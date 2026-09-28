@@ -6,7 +6,7 @@ option prologue:none
 option epilogue:none
 
 .data
-g_mode_count dd 5 dup(0)
+g_mode_count dd 6 dup(0)
 
 .const
 msg_self db "internal self-test failed", 0
@@ -354,6 +354,7 @@ rf_encode_block PROC FRAME
     mov r12d, eax
     mov r13d, MODE_RAW
     mov r14d, r12d
+    mov dword ptr [rsp+44], r14d
     mov rcx, rbx
     mov r10, qword ptr [rbx+JOB_WKS]
     lea rdx, [r10+WKS_RAW]
@@ -459,6 +460,7 @@ eb_after_pred:
     mov r8, r14
     call rf_memcpy
 eb_rice:
+    mov dword ptr [rsp+40], 0
     call rf_rice_save
     mov rcx, rbx
     mov r10, qword ptr [rbx+JOB_WKS]
@@ -471,6 +473,31 @@ eb_rice:
     jae eb_rice_drop
     mov r15, rax
     mov r13d, MODE_RICE
+    mov dword ptr [rsp+40], 1
+    mov r10, qword ptr [rbx+JOB_WKS]
+    lea rcx, [r10+WKS_BEST]
+    lea rdx, [r10+WKS_TRIAL]
+    mov r8, r15
+    call rf_memcpy
+    mov r14, r15
+    jmp eb_rans
+eb_rice_drop:
+    call rf_rice_restore
+eb_rans:
+    call rf_rans_save
+    mov rcx, rbx
+    mov r10, qword ptr [rbx+JOB_WKS]
+    lea rdx, [r10+WKS_TRIAL]
+    mov r8d, dword ptr [rsp+44]
+    call rf_rans_encode
+    cmp rax, -1
+    je eb_rans_drop
+    mov r15, rax
+    cmp dword ptr [rsp+40], 0
+    je eb_rans_keep
+    call rf_rice_restore
+eb_rans_keep:
+    mov r13d, MODE_RANS
     mov r10, qword ptr [rbx+JOB_WKS]
     lea rcx, [r10+WKS_BEST]
     lea rdx, [r10+WKS_TRIAL]
@@ -478,8 +505,8 @@ eb_rice:
     call rf_memcpy
     mov r14, r15
     jmp eb_emit
-eb_rice_drop:
-    call rf_rice_restore
+eb_rans_drop:
+    call rf_rans_restore
 eb_emit:
     mov rax, qword ptr [rbx+JOB_OUTEND]
     sub rax, qword ptr [rbx+JOB_OUT]
@@ -535,6 +562,8 @@ rf_decode_block PROC FRAME
     je db_pal
     cmp eax, MODE_RICE
     je db_rice
+    cmp eax, MODE_RANS
+    je db_rans
     jmp db_bad_mode
 db_raw:
     mov rax, qword ptr [rbx+DEC_SIZE]
@@ -630,6 +659,12 @@ db_rice:
     test eax, eax
     jnz db_leave
     jmp db_ok
+db_rans:
+    mov rcx, rbx
+    call rf_rans_decode
+    test eax, eax
+    jnz db_leave
+    jmp db_ok
 db_ok:
     mov eax, dword ptr [rbx+DEC_MODE]
     lea r10, g_mode_count
@@ -666,6 +701,7 @@ rf_clear_modes PROC
     mov dword ptr [g_mode_count+8], eax
     mov dword ptr [g_mode_count+12], eax
     mov dword ptr [g_mode_count+16], eax
+    mov dword ptr [g_mode_count+20], eax
     ret
 rf_clear_modes ENDP
 
@@ -682,6 +718,7 @@ rf_encode_image PROC FRAME
     mov qword ptr [rsp+104], 0
     call rf_clear_modes
     call rf_rice_reset
+    call rf_rans_reset
     mov eax, dword ptr [rbx+IMG_WIDTH]
     mov dword ptr [rsp+112], eax
     mov eax, dword ptr [rbx+IMG_HEIGHT]
@@ -870,6 +907,7 @@ rf_decode_rfi PROC FRAME
     mov dword ptr g_err_block, 0FFFFFFFFh
     call rf_clear_modes
     call rf_rice_reset
+    call rf_rans_reset
     cmp r12, RF_HEADER_SIZE
     jb di_trunc
     cmp r12, RF_MAX_FILE
@@ -1059,6 +1097,8 @@ di_end:
     mov dword ptr [rax+ST_PALETTE], ecx
     mov ecx, dword ptr [g_mode_count+16]
     mov dword ptr [rax+ST_RICE], ecx
+    mov ecx, dword ptr [g_mode_count+20]
+    mov dword ptr [rax+ST_RANS], ecx
 di_nostats:
     mov rcx, qword ptr [rsp+88]
     call rf_free

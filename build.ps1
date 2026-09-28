@@ -24,7 +24,7 @@ $lib = Join-Path $sdk.FullName "um\x64"
 
 $outDir = Join-Path $root "build"
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
-$sources = @("util", "crc32", "packbits", "fileio", "bmp", "rice", "codec", "main")
+$sources = @("util", "crc32", "packbits", "fileio", "bmp", "rice", "rans", "codec", "main")
 $objects = @()
 foreach ($name in $sources) {
     $src = Join-Path $root "src\$name.asm"

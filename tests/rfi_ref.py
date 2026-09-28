@@ -5,6 +5,7 @@ This module is a test oracle. It is not the codec implementation.
 
 from __future__ import annotations
 
+import array
 import struct
 import zlib
 
@@ -417,6 +418,252 @@ def rice_decode_block(
     return bytes(out)
 
 
+RANS_L = 1 << 23
+RANS_SCALE = 12
+RANS_ONE = 1 << RANS_SCALE
+RANS_INIT = 2816
+RANS_RATE = 4
+RANS_NCTX = 13851
+
+
+def qjls(delta: int) -> int:
+    if delta <= -21:
+        return -4
+    if delta <= -7:
+        return -3
+    if delta <= -3:
+        return -2
+    if delta < 0:
+        return -1
+    if delta == 0:
+        return 0
+    if delta < 3:
+        return 1
+    if delta < 7:
+        return 2
+    if delta < 21:
+        return 3
+    return 4
+
+
+class RansModel:
+    def __init__(self) -> None:
+        self.p = array.array("H", [RANS_INIT]) * (RANS_NCTX * 256)
+
+    def clone(self) -> "RansModel":
+        other = RansModel.__new__(RansModel)
+        other.p = array.array("H", self.p)
+        return other
+
+
+def _adapt_p(prob: int, bit: int) -> int:
+    if bit == 0:
+        prob += (RANS_ONE - prob) >> RANS_RATE
+        if prob > RANS_ONE - 1:
+            return RANS_ONE - 1
+        return prob
+    prob -= prob >> RANS_RATE
+    if prob < 1:
+        return 1
+    return prob
+
+
+def _rans_put(buf: bytearray, ptr: int, state: int, cum: int, freq: int) -> tuple[int, int] | None:
+    x_max = ((RANS_L >> RANS_SCALE) << 8) * freq
+    while state >= x_max:
+        if ptr == 0:
+            return None
+        ptr -= 1
+        buf[ptr] = state & 255
+        state >>= 8
+    state = ((state // freq) << RANS_SCALE) + (state % freq) + cum
+    return ptr, state
+
+
+def _plane_sample(rgb: bytes | bytearray, width: int, height: int, x: int, y: int, channel: int) -> int:
+    return _channel_rgb(rgb, width, height, x, y, channel)
+
+
+def _jctx(
+    rgb: bytes | bytearray,
+    width: int,
+    height: int,
+    x: int,
+    y: int,
+    channel: int,
+    x0: int,
+    y0: int,
+    bw: int,
+    sample,
+) -> int:
+    west = sample(x - 1, y, channel) if x > 0 else 0
+    north = sample(x, y - 1, channel) if y > 0 else 0
+    northwest = sample(x - 1, y - 1, channel) if x > 0 and y > 0 else 0
+    ne_known = y > 0 and x + 1 < width and ((y - 1) < y0 or (x + 1) < x0 + bw)
+    northeast = sample(x + 1, y - 1, channel) if ne_known else 0
+    q1 = qjls(northeast - north)
+    q2 = qjls(north - northwest)
+    q3 = qjls(northwest - west)
+    return (q1 + 4) * 81 + (q2 + 4) * 9 + (q3 + 4)
+
+
+def _rans_index(
+    rgb: bytes | bytearray,
+    width: int,
+    height: int,
+    x: int,
+    y: int,
+    channel: int,
+    x0: int,
+    y0: int,
+    bw: int,
+    sample,
+) -> int:
+    joint = _jctx(rgb, width, height, x, y, channel, x0, y0, bw, sample)
+    if channel == 0:
+        return joint
+    green_err = _residual_at(lambda px, py, channel=0: sample(px, py, channel), x, y)
+    bucket = qjls(green_err) + 4
+    return 729 + (channel - 1) * 6561 + joint * 9 + bucket
+
+
+def rans_encode_block(
+    rgb: bytes,
+    width: int,
+    height: int,
+    x0: int,
+    y0: int,
+    bw: int,
+    bh: int,
+    model: RansModel,
+    limit: int,
+) -> bytes | None:
+    if limit < 4:
+        return None
+    saved = model.clone()
+
+    def sample(x: int, y: int, channel: int) -> int:
+        return _plane_sample(rgb, width, height, x, y, channel)
+
+    snap: list[int] = []
+    probs = model.p
+    for channel in range(3):
+        for ly in range(bh):
+            y = y0 + ly
+            for lx in range(bw):
+                x = x0 + lx
+                err = _residual_at(lambda px, py, channel=channel: sample(px, py, channel), x, y)
+                mapped = _to_m(err)
+                ctx = _rans_index(rgb, width, height, x, y, channel, x0, y0, bw, sample)
+                node = 1
+                for shift in range(7, -1, -1):
+                    bit = (mapped >> shift) & 1
+                    slot = ctx * 256 + node
+                    prob = probs[slot]
+                    snap.append((bit << 15) | prob)
+                    probs[slot] = _adapt_p(prob, bit)
+                    node = node * 2 + bit
+    buf = bytearray(limit)
+    ptr = limit
+    state = RANS_L
+    for packed in reversed(snap):
+        prob = packed & 0x0FFF
+        bit = packed >> 15
+        if bit:
+            cum, freq = prob, RANS_ONE - prob
+        else:
+            cum, freq = 0, prob
+        put = _rans_put(buf, ptr, state, cum, freq)
+        if put is None:
+            model.p = saved.p
+            return None
+        ptr, state = put
+    if ptr < 4:
+        model.p = saved.p
+        return None
+    ptr -= 4
+    buf[ptr] = state & 255
+    buf[ptr + 1] = (state >> 8) & 255
+    buf[ptr + 2] = (state >> 16) & 255
+    buf[ptr + 3] = (state >> 24) & 255
+    body = bytes(buf[ptr:])
+    if len(body) >= limit:
+        model.p = saved.p
+        return None
+    return body
+
+
+def rans_decode_block(
+    body: bytes,
+    image: bytearray,
+    width: int,
+    height: int,
+    x0: int,
+    y0: int,
+    bw: int,
+    bh: int,
+    model: RansModel,
+) -> bytes:
+    if len(body) < 4:
+        raise FormatError("rans")
+    state = body[0] | (body[1] << 8) | (body[2] << 16) | (body[3] << 24)
+    pos = 4
+    planes = [bytearray(bw * bh) for _ in range(3)]
+    probs = model.p
+
+    def sample(x: int, y: int, channel: int) -> int:
+        if x0 <= x < x0 + bw and y0 <= y < y0 + bh:
+            return planes[channel][(y - y0) * bw + (x - x0)]
+        return _plane_sample(image, width, height, x, y, channel)
+
+    for channel in range(3):
+        for ly in range(bh):
+            y = y0 + ly
+            for lx in range(bw):
+                x = x0 + lx
+                ctx = _rans_index(image, width, height, x, y, channel, x0, y0, bw, sample)
+                node = 1
+                mapped = 0
+                for _shift in range(7, -1, -1):
+                    slot = ctx * 256 + node
+                    prob = probs[slot]
+                    bit = 1 if (state & (RANS_ONE - 1)) >= prob else 0
+                    if bit:
+                        cum, freq = prob, RANS_ONE - prob
+                    else:
+                        cum, freq = 0, prob
+                    state = freq * (state >> RANS_SCALE) + (state & (RANS_ONE - 1)) - cum
+                    while state < RANS_L:
+                        if pos >= len(body):
+                            raise FormatError("rans")
+                        state = (state << 8) | body[pos]
+                        pos += 1
+                    probs[slot] = _adapt_p(prob, bit)
+                    mapped = (mapped << 1) | bit
+                    node = node * 2 + bit
+                err = _from_m(mapped)
+                left = sample(x - 1, y, channel) if x > 0 else 0
+                up = sample(x, y - 1, channel) if y > 0 else 0
+                up_left = sample(x - 1, y - 1, channel) if x > 0 and y > 0 else 0
+                pred = _med(left, up, up_left)
+                planes[channel][ly * bw + lx] = (pred + err) & 255
+        if channel == 0:
+            for ly in range(bh):
+                y = y0 + ly
+                row = y * width
+                for lx in range(bw):
+                    image[((row + x0 + lx) * 3) + 1] = planes[0][ly * bw + lx]
+    if state != RANS_L or pos != len(body):
+        raise FormatError("rans")
+    out = bytearray(bw * bh * 3)
+    for i in range(bw * bh):
+        green = planes[0][i]
+        out[i * 3] = (planes[1][i] + green) & 255
+        out[i * 3 + 1] = green
+        out[i * 3 + 2] = (planes[2][i] + green) & 255
+    return bytes(out)
+
+
 def try_palette(rgb: bytes) -> bytes | None:
     order: list[bytes] = []
     index: dict[bytes, int] = {}
@@ -445,6 +692,7 @@ def encode_block(
     x0: int = 0,
     y0: int = 0,
     rice_state: RiceState | None = None,
+    rans_model: RansModel | None = None,
 ) -> bytes:
     raw = rgb
     best_mode = 0
@@ -458,10 +706,30 @@ def encode_block(
     palette = try_palette(raw)
     if palette is not None and len(palette) < len(best):
         best_mode, best = 3, palette
+    rice_won = False
+    rice_acc = None
+    rice_count = None
     if rice_state is not None and full is not None:
+        rice_acc = [row[:] for row in rice_state.acc]
+        rice_count = [row[:] for row in rice_state.count]
         rice = rice_encode_block(full, width, height, x0, y0, bw, bh, rice_state, len(best))
         if rice is not None:
             best_mode, best = 4, rice
+            rice_won = True
+    if rans_model is not None and full is not None:
+        # Keep the rANS model continuous. A body shorter than raw is written
+        # even when Rice is smaller, because dropping the block would reset
+        # the context the later blocks rely on.
+        raw_len = bw * bh * 3
+        frozen = rans_model.clone()
+        rans = rans_encode_block(full, width, height, x0, y0, bw, bh, rans_model, raw_len)
+        if rans is not None:
+            if rice_won and rice_state is not None and rice_acc is not None and rice_count is not None:
+                rice_state.acc = rice_acc
+                rice_state.count = rice_count
+            best_mode, best = 5, rans
+        else:
+            rans_model.p = frozen.p
     return bytes([best_mode, 0]) + struct.pack("<I", len(best)) + best
 
 
@@ -516,6 +784,7 @@ def encode_image(width: int, height: int, rgb: bytes) -> bytes:
         raise ValueError("rgb size")
     payload = bytearray()
     rice_state = RiceState()
+    rans_model = RansModel()
     for x0, y0, bw, bh in iter_blocks(width, height):
         payload += encode_block(
             crop_block(rgb, width, x0, y0, bw, bh),
@@ -527,6 +796,7 @@ def encode_image(width: int, height: int, rgb: bytes) -> bytes:
             x0=x0,
             y0=y0,
             rice_state=rice_state,
+            rans_model=rans_model,
         )
     return build_file(width, height, bytes(payload))
 
@@ -541,6 +811,7 @@ def decode_block(
     x0: int = 0,
     y0: int = 0,
     rice_state: RiceState | None = None,
+    rans_model: RansModel | None = None,
 ) -> bytes:
     if len(data) < 6:
         raise FormatError("truncated block")
@@ -580,6 +851,10 @@ def decode_block(
         if image is None or rice_state is None:
             raise FormatError("rice")
         return rice_decode_block(body, image, width, height, x0, y0, bw, bh, rice_state)
+    if mode == 5:
+        if image is None or rans_model is None:
+            raise FormatError("rans")
+        return rans_decode_block(body, image, width, height, x0, y0, bw, bh, rans_model)
     raise FormatError("block mode")
 
 
@@ -610,6 +885,7 @@ def decode_image(blob: bytes) -> tuple[int, int, bytes]:
     image = bytearray(width * height * 3)
     offset = 0
     rice_state = RiceState()
+    rans_model = RansModel()
     for x0, y0, bw, bh in iter_blocks(width, height):
         if offset + 6 > len(payload):
             raise FormatError("truncated block")
@@ -627,6 +903,7 @@ def decode_image(blob: bytes) -> tuple[int, int, bytes]:
             x0=x0,
             y0=y0,
             rice_state=rice_state,
+            rans_model=rans_model,
         )
         paste_block(image, width, x0, y0, bw, bh, block)
         offset += take

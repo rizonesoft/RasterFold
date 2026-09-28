@@ -34,6 +34,7 @@ MODE_PACKBITS    equ 1
 MODE_PREDICT     equ 2
 MODE_PALETTE     equ 3
 MODE_RICE        equ 4
+MODE_RANS        equ 5
 
 IMG_WIDTH        equ 0
 IMG_HEIGHT       equ 4
@@ -74,6 +75,7 @@ ST_PACKBITS      equ 16
 ST_PREDICT       equ 20
 ST_PALETTE       equ 24
 ST_RICE          equ 28
+ST_RANS          equ 32
 
 GENERIC_READ     equ 80000000h
 GENERIC_WRITE    equ 40000000h
@@ -179,6 +181,12 @@ EXTERNDEF rf_rice_restore:PROC
 EXTERNDEF rf_rice_encode:PROC
 EXTERNDEF rf_rice_decode:PROC
 EXTERNDEF rf_rice_selftest:PROC
+EXTERNDEF rf_rans_reset:PROC
+EXTERNDEF rf_rans_save:PROC
+EXTERNDEF rf_rans_restore:PROC
+EXTERNDEF rf_rans_encode:PROC
+EXTERNDEF rf_rans_decode:PROC
+EXTERNDEF rf_rans_selftest:PROC
 
 EXTERNDEF ExitProcess:PROC
 EXTERNDEF GetStdHandle:PROC

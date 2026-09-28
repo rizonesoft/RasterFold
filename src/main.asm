@@ -39,6 +39,7 @@ l_mpb db "mode_packbits: ", 0
 l_mpr db "mode_predict: ", 0
 l_mpal db "mode_palette: ", 0
 l_mrice db "mode_rice: ", 0
+l_mrans db "mode_rans: ", 0
 l_ok db "status: ok", 13, 10, 0
 st_read db "rf_stat read_us=", 0
 st_parse db "rf_stat parse_us=", 0
@@ -53,6 +54,7 @@ st_mpb db "rf_stat mode_packbits=", 0
 st_mpr db "rf_stat mode_predict=", 0
 st_mpal db "rf_stat mode_palette=", 0
 st_mrice db "rf_stat mode_rice=", 0
+st_mrans db "rf_stat mode_rans=", 0
 
 .code
 
@@ -83,6 +85,9 @@ main PROC FRAME
     test eax, eax
     jnz main_fail
     call rf_rice_selftest
+    test eax, eax
+    jnz main_fail
+    call rf_rans_selftest
     test eax, eax
     jnz main_fail
     call GetCommandLineW
@@ -343,6 +348,10 @@ cmd_inspect:
     mov r8d, dword ptr [rsp+228]
     call rf_write_line_u64
     mov rcx, g_stdout
+    lea rdx, l_mrans
+    mov r8d, dword ptr [rsp+232]
+    call rf_write_line_u64
+    mov rcx, g_stdout
     lea rdx, l_ok
     call rf_write_cstr
     jmp main_ok
@@ -422,6 +431,10 @@ main_ok:
     mov rcx, g_stdout
     lea rdx, st_mrice
     mov r8d, dword ptr [g_mode_count+16]
+    call rf_write_line_u64
+    mov rcx, g_stdout
+    lea rdx, st_mrans
+    mov r8d, dword ptr [g_mode_count+20]
     call rf_write_line_u64
 main_success:
     xor ebx, ebx

@@ -303,8 +303,8 @@ context = Q(abs(Eleft)) * 8 + Q(abs(Eup))
 `Eleft` and `Eup` are the MED residuals of those neighbours, not a second
 coding. Each channel has its own 64 contexts. At the start of the file every
 accumulator `A` is 4 and every count `N` is 1. A mode other than 4 does not
-change the model. Each mode-4 block, in payload order, updates the model
-after every residual:
+change the model. Mode 5 does not change it either. Each mode-4 block, in
+payload order, updates the model after every residual:
 
 ```
 k = 0
@@ -333,6 +333,85 @@ G = G'
 R = (R' + G) mod 256
 B = (B' + G) mod 256
 ```
+
+### Mode 5, subtract-green, MED, binary rANS
+
+The colour transform, visit order, and MED predictor are the same as mode 4.
+The coded symbol is the same mapped residual `m` in `0 .. 255`. What changes
+is the context and the entropy coder.
+
+Neighbours outside the image are 0. The above-right neighbour is also 0 when
+it belongs to a block that has not been decoded yet: on every row of a block
+except the first, the sample just past the block's right edge. `W`, `N`,
+`NW`, and `NE` are reconstructed samples of the plane being coded.
+
+```
+Q(d) = -4 when d <= -21
+       -3 when -20 <= d <= -7
+       -2 when -6 <= d <= -3
+       -1 when d is -2 or -1
+        0 when d = 0
+        1 when d is 1 or 2
+        2 when 3 <= d <= 6
+        3 when 7 <= d <= 20
+        4 when d >= 21
+
+j = (Q(NE - N) + 4) * 81 + (Q(N - NW) + 4) * 9 + (Q(NW - W) + 4)
+```
+
+For the green plane the context index is `j` (`0 .. 728`). For R' and B' it
+also mixes the green MED residual `eG` at the same pixel, which is known
+because green is coded first:
+
+```
+g = Q(eG) + 4
+index = 729 + (channel - 1) * 6561 + j * 9 + g
+```
+
+`channel` is 1 for R' and 2 for B'. There are 13851 contexts in total. Each
+context owns 256 binary-tree nodes. Node 1 is the root. A symbol's eight bits
+are coded MSB first, and the node for the next bit is `node * 2 + bit`.
+
+Each node stores a probability `p0` in `1 .. 4095`, the chance of bit 0 out
+of 4096. Every node starts at 2816. After the bit is coded:
+
+```
+if bit = 0: p0 = min(4095, p0 + ((4096 - p0) >> 4))
+else:       p0 = max(1, p0 - (p0 >> 4))
+```
+
+A mode other than 5 does not change these probabilities. The probabilities
+are updated for a mode-5 block only when that block is the one written.
+
+The block data is one rANS byte stream, state `L = 2^23`, scale 12. The
+encoder writes bytes backward and finishes by storing the 32-bit state
+little-endian at the front of the buffer. The decoder loads that state and
+then reads forward. For a bit with probability `p0`:
+
+```
+if bit = 0: cum = 0,          freq = p0
+else:       cum = p0,         freq = 4096 - p0
+```
+
+Encoding renorms while `state >= freq * 2^19`, emitting the low byte each
+time, then sets:
+
+```
+state = (state / freq) * 4096 + (state mod freq) + cum
+```
+
+Decoding sets:
+
+```
+state = freq * (state >> 12) + (state mod 4096) - cum
+```
+
+and refills a byte from the stream while `state < L`. Division and remainder
+are unsigned. After the last symbol the state must be `L` again and the
+decoder must have consumed every byte. Anything else rejects the block. A
+stream shorter than 4 bytes is rejected.
+
+Inverse subtract-green is the same as mode 4.
 
 ## PackBits
 
@@ -390,9 +469,13 @@ that gather; it is emitted as a repeat only when the outer rule starts on it.
 For each block the reference encoder tries the applicable modes and writes the
 one with the smallest `data_size`. Ties keep the lowest mode number, so raw
 wins a tie. Palette is skipped when the block has more than 256 colours. A
-PackBits result, and a mode-4 Rice result, is used only when it is strictly
-smaller than the current best size. The Rice model is updated only for a
-mode-4 block that is actually written. This policy is not a decoder
+PackBits result and a mode-4 Rice result are used only when strictly smaller
+than the current best size. A mode-5 rANS body is written whenever it is
+strictly smaller than the raw block, even if another mode is smaller, so the
+probability model is not interrupted. The Rice model is updated only for a
+mode-4 block that is actually written, and the rANS model only for a mode-5
+block that is actually written. Trying mode 5 after a successful mode-4 trial
+rolls the Rice model back when mode 5 wins. This policy is not a decoder
 requirement. Any valid mode may be selected per block.
 
 ## Rejection rules
@@ -408,10 +491,12 @@ is true:
 - `width` or `height` is outside the limits above, or `width * height`
   overflows the pixel limit.
 - `payload_size` does not equal `file_size - 32`, or either checksum mismatches.
-- A block header is truncated, `flags` is not 0, `mode` is not 0..4, or
+- A block header is truncated, `flags` is not 0, `mode` is not 0..5, or
   `data_size` runs past the payload.
 - A mode-4 Rice stream ends early, leaves a non-zero unused bit, leaves
   unread bytes, or produces a quotient or mapped residual above 255.
+- A mode-5 rANS stream is shorter than 4 bytes, ends early, finishes with a
+  state other than `2^23`, or leaves unread bytes.
 - A decoded block does not produce exactly the expected number of bytes, a
   PackBits marker is `0x80`, a palette index is out of range, or the payload
   does not end on a block boundary after `blocks_x * blocks_y` blocks.
