@@ -1,0 +1,49 @@
+{
+  "image": "R:\\GitHub\\RasterFold-codec\\measure\\image.bmp",
+  "width": 1672,
+  "height": 941,
+  "raw_rgb_bytes": 4720056,
+  "bmp_bytes": 4720110,
+  "rasterfold": {
+    "bytes": 4047356,
+    "encode_wall_us": 106289,
+    "decode_wall_us": 52133,
+    "encode_peak_ws": 20176896,
+    "decode_peak_ws": 20111360,
+    "encode_codec_us": 69714,
+    "decode_codec_us": 17044,
+    "pixels_match": true
+  },
+  "webp": {
+    "bytes": 1588708,
+    "encode_wall_us": 20597446,
+    "decode_wall_us": 195744,
+    "encode_peak_ws": 110395392,
+    "decode_peak_ws": 44613632,
+    "pixels_match": true,
+    "settings": "-c:v libwebp -lossless 1 -quality 100 -compression_level 6 -threads 1"
+  },
+  "avif": {
+    "bytes": 1776841,
+    "encode_wall_us": 30931394,
+    "decode_wall_us": 330705,
+    "encode_peak_ws": 107511808,
+    "decode_peak_ws": 49061888,
+    "pixels_match": true,
+    "settings": "-c:v libaom-av1 -pix_fmt gbrp -still-picture 1 -cpu-used 4 -threads 1 -aom-params lossless=1"
+  },
+  "jxl": {
+    "bytes": 1470703,
+    "encode_wall_us": 1541650,
+    "decode_wall_us": 526986,
+    "encode_peak_ws": 93712384,
+    "decode_peak_ws": 51814400,
+    "pixels_match": true,
+    "settings": "-c:v libjxl -distance 0 -effort 7 -threads 1"
+  },
+  "passed": false,
+  "failures": [
+    "size 4047356 is not smaller than jxl 1470703"
+  ],
+  "summary": "size 4047356 is not smaller than jxl 1470703"
+}
