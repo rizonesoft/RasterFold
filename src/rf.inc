@@ -33,6 +33,7 @@ MODE_RAW         equ 0
 MODE_PACKBITS    equ 1
 MODE_PREDICT     equ 2
 MODE_PALETTE     equ 3
+MODE_RICE        equ 4
 
 IMG_WIDTH        equ 0
 IMG_HEIGHT       equ 4
@@ -49,6 +50,8 @@ JOB_BH           equ 24
 JOB_WKS          equ 32
 JOB_OUT          equ 40
 JOB_OUTEND       equ 48
+JOB_WIDTH        equ 56
+JOB_HEIGHT       equ 60
 
 DEC_PIX          equ 0
 DEC_STRIDE       equ 8
@@ -60,6 +63,8 @@ DEC_MODE         equ 28
 DEC_WKS          equ 32
 DEC_DATA         equ 40
 DEC_SIZE         equ 48
+DEC_WIDTH        equ 56
+DEC_HEIGHT       equ 60
 
 ST_BLOCKS_X      equ 0
 ST_BLOCKS_Y      equ 4
@@ -68,6 +73,7 @@ ST_RAW           equ 12
 ST_PACKBITS      equ 16
 ST_PREDICT       equ 20
 ST_PALETTE       equ 24
+ST_RICE          equ 28
 
 GENERIC_READ     equ 80000000h
 GENERIC_WRITE    equ 40000000h
@@ -167,6 +173,12 @@ EXTERNDEF rf_bmp_store:PROC
 EXTERNDEF rf_encode_image:PROC
 EXTERNDEF rf_decode_rfi:PROC
 EXTERNDEF rf_predict_selftest:PROC
+EXTERNDEF rf_rice_reset:PROC
+EXTERNDEF rf_rice_save:PROC
+EXTERNDEF rf_rice_restore:PROC
+EXTERNDEF rf_rice_encode:PROC
+EXTERNDEF rf_rice_decode:PROC
+EXTERNDEF rf_rice_selftest:PROC
 
 EXTERNDEF ExitProcess:PROC
 EXTERNDEF GetStdHandle:PROC

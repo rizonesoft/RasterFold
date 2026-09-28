@@ -117,6 +117,306 @@ def unpredict(residual: bytes, bw: int, bh: int) -> bytes:
     return bytes(out)
 
 
+RICE_RESET = 32
+
+
+def _qb(mag: int) -> int:
+    if mag <= 1:
+        return mag if mag > 0 else 0
+    if mag <= 2:
+        return 2
+    if mag <= 4:
+        return 3
+    if mag <= 8:
+        return 4
+    if mag <= 16:
+        return 5
+    if mag <= 32:
+        return 6
+    return 7
+
+
+def _med(left: int, up: int, up_left: int) -> int:
+    if up_left >= left and up_left >= up:
+        pred = left if left < up else up
+    elif up_left <= left and up_left <= up:
+        pred = left if left > up else up
+    else:
+        pred = left + up - up_left
+    if pred < 0:
+        return 0
+    if pred > 255:
+        return 255
+    return pred
+
+
+def _delta(value: int, pred: int) -> int:
+    err = (value - pred) & 255
+    if err >= 128:
+        return err - 256
+    return err
+
+
+def _rice_k(acc: int, count: int) -> int:
+    k = 0
+    while k < 8 and (count << k) < acc:
+        k += 1
+    return k
+
+
+def _to_m(err: int) -> int:
+    if err >= 0:
+        return err << 1
+    return ((-err) << 1) - 1
+
+
+def _from_m(mapped: int) -> int:
+    if mapped & 1:
+        return -((mapped + 1) >> 1)
+    return mapped >> 1
+
+
+class RiceState:
+    def __init__(self) -> None:
+        self.acc = [[4] * 64 for _ in range(3)]
+        self.count = [[1] * 64 for _ in range(3)]
+
+
+class _RiceWriter:
+    def __init__(self, limit: int) -> None:
+        self.acc = 0
+        self.n = 0
+        self.out = bytearray()
+        self.limit = limit
+        self.over = False
+
+    def bit(self, value: int) -> None:
+        if self.over:
+            return
+        if value:
+            self.acc |= 1 << self.n
+        self.n += 1
+        if self.n == 8:
+            self.out.append(self.acc)
+            self.acc = 0
+            self.n = 0
+            if len(self.out) >= self.limit:
+                self.over = True
+
+    def bits(self, value: int, width: int) -> None:
+        for shift in range(width):
+            self.bit((value >> shift) & 1)
+
+    def finish(self) -> bytes | None:
+        if self.over:
+            return None
+        if self.n:
+            self.out.append(self.acc)
+        if len(self.out) >= self.limit:
+            return None
+        return bytes(self.out)
+
+
+class _RiceReader:
+    def __init__(self, data: bytes) -> None:
+        self.data = data
+        self.i = 0
+        self.acc = 0
+        self.n = 0
+
+    def bit(self) -> int:
+        if self.n == 0:
+            if self.i >= len(self.data):
+                raise FormatError("rice")
+            self.acc = self.data[self.i]
+            self.i += 1
+            self.n = 8
+        value = self.acc & 1
+        self.acc >>= 1
+        self.n -= 1
+        return value
+
+    def bits(self, width: int) -> int:
+        value = 0
+        for shift in range(width):
+            if self.bit():
+                value |= 1 << shift
+        return value
+
+    def finish(self) -> None:
+        if self.acc != 0 or self.i != len(self.data):
+            raise FormatError("rice")
+
+
+def _channel_rgb(rgb: bytes | bytearray, width: int, height: int, x: int, y: int, channel: int) -> int:
+    if x < 0 or y < 0 or x >= width or y >= height:
+        return 0
+    base = (y * width + x) * 3
+    red = rgb[base]
+    green = rgb[base + 1]
+    blue = rgb[base + 2]
+    if channel == 0:
+        return green
+    if channel == 1:
+        return (red - green) & 255
+    return (blue - green) & 255
+
+
+def _residual_at(sample, x: int, y: int) -> int:
+    if x < 0 or y < 0:
+        return 0
+    value = sample(x, y)
+    left = sample(x - 1, y) if x > 0 else 0
+    up = sample(x, y - 1) if y > 0 else 0
+    up_left = sample(x - 1, y - 1) if x > 0 and y > 0 else 0
+    return _delta(value, _med(left, up, up_left))
+
+
+def _bump(acc: list[int], count: list[int], ctx: int, err: int) -> None:
+    mag = -err if err < 0 else err
+    acc[ctx] += mag
+    count[ctx] += 1
+    if count[ctx] >= RICE_RESET:
+        acc[ctx] >>= 1
+        count[ctx] >>= 1
+        if count[ctx] < 1:
+            count[ctx] = 1
+
+
+class _RiceStop(Exception):
+    pass
+
+
+def _emit(writer: _RiceWriter, acc: list[int], count: list[int], ctx: int, err: int) -> bool:
+    k = _rice_k(acc[ctx], count[ctx])
+    mapped = _to_m(err)
+    quot = mapped >> k
+    for _ in range(quot):
+        writer.bit(1)
+    writer.bit(0)
+    if k:
+        writer.bits(mapped & ((1 << k) - 1), k)
+    _bump(acc, count, ctx, err)
+    return not writer.over
+
+
+def _read_err(reader: _RiceReader, acc: list[int], count: list[int], ctx: int) -> int:
+    k = _rice_k(acc[ctx], count[ctx])
+    quot = 0
+    while reader.bit():
+        quot += 1
+        if quot > 255:
+            raise FormatError("rice")
+    rem = reader.bits(k) if k else 0
+    mapped = (quot << k) | rem
+    if mapped > 255:
+        raise FormatError("rice")
+    err = _from_m(mapped)
+    _bump(acc, count, ctx, err)
+    return err
+
+
+def _for_pixels(x0: int, y0: int, bw: int, bh: int, sample, step) -> None:
+    prev = [0] * bw
+    left_e = 0
+    for ly in range(bh):
+        y = y0 + ly
+        for lx in range(bw):
+            x = x0 + lx
+            if x <= 0:
+                left_e = 0
+            elif lx == 0:
+                left_e = _residual_at(sample, x - 1, y)
+            if y <= 0:
+                up_e = 0
+            elif ly == 0:
+                up_e = _residual_at(sample, x, y - 1)
+            else:
+                up_e = prev[lx]
+            ctx = _qb(abs(left_e)) * 8 + _qb(abs(up_e))
+            left = sample(x - 1, y) if x > 0 else 0
+            up = sample(x, y - 1) if y > 0 else 0
+            up_left = sample(x - 1, y - 1) if x > 0 and y > 0 else 0
+            err = step(ctx, _med(left, up, up_left), x, y, lx, ly)
+            left_e = err
+            prev[lx] = err
+
+
+def rice_encode_block(
+    rgb: bytes,
+    width: int,
+    height: int,
+    x0: int,
+    y0: int,
+    bw: int,
+    bh: int,
+    state: RiceState,
+    limit: int,
+) -> bytes | None:
+    acc = [row[:] for row in state.acc]
+    count = [row[:] for row in state.count]
+    writer = _RiceWriter(limit)
+    for channel in range(3):
+
+        def sample(x: int, y: int, channel: int = channel) -> int:
+            return _channel_rgb(rgb, width, height, x, y, channel)
+
+        def step(ctx: int, pred: int, x: int, y: int, lx: int, ly: int, channel: int = channel, sample=sample) -> int:
+            err = _delta(sample(x, y), pred)
+            if not _emit(writer, acc[channel], count[channel], ctx, err):
+                raise _RiceStop
+            return err
+
+        try:
+            _for_pixels(x0, y0, bw, bh, sample, step)
+        except _RiceStop:
+            return None
+    blob = writer.finish()
+    if blob is None:
+        return None
+    state.acc = acc
+    state.count = count
+    return blob
+
+
+def rice_decode_block(
+    body: bytes,
+    image: bytearray,
+    width: int,
+    height: int,
+    x0: int,
+    y0: int,
+    bw: int,
+    bh: int,
+    state: RiceState,
+) -> bytes:
+    reader = _RiceReader(body)
+    planes = [bytearray(bw * bh) for _ in range(3)]
+    for channel in range(3):
+
+        def sample(x: int, y: int, channel: int = channel) -> int:
+            if x0 <= x < x0 + bw and y0 <= y < y0 + bh:
+                return planes[channel][(y - y0) * bw + (x - x0)]
+            return _channel_rgb(image, width, height, x, y, channel)
+
+        def step(ctx: int, pred: int, x: int, y: int, lx: int, ly: int, channel: int = channel) -> int:
+            err = _read_err(reader, state.acc[channel], state.count[channel], ctx)
+            planes[channel][ly * bw + lx] = (pred + err) & 255
+            return err
+
+        _for_pixels(x0, y0, bw, bh, sample, step)
+    reader.finish()
+    out = bytearray(bw * bh * 3)
+    for i in range(bw * bh):
+        green = planes[0][i]
+        red_p = planes[1][i]
+        blue_p = planes[2][i]
+        out[i * 3] = (red_p + green) & 255
+        out[i * 3 + 1] = green
+        out[i * 3 + 2] = (blue_p + green) & 255
+    return bytes(out)
+
+
 def try_palette(rgb: bytes) -> bytes | None:
     order: list[bytes] = []
     index: dict[bytes, int] = {}
@@ -135,7 +435,17 @@ def try_palette(rgb: bytes) -> bytes | None:
     return body
 
 
-def encode_block(rgb: bytes, bw: int, bh: int) -> bytes:
+def encode_block(
+    rgb: bytes,
+    bw: int,
+    bh: int,
+    full: bytes | None = None,
+    width: int = 0,
+    height: int = 0,
+    x0: int = 0,
+    y0: int = 0,
+    rice_state: RiceState | None = None,
+) -> bytes:
     raw = rgb
     best_mode = 0
     best = raw
@@ -148,6 +458,10 @@ def encode_block(rgb: bytes, bw: int, bh: int) -> bytes:
     palette = try_palette(raw)
     if palette is not None and len(palette) < len(best):
         best_mode, best = 3, palette
+    if rice_state is not None and full is not None:
+        rice = rice_encode_block(full, width, height, x0, y0, bw, bh, rice_state, len(best))
+        if rice is not None:
+            best_mode, best = 4, rice
     return bytes([best_mode, 0]) + struct.pack("<I", len(best)) + best
 
 
@@ -201,12 +515,33 @@ def encode_image(width: int, height: int, rgb: bytes) -> bytes:
     if len(rgb) != width * height * 3:
         raise ValueError("rgb size")
     payload = bytearray()
+    rice_state = RiceState()
     for x0, y0, bw, bh in iter_blocks(width, height):
-        payload += encode_block(crop_block(rgb, width, x0, y0, bw, bh), bw, bh)
+        payload += encode_block(
+            crop_block(rgb, width, x0, y0, bw, bh),
+            bw,
+            bh,
+            full=rgb,
+            width=width,
+            height=height,
+            x0=x0,
+            y0=y0,
+            rice_state=rice_state,
+        )
     return build_file(width, height, bytes(payload))
 
 
-def decode_block(data: bytes, bw: int, bh: int) -> bytes:
+def decode_block(
+    data: bytes,
+    bw: int,
+    bh: int,
+    image: bytearray | None = None,
+    width: int = 0,
+    height: int = 0,
+    x0: int = 0,
+    y0: int = 0,
+    rice_state: RiceState | None = None,
+) -> bytes:
     if len(data) < 6:
         raise FormatError("truncated block")
     mode = data[0]
@@ -241,6 +576,10 @@ def decode_block(data: bytes, bw: int, bh: int) -> bytes:
                 raise FormatError("palette index")
             out += palette[idx * 3 : idx * 3 + 3]
         return bytes(out)
+    if mode == 4:
+        if image is None or rice_state is None:
+            raise FormatError("rice")
+        return rice_decode_block(body, image, width, height, x0, y0, bw, bh, rice_state)
     raise FormatError("block mode")
 
 
@@ -270,6 +609,7 @@ def decode_image(blob: bytes) -> tuple[int, int, bytes]:
         raise FormatError("payload checksum")
     image = bytearray(width * height * 3)
     offset = 0
+    rice_state = RiceState()
     for x0, y0, bw, bh in iter_blocks(width, height):
         if offset + 6 > len(payload):
             raise FormatError("truncated block")
@@ -277,7 +617,17 @@ def decode_image(blob: bytes) -> tuple[int, int, bytes]:
         take = 6 + size
         if offset + take > len(payload):
             raise FormatError("block length")
-        block = decode_block(payload[offset : offset + take], bw, bh)
+        block = decode_block(
+            payload[offset : offset + take],
+            bw,
+            bh,
+            image=image,
+            width=width,
+            height=height,
+            x0=x0,
+            y0=y0,
+            rice_state=rice_state,
+        )
         paste_block(image, width, x0, y0, bw, bh, block)
         offset += take
     if offset != len(payload):

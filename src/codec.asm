@@ -6,7 +6,7 @@ option prologue:none
 option epilogue:none
 
 .data
-g_mode_count dd 4 dup(0)
+g_mode_count dd 5 dup(0)
 
 .const
 msg_self db "internal self-test failed", 0
@@ -415,7 +415,7 @@ eb_after_pred:
     lea r9, [r10+WKS_IDX]
     call rf_palette_build
     cmp eax, 1
-    jl eb_emit
+    jl eb_rice
     mov esi, eax
     mov r10, qword ptr [rbx+JOB_WKS]
     lea rdi, [r10+WKS_TRIAL]
@@ -432,7 +432,7 @@ eb_after_pred:
     mov eax, RF_TRIAL_CAP
     sub eax, 1
     sub eax, r15d
-    jbe eb_emit
+    jbe eb_rice
     mov r10, qword ptr [rbx+JOB_WKS]
     lea rcx, [r10+WKS_IDX]
     mov edx, dword ptr [rsp+32]
@@ -443,14 +443,14 @@ eb_after_pred:
     sub r9d, r15d
     call rf_packbits_encode
     cmp rax, 0
-    jl eb_emit
+    jl eb_rice
     mov rcx, rax
     add rcx, r15
-    jc eb_emit
+    jc eb_rice
     add rcx, 1
-    jc eb_emit
+    jc eb_rice
     cmp rcx, r14
-    jae eb_emit
+    jae eb_rice
     mov r13d, MODE_PALETTE
     mov r14, rcx
     mov r10, qword ptr [rbx+JOB_WKS]
@@ -458,6 +458,28 @@ eb_after_pred:
     lea rdx, [r10+WKS_TRIAL]
     mov r8, r14
     call rf_memcpy
+eb_rice:
+    call rf_rice_save
+    mov rcx, rbx
+    mov r10, qword ptr [rbx+JOB_WKS]
+    lea rdx, [r10+WKS_TRIAL]
+    mov r8, r14
+    call rf_rice_encode
+    cmp rax, -1
+    je eb_rice_drop
+    cmp rax, r14
+    jae eb_rice_drop
+    mov r15, rax
+    mov r13d, MODE_RICE
+    mov r10, qword ptr [rbx+JOB_WKS]
+    lea rcx, [r10+WKS_BEST]
+    lea rdx, [r10+WKS_TRIAL]
+    mov r8, r15
+    call rf_memcpy
+    mov r14, r15
+    jmp eb_emit
+eb_rice_drop:
+    call rf_rice_restore
 eb_emit:
     mov rax, qword ptr [rbx+JOB_OUTEND]
     sub rax, qword ptr [rbx+JOB_OUT]
@@ -511,6 +533,8 @@ rf_decode_block PROC FRAME
     je db_pred
     cmp eax, MODE_PALETTE
     je db_pal
+    cmp eax, MODE_RICE
+    je db_rice
     jmp db_bad_mode
 db_raw:
     mov rax, qword ptr [rbx+DEC_SIZE]
@@ -600,6 +624,12 @@ db_pal:
     lea rdx, [r10+WKS_RAW]
     call rf_scatter_rgb
     jmp db_ok
+db_rice:
+    mov rcx, rbx
+    call rf_rice_decode
+    test eax, eax
+    jnz db_leave
+    jmp db_ok
 db_ok:
     mov eax, dword ptr [rbx+DEC_MODE]
     lea r10, g_mode_count
@@ -635,6 +665,7 @@ rf_clear_modes PROC
     mov dword ptr [g_mode_count+4], eax
     mov dword ptr [g_mode_count+8], eax
     mov dword ptr [g_mode_count+12], eax
+    mov dword ptr [g_mode_count+16], eax
     ret
 rf_clear_modes ENDP
 
@@ -650,6 +681,7 @@ rf_encode_image PROC FRAME
     mov qword ptr [rsp+96], 0
     mov qword ptr [rsp+104], 0
     call rf_clear_modes
+    call rf_rice_reset
     mov eax, dword ptr [rbx+IMG_WIDTH]
     mov dword ptr [rsp+112], eax
     mov eax, dword ptr [rbx+IMG_HEIGHT]
@@ -750,6 +782,10 @@ ei_bw:
     mov rax, qword ptr [rsp+80]
     add rax, qword ptr [rsp+88]
     mov qword ptr [rsp+192], rax
+    mov eax, dword ptr [rsp+112]
+    mov dword ptr [rsp+200], eax
+    mov eax, dword ptr [rsp+116]
+    mov dword ptr [rsp+204], eax
     lea rcx, [rsp+144]
     call rf_encode_block
     cmp rax, -1
@@ -833,6 +869,7 @@ rf_decode_rfi PROC FRAME
     mov qword ptr [rsp+88], 0
     mov dword ptr g_err_block, 0FFFFFFFFh
     call rf_clear_modes
+    call rf_rice_reset
     cmp r12, RF_HEADER_SIZE
     jb di_trunc
     cmp r12, RF_MAX_FILE
@@ -981,6 +1018,10 @@ di_bw:
     mov qword ptr [rsp+200], rax
     mov dword ptr [rsp+208], edx
     mov qword ptr [rsp+208], rdx
+    mov eax, dword ptr [rsp+96]
+    mov dword ptr [rsp+216], eax
+    mov eax, dword ptr [rsp+100]
+    mov dword ptr [rsp+220], eax
     lea rcx, [rsp+160]
     call rf_decode_block
     test eax, eax
@@ -1016,6 +1057,8 @@ di_end:
     mov dword ptr [rax+ST_PREDICT], ecx
     mov ecx, dword ptr [g_mode_count+12]
     mov dword ptr [rax+ST_PALETTE], ecx
+    mov ecx, dword ptr [g_mode_count+16]
+    mov dword ptr [rax+ST_RICE], ecx
 di_nostats:
     mov rcx, qword ptr [rsp+88]
     call rf_free

@@ -242,6 +242,98 @@ decoder to accept the block. The reference encoder emits each distinct colour
 once, in first-seen scan order, and uses a palette only when the block has
 at most 256 distinct colours.
 
+### Mode 4, subtract-green, MED, Rice
+
+The block data is one LSB-first bit stream and nothing else. A partial final
+byte stores the unused high bits as zero. The decoder rejects a stream that
+ends early, has a non-zero unused bit, or has unread bytes.
+
+Samples are visited in three planes, G then R' then B', each plane row by
+row. The colour transform is the same subtract-green as mode 2:
+
+```
+G' = G
+R' = (R - G) mod 256
+B' = (B - G) mod 256
+```
+
+Each sample is predicted with the MED predictor from already reconstructed
+samples of that same plane. Neighbours outside the image are 0. Neighbours
+outside this block are the reconstructed samples of earlier blocks. `L` is
+the left sample, `U` the sample above, and `UL` the sample above-left.
+
+```
+if UL >= L and UL >= U: pred = min(L, U)
+else if UL <= L and UL <= U: pred = max(L, U)
+else: pred = L + U - UL
+pred = min(255, max(0, pred))
+```
+
+The residual is the wrapped difference, then signed:
+
+```
+err = (sample - pred) mod 256
+if err >= 128: err = err - 256
+```
+
+Reconstruction is `(pred + err) mod 256`, then the inverse of subtract-green.
+
+The signed residual is mapped to an integer `m` in `0 .. 255`:
+
+```
+if err >= 0: m = err * 2
+else:        m = (-err) * 2 - 1
+```
+
+Context index, from the signed residuals `Eleft` and `Eup` of the left and
+above samples (0 when that neighbour is outside the image):
+
+```
+Q(0) = 0
+Q(1) = 1
+Q(2) = 2
+Q(3) or Q(4) = 3
+Q(5) through Q(8) = 4
+Q(9) through Q(16) = 5
+Q(17) through Q(32) = 6
+Q(33) and above = 7
+context = Q(abs(Eleft)) * 8 + Q(abs(Eup))
+```
+
+`Eleft` and `Eup` are the MED residuals of those neighbours, not a second
+coding. Each channel has its own 64 contexts. At the start of the file every
+accumulator `A` is 4 and every count `N` is 1. A mode other than 4 does not
+change the model. Each mode-4 block, in payload order, updates the model
+after every residual:
+
+```
+k = 0
+while k < 8 and (N << k) < A: k = k + 1
+q = m >> k
+remainder = m & ((1 << k) - 1)
+```
+
+The stream then receives `q` one-bits, one zero-bit, and `remainder` in `k`
+bits, least significant bit first. After the symbol:
+
+```
+A = A + abs(err)
+N = N + 1
+if N >= 32:
+    A = A >> 1
+    N = N >> 1
+    if N < 1: N = 1
+```
+
+A quotient above 255, or a mapped value above 255, rejects the block.
+Inverse subtract-green is
+
+```
+G = G'
+R = (R' + G) mod 256
+B = (B' + G) mod 256
+```
+
 ## PackBits
 
 This is Apple PackBits with one extra rejection: the no-op marker is illegal.
@@ -298,9 +390,10 @@ that gather; it is emitted as a repeat only when the outer rule starts on it.
 For each block the reference encoder tries the applicable modes and writes the
 one with the smallest `data_size`. Ties keep the lowest mode number, so raw
 wins a tie. Palette is skipped when the block has more than 256 colours. A
-PackBits result is used only when it is strictly smaller than the current
-best size. This policy is not a decoder requirement. Any valid mode may be
-selected per block.
+PackBits result, and a mode-4 Rice result, is used only when it is strictly
+smaller than the current best size. The Rice model is updated only for a
+mode-4 block that is actually written. This policy is not a decoder
+requirement. Any valid mode may be selected per block.
 
 ## Rejection rules
 
@@ -315,8 +408,10 @@ is true:
 - `width` or `height` is outside the limits above, or `width * height`
   overflows the pixel limit.
 - `payload_size` does not equal `file_size - 32`, or either checksum mismatches.
-- A block header is truncated, `flags` is not 0, `mode` is not 0..3, or
+- A block header is truncated, `flags` is not 0, `mode` is not 0..4, or
   `data_size` runs past the payload.
+- A mode-4 Rice stream ends early, leaves a non-zero unused bit, leaves
+  unread bytes, or produces a quotient or mapped residual above 255.
 - A decoded block does not produce exactly the expected number of bytes, a
   PackBits marker is `0x80`, a palette index is out of range, or the payload
   does not end on a block boundary after `blocks_x * blocks_y` blocks.

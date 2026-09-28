@@ -34,7 +34,7 @@ An existing destination is left untouched. Output is written to `destination.par
 
 Each image is cut into independent 64×64 blocks, with smaller blocks on the right and bottom edges. A block does not use pixels from its neighbours. Scratch for one block is fixed at 64×64, so a hostile length cannot choose the scratch allocation. The output image is still one buffer.
 
-For every block the encoder tries four modes and stores the smallest payload. A tie keeps the lower mode number, so raw storage wins a tie. That choice is encoder policy. A decoder accepts any mode.
+For every block the encoder tries five modes and stores the smallest payload. A tie keeps the lower mode number, so raw storage wins a tie. That choice is encoder policy. A decoder accepts any mode.
 
 | Mode | Contents |
 |---|---|
@@ -42,10 +42,11 @@ For every block the encoder tries four modes and stores the smallest payload. A 
 | 1 | PackBits of those RGB bytes |
 | 2 | Subtract-green, then a left predictor that restarts at 0 on every row. Residuals are stored as R', G', and B' planes and PackBits-coded as one stream |
 | 3 | A palette of 1..256 colours in first-seen order, then PackBits of one index byte per pixel |
+| 4 | Subtract-green, MED from the left and above samples, then a context Rice coder. The model carries across mode-4 blocks |
 
 Subtract-green and the predictor use 8-bit wraparound, the low 8 bits of an x86 byte add or subtract. PackBits rejects the `0x80` no-op and must consume every input byte while producing exactly the expected count. The file is little-endian. Both checksums are zlib CRC-32: one over the payload, one over the first 28 header bytes (which include the payload checksum). The byte layout, rejection rules, and worked predictor example are in [spec/RFI-v1.md](spec/RFI-v1.md).
 
-PackBits plus a raw fallback is small enough to audit, and it does compress long runs. It is a weak coder for anything that is regular but not a repeated byte. There is no range coder, no LZ matcher, and no AVX2 path.
+PackBits plus a raw fallback is small enough to audit, and it does compress long runs. It is a weak coder for anything that is regular but not a repeated byte. Mode 4 adds a context Rice coder on MED residuals. There is no range coder, no LZ matcher, and no AVX2 path.
 
 The accepted BMP subset is uncompressed 24-bit `BITMAPINFOHEADER` data, bottom-up or top-down, with rows padded to 4 bytes. Other bit depths, compression, and header versions are rejected by name. A decoded BMP is a new canonical bottom-up file. Lossless means the width, height, and RGB samples match. Headers and padding bytes are not preserved.
 
@@ -94,7 +95,7 @@ Speed and memory go the other way. For the development UI image, RasterFold's bl
 
 The size gap on the images this project cares about is inside palette blocks and predict blocks, not in the raw fallback. A 1280×720 UI image is 240 blocks. The 6-byte headers are 1440 bytes, and the file is 26468 bytes, against a WebP file of 1346 bytes. A 640×480 gradient is entirely predict mode and is 57872 bytes, against WebP at 180. PackBits only collapses runs of the same byte, so a regular index stream or a planar residual still occupies hundreds of bytes per block.
 
-The next change is an order-0 entropy coder on palette indexes and on planar residuals, still inside the current blocks, with the raw fallback kept when the coder would expand a block. That is the measured hole. A later pass can look at per-block restart cost on pure solid images (the 640×480 solid file is 5632 bytes, almost all repeated palette blocks, against WebP at 56). SIMD and match finding are not the first gap: encode and decode are already faster here, and noise is already the same size as WebP.
+Mode 4 is that entropy coder for photographic residuals: subtract-green, a MED predictor, and a 64-context Rice code, used only when it is smaller than the other modes. The raw, PackBits, and palette paths stay. On `measure/image.bmp` this is the whole file. The remaining size gap against lossless JPEG XL is the predictor and the context model, not another PackBits pass. Decode has to stay within JPEG XL's wall time; the Rice decoder is already a large share of that budget.
 
 ## Limitations
 
