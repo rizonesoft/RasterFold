@@ -1,8 +1,9 @@
 # RasterFold image format, experimental version 1
 
 Status: experimental. Version 1 is allowed to change incompatibly until the
-magic byte is revised. This document is the contract for `.rfi` files and for
-the BMP subset the reference tool accepts.
+magic byte is revised. This document is the contract for `.fold` files and for
+the BMP subset the reference tool accepts. The filename suffix is `.fold`.
+The first three magic bytes remain `RFI`.
 
 A second implementation can decode a file from this text alone. The reference
 encoder's mode choice is deliberately not part of the contract.

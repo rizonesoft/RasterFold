@@ -3,7 +3,7 @@
 This image is the scoreboard, not a special case. The codec must use the same
 path it would use for any other 24-bit BMP.
 
-Exit 0 only when the decoded pixels match, the .rfi file is smaller than
+Exit 0 only when the decoded pixels match, the .fold file is smaller than
 lossless JPEG XL, and decode wall time and peak working set are less than or
 equal to JPEG XL. WebP and AVIF are measured and must decode exactly, but
 they are not the pass bar. Exit 1 when the measurement is valid but the bar
@@ -29,7 +29,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 import rfi_ref as rf  # noqa: E402
 
 BMP = ROOT / "measure" / "image.bmp"
-EXE = ROOT / "build" / "rasterfold.exe"
+EXE = ROOT / "Bin" / "rasterfold.exe"
 WORK = ROOT / "measure"
 class PMC(ctypes.Structure):
     _fields_ = [
@@ -122,7 +122,7 @@ def main() -> int:
         "bmp_bytes": BMP.stat().st_size,
     }
 
-    rfi = WORK / "image.rfi"
+    rfi = WORK / "image.fold"
     decoded = WORK / "rasterfold.bmp"
     rfi.unlink(missing_ok=True)
     decoded.unlink(missing_ok=True)

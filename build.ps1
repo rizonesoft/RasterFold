@@ -22,20 +22,22 @@ $sdk = Get-ChildItem $kits -Directory | Sort-Object Name -Descending | Select-Ob
 if (-not $sdk) { throw "Windows 10/11 SDK libraries were not found." }
 $lib = Join-Path $sdk.FullName "um\x64"
 
-$outDir = Join-Path $root "build"
-New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+$objDir = Join-Path $root "build"
+$binDir = Join-Path $root "Bin"
+New-Item -ItemType Directory -Force -Path $objDir, $binDir | Out-Null
 $sources = @("util", "crc32", "packbits", "fileio", "bmp", "rice", "rans", "codec", "main")
 $objects = @()
 foreach ($name in $sources) {
     $src = Join-Path $root "src\$name.asm"
-    $obj = Join-Path $outDir "$name.obj"
+    $obj = Join-Path $objDir "$name.obj"
     & $ml.FullName /nologo /c /Zi /Fo $obj /I (Join-Path $root "src") $src
     if ($LASTEXITCODE -ne 0) { throw "ml64 failed on $name.asm ($LASTEXITCODE)" }
     $objects += $obj
 }
-$exe = Join-Path $outDir "rasterfold.exe"
+$exe = Join-Path $binDir "rasterfold.exe"
+$pdb = Join-Path $binDir "rasterfold.pdb"
 & $link /nologo /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:main /MACHINE:X64 `
-    /DYNAMICBASE /NXCOMPAT /HIGHENTROPYVA /DEBUG /OUT:$exe `
+    /DYNAMICBASE /NXCOMPAT /HIGHENTROPYVA /DEBUG /OUT:$exe /PDB:$pdb `
     @objects /LIBPATH:$lib kernel32.lib shell32.lib
 if ($LASTEXITCODE -ne 0) { throw "link failed ($LASTEXITCODE)" }
 
@@ -45,5 +47,5 @@ $mlVer = cmd /c "`"$($ml.FullName)`" 2>&1" | Select-Object -First 3
     ($mlVer -join "`n")
     "link: $link"
     "sdk: $($sdk.Name)"
-) | Set-Content -Encoding Ascii (Join-Path $outDir "toolchain.txt")
+) | Set-Content -Encoding Ascii (Join-Path $objDir "toolchain.txt")
 Write-Host "built $exe"

@@ -1,12 +1,13 @@
 .grok/
 guard/
 build/
+Bin/
 tests/work/
 benchmarks/work/
 measure/*.webp
 measure/*.avif
 measure/*.jxl
-measure/*.rfi
+measure/*.fold
 measure/avif.bmp
 measure/jxl.bmp
 measure/rasterfold.bmp

@@ -8,9 +8,9 @@ option epilogue:none
 .const
 usage_text db "RasterFold experimental lossless codec", 13, 10
            db "usage:", 13, 10
-           db "  rasterfold encode [--time] input.bmp output.rfi", 13, 10
-           db "  rasterfold decode [--time] input.rfi output.bmp", 13, 10
-           db "  rasterfold inspect [--time] input.rfi", 13, 10
+           db "  rasterfold encode [--time] input.bmp output.fold", 13, 10
+           db "  rasterfold decode [--time] input.fold output.bmp", 13, 10
+           db "  rasterfold inspect [--time] input.fold", 13, 10
            db "exit codes: 0 ok, 1 usage, 2 io, 3 unsupported, 4 malformed, 5 limit", 13, 10, 0
 prefix db "rasterfold: ", 0
 unknown_err db "unknown error", 0

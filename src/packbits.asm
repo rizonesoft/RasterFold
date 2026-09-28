@@ -1,4 +1,4 @@
-; Apple PackBits. Control 0x80 is rejected. See spec/RFI-v1.md.
+; Apple PackBits. Control 0x80 is rejected. See spec/FOLD-v1.md.
 include rf.inc
 
 option casemap:none

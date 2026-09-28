@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tests"))
 from test_correctness import checker, draw_ui, gradient, noise, solid, stripes  # noqa: E402
 
-EXE = ROOT / "build" / "rasterfold.exe"
+EXE = ROOT / "Bin" / "rasterfold.exe"
 OUT = ROOT / "benchmarks"
 WORK = OUT / "work"
 FFMPEG = "ffmpeg"
@@ -214,8 +214,8 @@ def main() -> int:
             base = blank_row(group, name, width, height, digest, raw, bmp.stat().st_size)
             print(f"{group}/{name} {width}x{height}", flush=True)
 
-            rf_enc = rasterfold_convert("encode", bmp, folder / f"{name}.rfi")
-            rf_dec = rasterfold_convert("decode", folder / f"{name}.rfi", folder / f"{name}.rf.bmp")
+            rf_enc = rasterfold_convert("encode", bmp, folder / f"{name}.fold")
+            rf_dec = rasterfold_convert("decode", folder / f"{name}.fold", folder / f"{name}.rf.bmp")
             rf_match = rf_dec["code"] == 0 and pixels_of(folder / f"{name}.rf.bmp") == source
             if rf_enc["code"] != 0 or rf_dec["code"] != 0 or not rf_match:
                 failures.append(f"rasterfold {group}/{name} enc={rf_enc['code']} dec={rf_dec['code']} match={rf_match}")

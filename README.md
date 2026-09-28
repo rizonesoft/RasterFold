@@ -1,6 +1,6 @@
 # RasterFold
 
-RasterFold is an experimental lossless image codec for Windows 11 x64. The implementation is x86-64 assembly. The conventional extension is `.rfi`. Version 1 is a measured baseline, not a claim that it beats any existing codec.
+RasterFold is an experimental lossless image codec for Windows 11 x64. The implementation is x86-64 assembly. The conventional extension is `.fold`. Version 1 is a measured baseline, not a claim that it beats any existing codec.
 
 The research target is screenshots, application interfaces, diagrams, and pixel art, compared with lossless WebP on size, decode speed, and memory. Correctness comes first. The numbers below are from one machine and one run.
 
@@ -12,16 +12,16 @@ The build uses Microsoft `ml64`, Microsoft's linker, and the Windows SDK. `build
 powershell -ExecutionPolicy Bypass -File build.ps1
 ```
 
-That writes `build\rasterfold.exe`. The run recorded here used Macro Assembler (x64) 14.51.36256.0 and Windows SDK 10.0.26100.0.
+That writes object files to `build\` and `Bin\rasterfold.exe`. The run recorded here used Macro Assembler (x64) 14.51.36256.0 and Windows SDK 10.0.26100.0.
 
 There is no C or C++ in the codec. Python is used only for tests, image generation, and the benchmark driver. PNG, WebP, and JPEG XL in the benchmark come from ffmpeg, not from this tree.
 
 ## Commands
 
 ```
-rasterfold encode [--time] input.bmp output.rfi
-rasterfold decode [--time] input.rfi output.bmp
-rasterfold inspect [--time] input.rfi
+rasterfold encode [--time] input.bmp output.fold
+rasterfold decode [--time] input.fold output.bmp
+rasterfold inspect [--time] input.fold
 ```
 
 Exit codes are 0 for success, 1 for usage, 2 for file errors, 3 for an unsupported BMP or RasterFold version, 4 for a malformed file, and 5 for a size limit or allocation failure.
@@ -44,7 +44,7 @@ For every block the encoder tries five modes and stores the smallest payload. A 
 | 3 | A palette of 1..256 colours in first-seen order, then PackBits of one index byte per pixel |
 | 4 | Subtract-green, MED from the left and above samples, then a context Rice coder. The model carries across mode-4 blocks |
 
-Subtract-green and the predictor use 8-bit wraparound, the low 8 bits of an x86 byte add or subtract. PackBits rejects the `0x80` no-op and must consume every input byte while producing exactly the expected count. The file is little-endian. Both checksums are zlib CRC-32: one over the payload, one over the first 28 header bytes (which include the payload checksum). The byte layout, rejection rules, and worked predictor example are in [spec/RFI-v1.md](spec/RFI-v1.md).
+Subtract-green and the predictor use 8-bit wraparound, the low 8 bits of an x86 byte add or subtract. PackBits rejects the `0x80` no-op and must consume every input byte while producing exactly the expected count. The file is little-endian. Both checksums are zlib CRC-32: one over the payload, one over the first 28 header bytes (which include the payload checksum). The byte layout, rejection rules, and worked predictor example are in [spec/FOLD-v1.md](spec/FOLD-v1.md).
 
 PackBits plus a raw fallback is small enough to audit, and it does compress long runs. It is a weak coder for anything that is regular but not a repeated byte. Mode 4 adds a context Rice coder on MED residuals. There is no range coder, no LZ matcher, and no AVX2 path.
 
@@ -58,7 +58,7 @@ Limits are 1..32768 on each side, at most 32 megapixels, and at most 256 MiB for
 python tests\test_correctness.py
 ```
 
-On 2026-09-28 that suite reported 30 passed, 0 failed. It covers a single pixel, odd widths, padded rows, top-down BMPs, a gap before the pixels, solid colours, gradients, checkers, noise, and UI-like pictures. It also feeds truncated, checksum-broken, and mode-corrupted `.rfi` files, unsupported BMP variants, and paths that must not be overwritten.
+On 2026-09-28 that suite reported 30 passed, 0 failed. It covers a single pixel, odd widths, padded rows, top-down BMPs, a gap before the pixels, solid colours, gradients, checkers, noise, and UI-like pictures. It also feeds truncated, checksum-broken, and mode-corrupted `.fold` files, unsupported BMP variants, and paths that must not be overwritten.
 
 Pixels are compared with Pillow and with a separate BMP parser in `tests/rfi_ref.py`. That module is a second implementation of version 1, used only as a test oracle. The assembly encoder's bytes match the oracle, and each decoder accepts files written by the other. The program also checks CRC-32("123456789") = `0xCBF43926`, two PackBits vectors, and the planar predictor example before it will encode anything.
 
