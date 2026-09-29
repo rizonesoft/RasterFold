@@ -1,0 +1,318 @@
+---
+schema_version: 1
+id: milestones-reach
+domain: 05-milestones
+status: draft
+title: "TODO-03 -- Milestones 21 to 30: Reach (3.0)"
+depends_on: []
+track: G3
+---
+
+# TODO-03 -- Milestones 21 to 30: Reach (3.0)
+
+> **Goal:** Milestones 21 to 30 of the roadmap in `docs/research.md` section 9 are reached in order, each proven by a gate that measures its target and the no-regression rule against the milestone before it.
+
+> [!IMPORTANT]
+> **Current state (verified 2026-09-29):** No milestone gate has run. This file is generated from `research/milestones.py`; edit the table there and run `python research/milestones.py --write`, never this file by hand.
+<!-- claim: exists research/milestones.py -->
+
+## Inputs
+
+- [`research/milestones.py`](../../research/milestones.py) -- the milestone table this file is generated from
+- [`docs/research.md`](../../docs/research.md) -- section 9, the roadmap; sections 2 and 3, the measurement protocol and what was already tried
+
+## Outcome
+
+- Every milestone gate in this file is stamped with its target and no-regression figures quoted.
+
+**Adjacency:** all=not-applicable (milestone gates and planning sections; the work sections they depend on carry the product adjacency)
+
+## Implementation Order
+
+| Order | Section | Deliverable | Depends On | Status |
+| :---: | :-----: | ----------- | ---------- | :----: |
+|   1   |  §1   | Plan milestone 21: Run mode for flat regions | D05 T02 §20 |  [ ]   |
+|   2   |  §2   | Milestone 21 gate: Run mode for flat regions | §1 |  [ ]   |
+|   3   |  §3   | Plan milestone 22: Verified hashed context tables | §2 |  [ ]   |
+|   4   |  §4   | Milestone 22 gate: Verified hashed context tables | §3 |  [ ]   |
+|   5   |  §5   | Plan milestone 23: Higher-precision coder | §4 |  [ ]   |
+|   6   |  §6   | Milestone 23 gate: Higher-precision coder | §5 |  [ ]   |
+|   7   |  §7   | Plan milestone 24: Learned predictor at the max level | §6 |  [ ]   |
+|   8   |  §8   | Milestone 24 gate: Learned predictor at the max level | §7 |  [ ]   |
+|   9   |  §9   | Plan milestone 25: Texture-gated models | §8 |  [ ]   |
+|  10   |  §10  | Milestone 25 gate: Texture-gated models | §9 |  [ ]   |
+|  11   |  §11  | Plan milestone 26: Random-access decode | §10 |  [ ]   |
+|  12   |  §12  | Milestone 26 gate: Random-access decode | §11 |  [ ]   |
+|  13   |  §13  | Plan milestone 27: Portable and byte-exact | §12 |  [ ]   |
+|  14   |  §14  | Milestone 27 gate: Portable and byte-exact | §13 |  [ ]   |
+|  15   |  §15  | Plan milestone 28: Alpha, 16-bit, and metadata | §14 |  [ ]   |
+|  16   |  §16  | Milestone 28 gate: Alpha, 16-bit, and metadata | §15 |  [ ]   |
+|  17   |  §17  | Plan milestone 29: Coverage-proven decoder | §16 |  [ ]   |
+|  18   |  §18  | Milestone 29 gate: Coverage-proven decoder | §17 |  [ ]   |
+|  19   |  §19  | Plan milestone 30: RasterFold 3.0 | §18 |  [ ]   |
+|  20   |  §20  | Milestone 30 gate: RasterFold 3.0 | §19 |  [ ]   |
+
+---
+
+## 1. Plan Milestone 21: Run mode for flat regions
+
+Milestone 21's work is authored here, one milestone ahead, from what milestone 20 actually measured: its target is *generated images decode at least twice as fast and photos at least 5% faster, sizes no worse*. The design notes are `docs/research.md` section 9 (milestone 21) and the sections of `docs/research.md` it points at; the baseline is milestone 20's gate stamp (`D05 T02 §20`), never a figure from memory.
+
+- [ ] Read milestone 20's gate stamp and `docs/research.md` sections 3 and 9, and quote the baseline this milestone's target is measured from in this section as a `**Corrected YYYY-MM-DD:**` note. Done when: the note quotes the figures with their commands.
+- [ ] Author the milestone's work sections through `plan-experiment` (and `create-todo` for a new file) in the domains that own the work, each with its measurement and stop condition, placed in this milestone's phase of `todo/implementation-plan.md` above the gate row. Done when: `python scripts/todo-graph.py validate` exits 0 with the new sections in place. Cheaper substitute: one vague section named after the milestone.
+- [ ] Add every new work section to the Depends On of the gate (`D05 T03 §2`). Done when: `python scripts/todo-graph.py resolve 'D05 T03 §2'` lists them among its dependencies.
+- [ ] Commit: `"todo: plan milestone 21 -- run mode for flat regions"`
+
+**Test checkpoint:** `python scripts/todo-graph.py validate` and `plan --check` exit 0, and `resolve 'D05 T03 §2'` exits 4 naming at least one new work section, proving the gate waits on the authored work.
+
+## 2. Milestone 21 Gate: Run mode for flat regions
+
+**Needs:** Idle machine (timing)
+
+**Job:** A user can rely on milestone 21: generated images decode at least twice as fast and photos at least 5% faster, sizes no worse.
+
+Milestone 21 of the roadmap (`docs/research.md` section 9). It keeps everything milestone 20 reached: no photo size more than 0.1% worse, no encode or decode time more than 3% worse, no higher peak memory, and every older file still decoding. If the target is missed, the missed-milestone policy applies (`D99 T01 §4`): up to three follow-up experiments from `docs/research.md` are filed through `add-todo`, and the operator is asked only when all three miss.
+
+- [ ] Measure the target with `python research/ab.py ab <previous> <current> -n5` at `-t1` and `-t3`, and `python research/vsjxl.py -n5`. Done when: generated images decode at least twice as fast and photos at least 5% faster, sizes no worse, each figure quoted with its command.
+- [ ] Measure the no-regression rule against milestone 20's gate stamp: `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns), `python tests/benchmark.py -n 3`, `decode --time`, and `python tests/test_correctness.py`. Done when: each rule holds, quoted beside milestone 20's figures.
+- [ ] Record the milestone in `docs/research.md` sections 1 and 9 and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
+- [ ] Commit: `"milestone: reach milestone 21 -- run mode for flat regions"`
+
+**Test checkpoint:** every target figure and every no-regression figure quoted from a run at the commit; a figure that misses its bar blocks the stamp and triggers the missed-milestone policy instead.
+
+## 3. Plan Milestone 22: Verified hashed context tables
+
+Milestone 22's work is authored here, one milestone ahead, from what milestone 21 actually measured: its target is *decode at least 10% faster at equal memory, size within 0.1%*. The design notes are `docs/research.md` section 9 (milestone 22) and the sections of `docs/research.md` it points at; the baseline is milestone 21's gate stamp (`D05 T03 §2`), never a figure from memory.
+
+- [ ] Read milestone 21's gate stamp and `docs/research.md` sections 3 and 9, and quote the baseline this milestone's target is measured from in this section as a `**Corrected YYYY-MM-DD:**` note. Done when: the note quotes the figures with their commands.
+- [ ] Author the milestone's work sections through `plan-experiment` (and `create-todo` for a new file) in the domains that own the work, each with its measurement and stop condition, placed in this milestone's phase of `todo/implementation-plan.md` above the gate row. Done when: `python scripts/todo-graph.py validate` exits 0 with the new sections in place. Cheaper substitute: one vague section named after the milestone.
+- [ ] Add every new work section to the Depends On of the gate (`D05 T03 §4`). Done when: `python scripts/todo-graph.py resolve 'D05 T03 §4'` lists them among its dependencies.
+- [ ] Commit: `"todo: plan milestone 22 -- verified hashed context tables"`
+
+**Test checkpoint:** `python scripts/todo-graph.py validate` and `plan --check` exit 0, and `resolve 'D05 T03 §4'` exits 4 naming at least one new work section, proving the gate waits on the authored work.
+
+## 4. Milestone 22 Gate: Verified hashed context tables
+
+**Needs:** Idle machine (timing)
+
+**Job:** A user can rely on milestone 22: decode at least 10% faster at equal memory, size within 0.1%.
+
+Milestone 22 of the roadmap (`docs/research.md` section 9). It keeps everything milestone 21 reached: no photo size more than 0.1% worse, no encode or decode time more than 3% worse, no higher peak memory, and every older file still decoding. If the target is missed, the missed-milestone policy applies (`D99 T01 §4`): up to three follow-up experiments from `docs/research.md` are filed through `add-todo`, and the operator is asked only when all three miss.
+
+- [ ] Measure the target with `python research/ab.py ab <previous> <current> -n5` at `-t1` and `-t3`, and `python research/vsjxl.py -n5`. Done when: decode at least 10% faster at equal memory, size within 0.1%, each figure quoted with its command.
+- [ ] Measure the no-regression rule against milestone 21's gate stamp: `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns), `python tests/benchmark.py -n 3`, `decode --time`, and `python tests/test_correctness.py`. Done when: each rule holds, quoted beside milestone 21's figures.
+- [ ] Record the milestone in `docs/research.md` sections 1 and 9 and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
+- [ ] Commit: `"milestone: reach milestone 22 -- verified hashed context tables"`
+
+**Test checkpoint:** every target figure and every no-regression figure quoted from a run at the commit; a figure that misses its bar blocks the stamp and triggers the missed-milestone policy instead.
+
+## 5. Plan Milestone 23: Higher-precision coder
+
+Milestone 23's work is authored here, one milestone ahead, from what milestone 22 actually measured: its target is *generated-image geometric mean at least 10% smaller, photos unchanged*. The design notes are `docs/research.md` section 9 (milestone 23) and the sections of `docs/research.md` it points at; the baseline is milestone 22's gate stamp (`D05 T03 §4`), never a figure from memory.
+
+- [ ] Read milestone 22's gate stamp and `docs/research.md` sections 3 and 9, and quote the baseline this milestone's target is measured from in this section as a `**Corrected YYYY-MM-DD:**` note. Done when: the note quotes the figures with their commands.
+- [ ] Author the milestone's work sections through `plan-experiment` (and `create-todo` for a new file) in the domains that own the work, each with its measurement and stop condition, placed in this milestone's phase of `todo/implementation-plan.md` above the gate row. Done when: `python scripts/todo-graph.py validate` exits 0 with the new sections in place. Cheaper substitute: one vague section named after the milestone.
+- [ ] Add every new work section to the Depends On of the gate (`D05 T03 §6`). Done when: `python scripts/todo-graph.py resolve 'D05 T03 §6'` lists them among its dependencies.
+- [ ] Commit: `"todo: plan milestone 23 -- higher-precision coder"`
+
+**Test checkpoint:** `python scripts/todo-graph.py validate` and `plan --check` exit 0, and `resolve 'D05 T03 §6'` exits 4 naming at least one new work section, proving the gate waits on the authored work.
+
+## 6. Milestone 23 Gate: Higher-precision coder
+
+**Needs:** ffmpeg with libjxl (benchmarks)
+
+**Job:** A user can rely on milestone 23: generated-image geometric mean at least 10% smaller, photos unchanged.
+
+Milestone 23 of the roadmap (`docs/research.md` section 9). It keeps everything milestone 22 reached: no photo size more than 0.1% worse, no encode or decode time more than 3% worse, no higher peak memory, and every older file still decoding. If the target is missed, the missed-milestone policy applies (`D99 T01 §4`): up to three follow-up experiments from `docs/research.md` are filed through `add-todo`, and the operator is asked only when all three miss.
+
+- [ ] Measure the target with `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns). Done when: generated-image geometric mean at least 10% smaller, photos unchanged, each figure quoted with its command.
+- [ ] Measure the no-regression rule against milestone 22's gate stamp: `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns), `python tests/benchmark.py -n 3`, `decode --time`, and `python tests/test_correctness.py`. Done when: each rule holds, quoted beside milestone 22's figures.
+- [ ] Record the milestone in `docs/research.md` sections 1 and 9 and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
+- [ ] Commit: `"milestone: reach milestone 23 -- higher-precision coder"`
+
+**Test checkpoint:** every target figure and every no-regression figure quoted from a run at the commit; a figure that misses its bar blocks the stamp and triggers the missed-milestone policy instead.
+
+## 7. Plan Milestone 24: Learned predictor at the max level
+
+Milestone 24's work is authored here, one milestone ahead, from what milestone 23 actually measured: its target is *the max level at least 1% smaller on photos, fast and default byte-identical, confirmed on the held-out set*. The design notes are `docs/research.md` section 9 (milestone 24) and the sections of `docs/research.md` it points at; the baseline is milestone 23's gate stamp (`D05 T03 §6`), never a figure from memory.
+
+- [ ] Read milestone 23's gate stamp and `docs/research.md` sections 3 and 9, and quote the baseline this milestone's target is measured from in this section as a `**Corrected YYYY-MM-DD:**` note. Done when: the note quotes the figures with their commands.
+- [ ] Author the milestone's work sections through `plan-experiment` (and `create-todo` for a new file) in the domains that own the work, each with its measurement and stop condition, placed in this milestone's phase of `todo/implementation-plan.md` above the gate row. Done when: `python scripts/todo-graph.py validate` exits 0 with the new sections in place. Cheaper substitute: one vague section named after the milestone.
+- [ ] Add every new work section to the Depends On of the gate (`D05 T03 §8`). Done when: `python scripts/todo-graph.py resolve 'D05 T03 §8'` lists them among its dependencies.
+- [ ] Commit: `"todo: plan milestone 24 -- learned predictor at the max level"`
+
+**Test checkpoint:** `python scripts/todo-graph.py validate` and `plan --check` exit 0, and `resolve 'D05 T03 §8'` exits 4 naming at least one new work section, proving the gate waits on the authored work.
+
+## 8. Milestone 24 Gate: Learned predictor at the max level
+
+**Needs:** ffmpeg with libjxl (benchmarks)
+
+**Job:** A user can rely on milestone 24: the max level at least 1% smaller on photos, fast and default byte-identical, confirmed on the held-out set.
+
+Milestone 24 of the roadmap (`docs/research.md` section 9). It keeps everything milestone 23 reached: no photo size more than 0.1% worse, no encode or decode time more than 3% worse, no higher peak memory, and every older file still decoding. If the target is missed, the missed-milestone policy applies (`D99 T01 §4`): up to three follow-up experiments from `docs/research.md` are filed through `add-todo`, and the operator is asked only when all three miss.
+
+- [ ] Measure the target with `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns). Done when: the max level at least 1% smaller on photos, fast and default byte-identical, confirmed on the held-out set, each figure quoted with its command.
+- [ ] Measure the no-regression rule against milestone 23's gate stamp: `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns), `python tests/benchmark.py -n 3`, `decode --time`, and `python tests/test_correctness.py`. Done when: each rule holds, quoted beside milestone 23's figures.
+- [ ] Record the milestone in `docs/research.md` sections 1 and 9 and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
+- [ ] Commit: `"milestone: reach milestone 24 -- learned predictor at the max level"`
+
+**Test checkpoint:** every target figure and every no-regression figure quoted from a run at the commit; a figure that misses its bar blocks the stamp and triggers the missed-milestone policy instead.
+
+## 9. Plan Milestone 25: Texture-gated models
+
+Milestone 25's work is authored here, one milestone ahead, from what milestone 24 actually measured: its target is *the default level at least 0.4% smaller at equal decode time*. The design notes are `docs/research.md` section 9 (milestone 25) and the sections of `docs/research.md` it points at; the baseline is milestone 24's gate stamp (`D05 T03 §8`), never a figure from memory.
+
+- [ ] Read milestone 24's gate stamp and `docs/research.md` sections 3 and 9, and quote the baseline this milestone's target is measured from in this section as a `**Corrected YYYY-MM-DD:**` note. Done when: the note quotes the figures with their commands.
+- [ ] Author the milestone's work sections through `plan-experiment` (and `create-todo` for a new file) in the domains that own the work, each with its measurement and stop condition, placed in this milestone's phase of `todo/implementation-plan.md` above the gate row. Done when: `python scripts/todo-graph.py validate` exits 0 with the new sections in place. Cheaper substitute: one vague section named after the milestone.
+- [ ] Add every new work section to the Depends On of the gate (`D05 T03 §10`). Done when: `python scripts/todo-graph.py resolve 'D05 T03 §10'` lists them among its dependencies.
+- [ ] Commit: `"todo: plan milestone 25 -- texture-gated models"`
+
+**Test checkpoint:** `python scripts/todo-graph.py validate` and `plan --check` exit 0, and `resolve 'D05 T03 §10'` exits 4 naming at least one new work section, proving the gate waits on the authored work.
+
+## 10. Milestone 25 Gate: Texture-gated models
+
+**Needs:** Idle machine (timing)
+
+**Job:** A user can rely on milestone 25: the default level at least 0.4% smaller at equal decode time.
+
+Milestone 25 of the roadmap (`docs/research.md` section 9). It keeps everything milestone 24 reached: no photo size more than 0.1% worse, no encode or decode time more than 3% worse, no higher peak memory, and every older file still decoding. If the target is missed, the missed-milestone policy applies (`D99 T01 §4`): up to three follow-up experiments from `docs/research.md` are filed through `add-todo`, and the operator is asked only when all three miss.
+
+- [ ] Measure the target with `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns), `python research/ab.py ab <previous> <current> -n5` at `-t1` and `-t3`, and `python research/vsjxl.py -n5`. Done when: the default level at least 0.4% smaller at equal decode time, each figure quoted with its command.
+- [ ] Measure the no-regression rule against milestone 24's gate stamp: `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns), `python tests/benchmark.py -n 3`, `decode --time`, and `python tests/test_correctness.py`. Done when: each rule holds, quoted beside milestone 24's figures.
+- [ ] Record the milestone in `docs/research.md` sections 1 and 9 and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
+- [ ] Commit: `"milestone: reach milestone 25 -- texture-gated models"`
+
+**Test checkpoint:** every target figure and every no-regression figure quoted from a run at the commit; a figure that misses its bar blocks the stamp and triggers the missed-milestone policy instead.
+
+## 11. Plan Milestone 26: Random-access decode
+
+Milestone 26's work is authored here, one milestone ahead, from what milestone 25 actually measured: its target is *decoding a 1/16 region at least 8 times faster than a full decode, size within 0.1%*. The design notes are `docs/research.md` section 9 (milestone 26) and the sections of `docs/research.md` it points at; the baseline is milestone 25's gate stamp (`D05 T03 §10`), never a figure from memory.
+
+- [ ] Read milestone 25's gate stamp and `docs/research.md` sections 3 and 9, and quote the baseline this milestone's target is measured from in this section as a `**Corrected YYYY-MM-DD:**` note. Done when: the note quotes the figures with their commands.
+- [ ] Author the milestone's work sections through `plan-experiment` (and `create-todo` for a new file) in the domains that own the work, each with its measurement and stop condition, placed in this milestone's phase of `todo/implementation-plan.md` above the gate row. Done when: `python scripts/todo-graph.py validate` exits 0 with the new sections in place. Cheaper substitute: one vague section named after the milestone.
+- [ ] Add every new work section to the Depends On of the gate (`D05 T03 §12`). Done when: `python scripts/todo-graph.py resolve 'D05 T03 §12'` lists them among its dependencies.
+- [ ] Commit: `"todo: plan milestone 26 -- random-access decode"`
+
+**Test checkpoint:** `python scripts/todo-graph.py validate` and `plan --check` exit 0, and `resolve 'D05 T03 §12'` exits 4 naming at least one new work section, proving the gate waits on the authored work.
+
+## 12. Milestone 26 Gate: Random-access decode
+
+**Needs:** Idle machine (timing)
+
+**Job:** A user can rely on milestone 26: decoding a 1/16 region at least 8 times faster than a full decode, size within 0.1%.
+
+Milestone 26 of the roadmap (`docs/research.md` section 9). It keeps everything milestone 25 reached: no photo size more than 0.1% worse, no encode or decode time more than 3% worse, no higher peak memory, and every older file still decoding. If the target is missed, the missed-milestone policy applies (`D99 T01 §4`): up to three follow-up experiments from `docs/research.md` are filed through `add-todo`, and the operator is asked only when all three miss.
+
+- [ ] Measure the target with `Bin/rasterfold.exe decode --region` timings. Done when: decoding a 1/16 region at least 8 times faster than a full decode, size within 0.1%, each figure quoted with its command.
+- [ ] Measure the no-regression rule against milestone 25's gate stamp: `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns), `python tests/benchmark.py -n 3`, `decode --time`, and `python tests/test_correctness.py`. Done when: each rule holds, quoted beside milestone 25's figures.
+- [ ] Record the milestone in `docs/research.md` sections 1 and 9 and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
+- [ ] Commit: `"milestone: reach milestone 26 -- random-access decode"`
+
+**Test checkpoint:** every target figure and every no-regression figure quoted from a run at the commit; a figure that misses its bar blocks the stamp and triggers the missed-milestone policy instead.
+
+## 13. Plan Milestone 27: Portable and byte-exact
+
+Milestone 27's work is authored here, one milestone ahead, from what milestone 26 actually measured: its target is *Linux, macOS, and Windows on ARM64 builds with identical bytes on every platform*. The design notes are `docs/research.md` section 9 (milestone 27) and the sections of `docs/research.md` it points at; the baseline is milestone 26's gate stamp (`D05 T03 §12`), never a figure from memory.
+
+- [ ] Read milestone 26's gate stamp and `docs/research.md` sections 3 and 9, and quote the baseline this milestone's target is measured from in this section as a `**Corrected YYYY-MM-DD:**` note. Done when: the note quotes the figures with their commands.
+- [ ] Author the milestone's work sections through `plan-experiment` (and `create-todo` for a new file) in the domains that own the work, each with its measurement and stop condition, placed in this milestone's phase of `todo/implementation-plan.md` above the gate row. Done when: `python scripts/todo-graph.py validate` exits 0 with the new sections in place. Cheaper substitute: one vague section named after the milestone.
+- [ ] Add every new work section to the Depends On of the gate (`D05 T03 §14`). Done when: `python scripts/todo-graph.py resolve 'D05 T03 §14'` lists them among its dependencies.
+- [ ] Commit: `"todo: plan milestone 27 -- portable and byte-exact"`
+
+**Test checkpoint:** `python scripts/todo-graph.py validate` and `plan --check` exit 0, and `resolve 'D05 T03 §14'` exits 4 naming at least one new work section, proving the gate waits on the authored work.
+
+## 14. Milestone 27 Gate: Portable and byte-exact
+
+**Job:** A user can rely on milestone 27: Linux, macOS, and Windows on ARM64 builds with identical bytes on every platform.
+
+Milestone 27 of the roadmap (`docs/research.md` section 9). It keeps everything milestone 26 reached: no photo size more than 0.1% worse, no encode or decode time more than 3% worse, no higher peak memory, and every older file still decoding. If the target is missed, the missed-milestone policy applies (`D99 T01 §4`): up to three follow-up experiments from `docs/research.md` are filed through `add-todo`, and the operator is asked only when all three miss.
+
+- [ ] Measure the target with the known-answer vectors on every CI platform. Done when: Linux, macOS, and Windows on ARM64 builds with identical bytes on every platform, each figure quoted with its command.
+- [ ] Measure the no-regression rule against milestone 26's gate stamp: `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns), `python tests/benchmark.py -n 3`, `decode --time`, and `python tests/test_correctness.py`. Done when: each rule holds, quoted beside milestone 26's figures.
+- [ ] Record the milestone in `docs/research.md` sections 1 and 9 and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
+- [ ] Commit: `"milestone: reach milestone 27 -- portable and byte-exact"`
+
+**Test checkpoint:** every target figure and every no-regression figure quoted from a run at the commit; a figure that misses its bar blocks the stamp and triggers the missed-milestone policy instead.
+
+## 15. Plan Milestone 28: Alpha, 16-bit, and metadata
+
+Milestone 28's work is authored here, one milestone ahead, from what milestone 27 actually measured: its target is *alpha, 16-bit samples, and ICC and EXIF preserved, 8-bit RGB files byte-identical to milestone 27, the 16-bit set below JPEG XL e9*. The design notes are `docs/research.md` section 9 (milestone 28) and the sections of `docs/research.md` it points at; the baseline is milestone 27's gate stamp (`D05 T03 §14`), never a figure from memory.
+
+- [ ] Read milestone 27's gate stamp and `docs/research.md` sections 3 and 9, and quote the baseline this milestone's target is measured from in this section as a `**Corrected YYYY-MM-DD:**` note. Done when: the note quotes the figures with their commands.
+- [ ] Author the milestone's work sections through `plan-experiment` (and `create-todo` for a new file) in the domains that own the work, each with its measurement and stop condition, placed in this milestone's phase of `todo/implementation-plan.md` above the gate row. Done when: `python scripts/todo-graph.py validate` exits 0 with the new sections in place. Cheaper substitute: one vague section named after the milestone.
+- [ ] Add every new work section to the Depends On of the gate (`D05 T03 §16`). Done when: `python scripts/todo-graph.py resolve 'D05 T03 §16'` lists them among its dependencies.
+- [ ] Commit: `"todo: plan milestone 28 -- alpha, 16-bit, and metadata"`
+
+**Test checkpoint:** `python scripts/todo-graph.py validate` and `plan --check` exit 0, and `resolve 'D05 T03 §16'` exits 4 naming at least one new work section, proving the gate waits on the authored work.
+
+## 16. Milestone 28 Gate: Alpha, 16-bit, and metadata
+
+**Needs:** ffmpeg with libjxl (benchmarks)
+
+**Job:** A user can rely on milestone 28: alpha, 16-bit samples, and ICC and EXIF preserved, 8-bit RGB files byte-identical to milestone 27, the 16-bit set below JPEG XL e9.
+
+Milestone 28 of the roadmap (`docs/research.md` section 9). It keeps everything milestone 27 reached: no photo size more than 0.1% worse, no encode or decode time more than 3% worse, no higher peak memory, and every older file still decoding. If the target is missed, the missed-milestone policy applies (`D99 T01 §4`): up to three follow-up experiments from `docs/research.md` are filed through `add-todo`, and the operator is asked only when all three miss.
+
+- [ ] Measure the target with `python research/ab.py size rgba16`. Done when: alpha, 16-bit samples, and ICC and EXIF preserved, 8-bit RGB files byte-identical to milestone 27, the 16-bit set below JPEG XL e9, each figure quoted with its command.
+- [ ] Measure the no-regression rule against milestone 27's gate stamp: `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns), `python tests/benchmark.py -n 3`, `decode --time`, and `python tests/test_correctness.py`. Done when: each rule holds, quoted beside milestone 27's figures.
+- [ ] Record the milestone in `docs/research.md` sections 1 and 9 and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
+- [ ] Commit: `"milestone: reach milestone 28 -- alpha, 16-bit, and metadata"`
+
+**Test checkpoint:** every target figure and every no-regression figure quoted from a run at the commit; a figure that misses its bar blocks the stamp and triggers the missed-milestone policy instead.
+
+## 17. Plan Milestone 29: Coverage-proven decoder
+
+Milestone 29's work is authored here, one milestone ahead, from what milestone 28 actually measured: its target is *libFuzzer branch coverage of the decoder at least 95%, no crash in 10^9 executions, hostile-input decode time at most twice honest time*. The design notes are `docs/research.md` section 9 (milestone 29) and the sections of `docs/research.md` it points at; the baseline is milestone 28's gate stamp (`D05 T03 §16`), never a figure from memory.
+
+- [ ] Read milestone 28's gate stamp and `docs/research.md` sections 3 and 9, and quote the baseline this milestone's target is measured from in this section as a `**Corrected YYYY-MM-DD:**` note. Done when: the note quotes the figures with their commands.
+- [ ] Author the milestone's work sections through `plan-experiment` (and `create-todo` for a new file) in the domains that own the work, each with its measurement and stop condition, placed in this milestone's phase of `todo/implementation-plan.md` above the gate row. Done when: `python scripts/todo-graph.py validate` exits 0 with the new sections in place. Cheaper substitute: one vague section named after the milestone.
+- [ ] Add every new work section to the Depends On of the gate (`D05 T03 §18`). Done when: `python scripts/todo-graph.py resolve 'D05 T03 §18'` lists them among its dependencies.
+- [ ] Commit: `"todo: plan milestone 29 -- coverage-proven decoder"`
+
+**Test checkpoint:** `python scripts/todo-graph.py validate` and `plan --check` exit 0, and `resolve 'D05 T03 §18'` exits 4 naming at least one new work section, proving the gate waits on the authored work.
+
+## 18. Milestone 29 Gate: Coverage-proven decoder
+
+**Job:** A user can rely on milestone 29: libFuzzer branch coverage of the decoder at least 95%, no crash in 10^9 executions, hostile-input decode time at most twice honest time.
+
+Milestone 29 of the roadmap (`docs/research.md` section 9). It keeps everything milestone 28 reached: no photo size more than 0.1% worse, no encode or decode time more than 3% worse, no higher peak memory, and every older file still decoding. If the target is missed, the missed-milestone policy applies (`D99 T01 §4`): up to three follow-up experiments from `docs/research.md` are filed through `add-todo`, and the operator is asked only when all three miss.
+
+- [ ] Measure the target with the libFuzzer campaign report. Done when: libFuzzer branch coverage of the decoder at least 95%, no crash in 10^9 executions, hostile-input decode time at most twice honest time, each figure quoted with its command.
+- [ ] Measure the no-regression rule against milestone 28's gate stamp: `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns), `python tests/benchmark.py -n 3`, `decode --time`, and `python tests/test_correctness.py`. Done when: each rule holds, quoted beside milestone 28's figures.
+- [ ] Record the milestone in `docs/research.md` sections 1 and 9 and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
+- [ ] Commit: `"milestone: reach milestone 29 -- coverage-proven decoder"`
+
+**Test checkpoint:** every target figure and every no-regression figure quoted from a run at the commit; a figure that misses its bar blocks the stamp and triggers the missed-milestone policy instead.
+
+## 19. Plan Milestone 30: RasterFold 3.0
+
+Milestone 30's work is authored here, one milestone ahead, from what milestone 29 actually measured: its target is *`rasterfold-v3.0.0`: against 2.0, generated images at least 10% smaller, photos at the max level at least 1% smaller, decode at least 1.3 times faster, with random access, portability, alpha, and 16-bit*. The design notes are `docs/research.md` section 9 (milestone 30) and the sections of `docs/research.md` it points at; the baseline is milestone 29's gate stamp (`D05 T03 §18`), never a figure from memory.
+
+- [ ] Read milestone 29's gate stamp and `docs/research.md` sections 3 and 9, and quote the baseline this milestone's target is measured from in this section as a `**Corrected YYYY-MM-DD:**` note. Done when: the note quotes the figures with their commands.
+- [ ] Author the milestone's work sections through `plan-experiment` (and `create-todo` for a new file) in the domains that own the work, each with its measurement and stop condition, placed in this milestone's phase of `todo/implementation-plan.md` above the gate row. Done when: `python scripts/todo-graph.py validate` exits 0 with the new sections in place. Cheaper substitute: one vague section named after the milestone.
+- [ ] Add every new work section to the Depends On of the gate (`D05 T03 §20`). Done when: `python scripts/todo-graph.py resolve 'D05 T03 §20'` lists them among its dependencies.
+- [ ] Commit: `"todo: plan milestone 30 -- rasterfold 3.0"`
+
+**Test checkpoint:** `python scripts/todo-graph.py validate` and `plan --check` exit 0, and `resolve 'D05 T03 §20'` exits 4 naming at least one new work section, proving the gate waits on the authored work.
+
+## 20. Milestone 30 Gate: RasterFold 3.0
+
+**Needs:** Idle machine (timing)
+
+**Job:** A user can rely on milestone 30: `rasterfold-v3.0.0`: against 2.0, generated images at least 10% smaller, photos at the max level at least 1% smaller, decode at least 1.3 times faster, with random access, portability, alpha, and 16-bit.
+
+Milestone 30 of the roadmap (`docs/research.md` section 9). It keeps everything milestone 29 reached: no photo size more than 0.1% worse, no encode or decode time more than 3% worse, no higher peak memory, and every older file still decoding. If the target is missed, the missed-milestone policy applies (`D99 T01 §4`): up to three follow-up experiments from `docs/research.md` are filed through `add-todo`, and the operator is asked only when all three miss.
+
+- [ ] Measure the target with `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns), `python tests/benchmark.py -n 3`. Done when: `rasterfold-v3.0.0`: against 2.0, generated images at least 10% smaller, photos at the max level at least 1% smaller, decode at least 1.3 times faster, with random access, portability, alpha, and 16-bit, each figure quoted with its command.
+- [ ] Measure the no-regression rule against milestone 29's gate stamp: `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns), `python tests/benchmark.py -n 3`, `decode --time`, and `python tests/test_correctness.py`. Done when: each rule holds, quoted beside milestone 29's figures.
+- [ ] Record the milestone in `docs/research.md` sections 1 and 9 and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
+- [ ] Push the tag `rasterfold-v3.0.0`. Done when: the release workflow publishes the package and its checksums.
+- [ ] Run the backlog review for `rasterfold-v3.0.0`: promote each backlog entry into a section or record the operator's deferral on it. Done when: every entry carries a `reviewed: rasterfold-v3.0.0` field or has been promoted.
+- [ ] Commit: `"milestone: reach milestone 30 -- rasterfold 3.0"`
+
+**Test checkpoint:** every target figure and every no-regression figure quoted from a run at the commit; a figure that misses its bar blocks the stamp and triggers the missed-milestone policy instead.
+
+## Verification
+
+- [ ] `python research/milestones.py --check` exits 0
+- [ ] `python scripts/todo-graph.py validate` clean

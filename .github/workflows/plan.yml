@@ -1,0 +1,95 @@
+name: plan-gates
+
+# Plan tooling gates (ported from Isotone's plan.yml): the TODO graph tool
+# self-tests, the TODO tree validates, the plan projection is current, the
+# measured claims hold, the review records agree, and the commit hooks are
+# intact (mode 100755, LF). The campaign guard self-test drives the real Stop
+# hook through powershell.exe, so it runs in a Windows job.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/**'
+      - 'todo/**'
+      - 'docs/reviews/**'
+      - '.claude/**'
+      - '.conclave/**'
+      - 'tools/githooks/**'
+      - 'research/milestones.py'
+      - 'docs/research.md'
+      - '.gitattributes'
+      - 'AGENTS.md'
+      - '.github/workflows/plan.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/**'
+      - 'todo/**'
+      - 'docs/reviews/**'
+      - '.claude/**'
+      - '.conclave/**'
+      - 'tools/githooks/**'
+      - 'research/milestones.py'
+      - 'docs/research.md'
+      - '.gitattributes'
+      - 'AGENTS.md'
+      - '.github/workflows/plan.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  plan-gates:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history: the validator's git legs (provenance candidates,
+          # fix-commit proofs, ancestry) cannot resolve on a shallow checkout.
+          fetch-depth: 0
+      - name: Self-test the TODO graph tool
+        run: python3 scripts/todo-graph.py self-test
+      - name: Validate the TODO tree
+        run: python3 scripts/todo-graph.py validate
+      - name: Check plan projection is current
+        run: |
+          python3 scripts/todo-graph.py plan --sync
+          test -z "$(git status --porcelain)" || { echo "stale plan projection:"; git status --porcelain; git diff --stat; exit 1; }
+      - name: Check the generated milestone files
+        run: python3 research/milestones.py --check
+      - name: Re-measure the TODOs' claims
+        run: python3 scripts/todo-claims.py
+      - name: Check the findings ledger and run records
+        run: |
+          python3 scripts/todo-findings.py --check
+          python3 scripts/todo-runs.py --check
+      - name: Self-test the review tooling
+        run: |
+          python3 scripts/todo-claims.py --self-test
+          python3 scripts/todo-findings.py --self-test
+          python3 scripts/todo-runs.py --self-test
+          python3 scripts/panel_slots.py validate
+          python3 scripts/panel_slots.py --self-test
+          python3 scripts/review_prompt.py --self-test
+      - name: Assert commit hooks are intact
+        run: |
+          for hook in pre-commit commit-msg; do
+            test "$(git ls-files -s tools/githooks/$hook | cut -d' ' -f1)" = "100755" || { echo "$hook index mode is not 100755"; exit 1; }
+            git show HEAD:tools/githooks/$hook > /tmp/hook-blob || exit 1
+            if grep -q $'\r' /tmp/hook-blob; then echo "$hook blob carries CR"; exit 1; fi
+            git check-attr eol -- tools/githooks/$hook | grep -q ': eol: lf$' || { echo "$hook eol pin missing"; exit 1; }
+          done
+
+  campaign-guard:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Self-test the campaign guard
+        shell: pwsh
+        run: python scripts/campaign_guard.py --self-test

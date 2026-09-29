@@ -1,0 +1,12 @@
+#!/bin/sh
+# Strip AI-assistant attribution from every commit message (operator decision 2026-09-28): no
+# "Co-Authored-By:" trailer for Claude, Anthropic, or another AI assistant, and no "Generated with"
+# footer, so GitHub never lists an assistant as a contributor. Human co-authors are kept.
+msg="$1"
+tmp="$msg.tmp.$$"
+grep -v -i -E '^[[:space:]]*co-authored-by:.*(anthropic|claude|openai|chatgpt|copilot|gemini|codex)' "$msg" \
+  | grep -v -i -E '(generated with|created with) \[?claude' > "$tmp"
+# drop trailing blank lines left behind
+sed -e ':a' -e '/^[[:space:]]*$/{$d;N;ba' -e '}' "$tmp" > "$msg"
+rm -f "$tmp"
+exit 0

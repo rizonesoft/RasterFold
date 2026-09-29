@@ -1,0 +1,101 @@
+---
+schema_version: 1
+id: dll-and-api
+domain: 06-library
+status: draft
+title: "TODO-01 -- rasterfold.dll and the C API"
+depends_on: []
+frozen: true
+track: L1
+---
+
+# TODO-01 -- rasterfold.dll and the C API
+
+> **Goal:** Other programs can encode, decode, and inspect `.fold` files through `rasterfold.dll` and one header, `rasterfold.h`, with a versioned, documented C API that never allocates behind the caller's back without a way to free it, never touches the file system unless asked, and gives byte-identical results to the command line.
+
+> [!IMPORTANT]
+> **Current state (verified 2026-09-29):** The codec is only an executable. Its internal interface (`rf_encode`, `rf_decode`, `rf_cm_encode`, `rf_cm_decode` in `src/rf.h`) passes error text through the globals `g_err_code` and `g_err_msg`, allocates with `rf_alloc` from the process heap, and is not exported. There is no public header, no DLL, no import library, and no version function.
+<!-- claim: absent include/rasterfold.h -->
+<!-- claim: count "g_err_msg" src/rf.h = 1 -->
+
+## Inputs
+
+- [`src/rf.h`](../../src/rf.h), [`src/fold.c`](../../src/fold.c), [`src/sys.c`](../../src/sys.c) -- the internal interface the API wraps
+- [`build.ninja`](../../build.ninja) -- the build §2 extends with the DLL and import libraries
+- -> XREF: D07 T01 §1 -- the command line, which §3 rebuilds on the library
+- -> XREF: D08 T03 §2 -- the API reference generated from the header
+- -> XREF: D09 T01 §2 -- the release package that ships the DLL, header, and import libraries
+
+## Outcome
+
+- `include/rasterfold.h` declares the API with its version macros; `Bin/rasterfold.dll` exports exactly the functions listed in `src/rasterfold.def`, importing only `KERNEL32.dll`.
+- A C program and a Python `ctypes` test encode and decode through the DLL with byte-identical results to `rasterfold.exe`.
+
+**Adjacency:** list=not-applicable (no records to browse); document=not-applicable (no printed output); settings=applicable @ D06 T01 §1; reporting=applicable @ D06 T01 §1; notifications=applicable @ D06 T01 §1; permissions=not-applicable (the library writes no file unless the caller asks, and then through the same atomic path); audit=not-applicable (git history is the audit); exchange=applicable @ D06 T01 §2; reverse=applicable @ D06 T01 §4
+
+**Adjacency rationale:** Settings are the options structure (thread count, later effort); reporting is `rf_inspect`; notifications are the error codes and messages the caller receives; exchange is the exported interface; reverse is the decode that undoes every encode, proven in the API tests.
+
+## Implementation Order
+
+| Order | Section | Deliverable | Depends On | Status |
+| :---: | :-----: | ----------- | ---------- | :----: |
+|   1   |   §1    | The public header | -- |  [ ]   |
+|   2   |   §2    | The DLL and its import libraries | §1 |  [ ]   |
+|   3   |   §3    | The command line on the library | §2 |  [ ]   |
+|   4   |   §4    | API tests and the ABI list | §2 |  [ ]   |
+|   5   |   §5    | Example programs | §4 |  [ ]   |
+
+---
+
+## 1. The Public Header
+
+**Job:** A developer can choose the settings (the thread count) through an options structure, read a file's inspect report, and receive a notification of every failure as an error code with a message.
+
+The API is a contract that outlives releases, so it is designed before code: plain C, no global state, caller-visible ownership, and a version check.
+
+- [ ] Write `include/rasterfold.h`: `RF_API_VERSION` macros and `rf_version()`; an options structure with a size field for forward compatibility (`threads`, reserved fields); `rf_encode_image(const rf_pixels *, const rf_options *, rf_buffer *out, rf_error *err)`, `rf_decode_image(const void *data, size_t size, const rf_options *, rf_pixels *out, rf_error *err)`, `rf_inspect(const void *, size_t, rf_info *, rf_error *)`, and `rf_free(void *)` for everything the library allocates; `rf_pixels` naming width, height, stride, and layout (RGB8 for 1.0). Done when: the header compiles as C11 and C++ with `-Wall -Wextra -Werror`. Cheaper substitute: exporting the internal functions with their globals.
+- [ ] Document every function, parameter, ownership rule, and error code in the header's comments in the form `D08 T03 §2` generates the reference from. Done when: every declaration carries its comment.
+- [ ] Commit: `"api: the public rasterfold.h header"`
+
+**Test checkpoint:** `clang -std=c11 -fsyntax-only include/rasterfold.h` and `clang++ -fsyntax-only -x c++ include/rasterfold.h` exit 0 with `-Werror`.
+
+**Freeze check:** the header adds an interface and changes no `.fold` byte: `KAT_FOLD` and every oracle comparison are unchanged.
+
+## 2. The DLL and Its Import Libraries
+
+- [ ] Add a `rasterfold.dll` target to `build.ninja` (same objects without `main.c`, entry `DllMain`-free with `-nostdlib`, exports from `src/rasterfold.def`), plus a MinGW import library (`librasterfold.dll.a`) and an MSVC one (`rasterfold.lib`, from `llvm-dlltool`). Done when: `tools/llvm-mingw/bin/llvm-objdump.exe -p Bin/rasterfold.dll` lists exactly the `.def` exports and imports only `KERNEL32.dll`. Cheaper substitute: a DLL that exports every internal symbol.
+- [ ] Replace the error globals with the `rf_error` the caller passes (the executable keeps printing it). Done when: two threads of one process can encode concurrently with separate errors, shown by a test.
+- [ ] Commit: `"api: build rasterfold.dll with MinGW and MSVC import libraries"`
+
+**Test checkpoint:** the export and import listings quoted; a C test linked against each import library runs.
+
+## 3. The Command Line on the Library
+
+The executable uses the same code path as the library (linked statically, so `rasterfold.exe` stays one file), which guarantees the two cannot drift apart.
+
+- [ ] Rebuild `src/main.c` on the public API calls. Done when: `python tests/test_correctness.py` passes unchanged. Cheaper substitute: two code paths kept in step by hand.
+- [ ] Commit: `"cli: build the command line on the public API"`
+
+**Test checkpoint:** `python tests/test_correctness.py` passes every case; `KAT_FOLD` unchanged.
+
+## 4. API Tests and the ABI List
+
+**Job:** A developer can rely on every decode through the DLL reversing its encode, byte for byte.
+
+- [ ] Add `tests/test_api.py`, which drives the DLL through `ctypes`: round trips byte-identical to `rasterfold.exe` on every correctness image, every error code reachable, options with an older `size` accepted. Done when: `python tests/test_api.py` passes and `scripts/check-all.ps1` runs it.
+- [ ] Freeze `src/rasterfold.def` as the ABI list and add a check that fails when an export disappears or changes ordinal. Done when: removing an export from a build makes the check fail.
+- [ ] Commit: `"test: API round trips and the frozen export list"`
+
+**Test checkpoint:** `python tests/test_api.py` output quoted; the ABI check's failure on a removed export quoted, then restored.
+
+## 5. Example Programs
+
+- [ ] Add `examples/encode.c` and `examples/decode.c` (PPM in and out, error handling shown), built by `build.ninja` against the import library. Done when: both build and round-trip an image in CI. Cheaper substitute: code snippets in the docs that nothing compiles.
+- [ ] Commit: `"api: example programs built in CI"`
+
+**Test checkpoint:** the examples' round trip in the `build` workflow log.
+
+## Verification
+
+- [ ] `pwsh scripts/check-all.ps1` exits 0 with the API tests
+- [ ] `python scripts/todo-graph.py validate` clean

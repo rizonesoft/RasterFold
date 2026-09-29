@@ -1,0 +1,3 @@
+# Surface sections exempt from design-missing. RasterFold has no user-facing surface
+# (todo/README.md, Surfaces), so no section carries a Fidelity line and this list is
+# empty. It only ever shrinks: validate fails a ref HEAD does not list (design-baseline-grown).

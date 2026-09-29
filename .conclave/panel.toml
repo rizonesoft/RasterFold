@@ -1,0 +1,107 @@
+# Review wiring: the writer, the model registry, and slot -> (model, effort, timeout).
+#
+# The single source of truth for every review pin. Carried from Resolute
+# to Isotone on 2026-09-26 and from Isotone to RasterFold on 2026-09-29
+# with the same slots and models. Skills name slots and run
+# them through `python scripts/panel_slots.py exec <slot>`; they never
+# name a model. `scripts/panel_slots.py` validates this file: the slot
+# set is exact, every slot names a registered, non-retired model, efforts
+# are a closed set, and no slot runs the writer's family, so the writer
+# never reviews its own work.
+#
+# Re-pinning a reviewer is an edit here plus a fresh echo probe date on
+# the model entry; nothing else in the tree changes.
+#
+# Operator decision (Resolute 2026-09-25, adopted for Isotone and RasterFold): every
+# review slot runs GPT-6 Astra through codex (bulk at medium, every other
+# slot at high), and there are no fallback slots. A failed round stops
+# for the operator.
+
+# Operator decision: Claude Code on Opus 5.5 is the only writer.
+[writer]
+model = "claude-opus-5-5"
+
+# The model registry. `family` picks the runner (codex or claude; the
+# grok family survives only in retired entries the validator still
+# parses). `probed` is the date of the last live echo probe through that
+# runner. `retired` marks pins only historical records name: run records
+# and stamps keep parsing, and no slot may use them. `newest` is a regex
+# whose captures are version parts: records naming any concrete model it
+# matches (suffixed variants such as `-build-fast` never match) parse.
+# `served` names what the provider reported having run, for records only.
+[model."gpt-6-astra"]
+family = "codex"
+probed = "2026-09-25"
+
+[model."gpt-6-sol"]
+family = "codex"
+retired = "2026-09-25"
+
+# Retired with the Grok fallbacks; kept so the validator's legacy Grok
+# rules keep a registered family to parse against.
+[model."grok-newest"]
+family = "grok"
+retired = "2026-09-25"
+newest = "grok-(\\d+)\\.(\\d+)"
+served = "grok-(\\d+)\\.(\\d+)-build"
+
+[model."gpt-5.6-terra"]
+family = "codex"
+retired = "2026-09-23"
+
+[model."claude-opus-5-5"]
+family = "claude"
+probed = "2026-09-23"
+
+[model."gpt-5.6-sol"]
+family = "codex"
+retired = "2026-09-23"
+
+[model."opus"]
+family = "claude"
+retired = "2026-09-23"
+
+# Panel rounds. Full: R1-R2 bulk, R3 signoff, R4-R5 depth (blocking
+# findings only). Light: R1 bulk, R2 signoff. There are no fallback
+# slots: a failed round re-runs nothing and waits for the operator.
+[slot.bulk]
+model = "gpt-6-astra"
+effort = "medium"
+timeout = 600
+
+[slot.signoff] # governs every stamp
+model = "gpt-6-astra"
+effort = "high"
+timeout = 600
+
+[slot.depth]
+model = "gpt-6-astra"
+effort = "high"
+timeout = 600
+
+# Plan review after panel close.
+[slot.plan-primary]
+model = "gpt-6-astra"
+effort = "high"
+timeout = 900
+
+# The staged-stamp review before the stamp commit.
+[slot.stamp-check]
+model = "gpt-6-astra"
+effort = "high"
+timeout = 600
+
+# The independent `codex review --commit` pass in process-todo-section.
+[slot.independent]
+model = "gpt-6-astra"
+effort = "high"
+timeout = 900
+
+# The architecture gate after panel close (the .fold bitstream and its
+# version and method numbers, the oracle's independence from the C code,
+# the thread schedule and its byte-identical output, file safety).
+# Blocking, GPT like the sign-off.
+[slot.arch-primary]
+model = "gpt-6-astra"
+effort = "high"
+timeout = 600

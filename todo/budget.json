@@ -1,0 +1,18 @@
+{
+  "schema_version": 3,
+  "note": "Records the budget decisions; bounds nothing. Nothing in the plan is capped: backlog_cap and per_run_discovered_sections are null (no cap). A section a campaign files on its own carries an `**Origin:** discovered run=<id> <YYYY-MM-DD>` line, for provenance and reporting only. The live values must equal the latest history snapshot; history is append-only; a raise, removing a cap included, needs approved_by operator and the operator's words quoted in reason. The safeguards (no drop without operator approval, the release-time backlog gate) are checked on todo/backlog.md. Format and rules: todo/README.md, The budget and the backlog.",
+  "backlog_cap": null,
+  "per_run_discovered_sections": null,
+  "history": [
+    {
+      "date": "2026-09-29",
+      "change": "Initial budget at the port of the TODO system from Isotone: no caps (schema 3, both null), as in the system it was ported from.",
+      "reason": "Operator request 2026-09-29: \"take a look at Isotone, Resolute, ScratchPad. Take a look at the mechanics and port todo system, todo plan, skills, scripts, runners, hooks, etc.\" The ported system carries the operator's standing decision from Isotone (2026-09-27): \"the cap is worrying me, because I'm worried features will be left behind.\"",
+      "approved_by": "operator",
+      "snapshot": {
+        "backlog_cap": null,
+        "per_run_discovered_sections": null
+      }
+    }
+  ]
+}

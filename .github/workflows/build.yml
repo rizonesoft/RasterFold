@@ -1,0 +1,52 @@
+name: build
+
+# Builds the codec with the pinned toolchain (toolchain.json, installed by
+# tools/bootstrap.ps1) and runs the correctness suite and a short decoder fuzz
+# on every push and pull request to main. The JPEG XL comparisons need ffmpeg
+# with libjxl and a quiet machine, so they stay local (tests/measure_final.py,
+# tests/benchmark.py).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Cache the pinned toolchain archives
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: tools/downloads
+          key: toolchain-v1-${{ hashFiles('toolchain.json') }}
+      - name: Install the pinned toolchain
+        shell: pwsh
+        run: ./tools/bootstrap.ps1
+      - name: Build (warnings are errors)
+        shell: pwsh
+        run: ./build.ps1
+      - name: Imports stay Win32-only
+        shell: pwsh
+        run: |
+          $dlls = & tools/llvm-mingw/bin/llvm-objdump.exe -p Bin/rasterfold.exe | Select-String 'DLL Name:' | ForEach-Object { ($_ -split ':')[1].Trim() } | Sort-Object -Unique
+          $dlls
+          $extra = @($dlls | Where-Object { $_ -notin @('KERNEL32.dll', 'SHELL32.dll') })
+          if ($extra.Count -gt 0) { throw "unexpected imports: $($extra -join ', ')" }
+      - name: Test dependencies
+        run: python -m pip install --quiet pillow
+      - name: Correctness suite
+        run: python tests/test_correctness.py
+      - name: Decoder fuzz
+        run: python tests/fuzz_decode.py 300 1
