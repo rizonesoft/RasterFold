@@ -3,7 +3,6 @@ guard/
 build/
 Bin/
 tests/work/
-benchmarks/work/
 measure/*.webp
 measure/*.avif
 measure/*.jxl
@@ -17,4 +16,15 @@ measure/webp.bmp
 *.exe
 *.partial
 __pycache__/
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+.remember/
 *.pyc
+tools/*
+!tools/bootstrap.ps1
+!tools/provision.ps1
+!tools/githooks/
+*.o
+*.d
+.ninja_log
+.ninja_deps

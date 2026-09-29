@@ -1,0 +1,53 @@
+{
+  "$comment": [
+    "The pinned toolchain. tools/bootstrap.ps1 installs from this file,",
+    "tools/provision.ps1 verifies against it, and scripts/toolchain-latest.ps1",
+    "compares it with upstream; it is the only place a version or a URL is written.",
+    "Moving a pin is a decision recorded in a TODO section, never an automatic update.",
+    "",
+    "Every sha256 was taken from a real download on 2026-09-29. A pin without a",
+    "hash is reproducible only until a release is re-cut in place."
+  ],
+  "pinned": "2026-09-29",
+  "components": [
+    {
+      "name": "llvm-mingw",
+      "version": "20260922",
+      "url": "https://github.com/mstorsjo/llvm-mingw/releases/download/20260922/llvm-mingw-20260922-ucrt-x86_64.zip",
+      "sha256": "e3ad77d117a4bea19a7a3b333341824d79a5a371004a10e25b8504e7b3047666",
+      "bytes": 190725905,
+      "dir": "llvm-mingw",
+      "probe": "bin/clang.exe",
+      "versionArgs": ["--version"],
+      "versionMatch": "clang version ([0-9.]+)",
+      "expectVersion": "23.1.2",
+      "note": "Clang, LLD, and the MinGW-w64 import libraries. Builds the codec with no Visual Studio and no C runtime."
+    },
+    {
+      "name": "ninja",
+      "version": "1.13.2",
+      "url": "https://github.com/ninja-build/ninja/releases/download/v1.13.2/ninja-win.zip",
+      "sha256": "07fc8261b42b20e71d1720b39068c2e14ffcee6396b76fb7a795fb460b78dc65",
+      "bytes": 291570,
+      "dir": "ninja",
+      "probe": "ninja.exe",
+      "versionArgs": ["--version"],
+      "versionMatch": "^([0-9.]+)",
+      "expectVersion": "1.13.2",
+      "note": "The build driver for build.ninja."
+    },
+    {
+      "name": "libjxl",
+      "version": "0.12.0",
+      "url": "https://github.com/libjxl/libjxl/releases/download/v0.12.0/jxl-x64-windows-static.7z",
+      "sha256": "ff147dc7ac4ce55392974ccc70f2a8a8ec0eff3ae28529b072258b66c8f01ab2",
+      "bytes": 8059493,
+      "dir": "libjxl",
+      "probe": "bin/cjxl.exe",
+      "versionArgs": ["--version"],
+      "versionMatch": "v([0-9.]+)",
+      "expectVersion": "0.12.0",
+      "note": "The official cjxl and djxl binaries: a reference codec for the benchmark scripts only; nothing links against it. The .7z asset, because the .zip uses Deflate64, which the bsdtar in Windows cannot read."
+    }
+  ]
+}

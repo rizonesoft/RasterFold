@@ -1,107 +1,191 @@
 # RasterFold
 
-RasterFold is an experimental lossless image codec for Windows 11 x64. The implementation is x86-64 assembly. The conventional extension is `.fold`. Version 1 is a measured baseline, not a claim that it beats any existing codec.
+RasterFold is a lossless RGB image codec for Windows x64. It is written in C
+with no C runtime (Win32 only) and built with a pinned local Clang toolchain.
+The file extension is `.fold`. The format is version 2 and is described in
+[spec/FOLD.md](spec/FOLD.md).
 
-The research target is screenshots, application interfaces, diagrams, and pixel art, compared with lossless WebP on size, decode speed, and memory. Correctness comes first. The numbers below are from one machine and one run.
+On the reference photograph `measure/image.bmp` it is smaller than lossless
+JPEG XL at effort 7, decodes faster than JPEG XL does with all threads, encodes
+more than six times faster, and uses about a third of the memory. On a corpus
+of 39 photographs it is 2.9% smaller than JPEG XL overall. Images with very few
+colours, such as checkerboards and pixel art, are still much larger than with
+JPEG XL. The measurements and their conditions are below.
 
 ## Build
-
-The build uses Microsoft `ml64`, Microsoft's linker, and the Windows SDK. `build.ps1` locates them with `vswhere`.
 
 ```
 powershell -ExecutionPolicy Bypass -File build.ps1
 ```
 
-That writes object files to `build\` and `Bin\rasterfold.exe`. The run recorded here used Macro Assembler (x64) 14.51.36256.0 and Windows SDK 10.0.26100.0.
-
-There is no C or C++ in the codec. Python is used only for tests, image generation, and the benchmark driver. PNG, WebP, and JPEG XL in the benchmark come from ffmpeg, not from this tree.
+The first run executes `tools\bootstrap.ps1`, which downloads and checks the
+SHA-256 of three pinned archives into `tools\`: llvm-mingw 20260922 (Clang 23,
+LLD, MinGW-w64 import libraries), Ninja 1.13.2, and the libjxl 0.12.0 command
+line tools (a reference codec for benchmarks; nothing links against it).
+`build.ps1` then runs Ninja on `build.ninja`, which writes objects to
+`build\obj\` and the executable to `Bin\rasterfold.exe`. No Visual Studio
+installation is needed. The code targets x86-64-v2 (SSE4.2), so it runs on any
+x86-64 CPU from the last fifteen years.
 
 ## Commands
 
 ```
-rasterfold encode [--time] input.bmp output.fold
-rasterfold decode [--time] input.fold output.bmp
+rasterfold encode [--time] [--threads N] input.bmp output.fold
+rasterfold decode [--time] [--threads N] input.fold output.bmp
 rasterfold inspect [--time] input.fold
 ```
 
-Exit codes are 0 for success, 1 for usage, 2 for file errors, 3 for an unsupported BMP or RasterFold version, 4 for a malformed file, and 5 for a size limit or allocation failure.
+Exit codes are 0 for success, 1 for usage, 2 for file errors, 3 for an
+unsupported BMP or `.fold` version, 4 for a malformed file, and 5 for a size
+limit or allocation failure. An existing destination is never overwritten:
+output goes to `destination.partial` with `CREATE_NEW`, is flushed, and is
+renamed onto the destination only after success.
 
-An existing destination is left untouched. Output is written to `destination.partial` with `CREATE_NEW` and renamed onto the destination only after the bytes are flushed. A failed conversion deletes that temporary file and does not create the destination.
+`--threads 1` codes on one thread. The default uses three threads, one per
+colour channel, when the CPU has at least three logical processors. The file
+bytes are the same for any thread count.
 
-`--time` prints phase counters on stdout. `codec_us` is block encode or block decode. `total_us` adds BMP conversion and file IO, including the flush. `encode_wall_us` in the benchmark is the whole process, startup included.
+`--time` prints `rf_stat` lines: `read_us`, `parse_us`, `codec_us`, `write_us`,
+`total_us`, `alloc_peak`, `peak_working_set`, and `output_bytes`.
 
-## Codec
+## How it works
 
-Each image is cut into independent 64×64 blocks, with smaller blocks on the right and bottom edges. A block does not use pixels from its neighbours. Scratch for one block is fixed at 64×64, so a hostile length cannot choose the scratch allocation. The output image is still one buffer.
+Each pixel is coded as three channels: G, then R − G, then B − G. Each channel
+has its own models and its own arithmetic-coded stream.
 
-For every block the encoder tries five modes and stores the smallest payload. A tie keeps the lower mode number, so raw storage wins a tie. That choice is encoder policy. A decoder accepts any mode.
+1. **Prediction.** The JPEG XL weighted predictor (four sub-predictors mixed
+   by their recent errors), followed by a 12-tap sign-sign LMS stage that
+   corrects it from neighbouring errors, the G and R errors at the same pixel,
+   and five local gradients.
+2. **Contexts.** Five context models look at the neighbours relative to the
+   prediction on a scale set by the local error energy, the JPEG-LS gradients,
+   four simple alternative predictors, the error energy with the G and R
+   residuals of this pixel, and W and N against the prediction.
+3. **Coding.** The residual is binarized (zero flag, sign, exponent in unary,
+   mantissa). Each binary decision mixes the five models' probabilities with a
+   logistic mixer and is coded by an LZMA-style binary range coder. Counters
+   adapt at a rate set by their context's visit count.
+4. **Threads.** R depends on G only at the same pixel, and B on G and R. The
+   three channels therefore run as a pipeline, one thread each, R one row behind
+   G and B one row behind R. On one thread the same pipeline runs one pixel
+   apart, which lets the processor overlap the three channels.
 
-| Mode | Contents |
+If the coded payload is not smaller than the raw image, the file stores the raw
+pixels instead (method 0), so a `.fold` file is never more than 32 bytes larger
+than the raw RGB data.
+
+The accepted input is the uncompressed 24-bit `BITMAPINFOHEADER` BMP subset,
+bottom-up or top-down. A decoded BMP is a canonical bottom-up file; lossless
+means the width, height and RGB samples match. Limits are 1..32768 per side,
+at most 32 megapixels, and at most 256 MiB for an input file.
+
+## Source layout
+
+| file | contents |
 |---|---|
-| 0 | Raw RGB, top to bottom, R then G then B |
-| 1 | PackBits of those RGB bytes |
-| 2 | Subtract-green, then a left predictor that restarts at 0 on every row. Residuals are stored as R', G', and B' planes and PackBits-coded as one stream |
-| 3 | A palette of 1..256 colours in first-seen order, then PackBits of one index byte per pixel |
-| 4 | Subtract-green, MED from the left and above samples, then a context Rice coder. The model carries across mode-4 blocks |
+| `src/cm.c` | the CM method: predictor, contexts, mixer, range coder, threads |
+| `src/fold.c` | the `.fold` container: header, checksums, method choice |
+| `src/bmp.c` | BMP reading and writing |
+| `src/crc32.c` | zlib CRC-32, slicing by 8 |
+| `src/sys.c` | Win32: heap, files, atomic output, timing, threads |
+| `src/main.c` | command line |
+| `src/mem.c` | `memcpy`, `memset`, `memmove`, `memcmp`, `strlen` |
+| `tests/rfi_ref.py` | independent Python implementation of the format, the test oracle |
 
-Subtract-green and the predictor use 8-bit wraparound, the low 8 bits of an x86 byte add or subtract. PackBits rejects the `0x80` no-op and must consume every input byte while producing exactly the expected count. The file is little-endian. Both checksums are zlib CRC-32: one over the payload, one over the first 28 header bytes (which include the payload checksum). The byte layout, rejection rules, and worked predictor example are in [spec/FOLD-v1.md](spec/FOLD-v1.md).
+## Development workflow
 
-PackBits plus a raw fallback is small enough to audit, and it does compress long runs. It is a weak coder for anything that is regular but not a repeated byte. Mode 4 adds a context Rice coder on MED residuals. There is no range coder, no LZ matcher, and no AVX2 path.
+Work is planned and tracked in [`todo/`](todo/README.md): each change is a TODO
+section with a checklist, a falsifiable test checkpoint, and, for size and
+speed ideas, a measured stop condition. [`todo/implementation-plan.md`](todo/implementation-plan.md)
+orders the sections in phases, and `python scripts/todo-graph.py query ready`
+lists what can run now. The Claude Code skills in `.claude/skills/` run the
+lifecycle (`add-todo`, `plan-experiment`, `process-todo-section`,
+`review-todo-section`, `process-plan`); [`AGENTS.md`](AGENTS.md) holds the
+working rules, and [`docs/research.md`](docs/research.md) the research record and
+measurement protocol.
 
-The accepted BMP subset is uncompressed 24-bit `BITMAPINFOHEADER` data, bottom-up or top-down, with rows padded to 4 bytes. Other bit depths, compression, and header versions are rejected by name. A decoded BMP is a new canonical bottom-up file. Lossless means the width, height, and RGB samples match. Headers and padding bytes are not preserved.
+```
+pwsh tools\provision.ps1          set up a clone: toolchain, git hooks, Python and Pillow
+pwsh scripts\check-all.ps1        every gate: build, correctness, fuzz, plan and tool checks
+```
 
-Limits are 1..32768 on each side, at most 32 megapixels, and at most 256 MiB for an input file.
+The commit hook (`tools/githooks/pre-commit`) refuses a commit whose staged
+plan fails validation, and the `plan-gates` and `build` workflows repeat the
+checks on every push.
 
 ## Tests
 
 ```
-python tests\test_correctness.py
+python tests\test_correctness.py      round trips and rejection tests
+python tests\fuzz_decode.py [n]       mutated files must be rejected cleanly
+python tests\measure_final.py         the reference comparison on measure/image.bmp
+python tests\benchmark.py             size, speed and memory against PNG, WebP, JPEG XL
 ```
 
-On 2026-09-28 that suite reported 30 passed, 0 failed. It covers a single pixel, odd widths, padded rows, top-down BMPs, a gap before the pixels, solid colours, gradients, checkers, noise, and UI-like pictures. It also feeds truncated, checksum-broken, and mode-corrupted `.fold` files, unsupported BMP variants, and paths that must not be overwritten.
-
-Pixels are compared with Pillow and with a separate BMP parser in `tests/rfi_ref.py`. That module is a second implementation of version 1, used only as a test oracle. The assembly encoder's bytes match the oracle, and each decoder accepts files written by the other. The program also checks CRC-32("123456789") = `0xCBF43926`, two PackBits vectors, and the planar predictor example before it will encode anything.
+`test_correctness.py` (33 cases) checks every encoder output byte for byte
+against the Python oracle, decodes codec files with the oracle and oracle files
+with the codec, compares one-thread and three-thread output, checks a frozen
+known-answer file, and feeds truncated, extended, checksum-broken and
+out-of-range files, unsupported BMPs, and paths that must not be overwritten.
+`fuzz_decode.py` mutates valid files with the checksums recomputed, so the
+damage reaches the CM decoder; the decoder must exit 0 or 4, never crash or
+hang, and agree with the oracle whenever it accepts a file.
 
 ## Measurements
 
-`python tests\benchmark.py` writes `benchmarks/baseline.md` and `benchmarks/baseline.csv`. The images are synthetic pictures drawn for this run (Pillow 12.3.0), split into a development set and a held-out set. The codec was not changed after these numbers were recorded. Every successful decode matched the source pixels. There were no tool failures.
+Machine: Windows 11 (10.0.26200), Intel Core i5-11600K at 3.90 GHz, 6 cores and
+12 logical processors. The machine was running other work during these runs,
+so times vary by about ±10% between runs. ffmpeg 8.1.2 (gyan.dev full build)
+supplied PNG, WebP, JPEG XL and AVIF.
 
-Machine: Windows 11 (10.0.26200), Intel Core i5-11600K at 3.90 GHz, 6 cores and 12 logical processors, 34185392128 bytes of RAM. Every codec ran on one thread. ffmpeg was `8.1.2-full_build-www.gyan.dev` with its bundled libwebp and libjxl; that build does not print those library versions on their own.
+`python tests/measure_final.py` on `measure/image.bmp` (1672×941), unchanged
+from its original form:
 
-Selected sizes in bytes, development set:
+| codec | bytes | decode wall | decode peak working set |
+|---|---:|---:|---:|
+| RasterFold | **1,409,028** | **261 ms** | **17.3 MB** |
+| JPEG XL, effort 7 | 1,470,703 | 434 ms | 53.6 MB |
+| WebP, lossless, level 6 | 1,588,708 | 195 ms | 44.6 MB |
+| AVIF, lossless | 1,776,841 | 345 ms | 49.1 MB |
 
-| image | raw RGB | RasterFold | PNG | WebP | JPEG XL | blocks used |
-|---|---:|---:|---:|---:|---:|---|
-| solid 640×480 | 921600 | 5632 | 1602 | 56 | 125 | palette 80 |
-| ui 1280×720 | 2764800 | 26468 | 5790 | 1346 | 2316 | palette 239, packbits 1 |
-| text 800×600 | 1440000 | 18271 | 4512 | 1198 | 2164 | palette 129, packbits 1 |
-| gradient 640×480 | 921600 | 57872 | 3414 | 180 | 2886 | predict 80 |
-| noise 256×256 | 196608 | 196736 | 197584 | 196688 | 212784 | raw 16 |
+That script encodes JPEG XL with `-threads 1` but decodes it with ffmpeg's
+default thread count, so JPEG XL decodes on several threads there. Encoding
+this image takes RasterFold about 0.25 s and JPEG XL about 1.7 s. With one
+thread each, RasterFold decodes it in about 0.58 s and JPEG XL in about 0.72 s.
 
-Held-out set, same pattern:
+`python tests/benchmark.py` writes `benchmarks/results.md` for this image, the
+ten photographs in `testdata/photos/`, and eleven generated images. Every value
+below is RasterFold divided by JPEG XL effort 7, so lower is better. Values are
+geometric means of the per-image ratios, except the total-size column. Times
+are process wall times (median of 3 runs) and memory is the process peak
+working set.
 
-| image | raw RGB | RasterFold | PNG | WebP | JPEG XL | blocks used |
-|---|---:|---:|---:|---:|---:|---|
-| ui 1024×768 | 2359296 | 24183 | 5646 | 1324 | 2167 | palette 191, packbits 1 |
-| text 640×400 | 768000 | 11410 | 3484 | 1136 | 1730 | palette 69, packbits 1 |
-| gradient 333×200 | 199800 | 14512 | 852 | 96 | 696 | predict 24 |
-| noise 320×180 | 172800 | 172922 | 173623 | 172880 | 187664 | raw 15 |
+| set | total size | size | encode | encode, 1 thread each | decode | decode, 1 thread each | encode memory | decode memory |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `measure/image.bmp` | 0.958 | 0.958 | 0.15 | 0.37 | 0.58 | 0.80 | 0.19 | 0.33 |
+| 10 photographs | 0.974 | 0.972 | 0.15 | 0.30 | 0.52 | 0.71 | 0.22 | 0.33 |
+| 11 generated images | 0.948 | 1.199 | 0.34 | 0.55 | 0.42 | 0.63 | 0.29 | 0.32 |
 
-On the UI, text, diagram, checker, stripe, and gradient images, lossless WebP is the smallest, then JPEG XL, then PNG, then RasterFold. RasterFold is still far below the raw size on those images. On both noise images the raw fallback stays within a few block headers of the raw RGB size and matches WebP; JPEG XL is larger than raw there.
+The "encode" and "decode" columns compare RasterFold's default three threads
+with JPEG XL encoding on one thread and decoding with ffmpeg's default threads.
+The "1 thread each" columns run both codecs on one thread. All ten test
+photographs are smaller than JPEG XL. The generated set is mixed. Stripes,
+solid fills, the UI, text and diagram images, and noise are smaller. The
+checkerboard is 18 times larger, the one-pixel checker "pixel art" 9 times, the
+smooth gradients 1.2 to 1.6 times. JPEG XL has a palette transform for such
+content, and lossless WebP is smaller than both codecs on most of these images.
+The palette method is designed in `docs/research.md` (section 4.1) and planned as `D01 T01`.
 
-Speed and memory go the other way. For the development UI image, RasterFold's block encoder took 8089 µs and the whole encode process took 39720 µs, with a peak working set of 12206080 bytes and a heap high-water mark of 8358214 bytes. ffmpeg's process wall times on that file were 89746 µs for PNG, 1611033 µs for WebP, and 268271 µs for JPEG XL, with peak working sets of 29102080, 44437504, and 58249216 bytes. ffmpeg's times include startup and muxing. RasterFold's `codec_us` does not. Its process wall time, which does include startup, is still lower on every image in both sets. Decode shows the same split: block decode of that UI image was 1683 µs, while the ffmpeg decodes took 74408 to 131256 µs of wall time.
-
-## Next step
-
-The size gap on the images this project cares about is inside palette blocks and predict blocks, not in the raw fallback. A 1280×720 UI image is 240 blocks. The 6-byte headers are 1440 bytes, and the file is 26468 bytes, against a WebP file of 1346 bytes. A 640×480 gradient is entirely predict mode and is 57872 bytes, against WebP at 180. PackBits only collapses runs of the same byte, so a regular index stream or a planar residual still occupies hundreds of bytes per block.
-
-Mode 4 is that entropy coder for photographic residuals: subtract-green, a MED predictor, and a 64-context Rice code, used only when it is smaller than the other modes. The raw, PackBits, and palette paths stay. On `measure/image.bmp` this is the whole file. The remaining size gap against lossless JPEG XL is the predictor and the context model, not another PackBits pass. Decode has to stay within JPEG XL's wall time; the Rice decoder is already a large share of that budget.
+On a wider research corpus (the 24 Kodak photographs, 14 center crops of the
+imagecompression.info 8-bit RGB set, and `measure/image.bmp`), RasterFold's
+files total 2.9% less than JPEG XL effort 7's, and 37 of the 39 are smaller;
+kodim17 and kodim09 are 0.4% and 0.2% larger. `research/README.md` explains
+how to reproduce these numbers.
 
 ## Limitations
 
-- Input and output are 24-bit BMP only. No alpha, extra bit depths, colour profiles, animation, or shell integration.
-- The format is experimental. Version 1 may still change incompatibly.
-- The whole image is decoded into one buffer. Block scratch is bounded; the output image is not streamed.
-- There is no AVX2 path and no runtime CPU dispatch yet.
-- The benchmark pictures are generated. They are not a corpus of captured desktop screenshots.
-- ffmpeg wall times are not codec-only times, and this ffmpeg build does not identify the exact libwebp or libjxl version beyond the ffmpeg version string above.
+- Input and output are 24-bit BMP only. No alpha, 16-bit samples, colour
+  profiles, or animation.
+- The whole image is held in memory; decoding does not stream.
+- Encoder and decoder are symmetric: decoding costs about as much as encoding.
+- Palette-like synthetic content compresses worse than with JPEG XL or WebP.

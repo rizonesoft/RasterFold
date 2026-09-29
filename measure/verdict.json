@@ -5,46 +5,43 @@
   "raw_rgb_bytes": 4720056,
   "bmp_bytes": 4720110,
   "rasterfold": {
-    "bytes": 1575688,
-    "encode_wall_us": 1178267,
-    "decode_wall_us": 555496,
-    "encode_peak_ws": 32075776,
-    "decode_peak_ws": 24743936,
-    "encode_codec_us": 1146493,
-    "decode_codec_us": 525404,
+    "bytes": 1409028,
+    "encode_wall_us": 192738,
+    "decode_wall_us": 244117,
+    "encode_peak_ws": 17342464,
+    "decode_peak_ws": 17309696,
+    "encode_codec_us": 164055,
+    "decode_codec_us": 211739,
     "pixels_match": true
   },
   "webp": {
     "bytes": 1588708,
-    "encode_wall_us": 19867571,
-    "decode_wall_us": 146501,
-    "encode_peak_ws": 110456832,
-    "decode_peak_ws": 44597248,
+    "encode_wall_us": 24450012,
+    "decode_wall_us": 162416,
+    "encode_peak_ws": 110313472,
+    "decode_peak_ws": 44605440,
     "pixels_match": true,
     "settings": "-c:v libwebp -lossless 1 -quality 100 -compression_level 6 -threads 1"
   },
   "avif": {
     "bytes": 1776841,
-    "encode_wall_us": 35195447,
-    "decode_wall_us": 306013,
-    "encode_peak_ws": 106745856,
-    "decode_peak_ws": 49041408,
+    "encode_wall_us": 44097034,
+    "decode_wall_us": 612712,
+    "encode_peak_ws": 105115648,
+    "decode_peak_ws": 49033216,
     "pixels_match": true,
     "settings": "-c:v libaom-av1 -pix_fmt gbrp -still-picture 1 -cpu-used 4 -threads 1 -aom-params lossless=1"
   },
   "jxl": {
     "bytes": 1470703,
-    "encode_wall_us": 1520630,
-    "decode_wall_us": 553664,
-    "encode_peak_ws": 93691904,
-    "decode_peak_ws": 51638272,
+    "encode_wall_us": 2677499,
+    "decode_wall_us": 712695,
+    "encode_peak_ws": 93892608,
+    "decode_peak_ws": 49283072,
     "pixels_match": true,
     "settings": "-c:v libjxl -distance 0 -effort 7 -threads 1"
   },
-  "passed": false,
-  "failures": [
-    "size 1575688 is not smaller than jxl 1470703",
-    "decode wall 555496 us is slower than jxl 553664 us"
-  ],
-  "summary": "size 1575688 is not smaller than jxl 1470703; decode wall 555496 us is slower than jxl 553664 us"
+  "passed": true,
+  "failures": [],
+  "summary": "passed"
 }

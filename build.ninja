@@ -1,0 +1,29 @@
+# RasterFold build. tools\bootstrap.ps1 installs the pinned toolchain;
+# build.ps1 runs it when needed and then runs tools\ninja\ninja.exe.
+
+cc = tools\llvm-mingw\bin\clang.exe
+cflags = -std=c11 -O2 -march=x86-64-v2 -mtune=generic -Wall -Wextra -Werror -Wno-unused-parameter -fno-stack-protector -fno-ident -g
+ldflags = -nostdlib -Wl,--entry=rf_start -Wl,--subsystem,console -Wl,--pdb= -lkernel32 -lshell32
+
+rule cc
+  command = $cc $cflags -MD -MF $out.d -c $in -o $out
+  depfile = $out.d
+  deps = gcc
+  description = CC $in
+
+rule link
+  command = $cc $in -o $out $ldflags
+  description = LINK $out
+
+build build/obj/sys.o: cc src/sys.c
+build build/obj/mem.o: cc src/mem.c
+build build/obj/crc32.o: cc src/crc32.c
+build build/obj/bmp.o: cc src/bmp.c
+build build/obj/fold.o: cc src/fold.c
+build build/obj/cm.o: cc src/cm.c
+build build/obj/main.o: cc src/main.c
+
+build Bin/rasterfold.exe: link build/obj/sys.o build/obj/mem.o build/obj/crc32.o build/obj/bmp.o $
+    build/obj/fold.o build/obj/cm.o build/obj/main.o
+
+default Bin/rasterfold.exe

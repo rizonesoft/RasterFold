@@ -1,0 +1,112 @@
+[
+ {
+  "file": "kodim01.png",
+  "source": "https://r0k.us/graphics/kodak/kodak/kodim01.png",
+  "size": [
+   768,
+   512
+  ],
+  "altered": "no (re-encoded PNG, identical pixels)",
+  "rgb_sha256": "a00210743353594464ac67e680a41710f484444ca5f9dfddeb570de25c428273",
+  "png_bytes": 778467
+ },
+ {
+  "file": "kodim03.png",
+  "source": "https://r0k.us/graphics/kodak/kodak/kodim03.png",
+  "size": [
+   768,
+   512
+  ],
+  "altered": "no (re-encoded PNG, identical pixels)",
+  "rgb_sha256": "234e61f585503f2a44400f5561131e8a512ef2c15328cd83d5cdbf10e2616cf2",
+  "png_bytes": 540104
+ },
+ {
+  "file": "kodim05.png",
+  "source": "https://r0k.us/graphics/kodak/kodak/kodim05.png",
+  "size": [
+   768,
+   512
+  ],
+  "altered": "no (re-encoded PNG, identical pixels)",
+  "rgb_sha256": "ed3d1ee770909d3b27903b52ce19ee59a9bf24621a7bf1fb57b90677da880cb6",
+  "png_bytes": 806670
+ },
+ {
+  "file": "kodim13.png",
+  "source": "https://r0k.us/graphics/kodak/kodak/kodim13.png",
+  "size": [
+   768,
+   512
+  ],
+  "altered": "no (re-encoded PNG, identical pixels)",
+  "rgb_sha256": "875703d56fb9396f478b5d7d3b18e2b77c17147a685c6dc2567e1c574aaf01e3",
+  "png_bytes": 889437
+ },
+ {
+  "file": "kodim23.png",
+  "source": "https://r0k.us/graphics/kodak/kodak/kodim23.png",
+  "size": [
+   768,
+   512
+  ],
+  "altered": "no (re-encoded PNG, identical pixels)",
+  "rgb_sha256": "81992a83592267e69125666f3e3e04c1819529b4c4c1e55fde0a6a741bac4219",
+  "png_bytes": 556888
+ },
+ {
+  "file": "deer_crop.png",
+  "source": "http://imagecompression.info/test_images/rgb8bit.zip (deer.ppm, 4043x2641)",
+  "size": [
+   1024,
+   768
+  ],
+  "altered": "yes: center crop x=1509..2532, y=936..1703",
+  "rgb_sha256": "b17b4af3bc25aa45dd3e3920789e9d4c35cf94c8613d7631fde132f956ad47a7",
+  "png_bytes": 1562839
+ },
+ {
+  "file": "fireworks_crop.png",
+  "source": "http://imagecompression.info/test_images/rgb8bit.zip (fireworks.ppm, 3136x2352)",
+  "size": [
+   1024,
+   768
+  ],
+  "altered": "yes: center crop x=1056..2079, y=792..1559",
+  "rgb_sha256": "3d4b6492df8d7b3fea7bd360eb2f039db7740b4f141156afc1f40e18e95641d9",
+  "png_bytes": 1134326
+ },
+ {
+  "file": "flower_foveon_crop.png",
+  "source": "http://imagecompression.info/test_images/rgb8bit.zip (flower_foveon.ppm, 2268x1512)",
+  "size": [
+   1024,
+   768
+  ],
+  "altered": "yes: center crop x=622..1645, y=372..1139",
+  "rgb_sha256": "835c06cc6514ead58e15ffa357624850963f76dffc092eae04328b90a9a4e686",
+  "png_bytes": 834669
+ },
+ {
+  "file": "nightshot_iso_1600_crop.png",
+  "source": "http://imagecompression.info/test_images/rgb8bit.zip (nightshot_iso_1600.ppm, 3136x2352)",
+  "size": [
+   1024,
+   768
+  ],
+  "altered": "yes: center crop x=1056..2079, y=792..1559",
+  "rgb_sha256": "be80e0a500736981f90f34c0506abb300f233e138b706c4deb83623e505182a4",
+  "png_bytes": 1374199
+ },
+ {
+  "file": "spider_web_crop.png",
+  "source": "http://imagecompression.info/test_images/rgb8bit.zip (spider_web.ppm, 4256x2848)",
+  "size": [
+   1024,
+   768
+  ],
+  "altered": "yes: center crop x=1616..2639, y=1040..1807",
+  "rgb_sha256": "1a34f0b90e7aedf2eb85a0347dc1cd3ce5be35a5d6093f8f5bc13430e6a82546",
+  "png_bytes": 781572
+ }
+]

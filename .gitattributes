@@ -1,0 +1,37 @@
+# RasterFold: line endings and binary handling.
+* text=auto
+
+# LF: sources, scripts, docs, config read by POSIX tools, and git hooks.
+# The commit hook must be LF (Git for Windows runs it under sh); CI checks it.
+*.c text eol=lf
+*.h text eol=lf
+*.py text eol=lf
+*.ps1 text eol=lf
+*.sh text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.toml text eol=lf
+*.ninja text eol=lf
+.gitattributes text eol=lf
+.gitignore text eol=lf
+tools/githooks/** text eol=lf
+todo/.warning-baseline text eol=lf
+todo/.design-baseline text eol=lf
+docs/reviews/** text eol=lf
+
+# Binary: images, codec files, archives, executables.
+*.bmp binary
+*.png binary
+*.ppm binary
+*.jpg binary
+*.jxl binary
+*.webp binary
+*.avif binary
+*.fold binary
+*.zip binary
+*.7z binary
+*.exe binary
+*.dll binary
+*.pdb binary

@@ -20,6 +20,15 @@ WORK = ROOT / "tests" / "work"
 passed = 0
 failed = 0
 
+# A 16x8 image and its complete .fold file (method 1). Written by the oracle and
+# the codec alike; a change here is a change of the format.
+KAT_W, KAT_H = 16, 8
+KAT_RGB = bytes((x * 9 + y * 5 + c * 40 + ((x * 7 + y * 3) % 3)) & 255 for y in range(8) for x in range(16) for c in range(3))
+KAT_FOLD = bytes.fromhex(
+    "52464902020020001000000008000000010001003a000000b8923a9c7b2e13551e00000009000000070000000041ee93002ddf10975bffba"
+    "9a240a210014024daf691d221f14715e2e6c0001c05edda7566f6e0041f37cefce5b"
+)
+
 
 class Fail(Exception):
     pass
@@ -48,8 +57,17 @@ def expect_fail(args: list[str], code: int, text: str) -> None:
     check(result.stdout == b"", f"{args} wrote stdout on failure")
 
 
+# `-k TEXT` (repeatable) runs only the cases whose name contains one of the
+# texts, for iterating on one area; a commit still runs the whole suite.
+SELECT = [sys.argv[i + 1] for i, a in enumerate(sys.argv[:-1]) if a == "-k"]
+skipped = 0
+
+
 def case(name: str, fn) -> None:
-    global passed, failed
+    global passed, failed, skipped
+    if SELECT and not any(s in name for s in SELECT):
+        skipped += 1
+        return
     try:
         fn()
     except Exception as exc:
@@ -62,25 +80,23 @@ def case(name: str, fn) -> None:
 
 def oracle_self_check() -> None:
     check(rf.crc32(b"123456789") == 0xCBF43926, "crc vector")
-    check(rf.packbits_encode(bytes([1, 1, 1, 2, 3])) == bytes([0xFE, 1, 1, 2, 3]), "packbits run")
-    check(rf.packbits_encode(bytes([1, 2, 3, 3, 3])) == bytes([1, 1, 2, 0xFE, 3]), "packbits literal")
-    check(rf.packbits_encode(bytes(128)) == bytes([0x81, 0]), "packbits 128")
-    check(rf.packbits_encode(bytes([0xAB])) == bytes([0x00, 0xAB]), "packbits one")
-    try:
-        rf.packbits_decode(bytes([0x80]), 1)
-    except rf.FormatError:
-        pass
-    else:
-        raise Fail("nop was accepted")
-    rgb = bytes([10, 20, 30, 10, 20, 30, 10, 20, 30, 11, 20, 30])
-    residual = rf.predict(rgb, 2, 2)
-    check(
-        residual == bytes([0xF6, 0x00, 0xF6, 0x01, 0x14, 0x00, 0x14, 0x00, 0x0A, 0x00, 0x0A, 0x00]),
-        f"predict bytes {residual.hex()}",
-    )
-    check(rf.unpredict(residual, 2, 2) == rgb, "unpredict")
-    row = bytes([10, 20, 30, 10, 20, 30])
-    check(rf.predict(row, 2, 1) == bytes([0xF6, 0x00, 0x14, 0x00, 0x0A, 0x00]), "spec worked example")
+    check(rf.SQUASH[2047] == 2047 and rf.SQUASH[0] == 1 and rf.SQUASH[4094] == 4094, "squash endpoints")
+    check(all(rf.SQUASH[rf.STRETCH[p] + 2047] >= p or rf.STRETCH[p] == 2047 for p in range(1, 4096)), "stretch inverts squash")
+    check(rf.encode_image(KAT_W, KAT_H, KAT_RGB) == KAT_FOLD, "known-answer file")
+    check(rf.decode_image(KAT_FOLD) == (KAT_W, KAT_H, KAT_RGB), "known-answer decode")
+
+
+def known_answer() -> None:
+    work = WORK / "kat"
+    work.mkdir(parents=True, exist_ok=True)
+    src, out, back = work / "in.bmp", work / "out.fold", work / "out.bmp"
+    for f in (out, back):
+        f.unlink(missing_ok=True)
+    src.write_bytes(rf.write_bmp24(KAT_W, KAT_H, KAT_RGB))
+    expect_ok(["encode", str(src), str(out)])
+    check(out.read_bytes() == KAT_FOLD, "codec bytes differ from the known-answer file")
+    expect_ok(["decode", str(out), str(back)])
+    check(rf.read_bmp24(back.read_bytes()) == (KAT_W, KAT_H, KAT_RGB), "known-answer pixels")
 
 
 def solid(w: int, h: int, color: tuple[int, int, int]) -> bytes:
@@ -116,19 +132,29 @@ def stripes(w: int, h: int) -> bytes:
     return bytes(out)
 
 
+def extremes(w: int, h: int) -> bytes:
+    """Saturated colours and wraparound differences, the corners of every range."""
+    vals = (0, 255, 1, 254, 128, 127)
+    rng = random.Random(w * 31 + h)
+    return bytes(vals[rng.randrange(len(vals))] for _ in range(w * h * 3))
+
+
+def photo(w: int, h: int) -> bytes:
+    with Image.open(ROOT / "testdata" / "photos" / "kodim23.png") as im:
+        return im.convert("RGB").crop((260, 180, 260 + w, 180 + h)).tobytes()
+
+
 def draw_ui(w: int, h: int, seed: int) -> bytes:
     image = Image.new("RGB", (w, h), (245, 245, 245))
     pen = ImageDraw.Draw(image)
     pen.rectangle((0, 0, w - 1, 28), fill=(32, 64, 128))
     pen.rectangle((12, 48, w // 2, h - 20), fill=(255, 255, 255), outline=(180, 180, 180))
     pen.rectangle((w // 2 + 16, 48, w - 12, 140), fill=(220, 236, 220), outline=(40, 120, 40))
-    rng = random.Random(seed)
     for i in range(6):
         y = 160 + i * 28
         pen.rectangle((w // 2 + 16, y, w - 12, y + 20), fill=(255, 255, 255), outline=(160, 160, 160))
     pen.text((16, 6), f"RasterFold {seed}", fill=(255, 255, 255))
     pen.text((24, 60), "AaBb 0123", fill=(20, 20, 20))
-    _ = rng.randrange(3)
     return image.tobytes()
 
 
@@ -136,31 +162,33 @@ def roundtrip(name: str, width: int, height: int, rgb: bytes, **bmp_kw) -> None:
     work = WORK / name
     work.mkdir(parents=True, exist_ok=True)
     src_bmp = work / "in.bmp"
-    out_rfi = work / "out.fold"
+    out_fold = work / "out.fold"
+    one_fold = work / "one.fold"
     out_bmp = work / "out.bmp"
-    for stale in (out_rfi, out_bmp, work / "oracle.fold", work / "oracle.bmp", Path(str(out_rfi) + ".partial")):
+    one_bmp = work / "one.bmp"
+    oracle_fold = work / "oracle.fold"
+    oracle_bmp = work / "oracle.bmp"
+    for stale in (out_fold, one_fold, out_bmp, one_bmp, oracle_fold, oracle_bmp, Path(str(out_fold) + ".partial")):
         stale.unlink(missing_ok=True)
     src_bmp.write_bytes(rf.write_bmp24(width, height, rgb, **bmp_kw))
-    py_w, py_h, py_rgb = rf.read_bmp24(src_bmp.read_bytes())
-    check((py_w, py_h, py_rgb) == (width, height, rgb), "independent BMP reader mismatch")
-    expect_ok(["encode", str(src_bmp), str(out_rfi)])
-    encoded = out_rfi.read_bytes()
-    check(encoded == rf.encode_image(width, height, rgb), "encoder bytes differ from the oracle")
-    got_w, got_h, got_rgb = rf.decode_image(encoded)
-    check((got_w, got_h, got_rgb) == (width, height, rgb), "oracle decode of assembly file")
-    expect_ok(["decode", str(out_rfi), str(out_bmp)])
-    dec_w, dec_h, dec_rgb = rf.read_bmp24(out_bmp.read_bytes())
-    check((dec_w, dec_h, dec_rgb) == (width, height, rgb), "decoded BMP pixels")
+    check(rf.read_bmp24(src_bmp.read_bytes()) == (width, height, rgb), "independent BMP reader mismatch")
+    expect_ok(["encode", str(src_bmp), str(out_fold)])
+    expect_ok(["encode", "--threads", "1", str(src_bmp), str(one_fold)])
+    encoded = out_fold.read_bytes()
+    check(one_fold.read_bytes() == encoded, "one-thread and default encodes differ")
+    oracle = rf.encode_image(width, height, rgb)
+    check(encoded == oracle, "encoder bytes differ from the oracle")
+    check(rf.decode_image(encoded) == (width, height, rgb), "oracle decode of codec file")
+    expect_ok(["decode", str(out_fold), str(out_bmp)])
+    expect_ok(["decode", "--threads", "1", str(out_fold), str(one_bmp)])
+    check(rf.read_bmp24(out_bmp.read_bytes()) == (width, height, rgb), "decoded BMP pixels")
+    check(one_bmp.read_bytes() == out_bmp.read_bytes(), "one-thread and default decodes differ")
     with Image.open(out_bmp) as pillow:
         check(pillow.size == (width, height), "pillow size")
         check(pillow.convert("RGB").tobytes() == rgb, "pillow pixels")
-    # Decode the oracle bytes through the assembly decoder as well.
-    oracle_path = work / "oracle.fold"
-    oracle_bmp = work / "oracle.bmp"
-    oracle_path.write_bytes(rf.encode_image(width, height, rgb))
-    expect_ok(["decode", str(oracle_path), str(oracle_bmp)])
-    ow, oh, orgb = rf.read_bmp24(oracle_bmp.read_bytes())
-    check((ow, oh, orgb) == (width, height, rgb), "assembly decode of oracle file")
+    oracle_fold.write_bytes(oracle)
+    expect_ok(["decode", str(oracle_fold), str(oracle_bmp)])
+    check(rf.read_bmp24(oracle_bmp.read_bytes()) == (width, height, rgb), "codec decode of oracle file")
 
 
 def make_bad_bmp(kind: str) -> bytes:
@@ -194,80 +222,94 @@ def make_bad_bmp(kind: str) -> bytes:
     return bytes(blob)
 
 
+def recrc(blob: bytes | bytearray) -> bytes:
+    """Recompute both checksums so a mutation reaches the checks behind them."""
+    b = bytearray(blob)
+    struct.pack_into("<I", b, 20, len(b) - 32)
+    struct.pack_into("<I", b, 24, rf.crc32(bytes(b[32:])))
+    struct.pack_into("<I", b, 28, rf.crc32(bytes(b[:28])))
+    return bytes(b)
+
+
+def with_streams(sizes: tuple[int, int, int], data: bytes) -> bytes:
+    return struct.pack("<III", *sizes) + data
+
+
 def corrupt_cases() -> None:
     work = WORK / "corrupt"
     work.mkdir(parents=True, exist_ok=True)
-    base_rgb = solid(2, 2, (9, 8, 7))
-    good = rf.encode_image(2, 2, base_rgb)
-    (work / "good.bmp").write_bytes(rf.write_bmp24(2, 2, base_rgb))
+    good = KAT_FOLD
+    n = 0
 
-    def rfi(name: str, blob: bytes) -> Path:
-        path = work / name
+    def fold(blob: bytes) -> Path:
+        nonlocal n
+        n += 1
+        path = work / f"bad{n}.fold"
         path.write_bytes(blob)
         return path
 
-    expect_fail(["decode", str(rfi("short.fold", good[:10])), str(work / "a.bmp")], 4, "invalid RFI: truncated")
-    bad_magic = bytearray(good)
-    bad_magic[0] = 0
-    expect_fail(["decode", str(rfi("magic.fold", bad_magic)), str(work / "b.bmp")], 4, "invalid RFI: magic")
-    bad_ver = bytearray(good)
-    bad_ver[4] = 2
-    expect_fail(["decode", str(rfi("ver.fold", bad_ver)), str(work / "c.bmp")], 3, "unsupported RFI: version")
-    bad_hcrc = bytearray(good)
-    bad_hcrc[8] ^= 0x01
-    expect_fail(["decode", str(rfi("hcrc.fold", bad_hcrc)), str(work / "d.bmp")], 4, "invalid RFI: header checksum")
-    bad_pcrc = bytearray(good)
-    bad_pcrc[-1] ^= 0x01
-    expect_fail(["decode", str(rfi("pcrc.fold", bad_pcrc)), str(work / "e.bmp")], 4, "invalid RFI: payload checksum")
+    def reject(blob: bytes, code: int, text: str) -> None:
+        dest = work / f"bad{n + 1}.bmp"
+        dest.unlink(missing_ok=True)
+        expect_fail(["decode", str(fold(blob)), str(dest)], code, text)
+        check(not dest.exists(), f"{text}: an output was left behind")
 
-    raw = bytes([0, 0]) + struct.pack("<I", 3) + bytes([1, 2, 3])
-    mode9 = bytearray(raw)
-    mode9[0] = 9
-    expect_fail(
-        ["decode", str(rfi("mode.fold", rf.build_file(1, 1, mode9))), str(work / "f.bmp")],
-        4,
-        "invalid RFI: block mode",
-    )
-    flags = bytearray(raw)
-    flags[1] = 1
-    expect_fail(
-        ["decode", str(rfi("flags.fold", rf.build_file(1, 1, flags))), str(work / "g.bmp")],
-        4,
-        "invalid RFI: block flags",
-    )
-    nop = bytes([1, 0]) + struct.pack("<I", 1) + bytes([0x80])
-    expect_fail(
-        ["decode", str(rfi("nop.fold", rf.build_file(1, 1, nop))), str(work / "h.bmp")],
-        4,
-        "invalid RFI: packbits",
-    )
-    # One colour, but the index byte is 5.
-    pal = bytes([3, 0]) + struct.pack("<I", 1 + 3 + 2) + bytes([0, 9, 8, 7, 0x00, 5])
-    expect_fail(
-        ["decode", str(rfi("pidx.fold", rf.build_file(1, 1, pal))), str(work / "i.bmp")],
-        4,
-        "invalid RFI: palette index",
-    )
-    trailed = rf.build_file(1, 1, raw + b"\x00")
-    expect_fail(["decode", str(rfi("trail.fold", trailed)), str(work / "j.bmp")], 4, "invalid RFI: trailing data")
-    tiny = rf.build_file(1, 1, b"\x00\x00")
-    expect_fail(["decode", str(rfi("tiny.fold", tiny)), str(work / "k.bmp")], 4, "invalid RFI: truncated block")
+    reject(good[:10], 4, "invalid fold: truncated")
+    reject(b"XYZ" + good[3:], 4, "invalid fold: magic")
+    v1 = bytearray(good)
+    v1[3] = 1
+    reject(bytes(v1), 3, "unsupported fold: version")
+    ver = bytearray(good)
+    struct.pack_into("<H", ver, 4, 3)
+    reject(bytes(ver), 3, "unsupported fold: version")
+    hs = bytearray(good)
+    struct.pack_into("<H", hs, 6, 40)
+    reject(bytes(hs), 3, "unsupported fold: header size")
+    hcrc = bytearray(good)
+    hcrc[8] ^= 1
+    reject(bytes(hcrc), 4, "invalid fold: header checksum")
+    pcrc = bytearray(good)
+    pcrc[-1] ^= 1
+    reject(bytes(pcrc), 4, "invalid fold: payload checksum")
+    method = bytearray(good)
+    method[16] = 2
+    reject(recrc(method), 3, "unsupported fold: method")
+    res = bytearray(good)
+    res[17] = 1
+    reject(recrc(res), 4, "invalid fold: reserved byte")
+    dims = bytearray(good)
+    struct.pack_into("<I", dims, 8, 0)
+    reject(recrc(dims), 4, "invalid fold: dimensions")
+    big = bytearray(good)
+    struct.pack_into("<II", big, 8, 32768, 32768)
+    reject(recrc(big), 5, "image exceeds size limit")
+    extra = bytearray(good) + b"\x00"
+    struct.pack_into("<I", extra, 28, rf.crc32(bytes(extra[:28])))
+    reject(bytes(extra), 4, "invalid fold: payload length")
+    raw = rf.build_file(2, 1, rf.METHOD_RAW, bytes(5))
+    reject(raw, 4, "invalid fold: raw length")
 
-    # Forced raw and forced predict must decode to the same pixels.
+    # CM stream framing and contents, with checksums recomputed.
+    header = good[:32]
+    sizes = struct.unpack_from("<III", good, 32)
+    streams = good[44:]
+    reject(recrc(header + with_streams((sizes[0] + 1, sizes[1], sizes[2]), streams)), 4, "invalid fold: cm streams")
+    reject(recrc(header + with_streams((4, sizes[1], sizes[2] + sizes[0] - 4), streams)), 4, "invalid fold: cm streams")
+    reject(recrc(header + good[32:40]), 4, "invalid fold: cm streams")
+    cut = header + with_streams((sizes[0] - 1, sizes[1], sizes[2]), streams[: sizes[0] - 1] + streams[sizes[0]:])
+    reject(recrc(cut), 4, "invalid fold: cm stream")
+    longer = header + with_streams((sizes[0] + 1, sizes[1], sizes[2]), streams[: sizes[0]] + b"\x55" + streams[sizes[0]:])
+    reject(recrc(longer), 4, "invalid fold: cm stream")
+    flipped = bytearray(good)
+    flipped[44 + sizes[0] // 2] ^= 0x40
+    reject(recrc(flipped), 4, "invalid fold: cm stream")
+
+    # A hand-built raw file decodes.
     one = bytes([4, 5, 6])
-    raw_file = rf.build_file(1, 1, bytes([0, 0]) + struct.pack("<I", 3) + one)
     raw_out = work / "raw.bmp"
     raw_out.unlink(missing_ok=True)
-    expect_ok(["decode", str(rfi("raw.fold", raw_file)), str(raw_out)])
+    expect_ok(["decode", str(fold(rf.build_file(1, 1, rf.METHOD_RAW, one))), str(raw_out)])
     check(rf.read_bmp24(raw_out.read_bytes())[2] == one, "forced raw")
-    row = bytes([10, 20, 30, 10, 20, 30])
-    residual = rf.predict(row, 2, 1)
-    pred_body = rf.packbits_encode(residual)
-    pred_file = rf.build_file(2, 1, bytes([2, 0]) + struct.pack("<I", len(pred_body)) + pred_body)
-    pred_out = work / "pred.bmp"
-    pred_out.unlink(missing_ok=True)
-    expect_ok(["decode", str(rfi("pred.fold", pred_file)), str(pred_out)])
-    check(rf.read_bmp24(pred_out.read_bytes())[2] == row, "forced predict")
 
     bmp_cases = [
         ("sig.bmp", "sig", 4, "invalid BMP: signature"),
@@ -286,6 +328,7 @@ def corrupt_cases() -> None:
         path = work / filename
         path.write_bytes(make_bad_bmp(kind))
         dest = work / f"{filename}.fold"
+        dest.unlink(missing_ok=True)
         expect_fail(["encode", str(path), str(dest)], code, text)
         check(not dest.exists(), f"{filename} left an output")
 
@@ -304,6 +347,7 @@ def corrupt_cases() -> None:
     partial = work / "fresh.fold.partial"
     partial.write_bytes(b"partial")
     dest = work / "fresh.fold"
+    dest.unlink(missing_ok=True)
     expect_fail(["encode", str(src), str(dest)], 2, "temporary output already exists")
     check(not dest.exists(), "destination created despite partial")
     check(partial.read_bytes() == b"partial", "partial file was modified")
@@ -312,6 +356,7 @@ def corrupt_cases() -> None:
     before = same.read_bytes()
     expect_fail(["encode", str(same), str(same)], 2, "output file already exists")
     check(same.read_bytes() == before, "input overwritten")
+    expect_fail(["encode", "--threads", "0", str(src), str(work / "t0.fold")], 1, "usage")
 
 
 def main() -> int:
@@ -320,6 +365,7 @@ def main() -> int:
         return 1
     WORK.mkdir(parents=True, exist_ok=True)
     case("oracle", oracle_self_check)
+    case("known-answer", known_answer)
     images = [
         ("px1", 1, 1, bytes([0, 0, 0])),
         ("white", 1, 1, bytes([255, 255, 255])),
@@ -339,6 +385,8 @@ def main() -> int:
         ("stripes", 70, 40, stripes(70, 40)),
         ("noise", 40, 25, noise(40, 25, 1234)),
         ("noise2", 17, 19, noise(17, 19, 99)),
+        ("extremes", 33, 21, extremes(33, 21)),
+        ("photo", 120, 80, photo(120, 80)),
         ("ui", 320, 200, draw_ui(320, 200, 1)),
         ("text", 280, 120, draw_ui(280, 120, 2)),
     ]
@@ -352,25 +400,23 @@ def main() -> int:
     case(
         "orientation-identical",
         lambda: check(
-            rf.encode_image(9, 4, gradient(9, 4))
-            == open(WORK / "topdown" / "out.fold", "rb").read(),
+            rf.encode_image(9, 4, gradient(9, 4)) == open(WORK / "topdown" / "out.fold", "rb").read(),
             "top-down input encoded differently",
         ),
     )
-    grey = solid(16, 8, (128, 128, 128))
-    case("grey", lambda: roundtrip("grey", 16, 8, grey))
+    case("grey", lambda: roundtrip("grey", 16, 8, solid(16, 8, (128, 128, 128))))
     case("corrupt", corrupt_cases)
     # The checksum in a successful file matches zlib, not only our encoder.
     case(
         "zlib-crc",
         lambda: check(
-            zlib.crc32(open(WORK / "px1" / "out.fold", "rb").read()[32:]) & 0xFFFFFFFF
-            == struct.unpack_from("<I", open(WORK / "px1" / "out.fold", "rb").read(), 24)[0],
+            zlib.crc32(open(WORK / "photo" / "out.fold", "rb").read()[32:]) & 0xFFFFFFFF
+            == struct.unpack_from("<I", open(WORK / "photo" / "out.fold", "rb").read(), 24)[0],
             "payload crc",
         ),
     )
-    print(f"\n{passed} passed, {failed} failed")
-    return 0 if failed == 0 else 1
+    print(f"\n{passed} passed, {failed} failed" + (f", {skipped} skipped by -k" if skipped else ""))
+    return 0 if failed == 0 and passed > 0 else 1
 
 
 if __name__ == "__main__":

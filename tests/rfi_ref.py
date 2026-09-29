@@ -1,19 +1,21 @@
-"""Independent RasterFold version-1 codec and 24-bit BMP helpers.
+"""Independent RasterFold .fold (version 2) codec and 24-bit BMP helpers.
 
-This module is a test oracle. It is not the codec implementation.
+This module is the test oracle, written from spec/FOLD.md. It is not the
+codec implementation. It is slow: a few hundred thousand samples per minute.
 """
 
 from __future__ import annotations
 
-import array
 import struct
 import zlib
 
-MAGIC = b"RFI\x01"
-BLOCK = 64
+MAGIC = b"RFI\x02"
+VERSION = 2
+HEADER = 32
 MAX_DIM = 32768
 MAX_PIXELS = 32 * 1024 * 1024
-HEADER = 32
+METHOD_RAW = 0
+METHOD_CM = 1
 
 
 class FormatError(Exception):
@@ -24,893 +26,490 @@ def crc32(data: bytes) -> int:
     return zlib.crc32(data) & 0xFFFFFFFF
 
 
-def packbits_encode(src: bytes) -> bytes:
-    out = bytearray()
-    i = 0
-    n = len(src)
-    while i < n:
-        run = 1
-        while run < 128 and i + run < n and src[i + run] == src[i]:
-            run += 1
-        if run >= 2:
-            out.append((257 - run) & 0xFF)
-            out.append(src[i])
-            i += run
-            continue
-        start = i
-        lit = 0
-        while i < n and lit < 128:
-            if i + 2 < n and src[i] == src[i + 1] == src[i + 2]:
-                break
-            i += 1
-            lit += 1
-        if lit == 0:
-            raise RuntimeError("packbits literal gather produced an empty run")
-        out.append(lit - 1)
-        out.extend(src[start : start + lit])
-    return bytes(out)
+# ---------------------------------------------------------------- tables
+
+def _squash(d: int) -> int:
+    t = (1, 2, 3, 6, 10, 16, 27, 45, 73, 120, 194, 310, 488, 747, 1101, 1546, 2047, 2549, 2994, 3348,
+         3607, 3785, 3901, 3975, 4022, 4050, 4068, 4079, 4085, 4089, 4092, 4093, 4094)
+    if d > 2047:
+        return 4095
+    if d < -2047:
+        return 1
+    w = d & 127
+    i = (d >> 7) + 16
+    return (t[i] * (128 - w) + t[i + 1] * w + 64) >> 7
 
 
-def packbits_decode(src: bytes, expected: int) -> bytes:
-    out = bytearray()
-    i = 0
-    while i < len(src):
-        control = src[i]
-        i += 1
-        if control == 0x80:
-            raise FormatError("packbits nop")
-        if control <= 127:
-            count = control + 1
-            if i + count > len(src) or len(out) + count > expected:
-                raise FormatError("packbits literal overrun")
-            out.extend(src[i : i + count])
-            i += count
-        else:
-            count = 257 - control
-            if count < 2 or count > 128 or i >= len(src) or len(out) + count > expected:
-                raise FormatError("packbits repeat overrun")
-            out.extend(bytes([src[i]]) * count)
-            i += 1
-    if i != len(src) or len(out) != expected:
-        raise FormatError("packbits length")
-    return bytes(out)
+SQUASH = [_squash(x) for x in range(-2047, 2048)]          # index x + 2047
+STRETCH = [0] * 4096
+_pi = 0
+for _x in range(-2047, 2048):
+    _v = _squash(_x)
+    for _j in range(_pi, _v + 1):
+        STRETCH[_j] = _x
+    _pi = _v + 1
+for _j in range(_pi, 4096):
+    STRETCH[_j] = 2047
+RATE = [(65536 * 2) // (2 * n + 3) for n in range(61)]
+DIVL = [(1 << 24) // (i + 1) for i in range(64)]
 
 
-def predict(rgb: bytes, bw: int, bh: int) -> bytes:
-    npix = bw * bh
-    planes = [bytearray(npix), bytearray(npix), bytearray(npix)]
-    i = 0
-    for _y in range(bh):
-        left = [0, 0, 0]
-        for _x in range(bw):
-            r, g, b = rgb[i * 3 : i * 3 + 3]
-            rp = (r - g) & 255
-            gp = g & 255
-            bp = (b - g) & 255
-            planes[0][i] = (rp - left[0]) & 255
-            planes[1][i] = (gp - left[1]) & 255
-            planes[2][i] = (bp - left[2]) & 255
-            left = [rp, gp, bp]
-            i += 1
-    return bytes(planes[0] + planes[1] + planes[2])
+def _ilog2(v: int) -> int:
+    return max(v, 1).bit_length() - 1
 
 
-def unpredict(residual: bytes, bw: int, bh: int) -> bytes:
-    npix = bw * bh
-    if len(residual) != npix * 3:
-        raise FormatError("residual length")
-    pr = residual[0:npix]
-    pg = residual[npix : npix * 2]
-    pb = residual[npix * 2 :]
-    out = bytearray()
-    i = 0
-    for _y in range(bh):
-        left = [0, 0, 0]
-        for _x in range(bw):
-            rp = (pr[i] + left[0]) & 255
-            gp = (pg[i] + left[1]) & 255
-            bp = (pb[i] + left[2]) & 255
-            out.append((rp + gp) & 255)
-            out.append(gp)
-            out.append((bp + gp) & 255)
-            left = [rp, gp, bp]
-            i += 1
-    return bytes(out)
+def _errw(e: int, maxw: int) -> int:
+    sh = _ilog2(e + 1) - 5
+    if sh < 0:
+        sh = 0
+    return 4 + ((maxw * DIVL[e >> sh]) >> sh)
 
 
-RICE_RESET = 32
-
-
-def _qb(mag: int) -> int:
-    if mag <= 1:
-        return mag if mag > 0 else 0
-    if mag <= 2:
-        return 2
-    if mag <= 4:
-        return 3
-    if mag <= 8:
-        return 4
-    if mag <= 16:
-        return 5
-    if mag <= 32:
-        return 6
-    return 7
-
-
-def _med(left: int, up: int, up_left: int) -> int:
-    if up_left >= left and up_left >= up:
-        pred = left if left < up else up
-    elif up_left <= left and up_left <= up:
-        pred = left if left > up else up
-    else:
-        pred = left + up - up_left
-    if pred < 0:
+def _qlog(v: int) -> int:
+    if v <= 0:
         return 0
-    if pred > 255:
-        return 255
-    return pred
+    if v >= 16384:
+        return 15
+    return _ilog2(v) + 1
 
 
-def _delta(value: int, pred: int) -> int:
-    err = (value - pred) & 255
-    if err >= 128:
-        return err - 256
-    return err
+def _count(a: int, thresholds) -> int:
+    return sum(1 for t in thresholds if a >= t)
 
 
-def _rice_k(acc: int, count: int) -> int:
-    k = 0
-    while k < 8 and (count << k) < acc:
-        k += 1
-    return k
+def _signed(d: int, q: int, mid: int) -> int:
+    return mid + q if d > 0 else mid - q if d < 0 else mid
 
 
-def _to_m(err: int) -> int:
-    if err >= 0:
-        return err << 1
-    return ((-err) << 1) - 1
+def _q9(v: int) -> int:
+    return _signed(v, _count(abs(v), (1, 2, 4, 8)), 4)
 
 
-def _from_m(mapped: int) -> int:
-    if mapped & 1:
-        return -((mapped + 1) >> 1)
-    return mapped >> 1
+def _q7(d: int) -> int:
+    return _signed(d, _count(abs(d), (1, 3, 7)), 3)
 
 
-class RiceState:
+def _qj(d: int) -> int:
+    return _signed(d, _count(abs(d), (1, 3, 7, 21)), 4)
+
+
+def _qn7(d: int, scl: int) -> int:
+    a = 6 * abs(d)
+    return _signed(d, _count(a, (scl, 3 * scl, 7 * scl)), 3)
+
+
+def _med3(w: int, n: int, nw: int) -> int:
+    mx, mn = max(w, n), min(w, n)
+    if nw >= mx:
+        return mn
+    if nw <= mn:
+        return mx
+    return w + n - nw
+
+
+def _clamp(v: int, lo: int, hi: int) -> int:
+    return lo if v < lo else hi if v > hi else v
+
+
+def _wrap32(v: int) -> int:
+    return ((v + (1 << 31)) & 0xFFFFFFFF) - (1 << 31)
+
+
+# ---------------------------------------------------------------- range coder
+
+class RangeEncoder:
     def __init__(self) -> None:
-        self.acc = [[4] * 64 for _ in range(3)]
-        self.count = [[1] * 64 for _ in range(3)]
-
-
-class _RiceWriter:
-    def __init__(self, limit: int) -> None:
-        self.acc = 0
-        self.n = 0
+        self.low = 0
+        self.range = 0xFFFFFFFF
+        self.cache = 0
+        self.pending = 1
         self.out = bytearray()
-        self.limit = limit
-        self.over = False
 
-    def bit(self, value: int) -> None:
-        if self.over:
-            return
-        if value:
-            self.acc |= 1 << self.n
-        self.n += 1
-        if self.n == 8:
-            self.out.append(self.acc)
-            self.acc = 0
-            self.n = 0
-            if len(self.out) >= self.limit:
-                self.over = True
+    def _shift(self) -> None:
+        if (self.low & 0xFFFFFFFF) < 0xFF000000 or (self.low >> 32) != 0:
+            carry = self.low >> 32
+            b = self.cache
+            while True:
+                self.out.append((b + carry) & 0xFF)
+                b = 0xFF
+                self.pending -= 1
+                if self.pending == 0:
+                    break
+            self.cache = (self.low >> 24) & 0xFF
+        self.pending += 1
+        self.low = (self.low & 0x00FFFFFF) << 8
 
-    def bits(self, value: int, width: int) -> None:
-        for shift in range(width):
-            self.bit((value >> shift) & 1)
+    def bit(self, bit: int, p1: int) -> None:
+        bound = (self.range >> 12) * p1
+        if bit:
+            self.range = bound
+        else:
+            self.low += bound
+            self.range -= bound
+        while self.range < (1 << 24):
+            self.range = (self.range << 8) & 0xFFFFFFFF
+            self._shift()
 
-    def finish(self) -> bytes | None:
-        if self.over:
-            return None
-        if self.n:
-            self.out.append(self.acc)
-        if len(self.out) >= self.limit:
-            return None
+    def finish(self) -> bytes:
+        for _ in range(5):
+            self._shift()
         return bytes(self.out)
 
 
-class _RiceReader:
+class RangeDecoder:
     def __init__(self, data: bytes) -> None:
         self.data = data
-        self.i = 0
-        self.acc = 0
-        self.n = 0
+        self.pos = 0
+        self.range = 0xFFFFFFFF
+        self.code = 0
+        for _ in range(5):
+            self.code = ((self.code << 8) | self._byte()) & 0xFFFFFFFF
 
-    def bit(self) -> int:
-        if self.n == 0:
-            if self.i >= len(self.data):
-                raise FormatError("rice")
-            self.acc = self.data[self.i]
-            self.i += 1
-            self.n = 8
-        value = self.acc & 1
-        self.acc >>= 1
-        self.n -= 1
-        return value
+    def _byte(self) -> int:
+        b = self.data[self.pos] if self.pos < len(self.data) else 0
+        self.pos += 1
+        return b
 
-    def bits(self, width: int) -> int:
-        value = 0
-        for shift in range(width):
-            if self.bit():
-                value |= 1 << shift
-        return value
+    def bit(self, p1: int) -> int:
+        bound = (self.range >> 12) * p1
+        if self.code < bound:
+            self.range = bound
+            bit = 1
+        else:
+            self.code -= bound
+            self.range -= bound
+            bit = 0
+        while self.range < (1 << 24):
+            self.range = (self.range << 8) & 0xFFFFFFFF
+            self.code = ((self.code << 8) | self._byte()) & 0xFFFFFFFF
+        return bit
 
-    def finish(self) -> None:
-        if self.acc != 0 or self.i != len(self.data):
-            raise FormatError("rice")
-
-
-def _channel_rgb(rgb: bytes | bytearray, width: int, height: int, x: int, y: int, channel: int) -> int:
-    if x < 0 or y < 0 or x >= width or y >= height:
-        return 0
-    base = (y * width + x) * 3
-    red = rgb[base]
-    green = rgb[base + 1]
-    blue = rgb[base + 2]
-    if channel == 0:
-        return green
-    if channel == 1:
-        return (red - green) & 255
-    return (blue - green) & 255
+    def exhausted_exactly(self) -> bool:
+        return self.pos == len(self.data)
 
 
-def _residual_at(sample, x: int, y: int) -> int:
-    if x < 0 or y < 0:
-        return 0
-    value = sample(x, y)
-    left = sample(x - 1, y) if x > 0 else 0
-    up = sample(x, y - 1) if y > 0 else 0
-    up_left = sample(x - 1, y - 1) if x > 0 and y > 0 else 0
-    return _delta(value, _med(left, up, up_left))
+# ---------------------------------------------------------------- CM model
+
+NMODEL = 5
+NROWS = 2048
+NODES = 32
+LMSN = 12
 
 
-def _bump(acc: list[int], count: list[int], ctx: int, err: int) -> None:
-    mag = -err if err < 0 else err
-    acc[ctx] += mag
-    count[ctx] += 1
-    if count[ctx] >= RICE_RESET:
-        acc[ctx] >>= 1
-        count[ctx] >>= 1
-        if count[ctx] < 1:
-            count[ctx] = 1
+class Channel:
+    """Model state of one channel (G, R-G or B-G) and its coder."""
 
+    def __init__(self, w: int) -> None:
+        self.w = w
+        self.ctr = [[0 if node == 0 else 32768 for node in range(NODES)] for _ in range(NMODEL * NROWS)]
+        self.wt = [[19661, 19661, 19661, 19661, 19661, 0] for _ in range(128 * NODES)]
+        self.lms = [0] * LMSN
+        # weighted predictor state, two rows of w + 2 positions (JPEG XL layout)
+        self.perr = [[0, 0, 0, 0] for _ in range(2 * (w + 2))]
+        self.err = [0] * (2 * (w + 2))
+        self.er = [0] * (2 * (w + 2))
+        self.fe = [0] * (2 * (w + 2))
+        self.plane: list[list[int]] = []       # plane rows (values minus the G base)
+        self.enc: RangeEncoder | None = None
+        self.dec: RangeDecoder | None = None
+        self.bad = False
 
-class _RiceStop(Exception):
-    pass
+    # one decision
+    def code_bit(self, rows, rates, wrow, node: int, bit: int) -> int:
+        w = self.wt[wrow + node]
+        cs = [self.ctr[r] for r in rows]
+        st = [STRETCH[c[node] >> 4] for c in cs]
+        dot = sum(w[k] * st[k] for k in range(NMODEL)) + w[5] * 64
+        x = _clamp(dot >> 16, -2047, 2047)
+        p = SQUASH[x + 2047]
+        if self.enc is not None:
+            self.enc.bit(bit, p)
+        else:
+            bit = self.dec.bit(p)
+        err = (bit << 12) - p
+        for k in range(NMODEL):
+            w[k] = _wrap32(w[k] + ((st[k] * err + 4096) >> 13))
+        w[5] = _wrap32(w[5] + ((64 * err + 4096) >> 13))
+        target = 65535 if bit else 0
+        for k in range(NMODEL):
+            c = cs[k]
+            c[node] += ((target - c[node]) * rates[k]) >> 16
+        return bit
 
+    def code_raw(self, bit: int) -> int:
+        if self.enc is not None:
+            self.enc.bit(bit, 2048)
+            return bit
+        return self.dec.bit(2048)
 
-def _emit(writer: _RiceWriter, acc: list[int], count: list[int], ctx: int, err: int) -> bool:
-    k = _rice_k(acc[ctx], count[ctx])
-    mapped = _to_m(err)
-    quot = mapped >> k
-    for _ in range(quot):
-        writer.bit(1)
-    writer.bit(0)
-    if k:
-        writer.bits(mapped & ((1 << k) - 1), k)
-    _bump(acc, count, ctx, err)
-    return not writer.over
-
-
-def _read_err(reader: _RiceReader, acc: list[int], count: list[int], ctx: int) -> int:
-    k = _rice_k(acc[ctx], count[ctx])
-    quot = 0
-    while reader.bit():
-        quot += 1
-        if quot > 255:
-            raise FormatError("rice")
-    rem = reader.bits(k) if k else 0
-    mapped = (quot << k) | rem
-    if mapped > 255:
-        raise FormatError("rice")
-    err = _from_m(mapped)
-    _bump(acc, count, ctx, err)
-    return err
-
-
-def _for_pixels(x0: int, y0: int, bw: int, bh: int, sample, step) -> None:
-    prev = [0] * bw
-    left_e = 0
-    for ly in range(bh):
-        y = y0 + ly
-        for lx in range(bw):
-            x = x0 + lx
-            if x <= 0:
-                left_e = 0
-            elif lx == 0:
-                left_e = _residual_at(sample, x - 1, y)
-            if y <= 0:
-                up_e = 0
-            elif ly == 0:
-                up_e = _residual_at(sample, x, y - 1)
+    def code_residual(self, rows, rates, wrow, r: int) -> int:
+        enc = self.enc is not None
+        if not self.code_bit(rows, rates, wrow, 1, 1 if r != 0 else 0):
+            return 0
+        neg = self.code_bit(rows, rates, wrow, 2, 1 if r < 0 else 0)
+        e = got = 0
+        if enc:
+            a = abs(r)
+            e = _ilog2(a)
+            for k in range(e):
+                self.code_bit(rows, rates, wrow, 3 + k, 1)
+            if e < 7:
+                self.code_bit(rows, rates, wrow, 3 + e, 0)
+            rem = a - (1 << e)
+            for b in range(e - 1, -1, -1):
+                bit = (rem >> b) & 1
+                if b == e - 1:
+                    self.code_bit(rows, rates, wrow, 10 + e, bit)
+                elif b == e - 2:
+                    self.code_bit(rows, rates, wrow, 14 + 2 * e + (got & 1), bit)
+                else:
+                    self.code_raw(bit)
+                got = (got << 1) | bit
+            return r
+        while e < 7 and self.code_bit(rows, rates, wrow, 3 + e, 0):
+            e += 1
+        for b in range(e - 1, -1, -1):
+            if b == e - 1:
+                bit = self.code_bit(rows, rates, wrow, 10 + e, 0)
+            elif b == e - 2:
+                bit = self.code_bit(rows, rates, wrow, 14 + 2 * e + (got & 1), 0)
             else:
-                up_e = prev[lx]
-            ctx = _qb(abs(left_e)) * 8 + _qb(abs(up_e))
-            left = sample(x - 1, y) if x > 0 else 0
-            up = sample(x, y - 1) if y > 0 else 0
-            up_left = sample(x - 1, y - 1) if x > 0 and y > 0 else 0
-            err = step(ctx, _med(left, up, up_left), x, y, lx, ly)
-            left_e = err
-            prev[lx] = err
+                bit = self.code_raw(0)
+            got = (got << 1) | bit
+        a = (1 << e) + got
+        return -a if neg else a
 
 
-def rice_encode_block(
-    rgb: bytes,
-    width: int,
-    height: int,
-    x0: int,
-    y0: int,
-    bw: int,
-    bh: int,
-    state: RiceState,
-    limit: int,
-) -> bytes | None:
-    acc = [row[:] for row in state.acc]
-    count = [row[:] for row in state.count]
-    writer = _RiceWriter(limit)
-    for channel in range(3):
+def _code_sample(ch: Channel, c: int, x: int, y: int, value: int, cross: dict) -> int:
+    """Model and code sample (x, y) of channel c. cross holds the G (and R)
+    value, residual and clamped final error at (x, y). Returns the channel value."""
+    w = ch.w
+    cur = 0 if y & 1 else w + 2
+    prv = w + 2 if y & 1 else 0
+    r0 = ch.plane[y]
+    g = eg = feg = er_r = fer = 0
+    if c >= 1:
+        g, eg, feg = cross["g"], cross["eg"], cross["feg"]
+    if c == 2:
+        er_r, fer = cross["er"], cross["fer"]
 
-        def sample(x: int, y: int, channel: int = channel) -> int:
-            return _channel_rgb(rgb, width, height, x, y, channel)
+    # neighbours
+    if y == 0:
+        W = r0[x - 1] if x > 0 else 0
+        N = NW = NE = NN = NNE = W
+    else:
+        r1 = ch.plane[y - 1]
+        N = r1[x]
+        W = r0[x - 1] if x > 0 else N
+        NW = r1[x - 1] if x > 0 else N
+        NE = r1[x + 1] if x + 1 < w else N
+        NN = ch.plane[y - 2][x] if y > 1 else N
+        NNE = ch.plane[y - 2][x + 1] if (y > 1 and x + 1 < w) else NE
+    pN = prv + x
+    pNE = pN + 1 if x + 1 < w else pN
+    pNW = pN - 1 if x > 0 else pN
 
-        def step(ctx: int, pred: int, x: int, y: int, lx: int, ly: int, channel: int = channel, sample=sample) -> int:
-            err = _delta(sample(x, y), pred)
-            if not _emit(writer, acc[channel], count[channel], ctx, err):
-                raise _RiceStop
-            return err
+    # weighted predictor
+    wt = [_errw(ch.perr[pN][k] + ch.perr[pNE][k] + ch.perr[pNW][k], 13 if k == 0 else 12) for k in range(4)]
+    n8, w8, ne8 = N * 8, W * 8, NE * 8
+    teW = ch.err[cur + x - 1] if x > 0 else 0
+    teN, teNW, teNE = ch.err[pN], ch.err[pNW], ch.err[pNE]
+    sumWN = teN + teW
+    pr = [w8 + ne8 - n8,
+          n8 - (((sumWN + teNE) * 16) >> 5),
+          w8 - (((sumWN + teNW) * 10) >> 5),
+          n8 - (((teNW + teN + teNE) * 7) >> 5)]
+    ws = sum(wt)
+    lw = _ilog2(ws) - 4
+    wt = [v >> lw for v in wt]
+    ws = sum(wt)
+    total = (ws >> 1) - 1 + sum(pr[k] * wt[k] for k in range(4))
+    wpred = (total * DIVL[ws - 1]) >> 24
+    if ((teN ^ teW) | (teN ^ teNW)) <= 0:
+        wpred = _clamp(wpred, min(w8, ne8, n8), max(w8, ne8, n8))
 
-        try:
-            _for_pixels(x0, y0, bw, bh, sample, step)
-        except _RiceStop:
-            return None
-    blob = writer.finish()
-    if blob is None:
-        return None
-    state.acc = acc
-    state.count = count
-    return blob
+    # LMS correction
+    lin = [ch.fe[cur + x - 1] if x > 0 else 0,
+           ch.fe[prv + x] if y > 0 else 0,
+           ch.fe[prv + x - 1] if (x > 0 and y > 0) else 0,
+           ch.fe[prv + x + 1] if (y > 0 and x + 1 < w) else 0,
+           ch.fe[cur + x - 2] if x > 1 else 0,
+           feg, fer,
+           (N - W) * 8, (NE - N) * 8, (NW - W) * 8, (NN - N) * 8, (NNE - NE) * 8]
+    lin = [_clamp(v, -2047, 2047) for v in lin]
+    corr = _clamp(sum(ch.lms[k] * lin[k] for k in range(LMSN)) >> 16, -256, 256)
+    pred8 = wpred + corr
+    pred = (pred8 + 4) >> 3
+    predv = _clamp(pred + g, 0, 255)
 
+    # contexts
+    if x > 0:
+        eW = ch.er[cur + x - 1]
+    else:
+        eW = ch.er[prv + x] if y > 0 else 0
+    eN = ch.er[prv + x] if y > 0 else eW
+    eNW = ch.er[prv + x - 1] if (x > 0 and y > 0) else eN
+    eNE = ch.er[prv + x + 1] if (y > 0 and x + 1 < w) else eN
+    E = 2 * abs(eW) + 2 * abs(eN) + abs(eNW) + abs(eNE)
+    qE = _qlog(E)
+    gq = _q9(eg) if c else 4
+    rq = _q9(er_r) if c == 2 else 4
+    scl = (E >> 2) + 2
+    band = 0 if qE < 4 else 1 if qE < 8 else 2
+    k0 = (((_qn7(W - pred, scl) * 7 + _qn7(N - pred, scl)) * 7 + _qn7(NE - pred, scl)) * 7 + _qn7(NW - pred, scl)) * 3 + band
+    k1 = qE * 81 + gq * 9 + rq
+    k2 = (_qj(NE - N) * 81 + _qj(N - NW) * 9 + _qj(NW - W)) * 5 + (gq + 1) // 2
+    k3 = ((_q7(_med3(W, N, NW) - pred) * 7 + _q7(W + N - NW - pred)) * 7 + _q7(((W + NE + 1) >> 1) - pred)) * 7 + _q7(N + NE - NNE - pred)
+    k4 = (_q9(W - pred) * 9 + _q9(N - pred)) * 16 + qE
+    rows = [k * NROWS + kk % NROWS for k, kk in enumerate((k0, k1, k2, k3, k4))]
+    rates = []
+    for r in rows:
+        n = ch.ctr[r][0]
+        rates.append(RATE[n])
+        ch.ctr[r][0] = n + (1 if n < 60 else 0)
+    wsel = qE * 8 + ((0 if gq == 4 else 1 + (1 if abs(eg) > 3 else 0)) if c else 3)
+    wrow = wsel * NODES
 
-def rice_decode_block(
-    body: bytes,
-    image: bytearray,
-    width: int,
-    height: int,
-    x0: int,
-    y0: int,
-    bw: int,
-    bh: int,
-    state: RiceState,
-) -> bytes:
-    reader = _RiceReader(body)
-    planes = [bytearray(bw * bh) for _ in range(3)]
-    for channel in range(3):
+    # code
+    if ch.enc is not None:
+        r = (value - predv) & 255
+        if r >= 128:
+            r -= 256
+        ch.code_residual(rows, rates, wrow, r)
+    else:
+        r = ch.code_residual(rows, rates, wrow, 0)
+        if r == 128:
+            ch.bad = True
+        value = (predv + r) & 255
 
-        def sample(x: int, y: int, channel: int = channel) -> int:
-            if x0 <= x < x0 + bw and y0 <= y < y0 + bh:
-                return planes[channel][(y - y0) * bw + (x - x0)]
-            return _channel_rgb(image, width, height, x, y, channel)
-
-        def step(ctx: int, pred: int, x: int, y: int, lx: int, ly: int, channel: int = channel) -> int:
-            err = _read_err(reader, state.acc[channel], state.count[channel], ctx)
-            planes[channel][ly * bw + lx] = (pred + err) & 255
-            return err
-
-        _for_pixels(x0, y0, bw, bh, sample, step)
-    reader.finish()
-    out = bytearray(bw * bh * 3)
-    for i in range(bw * bh):
-        green = planes[0][i]
-        red_p = planes[1][i]
-        blue_p = planes[2][i]
-        out[i * 3] = (red_p + green) & 255
-        out[i * 3 + 1] = green
-        out[i * 3 + 2] = (blue_p + green) & 255
-    return bytes(out)
-
-
-RANS_L = 1 << 23
-RANS_SCALE = 12
-RANS_ONE = 1 << RANS_SCALE
-RANS_INIT = 2816
-RANS_RATE = 4
-RANS_NCTX = 13851
-
-
-def qjls(delta: int) -> int:
-    if delta <= -21:
-        return -4
-    if delta <= -7:
-        return -3
-    if delta <= -3:
-        return -2
-    if delta < 0:
-        return -1
-    if delta == 0:
-        return 0
-    if delta < 3:
-        return 1
-    if delta < 7:
-        return 2
-    if delta < 21:
-        return 3
-    return 4
-
-
-class RansModel:
-    def __init__(self) -> None:
-        self.p = array.array("H", [RANS_INIT]) * (RANS_NCTX * 256)
-
-    def clone(self) -> "RansModel":
-        other = RansModel.__new__(RansModel)
-        other.p = array.array("H", self.p)
-        return other
-
-
-def _adapt_p(prob: int, bit: int) -> int:
-    if bit == 0:
-        prob += (RANS_ONE - prob) >> RANS_RATE
-        if prob > RANS_ONE - 1:
-            return RANS_ONE - 1
-        return prob
-    prob -= prob >> RANS_RATE
-    if prob < 1:
-        return 1
-    return prob
+    # update
+    pv = value - g
+    r0[x] = pv
+    ferr = pv * 8 - pred8
+    sg = 10 if ferr > 0 else -10 if ferr < 0 else 0
+    for k in range(LMSN):
+        s = sg if lin[k] > 0 else -sg if lin[k] < 0 else 0
+        ch.lms[k] = _clamp(ch.lms[k] + s, -65536, 65536)
+    v8 = pv * 8
+    ch.err[cur + x] = wpred - v8
+    for k in range(4):
+        e = (abs(pr[k] - v8) + 3) >> 3
+        ch.perr[cur + x][k] = e
+        ch.perr[prv + x + 1][k] += e
+    ch.er[cur + x] = r
+    ch.fe[cur + x] = ferr
+    cross["r"] = ((r + 128) & 255) - 128                 # stored as a signed byte
+    cross["fe"] = _clamp(ferr, -2047, 2047)
+    return value
 
 
-def _rans_put(buf: bytearray, ptr: int, state: int, cum: int, freq: int) -> tuple[int, int] | None:
-    x_max = ((RANS_L >> RANS_SCALE) << 8) * freq
-    while state >= x_max:
-        if ptr == 0:
-            return None
-        ptr -= 1
-        buf[ptr] = state & 255
-        state >>= 8
-    state = ((state // freq) << RANS_SCALE) + (state % freq) + cum
-    return ptr, state
+def _run(width: int, height: int, chans: list[Channel], rgb: bytearray) -> None:
+    for y in range(height):
+        for ch in chans:
+            ch.plane.append([0] * width)
+        for x in range(width):
+            i = (y * width + x) * 3
+            gs: dict = {}
+            g = _code_sample(chans[0], 0, x, y, rgb[i + 1], gs)
+            rgb[i + 1] = g
+            cross = {"g": g, "eg": gs["r"], "feg": gs["fe"]}
+            rs = dict(cross)
+            rgb[i] = _code_sample(chans[1], 1, x, y, rgb[i], rs)
+            cross["er"], cross["fer"] = rs["r"], rs["fe"]
+            rgb[i + 2] = _code_sample(chans[2], 2, x, y, rgb[i + 2], dict(cross))
+        if y >= 2:
+            for ch in chans:
+                ch.plane[y - 2] = []                        # rows below y - 1 are no longer read
 
 
-def _plane_sample(rgb: bytes | bytearray, width: int, height: int, x: int, y: int, channel: int) -> int:
-    return _channel_rgb(rgb, width, height, x, y, channel)
+def cm_encode(width: int, height: int, rgb: bytes) -> bytes:
+    chans = [Channel(width) for _ in range(3)]
+    for ch in chans:
+        ch.enc = RangeEncoder()
+    _run(width, height, chans, bytearray(rgb))
+    streams = [ch.enc.finish() for ch in chans]
+    return b"".join(struct.pack("<I", len(s)) for s in streams) + b"".join(streams)
 
 
-def _jctx(
-    rgb: bytes | bytearray,
-    width: int,
-    height: int,
-    x: int,
-    y: int,
-    channel: int,
-    x0: int,
-    y0: int,
-    bw: int,
-    sample,
-) -> int:
-    west = sample(x - 1, y, channel) if x > 0 else 0
-    north = sample(x, y - 1, channel) if y > 0 else 0
-    northwest = sample(x - 1, y - 1, channel) if x > 0 and y > 0 else 0
-    ne_known = y > 0 and x + 1 < width and ((y - 1) < y0 or (x + 1) < x0 + bw)
-    northeast = sample(x + 1, y - 1, channel) if ne_known else 0
-    q1 = qjls(northeast - north)
-    q2 = qjls(north - northwest)
-    q3 = qjls(northwest - west)
-    return (q1 + 4) * 81 + (q2 + 4) * 9 + (q3 + 4)
+def cm_decode(payload: bytes, width: int, height: int) -> bytes:
+    if len(payload) < 12:
+        raise FormatError("cm streams")
+    sizes = struct.unpack_from("<III", payload, 0)
+    if any(s < 5 for s in sizes) or 12 + sum(sizes) != len(payload):
+        raise FormatError("cm streams")
+    chans = [Channel(width) for _ in range(3)]
+    pos = 12
+    for ch, size in zip(chans, sizes):
+        ch.dec = RangeDecoder(payload[pos:pos + size])
+        pos += size
+    rgb = bytearray(width * height * 3)
+    _run(width, height, chans, rgb)
+    if any(ch.bad or not ch.dec.exhausted_exactly() for ch in chans):
+        raise FormatError("cm stream")
+    return bytes(rgb)
 
 
-def _rans_index(
-    rgb: bytes | bytearray,
-    width: int,
-    height: int,
-    x: int,
-    y: int,
-    channel: int,
-    x0: int,
-    y0: int,
-    bw: int,
-    sample,
-) -> int:
-    joint = _jctx(rgb, width, height, x, y, channel, x0, y0, bw, sample)
-    if channel == 0:
-        return joint
-    green_err = _residual_at(lambda px, py, channel=0: sample(px, py, channel), x, y)
-    bucket = qjls(green_err) + 4
-    return 729 + (channel - 1) * 6561 + joint * 9 + bucket
+# ---------------------------------------------------------------- container
 
-
-def rans_encode_block(
-    rgb: bytes,
-    width: int,
-    height: int,
-    x0: int,
-    y0: int,
-    bw: int,
-    bh: int,
-    model: RansModel,
-    limit: int,
-) -> bytes | None:
-    if limit < 4:
-        return None
-    saved = model.clone()
-
-    def sample(x: int, y: int, channel: int) -> int:
-        return _plane_sample(rgb, width, height, x, y, channel)
-
-    snap: list[int] = []
-    probs = model.p
-    for channel in range(3):
-        for ly in range(bh):
-            y = y0 + ly
-            for lx in range(bw):
-                x = x0 + lx
-                err = _residual_at(lambda px, py, channel=channel: sample(px, py, channel), x, y)
-                mapped = _to_m(err)
-                ctx = _rans_index(rgb, width, height, x, y, channel, x0, y0, bw, sample)
-                node = 1
-                for shift in range(7, -1, -1):
-                    bit = (mapped >> shift) & 1
-                    slot = ctx * 256 + node
-                    prob = probs[slot]
-                    snap.append((bit << 15) | prob)
-                    probs[slot] = _adapt_p(prob, bit)
-                    node = node * 2 + bit
-    buf = bytearray(limit)
-    ptr = limit
-    state = RANS_L
-    for packed in reversed(snap):
-        prob = packed & 0x0FFF
-        bit = packed >> 15
-        if bit:
-            cum, freq = prob, RANS_ONE - prob
-        else:
-            cum, freq = 0, prob
-        put = _rans_put(buf, ptr, state, cum, freq)
-        if put is None:
-            model.p = saved.p
-            return None
-        ptr, state = put
-    if ptr < 4:
-        model.p = saved.p
-        return None
-    ptr -= 4
-    buf[ptr] = state & 255
-    buf[ptr + 1] = (state >> 8) & 255
-    buf[ptr + 2] = (state >> 16) & 255
-    buf[ptr + 3] = (state >> 24) & 255
-    body = bytes(buf[ptr:])
-    if len(body) >= limit:
-        model.p = saved.p
-        return None
-    return body
-
-
-def rans_decode_block(
-    body: bytes,
-    image: bytearray,
-    width: int,
-    height: int,
-    x0: int,
-    y0: int,
-    bw: int,
-    bh: int,
-    model: RansModel,
-) -> bytes:
-    if len(body) < 4:
-        raise FormatError("rans")
-    state = body[0] | (body[1] << 8) | (body[2] << 16) | (body[3] << 24)
-    pos = 4
-    planes = [bytearray(bw * bh) for _ in range(3)]
-    probs = model.p
-
-    def sample(x: int, y: int, channel: int) -> int:
-        if x0 <= x < x0 + bw and y0 <= y < y0 + bh:
-            return planes[channel][(y - y0) * bw + (x - x0)]
-        return _plane_sample(image, width, height, x, y, channel)
-
-    for channel in range(3):
-        for ly in range(bh):
-            y = y0 + ly
-            for lx in range(bw):
-                x = x0 + lx
-                ctx = _rans_index(image, width, height, x, y, channel, x0, y0, bw, sample)
-                node = 1
-                mapped = 0
-                for _shift in range(7, -1, -1):
-                    slot = ctx * 256 + node
-                    prob = probs[slot]
-                    bit = 1 if (state & (RANS_ONE - 1)) >= prob else 0
-                    if bit:
-                        cum, freq = prob, RANS_ONE - prob
-                    else:
-                        cum, freq = 0, prob
-                    state = freq * (state >> RANS_SCALE) + (state & (RANS_ONE - 1)) - cum
-                    while state < RANS_L:
-                        if pos >= len(body):
-                            raise FormatError("rans")
-                        state = (state << 8) | body[pos]
-                        pos += 1
-                    probs[slot] = _adapt_p(prob, bit)
-                    mapped = (mapped << 1) | bit
-                    node = node * 2 + bit
-                err = _from_m(mapped)
-                left = sample(x - 1, y, channel) if x > 0 else 0
-                up = sample(x, y - 1, channel) if y > 0 else 0
-                up_left = sample(x - 1, y - 1, channel) if x > 0 and y > 0 else 0
-                pred = _med(left, up, up_left)
-                planes[channel][ly * bw + lx] = (pred + err) & 255
-        if channel == 0:
-            for ly in range(bh):
-                y = y0 + ly
-                row = y * width
-                for lx in range(bw):
-                    image[((row + x0 + lx) * 3) + 1] = planes[0][ly * bw + lx]
-    if state != RANS_L or pos != len(body):
-        raise FormatError("rans")
-    out = bytearray(bw * bh * 3)
-    for i in range(bw * bh):
-        green = planes[0][i]
-        out[i * 3] = (planes[1][i] + green) & 255
-        out[i * 3 + 1] = green
-        out[i * 3 + 2] = (planes[2][i] + green) & 255
-    return bytes(out)
-
-
-def try_palette(rgb: bytes) -> bytes | None:
-    order: list[bytes] = []
-    index: dict[bytes, int] = {}
-    idxs = bytearray()
-    for i in range(0, len(rgb), 3):
-        pix = rgb[i : i + 3]
-        found = index.get(pix)
-        if found is None:
-            if len(order) == 256:
-                return None
-            index[pix] = len(order)
-            order.append(pix)
-            found = index[pix]
-        idxs.append(found)
-    body = bytes([len(order) - 1]) + b"".join(order) + packbits_encode(bytes(idxs))
-    return body
-
-
-def encode_block(
-    rgb: bytes,
-    bw: int,
-    bh: int,
-    full: bytes | None = None,
-    width: int = 0,
-    height: int = 0,
-    x0: int = 0,
-    y0: int = 0,
-    rice_state: RiceState | None = None,
-    rans_model: RansModel | None = None,
-) -> bytes:
-    raw = rgb
-    best_mode = 0
-    best = raw
-    packed = packbits_encode(raw)
-    if len(packed) < len(best):
-        best_mode, best = 1, packed
-    residual = packbits_encode(predict(raw, bw, bh))
-    if len(residual) < len(best):
-        best_mode, best = 2, residual
-    palette = try_palette(raw)
-    if palette is not None and len(palette) < len(best):
-        best_mode, best = 3, palette
-    rice_won = False
-    rice_acc = None
-    rice_count = None
-    if rice_state is not None and full is not None:
-        rice_acc = [row[:] for row in rice_state.acc]
-        rice_count = [row[:] for row in rice_state.count]
-        rice = rice_encode_block(full, width, height, x0, y0, bw, bh, rice_state, len(best))
-        if rice is not None:
-            best_mode, best = 4, rice
-            rice_won = True
-    if rans_model is not None and full is not None:
-        # Keep the rANS model continuous. A body shorter than raw is written
-        # even when Rice is smaller, because dropping the block would reset
-        # the context the later blocks rely on.
-        raw_len = bw * bh * 3
-        frozen = rans_model.clone()
-        rans = rans_encode_block(full, width, height, x0, y0, bw, bh, rans_model, raw_len)
-        if rans is not None:
-            if rice_won and rice_state is not None and rice_acc is not None and rice_count is not None:
-                rice_state.acc = rice_acc
-                rice_state.count = rice_count
-            best_mode, best = 5, rans
-        else:
-            rans_model.p = frozen.p
-    return bytes([best_mode, 0]) + struct.pack("<I", len(best)) + best
-
-
-def iter_blocks(width: int, height: int):
-    blocks_x = (width + BLOCK - 1) // BLOCK
-    blocks_y = (height + BLOCK - 1) // BLOCK
-    for by in range(blocks_y):
-        y0 = by * BLOCK
-        bh = min(BLOCK, height - y0)
-        for bx in range(blocks_x):
-            x0 = bx * BLOCK
-            bw = min(BLOCK, width - x0)
-            yield x0, y0, bw, bh
-
-
-def crop_block(rgb: bytes, width: int, x0: int, y0: int, bw: int, bh: int) -> bytes:
-    out = bytearray()
-    stride = width * 3
-    for y in range(y0, y0 + bh):
-        start = y * stride + x0 * 3
-        out += rgb[start : start + bw * 3]
-    return bytes(out)
-
-
-def paste_block(image: bytearray, width: int, x0: int, y0: int, bw: int, bh: int, block: bytes) -> None:
-    stride = width * 3
-    pos = 0
-    row = bw * 3
-    for y in range(y0, y0 + bh):
-        start = y * stride + x0 * 3
-        image[start : start + row] = block[pos : pos + row]
-        pos += row
-
-
-def build_file(width: int, height: int, payload: bytes) -> bytes:
+def build_file(width: int, height: int, method: int, payload: bytes, reserved: int = 0) -> bytes:
     header = bytearray(HEADER)
     header[0:4] = MAGIC
-    struct.pack_into("<H", header, 4, 1)
-    struct.pack_into("<H", header, 6, HEADER)
-    struct.pack_into("<I", header, 8, width)
-    struct.pack_into("<I", header, 12, height)
-    struct.pack_into("<H", header, 16, BLOCK)
+    struct.pack_into("<HH", header, 4, VERSION, HEADER)
+    struct.pack_into("<II", header, 8, width, height)
+    header[16] = method
+    header[17] = reserved
     struct.pack_into("<H", header, 18, 1)
-    struct.pack_into("<I", header, 20, len(payload))
-    struct.pack_into("<I", header, 24, crc32(payload))
-    struct.pack_into("<I", header, 28, crc32(header[:28]))
+    struct.pack_into("<II", header, 20, len(payload), crc32(payload))
+    struct.pack_into("<I", header, 28, crc32(bytes(header[:28])))
     return bytes(header) + payload
 
 
 def encode_image(width: int, height: int, rgb: bytes) -> bytes:
     if len(rgb) != width * height * 3:
         raise ValueError("rgb size")
-    payload = bytearray()
-    rice_state = RiceState()
-    rans_model = RansModel()
-    for x0, y0, bw, bh in iter_blocks(width, height):
-        payload += encode_block(
-            crop_block(rgb, width, x0, y0, bw, bh),
-            bw,
-            bh,
-            full=rgb,
-            width=width,
-            height=height,
-            x0=x0,
-            y0=y0,
-            rice_state=rice_state,
-            rans_model=rans_model,
-        )
-    return build_file(width, height, bytes(payload))
-
-
-def decode_block(
-    data: bytes,
-    bw: int,
-    bh: int,
-    image: bytearray | None = None,
-    width: int = 0,
-    height: int = 0,
-    x0: int = 0,
-    y0: int = 0,
-    rice_state: RiceState | None = None,
-    rans_model: RansModel | None = None,
-) -> bytes:
-    if len(data) < 6:
-        raise FormatError("truncated block")
-    mode = data[0]
-    flags = data[1]
-    size = struct.unpack_from("<I", data, 2)[0]
-    if flags != 0:
-        raise FormatError("block flags")
-    if size != len(data) - 6:
-        raise FormatError("block length")
-    body = data[6:]
-    raw_len = bw * bh * 3
-    if mode == 0:
-        if len(body) != raw_len:
-            raise FormatError("raw length")
-        return body
-    if mode == 1:
-        return packbits_decode(body, raw_len)
-    if mode == 2:
-        return unpredict(packbits_decode(body, raw_len), bw, bh)
-    if mode == 3:
-        if not body:
-            raise FormatError("palette")
-        ncolors = body[0] + 1
-        pal_bytes = ncolors * 3
-        if len(body) < 1 + pal_bytes:
-            raise FormatError("palette")
-        indexes = packbits_decode(body[1 + pal_bytes :], bw * bh)
-        out = bytearray()
-        palette = body[1 : 1 + pal_bytes]
-        for idx in indexes:
-            if idx >= ncolors:
-                raise FormatError("palette index")
-            out += palette[idx * 3 : idx * 3 + 3]
-        return bytes(out)
-    if mode == 4:
-        if image is None or rice_state is None:
-            raise FormatError("rice")
-        return rice_decode_block(body, image, width, height, x0, y0, bw, bh, rice_state)
-    if mode == 5:
-        if image is None or rans_model is None:
-            raise FormatError("rans")
-        return rans_decode_block(body, image, width, height, x0, y0, bw, bh, rans_model)
-    raise FormatError("block mode")
+    raw = len(rgb)
+    payload = cm_encode(width, height, rgb)
+    if len(payload) >= raw:
+        return build_file(width, height, METHOD_RAW, rgb)
+    return build_file(width, height, METHOD_CM, payload)
 
 
 def decode_image(blob: bytes) -> tuple[int, int, bytes]:
-    if len(blob) < HEADER or blob[0:4] != MAGIC:
+    if len(blob) < HEADER:
+        raise FormatError("truncated")
+    if blob[0:3] != b"RFI":
         raise FormatError("magic")
     version, header_size = struct.unpack_from("<HH", blob, 4)
-    if version != 1:
+    if blob[3] != VERSION or version != VERSION:
         raise FormatError("version")
     if header_size != HEADER:
         raise FormatError("header size")
-    width, height = struct.unpack_from("<II", blob, 8)
-    block_size, pixel_format = struct.unpack_from("<HH", blob, 16)
-    payload_size, payload_crc, header_crc = struct.unpack_from("<III", blob, 20)
-    if block_size != BLOCK or pixel_format != 1:
-        raise FormatError("format")
-    if crc32(blob[:28]) != header_crc:
+    if struct.unpack_from("<H", blob, 18)[0] != 1:
+        raise FormatError("pixel format")
+    if crc32(blob[:28]) != struct.unpack_from("<I", blob, 28)[0]:
         raise FormatError("header checksum")
-    if not (1 <= width <= MAX_DIM and 1 <= height <= MAX_DIM):
+    method, reserved = blob[16], blob[17]
+    if method > METHOD_CM:
+        raise FormatError("method")
+    if reserved != 0:
+        raise FormatError("reserved byte")
+    width, height = struct.unpack_from("<II", blob, 8)
+    if not (1 <= width <= MAX_DIM and 1 <= height <= MAX_DIM) or width * height > MAX_PIXELS:
         raise FormatError("dimensions")
-    if width * height > MAX_PIXELS:
-        raise FormatError("limit")
-    if payload_size != len(blob) - HEADER:
+    size, pcrc = struct.unpack_from("<II", blob, 20)
+    if size != len(blob) - HEADER:
         raise FormatError("payload length")
     payload = blob[HEADER:]
-    if crc32(payload) != payload_crc:
+    if crc32(payload) != pcrc:
         raise FormatError("payload checksum")
-    image = bytearray(width * height * 3)
-    offset = 0
-    rice_state = RiceState()
-    rans_model = RansModel()
-    for x0, y0, bw, bh in iter_blocks(width, height):
-        if offset + 6 > len(payload):
-            raise FormatError("truncated block")
-        size = struct.unpack_from("<I", payload, offset + 2)[0]
-        take = 6 + size
-        if offset + take > len(payload):
-            raise FormatError("block length")
-        block = decode_block(
-            payload[offset : offset + take],
-            bw,
-            bh,
-            image=image,
-            width=width,
-            height=height,
-            x0=x0,
-            y0=y0,
-            rice_state=rice_state,
-            rans_model=rans_model,
-        )
-        paste_block(image, width, x0, y0, bw, bh, block)
-        offset += take
-    if offset != len(payload):
-        raise FormatError("trailing data")
-    return width, height, bytes(image)
+    if method == METHOD_RAW:
+        if size != width * height * 3:
+            raise FormatError("raw length")
+        return width, height, bytes(payload)
+    return width, height, cm_decode(payload, width, height)
 
+
+# ---------------------------------------------------------------- BMP
 
 def row_stride(width: int) -> int:
     return (width * 3 + 3) & ~3
@@ -964,16 +563,16 @@ def read_bmp24(blob: bytes) -> tuple[int, int, bytes]:
     need = off + stride * height
     if off < 54 or need > len(blob):
         raise FormatError("bmp truncated")
-    if sizeimage not in (0, ) and sizeimage < stride * height:
+    if sizeimage not in (0,) and sizeimage < stride * height:
         raise FormatError("bmp image size")
     rgb = bytearray(width * height * 3)
     for file_y in range(height):
         img_y = file_y if topdown else height - 1 - file_y
         src = off + file_y * stride
-        for x in range(width):
-            b, g, r = blob[src + x * 3 : src + x * 3 + 3]
-            base = (img_y * width + x) * 3
-            rgb[base : base + 3] = bytes((r, g, b))
+        row = blob[src : src + width * 3]
+        dst = img_y * width * 3
+        rgb[dst : dst + width * 3] = row
+        rgb[dst : dst + width * 3 : 3], rgb[dst + 2 : dst + width * 3 : 3] = row[2::3], row[0::3]
         pad = blob[src + width * 3 : src + stride]
         if any(pad):
             raise FormatError("bmp padding")

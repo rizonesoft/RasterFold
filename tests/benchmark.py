@@ -1,25 +1,29 @@
-"""Repeatable size, time, and memory comparison.
+"""Size, speed, and memory: RasterFold against PNG, lossless WebP, and lossless JPEG XL.
 
-RasterFold times come from the tool itself and from the process wall clock.
-PNG, lossless WebP, and lossless JPEG XL times are ffmpeg process wall times,
-which include process startup, format conversion, and muxing. They are not
-split into codec-only time. Every image is listed. A decode that does not
-reproduce the source pixels is a failure, not a size result.
+  python tests/benchmark.py [-n REPEATS] [SET ...]      sets: measure photos synthetic (default all)
+
+Writes benchmarks/results.md and benchmarks/results.csv. Every time is a
+process wall time (median of the repeats) and every memory figure a process
+peak working set (maximum of the repeats), so RasterFold and ffmpeg are
+measured the same way, startup included. A result counts only when the decoded
+pixels equal the source. JPEG XL is decoded twice: with ffmpeg's default thread
+count, as tests/measure_final.py does, and with -threads 1.
 """
 
 from __future__ import annotations
 
 import csv
-import hashlib
+import ctypes
+import math
 import os
 import platform
+import statistics
 import subprocess
 import sys
 import time
-from pathlib import Path
-
-import ctypes
 from ctypes import wintypes
+from datetime import date
+from pathlib import Path
 
 from PIL import Image
 
@@ -29,12 +33,16 @@ from test_correctness import checker, draw_ui, gradient, noise, solid, stripes  
 
 EXE = ROOT / "Bin" / "rasterfold.exe"
 OUT = ROOT / "benchmarks"
-WORK = OUT / "work"
-FFMPEG = "ffmpeg"
+WORK = ROOT / "build" / "benchmark"
 
-PNG_ARGS = ["-c:v", "png", "-compression_level", "9", "-pred", "mixed", "-threads", "1"]
-WEBP_ARGS = ["-c:v", "libwebp", "-lossless", "1", "-quality", "100", "-compression_level", "6", "-threads", "1"]
-JXL_ARGS = ["-c:v", "libjxl", "-distance", "0", "-effort", "7", "-threads", "1"]
+CODECS = {
+    "rasterfold": {"ext": "fold"},
+    "rasterfold-1t": {"ext": "fold", "extra": ["--threads", "1"]},
+    "jxl": {"ext": "jxl", "args": ["-c:v", "libjxl", "-distance", "0", "-effort", "7", "-threads", "1"]},
+    "jxl-1t": {"ext": "jxl", "reuse": "jxl", "dec": ["-threads", "1"]},
+    "webp": {"ext": "webp", "args": ["-c:v", "libwebp", "-lossless", "1", "-quality", "100", "-compression_level", "6", "-threads", "1"]},
+    "png": {"ext": "png", "args": ["-c:v", "png", "-compression_level", "9", "-pred", "mixed", "-threads", "1"]},
+}
 
 
 class PMC(ctypes.Structure):
@@ -52,72 +60,21 @@ class PMC(ctypes.Structure):
     ]
 
 
-_k32 = ctypes.WinDLL("kernel32", use_last_error=True)
-_meminfo = _k32.K32GetProcessMemoryInfo
+_meminfo = ctypes.WinDLL("kernel32", use_last_error=True).K32GetProcessMemoryInfo
 _meminfo.argtypes = [wintypes.HANDLE, ctypes.POINTER(PMC), wintypes.DWORD]
 _meminfo.restype = wintypes.BOOL
 
 
-def peak_working_set(handle: int) -> int | None:
+def run(cmd: list[str]) -> tuple[int, int, int]:
+    """Exit code, wall time in microseconds, peak working set in bytes."""
+    started = time.perf_counter_ns()
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    proc.communicate()
+    wall = (time.perf_counter_ns() - started) // 1000
     pmc = PMC()
     pmc.cb = ctypes.sizeof(PMC)
-    if not _meminfo(wintypes.HANDLE(int(handle)), ctypes.byref(pmc), pmc.cb):
-        return None
-    return int(pmc.PeakWorkingSetSize)
-
-
-def run_timed(cmd: list[str]) -> dict:
-    started = time.perf_counter_ns()
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    stdout, stderr = proc.communicate()
-    elapsed_us = (time.perf_counter_ns() - started) // 1000
-    return {
-        "code": proc.returncode,
-        "stdout": stdout,
-        "stderr": stderr,
-        "wall_us": elapsed_us,
-        "peak_ws": peak_working_set(proc._handle),
-    }
-
-
-def cpu_name() -> str:
-    try:
-        out = subprocess.check_output(
-            ["powershell", "-NoProfile", "-Command", "(Get-CimInstance Win32_Processor | Select-Object -First 1).Name"],
-            text=True,
-        )
-        return " ".join(out.split())
-    except (OSError, subprocess.CalledProcessError):
-        return platform.processor()
-
-
-def memory_bytes() -> str:
-    try:
-        out = subprocess.check_output(
-            ["powershell", "-NoProfile", "-Command", "(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory"],
-            text=True,
-        )
-        return out.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return "unknown"
-
-
-def ffmpeg_version() -> str:
-    out = subprocess.check_output([FFMPEG, "-version"], text=True, stderr=subprocess.STDOUT)
-    return out.splitlines()[0].strip()
-
-
-def parse_stats(text: str) -> dict[str, int]:
-    stats = {}
-    for line in text.splitlines():
-        if line.startswith("rf_stat ") and "=" in line:
-            key, value = line[len("rf_stat ") :].split("=", 1)
-            stats[key] = int(value)
-    return stats
-
-
-def save_bmp(path: Path, width: int, height: int, rgb: bytes) -> None:
-    Image.frombytes("RGB", (width, height), rgb).save(path, format="BMP")
+    peak = int(pmc.PeakWorkingSetSize) if _meminfo(wintypes.HANDLE(int(proc._handle)), ctypes.byref(pmc), pmc.cb) else 0
+    return proc.returncode, wall, peak
 
 
 def pixels_of(path: Path) -> bytes:
@@ -125,7 +82,7 @@ def pixels_of(path: Path) -> bytes:
         return image.convert("RGB").tobytes()
 
 
-def dev_images() -> list[tuple[str, int, int, bytes]]:
+def synthetic() -> list[tuple[str, int, int, bytes]]:
     return [
         ("solid", 640, 480, solid(640, 480, (240, 240, 240))),
         ("checker", 512, 512, checker(512, 512, 16)),
@@ -137,274 +94,159 @@ def dev_images() -> list[tuple[str, int, int, bytes]]:
         ("text", 800, 600, draw_ui(800, 600, 12)),
         ("diagram", 900, 600, draw_ui(900, 600, 13)),
         ("odd", 65, 63, gradient(65, 63)),
-    ]
-
-
-def holdout_images() -> list[tuple[str, int, int, bytes]]:
-    return [
-        ("solid", 100, 50, solid(100, 50, (12, 80, 160))),
-        ("checker", 300, 180, checker(300, 180, 7)),
-        ("stripes", 800, 450, stripes(800, 450)),
-        ("gradient", 333, 200, gradient(333, 200)),
-        ("noise", 320, 180, noise(320, 180, 9099)),
-        ("pixel", 48, 48, checker(48, 48, 1)),
-        ("ui", 1024, 768, draw_ui(1024, 768, 21)),
-        ("text", 640, 400, draw_ui(640, 400, 22)),
-        ("diagram", 700, 500, draw_ui(700, 500, 23)),
         ("wide", 1919, 200, stripes(1919, 200)),
     ]
 
 
-def ffmpeg_encode(src: Path, dest: Path, codec_args: list[str]) -> dict:
-    if dest.exists():
-        dest.unlink()
-    cmd = [FFMPEG, "-y", "-hide_banner", "-i", str(src), *codec_args, "-update", "1", str(dest)]
-    result = run_timed(cmd)
-    result["bytes"] = dest.stat().st_size if dest.exists() and result["code"] == 0 else None
-    return result
+def sources(name: str, folder: Path) -> list[tuple[str, Path]]:
+    folder.mkdir(parents=True, exist_ok=True)
+    out = []
+    if name == "measure":
+        out.append(("image", ROOT / "measure" / "image.bmp"))
+    elif name == "photos":
+        for png in sorted((ROOT / "testdata" / "photos").glob("*.png")):
+            bmp = folder / f"{png.stem}.bmp"
+            if not bmp.exists():
+                Image.open(png).convert("RGB").save(bmp, format="BMP")
+            out.append((png.stem, bmp))
+    else:
+        for img, w, h, rgb in synthetic():
+            bmp = folder / f"{img}.bmp"
+            if not bmp.exists():
+                Image.frombytes("RGB", (w, h), rgb).save(bmp, format="BMP")
+            out.append((img, bmp))
+    return out
 
 
-def ffmpeg_decode(src: Path, dest: Path) -> dict:
-    if dest.exists():
-        dest.unlink()
-    cmd = [FFMPEG, "-y", "-hide_banner", "-i", str(src), "-frames:v", "1", "-update", "1", str(dest)]
-    return run_timed(cmd)
-
-
-def rasterfold_convert(mode: str, src: Path, dest: Path) -> dict:
-    if dest.exists():
-        dest.unlink()
-    result = run_timed([str(EXE), mode, "--time", str(src), str(dest)])
-    stats = parse_stats(result["stdout"].decode("utf-8", "replace"))
-    result["stats"] = stats
-    result["bytes"] = dest.stat().st_size if dest.exists() and result["code"] == 0 else None
-    return result
-
-
-def blank_row(group: str, name: str, width: int, height: int, digest: str, raw: int, bmp_bytes: int) -> dict:
+def measure(codec: str, src: Path, folder: Path, stem: str, repeats: int, done: dict) -> dict:
+    spec = CODECS[codec]
+    enc_file = folder / f"{stem}.{spec.get('reuse', codec)}.{spec['ext']}"
+    dec_file = folder / f"{stem}.{codec}.out.bmp"
+    encs, decs = [], []
+    ok = True
+    for _ in range(repeats):
+        for f in (dec_file, Path(str(dec_file) + ".partial")):
+            f.unlink(missing_ok=True)
+        if "reuse" in spec:
+            base = done[spec["reuse"]]
+            e = (0, base["encode_us"], base["encode_peak"]) if base["pixels_match"] else (1, 0, 0)
+            d = run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *spec["dec"], "-i", str(enc_file),
+                     "-frames:v", "1", "-update", "1", str(dec_file)]) if e[0] == 0 else (1, 0, 0)
+        elif codec.startswith("rasterfold"):
+            for f in (enc_file, Path(str(enc_file) + ".partial")):
+                f.unlink(missing_ok=True)
+            e = run([str(EXE), "encode", *spec.get("extra", []), str(src), str(enc_file)])
+            d = run([str(EXE), "decode", *spec.get("extra", []), str(enc_file), str(dec_file)]) if e[0] == 0 else (1, 0, 0)
+        else:
+            enc_file.unlink(missing_ok=True)
+            e = run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(src), *spec["args"], "-update", "1", str(enc_file)])
+            d = run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *spec.get("dec", []), "-i", str(enc_file),
+                     "-frames:v", "1", "-update", "1", str(dec_file)]) if e[0] == 0 else (1, 0, 0)
+        ok = ok and e[0] == 0 and d[0] == 0
+        encs.append(e)
+        decs.append(d)
+    match = ok and pixels_of(dec_file) == pixels_of(src)
     return {
-        "set": group,
-        "image": name,
-        "width": width,
-        "height": height,
-        "sha256": digest,
-        "raw_rgb_bytes": raw,
-        "bmp_bytes": bmp_bytes,
+        "bytes": enc_file.stat().st_size if ok else None,
+        "encode_us": statistics.median(x[1] for x in encs),
+        "decode_us": statistics.median(x[1] for x in decs),
+        "encode_peak": max(x[2] for x in encs),
+        "decode_peak": max(x[2] for x in decs),
+        "pixels_match": match,
     }
 
 
+def geomean(values: list[float]) -> float:
+    return math.exp(sum(math.log(v) for v in values) / len(values)) if values else float("nan")
+
+
 def main() -> int:
+    args = sys.argv[1:]
+    repeats = 3
+    if "-n" in args:
+        i = args.index("-n")
+        repeats = int(args[i + 1])
+        del args[i:i + 2]
+    sets = args or ["measure", "photos", "synthetic"]
     if not EXE.exists():
-        print(f"missing {EXE}")
+        print(f"missing {EXE}; run build.ps1")
         return 1
-    OUT.mkdir(parents=True, exist_ok=True)
-    rows = []
-    failures = []
-    for group, factory in (("dev", dev_images), ("holdout", holdout_images)):
-        folder = WORK / group
-        folder.mkdir(parents=True, exist_ok=True)
-        for name, width, height, rgb in factory():
-            bmp = folder / f"{name}.bmp"
-            save_bmp(bmp, width, height, rgb)
-            source = pixels_of(bmp)
-            if source != rgb:
-                failures.append(f"{group}/{name}: Pillow BMP did not preserve pixels")
-            digest = hashlib.sha256(bmp.read_bytes()).hexdigest()
-            raw = width * height * 3
-            base = blank_row(group, name, width, height, digest, raw, bmp.stat().st_size)
-            print(f"{group}/{name} {width}x{height}", flush=True)
-
-            rf_enc = rasterfold_convert("encode", bmp, folder / f"{name}.fold")
-            rf_dec = rasterfold_convert("decode", folder / f"{name}.fold", folder / f"{name}.rf.bmp")
-            rf_match = rf_dec["code"] == 0 and pixels_of(folder / f"{name}.rf.bmp") == source
-            if rf_enc["code"] != 0 or rf_dec["code"] != 0 or not rf_match:
-                failures.append(f"rasterfold {group}/{name} enc={rf_enc['code']} dec={rf_dec['code']} match={rf_match}")
-            enc_stats = rf_enc.get("stats", {})
-            dec_stats = rf_dec.get("stats", {})
-            rows.append({
-                **base,
-                "codec": "rasterfold",
-                "setting": "experimental v1, 1 thread",
-                "encode_wall_us": rf_enc["wall_us"],
-                "decode_wall_us": rf_dec["wall_us"],
-                "encode_peak_ws": rf_enc["peak_ws"],
-                "decode_peak_ws": rf_dec["peak_ws"],
-                "compressed_bytes": rf_enc["bytes"],
-                "pixels_match": rf_match,
-                "rf_encode_read_us": enc_stats.get("read_us"),
-                "rf_encode_parse_us": enc_stats.get("parse_us"),
-                "rf_encode_codec_us": enc_stats.get("codec_us"),
-                "rf_encode_write_us": enc_stats.get("write_us"),
-                "rf_encode_total_us": enc_stats.get("total_us"),
-                "rf_encode_alloc_peak": enc_stats.get("alloc_peak"),
-                "rf_decode_read_us": dec_stats.get("read_us"),
-                "rf_decode_codec_us": dec_stats.get("codec_us"),
-                "rf_decode_write_us": dec_stats.get("write_us"),
-                "rf_decode_total_us": dec_stats.get("total_us"),
-                "rf_decode_alloc_peak": dec_stats.get("alloc_peak"),
-                "mode_raw": enc_stats.get("mode_raw"),
-                "mode_packbits": enc_stats.get("mode_packbits"),
-                "mode_predict": enc_stats.get("mode_predict"),
-                "mode_palette": enc_stats.get("mode_palette"),
-            })
-
-            for codec, args, ext in (
-                ("png", PNG_ARGS, "png"),
-                ("webp", WEBP_ARGS, "webp"),
-                ("jxl", JXL_ARGS, "jxl"),
-            ):
-                encoded = folder / f"{name}.{ext}"
-                decoded = folder / f"{name}.{codec}.bmp"
-                enc = ffmpeg_encode(bmp, encoded, args)
-                dec = ffmpeg_decode(encoded, decoded) if enc["code"] == 0 else {"code": None, "wall_us": None, "peak_ws": None, "stderr": b""}
-                match = False
-                if dec.get("code") == 0 and decoded.exists():
-                    match = pixels_of(decoded) == source
-                if enc["code"] != 0 or dec.get("code") != 0 or not match:
-                    err = (enc["stderr"] or dec.get("stderr") or b"")[-400:]
-                    failures.append(f"{codec} {group}/{name} enc={enc['code']} dec={dec.get('code')} match={match} {err!r}")
-                setting = " ".join(args)
-                rows.append({
-                    **base,
-                    "codec": codec,
-                    "setting": setting,
-                    "encode_wall_us": enc["wall_us"],
-                    "decode_wall_us": dec.get("wall_us"),
-                    "encode_peak_ws": enc["peak_ws"],
-                    "decode_peak_ws": dec.get("peak_ws"),
-                    "compressed_bytes": enc.get("bytes"),
-                    "pixels_match": match,
-                    "rf_encode_read_us": "",
-                    "rf_encode_parse_us": "",
-                    "rf_encode_codec_us": "",
-                    "rf_encode_write_us": "",
-                    "rf_encode_total_us": "",
-                    "rf_encode_alloc_peak": "",
-                    "rf_decode_read_us": "",
-                    "rf_decode_codec_us": "",
-                    "rf_decode_write_us": "",
-                    "rf_decode_total_us": "",
-                    "rf_decode_alloc_peak": "",
-                    "mode_raw": "",
-                    "mode_packbits": "",
-                    "mode_predict": "",
-                    "mode_palette": "",
-                })
-
-    csv_path = OUT / "baseline.csv"
-    fields = list(rows[0].keys())
-    with csv_path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields)
+    rows, failures = [], []
+    for set_name in sets:
+        folder = WORK / set_name
+        for stem, src in sources(set_name, folder):
+            w, h = Image.open(src).size
+            print(f"{set_name}/{stem} {w}x{h}", flush=True)
+            done: dict = {}
+            for codec in CODECS:
+                r = done[codec] = measure(codec, src, folder, stem, repeats, done)
+                if not r["pixels_match"]:
+                    failures.append(f"{codec} {set_name}/{stem}")
+                rows.append({"set": set_name, "image": stem, "width": w, "height": h, "raw": w * h * 3, "codec": codec, **r})
+    OUT.mkdir(exist_ok=True)
+    with (OUT / "results.csv").open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
-    write_report(rows, failures)
-    print(f"wrote {csv_path}")
+    report(rows, failures, sets, repeats)
     print(f"failures: {len(failures)}")
-    for item in failures:
-        print(item)
+    for f in failures:
+        print(" ", f)
     return 1 if failures else 0
 
 
-def write_report(rows: list[dict], failures: list[str]) -> None:
+def report(rows: list[dict], failures: list[str], sets: list[str], repeats: int) -> None:
     toolchain = ROOT / "build" / "toolchain.txt"
-    tool_text = toolchain.read_text(encoding="utf-8") if toolchain.exists() else "toolchain.txt missing"
+    ffv = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True).stdout.splitlines()[0]
     lines = [
-        "# RasterFold baseline measurements",
+        "# RasterFold measurements",
         "",
-        "Generated by `tests/benchmark.py`. These numbers are measurements from this run, not targets.",
+        "Generated by `tests/benchmark.py`. One machine, one run; the numbers are measurements, not targets.",
         "",
-        f"- Date: 2026-09-28",
-        f"- Machine: {platform.platform()}",
-        f"- CPU: {cpu_name()}",
-        f"- Logical processors: {os.cpu_count()}",
-        f"- Physical memory bytes: {memory_bytes()}",
-        f"- Python: {platform.python_version()}",
-        f"- Pillow: {Image.__version__}",
-        f"- ffmpeg: {ffmpeg_version()}",
-        "- RasterFold: experimental version 1, one thread, no AVX2 path.",
-        "- PNG: ffmpeg `png`, `-compression_level 9 -pred mixed -threads 1`.",
-        "- WebP: ffmpeg `libwebp`, `-lossless 1 -quality 100 -compression_level 6 -threads 1`.",
-        "- JPEG XL: ffmpeg `libjxl`, `-distance 0 -effort 7 -threads 1`.",
-        "",
-        "RasterFold `codec_us` is only the block encode or block decode. `total_us` adds BMP parsing or writing and file reads or writes, including the final flush. `encode_wall_us` is the whole process, including startup.",
-        "ffmpeg times are whole-process wall times only. This ffmpeg build does not report a separate codec-only timer, and its process peak working set includes the ffmpeg binary.",
-        "A row is a successful size only when `pixels_match` is true.",
-        "",
-        "Toolchain:",
-        "",
-        "```",
-        tool_text.rstrip(),
-        "```",
+        f"- Date: {date.today().isoformat()}",
+        f"- Machine: {platform.platform()}, {os.cpu_count()} logical processors",
+        f"- Python {platform.python_version()}, Pillow {Image.__version__}",
+        f"- {ffv}",
+        f"- RasterFold toolchain: {toolchain.read_text().splitlines()[0] if toolchain.exists() else 'unknown'}",
+        f"- Times: median process wall time of {repeats} runs, startup included. Memory: maximum process peak working set.",
+        "- `rasterfold` uses its default three threads (one per channel); `rasterfold-1t` passes `--threads 1`.",
+        "- JPEG XL: ffmpeg libjxl `-distance 0 -effort 7`, encoded with `-threads 1`. `jxl` decodes with ffmpeg's default",
+        "  threads (as `tests/measure_final.py` does), `jxl-1t` with `-threads 1`. WebP: `-lossless 1 -quality 100",
+        "  -compression_level 6 -threads 1`. PNG: `-compression_level 9 -pred mixed -threads 1`.",
         "",
     ]
     if failures:
-        lines.append("## Failures")
-        lines.append("")
-        lines.extend(f"- {item}" for item in failures)
-        lines.append("")
+        lines += ["## Failures", ""] + [f"- {f}" for f in failures] + [""]
+    codecs = list(CODECS)
+    for set_name in sets:
+        srows = [r for r in rows if r["set"] == set_name]
+        images = list(dict.fromkeys(r["image"] for r in srows))
+        by = {(r["image"], r["codec"]): r for r in srows}
+        lines += [f"## {set_name}", "", "Totals and geometric means of the per-image ratio to `jxl` (lower is better):", ""]
+        lines += ["| codec | total bytes | size | encode time | decode time | encode memory | decode memory |", "|---|---:|---:|---:|---:|---:|---:|"]
+        for c in codecs:
+            ok = [i for i in images if by[(i, c)]["pixels_match"] and by[(i, "jxl")]["pixels_match"]]
+            tot = sum(by[(i, c)]["bytes"] or 0 for i in ok)
 
-    for group in ("dev", "holdout"):
-        group_rows = [row for row in rows if row["set"] == group]
-        images = []
-        for row in group_rows:
-            if row["image"] not in images:
-                images.append(row["image"])
-        lines.append(f"## {group}")
+            def g(key: str) -> str:
+                return f"{geomean([by[(i, c)][key] / by[(i, 'jxl')][key] for i in ok if by[(i, 'jxl')][key]]):.3f}"
+            lines.append(f"| {c} | {tot} | {g('bytes')} | {g('encode_us')} | {g('decode_us')} | {g('encode_peak')} | {g('decode_peak')} |")
+        lines += ["", "Bytes per image:", "", "| image | size | raw | " + " | ".join(codecs) + " |", "|---|---|---:|" + "---:|" * len(codecs)]
+        for i in images:
+            r0 = by[(i, codecs[0])]
+            cells = [str(by[(i, c)]["bytes"]) if by[(i, c)]["pixels_match"] else "FAIL" for c in codecs]
+            lines.append(f"| {i} | {r0['width']}x{r0['height']} | {r0['raw']} | " + " | ".join(cells) + " |")
+        lines += ["", "Decode wall time, microseconds:", "", "| image | " + " | ".join(codecs) + " |", "|---|" + "---:|" * len(codecs)]
+        for i in images:
+            lines.append(f"| {i} | " + " | ".join(str(int(by[(i, c)]["decode_us"])) for c in codecs) + " |")
+        lines += ["", "Encode wall time, microseconds:", "", "| image | " + " | ".join(codecs) + " |", "|---|" + "---:|" * len(codecs)]
+        for i in images:
+            lines.append(f"| {i} | " + " | ".join(str(int(by[(i, c)]["encode_us"])) for c in codecs) + " |")
+        lines += ["", "Decode peak working set, bytes:", "", "| image | " + " | ".join(codecs) + " |", "|---|" + "---:|" * len(codecs)]
+        for i in images:
+            lines.append(f"| {i} | " + " | ".join(str(by[(i, c)]["decode_peak"]) for c in codecs) + " |")
         lines.append("")
-        lines.append("| image | raw | rasterfold | png | webp | jxl | rf codec enc us | rf total enc us | rf wall enc us | png wall enc us | webp wall enc us | jxl wall enc us |")
-        lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
-        for image in images:
-            by_codec = {row["codec"]: row for row in group_rows if row["image"] == image}
-            rf = by_codec["rasterfold"]
-            lines.append(
-                "| {image} | {raw} | {rfb} | {png} | {webp} | {jxl} | {codec} | {total} | {wall} | {pw} | {ww} | {jw} |".format(
-                    image=image,
-                    raw=rf["raw_rgb_bytes"],
-                    rfb=cell(rf),
-                    png=cell(by_codec["png"]),
-                    webp=cell(by_codec["webp"]),
-                    jxl=cell(by_codec["jxl"]),
-                    codec=rf["rf_encode_codec_us"],
-                    total=rf["rf_encode_total_us"],
-                    wall=rf["encode_wall_us"],
-                    pw=by_codec["png"]["encode_wall_us"],
-                    ww=by_codec["webp"]["encode_wall_us"],
-                    jw=by_codec["jxl"]["encode_wall_us"],
-                )
-            )
-        lines.append("")
-        lines.append("| image | rf dec codec us | rf dec wall us | png dec wall us | webp dec wall us | jxl dec wall us | rf enc peak ws | png enc peak ws | webp enc peak ws | jxl enc peak ws | modes r/p/pr/pa |")
-        lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|")
-        for image in images:
-            by_codec = {row["codec"]: row for row in group_rows if row["image"] == image}
-            rf = by_codec["rasterfold"]
-            modes = f"{rf['mode_raw']}/{rf['mode_packbits']}/{rf['mode_predict']}/{rf['mode_palette']}"
-            lines.append(
-                "| {image} | {dc} | {dw} | {pd} | {wd} | {jd} | {rp} | {pp} | {wp} | {jp} | {modes} |".format(
-                    image=image,
-                    dc=rf["rf_decode_codec_us"],
-                    dw=rf["decode_wall_us"],
-                    pd=by_codec["png"]["decode_wall_us"],
-                    wd=by_codec["webp"]["decode_wall_us"],
-                    jd=by_codec["jxl"]["decode_wall_us"],
-                    rp=rf["encode_peak_ws"],
-                    pp=by_codec["png"]["encode_peak_ws"],
-                    wp=by_codec["webp"]["encode_peak_ws"],
-                    jp=by_codec["jxl"]["encode_peak_ws"],
-                    modes=modes,
-                )
-            )
-        lines.append("")
-        lines.append("Modes are raw / packbits / predict / palette block counts from the encoder.")
-        lines.append("")
-    text = "\n".join(lines) + "\n"
-    (OUT / "baseline.md").write_text(text, encoding="utf-8")
-
-
-def cell(row: dict) -> str:
-    if not row["pixels_match"] or row["compressed_bytes"] is None:
-        return "FAIL"
-    return str(row["compressed_bytes"])
+    (OUT / "results.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":
