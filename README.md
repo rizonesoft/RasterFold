@@ -1,9 +1,9 @@
 <p align="center"><img src="assets/brand/cover.svg" alt="RasterFold. Every pixel, preserved. Lossless RGB image compression for Windows, Linux and Android." width="1280"></p>
 
 <p align="center">
-<a href="https://github.com/rizonesoft/RasterFold/actions/workflows/build.yml"><img src="https://github.com/rizonesoft/RasterFold/actions/workflows/build.yml/badge.svg" alt="Build and codec tests"></a>
-<a href="https://github.com/rizonesoft/RasterFold/actions/workflows/plan.yml"><img src="https://github.com/rizonesoft/RasterFold/actions/workflows/plan.yml/badge.svg" alt="Plan and runner checks"></a>
-<a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--orange" alt="GPL-3.0 license"></a>
+<a href="https://github.com/rizonesoft/RasterFold/actions/workflows/build.yml?query=branch%3Amain+event%3Apush"><img src="https://github.com/rizonesoft/RasterFold/actions/workflows/build.yml/badge.svg?branch=main&amp;event=push" alt="Build and codec tests"></a>
+<a href="https://github.com/rizonesoft/RasterFold/actions/workflows/plan.yml?query=branch%3Amain+event%3Apush"><img src="https://github.com/rizonesoft/RasterFold/actions/workflows/plan.yml/badge.svg?branch=main&amp;event=push" alt="Plan and runner checks"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-orange" alt="GPL-3.0 license"></a>
 <a href="spec/FOLD.md"><img src="https://img.shields.io/badge/format-v2-36d7d1" alt="Format version 2"></a>
 </p>
 
