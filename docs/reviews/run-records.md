@@ -10,4 +10,14 @@ One block per stamped section whose review reached an independent round, appende
 
 Each round line carries the model, provider, exact version (`unresolved` when the invocation never pinned one), cost in total tokens (`unresolved` when unrecorded), latency in wall-clock seconds from the reviewer invocation to its returned output (`unresolved` when untimed), opportunity scope, review purpose, provenance, and the refs that round raised. Findings described only in review prose, without a ref, are noted in `#` comments and counted nowhere.
 
-No runs are recorded yet.
+## D00 T04 §1: independent review outage
+
+The following failed Codex review used the private Claude dispatcher. Its model field records the requested pin; no actual producer version or usage was returned. This record is an outage, not a stamped section.
+
+run: D00-T04-S1
+date: 2026-09-30
+runner: codex
+rounds: 1
+round: 1 model: claude-opus-5-5 effort: high outcome: error candidate: 73f0143949aceb1dd8fa4a695069d1df0952fa45 provider: anthropic version: unresolved cost: unresolved latency: 900s opportunity: full-scope purpose: section-review provenance: recorded findings:
+empty: 0
+refuted: 0

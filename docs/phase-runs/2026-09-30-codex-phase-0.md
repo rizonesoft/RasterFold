@@ -561,3 +561,9 @@ history 1 entry; latest 2026-09-29 approved by operator: Initial budget at the p
 - Final evidence: Linux correctness 33 passed/0 failed; API 8 tests OK; artifacts/consumers 4 tests OK; seeded fuzz 300 mutations, 293 rejected/7 valid, no crash/hang/mismatch; graph self-test 772 cases/0 failed with optional missing sibling clamp probe explicitly skipped; Claude guard 112 cases/0 failed; Codex lifecycle 55 tests OK; package tests 5 OK; installer tests 4 OK.
 - Windows driven correctness 33 passed/0 failed and package tests 5 OK, each exit 0. All target package layouts have no loose artifact copies; manifests cover 5 Linux, 8 Windows and 4 artifacts per Android ABI.
 - Research pass is not applicable: this section changes build/package infrastructure and makes no compression or speed claim. No codec/format/oracle/KAT source changed.
+
+## Stopped run=ab65fd2f08d9
+
+D00 T04 §1 implementation candidate: `73f0143949aceb1dd8fa4a695069d1df0952fa45`. Final local gates: 30/30 passed. The independent review exited 124 after 900.112 seconds at 2026-09-30T20:32:49Z, with empty stdout and no verdict. Requested pin: `claude-opus-5-5`, high effort, 900-second timeout; actual model and cost unresolved. Prompt SHA-256: `12386f8e7826c9eefca54f2997600399bd164205b1095c48e80c2660edbfb5e9`. Raw evidence remains in `build/codex-d00-t04-s1-review/independent.*`; canonical findings: `docs/reviews/00-workspace/D00-T04-s1.md`.
+
+No fallback, panel approval, stamp, row flip, push or remote CI claim. The section is not complete. Stop because the mandatory reviewer is unavailable, preserving the operator's narrowed scope: "complete the current section then stop". No later section was started; the phase and plan remain open.

@@ -71,6 +71,8 @@ Use pinned, checksum-verified LLVM/MinGW and Android NDK installations beneath `
 
 **Test checkpoint:** `python3 scripts/check-all.py` exits zero; `python3 tools/bootstrap.py --verify` verifies every installed component against its manifest and receipt; a corrupted receipt refuses verification.
 
+**Review blocked (2026-09-30):** Candidate `73f0143949aceb1dd8fa4a695069d1df0952fa45` passed the implementation gates, but the private `independent` slot (`claude-opus-5-5`, high effort) exited 124 after 900 seconds with no verdict. No verification stamp is earned. Evidence: `docs/reviews/00-workspace/D00-T04-s1.md`.
+
 ## 2. Portable Platform and SIMD Boundary
 
 **Job:** A caller can export format files between targets. Decoding can undo encoding. The codec can enforce an output policy that protects existing destination files.

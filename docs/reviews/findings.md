@@ -4,22 +4,24 @@
 
 Derived from the per-section findings files under `docs/reviews/`, which stay authoritative. This file is a view, not a record: editing it changes nothing and is overwritten on the next run. `review-todo-section` regenerates it after every stamp.
 
-**0 findings across 0 sections.**
+**1 findings across 1 sections.**
 
 ## By category
 
 | Category | Count | What it means |
 | --- | ---: | --- |
+| `correctness` | 1 | the code does the wrong thing |
 
 ## By severity
 
 | Severity | Count | What it means |
 | --- | ---: | --- |
 | `critical` | 0 | invalidates safety, data integrity, or the stamp |
-| `major` | 0 | wrong behavior in code, plan, or record |
+| `major` | 1 | wrong behavior in code, plan, or record |
 | `minor` | 0 | polish or wording, or no surviving defect |
 
 ## Every finding
 
 | Section | # | Severity | Category | Disposition | Source | Summary |
 | --- | --- | --- | --- | --- | --- | --- |
+| `D00 T04 §1` | F1 | major | `correctness` | fixed | self | Incomplete manifests produced incomplete ZIPs |
