@@ -35,6 +35,7 @@ def main():
     ):python(name,path,*args)
     gates.append(('document drift tests',[py,'-m','unittest','discover','-s','tests','-p','test_drift.py','-v']))
     gates.append(('plan audit tests',[py,'-m','unittest','discover','-s','tests','-p','test_plan_audit.py','-v']))
+    gates.append(('package tests',[py,'-m','unittest','discover','-s','tests','-p','test_package.py','-v']))
     if os.name != 'nt':
         # Codex campaigns and the Linux archive installer run in WSL/Linux.
         python('Codex review tooling','.codex/runner/review_prompt.py','--self-test')

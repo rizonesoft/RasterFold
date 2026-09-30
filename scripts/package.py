@@ -15,8 +15,19 @@ def package(target):
     manifest=json.loads((directory/'build.json').read_text())
     if manifest.get('schema') != 2 or manifest.get('target') != target:
         raise ValueError('unsupported build manifest; rebuild before packaging')
+    required={'include/rasterfold.h','lib/librasterfold.a'}
+    if target=='windows-x64':
+        required.update(('bin/rasterfold.exe','bin/rasterfold.dll',
+                         'lib/librasterfold.dll.a','lib/rasterfold.lib',
+                         'symbols/rasterfold.pdb','symbols/rasterfold-dll.pdb'))
+    else:
+        required.update(('bin/rasterfold','lib/librasterfold.so'))
+        if target=='linux-x64':required.add('lib/librasterfold.so.1')
+    artifacts=manifest.get('artifacts')
+    if not isinstance(artifacts,dict) or required-set(artifacts):
+        raise ValueError('incomplete build manifest; rebuild before packaging')
     files=[]
-    for name,digest in manifest['artifacts'].items():
+    for name,digest in artifacts.items():
         relative=PurePosixPath(name)
         if relative.is_absolute() or '..' in relative.parts or '\\' in name or ':' in name or relative.as_posix()!=name:
             raise ValueError(f'invalid artifact path: {name}')

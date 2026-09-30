@@ -52,14 +52,22 @@ frozen: true
 
 ## 1. Local Toolchains and WSL Gates
 
+> **Started:** 2026-09-30T20:10:51Z
+
 Use pinned, checksum-verified LLVM/MinGW and Android NDK installations beneath `tools/`; keep downloaded SDKs and compiler binaries out of Git. Windows remains a supported build target. Document the Linux host SDK requirement separately from the local compiler installation. Repair the measured WSL path, shell and locking defects without weakening gates.
 
-- [ ] Add a manifest-driven local bootstrap and build command for Windows, Linux and Android. Done when: every target produces artifacts and reports its compiler and target.
-- [ ] Organize lowercase `bin/<target>/` packages into conventional `bin/`, `lib/` and `include/` directories, with matching Windows PDBs in `symbols/`. Done when: native consumers and packaged artifacts use the new paths, manifest hashes cover the headers and symbols, and no loose compatibility copies remain.
-- [ ] Repair the six failed WSL gates and keep Windows validation runnable. Done when: the all-gates command exits zero on WSL and reports target-specific runtime limits honestly.
-- [ ] Deliver a ZIP artifact containing the built executable, libraries, header and build hashes for each target. Done when: `scripts/package.py` verifies manifests before creating ZIP artifacts.
-- [ ] Add target build CI and document local provisioning and verification. Done when: clean installation, repeat installation and checksum failure are tested.
-- [ ] Commit: `"build: provision local cross-platform toolchains from WSL"`
+- [x] Add a manifest-driven local bootstrap and build command for Windows, Linux and Android. Done when: every target produces artifacts and reports its compiler and target.
+- [x] Organize lowercase `bin/<target>/` packages into conventional `bin/`, `lib/` and `include/` directories, with matching Windows PDBs in `symbols/`. Done when: native consumers and packaged artifacts use the new paths, manifest hashes cover the headers and symbols, and no loose compatibility copies remain.
+- [x] Repair the six failed WSL gates and keep Windows validation runnable. Done when: the all-gates command exits zero on WSL and reports target-specific runtime limits honestly.
+- [x] Deliver a ZIP artifact containing the built executable, libraries, header and build hashes for each target. Done when: `scripts/package.py` verifies manifests before creating ZIP artifacts.
+- [x] Add target build CI and document local provisioning and verification. Done when: clean installation, repeat installation and checksum failure are tested.
+- [x] Commit: `"build: provision local cross-platform toolchains from WSL"`
+
+**Implementation evidence:** The bootstrap, target builds, package layout, provisioning guide and target CI shipped in `2c89e2e`; this section verifies those existing surfaces. On 2026-09-30 the four target builds and ZIP packages were reproduced. The four installer fixtures passed clean installation, repeat installation, archive checksum refusal and corrupted-receipt refusal. This candidate adds a required-artifact manifest check to `scripts/package.py`, plus five package tests and their full-gate registration, because a manifest omitting a required header, symbol or binary previously passed packaging.
+
+**Freeze check:** No codec, oracle, format specification or known-answer bytes change in this section; native correctness and oracle comparisons must remain green.
+
+**Checkpoint output (2026-09-30):** `python3 scripts/check-all.py --all-targets` exited 0 with `check-all: 30/30 passed`; Linux and Windows correctness each report `33 passed, 0 failed`; package tests each report five passing tests on Linux and Windows. Linux API: 8 tests; artifact/consumer tests: 4; seeded fuzz: `300 mutated files: 293 rejected, 7 still valid, no crash, hang or mismatch` (seed 1). Toolchain verification reports all three installed components OK. Android ARM64/x64 were built and inspected, not executed. The graph self-test explicitly skipped its optional absent sibling stamp-gate probe. Logs and the initial stale-cache correction are recorded in `docs/phase-runs/2026-09-30-codex-phase-0.md`.
 
 **Test checkpoint:** `python3 scripts/check-all.py` exits zero; `python3 tools/bootstrap.py --verify` verifies every installed component against its manifest and receipt; a corrupted receipt refuses verification.
 

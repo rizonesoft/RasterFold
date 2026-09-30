@@ -164,12 +164,12 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "Author-attested: 2026-09-30 source audit, docs/todo-vision-audit.md",
+      "evidence": "Author-attested: 2026-09-30 D00 T04 section 1 source review of required package artifacts and full-gate registration against scripts/build.py, scripts/package.py and scripts/check-all.py; five package regression tests pass; see docs/phase-runs/2026-09-30-codex-phase-0.md",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "51734a555f97e344771e8462284781429f04d5d5f6a8e5550e43e10e9c20e7c3",
         "scripts/build.py": "81f4a17e99f5a0bf93b55cc1c4e238b72cd9b8c014bf0a9b12c7e792777c8fac",
-        "scripts/package.py": "b7eb4d5e59b0eff92cc7af21173b20aa5fe6ab15133886977ecab7f965d728d0",
+        "scripts/package.py": "f88b30dea02dd187429bebd1ffc835f487db6c410c72e7855db73ef20f5ba116",
         "README.md": "b1c57d2c6872342fb95844b50470ad0cec5905cec0b268b7af121c151371ed6c"
       }
     },
@@ -183,13 +183,13 @@
       }
     },
     "docs/building.md": {
-      "evidence": "Author-attested: 2026-09-30 source audit, docs/todo-vision-audit.md",
+      "evidence": "Author-attested: 2026-09-30 D00 T04 section 1 source review of required package artifacts and full-gate registration against scripts/build.py, scripts/package.py and scripts/check-all.py; five package regression tests pass; see docs/phase-runs/2026-09-30-codex-phase-0.md",
       "sources": {
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
         "scripts/build.py": "81f4a17e99f5a0bf93b55cc1c4e238b72cd9b8c014bf0a9b12c7e792777c8fac",
-        "scripts/package.py": "b7eb4d5e59b0eff92cc7af21173b20aa5fe6ab15133886977ecab7f965d728d0",
+        "scripts/package.py": "f88b30dea02dd187429bebd1ffc835f487db6c410c72e7855db73ef20f5ba116",
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
-        "docs/building.md": "a0991f55723be9e45b3ca7ba93306abae553b3d37562c6192c2e467f1e8ae8f2"
+        "docs/building.md": "80d227a518bc165e857bf81d58ea2fabc972f1a90c2e53ea73a33bc8aa36cdb3"
       }
     },
     "docs/library.md": {
@@ -202,10 +202,10 @@
       }
     },
     "CONTRIBUTING.md": {
-      "evidence": "Author-attested: 2026-09-30: reviewed build/test instructions against scripts/build.py and scripts/check-all.py; drift and vision gate commands documented in docs/todo-vision-audit.md",
+      "evidence": "Author-attested: 2026-09-30 D00 T04 section 1 source review of required package artifacts and full-gate registration against scripts/build.py, scripts/package.py and scripts/check-all.py; five package regression tests pass; see docs/phase-runs/2026-09-30-codex-phase-0.md",
       "sources": {
         "scripts/build.py": "81f4a17e99f5a0bf93b55cc1c4e238b72cd9b8c014bf0a9b12c7e792777c8fac",
-        "scripts/check-all.py": "ceba2d0ab663346d9e0894958b074b7a2c071265404dbf8b5bf30678d3b973f8",
+        "scripts/check-all.py": "e2db0f20ef359f7a8b8f665e4ea4dca2081c6d3eb39bfb2f5f351117e3bbd0f9",
         "CONTRIBUTING.md": "01f5855ce18883d6930ce1ebb569ea9411ac21e3c4cf3faced1a56c155bf470f"
       }
     },
