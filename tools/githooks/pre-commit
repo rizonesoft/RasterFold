@@ -7,13 +7,13 @@ ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "pre-commit: not i
 cd "$ROOT" || { echo "pre-commit: cannot enter the work tree" >&2; exit 1; }
 pick_python() {
   for c in python3 python py; do
-    if command -v "$c" >/dev/null 2>&1 && "$c" -c 'import sys; sys.exit(sys.version_info[0] < 3)' 2>/dev/null; then
+    if command -v "$c" >/dev/null 2>&1 && "$c" -c 'import sys; sys.exit(sys.version_info < (3, 11))' 2>/dev/null; then
       printf '%s' "$c"; return 0
     fi
   done
   return 1
 }
-PY="$(pick_python)" || { echo "pre-commit: no working Python 3 (python3, python, or py) on PATH; install Python 3 so the TODO gate can run" >&2; exit 1; }
+PY="$(pick_python)" || { echo "pre-commit: no working Python 3.11+ (python3, python, or py) on PATH; install Python 3.11+ so the TODO gate can run" >&2; exit 1; }
 # Temp dir lives under the git dir so its path is native on every platform (no /tmp translation under Git Bash).
 GITDIR="$(git rev-parse --absolute-git-dir 2>/dev/null)" || { echo "pre-commit: cannot locate the git dir" >&2; exit 1; }
 WORK="$(mktemp -d "$GITDIR/hookgate.XXXXXX" 2>/dev/null)" || { echo "pre-commit: cannot make a temp dir" >&2; exit 1; }
@@ -35,6 +35,12 @@ if [ -f "$WORK/scripts/todo-graph.py" ]; then
 fi
 if [ -f "$WORK/research/milestones.py" ]; then
   (cd "$WORK" && "$PY" research/milestones.py --check) || { echo "pre-commit: the milestone files drift from research/milestones.py; run python research/milestones.py --write and stage the result" >&2; exit 1; }
+fi
+if [ -f "$WORK/scripts/plan-audit.py" ]; then
+  (cd "$WORK" && "$PY" scripts/plan-audit.py) || { echo "pre-commit: staged dependency order or vision coverage is incomplete" >&2; exit 1; }
+fi
+if [ -f "$WORK/scripts/drift-check.py" ]; then
+  (cd "$WORK" && "$PY" scripts/drift-check.py --git-dir "$GITDIR") || { echo "pre-commit: staged documentation drift; repair, review and stage the corrected files" >&2; exit 1; }
 fi
 git diff --quiet -- scripts todo docs || { "$PY" scripts/todo-graph.py validate >/dev/null 2>&1 || echo "pre-commit: warning: unstaged changes carry findings; this gate validated only the staged tree" >&2; }
 exit 0

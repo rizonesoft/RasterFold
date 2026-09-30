@@ -10,10 +10,10 @@ track: D1
 
 # TODO-01 -- HTML Documentation with Comparison Charts
 
-> **Goal:** RasterFold has an HTML documentation site built by Jekyll on GitHub Pages from `docs/`: an overview, getting started, the command-line and API references, the format specification, the research notes, and a benchmarks section with charts comparing RasterFold with JPEG XL e7, JPEG XL e9, lossless WebP, and PNG on size, encode and decode speed, and memory. Jekyll renders the pages, theme, and navigation; a stdlib Python script (`scripts/build-docs.py`) generates what Jekyll cannot check (the SVG charts and data tables from the committed CSVs, and the pages mirrored from sources outside `docs/`), and its `--check` fails when any generated file differs from its source.
+> **Goal:** RasterFold has an HTML documentation site built by Jekyll on GitHub Pages from explicitly allowlisted sources staged in `build/site-source/`: an overview, getting started, the command-line and API references, the format specification, the research notes, and a benchmarks section with charts comparing RasterFold with JPEG XL e7, JPEG XL e9, lossless WebP, and PNG on size, encode and decode speed, and memory. Jekyll renders the pages, theme, and navigation; a stdlib Python script (`scripts/build-docs.py`) generates what Jekyll cannot check (the SVG charts and data tables from the committed CSVs, and the pages mirrored from sources outside `docs/`), and its `--check` fails when any generated file differs from its source.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-09-29):** Documentation is Markdown only: `README.md`, `spec/FOLD.md`, `docs/research.md`, `research/README.md`, `todo/README.md`. Measurements live in `benchmarks/results.md` and `benchmarks/results.csv` (from `tests/benchmark.py`). There is no Jekyll configuration, no chart, and no Pages workflow. Operator decision 2026-09-29: "let's go with Jekyll" (the hybrid: Jekyll renders, a Python script generates the checked charts and mirrored pages). GitHub Pages' source is to be set to GitHub Actions (`D99 T01 §5`), without the starter workflow GitHub suggests.
+> **Current state (verified 2026-09-30):** Documentation is Markdown only: `README.md`, `spec/FOLD.md`, `docs/research.md`, `research/README.md`, `todo/README.md`, `docs/building.md` and `docs/library.md`. The current repository is private; deployment must verify account support and public-content boundaries. Measurements live in `benchmarks/results.md` and `benchmarks/results.csv` (from `tests/benchmark.py`). There is no Jekyll configuration, no chart, and no Pages workflow. Operator decision 2026-09-29: "let's go with Jekyll" (the hybrid: Jekyll renders, a Python script generates the checked charts and mirrored pages). GitHub Pages' source is to be set to GitHub Actions (`D99 T01 §5`), without the starter workflow GitHub suggests.
 <!-- claim: absent docs/_config.yml -->
 <!-- claim: absent scripts/build-docs.py -->
 <!-- claim: exists benchmarks/results.csv -->
@@ -28,12 +28,18 @@ track: D1
 - -> XREF: D99 T01 §5 -- the operator sets the Pages source to GitHub Actions for §3
 - -> XREF: D09 T01 §4 -- the 1.0 release, which links the published site
 
+- -> XREF: D10 T04 §1 -- shared implementation or verification boundary.
+
+- -> XREF: D10 T03 §8 -- shared implementation or verification boundary.
+
+- -> XREF: D08 T03 §2 -- shared implementation or verification boundary.
+
 ## Outcome
 
-- `docs/` is a Jekyll site (`docs/_config.yml`, the Just the Docs theme through `remote_theme`, a navigation list), and CI builds it with `actions/jekyll-build-pages` from `./docs` only; nothing outside `docs/` is published.
+- `docs/` holds public sources and internal records. `scripts/build-docs.py --stage build/site-source` selects only the explicit product allowlist, and CI builds that staging directory with Jekyll; raw `docs/` is never the publication source.
 - `python scripts/build-docs.py` writes the generated parts (the pages mirrored from `spec/FOLD.md` and `README.md` with front matter, and the SVG charts and data tables under `docs/_includes/generated/`) with no package beyond the Python standard library; `--check` exits 1 when a committed generated file differs from what its sources produce.
 - The benchmarks page shows, per set (reference image, photographs, generated images, held-out once it exists): size ratios, encode and decode times at one and default threads, and peak memory against JPEG XL e7, JPEG XL e9, lossless WebP, and PNG; plus a per-image size scatter and a size-against-decode-time chart.
-- The `pages` workflow checks the generated files, builds, and deploys on every push to `main` that touches the docs or the data.
+- The `pages` workflow checks the generated files, builds, and deploys on every main push and explicit release dispatch, with exact-source dispatch available for release readback.
 
 **Adjacency:** list=applicable @ D08 T01 §1; document=applicable @ D08 T01 §1; settings=not-applicable (the site's configuration is a committed file, not a user setting); reporting=applicable @ D08 T01 §2; notifications=not-applicable (a docs build reports on the console); permissions=not-applicable (a static site); audit=not-applicable (git history is the audit); exchange=applicable @ D08 T01 §3; reverse=not-applicable (a redeployed site replaces the last)
 
@@ -43,24 +49,39 @@ track: D1
 
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
-|   1   |   §1    | The Jekyll site and its generated pages | -- |  [ ]   |
+|   1   |   §1    | The Jekyll site and its generated pages | D08 T02 §1 |  [ ]   |
 |   2   |   §2    | Comparison charts | §1, D00 T02 §3 |  [ ]   |
-|   3   |   §3    | Publish with GitHub Pages | §2, D99 T01 §5 |  [ ]   |
+| 3 | §3 | Publish with GitHub Pages | §2, §4, §5, D08 T02 §5, D08 T02 §7, D99 T01 §5 | [ ] |
+| 4 | §4 | Complete current documentation map | §1, D08 T02 §7 | [ ] |
+| 5 | §5 | Accessible navigation and site states | §4 | [ ] |
+| 6 | §6 | Converter user guide and capability reference | §4, D10 T03 §8, D10 T04 §1 | [ ] |
+| 7 | §7 | Versioned downloads and complete references | D09 T01 §1, D09 T01 §2, D08 T03 §1, D08 T03 §2 | [ ] |
+| 8 | §8 | Published whole-product documentation acceptance | §3, §6, §7, D10 T04 §1 | [ ] |
 
 ---
 
 ## 1. The Jekyll Site and Its Generated Pages
 
+**Fidelity:** Documentation site -- the committed product documentation design.
+
+**Design:** docs/design/documentation.md -- states: all in spec -- themes: all four -- density: both
+
+**Treatment:** Readable technical content, original RasterFold branding and current-version labels.
+
+**Chrome:** Jekyll navigation, local search, page outline and edit-source link.
+
 **Job:** A reader can browse a list of documentation pages in one navigation and read each document rendered as HTML.
 
 Jekyll renders what it is good at (Markdown, layouts, the theme, navigation, search). Pages whose source lives outside `docs/` are mirrored into it by `scripts/build-docs.py`, never copied by hand, so they cannot drift from their sources.
 
-- [ ] Add `docs/_config.yml` (title, `remote_theme: just-the-docs/just-the-docs` with the `jekyll-remote-theme` plugin, search on, `exclude:` for `reviews/` and `phase-runs/` so review records are never published) and `docs/Gemfile` for local previews. Done when: `actions/jekyll-build-pages` builds `./docs` in CI without an error. Cheaper substitute: building from the repository root, which publishes `todo/`, `AGENTS.md`, and the skills.
-- [ ] Write the pages that live in `docs/`: `index.md` (overview), `getting-started.md`, `benchmarks.md`, with front matter placing them in the navigation, and front matter on `docs/research.md`. Done when: the built site lists them in its navigation.
+- [ ] Record an explicit page/asset allowlist in `docs/site-content.json`. Done when: a test refuses agent instructions, TODOs, review records, intelligence and private/local paths in the built site; excluding two current directories alone is insufficient.
+- [ ] Add `docs/_config.yml` (title, `remote_theme: just-the-docs/just-the-docs` with the `jekyll-remote-theme` plugin, search on, `exclude:` for `reviews/` and `phase-runs/` so review records are never published) and `docs/Gemfile` for local previews. Done when: `actions/jekyll-build-pages` builds `build/site-source/` in CI without an error; configuration exclusions are defense in depth, never the publication allowlist. Cheaper substitute: building from the repository root, which publishes `todo/`, `AGENTS.md`, and the skills.
+- [ ] Write the pages that live in `docs/`: `index.md` (overview), `getting-started.md`, `benchmarks.md`, with front matter placing them in the navigation, and a public research summary sourced from selected approved research sections. Done when: the built site lists them in its navigation.
 - [ ] Write `scripts/build-docs.py`, which mirrors `spec/FOLD.md` to `docs/format.md` and the command and limits parts of `README.md` to `docs/usage.md`, each with front matter and a generated-file banner, and `--check`, which regenerates in memory and compares. Done when: editing `spec/FOLD.md` without rerunning makes `python scripts/build-docs.py --check` exit 1.
+- [ ] Implement `scripts/build-docs.py --stage build/site-source`. Done when: the clean staging directory contains exactly the allowed generated pages/assets from `docs/site-content.json`, rebases links and rejects undeclared/private inputs; a seeded internal document cannot enter the artifact.
 - [ ] Commit: `"docs: a Jekyll site with pages mirrored from their sources"`
 
-**Test checkpoint:** `python scripts/build-docs.py --check` exits 0 on the tree and 1 after a source edit (quoted, then regenerated); the CI build log of `./docs` is quoted with no warning.
+**Test checkpoint:** `python scripts/build-docs.py --check` exits 0 on the tree and 1 after a source edit (quoted, then regenerated); the CI build log of `build/site-source/` is quoted with no warning.
 
 ## 2. Comparison Charts
 
@@ -79,12 +100,112 @@ Charts are generated as static SVG by `scripts/build-docs.py`, not drawn by Java
 
 **Job:** A reader can open the site the `pages` workflow exports to GitHub Pages.
 
-The workflow is GitHub's Jekyll starter adapted to this repository: it builds `./docs` only, checks the generated files first, pins every action to a full commit SHA like the other workflows, and runs only when the docs or their data change.
+The workflow is GitHub's Jekyll starter adapted to this repository: it builds the allowlisted staging directory, checks generated output first, pins every action to a full commit SHA and runs on every main push and explicit release dispatch so all generators see their current inputs.
 
-- [ ] Add `.github/workflows/pages.yml`: on pushes to `main` touching `docs/**`, `spec/**`, `README.md`, `benchmarks/**`, or `scripts/build-docs.py`, and on `workflow_dispatch`; permissions `contents: read`, `pages: write`, `id-token: write`; concurrency group `pages` without cancelling; a `build` job (checkout, `python scripts/build-docs.py --check`, `actions/configure-pages`, `actions/jekyll-build-pages` building `./docs` into `./_site`, `actions/upload-pages-artifact`) and a `deploy` job (`actions/deploy-pages`, environment `github-pages`); every action pinned to a full SHA with its version in a comment. Done when: the workflow run is green and the site loads at https://rizonesoft.github.io/RasterFold/. Cheaper substitute: the unmodified starter workflow, which builds the whole repository and skips the check.
+- [ ] Add `.github/workflows/pages.yml`: on every push to `main` and `workflow_dispatch` with an explicit immutable source ref; permissions `contents: read`, `pages: write`, `id-token: write`; concurrency group `pages` without cancelling; a `build` job (checkout the requested commit/tag, build the native CLI and its references using pinned tools, `python scripts/build-docs.py --check`, `python scripts/build-docs.py --stage build/site-source`, `actions/configure-pages`, `actions/jekyll-build-pages` with `source: build/site-source` into `./_site`, copy container output to a runner-owned artifact directory before receipt writes, `python3 scripts/drift-check.py --site-dir build/site-artifact --write-site-receipt`, a second read-only `--site-dir build/site-artifact` check, `actions/upload-pages-artifact` with `path: build/site-artifact`) and a `deploy` job (`actions/deploy-pages`, environment `github-pages`); every action pinned to a full SHA with its version in a comment. Done when: the workflow run is green and the site loads at https://rizonesoft.github.io/RasterFold/. Cheaper substitute: the unmodified starter workflow, which builds the whole repository and skips the check.
 - [ ] Commit: `"docs: publish the site with GitHub Pages"`
 
-**Test checkpoint:** the `pages` run's URL from `python scripts/review_prompt.py ci-wait <sha> --workflow pages --workflow-path .github/workflows/pages.yml`, and a fetch of the site's index page returning 200.
+**Test checkpoint:** the `pages` run's URL from `python scripts/review_prompt.py ci-wait <sha> --workflow pages --workflow-path .github/workflows/pages.yml`, and a fetch of the site's index page returning 200 and its published source receipt matching the deployed commit.
+
+**Groomed 2026-09-30:** The initial publication documents current capabilities. The converter manual and final complete-product site are later sections in Phase 9; the existing Phase 0 publication is not made dependent on future converter implementation.
+
+## 4. Complete current documentation map
+
+**Job:** A reader can find accurate documentation for every currently shipped command, API and target.
+
+**Fidelity:** Documentation site -- the committed documentation design.
+
+**Design:** docs/design/documentation.md -- states: all in spec -- themes: all four -- density: both
+
+**Treatment:** Readable, accessible technical references with current-version labels.
+
+**Chrome:** Shared Jekyll navigation, search, page outline and edit-source link.
+
+- [ ] Add the page inventory in `docs/site-content.json`. Done when: overview, four-target installation/build, current CLI/API, format, examples, measurements, limitations, troubleshooting, contribution, security and licenses each name one source.
+- [ ] Mirror `docs/building.md`, `docs/library.md` and `spec/FOLD.md` through `scripts/build-docs.py`. Done when: generated pages retain working links under `/RasterFold/` and current facts come from the source contracts.
+- [ ] Add current/planned/historical labels to `docs/index.md` and the benchmark pages. Done when: the native converter is not advertised as downloadable until its package exists.
+- [ ] Add `tests/test_docs.py` page-coverage fixtures. Done when: removing a required page or exporting a private source fails the build.
+- [ ] Commit: `"docs: complete current documentation map"`
+
+**Test checkpoint:** Run the page-coverage fixtures added here, build Jekyll and run `python3 scripts/drift-check.py --site-dir build/site-artifact`; quote missing-page and leaked-private-file failures.
+
+## 5. Accessible navigation and site states
+
+**Requires:** linux-display -- The checkpoint requires observed browser/accessibility or native-guide evidence, not only a source build; source checkpoint audit: docs/todo-vision-audit.md.
+
+**Job:** A reader can search and navigate the site on desktop and mobile using a keyboard or assistive technology.
+
+**Fidelity:** Documentation site -- the committed documentation design.
+
+**Design:** docs/design/documentation.md -- states: all in spec -- themes: all four -- density: both
+
+**Treatment:** Readable, accessible technical references with current-version labels.
+
+**Chrome:** Shared Jekyll navigation, search, page outline and edit-source link.
+
+- [ ] Implement navigation and local search in `docs/_config.yml` and `docs/_includes/`. Done when: every allowed page is reachable and search indexes only published content.
+- [ ] Style documented states in `docs/assets/`. Done when: four themes, both densities, narrow/mobile layout, visible focus, empty search and missing-page states match the design.
+- [ ] Add project-base-path and anchor checks in `tests/test_docs.py`. Done when: all local links, images, search assets and fragments work under `/RasterFold/`.
+- [ ] Record browser and accessibility evidence in `docs/site-validation.md`. Done when: keyboard-only navigation and a screen-reader pass cover overview, references, tables and search.
+- [ ] Commit: `"docs: accessible navigation and site states"`
+
+**Test checkpoint:** Build the site and drive its documented states at desktop/mobile widths; quote internal-link and accessibility evidence. A source-only review is insufficient.
+
+## 6. Converter user guide and capability reference
+
+**Requires:** display-session, linux-display, android-arm64-runtime, android-x64-runtime -- The checkpoint requires observed browser/accessibility or native-guide evidence, not only a source build; source checkpoint audit: docs/todo-vision-audit.md.
+
+**Job:** A user can install, use, compare and troubleshoot the native converter from complete documentation.
+
+**Fidelity:** Documentation site -- the committed documentation design.
+
+**Design:** docs/design/documentation.md -- states: all in spec -- themes: all four -- density: both
+
+**Treatment:** Readable, accessible technical references with current-version labels.
+
+**Chrome:** Shared Jekyll navigation, search, page outline and edit-source link.
+
+- [ ] Generate `docs/converter-formats.md` from `converter/codecs.json`. Done when: read/write, depth, alpha, animation, metadata and exactness classes match actual enabled adapters.
+- [ ] Write `docs/converter.md`. Done when: single conversion, previews, side-by-side/wipe/difference, saving, cancel/retry and Try sample each have tested instructions.
+- [ ] Write target-specific help in `docs/converter-troubleshooting.md`. Done when: permissions, display drivers, Android providers, unsupported modes, memory limits and larger output have concrete recovery steps.
+- [ ] Capture UI examples from the candidate in `docs/assets/converter/`. Done when: every screenshot names its source revision, target and state and contains no private source paths.
+- [ ] Register the generated capability page in `docs/drift.json`. Done when: stale registry values fail its generator check; authored definitions live separately in `docs/converter-exactness.md` and are never overwritten.
+- [ ] Commit: `"docs: converter user guide and capability reference"`
+
+**Test checkpoint:** Follow every guide on a clean target and check that the generated capability table exactly equals the registry; record native results for all four targets.
+
+## 7. Versioned downloads and complete references
+
+**Job:** A user can identify the current release, choose the right artifact and read matching references.
+
+**Fidelity:** Documentation site -- the committed documentation design.
+
+**Design:** docs/design/documentation.md -- states: all in spec -- themes: all four -- density: both
+
+**Treatment:** Readable, accessible technical references with current-version labels.
+
+**Chrome:** Shared Jekyll navigation, search, page outline and edit-source link.
+
+- [ ] Generate `docs/downloads.md` from verified release metadata. Done when: each target links executable/GUI and library packages, symbols, checksums and license/source information.
+- [ ] Generate release/API/format labels in `scripts/build-docs.py`. Done when: independent compatibility versions cannot be confused with the product SemVer.
+- [ ] Wire current CLI/API, converter and release-history pages in `docs/site-content.json`. Done when: all public entry points show matching release or development labels; later main builds keep downloads linked to the actual released assets rather than nonexistent development packages.
+- [ ] Register generated downloads/version pages in `docs/drift.json`. Done when: release metadata changes invalidate the generated pages before publication.
+- [ ] Commit: `"docs: versioned downloads and complete references"`
+
+**Test checkpoint:** Seed a version mismatch and a missing target asset and show the docs gate failing; then build and inspect the matching reference pages.
+
+## 8. Published whole-product documentation acceptance
+
+**Requires:** linux-display -- The checkpoint requires observed browser/accessibility or native-guide evidence, not only a source build; source checkpoint audit: docs/todo-vision-audit.md.
+
+**Job:** A user reaches the complete documentation for the exact product version they downloaded.
+
+- [ ] Add publication readback to `tests/test_docs.py`. Done when: the public project URL, source receipt, navigation, downloads and sampled references agree with the deployment candidate.
+- [ ] Exercise the full documentation inventory in `docs/site-validation.md`. Done when: installation, use, format, API, converter, benchmark limitations, accessibility, troubleshooting and licensing all have observed page evidence.
+- [ ] Verify the artifact allowlist and asset origins in `scripts/build-docs.py`. Done when: the published tree contains no runner, TODO, review, intelligence, private data or third-party tracking asset.
+- [ ] Commit: `"docs: published whole-product documentation acceptance"`
+
+**Test checkpoint:** Quote the successful Pages run plus deployed receipt/hash and page checks. HTTP 200 on the home page alone does not prove completeness.
 
 ## Verification
 

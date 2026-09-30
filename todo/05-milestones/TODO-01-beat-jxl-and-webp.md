@@ -31,7 +31,7 @@ track: G1
 
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
-|   1   |  §1   | Milestone 1 gate: Locked baseline | D00 T01 §1, D00 T01 §2, D00 T01 §3, D00 T01 §4, D00 T01 §5, D00 T02 §1, D00 T02 §2, D00 T02 §3, D08 T01 §1, D08 T01 §2, D08 T01 §3, D08 T02 §1, D08 T02 §2, D08 T02 §3, D08 T02 §4, D08 T02 §5, D99 T01 §3, D99 T01 §4 |  [ ]   |
+|   1   |  §1   | Milestone 1 gate: Locked baseline | D00 T01 §1, D00 T01 §2, D00 T01 §3, D00 T01 §4, D00 T01 §5, D00 T02 §1, D00 T02 §2, D00 T02 §3, D08 T01 §1, D08 T01 §2, D08 T01 §3, D08 T02 §1, D08 T02 §2, D08 T02 §3, D08 T02 §4, D08 T02 §5, D08 T02 §6, D08 T02 §7, D00 T04 §1, D00 T04 §2, D00 T04 §3, D00 T04 §4, D08 T04 §1, D99 T01 §3, D99 T01 §4 |  [ ]   |
 |   2   |  §2   | Milestone 2 gate: Same bytes, leaner and harder | D03 T01 §1, D03 T01 §2, D03 T01 §3, D04 T01 §1, D02 T01 §1, D02 T01 §2, §1 |  [ ]   |
 |   3   |  §3   | Milestone 3 gate: Few-colour images solved | D01 T01 §1, D01 T01 §2, D01 T01 §3, D04 T01 §2, §2 |  [ ]   |
 |   4   |  §4   | Milestone 4 gate: Format version 3: beat JPEG XL e9 on photographs | D01 T02 §1, D01 T02 §2, D01 T02 §3, D01 T02 §4, D01 T02 §5, D01 T02 §6, D01 T02 §7, D01 T03 §1, §3 |  [ ]   |
@@ -185,11 +185,11 @@ Milestone 9 of the roadmap (`docs/research.md` section 9). It keeps everything m
 
 **Needs:** Idle machine (timing)
 
-**Job:** A user can rely on milestone 10: `rasterfold-v1.0.0` released: format version 3 frozen; `rasterfold.exe` and `rasterfold.dll` with the C API; BMP, PNG, and PPM in and out; the HTML docs published; 100,000 fuzz mutations clean; smaller than JPEG XL e9 and lossless WebP on every set, and faster and leaner than JPEG XL on encode, decode, and memory.
+**Job:** A user can rely on milestone 10: `rasterfold-v1.0.0` released: format version 3 frozen; Windows/Linux x64 and Android ARM64/x64 CLI, shared/static C libraries and the complete native converter; BMP, PNG, and PPM in the CLI; the full HTML docs published; 100,000 fuzz mutations clean; smaller than JPEG XL e9 and lossless WebP on every set, and faster and leaner than JPEG XL on encode, decode, and memory.
 
 Milestone 10 of the roadmap (`docs/research.md` section 9). It keeps everything milestone 9 reached: no photo size more than 0.1% worse, no encode or decode time more than 3% worse, no higher peak memory, and every older file still decoding. If the target is missed, the missed-milestone policy applies (`D99 T01 §4`): up to three follow-up experiments from `docs/research.md` are filed through `add-todo`, and the operator is asked only when all three miss.
 
-- [ ] Measure the target with `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns), `python tests/benchmark.py -n 3`, `python tests/fuzz_decode.py`. Done when: `rasterfold-v1.0.0` released: format version 3 frozen; `rasterfold.exe` and `rasterfold.dll` with the C API; BMP, PNG, and PPM in and out; the HTML docs published; 100,000 fuzz mutations clean; smaller than JPEG XL e9 and lossless WebP on every set, and faster and leaner than JPEG XL on encode, decode, and memory, each figure quoted with its command.
+- [ ] Measure the target with `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns), `python tests/benchmark.py -n 3`, `python tests/fuzz_decode.py`. Done when: `rasterfold-v1.0.0` released: format version 3 frozen; Windows/Linux x64 and Android ARM64/x64 CLI, shared/static C libraries and the complete native converter; BMP, PNG, and PPM in the CLI; the full HTML docs published; 100,000 fuzz mutations clean; smaller than JPEG XL e9 and lossless WebP on every set, and faster and leaner than JPEG XL on encode, decode, and memory, each figure quoted with its command.
 - [ ] Measure the no-regression rule against milestone 9's gate stamp: `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns), `python tests/benchmark.py -n 3`, `decode --time`, and `python tests/test_correctness.py`. Done when: each rule holds, quoted beside milestone 9's figures.
 - [ ] Record the milestone in `docs/research.md` sections 1 and 9 and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
 - [ ] Commit: `"milestone: reach milestone 10 -- rasterfold 1.0"`

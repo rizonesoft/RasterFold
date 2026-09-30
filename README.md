@@ -62,3 +62,7 @@ The [execution plan](todo/implementation-plan.md) owns planned work. [AGENTS.md]
 Contributions should improve images in general. A size or speed claim needs the [measurement protocol](docs/research.md), its inputs, command and thread count. Reproducing one attractive result is not enough to claim a general win over JPEG XL.
 
 Read the [contribution guide](CONTRIBUTING.md), [security policy](SECURITY.md) and [code of conduct](CODE_OF_CONDUCT.md). RasterFold is licensed under [GPL-3.0](LICENSE).
+
+<!-- drift:begin readme-capabilities -->
+Current codec: format 2, C API 1.0, RGB8. Maximum dimension: 32768; maximum image: 33554432 pixels. The native converter and full Pages site are planned in [the product vision](docs/vision.md).
+<!-- drift:end readme-capabilities -->

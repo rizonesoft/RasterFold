@@ -56,6 +56,10 @@ track: G2
 
 ## 1. Plan Milestone 11: SIMD decisions
 
+-> SOURCE: research-7.2-grayscale
+
+- [ ] Preserve the promoted backlog obligation in `docs/research.md` and this milestone's work sections: Measure generic grayscale-channel detection and single-channel coding on a diverse grayscale set plus photo/tp/synth; retain the no-image-specific-tuning rule and require a new method/version if accepted. Done when: a named section owns its implementation and tests, or a measured negative result is retained without silently dropping the obligation.
+
 Milestone 11's work is authored here, one milestone ahead, from what milestone 10 actually measured: its target is *one-thread decode at least 10% faster than 1.0, bytes within 0.1%*. The design notes are `docs/research.md` section 9 (milestone 11) and the sections of `docs/research.md` it points at; the baseline is milestone 10's gate stamp (`D05 T01 §10`), never a figure from memory.
 
 - [ ] Read milestone 10's gate stamp and `docs/research.md` sections 3 and 9, and quote the baseline this milestone's target is measured from in this section as a `**Corrected YYYY-MM-DD:**` note. Done when: the note quotes the figures with their commands.
@@ -237,6 +241,10 @@ Milestone 17 of the roadmap (`docs/research.md` section 9). It keeps everything 
 **Test checkpoint:** every target figure and every no-regression figure quoted from a run at the commit; a figure that misses its bar blocks the stamp and triggers the missed-milestone policy instead.
 
 ## 15. Plan Milestone 18: Streaming
+
+-> SOURCE: readme-limitation-streaming
+
+- [ ] Preserve the promoted backlog obligation in `docs/research.md` and this milestone's work sections: Plan bounded-row encode/decode buffers and the matching API/thread schedule, proving memory on images above the current limit before raising it. Done when: a named section owns its implementation and tests, or a measured negative result is retained without silently dropping the obligation.
 
 Milestone 18's work is authored here, one milestone ahead, from what milestone 17 actually measured: its target is *peak memory on a 24-megapixel image at most one third of milestone 17's*. The design notes are `docs/research.md` section 9 (milestone 18) and the sections of `docs/research.md` it points at; the baseline is milestone 17's gate stamp (`D05 T02 §14`), never a figure from memory.
 

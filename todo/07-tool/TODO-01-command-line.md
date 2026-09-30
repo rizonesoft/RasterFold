@@ -25,9 +25,11 @@ track: T1
 - -> XREF: D06 T01 §3 -- the library the command line is rebuilt on
 - -> XREF: D08 T03 §1 -- the command-line reference generated from `rasterfold help`
 
+- -> XREF: D10 T02 §1 -- shared implementation or verification boundary.
+
 ## Outcome
 
-- `rasterfold encode|decode|inspect|verify|help|version` work as `D08 T03 §1`'s generated reference describes, with exit codes 0 to 5 unchanged.
+- `rasterfold encode|decode|inspect|verify|help|version` work as `D08 T03 §1`'s generated reference describes, with exit codes 0 to 5 unchanged. Explicit overwrite remains a planned opt-in contract, not current behavior.
 - PNG (8-bit RGB and RGBA without alpha loss refused cleanly until alpha exists), PPM, and BMP in and out with exact pixels.
 
 **Adjacency:** list=not-applicable (a command-line tool has no records to browse); document=applicable @ D07 T01 §1; settings=applicable @ D07 T01 §1; reporting=applicable @ D07 T01 §1; notifications=applicable @ D07 T01 §4; permissions=applicable @ D07 T01 §4; audit=not-applicable (git history is the audit); exchange=applicable @ D07 T01 §2; reverse=applicable @ D07 T01 §2
@@ -50,7 +52,7 @@ track: T1
 **Job:** A user can write a document file with `encode` or `decode`, configure the settings (`--threads`, `--overwrite`), and read a summary report from `inspect` or `verify` as text or JSON.
 
 - [ ] Add `verify` (decode in memory, check every checksum and the stream ends, print the pixel hash, write nothing), `inspect --json`, `help` (the usage text), and `version` / `--version` (codec version, format versions read and written, API version) to `src/main.c`. Done when: each command's output matches the reference `D08 T03 §1` generates. Cheaper substitute: `verify` implemented as decode to a temporary file.
-- [ ] Choose input and output formats by file extension (`.bmp`, `.png`, `.ppm`, `.fold`), refusing an unknown extension with exit 1. Done when: `rasterfold encode in.png out.fold` and `decode in.fold out.ppm` work.
+- [ ] Choose input and output formats by file extension (`.bmp`, `.png`, `.ppm`, `.fold`), refusing an unknown extension with exit 1. Done when: BMP dispatch passes and PNG/PPM report unsupported until their own sections land; their end-to-end cases belong to §2 and §3.
 - [ ] Commit: `"cli: verify, JSON inspect, help, and version"`
 
 **Test checkpoint:** new cases in `tests/test_correctness.py` for each command and each extension pair pass; `python tests/test_correctness.py` passes every case.

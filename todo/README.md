@@ -16,7 +16,7 @@ todo/
 ├── budget.json             the budget decisions and their history (no caps)
 ├── backlog.md              deferred ideas, one line each; never sections, never runnable, never dropped silently
 ├── .warning-baseline       accepted warnings; a NEW warning fails validate
-├── .design-baseline        empty: RasterFold has no user-facing surface (see "Surfaces")
+├── .design-baseline        empty: planned surfaces have explicit design contracts (see "Surfaces")
 ├── 00-workspace/
 │   ├── INDEX.md            domain index -- every TODO in this domain
 │   ├── TODO-01-<short-name>.md
@@ -27,7 +27,7 @@ todo/
 
 Domains are flat-numbered and ordered by allocation sequence. Each maps to a build area; the mapping lives in `TODO-00-INDEX.md` and in each domain's `INDEX.md`. The tooling reads domain names from the tree and never hardcodes them: a directory `NN-kebab-name/` holding an `INDEX.md` is a domain. Numbers are stable addresses: a new domain appends after the last one, because `DNN` cross-references encode them.
 
-The domains are `00-workspace` (toolchain, gates, CI, this system, measurement references, held-out validation), `01-compression` (the models, predictors, and methods that make files smaller), `02-speed` (threads, compiler options, and hot-loop work that make coding faster without changing bytes, or with a stated cost), `03-memory` (buffer lifetimes and peaks), `04-robustness` (decoder hardening, fuzzing, and format scope), `05-milestones` (the 60 milestone gates of the roadmap and their planning sections, generated from `research/milestones.py`), `06-library` (the DLL and its C API), `07-tool` (the command line), `08-docs` (the HTML documentation and the drift and staleness gates), `09-release` (versioning, packaging, releases), and `99-manual` (operator-only rows and recorded decisions, numbered apart from the allocation sequence; each of its rows sits in the phase that waits on it). `TODO-00-INDEX.md` is the authority for which exist today.
+The domains are `00-workspace` (toolchain, gates, CI, this system, measurement references, held-out validation), `01-compression` (the models, predictors, and methods that make files smaller), `02-speed` (threads, compiler options, and hot-loop work that make coding faster without changing bytes, or with a stated cost), `03-memory` (buffer lifetimes and peaks), `04-robustness` (decoder hardening, fuzzing, and format scope), `05-milestones` (the 60 milestone gates of the roadmap and their planning sections, generated from `research/milestones.py`), `06-library` (the DLL and its C API), `07-tool` (the command line), `08-docs` (the HTML documentation and the drift and staleness gates), `09-release` (versioning, packaging, releases), `10-converter` (the native C converter and bundled codec adapters), and `99-manual` (operator-only rows and recorded decisions, numbered apart from the allocation sequence; each of its rows sits in the phase that waits on it). `TODO-00-INDEX.md` is the authority for which exist today.
 
 **Naming:** `TODO-NN-short-name.md`, where `NN` is the next free number *within that domain*. Numbers are local to the domain and never reused. Renaming a file is safe: the stable `id` in frontmatter is what cross-references resolve against.
 
@@ -134,11 +134,11 @@ Skills under `.claude/skills/` may cite only full `DNN TNN §N` refs, and only t
 
 ## Proof: what a Test checkpoint may cite
 
-RasterFold is freestanding C (no C runtime) built by `build.ps1` with the pinned llvm-mingw toolchain and Ninja, with a Python oracle (`tests/rfi_ref.py`) and Python test drivers. A checkpoint cites one or more of these six, and **it must be able to fail**:
+RasterFold is C11 built by `scripts/build.py` and its host wrappers with pinned local toolchains; Windows codec artifacts are freestanding, Linux/Android use libc, and the separately packaged converter may bundle audited codec/support libraries, with a Python oracle (`tests/rfi_ref.py`) and Python test drivers. A checkpoint cites one or more of these six, and **it must be able to fail**:
 
 | Proof | What it is | What it cannot prove |
 | ----- | ---------- | -------------------- |
-| **Builds clean** | `powershell -ExecutionPolicy Bypass -File build.ps1` exits 0 and the compiler prints no warning for the touched files (`-Wall -Wextra`). The baseline gate every code section owes. | That the code does the right thing. It is a compile gate, nothing more. |
+| **Builds clean** | `python3 scripts/build.py` (Windows: `python scripts/build.py`) exits 0 and the compiler prints no warning for the touched files (`-Wall -Wextra`). The baseline gate every code section owes. | That the code does the right thing. It is a compile gate, nothing more. |
 | **Static analysis clean** | `clang-tidy` from `tools/llvm-mingw` reports nothing new on the touched files. This gate does not exist yet (`D00 T01 §3` builds it); until it ships, no checkpoint may cite it. | Runtime behavior. Clean analysis over wrong logic is still wrong logic. |
 | **Correctness test** | A named case of `python tests/test_correctness.py` (the codec against the independent oracle `tests/rfi_ref.py`, the frozen known-answer file, rejection cases), or `python tests/fuzz_decode.py N` for decoder hardening. Cite the case name and the pass count. | Speed and size. A passing round trip says nothing about how many bytes or cycles it took. |
 | **Driven run with evidence** | Run `bin/windows-x64/bin/rasterfold.exe` on a real file and quote what it printed: the `rf_stat` lines of `--time`, the `inspect` fields, the exit code of a refusal. | Repeatability. A driven run is evidence of one run, so the section says what was driven and what it produced. |
@@ -254,7 +254,7 @@ The frozen set as of this file is the two behaviors above.
 
 ## Surfaces
 
-RasterFold has no user-facing surface: it is a command-line tool and a file format. The ported validator's surface rules (the `**Fidelity:**`, `**Design:**`, `**Treatment:**`, and `**Chrome:**` lines, the `design-*` classes, and `todo/.design-baseline`) therefore stay dormant: no section carries a Fidelity line, so none of them can fire, and the design baseline stays empty. If a surface ever appears (a viewer, a GUI), its section takes those lines as the Isotone spec describes them.
+The Pages site and native converter are planned user-facing surfaces. Their sections declare `**Fidelity:**`, `**Design:**`, `**Treatment:**` and `**Chrome:**`, backed by `docs/design/documentation.md` or `docs/design/converter.md`. Design lines use `-- states: all in spec -- themes: all four -- density: both`. The design baseline remains empty: new surfaces receive explicit contracts, never exemptions.
 
 The one surface line that is live is `**Job:**`: one sentence naming what a user can do once the section ships (`**Job:** A user can export ... and import it back ...`). It is the section's positive statement of what it delivers, and `query adjacency` reads it to find the section that owns an `applicable @ DNN TNN §N` declaration.
 
@@ -275,6 +275,11 @@ Values are comma-separated closed vocabulary (`todo-graph.py` `REQUIRES_ALLOWED`
 | Value | Means | Detected how (local context) |
 | ----- | ----- | ---------------------------- |
 | `display-session` | A Windows interactive session able to show windows | `sys.platform == "win32"` with `SESSIONNAME` naming an interactive session (not `Services`, never empty); every other context evaluates False |
+| `windows-runtime` | Native Windows CLI/library execution | Explicit after a native execution probe; no GUI session required |
+| `linux-runtime` | Native Linux CLI/library execution | Explicit after a native execution probe; no GUI session required |
+| `linux-display` | Driven Linux display and accessibility evidence | Explicit after a real session probe; never inferred from DISPLAY or a build |
+| `android-arm64-runtime` | Driven Android ARM64 device evidence | Explicit after a device probe; SDK presence is insufficient |
+| `android-x64-runtime` | Driven Android x64 device/emulator evidence | Explicit after a runtime probe; cross-compilation is insufficient |
 | `operator` | A step only the operator can take: a login behind the owner's account, a deletion the agent's safety rules refuse, an approval of a frozen-behavior change. Every section in `todo/99-manual/` carries it | Never detected: no agent self-reports an operator's keyboard, so only a declared `query ready --context operator` lists these rows as runnable now |
 
 A section whose open work is worked OUTSIDE this tree carries a `Moved:` marker under its heading:
@@ -413,7 +418,9 @@ is a complete instruction: nobody has to translate domain `01` and TODO `01` int
 
 The boxes **are never ticked by hand**; `plan --check` runs in CI and in the pre-commit hook's validate path, so a stale projection fails instead of quietly misinforming whoever reads it next. Run `plan --sync` after any row flips.
 
-**CI enforces exactly this contract and nothing more.** The plan workflow runs `self-test`, `validate`, and `plan --check` on every push touching `todo/`, `scripts/`, or the workflow itself, so a FATAL (or a NEW warning) fails the build like any other defect.
+`plan --check` always validates the canonical Markdown projection in the selected working tree or staged export. It also verifies `build/todo-progress.json` and `build/todo-operator.json` when present; these ignored caches may be absent in a fresh clone or staged export. Checking creates neither cache and never rewrites the plan. `plan --sync` regenerates all three projections.
+
+**CI enforces this contract on every main-branch push and pull request.** The plan workflow runs `self-test`, `validate`, `plan --check`, dependency/vision coverage and document drift checks, so a FATAL (or a NEW warning) fails the build like any other defect.
 
 ### The budget and the backlog
 
@@ -492,7 +499,7 @@ or `validate` fails with `release-backlog-review-missing`. Running it means walk
 | `FATAL`  |    `1`    | The graph or the format is broken: a `Depends On` that does not resolve, a section without its Implementation Order row, a row without its section, a one-sided XREF, a deferral with no owner, a `superseded` TODO with no successor, and every other structural class in the per-class table below. Fix it before doing anything else. |
 | `WARN`   | see below | Ratchet-managed: a warning already in `todo/.warning-baseline` or the ack ledger exits `0`; a NEW one prints as `WARN*` and exits `1` until fixed or deliberately accepted with `warnings --accept`. |
 
-**The per-class map, mirrored from `SEVERITY_MAP` in `scripts/todo-graph.py`: the self-test compares this table to the map row-for-row, so editing one without the other fails `self-test`.** The rule is push-time actionability: FATAL where the fix is mechanical and the defect is a structural-integrity break; WARN where the fix is a judgement call a red build cannot resolve. The `fidelity-*` and `design-*` classes are dormant here (see "Surfaces"): they are kept so the validator stays one tool across the repos that share it.
+**The per-class map, mirrored from `SEVERITY_MAP` in `scripts/todo-graph.py`: the self-test compares this table to the map row-for-row, so editing one without the other fails `self-test`.** The rule is push-time actionability: FATAL where the fix is mechanical and the defect is a structural-integrity break; WARN where the fix is a judgement call a red build cannot resolve. The `fidelity-*` and `design-*` classes apply to the planned site and converter surfaces (see "Surfaces").
 
 | Class | Severity | Why |
 | ----- | -------- | --- |
@@ -522,7 +529,7 @@ or `validate` fails with `release-backlog-review-missing`. Running it means walk
 | `needs-unknown` | FATAL | A `**Needs:**` value outside the closed list in `todo-graph.py` (`NEEDS_ALLOWED`). The list is closed so a misspelt host cannot silently unmark a section that cannot run without it. |
 | `moved-target-missing` | FATAL | A `> **Moved:**` marker that names no file, or a file that does not exist. The marker takes the section out of `query ready`, the plan and the progress totals on the strength of that pointer, so a dead pointer would hide work. |
 | `pending-control-contract` | FATAL | Reserved: the coming-soon inspector is not ported yet, so this class cannot fire until it lands. |
-| `stamp-no-opus-panel` | FATAL | A stamp whose findings carry no panel verdicts. It reads as reviewed evidence while verifying nothing. The governing record is the last `GPT panel` section; a last `Claude panel` (or legacy `Opus panel`) section fails, because the writer never reviews. The class keeps its historical name and the legacy date rules the ported validator carries. |
+| `stamp-no-opus-panel` | FATAL | A stamp whose findings carry no panel verdicts. It reads as reviewed evidence while verifying nothing. The governing record is the last `GPT panel` section; Codex-written candidates use the independent `Claude panel`; Claude-written candidates retain the `GPT panel`. The writer family never reviews its own candidate. The class keeps its historical name and the legacy date rules the ported validator carries. |
 | `requires-unknown` | FATAL | A `**Requires:**` value outside the closed list in `todo-graph.py` (`REQUIRES_ALLOWED`). The list is closed so a misspelt capability cannot silently unmark a section. |
 | `requires-no-reason` | FATAL | A `**Requires:**` mark without its `-- reason`. The citation is what makes the mark auditable instead of vibes. |
 | `stamp-no-plan-review` | FATAL | A stamp that carries no `Plan review:` completion marker. The plan-review round is required procedure. |
@@ -547,7 +554,7 @@ or `validate` fails with `release-backlog-review-missing`. Running it means walk
 | `backlog-dropped` | FATAL | A source key HEAD's backlog holds (an entry, a merge marker, or a removal record) that the working file no longer accounts for: not carried by a live section's `-> SOURCE:` line, a surviving entry's merge marker, or an operator removal record. Nothing leaves the backlog without the operator's approval. |
 | `backlog-review-rewritten` | FATAL | A `reviewed:` field HEAD's entry carries that the working entry lost or changed: a release's backlog review is append-only. |
 | `release-backlog-review-missing` | FATAL | A release section (it pushes an app tag) without its ``Run the backlog review for `<tag>` `` checklist item. |
-| `release-backlog-unreviewed` | FATAL | A release section stamped `[x]` while a backlog entry in its scope (its app or `suite`; every entry for `isotone`), added on or before the stamp, has no `reviewed:` field for that tag. |
+| `release-backlog-unreviewed` | FATAL | A release section stamped `[x]` while a backlog entry in its scope (its app or `suite`; every entry for `rasterfold`), added on or before the stamp, has no `reviewed:` field for that tag. |
 | `design-missing` | FATAL | A section whose Fidelity line names a surface carries no `**Design:**` line and is not listed in `todo/.design-baseline`: a surface built from a guess instead of the spec it implements 1:1. |
 | `design-malformed` | FATAL | A `**Design:**` or `**Design deviation:**` line outside its grammar (near misses included), a second Design line in one section, a line outside a numbered section, or `new surface:` without the item that adds the spec to `docs/design/` first. |
 | `design-dead-ref` | FATAL | A Design ref whose file does not exist or whose anchor matches no heading (slugged GitHub-style) or HTML id, or a deviation whose follow-up names no live section. |
@@ -572,3 +579,7 @@ Treat a warning as a decision to make rather than noise to clear. The tree start
 | `process-plan`          | Front door for `implementation-plan.md`; chains ready phases                     |
 
 When something needs doing, start at `add-todo`: it decides whether the work belongs in an existing section, needs a new one, warrants a whole new file (delegating to `create-todo`), or is already covered. Reaching for `create-todo` directly tends to produce a second TODO over an existing one.
+
+### Native converter execution contexts
+
+`windows-runtime`, `linux-runtime`, `linux-display`, `android-arm64-runtime` and `android-x64-runtime` are explicit `Requires` values. Declare them with `query ready --context` only after recording a working native display or device/emulator probe. Windows desktop proof uses `display-session`. An environment variable, installed SDK, cross build or explicit context flag is never runtime proof. The relevant sections retain their required driven tests, accessibility checks and evidence even when admitted.

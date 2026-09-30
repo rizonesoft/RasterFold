@@ -13,7 +13,7 @@ track: D3
 > **Goal:** The command-line reference and the API reference are generated from the program and the header themselves, so they cannot describe an option or a function that does not exist, and the drift gate fails when they fall behind.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-09-30):** The command line is documented by its usage text in `src/main.c` and a hand-written section of `README.md`; the in-flight public API is declared in `include/rasterfold.h` and documented manually in `docs/library.md`. Generated Jekyll API and CLI pages remain owned by this file.
+> **Current state (verified 2026-09-30):** The command line is documented by its usage text in `src/main.c` and a hand-written section of `README.md`; the committed public API is declared in `include/rasterfold.h` and documented manually in `docs/library.md`. Generated Jekyll API and CLI pages remain owned by this file.
 <!-- claim: absent docs/cli.md -->
 
 ## Inputs
@@ -21,6 +21,8 @@ track: D3
 - [`src/main.c`](../../src/main.c) -- the help text the command-line reference comes from
 - -> XREF: D07 T01 §1 -- the version 1 commands and their `help` output
 - -> XREF: D06 T01 §1 -- the header whose comments the API reference comes from
+
+- -> XREF: D08 T01 §1 -- shared implementation or verification boundary.
 
 ## Outcome
 
@@ -39,7 +41,7 @@ track: D3
 
 ## 1. The Command-Line Reference
 
-- [ ] Generate `docs/cli.md` (with Jekyll front matter) from `bin/windows-x64/bin/rasterfold.exe help <command>` for every command (usage, options, exit codes, examples) in `scripts/build-docs.py`. Done when: the built site shows the page in its navigation. Cheaper substitute: a hand-written page.
+- [ ] Generate `docs/cli.md` (with Jekyll front matter) from the native target's `rasterfold help <command>` for every command (usage, options, exit codes, examples) in `scripts/build-docs.py`. Done when: the built site shows the page in its navigation. Cheaper substitute: a hand-written page.
 - [ ] Add the reference to the generated-files check of `D08 T02 §3`. Done when: changing a usage line without regenerating makes `python scripts/drift-check.py` exit 1.
 - [ ] Commit: `"docs: generate the command-line reference from the program"`
 

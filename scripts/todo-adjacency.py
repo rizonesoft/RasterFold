@@ -184,7 +184,8 @@ def bodies(lines, todo):
 
 def resolve(reference, origin, todos):
     """Unique file/domain and actual section, not just a syntactically valid ref."""
-    match = REFERENCE.fullmatch(reference.strip())
+    # Parsed XREFs retain their human reason; it is not part of the address.
+    match = REFERENCE.fullmatch(reference.partition(" -- ")[0].strip())
     if not match:
         return None
     domain = match.group("dom")

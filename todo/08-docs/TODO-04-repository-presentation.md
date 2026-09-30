@@ -14,7 +14,7 @@ track: D1
 > **Goal:** Give RasterFold a distinctive and accurate GitHub entry point with original branding, clear platform/library guidance, community files and artifact CI.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-09-30):** The operator requested the same presentation care as `R:\GitHub\Isotone` and Impossible OS. Their checked-out READMEs and community/workflow files supplied structural references, not RasterFold branding or performance evidence. RasterFold's in-flight cover, API guide and cross-platform workflow are owned here; the existing Jekyll site plan remains in its original file.
+> **Current state (verified 2026-09-30):** The operator requested the same presentation care as `R:\GitHub\Isotone` and Impossible OS. Their checked-out READMEs and community/workflow files supplied structural references, not RasterFold branding or performance evidence. RasterFold's committed cover, API guide and cross-platform workflow are owned here; the existing Jekyll site plan remains in its original file.
 <!-- claim: exists assets/brand/cover.svg -->
 <!-- claim: exists docs/building.md -->
 <!-- claim: exists docs/library.md -->

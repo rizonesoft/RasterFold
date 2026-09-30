@@ -1,0 +1,83 @@
+{
+  "schema": 1,
+  "release_gate": "D09 T01 \u00a74",
+  "requirements": {
+    "Native C engine, reproducible bundled sources and no extra installs": [
+      "D10 T01 \u00a71",
+      "D10 T01 \u00a72",
+      "D10 T01 \u00a73",
+      "D10 T01 \u00a74",
+      "D10 T01 \u00a75",
+      "D10 T01 \u00a76"
+    ],
+    "Native Windows Linux Android interface and C SVG icons": [
+      "D10 T03 \u00a71",
+      "D10 T03 \u00a72",
+      "D10 T03 \u00a73",
+      "D10 T03 \u00a74"
+    ],
+    "Single image preview, side by side comparison, accessibility and RasterFold demo": [
+      "D10 T03 \u00a75",
+      "D10 T03 \u00a76",
+      "D10 T03 \u00a77",
+      "D10 T03 \u00a78"
+    ],
+    "Runtime matrix, hostile input, native delivery and whole product acceptance": [
+      "D10 T04 \u00a71",
+      "D10 T04 \u00a72",
+      "D10 T04 \u00a73",
+      "D10 T04 \u00a74"
+    ],
+    "Complete GitHub Pages documentation and references": [
+      "D08 T01 \u00a71",
+      "D08 T01 \u00a72",
+      "D08 T01 \u00a73",
+      "D08 T01 \u00a74",
+      "D08 T01 \u00a75",
+      "D08 T01 \u00a76",
+      "D08 T01 \u00a77",
+      "D08 T01 \u00a78",
+      "D08 T03 \u00a71",
+      "D08 T03 \u00a72"
+    ],
+    "Document, information file, commit and site drift detection and repair": [
+      "D08 T02 \u00a71",
+      "D08 T02 \u00a72",
+      "D08 T02 \u00a73",
+      "D08 T02 \u00a74",
+      "D08 T02 \u00a75",
+      "D08 T02 \u00a76",
+      "D08 T02 \u00a77"
+    ],
+    "Automated version derivation and matching CLI SDK application releases": [
+      "D09 T01 \u00a71",
+      "D09 T01 \u00a72",
+      "D09 T01 \u00a73",
+      "D09 T01 \u00a74"
+    ],
+    "Local four target toolchain and isolated reviewed runners": [
+      "D00 T04 \u00a71",
+      "D00 T04 \u00a72",
+      "D00 T04 \u00a73",
+      "D00 T04 \u00a74"
+    ],
+    "Codec capabilities, exactness and differential fixture validation": [
+      "D10 T02 \u00a71",
+      "D10 T02 \u00a72",
+      "D10 T02 \u00a73",
+      "D10 T02 \u00a74",
+      "D10 T02 \u00a75",
+      "D10 T02 \u00a76",
+      "D10 T02 \u00a77",
+      "D10 T02 \u00a78",
+      "D10 T02 \u00a79",
+      "D10 T02 \u00a710",
+      "D10 T02 \u00a711",
+      "D10 T02 \u00a712"
+    ],
+    "Release signing identity and HEVC distribution decisions": [
+      "D99 T01 \u00a76",
+      "D99 T01 \u00a77"
+    ]
+  }
+}

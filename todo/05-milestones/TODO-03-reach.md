@@ -236,6 +236,10 @@ Milestone 27 of the roadmap (`docs/research.md` section 9). It keeps everything 
 
 ## 15. Plan Milestone 28: Alpha, 16-bit, and metadata
 
+-> SOURCE: research-7.3-alpha-16bit
+
+- [ ] Preserve the promoted backlog obligation in `docs/research.md` and this milestone's work sections: Plan exact alpha and 16-bit samples with PNG/TIFF/PAM inputs, independent oracle, format/API compatibility and metadata preservation; converter capabilities do not imply current RasterFold support. Done when: a named section owns its implementation and tests, or a measured negative result is retained without silently dropping the obligation.
+
 Milestone 28's work is authored here, one milestone ahead, from what milestone 27 actually measured: its target is *alpha, 16-bit samples, and ICC and EXIF preserved, 8-bit RGB files byte-identical to milestone 27, the 16-bit set below JPEG XL e9*. The design notes are `docs/research.md` section 9 (milestone 28) and the sections of `docs/research.md` it points at; the baseline is milestone 27's gate stamp (`D05 T03 §14`), never a figure from memory.
 
 - [ ] Read milestone 27's gate stamp and `docs/research.md` sections 3 and 9, and quote the baseline this milestone's target is measured from in this section as a `**Corrected YYYY-MM-DD:**` note. Done when: the note quotes the figures with their commands.

@@ -61,3 +61,7 @@ Android applications link the library for their ABI with the matching NDK. A JNI
 On failure, the output object is zeroed. Successful calls clear a supplied error object. Dimensions are limited to 32,768 per axis and 33,554,432 pixels; input files are limited to 256 MiB. Always check the return code before consuming output. Caller pointers and lengths must describe accessible memory, as with any C buffer interface.
 
 The [encode](../examples/encode.c) and [decode](../examples/decode.c) examples show PPM file handling and ownership. They are demonstration programs; the production CLI adds flushed partial-file publication. `tests/test_api.py` covers API behavior and oracle fidelity, while `tests/test_artifacts.py` verifies exports and compiles/runs C and C++ consumers against shared and static libraries.
+
+<!-- drift:begin api-capabilities -->
+Current public API: 1.0. Current encoded format: 2. Image limits: 32768 pixels per dimension and 33554432 pixels total. These values are generated from the C headers.
+<!-- drift:end api-capabilities -->

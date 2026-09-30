@@ -10,10 +10,10 @@ track: OP1
 
 # TODO-01 -- Operator Setup and Approvals (Manual)
 
-> **Goal:** Every step only the operator can take is written down with the exact command or decision, so no agent run stalls wondering whether it may act: the retired run-guard folders are gone, the GitHub CLI is logged in for the CI read-back, GitHub Pages is enabled for the docs, and the two standing decisions that let a campaign run through the roadmap (format-version approval and the missed-milestone policy) are recorded in the operator's words.
+> **Goal:** Every step only the operator can take is written down with the exact command or decision, so no agent run stalls wondering whether it may act: the retired run-guard folders are gone, the GitHub CLI is logged in for the CI read-back, GitHub Pages is enabled for the docs, and the two standing decisions that let a campaign run through the roadmap (format-version approval and the missed-milestone policy) are recorded in the operator's words. Production Android signing identity and the concrete HEVC distribution decision are release-only prerequisites.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-09-29):** The operator deleted the folders `.grok/`, `guard/`, and `build/review-20260928/` from the previous developer's tooling on 2026-09-29 (the agent session's safety rules had refused the deletion), and `.gitignore` no longer lists `.grok/` or `guard/`. The GitHub CLI (`gh`) is not installed on the development machine. No format version 3 exists; on 2026-09-29 the operator gave the standing approval and the missed-milestone policy recorded in §3 and §4. GitHub Pages is not enabled for the repository.
+> **Current state (verified 2026-09-30):** The operator deleted the folders `.grok/`, `guard/`, and `build/review-20260928/` from the previous developer's tooling on 2026-09-29 (the agent session's safety rules had refused the deletion), and `.gitignore` no longer lists `.grok/` or `guard/`. The WSL checkout now has an authenticated GitHub CLI, verified by successful CI readback and pushes on 2026-09-30; a new clone must verify its own identity. No format version 3 exists; on 2026-09-29 the operator gave the standing approval and the missed-milestone policy recorded in §3 and §4. GitHub Pages is not enabled for the repository.
 <!-- claim: count "^\.grok/$" .gitignore = 0 -->
 <!-- claim: count "^guard/$" .gitignore = 0 -->
 <!-- claim: count "^#define RF_VERSION 2u$" src/rf.h = 1 -->
@@ -37,6 +37,9 @@ track: OP1
 
 **Adjacency rationale:** Each section is a step a person takes; none changes what the tool reads, writes, or reports.
 
+- -> XREF: D10 T04 §3 -- production Android signing identity.
+- -> XREF: D10 T02 §7 -- HEVC distribution decision.
+
 ## Implementation Order
 
 | Order | Section | Deliverable                                   | Depends On | Status |
@@ -46,6 +49,8 @@ track: OP1
 |   3   |   §3    | Approve format version 3                      | --         |  [ ]   |
 |   4   |   §4    | The missed-milestone policy                   | --         |  [ ]   |
 |   5   |   §5    | Enable GitHub Pages                           | --         |  [ ]   |
+| 6 | §6 | Android release signing identity | -- | [ ] |
+| 7 | §7 | HEVC distribution decision | -- | [ ] |
 
 ---
 
@@ -63,11 +68,11 @@ The previous developer's campaign tooling left a lock folder and a run guard in 
 
 ## 2. Log In the GitHub CLI
 
-**Requires:** operator -- the login runs in the owner's browser session; agents hold no GitHub credentials.
+**Requires:** operator -- the login runs in the owner's browser session; a clone without usable existing authentication needs an interactive account enrollment; reuse authorized stored credentials before requesting any new login.
 
 `python scripts/review_prompt.py ci-wait` reads CI back through the GitHub CLI. Without it, every push's CI result is unverified, and the review skill's push block cannot complete.
 
-- [ ] Install the CLI (`winget install GitHub.cli`) and log in (`gh auth login`, GitHub.com, HTTPS). Done when: `gh auth status` prints `Logged in to github.com`.
+- [ ] Verify the existing CLI with `gh auth status`; only a missing clone setup installs the platform CLI (Windows: `winget install GitHub.cli`; WSL/Linux: the official GitHub CLI package instructions) and uses `gh auth login` when no authorized stored identity is available. Done when: `gh auth status` prints `Logged in to github.com`.
 - [ ] Commit: `"workspace: record the GitHub CLI login for the CI read-back"`
 
 **Test checkpoint:** `gh run list --repo rizonesoft/RasterFold --limit 1` exits 0.
@@ -100,12 +105,37 @@ Every milestone gate in `todo/05-milestones/` carries this policy: on a miss, up
 
 ## 5. Enable GitHub Pages
 
-**Requires:** operator -- repository settings need the owner's logged-in session; agents hold no GitHub credentials.
+**Requires:** operator -- the owner decides private-repository Pages eligibility and publication visibility; automation may reuse existing authorized account access for configuration once that decision is recorded.
 
 - [ ] In the repository settings of `rizonesoft/RasterFold`, set Pages to deploy from GitHub Actions. Done when: the settings page shows GitHub Actions as the source.
+- [ ] Record the public project-site visibility and `/RasterFold/` base path in `docs/site-content.json`; check the `github-pages` environment allows `main` and the intended release triggers. Done when: an exact-release source can deploy through an allowed `workflow_dispatch` from `main` even if tag deployment is restricted.
 - [ ] Commit: `"workspace: record that GitHub Pages serves the docs"`
 
 **Test checkpoint:** the first `pages` workflow run after the change is green and the site's address loads.
+
+## 6. Android release signing identity
+
+**Origin:** discovered run=61f3a8f4474f 2026-09-30 -- groom-plan release prerequisites.
+
+**Requires:** operator -- production application identity and durable signing-key custody must be established before public Android packages.
+
+- [ ] Record the chosen application ID, release owner and signing-certificate fingerprint in `docs/release-signing.md`. Done when: the operator's decision is recorded; no private key or secret value enters Git or logs.
+- [ ] Locate the existing authorized signing material in the Conclave vault, or have the owner establish it there, and configure scoped CI secret access. Done when: a test-signed artifact verifies against the recorded public fingerprint and recovery ownership is documented without revealing secret values.
+- [ ] Commit: `"release: record Android signing identity and custody"`
+
+**Test checkpoint:** Quote the public certificate fingerprint and successful verification of the test APK; secret values remain concealed.
+
+## 7. HEVC distribution decision
+
+**Origin:** discovered run=61f3a8f4474f 2026-09-30 -- groom-plan codec distribution prerequisite.
+
+**Requires:** operator -- the application's intended distribution and any unresolved HEVC licensing obligations need a recorded release-owner decision, not an invented agent approval.
+
+- [ ] Prepare the proposed HEVC provider, source license, distribution channels and unresolved obligations in `docs/codec-distribution.md` using current primary sources. Done when: the decision concerns a concrete provider/build rather than a generic codec warning.
+- [ ] Record the release owner's decision in `docs/codec-distribution.md`. Done when: the required enabled HEIC capability has an approved distribution path; an unresolved decision remains visibly blocking and does not silently remove the promised format.
+- [ ] Commit: `"release: record HEVC provider distribution decision"`
+
+**Test checkpoint:** The actual decision names the proposed provider/version and intended channels in `docs/codec-distribution.md`; D10 T02 §7 must later prove its pins match that decision. No future artifact is required to stamp this decision.
 
 ## Verification
 

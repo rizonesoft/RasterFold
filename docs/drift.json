@@ -1,0 +1,281 @@
+{
+  "schema": 1,
+  "coverage": [
+    {
+      "pattern": "*/todo-template.md",
+      "role": "template",
+      "reason": "Placeholders are authoring examples, not current facts."
+    },
+    {
+      "pattern": "docs/wsl-migration-audit.md",
+      "role": "historical",
+      "reason": "Dated migration evidence; source changes do not rewrite past proof."
+    },
+    {
+      "pattern": "docs/todo-vision-audit.md",
+      "role": "historical",
+      "reason": "Dated TODO audit evidence, with explicit current versus proposed boundaries."
+    },
+    {
+      "pattern": "docs/measurements.md",
+      "role": "historical",
+      "reason": "Historical measurements retain their original conditions."
+    },
+    {
+      "pattern": "docs/research.md",
+      "role": "historical",
+      "reason": "Dated research results and forward roadmap; live generated portions are checked separately."
+    },
+    {
+      "pattern": "docs/reviews/*",
+      "role": "historical",
+      "reason": "Immutable review evidence and candidate references."
+    },
+    {
+      "pattern": "docs/phase-runs/*",
+      "role": "historical",
+      "reason": "Run evidence is retained and never manufactured by repair."
+    },
+    {
+      "pattern": "todo/*",
+      "role": "plan",
+      "reason": "Future requirements and measured Current state claims; never read future versions as current capabilities."
+    },
+    {
+      "pattern": "docs/vision.md",
+      "role": "plan",
+      "reason": "Operator product contract; planned capabilities are labeled."
+    },
+    {
+      "pattern": "docs/design/*",
+      "role": "plan",
+      "reason": "Surface specifications are planned behavior."
+    },
+    {
+      "pattern": "benchmarks/*",
+      "role": "data",
+      "reason": "Measurements remain attached to their recorded conditions."
+    },
+    {
+      "pattern": ".intelligence/*",
+      "role": "historical",
+      "reason": "Retained runner evidence, not generated documentation."
+    },
+    {
+      "pattern": "*.json",
+      "role": "configuration",
+      "reason": "Structured JSON validated; facts.json is also reproduced from sources."
+    },
+    {
+      "pattern": "*.toml",
+      "role": "configuration",
+      "reason": "Structured TOML validated."
+    },
+    {
+      "pattern": "*.yml",
+      "role": "configuration",
+      "reason": "Workflow information and declared fact/claim bindings are checked."
+    },
+    {
+      "pattern": "*.yaml",
+      "role": "configuration",
+      "reason": "Configuration information and declared fact/claim bindings are checked."
+    },
+    {
+      "pattern": "*",
+      "role": "current",
+      "reason": "All other supported tracked or newly added text receives claim, fact and applicable link checks."
+    }
+  ],
+  "facts": {
+    "format_version": {
+      "kind": "regex",
+      "source": "src/rf.h",
+      "pattern": "^#define RF_VERSION (\\d+)[uUlL]*$",
+      "type": "int"
+    },
+    "max_dimension": {
+      "kind": "regex",
+      "source": "src/rf.h",
+      "pattern": "^#define RF_MAX_DIM (\\d+)[uUlL]*$",
+      "type": "int"
+    },
+    "max_pixels": {
+      "kind": "regex",
+      "source": "src/rf.h",
+      "pattern": "^#define RF_MAX_PIXELS (\\d+)[uUlL]*$",
+      "type": "int"
+    },
+    "max_file_bytes": {
+      "kind": "regex",
+      "source": "src/rf.h",
+      "pattern": "^#define RF_MAX_FILE (\\d+)[uUlL]*$",
+      "type": "int"
+    },
+    "api_major": {
+      "kind": "regex",
+      "source": "include/rasterfold.h",
+      "pattern": "^#define RF_API_VERSION_MAJOR (\\d+)[uUlL]*$",
+      "type": "int"
+    },
+    "api_minor": {
+      "kind": "regex",
+      "source": "include/rasterfold.h",
+      "pattern": "^#define RF_API_VERSION_MINOR (\\d+)[uUlL]*$",
+      "type": "int"
+    },
+    "measurement_reference_bytes": {
+      "kind": "csv",
+      "source": "benchmarks/results.csv",
+      "where": {
+        "set": "measure",
+        "image": "image",
+        "codec": "rasterfold"
+      },
+      "column": "bytes",
+      "type": "int"
+    }
+  },
+  "blocks": {
+    "readme-capabilities": {
+      "path": "README.md",
+      "template": "Current codec: format {format_version}, C API {api_major}.{api_minor}, RGB8. Maximum dimension: {max_dimension}; maximum image: {max_pixels} pixels. The native converter and full Pages site are planned in [the product vision](docs/vision.md)."
+    },
+    "build-capabilities": {
+      "path": "docs/building.md",
+      "template": "The sources currently declare format {format_version}, API {api_major}.{api_minor}, a {max_dimension}-pixel dimension limit and a {max_pixels}-pixel image limit. See [the document drift policy](document-drift.md) for validation and repair."
+    },
+    "api-capabilities": {
+      "path": "docs/library.md",
+      "template": "Current public API: {api_major}.{api_minor}. Current encoded format: {format_version}. Image limits: {max_dimension} pixels per dimension and {max_pixels} pixels total. These values are generated from the C headers."
+    }
+  },
+  "assertions": [
+    {
+      "pattern": "*",
+      "regex": "\\bformat (?:version |v)(\\d+)\\b",
+      "fact": "format_version"
+    },
+    {
+      "pattern": "*",
+      "regex": "\\bAPI (?:version )?(\\d+)\\.\\d+\\b",
+      "fact": "api_major"
+    }
+  ],
+  "reviews": {
+    "README.md": {
+      "evidence": "Author-attested: 2026-09-30 source audit, docs/todo-vision-audit.md",
+      "sources": {
+        "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
+        "src/rf.h": "51734a555f97e344771e8462284781429f04d5d5f6a8e5550e43e10e9c20e7c3",
+        "scripts/build.py": "81f4a17e99f5a0bf93b55cc1c4e238b72cd9b8c014bf0a9b12c7e792777c8fac",
+        "scripts/package.py": "b7eb4d5e59b0eff92cc7af21173b20aa5fe6ab15133886977ecab7f965d728d0",
+        "README.md": "b1c57d2c6872342fb95844b50470ad0cec5905cec0b268b7af121c151371ed6c"
+      }
+    },
+    "AGENTS.md": {
+      "evidence": "Author-attested: 2026-09-30 source audit, docs/todo-vision-audit.md",
+      "sources": {
+        "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
+        "src/rf.h": "51734a555f97e344771e8462284781429f04d5d5f6a8e5550e43e10e9c20e7c3",
+        "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
+        "AGENTS.md": "4faaa1fe7baf91233f2dda8bc6a38e98db5e8aef6a1f0f027d70c09febed5bac"
+      }
+    },
+    "docs/building.md": {
+      "evidence": "Author-attested: 2026-09-30 source audit, docs/todo-vision-audit.md",
+      "sources": {
+        "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
+        "scripts/build.py": "81f4a17e99f5a0bf93b55cc1c4e238b72cd9b8c014bf0a9b12c7e792777c8fac",
+        "scripts/package.py": "b7eb4d5e59b0eff92cc7af21173b20aa5fe6ab15133886977ecab7f965d728d0",
+        "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
+        "docs/building.md": "a0991f55723be9e45b3ca7ba93306abae553b3d37562c6192c2e467f1e8ae8f2"
+      }
+    },
+    "docs/library.md": {
+      "evidence": "Author-attested: 2026-09-30 source audit, docs/todo-vision-audit.md",
+      "sources": {
+        "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
+        "src/api.c": "76f5277f1fce9b053ca1e75648d1d5a7aa5494bf46266361e437f3e17f80812c",
+        "src/rasterfold.def": "8beeb2fc7b0e5e95bbe68623dc90732ab5fe6c97abc21026406801773f2ea783",
+        "docs/library.md": "4f6c962f5eca52b5573edd99d744fe838e9ee86b3a1dee86dc9ee51fe4fd2318"
+      }
+    },
+    "CONTRIBUTING.md": {
+      "evidence": "Author-attested: 2026-09-30: reviewed build/test instructions against scripts/build.py and scripts/check-all.py; drift and vision gate commands documented in docs/todo-vision-audit.md",
+      "sources": {
+        "scripts/build.py": "81f4a17e99f5a0bf93b55cc1c4e238b72cd9b8c014bf0a9b12c7e792777c8fac",
+        "scripts/check-all.py": "ceba2d0ab663346d9e0894958b074b7a2c071265404dbf8b5bf30678d3b973f8",
+        "CONTRIBUTING.md": "01f5855ce18883d6930ce1ebb569ea9411ac21e3c4cf3faced1a56c155bf470f"
+      }
+    },
+    ".codex/README.md": {
+      "evidence": "Author-attested: 2026-09-30 source audit, docs/todo-vision-audit.md",
+      "sources": {
+        ".codex/runner/campaign.py": "db98fb6858f40ee33d2f79e56f8861fcc904038edf2ce2696cad8dc213302470",
+        ".codex/hooks/adapter.py": "1f45f9a5c2d7db3eb3dff19a6af98041dd15cb7253ab83643fb6ee1dea4261d0",
+        ".codex/runner/panel.toml": "ae91d8b9e6c6619c10155d996573615d1219e99b62e9ba79395cf3f27bcb78de",
+        ".codex/README.md": "4d8678f2ca1b41ad0fcd4954bc516f62b043f64ce9c7c348f1b189967d5a66f6"
+      }
+    }
+  },
+  "historical_links": {},
+  "generators": [
+    {
+      "script": "research/milestones.py",
+      "check": [
+        "--check"
+      ],
+      "fix": [
+        "--write"
+      ]
+    },
+    {
+      "script": "scripts/todo-graph.py",
+      "check": [
+        "plan",
+        "--check"
+      ],
+      "fix": [
+        "plan",
+        "--sync"
+      ]
+    },
+    {
+      "script": "scripts/build-docs.py",
+      "check": [
+        "--check"
+      ],
+      "fix": [],
+      "planned_owner": "D08 T01 \u00a71"
+    }
+  ],
+  "site_sources": [
+    "README.md",
+    "docs/*.md",
+    "docs/facts.json",
+    "docs/_*",
+    "spec/*",
+    "include/*",
+    "src/main.c",
+    "assets/*",
+    "benchmarks/*",
+    "scripts/build-docs.py",
+    "scripts/drift-check.py",
+    "docs/drift.json"
+  ],
+  "encodings": {
+    "testdata/photos/NOTICE-imagecompression-info.txt": "cp1252"
+  },
+  "forbidden_site_paths": [
+    ".claude",
+    ".codex",
+    ".intelligence",
+    ".conclave",
+    "todo",
+    "reviews",
+    "phase-runs",
+    "agents.md",
+    "claude.md"
+  ]
+}

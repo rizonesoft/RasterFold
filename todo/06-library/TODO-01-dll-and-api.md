@@ -14,7 +14,7 @@ track: L1
 > **Goal:** Other programs can encode, decode, and inspect `.fold` files through Windows/Linux/Android shared or static libraries and one header, `rasterfold.h`, with a versioned, documented C API that never allocates behind the caller's back without a way to free it, never touches the file system unless asked, and gives byte-identical results to the command line.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-09-30):** The migration implementation adds a public C API, per-call errors, concurrent table initialization, CLI integration and shared/static builds for Windows, Linux and both requested Android ABIs. `tests/test_api.py` exercises native calls and `tests/test_artifacts.py` checks exports and C/C++ consumers. This is an in-flight candidate, not a verified section stamp; target-specific runtime evidence is recorded in `docs/wsl-migration-audit.md`.
+> **Current state (verified 2026-09-30):** The migration implementation adds a public C API, per-call errors, concurrent table initialization, CLI integration and shared/static builds for Windows, Linux and both requested Android ABIs. `tests/test_api.py` exercises native calls and `tests/test_artifacts.py` checks exports and C/C++ consumers. This implementation is committed, but has no verified section stamp; target-specific runtime evidence is recorded in `docs/wsl-migration-audit.md`.
 <!-- claim: exists include/rasterfold.h -->
 <!-- claim: count "g_err_msg" src/rf.h = 0 -->
 
@@ -27,6 +27,8 @@ track: L1
 - -> XREF: D09 T01 §2 -- the release package that ships the DLL, header, and import libraries
 
 - -> XREF: D00 T04 §1 -- local Windows, Linux and Android toolchains.
+
+- -> XREF: D10 T01 §1 -- shared implementation or verification boundary.
 
 ## Outcome
 
@@ -86,6 +88,7 @@ The executable uses the same code path as the library (linked statically, so `ra
 
 - [ ] Add `tests/test_api.py`, which drives the DLL through `ctypes`: round trips byte-identical to `rasterfold.exe` on every correctness image, every error code reachable, options with an older `size` accepted. Done when: `python tests/test_api.py` passes and `scripts/check-all.ps1` runs it.
 - [ ] Freeze `src/rasterfold.def` as the ABI list and add a check that fails when an export disappears or changes ordinal. Done when: removing an export from a build makes the check fail.
+- [ ] Inspect exported symbol/version sets for Windows, Linux and both Android ABIs in `tests/test_artifacts.py`. Done when: a leaked internal symbol or missing public API fails on any target, with no Windows-only ABI assumption.
 - [ ] Commit: `"test: API round trips and the frozen export list"`
 
 **Test checkpoint:** `python tests/test_api.py` output quoted; the ABI check's failure on a removed export quoted, then restored.

@@ -14,3 +14,7 @@ In table order, select only runnable-now rows whose dependencies are satisfied. 
 After each stamp, run graph validation, `plan --sync`, `query ready` and `query growth --since <start-commit>`. Inspect controller status and heartbeat log. Follow [delivery.md](../review-todo-section/delivery.md) for authorized pushes and CI readback. No later section builds on unresolved red CI. A release row reviews every backlog item under the operator's recorded decisions; the agent cannot invent a deferral.
 
 When every phase row is verified, write `## Closeout run=<id>` with outcomes and evidence. When all remaining rows are blocked or runnable elsewhere, write `PARKED <UTC> run=<id> <specific blockers>`. Commit the canonical run evidence through the normal section lifecycle. If plan-scoped, return to `$process-plan` for the next phase. If standalone, end the controller with `complete` only for a completed phase, or `park` with its reason. Operator stop instructions take effect before any closeout work.
+
+## Declared native contexts
+
+The default readiness query is conservative. For a native section, first record successful host/display/device probes in the run file, then use `python3 scripts/todo-graph.py query ready --context <capability> ...` with only the capabilities actually demonstrated. Re-probe at the section boundary and retain the section's full native checkpoint. The declaration is routing information, never proof or operator approval. Never add `operator` to an agent context; unresolved operator rows remain for the owner.

@@ -32,13 +32,16 @@ Domains are numbered in **allocation order**. `DNN TNN §N` cross-references enc
 | 07 | [Tool](./07-tool/INDEX.md) | 9 | The version 1 command line: commands, formats, messages, and exit codes. |
 | 08 | [Docs](./08-docs/INDEX.md) | 0, 9 | The HTML documentation with comparison charts, and the drift and staleness gates. |
 | 09 | [Release](./09-release/INDEX.md) | 9 | Versioning, the changelog, the package, and the 1.0 release. |
+| 10 | [Converter](./10-converter/INDEX.md) | 9 | Native C application, bundled codecs, preview, comparisons, SVG interface and native delivery. |
 | 99 | [Manual](./99-manual/INDEX.md) | 0 | Operator-only steps and decisions: the retired folders, the GitHub CLI login, GitHub Pages, and the recorded standing approval and missed-milestone policy. |
 
-`99-manual` is numbered apart from the allocation sequence on purpose: it is the operator's phase, not a build area, and a new build domain still appends after `09`.
+`99-manual` is numbered apart from the allocation sequence on purpose: it is the operator's phase, not a build area, and a new build domain still appends after `10`.
 
 The Phase column is the coarse domain grouping, not an executable schedule. Current dependency-safe sequencing and live counts come only from [`implementation-plan.md`](./implementation-plan.md) plus `python scripts/todo-graph.py query ready`.
 
 ## Active TODOs
+
+Native converter files are listed in [domain 10](./10-converter/INDEX.md); the complete product contract is [docs/vision.md](../docs/vision.md).
 
 | TODO | Domain | Title |
 | ---- | ------ | ----- |

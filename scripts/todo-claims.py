@@ -65,7 +65,8 @@ CITED_PATH_RE = re.compile(r"`([A-Za-z0-9_][A-Za-z0-9_./\-]*[A-Za-z0-9_/])`")
 # on day one and gets deleted rather than met. Resolute measured 3 of 20 on
 # 2026-09-17 (its D00 T04 §1); Isotone re-measured at the port, 2026-09-26, when
 # the tree held one `Current state` block and it carried a claim.
-COVERAGE_FLOOR = 1
+# RasterFold re-measured 31 of 31 blocks on 2026-09-30 (docs/todo-vision-audit.md).
+COVERAGE_FLOOR = 31
 DEFAULT_ROOT = "todo"
 
 

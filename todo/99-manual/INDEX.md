@@ -1,6 +1,6 @@
 # 99 Manual
 
-> **Phase 0** (its rows sit in the phase that waits on them)
+> **Phases 0 and 9** (its rows sit in the phase that waits on them)
 
 Operator-only steps no agent session can perform or may decide: deletions the session's safety rules refuse, logins behind the owner's account, and approvals that change a frozen behavior.
 
@@ -21,6 +21,8 @@ Operator-only steps no agent session can perform or may decide: deletions the se
 - The GitHub CLI login the CI read-back needs
 - The standing approval of format versions and the missed-milestone policy, recorded in the operator's words
 - Enabling GitHub Pages for the documentation site
+- Production Android signing identity and custody
+- HEVC provider distribution decision
 
 ## Out of scope
 

@@ -14,7 +14,7 @@ frozen: true
 > **Goal:** Develop from WSL with repository-local pinned compilers, build Windows, Linux and Android targets, and run either Claude or Codex with independently tunable mechanics in one checkout.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-09-30):** The original Windows-only build used `build.ps1` and `build.ninja`; the in-flight replacement adds native and cross targets through `scripts/build.py`. The native WSL baseline failed six gates: build dispatch, correctness, fuzz, review citation paths, Claude Stop handling and provisioning. Windows PowerShell successfully rebuilt the existing codec from the WSL checkout. Claude's controller is `scripts/campaign_guard.py`; its review pins are `.conclave/panel.toml`. The operator requested Codex parity, independent runner internals, no isolated worktrees and no checkpoint layer, then extended the delivery targets to Windows, Linux and Android executables and libraries.
+> **Current state (verified 2026-09-30):** The committed replacement uses `scripts/build.py` and pinned local tools for all four targets, with conventional `bin/<target>/` packages and independent runner mechanics. The pre-migration WSL baseline had failed six gates: build dispatch, correctness, fuzz, review citation paths, Claude Stop handling and provisioning. The migration audit records repaired gates and Windows/Linux runtime evidence; Android execution remains unproven. These sections still need their formal review stamps. Claude's controller is `scripts/campaign_guard.py`; its review pins are `.conclave/panel.toml`. The operator requested Codex parity, independent runner internals, no isolated worktrees and no checkpoint layer, then extended the delivery targets to Windows, Linux and Android executables and libraries.
 <!-- claim: exists src/sys.c -->
 <!-- claim: exists scripts/campaign_guard.py -->
 <!-- claim: exists toolchain.json -->
@@ -26,6 +26,8 @@ frozen: true
 - [`.claude/skills/`](../../.claude/skills/): lifecycle contracts to adapt for Codex.
 - -> XREF: D08 T04 §1 -- repository presentation and platform guides.
 - -> XREF: D06 T01 §2 -- the public library targets built with these compilers.
+
+- -> XREF: D10 T01 §1 -- shared implementation or verification boundary.
 
 ## Outcome
 

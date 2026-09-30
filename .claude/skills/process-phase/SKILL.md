@@ -84,3 +84,7 @@ Then re-run the full suite once, confirm the plan shows the phase complete, writ
 - Do not leave a run guarded after it ends, and do not pause with the guard live: stop deletes first, resume recreates.
 - Do not file a discovered section without its Origin line, and do not change `todo/budget.json`.
 - Do not delete a backlog entry except by promotion, a merge that keeps its key, or the operator's recorded words, and do not stamp a release section before its backlog review is recorded.
+
+## Declared native contexts
+
+The default readiness query is conservative. For a native section, first record successful host/display/device probes in the run file, then use `python3 scripts/todo-graph.py query ready --context <capability> ...` with only the capabilities actually demonstrated. Re-probe at the section boundary and retain the section's full native checkpoint. The declaration is routing information, never proof or operator approval. Never add `operator` to an agent context; unresolved operator rows remain for the owner.

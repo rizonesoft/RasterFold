@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **0 of 183 sections complete (0%).** 183 sections (0 discovered); backlog 3 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **0 of 222 sections complete (0%).** 222 sections (2 discovered); backlog 0 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -34,12 +34,19 @@ process todo section: | [ ] | `D03 T01 §1` | Decode streams straight from the i
 
 ## The acceptance bar
 
+The [product vision](../docs/vision.md) also requires the native converter and complete documentation. The capability matrix, platform evidence and source-drift gates are release requirements; codec research retains its measured stop conditions and negative-result path.
+
 RasterFold is finished milestone by milestone: **the 60 milestones of the roadmap (`docs/research.md` section 9), each keeping everything the one before it reached**, with every file it ever wrote still decoding, every malformed file refused cleanly, every document true to the code and the data, and every claim reproducible from a command in this repository. The first ten beat JPEG XL e9 and lossless WebP and release 1.0; from milestone 11 RasterFold beats its own previous release.
 
 <!-- no-align -->
 
 | Aim | Owned by |
 | --- | --- |
+| Native C converter with no additional user installs on Windows/Linux x64 and Android ARM64/x64 | `D10 T01 §2` · `D10 T04 §3` |
+| Every required format has truthful lossless capabilities and independent round trips | `D10 T01 §1` · `D10 T01 §4` · `D10 T04 §1` |
+| Single-image preview, synchronized comparisons, modern accessible SVG interface and real RasterFold demo | `D10 T03 §5` · `D10 T03 §6` · `D10 T03 §7` · `D10 T03 §8` |
+| Complete, private-content-safe GitHub Pages documentation matches delivered artifacts | `D08 T01 §4` · `D08 T01 §8` · `D10 T04 §4` |
+| Source facts, documents, supported text, commit references and built-site provenance detect drift and repair only deterministic output | `D08 T02 §6` · `D08 T02 §7` |
 | Every clone refuses a broken plan, and CI reads back green | `D00 T01 §1` (hook) · `D00 T01 §2` (CI read back) |
 | The C sources stay free of defects static analysis can find | `D00 T01 §3` |
 | The review panel works before the first stamp | `D00 T01 §4` |
@@ -59,7 +66,7 @@ RasterFold is finished milestone by milestone: **the 60 milestones of the roadma
 | Milestone 7, Every photograph beats JPEG XL e9: 39 of 39 photos and 10 of 10 test-pack photos below JPEG XL e9; encode at most 0.3 of JPEG XL e7's time | `D05 T01 §7` |
 | Milestone 8, Beat WebP on generated images: the generated set's total and geometric mean below lossless WebP's, and every generated image within 1.1 times WebP's size | `D05 T01 §8` |
 | Milestone 9, Holds on images never tuned on: milestones 4, 7, and 8 hold on the held-out set (`python research/ab.py size heldout`) without any retuning | `D05 T01 §9` |
-| Milestone 10, RasterFold 1.0: `rasterfold-v1.0.0` released: format version 3 frozen; `rasterfold.exe` and `rasterfold.dll` with the C API; BMP, PNG, and PPM in and out; the HTML docs published; 100,000 fuzz mutations clean; smaller than JPEG XL e9 and lossless WebP on every set, and faster and leaner than JPEG XL on encode, decode, and memory | `D05 T01 §10` |
+| Milestone 10, RasterFold 1.0: `rasterfold-v1.0.0` released: format version 3 frozen; Windows/Linux x64 and Android ARM64/x64 CLI, shared/static C libraries and the complete native converter; BMP, PNG, and PPM in the CLI; the full HTML docs published; 100,000 fuzz mutations clean; smaller than JPEG XL e9 and lossless WebP on every set, and faster and leaner than JPEG XL on encode, decode, and memory | `D05 T01 §10` |
 | Milestone 11, SIMD decisions: one-thread decode at least 10% faster than 1.0, bytes within 0.1% | `D05 T02 §2` |
 | Milestone 12, Two-layer mixing: photo total at least 0.4% smaller than milestone 11 | `D05 T02 §4` |
 | Milestone 13, Stronger prediction: photo total at least 0.5% smaller than milestone 12 | `D05 T02 §6` |
@@ -119,8 +126,8 @@ The ported plan, hooks, gates, measurement references, HTML docs, and drift gate
 
 |  ✔  | Section      | Deliverable                                        | Items |
 | :-: | ------------ | -------------------------------------------------- | :---: |
-| [ ] | `D08 T04 §1` | Repository presentation and developer entry points |   4   |
 | [ ] | `D00 T04 §1` | Local toolchains and WSL gates                     |   6   |
+| [ ] | `D08 T04 §1` | Repository presentation and developer entry points |   4   |
 | [ ] | `D00 T04 §2` | Portable platform and SIMD boundary                |   4   |
 | [ ] | `D00 T04 §3` | Isolated Codex lifecycle and review runner         |   5   |
 | [ ] | `D00 T04 §4` | Family-local intelligence                          |   4   |
@@ -128,8 +135,8 @@ The ported plan, hooks, gates, measurement references, HTML docs, and drift gate
 | [ ] | `D99 T01 §2` | Log in the GitHub CLI                              |   2   |
 | [ ] | `D99 T01 §3` | Approve format version 3                           |   2   |
 | [ ] | `D99 T01 §4` | The missed-milestone policy                        |   2   |
-| [ ] | `D99 T01 §5` | Enable GitHub Pages                                |   2   |
-| [ ] | `D00 T01 §1` | Commit the port and wire the commit hook           |   5   |
+| [ ] | `D99 T01 §5` | Enable GitHub Pages                                |   3   |
+| [ ] | `D00 T01 §1` | Commit the port and wire the commit hook           |   6   |
 | [ ] | `D00 T01 §3` | The static analysis gate                           |   4   |
 | [ ] | `D00 T01 §4` | Prove the review panel end to end                  |   4   |
 | [ ] | `D00 T01 §5` | Raise the claims coverage floor                    |   3   |
@@ -137,13 +144,17 @@ The ported plan, hooks, gates, measurement references, HTML docs, and drift gate
 | [ ] | `D00 T02 §1` | e9 and WebP references in the research tools       |   3   |
 | [ ] | `D00 T02 §2` | JPEG XL e9 in the benchmark                        |   2   |
 | [ ] | `D00 T02 §3` | The committed corpus results file                  |   3   |
-| [ ] | `D08 T01 §1` | The Jekyll site and its generated pages            |   4   |
 | [ ] | `D08 T02 §1` | One facts file and claims everywhere               |   4   |
+| [ ] | `D08 T01 §1` | The Jekyll site and its generated pages            |   6   |
 | [ ] | `D08 T02 §3` | Generated files match their sources                |   2   |
 | [ ] | `D08 T01 §2` | Comparison charts                                  |   4   |
 | [ ] | `D08 T02 §2` | Figures bound to their data                        |   3   |
 | [ ] | `D08 T02 §4` | Staleness: verified dates and data revisions       |   3   |
 | [ ] | `D08 T02 §5` | Links, and the gates wired everywhere              |   3   |
+| [ ] | `D08 T02 §6` | Deterministic repair and complete file coverage    |   5   |
+| [ ] | `D08 T02 §7` | Commit and built-site provenance                   |   5   |
+| [ ] | `D08 T01 §4` | Complete current documentation map                 |   5   |
+| [ ] | `D08 T01 §5` | Accessible navigation and site states              |   5   |
 | [ ] | `D08 T01 §3` | Publish with GitHub Pages                          |   2   |
 | [ ] | `D05 T01 §1` | Milestone 1 gate: Locked baseline                  |   4   |
 
@@ -245,24 +256,59 @@ Everything so far confirmed on images nobody tuned on, before anything is frozen
 
 The 1.0 product: library, command line, references, and the release that freezes version 3.
 
-|  ✔  | Section       | Deliverable                          | Items |
-| :-: | ------------- | ------------------------------------ | :---: |
-| [ ] | `D06 T01 §1`  | The public header                    |   3   |
-| [ ] | `D06 T01 §2`  | The DLL and its import libraries     |   3   |
-| [ ] | `D06 T01 §3`  | The command line on the library      |   2   |
-| [ ] | `D06 T01 §4`  | API tests and the ABI list           |   3   |
-| [ ] | `D06 T01 §5`  | Example programs                     |   2   |
-| [ ] | `D07 T01 §1`  | Commands and options                 |   3   |
-| [ ] | `D07 T01 §2`  | PNG in and out                       |   3   |
-| [ ] | `D07 T01 §3`  | PPM in and out                       |   2   |
-| [ ] | `D07 T01 §4`  | Exit codes, messages, and overwrite  |   3   |
-| [ ] | `D08 T03 §1`  | The command-line reference           |   3   |
-| [ ] | `D08 T03 §2`  | The API reference                    |   3   |
-| [ ] | `D09 T01 §1`  | One version source and the changelog |   3   |
-| [ ] | `D09 T01 §2`  | The release package                  |   2   |
-| [ ] | `D09 T01 §3`  | The release workflow                 |   2   |
-| [ ] | `D09 T01 §4`  | Release rasterfold-v1.0.0            |   5   |
-| [ ] | `D05 T01 §10` | Milestone 10 gate: RasterFold 1.0    |   4   |
+|  ✔  | Section       | Deliverable                                      | Items |
+| :-: | ------------- | ------------------------------------------------ | :---: |
+| [ ] | `D99 T01 §6`  | Android release signing identity                 |   3   |
+| [ ] | `D99 T01 §7`  | HEVC distribution decision                       |   3   |
+| [ ] | `D06 T01 §1`  | The public header                                |   3   |
+| [ ] | `D06 T01 §2`  | The DLL and its import libraries                 |   3   |
+| [ ] | `D06 T01 §3`  | The command line on the library                  |   2   |
+| [ ] | `D06 T01 §4`  | API tests and the ABI list                       |   4   |
+| [ ] | `D06 T01 §5`  | Example programs                                 |   2   |
+| [ ] | `D07 T01 §1`  | Commands and options                             |   3   |
+| [ ] | `D07 T01 §2`  | PNG in and out                                   |   3   |
+| [ ] | `D07 T01 §3`  | PPM in and out                                   |   2   |
+| [ ] | `D07 T01 §4`  | Exit codes, messages, and overwrite              |   3   |
+| [ ] | `D08 T03 §1`  | The command-line reference                       |   3   |
+| [ ] | `D08 T03 §2`  | The API reference                                |   3   |
+| [ ] | `D09 T01 §1`  | One version source and the changelog             |   5   |
+| [ ] | `D10 T01 §1`  | Pixel contract and capability registry           |   7   |
+| [ ] | `D10 T01 §2`  | Pinned bundled codec builds                      |   9   |
+| [ ] | `D10 T01 §3`  | Bounded asynchronous jobs                        |   6   |
+| [ ] | `D10 T01 §4`  | Exactness verification and differential fixtures |   7   |
+| [ ] | `D10 T01 §5`  | Safe import and export                           |   6   |
+| [ ] | `D10 T01 §6`  | Comparable measurements and reports              |   7   |
+| [ ] | `D10 T02 §1`  | RasterFold, BMP, PNG and PNM                     |   6   |
+| [ ] | `D10 T02 §2`  | WebP                                             |   6   |
+| [ ] | `D10 T02 §3`  | JPEG XL                                          |   6   |
+| [ ] | `D10 T02 §4`  | AVIF                                             |   6   |
+| [ ] | `D10 T02 §5`  | JPEG optimization and import                     |   6   |
+| [ ] | `D10 T02 §6`  | TIFF and GIF                                     |   6   |
+| [ ] | `D10 T02 §7`  | HEIF and HEIC                                    |   6   |
+| [ ] | `D10 T02 §8`  | QOI                                              |   6   |
+| [ ] | `D10 T02 §9`  | JPEG 2000                                        |   6   |
+| [ ] | `D10 T02 §10` | OpenEXR                                          |   6   |
+| [ ] | `D10 T02 §11` | Camera RAW and DNG import                        |   6   |
+| [ ] | `D10 T02 §12` | Animation and multi-page preservation            |   5   |
+| [ ] | `D10 T03 §1`  | C interface components and SVG icons             |   8   |
+| [ ] | `D10 T03 §2`  | Windows native integration                       |   6   |
+| [ ] | `D10 T03 §3`  | Linux native integration                         |   6   |
+| [ ] | `D10 T03 §4`  | Android native integration                       |   8   |
+| [ ] | `D10 T03 §5`  | Single-image conversion and preview              |   7   |
+| [ ] | `D10 T03 §6`  | Synchronized comparisons                         |   6   |
+| [ ] | `D10 T03 §7`  | Preferences and accessible error recovery        |   6   |
+| [ ] | `D10 T03 §8`  | Guided RasterFold demonstration                  |   5   |
+| [ ] | `D10 T04 §1`  | Full capability and device matrix                |   5   |
+| [ ] | `D10 T04 §2`  | Hostile input and resource limits                |   5   |
+| [ ] | `D10 T04 §3`  | Self-contained native packages                   |   6   |
+| [ ] | `D09 T01 §2`  | The release package                              |   2   |
+| [ ] | `D09 T01 §3`  | The release workflow                             |   2   |
+| [ ] | `D08 T01 §6`  | Converter user guide and capability reference    |   6   |
+| [ ] | `D08 T01 §7`  | Versioned downloads and complete references      |   5   |
+| [ ] | `D08 T01 §8`  | Published whole-product documentation acceptance |   4   |
+| [ ] | `D10 T04 §4`  | Whole-product release acceptance                 |   5   |
+| [ ] | `D09 T01 §4`  | Release rasterfold-v1.0.0                        |   6   |
+| [ ] | `D05 T01 §10` | Milestone 10 gate: RasterFold 1.0                |   4   |
 
 ### Phase 10 -- Milestone 11: SIMD decisions
 
@@ -270,7 +316,7 @@ Milestone 11's work is authored one milestone ahead by its planning section, fro
 
 |  ✔  | Section      | Deliverable                                | Items |
 | :-: | ------------ | ------------------------------------------ | :---: |
-| [ ] | `D05 T02 §1` | Plan milestone 11: SIMD decisions          |   4   |
+| [ ] | `D05 T02 §1` | Plan milestone 11: SIMD decisions          |   5   |
 | [ ] | `D02 T01 §3` | An AVX2 build, measured before dispatching |   3   |
 | [ ] | `D02 T02 §2` | The speed of an int16 SIMD mixer           |   4   |
 | [ ] | `D05 T02 §2` | Milestone 11 gate: SIMD decisions          |   4   |
@@ -335,7 +381,7 @@ Milestone 18's work is authored one milestone ahead by its planning section, fro
 
 |  ✔  | Section       | Deliverable                  | Items |
 | :-: | ------------- | ---------------------------- | :---: |
-| [ ] | `D05 T02 §15` | Plan milestone 18: Streaming |   4   |
+| [ ] | `D05 T02 §15` | Plan milestone 18: Streaming |   5   |
 | [ ] | `D05 T02 §16` | Milestone 18 gate: Streaming |   4   |
 
 ### Phase 18 -- Milestone 19: Many-core scaling
@@ -425,7 +471,7 @@ Milestone 28's work is authored one milestone ahead by its planning section, fro
 
 |  ✔  | Section       | Deliverable                                    | Items |
 | :-: | ------------- | ---------------------------------------------- | :---: |
-| [ ] | `D05 T03 §15` | Plan milestone 28: Alpha, 16-bit, and metadata |   4   |
+| [ ] | `D05 T03 §15` | Plan milestone 28: Alpha, 16-bit, and metadata |   5   |
 | [ ] | `D05 T03 §16` | Milestone 28 gate: Alpha, 16-bit, and metadata |   4   |
 
 ### Phase 28 -- Milestone 29: Coverage-proven decoder
@@ -715,3 +761,5 @@ Milestone 60's work is authored one milestone ahead by its planning section, fro
 | :-: | ------------- | --------------------------------- | :---: |
 | [ ] | `D05 T06 §19` | Plan milestone 60: RasterFold 6.0 |   4   |
 | [ ] | `D05 T06 §20` | Milestone 60 gate: RasterFold 6.0 |   6   |
+
+**Groomed 2026-09-30:** Added the native converter and complete documentation requirements, repaired prerequisite order within existing phases, and checked release reachability with `python3 scripts/plan-audit.py`. No existing section changed phase and no completion box was ticked.

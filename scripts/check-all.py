@@ -25,6 +25,7 @@ def main():
     for name,path,args in (
         ('graph self-test','scripts/todo-graph.py',['self-test']),('graph validate','scripts/todo-graph.py',['validate']),
         ('plan projection','scripts/todo-graph.py',['plan','--check']),('milestones','research/milestones.py',['--check']),
+        ('vision and order','scripts/plan-audit.py',[]),('document drift','scripts/drift-check.py',[]),
         ('claims','scripts/todo-claims.py',[]),('claims self-test','scripts/todo-claims.py',['--self-test']),
         ('findings','scripts/todo-findings.py',['--check']),('findings self-test','scripts/todo-findings.py',['--self-test']),
         ('runs','scripts/todo-runs.py',['--check']),('runs self-test','scripts/todo-runs.py',['--self-test']),
@@ -32,6 +33,8 @@ def main():
         ('Claude panel self-test','scripts/panel_slots.py',['--self-test']),('Claude guard','scripts/campaign_guard.py',['--self-test']),
         ('intelligence','scripts/intelligence.py',['validate']),
     ):python(name,path,*args)
+    gates.append(('document drift tests',[py,'-m','unittest','discover','-s','tests','-p','test_drift.py','-v']))
+    gates.append(('plan audit tests',[py,'-m','unittest','discover','-s','tests','-p','test_plan_audit.py','-v']))
     if os.name != 'nt':
         # Codex campaigns and the Linux archive installer run in WSL/Linux.
         python('Codex review tooling','.codex/runner/review_prompt.py','--self-test')

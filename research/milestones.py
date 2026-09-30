@@ -33,7 +33,7 @@ M = [
      "`pwsh scripts/check-all.ps1` green with every gate `PASS`; the `plan-gates` and `build` workflows green on the last push; `benchmarks/results.md` and `benchmarks/corpus.csv` report JPEG XL e7, JPEG XL e9, and lossless WebP; the HTML docs build and `python scripts/drift-check.py` exits 0. Baseline on 2026-09-29: photos 0.971 of JPEG XL e7 and 0.983 of e9, 28 of 39 photos below e9",
      f"`pwsh scripts/check-all.ps1`, `python scripts/review_prompt.py ci-wait` on the last push, {SIZE}",
      [FF], None,
-     "D00 T01 §1, D00 T01 §2, D00 T01 §3, D00 T01 §4, D00 T01 §5, D00 T02 §1, D00 T02 §2, D00 T02 §3, D08 T01 §1, D08 T01 §2, D08 T01 §3, D08 T02 §1, D08 T02 §2, D08 T02 §3, D08 T02 §4, D08 T02 §5, D99 T01 §3, D99 T01 §4"),
+     "D00 T01 §1, D00 T01 §2, D00 T01 §3, D00 T01 §4, D00 T01 §5, D00 T02 §1, D00 T02 §2, D00 T02 §3, D08 T01 §1, D08 T01 §2, D08 T01 §3, D08 T02 §1, D08 T02 §2, D08 T02 §3, D08 T02 §4, D08 T02 §5, D08 T02 §6, D08 T02 §7, D00 T04 §1, D00 T04 §2, D00 T04 §3, D00 T04 §4, D08 T04 §1, D99 T01 §3, D99 T01 §4"),
     (2, "Same bytes, leaner and harder",
      "every file byte-identical to milestone 1 (`KAT_FOLD` unchanged, the oracle agrees); decode `alloc_peak` at most 9.2 MB on `measure/image.bmp` (10.57 MB at milestone 1); one-thread decode at least 5% faster; a 4096x4096 header with a 20-byte payload refused in under a second",
      f"`bin/windows-x64/bin/rasterfold.exe decode --time`, {SPEED}, `python tests/test_correctness.py`",
@@ -68,7 +68,7 @@ M = [
      "`python research/ab.py size heldout` against JPEG XL e9 and WebP", [FF], None,
      "D00 T03 §1, D00 T03 §2"),
     (10, "RasterFold 1.0",
-     "`rasterfold-v1.0.0` released: format version 3 frozen; `rasterfold.exe` and `rasterfold.dll` with the C API; BMP, PNG, and PPM in and out; the HTML docs published; 100,000 fuzz mutations clean; smaller than JPEG XL e9 and lossless WebP on every set, and faster and leaner than JPEG XL on encode, decode, and memory",
+     "`rasterfold-v1.0.0` released: format version 3 frozen; Windows/Linux x64 and Android ARM64/x64 CLI, shared/static C libraries and the complete native converter; BMP, PNG, and PPM in the CLI; the full HTML docs published; 100,000 fuzz mutations clean; smaller than JPEG XL e9 and lossless WebP on every set, and faster and leaner than JPEG XL on encode, decode, and memory",
      f"{SIZE}, {BENCH}, `python tests/fuzz_decode.py`", [FF, IDLE], None,
      "D06 T01 §1, D06 T01 §2, D06 T01 §3, D06 T01 §4, D06 T01 §5, D07 T01 §1, D07 T01 §2, D07 T01 §3, D07 T01 §4, D08 T03 §1, D08 T03 §2, D09 T01 §1, D09 T01 §2, D09 T01 §3, D09 T01 §4"),
     (11, "SIMD decisions", "one-thread decode at least 10% faster than 1.0, bytes within 0.1%", SPEED, [IDLE], None, "D02 T01 §3, D02 T02 §2"),
@@ -175,9 +175,15 @@ def render_band(b: int) -> str:
             deps = work + (", " + local(prev, t) if prev else "")
         rows.append((g, f"Milestone {n} gate: {name}", deps))
         if p is not None:
+            promoted = {
+                11: ('research-7.2-grayscale', 'Measure generic grayscale-channel detection and single-channel coding on a diverse grayscale set plus photo/tp/synth; retain the no-image-specific-tuning rule and require a new method/version if accepted.'),
+                18: ('readme-limitation-streaming', 'Plan bounded-row encode/decode buffers and the matching API/thread schedule, proving memory on images above the current limit before raising it.'),
+                28: ('research-7.3-alpha-16bit', 'Plan exact alpha and 16-bit samples with PNG/TIFF/PAM inputs, independent oracle, format/API compatibility and metadata preservation; converter capabilities do not imply current RasterFold support.'),
+            }.get(n)
+            capture = (f"-> SOURCE: {promoted[0]}\n\n- [ ] Preserve the promoted backlog obligation in `docs/research.md` and this milestone's work sections: {promoted[1]} Done when: a named section owns its implementation and tests, or a measured negative result is retained without silently dropping the obligation.\n\n" if promoted else '')
             body.append(f"""## {p}. Plan Milestone {n}: {name}
 
-Milestone {n}'s work is authored here, one milestone ahead, from what milestone {n - 1} actually measured: its target is *{target}*. The design notes are `docs/research.md` section 9 (milestone {n}) and the sections of `docs/research.md` it points at; the baseline is milestone {n - 1}'s gate stamp (`{gate_ref(n - 1)}`), never a figure from memory.
+{capture}Milestone {n}'s work is authored here, one milestone ahead, from what milestone {n - 1} actually measured: its target is *{target}*. The design notes are `docs/research.md` section 9 (milestone {n}) and the sections of `docs/research.md` it points at; the baseline is milestone {n - 1}'s gate stamp (`{gate_ref(n - 1)}`), never a figure from memory.
 
 - [ ] Read milestone {n - 1}'s gate stamp and `docs/research.md` sections 3 and 9, and quote the baseline this milestone's target is measured from in this section as a `**Corrected YYYY-MM-DD:**` note. Done when: the note quotes the figures with their commands.
 - [ ] Author the milestone's work sections through `plan-experiment` (and `create-todo` for a new file) in the domains that own the work, each with its measurement and stop condition, placed in this milestone's phase of `todo/implementation-plan.md` above the gate row. Done when: `python scripts/todo-graph.py validate` exits 0 with the new sections in place. Cheaper substitute: one vague section named after the milestone.

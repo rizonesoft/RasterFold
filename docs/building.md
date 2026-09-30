@@ -107,3 +107,7 @@ python3 scripts/package.py --target all
 Packages and SHA-256 sidecars land in `build/packages/`. They preserve the target's `bin/`, `lib/`, `include/` and optional `symbols/` structure beneath `rasterfold-<target>/`, alongside `build.json`, `LICENSE` and `docs/` notes. The packager verifies every artifact, including the copied header and PDBs, against the build manifest. They are development packages, not published releases. Publishing remains a separate release action.
 
 The full gate runner retains logs under `build/logs/` and reports every failed command. `--quick` and `--skip-build` are iteration shortcuts, not full verification. Comparative benchmarks additionally require ffmpeg with libjxl and follow the quiet-machine protocol in [research.md](research.md).
+
+<!-- drift:begin build-capabilities -->
+The sources currently declare format 2, API 1.0, a 32768-pixel dimension limit and a 33554432-pixel image limit. See [the document drift policy](document-drift.md) for validation and repair.
+<!-- drift:end build-capabilities -->

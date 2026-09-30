@@ -671,7 +671,7 @@ table is generated from `research/milestones.py`.
 | 7 | Every photograph beats JPEG XL e9 | 39 of 39 photos and 10 of 10 test-pack photos below JPEG XL e9; encode at most 0.3 of JPEG XL e7's time | `D05 T01 §7` |
 | 8 | Beat WebP on generated images | the generated set's total and geometric mean below lossless WebP's, and every generated image within 1.1 times WebP's size | `D05 T01 §8` |
 | 9 | Holds on images never tuned on | milestones 4, 7, and 8 hold on the held-out set (`python research/ab.py size heldout`) without any retuning | `D05 T01 §9` |
-| 10 | RasterFold 1.0 | `rasterfold-v1.0.0` released: format version 3 frozen; `rasterfold.exe` and `rasterfold.dll` with the C API; BMP, PNG, and PPM in and out; the HTML docs published; 100,000 fuzz mutations clean; smaller than JPEG XL e9 and lossless WebP on every set, and faster and leaner than JPEG XL on encode, decode, and memory | `D05 T01 §10` |
+| 10 | RasterFold 1.0 | `rasterfold-v1.0.0` released: format version 3 frozen; Windows/Linux x64 and Android ARM64/x64 CLI, shared/static C libraries and the complete native converter; BMP, PNG, and PPM in the CLI; the full HTML docs published; 100,000 fuzz mutations clean; smaller than JPEG XL e9 and lossless WebP on every set, and faster and leaner than JPEG XL on encode, decode, and memory | `D05 T01 §10` |
 
 ### Milestones 11 to 20: RasterFold Beats RasterFold (2.0)
 

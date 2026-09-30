@@ -5,6 +5,7 @@
 # The commit hook must be LF (Git for Windows runs it under sh); CI checks it.
 *.c text eol=lf
 *.h text eol=lf
+*.def text eol=lf
 *.py text eol=lf
 *.ps1 text eol=lf
 *.sh text eol=lf

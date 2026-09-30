@@ -23,6 +23,8 @@ The Windows commands and Android evidence requirements are in the build guide. N
 - One section is one logical candidate range. Forward review fixes are allowed; do not amend a recorded candidate, force-push, bypass hooks or stamp unreviewed work.
 - A TODO row becomes complete only with verified evidence and the required independent reviews. Keep the implementation plan synchronized through its tooling.
 
+Run `python3 scripts/drift-check.py` after changing source or documentation. `--fix` refreshes registered generated output; stale prose review receipts require a real source review. The [drift guide](docs/document-drift.md) covers repairs, commit declarations and site artifacts. `python3 scripts/plan-audit.py` checks dependency order and release coverage.
+
 Use clear imperative commit subjects. Do not add assistant attribution trailers. Write Markdown paragraphs and list items on one logical line and avoid decorative hard wrapping.
 
 ## Report responsibly

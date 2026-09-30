@@ -1,0 +1,9 @@
+{
+  "api_major": 1,
+  "api_minor": 0,
+  "format_version": 2,
+  "max_dimension": 32768,
+  "max_file_bytes": 268435456,
+  "max_pixels": 33554432,
+  "measurement_reference_bytes": 1409028
+}

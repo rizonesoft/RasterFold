@@ -262,6 +262,13 @@ NEEDS_ALLOWED: dict[str, str] = {
 # branch below, and its self-test cases.
 REQUIRES_ALLOWED: tuple[str, ...] = (
     "display-session",
+    # Native GUI/device proof needs an explicitly verified execution context.
+    # DISPLAY, adb presence and successful cross-compilation are not proof.
+    "linux-display",
+    "windows-runtime",
+    "linux-runtime",
+    "android-arm64-runtime",
+    "android-x64-runtime",
     # Operator-only rows (todo/99-manual): no agent runner takes them. Ported
     # from ScratchPad (its D00 T01 §42) to RasterFold on 2026-09-29. Never
     # detected: only a declared `--context operator` satisfies it.
@@ -281,6 +288,10 @@ def detect_context(platform: str | None = None, environ=None) -> set[str]:
     window-station-less session cannot drive the built tools or capture
     their windows, and never as session 0, which names itself
     "Services" and has no window station (headless services, CI runners).
+
+    Linux display and Android runtime capabilities are explicitly declared
+    after a real session/device probe; none is inferred from environment
+    variables or installed tools. A declaration never replaces runtime proof.
 
     `operator` holds in no detected context: no agent self-reports an
     operator's keyboard, so only a declared `--context operator` satisfies
@@ -5851,9 +5862,8 @@ DESIGN_BASELINE_REF_RE = re.compile(r"^D\d{2} T\d{2} §\d+$")
 # the suite release, which no design deviation gates but the backlog gate does).
 RELEASE_ITEM_RE = re.compile(r"^Push (?:the tag )?`(?P<tag>(?P<app>rasterfold)-v\d+\.\d+\.\d+)`")
 # Domains whose surfaces belong to which app, for the design-deviation release
-# gate. RasterFold has no user-facing surface, so no domain maps to an app and
-# the design rules stay dormant.
-DESIGN_DOMAIN_APPS: dict[str, tuple[str, ...]] = {}
+# gate. Planned documentation and converter surfaces belong to RasterFold.
+DESIGN_DOMAIN_APPS: dict[str, tuple[str, ...]] = {"08": ("rasterfold",), "10": ("rasterfold",)}
 
 
 def configure_release_apps(apps: tuple[str, ...], suite: str, design_domains: dict) -> tuple:
@@ -6572,11 +6582,13 @@ def cmd_plan(args: argparse.Namespace) -> int:
                 + ", ".join(sorted(missing)[:8])
                 + ("..." if len(missing) > 8 else "")
             )
+        # These two projections live under ignored build/. A fresh clone or
+        # staged export has neither; checking must not require or create them.
+        # If present, they must still agree with the canonical Markdown graph.
         expected_json = progress_text(todos)
         written_progress = PROGRESS_JSON.read_text(encoding="utf-8") if PROGRESS_JSON.exists() else ""
-        json_stale = (
-            not PROGRESS_JSON.exists()
-            or not progress_generated_at_ok(written_progress)
+        json_stale = PROGRESS_JSON.exists() and (
+            not progress_generated_at_ok(written_progress)
             or progress_text_for_check(written_progress) != expected_json
         )
         if json_stale:
@@ -6585,9 +6597,8 @@ def cmd_plan(args: argparse.Namespace) -> int:
                 "run `python scripts/todo-graph.py plan --sync`"
             )
         expected_operator = operator_text(todos)
-        operator_stale = (
-            not OPERATOR_JSON.exists()
-            or OPERATOR_JSON.read_text(encoding="utf-8") != expected_operator
+        operator_stale = OPERATOR_JSON.exists() and (
+            OPERATOR_JSON.read_text(encoding="utf-8") != expected_operator
         )
         if operator_stale:
             print(

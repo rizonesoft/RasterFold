@@ -89,4 +89,4 @@ Write the groom record: what was sequenced, what drifted and was corrected, what
 - Do not file a discovered section without its Origin line, and do not change `todo/budget.json`.
 - Do not delete a backlog entry, a merge marker, or a removal record except by promotion, by a merge that keeps the key, or with the operator's recorded words.
 - Do not leave the tree unvalidated. `validate` plus `plan --check` pass before the commit.
-- Do not add a ref to `todo/.design-baseline`. It stays empty while RasterFold has no surface.
+- Do not add a ref to `todo/.design-baseline`. It stays empty. The native converter and documentation site have explicit design contracts; new surface exceptions require owned repair sections, never baseline expansion.

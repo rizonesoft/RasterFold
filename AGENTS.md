@@ -13,7 +13,7 @@ Agent instructions for this repository. Human orientation lives in `README.md`. 
 | `build.sh`, `build.ps1`, `scripts/build.py` | Native and cross builds over pinned local LLVM/Ninja, output `bin/<target>/`; root `build.ninja` is a compatibility front door |
 | `tools/bootstrap.py`, `tools/bootstrap.ps1`, `toolchain.json` | Verified repository-local Linux/Windows LLVM, Ninja and Android NDK pins; downloaded tools and archives are ignored |
 | `tools/provision.py`, `tools/provision.ps1` | Clone setup and read-only verification; Linux test dependencies use `.venv/` |
-| `tools/githooks/` | `pre-commit` (the TODO gate on the staged tree) and `commit-msg` (strips AI attribution) |
+| `tools/githooks/` | `pre-commit` (TODO, vision and drift gates on the staged tree) and `commit-msg` (strips AI attribution and validates declared facts) |
 | `tests/` | `rfi_ref.py` (the independent Python oracle of the format), `test_correctness.py`, `fuzz_decode.py`, `measure_final.py` (the JPEG XL reference comparison), `benchmark.py` |
 | `research/` | Measurement tools: `corpus.py`, `ab.py` (sizes and A/B timing of `cm.c` variants), `bench.c`, `prof.py`, `vsjxl.py`; data lands in `build/research/` |
 | `testdata/photos/` | The ten-photo test pack with its provenance and licences |
@@ -47,7 +47,7 @@ The build/tooling runs in WSL/Linux and Windows. Use `python3` in WSL/Linux and 
 
 `todo/` is the live execution plan; **format spec: `todo/README.md`.** Markdown is canonical and `build/` holds derived, gitignored projections.
 
-Domains are flat-numbered from `00`, allocated in order, and read from the tree: `00-workspace` (toolchain, gates, CI, this system), `01-compression`, `02-speed`, `03-memory`, `04-robustness`, `05-milestones` (the 60 milestone gates, generated from `research/milestones.py`), `06-library`, `07-tool`, `08-docs`, `09-release`, and `99-manual` (operator-only rows and the operator's recorded decisions). The plan runs one phase per milestone; see `todo/README.md`, Milestones. Numbers are stable addresses: a new domain appends after the last one. `todo/TODO-00-INDEX.md` is the authority for which exist.
+Domains are flat-numbered from `00`, allocated in order, and read from the tree: `00-workspace` (toolchain, gates, CI, this system), `01-compression`, `02-speed`, `03-memory`, `04-robustness`, `05-milestones` (the 60 milestone gates, generated from `research/milestones.py`), `06-library`, `07-tool`, `08-docs`, `09-release`, `10-converter` (the native C application and bundled codecs), and `99-manual` (operator-only rows and the operator's recorded decisions). The plan runs one phase per milestone; see `todo/README.md`, Milestones. Numbers are stable addresses: a new domain appends after the last one. `todo/TODO-00-INDEX.md` is the authority for which exist.
 
 **Nothing in the plan is capped.** Sections the operator asks for in an attended session carry nothing extra. A section a campaign files on its own carries `**Origin:** discovered run=<run id> <YYYY-MM-DD>` under its heading (provenance for reporting, never a quota) and must be a defect in shipped or in-flight work, something an acceptance-bar aim requires, or a prerequisite of a planned row; anything else goes to `todo/backlog.md` (never runnable, never capped). A backlog entry leaves only by promotion (a live section carries its source key), by merge (the survivor keeps ``merged: `<key>` ``), or with the operator's words in a removal record under `## Removed with operator approval`; `validate` fails anything else as `backlog-dropped`. Every release section (it pushes `rasterfold-vX.Y.Z`) carries a backlog review item and stamps only when every backlog entry was promoted or carries a `reviewed: <tag> <date> ...` field quoting the operator's deferral. `todo/budget.json` records the decisions (schema 3, both caps `null`); only the operator changes it, in words a new history entry quotes. The structural limits (30 items per section, 55 sections per file) apply.
 
@@ -88,7 +88,7 @@ A checkpoint citing a gate that does not exist yet is unfalsifiable and is not a
 
 ## The commit hook
 
-`tools/githooks/pre-commit` refuses a commit whose **staged** tree fails `python scripts/todo-graph.py validate`, checked in a temp checkout of the index. It must stay a POSIX shell script with LF endings and index mode `100755`. `tools/githooks/commit-msg` strips any AI-assistant attribution (a `Co-Authored-By:` trailer naming Claude, Anthropic, or another assistant, and "Generated with" footers) from every commit message, so GitHub never lists an assistant as a contributor; never add such lines to commits or pull requests, and keep `.claude/settings.json`'s `includeCoAuthoredBy: false` and empty `attribution`. `tools/provision.ps1` points `core.hooksPath` at `tools/githooks` for each clone; run it once after cloning. A red hook is a defect to fix, never a gate to skip.
+`tools/githooks/pre-commit` refuses a commit whose **staged** tree fails `python scripts/todo-graph.py validate`, checked in a temporary export of the index. It also enforces `scripts/plan-audit.py` and `scripts/drift-check.py` on the staged bytes. Explicit `Drift-Fact:` commit declarations are checked against staged source by `commit-msg`; historical declarations use their own commit tree in CI. It must stay a POSIX shell script with LF endings and index mode `100755`. `tools/githooks/commit-msg` strips any AI-assistant attribution (a `Co-Authored-By:` trailer naming Claude, Anthropic, or another assistant, and "Generated with" footers) from every commit message, so GitHub never lists an assistant as a contributor; never add such lines to commits or pull requests, and keep `.claude/settings.json`'s `includeCoAuthoredBy: false` and empty `attribution`. `tools/provision.ps1` points `core.hooksPath` at `tools/githooks` for each clone; run it once after cloning. A red hook is a defect to fix, never a gate to skip.
 
 ## A measurement recorded is a measurement re-checked
 
@@ -130,6 +130,8 @@ python3 scripts/todo-graph.py query stats     # tree health
 python3 scripts/todo-graph.py query budget    # sections and discovered sections per phase, the backlog count
 python3 scripts/todo-graph.py query growth --since <ref>   # a run's added sections and backlog changes
 python3 scripts/todo-graph.py resolve 'DNN TNN §N'   # ref -> file, section, deps, status
+python3 scripts/drift-check.py                # documents, generated output and source review receipts
+python3 scripts/plan-audit.py                 # prerequisite order and product coverage
 python3 scripts/todo-claims.py                # re-measure what the TODOs claim about the repo
 python3 scripts/todo-claims.py --coverage     # name every Current state block nothing re-measures
 python3 scripts/todo-findings.py --check      # fail if docs/reviews/findings.md is stale
