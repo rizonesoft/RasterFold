@@ -81,7 +81,7 @@ A workflow nobody has seen run is a claim, not a gate. The `plan-gates` workflow
 
 ## 3. The Static Analysis Gate
 
-The build already fails on any compiler warning (`-Werror` in `build.ninja`). Static analysis finds what the compiler does not: a read past a buffer on one path, an unchecked size, a leak. The gate is a ratchet: the count found on the day it lands is the baseline, and it only shrinks.
+The build already fails on any compiler warning (`-Werror` in `scripts/build.py`). Static analysis finds what the compiler does not: a read past a buffer on one path, an unchecked size, a leak. The gate is a ratchet: the count found on the day it lands is the baseline, and it only shrinks.
 
 - [ ] Add `.clang-tidy` with `bugprone-*`, `clang-analyzer-*`, `performance-*`, and `cert-*` checks, minus the checks that report style rather than defects (`bugprone-easily-swappable-parameters`, `readability-magic-numbers`, and any other noise the first run shows, each named with its reason in a comment). Done when: `tools/llvm-mingw/bin/clang-tidy.exe --quiet src/*.c -- -std=c11 -march=x86-64-v2 -Isrc` runs to completion. Cheaper substitute: enabling every check and baselining thousands of style findings.
 - [ ] Record the warning count in `todo/.tidy-baseline` as `count: <n>`, counting unique `(file, line, column, check)` findings. Done when: the file exists and its count equals the run's.

@@ -5,20 +5,20 @@ self-test for the Stop hook (D00 T04 §32, §34).
 turn while its run is open. The guard file it reads is written and
 deleted only through this module (D00 T04 §34):
 
-    python scripts/campaign_guard.py acquire --session S --phase N --run-file F --cron-id J [--handover REASON]
-    python scripts/campaign_guard.py end --session S --reason closeout|park|plan-done|operator-stop|escalation|stall
-    python scripts/campaign_guard.py hook-error [--session S] [--ack LINE]
-    python scripts/campaign_guard.py mint-generation
-    python scripts/campaign_guard.py whoami --session S --generation G
-    python scripts/campaign_guard.py reset-state --session S | --expect-no-guard yes
-    python scripts/campaign_guard.py pending-cancel | cancel-confirmed --cron-id J
-    python scripts/campaign_guard.py reconcile --session S --jobs J1,J2
-    python scripts/campaign_guard.py health --session S --jobs J1,J2
-    python scripts/campaign_guard.py expiry --session S [--now ISO]
-    python scripts/campaign_guard.py repair attempt --red SHA --commit SHA --workflow W --run-file F
-    python scripts/campaign_guard.py repair close --green SHA --workflow W --run-file F --evidence LINE
-    python scripts/campaign_guard.py repair status|restore --run-file F [--workflow W] | ceiling --run-id ID
-    python scripts/campaign_guard.py --self-test
+    python3 scripts/campaign_guard.py acquire --session S --phase N --run-file F --cron-id J [--handover REASON]
+    python3 scripts/campaign_guard.py end --session S --reason closeout|park|plan-done|operator-stop|escalation|stall
+    python3 scripts/campaign_guard.py hook-error [--session S] [--ack LINE]
+    python3 scripts/campaign_guard.py mint-generation
+    python3 scripts/campaign_guard.py whoami --session S --generation G
+    python3 scripts/campaign_guard.py reset-state --session S | --expect-no-guard yes
+    python3 scripts/campaign_guard.py pending-cancel | cancel-confirmed --cron-id J
+    python3 scripts/campaign_guard.py reconcile --session S --jobs J1,J2
+    python3 scripts/campaign_guard.py health --session S --jobs J1,J2
+    python3 scripts/campaign_guard.py expiry --session S [--now ISO]
+    python3 scripts/campaign_guard.py repair attempt --red SHA --commit SHA --workflow W --run-file F
+    python3 scripts/campaign_guard.py repair close --green SHA --workflow W --run-file F --evidence LINE
+    python3 scripts/campaign_guard.py repair status|restore --run-file F [--workflow W] | ceiling --run-id ID
+    python3 scripts/campaign_guard.py --self-test
 
 `acquire` creates the guard exclusively; the owning session may re-point
 it (a new phase or job) by compare-and-swap on `session_id`, and another
@@ -47,6 +47,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOOK = os.path.normpath(os.path.join(HERE, "..", ".claude", "hooks", "campaign-stop.ps1"))
@@ -69,6 +70,8 @@ def _paths(root: str) -> tuple[str, str]:
 
 
 LOCK_WAIT = 10.0
+_THREAD_LOCKS: dict[str, threading.Lock] = {}
+_THREAD_LOCKS_LOCK = threading.Lock()
 
 
 class _Lock:
@@ -76,7 +79,7 @@ class _Lock:
     re-point, handover, end) holds it, so a read-then-replace can never
     interleave with another session's change (D00 T04 §34 independent
     review). It is an operating-system lock on an open handle
-    (`msvcrt.locking` on Windows, `flock` elsewhere): it never expires
+    (`msvcrt.locking` on Windows, `lockf` elsewhere): it never expires
     while its holder lives, and the OS releases it when the holder
     closes the handle or dies, so no age test can break a live holder's
     lock (panel round 1). The lock file itself is never deleted."""
@@ -85,6 +88,8 @@ class _Lock:
         self.path = os.path.join(root, "build", "claude-campaign-guard.lock")
         self.wait = wait
         self.fd = None
+        with _THREAD_LOCKS_LOCK:
+            self.thread_lock = _THREAD_LOCKS.setdefault(os.path.realpath(self.path), threading.Lock())
 
     def _try(self) -> bool:
         if os.name == "nt":
@@ -97,20 +102,27 @@ class _Lock:
                 return False
         import fcntl
         try:
-            fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.lockf(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             return True
         except OSError:
             return False
 
     def __enter__(self):
         import time
+        if not self.thread_lock.acquire(timeout=self.wait):
+            raise GuardError(f"the guard is locked by another thread ({self.path}); retry")
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
-        self.fd = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o644)
+        try:
+            self.fd = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o644)
+        except OSError:
+            self.thread_lock.release()
+            raise
         deadline = time.monotonic() + self.wait
         while not self._try():
             if time.monotonic() >= deadline:
                 os.close(self.fd)
                 self.fd = None
+                self.thread_lock.release()
                 raise GuardError(f"the guard is locked by another change ({self.path}); retry")
             time.sleep(0.05)
         return self
@@ -124,10 +136,11 @@ class _Lock:
                     msvcrt.locking(self.fd, msvcrt.LK_UNLCK, 1)
                 else:
                     import fcntl
-                    fcntl.flock(self.fd, fcntl.LOCK_UN)
+                    fcntl.lockf(self.fd, fcntl.LOCK_UN)
             finally:
                 os.close(self.fd)
                 self.fd = None
+                self.thread_lock.release()
         return False
 
 
@@ -175,8 +188,22 @@ def acquire(root: str, session: str, phase: int, run_file: str, cron_id: str,
         raise GuardError("acquire needs --session, --run-file, and --cron-id")
     if os.path.isabs(run_file) or ".." in run_file.replace("\\", "/").split("/"):
         raise GuardError(f"run file {run_file!r} must be a repo-relative path inside the workspace")
-    with _Lock(root):
-        return _acquire_locked(root, session, phase, run_file, cron_id, handover, generation)
+    # Family-private implementation; only the admission lock and ownership
+    # handshake are shared with Codex. Fixture roots still use this code.
+    import importlib.util
+    source = os.path.join(REPO, '.claude', 'runner', 'admission.py')
+    spec = importlib.util.spec_from_file_location('claude_admission', source)
+    with _THREAD_LOCKS_LOCK:
+        module = sys.modules.get('claude_admission')
+        if module is None:
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            sys.modules['claude_admission'] = module
+    with module.admission(root):
+        if module.busy(root, 'codex'):
+            raise GuardError('Codex owns the checkout; stop that run before acquiring Claude')
+        with _Lock(root):
+            return _acquire_locked(root, session, phase, run_file, cron_id, handover, generation)
 
 
 def _acquire_locked(root: str, session: str, phase: int, run_file: str, cron_id: str,
@@ -751,7 +778,7 @@ def repair(root: str, action: str, red: str = "", commit: str = "", green: str =
 
 
 def _powershell() -> str | None:
-    for name in ("powershell.exe", "powershell", "pwsh"):
+    for name in (("powershell.exe", "powershell", "pwsh") if os.name == "nt" else ("pwsh",)):
         found = shutil.which(name)
         if found:
             return found
@@ -810,7 +837,7 @@ def _workspace(tmpd: str) -> str:
     os.makedirs(os.path.join(root, ".claude", "hooks"))
     shutil.copyfile(HOOK, os.path.join(root, ".claude", "hooks", "campaign-stop.ps1"))
     with open(os.path.join(root, ".gitignore"), "w", encoding="utf-8") as fh:
-        fh.write("build/\n")
+        fh.write("build/\n.runner/\n")
     # The fake graph prints the runnable count the test writes to ready.txt.
     with open(os.path.join(root, "scripts", "todo-graph.py"), "w", encoding="utf-8") as fh:
         fh.write("import os\n"
@@ -1079,15 +1106,15 @@ def _self_test() -> int:
             [sys.executable, "-c",
              "import sys, time; sys.path.insert(0, sys.argv[1]); import campaign_guard as cg\n"
              "with cg._Lock(sys.argv[2]):\n"
-             "    print('held', flush=True); time.sleep(4)",
-             HERE, root], stdout=subprocess.PIPE, text=True)
+             "    print('held', flush=True); sys.stdin.readline()",
+             HERE, root], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
         holder.stdout.readline()
         os.environ["CAMPAIGN_LOCK_WAIT_MS"] = "300"
         try:
             code, out, err = run_hook(root, SESSION)
         finally:
             del os.environ["CAMPAIGN_LOCK_WAIT_MS"]
-        holder.wait()
+        holder.communicate("\n")
         folder = os.path.join(root, "build", "claude-campaign-hook-errors")
         files = sorted(os.listdir(folder)) if os.path.isdir(folder) else []
         logged = "".join(open(os.path.join(folder, n), encoding="utf-8").read() for n in files)
@@ -1458,7 +1485,7 @@ def _self_test() -> int:
                      ["config", "commit.gpgsign", "false"]):
             subprocess.run(["git", *args], cwd=rtmp, capture_output=True, check=True)
         with open(os.path.join(rtmp, ".gitignore"), "w", encoding="utf-8") as fh:
-            fh.write("build/\n")
+            fh.write("build/\n.runner/\n")
         shas = []
         for n in range(6):
             with open(os.path.join(rtmp, "f.txt"), "w", encoding="utf-8") as fh:
@@ -1549,17 +1576,17 @@ def _self_test() -> int:
             skill = fh.read()
     except OSError:
         skill = ""
-    for pin, needle in (("skill-acquires-the-guard", "python scripts/campaign_guard.py acquire --session"),
-                        ("skill-ends-through-end", "python scripts/campaign_guard.py end --session"),
-                        ("skill-heartbeat-reports-hook-errors", "python scripts/campaign_guard.py hook-error"),
+    for pin, needle in (("skill-acquires-the-guard", "python3 scripts/campaign_guard.py acquire --session"),
+                        ("skill-ends-through-end", "python3 scripts/campaign_guard.py end --session"),
+                        ("skill-heartbeat-reports-hook-errors", "python3 scripts/campaign_guard.py hook-error"),
                         ("skill-refused-acquire-cancels-its-job", "A refused `acquire` means another session owns the run"),
                         ("skill-heartbeat-checks-ownership", "NOT THE OWNER or NOT THE CURRENT JOB"),
                         ("skill-heartbeat-ends-through-end", "--reason plan-done`, CronDelete this job"),
                         ("skill-heartbeat-owner-first",
-                         "1. Run `python scripts/campaign_guard.py whoami --session"),
-                        ("skill-reconciles-before-starting", "python scripts/campaign_guard.py reconcile --session"),
-                        ("skill-checks-health-at-each-boundary", "python scripts/campaign_guard.py health --session"),
-                        ("skill-confirms-the-cancel", "python scripts/campaign_guard.py cancel-confirmed --cron-id"),
+                         "1. Run `python3 scripts/campaign_guard.py whoami --session"),
+                        ("skill-reconciles-before-starting", "python3 scripts/campaign_guard.py reconcile --session"),
+                        ("skill-checks-health-at-each-boundary", "python3 scripts/campaign_guard.py health --session"),
+                        ("skill-confirms-the-cancel", "python3 scripts/campaign_guard.py cancel-confirmed --cron-id"),
                         ("skill-marks-bookkeeping", "- bookkeeping: heartbeat resumed"),
                         ("skill-heartbeat-confirms-before-clearing",
                          "CronDelete this job, confirm it gone with CronList, then run `cancel-confirmed`"),

@@ -1189,7 +1189,8 @@ def validate(graph, _args) -> int:
                 )
                 continue
             gpt_governs = s.stamped_on is not None and s.stamped_on >= GPT_GOVERNS_FROM
-            if gpt_governs:
+            codex_writer = graph.codex_implementer(s.implementer_body)
+            if gpt_governs or codex_writer:
                 # D00 T04 §27 and §29: GPT governs, Grok is every fallback,
                 # and the writer's family never reviews. GPT last owes no
                 # note; Grok last owes the `GPT outage` note; a Claude-family
@@ -1197,10 +1198,10 @@ def validate(graph, _args) -> int:
                 lasts = [(h[-1].start(), fam, h[-1]) for fam, h in
                          (("GPT", gpt_heads), ("Grok", grok_heads), ("Claude", heads)) if h]
                 _pos, family, lead = max(lasts, key=lambda item: item[0])
-                if family == "Claude":
+                if (family == "Claude" and not codex_writer) or (codex_writer and family != "Claude"):
                     flag(
                         "stamp-no-opus-panel",
-                        f"{where} findings {m.group(1)} Claude panel governs a stamp dated "
+                        f"{where} findings {m.group(1)} {family} panel governs a stamp dated "
                         f"{GPT_GOVERNS_FROM} or later: the writer's family never reviews",
                     )
                     continue

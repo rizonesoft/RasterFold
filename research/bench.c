@@ -55,12 +55,12 @@ int main(int argc, char **argv) {
         int is_raw = 0;
         for (int r = 0; r < reps; r++) {
             double t0 = cyc_ms();
-            if (rf_cm_encode(im.rgb, im.w, im.h, buf, raw - 1, &n, threads)) { printf("encode failed %s\n", argv[a]); ok = 0; break; }
+            if (rf_cm_encode(im.rgb, im.w, im.h, buf, raw - 1, &n, threads, 0)) { printf("encode failed %s\n", argv[a]); ok = 0; break; }
             double t1 = cyc_ms();
             if (n == 0) { is_raw = 1; n = raw; be = bd = t1 - t0; break; }   /* container stores raw */
             memset(out, 0, raw);
             double t2 = cyc_ms();
-            int rc = rf_cm_decode(buf, n, out, im.w, im.h, threads);
+            int rc = rf_cm_decode(buf, n, out, im.w, im.h, threads, 0);
             double t3 = cyc_ms();
             ok &= rc == 0 && memcmp(out, im.rgb, raw) == 0;
             if (t1 - t0 < be) be = t1 - t0;

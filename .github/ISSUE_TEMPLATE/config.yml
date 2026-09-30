@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security reporting
+    url: https://github.com/rizonesoft/RasterFold/blob/main/SECURITY.md
+    about: Report security concerns privately using the repository policy.

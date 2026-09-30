@@ -42,6 +42,8 @@ The Phase column is the coarse domain grouping, not an executable schedule. Curr
 
 | TODO | Domain | Title |
 | ---- | ------ | ----- |
+| [TODO-04](./08-docs/TODO-04-repository-presentation.md) | 08-docs | Repository Presentation and Developer Entry Points |
+| [TODO-04](./00-workspace/TODO-04-wsl-and-runners.md) | 00-workspace | WSL, Local Toolchains, and Isolated Runners |
 | [TODO-01](./00-workspace/TODO-01-dev-automation.md) | 00-workspace | Dev-Automation Wiring |
 | [TODO-01](./03-memory/TODO-01-buffer-lifetimes.md) | 03-memory | Buffer Lifetimes and Copies |
 | [TODO-01](./04-robustness/TODO-01-decoder-hardening.md) | 04-robustness | Decoder Hardening |

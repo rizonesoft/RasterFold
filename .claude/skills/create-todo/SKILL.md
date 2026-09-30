@@ -13,7 +13,7 @@ A new file is warranted when a subject no existing file owns needs a durable hom
 
 Name the domain and the next free `TODO-NN` number in it. Confirm no existing file covers the subject by searching as `add-todo` does. A file that overlaps an existing file's scope is a defect at birth.
 
-A file is operator-directed by default: the operator asked for it, so its sections carry no Origin line and nothing caps how many it holds or how many land in a phase. When a campaign invokes this skill for work it discovered on its own, every section passes `add-todo`'s admission test, and carries `**Origin:** discovered run=<run id> <YYYY-MM-DD>` directly under its heading, for provenance (`python scripts/todo-graph.py query growth --since <run start>` reports it by run; nothing caps it); sections that fail the test become backlog entries in `todo/backlog.md` instead.
+A file is operator-directed by default: the operator asked for it, so its sections carry no Origin line and nothing caps how many it holds or how many land in a phase. When a campaign invokes this skill for work it discovered on its own, every section passes `add-todo`'s admission test, and carries `**Origin:** discovered run=<run id> <YYYY-MM-DD>` directly under its heading, for provenance (`python3 scripts/todo-graph.py query growth --since <run start>` reports it by run; nothing caps it); sections that fail the test become backlog entries in `todo/backlog.md` instead.
 
 A new domain is allowed when no domain owns the subject: create `todo/NN-kebab-name/` with its `INDEX.md` (copy the shape of an existing domain index), append it to the Domain order table in `todo/TODO-00-INDEX.md`, and take the next free number. The tooling reads domains from the tree, so nothing else registers it.
 
@@ -39,9 +39,9 @@ Size sections by what holds together (max 30 items; a file caps at 55 sections).
 - Place every section in exactly one phase table of `todo/implementation-plan.md` (a `### Phase <N> -- <Title>` heading with a `| ✔ | Section | Deliverable | Items |` table), no earlier than the phase of anything it depends on, then:
 
 ```bash
-python scripts/todo-graph.py validate
-python scripts/todo-graph.py plan --sync
-python scripts/todo-graph.py plan --check
+python3 scripts/todo-graph.py validate
+python3 scripts/todo-graph.py plan --sync
+python3 scripts/todo-graph.py plan --check
 ```
 
 ### 4. Commit and report

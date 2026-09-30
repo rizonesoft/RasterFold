@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-EXE = REPO / "Bin" / "rasterfold.exe"
+EXE = REPO / "bin" / "windows-x64" / "bin" / "rasterfold.exe"
 TMP = REPO / "build" / "research" / "vs"
 TMP.mkdir(parents=True, exist_ok=True)
 

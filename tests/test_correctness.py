@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import random
 import struct
+import os
 import subprocess
 import sys
 import zlib
@@ -15,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tests"))
 import rfi_ref as rf  # noqa: E402
 
-EXE = ROOT / "Bin" / "rasterfold.exe"
+EXE = Path(os.environ.get("RF_TEST_EXE", ROOT / "bin" / ("windows-x64/bin/rasterfold.exe" if os.name == "nt" else "linux-x64/bin/rasterfold")))
 WORK = ROOT / "tests" / "work"
 passed = 0
 failed = 0

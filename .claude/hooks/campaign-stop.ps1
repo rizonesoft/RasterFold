@@ -94,8 +94,8 @@ try {
     $relative = [string]$guard.run_file
     if (-not $relative -or [System.IO.Path]::IsPathRooted($relative)) { Allow }
     $fullRun = [System.IO.Path]::GetFullPath((Join-Path $root $relative))
-    $fullRoot = [System.IO.Path]::GetFullPath($root).TrimEnd('\')
-    if (-not $fullRun.StartsWith($fullRoot + '\', [System.StringComparison]::OrdinalIgnoreCase)) { Allow }
+    $fullRoot = [System.IO.Path]::GetFullPath($root).TrimEnd([IO.Path]::DirectorySeparatorChar)
+    if (-not $fullRun.StartsWith($fullRoot + [IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) { Allow }
     if (-not (Test-Path -LiteralPath $fullRun)) { Allow }
 
     $text = Get-Content -LiteralPath $fullRun -Raw -Encoding UTF8
@@ -119,7 +119,8 @@ try {
     try {
         # Genuine halt: nothing runnable here. The runner still owes the
         # PARKED line, but blocking cannot produce work that does not exist.
-        $ready = & python scripts/todo-graph.py query ready 2>$null
+        $py = if (Get-Command python3 -ErrorAction SilentlyContinue) { "python3" } else { "python" }
+        $ready = & $py scripts/todo-graph.py query ready 2>$null
         $summary = $ready | Select-String -Pattern '(\d+) runnable now' | Select-Object -Last 1
         if ($summary -and [int]$summary.Matches[0].Groups[1].Value -eq 0) { Allow }
         $next = ($ready | Where-Object { $_ -match '\S' -and $_ -notmatch 'runnable now' } | Select-Object -First 1)
@@ -286,6 +287,6 @@ catch {
                 [System.IO.File]::WriteAllText((Join-Path $dir $name), "$at $reason")
             }
         }
-    } catch { }
+    } catch { [Console]::Error.WriteLine("campaign-stop: error recording failure: $($_.Exception.Message)") }
     exit 0
 }

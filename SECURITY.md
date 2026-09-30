@@ -1,0 +1,9 @@
+# Security policy
+
+RasterFold is in active development. Security fixes target the current `main` branch; no release support window is promised yet.
+
+Report suspected memory corruption, out-of-bounds access, malformed-input hangs or unintended file replacement privately to **derick@rizonetech.com**. Please avoid publishing a weaponized sample in a public issue before the report is assessed.
+
+Include the affected commit, operating system and architecture, compiler/build manifest, exact command or API call, observed behavior, and a minimal reproducer you are permitted to share. State whether the issue affects the CLI, shared library or static library. Do not include credentials or private customer images.
+
+Disclosure timing is coordinated with the reporter after assessment. A build or a fuzz run is evidence for its tested scope, not a guarantee that every input is safe.

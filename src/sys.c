@@ -5,59 +5,43 @@
 #include <psapi.h>
 #include "rf.h"
 
-static HANDLE g_heap;
-static uint64_t g_alloc_current;
-uint64_t g_alloc_peak;
-int g_err_code;
-const char *g_err_msg;
-
-int rf_fail(int code, const char *msg) {
-    if (!g_err_code) {
-        g_err_code = code;
-        g_err_msg = msg;
-    }
-    return code;
-}
-
 /* Blocks are 64-byte aligned. The 64 bytes in front of the block hold the
    raw HeapAlloc pointer and the requested size. */
 void *rf_alloc(size_t size) {
-    if (!g_heap) g_heap = GetProcessHeap();
     if (size == 0 || size > RF_MAX_FILE * 2) return 0;
-    uint8_t *raw = HeapAlloc(g_heap, HEAP_ZERO_MEMORY, size + 128);
+    uint8_t *raw = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, size + 128);
     if (!raw) return 0;
     uint8_t *p = (uint8_t *)(((uintptr_t)raw + 64 + 63) & ~(uintptr_t)63);
     ((void **)p)[-1] = raw;
     ((size_t *)p)[-2] = size;
-    g_alloc_current += size;
-    if (g_alloc_current > g_alloc_peak) g_alloc_peak = g_alloc_current;
+    rf_account_add(size);
     return p;
 }
 
 void rf_free(void *p) {
     if (!p) return;
-    g_alloc_current -= ((size_t *)p)[-2];
-    HeapFree(g_heap, 0, ((void **)p)[-1]);
+    rf_account_remove(((size_t *)p)[-2]);
+    HeapFree(GetProcessHeap(), 0, ((void **)p)[-1]);
 }
 
-int rf_read_file(const uint16_t *path, uint8_t **data, size_t *size) {
+int rf_read_file(const rf_path_char *path, uint8_t **data, size_t *size, rf_error *err) {
     *data = 0;
     *size = 0;
     HANDLE f = CreateFileW((LPCWSTR)path, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
-    if (f == INVALID_HANDLE_VALUE) return rf_fail(RF_ERR_IO, "cannot read input");
+    if (f == INVALID_HANDLE_VALUE) return rf_fail(err, RF_ERR_IO, "cannot read input");
     LARGE_INTEGER len;
     int rc = RF_OK;
     uint8_t *buf = 0;
-    if (!GetFileSizeEx(f, &len)) rc = rf_fail(RF_ERR_IO, "cannot read input");
-    else if (len.QuadPart <= 0) rc = rf_fail(RF_ERR_FORMAT, "invalid input: empty file");
-    else if ((uint64_t)len.QuadPart > RF_MAX_FILE) rc = rf_fail(RF_ERR_LIMIT, "input exceeds size limit");
-    else if (!(buf = rf_alloc((size_t)len.QuadPart))) rc = rf_fail(RF_ERR_LIMIT, "out of memory");
+    if (!GetFileSizeEx(f, &len)) rc = rf_fail(err, RF_ERR_IO, "cannot read input");
+    else if (len.QuadPart <= 0) rc = rf_fail(err, RF_ERR_FORMAT, "invalid input: empty file");
+    else if ((uint64_t)len.QuadPart > RF_MAX_FILE) rc = rf_fail(err, RF_ERR_LIMIT, "input exceeds size limit");
+    else if (!(buf = rf_alloc((size_t)len.QuadPart))) rc = rf_fail(err, RF_ERR_LIMIT, "out of memory");
     else {
         size_t done = 0, want = (size_t)len.QuadPart;
         while (done < want) {
             DWORD got = 0;
             DWORD chunk = (DWORD)((want - done) > 0x10000000u ? 0x10000000u : (want - done));
-            if (!ReadFile(f, buf + done, chunk, &got, 0) || got == 0) { rc = rf_fail(RF_ERR_IO, "cannot read input"); break; }
+            if (!ReadFile(f, buf + done, chunk, &got, 0) || got == 0) { rc = rf_fail(err, RF_ERR_IO, "cannot read input"); break; }
             done += got;
         }
     }
@@ -69,34 +53,34 @@ int rf_read_file(const uint16_t *path, uint8_t **data, size_t *size) {
 }
 
 /* 0 when nothing exists at path and the path can be created. */
-int rf_path_blocked(const uint16_t *path) {
+int rf_path_blocked(const rf_path_char *path, rf_error *err) {
     if (GetFileAttributesW((LPCWSTR)path) != INVALID_FILE_ATTRIBUTES)
-        return rf_fail(RF_ERR_IO, "output file already exists");
+        return rf_fail(err, RF_ERR_IO, "output file already exists");
     DWORD e = GetLastError();
     if (e == ERROR_FILE_NOT_FOUND || e == ERROR_PATH_NOT_FOUND) return RF_OK;
-    return rf_fail(RF_ERR_IO, "cannot access output path");
+    return rf_fail(err, RF_ERR_IO, "cannot access output path");
 }
 
 /* Write to path + ".partial" with CREATE_NEW, flush, then rename onto path.
    An existing path or temporary is never touched; a failure deletes only the
    temporary this call created. */
-int rf_write_atomic(const uint16_t *path, const uint8_t *data, size_t size) {
-    int rc = rf_path_blocked(path);
+int rf_write_atomic(const rf_path_char *path, const uint8_t *data, size_t size, rf_error *err) {
+    int rc = rf_path_blocked(path, err);
     if (rc) return rc;
     static const uint16_t suffix[] = {'.', 'p', 'a', 'r', 't', 'i', 'a', 'l', 0};
     uint16_t tmp[1024 + 9];
     size_t n = 0;
     while (path[n]) {
-        if (n >= 1024) return rf_fail(RF_ERR_IO, "path too long");
+        if (n >= 1024) return rf_fail(err, RF_ERR_IO, "path too long");
         tmp[n] = path[n];
         n++;
     }
-    if (n == 0) return rf_fail(RF_ERR_IO, "cannot write output");
+    if (n == 0) return rf_fail(err, RF_ERR_IO, "cannot write output");
     for (size_t i = 0; i < 9; i++) tmp[n + i] = suffix[i];
     if (GetFileAttributesW((LPCWSTR)tmp) != INVALID_FILE_ATTRIBUTES)
-        return rf_fail(RF_ERR_IO, "temporary output already exists");
+        return rf_fail(err, RF_ERR_IO, "temporary output already exists");
     HANDLE f = CreateFileW((LPCWSTR)tmp, GENERIC_WRITE, 0, 0, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, 0);
-    if (f == INVALID_HANDLE_VALUE) return rf_fail(RF_ERR_IO, "cannot write output");
+    if (f == INVALID_HANDLE_VALUE) return rf_fail(err, RF_ERR_IO, "cannot write output");
     size_t done = 0;
     int ok = 1;
     while (ok && done < size) {
@@ -110,7 +94,7 @@ int rf_write_atomic(const uint16_t *path, const uint8_t *data, size_t size) {
     ok = ok && MoveFileW((LPCWSTR)tmp, (LPCWSTR)path);
     if (!ok) {
         DeleteFileW((LPCWSTR)tmp);
-        return rf_fail(RF_ERR_IO, "cannot write output");
+        return rf_fail(err, RF_ERR_IO, "cannot write output");
     }
     return RF_OK;
 }
@@ -175,19 +159,4 @@ void rf_print(int to_stderr, const char *s) {
     HANDLE h = GetStdHandle(to_stderr ? STD_ERROR_HANDLE : STD_OUTPUT_HANDLE);
     DWORD put;
     if (h && h != INVALID_HANDLE_VALUE && n) WriteFile(h, s, (DWORD)n, &put, 0);
-}
-
-void rf_print_u64(int to_stderr, uint64_t v) {
-    char buf[24];
-    int i = 23;
-    buf[i] = 0;
-    do { buf[--i] = (char)('0' + v % 10); v /= 10; } while (v);
-    rf_print(to_stderr, buf + i);
-}
-
-void rf_print_hex32(int to_stderr, uint32_t v) {
-    char buf[9];
-    for (int i = 7; i >= 0; i--, v >>= 4) buf[i] = "0123456789abcdef"[v & 15];
-    buf[8] = 0;
-    rf_print(to_stderr, buf);
 }

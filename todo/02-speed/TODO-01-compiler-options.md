@@ -13,21 +13,21 @@ track: S1
 > **Goal:** The release build uses every compiler option that makes it measurably faster without changing a byte it writes: profile-guided optimization from a reproducible profile, link-time optimization if it helps, and an AVX2 path chosen at run time only if building for AVX2 is worth at least 5%.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-09-29):** `build.ninja` compiles with `-O2 -march=x86-64-v2 -mtune=generic -Werror` and links with `-nostdlib` against `kernel32` and `shell32` only; there is no profile, no `-flto`, and no instruction-set dispatch. Decode of `measure/image.bmp` takes 0.58 of JPEG XL's time with three threads and 0.80 with one thread each (`benchmarks/results.md`, 2026-09-29). The llvm-mingw toolchain carries `llvm-profdata.exe` and the Clang profile runtime.
-<!-- claim: count "-march=x86-64-v2" build.ninja = 1 -->
-<!-- claim: count "flto" build.ninja = 0 -->
-<!-- claim: count "fprofile" build.ninja = 0 -->
+> **Current state (verified 2026-09-30; timings below remain the 2026-09-29 baseline):** `scripts/build.py` compiles with `-O2 -march=x86-64-v2 -mtune=generic -Werror` and links its Windows executable with `-nostdlib` against `kernel32` and `shell32` only; POSIX targets use libc/pthreads; there is no profile, no `-flto`, and no instruction-set dispatch. Decode of `measure/image.bmp` takes 0.58 of JPEG XL's time with three threads and 0.80 with one thread each (`benchmarks/results.md`, 2026-09-29). The llvm-mingw toolchain carries `llvm-profdata.exe` and the Clang profile runtime.
+<!-- claim: count "-march=x86-64-v2" scripts/build.py = 1 -->
+<!-- claim: count "flto" scripts/build.py = 0 -->
+<!-- claim: count "fprofile" scripts/build.py = 0 -->
 <!-- claim: count "llvm-mingw-20260922-ucrt-x86_64.zip" toolchain.json = 1 -->
 
 ## Inputs
 
-- [`build.ninja`](../../build.ninja) -- the flags every section here changes
+- [`scripts/build.py`](../../scripts/build.py) -- the flags every section here changes
 - [`docs/research.md`](../../docs/research.md) -- sections 5.1, 5.2, and 5.6, the procedures
 - [`research/vsjxl.py`](../../research/vsjxl.py) -- process wall times against JPEG XL, the measurement for all three sections
 
 ## Outcome
 
-- `Bin/rasterfold.exe` is built with a committed or regenerated profile, and decodes `measure/image.bmp` at least 5% faster on one thread than before this file, or the file records that profile-guided optimization did not reach 5%.
+- `bin/windows-x64/bin/rasterfold.exe` is built with a committed or regenerated profile, and decodes `measure/image.bmp` at least 5% faster on one thread than before this file, or the file records that profile-guided optimization did not reach 5%.
 - The executable still imports only `KERNEL32.dll` and `SHELL32.dll`, and `KAT_FOLD` is unchanged.
 
 **Adjacency:** all=not-applicable (build flags; no byte, option, or output changes)
@@ -50,13 +50,13 @@ track: S1
 
 The hot paths (`code_bit`, `code_residual`, `cm_model`) are branchy; a profile tells Clang which way the branches go. The instrumented build needs the profile runtime and a C runtime, which the release build does not have, so it is a separate target. Bar: a one-thread decode at least 5% faster (`research/vsjxl.py`), bytes identical; otherwise the negative result ships and nothing changes in the release build.
 
-- [ ] Add a `pgo-gen` target to `build.ninja` that compiles with `-fprofile-instr-generate` and links `Bin\rasterfold-pgo.exe` with the normal C runtime entry and `tools\llvm-mingw\lib\clang\23\lib\windows\libclang_rt.profile-x86_64.a`. Done when: `tools\ninja\ninja.exe pgo-gen` builds it.
+- [ ] Add a `pgo-gen` target to `scripts/build.py` that compiles with `-fprofile-instr-generate` and links `bin\windows-x64-pgo\bin\rasterfold.exe` with the normal C runtime entry and `tools\llvm-mingw\lib\clang\23\lib\windows\libclang_rt.profile-x86_64.a`. Done when: `tools\ninja\ninja.exe pgo-gen` builds it.
 - [ ] Add `scripts/pgo.ps1`, which runs the instrumented build over `measure/image.bmp` and the ten test-pack photos, encode and decode, `--threads 1` and default, with `LLVM_PROFILE_FILE=build\pgo\%p.profraw`, then merges them with `llvm-profdata.exe merge -o build\pgo\rasterfold.profdata`. Done when: the merged profile exists. Cheaper substitute: profiling one image, which fits the profile to it.
 - [ ] Build the release with `-fprofile-instr-use=build\pgo\rasterfold.profdata` when the profile exists, and make `build.ps1` regenerate it when it is missing, so a clean checkout reproduces the build. Done when: a clean `build.ps1` run produces the optimized binary.
 - [ ] Measure with alternating runs of the old and new executable (`research/vsjxl.py -n5` for each, twice, alternating). Done when: the decode and encode ratios at one and three threads are quoted.
 - [ ] Commit: `"build: profile-guided optimization from a reproducible profile"`
 
-**Test checkpoint:** `python tests/test_correctness.py` passes every case (the bytes did not move); `llvm-objdump -p Bin\rasterfold.exe` lists only `KERNEL32.dll` and `SHELL32.dll`; the alternating timings are quoted against the 5% bar.
+**Test checkpoint:** `python tests/test_correctness.py` passes every case (the bytes did not move); `llvm-objdump -p bin\windows-x64\bin\rasterfold.exe` lists only `KERNEL32.dll` and `SHELL32.dll`; the alternating timings are quoted against the 5% bar.
 
 ## 2. Link-Time Optimization
 
@@ -64,7 +64,7 @@ The hot paths (`code_bit`, `code_residual`, `cm_model`) are branchy; a profile t
 
 The codec is small, but `cm.c`'s entry points are called through `fold.c`, and LTO can inline across that seam. Bar: any measurable gain (a minimum-time ratio below 0.97) with the imports unchanged.
 
-- [ ] Add `-flto` to `cflags` and `ldflags` in `build.ninja` (with the §1 profile when it shipped). Done when: `build.ps1` exits 0 and `llvm-objdump -p Bin\rasterfold.exe` lists only `KERNEL32.dll` and `SHELL32.dll`. Cheaper substitute: trusting LTO without checking that it did not pull in a runtime call.
+- [ ] Add `-flto` to `cflags` and `ldflags` in `scripts/build.py` (with the §1 profile when it shipped). Done when: `build.ps1` exits 0 and `llvm-objdump -p bin\windows-x64\bin\rasterfold.exe` lists only `KERNEL32.dll` and `SHELL32.dll`. Cheaper substitute: trusting LTO without checking that it did not pull in a runtime call.
 - [ ] Measure with alternating runs as in §1. Done when: the ratios are quoted; below the bar, `-flto` is removed again and the result recorded in `docs/research.md` section 3.
 - [ ] Commit: `"build: link-time optimization"`
 

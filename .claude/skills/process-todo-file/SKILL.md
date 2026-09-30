@@ -21,7 +21,7 @@ Do NOT use it to force a file closed. If sections remain open, they get implemen
 ### 1. Confirm the file is actually exhausted
 
 ```bash
-python scripts/todo-graph.py validate
+python3 scripts/todo-graph.py validate
 ```
 
 Every row `[x]`, every `[x]` covered by a `Verified:` stamp, zero FATALs. If a row is `[x]` without a stamp, the validator says so: go fix that first. In sweep-only mode (phase closeout with open rows remaining), the shipped rows carry stamps instead, and step 5 is skipped: the file keeps its status until exhaustion.
@@ -33,13 +33,13 @@ The `## Verification` section is not decoration. Run every item in it and record
 For a code TODO that means the **full** sweep, not the filtered runs individual sections used (the gate card is `.claude/skills/process-todo-section/gates.md`):
 
 ```powershell
-pwsh scripts/check-all.ps1             # build, correctness suite, fuzz, TODO gates
-python tests/test_correctness.py        # the whole suite, once, unfiltered
-python tests/fuzz_decode.py 5000        # the long fuzz run, with its seed quoted
-python tests/measure_final.py           # the JPEG XL reference comparison (PASS)
+python3 scripts/check-all.py             # build, correctness suite, fuzz, TODO gates
+python3 tests/test_correctness.py        # the whole suite, once, unfiltered
+python3 tests/fuzz_decode.py 5000        # the long fuzz run, with its seed quoted
+python3 scripts/windows.py tests/measure_final.py           # the JPEG XL reference comparison (PASS)
 ```
 
-plus the file's other Verification items (the corpus sizes re-measured with `python research/ab.py size` on `photo`, `tp`, and `synth`, `python tests/benchmark.py -n 3` rerun and `benchmarks/results.md` committed where the file moved size or speed, the README measurement table updated), each executed, none trimmed (in sweep-only mode: executed where the shipped rows allow, otherwise recorded not-yet-runnable with its owner).
+plus the file's other Verification items (the corpus sizes re-measured with `python3 scripts/windows.py research/ab.py size` on `photo`, `tp`, and `synth`, `python3 scripts/windows.py tests/benchmark.py -n 3` rerun and `benchmarks/results.md` committed where the file moved size or speed, the documented measurement record updated), each executed, none trimmed (in sweep-only mode: executed where the shipped rows allow, otherwise recorded not-yet-runnable with its owner).
 
 ### 3. Loose-end sweep
 
@@ -76,7 +76,7 @@ If the file is `frozen: true`:
 <deferrals carried forward, with their owners>
 ```
 
-Then sync the plan: `python scripts/todo-graph.py plan --sync`.
+Then sync the plan: `python3 scripts/todo-graph.py plan --sync`.
 
 ### 7. Report
 
@@ -84,7 +84,7 @@ Tell the user plainly:
 
 - What now works, in their terms: not a list of section titles.
 - What was deferred and who owns it.
-- Anything found in the sweep that became a new TODO, section, or backlog entry, how many of the new sections are discovered (Origin line) and under which run id, any backlog entry promoted or merged (with its merge marker), and the budget line (`python scripts/todo-graph.py query budget`) after it.
+- Anything found in the sweep that became a new TODO, section, or backlog entry, how many of the new sections are discovered (Origin line) and under which run id, any backlog entry promoted or merged (with its merge marker), and the budget line (`python3 scripts/todo-graph.py query budget`) after it.
 - Any gate that did not run, and why.
 
 ## Guardrails

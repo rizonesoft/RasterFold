@@ -3,10 +3,8 @@
 #include <string.h>
 #include <windows.h>
 #include "rf.h"
-uint64_t g_alloc_peak;
-int g_err_code;
-const char *g_err_msg;
-int rf_fail(int code, const char *msg) { if (!g_err_code) { g_err_code = code; g_err_msg = msg; } return code; }
+uint64_t rf_internal_alloc_peak;
+int rf_fail(rf_error *err, int code, const char *msg) { if (err && !err->code) { err->code = code; err->message = msg; } return code; }
 void *rf_alloc(size_t size) {
     uint8_t *raw = calloc(1, size + 128);
     if (!raw) return 0;

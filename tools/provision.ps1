@@ -25,6 +25,12 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
+if ($env:OS -ne 'Windows_NT') {
+  $forward = @()
+  if ($Verify) { $forward += '--verify' }
+  & python3 (Join-Path $Root 'tools/provision.py') @forward
+  exit $LASTEXITCODE
+}
 
 function Get-Python {
   foreach ($name in @('python', 'python3')) {

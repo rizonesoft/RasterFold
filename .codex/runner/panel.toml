@@ -1,0 +1,37 @@
+# Independent from .conclave/panel.toml, which continues to serve Claude.
+# The initial reviewer pin uses the repository's existing registered Claude model.
+# A pin is usable only after a successful private-slot probe; record it in docs/reviews.
+[writer]
+model = "gpt-6-astra"
+[model.gpt-6-astra]
+family = "codex"
+[model.claude-opus-5-5]
+family = "claude"
+[slot.bulk]
+model = "claude-opus-5-5"
+effort = "medium"
+timeout = 600
+[slot.signoff]
+model = "claude-opus-5-5"
+effort = "high"
+timeout = 600
+[slot.depth]
+model = "claude-opus-5-5"
+effort = "high"
+timeout = 600
+[slot.plan-primary]
+model = "claude-opus-5-5"
+effort = "high"
+timeout = 900
+[slot.stamp-check]
+model = "claude-opus-5-5"
+effort = "high"
+timeout = 600
+[slot.independent]
+model = "claude-opus-5-5"
+effort = "high"
+timeout = 900
+[slot.arch-primary]
+model = "claude-opus-5-5"
+effort = "high"
+timeout = 600

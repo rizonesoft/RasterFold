@@ -59,7 +59,7 @@ track: R1
 
 **Job:** A user can download one document package holding everything the release ships, with checksums to verify it.
 
-- [ ] Write `scripts/package.ps1`, which builds from a clean tree and writes `dist/rasterfold-<version>-win-x64.zip` with the executable, DLL, header, both import libraries, the docs site, `LICENSE`, `CHANGELOG.md`, and `SHA256SUMS`. Done when: two runs on the same commit produce byte-identical zips. Cheaper substitute: zipping `Bin/` by hand.
+- [ ] Write `scripts/package.ps1`, which builds from a clean tree and writes `dist/rasterfold-<version>-win-x64.zip` with the executable, DLL, header, both import libraries, the docs site, `LICENSE`, `CHANGELOG.md`, and `SHA256SUMS`. Done when: two runs on the same commit produce byte-identical zips. Cheaper substitute: zipping `bin/` by hand.
 - [ ] Commit: `"release: a reproducible release package"`
 
 **Test checkpoint:** the two runs' zip hashes quoted equal; the package's checksum file verifies.

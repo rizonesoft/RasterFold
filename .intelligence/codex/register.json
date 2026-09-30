@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "family": "codex",
+  "next_id": 5,
+  "entries": [
+    {
+      "id": 1,
+      "key": "1fb73c794d6923bc4ddcf82d3fa29a8684e8bb3be32f9663aed524ad19c20830",
+      "title": "Inherited terminal acceptance referred to unrelated .NET apps",
+      "evidence": ".claude/skills/process-plan/SKILL.md before this migration required a clean Windows machine without the .NET SDK for an Isotone-era release domain.",
+      "proposal": "Keep terminal acceptance tied to RasterFold release targets and validate both family skill copies after future ports.",
+      "owner": "D00 T04 \u00a73",
+      "status": "open",
+      "created": "2026-09-30T16:14:34.171140+00:00",
+      "history": []
+    },
+    {
+      "id": 2,
+      "key": "894e3df2ab10f8182b14a905d107750bb9f1c263712658ef50b3dc6a44dbb063",
+      "title": "Stop requests must retain identity independently of time and later pause commands",
+      "evidence": "build/wsl-audit/runner-hardening-before.log records reproduced stop/pause overwrite and clock-rollback failures; .codex/tests/test_runner.py now exercises both, plus resume and native-trust interleavings.",
+      "proposal": "Retain one immutable file per native event, acknowledge request ids, and make unhandled stops dominate pause. Keep the interruption regressions in the gate suite.",
+      "owner": "D00 T04 \u00a73",
+      "status": "open",
+      "created": "2026-09-30T17:52:12.033919+00:00",
+      "history": []
+    },
+    {
+      "id": 3,
+      "key": "fdfe5f3d536702e71124d8f6d680f3bb90544df2dec32ada57024f61c44030cb",
+      "title": "Campaign edits must remain repairable at a proven stopped boundary",
+      "evidence": "On 2026-09-30 campaign.py imported AdmissionBusy before admission.py defined it; PreToolUse denied all edit tools. The operator supplied the missing class. test_broken_controller_allows_only_proven_idle_maintenance reproduces the boundary.",
+      "proposal": "Check ownership through the small admission module before importing campaign code. Permit ordinary maintenance only with proven idle ownership; preserve active/malformed ownership refusal. Publish dependencies before their imports.",
+      "owner": "D00 T04 \u00a73",
+      "status": "open",
+      "created": "2026-09-30T17:52:12.037137+00:00",
+      "history": []
+    },
+    {
+      "id": 4,
+      "key": "ac44fe325269cd56e21f8c53c2c8ef042d5908f60c13ac036b0be836e4616c56",
+      "title": "Campaign discovery ids must match the canonical Origin parser",
+      "evidence": "build/wsl-audit/origin-regression-before.log records two regression tests with three failures: full UUID run ids from campaign.py and two skills were rejected by scripts/todo-graph.py section_origins.",
+      "proposal": "Use twelve lowercase hex digits for canonical run provenance, retain independent full UUID generations, and test actual skill commands against the canonical parser.",
+      "owner": "D00 T04 \u00a73",
+      "status": "open",
+      "created": "2026-09-30T17:52:12.039706+00:00",
+      "history": []
+    }
+  ],
+  "archive": []
+}

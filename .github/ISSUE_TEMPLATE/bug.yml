@@ -1,0 +1,38 @@
+name: Bug report
+description: Report a reproducible codec, library or build defect.
+title: '[Bug]: '
+body:
+  - type: markdown
+    attributes:
+      value: 'For security issues, follow SECURITY.md. Share only images you may redistribute.'
+  - type: input
+    id: version
+    attributes:
+      label: Commit or build identity
+      description: Include the commit and target from bin/<target>/build.json.
+    validations:
+      required: true
+  - type: dropdown
+    id: target
+    attributes:
+      label: Target
+      options:
+        - Windows x64
+        - Linux x64
+        - Android ARM64
+        - Android x64
+        - Repository tooling
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Exact commands or API calls, expected result, actual result, and a shareable sample if needed.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs and environment
+      description: OS version, compiler, thread count and relevant error output. Remove secrets and private paths.

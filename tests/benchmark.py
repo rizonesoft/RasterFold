@@ -31,7 +31,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tests"))
 from test_correctness import checker, draw_ui, gradient, noise, solid, stripes  # noqa: E402
 
-EXE = ROOT / "Bin" / "rasterfold.exe"
+EXE = ROOT / "bin" / "windows-x64" / "bin" / "rasterfold.exe"
 OUT = ROOT / "benchmarks"
 WORK = ROOT / "build" / "benchmark"
 

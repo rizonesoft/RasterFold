@@ -13,11 +13,18 @@ static void crc_tables(void) {
     }
     for (uint32_t i = 0; i < 256; i++)
         for (int s = 1; s < 8; s++) T[s][i] = (T[s - 1][i] >> 8) ^ T[0][T[s - 1][i] & 0xFF];
-    ready = 1;
 }
 
 uint32_t rf_crc32(const uint8_t *p, size_t n) {
-    if (!ready) crc_tables();
+    if (__atomic_load_n(&ready, __ATOMIC_ACQUIRE) != 2) {
+        int expected = 0;
+        if (__atomic_compare_exchange_n(&ready, &expected, 1, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+            crc_tables();
+            __atomic_store_n(&ready, 2, __ATOMIC_RELEASE);
+        } else {
+            while (__atomic_load_n(&ready, __ATOMIC_ACQUIRE) != 2) rf_yield();
+        }
+    }
     uint32_t c = 0xFFFFFFFFu;
     while (n && ((uintptr_t)p & 7)) { c = T[0][(c ^ *p++) & 0xFF] ^ (c >> 8); n--; }
     while (n >= 8) {

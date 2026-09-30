@@ -20,12 +20,12 @@ Write one paragraph: what the change is, which images it should help and why (th
 Measure the current code before planning against it, and quote the figures with their commands and the date:
 
 ```bash
-python research/corpus.py                          # once per clone
-python research/ab.py size photo                   # total, geomean, worst
-python research/ab.py size tp
-python research/ab.py size synth -v                # per image, for class-specific ideas
-python research/ab.py bench -r3 -t1 measure kodim01
-python research/ab.py bench -r3 -t3 measure kodim01
+python3 scripts/windows.py research/corpus.py                          # once per clone
+python3 scripts/windows.py research/ab.py size photo                   # total, geomean, worst
+python3 scripts/windows.py research/ab.py size tp
+python3 scripts/windows.py research/ab.py size synth -v                # per image, for class-specific ideas
+python3 scripts/windows.py research/ab.py bench -r3 -t1 measure kodim01
+python3 scripts/windows.py research/ab.py bench -r3 -t3 measure kodim01
 ```
 
 A plan whose baseline came from memory, from `README.md`, or from another day's run is planned against a number that may have moved.
@@ -38,7 +38,7 @@ Find where the idea already exists: the published reference codecs (JPEG XL modu
 
 Every experiment names, in its section:
 
-- **The commands** that measure it, from `docs/research.md` sections 2.3 and 2.4: `python research/ab.py size build/research/try.c photo` (then `tp` and `synth`) for bytes, `python research/ab.py ab src/cm.c build/research/try.c -n5 -t1` and `-t3` for time.
+- **The commands** that measure it, from `docs/research.md` sections 2.3 and 2.4: `python3 scripts/windows.py research/ab.py size build/research/try.c photo` (then `tp` and `synth`) for bytes, `python3 scripts/windows.py research/ab.py ab src/cm.c build/research/try.c -n5 -t1` and `-t3` for time.
 - **The bar**, written as numbers against the baseline of step 2: by default at least 0.1% on the photo total with the worst image no more than 0.1% worse, confirmed on `tp`; for a speed change, a minimum-time ratio below 0.97 at the thread counts it targets, with the bytes unchanged; for a class-specific change (synthetic images, small images), the class's figure plus no photo regression beyond 0.05%.
 - **The negative result**: what ships when the bar is missed (the measurement in the stamp, the row added to the "Already tried" table, the porting items struck with a pointer to the stamp).
 - **The guard against tuning**: the parameters to try are listed in the plan before any run, the photo set tunes, and `tp` confirms. No rule may look at a particular image's dimensions, hash, name, or colour statistics.
@@ -56,9 +56,9 @@ Measurement and implementation are usually separate sections, because the measur
 Author the section through `add-todo` (an item or section on an existing file) or `create-todo` (a new file) in the domain that owns it (`01-compression`, `02-speed`, `03-memory`, or `04-robustness`), with Depends On edges on the experiments whose results it needs and XREFs to the `docs/research.md` item it implements. Place every section in a phase of `todo/implementation-plan.md`.
 
 ```bash
-python scripts/todo-graph.py validate
-python scripts/todo-graph.py plan --sync
-python scripts/todo-graph.py plan --check
+python3 scripts/todo-graph.py validate
+python3 scripts/todo-graph.py plan --sync
+python3 scripts/todo-graph.py plan --check
 ```
 
 Commit as one `todo:` commit. Report the sections, the baseline figures with their date, the bar, and the prior art each design choice rests on.

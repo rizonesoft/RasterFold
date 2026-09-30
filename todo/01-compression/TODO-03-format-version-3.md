@@ -32,7 +32,7 @@ track: C3
 
 ## Outcome
 
-- `Bin/rasterfold.exe encode` writes version 3 files; `inspect` prints `RasterFold fold version 3`.
+- `bin/windows-x64/bin/rasterfold.exe encode` writes version 3 files; `inspect` prints `RasterFold fold version 3`.
 - The version 2 `KAT_FOLD` still decodes to its pixels (kept as a decode-only vector), and a version 3 known-answer file exists.
 - `python research/ab.py size photo` shows the combined gain `D01 T02 §7` measured, and `python tests/measure_final.py` still passes.
 

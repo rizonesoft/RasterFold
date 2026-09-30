@@ -1,11 +1,5 @@
 name: build
 
-# Builds the codec with the pinned toolchain (toolchain.json, installed by
-# tools/bootstrap.ps1) and runs the correctness suite and a short decoder fuzz
-# on every push and pull request to main. The JPEG XL comparisons need ffmpeg
-# with libjxl and a quiet machine, so they stay local (tests/measure_final.py,
-# tests/benchmark.py).
-
 on:
   push:
     branches: [main]
@@ -21,32 +15,72 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-windows:
+  linux-and-android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Cache checked compiler archives
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: tools/downloads
+          key: linux-toolchain-${{ hashFiles('toolchain.json') }}
+      - name: Install local toolchains and test environment
+        run: |
+          python3 tools/bootstrap.py
+          python3 -m venv .venv
+          .venv/bin/python -m pip install -r requirements-dev.txt
+      - name: Build all target artifacts
+        run: python3 scripts/build.py --target all
+      - name: Linux runtime, ABI and file-safety tests
+        run: |
+          .venv/bin/python tests/test_correctness.py
+          .venv/bin/python tests/test_api.py
+          .venv/bin/python tests/test_artifacts.py
+          .venv/bin/python tests/fuzz_decode.py 300 1
+      - name: Portable arithmetic fidelity
+        run: |
+          python3 scripts/build.py --portable
+          RF_TEST_EXE="$PWD/bin/linux-x64-portable/bin/rasterfold" .venv/bin/python tests/test_correctness.py
+      - name: Verify local toolchain and package development artifacts
+        run: |
+          python3 tools/bootstrap.py --verify
+          python3 scripts/package.py --target all
+      - name: Upload binaries and libraries
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cross-platform-development-packages
+          path: build/packages/*
+          if-no-files-found: error
+
+  windows:
     runs-on: windows-2025
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Cache the pinned toolchain archives
+      - name: Cache checked compiler archives
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: tools/downloads
-          key: toolchain-v1-${{ hashFiles('toolchain.json') }}
-      - name: Install the pinned toolchain
-        shell: pwsh
-        run: ./tools/bootstrap.ps1
-      - name: Build (warnings are errors)
-        shell: pwsh
-        run: ./build.ps1
-      - name: Imports stay Win32-only
+          key: windows-toolchain-${{ hashFiles('toolchain.json') }}
+      - name: Install compiler and test dependency
         shell: pwsh
         run: |
-          $dlls = & tools/llvm-mingw/bin/llvm-objdump.exe -p Bin/rasterfold.exe | Select-String 'DLL Name:' | ForEach-Object { ($_ -split ':')[1].Trim() } | Sort-Object -Unique
-          $dlls
-          $extra = @($dlls | Where-Object { $_ -notin @('KERNEL32.dll', 'SHELL32.dll') })
-          if ($extra.Count -gt 0) { throw "unexpected imports: $($extra -join ', ')" }
-      - name: Test dependencies
-        run: python -m pip install --quiet pillow
-      - name: Correctness suite
-        run: python tests/test_correctness.py
-      - name: Decoder fuzz
-        run: python tests/fuzz_decode.py 300 1
+          ./tools/bootstrap.ps1
+          python -m pip install -r requirements-dev.txt
+      - name: Build native Windows executable and libraries
+        shell: pwsh
+        run: ./build.ps1
+      - name: Windows runtime and library consumers
+        run: |
+          python tests/test_correctness.py
+          python tests/test_api.py
+          python tests/test_artifacts.py
+          python tests/fuzz_decode.py 300 1
+      - name: Package Windows artifacts
+        run: python scripts/package.py --target windows-x64
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: native-windows-development-package
+          path: build/packages/*
+          if-no-files-found: error

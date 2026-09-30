@@ -5,7 +5,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"& ([System.IO.Path]::Combine([Environment]::GetEnvironmentVariable('CLAUDE_PROJECT_DIR'), '.claude', 'hooks', 'campaign-stop.ps1'))\"",
+            "command": "pwsh -NoProfile -ExecutionPolicy Bypass -Command \"& ([System.IO.Path]::Combine([Environment]::GetEnvironmentVariable('CLAUDE_PROJECT_DIR'), '.claude', 'hooks', 'campaign-stop.ps1'))\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/owner-guard.py\"",
             "timeout": 30
           }
         ]

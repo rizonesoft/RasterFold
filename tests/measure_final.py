@@ -29,7 +29,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 import rfi_ref as rf  # noqa: E402
 
 BMP = ROOT / "measure" / "image.bmp"
-EXE = ROOT / "Bin" / "rasterfold.exe"
+EXE = ROOT / "bin" / "windows-x64" / "bin" / "rasterfold.exe"
 WORK = ROOT / "measure"
 class PMC(ctypes.Structure):
     _fields_ = [

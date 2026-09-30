@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="RasterFold folded pixel mark">
+<rect width="256" height="256" rx="48" fill="#0b1426"/>
+<path d="M36 36H220V96H96V220H36Z" fill="#a9ef76"/>
+<path d="M96 96H220L96 220Z" fill="#20a9b1"/>
+<path d="M96 96H158L96 158Z" fill="#e9ffbe"/>
+<rect x="166" y="166" width="54" height="54" rx="6" fill="#ff936c"/>
+</svg>

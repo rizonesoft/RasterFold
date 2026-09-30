@@ -1,19 +1,26 @@
 /* Command line: encode, decode, inspect. Entry point rf_start; no C runtime. */
+#ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <shellapi.h>
+#endif
 #include "rf.h"
+#ifdef _WIN32
+#define RF_EOL "\r\n"
+#else
+#define RF_EOL "\n"
+#endif
 
 static const char usage_text[] =
-    "RasterFold lossless image codec\r\n"
-    "usage:\r\n"
-    "  rasterfold encode [--time] [--threads N] input.bmp output.fold\r\n"
-    "  rasterfold decode [--time] [--threads N] input.fold output.bmp\r\n"
-    "  rasterfold inspect [--time] input.fold\r\n"
-    "--threads 1 codes on one thread; the default uses three when the CPU has them.\r\n"
-    "exit codes: 0 ok, 1 usage, 2 io, 3 unsupported, 4 malformed, 5 limit\r\n";
+    "RasterFold lossless image codec" RF_EOL
+    "usage:" RF_EOL
+    "  rasterfold encode [--time] [--threads N] input.bmp output.fold" RF_EOL
+    "  rasterfold decode [--time] [--threads N] input.fold output.bmp" RF_EOL
+    "  rasterfold inspect [--time] input.fold" RF_EOL
+    "--threads 1 codes on one thread; the default uses three when the CPU has them." RF_EOL
+    "exit codes: 0 ok, 1 usage, 2 io, 3 unsupported, 4 malformed, 5 limit" RF_EOL;
 
-static int wide_eq(const uint16_t *a, const char *b) {
+static int wide_eq(const rf_path_char *a, const char *b) {
     while (*a && *a == (uint8_t)*b) { a++; b++; }
     return *a == 0 && *b == 0;
 }
@@ -23,32 +30,32 @@ static void stat_line(const char *key, uint64_t v) {
     rf_print(0, key);
     rf_print(0, "=");
     rf_print_u64(0, v);
-    rf_print(0, "\r\n");
+    rf_print(0, "" RF_EOL);
 }
 
 static void info_line(const char *key, uint64_t v) {
     rf_print(0, key);
     rf_print(0, ": ");
     rf_print_u64(0, v);
-    rf_print(0, "\r\n");
+    rf_print(0, "" RF_EOL);
 }
 
 static void info_hex(const char *key, uint32_t v) {
     rf_print(0, key);
     rf_print(0, ": 0x");
     rf_print_hex32(0, v);
-    rf_print(0, "\r\n");
+    rf_print(0, "" RF_EOL);
 }
 
-static int run(int argc, uint16_t **argv) {
-    uint16_t *pos[3];
+static int run(int argc, rf_path_char **argv, rf_error *err) {
+    rf_path_char *pos[3];
     int npos = 0, timing = 0;
     int threads = rf_cpu_count() >= 3 ? 3 : 1;
     for (int i = 1; i < argc; i++) {
         if (wide_eq(argv[i], "--time")) { timing = 1; continue; }
         if (wide_eq(argv[i], "--threads")) {
             if (i + 1 >= argc) return -1;
-            const uint16_t *v = argv[++i];
+            const rf_path_char *v = argv[++i];
             if (v[0] < '1' || v[0] > '9' || v[1] != 0) return -1;
             threads = v[0] - '0';
             continue;
@@ -61,47 +68,56 @@ static int run(int argc, uint16_t **argv) {
     if (!(encode || decode || inspect) || npos != (inspect ? 2 : 3)) return -1;
 
     if (rf_crc32((const uint8_t *)"123456789", 9) != 0xCBF43926u)
-        return rf_fail(RF_ERR_LIMIT, "internal self-test failed");
-    if (!inspect && rf_path_blocked(pos[2])) return g_err_code;
+        return rf_fail(err, RF_ERR_LIMIT, "internal self-test failed");
+    if (!inspect && rf_path_blocked(pos[2], err)) return err->code;
 
     uint64_t t0 = rf_ticks(), t1, t2, t3, t4;
     uint8_t *file = 0, *out = 0;
     size_t file_size = 0, out_size = 0, written = 0;
     rf_image img = {0, 0, 0};
     rf_info info;
-    int rc = rf_read_file(pos[1], &file, &file_size);
+    int rc = rf_read_file(pos[1], &file, &file_size, err);
     t1 = t2 = t3 = t4 = rf_ticks();
     if (rc) goto done;
+    rf_options options = {sizeof(rf_options), (uint32_t)threads, {0}};
     if (encode) {
-        rc = rf_bmp_load(file, file_size, &img);
+        rc = rf_bmp_load(file, file_size, &img, err);
         rf_free(file);
         file = 0;
         t2 = rf_ticks();
         if (rc) goto done;
-        rc = rf_encode(&img, &out, &out_size, threads);
+        rf_pixels pixels = {img.width, img.height, (size_t)img.width * 3, RF_LAYOUT_RGB8, img.rgb, (size_t)img.width * img.height * 3};
+        rf_buffer buffer = {0, 0};
+        rc = rf_encode_image(&pixels, &options, &buffer, err);
+        out = buffer.data; out_size = buffer.size;
         t3 = rf_ticks();
         if (rc) goto done;
         rf_free(img.rgb);
         img.rgb = 0;
-        rc = rf_write_atomic(pos[2], out, out_size);
+        rc = rf_write_atomic(pos[2], out, out_size, err);
         written = out_size;
     } else {
-        rc = rf_decode(file, file_size, &img, &info, threads);
+        if (inspect) rc = rf_inspect(file, file_size, &info, err);
+        else {
+            rf_pixels pixels;
+            rc = rf_decode_image(file, file_size, &options, &pixels, err);
+            img.width = pixels.width; img.height = pixels.height; img.rgb = pixels.data;
+        }
         rf_free(file);
         file = 0;
         t3 = rf_ticks();
         if (rc) goto done;
         if (decode) {
-            rc = rf_bmp_store(&img, &out, &out_size);
+            rc = rf_bmp_store(&img, &out, &out_size, err);
             rf_free(img.rgb);
             img.rgb = 0;
-            if (!rc) rc = rf_write_atomic(pos[2], out, out_size);
+            if (!rc) rc = rf_write_atomic(pos[2], out, out_size, err);
             written = out_size;
         } else {
-            rf_print(0, "RasterFold fold version 2\r\n");
+            rf_print(0, "RasterFold fold version 2" RF_EOL);
             info_line("width", info.width);
             info_line("height", info.height);
-            rf_print(0, info.method == RF_METHOD_CM ? "method: cm\r\n" : "method: raw\r\n");
+            rf_print(0, info.method == RF_METHOD_CM ? "method: cm" RF_EOL : "method: raw" RF_EOL);
             info_line("uncompressed_rgb_bytes", (uint64_t)info.width * info.height * 3);
             info_line("payload_size", info.payload_size);
             info_line("file_size", file_size);
@@ -112,7 +128,7 @@ static int run(int argc, uint16_t **argv) {
                 info_line("stream_r", info.stream_size[1]);
                 info_line("stream_b", info.stream_size[2]);
             }
-            rf_print(0, "status: ok\r\n");
+            rf_print(0, "status: ok" RF_EOL);
         }
     }
     t4 = rf_ticks();
@@ -122,7 +138,7 @@ static int run(int argc, uint16_t **argv) {
         stat_line("codec_us", rf_elapsed_us(t2, t3));
         stat_line("write_us", rf_elapsed_us(t3, t4));
         stat_line("total_us", rf_elapsed_us(t0, t4));
-        stat_line("alloc_peak", g_alloc_peak);
+        stat_line("alloc_peak", rf_internal_alloc_peak);
         stat_line("peak_working_set", rf_peak_working_set());
         stat_line("output_bytes", written);
     }
@@ -133,18 +149,35 @@ done:
     return rc;
 }
 
+#ifdef _WIN32
 void rf_start(void) {
+    rf_error error = {0, 0};
+    rf_error *err = &error;
     int argc = 0;
-    uint16_t **argv = (uint16_t **)CommandLineToArgvW(GetCommandLineW(), &argc);
-    int rc = argv ? run(argc, argv) : -1;
+    rf_path_char **argv = (rf_path_char **)CommandLineToArgvW(GetCommandLineW(), &argc);
+    int rc = argv ? run(argc, argv, err) : -1;
     if (rc < 0) {
         rf_print(1, usage_text);
         rc = RF_ERR_USAGE;
     } else if (rc != RF_OK) {
         rf_print(1, "rasterfold: ");
-        rf_print(1, g_err_msg ? g_err_msg : "unknown error");
-        rf_print(1, "\r\n");
+        rf_print(1, err->message ? err->message : "unknown error");
+        rf_print(1, "" RF_EOL);
     }
     if (argv) LocalFree(argv);
     ExitProcess((UINT)rc);
 }
+
+#else
+int main(int argc, char **argv) {
+    rf_error error = {0, 0};
+    int rc = run(argc, argv, &error);
+    if (rc < 0) { rf_print(1, usage_text); return RF_ERR_USAGE; }
+    if (rc) {
+        rf_print(1, "rasterfold: ");
+        rf_print(1, error.message ? error.message : "unknown error");
+        rf_print(1, "" RF_EOL);
+    }
+    return rc;
+}
+#endif

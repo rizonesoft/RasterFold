@@ -9,7 +9,7 @@
    orders produce the same streams. Encoder and decoder share every modelling
    step: cm_model() and cm_code() are instantiated per channel and direction. */
 #include "rf.h"
-#include <smmintrin.h>
+#include "simd.h"
 
 #define NMODEL 5
 #define NROWS 2048          /* context rows per model */
@@ -39,7 +39,12 @@ static int squash_i(int d) {
 }
 
 static void cm_tables(void) {
-    if (tables_ready) return;
+    if (__atomic_load_n(&tables_ready, __ATOMIC_ACQUIRE) == 2) return;
+    int expected = 0;
+    if (!__atomic_compare_exchange_n(&tables_ready, &expected, 1, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+        while (__atomic_load_n(&tables_ready, __ATOMIC_ACQUIRE) != 2) rf_yield();
+        return;
+    }
     int pi = 0;
     for (int x = -2047; x <= 2047; x++) {
         int v = squash_i(x);
@@ -61,7 +66,7 @@ static void cm_tables(void) {
         int q = a == 0 ? 0 : a <= 1 ? 1 : a <= 3 ? 2 : a <= 7 ? 3 : 4;
         Q9T[v + 1024] = (uint8_t)(v < 0 ? 4 - q : 4 + q);
     }
-    tables_ready = 1;
+    __atomic_store_n(&tables_ready, 2, __ATOMIC_RELEASE);
 }
 
 RF_INLINE int clampq(int v) { return v < -1024 ? -1024 : v > 1023 ? 1023 : v; }
@@ -185,14 +190,14 @@ typedef struct {
     volatile int cancel;    /* worker threads exit at once when set before they start */
 } cm_t;
 
-static int cm_alloc(cm_t *m, uint32_t w, uint32_t h, uint8_t *rgb) {
+static int cm_alloc(cm_t *m, uint32_t w, uint32_t h, uint8_t *rgb, rf_error *err) {
     size_t ctr = (size_t)NMODEL * NROWS * NODES * 2;
     size_t wt = (size_t)WSEL * NODES * WSTRIDE * 4;
     size_t pos = ((((size_t)w + 2) * 2 * sizeof(pos_t)) + 63) & ~(size_t)63;
     size_t rows = (((size_t)w * 3 * 2) + 63) & ~(size_t)63;
     size_t xe = (((size_t)w * XROWS) + 63) & ~(size_t)63, xf = (((size_t)w * XROWS * 2) + 63) & ~(size_t)63;
     uint8_t *b = rf_alloc((ctr + wt + pos + rows) * 3 + (xe + xf) * 2);
-    if (!b) return rf_fail(RF_ERR_LIMIT, "out of memory");
+    if (!b) return rf_fail(err, RF_ERR_LIMIT, "out of memory");
     m->w = w; m->h = h; m->rgb = rgb; m->block = b;
     for (int c = 0; c < 3; c++) {
         chan_t *ch = &m->ch[c];
@@ -596,15 +601,15 @@ static void run(cm_t *m, int threads, const int enc) {
 
 /* ------------------------------------------------------------ interface */
 /* Payload: u32 size of each channel stream (G, R, B), then the three streams. */
-int rf_cm_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size_t cap, size_t *written, int threads) {
+int rf_cm_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size_t cap, size_t *written, int threads, rf_error *err) {
     cm_tables();
     *written = 0;
     if (cap < 12) return RF_OK;
     cm_t m;
-    if (cm_alloc(&m, w, h, (uint8_t *)rgb) != RF_OK) return RF_ERR_LIMIT;
+    if (cm_alloc(&m, w, h, (uint8_t *)rgb, err) != RF_OK) return RF_ERR_LIMIT;
     size_t each = (size_t)w * h + 64;
     uint8_t *tmp = rf_alloc(each * 3);
-    if (!tmp) { rf_free(m.block); return rf_fail(RF_ERR_LIMIT, "out of memory"); }
+    if (!tmp) { rf_free(m.block); return rf_fail(err, RF_ERR_LIMIT, "out of memory"); }
     for (int c = 0; c < 3; c++) renc_init(&m.ch[c].enc, tmp + each * c, each);
     run(&m, threads, 1);
     size_t total = 12;
@@ -630,21 +635,21 @@ int rf_cm_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size_
     return RF_OK;
 }
 
-int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *rgb, uint32_t w, uint32_t h, int threads) {
+int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *rgb, uint32_t w, uint32_t h, int threads, rf_error *err) {
     cm_tables();
-    if (n < 12) return rf_fail(RF_ERR_FORMAT, "invalid fold: cm streams");
+    if (n < 12) return rf_fail(err, RF_ERR_FORMAT, "invalid fold: cm streams");
     uint64_t sz[3], sum = 12;
     for (int c = 0; c < 3; c++) {
         sz[c] = (uint64_t)in[c * 4] | ((uint64_t)in[c * 4 + 1] << 8) | ((uint64_t)in[c * 4 + 2] << 16) | ((uint64_t)in[c * 4 + 3] << 24);
-        if (sz[c] < 5) return rf_fail(RF_ERR_FORMAT, "invalid fold: cm streams");
+        if (sz[c] < 5) return rf_fail(err, RF_ERR_FORMAT, "invalid fold: cm streams");
         sum += sz[c];
     }
-    if (sum != n) return rf_fail(RF_ERR_FORMAT, "invalid fold: cm streams");
+    if (sum != n) return rf_fail(err, RF_ERR_FORMAT, "invalid fold: cm streams");
     cm_t m;
-    if (cm_alloc(&m, w, h, rgb) != RF_OK) return RF_ERR_LIMIT;
+    if (cm_alloc(&m, w, h, rgb, err) != RF_OK) return RF_ERR_LIMIT;
     /* Each stream gets its own copy followed by 8 zero bytes. */
     uint8_t *copy = rf_alloc((size_t)(n - 12) + 3 * 8);
-    if (!copy) { rf_free(m.block); return rf_fail(RF_ERR_LIMIT, "out of memory"); }
+    if (!copy) { rf_free(m.block); return rf_fail(err, RF_ERR_LIMIT, "out of memory"); }
     const uint8_t *p = in + 12;
     uint8_t *q = copy;
     for (int c = 0; c < 3; c++) {
@@ -660,5 +665,5 @@ int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *rgb, uint32_t w, uint32_t
     for (int c = 0; c < 3; c++) bad |= m.ch[c].bad | (m.ch[c].dec.in != m.ch[c].dec.end);
     rf_free(copy);
     rf_free(m.block);
-    return bad ? rf_fail(RF_ERR_FORMAT, "invalid fold: cm stream") : RF_OK;
+    return bad ? rf_fail(err, RF_ERR_FORMAT, "invalid fold: cm stream") : RF_OK;
 }

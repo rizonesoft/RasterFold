@@ -1,16 +1,17 @@
-/* RasterFold shared declarations. Freestanding C: no C runtime, Win32 only. */
+/* Internal codec and platform declarations. Public ABI: include/rasterfold.h. */
 #ifndef RF_H
 #define RF_H
 
 #include <stddef.h>
 #include <stdint.h>
+#include "../include/rasterfold.h"
 
-#define RF_OK 0
-#define RF_ERR_USAGE 1
-#define RF_ERR_IO 2
-#define RF_ERR_UNSUPPORTED 3
-#define RF_ERR_FORMAT 4
-#define RF_ERR_LIMIT 5
+#ifdef _WIN32
+typedef uint16_t rf_path_char;
+#else
+typedef char rf_path_char;
+#endif
+
 
 #define RF_MAX_DIM 32768u
 #define RF_MAX_PIXELS 33554432ull
@@ -35,13 +36,13 @@ typedef struct {
 /* sys.c */
 void *rf_alloc(size_t size);            /* 64-byte aligned, zero-filled, or NULL */
 void rf_free(void *p);
-extern uint64_t g_alloc_peak;
-int rf_fail(int code, const char *msg); /* records the first error; returns code */
-extern int g_err_code;
-extern const char *g_err_msg;
-int rf_read_file(const uint16_t *path, uint8_t **data, size_t *size);
-int rf_path_blocked(const uint16_t *path);
-int rf_write_atomic(const uint16_t *path, const uint8_t *data, size_t size);
+extern uint64_t rf_internal_alloc_peak;
+int rf_fail(rf_error *err, int code, const char *msg); /* records the first error; returns code */
+void rf_account_add(size_t size);
+void rf_account_remove(size_t size);
+int rf_read_file(const rf_path_char *path, uint8_t **data, size_t *size, rf_error *err);
+int rf_path_blocked(const rf_path_char *path, rf_error *err);
+int rf_write_atomic(const rf_path_char *path, const uint8_t *data, size_t size, rf_error *err);
 uint64_t rf_ticks(void);
 uint64_t rf_elapsed_us(uint64_t start, uint64_t end);
 uint64_t rf_peak_working_set(void);
@@ -58,25 +59,19 @@ void rf_print_hex32(int to_stderr, uint32_t v);
 uint32_t rf_crc32(const uint8_t *p, size_t n);
 
 /* bmp.c */
-int rf_bmp_load(const uint8_t *file, size_t size, rf_image *out);
-int rf_bmp_store(const rf_image *img, uint8_t **file, size_t *size);
+int rf_bmp_load(const uint8_t *file, size_t size, rf_image *out, rf_error *err);
+int rf_bmp_store(const rf_image *img, uint8_t **file, size_t *size, rf_error *err);
 
 /* fold.c */
-typedef struct {
-    uint32_t width, height;
-    uint32_t method;
-    uint32_t payload_size, payload_crc, header_crc;
-    uint32_t stream_size[3];
-} rf_info;
-int rf_encode(const rf_image *img, uint8_t **file, size_t *size, int threads);
-int rf_decode(const uint8_t *file, size_t size, rf_image *out, rf_info *info, int threads);
+int rf_encode(const rf_image *img, uint8_t **file, size_t *size, int threads, rf_error *err);
+int rf_decode(const uint8_t *file, size_t size, rf_image *out, rf_info *info, int threads, rf_error *err);
 
 /* cm.c: the context-mixing method. rf_cm_encode sets *written to 0 when the
    payload would not fit in cap bytes; its return value is an error code.
    threads >= 2 codes the three channels on three threads; the bytes are the
    same for any thread count. */
-int rf_cm_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size_t cap, size_t *written, int threads);
-int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *rgb, uint32_t w, uint32_t h, int threads);
+int rf_cm_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size_t cap, size_t *written, int threads, rf_error *err);
+int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *rgb, uint32_t w, uint32_t h, int threads, rf_error *err);
 
 /* mem.c */
 void *memcpy(void *dst, const void *src, size_t n);

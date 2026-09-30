@@ -253,7 +253,7 @@ Milestone 18's work is authored here, one milestone ahead, from what milestone 1
 
 Milestone 18 of the roadmap (`docs/research.md` section 9). It keeps everything milestone 17 reached: no photo size more than 0.1% worse, no encode or decode time more than 3% worse, no higher peak memory, and every older file still decoding. If the target is missed, the missed-milestone policy applies (`D99 T01 §4`): up to three follow-up experiments from `docs/research.md` are filed through `add-todo`, and the operator is asked only when all three miss.
 
-- [ ] Measure the target with `Bin/rasterfold.exe decode --time` on a 24-megapixel image. Done when: peak memory on a 24-megapixel image at most one third of milestone 17's, each figure quoted with its command.
+- [ ] Measure the target with `bin/windows-x64/bin/rasterfold.exe decode --time` on a 24-megapixel image. Done when: peak memory on a 24-megapixel image at most one third of milestone 17's, each figure quoted with its command.
 - [ ] Measure the no-regression rule against milestone 17's gate stamp: `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns), `python tests/benchmark.py -n 3`, `decode --time`, and `python tests/test_correctness.py`. Done when: each rule holds, quoted beside milestone 17's figures.
 - [ ] Record the milestone in `docs/research.md` sections 1 and 9 and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
 - [ ] Commit: `"milestone: reach milestone 18 -- streaming"`

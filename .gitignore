@@ -1,7 +1,5 @@
-.grok/
-guard/
 build/
-Bin/
+bin/
 tests/work/
 measure/*.webp
 measure/*.avif
@@ -28,3 +26,11 @@ tools/*
 *.d
 .ninja_log
 .ninja_deps
+
+!tools/bootstrap.py
+!tools/provision.py
+.codex/state/
+.claude/state/
+.venv/
+.runner/
+.ninja_lock

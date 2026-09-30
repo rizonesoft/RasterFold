@@ -10,6 +10,10 @@ param([switch]$Force)
 $ErrorActionPreference = "Stop"
 $tools = Split-Path -Parent $MyInvocation.MyCommand.Path
 $root = Split-Path -Parent $tools
+if ($env:OS -ne 'Windows_NT') {
+  & python3 (Join-Path $root 'tools/bootstrap.py')
+  exit $LASTEXITCODE
+}
 $manifestPath = Join-Path $root "toolchain.json"
 if (-not (Test-Path $manifestPath)) { throw "bootstrap: toolchain.json not found at $manifestPath" }
 $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json

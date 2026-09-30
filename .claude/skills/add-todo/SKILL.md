@@ -18,7 +18,7 @@ Search the tree for a home the work already has:
 ```bash
 grep -rn "<keywords>" todo/ --include='TODO-*.md' | head -30
 grep -n -i "<keywords>" todo/backlog.md | head -10
-python scripts/todo-graph.py query findings | head -20
+python3 scripts/todo-graph.py query findings | head -20
 ```
 
 Read the candidates. A home exists when a section's scope already covers the work, even if its checklist does not name it yet. Search every app domain, not only the one the request names: a color picker, an undo stack, or a file dialog asked for in one app is often already owned by another or by the core domain. A matching backlog entry is a home too: extend its text rather than adding a second entry.
@@ -42,13 +42,13 @@ Everything else (a technique another codec has, an idea from a paper, a nice-to-
 
 ### 4. The Origin line (discovered work)
 
-A discovered section carries one line directly under its `## N.` heading, the run id being the one `campaign_guard.py` minted for the run (a groom outside a campaign mints its own with `python scripts/campaign_guard.py mint-generation`):
+A discovered section carries one line directly under its `## N.` heading, the run id being the one `campaign_guard.py` minted for the run (a groom outside a campaign mints its own with `python3 scripts/campaign_guard.py mint-generation`):
 
 ```
 **Origin:** discovered run=<run id> <YYYY-MM-DD> -- <what found it>
 ```
 
-The line is provenance, not a quota: there is no per-run cap (`todo/budget.json`), so a discovery that passes the admission test is never pushed to the backlog for lack of room. `python scripts/todo-graph.py query growth --since <run start commit>` lists what the run has added, discovered sections with their run id, for the run file and the report. Still prefer the smallest honest home:
+The line is provenance, not a quota: there is no per-run cap (`todo/budget.json`), so a discovery that passes the admission test is never pushed to the backlog for lack of room. `python3 scripts/todo-graph.py query growth --since <run start commit>` lists what the run has added, discovered sections with their run id, for the run file and the report. Still prefer the smallest honest home:
 
 - **Merge**: add the work as an item (or a Build-order stage) on an existing open section whose scope can hold it.
 - **Supersede**: when the new work replaces an open section, rewrite that section in place (its address stays) rather than adding a second one.
@@ -63,12 +63,12 @@ The line is provenance, not a quota: there is no per-run cap (`todo/budget.json`
 | Already covered | A section or a backlog entry owns it | Point at it. File nothing. |
 | Fits a section | An open section's scope covers it | Add a checklist item there, or extend the section body. Never touch a `[x]` section's checklist. |
 | Needs a section | Operator-directed, or discovered and passing the admission test; has no owner and sits inside an existing file's scope | Append a new `## N.` section in numerical position (with its Origin line when discovered) and its Implementation Order row, place the row in a phase of `todo/implementation-plan.md`, then sync the plan. |
-| Needs a file | Operator-directed, or discovered and passing the admission test; a new subject no file owns | Delegate to `create-todo`, or to `plan-new-feature` when the subject is a user-facing feature or a new app, passing on whether it is discovered and the run id. |
+| Needs a file | Operator-directed, or discovered and passing the admission test; a new subject no file owns | Use `create-todo`, passing on whether the work is discovered and its run id; use `plan-experiment` first when a codec experiment needs its measurement contract. |
 | Backlog | Discovered and failing the admission test, or the operator asked to defer it | Append one line to `todo/backlog.md` (above `## Removed with operator approval`) with the next free id: `- [B-NNN] <title> -- app: <app> -- source: <key> -- added: <today> -- summary: <what> -- needs: <refs or ids> -- why deferred: <the admission clause it failed, or the operator's words> -- promote when: <trigger>`. The backlog has no cap: an idea is never dropped for lack of room. |
 
 Shared or app-local: work lands in the core domain only when a second app needs it now. One app's need is filed in that app's domain, with a note naming the day it would move.
 
-**Promoting a backlog entry** is this skill run on the entry: a promotion the operator asks for is operator-directed, and one a campaign makes on its own passes the admission test and carries an Origin line. The promoting commit writes the section (carrying the entry's `source` as its `-> SOURCE:` line) and deletes the entry, or `validate` fails on the duplicate source. The section carrying the key is what lets the entry leave: an entry deleted any other way, with no merge marker on a survivor and no operator removal record, is `backlog-dropped`. A release's backlog review (an item in every release section) runs through this skill: each entry for the release's app or `suite` (every entry for an `isotone-v` release) is promoted, or the operator is asked whether it may wait and the answer is appended to the entry as `-- reviewed: <tag> <YYYY-MM-DD> deferred by operator: "<their words>"`. Never write a deferral the operator did not say. When the review promotes only part of an entry, the rest stays and the entry gains `-- reviewed: <tag> <YYYY-MM-DD> promoted DNN TNN §N`. Committed `reviewed:` fields are never edited or removed.
+**Promoting a backlog entry** is this skill run on the entry: a promotion the operator asks for is operator-directed, and one a campaign makes on its own passes the admission test and carries an Origin line. The promoting commit writes the section (carrying the entry's `source` as its `-> SOURCE:` line) and deletes the entry, or `validate` fails on the duplicate source. The section carrying the key is what lets the entry leave: an entry deleted any other way, with no merge marker on a survivor and no operator removal record, is `backlog-dropped`. A release's backlog review (an item in every release section) runs through this skill: every entry for a `rasterfold-v` release is promoted, or the operator is asked whether it may wait and the answer is appended to the entry as `-- reviewed: <tag> <YYYY-MM-DD> deferred by operator: "<their words>"`. Never write a deferral the operator did not say. When the review promotes only part of an entry, the rest stays and the entry gains `-- reviewed: <tag> <YYYY-MM-DD> promoted DNN TNN §N`. Committed `reviewed:` fields are never edited or removed.
 
 ### 6. New sections are born complete
 
@@ -85,9 +85,9 @@ Give it a dependency edge, not a wish. If it must wait on another section, say s
 - Then prove the tree still holds:
 
 ```bash
-python scripts/todo-graph.py validate
-python scripts/todo-graph.py plan --sync
-python scripts/todo-graph.py plan --check
+python3 scripts/todo-graph.py validate
+python3 scripts/todo-graph.py plan --sync
+python3 scripts/todo-graph.py plan --check
 ```
 
 ### 8. Commit and report

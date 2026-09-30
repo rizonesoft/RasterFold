@@ -2,7 +2,7 @@
 schema_version: 1
 id: dll-and-api
 domain: 06-library
-status: draft
+status: active
 title: "TODO-01 -- rasterfold.dll and the C API"
 depends_on: []
 frozen: true
@@ -11,24 +11,26 @@ track: L1
 
 # TODO-01 -- rasterfold.dll and the C API
 
-> **Goal:** Other programs can encode, decode, and inspect `.fold` files through `rasterfold.dll` and one header, `rasterfold.h`, with a versioned, documented C API that never allocates behind the caller's back without a way to free it, never touches the file system unless asked, and gives byte-identical results to the command line.
+> **Goal:** Other programs can encode, decode, and inspect `.fold` files through Windows/Linux/Android shared or static libraries and one header, `rasterfold.h`, with a versioned, documented C API that never allocates behind the caller's back without a way to free it, never touches the file system unless asked, and gives byte-identical results to the command line.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-09-29):** The codec is only an executable. Its internal interface (`rf_encode`, `rf_decode`, `rf_cm_encode`, `rf_cm_decode` in `src/rf.h`) passes error text through the globals `g_err_code` and `g_err_msg`, allocates with `rf_alloc` from the process heap, and is not exported. There is no public header, no DLL, no import library, and no version function.
-<!-- claim: absent include/rasterfold.h -->
-<!-- claim: count "g_err_msg" src/rf.h = 1 -->
+> **Current state (verified 2026-09-30):** The migration implementation adds a public C API, per-call errors, concurrent table initialization, CLI integration and shared/static builds for Windows, Linux and both requested Android ABIs. `tests/test_api.py` exercises native calls and `tests/test_artifacts.py` checks exports and C/C++ consumers. This is an in-flight candidate, not a verified section stamp; target-specific runtime evidence is recorded in `docs/wsl-migration-audit.md`.
+<!-- claim: exists include/rasterfold.h -->
+<!-- claim: count "g_err_msg" src/rf.h = 0 -->
 
 ## Inputs
 
 - [`src/rf.h`](../../src/rf.h), [`src/fold.c`](../../src/fold.c), [`src/sys.c`](../../src/sys.c) -- the internal interface the API wraps
-- [`build.ninja`](../../build.ninja) -- the build §2 extends with the DLL and import libraries
+- [`scripts/build.py`](../../scripts/build.py) -- the build §2 extends with the DLL and import libraries
 - -> XREF: D07 T01 §1 -- the command line, which §3 rebuilds on the library
 - -> XREF: D08 T03 §2 -- the API reference generated from the header
 - -> XREF: D09 T01 §2 -- the release package that ships the DLL, header, and import libraries
 
+- -> XREF: D00 T04 §1 -- local Windows, Linux and Android toolchains.
+
 ## Outcome
 
-- `include/rasterfold.h` declares the API with its version macros; `Bin/rasterfold.dll` exports exactly the functions listed in `src/rasterfold.def`, importing only `KERNEL32.dll`.
+- `include/rasterfold.h` declares the API with its version macros; `bin/windows-x64/bin/rasterfold.dll` exports exactly the functions listed in `src/rasterfold.def`, importing only `KERNEL32.dll`.
 - A C program and a Python `ctypes` test encode and decode through the DLL with byte-identical results to `rasterfold.exe`.
 
 **Adjacency:** list=not-applicable (no records to browse); document=not-applicable (no printed output); settings=applicable @ D06 T01 §1; reporting=applicable @ D06 T01 §1; notifications=applicable @ D06 T01 §1; permissions=not-applicable (the library writes no file unless the caller asks, and then through the same atomic path); audit=not-applicable (git history is the audit); exchange=applicable @ D06 T01 §2; reverse=applicable @ D06 T01 §4
@@ -40,7 +42,7 @@ track: L1
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
 |   1   |   §1    | The public header | -- |  [ ]   |
-|   2   |   §2    | The DLL and its import libraries | §1 |  [ ]   |
+|   2   |   §2    | Shared/static libraries and Windows import libraries | §1 |  [ ]   |
 |   3   |   §3    | The command line on the library | §2 |  [ ]   |
 |   4   |   §4    | API tests and the ABI list | §2 |  [ ]   |
 |   5   |   §5    | Example programs | §4 |  [ ]   |
@@ -63,7 +65,7 @@ The API is a contract that outlives releases, so it is designed before code: pla
 
 ## 2. The DLL and Its Import Libraries
 
-- [ ] Add a `rasterfold.dll` target to `build.ninja` (same objects without `main.c`, entry `DllMain`-free with `-nostdlib`, exports from `src/rasterfold.def`), plus a MinGW import library (`librasterfold.dll.a`) and an MSVC one (`rasterfold.lib`, from `llvm-dlltool`). Done when: `tools/llvm-mingw/bin/llvm-objdump.exe -p Bin/rasterfold.dll` lists exactly the `.def` exports and imports only `KERNEL32.dll`. Cheaper substitute: a DLL that exports every internal symbol.
+- [ ] Add Windows DLL/static and Linux/Android shared/static targets through `scripts/build.py` (same objects without `main.c`, Windows entry `DllMain`-free with no C runtime, exports from `src/rasterfold.def`), plus a MinGW import library (`librasterfold.dll.a`) and an MSVC one (`rasterfold.lib`, from `llvm-dlltool`). Done when: `tools/llvm-mingw/bin/llvm-objdump.exe -p bin/windows-x64/bin/rasterfold.dll` lists exactly the `.def` exports and imports only `KERNEL32.dll`. Cheaper substitute: a DLL that exports every internal symbol.
 - [ ] Replace the error globals with the `rf_error` the caller passes (the executable keeps printing it). Done when: two threads of one process can encode concurrently with separate errors, shown by a test.
 - [ ] Commit: `"api: build rasterfold.dll with MinGW and MSVC import libraries"`
 
@@ -90,10 +92,10 @@ The executable uses the same code path as the library (linked statically, so `ra
 
 ## 5. Example Programs
 
-- [ ] Add `examples/encode.c` and `examples/decode.c` (PPM in and out, error handling shown), built by `build.ninja` against the import library. Done when: both build and round-trip an image in CI. Cheaper substitute: code snippets in the docs that nothing compiles.
+- [ ] Add `examples/encode.c` and `examples/decode.c` (PPM in and out, error handling shown), built and run by `tests/test_artifacts.py` against native shared and static libraries. Done when: both build and round-trip an image locally and in the configured native CI jobs; remote CI proof is recorded separately. Cheaper substitute: code snippets in the docs that nothing compiles.
 - [ ] Commit: `"api: example programs built in CI"`
 
-**Test checkpoint:** the examples' round trip in the `build` workflow log.
+**Test checkpoint:** `python3 tests/test_artifacts.py` proves native examples; the `build` workflow runs the same commands, with remote results reported only after observation.
 
 ## Verification
 

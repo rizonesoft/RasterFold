@@ -10,7 +10,7 @@ Tools for changing the codec with numbers instead of guesses. Data goes to
 | `python research/ab.py bench [file.c] [-r3] [-t1\|-t3] IMAGES` | encode and decode time of a `cm.c` variant, verified round trip |
 | `python research/ab.py ab A.c B.c [-n5] [-t1] IMAGES` | alternates two variants and compares their minimum times |
 | `python research/prof.py [N]` | line-level profile from `bench.exe -p` samples |
-| `python research/vsjxl.py [image.bmp] [-n5]` | process wall times of `Bin/rasterfold.exe` against ffmpeg libjxl |
+| `python research/vsjxl.py [image.bmp] [-n5]` | process wall times of `bin/windows-x64/bin/rasterfold.exe` against ffmpeg libjxl |
 
 Sets for `ab.py`: `sub` (8 mixed photos), `kodak`, `ic`, `tp` (test pack),
 `photo` (measure + kodak + ic), `synth`, `all`. A name without a set is one

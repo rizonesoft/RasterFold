@@ -61,7 +61,7 @@ CHANGEME: one paragraph of context.
 
 ## Verification
 
-- [ ] `pwsh scripts/check-all.ps1` -- exits 0: build, correctness suite, fuzz, TODO gates green
-- [ ] `python tests/test_correctness.py` exits 0 with every case run, including this file's new cases
-- [ ] CHANGEME: file-level checks this file owes as a whole (the corpus sizes re-measured, `python tests/measure_final.py` PASS, `benchmarks/results.md` refreshed, a long fuzz run)
-- [ ] `python scripts/todo-graph.py validate` clean
+- [ ] `python3 scripts/check-all.py` -- exits 0: build, correctness suite, fuzz, TODO gates green
+- [ ] `python3 tests/test_correctness.py` exits 0 with every case run, including this file's new cases
+- [ ] CHANGEME: file-level checks this file owes as a whole (the corpus sizes re-measured, `python3 scripts/windows.py tests/measure_final.py` PASS, `benchmarks/results.md` refreshed, a long fuzz run)
+- [ ] `python3 scripts/todo-graph.py validate` clean

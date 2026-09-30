@@ -8,7 +8,7 @@ description: Harden the todo tree for a weaker executor -- sequence check, drift
 ## Evidence before reordering
 
 ```bash
-python scripts/todo-graph.py query sequence
+python3 scripts/todo-graph.py query sequence
 ```
 
 It prints the longest dependency chain, which is where delay costs most, and every coupling the review findings recorded: a section that filed a finding to another section ran into work that section owns, which the dependency graph does not carry.
@@ -19,7 +19,7 @@ The command proposes and cannot act: it opens no file for writing. Reordering ha
 
 Hardening the tree so a weaker executor can run it. Grooming adds prerequisites and fills gaps; it never moves a row out of its phase, never ticks a box, never deletes a backlog entry without a trace, never changes `todo/budget.json`, and never starts a campaign.
 
-Record the groom's start commit (`git rev-parse HEAD`) and a run id first (`python scripts/campaign_guard.py mint-generation`, or the campaign's `run_id` when a campaign runs the groom): every section the groom files of its own finding carries `**Origin:** discovered run=<run id> <YYYY-MM-DD> -- groom-plan <step>` directly under its heading, so the groom record and `python scripts/todo-graph.py query growth --since <start>` can show what it added. Nothing caps how many (operator decision 2026-09-27: "the cap is worrying me, because I'm worried features will be left behind."). Sections the operator asks for during a groom are operator-directed: no Origin line.
+Record the groom's start commit (`git rev-parse HEAD`) and a run id first (`python3 scripts/campaign_guard.py mint-generation`, or the campaign's `run_id` when a campaign runs the groom): every section the groom files of its own finding carries `**Origin:** discovered run=<run id> <YYYY-MM-DD> -- groom-plan <step>` directly under its heading, so the groom record and `python3 scripts/todo-graph.py query growth --since <start>` can show what it added. Nothing caps how many (operator decision 2026-09-27: "the cap is worrying me, because I'm worried features will be left behind."). Sections the operator asks for during a groom are operator-directed: no Origin line.
 
 ## Workflow
 
@@ -31,15 +31,15 @@ For every dependency edge (section-level `Depends On` and file-level `depends_on
 - Never move the consumer's row: phase membership is stable, and moving rows rewrites the plan's history.
 - Record each fix with `**Corrected YYYY-MM-DD:**` or `**Groomed YYYY-MM-DD:**`.
 
-Run `python scripts/todo-graph.py validate` after every structural edit. Cycles are FATAL: break them at authoring time.
+Run `python3 scripts/todo-graph.py validate` after every structural edit. Cycles are FATAL: break them at authoring time.
 
 ### 2. Drift sweep
 
 Walk every open section's concrete claims against today's repository: files, functions, constants, line numbers, command options, test cases, and measured ratios (re-run a quoted ratio when the code under it changed since the date it states). Correct drift in place with dated notes, exactly as `process-todo-section` steps 2-3 do, but tree-wide and without building anything.
 
 ```bash
-python scripts/todo-claims.py              # re-measure what the TODOs claim
-python scripts/todo-claims.py --coverage   # Current state blocks nothing re-measures
+python3 scripts/todo-claims.py              # re-measure what the TODOs claim
+python3 scripts/todo-claims.py --coverage   # Current state blocks nothing re-measures
 ```
 
 Pay special attention to:
@@ -56,7 +56,7 @@ Pay special attention to:
 
 Read the plan as the codec's users will meet it, domain by domain, and ask what has no owner: an encoder path without its decoder, a format change without its oracle, spec, and known-answer change, a speed change without its size check, a new method without fuzz seeds, an option nothing reads, an error path nothing tests. File each gap with `add-todo` (evidence, owner, dependency), which applies the admission test and stamps the Origin line: a gap becomes a section (or an item on an open section that can hold it) when it is a defect in shipped or in-flight work, something an acceptance-bar aim requires, or a prerequisite of a planned row. Nice-to-haves go to the backlog, where they are kept. Place any new rows in their phases and sync the plan.
 
-Check the Adjacency declarations while here: `python scripts/todo-graph.py query adjacency` advisories that name real gaps become sections; ones that are already covered get their anchors sharpened.
+Check the Adjacency declarations while here: `python3 scripts/todo-graph.py query adjacency` advisories that name real gaps become sections; ones that are already covered get their anchors sharpened.
 
 ### 4. Complete-feature pass
 
@@ -65,8 +65,8 @@ For every format change in the plan, confirm the change is whole: the encoder, t
 ### 5. Backlog triage
 
 ```bash
-python scripts/todo-graph.py query backlog
-python scripts/todo-graph.py query budget
+python3 scripts/todo-graph.py query backlog
+python3 scripts/todo-graph.py query budget
 ```
 
 The backlog has no cap, so triage is never about room. On every groom, walk it: each entry is either promoted or left, and nothing is dropped on the groom's own judgement (operator decision 2026-09-27, "No drop without operator approval"; `validate` fails an entry that leaves without a trace as `backlog-dropped`):

@@ -1153,7 +1153,23 @@ _OPUS_OUTAGE_RE = re.compile(r"opus outage", re.IGNORECASE)
 _GPT_OUTAGE_RE = re.compile(r"gpt outage", re.IGNORECASE)
 
 
-def panel_fallback(stripped_text: str, stamped_on: str | None) -> tuple[bool, bool]:
+def codex_implementer(body: str) -> bool:
+    """Explicit Codex provenance opts new stamps into the independent Claude panel.
+
+    Historical or absent provenance retains its original family policy.
+    """
+    implementer = _implementer(body)
+    if not implementer or not re.fullmatch(r'Codex(?: .*)?', implementer['name'], re.I):
+        return False
+    # Load the canonical registry by path: imported clients may already have
+    # their family-private dispatcher registered under the same module name.
+    spec = importlib.util.spec_from_file_location('canonical_panel_slots', Path(__file__).with_name('panel_slots.py'))
+    registry = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(registry)
+    return registry.family_accepts('codex', implementer['model'])
+
+
+def panel_fallback(stripped_text: str, stamped_on: str | None, implementer_body: str = '') -> tuple[bool, bool]:
     """(ran on the fallback family, carries the matching outage note) for
     one fence-stripped findings text. Before GPT_GOVERNS_FROM, Opus
     governed and a GPT-last record was the fallback; from it, GPT
@@ -1165,6 +1181,9 @@ def panel_fallback(stripped_text: str, stamped_on: str | None) -> tuple[bool, bo
     grok = list(_GROK_PANEL_HEAD_RE.finditer(stripped_text))
     if not gpt and not claude and not grok:
         return False, False
+    if codex_implementer(implementer_body):
+        last = max([(h[-1].start(), name) for name,h in (('GPT',gpt),('Claude',claude),('Grok',grok)) if h])[1]
+        return last != 'Claude', False
     others = [h[-1].start() for h in (claude, grok) if h]
     last_is_gpt = bool(gpt) and (not others or gpt[-1].start() > max(others))
     gpt_governs = (stamped_on or "") >= GPT_GOVERNS_FROM
@@ -2913,7 +2932,7 @@ def cmd_query(args) -> int:
                 text, unbalanced_opener = strip_fenced_code(text)
                 if unbalanced_opener is not None:
                     unreadable.append((m.group(1), unbalanced_opener))
-                is_fallback, has_note = panel_fallback(text, s.stamped_on)
+                is_fallback, has_note = panel_fallback(text, s.stamped_on, s.implementer_body)
                 if is_fallback:
                     fallback.append(m.group(1))
                 if has_note:

@@ -1,0 +1,17 @@
+name: Feature or experiment
+description: Propose a use case, portability improvement or measured codec experiment.
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: Problem and intended outcome
+      description: Who needs this, and what should become possible?
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence and tradeoffs
+      description: Relevant inputs, format implications, memory costs, prior art and a measurable success condition.
+    validations:
+      required: true

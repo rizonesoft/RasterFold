@@ -13,9 +13,9 @@ track: OP1
 > **Goal:** Every step only the operator can take is written down with the exact command or decision, so no agent run stalls wondering whether it may act: the retired run-guard folders are gone, the GitHub CLI is logged in for the CI read-back, GitHub Pages is enabled for the docs, and the two standing decisions that let a campaign run through the roadmap (format-version approval and the missed-milestone policy) are recorded in the operator's words.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-09-29):** The folders `.grok/`, `guard/`, and `build/review-20260928/` from the previous developer's tooling are still on disk; the agent session's safety rules refused to delete them (they read as logs), so the operator removes them. `.gitignore` still lists `.grok/` and `guard/`. The GitHub CLI (`gh`) is not installed on the development machine. No format version 3 exists; on 2026-09-29 the operator gave the standing approval and the missed-milestone policy recorded in §3 and §4. GitHub Pages is not enabled for the repository.
-<!-- claim: count "^\.grok/$" .gitignore = 1 -->
-<!-- claim: count "^guard/$" .gitignore = 1 -->
+> **Current state (verified 2026-09-29):** The operator deleted the folders `.grok/`, `guard/`, and `build/review-20260928/` from the previous developer's tooling on 2026-09-29 (the agent session's safety rules had refused the deletion), and `.gitignore` no longer lists `.grok/` or `guard/`. The GitHub CLI (`gh`) is not installed on the development machine. No format version 3 exists; on 2026-09-29 the operator gave the standing approval and the missed-milestone policy recorded in §3 and §4. GitHub Pages is not enabled for the repository.
+<!-- claim: count "^\.grok/$" .gitignore = 0 -->
+<!-- claim: count "^guard/$" .gitignore = 0 -->
 <!-- claim: count "^#define RF_VERSION 2u$" src/rf.h = 1 -->
 
 ## Inputs
@@ -55,8 +55,8 @@ track: OP1
 
 The previous developer's campaign tooling left a lock folder and a run guard in the tree. The agent session was refused the deletion because the folders read as logs, so the operator deletes them.
 
-- [ ] Delete the folders: `Remove-Item -Recurse -Force .grok, guard, build\review-20260928`. Done when: `Test-Path .grok, guard, build\review-20260928` prints `False` three times.
-- [ ] Remove the `.grok/` and `guard/` lines from `.gitignore`. Done when: `Select-String -Path .gitignore -Pattern '^(\.grok|guard)/$'` prints nothing, and this file's two `.gitignore` claims are updated to `= 0`.
+- [x] Delete the folders: `rm -rf .grok guard build/review-20260928` in Git Bash (or `Remove-Item -Recurse -Force .grok, guard, build\review-20260928` in PowerShell). Done when: `ls -d .grok guard build/review-20260928` reports all three missing. **Corrected 2026-09-29:** the item gave only the PowerShell form, which fails under the session's `!` prefix (Bash); the operator ran the Bash form.
+- [x] Remove the `.grok/` and `guard/` lines from `.gitignore`. Done when: `Select-String -Path .gitignore -Pattern '^(\.grok|guard)/$'` prints nothing, and this file's two `.gitignore` claims are updated to `= 0`.
 - [ ] Commit: `"workspace: drop the retired run-guard folders and their ignore lines"`
 
 **Test checkpoint:** `git status --short --ignored .grok guard` prints nothing; `python scripts/todo-claims.py` exits 0 with the claims updated.

@@ -84,7 +84,7 @@ track: D2
 
 **Job:** A contributor meets the policy at every step: the commit hook, the local gates, and CI refuse drift the same way.
 
-- [ ] Check every relative link and heading anchor in tracked Markdown and in `docs/site/`. Done when: a dead link makes the check exit 1.
+- [ ] Check every relative link and heading anchor in tracked Markdown, and in the Jekyll build of `docs/` in CI (`_site/`). Done when: a dead link makes the check exit 1.
 - [ ] Run `python scripts/drift-check.py` in `tools/githooks/pre-commit` (on the staged tree), in `scripts/check-all.ps1`, and in `.github/workflows/plan.yml`. Done when: each of the three refuses a seeded drift.
 - [ ] Commit: `"docs: refuse drift in the hook, the local gates, and CI"`
 

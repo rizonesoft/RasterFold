@@ -1,0 +1,7 @@
+LIBRARY rasterfold
+EXPORTS
+    rf_version @1
+    rf_encode_image @2
+    rf_decode_image @3
+    rf_inspect @4
+    rf_free @5

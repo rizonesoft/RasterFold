@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **0 of 178 sections complete (0%).** 178 sections (0 discovered); backlog 3 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **0 of 183 sections complete (0%).** 183 sections (0 discovered); backlog 3 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -117,30 +117,35 @@ RasterFold is finished milestone by milestone: **the 60 milestones of the roadma
 
 The ported plan, hooks, gates, measurement references, HTML docs, and drift gates come first: every later milestone is measured, reviewed, and documented through them. The operator rows sit here because this phase waits on them (the GitHub CLI login for the CI read-back, Pages for the docs); the two recorded decisions are stamped here so the format-version and missed-milestone rules hold from the start.
 
-|  ✔  | Section      | Deliverable                                  | Items |
-| :-: | ------------ | -------------------------------------------- | :---: |
-| [ ] | `D99 T01 §1` | Remove the retired run-guard folders         |   3   |
-| [ ] | `D99 T01 §2` | Log in the GitHub CLI                        |   2   |
-| [ ] | `D99 T01 §3` | Approve format version 3                     |   2   |
-| [ ] | `D99 T01 §4` | The missed-milestone policy                  |   2   |
-| [ ] | `D99 T01 §5` | Enable GitHub Pages                          |   2   |
-| [ ] | `D00 T01 §1` | Commit the port and wire the commit hook     |   5   |
-| [ ] | `D00 T01 §3` | The static analysis gate                     |   4   |
-| [ ] | `D00 T01 §4` | Prove the review panel end to end            |   4   |
-| [ ] | `D00 T01 §5` | Raise the claims coverage floor              |   3   |
-| [ ] | `D00 T01 §2` | First push: CI green and read back           |   3   |
-| [ ] | `D00 T02 §1` | e9 and WebP references in the research tools |   3   |
-| [ ] | `D00 T02 §2` | JPEG XL e9 in the benchmark                  |   2   |
-| [ ] | `D00 T02 §3` | The committed corpus results file            |   3   |
-| [ ] | `D08 T01 §1` | The site generator                           |   4   |
-| [ ] | `D08 T02 §1` | One facts file and claims everywhere         |   4   |
-| [ ] | `D08 T02 §3` | Generated files match their sources          |   2   |
-| [ ] | `D08 T01 §2` | Comparison charts                            |   3   |
-| [ ] | `D08 T02 §2` | Figures bound to their data                  |   3   |
-| [ ] | `D08 T02 §4` | Staleness: verified dates and data revisions |   3   |
-| [ ] | `D08 T02 §5` | Links, and the gates wired everywhere        |   3   |
-| [ ] | `D08 T01 §3` | Publish with GitHub Pages                    |   2   |
-| [ ] | `D05 T01 §1` | Milestone 1 gate: Locked baseline            |   4   |
+|  ✔  | Section      | Deliverable                                        | Items |
+| :-: | ------------ | -------------------------------------------------- | :---: |
+| [ ] | `D08 T04 §1` | Repository presentation and developer entry points |   4   |
+| [ ] | `D00 T04 §1` | Local toolchains and WSL gates                     |   6   |
+| [ ] | `D00 T04 §2` | Portable platform and SIMD boundary                |   4   |
+| [ ] | `D00 T04 §3` | Isolated Codex lifecycle and review runner         |   5   |
+| [ ] | `D00 T04 §4` | Family-local intelligence                          |   4   |
+| [ ] | `D99 T01 §1` | Remove the retired run-guard folders               |   3   |
+| [ ] | `D99 T01 §2` | Log in the GitHub CLI                              |   2   |
+| [ ] | `D99 T01 §3` | Approve format version 3                           |   2   |
+| [ ] | `D99 T01 §4` | The missed-milestone policy                        |   2   |
+| [ ] | `D99 T01 §5` | Enable GitHub Pages                                |   2   |
+| [ ] | `D00 T01 §1` | Commit the port and wire the commit hook           |   5   |
+| [ ] | `D00 T01 §3` | The static analysis gate                           |   4   |
+| [ ] | `D00 T01 §4` | Prove the review panel end to end                  |   4   |
+| [ ] | `D00 T01 §5` | Raise the claims coverage floor                    |   3   |
+| [ ] | `D00 T01 §2` | First push: CI green and read back                 |   3   |
+| [ ] | `D00 T02 §1` | e9 and WebP references in the research tools       |   3   |
+| [ ] | `D00 T02 §2` | JPEG XL e9 in the benchmark                        |   2   |
+| [ ] | `D00 T02 §3` | The committed corpus results file                  |   3   |
+| [ ] | `D08 T01 §1` | The Jekyll site and its generated pages            |   4   |
+| [ ] | `D08 T02 §1` | One facts file and claims everywhere               |   4   |
+| [ ] | `D08 T02 §3` | Generated files match their sources                |   2   |
+| [ ] | `D08 T01 §2` | Comparison charts                                  |   4   |
+| [ ] | `D08 T02 §2` | Figures bound to their data                        |   3   |
+| [ ] | `D08 T02 §4` | Staleness: verified dates and data revisions       |   3   |
+| [ ] | `D08 T02 §5` | Links, and the gates wired everywhere              |   3   |
+| [ ] | `D08 T01 §3` | Publish with GitHub Pages                          |   2   |
+| [ ] | `D05 T01 §1` | Milestone 1 gate: Locked baseline                  |   4   |
 
 ### Phase 1 -- Milestone 2: Same bytes, leaner and harder
 

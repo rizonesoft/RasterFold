@@ -22,7 +22,7 @@ So: **do not improvise around the plan, and do not implement a plan you have fou
 **Never hand-translate a reference into a filename.** Ask the graph:
 
 ```bash
-python scripts/todo-graph.py resolve "$ARGUMENTS"
+python3 scripts/todo-graph.py resolve "$ARGUMENTS"
 ```
 
 It accepts whatever the caller had in front of them:
@@ -47,7 +47,7 @@ It prints the path, the section title, the item count, whether the TODO is froze
 
 Use the `skill arg` line it prints as the canonical form for the rest of the run, so the commit message and the review call name the section the same way.
 
-**If `resolve` printed a `needs` line, the section needs a host.** Confirm the host is reachable before writing `Started:`: for `Windows host (build/test)`, `powershell -ExecutionPolicy Bypass -File build.ps1` exits 0; for `ffmpeg with libjxl (benchmarks)`, `ffmpeg -hide_banner -h encoder=libjxl` prints the encoder; for `Network (downloads)`, the download in the section's first item starts; for `Idle machine (timing)`, the machine's CPU load stays under about 20% for a minute (`Get-Counter '\Processor(_Total)\% Processor Time' -SampleInterval 5 -MaxSamples 12`), or the section's timings are marked as taken under load and repeated until two runs agree. If it is not, stop and say which host the section waits on: starting a host-bound section with no host is how a run burns a session producing nothing committable.
+**If `resolve` printed a `needs` line, verify that resource before writing `Started:`.** A Windows host gate from WSL uses `python3 scripts/windows.py --powershell build.ps1` and the Windows tests; a native Linux gate uses `python3 scripts/build.py`. Research comparisons need Windows ffmpeg with libjxl via the bridge in `docs/building.md`; merely having an unrelated ffmpeg on Linux is not that proof. Verify downloads before a network-bound experiment and keep the machine quiet for timing; record load and repeat under the research protocol. A missing target runtime stays an explicit unmet requirement, never a cross-build pass relabeled as execution.
 
 **If `resolve` printed a `requires` line with requirements missing here, the section needs that environment.** Confirm it is reachable before writing `Started:`. If it is not, stop and say which capability the section waits on: starting an environment-bound section with no environment burns a session the same way.
 
@@ -60,12 +60,12 @@ Use the `skill arg` line it prints as the canonical form for the rest of the run
 - **Validate before building.** Step 2 is a gate, not a formality. A section that cannot pass it gets fixed first.
 - **Follow the corrected contract.** The checklist items define the scope. Do not widen because something adjacent looks wrong; file it instead with `add-todo`, whose admission test decides between an item on an open section, a new section (carrying its Origin line), and the backlog. Correcting a defect *in* the section is not widening; adding work the section never asked for is.
 - **One section = one commit.** If you cannot describe the change in one commit message, the section was mis-sized. Plan corrections may ride in that commit, or land as their own `todo:` commit first when they are substantial. Review fix-loop commits append to the section's candidate range (never amend), and the stamp names the whole range.
-- **Commits are free; pushes are not.** Commit locally as often as you like. Push twice per section: the SHIP push, then the STAMP push. While iterating, run the affected checks only (`powershell -ExecutionPolicy Bypass -File build.ps1`, `python tests/test_correctness.py -k <case>`, `python research/ab.py size <variant> sub`), not the whole sweep. A third push is allowed when it is named and the reason recorded.
+- **Commits are free; pushes are not.** Commit locally as often as you like. Push twice per section: the SHIP push, then the STAMP push. While iterating, run the affected checks only (`python3 scripts/build.py`, `python3 tests/test_correctness.py -k <case>`, `python3 scripts/windows.py research/ab.py size <variant> sub`), not the whole sweep. A third push is allowed when it is named and the reason recorded.
 - **Never mark `[x]` without evidence.** The Implementation Order row flips only after the review stamp exists.
-- **Files are never damaged.** Output goes through `rf_write_atomic` (a `.partial` file created with `CREATE_NEW`, flushed, renamed only after success), an existing destination is never overwritten, and every input is untrusted: the decoder bounds every size and count before using it and rejects rather than guesses. A section that touches reading or writing exercises the failure path in its Test checkpoint, not only the happy path: an existing destination, a truncated or corrupted file, a size past a limit.
+- **Files are never damaged.** Output goes through `rf_write_atomic` (an exclusively created `.partial` file, flushed and published without replacing another destination), an existing destination is never overwritten, and every input is untrusted: the decoder bounds every size and count before using it and rejects rather than guesses. A section that touches reading or writing exercises the failure path in its Test checkpoint, not only the happy path: an existing destination, a truncated or corrupted file, a size past a limit.
 - **The bitstream is frozen per version.** A change to what the encoder writes or the decoder accepts touches four places in one commit: `src/cm.c` (or `src/fold.c`), the independent oracle `tests/rfi_ref.py` written from the spec text, `spec/FOLD.md`, and the known-answer file `KAT_FOLD` in `tests/test_correctness.py`. A new coding method takes a new method number; a change to an existing method takes a new format version (`docs/research.md` section 2.2). The oracle is never translated line by line from the C: it would repeat the C's bugs.
-- **Measure, never guess, and never tune to one image.** A compression or speed claim follows the protocol in `docs/research.md` sections 2.3 and 2.4: prototype in `build/research/try.c`, measure with `python research/ab.py` on the `photo`, `tp`, and `synth` sets, alternate A/B runs for speed, and state the thread counts. No rule, constant, or branch may look at the dimensions, hash, file name, or colour statistics of a particular image, and `measure/image.bmp` alone never decides anything.
-- **Encode and decode are proven together.** The decoder is the reverse of the encoder: a section that changes one proves the round trip, byte identity with the oracle, identical output for one thread and three threads, and rejection of the malformed inputs it now has to refuse (`python tests/fuzz_decode.py`).
+- **Measure, never guess, and never tune to one image.** A compression or speed claim follows the protocol in `docs/research.md` sections 2.3 and 2.4: prototype in `build/research/try.c`, measure with `python3 scripts/windows.py research/ab.py` on the `photo`, `tp`, and `synth` sets, alternate A/B runs for speed, and state the thread counts. No rule, constant, or branch may look at the dimensions, hash, file name, or colour statistics of a particular image, and `measure/image.bmp` alone never decides anything.
+- **Encode and decode are proven together.** The decoder is the reverse of the encoder: a section that changes one proves the round trip, byte identity with the oracle, identical output for one thread and three threads, and rejection of the malformed inputs it now has to refuse (`python3 tests/fuzz_decode.py`).
 
 ## The session does every step
 
@@ -96,8 +96,8 @@ The section was written before the code existed. Check it still holds. Seven que
 Ground each answer:
 
 ```bash
-python scripts/todo-graph.py validate          # graph integrity, XREF reciprocity
-python scripts/todo-claims.py                  # the TODOs' measured claims still hold
+python3 scripts/todo-graph.py validate          # graph integrity, XREF reciprocity
+python3 scripts/todo-claims.py                  # the TODOs' measured claims still hold
 grep -rn "<class/file the section names>" src/ tests/
 git log --oneline -5 -- <the paths the section touches>
 ```
@@ -118,7 +118,7 @@ git log --oneline -5 -- <the paths the section touches>
 #### Deferrals in both directions
 
 ```bash
-python scripts/todo-graph.py query deferred
+python3 scripts/todo-graph.py query deferred
 ```
 
 **Deferrals this section owns**: another section handed you this work, and it is part of your scope whether or not the checklist mentions it. It turns FATAL the moment this row flips, so it is not optional.
@@ -167,20 +167,20 @@ Work the checklist top to bottom. Tick each item as its Done-when becomes true, 
 - Build the cheaper substitute's failure into the work: the checkpoint must be able to catch the wrong thing, so build the test that distinguishes them.
 - Keep the diff to the section. Adjacent wrongness gets filed with `add-todo`, not fixed in passing.
 - One copy of each mechanism: the range coder, the counters, and the quantizers live once and are shared between methods. A second copy of the coder in a new method is a defect, not a shortcut.
-- The stack is fixed (`AGENTS.md`): freestanding C11 with no C runtime, Win32 through `kernel32` and `shell32` only, built by the pinned llvm-mingw Clang and Ninja; Python standard library plus Pillow for tests and research. A section that needs another dependency records the decision and its reason in the section before adding it.
+- The stack is fixed (`AGENTS.md`): C11 with a freestanding Win32 CLI/DLL and hosted Linux/Android libc platform layer, built by pinned local LLVM, Ninja and Android NDK; Python standard library plus Pillow for tests and research. A section that needs another dependency records the decision and its reason in the section before adding it.
 
 ### 4a. Measure before porting (compression and speed sections)
 
 A section whose deliverable is a size or speed change is an experiment first:
 
-1. **Prototype in research.** Copy `src/cm.c` to `build/research/try.c` and make the change there. `python research/ab.py` compiles any `cm.c` variant that keeps the `rf_cm_encode` / `rf_cm_decode` interface.
-2. **Measure by the protocol.** Size: `python research/ab.py size build/research/try.c photo`, then `tp` and `synth`, against the same commands on `src/cm.c`; quote `total`, `geomean`, and `worst`. Speed: `python research/ab.py ab src/cm.c build/research/try.c -n5 measure kodim01` at `-t1` and `-t3`; a minimum-time ratio below 0.97 is real, 0.97 to 1.03 is noise.
+1. **Prototype in research.** Copy `src/cm.c` to `build/research/try.c` and make the change there. `python3 scripts/windows.py research/ab.py` compiles any `cm.c` variant that keeps the `rf_cm_encode` / `rf_cm_decode` interface.
+2. **Measure by the protocol.** Size: `python3 scripts/windows.py research/ab.py size build/research/try.c photo`, then `tp` and `synth`, against the same commands on `src/cm.c`; quote `total`, `geomean`, and `worst`. Speed: `python3 scripts/windows.py research/ab.py ab src/cm.c build/research/try.c -n5 measure kodim01` at `-t1` and `-t3`; a minimum-time ratio below 0.97 is real, 0.97 to 1.03 is noise.
 3. **Apply the section's stop condition.** If the change misses its bar, it ships as a negative result (`todo/README.md`, Completion-first): nothing is ported into `src/`, the numbers go into the stamp and into the "Already tried" table of `docs/research.md`, and the porting items are struck with a pointer to the stamp.
 4. **Port only what passed.** Port into `src/cm.c`, then write the oracle change into `tests/rfi_ref.py` from the spec change, then `spec/FOLD.md`, then regenerate `KAT_FOLD` (`docs/research.md` section 2.2); a speed-only change must leave `KAT_FOLD` and every oracle comparison byte-identical.
 
 ### 5. The bitstream check (format sections)
 
-Before the checkpoint, confirm the four places agree: `python tests/test_correctness.py` compares every encoder output with the oracle byte for byte, decodes codec files with the oracle and oracle files with the codec, and checks the known-answer file. Then confirm that files of the previous version or method still decode or are rejected as unsupported, never misread, and that `python tests/fuzz_decode.py 300` reports no crash, hang, or oracle mismatch. `review-todo-section` refuses the stamp on a format change that skipped any of the four places.
+Before the checkpoint, confirm the four places agree: `python3 tests/test_correctness.py` compares every encoder output with the oracle byte for byte, decodes codec files with the oracle and oracle files with the codec, and checks the known-answer file. Then confirm that files of the previous version or method still decode or are rejected as unsupported, never misread, and that `python3 tests/fuzz_decode.py 300` reports no crash, hang, or oracle mismatch. `review-todo-section` refuses the stamp on a format change that skipped any of the four places.
 
 ### 6. Run the Test checkpoint, for real
 
@@ -189,16 +189,16 @@ Execute the checkpoint command and read the output. Quote the result in the comm
 Then run **every gate the section owes**, not only the checkpoint. The gate card is `.claude/skills/process-todo-section/gates.md`:
 
 ```powershell
-pwsh scripts/check-all.ps1            # build, correctness suite, fuzz, TODO gates, tool self-tests
-python tests/test_correctness.py      # the whole suite, not only the touched cases
-python tests/measure_final.py         # the JPEG XL reference comparison, when size or speed moved
-python scripts/todo-graph.py validate
-python scripts/todo-claims.py         # the TODOs' measured claims still hold
+python3 scripts/check-all.py            # build, correctness suite, fuzz, TODO gates, tool self-tests
+python3 tests/test_correctness.py      # the whole suite, not only the touched cases
+python3 scripts/windows.py tests/measure_final.py         # the JPEG XL reference comparison, when size or speed moved
+python3 scripts/todo-graph.py validate
+python3 scripts/todo-claims.py         # the TODOs' measured claims still hold
 ```
 
 **If a claim went stale, the section changed something a TODO had measured.** That is not a nuisance to silence: fix the claim *and* re-read the sentence it supports, in this commit, because the prose around a changed figure is usually wrong too.
 
-While iterating, narrow with `python tests/test_correctness.py -k <case>`. Before committing, run the full sweep once: a section that passes its own filter and breaks another suite has not passed.
+While iterating, narrow with `python3 tests/test_correctness.py -k <case>`. Before committing, run the full sweep once: a section that passes its own filter and breaks another suite has not passed.
 
 ### 7. Commit and push the ship
 
@@ -213,7 +213,7 @@ Commit as one section commit with the evidence in the body:
 
 Quote every suite count in the body from the commit being created: re-run the suites at this commit and quote those figures, never figures measured mid-item. Live-green quotes ride the same commit-time discipline: two non-simultaneous measurements never jointly satisfy one checkpoint.
 
-Push the SHIP push. The commit must exist on the remote before the next step, because the independent reviewer reads the commit. Capture the remote head first (`BEFORE=$(git ls-remote origin refs/heads/main | cut -f1)`) and read CI back after it with `python scripts/review_prompt.py ci-wait <SHIP_SHA> --since $BEFORE`, and record its line in the run file: a red read-back is repaired before the review, never carried into it, by the bounded repair loop the review skill's push block states, escalating only a cause the tree cannot fix. After a repair, `<SHIP_SHA>` is the repaired head: re-run the checkpoint there and give step 8 that sha, because the pre-repair commit is not the candidate any more.
+Push the SHIP push. The commit must exist on the remote before the next step, because the independent reviewer reads the commit. Capture the remote head first (`BEFORE=$(git ls-remote origin refs/heads/main | cut -f1)`) and read CI back after it with `python3 scripts/review_prompt.py ci-wait <SHIP_SHA> --since $BEFORE`, and record its line in the run file: a red read-back is repaired before the review, never carried into it, by the bounded repair loop the review skill's push block states, escalating only a cause the tree cannot fix. After a repair, `<SHIP_SHA>` is the repaired head: re-run the checkpoint there and give step 8 that sha, because the pre-repair commit is not the candidate any more.
 
 `ci-wait` reads the `plan-gates` workflow (`.github/workflows/plan.yml`) by default; a section whose paths the build workflow covers reads that one back too with `--workflow <name> --workflow-path .github/workflows/<file>.yml`, and records both lines.
 
@@ -222,7 +222,7 @@ Push the SHIP push. The commit must exist on the remote before the next step, be
 **An outside reviewer reads the commit before this session stamps its own work.** The session that built a section is the worst judge of whether it is right, and this step exists to break that.
 
 ```bash
-python scripts/panel_slots.py exec independent --commit <SHIP_SHA>
+python3 scripts/panel_slots.py exec independent --commit <SHIP_SHA>
 ```
 
 It reviews read-only and changes nothing.
@@ -250,7 +250,7 @@ Invoke `review-todo-section` on the same ref. Review writes the stamp and flips 
 After the stamp lands, push the STAMP push (through the review skill's push block) and sync the plan:
 
 ```bash
-python scripts/todo-graph.py plan --sync
+python3 scripts/todo-graph.py plan --sync
 ```
 
 ### 10. Report

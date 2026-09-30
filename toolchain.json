@@ -18,7 +18,9 @@
       "bytes": 190725905,
       "dir": "llvm-mingw",
       "probe": "bin/clang.exe",
-      "versionArgs": ["--version"],
+      "versionArgs": [
+        "--version"
+      ],
       "versionMatch": "clang version ([0-9.]+)",
       "expectVersion": "23.1.2",
       "note": "Clang, LLD, and the MinGW-w64 import libraries. Builds the codec with no Visual Studio and no C runtime."
@@ -31,7 +33,9 @@
       "bytes": 291570,
       "dir": "ninja",
       "probe": "ninja.exe",
-      "versionArgs": ["--version"],
+      "versionArgs": [
+        "--version"
+      ],
       "versionMatch": "^([0-9.]+)",
       "expectVersion": "1.13.2",
       "note": "The build driver for build.ninja."
@@ -44,10 +48,74 @@
       "bytes": 8059493,
       "dir": "libjxl",
       "probe": "bin/cjxl.exe",
-      "versionArgs": ["--version"],
+      "versionArgs": [
+        "--version"
+      ],
       "versionMatch": "v([0-9.]+)",
       "expectVersion": "0.12.0",
       "note": "The official cjxl and djxl binaries: a reference codec for the benchmark scripts only; nothing links against it. The .7z asset, because the .zip uses Deflate64, which the bsdtar in Windows cannot read."
     }
-  ]
+  ],
+  "hosts": {
+    "linux-x86_64": {
+      "components": [
+        {
+          "url": "https://github.com/mstorsjo/llvm-mingw/releases/download/20260922/llvm-mingw-20260922-ucrt-ubuntu-22.04-x86_64.tar.xz",
+          "sha256": "bb7bb7654b33d5aa8712acb837c963b2e0c56352560c76105270a3268c665c21",
+          "bytes": 83924028,
+          "name": "llvm-mingw-linux",
+          "dir": "llvm-mingw-linux",
+          "probe": "bin/clang",
+          "versionArgs": [
+            "--version"
+          ],
+          "expectVersion": "23.1.2",
+          "probes": [
+            "bin/clang",
+            "bin/ld.lld",
+            "bin/llvm-ar"
+          ]
+        },
+        {
+          "url": "https://dl.google.com/android/repository/android-ndk-r30-linux.zip",
+          "sha256": "753611f410d002cfcd3f3dc2ef49aad532089d3180b436c060a90bf0fcb64df2",
+          "bytes": 738633529,
+          "name": "android-ndk",
+          "dir": "android-ndk",
+          "probe": "toolchains/llvm/prebuilt/linux-x86_64/bin/clang",
+          "versionArgs": [
+            "--version"
+          ],
+          "expectVersion": "clang version",
+          "probes": [
+            "toolchains/llvm/prebuilt/linux-x86_64/bin/clang",
+            "toolchains/llvm/prebuilt/linux-x86_64/bin/ld.lld",
+            "source.properties"
+          ],
+          "versionFile": "source.properties",
+          "versionText": "Pkg.Revision = 30.0.16248370"
+        },
+        {
+          "name": "ninja-linux",
+          "dir": "ninja-linux",
+          "url": "https://github.com/ninja-build/ninja/releases/download/v1.13.2/ninja-linux.zip",
+          "sha256": "5749cbc4e668273514150a80e387a957f933c6ed3f5f11e03fb30955e2bbead6",
+          "bytes": 134040,
+          "probe": "ninja",
+          "versionArgs": [
+            "--version"
+          ],
+          "expectVersion": "1.13.2"
+        }
+      ]
+    }
+  },
+  "android": {
+    "ndk": "30.0.16248370",
+    "min_api": 21,
+    "abis": [
+      "arm64-v8a",
+      "x86_64"
+    ]
+  }
 }

@@ -1635,7 +1635,7 @@ def rerun_lines(step: dict, at: str) -> list[str]:
     # `bash` adds --noprofile --norc and pipefail to the default's -e).
     shell = {"bash": "bash --noprofile --norc -eo pipefail {0}", "sh": "sh -e {0}",
              "pwsh": "pwsh -command \". '{0}'\"", "powershell": "powershell -command \". '{0}'\"",
-             "python": "python {0}", "cmd": "cmd /D /E:ON /V:OFF /S /C \"CALL \"{0}\"\""}.get(shell, shell) if shell else shell
+             "python": "python3 {0}", "cmd": "cmd /D /E:ON /V:OFF /S /C \"CALL \"{0}\"\""}.get(shell, shell) if shell else shell
     posix = shell is not None and shell.split()[0] in ("bash", "sh")
     # Only the shells the context oracle proves against GitHub reproduce
     # locally (bash default, explicit bash, sh); pwsh, powershell, python,
@@ -2311,7 +2311,7 @@ def check_stamp_anchors(todo_path: str, section: int, cwd=None) -> list[str]:
                 if am is not None:
                     attest_ref, attest_where = am.group("path"), where
             for tick in _ANCHOR_TICK_RE.finditer(body):
-                span = tick.group("body")
+                span = tick.group("body").replace("\\", "/")
                 rm = _ANCHOR_RANGE_RE.match(span)
                 if rm is not None:
                     for side in rm.groups():
@@ -2326,13 +2326,13 @@ def check_stamp_anchors(todo_path: str, section: int, cwd=None) -> list[str]:
                     else:
                         review_oids.append((where, span))
         for tick in _ANCHOR_TICK_RE.finditer(body):
-            span = tick.group("body")
+            span = tick.group("body").replace("\\", "/")
             pm = _ANCHOR_PATHLINE_RE.match(span)
             if pm is not None:
                 if ("/" in span or "\\" in span) \
                         and not _anchor_root_ok(span, topdirs):
                     continue
-                path, first = pm.group("path"), int(pm.group("first"))
+                path, first = _anchor_shipshape(pm.group("path")), int(pm.group("first"))
                 last = int(pm.group("last")) if pm.group("last") else first
                 if not os.path.exists(path):
                     if _ANCHOR_MID_DOTTED_RE.search(span) is not None:
@@ -3146,7 +3146,7 @@ def parse_codex_stderr_model(stderr_text: str) -> str | None:
 
 BUNDLE_SCHEMA = "review-bundle/1"
 BUNDLE_MANIFEST_NAME = "manifest.json"
-BUNDLE_VERIFY_COMMAND = "python scripts/review_prompt.py bundle-verify <bundle>"
+BUNDLE_VERIFY_COMMAND = "python3 scripts/review_prompt.py bundle-verify <bundle>"
 BUNDLE_VERDICTS = ("approve", "needs-attention")
 # Verify reads hostile bytes (a bundle from anywhere), so it bounds
 # what it loads: the whole file and each member refuse past these,
@@ -4586,7 +4586,7 @@ def _self_test() -> int:
               and "\nMANIFEST " in hout,
               f"exit={proc.returncode} err={proc.stderr[-160:]!r}")
         # An alternate temp root: TMP/TEMP/TMPDIR all redirected (Windows
-        # python ignores TMPDIR, so all three move), chunk inside.
+        # python3 ignores TMPDIR, so all three move), chunk inside.
         alt_root = os.path.join(tmpd, "alt temp")
         os.makedirs(alt_root)
         alt_chunk = os.path.join(alt_root, "c.md")
@@ -6061,12 +6061,12 @@ def _self_test() -> int:
                   str(rerun_lines(steps_ctx["ctx"], "abc")))
             q_yml = ("jobs:\n  j:\n    runs-on: ubuntu-24.04\n    steps:\n      - name: q\n"
                      "        working-directory: my dir\n        env:\n          MODE: \"two words\"\n"
-                     "          QUOTE: it's\n        run: echo \"$MODE\" && python check.py\n")
+                     "          QUOTE: it's\n        run: echo \"$MODE\" && python3 check.py\n")
             got_q = rerun_lines(workflow_steps(q_yml)[0], "abc")
             check("rerun-quotes-values-and-scopes-env-to-the-script",
                   "ci-wait: |   export MODE='two words'" in got_q and "ci-wait: |   export QUOTE='it'\\''s'" in got_q
                   and "ci-wait: |   cd 'my dir'" in got_q
-                  and got_q[-1] == 'ci-wait: |   echo "$MODE" && python check.py', str(got_q))
+                  and got_q[-1] == 'ci-wait: |   echo "$MODE" && python3 check.py', str(got_q))
             for label, yml in (("flow env", "jobs:\n  j:\n    runs-on: ubuntu-24.04\n    steps:\n      - name: a\n        env: {MODE: x}\n        run: make\n"),
                                ("block env", "jobs:\n  j:\n    runs-on: ubuntu-24.04\n    steps:\n      - name: a\n        env:\n          MODE: |\n            x\n        run: make\n"),
                                ("flow workflow env", "env: {X: 1}\njobs:\n  j:\n    runs-on: ubuntu-24.04\n    steps:\n      - name: a\n        run: make\n"),
@@ -6509,10 +6509,10 @@ def _self_test() -> int:
             ("skill-coverage-sentence",
              "Every `rev-parse`, `show`, and `diff` on this page passes `--no-replace-objects`"),
             ("skill-push-explicit", "git push --atomic origin $COMMIT:refs/heads/main"),
-            ("skill-provenance-tags", "python scripts/review_prompt.py provenance-tags --findings"),
+            ("skill-provenance-tags", "python3 scripts/review_prompt.py provenance-tags --findings"),
             ("skill-reachable-before-push", "check-reachable --findings <findings path> --refs $COMMIT"),
             ("skill-reachable-after-push", "check-reachable --findings <findings path> --remote origin"),
-            ("skill-ci-wait", "python scripts/review_prompt.py ci-wait $COMMIT"),
+            ("skill-ci-wait", "python3 scripts/review_prompt.py ci-wait $COMMIT"),
             ("skill-ci-red-repairs", "A red read-back is a failed gate, and the run repairs it rather than waiting on it"),
             ("skill-ci-repair-bound", "at most three repair attempts per repair episode"),
             ("skill-ci-episode-no-reset", "so a new red never resets the count"),
@@ -6520,9 +6520,9 @@ def _self_test() -> int:
             ("skill-ci-cause-rule", "the cause decides, not the step's name"),
             ("skill-ci-slow-run", "a slow run is not an unreachable one"),
             ("skill-ci-ceiling-exit", "`ci-wait` exit 3 means it stayed pending past the ceiling"),
-            ("skill-ci-episode-persists", "python scripts/campaign_guard.py repair attempt --red"),
+            ("skill-ci-episode-persists", "python3 scripts/campaign_guard.py repair attempt --red"),
             ("skill-ci-close-evidence", "repair close --green <sha> --workflow <workflow> --run-file <run file> --evidence"),
-            ("skill-ci-ceiling-count", "python scripts/campaign_guard.py repair ceiling --run-id"),
+            ("skill-ci-ceiling-count", "python3 scripts/campaign_guard.py repair ceiling --run-id"),
             ("skill-ci-no-run-authorized", "--authorized-by <who> --authorized-at <UTC time> --approved-range <base>..<head>`, which exits 4 `NOT GREEN`"),
             ("skill-ci-quotes-redacted", "a record quotes `ci-wait` only as printed, its secret shapes already masked"),
             ("skill-ci-unknown-cause", "An unknown cause owes bounded evidence gathering"),
@@ -6535,10 +6535,10 @@ def _self_test() -> int:
              'git ls-remote origin refs/heads/main | cut -f1)" = "$COMMIT"'),
             ("skill-push-residual", "a concurrent force-push after it still moves the ref"),
             ("skill-parents-tool",
-             "python scripts/review_prompt.py check-parents"),
+             "python3 scripts/review_prompt.py check-parents"),
             ("skill-linear-sentence", "this tree stays linear"),
             ("skill-stamp-check",
-             "python scripts/review_prompt.py check-stamp --manifest $RUNDIR/stamp-manifest.md"),
+             "python3 scripts/review_prompt.py check-stamp --manifest $RUNDIR/stamp-manifest.md"),
             ("skill-stamp-branch", "PASS stamp holds` proceeds"),
             ("skill-merge-forbid", "refuses merge candidates outright"),
             ("skill-round-grammar", "`oid`(round N)"),
@@ -6550,7 +6550,7 @@ def _self_test() -> int:
             ("skill-assembled-commits", "--commits <o1,o2,...>"),
             ("skill-assembled-body", "--body $RUNDIR/fenced.md"),
             ("skill-anchors-tool",
-             "python scripts/review_prompt.py check-anchors <todo-path> <section>"),
+             "python3 scripts/review_prompt.py check-anchors <todo-path> <section>"),
             ("skill-stamp-staged",
              "ls-files --error-unmatch"),
             ("skill-stamp-clean",
@@ -6560,10 +6560,10 @@ def _self_test() -> int:
             ("skill-stamp-no-fallback",
              "Slot-timeout expiry has no fallback slot"),
             ("skill-panel-slot",
-             "python scripts/panel_slots.py exec <slot> < $RUNDIR/review-prompt.md"),
-            ("skill-plan-slot", "python scripts/panel_slots.py exec plan-primary"),
-            ("skill-stamp-slot", "python scripts/panel_slots.py exec stamp-check"),
-            ("skill-arch-slot", "python scripts/panel_slots.py exec arch-primary"),
+             "python3 scripts/panel_slots.py exec <slot> < $RUNDIR/review-prompt.md"),
+            ("skill-plan-slot", "python3 scripts/panel_slots.py exec plan-primary"),
+            ("skill-stamp-slot", "python3 scripts/panel_slots.py exec stamp-check"),
+            ("skill-arch-slot", "python3 scripts/panel_slots.py exec arch-primary"),
             ("skill-grok-cutoff", "on any later stamp it fails validation, because Grok left the panel"),
             ("skill-no-fallback", "re-runs nothing on another family, because there is no fallback slot"),
             ("skill-no-third-rung", "the writer's family never fills a round"),
