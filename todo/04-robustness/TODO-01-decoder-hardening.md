@@ -39,6 +39,7 @@ track: R1
 | :---: | :-----: | --------------------------------------------- | ---------- | :----: |
 |   1   |   §1    | Stop decoding a stream that has run out       | --         |  [ ]   |
 |   2   |   §2    | A long fuzz campaign over every method        | §1, D01 T01 §2 |  [ ]   |
+|   3   |   §3    | Oracle and spec agree on padding and counters | --         |  [ ]   |
 
 ---
 
@@ -68,6 +69,24 @@ The recorded fuzz runs are short. A campaign of 20,000 mutations over seeds that
 - [ ] Commit: `"test: fuzz every method with 20,000 mutations"`
 
 **Test checkpoint:** the four summary lines quoted from `docs/fuzz.md`, and `python tests/fuzz_decode.py 10 1` showing every method among the seeds.
+
+## 3. Oracle and Spec Agree on Padding and Counters
+
+**Origin:** discovered run=4865d816f23f 2026-10-01 -- oracle-writer audit in the Claude agent routing probe, verified by the lead
+
+**Job:** A user can encode any BMP the spec's accepted subset describes, and the independent oracle accepts and decodes exactly the same files as the codec.
+
+Admission: a defect in shipped work. `spec/FOLD.md:362` says row padding bytes are ignored, and `src/bmp.c` never inspects them, but the oracle's `read_bmp24` rejects any nonzero padding byte (`tests/rfi_ref.py:576-578`, `FormatError("bmp padding")`). The oracle is meant to check the codec against the spec, so a stricter oracle hides any divergence on padded input instead of proving agreement. The spec and the C agree; the oracle is the side that moves. Second, `spec/FOLD.md:253` writes the counter update as `c_m = c_m + (((65535*bit) - c_m) * rate_m) >> 16`, which under C precedence reads `(c_m + ...) >> 16`, while `src/cm.c:241` and `tests/rfi_ref.py:236` both compute `c_m + ((...) >> 16)`. The spec declares no operator conventions, so an oracle written from the text alone would follow the misreading. The code is right and the text gains parentheses; no byte changes. Third, the oracle skips acceptance rules the spec states, so it accepts files the codec must refuse; an oracle that accepts more than the spec cannot prove the codec's refusals.
+
+-> SOURCE: oracle-bmp-padding-2026-10-01
+
+- [ ] Remove the nonzero-padding rejection from `read_bmp24` in `tests/rfi_ref.py`, written from the spec rule rather than from `src/bmp.c`. Done when: the oracle accepts a BMP whose padding bytes are nonzero.
+- [ ] Add a case to `tests/test_correctness.py` that encodes a BMP with an odd width and nonzero padding bytes through both the codec and the oracle and asserts identical `.fold` bytes and identical decoded pixels. Done when: the case fails on the current oracle and passes after the change.
+- [ ] Add the spec's remaining acceptance rules to the oracle, from the spec text: in `read_bmp24`, `biWidth` and `|biHeight|` in 1..32768, at most 33554432 pixels, and `bfSize == 0` or `pixel_end <= bfSize <= file_size` (`spec/FOLD.md:354-360`; `bfSize` is read and discarded as `_bf_size` at `tests/rfi_ref.py:553`, and `MAX_DIM`/`MAX_PIXELS` are applied only to `.fold` headers at line 497); in the `.fold` reader, rejection of a file longer than 256 MiB (`spec/FOLD.md:330`; the oracle checks only the 32-byte minimum at line 478). Done when: a `tests/test_correctness.py` case per rule shows the codec and the oracle refusing the same files.
+- [ ] Parenthesize the counter update at `spec/FOLD.md:253` as `c_m = c_m + ((((65535*bit) - c_m) * rate_m) >> 16)`, and add one sentence near the top of the spec stating that operators follow C11 precedence on 32-bit or wider signed integers. Done when: every formula in the spec's coding sections parses under C precedence to what `tests/rfi_ref.py` computes, and `KAT_FOLD` is unchanged.
+- [ ] Commit: `"spec, test: oracle and spec agree on BMP padding and counter updates"`
+
+**Test checkpoint:** the new `tests/test_correctness.py` case passes, quoted, and the full `python3 tests/test_correctness.py` run passes every case (correctness test, proof 3).
 
 ## Verification
 

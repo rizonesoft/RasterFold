@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **0 of 222 sections complete (0%).** 222 sections (2 discovered); backlog 0 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **0 of 223 sections complete (0%).** 223 sections (3 discovered); backlog 0 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -168,6 +168,7 @@ Changes that keep every byte, so they need no format decision and every later ti
 | [ ] | `D03 T01 §2` | Decode straight into the BMP                    |   3   |
 | [ ] | `D03 T01 §3` | Encode straight into the output buffer          |   3   |
 | [ ] | `D04 T01 §1` | Stop decoding a stream that has run out         |   4   |
+| [ ] | `D04 T01 §3` | Oracle and spec agree on padding and counters   |   5   |
 | [ ] | `D02 T01 §1` | Profile-guided optimization                     |   5   |
 | [ ] | `D02 T01 §2` | Link-time optimization                          |   3   |
 | [ ] | `D05 T01 §2` | Milestone 2 gate: Same bytes, leaner and harder |   4   |
