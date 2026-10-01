@@ -26,7 +26,7 @@ Agent instructions for this repository. Human orientation lives in `README.md`. 
 | `todo/budget.json`, `todo/backlog.md` | The budget decisions (no caps) and the list of deferred ideas that are not sections, which loses nothing without a trace |
 | `docs/reviews/` | Per-section review findings, attestations, the derived findings ledger, run records |
 | `docs/phase-runs/` | One findings file per phase run, written as the run goes |
-| `.claude/` | Claude-owned skills, hooks, settings and intelligence implementation |
+| `.claude/` | Claude-owned skills, agents (routing: `.claude/agent-routing.md`), hooks, settings and intelligence implementation |
 | `.codex/`, `.agents/skills/` | Independent Codex mechanics; skill-discovery symlinks point only to `.codex/skills/` |
 | `.intelligence/` | Separate family registers and retained archives; disposition requires both runners stopped |
 | `.conclave/panel.toml` | The review panel wiring: writer, model registry, and every review slot |

@@ -174,12 +174,12 @@
       }
     },
     "AGENTS.md": {
-      "evidence": "Author-attested: 2026-09-30 source audit, docs/todo-vision-audit.md",
+      "evidence": "Author-attested: 2026-10-01 re-read AGENTS.md after its .claude/ paths row gained the agents directory and .claude/agent-routing.md, both of which exist; include/rasterfold.h, src/rf.h and toolchain.json are unchanged since the 2026-09-30 source audit",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "51734a555f97e344771e8462284781429f04d5d5f6a8e5550e43e10e9c20e7c3",
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
-        "AGENTS.md": "4faaa1fe7baf91233f2dda8bc6a38e98db5e8aef6a1f0f027d70c09febed5bac"
+        "AGENTS.md": "6c73eb623b2a388f3b5b169b1c89b53acc0e782323164075a1ea8469c4aa91d4"
       }
     },
     "docs/building.md": {
@@ -202,10 +202,10 @@
       }
     },
     "CONTRIBUTING.md": {
-      "evidence": "Author-attested: 2026-09-30 D00 T04 section 1 source review of required package artifacts and full-gate registration against scripts/build.py, scripts/package.py and scripts/check-all.py; five package regression tests pass; see docs/phase-runs/2026-09-30-codex-phase-0.md",
+      "evidence": "Author-attested: 2026-10-01 re-read CONTRIBUTING.md against scripts/check-all.py after it gained the agent routing validate and self-test gates; the documented --all-targets invocation, flags and drift-check guidance are unchanged and still accurate",
       "sources": {
         "scripts/build.py": "81f4a17e99f5a0bf93b55cc1c4e238b72cd9b8c014bf0a9b12c7e792777c8fac",
-        "scripts/check-all.py": "e2db0f20ef359f7a8b8f665e4ea4dca2081c6d3eb39bfb2f5f351117e3bbd0f9",
+        "scripts/check-all.py": "8b3be6dd4b27b0d54f353a6769ef357dbc0e05f7bffb0ddd7537c39d85f1e9f1",
         "CONTRIBUTING.md": "01f5855ce18883d6930ce1ebb569ea9411ac21e3c4cf3faced1a56c155bf470f"
       }
     },

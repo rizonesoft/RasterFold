@@ -62,13 +62,13 @@ Look specifically for the failure modes this codebase is prone to:
 - A frozen behavior that moved.
 - A checkpoint that passes by being unfalsifiable (a build that did not include the touched file, a round trip over an image the change cannot affect, a size measured on a set the change does not reach).
 
-The `source-defect` and `measurement` lenses run here, in-session: the panel prompt below mandates the four core lenses (the output checker enforces exactly those), so source reading and re-running the numbers stay with the session that can see the sources and run the tools. Re-run every quoted size and speed figure from its command, never from memory, and record those verdicts in the findings file beside the panel's.
+The `source-defect` and `measurement` lenses run here, in-session: the panel prompt below mandates the four core lenses (the output checker enforces exactly those), so source reading and re-running the numbers stay with the session that can see the sources and run the tools. Re-run every quoted size and speed figure from its command, never from memory, and record those verdicts in the findings file beside the panel's. The session may hand the re-runs to `checks-runner` and a first pass over the failure-mode list above to `routine-reviewer` (`.claude/agent-routing.md`), but the verdicts are the session's own: it reads the logs on disk, adjudicates every finding, and reviews the consequential surfaces itself.
 
 Cheap defects caught here cost nothing; the same defect caught by a lens costs a whole round.
 
 ### 3. Research pass (feature plans and codec changes)
 
-The researcher is the review session itself (the writer named in `.conclave/panel.toml`): the model with the sources, the web, and the filing tools. It runs in-session, not as a panel lens (lens verdicts must come from the independent headless panel; research needs web access the read-only panel deliberately lacks, and gathering evidence is not judging it, so the writer may research).
+The researcher is the review session itself (the writer named in `.conclave/panel.toml`): the model with the sources, the web, and the filing tools. It runs in-session, not as a panel lens (lens verdicts must come from the independent headless panel; research needs web access the read-only panel deliberately lacks, and gathering evidence is not judging it, so the writer may research). The session may dispatch the evidence gathering to `prior-art-researcher` (`.claude/agent-routing.md`); judging the evidence and every filing decision stay with the session.
 
 Run it when the candidate is a feature plan (a filed TODO file or section) or a change to the codec's models, format, or speed. Skip it on pure infrastructure with one line saying so.
 

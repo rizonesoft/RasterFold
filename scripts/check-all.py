@@ -31,6 +31,8 @@ def main():
         ('runs','scripts/todo-runs.py',['--check']),('runs self-test','scripts/todo-runs.py',['--self-test']),
         ('Claude review tooling','scripts/review_prompt.py',['--self-test']),('Claude panel','scripts/panel_slots.py',['validate']),
         ('Claude panel self-test','scripts/panel_slots.py',['--self-test']),('Claude guard','scripts/campaign_guard.py',['--self-test']),
+        ('agent routing','scripts/agent_routing.py',['validate']),
+        ('agent routing self-test','scripts/agent_routing.py',['--self-test']),
         ('intelligence','scripts/intelligence.py',['validate']),
     ):python(name,path,*args)
     gates.append(('document drift tests',[py,'-m','unittest','discover','-s','tests','-p','test_drift.py','-v']))

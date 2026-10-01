@@ -1,0 +1,70 @@
+{
+  "agents": {
+    "checks-runner": {
+      "alias": "sonnet",
+      "effort": "high",
+      "served": "claude-sonnet-5-5",
+      "served_effort": "high",
+      "catalog_newest": "claude-sonnet-5-5",
+      "probed": "2026-10-01",
+      "claude_code": "2.1.287",
+      "session": "247cf033-f76e-4882-ac89-1c5b7bc3b042",
+      "turns": 2
+    },
+    "code-explorer": {
+      "alias": "sonnet",
+      "effort": "high",
+      "served": "claude-sonnet-5-5",
+      "served_effort": "high",
+      "catalog_newest": "claude-sonnet-5-5",
+      "probed": "2026-10-01",
+      "claude_code": "2.1.287",
+      "session": "247cf033-f76e-4882-ac89-1c5b7bc3b042",
+      "turns": 10
+    },
+    "oracle-writer": {
+      "alias": "sonnet",
+      "effort": "high",
+      "served": "claude-sonnet-5-5",
+      "served_effort": "high",
+      "catalog_newest": "claude-sonnet-5-5",
+      "probed": "2026-10-01",
+      "claude_code": "2.1.287",
+      "session": "247cf033-f76e-4882-ac89-1c5b7bc3b042",
+      "turns": 2
+    },
+    "prior-art-researcher": {
+      "alias": "sonnet",
+      "effort": "high",
+      "served": "claude-sonnet-5-5",
+      "served_effort": "high",
+      "catalog_newest": "claude-sonnet-5-5",
+      "probed": "2026-10-01",
+      "claude_code": "2.1.287",
+      "session": "247cf033-f76e-4882-ac89-1c5b7bc3b042",
+      "turns": 4
+    },
+    "routine-reviewer": {
+      "alias": "sonnet",
+      "effort": "high",
+      "served": "claude-sonnet-5-5",
+      "served_effort": "high",
+      "catalog_newest": "claude-sonnet-5-5",
+      "probed": "2026-10-01",
+      "claude_code": "2.1.287",
+      "session": "247cf033-f76e-4882-ac89-1c5b7bc3b042",
+      "turns": 12
+    },
+    "section-implementer": {
+      "alias": "sonnet",
+      "effort": "high",
+      "served": "claude-sonnet-5-5",
+      "served_effort": "high",
+      "catalog_newest": "claude-sonnet-5-5",
+      "probed": "2026-10-01",
+      "claude_code": "2.1.287",
+      "session": "247cf033-f76e-4882-ac89-1c5b7bc3b042",
+      "turns": 4
+    }
+  }
+}

@@ -63,6 +63,8 @@ jobs:
           python3 scripts/panel_slots.py validate
           python3 scripts/panel_slots.py --self-test
           python3 scripts/review_prompt.py --self-test
+          python3 scripts/agent_routing.py validate
+          python3 scripts/agent_routing.py --self-test
       - name: Check private Codex tooling and intelligence
         run: |
           python3 .codex/runner/panel_slots.py validate
