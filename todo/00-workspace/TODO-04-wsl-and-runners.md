@@ -73,6 +73,8 @@ Use pinned, checksum-verified LLVM/MinGW and Android NDK installations beneath `
 
 **Review blocked (2026-09-30):** Candidate `73f0143949aceb1dd8fa4a695069d1df0952fa45` passed the implementation gates, but the private `independent` slot (`claude-opus-5-5`, high effort) exited 124 after 900 seconds with no verdict. No verification stamp is earned. Evidence: `docs/reviews/00-workspace/D00-T04-s1.md`.
 
+**Correction (2026-10-18):** Fresh gate execution exposed a timing-dependent guard fixture in `scripts/campaign_guard.py`: its three-second sleep did not ensure the hook had read the previous owner before handover. The fixture now signals from a disposable copy of the real hook immediately before acquiring the guard lock and waits for that signal before changing ownership. Production ownership handling is unchanged. Before correction, the suite reported `112 cases, 1 failed`; afterward, `python3 scripts/campaign_guard.py --self-test` exited 0 with `112 cases, 0 failed`. Logs: `build/codex-20261018-d00-t04-s1/initial-gate-logs/Claude-guard.log` and `guard-recheck.log`. The current section remains unstamped.
+
 ## 2. Portable Platform and SIMD Boundary
 
 **Job:** A caller can export format files between targets. Decoding can undo encoding. The codec can enforce an output policy that protects existing destination files.

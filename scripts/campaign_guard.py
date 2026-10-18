@@ -1405,16 +1405,33 @@ def _self_test() -> int:
             with open(payload_file, "w", encoding="utf-8") as fh:
                 json.dump({"session_id": SESSION, "cwd": lroot, "hook_event_name": "Stop"}, fh)
             payload_in = open(payload_file, "rb")
-            hook = subprocess.Popen([_powershell(), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", HOOK],
+            # Signal from a fixture copy after reading the old guard, immediately
+            # before taking its lock. Startup speed cannot establish this order.
+            ready = os.path.join(ltmp, "hook-ready.flag")
+            if os.path.exists(ready):
+                os.remove(ready)
+            with open(HOOK, encoding="utf-8") as fh:
+                hook_text = fh.read()
+            lock_line = "    $lock = Enter-GuardLock $root $LockWaitMs"
+            assert hook_text.count(lock_line) == 1, "hook lock boundary changed"
+            fixture_hook = os.path.join(ltmp, "interleave-hook.ps1")
+            with open(fixture_hook, "w", encoding="utf-8") as fh:
+                fh.write(hook_text.replace(lock_line,
+                    "    [System.IO.File]::WriteAllText($env:RF_TEST_HOOK_READY, 'ready')\n" + lock_line))
+            hook = subprocess.Popen([_powershell(), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", fixture_hook],
                                     stdin=payload_in, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                     text=True, encoding="utf-8", errors="replace",
-                                    env=dict(os.environ, CLAUDE_PROJECT_DIR=lroot))
+                                    env=dict(os.environ, CLAUDE_PROJECT_DIR=lroot, RF_TEST_HOOK_READY=ready))
             import time as _t
-            _t.sleep(3)  # the hook has read the guard and now waits on the lock
+            deadline = _t.monotonic() + 60
+            while not os.path.exists(ready) and hook.poll() is None and _t.monotonic() < deadline:
+                _t.sleep(0.05)
+            reached_lock = os.path.exists(ready)
             open(go, "w").close()
             out_h, err_h = hook.communicate(timeout=60)
             payload_in.close()
             holder.wait()
+            assert reached_lock, f"hook did not reach lock boundary: {out_h!r} {err_h!r}"
             return out_h.strip(), err_h, _state(lroot), read_guard(lroot)
 
         out_h, err_h, st_h, g_h = _interleave("handover")
