@@ -28,9 +28,10 @@ model = "claude-opus-5-5"
 effort = "high"
 timeout = 600
 [slot.independent]
+# Operator raised 900 to 1800 on 2026-10-20 after three 900 s timeouts on D00 T04 §1; probe recorded in docs/reviews/00-workspace/D00-T04-s1.md.
 model = "claude-opus-5-5"
 effort = "high"
-timeout = 900
+timeout = 1800
 [slot.arch-primary]
 model = "claude-opus-5-5"
 effort = "high"

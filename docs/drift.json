@@ -210,11 +210,11 @@
       }
     },
     ".codex/README.md": {
-      "evidence": "Author-attested: 2026-09-30 source audit, docs/todo-vision-audit.md",
+      "evidence": "Author-attested: 2026-09-30 source audit, docs/todo-vision-audit.md; panel.toml renewed 2026-10-20 after the operator-approved independent timeout 900 to 1800: README line 49 states no timeout value and dispatch still refuses overrides",
       "sources": {
         ".codex/runner/campaign.py": "db98fb6858f40ee33d2f79e56f8861fcc904038edf2ce2696cad8dc213302470",
         ".codex/hooks/adapter.py": "1f45f9a5c2d7db3eb3dff19a6af98041dd15cb7253ab83643fb6ee1dea4261d0",
-        ".codex/runner/panel.toml": "ae91d8b9e6c6619c10155d996573615d1219e99b62e9ba79395cf3f27bcb78de",
+        ".codex/runner/panel.toml": "dfbdd06ac5ebe07ccfde0a9eb4e813c7ca713f8812f4d9b80efb56fe2acc8d43",
         ".codex/README.md": "4d8678f2ca1b41ad0fcd4954bc516f62b043f64ce9c7c348f1b189967d5a66f6"
       }
     }
