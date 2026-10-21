@@ -161,11 +161,36 @@ class _Lock:
         return False
 
 
+def _read_regular(path: str, limit: int | None = None) -> tuple[os.stat_result, bytes | None]:
+    """A file's status and, when it is a regular file no larger than
+    `limit`, its bytes. It opens without blocking (a FIFO opened for
+    reading with O_NONBLOCK returns at once) and checks the open handle,
+    so the check and the read are of the same file and nothing swapped in
+    between can block the hook (independent review round 2)."""
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or (limit is not None and info.st_size > limit):
+            return info, None
+        with os.fdopen(fd, "rb", closefd=False) as fh:
+            return info, fh.read()
+    finally:
+        os.close(fd)
+
+
+def _read_json(path: str) -> object:
+    """A JSON file through `_read_regular`, so a FIFO in its place never
+    blocks a reader; FileNotFoundError passes through."""
+    _, data = _read_regular(path)
+    if data is None:
+        raise GuardError(f"{path} is not a regular file")
+    return json.loads(data.decode("utf-8-sig"))
+
+
 def read_guard(root: str) -> dict | None:
     guard, _ = _paths(root)
     try:
-        with open(guard, encoding="utf-8-sig") as fh:
-            doc = json.load(fh)
+        doc = _read_json(guard)
     except FileNotFoundError:
         return None
     except (OSError, ValueError) as exc:
@@ -391,7 +416,9 @@ def _run_markers_text(root: str, run_rel: str, guard: dict) -> str:
     lines carrying `run=<this run's id>`, wherever they sit in the file
     (D00 T04 §36)."""
     try:
-        with open(os.path.join(root, run_rel), encoding="utf-8", errors="replace") as fh:
+        # utf-8-sig, as the hook reads it: a byte-order mark never hides a
+        # first-line marker from one and not the other.
+        with open(os.path.join(root, run_rel), encoding="utf-8-sig", errors="replace") as fh:
             text = fh.read()
     except OSError:
         return ""
@@ -658,23 +685,6 @@ def _write_state(path: str, state: dict) -> None:
     os.replace(tmp, path)
 
 
-def _read_regular(path: str, limit: int | None = None) -> tuple[os.stat_result, bytes | None]:
-    """A file's status and, when it is a regular file no larger than
-    `limit`, its bytes. It opens without blocking (a FIFO opened for
-    reading with O_NONBLOCK returns at once) and checks the open handle,
-    so the check and the read are of the same file and nothing swapped in
-    between can block the hook (independent review round 2)."""
-    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
-    try:
-        info = os.fstat(fd)
-        if not stat.S_ISREG(info.st_mode) or (limit is not None and info.st_size > limit):
-            return info, None
-        with os.fdopen(fd, "rb", closefd=False) as fh:
-            return info, fh.read()
-    finally:
-        os.close(fd)
-
-
 # The guard's own files: a checkout that does not ignore build/ would
 # otherwise see every state write as progress.
 OWN_FILES = re.compile(r"^build/claude-campaign-(guard|state|pending-cancel)\.json(\.[0-9]+\.tmp)?$|"
@@ -802,10 +812,11 @@ def stop_decision(root: str, session: str) -> dict | None:
             print("campaign-stop: the guard changed while this hook waited; nothing written", file=sys.stderr)
             return None
         try:
-            with open(state_path, encoding="utf-8-sig") as fh:
-                old = json.load(fh)
+            old = _read_json(state_path)
         except FileNotFoundError:
             old = {}
+        if not isinstance(old, dict):
+            raise GuardError(f"the state file {state_path} is not an object")
         state = {"fingerprint": str(old.get("fingerprint", "")), "blocks": int(old.get("blocks", 0) or 0),
                  "trips": int(old.get("trips", 0) or 0), "stalled": False}
         # An error the heartbeat has not acknowledged stays until it is
@@ -871,8 +882,7 @@ def _record_hook_error(root: str, guard: dict | None, reason: str) -> None:
             state = {"fingerprint": "", "blocks": 0, "trips": 0, "stalled": False}
             old = {}
             try:
-                with open(state_path, encoding="utf-8-sig") as fh:
-                    old = json.load(fh)
+                old = _read_json(state_path)
                 state.update(fingerprint=str(old.get("fingerprint", "")), blocks=int(old.get("blocks", 0)),
                              trips=int(old.get("trips", 0)))
             except (OSError, ValueError, TypeError, AttributeError):
@@ -897,7 +907,8 @@ def _record_hook_error(root: str, guard: dict | None, reason: str) -> None:
 def stop_hook(stdin: str, project_dir: str | None) -> tuple[int, str]:
     """Run the hook on one Stop payload; returns (exit, stdout). It always
     exits 0: a bad payload, a missing guard, or any error allows the stop."""
-    root, guard = None, None
+    root = None
+    seen: dict = {}
     try:
         if not stdin.strip():
             return 0, ""
@@ -905,15 +916,33 @@ def stop_hook(stdin: str, project_dir: str | None) -> tuple[int, str]:
         root = project_dir or str(event.get("cwd") or "")
         if not root:
             return 0, ""
-        guard = read_guard(root)
-        decision = stop_decision(root, str(event.get("session_id") or ""))
+        session = str(event.get("session_id") or "")
+
+        def decide() -> None:
+            try:
+                seen["guard"] = read_guard(root)
+                seen["decision"] = stop_decision(root, session)
+            except BaseException as exc:
+                seen["error"] = exc
+
+        # The budget is enforced here, not only by the checks inside the
+        # decision: whatever blocks in it, the hook stops waiting one second
+        # past the budget and fails open (independent review round 3).
+        worker = threading.Thread(target=decide, daemon=True)
+        worker.start()
+        worker.join(_env_int("CAMPAIGN_HOOK_BUDGET_SECONDS", HOOK_BUDGET_SECONDS) + 1)
+        if worker.is_alive():
+            raise GuardError("the hook ran out of its time budget before deciding")
+        if "error" in seen:
+            raise seen["error"]
+        decision = seen.get("decision")
         return 0, json.dumps(decision) if decision else ""
     except Exception as error:  # fail open; the heartbeat reports what is recorded here
         reason = str(error) or type(error).__name__
         print(f"campaign-stop: {reason}", file=sys.stderr)
         if root:
             try:
-                _record_hook_error(root, guard, reason)
+                _record_hook_error(root, seen.get("guard"), reason)
             except OSError as exc:
                 print(f"campaign-stop: error recording failure: {exc}", file=sys.stderr)
         return 0, ""
@@ -1931,7 +1960,8 @@ def _self_test() -> int:
         logged = "".join(open(os.path.join(folder, n), encoding="utf-8").read()
                          for n in sorted(os.listdir(folder))) if os.path.isdir(folder) else ""
         check("the-lock-wait-counts-against-the-budget",
-              code == 0 and out is None and took < 3.8 and "guard lock stayed held" in logged,
+              code == 0 and out is None and took < 3.8
+              and ("guard lock stayed held" in logged or "time budget" in logged),
               f"{took:.1f}s {out} {err} {logged!r}")
         if os.path.isdir(folder):
             shutil.rmtree(folder)
@@ -1985,6 +2015,44 @@ def _self_test() -> int:
             took = time.monotonic() - began
             check("an-untracked-fifo-never-blocks-the-fingerprint",
                   isinstance(out, dict) and out.get("decision") == "block" and took < 10, f"{took:.1f}s {out} {err}")
+            os.remove(os.path.join(sroot, "untracked.fifo"))
+            guard_path, state_path = _paths(sroot)
+            os.rename(state_path, state_path + ".saved")
+            os.mkfifo(state_path)
+            began = time.monotonic()
+            code, out, err = run_hook(sroot, SESSION)
+            took = time.monotonic() - began
+            os.remove(state_path)
+            os.rename(state_path + ".saved", state_path)
+            check("a-fifo-state-file-fails-open-at-once",
+                  code == 0 and out is None and "not a regular file" in err and took < 10, f"{took:.1f}s {out} {err}")
+            shutil.rmtree(os.path.join(sroot, "build", "claude-campaign-hook-errors"), ignore_errors=True)
+        # Whatever blocks inside the decision, the joined worker bounds the
+        # hook: here the fingerprint itself hangs past the budget.
+        real_fingerprint = globals()["fingerprint"]
+        globals()["fingerprint"] = lambda *args, **kwargs: time.sleep(10)
+        os.environ["CAMPAIGN_HOOK_BUDGET_SECONDS"] = "1"
+        try:
+            began = time.monotonic()
+            code, out = stop_hook(json.dumps({"session_id": SESSION, "cwd": sroot}), sroot)
+            took = time.monotonic() - began
+        finally:
+            globals()["fingerprint"] = real_fingerprint
+            del os.environ["CAMPAIGN_HOOK_BUDGET_SECONDS"]
+        check("the-budget-bounds-a-decision-that-hangs",
+              code == 0 and out == "" and took < 4 and "time budget" in hook_error(sroot, SESSION),
+              f"{took:.1f}s {out!r} {hook_error(sroot, SESSION)}")
+        hook_error(sroot, SESSION, ack=hook_error(sroot, SESSION))
+        rid = read_guard(sroot)["run_id"]
+        with open(os.path.join(sroot, RUN_FILE), "w", encoding="utf-8-sig") as fh:
+            fh.write(f"## Closeout run={rid}\n\nshipped\n")
+        code, out, err = run_hook(sroot, SESSION)
+        try:
+            ended = end(sroot, SESSION, "closeout")
+        except GuardError as exc:
+            ended = str(exc)
+        check("a-bom-closeout-that-ends-the-hook-also-ends-the-run",
+              out is None and ended.startswith("end:") and read_guard(sroot) is None, f"{out} {ended}")
 
     # D00 T04 §35, §37: the repair episode survives a restart, refuses a
     # fourth attempt, binds its identity, counts a repeat once, closes only
@@ -2137,7 +2205,11 @@ def main(argv: list[str]) -> int:
         code, out = stop_hook(sys.stdin.read(), os.environ.get("CLAUDE_PROJECT_DIR"))
         if out:
             print(out)
-        return code
+        # A decision worker past its budget may still be blocked: exit
+        # without waiting on it.
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(code)
     if not argv:
         print(__doc__.split("\n\n")[1], file=sys.stderr)
         return 2

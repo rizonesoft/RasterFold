@@ -81,3 +81,40 @@ All four findings verified and fixed in the next commit, each with a self-test c
 2. Files are opened without blocking and checked through the open handle (`_read_regular`), so the check and the read are of the same file and no swap between them can block. The race itself cannot be staged deterministically, so no case pins it; the pre-existing FIFO cases still run.
 3. The run file decodes as `utf-8-sig`, as the PowerShell reader did (`a-byte-order-mark-never-hides-a-first-line-marker`).
 4. The re-check under the lock compares scope and phase too (`a-scope-change-while-the-hook-waits-writes-no-state`).
+
+## Round 3: astra (`gpt-6-astra` via `codex`)
+
+- Writer: claude
+- Run: 2026-10-21T05:20:59Z
+- Effort: medium
+- Lines: 20
+- Digest: d5e720ad10f518e2
+
+## adversarial: needs-attention
+
+1. **The hook budget still does not bound file reads or the final decision.** `scripts/campaign_guard.py:167` opens the guard before the deadline starts, and `scripts/campaign_guard.py:805` reads state after the last deadline check. Both use blocking `open`, unlike the hardened run-file reader. Reproduce with a FIFO at either JSON path and no writer: the external timeout kills the hook without recording budget exhaustion. Even regular-file delays can produce a late block: an in-memory probe advancing the clock to 41 seconds during the state read returned `block` and wrote state at `scripts/campaign_guard.py:826`. The round 1 budget finding remains partially unresolved.
+
+## consistency: approve
+
+No additional port-parity defect identified beyond the budget finding and lifecycle inconsistency below.
+
+## integration: needs-attention
+
+2. **The BOM fix lets the hook recognize a terminal marker that `end` rejects.** `scripts/campaign_guard.py:773` decodes with `utf-8-sig`, but `_run_markers_text` at `scripts/campaign_guard.py:394` still reads plain `utf-8`. Reproduce with a phase-scoped guard and a BOM-prefixed first-line `## Closeout run=<current-id>`. The hook allows stopping, but the heartbeat’s prescribed `end --reason closeout` at `.claude/skills/process-plan/SKILL.md:94` fails its marker check and leaves the guard active. The same applies to first-line `PARKED`. In-memory probes confirmed the hook returned no block while `_end_locked` raised “closeout needs a '## Closeout …' heading”.
+
+## record: advisory
+
+- **The lock-budget regression does not exercise successful acquisition after expiration.** `scripts/campaign_guard.py:1933` requires a lock-timeout error. Removing the post-acquisition deadline check at `scripts/campaign_guard.py:794` leaves this case’s exercised path unchanged. Add a deterministic clock/lock probe where acquisition succeeds after the deadline to substantiate that part of the round 2 fix.
+- **The BOM regression covers only the hook.** `scripts/campaign_guard.py:1908` never calls `end`, leaving finding 2 undetected.
+
+Reviewed the exact candidate and both rounds’ findings against `260e67d`. Verification used source comparison and in-memory probes. No files were modified; the fixture-writing self-test was not rerun.
+
+OVERALL: needs-attention
+
+## Response to round 3
+
+Both findings verified. The budget had now been patched three rounds running, so it was redesigned rather than patched again: the decision runs in a worker thread that the hook joins with the budget plus one second, and a worker still running fails the hook open (`the-budget-bounds-a-decision-that-hangs`, in which the fingerprint itself hangs). The inner checks stay, so a decision past the budget reports cleanly when it can. The guard and state files are read through the non-blocking reader too (`a-fifo-state-file-fails-open-at-once`), and the stop-hook entry exits without waiting on a blocked worker.
+
+`end` reads markers as `utf-8-sig` like the hook (`a-bom-closeout-that-ends-the-hook-also-ends-the-run`). The lock-budget case now accepts either recorded reason, because the joined worker may record the budget rather than the lock.
+
+Mutation evidence for these fixes: an unbounded join, a plain-UTF-8 marker read in `end`, and a blocking JSON read each turn one case red; with the blocking read, the joined worker still failed the hook open at 42 seconds. 143 cases, 0 failed. This is the third and last round the independent-review skill allows, so these fixes carry the self-test and mutation evidence above, not a fourth review.
