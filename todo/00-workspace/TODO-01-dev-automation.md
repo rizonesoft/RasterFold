@@ -33,6 +33,7 @@ track: W1
 - [`.conclave/reviewers.toml`](../../.conclave/reviewers.toml) and [`scripts/review-dispatch.py`](../../scripts/review-dispatch.py) -- the Conclave-SDK reviewer kit's pin and dispatcher, which §6 makes the source of Claude's reviewers
 - [`scripts/todo-claims.py`](../../scripts/todo-claims.py) -- `COVERAGE_FLOOR`, which §5 raises
 - -> XREF: D99 T01 §2 -- the GitHub CLI login §2 needs before `ci-wait` can read CI back
+- -> XREF: D00 T04 §1 -- the Codex-written toolchain candidate Claude adopted, whose stamp needs §6's Gemini route
 
 ## Outcome
 

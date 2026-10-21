@@ -28,6 +28,7 @@ frozen: true
 - -> XREF: D06 T01 §2 -- the public library targets built with these compilers.
 
 - -> XREF: D10 T01 §1 -- shared implementation or verification boundary.
+- -> XREF: D00 T01 §6 -- the reviewer pin whose Gemini route reviews §1's Codex-written candidate after Claude adopted it.
 
 ## Outcome
 
@@ -43,7 +44,7 @@ frozen: true
 
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
-| 1 | §1 | Local toolchains and WSL gates | -- | [ ] |
+| 1 | §1 | Local toolchains and WSL gates | D00 T01 §6 | [ ] |
 | 2 | §2 | Portable platform and SIMD boundary | §1 | [ ] |
 | 3 | §3 | Isolated Codex lifecycle and review runner | §1 | [ ] |
 | 4 | §4 | Family-local intelligence | §3 | [ ] |
@@ -53,6 +54,10 @@ frozen: true
 ## 1. Local Toolchains and WSL Gates
 
 > **Started:** 2026-09-30T20:10:51Z
+
+**Operator decision 2026-10-21:** "Claude adopts the chain" -- the operator's answer, in an attended Claude `process-plan` session, to: "Phase 0's first row, D00 T04 §1, is Codex's candidate (8b30db5..73f0143 plus fix 55b66a8), parked because Codex's private Claude reviewer timed out at 900s. Claude's own panel is GPT-6 Astra, the same family as the implementer, so this Claude run can't stamp it. D00 T04 §2-§4 and D08 T04 §1 depend on it. How should this run treat that chain?" Claude is the writer of this file's sections and of `D08 T04 §1` from that date.
+
+**Corrected 2026-10-21:** §1 had no dependency. Its candidate holds Codex-written bytes and Claude now finishes it, so neither the Claude family nor the GPT family may review it; the only third family is Gemini, which Claude's rounds reach only through the reviewer pin `D00 T01 §6` lands. §1 now depends on `D00 T01 §6`, and its rows (with every row that depends on it) moved after that section in Phase 0. A later section of this file whose candidate holds only Claude-written bytes is reviewed by Claude's normal route.
 
 Use pinned, checksum-verified LLVM/MinGW and Android NDK installations beneath `tools/`; keep downloaded SDKs and compiler binaries out of Git. Windows remains a supported build target. Document the Linux host SDK requirement separately from the local compiler installation. Repair the measured WSL path, shell and locking defects without weakening gates.
 

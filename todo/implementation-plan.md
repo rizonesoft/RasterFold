@@ -126,11 +126,6 @@ The ported plan, hooks, gates, measurement references, HTML docs, and drift gate
 
 |  ✔  | Section      | Deliverable                                        | Items |
 | :-: | ------------ | -------------------------------------------------- | :---: |
-| [ ] | `D00 T04 §1` | Local toolchains and WSL gates                     |   6   |
-| [ ] | `D08 T04 §1` | Repository presentation and developer entry points |   4   |
-| [ ] | `D00 T04 §2` | Portable platform and SIMD boundary                |   4   |
-| [ ] | `D00 T04 §3` | Isolated Codex lifecycle and review runner         |   5   |
-| [ ] | `D00 T04 §4` | Family-local intelligence                          |   4   |
 | [ ] | `D99 T01 §1` | Remove the retired run-guard folders               |   3   |
 | [ ] | `D99 T01 §2` | Log in the GitHub CLI                              |   2   |
 | [ ] | `D99 T01 §3` | Approve format version 3                           |   2   |
@@ -139,6 +134,11 @@ The ported plan, hooks, gates, measurement references, HTML docs, and drift gate
 | [ ] | `D00 T01 §1` | Commit the port and wire the commit hook           |   6   |
 | [ ] | `D00 T01 §3` | The static analysis gate                           |   4   |
 | [ ] | `D00 T01 §6` | Claude review rounds through the reviewer pin      |   8   |
+| [ ] | `D00 T04 §1` | Local toolchains and WSL gates                     |   6   |
+| [ ] | `D08 T04 §1` | Repository presentation and developer entry points |   4   |
+| [ ] | `D00 T04 §2` | Portable platform and SIMD boundary                |   4   |
+| [ ] | `D00 T04 §3` | Isolated Codex lifecycle and review runner         |   5   |
+| [ ] | `D00 T04 §4` | Family-local intelligence                          |   4   |
 | [ ] | `D00 T01 §4` | Prove the review panel end to end                  |   4   |
 | [ ] | `D00 T01 §5` | Raise the claims coverage floor                    |   3   |
 | [ ] | `D00 T01 §2` | First push: CI green and read back                 |   3   |
