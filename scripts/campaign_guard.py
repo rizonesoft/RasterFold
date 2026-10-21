@@ -53,6 +53,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -343,6 +344,8 @@ def _end_locked(root: str, session: str, reason: str, ready: int | None) -> str:
         raise GuardError(f"park needs a column-0 'PARKED <UTC>{tag} <reason>' line in {run_rel}")
     if reason == "escalation" and not re.search(r"(?m)^PARKED\b.*\bescalation:", text):
         raise GuardError(f"escalation needs a column-0 'PARKED <UTC>{tag} escalation: <cause>' line in {run_rel}")
+    if reason == "plan-done" and guard.get("scope") == "phase":
+        raise GuardError("a phase-scoped run covers one phase, not the plan: end it with closeout or park")
     if reason == "plan-done" and ready != 0:
         raise GuardError(f"plan-done needs '0 runnable now'; query ready reads {ready}")
     if reason == "stall":
@@ -693,7 +696,9 @@ def fingerprint(root: str, run_rel: str, run_text: str, deadline: float) -> str:
         except OSError:
             digest.update(f"{path} missing\n".encode("utf-8"))
             continue
-        if index <= max_hashed and info.st_size <= max_bytes:
+        # Only a regular file's content is read. git never lists a FIFO, but
+        # a listed path can become one before this read, which would block.
+        if index <= max_hashed and info.st_size <= max_bytes and stat.S_ISREG(info.st_mode):
             with open(full, "rb") as fh:
                 digest.update(f"{path} ".encode("utf-8") + hashlib.sha256(fh.read()).hexdigest().encode() + b"\n")
         else:
@@ -729,6 +734,7 @@ def stop_decision(root: str, session: str) -> dict | None:
     guard = read_guard(root)
     if guard is None or not session or str(guard.get("session_id", "")) != session:
         return None
+    deadline = time.monotonic() + _env_int("CAMPAIGN_HOOK_BUDGET_SECONDS", HOOK_BUDGET_SECONDS)
     run_rel = str(guard.get("run_file", ""))
     if not run_rel or os.path.isabs(run_rel):
         return None
@@ -737,10 +743,14 @@ def stop_decision(root: str, session: str) -> dict | None:
     if not full_run.startswith(full_root + os.sep):
         return None
     try:
-        with open(os.path.join(root, run_rel), encoding="utf-8", errors="replace") as fh:
-            run_text = fh.read()
+        info = os.stat(os.path.join(root, run_rel))
     except FileNotFoundError:
         return None
+    # A FIFO or a device would block the read past the budget.
+    if not stat.S_ISREG(info.st_mode):
+        raise GuardError(f"the run file {run_rel} is not a regular file")
+    with open(os.path.join(root, run_rel), encoding="utf-8", errors="replace") as fh:
+        run_text = fh.read()
     # A marker ends the run only when it carries this run's id, wherever it
     # sits in the file, so a reused run file's old closeout or PARKED line
     # never ends a new run (D00 T04 §36); a guard with no run id predates
@@ -750,7 +760,6 @@ def stop_decision(root: str, session: str) -> dict | None:
         if re.match(r"(## Closeout\b|PARKED\b)", line) and (
                 not run_id or re.search(r"\brun=" + re.escape(run_id) + r"\b", line)):
             return None
-    deadline = time.monotonic() + _env_int("CAMPAIGN_HOOK_BUDGET_SECONDS", HOOK_BUDGET_SECONDS)
     phase_only = guard.get("scope") == "phase"
     # Genuine halt: nothing runnable here. The runner still owes the PARKED
     # line, but blocking cannot produce work that does not exist.
@@ -760,6 +769,7 @@ def stop_decision(root: str, session: str) -> dict | None:
         return None
     print_ = fingerprint(root, run_rel, run_text, deadline)
     _, state_path = _paths(root)
+    _remaining(deadline)
     lock = _guard_lock(root, _env_int("CAMPAIGN_LOCK_WAIT_MS", 5000))
     try:
         # A handover or an end that landed while this hook worked means the
@@ -839,18 +849,22 @@ def _record_hook_error(root: str, guard: dict | None, reason: str) -> None:
         try:
             _, state_path = _paths(root)
             state = {"fingerprint": "", "blocks": 0, "trips": 0, "stalled": False}
+            old = {}
             try:
                 with open(state_path, encoding="utf-8-sig") as fh:
                     old = json.load(fh)
                 state.update(fingerprint=str(old.get("fingerprint", "")), blocks=int(old.get("blocks", 0)),
                              trips=int(old.get("trips", 0)))
             except (OSError, ValueError, TypeError, AttributeError):
-                pass
-            state.update(hook_error=reason, hook_error_at=at)
-            _write_state(state_path, state)
+                old = old if isinstance(old, dict) else {}
+            # An unacknowledged error is never replaced: the new one goes to
+            # a file of its own, which `hook-error` reports after it.
+            if not old.get("hook_error"):
+                state.update(hook_error=reason, hook_error_at=at)
+                _write_state(state_path, state)
+                return
         finally:
             lock.__exit__(None, None, None)
-        return
     # One file per error, never an append: a drain can never race a writer.
     folder = os.path.join(root, "build", "claude-campaign-hook-errors")
     os.makedirs(folder, exist_ok=True)
@@ -1129,7 +1143,9 @@ def _workspace(tmpd: str) -> str:
         fh.write("build/\n.runner/\n")
     # The fake graph prints the runnable count the test writes to ready.txt.
     with open(os.path.join(root, "scripts", "todo-graph.py"), "w", encoding="utf-8") as fh:
-        fh.write("import os\n"
+        fh.write("import os, time\n"
+                 "if os.path.exists(os.path.join(os.path.dirname(__file__), 'slow.txt')):\n"
+                 "    time.sleep(5)\n"
                  "n = open(os.path.join(os.path.dirname(__file__), 'ready.txt')).read().strip()\n"
                  "if n != '0':\n"
                  "    print('00-workspace/TODO-01-bootstrap.md §3  Red CI repaired, not waited on')\n"
@@ -1819,6 +1835,21 @@ def _self_test() -> int:
         check("a-phase-run-blocks-for-its-own-phase-only",
               "then the next section of Phase 2 only (this run covers that phase)" in reason
               and "then the next phase" not in reason and "Next ready row" not in reason, f"{out} {err}")
+        try:
+            end(sroot, SESSION, "plan-done")
+            check("plan-done-is-refused-for-a-phase-run", False)
+        except GuardError as exc:
+            check("plan-done-is-refused-for-a-phase-run",
+                  "covers one phase" in str(exc) and read_guard(sroot) is not None, str(exc))
+        srun = os.path.join(sroot, RUN_FILE)
+        with open(srun, encoding="utf-8") as fh:
+            sbefore = fh.read()
+        with open(srun, "a", encoding="utf-8") as fh:
+            fh.write(f"\nPARKED 2099-01-01T00:00:00Z run={sg['run_id']} every leftover row is blocked\n")
+        code, out, err = run_hook(sroot, SESSION)
+        check("a-parked-marker-carrying-the-run-id-ends-a-phase-run", code == 0 and out is None, f"{out} {err}")
+        with open(srun, "w", encoding="utf-8") as fh:
+            fh.write(sbefore)
         acquire(sroot, SESSION, 2, RUN_FILE, "job-s2")
         check("a-re-point-keeps-the-scope", read_guard(sroot).get("scope") == "phase", str(read_guard(sroot)))
         acquire(sroot, "22222222-0000-0000-0000-000000000000", 2, RUN_FILE, "job-s3", handover="drill")
@@ -1838,6 +1869,7 @@ def _self_test() -> int:
         check("an-unacknowledged-hook-error-survives-later-hook-runs",
               _state(sroot).get("hook_error") == "an earlier failure" and _state(sroot).get("blocks") == 1,
               str(_state(sroot)))
+        hook_error(sroot, SESSION, ack=hook_error(sroot, SESSION))
         with open(os.path.join(sroot, RUN_FILE), "a", encoding="utf-8") as fh:
             fh.write(f"\n## Closeout run={rid}\n\nshipped\n")
         code, out, err = run_hook(sroot, SESSION)
@@ -1852,6 +1884,48 @@ def _self_test() -> int:
         check("an-exhausted-budget-fails-open-and-is-recorded",
               code == 0 and out is None and "time budget" in err
               and "time budget" in str(_state(sroot).get("hook_error", "")), f"{out} {err} {_state(sroot)}")
+        # A second failure never replaces an unacknowledged first: it lands
+        # in a file of its own, reported after the first is acknowledged.
+        first = hook_error(sroot, SESSION)
+        os.environ["CAMPAIGN_HOOK_BUDGET_SECONDS"] = "1"
+        open(os.path.join(sroot, "scripts", "slow.txt"), "w").close()
+        try:
+            began = time.monotonic()
+            code, out, err = run_hook(sroot, SESSION)
+            took = time.monotonic() - began
+        finally:
+            del os.environ["CAMPAIGN_HOOK_BUDGET_SECONDS"]
+            os.remove(os.path.join(sroot, "scripts", "slow.txt"))
+        check("the-budget-bounds-a-slow-plan-query",
+              code == 0 and out is None and "time budget" in err and took < 4.5, f"{took:.1f}s {out} {err}")
+        check("a-second-failure-keeps-the-first-error", hook_error(sroot, SESSION) == first, hook_error(sroot, SESSION))
+        hook_error(sroot, SESSION, ack=first)
+        second = hook_error(sroot, SESSION)
+        check("the-second-failure-is-reported-after-the-first",
+              second.startswith("campaign-stop hook failed at ") and "time budget" in second
+              and "recorded without the lock" in second, second)
+        hook_error(sroot, SESSION, ack=second)
+        if hasattr(os, "mkfifo"):
+            os.remove(srun)
+            os.mkfifo(srun)
+            began = time.monotonic()
+            code, out, err = run_hook(sroot, SESSION)
+            took = time.monotonic() - began
+            check("a-fifo-run-file-fails-open-at-once",
+                  code == 0 and out is None and "not a regular file" in err and took < 10
+                  and "not a regular file" in str(_state(sroot).get("hook_error", "")), f"{took:.1f}s {out} {err}")
+            hook_error(sroot, SESSION, ack=hook_error(sroot, SESSION))
+            os.remove(srun)
+            with open(srun, "w", encoding="utf-8") as fh:
+                fh.write("# run\n")
+            # git does not list a FIFO as untracked, so this pins end to end
+            # that one in the tree never reaches a blocking read.
+            os.mkfifo(os.path.join(sroot, "untracked.fifo"))
+            began = time.monotonic()
+            code, out, err = run_hook(sroot, SESSION)
+            took = time.monotonic() - began
+            check("an-untracked-fifo-never-blocks-the-fingerprint",
+                  isinstance(out, dict) and out.get("decision") == "block" and took < 10, f"{took:.1f}s {out} {err}")
 
     # D00 T04 §35, §37: the repair episode survives a restart, refuses a
     # fourth attempt, binds its identity, counts a repeat once, closes only
