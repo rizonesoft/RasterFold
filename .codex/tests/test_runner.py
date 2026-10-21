@@ -162,6 +162,27 @@ class Runner(unittest.TestCase):
         self.assertEqual(result['hookSpecificOutput']['permissionDecision'],'deny')
         self.assertEqual(hooks.handle({'hook_event_name':'PreToolUse','session_id':'session-one','tool_name':'exec_command'},self.root),{})
 
+    def test_reviewer_admission_beside_a_claude_run(self):
+        guard=self.root/'build/claude-campaign-guard.json';guard.parent.mkdir(exist_ok=True)
+        guard.write_text(json.dumps(dict(session_id='claude-session',run_id='abc123def456')))
+        payload={'hook_event_name':'PreToolUse','session_id':'reviewer','tool_name':'exec_command'}
+        denied=lambda result: result['hookSpecificOutput']['permissionDecision']=='deny'
+        with patch.dict(os.environ,{'RASTERFOLD_REVIEW_FOR_RUN':'abc123def456'}):
+            self.assertEqual(hooks.handle(payload,self.root),{})
+        for wrong in ('0123456789ab',''):
+            with patch.dict(os.environ,{'RASTERFOLD_REVIEW_FOR_RUN':wrong}):
+                self.assertTrue(denied(hooks.handle(payload,self.root)))
+        with patch.dict(os.environ):
+            os.environ.pop('RASTERFOLD_REVIEW_FOR_RUN',None)
+            self.assertTrue(denied(hooks.handle(payload,self.root)))
+        guard.write_text(json.dumps(dict(session_id='claude-session')))
+        with patch.dict(os.environ,{'RASTERFOLD_REVIEW_FOR_RUN':'abc123def456'}):
+            self.assertTrue(denied(hooks.handle(payload,self.root)))
+        guard.unlink();self.start()
+        with patch.dict(os.environ,{'RASTERFOLD_REVIEW_FOR_RUN':'abc123def456'}):
+            self.assertTrue(denied(hooks.handle({**payload,'session_id':'foreign'},self.root)))
+            self.assertEqual(hooks.handle({**payload,'session_id':'session-one'},self.root),{})
+
     def test_intelligence_capture_dedup_and_stopped_boundary(self):
         self.start();one=self.capture();two=self.capture();self.assertEqual(one['id'],two['id'])
         for action in ('defer','apply','reject','archive'):

@@ -42,11 +42,16 @@ slot timeout, and exits 124 on expiry (the `timeout` convention the
 outage matrix keys on). Its first stderr line names the slot and the
 model that ran. The `independent` slot runs `codex review`,
 which takes its scope from the extra arguments (`--commit <sha>`) and
-reads no prompt.
+reads no prompt. It runs in Codex's read-only sandbox, like every other
+codex slot, and while a Claude run holds the checkout it names that run
+in `RASTERFOLD_REVIEW_FOR_RUN`, which the Codex writer guard
+(`.codex/hooks/adapter.py`) admits as a reviewer rather than a second
+writer.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -222,6 +227,36 @@ def family_accepts(family: str, model: str, table: dict | None = None) -> bool:
     return False
 
 
+def guard_path() -> str:
+    here = os.path.dirname(os.path.abspath(__file__))
+    return os.path.normpath(os.path.join(here, "..", "build", "claude-campaign-guard.json"))
+
+
+def slot_env(slot: str, guard: str | None = None, base: dict | None = None) -> dict:
+    """The producer environment: `base` (the inherited one), with the
+    `independent` reviewer naming the live Claude run it reviews for, so
+    the Codex writer guard admits it. No guard, no name: an inherited
+    name never outlives the run it named. Raises PanelSlotsError when a
+    guard exists but names no run."""
+    env = dict(os.environ if base is None else base)
+    env.pop("RASTERFOLD_REVIEW_FOR_RUN", None)
+    if slot != "independent":
+        return env
+    path = guard or guard_path()
+    try:
+        with open(path, encoding="utf-8-sig") as fh:
+            doc = json.load(fh)
+    except FileNotFoundError:
+        return env
+    except (OSError, ValueError) as exc:
+        raise PanelSlotsError(f"the Claude guard {path} is unreadable: {exc}") from exc
+    run_id = doc.get("run_id") if isinstance(doc, dict) else None
+    if not isinstance(run_id, str) or not run_id:
+        raise PanelSlotsError(f"the Claude guard {path} names no run_id; the reviewer cannot name its run")
+    env["RASTERFOLD_REVIEW_FOR_RUN"] = run_id
+    return env
+
+
 def _exe(name: str) -> str:
     # npm installs `codex` as a .cmd shim on Windows: resolve it so
     # subprocess finds it without a shell.
@@ -238,8 +273,10 @@ def argv_for_slot(slot: str, extra: list[str] | None = None, table: dict | None 
     if slot == "independent":
         # `codex review` refuses a prompt beside a scope flag, so the
         # extra args carry the scope and nothing rides stdin.
+        # The read-only sandbox keeps the reviewer off the tree, as `-s
+        # read-only` does for `codex exec`; `codex review` takes it as config.
         return ["codex", "review", *extra, "-c", f'model="{model}"',
-                "-c", f'model_reasoning_effort="{effort}"']
+                "-c", f'model_reasoning_effort="{effort}"', "-c", 'sandbox_mode="read-only"']
     if entry["family"] == "codex":
         return ["codex", "exec", "-m", model, "-c", f'model_reasoning_effort="{effort}"',
                 "-s", "read-only", *extra, "-"]
@@ -269,7 +306,7 @@ def exec_slot(slot: str, extra: list[str], stdin, stdout, stderr, table: dict | 
     feed = subprocess.DEVNULL if slot == "independent" else stdin
     argv = argv_for_slot(slot, extra, table)
     argv[0] = _exe(argv[0])
-    proc = subprocess.Popen(argv, stdin=feed, stdout=stdout, stderr=stderr)
+    proc = subprocess.Popen(argv, stdin=feed, stdout=stdout, stderr=stderr, env=slot_env(slot))
     try:
         return proc.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -374,7 +411,28 @@ def _self_test() -> int:
     check("argv independent takes scope, no stdin dash",
           argv_for_slot("independent", ["--commit", "abc"], table=good)
           == ["codex", "review", "--commit", "abc", "-c", 'model="g-one"', "-c",
-              'model_reasoning_effort="high"'])
+              'model_reasoning_effort="high"', "-c", 'sandbox_mode="read-only"'])
+    # The reviewer names the live Claude run, and only a live one.
+    with tempfile.TemporaryDirectory() as gtmp:
+        gpath = os.path.join(gtmp, "claude-campaign-guard.json")
+        stale = {"PATH": "x", "RASTERFOLD_REVIEW_FOR_RUN": "old"}
+        none_env = slot_env("independent", gpath, stale)
+        check("independent without a guard names no run",
+              "RASTERFOLD_REVIEW_FOR_RUN" not in none_env and none_env["PATH"] == "x", str(none_env))
+        with open(gpath, "w", encoding="utf-8") as fh:
+            json.dump({"session_id": "s", "run_id": "abc123def456"}, fh)
+        check("independent beside a live guard names its run",
+              slot_env("independent", gpath, stale).get("RASTERFOLD_REVIEW_FOR_RUN") == "abc123def456")
+        check("other slots never name a run",
+              "RASTERFOLD_REVIEW_FOR_RUN" not in slot_env("bulk", gpath, stale))
+        for bad in ('{"session_id": "s"}', '{bad', '[]'):
+            with open(gpath, "w", encoding="utf-8") as fh:
+                fh.write(bad)
+            try:
+                slot_env("independent", gpath, stale)
+                check(f"a guard naming no run refuses ({bad})", False)
+            except PanelSlotsError as exc:
+                check(f"a guard naming no run refuses ({bad})", "guard" in str(exc), str(exc))
     try:
         argv_for_slot("nope", table=good)
         check("unknown slot refuses", False)
@@ -455,6 +513,20 @@ def _self_test() -> int:
             rc = exec_slot("bulk", [], fin, fout, subprocess.DEVNULL, good)
             fout.seek(0)
             check("exec pipes stdin to stdout", rc == 0 and fout.read() == b"ECHO")
+        real_guard = guard_path
+        with tempfile.TemporaryDirectory() as gtmp, tempfile.TemporaryFile() as fout:
+            gpath = os.path.join(gtmp, "claude-campaign-guard.json")
+            with open(gpath, "w", encoding="utf-8") as fh:
+                json.dump({"session_id": "s", "run_id": "abc123def456"}, fh)
+            globals()["guard_path"] = lambda: gpath
+            globals()["argv_for_slot"] = lambda slot, extra=None, table=None: [
+                sys.executable, "-c", "import os, sys; sys.stdout.write(os.environ.get('RASTERFOLD_REVIEW_FOR_RUN', '-'))"]
+            try:
+                rc = exec_slot("independent", ["--commit", "abc"], subprocess.DEVNULL, fout, subprocess.DEVNULL, good)
+            finally:
+                globals()["guard_path"] = real_guard
+            fout.seek(0)
+            check("exec hands the reviewer its run", rc == 0 and fout.read() == b"abc123def456")
     finally:
         globals()["argv_for_slot"] = real_argv
 
