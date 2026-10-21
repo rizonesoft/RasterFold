@@ -60,6 +60,16 @@ import tempfile
 import threading
 import time
 
+# The guard prints row names (U+00A7) and paths a cp1252 console cannot
+# encode, which raises UnicodeEncodeError mid-command. Reconfigure our own
+# streams, as scripts/todo-graph.py does, rather than asking every caller
+# to set PYTHONIOENCODING.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):  # already wrapped, or not a real stream
+        pass
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 SETTINGS = os.path.normpath(os.path.join(HERE, "..", ".claude", "settings.json"))
 SESSION = "11111111-2222-3333-4444-555555555555"
@@ -324,9 +334,11 @@ def ready_rows(root: str, timeout: float = 300.0, phase: int | None = None) -> t
     or park marker, never on another phase's count, and is never pointed
     at another phase's row (Conclave-SDK todo kit)."""
     try:
+        # Ask the child for the UTF-8 this decodes: a console code page
+        # (cp1252 on Windows) would garble every section mark it prints.
         proc = subprocess.run([sys.executable, os.path.join(root, "scripts", "todo-graph.py"), "query", "ready"],
                               capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=root,
-                              timeout=max(timeout, 1.0))
+                              env=dict(os.environ, PYTHONIOENCODING="utf-8"), timeout=max(timeout, 1.0))
     except (OSError, subprocess.TimeoutExpired):
         return None, ""
     counts = re.findall(r"(\d+) runnable now", proc.stdout)
@@ -1136,11 +1148,13 @@ def _powershell() -> str | None:
     return None
 
 
-def run_hook(root: str, session: str, script: str | None = None) -> tuple[int, dict | None, str]:
+def run_hook(root: str, session: str, script: str | None = None,
+             env_extra: dict | None = None) -> tuple[int, dict | None, str]:
     """Feed the hook one Stop payload, as the workspace's own copy of this
-    module (or `script`); return (exit, parsed stdout JSON or None when it
-    allowed silently, stderr)."""
-    env = dict(os.environ, CLAUDE_PROJECT_DIR=root)
+    module (or `script`), with `env_extra` over the inherited environment;
+    return (exit, parsed stdout JSON or None when it allowed silently,
+    stderr)."""
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=root, **(env_extra or {}))
     payload = json.dumps({"session_id": session, "cwd": root, "hook_event_name": "Stop"})
     proc = subprocess.run([sys.executable, script or os.path.join(root, "scripts", "campaign_guard.py"), "stop-hook"],
                           input=payload, capture_output=True, text=True, encoding="utf-8",
@@ -2182,6 +2196,25 @@ def _self_test() -> int:
             check("skill-a-standalone-phase-acquires-a-phase-scope", "`acquire --scope phase`" in fh.read(), phase_skill)
     except OSError as exc:
         check("skill-a-standalone-phase-acquires-a-phase-scope", False, str(exc))
+
+    # A stock Windows console writes cp1252. The hook asks its child for
+    # the UTF-8 it decodes, so a producer that keeps the console code page
+    # (the fake graph does not reconfigure its streams) still names the row.
+    with tempfile.TemporaryDirectory(prefix="campaign-guard-enc-") as etmp:
+        eroot = _workspace(etmp)
+        _guard(eroot)
+        code, out, err = run_hook(eroot, SESSION, env_extra={"PYTHONIOENCODING": "cp1252"})
+        check("the-next-row-survives-a-legacy-console-encoding",
+              code == 0 and isinstance(out, dict)
+              and "TODO-01-bootstrap.md §3  Red CI repaired" in out.get("reason", ""), f"{code} {out} {err}")
+        # The guard's own streams print what cp1252 cannot encode.
+        bad = subprocess.run([sys.executable, os.path.join(HERE, "campaign_guard.py"), "acquire", "--root", eroot,
+                              "--session", SESSION, "--run-file", "../\u0100.md", "--cron-id", "job-1"],
+                             capture_output=True, env=dict(os.environ, PYTHONIOENCODING="cp1252"))
+        berr = bad.stderr.decode("utf-8", "replace")
+        check("the-guard-prints-on-a-legacy-console-encoding",
+              bad.returncode == 1 and "\u0100.md" in berr and "must be a repo-relative path" in berr
+              and "Traceback" not in berr, f"{bad.returncode} {berr[-400:]}")
 
     print(f"campaign_guard self-test: {passed + failed} cases, {failed} failed")
     return 1 if failed else 0

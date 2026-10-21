@@ -142,11 +142,13 @@ The design keeps each layer's owner. `.conclave/reviewers.toml` owns who reviews
 
 **Origin:** discovered run=9bdc68a3a5dc 2026-10-21 -- the SHIP push of `D99 T01 §3` read back red
 
+> **Started:** 2026-10-21T06:25:47Z
+
 Admission: a defect in shipped work. The Python Stop hook landed in `a9a5af7` to `4fd93a0` (2026-10-21, before this section existed) and the first push carrying it turned `plan-gates` red on `windows-2025` (run `39554469979`): `block-open-run-naming-next-row` saw `�` where the next row's `§3` belongs, and printing that FAIL line then raised `UnicodeEncodeError: 'charmap' codec can't encode character '�'`, so the job died with a traceback instead of a count. Two causes, both in `scripts/campaign_guard.py`. `ready_rows` decodes the `query ready` child's stdout as UTF-8 but never asks the child for UTF-8, so a child that writes in the console code page (cp1252 on a stock Windows runner) garbles every non-ASCII row name the hook shows the session; the real `scripts/todo-graph.py` reconfigures its own streams, so the defect hides until any other producer answers. And the guard's own streams keep the console code page, so any line it prints with a character outside cp1252 crashes the command that prints it. The local Windows host passed (`140 cases, 0 failed`) because it runs in UTF-8.
 
-- [ ] Make `ready_rows` run its child with `PYTHONIOENCODING=utf-8` in the child's environment, matching the UTF-8 it decodes. Done when: a self-test case runs the hook with `PYTHONIOENCODING=cp1252` against a fake graph that does not reconfigure its streams and finds `§3` in the block reason; the case fails before the fix.
-- [ ] Reconfigure the guard's own `stdout` and `stderr` to UTF-8 at import, the way `scripts/todo-graph.py` does. Done when: a self-test case runs a guard command that prints a character cp1252 cannot encode under `PYTHONIOENCODING=cp1252` and it exits 0 with the character intact; the case fails before the fix.
-- [ ] Commit: `"guard: decode the next row and print on a legacy console encoding"`
+- [x] Make `ready_rows` run its child with `PYTHONIOENCODING=utf-8` in the child's environment, matching the UTF-8 it decodes. Done when: a self-test case runs the hook with `PYTHONIOENCODING=cp1252` against a fake graph that does not reconfigure its streams and finds `§3` in the block reason; the case fails before the fix.
+- [x] Reconfigure the guard's own `stdout` and `stderr` to UTF-8 at import, the way `scripts/todo-graph.py` does. Done when: a self-test case runs a guard command that prints a character cp1252 cannot encode under `PYTHONIOENCODING=cp1252` and it exits 0 with the character intact; the case fails before the fix.
+- [x] Commit: `"guard: decode the next row and print on a legacy console encoding"`
 
 **Test checkpoint:** `python3 scripts/campaign_guard.py --self-test` exits 0 on Linux and through `python3 scripts/windows.py scripts/campaign_guard.py --self-test` on Windows, each quoting its `cases, 0 failed` line; both new cases quoted failing against the pre-fix module; `ci-wait` reads `plan-gates` green on the pushed repair, its `campaign-guard (windows-2025)` job included.
 
