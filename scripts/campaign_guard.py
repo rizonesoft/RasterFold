@@ -1,11 +1,15 @@
-"""The campaign run guard: its lifecycle commands and the driven
-self-test for the Stop hook (D00 T04 §32, §34).
+"""The campaign run guard: the Claude Code Stop hook, its lifecycle
+commands, and the driven self-test (D00 T04 §32, §34).
 
-`.claude/hooks/campaign-stop.ps1` blocks the campaign session's end of
-turn while its run is open. The guard file it reads is written and
-deleted only through this module (D00 T04 §34):
+`stop-hook` blocks the campaign session's end of turn while its run is
+open. It runs in Python so it behaves the same on Windows and WSL,
+following the Conclave-SDK todo kit's design (2026-10-21), which itself
+ported this repository's former `.claude/hooks/campaign-stop.ps1`. The
+guard file it reads is written and deleted only through this module
+(D00 T04 §34):
 
-    python3 scripts/campaign_guard.py acquire --session S --phase N --run-file F --cron-id J [--handover REASON]
+    python3 scripts/campaign_guard.py stop-hook                     (the Stop hook; reads the payload on stdin)
+    python3 scripts/campaign_guard.py acquire --session S --phase N --run-file F --cron-id J [--scope plan|phase] [--generation G] [--handover REASON]
     python3 scripts/campaign_guard.py end --session S --reason closeout|park|plan-done|operator-stop|escalation|stall
     python3 scripts/campaign_guard.py hook-error [--session S] [--ack LINE]
     python3 scripts/campaign_guard.py mint-generation
@@ -22,7 +26,10 @@ deleted only through this module (D00 T04 §34):
 
 `acquire` creates the guard exclusively; the owning session may re-point
 it (a new phase or job) by compare-and-swap on `session_id`, and another
-session is refused a live guard unless the operator hands it over.
+session is refused a live guard unless the operator hands it over. Its
+`--scope` says what the run covers: `plan` (process-plan chains every
+ready phase) or `phase` (process-phase was asked for one phase), so the
+hook and the heartbeat resume only what was asked for.
 `end` checks the end path's marker in the run file (a `## Closeout`
 heading, a column-0 `PARKED` line, `0 runnable now`, or nothing for an
 operator stop), then deletes the guard file and the state file and
@@ -31,7 +38,8 @@ clears an error the hook recorded, for the heartbeat to report. Every
 command takes `--root` to act on a fixture workspace instead of this
 repository.
 
-The self-test drives the real hook with Stop payloads against a
+The self-test drives the real hook, as a subprocess and through the
+command `.claude/settings.json` wires, with Stop payloads against a
 throwaway workspace (a git repository, a guard file, a run file, and a
 fake `scripts/todo-graph.py` whose runnable count the test controls) and
 asserts every allow and block case, the stall breaker, and the
@@ -40,6 +48,7 @@ lifecycle commands.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -48,9 +57,9 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-HOOK = os.path.normpath(os.path.join(HERE, "..", ".claude", "hooks", "campaign-stop.ps1"))
 SETTINGS = os.path.normpath(os.path.join(HERE, "..", ".claude", "settings.json"))
 SESSION = "11111111-2222-3333-4444-555555555555"
 RUN_FILE = "docs/phase-runs/2099-01-01-phase-0.md"
@@ -58,6 +67,13 @@ RUN_FILE = "docs/phase-runs/2099-01-01-phase-0.md"
 
 REPO = os.path.normpath(os.path.join(HERE, ".."))
 END_REASONS = ("closeout", "park", "plan-done", "operator-stop", "escalation", "stall")
+SCOPES = ("plan", "phase")
+MAX_BLOCKS_WITHOUT_PROGRESS = 3
+# Claude Code stops a Stop hook at the timeout .claude/settings.json gives
+# it (60 seconds) and treats that as a non-blocking error, so the hook
+# keeps its own deadline well inside it and still has time to record a
+# failure.
+HOOK_BUDGET_SECONDS = 40
 
 
 class GuardError(ValueError):
@@ -178,16 +194,20 @@ def _run_length(root: str, run_file: str) -> int:
 
 
 def acquire(root: str, session: str, phase: int, run_file: str, cron_id: str,
-            handover: str | None = None, generation: str | None = None) -> str:
+            handover: str | None = None, generation: str | None = None, scope: str | None = None) -> str:
     """Write the guard for `session`. A new guard is created exclusively
     (O_EXCL), so two sessions racing to start a run cannot both win; the
     owner re-points its own guard by compare-and-swap on `session_id`; a
     live guard owned by another session is refused unless the operator
-    hands it over, and the handover is recorded in the guard."""
+    hands it over, and the handover is recorded in the guard. A re-point
+    or a handover of the same run keeps its `scope` unless one is given;
+    a new run defaults to `plan`."""
     if not session or not run_file or not cron_id:
         raise GuardError("acquire needs --session, --run-file, and --cron-id")
     if os.path.isabs(run_file) or ".." in run_file.replace("\\", "/").split("/"):
         raise GuardError(f"run file {run_file!r} must be a repo-relative path inside the workspace")
+    if scope is not None and scope not in SCOPES:
+        raise GuardError(f"scope {scope!r} is not one of {', '.join(SCOPES)}")
     # Family-private implementation; only the admission lock and ownership
     # handshake are shared with Codex. Fixture roots still use this code.
     import importlib.util
@@ -203,11 +223,11 @@ def acquire(root: str, session: str, phase: int, run_file: str, cron_id: str,
         if module.busy(root, 'codex'):
             raise GuardError('Codex owns the checkout; stop that run before acquiring Claude')
         with _Lock(root):
-            return _acquire_locked(root, session, phase, run_file, cron_id, handover, generation)
+            return _acquire_locked(root, session, phase, run_file, cron_id, handover, generation, scope)
 
 
 def _acquire_locked(root: str, session: str, phase: int, run_file: str, cron_id: str,
-                    handover: str | None, generation: str | None = None) -> str:
+                    handover: str | None, generation: str | None = None, scope: str | None = None) -> str:
     guard, state_path = _paths(root)
     os.makedirs(os.path.dirname(guard), exist_ok=True)
     try:
@@ -217,6 +237,8 @@ def _acquire_locked(root: str, session: str, phase: int, run_file: str, cron_id:
     same_run = previous.get("run_file") == run_file and previous.get("session_id") == session
     doc = {"runner": "claude", "workspace": root.replace("\\", "/"), "phase": phase,
            "run_file": run_file, "session_id": session, "cron_id": cron_id,
+           "scope": scope or (previous.get("scope") if previous.get("session_id") == session
+                              or (handover and previous.get("run_file") == run_file) else None) or "plan",
            # D00 T04 §36: the generation the heartbeat prompt carries, when
            # its job was created (the 7-day expiry counts from it), and the
            # run file's length at acquisition, so a reused run file's old
@@ -255,7 +277,7 @@ def _acquire_locked(root: str, session: str, phase: int, run_file: str, cron_id:
                 os.unlink(state_path)
             except FileNotFoundError:
                 pass
-        return (f"acquire: guard {what} for session {session} (phase {phase}, {run_file}, job {cron_id}, "
+        return (f"acquire: guard {what} for session {session} (phase {phase}, scope {doc['scope']}, {run_file}, job {cron_id}, "
                 f"generation {doc['generation']}, run {doc['run_id']})")
     with os.fdopen(fd, "wb") as fh:
         fh.write(data)
@@ -264,19 +286,28 @@ def _acquire_locked(root: str, session: str, phase: int, run_file: str, cron_id:
         os.unlink(state_path)
     except FileNotFoundError:
         pass
-    return (f"acquire: guard created for session {session} (phase {phase}, {run_file}, job {cron_id}, "
+    return (f"acquire: guard created for session {session} (phase {phase}, scope {doc['scope']}, {run_file}, job {cron_id}, "
             f"generation {doc['generation']}, run {doc['run_id']})")
 
 
-def _ready_count(root: str) -> int | None:
+def ready_rows(root: str, timeout: float = 300.0, phase: int | None = None) -> tuple[int | None, str]:
+    """How many rows `query ready` offers and the first of them, or
+    (None, "") when the query cannot be read. The `N runnable now`
+    summary does not say which phase a row is in, so for a phase-scoped
+    run (`phase`) the count is unknown: that run ends on its own closeout
+    or park marker, never on another phase's count, and is never pointed
+    at another phase's row (Conclave-SDK todo kit)."""
     try:
         proc = subprocess.run([sys.executable, os.path.join(root, "scripts", "todo-graph.py"), "query", "ready"],
                               capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=root,
-                              timeout=300)
+                              timeout=max(timeout, 1.0))
     except (OSError, subprocess.TimeoutExpired):
-        return None
-    m = re.findall(r"(\d+) runnable now", proc.stdout)
-    return int(m[-1]) if m else None
+        return None, ""
+    counts = re.findall(r"(\d+) runnable now", proc.stdout)
+    if not counts or phase is not None:
+        return None, ""
+    lines = [ln.strip() for ln in proc.stdout.splitlines() if ln.strip() and "runnable now" not in ln]
+    return int(counts[-1]), (lines[0] if lines else "")
 
 
 def end(root: str, session: str, reason: str) -> str:
@@ -290,7 +321,7 @@ def end(root: str, session: str, reason: str) -> str:
         raise GuardError("end needs --session (the session that owns the guard)")
     # The plan query runs before the lock, so no subprocess is ever held
     # under it (panel round 1).
-    ready = _ready_count(root) if reason == "plan-done" else None
+    ready = ready_rows(root)[0] if reason == "plan-done" else None
     with _Lock(root):
         return _end_locked(root, session, reason, ready)
 
@@ -431,7 +462,8 @@ def whoami(root: str, session: str, generation: str | None = None) -> str:
             return "NOT THE CURRENT JOB"
         # The run id rides the answer, so the heartbeat reads which markers
         # are this run's without carrying the id in its prompt.
-        return f"OWNER run={guard.get('run_id')}" if guard.get("run_id") else "OWNER"
+        scope = guard.get("scope") or "plan"
+        return f"OWNER run={guard.get('run_id')} scope={scope}" if guard.get("run_id") else f"OWNER scope={scope}"
 
 
 def reset_state(root: str, session: str | None = None, expect_no_guard: bool = False) -> str:
@@ -595,6 +627,262 @@ def _hook_error_locked(root: str, session: str | None, ack: str | None = None) -
         json.dump(state, fh)
     os.replace(tmp, state_path)
     return f"hook-error: acknowledged and cleared: {line}"
+
+
+# ---- the Stop hook ---------------------------------------------------------
+
+def _env_int(name: str, default: int) -> int:
+    value = os.environ.get(name, "")
+    return int(value) if value.isdigit() else default
+
+
+def _remaining(deadline: float) -> float:
+    left = deadline - time.monotonic()
+    if left <= 0:
+        raise GuardError("the hook ran out of its time budget before deciding")
+    return left
+
+
+def _hook_git(root: str, deadline: float, *args: str) -> bytes:
+    return subprocess.run(["git", *args], cwd=root, capture_output=True,
+                          timeout=max(deadline - time.monotonic(), 1.0)).stdout
+
+
+def _write_state(path: str, state: dict) -> None:
+    tmp = f"{path}.{os.getpid()}.tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(state, fh)
+    os.replace(tmp, path)
+
+
+# The guard's own files: a checkout that does not ignore build/ would
+# otherwise see every state write as progress.
+OWN_FILES = re.compile(r"^build/claude-campaign-(guard|state|pending-cancel)\.json(\.[0-9]+\.tmp)?$|"
+                       r"^build/claude-campaign-guard\.lock$|^build/claude-campaign-hook-errors/")
+
+
+def fingerprint(root: str, run_rel: str, run_text: str, deadline: float) -> str:
+    """Progress: HEAD, the working-tree diff, the untracked files, and the
+    run file without its `- bookkeeping:` lines. The run file leaves the
+    diff and the untracked set and is hashed on its own, so a heartbeat or
+    retry note in its Critical events never passes for progress, while
+    any other line still counts (D00 T04 §34, §36). Untracked content is
+    hashed for the first 500 files up to 4 MB each, the next 5000 count by
+    size and write time, and any past that by name alone, so a huge
+    scratch tree cannot stall the hook and no untracked path drops out;
+    the bounds read from the environment so fixtures can pin them."""
+    max_hashed = _env_int("CAMPAIGN_HASH_FILES", 500)
+    max_bytes = _env_int("CAMPAIGN_HASH_BYTES", 4 * 1024 * 1024)
+    max_stat = _env_int("CAMPAIGN_STAT_FILES", 5000)
+    run_path = run_rel.replace("\\", "/")
+    digest = hashlib.sha256()
+    digest.update(_hook_git(root, deadline, "rev-parse", "HEAD").strip() + b"\n")
+    digest.update(_hook_git(root, deadline, "diff", "HEAD", "--", ".", f":(exclude){run_path}",
+                            ":(exclude)build/claude-campaign-*") + b"\n")
+    # NUL-delimited, so git never quotes or escapes a name.
+    listed = _hook_git(root, deadline, "ls-files", "-z", "--others", "--exclude-standard").decode("utf-8", "replace")
+    paths = [p for p in listed.split("\0") if p and p != run_path and not OWN_FILES.match(p)]
+    for index, path in enumerate(paths, 1):
+        _remaining(deadline)
+        if index > max_hashed + max_stat:
+            digest.update(f"{path}\n".encode("utf-8"))
+            continue
+        full = os.path.join(root, path)
+        try:
+            info = os.stat(full)
+        except OSError:
+            digest.update(f"{path} missing\n".encode("utf-8"))
+            continue
+        if index <= max_hashed and info.st_size <= max_bytes:
+            with open(full, "rb") as fh:
+                digest.update(f"{path} ".encode("utf-8") + hashlib.sha256(fh.read()).hexdigest().encode() + b"\n")
+        else:
+            digest.update(f"{path} {info.st_size} {info.st_mtime_ns}\n".encode("utf-8"))
+    digest.update(re.sub(r"(?m)^- bookkeeping:.*(\r?\n)?", "", run_text).encode("utf-8"))
+    return digest.hexdigest()
+
+
+def _same_run(still: dict | None, guard: dict) -> bool:
+    """Whether the guard re-read under the lock is still the run the hook
+    started deciding for (D00 T04 §36 panel round 1). A guard without a
+    run id predates the rule and compares by session and run file."""
+    if still is None or str(still.get("session_id", "")) != str(guard.get("session_id", "")):
+        return False
+    if str(still.get("run_file", "")) != str(guard.get("run_file", "")):
+        return False
+    return "run_id" not in guard or str(still.get("run_id", "")) == str(guard.get("run_id", ""))
+
+
+def _guard_lock(root: str, wait_ms: int) -> _Lock:
+    lock = _Lock(root, wait=wait_ms / 1000)
+    try:
+        lock.__enter__()
+    except GuardError:
+        raise GuardError(f"the guard lock stayed held for {wait_ms}ms") from None
+    return lock
+
+
+def stop_decision(root: str, session: str) -> dict | None:
+    """The hook's decision for one Stop event: None allows the stop, a
+    dict is the `block` payload. Only the session named in the guard is
+    ever blocked; a second session or a subagent ends its turns."""
+    guard = read_guard(root)
+    if guard is None or not session or str(guard.get("session_id", "")) != session:
+        return None
+    run_rel = str(guard.get("run_file", ""))
+    if not run_rel or os.path.isabs(run_rel):
+        return None
+    full_root = os.path.normcase(os.path.abspath(root)).rstrip(os.sep)
+    full_run = os.path.normcase(os.path.abspath(os.path.join(root, run_rel)))
+    if not full_run.startswith(full_root + os.sep):
+        return None
+    try:
+        with open(os.path.join(root, run_rel), encoding="utf-8", errors="replace") as fh:
+            run_text = fh.read()
+    except FileNotFoundError:
+        return None
+    # A marker ends the run only when it carries this run's id, wherever it
+    # sits in the file, so a reused run file's old closeout or PARKED line
+    # never ends a new run (D00 T04 §36); a guard with no run id predates
+    # the rule, and any marker counts.
+    run_id = str(guard.get("run_id") or "")
+    for line in run_text.splitlines():
+        if re.match(r"(## Closeout\b|PARKED\b)", line) and (
+                not run_id or re.search(r"\brun=" + re.escape(run_id) + r"\b", line)):
+            return None
+    deadline = time.monotonic() + _env_int("CAMPAIGN_HOOK_BUDGET_SECONDS", HOOK_BUDGET_SECONDS)
+    phase_only = guard.get("scope") == "phase"
+    # Genuine halt: nothing runnable here. The runner still owes the PARKED
+    # line, but blocking cannot produce work that does not exist.
+    ready, next_row = ready_rows(root, timeout=_remaining(deadline) / 2,
+                                 phase=guard.get("phase") if phase_only else None)
+    if ready == 0:
+        return None
+    print_ = fingerprint(root, run_rel, run_text, deadline)
+    _, state_path = _paths(root)
+    lock = _guard_lock(root, _env_int("CAMPAIGN_LOCK_WAIT_MS", 5000))
+    try:
+        # A handover or an end that landed while this hook worked means the
+        # state is no longer this run's, and nothing is written.
+        try:
+            still = read_guard(root)
+        except GuardError:
+            still = None
+        if not _same_run(still, guard):
+            print("campaign-stop: the guard changed while this hook waited; nothing written", file=sys.stderr)
+            return None
+        try:
+            with open(state_path, encoding="utf-8-sig") as fh:
+                old = json.load(fh)
+        except FileNotFoundError:
+            old = {}
+        state = {"fingerprint": str(old.get("fingerprint", "")), "blocks": int(old.get("blocks", 0) or 0),
+                 "trips": int(old.get("trips", 0) or 0), "stalled": False}
+        # An error the heartbeat has not acknowledged stays until it is
+        # (`hook-error --ack`), however many hook runs come between.
+        state.update({k: old[k] for k in ("hook_error", "hook_error_at") if old.get(k)})
+        if state["fingerprint"] != print_:
+            # The tree moved since the last stop: real progress resets the breaker.
+            state.update(fingerprint=print_, blocks=0, trips=0)
+        if state["blocks"] >= MAX_BLOCKS_WITHOUT_PROGRESS:
+            # Repeated pushes with no change to the tree mean the session is
+            # stuck, not idle. Let it stop and say so.
+            state.update(blocks=0, trips=state["trips"] + 1, stalled=True, stalled_at=_utc_now())
+            _write_state(state_path, state)
+            print(f"campaign-stop: stall breaker tripped ({state['trips']}) after {MAX_BLOCKS_WITHOUT_PROGRESS} "
+                  f"blocks with no tree change", file=sys.stderr)
+            return None
+        state["blocks"] += 1
+        _write_state(state_path, state)
+    finally:
+        lock.__exit__(None, None, None)
+    onward = (f" of Phase {guard.get('phase')} only (this run covers that phase)" if phase_only
+              else ", then the next phase")
+    reason = (f"Campaign run is still open ({run_rel}). Do not end the turn. Finish the open section's checklist, "
+              f"run the review panel and stamp it, then the next section{onward}. A commit, a green suite, a red CI "
+              f"(repair it through the review skill's bounded repair loop), or a status report is not a stop.")
+    if next_row:
+        reason += f" Next ready row: {next_row}."
+    reason += (f" Finished means a '## Closeout run={run_id}' heading or a column-0 'PARKED <UTC> run={run_id} "
+               f"<reason>' line in the run file. Escalating to the operator (an exhausted repair bound, an "
+               f"unverifiable CI, a cause the tree cannot fix) ends the run first: write a column-0 'PARKED <UTC> "
+               f"run={run_id} escalation: <cause>' line, run 'python3 scripts/campaign_guard.py end --session "
+               f"{session} --reason escalation', CronDelete the heartbeat it names, then report. The breaker allows "
+               f"the stop after {MAX_BLOCKS_WITHOUT_PROGRESS} pushes with no tree change (this is push "
+               f"{state['blocks']}).")
+    return {"decision": "block", "reason": reason}
+
+
+def _record_hook_error(root: str, guard: dict | None, reason: str) -> None:
+    """Fail open, but never silently: record the error where the heartbeat
+    reads it (D00 T04 §34). Into the state file under the guard lock when
+    the lock can be had and the guard is still this run's (or names no
+    owner to compare: an unreadable guard is exactly what must be
+    reported), else into a file of its own that needs no lock, so a run
+    handed over or ended meanwhile never gets a write into its state
+    (D00 T04 §36 panel rounds 1 and 2). Best effort only."""
+    at = _utc_now()
+    try:
+        lock = _guard_lock(root, 1000)
+    except (GuardError, OSError):
+        lock = None
+    if lock is not None and guard is not None:
+        try:
+            still = read_guard(root)
+        except GuardError:
+            still = None
+        if not (still is not None and str(still.get("session_id", "")) == str(guard.get("session_id", ""))
+                and ("run_id" not in guard or str(still.get("run_id", "")) == str(guard.get("run_id", "")))):
+            lock.__exit__(None, None, None)
+            lock = None
+    if lock is not None:
+        try:
+            _, state_path = _paths(root)
+            state = {"fingerprint": "", "blocks": 0, "trips": 0, "stalled": False}
+            try:
+                with open(state_path, encoding="utf-8-sig") as fh:
+                    old = json.load(fh)
+                state.update(fingerprint=str(old.get("fingerprint", "")), blocks=int(old.get("blocks", 0)),
+                             trips=int(old.get("trips", 0)))
+            except (OSError, ValueError, TypeError, AttributeError):
+                pass
+            state.update(hook_error=reason, hook_error_at=at)
+            _write_state(state_path, state)
+        finally:
+            lock.__exit__(None, None, None)
+        return
+    # One file per error, never an append: a drain can never race a writer.
+    folder = os.path.join(root, "build", "claude-campaign-hook-errors")
+    os.makedirs(folder, exist_ok=True)
+    name = os.path.join(folder, f"{time.time_ns():020d}-{os.getpid()}.txt")
+    with open(name + ".tmp", "w", encoding="utf-8") as fh:  # the drain lists only .txt
+        fh.write(f"{at} {reason}")
+    os.replace(name + ".tmp", name)
+
+
+def stop_hook(stdin: str, project_dir: str | None) -> tuple[int, str]:
+    """Run the hook on one Stop payload; returns (exit, stdout). It always
+    exits 0: a bad payload, a missing guard, or any error allows the stop."""
+    root, guard = None, None
+    try:
+        if not stdin.strip():
+            return 0, ""
+        event = json.loads(stdin)
+        root = project_dir or str(event.get("cwd") or "")
+        if not root:
+            return 0, ""
+        guard = read_guard(root)
+        decision = stop_decision(root, str(event.get("session_id") or ""))
+        return 0, json.dumps(decision) if decision else ""
+    except Exception as error:  # fail open; the heartbeat reports what is recorded here
+        reason = str(error) or type(error).__name__
+        print(f"campaign-stop: {reason}", file=sys.stderr)
+        if root:
+            try:
+                _record_hook_error(root, guard, reason)
+            except OSError as exc:
+                print(f"campaign-stop: error recording failure: {exc}", file=sys.stderr)
+        return 0, ""
 
 
 REPAIR_BOUND = 3
@@ -785,15 +1073,15 @@ def _powershell() -> str | None:
     return None
 
 
-def run_hook(root: str, session: str) -> tuple[int, dict | None, str]:
-    """Feed the hook one Stop payload; return (exit, parsed stdout JSON or
-    None when it allowed silently, stderr)."""
-    shell = _powershell()
+def run_hook(root: str, session: str, script: str | None = None) -> tuple[int, dict | None, str]:
+    """Feed the hook one Stop payload, as the workspace's own copy of this
+    module (or `script`); return (exit, parsed stdout JSON or None when it
+    allowed silently, stderr)."""
     env = dict(os.environ, CLAUDE_PROJECT_DIR=root)
     payload = json.dumps({"session_id": session, "cwd": root, "hook_event_name": "Stop"})
-    proc = subprocess.run([shell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", HOOK],
+    proc = subprocess.run([sys.executable, script or os.path.join(root, "scripts", "campaign_guard.py"), "stop-hook"],
                           input=payload, capture_output=True, text=True, encoding="utf-8",
-                          errors="replace", env=env, timeout=120)
+                          errors="replace", env=env, cwd=root, timeout=120)
     out = proc.stdout.strip()
     try:
         parsed = json.loads(out) if out else None
@@ -814,7 +1102,7 @@ def configured_command() -> str | None:
 
 def run_configured(root: str, session: str, shell: list[str]) -> tuple[int, dict | None, str]:
     """Run the configured command the way Claude Code would, through
-    `shell` (Git Bash or PowerShell), with CLAUDE_PROJECT_DIR pointing at
+    `shell` (sh, Git Bash, or PowerShell), with CLAUDE_PROJECT_DIR pointing at
     the fixture (§32 independent review: a `$VAR` path that one shell
     does not expand never launches the hook)."""
     env = dict(os.environ, CLAUDE_PROJECT_DIR=root)
@@ -834,8 +1122,9 @@ def _workspace(tmpd: str) -> str:
     os.makedirs(os.path.join(root, "scripts"))
     os.makedirs(os.path.join(root, "build"))
     os.makedirs(os.path.join(root, "docs", "phase-runs"))
-    os.makedirs(os.path.join(root, ".claude", "hooks"))
-    shutil.copyfile(HOOK, os.path.join(root, ".claude", "hooks", "campaign-stop.ps1"))
+    # The hook runs from the workspace's own copy, as the configured
+    # command resolves it through CLAUDE_PROJECT_DIR.
+    shutil.copyfile(os.path.join(HERE, "campaign_guard.py"), os.path.join(root, "scripts", "campaign_guard.py"))
     with open(os.path.join(root, ".gitignore"), "w", encoding="utf-8") as fh:
         fh.write("build/\n.runner/\n")
     # The fake graph prints the runnable count the test writes to ready.txt.
@@ -885,12 +1174,6 @@ def _self_test() -> int:
             failed += 1
             print(f"FAIL {name} {detail}")
 
-    if _powershell() is None:
-        print("campaign_guard self-test: SKIP (no PowerShell on this host)")
-        return 0
-    if not os.path.isfile(HOOK):
-        print(f"FAIL hook-present {HOOK}")
-        return 1
     with tempfile.TemporaryDirectory(prefix="campaign-guard-") as tmpd:
         root = _workspace(tmpd)
 
@@ -901,16 +1184,33 @@ def _self_test() -> int:
         code, out, err = run_hook(root, "99999999-0000-0000-0000-000000000000")
         check("allow-another-session", code == 0 and out is None, f"{code} {out} {err}")
 
-        # The configured command, not just the script: through PowerShell
-        # (a Windows host without Git Bash) and through Git Bash.
-        shells = [("powershell", [_powershell(), "-NoProfile", "-Command"])]
-        # Git Bash by path: the `bash` on PATH can be WSL's, which runs a
-        # different interpreter against the wrong tree.
-        bash = os.path.join(os.environ.get("ProgramFiles", "C:/Program Files"), "Git", "bin", "bash.exe")
-        if os.path.isfile(bash):
-            shells.append(("bash", [bash, "-c"]))
-        check("settings-wire-the-stop-hook", configured_command() is not None
-              and "campaign-stop.ps1" in (configured_command() or ""), str(configured_command()))
+        # The configured command, not just the script: through every shell
+        # Claude Code may launch it with on this host. On Windows that is
+        # PowerShell (a host without Git Bash) and Git Bash; elsewhere sh,
+        # and PowerShell when it is installed.
+        shells = []
+        if os.name == "nt":
+            shells.append(("powershell", [_powershell(), "-NoProfile", "-Command"]))
+            # Git Bash by path: the `bash` on PATH can be WSL's, which runs a
+            # different interpreter against the wrong tree.
+            bash = os.path.join(os.environ.get("ProgramFiles", "C:/Program Files"), "Git", "bin", "bash.exe")
+            if os.path.isfile(bash):
+                shells.append(("bash", [bash, "-c"]))
+        else:
+            shells.append(("sh", ["/bin/sh", "-c"]))
+            if _powershell():
+                shells.append(("pwsh", [_powershell(), "-NoProfile", "-Command"]))
+        command = configured_command() or ""
+        check("settings-wire-the-stop-hook",
+              "campaign_guard.py" in command and "'stop-hook'" in command and "CLAUDE_PROJECT_DIR" in command,
+              command)
+        try:
+            with open(SETTINGS, encoding="utf-8") as fh:
+                hook_timeout = json.load(fh)["hooks"]["Stop"][0]["hooks"][0].get("timeout")
+        except (OSError, ValueError, KeyError, IndexError, TypeError):
+            hook_timeout = None
+        check("the-hook-budget-fits-inside-the-configured-timeout",
+              isinstance(hook_timeout, int) and HOOK_BUDGET_SECONDS + 10 <= hook_timeout, str(hook_timeout))
         for label, shell in shells:
             state_path = os.path.join(root, "build", "claude-campaign-state.json")
             if os.path.exists(state_path):
@@ -1309,7 +1609,8 @@ def _self_test() -> int:
               isinstance(out, dict) and out.get("decision") == "block", str(out))
         with open(run, "a", encoding="utf-8") as fh:
             fh.write(f"\nPARKED 2099-01-01T00:00:00Z run={rid} this run parked\n")
-        check("whoami-owner-names-the-run", whoami(lroot, SESSION, g1) == f"OWNER run={read_guard(lroot)['run_id']}",
+        check("whoami-owner-names-the-run-and-its-scope",
+              whoami(lroot, SESSION, g1) == f"OWNER run={read_guard(lroot)['run_id']} scope=plan",
               whoami(lroot, SESSION, g1))
         check("whoami-not-the-current-job", whoami(lroot, SESSION, "stale0000000") == "NOT THE CURRENT JOB")
         check("whoami-not-the-owner", whoami(lroot, "99999999-0000-0000-0000-000000000000", g1) == "NOT THE OWNER")
@@ -1410,15 +1711,15 @@ def _self_test() -> int:
             ready = os.path.join(ltmp, "hook-ready.flag")
             if os.path.exists(ready):
                 os.remove(ready)
-            with open(HOOK, encoding="utf-8") as fh:
+            with open(os.path.join(HERE, "campaign_guard.py"), encoding="utf-8") as fh:
                 hook_text = fh.read()
-            lock_line = "    $lock = Enter-GuardLock $root $LockWaitMs"
+            lock_line = '    lock = _guard_lock(root, _env_int("CAMPAIGN_LOCK_WAIT_MS", 5000))\n'
             assert hook_text.count(lock_line) == 1, "hook lock boundary changed"
-            fixture_hook = os.path.join(ltmp, "interleave-hook.ps1")
+            fixture_hook = os.path.join(ltmp, "interleave_hook.py")
             with open(fixture_hook, "w", encoding="utf-8") as fh:
                 fh.write(hook_text.replace(lock_line,
-                    "    [System.IO.File]::WriteAllText($env:RF_TEST_HOOK_READY, 'ready')\n" + lock_line))
-            hook = subprocess.Popen([_powershell(), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", fixture_hook],
+                    "    open(os.environ['RF_TEST_HOOK_READY'], 'w').write('ready')\n" + lock_line))
+            hook = subprocess.Popen([sys.executable, fixture_hook, "stop-hook"],
                                     stdin=payload_in, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                     text=True, encoding="utf-8", errors="replace",
                                     env=dict(os.environ, CLAUDE_PROJECT_DIR=lroot, RF_TEST_HOOK_READY=ready))
@@ -1491,6 +1792,66 @@ def _self_test() -> int:
         finally:
             for k in env_bounds:
                 del os.environ[k]
+
+    # Conclave-SDK todo kit (2026-10-21): a phase-scoped run covers its one
+    # phase. The hook never ends it on the plan's count or points it at
+    # another phase's row, a re-point or handover keeps the scope, and
+    # whoami tells the heartbeat which skill to resume.
+    with tempfile.TemporaryDirectory(prefix="campaign-scope-") as stmp:
+        sroot = _workspace(stmp)
+        try:
+            acquire(sroot, SESSION, 2, RUN_FILE, "job-s", scope="everything")
+            check("acquire-refuses-an-unknown-scope", False)
+        except GuardError as exc:
+            check("acquire-refuses-an-unknown-scope", "is not one of plan, phase" in str(exc), str(exc))
+        msg = acquire(sroot, SESSION, 2, RUN_FILE, "job-s", scope="phase")
+        sg = read_guard(sroot)
+        check("acquire-records-a-phase-scope", sg.get("scope") == "phase" and "scope phase" in msg, msg)
+        check("whoami-names-a-phase-scope", whoami(sroot, SESSION, sg["generation"])
+              == f"OWNER run={sg['run_id']} scope=phase", whoami(sroot, SESSION, sg["generation"]))
+        _set_ready(sroot, 0)
+        code, out, err = run_hook(sroot, SESSION)
+        check("a-phase-run-is-not-ended-by-the-plan-count",
+              isinstance(out, dict) and out.get("decision") == "block", f"{code} {out} {err}")
+        _set_ready(sroot, 3)
+        code, out, err = run_hook(sroot, SESSION)
+        reason = out.get("reason", "") if isinstance(out, dict) else ""
+        check("a-phase-run-blocks-for-its-own-phase-only",
+              "then the next section of Phase 2 only (this run covers that phase)" in reason
+              and "then the next phase" not in reason and "Next ready row" not in reason, f"{out} {err}")
+        acquire(sroot, SESSION, 2, RUN_FILE, "job-s2")
+        check("a-re-point-keeps-the-scope", read_guard(sroot).get("scope") == "phase", str(read_guard(sroot)))
+        acquire(sroot, "22222222-0000-0000-0000-000000000000", 2, RUN_FILE, "job-s3", handover="drill")
+        check("a-handover-of-the-same-run-keeps-the-scope", read_guard(sroot).get("scope") == "phase",
+              str(read_guard(sroot)))
+        acquire(sroot, SESSION, 2, RUN_FILE, "job-s4", handover="back", scope="plan")
+        check("a-given-scope-replaces-the-old-one", read_guard(sroot).get("scope") == "plan", str(read_guard(sroot)))
+        code, out, err = run_hook(sroot, SESSION)
+        check("a-plan-run-blocks-naming-the-next-row",
+              isinstance(out, dict) and "then the next phase" in out.get("reason", "")
+              and "Next ready row: 00-workspace/TODO-01-bootstrap.md §3" in out.get("reason", ""), f"{out} {err}")
+        rid = read_guard(sroot)["run_id"]
+        with open(os.path.join(sroot, "build", "claude-campaign-state.json"), "w", encoding="utf-8") as fh:
+            json.dump({"fingerprint": "", "blocks": 0, "trips": 0, "stalled": False,
+                       "hook_error": "an earlier failure", "hook_error_at": "2099-01-01T00:00:00Z"}, fh)
+        run_hook(sroot, SESSION)
+        check("an-unacknowledged-hook-error-survives-later-hook-runs",
+              _state(sroot).get("hook_error") == "an earlier failure" and _state(sroot).get("blocks") == 1,
+              str(_state(sroot)))
+        with open(os.path.join(sroot, RUN_FILE), "a", encoding="utf-8") as fh:
+            fh.write(f"\n## Closeout run={rid}\n\nshipped\n")
+        code, out, err = run_hook(sroot, SESSION)
+        check("a-closeout-carrying-the-run-id-ends-a-scoped-run", code == 0 and out is None, f"{out} {err}")
+        os.environ["CAMPAIGN_HOOK_BUDGET_SECONDS"] = "0"
+        try:
+            with open(os.path.join(sroot, RUN_FILE), "w", encoding="utf-8") as fh:
+                fh.write("# run\n")
+            code, out, err = run_hook(sroot, SESSION)
+        finally:
+            del os.environ["CAMPAIGN_HOOK_BUDGET_SECONDS"]
+        check("an-exhausted-budget-fails-open-and-is-recorded",
+              code == 0 and out is None and "time budget" in err
+              and "time budget" in str(_state(sroot).get("hook_error", "")), f"{out} {err} {_state(sroot)}")
 
     # D00 T04 §35, §37: the repair episode survives a restart, refuses a
     # fourth attempt, binds its identity, counts a repeat once, closes only
@@ -1607,8 +1968,19 @@ def _self_test() -> int:
                         ("skill-marks-bookkeeping", "- bookkeeping: heartbeat resumed"),
                         ("skill-heartbeat-confirms-before-clearing",
                          "CronDelete this job, confirm it gone with CronList, then run `cancel-confirmed`"),
-                        ("skill-markers-carry-the-run-id", "a closeout is a line `## Closeout run=<run id>`")):
+                        ("skill-markers-carry-the-run-id", "a closeout is a line `## Closeout run=<run id>`"),
+                        ("skill-acquires-a-plan-scope", "--generation <generation> --scope plan"),
+                        ("skill-heartbeat-ends-a-phase-run-on-its-marker",
+                         "and step 1 printed scope=phase, the one phase asked for is over"),
+                        ("skill-heartbeat-resumes-by-scope",
+                         "under process-phase for Phase <N> only when step 1 printed scope=phase")):
         check(pin, needle in skill, plan_skill)
+    phase_skill = os.path.normpath(os.path.join(HERE, "..", ".claude", "skills", "process-phase", "SKILL.md"))
+    try:
+        with open(phase_skill, encoding="utf-8") as fh:
+            check("skill-a-standalone-phase-acquires-a-phase-scope", "`acquire --scope phase`" in fh.read(), phase_skill)
+    except OSError as exc:
+        check("skill-a-standalone-phase-acquires-a-phase-scope", False, str(exc))
 
     print(f"campaign_guard self-test: {passed + failed} cases, {failed} failed")
     return 1 if failed else 0
@@ -1628,6 +2000,11 @@ def _opts(argv: list[str]) -> dict:
 def main(argv: list[str]) -> int:
     if argv == ["--self-test"]:
         return _self_test()
+    if argv == ["stop-hook"]:
+        code, out = stop_hook(sys.stdin.read(), os.environ.get("CLAUDE_PROJECT_DIR"))
+        if out:
+            print(out)
+        return code
     if not argv:
         print(__doc__.split("\n\n")[1], file=sys.stderr)
         return 2
@@ -1645,7 +2022,7 @@ def main(argv: list[str]) -> int:
         if argv[0] == "acquire":
             print(acquire(root, opts.get("session", ""), int(opts.get("phase", "0")),
                           opts.get("run_file", ""), opts.get("cron_id", ""), opts.get("handover"),
-                          opts.get("generation")))
+                          opts.get("generation"), opts.get("scope")))
             return 0
         if argv[0] == "end":
             print(end(root, opts.get("session", ""), opts.get("reason", "")))

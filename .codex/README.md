@@ -21,7 +21,7 @@ Invoke `$process-plan --audit` for a read-only audit or `$process-plan` to execu
 | --- | --- | --- |
 | Skills | `.codex/skills/` | `.claude/skills/` |
 | Hook configuration | `.codex/hooks.json` | `.claude/settings.json` |
-| Campaign lifecycle | `.codex/runner/campaign.py` | `scripts/campaign_guard.py` and `.claude/hooks/campaign-stop.ps1` |
+| Campaign lifecycle | `.codex/runner/campaign.py` | `scripts/campaign_guard.py` (its `stop-hook` command is the Stop hook) |
 | Review dispatch | `.codex/runner/panel_slots.py`, private `panel.toml` | `scripts/panel_slots.py`, `.conclave/panel.toml` |
 | Review evidence tools | `.codex/runner/review_prompt.py` | `scripts/review_prompt.py` |
 | Transient state | `.codex/state/` | `build/claude-campaign-*` |
