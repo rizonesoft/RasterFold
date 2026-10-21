@@ -2207,14 +2207,18 @@ def _self_test() -> int:
         check("the-next-row-survives-a-legacy-console-encoding",
               code == 0 and isinstance(out, dict)
               and "TODO-01-bootstrap.md §3  Red CI repaired" in out.get("reason", ""), f"{code} {out} {err}")
-        # The guard's own streams print what cp1252 cannot encode.
-        bad = subprocess.run([sys.executable, os.path.join(HERE, "campaign_guard.py"), "acquire", "--root", eroot,
-                              "--session", SESSION, "--run-file", "../\u0100.md", "--cron-id", "job-1"],
-                             capture_output=True, env=dict(os.environ, PYTHONIOENCODING="cp1252"))
-        berr = bad.stderr.decode("utf-8", "replace")
+        # The guard's own streams print what cp1252 cannot encode: a
+        # successful command names a run file outside that code page.
+        wide = "docs/phase-runs/2099-01-01-\u0100.md"
+        with open(os.path.join(eroot, wide), "w", encoding="utf-8") as fh:
+            fh.write("# Phase run\n")
+        ok = subprocess.run([sys.executable, os.path.join(HERE, "campaign_guard.py"), "acquire", "--root", eroot,
+                             "--session", SESSION, "--phase", "0", "--run-file", wide, "--cron-id", "job-1"],
+                            capture_output=True, env=dict(os.environ, PYTHONIOENCODING="cp1252"))
+        oout = ok.stdout.decode("utf-8", "replace")
         check("the-guard-prints-on-a-legacy-console-encoding",
-              bad.returncode == 1 and "\u0100.md" in berr and "must be a repo-relative path" in berr
-              and "Traceback" not in berr, f"{bad.returncode} {berr[-400:]}")
+              ok.returncode == 0 and wide in oout and "acquire:" in oout,
+              f"{ok.returncode} {oout[-300:]} {ok.stderr.decode('utf-8', 'replace')[-400:]}")
 
     print(f"campaign_guard self-test: {passed + failed} cases, {failed} failed")
     return 1 if failed else 0
