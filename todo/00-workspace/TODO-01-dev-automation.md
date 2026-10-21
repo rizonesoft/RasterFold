@@ -57,7 +57,7 @@ track: W1
 |   4   |   §4    | Prove the review panel end to end             | §1, §6     |  [ ]   |
 |   5   |   §5    | Raise the claims coverage floor               | §1         |  [ ]   |
 |   6   |   §6    | Claude review rounds through the reviewer pin | §1         |  [ ]   |
-| 7 | §7 | The campaign guard on a legacy console encoding | -- | [ ] |
+| 7 | §7 | The campaign guard on a legacy console encoding | -- | [x] |
 | 8 | §8 | A read-only independent reviewer beside a live run | -- | [ ] |
 
 ---
@@ -153,6 +153,13 @@ Admission: a defect in shipped work. The Python Stop hook landed in `a9a5af7` to
 - [x] Commit: `"guard: decode the next row and print on a legacy console encoding"`
 
 **Test checkpoint:** `python3 scripts/campaign_guard.py --self-test` exits 0 on Linux and through `python3 scripts/windows.py scripts/campaign_guard.py --self-test` on Windows, each quoting its `cases, 0 failed` line; both new cases quoted failing against the pre-fix module; `ci-wait` reads `plan-gates` green on the pushed repair, its `campaign-guard (windows-2025)` job included.
+
+> **Verified:** 2026-10-21 | §7 | campaign_guard self-test 145 cases, 0 failed (Linux) · 142 cases, 0 failed (native Windows) · both new cases red against their mutants (145 cases, 1 failed each) · plan-gates green on the repair push (run 39556229372)
+> **Review:** 3 rounds (Full), candidate `c4ae79b0e75e`(round 1) `19327d468ff9`(round 2) `19327d468ff9`(round 3) -- round 3 signoff: `adversarial` approve · `consistency` approve · `integration` approve · `record` approve; round 1 `consistency` needs-attention (1), fixed in round 2's candidate; the independent `codex review` of round 1's candidate found no actionable regressions. Raw findings: docs/reviews/00-workspace/D00-T01-s7.md. Attestation: docs/reviews/00-workspace/D00-T01-s7.attest.json
+> **Plan review:** gpt high, 3 findings rejected, one to backlog B-001 (run 20261021-D00-T01-S7-gpt)
+> **CRUD:** not applicable (the guard writes no codec file; its write path is the guard and state files, exercised by the self-test's acquire cases)
+> **Implementer:** Claude (claude-opus-5-5)
+> **Duration:** 2026-10-21T06:25:47Z to 2026-10-21T07:05:00Z
 
 ## 8. A Read-Only Independent Reviewer Beside a Live Run
 

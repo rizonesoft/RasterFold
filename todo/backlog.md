@@ -8,5 +8,6 @@ Ideas worth keeping that are not planned work. Nothing here is a section: an ent
 
 ## Entries
 
+- [B-001] Separate stderr assertion for the guard's legacy-encoding stream case -- app: rasterfold -- source: D00-T01-S7-PR2 -- added: 2026-10-21 -- summary: the D00 T01 §7 self-test proves the UTF-8 reconfigure through stdout only; a second case would print a character outside cp1252 on stderr under PYTHONIOENCODING=cp1252 and assert it intact -- needs: D00 T01 §7 -- why deferred: fails the admission test; both streams reconfigure in one statement, so this is coverage polish, not a defect or a prerequisite -- promote when: the guard's stream setup splits per stream, or a stderr encoding defect is observed
 
 ## Removed with operator approval

@@ -4,12 +4,13 @@
 
 Derived from the per-section findings files under `docs/reviews/`, which stay authoritative. This file is a view, not a record: editing it changes nothing and is overwritten on the next run. `review-todo-section` regenerates it after every stamp.
 
-**1 findings across 1 sections.**
+**2 findings across 2 sections.**
 
 ## By category
 
 | Category | Count | What it means |
 | --- | ---: | --- |
+| `consistency` | 1 | disagrees with the rest of the suite, its naming, or its layout |
 | `correctness` | 1 | the code does the wrong thing |
 
 ## By severity
@@ -18,10 +19,11 @@ Derived from the per-section findings files under `docs/reviews/`, which stay au
 | --- | ---: | --- |
 | `critical` | 0 | invalidates safety, data integrity, or the stamp |
 | `major` | 1 | wrong behavior in code, plan, or record |
-| `minor` | 0 | polish or wording, or no surviving defect |
+| `minor` | 1 | polish or wording, or no surviving defect |
 
 ## Every finding
 
 | Section | # | Severity | Category | Disposition | Source | Summary |
 | --- | --- | --- | --- | --- | --- | --- |
+| `D00 T01 §7` | F1 | minor | `consistency` | fixed | independent | The stream case proved an error path, not a successful command |
 | `D00 T04 §1` | F1 | major | `correctness` | fixed | self | Incomplete manifests produced incomplete ZIPs |

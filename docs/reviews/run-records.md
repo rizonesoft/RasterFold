@@ -21,3 +21,16 @@ rounds: 1
 round: 1 model: claude-opus-5-5 effort: high outcome: error candidate: 73f0143949aceb1dd8fa4a695069d1df0952fa45 provider: anthropic version: unresolved cost: unresolved latency: 900s opportunity: full-scope purpose: section-review provenance: recorded findings:
 empty: 0
 refuted: 0
+
+## D00 T01 §7: the campaign guard on a legacy console encoding
+
+run: D00-T01-S7
+date: 2026-10-21
+runner: panel
+rounds: 4
+round: 1 model: gpt-6-astra effort: medium outcome: findings candidate: c4ae79b0e75eae55d58b2a8d2ed828d1a6d79361 provider: openai version: gpt-6-astra cost: 22206tokens latency: 26s opportunity: full-scope purpose: section-review provenance: recorded findings: D00-T01-S7-F1
+round: 2 model: gpt-6-astra effort: medium outcome: empty candidate: 19327d468ff964379f822bd97cd9df3063387393 provider: openai version: gpt-6-astra cost: 20073tokens latency: 30s opportunity: full-scope purpose: fix-loop provenance: recorded findings:
+round: 3 model: gpt-6-astra effort: high outcome: empty candidate: 19327d468ff964379f822bd97cd9df3063387393 provider: openai version: gpt-6-astra cost: 20992tokens latency: 29s opportunity: full-scope purpose: sign-off provenance: recorded findings:
+round: 4 model: gpt-6-astra effort: high outcome: independent candidate: c4ae79b0e75eae55d58b2a8d2ed828d1a6d79361 provider: openai version: gpt-6-astra cost: unresolved latency: 76s opportunity: full-scope purpose: section-review provenance: recorded findings:
+empty: 2
+refuted: 0
