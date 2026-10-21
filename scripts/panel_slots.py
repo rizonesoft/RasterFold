@@ -43,8 +43,8 @@ outage matrix keys on). Its first stderr line names the slot and the
 model that ran. The `independent` slot runs `codex review`,
 which takes its scope from the extra arguments (`--commit <sha>`) and
 reads no prompt. It runs in Codex's read-only sandbox, like every other
-codex slot, and while a Claude run holds the checkout it names that run
-in `RASTERFOLD_REVIEW_FOR_RUN`, which the Codex writer guard
+codex slot. While a Claude run holds the checkout every slot names that
+run in `RASTERFOLD_REVIEW_FOR_RUN`, which the Codex writer guard
 (`.codex/hooks/adapter.py`) admits as a reviewer rather than a second
 writer.
 """
@@ -233,15 +233,14 @@ def guard_path() -> str:
 
 
 def slot_env(slot: str, guard: str | None = None, base: dict | None = None) -> dict:
-    """The producer environment: `base` (the inherited one), with the
-    `independent` reviewer naming the live Claude run it reviews for, so
-    the Codex writer guard admits it. No guard, no name: an inherited
-    name never outlives the run it named. Raises PanelSlotsError when a
-    guard exists but names no run."""
+    """The producer environment: `base` (the inherited one), with every
+    slot's reviewer naming the live Claude run it reviews for, so the
+    Codex writer guard admits it (a stamp check reads the tree as much as
+    `codex review` does). No guard, no name: an inherited name never
+    outlives the run it named. Raises PanelSlotsError when a guard exists
+    but names no run."""
     env = dict(os.environ if base is None else base)
     env.pop("RASTERFOLD_REVIEW_FOR_RUN", None)
-    if slot != "independent":
-        return env
     path = guard or guard_path()
     try:
         with open(path, encoding="utf-8-sig") as fh:
@@ -423,8 +422,9 @@ def _self_test() -> int:
             json.dump({"session_id": "s", "run_id": "abc123def456"}, fh)
         check("independent beside a live guard names its run",
               slot_env("independent", gpath, stale).get("RASTERFOLD_REVIEW_FOR_RUN") == "abc123def456")
-        check("other slots never name a run",
-              "RASTERFOLD_REVIEW_FOR_RUN" not in slot_env("bulk", gpath, stale))
+        check("every slot names its run",
+              all(slot_env(name, gpath, stale).get("RASTERFOLD_REVIEW_FOR_RUN") == "abc123def456"
+                  for name in PANEL_SLOTS))
         for bad in ('{"session_id": "s"}', '{bad', '[]'):
             with open(gpath, "w", encoding="utf-8") as fh:
                 fh.write(bad)

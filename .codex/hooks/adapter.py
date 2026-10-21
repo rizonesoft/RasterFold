@@ -43,7 +43,7 @@ def handle(payload, root=ROOT, request_recorded=False):
             claude, codex = busy(root, 'claude'), busy(root, 'codex')
             other = claude or (codex if codex and codex['session_id'] != session else None)
         # A read-only reviewer the live Claude run started names that run
-        # (scripts/panel_slots.py, the independent slot): it is not a writer.
+        # (scripts/panel_slots.py, every review slot): it is not a writer.
         reviewer = os.environ.get('RASTERFOLD_REVIEW_FOR_RUN', '')
         if claude and not codex and reviewer and reviewer == claude.get('run_id'):
             other = None

@@ -210,12 +210,12 @@
       }
     },
     ".codex/README.md": {
-      "evidence": "Author-attested: 2026-10-21 re-read .codex/README.md after .codex/hooks/adapter.py began admitting a Codex session whose RASTERFOLD_REVIEW_FOR_RUN names the live Claude guard's run_id (D00 T01 \u00a78); the tool-admission paragraph and the Review and delivery paragraph now state that admission and the read-only independent slot; every other lifecycle statement still holds",
+      "evidence": "Author-attested: 2026-10-21 re-read .codex/README.md after the reviewer admission widened from the independent slot to every review slot scripts/panel_slots.py starts for a live Claude run (a stamp check reads the tree too; D00 T01 \u00a78 fix loop); the tool-admission and Review and delivery paragraphs now say so; every other statement unchanged",
       "sources": {
         ".codex/runner/campaign.py": "db98fb6858f40ee33d2f79e56f8861fcc904038edf2ce2696cad8dc213302470",
-        ".codex/hooks/adapter.py": "0124ad85008145e87bb50f50ee1eb6c113b5605a2dc8125a989dafd98a923d23",
+        ".codex/hooks/adapter.py": "dd5e91d8d8420f75ae3f63bd1f102aa6b3688ca965a640c7ec801de403fd02b7",
         ".codex/runner/panel.toml": "dfbdd06ac5ebe07ccfde0a9eb4e813c7ca713f8812f4d9b80efb56fe2acc8d43",
-        ".codex/README.md": "b9323aef7d6e7740f4999f9fe2c24d26423efdd99e68d5a713db7614dd71b9e4"
+        ".codex/README.md": "217dc6fa9e77d93a4a50653a72cb755e0e4598e2fc801ba6ab9498c992886d37"
       }
     }
   },
