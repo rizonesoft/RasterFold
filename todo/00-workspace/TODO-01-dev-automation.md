@@ -57,6 +57,8 @@ track: W1
 |   4   |   §4    | Prove the review panel end to end             | §1, §6     |  [ ]   |
 |   5   |   §5    | Raise the claims coverage floor               | §1         |  [ ]   |
 |   6   |   §6    | Claude review rounds through the reviewer pin | §1         |  [ ]   |
+| 7 | §7 | The campaign guard on a legacy console encoding | -- | [ ] |
+| 8 | §8 | A read-only independent reviewer beside a live run | -- | [ ] |
 
 ---
 
@@ -135,6 +137,31 @@ The design keeps each layer's owner. `.conclave/reviewers.toml` owns who reviews
 - [ ] Commit: `"review: Claude rounds take their reviewers from the reviewer pin"`
 
 **Test checkpoint:** `python3 scripts/check-all.py` exits 0 (quoted), and one probe round per path is quoted: Astra serving, and Gemini serving after a forced primary failure (a pin naming a missing CLI first, in a scratch copy).
+
+## 7. The Campaign Guard on a Legacy Console Encoding
+
+**Origin:** discovered run=9bdc68a3a5dc 2026-10-21 -- the SHIP push of `D99 T01 §3` read back red
+
+Admission: a defect in shipped work. The Python Stop hook landed in `a9a5af7` to `4fd93a0` (2026-10-21, before this section existed) and the first push carrying it turned `plan-gates` red on `windows-2025` (run `39554469979`): `block-open-run-naming-next-row` saw `�` where the next row's `§3` belongs, and printing that FAIL line then raised `UnicodeEncodeError: 'charmap' codec can't encode character '�'`, so the job died with a traceback instead of a count. Two causes, both in `scripts/campaign_guard.py`. `ready_rows` decodes the `query ready` child's stdout as UTF-8 but never asks the child for UTF-8, so a child that writes in the console code page (cp1252 on a stock Windows runner) garbles every non-ASCII row name the hook shows the session; the real `scripts/todo-graph.py` reconfigures its own streams, so the defect hides until any other producer answers. And the guard's own streams keep the console code page, so any line it prints with a character outside cp1252 crashes the command that prints it. The local Windows host passed (`140 cases, 0 failed`) because it runs in UTF-8.
+
+- [ ] Make `ready_rows` run its child with `PYTHONIOENCODING=utf-8` in the child's environment, matching the UTF-8 it decodes. Done when: a self-test case runs the hook with `PYTHONIOENCODING=cp1252` against a fake graph that does not reconfigure its streams and finds `§3` in the block reason; the case fails before the fix.
+- [ ] Reconfigure the guard's own `stdout` and `stderr` to UTF-8 at import, the way `scripts/todo-graph.py` does. Done when: a self-test case runs a guard command that prints a character cp1252 cannot encode under `PYTHONIOENCODING=cp1252` and it exits 0 with the character intact; the case fails before the fix.
+- [ ] Commit: `"guard: decode the next row and print on a legacy console encoding"`
+
+**Test checkpoint:** `python3 scripts/campaign_guard.py --self-test` exits 0 on Linux and through `python3 scripts/windows.py scripts/campaign_guard.py --self-test` on Windows, each quoting its `cases, 0 failed` line; both new cases quoted failing against the pre-fix module; `ci-wait` reads `plan-gates` green on the pushed repair, its `campaign-guard (windows-2025)` job included.
+
+## 8. A Read-Only Independent Reviewer Beside a Live Run
+
+**Origin:** discovered run=9bdc68a3a5dc 2026-10-21 -- the independent review of `D99 T01 §3` was refused
+
+Admission: a defect in shipped work and a prerequisite of every stamp (`process-todo-section` step 8 runs the `independent` slot before `review-todo-section`). Two defects stop the slot. `scripts/panel_slots.py` runs `codex review` with no sandbox override, so the reviewer inherits the operator's `sandbox_mode = "danger-full-access"` while every other codex slot runs `-s read-only`; the skill promises a reviewer that "reviews read-only and changes nothing", and nothing enforces it. And `.codex/hooks/adapter.py`'s PreToolUse handler denies every tool except `Read`, `Glob`, `Grep`, and `view_image` to any Codex session while a Claude run holds the checkout, so the reviewer that the Claude run itself starts cannot run `git show` and returns "Review blocked" (2026-10-21, `build/review-d99-t01-s3/independent.err`). The writer guard exists to stop a second writer; a read-only reviewer the owning run invoked is not one. The Codex hook payload carries no sandbox field (its schema in Codex 0.163.0 names `permission_mode` with Claude-style values only), so the run states the admission explicitly.
+
+- [ ] Make the `independent` slot run `codex review` with `-c sandbox_mode="read-only"` and export `RASTERFOLD_REVIEW_FOR_RUN=<the live Claude guard's run_id>` to the reviewer, refusing to start (exit 2, naming why) when no Claude guard is live and the variable would name nothing. Done when: `python3 scripts/panel_slots.py --self-test` asserts the argv carries the read-only sandbox and the environment carries the run id, for a live guard, and the slot still runs with no guard and no variable.
+- [ ] Teach the PreToolUse handler in `.codex/hooks/adapter.py` to admit a Codex session whose environment names the run id of the live Claude guard in `RASTERFOLD_REVIEW_FOR_RUN`, and to keep denying every other session, a stale or wrong run id included. Done when: `.codex/tests` gains cases for the admitted reviewer, a wrong run id, a missing variable, and a live Codex campaign (whose own sessions keep their rules), and `python3 -m unittest discover -s .codex/tests -v` passes.
+- [ ] Rerun the independent review of `D99 T01 §3`'s candidate beside the live run. Done when: `python3 scripts/panel_slots.py exec independent --commit <sha>` returns a review that inspected the commit, its first stderr line quoted.
+- [ ] Commit: `"review: run the independent reviewer read-only beside a live run"`
+
+**Test checkpoint:** `python3 scripts/panel_slots.py --self-test` and `python3 -m unittest discover -s .codex/tests -v` exit 0; a live `exec independent --commit <sha>` run beside this run's guard is quoted with its pin line and verdict; a Codex session started without the variable is still refused (quoted).
 
 ## Verification
 
