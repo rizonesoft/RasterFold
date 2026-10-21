@@ -30,6 +30,7 @@ track: W1
 - [`.github/workflows/plan.yml`](../../.github/workflows/plan.yml), [`.github/workflows/build.yml`](../../.github/workflows/build.yml) -- the workflows §2 reads back
 - [`scripts/check-all.ps1`](../../scripts/check-all.ps1) -- the gate runner §3 adds the static analysis gate to
 - [`.conclave/panel.toml`](../../.conclave/panel.toml) and [`scripts/panel_slots.py`](../../scripts/panel_slots.py) -- the review panel §4 proves
+- [`.conclave/reviewers.toml`](../../.conclave/reviewers.toml) and [`scripts/review-dispatch.py`](../../scripts/review-dispatch.py) -- the Conclave-SDK reviewer kit's pin and dispatcher, which §6 makes the source of Claude's reviewers
 - [`scripts/todo-claims.py`](../../scripts/todo-claims.py) -- `COVERAGE_FLOOR`, which §5 raises
 - -> XREF: D99 T01 §2 -- the GitHub CLI login §2 needs before `ci-wait` can read CI back
 
@@ -52,8 +53,9 @@ track: W1
 |   1   |   §1    | Commit the port and wire the commit hook      | --         |  [ ]   |
 |   2   |   §2    | First push: CI green and read back            | §1, D99 T01 §2 |  [ ]   |
 |   3   |   §3    | The static analysis gate                      | §1         |  [ ]   |
-|   4   |   §4    | Prove the review panel end to end             | §1         |  [ ]   |
+|   4   |   §4    | Prove the review panel end to end             | §1, §6     |  [ ]   |
 |   5   |   §5    | Raise the claims coverage floor               | §1         |  [ ]   |
+|   6   |   §6    | Claude review rounds through the reviewer pin | §1         |  [ ]   |
 
 ---
 
@@ -113,6 +115,25 @@ The first real stamp should not be the first time the panel runs. Every slot in 
 - [ ] Commit: `"workspace: raise the claims coverage floor to the measured count"`
 
 **Test checkpoint:** `python scripts/todo-claims.py --coverage` exits 0 at the new floor and exits 1 with one claim removed (quoted, then restored).
+
+## 6. Claude Review Rounds Through the Reviewer Pin
+
+**Operator decision 2026-10-21:** "Switch stamps to the dispatcher" -- the operator's answer, in an attended session, to: "The reviewer kit adds `.conclave/reviewers.toml` and `review-dispatch.py` (Claude routes to Astra with Gemini as fallback). RasterFold already has `.conclave/panel.toml`, where your recorded decision is Astra only with no fallback slots. How should the two coexist?" This supersedes the no-fallback decision recorded in `.conclave/panel.toml` (Resolute 2026-09-25) for Claude-written work. Codex-written work keeps its private Claude panel (`D00 T04 §3`).
+
+The Conclave-SDK reviewer kit (imported 2026-10-21, `bcbbf2f`) routes Claude's work to GPT-6 Astra with Gemini 4 as the one fallback, but nothing in the stamp path reads it yet: every round runs `scripts/panel_slots.py exec <slot>`, and four places are built around a `GPT panel` record. `stamp-no-opus-panel` (`scripts/todo-validate.py` rule 16) reads only `Opus`, `Claude`, `GPT`, and `Grok` panel headings and fails any other last section; `scripts/todo-runs.py` maps headings to families and accepts only the `openai` and `anthropic` providers; `scripts/review_prompt.py attest` derives a runner identity only for `codex-panel`, `claude-panel`, and `grok-panel`, needing a `model:` banner `agy` does not print; and `review_prompt.py --self-test` pins the skill's slot and no-fallback wording. The dispatcher's own `## Round N:` record is read by nothing else, and `--list-rounds` reports `docs/reviews/todo-vision-audit-2026-09-30.md` unreadable because its `## Round 2 findings:` headings look like dispatcher rounds.
+
+The design keeps each layer's owner. `.conclave/reviewers.toml` owns who reviews Claude's work and the one fallback; `.conclave/panel.toml` keeps the round roles (slot effort and timeout) and stops naming a model for Claude's slots; the validators keep owning the record format. A round still runs as `panel_slots.py exec <slot>` with the fenced prompt on stdin, so the receipt, fences, and attestation keep working; the slot resolves its reviewer from the pin's `claude` route through `review-dispatch.py`'s `load_pin`, the only place the pin's rules live, and fails over to the fallback exactly when the dispatcher would (not installed, non-zero exit, timeout, empty reply, `OVERALL: blocked`). A fallback round is recorded under a `Gemini panel Round N` heading with a `Fallback:` line naming the primary's failure, the same shape the retired Grok fallback used.
+
+- [ ] Make `scripts/panel_slots.py exec <slot>` take Claude's reviewer and fallback from `.conclave/reviewers.toml` through `load_pin` (imported from `scripts/review-dispatch.py`, never re-implemented), run the primary at the slot's effort and timeout, fail over to the fallback on the dispatcher's failure conditions, print `panel_slots: slot S reviewer R model M effort E timeout Ts` (and `panel_slots: fallback R2 after R: <reason>`) on stderr, and run `agy` with the dispatcher's arguments. Done when: `python3 scripts/panel_slots.py --self-test` covers primary success, every failover reason, both reviewers failing (exit 1, no review), and a pin that refuses (exit 2), with fake CLIs. Cheaper substitute: calling `review-dispatch.py` as a subprocess, which drops the stdin fence, the model banner, and the slot's effort.
+- [ ] Drop the model from Claude's slots in `.conclave/panel.toml` and teach `panel_slots.py validate` the new shape, keeping the Codex panel (`.codex/runner/panel.toml`) untouched. Done when: `validate` refuses a Claude slot that names a model and accepts the pinned route; `.codex/tests` still pass.
+- [ ] Accept `Gemini panel` as the fallback family in `stamp-no-opus-panel` (`scripts/todo-validate.py`), `review-citation-role-mismatch`, the plan-review rung grammar (`gemini rung`), `panel_fallback` and `query plan-health` (`scripts/todo-graph.py`), and in `scripts/todo-runs.py` (`HEADING_FAMILY`, a `google` provider, `family_accepts`). Done when: `python3 scripts/todo-graph.py self-test` and `python3 scripts/todo-runs.py --self-test` include a Gemini fallback stamp that passes with its `Fallback:` line and fails without it, and every existing stamp still validates.
+- [ ] Give `scripts/review_prompt.py attest` a `gemini-panel` identity read from the `panel_slots:` stderr line, since `agy` prints no model banner. Done when: `python3 scripts/review_prompt.py --self-test` attests a Gemini fallback round and refuses one whose stderr names no reviewer.
+- [ ] Rewrite `.claude/skills/review-todo-section/SKILL.md` (policy line, outage matrix, slot table, findings headings) and `.claude/skills/process-todo-section/SKILL.md` (`independent` slot) for the route and its fallback, and update the `review_prompt.py --self-test` skill pins with them. Done when: no Claude skill says "no fallback", and `python3 scripts/review_prompt.py --self-test` passes on the new wording.
+- [ ] Keep ad-hoc `independent-review` rounds out of the stamp record: record them under `docs/reviews/independent/` (move `docs/reviews/conclave-guard-port.md` there and its `historical_links` keys in `docs/drift.json`), and point `.claude/skills/independent-review/SKILL.md` and `.codex/skills/independent-review/SKILL.md` at it. Done when: `python3 scripts/review-dispatch.py --list-rounds --records docs/reviews/independent` lists every round with none unreadable, and `python3 scripts/drift-check.py` exits 0.
+- [ ] Update `AGENTS.md` (the `.conclave/` rows and the review rules), `.claude/agent-routing.md`, and the `.conclave/panel.toml` header comment to name the route and its fallback. Done when: `python3 scripts/drift-check.py` exits 0 with the AGENTS.md receipt renewed.
+- [ ] Commit: `"review: Claude rounds take their reviewers from the reviewer pin"`
+
+**Test checkpoint:** `python3 scripts/check-all.py` exits 0 (quoted), and one probe round per path is quoted: Astra serving, and Gemini serving after a forced primary failure (a pin naming a missing CLI first, in a scratch copy).
 
 ## Verification
 
