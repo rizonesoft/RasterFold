@@ -98,6 +98,7 @@ These local adaptations differ from the kit files, and `forge.py sync` would und
 - The four base-kit agents (`debug-evidence`, `git-runner`, `mutation-tester`, `test-runner`) carry `effort: high` and an agent-class mark, and sit in `.claude/agent-routing.md`'s table and the routing probe.
 - `.agents/skills/<kit skill>` entries are symlinks to `.codex/skills/`, as for every other skill.
 - `scripts/verify-agent-tiers.mjs` is removed: its rule that no subagent holds an edit tool contradicts the implementer class, and `scripts/agent_routing.py validate` is this repository's tier check.
+- `.conclave/reviewers.toml` pins the Gemini reviewer at `gemini-4-argon-medium`, not the kit's `-high` (operator decision 2026-10-21).
 - `CODEX.md`, `GEMINI.md` and `docs/agent-skills-and-rules-structure.md` describe this repository's layout, not the SDK default.
 
 ## The commit hook

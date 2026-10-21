@@ -20,10 +20,11 @@ model = "gpt-6-astra"
 effort = "medium"
 
 # Gemini 4 through the Antigravity CLI in plan mode and its sandbox. The
-# effort is part of the model name (gemini-4-argon-low, -medium or -high).
+# effort is part of the model name (gemini-4-argon-low, -medium or -high);
+# Gemini reviewers run at medium (operator decision 2026-10-21).
 [reviewers.gemini]
 cli = "agy"
-model = "gemini-4-argon-high"
+model = "gemini-4-argon-medium"
 
 # Sonnet 5.5 through Claude Code in plan mode.
 [reviewers.sonnet]
