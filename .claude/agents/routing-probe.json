@@ -22,6 +22,39 @@
       "session": "247cf033-f76e-4882-ac89-1c5b7bc3b042",
       "turns": 10
     },
+    "debug-evidence": {
+      "alias": "sonnet",
+      "effort": "high",
+      "served": "claude-sonnet-5-5",
+      "served_effort": "high",
+      "catalog_newest": "claude-sonnet-5-5",
+      "probed": "2026-10-21",
+      "claude_code": "2.1.306",
+      "session": "b854f101-0081-4389-a390-cae2d91a1b0c",
+      "turns": 1
+    },
+    "git-runner": {
+      "alias": "sonnet",
+      "effort": "high",
+      "served": "claude-sonnet-5-5",
+      "served_effort": "high",
+      "catalog_newest": "claude-sonnet-5-5",
+      "probed": "2026-10-21",
+      "claude_code": "2.1.306",
+      "session": "b854f101-0081-4389-a390-cae2d91a1b0c",
+      "turns": 1
+    },
+    "mutation-tester": {
+      "alias": "sonnet",
+      "effort": "high",
+      "served": "claude-sonnet-5-5",
+      "served_effort": "high",
+      "catalog_newest": "claude-sonnet-5-5",
+      "probed": "2026-10-21",
+      "claude_code": "2.1.306",
+      "session": "b854f101-0081-4389-a390-cae2d91a1b0c",
+      "turns": 1
+    },
     "oracle-writer": {
       "alias": "sonnet",
       "effort": "high",
@@ -65,6 +98,17 @@
       "claude_code": "2.1.287",
       "session": "247cf033-f76e-4882-ac89-1c5b7bc3b042",
       "turns": 4
+    },
+    "test-runner": {
+      "alias": "sonnet",
+      "effort": "high",
+      "served": "claude-sonnet-5-5",
+      "served_effort": "high",
+      "catalog_newest": "claude-sonnet-5-5",
+      "probed": "2026-10-21",
+      "claude_code": "2.1.306",
+      "session": "b854f101-0081-4389-a390-cae2d91a1b0c",
+      "turns": 1
     }
   }
 }

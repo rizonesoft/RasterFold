@@ -14,6 +14,10 @@ Claude sessions in this repository run as a lead plus a delegated fleet. The lea
 | `oracle-writer` | `sonnet` | `high` | implementer | The `tests/rfi_ref.py` change for a format change, written from `spec/FOLD.md` alone so the oracle stays independent of the C. |
 | `checks-runner` | `sonnet` | `high` | runner | Builds, the correctness suite, fuzz, check-all, TODO gates, and research measurements whose output would flood the lead. Never edits. |
 | `routine-reviewer` | `sonnet` | `high` | reviewer | An advisory pre-pass over a candidate diff (failure modes, consistency, integration, Markdown rules) before the lead's self-review and the GPT panel. Never a verdict. |
+| `debug-evidence` | `sonnet` | `high` | explorer | Phase 1 of systematic debugging: timeline, state, and safe reproductions of a symptom, observations kept apart from interpretation. Read-only; the cause and the fix stay with the lead. From the Conclave-SDK base kit. |
+| `git-runner` | `sonnet` | `high` | runner | Read-only git surveys: status, diff summaries by hunk intent, log archaeology, blame. Never commits, stages, or resets. From the Conclave-SDK base kit. |
+| `mutation-tester` | `sonnet` | `high` | runner | Proving a new test can fail: applies each mutation the lead names in a throwaway `git worktree` under scratch (never the live tree), runs the given command, restores, and reports killed or survived. From the Conclave-SDK base kit. |
+| `test-runner` | `sonnet` | `high` | runner | One named test or check command with a compact pass/fail report. `checks-runner` stays the runner for RasterFold's builds, gates, and measurements; this one is for ad-hoc commands outside that list. From the Conclave-SDK base kit. |
 
 `checks-runner` runs with `omitClaudeMd: true` because its dispatch carries everything it needs; the others load `CLAUDE.md` and `AGENTS.md` because they apply the repository's writing and format rules.
 

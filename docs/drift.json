@@ -174,12 +174,12 @@
       }
     },
     "AGENTS.md": {
-      "evidence": "Author-attested: 2026-10-01 re-read AGENTS.md after its .claude/ paths row gained the agents directory and .claude/agent-routing.md, both of which exist; include/rasterfold.h, src/rf.h and toolchain.json are unchanged since the 2026-09-30 source audit",
+      "evidence": "Author-attested: 2026-10-21 re-read AGENTS.md after it gained the Conclave-SDK kit rows (.conclave/kits.json, CODEX.md, GEMINI.md, rules folders, reviewers.toml, review-dispatch.py, review-round-prompt.md, .conclave/automations/) and the Conclave-SDK kits section; every named path exists after forge.py kit base, reviewer and automations from Conclave-SDK b1ead32; include/rasterfold.h, src/rf.h and toolchain.json are unchanged",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "51734a555f97e344771e8462284781429f04d5d5f6a8e5550e43e10e9c20e7c3",
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
-        "AGENTS.md": "6c73eb623b2a388f3b5b169b1c89b53acc0e782323164075a1ea8469c4aa91d4"
+        "AGENTS.md": "874c4600df1ee48bdd8d66a8b9b6c1da8b5156a603d16e31fbad6d275d038631"
       }
     },
     "docs/building.md": {

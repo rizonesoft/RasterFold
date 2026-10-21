@@ -27,9 +27,12 @@ Agent instructions for this repository. Human orientation lives in `README.md`. 
 | `docs/reviews/` | Per-section review findings, attestations, the derived findings ledger, run records |
 | `docs/phase-runs/` | One findings file per phase run, written as the run goes |
 | `.claude/` | Claude-owned skills, agents (routing: `.claude/agent-routing.md`), hooks, settings and intelligence implementation |
-| `.codex/`, `.agents/skills/` | Independent Codex mechanics; skill-discovery symlinks point only to `.codex/skills/` |
+| `.codex/`, `.agents/skills/` | Independent Codex mechanics; skill-discovery symlinks point only to `.codex/skills/`; `.agents/rules/` holds Antigravity's rule |
 | `.intelligence/` | Separate family registers and retained archives; disposition requires both runners stopped |
 | `.conclave/panel.toml` | The review panel wiring: writer, model registry, and every review slot |
+| `.conclave/kits.json`, `CODEX.md`, `GEMINI.md`, `.claude/rules/`, `.codex/rules/` | The Conclave-SDK kits (`base`, `reviewer`, `automations`) this checkout took from `rizonetech/Conclave-SDK` through its `forge.py`, the per-agent entry files, and the kits' output and safety rules; see Conclave-SDK kits below |
+| `.conclave/reviewers.toml`, `scripts/review-dispatch.py`, `docs/review-round-prompt.md` | The reviewer kit: the reviewer pin with one fallback per writer, and the dispatcher that runs a round with failover |
+| `.conclave/automations/` | The automations kit: `tasks.json` (folder `\\RasterFold\\`, no tasks yet), the runner, the failure email, and the Task Scheduler and systemd installers; tests in `scripts/tests/` |
 | `bin/`, `build/` | Build output, scratch, caches, the research corpus, and campaign guard state; ignored, never authoritative |
 
 The build/tooling runs in WSL/Linux and Windows. Use `python3` in WSL/Linux and `python` on Windows. TODO tooling needs Python 3.11+ and no third-party package; image tests need pinned Pillow. Comparative measurements need ffmpeg with libjxl. Agent automation is operated in the shared WSL/Linux checkout; Android runtime validation is separate from cross-compilation. See `docs/building.md` for host SDK requirements.
@@ -85,6 +88,17 @@ A checkpoint citing a gate that does not exist yet is unfalsifiable and is not a
 - **No em dashes** in authored prose; use `--`, a colon, or a new sentence. One line per paragraph and list item in Markdown.
 - **Source of truth:** the format via `spec/FOLD.md` and the oracle, other codecs via their specifications, reference implementations, and published papers, measurements via the commands that produced them, plan state via `todo/`. Disagreements are recorded decisions, not silent reinterpretations.
 - **Completion-first, no partial ships:** a section is complete only when every micro-step is `[x]`, its checkpoint is quoted from a real run, and review stamped it. Anything genuinely unshippable now files through `add-todo` with an owner (debt with a collector, never a silent drop), and waiting is never a strategy. Reviewers refuse stamps on partial scope.
+
+## Conclave-SDK kits
+
+The `base`, `reviewer` and `automations` kits came from `rizonetech/Conclave-SDK` at `b1ead32` (2026-10-21) through `python3 <sdk>/forge.py kit . <kit> --agent all`. `.conclave/kits.json` stamps `reviewer` and `automations`; `base` stays unstamped because RasterFold keeps its own `.claude/agents/code-explorer.md`. The SDK's `todo` kit is not installed: RasterFold's TODO system, skills and `scripts/campaign_guard.py` are its own, and they take the todo kit's Stop hook and heartbeat design by hand.
+
+These local adaptations differ from the kit files, and `forge.py sync` would undo them (it rewrites `.claude/agents/`, every kit's skills and rules, and with `--include-scripts` its scripts), so a sync always runs `--dry-run` first and keeps them:
+
+- The four base-kit agents (`debug-evidence`, `git-runner`, `mutation-tester`, `test-runner`) carry `effort: high` and an agent-class mark, and sit in `.claude/agent-routing.md`'s table and the routing probe.
+- `.agents/skills/<kit skill>` entries are symlinks to `.codex/skills/`, as for every other skill.
+- `scripts/verify-agent-tiers.mjs` is removed: its rule that no subagent holds an edit tool contradicts the implementer class, and `scripts/agent_routing.py validate` is this repository's tier check.
+- `CODEX.md`, `GEMINI.md` and `docs/agent-skills-and-rules-structure.md` describe this repository's layout, not the SDK default.
 
 ## The commit hook
 
