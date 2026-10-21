@@ -658,6 +658,23 @@ def _write_state(path: str, state: dict) -> None:
     os.replace(tmp, path)
 
 
+def _read_regular(path: str, limit: int | None = None) -> tuple[os.stat_result, bytes | None]:
+    """A file's status and, when it is a regular file no larger than
+    `limit`, its bytes. It opens without blocking (a FIFO opened for
+    reading with O_NONBLOCK returns at once) and checks the open handle,
+    so the check and the read are of the same file and nothing swapped in
+    between can block the hook (independent review round 2)."""
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or (limit is not None and info.st_size > limit):
+            return info, None
+        with os.fdopen(fd, "rb", closefd=False) as fh:
+            return info, fh.read()
+    finally:
+        os.close(fd)
+
+
 # The guard's own files: a checkout that does not ignore build/ would
 # otherwise see every state write as progress.
 OWN_FILES = re.compile(r"^build/claude-campaign-(guard|state|pending-cancel)\.json(\.[0-9]+\.tmp)?$|"
@@ -692,15 +709,14 @@ def fingerprint(root: str, run_rel: str, run_text: str, deadline: float) -> str:
             continue
         full = os.path.join(root, path)
         try:
-            info = os.stat(full)
+            # Only a regular file's content is read. git never lists a FIFO,
+            # but a listed path can become one before the read.
+            info, data = _read_regular(full, max_bytes) if index <= max_hashed else (os.stat(full), None)
         except OSError:
             digest.update(f"{path} missing\n".encode("utf-8"))
             continue
-        # Only a regular file's content is read. git never lists a FIFO, but
-        # a listed path can become one before this read, which would block.
-        if index <= max_hashed and info.st_size <= max_bytes and stat.S_ISREG(info.st_mode):
-            with open(full, "rb") as fh:
-                digest.update(f"{path} ".encode("utf-8") + hashlib.sha256(fh.read()).hexdigest().encode() + b"\n")
+        if data is not None:
+            digest.update(f"{path} ".encode("utf-8") + hashlib.sha256(data).hexdigest().encode() + b"\n")
         else:
             digest.update(f"{path} {info.st_size} {info.st_mtime_ns}\n".encode("utf-8"))
     digest.update(re.sub(r"(?m)^- bookkeeping:.*(\r?\n)?", "", run_text).encode("utf-8"))
@@ -709,11 +725,15 @@ def fingerprint(root: str, run_rel: str, run_text: str, deadline: float) -> str:
 
 def _same_run(still: dict | None, guard: dict) -> bool:
     """Whether the guard re-read under the lock is still the run the hook
-    started deciding for (D00 T04 §36 panel round 1). A guard without a
+    started deciding for (D00 T04 §36 panel round 1), scope and phase
+    included (independent review round 2). A guard without a
     run id predates the rule and compares by session and run file."""
     if still is None or str(still.get("session_id", "")) != str(guard.get("session_id", "")):
         return False
     if str(still.get("run_file", "")) != str(guard.get("run_file", "")):
+        return False
+    # The scope and the phase decide the block message and the next row.
+    if (still.get("scope") or "plan") != (guard.get("scope") or "plan") or still.get("phase") != guard.get("phase"):
         return False
     return "run_id" not in guard or str(still.get("run_id", "")) == str(guard.get("run_id", ""))
 
@@ -743,14 +763,14 @@ def stop_decision(root: str, session: str) -> dict | None:
     if not full_run.startswith(full_root + os.sep):
         return None
     try:
-        info = os.stat(os.path.join(root, run_rel))
+        _, data = _read_regular(os.path.join(root, run_rel))
     except FileNotFoundError:
         return None
     # A FIFO or a device would block the read past the budget.
-    if not stat.S_ISREG(info.st_mode):
+    if data is None:
         raise GuardError(f"the run file {run_rel} is not a regular file")
-    with open(os.path.join(root, run_rel), encoding="utf-8", errors="replace") as fh:
-        run_text = fh.read()
+    # utf-8-sig: a byte-order mark never hides a first-line marker.
+    run_text = data.decode("utf-8-sig", "replace")
     # A marker ends the run only when it carries this run's id, wherever it
     # sits in the file, so a reused run file's old closeout or PARKED line
     # never ends a new run (D00 T04 §36); a guard with no run id predates
@@ -769,9 +789,9 @@ def stop_decision(root: str, session: str) -> dict | None:
         return None
     print_ = fingerprint(root, run_rel, run_text, deadline)
     _, state_path = _paths(root)
-    _remaining(deadline)
-    lock = _guard_lock(root, _env_int("CAMPAIGN_LOCK_WAIT_MS", 5000))
+    lock = _guard_lock(root, min(_env_int("CAMPAIGN_LOCK_WAIT_MS", 5000), int(_remaining(deadline) * 1000)))
     try:
+        _remaining(deadline)
         # A handover or an end that landed while this hook worked means the
         # state is no longer this run's, and nothing is written.
         try:
@@ -1698,6 +1718,17 @@ def _self_test() -> int:
             with open(run, "w", encoding="utf-8") as fh:
                 fh.write("# run\n")
             acquire(lroot, SESSION, 0, RUN_FILE, "job-i")
+            # The fixture copy signals just before the hook takes the lock. It
+            # is written before the holder starts, so a moved anchor fails
+            # here without orphaning a lock holder.
+            with open(os.path.join(HERE, "campaign_guard.py"), encoding="utf-8") as fh:
+                hook_text = fh.read()
+            lock_line = '    lock = _guard_lock(root, min(_env_int("CAMPAIGN_LOCK_WAIT_MS", 5000), int(_remaining(deadline) * 1000)))\n'
+            assert hook_text.count(lock_line) == 1, "hook lock boundary changed"
+            fixture_hook = os.path.join(ltmp, "interleave_hook.py")
+            with open(fixture_hook, "w", encoding="utf-8") as fh:
+                fh.write(hook_text.replace(lock_line,
+                    "    open(os.environ['RF_TEST_HOOK_READY'], 'w').write('ready')\n" + lock_line))
             go = os.path.join(ltmp, "go.flag")
             if os.path.exists(go):
                 os.remove(go)
@@ -1710,6 +1741,9 @@ def _self_test() -> int:
                  "    while not os.path.exists(go): time.sleep(0.05)\n"
                  "    if change == 'handover':\n"
                  "        cg._acquire_locked(root, 'cccccccc-0000-0000-0000-000000000000', 0, cg.RUN_FILE, 'job-h', 'drill')\n"
+                 "    elif change == 'rescope':\n"
+                 "        g = cg.read_guard(root)\n"
+                 "        cg._acquire_locked(root, g['session_id'], 0, cg.RUN_FILE, 'job-i', None, None, 'phase')\n"
                  "    else:\n"
                  "        g = cg.read_guard(root)\n"
                  "        cg._end_locked(root, g['session_id'], 'operator-stop', None)\n"
@@ -1727,14 +1761,6 @@ def _self_test() -> int:
             ready = os.path.join(ltmp, "hook-ready.flag")
             if os.path.exists(ready):
                 os.remove(ready)
-            with open(os.path.join(HERE, "campaign_guard.py"), encoding="utf-8") as fh:
-                hook_text = fh.read()
-            lock_line = '    lock = _guard_lock(root, _env_int("CAMPAIGN_LOCK_WAIT_MS", 5000))\n'
-            assert hook_text.count(lock_line) == 1, "hook lock boundary changed"
-            fixture_hook = os.path.join(ltmp, "interleave_hook.py")
-            with open(fixture_hook, "w", encoding="utf-8") as fh:
-                fh.write(hook_text.replace(lock_line,
-                    "    open(os.environ['RF_TEST_HOOK_READY'], 'w').write('ready')\n" + lock_line))
             hook = subprocess.Popen([sys.executable, fixture_hook, "stop-hook"],
                                     stdin=payload_in, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                     text=True, encoding="utf-8", errors="replace",
@@ -1755,6 +1781,10 @@ def _self_test() -> int:
         check("a-handover-while-the-hook-waits-writes-no-state",
               out_h == "" and "guard changed while this hook waited" in err_h and st_h == {}
               and g_h["session_id"].startswith("cccccccc"), f"{out_h!r} {err_h!r} {st_h} {g_h}")
+        out_h, err_h, st_h, g_h = _interleave("rescope")
+        check("a-scope-change-while-the-hook-waits-writes-no-state",
+              out_h == "" and "guard changed while this hook waited" in err_h and st_h == {}
+              and g_h["scope"] == "phase", f"{out_h!r} {err_h!r} {st_h} {g_h}")
         out_h, err_h, st_h, g_h = _interleave("end")
         check("an-end-while-the-hook-waits-writes-no-state",
               out_h == "" and "guard changed while this hook waited" in err_h and st_h == {} and g_h is None,
@@ -1874,10 +1904,39 @@ def _self_test() -> int:
             fh.write(f"\n## Closeout run={rid}\n\nshipped\n")
         code, out, err = run_hook(sroot, SESSION)
         check("a-closeout-carrying-the-run-id-ends-a-scoped-run", code == 0 and out is None, f"{out} {err}")
+        with open(os.path.join(sroot, RUN_FILE), "w", encoding="utf-8-sig") as fh:
+            fh.write(f"## Closeout run={rid}\n\nshipped\n")
+        code, out, err = run_hook(sroot, SESSION)
+        check("a-byte-order-mark-never-hides-a-first-line-marker", code == 0 and out is None, f"{out} {err}")
+        with open(os.path.join(sroot, RUN_FILE), "w", encoding="utf-8") as fh:
+            fh.write("# run\n")
+        # The lock wait counts against the budget: a lock held past it fails
+        # open instead of blocking late.
+        holder = subprocess.Popen(
+            [sys.executable, "-c",
+             "import sys, time; sys.path.insert(0, sys.argv[1]); import campaign_guard as cg\n"
+             "with cg._Lock(sys.argv[2]):\n"
+             "    print('held', flush=True); time.sleep(4)",
+             HERE, sroot], stdout=subprocess.PIPE, text=True)
+        holder.stdout.readline()
+        os.environ["CAMPAIGN_HOOK_BUDGET_SECONDS"] = "2"
+        try:
+            began = time.monotonic()
+            code, out, err = run_hook(sroot, SESSION)
+            took = time.monotonic() - began
+        finally:
+            del os.environ["CAMPAIGN_HOOK_BUDGET_SECONDS"]
+            holder.wait()
+        folder = os.path.join(sroot, "build", "claude-campaign-hook-errors")
+        logged = "".join(open(os.path.join(folder, n), encoding="utf-8").read()
+                         for n in sorted(os.listdir(folder))) if os.path.isdir(folder) else ""
+        check("the-lock-wait-counts-against-the-budget",
+              code == 0 and out is None and took < 3.8 and "guard lock stayed held" in logged,
+              f"{took:.1f}s {out} {err} {logged!r}")
+        if os.path.isdir(folder):
+            shutil.rmtree(folder)
         os.environ["CAMPAIGN_HOOK_BUDGET_SECONDS"] = "0"
         try:
-            with open(os.path.join(sroot, RUN_FILE), "w", encoding="utf-8") as fh:
-                fh.write("# run\n")
             code, out, err = run_hook(sroot, SESSION)
         finally:
             del os.environ["CAMPAIGN_HOOK_BUDGET_SECONDS"]
