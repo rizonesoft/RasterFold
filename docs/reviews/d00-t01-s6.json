@@ -1,0 +1,96 @@
+{
+  "ref": "D00 T01 \u00a76",
+  "title": "Claude Review Rounds Through the Reviewer Pin",
+  "implementation_sha": "d47007b1d303228f07ad03289f5a2db106a99373",
+  "date": "2026-10-24",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/00-workspace/D00-T01-s6.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/00-workspace/D00-T01-s6.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 3,
+      "report": "docs/reviews/00-workspace/D00-T01-s6.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 scripts/check-all.py --quick",
+    "python3 scripts/review-dispatch.py --check-pin --json",
+    "python3 scripts/review-dispatch.py --list-rounds --json",
+    "python3 -m unittest discover -s scripts/tests -v"
+  ],
+  "completion": {
+    "report": "docs/reviews/00-workspace/D00-T01-s6.md",
+    "verdict": "completed",
+    "candidate": "5446ac9e2ac5dcfa313cbbfea2c882b99454a708",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 3,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/00-workspace/D00-T01-s6.md",
+    "candidate": "e12b283b8e885bea4c564af016b98ff8de356949",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}

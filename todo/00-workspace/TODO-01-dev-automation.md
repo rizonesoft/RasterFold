@@ -57,7 +57,7 @@ track: W1
 |   3   |   §3    | The static analysis gate                      | §1         |  [x]   |
 |   4   |   §4    | Prove the review panel end to end             | §1, §6     |  [ ]   |
 |   5   |   §5    | Raise the claims coverage floor               | §1         |  [ ]   |
-|   6   |   §6    | Claude review rounds through the reviewer pin | §1         |  [ ]   |
+|   6   |   §6    | Claude review rounds through the reviewer pin | §1         |  [x]   |
 | 7 | §7 | The campaign guard on a legacy console encoding | -- | [x] |
 | 8 | §8 | A read-only independent reviewer beside a live run | -- | [x] |
 | 9 | §9 | Windows Job Object process-tree cleanup in review-dispatch.py | §8 | [x] |
@@ -142,10 +142,12 @@ The build already fails on any compiler warning (`-Werror` in `scripts/build.py`
 - [x] Retire `.claude/`, `.codex/`, `CLAUDE.md`, `CODEX.md`, `.conclave/panel.toml`, `scripts/panel_slots.py`, `scripts/review_prompt.py`, and `scripts/agent_routing.py`, and consolidate all project skills under `.agents/skills/` and the `Stop` hook in `.agents/hooks.json`. Done when: `python3 scripts/campaign_guard.py --self-test` exits 0 against `.agents/hooks.json` and `.agents/skills/`.
 - [x] Normalize legacy `## Plan review` / `## Round` headings in `docs/reviews/` so `python3 scripts/review-dispatch.py --list-rounds` reports 0 unreadable files. Done when: `python3 scripts/review-dispatch.py --list-rounds --json` reports `"unreadable": []` and `python3 scripts/todo-graph.py validate` exits 0.
 - [x] Update `AGENTS.md`, `GEMINI.md`, `README.md`, `CONTRIBUTING.md`, `docs/README.md`, `docs/agent-skills-and-rules-structure.md`, `scripts/check-all.py`, and `.github/workflows/plan.yml` for the sole-writer `agy` + `astra` architecture. Done when: `python3 scripts/drift-check.py` exits 0.
-- [x] Commit: `"review: consolidate on Antigravity writer and Astra adaptive review dispatch"`
+- [x] Commit: `"todo: start D00 T01 §6 and record first-round P3 severity-stop rule"` (the initial sole-writer consolidation landed in `c065b58` and the first-round `P3` stop rule and route/footer hardening in `5446ac9`..`d47007b`)
 
 **Test checkpoint:** `python3 scripts/check-all.py --quick`, `python3 scripts/review-dispatch.py --check-pin --json`, `python3 scripts/review-dispatch.py --list-rounds --json`, and `python3 -m unittest discover -s scripts/tests -v` exit 0 (quoted).
 
+> **Verified:** 2026-10-24 | §6 | d47007b1d303228f07ad03289f5a2db106a99373
+> **Review:** `docs/reviews/d00-t01-s6.json`
 ## 7. The Campaign Guard on a Legacy Console Encoding
 
 **Origin:** discovered run=9bdc68a3a5dc 2026-10-21 -- the SHIP push of `D99 T01 §3` read back red
