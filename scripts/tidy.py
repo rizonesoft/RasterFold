@@ -30,6 +30,16 @@ def parse_baseline(path: Path) -> int:
 
 
 def committed_baseline(root: Path, rel_path: str = 'todo/.tidy-baseline') -> int | None:
+    shallow = subprocess.run(
+        ['git', 'rev-parse', '--is-shallow-repository'],
+        cwd=root,
+        capture_output=True,
+        text=True,
+    )
+    if shallow.returncode == 0 and shallow.stdout.strip() == 'true':
+        raise ValueError(
+            f'shallow git checkout cannot verify {rel_path} history; fetch full history (git fetch --unshallow)'
+        )
     revs = subprocess.run(
         ['git', 'rev-list', '--reverse', 'HEAD', '--', rel_path],
         cwd=root,
@@ -41,8 +51,7 @@ def committed_baseline(root: Path, rel_path: str = 'todo/.tidy-baseline') -> int
     commits = [line.strip() for line in revs.stdout.splitlines() if line.strip()]
     if not commits:
         return None
-    prev_val: int | None = None
-    prev_sha = ''
+    min_val: int | None = None
     for sha in commits:
         proc = subprocess.run(
             ['git', 'show', f'{sha}:{rel_path}'],
@@ -56,13 +65,9 @@ def committed_baseline(root: Path, rel_path: str = 'todo/.tidy-baseline') -> int
         if not match:
             raise ValueError(f'malformed committed baseline {sha}:{rel_path}')
         val = int(match.group(1))
-        if prev_val is not None and val > prev_val:
-            raise ValueError(
-                f'committed baseline in {rel_path} increased from {prev_val} ({prev_sha[:12]}) to {val} ({sha[:12]}); baseline may only shrink'
-            )
-        prev_val = val
-        prev_sha = sha
-    return prev_val
+        if min_val is None or val < min_val:
+            min_val = val
+    return min_val
 
 
 def host_targets(root: Path = ROOT, os_name: str = os.name) -> list[dict]:

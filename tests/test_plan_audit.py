@@ -336,8 +336,25 @@ class TidyGateTests(unittest.TestCase):
             base_file.write_text('count: 16\n', encoding='utf-8')
             subprocess.run([git, 'add', 'todo/.tidy-baseline'], cwd=repo, check=True)
             subprocess.run([git, 'commit', '-qm', 'illegal baseline increase to 16'], cwd=repo, check=True)
-            with self.assertRaisesRegex(ValueError, r'committed baseline in todo/\.tidy-baseline increased from 15 .* to 16'):
-                tidy_gate.committed_baseline(repo)
+            min_base = tidy_gate.committed_baseline(repo)
+            self.assertEqual(15, min_base)
+            with self.assertRaisesRegex(ValueError, r'baseline 16 .* exceeds committed baseline 15'):
+                tidy_gate.evaluate_ratchet(16, base_file, ratchet=False, head_baseline=min_base)
+
+            shallow_repo = Path(tmp) / 'shallow'
+            subprocess.run([git, 'clone', '-q', '--depth', '1', f'file://{repo}', str(shallow_repo)], check=True)
+            with self.assertRaisesRegex(ValueError, r'shallow git checkout cannot verify'):
+                tidy_gate.committed_baseline(shallow_repo)
+
+            base_file.write_text('count: 15\n', encoding='utf-8')
+            subprocess.run([git, 'add', 'todo/.tidy-baseline'], cwd=repo, check=True)
+            subprocess.run([git, 'commit', '-qm', 'forward repair restoring baseline to 15'], cwd=repo, check=True)
+            min_after_repair = tidy_gate.committed_baseline(repo)
+            self.assertEqual(15, min_after_repair)
+            self.assertEqual(
+                '15/15 unique warning(s)',
+                tidy_gate.evaluate_ratchet(15, base_file, ratchet=False, head_baseline=min_after_repair),
+            )
 
     def test_cross_target_deduplication_and_failure_paths(self):
         out_win = (
