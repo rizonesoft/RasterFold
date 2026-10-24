@@ -9,7 +9,7 @@
     hooks      git core.hooksPath = tools/githooks, and tools/githooks/pre-commit
                and commit-msg present. Repair sets core.hooksPath (never over a
                different value someone chose: that is reported and left alone).
-    python     Python 3 on PATH (tests, research tools, and the TODO gates).
+    python     Python 3.11+ on PATH (tests, research tools, and the TODO gates).
     pillow     the Pillow package importable (tests and research tools read and
                write PNG and BMP through it). Repair: python -m pip install pillow.
     ffmpeg     ADVISORY: ffmpeg on PATH with the libjxl encoder, needed only by
@@ -33,11 +33,16 @@ if ($env:OS -ne 'Windows_NT') {
 }
 
 function Get-Python {
-  foreach ($name in @('python', 'python3')) {
-    $cmd = Get-Command $name -ErrorAction SilentlyContinue
-    if ($cmd) {
-      $v = (& $cmd.Source --version 2>&1) -join ' '
-      if ($v -match 'Python 3\.') { return @{ Path = $cmd.Source; Version = $v.Trim() } }
+  foreach ($name in @('python3', 'python', 'py')) {
+    foreach ($cmd in @(Get-Command $name -All -ErrorAction SilentlyContinue)) {
+      if (-not $cmd.Source) { continue }
+      try {
+        & $cmd.Source -c "import sys; sys.exit(sys.version_info < (3, 11))" 2>$null
+        if ($LASTEXITCODE -eq 0) {
+          $v = (& $cmd.Source --version 2>&1) -join ' '
+          if ($v -match 'Python 3\.') { return @{ Path = $cmd.Source; Version = $v.Trim() } }
+        }
+      } catch { }
     }
   }
   return $null
@@ -76,8 +81,8 @@ function Test-PythonLegs {
   $py = Get-Python
   if (-not $py) {
     return @(
-      @{ Name = 'python'; Ok = $false; Required = $true; Detail = 'Python 3 not on PATH (install from python.org or winget Python.Python.3.14)' },
-      @{ Name = 'pillow'; Ok = $false; Required = $true; Detail = 'needs Python first' }
+      @{ Name = 'python'; Ok = $false; Required = $true; Detail = 'Python 3.11+ not on PATH (install from python.org or winget Python.Python.3.14)' },
+      @{ Name = 'pillow'; Ok = $false; Required = $true; Detail = 'needs Python 3.11+ first' }
     )
   }
   $res = @(@{ Name = 'python'; Ok = $true; Required = $true; Detail = $py.Version })

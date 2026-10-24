@@ -18,6 +18,7 @@ PY="$(pick_python)" || { echo "pre-commit: no working Python 3.11+ (python3, pyt
 GITDIR="$(git rev-parse --absolute-git-dir 2>/dev/null)" || { echo "pre-commit: cannot locate the git dir" >&2; exit 1; }
 WORK="$(mktemp -d "$GITDIR/hookgate.XXXXXX" 2>/dev/null)" || { echo "pre-commit: cannot make a temp dir" >&2; exit 1; }
 cleanup() {
+  rc=$?
   # Windows briefly locks fresh files (antivirus, fsmonitor), so one rm -rf pass can
   # fail with "Device or resource busy" and litter the git dir; retry instead.
   n=0
@@ -26,9 +27,12 @@ cleanup() {
     n=$((n+1)); sleep 1
   done
   [ -e "$WORK" ] && echo "pre-commit: warning: could not remove $WORK" >&2
-  return 0
+  return "$rc"
 }
-trap 'cleanup' EXIT INT TERM
+trap 'cleanup' EXIT
+trap 'cleanup; trap - EXIT; exit 129' HUP
+trap 'cleanup; trap - EXIT; exit 130' INT
+trap 'cleanup; trap - EXIT; exit 143' TERM
 git checkout-index -a --prefix="$WORK/" || { echo "pre-commit: cannot stage the index for validation" >&2; exit 1; }
 if [ -f "$WORK/scripts/todo-graph.py" ]; then
   (cd "$WORK" && "$PY" scripts/todo-graph.py validate) || { echo "pre-commit: todo-graph validate is red on the staged tree; fix the findings above and retry" >&2; exit 1; }
@@ -42,5 +46,6 @@ fi
 if [ -f "$WORK/scripts/drift-check.py" ]; then
   (cd "$WORK" && "$PY" scripts/drift-check.py --git-dir "$GITDIR") || { echo "pre-commit: staged documentation drift; repair, review and stage the corrected files" >&2; exit 1; }
 fi
+[ -d "$WORK" ] || { echo "pre-commit: staged export disappeared before validation completed" >&2; exit 1; }
 git diff --quiet -- scripts todo docs || { "$PY" scripts/todo-graph.py validate >/dev/null 2>&1 || echo "pre-commit: warning: unstaged changes carry findings; this gate validated only the staged tree" >&2; }
 exit 0

@@ -22,7 +22,10 @@ if git cat-file -e :scripts/drift-check.py 2>/dev/null; then
   done
   [ -n "$PY" ] || { echo "commit-msg: Python 3.11+ is required for document facts" >&2; exit 1; }
   CHECKER="$(mktemp "$GITDIR/drift-msg.XXXXXX")" || exit 1
-  trap 'rm -f "$CHECKER"' EXIT INT TERM
+  trap 'rm -f "$CHECKER"' EXIT
+  trap 'rm -f "$CHECKER"; trap - EXIT; exit 129' HUP
+  trap 'rm -f "$CHECKER"; trap - EXIT; exit 130' INT
+  trap 'rm -f "$CHECKER"; trap - EXIT; exit 143' TERM
   git show :scripts/drift-check.py > "$CHECKER" || exit 1
   "$PY" "$CHECKER" --root "$ROOT" --commit-message "$msg" || exit 1
 fi

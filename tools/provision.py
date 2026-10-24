@@ -10,6 +10,12 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def check_python_version(version_info=None):
+    info = sys.version_info if version_info is None else version_info
+    if info < (3, 11):
+        raise ValueError('Python 3.11+ is required for repository gates')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--verify', action='store_true')
@@ -17,6 +23,7 @@ def main():
     if sys.platform != 'linux':
         parser.error('Windows hosts use tools/provision.ps1')
     try:
+        check_python_version()
         if not args.verify:
             subprocess.run([sys.executable, str(ROOT / 'tools/bootstrap.py')], check=True)
             if not (ROOT / '.venv/bin/python').is_file():
@@ -40,7 +47,7 @@ def main():
             if not shutil.which(command):
                 raise ValueError(f'{command} is required for repository gates (pwsh serves the existing Claude hook)')
         python = ROOT/'.venv/bin/python'
-        subprocess.run([str(python) if python.is_file() else sys.executable, '-c', 'import PIL; print("Pillow", PIL.__version__)'], check=True)
+        subprocess.run([str(python) if python.is_file() else sys.executable, '-c', 'import sys, PIL\nif sys.version_info < (3, 11):\n    raise SystemExit("Python 3.11+ is required")\nprint("Pillow", PIL.__version__)'], check=True)
         if not Path('/usr/include/stdio.h').is_file():
             raise ValueError('native Linux builds require the host libc development headers (Ubuntu: build-essential)')
         print('provision: local toolchain, hooks, Python/Pillow, PowerShell and native SDK verified')

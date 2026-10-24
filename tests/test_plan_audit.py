@@ -3,7 +3,11 @@ import importlib.util
 import argparse
 import contextlib
 import io
+import os
 from pathlib import Path
+import shutil
+import stat
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -143,6 +147,145 @@ class PlanProjectionTests(unittest.TestCase):
                 self.assertIn(cache.name + ' is stale', output)
                 self.assertEqual('{}\n', cache.read_text(encoding='utf-8'))
                 cache.unlink()
+
+
+class HookAndProvisionTests(unittest.TestCase):
+    def test_precommit_hook_cancellation_exits_nonzero_and_cleans_up(self):
+        if not shutil.which('sh'):
+            self.skipTest('POSIX shell is required for Git hook execution')
+        real_git = shutil.which('git')
+        self.assertIsNotNone(real_git)
+        for sig_name in ('TERM', 'INT'):
+            with self.subTest(signal=sig_name), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp) / 'repo'
+                root.mkdir()
+                subprocess.run([real_git, 'init', '-q'], cwd=root, check=True)
+                subprocess.run([real_git, 'config', 'user.email', 'fixture@example.invalid'], cwd=root, check=True)
+                subprocess.run([real_git, 'config', 'user.name', 'Fixture'], cwd=root, check=True)
+                gate = root / 'scripts/plan-audit.py'
+                gate.parent.mkdir(parents=True, exist_ok=True)
+                gate.write_text('raise SystemExit(1)\n', encoding='utf-8')
+                subprocess.run([real_git, 'add', 'scripts/plan-audit.py'], cwd=root, check=True)
+
+                shim_dir = Path(tmp) / 'bin'
+                shim_dir.mkdir()
+                git_shim = shim_dir / 'git'
+                git_shim.write_text(
+                    f'#!/bin/sh\n'
+                    f'"{real_git}" "$@"\n'
+                    f'rc=$?\n'
+                    f'if [ "${{1:-}}" = "checkout-index" ]; then\n'
+                    f'  kill -{sig_name} "$PPID"\n'
+                    f'  sleep 1\n'
+                    f'fi\n'
+                    f'exit "$rc"\n',
+                    encoding='utf-8',
+                )
+                git_shim.chmod(git_shim.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+                env = dict(os.environ)
+                env['PATH'] = str(shim_dir) + os.pathsep + env.get('PATH', '')
+                proc = subprocess.run(
+                    ['sh', str(ROOT / 'tools/githooks/pre-commit')],
+                    cwd=root,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                self.assertNotEqual(0, proc.returncode, proc.stdout + proc.stderr)
+                self.assertEqual([], list((root / '.git').glob('hookgate.*')))
+
+    def test_provision_rejects_python_older_than_3_11(self):
+        prov_spec = importlib.util.spec_from_file_location('provision', ROOT / 'tools/provision.py')
+        prov = importlib.util.module_from_spec(prov_spec)
+        prov_spec.loader.exec_module(prov)
+        with self.assertRaisesRegex(ValueError, r'Python 3\.11\+ is required'):
+            prov.check_python_version((3, 10, 14))
+        prov.check_python_version((3, 11, 0))
+
+        pwsh = shutil.which('pwsh')
+        if not pwsh:
+            self.skipTest('pwsh is required to test tools/provision.ps1')
+        ps1_text = (ROOT / 'tools/provision.ps1').read_text(encoding='utf-8')
+        start = ps1_text.index('function Get-Python {')
+        end = ps1_text.index('function Test-FfmpegLeg {')
+        functions_block = ps1_text[start:end]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_310 = Path(tmp) / 'py310'
+            bin_310.mkdir()
+            for name in ('python3', 'python', 'py'):
+                shim = bin_310 / (name + ('.cmd' if os.name == 'nt' else ''))
+                if os.name == 'nt':
+                    shim.write_text(
+                        '@echo off\r\n'
+                        'if "%~1"=="--version" (echo Python 3.10.14 & exit /b 0)\r\n'
+                        'exit /b 1\r\n',
+                        encoding='utf-8',
+                    )
+                else:
+                    shim.write_text(
+                        '#!/bin/sh\n'
+                        'if [ "${1:-}" = "--version" ]; then echo "Python 3.10.14"; exit 0; fi\n'
+                        'exit 1\n',
+                        encoding='utf-8',
+                    )
+                    shim.chmod(shim.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+            env_310 = dict(os.environ)
+            env_310['PATH'] = str(bin_310)
+            res_310 = subprocess.run(
+                [
+                    pwsh,
+                    '-NoProfile',
+                    '-Command',
+                    functions_block + '\n$r = Test-PythonLegs; if ($r[0].Ok) { exit 0 } else { Write-Output $r[0].Detail; exit 1 }',
+                ],
+                env=env_310,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertNotEqual(0, res_310.returncode, res_310.stdout + res_310.stderr)
+            self.assertIn('Python 3.11+ not on PATH', res_310.stdout)
+
+            bin_312 = Path(tmp) / 'py312'
+            bin_312.mkdir()
+            shim_312 = bin_312 / ('python' + ('.cmd' if os.name == 'nt' else ''))
+            if os.name == 'nt':
+                shim_312.write_text(
+                    '@echo off\r\n'
+                    'if "%~1"=="--version" (echo Python 3.12.4 & exit /b 0)\r\n'
+                    'echo 10.4.0\r\n'
+                    'exit /b 0\r\n',
+                    encoding='utf-8',
+                )
+            else:
+                shim_312.write_text(
+                    '#!/bin/sh\n'
+                    'if [ "${1:-}" = "--version" ]; then echo "Python 3.12.4"; exit 0; fi\n'
+                    'echo "10.4.0"\n'
+                    'exit 0\n',
+                    encoding='utf-8',
+                )
+                shim_312.chmod(shim_312.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+            env_mixed = dict(os.environ)
+            env_mixed['PATH'] = str(bin_310) + os.pathsep + str(bin_312)
+            res_mixed = subprocess.run(
+                [
+                    pwsh,
+                    '-NoProfile',
+                    '-Command',
+                    functions_block + '\n$r = Test-PythonLegs; if ($r[0].Ok -and $r[1].Ok) { Write-Output $r[0].Detail; exit 0 } else { exit 1 }',
+                ],
+                env=env_mixed,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(0, res_mixed.returncode, res_mixed.stdout + res_mixed.stderr)
+            self.assertIn('Python 3.12.4', res_mixed.stdout)
 
 
 if __name__ == '__main__':
