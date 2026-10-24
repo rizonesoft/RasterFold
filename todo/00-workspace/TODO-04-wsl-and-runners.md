@@ -46,7 +46,7 @@ frozen: true
 | :---: | :-----: | ----------- | ---------- | :----: |
 | 1 | §1 | Local toolchains and WSL gates | D00 T01 §6 | [x] |
 | 2 | §2 | Portable platform and SIMD boundary | §1 | [x] |
-| 3 | §3 | Isolated Codex lifecycle and review runner | §1 | [ ] |
+| 3 | §3 | Isolated Codex lifecycle and review runner | §1 | [x] |
 | 4 | §4 | Family-local intelligence | §3 | [ ] |
 
 ---
@@ -129,6 +129,8 @@ Keep the format frozen at version 2. Add Linux and Android platform support and 
 
 **Freeze check:** No codec, oracle, format specification, or known-answer bytes change in this section; native correctness and oracle comparisons must remain green.
 
+> **Verified:** 2026-10-25 | §3 | 3278330ae323b1ad52aff3702f78f21eb7355804
+> **Review:** `docs/reviews/d00-t04-s3.json`
 ## 4. Family-Local Intelligence
 
 **Corrected 2026-10-24:** Standalone `scripts/intelligence.py` validates the retained `.intelligence/` registers and archives without `.claude/` or `.codex/` runner directories, while `.agents/skills/process-intelligence/SKILL.md` governs stopped-boundary disposition.

@@ -1,0 +1,86 @@
+{
+  "ref": "D00 T04 \u00a73",
+  "title": "Isolated Codex Lifecycle and Review Runner",
+  "implementation_sha": "3278330ae323b1ad52aff3702f78f21eb7355804",
+  "date": "2026-10-25",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/00-workspace/D00-T04-s3.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 -m unittest discover -s scripts/tests -v -> Ran 99 tests, OK (skipped=1)",
+    "python3 scripts/campaign_guard.py --self-test -> 145 cases, 0 failed",
+    "python3 scripts/review-dispatch.py --check-pin --json -> ok: true, routes: agy -> astra",
+    "python3 scripts/drift-check.py -> 162 supported documents; 0 error(s)"
+  ],
+  "completion": {
+    "report": "docs/reviews/00-workspace/D00-T04-s3.md",
+    "verdict": "completed",
+    "candidate": "38667504c1f84b328ec748f0f60fda8f50936368",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/00-workspace/D00-T04-s3.md",
+    "candidate": "b8a3caad7f5e0828d2d016dd314b279be9fb71d5",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}
