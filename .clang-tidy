@@ -1,0 +1,27 @@
+# Static analysis configuration for RasterFold C11 sources (D00 T01 §3).
+# Enabled families: bugprone-*, clang-analyzer-*, performance-*, cert-*.
+# Excluded style/platform-noise checks (each with its reason):
+# - bugprone-easily-swappable-parameters: style warning on adjacent width/height and RGB parameters.
+# - readability-magic-numbers: codec constants and bit widths are specified in spec/FOLD.md.
+# - bugprone-signed-bitwise: fixed-point predictor and mixer arithmetic in src/cm.c intentionally shifts signed accumulators.
+# - clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling: recommends C11 Annex K memcpy_s/memset_s, absent in freestanding Win32 and POSIX libc.
+# - bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp: flags standard POSIX feature-test macros (_GNU_SOURCE, _POSIX_C_SOURCE) in src/sys_posix.c.
+# - performance-no-int-to-ptr: flags Win32 SDK INVALID_HANDLE_VALUE ((HANDLE)(LONG_PTR)-1) in src/sys.c.
+# - bugprone-assignment-in-if-condition: idiomatic C allocation-and-test guards across the codec.
+Checks: >
+  -*,
+  bugprone-*,
+  clang-analyzer-*,
+  performance-*,
+  cert-*,
+  -bugprone-easily-swappable-parameters,
+  -readability-magic-numbers,
+  -bugprone-signed-bitwise,
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
+  -bugprone-reserved-identifier,
+  -cert-dcl37-c,
+  -cert-dcl51-cpp,
+  -performance-no-int-to-ptr,
+  -bugprone-assignment-in-if-condition
+HeaderFilterRegex: 'src/.*\.h$'
+FormatStyle: none

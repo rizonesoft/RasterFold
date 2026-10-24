@@ -164,11 +164,11 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "Author-attested: 2026-10-24 re-read README.md after updating Development and automation to name Antigravity (agy) as the sole writer with .agents/skills/, .agents/hooks.json, scripts/campaign_guard.py, and scripts/review-dispatch.py; all codec and build facts unchanged",
+      "evidence": "Author-attested: 2026-10-24 re-read README.md against scripts/build.py after adding compile_commands.json emission in build.py (D00 T01 section 3); documented build outputs and targets hold",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "51734a555f97e344771e8462284781429f04d5d5f6a8e5550e43e10e9c20e7c3",
-        "scripts/build.py": "81f4a17e99f5a0bf93b55cc1c4e238b72cd9b8c014bf0a9b12c7e792777c8fac",
+        "scripts/build.py": "01c74624dccd3b9899471ed7c75836942da0ac2e1933d94debf2aa5960f4035f",
         "scripts/package.py": "f88b30dea02dd187429bebd1ffc835f487db6c410c72e7855db73ef20f5ba116",
         "README.md": "a951ecf34ea9a295463e97ec97f5de02895943ec4a7cdc9f64585d3f3791a0f8"
       }
@@ -183,10 +183,10 @@
       }
     },
     "docs/building.md": {
-      "evidence": "Author-attested: 2026-09-30 D00 T04 section 1 source review of required package artifacts and full-gate registration against scripts/build.py, scripts/package.py and scripts/check-all.py; five package regression tests pass; see docs/phase-runs/2026-09-30-codex-phase-0.md",
+      "evidence": "Author-attested: 2026-10-24 re-read docs/building.md against scripts/build.py after adding compile_commands.json emission in build.py (D00 T01 section 3); documented toolchain, targets, and package outputs hold",
       "sources": {
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
-        "scripts/build.py": "81f4a17e99f5a0bf93b55cc1c4e238b72cd9b8c014bf0a9b12c7e792777c8fac",
+        "scripts/build.py": "01c74624dccd3b9899471ed7c75836942da0ac2e1933d94debf2aa5960f4035f",
         "scripts/package.py": "f88b30dea02dd187429bebd1ffc835f487db6c410c72e7855db73ef20f5ba116",
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "docs/building.md": "80d227a518bc165e857bf81d58ea2fabc972f1a90c2e53ea73a33bc8aa36cdb3"
@@ -202,10 +202,10 @@
       }
     },
     "CONTRIBUTING.md": {
-      "evidence": "Author-attested: 2026-10-24 re-read CONTRIBUTING.md against scripts/check-all.py after replacing legacy panel/Codex gates with review-dispatch.py, campaign_guard.py, and scripts/tests unit tests; documented build and test workflow holds",
+      "evidence": "Author-attested: 2026-10-24 re-read CONTRIBUTING.md against scripts/build.py and scripts/check-all.py after adding compile_commands.json and the clang-tidy gate (D00 T01 section 3); documented build and gate workflow holds",
       "sources": {
-        "scripts/build.py": "81f4a17e99f5a0bf93b55cc1c4e238b72cd9b8c014bf0a9b12c7e792777c8fac",
-        "scripts/check-all.py": "480c5050ff9c13fa5c84ede92818228e15390b82fcaa9aa914deb248308d4838",
+        "scripts/build.py": "01c74624dccd3b9899471ed7c75836942da0ac2e1933d94debf2aa5960f4035f",
+        "scripts/check-all.py": "9445bd7167f80afdd5e9c558defbfea1ec28cd69600d59a794d0addf2fc28d8c",
         "CONTRIBUTING.md": "01f5855ce18883d6930ce1ebb569ea9411ac21e3c4cf3faced1a56c155bf470f"
       }
     }

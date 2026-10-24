@@ -16,6 +16,9 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('plan_audit', ROOT / 'scripts/plan-audit.py')
 audit = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(audit)
+tidy_spec = importlib.util.spec_from_file_location('tidy_gate', ROOT / 'scripts/tidy.py')
+tidy_gate = importlib.util.module_from_spec(tidy_spec)
+tidy_spec.loader.exec_module(tidy_gate)
 
 
 class PlanAuditTests(unittest.TestCase):
@@ -286,6 +289,68 @@ class HookAndProvisionTests(unittest.TestCase):
             )
             self.assertEqual(0, res_mixed.returncode, res_mixed.stdout + res_mixed.stderr)
             self.assertIn('Python 3.12.4', res_mixed.stdout)
+
+
+class TidyGateTests(unittest.TestCase):
+    def test_ratchet_sequence_18_to_15_to_16_and_upward_edit_refusal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            baseline = Path(tmp) / '.tidy-baseline'
+            baseline.write_text('count: 18\n', encoding='utf-8')
+            self.assertEqual('18/18 unique warning(s)', tidy_gate.evaluate_ratchet(18, baseline, ratchet=False, head_baseline=18))
+            with self.assertRaisesRegex(ValueError, r'below baseline 18.*--ratchet'):
+                tidy_gate.evaluate_ratchet(15, baseline, ratchet=False, head_baseline=18)
+            self.assertEqual(
+                'ratcheted baseline from 18 to 15',
+                tidy_gate.evaluate_ratchet(15, baseline, ratchet=True, head_baseline=18),
+            )
+            self.assertEqual(15, tidy_gate.parse_baseline(baseline))
+            with self.assertRaisesRegex(ValueError, r'exceeding baseline 15'):
+                tidy_gate.evaluate_ratchet(16, baseline, ratchet=False, head_baseline=18)
+            with self.assertRaisesRegex(ValueError, r'exceeding baseline 15'):
+                tidy_gate.evaluate_ratchet(16, baseline, ratchet=True, head_baseline=18)
+            self.assertEqual(15, tidy_gate.parse_baseline(baseline))
+            baseline.write_text('count: 19\n', encoding='utf-8')
+            with self.assertRaisesRegex(ValueError, r'exceeds committed baseline 18'):
+                tidy_gate.evaluate_ratchet(19, baseline, ratchet=False, head_baseline=18)
+
+    def test_cross_target_deduplication_and_failure_paths(self):
+        out_win = (
+            str(ROOT / 'src/cm.c')
+            + ":651:49: warning: performing an implicit widening conversion to type 'size_t' (aka 'unsigned long long') [bugprone-implicit-widening-of-multiplication-result]\n"
+        )
+        out_lin = (
+            str(ROOT / 'src/cm.c')
+            + ":651:49: warning: performing an implicit widening conversion to type 'size_t' (aka 'unsigned long') [bugprone-implicit-widening-of-multiplication-result]\n"
+        )
+        f1, _ = tidy_gate.parse_tidy_output(out_win, 0, ROOT, 'windows-x64')
+        f2, _ = tidy_gate.parse_tidy_output(out_lin, 0, ROOT, 'linux-x64')
+        self.assertEqual(1, len(f1 | f2))
+        self.assertEqual({('src/cm.c', 651, 49, 'bugprone-implicit-widening-of-multiplication-result')}, f1 | f2)
+
+        with self.assertRaisesRegex(ValueError, r'exited with code 2'):
+            tidy_gate.parse_tidy_output('warning-free output without error marker\n', 2, ROOT, 'linux-x64')
+        with self.assertRaisesRegex(ValueError, r'error diagnostic'):
+            tidy_gate.parse_tidy_output('src/mem.c:10:5: error: undeclared identifier [clang-diagnostic-error]\n', 0, ROOT, 'linux-x64')
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            with self.assertRaisesRegex(ValueError, r'missing baseline'):
+                tidy_gate.parse_baseline(tmp_path / 'missing')
+            bad_base = tmp_path / 'bad-baseline'
+            for bad_text in ('', 'count: -1\n', 'count: abc\n', 'warnings: 10\n'):
+                bad_base.write_text(bad_text, encoding='utf-8')
+                with self.assertRaisesRegex(ValueError, r'malformed baseline'):
+                    tidy_gate.parse_baseline(bad_base)
+
+            with self.assertRaisesRegex(ValueError, r'missing compilation database'):
+                tidy_gate.validate_compdb(tmp_path / 'missing.json', ROOT)
+            compdb = tmp_path / 'compile_commands.json'
+            compdb.write_text('[]\n', encoding='utf-8')
+            with self.assertRaisesRegex(ValueError, r'empty compilation database'):
+                tidy_gate.validate_compdb(compdb, ROOT)
+            compdb.write_text('[{"file": "/nonexistent/src/foo.c", "arguments": ["clang"]}]\n', encoding='utf-8')
+            with self.assertRaisesRegex(ValueError, r'references missing file'):
+                tidy_gate.validate_compdb(compdb, ROOT)
 
 
 if __name__ == '__main__':

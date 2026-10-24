@@ -18,6 +18,7 @@ def main():
     gates=[]
     def python(name,path,*args):gates.append((name,[py,path,*args]))
     if not a.skip_build:python('build','scripts/build.py',*(['--target','all'] if a.all_targets else []))
+    python('clang-tidy','scripts/tidy.py')
     python('correctness','tests/test_correctness.py')
     python('api','tests/test_api.py')
     python('native consumers and ABI','tests/test_artifacts.py')

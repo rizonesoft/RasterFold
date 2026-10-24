@@ -17,7 +17,9 @@
 *.ninja text eol=lf
 .gitattributes text eol=lf
 .gitignore text eol=lf
+.clang-tidy text eol=lf
 tools/githooks/** text eol=lf
+todo/.tidy-baseline text eol=lf
 todo/.warning-baseline text eol=lf
 todo/.design-baseline text eol=lf
 docs/reviews/** text eol=lf
