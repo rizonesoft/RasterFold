@@ -68,16 +68,30 @@ int rf_write_atomic(const rf_path_char *path, const uint8_t *data, size_t size, 
     if (rc) return rc;
     size_t n = strlen(path);
     if (!n || n >= 1024) return rf_fail(err, RF_ERR_IO, "path too long");
-    char tmp[1033], parent[1024];
-    memcpy(tmp, path, n); memcpy(tmp + n, ".partial", 9);
+    char parent[1024];
     memcpy(parent, path, n + 1);
     size_t slash = n;
     while (slash && parent[slash - 1] != '/') slash--;
+    const char *leaf = path + slash;
+    if (!*leaf || (leaf[0] == '.' && (!leaf[1] || (leaf[1] == '.' && !leaf[2]))))
+        return rf_fail(err, RF_ERR_IO, "cannot write output");
+    size_t leaf_n = n - slash;
+    char tmp_leaf[1033];
+    memcpy(tmp_leaf, leaf, leaf_n); memcpy(tmp_leaf + leaf_n, ".partial", 9);
     if (!slash) { parent[0] = '.'; parent[1] = 0; }
     else parent[slash == 1 ? 1 : slash - 1] = 0;
     int dir = open(parent, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
     if (dir < 0) return rf_fail(err, RF_ERR_IO, "cannot write output");
-    int fd = open(tmp, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0666);
+    struct stat st;
+    if (!fstatat(dir, leaf, &st, AT_SYMLINK_NOFOLLOW)) {
+        close(dir);
+        return rf_fail(err, RF_ERR_IO, "output file already exists");
+    }
+    if (errno != ENOENT) {
+        close(dir);
+        return rf_fail(err, RF_ERR_IO, "cannot access output path");
+    }
+    int fd = openat(dir, tmp_leaf, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0666);
     if (fd < 0) {
         int exists = errno == EEXIST;
         close(dir);
@@ -100,15 +114,15 @@ int rf_write_atomic(const rf_path_char *path, const uint8_t *data, size_t size, 
     int published = 0, renamed = 0;
     if (ok) {
 #if defined(SYS_renameat2)
-        if (!syscall(SYS_renameat2, AT_FDCWD, tmp, AT_FDCWD, path, 1u /* RENAME_NOREPLACE */))
+        if (!syscall(SYS_renameat2, dir, tmp_leaf, dir, leaf, 1u /* RENAME_NOREPLACE */))
             published = renamed = 1;
         else if (errno == ENOSYS || errno == EINVAL || errno == EOPNOTSUPP || errno == EPERM)
-            published = link(tmp, path) == 0;
+            published = linkat(dir, tmp_leaf, dir, leaf, 0) == 0;
 #else
-        published = link(tmp, path) == 0;
+        published = linkat(dir, tmp_leaf, dir, leaf, 0) == 0;
 #endif
     }
-    int cleaned = renamed || unlink(tmp) == 0;
+    int cleaned = renamed || unlinkat(dir, tmp_leaf, 0) == 0;
     /* Some filesystems do not implement directory fsync. File contents were
      * flushed before publication; directory persistence is best effort there. */
     int durable = published && (fsync(dir) == 0 || errno == EINVAL);

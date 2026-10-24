@@ -121,7 +121,7 @@ class Artifacts(unittest.TestCase):
                 'fallback':('long syscall(long n, ...) { (void)n; errno=ENOSYS; return -1; }',0,b''),
                 'flush':('int fsync(int fd) { struct stat s; if(!fstat(fd,&s) && S_ISDIR(s.st_mode)){errno=EIO;return -1;}return 0;}',2,b'output published but directory flush failed'),
                 'unsupported_flush':('int fsync(int fd) { struct stat s; if(!fstat(fd,&s) && S_ISDIR(s.st_mode)){errno=EINVAL;return -1;}return 0;}',0,b''),
-                'cleanup':('long syscall(long n, ...) { (void)n;errno=ENOSYS;return -1;} int unlink(const char *p){(void)p;errno=EPERM;return -1;}',2,b'output published but temporary cleanup failed'),
+                'cleanup':('long syscall(long n, ...) { (void)n;errno=ENOSYS;return -1;} int unlinkat(int d, const char *p, int f){(void)d;(void)p;(void)f;errno=EPERM;return -1;}',2,b'output published but temporary cleanup failed'),
             }
             for name,(body,code,message) in variants.items():
                 with self.subTest(name=name):
@@ -132,6 +132,39 @@ class Artifacts(unittest.TestCase):
                     result=subprocess.run([OUT/'bin/rasterfold','encode',src,dest],env=env,capture_output=True,timeout=15)
                     self.assertEqual(result.returncode,code,result.stderr)
                     self.assertIn(message,result.stderr);self.assertEqual(dest.read_bytes(),KAT_FOLD)
+            for mode,err_code in (('renameat2','EEXIST'),('linkat','ENOSYS')):
+                with self.subTest(name=f'parent_retarget_{mode}'):
+                    dir_a=temp/f'dir_a_{mode}';dir_b=temp/f'dir_b_{mode}';dir_a.mkdir();dir_b.mkdir()
+                    (dir_b/'out.fold').write_bytes(b'keep-b-fold')
+                    (dir_b/'out.fold.partial').write_bytes(b'keep-b-partial')
+                    parent_link=temp/f'parent_link_{mode}';parent_link.symlink_to(dir_a)
+                    retarget_src=temp/f'retarget_{mode}.c';retarget_so=temp/f'retarget_{mode}.so'
+                    retarget_src.write_text(
+                        '#include <errno.h>\n#include <fcntl.h>\n#include <stdlib.h>\n#include <unistd.h>\n'
+                        'long syscall(long n, ...) {\n'
+                        '    (void)n;\n'
+                        '    const char *link_path = getenv("RF_TEST_PARENT_LINK");\n'
+                        '    const char *dir_b = getenv("RF_TEST_DIR_B");\n'
+                        '    const char *collide_a = getenv("RF_TEST_COLLIDE_A");\n'
+                        '    if (collide_a) { int cfd = open(collide_a, O_WRONLY | O_CREAT | O_EXCL, 0666); if (cfd >= 0) close(cfd); }\n'
+                        '    if (link_path && dir_b) { unlink(link_path); symlink(dir_b, link_path); }\n'
+                        f'    errno = {err_code};\n'
+                        '    return -1;\n'
+                        '}\n'
+                    )
+                    run([tool('clang'),'--target=x86_64-linux-gnu','-shared','-fPIC',retarget_src,'-o',retarget_so])
+                    env=dict(
+                        os.environ,
+                        LD_PRELOAD=str(retarget_so),
+                        RF_TEST_PARENT_LINK=str(parent_link),
+                        RF_TEST_DIR_B=str(dir_b),
+                        RF_TEST_COLLIDE_A=str(dir_a/'out.fold'),
+                    )
+                    result=subprocess.run([OUT/'bin/rasterfold','encode',src,parent_link/'out.fold'],env=env,capture_output=True,timeout=15)
+                    self.assertEqual(result.returncode,2,result.stderr)
+                    self.assertEqual((dir_b/'out.fold').read_bytes(),b'keep-b-fold')
+                    self.assertEqual((dir_b/'out.fold.partial').read_bytes(),b'keep-b-partial')
+                    self.assertFalse((dir_a/'out.fold.partial').exists())
 
 
 if __name__=='__main__':unittest.main(verbosity=2)
