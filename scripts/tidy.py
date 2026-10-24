@@ -30,18 +30,39 @@ def parse_baseline(path: Path) -> int:
 
 
 def committed_baseline(root: Path, rel_path: str = 'todo/.tidy-baseline') -> int | None:
-    proc = subprocess.run(
-        ['git', 'show', f'HEAD:{rel_path}'],
+    revs = subprocess.run(
+        ['git', 'rev-list', '--reverse', 'HEAD', '--', rel_path],
         cwd=root,
         capture_output=True,
         text=True,
     )
-    if proc.returncode != 0:
+    if revs.returncode != 0:
         return None
-    match = BASELINE_RE.match(proc.stdout)
-    if not match:
-        raise ValueError(f'malformed committed baseline HEAD:{rel_path}')
-    return int(match.group(1))
+    commits = [line.strip() for line in revs.stdout.splitlines() if line.strip()]
+    if not commits:
+        return None
+    prev_val: int | None = None
+    prev_sha = ''
+    for sha in commits:
+        proc = subprocess.run(
+            ['git', 'show', f'{sha}:{rel_path}'],
+            cwd=root,
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode != 0:
+            continue
+        match = BASELINE_RE.match(proc.stdout)
+        if not match:
+            raise ValueError(f'malformed committed baseline {sha}:{rel_path}')
+        val = int(match.group(1))
+        if prev_val is not None and val > prev_val:
+            raise ValueError(
+                f'committed baseline in {rel_path} increased from {prev_val} ({prev_sha[:12]}) to {val} ({sha[:12]}); baseline may only shrink'
+            )
+        prev_val = val
+        prev_sha = sha
+    return prev_val
 
 
 def host_targets(root: Path = ROOT, os_name: str = os.name) -> list[dict]:

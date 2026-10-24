@@ -313,6 +313,32 @@ class TidyGateTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, r'exceeds committed baseline 18'):
                 tidy_gate.evaluate_ratchet(19, baseline, ratchet=False, head_baseline=18)
 
+    def test_committed_baseline_increase_is_refused(self):
+        git = shutil.which('git')
+        self.assertIsNotNone(git)
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / 'repo'
+            (repo / 'todo').mkdir(parents=True)
+            subprocess.run([git, 'init', '-q'], cwd=repo, check=True)
+            subprocess.run([git, 'config', 'user.email', 'fixture@example.invalid'], cwd=repo, check=True)
+            subprocess.run([git, 'config', 'user.name', 'Fixture'], cwd=repo, check=True)
+            base_file = repo / 'todo/.tidy-baseline'
+            base_file.write_text('count: 20\n', encoding='utf-8')
+            subprocess.run([git, 'add', 'todo/.tidy-baseline'], cwd=repo, check=True)
+            subprocess.run([git, 'commit', '-qm', 'initial baseline 20'], cwd=repo, check=True)
+            self.assertEqual(20, tidy_gate.committed_baseline(repo))
+
+            base_file.write_text('count: 15\n', encoding='utf-8')
+            subprocess.run([git, 'add', 'todo/.tidy-baseline'], cwd=repo, check=True)
+            subprocess.run([git, 'commit', '-qm', 'shrink baseline to 15'], cwd=repo, check=True)
+            self.assertEqual(15, tidy_gate.committed_baseline(repo))
+
+            base_file.write_text('count: 16\n', encoding='utf-8')
+            subprocess.run([git, 'add', 'todo/.tidy-baseline'], cwd=repo, check=True)
+            subprocess.run([git, 'commit', '-qm', 'illegal baseline increase to 16'], cwd=repo, check=True)
+            with self.assertRaisesRegex(ValueError, r'committed baseline in todo/\.tidy-baseline increased from 15 .* to 16'):
+                tidy_gate.committed_baseline(repo)
+
     def test_cross_target_deduplication_and_failure_paths(self):
         out_win = (
             str(ROOT / 'src/cm.c')
