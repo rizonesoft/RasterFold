@@ -2,7 +2,7 @@
 schema_version: 1
 id: wsl-and-runners
 domain: 00-workspace
-status: active
+status: done
 title: "TODO-04 -- WSL, Local Toolchains, and Isolated Runners"
 depends_on: []
 track: W2
@@ -47,7 +47,7 @@ frozen: true
 | 1 | §1 | Local toolchains and WSL gates | D00 T01 §6 | [x] |
 | 2 | §2 | Portable platform and SIMD boundary | §1 | [x] |
 | 3 | §3 | Isolated Codex lifecycle and review runner | §1 | [x] |
-| 4 | §4 | Family-local intelligence | §3 | [ ] |
+| 4 | §4 | Family-local intelligence | §3 | [x] |
 
 ---
 
@@ -150,6 +150,8 @@ Keep the format frozen at version 2. Add Linux and Android platform support and 
 
 **Freeze check:** No codec, oracle, format specification, or known-answer bytes change in this section; native correctness and oracle comparisons must remain green.
 
+> **Verified:** 2026-10-25 | §4 | a6f8f82524e962a8043924d75add98ef13f12d0b
+> **Review:** `docs/reviews/d00-t04-s4.json`
 ## Verification
 
 - [ ] `python3 scripts/check-all.py` passes every required host gate.

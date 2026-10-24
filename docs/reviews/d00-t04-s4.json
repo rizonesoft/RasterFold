@@ -1,0 +1,96 @@
+{
+  "ref": "D00 T04 \u00a74",
+  "title": "Family-Local Intelligence",
+  "implementation_sha": "a6f8f82524e962a8043924d75add98ef13f12d0b",
+  "date": "2026-10-25",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/00-workspace/D00-T04-s4.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/00-workspace/D00-T04-s4.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 3,
+      "report": "docs/reviews/00-workspace/D00-T04-s4.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 scripts/intelligence.py validate -> claude: 0 active, codex: 4 active; valid",
+    "python3 scripts/tests/test_intelligence.py -v -> Ran 5 tests, OK",
+    "python3 scripts/windows.py scripts/tests/test_intelligence.py -v -> Ran 5 tests, OK",
+    "python3 scripts/campaign_guard.py --self-test -> 145 cases, 0 failed"
+  ],
+  "completion": {
+    "report": "docs/reviews/00-workspace/D00-T04-s4.md",
+    "verdict": "complete",
+    "candidate": "708ce6d734dd3102ee0506feeaa1e02d5685ba82",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 3,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/00-workspace/D00-T04-s4.md",
+    "candidate": "6c1d4ac78631db0fc53e8f4569ce5daffb432600",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}
