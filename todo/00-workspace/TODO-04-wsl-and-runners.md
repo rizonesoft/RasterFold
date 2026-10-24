@@ -45,7 +45,7 @@ frozen: true
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
 | 1 | §1 | Local toolchains and WSL gates | D00 T01 §6 | [x] |
-| 2 | §2 | Portable platform and SIMD boundary | §1 | [ ] |
+| 2 | §2 | Portable platform and SIMD boundary | §1 | [x] |
 | 3 | §3 | Isolated Codex lifecycle and review runner | §1 | [ ] |
 | 4 | §4 | Family-local intelligence | §3 | [ ] |
 
@@ -107,6 +107,8 @@ Keep the format frozen at version 2. Add Linux and Android platform support and 
 
 **Freeze check:** no new method, version, predictor, constant or acceptance rule; every emitted byte must match the independent oracle and existing known-answer file.
 
+> **Verified:** 2026-10-25 | §2 | 513dc4162d9ac4e1e168391c1a3d0c81834bafb2
+> **Review:** `docs/reviews/d00-t04-s2.json`
 ## 3. Isolated Codex Lifecycle and Review Runner
 
 **Corrected 2026-10-24:** With the operator decision to consolidate on Antigravity (`agy`) as the sole writer and GPT-6 Astra (`gpt-6-astra` via `codex`) as the sole reviewer (`D00 T01 §6`), the `.claude/` and `.codex/` writer harnesses are retired. This section's deliverables are satisfied by the unified `.agents/skills/` lifecycle skills, `.agents/hooks.json` native `Stop` hook, `scripts/campaign_guard.py` controller, and `scripts/review-dispatch.py` adaptive reviewer.

@@ -1,0 +1,91 @@
+{
+  "ref": "D00 T04 \u00a72",
+  "title": "Portable Platform and SIMD Boundary",
+  "implementation_sha": "513dc4162d9ac4e1e168391c1a3d0c81834bafb2",
+  "date": "2026-10-25",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/00-workspace/D00-T04-s2.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/00-workspace/D00-T04-s2.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 tests/test_correctness.py -> 33 passed, 0 failed",
+    "python3 tests/fuzz_decode.py 300 1 -> 300 mutated files: 293 rejected, 7 still valid",
+    "python3 scripts/build.py --target all -> built linux-x64, windows-x64, android-arm64, android-x64",
+    "python3 tests/test_artifacts.py -> Ran 4 tests, OK"
+  ],
+  "completion": {
+    "report": "docs/reviews/00-workspace/D00-T04-s2.md",
+    "verdict": "complete",
+    "candidate": "31fab2636aea048747607f01ab48be21d379f216",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 2,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/00-workspace/D00-T04-s2.md",
+    "candidate": "2bd33bafa523206461caf483f539ef9558902aee",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}

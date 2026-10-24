@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **13 of 227 sections complete (6%).** 227 sections (6 discovered); backlog 1 entry. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **14 of 227 sections complete (6%).** 227 sections (6 discovered); backlog 1 entry. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -139,7 +139,7 @@ The ported plan, hooks, gates, measurement references, HTML docs, and drift gate
 | [x] | `D00 T01 §6` | Claude review rounds through the reviewer pin                 |   6   |
 | [x] | `D00 T04 §1` | Local toolchains and WSL gates                                |   6   |
 | [x] | `D08 T04 §1` | Repository presentation and developer entry points            |   4   |
-| [ ] | `D00 T04 §2` | Portable platform and SIMD boundary                           |   4   |
+| [x] | `D00 T04 §2` | Portable platform and SIMD boundary                           |   4   |
 | [ ] | `D00 T04 §3` | Isolated Codex lifecycle and review runner                    |   5   |
 | [ ] | `D00 T04 §4` | Family-local intelligence                                     |   4   |
 | [ ] | `D00 T01 §4` | Prove the review panel end to end                             |   4   |
