@@ -440,27 +440,17 @@ def run(argv, stdin_text, timeout, watched):
         job = None
         process = None
         try:
-            if os.name == "nt":
-                job = create_windows_job()
-            process = subprocess.Popen(argv, cwd=ROOT, stdin=subprocess.PIPE, stdout=output,
-                                       stderr=subprocess.DEVNULL, **group)
-            if os.name == "nt":
-                process._job_handle = job
-                job = None
-                bind_and_resume_windows_job(process._job_handle, process)
-        except (OSError, ValueError) as exc:
-            if job is not None:
-                close_windows_job(job)
-            if process is not None:
-                if process.stdin is not None:
-                    try:
-                        process.stdin.close()
-                    except OSError:
-                        pass
-                kill_tree(process)
-                process.wait()
-            return None, f"could not start: {getattr(exc, 'strerror', None) or str(exc) or type(exc).__name__}"
-        try:
+            try:
+                if os.name == "nt":
+                    job = create_windows_job()
+                process = subprocess.Popen(argv, cwd=ROOT, stdin=subprocess.PIPE, stdout=output,
+                                           stderr=subprocess.DEVNULL, **group)
+                if os.name == "nt":
+                    process._job_handle = job
+                    job = None
+                    bind_and_resume_windows_job(process._job_handle, process)
+            except (OSError, ValueError) as exc:
+                return None, f"could not start: {getattr(exc, 'strerror', None) or str(exc) or type(exc).__name__}"
             # Fed from a thread: a reviewer that never reads would otherwise block this write past any timeout.
             threading.Thread(target=feed, args=(process.stdin, stdin_text), daemon=True).start()
             deadline = time.monotonic() + timeout
@@ -471,8 +461,16 @@ def run(argv, stdin_text, timeout, watched):
                     return None, "timed out"
                 time.sleep(POLL_SECONDS)
         finally:
-            kill_tree(process)
-            process.wait()
+            if job is not None:
+                close_windows_job(job)
+            if process is not None:
+                if process.stdin is not None:
+                    try:
+                        process.stdin.close()
+                    except OSError:
+                        pass
+                kill_tree(process)
+                process.wait()
     if process.returncode != 0:
         return None, f"exited {process.returncode}"
     if any(path.is_file() and path.stat().st_size > MAX_OUTPUT_BYTES for path in watched):

@@ -790,6 +790,26 @@ class Dispatch(Harness):
                     fake_proc2.kill.assert_called_once()
                     fake_proc2.wait.assert_called_once()
 
+                    # 7. BaseException (e.g. KeyboardInterrupt) before job assignment still terminates the suspended
+                    # process and closes the job handle while propagating the cancellation.
+                    fake_k32.reset_mock()
+                    fake_ntdll.reset_mock()
+                    fake_k32.CreateJobObjectW.return_value = 6060
+                    fake_k32.SetInformationJobObject.return_value = 1
+                    fake_k32.AssignProcessToJobObject.side_effect = KeyboardInterrupt("cancelled during assignment")
+                    fake_proc3 = unittest.mock.MagicMock()
+                    fake_proc3._handle = 1002
+                    fake_proc3.stdin = unittest.mock.MagicMock()
+                    with unittest.mock.patch.object(module.subprocess, "Popen", return_value=fake_proc3):
+                        with self.assertRaises(KeyboardInterrupt):
+                            module.run(["codex"], "hi", 5, [stdout_path])
+                    fake_ntdll.NtResumeProcess.assert_not_called()
+                    fake_k32.TerminateJobObject.assert_called_once_with(6060, 1)
+                    fake_k32.CloseHandle.assert_called_once_with(6060)
+                    fake_proc3.stdin.close.assert_called_once()
+                    fake_proc3.kill.assert_called_once()
+                    fake_proc3.wait.assert_called_once()
+
     def test_the_prompt_never_reaches_the_command_line(self):
         # A Windows .cmd shim re-parses its arguments through cmd.exe, so prose there could become commands.
         argv = self.module().command({"cli": "codex", "model": "gpt-6.1-sol", "effort": "xhigh"}, "C:/tools/codex.cmd",
