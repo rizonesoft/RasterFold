@@ -25,7 +25,7 @@ The pin refuses any other writer, any other reviewer CLI, a second reviewer in a
 
    On Windows use `python` instead of `python3`; the command is otherwise the same.
 4. Read the review. Verify every finding against the code before acting: fix what is real, and record why anything else is not.
-5. Commit fixes as new commits and run another round on the new tip, up to 33 rounds; from round 4 on, a round whose findings are all `P3` or advisory ends the loop and its findings are filed as follow-up work. A unit that needs patching three rounds running gets re-thought, not patched again.
+5. Commit fixes as new commits and run another round on the new tip, up to 33 rounds; the loop ends on the first round with no Critical (`P1`) or Important (`P2`) finding (`HIGHEST: none` or `HIGHEST: P3`), and any `P3` or advisory findings are filed as follow-up work. A unit that needs patching three rounds running gets re-thought, not patched again.
 
 ## Rules
 

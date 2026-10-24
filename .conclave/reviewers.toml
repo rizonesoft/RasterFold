@@ -5,7 +5,7 @@
 # Every pass's effort and lenses come from [schedule] below, enforced by scripts/review-dispatch.py from the findings file passed to --record:
 #   - before the build, one pass of --kind plan at medium effort (adversarial, completeness, consistency, integration, and record on the section's plan);
 #   - after the build, one pass of --kind completion at medium effort (completeness and excellence against the domain and reference codecs);
-#   - then the review rounds: round 1 at high effort (adversarial + integration), round 2 at medium (adversarial), round 3 at low (adversarial), and from round 4 on one lens per round at low effort, rotating consistency, design (only when --surface is passed), and record. If a low-effort round reports HIGHEST: P1, the next round escalates once to medium adversarial. From round 4 on, a round whose findings are all P3 (HIGHEST: P3) may stop the loop (`severity_stop_after = 3`).
+#   - then the review rounds: round 1 at high effort (adversarial + integration), round 2 at medium (adversarial), round 3 at low (adversarial), and from round 4 on one lens per round at low effort, rotating consistency, design (only when --surface is passed), and record. If a low-effort round reports HIGHEST: P1, the next round escalates once to medium adversarial. Any round with no Critical (P1) or Important (P2) finding (HIGHEST: none or HIGHEST: P3) may stop the loop on the first such round (`severity_stop_after = 0`).
 
 schema_version = 1
 
@@ -18,7 +18,7 @@ effort = "medium"
 agy = ["astra"]
 
 [schedule]
-severity_stop_after = 3
+severity_stop_after = 0
 
 [schedule.plan]
 effort = "medium"

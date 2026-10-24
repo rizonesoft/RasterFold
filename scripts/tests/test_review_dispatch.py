@@ -968,7 +968,7 @@ def bad_pins(good):
 
 SCHEDULED_PIN = FIXTURE_PIN + textwrap.dedent('''
     [schedule]
-    severity_stop_after = 3
+    severity_stop_after = 0
 
     [schedule.plan]
     effort = "medium"
@@ -1073,13 +1073,20 @@ class Schedule(Harness):
         self.assertEqual((summary["escalated"], self.effort_of(call)), (False, "low"),
                          "a medium escalation that finds a P1 does not escalate again")
 
-    def test_severity_stop_only_past_the_fixed_rounds_and_only_on_p3(self):
+    def test_severity_stop_on_first_p3_only_round_and_never_on_p1_or_p2(self):
         p3 = "1. P3 calc.py:2 a name.\n\nHIGHEST: P3\nOVERALL: approve"
         stops = [self.round(p3)[0]["severity_stop"] for _ in range(4)]
-        self.assertEqual(stops, [False, False, False, True])
+        self.assertEqual(stops, [True, True, True, True])
+        self.assertFalse(self.round("1. P1 calc.py:2.\n\nHIGHEST: P1\nOVERALL: needs-attention")[0]["severity_stop"])
         self.assertFalse(self.round("1. P2 calc.py:2.\n\nHIGHEST: P2\nOVERALL: needs-attention")[0]["severity_stop"])
         self.assertFalse(self.round("1. calc.py:2 untagged.\n\nOVERALL: needs-attention")[0]["severity_stop"],
                          "a round with no HIGHEST line never stops the loop")
+        # Historical pins with severity_stop_after = 3 remain supported for already-stamped receipts.
+        (self.repo / ".conclave/reviewers.toml").write_text(
+            SCHEDULED_PIN.replace("severity_stop_after = 0", "severity_stop_after = 3"), encoding="utf-8")
+        self.findings.unlink(missing_ok=True)
+        legacy_stops = [self.round(p3)[0]["severity_stop"] for _ in range(4)]
+        self.assertEqual(legacy_stops, [False, False, False, True])
 
     def test_an_unreadable_findings_file_is_refused_before_a_review_runs(self):
         self.findings.write_text("## Round one\n\nnot a record\n", encoding="utf-8")
@@ -1156,7 +1163,7 @@ class Schedule(Harness):
     def test_check_pin_reports_the_schedule(self):
         result, summary = self.dispatch("--check-pin", "--json")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(summary["schedule"]["severity_stop_after"], 3)
+        self.assertEqual(summary["schedule"]["severity_stop_after"], 0)
 
     def test_a_malformed_schedule_refuses_every_dispatch(self):
         module = self.module()
@@ -1169,7 +1176,7 @@ class Schedule(Harness):
             "duplicate lens": {**good, "rotation": {"effort": "low", "lenses": ["record", "record"]}},
             "missing key": {k: v for k, v in good.items() if k != "escalation"},
             "unknown key": {**good, "extra": 1},
-            "stop zero": {**good, "severity_stop_after": 0},
+            "stop negative": {**good, "severity_stop_after": -1},
             "stop bool": {**good, "severity_stop_after": True},
         }
         module.check_schedule(good, ["codex"])

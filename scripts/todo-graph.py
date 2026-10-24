@@ -6417,7 +6417,7 @@ VERDICTS = {
 }
 REVIEW_ROUND_CAP = 33
 EARLIER_CAPS = {8, 13, 22}
-SEVERITY_CUTOFF_ROUND = 3
+SEVERITY_CUTOFF_ROUND = 0
 COMPLETION_VERDICTS = ("complete", "completed", "filed")
 FILED_GAP_RE = re.compile(r"^- Filed: (D\d{2} T\d{2} §[1-9]\d*)(?![\w§]|\.\d)")
 PIN_PATH = ".conclave/reviewers.toml"
@@ -6806,13 +6806,21 @@ def receipt_data_ok(
                 for r in claimed:
                     e = reviewed.get(r["round"])
                     last = ([x.strip() for x in e["review"].splitlines() if x.strip()] or [""])[-1] if e else ""
+                    expected_overall = (
+                        ("OVERALL: approve",)
+                        if r["verdict"] == "clean"
+                        else ("OVERALL: approve", "OVERALL: needs-attention")
+                        if r["verdict"] == "stopped-low-severity"
+                        else ("OVERALL: needs-attention",)
+                    )
                     require(
                         e is not None
                         and e["writer"] in dispatch.WRITER_FAMILY
                         and dispatch.FAMILY.get(e["cli"]) not in (None, dispatch.WRITER_FAMILY[e["writer"]])
-                        and last == ("OVERALL: approve" if r["verdict"] == "clean" else "OVERALL: needs-attention"),
+                        and last in expected_overall,
                         f"round {r['round']} is not a review returned by another model family with a verdict "
-                        f"matching {r['verdict']} (clean needs OVERALL: approve, any other needs-attention) in "
+                        f"matching {r['verdict']} (clean needs OVERALL: approve, stopped-low-severity allows "
+                        f"approve or needs-attention with HIGHEST: P3, any other needs-attention) in "
                         f"{report}: {ref}",
                     )
                     lines = [x.strip() for x in e["review"].splitlines() if x.strip()]
