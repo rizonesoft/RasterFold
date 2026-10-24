@@ -404,6 +404,32 @@ class TidyGateTests(unittest.TestCase):
                 tidy_gate.evaluate_ratchet(15, base_file, ratchet=False, head_baseline=min_after_del_15),
             )
 
+            base_file.write_text('count: typo\n', encoding='utf-8')
+            subprocess.run([git, 'add', 'todo/.tidy-baseline'], cwd=repo, check=True)
+            subprocess.run([git, 'commit', '-qm', 'accidental malformed baseline commit'], cwd=repo, check=True)
+            min_at_typo = tidy_gate.committed_baseline(repo)
+            self.assertEqual(15, min_at_typo)
+            with self.assertRaisesRegex(ValueError, r'malformed baseline'):
+                tidy_gate.evaluate_ratchet(15, base_file, ratchet=False, head_baseline=min_at_typo)
+
+            base_file.write_text('count: 20\n', encoding='utf-8')
+            subprocess.run([git, 'add', 'todo/.tidy-baseline'], cwd=repo, check=True)
+            subprocess.run([git, 'commit', '-qm', 'attempt to repair typo at 20 above historical min 15'], cwd=repo, check=True)
+            min_after_typo_20 = tidy_gate.committed_baseline(repo)
+            self.assertEqual(15, min_after_typo_20)
+            with self.assertRaisesRegex(ValueError, r'baseline 20 .* exceeds committed baseline 15'):
+                tidy_gate.evaluate_ratchet(20, base_file, ratchet=False, head_baseline=min_after_typo_20)
+
+            base_file.write_text('count: 15\n', encoding='utf-8')
+            subprocess.run([git, 'add', 'todo/.tidy-baseline'], cwd=repo, check=True)
+            subprocess.run([git, 'commit', '-qm', 'repair malformed baseline at historical min 15'], cwd=repo, check=True)
+            min_after_typo_15 = tidy_gate.committed_baseline(repo)
+            self.assertEqual(15, min_after_typo_15)
+            self.assertEqual(
+                '15/15 unique warning(s)',
+                tidy_gate.evaluate_ratchet(15, base_file, ratchet=False, head_baseline=min_after_typo_15),
+            )
+
             with patch.object(
                 tidy_gate.subprocess,
                 'run',
