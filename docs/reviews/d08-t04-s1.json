@@ -1,0 +1,85 @@
+{
+  "ref": "D08 T04 \u00a71",
+  "title": "Repository Presentation and Developer Entry Points",
+  "implementation_sha": "1c3fbc10a283bff0468c15c9efa4c95a6a2a80cc",
+  "date": "2026-10-25",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/08-docs/D08-T04-s1.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 scripts/package.py --target all",
+    "python3 tests/test_artifacts.py",
+    "python3 scripts/drift-check.py"
+  ],
+  "completion": {
+    "report": "docs/reviews/08-docs/D08-T04-s1.md",
+    "verdict": "completed",
+    "candidate": "bc5548c541a65b63eb24d3e59f28547594eabc24",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/08-docs/D08-T04-s1.md",
+    "candidate": "4cf91fb83131ecc22ef2f761d9a488f744098d03",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}

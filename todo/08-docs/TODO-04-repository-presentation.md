@@ -2,7 +2,7 @@
 schema_version: 1
 id: repository-presentation
 domain: 08-docs
-status: active
+status: done
 title: "TODO-04 -- Repository Presentation and Developer Entry Points"
 depends_on: []
 frozen: true
@@ -38,7 +38,7 @@ track: D1
 
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
-| 1 | §1 | Repository presentation and developer entry points | D00 T04 §1 | [ ] |
+| 1 | §1 | Repository presentation and developer entry points | D00 T04 §1 | [x] |
 
 ---
 
@@ -57,6 +57,8 @@ track: D1
 
 **Freeze check:** Existing Jekyll work and historical measurements stay owned by their original sections; presentation does not change the format, codec claims or verified plan stamps.
 
+> **Verified:** 2026-10-25 | §1 | 1c3fbc10a283bff0468c15c9efa4c95a6a2a80cc
+> **Review:** `docs/reviews/d08-t04-s1.json`
 ## Verification
 
 - [x] `python3 scripts/todo-graph.py validate` and `plan --check` pass.
