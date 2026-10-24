@@ -17,6 +17,36 @@ TARGETS = ('linux-x64', 'windows-x64', 'android-arm64', 'android-x64')
 COMMON = ('platform', 'api', 'crc32', 'bmp', 'fold', 'cm')
 
 
+def target_artifacts(target: str) -> tuple[str, ...]:
+    if target == 'windows-x64':
+        return (
+            'bin/rasterfold.exe',
+            'bin/rasterfold.dll',
+            'lib/librasterfold.a',
+            'lib/librasterfold.dll.a',
+            'lib/rasterfold.lib',
+            'symbols/rasterfold.pdb',
+            'symbols/rasterfold-dll.pdb',
+            'include/rasterfold.h',
+        )
+    if target == 'linux-x64':
+        return (
+            'bin/rasterfold',
+            'lib/librasterfold.so.1',
+            'lib/librasterfold.a',
+            'lib/librasterfold.so',
+            'include/rasterfold.h',
+        )
+    if target in ('android-arm64', 'android-x64'):
+        return (
+            'bin/rasterfold',
+            'lib/librasterfold.so',
+            'lib/librasterfold.a',
+            'include/rasterfold.h',
+        )
+    raise ValueError(f'unknown target: {target}')
+
+
 def shell_command(args: list[str]) -> str:
     return subprocess.list2cmdline(args) if os.name == 'nt' else shlex.join(args)
 
@@ -133,6 +163,9 @@ def build(target: str, jobs: int, portable: bool) -> None:
     header = headers / 'rasterfold.h'
     shutil.copy2(ROOT / 'include/rasterfold.h', header)
     artifacts.append(header)
+    emitted = tuple(p.relative_to(out).as_posix() for p in artifacts)
+    if emitted != target_artifacts(target):
+        raise ValueError(f'emitted artifacts {emitted} do not match target_artifacts({target!r})')
     compiler = subprocess.check_output([str(cc), '--version'], text=True).splitlines()[0]
     (out / 'build.json').write_text(json.dumps({
         'schema': 2, 'target': target, 'triple': triple, 'portable_simd': portable, 'compiler': compiler,

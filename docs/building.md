@@ -104,7 +104,7 @@ python3 tools/bootstrap.py --verify
 python3 scripts/package.py --target all
 ```
 
-Packages and SHA-256 sidecars land in `build/packages/`. They preserve the target's `bin/`, `lib/`, `include/` and optional `symbols/` structure beneath `rasterfold-<target>/`, alongside `build.json`, `LICENSE` and `docs/` notes. The packager requires every target artifact to appear in the build manifest and verifies every listed artifact, including the copied header and PDBs, against its recorded hash before writing the ZIP. They are development packages, not published releases. Publishing remains a separate release action.
+Packages and SHA-256 sidecars land in `build/packages/`. They preserve the target's `bin/`, `lib/`, `include/` and optional `symbols/` directory paths beneath `rasterfold-<target>/` as dereferenced regular files (so `lib/librasterfold.so` on Linux is stored as a full regular file matching `lib/librasterfold.so.1` for portable extraction), alongside `build.json`, `LICENSE` and `docs/` notes. The packager requires every target artifact from `scripts/build.py`'s `target_artifacts` table to appear in the build manifest, reads `build.json` and each listed artifact once into memory, and verifies every listed artifact, including the copied header and PDBs, against its recorded hash before writing those exact verified bytes into the ZIP. They are development packages, not published releases. Publishing remains a separate release action.
 
 The full gate runner retains logs under `build/logs/` and reports every failed command. `--quick` and `--skip-build` are iteration shortcuts, not full verification. Comparative benchmarks additionally require ffmpeg with libjxl and follow the quiet-machine protocol in [research.md](research.md).
 
