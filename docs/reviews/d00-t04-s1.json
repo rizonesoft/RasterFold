@@ -1,0 +1,85 @@
+{
+  "ref": "D00 T04 \u00a71",
+  "title": "Local Toolchains and WSL Gates",
+  "implementation_sha": "4f49d1b079d98401815cfa3e3fd3cf05d1bf874d",
+  "date": "2026-10-25",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/00-workspace/D00-T04-s1.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 scripts/check-all.py --all-targets",
+    "python3 tools/bootstrap.py --verify",
+    "python3 scripts/package.py --target all"
+  ],
+  "completion": {
+    "report": "docs/reviews/00-workspace/D00-T04-s1.md",
+    "verdict": "complete",
+    "candidate": "4f49d1b079d98401815cfa3e3fd3cf05d1bf874d",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/00-workspace/D00-T04-s1.md",
+    "candidate": "3c95f6ed85b5e166c032654d045983bea4efcb4e",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}

@@ -44,7 +44,7 @@ frozen: true
 
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
-| 1 | §1 | Local toolchains and WSL gates | D00 T01 §6 | [ ] |
+| 1 | §1 | Local toolchains and WSL gates | D00 T01 §6 | [x] |
 | 2 | §2 | Portable platform and SIMD boundary | §1 | [ ] |
 | 3 | §3 | Isolated Codex lifecycle and review runner | §1 | [ ] |
 | 4 | §4 | Family-local intelligence | §3 | [ ] |
@@ -84,6 +84,8 @@ Use pinned, checksum-verified LLVM/MinGW and Android NDK installations beneath `
 
 **Checkpoint output (2026-10-24):** `python3 scripts/check-all.py --all-targets` exited 0 with `check-all: 28/28 passed` (28 gates after retiring the legacy `.claude/` and `.codex/` lifecycle gates in `c065b58` and adding `clang-tidy` in `D00 T01 §3`); `python3 tools/bootstrap.py --verify` exited 0 (`OK llvm-mingw-linux 23.1.2 (llvm-mingw-linux)`, `OK android-ndk clang version (android-ndk)`, `OK ninja-linux 1.13.2 (ninja-linux)`); `tests/test_package.py` passed 9/9 tests on Linux and 9/9 tests on Windows (`scripts/windows.py`); `tests/test_toolchain.py` passed 4/4 installer and corrupted-receipt refusal tests; `python3 scripts/package.py --target all` packaged all four targets (`windows-x64`, `linux-x64`, `android-arm64`, `android-x64`) with matching `.zip.sha256` sidecars.
 
+> **Verified:** 2026-10-25 | §1 | 4f49d1b079d98401815cfa3e3fd3cf05d1bf874d
+> **Review:** `docs/reviews/d00-t04-s1.json`
 ## 2. Portable Platform and SIMD Boundary
 
 **Job:** A caller can export format files between targets. Decoding can undo encoding. The codec can enforce an output policy that protects existing destination files.
