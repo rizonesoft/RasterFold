@@ -8,7 +8,7 @@
 | [Research record](research.md) | Measurement protocol, experiments and prior art |
 | [Historical measurements](measurements.md) | Preserved pre-migration Windows comparison, with its limits |
 | [WSL migration audit](wsl-migration-audit.md) | Actual build/test evidence and remaining runtime limits |
-| [Codex automation](../.codex/README.md) | Private skills, native hooks, controller and review mechanics |
+| [Agent skills and rules](agent-skills-and-rules-structure.md) | Antigravity skills, rules, native Stop hook and adaptive review dispatch |
 | [Runner intelligence](../.intelligence/README.md) | Family-owned observations and stopped maintenance |
 | [Execution plan](../todo/implementation-plan.md) | Canonical planned work and section ownership |
 

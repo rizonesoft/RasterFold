@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Agent instructions for this repository. Human orientation lives in `README.md`. Claude Code loads this file through the `CLAUDE.md` import stub.
+Agent instructions for this repository. Human orientation lives in `README.md`. Antigravity (`agy`) loads this file through `GEMINI.md`.
 
 ## What this project is
 
@@ -20,18 +20,16 @@ Agent instructions for this repository. Human orientation lives in `README.md`. 
 | `measure/` | The reference image and the comparison verdict |
 | `benchmarks/` | `results.md` and `results.csv` from `tests/benchmark.py` |
 | `docs/research.md` | The research record: where the codec stands, the measurement protocol, the "Already tried" table, the designs the plan's sections implement, and prior art |
-| `scripts/` | `check-all.ps1` (every local gate) and the stdlib Python TODO tooling (`todo-graph.py`, validator, claims, findings, runs, review prompt, panel slots, campaign guard) |
+| `scripts/` | `check-all.ps1` (every local gate) and the stdlib Python TODO tooling (`todo-graph.py`, validator, claims, findings, runs, `review-dispatch.py`, `ci_status.py`, `campaign_guard.py`) |
 | `todo/` | The live execution plan; read `todo/README.md` before authoring or implementing |
 | `todo/implementation-plan.md` | Ordered phase plan; its boxes are synchronized through `scripts/todo-graph.py` |
 | `todo/budget.json`, `todo/backlog.md` | The budget decisions (no caps) and the list of deferred ideas that are not sections, which loses nothing without a trace |
 | `docs/reviews/` | Per-section review findings, attestations, the derived findings ledger, run records |
 | `docs/phase-runs/` | One findings file per phase run, written as the run goes |
-| `.claude/` | Claude-owned skills, agents (routing: `.claude/agent-routing.md`), hooks, settings and intelligence implementation |
-| `.codex/`, `.agents/skills/` | Independent Codex mechanics; skill-discovery symlinks point only to `.codex/skills/`; `.agents/rules/` holds Antigravity's rule |
-| `.intelligence/` | Separate family registers and retained archives; disposition requires both runners stopped |
-| `.conclave/panel.toml` | The review panel wiring: writer, model registry, and every review slot |
-| `.conclave/kits.json`, `CODEX.md`, `GEMINI.md`, `.claude/rules/`, `.codex/rules/` | The Conclave-SDK kits (`base`, `reviewer`, `automations`) this checkout took from `rizonetech/Conclave-SDK` through its `forge.py`, the per-agent entry files, and the kits' output and safety rules; see Conclave-SDK kits below |
-| `.conclave/reviewers.toml`, `scripts/review-dispatch.py`, `docs/review-round-prompt.md` | The reviewer kit: the reviewer pin with one fallback per writer, and the dispatcher that runs a round with failover |
+| `.agents/` | Antigravity-owned skills (`.agents/skills/`), rules (`.agents/rules/`), and native `Stop` hook (`.agents/hooks.json`) |
+| `.intelligence/` | Retained runner intelligence registers and archives; disposition requires the campaign guard stopped |
+| `.conclave/kits.json`, `GEMINI.md`, `.agents/rules/` | The Conclave-SDK kits (`base`, `reviewer`, `automations`) this checkout took from `rizonetech/Conclave-SDK` through its `forge.py`, the Antigravity entry file, and the kits' output and safety rules; see Conclave-SDK kits below |
+| `.conclave/reviewers.toml`, `scripts/review-dispatch.py`, `docs/review-round-prompt.md`, `docs/plan-review-prompt.md`, `docs/completion-review-prompt.md` | The reviewer kit: the `agy -> astra` reviewer pin, the 3-stage adaptive review schedule (`plan`, `completion`, and adaptive rounds), and the dispatcher |
 | `.conclave/automations/` | The automations kit: `tasks.json` (folder `\\RasterFold\\`, no tasks yet), the runner, the failure email, and the Task Scheduler and systemd installers; tests in `scripts/tests/` |
 | `bin/`, `build/` | Build output, scratch, caches, the research corpus, and campaign guard state; ignored, never authoritative |
 
@@ -58,11 +56,11 @@ Files are `todo/NN-domain/TODO-NN-short-name.md`. The **Implementation Order tab
 
 ## Choose the work contract
 
-For TODO work, read the target section, `todo/README.md`, its dependencies, and the applicable family-owned skill under `.claude/skills/` or `.codex/skills/`: capture through `add-todo`, author a file through `create-todo`, plan a codec change through `plan-experiment`, build through `process-todo-section` (gate card: the chosen family's `process-todo-section/gates.md`), stamp through `review-todo-section`, close a file through `process-todo-file`, run a phase or the plan through `process-phase` or `process-plan`, harden the tree through `groom-plan`.
+For TODO work, read the target section, `todo/README.md`, its dependencies, and the applicable skill under `.agents/skills/`: capture through `add-todo`, author a file through `create-todo`, plan a codec change through `plan-experiment`, build through `process-todo-section` (gate card: `.agents/skills/process-todo-section/gates.md`), stamp through `review-todo-section`, close a file through `process-todo-file`, run a phase or the plan through `process-phase` or `process-plan`, harden the tree through `groom-plan`.
 
-The lifecycle is: capture, author, validate the plan and source claims, record `Started:`, implement, run the section's gates, commit, independent review, panel review and stamp, then sync the plan. Each section must be executable with zero conversation context. **One section = one commit.** Preserve section addresses and bidirectional cross-references. A TODO Implementation Order row turns `[x]` only with its `Verified:` stamp through the review skill. Do not rewrite a stamped checklist or transfer evidence across changed candidates. File new work with its own owner and dependency.
+The lifecycle is: capture, author, validate the plan and source claims, record `Started:`, run the pre-build `--kind plan` review, implement, run the section's gates, commit, run the post-build `--kind completion` review, run adaptive code review rounds and stamp through `review-todo-section`, then sync the plan. Each section must be executable with zero conversation context. **One section = one commit.** Preserve section addresses and bidirectional cross-references. A TODO Implementation Order row turns `[x]` only with its `Verified:` stamp through `python3 scripts/todo-graph.py stamp`. Do not rewrite a stamped checklist or transfer evidence across changed candidates. File new work with its own owner and dependency.
 
-`/process-plan` (Claude) or `$process-plan` (Codex) is the campaign front door. Each audits the plan, starts its own Stop/run guard and heartbeat, and processes dependency-safe phases. Codex uses `.codex/runner/campaign.py` and native hooks; Claude retains `scripts/campaign_guard.py` and its Stop hook. `.runner/admission.lock` serializes admission and stopped maintenance. Neither may adopt or mutate the other's state. No isolated worktrees or checkpoint recovery layer is required or created.
+`process-plan` is the campaign front door. It audits the plan, starts `scripts/campaign_guard.py` (enforced by `.agents/hooks.json`'s `Stop` hook) and the native in-session `schedule` (`3-59/5 * * * *`) heartbeat, and processes dependency-safe phases. No isolated worktrees or checkpoint recovery layer is required or created.
 
 ## What counts as proof
 
@@ -81,7 +79,7 @@ A checkpoint citing a gate that does not exist yet is unfalsifiable and is not a
 
 - **Output discipline:** bound every command (`build.ps1` filtered to errors and warnings, `test_correctness.py -k` while iterating, `tail`/`head` on logs and on `ab.py -v` tables, field extraction on JSON). Keep full logs in ignored scratch under `build/`.
 - **Act, then report:** complete authorized work and report evidence. Explicit operator stop instructions take effect immediately.
-- **One writer, and it never reviews itself:** Either Claude or Codex may implement the operator's work (2026-09-30 instruction), with one campaign owner per checkout. Claude's headless reviewer slots remain in `.conclave/panel.toml`; Codex uses its independent `.codex/runner/panel.toml` and dispatcher. A writer's family never reviews its own candidate. Codex stamps declare `Implementer: Codex (<actual registered model>)` and use a Claude panel; historical stamps retain their original rules. No fallback slots or fabricated reviews. A failed review is recorded as an outage and the run stops or parks. See `.codex/README.md` for isolation and native hook trust.
+- **One writer, and it never reviews itself:** Google Antigravity (`agy`, running Claude or Gemini writer models) is the sole writer in this repository (2026-10-24 operator decision). Every independent review (`--kind plan` pre-build, `--kind completion` post-build, and the adaptive code review rounds `high -> medium -> low -> low ...`) runs GPT-6 Astra (`gpt-6-astra` via `codex`) through `scripts/review-dispatch.py` and `.conclave/reviewers.toml` (`[routes] agy = ["astra"]`, no fallback). A writer never reviews its own candidate. Historical stamps retain their original rules. No fallback slots or fabricated reviews: a failed review stops or parks the run.
 - **Writes are serial:** one session owns the working tree. Check `git status` before building over unfamiliar work.
 - **Section atomicity is the candidate range:** one section ships as one logical change, and review fix-loop commits append to that range (never amend); each fix is re-reviewed and the stamp names the whole range. "One section = one commit" never means "one hash".
 - **Experiments end in a result, not a change:** a compression or speed section that misses its stop condition ships the negative result (stamped measurement, a row in `docs/research.md`'s "Already tried" table), and its change is not ported.
@@ -91,19 +89,17 @@ A checkpoint citing a gate that does not exist yet is unfalsifiable and is not a
 
 ## Conclave-SDK kits
 
-The `base`, `reviewer` and `automations` kits came from `rizonetech/Conclave-SDK` at `b1ead32` (2026-10-21) through `python3 <sdk>/forge.py kit . <kit> --agent all`. `.conclave/kits.json` stamps `reviewer` and `automations`; `base` stays unstamped because RasterFold keeps its own `.claude/agents/code-explorer.md`. The SDK's `todo` kit is not installed: RasterFold's TODO system, skills and `scripts/campaign_guard.py` are its own, and they take the todo kit's Stop hook and heartbeat design by hand.
+The `base`, `reviewer` and `automations` kits came from `rizonetech/Conclave-SDK` at `b1ead32` (2026-10-21) through `python3 <sdk>/forge.py kit . <kit> --agent all`. `.conclave/kits.json` stamps `reviewer` and `automations`. The SDK's `todo` kit is not installed: RasterFold's TODO system, skills in `.agents/skills/`, `.agents/hooks.json`, and `scripts/campaign_guard.py` are its own.
 
-These local adaptations differ from the kit files, and `forge.py sync` would undo them (it rewrites `.claude/agents/`, every kit's skills and rules, and with `--include-scripts` its scripts), so a sync always runs `--dry-run` first and keeps them:
+These local adaptations differ from the kit files, and `forge.py sync` would undo them (it rewrites every kit's skills and rules, and with `--include-scripts` its scripts), so a sync always runs `--dry-run` first and keeps them:
 
-- The four base-kit agents (`debug-evidence`, `git-runner`, `mutation-tester`, `test-runner`) carry `effort: high` and an agent-class mark, and sit in `.claude/agent-routing.md`'s table and the routing probe.
-- `.agents/skills/<kit skill>` entries are symlinks to `.codex/skills/`, as for every other skill.
-- `scripts/verify-agent-tiers.mjs` is removed: its rule that no subagent holds an edit tool contradicts the implementer class, and `scripts/agent_routing.py validate` is this repository's tier check.
-- `.conclave/reviewers.toml` pins the Gemini reviewer at `gemini-4-argon-medium`, not the kit's `-high` (operator decision 2026-10-21).
-- `CODEX.md`, `GEMINI.md` and `docs/agent-skills-and-rules-structure.md` describe this repository's layout, not the SDK default.
+- Antigravity (`agy`) is the sole writer (`WRITERS = ("agy",)` in `scripts/review-dispatch.py`); `.claude/` and `.codex/` are retired, and `.agents/skills/` holds the canonical skill files directly.
+- `.conclave/reviewers.toml` pins `astra` (`gpt-6-astra` via `codex`) as the sole reviewer for `agy` (`[routes] agy = ["astra"]`, no fallback) and defines the `[schedule]` table for `--kind plan`, `--kind completion`, and adaptive code review rounds (operator decision 2026-10-24).
+- `GEMINI.md` and `docs/agent-skills-and-rules-structure.md` describe this repository's layout, not the SDK default.
 
 ## The commit hook
 
-`tools/githooks/pre-commit` refuses a commit whose **staged** tree fails `python scripts/todo-graph.py validate`, checked in a temporary export of the index. It also enforces `scripts/plan-audit.py` and `scripts/drift-check.py` on the staged bytes. Explicit `Drift-Fact:` commit declarations are checked against staged source by `commit-msg`; historical declarations use their own commit tree in CI. It must stay a POSIX shell script with LF endings and index mode `100755`. `tools/githooks/commit-msg` strips any AI-assistant attribution (a `Co-Authored-By:` trailer naming Claude, Anthropic, or another assistant, and "Generated with" footers) from every commit message, so GitHub never lists an assistant as a contributor; never add such lines to commits or pull requests, and keep `.claude/settings.json`'s `includeCoAuthoredBy: false` and empty `attribution`. `tools/provision.ps1` points `core.hooksPath` at `tools/githooks` for each clone; run it once after cloning. A red hook is a defect to fix, never a gate to skip.
+`tools/githooks/pre-commit` refuses a commit whose **staged** tree fails `python scripts/todo-graph.py validate`, checked in a temporary export of the index. It also enforces `scripts/plan-audit.py` and `scripts/drift-check.py` on the staged bytes. Explicit `Drift-Fact:` commit declarations are checked against staged source by `commit-msg`; historical declarations use their own commit tree in CI. It must stay a POSIX shell script with LF endings and index mode `100755`. `tools/githooks/commit-msg` strips any AI-assistant attribution (a `Co-Authored-By:` trailer naming Claude, Anthropic, or another assistant, and "Generated with" footers) from every commit message, so GitHub never lists an assistant as a contributor; never add such lines to commits or pull requests. `tools/provision.ps1` points `core.hooksPath` at `tools/githooks` for each clone; run it once after cloning. A red hook is a defect to fix, never a gate to skip.
 
 ## A measurement recorded is a measurement re-checked
 
@@ -123,7 +119,7 @@ Answer from source first: the code, the format specification, a reference codec 
 
 ## Validation
 
-WSL/Linux: `python3 scripts/check-all.py --all-targets`. Target artifacts and full logs are ignored build output; report actual runtime coverage separately. Codex-only fixtures: `python3 -m unittest discover -s .codex/tests -v`.
+WSL/Linux: `python3 scripts/check-all.py --all-targets`. Target artifacts and full logs are ignored build output; report actual runtime coverage separately. Review and automation unit tests: `python3 -m unittest discover -s scripts/tests -v`.
 
 ```powershell
 pwsh scripts/check-all.ps1                    # native build, correctness, API, fuzz and repository gates
@@ -152,7 +148,9 @@ python3 scripts/todo-claims.py --coverage     # name every Current state block n
 python3 scripts/todo-findings.py --check      # fail if docs/reviews/findings.md is stale
 python3 scripts/todo-runs.py --check          # run records agree with the review files
 python3 scripts/campaign_guard.py --self-test # the Stop hook and guard lifecycle, in a throwaway workspace
-python3 scripts/panel_slots.py validate       # the review panel wiring holds
+python3 scripts/review-dispatch.py --check-pin # the reviewer pin and schedule table hold
+python3 scripts/review-dispatch.py --list-rounds # every recorded review round parses cleanly
+python3 scripts/ci_status.py                  # read build.yml and plan.yml on main
 ```
 
 Run checks owed by the task. Report only commands actually run, and distinguish static evidence, test output, driven-run output, fidelity output, measurements, and review proof.

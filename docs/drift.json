@@ -164,22 +164,22 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "Author-attested: 2026-09-30 D00 T04 section 1 source review of required package artifacts and full-gate registration against scripts/build.py, scripts/package.py and scripts/check-all.py; five package regression tests pass; see docs/phase-runs/2026-09-30-codex-phase-0.md",
+      "evidence": "Author-attested: 2026-10-24 re-read README.md after updating Development and automation to name Antigravity (agy) as the sole writer with .agents/skills/, .agents/hooks.json, scripts/campaign_guard.py, and scripts/review-dispatch.py; all codec and build facts unchanged",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "51734a555f97e344771e8462284781429f04d5d5f6a8e5550e43e10e9c20e7c3",
         "scripts/build.py": "81f4a17e99f5a0bf93b55cc1c4e238b72cd9b8c014bf0a9b12c7e792777c8fac",
         "scripts/package.py": "f88b30dea02dd187429bebd1ffc835f487db6c410c72e7855db73ef20f5ba116",
-        "README.md": "b1c57d2c6872342fb95844b50470ad0cec5905cec0b268b7af121c151371ed6c"
+        "README.md": "a951ecf34ea9a295463e97ec97f5de02895943ec4a7cdc9f64585d3f3791a0f8"
       }
     },
     "AGENTS.md": {
-      "evidence": "Author-attested: 2026-10-21 re-read AGENTS.md after its Conclave-SDK local adaptations list gained one line: .conclave/reviewers.toml pins the Gemini reviewer at gemini-4-argon-medium, not the kit's -high (operator decision 2026-10-21, recorded in D00 T01 \u00a76); every other statement unchanged",
+      "evidence": "Author-attested: 2026-10-24 re-read AGENTS.md after consolidating on Antigravity (agy) as sole writer and GPT-6 Astra (scripts/review-dispatch.py) as sole reviewer with the 3-stage adaptive review schedule, retiring .claude/ and .codex/",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "51734a555f97e344771e8462284781429f04d5d5f6a8e5550e43e10e9c20e7c3",
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
-        "AGENTS.md": "4a6738e24659a3a408ab3ee6253586cd4e0a26e57522660f4a10d26772fdb85b"
+        "AGENTS.md": "e8cc6c5a613d22b1ca7a1d1a2829c95040758562184b54283aac722dbacd0bc3"
       }
     },
     "docs/building.md": {
@@ -202,24 +202,17 @@
       }
     },
     "CONTRIBUTING.md": {
-      "evidence": "Author-attested: 2026-10-01 re-read CONTRIBUTING.md against scripts/check-all.py after it gained the agent routing validate and self-test gates; the documented --all-targets invocation, flags and drift-check guidance are unchanged and still accurate",
+      "evidence": "Author-attested: 2026-10-24 re-read CONTRIBUTING.md against scripts/check-all.py after replacing legacy panel/Codex gates with review-dispatch.py, campaign_guard.py, and scripts/tests unit tests; documented build and test workflow holds",
       "sources": {
         "scripts/build.py": "81f4a17e99f5a0bf93b55cc1c4e238b72cd9b8c014bf0a9b12c7e792777c8fac",
-        "scripts/check-all.py": "8b3be6dd4b27b0d54f353a6769ef357dbc0e05f7bffb0ddd7537c39d85f1e9f1",
+        "scripts/check-all.py": "480c5050ff9c13fa5c84ede92818228e15390b82fcaa9aa914deb248308d4838",
         "CONTRIBUTING.md": "01f5855ce18883d6930ce1ebb569ea9411ac21e3c4cf3faced1a56c155bf470f"
-      }
-    },
-    ".codex/README.md": {
-      "evidence": "Author-attested: 2026-10-21 re-read .codex/README.md after the reviewer admission widened from the independent slot to every review slot scripts/panel_slots.py starts for a live Claude run (a stamp check reads the tree too; D00 T01 \u00a78 fix loop); the tool-admission and Review and delivery paragraphs now say so; every other statement unchanged",
-      "sources": {
-        ".codex/runner/campaign.py": "db98fb6858f40ee33d2f79e56f8861fcc904038edf2ce2696cad8dc213302470",
-        ".codex/hooks/adapter.py": "dd5e91d8d8420f75ae3f63bd1f102aa6b3688ca965a640c7ec801de403fd02b7",
-        ".codex/runner/panel.toml": "dfbdd06ac5ebe07ccfde0a9eb4e813c7ca713f8812f4d9b80efb56fe2acc8d43",
-        ".codex/README.md": "217dc6fa9e77d93a4a50653a72cb755e0e4598e2fc801ba6ab9498c992886d37"
       }
     }
   },
   "historical_links": {
+    "docs/wsl-migration-audit.md -> ../.codex/skills/review-todo-section/SKILL.md": "Historical WSL migration audit (2026-09-30) citing the retired .codex skill path prior to the 2026-10-24 Antigravity consolidation",
+    "docs/wsl-migration-audit.md -> ../.codex/README.md": "Historical WSL migration audit (2026-09-30) citing the retired .codex guide prior to the 2026-10-24 Antigravity consolidation",
     "docs/reviews/conclave-guard-port.md -> /home/derickpayne/projects/RasterFold/scripts/campaign_guard.py:740": "Captured reviewer output (review-dispatch.py round 1, 2026-10-21), byte-exact under its digest; the targets are absolute file:line citations, not repository links",
     "docs/reviews/conclave-guard-port.md -> /home/derickpayne/projects/RasterFold/scripts/campaign_guard.py:849": "Captured reviewer output (review-dispatch.py round 1, 2026-10-21), byte-exact under its digest; the targets are absolute file:line citations, not repository links",
     "docs/reviews/conclave-guard-port.md -> /home/derickpayne/projects/RasterFold/scripts/campaign_guard.py:346": "Captured reviewer output (review-dispatch.py round 1, 2026-10-21), byte-exact under its digest; the targets are absolute file:line citations, not repository links",

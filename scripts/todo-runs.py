@@ -76,20 +76,13 @@ def _load_diag():
 DIAG = _load_diag()
 
 
-def _load_panel_slots():
-    """The review wiring table's loader (D00 T04 §27): model names live
-    in `.conclave/panel.toml`, never in this module."""
-    mod = sys.modules.get("panel_slots")
-    if mod is not None:
-        return mod
-    spec = importlib.util.spec_from_file_location("panel_slots", HERE / "panel_slots.py")
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules["panel_slots"] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-PANEL_SLOTS = _load_panel_slots()
+# Historical model registry for legacy panel run records (prior to the
+# 2026-10-24 switch to `.conclave/reviewers.toml` and `review-dispatch.py`).
+_FAMILY_MODELS = {
+    "codex": ("gpt-5.6-sol", "gpt-5.6-terra", "gpt-6-astra", "gpt-6-sol"),
+    "claude": ("claude-opus-5-5", "opus"),
+}
+_GROK_MODEL_RE = re.compile(r"grok-(\d+)\.(\d+)(?:-build)?")
 
 ROOT = HERE.parent
 DEFAULT_RUNS = ROOT / "docs" / "reviews" / "run-records.md"
@@ -129,15 +122,18 @@ PROVENANCES = ("recorded", "reconstructed")
 # `Claude panel` is the family word, legacy records say `Opus panel`;
 # D00 T04 §29 adds `Grok panel` for the Grok fallbacks).
 HEADING_FAMILY = {"GPT": "codex", "Opus": "claude", "Claude": "claude", "Grok": "grok"}
-PANEL_TABLE = PANEL_SLOTS.load()
 
 
 def family_accepts(heading: str, model) -> bool:
     """A round's `model:` belongs to its heading's family: a registered
     model (retired pins included, so historical rounds keep checking),
     or a concrete model a `newest` entry resolves to (`grok-4.7`)."""
-    return isinstance(model, str) and PANEL_SLOTS.family_accepts(
-        HEADING_FAMILY[heading], model, PANEL_TABLE)
+    if not isinstance(model, str):
+        return False
+    family = HEADING_FAMILY[heading]
+    if family == "grok":
+        return bool(_GROK_MODEL_RE.fullmatch(model))
+    return model in _FAMILY_MODELS.get(family, ())
 
 
 # The rungs the cut-leg interim reports, one per family.
@@ -360,14 +356,31 @@ def _review_path(compact):
     return None
 
 
+_DISPATCH_HEADING_RE = re.compile(
+    r"^## (?:Plan review|Completion review|Round \d+):", re.MULTILINE
+)
+
+
 def _review_files():
-    """Compact sections with a committed-shape review file under docs/reviews/."""
+    """Compact sections with a committed-shape review file under docs/reviews/.
+
+    Files recorded by `scripts/review-dispatch.py` (carrying `## Plan review:`,
+    `## Completion review:`, or `## Round N:` headings) are audited by
+    `review-dispatch.py --list-rounds` and `todo-graph.py query rounds` rather
+    than the legacy `run-records.md` table.
+    """
     sections = set()
     if not TF.REVIEWS.is_dir():
         return sections
     for path in TF.REVIEWS.rglob("*.md"):
         display = TF._ref_for(path.name)
         if display is not None:
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                text = ""
+            if _DISPATCH_HEADING_RE.search(text):
+                continue
             sections.add(_compact_section(display))
     return sections
 
@@ -1569,7 +1582,7 @@ refuted: 0
         run = _mkrun(section, "panel")
         run.round_lines = [(0, n + 1, items) for n, items in enumerate(rounds)]
         return run
-    sol = PANEL_SLOTS.family_models("codex")[0]
+    sol = _FAMILY_MODELS["codex"][0]
     # D00 T04 §29: Grok rounds record the concrete model that ran; the
     # registry's `newest` entry accepts any matching release, never a
     # suffixed variant, and never across families.

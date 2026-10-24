@@ -55,21 +55,16 @@ jobs:
         run: |
           python3 scripts/todo-findings.py --check
           python3 scripts/todo-runs.py --check
-      - name: Self-test the review tooling
+      - name: Self-test the review tooling and automations
         run: |
           python3 scripts/todo-claims.py --self-test
           python3 scripts/todo-findings.py --self-test
           python3 scripts/todo-runs.py --self-test
-          python3 scripts/panel_slots.py validate
-          python3 scripts/panel_slots.py --self-test
-          python3 scripts/review_prompt.py --self-test
-          python3 scripts/agent_routing.py validate
-          python3 scripts/agent_routing.py --self-test
-      - name: Check private Codex tooling and intelligence
+          python3 scripts/review-dispatch.py --check-pin
+          python3 scripts/review-dispatch.py --list-rounds
+          python3 -m unittest discover -s scripts/tests -v
+      - name: Check toolchain installer and intelligence
         run: |
-          python3 .codex/runner/panel_slots.py validate
-          python3 .codex/runner/review_prompt.py --self-test
-          python3 -m unittest discover -s .codex/tests -v
           python3 -m unittest discover -s tests -p test_toolchain.py -v
           python3 scripts/intelligence.py validate
       - name: Assert commit hooks are intact

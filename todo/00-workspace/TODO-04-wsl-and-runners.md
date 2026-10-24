@@ -11,10 +11,10 @@ frozen: true
 
 # TODO-04 -- WSL, Local Toolchains, and Isolated Runners
 
-> **Goal:** Develop from WSL with repository-local pinned compilers, build Windows, Linux and Android targets, and run either Claude or Codex with independently tunable mechanics in one checkout.
+> **Goal:** Develop from WSL with repository-local pinned compilers, build Windows, Linux and Android targets, and run the Antigravity (`agy`) writer with GPT-6 Astra independent review in one checkout.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-09-30):** The committed replacement uses `scripts/build.py` and pinned local tools for all four targets, with conventional `bin/<target>/` packages and independent runner mechanics. The pre-migration WSL baseline had failed six gates: build dispatch, correctness, fuzz, review citation paths, Claude Stop handling and provisioning. The migration audit records repaired gates and Windows/Linux runtime evidence; Android execution remains unproven. These sections still need their formal review stamps. Claude's controller is `scripts/campaign_guard.py`; its review pins are `.conclave/panel.toml`. The operator requested Codex parity, independent runner internals, no isolated worktrees and no checkpoint layer, then extended the delivery targets to Windows, Linux and Android executables and libraries.
+> **Current state (verified 2026-10-24):** The committed replacement uses `scripts/build.py` and pinned local tools for all four targets, with conventional `bin/<target>/` packages, Antigravity (`agy`) as the sole writer, and GPT-6 Astra (`gpt-6-astra` via `codex`) as the sole reviewer through `.conclave/reviewers.toml` and `scripts/review-dispatch.py`. The pre-migration WSL baseline had failed six gates: build dispatch, correctness, fuzz, review citation paths, Stop handling and provisioning. The migration audit records repaired gates and Windows/Linux runtime evidence; Android execution remains unproven. These sections still need their formal review stamps. The campaign controller is `scripts/campaign_guard.py` wired to `.agents/hooks.json` and `.agents/skills/`.
 <!-- claim: exists src/sys.c -->
 <!-- claim: exists scripts/campaign_guard.py -->
 <!-- claim: exists toolchain.json -->
@@ -23,18 +23,18 @@ frozen: true
 
 - [`build.ps1`](../../build.ps1), [`build.ninja`](../../build.ninja), [`toolchain.json`](../../toolchain.json): existing Windows build and pins.
 - [`src/rf.h`](../../src/rf.h), [`src/sys.c`](../../src/sys.c), [`src/cm.c`](../../src/cm.c): platform boundary and arithmetic that must remain byte-identical.
-- [`.claude/skills/`](../../.claude/skills/): lifecycle contracts to adapt for Codex.
+- [`.agents/skills/`](../../.agents/skills/), [`.agents/hooks.json`](../../.agents/hooks.json), [`scripts/review-dispatch.py`](../../scripts/review-dispatch.py), [`scripts/campaign_guard.py`](../../scripts/campaign_guard.py): lifecycle contracts, native Stop hook, adaptive review dispatcher, and campaign controller.
 - -> XREF: D08 T04 §1 -- repository presentation and platform guides.
 - -> XREF: D06 T01 §2 -- the public library targets built with these compilers.
 
 - -> XREF: D10 T01 §1 -- shared implementation or verification boundary.
-- -> XREF: D00 T01 §6 -- the reviewer pin whose Gemini route reviews §1's Codex-written candidate after Claude adopted it.
+- -> XREF: D00 T01 §6 -- the reviewer pin whose `agy -> astra` route reviews §1's toolchain candidate.
 
 ## Outcome
 
 - A verified local compiler installation under `tools/` builds native Linux, cross Windows and Android artifacts, without changing the host toolchain.
-- Both runner families have their own skills, hooks, settings, state and review tools; a shared admission lock prevents concurrent writers.
-- Evidence-backed intelligence stays family-local and is processed only at a stopped boundary.
+- The Antigravity (`agy`) writer has its skills in `.agents/skills/`, native `Stop` hook in `.agents/hooks.json`, campaign guard in `scripts/campaign_guard.py`, and 3-stage adaptive review dispatcher in `scripts/review-dispatch.py`.
+- Evidence-backed intelligence is validated through `scripts/intelligence.py` and processed only at a stopped boundary.
 
 **Adjacency:** list=not-applicable (no record list); document=not-applicable (no printed output); settings=not-applicable (no codec option); reporting=not-applicable (existing CLI reports); notifications=not-applicable (existing exit codes); permissions=applicable @ D00 T04 §2; audit=not-applicable (Git retains changes); exchange=applicable @ D00 T04 §2; reverse=applicable @ D00 T04 §2
 
@@ -97,26 +97,26 @@ Keep the format frozen at version 2. Add Linux and Android platform support and 
 
 ## 3. Isolated Codex Lifecycle and Review Runner
 
-Keep Claude's runner installed. Codex owns its implementation, pins, native hooks, heartbeat/recovery mechanism and run records. Share canonical source and TODO contracts, plus only the admission mutex needed for one writer. Do not create worktrees, snapshots or checkpoint gates. Native hook trust is a runtime admission requirement, never synthesized by the runner.
+**Corrected 2026-10-24:** With the operator decision to consolidate on Antigravity (`agy`) as the sole writer and GPT-6 Astra (`gpt-6-astra` via `codex`) as the sole reviewer (`D00 T01 §6`), the `.claude/` and `.codex/` writer harnesses are retired. This section's deliverables are satisfied by the unified `.agents/skills/` lifecycle skills, `.agents/hooks.json` native `Stop` hook, `scripts/campaign_guard.py` controller, and `scripts/review-dispatch.py` adaptive reviewer.
 
-- [ ] Adapt every Claude lifecycle skill for Codex and register supported skill discovery. Done when: every lifecycle has a Codex counterpart without Claude-only tools or paths.
-- [ ] Implement native Stop, resume, prompt-stop and interrupt handling with session-bound ownership and a bounded heartbeat. Done when: lifecycle, malformed state, sibling contention and explicit-stop tests pass.
-- [ ] Give Codex a private independent review panel and review tooling. Done when: same-family review is refused and a concrete private reviewer invocation is exercised.
-- [ ] Document exact invocation, hook trust and stopped maintenance. Done when: a fresh session can discover and audit without arming a campaign.
-- [ ] Commit: `"codex: isolate the plan runner and lifecycle skills"`
+- [ ] Maintain all lifecycle skills in `.agents/skills/` for Antigravity (`agy`). Done when: `python3 scripts/todo-graph.py validate` and `python3 scripts/campaign_guard.py --self-test` pass with all skills under `.agents/skills/`.
+- [ ] Implement native `Stop` hook handling in `.agents/hooks.json` and `scripts/campaign_guard.py` with session-bound ownership and a bounded heartbeat. Done when: `python3 scripts/campaign_guard.py --self-test` passes all 145 cases.
+- [ ] Route all independent reviews (`--kind plan`, `--kind completion`, and adaptive code review rounds) from `--writer agy` to `astra` (`codex`, `gpt-6-astra`) through `.conclave/reviewers.toml` and `scripts/review-dispatch.py`. Done when: `python3 scripts/review-dispatch.py --check-pin --json` and `python3 -m unittest discover -s scripts/tests -v` pass.
+- [ ] Document exact invocation, hook configuration, and stopped maintenance in `AGENTS.md`, `GEMINI.md`, and `.agents/skills/`. Done when: `python3 scripts/drift-check.py` exits 0.
+- [ ] Commit: `"runner: consolidate lifecycle skills, guard, and review dispatch on Antigravity"`
 
-**Test checkpoint:** `python3 -m unittest discover -s .codex/tests -v` exits zero, and native hook discovery lists the project event definitions without mutating trust.
+**Test checkpoint:** `python3 -m unittest discover -s scripts/tests -v` and `python3 scripts/campaign_guard.py --self-test` exit zero.
 
 ## 4. Family-Local Intelligence
 
-Carry the JMR pattern at RasterFold's scale: append evidence and proposed corrections during a run, then explicitly apply, reject or defer at a stopped boundary. No automatic rewrite of runner policy and no sharing of family ids.
+**Corrected 2026-10-24:** Standalone `scripts/intelligence.py` validates the retained `.intelligence/` registers and archives without `.claude/` or `.codex/` runner directories, while `.agents/skills/process-intelligence/SKILL.md` governs stopped-boundary disposition.
 
-- [ ] Add separate intelligence registers and commands with atomic writes, evidence and owner fields, and retained archives. Done when: malformed records and cross-family writes are refused.
-- [ ] Add process-intelligence skills and stopped-boundary checks for both families. Done when: active, paused or unreadable ownership prevents disposition and archiving.
-- [ ] Test capture, de-duplication, apply/reject/defer, archive, concurrency and stopped checks. Done when: every case passes and no live campaign was started by tests.
-- [ ] Commit: `"runner: retain and process family-local intelligence"`
+- [ ] Maintain intelligence registers and validation in `scripts/intelligence.py` with atomic writes, evidence and owner fields, and retained archives. Done when: `python3 scripts/intelligence.py validate` exits 0 and malformed records are refused.
+- [ ] Provide `.agents/skills/process-intelligence/SKILL.md` and stopped-boundary checks in `scripts/intelligence.py`. Done when: active or unreadable guard state prevents disposition and archiving.
+- [ ] Verify intelligence register validation and campaign guard stopped-boundary checks. Done when: `python3 scripts/intelligence.py validate` and `python3 scripts/campaign_guard.py --self-test` exit zero.
+- [ ] Commit: `"runner: retain and process runner intelligence"`
 
-**Test checkpoint:** `python3 -m unittest discover -s .codex/tests -v` and `python3 scripts/intelligence.py validate` exit zero.
+**Test checkpoint:** `python3 scripts/campaign_guard.py --self-test` and `python3 scripts/intelligence.py validate` exit zero.
 
 ## Verification
 

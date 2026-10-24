@@ -31,7 +31,7 @@ FF = "ffmpeg with libjxl (benchmarks)"
 M = [
     (1, "Locked baseline",
      "`pwsh scripts/check-all.ps1` green with every gate `PASS`; the `plan-gates` and `build` workflows green on the last push; `benchmarks/results.md` and `benchmarks/corpus.csv` report JPEG XL e7, JPEG XL e9, and lossless WebP; the HTML docs build and `python scripts/drift-check.py` exits 0. Baseline on 2026-09-29: photos 0.971 of JPEG XL e7 and 0.983 of e9, 28 of 39 photos below e9",
-     f"`pwsh scripts/check-all.ps1`, `python scripts/review_prompt.py ci-wait` on the last push, {SIZE}",
+     f"`pwsh scripts/check-all.ps1`, `python3 scripts/ci_status.py` on the last push, {SIZE}",
      [FF], None,
      "D00 T01 §1, D00 T01 §2, D00 T01 §3, D00 T01 §4, D00 T01 §5, D00 T02 §1, D00 T02 §2, D00 T02 §3, D08 T01 §1, D08 T01 §2, D08 T01 §3, D08 T02 §1, D08 T02 §2, D08 T02 §3, D08 T02 §4, D08 T02 §5, D08 T02 §6, D08 T02 §7, D00 T04 §1, D00 T04 §2, D00 T04 §3, D00 T04 §4, D08 T04 §1, D99 T01 §3, D99 T01 §4"),
     (2, "Same bytes, leaner and harder",

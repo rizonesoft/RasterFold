@@ -29,20 +29,16 @@ def main():
         ('claims','scripts/todo-claims.py',[]),('claims self-test','scripts/todo-claims.py',['--self-test']),
         ('findings','scripts/todo-findings.py',['--check']),('findings self-test','scripts/todo-findings.py',['--self-test']),
         ('runs','scripts/todo-runs.py',['--check']),('runs self-test','scripts/todo-runs.py',['--self-test']),
-        ('Claude review tooling','scripts/review_prompt.py',['--self-test']),('Claude panel','scripts/panel_slots.py',['validate']),
-        ('Claude panel self-test','scripts/panel_slots.py',['--self-test']),('Claude guard','scripts/campaign_guard.py',['--self-test']),
-        ('agent routing','scripts/agent_routing.py',['validate']),
-        ('agent routing self-test','scripts/agent_routing.py',['--self-test']),
+        ('reviewer pin','scripts/review-dispatch.py',['--check-pin']),
+        ('review rounds','scripts/review-dispatch.py',['--list-rounds']),
+        ('campaign guard','scripts/campaign_guard.py',['--self-test']),
         ('intelligence','scripts/intelligence.py',['validate']),
     ):python(name,path,*args)
+    gates.append(('review and automation tests',[py,'-m','unittest','discover','-s','scripts/tests','-v']))
     gates.append(('document drift tests',[py,'-m','unittest','discover','-s','tests','-p','test_drift.py','-v']))
     gates.append(('plan audit tests',[py,'-m','unittest','discover','-s','tests','-p','test_plan_audit.py','-v']))
     gates.append(('package tests',[py,'-m','unittest','discover','-s','tests','-p','test_package.py','-v']))
     if os.name != 'nt':
-        # Codex campaigns and the Linux archive installer run in WSL/Linux.
-        python('Codex review tooling','.codex/runner/review_prompt.py','--self-test')
-        python('Codex panel','.codex/runner/panel_slots.py','validate')
-        gates.append(('Codex lifecycle',[py,'-m','unittest','discover','-s','.codex/tests','-v']))
         gates.append(('toolchain installer tests',[py,'-m','unittest','discover','-s','tests','-p','test_toolchain.py','-v']))
     gates.append(('provision',(['powershell','-NoProfile','-ExecutionPolicy','Bypass','-File','tools/provision.ps1','-Verify'] if os.name=='nt' else [py,'tools/provision.py','--verify'])))
     logs=ROOT/'build/logs';logs.mkdir(parents=True,exist_ok=True)

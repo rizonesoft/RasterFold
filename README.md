@@ -57,7 +57,7 @@ Include [`rasterfold.h`](include/rasterfold.h), link a shared or static library,
 
 ## Development and automation
 
-The [execution plan](todo/implementation-plan.md) owns planned work. [AGENTS.md](AGENTS.md) defines format fidelity, review and measurement rules. Claude and [Codex](.codex/README.md) have separate skills, hooks, controllers and intelligence registers, with one campaign writer in the existing checkout.
+The [execution plan](todo/implementation-plan.md) owns planned work. [AGENTS.md](AGENTS.md) and [GEMINI.md](GEMINI.md) define format fidelity, review and measurement rules. Antigravity (`agy`) is the sole writer, with skills in `.agents/skills/`, native `Stop` hook in `.agents/hooks.json`, campaign controller in `scripts/campaign_guard.py`, and independent GPT-6 Astra reviews dispatched through `scripts/review-dispatch.py`.
 
 Contributions should improve images in general. A size or speed claim needs the [measurement protocol](docs/research.md), its inputs, command and thread count. Reproducing one attractive result is not enough to claim a general win over JPEG XL.
 

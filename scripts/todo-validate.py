@@ -1136,6 +1136,10 @@ def validate(graph, _args) -> int:
             stamp_day = s.stamped_on if s.stamped_on is not None else "undated"
             where = f"{t.path}:{s.line}: §{num} stamped {stamp_day}"
             body = getattr(s, "review_body", None) or ""
+            if graph.RECEIPT_REVIEW_RE.match(body.strip()):
+                for rprob in graph.validate_section_receipt(t, num, s, set(graph._section_refs(todos))):
+                    flag("malformed-stamp", f"{where} receipt error: {rprob}")
+                continue
             m = graph.FINDINGS_RE.search(body)
             if not m:
                 flag(
@@ -1313,6 +1317,8 @@ def validate(graph, _args) -> int:
             if num not in t.verified_sections:
                 continue
             if s.stamped_on is not None and s.stamped_on <= graph.PLAN_REVIEW_CUTOFF:
+                continue
+            if graph.RECEIPT_REVIEW_RE.match((getattr(s, "review_body", None) or "").strip()):
                 continue
             marker = getattr(s, "plan_review_body", None) or ""
             if not marker.strip():
@@ -2210,7 +2216,7 @@ def validate(graph, _args) -> int:
     # The scan root rides the graph global so fixtures substitute their own.
     if todos:
         origin = todos[0]
-        skills_dir = getattr(graph, "SKILLS_DIR", graph.REPO / ".claude" / "skills")
+        skills_dir = getattr(graph, "SKILLS_DIR", graph.REPO / ".agents" / "skills")
         if skills_dir.is_dir():
             for path in sorted(skills_dir.glob("*/SKILL.md")):
                 try:

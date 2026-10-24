@@ -71,7 +71,7 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SETTINGS = os.path.normpath(os.path.join(HERE, "..", ".claude", "settings.json"))
+SETTINGS = os.path.normpath(os.path.join(HERE, "..", ".agents", "hooks.json"))
 SESSION = "11111111-2222-3333-4444-555555555555"
 RUN_FILE = "docs/phase-runs/2099-01-01-phase-0.md"
 
@@ -244,22 +244,8 @@ def acquire(root: str, session: str, phase: int, run_file: str, cron_id: str,
         raise GuardError(f"run file {run_file!r} must be a repo-relative path inside the workspace")
     if scope is not None and scope not in SCOPES:
         raise GuardError(f"scope {scope!r} is not one of {', '.join(SCOPES)}")
-    # Family-private implementation; only the admission lock and ownership
-    # handshake are shared with Codex. Fixture roots still use this code.
-    import importlib.util
-    source = os.path.join(REPO, '.claude', 'runner', 'admission.py')
-    spec = importlib.util.spec_from_file_location('claude_admission', source)
-    with _THREAD_LOCKS_LOCK:
-        module = sys.modules.get('claude_admission')
-        if module is None:
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            sys.modules['claude_admission'] = module
-    with module.admission(root):
-        if module.busy(root, 'codex'):
-            raise GuardError('Codex owns the checkout; stop that run before acquiring Claude')
-        with _Lock(root):
-            return _acquire_locked(root, session, phase, run_file, cron_id, handover, generation, scope)
+    with _Lock(root):
+        return _acquire_locked(root, session, phase, run_file, cron_id, handover, generation, scope)
 
 
 def _acquire_locked(root: str, session: str, phase: int, run_file: str, cron_id: str,
@@ -925,10 +911,14 @@ def stop_hook(stdin: str, project_dir: str | None) -> tuple[int, str]:
         if not stdin.strip():
             return 0, ""
         event = json.loads(stdin)
-        root = project_dir or str(event.get("cwd") or "")
+        if event.get("terminationReason") == "USER_CANCELED" or event.get("fullyIdle") is False:
+            return 0, ""
+        ws_paths = event.get("workspacePaths")
+        ws_root = ws_paths[0] if isinstance(ws_paths, list) and ws_paths and isinstance(ws_paths[0], str) else ""
+        root = project_dir or ws_root or str(event.get("cwd") or "")
         if not root:
             return 0, ""
-        session = str(event.get("session_id") or "")
+        session = str(event.get("conversationId") or event.get("session_id") or "")
 
         def decide() -> None:
             try:
@@ -948,6 +938,8 @@ def stop_hook(stdin: str, project_dir: str | None) -> tuple[int, str]:
         if "error" in seen:
             raise seen["error"]
         decision = seen.get("decision")
+        if decision and "conversationId" in event:
+            decision = {"decision": "continue", "reason": decision["reason"]}
         return 0, json.dumps(decision) if decision else ""
     except Exception as error:  # fail open; the heartbeat reports what is recorded here
         reason = str(error) or type(error).__name__
@@ -2163,7 +2155,7 @@ def _self_test() -> int:
               c1.stdout + c2.stderr)
 
     # D00 T04 §34: the runner's contract routes through these commands.
-    plan_skill = os.path.normpath(os.path.join(HERE, "..", ".claude", "skills", "process-plan", "SKILL.md"))
+    plan_skill = os.path.normpath(os.path.join(HERE, "..", ".agents", "skills", "process-plan", "SKILL.md"))
     try:
         with open(plan_skill, encoding="utf-8") as fh:
             skill = fh.read()
@@ -2190,7 +2182,7 @@ def _self_test() -> int:
                         ("skill-heartbeat-resumes-by-scope",
                          "under process-phase for Phase <N> only when step 1 printed scope=phase")):
         check(pin, needle in skill, plan_skill)
-    phase_skill = os.path.normpath(os.path.join(HERE, "..", ".claude", "skills", "process-phase", "SKILL.md"))
+    phase_skill = os.path.normpath(os.path.join(HERE, "..", ".agents", "skills", "process-phase", "SKILL.md"))
     try:
         with open(phase_skill, encoding="utf-8") as fh:
             check("skill-a-standalone-phase-acquires-a-phase-scope", "`acquire --scope phase`" in fh.read(), phase_skill)

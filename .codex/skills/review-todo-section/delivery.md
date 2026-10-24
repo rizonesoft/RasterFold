@@ -1,9 +1,0 @@
-# Delivery and CI evidence
-
-Push only within the user's authorized scope. Local source review and passing local tests are not remote CI proof. Never force-push, amend a recorded candidate, bypass hooks or transfer evidence to changed bytes.
-
-Before an authorized push record the remote main OID. Use the normal ship push followed by the separately reviewed stamp push. Read back each applicable workflow with `python3 .codex/runner/review_prompt.py ci-wait <head> --since <previous-remote-head>`; select `build` with `--workflow build --workflow-path .github/workflows/build.yml` for codec/toolchain work. Record the printed result exactly, including `not triggered` or unresolved status. No queued/in-progress/missing run is green.
-
-A repository defect gets a forward repair owned by the responsible section and new review against the new candidate. One episode starts at the first red and ends only on confirmed green. Before each repair use `python3 .codex/runner/repair.py attempt --run-file <file> --red <sha> --commit <repair-sha> --workflow <name> --ci-run <failed-GitHub-run-id>`; the controller verifies the failed run identity and the private ledger permits three distinct attempts per episode, including across restarts. On green use `close --ci-run <GitHub-run-id>` with its commit and the measured CI evidence. The controller independently reads the exact workflow run and requires completed/success, the expected workflow name, and the same head commit. Repair records bind the current owner/run and remain continuous across phase files. Use `status` before resuming. A changed red hash never resets the allowance.
-
-Diagnose unknown failures from the run details, complete job log and one local reproduction. If still unverifiable, caused by an external platform failure, or at the repair limit, record the blocker and park the private controller. Report it candidly. Do not retire a workflow or declare silence green to get around a failed gate.

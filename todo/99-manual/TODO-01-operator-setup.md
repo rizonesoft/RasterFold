@@ -70,7 +70,7 @@ The previous developer's campaign tooling left a lock folder and a run guard in 
 
 **Requires:** operator -- the login runs in the owner's browser session; a clone without usable existing authentication needs an interactive account enrollment; reuse authorized stored credentials before requesting any new login.
 
-`python scripts/review_prompt.py ci-wait` reads CI back through the GitHub CLI. Without it, every push's CI result is unverified, and the review skill's push block cannot complete.
+`python3 scripts/ci_status.py` reads CI back through the GitHub CLI. Without it, every push's CI result is unverified, and the phase runner's CI read-back cannot complete.
 
 - [ ] Verify the existing CLI with `gh auth status`; only a missing clone setup installs the platform CLI (Windows: `winget install GitHub.cli`; WSL/Linux: the official GitHub CLI package instructions) and uses `gh auth login` when no authorized stored identity is available. Done when: `gh auth status` prints `Logged in to github.com`.
 - [ ] Commit: `"workspace: record the GitHub CLI login for the CI read-back"`

@@ -1,40 +1,48 @@
-# Independent reviewers for this repository, read by scripts/review-dispatch.py.
+# Reviewer pin for independent-review (scripts/review-dispatch.py).
 #
-# A route names one reviewer and at most one fallback for work written by one
-# agent, and neither is of the writer's own model family (the CLI names it:
-# codex is OpenAI, agy is Google, claude is Anthropic). The first reviewer that
-# runs and returns a review is the round; one that is not installed, fails,
-# times out, returns nothing or replies OVERALL: blocked is skipped and the
-# reason recorded. If both fail there is no review, never an approval.
+# Antigravity CLI (writer `agy`, serving Claude or Gemini models) is the only writer in this repository and GPT-6 Astra through the Codex CLI is the only reviewer: one route, no fallback. When Astra returns no review, nothing else runs and the round is not an approval.
 #
-# Loaded strictly: an unknown key, an unknown CLI, a malformed model, a route
-# naming an undefined reviewer, a same-family reviewer or a second fallback
-# refuses every dispatch.
+# Every pass's effort and lenses come from [schedule] below, enforced by scripts/review-dispatch.py from the findings file passed to --record:
+#   - before the build, one pass of --kind plan at medium effort (adversarial, completeness, consistency, integration, and record on the section's plan);
+#   - after the build, one pass of --kind completion at medium effort (completeness and excellence against the domain and reference codecs);
+#   - then the review rounds: round 1 at high effort (adversarial + integration), round 2 at medium (adversarial), round 3 at low (adversarial), and from round 4 on one lens per round at low effort, rotating consistency, design (only when --surface is passed), and record. If a low-effort round reports HIGHEST: P1, the next round escalates once to medium adversarial. From round 4 on, a round whose findings are all P3 (HIGHEST: P3) may stop the loop (`severity_stop_after = 3`).
 
 schema_version = 1
 
-# GPT-6 Astra through the Codex CLI, read-only sandbox.
 [reviewers.astra]
 cli = "codex"
 model = "gpt-6-astra"
 effort = "medium"
 
-# Gemini 4 through the Antigravity CLI in plan mode and its sandbox. The
-# effort is part of the model name (gemini-4-argon-low, -medium or -high);
-# Gemini reviewers run at medium (operator decision 2026-10-21).
-[reviewers.gemini]
-cli = "agy"
-model = "gemini-4-argon-medium"
-
-# Sonnet 5.5 through Claude Code in plan mode.
-[reviewers.sonnet]
-cli = "claude"
-model = "claude-sonnet-5-5"
-effort = "high"
-
-# Each writer is reviewed by the other two families: Astra first wherever it
-# may review, and the third family as the one fallback.
 [routes]
-claude = ["astra", "gemini"]
-codex = ["gemini", "sonnet"]
-gemini = ["astra", "sonnet"]
+agy = ["astra"]
+
+[schedule]
+severity_stop_after = 3
+
+[schedule.plan]
+effort = "medium"
+lenses = ["plan"]
+
+[schedule.completion]
+effort = "medium"
+
+[[schedule.rounds]]
+effort = "high"
+lenses = ["adversarial", "integration"]
+
+[[schedule.rounds]]
+effort = "medium"
+lenses = ["adversarial"]
+
+[[schedule.rounds]]
+effort = "low"
+lenses = ["adversarial"]
+
+[schedule.rotation]
+effort = "low"
+lenses = ["consistency", "design", "record"]
+
+[schedule.escalation]
+effort = "medium"
+lenses = ["adversarial"]

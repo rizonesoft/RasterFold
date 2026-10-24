@@ -1,25 +1,45 @@
 #!/usr/bin/env python3
-"""Run one independent review round with the reviewers pinned in .conclave/reviewers.toml, failing over in order.
+"""Run one independent review round with the reviewer pinned in .conclave/reviewers.toml.
 
-    python3 scripts/review-dispatch.py --writer claude --prompt review-prompt.md --record docs/reviews/x.md
+    python3 scripts/review-dispatch.py --writer agy --prompt review-prompt.md --record docs/reviews/x.md
+    python3 scripts/review-dispatch.py --kind completion --candidate <40-char SHA> --writer agy \
+        --prompt completion-prompt.md --record docs/reviews/x.md     the one-pass completion and excellence review
     python3 scripts/review-dispatch.py --check-pin [--json] [--pin <path>]     the pin's verdict; runs no reviewer
     python3 scripts/review-dispatch.py --list-rounds [--json] [--records <dir>]  recorded rounds; runs no reviewer
 
-`--writer` is the agent whose work is under review (claude, codex or gemini); its route in the pin lists one reviewer
-of a different model family and at most one fallback, also of a different family. The first reviewer that runs and
-returns a review is the round. One that is not installed, exits non-zero, times out, returns nothing, or ends its
-reply `OVERALL: blocked` (it could not reach the candidate, for example a sandbox that cannot read the repository) is
-skipped and the reason recorded. When every reviewer fails there is no review: exit 1, which never counts as approval.
+`--writer` is the agent whose work is under review. Antigravity (`agy`) is the only writer in this
+repository, and its route in the pin names exactly one reviewer of a different model family, run through the Codex CLI
+(owner decision 2026-10-24: one reviewer, no fallback). A reviewer that is not installed, exits non-zero, times out,
+returns nothing, or ends its reply `OVERALL: blocked` (it could not reach the candidate, for example a sandbox that
+cannot read the repository) returned no review, and the reason is recorded: exit 1, which never counts as approval.
 A review that finds problems is still a review (exit 0).
 
 `--check-pin` loads the pin with `load_pin`, the only place the rules live, and reports without running anything:
 with `--json`, `{"ok": true, "schema_version", "reviewers", "routes", "clis": {cli: on PATH}}` and exit 0, or
 `{"ok": false, "error": "<the Refused message>"}` and exit 2; without `--json`, `ok` or `refused: <message>`.
 
-Reviewers run read-only in the repository root: Codex in its read-only sandbox, Antigravity in plan mode inside its
-sandbox, Claude Code in plan mode. The script prints a JSON summary; `--record` also appends a `## Round N` section to
-the findings file with an atomic write, and writes nothing (exit 2, the summary still printed) to a findings file it
-cannot read back. Works the same from PowerShell and from WSL. Stdlib only.
+The reviewer runs read-only in the repository root, in the Codex read-only sandbox. The script prints a JSON summary;
+`--record` also appends a `## Round N` section to the findings file with an atomic write, and writes nothing (exit 2,
+the summary still printed) to a findings file it cannot read back. Works the same from PowerShell and from WSL.
+Stdlib only.
+
+`--kind completion` runs the one-pass completion and excellence review (`docs/completion-review-prompt.md`) on the
+built section before its regular rounds. With `--record` it appends a `## Completion review` section naming the
+reviewer, its model and the `--candidate` commit instead of a `## Round N` section, and it is not counted as a round.
+A findings file holds one returned completion review: a second is refused (exit 2) and nothing is appended, while a
+pass that returned no review (`## Completion review: none`) may be followed by another.
+
+`--kind plan` runs the one-pass plan review (`docs/plan-review-prompt.md`) on the section as written, before the build:
+it asks whether building the section exactly as planned produces a 100% complete feature. It is recorded as a
+`## Plan review` section with the same one-pass rule, and it is not counted as a round.
+
+When the pin has a `[schedule]`, the dispatcher owns each pass's effort and lenses (owner decision 2026-10-24): the
+plan and completion passes take their scheduled effort, and a round's place in `[[schedule.rounds]]` comes from the
+rounds that returned a review already recorded in the `--record` file. Rounds past that list rotate one lens per round
+through `[schedule.rotation]` (the design lens only with `--surface`), and a low-effort round whose review reads
+`HIGHEST: P1` is followed by the `[schedule.escalation]` step. The scheduled lenses are appended to the prompt and
+recorded on an `- Lenses:` line. The JSON summary carries `position`, `escalated` and `severity_stop` (true when a
+returned round past `severity_stop_after` reads `HIGHEST: P3`: the loop may stop there).
 """
 import argparse
 from datetime import datetime, timezone
@@ -39,21 +59,19 @@ import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 PIN = ROOT / ".conclave" / "reviewers.toml"
-WRITERS = ("claude", "codex", "gemini")
-CLIS = ("codex", "agy", "claude")
+# Antigravity (`agy`) is the only writer, and the Codex CLI the only reviewer CLI (owner decision 2026-10-24).
+WRITERS = ("agy",)
+CLIS = ("codex",)
 # A reviewer is never of the writer's own model family: its CLI names the family, and so does the writer.
-FAMILY = {"codex": "openai", "agy": "google", "claude": "anthropic"}
-WRITER_FAMILY = {"claude": "anthropic", "codex": "openai", "gemini": "google"}
-EFFORTS = {"codex": ("low", "medium", "high", "xhigh"), "claude": ("low", "medium", "high", "xhigh", "max")}
+FAMILY = {"codex": "openai"}
+WRITER_FAMILY = {"agy": "agy"}
+EFFORTS = {"codex": ("low", "medium", "high", "xhigh")}
 MODEL = re.compile(r"^[a-z0-9][a-z0-9.-]*$")
 NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")
-# Antigravity takes the prompt only as the -p value. Past this size it gets a pointer to the prompt file instead.
-# Windows caps a whole command line at 32,767 characters; Linux caps one argument at 128 KiB.
-ARGV_PROMPT_LIMIT = 24_000 if os.name == "nt" else 100_000
 # A review is prose. Output past this size is a runaway reviewer, not a review.
 MAX_OUTPUT_BYTES = 2_000_000
 # The prompt's reply format ends with an OVERALL line; `blocked` means the reviewer never saw the work.
-BLOCKED = re.compile(r"^\s*OVERALL:\s*blocked\b", re.IGNORECASE)
+BLOCKED = re.compile(r"^\s*(?:OVERALL|COMPLETION):\s*blocked\b", re.IGNORECASE)
 POLL_SECONDS = 0.2
 CLEANUP_SECONDS = 10
 
@@ -62,10 +80,14 @@ class Refused(Exception):
     """The pin or the arguments are wrong; nothing ran."""
 
 
-def load_pin(path=PIN):
+def load_pin(path=PIN, data=None):
+    """The checked pin at `path`, or, given `data`, the pin in those bytes (a committed pin read with `git show`), so
+    a read-only caller needs no temporary file."""
     try:
-        with open(path, "rb") as handle:
-            pin = tomllib.load(handle)
+        if data is None:
+            with open(path, "rb") as handle:
+                data = handle.read()
+        pin = tomllib.loads(data.decode("utf-8"))
     except FileNotFoundError:
         raise Refused(f"no reviewer pin at {path}") from None
     except tomllib.TOMLDecodeError as exc:
@@ -82,9 +104,11 @@ def load_pin(path=PIN):
     except RecursionError:
         raise Refused("unreadable reviewer pin: nested too deeply to read") from None
     # `type(...) is int`: TOML true is Python True (an int subclass) and 1.0 == 1, so `!= 1` alone let both load.
-    if set(pin) != {"schema_version", "reviewers", "routes"} or type(pin["schema_version"]) is not int \
-            or pin["schema_version"] != 1:
-        raise Refused("the reviewer pin needs exactly schema_version = 1, [reviewers.*] and [routes]")
+    if not {"schema_version", "reviewers", "routes"} <= set(pin) <= {"schema_version", "reviewers", "routes",
+                                                                     "schedule"} \
+            or type(pin["schema_version"]) is not int or pin["schema_version"] != 1:
+        raise Refused("the reviewer pin needs exactly schema_version = 1, [reviewers.*] and [routes], "
+                      "and may add [schedule]")
     reviewers = pin["reviewers"]
     if not isinstance(reviewers, dict) or not reviewers:
         raise Refused("the reviewer pin defines no reviewers")
@@ -100,26 +124,140 @@ def load_pin(path=PIN):
             raise Refused(f"reviewer {name!r} needs cli = one of {', '.join(CLIS)}")
         if not isinstance(model, str) or not MODEL.fullmatch(model):
             raise Refused(f"reviewer {name!r} has a malformed model")
-        if cli == "agy":
-            if effort is not None:
-                raise Refused(f"reviewer {name!r}: Antigravity carries the effort in the model name, so set no effort")
-        elif effort not in EFFORTS[cli]:
+        if effort not in EFFORTS[cli]:
             raise Refused(f"reviewer {name!r} needs effort = one of {', '.join(EFFORTS[cli])}")
     routes = pin["routes"]
     if not isinstance(routes, dict) or set(routes) - set(WRITERS):
         raise Refused(f"[routes] may only name the writers {', '.join(WRITERS)}")
     for writer, chain in routes.items():
-        if not isinstance(chain, list) or not 1 <= len(chain) <= 2 or not all(isinstance(r, str) for r in chain):
-            raise Refused(f"route {writer!r} must list one reviewer and at most one fallback")
-        if any(r not in reviewers for r in chain) or len(set(chain)) != len(chain):
-            raise Refused(f"route {writer!r} must list defined reviewers, each once")
-        same = [r for r in chain if FAMILY[reviewers[r]["cli"]] == WRITER_FAMILY[writer]]
-        if same:
-            raise Refused(f"route {writer!r} names {', '.join(same)}, of the writer's own family; "
+        # One reviewer, no fallback (owner decision 2026-10-24).
+        if not isinstance(chain, list) or len(chain) != 1 or not isinstance(chain[0], str):
+            raise Refused(f"route {writer!r} must list exactly one reviewer, with no fallback")
+        if chain[0] not in reviewers:
+            raise Refused(f"route {writer!r} must name a defined reviewer")
+        if FAMILY[reviewers[chain[0]]["cli"]] == WRITER_FAMILY[writer]:
+            raise Refused(f"route {writer!r} names {chain[0]}, of the writer's own family; "
                           f"a review comes from a different family")
-        if len({FAMILY[reviewers[r]["cli"]] for r in chain}) != len(chain):
-            raise Refused(f"route {writer!r}: the fallback must be of a third family, not the reviewer's own")
+    if "schedule" in pin:
+        check_schedule(pin["schedule"], {reviewers[chain[0]]["cli"] for chain in routes.values()})
     return pin
+
+
+# The lenses a schedule may name, each with the question the reviewer is given for it. `plan` and `plan-delivery`
+# read the section's plan: before the build (is it a complete feature?) and after it (did the build deliver it?).
+LENSES = {
+    "plan": "Will this section, built exactly as written, produce a 100% complete feature? Name every missing "
+            "control, state, setting consumer, error or refusal path, undo or reverse path, Ctrl+K reach, persistence "
+            "read-back and test, and every `Done when:` that cannot fail.",
+    "plan-delivery": "Did the build deliver every checklist item and `Done when:` of the section, with nothing "
+                     "partial, stubbed or quietly narrowed?",
+    "adversarial": "How does this fail on hostile input, races, aborts, cancellation, automation or links?",
+    "integration": "Do callers and consumers still hold, with every contract (threads, ownership, errors) kept?",
+    "source-defect": "Is the upstream specification or spec/FOLD.md read accurately, with deviations noted?",
+    "consistency": "Does it match the module rules, naming, shared components, settings and sibling code?",
+    "quality": "Is the code clear, minimal and maintainable: dead code, duplication, misleading names or comments, "
+               "tests that pass without exercising the behaviour?",
+    "design": "Does the rendered UI match the section's **Design:** specification and its tokens: roles, radii, icons, states, accessibility?",
+    "optimization": "Where does it waste time, memory, allocations, I/O or redraws on the paths users hit, and what "
+                    "measured target does it miss?",
+    "record": "Does the evidence match what ran, with owned deferrals and an earned flip of every item?",
+}
+STEP_KEYS = {"effort", "lenses"}
+
+
+def check_step(where, step, efforts, lenses=True):
+    if not isinstance(step, dict) or set(step) - STEP_KEYS or "effort" not in step \
+            or (lenses and "lenses" not in step) or (not lenses and "lenses" in step):
+        need = "effort and lenses" if lenses else "only effort"
+        raise Refused(f"[schedule] {where} needs {need}")
+    if step["effort"] not in efforts:
+        raise Refused(f"[schedule] {where} needs effort = one of {', '.join(efforts)}")
+    if lenses:
+        names = step["lenses"]
+        if not isinstance(names, list) or not names or not all(isinstance(n, str) and n in LENSES for n in names) \
+                or len(set(names)) != len(names):
+            raise Refused(f"[schedule] {where} needs lenses = a list of distinct lenses from "
+                          f"{', '.join(LENSES)}")
+
+
+def check_schedule(schedule, clis):
+    """The review schedule, as strictly as the reviewers: every effort valid for every routed CLI, every lens known."""
+    efforts = [e for e in EFFORTS["codex"] if all(e in EFFORTS[cli] for cli in clis)]
+    keys = {"plan", "completion", "rounds", "rotation", "escalation", "severity_stop_after"}
+    if not isinstance(schedule, dict) or set(schedule) != keys:
+        raise Refused(f"[schedule] needs exactly {', '.join(sorted(keys))}")
+    check_step("plan", schedule["plan"], efforts)
+    check_step("completion", schedule["completion"], efforts, lenses=False)
+    check_step("escalation", schedule["escalation"], efforts)
+    check_step("rotation", schedule["rotation"], efforts)
+    rounds = schedule["rounds"]
+    if not isinstance(rounds, list) or not rounds:
+        raise Refused("[schedule] rounds needs at least one round")
+    for n, step in enumerate(rounds, 1):
+        check_step(f"round {n}", step, efforts)
+    stop = schedule["severity_stop_after"]
+    if type(stop) is not int or not 1 <= stop <= 33:
+        raise Refused("[schedule] severity_stop_after needs a whole number of rounds from 1 to 33")
+
+
+HIGHEST = re.compile(r"^\s*HIGHEST:\s*(P[123])\b", re.IGNORECASE | re.MULTILINE)
+
+
+def highest(review):
+    """The `HIGHEST:` severity a review declares (`P1`, `P2`, `P3`), or None."""
+    found = HIGHEST.findall(review or "")
+    return found[-1].upper() if found else None
+
+
+def returned_review(entry):
+    """A recorded round that is a review: a reviewer of another model family than the writer ran and replied with the
+    prompt's final `OVERALL: approve` or `OVERALL: needs-attention` line. An outage, a self-review (a reviewer of the
+    writer's own family, or of no known family) and a reply without that line are recorded rounds, not reviews.
+    scripts/todo-graph.py `stamp` uses this same predicate, so the schedule and the receipt count the same rounds."""
+    lines = [x.strip() for x in (entry.get("review") or "").splitlines() if x.strip()]
+    return bool(entry.get("reviewer")) and entry.get("writer") in WRITER_FAMILY \
+        and FAMILY.get(entry.get("cli")) not in (None, WRITER_FAMILY[entry["writer"]]) \
+        and bool(lines) and lines[-1] in ("OVERALL: approve", "OVERALL: needs-attention")
+
+
+def scheduled(schedule, kind, rounds, surface):
+    """The effort and lenses for the next pass, from the pin's schedule and the rounds already recorded.
+
+    The position counts returned reviews only (`returned_review`): an outage, a self-review and a reply without the
+    final OVERALL line do not move it. Rounds past the fixed list rotate through `rotation`'s lenses, one per round,
+    skipping `design` when the section has no surface. After a low-effort round that declared `HIGHEST: P1`, the next
+    round is the `escalation` step instead. scripts/todo-graph.py `stamp` replays this to check every recorded
+    pass, so it is the one copy of the schedule rule."""
+    if kind in ("plan", "completion"):
+        step = schedule[kind]
+        return {"position": None, "effort": step["effort"], "lenses": list(step.get("lenses", [])),
+                "escalated": False}
+    returned = [r for r in rounds if returned_review(r)]
+    position = len(returned) + 1
+    last = returned[-1] if returned else None
+    if last is not None and last.get("effort") == "low" and highest(last.get("review")) == "P1":
+        step, escalated = schedule["escalation"], True
+    elif position <= len(schedule["rounds"]):
+        step, escalated = schedule["rounds"][position - 1], False
+    else:
+        rotation = [n for n in schedule["rotation"]["lenses"] if surface or n != "design"] \
+            or schedule["rotation"]["lenses"]
+        step = {"effort": schedule["rotation"]["effort"],
+                "lenses": [rotation[(position - len(schedule["rounds"]) - 1) % len(rotation)]]}
+        escalated = False
+    return {"position": position, "effort": step["effort"], "lenses": list(step["lenses"]), "escalated": escalated}
+
+
+def lens_block(plan):
+    """The prompt section naming this pass's scheduled lenses and effort, appended after the writer's prompt."""
+    where = f"Round {plan['position']}" if plan["position"] else "This pass"
+    lines = ["", "", "## Lenses for this pass (scheduled by scripts/review-dispatch.py)", "",
+             f"{where} runs at {plan['effort']} reasoning effort"
+             + (", escalated after a low-effort round found a P1" if plan["escalated"] else "")
+             + ". Review through these lenses only, each as its own verdict, and ignore any other lens list above:",
+             ""]
+    lines += [f"- `{name}`: {LENSES[name]}" for name in plan["lenses"]]
+    return "\n".join(lines) + "\n"
 
 
 EXTENSION = re.compile(r"\.[A-Za-z0-9]+")
@@ -158,21 +296,12 @@ def fully_qualified(directory):
     return drive.startswith(("\\\\", "//")) or (len(drive) == 2 and rest[:1] in ("\\", "/"))
 
 
-def command(reviewer, executable, prompt, prompt_path, output_path, timeout):
-    """The argv and stdin for one read-only review. The model and effort come only from the pin."""
-    cli, model, effort = reviewer["cli"], reviewer["model"], reviewer.get("effort")
-    if cli == "codex":
-        return [executable, "exec", "-m", model, "-c", f"model_reasoning_effort={effort}", "--sandbox", "read-only",
-                "--ephemeral", "--skip-git-repo-check", "-o", str(output_path), "-"], prompt
-    if cli == "claude":
-        return [executable, "-p", "--model", model, "--effort", effort, "--permission-mode", "plan"], prompt
-    text = prompt
-    # A Windows .cmd or .bat shim re-parses its arguments through cmd.exe, so prose there could become commands:
-    # it only ever gets a pointer to the prompt file. So does a prompt too long for a command line.
-    shim = Path(executable).suffix.lower() in (".cmd", ".bat")
-    if shim or len(prompt.encode()) > ARGV_PROMPT_LIMIT or len(prompt) > ARGV_PROMPT_LIMIT:
-        text = f"Follow the review instructions in the file {prompt_path} exactly. Do not modify any file."
-    return [executable, "--model", model, "--mode", "plan", "--sandbox", "--print-timeout", f"{timeout}s", f"-p={text}"], None
+def command(reviewer, executable, output_path, effort=None):
+    """The argv for one read-only Codex review. The prompt goes on stdin, never on the command line, so a Windows
+    .cmd shim never re-parses prose as commands. The model comes only from the pin, and the effort from the pin's
+    reviewer or, when the pin has a [schedule], from the step it schedules for this pass."""
+    return [executable, "exec", "-m", reviewer["model"], "-c", f"model_reasoning_effort={effort or reviewer['effort']}",
+            "--sandbox", "read-only", "--ephemeral", "--skip-git-repo-check", "-o", str(output_path), "-"]
 
 
 def kill_tree(process):
@@ -219,19 +348,18 @@ def feed(pipe, text):
 def run(argv, stdin_text, timeout, watched):
     """Run one reviewer in its own process group, watching the size of every file it writes while it runs, so neither
     a hang nor a flood of output can take the dispatcher or the disk down. The group is ended afterwards whatever
-    happened. Returns (exit code, None) or (None, reason to fail over)."""
+    happened. Returns (exit code, None) or (None, the reason it returned no review)."""
     group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
     stdout_path = watched[0]
     with open(stdout_path, "wb") as output:
         try:
-            process = subprocess.Popen(argv, cwd=ROOT, stdin=subprocess.PIPE if stdin_text is not None else subprocess.DEVNULL,
-                                       stdout=output, stderr=subprocess.DEVNULL, **group)
+            process = subprocess.Popen(argv, cwd=ROOT, stdin=subprocess.PIPE, stdout=output,
+                                       stderr=subprocess.DEVNULL, **group)
         except (OSError, ValueError) as exc:
             return None, f"could not start: {getattr(exc, 'strerror', None) or type(exc).__name__}"
         try:
-            if stdin_text is not None:
-                # Fed from a thread: a reviewer that never reads would otherwise block this write past any timeout.
-                threading.Thread(target=feed, args=(process.stdin, stdin_text), daemon=True).start()
+            # Fed from a thread: a reviewer that never reads would otherwise block this write past any timeout.
+            threading.Thread(target=feed, args=(process.stdin, stdin_text), daemon=True).start()
             deadline = time.monotonic() + timeout
             while process.poll() is None:
                 if any(path.is_file() and path.stat().st_size > MAX_OUTPUT_BYTES for path in watched):
@@ -249,48 +377,57 @@ def run(argv, stdin_text, timeout, watched):
     return process.returncode, None
 
 
-def review(pin, writer, prompt_path, timeout):
-    """Walk the writer's route until one reviewer returns a review. Returns the summary dict."""
+def review(pin, writer, prompt_path, timeout, plan=None):
+    """Run the writer's one reviewer. Returns the summary dict: `reviewer` is None when no review came back, and
+    `skipped` then names the reviewer and why (there is no fallback). `plan` is the scheduled step (see `scheduled`):
+    its effort replaces the reviewer's, and its lenses are appended to the prompt and recorded."""
     if writer not in pin["routes"]:
         raise Refused(f"the reviewer pin has no route for writer {writer!r}")
     prompt = Path(prompt_path).read_text(encoding="utf-8")
     if not prompt.strip():
         raise Refused("the review prompt is empty")
     if "\0" in prompt:
-        raise Refused("the review prompt contains a NUL byte; no command line can carry it")
-    failover = []
-    for name in pin["routes"][writer]:
-        reviewer = pin["reviewers"][name]
-        # The resolved path, not the bare name: on Windows a CLI is often a .cmd shim that Popen cannot find by name.
-        executable = find_cli(reviewer["cli"])
-        if executable is None:
-            failover.append({"reviewer": name, "reason": f"{reviewer['cli']} is not installed"})
-            continue
-        stdout = None
-        tmp = Path(tempfile.mkdtemp())
-        try:
-            stdout_path, message_path = tmp / "stdout.txt", tmp / "last-message.md"
-            argv, stdin_text = command(reviewer, executable, prompt, Path(prompt_path).resolve(), message_path, timeout)
-            _, problem = run(argv, stdin_text, timeout, [stdout_path, message_path])
-            if problem is None:
-                source = message_path if reviewer["cli"] == "codex" else stdout_path
-                stdout = source.read_text(encoding="utf-8", errors="replace") if source.is_file() else ""
-        finally:
-            remove_scratch(tmp)
-        if problem is None and not (stdout or "").strip():
-            problem = "returned no review"
+        raise Refused("the review prompt contains a NUL byte; no reviewer can be given it")
+    (name,) = pin["routes"][writer]
+    reviewer = pin["reviewers"][name]
+    effort = plan["effort"] if plan else reviewer.get("effort")
+    lenses = plan["lenses"] if plan else []
+    if lenses:
+        prompt = prompt.rstrip("\n") + lens_block(plan)
+    scheduled_fields = {"effort": effort, "lenses": lenses} if plan else {}
+
+    def none(reason):
+        return {"writer": writer, "reviewer": None, "skipped": [{"reviewer": name, "reason": reason}], "review": None,
+                **scheduled_fields}
+
+    # The resolved path, not the bare name: on Windows a CLI is often a .cmd shim that Popen cannot find by name.
+    executable = find_cli(reviewer["cli"])
+    if executable is None:
+        return none(f"{reviewer['cli']} is not installed")
+    text = None
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        stdout_path, message_path = tmp / "stdout.txt", tmp / "last-message.md"
+        _, problem = run(command(reviewer, executable, message_path, effort), prompt, timeout,
+                         [stdout_path, message_path])
         if problem is None:
-            problem = blocked(stdout)
-        if problem:
-            failover.append({"reviewer": name, "reason": problem})
-            continue
-        return {"writer": writer, "reviewer": name, "cli": reviewer["cli"], "model": reviewer["model"],
-                "effort": reviewer.get("effort"), "failover": failover, "review": stdout.strip()}
-    return {"writer": writer, "reviewer": None, "failover": failover, "review": None}
+            # Codex writes its final message to the -o file; stdout carries its progress, not the review.
+            text = message_path.read_text(encoding="utf-8", errors="replace") if message_path.is_file() else ""
+    finally:
+        remove_scratch(tmp)
+    if problem is None and not (text or "").strip():
+        problem = "returned no review"
+    if problem is None:
+        problem = blocked(text)
+    if problem:
+        return none(problem)
+    return {"writer": writer, "reviewer": name, "cli": reviewer["cli"], "model": reviewer["model"],
+            "effort": effort, "skipped": [], "review": text.strip(), **({"lenses": lenses} if plan else {})}
 
 
 def blocked(text):
-    """Why a reply is not a review, when its last line is `OVERALL: blocked`; None for a review."""
+    """Why a reply is not a review, when its last line is `OVERALL: blocked` (or `COMPLETION: blocked`); None for a
+    review."""
     lines = [line for line in text.strip().splitlines() if line.strip()]
     if not lines or not BLOCKED.match(lines[-1]):
         return None
@@ -323,7 +460,18 @@ def atomic_write(path, text):
 # past Python's digit limit raises). A review is at most MAX_OUTPUT_BYTES, so it has at most MAX_OUTPUT_BYTES + 1 lines,
 # and the count's width follows from that: whatever `record` writes, the reader reads.
 ROUND_HEADING = re.compile(r"^## Round ([0-9]{1,6}): (none|([a-z0-9][a-z0-9-]*) \(`([^`]+)` via `([a-z]+)`\))$")
-ROUND_LINE = re.compile(r"^- (Writer|Run|Effort|Lines|Digest|Skipped): (\S.*)$")
+ROUND_LINE = re.compile(r"^- (Writer|Run|Effort|Lenses|Lines|Digest|Skipped): (\S.*)$")
+# The one-pass completion review, recorded beside the rounds and never counted as one. It always carries Lines, Digest
+# and the Candidate commit it reviewed; the writer's notes after it (its `- Filed:` lines) run to the next `## ` line.
+COMPLETION_HEADING = re.compile(r"^## Completion review: (none|([a-z0-9][a-z0-9-]*) \(`([^`]+)` via `([a-z]+)`\))$")
+PLAN_HEADING = re.compile(r"^## Plan review: (none|([a-z0-9][a-z0-9-]*) \(`([^`]+)` via `([a-z]+)`\))$")
+COMPLETION_LINE = re.compile(r"^- (Writer|Run|Candidate|Effort|Lenses|Lines|Digest|Skipped): (\S.*)$")
+# The one-pass reviews, by --kind: the heading each is recorded under and the key read_findings lists them under.
+PASSES = {"completion": ("## Completion review", COMPLETION_HEADING, "completions"),
+          "plan": ("## Plan review", PLAN_HEADING, "plans")}
+RESERVED = ("## Round", *(prefix for prefix, _, _ in PASSES.values()))
+RESERVED_NAMES = "headings starting `## Round`, `## Completion review` or `## Plan review` are reserved for --record"
+CANDIDATE = re.compile(r"[0-9a-f]{40}")
 SKIPPED = re.compile(r"^([a-z0-9][a-z0-9-]*) \((.*)\)$")
 COUNT = re.compile(r"[0-9]{1,%d}" % len(str(MAX_OUTPUT_BYTES + 1)))
 DIGEST = re.compile(r"[0-9a-f]{16}")
@@ -344,84 +492,161 @@ def digest(lines):
     return hashlib.sha256("\n".join(canonical(line) for line in lines).encode("utf-8")).hexdigest()[:16]
 
 
-def read_rounds(text):
-    """The rounds `record` wrote in one findings file, or None when anything `record` writes is not as it writes it.
+def _read_findings(text):
+    """The rounds and completion reviews `record` and `record_completion` wrote in one findings file, as
+    `{"rounds": [...], "completions": [...]}`, or None when anything they write is not as they write it.
 
     A round is a `## Round` heading, a blank line, and a metadata block to the next blank line in which every line is
     one of `record`'s fields (Writer and Run exactly once, Effort, Lines and Digest at most once, any number of Skipped;
     Digest only with Lines). With Lines, the next N lines are the review, skipped unread, and a blank line or the end of
     the file must follow them; with Digest, they must also hash to it, so a hand edit inside a review shows as
     unreadable even when it keeps the count. Without Lines (a round recorded before the count), the round runs to the
-    next `## Round` line. Anything else makes the file unreadable rather than losing a field."""
-    rounds = []
+    next reserved heading. A completion review, and a plan review (`## Plan review`), is read the same way, with
+    Writer, Run, Candidate, Lines and Digest required; the lines after it up to the next `## ` line are its `notes`,
+    the writer's own record of what was done with each gap. Lenses, when present, is the comma-separated list the
+    schedule gave the pass. Anything else makes the file unreadable rather than losing a field."""
+    found = {"rounds": [], "completions": [], "plans": []}
     raw = raw_lines(text)
     lines = [canonical(line) for line in raw]
     i = 0
     while i < len(lines):
-        if not lines[i].startswith("## Round"):
+        kind = next((k for k, (prefix, _, _) in PASSES.items() if lines[i].startswith(prefix)), None)
+        completion = kind is not None
+        if not lines[i].startswith("## Round") and not completion:
             i += 1
             continue
-        heading = ROUND_HEADING.match(lines[i])
+        head = i
+        heading = (PASSES[kind][1] if completion else ROUND_HEADING).match(lines[i])
         if not heading or i + 1 >= len(lines) or lines[i + 1] != "":
-            return None
-        entry = {"number": int(heading.group(1)), "reviewer": heading.group(3), "model": heading.group(4),
-                 "cli": heading.group(5), "writer": None, "run": None, "effort": None, "skipped": []}
+            return None, head
+        if completion:
+            entry = {"reviewer": heading.group(2), "model": heading.group(3), "cli": heading.group(4), "writer": None,
+                     "run": None, "candidate": None, "effort": None, "lenses": None, "skipped": []}
+        else:
+            entry = {"number": int(heading.group(1)), "reviewer": heading.group(3), "model": heading.group(4),
+                     "cli": heading.group(5), "writer": None, "run": None, "effort": None, "lenses": None,
+                     "skipped": []}
         count = sealed = None
         i += 2
         while i < len(lines) and lines[i] != "":
-            field = ROUND_LINE.match(lines[i])
+            field = (COMPLETION_LINE if completion else ROUND_LINE).match(lines[i])
             if not field:
-                return None
+                return None, head
             key, value = field.group(1).lower(), field.group(2)
             if key == "skipped":
                 skipped = SKIPPED.match(value)
                 if not skipped:
-                    return None
+                    return None, head
                 entry["skipped"].append({"reviewer": skipped.group(1), "reason": skipped.group(2)})
             elif key == "lines":
                 # ASCII digits only: "²" passes str.isdigit and int() raises on it.
                 if count is not None or not COUNT.fullmatch(value):
-                    return None
+                    return None, head
                 count = int(value)
             elif key == "digest":
                 if sealed is not None or not DIGEST.fullmatch(value):
-                    return None
+                    return None, head
                 sealed = value
-            elif entry[key] is not None:
-                return None
+            elif entry[key] is not None or (key == "candidate" and not CANDIDATE.fullmatch(value)):
+                return None, head
+            elif key == "lenses":
+                names = value.split(", ")
+                if not all(name in LENSES for name in names) or len(set(names)) != len(names):
+                    return None, head
+                entry[key] = names
             else:
                 entry[key] = value
             i += 1
         if entry["writer"] is None or entry["run"] is None or (sealed is not None and count is None):
-            return None
+            return None, head
+        if completion and (entry["candidate"] is None or sealed is None):
+            return None, head
         if count is not None:
             start = i + 1  # the blank line after the metadata, then the review, unread
             i = start + count
             if i > len(lines) or (i < len(lines) and lines[i] != ""):
-                return None
+                return None, head
             if sealed is not None and digest(raw[start:i]) != sealed:
-                return None
-        rounds.append(entry)
-    return rounds
+                return None, head
+            entry["review"] = "\n".join(lines[start:i])
+        else:
+            end = next((j for j in range(i, len(lines)) if lines[j].startswith(RESERVED)), len(lines))
+            entry["review"] = "\n".join(lines[i:end])
+            i = end
+        if completion:
+            end = next((j for j in range(i, len(lines)) if lines[j].startswith("## ")), len(lines))
+            entry["notes"] = [line for line in lines[i:end] if line.strip()]
+            i = end
+            found[PASSES[kind][2]].append(entry)
+        else:
+            found["rounds"].append(entry)
+    return found, None
+
+
+def read_findings(text):
+    """See `_read_findings`: the parsed rounds, completion and plan reviews, or None when the file cannot be read."""
+    return _read_findings(text)[0]
+
+
+def unreadable_heading(text):
+    """The line where a findings file stops being readable, as `line N: <text>`, so a refusal can name it. A writer's
+    own note under a heading that starts `## Round`, `## Completion review` or `## Plan review` is the usual cause:
+    those prefixes are reserved for what `--record` writes."""
+    found, head = _read_findings(text)
+    if found is not None or head is None:
+        return ""
+    lines = raw_lines(text)
+    return f"; the first unreadable record starts at line {head + 1}: {canonical(lines[head])!r}" if head < len(lines) else ""
+
+
+def read_rounds(text):
+    """The rounds `record` wrote in one findings file (completion reviews are not rounds), or None when the file is not
+    as `record` and `record_completion` write it (see read_findings)."""
+    found = read_findings(text)
+    return None if found is None else found["rounds"]
+
+
+def read_completions(text):
+    """The completion reviews `record_completion` wrote in one findings file, or None when it cannot be read back."""
+    found = read_findings(text)
+    return None if found is None else found["completions"]
+
+
+def read_plans(text):
+    """The plan reviews `--kind plan` recorded in one findings file, or None when it cannot be read back."""
+    found = read_findings(text)
+    return None if found is None else found["plans"]
 
 
 class Unrecorded(Exception):
     """The findings file cannot be read back, so a round is not appended to it."""
 
 
-def record(path, result, when):
-    """Append one round and return its number. A findings file the reader cannot read back gets nothing appended:
-    numbering it would have to guess (counting headings counts quoted ones), so `Unrecorded` is raised instead."""
+def existing_findings(path, what):
+    """A findings file's text as stored, or `Unrecorded` when it cannot be read."""
     try:
         # Bytes, not read_text: universal newlines would turn a stored lone "\r" into a line break and move the
         # line count of an earlier round.
-        existing = path.read_bytes().decode("utf-8") if path.exists() else ""
+        return path.read_bytes().decode("utf-8") if path.exists() else ""
     except (OSError, UnicodeDecodeError) as exc:
-        raise Unrecorded(f"{path} cannot be read back ({exc}), so the round was not recorded") from None
+        raise Unrecorded(f"{path} cannot be read back ({exc}), so the {what} was not recorded") from None
+
+
+def append_findings(path, existing, lines):
+    # Always one blank line before the heading, even when the file already ends in one: a review whose last line is
+    # empty also ends the file in "\n\n", and the reader needs a blank line after the review's own lines.
+    separator = "" if not existing else ("\n" if existing.endswith("\n") else "\n\n")
+    atomic_write(path, existing + separator + "\n".join(lines))
+
+
+def record(path, result, when):
+    """Append one round and return its number. A findings file the reader cannot read back gets nothing appended:
+    numbering it would have to guess (counting headings counts quoted ones), so `Unrecorded` is raised instead."""
+    existing = existing_findings(path, "round")
     known = read_rounds(existing)
     if known is None:
-        raise Unrecorded(f"{path} cannot be read back (a round heading or line is not in the format --record writes), "
-                         f"so the round was not recorded")
+        raise Unrecorded(f"{path} cannot be read back (a round heading or line is not in the format --record writes"
+                         f"{unreadable_heading(existing)}; {RESERVED_NAMES}), so the round was not recorded")
     number = len(known) + 1
     who = f"{result['reviewer']} (`{result['model']}` via `{result['cli']}`)" if result["reviewer"] else "none"
     review = raw_lines(result["review"] or "No reviewer returned a review. This round is not an approval.")
@@ -429,15 +654,39 @@ def record(path, result, when):
         raise Unrecorded(f"the review or the round number is past what {path} can be read back with, "
                          f"so the round was not recorded")
     lines = [f"## Round {number}: {who}", "", f"- Writer: {result['writer']}", f"- Run: {when}"]
-    if result.get("effort"):
-        lines.append(f"- Effort: {result['effort']}")
-    lines += [f"- Skipped: {f['reviewer']} ({f['reason']})" for f in result["failover"]]
+    lines += metadata(result)
     lines += [f"- Lines: {len(review)}", f"- Digest: {digest(review)}", "", *review, ""]
-    # Always one blank line before the heading, even when the file already ends in one: a review whose last line is
-    # empty also ends the file in "\n\n", and the reader needs a blank line after the review's own lines.
-    separator = "" if not existing else ("\n" if existing.endswith("\n") else "\n\n")
-    atomic_write(path, existing + separator + "\n".join(lines))
+    append_findings(path, existing, lines)
     return number
+
+
+def metadata(result):
+    lines = [f"- Effort: {result['effort']}"] if result.get("effort") else []
+    if result.get("lenses"):
+        lines.append(f"- Lenses: {', '.join(result['lenses'])}")
+    return lines + [f"- Skipped: {f['reviewer']} ({f['reason']})" for f in result["skipped"]]
+
+
+def record_completion(path, result, when, candidate, kind="completion"):
+    """Append the completion review (or, with kind "plan", the plan review). Each is one pass: a findings file that
+    already holds a returned one gets nothing appended (`Unrecorded`), and neither does one the reader cannot read."""
+    prefix, _, key = PASSES[kind]
+    what = f"{kind} review"
+    existing = existing_findings(path, what)
+    found = read_findings(existing)
+    if found is None:
+        raise Unrecorded(f"{path} cannot be read back (a heading or line is not in the format --record writes"
+                         f"{unreadable_heading(existing)}; {RESERVED_NAMES}), so the {what} was not recorded")
+    if any(entry["reviewer"] for entry in found[key]):
+        raise Unrecorded(f"{path} already holds a {what}; it is one pass, so this one was not recorded")
+    who = f"{result['reviewer']} (`{result['model']}` via `{result['cli']}`)" if result["reviewer"] else "none"
+    review = raw_lines(result["review"] or f"No reviewer returned a {what}. This pass is not an approval.")
+    if not COUNT.fullmatch(str(len(review))):
+        raise Unrecorded(f"the review is past what {path} can be read back with, so it was not recorded")
+    lines = [f"{prefix}: {who}", "", f"- Writer: {result['writer']}", f"- Run: {when}", f"- Candidate: {candidate}"]
+    lines += metadata(result)
+    lines += [f"- Lines: {len(review)}", f"- Digest: {digest(review)}", "", *review, ""]
+    append_findings(path, existing, lines)
 
 
 def list_rounds(records_dir):
@@ -458,15 +707,17 @@ def list_rounds(records_dir):
     for path in paths:
         # One file that cannot be read, or is not UTF-8, is named in `unreadable`; the others are still listed.
         try:
-            rounds = read_rounds(path.read_bytes().decode("utf-8"))
-        # RuntimeError: a symlink loop on older Pythons. ValueError: anything read_rounds meets that int() or the
+            found = read_findings(path.read_bytes().decode("utf-8"))
+        # RuntimeError: a symlink loop on older Pythons. ValueError: anything read_findings meets that int() or the
         # digest cannot take, so one bad file never aborts the listing.
         except (OSError, UnicodeDecodeError, RuntimeError, ValueError):
-            rounds = None
-        if rounds is None:
+            found = None
+        if found is None:
             unreadable.append(shown(path))
-        elif rounds:
-            records.append({"path": shown(path), "rounds": rounds})
+        elif found["rounds"] or found["completions"] or found["plans"]:
+            records.append({"path": shown(path), "rounds": found["rounds"],
+                            **({"completions": found["completions"]} if found["completions"] else {}),
+                            **({"plans": found["plans"]} if found["plans"] else {})})
     return {"records": records, **({"unreadable": unreadable} if unreadable else {})}
 
 
@@ -474,8 +725,17 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--writer", choices=WRITERS, help="The agent whose work is under review")
     parser.add_argument("--prompt", help="File holding the review prompt")
-    parser.add_argument("--record", help="Findings file to append this round to")
-    parser.add_argument("--timeout", type=int, default=1800, help="Seconds per reviewer before failing over")
+    parser.add_argument("--record", help="Findings file to append this round (or completion review) to")
+    parser.add_argument("--kind", choices=("round", "completion", "plan"), default="round",
+                        help="round (default): one review round; completion: the one-pass completion and excellence "
+                             "review, recorded as a ## Completion review section and not counted as a round; plan: "
+                             "the one-pass plan review before the build, recorded as a ## Plan review section")
+    parser.add_argument("--candidate", help="With --kind completion or plan: the full 40-character commit under "
+                                            "review (for a plan review, the commit holding the section as reviewed)")
+    parser.add_argument("--surface", action="store_true",
+                        help="The section has Surface: yes, so the schedule's rotation includes the design lens")
+    parser.add_argument("--timeout", type=int, default=1800,
+                        help="Seconds before the reviewer is stopped and the round records no review")
     parser.add_argument("--pin", default=str(PIN), help=argparse.SUPPRESS)
     parser.add_argument("--check-pin", action="store_true",
                         help="Report whether the pin loads, and each CLI's presence, instead of running a review; "
@@ -495,7 +755,8 @@ def main(argv=None):
             return 2
         clis = {cli: find_cli(cli) is not None for cli in CLIS}
         print(json.dumps({"ok": True, "schema_version": pin["schema_version"], "reviewers": pin["reviewers"],
-                          "routes": pin["routes"], "clis": clis}) if args.json else "ok")
+                          "routes": pin["routes"], "schedule": pin.get("schedule"), "clis": clis})
+              if args.json else "ok")
         return 0
     if args.list_rounds:
         listing = list_rounds(args.records)
@@ -503,6 +764,12 @@ def main(argv=None):
             print(json.dumps(listing, indent=2))
         else:
             for entry in listing["records"]:
+                for p in entry.get("plans", []):
+                    who = f"{p['reviewer']} ({p['model']} via {p['cli']})" if p["reviewer"] else "no review"
+                    print(f"{entry['path']}  Plan review: {who}, candidate {p['candidate']}, {p['run']}")
+                for c in entry.get("completions", []):
+                    who = f"{c['reviewer']} ({c['model']} via {c['cli']})" if c["reviewer"] else "no review"
+                    print(f"{entry['path']}  Completion review: {who}, candidate {c['candidate']}, {c['run']}")
                 for r in entry["rounds"]:
                     who = f"{r['reviewer']} ({r['model']} via {r['cli']})" if r["reviewer"] else "no review"
                     print(f"{entry['path']}  Round {r['number']}: {who}, writer {r['writer']}, {r['run']}")
@@ -511,18 +778,51 @@ def main(argv=None):
         return 0
     if not args.writer or not args.prompt:
         parser.error("--writer and --prompt are required unless --check-pin or --list-rounds is given")
+    one_pass = args.kind in PASSES
+    if one_pass and not (args.candidate and CANDIDATE.fullmatch(args.candidate)):
+        parser.error(f"--kind {args.kind} needs --candidate, the full 40-character commit under review")
+    if args.kind == "round" and args.candidate:
+        parser.error("--candidate goes with --kind completion or plan; a round names its candidate in its prompt")
     try:
-        result = review(load_pin(args.pin), args.writer, args.prompt, args.timeout)
-    except (Refused, OSError) as exc:
+        pin = load_pin(args.pin)
+        plan = None
+        if "schedule" in pin:
+            rounds = []
+            if args.record and args.kind == "round":
+                # The position in the schedule comes from the rounds already recorded; a file that cannot be read
+                # back is refused here, before a review is spent that could not be recorded.
+                existing = existing_findings(Path(args.record), "round")
+                rounds = read_rounds(existing)
+                if rounds is None:
+                    raise Unrecorded(f"{args.record} cannot be read back (a round heading or line is not in the "
+                                     f"format --record writes{unreadable_heading(existing)}; {RESERVED_NAMES}), so "
+                                     f"no round was run")
+            plan = scheduled(pin["schedule"], args.kind, rounds, args.surface)
+        result = review(pin, args.writer, args.prompt, args.timeout, plan)
+    except (Refused, Unrecorded, OSError) as exc:
         print("review-dispatch refused: " + str(exc), file=sys.stderr)
         return 2
     when = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if one_pass:
+        result.update(kind=args.kind, candidate=args.candidate)
+    if plan and plan["position"]:
+        result.update(position=plan["position"], escalated=plan["escalated"])
+        stop_after = pin["schedule"]["severity_stop_after"]
+        # The severity stop: past the fixed adversarial rounds, a returned round whose worst finding is P3 ends the
+        # loop (todo-graph.py SEVERITY_CUTOFF_ROUND is the same number, and `stamp` re-checks it).
+        result["severity_stop"] = bool(result["reviewer"]) and plan["position"] > stop_after \
+            and highest(result["review"]) == "P3"
     if args.record:
         try:
-            result["round"] = record(Path(args.record), result, when)
+            if one_pass:
+                record_completion(Path(args.record), result, when, args.candidate, args.kind)
+                result["recorded"] = True
+            else:
+                result["round"] = record(Path(args.record), result, when)
         except Unrecorded as exc:
             # The review still reaches stdout; only the findings file is left as it was.
-            print(json.dumps({**result, "round": None, "run": when}, indent=2))
+            unrecorded = {"recorded": False} if one_pass else {"round": None}
+            print(json.dumps({**result, **unrecorded, "run": when}, indent=2))
             print("review-dispatch refused: " + str(exc), file=sys.stderr)
             return 2
     print(json.dumps({**result, "run": when}, indent=2))

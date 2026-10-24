@@ -62,7 +62,7 @@ for _stream in (sys.stdout, sys.stderr):
 REPO = Path(__file__).resolve().parent.parent
 TODO_DIR = REPO / "todo"
 CACHE = REPO / "build" / "todo-cache.json"
-SKILLS_DIR = REPO / ".claude" / "skills"
+SKILLS_DIR = REPO / ".agents" / "skills"
 
 ID_RE = re.compile(r"^[a-z][a-z0-9-]{0,58}[a-z0-9]$")
 STATUSES = {"draft", "active", "blocked", "done", "superseded"}
@@ -2297,6 +2297,10 @@ def cmd_query(args) -> int:
         )
         return 0
 
+    if what == "rounds":
+        print(json.dumps(review_rounds(todos), indent=2, ensure_ascii=False))
+        return 0
+
     if what == "backlog":
         loaded = load_backlog()
         if loaded is None:
@@ -3954,6 +3958,7 @@ def cmd_resolve(args: argparse.Namespace) -> int:
     print(f"ref        D{dom} T{target.number} §{sec}")
     print(f"status     [{s.status}]  ({s.items_done}/{s.items_total} items)")
     print(f"frozen     {'yes -- section needs a Freeze check' if target.frozen else 'no'}")
+    print(f"surface    {'yes' if (s.has_fidelity_block and not s.fidelity_exempt) else 'no'}")
     print(f"deps       {', '.join(s.depends_on) if s.depends_on else '--'}")
     if s.moved:
         print(f"moved      {s.moved}")
@@ -6402,6 +6407,801 @@ def growth_report(ref: str, todos: list[Todo]) -> dict | None:
         "backlog_removed": sorted(i for i in then_backlog if i not in now_backlog),
         "titles": {**then_secs, **now_secs, **then_backlog, **now_backlog},
     }
+
+
+# ---------------------------------------------------- receipt, stamp & unstamp
+
+VERDICTS = {
+    "clean", "fixed", "stopped-at-33", "stopped-at-22",
+    "stopped-at-13", "stopped-at-8", "stopped-at-3", "stopped-low-severity",
+}
+REVIEW_ROUND_CAP = 33
+EARLIER_CAPS = {8, 13, 22}
+SEVERITY_CUTOFF_ROUND = 3
+COMPLETION_VERDICTS = ("complete", "completed", "filed")
+FILED_GAP_RE = re.compile(r"^- Filed: (D\d{2} T\d{2} §[1-9]\d*)(?![\w§]|\.\d)")
+PIN_PATH = ".conclave/reviewers.toml"
+PLAN_KEYS = {"report", "candidate", "reviewer", "model", "effort", "lenses"}
+STARTED_LINE_RE = re.compile(r"^> \*\*Started:\*\* .+$", re.M)
+ROUND_RECORD_RE = re.compile(r"^## Round ([0-9]+): ", re.M)
+RECEIPT_REVIEW_RE = re.compile(r"^`?(?P<path>docs/reviews/[a-z0-9][a-z0-9.-]*\.json)`?$")
+
+
+class Refused(ValueError):
+    pass
+
+
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise Refused(message)
+
+
+def _atomic_write(path: Path, data: str | bytes) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    raw = data if isinstance(data, bytes) else data.encode("utf-8")
+    fd, temporary = tempfile.mkstemp(dir=path.parent)
+    try:
+        with os.fdopen(fd, "wb") as out:
+            out.write(raw)
+            out.flush()
+            os.fsync(out.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+_REVIEW_DISPATCH_MOD = []
+
+
+def review_dispatch():
+    """scripts/review-dispatch.py loaded once as a module."""
+    if not _REVIEW_DISPATCH_MOD:
+        spec = importlib.util.spec_from_file_location(
+            "review_dispatch", Path(__file__).resolve().parent / "review-dispatch.py"
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _REVIEW_DISPATCH_MOD.append(module)
+    return _REVIEW_DISPATCH_MOD[0]
+
+
+def commit_ok(root: Path, sha: str) -> None:
+    kind = subprocess.run(
+        ["git", "-C", str(root), "cat-file", "-t", sha],
+        capture_output=True, text=True, timeout=30,
+    )
+    require(kind.returncode == 0 and kind.stdout.strip() == "commit", "not a commit: " + sha)
+    on_branch = subprocess.run(
+        ["git", "-C", str(root), "merge-base", "--is-ancestor", sha, "HEAD"],
+        capture_output=True, timeout=30,
+    )
+    require(on_branch.returncode == 0, "commit is not on this branch: " + sha)
+
+
+def report_ok(root: Path, raw_report: str, ref: str) -> Path:
+    root_path = Path(root)
+    report = Path(raw_report)
+    require(
+        isinstance(raw_report, str)
+        and re.fullmatch(r"docs/reviews/[A-Za-z0-9_./-]+\.md", raw_report) is not None
+        and not report.is_absolute()
+        and not report.drive
+        and not report.root
+        and ".." not in report.parts,
+        f"invalid review report path ({raw_report}): {ref}",
+    )
+    cur = root_path
+    for part in report.parts:
+        cur = cur / part
+        require(not cur.is_symlink(), f"invalid review report path ({raw_report}): {ref}")
+    report_path = root_path / report
+    require(
+        report_path.is_file()
+        and report_path.resolve().is_relative_to(root_path.resolve())
+        and bool(report_path.read_text(encoding="utf-8").strip()),
+        f"missing or empty review report ({raw_report}): {ref}",
+    )
+    return report_path
+
+
+def _other_family(dispatch, entry: dict) -> bool:
+    return (
+        bool(entry["reviewer"])
+        and entry["writer"] in dispatch.WRITER_FAMILY
+        and dispatch.FAMILY.get(entry["cli"]) not in (None, dispatch.WRITER_FAMILY[entry["writer"]])
+    )
+
+
+def completion_record(root: Path, completion: dict, ref: str, stamp_sha: str, commits: set[str] | None = None) -> dict:
+    require(
+        isinstance(completion, dict)
+        and isinstance(completion.get("report"), str)
+        and isinstance(completion.get("verdict"), str),
+        f"receipt completion is malformed: {ref}",
+    )
+    report, verdict = completion["report"], completion["verdict"]
+    require(
+        verdict in COMPLETION_VERDICTS,
+        f"--completion verdict must be one of {', '.join(COMPLETION_VERDICTS)}, not {verdict!r}: {ref}",
+    )
+    path = report_ok(root, report, ref)
+    dispatch = review_dispatch()
+    found = dispatch.read_completions(path.read_bytes().decode("utf-8"))
+    require(found is not None, f"{report} is not a findings file the dispatcher can read: {ref}")
+    require(bool(found), f"{report} holds no ## Completion review; run review-dispatch.py --kind completion: {ref}")
+    returned = [
+        e for e in found
+        if _other_family(dispatch, e)
+        and ([x.strip() for x in e["review"].splitlines() if x.strip()] or [""])[-1]
+        in ("COMPLETION: complete", "COMPLETION: gaps")
+    ]
+    require(
+        len(returned) == 1,
+        f"{report} must hold exactly one completion review returned by another model family "
+        f"and ending COMPLETION: complete or COMPLETION: gaps, not {len(returned)}: {ref}",
+    )
+    (entry,) = returned
+    last = [x.strip() for x in entry["review"].splitlines() if x.strip()][-1]
+    expected = "COMPLETION: complete" if verdict == "complete" else "COMPLETION: gaps"
+    require(
+        last == expected,
+        f"completion verdict {verdict} needs a review ending {expected}, and {report} ends {last}: {ref}",
+    )
+    filed = list(dict.fromkeys(m[1] for m in (FILED_GAP_RE.match(line) for line in entry["notes"]) if m))
+    require(
+        bool(filed) == (verdict == "filed"),
+        f"completion verdict filed needs each filed section listed as '- Filed: DNN TNN §N' under the completion "
+        f"review in {report}, and only filed lists any: {ref}",
+    )
+    require(ref not in filed, f"{ref} cannot file a completion gap to itself: {ref}")
+    candidate = entry["candidate"]
+    if commits is None or candidate not in commits:
+        commit_ok(root, candidate)
+    if commits is None:
+        ancestor = subprocess.run(
+            ["git", "-C", str(root), "merge-base", "--is-ancestor", candidate, stamp_sha],
+            capture_output=True, timeout=30,
+        )
+        require(
+            ancestor.returncode == 0,
+            f"the completion review's candidate {candidate} is not the stamped commit or an ancestor of it: {ref}",
+        )
+    return {
+        "report": report, "verdict": verdict, "candidate": candidate,
+        "reviewer": entry["reviewer"], "model": entry["model"], "filed": filed,
+    }
+
+
+def _raw_section_text(text: str, number: int | str) -> str | None:
+    head = re.search(rf"^## {number}\. ", text, re.M)
+    if head is None:
+        return None
+    end = re.search(r"^##(?:[ \t]|$)", text[head.end():], re.M)
+    return text[head.start():head.end() + end.start() if end else len(text)]
+
+
+def build_start(root: Path, path: str, body: str, ref: str) -> str:
+    started = STARTED_LINE_RE.search(body or "")
+    first = None
+    if started:
+        line = started[0].rstrip("\r")
+        number = ref.rsplit("§", 1)[1]
+        out = subprocess.run(
+            ["git", "-C", str(root), "log", "--reverse", "--format=%H", "--", path],
+            capture_output=True, text=True, timeout=60,
+        )
+        for sha in out.stdout.split() if out.returncode == 0 else []:
+            shown = subprocess.run(
+                ["git", "-C", str(root), "show", f"{sha}:{path}"],
+                capture_output=True, timeout=30,
+            )
+            section = _raw_section_text(shown.stdout.decode("utf-8", "replace"), number) if shown.returncode == 0 else None
+            if section is not None and line in section.splitlines():
+                first = sha
+                break
+    else:
+        out = subprocess.run(
+            ["git", "-C", str(root), "log", "--reverse", "--format=%H", "-E",
+             f"--grep={ref}([^0-9]|$)", "--", ".", ":(exclude)todo", ":(exclude)docs"],
+            capture_output=True, text=True, timeout=60,
+        )
+        first = out.stdout.split()[0] if out.returncode == 0 and out.stdout.split() else None
+    require(
+        first is not None,
+        f"cannot find the commit the build began at: record '> **Started:**' in the section before the build: {ref}",
+    )
+    return first
+
+
+def section_findings_path(root: Path, ref: str) -> str:
+    m = re.fullmatch(r"D(\d{2}) T(\d{2}) §([1-9]\d*)", ref)
+    require(m is not None, f"not a full section reference: {ref}")
+    todo_root = Path(root) / "todo"
+    domains = sorted(d.name for d in todo_root.iterdir() if d.is_dir() and d.name.startswith(f"{m[1]}-"))
+    require(len(domains) == 1, f"no single todo/{m[1]}-<domain> folder for: {ref}")
+    return f"docs/reviews/{domains[0]}/D{m[1]}-T{m[2]}-s{m[3]}.md"
+
+
+def plan_record(root: Path, report: str, ref: str, commits: set[str] | None = None, start: str | None = None) -> dict:
+    require(isinstance(report, str), f"receipt plan is malformed: {ref}")
+    expected = section_findings_path(root, ref)
+    require(report == expected, f"--plan must be the section's own findings file {expected}, not {report}: {ref}")
+    path = report_ok(root, report, ref)
+    dispatch = review_dispatch()
+    found = dispatch.read_plans(path.read_bytes().decode("utf-8"))
+    require(found is not None, f"{report} is not a findings file the dispatcher can read: {ref}")
+    require(bool(found), f"{report} holds no ## Plan review; run review-dispatch.py --kind plan: {ref}")
+
+    def _verdict(entry: dict) -> bool:
+        lines = [x.strip() for x in entry["review"].splitlines() if x.strip()]
+        return (
+            len(lines) >= 2
+            and lines[-2] in ("PLAN: complete", "PLAN: gaps")
+            and lines[-1] in ("OVERALL: approve", "OVERALL: needs-attention")
+        )
+
+    returned = [e for e in found if _other_family(dispatch, e) and _verdict(e)]
+    require(
+        len(returned) == 1,
+        f"{report} must hold exactly one plan review returned by another model family and "
+        f"ending PLAN: complete or gaps, then OVERALL: approve or needs-attention, not {len(returned)}: {ref}",
+    )
+    (entry,) = returned
+    candidate = entry["candidate"]
+    if commits is None or candidate not in commits:
+        commit_ok(root, candidate)
+    if start is not None:
+        ancestor = subprocess.run(
+            ["git", "-C", str(root), "merge-base", "--is-ancestor", candidate, start],
+            capture_output=True, timeout=30,
+        )
+        require(
+            ancestor.returncode == 0,
+            f"the plan review's candidate {candidate} is not the commit the build began "
+            f"at ({start}) or an ancestor of it: review the plan before the build: {ref}",
+        )
+    return {
+        "report": report, "candidate": candidate, "reviewer": entry["reviewer"],
+        "model": entry["model"], "effort": entry["effort"], "lenses": entry["lenses"] or [],
+    }
+
+
+def pin_schedule(root: Path, sha: str, ref: str) -> dict:
+    shown = subprocess.run(["git", "-C", str(root), "show", f"{sha}:{PIN_PATH}"], capture_output=True, timeout=30)
+    require(shown.returncode == 0, f"no reviewer pin {PIN_PATH} at {sha}: {ref}")
+    dispatch = review_dispatch()
+    try:
+        pin = dispatch.load_pin(PIN_PATH, data=shown.stdout)
+    except dispatch.Refused as exc:
+        raise Refused(f"the reviewer pin at {sha} does not load: {exc}: {ref}") from None
+    require("schedule" in pin, f"the reviewer pin at {sha} has no [schedule] to check the reviews against: {ref}")
+    return pin["schedule"]
+
+
+def schedule_ok(root: Path, data: dict, ref: str, surface: bool) -> None:
+    require(isinstance(surface, bool), f"the section's Surface is needed to check the review schedule: {ref}")
+    dispatch = review_dispatch()
+    schedule = data["schedule"]
+
+    def _check(where: str, recorded: dict, expected: dict) -> None:
+        got = (recorded["effort"], list(recorded["lenses"] or []))
+        want = (expected["effort"], expected["lenses"])
+        position = (
+            f" (position {expected['position']}{', escalated' if expected['escalated'] else ''})"
+            if expected["position"]
+            else ""
+        )
+        require(
+            got == want,
+            f"{where} ran at {got[0]} with lenses {got[1]}; the schedule expects {want[0]} with {want[1]}{position}: {ref}",
+        )
+
+    plan_report = data["plan"]["report"]
+    for entry in dispatch.read_plans((Path(root) / plan_report).read_bytes().decode("utf-8")):
+        _check(f"the plan review in {plan_report}", entry, dispatch.scheduled(schedule, "plan", [], surface))
+    completion = data["completion"]["report"]
+    completions = dispatch.read_completions((Path(root) / completion).read_bytes().decode("utf-8"))
+    require(
+        sum(
+            1 for e in completions
+            if _other_family(dispatch, e)
+            and e["candidate"] == data["completion"]["candidate"]
+            and ([x.strip() for x in e["review"].splitlines() if x.strip()] or [""])[-1]
+            in ("COMPLETION: complete", "COMPLETION: gaps")
+        ) == 1,
+        f"{completion} must hold exactly one returned completion review: {ref}",
+    )
+    for entry in completions:
+        _check(f"the completion review in {completion}", entry, dispatch.scheduled(schedule, "completion", [], surface))
+    for report in dict.fromkeys(r["report"] for r in data["reviews"]):
+        recorded = dispatch.read_rounds((Path(root) / report).read_bytes().decode("utf-8"))
+        for i, entry in enumerate(recorded):
+            _check(f"{report} round {entry['number']}", entry, dispatch.scheduled(schedule, "round", recorded[:i], surface))
+
+
+def rounds_recorded(root: Path, reviews: list[dict]) -> int:
+    spent = 0
+    for report in dict.fromkeys(r["report"] for r in reviews):
+        named = max(r["round"] for r in reviews if r["report"] == report)
+        path = Path(root) / report
+        text = path.read_bytes().decode("utf-8") if path.is_file() else ""
+        parsed = review_dispatch().read_rounds(text)
+        recorded = [e["number"] for e in parsed] if parsed is not None else [int(n) for n in ROUND_RECORD_RE.findall(text)]
+        spent += max([named, *recorded])
+    return spent
+
+
+def receipt_data_ok(
+    data: dict,
+    ref: str,
+    stamp_sha: str,
+    root: Path | None = None,
+    building: bool = False,
+    commits: set[str] | None = None,
+    surface: bool | None = None,
+) -> None:
+    require(isinstance(data, dict), f"receipt is not an object: {ref}")
+    require(
+        data.get("ref") == ref and data.get("implementation_sha") == stamp_sha,
+        f"receipt does not match its stamp: {ref}",
+    )
+    rounds = data.get("reviews")
+    require(
+        isinstance(rounds, list)
+        and rounds
+        and all(
+            isinstance(r, dict)
+            and type(r.get("round")) is int
+            and r["round"] >= 1
+            and isinstance(r.get("report"), str)
+            and r["report"]
+            and isinstance(r.get("verdict"), str)
+            and r["verdict"] in VERDICTS
+            for r in rounds
+        ),
+        f"receipt has no valid review rounds (verdict one of {', '.join(sorted(VERDICTS))}): {ref}",
+    )
+    require(
+        all(r["round"] > SEVERITY_CUTOFF_ROUND for r in rounds if r["verdict"] == "stopped-low-severity"),
+        f"stopped-low-severity is allowed only after round {SEVERITY_CUTOFF_ROUND}: {ref}",
+    )
+    if root is not None:
+        for r in rounds:
+            report_ok(root, r["report"], ref)
+    if not building:
+        require("rounds_spent" in data and "plan" in data and "schedule" in data and "completion" in data,
+                f"receipt requires plan, completion, schedule, and rounds_spent: {ref}")
+    if "rounds_spent" in data:
+        spent, cap = data.get("rounds_spent"), data.get("round_cap")
+        require(
+            type(spent) is int
+            and spent >= max(r["round"] for r in rounds)
+            and type(cap) is int
+            and cap in EARLIER_CAPS | {REVIEW_ROUND_CAP},
+            f"receipt rounds_spent or round_cap is invalid: {ref}",
+        )
+        require(
+            all(r["verdict"] == f"stopped-at-{cap}" for r in rounds if r["verdict"].startswith("stopped-at-")),
+            f"a stopped-at verdict must be stopped-at-{cap}: {ref}",
+        )
+        if root is not None:
+            dispatch = review_dispatch()
+            for report in dict.fromkeys(r["report"] for r in rounds):
+                recorded = dispatch.read_rounds((Path(root) / report).read_bytes().decode("utf-8"))
+                require(recorded is not None, f"{report} is not a findings file the dispatcher can read: {ref}")
+                numbers = [e["number"] for e in recorded]
+                require(
+                    numbers == list(range(1, len(numbers) + 1)),
+                    f"{report} must number its rounds 1 to {len(numbers)} in order, once each: {ref}",
+                )
+                reviewed = {e["number"]: e for e in recorded if dispatch.returned_review(e)}
+                require(reviewed, f"{report} holds no returned review: {ref}")
+                require(
+                    len(reviewed) <= cap,
+                    f"{report} holds {len(reviewed)} returned reviews, over the {cap}-round cap: {ref}",
+                )
+                claimed = sorted((r for r in rounds if r["report"] == report), key=lambda r: r["round"])
+                for r in claimed:
+                    e = reviewed.get(r["round"])
+                    last = ([x.strip() for x in e["review"].splitlines() if x.strip()] or [""])[-1] if e else ""
+                    require(
+                        e is not None
+                        and e["writer"] in dispatch.WRITER_FAMILY
+                        and dispatch.FAMILY.get(e["cli"]) not in (None, dispatch.WRITER_FAMILY[e["writer"]])
+                        and last == ("OVERALL: approve" if r["verdict"] == "clean" else "OVERALL: needs-attention"),
+                        f"round {r['round']} is not a review returned by another model family with a verdict "
+                        f"matching {r['verdict']} (clean needs OVERALL: approve, any other needs-attention) in "
+                        f"{report}: {ref}",
+                    )
+                    lines = [x.strip() for x in e["review"].splitlines() if x.strip()]
+                    require(
+                        r["verdict"] != "stopped-low-severity" or (len(lines) >= 2 and lines[-2] == "HIGHEST: P3"),
+                        f"round {r['round']} does not declare HIGHEST: P3 before its OVERALL line, so it cannot "
+                        f"stop on severity: {ref}",
+                    )
+                    returned_n = sum(1 for n in reviewed if n <= r["round"])
+                    require(
+                        r["verdict"] != "stopped-low-severity" or returned_n > SEVERITY_CUTOFF_ROUND,
+                        f"round {r['round']} follows only {returned_n} returned reviews, so it cannot stop on "
+                        f"severity before {SEVERITY_CUTOFF_ROUND + 1}: {ref}",
+                    )
+                    require(
+                        not r["verdict"].startswith("stopped-at-") or returned_n == cap,
+                        f"round {r['round']} follows {returned_n} returned reviews; a cap stop is the round that "
+                        f"returns review {cap}: {ref}",
+                    )
+                require(
+                    max(reviewed) == len(recorded),
+                    f"the review loop in {report} ends with round {len(recorded)}, which returned no review; "
+                    f"run another round before stamping: {ref}",
+                )
+                require(
+                    claimed[-1]["round"] == max(reviewed)
+                    and (claimed[-1]["verdict"] == "clean" or claimed[-1]["verdict"].startswith("stopped-")),
+                    f"the review loop in {report} must end at its last reviewed round ({max(reviewed)}), clean or "
+                    f"stopped, and the receipt must name that round: {ref}",
+                )
+            require(
+                spent == rounds_recorded(root, rounds),
+                f"receipt rounds_spent {spent} is not the {rounds_recorded(root, rounds)} rounds its findings files "
+                f"record: {ref}",
+            )
+        stopped = any(r["verdict"].startswith("stopped-") for r in rounds)
+        outcome = data.get("cap_outcome")
+        require(
+            (isinstance(outcome, str) and bool(outcome.strip())) == stopped,
+            f"receipt needs cap_outcome exactly when a review stopped (at the cap or on severity): {ref}",
+        )
+    if "completion" in data:
+        recorded_c = data["completion"]
+        require(
+            isinstance(recorded_c, dict)
+            and set(recorded_c) == {"report", "verdict", "candidate", "reviewer", "model", "filed"},
+            f"receipt completion is malformed: {ref}",
+        )
+        if root is not None:
+            require(
+                completion_record(root, recorded_c, ref, stamp_sha, commits) == recorded_c,
+                f"receipt completion does not match its findings file {recorded_c['report']}: {ref}",
+            )
+    if "plan" in data and not building:
+        recorded_p = data["plan"]
+        require(isinstance(recorded_p, dict) and set(recorded_p) == PLAN_KEYS, f"receipt plan is malformed: {ref}")
+        require(isinstance(data.get("schedule"), dict), f"receipt schedule is malformed: {ref}")
+        if root is not None:
+            require(
+                plan_record(root, recorded_p["report"], ref, commits) == recorded_p,
+                f"receipt plan does not match its findings file {recorded_p['report']}: {ref}",
+            )
+            require(
+                pin_schedule(root, stamp_sha, ref) == data["schedule"],
+                f"receipt schedule is not the [schedule] in {PIN_PATH} at the stamped commit: {ref}",
+            )
+            schedule_ok(root, data, ref, bool(surface))
+    checks = data.get("checks")
+    require(
+        isinstance(checks, list) and checks and all(isinstance(c, str) and c.strip() for c in checks),
+        f"receipt has no checks: {ref}",
+    )
+    require(
+        isinstance(data.get("date"), str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", data["date"]) is not None,
+        f"receipt has no valid date: {ref}",
+    )
+
+
+def receipt_ok(
+    root: Path,
+    receipt: str,
+    ref: str,
+    stamp_sha: str,
+    commits: set[str] | None = None,
+    surface: bool | None = None,
+) -> dict:
+    require(
+        re.fullmatch(r"docs/reviews/[a-z0-9][a-z0-9.-]*\.json", receipt or "") is not None,
+        f"invalid receipt path: {ref}",
+    )
+    path = Path(root) / receipt
+    require(path.is_file() and not path.is_symlink(), f"missing receipt: {ref}")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError:
+        raise Refused(f"receipt is not JSON: {ref}") from None
+    if commits is None or stamp_sha not in commits:
+        commit_ok(root, stamp_sha)
+    receipt_data_ok(data, ref, stamp_sha, root=root, commits=commits, surface=surface)
+    return data
+
+
+def validate_section_receipt(todo: Todo, num: int, sec: Section, all_refs: set[str]) -> list[str]:
+    """Validate a section whose Review: line names a JSON receipt (`docs/reviews/<slug>.json`)."""
+    m = RECEIPT_REVIEW_RE.match((sec.review_body or "").strip())
+    if m is None:
+        return []
+    receipt = m.group("path")
+    dom = todo.domain.split("-")[0]
+    ref = f"D{dom} T{todo.number} §{num}"
+    root = TODO_DIR.parent
+    shaped = STAMP_BODY_RE.match((sec.verified_body or "").strip())
+    if shaped is None:
+        return [f"invalid Verified stamp for receipt {receipt}: {ref}"]
+    evidence = shaped.group("evidence").strip()
+    sha_m = re.match(r"^([0-9a-f]{40})\b", evidence)
+    if sha_m is None:
+        return [f"Verified stamp for receipt {receipt} must carry a 40-char commit SHA, got {evidence!r}: {ref}"]
+    sha = sha_m.group(1)
+    surface = bool(sec.has_fidelity_block and not sec.fidelity_exempt)
+    try:
+        data = receipt_ok(root, receipt, ref, sha, surface=surface)
+        for target in data.get("completion", {}).get("filed", []):
+            require(target in all_refs, f"completion gap filed as {target}, which does not resolve: {ref}")
+    except Refused as exc:
+        return [str(exc)]
+    return []
+
+
+def review_rounds(todos: list[Todo] | None = None) -> dict:
+    """Rounds spent per stamped section, from each receipt or findings file."""
+    if todos is None:
+        todos = load_todos()
+    root = TODO_DIR.parent
+    sections = []
+    for t in todos:
+        dom = t.domain.split("-")[0]
+        for num, s in sorted(t.sections.items()):
+            if s.status != "x" or num not in t.verified_sections:
+                continue
+            ref = f"D{dom} T{t.number} §{num}"
+            rm = RECEIPT_REVIEW_RE.match((s.review_body or "").strip())
+            if rm:
+                rpath = root / rm.group("path")
+                if not rpath.is_file():
+                    continue
+                data = json.loads(rpath.read_text(encoding="utf-8"))
+                spent = data.get("rounds_spent") or rounds_recorded(root, data["reviews"])
+                sections.append({
+                    "ref": ref,
+                    "rounds_spent": spent,
+                    "round_cap": data.get("round_cap"),
+                    "verdicts": [r["verdict"] for r in data["reviews"]],
+                    "cap_outcome": data.get("cap_outcome"),
+                    "completion": (data.get("completion") or {}).get("verdict"),
+                })
+    spent_list = [s["rounds_spent"] for s in sections]
+    return {
+        "cap": REVIEW_ROUND_CAP,
+        "sections": sections,
+        "summary": {
+            "stamped": len(sections),
+            "rounds": sum(spent_list),
+            "mean": round(sum(spent_list) / len(spent_list), 2) if spent_list else None,
+            "max": max(spent_list, default=None),
+            "stopped_at_cap": sum(any(v.startswith("stopped-at-") for v in s["verdicts"]) for s in sections),
+            "stopped_low_severity": sum("stopped-low-severity" in s["verdicts"] for s in sections),
+        },
+    }
+
+
+def _resolve_target_section(raw_ref: str, todos: list[Todo]) -> tuple[Todo, int, Section, str]:
+    by_prefix = {(t.domain.split("-")[0], t.number): t for t in todos}
+    m = re.fullmatch(r"D(\d{2})\s+T(\d{2})\s+§([1-9]\d*)", raw_ref.strip())
+    require(m is not None, f"unresolved section (use 'DNN TNN §N'): {raw_ref}")
+    target = by_prefix.get((m.group(1), m.group(2)))
+    require(target is not None, f"unresolved section: {raw_ref}")
+    sec_num = int(m.group(3))
+    require(sec_num in target.sections, f"unresolved section: {raw_ref}")
+    ref = f"D{m.group(1)} T{m.group(2)} §{sec_num}"
+    return target, sec_num, target.sections[sec_num], ref
+
+
+def stamp(
+    root: Path,
+    raw_ref: str,
+    sha: str,
+    reviews: list[dict],
+    checks: list[str],
+    day: str,
+    sync_plan: bool = True,
+    cap_outcome: str | None = None,
+    completion: dict | None = None,
+    plan: str | None = None,
+) -> str:
+    root = Path(root)
+    todos = load_todos()
+    by_key = {(t.domain, t.number): t for t in todos}
+    all_refs = _section_refs(todos)
+    target, sec_num, sec, ref = _resolve_target_section(raw_ref, todos)
+    require(sec.status != "x" and sec_num not in target.verified_sections, f"already verified: {ref}")
+    unmet = unmet_dependencies(target, sec_num, todos, by_key)
+    require(not unmet, f"open prerequisite: {', '.join(u['dnn'] for u in unmet)}: {ref}")
+    require(re.fullmatch(r"[0-9a-f]{40}", sha) is not None, "the implementation SHA must be a full 40-character commit")
+    commit_ok(root, sha)
+    todo_path = root / target.path
+    original_bytes = todo_path.read_bytes()
+    original_text = original_bytes.decode("utf-8").replace("\r\n", "\n")
+    body = _raw_section_text(original_text, sec_num)
+    require(body is not None, f"section body not found in {target.path}: {ref}")
+    open_items = [
+        text for done, text in sec.items
+        if not done and not text.lower().startswith("commit:") and not text.startswith("~~")
+    ]
+    require(not open_items, f"unticked checklist items in {ref}: {open_items[0] if open_items else ''}")
+    slug = re.sub(r"[^a-z0-9]+", "-", ref.lower().replace("§", "s")).strip("-")
+    receipt = f"docs/reviews/{slug}.json"
+    require(
+        completion is not None,
+        f"--completion '<findings file>:<{'|'.join(COMPLETION_VERDICTS)}>' is required: run the one-pass completion "
+        f"review (scripts/review-dispatch.py --kind completion) before the rounds and name its verdict: {ref}",
+    )
+    require(
+        plan is not None,
+        f"--plan '<findings file>' is required: run the one-pass plan review (scripts/review-dispatch.py --kind "
+        f"plan) before the build: {ref}",
+    )
+    stopped = any(isinstance(r, dict) and str(r.get("verdict", "")).startswith("stopped-") for r in reviews)
+    require(
+        stopped == bool((cap_outcome or "").strip()),
+        "--cap-outcome is required with a stopped verdict (what was done when the review stopped at the cap or on "
+        "severity), and only then",
+    )
+    surface = bool(sec.has_fidelity_block and not sec.fidelity_exempt)
+    data: dict = {
+        "ref": ref,
+        "title": sec.title,
+        "implementation_sha": sha,
+        "date": day,
+        "reviews": reviews,
+        "checks": checks,
+    }
+    receipt_data_ok(data, ref, sha, root=root, building=True)
+    data["completion"] = completion_record(root, completion, ref, sha)
+    for filed_ref in data["completion"]["filed"]:
+        require(filed_ref in all_refs, f"completion gap filed as {filed_ref}, which does not resolve: {ref}")
+    data["rounds_spent"] = rounds_recorded(root, reviews)
+    data["round_cap"] = REVIEW_ROUND_CAP
+    if stopped:
+        data["cap_outcome"] = cap_outcome.strip()
+    data["plan"] = plan_record(root, plan, ref, start=build_start(root, target.path, body, ref))
+    data["schedule"] = pin_schedule(root, sha, ref)
+    receipt_data_ok(data, ref, sha, root=root, surface=surface)
+    receipt_path = root / receipt
+    require(not receipt_path.exists(), f"receipt already exists: {receipt}")
+
+    new_body = re.sub(r"^- \[ \] (Commit:.+)$", r"- [x] \1", body.rstrip("\n"), flags=re.M)
+    new_body += f"\n\n> **Verified:** {day} | §{sec_num} | {sha}\n> **Review:** `{receipt}`\n"
+    require(original_text.count(body) == 1, f"section body is not unique in {target.path}")
+    text = original_text.replace(body, new_body, 1)
+    row_re = re.compile(r"^(\|\s*\d+\s*\|\s*§" + str(sec_num) + r"\s*\|[^\n]*\|\s*)\[ \](\s*\|)$", re.M)
+    require(len(row_re.findall(text)) == 1, f"implementation row not found: {ref}")
+    text = row_re.sub(r"\1[x]\2", text)
+    siblings_done = all(s.status == "x" for n, s in target.sections.items() if n != sec_num)
+    if siblings_done:
+        text, n_sub = re.subn(r"\A(---\n(?:.*\n)*?)status: [a-z]+\n", r"\1status: done\n", text, count=1)
+        require(n_sub == 1, f"frontmatter status not found: {target.path}")
+    plan_path = PLAN
+    original_plan_bytes = plan_path.read_bytes() if plan_path.is_file() else None
+    try:
+        _atomic_write(receipt_path, json.dumps(data, indent=2) + "\n")
+        _atomic_write(todo_path, text)
+        if sync_plan and plan_path.is_file():
+            cmd_plan(argparse.Namespace(check=False, sync=True))
+    except BaseException:
+        receipt_path.unlink(missing_ok=True)
+        try:
+            if not todo_path.is_file() or todo_path.read_bytes() != original_bytes:
+                _atomic_write(todo_path, original_bytes)
+        finally:
+            if original_plan_bytes is not None:
+                if not plan_path.is_file() or plan_path.read_bytes() != original_plan_bytes:
+                    _atomic_write(plan_path, original_plan_bytes)
+        raise
+    return receipt
+
+
+def unstamp(root: Path, raw_ref: str, reason: str, day: str) -> str:
+    root = Path(root)
+    todos = load_todos()
+    target, sec_num, sec, ref = _resolve_target_section(raw_ref, todos)
+    require(sec.status == "x" and sec_num in target.verified_sections, f"not stamped: {ref}")
+    require(bool(reason.strip()) and "\n" not in reason, "--reason must be one line saying what regressed")
+    require(re.fullmatch(r"\d{4}-\d{2}-\d{2}", day) is not None, f"invalid date: {day}")
+    rm = RECEIPT_REVIEW_RE.match((sec.review_body or "").strip())
+    require(rm is not None, f"section does not carry a JSON receipt: {ref}")
+    receipt_rel = rm.group("path")
+    receipt_path = root / receipt_rel
+    require(receipt_path.is_file(), f"missing receipt {receipt_rel}: {ref}")
+    revoked_path = receipt_path.with_name(f"{receipt_path.stem}.revoked-{day}.json")
+    n = 2
+    while revoked_path.exists():
+        revoked_path = receipt_path.with_name(f"{receipt_path.stem}.revoked-{day}-{n}.json")
+        n += 1
+    revoked = revoked_path.relative_to(root).as_posix()
+    todo_path = root / target.path
+    original_bytes = todo_path.read_bytes()
+    original_text = original_bytes.decode("utf-8").replace("\r\n", "\n")
+    body = _raw_section_text(original_text, sec_num)
+    require(body is not None, f"section body not found in {target.path}: {ref}")
+    stamp_lines = re.compile(r"\n\n> \*\*Verified:\*\* [^\n]*\n> \*\*Review:\*\* `[^`\n]*`")
+    require(len(stamp_lines.findall(body)) == 1, f"stamp lines not found: {ref}")
+    new_body = stamp_lines.sub("", body.rstrip("\n"))
+    new_body = re.sub(r"^- \[x\] (Commit:.+)$", r"- [ ] \1", new_body, flags=re.M)
+    new_body += f"\n\n> **Reopened:** {day} | {ref} | {reason.strip()} (revoked receipt `{revoked}`)\n"
+    require(original_text.count(body) == 1, f"section body is not unique in {target.path}")
+    text = original_text.replace(body, new_body, 1)
+    row_re = re.compile(r"^(\|\s*\d+\s*\|\s*§" + str(sec_num) + r"\s*\|[^\n]*\|\s*)\[x\](\s*\|)$", re.M)
+    require(len(row_re.findall(text)) == 1, f"implementation row not found: {ref}")
+    text = row_re.sub(r"\1[ ]\2", text)
+    text = re.sub(r"\A(---\n(?:.*\n)*?)status: done\n", r"\1status: active\n", text, count=1)
+    receipt_bytes = receipt_path.read_bytes()
+    plan_path = PLAN
+    original_plan_bytes = plan_path.read_bytes() if plan_path.is_file() else None
+    try:
+        _atomic_write(revoked_path, receipt_bytes)
+        _atomic_write(todo_path, text)
+        receipt_path.unlink()
+        if plan_path.is_file():
+            cmd_plan(argparse.Namespace(check=False, sync=True))
+    except BaseException:
+        try:
+            if not receipt_path.is_file():
+                _atomic_write(receipt_path, receipt_bytes)
+            revoked_path.unlink(missing_ok=True)
+            if not todo_path.is_file() or todo_path.read_bytes() != original_bytes:
+                _atomic_write(todo_path, original_bytes)
+        finally:
+            if original_plan_bytes is not None and (
+                not plan_path.is_file() or plan_path.read_bytes() != original_plan_bytes
+            ):
+                _atomic_write(plan_path, original_plan_bytes)
+        raise
+    return revoked
+
+
+def _review_round_arg(value: str) -> dict:
+    parts = value.split(":")
+    if not (len(parts) == 3 and parts[0].isdigit() and parts[1]):
+        raise argparse.ArgumentTypeError(f"--review takes round:report:verdict, not {value!r}")
+    return {"round": int(parts[0]), "report": parts[1], "verdict": parts[2]}
+
+
+def _completion_review_arg(value: str) -> dict:
+    report, _, verdict = value.rpartition(":")
+    if not (report and verdict):
+        raise argparse.ArgumentTypeError(f"--completion takes <findings file>:<verdict>, not {value!r}")
+    return {"report": report, "verdict": verdict}
+
+
+def cmd_stamp(args: argparse.Namespace) -> int:
+    try:
+        receipt = stamp(
+            TODO_DIR.parent,
+            args.ref,
+            args.sha,
+            args.review,
+            args.checks,
+            args.date,
+            sync_plan=True,
+            cap_outcome=args.cap_outcome,
+            completion=args.completion,
+            plan=args.plan,
+        )
+    except Refused as exc:
+        print(f"TODO refused: {exc}", file=sys.stderr)
+        return 2
+    print(f"stamped {args.ref}; receipt {receipt}; plan synchronized")
+    return 0
+
+
+def cmd_unstamp(args: argparse.Namespace) -> int:
+    try:
+        revoked = unstamp(TODO_DIR.parent, args.ref, args.reason, args.date)
+    except Refused as exc:
+        print(f"TODO refused: {exc}", file=sys.stderr)
+        return 2
+    print(f"unstamped {args.ref}; receipt kept as {revoked}; plan synchronized")
+    return 0
 
 
 def cmd_plan(args: argparse.Namespace) -> int:
@@ -11320,7 +12120,7 @@ def main() -> int:
     q = sub.add_parser("query", help="ask the graph a question")
     q.add_argument(
         "what",
-        choices=["ready", "blocked", "stats", "deferred", "frozen", "findings", "surfaces", "adjacency", "calibration", "sequence", "plan-health", "summary", "run", "budget", "backlog", "growth", "design"],
+        choices=["ready", "blocked", "stats", "deferred", "frozen", "findings", "surfaces", "adjacency", "calibration", "sequence", "plan-health", "summary", "run", "budget", "backlog", "growth", "design", "rounds"],
     )
     q.add_argument("target", nargs="?", help="run: run ID to inspect")
     q.add_argument("--since", metavar="REF", help="growth: the commit to count from (a run's start commit)")
@@ -11383,6 +12183,24 @@ def main() -> int:
         help="also write platform/resources/rebuild-progress.json",
     )
     pr.set_defaults(fn=cmd_progress)
+    st = sub.add_parser("stamp", help="verify and stamp a completed section with its review receipt")
+    st.add_argument("ref", help="'DNN TNN §N'")
+    st.add_argument("--sha", required=True, help="40-character candidate commit SHA")
+    st.add_argument("--review", action="append", default=[], type=_review_round_arg,
+                    help="<round>:<report path>:<clean|fixed|stopped-at-33|stopped-low-severity>")
+    st.add_argument("--check", dest="checks", action="append", default=[],
+                    help="<command> -> <result>")
+    st.add_argument("--date", default=date.today().isoformat(), help="YYYY-MM-DD stamp date")
+    st.add_argument("--cap-outcome", help="required when a review stopped at the cap or on severity")
+    st.add_argument("--plan", help="required: <findings file> from review-dispatch.py --kind plan")
+    st.add_argument("--completion", type=_completion_review_arg,
+                    help="required: <findings file>:<complete|completed|filed> from review-dispatch.py --kind completion")
+    st.set_defaults(fn=cmd_stamp)
+    un = sub.add_parser("unstamp", help="reopen a stamped section and keep its revoked receipt")
+    un.add_argument("ref", help="'DNN TNN §N'")
+    un.add_argument("--reason", required=True, help="one line naming what regressed")
+    un.add_argument("--date", default=date.today().isoformat(), help="YYYY-MM-DD unstamp date")
+    un.set_defaults(fn=cmd_unstamp)
     args = p.parse_args()
     if args.cmd == "query" and args.what != "adjacency" and any(getattr(args, key, None) for key in ("file", "at", "json", "require_owned", "require_conformance")):
         p.error("--file/--at/--json/--require-owned/--require-conformance apply only to query adjacency")

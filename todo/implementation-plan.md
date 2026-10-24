@@ -135,7 +135,7 @@ The ported plan, hooks, gates, measurement references, HTML docs, and drift gate
 | [ ] | `D99 T01 §5` | Enable GitHub Pages                                |   3   |
 | [ ] | `D00 T01 §1` | Commit the port and wire the commit hook           |   6   |
 | [ ] | `D00 T01 §3` | The static analysis gate                           |   4   |
-| [ ] | `D00 T01 §6` | Claude review rounds through the reviewer pin      |   8   |
+| [ ] | `D00 T01 §6` | Claude review rounds through the reviewer pin      |   6   |
 | [ ] | `D00 T04 §1` | Local toolchains and WSL gates                     |   6   |
 | [ ] | `D08 T04 §1` | Repository presentation and developer entry points |   4   |
 | [ ] | `D00 T04 §2` | Portable platform and SIMD boundary                |   4   |

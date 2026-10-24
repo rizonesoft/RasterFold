@@ -85,7 +85,7 @@ Not filed: the reviewed repository is not present in this session, so these two 
 
 Both round 2 blockers are fixed. No new blocking defect was found. The items below are low severity and can be fixed in normal maintenance.
 
-## Round 2 findings: status
+### Round 2 findings: status
 
 | # | Status | Evidence |
 | --- | --- | --- |
@@ -143,7 +143,7 @@ This APPROVE covers the plan source only. It does not cover repair safety, stage
 
 All four round 3 low findings are corrected as described. The diffs introduce no blocking defect. The notes below are low severity.
 
-## Round 3 findings: status
+### Round 3 findings: status
 
 | # | Status | Evidence |
 | --- | --- | --- |
