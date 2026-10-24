@@ -775,7 +775,7 @@ def main(argv=None):
                     print(f"{entry['path']}  Round {r['number']}: {who}, writer {r['writer']}, {r['run']}")
             for path in listing.get("unreadable", []):
                 print(f"{path}  unreadable: a round heading or line is not in the record format")
-        return 0
+        return 1 if listing.get("unreadable") else 0
     if not args.writer or not args.prompt:
         parser.error("--writer and --prompt are required unless --check-pin or --list-rounds is given")
     one_pass = args.kind in PASSES

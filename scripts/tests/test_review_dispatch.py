@@ -148,7 +148,9 @@ class Dispatch(Harness):
         self.assertIn("(codex)", summary["review"])
         (call,) = self.calls()
         self.assertEqual(call["argv"][:3], ["exec", "-m", "gpt-6.1-sol"])
-        for flag in ("--sandbox", "read-only", "--ephemeral", "model_reasoning_effort=xhigh"):
+        i = call["argv"].index("--sandbox")
+        self.assertEqual(call["argv"][i:i + 2], ["--sandbox", "read-only"])
+        for flag in ("--ephemeral", "model_reasoning_effort=xhigh"):
             self.assertIn(flag, call["argv"])
         self.assertEqual(call["argv"][-1], "-", "the prompt goes on stdin, never on the command line")
         self.assertEqual(call["stdin"], self.prompt.read_text())
@@ -362,7 +364,7 @@ class Dispatch(Harness):
         bad = self.repo / "docs/reviews/b.md"
         bad.write_text("# Findings\n\n## Round two: sol\n\n- Writer: agy\n", encoding="utf-8")
         result, listing = self.dispatch("--list-rounds", "--json")
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.returncode, 1, result.stderr)
         self.assertEqual([r["path"] for r in listing["records"]], ["docs/reviews/a.md"])
         self.assertEqual(listing["unreadable"], ["docs/reviews/b.md"])
         self.assertEqual(len(self.calls()), 1, "listing ran a reviewer")
@@ -429,7 +431,7 @@ class Dispatch(Harness):
             self.assertNotEqual(body, recorded, name)
             (self.repo / "docs/reviews" / name).write_text(body, encoding="utf-8")
         result, listing = self.dispatch("--list-rounds", "--json")
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.returncode, 1, result.stderr)
         self.assertEqual([r["path"] for r in listing["records"]], ["docs/reviews/good.md"])
         self.assertEqual(sorted(listing["unreadable"]), ["docs/reviews/huge.md", "docs/reviews/superscript.md"])
 
@@ -541,7 +543,7 @@ class Dispatch(Harness):
         self.assertIn("calc.py:2 subtracts", summary["review"])
         self.assertEqual(bad.read_bytes(), body.encode("utf-8"))
         result, listing = self.dispatch("--list-rounds", "--json")
-        self.assertEqual((result.returncode, listing["unreadable"]), (0, ["docs/reviews/huge-number.md"]))
+        self.assertEqual((result.returncode, listing["unreadable"]), (1, ["docs/reviews/huge-number.md"]))
 
     def test_the_largest_review_record_writes_is_one_its_reader_reads(self):
         module, path = self.module(), self.repo / "docs/reviews/large.md"
@@ -555,7 +557,7 @@ class Dispatch(Harness):
         self.dispatch("--writer", "agy", "--prompt", str(self.prompt), "--record", str(good))
         os.symlink("loop.md", self.repo / "docs/reviews/loop.md")
         result, listing = self.dispatch("--list-rounds", "--json")
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.returncode, 1, result.stderr)
         self.assertEqual([r["path"] for r in listing["records"]], ["docs/reviews/good.md"])
         self.assertEqual(listing["unreadable"], ["docs/reviews/loop.md"])
 
@@ -575,7 +577,7 @@ class Dispatch(Harness):
                                                               .encode("utf-8", "surrogateescape"))
         (self.repo / "docs/reviews/folder.md").mkdir()  # a path that cannot be read as a file
         result, listing = self.dispatch("--list-rounds", "--json")
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.returncode, 1, result.stderr)
         self.assertEqual([r["path"] for r in listing["records"]], ["docs/reviews/good.md"])
         self.assertEqual(sorted(listing["unreadable"]), sorted(
             f"docs/reviews/{n}" for n in (*cases, "not-utf8.md", "folder.md")))
@@ -918,6 +920,8 @@ class Schedule(Harness):
         self.assertNotIn("position", summary)
         (call,) = self.calls()
         self.assertEqual(self.effort_of(call), "medium")
+        i = call["argv"].index("--sandbox")
+        self.assertEqual(call["argv"][i:i + 2], ["--sandbox", "read-only"])
         self.assertIn("- `plan`:", call["stdin"])
         text = self.findings.read_text(encoding="utf-8")
         self.assertIn("## Plan review: sol (`gpt-6.1-sol` via `codex`)", text)
@@ -944,8 +948,25 @@ class Schedule(Harness):
         self.assertEqual(result.returncode, 0, result.stderr)
         (call,) = self.calls()
         self.assertEqual(self.effort_of(call), "medium")
+        i = call["argv"].index("--sandbox")
+        self.assertEqual(call["argv"][i:i + 2], ["--sandbox", "read-only"])
         self.assertNotIn("## Lenses for this pass", call["stdin"])
         self.assertEqual(call["stdin"], self.prompt.read_text())
+
+    def test_all_three_review_stages_pass_adjacent_read_only_sandbox_argv(self):
+        candidate = "c" * 40
+        for kind, extra, say in (
+            ("plan", ("--kind", "plan", "--candidate", candidate), "HIGHEST: none\nPLAN: complete\nOVERALL: approve"),
+            ("completion", ("--kind", "completion", "--candidate", candidate), "COMPLETION: complete"),
+            ("round", ("--kind", "round"), "HIGHEST: none\nOVERALL: approve"),
+        ):
+            with self.subTest(kind=kind):
+                self.log.unlink(missing_ok=True)
+                result, _ = self.dispatch("--writer", "agy", "--prompt", str(self.prompt), *extra, codex="say", say=say)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                (call,) = self.calls()
+                idx = call["argv"].index("--sandbox")
+                self.assertEqual(call["argv"][idx:idx + 2], ["--sandbox", "read-only"])
 
     def test_a_pin_without_a_schedule_keeps_the_reviewers_effort_and_prompt(self):
         (self.repo / ".conclave/reviewers.toml").write_text(FIXTURE_PIN, encoding="utf-8")
