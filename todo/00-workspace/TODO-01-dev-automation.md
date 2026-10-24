@@ -174,15 +174,19 @@ Admission: a defect in shipped work. The Python Stop hook landed in `a9a5af7` to
 
 **Origin:** discovered run=7c814ed0d16f 2026-10-24 -- completion review of `D00 T01 §8`
 
+> **Started:** 2026-10-24T19:41:15Z
+
 -> SOURCE: D00-T01-S8-COMPLETION-1
 
-Admission: a defect in shipped work (`scripts/review-dispatch.py:310`). On Windows, `kill_tree` uses `taskkill /T /F /PID`, which reaches descendant helper processes only while the root reviewer process is still alive; if the reviewer exits before a child helper, the child can outlive the review and hold scratch files open (`test_a_reviewers_children_do_not_outlive_it` is skipped on Windows at `scripts/tests/test_review_dispatch.py:624`). Assigning the reviewer process to a Win32 Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` (or terminating the job in `kill_tree`) guarantees that every descendant process is terminated on Windows just as `os.killpg` does on POSIX.
+Admission: a defect in shipped work (`scripts/review-dispatch.py:309`). On Windows, `kill_tree` uses `taskkill /T /F /PID`, which reaches descendant helper processes only while the root reviewer process is still alive; if the reviewer exits before a child helper, the child can outlive the review and hold scratch files open (`test_a_reviewers_children_do_not_outlive_it` is skipped on Windows at `scripts/tests/test_review_dispatch.py:644`). Assigning the reviewer process to a Win32 Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` (and terminating/closing the job in `kill_tree`) guarantees that every descendant process is terminated on Windows just as `os.killpg` does on POSIX.
 
-- [ ] Bind the reviewer child process on Windows to a Win32 Job Object in `scripts/review-dispatch.py` (`CreateJobObjectW`, `SetInformationJobObject` with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, `AssignProcessToJobObject`, and `TerminateJobObject` / `CloseHandle` in `kill_tree`). Done when: `kill_tree` terminates a child helper that outlived the reviewer on Windows without leaving the `WORKAROUND` limitation.
-- [ ] Enable `test_a_reviewers_children_do_not_outlive_it` on Windows in `scripts/tests/test_review_dispatch.py` and verify it passes on both Linux and Windows (`python3 scripts/windows.py -m unittest discover -s scripts/tests -v`). Done when: the `@unittest.skipIf(os.name == "nt", ...)` decorator is removed and the test passes on both hosts.
-- [ ] Commit: `"review: terminate Windows reviewer descendant trees with a Job Object"`
+**Corrected 2026-10-24:** `scripts/windows.py` takes a script path as its first argument (`python3 scripts/windows.py scripts/tests/test_review_dispatch.py -v`), not `-m unittest`. Updated the Windows test command in the second item and checkpoint accordingly.
 
-**Test checkpoint:** `python3 -m unittest discover -s scripts/tests -v` on Linux and `python3 scripts/windows.py -m unittest discover -s scripts/tests -v` on Windows exit 0 with `test_a_reviewers_children_do_not_outlive_it` running and passing on both platforms.
+- [ ] Bind the reviewer child process on Windows to a Win32 Job Object in `scripts/review-dispatch.py` (`CreateJobObjectW`, `SetInformationJobObject` with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, `AssignProcessToJobObject`, and `TerminateJobObject` / `CloseHandle` in `kill_tree`, falling back to `taskkill /T /F /PID` if job assignment was unavailable). Done when: `kill_tree` terminates a child helper that outlived the reviewer on Windows without leaving the `WORKAROUND` limitation.
+- [ ] Enable `test_a_reviewers_children_do_not_outlive_it` on Windows in `scripts/tests/test_review_dispatch.py` (using a platform-appropriate alive check on Windows so a dead PID does not raise `SystemError` or false-positive before handle cleanup) and verify it passes on both Linux and Windows (`python3 scripts/windows.py scripts/tests/test_review_dispatch.py -v < /dev/null`). Done when: the `@unittest.skipIf(os.name == "nt", ...)` decorator is removed and the test passes on both hosts.
+- [ ] Commit: `"review: terminate Windows reviewer descendant trees with a Job Object (D00 T01 §9)"`
+
+**Test checkpoint:** `python3 -m unittest discover -s scripts/tests -v` on Linux and `python3 scripts/windows.py scripts/tests/test_review_dispatch.py -v < /dev/null` on Windows exit 0 with `test_a_reviewers_children_do_not_outlive_it` running and passing on both platforms.
 
 ## Verification
 
