@@ -689,81 +689,106 @@ class Dispatch(Harness):
         with tempfile.TemporaryDirectory() as tmp:
             stdout_path = Path(tmp) / "stdout.txt"
             with unittest.mock.patch.object(module.os, "name", "nt"):
-                # 1. Job creation fails before Popen runs.
-                with unittest.mock.patch.object(module, "create_windows_job",
-                                                side_effect=OSError(5, "CreateJobObjectW denied")), \
-                     unittest.mock.patch.object(module.subprocess, "Popen") as popen_mock:
-                    code, reason = module.run(["codex"], "hi", 5, [stdout_path])
-                self.assertIsNone(code)
-                self.assertEqual(reason, "could not start: CreateJobObjectW denied")
-                popen_mock.assert_not_called()
-
-                # 2. Popen fails after job creation: the job handle is closed and the launch error preserved.
-                closed = []
-                with unittest.mock.patch.object(module, "create_windows_job", return_value=4242), \
-                     unittest.mock.patch.object(module, "close_windows_job", side_effect=closed.append), \
-                     unittest.mock.patch.object(module.subprocess, "Popen",
-                                                side_effect=OSError(2, "No such executable")):
-                    code, reason = module.run(["codex"], "hi", 5, [stdout_path])
-                self.assertIsNone(code)
-                self.assertEqual(reason, "could not start: No such executable")
-                self.assertEqual(closed, [4242])
-
-                # 3. Assignment or resume fails after suspended Popen: process is terminated, job closed, stdin closed.
-                fake_proc = unittest.mock.MagicMock()
-                fake_proc._handle = 999
-                fake_proc.stdin = unittest.mock.MagicMock()
-                closed = []
-                with unittest.mock.patch.object(module, "create_windows_job", return_value=7777), \
-                     unittest.mock.patch.object(module, "close_windows_job", side_effect=closed.append), \
-                     unittest.mock.patch.object(module.subprocess, "Popen", return_value=fake_proc) as popen_mock, \
-                     unittest.mock.patch.object(module, "bind_and_resume_windows_job",
-                                                side_effect=OSError(5, "AssignProcessToJobObject denied")):
-                    code, reason = module.run(["codex"], "hi", 5, [stdout_path])
-                self.assertIsNone(code)
-                self.assertEqual(reason, "could not start: AssignProcessToJobObject denied")
-                self.assertEqual(
-                    popen_mock.call_args.kwargs.get("creationflags"),
-                    module.CREATE_NEW_PROCESS_GROUP | module.CREATE_SUSPENDED,
-                )
-                self.assertEqual(closed, [7777])
-                fake_proc.stdin.close.assert_called_once()
-                fake_proc.kill.assert_called_once()
-                fake_proc.wait.assert_called_once()
-
-                # 4. Direct unit verification of create_windows_job and bind_and_resume_windows_job failure paths.
                 fake_k32 = unittest.mock.MagicMock()
                 fake_ntdll = unittest.mock.MagicMock()
                 with unittest.mock.patch.object(module, "_win32_apis", return_value=(fake_k32, fake_ntdll)), \
                      unittest.mock.patch.object(module.ctypes, "get_last_error", return_value=5, create=True), \
                      unittest.mock.patch.object(module.ctypes, "WinError",
                                                 side_effect=lambda err: OSError(err, f"WinError {err}"), create=True):
-                    fake_k32.CreateJobObjectW.return_value = 8888
-                    fake_k32.SetInformationJobObject.return_value = 0
-                    with self.assertRaises(OSError):
-                        module.create_windows_job()
-                    fake_k32.CloseHandle.assert_called_once_with(8888)
+                    # 1. CreateJobObjectW fails (returns NULL) before Popen runs.
+                    fake_k32.CreateJobObjectW.return_value = 0
+                    with unittest.mock.patch.object(module.subprocess, "Popen") as popen_mock:
+                        code, reason = module.run(["codex"], "hi", 5, [stdout_path])
+                    self.assertIsNone(code)
+                    self.assertEqual(reason, "could not start: WinError 5")
+                    popen_mock.assert_not_called()
 
+                    # 2. SetInformationJobObject fails: the job handle is closed and Popen never runs.
+                    fake_k32.reset_mock()
+                    fake_k32.CreateJobObjectW.return_value = 4141
+                    fake_k32.SetInformationJobObject.return_value = 0
+                    with unittest.mock.patch.object(module.subprocess, "Popen") as popen_mock:
+                        code, reason = module.run(["codex"], "hi", 5, [stdout_path])
+                    self.assertIsNone(code)
+                    self.assertEqual(reason, "could not start: WinError 5")
+                    fake_k32.CloseHandle.assert_called_once_with(4141)
+                    popen_mock.assert_not_called()
+
+                    # 3. Popen fails after job creation: the job handle is terminated and closed, and the launch error preserved.
+                    fake_k32.reset_mock()
+                    fake_k32.CreateJobObjectW.return_value = 4242
+                    fake_k32.SetInformationJobObject.return_value = 1
+                    with unittest.mock.patch.object(module.subprocess, "Popen",
+                                                    side_effect=OSError(2, "No such executable")):
+                        code, reason = module.run(["codex"], "hi", 5, [stdout_path])
+                    self.assertIsNone(code)
+                    self.assertEqual(reason, "could not start: No such executable")
+                    fake_k32.TerminateJobObject.assert_called_once_with(4242, 1)
+                    fake_k32.CloseHandle.assert_called_once_with(4242)
+
+                    # 4. AssignProcessToJobObject fails after suspended Popen: NtResumeProcess is never called,
+                    # and the suspended process and job are terminated and cleaned up.
+                    fake_k32.reset_mock()
+                    fake_ntdll.reset_mock()
+                    fake_k32.CreateJobObjectW.return_value = 7777
+                    fake_k32.SetInformationJobObject.return_value = 1
+                    fake_k32.AssignProcessToJobObject.return_value = 0
+                    fake_proc = unittest.mock.MagicMock()
+                    fake_proc._handle = 999
+                    fake_proc.stdin = unittest.mock.MagicMock()
+                    with unittest.mock.patch.object(module.subprocess, "Popen", return_value=fake_proc) as popen_mock:
+                        code, reason = module.run(["codex"], "hi", 5, [stdout_path])
+                    self.assertIsNone(code)
+                    self.assertEqual(reason, "could not start: WinError 5")
+                    self.assertEqual(
+                        popen_mock.call_args.kwargs.get("creationflags"),
+                        module.CREATE_NEW_PROCESS_GROUP | module.CREATE_SUSPENDED,
+                    )
+                    fake_ntdll.NtResumeProcess.assert_not_called()
+                    fake_k32.TerminateJobObject.assert_called_once_with(7777, 1)
+                    fake_k32.CloseHandle.assert_called_once_with(7777)
+                    fake_proc.stdin.close.assert_called_once()
+                    fake_proc.kill.assert_called_once()
+                    fake_proc.wait.assert_called_once()
+
+                    # 5. NtResumeProcess fails after AssignProcessToJobObject: process and job are terminated and cleaned up.
+                    fake_k32.reset_mock()
+                    fake_ntdll.reset_mock()
+                    fake_k32.CreateJobObjectW.return_value = 8888
+                    fake_k32.SetInformationJobObject.return_value = 1
                     fake_k32.AssignProcessToJobObject.return_value = 1
                     fake_ntdll.NtResumeProcess.return_value = -1073741823
-                    with self.assertRaisesRegex(OSError, "NtResumeProcess failed"):
-                        module.bind_and_resume_windows_job(8888, fake_proc)
+                    fake_proc_resume = unittest.mock.MagicMock()
+                    fake_proc_resume._handle = 1000
+                    fake_proc_resume.stdin = unittest.mock.MagicMock()
+                    with unittest.mock.patch.object(module.subprocess, "Popen", return_value=fake_proc_resume):
+                        code, reason = module.run(["codex"], "hi", 5, [stdout_path])
+                    self.assertIsNone(code)
+                    self.assertIn("NtResumeProcess failed", reason)
+                    fake_k32.TerminateJobObject.assert_called_once_with(8888, 1)
+                    fake_k32.CloseHandle.assert_called_once_with(8888)
+                    fake_proc_resume.stdin.close.assert_called_once()
+                    fake_proc_resume.kill.assert_called_once()
+                    fake_proc_resume.wait.assert_called_once()
 
-                # 5. An unexpected exception inside the watch loop still cleans up the job and process in `finally`.
-                fake_proc2 = unittest.mock.MagicMock()
-                fake_proc2._handle = 1001
-                fake_proc2.stdin = unittest.mock.MagicMock()
-                fake_proc2.poll.side_effect = RuntimeError("poll exploded")
-                closed2 = []
-                with unittest.mock.patch.object(module, "create_windows_job", return_value=9999), \
-                     unittest.mock.patch.object(module, "close_windows_job", side_effect=closed2.append), \
-                     unittest.mock.patch.object(module, "bind_and_resume_windows_job"), \
-                     unittest.mock.patch.object(module.subprocess, "Popen", return_value=fake_proc2):
-                    with self.assertRaisesRegex(RuntimeError, "poll exploded"):
-                        module.run(["codex"], "hi", 5, [stdout_path])
-                self.assertEqual(closed2, [9999])
-                fake_proc2.kill.assert_called_once()
-                fake_proc2.wait.assert_called_once()
+                    # 6. An unexpected exception inside the watch loop still cleans up the job and process in `finally`.
+                    fake_k32.reset_mock()
+                    fake_ntdll.reset_mock()
+                    fake_k32.CreateJobObjectW.return_value = 9999
+                    fake_k32.SetInformationJobObject.return_value = 1
+                    fake_k32.AssignProcessToJobObject.return_value = 1
+                    fake_ntdll.NtResumeProcess.return_value = 0
+                    fake_proc2 = unittest.mock.MagicMock()
+                    fake_proc2._handle = 1001
+                    fake_proc2.stdin = unittest.mock.MagicMock()
+                    fake_proc2.poll.side_effect = RuntimeError("poll exploded")
+                    with unittest.mock.patch.object(module.subprocess, "Popen", return_value=fake_proc2):
+                        with self.assertRaisesRegex(RuntimeError, "poll exploded"):
+                            module.run(["codex"], "hi", 5, [stdout_path])
+                    fake_k32.TerminateJobObject.assert_called_once_with(9999, 1)
+                    fake_k32.CloseHandle.assert_called_once_with(9999)
+                    fake_proc2.kill.assert_called_once()
+                    fake_proc2.wait.assert_called_once()
 
     def test_the_prompt_never_reaches_the_command_line(self):
         # A Windows .cmd shim re-parses its arguments through cmd.exe, so prose there could become commands.
