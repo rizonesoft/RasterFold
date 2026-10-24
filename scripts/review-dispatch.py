@@ -701,10 +701,23 @@ def list_rounds(records_dir):
         return path.relative_to(ROOT).as_posix() if path.is_relative_to(ROOT) else path.as_posix()
 
     try:
-        paths = sorted(records_dir.rglob("*.md")) if records_dir.is_dir() else []
-    except OSError:  # a folder that cannot be walked is reported, like a file that cannot be read
+        exists = records_dir.exists() or records_dir.is_symlink()
+        is_dir = records_dir.is_dir() and not records_dir.is_symlink()
+    except OSError:
         return {"records": [], "unreadable": [shown(records_dir)]}
-    for path in paths:
+    if exists and not is_dir:
+        return {"records": [], "unreadable": [shown(records_dir)]}
+    paths = []
+    if is_dir:
+        for dirpath, dirnames, filenames in os.walk(records_dir, onerror=lambda err: unreadable.append(
+                shown(getattr(err, "filename", None) or records_dir))):
+            dirnames.sort()
+            for name in sorted(dirnames) + sorted(filenames):
+                if name.endswith(".md"):
+                    paths.append(Path(dirpath) / name)
+                    if name in dirnames:
+                        dirnames.remove(name)
+    for path in sorted(paths):
         # One file that cannot be read, or is not UTF-8, is named in `unreadable`; the others are still listed.
         try:
             found = read_findings(path.read_bytes().decode("utf-8"))

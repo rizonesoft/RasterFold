@@ -582,6 +582,26 @@ class Dispatch(Harness):
         self.assertEqual(sorted(listing["unreadable"]), sorted(
             f"docs/reviews/{n}" for n in (*cases, "not-utf8.md", "folder.md")))
 
+    def test_an_unsearchable_findings_subdirectory_is_reported_unreadable(self):
+        module = self.module()
+        good = self.repo / "docs/reviews/00-workspace/good.md"
+        self.dispatch("--writer", "agy", "--prompt", str(self.prompt), "--record", str(good))
+        blocked = self.repo / "docs/reviews/01-compression"
+        blocked.mkdir(parents=True)
+        real_scandir = os.scandir
+
+        def guarded_scandir(path):
+            if Path(path).resolve() == blocked.resolve():
+                raise PermissionError(13, "Permission denied", str(path))
+            return real_scandir(path)
+
+        with unittest.mock.patch("os.scandir", side_effect=guarded_scandir):
+            listing = module.list_rounds(self.repo / "docs/reviews")
+            code = module.main(["--list-rounds", "--json", "--records", str(self.repo / "docs/reviews")])
+        self.assertEqual(code, 1)
+        self.assertEqual([r["path"] for r in listing["records"]], ["docs/reviews/00-workspace/good.md"])
+        self.assertEqual(listing["unreadable"], ["docs/reviews/01-compression"])
+
     def test_a_runaway_reviewer_is_stopped_while_it_runs(self):
         started = time.monotonic()
         result, summary = self.dispatch("--writer", "agy", "--prompt", str(self.prompt), "--timeout", "40",
