@@ -58,7 +58,7 @@ track: W1
 |   6   |   §6    | Claude review rounds through the reviewer pin | §1         |  [ ]   |
 | 7 | §7 | The campaign guard on a legacy console encoding | -- | [x] |
 | 8 | §8 | A read-only independent reviewer beside a live run | -- | [x] |
-| 9 | §9 | Windows Job Object process-tree cleanup in review-dispatch.py | §8 | [ ] |
+| 9 | §9 | Windows Job Object process-tree cleanup in review-dispatch.py | §8 | [x] |
 
 ---
 
@@ -188,6 +188,8 @@ Admission: a defect in shipped work (`scripts/review-dispatch.py:309`). On Windo
 
 **Test checkpoint:** `python3 -m unittest discover -s scripts/tests -v` on Linux and `python3 scripts/windows.py scripts/tests/test_review_dispatch.py -v < /dev/null` on Windows exit 0 with `test_a_reviewers_children_do_not_outlive_it`, descendant-bearing timeout/flood cleanup tests, and Job Object failure-containment tests running and passing on both platforms.
 
+> **Verified:** 2026-10-24 | §9 | 32bcc7acb05189ccd93d3517931df67c10d3848e
+> **Review:** `docs/reviews/d00-t01-s9.json`
 ## Verification
 
 - [ ] `pwsh scripts/check-all.ps1` -- exits 0 with every gate `PASS`, the static analysis gate included

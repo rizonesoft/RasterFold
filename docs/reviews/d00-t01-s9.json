@@ -1,0 +1,95 @@
+{
+  "ref": "D00 T01 \u00a79",
+  "title": "Windows Job Object Process-Tree Cleanup in review-dispatch.py",
+  "implementation_sha": "32bcc7acb05189ccd93d3517931df67c10d3848e",
+  "date": "2026-10-24",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/00-workspace/D00-T01-s9.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/00-workspace/D00-T01-s9.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 3,
+      "report": "docs/reviews/00-workspace/D00-T01-s9.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 -m unittest discover -s scripts/tests -v -> 98 tests OK (1 skipped)",
+    "python3 scripts/windows.py scripts/tests/test_review_dispatch.py -v -> 68 tests OK (1 skipped)",
+    "python3 scripts/check-all.py --quick -> 26/26 passed"
+  ],
+  "completion": {
+    "report": "docs/reviews/00-workspace/D00-T01-s9.md",
+    "verdict": "completed",
+    "candidate": "e63cdd8158ed29b8e7beca8e006c375c5e00c524",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 3,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/00-workspace/D00-T01-s9.md",
+    "candidate": "b80f117fd4d0f826035f31f396ffa040b0fc1e6f",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 3,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}

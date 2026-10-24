@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **2 of 227 sections complete (1%).** 227 sections (6 discovered); backlog 1 entry. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **3 of 227 sections complete (1%).** 227 sections (6 discovered); backlog 1 entry. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -128,7 +128,7 @@ The ported plan, hooks, gates, measurement references, HTML docs, and drift gate
 | :-: | ------------ | ------------------------------------------------------------- | :---: |
 | [x] | `D00 T01 §7` | The campaign guard on a legacy console encoding               |   3   |
 | [x] | `D00 T01 §8` | A read-only independent reviewer beside a live run            |   4   |
-| [ ] | `D00 T01 §9` | Windows Job Object process-tree cleanup in review-dispatch.py |   3   |
+| [x] | `D00 T01 §9` | Windows Job Object process-tree cleanup in review-dispatch.py |   3   |
 | [ ] | `D99 T01 §1` | Remove the retired run-guard folders                          |   3   |
 | [ ] | `D99 T01 §2` | Log in the GitHub CLI                                         |   2   |
 | [ ] | `D99 T01 §3` | Approve format version 3                                      |   2   |
