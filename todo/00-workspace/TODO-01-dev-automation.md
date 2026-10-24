@@ -54,7 +54,7 @@ track: W1
 | :---: | :-----: | --------------------------------------------- | ---------- | :----: |
 |   1   |   §1    | Commit the port and wire the commit hook      | --         |  [x]   |
 |   2   |   §2    | First push: CI green and read back            | §1, D99 T01 §2 |  [ ]   |
-|   3   |   §3    | The static analysis gate                      | §1         |  [ ]   |
+|   3   |   §3    | The static analysis gate                      | §1         |  [x]   |
 |   4   |   §4    | Prove the review panel end to end             | §1, §6     |  [ ]   |
 |   5   |   §5    | Raise the claims coverage floor               | §1         |  [ ]   |
 |   6   |   §6    | Claude review rounds through the reviewer pin | §1         |  [ ]   |
@@ -108,6 +108,8 @@ The build already fails on any compiler warning (`-Werror` in `scripts/build.py`
 
 **Test checkpoint:** `pwsh scripts/check-all.ps1` shows the `clang-tidy` gate `PASS`; the probe run's `FAIL` line and its finding are quoted.
 
+> **Verified:** 2026-10-24 | §3 | 6ddd5ddf7d4a5d8312ee28de460d9b6726b7ade4
+> **Review:** `docs/reviews/d00-t01-s3.json`
 ## 4. Prove the Review Panel End to End
 
 **Corrected 2026-10-24:** With the operator decision to consolidate on Antigravity (`agy`) as the sole writer and GPT-6 Astra (`gpt-6-astra` via `codex`) as the sole reviewer through `.conclave/reviewers.toml` and `scripts/review-dispatch.py`, this section proves the `agy -> astra` route and the 3-stage adaptive schedule (`--kind plan`, `--kind completion`, and `--round 1`) end to end instead of the retired `.conclave/panel.toml` and `scripts/panel_slots.py`.
