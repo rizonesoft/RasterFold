@@ -56,13 +56,15 @@ track: OP1
 
 ## 1. Remove the Retired Run-Guard Folders
 
+> **Started:** 2026-10-24T21:47:10Z
+
 **Requires:** operator -- the agent session's safety rules refused this deletion on 2026-09-29, so only the operator can perform it.
 
 The previous developer's campaign tooling left a lock folder and a run guard in the tree. The agent session was refused the deletion because the folders read as logs, so the operator deletes them.
 
 - [x] Delete the folders: `rm -rf .grok guard build/review-20260928` in Git Bash (or `Remove-Item -Recurse -Force .grok, guard, build\review-20260928` in PowerShell). Done when: `ls -d .grok guard build/review-20260928` reports all three missing. **Corrected 2026-09-29:** the item gave only the PowerShell form, which fails under the session's `!` prefix (Bash); the operator ran the Bash form.
 - [x] Remove the `.grok/` and `guard/` lines from `.gitignore`. Done when: `Select-String -Path .gitignore -Pattern '^(\.grok|guard)/$'` prints nothing, and this file's two `.gitignore` claims are updated to `= 0`.
-- [ ] Commit: `"workspace: drop the retired run-guard folders and their ignore lines"`
+- [x] Commit: `"workspace: drop the retired run-guard folders and their ignore lines"` (the deletion and `.gitignore` edit landed in `97e5ca5`; this commit records the section's completion)
 
 **Test checkpoint:** `git status --short --ignored .grok guard` prints nothing; `python scripts/todo-claims.py` exits 0 with the claims updated.
 
