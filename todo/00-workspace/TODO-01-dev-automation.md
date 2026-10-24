@@ -95,11 +95,13 @@ A workflow nobody has seen run is a claim, not a gate. The `plan-gates` workflow
 
 ## 3. The Static Analysis Gate
 
+> **Started:** 2026-10-24T20:37:00Z
+
 The build already fails on any compiler warning (`-Werror` in `scripts/build.py`). Static analysis finds what the compiler does not: a read past a buffer on one path, an unchecked size, a leak. The gate is a ratchet: the count found on the day it lands is the baseline, and it only shrinks.
 
 - [ ] Add `.clang-tidy` with `bugprone-*`, `clang-analyzer-*`, `performance-*`, and `cert-*` checks, minus the checks that report style rather than defects (`bugprone-easily-swappable-parameters`, `readability-magic-numbers`, and any other noise the first run shows, each named with its reason in a comment). Done when: a `scripts/tidy.py` driver uses each target's compilation database and pinned clang-tidy, covering Windows/POSIX, x64 SIMD and ARM64 portable paths. Cheaper substitute: enabling every check and baselining thousands of style findings.
-- [ ] Record the warning count in `todo/.tidy-baseline` as `count: <n>`, counting unique `(file, line, column, check)` findings. Done when: the file exists and its count equals the run's.
-- [ ] Add a `clang-tidy` gate to `scripts/check-all.py` (also used by `scripts/check-all.ps1`) that fails when the count exceeds the baseline or any `error:` appears. Done when: the gate passes on the tree, and a probe line added to `src/mem.c` that reads an uninitialized variable makes it fail; the probe is reverted.
+- [ ] Record the warning count in `todo/.tidy-baseline` as `count: <n>`, counting unique `(file, line, column, check)` findings, pin `.clang-tidy` and `todo/.tidy-baseline` to LF in `.gitattributes`, and update this file's `Current state` `.clang-tidy` claim (`<!-- claim: exists .clang-tidy -->`) when `.clang-tidy` lands. Done when: `todo/.tidy-baseline` exists, its count equals the run's (`count: 18`), and `python3 scripts/todo-claims.py` exits 0.
+- [ ] Add a `clang-tidy` gate to `scripts/check-all.py` (also used by `scripts/check-all.ps1`) that fails when the count exceeds the baseline or any `error:` appears, and renew `CONTRIBUTING.md`'s review receipt in `docs/drift.json` for the updated `scripts/check-all.py`. Done when: the gate passes on the tree, and a probe line added to `src/mem.c` that reads an uninitialized variable makes it fail; the probe is reverted.
 - [ ] Commit: `"workspace: gate the C sources on clang-tidy against a shrinking baseline"`
 
 **Test checkpoint:** `pwsh scripts/check-all.ps1` shows the `clang-tidy` gate `PASS`; the probe run's `FAIL` line and its finding are quoted.
