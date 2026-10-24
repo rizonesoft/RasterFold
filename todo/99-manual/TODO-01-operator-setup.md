@@ -50,7 +50,7 @@ track: OP1
 |   2   |   §2    | Log in the GitHub CLI                         | --         |  [x]   |
 |   3   |   §3    | Approve format version 3                      | --         |  [x]   |
 |   4   |   §4    | The missed-milestone policy                   | --         |  [x]   |
-|   5   |   §5    | Enable GitHub Pages                           | --         |  [ ]   |
+|   5   |   §5    | Enable GitHub Pages                           | --         |  [x]   |
 | 6 | §6 | Android release signing identity | -- | [ ] |
 | 7 | §7 | HEVC distribution decision | -- | [ ] |
 
@@ -133,6 +133,8 @@ Every milestone gate in `todo/05-milestones/` carries this policy: on a miss, up
 
 **Test checkpoint:** **Corrected 2026-10-24:** the section originally required the first `pages` workflow run to be green and the site's address to load here, before `D08 T01 §3` (which depends on `D99 T01 §5`) creates `.github/workflows/pages.yml`. This section verifies that `gh api repos/rizonesoft/RasterFold/pages`, `gh api repos/rizonesoft/RasterFold/environments/github-pages`, and `gh api repos/rizonesoft/RasterFold/environments/github-pages/deployment-branch-policies` match every required field in `docs/site-content.json` (and that mutating `base_path` or omitting `environment` fails the check), and `python3 scripts/drift-check.py` exits 0; `D08 T01 §3` verifies both the push `pages` workflow run and a `workflow_dispatch` run on `main` with a distinct immutable commit ref, plus the live site response.
 
+> **Verified:** 2026-10-25 | §5 | d64b89ee273fc2f969bd767a38b908423abe0335
+> **Review:** `docs/reviews/d99-t01-s5.json`
 ## 6. Android release signing identity
 
 **Origin:** discovered run=61f3a8f4474f 2026-09-30 -- groom-plan release prerequisites.
