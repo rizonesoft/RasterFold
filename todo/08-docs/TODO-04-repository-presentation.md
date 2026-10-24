@@ -59,5 +59,5 @@ track: D1
 
 ## Verification
 
-- [ ] `python3 scripts/todo-graph.py validate` and `plan --check` pass.
-- [ ] The README's target and API claims match the measured migration audit.
+- [x] `python3 scripts/todo-graph.py validate` and `plan --check` pass.
+- [x] The README's target and API claims match the measured migration audit.
