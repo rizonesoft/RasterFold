@@ -53,11 +53,13 @@ frozen: true
 
 ## 1. Local Toolchains and WSL Gates
 
-> **Started:** 2026-09-30T20:10:51Z
+> **Started:** 2026-10-24T22:13:30Z
 
 **Operator decision 2026-10-21:** "Claude adopts the chain" -- the operator's answer, in an attended Claude `process-plan` session, to: "Phase 0's first row, D00 T04 §1, is Codex's candidate (8b30db5..73f0143 plus fix 55b66a8), parked because Codex's private Claude reviewer timed out at 900s. Claude's own panel is GPT-6 Astra, the same family as the implementer, so this Claude run can't stamp it. D00 T04 §2-§4 and D08 T04 §1 depend on it. How should this run treat that chain?" Claude is the writer of this file's sections and of `D08 T04 §1` from that date.
 
 **Corrected 2026-10-21:** §1 had no dependency. Its candidate holds Codex-written bytes and Claude now finishes it, so neither the Claude family nor the GPT family may review it; the only third family is Gemini, which Claude's rounds reach only through the reviewer pin `D00 T01 §6` lands. §1 now depends on `D00 T01 §6`, and its rows (with every row that depends on it) moved after that section in Phase 0. A later section of this file whose candidate holds only Claude-written bytes is reviewed by Claude's normal route.
+
+**Corrected 2026-10-24:** On 2026-10-24 (`D00 T01 §6`), the operator consolidated the repository onto Antigravity (`agy`) as the sole writer and GPT-6 Astra (`gpt-6-astra` via `codex`) as the sole independent reviewer (`[routes] agy = ["astra"]`). This candidate resolves the four 2026-10-20 Round A findings recorded in `docs/reviews/00-workspace/D00-T04-s1.md`: (1) define one authoritative `target_artifacts(target)` table in `scripts/build.py` imported by `scripts/package.py` and `tests/test_package.py`; (2) read each artifact once in `scripts/package.py` so the exact verified bytes are written into the ZIP; (3) refuse missing or non-regular artifact files with `ValueError("rebuild before packaging")`, test `lib/librasterfold.so` symlink packaging, and state in `docs/building.md` that ZIP archives store dereferenced regular files; and (4) pin `scripts/check-all.py` and `scripts/package.py` in `docs/drift.json` review receipts with document-specific evidence.
 
 Use pinned, checksum-verified LLVM/MinGW and Android NDK installations beneath `tools/`; keep downloaded SDKs and compiler binaries out of Git. Windows remains a supported build target. Document the Linux host SDK requirement separately from the local compiler installation. Repair the measured WSL path, shell and locking defects without weakening gates.
 
