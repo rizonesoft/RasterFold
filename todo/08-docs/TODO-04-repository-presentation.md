@@ -44,12 +44,14 @@ track: D1
 
 ## 1. Repository Presentation and Developer Entry Points
 
+> **Started:** 2026-10-24T22:25:00Z
+
 **Job:** A developer reads build reports and the migration audit, then downloads artifacts with an explicit platform and API contract.
 
-- [ ] Add original SVG cover/icon, an accurate README and preserved historical measurement context. Done when: local links resolve and no old Windows measurement is presented as a new cross-platform claim.
-- [ ] Add build/API guides, community policy, issue forms and PR guidance. Done when: commands name actual artifacts and runtime limits, with no fabricated releases or contacts.
-- [ ] Update artifact CI and create local development packages. Done when: target manifests match packaged bytes; local tests and future remote CI are described separately.
-- [ ] Commit: `"docs: present RasterFold and its cross-platform developer workflow"`
+- [x] Add original SVG cover/icon, an accurate README and preserved historical measurement context. Done when: local links resolve and no old Windows measurement is presented as a new cross-platform claim (landed in `2c89e2e`; updated `README.md` and `docs/building.md` for the 2026-10-24 Antigravity consolidation).
+- [x] Add build/API guides, community policy, issue forms and PR guidance. Done when: commands name actual artifacts and runtime limits, with no fabricated releases or contacts (`docs/building.md`, `docs/library.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `.github/ISSUE_TEMPLATE/`, `.github/pull_request_template.md`).
+- [x] Update artifact CI and create local development packages. Done when: target manifests match packaged bytes; local tests and future remote CI are described separately (`.github/workflows/build.yml` and `scripts/package.py`).
+- [x] Commit: `"docs: present RasterFold and its cross-platform developer workflow"`
 
 **Test checkpoint:** `python3 scripts/package.py --target all` verifies all artifact hashes; `python3 tests/test_artifacts.py` validates the declared ABI and native consumers. Visual inspection and local-link checks are recorded in `docs/wsl-migration-audit.md`; these do not substitute for runtime tests or remote CI.
 

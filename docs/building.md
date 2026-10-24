@@ -4,7 +4,7 @@ RasterFold builds a command-line codec, shared library and static library for Wi
 
 ## Linux and WSL
 
-Use an x86-64 Linux host. Install Python 3.12 or later with venv support, Git, native C development headers and libraries (Ubuntu's `build-essential`), and PowerShell 7 for the existing Claude Stop-hook tests. These host prerequisites are distinct from the downloaded compiler. The codec itself needs no Python or PowerShell at runtime.
+Use an x86-64 Linux host. Install Python 3.12 or later with venv support, Git, native C development headers and libraries (Ubuntu's `build-essential`), and PowerShell 7 (`pwsh`, for PowerShell gate and automation wrappers). These host prerequisites are distinct from the downloaded compiler. The codec itself needs no Python or PowerShell at runtime.
 
 ```bash
 python3 tools/provision.py
@@ -36,7 +36,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1
 python scripts/check-all.py
 ```
 
-The Windows codec remains freestanding. Its executable imports only `KERNEL32.dll` and `SHELL32.dll`; the DLL imports only `KERNEL32.dll`. The library's caller may use a normal C or C++ runtime. PowerShell 7 must also be installed to run the repository's current hook definitions; `powershell.exe` remains supported for the build/provision wrappers.
+The Windows codec remains freestanding. Its executable imports only `KERNEL32.dll` and `SHELL32.dll`; the DLL imports only `KERNEL32.dll`. The library's caller may use a normal C or C++ runtime. PowerShell 7 (`pwsh`) or Windows PowerShell (`powershell.exe`) runs the build, provision, and gate wrappers.
 
 From WSL, `python3 scripts/windows.py tests/test_correctness.py` runs the Windows Python installation against the Windows codec. Windows Python and Pillow are separate from the Linux venv. WSL interop must be enabled. These are Windows runtime tests, not Linux execution of a PE binary.
 
@@ -48,7 +48,7 @@ python3 scripts/windows.py tests/benchmark.py -n 3
 python3 scripts/windows.py tests/measure_final.py
 ```
 
-The last two commands write their recorded benchmark results; run them on a quiet machine under the research protocol. The migration audit only smoke-tests the measurement helpers and one research harness input, without replacing historical comparison results. Codex lifecycle and Linux installer tests run only in the WSL/Linux full gate suite; the native Windows suite covers Windows tooling.
+The last two commands write their recorded benchmark results; run them on a quiet machine under the research protocol. The migration audit only smoke-tests the measurement helpers and one research harness input, without replacing historical comparison results. Linux toolchain installer tests run only in the WSL/Linux full gate suite; the native Windows suite covers Windows tooling.
 
 ## Outputs and Android
 

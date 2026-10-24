@@ -37,7 +37,7 @@ source .venv/bin/activate
 python3 scripts/check-all.py --all-targets
 ```
 
-Outputs land in `bin/<target>/`, organized into `bin/` for executables and Windows DLLs, `lib/` for libraries, `include/` for headers and `symbols/` for Windows PDBs. The compiler and SDK downloads stay inside the repository and are not committed. Python, Git, PowerShell 7 for the existing Claude hook, and the native Linux C development headers are host prerequisites. [The build guide](docs/building.md) covers Windows, individual targets, verification and packaging.
+Outputs land in `bin/<target>/`, organized into `bin/` for executables and Windows DLLs, `lib/` for libraries, `include/` for headers and `symbols/` for Windows PDBs. The compiler and SDK downloads stay inside the repository and are not committed. Python, Git, PowerShell 7 (`pwsh`, for PowerShell gate and automation wrappers), and the native Linux C development headers are host prerequisites. [The build guide](docs/building.md) covers Windows, individual targets, verification and packaging.
 
 ## Encode, decode, inspect
 

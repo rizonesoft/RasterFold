@@ -45,7 +45,7 @@ def main():
                 path.chmod(path.stat().st_mode | 0o111)
         for command in ('git','pwsh'):
             if not shutil.which(command):
-                raise ValueError(f'{command} is required for repository gates (pwsh serves the existing Claude hook)')
+                raise ValueError(f'{command} is required for repository gates (pwsh serves the PowerShell gate and automation wrappers)')
         python = ROOT/'.venv/bin/python'
         subprocess.run([str(python) if python.is_file() else sys.executable, '-c', 'import sys, PIL\nif sys.version_info < (3, 11):\n    raise SystemExit("Python 3.11+ is required")\nprint("Pillow", PIL.__version__)'], check=True)
         if not Path('/usr/include/stdio.h').is_file():

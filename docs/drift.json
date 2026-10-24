@@ -171,7 +171,7 @@
         "scripts/build.py": "c56a6554b5956a1f3469b8436d8432b6c4692ba0c6e43dd02aa59d82c83fd3a0",
         "scripts/package.py": "b9ef31c48c2c5f7dfdcb22a7b3e5bd1a14c36b84d5d3887f17646bf47eaad199",
         "scripts/check-all.py": "9445bd7167f80afdd5e9c558defbfea1ec28cd69600d59a794d0addf2fc28d8c",
-        "README.md": "a951ecf34ea9a295463e97ec97f5de02895943ec4a7cdc9f64585d3f3791a0f8"
+        "README.md": "3455c54eb81acc4f418fada24889bdb66475d7a5339c9ffc84f906794c8ef218"
       }
     },
     "AGENTS.md": {
@@ -191,7 +191,7 @@
         "scripts/package.py": "b9ef31c48c2c5f7dfdcb22a7b3e5bd1a14c36b84d5d3887f17646bf47eaad199",
         "scripts/check-all.py": "9445bd7167f80afdd5e9c558defbfea1ec28cd69600d59a794d0addf2fc28d8c",
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
-        "docs/building.md": "2eb8e9c55155cc3978984e6d8a715898e169a589bde28a63159a3b621c98afce"
+        "docs/building.md": "968395713c92b23e8937eb81fff1d8c5a1edeca1684cb5e24e1a7c12fc717038"
       }
     },
     "docs/library.md": {
