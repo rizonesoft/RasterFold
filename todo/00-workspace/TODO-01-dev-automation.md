@@ -41,7 +41,7 @@ track: W1
 - `git ls-files -s tools/githooks/pre-commit tools/githooks/commit-msg` prints mode `100755` for both, and a provisioned clone refuses a commit whose staged tree fails `validate`.
 - The first push of `main` has a green `plan-gates` run and a green `build` run, quoted by URL in this file's stamp.
 - `scripts/check-all.py` and its PowerShell wrapper run target-aware clang-tidy over Windows/POSIX and x64/ARM64 compilation databases; the gate fails on a warning count above `todo/.tidy-baseline`.
-- One review slot of each kind has run against a probe and its record is committed, so the first real stamp does not discover a broken panel.
+- Each review stage (`--kind plan`, `--kind completion`, and `--kind round`) on the `agy -> astra` route has run against a probe with its parsed evidence (`candidate`, `reviewer`, `model`, `effort`, `lenses`, `lines`, `digest`, and verdict) committed in §4 and its scratch record removed after read-back, while every real stamp commits its review record under `docs/reviews/`.
 - `COVERAGE_FLOOR` equals the number of `Current state` blocks carrying a claim on the day §5 ships.
 
 **Adjacency:** all=not-applicable (repository plumbing: gates, hooks, and CI with no user-facing file, option, or output)
@@ -112,14 +112,22 @@ The build already fails on any compiler warning (`-Werror` in `scripts/build.py`
 > **Review:** `docs/reviews/d00-t01-s3.json`
 ## 4. Prove the Review Panel End to End
 
-**Corrected 2026-10-24:** With the operator decision to consolidate on Antigravity (`agy`) as the sole writer and GPT-6 Astra (`gpt-6-astra` via `codex`) as the sole reviewer through `.conclave/reviewers.toml` and `scripts/review-dispatch.py`, this section proves the `agy -> astra` route and the 3-stage adaptive schedule (`--kind plan`, `--kind completion`, and `--round 1`) end to end instead of the retired `.conclave/panel.toml` and `scripts/panel_slots.py`.
+> **Started:** 2026-10-24T23:44:00Z
 
-- [ ] Run `python3 scripts/review-dispatch.py --check-pin --json` and a live probe `python3 scripts/review-dispatch.py --writer agy --kind round --candidate <sha> --record <scratch-record> --prompt <probe-prompt>` against the §1 commit into a scratch record (then removed). Done when: `--check-pin` exits 0 and the live probe returns a valid `VERDICT:` / `OVERALL:` review block from `astra` (`gpt-6-astra`). Cheaper substitute: `codex --version`, which proves the CLI exists and nothing else.
-- [ ] Verify `python3 scripts/review-dispatch.py --list-rounds --json` and `python3 scripts/todo-runs.py --check` exit 0 with 0 unreadable files. Done when: both exit 0.
-- [ ] Verify `python3 -m unittest discover -s scripts/tests -v` passes all `test_review_dispatch.py` and `test_automations.py` cases. Done when: the suite exits 0.
-- [ ] Commit: `"workspace: prove the review dispatcher against a probe"`
+**Corrected 2026-10-24:** With the operator decision to consolidate on Antigravity (`agy`) as the sole writer and GPT-6 Astra (`gpt-6-astra` via `codex`) as the sole reviewer through `.conclave/reviewers.toml` and `scripts/review-dispatch.py`, this section proves the `agy -> astra` route and the 3-stage adaptive schedule (`--kind plan`, `--kind completion`, and `--kind round`) end to end instead of the retired `.conclave/panel.toml` and `scripts/panel_slots.py`.
 
-**Test checkpoint:** `python3 scripts/review-dispatch.py --check-pin --json`, `python3 scripts/todo-runs.py --check`, and `python3 -m unittest discover -s scripts/tests -v` exit 0; the live probe's reviewer/model/verdict summary is quoted.
+- [x] Run `python3 scripts/review-dispatch.py --check-pin --json` and a live 3-stage probe (`--kind plan --candidate 264158d8f4f8d74417d27a50bb288f8c0138958d`, `--kind completion --candidate 264158d8f4f8d74417d27a50bb288f8c0138958d`, and `--kind round` naming `264158d8f4f8d74417d27a50bb288f8c0138958d` in the prompt) into a scratch record `build/reviews/probe/records/probe.md`, read it back with `python3 scripts/review-dispatch.py --list-rounds --records build/reviews/probe/records --json`, commit the parsed evidence below, and remove the scratch record. Done when: `--check-pin` exits 0, all three stages return valid verdicts from `astra` (`gpt-6-astra`), and `--list-rounds --records` parses all three sections with 0 unreadable files. Cheaper substitute: `codex --version`, which proves the CLI exists and nothing else.
+- [x] Verify `python3 scripts/review-dispatch.py --list-rounds --json` and `python3 scripts/todo-runs.py --check` exit 0 with 0 unreadable files. Done when: both exit 0.
+- [x] Verify `python3 -m unittest discover -s scripts/tests -v` (Linux) and `python3 scripts/windows.py` on `scripts/tests/test_review_dispatch.py`, `scripts/tests/test_automations.py`, and `scripts/tests/test_intelligence.py` (Windows) pass all cases. Done when: both Linux and Windows test runs exit 0.
+- [x] Commit: `"workspace: prove the review dispatcher against a probe"`
+
+**Test checkpoint:** `python3 scripts/review-dispatch.py --check-pin --json`, `python3 scripts/review-dispatch.py --list-rounds --json`, `python3 scripts/todo-runs.py --check`, `python3 -m unittest discover -s scripts/tests -v`, and the Windows test equivalents exit 0; the 3-stage live probe's candidate, reviewer, model, effort, lenses, line count, digest, and verdict summary is quoted and committed here after scratch-record read-back.
+
+**Checkpoint output (2026-10-24):** `python3 scripts/review-dispatch.py --check-pin --json` exited 0 (`"ok": true`, `"routes": {"agy": ["astra"]}`, `"reviewers": {"astra": {"cli": "codex", "model": "gpt-6-astra", "effort": "medium"}}`, `"severity_stop_after": 0`, `"clis": {"codex": true}`). The 3-stage live probe against `D00 T01 §1` commit `264158d8f4f8d74417d27a50bb288f8c0138958d` into `build/reviews/probe/records/probe.md` ran all three passes and was read back cleanly by `python3 scripts/review-dispatch.py --list-rounds --records build/reviews/probe/records --json` (`"unreadable": []`) before `build/reviews/probe/records` was removed:
+1. `--kind plan --candidate 264158d8f4f8d74417d27a50bb288f8c0138958d`: `run=2026-10-24T23:47:28Z`, `reviewer=astra`, `model=gpt-6-astra`, `cli=codex`, `writer=agy`, `effort=medium`, `lenses=["plan"]`, `lines=9`, `digest=3573787d5513da14`, verdict `HIGHEST: P2` / `PLAN: gaps` / `OVERALL: needs-attention`.
+2. `--kind completion --candidate 264158d8f4f8d74417d27a50bb288f8c0138958d`: `run=2026-10-24T23:48:04Z`, `reviewer=astra`, `model=gpt-6-astra`, `cli=codex`, `writer=agy`, `effort=medium`, `lenses=null`, `lines=7`, `digest=ef8ca9140b6a3493`, verdict `COMPLETION: complete`.
+3. `--kind round` (Round 1 on `264158d8f4f8d74417d27a50bb288f8c0138958d`): `run=2026-10-24T23:49:15Z`, `reviewer=astra`, `model=gpt-6-astra`, `cli=codex`, `writer=agy`, `effort=high`, `lenses=["adversarial", "integration"]`, `lines=12`, `digest=74adf3662c008596`, verdict `HIGHEST: none` / `OVERALL: approve`.
+`python3 scripts/review-dispatch.py --list-rounds --json` exited 0 (`"unreadable": []`); `python3 scripts/todo-runs.py --check` exited 0 (`todo-runs: 37 run record(s) current`); `python3 -m unittest discover -s scripts/tests -v` exited 0 (`Ran 104 tests in 33.682s`, `OK (skipped=1)`); and Windows test runs via `scripts/windows.py` (`test_review_dispatch.py` `Ran 69 tests, OK (skipped=1)`, `test_automations.py` `Ran 30 tests in 1.657s, OK (skipped=3)`, and `test_intelligence.py` `Ran 5 tests in 1.790s, OK`) all exited 0.
 
 ## 5. Raise the Claims Coverage Floor
 
