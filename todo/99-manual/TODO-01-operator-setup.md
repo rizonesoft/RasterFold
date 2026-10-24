@@ -44,7 +44,7 @@ track: OP1
 
 | Order | Section | Deliverable                                   | Depends On | Status |
 | :---: | :-----: | --------------------------------------------- | ---------- | :----: |
-|   1   |   §1    | Remove the retired run-guard folders          | --         |  [ ]   |
+|   1   |   §1    | Remove the retired run-guard folders          | --         |  [x]   |
 |   2   |   §2    | Log in the GitHub CLI                         | --         |  [ ]   |
 |   3   |   §3    | Approve format version 3                      | --         |  [x]   |
 |   4   |   §4    | The missed-milestone policy                   | --         |  [x]   |
@@ -68,6 +68,8 @@ The previous developer's campaign tooling left a lock folder and a run guard in 
 
 **Test checkpoint:** `git status --short --ignored .grok guard` prints nothing; `python scripts/todo-claims.py` exits 0 with the claims updated.
 
+> **Verified:** 2026-10-24 | §1 | 865c03fdbd24ec5450e8da269603db0f6ea79462
+> **Review:** `docs/reviews/d99-t01-s1.json`
 ## 2. Log In the GitHub CLI
 
 **Requires:** operator -- the login runs in the owner's browser session; a clone without usable existing authentication needs an interactive account enrollment; reuse authorized stored credentials before requesting any new login.
