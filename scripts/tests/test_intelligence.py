@@ -233,6 +233,45 @@ class IntelligenceTests(unittest.TestCase):
                 {"schema": 1, "family": "claude", "next_id": True, "entries": [], "archive": []},
                 {"schema": 1, "family": "claude", "next_id": 2, "entries": [{**good_entry, "key": "0" * 64}], "archive": []},
                 {"schema": 1, "family": "claude", "next_id": 2, "entries": [{**good_entry, "status": "applied"}], "archive": []},
+                {
+                    "schema": 1,
+                    "family": "claude",
+                    "next_id": 2,
+                    "entries": [
+                        {
+                            **good_entry,
+                            "status": "applied",
+                            "history": [{"action": "defer", "at": "2026-10-24T00:00:00Z", "reason": "only deferred"}],
+                        }
+                    ],
+                    "archive": [],
+                },
+                {
+                    "schema": 1,
+                    "family": "claude",
+                    "next_id": 2,
+                    "entries": [
+                        {
+                            **good_entry,
+                            "status": "open",
+                            "history": [{"action": "defer", "at": "2026-10-24T00:00:00Z", "reason": "wrong status"}],
+                        }
+                    ],
+                    "archive": [],
+                },
+                {
+                    "schema": 1,
+                    "family": "claude",
+                    "next_id": 2,
+                    "entries": [
+                        {
+                            **good_entry,
+                            "status": "open",
+                            "history": [{"action": "recurrence", "at": "2026-10-24T00:00:00Z", "previous_id": 1}],
+                        }
+                    ],
+                    "archive": [],
+                },
                 {"schema": 1, "family": "claude", "next_id": 2, "entries": [], "archive": [good_entry]},
                 {
                     "schema": 1,
@@ -293,6 +332,16 @@ class IntelligenceTests(unittest.TestCase):
                     intelligence.update(
                         root, "claude", "defer", ident=1, reason="blocked by unreadable build"
                     )
+            self.assertEqual(reg_path.read_bytes(), baseline)
+
+            # _Lock.__enter__ releases the in-process thread lock if os.makedirs fails, so a subsequent
+            # disposition in the same process still succeeds once the directory is creatable.
+            with mock.patch("campaign_guard.os.makedirs", side_effect=OSError("makedirs failed")):
+                with self.assertRaisesRegex(OSError, "makedirs failed"):
+                    intelligence.update(
+                        root, "claude", "defer", ident=1, reason="blocked by makedirs failure"
+                    )
+            self.assertFalse(campaign_guard._Lock(str(root)).thread_lock.locked())
             self.assertEqual(reg_path.read_bytes(), baseline)
 
             # Held lock refuses disposition and leaves register untouched.

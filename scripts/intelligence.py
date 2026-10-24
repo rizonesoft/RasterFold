@@ -23,34 +23,62 @@ SENTINELS = (
 )
 
 
-def _validate_history_entry(entry: object) -> None:
-    if not isinstance(entry, dict):
-        raise ValueError("malformed disposition history entry")
-    action = entry.get("action")
-    if action == "recurrence":
-        if (
-            set(entry) != {"action", "previous_id", "at"}
-            or type(entry["previous_id"]) is not int
-            or entry["previous_id"] <= 0
-            or not isinstance(entry["at"], str)
-            or not entry["at"].strip()
-        ):
-            raise ValueError("malformed recurrence history entry")
-        return
-    if action in ("apply", "reject", "defer", "archive"):
-        if (
-            set(entry) != {"action", "at", "reason", "commit"}
-            or not isinstance(entry["at"], str)
-            or not entry["at"].strip()
-            or not isinstance(entry["reason"], str)
-            or not entry["reason"].strip()
-            or not isinstance(entry["commit"], str)
-        ):
+def _validate_history(row: dict, bucket_name: str) -> None:
+    history = row.get("history")
+    if not isinstance(history, list):
+        raise ValueError("missing disposition history")
+    state = "open"
+    archived = False
+    for idx, entry in enumerate(history):
+        if not isinstance(entry, dict):
             raise ValueError("malformed disposition history entry")
-        if action == "apply" and not entry["commit"].strip():
-            raise ValueError("apply history entry requires a commit")
-        return
-    raise ValueError("unknown history action")
+        if archived:
+            raise ValueError("no history transitions allowed after archive")
+        action = entry.get("action")
+        if action == "recurrence":
+            if (
+                idx != 0
+                or set(entry) != {"action", "previous_id", "at"}
+                or type(entry["previous_id"]) is not int
+                or not 0 < entry["previous_id"] < row["id"]
+                or not isinstance(entry["at"], str)
+                or not entry["at"].strip()
+            ):
+                raise ValueError("malformed recurrence history entry")
+            continue
+        if action in ("apply", "reject", "defer", "archive"):
+            if (
+                set(entry) != {"action", "at", "reason", "commit"}
+                or not isinstance(entry["at"], str)
+                or not entry["at"].strip()
+                or not isinstance(entry["reason"], str)
+                or not entry["reason"].strip()
+                or not isinstance(entry["commit"], str)
+            ):
+                raise ValueError("malformed disposition history entry")
+            if action == "apply":
+                if not entry["commit"].strip():
+                    raise ValueError("apply history entry requires a commit")
+            elif entry["commit"] != "":
+                raise ValueError(f"{action} history entry must not carry a commit")
+            if action in ("apply", "reject", "defer"):
+                if state not in ("open", "deferred"):
+                    raise ValueError("closed entries are immutable except for archiving")
+                state = {"apply": "applied", "reject": "rejected", "defer": "deferred"}[action]
+            else:
+                if bucket_name != "archive" or state not in ("applied", "rejected"):
+                    raise ValueError("only resolved entries can be archived")
+                archived = True
+            continue
+        raise ValueError("unknown history action")
+    if bucket_name == "archive":
+        if row["status"] not in ("applied", "rejected"):
+            raise ValueError("only resolved entries can be archived")
+        if not archived or state != row["status"]:
+            raise ValueError("archived entries require a closing archive history record matching status")
+    else:
+        if state != row["status"]:
+            raise ValueError("intelligence status does not match disposition history")
 
 
 def read_register(root: Path, family: str) -> dict:
@@ -94,21 +122,11 @@ def read_register(root: Path, family: str) -> dict:
             ).hexdigest()
             if row["key"] != expected_key:
                 raise ValueError(f"intelligence key mismatch in {family}")
-            if not isinstance(row["history"], list):
-                raise ValueError("missing disposition history")
-            for hist in row["history"]:
-                _validate_history_entry(hist)
+            _validate_history(row, bucket_name)
             if bucket_name == "entries":
                 if row["key"] in active_keys:
                     raise ValueError(f"duplicate active intelligence key in {family}")
                 active_keys.add(row["key"])
-                if row["status"] != "open" and not row["history"]:
-                    raise ValueError("missing disposition history")
-            else:
-                if row["status"] not in ("applied", "rejected"):
-                    raise ValueError("only resolved entries can be archived")
-                if not row["history"] or row["history"][-1].get("action") != "archive":
-                    raise ValueError("archived entries require a closing archive history record")
     return data
 
 

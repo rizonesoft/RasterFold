@@ -138,21 +138,24 @@ class _Lock:
         import time
         if not self.thread_lock.acquire(timeout=self.wait):
             raise GuardError(f"the guard is locked by another thread ({self.path}); retry")
-        os.makedirs(os.path.dirname(self.path), exist_ok=True)
         try:
+            os.makedirs(os.path.dirname(self.path), exist_ok=True)
             self.fd = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o644)
-        except OSError:
+            deadline = time.monotonic() + self.wait
+            while not self._try():
+                if time.monotonic() >= deadline:
+                    raise GuardError(f"the guard is locked by another change ({self.path}); retry")
+                time.sleep(0.05)
+            return self
+        except BaseException:
+            if self.fd is not None:
+                try:
+                    os.close(self.fd)
+                except OSError:
+                    pass
+                self.fd = None
             self.thread_lock.release()
             raise
-        deadline = time.monotonic() + self.wait
-        while not self._try():
-            if time.monotonic() >= deadline:
-                os.close(self.fd)
-                self.fd = None
-                self.thread_lock.release()
-                raise GuardError(f"the guard is locked by another change ({self.path}); retry")
-            time.sleep(0.05)
-        return self
 
     def __exit__(self, *exc):
         if self.fd is not None:
