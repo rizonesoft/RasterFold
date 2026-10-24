@@ -88,16 +88,22 @@ Use pinned, checksum-verified LLVM/MinGW and Android NDK installations beneath `
 > **Review:** `docs/reviews/d00-t04-s1.json`
 ## 2. Portable Platform and SIMD Boundary
 
+> **Started:** 2026-10-24T22:40:39Z
+
 **Job:** A caller can export format files between targets. Decoding can undo encoding. The codec can enforce an output policy that protects existing destination files.
 
 Keep the format frozen at version 2. Add Linux and Android platform support and an integer-equivalent portable SIMD path. Retain Windows file safety, and on POSIX publish an exclusive temporary file without replacing an existing destination. Runtime support is distinct from cross-compilation.
 
-- [ ] Add native POSIX file, timing and suspended-worker support. Done when: correctness and file refusal tests pass on Linux.
-- [ ] Make ARM builds preserve all arithmetic and thread-count output. Done when: portable arithmetic passes the frozen oracle cases and both Android ABIs build.
-- [ ] Run Windows and Linux correctness, malformed-input fuzz and artifact inspection. Done when: the frozen known-answer bytes are unchanged; missing Android runtime proof is named explicitly.
-- [ ] Commit: `"codec: support Linux and Android without changing fold bytes"`
+- [x] Add native POSIX file, timing and suspended-worker support. Done when: correctness and file refusal tests pass on Linux.
+- [x] Make ARM builds preserve all arithmetic and thread-count output. Done when: portable arithmetic passes the frozen oracle cases and both Android ABIs build.
+- [x] Run Windows and Linux correctness, malformed-input fuzz and artifact inspection. Done when: the frozen known-answer bytes are unchanged; missing Android runtime proof is named explicitly.
+- [x] Commit: `"codec: support Linux and Android without changing fold bytes"`
+
+**Implementation evidence:** The POSIX platform layer (`src/sys_posix.c`), shared platform accounting (`src/platform.c`), integer-equivalent portable SIMD path (`src/simd.h`, exercised on x64 via `-DRF_PORTABLE_SIMD` / `scripts/build.py --portable`), POSIX CLI entry (`src/main.c`), platform header declarations (`src/rf.h`), and POSIX file-safety and artifact tests (`tests/test_artifacts.py`, `tests/test_api.py`, `tests/test_correctness.py`) shipped in `2c89e2e313d552ffdbcb167a2f9f67f1fb0414ac`.
 
 **Test checkpoint:** `python3 tests/test_correctness.py` and `python3 tests/fuzz_decode.py 300 1` exit zero on Linux; Windows equivalents run through `scripts/windows.py`; `python3 scripts/build.py --target all` builds all configured targets.
+
+**Checkpoint output (2026-10-24):** `python3 scripts/build.py --target all` exited 0 and built `linux-x64`, `windows-x64`, `android-arm64`, and `android-x64`; `python3 scripts/build.py --portable` and `python3 scripts/windows.py scripts/build.py --portable < /dev/null` built `linux-x64-portable` and `windows-x64-portable` with `-DRF_PORTABLE_SIMD`; `python3 tests/test_correctness.py` (`33 passed, 0 failed`), `RF_TEST_EXE=bin/linux-x64-portable/bin/rasterfold python3 tests/test_correctness.py` (`33 passed, 0 failed`), `python3 tests/fuzz_decode.py 300 1` (`300 mutated files: 293 rejected, 7 still valid, no crash, hang or mismatch`), `python3 tests/test_api.py` (`8 tests OK`), and `python3 tests/test_artifacts.py` (`4 tests OK`, including `test_no_clobber_race_symlinks_and_fifo` and `test_publish_fallback_and_post_publish_errors`) all exited 0 on Linux; Windows equivalents via `scripts/windows.py` (`tests/test_correctness.py` `33 passed, 0 failed` for both SSE4.1 and `windows-x64-portable`, `tests/fuzz_decode.py 300 1` `300 mutated files: 293 rejected, 7 still valid, no crash, hang or mismatch`, `tests/test_api.py` `8 tests OK`, and `tests/test_artifacts.py` `4 tests OK, skipped=2`) all exited 0. Android ARM64 and Android x64 artifacts (`bin/rasterfold`, `lib/librasterfold.so`, `lib/librasterfold.a`) were cross-compiled and ELF-inspected (`llvm-nm`, `llvm-readelf`, `build.json` SHA-256 verification), not executed on an Android device or emulator (missing Android runtime proof).
 
 **Freeze check:** no new method, version, predictor, constant or acceptance rule; every emitted byte must match the independent oracle and existing known-answer file.
 
