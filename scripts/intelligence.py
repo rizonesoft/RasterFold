@@ -81,13 +81,7 @@ def _validate_history(row: dict, bucket_name: str) -> None:
             raise ValueError("intelligence status does not match disposition history")
 
 
-def read_register(root: Path, family: str) -> dict:
-    if family not in FAMILIES:
-        raise ValueError(f"unknown intelligence family: {family}")
-    path = Path(root) / ".intelligence" / family / "register.json"
-    if path.is_symlink() or not path.is_file():
-        raise ValueError(f"missing intelligence register for {family}")
-    data = json.loads(path.read_text(encoding="utf-8"))
+def _validate_register_data(data: dict, family: str) -> dict:
     if (
         not isinstance(data, dict)
         or set(data) != {"schema", "family", "next_id", "entries", "archive"}
@@ -130,7 +124,18 @@ def read_register(root: Path, family: str) -> dict:
     return data
 
 
+def read_register(root: Path, family: str) -> dict:
+    if family not in FAMILIES:
+        raise ValueError(f"unknown intelligence family: {family}")
+    path = Path(root) / ".intelligence" / family / "register.json"
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f"missing intelligence register for {family}")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return _validate_register_data(data, family)
+
+
 def save_register(root: Path, family: str, data: dict) -> None:
+    _validate_register_data(data, family)
     path = Path(root) / ".intelligence" / family / "register.json"
     temp = path.with_name(path.name + f".{os.getpid()}.tmp")
     try:
@@ -197,6 +202,8 @@ def update(
         data = read_register(root, family)
         now = datetime.now(timezone.utc).isoformat()
         if action == "capture":
+            if ident is not None or reason.strip() or commit.strip():
+                raise ValueError("capture does not accept --id, --reason or --commit")
             if not all(x.strip() for x in (title, evidence, proposal, owner)):
                 raise ValueError("capture requires title, evidence, proposal and owner")
             key = hashlib.sha256((title.strip() + "\n" + evidence.strip()).encode("utf-8")).hexdigest()
@@ -220,25 +227,30 @@ def update(
             data["next_id"] += 1
             data["entries"].append(row)
         else:
+            if any(x.strip() for x in (title, evidence, proposal, owner)):
+                raise ValueError(f"{action} does not accept --title, --evidence, --proposal or --owner")
             row = next((e for e in data["entries"] if e["id"] == ident), None)
             if row is None:
                 raise ValueError("entry is not in the active register")
             if not reason.strip():
                 raise ValueError("record a reason and its supporting evidence")
             if action == "archive":
+                if commit.strip():
+                    raise ValueError("archive does not accept --commit")
                 if row["status"] not in ("applied", "rejected"):
                     raise ValueError("open or deferred intelligence cannot be archived")
+                commit = ""
                 data["entries"].remove(row)
                 data["archive"].append(row)
             elif action in ("apply", "reject", "defer"):
                 if row["status"] not in ("open", "deferred"):
                     raise ValueError("closed entries are immutable except for archiving")
                 if action == "apply":
-                    if not commit:
+                    if not commit.strip():
                         raise ValueError("applied intelligence requires a reachable implementation commit")
                     try:
                         commit = subprocess.check_output(
-                            ["git", "--no-replace-objects", "rev-parse", "--verify", commit + "^{commit}"],
+                            ["git", "--no-replace-objects", "rev-parse", "--verify", commit.strip() + "^{commit}"],
                             cwd=root,
                             text=True,
                             stderr=subprocess.DEVNULL,
@@ -252,6 +264,10 @@ def update(
                         )
                     except subprocess.SubprocessError as exc:
                         raise ValueError("applied intelligence requires a reachable implementation commit") from exc
+                else:
+                    if commit.strip():
+                        raise ValueError(f"{action} does not accept --commit")
+                    commit = ""
                 row["status"] = {"apply": "applied", "reject": "rejected", "defer": "deferred"}[action]
             else:
                 raise ValueError("unknown intelligence action")

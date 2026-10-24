@@ -167,7 +167,7 @@ class IntelligenceTests(unittest.TestCase):
             self.assertEqual(reg_path.read_bytes(), before_bad_archive)
 
             before_bad_apply = reg_path.read_bytes()
-            with self.assertRaises( (ValueError, subprocess.SubprocessError) ):
+            with self.assertRaises((ValueError, subprocess.SubprocessError)):
                 intelligence.update(
                     root,
                     "claude",
@@ -175,6 +175,36 @@ class IntelligenceTests(unittest.TestCase):
                     ident=1,
                     commit="deadbeef" * 5,
                     reason="unreachable commit",
+                )
+            for bad_action in ("defer", "reject"):
+                with self.assertRaisesRegex(ValueError, f"{bad_action} does not accept --commit"):
+                    intelligence.update(
+                        root,
+                        "claude",
+                        bad_action,
+                        ident=1,
+                        commit=head,
+                        reason="incompatible commit",
+                    )
+            with self.assertRaisesRegex(ValueError, "capture does not accept --id, --reason or --commit"):
+                intelligence.update(
+                    root,
+                    "claude",
+                    "capture",
+                    title="T",
+                    evidence="E",
+                    proposal="P",
+                    owner="D00 T04 §4",
+                    commit=head,
+                )
+            with self.assertRaisesRegex(ValueError, "defer does not accept --title, --evidence, --proposal or --owner"):
+                intelligence.update(
+                    root,
+                    "claude",
+                    "defer",
+                    ident=1,
+                    reason="bad extra title",
+                    title="Unexpected",
                 )
             self.assertEqual(reg_path.read_bytes(), before_bad_apply)
 
@@ -186,6 +216,18 @@ class IntelligenceTests(unittest.TestCase):
                 reason="reproduced and found false premise",
             )
             self.assertEqual(rejected["status"], "rejected")
+
+            before_bad_archive_commit = reg_path.read_bytes()
+            with self.assertRaisesRegex(ValueError, "archive does not accept --commit"):
+                intelligence.update(
+                    root,
+                    "claude",
+                    "archive",
+                    ident=1,
+                    commit=head,
+                    reason="incompatible commit on archive",
+                )
+            self.assertEqual(reg_path.read_bytes(), before_bad_archive_commit)
 
             archived = intelligence.update(
                 root,
@@ -241,7 +283,14 @@ class IntelligenceTests(unittest.TestCase):
                         {
                             **good_entry,
                             "status": "applied",
-                            "history": [{"action": "defer", "at": "2026-10-24T00:00:00Z", "reason": "only deferred"}],
+                            "history": [
+                                {
+                                    "action": "defer",
+                                    "at": "2026-10-24T00:00:00Z",
+                                    "reason": "only deferred",
+                                    "commit": "",
+                                }
+                            ],
                         }
                     ],
                     "archive": [],
@@ -254,7 +303,14 @@ class IntelligenceTests(unittest.TestCase):
                         {
                             **good_entry,
                             "status": "open",
-                            "history": [{"action": "defer", "at": "2026-10-24T00:00:00Z", "reason": "wrong status"}],
+                            "history": [
+                                {
+                                    "action": "defer",
+                                    "at": "2026-10-24T00:00:00Z",
+                                    "reason": "wrong status",
+                                    "commit": "",
+                                }
+                            ],
                         }
                     ],
                     "archive": [],
