@@ -1,0 +1,86 @@
+{
+  "ref": "D00 T01 \u00a74",
+  "title": "Prove the Review Panel End to End",
+  "implementation_sha": "63af0bcdc211d4e5567d215ed5ac9c2ac70bfdfc",
+  "date": "2026-10-25",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/00-workspace/D00-T01-s4.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 scripts/review-dispatch.py --check-pin --json -> ok: true, agy -> astra",
+    "python3 scripts/review-dispatch.py --list-rounds --json -> unreadable: []",
+    "python3 scripts/todo-runs.py --check -> 2 runs, 5 rounds: all resolve, all covered, counts agree",
+    "python3 -m unittest discover -s scripts/tests -v -> Ran 104 tests, OK (skipped=1)"
+  ],
+  "completion": {
+    "report": "docs/reviews/00-workspace/D00-T01-s4.md",
+    "verdict": "completed",
+    "candidate": "af829db2cda03cb4142f4f18494be984b61a7cf4",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/00-workspace/D00-T01-s4.md",
+    "candidate": "53404f7dbb4f87b5ef43ae602969ef56c3ebb6c9",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}

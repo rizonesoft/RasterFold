@@ -55,7 +55,7 @@ track: W1
 |   1   |   §1    | Commit the port and wire the commit hook      | --         |  [x]   |
 |   2   |   §2    | First push: CI green and read back            | §1, D99 T01 §2 |  [ ]   |
 |   3   |   §3    | The static analysis gate                      | §1         |  [x]   |
-|   4   |   §4    | Prove the review panel end to end             | §1, §6     |  [ ]   |
+|   4   |   §4    | Prove the review panel end to end             | §1, §6     |  [x]   |
 |   5   |   §5    | Raise the claims coverage floor               | §1         |  [ ]   |
 |   6   |   §6    | Claude review rounds through the reviewer pin | §1         |  [x]   |
 | 7 | §7 | The campaign guard on a legacy console encoding | -- | [x] |
@@ -129,6 +129,8 @@ The build already fails on any compiler warning (`-Werror` in `scripts/build.py`
 3. `--kind round` (Round 1 on `264158d8f4f8d74417d27a50bb288f8c0138958d`): `run=2026-10-24T23:49:15Z`, `reviewer=astra`, `model=gpt-6-astra`, `cli=codex`, `writer=agy`, `effort=high`, `lenses=["adversarial", "integration"]`, `lines=12`, `digest=74adf3662c008596`, verdict `HIGHEST: none` / `OVERALL: approve`.
 `python3 scripts/review-dispatch.py --list-rounds --json` exited 0 (`"unreadable": []`); `python3 scripts/todo-runs.py --check` exited 0 (`2 runs, 5 rounds: all resolve, all covered, counts agree`); `python3 -m unittest discover -s scripts/tests -v` exited 0 (`Ran 104 tests in 33.682s`, `OK (skipped=1)`); and Windows test runs via `scripts/windows.py` (`test_review_dispatch.py` `Ran 69 tests, OK (skipped=1)`, `test_automations.py` `Ran 30 tests in 1.657s, OK (skipped=3)`, and `test_intelligence.py` `Ran 5 tests in 1.790s, OK`) all exited 0.
 
+> **Verified:** 2026-10-25 | §4 | 63af0bcdc211d4e5567d215ed5ac9c2ac70bfdfc
+> **Review:** `docs/reviews/d00-t01-s4.json`
 ## 5. Raise the Claims Coverage Floor
 
 `COVERAGE_FLOOR` is the number of `Current state` blocks that must carry a claim. It is 31 after the 2026-09-30 measurement of 31/31 covered blocks; remeasure before raising it further.
