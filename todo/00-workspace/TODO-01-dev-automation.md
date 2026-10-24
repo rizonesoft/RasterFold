@@ -64,16 +64,20 @@ track: W1
 
 ## 1. Commit the Port and Wire the Commit Hook
 
+> **Started:** 2026-10-24T20:16:25Z
+
 The hook is the only gate that runs before a commit exists, so a tree that fails `validate` never reaches the remote. It must stay a POSIX shell script with LF endings, because Git for Windows runs hooks under its own `sh`, and it must be recorded executable, because Windows does not keep the file mode.
 
-- [ ] Run `python3 tools/provision.py` in WSL/Linux or `powershell -File tools/provision.ps1` on Windows. Done when: the host provisioner in verification mode exits zero and reports the local toolchain, hook, Python/Pillow and required host checks and `git config core.hooksPath` prints `tools/githooks`. Cheaper substitute: copying the hooks into `.git/hooks`, which no clone inherits.
-- [ ] Stage the ported tree (`todo/`, `scripts/`, `.agents/`, `.conclave/`, `tools/githooks/`, `tools/provision.ps1`, `toolchain.json`, `AGENTS.md`, `GEMINI.md`, `docs/`, `.github/`, `.gitattributes`) and record both hooks executable with `git update-index --chmod=+x tools/githooks/pre-commit tools/githooks/commit-msg`. Done when: `git ls-files -s tools/githooks/pre-commit tools/githooks/commit-msg` prints mode `100755` for both.
+**Corrected 2026-10-24:** The port and hook wiring first landed in `97e5ca5` (`workspace: port the TODO system, skills, hooks, and gates from Isotone`), and WSL/Linux runs `python3 scripts/check-all.py` alongside `pwsh scripts/check-all.ps1`. This section verifies every hook, `.gitattributes`, `provision.py --verify`, and `plan-audit.py` requirement, runs the scratch-clone broken-tree refusal probe, and commits the section's verification record.
+
+- [ ] Run `python3 tools/provision.py` in WSL/Linux or `powershell -File tools/provision.ps1` on Windows. Done when: the host provisioner in verification mode (`--verify`) exits zero and reports the local toolchain, hook, Python/Pillow and required host checks and `git config core.hooksPath` prints `tools/githooks`. Cheaper substitute: copying the hooks into `.git/hooks`, which no clone inherits.
+- [ ] Stage the ported tree (`todo/`, `scripts/`, `.agents/`, `.conclave/`, `tools/githooks/`, `tools/provision.ps1`, `toolchain.json`, `AGENTS.md`, `GEMINI.md`, `docs/`, `.github/`, `.gitattributes`) and record both hooks executable with `git update-index --chmod=+x tools/githooks/pre-commit tools/githooks/commit-msg` (shipped in `97e5ca5` and `c065b58`). Done when: `git ls-files -s tools/githooks/pre-commit tools/githooks/commit-msg` prints mode `100755` for both.
 - [ ] Confirm `.gitattributes` pins the hooks to LF. Done when: `git check-attr eol -- tools/githooks/pre-commit tools/githooks/commit-msg` prints `eol: lf` for both.
 - [ ] Confirm the hook refuses a broken staged tree: stage a copy of a TODO file with its `Commit:` item removed and run `git commit` in a scratch clone. Done when: the commit is refused with `pre-commit: todo-graph validate is red on the staged tree`, and the scratch clone is deleted.
-- [ ] Keep `scripts/plan-audit.py` wired into staged hooks, `scripts/check-all.py` and `.github/workflows/plan.yml`, running against the canonical graph and `docs/vision-map.json`. Done when: later prerequisites and disconnected release requirements fail, while all product owners reach the release gate.
-- [ ] Commit: `"workspace: port the TODO system, skills, hooks, and gates from Isotone"`
+- [ ] Keep `scripts/plan-audit.py` wired into staged hooks, `scripts/check-all.py` and `.github/workflows/plan.yml`, running against the canonical graph and `docs/vision-map.json`. Done when: later prerequisites and disconnected release requirements fail (`python3 -m unittest discover -s scripts/tests -p 'test_plan_audit.py' -v`), while all product owners reach the release gate (`python3 scripts/plan-audit.py`).
+- [ ] Commit: `"workspace: verify the ported TODO system, hooks, and gates (D00 T01 §1)"` (the port first landed in `97e5ca5`)
 
-**Test checkpoint:** `pwsh scripts/check-all.ps1` exits 0 with every gate `PASS` at the commit; `git ls-files -s tools/githooks/pre-commit` prints `100755`; the refused scratch commit's message is quoted.
+**Test checkpoint:** `python3 scripts/check-all.py` (or `pwsh scripts/check-all.ps1`) exits 0 with every gate `PASS` at the commit; `git ls-files -s tools/githooks/pre-commit tools/githooks/commit-msg` prints `100755` for both; `git check-attr eol -- tools/githooks/pre-commit tools/githooks/commit-msg` prints `eol: lf`; the refused scratch commit's message is quoted.
 
 ## 2. First Push: CI Green and Read Back
 
