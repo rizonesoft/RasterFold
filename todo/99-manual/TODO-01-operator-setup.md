@@ -79,7 +79,7 @@ The previous developer's campaign tooling left a lock folder and a run guard in 
 
 ## 3. Approve Format Version 3
 
-> **Started:** 2026-10-21T06:16:40Z
+> **Started:** 2026-10-24T20:05:45Z
 
 What method 1 writes is frozen per format version (`AGENTS.md`). The operator gave a standing approval for new format versions instead of approving each one, so a campaign does not stop at every version:
 
@@ -88,9 +88,9 @@ What method 1 writes is frozen per format version (`AGENTS.md`). The operator ga
 **Reading of the decision (recorded 2026-09-29, the operator may correct it):** version 3 is the development version across milestones 4 to 8 (`D01 T03 §1`, `D01 T04 §3`, `D01 T05 §2`, `D01 T06 §2`, and strips in `D01 T03 §2`); its approval takes effect when milestone 9's held-out check confirms it, and the 1.0 release (`D09 T01 §4`) freezes it. Every later version is approved the same way at the milestone that measures it.
 
 - [x] Record the operator's standing approval under this section. Done when: the decision line quotes the operator.
-- [x] Commit: `"todo: record the operator's standing approval of format versions"` (the decision text first landed inside the port commit `97e5ca5`; this commit is the section's own record)
+- [x] Commit: `"todo: record the operator's standing approval of format versions (D99 T01 §3)"` (the decision text first landed inside the port commit `97e5ca5`; this commit is the section's own record)
 
-**Test checkpoint:** the decision line is present and `python scripts/todo-graph.py validate` exits 0.
+**Test checkpoint:** the decision line is present and `python3 scripts/todo-graph.py validate` exits 0.
 
 ## 4. The Missed-Milestone Policy
 
