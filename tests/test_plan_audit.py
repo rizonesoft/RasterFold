@@ -356,6 +356,56 @@ class TidyGateTests(unittest.TestCase):
                 tidy_gate.evaluate_ratchet(15, base_file, ratchet=False, head_baseline=min_after_repair),
             )
 
+    def test_merge_history_and_git_read_failures_fail_closed(self):
+        git = shutil.which('git')
+        self.assertIsNotNone(git)
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / 'repo'
+            (repo / 'todo').mkdir(parents=True)
+            subprocess.run([git, 'init', '-q', '-b', 'main'], cwd=repo, check=True)
+            subprocess.run([git, 'config', 'user.email', 'fixture@example.invalid'], cwd=repo, check=True)
+            subprocess.run([git, 'config', 'user.name', 'Fixture'], cwd=repo, check=True)
+            base_file = repo / 'todo/.tidy-baseline'
+            base_file.write_text('count: 20\n', encoding='utf-8')
+            subprocess.run([git, 'add', 'todo/.tidy-baseline'], cwd=repo, check=True)
+            subprocess.run([git, 'commit', '-qm', 'initial baseline 20'], cwd=repo, check=True)
+
+            subprocess.run([git, 'checkout', '-qb', 'shrink'], cwd=repo, check=True)
+            base_file.write_text('count: 15\n', encoding='utf-8')
+            subprocess.run([git, 'add', 'todo/.tidy-baseline'], cwd=repo, check=True)
+            subprocess.run([git, 'commit', '-qm', 'shrink to 15 on side branch'], cwd=repo, check=True)
+
+            subprocess.run([git, 'checkout', '-q', 'main'], cwd=repo, check=True)
+            subprocess.run([git, 'merge', '--no-ff', '-s', 'ours', '-qm', 'merge keeping 20', 'shrink'], cwd=repo, check=True)
+            self.assertEqual('count: 20\n', base_file.read_text(encoding='utf-8'))
+            min_merged = tidy_gate.committed_baseline(repo)
+            self.assertEqual(15, min_merged)
+            with self.assertRaisesRegex(ValueError, r'baseline 20 .* exceeds committed baseline 15'):
+                tidy_gate.evaluate_ratchet(20, base_file, ratchet=False, head_baseline=min_merged)
+
+            with patch.object(
+                tidy_gate.subprocess,
+                'run',
+                side_effect=[
+                    subprocess.CompletedProcess(['git'], 0, stdout='false\n', stderr=''),
+                    subprocess.CompletedProcess(['git'], 128, stdout='', stderr='fatal: bad revision HEAD'),
+                ],
+            ):
+                with self.assertRaisesRegex(ValueError, r'cannot read git history'):
+                    tidy_gate.committed_baseline(repo)
+
+            with patch.object(
+                tidy_gate.subprocess,
+                'run',
+                side_effect=[
+                    subprocess.CompletedProcess(['git'], 0, stdout='false\n', stderr=''),
+                    subprocess.CompletedProcess(['git'], 0, stdout='deadbeef\n', stderr=''),
+                    subprocess.CompletedProcess(['git'], 128, stdout='', stderr='fatal: bad object deadbeef:todo/.tidy-baseline'),
+                ],
+            ):
+                with self.assertRaisesRegex(ValueError, r'cannot read historical baseline'):
+                    tidy_gate.committed_baseline(repo)
+
     def test_cross_target_deduplication_and_failure_paths(self):
         out_win = (
             str(ROOT / 'src/cm.c')

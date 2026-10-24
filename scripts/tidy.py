@@ -36,18 +36,20 @@ def committed_baseline(root: Path, rel_path: str = 'todo/.tidy-baseline') -> int
         capture_output=True,
         text=True,
     )
-    if shallow.returncode == 0 and shallow.stdout.strip() == 'true':
+    if shallow.returncode != 0:
+        raise ValueError(f'cannot verify git repository state for {rel_path}: {shallow.stderr.strip()}')
+    if shallow.stdout.strip() == 'true':
         raise ValueError(
             f'shallow git checkout cannot verify {rel_path} history; fetch full history (git fetch --unshallow)'
         )
     revs = subprocess.run(
-        ['git', 'rev-list', '--reverse', 'HEAD', '--', rel_path],
+        ['git', 'rev-list', '--full-history', '--reverse', 'HEAD', '--', rel_path],
         cwd=root,
         capture_output=True,
         text=True,
     )
     if revs.returncode != 0:
-        return None
+        raise ValueError(f'cannot read git history for {rel_path}: {revs.stderr.strip()}')
     commits = [line.strip() for line in revs.stdout.splitlines() if line.strip()]
     if not commits:
         return None
@@ -60,7 +62,9 @@ def committed_baseline(root: Path, rel_path: str = 'todo/.tidy-baseline') -> int
             text=True,
         )
         if proc.returncode != 0:
-            continue
+            raise ValueError(
+                f'cannot read historical baseline {sha}:{rel_path}: {proc.stderr.strip() or "missing blob or deleted baseline"}'
+            )
         match = BASELINE_RE.match(proc.stdout)
         if not match:
             raise ValueError(f'malformed committed baseline {sha}:{rel_path}')
