@@ -464,13 +464,13 @@ def run(argv, stdin_text, timeout, watched):
             if job is not None:
                 close_windows_job(job)
             if process is not None:
+                kill_tree(process)
+                process.wait()
                 if process.stdin is not None:
                     try:
                         process.stdin.close()
                     except OSError:
                         pass
-                kill_tree(process)
-                process.wait()
     if process.returncode != 0:
         return None, f"exited {process.returncode}"
     if any(path.is_file() and path.stat().st_size > MAX_OUTPUT_BYTES for path in watched):
