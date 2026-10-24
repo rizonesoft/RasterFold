@@ -64,7 +64,7 @@ The previous developer's campaign tooling left a lock folder and a run guard in 
 
 - [x] Delete the folders: `rm -rf .grok guard build/review-20260928` in Git Bash (or `Remove-Item -Recurse -Force .grok, guard, build\review-20260928` in PowerShell). Done when: `ls -d .grok guard build/review-20260928` reports all three missing. **Corrected 2026-09-29:** the item gave only the PowerShell form, which fails under the session's `!` prefix (Bash); the operator ran the Bash form.
 - [x] Remove the `.grok/` and `guard/` lines from `.gitignore`. Done when: `Select-String -Path .gitignore -Pattern '^(\.grok|guard)/$'` prints nothing, and this file's two `.gitignore` claims are updated to `= 0`.
-- [x] Commit: `"workspace: drop the retired run-guard folders and their ignore lines"` (the deletion and `.gitignore` edit landed in `97e5ca5`; this commit records the section's completion)
+- [x] Commit: `"workspace: drop the retired run-guard folders and their ignore lines"` (the operator deleted the three untracked/ignored folders from the filesystem on 2026-09-29, the tracked `.gitignore` removal landed in `2c89e2e313d5`, and this commit records the section's completion)
 
 **Test checkpoint:** `git status --short --ignored .grok guard` prints nothing; `python scripts/todo-claims.py` exits 0 with the claims updated.
 
