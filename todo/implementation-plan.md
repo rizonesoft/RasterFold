@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **4 of 227 sections complete (2%).** 227 sections (6 discovered); backlog 1 entry. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **5 of 227 sections complete (2%).** 227 sections (6 discovered); backlog 1 entry. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -132,7 +132,7 @@ The ported plan, hooks, gates, measurement references, HTML docs, and drift gate
 | [ ] | `D99 T01 §1` | Remove the retired run-guard folders                          |   3   |
 | [ ] | `D99 T01 §2` | Log in the GitHub CLI                                         |   2   |
 | [x] | `D99 T01 §3` | Approve format version 3                                      |   2   |
-| [ ] | `D99 T01 §4` | The missed-milestone policy                                   |   2   |
+| [x] | `D99 T01 §4` | The missed-milestone policy                                   |   2   |
 | [ ] | `D99 T01 §5` | Enable GitHub Pages                                           |   3   |
 | [ ] | `D00 T01 §1` | Commit the port and wire the commit hook                      |   6   |
 | [ ] | `D00 T01 §3` | The static analysis gate                                      |   4   |

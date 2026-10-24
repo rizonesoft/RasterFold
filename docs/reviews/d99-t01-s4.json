@@ -1,0 +1,85 @@
+{
+  "ref": "D99 T01 \u00a74",
+  "title": "The Missed-Milestone Policy",
+  "implementation_sha": "bfe1813e76ac9f3937a770bddb0de0ebb4fedcb4",
+  "date": "2026-10-24",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/99-manual/D99-T01-s4.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 research/milestones.py --check -> milestones: current",
+    "python3 scripts/todo-graph.py validate -> 32 todos, 227 sections -- 0 fatal, 0 warning(s)",
+    "python3 scripts/todo-claims.py -> 71 claim(s) -- 71 hold, 0 stale, 0 malformed; coverage 31/31, floor 31"
+  ],
+  "completion": {
+    "report": "docs/reviews/99-manual/D99-T01-s4.md",
+    "verdict": "complete",
+    "candidate": "bfe1813e76ac9f3937a770bddb0de0ebb4fedcb4",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/99-manual/D99-T01-s4.md",
+    "candidate": "bfe1813e76ac9f3937a770bddb0de0ebb4fedcb4",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 3,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}

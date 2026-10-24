@@ -47,7 +47,7 @@ track: OP1
 |   1   |   §1    | Remove the retired run-guard folders          | --         |  [ ]   |
 |   2   |   §2    | Log in the GitHub CLI                         | --         |  [ ]   |
 |   3   |   §3    | Approve format version 3                      | --         |  [x]   |
-|   4   |   §4    | The missed-milestone policy                   | --         |  [ ]   |
+|   4   |   §4    | The missed-milestone policy                   | --         |  [x]   |
 |   5   |   §5    | Enable GitHub Pages                           | --         |  [ ]   |
 | 6 | §6 | Android release signing identity | -- | [ ] |
 | 7 | §7 | HEVC distribution decision | -- | [ ] |
@@ -109,6 +109,8 @@ Every milestone gate in `todo/05-milestones/` carries this policy: on a miss, up
 
 **Test checkpoint:** the decision line is present and every gate in `todo/05-milestones/` names `D99 T01 §4` (`python3 research/milestones.py --check` exits 0).
 
+> **Verified:** 2026-10-24 | §4 | bfe1813e76ac9f3937a770bddb0de0ebb4fedcb4
+> **Review:** `docs/reviews/d99-t01-s4.json`
 ## 5. Enable GitHub Pages
 
 **Requires:** operator -- the owner decides private-repository Pages eligibility and publication visibility; automation may reuse existing authorized account access for configuration once that decision is recorded.
