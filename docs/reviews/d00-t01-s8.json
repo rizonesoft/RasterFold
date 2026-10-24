@@ -1,0 +1,94 @@
+{
+  "ref": "D00 T01 \u00a78",
+  "title": "A Read-Only Independent Reviewer Beside a Live Run",
+  "implementation_sha": "2c37958e22415085911b516cdb5f1180807df723",
+  "date": "2026-10-24",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/00-workspace/D00-T01-s8.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/00-workspace/D00-T01-s8.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 -m unittest discover -s scripts/tests -v -> 96 tests OK (1 skipped)",
+    "python3 scripts/campaign_guard.py --self-test -> 145 cases, 0 failed",
+    "python3 scripts/review-dispatch.py --check-pin --json -> ok: true, agy -> astra",
+    "python3 scripts/review-dispatch.py --list-rounds --json -> exit 0 (0 unreadable)",
+    "live review-dispatch probe beside active campaign guard run=7c814ed0d16f -> read-only write refused (Errno 30), OWNER and stop-hook intact"
+  ],
+  "completion": {
+    "report": "docs/reviews/00-workspace/D00-T01-s8.md",
+    "verdict": "filed",
+    "candidate": "163d3b439ddfb9efb4dc87a895b67fb0686e816d",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": [
+      "D00 T01 \u00a79"
+    ]
+  },
+  "rounds_spent": 2,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/00-workspace/D00-T01-s8.md",
+    "candidate": "c065b5865f774a4bb7c816f35a551d28941b4c0d",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 3,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}
