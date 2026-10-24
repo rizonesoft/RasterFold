@@ -133,14 +133,22 @@ Keep the format frozen at version 2. Add Linux and Android platform support and 
 > **Review:** `docs/reviews/d00-t04-s3.json`
 ## 4. Family-Local Intelligence
 
+> **Started:** 2026-10-24T23:17:14Z
+
 **Corrected 2026-10-24:** Standalone `scripts/intelligence.py` validates the retained `.intelligence/` registers and archives without `.claude/` or `.codex/` runner directories, while `.agents/skills/process-intelligence/SKILL.md` governs stopped-boundary disposition.
 
-- [ ] Maintain intelligence registers and validation in `scripts/intelligence.py` with atomic writes, evidence and owner fields, and retained archives. Done when: `python3 scripts/intelligence.py validate` exits 0 and malformed records are refused.
-- [ ] Provide `.agents/skills/process-intelligence/SKILL.md` and stopped-boundary checks in `scripts/intelligence.py`. Done when: active or unreadable guard state prevents disposition and archiving.
-- [ ] Verify intelligence register validation and campaign guard stopped-boundary checks. Done when: `python3 scripts/intelligence.py validate` and `python3 scripts/campaign_guard.py --self-test` exit zero.
-- [ ] Commit: `"runner: retain and process runner intelligence"`
+- [x] Maintain intelligence registers and validation in `scripts/intelligence.py` with atomic writes, evidence and owner fields, SHA-256 key verification, history record validation, and retained archives. Done when: `python3 scripts/intelligence.py validate` exits 0 and missing or malformed records are refused without modifying register bytes.
+- [x] Provide `.agents/skills/process-intelligence/SKILL.md` and `.intelligence/README.md` with explicit `--family {claude,codex}` selection for listing, capture, and disposition, and enforce stopped-boundary checks in `scripts/intelligence.py` under one continuous `campaign_guard._Lock` acquisition across idle verification (`build/claude-campaign-guard.json`, `build/claude-campaign-state.json`, and `build/claude-campaign-pending-cancel.json`), register read, mutation, and atomic `os.fsync` + `replace`. Done when: active, pending-cancel, held-lock, or unreadable guard state prevents disposition and archiving while leaving register bytes unchanged.
+- [x] Verify intelligence register validation, family isolation, continuous-lock race protection, and campaign guard stopped-boundary checks in `scripts/tests/test_intelligence.py` on Linux and Windows. Done when: `python3 scripts/intelligence.py validate`, `python3 -m unittest discover -s scripts/tests -v`, `python3 scripts/windows.py scripts/tests/test_intelligence.py -v`, and `python3 scripts/campaign_guard.py --self-test` exit zero.
+- [x] Commit: `"runner: retain and process runner intelligence"`
 
-**Test checkpoint:** `python3 scripts/campaign_guard.py --self-test` and `python3 scripts/intelligence.py validate` exit zero.
+**Implementation evidence:** Hardened `scripts/intelligence.py` (`read_register`, `save_register`, `require_idle`, and `update` holding one continuous `campaign_guard._Lock` across idle check, read, mutation, and atomic `os.fsync` + `replace` with `.tmp` cleanup on failure), updated `.intelligence/README.md` and `.agents/skills/process-intelligence/SKILL.md` to require explicit `--family <claude|codex>` selection and dual-register inspection, and added `scripts/tests/test_intelligence.py` covering family isolation, recurrence from archive, malformed-register refusal, stopped-boundary sentinels, unreadable `build/`, held-lock refusal, deterministic interleaving race protection, and write-failure rollback.
+
+**Test checkpoint:** `python3 scripts/campaign_guard.py --self-test`, `python3 scripts/intelligence.py validate`, `python3 -m unittest discover -s scripts/tests -v`, and `python3 scripts/windows.py scripts/tests/test_intelligence.py -v` exit zero.
+
+**Checkpoint output (2026-10-24):** `python3 scripts/intelligence.py validate` exited 0 (`claude: 0 active records, 0 archived; valid`, `codex: 4 active records, 0 archived; valid`); `python3 -m unittest discover -s scripts/tests -v` exited 0 (`Ran 104 tests in 40.5s`, `OK (skipped=1)`, including 5 `IntelligenceTests` cases in `scripts/tests/test_intelligence.py`); `python3 scripts/windows.py scripts/tests/test_intelligence.py -v < /dev/null` exited 0 (`Ran 5 tests in 2.2s`, `OK`); `python3 scripts/campaign_guard.py --self-test` exited 0 (`campaign_guard self-test: 145 cases, 0 failed`).
+
+**Freeze check:** No codec, oracle, format specification, or known-answer bytes change in this section; native correctness and oracle comparisons must remain green.
 
 ## Verification
 
