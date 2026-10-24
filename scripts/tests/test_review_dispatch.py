@@ -892,12 +892,15 @@ class Dispatch(Harness):
 
     def test_the_completion_review_is_one_pass(self):
         record = self.repo / "docs/reviews/c.md"
-        # A pass that returned no review records `none` and may be followed by another pass.
+        # A pass that returned no review (or lacked a COMPLETION: footer) records `none` and may be retried.
         result, _ = self.complete(record, codex="fail")
         self.assertEqual(result.returncode, 1)
         self.assertIn("## Completion review: none\n", record.read_text(encoding="utf-8"))
         result, _ = self.complete(record, codex="completionblocked")
         self.assertEqual(result.returncode, 1, "COMPLETION: blocked is not a review")
+        result, summary = self.complete(record, codex="say", say="1. Missing footer line without COMPLETION tag.")
+        self.assertEqual(result.returncode, 1, "a completion reply without COMPLETION: is not a review")
+        self.assertEqual(summary["skipped"], [{"reviewer": "sol", "reason": "returned no completion verdict"}])
         result, _ = self.complete(record, codex="completion")
         self.assertEqual(result.returncode, 0, result.stderr)
         before = record.read_bytes()
@@ -1228,6 +1231,80 @@ class RepositoryPin(unittest.TestCase):
         with open(REPO_PIN, "rb") as handle:
             pin = tomllib.load(handle)
         self.assertEqual(pin["schedule"]["severity_stop_after"], todo_graph.SEVERITY_CUTOFF_ROUND)
+
+    def test_stamp_schedule_rejects_unpinned_reviewer_and_allows_retry_after_invalid_one_pass(self):
+        spec = importlib.util.spec_from_file_location("todo_graph_route_check", SCRIPTS / "todo-graph.py")
+        todo_graph = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = todo_graph
+        try:
+            spec.loader.exec_module(todo_graph)
+        finally:
+            del sys.modules[spec.name]
+        dispatch = todo_graph.review_dispatch()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "todo/00-workspace").mkdir(parents=True)
+            report_rel = "docs/reviews/00-workspace/D00-T01-s6.md"
+            report = root / report_rel
+            head = subprocess.run(["git", "-C", str(SCRIPTS.parent), "rev-parse", "HEAD"],
+                                  capture_output=True, text=True, check=True).stdout.strip()
+            with open(REPO_PIN, "rb") as handle:
+                pin = tomllib.load(handle)
+            # Pre-seed an invalid completion entry (missing COMPLETION:) with valid digest, then verify
+            # record_completion allows a valid retry rather than permanently consuming the slot.
+            bad_lines = ["1. Incomplete reply without footer."]
+            report.parent.mkdir(parents=True, exist_ok=True)
+            report.write_text("\n".join([
+                "## Completion review: astra (`gpt-6-astra` via `codex`)",
+                "",
+                "- Writer: agy",
+                "- Run: 2026-10-24T00:00:00Z",
+                f"- Candidate: {head}",
+                "- Effort: medium",
+                f"- Lines: {len(bad_lines)}",
+                f"- Digest: {dispatch.digest(bad_lines)}",
+                "",
+                *bad_lines,
+                "",
+            ]), encoding="utf-8")
+            dispatch.record_completion(
+                report,
+                {"writer": "agy", "reviewer": "astra", "cli": "codex", "model": "gpt-6-astra",
+                 "effort": "medium", "skipped": [], "review": "COMPLETION: complete"},
+                "2026-10-24T00:01:00Z",
+                head,
+                "completion",
+            )
+            # Now record a plan review and round 1 from an unpinned reviewer (`sol` / `gpt-6.1-sol`) and verify
+            # schedule_ok refuses it against the committed `astra` / `gpt-6-astra` pin.
+            dispatch.record_completion(
+                report,
+                {"writer": "agy", "reviewer": "astra", "cli": "codex", "model": "gpt-6-astra",
+                 "effort": "medium", "lenses": ["plan"], "skipped": [],
+                 "review": "HIGHEST: none\nPLAN: complete\nOVERALL: approve"},
+                "2026-10-24T00:02:00Z",
+                head,
+                "plan",
+            )
+            dispatch.record(
+                report,
+                {"writer": "agy", "reviewer": "sol", "cli": "codex", "model": "gpt-6.1-sol",
+                 "effort": "high", "lenses": ["adversarial", "integration"], "skipped": [],
+                 "review": "HIGHEST: none\nOVERALL: approve"},
+                "2026-10-24T00:03:00Z",
+            )
+            data = {
+                "implementation_sha": head,
+                "schedule": pin["schedule"],
+                "plan": {"report": report_rel, "candidate": head, "reviewer": "astra",
+                         "model": "gpt-6-astra", "effort": "medium", "lenses": ["plan"]},
+                "completion": {"report": report_rel, "verdict": "complete", "candidate": head,
+                               "reviewer": "astra", "model": "gpt-6-astra", "filed": []},
+                "reviews": [{"round": 1, "report": report_rel, "verdict": "clean"}],
+            }
+            with unittest.mock.patch.object(todo_graph, "committed_pin", return_value=pin):
+                with self.assertRaisesRegex(todo_graph.Refused, r"not the reviewer astra"):
+                    todo_graph.schedule_ok(root, data, "D00 T01 §6", False)
 
 
 if __name__ == "__main__":

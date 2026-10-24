@@ -221,6 +221,26 @@ def returned_review(entry):
         and bool(lines) and lines[-1] in ("OVERALL: approve", "OVERALL: needs-attention")
 
 
+def valid_one_pass_footer(text, kind):
+    """True when a one-pass reply (`completion` or `plan`) ends with the footer lines `stamp` requires."""
+    lines = [x.strip() for x in (text or "").splitlines() if x.strip()]
+    if kind == "completion":
+        return bool(lines) and lines[-1] in ("COMPLETION: complete", "COMPLETION: gaps")
+    if kind == "plan":
+        return (len(lines) >= 2
+                and lines[-2] in ("PLAN: complete", "PLAN: gaps")
+                and lines[-1] in ("OVERALL: approve", "OVERALL: needs-attention"))
+    return False
+
+
+def returned_one_pass(entry, kind):
+    """A recorded completion or plan pass that is a valid returned review from another model family.
+    scripts/todo-graph.py `stamp` uses this same predicate."""
+    return bool(entry.get("reviewer")) and entry.get("writer") in WRITER_FAMILY \
+        and FAMILY.get(entry.get("cli")) not in (None, WRITER_FAMILY[entry["writer"]]) \
+        and valid_one_pass_footer(entry.get("review"), kind)
+
+
 def scheduled(schedule, kind, rounds, surface):
     """The effort and lenses for the next pass, from the pin's schedule and the rounds already recorded.
 
@@ -478,7 +498,7 @@ def run(argv, stdin_text, timeout, watched):
     return process.returncode, None
 
 
-def review(pin, writer, prompt_path, timeout, plan=None):
+def review(pin, writer, prompt_path, timeout, plan=None, kind="round"):
     """Run the writer's one reviewer. Returns the summary dict: `reviewer` is None when no review came back, and
     `skipped` then names the reviewer and why (there is no fallback). `plan` is the scheduled step (see `scheduled`):
     its effort replaces the reviewer's, and its lenses are appended to the prompt and recorded."""
@@ -520,6 +540,8 @@ def review(pin, writer, prompt_path, timeout, plan=None):
         problem = "returned no review"
     if problem is None:
         problem = blocked(text)
+    if problem is None and kind in PASSES and not valid_one_pass_footer(text, kind):
+        problem = f"returned no {kind} verdict"
     if problem:
         return none(problem)
     return {"writer": writer, "reviewer": name, "cli": reviewer["cli"], "model": reviewer["model"],
@@ -778,7 +800,7 @@ def record_completion(path, result, when, candidate, kind="completion"):
     if found is None:
         raise Unrecorded(f"{path} cannot be read back (a heading or line is not in the format --record writes"
                          f"{unreadable_heading(existing)}; {RESERVED_NAMES}), so the {what} was not recorded")
-    if any(entry["reviewer"] for entry in found[key]):
+    if any(returned_one_pass(entry, kind) for entry in found[key]):
         raise Unrecorded(f"{path} already holds a {what}; it is one pass, so this one was not recorded")
     who = f"{result['reviewer']} (`{result['model']}` via `{result['cli']}`)" if result["reviewer"] else "none"
     review = raw_lines(result["review"] or f"No reviewer returned a {what}. This pass is not an approval.")
@@ -912,7 +934,7 @@ def main(argv=None):
                                      f"format --record writes{unreadable_heading(existing)}; {RESERVED_NAMES}), so "
                                      f"no round was run")
             plan = scheduled(pin["schedule"], args.kind, rounds, args.surface)
-        result = review(pin, args.writer, args.prompt, args.timeout, plan)
+        result = review(pin, args.writer, args.prompt, args.timeout, plan, args.kind)
     except (Refused, Unrecorded, OSError) as exc:
         print("review-dispatch refused: " + str(exc), file=sys.stderr)
         return 2

@@ -6531,12 +6531,7 @@ def completion_record(root: Path, completion: dict, ref: str, stamp_sha: str, co
     found = dispatch.read_completions(path.read_bytes().decode("utf-8"))
     require(found is not None, f"{report} is not a findings file the dispatcher can read: {ref}")
     require(bool(found), f"{report} holds no ## Completion review; run review-dispatch.py --kind completion: {ref}")
-    returned = [
-        e for e in found
-        if _other_family(dispatch, e)
-        and ([x.strip() for x in e["review"].splitlines() if x.strip()] or [""])[-1]
-        in ("COMPLETION: complete", "COMPLETION: gaps")
-    ]
+    returned = [e for e in found if dispatch.returned_one_pass(e, "completion")]
     require(
         len(returned) == 1,
         f"{report} must hold exactly one completion review returned by another model family "
@@ -6634,15 +6629,7 @@ def plan_record(root: Path, report: str, ref: str, commits: set[str] | None = No
     require(found is not None, f"{report} is not a findings file the dispatcher can read: {ref}")
     require(bool(found), f"{report} holds no ## Plan review; run review-dispatch.py --kind plan: {ref}")
 
-    def _verdict(entry: dict) -> bool:
-        lines = [x.strip() for x in entry["review"].splitlines() if x.strip()]
-        return (
-            len(lines) >= 2
-            and lines[-2] in ("PLAN: complete", "PLAN: gaps")
-            and lines[-1] in ("OVERALL: approve", "OVERALL: needs-attention")
-        )
-
-    returned = [e for e in found if _other_family(dispatch, e) and _verdict(e)]
+    returned = [e for e in found if dispatch.returned_one_pass(e, "plan")]
     require(
         len(returned) == 1,
         f"{report} must hold exactly one plan review returned by another model family and "
@@ -6668,7 +6655,7 @@ def plan_record(root: Path, report: str, ref: str, commits: set[str] | None = No
     }
 
 
-def pin_schedule(root: Path, sha: str, ref: str) -> dict:
+def committed_pin(root: Path, sha: str, ref: str) -> dict:
     shown = subprocess.run(["git", "-C", str(root), "show", f"{sha}:{PIN_PATH}"], capture_output=True, timeout=30)
     require(shown.returncode == 0, f"no reviewer pin {PIN_PATH} at {sha}: {ref}")
     dispatch = review_dispatch()
@@ -6677,15 +6664,36 @@ def pin_schedule(root: Path, sha: str, ref: str) -> dict:
     except dispatch.Refused as exc:
         raise Refused(f"the reviewer pin at {sha} does not load: {exc}: {ref}") from None
     require("schedule" in pin, f"the reviewer pin at {sha} has no [schedule] to check the reviews against: {ref}")
-    return pin["schedule"]
+    return pin
+
+
+def pin_schedule(root: Path, sha: str, ref: str) -> dict:
+    return committed_pin(root, sha, ref)["schedule"]
 
 
 def schedule_ok(root: Path, data: dict, ref: str, surface: bool) -> None:
     require(isinstance(surface, bool), f"the section's Surface is needed to check the review schedule: {ref}")
     dispatch = review_dispatch()
+    pin = committed_pin(root, data["implementation_sha"], ref)
     schedule = data["schedule"]
 
+    def _check_route(where: str, recorded: dict) -> None:
+        if not recorded.get("reviewer"):
+            return
+        writer = recorded.get("writer")
+        require(writer in pin["routes"], f"{where} has unrouted writer {writer!r}: {ref}")
+        (pinned_name,) = pin["routes"][writer]
+        pinned = pin["reviewers"][pinned_name]
+        got = (recorded["reviewer"], recorded.get("cli"), recorded.get("model"))
+        want = (pinned_name, pinned["cli"], pinned["model"])
+        require(
+            got == want,
+            f"{where} was reviewed by {got[0]} ({got[2]} via {got[1]}), not the reviewer {want[0]} "
+            f"({want[2]} via {want[1]}) pinned for writer {writer!r} in {PIN_PATH}: {ref}",
+        )
+
     def _check(where: str, recorded: dict, expected: dict) -> None:
+        _check_route(where, recorded)
         got = (recorded["effort"], list(recorded["lenses"] or []))
         want = (expected["effort"], expected["lenses"])
         position = (
@@ -6700,25 +6708,28 @@ def schedule_ok(root: Path, data: dict, ref: str, surface: bool) -> None:
 
     plan_report = data["plan"]["report"]
     for entry in dispatch.read_plans((Path(root) / plan_report).read_bytes().decode("utf-8")):
-        _check(f"the plan review in {plan_report}", entry, dispatch.scheduled(schedule, "plan", [], surface))
+        if dispatch.returned_one_pass(entry, "plan"):
+            _check(f"the plan review in {plan_report}", entry, dispatch.scheduled(schedule, "plan", [], surface))
     completion = data["completion"]["report"]
     completions = dispatch.read_completions((Path(root) / completion).read_bytes().decode("utf-8"))
     require(
         sum(
             1 for e in completions
-            if _other_family(dispatch, e)
+            if dispatch.returned_one_pass(e, "completion")
             and e["candidate"] == data["completion"]["candidate"]
-            and ([x.strip() for x in e["review"].splitlines() if x.strip()] or [""])[-1]
-            in ("COMPLETION: complete", "COMPLETION: gaps")
         ) == 1,
         f"{completion} must hold exactly one returned completion review: {ref}",
     )
     for entry in completions:
-        _check(f"the completion review in {completion}", entry, dispatch.scheduled(schedule, "completion", [], surface))
+        if dispatch.returned_one_pass(entry, "completion"):
+            _check(f"the completion review in {completion}", entry, dispatch.scheduled(schedule, "completion", [], surface))
     for report in dict.fromkeys(r["report"] for r in data["reviews"]):
         recorded = dispatch.read_rounds((Path(root) / report).read_bytes().decode("utf-8"))
         for i, entry in enumerate(recorded):
-            _check(f"{report} round {entry['number']}", entry, dispatch.scheduled(schedule, "round", recorded[:i], surface))
+            if dispatch.returned_review(entry) or entry.get("reviewer") is None:
+                _check(f"{report} round {entry['number']}", entry, dispatch.scheduled(schedule, "round", recorded[:i], surface))
+            else:
+                _check_route(f"{report} round {entry['number']}", entry)
 
 
 def rounds_recorded(root: Path, reviews: list[dict]) -> int:
