@@ -96,6 +96,8 @@ What method 1 writes is frozen per format version (`AGENTS.md`). The operator ga
 > **Review:** `docs/reviews/d99-t01-s3.json`
 ## 4. The Missed-Milestone Policy
 
+> **Started:** 2026-10-24T20:12:30Z
+
 A milestone whose target is missed would otherwise stop a campaign for a decision each time. The operator set the policy:
 
 **Operator decision 2026-09-29:** "file it like that" -- the operator's reply to this proposal, quoted from the session: "A policy for missed targets. For example: 'when a milestone misses, file up to three follow-up experiments from `docs/research.md`; escalate only if all three miss.'"
@@ -103,9 +105,9 @@ A milestone whose target is missed would otherwise stop a campaign for a decisio
 Every milestone gate in `todo/05-milestones/` carries this policy: on a miss, up to three follow-up experiments are filed through `add-todo` (with Origin lines), each measured against the gate's bar; the operator is asked only when all three miss.
 
 - [x] Record the operator's missed-milestone policy under this section. Done when: the decision line quotes the operator.
-- [ ] Commit: `"todo: record the operator's missed-milestone policy"`
+- [x] Commit: `"todo: record the operator's missed-milestone policy (D99 T01 §4)"` (the decision text first landed inside the port commit `97e5ca5`; this commit is the section's own record)
 
-**Test checkpoint:** the decision line is present and every gate in `todo/05-milestones/` names `D99 T01 §4` (`python research/milestones.py --check` exits 0).
+**Test checkpoint:** the decision line is present and every gate in `todo/05-milestones/` names `D99 T01 §4` (`python3 research/milestones.py --check` exits 0).
 
 ## 5. Enable GitHub Pages
 
