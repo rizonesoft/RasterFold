@@ -58,6 +58,7 @@ track: W1
 |   6   |   §6    | Claude review rounds through the reviewer pin | §1         |  [ ]   |
 | 7 | §7 | The campaign guard on a legacy console encoding | -- | [x] |
 | 8 | §8 | A read-only independent reviewer beside a live run | -- | [ ] |
+| 9 | §9 | Windows Job Object process-tree cleanup in review-dispatch.py | §8 | [ ] |
 
 ---
 
@@ -166,6 +167,20 @@ Admission: a defect in shipped work. The Python Stop hook landed in `a9a5af7` to
 - [x] Commit: `"review: run the independent reviewer read-only beside a live run"`
 
 **Test checkpoint:** `python3 -m unittest discover -s scripts/tests -v`, `python3 scripts/campaign_guard.py --self-test`, `python3 scripts/review-dispatch.py --check-pin --json`, and `python3 scripts/review-dispatch.py --list-rounds --json` exit 0 (with `--list-rounds` exiting 1 on a malformed findings record); a live `scripts/review-dispatch.py` probe beside an active campaign guard returns a valid review from `astra`, proves `--sandbox read-only` refuses a write, and leaves guard ownership and the writer's `Stop` hook protection intact.
+
+## 9. Windows Job Object Process-Tree Cleanup in review-dispatch.py
+
+**Origin:** discovered run=7c814ed0d16f 2026-10-24 -- completion review of `D00 T01 §8`
+
+-> SOURCE: D00-T01-S8-COMPLETION-1
+
+Admission: a defect in shipped work (`scripts/review-dispatch.py:310`). On Windows, `kill_tree` uses `taskkill /T /F /PID`, which reaches descendant helper processes only while the root reviewer process is still alive; if the reviewer exits before a child helper, the child can outlive the review and hold scratch files open (`test_a_reviewers_children_do_not_outlive_it` is skipped on Windows at `scripts/tests/test_review_dispatch.py:624`). Assigning the reviewer process to a Win32 Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` (or terminating the job in `kill_tree`) guarantees that every descendant process is terminated on Windows just as `os.killpg` does on POSIX.
+
+- [ ] Bind the reviewer child process on Windows to a Win32 Job Object in `scripts/review-dispatch.py` (`CreateJobObjectW`, `SetInformationJobObject` with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, `AssignProcessToJobObject`, and `TerminateJobObject` / `CloseHandle` in `kill_tree`). Done when: `kill_tree` terminates a child helper that outlived the reviewer on Windows without leaving the `WORKAROUND` limitation.
+- [ ] Enable `test_a_reviewers_children_do_not_outlive_it` on Windows in `scripts/tests/test_review_dispatch.py` and verify it passes on both Linux and Windows (`python3 scripts/windows.py -m unittest discover -s scripts/tests -v`). Done when: the `@unittest.skipIf(os.name == "nt", ...)` decorator is removed and the test passes on both hosts.
+- [ ] Commit: `"review: terminate Windows reviewer descendant trees with a Job Object"`
+
+**Test checkpoint:** `python3 -m unittest discover -s scripts/tests -v` on Linux and `python3 scripts/windows.py -m unittest discover -s scripts/tests -v` on Windows exit 0 with `test_a_reviewers_children_do_not_outlive_it` running and passing on both platforms.
 
 ## Verification
 
