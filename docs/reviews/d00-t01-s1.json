@@ -1,0 +1,91 @@
+{
+  "ref": "D00 T01 \u00a71",
+  "title": "Commit the Port and Wire the Commit Hook",
+  "implementation_sha": "264158d8f4f8d74417d27a50bb288f8c0138958d",
+  "date": "2026-10-24",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/00-workspace/D00-T01-s1.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/00-workspace/D00-T01-s1.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 scripts/check-all.py -> check-all: 27/27 passed",
+    "git ls-files -s tools/githooks/pre-commit tools/githooks/commit-msg -> 100755 for both",
+    "git check-attr eol -- tools/githooks/pre-commit tools/githooks/commit-msg -> eol: lf for both",
+    "scratch-clone pre-commit refusal probe -> exit 1 (pre-commit: todo-graph validate is red on the staged tree), HEAD unchanged"
+  ],
+  "completion": {
+    "report": "docs/reviews/00-workspace/D00-T01-s1.md",
+    "verdict": "completed",
+    "candidate": "12dc20daf96806e484920a0a935e6468f70aac67",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 2,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/00-workspace/D00-T01-s1.md",
+    "candidate": "104bf8f65454c1440eb0465984eec2432e094df8",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 3,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}

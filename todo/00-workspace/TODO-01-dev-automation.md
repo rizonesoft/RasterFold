@@ -50,7 +50,7 @@ track: W1
 
 | Order | Section | Deliverable                                   | Depends On | Status |
 | :---: | :-----: | --------------------------------------------- | ---------- | :----: |
-|   1   |   §1    | Commit the port and wire the commit hook      | --         |  [ ]   |
+|   1   |   §1    | Commit the port and wire the commit hook      | --         |  [x]   |
 |   2   |   §2    | First push: CI green and read back            | §1, D99 T01 §2 |  [ ]   |
 |   3   |   §3    | The static analysis gate                      | §1         |  [ ]   |
 |   4   |   §4    | Prove the review panel end to end             | §1, §6     |  [ ]   |
@@ -79,6 +79,8 @@ The hook is the only gate that runs before a commit exists, so a tree that fails
 
 **Test checkpoint:** `python3 scripts/check-all.py` (or `pwsh scripts/check-all.ps1`) exits 0 with every gate `PASS` at the commit; `git ls-files -s tools/githooks/pre-commit tools/githooks/commit-msg` prints `100755` for both; `git check-attr eol -- tools/githooks/pre-commit tools/githooks/commit-msg` prints `eol: lf`; the refused scratch commit's message is quoted.
 
+> **Verified:** 2026-10-24 | §1 | 264158d8f4f8d74417d27a50bb288f8c0138958d
+> **Review:** `docs/reviews/d00-t01-s1.json`
 ## 2. First Push: CI Green and Read Back
 
 **Needs:** Network (downloads)
