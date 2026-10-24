@@ -154,6 +154,6 @@ Keep the format frozen at version 2. Add Linux and Android platform support and 
 > **Review:** `docs/reviews/d00-t04-s4.json`
 ## Verification
 
-- [ ] `python3 scripts/check-all.py` passes every required host gate.
-- [ ] `python3 scripts/todo-graph.py validate` and `plan --check` pass.
-- [ ] Native Windows and Linux tests pass; Android build and runtime evidence are reported separately.
+- [x] `python3 scripts/check-all.py` passes every required host gate (`python3 scripts/check-all.py --all-targets` exited 0 with `check-all: 28/28 passed`).
+- [x] `python3 scripts/todo-graph.py validate` and `plan --check` pass (`32 todos, 227 sections -- 0 fatal, 0 warning(s)`; `implementation plan is current -- 16/227 sections complete (7%)`).
+- [x] Native Windows and Linux tests pass; Android build and runtime evidence are reported separately (`tests/test_correctness.py` `33 passed, 0 failed` on Linux and Windows; `python3 tests/fuzz_decode.py 5000 1` exited 0 with `5000 mutated files: 4892 rejected, 108 still valid, no crash, hang or mismatch`; `python3 scripts/windows.py tests/measure_final.py` printed `PASS` with `rasterfold bytes=1409028 < jxl 1470703 < webp 1588708 < avif 1776841`; Android ARM64 and Android x64 artifacts built and ELF-inspected, with Android device runtime validation remaining separate from cross-compilation).

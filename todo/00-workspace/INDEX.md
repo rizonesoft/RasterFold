@@ -12,12 +12,11 @@ The toolchain, gates, hooks, CI, and the TODO system every later domain leans on
 | [TODO-02](./TODO-02-measurement-references.md) | Measurement References: JPEG XL e9 and WebP | draft |
 | [TODO-03](./TODO-03-held-out-validation.md) | Held-Out Validation | draft |
 
-| [TODO-04](./TODO-04-wsl-and-runners.md) | WSL, Local Toolchains, and Isolated Runners | active |
-
 ## Completed
 
 | TODO | Title | Completed |
 | ---- | ----- | :-------: |
+| [TODO-04](./TODO-04-wsl-and-runners.md) | WSL, Local Toolchains, and Isolated Runners | 2026-10-25 |
 
 ## In scope
 
