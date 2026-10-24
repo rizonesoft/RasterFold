@@ -35,6 +35,9 @@ FAKE_CLI = textwrap.dedent('''\
     import json, os, subprocess, sys, time
     name, args = sys.argv[1], sys.argv[2:]
     mode = os.environ.get("FAKE_" + name.upper(), "ok")
+    if mode in ("orphan", "orphansleep", "orphanflood"):
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        open(os.environ["FAKE_CHILD_PID"], "w").write(str(child.pid))
     if mode == "noread":
         time.sleep(30)
     stdin = "" if sys.stdin is None or sys.stdin.isatty() else sys.stdin.read()
@@ -42,9 +45,9 @@ FAKE_CLI = textwrap.dedent('''\
         log.write(json.dumps({"cli": name, "argv": args, "stdin": stdin, "cwd": os.getcwd()}) + "\\n")
     if mode == "fail":
         sys.exit(3)
-    if mode == "sleep":
+    if mode in ("sleep", "orphansleep"):
         time.sleep(30)
-    if mode == "flood":
+    if mode in ("flood", "orphanflood"):
         while True:
             sys.stdout.write("x" * 65536)
             sys.stdout.flush()
@@ -55,9 +58,6 @@ FAKE_CLI = textwrap.dedent('''\
                 out.write("x" * 65536)
                 out.flush()
                 time.sleep(0.01)
-    if mode == "orphan":
-        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
-        open(os.environ["FAKE_CHILD_PID"], "w").write(str(child.pid))
     text = "" if mode == "empty" else "VERDICT: needs-attention, calc.py:2 subtracts. (" + name + ")"
     if mode == "headings":
         text = "## Round trip serialization\\n\\nFine.\\n\\n```\\n## Round 9: none\\n\\n- Writer: agy\\n- Run: 2026-01-01T00:00:00Z\\n```\\n\\nOVERALL: approve"
@@ -72,10 +72,16 @@ FAKE_CLI = textwrap.dedent('''\
     open(args[args.index("-o") + 1], "w").write(text)
     if mode == "linger":
         # A process the reviewer started outlives it and holds the message file open for a moment, as a CLI's helper
-        # process can; the reviewer exits first, so no tree kill reaches the helper.
+        # process can; the reviewer exits first, so a detached helper would keep the scratch file locked.
         ready = os.environ["FAKE_CHILD_PID"] + ".ready"
-        holder = "import sys, time; f = open(sys.argv[1], 'a'); open(sys.argv[2], 'w').close(); time.sleep(3)"
-        subprocess.Popen([sys.executable, "-c", holder, args[args.index("-o") + 1], ready], cwd=os.path.dirname(sys.executable))
+        flags = getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0x01000000) if os.name == "nt" else 0
+        holder = "import sys, time; f = open(sys.argv[1], 'a'); open(sys.argv[2], 'w').close(); time.sleep(1.5)"
+        try:
+            subprocess.Popen([sys.executable, "-c", holder, args[args.index("-o") + 1], ready],
+                             cwd=os.path.dirname(sys.executable), creationflags=flags)
+        except OSError:
+            subprocess.Popen([sys.executable, "-c", holder, args[args.index("-o") + 1], ready],
+                             cwd=os.path.dirname(sys.executable))
         while not os.path.exists(ready):
             time.sleep(0.05)
 ''')
@@ -97,7 +103,7 @@ class Harness(unittest.TestCase):
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
-        self.repo = Path(self._tmp.name) / "repo"
+        self.repo = Path(self._tmp.name).resolve() / "repo"
         (self.repo / "scripts").mkdir(parents=True)
         (self.repo / ".conclave").mkdir()
         shutil.copy(SCRIPTS / "review-dispatch.py", self.repo / "scripts/review-dispatch.py")
@@ -641,19 +647,123 @@ class Dispatch(Harness):
         self.assertIn("NUL byte", result.stderr)
         self.assertEqual(self.calls(), [])
 
-    @unittest.skipIf(os.name == "nt", "Windows cannot reach a child once its reviewer has exited (see kill_tree)")
+    def assert_pid_gone(self, pid):
+        for _ in range(50):
+            if os.name == "nt":
+                out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"],
+                                     capture_output=True, text=True).stdout
+                if not re.search(rf"\b{pid}\b", out):
+                    return
+            else:
+                try:
+                    os.kill(pid, 0)
+                except ProcessLookupError:
+                    return
+            time.sleep(0.1)
+        try:
+            os.kill(pid, 9)
+        except OSError:
+            pass
+        self.fail("the reviewer's child process was still running")
+
     def test_a_reviewers_children_do_not_outlive_it(self):
         _, summary = self.dispatch("--writer", "agy", "--prompt", str(self.prompt), codex="orphan")
         self.assertEqual(summary["reviewer"], "sol")
         pid = int((Path(self._tmp.name) / "child.pid").read_text())
-        for _ in range(50):
-            try:
-                os.kill(pid, 0)
-            except ProcessLookupError:
-                return
-            time.sleep(0.1)
-        os.kill(pid, 9)
-        self.fail("the reviewer's child process was still running")
+        self.assert_pid_gone(pid)
+
+    def test_a_reviewers_children_do_not_outlive_timeout_or_output_flood(self):
+        for mode, extra, expected in (("orphansleep", ("--timeout", "2"), "timed out"),
+                                      ("orphanflood", ("--timeout", "40"), "returned more than 2000000 bytes")):
+            with self.subTest(mode):
+                child_pid = Path(self._tmp.name) / "child.pid"
+                child_pid.unlink(missing_ok=True)
+                result, summary = self.dispatch("--writer", "agy", "--prompt", str(self.prompt), *extra, codex=mode)
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(summary["skipped"], [{"reviewer": "sol", "reason": expected}])
+                self.assert_pid_gone(int(child_pid.read_text()))
+                self.assertEqual(list(self.scratch.iterdir()), [])
+
+    def test_windows_job_containment_operates_and_refuses_when_containment_fails(self):
+        module = self.module()
+        with tempfile.TemporaryDirectory() as tmp:
+            stdout_path = Path(tmp) / "stdout.txt"
+            with unittest.mock.patch.object(module.os, "name", "nt"):
+                # 1. Job creation fails before Popen runs.
+                with unittest.mock.patch.object(module, "create_windows_job",
+                                                side_effect=OSError(5, "CreateJobObjectW denied")), \
+                     unittest.mock.patch.object(module.subprocess, "Popen") as popen_mock:
+                    code, reason = module.run(["codex"], "hi", 5, [stdout_path])
+                self.assertIsNone(code)
+                self.assertEqual(reason, "could not start: CreateJobObjectW denied")
+                popen_mock.assert_not_called()
+
+                # 2. Popen fails after job creation: the job handle is closed and the launch error preserved.
+                closed = []
+                with unittest.mock.patch.object(module, "create_windows_job", return_value=4242), \
+                     unittest.mock.patch.object(module, "close_windows_job", side_effect=closed.append), \
+                     unittest.mock.patch.object(module.subprocess, "Popen",
+                                                side_effect=OSError(2, "No such executable")):
+                    code, reason = module.run(["codex"], "hi", 5, [stdout_path])
+                self.assertIsNone(code)
+                self.assertEqual(reason, "could not start: No such executable")
+                self.assertEqual(closed, [4242])
+
+                # 3. Assignment or resume fails after suspended Popen: process is terminated, job closed, stdin closed.
+                fake_proc = unittest.mock.MagicMock()
+                fake_proc._handle = 999
+                fake_proc.stdin = unittest.mock.MagicMock()
+                closed = []
+                with unittest.mock.patch.object(module, "create_windows_job", return_value=7777), \
+                     unittest.mock.patch.object(module, "close_windows_job", side_effect=closed.append), \
+                     unittest.mock.patch.object(module.subprocess, "Popen", return_value=fake_proc) as popen_mock, \
+                     unittest.mock.patch.object(module, "bind_and_resume_windows_job",
+                                                side_effect=OSError(5, "AssignProcessToJobObject denied")):
+                    code, reason = module.run(["codex"], "hi", 5, [stdout_path])
+                self.assertIsNone(code)
+                self.assertEqual(reason, "could not start: AssignProcessToJobObject denied")
+                self.assertEqual(
+                    popen_mock.call_args.kwargs.get("creationflags"),
+                    module.CREATE_NEW_PROCESS_GROUP | module.CREATE_SUSPENDED,
+                )
+                self.assertEqual(closed, [7777])
+                fake_proc.stdin.close.assert_called_once()
+                fake_proc.kill.assert_called_once()
+                fake_proc.wait.assert_called_once()
+
+                # 4. Direct unit verification of create_windows_job and bind_and_resume_windows_job failure paths.
+                fake_k32 = unittest.mock.MagicMock()
+                fake_ntdll = unittest.mock.MagicMock()
+                with unittest.mock.patch.object(module, "_win32_apis", return_value=(fake_k32, fake_ntdll)), \
+                     unittest.mock.patch.object(module.ctypes, "get_last_error", return_value=5, create=True), \
+                     unittest.mock.patch.object(module.ctypes, "WinError",
+                                                side_effect=lambda err: OSError(err, f"WinError {err}"), create=True):
+                    fake_k32.CreateJobObjectW.return_value = 8888
+                    fake_k32.SetInformationJobObject.return_value = 0
+                    with self.assertRaises(OSError):
+                        module.create_windows_job()
+                    fake_k32.CloseHandle.assert_called_once_with(8888)
+
+                    fake_k32.AssignProcessToJobObject.return_value = 1
+                    fake_ntdll.NtResumeProcess.return_value = -1073741823
+                    with self.assertRaisesRegex(OSError, "NtResumeProcess failed"):
+                        module.bind_and_resume_windows_job(8888, fake_proc)
+
+                # 5. An unexpected exception inside the watch loop still cleans up the job and process in `finally`.
+                fake_proc2 = unittest.mock.MagicMock()
+                fake_proc2._handle = 1001
+                fake_proc2.stdin = unittest.mock.MagicMock()
+                fake_proc2.poll.side_effect = RuntimeError("poll exploded")
+                closed2 = []
+                with unittest.mock.patch.object(module, "create_windows_job", return_value=9999), \
+                     unittest.mock.patch.object(module, "close_windows_job", side_effect=closed2.append), \
+                     unittest.mock.patch.object(module, "bind_and_resume_windows_job"), \
+                     unittest.mock.patch.object(module.subprocess, "Popen", return_value=fake_proc2):
+                    with self.assertRaisesRegex(RuntimeError, "poll exploded"):
+                        module.run(["codex"], "hi", 5, [stdout_path])
+                self.assertEqual(closed2, [9999])
+                fake_proc2.kill.assert_called_once()
+                fake_proc2.wait.assert_called_once()
 
     def test_the_prompt_never_reaches_the_command_line(self):
         # A Windows .cmd shim re-parses its arguments through cmd.exe, so prose there could become commands.

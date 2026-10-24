@@ -42,6 +42,7 @@ recorded on an `- Lenses:` line. The JSON summary carries `position`, `escalated
 returned round past `severity_stop_after` reads `HIGHEST: P3`: the loop may stop there).
 """
 import argparse
+import ctypes
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -304,13 +305,97 @@ def command(reviewer, executable, output_path, effort=None):
             "--sandbox", "read-only", "--ephemeral", "--skip-git-repo-check", "-o", str(output_path), "-"]
 
 
+CREATE_NEW_PROCESS_GROUP = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
+CREATE_SUSPENDED = 0x00000004
+JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS = 9
+JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+
+
+class _IO_COUNTERS(ctypes.Structure):
+    _fields_ = [("ReadOperationCount", ctypes.c_uint64), ("WriteOperationCount", ctypes.c_uint64),
+                ("OtherOperationCount", ctypes.c_uint64), ("ReadTransferCount", ctypes.c_uint64),
+                ("WriteTransferCount", ctypes.c_uint64), ("OtherTransferCount", ctypes.c_uint64)]
+
+
+class _JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
+    _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64),
+                ("LimitFlags", ctypes.c_uint32), ("MinimumWorkingSetSize", ctypes.c_size_t),
+                ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", ctypes.c_uint32),
+                ("Affinity", ctypes.c_size_t), ("PriorityClass", ctypes.c_uint32),
+                ("SchedulingClass", ctypes.c_uint32)]
+
+
+class _JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
+    _fields_ = [("BasicLimitInformation", _JOBOBJECT_BASIC_LIMIT_INFORMATION), ("IoInfo", _IO_COUNTERS),
+                ("ProcessMemoryLimit", ctypes.c_size_t), ("JobMemoryLimit", ctypes.c_size_t),
+                ("PeakProcessMemoryUsed", ctypes.c_size_t), ("PeakJobMemoryUsed", ctypes.c_size_t)]
+
+
+def _win32_apis():
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateJobObjectW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p]
+    kernel32.CreateJobObjectW.restype = ctypes.c_void_p
+    kernel32.SetInformationJobObject.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32]
+    kernel32.SetInformationJobObject.restype = ctypes.c_int
+    kernel32.AssignProcessToJobObject.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    kernel32.AssignProcessToJobObject.restype = ctypes.c_int
+    kernel32.TerminateJobObject.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+    kernel32.TerminateJobObject.restype = ctypes.c_int
+    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+    kernel32.CloseHandle.restype = ctypes.c_int
+    ntdll = ctypes.WinDLL("ntdll")
+    ntdll.NtResumeProcess.argtypes = [ctypes.c_void_p]
+    ntdll.NtResumeProcess.restype = ctypes.c_int32
+    return kernel32, ntdll
+
+
+def create_windows_job():
+    """Create a Win32 Job Object configured with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE so every descendant is ended."""
+    kernel32, _ = _win32_apis()
+    job = kernel32.CreateJobObjectW(None, None)
+    if not job:
+        raise ctypes.WinError(ctypes.get_last_error())
+    info = _JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+    info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    if not kernel32.SetInformationJobObject(job, JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS, ctypes.byref(info),
+                                            ctypes.sizeof(info)):
+        err = ctypes.get_last_error()
+        kernel32.CloseHandle(job)
+        raise ctypes.WinError(err)
+    return job
+
+
+def bind_and_resume_windows_job(job, process):
+    """Assign a suspended Windows reviewer process to `job` before it executes any instruction, then resume it."""
+    kernel32, ntdll = _win32_apis()
+    handle = int(process._handle)
+    if not kernel32.AssignProcessToJobObject(job, ctypes.c_void_p(handle)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    status = ntdll.NtResumeProcess(ctypes.c_void_p(handle))
+    if status != 0:
+        raise OSError(f"NtResumeProcess failed (0x{status & 0xFFFFFFFF:08x})")
+
+
+def close_windows_job(job):
+    """Terminate every process in `job` and close the job handle."""
+    if not job:
+        return
+    kernel32, _ = _win32_apis()
+    kernel32.TerminateJobObject(job, 1)
+    kernel32.CloseHandle(job)
+
+
 def kill_tree(process):
     """End a reviewer and everything it started, whether it is still running or has already exited."""
     if os.name == "nt":
-        # WORKAROUND: Windows offers no process-group kill without job objects, so taskkill /T reaches the reviewer's
-        # children only while the reviewer itself is alive. A child that outlives a reviewer which exited by itself
-        # is not reached on Windows; on Linux and WSL the whole session is killed below.
-        subprocess.run(["taskkill", "/T", "/F", "/PID", str(process.pid)], capture_output=True)
+        job = getattr(process, "_job_handle", None)
+        if job:
+            process._job_handle = None
+            close_windows_job(job)
+        try:
+            process.kill()
+        except OSError:
+            pass
     else:
         try:
             os.killpg(process.pid, signal.SIGKILL)
@@ -320,9 +405,8 @@ def kill_tree(process):
 
 def remove_scratch(path):
     """Remove a reviewer's scratch directory. On Windows a file stays locked until every process holding it has
-    exited, and a reviewer's helper can outlive the reviewer (see kill_tree) and keep writing into it, so a failed
-    removal is retried for a bounded time. A directory that still cannot be removed is left behind with a note: the
-    round's outcome is already decided."""
+    exited, so a failed removal is retried for a bounded time. A directory that still cannot be removed is left behind
+    with a note: the round's outcome is already decided."""
     deadline = time.monotonic() + CLEANUP_SECONDS
     while True:
         try:
@@ -346,17 +430,36 @@ def feed(pipe, text):
 
 
 def run(argv, stdin_text, timeout, watched):
-    """Run one reviewer in its own process group, watching the size of every file it writes while it runs, so neither
-    a hang nor a flood of output can take the dispatcher or the disk down. The group is ended afterwards whatever
-    happened. Returns (exit code, None) or (None, the reason it returned no review)."""
-    group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
+    """Run one reviewer in its own process group (or Win32 Job Object on Windows), watching the size of every file it
+    writes while it runs, so neither a hang nor a flood of output can take the dispatcher or the disk down. The group
+    or job is ended afterwards whatever happened. Returns (exit code, None) or (None, the reason it returned no review)."""
+    group = ({"creationflags": CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED} if os.name == "nt"
+             else {"start_new_session": True})
     stdout_path = watched[0]
     with open(stdout_path, "wb") as output:
+        job = None
+        process = None
         try:
+            if os.name == "nt":
+                job = create_windows_job()
             process = subprocess.Popen(argv, cwd=ROOT, stdin=subprocess.PIPE, stdout=output,
                                        stderr=subprocess.DEVNULL, **group)
+            if os.name == "nt":
+                process._job_handle = job
+                job = None
+                bind_and_resume_windows_job(process._job_handle, process)
         except (OSError, ValueError) as exc:
-            return None, f"could not start: {getattr(exc, 'strerror', None) or type(exc).__name__}"
+            if job is not None:
+                close_windows_job(job)
+            if process is not None:
+                if process.stdin is not None:
+                    try:
+                        process.stdin.close()
+                    except OSError:
+                        pass
+                kill_tree(process)
+                process.wait()
+            return None, f"could not start: {getattr(exc, 'strerror', None) or str(exc) or type(exc).__name__}"
         try:
             # Fed from a thread: a reviewer that never reads would otherwise block this write past any timeout.
             threading.Thread(target=feed, args=(process.stdin, stdin_text), daemon=True).start()
