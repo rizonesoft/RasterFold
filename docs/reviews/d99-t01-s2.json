@@ -1,0 +1,84 @@
+{
+  "ref": "D99 T01 \u00a72",
+  "title": "Log In the GitHub CLI",
+  "implementation_sha": "490b13cba1022d3f448daecb3b2d28c462e5cd37",
+  "date": "2026-10-25",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/99-manual/D99-T01-s2.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "gh auth status",
+    "gh run list --repo rizonesoft/RasterFold --limit 1"
+  ],
+  "completion": {
+    "report": "docs/reviews/99-manual/D99-T01-s2.md",
+    "verdict": "complete",
+    "candidate": "490b13cba1022d3f448daecb3b2d28c462e5cd37",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/99-manual/D99-T01-s2.md",
+    "candidate": "490b13cba1022d3f448daecb3b2d28c462e5cd37",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}

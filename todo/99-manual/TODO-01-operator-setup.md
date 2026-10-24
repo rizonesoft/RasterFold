@@ -45,7 +45,7 @@ track: OP1
 | Order | Section | Deliverable                                   | Depends On | Status |
 | :---: | :-----: | --------------------------------------------- | ---------- | :----: |
 |   1   |   §1    | Remove the retired run-guard folders          | --         |  [x]   |
-|   2   |   §2    | Log in the GitHub CLI                         | --         |  [ ]   |
+|   2   |   §2    | Log in the GitHub CLI                         | --         |  [x]   |
 |   3   |   §3    | Approve format version 3                      | --         |  [x]   |
 |   4   |   §4    | The missed-milestone policy                   | --         |  [x]   |
 |   5   |   §5    | Enable GitHub Pages                           | --         |  [ ]   |
@@ -83,6 +83,8 @@ The previous developer's campaign tooling left a lock folder and a run guard in 
 
 **Test checkpoint:** `gh run list --repo rizonesoft/RasterFold --limit 1` exits 0.
 
+> **Verified:** 2026-10-25 | §2 | 490b13cba1022d3f448daecb3b2d28c462e5cd37
+> **Review:** `docs/reviews/d99-t01-s2.json`
 ## 3. Approve Format Version 3
 
 > **Started:** 2026-10-24T20:05:45Z
