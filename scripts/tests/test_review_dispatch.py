@@ -1246,9 +1246,18 @@ class RepositoryPin(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "todo/00-workspace").mkdir(parents=True)
+            (root / ".conclave").mkdir(parents=True)
+            (root / ".conclave/reviewers.toml").write_bytes(REPO_PIN.read_bytes())
+            subprocess.run(["git", "-C", str(root), "init", "-q"], check=True)
+            subprocess.run(["git", "-C", str(root), "add", ".conclave/reviewers.toml"], check=True)
+            subprocess.run(
+                ["git", "-C", str(root), "-c", "user.name=Test", "-c", "user.email=test@example.com",
+                 "commit", "-q", "-m", "pin"],
+                check=True,
+            )
             report_rel = "docs/reviews/00-workspace/D00-T01-s6.md"
             report = root / report_rel
-            head = subprocess.run(["git", "-C", str(SCRIPTS.parent), "rev-parse", "HEAD"],
+            head = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
                                   capture_output=True, text=True, check=True).stdout.strip()
             with open(REPO_PIN, "rb") as handle:
                 pin = tomllib.load(handle)
@@ -1304,9 +1313,8 @@ class RepositoryPin(unittest.TestCase):
                                "reviewer": "astra", "model": "gpt-6-astra", "filed": []},
                 "reviews": [{"round": 1, "report": report_rel, "verdict": "clean"}],
             }
-            with unittest.mock.patch.object(todo_graph, "committed_pin", return_value=pin):
-                with self.assertRaisesRegex(todo_graph.Refused, r"not the reviewer astra"):
-                    todo_graph.schedule_ok(root, data, "D00 T01 §6", False)
+            with self.assertRaisesRegex(todo_graph.Refused, r"not the reviewer astra"):
+                todo_graph.schedule_ok(root, data, "D00 T01 §6", False)
 
 
 if __name__ == "__main__":

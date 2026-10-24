@@ -111,15 +111,23 @@ Keep the format frozen at version 2. Add Linux and Android platform support and 
 > **Review:** `docs/reviews/d00-t04-s2.json`
 ## 3. Isolated Codex Lifecycle and Review Runner
 
+> **Started:** 2026-10-24T23:01:20Z
+
 **Corrected 2026-10-24:** With the operator decision to consolidate on Antigravity (`agy`) as the sole writer and GPT-6 Astra (`gpt-6-astra` via `codex`) as the sole reviewer (`D00 T01 §6`), the `.claude/` and `.codex/` writer harnesses are retired. This section's deliverables are satisfied by the unified `.agents/skills/` lifecycle skills, `.agents/hooks.json` native `Stop` hook, `scripts/campaign_guard.py` controller, and `scripts/review-dispatch.py` adaptive reviewer.
 
-- [ ] Maintain all lifecycle skills in `.agents/skills/` for Antigravity (`agy`). Done when: `python3 scripts/todo-graph.py validate` and `python3 scripts/campaign_guard.py --self-test` pass with all skills under `.agents/skills/`.
-- [ ] Implement native `Stop` hook handling in `.agents/hooks.json` and `scripts/campaign_guard.py` with session-bound ownership and a bounded heartbeat. Done when: `python3 scripts/campaign_guard.py --self-test` passes all 145 cases.
-- [ ] Route all independent reviews (`--kind plan`, `--kind completion`, and adaptive code review rounds) from `--writer agy` to `astra` (`codex`, `gpt-6-astra`) through `.conclave/reviewers.toml` and `scripts/review-dispatch.py`. Done when: `python3 scripts/review-dispatch.py --check-pin --json` and `python3 -m unittest discover -s scripts/tests -v` pass.
-- [ ] Document exact invocation, hook configuration, and stopped maintenance in `AGENTS.md`, `GEMINI.md`, and `.agents/skills/`. Done when: `python3 scripts/drift-check.py` exits 0.
-- [ ] Commit: `"runner: consolidate lifecycle skills, guard, and review dispatch on Antigravity"`
+- [x] Maintain all lifecycle skills in `.agents/skills/` for Antigravity (`agy`). Done when: `python3 scripts/todo-graph.py validate` and `python3 scripts/campaign_guard.py --self-test` pass with all skills under `.agents/skills/`.
+- [x] Implement native `Stop` hook handling in `.agents/hooks.json` and `scripts/campaign_guard.py` with session-bound ownership and a bounded heartbeat. Done when: `python3 scripts/campaign_guard.py --self-test` passes all 145 cases.
+- [x] Route all independent reviews (`--kind plan`, `--kind completion`, and adaptive code review rounds) from `--writer agy` to `astra` (`codex`, `gpt-6-astra`) through `.conclave/reviewers.toml` and `scripts/review-dispatch.py`. Done when: `python3 scripts/review-dispatch.py --check-pin --json` and `python3 -m unittest discover -s scripts/tests -v` pass.
+- [x] Document exact invocation, hook configuration, and stopped maintenance in `AGENTS.md`, `GEMINI.md`, and `.agents/skills/`. Done when: `python3 scripts/drift-check.py` exits 0.
+- [x] Commit: `"runner: consolidate lifecycle skills, guard, and review dispatch on Antigravity"`
+
+**Implementation evidence:** The unified `.agents/skills/` lifecycle skills, `.agents/hooks.json` native `Stop` hook, `scripts/campaign_guard.py` controller, `.conclave/reviewers.toml` `agy -> astra` pin, and `scripts/review-dispatch.py` adaptive 3-stage reviewer shipped in `c065b5865f774a4bb7c816f35a551d28941b4c0d` (hardened in `D00 T01 §6`, `§8`, and `§9`). This candidate also fixes `RepositoryPin.test_stamp_schedule_rejects_unpinned_reviewer_and_allows_retry_after_invalid_one_pass` in `scripts/tests/test_review_dispatch.py` to initialize a local temporary git repository instead of calling `git -C` on the WSL UNC checkout path from Windows Python.
 
 **Test checkpoint:** `python3 -m unittest discover -s scripts/tests -v` and `python3 scripts/campaign_guard.py --self-test` exit zero.
+
+**Checkpoint output (2026-10-24):** `python3 -m unittest discover -s scripts/tests -v` exited 0 (`Ran 99 tests in 40.418s`, `OK (skipped=1)`); `python3 scripts/windows.py scripts/tests/test_review_dispatch.py -v < /dev/null` exited 0 on Windows; `python3 scripts/campaign_guard.py --self-test` exited 0 (`campaign_guard self-test: 145 cases, 0 failed`, exercising `.agents/hooks.json` `Stop` hook continuation for the owning session, heartbeat `whoami` ownership/generation matching, `end --reason operator-stop`, `pending-cancel` / `cancel-confirmed`, and `reset-state --expect-no-guard yes`); `python3 scripts/review-dispatch.py --check-pin --json` exited 0 (`"ok": true`, `"routes": {"agy": ["astra"]}`, `"severity_stop_after": 0`); `python3 scripts/todo-graph.py validate` (`32 todos, 227 sections -- 0 fatal, 0 warning(s)`) and `python3 scripts/drift-check.py` (`162 supported documents; 0 error(s)`) exited 0. In the live Antigravity session `41c81c91-3d24-4ccd-a3d7-81f788b0cafd`, the active heartbeat job `41c81c91-3d24-4ccd-a3d7-81f788b0cafd/task-488` delivered 47 iterations verified with `whoami --session 41c81c91-3d24-4ccd-a3d7-81f788b0cafd --generation 436810801245` (`OWNER run=7c814ed0d16f scope=plan`), and a disposable native `schedule` probe (`41c81c91-3d24-4ccd-a3d7-81f788b0cafd/task-2119`) was created, verified in `manage_task(Action="list")`, cancelled via `manage_task(Action="kill")`, and confirmed absent in `manage_task(Action="list")`.
+
+**Freeze check:** No codec, oracle, format specification, or known-answer bytes change in this section; native correctness and oracle comparisons must remain green.
 
 ## 4. Family-Local Intelligence
 
