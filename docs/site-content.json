@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "repository": "rizonesoft/RasterFold",
+  "visibility": "public",
+  "base_path": "/RasterFold/",
+  "site_url": "https://rizonesoft.github.io/RasterFold/",
+  "build_type": "workflow",
+  "https_enforced": true,
+  "environment": {
+    "name": "github-pages",
+    "custom_branch_policies": true,
+    "allowed_branches": [
+      "main"
+    ],
+    "release_trigger": {
+      "event": "workflow_dispatch",
+      "dispatch_branch": "main",
+      "supports_exact_release_ref": true
+    }
+  }
+}
