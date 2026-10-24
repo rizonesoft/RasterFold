@@ -157,7 +157,7 @@ Admission: a defect in shipped work. The Python Stop hook landed in `a9a5af7` to
 
 **Origin:** discovered run=9bdc68a3a5dc 2026-10-21 -- the independent review of `D99 T01 §3` was refused
 
-> **Started:** 2026-10-21T06:25:47Z
+> **Started:** 2026-10-24T19:08:32Z
 
 **Corrected 2026-10-24:** The 2026-10-24 consolidation onto Antigravity (`agy`) as the sole writer retired `.codex/hooks/adapter.py` and `scripts/panel_slots.py`. `scripts/review-dispatch.py` always invokes `codex exec ... --sandbox read-only` so GPT-6 Astra runs in a read-only sandbox beside a live `agy` campaign without writer-hook contention, and `--list-rounds` exits 1 when any findings file is unreadable.
 
