@@ -1080,6 +1080,8 @@ class Schedule(Harness):
         p3 = "1. P3 calc.py:2 a name.\n\nHIGHEST: P3\nOVERALL: approve"
         stops = [self.round(p3)[0]["severity_stop"] for _ in range(4)]
         self.assertEqual(stops, [True, True, True, True])
+        self.assertFalse(self.round("1. P3 calc.py:2.\n\nHIGHEST: P3")[0]["severity_stop"],
+                         "a round missing OVERALL: is not a returned review and never stops the loop")
         self.assertFalse(self.round("1. P1 calc.py:2.\n\nHIGHEST: P1\nOVERALL: needs-attention")[0]["severity_stop"])
         self.assertFalse(self.round("1. P2 calc.py:2.\n\nHIGHEST: P2\nOVERALL: needs-attention")[0]["severity_stop"])
         self.assertFalse(self.round("1. calc.py:2 untagged.\n\nOVERALL: needs-attention")[0]["severity_stop"],

@@ -946,7 +946,7 @@ def main(argv=None):
         stop_after = pin["schedule"]["severity_stop_after"]
         # The severity stop: past `severity_stop_after` (0 in the current pin, so from round 1 on), a returned round
         # whose worst finding is P3 ends the loop (todo-graph.py SEVERITY_CUTOFF_ROUND is the same number).
-        result["severity_stop"] = bool(result["reviewer"]) and plan["position"] > stop_after \
+        result["severity_stop"] = returned_review(result) and plan["position"] > stop_after \
             and highest(result["review"]) == "P3"
     if args.record:
         try:
