@@ -46,7 +46,7 @@ track: OP1
 | :---: | :-----: | --------------------------------------------- | ---------- | :----: |
 |   1   |   §1    | Remove the retired run-guard folders          | --         |  [ ]   |
 |   2   |   §2    | Log in the GitHub CLI                         | --         |  [ ]   |
-|   3   |   §3    | Approve format version 3                      | --         |  [ ]   |
+|   3   |   §3    | Approve format version 3                      | --         |  [x]   |
 |   4   |   §4    | The missed-milestone policy                   | --         |  [ ]   |
 |   5   |   §5    | Enable GitHub Pages                           | --         |  [ ]   |
 | 6 | §6 | Android release signing identity | -- | [ ] |
@@ -92,6 +92,8 @@ What method 1 writes is frozen per format version (`AGENTS.md`). The operator ga
 
 **Test checkpoint:** the decision line is present and `python3 scripts/todo-graph.py validate` exits 0.
 
+> **Verified:** 2026-10-24 | §3 | dd4d46da9ca3a2dae33ff18480b56c09c5b80b13
+> **Review:** `docs/reviews/d99-t01-s3.json`
 ## 4. The Missed-Milestone Policy
 
 A milestone whose target is missed would otherwise stop a campaign for a decision each time. The operator set the policy:
