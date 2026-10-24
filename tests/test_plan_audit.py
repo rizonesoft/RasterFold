@@ -383,6 +383,27 @@ class TidyGateTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, r'baseline 20 .* exceeds committed baseline 15'):
                 tidy_gate.evaluate_ratchet(20, base_file, ratchet=False, head_baseline=min_merged)
 
+            subprocess.run([git, 'rm', '-q', 'todo/.tidy-baseline'], cwd=repo, check=True)
+            subprocess.run([git, 'commit', '-qm', 'delete baseline'], cwd=repo, check=True)
+            base_file.parent.mkdir(parents=True, exist_ok=True)
+            base_file.write_text('count: 20\n', encoding='utf-8')
+            subprocess.run([git, 'add', 'todo/.tidy-baseline'], cwd=repo, check=True)
+            subprocess.run([git, 'commit', '-qm', 'restore baseline at 20 after deletion'], cwd=repo, check=True)
+            min_after_del_20 = tidy_gate.committed_baseline(repo)
+            self.assertEqual(15, min_after_del_20)
+            with self.assertRaisesRegex(ValueError, r'baseline 20 .* exceeds committed baseline 15'):
+                tidy_gate.evaluate_ratchet(20, base_file, ratchet=False, head_baseline=min_after_del_20)
+
+            base_file.write_text('count: 15\n', encoding='utf-8')
+            subprocess.run([git, 'add', 'todo/.tidy-baseline'], cwd=repo, check=True)
+            subprocess.run([git, 'commit', '-qm', 'restore baseline at 15 after deletion'], cwd=repo, check=True)
+            min_after_del_15 = tidy_gate.committed_baseline(repo)
+            self.assertEqual(15, min_after_del_15)
+            self.assertEqual(
+                '15/15 unique warning(s)',
+                tidy_gate.evaluate_ratchet(15, base_file, ratchet=False, head_baseline=min_after_del_15),
+            )
+
             with patch.object(
                 tidy_gate.subprocess,
                 'run',
@@ -400,7 +421,23 @@ class TidyGateTests(unittest.TestCase):
                 side_effect=[
                     subprocess.CompletedProcess(['git'], 0, stdout='false\n', stderr=''),
                     subprocess.CompletedProcess(['git'], 0, stdout='deadbeef\n', stderr=''),
-                    subprocess.CompletedProcess(['git'], 128, stdout='', stderr='fatal: bad object deadbeef:todo/.tidy-baseline'),
+                    subprocess.CompletedProcess(['git'], 128, stdout='', stderr='fatal: unable to read blob'),
+                    subprocess.CompletedProcess(
+                        ['git'], 0, stdout='100644 blob 0123456789abcdef\ttodo/.tidy-baseline\n', stderr=''
+                    ),
+                ],
+            ):
+                with self.assertRaisesRegex(ValueError, r'cannot read historical baseline'):
+                    tidy_gate.committed_baseline(repo)
+
+            with patch.object(
+                tidy_gate.subprocess,
+                'run',
+                side_effect=[
+                    subprocess.CompletedProcess(['git'], 0, stdout='false\n', stderr=''),
+                    subprocess.CompletedProcess(['git'], 0, stdout='deadbeef\n', stderr=''),
+                    subprocess.CompletedProcess(['git'], 128, stdout='', stderr='fatal: bad object deadbeef'),
+                    subprocess.CompletedProcess(['git'], 128, stdout='', stderr='fatal: not a tree object'),
                 ],
             ):
                 with self.assertRaisesRegex(ValueError, r'cannot read historical baseline'):

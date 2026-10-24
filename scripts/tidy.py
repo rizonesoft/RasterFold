@@ -62,9 +62,16 @@ def committed_baseline(root: Path, rel_path: str = 'todo/.tidy-baseline') -> int
             text=True,
         )
         if proc.returncode != 0:
-            raise ValueError(
-                f'cannot read historical baseline {sha}:{rel_path}: {proc.stderr.strip() or "missing blob or deleted baseline"}'
+            ls_tree = subprocess.run(
+                ['git', 'ls-tree', sha, '--', rel_path],
+                cwd=root,
+                capture_output=True,
+                text=True,
             )
+            if ls_tree.returncode == 0 and not ls_tree.stdout.strip():
+                continue
+            detail = proc.stderr.strip() or ls_tree.stderr.strip() or 'missing git object'
+            raise ValueError(f'cannot read historical baseline {sha}:{rel_path}: {detail}')
         match = BASELINE_RE.match(proc.stdout)
         if not match:
             raise ValueError(f'malformed committed baseline {sha}:{rel_path}')
