@@ -121,13 +121,15 @@ Every milestone gate in `todo/05-milestones/` carries this policy: on a miss, up
 > **Review:** `docs/reviews/d99-t01-s4.json`
 ## 5. Enable GitHub Pages
 
+> **Started:** 2026-10-24T22:02:00Z
+
 **Requires:** operator -- the owner decides private-repository Pages eligibility and publication visibility; automation may reuse existing authorized account access for configuration once that decision is recorded.
 
-- [ ] In the repository settings of `rizonesoft/RasterFold`, set Pages to deploy from GitHub Actions. Done when: the settings page shows GitHub Actions as the source.
+- [x] In the repository settings of `rizonesoft/RasterFold`, set Pages to deploy from GitHub Actions. Done when: the settings page shows GitHub Actions as the source (configured on 2026-09-29; `gh api repos/rizonesoft/RasterFold/pages` reports `"build_type": "workflow"`, `"public": true`, `"html_url": "https://rizonesoft.github.io/RasterFold/"`, and `"https_enforced": true`).
 - [ ] Record the public project-site visibility and `/RasterFold/` base path in `docs/site-content.json`; check the `github-pages` environment allows `main` and the intended release triggers. Done when: an exact-release source can deploy through an allowed `workflow_dispatch` from `main` even if tag deployment is restricted.
 - [ ] Commit: `"workspace: record that GitHub Pages serves the docs"`
 
-**Test checkpoint:** the first `pages` workflow run after the change is green and the site's address loads.
+**Test checkpoint:** **Corrected 2026-10-24:** the section originally required the first `pages` workflow run to be green and the site's address to load here, before `D08 T01 §3` (which depends on `D99 T01 §5`) creates `.github/workflows/pages.yml`. This section verifies that `gh api repos/rizonesoft/RasterFold/pages` reports `"build_type": "workflow"` and `"public": true`, `gh api repos/rizonesoft/RasterFold/environments/github-pages/deployment-branch-policies` lists `main` as an allowed deployment branch for `workflow_dispatch`, and `docs/site-content.json` records those settings and passes `python3 scripts/drift-check.py`; `D08 T01 §3` verifies the first `pages` workflow run and live site response.
 
 ## 6. Android release signing identity
 
