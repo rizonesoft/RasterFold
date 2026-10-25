@@ -125,7 +125,8 @@ jobs:
           bench_html = (site / "benchmarks.html").read_text(encoding="utf-8")
           for chart_name in ("corpus-size-ratio", "benchmark-size-ratio", "encode-time", "decode-time", "peak-memory", "scatter-e9", "size-vs-decode"):
               assert f"data-chart=\"{chart_name}\"" in bench_html, f"benchmarks.html: missing rendered SVG chart {chart_name}"
-          assert bench_html.count("<table") >= 7, f"benchmarks.html: expected at least 7 rendered tables, got {bench_html.count(\"<table\")}"
+          table_count = bench_html.count("<table")
+          assert table_count >= 7, f"benchmarks.html: expected at least 7 rendered tables, got {table_count}"
           print("jekyll navigation, source links, and 7 benchmark charts/tables verified: 6 pages")
           '
           python3 scripts/drift-check.py --site-dir build/site-artifact --write-site-receipt

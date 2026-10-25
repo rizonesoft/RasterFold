@@ -774,14 +774,14 @@ class DriftTests(unittest.TestCase):
                 'scripts/build-docs.py',
                 'import os, sys\n'
                 'if "--check" in sys.argv:\n'
-                '    os.chmod("docs/format.md", 0o755)\n'
+                '    os.chmod("docs/format.md", 0o444 if os.name == "nt" else 0o755)\n'
                 'sys.exit(0)\n',
             )
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
                 self.assertEqual(1, drift.main(['--root', str(self.root)]))
             self.assertIn('generator: scripts/build-docs.py: --check modified docs/format.md; check mode must be read-only', buf.getvalue())
-            (self.root / 'docs/format.md').chmod(orig_mode)
+            (self.root / 'docs/format.md').chmod(orig_mode | 0o200)
 
             self.write(
                 'scripts/build-docs.py',
@@ -1894,9 +1894,9 @@ class DriftTests(unittest.TestCase):
             '    sys.exit(0 if ok else 1)\n'
             'if "--sync" in sys.argv:\n'
             '    p.parent.mkdir(parents=True, exist_ok=True)\n'
-            '    p.write_text(want, encoding="utf-8")\n'
+            '    p.write_text(want, encoding="utf-8", newline="\\n")\n'
             '    prog.parent.mkdir(parents=True, exist_ok=True)\n'
-            '    prog.write_text(want_prog, encoding="utf-8")\n'
+            '    prog.write_text(want_prog, encoding="utf-8", newline="\\n")\n'
             '    sys.exit(0)\n'
         )
         self.write('scripts/todo-graph.py', orig_gen)
@@ -2126,16 +2126,17 @@ class DriftTests(unittest.TestCase):
         self.assertEqual([], list(ms_target.parent.glob('.milestones-*')))
         ms_target.write_bytes(b'original milestone bytes\n')
         os.chmod(ms_target, 0o640)
+        exp_ms_mode = ms_target.stat().st_mode & 0o777
 
         with mock.patch('os.replace', side_effect=OSError('simulated milestone replace failure')):
             with self.assertRaises(OSError):
                 ms_mod.atomic_write_text(ms_target, 'new bytes\n', b'original milestone bytes\n')
         self.assertEqual(b'original milestone bytes\n', ms_target.read_bytes())
-        self.assertEqual(0o640, ms_target.stat().st_mode & 0o777)
+        self.assertEqual(exp_ms_mode, ms_target.stat().st_mode & 0o777)
         self.assertEqual([], list(ms_target.parent.glob('.milestones-*')))
         ms_mod.atomic_write_text(ms_target, 'updated milestone bytes\n', b'original milestone bytes\n')
         self.assertEqual(b'updated milestone bytes\n', ms_target.read_bytes())
-        self.assertEqual(0o640, ms_target.stat().st_mode & 0o777)
+        self.assertEqual(exp_ms_mode, ms_target.stat().st_mode & 0o777)
         ms_target.unlink()
 
         # 5. Injected write/replacement failure preservation, temp cleanup, permission preservation, stale cache repair, and idempotent recovery.
@@ -2145,6 +2146,7 @@ class DriftTests(unittest.TestCase):
         self.write('build/todo-progress.json', '{"ok": false}\n')
         for rel in ('README.md', 'docs/facts.json', 'todo/implementation-plan.md', 'build/todo-progress.json'):
             os.chmod(self.root / rel, 0o640)
+        exp_file_mode = (self.root / 'README.md').stat().st_mode & 0o777
         drifted_readme = (self.root / 'README.md').read_bytes()
         drifted_facts = (self.root / 'docs/facts.json').read_bytes()
         drifted_plan = (self.root / 'todo/implementation-plan.md').read_bytes()
@@ -2157,7 +2159,7 @@ class DriftTests(unittest.TestCase):
         self.assertEqual(drifted_facts, (self.root / 'docs/facts.json').read_bytes())
         self.assertEqual(drifted_plan, (self.root / 'todo/implementation-plan.md').read_bytes())
         self.assertEqual(drifted_prog, (self.root / 'build/todo-progress.json').read_bytes())
-        self.assertEqual(0o640, (self.root / 'README.md').stat().st_mode & 0o777)
+        self.assertEqual(exp_file_mode, (self.root / 'README.md').stat().st_mode & 0o777)
         self.assertEqual([], list(self.root.rglob('.drift-*')))
 
         with mock.patch('os.replace', side_effect=OSError('simulated replace failure')):
@@ -2167,10 +2169,10 @@ class DriftTests(unittest.TestCase):
         self.assertEqual(drifted_facts, (self.root / 'docs/facts.json').read_bytes())
         self.assertEqual(drifted_plan, (self.root / 'todo/implementation-plan.md').read_bytes())
         self.assertEqual(drifted_prog, (self.root / 'build/todo-progress.json').read_bytes())
-        self.assertEqual(0o640, (self.root / 'README.md').stat().st_mode & 0o777)
+        self.assertEqual(exp_file_mode, (self.root / 'README.md').stat().st_mode & 0o777)
         self.assertEqual([], list(self.root.rglob('.drift-*')))
 
-        # Recovery and idempotence: unpatched --fix succeeds, repairs build/todo-progress.json, preserves 0o640 mode,
+        # Recovery and idempotence: unpatched --fix succeeds, repairs build/todo-progress.json, preserves mode,
         # and a second --fix in a later second (different generated_at) preserves build/todo-progress.json byte-for-byte.
         out_fix1 = io.StringIO()
         with mock.patch.dict(os.environ, {'TEST_PROGRESS_TS': '2026-10-25T08:00:01Z'}):
@@ -2182,7 +2184,7 @@ class DriftTests(unittest.TestCase):
             (self.root / 'build/todo-progress.json').read_text(encoding='utf-8'),
         )
         for rel in ('README.md', 'docs/facts.json', 'todo/implementation-plan.md', 'build/todo-progress.json'):
-            self.assertEqual(0o640, (self.root / rel).stat().st_mode & 0o777)
+            self.assertEqual(exp_file_mode, (self.root / rel).stat().st_mode & 0o777)
         snap_after_fix1 = {
             rel: drift.digest((self.root / rel).read_bytes())
             for rel in ('README.md', 'docs/facts.json', 'todo/implementation-plan.md', 'build/todo-progress.json')

@@ -1657,7 +1657,7 @@
       }
     },
     "research/README.md": {
-      "evidence": "Author-attested: 2026-10-25 re-read research/README.md against research/corpus.py, research/ab.py, research/vsjxl.py, research/prof.py, and research/bench.c (D08 T02 section 4)",
+      "evidence": "Author-attested: 2026-10-25 re-read research/README.md after research/milestones.py path formatting update",
       "sources": {
         "research/corpus.py": "4434e32d8cdb5e70d887f03f7f4cdfbe9ada666ea680c7d6ce176cc9b2858bb7",
         "research/ab.py": "1c610cd4922caba9aa4e487506dcc90d77aaad67f6a98e0276b32ec44c96400f",

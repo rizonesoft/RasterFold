@@ -351,7 +351,7 @@ def main() -> int:
         print(f"milestones: wrote {len(stale)} file(s)")
         return 0
     for p in stale:
-        print(f"milestones: {p.relative_to(REPO)} is stale; run python research/milestones.py --write")
+        print(f"milestones: {p.relative_to(REPO).as_posix()} is stale; run python research/milestones.py --write")
     print(f"milestones: {'current' if not stale else str(len(stale)) + ' stale'}")
     return 1 if stale else 0
 
