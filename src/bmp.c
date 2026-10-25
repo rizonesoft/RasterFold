@@ -60,13 +60,9 @@ int rf_bmp_load(const uint8_t *f, size_t size, rf_image *out, rf_error *err) {
 }
 
 /* Canonical bottom-up 24-bit BMP with zero padding and 3780 pixels per metre. */
-int rf_bmp_store(const rf_image *img, uint8_t **file, size_t *size, rf_error *err) {
-    uint32_t w = img->width, h = img->height;
+void rf_bmp_header(uint8_t *b, uint32_t w, uint32_t h) {
     uint64_t stride = ((uint64_t)w * 3 + 3) & ~(uint64_t)3;
     uint64_t total = 54 + stride * h;
-    if (total > RF_MAX_FILE) return rf_fail(err, RF_ERR_LIMIT, "image exceeds size limit");
-    uint8_t *b = rf_alloc((size_t)total);
-    if (!b) return rf_fail(err, RF_ERR_LIMIT, "out of memory");
     wr16(b, 0x4D42);
     wr32(b + 2, (uint32_t)total);
     wr32(b + 10, 54);
@@ -78,9 +74,32 @@ int rf_bmp_store(const rf_image *img, uint8_t **file, size_t *size, rf_error *er
     wr32(b + 34, (uint32_t)(stride * h));
     wr32(b + 38, 3780);
     wr32(b + 42, 3780);
+}
+
+void rf_bmp_write_raw(uint8_t *bmp, size_t stride, const uint8_t *rgb, uint32_t w, uint32_t h) {
     for (uint32_t y = 0; y < h; y++)
-        swap_rb(b + 54 + stride * (h - 1 - y), img->rgb + (size_t)y * w * 3, w);
+        swap_rb(bmp + 54 + stride * (h - 1 - y), rgb + (size_t)y * w * 3, w);
+}
+
+int rf_bmp_alloc(uint32_t w, uint32_t h, uint8_t **file, size_t *size, size_t *stride, rf_error *err) {
+    *file = 0;
+    *size = 0;
+    uint64_t s = ((uint64_t)w * 3 + 3) & ~(uint64_t)3;
+    uint64_t total = 54 + s * h;
+    if (total > RF_MAX_FILE) return rf_fail(err, RF_ERR_LIMIT, "image exceeds size limit");
+    uint8_t *b = rf_alloc((size_t)total);
+    if (!b) return rf_fail(err, RF_ERR_LIMIT, "out of memory");
+    rf_bmp_header(b, w, h);
     *file = b;
     *size = (size_t)total;
+    if (stride) *stride = (size_t)s;
+    return RF_OK;
+}
+
+int rf_bmp_store(const rf_image *img, uint8_t **file, size_t *size, rf_error *err) {
+    size_t stride = 0;
+    int rc = rf_bmp_alloc(img->width, img->height, file, size, &stride, err);
+    if (rc || !*file) return rc;
+    rf_bmp_write_raw(*file, stride, img->rgb, img->width, img->height);
     return RF_OK;
 }

@@ -182,7 +182,9 @@ def roundtrip(name: str, width: int, height: int, rgb: bytes, **bmp_kw) -> None:
     check(rf.decode_image(encoded) == (width, height, rgb), "oracle decode of codec file")
     expect_ok(["decode", str(out_fold), str(out_bmp)])
     expect_ok(["decode", "--threads", "1", str(out_fold), str(one_bmp)])
+    canonical_bmp = rf.write_bmp24(width, height, rgb)
     check(rf.read_bmp24(out_bmp.read_bytes()) == (width, height, rgb), "decoded BMP pixels")
+    check(out_bmp.read_bytes() == canonical_bmp, "decoded BMP bytes differ from canonical BMP")
     check(one_bmp.read_bytes() == out_bmp.read_bytes(), "one-thread and default decodes differ")
     with Image.open(out_bmp) as pillow:
         check(pillow.size == (width, height), "pillow size")
@@ -190,6 +192,7 @@ def roundtrip(name: str, width: int, height: int, rgb: bytes, **bmp_kw) -> None:
     oracle_fold.write_bytes(oracle)
     expect_ok(["decode", str(oracle_fold), str(oracle_bmp)])
     check(rf.read_bmp24(oracle_bmp.read_bytes()) == (width, height, rgb), "codec decode of oracle file")
+    check(oracle_bmp.read_bytes() == canonical_bmp, "codec decode of oracle file BMP bytes differ from canonical BMP")
 
 
 def make_bad_bmp(kind: str) -> bytes:

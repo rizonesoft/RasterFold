@@ -60,7 +60,7 @@ int main(int argc, char **argv) {
             if (n == 0) { is_raw = 1; n = raw; be = bd = t1 - t0; break; }   /* container stores raw */
             memset(out, 0, raw);
             double t2 = cyc_ms();
-            int rc = rf_cm_decode(buf, n, out, im.w, im.h, threads, 0);
+            int rc = rf_cm_decode(buf, n, out, 0, im.w, im.h, threads, 0);
             double t3 = cyc_ms();
             ok &= rc == 0 && memcmp(out, im.rgb, raw) == 0;
             if (t1 - t0 < be) be = t1 - t0;

@@ -47,8 +47,7 @@ int rf_encode(const rf_image *img, uint8_t **file, size_t *size, int threads, rf
     return RF_OK;
 }
 
-int rf_decode(const uint8_t *f, size_t size, rf_image *out, rf_info *info, int threads, rf_error *err) {
-    out->rgb = 0;
+static int parse_fold(const uint8_t *f, size_t size, rf_info *info, const uint8_t **payload_out, rf_error *err) {
     if (size < RF_HEADER_SIZE) return rf_fail(err, RF_ERR_FORMAT, "invalid fold: truncated");
     if (f[0] != 'R' || f[1] != 'F' || f[2] != 'I') return rf_fail(err, RF_ERR_FORMAT, "invalid fold: magic");
     if (f[3] != RF_VERSION || rd16(f + 4) != RF_VERSION) return rf_fail(err, RF_ERR_UNSUPPORTED, "unsupported fold: version");
@@ -65,19 +64,49 @@ int rf_decode(const uint8_t *f, size_t size, rf_image *out, rf_info *info, int t
     if ((uint64_t)n != (uint64_t)size - RF_HEADER_SIZE) return rf_fail(err, RF_ERR_FORMAT, "invalid fold: payload length");
     const uint8_t *payload = f + RF_HEADER_SIZE;
     if (rf_crc32(payload, n) != rd32(f + 24)) return rf_fail(err, RF_ERR_FORMAT, "invalid fold: payload checksum");
-    if (info) {
-        info->width = w; info->height = h; info->method = method;
-        info->payload_size = n; info->payload_crc = rd32(f + 24); info->header_crc = rd32(f + 28);
-        for (int c = 0; c < 3; c++) info->stream_size[c] = (method == RF_METHOD_CM && n >= 12) ? rd32(payload + 4 * c) : 0;
-    }
     size_t raw = (size_t)w * h * 3;
     if (method == RF_METHOD_RAW && n != raw) return rf_fail(err, RF_ERR_FORMAT, "invalid fold: raw length");
+    info->width = w; info->height = h; info->method = method;
+    info->payload_size = n; info->payload_crc = rd32(f + 24); info->header_crc = rd32(f + 28);
+    for (int c = 0; c < 3; c++) info->stream_size[c] = (method == RF_METHOD_CM && n >= 12) ? rd32(payload + 4 * c) : 0;
+    *payload_out = payload;
+    return RF_OK;
+}
+
+int rf_decode(const uint8_t *f, size_t size, rf_image *out, rf_info *info, int threads, rf_error *err) {
+    out->rgb = 0;
+    rf_info hdr = {0};
+    const uint8_t *payload = 0;
+    int rc = parse_fold(f, size, &hdr, &payload, err);
+    if (rc || !payload) return rc;
+    if (info) *info = hdr;
+    size_t raw = (size_t)hdr.width * hdr.height * 3;
     uint8_t *rgb = rf_alloc(raw);
     if (!rgb) return rf_fail(err, RF_ERR_LIMIT, "out of memory");
-    if (method == RF_METHOD_RAW) memcpy(rgb, payload, raw);
-    else if ((rc = rf_cm_decode(payload, n, rgb, w, h, threads, err)) != RF_OK) { rf_free(rgb); return rc; }
-    out->width = w;
-    out->height = h;
+    if (hdr.method == RF_METHOD_RAW) memcpy(rgb, payload, raw);
+    else if ((rc = rf_cm_decode(payload, hdr.payload_size, rgb, 0, hdr.width, hdr.height, threads, err)) != RF_OK) { rf_free(rgb); return rc; }
+    out->width = hdr.width;
+    out->height = hdr.height;
     out->rgb = rgb;
+    return RF_OK;
+}
+
+int rf_decode_bmp(const uint8_t *f, size_t size, uint8_t **bmp, size_t *bmp_size, int threads, rf_error *err) {
+    *bmp = 0;
+    *bmp_size = 0;
+    rf_info hdr = {0};
+    const uint8_t *payload = 0;
+    int rc = parse_fold(f, size, &hdr, &payload, err);
+    if (rc || !payload) return rc;
+    size_t stride = 0;
+    rc = rf_bmp_alloc(hdr.width, hdr.height, bmp, bmp_size, &stride, err);
+    if (rc || !*bmp) return rc;
+    if (hdr.method == RF_METHOD_RAW) rf_bmp_write_raw(*bmp, stride, payload, hdr.width, hdr.height);
+    else if ((rc = rf_cm_decode(payload, hdr.payload_size, *bmp, stride, hdr.width, hdr.height, threads, err)) != RF_OK) {
+        rf_free(*bmp);
+        *bmp = 0;
+        *bmp_size = 0;
+        return rc;
+    }
     return RF_OK;
 }

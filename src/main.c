@@ -48,7 +48,7 @@ static void info_hex(const char *key, uint32_t v) {
 }
 
 static int run(int argc, rf_path_char **argv, rf_error *err) {
-    rf_path_char *pos[3];
+    rf_path_char *pos[3] = {0, 0, 0};
     int npos = 0, timing = 0;
     int threads = rf_cpu_count() >= 3 ? 3 : 1;
     for (int i = 1; i < argc; i++) {
@@ -98,20 +98,13 @@ static int run(int argc, rf_path_char **argv, rf_error *err) {
         written = out_size;
     } else {
         if (inspect) rc = rf_inspect(file, file_size, &info, err);
-        else {
-            rf_pixels pixels;
-            rc = rf_decode_image(file, file_size, &options, &pixels, err);
-            img.width = pixels.width; img.height = pixels.height; img.rgb = pixels.data;
-        }
+        else rc = rf_decode_bmp(file, file_size, &out, &out_size, threads, err);
         rf_free(file);
         file = 0;
         t3 = rf_ticks();
         if (rc) goto done;
         if (decode) {
-            rc = rf_bmp_store(&img, &out, &out_size, err);
-            rf_free(img.rgb);
-            img.rgb = 0;
-            if (!rc) rc = rf_write_atomic(pos[2], out, out_size, err);
+            rc = rf_write_atomic(pos[2], out, out_size, err);
             written = out_size;
         } else {
             rf_print(0, "RasterFold fold version 2" RF_EOL);

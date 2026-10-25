@@ -200,7 +200,9 @@ typedef struct {
 
 typedef struct {
     uint32_t w, h;
-    uint8_t *rgb;       /* the image: read by the encoder, written by the decoder */
+    uint8_t *rgb;       /* row 0 pixel base: read by the encoder, written by the decoder */
+    ptrdiff_t stride;   /* signed byte step from row y to row y + 1 */
+    int r_off;          /* byte offset of R in a 3-byte pixel: 0 for RGB, 2 for BGR */
     int8_t *xe[2];      /* XROWS rows of the G and R residuals */
     int16_t *xf[2];     /* XROWS rows of the G and R final errors, clamped to +-2047 */
     chan_t ch[3];
@@ -208,7 +210,7 @@ typedef struct {
     volatile int cancel;    /* worker threads exit at once when set before they start */
 } cm_t;
 
-static int cm_alloc(cm_t *m, uint32_t w, uint32_t h, uint8_t *rgb, rf_error *err) {
+static int cm_alloc(cm_t *m, uint32_t w, uint32_t h, uint8_t *rgb, size_t bmp_stride, rf_error *err) {
     size_t ctr = (size_t)NMODEL * NROWS * NODES * 2;
     size_t wt = (size_t)WSEL * NODES * WSTRIDE * 4;
     size_t pos = ((((size_t)w + 2) * 2 * sizeof(pos_t)) + 63) & ~(size_t)63;
@@ -216,7 +218,16 @@ static int cm_alloc(cm_t *m, uint32_t w, uint32_t h, uint8_t *rgb, rf_error *err
     size_t xe = (((size_t)w * XROWS) + 63) & ~(size_t)63, xf = (((size_t)w * XROWS * 2) + 63) & ~(size_t)63;
     uint8_t *b = rf_alloc((ctr + wt + pos + rows) * 3 + (xe + xf) * 2);
     if (!b) return rf_fail(err, RF_ERR_LIMIT, "out of memory");
-    m->w = w; m->h = h; m->rgb = rgb; m->block = b;
+    m->w = w; m->h = h; m->block = b;
+    if (bmp_stride) {
+        m->rgb = rgb + 54 + bmp_stride * (h - 1);
+        m->stride = -(ptrdiff_t)bmp_stride;
+        m->r_off = 2;
+    } else {
+        m->rgb = rgb;
+        m->stride = (ptrdiff_t)w * 3;
+        m->r_off = 0;
+    }
     for (int c = 0; c < 3; c++) {
         chan_t *ch = &m->ch[c];
         ch->ctr = (uint16_t *)b; b += ctr;
@@ -327,7 +338,7 @@ RF_INLINE void cm_model(cm_t *m, const int c, uint32_t x, uint32_t y, stage_t *s
     int g = 0, eg = 0, feg = 0, er_r = 0, fer = 0;
     const size_t xs = (size_t)(y % XROWS) * m->w + x;
     if (c >= 1) {
-        g = m->rgb[((size_t)y * m->w + x) * 3 + 1];
+        g = m->rgb[(ptrdiff_t)y * m->stride + (ptrdiff_t)x * 3 + 1];
         eg = m->xe[0][xs];
         feg = m->xf[0][xs];
     }
@@ -533,7 +544,7 @@ RF_INLINE int cm_code(cm_t *m, const int c, uint32_t x, uint32_t y, int value, c
         m->xe[c][xs] = (int8_t)r;
         m->xf[c][xs] = (int16_t)(ferr > 2047 ? 2047 : ferr < -2047 ? -2047 : ferr);
     }
-    if (!enc) m->rgb[((size_t)y * m->w + x) * 3 + (c == 0 ? 1 : c == 1 ? 0 : 2)] = (uint8_t)value;
+    if (!enc) m->rgb[(ptrdiff_t)y * m->stride + (ptrdiff_t)x * 3 + (c == 0 ? 1 : c == 1 ? m->r_off : 2 - m->r_off)] = (uint8_t)value;
     return value;
 }
 
@@ -624,7 +635,7 @@ int rf_cm_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size_
     *written = 0;
     if (cap < 12) return RF_OK;
     cm_t m;
-    if (cm_alloc(&m, w, h, (uint8_t *)rgb, err) != RF_OK) return RF_ERR_LIMIT;
+    if (cm_alloc(&m, w, h, (uint8_t *)rgb, 0, err) != RF_OK) return RF_ERR_LIMIT;
     size_t each = (size_t)w * h + 64;
     uint8_t *tmp = rf_alloc(each * 3);
     if (!tmp) { rf_free(m.block); return rf_fail(err, RF_ERR_LIMIT, "out of memory"); }
@@ -653,7 +664,7 @@ int rf_cm_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size_
     return RF_OK;
 }
 
-int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *rgb, uint32_t w, uint32_t h, int threads, rf_error *err) {
+int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *out, size_t stride, uint32_t w, uint32_t h, int threads, rf_error *err) {
     cm_tables();
     if (n < 12) return rf_fail(err, RF_ERR_FORMAT, "invalid fold: cm streams");
     uint64_t sz[3], sum = 12;
@@ -664,7 +675,7 @@ int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *rgb, uint32_t w, uint32_t
     }
     if (sum != n) return rf_fail(err, RF_ERR_FORMAT, "invalid fold: cm streams");
     cm_t m;
-    if (cm_alloc(&m, w, h, rgb, err) != RF_OK) return RF_ERR_LIMIT;
+    if (cm_alloc(&m, w, h, out, stride, err) != RF_OK) return RF_ERR_LIMIT;
     const uint8_t *p = in + 12;
     for (int c = 0; c < 3; c++) {
         rdec_init(&m.ch[c].dec, p, (size_t)sz[c]);

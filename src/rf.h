@@ -59,19 +59,25 @@ void rf_print_hex32(int to_stderr, uint32_t v);
 uint32_t rf_crc32(const uint8_t *p, size_t n);
 
 /* bmp.c */
+void rf_bmp_header(uint8_t *b, uint32_t w, uint32_t h);
+void rf_bmp_write_raw(uint8_t *bmp, size_t stride, const uint8_t *rgb, uint32_t w, uint32_t h);
+int rf_bmp_alloc(uint32_t w, uint32_t h, uint8_t **file, size_t *size, size_t *stride, rf_error *err);
 int rf_bmp_load(const uint8_t *file, size_t size, rf_image *out, rf_error *err);
 int rf_bmp_store(const rf_image *img, uint8_t **file, size_t *size, rf_error *err);
 
 /* fold.c */
 int rf_encode(const rf_image *img, uint8_t **file, size_t *size, int threads, rf_error *err);
 int rf_decode(const uint8_t *file, size_t size, rf_image *out, rf_info *info, int threads, rf_error *err);
+int rf_decode_bmp(const uint8_t *file, size_t size, uint8_t **bmp, size_t *bmp_size, int threads, rf_error *err);
 
 /* cm.c: the context-mixing method. rf_cm_encode sets *written to 0 when the
    payload would not fit in cap bytes; its return value is an error code.
    threads >= 2 codes the three channels on three threads; the bytes are the
-   same for any thread count. */
+   same for any thread count. When stride is 0, rf_cm_decode writes packed
+   top-down RGB to out; otherwise it writes bottom-up BGR rows of stride bytes
+   starting at out + 54. */
 int rf_cm_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size_t cap, size_t *written, int threads, rf_error *err);
-int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *rgb, uint32_t w, uint32_t h, int threads, rf_error *err);
+int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *out, size_t stride, uint32_t w, uint32_t h, int threads, rf_error *err);
 
 /* mem.c */
 void *memcpy(void *dst, const void *src, size_t n);
