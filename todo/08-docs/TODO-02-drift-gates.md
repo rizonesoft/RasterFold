@@ -19,6 +19,7 @@ track: D2
 
 ## Inputs
 
+- [`include/rasterfold.h`](../../include/rasterfold.h), [`src/rf.h`](../../src/rf.h), [`src/main.c`](../../src/main.c) -- the C headers and CLI entry point `docs/facts.json` derives its values from (product SemVer `VERSION` is reserved for `todo/09-release/TODO-01-release-v1.md` section 1)
 - [`scripts/todo-claims.py`](../../scripts/todo-claims.py) -- the claim checker §1 extends to the whole repository
 - [`README.md`](../../README.md), [`docs/research.md`](../../docs/research.md), [`research/README.md`](../../research/README.md), [`spec/FOLD.md`](../../spec/FOLD.md), [`AGENTS.md`](../../AGENTS.md) -- the documents under the gates
 - [`tools/githooks/pre-commit`](../../tools/githooks/pre-commit), [`scripts/check-all.ps1`](../../scripts/check-all.ps1), [`.github/workflows/plan.yml`](../../.github/workflows/plan.yml) -- where §5 wires the gates
@@ -50,12 +51,15 @@ track: D2
 
 ## 1. One Facts File and Claims Everywhere
 
-- [ ] Write `docs/facts.json`: the product and format names, the codec and format versions, the size limits, the exit codes and their meanings, the command names, and the file extensions. Done when: every value matches `src/rf.h` and `src/main.c`, checked by `scripts/drift-check.py`. Cheaper substitute: a list in the README.
-- [ ] Implement explicit fact bindings, generated current-fact blocks and supported prose assertions in `scripts/drift-check.py`. Done when: a wrong current format/API/limit value and a malformed binding fail; unbound arbitrary prose is reported as outside semantic proof, never silently repaired.
-- [ ] Reuse `scripts/todo-claims.py` claim evaluation from `scripts/drift-check.py` across supported information files. Done when: a stale or unterminated claim in `README.md` fails, while fenced examples and historical/planned roles remain explicit.
-- [ ] Commit: `"docs: one facts file and claims checked in every document"`
+> **Started:** 2026-10-25T01:58:00Z
 
-**Test checkpoint:** `python scripts/drift-check.py` exits 0; the two seeded drifts above each exit 1 (quoted, then reverted).
+- [x] Write `docs/facts.json`: the product and format names, the public C API (`RF_API_VERSION_MAJOR`, `RF_API_VERSION_MINOR`) and format (`RF_VERSION`) versions (product SemVer `VERSION` is reserved for `todo/09-release/TODO-01-release-v1.md` section 1), the size limits (`RF_HEADER_SIZE`, `RF_MAX_DIM`, `RF_MAX_PIXELS`, `RF_MAX_FILE`), the exit codes and their meanings, the command names, and the file extensions. Done when: every value matches `include/rasterfold.h`, `src/rf.h`, and `src/main.c`, checked by `scripts/drift-check.py`. Cheaper substitute: a list in the README.
+- [x] Implement explicit fact bindings, generated current-fact blocks and supported prose assertions (`format_version`, `api_major`, `api_minor`, `max_dimension`, `max_pixels`, `max_file_bytes`) in `scripts/drift-check.py` and `docs/drift.json`. Done when: a wrong current format/API major/API minor/limit value and a malformed binding fail; unbound arbitrary prose is reported as outside semantic proof, never silently repaired.
+- [x] Reuse `scripts/todo-claims.py` claim evaluation from `scripts/drift-check.py` across supported information files. Done when: a stale or unterminated claim in `README.md` fails, while fenced examples and historical/planned roles remain explicit.
+- [x] Add regression tests in `tests/test_drift.py` for the expanded `docs/facts.json` derivation against the live repository (`include/rasterfold.h`, `src/rf.h`, `src/main.c`), wrong format/API major/API minor/limit prose assertions, malformed bindings, stale and unterminated claims in `README.md`, and preservation of fenced examples and historical/plan roles. Done when: `python3 -m unittest tests/test_drift.py -v` passes.
+- [x] Commit: `"docs: one facts file and claims checked in every document"`
+
+**Test checkpoint:** `python3 -m unittest tests/test_drift.py -v` passes; `python3 scripts/drift-check.py` exits 0 on the clean tree; independent seeded CLI runs against `README.md` for (a) wrong format, API major, API minor, and limit prose assertions, (b) a malformed fact binding, and (c) a stale and an unterminated claim each exit 1 (quoted, then reverted with a clean `python3 scripts/drift-check.py` exit 0 read-back).
 
 ## 2. Figures Bound to Their Data
 

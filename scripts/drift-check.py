@@ -117,6 +117,14 @@ def derive_facts(manifest, read):
             if len(values) != 1:
                 raise ValueError(f'{key}: expected exactly one source match, got {len(values)}')
             value = int(values[0]) if rule.get('type') == 'int' else values[0]
+            for extra in rule.get('also_match', ()):
+                extra_source = read(extra['source'])
+                extra_values = re.findall(extra['pattern'], extra_source, re.M)
+                if len(extra_values) != 1:
+                    raise ValueError(f'{key}: expected one match in {extra["source"]}, got {len(extra_values)}')
+                extra_value = int(extra_values[0]) if rule.get('type') == 'int' else extra_values[0]
+                if extra_value != value:
+                    raise ValueError(f'{key}: {rule["source"]} has {value!r}, {extra["source"]} has {extra_value!r}')
         elif rule['kind'] == 'json':
             value = json.loads(source)
             for part in rule['key'].split('.'):

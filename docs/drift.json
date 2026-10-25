@@ -88,10 +88,32 @@
     }
   ],
   "facts": {
+    "product_name": {
+      "kind": "regex",
+      "source": "src/main.c",
+      "pattern": "^    \"(RasterFold) lossless image codec\" RF_EOL$"
+    },
+    "format_name": {
+      "kind": "regex",
+      "source": "src/main.c",
+      "pattern": "^\\s*rf_print\\(0, \"RasterFold (fold) version \\d+\" RF_EOL\\);$"
+    },
     "format_version": {
       "kind": "regex",
       "source": "src/rf.h",
       "pattern": "^#define RF_VERSION (\\d+)[uUlL]*$",
+      "type": "int",
+      "also_match": [
+        {
+          "source": "src/main.c",
+          "pattern": "^\\s*rf_print\\(0, \"RasterFold fold version (\\d+)\" RF_EOL\\);$"
+        }
+      ]
+    },
+    "header_bytes": {
+      "kind": "regex",
+      "source": "src/rf.h",
+      "pattern": "^#define RF_HEADER_SIZE (\\d+)[uUlL]*$",
       "type": "int"
     },
     "max_dimension": {
@@ -124,6 +146,167 @@
       "pattern": "^#define RF_API_VERSION_MINOR (\\d+)[uUlL]*$",
       "type": "int"
     },
+    "exit_ok": {
+      "kind": "regex",
+      "source": "include/rasterfold.h",
+      "pattern": "^#define RF_OK (\\d+)$",
+      "type": "int",
+      "also_match": [
+        {
+          "source": "src/main.c",
+          "pattern": "^    \"exit codes: (\\d+) ok, \\d+ usage, \\d+ io, \\d+ unsupported, \\d+ malformed, \\d+ limit\" RF_EOL;$"
+        }
+      ]
+    },
+    "exit_ok_meaning": {
+      "kind": "regex",
+      "source": "src/main.c",
+      "pattern": "^    \"exit codes: 0 ([a-z]+), 1 [a-z]+, 2 [a-z]+, 3 [a-z]+, 4 [a-z]+, 5 [a-z]+\" RF_EOL;$"
+    },
+    "exit_usage": {
+      "kind": "regex",
+      "source": "include/rasterfold.h",
+      "pattern": "^#define RF_ERR_USAGE (\\d+)$",
+      "type": "int",
+      "also_match": [
+        {
+          "source": "src/main.c",
+          "pattern": "^    \"exit codes: \\d+ ok, (\\d+) usage, \\d+ io, \\d+ unsupported, \\d+ malformed, \\d+ limit\" RF_EOL;$"
+        }
+      ]
+    },
+    "exit_usage_meaning": {
+      "kind": "regex",
+      "source": "src/main.c",
+      "pattern": "^    \"exit codes: 0 [a-z]+, 1 ([a-z]+), 2 [a-z]+, 3 [a-z]+, 4 [a-z]+, 5 [a-z]+\" RF_EOL;$"
+    },
+    "exit_io": {
+      "kind": "regex",
+      "source": "include/rasterfold.h",
+      "pattern": "^#define RF_ERR_IO (\\d+)$",
+      "type": "int",
+      "also_match": [
+        {
+          "source": "src/main.c",
+          "pattern": "^    \"exit codes: \\d+ ok, \\d+ usage, (\\d+) io, \\d+ unsupported, \\d+ malformed, \\d+ limit\" RF_EOL;$"
+        }
+      ]
+    },
+    "exit_io_meaning": {
+      "kind": "regex",
+      "source": "src/main.c",
+      "pattern": "^    \"exit codes: 0 [a-z]+, 1 [a-z]+, 2 ([a-z]+), 3 [a-z]+, 4 [a-z]+, 5 [a-z]+\" RF_EOL;$"
+    },
+    "exit_unsupported": {
+      "kind": "regex",
+      "source": "include/rasterfold.h",
+      "pattern": "^#define RF_ERR_UNSUPPORTED (\\d+)$",
+      "type": "int",
+      "also_match": [
+        {
+          "source": "src/main.c",
+          "pattern": "^    \"exit codes: \\d+ ok, \\d+ usage, \\d+ io, (\\d+) unsupported, \\d+ malformed, \\d+ limit\" RF_EOL;$"
+        }
+      ]
+    },
+    "exit_unsupported_meaning": {
+      "kind": "regex",
+      "source": "src/main.c",
+      "pattern": "^    \"exit codes: 0 [a-z]+, 1 [a-z]+, 2 [a-z]+, 3 ([a-z]+), 4 [a-z]+, 5 [a-z]+\" RF_EOL;$"
+    },
+    "exit_malformed": {
+      "kind": "regex",
+      "source": "include/rasterfold.h",
+      "pattern": "^#define RF_ERR_FORMAT (\\d+)$",
+      "type": "int",
+      "also_match": [
+        {
+          "source": "src/main.c",
+          "pattern": "^    \"exit codes: \\d+ ok, \\d+ usage, \\d+ io, \\d+ unsupported, (\\d+) malformed, \\d+ limit\" RF_EOL;$"
+        }
+      ]
+    },
+    "exit_malformed_meaning": {
+      "kind": "regex",
+      "source": "src/main.c",
+      "pattern": "^    \"exit codes: 0 [a-z]+, 1 [a-z]+, 2 [a-z]+, 3 [a-z]+, 4 ([a-z]+), 5 [a-z]+\" RF_EOL;$"
+    },
+    "exit_limit": {
+      "kind": "regex",
+      "source": "include/rasterfold.h",
+      "pattern": "^#define RF_ERR_LIMIT (\\d+)$",
+      "type": "int",
+      "also_match": [
+        {
+          "source": "src/main.c",
+          "pattern": "^    \"exit codes: \\d+ ok, \\d+ usage, \\d+ io, \\d+ unsupported, \\d+ malformed, (\\d+) limit\" RF_EOL;$"
+        }
+      ]
+    },
+    "exit_limit_meaning": {
+      "kind": "regex",
+      "source": "src/main.c",
+      "pattern": "^    \"exit codes: 0 [a-z]+, 1 [a-z]+, 2 [a-z]+, 3 [a-z]+, 4 [a-z]+, 5 ([a-z]+)\" RF_EOL;$"
+    },
+    "cmd_encode": {
+      "kind": "regex",
+      "source": "src/main.c",
+      "pattern": "^    \"  rasterfold (encode) \\[--time\\] \\[--threads N\\] input\\.bmp output\\.fold\" RF_EOL$",
+      "also_match": [
+        {
+          "source": "src/main.c",
+          "pattern": "int encode = wide_eq\\(pos\\[0\\], \"(encode)\"\\)"
+        }
+      ]
+    },
+    "cmd_decode": {
+      "kind": "regex",
+      "source": "src/main.c",
+      "pattern": "^    \"  rasterfold (decode) \\[--time\\] \\[--threads N\\] input\\.fold output\\.bmp\" RF_EOL$",
+      "also_match": [
+        {
+          "source": "src/main.c",
+          "pattern": "decode = wide_eq\\(pos\\[0\\], \"(decode)\"\\)"
+        }
+      ]
+    },
+    "cmd_inspect": {
+      "kind": "regex",
+      "source": "src/main.c",
+      "pattern": "^    \"  rasterfold (inspect) \\[--time\\] input\\.fold\" RF_EOL$",
+      "also_match": [
+        {
+          "source": "src/main.c",
+          "pattern": "inspect = wide_eq\\(pos\\[0\\], \"(inspect)\"\\)"
+        }
+      ]
+    },
+    "input_image_ext": {
+      "kind": "regex",
+      "source": "src/main.c",
+      "pattern": "^    \"  rasterfold encode \\[--time\\] \\[--threads N\\] input(\\.bmp) output\\.fold\" RF_EOL$",
+      "also_match": [
+        {
+          "source": "src/main.c",
+          "pattern": "^    \"  rasterfold decode \\[--time\\] \\[--threads N\\] input\\.fold output(\\.bmp)\" RF_EOL$"
+        }
+      ]
+    },
+    "encoded_ext": {
+      "kind": "regex",
+      "source": "src/main.c",
+      "pattern": "^    \"  rasterfold encode \\[--time\\] \\[--threads N\\] input\\.bmp output(\\.fold)\" RF_EOL$",
+      "also_match": [
+        {
+          "source": "src/main.c",
+          "pattern": "^    \"  rasterfold decode \\[--time\\] \\[--threads N\\] input(\\.fold) output\\.bmp\" RF_EOL$"
+        },
+        {
+          "source": "src/main.c",
+          "pattern": "^    \"  rasterfold inspect \\[--time\\] input(\\.fold)\" RF_EOL$"
+        }
+      ]
+    },
     "measurement_reference_bytes": {
       "kind": "csv",
       "source": "benchmarks/results.csv",
@@ -153,13 +336,43 @@
   "assertions": [
     {
       "pattern": "*",
-      "regex": "\\bformat (?:version |v)(\\d+)\\b",
+      "regex": "\\b(?:(?:encoded |codec: |declare )format:? |format (?:version |v))(\\d+)\\b",
       "fact": "format_version"
     },
     {
       "pattern": "*",
-      "regex": "\\bAPI (?:version )?(\\d+)\\.\\d+\\b",
+      "regex": "\\b(?:public )?API:? (?:version )?(\\d+)\\.\\d+\\b",
       "fact": "api_major"
+    },
+    {
+      "pattern": "*",
+      "regex": "\\b(?:public )?API:? (?:version )?\\d+\\.(\\d+)\\b",
+      "fact": "api_minor"
+    },
+    {
+      "pattern": "*",
+      "regex": "\\b(?:maximum dimension:? |dimension limit:? )(\\d+)\\b",
+      "fact": "max_dimension"
+    },
+    {
+      "pattern": "*",
+      "regex": "\\b(\\d+)(?:-pixel dimension limit| pixels per dimension)\\b",
+      "fact": "max_dimension"
+    },
+    {
+      "pattern": "*",
+      "regex": "\\b(?:maximum image:? |image limit:? )(\\d+)\\b",
+      "fact": "max_pixels"
+    },
+    {
+      "pattern": "*",
+      "regex": "\\b(\\d+)(?:-pixel image limit| pixels total)\\b",
+      "fact": "max_pixels"
+    },
+    {
+      "pattern": "*",
+      "regex": "\\b(?:maximum file(?: size)?:? |file(?: size)? limit:? )(\\d+)\\b",
+      "fact": "max_file_bytes"
     }
   ],
   "reviews": {

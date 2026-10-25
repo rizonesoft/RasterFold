@@ -383,6 +383,71 @@ class DriftTests(unittest.TestCase):
         self.write('message.txt', 'Change\n\nDrift-Fact: version=2\n')
         self.assertEqual(0, self.hook('commit-msg', str(self.root / 'message.txt')).returncode)
 
+    def test_live_repository_facts_and_secondary_source_matches(self):
+        live_manifest = json.loads((REPO / 'docs/drift.json').read_text(encoding='utf-8'))
+        live_facts = drift.derive_facts(live_manifest, lambda rel: (REPO / rel).read_text(encoding='utf-8'))
+        committed_facts = json.loads((REPO / 'docs/facts.json').read_text(encoding='utf-8'))
+        self.assertEqual(committed_facts, live_facts)
+        expected_keys = {
+            'product_name', 'format_name', 'format_version', 'header_bytes',
+            'max_dimension', 'max_pixels', 'max_file_bytes', 'api_major', 'api_minor',
+            'exit_ok', 'exit_ok_meaning', 'exit_usage', 'exit_usage_meaning',
+            'exit_io', 'exit_io_meaning', 'exit_unsupported', 'exit_unsupported_meaning',
+            'exit_malformed', 'exit_malformed_meaning', 'exit_limit', 'exit_limit_meaning',
+            'cmd_encode', 'cmd_decode', 'cmd_inspect', 'input_image_ext', 'encoded_ext',
+            'measurement_reference_bytes',
+        }
+        self.assertEqual(expected_keys, set(live_facts))
+        for mutated, target, old, new in [
+            ('format_version', 'src/rf.h', '#define RF_VERSION 2u', '#define RF_VERSION 3u'),
+            ('exit_limit', 'include/rasterfold.h', '#define RF_ERR_LIMIT 5', '#define RF_ERR_LIMIT 6'),
+            ('cmd_inspect', 'src/main.c', 'wide_eq(pos[0], "inspect")', 'wide_eq(pos[0], "check")'),
+        ]:
+            def read_mutated(rel, target=target, old=old, new=new):
+                text = (REPO / rel).read_text(encoding='utf-8')
+                return text.replace(old, new, 1) if rel == target else text
+            with self.assertRaisesRegex(ValueError, mutated):
+                drift.derive_facts(live_manifest, read_mutated)
+
+    def test_live_assertions_and_readme_claims_and_bindings(self):
+        live_manifest = json.loads((REPO / 'docs/drift.json').read_text(encoding='utf-8'))
+        self.manifest['assertions'] = live_manifest['assertions']
+        self.manifest['facts'].update({
+            'format_version': {'kind': 'regex', 'source': 'src/version.h', 'pattern': r'^#define VERSION (\d+)u$', 'type': 'int'},
+            'api_major': {'kind': 'regex', 'source': 'src/api.h', 'pattern': r'^#define API_MAJOR (\d+)u$', 'type': 'int'},
+            'api_minor': {'kind': 'regex', 'source': 'src/api.h', 'pattern': r'^#define API_MINOR (\d+)u$', 'type': 'int'},
+            'max_dimension': {'kind': 'regex', 'source': 'src/api.h', 'pattern': r'^#define MAX_DIM (\d+)u$', 'type': 'int'},
+            'max_pixels': {'kind': 'regex', 'source': 'src/api.h', 'pattern': r'^#define MAX_PIX (\d+)u$', 'type': 'int'},
+            'max_file_bytes': {'kind': 'regex', 'source': 'src/api.h', 'pattern': r'^#define MAX_FILE (\d+)u$', 'type': 'int'},
+        })
+        self.write('src/api.h', '#define API_MAJOR 1u\n#define API_MINOR 0u\n#define MAX_DIM 32768u\n#define MAX_PIX 33554432u\n#define MAX_FILE 268435456u\n')
+        self.manifest['coverage'].insert(0, {'pattern': 'docs/history.md', 'role': 'historical', 'reason': 'historical fixture'})
+        self.manifest['coverage'].insert(0, {'pattern': 'todo/plan.md', 'role': 'plan', 'reason': 'plan fixture'})
+        self.save()
+        self.check().fix()
+        base_readme = (self.root / 'README.md').read_text(encoding='utf-8')
+        for sample in (
+            'Current codec: format 3.',
+            'C API 2.0 is current.',
+            'C API 1.9 is current.',
+            'Maximum dimension: 16384.',
+            'Maximum image: 1000000 pixels.',
+            'Maximum file size: 999999.',
+        ):
+            self.write('README.md', base_readme + '\n' + sample + '\n')
+            c = self.check()
+            self.assertIn('prose-fact', self.kinds(c), sample)
+        self.write('README.md', base_readme + '\n```md\nCurrent codec: format 9, C API 9.9. Maximum dimension: 1.\n```\n')
+        self.write('docs/history.md', 'Format version 1 and API 0.9 with a 1024-pixel dimension limit.\n')
+        self.write('todo/plan.md', 'Planned format version 3 and API 2.0.\n')
+        self.assertEqual([], self.check().errors)
+        self.write('README.md', base_readme + '\n<!-- drift:fact format_version = 2\n')
+        self.assertIn('fact', self.kinds(self.check()))
+        self.write('README.md', base_readme + '\n<!-- claim: exists no_such_file.c -->\n')
+        self.assertIn('claim', self.kinds(self.check()))
+        self.write('README.md', base_readme + '\n<!-- claim: exists src/version.h\n')
+        self.assertIn('claim', self.kinds(self.check()))
+
 
 if __name__ == '__main__':
     unittest.main()

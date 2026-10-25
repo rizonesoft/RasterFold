@@ -148,7 +148,7 @@ The ported plan, hooks, gates, measurement references, HTML docs, and drift gate
 | [x] | `D00 T02 §1` | e9 and WebP references in the research tools                  |   3   |
 | [x] | `D00 T02 §2` | JPEG XL e9 in the benchmark                                   |   2   |
 | [x] | `D00 T02 §3` | The committed corpus results file                             |   3   |
-| [ ] | `D08 T02 §1` | One facts file and claims everywhere                          |   4   |
+| [ ] | `D08 T02 §1` | One facts file and claims everywhere                          |   5   |
 | [ ] | `D08 T01 §1` | The Jekyll site and its generated pages                       |   6   |
 | [ ] | `D08 T02 §3` | Generated files match their sources                           |   2   |
 | [ ] | `D08 T01 §2` | Comparison charts                                             |   4   |
