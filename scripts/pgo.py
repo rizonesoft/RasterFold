@@ -163,27 +163,42 @@ def publish_profile_pair(
     meta_partial = Path(str(meta_path) + '.partial')
     bak_prof = Path(str(out_path) + '.bak')
     bak_meta = Path(str(meta_path) + '.bak')
-    for p in (partial, meta_partial, bak_prof, bak_meta):
+    bak_prof_tmp = Path(str(bak_prof) + '.tmp')
+    bak_meta_tmp = Path(str(bak_meta) + '.tmp')
+    for p in (partial, meta_partial, bak_prof, bak_meta, bak_prof_tmp, bak_meta_tmp):
         p.unlink(missing_ok=True)
     shutil.copy2(staged_prof, partial)
     meta_partial.write_text(json.dumps(meta, indent=2) + '\n', encoding='utf-8')
-    had_prev = out_path.is_file() and meta_path.is_file()
-    if had_prev:
-        shutil.copy2(out_path, bak_prof)
-        shutil.copy2(meta_path, bak_meta)
+    compiler = str(meta['compiler'])
+    expected_hashes = dict(meta['sources'])
+    had_valid_backup = False
     try:
+        if build_mod.is_consistent_profile_pair(out_path, meta_path, compiler, expected_hashes):
+            shutil.copy2(out_path, bak_prof_tmp)
+            shutil.copy2(meta_path, bak_meta_tmp)
+            replace_fn(bak_prof_tmp, bak_prof)
+            replace_fn(bak_meta_tmp, bak_meta)
+            had_valid_backup = build_mod.is_consistent_profile_pair(bak_prof, bak_meta, compiler, expected_hashes)
         replace_fn(partial, out_path)
         replace_fn(meta_partial, meta_path)
     except BaseException:
-        partial.unlink(missing_ok=True)
-        meta_partial.unlink(missing_ok=True)
-        if had_prev and bak_prof.is_file() and bak_meta.is_file():
-            bak_prof.replace(out_path)
-            bak_meta.replace(meta_path)
+        for p in (partial, meta_partial, bak_prof_tmp, bak_meta_tmp):
+            p.unlink(missing_ok=True)
+        if (
+            had_valid_backup
+            and not build_mod.is_consistent_profile_pair(out_path, meta_path, compiler, expected_hashes)
+            and build_mod.is_consistent_profile_pair(bak_prof, bak_meta, compiler, expected_hashes)
+        ):
+            res_prof = Path(str(out_path) + '.restore')
+            res_meta = Path(str(meta_path) + '.restore')
+            shutil.copy2(bak_prof, res_prof)
+            shutil.copy2(bak_meta, res_meta)
+            res_prof.replace(out_path)
+            res_meta.replace(meta_path)
         raise
     finally:
-        bak_prof.unlink(missing_ok=True)
-        bak_meta.unlink(missing_ok=True)
+        for p in (bak_prof, bak_meta, bak_prof_tmp, bak_meta_tmp):
+            p.unlink(missing_ok=True)
 
 
 def generate_profile(

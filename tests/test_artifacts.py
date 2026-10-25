@@ -411,22 +411,55 @@ class Artifacts(unittest.TestCase):
             self.assertEqual(prof_out.read_bytes(), second_bytes)
             self.assertEqual(meta_out.read_text(encoding='utf-8'), second_meta)
 
-            # 6. Interrupted publication between .profdata and .profdata.json rolls back to the previous valid pair.
+            # 6. Interrupted backup creation or live publication preserves the valid profile pair.
             staged_new = temp_dir / 'staged_new.profdata'
             staged_new.write_bytes(second_bytes + b'\x00')
             new_meta = json.loads(second_meta)
             new_meta['profdata_sha256'] = hashlib.sha256(staged_new.read_bytes()).hexdigest()
+            bak_prof = Path(str(prof_out) + '.bak')
+            bak_meta = Path(str(meta_out) + '.bak')
+
+            def interrupt_on_bak_meta(src: Path, dst: Path) -> None:
+                if dst == bak_meta:
+                    dst.write_text('{truncated', encoding='utf-8')
+                    raise OSError('simulated interruption during backup metadata creation')
+                src.replace(dst)
+
+            with self.assertRaisesRegex(OSError, 'simulated interruption during backup'):
+                pgo_mod.publish_profile_pair(staged_new, prof_out, new_meta, replace_fn=interrupt_on_bak_meta)
+            self.assertEqual(prof_out.read_bytes(), second_bytes)
+            self.assertEqual(meta_out.read_text(encoding='utf-8'), second_meta)
+            self.assertEqual(build_mod.validate_pgo_profile(prof_out, pgo_tools, suffix), prof_out.resolve())
+
+            # Simulate an uncleaned truncated backup left by SIGKILL while the live pair is valid.
+            bak_prof.write_bytes(second_bytes)
+            bak_meta.write_text('{truncated', encoding='utf-8')
+            self.assertEqual(build_mod.validate_pgo_profile(prof_out, pgo_tools, suffix), prof_out.resolve())
+            self.assertEqual(prof_out.read_bytes(), second_bytes)
+            self.assertEqual(meta_out.read_text(encoding='utf-8'), second_meta)
+            self.assertFalse(bak_prof.exists())
+            self.assertFalse(bak_meta.exists())
 
             def interrupt_on_meta(src: Path, dst: Path) -> None:
                 if dst == meta_out:
                     raise OSError('simulated interruption before metadata replace')
                 src.replace(dst)
 
-            with self.assertRaisesRegex(OSError, 'simulated interruption'):
+            with self.assertRaisesRegex(OSError, 'simulated interruption before metadata'):
                 pgo_mod.publish_profile_pair(staged_new, prof_out, new_meta, replace_fn=interrupt_on_meta)
             self.assertEqual(prof_out.read_bytes(), second_bytes)
             self.assertEqual(meta_out.read_text(encoding='utf-8'), second_meta)
             self.assertEqual(build_mod.validate_pgo_profile(prof_out, pgo_tools, suffix), prof_out.resolve())
+
+            # Simulate a crash after live .profdata replacement where a complete backup pair exists on disk.
+            bak_prof.write_bytes(second_bytes)
+            bak_meta.write_text(second_meta, encoding='utf-8')
+            prof_out.write_bytes(staged_new.read_bytes())
+            self.assertEqual(build_mod.validate_pgo_profile(prof_out, pgo_tools, suffix), prof_out.resolve())
+            self.assertEqual(prof_out.read_bytes(), second_bytes)
+            self.assertEqual(meta_out.read_text(encoding='utf-8'), second_meta)
+            self.assertFalse(bak_prof.exists())
+            self.assertFalse(bak_meta.exists())
 
             # 7. Stale source or header provenance in .profdata.json is rejected by validate_pgo_profile.
             for tracked_key in ('src/cm.c', 'include/rasterfold.h'):

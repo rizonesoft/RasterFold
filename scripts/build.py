@@ -120,20 +120,74 @@ def validate_pgo_exe_provenance(exe: Path, cc: Path) -> dict[str, object]:
     return meta
 
 
+def is_consistent_profile_pair(
+    prof_path: Path,
+    meta_path: Path,
+    compiler: str,
+    expected_hashes: dict[str, str],
+    profdata_tool: Path | None = None,
+) -> bool:
+    if not prof_path.is_file() or prof_path.stat().st_size == 0 or not meta_path.is_file():
+        return False
+    try:
+        meta = json.loads(meta_path.read_text(encoding='utf-8'))
+        actual_sha = hashlib.sha256(prof_path.read_bytes()).hexdigest()
+    except Exception:
+        return False
+    if meta.get('schema') != 1 or meta.get('profdata_sha256') != actual_sha or meta.get('compiler') != compiler:
+        return False
+    sources = meta.get('sources')
+    if not isinstance(sources, dict) or set(sources.keys()) != set(expected_hashes.keys()):
+        return False
+    if any(sources.get(rel) != current for rel, current in expected_hashes.items()):
+        return False
+    if profdata_tool is not None:
+        proc = subprocess.run([str(profdata_tool), 'show', str(prof_path)], capture_output=True, text=True)
+        if proc.returncode != 0:
+            return False
+    return True
+
+
+def restore_profile_backup_if_needed(
+    resolved: Path,
+    meta_path: Path,
+    compiler: str,
+    expected_hashes: dict[str, str],
+    profdata_tool: Path,
+) -> None:
+    bak_prof = Path(str(resolved) + '.bak')
+    bak_meta = Path(str(meta_path) + '.bak')
+    for tmp in (Path(str(bak_prof) + '.tmp'), Path(str(bak_meta) + '.tmp')):
+        tmp.unlink(missing_ok=True)
+    if not (bak_prof.is_file() or bak_meta.is_file()):
+        return
+    if is_consistent_profile_pair(resolved, meta_path, compiler, expected_hashes, profdata_tool):
+        bak_prof.unlink(missing_ok=True)
+        bak_meta.unlink(missing_ok=True)
+        return
+    if is_consistent_profile_pair(bak_prof, bak_meta, compiler, expected_hashes, profdata_tool):
+        res_prof = Path(str(resolved) + '.restore')
+        res_meta = Path(str(meta_path) + '.restore')
+        shutil.copy2(bak_prof, res_prof)
+        shutil.copy2(bak_meta, res_meta)
+        res_prof.replace(resolved)
+        res_meta.replace(meta_path)
+    bak_prof.unlink(missing_ok=True)
+    bak_meta.unlink(missing_ok=True)
+
+
 def validate_pgo_profile(profile: Path, tools: Path, suffix: str) -> Path:
     resolved = profile.resolve()
     meta_path = Path(str(resolved) + '.json')
-    bak_prof = Path(str(resolved) + '.bak')
-    bak_meta = Path(str(meta_path) + '.bak')
-    if bak_prof.is_file() and bak_meta.is_file():
-        bak_prof.replace(resolved)
-        bak_meta.replace(meta_path)
-    if not resolved.is_file() or resolved.stat().st_size == 0:
-        raise ValueError(f'missing or empty PGO profile: {profile}')
     profdata = tools / ('llvm-profdata' + suffix)
     cc = tools / ('clang' + suffix)
     if not profdata.is_file() or not cc.is_file():
         raise ValueError(f'missing {profdata}; run tools/bootstrap.py')
+    compiler = subprocess.check_output([str(cc), '--version'], text=True).splitlines()[0]
+    expected_hashes = pgo_source_hashes()
+    restore_profile_backup_if_needed(resolved, meta_path, compiler, expected_hashes, profdata)
+    if not resolved.is_file() or resolved.stat().st_size == 0:
+        raise ValueError(f'missing or empty PGO profile: {profile}')
     proc = subprocess.run([str(profdata), 'show', str(resolved)], capture_output=True, text=True)
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout or 'invalid profile').strip().splitlines()[0]
@@ -145,13 +199,11 @@ def validate_pgo_profile(profile: Path, tools: Path, suffix: str) -> Path:
     except Exception as exc:
         raise ValueError(f'stale or mismatched PGO profile provenance in {meta_path}: {exc}') from exc
     actual_sha = hashlib.sha256(resolved.read_bytes()).hexdigest()
-    compiler = subprocess.check_output([str(cc), '--version'], text=True).splitlines()[0]
     if meta.get('schema') != 1 or meta.get('profdata_sha256') != actual_sha or meta.get('compiler') != compiler:
         raise ValueError(f'stale or mismatched PGO profile provenance in {meta_path}: compiler or profile digest mismatch')
     sources = meta.get('sources')
     if not isinstance(sources, dict):
         raise ValueError(f'stale or mismatched PGO profile provenance in {meta_path}: missing sources table')
-    expected_hashes = pgo_source_hashes()
     if set(sources.keys()) != set(expected_hashes.keys()):
         raise ValueError(f'stale or mismatched PGO profile provenance in {meta_path}: tracked source set mismatch; regenerate with scripts/pgo.ps1')
     for rel, current in expected_hashes.items():
