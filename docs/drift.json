@@ -7,6 +7,11 @@
       "reason": "Placeholders are authoring examples, not current facts."
     },
     {
+      "pattern": "docs/_includes/generated/*",
+      "role": "generated",
+      "reason": "Generated SVG comparison charts and Markdown tables from benchmarks/*.csv, checked by scripts/build-docs.py --check and --self-test."
+    },
+    {
       "pattern": "docs/_includes/*",
       "role": "template",
       "reason": "Jekyll HTML layout includes with Liquid expressions."
@@ -498,7 +503,21 @@
       "outputs": [
         "docs/format.md",
         "docs/usage.md",
-        "docs/research-summary.md"
+        "docs/research-summary.md",
+        "docs/_includes/generated/charts/corpus-size-ratio.svg",
+        "docs/_includes/generated/charts/benchmark-size-ratio.svg",
+        "docs/_includes/generated/charts/encode-time.svg",
+        "docs/_includes/generated/charts/decode-time.svg",
+        "docs/_includes/generated/charts/peak-memory.svg",
+        "docs/_includes/generated/charts/scatter-e9.svg",
+        "docs/_includes/generated/charts/size-vs-decode.svg",
+        "docs/_includes/generated/tables/corpus-size-ratio.md",
+        "docs/_includes/generated/tables/benchmark-size-ratio.md",
+        "docs/_includes/generated/tables/encode-time.md",
+        "docs/_includes/generated/tables/decode-time.md",
+        "docs/_includes/generated/tables/peak-memory.md",
+        "docs/_includes/generated/tables/scatter-e9.md",
+        "docs/_includes/generated/tables/size-vs-decode.md"
       ],
       "planned_outputs": {
         "docs/cli.md": "D08 T03 §1",

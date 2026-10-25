@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import csv
 import ctypes
+import hashlib
+import io
 import math
 import os
 import platform
@@ -174,15 +176,58 @@ def parse_csv_row(raw: dict[str, str]) -> dict:
     }
 
 
-def load_existing_rows(csv_path: Path) -> list[dict]:
+def kat_fold_sha256(repo: Path = ROOT) -> str:
+    tc_path = repo / "tests" / "test_correctness.py"
+    text = tc_path.read_text(encoding="utf-8")
+    m = re.search(r"KAT_FOLD\s*=\s*bytes\.fromhex\(\s*((?:\"[^\"]*\"\s*)+)\)", text, re.S)
+    if not m:
+        raise ValueError(f"unable to locate KAT_FOLD in {tc_path}")
+    hex_str = "".join(re.findall(r'"([0-9a-fA-F]+)"', m.group(1)))
+    return hashlib.sha256(bytes.fromhex(hex_str)).hexdigest()
+
+
+def read_results_csv(csv_path: Path) -> tuple[dict[str, str], list[dict]]:
     if not csv_path.is_file():
-        return []
-    with csv_path.open("r", newline="", encoding="utf-8") as fh:
-        return [parse_csv_row(r) for r in csv.DictReader(fh)]
+        return {}, []
+    raw_lines = csv_path.read_text(encoding="utf-8").splitlines(keepends=True)
+    meta: dict[str, str] = {}
+    idx = 0
+    while idx < len(raw_lines) and raw_lines[idx].lstrip().startswith("#"):
+        comment = raw_lines[idx].lstrip()[1:].strip()
+        for token in comment.split():
+            if "=" in token:
+                k, v = token.split("=", 1)
+                meta[k.strip()] = v.strip()
+        idx += 1
+    body = "".join(raw_lines[idx:])
+    if not body.strip():
+        return meta, []
+    return meta, [parse_csv_row(r) for r in csv.DictReader(io.StringIO(body))]
 
 
-def write_csv_rows(csv_path: Path, rows: list[dict]) -> None:
+def load_existing_rows(csv_path: Path) -> list[dict]:
+    _, rows = read_results_csv(csv_path)
+    return rows
+
+
+def write_csv_rows(csv_path: Path, rows: list[dict], meta: dict[str, str] | None = None) -> None:
     with csv_path.open("w", newline="", encoding="utf-8") as fh:
+        if meta:
+            ordered_keys = (
+                "codec_revision",
+                "kat_fold_sha256",
+                "date",
+                "measured_sets",
+                "retained_sets",
+                "retained_revision",
+                "retained_date",
+            )
+            parts = [f"{k}={meta[k]}" for k in ordered_keys if k in meta and meta[k]]
+            for k, v in meta.items():
+                if k not in ordered_keys and v:
+                    parts.append(f"{k}={v}")
+            if parts:
+                fh.write("# " + " ".join(parts) + "\n")
         writer = csv.DictWriter(fh, fieldnames=list(CSV_FIELDS))
         writer.writeheader()
         writer.writerows(rows)
@@ -294,7 +339,7 @@ def main() -> int:
         return 1
     OUT.mkdir(exist_ok=True)
     csv_path = OUT / "results.csv"
-    existing = load_existing_rows(csv_path)
+    existing_meta, existing = read_results_csv(csv_path)
     measured = []
     for set_name in sets:
         folder = WORK / set_name
@@ -307,7 +352,18 @@ def main() -> int:
                 measured.append({"set": set_name, "image": stem, "width": w, "height": h, "raw": w * h * 3, "codec": codec, **r})
     rows, retained_sets = merge_rows(existing, measured, sets)
     failures = [f"{r['codec']} {r['set']}/{r['image']}" for r in rows if not r["pixels_match"]]
-    write_csv_rows(csv_path, rows)
+    rev_proc = subprocess.run(["git", "rev-parse", "--verify", "HEAD"], cwd=ROOT, capture_output=True, text=True)
+    head_sha = (rev_proc.stdout or "").strip() if rev_proc.returncode == 0 else "unknown"
+    meta = {
+        "codec_revision": head_sha,
+        "kat_fold_sha256": kat_fold_sha256(ROOT),
+        "date": date.today().isoformat(),
+        "measured_sets": ",".join(sets),
+        "retained_sets": ",".join(retained_sets) if retained_sets else "none",
+        "retained_revision": existing_meta.get("retained_revision") or existing_meta.get("codec_revision", "unknown") if retained_sets else "none",
+        "retained_date": existing_meta.get("retained_date") or existing_meta.get("date", "unknown") if retained_sets else "none",
+    }
+    write_csv_rows(csv_path, rows, meta=meta)
     report(rows, failures, sets, repeats, retained_sets=retained_sets)
     print(f"failures: {len(failures)}")
     for f in failures:

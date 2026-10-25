@@ -6,7 +6,11 @@ Uses only the Python standard library. Never stages raw docs/ or repository root
 from __future__ import annotations
 
 import argparse
+import csv
+from html import escape as xml_escape
+import io
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -14,6 +18,7 @@ import shutil
 import sys
 import tempfile
 from urllib.parse import urlsplit
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 SITE_CONTENT = 'docs/site-content.json'
@@ -295,6 +300,901 @@ def render_research_summary_page(root: Path, page_meta: dict) -> str:
     return header + '\n\n---\n\n'.join(selected) + '\n'
 
 
+CHART_NAMES = (
+    'corpus-size-ratio',
+    'benchmark-size-ratio',
+    'encode-time',
+    'decode-time',
+    'peak-memory',
+    'scatter-e9',
+    'size-vs-decode',
+)
+CORPUS_CSV = 'benchmarks/corpus.csv'
+RESULTS_CSV = 'benchmarks/results.csv'
+CORPUS_CODECS = ('rasterfold', 'jxl_e7', 'jxl_e9', 'webp')
+BENCHMARK_SETS = ('measure', 'photos', 'synthetic')
+BENCHMARK_CODECS = ('rasterfold', 'rasterfold-1t', 'jxl', 'jxl-1t', 'jxl-e9', 'webp', 'png')
+TP_OVERLAP_PHOTO = (
+    'ic_deer',
+    'ic_fireworks',
+    'ic_flower_foveon',
+    'ic_nightshot_iso_1600',
+    'ic_spider_web',
+)
+CODEC_COLORS = {
+    'rasterfold': '#2563eb',
+    'rasterfold-1t': '#60a5fa',
+    'jxl': '#059669',
+    'jxl_e7': '#059669',
+    'jxl-1t': '#34d399',
+    'jxl-e9': '#7c3aed',
+    'jxl_e9': '#7c3aed',
+    'webp': '#d97706',
+    'png': '#64748b',
+}
+SET_COLORS = {
+    'photo': '#2563eb',
+    'tp': '#059669',
+    'synth': '#d97706',
+    'measure': '#2563eb',
+    'photos': '#059669',
+    'synthetic': '#d97706',
+}
+CODEC_THREAD_LABELS = {
+    'rasterfold': 'enc 3T / dec 3T',
+    'rasterfold-1t': 'enc 1T / dec 1T',
+    'jxl': 'enc 1T / dec default',
+    'jxl-1t': 'enc 1T / dec 1T',
+    'jxl-e9': 'enc 1T / dec default',
+    'webp': 'enc 1T / dec 1T',
+    'png': 'enc 1T / dec 1T',
+}
+
+
+def _geomean(values: list[float]) -> float:
+    if not values:
+        raise ValueError('cannot compute geometric mean of empty sequence')
+    return math.exp(sum(math.log(v) for v in values) / len(values))
+
+
+def load_csv_with_meta(root: Path, rel: str) -> tuple[dict[str, str], list[dict[str, str]]]:
+    path = safe_repo_path(root, rel)
+    if not path.is_file():
+        raise ValueError(f'{rel}: missing measurement CSV')
+    raw_lines = path.read_text(encoding='utf-8').splitlines(keepends=True)
+    meta: dict[str, str] = {}
+    idx = 0
+    while idx < len(raw_lines) and raw_lines[idx].lstrip().startswith('#'):
+        comment = raw_lines[idx].lstrip()[1:].strip()
+        for token in comment.split():
+            if '=' in token:
+                k, v = token.split('=', 1)
+                meta[k.strip()] = v.strip()
+        idx += 1
+    for req_key, pattern in (
+        ('codec_revision', r'^[0-9a-f]{40}$'),
+        ('kat_fold_sha256', r'^[0-9a-f]{64}$'),
+        ('date', r'^\d{4}-\d{2}-\d{2}$'),
+    ):
+        val = meta.get(req_key, '')
+        if not re.fullmatch(pattern, val):
+            raise ValueError(f'{rel}: missing or invalid header {req_key}={val!r}')
+    if rel == RESULTS_CSV:
+        for req_key in ('measured_sets', 'retained_sets', 'retained_revision', 'retained_date'):
+            if not meta.get(req_key):
+                raise ValueError(f'{rel}: missing required header {req_key}')
+        if meta['retained_sets'] != 'none':
+            if not re.fullmatch(r'^[0-9a-f]{40}$', meta['retained_revision']):
+                raise ValueError(f'{rel}: invalid retained_revision={meta["retained_revision"]!r}')
+            if not re.fullmatch(r'^\d{4}-\d{2}-\d{2}$', meta['retained_date']):
+                raise ValueError(f'{rel}: invalid retained_date={meta["retained_date"]!r}')
+    body = ''.join(raw_lines[idx:])
+    rows = list(csv.DictReader(io.StringIO(body)))
+    if not rows:
+        raise ValueError(f'{rel}: CSV contains no data rows')
+    return meta, rows
+
+
+def compute_chart_datasets(root: Path) -> dict[str, dict]:
+    corpus_meta, corpus_raw = load_csv_with_meta(root, CORPUS_CSV)
+    results_meta, results_raw = load_csv_with_meta(root, RESULTS_CSV)
+
+    corpus_rows: list[dict] = []
+    seen_corpus_images: set[str] = set()
+    for r in corpus_raw:
+        img = (r.get('image') or '').strip()
+        set_name = (r.get('set') or '').strip()
+        if not img or set_name not in ('photo', 'tp', 'synth') or img in seen_corpus_images:
+            raise ValueError(f'{CORPUS_CSV}: invalid or duplicate row {r!r}')
+        seen_corpus_images.add(img)
+        w = int(r['width'])
+        h = int(r['height'])
+        rf = int(r['rasterfold'])
+        e7 = int(r['jxl_e7'])
+        e9 = int(r['jxl_e9'])
+        wp = int(r['webp'])
+        if min(w, h, rf, e7, e9, wp) <= 0:
+            raise ValueError(f'{CORPUS_CSV}: non-positive value in row {r!r}')
+        corpus_rows.append(
+            {
+                'set': set_name,
+                'image': img,
+                'width': w,
+                'height': h,
+                'raw': w * h * 3,
+                'rasterfold': rf,
+                'jxl_e7': e7,
+                'jxl_e9': e9,
+                'webp': wp,
+            }
+        )
+
+    results_rows: list[dict] = []
+    seen_results: set[tuple[str, str, str]] = set()
+    for r in results_raw:
+        set_name = (r.get('set') or '').strip()
+        img = (r.get('image') or '').strip()
+        codec = (r.get('codec') or '').strip()
+        key = (set_name, img, codec)
+        if set_name not in BENCHMARK_SETS or codec not in BENCHMARK_CODECS or not img or key in seen_results:
+            raise ValueError(f'{RESULTS_CSV}: invalid or duplicate row {r!r}')
+        seen_results.add(key)
+        if (r.get('pixels_match') or '').strip() != 'True':
+            raise ValueError(f'{RESULTS_CSV}: pixels_match is not True for {key}')
+        w = int(r['width'])
+        h = int(r['height'])
+        raw_b = int(r['raw'])
+        b = int(r['bytes'])
+        enc_us = float(r['encode_us'])
+        dec_us = float(r['decode_us'])
+        enc_pk = int(r['encode_peak'])
+        dec_pk = int(r['decode_peak'])
+        if min(w, h, raw_b, b, enc_us, dec_us, enc_pk, dec_pk) <= 0:
+            raise ValueError(f'{RESULTS_CSV}: non-positive measurement in {key}')
+        results_rows.append(
+            {
+                'set': set_name,
+                'image': img,
+                'width': w,
+                'height': h,
+                'raw': raw_b,
+                'codec': codec,
+                'bytes': b,
+                'encode_us': int(enc_us) if enc_us.is_integer() else enc_us,
+                'decode_us': int(dec_us) if dec_us.is_integer() else dec_us,
+                'encode_peak': enc_pk,
+                'decode_peak': dec_pk,
+            }
+        )
+
+    corpus_prov = {
+        'source': CORPUS_CSV,
+        'codec_revision': corpus_meta['codec_revision'],
+        'kat_fold_sha256': corpus_meta['kat_fold_sha256'],
+        'date': corpus_meta['date'],
+        'threads': 'rasterfold: 3T default; jxl_e7, jxl_e9, webp: -threads 1',
+        'limitations': 'Size-only research corpus (55 images: photo 39, tp 10 overlapping / tp-only 5 exclusive, synth 11); PNG, wall time, and memory are measured in benchmarks/results.csv.',
+    }
+    results_prov = {
+        'source': RESULTS_CSV,
+        'codec_revision': results_meta['codec_revision'],
+        'kat_fold_sha256': results_meta['kat_fold_sha256'],
+        'date': results_meta['date'],
+        'measured_sets': results_meta['measured_sets'],
+        'retained_sets': results_meta['retained_sets'],
+        'retained_revision': results_meta['retained_revision'],
+        'retained_date': results_meta['retained_date'],
+        'threads': 'rasterfold: 3T; rasterfold-1t: 1T; jxl/jxl-e9: enc 1T, dec default; jxl-1t: enc 1T, dec 1T; webp/png: 1T',
+        'limitations': (
+            f'measured_sets={results_meta["measured_sets"]} ({results_meta["date"]}, rev {results_meta["codec_revision"][:12]}); '
+            f'retained_sets={results_meta["retained_sets"]} ({results_meta["retained_date"]}, rev {results_meta["retained_revision"][:12]}, jxl-e9 not measured).'
+        ),
+    }
+
+    # 1. corpus-size-ratio
+    corpus_groups = {
+        'photo': [r for r in corpus_rows if r['set'] == 'photo'],
+        'tp': [r for r in corpus_rows if r['set'] == 'tp' or r['image'] in TP_OVERLAP_PHOTO],
+        'tp-only': [r for r in corpus_rows if r['set'] == 'tp'],
+        'synth': [r for r in corpus_rows if r['set'] == 'synth'],
+        'all': list(corpus_rows),
+    }
+    corpus_bars: list[dict] = []
+    corpus_table_rows: list[list[str]] = []
+    for gname in ('photo', 'tp', 'tp-only', 'synth', 'all'):
+        g_rows = corpus_groups[gname]
+        if not g_rows:
+            raise ValueError(f'{CORPUS_CSV}: empty corpus group {gname}')
+        e7_sum = sum(r['jxl_e7'] for r in g_rows)
+        totals = {c: sum(r[c] for r in g_rows) for c in CORPUS_CODECS}
+        ratios = {c: totals[c] / e7_sum for c in CORPUS_CODECS}
+        rf_geomean = _geomean([r['rasterfold'] / r['jxl_e7'] for r in g_rows])
+        for c in CORPUS_CODECS:
+            corpus_bars.append(
+                {
+                    'group': gname,
+                    'series': c,
+                    'value': f'{ratios[c]:.4f}',
+                    'num': ratios[c],
+                    'raw_total': str(totals[c]),
+                    'denom_total': str(e7_sum),
+                }
+            )
+        corpus_table_rows.append(
+            [
+                gname,
+                str(len(g_rows)),
+                str(totals['rasterfold']),
+                str(totals['jxl_e7']),
+                str(totals['jxl_e9']),
+                str(totals['webp']),
+                f'{ratios["rasterfold"]:.4f}',
+                f'{rf_geomean:.4f}',
+                f'{ratios["jxl_e9"]:.4f}',
+                f'{ratios["webp"]:.4f}',
+            ]
+        )
+
+    # Helper to index results_rows by set -> image -> codec
+    by_set_img: dict[str, dict[str, dict[str, dict]]] = {s: {} for s in BENCHMARK_SETS}
+    for r in results_rows:
+        by_set_img[r['set']].setdefault(r['image'], {})[r['codec']] = r
+    for s in BENCHMARK_SETS:
+        if not by_set_img[s]:
+            raise ValueError(f'{RESULTS_CSV}: empty benchmark set {s}')
+        for img, cmap in by_set_img[s].items():
+            if 'jxl' not in cmap:
+                raise ValueError(f'{RESULTS_CSV}: missing baseline jxl row for {s}/{img}')
+
+    # 2. benchmark-size-ratio, 3. encode-time, 4. decode-time, 5. peak-memory, 7. size-vs-decode
+    bench_size_bars: list[dict] = []
+    bench_size_table: list[list[str]] = []
+    enc_time_bars: list[dict] = []
+    enc_time_table: list[list[str]] = []
+    dec_time_bars: list[dict] = []
+    dec_time_table: list[list[str]] = []
+    peak_mem_bars: list[dict] = []
+    peak_mem_table: list[list[str]] = []
+    svd_points: list[dict] = []
+    svd_table: list[list[str]] = []
+
+    for s in BENCHMARK_SETS:
+        imgs = sorted(by_set_img[s].keys())
+        n_imgs = len(imgs)
+        for c in BENCHMARK_CODECS:
+            present = [by_set_img[s][img][c] for img in imgs if c in by_set_img[s][img]]
+            if present and len(present) != n_imgs:
+                raise ValueError(f'{RESULTS_CSV}: partial codec coverage for {s}/{c} ({len(present)}/{n_imgs})')
+            if not present:
+                for target_bars in (bench_size_bars, enc_time_bars, dec_time_bars):
+                    target_bars.append({'group': s, 'series': c, 'value': 'N/A', 'num': None})
+                peak_mem_bars.append({'group': f'{s}-encode', 'series': c, 'value': 'N/A', 'num': None, 'mib': 'N/A'})
+                peak_mem_bars.append({'group': f'{s}-decode', 'series': c, 'value': 'N/A', 'num': None, 'mib': 'N/A'})
+                svd_points.append({'group': s, 'series': c, 'x': 'N/A', 'y': 'N/A', 'num_x': None, 'num_y': None})
+                na_note = f'N/A (not measured in retained {results_meta["retained_date"]} set)'
+                bench_size_table.append([s, c, str(n_imgs), na_note, na_note])
+                enc_time_table.append([s, c, CODEC_THREAD_LABELS[c], na_note, na_note])
+                dec_time_table.append([s, c, CODEC_THREAD_LABELS[c], na_note, na_note])
+                peak_mem_table.append([s, c, na_note, na_note, na_note, na_note])
+                svd_table.append([s, c, CODEC_THREAD_LABELS[c], na_note, na_note])
+                continue
+
+            total_bytes = sum(by_set_img[s][img][c]['bytes'] for img in imgs)
+            size_geo = _geomean([by_set_img[s][img][c]['bytes'] / by_set_img[s][img]['jxl']['bytes'] for img in imgs])
+            total_enc = sum(by_set_img[s][img][c]['encode_us'] for img in imgs)
+            enc_geo = _geomean([by_set_img[s][img][c]['encode_us'] / by_set_img[s][img]['jxl']['encode_us'] for img in imgs])
+            total_dec = sum(by_set_img[s][img][c]['decode_us'] for img in imgs)
+            dec_geo = _geomean([by_set_img[s][img][c]['decode_us'] / by_set_img[s][img]['jxl']['decode_us'] for img in imgs])
+            max_enc_pk = max(by_set_img[s][img][c]['encode_peak'] for img in imgs)
+            max_dec_pk = max(by_set_img[s][img][c]['decode_peak'] for img in imgs)
+
+            bench_size_bars.append({'group': s, 'series': c, 'value': f'{size_geo:.4f}', 'num': size_geo, 'total_bytes': str(total_bytes)})
+            bench_size_table.append([s, c, str(n_imgs), str(total_bytes), f'{size_geo:.4f}'])
+
+            enc_time_bars.append({'group': s, 'series': c, 'value': f'{enc_geo:.4f}', 'num': enc_geo, 'total_us': str(total_enc)})
+            enc_time_table.append([s, c, CODEC_THREAD_LABELS[c], str(total_enc), f'{enc_geo:.4f}'])
+
+            dec_time_bars.append({'group': s, 'series': c, 'value': f'{dec_geo:.4f}', 'num': dec_geo, 'total_us': str(total_dec)})
+            dec_time_table.append([s, c, CODEC_THREAD_LABELS[c], str(total_dec), f'{dec_geo:.4f}'])
+
+            enc_mib = f'{max_enc_pk / (1024 * 1024):.2f}'
+            dec_mib = f'{max_dec_pk / (1024 * 1024):.2f}'
+            peak_mem_bars.append({'group': f'{s}-encode', 'series': c, 'value': str(max_enc_pk), 'num': float(max_enc_pk), 'mib': enc_mib})
+            peak_mem_bars.append({'group': f'{s}-decode', 'series': c, 'value': str(max_dec_pk), 'num': float(max_dec_pk), 'mib': dec_mib})
+            peak_mem_table.append([s, c, str(max_enc_pk), enc_mib, str(max_dec_pk), dec_mib])
+
+            svd_points.append({'group': s, 'series': c, 'x': f'{dec_geo:.4f}', 'y': f'{size_geo:.4f}', 'num_x': dec_geo, 'num_y': size_geo})
+            svd_table.append([s, c, CODEC_THREAD_LABELS[c], f'{dec_geo:.4f}', f'{size_geo:.4f}'])
+
+    # 6. scatter-e9
+    scatter_e9_points: list[dict] = []
+    scatter_e9_table: list[list[str]] = []
+    for r in corpus_rows:
+        ratio = r['rasterfold'] / r['jxl_e9']
+        scatter_e9_points.append(
+            {
+                'set': r['set'],
+                'image': r['image'],
+                'x': str(r['raw']),
+                'y': f'{ratio:.4f}',
+                'num_x': float(r['raw']),
+                'num_y': ratio,
+                'rf': str(r['rasterfold']),
+                'e9': str(r['jxl_e9']),
+            }
+        )
+        scatter_e9_table.append(
+            [
+                r['set'],
+                r['image'],
+                f'{r["width"]}x{r["height"]}',
+                str(r['raw']),
+                str(r['rasterfold']),
+                str(r['jxl_e7']),
+                str(r['jxl_e9']),
+                str(r['webp']),
+                f'{ratio:.4f}',
+            ]
+        )
+
+    return {
+        'corpus-size-ratio': {
+            'name': 'corpus-size-ratio',
+            'kind': 'bar',
+            'title': 'Research Corpus: Total Compressed Size Ratio vs JPEG XL e7 (Lower Is Smaller)',
+            'y_label': 'Total compressed bytes / JPEG XL e7 bytes',
+            'y_max': 1.25,
+            'groups': ('photo', 'tp', 'tp-only', 'synth', 'all'),
+            'series': CORPUS_CODECS,
+            'bars': corpus_bars,
+            'provenance': corpus_prov,
+            'table_headers': [
+                'Set',
+                'Images',
+                'RasterFold (bytes)',
+                'JPEG XL e7 (bytes)',
+                'JPEG XL e9 (bytes)',
+                'Lossless WebP (bytes)',
+                'RF / e7 (total)',
+                'RF / e7 (geomean)',
+                'e9 / e7 (total)',
+                'WebP / e7 (total)',
+            ],
+            'table_rows': corpus_table_rows,
+        },
+        'benchmark-size-ratio': {
+            'name': 'benchmark-size-ratio',
+            'kind': 'bar',
+            'title': 'Benchmark Suite: Geometric-Mean Size Ratio vs JPEG XL e7 (Lower Is Smaller)',
+            'y_label': 'Geomean per-image bytes / JPEG XL e7 bytes',
+            'y_max': 2.50,
+            'groups': BENCHMARK_SETS,
+            'series': BENCHMARK_CODECS,
+            'bars': bench_size_bars,
+            'provenance': results_prov,
+            'table_headers': [
+                'Set',
+                'Codec',
+                'Images',
+                'Total Bytes',
+                'Geomean Size Ratio vs JXL e7',
+            ],
+            'table_rows': bench_size_table,
+        },
+        'encode-time': {
+            'name': 'encode-time',
+            'kind': 'bar',
+            'title': 'Benchmark Suite: Geometric-Mean Encode Time Ratio vs JPEG XL e7 (Lower Is Faster)',
+            'y_label': 'Geomean encode wall time / JPEG XL e7 (capped at 12x)',
+            'y_max': 12.0,
+            'groups': BENCHMARK_SETS,
+            'series': BENCHMARK_CODECS,
+            'bars': enc_time_bars,
+            'provenance': results_prov,
+            'table_headers': [
+                'Set',
+                'Codec',
+                'Threads',
+                'Total Encode Time (us)',
+                'Geomean Encode Time Ratio vs JXL e7',
+            ],
+            'table_rows': enc_time_table,
+        },
+        'decode-time': {
+            'name': 'decode-time',
+            'kind': 'bar',
+            'title': 'Benchmark Suite: Geometric-Mean Decode Time Ratio vs JPEG XL e7 (Lower Is Faster)',
+            'y_label': 'Geomean decode wall time / JPEG XL e7',
+            'y_max': 2.20,
+            'groups': BENCHMARK_SETS,
+            'series': BENCHMARK_CODECS,
+            'bars': dec_time_bars,
+            'provenance': results_prov,
+            'table_headers': [
+                'Set',
+                'Codec',
+                'Threads',
+                'Total Decode Time (us)',
+                'Geomean Decode Time Ratio vs JXL e7',
+            ],
+            'table_rows': dec_time_table,
+        },
+        'peak-memory': {
+            'name': 'peak-memory',
+            'kind': 'bar',
+            'title': 'Benchmark Suite: Maximum Process Peak Working Set per Set (Lower Is Leaner)',
+            'y_label': 'Peak working set (bytes, max scale 120 MiB)',
+            'y_max': 125829120.0,
+            'groups': (
+                'measure-encode',
+                'measure-decode',
+                'photos-encode',
+                'photos-decode',
+                'synthetic-encode',
+                'synthetic-decode',
+            ),
+            'series': BENCHMARK_CODECS,
+            'bars': peak_mem_bars,
+            'provenance': results_prov,
+            'table_headers': [
+                'Set',
+                'Codec',
+                'Max Encode Peak (bytes)',
+                'Max Encode Peak (MiB)',
+                'Max Decode Peak (bytes)',
+                'Max Decode Peak (MiB)',
+            ],
+            'table_rows': peak_mem_table,
+        },
+        'scatter-e9': {
+            'name': 'scatter-e9',
+            'kind': 'scatter-corpus',
+            'title': 'Research Corpus: Per-Image Size Ratio (RasterFold / JPEG XL e9) vs Raw RGB Bytes',
+            'x_label': 'Raw RGB image size (bytes)',
+            'y_label': 'RasterFold / JPEG XL e9 size ratio (capped at 3.0x; syn_checker=27.1857, syn_gradient=7.3393, syn_pixel=11.3019)',
+            'x_min': 0.0,
+            'x_max': 5000000.0,
+            'y_min': 0.70,
+            'y_max': 3.00,
+            'points': scatter_e9_points,
+            'provenance': corpus_prov,
+            'table_headers': [
+                'Set',
+                'Image',
+                'Dimensions',
+                'Raw Bytes',
+                'RasterFold (bytes)',
+                'JPEG XL e7 (bytes)',
+                'JPEG XL e9 (bytes)',
+                'Lossless WebP (bytes)',
+                'RF / e9 Ratio',
+            ],
+            'table_rows': scatter_e9_table,
+        },
+        'size-vs-decode': {
+            'name': 'size-vs-decode',
+            'kind': 'scatter-sets',
+            'title': 'Benchmark Suite: Geometric-Mean Size Ratio vs Decode Time Ratio (Relative to JPEG XL e7)',
+            'x_label': 'Geomean decode wall-time ratio vs JPEG XL e7 (lower is faster)',
+            'y_label': 'Geomean compressed size ratio vs JPEG XL e7 (lower is smaller)',
+            'x_min': 0.0,
+            'x_max': 2.20,
+            'y_min': 0.20,
+            'y_max': 2.50,
+            'groups': BENCHMARK_SETS,
+            'series': BENCHMARK_CODECS,
+            'points': svd_points,
+            'provenance': results_prov,
+            'table_headers': [
+                'Set',
+                'Codec',
+                'Threads',
+                'Geomean Decode Time Ratio vs JXL e7',
+                'Geomean Size Ratio vs JXL e7',
+            ],
+            'table_rows': svd_table,
+        },
+    }
+
+
+def _svg_prov_attrs(prov: dict[str, str]) -> str:
+    attrs = [
+        f'data-source="{xml_escape(prov["source"], quote=True)}"',
+        f'data-codec-revision="{xml_escape(prov["codec_revision"], quote=True)}"',
+        f'data-kat-fold-sha256="{xml_escape(prov["kat_fold_sha256"], quote=True)}"',
+        f'data-date="{xml_escape(prov["date"], quote=True)}"',
+        f'data-threads="{xml_escape(prov["threads"], quote=True)}"',
+        f'data-limitations="{xml_escape(prov["limitations"], quote=True)}"',
+    ]
+    for extra in ('measured_sets', 'retained_sets', 'retained_revision', 'retained_date'):
+        if extra in prov:
+            attrs.append(f'data-{extra.replace("_", "-")}="{xml_escape(prov[extra], quote=True)}"')
+    return ' '.join(attrs)
+
+
+def render_bar_svg(spec: dict) -> str:
+    name = spec['name']
+    prov = spec['provenance']
+    width, height = 940, 460
+    plot_left, plot_top, plot_width, plot_height = 80.0, 74.0, 830.0, 270.0
+    plot_bottom = plot_top + plot_height
+    y_max = float(spec['y_max'])
+    groups = spec['groups']
+    series = spec['series']
+    bar_map = {(b['group'], b['series']): b for b in spec['bars']}
+
+    lines = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" role="img" '
+        f'aria-labelledby="title-{name} desc-{name}" data-chart="{name}" data-kind="bar-chart" '
+        f'data-plot-left="{plot_left:.2f}" data-plot-top="{plot_top:.2f}" '
+        f'data-plot-width="{plot_width:.2f}" data-plot-height="{plot_height:.2f}" '
+        f'data-plot-bottom="{plot_bottom:.2f}" data-y-max="{y_max:.4f}" {_svg_prov_attrs(prov)}>',
+        f'  <title id="title-{name}">{xml_escape(spec["title"])}</title>',
+        f'  <desc id="desc-{name}">Source: {xml_escape(prov["source"])} | revision: {xml_escape(prov["codec_revision"])} | date: {xml_escape(prov["date"])} | threads: {xml_escape(prov["threads"])} | limitations: {xml_escape(prov["limitations"])}</desc>',
+        f'  <rect x="0" y="0" width="{width}" height="{height}" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>',
+        f'  <text x="16" y="26" font-family="system-ui, sans-serif" font-size="14" font-weight="700" fill="#0f172a">{xml_escape(spec["title"])}</text>',
+        f'  <text x="16" y="44" font-family="system-ui, sans-serif" font-size="11" fill="#475569">{xml_escape(spec["y_label"])}</text>',
+    ]
+
+    # Legend
+    lx = 16
+    for s in series:
+        color = CODEC_COLORS.get(s, '#334155')
+        lines.append(f'  <rect x="{lx}" y="52" width="10" height="10" fill="{color}"/>')
+        lines.append(f'  <text x="{lx + 14}" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">{xml_escape(s)}</text>')
+        lx += 118
+
+    # Plot frame & baseline
+    lines.append(f'  <line x1="{plot_left:.2f}" y1="{plot_top:.2f}" x2="{plot_left:.2f}" y2="{plot_bottom:.2f}" stroke="#94a3b8" stroke-width="1"/>')
+    lines.append(f'  <line x1="{plot_left:.2f}" y1="{plot_bottom:.2f}" x2="{plot_left + plot_width:.2f}" y2="{plot_bottom:.2f}" stroke="#94a3b8" stroke-width="1"/>')
+
+    group_span = plot_width / len(groups)
+    inner_span = group_span * 0.84
+    bar_w = round(inner_span / len(series), 2)
+
+    for g_idx, g in enumerate(groups):
+        gx_start = plot_left + g_idx * group_span + (group_span - inner_span) / 2.0
+        gx_center = plot_left + (g_idx + 0.5) * group_span
+        lines.append(
+            f'  <text x="{gx_center:.2f}" y="{plot_bottom + 18:.2f}" text-anchor="middle" '
+            f'font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#1e293b">{xml_escape(g)}</text>'
+        )
+        for s_idx, s in enumerate(series):
+            b = bar_map[(g, s)]
+            bx = round(gx_start + s_idx * bar_w, 2)
+            val_str = b['value']
+            if b['num'] is None or val_str == 'N/A':
+                lines.append(
+                    f'  <g data-kind="na" data-group="{xml_escape(g, quote=True)}" data-series="{xml_escape(s, quote=True)}" data-value="N/A">'
+                    f'<text x="{bx + bar_w / 2:.2f}" y="{plot_bottom - 6:.2f}" text-anchor="middle" font-family="monospace" font-size="8" fill="#64748b">N/A</text>'
+                    f'</g>'
+                )
+            else:
+                num = float(b['num'])
+                clamped = min(max(num, 0.0), y_max)
+                bh = round(plot_height * (clamped / y_max), 2)
+                by = round(plot_bottom - bh, 2)
+                color = CODEC_COLORS.get(s, '#2563eb')
+                lines.append(
+                    f'  <rect data-kind="bar" data-group="{xml_escape(g, quote=True)}" data-series="{xml_escape(s, quote=True)}" '
+                    f'data-value="{xml_escape(val_str, quote=True)}" x="{bx:.2f}" y="{by:.2f}" width="{max(bar_w - 2.0, 2.0):.2f}" height="{bh:.2f}" fill="{color}"/>'
+                )
+                lines.append(
+                    f'  <text data-kind="bar-label" data-group="{xml_escape(g, quote=True)}" data-series="{xml_escape(s, quote=True)}" '
+                    f'x="{bx + max(bar_w - 2.0, 2.0) / 2:.2f}" y="{max(by - 3.0, plot_top - 4.0):.2f}" text-anchor="middle" '
+                    f'font-family="monospace" font-size="7" fill="#0f172a">{xml_escape(val_str)}</text>'
+                )
+
+    lines.append(
+        f'  <text data-kind="provenance" x="16" y="{height - 46}" font-family="monospace" font-size="9.5" fill="#334155">'
+        f'Source: {xml_escape(prov["source"])} | codec_revision={xml_escape(prov["codec_revision"])} | date={xml_escape(prov["date"])}</text>'
+    )
+    lines.append(
+        f'  <text data-kind="threads" x="16" y="{height - 30}" font-family="monospace" font-size="9.5" fill="#334155">'
+        f'Threads: {xml_escape(prov["threads"])}</text>'
+    )
+    lines.append(
+        f'  <text data-kind="limitations" x="16" y="{height - 14}" font-family="monospace" font-size="9.5" fill="#475569">'
+        f'Limitations: {xml_escape(prov["limitations"])}</text>'
+    )
+    lines.append('</svg>\n')
+    return '\n'.join(lines)
+
+
+def render_scatter_svg(spec: dict) -> str:
+    name = spec['name']
+    prov = spec['provenance']
+    width, height = 940, 460
+    plot_left, plot_top, plot_width, plot_height = 80.0, 74.0, 830.0, 270.0
+    plot_bottom = plot_top + plot_height
+    x_min, x_max = float(spec['x_min']), float(spec['x_max'])
+    y_min, y_max = float(spec['y_min']), float(spec['y_max'])
+
+    lines = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" role="img" '
+        f'aria-labelledby="title-{name} desc-{name}" data-chart="{name}" data-kind="{spec["kind"]}" '
+        f'data-plot-left="{plot_left:.2f}" data-plot-top="{plot_top:.2f}" '
+        f'data-plot-width="{plot_width:.2f}" data-plot-height="{plot_height:.2f}" '
+        f'data-plot-bottom="{plot_bottom:.2f}" data-x-min="{x_min:.4f}" data-x-max="{x_max:.4f}" '
+        f'data-y-min="{y_min:.4f}" data-y-max="{y_max:.4f}" {_svg_prov_attrs(prov)}>',
+        f'  <title id="title-{name}">{xml_escape(spec["title"])}</title>',
+        f'  <desc id="desc-{name}">Source: {xml_escape(prov["source"])} | revision: {xml_escape(prov["codec_revision"])} | date: {xml_escape(prov["date"])} | threads: {xml_escape(prov["threads"])} | limitations: {xml_escape(prov["limitations"])}</desc>',
+        f'  <rect x="0" y="0" width="{width}" height="{height}" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>',
+        f'  <text x="16" y="26" font-family="system-ui, sans-serif" font-size="14" font-weight="700" fill="#0f172a">{xml_escape(spec["title"])}</text>',
+        f'  <text x="16" y="44" font-family="system-ui, sans-serif" font-size="11" fill="#475569">X: {xml_escape(spec["x_label"])} | Y: {xml_escape(spec["y_label"])}</text>',
+        f'  <line x1="{plot_left:.2f}" y1="{plot_top:.2f}" x2="{plot_left:.2f}" y2="{plot_bottom:.2f}" stroke="#94a3b8" stroke-width="1"/>',
+        f'  <line x1="{plot_left:.2f}" y1="{plot_bottom:.2f}" x2="{plot_left + plot_width:.2f}" y2="{plot_bottom:.2f}" stroke="#94a3b8" stroke-width="1"/>',
+    ]
+
+    # Reference line at y = 1.0
+    if y_min <= 1.0 <= y_max:
+        ref_y = round(plot_bottom - plot_height * ((1.0 - y_min) / (y_max - y_min)), 2)
+        lines.append(
+            f'  <line x1="{plot_left:.2f}" y1="{ref_y:.2f}" x2="{plot_left + plot_width:.2f}" y2="{ref_y:.2f}" '
+            f'stroke="#94a3b8" stroke-dasharray="4 4" stroke-width="1"/>'
+        )
+
+    for pt in spec['points']:
+        if pt.get('num_x') is None or pt.get('num_y') is None:
+            g = pt['group']
+            s = pt['series']
+            lines.append(
+                f'  <g data-kind="na" data-group="{xml_escape(g, quote=True)}" data-series="{xml_escape(s, quote=True)}" data-value="N/A">'
+                f'<text x="{plot_left + 12:.2f}" y="{plot_top + 14:.2f}" font-family="monospace" font-size="8" fill="#64748b">{xml_escape(g)}/{xml_escape(s)}: N/A</text>'
+                f'</g>'
+            )
+            continue
+        nx = min(max(float(pt['num_x']), x_min), x_max)
+        ny = min(max(float(pt['num_y']), y_min), y_max)
+        cx = round(plot_left + plot_width * ((nx - x_min) / (x_max - x_min)), 2)
+        cy = round(plot_bottom - plot_height * ((ny - y_min) / (y_max - y_min)), 2)
+        if spec['kind'] == 'scatter-corpus':
+            color = SET_COLORS.get(pt['set'], '#2563eb')
+            lines.append(
+                f'  <circle data-kind="point" data-set="{xml_escape(pt["set"], quote=True)}" '
+                f'data-image="{xml_escape(pt["image"], quote=True)}" data-x="{xml_escape(pt["x"], quote=True)}" '
+                f'data-y="{xml_escape(pt["y"], quote=True)}" data-rf="{xml_escape(pt["rf"], quote=True)}" '
+                f'data-e9="{xml_escape(pt["e9"], quote=True)}" cx="{cx:.2f}" cy="{cy:.2f}" r="4.0" fill="{color}"/>'
+            )
+        else:
+            color = CODEC_COLORS.get(pt['series'], '#2563eb')
+            lines.append(
+                f'  <circle data-kind="point" data-group="{xml_escape(pt["group"], quote=True)}" '
+                f'data-series="{xml_escape(pt["series"], quote=True)}" data-x="{xml_escape(pt["x"], quote=True)}" '
+                f'data-y="{xml_escape(pt["y"], quote=True)}" cx="{cx:.2f}" cy="{cy:.2f}" r="5.0" fill="{color}"/>'
+            )
+
+    lines.append(
+        f'  <text data-kind="provenance" x="16" y="{height - 46}" font-family="monospace" font-size="9.5" fill="#334155">'
+        f'Source: {xml_escape(prov["source"])} | codec_revision={xml_escape(prov["codec_revision"])} | date={xml_escape(prov["date"])}</text>'
+    )
+    lines.append(
+        f'  <text data-kind="threads" x="16" y="{height - 30}" font-family="monospace" font-size="9.5" fill="#334155">'
+        f'Threads: {xml_escape(prov["threads"])}</text>'
+    )
+    lines.append(
+        f'  <text data-kind="limitations" x="16" y="{height - 14}" font-family="monospace" font-size="9.5" fill="#475569">'
+        f'Limitations: {xml_escape(prov["limitations"])}</text>'
+    )
+    lines.append('</svg>\n')
+    return '\n'.join(lines)
+
+
+def render_markdown_table(spec: dict) -> str:
+    name = spec['name']
+    prov = spec['provenance']
+    headers = spec['table_headers']
+    rows = spec['table_rows']
+    out = [
+        f'<!-- GENERATED by scripts/build-docs.py for {name} from {prov["source"]} '
+        f'(codec_revision={prov["codec_revision"]}, date={prov["date"]}); do not edit by hand. -->',
+        '',
+        f'*Source:* `{prov["source"]}` (`codec_revision={prov["codec_revision"]}`, `date={prov["date"]}`) | '
+        f'*Threads:* {prov["threads"]} | *Limitations:* {prov["limitations"]}',
+        '',
+        '| ' + ' | '.join(headers) + ' |',
+        '| ' + ' | '.join('---' for _ in headers) + ' |',
+    ]
+    for r in rows:
+        out.append('| ' + ' | '.join(r) + ' |')
+    out.append('')
+    return '\n'.join(out)
+
+
+def render_generated_charts_and_tables(root: Path) -> dict[str, str]:
+    datasets = compute_chart_datasets(root)
+    outputs: dict[str, str] = {}
+    for name in CHART_NAMES:
+        spec = datasets[name]
+        chart_rel = f'docs/_includes/generated/charts/{name}.svg'
+        table_rel = f'docs/_includes/generated/tables/{name}.md'
+        if spec['kind'] == 'bar':
+            outputs[chart_rel] = render_bar_svg(spec)
+        else:
+            outputs[chart_rel] = render_scatter_svg(spec)
+        outputs[table_rel] = render_markdown_table(spec)
+    return outputs
+
+
+def _parse_pipe_table(md_text: str) -> tuple[list[str], list[list[str]]]:
+    table_lines = [ln.strip() for ln in md_text.splitlines() if ln.strip().startswith('|') and ln.strip().endswith('|')]
+    if len(table_lines) < 3:
+        raise ValueError('Markdown table has fewer than 3 pipe lines')
+    headers = [c.strip() for c in table_lines[0].strip('|').split('|')]
+    rows = [[c.strip() for c in ln.strip('|').split('|')] for ln in table_lines[2:]]
+    return headers, rows
+
+
+def self_test_charts(root: Path) -> list[str]:
+    errors: list[str] = []
+    try:
+        datasets = compute_chart_datasets(root)
+    except (OSError, ValueError, KeyError) as exc:
+        return [f'dataset calculation failed: {exc}']
+
+    benchmarks_path = safe_repo_path(root, 'docs/benchmarks.md')
+    benchmarks_text = benchmarks_path.read_text(encoding='utf-8') if benchmarks_path.is_file() else ''
+
+    for name in CHART_NAMES:
+        spec = datasets[name]
+        prov = spec['provenance']
+        chart_rel = f'docs/_includes/generated/charts/{name}.svg'
+        table_rel = f'docs/_includes/generated/tables/{name}.md'
+        chart_inc = f'{{% include generated/charts/{name}.svg %}}'
+        table_inc = f'{{% include generated/tables/{name}.md %}}'
+        if chart_inc not in benchmarks_text:
+            errors.append(f'docs/benchmarks.md: missing include {chart_inc}')
+        if table_inc not in benchmarks_text:
+            errors.append(f'docs/benchmarks.md: missing include {table_inc}')
+
+        chart_path = safe_repo_path(root, chart_rel)
+        if not chart_path.is_file():
+            errors.append(f'{chart_rel}: missing SVG chart file')
+        else:
+            try:
+                svg_root = ET.fromstring(chart_path.read_text(encoding='utf-8'))
+            except ET.ParseError as exc:
+                errors.append(f'{chart_rel}: invalid SVG XML: {exc}')
+                svg_root = None
+
+            if svg_root is not None:
+                for attr, expected_val in (
+                    ('data-chart', name),
+                    ('data-source', prov['source']),
+                    ('data-codec-revision', prov['codec_revision']),
+                    ('data-kat-fold-sha256', prov['kat_fold_sha256']),
+                    ('data-date', prov['date']),
+                    ('data-threads', prov['threads']),
+                    ('data-limitations', prov['limitations']),
+                ):
+                    if svg_root.attrib.get(attr) != expected_val:
+                        errors.append(f'{chart_rel}: {attr}={svg_root.attrib.get(attr)!r} != {expected_val!r}')
+                for extra in ('measured_sets', 'retained_sets', 'retained_revision', 'retained_date'):
+                    if extra in prov:
+                        attr = f'data-{extra.replace("_", "-")}'
+                        if svg_root.attrib.get(attr) != prov[extra]:
+                            errors.append(f'{chart_rel}: {attr}={svg_root.attrib.get(attr)!r} != {prov[extra]!r}')
+
+                all_text = ' '.join(''.join(el.itertext()) for el in svg_root.iter())
+                for token in (prov['source'], prov['codec_revision'], prov['date'], prov['threads'], prov['limitations']):
+                    if token not in all_text:
+                        errors.append(f'{chart_rel}: visible SVG text missing provenance token {token!r}')
+
+                plot_left = float(svg_root.attrib.get('data-plot-left', '0'))
+                plot_width = float(svg_root.attrib.get('data-plot-width', '0'))
+                plot_height = float(svg_root.attrib.get('data-plot-height', '0'))
+                plot_bottom = float(svg_root.attrib.get('data-plot-bottom', '0'))
+
+                if spec['kind'] == 'bar':
+                    y_max = float(svg_root.attrib.get('data-y-max', '0'))
+                    expected_bars = {(b['group'], b['series']): b for b in spec['bars']}
+                    seen_keys: set[tuple[str, str]] = set()
+                    labels: dict[tuple[str, str], str] = {}
+                    for el in svg_root.iter():
+                        kind = el.attrib.get('data-kind')
+                        if kind == 'bar-label':
+                            labels[(el.attrib.get('data-group', ''), el.attrib.get('data-series', ''))] = (el.text or '').strip()
+                        elif kind in ('bar', 'na'):
+                            key = (el.attrib.get('data-group', ''), el.attrib.get('data-series', ''))
+                            if key in seen_keys:
+                                errors.append(f'{chart_rel}: duplicate bar/na element for {key}')
+                            seen_keys.add(key)
+                            if key not in expected_bars:
+                                errors.append(f'{chart_rel}: unexpected bar/na key {key}')
+                                continue
+                            exp = expected_bars[key]
+                            got_val = el.attrib.get('data-value', '')
+                            if got_val != exp['value']:
+                                errors.append(f'{chart_rel}: {key} data-value={got_val!r} != {exp["value"]!r}')
+                            if exp['num'] is None:
+                                if kind != 'na':
+                                    errors.append(f'{chart_rel}: {key} expected data-kind="na", got {kind!r}')
+                            else:
+                                if kind != 'bar':
+                                    errors.append(f'{chart_rel}: {key} expected data-kind="bar", got {kind!r}')
+                                else:
+                                    clamped = min(max(float(exp['num']), 0.0), y_max)
+                                    exp_h = round(plot_height * (clamped / y_max), 2)
+                                    exp_y = round(plot_bottom - exp_h, 2)
+                                    got_h = float(el.attrib.get('height', '-1'))
+                                    got_y = float(el.attrib.get('y', '-1'))
+                                    if abs(got_h - exp_h) > 0.05 or abs(got_y - exp_y) > 0.05:
+                                        errors.append(
+                                            f'{chart_rel}: {key} bar geometry height={got_h:.2f}/y={got_y:.2f} != expected {exp_h:.2f}/{exp_y:.2f}'
+                                        )
+                    for key, exp in expected_bars.items():
+                        if key not in seen_keys:
+                            errors.append(f'{chart_rel}: missing series element for {key}')
+                        elif exp['num'] is not None and labels.get(key) != exp['value']:
+                            errors.append(f'{chart_rel}: {key} bar-label={labels.get(key)!r} != {exp["value"]!r}')
+                else:
+                    x_min = float(svg_root.attrib.get('data-x-min', '0'))
+                    x_max = float(svg_root.attrib.get('data-x-max', '1'))
+                    y_min = float(svg_root.attrib.get('data-y-min', '0'))
+                    y_max = float(svg_root.attrib.get('data-y-max', '1'))
+                    if spec['kind'] == 'scatter-corpus':
+                        expected_pts = {(p['set'], p['image']): p for p in spec['points']}
+                        key_attrs = ('data-set', 'data-image')
+                    else:
+                        expected_pts = {(p['group'], p['series']): p for p in spec['points']}
+                        key_attrs = ('data-group', 'data-series')
+                    seen_pts: set[tuple[str, str]] = set()
+                    for el in svg_root.iter():
+                        kind = el.attrib.get('data-kind')
+                        if kind in ('point', 'na'):
+                            key = (el.attrib.get(key_attrs[0], ''), el.attrib.get(key_attrs[1], ''))
+                            if key in seen_pts:
+                                errors.append(f'{chart_rel}: duplicate point/na element for {key}')
+                            seen_pts.add(key)
+                            if key not in expected_pts:
+                                errors.append(f'{chart_rel}: unexpected point/na key {key}')
+                                continue
+                            exp = expected_pts[key]
+                            if exp['num_x'] is None or exp['num_y'] is None:
+                                if kind != 'na':
+                                    errors.append(f'{chart_rel}: {key} expected data-kind="na", got {kind!r}')
+                            else:
+                                if kind != 'point':
+                                    errors.append(f'{chart_rel}: {key} expected data-kind="point", got {kind!r}')
+                                    continue
+                                if el.attrib.get('data-x') != exp['x'] or el.attrib.get('data-y') != exp['y']:
+                                    errors.append(
+                                        f'{chart_rel}: {key} point data-x/data-y=({el.attrib.get("data-x")!r}, {el.attrib.get("data-y")!r}) != ({exp["x"]!r}, {exp["y"]!r})'
+                                    )
+                                nx = min(max(float(exp['num_x']), x_min), x_max)
+                                ny = min(max(float(exp['num_y']), y_min), y_max)
+                                exp_cx = round(plot_left + plot_width * ((nx - x_min) / (x_max - x_min)), 2)
+                                exp_cy = round(plot_bottom - plot_height * ((ny - y_min) / (y_max - y_min)), 2)
+                                got_cx = float(el.attrib.get('cx', '-1'))
+                                got_cy = float(el.attrib.get('cy', '-1'))
+                                if abs(got_cx - exp_cx) > 0.05 or abs(got_cy - exp_cy) > 0.05:
+                                    errors.append(
+                                        f'{chart_rel}: {key} point geometry cx={got_cx:.2f}/cy={got_cy:.2f} != expected {exp_cx:.2f}/{exp_cy:.2f}'
+                                    )
+                    for key in expected_pts:
+                        if key not in seen_pts:
+                            errors.append(f'{chart_rel}: missing point/na element for {key}')
+
+        table_path = safe_repo_path(root, table_rel)
+        if not table_path.is_file():
+            errors.append(f'{table_rel}: missing Markdown table file')
+        else:
+            md_text = table_path.read_text(encoding='utf-8')
+            for token in (prov['source'], prov['codec_revision'], prov['date'], prov['threads'], prov['limitations']):
+                if token not in md_text:
+                    errors.append(f'{table_rel}: missing provenance/limitation token {token!r}')
+            try:
+                got_headers, got_rows = _parse_pipe_table(md_text)
+                if got_headers != spec['table_headers']:
+                    errors.append(f'{table_rel}: table headers {got_headers!r} != {spec["table_headers"]!r}')
+                if got_rows != spec['table_rows']:
+                    errors.append(f'{table_rel}: table rows do not match CSV calculation')
+            except ValueError as exc:
+                errors.append(f'{table_rel}: {exc}')
+
+    return errors
+
+
 def render_generated_pages(root: Path, site_content: dict | None = None) -> dict[str, str]:
     if site_content is None:
         site_content = load_site_content(root)
@@ -312,6 +1212,9 @@ def render_generated_pages(root: Path, site_content: dict | None = None) -> dict
         if page_id not in renderers or not output_rel:
             raise ValueError(f'unsupported mirrored page entry: {page!r}')
         outputs[output_rel] = renderers[page_id](root, page)
+    has_chart_config = any('generated/charts/' in entry.get('source', '') for entry in site_content.get('config', []))
+    if has_chart_config or ((root / CORPUS_CSV).is_file() and (root / RESULTS_CSV).is_file()):
+        outputs.update(render_generated_charts_and_tables(root))
     return outputs
 
 
@@ -374,6 +1277,9 @@ def check_generated_pages(root: Path) -> list[str]:
                 expected_source_line = f'source_path: {entry["source"]}'
                 if expected_source_line not in text.split('---', 2)[1] if text.startswith('---\n') and text.count('---') >= 2 else True:
                     errors.append(f'{check_rel}: missing {expected_source_line!r} in front matter')
+    has_chart_config = any('generated/charts/' in entry.get('source', '') for entry in site_content.get('config', []))
+    if has_chart_config or ((root / CORPUS_CSV).is_file() and (root / RESULTS_CSV).is_file()):
+        errors.extend(self_test_charts(root))
     return errors
 
 
@@ -573,14 +1479,23 @@ def stage_site(root: Path, stage_arg: str | Path) -> list[str]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, default=ROOT)
-    parser.add_argument('--write', action='store_true', help='Write generated pages (default when no mode flag is given)')
-    parser.add_argument('--check', action='store_true', help='Verify generated pages and site allowlist without modifying files')
+    parser.add_argument('--write', action='store_true', help='Write generated pages, charts, and tables (default when no mode flag is given)')
+    parser.add_argument('--check', action='store_true', help='Verify generated pages, charts, tables, and site allowlist without modifying files')
+    parser.add_argument('--self-test', action='store_true', help='Independently parse generated SVG charts and Markdown tables and assert numerical agreement with CSVs')
     parser.add_argument('--stage', metavar='DIR', help='Stage the allowlisted Jekyll source tree into DIR (must be inside build/)')
     args = parser.parse_args(argv)
     try:
         root = args.root.resolve()
-        if args.check and (args.write or args.stage):
-            raise ValueError('--check cannot be combined with --write or --stage')
+        if (args.check or args.self_test) and (args.write or args.stage):
+            raise ValueError('--check and --self-test cannot be combined with --write or --stage')
+        if args.self_test and not args.check:
+            errors = self_test_charts(root)
+            for err in errors:
+                print(f'build-docs: self-test: {err}', file=sys.stderr)
+            if errors:
+                return 1
+            print(f'build-docs: self-test: {len(CHART_NAMES)} chart(s) and {len(CHART_NAMES)} table(s) match CSV data')
+            return 0
         if args.check:
             errors = check_generated_pages(root)
             for err in errors:

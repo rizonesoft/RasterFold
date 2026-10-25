@@ -26,6 +26,62 @@
     {
       "source": "docs/_includes/components/footer.html",
       "staged": "_includes/components/footer.html"
+    },
+    {
+      "source": "docs/_includes/generated/charts/corpus-size-ratio.svg",
+      "staged": "_includes/generated/charts/corpus-size-ratio.svg"
+    },
+    {
+      "source": "docs/_includes/generated/charts/benchmark-size-ratio.svg",
+      "staged": "_includes/generated/charts/benchmark-size-ratio.svg"
+    },
+    {
+      "source": "docs/_includes/generated/charts/encode-time.svg",
+      "staged": "_includes/generated/charts/encode-time.svg"
+    },
+    {
+      "source": "docs/_includes/generated/charts/decode-time.svg",
+      "staged": "_includes/generated/charts/decode-time.svg"
+    },
+    {
+      "source": "docs/_includes/generated/charts/peak-memory.svg",
+      "staged": "_includes/generated/charts/peak-memory.svg"
+    },
+    {
+      "source": "docs/_includes/generated/charts/scatter-e9.svg",
+      "staged": "_includes/generated/charts/scatter-e9.svg"
+    },
+    {
+      "source": "docs/_includes/generated/charts/size-vs-decode.svg",
+      "staged": "_includes/generated/charts/size-vs-decode.svg"
+    },
+    {
+      "source": "docs/_includes/generated/tables/corpus-size-ratio.md",
+      "staged": "_includes/generated/tables/corpus-size-ratio.md"
+    },
+    {
+      "source": "docs/_includes/generated/tables/benchmark-size-ratio.md",
+      "staged": "_includes/generated/tables/benchmark-size-ratio.md"
+    },
+    {
+      "source": "docs/_includes/generated/tables/encode-time.md",
+      "staged": "_includes/generated/tables/encode-time.md"
+    },
+    {
+      "source": "docs/_includes/generated/tables/decode-time.md",
+      "staged": "_includes/generated/tables/decode-time.md"
+    },
+    {
+      "source": "docs/_includes/generated/tables/peak-memory.md",
+      "staged": "_includes/generated/tables/peak-memory.md"
+    },
+    {
+      "source": "docs/_includes/generated/tables/scatter-e9.md",
+      "staged": "_includes/generated/tables/scatter-e9.md"
+    },
+    {
+      "source": "docs/_includes/generated/tables/size-vs-decode.md",
+      "staged": "_includes/generated/tables/size-vs-decode.md"
     }
   ],
   "pages": [

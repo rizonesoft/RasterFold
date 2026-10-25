@@ -45,6 +45,7 @@ jobs:
           python3 -m unittest discover -s tests -p test_plan_audit.py -v
       - name: Stage allowlisted Jekyll site source
         run: |
+          python3 scripts/build-docs.py --self-test
           python3 scripts/build-docs.py --check
           python3 scripts/build-docs.py --stage build/site-source
       - name: Build Jekyll documentation site from allowlisted source
@@ -114,7 +115,11 @@ jobs:
               page_html = page_path.read_text(encoding="utf-8")
               expected_edit = f"href=\"https://github.com/rizonesoft/RasterFold/tree/main/{src_rel}\" id=\"edit-this-page\""
               assert expected_edit in page_html, f"{slug}: missing expected edit link {expected_edit}"
-          print("jekyll navigation and source links verified: 6 pages")
+          bench_html = (site / "benchmarks.html").read_text(encoding="utf-8")
+          for chart_name in ("corpus-size-ratio", "benchmark-size-ratio", "encode-time", "decode-time", "peak-memory", "scatter-e9", "size-vs-decode"):
+              assert f"data-chart=\"{chart_name}\"" in bench_html, f"benchmarks.html: missing rendered SVG chart {chart_name}"
+          assert bench_html.count("<table") >= 7, f"benchmarks.html: expected at least 7 rendered tables, got {bench_html.count(\"<table\")}"
+          print("jekyll navigation, source links, and 7 benchmark charts/tables verified: 6 pages")
           '
           python3 scripts/drift-check.py --site-dir build/site-artifact --write-site-receipt
           python3 scripts/drift-check.py --site-dir build/site-artifact

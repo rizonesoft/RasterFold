@@ -1,3 +1,4 @@
+# codec_revision=225ba888a41e09a89d65f82829098fd8c7d41c3c kat_fold_sha256=b3012508fdcadc58e768baaba1c9fc3cf5cc2dd837643888b1ca2314fe79bb32 date=2026-10-25 measured_sets=measure retained_sets=photos,synthetic retained_revision=0159404532cf944c4265ecb8ea46c54f637bdfc2 retained_date=2026-09-29
 set,image,width,height,raw,codec,bytes,encode_us,decode_us,encode_peak,decode_peak,pixels_match
 measure,image,1672,941,4720056,rasterfold,1409028,401129,384760,16687104,16588800,True
 measure,image,1672,941,4720056,rasterfold-1t,1409028,735338,892713,16584704,16465920,True

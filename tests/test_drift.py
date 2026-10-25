@@ -504,6 +504,8 @@ class DriftTests(unittest.TestCase):
             'docs/vision.md',
             'include/rasterfold.h',
             'research/README.md',
+            'benchmarks/corpus.csv',
+            'benchmarks/results.csv',
         ):
             self.write(rel, (REPO / rel).read_text(encoding='utf-8'))
         (self.root / 'examples').mkdir(parents=True, exist_ok=True)
@@ -515,7 +517,16 @@ class DriftTests(unittest.TestCase):
         self.write('.intelligence/lessons.md', '# Internal intelligence\n')
 
         written = build_docs.write_generated_pages(self.root)
-        self.assertEqual(['docs/format.md', 'docs/research-summary.md', 'docs/usage.md'], written)
+        expected_written = sorted(
+            [
+                'docs/format.md',
+                'docs/research-summary.md',
+                'docs/usage.md',
+                *(f'docs/_includes/generated/charts/{n}.svg' for n in build_docs.CHART_NAMES),
+                *(f'docs/_includes/generated/tables/{n}.md' for n in build_docs.CHART_NAMES),
+            ]
+        )
+        self.assertEqual(expected_written, written)
         self.assertEqual([], build_docs.check_generated_pages(self.root))
 
         # Editing spec/FOLD.md without rerunning makes --check fail (exit 1).
@@ -586,18 +597,22 @@ class DriftTests(unittest.TestCase):
         staged = build_docs.stage_site(self.root, 'build/site-source')
         self.assertFalse((self.root / 'build/site-source/obsolete.md').exists())
         self.assertEqual(
-            [
-                '_config.yml',
-                '_includes/components/footer.html',
-                'assets/brand/cover.svg',
-                'assets/brand/icon.svg',
-                'benchmarks.md',
-                'format.md',
-                'getting-started.md',
-                'index.md',
-                'research-summary.md',
-                'usage.md',
-            ],
+            sorted(
+                [
+                    '_config.yml',
+                    '_includes/components/footer.html',
+                    *(f'_includes/generated/charts/{n}.svg' for n in build_docs.CHART_NAMES),
+                    *(f'_includes/generated/tables/{n}.md' for n in build_docs.CHART_NAMES),
+                    'assets/brand/cover.svg',
+                    'assets/brand/icon.svg',
+                    'benchmarks.md',
+                    'format.md',
+                    'getting-started.md',
+                    'index.md',
+                    'research-summary.md',
+                    'usage.md',
+                ]
+            ),
             staged,
         )
         staged_index = (self.root / 'build/site-source/index.md').read_text(encoding='utf-8')
@@ -619,7 +634,7 @@ class DriftTests(unittest.TestCase):
         self.assertEqual(staged_index, (self.root / 'build/site-source/index.md').read_text(encoding='utf-8'))
 
     def test_all_three_generators_reject_stale_outputs_and_leave_files_unchanged(self):
-        for d in ('todo', 'research', 'spec', 'assets'):
+        for d in ('todo', 'research', 'spec', 'assets', 'benchmarks'):
             shutil.copytree(REPO / d, self.root / d, dirs_exist_ok=True)
         for s in ('todo-graph.py', 'build-docs.py', 'todo-claims.py'):
             self.write(f'scripts/{s}', (REPO / 'scripts' / s).read_text(encoding='utf-8'))
@@ -645,6 +660,7 @@ class DriftTests(unittest.TestCase):
             {'pattern': 'README.md', 'role': 'template', 'reason': 'fixture'},
             {'pattern': 'spec/*', 'role': 'template', 'reason': 'fixture'},
             {'pattern': 'research/*', 'role': 'template', 'reason': 'fixture'},
+            {'pattern': 'benchmarks/*', 'role': 'data', 'reason': 'fixture'},
             {'pattern': '*', 'role': 'current', 'reason': 'fixture'},
         ]
         self.manifest['blocks'] = {}
@@ -791,6 +807,101 @@ class DriftTests(unittest.TestCase):
             self.assertEqual(0, drift.main(['--root', str(self.root), '--fix']))
         for rel, orig_text in originals.items():
             self.assertEqual(orig_text, (self.root / rel).read_text(encoding='utf-8'))
+
+    def test_comparison_charts_tables_and_self_test_mutations(self):
+        for rel in (
+            'docs/site-content.json',
+            'docs/_config.yml',
+            'docs/_includes/components/footer.html',
+            'docs/index.md',
+            'docs/getting-started.md',
+            'docs/benchmarks.md',
+            'README.md',
+            'spec/FOLD.md',
+            'docs/research.md',
+            'assets/brand/icon.svg',
+            'assets/brand/cover.svg',
+            'benchmarks/corpus.csv',
+            'benchmarks/results.csv',
+        ):
+            self.write(rel, (REPO / rel).read_text(encoding='utf-8'))
+
+        build_docs.write_generated_pages(self.root)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(0, build_docs.main(['--root', str(self.root), '--self-test']))
+        self.assertIn('7 chart(s) and 7 table(s) match CSV data', out.getvalue())
+
+        # Verify tp (10 overlapping images) vs tp-only (5 exclusive CSV rows) and N/A on retained jxl-e9 sets.
+        corpus_table = (self.root / 'docs/_includes/generated/tables/corpus-size-ratio.md').read_text(encoding='utf-8')
+        self.assertIn('| tp | 10 |', corpus_table)
+        self.assertIn('| tp-only | 5 |', corpus_table)
+        bench_table = (self.root / 'docs/_includes/generated/tables/benchmark-size-ratio.md').read_text(encoding='utf-8')
+        self.assertIn('N/A (not measured in retained 2026-09-29 set)', bench_table)
+
+        # 1. Hand-edited bar data-value fails --self-test.
+        csr_rel = 'docs/_includes/generated/charts/corpus-size-ratio.svg'
+        csr_orig = (self.root / csr_rel).read_text(encoding='utf-8')
+        self.write(csr_rel, csr_orig.replace('data-value="0.9712"', 'data-value="0.1234"', 1))
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(1, build_docs.main(['--root', str(self.root), '--self-test']))
+        self.assertIn("('photo', 'rasterfold') data-value='0.1234' != '0.9712'", err.getvalue())
+
+        # 2. Hand-edited bar SVG geometry height fails --self-test even when data-value is untouched.
+        self.write(csr_rel, csr_orig.replace('height="209.77"', 'height="100.00"', 1))
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(1, build_docs.main(['--root', str(self.root), '--self-test']))
+        self.assertIn('bar geometry height=100.00', err.getvalue())
+        self.write(csr_rel, csr_orig)
+
+        # 3. Hand-edited scatter point value and geometry fail --self-test.
+        sc_rel = 'docs/_includes/generated/charts/scatter-e9.svg'
+        sc_orig = (self.root / sc_rel).read_text(encoding='utf-8')
+        self.write(sc_rel, sc_orig.replace('data-y="0.9781"', 'data-y="0.5000"', 1))
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(1, build_docs.main(['--root', str(self.root), '--self-test']))
+        self.assertIn("('photo', 'measure') point data-x/data-y=", err.getvalue())
+        self.write(sc_rel, sc_orig.replace('cy="311.35"', 'cy="200.00"', 1))
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(1, build_docs.main(['--root', str(self.root), '--self-test']))
+        self.assertIn('point geometry cx=', err.getvalue())
+        self.write(sc_rel, sc_orig)
+
+        # 4. Deleted series element (e.g. removing an N/A or bar element) fails --self-test.
+        bsr_rel = 'docs/_includes/generated/charts/benchmark-size-ratio.svg'
+        bsr_orig = (self.root / bsr_rel).read_text(encoding='utf-8')
+        dropped = '\n'.join(ln for ln in bsr_orig.splitlines() if 'data-group="photos" data-series="jxl-e9"' not in ln) + '\n'
+        self.write(bsr_rel, dropped)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(1, build_docs.main(['--root', str(self.root), '--self-test']))
+        self.assertIn("missing series element for ('photos', 'jxl-e9')", err.getvalue())
+        self.write(bsr_rel, bsr_orig)
+
+        # 5. Hand-edited Markdown table cell fails --self-test.
+        tbl_rel = 'docs/_includes/generated/tables/corpus-size-ratio.md'
+        tbl_orig = (self.root / tbl_rel).read_text(encoding='utf-8')
+        self.write(tbl_rel, tbl_orig.replace('30865211', '99999999', 1))
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(1, build_docs.main(['--root', str(self.root), '--self-test']))
+        self.assertIn('table rows do not match CSV calculation', err.getvalue())
+        self.write(tbl_rel, tbl_orig)
+
+        # 6. Stripping the provenance comment from benchmarks/results.csv fails --self-test.
+        res_orig = (self.root / 'benchmarks/results.csv').read_text(encoding='utf-8')
+        self.write('benchmarks/results.csv', '\n'.join(res_orig.splitlines()[1:]) + '\n')
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(1, build_docs.main(['--root', str(self.root), '--self-test']))
+        self.assertIn('benchmarks/results.csv: missing or invalid header codec_revision=', err.getvalue())
+        self.write('benchmarks/results.csv', res_orig)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(0, build_docs.main(['--root', str(self.root), '--self-test']))
 
 
 if __name__ == '__main__':

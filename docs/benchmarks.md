@@ -30,4 +30,48 @@ Recorded in `benchmarks/corpus.csv` on `2026-10-25` (`codec_revision=c8c1f78d74a
 - **`tp` set (5 classic test images):** RasterFold `4,471,965` bytes; JPEG XL `e7` `4,615,919` bytes (total ratio `0.9688`, geometric mean `0.9584`); JPEG XL `e9` `4,551,159` bytes (total ratio `0.9826`, geometric mean `0.9762`); lossless WebP `4,909,874` bytes (total ratio `0.9108`, geometric mean `0.8781`).
 - **`synth` set (11 synthetic stress images):** RasterFold `214,773` bytes; JPEG XL `e7` `226,544` bytes (total ratio `0.9480`, geometric mean `1.1986`); JPEG XL `e9` `223,034` bytes (total ratio `0.9630`, geometric mean `2.2860`); lossless WebP `201,248` bytes (total ratio `1.0672`, geometric mean `3.6626`).
 
-> **Note:** Static SVG comparison charts and generated per-set Markdown tables under `docs/_includes/generated/` are added in the next documentation section (`D08 T01 §2`). See [Research Summary](research-summary.md) for the full measurement protocol and per-set breakdown.
+## Comparison Charts and Data Tables
+
+Every chart below is generated as static SVG by `scripts/build-docs.py` directly from `benchmarks/corpus.csv` and `benchmarks/results.csv`, paired with its generated Markdown data table, and verified in CI by `python3 scripts/build-docs.py --self-test` and `--check`. See [Research Summary](research-summary.md) for the measurement protocol.
+
+### 1. Research Corpus Size Ratio vs JPEG XL e7
+
+{% include generated/charts/corpus-size-ratio.svg %}
+
+{% include generated/tables/corpus-size-ratio.md %}
+
+### 2. Benchmark Suite Size Ratio vs JPEG XL e7
+
+{% include generated/charts/benchmark-size-ratio.svg %}
+
+{% include generated/tables/benchmark-size-ratio.md %}
+
+### 3. Encode Wall Time Ratio vs JPEG XL e7
+
+{% include generated/charts/encode-time.svg %}
+
+{% include generated/tables/encode-time.md %}
+
+### 4. Decode Wall Time Ratio vs JPEG XL e7
+
+{% include generated/charts/decode-time.svg %}
+
+{% include generated/tables/decode-time.md %}
+
+### 5. Peak Working Set Memory per Set
+
+{% include generated/charts/peak-memory.svg %}
+
+{% include generated/tables/peak-memory.md %}
+
+### 6. Per-Image Size Ratio vs JPEG XL e9 Across the 55-Image Corpus
+
+{% include generated/charts/scatter-e9.svg %}
+
+{% include generated/tables/scatter-e9.md %}
+
+### 7. Size Ratio vs Decode Time Ratio per Benchmark Set
+
+{% include generated/charts/size-vs-decode.svg %}
+
+{% include generated/tables/size-vs-decode.md %}
