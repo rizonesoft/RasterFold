@@ -49,7 +49,7 @@ track: D1
 
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
-|   1   |   §1    | The Jekyll site and its generated pages | D08 T02 §1 |  [ ]   |
+|   1   |   §1    | The Jekyll site and its generated pages | D08 T02 §1 |  [x]   |
 |   2   |   §2    | Comparison charts | §1, D00 T02 §3 |  [ ]   |
 | 3 | §3 | Publish with GitHub Pages | §2, §4, §5, D08 T02 §5, D08 T02 §7, D99 T01 §5 | [ ] |
 | 4 | §4 | Complete current documentation map | §1, D08 T02 §7 | [ ] |
@@ -86,6 +86,8 @@ Jekyll renders what it is good at (Markdown, layouts, the theme, navigation, sea
 
 **Test checkpoint:** `python3 scripts/build-docs.py --check` exits 0 on the tree and 1 after a source edit (quoted, then regenerated); `python3 -m unittest tests/test_drift.py -v` passes; the CI build log of `build/site-source/` from `.github/workflows/plan.yml` is quoted with no warning.
 
+> **Verified:** 2026-10-25 | §1 | 03a81db61afa9bcc7ada2c2549e17d93d9b7f127
+> **Review:** `docs/reviews/d08-t01-s1.json`
 ## 2. Comparison Charts
 
 **Job:** A reader can see size, speed, and memory against JPEG XL e7, JPEG XL e9, lossless WebP, and PNG as charts that report the committed measurements.

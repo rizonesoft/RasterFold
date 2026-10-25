@@ -1,0 +1,95 @@
+{
+  "ref": "D08 T01 \u00a71",
+  "title": "The Jekyll Site and Its Generated Pages",
+  "implementation_sha": "03a81db61afa9bcc7ada2c2549e17d93d9b7f127",
+  "date": "2026-10-25",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/08-docs/D08-T01-s1.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/08-docs/D08-T01-s1.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 3,
+      "report": "docs/reviews/08-docs/D08-T01-s1.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 scripts/build-docs.py --check -> build-docs: current (exit 0); seeded spec/FOLD.md edit -> build-docs: docs/format.md: generated file differs from source (exit 1); restored -> build-docs: current (exit 0)",
+    "python3 -m unittest tests/test_drift.py -v -> Ran 46 tests in 2.018s, OK",
+    "plan.yml run 40156888189 (https://github.com/rizonesoft/RasterFold/actions/runs/40156888189) -> actions/jekyll-build-pages built build/site-source/ cleanly with 0 warnings; jekyll navigation and source links verified: 6 pages; drift: 190 supported documents; 0 error(s)"
+  ],
+  "completion": {
+    "report": "docs/reviews/08-docs/D08-T01-s1.md",
+    "verdict": "completed",
+    "candidate": "6c4afa1caba437a20cc64041ea5868fa269dcd52",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 3,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/08-docs/D08-T01-s1.md",
+    "candidate": "a32db62a325ba82dbbac38dcf438f7bd26b8048c",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}
