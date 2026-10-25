@@ -1720,7 +1720,7 @@
       }
     },
     "docs/troubleshooting.md": {
-      "evidence": "Author-attested: 2026-10-25 authored docs/troubleshooting.md against include/rasterfold.h, src/rf.h, src/main.c, src/fold.c, src/bmp.c, src/api.c, src/sys_posix.c, tools/provision.py, and tools/provision.ps1 (D08 T01 section 4)",
+      "evidence": "2026-10-25: D08 T01 \u00a74 completion review fixes",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "51734a555f97e344771e8462284781429f04d5d5f6a8e5550e43e10e9c20e7c3",
@@ -1731,7 +1731,7 @@
         "src/sys_posix.c": "6cee065e06d0513dc12bad7f77db6d77a819b5926428fe7cdd66c351f81e9dfc",
         "tools/provision.py": "b17ea42569b76d70edbcc235dbc86385c9c7ce50b1be7a3bb83383c30f848556",
         "tools/provision.ps1": "836043df1f959726d5fa2b73d206fa896c9d3aacd12bf7e21b8193a4bb14ad96",
-        "docs/troubleshooting.md": "5f90975861061f9c61ee7e434ffed425e4f3fc920280a4ffc19b2b1a15c5794f"
+        "docs/troubleshooting.md": "6cd9d0d5e51bb312be55fb56c3cd654739541c9db569f068e325300819510271"
       }
     },
     "docs/licenses.md": {
