@@ -39,7 +39,7 @@ track: D2
 
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
-|   1   |   §1    | One facts file and claims everywhere | -- |  [ ]   |
+|   1   |   §1    | One facts file and claims everywhere | -- |  [x]   |
 |   2   |   §2    | Figures bound to their data | §1, D00 T02 §3 |  [ ]   |
 |   3   |   §3    | Generated files match their sources | §1, D08 T01 §1 |  [ ]   |
 |   4   |   §4    | Staleness: verified dates and data revisions | §2 |  [ ]   |
@@ -61,6 +61,8 @@ track: D2
 
 **Test checkpoint:** `python3 -m unittest tests/test_drift.py -v` passes; `python3 scripts/drift-check.py` exits 0 on the clean tree; independent seeded CLI runs against `README.md` for (a) wrong format, API major, API minor, and limit prose assertions, (b) a malformed fact binding, and (c) a stale and an unterminated claim each exit 1 (quoted, then reverted with a clean `python3 scripts/drift-check.py` exit 0 read-back).
 
+> **Verified:** 2026-10-25 | §1 | 8c4abb36805458823cd883f3bd3dce91857c99e2
+> **Review:** `docs/reviews/d08-t02-s1.json`
 ## 2. Figures Bound to Their Data
 
 - [ ] Add a `<!-- drift:fact <provider-key> = <value> -->` comment form, placed beside each measured figure in a README or doc, whose selector names a provider in `docs/drift.json` with an exact CSV row selector and column (an aggregate needs an explicitly tested provider), and make `scripts/drift-check.py` recompute each one and compare. Done when: every current published measurement carries a binding and provenance; legacy research is labeled historical rather than falsely bound to newer data. Cheaper substitute: rounding the figures vaguely so they never look wrong.

@@ -1,0 +1,95 @@
+{
+  "ref": "D08 T02 \u00a71",
+  "title": "One Facts File and Claims Everywhere",
+  "implementation_sha": "8c4abb36805458823cd883f3bd3dce91857c99e2",
+  "date": "2026-10-25",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/08-docs/D08-T02-s1.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/08-docs/D08-T02-s1.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 3,
+      "report": "docs/reviews/08-docs/D08-T02-s1.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 -m unittest tests/test_drift.py -v -> Ran 44 tests in 2.022s, OK",
+    "python3 scripts/drift-check.py -> drift: 180 supported documents; 0 error(s); 0 deterministic repair(s)",
+    "seeded README.md probes (prose-assertions, malformed-binding, stale-and-unterminated-claims) -> exit 1 each (prose-fact: format_version/api_major/api_minor/max_dimension/max_pixels/max_file_bytes; fact: line 70: malformed fact binding; claim: line 70: no_such_file.c does not exist / line 71: unterminated claim); restored -> exit 0"
+  ],
+  "completion": {
+    "report": "docs/reviews/08-docs/D08-T02-s1.md",
+    "verdict": "complete",
+    "candidate": "9dac44b18cd56e98186420eca64866ca11fa97f0",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 3,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/08-docs/D08-T02-s1.md",
+    "candidate": "bb9af3c30cdb6b78dbae89aa0bb425872228ed0b",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}

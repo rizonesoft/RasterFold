@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **22 of 227 sections complete (10%).** 227 sections (6 discovered); backlog 1 entry. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **23 of 227 sections complete (10%).** 227 sections (6 discovered); backlog 1 entry. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -148,7 +148,7 @@ The ported plan, hooks, gates, measurement references, HTML docs, and drift gate
 | [x] | `D00 T02 §1` | e9 and WebP references in the research tools                  |   3   |
 | [x] | `D00 T02 §2` | JPEG XL e9 in the benchmark                                   |   2   |
 | [x] | `D00 T02 §3` | The committed corpus results file                             |   3   |
-| [ ] | `D08 T02 §1` | One facts file and claims everywhere                          |   5   |
+| [x] | `D08 T02 §1` | One facts file and claims everywhere                          |   5   |
 | [ ] | `D08 T01 §1` | The Jekyll site and its generated pages                       |   6   |
 | [ ] | `D08 T02 §3` | Generated files match their sources                           |   2   |
 | [ ] | `D08 T01 §2` | Comparison charts                                             |   4   |
