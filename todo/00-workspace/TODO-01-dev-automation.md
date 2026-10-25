@@ -85,15 +85,19 @@ The hook is the only gate that runs before a commit exists, so a tree that fails
 > **Review:** `docs/reviews/d00-t01-s1.json`
 ## 2. First Push: CI Green and Read Back
 
+> **Started:** 2026-10-25T00:19:00Z
+
 **Needs:** Network (downloads)
 
 A workflow nobody has seen run is a claim, not a gate. The `plan-gates` workflow validates the plan and supported documentation on every main push; the `build` workflow bootstraps the pinned toolchain on a clean runner, builds, and runs the correctness suite. Both are read back with `scripts/ci_status.py`, so a red run is seen by the session that caused it.
 
-- [ ] Push `main` and read both workflows back with `python3 scripts/ci_status.py`. Done when: both `build.yml` and `plan.yml` print a `green` verdict with the run URL. Cheaper substitute: opening the Actions page by hand, which leaves no record.
-- [ ] Record both run URLs and their conclusions in this section's stamp. Done when: the stamp quotes both lines as `ci_status.py` printed them.
-- [ ] Commit: `"workspace: read the first CI runs back"`
+**Corrected 2026-10-25:** Per the pre-build `--kind plan` review (`docs/reviews/00-workspace/D00-T01-s2.md`), the deliberate broken-TODO probe on scratch branch `probe/d00-t01-s2-red-plan` (`606c7f572af2a6666ab587f3f58b108daa4dfe6e`, triggered via `gh workflow run plan.yml --ref probe/d00-t01-s2-red-plan`) must record both the `scripts/ci_status.py --workflow plan.yml --branch probe/d00-t01-s2-red-plan` verdict (`plan.yml: red at 606c7f572af2 (https://github.com/rizonesoft/RasterFold/actions/runs/40146423134)`, exit 1) and the `Validate the TODO tree` step diagnostic (`FATAL todo/00-workspace/TODO-01-dev-automation.md:86: §2 has no '- [ ] Commit:' checklist item`, `32 todos, 227 sections -- 1 fatal, 0 warning(s)`) proving the deliberate `no-commit-item` defect caused the failure before the branch is deleted (`git push origin --delete probe/d00-t01-s2-red-plan`).
 
-**Test checkpoint:** `python3 scripts/ci_status.py` exits 0 for both workflows on the pushed commit; a deliberately broken TODO pushed to a scratch branch makes `plan-gates` fail, and the red run's URL is quoted before the branch is deleted.
+- [x] Push `main` and read both workflows back with `python3 scripts/ci_status.py`. Done when: both `build.yml` and `plan.yml` print a `green` verdict with the run URL (`build.yml: green at 5f46c6a38ffa (https://github.com/rizonesoft/RasterFold/actions/runs/40146055234)` and `plan.yml: green at 5f46c6a38ffa (https://github.com/rizonesoft/RasterFold/actions/runs/40146055157)`). Cheaper substitute: opening the Actions page by hand, which leaves no record.
+- [x] Record both run URLs and their conclusions in this section's stamp, and prove a deliberately broken TODO pushed to scratch branch `probe/d00-t01-s2-red-plan` (`606c7f572af2a6666ab587f3f58b108daa4dfe6e`) makes `plan-gates` fail at `Validate the TODO tree` (`plan.yml: red at 606c7f572af2 (https://github.com/rizonesoft/RasterFold/actions/runs/40146423134)`, `failed job: plan-gates (failure) https://github.com/rizonesoft/RasterFold/actions/runs/40146423134/job/121028631004`, step diagnostic `FATAL todo/00-workspace/TODO-01-dev-automation.md:86: §2 has no '- [ ] Commit:' checklist item`, exit 1) before deleting `probe/d00-t01-s2-red-plan`. Done when: the stamp quotes both green lines as `ci_status.py` printed them and the red probe run URL and `no-commit-item` diagnostic are recorded.
+- [x] Commit: `"workspace: read the first CI runs back"`
+
+**Test checkpoint:** `python3 scripts/ci_status.py` exits 0 for both workflows on the pushed commit (`build.yml: green at 5f46c6a38ffa (https://github.com/rizonesoft/RasterFold/actions/runs/40146055234)`, `plan.yml: green at 5f46c6a38ffa (https://github.com/rizonesoft/RasterFold/actions/runs/40146055157)`); a deliberately broken TODO pushed to scratch branch `probe/d00-t01-s2-red-plan` (`606c7f572af2a6666ab587f3f58b108daa4dfe6e`) makes `plan-gates` fail (`python3 scripts/ci_status.py --workflow plan.yml --branch probe/d00-t01-s2-red-plan` exits 1 with `plan.yml: red at 606c7f572af2 (https://github.com/rizonesoft/RasterFold/actions/runs/40146423134)`, `failed job: plan-gates (failure) https://github.com/rizonesoft/RasterFold/actions/runs/40146423134/job/121028631004`, `Validate the TODO tree` step `FATAL todo/00-workspace/TODO-01-dev-automation.md:86: §2 has no '- [ ] Commit:' checklist item`), and the red run's URL is quoted before the branch is deleted.
 
 ## 3. The Static Analysis Gate
 
