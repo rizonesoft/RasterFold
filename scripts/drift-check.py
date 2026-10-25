@@ -1617,7 +1617,7 @@ class Checker:
         return ('other', *meta, st.st_size)
 
     def _watched_paths(self):
-        ignored_dirs = {'__pycache__', '.git', 'build', 'bin', '.venv'}
+        ignored_dirs = {'__pycache__', '.git', 'build', 'bin', '.venv', '.remember', '.runner'}
         paths = {
             '.',
             *self.files,
@@ -1628,11 +1628,16 @@ class Checker:
         }
         if self.root.is_dir():
             for dirpath, dirnames, filenames in os.walk(self.root, topdown=True, followlinks=False):
-                dirnames[:] = [d for d in dirnames if d not in ignored_dirs]
                 rel_dir = Path(dirpath).relative_to(self.root)
+                if rel_dir == Path('tools'):
+                    dirnames[:] = [d for d in dirnames if d == 'githooks']
+                else:
+                    dirnames[:] = [d for d in dirnames if d not in ignored_dirs]
                 if str(rel_dir) != '.':
                     paths.add(rel_dir.as_posix())
                 for name in filenames:
+                    if rel_dir == Path('tools') and name not in ('bootstrap.py', 'bootstrap.ps1', 'provision.py', 'provision.ps1'):
+                        continue
                     paths.add((rel_dir / name).as_posix() if str(rel_dir) != '.' else name)
         for rel in list(paths):
             if rel != '.':
@@ -1645,12 +1650,21 @@ class Checker:
         return {rel: self._entry_state(rel) for rel in paths}
 
     def _copy_checkout_to_stage(self, stage_root):
+        if self.files:
+            for rel in sorted(self.files):
+                src = self.root / rel
+                if not src.exists() and not src.is_symlink():
+                    continue
+                dst = stage_root / rel
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst, follow_symlinks=False)
+            return
         shutil.copytree(
             self.root,
             stage_root,
             dirs_exist_ok=True,
             symlinks=True,
-            ignore=shutil.ignore_patterns('.git', 'build', 'bin', '.venv', '__pycache__'),
+            ignore=shutil.ignore_patterns('.git', 'build', 'bin', '.venv', '__pycache__', '.remember', '.runner'),
         )
 
     @staticmethod
