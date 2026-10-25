@@ -244,14 +244,22 @@ def _select_csv_rows(source, rule, key):
     return rows
 
 
-def _scan_link_tail(text, close_b):
+def _has_blank_line(text, start, end):
+    return bool(re.search(r'\n[ \t]*\n', text[start:end]))
+
+
+def _scan_link_tail(text, close_b, allow_newlines=False):
     n = len(text)
+    ws = ' \t\n' if allow_newlines else ' \t'
+    stop_nl = '' if allow_newlines else '\n'
     j = close_b + 1
-    while j < n and text[j] in ' \t':
+    while j < n and text[j] in ws:
         j += 1
+    if allow_newlines and _has_blank_line(text, close_b, j):
+        return None
     if j < n and text[j] == '(':
         k = j + 1
-        while k < n and text[k] in ' \t':
+        while k < n and text[k] in ws:
             k += 1
         depth = 1
         if k < n and text[k] == '<':
@@ -275,12 +283,12 @@ def _scan_link_tail(text, close_b):
                         break
                 k += 1
         if depth > 0:
-            while k < n and text[k] in ' \t':
+            while k < n and text[k] in ws:
                 k += 1
             if k < n and text[k] in ('"', "'", '('):
                 close_q = ')' if text[k] == '(' else text[k]
                 k += 1
-                while k < n and text[k] != '\n':
+                while k < n and (allow_newlines or text[k] != '\n'):
                     if text[k] == '\\':
                         k += 2
                         continue
@@ -288,17 +296,17 @@ def _scan_link_tail(text, close_b):
                         k += 1
                         break
                     k += 1
-            while k < n and text[k] in ' \t':
+            while k < n and text[k] in ws:
                 k += 1
             if k < n and text[k] == ')':
                 depth = 0
                 k += 1
-        if depth == 0:
+        if depth == 0 and not (allow_newlines and _has_blank_line(text, close_b, k)):
             return k
     elif j < n and text[j] == '[':
         k = j + 1
         depth = 1
-        while k < n and text[k] != '\n' and depth > 0:
+        while k < n and (allow_newlines or text[k] != '\n') and depth > 0:
             ch = text[k]
             if ch == '\\':
                 k += 2
@@ -308,7 +316,7 @@ def _scan_link_tail(text, close_b):
             elif ch == ']':
                 depth -= 1
             k += 1
-        if depth == 0:
+        if depth == 0 and not (allow_newlines and _has_blank_line(text, close_b, k)):
             return k
     return None
 
@@ -322,7 +330,7 @@ def _is_escaped(text, idx):
     return (bs % 2) == 1
 
 
-def _strip_markdown_images(text):
+def _strip_markdown_images(text, allow_newlines=False):
     out = []
     i = 0
     n = len(text)
@@ -330,7 +338,7 @@ def _strip_markdown_images(text):
         if text[i:i + 2] == '![' and not _is_escaped(text, i):
             k = i + 2
             depth = 1
-            while k < n and text[k] != '\n' and depth > 0:
+            while k < n and (allow_newlines or text[k] != '\n') and depth > 0:
                 ch = text[k]
                 if ch == '\\':
                     k += 2
@@ -340,32 +348,47 @@ def _strip_markdown_images(text):
                 elif ch == ']':
                     depth -= 1
                 k += 1
-            if depth == 0:
+            if depth == 0 and not (allow_newlines and _has_blank_line(text, i, k)):
                 close_b = k - 1
-                tail_end = _scan_link_tail(text, close_b)
-                out.append(' ')
-                i = tail_end if tail_end is not None else k
+                tail_end = _scan_link_tail(text, close_b, allow_newlines=allow_newlines)
+                end_idx = tail_end if tail_end is not None else k
+                out.append(re.sub(r'[^\n]', ' ', text[i:end_idx]))
+                i = end_idx
                 continue
+            if not allow_newlines and depth > 0:
+                out.append(' ')
+                break
         out.append(text[i])
         i += 1
     return ''.join(out)
 
 
-def _strip_markdown_links(text):
-    text = _strip_markdown_images(text)
+def _strip_markdown_links(text, allow_newlines=False):
+    text = _strip_markdown_images(text, allow_newlines=allow_newlines)
     out = []
     i = 0
     n = len(text)
     while i < n:
         if text[i] == ']' and not _is_escaped(text, i):
-            tail_end = _scan_link_tail(text, i)
+            tail_end = _scan_link_tail(text, i, allow_newlines=allow_newlines)
             if tail_end is not None:
-                out.append(']')
+                out.append(']' + re.sub(r'[^\n]', ' ', text[i + 1:tail_end]))
                 i = tail_end
                 continue
         out.append(text[i])
         i += 1
     return ''.join(out)
+
+
+def _mask_document_markdown(text):
+    no_comments = re.sub(r'<!--.*?-->', lambda m: ' ' * len(m.group(0)), text, flags=re.S)
+    stripped = _strip_markdown_links(no_comments, allow_newlines=True)
+    stripped = re.sub(r'(?m)^\s*\[[^\]\n]+\]:.*$', lambda m: ' ' * len(m.group(0)), stripped)
+    chars = list(text)
+    for idx, (orig_ch, mask_ch) in enumerate(zip(text, stripped)):
+        if orig_ch != mask_ch and orig_ch != '\n':
+            chars[idx] = ' '
+    return ''.join(chars)
 
 
 NON_RENDERED_TAGS = {
@@ -795,11 +818,13 @@ class Checker:
                 self.error('syntax', rel, str(exc))
             prose_text = prose(text) if suffix in ('.md', '.markdown') else text
             masked_prose = (
-                re.sub(
-                    r'(`+)(.+?)\1',
-                    lambda m: m.group(1) + m.group(2).replace('<', '\x01').replace('>', '\x02') + m.group(1),
-                    prose_text,
-                    flags=re.S,
+                _mask_document_markdown(
+                    re.sub(
+                        r'(`+)(.+?)\1',
+                        lambda m: m.group(1) + m.group(2).replace('<', '\x01').replace('>', '\x02') + m.group(1),
+                        prose_text,
+                        flags=re.S,
+                    )
                 )
                 if suffix in ('.md', '.markdown')
                 else prose_text

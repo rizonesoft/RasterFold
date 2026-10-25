@@ -1193,6 +1193,8 @@ class DriftTests(unittest.TestCase):
             'Size: [999 bytes](https://example.invalid/a(b(c))#1409028) <!-- drift:fact measurement_reference_bytes = 1409028 -->',
             "Size: [999 bytes](https://example.invalid/it's#1409028) <!-- drift:fact measurement_reference_bytes = 1409028 -->",
             'Size: 999 bytes ![1409028](_includes/generated/charts/corpus-size-ratio.svg) <!-- drift:fact measurement_reference_bytes = 1409028 -->',
+            'Wrong size: 999 bytes. ![1,409,028 <!-- drift:fact measurement_reference_bytes = 1409028 -->](_includes/generated/charts/corpus-size-ratio.svg)',
+            'Wrong size: 999 bytes. ![\n1,409,028 <!-- drift:fact measurement_reference_bytes = 1409028 -->\n](_includes/generated/charts/corpus-size-ratio.svg)',
             r'Size: 999 bytes \\![1409028](_includes/generated/charts/corpus-size-ratio.svg) <!-- drift:fact measurement_reference_bytes = 1409028 -->',
             'Size: 999 bytes [source][1409028] <!-- drift:fact measurement_reference_bytes = 1409028 -->\n\n[1409028]: README.md',
         ):
