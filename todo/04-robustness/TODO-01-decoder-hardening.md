@@ -13,7 +13,7 @@ track: R1
 > **Goal:** A file that lies about its size costs the decoder milliseconds, not seconds, and the decoder has survived a long fuzz campaign from seeds that reach every method, with the seeds and results on record.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-09-29):** A CM stream that runs out keeps decoding against zero padding until the image ends, and only then is rejected (`in != end`); a 32768x1024 header with a 20-byte payload therefore decodes about 100 million samples before exit 4. `tests/fuzz_decode.py` mutates valid files with the checksums recomputed; its longest recorded run is 600 iterations (587 rejected, 13 valid, no crash, hang, or mismatch).
+> **Current state (verified 2026-10-25):** A CM stream that runs out transitions into `rdec.tail` (`src/cm.c`) and keeps decoding against zero padding (`d->in` clamped at `d->lim = d->end + 2`) until the image ends, and only then is rejected (`in != end`); a 32768x1024 header with a 20-byte payload therefore decodes about 100 million samples before exit 4. `tests/fuzz_decode.py` mutates valid files with the checksums recomputed; its longest recorded single-seed run is 5,000 iterations (`python3 tests/fuzz_decode.py 5000 3`: 4,895 rejected, 105 valid, no crash, hang, or mismatch), while a 20,000-mutation campaign across seeds covering every method (§2) has not yet run.
 <!-- claim: count "d->in = d->in > d->lim \? d->lim : d->in;" src/cm.c = 1 -->
 <!-- claim: exists tests/fuzz_decode.py -->
 
@@ -44,6 +44,8 @@ track: R1
 ---
 
 ## 1. Stop Decoding a Stream That Has Run Out
+
+> **Started:** 2026-10-25T16:36:30Z
 
 **Job:** A user who opens a damaged or hostile file can see it refused within a second, by the same notification as today (exit 4 and one message line), under the unchanged file-safety policy.
 
