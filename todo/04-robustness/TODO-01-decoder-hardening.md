@@ -76,6 +76,8 @@ The recorded fuzz runs are short. A campaign of 20,000 mutations over seeds that
 
 ## 3. Oracle and Spec Agree on Padding and Counters
 
+> **Started:** 2026-10-25T17:03:00Z
+
 **Origin:** discovered run=4865d816f23f 2026-10-01 -- oracle-writer audit in the Claude agent routing probe, verified by the lead
 
 **Job:** A user can encode any BMP the spec's accepted subset describes, and the independent oracle accepts and decodes exactly the same files as the codec.
