@@ -2555,6 +2555,81 @@ class DriftTests(unittest.TestCase):
         self.assertIn('python3 scripts/drift-check.py --commit-range "$(git rev-parse "$HEAD_SHA^")..$HEAD_SHA"', plan_yml)
         self.assertIn('python3 scripts/drift-check.py --commit-range "$HEAD_SHA"', plan_yml)
 
+    def test_milestones_generator_stamp_roundtrip_gate_and_planning_sections(self) -> None:
+        spec = importlib.util.spec_from_file_location('milestones_mod', REPO / 'research/milestones.py')
+        assert spec and spec.loader
+        milestones = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(milestones)
+
+        tg_spec = importlib.util.spec_from_file_location('todo_graph_mod', REPO / 'scripts/todo-graph.py')
+        assert tg_spec and tg_spec.loader
+        sys.modules['todo_graph_mod'] = todo_graph = importlib.util.module_from_spec(tg_spec)
+        tg_spec.loader.exec_module(todo_graph)
+
+        def simulate_stamp(original_text: str, sec_num: int, day: str, sha: str, receipt: str) -> str:
+            head = re.search(rf'^## {sec_num}\. ', original_text, re.M)
+            assert head is not None
+            end = re.search(r'^##(?:[ \t]|$)', original_text[head.end():], re.M)
+            body = original_text[head.start():head.end() + end.start() if end else len(original_text)]
+            new_body = re.sub(r'^- \[ \] (Commit:.+)$', r'- [x] \1', body.rstrip('\n'), flags=re.M)
+            new_body += f'\n\n> **Verified:** {day} | §{sec_num} | {sha}\n> **Review:** `{receipt}`\n'
+            text = original_text.replace(body, new_body, 1)
+            row_re = re.compile(r'^(\|\s*\d+\s*\|\s*§' + str(sec_num) + r'\s*\|[^\n]*\|\s*)\[ \](\s*\|)$', re.M)
+            return row_re.sub(r'\1[x]\2', text)
+
+        orig_load = milestones._load_receipt
+        try:
+            # 1. Gate section D05 T01 s1 stamp round-trip.
+            milestones._load_receipt = lambda t, s: (f'docs/reviews/d05-t{t:02d}-s{s}.json', None)
+            band0_unstamped = milestones.render_band(0)
+            band0_stamped = simulate_stamp(
+                band0_unstamped,
+                1,
+                '2026-10-25',
+                'a' * 40,
+                'docs/reviews/d05-t01-s1.json',
+            )
+            milestones._load_receipt = lambda t, s: (
+                ('docs/reviews/d05-t01-s1.json', {'date': '2026-10-25', 'implementation_sha': 'a' * 40})
+                if (t, s) == (1, 1)
+                else (f'docs/reviews/d05-t{t:02d}-s{s}.json', None)
+            )
+            band0_rendered = milestones.render_band(0)
+            self.assertEqual(band0_stamped, band0_rendered)
+
+            # 2. Planning section D05 T02 s1 stamp round-trip and todo-validate section completeness.
+            milestones._load_receipt = lambda t, s: (f'docs/reviews/d05-t{t:02d}-s{s}.json', None)
+            milestones.PLAN_STATE[11] = {'checked': True}
+            band1_unstamped = milestones.render_band(1)
+            band1_stamped = simulate_stamp(
+                band1_unstamped,
+                1,
+                '2026-10-25',
+                'b' * 40,
+                'docs/reviews/d05-t02-s1.json',
+            )
+            milestones._load_receipt = lambda t, s: (
+                ('docs/reviews/d05-t02-s1.json', {'date': '2026-10-25', 'implementation_sha': 'b' * 40})
+                if (t, s) == (2, 1)
+                else (f'docs/reviews/d05-t{t:02d}-s{s}.json', None)
+            )
+            band1_rendered = milestones.render_band(1)
+            self.assertEqual(band1_stamped, band1_rendered)
+
+            with tempfile.TemporaryDirectory() as tmp:
+                tmp_path = Path(tmp) / 'TODO-02-towards-halving-jxl.md'
+                tmp_path.write_text(band1_rendered, encoding='utf-8')
+                parsed = todo_graph.parse_todo(tmp_path)
+                sec1 = parsed.sections[1]
+                self.assertEqual('x', sec1.status)
+                self.assertIn('2026-10-25 | §1 | ' + ('b' * 40), sec1.verified_body)
+                self.assertIn('docs/reviews/d05-t02-s1.json', sec1.review_body)
+                self.assertTrue(sec1.commit_done)
+                self.assertTrue(all(done for done, _ in sec1.items), sec1.items)
+        finally:
+            milestones._load_receipt = orig_load
+            milestones.PLAN_STATE.pop(11, None)
+
 
 if __name__ == '__main__':
     unittest.main()

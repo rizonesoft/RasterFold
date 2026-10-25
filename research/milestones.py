@@ -139,6 +139,8 @@ RULE = ("It keeps everything milestone {prev} reached: no photo size more than 0
 POLICY = ("If the target is missed, the missed-milestone policy applies (`D99 T01 §4`): up to three follow-up experiments "
           "from `docs/research.md` are filed through `add-todo`, and the operator is asked only when all three miss.")
 
+PLAN_STATE: dict[int, dict[str, object]] = {}
+
 GATE_STATE: dict[int, dict[str, object]] = {
     1: {
         "started": "2026-10-25T12:41:00Z",
@@ -163,7 +165,7 @@ GATE_STATE: dict[int, dict[str, object]] = {
             "`python3 scripts/windows.py research/vsjxl.py -n5` prints `rf_enc median 292.8 ms min 271.6`, `rf_dec median 287.7 ms min 284.0`, `jxl_enc median 1582.9 ms min 1549.6`, `jxl_dec median 480.8 ms min 465.2`, `decode ratio (median) 0.598 encode ratio 0.185`; "
             "`python3 research/ab.py ab src/cm.c src/cm.c measure -n5` prints `-t1` `enc min=482.7..484.1 med=496.4..499.6 dec min=453.5..467.2 med=481.7..498.2` and `-t3` `enc min=152.2..168.6 med=177.9..187.6 dec min=167.3..177.9 med=185.2..193.2`; "
             "`python3 research/milestones.py --check`, `python3 scripts/build-docs.py --check`, and `python3 scripts/drift-check.py` exit 0; "
-            "and `python3 scripts/ci_status.py` and `python3 scripts/ci_status.py --workflow pages.yml` report `build.yml: green at 91b43d439f0c (https://github.com/rizonesoft/RasterFold/actions/runs/40195950978)`, `plan.yml: green at 91b43d439f0c (https://github.com/rizonesoft/RasterFold/actions/runs/40195950906)`, and `pages.yml: green at 91b43d439f0c (https://github.com/rizonesoft/RasterFold/actions/runs/40195950947)` on `91b43d439f0c19b4a42d0ac9fe62a63d4f125ba4`."
+            "and `python3 scripts/ci_status.py` and `python3 scripts/ci_status.py --workflow pages.yml` report `build.yml: green at 35eb5c4d1176 (https://github.com/rizonesoft/RasterFold/actions/runs/40197473962)`, `plan.yml: green at 35eb5c4d1176 (https://github.com/rizonesoft/RasterFold/actions/runs/40197473971)`, and `pages.yml: green at 35eb5c4d1176 (https://github.com/rizonesoft/RasterFold/actions/runs/40197473951)` on `35eb5c4d11766d01026604bc788ab4663d9de073` (and `91b43d439f0c19b4a42d0ac9fe62a63d4f125ba4` at runs `40195950978`, `40195950906`, `40195950947`)."
         ),
     },
 }
@@ -213,31 +215,52 @@ def render_band(b: int) -> str:
         p, g = section_numbers(n)
         prev = gate_ref(n - 1) if n > 1 else None
         if p is not None:
-            _prel, preceipt = _load_receipt(t, p)
+            prel, preceipt = _load_receipt(t, p)
             rows.append((p, f"Plan milestone {n}: {name}", local(prev, t) if prev else "--", "[x]" if preceipt else "[ ]"))
             deps = local(plan_ref(n), t) + (", " + work if work else "")
         else:
+            prel, preceipt = "", None
             deps = work + (", " + local(prev, t) if prev else "")
         grel, greceipt = _load_receipt(t, g)
         rows.append((g, f"Milestone {n} gate: {name}", deps, "[x]" if greceipt else "[ ]"))
         if p is not None:
+            pstate = PLAN_STATE.get(n, {})
+            p_started_block = f"> **Started:** {pstate['started']}\n\n" if pstate.get("started") else ""
+            p_notes_list = pstate.get("notes") or []
+            p_notes_block = "".join(f"\n{note}\n" for note in p_notes_list) if isinstance(p_notes_list, list) and p_notes_list else ""
+            p_item_box = "[x]" if (pstate.get("checked") or preceipt is not None) else "[ ]"
+            p_commit_box = "[x]" if preceipt is not None else "[ ]"
             promoted = {
                 11: ('research-7.2-grayscale', 'Measure generic grayscale-channel detection and single-channel coding on a diverse grayscale set plus photo/tp/synth; retain the no-image-specific-tuning rule and require a new method/version if accepted.'),
                 18: ('readme-limitation-streaming', 'Plan bounded-row encode/decode buffers and the matching API/thread schedule, proving memory on images above the current limit before raising it.'),
                 28: ('research-7.3-alpha-16bit', 'Plan exact alpha and 16-bit samples with PNG/TIFF/PAM inputs, independent oracle, format/API compatibility and metadata preservation; converter capabilities do not imply current RasterFold support.'),
             }.get(n)
-            capture = (f"-> SOURCE: {promoted[0]}\n\n- [ ] Preserve the promoted backlog obligation in `docs/research.md` and this milestone's work sections: {promoted[1]} Done when: a named section owns its implementation and tests, or a measured negative result is retained without silently dropping the obligation.\n\n" if promoted else '')
+            capture = (f"-> SOURCE: {promoted[0]}\n\n- {p_item_box} Preserve the promoted backlog obligation in `docs/research.md` and this milestone's work sections: {promoted[1]} Done when: a named section owns its implementation and tests, or a measured negative result is retained without silently dropping the obligation.\n\n" if promoted else '')
+            p_custom_items = pstate.get("items")
+            if isinstance(p_custom_items, list) and p_custom_items:
+                p_checklist_block = "\n".join(f"- {p_item_box} {it}" for it in p_custom_items) + "\n"
+            else:
+                p_checklist_block = (
+                    f"- {p_item_box} Read milestone {n - 1}'s gate stamp and `docs/research.md` sections 3 and 9, and quote the baseline this milestone's target is measured from in this section as a `**Corrected YYYY-MM-DD:**` note. Done when: the note quotes the figures with their commands.\n"
+                    f"- {p_item_box} Author the milestone's work sections through `plan-experiment` (and `create-todo` for a new file) in the domains that own the work, each with its measurement and stop condition, placed in this milestone's phase of `todo/implementation-plan.md` above the gate row. Done when: `python scripts/todo-graph.py validate` exits 0 with the new sections in place. Cheaper substitute: one vague section named after the milestone.\n"
+                    f"- {p_item_box} Add every new work section to the Depends On of the gate (`{gate_ref(n)}`). Done when: `python scripts/todo-graph.py resolve '{gate_ref(n)}'` lists them among its dependencies.\n"
+                )
+            p_checkpoint_text = str(
+                pstate.get("checkpoint")
+                or f"`python scripts/todo-graph.py validate` and `plan --check` exit 0, and `resolve '{gate_ref(n)}'` exits 4 naming at least one new work section, proving the gate waits on the authored work."
+            )
+            p_verified_block = (
+                f"\n\n> **Verified:** {preceipt['date']} | §{p} | {preceipt['implementation_sha']}\n> **Review:** `{prel}`\n"
+                if preceipt is not None
+                else "\n\n"
+            )
             body.append(f"""## {p}. Plan Milestone {n}: {name}
 
-{capture}Milestone {n}'s work is authored here, one milestone ahead, from what milestone {n - 1} actually measured: its target is *{target}*. The design notes are `docs/research.md` section 9 (milestone {n}) and the sections of `docs/research.md` it points at; the baseline is milestone {n - 1}'s gate stamp (`{gate_ref(n - 1)}`), never a figure from memory.
+{p_started_block}{capture}Milestone {n}'s work is authored here, one milestone ahead, from what milestone {n - 1} actually measured: its target is *{target}*. The design notes are `docs/research.md` section 9 (milestone {n}) and the sections of `docs/research.md` it points at; the baseline is milestone {n - 1}'s gate stamp (`{gate_ref(n - 1)}`), never a figure from memory.
+{p_notes_block}
+{p_checklist_block}- {p_commit_box} Commit: `"todo: plan milestone {n} -- {name.lower()}"`
 
-- [ ] Read milestone {n - 1}'s gate stamp and `docs/research.md` sections 3 and 9, and quote the baseline this milestone's target is measured from in this section as a `**Corrected YYYY-MM-DD:**` note. Done when: the note quotes the figures with their commands.
-- [ ] Author the milestone's work sections through `plan-experiment` (and `create-todo` for a new file) in the domains that own the work, each with its measurement and stop condition, placed in this milestone's phase of `todo/implementation-plan.md` above the gate row. Done when: `python scripts/todo-graph.py validate` exits 0 with the new sections in place. Cheaper substitute: one vague section named after the milestone.
-- [ ] Add every new work section to the Depends On of the gate (`{gate_ref(n)}`). Done when: `python scripts/todo-graph.py resolve '{gate_ref(n)}'` lists them among its dependencies.
-- [ ] Commit: `"todo: plan milestone {n} -- {name.lower()}"`
-
-**Test checkpoint:** `python scripts/todo-graph.py validate` and `plan --check` exit 0, and `resolve '{gate_ref(n)}'` exits 4 naming at least one new work section, proving the gate waits on the authored work.
-""")
+**Test checkpoint:** {p_checkpoint_text}{p_verified_block}""")
         state = GATE_STATE.get(n, {})
         started_block = f"> **Started:** {state['started']}\n\n" if state.get("started") else ""
         extra = []
@@ -278,9 +301,9 @@ def render_band(b: int) -> str:
             or "every target figure and every no-regression figure quoted from a run at the commit; a figure that misses its bar blocks the stamp and triggers the missed-milestone policy instead."
         )
         verified_block = (
-            f"\n> **Verified:** {greceipt['date']} | §{g} | {greceipt['implementation_sha']}\n> **Review:** `{grel}`\n"
+            f"\n\n> **Verified:** {greceipt['date']} | §{g} | {greceipt['implementation_sha']}\n> **Review:** `{grel}`\n"
             if greceipt is not None
-            else ""
+            else "\n\n"
         )
         body.append(f"""## {g}. Milestone {n} Gate: {name}
 
@@ -290,8 +313,7 @@ Milestone {n} of the roadmap (`docs/research.md` section 9). {RULE.format(prev=n
 {notes_block}
 {checklist_block}- {commit_box} Commit: `"milestone: reach milestone {n} -- {name.lower()}"`
 
-**Test checkpoint:** {checkpoint_text}
-{verified_block}""")
+**Test checkpoint:** {checkpoint_text}{verified_block}""")
     order = "\n".join(f"|  {i:>2}   |  §{s:<3} | {d} | {dep} |  {box}   |" for i, (s, d, dep, box) in enumerate(sorted(rows), 1))
     all_done = all(box == "[x]" for _s, _d, _dep, box in rows)
     fm_status = "done" if all_done else "draft"
@@ -336,8 +358,7 @@ track: G{t}
 
 ---
 
-{chr(10).join(body)}
-## Verification
+{"".join(body)}## Verification
 
 - [ ] `python research/milestones.py --check` exits 0
 - [ ] `python scripts/todo-graph.py validate` clean
