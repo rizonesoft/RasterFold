@@ -32,11 +32,17 @@ from ctypes import wintypes
 from datetime import date
 from pathlib import Path
 
-from PIL import Image
+try:
+    from PIL import Image
+except ModuleNotFoundError:  # pragma: no cover - stdlib-only CSV/provenance callers
+    Image = None
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tests"))
-from test_correctness import checker, draw_ui, gradient, noise, solid, stripes  # noqa: E402
+try:
+    from test_correctness import checker, draw_ui, gradient, noise, solid, stripes  # noqa: E402
+except ModuleNotFoundError:  # pragma: no cover - stdlib-only CSV/provenance callers
+    checker = draw_ui = gradient = noise = solid = stripes = None
 
 EXE = ROOT / "bin" / "windows-x64" / "bin" / "rasterfold.exe"
 OUT = ROOT / "benchmarks"
