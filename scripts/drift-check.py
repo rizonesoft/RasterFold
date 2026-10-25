@@ -331,7 +331,7 @@ VOID_TAGS = {
     'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input',
     'link', 'meta', 'param', 'source', 'track', 'wbr',
 }
-ZERO_CSS_VALUE_RE = re.compile(r'[+-]?(?:0+(?:\.0*)?|\.0+)(?:[a-z%]*)?', re.I)
+CSS_NUM_PART = r'(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?'
 VALID_DISPLAY_VALUES = {
     'none', 'inline', 'block', 'inline-block', 'flex', 'inline-flex',
     'grid', 'inline-grid', 'table', 'inline-table', 'table-row', 'table-cell',
@@ -346,10 +346,10 @@ VALID_FONT_SIZE_KEYWORDS = {
     'xx-small', 'x-small', 'small', 'medium', 'large', 'x-large', 'xx-large',
     'xxx-large', 'smaller', 'larger', 'inherit', 'initial', 'unset', 'revert', 'revert-layer',
 }
-VALID_OPACITY_RE = re.compile(r'[+-]?(?:\d+(?:\.\d*)?|\.\d+)%?', re.I)
+VALID_OPACITY_RE = re.compile(rf'[+-]?{CSS_NUM_PART}%?', re.I)
 VALID_FONT_SIZE_LEN_RE = re.compile(
-    r'\+?(?:0+(?:\.0*)?|\.0+)|'
-    r'\+?(?:\d+(?:\.\d*)?|\.\d+)(?:px|em|rem|ex|ch|vw|vh|vmin|vmax|cm|mm|in|pt|pc|q|%)',
+    rf'[+-]?(?:0+(?:\.0+)?|\.0+)(?:e[+-]?\d+)?|'
+    rf'\+?{CSS_NUM_PART}(?:px|em|rem|ex|ch|vw|vh|vmin|vmax|cm|mm|in|pt|pc|q|%)',
     re.I,
 )
 
@@ -404,8 +404,10 @@ def _style_is_hidden(style_text):
     if op_val and VALID_OPACITY_RE.fullmatch(op_val) and float(op_val.rstrip('%')) <= 0.0:
         return True
     fs_val = effective.get('font-size', (0, ''))[1]
-    if fs_val and ZERO_CSS_VALUE_RE.fullmatch(fs_val):
-        return True
+    if fs_val and VALID_FONT_SIZE_LEN_RE.fullmatch(fs_val):
+        fs_num = re.sub(r'(?:px|em|rem|ex|ch|vw|vh|vmin|vmax|cm|mm|in|pt|pc|q|%)$', '', fs_val, flags=re.I)
+        if float(fs_num) <= 0.0:
+            return True
     return False
 
 
