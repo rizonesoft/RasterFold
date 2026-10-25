@@ -1,110 +1,120 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 460" role="img" aria-labelledby="title-peak-memory desc-peak-memory" data-chart="peak-memory" data-kind="bar-chart" data-plot-left="80.00" data-plot-top="74.00" data-plot-width="830.00" data-plot-height="270.00" data-plot-bottom="344.00" data-y-max="125829120.0000" data-source="benchmarks/results.csv" data-codec-revision="225ba888a41e09a89d65f82829098fd8c7d41c3c" data-kat-fold-sha256="b3012508fdcadc58e768baaba1c9fc3cf5cc2dd837643888b1ca2314fe79bb32" data-date="2026-10-25" data-threads="rasterfold: 3T; rasterfold-1t: 1T; jxl/jxl-e9: enc 1T, dec default; jxl-1t: enc 1T, dec 1T; webp/png: 1T" data-limitations="measured_sets=measure (2026-10-25, rev 225ba888a41e); retained_sets=photos,synthetic (2026-09-29, rev 0159404532cf, jxl-e9 not measured)." data-measured-sets="measure" data-retained-sets="photos,synthetic" data-retained-revision="0159404532cf944c4265ecb8ea46c54f637bdfc2" data-retained-date="2026-09-29">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 460" role="img" aria-labelledby="title-peak-memory desc-peak-memory" data-chart="peak-memory" data-kind="bar-chart" data-plot-left="80.00" data-plot-top="74.00" data-plot-width="830.00" data-plot-height="270.00" data-plot-bottom="344.00" data-y-max="125829120.0000" data-source="benchmarks/results.csv" data-codec-revision="225ba888a41e09a89d65f82829098fd8c7d41c3c" data-kat-fold-sha256="b3012508fdcadc58e768baaba1c9fc3cf5cc2dd837643888b1ca2314fe79bb32" data-date="2026-10-25" data-threads="rasterfold: 3T; rasterfold-1t: 1T; jxl/jxl-e9: enc 1T, dec default; jxl-1t: enc 1T, dec 1T; webp/png: 1T" data-limitations="measured_sets=measure (2026-10-25, rev 225ba888a41e); retained_sets=photos,synthetic (2026-09-29, rev 0159404532cf, jxl-e9 not measured)." data-measured-sets="measure" data-retained-sets="photos,synthetic" data-retained-revision="0159404532cf944c4265ecb8ea46c54f637bdfc2" data-retained-date="2026-09-29" data-set-revisions="measure:225ba888a41e09a89d65f82829098fd8c7d41c3c,photos:0159404532cf944c4265ecb8ea46c54f637bdfc2,synthetic:0159404532cf944c4265ecb8ea46c54f637bdfc2" data-set-dates="measure:2026-10-25,photos:2026-09-29,synthetic:2026-09-29">
   <title id="title-peak-memory">Benchmark Suite: Maximum Process Peak Working Set per Set (Lower Is Leaner)</title>
   <desc id="desc-peak-memory">Source: benchmarks/results.csv | revision: 225ba888a41e09a89d65f82829098fd8c7d41c3c | date: 2026-10-25 | threads: rasterfold: 3T; rasterfold-1t: 1T; jxl/jxl-e9: enc 1T, dec default; jxl-1t: enc 1T, dec 1T; webp/png: 1T | limitations: measured_sets=measure (2026-10-25, rev 225ba888a41e); retained_sets=photos,synthetic (2026-09-29, rev 0159404532cf, jxl-e9 not measured).</desc>
   <rect x="0" y="0" width="940" height="460" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
   <text x="16" y="26" font-family="system-ui, sans-serif" font-size="14" font-weight="700" fill="#0f172a">Benchmark Suite: Maximum Process Peak Working Set per Set (Lower Is Leaner)</text>
   <text x="16" y="44" font-family="system-ui, sans-serif" font-size="11" fill="#475569">Peak working set (bytes, max scale 120 MiB)</text>
   <rect x="16" y="52" width="10" height="10" fill="#2563eb"/>
-  <text x="30" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">rasterfold</text>
+  <text data-kind="legend-item" data-series="rasterfold" x="30" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">rasterfold</text>
   <rect x="134" y="52" width="10" height="10" fill="#60a5fa"/>
-  <text x="148" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">rasterfold-1t</text>
+  <text data-kind="legend-item" data-series="rasterfold-1t" x="148" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">rasterfold-1t</text>
   <rect x="252" y="52" width="10" height="10" fill="#059669"/>
-  <text x="266" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">jxl</text>
+  <text data-kind="legend-item" data-series="jxl" x="266" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">jxl</text>
   <rect x="370" y="52" width="10" height="10" fill="#34d399"/>
-  <text x="384" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">jxl-1t</text>
+  <text data-kind="legend-item" data-series="jxl-1t" x="384" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">jxl-1t</text>
   <rect x="488" y="52" width="10" height="10" fill="#7c3aed"/>
-  <text x="502" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">jxl-e9</text>
+  <text data-kind="legend-item" data-series="jxl-e9" x="502" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">jxl-e9</text>
   <rect x="606" y="52" width="10" height="10" fill="#d97706"/>
-  <text x="620" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">webp</text>
+  <text data-kind="legend-item" data-series="webp" x="620" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">webp</text>
   <rect x="724" y="52" width="10" height="10" fill="#64748b"/>
-  <text x="738" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">png</text>
+  <text data-kind="legend-item" data-series="png" x="738" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">png</text>
+  <line x1="76.00" y1="344.00" x2="910.00" y2="344.00" stroke="#e2e8f0" stroke-width="1"/>
+  <text data-kind="y-tick" data-value="0.00" x="74.00" y="347.00" text-anchor="end" font-family="monospace" font-size="8.5" fill="#475569">0.00</text>
+  <line x1="76.00" y1="276.50" x2="910.00" y2="276.50" stroke="#e2e8f0" stroke-width="1"/>
+  <text data-kind="y-tick" data-value="31457280" x="74.00" y="279.50" text-anchor="end" font-family="monospace" font-size="8.5" fill="#475569">31457280</text>
+  <line x1="76.00" y1="209.00" x2="910.00" y2="209.00" stroke="#e2e8f0" stroke-width="1"/>
+  <text data-kind="y-tick" data-value="62914560" x="74.00" y="212.00" text-anchor="end" font-family="monospace" font-size="8.5" fill="#475569">62914560</text>
+  <line x1="76.00" y1="141.50" x2="910.00" y2="141.50" stroke="#e2e8f0" stroke-width="1"/>
+  <text data-kind="y-tick" data-value="94371840" x="74.00" y="144.50" text-anchor="end" font-family="monospace" font-size="8.5" fill="#475569">94371840</text>
+  <line x1="76.00" y1="74.00" x2="910.00" y2="74.00" stroke="#e2e8f0" stroke-width="1"/>
+  <text data-kind="y-tick" data-value="125829120" x="74.00" y="77.00" text-anchor="end" font-family="monospace" font-size="8.5" fill="#475569">125829120</text>
   <line x1="80.00" y1="74.00" x2="80.00" y2="344.00" stroke="#94a3b8" stroke-width="1"/>
   <line x1="80.00" y1="344.00" x2="910.00" y2="344.00" stroke="#94a3b8" stroke-width="1"/>
   <text x="149.17" y="362.00" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#1e293b">measure-encode</text>
-  <rect data-kind="bar" data-group="measure-encode" data-series="rasterfold" data-value="16687104" x="91.07" y="308.19" width="14.60" height="35.81" fill="#2563eb"/>
+  <rect data-kind="bar" data-group="measure-encode" data-series="rasterfold" data-value="16687104" x="91.07" y="308.19" width="14.60" height="35.81" fill="#2563eb"><title>measure-encode / rasterfold: 16687104</title></rect>
   <text data-kind="bar-label" data-group="measure-encode" data-series="rasterfold" x="98.37" y="305.19" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">16687104</text>
-  <rect data-kind="bar" data-group="measure-encode" data-series="rasterfold-1t" data-value="16584704" x="107.67" y="308.41" width="14.60" height="35.59" fill="#60a5fa"/>
+  <rect data-kind="bar" data-group="measure-encode" data-series="rasterfold-1t" data-value="16584704" x="107.67" y="308.41" width="14.60" height="35.59" fill="#60a5fa"><title>measure-encode / rasterfold-1t: 16584704</title></rect>
   <text data-kind="bar-label" data-group="measure-encode" data-series="rasterfold-1t" x="114.97" y="305.41" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">16584704</text>
-  <rect data-kind="bar" data-group="measure-encode" data-series="jxl" data-value="92995584" x="124.27" y="144.45" width="14.60" height="199.55" fill="#059669"/>
+  <rect data-kind="bar" data-group="measure-encode" data-series="jxl" data-value="92995584" x="124.27" y="144.45" width="14.60" height="199.55" fill="#059669"><title>measure-encode / jxl: 92995584</title></rect>
   <text data-kind="bar-label" data-group="measure-encode" data-series="jxl" x="131.57" y="141.45" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">92995584</text>
-  <rect data-kind="bar" data-group="measure-encode" data-series="jxl-1t" data-value="92995584" x="140.87" y="144.45" width="14.60" height="199.55" fill="#34d399"/>
+  <rect data-kind="bar" data-group="measure-encode" data-series="jxl-1t" data-value="92995584" x="140.87" y="144.45" width="14.60" height="199.55" fill="#34d399"><title>measure-encode / jxl-1t: 92995584</title></rect>
   <text data-kind="bar-label" data-group="measure-encode" data-series="jxl-1t" x="148.17" y="141.45" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">92995584</text>
-  <rect data-kind="bar" data-group="measure-encode" data-series="jxl-e9" data-value="93143040" x="157.47" y="144.14" width="14.60" height="199.86" fill="#7c3aed"/>
+  <rect data-kind="bar" data-group="measure-encode" data-series="jxl-e9" data-value="93143040" x="157.47" y="144.14" width="14.60" height="199.86" fill="#7c3aed"><title>measure-encode / jxl-e9: 93143040</title></rect>
   <text data-kind="bar-label" data-group="measure-encode" data-series="jxl-e9" x="164.77" y="141.14" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">93143040</text>
-  <rect data-kind="bar" data-group="measure-encode" data-series="webp" data-value="109834240" x="174.07" y="108.32" width="14.60" height="235.68" fill="#d97706"/>
+  <rect data-kind="bar" data-group="measure-encode" data-series="webp" data-value="109834240" x="174.07" y="108.32" width="14.60" height="235.68" fill="#d97706"><title>measure-encode / webp: 109834240</title></rect>
   <text data-kind="bar-label" data-group="measure-encode" data-series="webp" x="181.37" y="105.32" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">109834240</text>
-  <rect data-kind="bar" data-group="measure-encode" data-series="png" data-value="35016704" x="190.67" y="268.86" width="14.60" height="75.14" fill="#64748b"/>
+  <rect data-kind="bar" data-group="measure-encode" data-series="png" data-value="35016704" x="190.67" y="268.86" width="14.60" height="75.14" fill="#64748b"><title>measure-encode / png: 35016704</title></rect>
   <text data-kind="bar-label" data-group="measure-encode" data-series="png" x="197.97" y="265.86" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">35016704</text>
   <text x="287.50" y="362.00" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#1e293b">measure-decode</text>
-  <rect data-kind="bar" data-group="measure-decode" data-series="rasterfold" data-value="16588800" x="229.40" y="308.40" width="14.60" height="35.60" fill="#2563eb"/>
+  <rect data-kind="bar" data-group="measure-decode" data-series="rasterfold" data-value="16588800" x="229.40" y="308.40" width="14.60" height="35.60" fill="#2563eb"><title>measure-decode / rasterfold: 16588800</title></rect>
   <text data-kind="bar-label" data-group="measure-decode" data-series="rasterfold" x="236.70" y="305.40" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">16588800</text>
-  <rect data-kind="bar" data-group="measure-decode" data-series="rasterfold-1t" data-value="16465920" x="246.00" y="308.67" width="14.60" height="35.33" fill="#60a5fa"/>
+  <rect data-kind="bar" data-group="measure-decode" data-series="rasterfold-1t" data-value="16465920" x="246.00" y="308.67" width="14.60" height="35.33" fill="#60a5fa"><title>measure-decode / rasterfold-1t: 16465920</title></rect>
   <text data-kind="bar-label" data-group="measure-decode" data-series="rasterfold-1t" x="253.30" y="305.67" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">16465920</text>
-  <rect data-kind="bar" data-group="measure-decode" data-series="jxl" data-value="51462144" x="262.60" y="233.57" width="14.60" height="110.43" fill="#059669"/>
+  <rect data-kind="bar" data-group="measure-decode" data-series="jxl" data-value="51462144" x="262.60" y="233.57" width="14.60" height="110.43" fill="#059669"><title>measure-decode / jxl: 51462144</title></rect>
   <text data-kind="bar-label" data-group="measure-decode" data-series="jxl" x="269.90" y="230.57" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">51462144</text>
-  <rect data-kind="bar" data-group="measure-decode" data-series="jxl-1t" data-value="33849344" x="279.20" y="271.37" width="14.60" height="72.63" fill="#34d399"/>
+  <rect data-kind="bar" data-group="measure-decode" data-series="jxl-1t" data-value="33849344" x="279.20" y="271.37" width="14.60" height="72.63" fill="#34d399"><title>measure-decode / jxl-1t: 33849344</title></rect>
   <text data-kind="bar-label" data-group="measure-decode" data-series="jxl-1t" x="286.50" y="268.37" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">33849344</text>
-  <rect data-kind="bar" data-group="measure-decode" data-series="jxl-e9" data-value="52023296" x="295.80" y="232.37" width="14.60" height="111.63" fill="#7c3aed"/>
+  <rect data-kind="bar" data-group="measure-decode" data-series="jxl-e9" data-value="52023296" x="295.80" y="232.37" width="14.60" height="111.63" fill="#7c3aed"><title>measure-decode / jxl-e9: 52023296</title></rect>
   <text data-kind="bar-label" data-group="measure-decode" data-series="jxl-e9" x="303.10" y="229.37" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">52023296</text>
-  <rect data-kind="bar" data-group="measure-decode" data-series="webp" data-value="43728896" x="312.40" y="250.17" width="14.60" height="93.83" fill="#d97706"/>
+  <rect data-kind="bar" data-group="measure-decode" data-series="webp" data-value="43728896" x="312.40" y="250.17" width="14.60" height="93.83" fill="#d97706"><title>measure-decode / webp: 43728896</title></rect>
   <text data-kind="bar-label" data-group="measure-decode" data-series="webp" x="319.70" y="247.17" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">43728896</text>
-  <rect data-kind="bar" data-group="measure-decode" data-series="png" data-value="38854656" x="329.00" y="260.63" width="14.60" height="83.37" fill="#64748b"/>
+  <rect data-kind="bar" data-group="measure-decode" data-series="png" data-value="38854656" x="329.00" y="260.63" width="14.60" height="83.37" fill="#64748b"><title>measure-decode / png: 38854656</title></rect>
   <text data-kind="bar-label" data-group="measure-decode" data-series="png" x="336.30" y="257.63" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">38854656</text>
   <text x="425.83" y="362.00" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#1e293b">photos-encode</text>
-  <rect data-kind="bar" data-group="photos-encode" data-series="rasterfold" data-value="14962688" x="367.73" y="311.89" width="14.60" height="32.11" fill="#2563eb"/>
+  <rect data-kind="bar" data-group="photos-encode" data-series="rasterfold" data-value="14962688" x="367.73" y="311.89" width="14.60" height="32.11" fill="#2563eb"><title>photos-encode / rasterfold: 14962688</title></rect>
   <text data-kind="bar-label" data-group="photos-encode" data-series="rasterfold" x="375.03" y="308.89" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">14962688</text>
-  <rect data-kind="bar" data-group="photos-encode" data-series="rasterfold-1t" data-value="14942208" x="384.33" y="311.94" width="14.60" height="32.06" fill="#60a5fa"/>
+  <rect data-kind="bar" data-group="photos-encode" data-series="rasterfold-1t" data-value="14942208" x="384.33" y="311.94" width="14.60" height="32.06" fill="#60a5fa"><title>photos-encode / rasterfold-1t: 14942208</title></rect>
   <text data-kind="bar-label" data-group="photos-encode" data-series="rasterfold-1t" x="391.63" y="308.94" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">14942208</text>
-  <rect data-kind="bar" data-group="photos-encode" data-series="jxl" data-value="59432960" x="400.93" y="216.47" width="14.60" height="127.53" fill="#059669"/>
+  <rect data-kind="bar" data-group="photos-encode" data-series="jxl" data-value="59432960" x="400.93" y="216.47" width="14.60" height="127.53" fill="#059669"><title>photos-encode / jxl: 59432960</title></rect>
   <text data-kind="bar-label" data-group="photos-encode" data-series="jxl" x="408.23" y="213.47" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">59432960</text>
-  <rect data-kind="bar" data-group="photos-encode" data-series="jxl-1t" data-value="59432960" x="417.53" y="216.47" width="14.60" height="127.53" fill="#34d399"/>
+  <rect data-kind="bar" data-group="photos-encode" data-series="jxl-1t" data-value="59432960" x="417.53" y="216.47" width="14.60" height="127.53" fill="#34d399"><title>photos-encode / jxl-1t: 59432960</title></rect>
   <text data-kind="bar-label" data-group="photos-encode" data-series="jxl-1t" x="424.83" y="213.47" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">59432960</text>
-  <g data-kind="na" data-group="photos-encode" data-series="jxl-e9" data-value="N/A"><text x="442.43" y="338.00" text-anchor="middle" font-family="monospace" font-size="8" fill="#64748b">N/A</text></g>
-  <rect data-kind="bar" data-group="photos-encode" data-series="webp" data-value="67457024" x="450.73" y="199.25" width="14.60" height="144.75" fill="#d97706"/>
+  <g data-kind="na" data-group="photos-encode" data-series="jxl-e9" data-value="N/A" data-x="442.43" data-y="338.00"><text x="442.43" y="338.00" text-anchor="middle" font-family="monospace" font-size="8" fill="#64748b">N/A</text></g>
+  <rect data-kind="bar" data-group="photos-encode" data-series="webp" data-value="67457024" x="450.73" y="199.25" width="14.60" height="144.75" fill="#d97706"><title>photos-encode / webp: 67457024</title></rect>
   <text data-kind="bar-label" data-group="photos-encode" data-series="webp" x="458.03" y="196.25" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">67457024</text>
-  <rect data-kind="bar" data-group="photos-encode" data-series="png" data-value="29933568" x="467.33" y="279.77" width="14.60" height="64.23" fill="#64748b"/>
+  <rect data-kind="bar" data-group="photos-encode" data-series="png" data-value="29933568" x="467.33" y="279.77" width="14.60" height="64.23" fill="#64748b"><title>photos-encode / png: 29933568</title></rect>
   <text data-kind="bar-label" data-group="photos-encode" data-series="png" x="474.63" y="276.77" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">29933568</text>
   <text x="564.17" y="362.00" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#1e293b">photos-decode</text>
-  <rect data-kind="bar" data-group="photos-decode" data-series="rasterfold" data-value="14856192" x="506.07" y="312.12" width="14.60" height="31.88" fill="#2563eb"/>
+  <rect data-kind="bar" data-group="photos-decode" data-series="rasterfold" data-value="14856192" x="506.07" y="312.12" width="14.60" height="31.88" fill="#2563eb"><title>photos-decode / rasterfold: 14856192</title></rect>
   <text data-kind="bar-label" data-group="photos-decode" data-series="rasterfold" x="513.37" y="309.12" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">14856192</text>
-  <rect data-kind="bar" data-group="photos-decode" data-series="rasterfold-1t" data-value="14753792" x="522.67" y="312.34" width="14.60" height="31.66" fill="#60a5fa"/>
+  <rect data-kind="bar" data-group="photos-decode" data-series="rasterfold-1t" data-value="14753792" x="522.67" y="312.34" width="14.60" height="31.66" fill="#60a5fa"><title>photos-decode / rasterfold-1t: 14753792</title></rect>
   <text data-kind="bar-label" data-group="photos-decode" data-series="rasterfold-1t" x="529.97" y="309.34" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">14753792</text>
-  <rect data-kind="bar" data-group="photos-decode" data-series="jxl" data-value="42369024" x="539.27" y="253.09" width="14.60" height="90.91" fill="#059669"/>
+  <rect data-kind="bar" data-group="photos-decode" data-series="jxl" data-value="42369024" x="539.27" y="253.09" width="14.60" height="90.91" fill="#059669"><title>photos-decode / jxl: 42369024</title></rect>
   <text data-kind="bar-label" data-group="photos-decode" data-series="jxl" x="546.57" y="250.09" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">42369024</text>
-  <rect data-kind="bar" data-group="photos-decode" data-series="jxl-1t" data-value="30179328" x="555.87" y="279.24" width="14.60" height="64.76" fill="#34d399"/>
+  <rect data-kind="bar" data-group="photos-decode" data-series="jxl-1t" data-value="30179328" x="555.87" y="279.24" width="14.60" height="64.76" fill="#34d399"><title>photos-decode / jxl-1t: 30179328</title></rect>
   <text data-kind="bar-label" data-group="photos-decode" data-series="jxl-1t" x="563.17" y="276.24" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">30179328</text>
-  <g data-kind="na" data-group="photos-decode" data-series="jxl-e9" data-value="N/A"><text x="580.77" y="338.00" text-anchor="middle" font-family="monospace" font-size="8" fill="#64748b">N/A</text></g>
-  <rect data-kind="bar" data-group="photos-decode" data-series="webp" data-value="34729984" x="589.07" y="269.48" width="14.60" height="74.52" fill="#d97706"/>
+  <g data-kind="na" data-group="photos-decode" data-series="jxl-e9" data-value="N/A" data-x="580.77" data-y="338.00"><text x="580.77" y="338.00" text-anchor="middle" font-family="monospace" font-size="8" fill="#64748b">N/A</text></g>
+  <rect data-kind="bar" data-group="photos-decode" data-series="webp" data-value="34729984" x="589.07" y="269.48" width="14.60" height="74.52" fill="#d97706"><title>photos-decode / webp: 34729984</title></rect>
   <text data-kind="bar-label" data-group="photos-decode" data-series="webp" x="596.37" y="266.48" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">34729984</text>
-  <rect data-kind="bar" data-group="photos-decode" data-series="png" data-value="32047104" x="605.67" y="275.23" width="14.60" height="68.77" fill="#64748b"/>
+  <rect data-kind="bar" data-group="photos-decode" data-series="png" data-value="32047104" x="605.67" y="275.23" width="14.60" height="68.77" fill="#64748b"><title>photos-decode / png: 32047104</title></rect>
   <text data-kind="bar-label" data-group="photos-decode" data-series="png" x="612.97" y="272.23" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">32047104</text>
   <text x="702.50" y="362.00" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#1e293b">synthetic-encode</text>
-  <rect data-kind="bar" data-group="synthetic-encode" data-series="rasterfold" data-value="12394496" x="644.40" y="317.40" width="14.60" height="26.60" fill="#2563eb"/>
+  <rect data-kind="bar" data-group="synthetic-encode" data-series="rasterfold" data-value="12394496" x="644.40" y="317.40" width="14.60" height="26.60" fill="#2563eb"><title>synthetic-encode / rasterfold: 12394496</title></rect>
   <text data-kind="bar-label" data-group="synthetic-encode" data-series="rasterfold" x="651.70" y="314.40" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">12394496</text>
-  <rect data-kind="bar" data-group="synthetic-encode" data-series="rasterfold-1t" data-value="12279808" x="661.00" y="317.65" width="14.60" height="26.35" fill="#60a5fa"/>
+  <rect data-kind="bar" data-group="synthetic-encode" data-series="rasterfold-1t" data-value="12279808" x="661.00" y="317.65" width="14.60" height="26.35" fill="#60a5fa"><title>synthetic-encode / rasterfold-1t: 12279808</title></rect>
   <text data-kind="bar-label" data-group="synthetic-encode" data-series="rasterfold-1t" x="668.30" y="314.65" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">12279808</text>
-  <rect data-kind="bar" data-group="synthetic-encode" data-series="jxl" data-value="58253312" x="677.60" y="219.00" width="14.60" height="125.00" fill="#059669"/>
+  <rect data-kind="bar" data-group="synthetic-encode" data-series="jxl" data-value="58253312" x="677.60" y="219.00" width="14.60" height="125.00" fill="#059669"><title>synthetic-encode / jxl: 58253312</title></rect>
   <text data-kind="bar-label" data-group="synthetic-encode" data-series="jxl" x="684.90" y="216.00" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">58253312</text>
-  <rect data-kind="bar" data-group="synthetic-encode" data-series="jxl-1t" data-value="58253312" x="694.20" y="219.00" width="14.60" height="125.00" fill="#34d399"/>
+  <rect data-kind="bar" data-group="synthetic-encode" data-series="jxl-1t" data-value="58253312" x="694.20" y="219.00" width="14.60" height="125.00" fill="#34d399"><title>synthetic-encode / jxl-1t: 58253312</title></rect>
   <text data-kind="bar-label" data-group="synthetic-encode" data-series="jxl-1t" x="701.50" y="216.00" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">58253312</text>
-  <g data-kind="na" data-group="synthetic-encode" data-series="jxl-e9" data-value="N/A"><text x="719.10" y="338.00" text-anchor="middle" font-family="monospace" font-size="8" fill="#64748b">N/A</text></g>
-  <rect data-kind="bar" data-group="synthetic-encode" data-series="webp" data-value="53841920" x="727.40" y="228.47" width="14.60" height="115.53" fill="#d97706"/>
+  <g data-kind="na" data-group="synthetic-encode" data-series="jxl-e9" data-value="N/A" data-x="719.10" data-y="338.00"><text x="719.10" y="338.00" text-anchor="middle" font-family="monospace" font-size="8" fill="#64748b">N/A</text></g>
+  <rect data-kind="bar" data-group="synthetic-encode" data-series="webp" data-value="53841920" x="727.40" y="228.47" width="14.60" height="115.53" fill="#d97706"><title>synthetic-encode / webp: 53841920</title></rect>
   <text data-kind="bar-label" data-group="synthetic-encode" data-series="webp" x="734.70" y="225.47" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">53841920</text>
-  <rect data-kind="bar" data-group="synthetic-encode" data-series="png" data-value="29368320" x="744.00" y="280.98" width="14.60" height="63.02" fill="#64748b"/>
+  <rect data-kind="bar" data-group="synthetic-encode" data-series="png" data-value="29368320" x="744.00" y="280.98" width="14.60" height="63.02" fill="#64748b"><title>synthetic-encode / png: 29368320</title></rect>
   <text data-kind="bar-label" data-group="synthetic-encode" data-series="png" x="751.30" y="277.98" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">29368320</text>
   <text x="840.83" y="362.00" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#1e293b">synthetic-decode</text>
-  <rect data-kind="bar" data-group="synthetic-decode" data-series="rasterfold" data-value="12374016" x="782.73" y="317.45" width="14.60" height="26.55" fill="#2563eb"/>
+  <rect data-kind="bar" data-group="synthetic-decode" data-series="rasterfold" data-value="12374016" x="782.73" y="317.45" width="14.60" height="26.55" fill="#2563eb"><title>synthetic-decode / rasterfold: 12374016</title></rect>
   <text data-kind="bar-label" data-group="synthetic-decode" data-series="rasterfold" x="790.03" y="314.45" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">12374016</text>
-  <rect data-kind="bar" data-group="synthetic-decode" data-series="rasterfold-1t" data-value="12263424" x="799.33" y="317.69" width="14.60" height="26.31" fill="#60a5fa"/>
+  <rect data-kind="bar" data-group="synthetic-decode" data-series="rasterfold-1t" data-value="12263424" x="799.33" y="317.69" width="14.60" height="26.31" fill="#60a5fa"><title>synthetic-decode / rasterfold-1t: 12263424</title></rect>
   <text data-kind="bar-label" data-group="synthetic-decode" data-series="rasterfold-1t" x="806.63" y="314.69" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">12263424</text>
-  <rect data-kind="bar" data-group="synthetic-decode" data-series="jxl" data-value="41549824" x="815.93" y="254.84" width="14.60" height="89.16" fill="#059669"/>
+  <rect data-kind="bar" data-group="synthetic-decode" data-series="jxl" data-value="41549824" x="815.93" y="254.84" width="14.60" height="89.16" fill="#059669"><title>synthetic-decode / jxl: 41549824</title></rect>
   <text data-kind="bar-label" data-group="synthetic-decode" data-series="jxl" x="823.23" y="251.84" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">41549824</text>
-  <rect data-kind="bar" data-group="synthetic-decode" data-series="jxl-1t" data-value="30420992" x="832.53" y="278.72" width="14.60" height="65.28" fill="#34d399"/>
+  <rect data-kind="bar" data-group="synthetic-decode" data-series="jxl-1t" data-value="30420992" x="832.53" y="278.72" width="14.60" height="65.28" fill="#34d399"><title>synthetic-decode / jxl-1t: 30420992</title></rect>
   <text data-kind="bar-label" data-group="synthetic-decode" data-series="jxl-1t" x="839.83" y="275.72" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">30420992</text>
-  <g data-kind="na" data-group="synthetic-decode" data-series="jxl-e9" data-value="N/A"><text x="857.43" y="338.00" text-anchor="middle" font-family="monospace" font-size="8" fill="#64748b">N/A</text></g>
-  <rect data-kind="bar" data-group="synthetic-decode" data-series="webp" data-value="31985664" x="865.73" y="275.37" width="14.60" height="68.63" fill="#d97706"/>
+  <g data-kind="na" data-group="synthetic-decode" data-series="jxl-e9" data-value="N/A" data-x="857.43" data-y="338.00"><text x="857.43" y="338.00" text-anchor="middle" font-family="monospace" font-size="8" fill="#64748b">N/A</text></g>
+  <rect data-kind="bar" data-group="synthetic-decode" data-series="webp" data-value="31985664" x="865.73" y="275.37" width="14.60" height="68.63" fill="#d97706"><title>synthetic-decode / webp: 31985664</title></rect>
   <text data-kind="bar-label" data-group="synthetic-decode" data-series="webp" x="873.03" y="272.37" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">31985664</text>
-  <rect data-kind="bar" data-group="synthetic-decode" data-series="png" data-value="30142464" x="882.33" y="279.32" width="14.60" height="64.68" fill="#64748b"/>
+  <rect data-kind="bar" data-group="synthetic-decode" data-series="png" data-value="30142464" x="882.33" y="279.32" width="14.60" height="64.68" fill="#64748b"><title>synthetic-decode / png: 30142464</title></rect>
   <text data-kind="bar-label" data-group="synthetic-decode" data-series="png" x="889.63" y="276.32" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">30142464</text>
   <text data-kind="provenance" x="16" y="414" font-family="monospace" font-size="9.5" fill="#334155">Source: benchmarks/results.csv | codec_revision=225ba888a41e09a89d65f82829098fd8c7d41c3c | date=2026-10-25</text>
   <text data-kind="threads" x="16" y="430" font-family="monospace" font-size="9.5" fill="#334155">Threads: rasterfold: 3T; rasterfold-1t: 1T; jxl/jxl-e9: enc 1T, dec default; jxl-1t: enc 1T, dec 1T; webp/png: 1T</text>

@@ -266,6 +266,53 @@ class ResearchRefsTests(unittest.TestCase):
             reloaded = benchmark.load_existing_rows(csv_path)
             self.assertEqual(reloaded, combined)
 
+            # Verify multi-step partial reruns preserve per-set provenance without misattributing retained sets.
+            rev_sep = "0159404532cf944c4265ecb8ea46c54f637bdfc2"
+            rev_oct = "225ba888a41e09a89d65f82829098fd8c7d41c3c"
+            rev_nov = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            kat_sha = benchmark.kat_fold_sha256()
+            meta_step1 = benchmark.resolve_set_provenance(
+                {"codec_revision": rev_sep, "date": "2026-09-29", "measured_sets": "measure,photos,synthetic", "retained_sets": "none"},
+                ["measure"],
+                ["photos", "synthetic"],
+                rev_oct,
+                "2026-10-25",
+                kat_sha,
+            )
+            benchmark.write_csv_rows(csv_path, combined, meta=meta_step1)
+            loaded_meta1, _ = benchmark.read_results_csv(csv_path)
+            self.assertEqual(
+                benchmark.parse_set_map(loaded_meta1["set_revisions"]),
+                {"measure": rev_oct, "photos": rev_sep, "synthetic": rev_sep},
+            )
+            self.assertEqual(
+                benchmark.parse_set_map(loaded_meta1["set_dates"]),
+                {"measure": "2026-10-25", "photos": "2026-09-29", "synthetic": "2026-09-29"},
+            )
+            # Step 2: rerun only photos on 2026-11-01; retained measure must stay 2026-10-25 / rev_oct while synthetic stays 2026-09-29 / rev_sep.
+            meta_step2 = benchmark.resolve_set_provenance(
+                loaded_meta1,
+                ["photos"],
+                ["measure", "synthetic"],
+                rev_nov,
+                "2026-11-01",
+                kat_sha,
+            )
+            benchmark.write_csv_rows(csv_path, combined, meta=meta_step2)
+            loaded_meta2, _ = benchmark.read_results_csv(csv_path)
+            self.assertEqual(loaded_meta2["measured_sets"], "photos")
+            self.assertEqual(loaded_meta2["retained_sets"], "measure,synthetic")
+            self.assertEqual(
+                benchmark.parse_set_map(loaded_meta2["set_revisions"]),
+                {"measure": rev_oct, "photos": rev_nov, "synthetic": rev_sep},
+            )
+            self.assertEqual(
+                benchmark.parse_set_map(loaded_meta2["set_dates"]),
+                {"measure": "2026-10-25", "photos": "2026-11-01", "synthetic": "2026-09-29"},
+            )
+            self.assertEqual(loaded_meta2["retained_revision"], f"measure:{rev_oct},synthetic:{rev_sep}")
+            self.assertEqual(loaded_meta2["retained_date"], "measure:2026-10-25,synthetic:2026-09-29")
+
             with self.assertRaises(ValueError):
                 benchmark.parse_csv_row({**seed_rows[0], "pixels_match": "yes"})
             self.assertEqual(benchmark.normalize_sets(["measure", "measure", "photos", "measure"]), ["measure", "photos"])

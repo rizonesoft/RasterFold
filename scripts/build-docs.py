@@ -380,14 +380,25 @@ def load_csv_with_meta(root: Path, rel: str) -> tuple[dict[str, str], list[dict[
         if not re.fullmatch(pattern, val):
             raise ValueError(f'{rel}: missing or invalid header {req_key}={val!r}')
     if rel == RESULTS_CSV:
-        for req_key in ('measured_sets', 'retained_sets', 'retained_revision', 'retained_date'):
+        for req_key in ('measured_sets', 'retained_sets', 'retained_revision', 'retained_date', 'set_revisions', 'set_dates'):
             if not meta.get(req_key):
                 raise ValueError(f'{rel}: missing required header {req_key}')
         if meta['retained_sets'] != 'none':
-            if not re.fullmatch(r'^[0-9a-f]{40}$', meta['retained_revision']):
-                raise ValueError(f'{rel}: invalid retained_revision={meta["retained_revision"]!r}')
-            if not re.fullmatch(r'^\d{4}-\d{2}-\d{2}$', meta['retained_date']):
-                raise ValueError(f'{rel}: invalid retained_date={meta["retained_date"]!r}')
+            for tok in meta['retained_revision'].split(','):
+                rev_val = tok.split(':', 1)[1] if ':' in tok else tok
+                if not re.fullmatch(r'^[0-9a-f]{40}$', rev_val):
+                    raise ValueError(f'{rel}: invalid retained_revision={meta["retained_revision"]!r}')
+            for tok in meta['retained_date'].split(','):
+                date_val = tok.split(':', 1)[1] if ':' in tok else tok
+                if not re.fullmatch(r'^\d{4}-\d{2}-\d{2}$', date_val):
+                    raise ValueError(f'{rel}: invalid retained_date={meta["retained_date"]!r}')
+        rev_pairs = dict(item.split(':', 1) for item in meta['set_revisions'].split(',') if ':' in item)
+        date_pairs = dict(item.split(':', 1) for item in meta['set_dates'].split(',') if ':' in item)
+        for s in BENCHMARK_SETS:
+            if not re.fullmatch(r'^[0-9a-f]{40}$', rev_pairs.get(s, '')):
+                raise ValueError(f'{rel}: invalid or missing set_revisions entry for {s} in {meta["set_revisions"]!r}')
+            if not re.fullmatch(r'^\d{4}-\d{2}-\d{2}$', date_pairs.get(s, '')):
+                raise ValueError(f'{rel}: invalid or missing set_dates entry for {s} in {meta["set_dates"]!r}')
     body = ''.join(raw_lines[idx:])
     rows = list(csv.DictReader(io.StringIO(body)))
     if not rows:
@@ -475,6 +486,8 @@ def compute_chart_datasets(root: Path) -> dict[str, dict]:
         'threads': 'rasterfold: 3T default; jxl_e7, jxl_e9, webp: -threads 1',
         'limitations': 'Size-only research corpus (55 images: photo 39, tp 10 overlapping / tp-only 5 exclusive, synth 11); PNG, wall time, and memory are measured in benchmarks/results.csv.',
     }
+    set_rev_map = dict(item.split(':', 1) for item in results_meta['set_revisions'].split(',') if ':' in item)
+    set_date_map = dict(item.split(':', 1) for item in results_meta['set_dates'].split(',') if ':' in item)
     results_prov = {
         'source': RESULTS_CSV,
         'codec_revision': results_meta['codec_revision'],
@@ -484,6 +497,8 @@ def compute_chart_datasets(root: Path) -> dict[str, dict]:
         'retained_sets': results_meta['retained_sets'],
         'retained_revision': results_meta['retained_revision'],
         'retained_date': results_meta['retained_date'],
+        'set_revisions': results_meta['set_revisions'],
+        'set_dates': results_meta['set_dates'],
         'threads': 'rasterfold: 3T; rasterfold-1t: 1T; jxl/jxl-e9: enc 1T, dec default; jxl-1t: enc 1T, dec 1T; webp/png: 1T',
         'limitations': (
             f'measured_sets={results_meta["measured_sets"]} ({results_meta["date"]}, rev {results_meta["codec_revision"][:12]}); '
@@ -571,7 +586,7 @@ def compute_chart_datasets(root: Path) -> dict[str, dict]:
                 peak_mem_bars.append({'group': f'{s}-encode', 'series': c, 'value': 'N/A', 'num': None, 'mib': 'N/A'})
                 peak_mem_bars.append({'group': f'{s}-decode', 'series': c, 'value': 'N/A', 'num': None, 'mib': 'N/A'})
                 svd_points.append({'group': s, 'series': c, 'x': 'N/A', 'y': 'N/A', 'num_x': None, 'num_y': None})
-                na_note = f'N/A (not measured in retained {results_meta["retained_date"]} set)'
+                na_note = f'N/A (not measured in retained {set_date_map[s]} set)'
                 bench_size_table.append([s, c, str(n_imgs), na_note, na_note])
                 enc_time_table.append([s, c, CODEC_THREAD_LABELS[c], na_note, na_note])
                 dec_time_table.append([s, c, CODEC_THREAD_LABELS[c], na_note, na_note])
@@ -806,10 +821,16 @@ def _svg_prov_attrs(prov: dict[str, str]) -> str:
         f'data-threads="{xml_escape(prov["threads"], quote=True)}"',
         f'data-limitations="{xml_escape(prov["limitations"], quote=True)}"',
     ]
-    for extra in ('measured_sets', 'retained_sets', 'retained_revision', 'retained_date'):
+    for extra in ('measured_sets', 'retained_sets', 'retained_revision', 'retained_date', 'set_revisions', 'set_dates'):
         if extra in prov:
             attrs.append(f'data-{extra.replace("_", "-")}="{xml_escape(prov[extra], quote=True)}"')
     return ' '.join(attrs)
+
+
+def _format_tick(val: float) -> str:
+    if val >= 10000.0:
+        return f'{int(round(val))}'
+    return f'{val:.2f}'
 
 
 def render_bar_svg(spec: dict) -> str:
@@ -841,10 +862,26 @@ def render_bar_svg(spec: dict) -> str:
     for s in series:
         color = CODEC_COLORS.get(s, '#334155')
         lines.append(f'  <rect x="{lx}" y="52" width="10" height="10" fill="{color}"/>')
-        lines.append(f'  <text x="{lx + 14}" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">{xml_escape(s)}</text>')
+        lines.append(
+            f'  <text data-kind="legend-item" data-series="{xml_escape(s, quote=True)}" x="{lx + 14}" y="61" '
+            f'font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">{xml_escape(s)}</text>'
+        )
         lx += 118
 
-    # Plot frame & baseline
+    # Plot frame, Y-axis scale ticks & baseline
+    for step in range(5):
+        frac = step / 4.0
+        yv = y_max * frac
+        yy = round(plot_bottom - plot_height * frac, 2)
+        tlabel = _format_tick(yv)
+        lines.append(
+            f'  <line x1="{plot_left - 4:.2f}" y1="{yy:.2f}" x2="{plot_left + plot_width:.2f}" y2="{yy:.2f}" '
+            f'stroke="#e2e8f0" stroke-width="1"/>'
+        )
+        lines.append(
+            f'  <text data-kind="y-tick" data-value="{xml_escape(tlabel, quote=True)}" x="{plot_left - 6:.2f}" y="{yy + 3:.2f}" '
+            f'text-anchor="end" font-family="monospace" font-size="8.5" fill="#475569">{xml_escape(tlabel)}</text>'
+        )
     lines.append(f'  <line x1="{plot_left:.2f}" y1="{plot_top:.2f}" x2="{plot_left:.2f}" y2="{plot_bottom:.2f}" stroke="#94a3b8" stroke-width="1"/>')
     lines.append(f'  <line x1="{plot_left:.2f}" y1="{plot_bottom:.2f}" x2="{plot_left + plot_width:.2f}" y2="{plot_bottom:.2f}" stroke="#94a3b8" stroke-width="1"/>')
 
@@ -864,9 +901,12 @@ def render_bar_svg(spec: dict) -> str:
             bx = round(gx_start + s_idx * bar_w, 2)
             val_str = b['value']
             if b['num'] is None or val_str == 'N/A':
+                na_x = round(bx + bar_w / 2.0, 2)
+                na_y = round(plot_bottom - 6.0, 2)
                 lines.append(
-                    f'  <g data-kind="na" data-group="{xml_escape(g, quote=True)}" data-series="{xml_escape(s, quote=True)}" data-value="N/A">'
-                    f'<text x="{bx + bar_w / 2:.2f}" y="{plot_bottom - 6:.2f}" text-anchor="middle" font-family="monospace" font-size="8" fill="#64748b">N/A</text>'
+                    f'  <g data-kind="na" data-group="{xml_escape(g, quote=True)}" data-series="{xml_escape(s, quote=True)}" '
+                    f'data-value="N/A" data-x="{na_x:.2f}" data-y="{na_y:.2f}">'
+                    f'<text x="{na_x:.2f}" y="{na_y:.2f}" text-anchor="middle" font-family="monospace" font-size="8" fill="#64748b">N/A</text>'
                     f'</g>'
                 )
             else:
@@ -877,7 +917,8 @@ def render_bar_svg(spec: dict) -> str:
                 color = CODEC_COLORS.get(s, '#2563eb')
                 lines.append(
                     f'  <rect data-kind="bar" data-group="{xml_escape(g, quote=True)}" data-series="{xml_escape(s, quote=True)}" '
-                    f'data-value="{xml_escape(val_str, quote=True)}" x="{bx:.2f}" y="{by:.2f}" width="{max(bar_w - 2.0, 2.0):.2f}" height="{bh:.2f}" fill="{color}"/>'
+                    f'data-value="{xml_escape(val_str, quote=True)}" x="{bx:.2f}" y="{by:.2f}" width="{max(bar_w - 2.0, 2.0):.2f}" height="{bh:.2f}" fill="{color}">'
+                    f'<title>{xml_escape(f"{g} / {s}: {val_str}")}</title></rect>'
                 )
                 lines.append(
                     f'  <text data-kind="bar-label" data-group="{xml_escape(g, quote=True)}" data-series="{xml_escape(s, quote=True)}" '
@@ -922,9 +963,59 @@ def render_scatter_svg(spec: dict) -> str:
         f'  <rect x="0" y="0" width="{width}" height="{height}" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>',
         f'  <text x="16" y="26" font-family="system-ui, sans-serif" font-size="14" font-weight="700" fill="#0f172a">{xml_escape(spec["title"])}</text>',
         f'  <text x="16" y="44" font-family="system-ui, sans-serif" font-size="11" fill="#475569">X: {xml_escape(spec["x_label"])} | Y: {xml_escape(spec["y_label"])}</text>',
-        f'  <line x1="{plot_left:.2f}" y1="{plot_top:.2f}" x2="{plot_left:.2f}" y2="{plot_bottom:.2f}" stroke="#94a3b8" stroke-width="1"/>',
-        f'  <line x1="{plot_left:.2f}" y1="{plot_bottom:.2f}" x2="{plot_left + plot_width:.2f}" y2="{plot_bottom:.2f}" stroke="#94a3b8" stroke-width="1"/>',
     ]
+
+    # Legend for series/set identification
+    lx = 16
+    if spec['kind'] == 'scatter-corpus':
+        for s_name in ('photo', 'tp', 'synth'):
+            color = SET_COLORS[s_name]
+            lines.append(f'  <circle cx="{lx + 5}" cy="57" r="4.0" fill="{color}"/>')
+            lines.append(
+                f'  <text data-kind="legend-item" data-series="{s_name}" x="{lx + 13}" y="61" '
+                f'font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">{s_name}</text>'
+            )
+            lx += 86
+    else:
+        for s_name in spec['series']:
+            color = CODEC_COLORS.get(s_name, '#334155')
+            lines.append(f'  <circle cx="{lx + 5}" cy="57" r="4.0" fill="{color}" stroke="#0f172a" stroke-width="1"/>')
+            lines.append(
+                f'  <text data-kind="legend-item" data-series="{xml_escape(s_name, quote=True)}" x="{lx + 13}" y="61" '
+                f'font-family="system-ui, sans-serif" font-size="9.5" fill="#1e293b">{xml_escape(s_name)}</text>'
+            )
+            lx += 92
+        lines.append(
+            f'  <text data-kind="legend-item" data-series="sets" x="{lx + 4}" y="61" '
+            f'font-family="monospace" font-size="9" fill="#334155">Sets: M=measure (solid) | P=photos (dashed) | S=synthetic (dotted)</text>'
+        )
+
+    # Numeric X-axis and Y-axis ticks & grid lines
+    for step in range(5):
+        frac = step / 4.0
+        xv = x_min + (x_max - x_min) * frac
+        xx = round(plot_left + plot_width * frac, 2)
+        xlabel = _format_tick(xv)
+        lines.append(
+            f'  <line x1="{xx:.2f}" y1="{plot_top:.2f}" x2="{xx:.2f}" y2="{plot_bottom + 4:.2f}" stroke="#e2e8f0" stroke-width="1"/>'
+        )
+        lines.append(
+            f'  <text data-kind="x-tick" data-value="{xml_escape(xlabel, quote=True)}" x="{xx:.2f}" y="{plot_bottom + 15:.2f}" '
+            f'text-anchor="middle" font-family="monospace" font-size="8.5" fill="#475569">{xml_escape(xlabel)}</text>'
+        )
+        yv = y_min + (y_max - y_min) * frac
+        yy = round(plot_bottom - plot_height * frac, 2)
+        ylabel = _format_tick(yv)
+        lines.append(
+            f'  <line x1="{plot_left - 4:.2f}" y1="{yy:.2f}" x2="{plot_left + plot_width:.2f}" y2="{yy:.2f}" stroke="#e2e8f0" stroke-width="1"/>'
+        )
+        lines.append(
+            f'  <text data-kind="y-tick" data-value="{xml_escape(ylabel, quote=True)}" x="{plot_left - 6:.2f}" y="{yy + 3:.2f}" '
+            f'text-anchor="end" font-family="monospace" font-size="8.5" fill="#475569">{xml_escape(ylabel)}</text>'
+        )
+
+    lines.append(f'  <line x1="{plot_left:.2f}" y1="{plot_top:.2f}" x2="{plot_left:.2f}" y2="{plot_bottom:.2f}" stroke="#94a3b8" stroke-width="1"/>')
+    lines.append(f'  <line x1="{plot_left:.2f}" y1="{plot_bottom:.2f}" x2="{plot_left + plot_width:.2f}" y2="{plot_bottom:.2f}" stroke="#94a3b8" stroke-width="1"/>')
 
     # Reference line at y = 1.0
     if y_min <= 1.0 <= y_max:
@@ -934,13 +1025,26 @@ def render_scatter_svg(spec: dict) -> str:
             f'stroke="#94a3b8" stroke-dasharray="4 4" stroke-width="1"/>'
         )
 
+    set_prefixes = {'measure': 'M', 'photos': 'P', 'synthetic': 'S'}
+    set_strokes = {
+        'measure': 'stroke="#0f172a" stroke-width="1.5"',
+        'photos': 'stroke="#0f172a" stroke-width="1.5" stroke-dasharray="3 2"',
+        'synthetic': 'stroke="#0f172a" stroke-width="1.5" stroke-dasharray="1 2"',
+    }
+    set_y_offsets = {'measure': -7.0, 'photos': 1.0, 'synthetic': 9.0}
+
+    na_idx = 0
     for pt in spec['points']:
         if pt.get('num_x') is None or pt.get('num_y') is None:
             g = pt['group']
             s = pt['series']
+            na_x = round(plot_left + 12.0, 2)
+            na_y = round(plot_top + 16.0 + na_idx * 14.0, 2)
+            na_idx += 1
             lines.append(
-                f'  <g data-kind="na" data-group="{xml_escape(g, quote=True)}" data-series="{xml_escape(s, quote=True)}" data-value="N/A">'
-                f'<text x="{plot_left + 12:.2f}" y="{plot_top + 14:.2f}" font-family="monospace" font-size="8" fill="#64748b">{xml_escape(g)}/{xml_escape(s)}: N/A</text>'
+                f'  <g data-kind="na" data-group="{xml_escape(g, quote=True)}" data-series="{xml_escape(s, quote=True)}" '
+                f'data-value="N/A" data-x="{na_x:.2f}" data-y="{na_y:.2f}">'
+                f'<text x="{na_x:.2f}" y="{na_y:.2f}" font-family="monospace" font-size="8.5" fill="#64748b">{xml_escape(g)}/{xml_escape(s)}: N/A</text>'
                 f'</g>'
             )
             continue
@@ -950,18 +1054,32 @@ def render_scatter_svg(spec: dict) -> str:
         cy = round(plot_bottom - plot_height * ((ny - y_min) / (y_max - y_min)), 2)
         if spec['kind'] == 'scatter-corpus':
             color = SET_COLORS.get(pt['set'], '#2563eb')
+            tip = f'{pt["set"]}/{pt["image"]}: raw={pt["x"]}, rf/e9={pt["y"]}'
             lines.append(
                 f'  <circle data-kind="point" data-set="{xml_escape(pt["set"], quote=True)}" '
                 f'data-image="{xml_escape(pt["image"], quote=True)}" data-x="{xml_escape(pt["x"], quote=True)}" '
                 f'data-y="{xml_escape(pt["y"], quote=True)}" data-rf="{xml_escape(pt["rf"], quote=True)}" '
-                f'data-e9="{xml_escape(pt["e9"], quote=True)}" cx="{cx:.2f}" cy="{cy:.2f}" r="4.0" fill="{color}"/>'
+                f'data-e9="{xml_escape(pt["e9"], quote=True)}" cx="{cx:.2f}" cy="{cy:.2f}" r="4.0" fill="{color}">'
+                f'<title>{xml_escape(tip)}</title></circle>'
             )
         else:
             color = CODEC_COLORS.get(pt['series'], '#2563eb')
+            g = pt['group']
+            s = pt['series']
+            prefix = set_prefixes.get(g, g[:1].upper())
+            stroke_attr = set_strokes.get(g, 'stroke="#0f172a" stroke-width="1"')
+            y_off = set_y_offsets.get(g, 0.0)
+            tip = f'{g}/{s}: decode={pt["x"]}, size={pt["y"]}'
+            label_txt = f'{prefix}:{s}'
             lines.append(
-                f'  <circle data-kind="point" data-group="{xml_escape(pt["group"], quote=True)}" '
-                f'data-series="{xml_escape(pt["series"], quote=True)}" data-x="{xml_escape(pt["x"], quote=True)}" '
-                f'data-y="{xml_escape(pt["y"], quote=True)}" cx="{cx:.2f}" cy="{cy:.2f}" r="5.0" fill="{color}"/>'
+                f'  <circle data-kind="point" data-group="{xml_escape(g, quote=True)}" '
+                f'data-series="{xml_escape(s, quote=True)}" data-x="{xml_escape(pt["x"], quote=True)}" '
+                f'data-y="{xml_escape(pt["y"], quote=True)}" cx="{cx:.2f}" cy="{cy:.2f}" r="5.0" fill="{color}" {stroke_attr}>'
+                f'<title>{xml_escape(tip)}</title></circle>'
+            )
+            lines.append(
+                f'  <text data-kind="point-label" data-group="{xml_escape(g, quote=True)}" data-series="{xml_escape(s, quote=True)}" '
+                f'x="{cx + 7.0:.2f}" y="{cy + y_off:.2f}" font-family="monospace" font-size="7.5" fill="#1e293b">{xml_escape(label_txt)}</text>'
             )
 
     lines.append(
@@ -1025,10 +1143,168 @@ def _parse_pipe_table(md_text: str) -> tuple[list[str], list[list[str]]]:
     return headers, rows
 
 
+def _independent_csv_reference(root: Path) -> dict[str, dict]:
+    """Independently parse CSV files via csv.reader and compute reference expectations without compute_chart_datasets."""
+    def _raw_csv_read(rel: str) -> tuple[dict[str, str], list[dict[str, str]]]:
+        p = safe_repo_path(root, rel)
+        lines = p.read_text(encoding='utf-8').splitlines()
+        meta: dict[str, str] = {}
+        data_lines: list[str] = []
+        for ln in lines:
+            if not data_lines and ln.lstrip().startswith('#'):
+                for tok in ln.lstrip()[1:].strip().split():
+                    if '=' in tok:
+                        k, v = tok.split('=', 1)
+                        meta[k.strip()] = v.strip()
+            elif ln.strip():
+                data_lines.append(ln)
+        for rk, pat in (
+            ('codec_revision', r'^[0-9a-f]{40}$'),
+            ('kat_fold_sha256', r'^[0-9a-f]{64}$'),
+            ('date', r'^\d{4}-\d{2}-\d{2}$'),
+        ):
+            val = meta.get(rk, '')
+            if not re.fullmatch(pat, val):
+                raise ValueError(f'{rel}: missing or invalid header {rk}={val!r}')
+        if rel == RESULTS_CSV:
+            for rk in ('measured_sets', 'retained_sets', 'retained_revision', 'retained_date', 'set_revisions', 'set_dates'):
+                if not meta.get(rk):
+                    raise ValueError(f'{rel}: missing required header {rk}')
+        reader = list(csv.reader(data_lines))
+        if len(reader) < 2:
+            raise ValueError(f'{rel}: missing header or rows')
+        hdr = [h.strip() for h in reader[0]]
+        return meta, [{hdr[i]: cell.strip() for i, cell in enumerate(row)} for row in reader[1:]]
+
+    def _ref_gm(vals: list[float]) -> float:
+        return math.prod(vals) ** (1.0 / len(vals))
+
+    c_meta, c_rows = _raw_csv_read(CORPUS_CSV)
+    r_meta, r_rows = _raw_csv_read(RESULTS_CSV)
+    set_dates = dict(item.split(':', 1) for item in r_meta['set_dates'].split(',') if ':' in item)
+
+    c_prov = {
+        'source': CORPUS_CSV,
+        'codec_revision': c_meta['codec_revision'],
+        'kat_fold_sha256': c_meta['kat_fold_sha256'],
+        'date': c_meta['date'],
+        'threads': 'rasterfold: 3T default; jxl_e7, jxl_e9, webp: -threads 1',
+        'limitations': 'Size-only research corpus (55 images: photo 39, tp 10 overlapping / tp-only 5 exclusive, synth 11); PNG, wall time, and memory are measured in benchmarks/results.csv.',
+    }
+    r_prov = {
+        'source': RESULTS_CSV,
+        'codec_revision': r_meta['codec_revision'],
+        'kat_fold_sha256': r_meta['kat_fold_sha256'],
+        'date': r_meta['date'],
+        'measured_sets': r_meta['measured_sets'],
+        'retained_sets': r_meta['retained_sets'],
+        'retained_revision': r_meta['retained_revision'],
+        'retained_date': r_meta['retained_date'],
+        'set_revisions': r_meta['set_revisions'],
+        'set_dates': r_meta['set_dates'],
+        'threads': 'rasterfold: 3T; rasterfold-1t: 1T; jxl/jxl-e9: enc 1T, dec default; jxl-1t: enc 1T, dec 1T; webp/png: 1T',
+        'limitations': (
+            f'measured_sets={r_meta["measured_sets"]} ({r_meta["date"]}, rev {r_meta["codec_revision"][:12]}); '
+            f'retained_sets={r_meta["retained_sets"]} ({r_meta["retained_date"]}, rev {r_meta["retained_revision"][:12]}, jxl-e9 not measured).'
+        ),
+    }
+
+    c_groups = {
+        'photo': [r for r in c_rows if r['set'] == 'photo'],
+        'tp': [r for r in c_rows if r['set'] == 'tp' or r['image'] in TP_OVERLAP_PHOTO],
+        'tp-only': [r for r in c_rows if r['set'] == 'tp'],
+        'synth': [r for r in c_rows if r['set'] == 'synth'],
+        'all': list(c_rows),
+    }
+    c_bars, c_tbl = [], []
+    for g in ('photo', 'tp', 'tp-only', 'synth', 'all'):
+        gr = c_groups[g]
+        e7_tot = sum(int(r['jxl_e7']) for r in gr)
+        tots = {c: sum(int(r[c]) for r in gr) for c in CORPUS_CODECS}
+        rf_gm = _ref_gm([int(r['rasterfold']) / int(r['jxl_e7']) for r in gr])
+        for c in CORPUS_CODECS:
+            rat = tots[c] / e7_tot
+            c_bars.append({'group': g, 'series': c, 'value': f'{rat:.4f}', 'num': rat})
+        c_tbl.append([
+            g, str(len(gr)), str(tots['rasterfold']), str(tots['jxl_e7']), str(tots['jxl_e9']), str(tots['webp']),
+            f'{tots["rasterfold"] / e7_tot:.4f}', f'{rf_gm:.4f}', f'{tots["jxl_e9"] / e7_tot:.4f}', f'{tots["webp"] / e7_tot:.4f}',
+        ])
+
+    r_idx: dict[str, dict[str, dict[str, dict[str, str]]]] = {s: {} for s in BENCHMARK_SETS}
+    for r in r_rows:
+        r_idx[r['set']].setdefault(r['image'], {})[r['codec']] = r
+
+    bs_bars, bs_tbl = [], []
+    et_bars, et_tbl = [], []
+    dt_bars, dt_tbl = [], []
+    pm_bars, pm_tbl = [], []
+    svd_pts, svd_tbl = [], []
+    for s in BENCHMARK_SETS:
+        imgs = sorted(r_idx[s].keys())
+        for c in BENCHMARK_CODECS:
+            if c not in r_idx[s][imgs[0]]:
+                for tb in (bs_bars, et_bars, dt_bars):
+                    tb.append({'group': s, 'series': c, 'value': 'N/A', 'num': None})
+                pm_bars.append({'group': f'{s}-encode', 'series': c, 'value': 'N/A', 'num': None})
+                pm_bars.append({'group': f'{s}-decode', 'series': c, 'value': 'N/A', 'num': None})
+                svd_pts.append({'group': s, 'series': c, 'x': 'N/A', 'y': 'N/A', 'num_x': None, 'num_y': None})
+                note = f'N/A (not measured in retained {set_dates[s]} set)'
+                bs_tbl.append([s, c, str(len(imgs)), note, note])
+                et_tbl.append([s, c, CODEC_THREAD_LABELS[c], note, note])
+                dt_tbl.append([s, c, CODEC_THREAD_LABELS[c], note, note])
+                pm_tbl.append([s, c, note, note, note, note])
+                svd_tbl.append([s, c, CODEC_THREAD_LABELS[c], note, note])
+                continue
+            tb_val = sum(int(r_idx[s][i][c]['bytes']) for i in imgs)
+            sg_val = _ref_gm([int(r_idx[s][i][c]['bytes']) / int(r_idx[s][i]['jxl']['bytes']) for i in imgs])
+            te_val = sum(int(float(r_idx[s][i][c]['encode_us'])) for i in imgs)
+            eg_val = _ref_gm([float(r_idx[s][i][c]['encode_us']) / float(r_idx[s][i]['jxl']['encode_us']) for i in imgs])
+            td_val = sum(int(float(r_idx[s][i][c]['decode_us'])) for i in imgs)
+            dg_val = _ref_gm([float(r_idx[s][i][c]['decode_us']) / float(r_idx[s][i]['jxl']['decode_us']) for i in imgs])
+            ep_val = max(int(r_idx[s][i][c]['encode_peak']) for i in imgs)
+            dp_val = max(int(r_idx[s][i][c]['decode_peak']) for i in imgs)
+            bs_bars.append({'group': s, 'series': c, 'value': f'{sg_val:.4f}', 'num': sg_val})
+            bs_tbl.append([s, c, str(len(imgs)), str(tb_val), f'{sg_val:.4f}'])
+            et_bars.append({'group': s, 'series': c, 'value': f'{eg_val:.4f}', 'num': eg_val})
+            et_tbl.append([s, c, CODEC_THREAD_LABELS[c], str(te_val), f'{eg_val:.4f}'])
+            dt_bars.append({'group': s, 'series': c, 'value': f'{dg_val:.4f}', 'num': dg_val})
+            dt_tbl.append([s, c, CODEC_THREAD_LABELS[c], str(td_val), f'{dg_val:.4f}'])
+            emib, dmib = f'{ep_val / 1048576:.2f}', f'{dp_val / 1048576:.2f}'
+            pm_bars.append({'group': f'{s}-encode', 'series': c, 'value': str(ep_val), 'num': float(ep_val)})
+            pm_bars.append({'group': f'{s}-decode', 'series': c, 'value': str(dp_val), 'num': float(dp_val)})
+            pm_tbl.append([s, c, str(ep_val), emib, str(dp_val), dmib])
+            svd_pts.append({'group': s, 'series': c, 'x': f'{dg_val:.4f}', 'y': f'{sg_val:.4f}', 'num_x': dg_val, 'num_y': sg_val})
+            svd_tbl.append([s, c, CODEC_THREAD_LABELS[c], f'{dg_val:.4f}', f'{sg_val:.4f}'])
+
+    sc_pts, sc_tbl = [], []
+    for r in c_rows:
+        raw_sz = int(r['width']) * int(r['height']) * 3
+        rat = int(r['rasterfold']) / int(r['jxl_e9'])
+        sc_pts.append({'set': r['set'], 'image': r['image'], 'x': str(raw_sz), 'y': f'{rat:.4f}', 'num_x': float(raw_sz), 'num_y': rat})
+        sc_tbl.append([r['set'], r['image'], f'{r["width"]}x{r["height"]}', str(raw_sz), r['rasterfold'], r['jxl_e7'], r['jxl_e9'], r['webp'], f'{rat:.4f}'])
+
+    return {
+        'corpus-size-ratio': {'kind': 'bar', 'bars': c_bars, 'provenance': c_prov, 'table_rows': c_tbl,
+                              'table_headers': ['Set', 'Images', 'RasterFold (bytes)', 'JPEG XL e7 (bytes)', 'JPEG XL e9 (bytes)', 'Lossless WebP (bytes)', 'RF / e7 (total)', 'RF / e7 (geomean)', 'e9 / e7 (total)', 'WebP / e7 (total)']},
+        'benchmark-size-ratio': {'kind': 'bar', 'bars': bs_bars, 'provenance': r_prov, 'table_rows': bs_tbl,
+                                 'table_headers': ['Set', 'Codec', 'Images', 'Total Bytes', 'Geomean Size Ratio vs JXL e7']},
+        'encode-time': {'kind': 'bar', 'bars': et_bars, 'provenance': r_prov, 'table_rows': et_tbl,
+                        'table_headers': ['Set', 'Codec', 'Threads', 'Total Encode Time (us)', 'Geomean Encode Time Ratio vs JXL e7']},
+        'decode-time': {'kind': 'bar', 'bars': dt_bars, 'provenance': r_prov, 'table_rows': dt_tbl,
+                        'table_headers': ['Set', 'Codec', 'Threads', 'Total Decode Time (us)', 'Geomean Decode Time Ratio vs JXL e7']},
+        'peak-memory': {'kind': 'bar', 'bars': pm_bars, 'provenance': r_prov, 'table_rows': pm_tbl,
+                        'table_headers': ['Set', 'Codec', 'Max Encode Peak (bytes)', 'Max Encode Peak (MiB)', 'Max Decode Peak (bytes)', 'Max Decode Peak (MiB)']},
+        'scatter-e9': {'kind': 'scatter-corpus', 'points': sc_pts, 'provenance': c_prov, 'table_rows': sc_tbl,
+                       'table_headers': ['Set', 'Image', 'Dimensions', 'Raw Bytes', 'RasterFold (bytes)', 'JPEG XL e7 (bytes)', 'JPEG XL e9 (bytes)', 'Lossless WebP (bytes)', 'RF / e9 Ratio']},
+        'size-vs-decode': {'kind': 'scatter-sets', 'points': svd_pts, 'provenance': r_prov, 'table_rows': svd_tbl,
+                           'table_headers': ['Set', 'Codec', 'Threads', 'Geomean Decode Time Ratio vs JXL e7', 'Geomean Size Ratio vs JXL e7']},
+    }
+
+
 def self_test_charts(root: Path) -> list[str]:
     errors: list[str] = []
     try:
-        datasets = compute_chart_datasets(root)
+        datasets = _independent_csv_reference(root)
     except (OSError, ValueError, KeyError) as exc:
         return [f'dataset calculation failed: {exc}']
 
@@ -1069,7 +1345,7 @@ def self_test_charts(root: Path) -> list[str]:
                 ):
                     if svg_root.attrib.get(attr) != expected_val:
                         errors.append(f'{chart_rel}: {attr}={svg_root.attrib.get(attr)!r} != {expected_val!r}')
-                for extra in ('measured_sets', 'retained_sets', 'retained_revision', 'retained_date'):
+                for extra in ('measured_sets', 'retained_sets', 'retained_revision', 'retained_date', 'set_revisions', 'set_dates'):
                     if extra in prov:
                         attr = f'data-{extra.replace("_", "-")}'
                         if svg_root.attrib.get(attr) != prov[extra]:
@@ -1079,6 +1355,21 @@ def self_test_charts(root: Path) -> list[str]:
                 for token in (prov['source'], prov['codec_revision'], prov['date'], prov['threads'], prov['limitations']):
                     if token not in all_text:
                         errors.append(f'{chart_rel}: visible SVG text missing provenance token {token!r}')
+
+                legend_items = [el for el in svg_root.iter() if el.attrib.get('data-kind') == 'legend-item']
+                y_ticks = [el for el in svg_root.iter() if el.attrib.get('data-kind') == 'y-tick']
+                if not legend_items:
+                    errors.append(f'{chart_rel}: missing legend items')
+                if len(y_ticks) < 2:
+                    errors.append(f'{chart_rel}: missing Y-axis numeric ticks')
+
+                na_coords: set[tuple[str, str]] = set()
+                for el in svg_root.iter():
+                    if el.attrib.get('data-kind') == 'na':
+                        coord = (el.attrib.get('data-x', ''), el.attrib.get('data-y', ''))
+                        if coord in na_coords:
+                            errors.append(f'{chart_rel}: overlapping N/A label coordinates {coord}')
+                        na_coords.add(coord)
 
                 plot_left = float(svg_root.attrib.get('data-plot-left', '0'))
                 plot_width = float(svg_root.attrib.get('data-plot-width', '0'))
@@ -1128,6 +1419,9 @@ def self_test_charts(root: Path) -> list[str]:
                         elif exp['num'] is not None and labels.get(key) != exp['value']:
                             errors.append(f'{chart_rel}: {key} bar-label={labels.get(key)!r} != {exp["value"]!r}')
                 else:
+                    x_ticks = [el for el in svg_root.iter() if el.attrib.get('data-kind') == 'x-tick']
+                    if len(x_ticks) < 2:
+                        errors.append(f'{chart_rel}: missing X-axis numeric ticks')
                     x_min = float(svg_root.attrib.get('data-x-min', '0'))
                     x_max = float(svg_root.attrib.get('data-x-max', '1'))
                     y_min = float(svg_root.attrib.get('data-y-min', '0'))
@@ -1139,9 +1433,12 @@ def self_test_charts(root: Path) -> list[str]:
                         expected_pts = {(p['group'], p['series']): p for p in spec['points']}
                         key_attrs = ('data-group', 'data-series')
                     seen_pts: set[tuple[str, str]] = set()
+                    point_labels: set[tuple[str, str]] = set()
                     for el in svg_root.iter():
                         kind = el.attrib.get('data-kind')
-                        if kind in ('point', 'na'):
+                        if kind == 'point-label':
+                            point_labels.add((el.attrib.get('data-group', ''), el.attrib.get('data-series', '')))
+                        elif kind in ('point', 'na'):
                             key = (el.attrib.get(key_attrs[0], ''), el.attrib.get(key_attrs[1], ''))
                             if key in seen_pts:
                                 errors.append(f'{chart_rel}: duplicate point/na element for {key}')
@@ -1157,6 +1454,8 @@ def self_test_charts(root: Path) -> list[str]:
                                 if kind != 'point':
                                     errors.append(f'{chart_rel}: {key} expected data-kind="point", got {kind!r}')
                                     continue
+                                if not any(child.tag.endswith('title') and (child.text or '').strip() for child in el):
+                                    errors.append(f'{chart_rel}: {key} point missing <title> tooltip')
                                 if el.attrib.get('data-x') != exp['x'] or el.attrib.get('data-y') != exp['y']:
                                     errors.append(
                                         f'{chart_rel}: {key} point data-x/data-y=({el.attrib.get("data-x")!r}, {el.attrib.get("data-y")!r}) != ({exp["x"]!r}, {exp["y"]!r})'
@@ -1171,9 +1470,11 @@ def self_test_charts(root: Path) -> list[str]:
                                     errors.append(
                                         f'{chart_rel}: {key} point geometry cx={got_cx:.2f}/cy={got_cy:.2f} != expected {exp_cx:.2f}/{exp_cy:.2f}'
                                     )
-                    for key in expected_pts:
+                    for key, exp in expected_pts.items():
                         if key not in seen_pts:
                             errors.append(f'{chart_rel}: missing point/na element for {key}')
+                        elif spec['kind'] == 'scatter-sets' and exp['num_x'] is not None and key not in point_labels:
+                            errors.append(f'{chart_rel}: missing point-label for {key}')
 
         table_path = safe_repo_path(root, table_rel)
         if not table_path.is_file():

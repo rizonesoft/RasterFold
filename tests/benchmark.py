@@ -210,6 +210,84 @@ def load_existing_rows(csv_path: Path) -> list[dict]:
     return rows
 
 
+def parse_set_map(raw: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for item in (raw or "").split(","):
+        item = item.strip()
+        if ":" in item:
+            k, v = item.split(":", 1)
+            if k.strip() and v.strip():
+                out[k.strip()] = v.strip()
+    return out
+
+
+def resolve_set_provenance(
+    existing_meta: dict[str, str],
+    measured_sets: list[str],
+    retained_sets: list[str],
+    head_sha: str,
+    run_date: str,
+    kat_sha: str | None = None,
+) -> dict[str, str]:
+    prior_revs = parse_set_map(existing_meta.get("set_revisions", ""))
+    prior_dates = parse_set_map(existing_meta.get("set_dates", ""))
+    prev_measured = [s.strip() for s in existing_meta.get("measured_sets", "").split(",") if s.strip() and s.strip() != "none"]
+    prev_retained = [s.strip() for s in existing_meta.get("retained_sets", "").split(",") if s.strip() and s.strip() != "none"]
+    for s in prev_measured:
+        prior_revs.setdefault(s, existing_meta.get("codec_revision", "unknown"))
+        prior_dates.setdefault(s, existing_meta.get("date", "unknown"))
+    prev_ret_rev_map = parse_set_map(existing_meta.get("retained_revision", ""))
+    prev_ret_date_map = parse_set_map(existing_meta.get("retained_date", ""))
+    for s in prev_retained:
+        prior_revs.setdefault(
+            s,
+            prev_ret_rev_map.get(s)
+            or existing_meta.get("retained_revision")
+            or existing_meta.get("codec_revision", "unknown"),
+        )
+        prior_dates.setdefault(
+            s,
+            prev_ret_date_map.get(s)
+            or existing_meta.get("retained_date")
+            or existing_meta.get("date", "unknown"),
+        )
+
+    revs: dict[str, str] = {}
+    dates: dict[str, str] = {}
+    for s in measured_sets:
+        revs[s] = head_sha
+        dates[s] = run_date
+    for s in retained_sets:
+        revs[s] = prior_revs.get(s, "unknown")
+        dates[s] = prior_dates.get(s, "unknown")
+
+    ordered = [s for s in ALL_SETS if s in revs]
+    for s in (*measured_sets, *retained_sets):
+        if s not in ordered:
+            ordered.append(s)
+
+    if not retained_sets:
+        ret_rev = "none"
+        ret_date = "none"
+    else:
+        uniq_revs = {revs[s] for s in retained_sets}
+        uniq_dates = {dates[s] for s in retained_sets}
+        ret_rev = revs[retained_sets[0]] if len(uniq_revs) == 1 else ",".join(f"{s}:{revs[s]}" for s in retained_sets)
+        ret_date = dates[retained_sets[0]] if len(uniq_dates) == 1 else ",".join(f"{s}:{dates[s]}" for s in retained_sets)
+
+    return {
+        "codec_revision": head_sha,
+        "kat_fold_sha256": kat_sha if kat_sha is not None else kat_fold_sha256(ROOT),
+        "date": run_date,
+        "measured_sets": ",".join(measured_sets),
+        "retained_sets": ",".join(retained_sets) if retained_sets else "none",
+        "retained_revision": ret_rev,
+        "retained_date": ret_date,
+        "set_revisions": ",".join(f"{s}:{revs[s]}" for s in ordered),
+        "set_dates": ",".join(f"{s}:{dates[s]}" for s in ordered),
+    }
+
+
 def write_csv_rows(csv_path: Path, rows: list[dict], meta: dict[str, str] | None = None) -> None:
     with csv_path.open("w", newline="", encoding="utf-8") as fh:
         if meta:
@@ -221,6 +299,8 @@ def write_csv_rows(csv_path: Path, rows: list[dict], meta: dict[str, str] | None
                 "retained_sets",
                 "retained_revision",
                 "retained_date",
+                "set_revisions",
+                "set_dates",
             )
             parts = [f"{k}={meta[k]}" for k in ordered_keys if k in meta and meta[k]]
             for k, v in meta.items():
@@ -354,15 +434,14 @@ def main() -> int:
     failures = [f"{r['codec']} {r['set']}/{r['image']}" for r in rows if not r["pixels_match"]]
     rev_proc = subprocess.run(["git", "rev-parse", "--verify", "HEAD"], cwd=ROOT, capture_output=True, text=True)
     head_sha = (rev_proc.stdout or "").strip() if rev_proc.returncode == 0 else "unknown"
-    meta = {
-        "codec_revision": head_sha,
-        "kat_fold_sha256": kat_fold_sha256(ROOT),
-        "date": date.today().isoformat(),
-        "measured_sets": ",".join(sets),
-        "retained_sets": ",".join(retained_sets) if retained_sets else "none",
-        "retained_revision": existing_meta.get("retained_revision") or existing_meta.get("codec_revision", "unknown") if retained_sets else "none",
-        "retained_date": existing_meta.get("retained_date") or existing_meta.get("date", "unknown") if retained_sets else "none",
-    }
+    meta = resolve_set_provenance(
+        existing_meta,
+        sets,
+        retained_sets,
+        head_sha,
+        date.today().isoformat(),
+        kat_fold_sha256(ROOT),
+    )
     write_csv_rows(csv_path, rows, meta=meta)
     report(rows, failures, sets, repeats, retained_sets=retained_sets)
     print(f"failures: {len(failures)}")

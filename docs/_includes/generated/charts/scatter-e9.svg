@@ -4,64 +4,90 @@
   <rect x="0" y="0" width="940" height="460" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
   <text x="16" y="26" font-family="system-ui, sans-serif" font-size="14" font-weight="700" fill="#0f172a">Research Corpus: Per-Image Size Ratio (RasterFold / JPEG XL e9) vs Raw RGB Bytes</text>
   <text x="16" y="44" font-family="system-ui, sans-serif" font-size="11" fill="#475569">X: Raw RGB image size (bytes) | Y: RasterFold / JPEG XL e9 size ratio (capped at 3.0x; syn_checker=27.1857, syn_gradient=7.3393, syn_pixel=11.3019)</text>
+  <circle cx="21" cy="57" r="4.0" fill="#2563eb"/>
+  <text data-kind="legend-item" data-series="photo" x="29" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">photo</text>
+  <circle cx="107" cy="57" r="4.0" fill="#059669"/>
+  <text data-kind="legend-item" data-series="tp" x="115" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">tp</text>
+  <circle cx="193" cy="57" r="4.0" fill="#d97706"/>
+  <text data-kind="legend-item" data-series="synth" x="201" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">synth</text>
+  <line x1="80.00" y1="74.00" x2="80.00" y2="348.00" stroke="#e2e8f0" stroke-width="1"/>
+  <text data-kind="x-tick" data-value="0.00" x="80.00" y="359.00" text-anchor="middle" font-family="monospace" font-size="8.5" fill="#475569">0.00</text>
+  <line x1="76.00" y1="344.00" x2="910.00" y2="344.00" stroke="#e2e8f0" stroke-width="1"/>
+  <text data-kind="y-tick" data-value="0.70" x="74.00" y="347.00" text-anchor="end" font-family="monospace" font-size="8.5" fill="#475569">0.70</text>
+  <line x1="287.50" y1="74.00" x2="287.50" y2="348.00" stroke="#e2e8f0" stroke-width="1"/>
+  <text data-kind="x-tick" data-value="1250000" x="287.50" y="359.00" text-anchor="middle" font-family="monospace" font-size="8.5" fill="#475569">1250000</text>
+  <line x1="76.00" y1="276.50" x2="910.00" y2="276.50" stroke="#e2e8f0" stroke-width="1"/>
+  <text data-kind="y-tick" data-value="1.27" x="74.00" y="279.50" text-anchor="end" font-family="monospace" font-size="8.5" fill="#475569">1.27</text>
+  <line x1="495.00" y1="74.00" x2="495.00" y2="348.00" stroke="#e2e8f0" stroke-width="1"/>
+  <text data-kind="x-tick" data-value="2500000" x="495.00" y="359.00" text-anchor="middle" font-family="monospace" font-size="8.5" fill="#475569">2500000</text>
+  <line x1="76.00" y1="209.00" x2="910.00" y2="209.00" stroke="#e2e8f0" stroke-width="1"/>
+  <text data-kind="y-tick" data-value="1.85" x="74.00" y="212.00" text-anchor="end" font-family="monospace" font-size="8.5" fill="#475569">1.85</text>
+  <line x1="702.50" y1="74.00" x2="702.50" y2="348.00" stroke="#e2e8f0" stroke-width="1"/>
+  <text data-kind="x-tick" data-value="3750000" x="702.50" y="359.00" text-anchor="middle" font-family="monospace" font-size="8.5" fill="#475569">3750000</text>
+  <line x1="76.00" y1="141.50" x2="910.00" y2="141.50" stroke="#e2e8f0" stroke-width="1"/>
+  <text data-kind="y-tick" data-value="2.42" x="74.00" y="144.50" text-anchor="end" font-family="monospace" font-size="8.5" fill="#475569">2.42</text>
+  <line x1="910.00" y1="74.00" x2="910.00" y2="348.00" stroke="#e2e8f0" stroke-width="1"/>
+  <text data-kind="x-tick" data-value="5000000" x="910.00" y="359.00" text-anchor="middle" font-family="monospace" font-size="8.5" fill="#475569">5000000</text>
+  <line x1="76.00" y1="74.00" x2="910.00" y2="74.00" stroke="#e2e8f0" stroke-width="1"/>
+  <text data-kind="y-tick" data-value="3.00" x="74.00" y="77.00" text-anchor="end" font-family="monospace" font-size="8.5" fill="#475569">3.00</text>
   <line x1="80.00" y1="74.00" x2="80.00" y2="344.00" stroke="#94a3b8" stroke-width="1"/>
   <line x1="80.00" y1="344.00" x2="910.00" y2="344.00" stroke="#94a3b8" stroke-width="1"/>
   <line x1="80.00" y1="308.78" x2="910.00" y2="308.78" stroke="#94a3b8" stroke-dasharray="4 4" stroke-width="1"/>
-  <circle data-kind="point" data-set="photo" data-image="measure" data-x="4720056" data-y="0.9781" data-rf="1409028" data-e9="1440564" cx="863.53" cy="311.35" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="kodim01" data-x="1179648" data-y="1.0043" data-rf="456732" data-e9="454757" cx="275.82" cy="308.27" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="kodim02" data-x="1179648" data-y="0.9986" data-rf="404539" data-e9="405088" cx="275.82" cy="308.94" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="kodim03" data-x="1179648" data-y="0.9989" data-rf="327760" data-e9="328115" cx="275.82" cy="308.91" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="kodim04" data-x="1179648" data-y="0.9783" data-rf="404956" data-e9="413924" cx="275.82" cy="311.33" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="kodim05" data-x="1179648" data-y="0.9950" data-rf="482636" data-e9="485059" cx="275.82" cy="309.37" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="kodim06" data-x="1179648" data-y="1.0017" data-rf="420250" data-e9="419530" cx="275.82" cy="308.58" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="kodim07" data-x="1179648" data-y="1.0003" data-rf="357206" data-e9="357100" cx="275.82" cy="308.75" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="kodim08" data-x="1179648" data-y="0.9990" data-rf="501169" data-e9="501647" cx="275.82" cy="308.89" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="kodim09" data-x="1179648" data-y="1.0129" data-rf="381325" data-e9="376471" cx="275.82" cy="307.27" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="kodim10" data-x="1179648" data-y="1.0117" data-rf="389478" data-e9="384968" cx="275.82" cy="307.41" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="kodim11" data-x="1179648" data-y="0.9878" data-rf="403269" data-e9="408257" cx="275.82" cy="310.22" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="kodim12" data-x="1179648" data-y="1.0142" data-rf="357100" data-e9="352104" cx="275.82" cy="307.12" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="kodim13" data-x="1179648" data-y="0.9870" data-rf="541784" data-e9="548906" cx="275.82" cy="310.31" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="kodim14" data-x="1179648" data-y="0.9927" data-rf="452998" data-e9="456324" cx="275.82" cy="309.64" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="kodim15" data-x="1179648" data-y="0.9923" data-rf="379985" data-e9="382924" cx="275.82" cy="309.68" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="kodim16" data-x="1179648" data-y="1.0193" data-rf="371645" data-e9="364606" cx="275.82" cy="306.52" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="kodim17" data-x="1179648" data-y="1.0154" data-rf="386228" data-e9="380388" cx="275.82" cy="306.98" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="kodim18" data-x="1179648" data-y="0.9838" data-rf="504814" data-e9="513147" cx="275.82" cy="310.69" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="kodim19" data-x="1179648" data-y="0.9886" data-rf="432872" data-e9="437857" cx="275.82" cy="310.12" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="kodim20" data-x="1179648" data-y="0.9944" data-rf="323340" data-e9="325163" cx="275.82" cy="309.44" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="kodim21" data-x="1179648" data-y="1.0016" data-rf="436462" data-e9="435768" cx="275.82" cy="308.60" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="kodim22" data-x="1179648" data-y="0.9960" data-rf="466463" data-e9="468333" cx="275.82" cy="309.25" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="kodim23" data-x="1179648" data-y="0.9958" data-rf="370706" data-e9="372253" cx="275.82" cy="309.27" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="kodim24" data-x="1179648" data-y="0.9994" data-rf="435387" data-e9="435637" cx="275.82" cy="308.85" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="ic_artificial" data-x="3686400" data-y="0.9511" data-rf="108031" data-e9="113589" cx="691.94" cy="314.53" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="ic_big_building" data-x="3686400" data-y="0.9749" data-rf="1766526" data-e9="1812036" cx="691.94" cy="311.73" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="ic_big_tree" data-x="3686400" data-y="0.9813" data-rf="1731899" data-e9="1764990" cx="691.94" cy="310.98" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="ic_bridge" data-x="3686400" data-y="0.9747" data-rf="2050631" data-e9="2103943" cx="691.94" cy="311.76" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="ic_cathedral" data-x="3686400" data-y="0.9822" data-rf="1561085" data-e9="1589343" cx="691.94" cy="310.87" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="ic_deer" data-x="3686400" data-y="0.9820" data-rf="2346330" data-e9="2389270" cx="691.94" cy="310.89" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="ic_fireworks" data-x="3686400" data-y="0.9700" data-rf="1148618" data-e9="1184089" cx="691.94" cy="312.30" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="ic_flower_foveon" data-x="3686400" data-y="1.0156" data-rf="775843" data-e9="763898" cx="691.94" cy="306.95" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="ic_hdr" data-x="3686400" data-y="0.9643" data-rf="1078331" data-e9="1118223" cx="691.94" cy="312.97" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="ic_leaves_iso_1600" data-x="3686400" data-y="0.9681" data-rf="1899110" data-e9="1961785" cx="691.94" cy="312.53" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="ic_leaves_iso_200" data-x="3686400" data-y="0.9580" data-rf="1509317" data-e9="1575500" cx="691.94" cy="313.71" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="ic_nightshot_iso_100" data-x="3686400" data-y="0.9662" data-rf="903577" data-e9="935218" cx="691.94" cy="312.75" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="ic_nightshot_iso_1600" data-x="3686400" data-y="1.0135" data-rf="1859622" data-e9="1834783" cx="691.94" cy="307.19" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="photo" data-image="ic_spider_web" data-x="3686400" data-y="0.9044" data-rf="728159" data-e9="805157" cx="691.94" cy="320.01" r="4.0" fill="#2563eb"/>
-  <circle data-kind="point" data-set="tp" data-image="tp_deer_crop" data-x="2359296" data-y="0.9815" data-rf="1498071" data-e9="1526358" cx="471.64" cy="310.96" r="4.0" fill="#059669"/>
-  <circle data-kind="point" data-set="tp" data-image="tp_fireworks_crop" data-x="2359296" data-y="0.9691" data-rf="769372" data-e9="793927" cx="471.64" cy="312.41" r="4.0" fill="#059669"/>
-  <circle data-kind="point" data-set="tp" data-image="tp_flower_foveon_crop" data-x="2359296" data-y="1.0127" data-rf="519064" data-e9="512571" cx="471.64" cy="307.30" r="4.0" fill="#059669"/>
-  <circle data-kind="point" data-set="tp" data-image="tp_nightshot_iso_1600_crop" data-x="2359296" data-y="1.0131" data-rf="1203458" data-e9="1187904" cx="471.64" cy="307.25" r="4.0" fill="#059669"/>
-  <circle data-kind="point" data-set="tp" data-image="tp_spider_web_crop" data-x="2359296" data-y="0.9087" data-rf="482000" data-e9="530399" cx="471.64" cy="319.49" r="4.0" fill="#059669"/>
-  <circle data-kind="point" data-set="synth" data-image="syn_solid" data-x="921600" data-y="0.8333" data-rf="100" data-e9="120" cx="232.99" cy="328.35" r="4.0" fill="#d97706"/>
-  <circle data-kind="point" data-set="synth" data-image="syn_checker" data-x="786432" data-y="27.1857" data-rf="5709" data-e9="210" cx="210.55" cy="74.00" r="4.0" fill="#d97706"/>
-  <circle data-kind="point" data-set="synth" data-image="syn_stripes" data-x="691200" data-y="1.4170" data-rf="384" data-e9="271" cx="194.74" cy="259.83" r="4.0" fill="#d97706"/>
-  <circle data-kind="point" data-set="synth" data-image="syn_gradient" data-x="921600" data-y="7.3393" data-rf="4521" data-e9="616" cx="232.99" cy="74.00" r="4.0" fill="#d97706"/>
-  <circle data-kind="point" data-set="synth" data-image="syn_noise" data-x="196608" data-y="0.9137" data-rf="196640" data-e9="215205" cx="112.64" cy="318.91" r="4.0" fill="#d97706"/>
-  <circle data-kind="point" data-set="synth" data-image="syn_pixel" data-x="49152" data-y="11.3019" data-rf="599" data-e9="53" cx="88.16" cy="74.00" r="4.0" fill="#d97706"/>
-  <circle data-kind="point" data-set="synth" data-image="syn_ui" data-x="2764800" data-y="0.9599" data-rf="2107" data-e9="2195" cx="538.96" cy="313.49" r="4.0" fill="#d97706"/>
-  <circle data-kind="point" data-set="synth" data-image="syn_text" data-x="1440000" data-y="1.0393" data-rf="2118" data-e9="2038" cx="319.04" cy="304.17" r="4.0" fill="#d97706"/>
-  <circle data-kind="point" data-set="synth" data-image="syn_diagram" data-x="1620000" data-y="1.0415" data-rf="2134" data-e9="2049" cx="348.92" cy="303.91" r="4.0" fill="#d97706"/>
-  <circle data-kind="point" data-set="synth" data-image="syn_odd" data-x="12285" data-y="2.5077" data-rf="163" data-e9="65" cx="82.04" cy="131.79" r="4.0" fill="#d97706"/>
-  <circle data-kind="point" data-set="synth" data-image="syn_wide" data-x="1151400" data-y="1.4057" data-rf="298" data-e9="212" cx="271.13" cy="261.16" r="4.0" fill="#d97706"/>
+  <circle data-kind="point" data-set="photo" data-image="measure" data-x="4720056" data-y="0.9781" data-rf="1409028" data-e9="1440564" cx="863.53" cy="311.35" r="4.0" fill="#2563eb"><title>photo/measure: raw=4720056, rf/e9=0.9781</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="kodim01" data-x="1179648" data-y="1.0043" data-rf="456732" data-e9="454757" cx="275.82" cy="308.27" r="4.0" fill="#2563eb"><title>photo/kodim01: raw=1179648, rf/e9=1.0043</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="kodim02" data-x="1179648" data-y="0.9986" data-rf="404539" data-e9="405088" cx="275.82" cy="308.94" r="4.0" fill="#2563eb"><title>photo/kodim02: raw=1179648, rf/e9=0.9986</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="kodim03" data-x="1179648" data-y="0.9989" data-rf="327760" data-e9="328115" cx="275.82" cy="308.91" r="4.0" fill="#2563eb"><title>photo/kodim03: raw=1179648, rf/e9=0.9989</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="kodim04" data-x="1179648" data-y="0.9783" data-rf="404956" data-e9="413924" cx="275.82" cy="311.33" r="4.0" fill="#2563eb"><title>photo/kodim04: raw=1179648, rf/e9=0.9783</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="kodim05" data-x="1179648" data-y="0.9950" data-rf="482636" data-e9="485059" cx="275.82" cy="309.37" r="4.0" fill="#2563eb"><title>photo/kodim05: raw=1179648, rf/e9=0.9950</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="kodim06" data-x="1179648" data-y="1.0017" data-rf="420250" data-e9="419530" cx="275.82" cy="308.58" r="4.0" fill="#2563eb"><title>photo/kodim06: raw=1179648, rf/e9=1.0017</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="kodim07" data-x="1179648" data-y="1.0003" data-rf="357206" data-e9="357100" cx="275.82" cy="308.75" r="4.0" fill="#2563eb"><title>photo/kodim07: raw=1179648, rf/e9=1.0003</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="kodim08" data-x="1179648" data-y="0.9990" data-rf="501169" data-e9="501647" cx="275.82" cy="308.89" r="4.0" fill="#2563eb"><title>photo/kodim08: raw=1179648, rf/e9=0.9990</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="kodim09" data-x="1179648" data-y="1.0129" data-rf="381325" data-e9="376471" cx="275.82" cy="307.27" r="4.0" fill="#2563eb"><title>photo/kodim09: raw=1179648, rf/e9=1.0129</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="kodim10" data-x="1179648" data-y="1.0117" data-rf="389478" data-e9="384968" cx="275.82" cy="307.41" r="4.0" fill="#2563eb"><title>photo/kodim10: raw=1179648, rf/e9=1.0117</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="kodim11" data-x="1179648" data-y="0.9878" data-rf="403269" data-e9="408257" cx="275.82" cy="310.22" r="4.0" fill="#2563eb"><title>photo/kodim11: raw=1179648, rf/e9=0.9878</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="kodim12" data-x="1179648" data-y="1.0142" data-rf="357100" data-e9="352104" cx="275.82" cy="307.12" r="4.0" fill="#2563eb"><title>photo/kodim12: raw=1179648, rf/e9=1.0142</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="kodim13" data-x="1179648" data-y="0.9870" data-rf="541784" data-e9="548906" cx="275.82" cy="310.31" r="4.0" fill="#2563eb"><title>photo/kodim13: raw=1179648, rf/e9=0.9870</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="kodim14" data-x="1179648" data-y="0.9927" data-rf="452998" data-e9="456324" cx="275.82" cy="309.64" r="4.0" fill="#2563eb"><title>photo/kodim14: raw=1179648, rf/e9=0.9927</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="kodim15" data-x="1179648" data-y="0.9923" data-rf="379985" data-e9="382924" cx="275.82" cy="309.68" r="4.0" fill="#2563eb"><title>photo/kodim15: raw=1179648, rf/e9=0.9923</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="kodim16" data-x="1179648" data-y="1.0193" data-rf="371645" data-e9="364606" cx="275.82" cy="306.52" r="4.0" fill="#2563eb"><title>photo/kodim16: raw=1179648, rf/e9=1.0193</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="kodim17" data-x="1179648" data-y="1.0154" data-rf="386228" data-e9="380388" cx="275.82" cy="306.98" r="4.0" fill="#2563eb"><title>photo/kodim17: raw=1179648, rf/e9=1.0154</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="kodim18" data-x="1179648" data-y="0.9838" data-rf="504814" data-e9="513147" cx="275.82" cy="310.69" r="4.0" fill="#2563eb"><title>photo/kodim18: raw=1179648, rf/e9=0.9838</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="kodim19" data-x="1179648" data-y="0.9886" data-rf="432872" data-e9="437857" cx="275.82" cy="310.12" r="4.0" fill="#2563eb"><title>photo/kodim19: raw=1179648, rf/e9=0.9886</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="kodim20" data-x="1179648" data-y="0.9944" data-rf="323340" data-e9="325163" cx="275.82" cy="309.44" r="4.0" fill="#2563eb"><title>photo/kodim20: raw=1179648, rf/e9=0.9944</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="kodim21" data-x="1179648" data-y="1.0016" data-rf="436462" data-e9="435768" cx="275.82" cy="308.60" r="4.0" fill="#2563eb"><title>photo/kodim21: raw=1179648, rf/e9=1.0016</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="kodim22" data-x="1179648" data-y="0.9960" data-rf="466463" data-e9="468333" cx="275.82" cy="309.25" r="4.0" fill="#2563eb"><title>photo/kodim22: raw=1179648, rf/e9=0.9960</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="kodim23" data-x="1179648" data-y="0.9958" data-rf="370706" data-e9="372253" cx="275.82" cy="309.27" r="4.0" fill="#2563eb"><title>photo/kodim23: raw=1179648, rf/e9=0.9958</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="kodim24" data-x="1179648" data-y="0.9994" data-rf="435387" data-e9="435637" cx="275.82" cy="308.85" r="4.0" fill="#2563eb"><title>photo/kodim24: raw=1179648, rf/e9=0.9994</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="ic_artificial" data-x="3686400" data-y="0.9511" data-rf="108031" data-e9="113589" cx="691.94" cy="314.53" r="4.0" fill="#2563eb"><title>photo/ic_artificial: raw=3686400, rf/e9=0.9511</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="ic_big_building" data-x="3686400" data-y="0.9749" data-rf="1766526" data-e9="1812036" cx="691.94" cy="311.73" r="4.0" fill="#2563eb"><title>photo/ic_big_building: raw=3686400, rf/e9=0.9749</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="ic_big_tree" data-x="3686400" data-y="0.9813" data-rf="1731899" data-e9="1764990" cx="691.94" cy="310.98" r="4.0" fill="#2563eb"><title>photo/ic_big_tree: raw=3686400, rf/e9=0.9813</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="ic_bridge" data-x="3686400" data-y="0.9747" data-rf="2050631" data-e9="2103943" cx="691.94" cy="311.76" r="4.0" fill="#2563eb"><title>photo/ic_bridge: raw=3686400, rf/e9=0.9747</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="ic_cathedral" data-x="3686400" data-y="0.9822" data-rf="1561085" data-e9="1589343" cx="691.94" cy="310.87" r="4.0" fill="#2563eb"><title>photo/ic_cathedral: raw=3686400, rf/e9=0.9822</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="ic_deer" data-x="3686400" data-y="0.9820" data-rf="2346330" data-e9="2389270" cx="691.94" cy="310.89" r="4.0" fill="#2563eb"><title>photo/ic_deer: raw=3686400, rf/e9=0.9820</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="ic_fireworks" data-x="3686400" data-y="0.9700" data-rf="1148618" data-e9="1184089" cx="691.94" cy="312.30" r="4.0" fill="#2563eb"><title>photo/ic_fireworks: raw=3686400, rf/e9=0.9700</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="ic_flower_foveon" data-x="3686400" data-y="1.0156" data-rf="775843" data-e9="763898" cx="691.94" cy="306.95" r="4.0" fill="#2563eb"><title>photo/ic_flower_foveon: raw=3686400, rf/e9=1.0156</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="ic_hdr" data-x="3686400" data-y="0.9643" data-rf="1078331" data-e9="1118223" cx="691.94" cy="312.97" r="4.0" fill="#2563eb"><title>photo/ic_hdr: raw=3686400, rf/e9=0.9643</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="ic_leaves_iso_1600" data-x="3686400" data-y="0.9681" data-rf="1899110" data-e9="1961785" cx="691.94" cy="312.53" r="4.0" fill="#2563eb"><title>photo/ic_leaves_iso_1600: raw=3686400, rf/e9=0.9681</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="ic_leaves_iso_200" data-x="3686400" data-y="0.9580" data-rf="1509317" data-e9="1575500" cx="691.94" cy="313.71" r="4.0" fill="#2563eb"><title>photo/ic_leaves_iso_200: raw=3686400, rf/e9=0.9580</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="ic_nightshot_iso_100" data-x="3686400" data-y="0.9662" data-rf="903577" data-e9="935218" cx="691.94" cy="312.75" r="4.0" fill="#2563eb"><title>photo/ic_nightshot_iso_100: raw=3686400, rf/e9=0.9662</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="ic_nightshot_iso_1600" data-x="3686400" data-y="1.0135" data-rf="1859622" data-e9="1834783" cx="691.94" cy="307.19" r="4.0" fill="#2563eb"><title>photo/ic_nightshot_iso_1600: raw=3686400, rf/e9=1.0135</title></circle>
+  <circle data-kind="point" data-set="photo" data-image="ic_spider_web" data-x="3686400" data-y="0.9044" data-rf="728159" data-e9="805157" cx="691.94" cy="320.01" r="4.0" fill="#2563eb"><title>photo/ic_spider_web: raw=3686400, rf/e9=0.9044</title></circle>
+  <circle data-kind="point" data-set="tp" data-image="tp_deer_crop" data-x="2359296" data-y="0.9815" data-rf="1498071" data-e9="1526358" cx="471.64" cy="310.96" r="4.0" fill="#059669"><title>tp/tp_deer_crop: raw=2359296, rf/e9=0.9815</title></circle>
+  <circle data-kind="point" data-set="tp" data-image="tp_fireworks_crop" data-x="2359296" data-y="0.9691" data-rf="769372" data-e9="793927" cx="471.64" cy="312.41" r="4.0" fill="#059669"><title>tp/tp_fireworks_crop: raw=2359296, rf/e9=0.9691</title></circle>
+  <circle data-kind="point" data-set="tp" data-image="tp_flower_foveon_crop" data-x="2359296" data-y="1.0127" data-rf="519064" data-e9="512571" cx="471.64" cy="307.30" r="4.0" fill="#059669"><title>tp/tp_flower_foveon_crop: raw=2359296, rf/e9=1.0127</title></circle>
+  <circle data-kind="point" data-set="tp" data-image="tp_nightshot_iso_1600_crop" data-x="2359296" data-y="1.0131" data-rf="1203458" data-e9="1187904" cx="471.64" cy="307.25" r="4.0" fill="#059669"><title>tp/tp_nightshot_iso_1600_crop: raw=2359296, rf/e9=1.0131</title></circle>
+  <circle data-kind="point" data-set="tp" data-image="tp_spider_web_crop" data-x="2359296" data-y="0.9087" data-rf="482000" data-e9="530399" cx="471.64" cy="319.49" r="4.0" fill="#059669"><title>tp/tp_spider_web_crop: raw=2359296, rf/e9=0.9087</title></circle>
+  <circle data-kind="point" data-set="synth" data-image="syn_solid" data-x="921600" data-y="0.8333" data-rf="100" data-e9="120" cx="232.99" cy="328.35" r="4.0" fill="#d97706"><title>synth/syn_solid: raw=921600, rf/e9=0.8333</title></circle>
+  <circle data-kind="point" data-set="synth" data-image="syn_checker" data-x="786432" data-y="27.1857" data-rf="5709" data-e9="210" cx="210.55" cy="74.00" r="4.0" fill="#d97706"><title>synth/syn_checker: raw=786432, rf/e9=27.1857</title></circle>
+  <circle data-kind="point" data-set="synth" data-image="syn_stripes" data-x="691200" data-y="1.4170" data-rf="384" data-e9="271" cx="194.74" cy="259.83" r="4.0" fill="#d97706"><title>synth/syn_stripes: raw=691200, rf/e9=1.4170</title></circle>
+  <circle data-kind="point" data-set="synth" data-image="syn_gradient" data-x="921600" data-y="7.3393" data-rf="4521" data-e9="616" cx="232.99" cy="74.00" r="4.0" fill="#d97706"><title>synth/syn_gradient: raw=921600, rf/e9=7.3393</title></circle>
+  <circle data-kind="point" data-set="synth" data-image="syn_noise" data-x="196608" data-y="0.9137" data-rf="196640" data-e9="215205" cx="112.64" cy="318.91" r="4.0" fill="#d97706"><title>synth/syn_noise: raw=196608, rf/e9=0.9137</title></circle>
+  <circle data-kind="point" data-set="synth" data-image="syn_pixel" data-x="49152" data-y="11.3019" data-rf="599" data-e9="53" cx="88.16" cy="74.00" r="4.0" fill="#d97706"><title>synth/syn_pixel: raw=49152, rf/e9=11.3019</title></circle>
+  <circle data-kind="point" data-set="synth" data-image="syn_ui" data-x="2764800" data-y="0.9599" data-rf="2107" data-e9="2195" cx="538.96" cy="313.49" r="4.0" fill="#d97706"><title>synth/syn_ui: raw=2764800, rf/e9=0.9599</title></circle>
+  <circle data-kind="point" data-set="synth" data-image="syn_text" data-x="1440000" data-y="1.0393" data-rf="2118" data-e9="2038" cx="319.04" cy="304.17" r="4.0" fill="#d97706"><title>synth/syn_text: raw=1440000, rf/e9=1.0393</title></circle>
+  <circle data-kind="point" data-set="synth" data-image="syn_diagram" data-x="1620000" data-y="1.0415" data-rf="2134" data-e9="2049" cx="348.92" cy="303.91" r="4.0" fill="#d97706"><title>synth/syn_diagram: raw=1620000, rf/e9=1.0415</title></circle>
+  <circle data-kind="point" data-set="synth" data-image="syn_odd" data-x="12285" data-y="2.5077" data-rf="163" data-e9="65" cx="82.04" cy="131.79" r="4.0" fill="#d97706"><title>synth/syn_odd: raw=12285, rf/e9=2.5077</title></circle>
+  <circle data-kind="point" data-set="synth" data-image="syn_wide" data-x="1151400" data-y="1.4057" data-rf="298" data-e9="212" cx="271.13" cy="261.16" r="4.0" fill="#d97706"><title>synth/syn_wide: raw=1151400, rf/e9=1.4057</title></circle>
   <text data-kind="provenance" x="16" y="414" font-family="monospace" font-size="9.5" fill="#334155">Source: benchmarks/corpus.csv | codec_revision=c8c1f78d74a423844c77da10d7d0dcde25f73056 | date=2026-10-25</text>
   <text data-kind="threads" x="16" y="430" font-family="monospace" font-size="9.5" fill="#334155">Threads: rasterfold: 3T default; jxl_e7, jxl_e9, webp: -threads 1</text>
   <text data-kind="limitations" x="16" y="446" font-family="monospace" font-size="9.5" fill="#475569">Limitations: Size-only research corpus (55 images: photo 39, tp 10 overlapping / tp-only 5 exclusive, synth 11); PNG, wall time, and memory are measured in benchmarks/results.csv.</text>

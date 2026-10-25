@@ -839,6 +839,60 @@ class DriftTests(unittest.TestCase):
         bench_table = (self.root / 'docs/_includes/generated/tables/benchmark-size-ratio.md').read_text(encoding='utf-8')
         self.assertIn('N/A (not measured in retained 2026-09-29 set)', bench_table)
 
+        # Independently compute corpus and benchmark aggregates directly from raw CSV rows and verify tables & SVG attributes.
+        import csv as csv_mod
+        import math as math_mod
+        import xml.etree.ElementTree as ET
+        from unittest import mock
+
+        c_lines = [ln for ln in (self.root / 'benchmarks/corpus.csv').read_text(encoding='utf-8').splitlines() if ln.strip() and not ln.startswith('#')]
+        c_rows = list(csv_mod.DictReader(c_lines))
+        self.assertEqual(55, len(c_rows))
+        photo_rows = [r for r in c_rows if r['set'] == 'photo']
+        exp_photo_rf = sum(int(r['rasterfold']) for r in photo_rows)
+        exp_photo_e7 = sum(int(r['jxl_e7']) for r in photo_rows)
+        exp_photo_rat = f'{exp_photo_rf / exp_photo_e7:.4f}'
+        exp_photo_gm = f'{math_mod.prod(int(r["rasterfold"]) / int(r["jxl_e7"]) for r in photo_rows) ** (1.0 / len(photo_rows)):.4f}'
+        self.assertIn(f'| photo | 39 | {exp_photo_rf} | {exp_photo_e7} |', corpus_table)
+        self.assertIn(f'| {exp_photo_rat} | {exp_photo_gm} |', corpus_table)
+
+        r_lines = [ln for ln in (self.root / 'benchmarks/results.csv').read_text(encoding='utf-8').splitlines() if ln.strip() and not ln.startswith('#')]
+        r_rows = list(csv_mod.DictReader(r_lines))
+        photos_rf = {r['image']: r for r in r_rows if r['set'] == 'photos' and r['codec'] == 'rasterfold'}
+        photos_jxl = {r['image']: r for r in r_rows if r['set'] == 'photos' and r['codec'] == 'jxl'}
+        exp_photos_size_gm = f'{math_mod.prod(int(photos_rf[k]["bytes"]) / int(photos_jxl[k]["bytes"]) for k in photos_rf) ** (1.0 / len(photos_rf)):.4f}'
+        exp_photos_dec_gm = f'{math_mod.prod(float(photos_rf[k]["decode_us"]) / float(photos_jxl[k]["decode_us"]) for k in photos_rf) ** (1.0 / len(photos_rf)):.4f}'
+        exp_photos_enc_pk = str(max(int(r['encode_peak']) for r in photos_rf.values()))
+        self.assertIn(f'| photos | rasterfold | 10 | {sum(int(r["bytes"]) for r in photos_rf.values())} | {exp_photos_size_gm} |', bench_table)
+        svd_svg = ET.fromstring((self.root / 'docs/_includes/generated/charts/size-vs-decode.svg').read_text(encoding='utf-8'))
+        svd_pt = next(el for el in svd_svg.iter() if el.attrib.get('data-kind') == 'point' and el.attrib.get('data-group') == 'photos' and el.attrib.get('data-series') == 'rasterfold')
+        self.assertEqual((exp_photos_dec_gm, exp_photos_size_gm), (svd_pt.attrib.get('data-x'), svd_pt.attrib.get('data-y')))
+        # Verify scatter-sets N/A elements have distinct coordinates and point-label + legend + ticks exist.
+        na_els = [el for el in svd_svg.iter() if el.attrib.get('data-kind') == 'na']
+        self.assertEqual(2, len(na_els))
+        self.assertEqual(2, len({(el.attrib.get('data-x'), el.attrib.get('data-y')) for el in na_els}))
+        self.assertTrue(any(el.attrib.get('data-kind') == 'point-label' and (el.text or '') == 'P:rasterfold' for el in svd_svg.iter()))
+        pm_svg = ET.fromstring((self.root / 'docs/_includes/generated/charts/peak-memory.svg').read_text(encoding='utf-8'))
+        pm_bar = next(el for el in pm_svg.iter() if el.attrib.get('data-kind') == 'bar' and el.attrib.get('data-group') == 'photos-encode' and el.attrib.get('data-series') == 'rasterfold')
+        self.assertEqual(exp_photos_enc_pk, pm_bar.attrib.get('data-value'))
+
+        # Verify that an aggregation bug in compute_chart_datasets followed by full regeneration is caught by --self-test.
+        real_compute = build_docs.compute_chart_datasets
+
+        def buggy_compute(r_path):
+            ds = real_compute(r_path)
+            ds['corpus-size-ratio']['bars'][0]['value'] = '0.8888'
+            ds['corpus-size-ratio']['bars'][0]['num'] = 0.8888
+            return ds
+
+        with mock.patch.object(build_docs, 'compute_chart_datasets', side_effect=buggy_compute):
+            build_docs.write_generated_pages(self.root)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(1, build_docs.main(['--root', str(self.root), '--self-test']))
+        self.assertIn("('photo', 'rasterfold') data-value='0.8888' != '0.9712'", err.getvalue())
+        build_docs.write_generated_pages(self.root)
+
         # 1. Hand-edited bar data-value fails --self-test.
         csr_rel = 'docs/_includes/generated/charts/corpus-size-ratio.svg'
         csr_orig = (self.root / csr_rel).read_text(encoding='utf-8')

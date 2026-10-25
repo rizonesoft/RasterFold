@@ -1,67 +1,77 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 460" role="img" aria-labelledby="title-encode-time desc-encode-time" data-chart="encode-time" data-kind="bar-chart" data-plot-left="80.00" data-plot-top="74.00" data-plot-width="830.00" data-plot-height="270.00" data-plot-bottom="344.00" data-y-max="12.0000" data-source="benchmarks/results.csv" data-codec-revision="225ba888a41e09a89d65f82829098fd8c7d41c3c" data-kat-fold-sha256="b3012508fdcadc58e768baaba1c9fc3cf5cc2dd837643888b1ca2314fe79bb32" data-date="2026-10-25" data-threads="rasterfold: 3T; rasterfold-1t: 1T; jxl/jxl-e9: enc 1T, dec default; jxl-1t: enc 1T, dec 1T; webp/png: 1T" data-limitations="measured_sets=measure (2026-10-25, rev 225ba888a41e); retained_sets=photos,synthetic (2026-09-29, rev 0159404532cf, jxl-e9 not measured)." data-measured-sets="measure" data-retained-sets="photos,synthetic" data-retained-revision="0159404532cf944c4265ecb8ea46c54f637bdfc2" data-retained-date="2026-09-29">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 460" role="img" aria-labelledby="title-encode-time desc-encode-time" data-chart="encode-time" data-kind="bar-chart" data-plot-left="80.00" data-plot-top="74.00" data-plot-width="830.00" data-plot-height="270.00" data-plot-bottom="344.00" data-y-max="12.0000" data-source="benchmarks/results.csv" data-codec-revision="225ba888a41e09a89d65f82829098fd8c7d41c3c" data-kat-fold-sha256="b3012508fdcadc58e768baaba1c9fc3cf5cc2dd837643888b1ca2314fe79bb32" data-date="2026-10-25" data-threads="rasterfold: 3T; rasterfold-1t: 1T; jxl/jxl-e9: enc 1T, dec default; jxl-1t: enc 1T, dec 1T; webp/png: 1T" data-limitations="measured_sets=measure (2026-10-25, rev 225ba888a41e); retained_sets=photos,synthetic (2026-09-29, rev 0159404532cf, jxl-e9 not measured)." data-measured-sets="measure" data-retained-sets="photos,synthetic" data-retained-revision="0159404532cf944c4265ecb8ea46c54f637bdfc2" data-retained-date="2026-09-29" data-set-revisions="measure:225ba888a41e09a89d65f82829098fd8c7d41c3c,photos:0159404532cf944c4265ecb8ea46c54f637bdfc2,synthetic:0159404532cf944c4265ecb8ea46c54f637bdfc2" data-set-dates="measure:2026-10-25,photos:2026-09-29,synthetic:2026-09-29">
   <title id="title-encode-time">Benchmark Suite: Geometric-Mean Encode Time Ratio vs JPEG XL e7 (Lower Is Faster)</title>
   <desc id="desc-encode-time">Source: benchmarks/results.csv | revision: 225ba888a41e09a89d65f82829098fd8c7d41c3c | date: 2026-10-25 | threads: rasterfold: 3T; rasterfold-1t: 1T; jxl/jxl-e9: enc 1T, dec default; jxl-1t: enc 1T, dec 1T; webp/png: 1T | limitations: measured_sets=measure (2026-10-25, rev 225ba888a41e); retained_sets=photos,synthetic (2026-09-29, rev 0159404532cf, jxl-e9 not measured).</desc>
   <rect x="0" y="0" width="940" height="460" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
   <text x="16" y="26" font-family="system-ui, sans-serif" font-size="14" font-weight="700" fill="#0f172a">Benchmark Suite: Geometric-Mean Encode Time Ratio vs JPEG XL e7 (Lower Is Faster)</text>
   <text x="16" y="44" font-family="system-ui, sans-serif" font-size="11" fill="#475569">Geomean encode wall time / JPEG XL e7 (capped at 12x)</text>
   <rect x="16" y="52" width="10" height="10" fill="#2563eb"/>
-  <text x="30" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">rasterfold</text>
+  <text data-kind="legend-item" data-series="rasterfold" x="30" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">rasterfold</text>
   <rect x="134" y="52" width="10" height="10" fill="#60a5fa"/>
-  <text x="148" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">rasterfold-1t</text>
+  <text data-kind="legend-item" data-series="rasterfold-1t" x="148" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">rasterfold-1t</text>
   <rect x="252" y="52" width="10" height="10" fill="#059669"/>
-  <text x="266" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">jxl</text>
+  <text data-kind="legend-item" data-series="jxl" x="266" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">jxl</text>
   <rect x="370" y="52" width="10" height="10" fill="#34d399"/>
-  <text x="384" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">jxl-1t</text>
+  <text data-kind="legend-item" data-series="jxl-1t" x="384" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">jxl-1t</text>
   <rect x="488" y="52" width="10" height="10" fill="#7c3aed"/>
-  <text x="502" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">jxl-e9</text>
+  <text data-kind="legend-item" data-series="jxl-e9" x="502" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">jxl-e9</text>
   <rect x="606" y="52" width="10" height="10" fill="#d97706"/>
-  <text x="620" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">webp</text>
+  <text data-kind="legend-item" data-series="webp" x="620" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">webp</text>
   <rect x="724" y="52" width="10" height="10" fill="#64748b"/>
-  <text x="738" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">png</text>
+  <text data-kind="legend-item" data-series="png" x="738" y="61" font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">png</text>
+  <line x1="76.00" y1="344.00" x2="910.00" y2="344.00" stroke="#e2e8f0" stroke-width="1"/>
+  <text data-kind="y-tick" data-value="0.00" x="74.00" y="347.00" text-anchor="end" font-family="monospace" font-size="8.5" fill="#475569">0.00</text>
+  <line x1="76.00" y1="276.50" x2="910.00" y2="276.50" stroke="#e2e8f0" stroke-width="1"/>
+  <text data-kind="y-tick" data-value="3.00" x="74.00" y="279.50" text-anchor="end" font-family="monospace" font-size="8.5" fill="#475569">3.00</text>
+  <line x1="76.00" y1="209.00" x2="910.00" y2="209.00" stroke="#e2e8f0" stroke-width="1"/>
+  <text data-kind="y-tick" data-value="6.00" x="74.00" y="212.00" text-anchor="end" font-family="monospace" font-size="8.5" fill="#475569">6.00</text>
+  <line x1="76.00" y1="141.50" x2="910.00" y2="141.50" stroke="#e2e8f0" stroke-width="1"/>
+  <text data-kind="y-tick" data-value="9.00" x="74.00" y="144.50" text-anchor="end" font-family="monospace" font-size="8.5" fill="#475569">9.00</text>
+  <line x1="76.00" y1="74.00" x2="910.00" y2="74.00" stroke="#e2e8f0" stroke-width="1"/>
+  <text data-kind="y-tick" data-value="12.00" x="74.00" y="77.00" text-anchor="end" font-family="monospace" font-size="8.5" fill="#475569">12.00</text>
   <line x1="80.00" y1="74.00" x2="80.00" y2="344.00" stroke="#94a3b8" stroke-width="1"/>
   <line x1="80.00" y1="344.00" x2="910.00" y2="344.00" stroke="#94a3b8" stroke-width="1"/>
   <text x="218.33" y="362.00" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#1e293b">measure</text>
-  <rect data-kind="bar" data-group="measure" data-series="rasterfold" data-value="0.2078" x="102.13" y="339.32" width="31.20" height="4.68" fill="#2563eb"/>
+  <rect data-kind="bar" data-group="measure" data-series="rasterfold" data-value="0.2078" x="102.13" y="339.32" width="31.20" height="4.68" fill="#2563eb"><title>measure / rasterfold: 0.2078</title></rect>
   <text data-kind="bar-label" data-group="measure" data-series="rasterfold" x="117.73" y="336.32" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">0.2078</text>
-  <rect data-kind="bar" data-group="measure" data-series="rasterfold-1t" data-value="0.3810" x="135.33" y="335.43" width="31.20" height="8.57" fill="#60a5fa"/>
+  <rect data-kind="bar" data-group="measure" data-series="rasterfold-1t" data-value="0.3810" x="135.33" y="335.43" width="31.20" height="8.57" fill="#60a5fa"><title>measure / rasterfold-1t: 0.3810</title></rect>
   <text data-kind="bar-label" data-group="measure" data-series="rasterfold-1t" x="150.93" y="332.43" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">0.3810</text>
-  <rect data-kind="bar" data-group="measure" data-series="jxl" data-value="1.0000" x="168.53" y="321.50" width="31.20" height="22.50" fill="#059669"/>
+  <rect data-kind="bar" data-group="measure" data-series="jxl" data-value="1.0000" x="168.53" y="321.50" width="31.20" height="22.50" fill="#059669"><title>measure / jxl: 1.0000</title></rect>
   <text data-kind="bar-label" data-group="measure" data-series="jxl" x="184.13" y="318.50" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">1.0000</text>
-  <rect data-kind="bar" data-group="measure" data-series="jxl-1t" data-value="1.0000" x="201.73" y="321.50" width="31.20" height="22.50" fill="#34d399"/>
+  <rect data-kind="bar" data-group="measure" data-series="jxl-1t" data-value="1.0000" x="201.73" y="321.50" width="31.20" height="22.50" fill="#34d399"><title>measure / jxl-1t: 1.0000</title></rect>
   <text data-kind="bar-label" data-group="measure" data-series="jxl-1t" x="217.33" y="318.50" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">1.0000</text>
-  <rect data-kind="bar" data-group="measure" data-series="jxl-e9" data-value="5.3688" x="234.93" y="223.20" width="31.20" height="120.80" fill="#7c3aed"/>
+  <rect data-kind="bar" data-group="measure" data-series="jxl-e9" data-value="5.3688" x="234.93" y="223.20" width="31.20" height="120.80" fill="#7c3aed"><title>measure / jxl-e9: 5.3688</title></rect>
   <text data-kind="bar-label" data-group="measure" data-series="jxl-e9" x="250.53" y="220.20" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">5.3688</text>
-  <rect data-kind="bar" data-group="measure" data-series="webp" data-value="11.1750" x="268.13" y="92.56" width="31.20" height="251.44" fill="#d97706"/>
+  <rect data-kind="bar" data-group="measure" data-series="webp" data-value="11.1750" x="268.13" y="92.56" width="31.20" height="251.44" fill="#d97706"><title>measure / webp: 11.1750</title></rect>
   <text data-kind="bar-label" data-group="measure" data-series="webp" x="283.73" y="89.56" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">11.1750</text>
-  <rect data-kind="bar" data-group="measure" data-series="png" data-value="0.7281" x="301.33" y="327.62" width="31.20" height="16.38" fill="#64748b"/>
+  <rect data-kind="bar" data-group="measure" data-series="png" data-value="0.7281" x="301.33" y="327.62" width="31.20" height="16.38" fill="#64748b"><title>measure / png: 0.7281</title></rect>
   <text data-kind="bar-label" data-group="measure" data-series="png" x="316.93" y="324.62" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">0.7281</text>
   <text x="495.00" y="362.00" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#1e293b">photos</text>
-  <rect data-kind="bar" data-group="photos" data-series="rasterfold" data-value="0.1527" x="378.80" y="340.57" width="31.20" height="3.43" fill="#2563eb"/>
+  <rect data-kind="bar" data-group="photos" data-series="rasterfold" data-value="0.1527" x="378.80" y="340.57" width="31.20" height="3.43" fill="#2563eb"><title>photos / rasterfold: 0.1527</title></rect>
   <text data-kind="bar-label" data-group="photos" data-series="rasterfold" x="394.40" y="337.57" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">0.1527</text>
-  <rect data-kind="bar" data-group="photos" data-series="rasterfold-1t" data-value="0.3011" x="412.00" y="337.23" width="31.20" height="6.77" fill="#60a5fa"/>
+  <rect data-kind="bar" data-group="photos" data-series="rasterfold-1t" data-value="0.3011" x="412.00" y="337.23" width="31.20" height="6.77" fill="#60a5fa"><title>photos / rasterfold-1t: 0.3011</title></rect>
   <text data-kind="bar-label" data-group="photos" data-series="rasterfold-1t" x="427.60" y="334.23" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">0.3011</text>
-  <rect data-kind="bar" data-group="photos" data-series="jxl" data-value="1.0000" x="445.20" y="321.50" width="31.20" height="22.50" fill="#059669"/>
+  <rect data-kind="bar" data-group="photos" data-series="jxl" data-value="1.0000" x="445.20" y="321.50" width="31.20" height="22.50" fill="#059669"><title>photos / jxl: 1.0000</title></rect>
   <text data-kind="bar-label" data-group="photos" data-series="jxl" x="460.80" y="318.50" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">1.0000</text>
-  <rect data-kind="bar" data-group="photos" data-series="jxl-1t" data-value="1.0000" x="478.40" y="321.50" width="31.20" height="22.50" fill="#34d399"/>
+  <rect data-kind="bar" data-group="photos" data-series="jxl-1t" data-value="1.0000" x="478.40" y="321.50" width="31.20" height="22.50" fill="#34d399"><title>photos / jxl-1t: 1.0000</title></rect>
   <text data-kind="bar-label" data-group="photos" data-series="jxl-1t" x="494.00" y="318.50" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">1.0000</text>
-  <g data-kind="na" data-group="photos" data-series="jxl-e9" data-value="N/A"><text x="528.20" y="338.00" text-anchor="middle" font-family="monospace" font-size="8" fill="#64748b">N/A</text></g>
-  <rect data-kind="bar" data-group="photos" data-series="webp" data-value="8.2603" x="544.80" y="158.14" width="31.20" height="185.86" fill="#d97706"/>
+  <g data-kind="na" data-group="photos" data-series="jxl-e9" data-value="N/A" data-x="528.20" data-y="338.00"><text x="528.20" y="338.00" text-anchor="middle" font-family="monospace" font-size="8" fill="#64748b">N/A</text></g>
+  <rect data-kind="bar" data-group="photos" data-series="webp" data-value="8.2603" x="544.80" y="158.14" width="31.20" height="185.86" fill="#d97706"><title>photos / webp: 8.2603</title></rect>
   <text data-kind="bar-label" data-group="photos" data-series="webp" x="560.40" y="155.14" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">8.2603</text>
-  <rect data-kind="bar" data-group="photos" data-series="png" data-value="0.2782" x="578.00" y="337.74" width="31.20" height="6.26" fill="#64748b"/>
+  <rect data-kind="bar" data-group="photos" data-series="png" data-value="0.2782" x="578.00" y="337.74" width="31.20" height="6.26" fill="#64748b"><title>photos / png: 0.2782</title></rect>
   <text data-kind="bar-label" data-group="photos" data-series="png" x="593.60" y="334.74" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">0.2782</text>
   <text x="771.67" y="362.00" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#1e293b">synthetic</text>
-  <rect data-kind="bar" data-group="synthetic" data-series="rasterfold" data-value="0.3347" x="655.47" y="336.47" width="31.20" height="7.53" fill="#2563eb"/>
+  <rect data-kind="bar" data-group="synthetic" data-series="rasterfold" data-value="0.3347" x="655.47" y="336.47" width="31.20" height="7.53" fill="#2563eb"><title>synthetic / rasterfold: 0.3347</title></rect>
   <text data-kind="bar-label" data-group="synthetic" data-series="rasterfold" x="671.07" y="333.47" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">0.3347</text>
-  <rect data-kind="bar" data-group="synthetic" data-series="rasterfold-1t" data-value="0.5513" x="688.67" y="331.60" width="31.20" height="12.40" fill="#60a5fa"/>
+  <rect data-kind="bar" data-group="synthetic" data-series="rasterfold-1t" data-value="0.5513" x="688.67" y="331.60" width="31.20" height="12.40" fill="#60a5fa"><title>synthetic / rasterfold-1t: 0.5513</title></rect>
   <text data-kind="bar-label" data-group="synthetic" data-series="rasterfold-1t" x="704.27" y="328.60" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">0.5513</text>
-  <rect data-kind="bar" data-group="synthetic" data-series="jxl" data-value="1.0000" x="721.87" y="321.50" width="31.20" height="22.50" fill="#059669"/>
+  <rect data-kind="bar" data-group="synthetic" data-series="jxl" data-value="1.0000" x="721.87" y="321.50" width="31.20" height="22.50" fill="#059669"><title>synthetic / jxl: 1.0000</title></rect>
   <text data-kind="bar-label" data-group="synthetic" data-series="jxl" x="737.47" y="318.50" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">1.0000</text>
-  <rect data-kind="bar" data-group="synthetic" data-series="jxl-1t" data-value="1.0000" x="755.07" y="321.50" width="31.20" height="22.50" fill="#34d399"/>
+  <rect data-kind="bar" data-group="synthetic" data-series="jxl-1t" data-value="1.0000" x="755.07" y="321.50" width="31.20" height="22.50" fill="#34d399"><title>synthetic / jxl-1t: 1.0000</title></rect>
   <text data-kind="bar-label" data-group="synthetic" data-series="jxl-1t" x="770.67" y="318.50" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">1.0000</text>
-  <g data-kind="na" data-group="synthetic" data-series="jxl-e9" data-value="N/A"><text x="804.87" y="338.00" text-anchor="middle" font-family="monospace" font-size="8" fill="#64748b">N/A</text></g>
-  <rect data-kind="bar" data-group="synthetic" data-series="webp" data-value="4.3383" x="821.47" y="246.39" width="31.20" height="97.61" fill="#d97706"/>
+  <g data-kind="na" data-group="synthetic" data-series="jxl-e9" data-value="N/A" data-x="804.87" data-y="338.00"><text x="804.87" y="338.00" text-anchor="middle" font-family="monospace" font-size="8" fill="#64748b">N/A</text></g>
+  <rect data-kind="bar" data-group="synthetic" data-series="webp" data-value="4.3383" x="821.47" y="246.39" width="31.20" height="97.61" fill="#d97706"><title>synthetic / webp: 4.3383</title></rect>
   <text data-kind="bar-label" data-group="synthetic" data-series="webp" x="837.07" y="243.39" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">4.3383</text>
-  <rect data-kind="bar" data-group="synthetic" data-series="png" data-value="0.4579" x="854.67" y="333.70" width="31.20" height="10.30" fill="#64748b"/>
+  <rect data-kind="bar" data-group="synthetic" data-series="png" data-value="0.4579" x="854.67" y="333.70" width="31.20" height="10.30" fill="#64748b"><title>synthetic / png: 0.4579</title></rect>
   <text data-kind="bar-label" data-group="synthetic" data-series="png" x="870.27" y="330.70" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">0.4579</text>
   <text data-kind="provenance" x="16" y="414" font-family="monospace" font-size="9.5" fill="#334155">Source: benchmarks/results.csv | codec_revision=225ba888a41e09a89d65f82829098fd8c7d41c3c | date=2026-10-25</text>
   <text data-kind="threads" x="16" y="430" font-family="monospace" font-size="9.5" fill="#334155">Threads: rasterfold: 3T; rasterfold-1t: 1T; jxl/jxl-e9: enc 1T, dec default; jxl-1t: enc 1T, dec 1T; webp/png: 1T</text>
