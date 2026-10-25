@@ -46,6 +46,8 @@ track: S1
 
 ## 1. Profile-Guided Optimization
 
+> **Started:** 2026-10-25T17:31:30Z
+
 **Needs:** Idle machine (timing)
 
 The hot paths (`code_bit`, `code_residual`, `cm_model`) are branchy; a profile tells Clang which way the branches go. The instrumented build needs the profile runtime and a C runtime, which the release build does not have, so it is a separate target. Bar: a one-thread decode at least 5% faster (`research/vsjxl.py`), bytes identical; otherwise the negative result ships and nothing changes in the release build.
