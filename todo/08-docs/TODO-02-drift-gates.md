@@ -43,7 +43,7 @@ track: D2
 |   2   |   §2    | Figures bound to their data | §1, D00 T02 §3 |  [x]   |
 |   3   |   §3    | Generated files match their sources | §1, D08 T01 §1 |  [x]   |
 |   4   |   §4    | Staleness: verified dates and data revisions | §2 |  [x]   |
-|   5   |   §5    | Links, and the gates wired everywhere | §3, §4 |  [ ]   |
+|   5   |   §5    | Links, and the gates wired everywhere | §3, §4 |  [x]   |
 | 6 | §6 | Deterministic repair and complete file coverage | §1, §3 | [ ] |
 | 7 | §7 | Commit and built-site provenance | §5, §6 | [ ] |
 
@@ -114,6 +114,8 @@ track: D2
 
 **Test checkpoint:** `python3 -m unittest tests/test_drift.py -v` passes (`Ran 51 tests in 23.1s, OK`); a scratch-clone commit with a seeded broken link (`[broken [nested] link](missing-target(1).md#bad)`) is refused by `tools/githooks/pre-commit` (`link: README.md: missing target: missing-target(1).md#bad`, `stale: README.md: README.md changed since review ...`, `pre-commit: staged documentation drift; repair, review and stage the corrected files`, `rc=1`, `HEAD` unchanged) and succeeds (`rc=0`, `HEAD` advances) after restoring a valid link; `pwsh scripts/check-all.ps1 -Gate "document drift"` fails on the seeded broken link (`FAIL document drift (1.6s)`, `link: README.md: missing target: missing-target(1).md#bad`, `check-all: 0/1 passed`, `rc=1`) and passes after restoration (`PASS document drift (1.7s)`, `check-all: 1/1 passed`, `rc=0`; `pwsh scripts/check-all.ps1 -Quick` `check-all: 27/27 passed`); seeded built-artifact failures in `build/site-artifact/` fail `python3 scripts/drift-check.py --site-dir build/site-artifact` with `rc=1` (`link: index.html: missing target: missing-page.html`, `site-link: index.html: URL outside Pages base path: /outside/page.html`, `anchor: index.html: missing heading or id: /RasterFold/format.html#missing-html-id`) and recover to `rc=0`.
 
+> **Verified:** 2026-10-25 | §5 | 3588c3d7b69546b56d7364837a87194c8ebe15d1
+> **Review:** `docs/reviews/d08-t02-s5.json`
 ## 6. Deterministic repair and complete file coverage
 
 **Job:** A maintainer can render source facts into generated documents and repair stale output while preserving authored and historical evidence.

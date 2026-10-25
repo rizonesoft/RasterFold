@@ -1,0 +1,105 @@
+{
+  "ref": "D08 T02 \u00a75",
+  "title": "Links, and the Gates Wired Everywhere",
+  "implementation_sha": "3588c3d7b69546b56d7364837a87194c8ebe15d1",
+  "date": "2026-10-25",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/08-docs/D08-T02-s5.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/08-docs/D08-T02-s5.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 3,
+      "report": "docs/reviews/08-docs/D08-T02-s5.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 4,
+      "report": "docs/reviews/08-docs/D08-T02-s5.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 5,
+      "report": "docs/reviews/08-docs/D08-T02-s5.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 scripts/drift-check.py -> drift: 214 supported documents; 0 error(s); 0 deterministic repair(s)",
+    "python3 -m unittest tests/test_drift.py -v -> Ran 51 tests OK",
+    "pwsh scripts/check-all.ps1 -Quick -> check-all: 27/27 passed"
+  ],
+  "completion": {
+    "report": "docs/reviews/08-docs/D08-T02-s5.md",
+    "verdict": "completed",
+    "candidate": "400968ea4b4f56da29b032ce9ab5fdafae78ba40",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 5,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/08-docs/D08-T02-s5.md",
+    "candidate": "f94b1ab86c09b2fd5ff9a7d8b388b47aa737592d",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}
