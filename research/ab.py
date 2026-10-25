@@ -43,7 +43,8 @@ SETS = {
               "syn_diagram", "syn_odd", "syn_wide"],
 }
 SETS["photo"] = ["measure"] + SETS["kodak"] + SETS["ic"]
-SETS["all"] = SETS["photo"] + [n for n in SETS["tp"] if n not in SETS["photo"]] + SETS["synth"]
+SETS["tp-only"] = [n for n in SETS["tp"] if n not in SETS["photo"]]
+SETS["all"] = SETS["photo"] + SETS["tp-only"] + SETS["synth"]
 CORPUS_CSV_FIELDS = ("set", "image", "width", "height", "rasterfold", "jxl_e7", "jxl_e9", "webp")
 HEADER_COMMENT_RE = re.compile(
     r"^# codec_revision=(?P<codec_revision>[0-9a-f]{40}) kat_fold_sha256=(?P<kat_fold_sha256>[0-9a-f]{64}) date=(?P<date>\d{4}-\d{2}-\d{2})$"

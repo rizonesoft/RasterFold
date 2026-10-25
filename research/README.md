@@ -13,7 +13,8 @@ Tools for changing the codec with numbers instead of guesses. Data goes to
 | `python research/vsjxl.py [image.bmp] [-n5]` | process wall times of `bin/windows-x64/bin/rasterfold.exe` against ffmpeg libjxl |
 
 Sets for `ab.py`: `sub` (8 mixed photos), `kodak`, `ic`, `tp` (test pack),
-`photo` (measure + kodak + ic), `synth`, `all`. A name without a set is one
+`tp-only` (5 exclusive test-pack crops), `photo` (measure + kodak + ic), `synth`,
+`all`. A name without a set is one
 image from `build/research/ppm`.
 
 `ab.py` compiles `bench.c` + `benchsys.c` + the given `cm.c` with the local
