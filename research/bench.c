@@ -50,7 +50,7 @@ int main(int argc, char **argv) {
         if (!strncmp(argv[a], "-t", 2)) { threads = atoi(argv[a] + 2); continue; }
         Image im; if (!load_ppm(argv[a], &im)) { fprintf(stderr, "bad %s\n", argv[a]); return 1; }
         size_t raw = (size_t)im.w * im.h * 3;
-        uint8_t *buf = malloc(raw + 64), *out = malloc(raw);
+        uint8_t *buf = malloc(raw + 256), *out = malloc(raw);
         size_t n = 0; double be = 1e30, bd = 1e30; int ok = 1;
         int is_raw = 0;
         for (int r = 0; r < reps; r++) {

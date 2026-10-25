@@ -629,7 +629,9 @@ static void run(cm_t *m, int threads, const int enc) {
 }
 
 /* ------------------------------------------------------------ interface */
-/* Payload: u32 size of each channel stream (G, R, B), then the three streams. */
+/* Payload: u32 size of each channel stream (G, R, B), then the three streams.
+   out must have at least 12 + 3 * (w * h + 64) writable bytes; cap bounds the
+   final payload size. */
 int rf_cm_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size_t cap, size_t *written, int threads, rf_error *err) {
     cm_tables();
     *written = 0;
@@ -637,9 +639,7 @@ int rf_cm_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size_
     cm_t m;
     if (cm_alloc(&m, w, h, (uint8_t *)rgb, 0, err) != RF_OK) return RF_ERR_LIMIT;
     size_t each = (size_t)w * h + 64;
-    uint8_t *tmp = rf_alloc(each * 3);
-    if (!tmp) { rf_free(m.block); return rf_fail(err, RF_ERR_LIMIT, "out of memory"); }
-    for (int c = 0; c < 3; c++) renc_init(&m.ch[c].enc, tmp + each * c, each);
+    for (int c = 0; c < 3; c++) renc_init(&m.ch[c].enc, out + 12 + each * c, each);
     run(&m, threads, 1);
     size_t total = 12;
     for (int c = 0; c < 3; c++) {
@@ -654,12 +654,11 @@ int rf_cm_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size_
             uint32_t n = (uint32_t)m.ch[c].enc.pos;
             out[c * 4] = (uint8_t)n; out[c * 4 + 1] = (uint8_t)(n >> 8);
             out[c * 4 + 2] = (uint8_t)(n >> 16); out[c * 4 + 3] = (uint8_t)(n >> 24);
-            memcpy(o, tmp + each * c, n);
+            if (c > 0) memmove(o, out + 12 + each * c, n);
             o += n;
         }
         *written = total;
     }
-    rf_free(tmp);
     rf_free(m.block);
     return RF_OK;
 }

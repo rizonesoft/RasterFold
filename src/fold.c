@@ -20,7 +20,7 @@ int rf_encode(const rf_image *img, uint8_t **file, size_t *size, int threads, rf
     int rc = check_dims(img->width, img->height, "invalid image: dimensions", err);
     if (rc) return rc;
     size_t raw = (size_t)img->width * img->height * 3;
-    uint8_t *f = rf_alloc(RF_HEADER_SIZE + raw);
+    uint8_t *f = rf_alloc(RF_HEADER_SIZE + raw + 256);
     if (!f) return rf_fail(err, RF_ERR_LIMIT, "out of memory");
     size_t n = 0;
     rc = rf_cm_encode(img->rgb, img->width, img->height, f + RF_HEADER_SIZE, raw - 1, &n, threads, err);
