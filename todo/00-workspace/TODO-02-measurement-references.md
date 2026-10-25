@@ -102,5 +102,5 @@ The roadmap measures milestones against JPEG XL e9 and WebP, so the tool that de
 > **Review:** `docs/reviews/d00-t02-s3.json`
 ## Verification
 
-- [ ] `pwsh scripts/check-all.ps1` exits 0
-- [ ] `python scripts/todo-graph.py validate` clean
+- [x] `pwsh scripts/check-all.ps1` exits 0
+- [x] `python scripts/todo-graph.py validate` clean

@@ -47,7 +47,6 @@ Native converter files are listed in [domain 10](./10-converter/INDEX.md); the c
 | ---- | ------ | ----- |
 | [TODO-01](./03-memory/TODO-01-buffer-lifetimes.md) | 03-memory | Buffer Lifetimes and Copies |
 | [TODO-01](./04-robustness/TODO-01-decoder-hardening.md) | 04-robustness | Decoder Hardening |
-| [TODO-02](./00-workspace/TODO-02-measurement-references.md) | 00-workspace | Measurement References: JPEG XL e9 and WebP |
 | [TODO-01](./08-docs/TODO-01-html-docs.md) | 08-docs | HTML Documentation with Comparison Charts |
 | [TODO-02](./08-docs/TODO-02-drift-gates.md) | 08-docs | Drift and Staleness Gates |
 | [TODO-01](./05-milestones/TODO-01-beat-jxl-and-webp.md) | 05-milestones | Milestones 1 to 10 |
