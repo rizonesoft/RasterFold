@@ -13,6 +13,7 @@ table here, run --write, and commit the table and the generated files together.
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 import tempfile
@@ -138,6 +139,39 @@ RULE = ("It keeps everything milestone {prev} reached: no photo size more than 0
 POLICY = ("If the target is missed, the missed-milestone policy applies (`D99 T01 §4`): up to three follow-up experiments "
           "from `docs/research.md` are filed through `add-todo`, and the operator is asked only when all three miss.")
 
+GATE_STATE: dict[int, dict[str, object]] = {
+    1: {
+        "started": "2026-10-25T12:41:00Z",
+        "checked": True,
+        "reached": "reached 2026-10-25",
+        "notes": [
+            "**Corrected 2026-10-25:** Per the pre-build `--kind plan` review (`docs/reviews/05-milestones/D05-T01-s1.md`), this gate also verifies post-push CI read-back on the completed candidate SHA across `build.yml`, `plan.yml` (including its Jekyll HTML build and `--site-dir` check), and `pages.yml` (`python3 scripts/ci_status.py` and `python3 scripts/ci_status.py --workflow pages.yml`), runs `python3 scripts/windows.py tests/measure_final.py` (`PASS` on `measure/image.bmp`, required by `docs/research.md` section 2.1), and records a fresh `decode --time` allocator peak baseline on `measure/image.bmp` (`bin/windows-x64/bin/rasterfold.exe` `alloc_peak=10569996` at 3 threads and `alloc_peak=10569964` at `--threads 1`; `bin/linux-x64/bin/rasterfold` `alloc_peak=10570204` at 3 threads; `10.57 MB`) together with `research/vsjxl.py -n5` and `research/ab.py ab src/cm.c src/cm.c measure -n5` at `-t1` and `-t3` for Milestone 2.",
+        ],
+        "items": [
+            "Measure the target with `pwsh scripts/check-all.ps1 -AllTargets`, `python3 scripts/windows.py tests/measure_final.py`, `python3 scripts/ci_status.py` and `python3 scripts/ci_status.py --workflow pages.yml` on the completed candidate push, and `python3 research/ab.py size photo -v`, `tp -v`, and `synth -v` (with the JPEG XL e9 and WebP columns). Done when: `pwsh scripts/check-all.ps1 -AllTargets` is green with every gate `PASS` (`check-all: 29/29 passed`); `tests/measure_final.py` exits 0 (`PASS`); `build.yml`, `plan.yml`, and `pages.yml` are green on the pushed candidate; `benchmarks/results.md` and `benchmarks/corpus.csv` report JPEG XL e7, JPEG XL e9, and lossless WebP; the HTML docs build and `python3 scripts/drift-check.py` exits 0; and the corpus matches the 2026-09-29 baseline (`photo`: `0.9712` of JPEG XL e7 and `0.9829` of e9, `28 of 39` photos below e9), each figure quoted with its command.",
+            "Record the baseline figures (`python3 research/ab.py size photo -v`, `tp -v`, and `synth -v` with the JPEG XL e9 and WebP columns; `tests/benchmark.py measure -n 3` and `benchmarks/results.csv`; `bin/windows-x64/bin/rasterfold.exe decode --time` at 3 threads and `--threads 1` plus `bin/linux-x64/bin/rasterfold decode --time` on `measure/image.bmp`; `python3 scripts/windows.py research/vsjxl.py -n5`; and `python3 research/ab.py ab src/cm.c src/cm.c measure -n5` at `-t1` and `-t3`) as the reference for milestone 2. Done when: they are recorded in `docs/research.md` section 1 and quoted in this section's checkpoint and stamp.",
+            "Record the milestone in `docs/research.md` sections 1 and 9 and regenerate the documentation sources and tables (`python3 scripts/build-docs.py --write` and `python3 research/milestones.py --write`), verifying HTML generation and `python3 scripts/drift-check.py`. Done when: `python3 research/milestones.py --check`, `python3 scripts/build-docs.py --check`, and `python3 scripts/drift-check.py` exit 0.",
+        ],
+        "checkpoint": (
+            "`pwsh scripts/check-all.ps1 -AllTargets` exits 0 (`check-all: 29/29 passed`); "
+            "`python3 scripts/windows.py tests/measure_final.py` exits 0 (`PASS`, `rasterfold bytes=1409028 decode_wall_us=295854 decode_peak_ws=16576512 decode_codec_us=183840 pixels=True` vs `jxl bytes=1470703 decode_wall_us=459807 decode_peak_ws=51281920`); "
+            "`python3 research/ab.py size photo -v` prints `total=30865211 jxl=31782058 ratio=0.9712 geomean=0.9728 worst=1.0037 (kodim17) e9=31400714 e9_ratio=0.9829 e9_geomean=0.9883 e9_worst=1.0193 (kodim16) webp=34138176 webp_ratio=0.9041 webp_geomean=0.8932 webp_worst=1.0104 (ic_deer) measure=1409028 (0.9581 e9=0.9781 webp=0.8869)` with `28 of 39` photos below e9; "
+            "`python3 research/ab.py size tp -v` prints `total=6651583 jxl=6826895 ratio=0.9743 geomean=0.9722 worst=0.9931 (tp_nightshot_iso_1600_crop) e9=6740249 e9_ratio=0.9868 e9_geomean=0.9862 e9_worst=1.0131 (tp_nightshot_iso_1600_crop) webp=7368948 webp_ratio=0.9027 webp_geomean=0.8811 webp_worst=1.0073 (tp_deer_crop)`; "
+            "`python3 research/ab.py size synth -v` prints `total=214773 jxl=226544 ratio=0.9480 geomean=1.1986 worst=18.0665 (syn_checker) e9=223034 e9_ratio=0.9630 e9_geomean=2.2860 e9_worst=27.1857 (syn_checker) webp=201248 webp_ratio=1.0672 webp_geomean=3.6626 webp_worst=69.6220 (syn_checker)`; "
+            "`tests/benchmark.py measure -n 3` exits 0 (`failures: 0`, `rasterfold` `1409028` bytes, `encode_us=302174` / `0.214x` `jxl`, `decode_us=275672` / `0.603x` `jxl`, `rasterfold-1t` `encode_us=560065` / `0.397x`, `decode_us=542675` / `1.188x`, `jxl-e9` `1440564` bytes, `webp` `1588708` bytes; committed `benchmarks/results.csv` and `benchmarks/corpus.csv` verified); "
+            "`bin/windows-x64/bin/rasterfold.exe decode --time` on `measure/image.bmp` prints `alloc_peak=10569996` (`10.57 MB`, `codec_us=183820`, `total_us=240767`, `peak_working_set=16576512`) at 3 threads and `alloc_peak=10569964` (`10.57 MB`, `codec_us=488047`, `total_us=557786`, `peak_working_set=16465920`) at `--threads 1` (`bin/linux-x64/bin/rasterfold decode --time` prints `alloc_peak=10570204`, `10.57 MB`, `codec_us=196505`, `total_us=205643`); "
+            "`python3 scripts/windows.py research/vsjxl.py -n5` prints `rf_enc median 292.8 ms min 271.6`, `rf_dec median 287.7 ms min 284.0`, `jxl_enc median 1582.9 ms min 1549.6`, `jxl_dec median 480.8 ms min 465.2`, `decode ratio (median) 0.598 encode ratio 0.185`; "
+            "`python3 research/ab.py ab src/cm.c src/cm.c measure -n5` prints `-t1` `enc min=482.7..484.1 med=496.4..499.6 dec min=453.5..467.2 med=481.7..498.2` and `-t3` `enc min=152.2..168.6 med=177.9..187.6 dec min=167.3..177.9 med=185.2..193.2`; "
+            "`python3 research/milestones.py --check`, `python3 scripts/build-docs.py --check`, and `python3 scripts/drift-check.py` exit 0; "
+            "and `python3 scripts/ci_status.py` and `python3 scripts/ci_status.py --workflow pages.yml` are green on the pushed commit."
+        ),
+    },
+}
+
+BAND_CURRENT_STATE: dict[int, str] = {
+    0: "> **Current state (verified 2026-10-25):** Milestone 1 (`§1`, Locked baseline) is reached; Milestones 2 to 10 remain open. This file is generated from `research/milestones.py`; edit the table there and run `python research/milestones.py --write`, never this file by hand.",
+}
+
 
 def band_of(n: int) -> int:
     return (n - 1) // 10
@@ -163,6 +197,14 @@ def local(ref: str, t: int) -> str:
     return ref.split(" ", 2)[2] if ref.startswith(f"D05 T{t:02d} ") else ref
 
 
+def _load_receipt(t: int, s: int) -> tuple[str, dict | None]:
+    rel = f"docs/reviews/d05-t{t:02d}-s{s}.json"
+    path = REPO / rel
+    if not path.is_file():
+        return rel, None
+    return rel, json.loads(path.read_text(encoding="utf-8"))
+
+
 def render_band(b: int) -> str:
     first, title, slug = BANDS[b]
     t = b + 1
@@ -171,11 +213,13 @@ def render_band(b: int) -> str:
         p, g = section_numbers(n)
         prev = gate_ref(n - 1) if n > 1 else None
         if p is not None:
-            rows.append((p, f"Plan milestone {n}: {name}", local(prev, t) if prev else "--"))
+            _prel, preceipt = _load_receipt(t, p)
+            rows.append((p, f"Plan milestone {n}: {name}", local(prev, t) if prev else "--", "[x]" if preceipt else "[ ]"))
             deps = local(plan_ref(n), t) + (", " + work if work else "")
         else:
             deps = work + (", " + local(prev, t) if prev else "")
-        rows.append((g, f"Milestone {n} gate: {name}", deps))
+        grel, greceipt = _load_receipt(t, g)
+        rows.append((g, f"Milestone {n} gate: {name}", deps, "[x]" if greceipt else "[ ]"))
         if p is not None:
             promoted = {
                 11: ('research-7.2-grayscale', 'Measure generic grayscale-channel detection and single-channel coding on a diverse grayscale set plus photo/tp/synth; retain the no-image-specific-tuning rule and require a new method/version if accepted.'),
@@ -194,6 +238,8 @@ def render_band(b: int) -> str:
 
 **Test checkpoint:** `python scripts/todo-graph.py validate` and `plan --check` exit 0, and `resolve '{gate_ref(n)}'` exits 4 naming at least one new work section, proving the gate waits on the authored work.
 """)
+        state = GATE_STATE.get(n, {})
+        started_block = f"> **Started:** {state['started']}\n\n" if state.get("started") else ""
         extra = []
         # One Needs line per section (the parser keeps the last): the most
         # constraining host wins.
@@ -202,31 +248,62 @@ def render_band(b: int) -> str:
             extra.append(f"**Needs:** {sorted(needs, key=lambda x: rank.get(x, 3))[0]}\n")
         if requires:
             extra.append(f"**Requires:** operator -- {requires}.\n")
+        item_box = "[x]" if (state.get("checked") or greceipt is not None) else "[ ]"
+        commit_box = "[x]" if greceipt is not None else "[ ]"
         release = RELEASES.get(n)
         release_items = ""
         if release and n != 10:
-            release_items = (f"- [ ] Push the tag `rasterfold-v{release}`. Done when: the release workflow publishes the package and its checksums.\n"
-                             f"- [ ] Run the backlog review for `rasterfold-v{release}`: promote each backlog entry into a section or record the operator's deferral on it. Done when: every entry carries a `reviewed: rasterfold-v{release}` field or has been promoted.\n")
+            release_items = (f"- {item_box} Push the tag `rasterfold-v{release}`. Done when: the release workflow publishes the package and its checksums.\n"
+                             f"- {item_box} Run the backlog review for `rasterfold-v{release}`: promote each backlog entry into a section or record the operator's deferral on it. Done when: every entry carries a `reviewed: rasterfold-v{release}` field or has been promoted.\n")
         source = "\n-> SOURCE: webp-second-target\n" if n == 8 else ""
+        notes_list = state.get("notes") or []
+        notes_block = "".join(f"\n{note}\n" for note in notes_list) if isinstance(notes_list, list) and notes_list else ""
+        custom_items = state.get("items")
+        if isinstance(custom_items, list) and custom_items:
+            checklist_block = "\n".join(f"- {item_box} {it}" for it in custom_items) + "\n" + release_items
+        else:
+            item2 = (
+                "Measure the no-regression rule against milestone " + str(n - 1) + "'s gate stamp: " + SIZE + ", " + BENCH + ", `decode --time`, and `python tests/test_correctness.py`. Done when: each rule holds, quoted beside milestone " + str(n - 1) + "'s figures."
+                if n > 1
+                else "Record the baseline figures (" + SIZE + ", " + BENCH + ") as the reference for milestone 2. Done when: they are quoted in this section's stamp."
+            )
+            checklist_block = (
+                f"- {item_box} Measure the target with {measure}. Done when: {target}, each figure quoted with its command.\n"
+                f"- {item_box} {item2}\n"
+                f"- {item_box} Record the milestone in `docs/research.md` sections 1 and 9 and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.\n"
+                f"{release_items}"
+            )
+        checkpoint_text = str(
+            state.get("checkpoint")
+            or "every target figure and every no-regression figure quoted from a run at the commit; a figure that misses its bar blocks the stamp and triggers the missed-milestone policy instead."
+        )
+        verified_block = (
+            f"\n> **Verified:** {greceipt['date']} | §{g} | {greceipt['implementation_sha']}\n> **Review:** `{grel}`\n"
+            if greceipt is not None
+            else ""
+        )
         body.append(f"""## {g}. Milestone {n} Gate: {name}
 
-{''.join(e + chr(10) for e in extra)}**Job:** A user can rely on milestone {n}: {target}.
+{started_block}{''.join(e + chr(10) for e in extra)}**Job:** A user can rely on milestone {n}: {target}.
 {source}
 Milestone {n} of the roadmap (`docs/research.md` section 9). {RULE.format(prev=n - 1) if n > 1 else "It is the baseline every later milestone is measured against."} {POLICY}
+{notes_block}
+{checklist_block}- {commit_box} Commit: `"milestone: reach milestone {n} -- {name.lower()}"`
 
-- [ ] Measure the target with {measure}. Done when: {target}, each figure quoted with its command.
-- [ ] {"Measure the no-regression rule against milestone " + str(n - 1) + "'s gate stamp: " + SIZE + ", " + BENCH + ", `decode --time`, and `python tests/test_correctness.py`. Done when: each rule holds, quoted beside milestone " + str(n - 1) + "'s figures." if n > 1 else "Record the baseline figures (" + SIZE + ", " + BENCH + ") as the reference for milestone 2. Done when: they are quoted in this section's stamp."}
-- [ ] Record the milestone in `docs/research.md` sections 1 and 9 and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
-{release_items}- [ ] Commit: `"milestone: reach milestone {n} -- {name.lower()}"`
-
-**Test checkpoint:** every target figure and every no-regression figure quoted from a run at the commit; a figure that misses its bar blocks the stamp and triggers the missed-milestone policy instead.
-""")
-    order = "\n".join(f"|  {i:>2}   |  §{s:<3} | {d} | {dep} |  [ ]   |" for i, (s, d, dep) in enumerate(sorted(rows), 1))
+**Test checkpoint:** {checkpoint_text}
+{verified_block}""")
+    order = "\n".join(f"|  {i:>2}   |  §{s:<3} | {d} | {dep} |  {box}   |" for i, (s, d, dep, box) in enumerate(sorted(rows), 1))
+    all_done = all(box == "[x]" for _s, _d, _dep, box in rows)
+    fm_status = "done" if all_done else "draft"
+    current_state = BAND_CURRENT_STATE.get(
+        b,
+        "> **Current state (verified 2026-09-29):** No milestone gate has run. This file is generated from `research/milestones.py`; edit the table there and run `python research/milestones.py --write`, never this file by hand.",
+    )
     return f"""---
 schema_version: 1
 id: milestones-{slug}
 domain: 05-milestones
-status: draft
+status: {fm_status}
 title: "TODO-{t:02d} -- {title}"
 depends_on: []
 track: G{t}
@@ -237,7 +314,7 @@ track: G{t}
 > **Goal:** Milestones {first} to {first + 9} of the roadmap in `docs/research.md` section 9 are reached in order, each proven by a gate that measures its target and the no-regression rule against the milestone before it.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-09-29):** No milestone gate has run. This file is generated from `research/milestones.py`; edit the table there and run `python research/milestones.py --write`, never this file by hand.
+{current_state}
 <!-- claim: exists research/milestones.py -->
 
 ## Inputs
@@ -278,7 +355,9 @@ def render_research() -> str:
     for first, title, _slug in BANDS:
         out += [f"### {title}", "", "| # | milestone | target | gate |", "|---|---|---|---|"]
         for n, name, target, *_ in M[first - 1:first + 9]:
-            out.append(f"| {n} | {name} | {target} | `{gate_ref(n)}` |")
+            reached = GATE_STATE.get(n, {}).get("reached")
+            gate_cell = f"`{gate_ref(n)}` ({reached})" if reached else f"`{gate_ref(n)}`"
+            out.append(f"| {n} | {name} | {target} | {gate_cell} |")
         out.append("")
     out.append(END)
     return "\n".join(out)
