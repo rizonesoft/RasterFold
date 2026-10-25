@@ -1756,16 +1756,16 @@
       }
     },
     "docs/site-validation.md": {
-      "evidence": "Author-attested: 2026-10-25 recorded desktop/mobile browser and accessibility tree validation in docs/site-validation.md (D08 T01 section 5)",
+      "evidence": "Author-attested: 2026-10-25 verified offline search retry, window.name cross-page session fallback, and reconciled browser validation evidence in docs/site-validation.md (D08 T01 section 5)",
       "sources": {
         "docs/_config.yml": "8f46bcaed4f04d75e09c36bb28f1d02f47d8ec342e8efa2bdc5ebdda481f0003",
-        "docs/_includes/head_custom.html": "44e2df7c5ae2733f3a4a4f411d8259ca99b13a37ce071696db5dd1322eb99c89",
+        "docs/_includes/head_custom.html": "7c7de0dfc6377db3b526d8b6fdcb1c2ffa73d2dca7d88b5aab47e45781c47994",
         "docs/_includes/header_custom.html": "b985261215544f807451a279b6409a960f1ba9b69a3bb4ddb7868b2efc8b67a8",
         "docs/assets/css/site-states.css": "a5b9a1dd538e73cd748b675ec990dec52669f62d7ab414848f88dd9260e9c01e",
-        "docs/assets/js/site-states.js": "0554852bab9468df7ba6454fd917f91058c5ef414518f1c8e48268b0a80fe256",
+        "docs/assets/js/site-states.js": "a947ae46d57df769324ef376c20acd7d8a635635e1ddec9504701b2440f70ffa",
         "docs/404.md": "eb1236932eb9ec7cf176d512088f398ebfaa9a4f1d4c1c141621ac3dc5dfc7f9",
         "docs/site-content.json": "3611e28cba68ff6ac17ace19115ebb014f06140322afcfc32ec39b78128c6f30",
-        "docs/site-validation.md": "8e13b203e6c1ebc0725fb08de0ccc21c09aed30dc812d282a5afdebc355e0bf6"
+        "docs/site-validation.md": "bdfbada4789748728dca8bb35258ce0b1a084c939624986c6f0bf24b3a663d65"
       }
     }
   },

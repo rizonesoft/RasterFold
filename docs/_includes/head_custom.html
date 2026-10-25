@@ -2,8 +2,8 @@
 (function () {
   var allowedThemes = { "light": true, "dark": true, "hc-light": true, "hc-dark": true };
   var allowedDensities = { "comfortable": true, "compact": true };
-  var theme = "light";
-  var density = "comfortable";
+  var theme = null;
+  var density = null;
   try {
     var savedTheme = window.localStorage.getItem("rf_docs_theme");
     if (savedTheme && allowedThemes[savedTheme]) {
@@ -14,10 +14,25 @@
       density = savedDensity;
     }
   } catch (e) {
-    /* Storage unavailable: fall back to session attributes on documentElement */
+    /* Storage unavailable: fall back to window.name session state below */
   }
-  document.documentElement.setAttribute("data-rf-theme", theme);
-  document.documentElement.setAttribute("data-rf-density", density);
+  if (!theme || !density) {
+    try {
+      if (typeof window.name === "string" && window.name.indexOf("rf_docs_session:") === 0) {
+        var sess = JSON.parse(window.name.slice("rf_docs_session:".length));
+        if (!theme && sess && sess.theme && allowedThemes[sess.theme]) {
+          theme = sess.theme;
+        }
+        if (!density && sess && sess.density && allowedDensities[sess.density]) {
+          density = sess.density;
+        }
+      }
+    } catch (e2) {
+      /* Ignore malformed window.name */
+    }
+  }
+  document.documentElement.setAttribute("data-rf-theme", theme || "light");
+  document.documentElement.setAttribute("data-rf-density", density || "comfortable");
 
   var origScrollIntoView = Element.prototype.scrollIntoView;
   Element.prototype.scrollIntoView = function () {

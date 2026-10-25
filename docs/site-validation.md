@@ -38,14 +38,14 @@ The header toolbar (`docs/_includes/header_custom.html`) provides keyboard-opera
 | Comfortable (`comfortable`) | `data-rf-density="comfortable"` | `16px` body font, `1.65` line height | `0.55rem 0.75rem` table cell padding | `Density set to Comfortable` |
 | Compact (`compact`) | `data-rf-density="compact"` | `14px` body font, `1.42` line height | `0.25rem 0.45rem` table cell padding | `Density set to Compact` |
 
-- **Cross-page persistence:** Selecting `hc-dark` and `compact` on `/RasterFold/` and navigating to `/RasterFold/format.html` preserves `data-rf-theme="hc-dark"`, `data-rf-density="compact"`, and `aria-pressed="true"` on both active buttons.
-- **Storage-unavailable fallback:** When `localStorage` access throws (`window.rfDocsState.setStorageUnavailableForTest(true)`), selecting `dark` applies `data-rf-theme="dark"` in session state without throwing and announces `"Theme set to Dark (session only)"`.
+- **Cross-page persistence (`localStorage`):** Selecting `hc-dark` and `compact` on `/RasterFold/` and reloading or navigating to `/RasterFold/format.html` preserves `data-rf-theme="hc-dark"`, `data-rf-density="compact"`, and `aria-pressed="true"` on both active buttons.
+- **Storage-unavailable cross-page session fallback (`window.name`):** When `window.localStorage` throws `DOMException("localStorage disabled", "SecurityError")` on every document load, selecting `hc-dark` and `compact` on `/RasterFold/` writes `rf_docs_session:{"theme":"hc-dark","density":"compact"}` to `window.name`, announces `"Theme set to High Contrast Dark (session only)"` and `"Density set to Compact (session only)"`, and following the sidebar link to `/RasterFold/usage.html` restores `data-rf-theme="hc-dark"`, `data-rf-density="compact"`, and `aria-pressed="true"` before paint on the new document.
 
 ## 4. Code-Copy Controls and Live Feedback
 
 - Every code block inside `<main id="main-content">` (`div.highlighter-rouge`, `figure.highlight`) has a single keyboard-focusable `<button type="button" class="rf-copy-button" aria-label="Copy code to clipboard">`.
-- **Success state:** Activating `.rf-copy-button` via `Enter` on `/RasterFold/getting-started.html` sets `data-copy-state="copied"`, updates visible text to `"Copied"`, and announces `"Copied code to clipboard"` in `#rf-a11y-status`.
-- **Refusal / error state:** When clipboard write is refused (`window.rfDocsState.setClipboardForceFail(true)`), activating `.rf-copy-button` sets `data-copy-state="failed"`, updates visible text to `"Copy failed"`, and announces `"Unable to copy code to clipboard"` in `#rf-a11y-status`.
+- **Success state:** Activating `.rf-copy-button` on `/RasterFold/usage.html` sets `data-copy-state="copied"`, updates visible text to `"Copied"`, and announces `"Copied code to clipboard"` in `#rf-a11y-status`.
+- **Refusal / error state:** When clipboard write is refused (`window.rfDocsState.setClipboardForceFail(true)`), activating `.rf-copy-button` sets `data-copy-state="failed"`, updates visible text to `"Copy failed"`, and announces `"Unable to copy code to clipboard; select and copy the code block manually"` in `#rf-a11y-status`.
 
 ## 5. Local Search, Empty Search, Offline Failure, and Missing-Page (`404.html`) States
 
@@ -53,14 +53,14 @@ The header toolbar (`docs/_includes/header_custom.html`) provides keyboard-opera
 - **Keyboard shortcuts and result activation:**
   - Pressing `/` (outside editable fields) or `Ctrl+K` focuses `#search-input` (`aria-controls="search-results"`, `aria-expanded="false"`) and announces `"Search input focused"`.
   - Querying `"troubleshooting"` expands `#search-results` (`role="region"`, `aria-label="Search results"`), sets `aria-expanded="true"` on `#search-input`, renders `8` `.search-results-list-item` entries, and announces `"8 search results available"`.
-  - Pressing `Escape` removes `html.search-active`, sets `aria-expanded="false"`, returns focus to `#search-input`, and announces `"Search results dismissed"`.
+  - Pressing `Escape` clears `#search-input.value` to `""`, removes `html.search-active`, empties `#search-results`, sets `aria-expanded="false"`, returns focus to `#search-input`, and announces `"Search cleared"`.
   - Querying `"CRC-32"` and pressing `Enter` activates the first matching result and navigates to `/RasterFold/format.html#file-layout`.
 - **Empty search state (`.search-no-result`):**
-  - Querying `"zzzznonexistenttoken"` renders `.rf-search-empty-message` (`No matching documentation found for "zzzznonexistenttoken".`), a keyboard-focusable `#rf-search-clear` (`Clear search`) button, and recovery links to `Overview`, `CLI Usage`, `C API Guide`, and `Troubleshooting`.
+  - Querying `"xyznonexistentquery999"` renders `.rf-search-empty-message` (`No matching documentation found for "xyznonexistentquery999".`), a keyboard-focusable `#rf-search-clear` (`Clear search`) button, and recovery links to `Overview`, `CLI Usage`, `C API Guide`, and `Troubleshooting`.
   - Activating `#rf-search-clear` resets `#search-input` to `""`, sets `aria-expanded="false"`, returns focus to `#search-input`, and announces `"Search cleared"`.
-- **Offline / unavailable `search-data.json` state (`#rf-search-offline`):**
-  - When `/RasterFold/assets/js/search-data.json` returns HTTP `503` or network failure, `#rf-search-offline` (`role="alert"`) becomes visible, `#search-input` sets `aria-invalid="true"`, and `#rf-a11y-status` announces `"Search index is unavailable offline"`.
-  - Restoring the endpoint and activating `#rf-search-retry` (`Retry search index`) re-fetches `/RasterFold/assets/js/search-data.json`, hides `#rf-search-offline`, clears `aria-invalid`, focuses `#search-input`, and announces `"Search index loaded"`.
+- **Offline / unavailable `search-data.json` state (`#rf-search-offline`) and functional retry:**
+  - When `/RasterFold/assets/js/search-data.json` fails on initial page load, `#rf-search-offline` (`role="alert"`) becomes visible, `#search-input` sets `aria-invalid="true"`, and `#rf-a11y-status` announces `"Search index is unavailable offline"`.
+  - Restoring the endpoint and activating `#rf-search-retry` (`Retry search index`) re-fetches and parses `/RasterFold/assets/js/search-data.json` into the fallback search index, hides `#rf-search-offline`, clears `aria-invalid`, focuses `#search-input`, and announces `"Search index loaded"`. Typing `"FOLD"` into `#search-input` after retry renders `20` `.search-results-list-item` entries, and pressing `Enter` navigates to `/RasterFold/c-api.html`.
 - **Missing-page (`404.html`) state:**
   - Requesting an unknown route under `/RasterFold/` serves `404.html` (`<h1>Page not found (404)</h1>`), preserving the site header, search bar, theme/density controls, and direct `/RasterFold/*.html` recovery links to all published sections.
 
