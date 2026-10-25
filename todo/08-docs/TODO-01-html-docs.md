@@ -52,7 +52,7 @@ track: D1
 |   1   |   §1    | The Jekyll site and its generated pages | D08 T02 §1 |  [x]   |
 |   2   |   §2    | Comparison charts | §1, D00 T02 §3 |  [x]   |
 | 3 | §3 | Publish with GitHub Pages | §2, §4, §5, D08 T02 §5, D08 T02 §7, D99 T01 §5 | [ ] |
-| 4 | §4 | Complete current documentation map | §1, D08 T02 §7 | [ ] |
+| 4 | §4 | Complete current documentation map | §1, D08 T02 §7 | [x] |
 | 5 | §5 | Accessible navigation and site states | §4 | [ ] |
 | 6 | §6 | Converter user guide and capability reference | §4, D10 T03 §8, D10 T04 §1 | [ ] |
 | 7 | §7 | Versioned downloads and complete references | D09 T01 §1, D09 T01 §2, D08 T03 §1, D08 T03 §2 | [ ] |
@@ -143,6 +143,8 @@ The workflow is GitHub's Jekyll starter adapted to this repository: it builds th
 - Correctness tests: `python3 -m unittest discover -s tests -p 'test_docs.py' -v` passed `Ran 5 tests ... OK`; `python3 scripts/build-docs.py --self-test` passed `build-docs: self-test passed (7 checks)`.
 - Driven run with evidence: `python3 scripts/build-docs.py --stage build/site-source` staged `32 file(s) into build/site-source`; `docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/github/workspace" -w /github/workspace -e GITHUB_WORKSPACE="/github/workspace" -e PAGES_REPO_NWO="rizonesoft/RasterFold" -e INPUT_SOURCE="build/site-source" -e INPUT_DESTINATION="build/site-artifact" ghcr.io/actions/jekyll-build-pages:v1.0.13` built `build/site-artifact` cleanly (`Remote Theme: Using theme just-the-docs/just-the-docs`, `done in 5.912 seconds`); `python3 scripts/drift-check.py --site-dir build/site-artifact --write-site-receipt && python3 scripts/drift-check.py --site-dir build/site-artifact` printed `drift: 228 supported documents; 0 error(s); 0 deterministic repair(s)`. Removing `build/site-artifact/troubleshooting.html` failed `python3 scripts/drift-check.py --site-dir build/site-artifact` with `site: build/site-artifact: missing allowlisted built output: troubleshooting.html`, `site: build/site-artifact: invalid source receipt drift-build.json: missing allowlisted built output in build/site-artifact: troubleshooting.html`, and 15 `link: ...: missing target: /RasterFold/troubleshooting.html` errors (`drift: 228 supported documents; 17 error(s)`). Injecting `todo/08-docs/TODO-01-html-docs.md` into `build/site-artifact/todo/08-docs/TODO-01-html-docs.md` failed `python3 scripts/drift-check.py --site-dir build/site-artifact` with `site-private: build/site-artifact: private path in artifact: todo/08-docs/TODO-01-html-docs.md` (`drift: 228 supported documents; 4 error(s)`).
 
+> **Verified:** 2026-10-25 | §4 | 91f1b22319cd9cdf81b5fcf80fabccaba0b859aa
+> **Review:** `docs/reviews/d08-t01-s4.json`
 ## 5. Accessible navigation and site states
 
 **Requires:** linux-display -- The checkpoint requires observed browser/accessibility or native-guide evidence, not only a source build; source checkpoint audit: docs/todo-vision-audit.md.

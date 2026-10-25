@@ -1,0 +1,90 @@
+{
+  "ref": "D08 T01 \u00a74",
+  "title": "Complete current documentation map",
+  "implementation_sha": "91f1b22319cd9cdf81b5fcf80fabccaba0b859aa",
+  "date": "2026-10-25",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/08-docs/D08-T01-s4.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/08-docs/D08-T01-s4.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 -m unittest discover -s tests -p test_docs.py -v -> Ran 5 tests OK",
+    "python3 scripts/build-docs.py --self-test -> 7 chart(s) and 7 table(s) match CSV data",
+    "python3 scripts/drift-check.py --site-dir build/site-artifact -> drift: 228 supported documents; 0 error(s); 0 deterministic repair(s)"
+  ],
+  "completion": {
+    "report": "docs/reviews/08-docs/D08-T01-s4.md",
+    "verdict": "completed",
+    "candidate": "7ce1182ede8d27fa5ba130c9e61ec5656433749d",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 2,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/08-docs/D08-T01-s4.md",
+    "candidate": "2b88e95dbe8bc4bca7609a7e12afc6886f98b2d0",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}
