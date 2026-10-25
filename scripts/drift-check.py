@@ -326,6 +326,20 @@ def _strip_markdown_links(text):
 def _check_visible_fact(segment, expected_str):
     cleaned = re.sub(r'`+<!--.*?-->`+', ' ', segment)
     cleaned = re.sub(r'<!--.*?-->', ' ', cleaned)
+    cleaned = re.sub(
+        r'<(script|style|template|noscript|svg|head|title)\b(?:[^>"\']|"[^"]*"|\'[^\']*\')*>.*?</\1>',
+        ' ',
+        cleaned,
+        flags=re.I | re.S,
+    )
+    cleaned = re.sub(
+        r'<([A-Za-z][A-Za-z0-9:-]*)\b(?:[^>"\']|"[^"]*"|\'[^\']*\')*'
+        r'(?:\bhidden\b|aria-hidden\s*=\s*["\']?true|style\s*=\s*["\'][^"\']*(?:display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0(?![.0-9])))'
+        r'(?:[^>"\']|"[^"]*"|\'[^\']*\')*>.*?</\1>',
+        ' ',
+        cleaned,
+        flags=re.I | re.S,
+    )
     cleaned = re.sub(r'<[A-Za-z/!](?:[^>"\']|"[^"]*"|\'[^\']*\')*>', ' ', cleaned)
     cleaned = re.sub(r'(?m)^\s*\[[^\]\n]+\]:.*$', ' ', cleaned)
     cleaned = _strip_markdown_links(cleaned)
@@ -334,14 +348,14 @@ def _check_visible_fact(segment, expected_str):
             r'(?<![A-Za-z0-9_.\-/#])'
             r'(-?\d+(?:,\d{3})*(?:\.\d+)?|-?\d+(?:_\d{3})*(?:\.\d+)?|-?\d+(?:\.\d+)?)'
             r'(?![A-Za-z0-9_.\-])'
-            r'[`\'")\]]*(?:[- ]+[A-Za-z`]+)*\.?\s*$',
+            r'[*_`\'")\]]*(?:[- ]+[A-Za-z`]+[*_`\'")\]]*)*\.?\s*$',
             cleaned,
         )
         if not m:
             return False
         return m.group(1).replace(',', '').replace('_', '') == expected_str
     return bool(expected_str) and bool(
-        re.search(r'(?<![A-Za-z0-9_.-])' + re.escape(expected_str) + r'(?![A-Za-z0-9_.-])[`\'")\s]*$', cleaned)
+        re.search(r'(?<![A-Za-z0-9_.-])' + re.escape(expected_str) + r'(?![A-Za-z0-9_.-])[*_`\'")\]]*\s*$', cleaned)
     )
 
 

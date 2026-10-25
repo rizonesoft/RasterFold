@@ -1170,6 +1170,8 @@ class DriftTests(unittest.TestCase):
         for smuggled in (
             'Size: <span data-bytes="1409028">999</span> bytes <!-- drift:fact measurement_reference_bytes = 1409028 -->',
             'Size: 999 bytes <span title="x > 1409028">wrong</span> <!-- drift:fact measurement_reference_bytes = 1409028 -->',
+            'Size: 999 bytes <script>1409028</script> <!-- drift:fact measurement_reference_bytes = 1409028 -->',
+            'Size: 999 bytes <span hidden>1409028</span> <!-- drift:fact measurement_reference_bytes = 1409028 -->',
             'Size: [999 bytes](README.md#1409028) <!-- drift:fact measurement_reference_bytes = 1409028 -->',
             'Size: [999 bytes](https://example.invalid/a(b(c))#1409028) <!-- drift:fact measurement_reference_bytes = 1409028 -->',
             "Size: [999 bytes](https://example.invalid/it's#1409028) <!-- drift:fact measurement_reference_bytes = 1409028 -->",
@@ -1186,6 +1188,11 @@ class DriftTests(unittest.TestCase):
                 ),
                 (smuggled, c.errors),
             )
+        self.write(
+            'docs/benchmarks.md',
+            orig_bm + '\nSize: [1,409,028 bytes](https://example.invalid/source) <!-- drift:fact measurement_reference_bytes = 1409028 -->\n',
+        )
+        self.assertEqual([], self.check().errors)
 
         # Fractional microsecond medians (from even repeat counts in tests/benchmark.py) derive and render cleanly.
         self.write('docs/benchmarks.md', orig_bm)
