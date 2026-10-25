@@ -73,10 +73,13 @@ track: D2
 
 ## 3. Generated Files Match Their Sources
 
-- [ ] Run every generator's `--check` from `scripts/drift-check.py`: `python scripts/build-docs.py --check`, `python research/milestones.py --check`, `python scripts/todo-graph.py plan --check`, and (once they exist) the command-line and API references. Done when: a stale output of each makes the check exit 1. Cheaper substitute: regenerating in CI without failing.
-- [ ] Commit: `"docs: every generated file checked against its source"`
+> **Started:** 2026-10-25T03:12:00Z
 
-**Test checkpoint:** each seeded stale output quoted with its failure line.
+- [x] Run every generator's `--check` from `scripts/drift-check.py`: `python scripts/build-docs.py --check`, `python research/milestones.py --check`, `python scripts/todo-graph.py plan --check`, and (once they exist) the command-line and API references (`planned_outputs` for `docs/cli.md` and `docs/api.md` in `docs/drift.json`), verifying that declared generator `outputs` exist and remain read-only during `--check`. Done when: a stale output of each makes the check exit 1. Cheaper substitute: regenerating in CI without failing.
+- [x] Add generator integration regression tests in `tests/test_drift.py` that independently stale `scripts/build-docs.py`, `research/milestones.py`, and `scripts/todo-graph.py` outputs, assert top-level `scripts/drift-check.py` exits 1 with the corresponding generator diagnostic without modifying files, and verify restoration and `--fix` repair to exit 0. Done when: `python3 -m unittest tests/test_drift.py -v` passes.
+- [x] Commit: `"docs: every generated file checked against its source"`
+
+**Test checkpoint:** `python3 -m unittest tests/test_drift.py -v` passes (`Ran 47 tests in 5.519s, OK`); each seeded stale output quoted from `python3 scripts/drift-check.py` with its failure line and exit 1 (`docs/format.md`: `generator: scripts/build-docs.py: build-docs: docs/format.md: generated file differs from source (run python3 scripts/build-docs.py)`, `rc=1`; `todo/05-milestones/TODO-01-beat-jxl-and-webp.md`: `generator: research/milestones.py: milestones: todo/05-milestones/TODO-01-beat-jxl-and-webp.md is stale; run python research/milestones.py --write`, `rc=1`; `todo/implementation-plan.md`: `generator: scripts/todo-graph.py: ::error::todo/implementation-plan.md is stale -- D08 T01 §1: plan says [ ], graph says [x]`, `rc=1`), then restored with `python3 scripts/drift-check.py` exiting 0 (`drift: 192 supported documents; 0 error(s); 0 deterministic repair(s)`).
 
 ## 4. Staleness: Verified Dates and Data Revisions
 

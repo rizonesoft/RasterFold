@@ -150,7 +150,7 @@ The ported plan, hooks, gates, measurement references, HTML docs, and drift gate
 | [x] | `D00 T02 §3` | The committed corpus results file                             |   3   |
 | [x] | `D08 T02 §1` | One facts file and claims everywhere                          |   5   |
 | [x] | `D08 T01 §1` | The Jekyll site and its generated pages                       |   7   |
-| [ ] | `D08 T02 §3` | Generated files match their sources                           |   2   |
+| [ ] | `D08 T02 §3` | Generated files match their sources                           |   3   |
 | [ ] | `D08 T01 §2` | Comparison charts                                             |   4   |
 | [ ] | `D08 T02 §2` | Figures bound to their data                                   |   3   |
 | [ ] | `D08 T02 §4` | Staleness: verified dates and data revisions                  |   3   |

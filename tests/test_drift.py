@@ -618,6 +618,102 @@ class DriftTests(unittest.TestCase):
             build_docs.stage_site(self.root, 'build/site-source')
         self.assertEqual(staged_index, (self.root / 'build/site-source/index.md').read_text(encoding='utf-8'))
 
+    def test_all_three_generators_reject_stale_outputs_and_leave_files_unchanged(self):
+        for d in ('todo', 'research', 'spec', 'assets'):
+            shutil.copytree(REPO / d, self.root / d, dirs_exist_ok=True)
+        for s in ('todo-graph.py', 'build-docs.py', 'todo-claims.py'):
+            self.write(f'scripts/{s}', (REPO / 'scripts' / s).read_text(encoding='utf-8'))
+        for p in (REPO / 'docs').iterdir():
+            if p.name in ('reviews', 'phase-runs', 'design', 'drift.json', 'facts.json'):
+                continue
+            if p.is_dir():
+                shutil.copytree(p, self.root / 'docs' / p.name, dirs_exist_ok=True)
+            else:
+                self.write(f'docs/{p.name}', p.read_text(encoding='utf-8'))
+        self.write('include/rasterfold.h', (REPO / 'include/rasterfold.h').read_text(encoding='utf-8'))
+        (self.root / 'examples').mkdir(parents=True, exist_ok=True)
+        self.write('examples/encode_ppm.c', '/* fixture */\n')
+        # Keep README.md matching the live repository for build-docs.py while keeping the fixture block for drift.json.
+        live_readme = (REPO / 'README.md').read_text(encoding='utf-8')
+        self.write('README.md', live_readme + '\n<!-- drift:begin version -->\nVersion 2.\n<!-- drift:end version -->\n')
+        build_docs.write_generated_pages(self.root)
+
+        live_manifest = json.loads((REPO / 'docs/drift.json').read_text(encoding='utf-8'))
+        self.manifest['coverage'] = [
+            {'pattern': 'todo/*', 'role': 'template', 'reason': 'fixture'},
+            {'pattern': 'docs/*', 'role': 'template', 'reason': 'fixture'},
+            {'pattern': 'README.md', 'role': 'template', 'reason': 'fixture'},
+            {'pattern': 'spec/*', 'role': 'template', 'reason': 'fixture'},
+            {'pattern': 'research/*', 'role': 'template', 'reason': 'fixture'},
+            {'pattern': '*', 'role': 'current', 'reason': 'fixture'},
+        ]
+        self.manifest['blocks'] = {}
+        self.manifest['generators'] = live_manifest['generators']
+        self.save()
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(0, drift.main(['--root', str(self.root)]), out.getvalue())
+
+        for script_rel, target_rel, expected_substr, mutator in (
+            (
+                'scripts/build-docs.py',
+                'docs/format.md',
+                'docs/format.md: generated file differs from source',
+                lambda t: t + '\n<!-- seeded stale output -->\n',
+            ),
+            (
+                'research/milestones.py',
+                'todo/05-milestones/TODO-01-beat-jxl-and-webp.md',
+                'todo/05-milestones/TODO-01-beat-jxl-and-webp.md is stale',
+                lambda t: t + '\n<!-- seeded stale output -->\n',
+            ),
+            (
+                'scripts/todo-graph.py',
+                'todo/implementation-plan.md',
+                'todo/implementation-plan.md is stale',
+                lambda t: t.replace('| [x] | `D08 T01 §1` |', '| [ ] | `D08 T01 §1` |', 1),
+            ),
+        ):
+            target_path = self.root / target_rel
+            orig_text = target_path.read_text(encoding='utf-8')
+            stale_text = mutator(orig_text)
+            self.assertNotEqual(orig_text, stale_text, script_rel)
+            self.write(target_rel, stale_text)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = drift.main(['--root', str(self.root)])
+            self.assertEqual(1, rc, script_rel)
+            output = buf.getvalue()
+            self.assertIn(f'generator: {script_rel}:', output)
+            self.assertIn(expected_substr, output)
+            # --check must never mutate or silently regenerate the stale output on disk.
+            self.assertEqual(stale_text, target_path.read_text(encoding='utf-8'))
+            self.write(target_rel, orig_text)
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(0, drift.main(['--root', str(self.root)]))
+
+        # Planned outputs (docs/cli.md, docs/api.md) are rejected if created before promotion to mandatory outputs.
+        self.write('docs/cli.md', '# Unregistered CLI reference\n')
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.assertEqual(1, drift.main(['--root', str(self.root)]))
+        self.assertIn('planned output docs/cli.md (D08 T03 §1) exists before being promoted to outputs', buf.getvalue())
+        (self.root / 'docs/cli.md').unlink()
+
+        # --fix repairs all three stale generator outputs deterministically.
+        originals = {
+            rel: (self.root / rel).read_text(encoding='utf-8')
+            for rel in ('docs/format.md', 'todo/05-milestones/TODO-01-beat-jxl-and-webp.md', 'todo/implementation-plan.md')
+        }
+        self.write('docs/format.md', originals['docs/format.md'] + '\n<!-- stale for fix -->\n')
+        self.write('todo/05-milestones/TODO-01-beat-jxl-and-webp.md', originals['todo/05-milestones/TODO-01-beat-jxl-and-webp.md'] + '\n<!-- stale for fix -->\n')
+        self.write('todo/implementation-plan.md', originals['todo/implementation-plan.md'].replace('| [x] | `D08 T01 §1` |', '| [ ] | `D08 T01 §1` |', 1))
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(0, drift.main(['--root', str(self.root), '--fix']))
+        for rel, orig_text in originals.items():
+            self.assertEqual(orig_text, (self.root / rel).read_text(encoding='utf-8'))
+
 
 if __name__ == '__main__':
     unittest.main()

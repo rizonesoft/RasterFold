@@ -445,10 +445,25 @@ class Checker:
                     continue
                 self.error('generator', gen['script'], 'required generator missing')
                 continue
+            for out, owner in gen.get('planned_outputs', {}).items():
+                if self.path(out).is_file():
+                    self.error('generator', gen['script'], f'planned output {out} ({owner}) exists before being promoted to outputs')
+            before_outputs = {}
+            for out in gen.get('outputs', []):
+                out_path = self.path(out)
+                if not fix and not out_path.is_file():
+                    self.error('generator', gen['script'], f'missing generated output: {out}')
+                elif out_path.is_file():
+                    before_outputs[out] = digest(out_path.read_bytes())
             args = gen['fix'] if fix else gen['check']
             result = subprocess.run([sys.executable, gen['script'], *args], cwd=self.root, env=env, capture_output=True, text=True, timeout=120)
             if result.returncode:
-                self.error('generator', gen['script'], (result.stdout + result.stderr)[-1500:])
+                self.error('generator', gen['script'], (result.stdout + result.stderr).strip()[-1500:])
+            if not fix:
+                for out, before_hash in before_outputs.items():
+                    out_path = self.path(out)
+                    if not out_path.is_file() or digest(out_path.read_bytes()) != before_hash:
+                        self.error('generator', gen['script'], f'--check modified {out}; check mode must be read-only')
 
     def fix(self):
         for rel, (before, _) in self.repairs.items():

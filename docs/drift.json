@@ -462,6 +462,15 @@
       ],
       "fix": [
         "--write"
+      ],
+      "outputs": [
+        "docs/research.md",
+        "todo/05-milestones/TODO-01-beat-jxl-and-webp.md",
+        "todo/05-milestones/TODO-02-beat-itself.md",
+        "todo/05-milestones/TODO-03-reach.md",
+        "todo/05-milestones/TODO-04-beyond-still-files.md",
+        "todo/05-milestones/TODO-05-efficiency-and-trust.md",
+        "todo/05-milestones/TODO-06-new-data.md"
       ]
     },
     {
@@ -473,6 +482,9 @@
       "fix": [
         "plan",
         "--sync"
+      ],
+      "outputs": [
+        "todo/implementation-plan.md"
       ]
     },
     {
@@ -482,7 +494,16 @@
       ],
       "fix": [
         "--write"
-      ]
+      ],
+      "outputs": [
+        "docs/format.md",
+        "docs/usage.md",
+        "docs/research-summary.md"
+      ],
+      "planned_outputs": {
+        "docs/cli.md": "D08 T03 §1",
+        "docs/api.md": "D08 T03 §2"
+      }
     }
   ],
   "site_sources": [
