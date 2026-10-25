@@ -38,7 +38,19 @@ BLOCK = re.compile(r'(?P<start><!-- drift:begin (?P<id>[a-z0-9-]+) -->\r?\n)(?P<
 FACT = re.compile(r'<!-- drift:fact ([a-z0-9_.-]+) = (.*?) -->')
 COMMIT = re.compile(r'<!-- drift:commit ([0-9a-f]{7,40})(?: (\S+))? -->')
 LINK = re.compile(r'!?\[[^\]\n]*\]\((?:<([^>\n]+)>|([^\s)]+))(?:\s+["\'][^\n]*?["\'])?\)')
-REFERENCE = re.compile(r'^[ \t]{0,3}\[(?!\^)([^\]\n]+)\]:[ \t]*(?:\r?\n[ \t]*)?(?:<([^>\n]+)>|([^\s>]+))', re.M)
+REFERENCE = re.compile(
+    r'^(?: {0,3}>[ \t]?)* {0,3}\[(?!\^)([^\]\n]+)\]:[ \t]*(?:\r?\n(?: {0,3}>[ \t]?)*[ \t]*)?(?:<([^>\n]+)>|([^\s>]+))',
+    re.M,
+)
+HTML_BLOCK_TAG_RE = re.compile(
+    r'^ {0,3}<(?:!--|!\[CDATA\[|\?|'
+    r'/?(?:address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|'
+    r'dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|'
+    r'h[1-6]|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|'
+    r'ol|optgroup|option|p|param|pre|script|search|section|style|summary|table|tbody|td|'
+    r'tfoot|th|thead|title|tr|track|ul)(?:[\s/>]|$))',
+    re.I,
+)
 BYTE_UNITS = {
     '': 1, 'b': 1, 'byte': 1, 'bytes': 1,
     'kib': 1024, 'mib': 1024 ** 2, 'gib': 1024 ** 3, 'tib': 1024 ** 4,
@@ -90,6 +102,26 @@ class HTML(HTMLParser):
                 self.links.append(attrs[name])
 
 
+def _skip_inline_ws(text, pos):
+    n = len(text)
+    newlines = 0
+    while pos < n:
+        ch = text[pos]
+        if ch in (' ', '\t', '\r'):
+            pos += 1
+        elif ch == '\n':
+            newlines += 1
+            if newlines > 1:
+                return None
+            pos += 1
+            m_bq = re.match(r'(?: {0,3}>[ \t]?)+', text[pos:])
+            if m_bq:
+                pos += m_bq.end()
+        else:
+            break
+    return pos
+
+
 def _parse_inline_link_at(text, bracket_pos):
     n = len(text)
     if bracket_pos > 0 and text[bracket_pos - 1] == '\\' and (bracket_pos < 2 or text[bracket_pos - 2] != '\\'):
@@ -116,10 +148,8 @@ def _parse_inline_link_at(text, bracket_pos):
     if close_bracket + 1 >= n or text[close_bracket + 1] != '(':
         return None
     label = text[bracket_pos + 1:close_bracket]
-    j = close_bracket + 2
-    while j < n and text[j] in (' ', '\t'):
-        j += 1
-    if j >= n:
+    j = _skip_inline_ws(text, close_bracket + 2)
+    if j is None or j >= n:
         return None
     if text[j] == '<':
         k = j + 1
@@ -151,9 +181,10 @@ def _parse_inline_link_at(text, bracket_pos):
             k += 1
         dest = text[j:k]
         m = k
-    while m < n and text[m] in (' ', '\t'):
-        m += 1
-    if m < n and text[m] in ('"', "'", '('):
+    m = _skip_inline_ws(text, m)
+    if m is None or m >= n:
+        return None
+    if text[m] in ('"', "'", '('):
         q = ')' if text[m] == '(' else text[m]
         m += 1
         while m < n and text[m] not in (q, '\n', '\r'):
@@ -164,9 +195,10 @@ def _parse_inline_link_at(text, bracket_pos):
         if m >= n or text[m] != q:
             return None
         m += 1
-        while m < n and text[m] in (' ', '\t'):
-            m += 1
-    if m >= n or text[m] != ')':
+        m = _skip_inline_ws(text, m)
+        if m is None or m >= n:
+            return None
+    if text[m] != ')':
         return None
     return label, dest, m + 1
 
@@ -228,19 +260,25 @@ def _extract_markdown_links(text):
 
 def _extract_unresolved_references(text):
     defined = {re.sub(r'\s+', ' ', m[1].strip()).casefold() for m in REFERENCE.finditer(text)}
+    scan_text = REFERENCE.sub(lambda m: blank(m[0]), text)
     unresolved = []
     i = 0
-    n = len(text)
+    n = len(scan_text)
     while i < n:
-        if text[i] == '\\':
+        if scan_text[i] == '\\':
             i += 2
             continue
-        if text[i] == '[':
-            inline = _parse_inline_link_at(text, i)
-            if inline is not None:
-                i += 1
+        if scan_text[i] == '!' and i + 1 < n and scan_text[i + 1] == '[':
+            inline_img = _parse_inline_link_at(scan_text, i + 1)
+            if inline_img is not None:
+                i = inline_img[2]
                 continue
-            ref = _parse_reference_link_at(text, i)
+        if scan_text[i] == '[':
+            inline = _parse_inline_link_at(scan_text, i)
+            if inline is not None:
+                i = inline[2]
+                continue
+            ref = _parse_reference_link_at(scan_text, i)
             if ref is not None:
                 _, ref_name, end_pos = ref
                 key = re.sub(r'\s+', ' ', ref_name).casefold()
@@ -296,12 +334,13 @@ def anchors(text, markdown=True):
         prose_body = REFERENCE.sub(lambda m: blank(m[0]), prose(body))
         para_lines = []
         for line in prose_body.splitlines():
-            atx = re.match(r'^[ \t]{0,3}#{1,6}[ \t]+(.+?)[ \t]*#*[ \t]*$', line)
+            atx = re.match(r'^ {0,3}#{1,6}(?:[ \t]+(.+?))?[ \t]*#*[ \t]*$', line)
             if atx:
                 para_lines.clear()
-                _register_heading_anchor(atx[1], found, seen)
+                if atx[1]:
+                    _register_heading_anchor(atx[1], found, seen)
                 continue
-            setext = re.match(r'^[ \t]{0,3}(=+|-+)[ \t]*$', line)
+            setext = re.match(r'^ {0,3}(=+|-+)[ \t]*$', line)
             if setext and para_lines:
                 _register_heading_anchor(' '.join(para_lines), found, seen)
                 para_lines.clear()
@@ -309,10 +348,10 @@ def anchors(text, markdown=True):
             if (
                 not line.strip()
                 or re.match(
-                    r'^(?:[ \t]{4,}|[ \t]{0,3}(?:>|#|[-*+][ \t]|\d+[.)][ \t]|\||<!--|<[a-zA-Z/!]|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|(?:-[ \t]*){3,}))',
+                    r'^(?: {4,}| {0,3}\t| {0,3}(?:>|[-*+][ \t]|\d+[.)][ \t]|\||(?:\*[ \t]*){3,}$|(?:_[ \t]*){3,}$|(?:-[ \t]*){3,}$))',
                     line,
                 )
-                or re.match(r'^[ \t]{0,3}\[(?!\^)[^\]\n]+\]:', line)
+                or HTML_BLOCK_TAG_RE.match(line)
             ):
                 para_lines.clear()
             else:

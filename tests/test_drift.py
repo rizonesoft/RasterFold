@@ -1651,11 +1651,20 @@ class DriftTests(unittest.TestCase):
             '----------------------------------\n\n'
             'Setext [Ref Heading][guide]\n'
             '===========================\n\n'
+            '<em>Inline HTML Heading</em>\n'
+            '============================\n\n'
+            '#hashtag Setext\n'
+            '---------------\n\n'
             '[guide]:\n'
             '  README.md\n'
             '[collapsed]:\n'
             '  <dir/file (2).md>\n\n'
             'Paragraph before thematic break.\n\n'
+            '---\n\n'
+            '\t# Tab Indented Code\n\n'
+            'Tab Paragraph\n'
+            '\t---\n\n'
+            '<div>Block HTML</div>\n'
             '---\n\n'
             '- List item\n'
             '---\n\n'
@@ -1680,19 +1689,29 @@ class DriftTests(unittest.TestCase):
             '[ref-collapsed](target.md#collapsed)\n'
             '[linked-setext](target.md#linked-setext-inner)\n'
             '[ref-setext](target.md#setext-ref-heading)\n'
+            '[inline-html-setext](target.md#inline-html-heading)\n'
+            '[hashtag-setext](target.md#hashtag-setext)\n'
             '[paren-file](dir/file(1).md#paren-target "title")\n'
             '[angle-file](<dir/file (2).md#angle-target>)\n'
+            '[multiline-dest](\n  target.md#setext-h1\n)\n'
+            '[multiline-title](\n  dir/file(1).md#paren-target\n  "title"\n)\n'
+            '[array[i][j]](README.md)\n'
+            '[guide](README.md "see [foo][bar]")\n'
             '[![badge](dir/badge.svg)](target.md#setext-h1)\n'
             '[ref-use][ref_ok]\n'
             '[ref-nextline][ref_next]\n\n'
+            '> [bq-guide][bq_ref]\n'
+            '>\n'
+            '> [bq_ref]:\n'
+            '>   README.md\n\n'
             '[ref_ok]: <dir/file (2).md#angle-target>\n'
             '[ref_next]:\n'
             '  dir/file(1).md#paren-target\n',
         )
         self.assertEqual([], self.check().errors)
 
-        # Non-Setext constructs (frontmatter, list item before ---, blockquote before ---, table separator) must not create anchors.
-        for bad_frag in ('#title-target-frontmatter', '#list-item', '#blockquote-line', '#table-col'):
+        # Non-Setext constructs (frontmatter, tab-indented code blocks, block HTML, list item before ---, blockquote before ---, table separator) must not create anchors.
+        for bad_frag in ('#title-target-frontmatter', '#tab-indented-code', '#tab-paragraph', '#block-html', '#list-item', '#blockquote-line', '#table-col'):
             self.write('bad_anchor.md', f'[Bad](target.md{bad_frag})\n')
             c_bad = self.check()
             self.assertTrue(
@@ -1701,14 +1720,16 @@ class DriftTests(unittest.TestCase):
             )
         (self.root / 'bad_anchor.md').unlink()
 
-        # Broken nested-label, parenthesized, angle-bracketed, nested-image, next-line reference, and unresolved reference links must each report a link error.
+        # Broken nested-label, parenthesized, angle-bracketed, multiline, nested-image, next-line reference, blockquote reference, and unresolved reference links must each report a link error.
         for bad_md, expected_target in (
             ('[a [nested] label](gone.md)\n', 'gone.md'),
             ('[paren](dir/missing(1).md)\n', 'dir/missing(1).md'),
             ('[angle](<dir/missing (2).md>)\n', 'dir/missing (2).md'),
+            ('[multiline](\n  missing-multiline.md\n)\n', 'missing-multiline.md'),
             ('[![badge](dir/missing.svg)](target.md)\n', 'dir/missing.svg'),
             ('[ref][r]\n\n[r]: <dir/missing (3).md>\n', 'dir/missing (3).md'),
             ('[guide][g]\n\n[g]:\n  dir/missing_nextline.md\n', 'dir/missing_nextline.md'),
+            ('> [bq][bq_bad]\n>\n> [bq_bad]: missing-bq.md\n', 'missing-bq.md'),
             ('[Guide][undefined_ref]\n', 'unresolved reference link: [undefined_ref]'),
         ):
             self.write('bad_link.md', bad_md)
