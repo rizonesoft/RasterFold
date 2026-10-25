@@ -37,7 +37,7 @@ track: R1
 
 | Order | Section | Deliverable                                   | Depends On | Status |
 | :---: | :-----: | --------------------------------------------- | ---------- | :----: |
-|   1   |   §1    | Stop decoding a stream that has run out       | --         |  [ ]   |
+|   1   |   §1    | Stop decoding a stream that has run out       | --         |  [x]   |
 |   2   |   §2    | A long fuzz campaign over every method        | §1, D01 T01 §2 |  [ ]   |
 |   3   |   §3    | Oracle and spec agree on padding and counters | --         |  [ ]   |
 
@@ -58,6 +58,8 @@ Once a channel's read pointer has reached `end + 2`, the file will be rejected a
 
 **Test checkpoint:** `truncated-abort` in `tests/test_correctness.py` passes on Linux and Windows (`python3 tests/test_correctness.py`: `34 passed, 0 failed`; `python3 scripts/windows.py tests/test_correctness.py -k truncated-abort`: `1 passed, 0 failed`): before the fix, the 4096x4096 27-byte CM payload (`cm4096_27b`) took `13,337 ms` (`--threads 1`) and `3,944 ms` (`--threads 3`); after the fix, `cm4096_20b` fails with exit 4 (`rasterfold: invalid fold: cm streams`) in `104.75 ms` (`--threads 1`) and `57.51 ms` (`--threads 3`), `cm4096_27b` fails with exit 4 (`rasterfold: invalid fold: cm stream`) in `25.02 ms` (`--threads 1`) and `20.43 ms` (`--threads 3`), and per-channel truncated streams on `photo(64, 64)` (`h = 64 > XROWS = 32`, both 5-byte row-0 truncation `trunc_ch0..2` and 75%-length post-`XROWS` truncation `trunc_mid_ch0..2`) fail with exit 4 (`rasterfold: invalid fold: cm stream`) in under `65 ms` at `--threads 1` and `--threads 3`, with no output BMP or `.partial` file left behind; `python3 tests/fuzz_decode.py 2000 5` reports `2000 mutated files: 1948 rejected, 52 still valid, no crash, hang or mismatch`; `python3 research/ab.py ab <A> src/cm.c measure kodim01 -n5` confirms no speed regression (`-t1`: `B/A: enc 0.994 dec 0.995`; `-t3`: `B/A: enc 1.063 dec 0.981`); and `python3 scripts/build.py --target all` and `python3 scripts/tidy.py` (`16/16`) pass cleanly.
 
+> **Verified:** 2026-10-25 | §1 | 651f3ebf34d7b73580b60f7bdeb0f039d01a0eaf
+> **Review:** `docs/reviews/d04-t01-s1.json`
 ## 2. A Long Fuzz Campaign over Every Method
 
 **Needs:** Idle machine (timing)

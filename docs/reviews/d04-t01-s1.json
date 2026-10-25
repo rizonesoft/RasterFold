@@ -1,0 +1,87 @@
+{
+  "ref": "D04 T01 \u00a71",
+  "title": "Stop Decoding a Stream That Has Run Out",
+  "implementation_sha": "651f3ebf34d7b73580b60f7bdeb0f039d01a0eaf",
+  "date": "2026-10-25",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/04-robustness/D04-T01-s1.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 scripts/build.py --target all -> built linux-x64, windows-x64, android-arm64, android-x64",
+    "python3 scripts/tidy.py -> tidy: 16/16 unique warning(s)",
+    "python3 tests/test_correctness.py -> 34 passed, 0 failed",
+    "python3 scripts/windows.py tests/test_correctness.py -k truncated-abort -> 1 passed, 0 failed",
+    "python3 tests/fuzz_decode.py 2000 5 -> 2000 mutated files: 1948 rejected, 52 still valid, no crash, hang or mismatch"
+  ],
+  "completion": {
+    "report": "docs/reviews/04-robustness/D04-T01-s1.md",
+    "verdict": "completed",
+    "candidate": "7bfaa62d5dea1ac8f552a4dc08b5e92e5b1705d1",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/04-robustness/D04-T01-s1.md",
+    "candidate": "9b90b38793f7aca42787efb91cf444c62df0be58",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}
