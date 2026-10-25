@@ -16,6 +16,7 @@ import re
 import statistics
 import subprocess
 import sys
+import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from pathlib import Path
@@ -193,6 +194,31 @@ def kat_fold_sha256(repo: Path = REPO) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def _provenance_digests(repo: Path = REPO) -> dict[str, str]:
+    digests: dict[str, str] = {}
+    for rel in PROVENANCE_PATHS:
+        target = repo / rel
+        if target.is_dir():
+            for child in sorted(target.rglob("*")):
+                if child.is_file():
+                    digests[child.relative_to(repo).as_posix()] = hashlib.sha256(child.read_bytes()).hexdigest()
+        elif target.is_file():
+            digests[target.relative_to(repo).as_posix()] = hashlib.sha256(target.read_bytes()).hexdigest()
+        else:
+            raise SystemExit(f"missing provenance path: {target}")
+    return digests
+
+
+def provenance_snapshot(
+    src: Path,
+    flags: list[str] | tuple[str, ...] = (),
+    repo: Path = REPO,
+    runner=subprocess.run,
+) -> tuple[str, str, dict[str, str]]:
+    head_sha, kat_hash = codec_provenance(src, flags, repo=repo, runner=runner)
+    return head_sha, kat_hash, _provenance_digests(repo)
+
+
 def codec_provenance(
     src: Path,
     flags: list[str] | tuple[str, ...] = (),
@@ -283,15 +309,22 @@ def write_corpus_csv(
     repo: Path = REPO,
     runner=subprocess.run,
     today: str | None = None,
+    expected_snapshot: tuple[str, str, dict[str, str]] | None = None,
 ) -> tuple[dict[str, str], list[dict]]:
     if not got:
         raise SystemExit("no images to write to corpus CSV")
-    head_sha, kat_hash = codec_provenance(
+    csv_path = Path(csv_path)
+    if csv_path.is_symlink() or csv_path.is_dir():
+        raise SystemExit(f"refusing to write corpus CSV to symlink or directory: {csv_path}")
+    post_snapshot = provenance_snapshot(
         src if src is not None else repo / "src" / "cm.c",
         flags,
         repo=repo,
         runner=runner,
     )
+    if expected_snapshot is not None and post_snapshot != expected_snapshot:
+        raise SystemExit("--csv refused: codec/bench provenance changed during measurement")
+    head_sha, kat_hash, _ = post_snapshot
     stamp_date = today or date.today().isoformat()
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", stamp_date):
         raise SystemExit(f"invalid date for corpus CSV: {stamp_date!r}")
@@ -326,19 +359,31 @@ def write_corpus_csv(
     writer.writerows(rows)
     payload = buf.getvalue().encode("utf-8")
 
-    csv_path = Path(csv_path)
     csv_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = csv_path.parent / f".{csv_path.name}.{os.getpid()}.tmp"
+    tmp_path: Path | None = None
     try:
-        with tmp_path.open("wb") as fh:
+        fd, tmp_str = tempfile.mkstemp(
+            prefix=f".{csv_path.name}.",
+            suffix=".tmp",
+            dir=csv_path.parent,
+        )
+        tmp_path = Path(tmp_str)
+        with os.fdopen(fd, "wb") as fh:
             fh.write(payload)
             fh.flush()
             os.fsync(fh.fileno())
+        verified = read_corpus_csv(tmp_path)
         os.replace(tmp_path, csv_path)
+        tmp_path = None
     except OSError as exc:
-        tmp_path.unlink(missing_ok=True)
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
         raise SystemExit(f"failed writing corpus CSV {csv_path}: {exc}") from exc
-    return read_corpus_csv(csv_path)
+    except BaseException:
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
+        raise
+    return verified
 
 
 def reconstruct_set_summary(csv_path: Path, set_name: str) -> dict:
@@ -476,8 +521,7 @@ def main():
         print(summarize_sizes(got, refs, verbose="-v" in sys.argv, prefix=f"{rest[0]} {cfg} "))
     elif mode == "size":
         src = Path(rest.pop(0)) if rest and rest[0].endswith(".c") else REPO / "src" / "cm.c"
-        if csv_path is not None:
-            codec_provenance(src, flags)
+        pre_snapshot = provenance_snapshot(src, flags) if csv_path is not None else None
         imgs = names(rest)
         build(src, RES / "benchS.exe", flags)
         refs = json.loads((RES / "jxl_refs.json").read_text(encoding="utf-8"))
@@ -493,7 +537,14 @@ def main():
             got = list(pool.map(one, imgs))
         summary = summarize_sizes(got, refs, verbose="-v" in sys.argv)
         if csv_path is not None:
-            write_corpus_csv(csv_path, got, refs, src=src, flags=flags)
+            write_corpus_csv(
+                csv_path,
+                got,
+                refs,
+                src=src,
+                flags=flags,
+                expected_snapshot=pre_snapshot,
+            )
         print(summary)
 
 

@@ -492,6 +492,57 @@ class ResearchRefsTests(unittest.TestCase):
             self.assertEqual(csv_path.read_bytes(), original_bytes)
             self.assertEqual([p.name for p in root.iterdir() if p.name.endswith(".tmp")], [])
 
+            # 7. Read-back validation runs on tmp_path BEFORE os.replace, preserving csv_path on failure.
+            with mock.patch.object(ab, "read_corpus_csv", side_effect=SystemExit("read-back failed")):
+                with self.assertRaises(SystemExit) as ctx:
+                    ab.write_corpus_csv(
+                        csv_path,
+                        [("kodim01", 999999), ("syn_checker", 5709)],
+                        refs,
+                        ppm_dir=ppm_dir,
+                        runner=clean_runner,
+                    )
+                self.assertIn("read-back failed", str(ctx.exception))
+            self.assertEqual(csv_path.read_bytes(), original_bytes)
+            self.assertEqual([p.name for p in root.iterdir() if p.name.endswith(".tmp")], [])
+
+            # 8. Provenance change between pre-build snapshot and publication is refused and preserves csv_path.
+            stale_snapshot = ("f" * 40, ab.kat_fold_sha256(), ab._provenance_digests())
+            with self.assertRaises(SystemExit) as ctx:
+                ab.write_corpus_csv(
+                    csv_path,
+                    [("kodim01", 999999), ("syn_checker", 5709)],
+                    refs,
+                    ppm_dir=ppm_dir,
+                    runner=clean_runner,
+                    expected_snapshot=stale_snapshot,
+                )
+            self.assertIn("--csv refused: codec/bench provenance changed during measurement", str(ctx.exception))
+            self.assertEqual(csv_path.read_bytes(), original_bytes)
+
+            # 9. Pre-existing predictable .tmp symlink or symlink destination is never followed/truncated.
+            import os as os_mod
+
+            if hasattr(os_mod, "symlink"):
+                predictable_tmp = root / f".{csv_path.name}.{os_mod.getpid()}.tmp"
+                try:
+                    predictable_tmp.symlink_to(csv_path)
+                except OSError:
+                    predictable_tmp = None
+                if predictable_tmp is not None:
+                    with mock.patch("os.fsync", side_effect=OSError("disk full on fsync")):
+                        with self.assertRaises(SystemExit):
+                            ab.write_corpus_csv(
+                                csv_path,
+                                [("kodim01", 999999), ("syn_checker", 5709)],
+                                refs,
+                                ppm_dir=ppm_dir,
+                                runner=clean_runner,
+                            )
+                    self.assertEqual(csv_path.read_bytes(), original_bytes)
+                    self.assertTrue(predictable_tmp.is_symlink())
+                    predictable_tmp.unlink()
+
     def test_drift_check_derive_facts_csv_with_and_without_comments(self) -> None:
         import importlib.util
 
