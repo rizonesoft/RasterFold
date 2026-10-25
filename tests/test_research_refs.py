@@ -289,6 +289,255 @@ class ResearchRefsTests(unittest.TestCase):
                 else:
                     self.assertIn("FAIL", md)
 
+    def test_corpus_csv_reconstructs_all_five_research_summaries(self) -> None:
+        csv_path = ROOT / "benchmarks" / "corpus.csv"
+        meta, rows = ab.read_corpus_csv(csv_path)
+        self.assertRegex(meta["codec_revision"], r"^[0-9a-f]{40}$")
+        self.assertEqual(meta["kat_fold_sha256"], ab.kat_fold_sha256())
+        self.assertEqual(len(rows), 55)
+        self.assertEqual([r["image"] for r in rows], ab.SETS["all"])
+        self.assertEqual(sum(1 for r in rows if r["set"] == "photo"), 39)
+        self.assertEqual(sum(1 for r in rows if r["set"] == "tp"), 5)
+        self.assertEqual(sum(1 for r in rows if r["set"] == "synth"), 11)
+
+        photo = ab.reconstruct_set_summary(csv_path, "photo")
+        self.assertEqual(photo["images"], ab.SETS["photo"])
+        self.assertEqual(photo["count"], 39)
+        self.assertEqual(photo["rasterfold"], 30865211)
+        self.assertEqual(photo["jxl_e7"], 31782058)
+        self.assertEqual(photo["jxl_e9"], 31400714)
+        self.assertEqual(photo["webp"], 34138176)
+        self.assertEqual(f"{photo['e7_ratio']:.4f}", "0.9712")
+        self.assertEqual(f"{photo['e7_geomean']:.4f}", "0.9728")
+        self.assertEqual(photo["worst_image"], "kodim17")
+        self.assertEqual(f"{photo['worst_e7_ratio']:.4f}", "1.0037")
+        self.assertEqual(f"{photo['e9_ratio']:.4f}", "0.9829")
+        self.assertEqual(f"{photo['webp_ratio']:.4f}", "0.9041")
+        self.assertEqual(photo["below_e9"], 28)
+
+        kodak = ab.reconstruct_set_summary(csv_path, "kodak")
+        self.assertEqual(kodak["images"], ab.SETS["kodak"])
+        self.assertEqual(kodak["count"], 24)
+        self.assertEqual(f"{kodak['e7_ratio']:.4f}", "0.9859")
+        self.assertEqual(f"{kodak['e7_geomean']:.4f}", "0.9860")
+        self.assertEqual(kodak["worst_image"], "kodim17")
+        self.assertEqual(f"{kodak['worst_e7_ratio']:.4f}", "1.0037")
+
+        ic = ab.reconstruct_set_summary(csv_path, "ic")
+        self.assertEqual(ic["images"], ab.SETS["ic"])
+        self.assertEqual(ic["count"], 14)
+        self.assertEqual(f"{ic['e7_ratio']:.4f}", "0.9647")
+        self.assertEqual(f"{ic['e7_geomean']:.4f}", "0.9517")
+        self.assertEqual(ic["worst_image"], "ic_nightshot_iso_1600")
+        self.assertEqual(f"{ic['worst_e7_ratio']:.4f}", "0.9942")
+
+        tp = ab.reconstruct_set_summary(csv_path, "tp")
+        self.assertEqual(tp["images"], ab.SETS["tp"])
+        self.assertEqual(tp["count"], 10)
+        self.assertEqual(f"{tp['e7_ratio']:.4f}", "0.9743")
+        self.assertEqual(f"{tp['e7_geomean']:.4f}", "0.9722")
+        self.assertEqual(tp["worst_image"], "tp_nightshot_iso_1600_crop")
+        self.assertEqual(f"{tp['worst_e7_ratio']:.4f}", "0.9931")
+
+        synth = ab.reconstruct_set_summary(csv_path, "synth")
+        self.assertEqual(synth["images"], ab.SETS["synth"])
+        self.assertEqual(synth["count"], 11)
+        self.assertEqual(f"{synth['e7_ratio']:.4f}", "0.9480")
+        self.assertEqual(f"{synth['e7_geomean']:.4f}", "1.1986")
+        self.assertEqual(synth["worst_image"], "syn_checker")
+        self.assertEqual(f"{synth['worst_e7_ratio']:.4f}", "18.0665")
+
+    def test_corpus_csv_provenance_and_failure_preservation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ppm_dir = root / "ppm"
+            ppm_dir.mkdir(parents=True, exist_ok=True)
+            (ppm_dir / "kodim01.ppm").write_bytes(b"P6\n# comment\n2 1\n255\n\x01\x02\x03\x04\x05\x06")
+            (ppm_dir / "syn_checker.ppm").write_bytes(b"P6\n1 2\n255\n\x01\x02\x03\x04\x05\x06")
+            refs = {
+                "kodim01:e7": 460550,
+                "kodim01:e9": 454757,
+                "kodim01:webp": 499410,
+                "syn_checker:e7": 316,
+                "syn_checker:e9": 210,
+                "syn_checker:webp": 82,
+            }
+            got = [("kodim01", 456732), ("syn_checker", 5709)]
+            csv_path = root / "corpus.csv"
+            fake_head = "a" * 40
+
+            def clean_runner(cmd, **kwargs):
+                if cmd[:3] == ["git", "rev-parse", "--verify"]:
+                    return subprocess.CompletedProcess(cmd, 0, stdout=fake_head + "\n", stderr="")
+                return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+            meta, rows = ab.write_corpus_csv(
+                csv_path,
+                got,
+                refs,
+                ppm_dir=ppm_dir,
+                runner=clean_runner,
+                today="2026-10-25",
+            )
+            self.assertEqual(meta["codec_revision"], fake_head)
+            self.assertEqual(meta["kat_fold_sha256"], ab.kat_fold_sha256())
+            self.assertEqual(meta["date"], "2026-10-25")
+            self.assertEqual(
+                rows,
+                [
+                    {
+                        "set": "photo",
+                        "image": "kodim01",
+                        "width": 2,
+                        "height": 1,
+                        "rasterfold": 456732,
+                        "jxl_e7": 460550,
+                        "jxl_e9": 454757,
+                        "webp": 499410,
+                    },
+                    {
+                        "set": "synth",
+                        "image": "syn_checker",
+                        "width": 1,
+                        "height": 2,
+                        "rasterfold": 5709,
+                        "jxl_e7": 316,
+                        "jxl_e9": 210,
+                        "webp": 82,
+                    },
+                ],
+            )
+            original_bytes = csv_path.read_bytes()
+
+            # 1. Alternate .c source refused and existing CSV preserved.
+            alt_c = root / "alt_cm.c"
+            alt_c.write_text("/* variant */\n", encoding="utf-8")
+            with self.assertRaises(SystemExit) as ctx:
+                ab.write_corpus_csv(csv_path, got, refs, src=alt_c, ppm_dir=ppm_dir, runner=clean_runner)
+            self.assertIn("--csv requires canonical", str(ctx.exception))
+            self.assertEqual(csv_path.read_bytes(), original_bytes)
+
+            # 2. Custom compiler flags refused and existing CSV preserved.
+            with self.assertRaises(SystemExit) as ctx:
+                ab.write_corpus_csv(csv_path, got, refs, flags=["-DTEST=1"], ppm_dir=ppm_dir, runner=clean_runner)
+            self.assertIn("--csv refuses custom compiler flags", str(ctx.exception))
+            self.assertEqual(csv_path.read_bytes(), original_bytes)
+
+            # 3. Unavailable git HEAD refused and existing CSV preserved.
+            def bad_rev_runner(cmd, **kwargs):
+                if cmd[:3] == ["git", "rev-parse", "--verify"]:
+                    return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="fatal")
+                return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+            with self.assertRaises(SystemExit) as ctx:
+                ab.write_corpus_csv(csv_path, got, refs, ppm_dir=ppm_dir, runner=bad_rev_runner)
+            self.assertIn("unable to determine clean 40-char git HEAD", str(ctx.exception))
+            self.assertEqual(csv_path.read_bytes(), original_bytes)
+
+            # 4. Modified codec/bench source refused and existing CSV preserved.
+            def dirty_runner(cmd, **kwargs):
+                if cmd[:3] == ["git", "rev-parse", "--verify"]:
+                    return subprocess.CompletedProcess(cmd, 0, stdout=fake_head + "\n", stderr="")
+                return subprocess.CompletedProcess(cmd, 0, stdout=" M src/cm.c\n", stderr="")
+
+            with self.assertRaises(SystemExit) as ctx:
+                ab.write_corpus_csv(csv_path, got, refs, ppm_dir=ppm_dir, runner=dirty_runner)
+            self.assertIn("--csv refuses modified codec/bench sources", str(ctx.exception))
+            self.assertEqual(csv_path.read_bytes(), original_bytes)
+
+            # 5. Duplicate image in got refused and existing CSV preserved.
+            with self.assertRaises(SystemExit) as ctx:
+                ab.write_corpus_csv(
+                    csv_path,
+                    [("kodim01", 456732), ("kodim01", 456732)],
+                    refs,
+                    ppm_dir=ppm_dir,
+                    runner=clean_runner,
+                )
+            self.assertIn("duplicate or empty image", str(ctx.exception))
+            self.assertEqual(csv_path.read_bytes(), original_bytes)
+
+            # 6. Invalid PPM payload length refused and existing CSV preserved.
+            (ppm_dir / "kodim01.ppm").write_bytes(b"P6\n2 1\n255\n\x01\x02")
+            with self.assertRaises(SystemExit) as ctx:
+                ab.write_corpus_csv(csv_path, got, refs, ppm_dir=ppm_dir, runner=clean_runner)
+            self.assertIn("invalid PPM payload length", str(ctx.exception))
+            self.assertEqual(csv_path.read_bytes(), original_bytes)
+
+    def test_drift_check_derive_facts_csv_with_and_without_comments(self) -> None:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("drift_check", ROOT / "scripts" / "drift-check.py")
+        assert spec is not None and spec.loader is not None
+        drift_check = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(drift_check)
+
+        sources = {
+            "benchmarks/corpus.csv": (
+                "# codec_revision=" + "b" * 40 + " kat_fold_sha256=" + "c" * 64 + " date=2026-10-25\n"
+                "set,image,width,height,rasterfold,jxl_e7,jxl_e9,webp\n"
+                "photo,measure,1672,941,1409028,1470703,1440564,1588708\n"
+                "photo,kodim01,768,512,456732,460550,454757,499410\n"
+            ),
+            "benchmarks/results.csv": (
+                "set,image,codec,bytes\n"
+                "measure,image,rasterfold,1409028\n"
+                "measure,image,jxl-e9,1440564\n"
+            ),
+        }
+        manifest = {
+            "facts": {
+                "corpus_measure_e9": {
+                    "kind": "csv",
+                    "source": "benchmarks/corpus.csv",
+                    "where": {"set": "photo", "image": "measure"},
+                    "column": "jxl_e9",
+                    "type": "int",
+                },
+                "results_measure_rf": {
+                    "kind": "csv",
+                    "source": "benchmarks/results.csv",
+                    "where": {"set": "measure", "image": "image", "codec": "rasterfold"},
+                    "column": "bytes",
+                    "type": "int",
+                },
+            }
+        }
+        facts = drift_check.derive_facts(manifest, lambda rel: sources[rel])
+        self.assertEqual(facts, {"corpus_measure_e9": 1440564, "results_measure_rf": 1409028})
+
+        # Zero-match selector must raise ValueError.
+        zero_manifest = {
+            "facts": {
+                "missing": {
+                    "kind": "csv",
+                    "source": "benchmarks/corpus.csv",
+                    "where": {"image": "nonexistent"},
+                    "column": "rasterfold",
+                    "type": "int",
+                }
+            }
+        }
+        with self.assertRaises(ValueError) as ctx:
+            drift_check.derive_facts(zero_manifest, lambda rel: sources[rel])
+        self.assertIn("expected one CSV row, got 0", str(ctx.exception))
+
+        # Multiple-match selector must raise ValueError.
+        multi_manifest = {
+            "facts": {
+                "multi": {
+                    "kind": "csv",
+                    "source": "benchmarks/corpus.csv",
+                    "where": {"set": "photo"},
+                    "column": "rasterfold",
+                    "type": "int",
+                }
+            }
+        }
+        with self.assertRaises(ValueError) as ctx:
+            drift_check.derive_facts(multi_manifest, lambda rel: sources[rel])
+        self.assertIn("expected one CSV row, got 2", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

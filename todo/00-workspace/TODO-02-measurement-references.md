@@ -13,13 +13,13 @@ track: W2
 > **Goal:** Every measurement RasterFold makes reports JPEG XL effort 7, JPEG XL effort 9, and lossless WebP side by side, from the research tools, the benchmark, and a committed per-image corpus file the docs and drift gates read, so no target in the roadmap is measured against a reference nobody reran.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-10-25):** `research/corpus.py` records JPEG XL e7 (`<image>:e7`), JPEG XL e9 (`<image>:e9`), and lossless WebP (`<image>:webp`) sizes in `build/research/jxl_refs.json`, and `research/ab.py` (`size` and `rsize`) compares against all three references via `summarize_sizes`. `tests/benchmark.py` runs `rasterfold`, `rasterfold-1t`, `jxl`, `jxl-1t` (both e7), `jxl-e9` (effort 9), `webp`, and `png`, merges subset runs with existing `benchmarks/results.csv` rows via `load_existing_rows`/`merge_rows`, and labels retained sets in `benchmarks/results.md`. On the 39-photo corpus, `research/ab.py size photo` reports 0.9712 of e7, 0.9829 (0.983) of e9, and 0.9041 (0.904) of WebP; on `synth`, geometric mean is 1.1986 of e7, 2.2860 (2.29) of e9, and 3.6626 (3.66) of WebP. No per-image corpus results are committed yet.
+> **Current state (verified 2026-10-25):** `research/corpus.py` records JPEG XL e7 (`<image>:e7`), JPEG XL e9 (`<image>:e9`), and lossless WebP (`<image>:webp`) sizes in `build/research/jxl_refs.json`, and `research/ab.py` (`size` and `rsize`) compares against all three references via `summarize_sizes`. `tests/benchmark.py` runs `rasterfold`, `rasterfold-1t`, `jxl`, `jxl-1t` (both e7), `jxl-e9` (effort 9), `webp`, and `png`, merges subset runs with existing `benchmarks/results.csv` rows via `load_existing_rows`/`merge_rows`, and labels retained sets in `benchmarks/results.md`. On the 39-photo corpus, `research/ab.py size photo` reports 0.9712 of e7, 0.9829 (0.983) of e9, and 0.9041 (0.904) of WebP; on `synth`, geometric mean is 1.1986 of e7, 2.2860 (2.29) of e9, and 3.6626 (3.66) of WebP. `benchmarks/corpus.csv` commits all 55 research images (`39` `photo`, `5` `tp`, `11` `synth`) with `# codec_revision=<HEAD> kat_fold_sha256=<sha256> date=<YYYY-MM-DD>`.
 <!-- claim: count "effort\", \"7\"" research/corpus.py = 1 -->
 <!-- claim: count "effort\", \"9\"" research/corpus.py = 1 -->
 <!-- claim: count "\"libwebp\"" research/corpus.py = 1 -->
 <!-- claim: exists tests/test_research_refs.py -->
 <!-- claim: count "\"jxl-e9\"" tests/benchmark.py = 1 -->
-<!-- claim: absent benchmarks/corpus.csv -->
+<!-- claim: exists benchmarks/corpus.csv -->
 
 ## Inputs
 
@@ -86,13 +86,17 @@ The roadmap measures milestones against JPEG XL e9 and WebP, so the tool that de
 > **Review:** `docs/reviews/d00-t02-s2.json`
 ## 3. The Committed Corpus Results File
 
+> **Started:** 2026-10-25T01:33:00Z
+
 **Job:** A reader of the docs can check every quoted corpus figure against the committed file the size tool exports, which names the revision it came from.
 
-- [ ] Add `--csv <path>` to `research/ab.py size`, writing per-image rows (set, image, width, height, rasterfold, jxl_e7, jxl_e9, webp) and a header line naming the codec revision (`git rev-parse HEAD`) and the `KAT_FOLD` hash. Done when: `python research/ab.py size all --csv benchmarks/corpus.csv` writes every research image.
-- [ ] Commit `benchmarks/corpus.csv`. Done when: the file is tracked and its figures match `docs/research.md` section 1.
-- [ ] Commit: `"research: commit the per-image corpus results"`
+**Corrected 2026-10-25:** Per the pre-build `--kind plan` review (`docs/reviews/00-workspace/D00-T02-s3.md`), `SETS["all"]` in `research/ab.py` includes all 55 research images (`39` `photo`, `5` `tp_*_crop` in `tp`, and `11` `synth`) with exclusive per-row `set` labels (`photo`, `tp`, `synth`) while `reconstruct_set_summary(csv_path, set_name)` reconstructs overlapping sets (`photo`, `kodak`, `ic`, `tp`, `synth`) from `SETS[set_name]` membership; `write_corpus_csv` / `codec_provenance` refuses alternate `.c` sources, custom compiler flags, unavailable `git rev-parse --verify HEAD`, or dirty working-tree codec/bench/`KAT_FOLD` sources, validates PPM headers/payloads (`ppm_dimensions`), references, and unique image rows before atomic `.tmp` + `os.fsync` + `os.replace` publication and `read_corpus_csv` verification (leaving any existing CSV untouched on failure); `scripts/drift-check.py` (`derive_facts`, `kind == 'csv'`) strips leading `#` metadata comment lines via `_csv_stream`; and `tests/test_research_refs.py` directly tests all five set summaries, provenance/failure preservation, and `derive_facts` CSV providers with and without leading comments.
 
-**Test checkpoint:** the committed file's photo totals reproduce `docs/research.md` section 1 (0.9712 of e7) when summed by a one-line script quoted in the stamp.
+- [x] Add `--csv <path>` to `research/ab.py size` (`write_corpus_csv`, `read_corpus_csv`, `codec_provenance`, `ppm_dimensions`, `reconstruct_set_summary`) and leading-comment CSV support to `scripts/drift-check.py` (`_csv_stream`), writing per-image rows (`set,image,width,height,rasterfold,jxl_e7,jxl_e9,webp`) for all 55 research images in `SETS["all"]` and a `# codec_revision=<git rev-parse HEAD> kat_fold_sha256=<sha256> date=<YYYY-MM-DD>` header line after verifying clean canonical codec/bench provenance, validating PPM headers/payloads and reference sizes, writing atomically, and reading back. Done when: `python3 research/ab.py size all --csv benchmarks/corpus.csv` writes all 55 research images and refuses alternate/dirty sources or invalid inputs without modifying an existing CSV.
+- [x] Commit `benchmarks/corpus.csv` and regression coverage in `tests/test_research_refs.py` (`test_corpus_csv_reconstructs_all_five_research_summaries`, `test_corpus_csv_provenance_and_failure_preservation`, `test_drift_check_derive_facts_csv_with_and_without_comments`). Done when: `benchmarks/corpus.csv` is tracked, its reconstructed summaries match all five rows of `docs/research.md` section 1 (`photo` 39 images, `0.9712` total, `0.9728` geomean, worst `kodim17 1.0037`, 28/39 below e9; `kodak` 24 images, `0.9859` total, `0.9860` geomean, worst `kodim17 1.0037`; `ic` 14 images, `0.9647` total, `0.9517` geomean, worst `ic_nightshot_iso_1600 0.9942`; `tp` 10 images, `0.9743` total, `0.9722` geomean, worst `tp_nightshot_iso_1600_crop 0.9931`; `synth` 11 images, `0.9480` total, `1.1986` geomean, worst `syn_checker 18.0665`), and `tests/test_research_refs.py` passes on Linux and Windows.
+- [x] Commit: `"research: commit the per-image corpus results"`
+
+**Test checkpoint:** `python3 -c "import csv; rows=[r for r in csv.DictReader(l for l in open('benchmarks/corpus.csv', encoding='utf-8') if not l.startswith('#')) if r['set']=='photo']; rf=sum(int(r['rasterfold']) for r in rows); e7=sum(int(r['jxl_e7']) for r in rows); e9=sum(int(r['jxl_e9']) for r in rows); wb=sum(int(r['webp']) for r in rows); print(f'n={len(rows)} rf={rf} e7={e7} ratio={rf/e7:.4f} e9={e9} e9_ratio={rf/e9:.4f} webp={wb} webp_ratio={rf/wb:.4f}')"` prints `n=39 rf=30865211 e7=31782058 ratio=0.9712 e9=31400714 e9_ratio=0.9829 webp=34138176 webp_ratio=0.9041` (reproducing `docs/research.md` section 1's `0.9712` of e7); `python3 -m unittest discover -s tests -p 'test_research_refs.py' -v` and `python3 scripts/windows.py tests/test_research_refs.py -v < /dev/null` (`8 tests OK`, covering all five `docs/research.md` section 1 summaries, provenance/failure preservation, and `scripts/drift-check.py` `derive_facts` CSV providers) exit 0.
 
 ## Verification
 

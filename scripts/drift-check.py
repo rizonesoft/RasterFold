@@ -100,6 +100,14 @@ def anchors(text, markdown=True):
 
 
 
+def _csv_stream(source):
+    lines = source.splitlines(keepends=True)
+    idx = 0
+    while idx < len(lines) and lines[idx].lstrip().startswith('#'):
+        idx += 1
+    return io.StringIO(''.join(lines[idx:]))
+
+
 def derive_facts(manifest, read):
     facts = {}
     for key, rule in manifest['facts'].items():
@@ -114,7 +122,7 @@ def derive_facts(manifest, read):
             for part in rule['key'].split('.'):
                 value = value[part]
         elif rule['kind'] == 'csv':
-            rows = [r for r in csv.DictReader(io.StringIO(source)) if all(r.get(k) == v for k, v in rule['where'].items())]
+            rows = [r for r in csv.DictReader(_csv_stream(source)) if all(r.get(k) == v for k, v in rule['where'].items())]
             if len(rows) != 1:
                 raise ValueError(f'{key}: expected one CSV row, got {len(rows)}')
             value = rows[0][rule['column']]

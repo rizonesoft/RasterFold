@@ -3,9 +3,12 @@ Data (corpus, JPEG XL / WebP sizes, executables) lives in build/research; see re
 
   python research/ab.py bench [cm.c] [-r3] images...      time one cm.c (default: src/cm.c)
   python research/ab.py ab A.c B.c [-n 5] images...        alternate two variants, compare minima
-  python research/ab.py size [cm.c] SET                    exact sizes vs JPEG XL e7, e9, and WebP, in parallel
+  python research/ab.py size [cm.c] SET [--csv PATH]       exact sizes vs JPEG XL e7, e9, and WebP, in parallel
 Images may be names in build/research/ppm or set names: sub, kodak, ic, synth, photo, all, tp.
 """
+import csv
+import hashlib
+import io
 import json
 import math
 import os
@@ -14,6 +17,7 @@ import statistics
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date
 from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parent
@@ -37,7 +41,12 @@ SETS = {
               "syn_diagram", "syn_odd", "syn_wide"],
 }
 SETS["photo"] = ["measure"] + SETS["kodak"] + SETS["ic"]
-SETS["all"] = SETS["photo"] + SETS["synth"]
+SETS["all"] = SETS["photo"] + [n for n in SETS["tp"] if n not in SETS["photo"]] + SETS["synth"]
+CORPUS_CSV_FIELDS = ("set", "image", "width", "height", "rasterfold", "jxl_e7", "jxl_e9", "webp")
+HEADER_COMMENT_RE = re.compile(
+    r"^# codec_revision=(?P<codec_revision>[0-9a-f]{40}) kat_fold_sha256=(?P<kat_fold_sha256>[0-9a-f]{64}) date=(?P<date>\d{4}-\d{2}-\d{2})$"
+)
+PROVENANCE_PATHS = ("src", "include", "research/bench.c", "research/benchsys.c", "tests/test_correctness.py")
 
 
 def is_positive_int(value: object) -> bool:
@@ -116,6 +125,284 @@ def summarize_sizes(got: list[tuple[str, int]], refs: dict, verbose: bool = Fals
     return "\n".join(lines)
 
 
+def ppm_dimensions(ppm_path: Path) -> tuple[int, int]:
+    if not ppm_path.is_file():
+        raise SystemExit(f"missing PPM file: {ppm_path}")
+    data = ppm_path.read_bytes()
+    if not data.startswith(b"P6"):
+        raise SystemExit(f"invalid PPM magic in {ppm_path}")
+    pos = 2
+    tokens: list[bytes] = []
+    n = len(data)
+    while len(tokens) < 3 and pos < n:
+        while pos < n and data[pos:pos + 1] in (b" ", b"\t", b"\r", b"\n"):
+            pos += 1
+        if pos < n and data[pos:pos + 1] == b"#":
+            while pos < n and data[pos:pos + 1] != b"\n":
+                pos += 1
+            continue
+        start = pos
+        while pos < n and data[pos:pos + 1] not in (b" ", b"\t", b"\r", b"\n", b"#"):
+            pos += 1
+        if pos > start:
+            tokens.append(data[start:pos])
+    if len(tokens) != 3 or pos >= n or data[pos:pos + 1] not in (b" ", b"\t", b"\r", b"\n"):
+        raise SystemExit(f"invalid PPM header in {ppm_path}")
+    pos += 1
+    try:
+        width = int(tokens[0].decode("ascii"))
+        height = int(tokens[1].decode("ascii"))
+        maxval = int(tokens[2].decode("ascii"))
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise SystemExit(f"invalid PPM header numbers in {ppm_path}: {exc}") from exc
+    if width <= 0 or height <= 0 or maxval != 255:
+        raise SystemExit(f"invalid PPM dimensions/maxval in {ppm_path}: {width}x{height} maxval={maxval}")
+    expected_pixels = width * height * 3
+    if len(data) - pos != expected_pixels:
+        raise SystemExit(
+            f"invalid PPM payload length in {ppm_path}: got {len(data) - pos}, expected {expected_pixels}"
+        )
+    return width, height
+
+
+def image_set_label(name: str) -> str:
+    if name in SETS["photo"]:
+        return "photo"
+    if name in SETS["tp"]:
+        return "tp"
+    if name in SETS["synth"]:
+        return "synth"
+    raise SystemExit(f"unknown corpus set for image: {name}")
+
+
+def kat_fold_sha256(repo: Path = REPO) -> str:
+    tc_path = repo / "tests" / "test_correctness.py"
+    if not tc_path.is_file():
+        raise SystemExit(f"missing {tc_path}")
+    text = tc_path.read_text(encoding="utf-8")
+    m = re.search(r"KAT_FOLD\s*=\s*bytes\.fromhex\(\s*((?:\"[^\"]*\"\s*)+)\)", text, re.S)
+    if not m:
+        raise SystemExit(f"unable to locate KAT_FOLD in {tc_path}")
+    hex_chunks = re.findall(r'"([0-9a-fA-F]+)"', m.group(1))
+    hex_str = "".join(hex_chunks)
+    if not hex_str or len(hex_str) % 2 != 0:
+        raise SystemExit(f"invalid KAT_FOLD hex literal in {tc_path}")
+    raw = bytes.fromhex(hex_str)
+    if not raw:
+        raise SystemExit(f"empty KAT_FOLD in {tc_path}")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def codec_provenance(
+    src: Path,
+    flags: list[str] | tuple[str, ...] = (),
+    repo: Path = REPO,
+    runner=subprocess.run,
+) -> tuple[str, str]:
+    canonical_cm = (repo / "src" / "cm.c").resolve()
+    if Path(src).resolve() != canonical_cm:
+        raise SystemExit(f"--csv requires canonical {canonical_cm}, got {src}")
+    if flags:
+        raise SystemExit(f"--csv refuses custom compiler flags: {list(flags)}")
+    rev_proc = runner(
+        ["git", "rev-parse", "--verify", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    head_sha = (rev_proc.stdout or "").strip() if rev_proc.returncode == 0 else ""
+    if not re.fullmatch(r"[0-9a-f]{40}", head_sha):
+        raise SystemExit("unable to determine clean 40-char git HEAD for --csv")
+    status_proc = runner(
+        ["git", "status", "--porcelain", "--", *PROVENANCE_PATHS],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    if status_proc.returncode != 0:
+        raise SystemExit("unable to check git status for --csv provenance")
+    if (status_proc.stdout or "").strip():
+        raise SystemExit(
+            f"--csv refuses modified codec/bench sources:\n{(status_proc.stdout or '').strip()}"
+        )
+    return head_sha, kat_fold_sha256(repo)
+
+
+def read_corpus_csv(csv_path: Path) -> tuple[dict[str, str], list[dict]]:
+    if not csv_path.is_file():
+        raise SystemExit(f"missing corpus CSV: {csv_path}")
+    raw_lines = csv_path.read_text(encoding="utf-8").splitlines()
+    if len(raw_lines) < 2:
+        raise SystemExit(f"invalid corpus CSV (too few lines): {csv_path}")
+    m = HEADER_COMMENT_RE.fullmatch(raw_lines[0].strip())
+    if not m:
+        raise SystemExit(f"invalid corpus CSV header comment in {csv_path}: {raw_lines[0]!r}")
+    meta = dict(m.groupdict())
+    reader = csv.DictReader(io.StringIO("\n".join(raw_lines[1:]) + "\n"))
+    if tuple(reader.fieldnames or ()) != CORPUS_CSV_FIELDS:
+        raise SystemExit(f"invalid corpus CSV columns in {csv_path}: {reader.fieldnames!r}")
+    rows: list[dict] = []
+    seen_images: set[str] = set()
+    for r in reader:
+        img = (r.get("image") or "").strip()
+        set_name = (r.get("set") or "").strip()
+        if not img or img in seen_images:
+            raise SystemExit(f"duplicate or empty image row in {csv_path}: {img!r}")
+        seen_images.add(img)
+        if set_name not in ("photo", "tp", "synth") or image_set_label(img) != set_name:
+            raise SystemExit(f"invalid set label for {img} in {csv_path}: {set_name!r}")
+        try:
+            row = {
+                "set": set_name,
+                "image": img,
+                "width": int(r["width"]),
+                "height": int(r["height"]),
+                "rasterfold": int(r["rasterfold"]),
+                "jxl_e7": int(r["jxl_e7"]),
+                "jxl_e9": int(r["jxl_e9"]),
+                "webp": int(r["webp"]),
+            }
+        except (KeyError, TypeError, ValueError) as exc:
+            raise SystemExit(f"invalid numeric field for {img} in {csv_path}: {exc}") from exc
+        if any(row[k] <= 0 for k in ("width", "height", "rasterfold", "jxl_e7", "jxl_e9", "webp")):
+            raise SystemExit(f"non-positive numeric field for {img} in {csv_path}: {row}")
+        rows.append(row)
+    if not rows:
+        raise SystemExit(f"empty corpus CSV: {csv_path}")
+    return meta, rows
+
+
+def write_corpus_csv(
+    csv_path: Path,
+    got: list[tuple[str, int]],
+    refs: dict,
+    *,
+    src: Path | None = None,
+    flags: list[str] | tuple[str, ...] = (),
+    ppm_dir: Path = PPM,
+    repo: Path = REPO,
+    runner=subprocess.run,
+    today: str | None = None,
+) -> tuple[dict[str, str], list[dict]]:
+    if not got:
+        raise SystemExit("no images to write to corpus CSV")
+    head_sha, kat_hash = codec_provenance(
+        src if src is not None else repo / "src" / "cm.c",
+        flags,
+        repo=repo,
+        runner=runner,
+    )
+    stamp_date = today or date.today().isoformat()
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", stamp_date):
+        raise SystemExit(f"invalid date for corpus CSV: {stamp_date!r}")
+    seen: set[str] = set()
+    rows: list[dict] = []
+    for name, s in got:
+        if not name or name in seen:
+            raise SystemExit(f"duplicate or empty image in corpus CSV export: {name!r}")
+        seen.add(name)
+        if not is_positive_int(s):
+            raise SystemExit(f"invalid measured size for {name}: {s!r}")
+        j7 = ref_size(refs, name, "e7")
+        j9 = ref_size(refs, name, "e9")
+        wb = ref_size(refs, name, "webp")
+        w, h = ppm_dimensions(ppm_dir / f"{name}.ppm")
+        rows.append(
+            {
+                "set": image_set_label(name),
+                "image": name,
+                "width": w,
+                "height": h,
+                "rasterfold": s,
+                "jxl_e7": j7,
+                "jxl_e9": j9,
+                "webp": wb,
+            }
+        )
+    buf = io.StringIO()
+    buf.write(f"# codec_revision={head_sha} kat_fold_sha256={kat_hash} date={stamp_date}\n")
+    writer = csv.DictWriter(buf, fieldnames=list(CORPUS_CSV_FIELDS), lineterminator="\n")
+    writer.writeheader()
+    writer.writerows(rows)
+    payload = buf.getvalue().encode("utf-8")
+
+    csv_path = Path(csv_path)
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = csv_path.parent / f".{csv_path.name}.{os.getpid()}.tmp"
+    try:
+        with tmp_path.open("wb") as fh:
+            fh.write(payload)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp_path, csv_path)
+    except OSError as exc:
+        tmp_path.unlink(missing_ok=True)
+        raise SystemExit(f"failed writing corpus CSV {csv_path}: {exc}") from exc
+    return read_corpus_csv(csv_path)
+
+
+def reconstruct_set_summary(csv_path: Path, set_name: str) -> dict:
+    if set_name not in SETS:
+        raise SystemExit(f"unknown set name: {set_name!r}")
+    _, rows = read_corpus_csv(csv_path)
+    by_image = {r["image"]: r for r in rows}
+    members = SETS[set_name]
+    missing = [n for n in members if n not in by_image]
+    if missing:
+        raise SystemExit(f"missing {set_name} image(s) in {csv_path}: {missing}")
+    selected = [by_image[n] for n in members]
+    rf_tot = sum(r["rasterfold"] for r in selected)
+    e7_tot = sum(r["jxl_e7"] for r in selected)
+    e9_tot = sum(r["jxl_e9"] for r in selected)
+    wb_tot = sum(r["webp"] for r in selected)
+    e7_ratios = [r["rasterfold"] / r["jxl_e7"] for r in selected]
+    e9_ratios = [r["rasterfold"] / r["jxl_e9"] for r in selected]
+    wb_ratios = [r["rasterfold"] / r["webp"] for r in selected]
+    worst_row = max(selected, key=lambda r: r["rasterfold"] / r["jxl_e7"])
+    return {
+        "set": set_name,
+        "images": [r["image"] for r in selected],
+        "count": len(selected),
+        "rasterfold": rf_tot,
+        "jxl_e7": e7_tot,
+        "jxl_e9": e9_tot,
+        "webp": wb_tot,
+        "e7_ratio": rf_tot / e7_tot,
+        "e9_ratio": rf_tot / e9_tot,
+        "webp_ratio": rf_tot / wb_tot,
+        "e7_geomean": math.exp(sum(math.log(x) for x in e7_ratios) / len(e7_ratios)),
+        "e9_geomean": math.exp(sum(math.log(x) for x in e9_ratios) / len(e9_ratios)),
+        "webp_geomean": math.exp(sum(math.log(x) for x in wb_ratios) / len(wb_ratios)),
+        "worst_image": worst_row["image"],
+        "worst_e7_ratio": worst_row["rasterfold"] / worst_row["jxl_e7"],
+        "below_e9": sum(1 for r in selected if r["rasterfold"] < r["jxl_e9"]),
+    }
+
+
+def extract_csv_arg(args: list[str]) -> tuple[Path | None, list[str]]:
+    csv_path: Path | None = None
+    cleaned: list[str] = []
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--csv":
+            if csv_path is not None or i + 1 >= len(args) or not args[i + 1].strip():
+                raise SystemExit("--csv requires a single path argument")
+            csv_path = Path(args[i + 1])
+            i += 2
+            continue
+        if arg.startswith("--csv="):
+            val = arg.split("=", 1)[1].strip()
+            if csv_path is not None or not val:
+                raise SystemExit("--csv requires a single path argument")
+            csv_path = Path(val)
+            i += 1
+            continue
+        cleaned.append(arg)
+        i += 1
+    return csv_path, cleaned
+
+
 def names(args):
     out = []
     for a in args:
@@ -151,6 +438,9 @@ def total(out):
 
 def main():
     mode, rest = sys.argv[1], sys.argv[2:]
+    csv_path, rest = extract_csv_arg(rest)
+    if csv_path is not None and mode != "size":
+        raise SystemExit(f"--csv is only supported in size mode, not {mode!r}")
     flags = [a for a in rest if a.startswith("-D") or a.startswith("-O") or a.startswith("-m")]
     rest = [a for a in rest if a not in flags]
     if mode == "bench":
@@ -185,7 +475,9 @@ def main():
             got = list(pool.map(one, imgs))
         print(summarize_sizes(got, refs, verbose="-v" in sys.argv, prefix=f"{rest[0]} {cfg} "))
     elif mode == "size":
-        src = rest.pop(0) if rest and rest[0].endswith(".c") else REPO / "src" / "cm.c"
+        src = Path(rest.pop(0)) if rest and rest[0].endswith(".c") else REPO / "src" / "cm.c"
+        if csv_path is not None:
+            codec_provenance(src, flags)
         imgs = names(rest)
         build(src, RES / "benchS.exe", flags)
         refs = json.loads((RES / "jxl_refs.json").read_text(encoding="utf-8"))
@@ -199,7 +491,10 @@ def main():
             raise SystemExit(f"no size for {n}: {out!r}")
         with ThreadPoolExecutor(8) as pool:
             got = list(pool.map(one, imgs))
-        print(summarize_sizes(got, refs, verbose="-v" in sys.argv))
+        summary = summarize_sizes(got, refs, verbose="-v" in sys.argv)
+        if csv_path is not None:
+            write_corpus_csv(csv_path, got, refs, src=src, flags=flags)
+        print(summary)
 
 
 if __name__ == "__main__":
