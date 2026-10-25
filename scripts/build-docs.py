@@ -33,7 +33,11 @@ FORBIDDEN_SITE_TOKENS = (
     'claude.md',
 )
 MD_LINK_RE = re.compile(r'(!?\[[^\]\n]*\]\()(?P<url><[^>\n]+>|[^\s)]+)(?P<tail>(?:\s+["\'][^\n]*?["\'])?\))')
-HTML_ATTR_RE = re.compile(r'(\b(?:href|src)=["\'])(?P<url>[^"\']+)(["\'])')
+MD_REF_RE = re.compile(r'^(\s*\[(?!\^)[^\]]+\]:\s*)(?P<url><[^>\n]+>|[^\s>]+)(?P<tail>.*)$')
+HTML_ATTR_RE = re.compile(
+    r'(\b(?:href|src|poster)\s*=\s*)(?:(["\'])(?P<qurl>[^"\']*)(\2)|(?P<uurl>[^\s"\'=<>`]+))',
+    re.I,
+)
 README_SECTIONS = (
     '## What is here',
     '## Build in WSL or Linux',
@@ -332,18 +336,19 @@ def validate_stage_destination(root: Path, stage_arg: str | Path) -> Path:
     build_root = resolved_root / 'build'
     if build_root.is_symlink():
         raise ValueError('build directory cannot be a symlink')
-    candidate = (Path(raw) if Path(raw).is_absolute() else (resolved_root / raw))
-    if candidate.is_symlink():
-        raise ValueError(f'staging destination cannot be a symlink: {raw}')
-    resolved_dest = candidate.resolve()
-    if resolved_dest == build_root or not resolved_dest.is_relative_to(build_root):
+    candidate = Path(raw) if Path(raw).is_absolute() else (resolved_root / raw)
+    lexical_dest = Path(os.path.abspath(str(candidate)))
+    if lexical_dest == build_root or not lexical_dest.is_relative_to(build_root):
         raise ValueError(f'staging destination must be a subdirectory inside build/: {raw}')
     cur = build_root
-    for part in resolved_dest.relative_to(build_root).parts:
+    for part in lexical_dest.relative_to(build_root).parts:
         cur /= part
         if cur.is_symlink():
-            raise ValueError(f'staging destination ancestor is a symlink: {cur}')
-    if candidate.exists() and not candidate.is_dir():
+            raise ValueError(f'staging destination ancestor or target is a symlink: {cur}')
+    resolved_dest = lexical_dest.resolve()
+    if resolved_dest == build_root or not resolved_dest.is_relative_to(build_root):
+        raise ValueError(f'staging destination must resolve inside build/: {raw}')
+    if resolved_dest.exists() and not resolved_dest.is_dir():
         raise ValueError(f'staging destination exists and is not a directory: {raw}')
     return resolved_dest
 
@@ -368,7 +373,9 @@ def rebase_staged_links(
         if parts.scheme or parts.netloc or clean_url.startswith('#') or clean_url.startswith('{{'):
             return raw_url
         target_path = parts.path
+        query = ('?' + parts.query) if parts.query else ''
         fragment = ('#' + parts.fragment) if parts.fragment else ''
+        suffix = f'{query}{fragment}'
         if not target_path:
             return raw_url
         if target_path.startswith('/'):
@@ -381,16 +388,24 @@ def rebase_staged_links(
         if is_forbidden_path(norm_rel, extra_forbidden):
             raise ValueError(f'{source_doc_rel}: link targets forbidden private/internal path {norm_rel!r}')
         if norm_rel in doc_to_staged_html:
-            rebased = f'{base_path}/{doc_to_staged_html[norm_rel]}{fragment}'
+            rebased = f'{base_path}/{doc_to_staged_html[norm_rel]}{suffix}'
         elif norm_rel in asset_to_staged_url:
-            rebased = f'{base_path}/{asset_to_staged_url[norm_rel]}{fragment}'
+            rebased = f'{base_path}/{asset_to_staged_url[norm_rel]}{suffix}'
         else:
             repo_target = safe_repo_path(root, norm_rel)
             if not repo_target.exists():
                 raise ValueError(f'{source_doc_rel}: link target does not exist: {norm_rel}')
             kind = 'tree' if repo_target.is_dir() else 'blob'
-            rebased = f'https://github.com/{repo_slug}/{kind}/main/{norm_rel}{fragment}'
+            rebased = f'https://github.com/{repo_slug}/{kind}/main/{norm_rel}{suffix}'
         return f'<{rebased}>' if bracketed else rebased
+
+    def rewrite_html_attr(match: re.Match[str]) -> str:
+        prefix = match.group(1)
+        qurl = match.group('qurl')
+        if qurl is not None:
+            quote = match.group(2)
+            return f'{prefix}{quote}{rewrite_url(qurl)}{quote}'
+        return f'{prefix}{rewrite_url(match.group("uurl"))}'
 
     lines: list[str] = []
     fence: str | None = None
@@ -408,7 +423,8 @@ def rebase_staged_links(
             lines.append(line)
             continue
         line = MD_LINK_RE.sub(lambda m: m.group(1) + rewrite_url(m.group('url')) + m.group('tail'), line)
-        line = HTML_ATTR_RE.sub(lambda m: m.group(1) + rewrite_url(m.group('url')) + m.group(3), line)
+        line = MD_REF_RE.sub(lambda m: m.group(1) + rewrite_url(m.group('url')) + m.group('tail'), line)
+        line = HTML_ATTR_RE.sub(rewrite_html_attr, line)
         lines.append(line)
     return ''.join(lines)
 

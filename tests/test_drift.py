@@ -541,8 +541,26 @@ class DriftTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 build_docs.stage_site(self.root, 'build/symlink-dest')
             self.assertEqual(sentinel, (self.root / 'docs/index.md').read_bytes())
+            self.write('build/victim/site/keep.txt', 'victim data')
+            (self.root / 'build/alias').symlink_to(self.root / 'build/victim', target_is_directory=True)
+            with self.assertRaises(ValueError):
+                build_docs.stage_site(self.root, 'build/alias/site')
+            self.assertEqual('victim data', (self.root / 'build/victim/site/keep.txt').read_text(encoding='utf-8'))
         except OSError:
             pass
+
+        # Reference-style Markdown links, HTML attributes with whitespace around =, and query strings are rebased cleanly.
+        self.write(
+            'docs/index.md',
+            sentinel.decode('utf-8')
+            + '\nSee [Build Ref][build], <a href = "building.md?plain=1#L2">HTML Build</a>, and [Header](../include/rasterfold.h?plain=1#L1).\n\n[build]: building.md?raw=1#L3\n',
+        )
+        build_docs.stage_site(self.root, 'build/site-source')
+        rebased_probe = (self.root / 'build/site-source/index.md').read_text(encoding='utf-8')
+        self.assertIn('[build]: https://github.com/rizonesoft/RasterFold/blob/main/docs/building.md?raw=1#L3', rebased_probe)
+        self.assertIn('<a href = "https://github.com/rizonesoft/RasterFold/blob/main/docs/building.md?plain=1#L2">', rebased_probe)
+        self.assertIn('(https://github.com/rizonesoft/RasterFold/blob/main/include/rasterfold.h?plain=1#L1)', rebased_probe)
+        self.write('docs/index.md', sentinel.decode('utf-8'))
 
         # Repeated staging removes obsolete files from build/site-source and stages only the allowlist.
         self.write('build/site-source/obsolete.md', 'stale file\n')

@@ -57,20 +57,59 @@ jobs:
           rm -rf build/site-artifact
           cp -R build/site-raw build/site-artifact
           python3 -c '
+          from html.parser import HTMLParser
           import pathlib
+
+          class NavParser(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.nav_depth = 0
+                  self.cur_href = None
+                  self.cur_text = []
+                  self.nav_links = {}
+
+              def handle_starttag(self, tag, attrs):
+                  ad = dict(attrs)
+                  if tag == "nav" and (ad.get("id") == "site-nav" or ad.get("aria-label") == "Main"):
+                      self.nav_depth = 1
+                  elif self.nav_depth > 0:
+                      if tag == "nav":
+                          self.nav_depth += 1
+                      elif tag == "a" and ad.get("href"):
+                          self.cur_href = ad["href"]
+                          self.cur_text = []
+
+              def handle_data(self, data):
+                  if self.nav_depth > 0 and self.cur_href is not None:
+                      self.cur_text.append(data)
+
+              def handle_endtag(self, tag):
+                  if self.nav_depth > 0:
+                      if tag == "a" and self.cur_href is not None:
+                          self.nav_links[self.cur_href] = "".join(self.cur_text).strip()
+                          self.cur_href = None
+                          self.cur_text = []
+                      elif tag == "nav":
+                          self.nav_depth -= 1
+
           site = pathlib.Path("build/site-artifact")
-          index = (site / "index.html").read_text(encoding="utf-8")
-          for slug, title, src_rel in [
-              ("index.html", "Overview", "docs/index.md"),
-              ("getting-started.html", "Getting Started", "docs/getting-started.md"),
-              ("usage.html", "CLI and Library Usage", "README.md"),
-              ("format.html", "Format Specification", "spec/FOLD.md"),
-              ("benchmarks.html", "Benchmarks", "docs/benchmarks.md"),
-              ("research-summary.html", "Research Summary", "docs/research.md"),
+          parser = NavParser()
+          parser.feed((site / "index.html").read_text(encoding="utf-8"))
+          assert parser.nav_links, "no links found inside site-nav"
+          for slug, nav_hrefs, title, src_rel in [
+              ("index.html", ("/RasterFold/", "/RasterFold/index.html"), "Overview", "docs/index.md"),
+              ("getting-started.html", ("/RasterFold/getting-started.html",), "Getting Started", "docs/getting-started.md"),
+              ("usage.html", ("/RasterFold/usage.html",), "CLI and Library Usage", "README.md"),
+              ("format.html", ("/RasterFold/format.html",), "Format Specification", "spec/FOLD.md"),
+              ("benchmarks.html", ("/RasterFold/benchmarks.html",), "Benchmarks", "docs/benchmarks.md"),
+              ("research-summary.html", ("/RasterFold/research-summary.html",), "Research Summary", "docs/research.md"),
           ]:
               page_path = site / slug
               assert page_path.is_file(), f"missing built page: {slug}"
-              assert title in index, f"missing nav title in index.html: {title}"
+              matched_href = next((h for h in nav_hrefs if parser.nav_links.get(h) == title), None)
+              assert matched_href is not None, f"missing nav link {nav_hrefs} -> {title!r} in {parser.nav_links}"
+              rel_target = matched_href[len("/RasterFold/"):] or "index.html"
+              assert (site / rel_target).is_file(), f"nav link destination missing: {rel_target}"
               assert pathlib.Path(src_rel).is_file(), f"missing repository source file: {src_rel}"
               page_html = page_path.read_text(encoding="utf-8")
               expected_edit = f"href=\"https://github.com/rizonesoft/RasterFold/tree/main/{src_rel}\" id=\"edit-this-page\""
