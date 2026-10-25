@@ -59,17 +59,44 @@ def base_x64_flags() -> list[str]:
     return ['-march=x86-64-v2', '-mtune=generic']
 
 
+PGO_TRACKED_SOURCES = (
+    'src/cm.c', 'src/fold.c', 'src/bmp.c', 'src/crc32.c',
+    'src/api.c', 'src/main.c', 'src/sys.c', 'src/platform.c',
+    'src/rf.h', 'src/simd.h',
+)
+
+
 def validate_pgo_profile(profile: Path, tools: Path, suffix: str) -> Path:
     resolved = profile.resolve()
     if not resolved.is_file() or resolved.stat().st_size == 0:
         raise ValueError(f'missing or empty PGO profile: {profile}')
     profdata = tools / ('llvm-profdata' + suffix)
-    if not profdata.is_file():
+    cc = tools / ('clang' + suffix)
+    if not profdata.is_file() or not cc.is_file():
         raise ValueError(f'missing {profdata}; run tools/bootstrap.py')
     proc = subprocess.run([str(profdata), 'show', str(resolved)], capture_output=True, text=True)
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout or 'invalid profile').strip().splitlines()[0]
         raise ValueError(f'corrupt or incompatible PGO profile {profile}: {detail}')
+    meta_path = Path(str(resolved) + '.json')
+    if not meta_path.is_file():
+        raise ValueError(f'stale or mismatched PGO profile provenance: missing {meta_path}')
+    try:
+        meta = json.loads(meta_path.read_text(encoding='utf-8'))
+    except Exception as exc:
+        raise ValueError(f'stale or mismatched PGO profile provenance in {meta_path}: {exc}') from exc
+    actual_sha = hashlib.sha256(resolved.read_bytes()).hexdigest()
+    compiler = subprocess.check_output([str(cc), '--version'], text=True).splitlines()[0]
+    if meta.get('schema') != 1 or meta.get('profdata_sha256') != actual_sha or meta.get('compiler') != compiler:
+        raise ValueError(f'stale or mismatched PGO profile provenance in {meta_path}: compiler or profile digest mismatch')
+    sources = meta.get('sources')
+    if not isinstance(sources, dict):
+        raise ValueError(f'stale or mismatched PGO profile provenance in {meta_path}: missing sources table')
+    for rel in PGO_TRACKED_SOURCES:
+        expected = sources.get(rel)
+        current = hashlib.sha256((ROOT / rel).read_bytes()).hexdigest()
+        if expected != current:
+            raise ValueError(f'stale or mismatched PGO profile provenance for {rel} in {meta_path}; regenerate with scripts/pgo.ps1')
     return resolved
 
 
@@ -152,7 +179,10 @@ def build(target: str, jobs: int, portable: bool, pgo_profile: Path | None = Non
     if pgo_profile is not None:
         pgo_tools = ROOT / ('tools/llvm-mingw/bin' if os.name == 'nt' else 'tools/llvm-mingw-linux/bin')
         validated_profile = validate_pgo_profile(pgo_profile, pgo_tools, suffix)
-        flags += [f'-fprofile-instr-use={validated_profile}', '-Wno-profile-instr-out-of-date', '-Wno-profile-instr-unprofiled']
+        if windows and not portable:
+            flags += [f'-fprofile-instr-use={validated_profile}', '-Wno-profile-instr-unprofiled']
+        else:
+            validated_profile = None
     link = [str(cc), f'--target={triple}', '-fuse-ld=lld']
     if windows:
         link += ['-nostdlib']

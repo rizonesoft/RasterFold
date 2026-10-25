@@ -320,7 +320,9 @@ class Artifacts(unittest.TestCase):
                     self.assertFalse((dir_a/'out.fold.partial').exists())
 
     def test_pgo_lifecycle_and_validation(self):
+        import json
         import sys
+        import time
         sys.path.insert(0, str(ROOT / 'scripts'))
         import build as build_mod  # noqa: E402
         import pgo as pgo_mod  # noqa: E402
@@ -328,13 +330,49 @@ class Artifacts(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=ROOT / 'build') as temp:
             temp_dir = Path(temp)
             # 1. Synthetic fallback training BMPs cover 10 regimes and decode cleanly via rfi_ref.
-            bmps = pgo_mod.synthetic_training_bmps(temp_dir / 'syn') if (temp_dir / 'syn').mkdir() is None else []
+            syn_dir = temp_dir / 'syn'
+            syn_dir.mkdir()
+            bmps = pgo_mod.synthetic_training_bmps(syn_dir)
             self.assertEqual(len(bmps), 10)
             w0, h0, rgb0 = rfi_ref.read_bmp24(bmps[0].read_bytes())
             self.assertEqual((w0, h0), (256, 192))
             self.assertEqual(len(rgb0), 256 * 192 * 3)
 
-            # 2. Corrupt or empty profile is refused by validate_pgo_profile and scripts/build.py --pgo-use.
+            # 2. Repeated profile generation (max_images=1) produces valid .profdata and .profdata.json.
+            prof_out = temp_dir / 'test.profdata'
+            meta_out = Path(str(prof_out) + '.json')
+            if not (ROOT / 'bin/windows-x64-pgo/bin/rasterfold.exe').is_file():
+                build_mod.build_pgo_gen(1)
+            pgo_mod.generate_profile(prof_out, build_instrumented=False, max_images=1)
+            self.assertTrue(prof_out.is_file() and prof_out.stat().st_size > 0)
+            self.assertTrue(meta_out.is_file())
+            first_bytes = prof_out.read_bytes()
+            first_meta = meta_out.read_text(encoding='utf-8')
+            pgo_mod.generate_profile(prof_out, build_instrumented=False, max_images=1)
+            second_bytes = prof_out.read_bytes()
+            second_meta = meta_out.read_text(encoding='utf-8')
+            self.assertGreater(len(second_bytes), 0)
+            pgo_tools = ROOT / ('tools/llvm-mingw/bin' if WIN else 'tools/llvm-mingw-linux/bin')
+            suffix = '.exe' if WIN else ''
+            self.assertEqual(build_mod.validate_pgo_profile(prof_out, pgo_tools, suffix), prof_out.resolve())
+
+            # 3. Failed training run preserves both existing .profdata and .profdata.json unchanged.
+            bad_exe = temp_dir / 'bad_pgo.exe'
+            bad_exe.write_bytes(b'not-an-executable')
+            with self.assertRaises((OSError, RuntimeError, subprocess.CalledProcessError)):
+                pgo_mod.generate_profile(prof_out, build_instrumented=False, pgo_exe=bad_exe, max_images=1)
+            self.assertEqual(prof_out.read_bytes(), second_bytes)
+            self.assertEqual(meta_out.read_text(encoding='utf-8'), second_meta)
+
+            # 4. Stale source provenance in .profdata.json is rejected by validate_pgo_profile.
+            stale_meta = json.loads(second_meta)
+            stale_meta['sources']['src/cm.c'] = '0' * 64
+            meta_out.write_text(json.dumps(stale_meta), encoding='utf-8')
+            with self.assertRaisesRegex(ValueError, 'stale or mismatched PGO profile provenance'):
+                build_mod.validate_pgo_profile(prof_out, pgo_tools, suffix)
+            meta_out.write_text(second_meta, encoding='utf-8')
+
+            # 5. Corrupt .profdata is refused by scripts/build.py --pgo-use.
             corrupt = temp_dir / 'corrupt.profdata'
             corrupt.write_bytes(b'not-a-valid-llvm-profdata')
             proc = subprocess.run(
@@ -346,20 +384,18 @@ class Artifacts(unittest.TestCase):
             self.assertNotEqual(proc.returncode, 0)
             self.assertIn('corrupt or incompatible PGO profile', proc.stderr)
 
-            # 3. Failed training run does not overwrite an existing profile at the destination path.
-            existing = temp_dir / 'keep.profdata'
-            existing.write_bytes(b'sentinel-valid-bytes')
-            if WIN:
-                with self.assertRaises((FileNotFoundError, RuntimeError)):
-                    pgo_mod.generate_profile(existing, build_instrumented=False, pgo_exe=temp_dir / 'missing.exe')
-                self.assertEqual(existing.read_bytes(), b'sentinel-valid-bytes')
-
-            # 4. Valid profile created from a single dummy profraw or existing build/pgo/rasterfold.profdata validates.
-            real_prof = ROOT / 'build' / 'pgo' / 'rasterfold.profdata'
-            if real_prof.is_file():
-                pgo_tools = ROOT / ('tools/llvm-mingw/bin' if WIN else 'tools/llvm-mingw-linux/bin')
-                validated = build_mod.validate_pgo_profile(real_prof, pgo_tools, '.exe' if WIN else '')
-                self.assertEqual(validated, real_prof.resolve())
+            # 6. Implicit Ninja dependency on .profdata triggers object rebuild when profile timestamp advances.
+            manifest = ROOT / 'build' / 'windows-x64' / 'build.ninja'
+            try:
+                build_mod.build('windows-x64', 2, False, pgo_profile=prof_out)
+                self.assertIn(f'| {build_mod.ninja_path(prof_out.resolve())}', manifest.read_text(encoding='utf-8'))
+                future = time.time() + 10.0
+                os.utime(prof_out, (future, future))
+                ninja_bin = ROOT / ('tools/ninja/ninja.exe' if WIN else 'tools/ninja-linux/ninja')
+                dry = subprocess.run([str(ninja_bin), '-f', str(manifest), '-n'], cwd=ROOT, capture_output=True, text=True, check=True)
+                self.assertIn('CC cm', dry.stdout)
+            finally:
+                build_mod.build('windows-x64', 2, False, pgo_profile=None)
 
 
 if __name__=='__main__':unittest.main(verbosity=2)

@@ -1,9 +1,12 @@
-"""Alternate RasterFold and ffmpeg/libjxl (or two RasterFold executables) process runs; report medians and mins.
+"""Alternate RasterFold and ffmpeg/libjxl (or two RasterFold executables / corpus sets) runs; report medians and mins.
 
 usage: python research/vsjxl.py [image.bmp] [-n 5] [--threads 1|3] [--exe PATH] [--alt-exe PATH]
+       python research/vsjxl.py --corpus photo|tp|synth [-n 3] [--threads 1|3] [--pgo-profile PATH]
 """
 import argparse
+import math
 import os
+import re
 import shutil
 import statistics
 import subprocess
@@ -42,11 +45,78 @@ def parse_args(argv):
     p.add_argument("--threads", type=int, choices=(1, 3), default=None)
     p.add_argument("--exe", type=Path, default=DEFAULT_EXE)
     p.add_argument("--alt-exe", type=Path, default=None)
+    p.add_argument("--corpus", choices=("photo", "tp", "synth", "all"), default=None)
+    p.add_argument("--pgo-profile", type=Path, default=REPO / "build" / "pgo" / "rasterfold.profdata")
     return p.parse_args(norm)
+
+
+def run_corpus_ab(set_name: str, n: int, threads: int, pgo_profile: Path) -> None:
+    sys.path.insert(0, str(REPO / "research"))
+    import ab  # noqa: E402
+
+    prof = pgo_profile.resolve()
+    base_exe = ab.RES / "bench_base.exe"
+    pgo_exe = ab.RES / "bench_pgo.exe"
+    ab.build(REPO / "src" / "cm.c", base_exe, ())
+    ab.build(REPO / "src" / "cm.c", pgo_exe, (f"-fprofile-instr-use={prof}", "-Wno-profile-instr-unprofiled"))
+    sets = ("photo", "tp", "synth") if set_name == "all" else (set_name,)
+    t_flag = f"-t{threads}"
+    for sname in sets:
+        imgs = ab.SETS[sname]
+        base_runs = []
+        pgo_runs = []
+        for r in range(n):
+            pair = [("base", base_exe, base_runs), ("pgo", pgo_exe, pgo_runs)]
+            if r % 2 == 1:
+                pair.reverse()
+            for _, exe, lst in pair:
+                proc = subprocess.run(
+                    [str(exe), "-r1", t_flag, *[f"ppm/{img}.ppm" for img in imgs]],
+                    stdin=subprocess.DEVNULL,
+                    capture_output=True,
+                    text=True,
+                    cwd=ab.RES,
+                    check=True,
+                )
+                rows = {}
+                for line in proc.stdout.splitlines():
+                    m = re.match(r"^(\S+)\.ppm\s+(\d+)\s+bpp=\S+\s+enc=\s*([\d.]+)ms\s+dec=\s*([\d.]+)ms", line.strip())
+                    if m:
+                        rows[m.group(1)] = (int(m.group(2)), max(float(m.group(3)), 0.05), max(float(m.group(4)), 0.05))
+                lst.append((rows, ab.total(proc.stdout)))
+        base_tot_enc = min(x[1][1] for x in base_runs)
+        pgo_tot_enc = min(x[1][1] for x in pgo_runs)
+        base_tot_dec = min(x[1][2] for x in base_runs)
+        pgo_tot_dec = min(x[1][2] for x in pgo_runs)
+        enc_ratios = []
+        dec_ratios = []
+        for img in imgs:
+            if base_runs[0][0][img][0] != pgo_runs[0][0][img][0]:
+                raise SystemExit(f"size mismatch on {img}")
+            be = min(x[0][img][1] for x in base_runs)
+            pe = min(x[0][img][1] for x in pgo_runs)
+            bd = min(x[0][img][2] for x in base_runs)
+            pd = min(x[0][img][2] for x in pgo_runs)
+            enc_ratios.append((pe / be, img))
+            dec_ratios.append((pd / bd, img))
+        g_enc = math.exp(sum(math.log(x[0]) for x in enc_ratios) / len(enc_ratios))
+        g_dec = math.exp(sum(math.log(x[0]) for x in dec_ratios) / len(dec_ratios))
+        w_enc = max(enc_ratios)
+        w_dec = max(dec_ratios)
+        print(
+            f"{sname:5s} {t_flag} n={len(imgs):2d} | dec min_tot={pgo_tot_dec/base_tot_dec:.3f} "
+            f"({pgo_tot_dec:.1f}/{base_tot_dec:.1f}ms) geomean={g_dec:.3f} worst={w_dec[1]}({w_dec[0]:.3f}) | "
+            f"enc min_tot={pgo_tot_enc/base_tot_enc:.3f} ({pgo_tot_enc:.1f}/{base_tot_enc:.1f}ms) "
+            f"geomean={g_enc:.3f} worst={w_enc[1]}({w_enc[0]:.3f})",
+            flush=True,
+        )
 
 
 def main():
     args = parse_args(sys.argv[1:])
+    if args.corpus is not None:
+        run_corpus_ab(args.corpus, args.n, args.threads or 1, args.pgo_profile)
+        return
     src = Path(args.image)
     n = args.n
     exe = args.exe

@@ -17,7 +17,11 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUT = ROOT / 'build' / 'pgo' / 'rasterfold.profdata'
 PGO_EXE = ROOT / 'bin' / 'windows-x64-pgo' / 'bin' / 'rasterfold.exe'
-TRACKED_SOURCES = ('src/cm.c', 'src/fold.c', 'src/bmp.c', 'src/crc32.c', 'src/api.c', 'src/main.c')
+TRACKED_SOURCES = (
+    'src/cm.c', 'src/fold.c', 'src/bmp.c', 'src/crc32.c',
+    'src/api.c', 'src/main.c', 'src/sys.c', 'src/platform.c',
+    'src/rf.h', 'src/simd.h',
+)
 
 
 def write_bmp24(width: int, height: int, rgb: bytes) -> bytes:
@@ -137,12 +141,21 @@ def prepare_training_bmps(work: Path) -> tuple[list[Path], str]:
     return synthetic_training_bmps(work), 'synthetic:10-regime'
 
 
-def generate_profile(out_path: Path, build_instrumented: bool = True, pgo_exe: Path = PGO_EXE) -> Path:
+def generate_profile(
+    out_path: Path,
+    build_instrumented: bool = True,
+    pgo_exe: Path = PGO_EXE,
+    max_images: int | None = None,
+) -> Path:
     if os.name != 'nt':
         cmd = [sys.executable, str(ROOT / 'scripts' / 'windows.py'), 'scripts/pgo.py', '--out',
                out_path.resolve().relative_to(ROOT.resolve()).as_posix()]
         if not build_instrumented:
             cmd.append('--no-build')
+        if pgo_exe != PGO_EXE:
+            cmd.extend(['--pgo-exe', pgo_exe.resolve().relative_to(ROOT.resolve()).as_posix()])
+        if max_images is not None:
+            cmd.extend(['--max-images', str(max_images)])
         subprocess.run(cmd, cwd=ROOT, stdin=subprocess.DEVNULL, check=True)
         return out_path
     if build_instrumented:
@@ -162,6 +175,8 @@ def generate_profile(out_path: Path, build_instrumented: bool = True, pgo_exe: P
         raw_dir.mkdir(parents=True, exist_ok=True)
         img_dir.mkdir(parents=True, exist_ok=True)
         bmps, dataset_label = prepare_training_bmps(img_dir)
+        if max_images is not None:
+            bmps = bmps[:max_images]
         run_index = 0
         raw_files: list[Path] = []
         for bmp in bmps:
@@ -226,10 +241,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--out', type=Path, default=DEFAULT_OUT)
     parser.add_argument('--no-build', action='store_true', help='use existing bin/windows-x64-pgo/bin/rasterfold.exe')
+    parser.add_argument('--pgo-exe', type=Path, default=PGO_EXE, help='override instrumented executable path')
+    parser.add_argument('--max-images', type=int, default=None, help='limit training images (for fast lifecycle tests)')
     args = parser.parse_args()
     out = args.out if args.out.is_absolute() else (ROOT / args.out)
+    pgo_exe = args.pgo_exe if args.pgo_exe.is_absolute() else (ROOT / args.pgo_exe)
     try:
-        generate_profile(out, build_instrumented=not args.no_build)
+        generate_profile(out, build_instrumented=not args.no_build, pgo_exe=pgo_exe, max_images=args.max_images)
         return 0
     except Exception as exc:
         print(f'pgo: {exc}', file=sys.stderr)
