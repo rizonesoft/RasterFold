@@ -1,0 +1,103 @@
+{
+  "ref": "D05 T01 \u00a71",
+  "title": "Milestone 1 Gate: Locked baseline",
+  "implementation_sha": "fbf1036de2cfd0eeaee1a55399563e2d2200328c",
+  "date": "2026-10-25",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/05-milestones/D05-T01-s1.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/05-milestones/D05-T01-s1.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 3,
+      "report": "docs/reviews/05-milestones/D05-T01-s1.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "pwsh scripts/check-all.ps1 -AllTargets -> check-all: 29/29 passed",
+    "python3 scripts/windows.py tests/measure_final.py -> PASS (rasterfold bytes=1409028 decode_wall_us=295854 decode_peak_ws=16576512 decode_codec_us=183840 pixels=True vs jxl bytes=1470703 decode_wall_us=459807 decode_peak_ws=51281920)",
+    "python3 research/ab.py size photo -v -> total=30865211 jxl=31782058 ratio=0.9712 geomean=0.9728 worst=1.0037 (kodim17) e9=31400714 e9_ratio=0.9829 e9_geomean=0.9883 e9_worst=1.0193 (kodim16) webp=34138176 webp_ratio=0.9041 webp_geomean=0.8932 webp_worst=1.0104 (ic_deer) measure=1409028 (0.9581 e9=0.9781 webp=0.8869), 28 of 39 photos below e9",
+    "python3 research/ab.py size tp -v -> total=6651583 jxl=6826895 ratio=0.9743 geomean=0.9722 worst=0.9931 (tp_nightshot_iso_1600_crop) e9=6740249 e9_ratio=0.9868 e9_geomean=0.9862 e9_worst=1.0131 (tp_nightshot_iso_1600_crop) webp=7368948 webp_ratio=0.9027 webp_geomean=0.8811 webp_worst=1.0073 (tp_deer_crop)",
+    "python3 research/ab.py size synth -v -> total=214773 jxl=226544 ratio=0.9480 geomean=1.1986 worst=18.0665 (syn_checker) e9=223034 e9_ratio=0.9630 geomean=2.2860 e9_worst=27.1857 (syn_checker) webp=201248 webp_ratio=1.0672 webp_geomean=3.6626 webp_worst=69.6220 (syn_checker)",
+    "tests/benchmark.py measure -n 3 -> failures: 0, rasterfold 1409028 bytes encode_us=308760 decode_us=319315 encode_peak=16699392 decode_peak=16580608, rasterfold-1t encode_us=640604 decode_us=601611 encode_peak=16625664 decode_peak=16461824, jxl 1470703 bytes encode_us=1595197 decode_us=493267, jxl-1t decode_us=721246, jxl-e9 1440564 bytes encode_us=10492083 decode_us=491123, webp 1588708 bytes encode_us=23548198 decode_us=219895",
+    "bin/windows-x64/bin/rasterfold.exe decode --time measure/image.bmp -> alloc_peak=10569996 (10.57 MB, codec_us=183820, total_us=240767, peak_working_set=16576512) at 3T and alloc_peak=10569964 (10.57 MB, codec_us=488047, total_us=557786, peak_working_set=16465920) at 1T; bin/linux-x64/bin/rasterfold decode --time -> alloc_peak=10570204 (10.57 MB, codec_us=196505, total_us=205643) at 3T",
+    "python3 scripts/windows.py research/vsjxl.py -n5 -> rf_enc median 292.8 ms min 271.6, rf_dec median 287.7 ms min 284.0, jxl_enc median 1582.9 ms min 1549.6, jxl_dec median 480.8 ms min 465.2, decode ratio 0.598 encode ratio 0.185",
+    "python3 research/ab.py ab src/cm.c src/cm.c measure -n5 -> -t1 enc min=482.7..484.1 med=496.4..499.6 dec min=453.5..467.2 med=481.7..498.2 and -t3 enc min=152.2..168.6 med=177.9..187.6 dec min=167.3..177.9 med=185.2..193.2",
+    "python3 research/milestones.py --check && python3 scripts/build-docs.py --check && python3 scripts/drift-check.py && python3 -m unittest discover -s tests -p test_drift.py -v -> 54 tests OK, 0 drift errors",
+    "python3 scripts/ci_status.py && python3 scripts/ci_status.py --workflow pages.yml -> build.yml green at fbf1036de2cf (40200418944), plan.yml green at fbf1036de2cf (40200418918), pages.yml green at fbf1036de2cf (40200418908)"
+  ],
+  "completion": {
+    "report": "docs/reviews/05-milestones/D05-T01-s1.md",
+    "verdict": "completed",
+    "candidate": "91b43d439f0c19b4a42d0ac9fe62a63d4f125ba4",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 3,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/05-milestones/D05-T01-s1.md",
+    "candidate": "b4f76b2d9bd358df0e1abd8b9b62a59641e56fe7",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}
