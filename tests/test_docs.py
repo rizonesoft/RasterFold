@@ -813,6 +813,91 @@ class DocsMapTests(unittest.TestCase):
                     fetcher=_always_failing_fetcher,
                 )
 
+            # 8. Empty --verify-live "" or --stage "" in CLI main() rejects without calling write_generated_pages.
+            write_calls = {'count': 0}
+            orig_writer = build_docs.write_generated_pages
+
+            def _forbidden_writer(*_a, **_kw):
+                write_calls['count'] += 1
+                return []
+
+            build_docs.write_generated_pages = _forbidden_writer
+            try:
+                err_empty_verify = io.StringIO()
+                with contextlib.redirect_stderr(err_empty_verify):
+                    self.assertEqual(
+                        1,
+                        build_docs.main(
+                            [
+                                '--root',
+                                str(self.root),
+                                '--verify-live',
+                                '',
+                                '--expected-receipt',
+                                str(receipt_path),
+                                '--expected-commit',
+                                expected_commit,
+                            ]
+                        ),
+                    )
+                self.assertEqual(0, write_calls['count'])
+                self.assertIn('--verify-live URL must be non-empty', err_empty_verify.getvalue())
+
+                err_empty_stage = io.StringIO()
+                with contextlib.redirect_stderr(err_empty_stage):
+                    self.assertEqual(1, build_docs.main(['--root', str(self.root), '--stage', '']))
+                self.assertEqual(0, write_calls['count'])
+                self.assertIn('invalid staging destination', err_empty_stage.getvalue())
+            finally:
+                build_docs.write_generated_pages = orig_writer
+
+            # 9. Truncated HTTP response (http.client.IncompleteRead) inside _default_http_fetcher converts to ValueError and recovers via retry.
+            import http.client
+            import urllib.request
+
+            urlopen_calls = {'count': 0}
+            orig_urlopen = urllib.request.urlopen
+
+            class _FakeResponse:
+                def __init__(self, status: int, body: bytes, truncate: bool = False) -> None:
+                    self.status = status
+                    self._body = body
+                    self._truncate = truncate
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, exc_type, exc, tb):
+                    return False
+
+                def read(self) -> bytes:
+                    if self._truncate:
+                        raise http.client.IncompleteRead(self._body[:8], len(self._body) - 8)
+                    return self._body
+
+            def _mock_urlopen(req, timeout=20):
+                raw_url = req.full_url.split('?_rf_verify=', 1)[0]
+                if raw_url not in served_files:
+                    raise ValueError(f'unexpected URL {raw_url}')
+                urlopen_calls['count'] += 1
+                if urlopen_calls['count'] == 1:
+                    return _FakeResponse(200, served_files[raw_url], truncate=True)
+                return _FakeResponse(200, served_files[raw_url], truncate=False)
+
+            urllib.request.urlopen = _mock_urlopen
+            try:
+                recovered_http = build_docs.verify_live_publication(
+                    base_url,
+                    receipt_path,
+                    expected_commit,
+                    retries=2,
+                    retry_delay=0.0,
+                )
+                self.assertEqual(2, recovered_http['attempt'])
+                self.assertEqual(expected_commit, recovered_http['commit'])
+            finally:
+                urllib.request.urlopen = orig_urlopen
+
 
 if __name__ == '__main__':
     unittest.main()

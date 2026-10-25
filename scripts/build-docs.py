@@ -1990,6 +1990,7 @@ LIVE_SAMPLE_PAGES: tuple[str, ...] = LIVE_SAMPLED_PAGES
 
 
 def _default_http_fetcher(url: str) -> tuple[int, bytes]:
+    import http.client
     import urllib.error
     import urllib.request
 
@@ -2007,9 +2008,12 @@ def _default_http_fetcher(url: str) -> tuple[int, bytes]:
         with urllib.request.urlopen(req, timeout=20) as resp:
             return int(resp.status), resp.read()
     except urllib.error.HTTPError as exc:
-        body = exc.read() if hasattr(exc, 'read') else b''
+        try:
+            body = exc.read() if hasattr(exc, 'read') else b''
+        except (OSError, http.client.HTTPException) as read_exc:
+            raise ValueError(f'HTTP error body read failed for {url}: {read_exc}') from None
         return int(exc.code), body
-    except (OSError, urllib.error.URLError) as exc:
+    except (OSError, urllib.error.URLError, http.client.HTTPException) as exc:
         raise ValueError(f'HTTP request failed for {url}: {exc}') from None
 
 
@@ -2150,10 +2154,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         root = args.root.resolve()
-        if (args.check or args.self_test or args.verify_live) and (args.write or args.stage):
+        has_verify_live = args.verify_live is not None
+        has_stage = args.stage is not None
+        if (args.check or args.self_test or has_verify_live) and (args.write or has_stage):
             raise ValueError('--check, --self-test, and --verify-live cannot be combined with --write or --stage')
-        if args.verify_live:
-            if not args.expected_receipt or not args.expected_commit:
+        if has_verify_live:
+            if not args.verify_live.strip():
+                raise ValueError('--verify-live URL must be non-empty')
+            if args.expected_receipt is None or not str(args.expected_receipt).strip() or not (args.expected_commit or '').strip():
                 raise ValueError('--verify-live requires both --expected-receipt and --expected-commit')
             res = verify_live_publication(
                 args.verify_live,
@@ -2182,7 +2190,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             print('build-docs: current')
             return 0
-        if args.stage:
+        if has_stage:
             if args.write:
                 write_generated_pages(root)
             staged = stage_site(root, args.stage)
