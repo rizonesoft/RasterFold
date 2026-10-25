@@ -331,10 +331,7 @@ VOID_TAGS = {
     'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input',
     'link', 'meta', 'param', 'source', 'track', 'wbr',
 }
-HIDDEN_STYLE_RE = re.compile(
-    r'(?:display\s*:\s*none|visibility\s*:\s*(?:hidden|collapse)|(?:opacity|font-size)\s*:\s*[+-]?(?:0+(?:\.0*)?|\.0+)(?:[a-z%]*)?(?![.0-9]))',
-    re.I,
-)
+ZERO_CSS_VALUE_RE = re.compile(r'[+-]?(?:0+(?:\.0*)?|\.0+)(?:[a-z%]*)?', re.I)
 
 
 def _decode_css_text(val):
@@ -344,6 +341,37 @@ def _decode_css_text(val):
         lambda m: chr(int(m.group(1), 16)) if m.group(1) else m.group(2),
         no_comments,
     )
+
+
+def _style_is_hidden(style_text):
+    css = _decode_css_text(style_text)
+    effective = {}
+    for decl in css.split(';'):
+        if ':' not in decl:
+            continue
+        prop_raw, val_raw = decl.split(':', 1)
+        prop = prop_raw.strip().lower()
+        if prop not in ('display', 'visibility', 'opacity', 'font-size'):
+            continue
+        val = val_raw.strip()
+        imp_match = re.search(r'!\s*important\s*$', val, re.I)
+        imp = 1 if imp_match else 0
+        if imp_match:
+            val = val[:imp_match.start()].strip()
+        if not val:
+            continue
+        prev_imp, _ = effective.get(prop, (-1, ''))
+        if imp >= prev_imp:
+            effective[prop] = (imp, val.lower())
+    if effective.get('display', (0, ''))[1] == 'none':
+        return True
+    if effective.get('visibility', (0, ''))[1] in ('hidden', 'collapse'):
+        return True
+    for prop in ('opacity', 'font-size'):
+        v = effective.get(prop, (0, ''))[1]
+        if v and ZERO_CSS_VALUE_RE.fullmatch(v):
+            return True
+    return False
 
 
 def _tag_is_hidden(tag_lower, attrs):
@@ -356,7 +384,7 @@ def _tag_is_hidden(tag_lower, attrs):
             return True
         if name == 'aria-hidden' and val.lower() == 'true':
             return True
-        if name == 'style' and HIDDEN_STYLE_RE.search(_decode_css_text(val)):
+        if name == 'style' and _style_is_hidden(val):
             return True
     return False
 
@@ -392,15 +420,15 @@ class _VisibleHTMLState(HTMLParser):
             self.chunks.append(data)
 
     def consume(self, segment):
-        masked = re.sub(r'`+<!--.*?-->`+', ' ', segment)
+        masked = re.sub(r'`+<!--.*?-->`+', lambda m: ' ' * len(m.group(0)), segment)
         masked = re.sub(
             r'(`+)([^`]*?)\1',
-            lambda m: m.group(1) + m.group(2).replace('<', '\x00LT\x00').replace('>', '\x00GT\x00') + m.group(1),
+            lambda m: m.group(1) + m.group(2).replace('<', '\x01').replace('>', '\x02') + m.group(1),
             masked,
         )
         self.chunks.clear()
         self.feed(masked)
-        return ''.join(self.chunks).replace('\x00LT\x00', '<').replace('\x00GT\x00', '>')
+        return ''.join(self.chunks).replace('\x01', '<').replace('\x02', '>')
 
 
 def _check_visible_fact(segment, expected_str, html_state=None):
@@ -687,7 +715,7 @@ class Checker:
             masked_prose = (
                 re.sub(
                     r'(`+)(.+?)\1',
-                    lambda m: m.group(1) + m.group(2).replace('<', '\x00LT\x00').replace('>', '\x00GT\x00') + m.group(1),
+                    lambda m: m.group(1) + m.group(2).replace('<', '\x01').replace('>', '\x02') + m.group(1),
                     prose_text,
                     flags=re.S,
                 )
