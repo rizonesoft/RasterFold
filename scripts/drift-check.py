@@ -1711,17 +1711,21 @@ class Checker:
         if before_bytes is None or after_bytes is None:
             return False
         try:
-            before_obj = json.loads(before_bytes.decode('utf-8'))
-            after_obj = json.loads(after_bytes.decode('utf-8'))
+            before_text = before_bytes.decode('utf-8')
+            after_text = after_bytes.decode('utf-8')
+            before_obj = json.loads(before_text)
+            after_obj = json.loads(after_text)
         except (UnicodeDecodeError, ValueError):
             return False
         if not isinstance(before_obj, dict) or not isinstance(after_obj, dict):
+            return False
+        if before_text != json.dumps(before_obj, indent=2, sort_keys=True) + '\n':
             return False
         if not (cls._valid_generated_at(before_obj.get('generated_at')) and cls._valid_generated_at(after_obj.get('generated_at'))):
             return False
         b_copy = {k: v for k, v in before_obj.items() if k != 'generated_at'}
         a_copy = {k: v for k, v in after_obj.items() if k != 'generated_at'}
-        return b_copy == a_copy
+        return json.dumps(b_copy, indent=2, sort_keys=True) == json.dumps(a_copy, indent=2, sort_keys=True)
 
     @staticmethod
     def _stage_change_allowed(rel, before_state, after_state, declared_outputs):

@@ -2218,6 +2218,31 @@ class DriftTests(unittest.TestCase):
                 (json.dumps(mutated_obj, indent=2, sort_keys=True) + '\n').encode('utf-8'),
             )
         )
+        # Numeric and boolean type substitutions (0 vs 0.0, 0 vs False, 1 vs True) must not be treated as equal.
+        float_obj = json.loads(payload_t1.decode('utf-8'))
+        float_obj['current_phase_id'] = 0.0
+        self.assertFalse(
+            drift.Checker._cache_output_semantically_equal(
+                (json.dumps(float_obj, indent=2, sort_keys=True) + '\n').encode('utf-8'),
+                payload_t2,
+            )
+        )
+        bool_obj = json.loads(payload_t1.decode('utf-8'))
+        bool_obj['current_phase_id'] = False
+        self.assertFalse(
+            drift.Checker._cache_output_semantically_equal(
+                (json.dumps(bool_obj, indent=2, sort_keys=True) + '\n').encode('utf-8'),
+                payload_t2,
+            )
+        )
+        schema_bool_obj = json.loads(payload_t1.decode('utf-8'))
+        schema_bool_obj['schema'] = True
+        self.assertFalse(
+            drift.Checker._cache_output_semantically_equal(
+                (json.dumps(schema_bool_obj, indent=2, sort_keys=True) + '\n').encode('utf-8'),
+                payload_t2,
+            )
+        )
 
 
 if __name__ == '__main__':
