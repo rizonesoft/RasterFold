@@ -36,6 +36,11 @@ FACT = re.compile(r'<!-- drift:fact ([a-z0-9_.-]+) = (.*?) -->')
 COMMIT = re.compile(r'<!-- drift:commit ([0-9a-f]{7,40})(?: (\S+))? -->')
 LINK = re.compile(r'!?\[[^\]\n]*\]\((?:<([^>\n]+)>|([^\s)]+))(?:\s+["\'][^\n]*?["\'])?\)')
 REFERENCE = re.compile(r'^\s*\[(?!\^)[^\]]+\]:\s*<?([^\s>]+)>?', re.M)
+BYTE_UNITS = {
+    '': 1, 'b': 1, 'byte': 1, 'bytes': 1,
+    'kib': 1024, 'mib': 1024 ** 2, 'gib': 1024 ** 3, 'tib': 1024 ** 4,
+    'kb': 1000, 'mb': 1000 ** 2, 'gb': 1000 ** 3, 'tb': 1000 ** 4,
+}
 
 
 def digest(data):
@@ -307,7 +312,17 @@ class Checker:
                         continue
                     expected = str(self.facts[rule['fact']])
                     for value in re.findall(rule['regex'], scan, re.I):
-                        if value != expected:
+                        if rule.get('units') == 'bytes':
+                            num_text, unit_text = value if isinstance(value, tuple) else (value, '')
+                            unit_key = unit_text.strip().lower()
+                            if unit_key not in BYTE_UNITS:
+                                self.error('prose-fact', rel, f'{rule["fact"]}: stated {num_text} {unit_text} (unsupported unit), source says {expected}; review required')
+                                continue
+                            normalized = str(int(num_text) * BYTE_UNITS[unit_key])
+                            stated = f'{num_text} {unit_text}'.strip()
+                            if normalized != expected:
+                                self.error('prose-fact', rel, f'{rule["fact"]}: stated {stated}, source says {expected}; review required')
+                        elif value != expected:
                             self.error('prose-fact', rel, f'{rule["fact"]}: stated {value}, source says {expected}; review required')
         for name, block in blocks.items():
             if name not in seen_blocks:

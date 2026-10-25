@@ -371,8 +371,9 @@
     },
     {
       "pattern": "*",
-      "regex": "\\b(?:maximum file(?: size)?:? |file(?: size)? limit:? )(\\d+)\\b",
-      "fact": "max_file_bytes"
+      "regex": "\\b(?:maximum file(?: size)?:? |file(?: size)? limit:? )(\\d+)(?:[ \\t]*([a-zA-Z]+))?\\b",
+      "fact": "max_file_bytes",
+      "units": "bytes"
     }
   ],
   "reviews": {

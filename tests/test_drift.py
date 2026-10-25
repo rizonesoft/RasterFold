@@ -433,10 +433,20 @@ class DriftTests(unittest.TestCase):
             'Maximum dimension: 16384.',
             'Maximum image: 1000000 pixels.',
             'Maximum file size: 999999.',
+            'Maximum file size: 268435456 KiB.',
+            'Maximum file size: 256 MB.',
+            'Maximum file size: 268435456 widgets.',
         ):
             self.write('README.md', base_readme + '\n' + sample + '\n')
             c = self.check()
             self.assertIn('prose-fact', self.kinds(c), sample)
+        for valid_file_size in (
+            'Maximum file size: 268435456.',
+            'Maximum file size: 268435456 bytes.',
+            'Maximum file size: 256 MiB.',
+        ):
+            self.write('README.md', base_readme + '\n' + valid_file_size + '\n')
+            self.assertEqual([], self.check().errors, valid_file_size)
         self.write('README.md', base_readme + '\n```md\nCurrent codec: format 9, C API 9.9. Maximum dimension: 1.\n```\n')
         self.write('docs/history.md', 'Format version 1 and API 0.9 with a 1024-pixel dimension limit.\n')
         self.write('todo/plan.md', 'Planned format version 3 and API 2.0.\n')
