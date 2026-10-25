@@ -2284,6 +2284,16 @@ class DriftTests(unittest.TestCase):
             self.assertEqual(0, drift.main(['--root', str(self.root), '--commit-range', commit_v2]))
             self.assertEqual(0, drift.main(['--root', str(self.root), '--commit-range', commit_v3]))
 
+        for good_prose_msg in (
+            'Drift-Fact validation rejects malformed declarations\n',
+            'Drift-Fact: subject line is not a trailer\n',
+            'Drift-Fact validation rejects malformed declarations\n\nDrift-Fact trailers are checked in CI.\n',
+            'Drift-Fact validation rejects malformed declarations\n\nDrift-Fact: version=3\n',
+        ):
+            self.write('msg.txt', good_prose_msg)
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(0, drift.main(['--root', str(self.root), '--commit-message', str(self.root / 'msg.txt')]), good_prose_msg)
+
         for bad_msg in (
             'Title\n\ndrift-fact: version=3\n',
             'Title\n\n  Drift-Fact: version=3\n',

@@ -1619,7 +1619,7 @@
     "docs/document-drift.md": {
       "evidence": "Author-attested: 2026-10-25 re-read docs/document-drift.md against scripts/drift-check.py, docs/drift.json, tools/githooks/pre-commit, tools/githooks/commit-msg, and .github/workflows/plan.yml (D08 T02 section 7)",
       "sources": {
-        "scripts/drift-check.py": "f2b7142b4631d69ef082d307ba3ece4091d9e9e8f087b019b4b06ae8c5da0c23",
+        "scripts/drift-check.py": "5b2ab2369453676f3ba06646ad4c858b3306b5ff0c6e516042da4d6211487d8f",
         "scripts/plan-audit.py": "a75c0311c54108a195c8fbe9048df11458abfe946563bb7c248e798fcdb98d42",
         "docs/document-drift.md": "d7495dc9d7c83acec4a427d8389e3dfdebccd68f8746a07baa1e829f7b95b59c"
       }

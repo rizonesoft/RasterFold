@@ -41,7 +41,7 @@ UNREAD = object()
 BLOCK = re.compile(r'(?P<start><!-- drift:begin (?P<id>[a-z0-9-]+) -->\r?\n)(?P<body>.*?)(?P<end><!-- drift:end (?P=id) -->)', re.S)
 FACT = re.compile(r'<!-- drift:fact ([a-z0-9_.-]+) = (.*?) -->')
 COMMIT = re.compile(r'<!-- drift:commit ([0-9a-f]{7,40})(?: ((?:(?!-->)\S)+))? -->')
-DRIFT_FACT_LINE = re.compile(r'^[ \t]*drift-fact(?:\s*:|\b)', re.I | re.M)
+DRIFT_FACT_TRAILER = re.compile(r'^[ \t]*drift-fact(?:\s*:|[ \t]+[a-z0-9_.-]+[ \t]*=)', re.I)
 LINK = re.compile(r'!?\[[^\]\n]*\]\((?:<([^>\n]+)>|([^\s)]+))(?:\s+["\'][^\n]*?["\'])?\)')
 REFERENCE = re.compile(
     r'^(?: {0,3}>[ \t]?)* {0,3}\[(?!\^)([^\]\n]+)\]:[ \t]*(?:\r?\n(?: {0,3}>[ \t]?)*[ \t]*)?(?:<([^>\n]+)>|([^\s>]+))'
@@ -2036,7 +2036,7 @@ def main(argv=None):
             if args.fix or args.review or args.commit_range or args.site_dir:
                 raise ValueError('--commit-message cannot be combined with document/site operations')
             message = args.commit_message.read_text(encoding='utf-8')
-            if not DRIFT_FACT_LINE.search(message):
+            if not _has_drift_fact_declarations(message):
                 return 0
             facts = check.revision_facts(':')
             declarations(message, facts, check, str(args.commit_message))
@@ -2081,7 +2081,7 @@ def main(argv=None):
                 raise ValueError('--commit-range requires two explicit commit ids or a single commit id')
             for oid in oids:
                 message = check.git('show', '-s', '--format=%B', oid).decode()
-                if DRIFT_FACT_LINE.search(message):
+                if _has_drift_fact_declarations(message):
                     # A historical declaration belongs to its own tree, not today's source.
                     facts = check.revision_facts(oid + ':')
                     declarations(message, facts, check, oid)
@@ -2110,9 +2110,18 @@ def main(argv=None):
         return 2
 
 
+def _body_lines(message):
+    lines = message.splitlines()
+    return lines[1:] if len(lines) > 1 else []
+
+
+def _has_drift_fact_declarations(message):
+    return any(DRIFT_FACT_TRAILER.match(line) for line in _body_lines(message))
+
+
 def declarations(message, facts, check, where):
-    for line in message.splitlines():
-        if not DRIFT_FACT_LINE.match(line):
+    for line in _body_lines(message):
+        if not DRIFT_FACT_TRAILER.match(line):
             continue
         match = re.fullmatch(r'Drift-Fact: ([a-z0-9_.-]+)=(.+)', line)
         if not match or match[1] not in facts or str(facts[match[1]]) != match[2]:
