@@ -2,7 +2,7 @@
 schema_version: 1
 id: dev-automation
 domain: 00-workspace
-status: draft
+status: done
 title: "TODO-01 -- Dev-Automation Wiring"
 depends_on: []
 track: W1
@@ -53,7 +53,7 @@ track: W1
 | Order | Section | Deliverable                                   | Depends On | Status |
 | :---: | :-----: | --------------------------------------------- | ---------- | :----: |
 |   1   |   §1    | Commit the port and wire the commit hook      | --         |  [x]   |
-|   2   |   §2    | First push: CI green and read back            | §1, D99 T01 §2 |  [ ]   |
+|   2   |   §2    | First push: CI green and read back            | §1, D99 T01 §2 |  [x]   |
 |   3   |   §3    | The static analysis gate                      | §1         |  [x]   |
 |   4   |   §4    | Prove the review panel end to end             | §1, §6     |  [x]   |
 |   5   |   §5    | Raise the claims coverage floor               | §1         |  [x]   |
@@ -99,6 +99,8 @@ A workflow nobody has seen run is a claim, not a gate. The `plan-gates` workflow
 
 **Test checkpoint:** `python3 scripts/ci_status.py` exits 0 for both workflows on the pushed commit (`build.yml: green at 6ad7aafe0ad9 (https://github.com/rizonesoft/RasterFold/actions/runs/40146688580)`, `plan.yml: green at 6ad7aafe0ad9 (https://github.com/rizonesoft/RasterFold/actions/runs/40146688570)`, `headSha` `6ad7aafe0ad9ffdf9a31584429b7dd8a218a1d10`, after `build.yml: green at 5f46c6a38ffa (https://github.com/rizonesoft/RasterFold/actions/runs/40146055234)` and `plan.yml: green at 5f46c6a38ffa (https://github.com/rizonesoft/RasterFold/actions/runs/40146055157)`); a deliberately broken TODO pushed to scratch branch `probe/d00-t01-s2-red-plan` (`606c7f572af2a6666ab587f3f58b108daa4dfe6e`) makes `plan-gates` fail (`python3 scripts/ci_status.py --workflow plan.yml --branch probe/d00-t01-s2-red-plan` exits 1 with `plan.yml: red at 606c7f572af2 (https://github.com/rizonesoft/RasterFold/actions/runs/40146423134)`, `failed job: plan-gates (failure) https://github.com/rizonesoft/RasterFold/actions/runs/40146423134/job/121028631004`, `Validate the TODO tree` step `FATAL todo/00-workspace/TODO-01-dev-automation.md:86: §2 has no '- [ ] Commit:' checklist item`), and the red run's URL is quoted before the branch is deleted.
 
+> **Verified:** 2026-10-25 | §2 | 0d5a57cf8a0548280ccadcb061eb01fe37bc2a5c
+> **Review:** `docs/reviews/d00-t01-s2.json`
 ## 3. The Static Analysis Gate
 
 > **Started:** 2026-10-24T20:37:00Z

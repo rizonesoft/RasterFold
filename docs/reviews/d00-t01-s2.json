@@ -1,0 +1,84 @@
+{
+  "ref": "D00 T01 \u00a72",
+  "title": "First Push: CI Green and Read Back",
+  "implementation_sha": "0d5a57cf8a0548280ccadcb061eb01fe37bc2a5c",
+  "date": "2026-10-25",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/00-workspace/D00-T01-s2.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 scripts/ci_status.py -> build.yml: green at 6ad7aafe0ad9 (https://github.com/rizonesoft/RasterFold/actions/runs/40146688580); plan.yml: green at 6ad7aafe0ad9 (https://github.com/rizonesoft/RasterFold/actions/runs/40146688570), exit 0",
+    "python3 scripts/ci_status.py --workflow plan.yml --branch probe/d00-t01-s2-red-plan -> plan.yml: red at 606c7f572af2 (https://github.com/rizonesoft/RasterFold/actions/runs/40146423134), failed job: plan-gates (failure) https://github.com/rizonesoft/RasterFold/actions/runs/40146423134/job/121028631004, Validate the TODO tree FATAL todo/00-workspace/TODO-01-dev-automation.md:86: \u00a72 has no - [ ] Commit: checklist item, exit 1"
+  ],
+  "completion": {
+    "report": "docs/reviews/00-workspace/D00-T01-s2.md",
+    "verdict": "completed",
+    "candidate": "6ad7aafe0ad9ffdf9a31584429b7dd8a218a1d10",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/00-workspace/D00-T01-s2.md",
+    "candidate": "5f46c6a38ffa2fb1dcc902a1fbaa904c0714fc5a",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}
