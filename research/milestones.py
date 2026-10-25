@@ -320,6 +320,15 @@ def atomic_write_text(path: Path, want: str, before: bytes | None) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.chmod(tmp_path, orig_mode)
+        if not path.resolve().is_relative_to(REPO.resolve()):
+            raise ValueError(f"path escapes repository: {path}")
+        cur = REPO
+        for part in path.relative_to(REPO).parts:
+            cur /= part
+            if cur.is_symlink():
+                raise ValueError(f"refusing to write through symlink: {path}")
+        if (path.read_bytes() if path.exists() else None) != before:
+            raise ValueError(f"{path.relative_to(REPO)} changed during write; refusing to overwrite")
         os.replace(tmp_path, path)
     finally:
         if tmp_path.exists():

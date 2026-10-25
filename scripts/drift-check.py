@@ -1162,13 +1162,30 @@ class Checker:
         facts = self.manifest.get('facts')
         if not isinstance(facts, dict):
             raise ValueError('invalid facts table in drift manifest')
-        valid_kinds = {'c-define', 'regex', 'json', 'file-sha256', 'line-count', 'csv', 'csv-meta', 'csv-aggregate'}
+        valid_kinds = {'regex', 'json', 'csv', 'csv-meta', 'csv-aggregate'}
         for key, rule in facts.items():
             if not isinstance(key, str) or not key or not isinstance(rule, dict):
                 raise ValueError(f'invalid fact definition: {key!r}')
-            if rule.get('kind') not in valid_kinds:
-                raise ValueError(f'{key}: unknown provider kind {rule.get("kind")!r}')
+            kind = rule.get('kind')
+            if kind not in valid_kinds:
+                raise ValueError(f'{key}: unknown provider kind {kind!r}')
             self.path(rule.get('source', ''))
+            if kind == 'regex':
+                if not isinstance(rule.get('pattern'), str) or not rule['pattern']:
+                    raise ValueError(f'{key}: regex provider requires non-empty pattern')
+                re.compile(rule['pattern'])
+            elif kind == 'json':
+                if not isinstance(rule.get('key'), str) or not rule['key']:
+                    raise ValueError(f'{key}: json provider requires non-empty key string')
+            elif kind == 'csv':
+                if not isinstance(rule.get('where'), dict) or not isinstance(rule.get('column'), str) or not rule['column']:
+                    raise ValueError(f'{key}: csv provider requires where dict and column string')
+            elif kind == 'csv-meta':
+                if not isinstance(rule.get('key'), str) or not rule['key']:
+                    raise ValueError(f'{key}: csv-meta provider requires key string')
+            elif kind == 'csv-aggregate':
+                if rule.get('op') not in {'count', 'sum', 'max', 'ratio', 'geomean'}:
+                    raise ValueError(f'{key}: csv-aggregate provider requires valid op')
         blocks = self.manifest.get('blocks')
         if not isinstance(blocks, dict):
             raise ValueError('invalid blocks table in drift manifest')
@@ -1230,6 +1247,11 @@ class Checker:
                 raise ValueError(f'invalid generator outputs for {gen.get("script")!r}')
             for out in outputs:
                 self.path(out)
+            cache_outputs = gen.get('cache_outputs', [])
+            if not isinstance(cache_outputs, list):
+                raise ValueError(f'invalid generator cache_outputs for {gen.get("script")!r}')
+            for cout in cache_outputs:
+                self.path(cout)
             planned = gen.get('planned_outputs', {})
             if not isinstance(planned, dict):
                 raise ValueError(f'invalid generator planned_outputs for {gen.get("script")!r}')
@@ -1624,6 +1646,7 @@ class Checker:
             *self.manifest.get('files', {}).keys(),
             *(gen['script'] for gen in self.manifest['generators']),
             *(out for g in self.manifest['generators'] for out in g.get('outputs', [])),
+            *(out for g in self.manifest['generators'] for out in g.get('cache_outputs', [])),
             *(out for g in self.manifest['generators'] for out in g.get('planned_outputs', {})),
         }
         if self.root.is_dir():
@@ -1635,6 +1658,8 @@ class Checker:
                     dirnames[:] = [d for d in dirnames if d not in ignored_dirs]
                 if str(rel_dir) != '.':
                     paths.add(rel_dir.as_posix())
+                for d in dirnames:
+                    paths.add((rel_dir / d).as_posix() if str(rel_dir) != '.' else d)
                 for name in filenames:
                     if rel_dir == Path('tools') and name not in ('bootstrap.py', 'bootstrap.ps1', 'provision.py', 'provision.ps1'):
                         continue
@@ -1650,22 +1675,20 @@ class Checker:
         return {rel: self._entry_state(rel) for rel in paths}
 
     def _copy_checkout_to_stage(self, stage_root):
-        if self.files:
-            for rel in sorted(self.files):
-                src = self.root / rel
-                if not src.exists() and not src.is_symlink():
-                    continue
-                dst = stage_root / rel
+        for rel in self._watched_paths():
+            if rel == '.':
+                continue
+            src = self.path(rel)
+            if not src.exists():
+                continue
+            dst = stage_root / rel
+            if src.is_dir():
+                dst.mkdir(parents=True, exist_ok=True)
+            elif src.is_file():
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, dst, follow_symlinks=False)
-            return
-        shutil.copytree(
-            self.root,
-            stage_root,
-            dirs_exist_ok=True,
-            symlinks=True,
-            ignore=shutil.ignore_patterns('.git', 'build', 'bin', '.venv', '__pycache__', '.remember', '.runner'),
-        )
+            else:
+                raise ValueError(f'unsupported checkout entry for staging: {rel}')
 
     @staticmethod
     def _stage_change_allowed(rel, before_state, after_state, declared_outputs):
@@ -1712,7 +1735,14 @@ class Checker:
                         self.error('generator', gen['script'], f'missing generated output: {out}')
                 elif out not in self.generator_before:
                     self.generator_before[out] = out_path.read_bytes() if out_path.is_file() else None
+            for cout in gen.get('cache_outputs', []):
+                cout_path = self.path(cout)
+                if not fix or cout not in self.generator_before:
+                    self.generator_before[cout] = cout_path.read_bytes() if cout_path.is_file() else None
             if not fix:
+                for rel in self._watched_paths():
+                    if rel != '.':
+                        self.path(rel)
                 before_snap = self._snapshot_paths(self._watched_paths())
                 result = subprocess.run([sys.executable, gen['script'], *gen['check']], cwd=self.root, env=env, capture_output=True, text=True, timeout=120)
                 if result.returncode:
@@ -1725,7 +1755,8 @@ class Checker:
                     if after_snap[rel] != before_snap.get(rel, ('absent', None)):
                         self.error('generator', gen['script'], f'--check modified {rel}; check mode must be read-only')
             else:
-                declared_outputs = set(gen.get('outputs', []))
+                cache_outputs = list(gen.get('cache_outputs', []))
+                declared_outputs = set(gen.get('outputs', [])) | set(cache_outputs)
                 with tempfile.TemporaryDirectory(prefix='drift-gen-') as tmp:
                     stage_root = Path(tmp)
                     self._copy_checkout_to_stage(stage_root)
@@ -1767,6 +1798,12 @@ class Checker:
                         expected_before = self.generator_before.get(out)
                         if staged_bytes != expected_before:
                             gen_repairs[out] = (expected_before, staged_bytes)
+                    for cout in cache_outputs:
+                        if (self.root / cout).exists() and stage_checker._entry_state(cout)[0] == 'file':
+                            staged_bytes = stage_checker.path(cout).read_bytes()
+                            expected_before = self.generator_before.get(cout)
+                            if staged_bytes != expected_before:
+                                gen_repairs[cout] = (expected_before, staged_bytes)
                 if gen_repairs:
                     saved_repairs = dict(self.repairs)
                     try:
@@ -1781,6 +1818,7 @@ class Checker:
         generated_paths = {
             'docs/facts.json',
             *(out for gen in self.manifest.get('generators', []) for out in gen.get('outputs', [])),
+            *(out for gen in self.manifest.get('generators', []) for out in gen.get('cache_outputs', [])),
             *extra,
         }
         block_paths = {block['path'] for block in self.manifest.get('blocks', {}).values()}
@@ -1836,6 +1874,9 @@ class Checker:
                     out.flush()
                     os.fsync(out.fileno())
                 os.chmod(temp, mode)
+                path = self.path(rel)
+                if (path.read_bytes() if path.exists() else None) != before:
+                    raise ValueError(f'{rel} changed during repair; refusing to overwrite')
                 os.replace(temp, path)
             finally:
                 if os.path.exists(temp): os.unlink(temp)

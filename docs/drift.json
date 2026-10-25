@@ -1619,7 +1619,7 @@
     "docs/document-drift.md": {
       "evidence": "Author-attested: 2026-10-25 re-read docs/document-drift.md against scripts/drift-check.py and docs/drift.json (D08 T02 section 6)",
       "sources": {
-        "scripts/drift-check.py": "fc4a8328375d61e33ceca1b7a8577f423b052f46ae1e26bc5ac8230be4a4cbf2",
+        "scripts/drift-check.py": "611b09bddb2f1777dabf27505129bf3222413d2577c8860f7530f4a4d1f3f9aa",
         "scripts/plan-audit.py": "a75c0311c54108a195c8fbe9048df11458abfe946563bb7c248e798fcdb98d42",
         "docs/document-drift.md": "2a5aeaee51a1835b1ae0c12d9da11d7c3083575b4efdedee6b1b4d56dda34e0d"
       }
@@ -1714,6 +1714,10 @@
       ],
       "outputs": [
         "todo/implementation-plan.md"
+      ],
+      "cache_outputs": [
+        "build/todo-progress.json",
+        "build/todo-operator.json"
       ]
     },
     {

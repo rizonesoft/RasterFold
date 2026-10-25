@@ -1878,16 +1878,23 @@ class DriftTests(unittest.TestCase):
         self.assertEqual('configuration', role_by_path.get('.gitignore'))
         self.assertEqual(drift.ROLES, {entry['role'] for entry in live.inventory})
 
-        # Set up a generator in the fixture manifest so both direct and generator repairs are exercised.
+        # Set up a generator in the fixture manifest so both direct and generator repairs (including cache_outputs) are exercised.
         orig_gen = (
             'import pathlib, sys\n'
             'p = pathlib.Path("todo/implementation-plan.md")\n'
+            'prog = pathlib.Path("build/todo-progress.json")\n'
             'want = "# Plan\\n"\n'
+            'want_prog = "{\\"ok\\": true}\\n"\n'
             'if "--check" in sys.argv:\n'
-            '    sys.exit(0 if p.is_file() and p.read_text(encoding="utf-8") == want else 1)\n'
+            '    ok = p.is_file() and p.read_text(encoding="utf-8") == want\n'
+            '    if prog.exists():\n'
+            '        ok = ok and prog.read_text(encoding="utf-8") == want_prog\n'
+            '    sys.exit(0 if ok else 1)\n'
             'if "--sync" in sys.argv:\n'
             '    p.parent.mkdir(parents=True, exist_ok=True)\n'
             '    p.write_text(want, encoding="utf-8")\n'
+            '    prog.parent.mkdir(parents=True, exist_ok=True)\n'
+            '    prog.write_text(want_prog, encoding="utf-8")\n'
             '    sys.exit(0)\n'
         )
         self.write('scripts/todo-graph.py', orig_gen)
@@ -1899,6 +1906,7 @@ class DriftTests(unittest.TestCase):
                 'check': ['plan', '--check'],
                 'fix': ['plan', '--sync'],
                 'outputs': ['todo/implementation-plan.md'],
+                'cache_outputs': ['build/todo-progress.json'],
                 'planned_outputs': {'docs/api.md': 'D08 T01 §4'},
             }
         ]
@@ -1927,6 +1935,11 @@ class DriftTests(unittest.TestCase):
                 lambda m: m['coverage'].append({'pattern': 'never-matches-*.md', 'role': 'current', 'reason': '   '}),
                 'invalid coverage rule',
             )
+            for bad_kind in ('c-define', 'file-sha256', 'line-count'):
+                assert_manifest_rejected(
+                    lambda m, k=bad_kind: m['facts'].update({'bad_fact': {'kind': k, 'source': 'src/version.h'}}),
+                    f"unknown provider kind '{bad_kind}'",
+                )
             assert_manifest_rejected(
                 lambda m: m['blocks']['version'].update({'template': 'Version {unknown_fact}\n'}),
                 "unknown fact placeholder 'unknown_fact'",
@@ -2031,7 +2044,7 @@ class DriftTests(unittest.TestCase):
         self.assertIn('planned output docs/api.md', str(ctx.exception))
         self.assertFalse((self.root / 'docs/api.md').exists())
 
-        # 4c. Concurrent edit to a generator output while staging is refused by compare-before-write publication.
+        # 4c. Concurrent edit to a generator output while staging or during os.fsync is refused by compare-before-write publication.
         self.write('scripts/todo-graph.py', orig_gen)
         self.write('todo/implementation-plan.md', 'stale plan\n')
         c_race = drift.Checker(self.root)
@@ -2048,7 +2061,44 @@ class DriftTests(unittest.TestCase):
         self.assertEqual('concurrent user edit\n', (self.root / 'todo/implementation-plan.md').read_text(encoding='utf-8'))
         (self.root / 'todo/implementation-plan.md').write_bytes(plan_before)
 
-        # 4d. Direct test of research/milestones.py atomic_write_text safety (compare-before-write, symlink refusal, failure cleanup).
+        # Concurrent edit during os.fsync in Checker.fix() is refused before os.replace.
+        self.write('README.md', '# Guide\n\nAuthored words stay here.\n\n<!-- drift:begin version -->\nstale block\n<!-- drift:end version -->\n')
+        c_fsync_race = self.check()
+        real_fsync = os.fsync
+
+        def fsync_mutate_readme(fd):
+            real_fsync(fd)
+            (self.root / 'README.md').write_text('concurrent edit during fsync\n', encoding='utf-8')
+
+        with mock.patch('os.fsync', side_effect=fsync_mutate_readme):
+            with self.assertRaises(ValueError) as ctx:
+                c_fsync_race.fix()
+        self.assertIn('README.md changed during repair; refusing to overwrite', str(ctx.exception))
+        self.assertEqual('concurrent edit during fsync\n', (self.root / 'README.md').read_text(encoding='utf-8'))
+        self.assertEqual([], list(self.root.rglob('.drift-*')))
+        (self.root / 'README.md').write_bytes(readme_before)
+
+        # Unreferenced symlink in the checkout pointing outside self.root is refused before copying or running generators.
+        with tempfile.TemporaryDirectory() as ext_dir:
+            ext_file = Path(ext_dir) / 'outside.c'
+            ext_file.write_text('int outside = 1;\n', encoding='utf-8')
+            ext_link = self.root / 'src/ext_link.c'
+            try:
+                ext_link.symlink_to(ext_file)
+            except OSError:
+                ext_link = None
+            if ext_link is not None:
+                try:
+                    c_sym = drift.Checker(self.root)
+                    c_sym.load()
+                    with self.assertRaises(ValueError) as ctx:
+                        c_sym.generators(fix=True)
+                    self.assertIn('src/ext_link.c', str(ctx.exception))
+                    self.assertEqual('int outside = 1;\n', ext_file.read_text(encoding='utf-8'))
+                finally:
+                    ext_link.unlink(missing_ok=True)
+
+        # 4d. Direct test of research/milestones.py atomic_write_text safety (compare-before-write including during fsync, symlink refusal, failure cleanup).
         ms_spec = importlib.util.spec_from_file_location('milestones_mod', REPO / 'research/milestones.py')
         ms_mod = importlib.util.module_from_spec(ms_spec)
         ms_spec.loader.exec_module(ms_mod)
@@ -2061,6 +2111,20 @@ class DriftTests(unittest.TestCase):
             ms_mod.atomic_write_text(ms_target, 'new bytes\n', b'wrong before bytes\n')
         self.assertIn('changed during write; refusing to overwrite', str(ctx.exception))
         self.assertEqual(b'original milestone bytes\n', ms_target.read_bytes())
+
+        def fsync_mutate_milestone(fd):
+            real_fsync(fd)
+            ms_target.write_bytes(b'concurrent milestone edit during fsync\n')
+
+        with mock.patch('os.fsync', side_effect=fsync_mutate_milestone):
+            with self.assertRaises(ValueError) as ctx:
+                ms_mod.atomic_write_text(ms_target, 'new bytes\n', b'original milestone bytes\n')
+        self.assertIn('changed during write; refusing to overwrite', str(ctx.exception))
+        self.assertEqual(b'concurrent milestone edit during fsync\n', ms_target.read_bytes())
+        self.assertEqual([], list(ms_target.parent.glob('.milestones-*')))
+        ms_target.write_bytes(b'original milestone bytes\n')
+        os.chmod(ms_target, 0o640)
+
         with mock.patch('os.replace', side_effect=OSError('simulated milestone replace failure')):
             with self.assertRaises(OSError):
                 ms_mod.atomic_write_text(ms_target, 'new bytes\n', b'original milestone bytes\n')
@@ -2072,15 +2136,17 @@ class DriftTests(unittest.TestCase):
         self.assertEqual(0o640, ms_target.stat().st_mode & 0o777)
         ms_target.unlink()
 
-        # 5. Injected write/replacement failure preservation, temp cleanup, permission preservation, and idempotent recovery.
+        # 5. Injected write/replacement failure preservation, temp cleanup, permission preservation, stale cache repair, and idempotent recovery.
         self.write('README.md', '# Guide\n\nAuthored words stay here.\n\n<!-- drift:begin version -->\nstale block\n<!-- drift:end version -->\n')
         self.write('docs/facts.json', '{\n  "version": 999\n}\n')
         self.write('todo/implementation-plan.md', 'stale plan\n')
-        for rel in ('README.md', 'docs/facts.json', 'todo/implementation-plan.md'):
+        self.write('build/todo-progress.json', '{"ok": false}\n')
+        for rel in ('README.md', 'docs/facts.json', 'todo/implementation-plan.md', 'build/todo-progress.json'):
             os.chmod(self.root / rel, 0o640)
         drifted_readme = (self.root / 'README.md').read_bytes()
         drifted_facts = (self.root / 'docs/facts.json').read_bytes()
         drifted_plan = (self.root / 'todo/implementation-plan.md').read_bytes()
+        drifted_prog = (self.root / 'build/todo-progress.json').read_bytes()
 
         with mock.patch('os.fsync', side_effect=OSError('simulated fsync failure')):
             with contextlib.redirect_stderr(io.StringIO()):
@@ -2088,6 +2154,7 @@ class DriftTests(unittest.TestCase):
         self.assertEqual(drifted_readme, (self.root / 'README.md').read_bytes())
         self.assertEqual(drifted_facts, (self.root / 'docs/facts.json').read_bytes())
         self.assertEqual(drifted_plan, (self.root / 'todo/implementation-plan.md').read_bytes())
+        self.assertEqual(drifted_prog, (self.root / 'build/todo-progress.json').read_bytes())
         self.assertEqual(0o640, (self.root / 'README.md').stat().st_mode & 0o777)
         self.assertEqual([], list(self.root.rglob('.drift-*')))
 
@@ -2097,15 +2164,17 @@ class DriftTests(unittest.TestCase):
         self.assertEqual(drifted_readme, (self.root / 'README.md').read_bytes())
         self.assertEqual(drifted_facts, (self.root / 'docs/facts.json').read_bytes())
         self.assertEqual(drifted_plan, (self.root / 'todo/implementation-plan.md').read_bytes())
+        self.assertEqual(drifted_prog, (self.root / 'build/todo-progress.json').read_bytes())
         self.assertEqual(0o640, (self.root / 'README.md').stat().st_mode & 0o777)
         self.assertEqual([], list(self.root.rglob('.drift-*')))
 
-        # Recovery and idempotence: unpatched --fix succeeds, preserves 0o640 mode, and second --fix makes 0 changes.
+        # Recovery and idempotence: unpatched --fix succeeds, repairs build/todo-progress.json, preserves 0o640 mode, and second --fix makes 0 changes.
         out_fix1 = io.StringIO()
         with contextlib.redirect_stdout(out_fix1):
             self.assertEqual(0, drift.main(['--root', str(self.root), '--fix']))
         self.assertIn('0 error(s); 0 deterministic repair(s)', out_fix1.getvalue())
-        for rel in ('README.md', 'docs/facts.json', 'todo/implementation-plan.md'):
+        self.assertEqual('{"ok": true}\n', (self.root / 'build/todo-progress.json').read_text(encoding='utf-8'))
+        for rel in ('README.md', 'docs/facts.json', 'todo/implementation-plan.md', 'build/todo-progress.json'):
             self.assertEqual(0o640, (self.root / rel).stat().st_mode & 0o777)
         snap_after_fix1 = {
             rel: drift.digest((self.root / rel).read_bytes())
