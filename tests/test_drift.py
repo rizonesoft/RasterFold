@@ -1172,6 +1172,7 @@ class DriftTests(unittest.TestCase):
             'Size: 999 bytes <span title="x > 1409028">wrong</span> <!-- drift:fact measurement_reference_bytes = 1409028 -->',
             'Size: [999 bytes](README.md#1409028) <!-- drift:fact measurement_reference_bytes = 1409028 -->',
             'Size: [999 bytes](https://example.invalid/a(b(c))#1409028) <!-- drift:fact measurement_reference_bytes = 1409028 -->',
+            "Size: [999 bytes](https://example.invalid/it's#1409028) <!-- drift:fact measurement_reference_bytes = 1409028 -->",
             'Size: 999 bytes [source][1409028] <!-- drift:fact measurement_reference_bytes = 1409028 -->\n\n[1409028]: README.md',
         ):
             self.write('docs/benchmarks.md', orig_bm + '\n' + smuggled + '\n')

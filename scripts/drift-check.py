@@ -255,24 +255,48 @@ def _strip_markdown_links(text):
                 j += 1
             if j < n and text[j] == '(':
                 k = j + 1
+                while k < n and text[k] in ' \t':
+                    k += 1
                 depth = 1
-                in_quote = None
-                while k < n and text[k] != '\n' and depth > 0:
-                    ch = text[k]
-                    if ch == '\\':
-                        k += 2
-                        continue
-                    if in_quote:
-                        if ch == in_quote:
-                            in_quote = None
-                    else:
-                        if ch in ('"', "'"):
-                            in_quote = ch
-                        elif ch == '(':
+                if k < n and text[k] == '<':
+                    k += 1
+                    while k < n and text[k] not in '>\n':
+                        k += 2 if text[k] == '\\' else 1
+                    if k < n and text[k] == '>':
+                        k += 1
+                else:
+                    while k < n and text[k] not in ' \t\n':
+                        ch = text[k]
+                        if ch == '\\':
+                            k += 2
+                            continue
+                        if ch == '(':
                             depth += 1
                         elif ch == ')':
                             depth -= 1
-                    k += 1
+                            if depth == 0:
+                                k += 1
+                                break
+                        k += 1
+                if depth > 0:
+                    while k < n and text[k] in ' \t':
+                        k += 1
+                    if k < n and text[k] in ('"', "'", '('):
+                        close_q = ')' if text[k] == '(' else text[k]
+                        k += 1
+                        while k < n and text[k] != '\n':
+                            if text[k] == '\\':
+                                k += 2
+                                continue
+                            if text[k] == close_q:
+                                k += 1
+                                break
+                            k += 1
+                    while k < n and text[k] in ' \t':
+                        k += 1
+                    if k < n and text[k] == ')':
+                        depth = 0
+                        k += 1
                 if depth == 0:
                     out.append(']')
                     i = k
@@ -306,15 +330,16 @@ def _check_visible_fact(segment, expected_str):
     cleaned = re.sub(r'(?m)^\s*\[[^\]\n]+\]:.*$', ' ', cleaned)
     cleaned = _strip_markdown_links(cleaned)
     if re.fullmatch(r'-?\d+(?:\.\d+)?', expected_str):
-        nums = re.findall(
-            r'(?<![A-Za-z0-9_])-?\d+(?:,\d{3})*(?:\.\d+)?(?![A-Za-z0-9_])'
-            r'|(?<![A-Za-z0-9_])-?\d+(?:_\d{3})*(?:\.\d+)?(?![A-Za-z0-9_])'
-            r'|(?<![A-Za-z0-9_])-?\d+(?:\.\d+)?(?![A-Za-z0-9_])',
+        m = re.search(
+            r'(?<![A-Za-z0-9_.\-/#])'
+            r'(-?\d+(?:,\d{3})*(?:\.\d+)?|-?\d+(?:_\d{3})*(?:\.\d+)?|-?\d+(?:\.\d+)?)'
+            r'(?![A-Za-z0-9_.\-])'
+            r'[`\'")\]]*(?:[- ]+[A-Za-z`]+)*\.?\s*$',
             cleaned,
         )
-        if not nums:
+        if not m:
             return False
-        return nums[-1].replace(',', '').replace('_', '') == expected_str
+        return m.group(1).replace(',', '').replace('_', '') == expected_str
     return bool(expected_str) and bool(
         re.search(r'(?<![A-Za-z0-9_.-])' + re.escape(expected_str) + r'(?![A-Za-z0-9_.-])[`\'")\s]*$', cleaned)
     )
