@@ -64,7 +64,7 @@ PGO_TRACKED_SOURCES = (
     'src/cm.c', 'src/fold.c', 'src/bmp.c', 'src/crc32.c',
     'src/api.c', 'src/main.c', 'src/mem.c', 'src/sys.c',
     'src/sys_posix.c', 'src/platform.c', 'src/rasterfold.def',
-    'src/rf.h', 'src/simd.h',
+    'src/rf.h', 'src/rc.h', 'src/simd.h',
 )
 
 
