@@ -27,6 +27,21 @@
       "reason": "Dated research results and forward roadmap; live generated portions are checked separately."
     },
     {
+      "pattern": "docs/research-summary.md",
+      "role": "historical",
+      "reason": "Mirrored public summary of dated research results from docs/research.md, checked by scripts/build-docs.py --check."
+    },
+    {
+      "pattern": "docs/format.md",
+      "role": "generated",
+      "reason": "Mirrored format specification from spec/FOLD.md, checked by scripts/build-docs.py --check."
+    },
+    {
+      "pattern": "docs/usage.md",
+      "role": "generated",
+      "reason": "Mirrored CLI and library usage guide from README.md, checked by scripts/build-docs.py --check."
+    },
+    {
       "pattern": "docs/reviews/*",
       "role": "historical",
       "reason": "Immutable review evidence and candidate references."
@@ -460,8 +475,9 @@
       "check": [
         "--check"
       ],
-      "fix": [],
-      "planned_owner": "D08 T01 \u00a71"
+      "fix": [
+        "--write"
+      ]
     }
   ],
   "site_sources": [

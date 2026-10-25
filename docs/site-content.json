@@ -17,5 +17,87 @@
       "dispatch_branch": "main",
       "supports_exact_release_ref": true
     }
-  }
+  },
+  "config": [
+    {
+      "source": "docs/_config.yml",
+      "staged": "_config.yml"
+    }
+  ],
+  "pages": [
+    {
+      "id": "overview",
+      "source": "docs/index.md",
+      "staged": "index.md",
+      "title": "Overview",
+      "nav_order": 1,
+      "kind": "authored"
+    },
+    {
+      "id": "getting-started",
+      "source": "docs/getting-started.md",
+      "staged": "getting-started.md",
+      "title": "Getting Started",
+      "nav_order": 2,
+      "kind": "authored"
+    },
+    {
+      "id": "usage",
+      "source": "README.md",
+      "output": "docs/usage.md",
+      "staged": "usage.md",
+      "title": "CLI and Library Usage",
+      "nav_order": 3,
+      "kind": "mirrored"
+    },
+    {
+      "id": "format",
+      "source": "spec/FOLD.md",
+      "output": "docs/format.md",
+      "staged": "format.md",
+      "title": "Format Specification",
+      "nav_order": 4,
+      "kind": "mirrored"
+    },
+    {
+      "id": "benchmarks",
+      "source": "docs/benchmarks.md",
+      "staged": "benchmarks.md",
+      "title": "Benchmarks",
+      "nav_order": 5,
+      "kind": "authored"
+    },
+    {
+      "id": "research-summary",
+      "source": "docs/research.md",
+      "output": "docs/research-summary.md",
+      "staged": "research-summary.md",
+      "title": "Research Summary",
+      "nav_order": 6,
+      "kind": "mirrored"
+    }
+  ],
+  "assets": [
+    {
+      "source": "assets/brand/icon.svg",
+      "staged": "assets/brand/icon.svg"
+    },
+    {
+      "source": "assets/brand/cover.svg",
+      "staged": "assets/brand/cover.svg"
+    }
+  ],
+  "forbidden_prefixes": [
+    "todo/",
+    ".agents/",
+    ".claude/",
+    ".codex/",
+    ".conclave/",
+    ".intelligence/",
+    "docs/reviews/",
+    "docs/phase-runs/",
+    "AGENTS.md",
+    "GEMINI.md",
+    "CLAUDE.md"
+  ]
 }

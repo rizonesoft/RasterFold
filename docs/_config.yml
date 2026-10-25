@@ -1,0 +1,22 @@
+title: RasterFold
+description: "Lossless RGB image codec in C11 for Windows, Linux, and Android"
+baseurl: "/RasterFold"
+url: "https://rizonesoft.github.io"
+remote_theme: just-the-docs/just-the-docs
+plugins:
+  - jekyll-remote-theme
+search_enabled: true
+logo: "/assets/brand/icon.svg"
+favicon_ico: "/assets/brand/icon.svg"
+gh_edit_link: true
+gh_edit_link_text: "View source on GitHub"
+gh_edit_repository: "https://github.com/rizonesoft/RasterFold"
+gh_edit_branch: "main"
+gh_edit_view_mode: "tree"
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - reviews/
+  - phase-runs/
+  - design/
+  - "*.json"

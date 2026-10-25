@@ -43,6 +43,38 @@ jobs:
           python3 scripts/drift-check.py
           python3 -m unittest discover -s tests -p test_drift.py -v
           python3 -m unittest discover -s tests -p test_plan_audit.py -v
+      - name: Stage allowlisted Jekyll site source
+        run: |
+          python3 scripts/build-docs.py --check
+          python3 scripts/build-docs.py --stage build/site-source
+      - name: Build Jekyll documentation site from allowlisted source
+        uses: actions/jekyll-build-pages@44a6e6beabd48582f863aeeb6cb2151cc1716697 # v1.0.13
+        with:
+          source: build/site-source
+          destination: build/site-raw
+      - name: Verify built Jekyll site navigation and boundaries
+        run: |
+          rm -rf build/site-artifact
+          cp -R build/site-raw build/site-artifact
+          python3 -c '
+          import pathlib
+          site = pathlib.Path("build/site-artifact")
+          index = (site / "index.html").read_text(encoding="utf-8")
+          for slug, title in [
+              ("index.html", "Overview"),
+              ("getting-started.html", "Getting Started"),
+              ("usage.html", "CLI and Library Usage"),
+              ("format.html", "Format Specification"),
+              ("benchmarks.html", "Benchmarks"),
+              ("research-summary.html", "Research Summary"),
+          ]:
+              assert (site / slug).is_file(), f"missing built page: {slug}"
+              assert title in index, f"missing nav title in index.html: {title}"
+          print("jekyll navigation verified: 6 pages")
+          '
+          python3 scripts/drift-check.py --site-dir build/site-artifact --write-site-receipt
+          python3 scripts/drift-check.py --site-dir build/site-artifact
+          rm -rf build/site-source build/site-raw build/site-artifact
       - name: Check commit fact declarations against each commit's own source
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}

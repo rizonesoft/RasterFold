@@ -14,6 +14,10 @@ spec = importlib.util.spec_from_file_location('drift', REPO / 'scripts/drift-che
 drift = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(drift)
 
+build_docs_spec = importlib.util.spec_from_file_location('build_docs', REPO / 'scripts/build-docs.py')
+build_docs = importlib.util.module_from_spec(build_docs_spec)
+build_docs_spec.loader.exec_module(build_docs)
+
 
 class DriftTests(unittest.TestCase):
     def setUp(self):
@@ -467,6 +471,113 @@ class DriftTests(unittest.TestCase):
         self.assertIn('claim', self.kinds(self.check()))
         self.write('README.md', base_readme + '\n<!-- claim: exists src/version.h\n')
         self.assertIn('claim', self.kinds(self.check()))
+
+    def test_build_docs_generator_is_mandatory_in_live_manifest(self):
+        live_manifest = json.loads((REPO / 'docs/drift.json').read_text(encoding='utf-8'))
+        gen = next(g for g in live_manifest['generators'] if g['script'] == 'scripts/build-docs.py')
+        self.assertNotIn('planned_owner', gen)
+        self.assertEqual(['--check'], gen['check'])
+        self.assertEqual(['--write'], gen['fix'])
+        self.manifest['generators'] = [gen]
+        self.save()
+        c = self.check()
+        c.generators()
+        self.assertIn('generator', self.kinds(c))
+
+    def test_build_docs_mirror_stage_allowlist_and_destination_confinement(self):
+        for rel in (
+            'docs/site-content.json',
+            'docs/_config.yml',
+            'docs/Gemfile',
+            'docs/index.md',
+            'docs/getting-started.md',
+            'docs/benchmarks.md',
+            'README.md',
+            'spec/FOLD.md',
+            'docs/research.md',
+            'assets/brand/icon.svg',
+            'assets/brand/cover.svg',
+            'docs/measurements.md',
+            'docs/building.md',
+            'docs/library.md',
+            'docs/vision.md',
+            'include/rasterfold.h',
+            'research/README.md',
+        ):
+            self.write(rel, (REPO / rel).read_text(encoding='utf-8'))
+        (self.root / 'examples').mkdir(parents=True, exist_ok=True)
+        self.write('examples/encode_ppm.c', '/* fixture */\n')
+        self.write('todo/secret.md', '# Internal plan\n')
+        self.write('AGENTS.md', '# Internal agent instructions\n')
+        self.write('docs/reviews/r1.md', '# Internal review\n')
+        self.write('docs/phase-runs/run.md', '# Internal run\n')
+        self.write('.intelligence/lessons.md', '# Internal intelligence\n')
+
+        written = build_docs.write_generated_pages(self.root)
+        self.assertEqual(['docs/format.md', 'docs/research-summary.md', 'docs/usage.md'], written)
+        self.assertEqual([], build_docs.check_generated_pages(self.root))
+
+        # Editing spec/FOLD.md without rerunning makes --check fail (exit 1).
+        orig_spec = (self.root / 'spec/FOLD.md').read_text(encoding='utf-8')
+        self.write('spec/FOLD.md', orig_spec + '\nEdited spec line.\n')
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(1, build_docs.main(['--root', str(self.root), '--check']))
+        self.write('spec/FOLD.md', orig_spec)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(0, build_docs.main(['--root', str(self.root), '--check']))
+
+        # Staging refuses unsafe destinations without modifying existing files.
+        sentinel = (self.root / 'docs/index.md').read_bytes()
+        (self.root / 'build').mkdir(parents=True, exist_ok=True)
+        self.write('build/not-a-dir', 'keep me')
+        for bad_dest in ('.', 'docs', 'build', 'build/../docs', '../outside', '/tmp/outside-stage', 'build/not-a-dir'):
+            with self.assertRaises(ValueError):
+                build_docs.stage_site(self.root, bad_dest)
+        self.assertEqual(sentinel, (self.root / 'docs/index.md').read_bytes())
+        self.assertEqual('keep me', (self.root / 'build/not-a-dir').read_text(encoding='utf-8'))
+        try:
+            (self.root / 'build/symlink-dest').symlink_to(self.root / 'docs', target_is_directory=True)
+            with self.assertRaises(ValueError):
+                build_docs.stage_site(self.root, 'build/symlink-dest')
+            self.assertEqual(sentinel, (self.root / 'docs/index.md').read_bytes())
+        except OSError:
+            pass
+
+        # Repeated staging removes obsolete files from build/site-source and stages only the allowlist.
+        self.write('build/site-source/obsolete.md', 'stale file\n')
+        staged = build_docs.stage_site(self.root, 'build/site-source')
+        self.assertFalse((self.root / 'build/site-source/obsolete.md').exists())
+        self.assertEqual(
+            [
+                '_config.yml',
+                'assets/brand/cover.svg',
+                'assets/brand/icon.svg',
+                'benchmarks.md',
+                'format.md',
+                'getting-started.md',
+                'index.md',
+                'research-summary.md',
+                'usage.md',
+            ],
+            staged,
+        )
+        staged_index = (self.root / 'build/site-source/index.md').read_text(encoding='utf-8')
+        self.assertIn('/RasterFold/getting-started.html', staged_index)
+        self.assertIn('/RasterFold/assets/brand/cover.svg', staged_index)
+
+        # Allowlist refuses private/internal paths in site-content.json or page links without clobbering existing stage.
+        orig_sc = json.loads((self.root / 'docs/site-content.json').read_text(encoding='utf-8'))
+        for forbidden_src in ('todo/secret.md', 'AGENTS.md', 'docs/reviews/r1.md', 'docs/phase-runs/run.md', '.intelligence/lessons.md'):
+            mutated = json.loads(json.dumps(orig_sc))
+            mutated['pages'].append({'id': 'bad', 'source': forbidden_src, 'staged': 'bad.md', 'title': 'Bad', 'nav_order': 99, 'kind': 'authored'})
+            self.write('docs/site-content.json', json.dumps(mutated, indent=2) + '\n')
+            with self.assertRaises(ValueError):
+                build_docs.stage_site(self.root, 'build/site-source')
+        self.write('docs/site-content.json', json.dumps(orig_sc, indent=2) + '\n')
+        self.write('docs/index.md', sentinel.decode('utf-8') + '\n[Leaked](../todo/secret.md)\n')
+        with self.assertRaises(ValueError):
+            build_docs.stage_site(self.root, 'build/site-source')
+        self.assertEqual(staged_index, (self.root / 'build/site-source/index.md').read_text(encoding='utf-8'))
 
 
 if __name__ == '__main__':

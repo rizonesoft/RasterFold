@@ -13,9 +13,9 @@ track: D1
 > **Goal:** RasterFold has an HTML documentation site built by Jekyll on GitHub Pages from explicitly allowlisted sources staged in `build/site-source/`: an overview, getting started, the command-line and API references, the format specification, the research notes, and a benchmarks section with charts comparing RasterFold with JPEG XL e7, JPEG XL e9, lossless WebP, and PNG on size, encode and decode speed, and memory. Jekyll renders the pages, theme, and navigation; a stdlib Python script (`scripts/build-docs.py`) generates what Jekyll cannot check (the SVG charts and data tables from the committed CSVs, and the pages mirrored from sources outside `docs/`), and its `--check` fails when any generated file differs from its source.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-09-30):** Documentation is Markdown only: `README.md`, `spec/FOLD.md`, `docs/research.md`, `research/README.md`, `todo/README.md`, `docs/building.md` and `docs/library.md`. The current repository is private; deployment must verify account support and public-content boundaries. Measurements live in `benchmarks/results.md` and `benchmarks/results.csv` (from `tests/benchmark.py`). There is no Jekyll configuration, no chart, and no Pages workflow. Operator decision 2026-09-29: "let's go with Jekyll" (the hybrid: Jekyll renders, a Python script generates the checked charts and mirrored pages). GitHub Pages' source is to be set to GitHub Actions (`D99 T01 §5`), without the starter workflow GitHub suggests.
-<!-- claim: absent docs/_config.yml -->
-<!-- claim: absent scripts/build-docs.py -->
+> **Current state (verified 2026-10-25):** `docs/_config.yml`, `docs/Gemfile`, `docs/site-content.json`, `scripts/build-docs.py`, the initial site pages (`docs/index.md`, `docs/getting-started.md`, `docs/benchmarks.md`, `docs/research-summary.md`), and the mirrored pages (`docs/format.md`, `docs/usage.md`) are implemented by `D08 T01 §1`, with `actions/jekyll-build-pages` verifying `build/site-source/` in `.github/workflows/plan.yml`. Measurements live in `benchmarks/results.md`, `benchmarks/results.csv`, and `benchmarks/corpus.csv`. SVG comparison charts (§2) and the dedicated `.github/workflows/pages.yml` deployment workflow (§3) remain planned. Operator decision 2026-09-29: "let's go with Jekyll" (the hybrid: Jekyll renders, a Python script generates the checked charts and mirrored pages). GitHub Pages' source is set to GitHub Actions (`D99 T01 §5`).
+<!-- claim: exists docs/_config.yml -->
+<!-- claim: exists scripts/build-docs.py -->
 <!-- claim: exists benchmarks/results.csv -->
 
 ## Inputs
@@ -62,6 +62,8 @@ track: D1
 
 ## 1. The Jekyll Site and Its Generated Pages
 
+> **Started:** 2026-10-25T02:23:14Z
+
 **Fidelity:** Documentation site -- the committed product documentation design.
 
 **Design:** docs/design/documentation.md -- states: all in spec -- themes: all four -- density: both
@@ -74,14 +76,15 @@ track: D1
 
 Jekyll renders what it is good at (Markdown, layouts, the theme, navigation, search). Pages whose source lives outside `docs/` are mirrored into it by `scripts/build-docs.py`, never copied by hand, so they cannot drift from their sources.
 
-- [ ] Record an explicit page/asset allowlist in `docs/site-content.json`. Done when: a test refuses agent instructions, TODOs, review records, intelligence and private/local paths in the built site; excluding two current directories alone is insufficient.
-- [ ] Add `docs/_config.yml` (title, `remote_theme: just-the-docs/just-the-docs` with the `jekyll-remote-theme` plugin, search on, `exclude:` for `reviews/` and `phase-runs/` so review records are never published) and `docs/Gemfile` for local previews. Done when: `actions/jekyll-build-pages` builds `build/site-source/` in CI without an error; configuration exclusions are defense in depth, never the publication allowlist. Cheaper substitute: building from the repository root, which publishes `todo/`, `AGENTS.md`, and the skills.
-- [ ] Write the pages that live in `docs/`: `index.md` (overview), `getting-started.md`, `benchmarks.md`, with front matter placing them in the navigation, and a public research summary sourced from selected approved research sections. Done when: the built site lists them in its navigation.
-- [ ] Write `scripts/build-docs.py`, which mirrors `spec/FOLD.md` to `docs/format.md` and the command and limits parts of `README.md` to `docs/usage.md`, each with front matter and a generated-file banner, and `--check`, which regenerates in memory and compares. Done when: editing `spec/FOLD.md` without rerunning makes `python scripts/build-docs.py --check` exit 1.
-- [ ] Implement `scripts/build-docs.py --stage build/site-source`. Done when: the clean staging directory contains exactly the allowed generated pages/assets from `docs/site-content.json`, rebases links and rejects undeclared/private inputs; a seeded internal document cannot enter the artifact.
-- [ ] Commit: `"docs: a Jekyll site with pages mirrored from their sources"`
+- [x] Record an explicit page/asset allowlist in `docs/site-content.json`. Done when: a test refuses agent instructions, TODOs, review records, intelligence and private/local paths in the built site; excluding two current directories alone is insufficient.
+- [x] Add `docs/_config.yml` (title, `remote_theme: just-the-docs/just-the-docs` with the `jekyll-remote-theme` plugin, search on, `exclude:` for `reviews/` and `phase-runs/` so review records are never published) and `docs/Gemfile` for local previews. Done when: `actions/jekyll-build-pages` builds `build/site-source/` in CI without an error; configuration exclusions are defense in depth, never the publication allowlist. Cheaper substitute: building from the repository root, which publishes `todo/`, `AGENTS.md`, and the skills.
+- [x] Write the pages that live in `docs/`: `index.md` (overview), `getting-started.md`, `benchmarks.md`, with front matter placing them in the navigation, and a public research summary (`docs/research-summary.md`) sourced from selected approved research sections. Done when: the built site lists them in its navigation.
+- [x] Write `scripts/build-docs.py`, which mirrors `spec/FOLD.md` to `docs/format.md`, the command and limits parts of `README.md` to `docs/usage.md`, and selected public sections of `docs/research.md` to `docs/research-summary.md`, each with front matter and a generated-file banner, plus `--check` (which regenerates in memory and compares); remove `"planned_owner": "D08 T01 §1"` from `docs/drift.json` so `scripts/build-docs.py --check` is a mandatory drift generator. Done when: editing `spec/FOLD.md` without rerunning makes `python scripts/build-docs.py --check` exit 1, and removing `scripts/build-docs.py` makes `scripts/drift-check.py` fail.
+- [x] Implement `scripts/build-docs.py --stage build/site-source` with strict destination confinement (allowing only non-symlink subdirectories under `build/`, refusing `.`, `docs`, `..` traversal, or symlink ancestors/targets without modifying existing files, and removing obsolete staged files on repeated runs) and add regression fixtures in `tests/test_drift.py`. Done when: the clean staging directory contains exactly the allowed generated pages/assets from `docs/site-content.json`, rebases links, rejects undeclared/private inputs and unsafe destinations without modifying existing files, and removes obsolete staged files on re-staging.
+- [x] Wire a build-only Jekyll verification step in `.github/workflows/plan.yml` (`python3 scripts/build-docs.py --check`, `python3 scripts/build-docs.py --stage build/site-source`, `actions/jekyll-build-pages@44a6e6beabd48582f863aeeb6cb2151cc1716697` into `build/site-artifact`, and rendered HTML navigation verification). Done when: the `plan.yml` CI run builds `build/site-source/` cleanly and verifies the rendered navigation.
+- [x] Commit: `"docs: a Jekyll site with pages mirrored from their sources"`
 
-**Test checkpoint:** `python scripts/build-docs.py --check` exits 0 on the tree and 1 after a source edit (quoted, then regenerated); the CI build log of `build/site-source/` is quoted with no warning.
+**Test checkpoint:** `python3 scripts/build-docs.py --check` exits 0 on the tree and 1 after a source edit (quoted, then regenerated); `python3 -m unittest tests/test_drift.py -v` passes; the CI build log of `build/site-source/` from `.github/workflows/plan.yml` is quoted with no warning.
 
 ## 2. Comparison Charts
 
