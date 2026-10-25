@@ -991,10 +991,18 @@ class DriftTests(unittest.TestCase):
         live_manifest = json.loads((REPO / 'docs/drift.json').read_text(encoding='utf-8'))
         live_facts = drift.derive_facts(live_manifest, lambda rel: (REPO / rel).read_text(encoding='utf-8'))
 
-        # 1. Independently verify corpus group memberships (photo 39, tp 10 overlapping, tp-only 5 exclusive, synth 11, all 55) and aggregate values.
+        # 1. Independently verify corpus group memberships against research/ab.py SETS (photo 39, tp 10 overlapping, tp-only 5 exclusive, synth 11, all 55) and aggregate values.
+        ab_spec = importlib.util.spec_from_file_location('ab_mod', REPO / 'research/ab.py')
+        ab_mod = importlib.util.module_from_spec(ab_spec)
+        ab_spec.loader.exec_module(ab_mod)
+        self.assertEqual(set(ab_mod.SETS['photo']), {img for _s, img in drift.CORPUS_GROUP_MEMBERS['photo']})
+        self.assertEqual(set(ab_mod.SETS['tp']), {img for _s, img in drift.CORPUS_GROUP_MEMBERS['tp']})
+        self.assertEqual(set(ab_mod.SETS['synth']), {img for _s, img in drift.CORPUS_GROUP_MEMBERS['synth']})
+        self.assertEqual(set(ab_mod.SETS['all']), {img for _s, img in drift.CORPUS_GROUP_MEMBERS['all']})
+
         corpus_raw = (REPO / 'benchmarks/corpus.csv').read_text(encoding='utf-8')
         corpus_rows = list(csv_mod.DictReader([ln for ln in corpus_raw.splitlines() if ln.strip() and not ln.startswith('#')]))
-        tp_overlap = {'ic_deer', 'ic_fireworks', 'ic_flower_foveon', 'ic_nightshot_iso_1600', 'ic_spider_web'}
+        tp_overlap = {'kodim01', 'kodim03', 'kodim05', 'kodim13', 'kodim23'}
         expected_groups = {
             'photo': (39, [r for r in corpus_rows if r['set'] == 'photo']),
             'tp': (10, [r for r in corpus_rows if r['set'] == 'tp' or r['image'] in tp_overlap]),
@@ -1002,6 +1010,9 @@ class DriftTests(unittest.TestCase):
             'synth': (11, [r for r in corpus_rows if r['set'] == 'synth']),
             'all': (55, corpus_rows),
         }
+        self.assertEqual(6651583, live_facts['corpus_tp_rf_bytes'])
+        self.assertEqual('0.9743', live_facts['corpus_tp_jxl_e7_ratio'])
+        self.assertEqual('0.9722', live_facts['corpus_tp_jxl_e7_geomean'])
         for key_prefix, (exp_count, grp_rows) in expected_groups.items():
             self.assertEqual(exp_count, len(grp_rows), key_prefix)
             self.assertEqual(exp_count, live_facts[f'corpus_{key_prefix}_count'])
@@ -1177,12 +1188,60 @@ class DriftTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, expected_msg):
                 drift.derive_facts(bad_manifest, lambda rel: (self.root / rel).read_text(encoding='utf-8'))
 
-        # Wrong corpus group row count fails derive_facts.
+        # Wrong corpus group row count, duplicate image, or unexpected image member fails derive_facts.
         truncated_corpus = '\n'.join(orig_corpus.splitlines()[:-1]) + '\n'
-        with self.assertRaisesRegex(ValueError, "corpus group 'synth' expected 11 rows, got 10"):
+        with self.assertRaisesRegex(ValueError, "corpus group 'synth' expected 11 authoritative members, got 10"):
             drift.derive_facts(
                 {'facts': {'probe': {'kind': 'csv-aggregate', 'source': 'benchmarks/corpus.csv', 'op': 'count', 'group': 'synth'}}},
                 lambda _rel: truncated_corpus,
+            )
+        dup_kodim_corpus = orig_corpus.replace('photo,kodim02,', 'photo,kodim01,', 1)
+        with self.assertRaisesRegex(ValueError, 'invalid or duplicate corpus CSV row'):
+            drift.derive_facts(
+                {'facts': {'probe': {'kind': 'csv-aggregate', 'source': 'benchmarks/corpus.csv', 'op': 'count', 'group': 'photo'}}},
+                lambda _rel: dup_kodim_corpus,
+            )
+        unknown_member_corpus = orig_corpus.replace('photo,kodim02,', 'photo,kodim99,', 1)
+        with self.assertRaisesRegex(ValueError, "corpus group 'photo' expected 39 authoritative members"):
+            drift.derive_facts(
+                {'facts': {'probe': {'kind': 'csv-aggregate', 'source': 'benchmarks/corpus.csv', 'op': 'count', 'group': 'photo'}}},
+                lambda _rel: unknown_member_corpus,
+            )
+
+        # Duplicate numerator row or unexpected benchmark set image in results.csv fails derive_facts.
+        res_lines = orig_results.splitlines()
+        deer_rf_line = next(ln for ln in res_lines if ln.startswith('photos,deer_crop,') and ',rasterfold,' in ln)
+        dup_deer_results = '\n'.join([*res_lines, deer_rf_line]) + '\n'
+        with self.assertRaisesRegex(ValueError, 'invalid or duplicate benchmark CSV row'):
+            drift.derive_facts(
+                {
+                    'facts': {
+                        'probe': {
+                            'kind': 'csv-aggregate',
+                            'source': 'benchmarks/results.csv',
+                            'op': 'geomean',
+                            'where': {'set': 'photos', 'codec': 'rasterfold'},
+                            'column': 'bytes',
+                            'denominator_where': {'set': 'photos', 'codec': 'jxl'},
+                        }
+                    }
+                },
+                lambda _rel: dup_deer_results,
+            )
+        unknown_bench_results = orig_results.replace('photos,deer_crop,', 'photos,unknown_crop,', 1)
+        with self.assertRaisesRegex(ValueError, "benchmark set 'photos' expected 10 authoritative images"):
+            drift.derive_facts(
+                {
+                    'facts': {
+                        'probe': {
+                            'kind': 'csv-aggregate',
+                            'source': 'benchmarks/results.csv',
+                            'op': 'count',
+                            'where': {'set': 'photos', 'codec': 'rasterfold'},
+                        }
+                    }
+                },
+                lambda _rel: unknown_bench_results,
             )
 
         # 7. Historical research documents remain historical and untouched by --fix.

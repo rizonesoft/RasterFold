@@ -315,11 +315,11 @@ CORPUS_CODECS = ('rasterfold', 'jxl_e7', 'jxl_e9', 'webp')
 BENCHMARK_SETS = ('measure', 'photos', 'synthetic')
 BENCHMARK_CODECS = ('rasterfold', 'rasterfold-1t', 'jxl', 'jxl-1t', 'jxl-e9', 'webp', 'png')
 TP_OVERLAP_PHOTO = (
-    'ic_deer',
-    'ic_fireworks',
-    'ic_flower_foveon',
-    'ic_nightshot_iso_1600',
-    'ic_spider_web',
+    'kodim01',
+    'kodim03',
+    'kodim05',
+    'kodim13',
+    'kodim23',
 )
 CODEC_COLORS = {
     'rasterfold': '#2563eb',

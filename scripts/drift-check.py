@@ -108,18 +108,46 @@ def anchors(text, markdown=True):
 
 
 TP_OVERLAP_PHOTO = (
-    'ic_deer',
-    'ic_fireworks',
-    'ic_flower_foveon',
-    'ic_nightshot_iso_1600',
-    'ic_spider_web',
+    'kodim01',
+    'kodim03',
+    'kodim05',
+    'kodim13',
+    'kodim23',
 )
-CORPUS_GROUP_EXPECTED_COUNTS = {
-    'photo': 39,
-    'tp': 10,
-    'tp-only': 5,
-    'synth': 11,
-    'all': 55,
+CORPUS_KODAK = tuple(f'kodim{i:02d}' for i in range(1, 25))
+CORPUS_IC = (
+    'ic_artificial', 'ic_big_building', 'ic_big_tree', 'ic_bridge', 'ic_cathedral',
+    'ic_deer', 'ic_fireworks', 'ic_flower_foveon', 'ic_hdr', 'ic_leaves_iso_1600',
+    'ic_leaves_iso_200', 'ic_nightshot_iso_100', 'ic_nightshot_iso_1600', 'ic_spider_web',
+)
+CORPUS_TP_ONLY = (
+    'tp_deer_crop', 'tp_fireworks_crop', 'tp_flower_foveon_crop',
+    'tp_nightshot_iso_1600_crop', 'tp_spider_web_crop',
+)
+CORPUS_SYNTH = (
+    'syn_solid', 'syn_checker', 'syn_stripes', 'syn_gradient', 'syn_noise',
+    'syn_pixel', 'syn_ui', 'syn_text', 'syn_diagram', 'syn_odd', 'syn_wide',
+)
+CORPUS_GROUP_MEMBERS = {
+    'photo': {('photo', img) for img in ('measure', *CORPUS_KODAK, *CORPUS_IC)},
+    'tp': {('photo', img) for img in TP_OVERLAP_PHOTO} | {('tp', img) for img in CORPUS_TP_ONLY},
+    'tp-only': {('tp', img) for img in CORPUS_TP_ONLY},
+    'synth': {('synth', img) for img in CORPUS_SYNTH},
+}
+CORPUS_GROUP_MEMBERS['all'] = (
+    CORPUS_GROUP_MEMBERS['photo'] | CORPUS_GROUP_MEMBERS['tp-only'] | CORPUS_GROUP_MEMBERS['synth']
+)
+BENCHMARK_SET_IMAGES = {
+    'measure': {'image'},
+    'photos': {
+        'deer_crop', 'fireworks_crop', 'flower_foveon_crop',
+        'kodim01', 'kodim03', 'kodim05', 'kodim13', 'kodim23',
+        'nightshot_iso_1600_crop', 'spider_web_crop',
+    },
+    'synthetic': {
+        'solid', 'checker', 'stripes', 'gradient', 'noise',
+        'pixel', 'ui', 'text', 'diagram', 'odd', 'wide',
+    },
 }
 
 
@@ -145,8 +173,33 @@ def _csv_meta(source):
     return meta
 
 
+def _validate_csv_table(all_rows, key):
+    if not all_rows:
+        raise ValueError(f'{key}: CSV file has 0 data rows')
+    sample = all_rows[0]
+    if 'codec' in sample:
+        seen = set()
+        for r in all_rows:
+            row_id = (r.get('set'), r.get('image'), r.get('codec'))
+            if not all(row_id) or row_id in seen:
+                raise ValueError(f'{key}: invalid or duplicate benchmark CSV row {row_id!r}')
+            if 'pixels_match' in r and r.get('pixels_match') != 'True':
+                raise ValueError(f'{key}: benchmark CSV row {row_id!r} has pixels_match={r.get("pixels_match")!r}')
+            seen.add(row_id)
+    elif 'set' in sample and 'image' in sample:
+        seen_pairs, seen_images = set(), set()
+        for r in all_rows:
+            pair = (r.get('set'), r.get('image'))
+            img = r.get('image')
+            if not all(pair) or pair in seen_pairs or img in seen_images:
+                raise ValueError(f'{key}: invalid or duplicate corpus CSV row {pair!r}')
+            seen_pairs.add(pair)
+            seen_images.add(img)
+
+
 def _select_csv_rows(source, rule, key):
     all_rows = list(csv.DictReader(_csv_stream(source)))
+    _validate_csv_table(all_rows, key)
     if 'group' in rule:
         group = rule['group']
         if group == 'photo':
@@ -161,17 +214,33 @@ def _select_csv_rows(source, rule, key):
             rows = list(all_rows)
         else:
             raise ValueError(f'{key}: unknown corpus group {group!r}')
-        exp_count = CORPUS_GROUP_EXPECTED_COUNTS[group]
-        if len(rows) != exp_count:
-            raise ValueError(f'{key}: corpus group {group!r} expected {exp_count} rows, got {len(rows)}')
+        exp_members = CORPUS_GROUP_MEMBERS[group]
+        got_members = [(r.get('set'), r.get('image')) for r in rows]
+        if len(got_members) != len(exp_members) or set(got_members) != exp_members:
+            raise ValueError(
+                f'{key}: corpus group {group!r} expected {len(exp_members)} authoritative members, got {len(got_members)} (diff={set(got_members) ^ exp_members})'
+            )
         if 'where' in rule:
             rows = [r for r in rows if all(r.get(k) == v for k, v in rule['where'].items())]
     elif 'where' in rule and isinstance(rule['where'], dict) and rule['where']:
         rows = [r for r in all_rows if all(r.get(k) == v for k, v in rule['where'].items())]
+        bset = rule['where'].get('set')
+        if bset in BENCHMARK_SET_IMAGES and 'image' not in rule['where'] and 'codec' in rule['where']:
+            exp_imgs = BENCHMARK_SET_IMAGES[bset]
+            got_imgs = [r.get('image') for r in rows]
+            if len(got_imgs) != len(exp_imgs) or set(got_imgs) != exp_imgs:
+                raise ValueError(
+                    f'{key}: benchmark set {bset!r} expected {len(exp_imgs)} authoritative images, got {len(got_imgs)}'
+                )
     else:
         raise ValueError(f'{key}: csv-aggregate requires non-empty group or where selector')
     if not rows:
         raise ValueError(f'{key}: CSV selector matched 0 rows')
+    join_key = rule.get('join_key', 'image')
+    if join_key in rows[0]:
+        keys = [r.get(join_key) for r in rows]
+        if len(set(keys)) != len(keys):
+            raise ValueError(f'{key}: duplicate {join_key!r} keys in selected rows')
     return rows
 
 
@@ -255,6 +324,11 @@ def derive_facts(manifest, read):
                     den = sum((Decimal(r[den_col]) for r in rows), Decimal(0))
                 elif 'denominator_where' in rule:
                     den_rows = _select_csv_rows(source, {'where': rule['denominator_where']}, f'{key}.denominator')
+                    join_key = rule.get('join_key', 'image')
+                    num_by_key = {r[join_key]: r for r in rows}
+                    den_by_key = {r[join_key]: r for r in den_rows}
+                    if len(num_by_key) != len(rows) or len(den_by_key) != len(den_rows) or set(num_by_key) != set(den_by_key):
+                        raise ValueError(f'{key}: ratio denominator rows do not match numerator keys on {join_key!r}')
                     den_col = rule.get('denominator_where_column', col)
                     den = sum((Decimal(r[den_col]) for r in den_rows), Decimal(0))
                 else:
@@ -270,8 +344,9 @@ def derive_facts(manifest, read):
                 elif 'denominator_where' in rule:
                     den_rows = _select_csv_rows(source, {'where': rule['denominator_where']}, f'{key}.denominator')
                     join_key = rule.get('join_key', 'image')
+                    num_by_key = {r[join_key]: r for r in rows}
                     den_by_key = {r[join_key]: r for r in den_rows}
-                    if len(den_by_key) != len(den_rows) or set(den_by_key) != {r[join_key] for r in rows}:
+                    if len(num_by_key) != len(rows) or len(den_by_key) != len(den_rows) or set(num_by_key) != set(den_by_key):
                         raise ValueError(f'{key}: geomean denominator rows do not match numerator keys on {join_key!r}')
                     den_col = rule.get('denominator_where_column', col)
                     ratios = [float(Decimal(r[col]) / Decimal(den_by_key[r[join_key]][den_col])) for r in rows]
