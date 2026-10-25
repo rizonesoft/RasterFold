@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -199,6 +200,9 @@ def local(ref: str, t: int) -> str:
     return ref.split(" ", 2)[2] if ref.startswith(f"D05 T{t:02d} ") else ref
 
 
+REOPENED_LINE_RE = re.compile(r"^> \*\*Reopened:\*\* [^\n]+$", re.M)
+
+
 def _load_receipt(t: int, s: int) -> tuple[str, dict | None]:
     rel = f"docs/reviews/d05-t{t:02d}-s{s}.json"
     path = REPO / rel
@@ -207,28 +211,127 @@ def _load_receipt(t: int, s: int) -> tuple[str, dict | None]:
     return rel, json.loads(path.read_text(encoding="utf-8"))
 
 
+def _format_reopened_entry(entry: object, ref: str) -> str:
+    if isinstance(entry, str):
+        line = entry.strip()
+        return line if line.startswith("> **Reopened:**") else f"> **Reopened:** {line}"
+    if isinstance(entry, dict):
+        day = str(entry.get("date", "")).strip()
+        reason = str(entry.get("reason", "")).strip()
+        revoked = str(entry.get("revoked_receipt", entry.get("revoked", ""))).strip()
+        return f"> **Reopened:** {day} | {ref} | {reason} (revoked receipt `{revoked}`)"
+    raise TypeError(f"unsupported reopened entry for {ref}: {entry!r}")
+
+
+def _load_reopened(t: int, s: int, state: dict[str, object], ref: str) -> list[str]:
+    explicit = state.get("reopened")
+    if explicit:
+        if isinstance(explicit, (str, dict)):
+            return [_format_reopened_entry(explicit, ref)]
+        if isinstance(explicit, list):
+            return [_format_reopened_entry(x, ref) for x in explicit if x]
+    _first, _title, slug = BANDS[t - 1]
+    todo_path = TODO / f"TODO-{t:02d}-{slug}.md"
+    if todo_path.is_file():
+        text = todo_path.read_text(encoding="utf-8").replace("\r\n", "\n")
+        head = re.search(rf"^## {s}\. ", text, re.M)
+        if head is not None:
+            end = re.search(r"^##(?:[ \t]|$)", text[head.end():], re.M)
+            sec_text = text[head.start():head.end() + end.start() if end else len(text)]
+            found = REOPENED_LINE_RE.findall(sec_text)
+            if found:
+                return found
+    reviews_dir = REPO / "docs" / "reviews"
+    if reviews_dir.is_dir():
+        revoked_files = sorted(reviews_dir.glob(f"d05-t{t:02d}-s{s}.revoked-*.json"))
+        if revoked_files:
+            out: list[str] = []
+            for rpath in revoked_files:
+                m = re.search(r"\.revoked-(\d{4}-\d{2}-\d{2})(?:-\d+)?\.json$", rpath.name)
+                day = m.group(1) if m else "2026-10-25"
+                reason = str(state.get("reopened_reason") or "reopened")
+                rel_revoked = f"docs/reviews/{rpath.name}"
+                out.append(f"> **Reopened:** {day} | {ref} | {reason} (revoked receipt `{rel_revoked}`)")
+            return out
+    return []
+
+
+def _resolve_receipt_and_reopened(
+    t: int,
+    s: int,
+    rel: str,
+    receipt: dict | None,
+    state: dict[str, object],
+    ref: str,
+) -> tuple[dict | None, list[str]]:
+    reopened_lines = _load_reopened(t, s, state, ref)
+    if receipt is not None and (".revoked-" in rel or receipt.get("revoked") or receipt.get("reopened")):
+        if receipt.get("reopened") and not reopened_lines:
+            reopened_lines = [_format_reopened_entry(receipt["reopened"], ref)]
+        elif not reopened_lines:
+            day = str(receipt.get("reopened_date") or receipt.get("date") or "2026-10-25")
+            reason = str(receipt.get("reason") or state.get("reopened_reason") or "reopened")
+            reopened_lines = [f"> **Reopened:** {day} | {ref} | {reason} (revoked receipt `{rel}`)"]
+        receipt = None
+    return receipt, reopened_lines
+
+
+def _format_verification_tail(sec_num: int, rel: str, receipt: dict | None, reopened_lines: list[str]) -> str:
+    reopened_block = "".join(f"\n\n{line}" for line in reopened_lines)
+    if receipt is not None:
+        return (
+            f"{reopened_block}\n\n> **Verified:** {receipt['date']} | §{sec_num} | {receipt['implementation_sha']}\n"
+            f"> **Review:** `{rel}`\n"
+        )
+    if reopened_lines:
+        return f"{reopened_block}\n"
+    return "\n\n"
+
+
+def _band_current_state(b: int, reopened_milestones: set[int]) -> str:
+    base = BAND_CURRENT_STATE.get(
+        b,
+        "> **Current state (verified 2026-09-29):** No milestone gate has run. This file is generated from `research/milestones.py`; edit the table there and run `python research/milestones.py --write`, never this file by hand.",
+    )
+    for n in sorted(reopened_milestones):
+        _p, g = section_numbers(n)
+        name = M[n - 1][1]
+        base = base.replace(f"Milestone {n} (`§{g}`, {name}) is reached", f"Milestone {n} (`§{g}`, {name}) is reopened")
+    return base
+
+
 def render_band(b: int) -> str:
     first, title, slug = BANDS[b]
     t = b + 1
     rows, body = [], []
+    reopened_milestones: set[int] = set()
+    any_reopened = False
     for n, name, target, measure, needs, requires, work, *_ in M[first - 1:first + 9]:
         p, g = section_numbers(n)
         prev = gate_ref(n - 1) if n > 1 else None
+        pstate = PLAN_STATE.get(n, {}) if p is not None else {}
         if p is not None:
-            prel, preceipt = _load_receipt(t, p)
+            prel, raw_preceipt = _load_receipt(t, p)
+            preceipt, p_reopened_lines = _resolve_receipt_and_reopened(t, p, prel, raw_preceipt, pstate, plan_ref(n))
+            if p_reopened_lines and preceipt is None:
+                any_reopened = True
             rows.append((p, f"Plan milestone {n}: {name}", local(prev, t) if prev else "--", "[x]" if preceipt else "[ ]"))
             deps = local(plan_ref(n), t) + (", " + work if work else "")
         else:
-            prel, preceipt = "", None
+            prel, preceipt, p_reopened_lines = "", None, []
             deps = work + (", " + local(prev, t) if prev else "")
-        grel, greceipt = _load_receipt(t, g)
+        state = GATE_STATE.get(n, {})
+        grel, raw_greceipt = _load_receipt(t, g)
+        greceipt, g_reopened_lines = _resolve_receipt_and_reopened(t, g, grel, raw_greceipt, state, gate_ref(n))
+        if g_reopened_lines and greceipt is None:
+            reopened_milestones.add(n)
+            any_reopened = True
         rows.append((g, f"Milestone {n} gate: {name}", deps, "[x]" if greceipt else "[ ]"))
         if p is not None:
-            pstate = PLAN_STATE.get(n, {})
             p_started_block = f"> **Started:** {pstate['started']}\n\n" if pstate.get("started") else ""
             p_notes_list = pstate.get("notes") or []
             p_notes_block = "".join(f"\n{note}\n" for note in p_notes_list) if isinstance(p_notes_list, list) and p_notes_list else ""
-            p_item_box = "[x]" if (pstate.get("checked") or preceipt is not None) else "[ ]"
+            p_item_box = "[x]" if (pstate.get("checked") or preceipt is not None or bool(p_reopened_lines)) else "[ ]"
             p_commit_box = "[x]" if preceipt is not None else "[ ]"
             promoted = {
                 11: ('research-7.2-grayscale', 'Measure generic grayscale-channel detection and single-channel coding on a diverse grayscale set plus photo/tp/synth; retain the no-image-specific-tuning rule and require a new method/version if accepted.'),
@@ -249,11 +352,7 @@ def render_band(b: int) -> str:
                 pstate.get("checkpoint")
                 or f"`python scripts/todo-graph.py validate` and `plan --check` exit 0, and `resolve '{gate_ref(n)}'` exits 4 naming at least one new work section, proving the gate waits on the authored work."
             )
-            p_verified_block = (
-                f"\n\n> **Verified:** {preceipt['date']} | §{p} | {preceipt['implementation_sha']}\n> **Review:** `{prel}`\n"
-                if preceipt is not None
-                else "\n\n"
-            )
+            p_verified_block = _format_verification_tail(p, prel, preceipt, p_reopened_lines)
             body.append(f"""## {p}. Plan Milestone {n}: {name}
 
 {p_started_block}{capture}Milestone {n}'s work is authored here, one milestone ahead, from what milestone {n - 1} actually measured: its target is *{target}*. The design notes are `docs/research.md` section 9 (milestone {n}) and the sections of `docs/research.md` it points at; the baseline is milestone {n - 1}'s gate stamp (`{gate_ref(n - 1)}`), never a figure from memory.
@@ -261,7 +360,6 @@ def render_band(b: int) -> str:
 {p_checklist_block}- {p_commit_box} Commit: `"todo: plan milestone {n} -- {name.lower()}"`
 
 **Test checkpoint:** {p_checkpoint_text}{p_verified_block}""")
-        state = GATE_STATE.get(n, {})
         started_block = f"> **Started:** {state['started']}\n\n" if state.get("started") else ""
         extra = []
         # One Needs line per section (the parser keeps the last): the most
@@ -271,7 +369,7 @@ def render_band(b: int) -> str:
             extra.append(f"**Needs:** {sorted(needs, key=lambda x: rank.get(x, 3))[0]}\n")
         if requires:
             extra.append(f"**Requires:** operator -- {requires}.\n")
-        item_box = "[x]" if (state.get("checked") or greceipt is not None) else "[ ]"
+        item_box = "[x]" if (state.get("checked") or greceipt is not None or bool(g_reopened_lines)) else "[ ]"
         commit_box = "[x]" if greceipt is not None else "[ ]"
         release = RELEASES.get(n)
         release_items = ""
@@ -300,11 +398,7 @@ def render_band(b: int) -> str:
             state.get("checkpoint")
             or "every target figure and every no-regression figure quoted from a run at the commit; a figure that misses its bar blocks the stamp and triggers the missed-milestone policy instead."
         )
-        verified_block = (
-            f"\n\n> **Verified:** {greceipt['date']} | §{g} | {greceipt['implementation_sha']}\n> **Review:** `{grel}`\n"
-            if greceipt is not None
-            else "\n\n"
-        )
+        verified_block = _format_verification_tail(g, grel, greceipt, g_reopened_lines)
         body.append(f"""## {g}. Milestone {n} Gate: {name}
 
 {started_block}{''.join(e + chr(10) for e in extra)}**Job:** A user can rely on milestone {n}: {target}.
@@ -316,11 +410,13 @@ Milestone {n} of the roadmap (`docs/research.md` section 9). {RULE.format(prev=n
 **Test checkpoint:** {checkpoint_text}{verified_block}""")
     order = "\n".join(f"|  {i:>2}   |  §{s:<3} | {d} | {dep} |  {box}   |" for i, (s, d, dep, box) in enumerate(sorted(rows), 1))
     all_done = all(box == "[x]" for _s, _d, _dep, box in rows)
-    fm_status = "done" if all_done else "draft"
-    current_state = BAND_CURRENT_STATE.get(
-        b,
-        "> **Current state (verified 2026-09-29):** No milestone gate has run. This file is generated from `research/milestones.py`; edit the table there and run `python research/milestones.py --write`, never this file by hand.",
-    )
+    todo_path = TODO / f"TODO-{t:02d}-{slug}.md"
+    existing_active = False
+    if todo_path.is_file() and any_reopened:
+        existing_head = todo_path.read_text(encoding="utf-8")[:256]
+        existing_active = bool(re.search(r"^status:\s*active\s*$", existing_head, re.M))
+    fm_status = "done" if all_done else ("active" if existing_active else "draft")
+    current_state = _band_current_state(b, reopened_milestones)
     return f"""---
 schema_version: 1
 id: milestones-{slug}
@@ -373,11 +469,22 @@ def render_research() -> str:
            "against its own previous release. Targets past milestone 10 are estimates: each is re-derived from the previous",
            "milestone's measured results when its planning section runs. The gates live in `todo/05-milestones/`; this",
            "table is generated from `research/milestones.py`.", ""]
-    for first, title, _slug in BANDS:
+    for b, (first, title, _slug) in enumerate(BANDS):
+        t = b + 1
         out += [f"### {title}", "", "| # | milestone | target | gate |", "|---|---|---|---|"]
         for n, name, target, *_ in M[first - 1:first + 9]:
-            reached = GATE_STATE.get(n, {}).get("reached")
-            gate_cell = f"`{gate_ref(n)}` ({reached})" if reached else f"`{gate_ref(n)}`"
+            state = GATE_STATE.get(n, {})
+            _p, g = section_numbers(n)
+            grel, raw_greceipt = _load_receipt(t, g)
+            greceipt, g_reopened_lines = _resolve_receipt_and_reopened(t, g, grel, raw_greceipt, state, gate_ref(n))
+            is_reopened = bool(g_reopened_lines) and greceipt is None
+            reached = None if is_reopened else state.get("reached")
+            if is_reopened:
+                gate_cell = f"`{gate_ref(n)}` (reopened)"
+            elif reached:
+                gate_cell = f"`{gate_ref(n)}` ({reached})"
+            else:
+                gate_cell = f"`{gate_ref(n)}`"
             out.append(f"| {n} | {name} | {target} | {gate_cell} |")
         out.append("")
     out.append(END)

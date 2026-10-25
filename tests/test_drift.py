@@ -2577,7 +2577,23 @@ class DriftTests(unittest.TestCase):
             row_re = re.compile(r'^(\|\s*\d+\s*\|\s*§' + str(sec_num) + r'\s*\|[^\n]*\|\s*)\[ \](\s*\|)$', re.M)
             return row_re.sub(r'\1[x]\2', text)
 
+        def simulate_unstamp(original_text: str, sec_num: int, ref: str, day: str, reason: str, revoked: str) -> str:
+            head = re.search(rf'^## {sec_num}\. ', original_text, re.M)
+            assert head is not None
+            end = re.search(r'^##(?:[ \t]|$)', original_text[head.end():], re.M)
+            body = original_text[head.start():head.end() + end.start() if end else len(original_text)]
+            stamp_lines = re.compile(r'\n\n> \*\*Verified:\*\* [^\n]*\n> \*\*Review:\*\* `[^`\n]*`')
+            new_body = stamp_lines.sub('', body.rstrip('\n'))
+            new_body = re.sub(r'^- \[x\] (Commit:.+)$', r'- [ ] \1', new_body, flags=re.M)
+            new_body += f'\n\n> **Reopened:** {day} | {ref} | {reason.strip()} (revoked receipt `{revoked}`)\n'
+            text = original_text.replace(body, new_body, 1)
+            row_re = re.compile(r'^(\|\s*\d+\s*\|\s*§' + str(sec_num) + r'\s*\|[^\n]*\|\s*)\[x\](\s*\|)$', re.M)
+            text = row_re.sub(r'\1[ ]\2', text)
+            return re.sub(r'\A(---\n(?:.*\n)*?)status: done\n', r'\1status: active\n', text, count=1)
+
         orig_load = milestones._load_receipt
+        orig_todo = milestones.TODO
+        orig_repo = milestones.REPO
         try:
             # 1. Gate section D05 T01 s1 stamp round-trip.
             milestones._load_receipt = lambda t, s: (f'docs/reviews/d05-t{t:02d}-s{s}.json', None)
@@ -2626,8 +2642,72 @@ class DriftTests(unittest.TestCase):
                 self.assertIn('docs/reviews/d05-t02-s1.json', sec1.review_body)
                 self.assertTrue(sec1.commit_done)
                 self.assertTrue(all(done for done, _ in sec1.items), sec1.items)
+
+            # 3. Unstamp-to-regeneration and re-stamp round-trip on D05 T01 s1.
+            with tempfile.TemporaryDirectory() as tmp:
+                tmp_root = Path(tmp)
+                tmp_todo_dir = tmp_root / 'todo' / '05-milestones'
+                tmp_reviews_dir = tmp_root / 'docs' / 'reviews'
+                tmp_todo_dir.mkdir(parents=True)
+                tmp_reviews_dir.mkdir(parents=True)
+                milestones.REPO = tmp_root
+                milestones.TODO = tmp_todo_dir
+                milestones._load_receipt = orig_load
+
+                band0_unstamped_text = simulate_unstamp(
+                    band0_stamped,
+                    1,
+                    'D05 T01 §1',
+                    '2026-10-26',
+                    'baseline timing rerun required',
+                    'docs/reviews/d05-t01-s1.revoked-2026-10-26.json',
+                )
+                (tmp_todo_dir / 'TODO-01-beat-jxl-and-webp.md').write_text(band0_unstamped_text, encoding='utf-8')
+                (tmp_reviews_dir / 'd05-t01-s1.revoked-2026-10-26.json').write_text(
+                    '{"date": "2026-10-25", "implementation_sha": "' + ('a' * 40) + '"}\n',
+                    encoding='utf-8',
+                )
+                regen_band0 = milestones.render_band(0)
+                self.assertIn(
+                    '> **Reopened:** 2026-10-26 | D05 T01 §1 | baseline timing rerun required (revoked receipt `docs/reviews/d05-t01-s1.revoked-2026-10-26.json`)',
+                    regen_band0,
+                )
+                self.assertIn('Milestone 1 (`§1`, Locked baseline) is reopened;', regen_band0)
+                self.assertNotIn('Milestone 1 (`§1`, Locked baseline) is reached;', regen_band0)
+                self.assertEqual(
+                    band0_unstamped_text.replace(
+                        'Milestone 1 (`§1`, Locked baseline) is reached;',
+                        'Milestone 1 (`§1`, Locked baseline) is reopened;',
+                    ),
+                    regen_band0,
+                )
+                regen_research = milestones.render_research()
+                self.assertIn('`D05 T01 §1` (reopened)', regen_research)
+                self.assertNotIn('`D05 T01 §1` (reached', regen_research)
+
+                # Re-stamping after unstamp preserves the Reopened audit line and restores reached status.
+                (tmp_todo_dir / 'TODO-01-beat-jxl-and-webp.md').write_text(regen_band0, encoding='utf-8')
+                restamped_expected = simulate_stamp(
+                    regen_band0,
+                    1,
+                    '2026-10-27',
+                    'c' * 40,
+                    'docs/reviews/d05-t01-s1.json',
+                ).replace(
+                    'Milestone 1 (`§1`, Locked baseline) is reopened;',
+                    'Milestone 1 (`§1`, Locked baseline) is reached;',
+                )
+                (tmp_reviews_dir / 'd05-t01-s1.json').write_text(
+                    '{"date": "2026-10-27", "implementation_sha": "' + ('c' * 40) + '"}\n',
+                    encoding='utf-8',
+                )
+                restamped_rendered = milestones.render_band(0)
+                self.assertEqual(restamped_expected, restamped_rendered)
+                self.assertIn('`D05 T01 §1` (reached 2026-10-25)', milestones.render_research())
         finally:
             milestones._load_receipt = orig_load
+            milestones.TODO = orig_todo
+            milestones.REPO = orig_repo
             milestones.PLAN_STATE.pop(11, None)
 
 
