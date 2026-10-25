@@ -1167,6 +1167,21 @@ class DriftTests(unittest.TestCase):
             ),
             c.errors,
         )
+        for smuggled in (
+            'Size: <span data-bytes="1409028">999</span> bytes <!-- drift:fact measurement_reference_bytes = 1409028 -->',
+            'Size: [999 bytes](README.md#1409028) <!-- drift:fact measurement_reference_bytes = 1409028 -->',
+        ):
+            self.write('docs/benchmarks.md', orig_bm + '\n' + smuggled + '\n')
+            c = self.check()
+            self.assertTrue(
+                any(
+                    e['kind'] == 'fact'
+                    and e['path'] == 'docs/benchmarks.md'
+                    and 'visible figure before measurement_reference_bytes does not match 1409028' in e['detail']
+                    for e in c.errors
+                ),
+                (smuggled, c.errors),
+            )
 
         # Fractional microsecond medians (from even repeat counts in tests/benchmark.py) derive and render cleanly.
         self.write('docs/benchmarks.md', orig_bm)

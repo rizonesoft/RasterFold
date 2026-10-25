@@ -245,7 +245,10 @@ def _select_csv_rows(source, rule, key):
 
 
 def _check_visible_fact(segment, expected_str):
-    cleaned = re.sub(r'<!--.*?-->', ' ', re.sub(r'`+<!--.*?-->`+', ' ', segment))
+    cleaned = re.sub(r'`+<!--.*?-->`+', ' ', segment)
+    cleaned = re.sub(r'<!--.*?-->', ' ', cleaned)
+    cleaned = re.sub(r'<[A-Za-z/!][^>]*>', ' ', cleaned)
+    cleaned = re.sub(r'\]\([^)\n]*\)', ']', cleaned)
     if re.fullmatch(r'-?\d+(?:\.\d+)?', expected_str):
         nums = re.findall(
             r'(?<![A-Za-z0-9_])-?\d+(?:,\d{3})*(?:\.\d+)?(?![A-Za-z0-9_])'
