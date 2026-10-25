@@ -686,6 +686,7 @@ class DocsMapTests(unittest.TestCase):
 
             base_url = 'https://rizonesoft.github.io/RasterFold'
             served_files: dict[str, bytes] = {
+                f'{base_url}/': (artifact_dir / 'index.html').read_bytes(),
                 f'{base_url}/drift-build.json': receipt_path.read_bytes(),
             }
             for rel_page in build_docs.LIVE_SAMPLE_PAGES:
@@ -715,7 +716,7 @@ class DocsMapTests(unittest.TestCase):
             stale_same_commit['outputs']['index.html'] = '0' * 64
             stale_map = dict(served_files)
             stale_map[f'{base_url}/drift-build.json'] = (json.dumps(stale_same_commit) + '\n').encode('utf-8')
-            with self.assertRaisesRegex(ValueError, 'outputs differs from expected build receipt'):
+            with self.assertRaisesRegex(ValueError, r"outputs.*differs from expected build receipt"):
                 build_docs.verify_live_publication(
                     base_url,
                     receipt_path,

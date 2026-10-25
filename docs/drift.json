@@ -1645,11 +1645,11 @@
       }
     },
     "docs/README.md": {
-      "evidence": "Author-attested: 2026-10-25 verified docs/README.md against scripts/build-docs.py and .github/workflows/pages.yml for GitHub Pages publication and --verify-live (D08 T01 section 3)",
+      "evidence": "Author-attested: 2026-10-25 verified docs/README.md against scripts/build-docs.py after adding hashlib import for --verify-live (D08 T01 section 3)",
       "sources": {
         "docs/_config.yml": "d2459047e15f142133fb8206900c7921ca9c793559c63c264e7e43dbb1f00522",
         "docs/site-content.json": "3611e28cba68ff6ac17ace19115ebb014f06140322afcfc32ec39b78128c6f30",
-        "scripts/build-docs.py": "9927e168f0f04c4c6b27c7017ef43df6c89e5b753f32c6558911f0bd9079b3fc",
+        "scripts/build-docs.py": "e91784a7c3002d512161e371db3223fed0be7c4afeec11223a31ee340e14e1f1",
         "docs/README.md": "c3c21417c182d9e2ee23541965e110085b75cf92f27c52dadb8725543f9d490b"
       }
     },

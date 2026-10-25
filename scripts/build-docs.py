@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 from html import escape as xml_escape
 import io
 import json
@@ -1985,6 +1986,7 @@ LIVE_SAMPLED_PAGES: tuple[str, ...] = (
     'benchmarks.html',
     '404.html',
 )
+LIVE_SAMPLE_PAGES: tuple[str, ...] = LIVE_SAMPLED_PAGES
 
 
 def _default_http_fetcher(url: str) -> tuple[int, bytes]:
@@ -2019,11 +2021,14 @@ def verify_live_publication(
     pages: tuple[str, ...] = LIVE_SAMPLED_PAGES,
     retries: int = 12,
     delay_seconds: float = 5.0,
+    retry_delay: float | None = None,
     fetcher=None,
     sleep_fn=None,
 ) -> dict:
     import time
 
+    if retry_delay is not None:
+        delay_seconds = retry_delay
     if not isinstance(expected_commit, str) or re.fullmatch(r'[0-9a-f]{40}', expected_commit) is None:
         raise ValueError(f'expected_commit must be a 40-character lowercase hex SHA, got {expected_commit!r}')
     if retries < 1:
@@ -2081,6 +2086,9 @@ def verify_live_publication(
                 raise ValueError(
                     f'live receipt commit {live_receipt.get("commit")!r} != expected {expected_commit!r}'
                 )
+            for key in ('sources', 'generated', 'outputs'):
+                if live_receipt.get(key) != expected_receipt.get(key):
+                    raise ValueError(f'live drift-build.json[{key!r}] differs from expected build receipt')
             if live_receipt != expected_receipt:
                 raise ValueError(
                     'live drift-build.json differs from expected build receipt (stale same-commit or tampered artifact)'
@@ -2107,7 +2115,7 @@ def verify_live_publication(
                 expected_hash = expected_outputs[page_rel]
                 if actual_hash != expected_hash:
                     raise ValueError(
-                        f'{page_rel} SHA-256 {actual_hash} != expected receipt digest {expected_hash}'
+                        f'live page {page_rel} sha256 {actual_hash} != expected receipt digest {expected_hash}'
                     )
                 verified_hashes[page_rel] = actual_hash
 
@@ -2115,6 +2123,7 @@ def verify_live_publication(
                 'site_url': norm_url,
                 'commit': expected_commit,
                 'attempt': attempt,
+                'outputs_count': len(expected_outputs),
                 'verified_pages': list(pages),
                 'page_hashes': verified_hashes,
             }

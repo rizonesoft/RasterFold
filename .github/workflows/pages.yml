@@ -125,10 +125,10 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
 
-      - name: Checkout target commit for live verification
+      - name: Checkout verifier script for live verification
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.build.outputs.target_sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Download trusted site build receipt
