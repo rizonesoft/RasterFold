@@ -23,7 +23,7 @@ track: M1
 - [`docs/research.md`](../../docs/research.md) -- sections 6.1 to 6.3, the designs and the byte arithmetic
 - [`src/cm.c`](../../src/cm.c) -- `rf_cm_decode` (the stream copy) and `rf_cm_encode` (the stream buffers)
 - [`src/fold.c`](../../src/fold.c), [`src/bmp.c`](../../src/bmp.c), [`src/main.c`](../../src/main.c) -- the decode path from file to BMP
-- [`src/sys.c`](../../src/sys.c) -- `rf_read_file`, which §1 pads
+- [`src/sys.c`](../../src/sys.c), [`src/sys_posix.c`](../../src/sys_posix.c) -- `rf_read_file`, which §1 pads on Windows and POSIX targets
 
 ## Outcome
 
@@ -46,10 +46,12 @@ track: M1
 
 ## 1. Decode Streams Straight from the Input File
 
+> **Started:** 2026-10-25T14:20:07Z
+
 The padded stream copy exists so `rdec_bit` can load two bytes past a stream's end without a bounds check. It is unnecessary: the decoder never uses a byte past `end` in a stream it accepts (it loads `in[0]` and `in[1]` but shifts out what it does not consume), the bytes after streams G and R are the next stream's, and only stream B's two bytes lie past the file.
 
-- [ ] Allocate `size + 8` bytes in `rf_read_file` (`src/sys.c`); `rf_alloc` zeroes them. Done when: the eight bytes after every file read are zero. Cheaper substitute: keeping the copy and padding only stream B.
-- [ ] Point `rdec_init` at the payload directly in `rf_cm_decode` and delete the copy. Done when: `decode --time` on `measure/image.bmp` reports `alloc_peak` about 1.41 MB lower.
+- [ ] Allocate `size + 8` bytes in `rf_read_file` (`src/sys.c` and `src/sys_posix.c`); `rf_alloc` zeroes them. Done when: the eight bytes after every file read are zero on both Windows and POSIX. Cheaper substitute: keeping the copy and padding only stream B. **Corrected 2026-10-25:** added `src/sys_posix.c` alongside `src/sys.c` since `D00 T04 §1` added the POSIX platform layer.
+- [ ] Point `rdec_init` at the payload directly in `rf_cm_decode` and delete the copy. Done when: `decode --time` on `measure/image.bmp` reports `alloc_peak` about 1.41 MB lower in `rf_cm_decode` (`inspect --time` drops from `10569996` to `9160996` bytes, and `decode --time` drops from `10569996` to `9437238` bytes until §2 removes the second 4.72 MB image buffer in `rf_bmp_store`). **Corrected 2026-10-25:** noted that in `decode --time`, `rf_bmp_store` holds `img.rgb` (`4,718,592`) + BMP `out` (`4,718,646`) = `9,437,238` bytes after `rf_cm_decode` finishes until §2 decodes straight into the BMP buffer.
 - [ ] Commit: `"codec: decode streams straight from the input file"`
 
 **Test checkpoint:** `python tests/test_correctness.py` passes every case, the corruption and truncation cases included; `python tests/fuzz_decode.py 2000 3` reports no crash, hang, or mismatch; the old and new `alloc_peak` lines are quoted.
