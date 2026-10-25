@@ -2,23 +2,23 @@
   <title id="title-size-vs-decode">Benchmark Suite: Geometric-Mean Size Ratio vs Decode Time Ratio (Relative to JPEG XL e7)</title>
   <desc id="desc-size-vs-decode">Source: benchmarks/results.csv | revision: 225ba888a41e09a89d65f82829098fd8c7d41c3c | date: 2026-10-25 | threads: rasterfold: 3T; rasterfold-1t: 1T; jxl/jxl-e9: enc 1T, dec default; jxl-1t: enc 1T, dec 1T; webp/png: 1T | limitations: measured_sets=measure (2026-10-25, rev 225ba888a41e); retained_sets=photos,synthetic (2026-09-29, rev 0159404532cf, jxl-e9 not measured).</desc>
   <rect x="0" y="0" width="940" height="460" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
-  <text x="16" y="26" font-family="system-ui, sans-serif" font-size="14" font-weight="700" fill="#0f172a">Benchmark Suite: Geometric-Mean Size Ratio vs Decode Time Ratio (Relative to JPEG XL e7)</text>
-  <text x="16" y="44" font-family="system-ui, sans-serif" font-size="11" fill="#475569">X: Geomean decode wall-time ratio vs JPEG XL e7 (lower is faster) | Y: Geomean compressed size ratio vs JPEG XL e7 (lower is smaller)</text>
-  <circle cx="21" cy="57" r="4.0" fill="#2563eb" stroke="#0f172a" stroke-width="1"/>
-  <text data-kind="legend-item" data-series="rasterfold" x="29" y="61" font-family="system-ui, sans-serif" font-size="9.5" fill="#1e293b">rasterfold</text>
-  <circle cx="113" cy="57" r="4.0" fill="#60a5fa" stroke="#0f172a" stroke-width="1"/>
-  <text data-kind="legend-item" data-series="rasterfold-1t" x="121" y="61" font-family="system-ui, sans-serif" font-size="9.5" fill="#1e293b">rasterfold-1t</text>
-  <circle cx="205" cy="57" r="4.0" fill="#059669" stroke="#0f172a" stroke-width="1"/>
-  <text data-kind="legend-item" data-series="jxl" x="213" y="61" font-family="system-ui, sans-serif" font-size="9.5" fill="#1e293b">jxl</text>
-  <circle cx="297" cy="57" r="4.0" fill="#34d399" stroke="#0f172a" stroke-width="1"/>
-  <text data-kind="legend-item" data-series="jxl-1t" x="305" y="61" font-family="system-ui, sans-serif" font-size="9.5" fill="#1e293b">jxl-1t</text>
-  <circle cx="389" cy="57" r="4.0" fill="#7c3aed" stroke="#0f172a" stroke-width="1"/>
-  <text data-kind="legend-item" data-series="jxl-e9" x="397" y="61" font-family="system-ui, sans-serif" font-size="9.5" fill="#1e293b">jxl-e9</text>
-  <circle cx="481" cy="57" r="4.0" fill="#d97706" stroke="#0f172a" stroke-width="1"/>
-  <text data-kind="legend-item" data-series="webp" x="489" y="61" font-family="system-ui, sans-serif" font-size="9.5" fill="#1e293b">webp</text>
-  <circle cx="573" cy="57" r="4.0" fill="#64748b" stroke="#0f172a" stroke-width="1"/>
-  <text data-kind="legend-item" data-series="png" x="581" y="61" font-family="system-ui, sans-serif" font-size="9.5" fill="#1e293b">png</text>
-  <text data-kind="legend-item" data-series="sets" x="664" y="61" font-family="monospace" font-size="9" fill="#334155">Sets: M=measure (solid) | P=photos (dashed) | S=synthetic (dotted)</text>
+  <text x="16" y="22" font-family="system-ui, sans-serif" font-size="14" font-weight="700" fill="#0f172a">Benchmark Suite: Geometric-Mean Size Ratio vs Decode Time Ratio (Relative to JPEG XL e7)</text>
+  <text x="16" y="38" font-family="system-ui, sans-serif" font-size="11" fill="#475569">X: Geomean decode wall-time ratio vs JPEG XL e7 (lower is faster) | Y: Geomean compressed size ratio vs JPEG XL e7 (lower is smaller)</text>
+  <circle cx="21" cy="49" r="4.0" fill="#2563eb" stroke="#0f172a" stroke-width="1"/>
+  <text data-kind="legend-item" data-series="rasterfold" x="29" y="53" font-family="system-ui, sans-serif" font-size="9.5" fill="#1e293b">rasterfold</text>
+  <circle cx="113" cy="49" r="4.0" fill="#60a5fa" stroke="#0f172a" stroke-width="1"/>
+  <text data-kind="legend-item" data-series="rasterfold-1t" x="121" y="53" font-family="system-ui, sans-serif" font-size="9.5" fill="#1e293b">rasterfold-1t</text>
+  <circle cx="205" cy="49" r="4.0" fill="#059669" stroke="#0f172a" stroke-width="1"/>
+  <text data-kind="legend-item" data-series="jxl" x="213" y="53" font-family="system-ui, sans-serif" font-size="9.5" fill="#1e293b">jxl</text>
+  <circle cx="297" cy="49" r="4.0" fill="#34d399" stroke="#0f172a" stroke-width="1"/>
+  <text data-kind="legend-item" data-series="jxl-1t" x="305" y="53" font-family="system-ui, sans-serif" font-size="9.5" fill="#1e293b">jxl-1t</text>
+  <circle cx="389" cy="49" r="4.0" fill="#7c3aed" stroke="#0f172a" stroke-width="1"/>
+  <text data-kind="legend-item" data-series="jxl-e9" x="397" y="53" font-family="system-ui, sans-serif" font-size="9.5" fill="#1e293b">jxl-e9</text>
+  <circle cx="481" cy="49" r="4.0" fill="#d97706" stroke="#0f172a" stroke-width="1"/>
+  <text data-kind="legend-item" data-series="webp" x="489" y="53" font-family="system-ui, sans-serif" font-size="9.5" fill="#1e293b">webp</text>
+  <circle cx="573" cy="49" r="4.0" fill="#64748b" stroke="#0f172a" stroke-width="1"/>
+  <text data-kind="legend-item" data-series="png" x="581" y="53" font-family="system-ui, sans-serif" font-size="9.5" fill="#1e293b">png</text>
+  <text data-kind="legend-item" data-series="sets" x="16" y="65" font-family="monospace" font-size="9" fill="#334155">Sets: M=measure (solid) | P=photos (dashed) | S=synthetic (dotted)</text>
   <line x1="80.00" y1="74.00" x2="80.00" y2="348.00" stroke="#e2e8f0" stroke-width="1"/>
   <text data-kind="x-tick" data-value="0.00" x="80.00" y="359.00" text-anchor="middle" font-family="monospace" font-size="8.5" fill="#475569">0.00</text>
   <line x1="76.00" y1="344.00" x2="910.00" y2="344.00" stroke="#e2e8f0" stroke-width="1"/>

@@ -961,8 +961,8 @@ def render_scatter_svg(spec: dict) -> str:
         f'  <title id="title-{name}">{xml_escape(spec["title"])}</title>',
         f'  <desc id="desc-{name}">Source: {xml_escape(prov["source"])} | revision: {xml_escape(prov["codec_revision"])} | date: {xml_escape(prov["date"])} | threads: {xml_escape(prov["threads"])} | limitations: {xml_escape(prov["limitations"])}</desc>',
         f'  <rect x="0" y="0" width="{width}" height="{height}" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>',
-        f'  <text x="16" y="26" font-family="system-ui, sans-serif" font-size="14" font-weight="700" fill="#0f172a">{xml_escape(spec["title"])}</text>',
-        f'  <text x="16" y="44" font-family="system-ui, sans-serif" font-size="11" fill="#475569">X: {xml_escape(spec["x_label"])} | Y: {xml_escape(spec["y_label"])}</text>',
+        f'  <text x="16" y="22" font-family="system-ui, sans-serif" font-size="14" font-weight="700" fill="#0f172a">{xml_escape(spec["title"])}</text>',
+        f'  <text x="16" y="38" font-family="system-ui, sans-serif" font-size="11" fill="#475569">X: {xml_escape(spec["x_label"])} | Y: {xml_escape(spec["y_label"])}</text>',
     ]
 
     # Legend for series/set identification
@@ -970,23 +970,23 @@ def render_scatter_svg(spec: dict) -> str:
     if spec['kind'] == 'scatter-corpus':
         for s_name in ('photo', 'tp', 'synth'):
             color = SET_COLORS[s_name]
-            lines.append(f'  <circle cx="{lx + 5}" cy="57" r="4.0" fill="{color}"/>')
+            lines.append(f'  <circle cx="{lx + 5}" cy="49" r="4.0" fill="{color}"/>')
             lines.append(
-                f'  <text data-kind="legend-item" data-series="{s_name}" x="{lx + 13}" y="61" '
+                f'  <text data-kind="legend-item" data-series="{s_name}" x="{lx + 13}" y="53" '
                 f'font-family="system-ui, sans-serif" font-size="10" fill="#1e293b">{s_name}</text>'
             )
             lx += 86
     else:
         for s_name in spec['series']:
             color = CODEC_COLORS.get(s_name, '#334155')
-            lines.append(f'  <circle cx="{lx + 5}" cy="57" r="4.0" fill="{color}" stroke="#0f172a" stroke-width="1"/>')
+            lines.append(f'  <circle cx="{lx + 5}" cy="49" r="4.0" fill="{color}" stroke="#0f172a" stroke-width="1"/>')
             lines.append(
-                f'  <text data-kind="legend-item" data-series="{xml_escape(s_name, quote=True)}" x="{lx + 13}" y="61" '
+                f'  <text data-kind="legend-item" data-series="{xml_escape(s_name, quote=True)}" x="{lx + 13}" y="53" '
                 f'font-family="system-ui, sans-serif" font-size="9.5" fill="#1e293b">{xml_escape(s_name)}</text>'
             )
             lx += 92
         lines.append(
-            f'  <text data-kind="legend-item" data-series="sets" x="{lx + 4}" y="61" '
+            f'  <text data-kind="legend-item" data-series="sets" x="16" y="65" '
             f'font-family="monospace" font-size="9" fill="#334155">Sets: M=measure (solid) | P=photos (dashed) | S=synthetic (dotted)</text>'
         )
 
@@ -1360,6 +1360,11 @@ def self_test_charts(root: Path) -> list[str]:
                 y_ticks = [el for el in svg_root.iter() if el.attrib.get('data-kind') == 'y-tick']
                 if not legend_items:
                     errors.append(f'{chart_rel}: missing legend items')
+                for leg_el in legend_items:
+                    lx_val = float(leg_el.attrib.get('x', '0'))
+                    est_right = lx_val + len((leg_el.text or '').strip()) * 6.0
+                    if est_right > 928.0:
+                        errors.append(f'{chart_rel}: legend item {leg_el.attrib.get("data-series")!r} overflows viewport (est_right={est_right:.1f})')
                 if len(y_ticks) < 2:
                     errors.append(f'{chart_rel}: missing Y-axis numeric ticks')
 
