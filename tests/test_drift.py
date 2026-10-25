@@ -428,13 +428,19 @@ class DriftTests(unittest.TestCase):
         base_readme = (self.root / 'README.md').read_text(encoding='utf-8')
         for sample in (
             'Current codec: format 3.',
+            'Current codec: format 2.5.',
             'C API 2.0 is current.',
             'C API 1.9 is current.',
+            'C API 1.0.5 is current.',
             'Maximum dimension: 16384.',
+            'Maximum dimension: 32768.5.',
             'Maximum image: 1000000 pixels.',
             'Maximum file size: 999999.',
             'Maximum file size: 268435456 KiB.',
+            'Maximum file size: 268435456.0 KiB.',
             'Maximum file size: 256 MB.',
+            'Maximum file size: 268435456.5 bytes.',
+            'Maximum file size: 12,34 bytes.',
             'Maximum file size: 268435456 widgets.',
         ):
             self.write('README.md', base_readme + '\n' + sample + '\n')
@@ -442,8 +448,12 @@ class DriftTests(unittest.TestCase):
             self.assertIn('prose-fact', self.kinds(c), sample)
         for valid_file_size in (
             'Maximum file size: 268435456.',
+            'Maximum file size: 268,435,456 bytes.',
             'Maximum file size: 268435456 bytes.',
             'Maximum file size: 256 MiB.',
+            'Maximum file size: 256.0 MiB.',
+            'Maximum file size: 0.25 GiB.',
+            'Maximum dimension: 32,768.',
         ):
             self.write('README.md', base_readme + '\n' + valid_file_size + '\n')
             self.assertEqual([], self.check().errors, valid_file_size)

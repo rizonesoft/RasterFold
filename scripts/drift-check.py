@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+from decimal import Decimal, InvalidOperation
 import fnmatch
 import hashlib
 from html import unescape
@@ -315,15 +316,21 @@ class Checker:
                         if rule.get('units') == 'bytes':
                             num_text, unit_text = value if isinstance(value, tuple) else (value, '')
                             unit_key = unit_text.strip().lower()
-                            if unit_key not in BYTE_UNITS:
-                                self.error('prose-fact', rel, f'{rule["fact"]}: stated {num_text} {unit_text} (unsupported unit), source says {expected}; review required')
-                                continue
-                            normalized = str(int(num_text) * BYTE_UNITS[unit_key])
                             stated = f'{num_text} {unit_text}'.strip()
-                            if normalized != expected:
+                            if unit_key not in BYTE_UNITS:
+                                self.error('prose-fact', rel, f'{rule["fact"]}: stated {stated} (unsupported unit), source says {expected}; review required')
+                                continue
+                            clean = num_text.replace(',', '') if re.fullmatch(r'\d+(?:,\d{3})+(?:\.\d+)?', num_text) else (num_text.replace('_', '') if re.fullmatch(r'\d+(?:_\d{3})+(?:\.\d+)?', num_text) else (num_text if re.fullmatch(r'\d+(?:\.\d+)?', num_text) else None))
+                            try:
+                                scaled = Decimal(clean) * BYTE_UNITS[unit_key] if clean is not None else None
+                            except InvalidOperation:
+                                scaled = None
+                            if scaled is None or scaled != int(scaled) or str(int(scaled)) != expected:
                                 self.error('prose-fact', rel, f'{rule["fact"]}: stated {stated}, source says {expected}; review required')
-                        elif value != expected:
-                            self.error('prose-fact', rel, f'{rule["fact"]}: stated {value}, source says {expected}; review required')
+                        else:
+                            clean = value.replace(',', '') if re.fullmatch(r'\d+(?:,\d{3})+', value) else (value.replace('_', '') if re.fullmatch(r'\d+(?:_\d{3})+', value) else value)
+                            if clean != expected:
+                                self.error('prose-fact', rel, f'{rule["fact"]}: stated {value}, source says {expected}; review required')
         for name, block in blocks.items():
             if name not in seen_blocks:
                 self.error('block', block['path'], f'required block {name} is missing; restore its markers')

@@ -336,42 +336,42 @@
   "assertions": [
     {
       "pattern": "*",
-      "regex": "\\b(?:(?:encoded |codec: |declare )format:? |format (?:version |v))(\\d+)\\b",
+      "regex": "\\b(?:(?:encoded |codec: |declare )format:? |format (?:version |v))(\\d+(?:[.,_]\\d+)*)\\b",
       "fact": "format_version"
     },
     {
       "pattern": "*",
-      "regex": "\\b(?:public )?API:? (?:version )?(\\d+)\\.\\d+\\b",
+      "regex": "\\b(?:public )?API:? (?:version )?(\\d+)\\.\\d+(?![.,_]\\d)\\b",
       "fact": "api_major"
     },
     {
       "pattern": "*",
-      "regex": "\\b(?:public )?API:? (?:version )?\\d+\\.(\\d+)\\b",
+      "regex": "\\b(?:public )?API:? (?:version )?\\d+\\.(\\d+(?:[.,_]\\d+)*)\\b",
       "fact": "api_minor"
     },
     {
       "pattern": "*",
-      "regex": "\\b(?:maximum dimension:? |dimension limit:? )(\\d+)\\b",
+      "regex": "\\b(?:maximum dimension:? |dimension limit:? )(\\d+(?:[.,_]\\d+)*)\\b",
       "fact": "max_dimension"
     },
     {
       "pattern": "*",
-      "regex": "\\b(\\d+)(?:-pixel dimension limit| pixels per dimension)\\b",
+      "regex": "\\b(\\d+(?:[.,_]\\d+)*)(?:-pixel dimension limit| pixels per dimension)\\b",
       "fact": "max_dimension"
     },
     {
       "pattern": "*",
-      "regex": "\\b(?:maximum image:? |image limit:? )(\\d+)\\b",
+      "regex": "\\b(?:maximum image:? |image limit:? )(\\d+(?:[.,_]\\d+)*)\\b",
       "fact": "max_pixels"
     },
     {
       "pattern": "*",
-      "regex": "\\b(\\d+)(?:-pixel image limit| pixels total)\\b",
+      "regex": "\\b(\\d+(?:[.,_]\\d+)*)(?:-pixel image limit| pixels total)\\b",
       "fact": "max_pixels"
     },
     {
       "pattern": "*",
-      "regex": "\\b(?:maximum file(?: size)?:? |file(?: size)? limit:? )(\\d+)(?:[ \\t]*([a-zA-Z]+))?\\b",
+      "regex": "\\b(?:maximum file(?: size)?:? |file(?: size)? limit:? )(\\d+(?:[.,_]\\d+)*)(?:[ \\t]*([a-zA-Z]+))?\\b",
       "fact": "max_file_bytes",
       "units": "bytes"
     }
