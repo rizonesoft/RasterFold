@@ -1624,6 +1624,142 @@ class DriftTests(unittest.TestCase):
             )
         )
 
+    def test_setext_nested_links_and_gate_entrypoints(self):
+        self.write(
+            'target.md',
+            '---\n'
+            'layout: default\n'
+            'title: Target Frontmatter\n'
+            '---\n'
+            'Setext H1\n'
+            '=========\n\n'
+            'Setext H2\n'
+            '---------\n\n'
+            'Multi Line\n'
+            'Setext\n'
+            '------\n\n'
+            'Setext Dup\n'
+            '==========\n\n'
+            'Setext Dup\n'
+            '----------\n\n'
+            '   ## Indented ATX\n\n'
+            '## [Linked Heading](README.md)\n\n'
+            '[Linked Setext [Inner]](README.md)\n'
+            '----------------------------------\n\n'
+            'Paragraph before thematic break.\n\n'
+            '---\n\n'
+            '- List item\n'
+            '---\n\n'
+            '> Blockquote line\n'
+            '---\n\n'
+            '| Table Col |\n'
+            '| --- |\n',
+        )
+        self.write('dir/file(1).md', '   ### Paren Target\n\n[back](../valid_links.md)\n')
+        self.write('dir/file (2).md', 'Angle Target\n============\n')
+        self.write('dir/badge.svg', '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>\n')
+        self.write(
+            'valid_links.md',
+            '[a [nested] label](target.md#setext-h1)\n'
+            '[h2](target.md#setext-h2)\n'
+            '[multi](target.md#multi-line-setext)\n'
+            '[dup0](target.md#setext-dup)\n'
+            '[dup1](target.md#setext-dup-1)\n'
+            '[indented](target.md#indented-atx)\n'
+            '[linked](target.md#linked-heading)\n'
+            '[linked-setext](target.md#linked-setext-inner)\n'
+            '[paren-file](dir/file(1).md#paren-target "title")\n'
+            '[angle-file](<dir/file (2).md#angle-target>)\n'
+            '[![badge](dir/badge.svg)](target.md#setext-h1)\n'
+            '[ref-use][ref_ok]\n\n'
+            '[ref_ok]: <dir/file (2).md#angle-target>\n',
+        )
+        self.assertEqual([], self.check().errors)
+
+        # Non-Setext constructs (frontmatter, list item before ---, blockquote before ---, table separator) must not create anchors.
+        for bad_frag in ('#title-target-frontmatter', '#list-item', '#blockquote-line', '#table-col'):
+            self.write('bad_anchor.md', f'[Bad](target.md{bad_frag})\n')
+            c_bad = self.check()
+            self.assertTrue(
+                any(e['kind'] == 'anchor' and e['path'] == 'bad_anchor.md' and bad_frag in e['detail'] for e in c_bad.errors),
+                (bad_frag, c_bad.errors),
+            )
+        (self.root / 'bad_anchor.md').unlink()
+
+        # Broken nested-label, parenthesized, angle-bracketed, nested-image, and reference links must each report a link error.
+        for bad_md, expected_target in (
+            ('[a [nested] label](gone.md)\n', 'gone.md'),
+            ('[paren](dir/missing(1).md)\n', 'dir/missing(1).md'),
+            ('[angle](<dir/missing (2).md>)\n', 'dir/missing (2).md'),
+            ('[![badge](dir/missing.svg)](target.md)\n', 'dir/missing.svg'),
+            ('[ref][r]\n\n[r]: <dir/missing (3).md>\n', 'dir/missing (3).md'),
+        ):
+            self.write('bad_link.md', bad_md)
+            c_link = self.check()
+            self.assertTrue(
+                any(e['kind'] == 'link' and e['path'] == 'bad_link.md' and expected_target in e['detail'] for e in c_link.errors),
+                (bad_md, c_link.errors),
+            )
+        (self.root / 'bad_link.md').unlink()
+        self.assertEqual([], self.check().errors)
+
+        # Built Jekyll artifact in build/site-artifact/ validates relative links, /RasterFold/ base-path links, and HTML IDs.
+        self.write('.gitignore', 'build/\n')
+        self.write('build/site-artifact/index.html', '<html><body><a href="/RasterFold/format.html#format-id">Format</a></body></html>\n')
+        self.write('build/site-artifact/format.html', '<html><body><h2 id="format-id">Format</h2><a href="index.html">Home</a></body></html>\n')
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(0, drift.main(['--root', str(self.root), '--site-dir', 'build/site-artifact', '--write-site-receipt']))
+            self.assertEqual(0, drift.main(['--root', str(self.root), '--site-dir', 'build/site-artifact']))
+
+        # Seed broken relative link, out-of-base-path link, and missing HTML fragment in build/site-artifact/.
+        self.write(
+            'build/site-artifact/index.html',
+            '<html><body>'
+            '<a href="missing-page.html">Dead</a>'
+            '<a href="/outside/page.html">Outside</a>'
+            '<a href="/RasterFold/format.html#missing-html-id">BadFrag</a>'
+            '</body></html>\n',
+        )
+        c_site = self.check()
+        self.write('build/site-artifact/drift-build.json', json.dumps(c_site.site_receipt('build/site-artifact')))
+        out_buf = io.StringIO()
+        with contextlib.redirect_stdout(out_buf):
+            self.assertEqual(1, drift.main(['--root', str(self.root), '--site-dir', 'build/site-artifact']))
+        site_out = out_buf.getvalue()
+        self.assertIn('link: index.html: missing target: missing-page.html', site_out)
+        self.assertIn('site-link: index.html: URL outside Pages base path: /outside/page.html', site_out)
+        self.assertIn('anchor: index.html: missing heading or id: /RasterFold/format.html#missing-html-id', site_out)
+
+        # Restore valid built site and verify clean exit 0.
+        self.write('build/site-artifact/index.html', '<html><body><a href="/RasterFold/format.html#format-id">Format</a></body></html>\n')
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(0, drift.main(['--root', str(self.root), '--site-dir', 'build/site-artifact', '--write-site-receipt']))
+            self.assertEqual(0, drift.main(['--root', str(self.root), '--site-dir', 'build/site-artifact']))
+
+        # Verify gate entrypoints (scripts/check-all.ps1, scripts/check-all.py, .github/workflows/plan.yml, tools/githooks/pre-commit).
+        ps1_text = (REPO / 'scripts/check-all.ps1').read_text(encoding='utf-8')
+        self.assertIn('scripts/check-all.py', ps1_text)
+        self.assertIn('exit $LASTEXITCODE', ps1_text)
+        check_all_text = (REPO / 'scripts/check-all.py').read_text(encoding='utf-8')
+        self.assertIn("('document drift','scripts/drift-check.py',[])", check_all_text)
+        plan_yml_text = (REPO / '.github/workflows/plan.yml').read_text(encoding='utf-8')
+        self.assertIn('python3 scripts/drift-check.py\n', plan_yml_text)
+        self.assertIn('python3 scripts/drift-check.py --site-dir build/site-artifact --write-site-receipt', plan_yml_text)
+        self.assertIn('python3 scripts/drift-check.py --site-dir build/site-artifact\n', plan_yml_text)
+
+        if shutil.which('sh'):
+            self.write('scripts/drift-check.py', (REPO / 'scripts/drift-check.py').read_text(encoding='utf-8'))
+            self.git('add', '-A')
+            self.git('commit', '-qm', 'Install updated drift-check for hook link test')
+            self.git('config', 'core.hooksPath', str(REPO / 'tools/githooks'))
+            head_before = self.git('rev-parse', 'HEAD')
+            self.write('README.md', (self.root / 'README.md').read_text(encoding='utf-8') + '\nSee [broken [nested] link](nonexistent.md).\n')
+            self.git('add', 'README.md')
+            proc = subprocess.run(['git', 'commit', '-m', 'Should fail on broken link'], cwd=self.root, capture_output=True, text=True, timeout=60)
+            self.assertNotEqual(0, proc.returncode)
+            self.assertIn('missing target: nonexistent.md', (proc.stdout or '') + (proc.stderr or ''))
+            self.assertEqual(head_before, self.git('rev-parse', 'HEAD'))
+
 
 if __name__ == '__main__':
     unittest.main()

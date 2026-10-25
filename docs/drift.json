@@ -1587,11 +1587,11 @@
       }
     },
     "docs/document-drift.md": {
-      "evidence": "Author-attested: 2026-10-25 re-read docs/document-drift.md against scripts/drift-check.py and docs/drift.json",
+      "evidence": "Author-attested: 2026-10-25 re-read docs/document-drift.md against scripts/drift-check.py and docs/drift.json (D08 T02 section 5)",
       "sources": {
-        "scripts/drift-check.py": "2c01000ce26c2206cbfa2ee024d85a01dcb654a1af5f6d215f91a501e5c60780",
+        "scripts/drift-check.py": "157f2f4fea1868ecd388808af7d2ea4cf69091a7e39aeb2d8a30910a837eddb3",
         "scripts/plan-audit.py": "a75c0311c54108a195c8fbe9048df11458abfe946563bb7c248e798fcdb98d42",
-        "docs/document-drift.md": "b62a84a167647aeb8f431cc3981982e42c014ace8d602559db0d5e27fe03ab96"
+        "docs/document-drift.md": "1f8e84487a8c3c8ead3889e0116563508d65585275b7c5eb36209b738daea4fb"
       }
     },
     "docs/README.md": {

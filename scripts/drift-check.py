@@ -38,7 +38,7 @@ BLOCK = re.compile(r'(?P<start><!-- drift:begin (?P<id>[a-z0-9-]+) -->\r?\n)(?P<
 FACT = re.compile(r'<!-- drift:fact ([a-z0-9_.-]+) = (.*?) -->')
 COMMIT = re.compile(r'<!-- drift:commit ([0-9a-f]{7,40})(?: (\S+))? -->')
 LINK = re.compile(r'!?\[[^\]\n]*\]\((?:<([^>\n]+)>|([^\s)]+))(?:\s+["\'][^\n]*?["\'])?\)')
-REFERENCE = re.compile(r'^\s*\[(?!\^)[^\]]+\]:\s*<?([^\s>]+)>?', re.M)
+REFERENCE = re.compile(r'^[ \t]{0,3}\[(?!\^)[^\]\n]+\]:[ \t]*(?:<([^>\n]+)>|([^\s>]+))', re.M)
 BYTE_UNITS = {
     '': 1, 'b': 1, 'byte': 1, 'bytes': 1,
     'kib': 1024, 'mib': 1024 ** 2, 'gib': 1024 ** 3, 'tib': 1024 ** 4,
@@ -90,20 +90,162 @@ class HTML(HTMLParser):
                 self.links.append(attrs[name])
 
 
+def _parse_inline_link_at(text, bracket_pos):
+    n = len(text)
+    if bracket_pos > 0 and text[bracket_pos - 1] == '\\' and (bracket_pos < 2 or text[bracket_pos - 2] != '\\'):
+        return None
+    depth = 0
+    i = bracket_pos
+    while i < n:
+        ch = text[i]
+        if ch == '\\':
+            i += 2
+            continue
+        if ch == '[':
+            depth += 1
+        elif ch == ']':
+            depth -= 1
+            if depth == 0:
+                break
+        elif ch == '\n' and re.match(r'[ \t]*\r?\n', text[i + 1:]):
+            return None
+        i += 1
+    else:
+        return None
+    close_bracket = i
+    if close_bracket + 1 >= n or text[close_bracket + 1] != '(':
+        return None
+    label = text[bracket_pos + 1:close_bracket]
+    j = close_bracket + 2
+    while j < n and text[j] in (' ', '\t'):
+        j += 1
+    if j >= n:
+        return None
+    if text[j] == '<':
+        k = j + 1
+        while k < n and text[k] not in ('>', '\n', '\r', '<'):
+            if text[k] == '\\':
+                k += 2
+                continue
+            k += 1
+        if k >= n or text[k] != '>':
+            return None
+        dest = text[j + 1:k]
+        m = k + 1
+    else:
+        k = j
+        pdepth = 0
+        while k < n:
+            ch = text[k]
+            if ch == '\\':
+                k += 2
+                continue
+            if ch in (' ', '\t', '\n', '\r'):
+                break
+            if ch == '(':
+                pdepth += 1
+            elif ch == ')':
+                if pdepth == 0:
+                    break
+                pdepth -= 1
+            k += 1
+        dest = text[j:k]
+        m = k
+    while m < n and text[m] in (' ', '\t'):
+        m += 1
+    if m < n and text[m] in ('"', "'", '('):
+        q = ')' if text[m] == '(' else text[m]
+        m += 1
+        while m < n and text[m] not in (q, '\n', '\r'):
+            if text[m] == '\\':
+                m += 2
+                continue
+            m += 1
+        if m >= n or text[m] != q:
+            return None
+        m += 1
+        while m < n and text[m] in (' ', '\t'):
+            m += 1
+    if m >= n or text[m] != ')':
+        return None
+    return label, dest, m + 1
+
+
+def _extract_markdown_links(text):
+    out = []
+    for idx, ch in enumerate(text):
+        if ch == '[':
+            res = _parse_inline_link_at(text, idx)
+            if res is not None and res[1]:
+                out.append(res[1])
+    out.extend(m[1] or m[2] for m in REFERENCE.finditer(text))
+    return out
+
+
+def _strip_markdown_links_to_text(raw):
+    out = []
+    i = 0
+    n = len(raw)
+    while i < n:
+        if raw[i] == '!' and i + 1 < n and raw[i + 1] == '[':
+            res = _parse_inline_link_at(raw, i + 1)
+            if res is not None:
+                label, _, end_pos = res
+                out.append(_strip_markdown_links_to_text(label))
+                i = end_pos
+                continue
+        if raw[i] == '[':
+            res = _parse_inline_link_at(raw, i)
+            if res is not None:
+                label, _, end_pos = res
+                out.append(_strip_markdown_links_to_text(label))
+                i = end_pos
+                continue
+        out.append(raw[i])
+        i += 1
+    return ''.join(out)
+
+
+def _register_heading_anchor(raw_title, found, seen):
+    cleaned = _strip_markdown_links_to_text(raw_title)
+    title = re.sub(r'<[^>]*>', '', unescape(cleaned)).strip().lower()
+    title = re.sub(r'[^\w\-\s]', '', title).replace(' ', '-')
+    if not title:
+        return
+    n = seen.get(title, 0)
+    found.add(title + (f'-{n}' if n else ''))
+    seen[title] = n + 1
+
+
 def anchors(text, markdown=True):
     html = HTML()
-    html.feed(text)
+    html.feed(prose(text) if markdown else text)
     found, seen = html.anchors, {}
     if markdown:
-        for line in prose(text).splitlines():
-            match = re.match(r'^#{1,6}\s+(.+?)\s*#*$', line)
-            if not match:
+        body = re.sub(r'\A---\r?\n.*?\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|\Z)', '', text, count=1, flags=re.S)
+        para_lines = []
+        for line in prose(body).splitlines():
+            atx = re.match(r'^[ \t]{0,3}#{1,6}[ \t]+(.+?)[ \t]*#*[ \t]*$', line)
+            if atx:
+                para_lines.clear()
+                _register_heading_anchor(atx[1], found, seen)
                 continue
-            title = re.sub(r'<[^>]*>', '', unescape(match[1])).lower()
-            title = re.sub(r'[^\w\-\s]', '', title).replace(' ', '-')
-            n = seen.get(title, 0)
-            found.add(title + (f'-{n}' if n else ''))
-            seen[title] = n + 1
+            setext = re.match(r'^[ \t]{0,3}(=+|-+)[ \t]*$', line)
+            if setext and para_lines:
+                _register_heading_anchor(' '.join(para_lines), found, seen)
+                para_lines.clear()
+                continue
+            if (
+                not line.strip()
+                or re.match(
+                    r'^(?:[ \t]{4,}|[ \t]{0,3}(?:>|#|[-*+][ \t]|\d+[.)][ \t]|\||<!--|<[a-zA-Z/!]|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|(?:-[ \t]*){3,}))',
+                    line,
+                )
+                or re.match(r'^[ \t]{0,3}\[(?!\^)[^\]\n]+\]:', line)
+            ):
+                para_lines.clear()
+            else:
+                para_lines.append(line.strip())
     return found
 
 
@@ -1076,7 +1218,7 @@ class Checker:
         html.feed(text)
         links = html.links
         if Path(rel).suffix in ('.md', '.markdown'):
-            links += [m[1] or m[2] for m in LINK.finditer(text)] + REFERENCE.findall(text)
+            links += _extract_markdown_links(text)
         for link in links:
             parts = urlsplit(unescape(link))
             if parts.scheme or parts.netloc or not link or link.startswith('{{'):

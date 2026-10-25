@@ -104,13 +104,15 @@ track: D2
 > **Review:** `docs/reviews/d08-t02-s4.json`
 ## 5. Links, and the Gates Wired Everywhere
 
+> **Started:** 2026-10-25T07:25:30Z
+
 **Job:** A contributor meets the policy at every step: the commit hook, the local gates, and CI refuse drift the same way.
 
-- [ ] Check every relative link and heading anchor in tracked Markdown, and in the allowlisted Jekyll artifact in CI (`build/site-artifact/`). Done when: a dead link makes the check exit 1; extend source-anchor fixtures to cover Setext headings before such headings are admitted, while built HTML IDs remain authoritative.
-- [ ] Run `python scripts/drift-check.py` in `tools/githooks/pre-commit` (on the staged tree), in `scripts/check-all.ps1`, and in `.github/workflows/plan.yml`. Done when: each of the three refuses a seeded drift.
-- [ ] Commit: `"docs: refuse drift in the hook, the local gates, and CI"`
+- [x] Check every relative link (including nested bracket labels, balanced-parenthesis destinations, angle-bracket destinations, and reference link definitions) and heading anchor (ATX including up to three leading spaces and linked headings, and Setext `===` and `---` headings excluding YAML front matter, thematic breaks, list items, blockquotes, and tables) in tracked Markdown, and check relative links, `/RasterFold/` base-path links, and built HTML IDs in the allowlisted Jekyll artifact in CI (`build/site-artifact/`), updating `docs/document-drift.md` and its review receipt. Done when: a dead link or missing anchor makes `python3 scripts/drift-check.py` exit 1 while built HTML IDs remain authoritative.
+- [x] Run `python scripts/drift-check.py` in `tools/githooks/pre-commit` (on the staged tree), in `scripts/check-all.ps1` / `scripts/check-all.py`, and in `.github/workflows/plan.yml` (both repository-wide and `--site-dir build/site-artifact`), and add regression tests in `tests/test_drift.py` (`test_setext_nested_links_and_gate_entrypoints`) covering source Markdown link forms, ATX/Setext heading anchors, built-site HTML link/fragment failures, and entrypoint refusal and recovery. Done when: each of the three entrypoints refuses a seeded drift and `python3 -m unittest tests/test_drift.py -v` passes.
+- [x] Commit: `"docs: refuse drift in the hook, the local gates, and CI"`
 
-**Test checkpoint:** a scratch-clone commit with a seeded drift refused by the hook (quoted); `pwsh scripts/check-all.ps1` shows the `drift` gate `PASS` on the tree.
+**Test checkpoint:** `python3 -m unittest tests/test_drift.py -v` passes (`Ran 51 tests in 19.6s, OK`); a scratch-clone commit with a seeded broken link (`[broken [nested] link](missing-target(1).md#bad)`) is refused by `tools/githooks/pre-commit` (`link: README.md: missing target: missing-target(1).md#bad`, `stale: README.md: README.md changed since review ...`, `pre-commit: staged documentation drift; repair, review and stage the corrected files`, `rc=1`, `HEAD` unchanged); seeded built-artifact failures in `build/site-artifact/` fail `python3 scripts/drift-check.py --site-dir build/site-artifact` with `rc=1` (`link: index.html: missing target: missing-page.html`, `site-link: index.html: URL outside Pages base path: /outside/page.html`, `anchor: index.html: missing heading or id: /RasterFold/format.html#missing-html-id`) and recover to `rc=0`; `pwsh scripts/check-all.ps1 -Quick` shows `PASS document drift (1.6s)` and `PASS document drift tests (19.6s)` (`check-all: 27/27 passed`).
 
 ## 6. Deterministic repair and complete file coverage
 
