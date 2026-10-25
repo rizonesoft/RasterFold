@@ -40,7 +40,7 @@ track: D2
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
 |   1   |   §1    | One facts file and claims everywhere | -- |  [x]   |
-|   2   |   §2    | Figures bound to their data | §1, D00 T02 §3 |  [ ]   |
+|   2   |   §2    | Figures bound to their data | §1, D00 T02 §3 |  [x]   |
 |   3   |   §3    | Generated files match their sources | §1, D08 T01 §1 |  [x]   |
 |   4   |   §4    | Staleness: verified dates and data revisions | §2 |  [ ]   |
 |   5   |   §5    | Links, and the gates wired everywhere | §3, §4 |  [ ]   |
@@ -73,6 +73,8 @@ track: D2
 
 **Test checkpoint:** `python3 -m unittest tests/test_drift.py -v` passes (`Ran 49 tests in 10.027s, OK`); changing one CSV cell (`benchmarks/results.csv` `1409028 -> 1409999`: `fact: docs/benchmarks.md: line 20: measurement_reference_bytes must equal 1409999; review the surrounding sentence`, `generated: docs/facts.json: deterministic output differs; run --fix`, `rc=1`), changing a visible figure while keeping its `drift:fact` annotation (`docs/benchmarks.md` `` `1,409,028` -> `1,409,999` ``: `fact: docs/benchmarks.md: line 20: visible figure before measurement_reference_bytes does not match 1409028; review the surrounding sentence`, `generated: docs/benchmarks.md: deterministic output differs; run --fix`, `rc=1`), editing the generated `benchmarks-measurements` block (`RGB8, -> RGB24,`: `generated: docs/benchmarks.md: deterministic output differs; run --fix`, `rc=1`), and removing its block markers (`block: docs/benchmarks.md: required block benchmarks-measurements is missing; restore its markers`, `rc=1`) each make `python3 scripts/drift-check.py` exit 1 naming the mismatched figure/block, then restored to exit 0 on the tree (`drift: 210 supported documents; 0 error(s); 0 deterministic repair(s)`).
 
+> **Verified:** 2026-10-25 | §2 | e0e662d2de0bf0f5dd26b1a69067957d6a0d8bc0
+> **Review:** `docs/reviews/d08-t02-s2.json`
 ## 3. Generated Files Match Their Sources
 
 > **Started:** 2026-10-25T03:12:00Z
