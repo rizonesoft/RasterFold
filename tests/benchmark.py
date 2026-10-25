@@ -188,7 +188,20 @@ def write_csv_rows(csv_path: Path, rows: list[dict]) -> None:
         writer.writerows(rows)
 
 
+def normalize_sets(raw_sets: list[str]) -> list[str]:
+    if not raw_sets:
+        return list(ALL_SETS)
+    out: list[str] = []
+    for s in raw_sets:
+        if s not in ALL_SETS:
+            raise ValueError(f"unknown benchmark set: {s!r} (expected one of {', '.join(ALL_SETS)})")
+        if s not in out:
+            out.append(s)
+    return out
+
+
 def merge_rows(existing: list[dict], measured: list[dict], measured_sets: list[str]) -> tuple[list[dict], list[str]]:
+    measured_sets = normalize_sets(measured_sets)
     measured_set_names = set(measured_sets)
     retained = [r for r in existing if r["set"] not in measured_set_names]
     retained_sets = [s for s in ALL_SETS if s not in measured_set_names and any(r["set"] == s for r in retained)]
@@ -200,19 +213,25 @@ def merge_rows(existing: list[dict], measured: list[dict], measured_sets: list[s
         if s not in ordered_sets and (s in measured_set_names or s in retained_sets):
             ordered_sets.append(s)
     by_set: dict[str, list[dict]] = {s: [] for s in ordered_sets}
+    seen_measured: set[tuple[str, str, str]] = set()
     for r in measured:
+        if r["set"] not in measured_set_names:
+            raise ValueError(f"measured row set {r['set']!r} not in measured_sets {measured_sets!r}")
+        key = (r["set"], r["image"], r["codec"])
+        if key in seen_measured:
+            raise ValueError(f"duplicate measured row for {key!r}")
+        seen_measured.add(key)
         by_set.setdefault(r["set"], []).append(r)
+    seen_retained: set[tuple[str, str, str]] = set()
     for r in retained:
+        key = (r["set"], r["image"], r["codec"])
+        if key in seen_retained:
+            raise ValueError(f"duplicate retained row in results.csv for {key!r}")
+        seen_retained.add(key)
         by_set.setdefault(r["set"], []).append(r)
     combined: list[dict] = []
-    seen: set[tuple[str, str, str]] = set()
     for s in ordered_sets:
-        for r in by_set.get(s, []):
-            key = (r["set"], r["image"], r["codec"])
-            if key in seen:
-                continue
-            seen.add(key)
-            combined.append(r)
+        combined.extend(by_set.get(s, []))
     return combined, retained_sets
 
 
@@ -265,7 +284,11 @@ def main() -> int:
         i = args.index("-n")
         repeats = int(args[i + 1])
         del args[i:i + 2]
-    sets = args or list(ALL_SETS)
+    try:
+        sets = normalize_sets(args)
+    except ValueError as exc:
+        print(str(exc))
+        return 1
     if not EXE.exists():
         print(f"missing {EXE}; run build.ps1")
         return 1

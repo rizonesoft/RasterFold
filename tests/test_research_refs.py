@@ -268,6 +268,13 @@ class ResearchRefsTests(unittest.TestCase):
 
             with self.assertRaises(ValueError):
                 benchmark.parse_csv_row({**seed_rows[0], "pixels_match": "yes"})
+            self.assertEqual(benchmark.normalize_sets(["measure", "measure", "photos", "measure"]), ["measure", "photos"])
+            with self.assertRaises(ValueError):
+                benchmark.normalize_sets(["measure", "unknown_set"])
+            with self.assertRaises(ValueError):
+                benchmark.merge_rows(existing, [*measured, {**measured[0], "pixels_match": False}], ["measure"])
+            with self.assertRaises(ValueError):
+                benchmark.merge_rows([*existing, existing[-1]], measured, ["measure"])
 
             benchmark.report(reloaded, failures, ["measure"], 1, retained_sets=retained_sets, out_dir=out_dir)
             md = (out_dir / "results.md").read_text(encoding="utf-8")
