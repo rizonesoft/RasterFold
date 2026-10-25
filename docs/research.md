@@ -604,9 +604,15 @@ every `.fold` file byte-identical:
 2. **Per-sample `rdec_tail` check in `cm_code`:** one sample (`code_residual`) makes at
    most 16 binary decisions and advances `d->in` by at most 32 bytes (with a 2-byte
    lookahead in `rdec_bit`). Widening `rdec.tail` from 16 to 128 bytes (copying the last
-   48 stream bytes plus 80 zero bytes, `lim = in + n - 40`) allows moving
-   `if (d->in >= d->lim) rdec_tail(d)` out of `rdec_bit` to once per sample in `cm_code`,
-   restoring `rdec_bit` to a branchless, call-free leaf expression.
+   48 stream bytes plus 80 zero bytes, `lim = in + n - 40`, with streams of `rem <= 48`
+   starting directly in `d->tail` in `rdec_init`) allows moving
+   `if (d->in >= d->lim) rdec_tail(d)` out of `rdec_bit` to once per sample immediately
+   after `code_residual` in `cm_code`. Running `rdec_tail` immediately after
+   `code_residual` preserves the exact post-sample and end-of-row invariant of `rdec_bit`:
+   any sample that enters the last 40 bytes of `in` transitions into `d->tail` (with
+   `lim = d->tail + 50 = d->end + 2`) before `cm_code` returns, so the end-of-row
+   exhaustion checks (`d->in >= d->lim`) in `run_pipelined` and `run_channel` trigger
+   if and only if the stream has actually run past `d->end + 2`.
 3. **Row-context precomputation and interior specialization:** precomputing `rgb_row`,
    `xs_row`, `r0`, `r1`, `r2`, `cur`, `prv`, and `c_off` once per row `y` in `row_ctx_t`
    removes per-pixel `% 3`, `% XROWS`, and `y * stride` addressing, and specializing
