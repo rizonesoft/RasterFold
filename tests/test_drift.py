@@ -724,6 +724,21 @@ class DriftTests(unittest.TestCase):
                 'scripts/build-docs.py',
                 'import pathlib, sys\n'
                 'if "--check" in sys.argv:\n'
+                '    pathlib.Path("docs/api.md").mkdir(parents=True, exist_ok=True)\n'
+                'sys.exit(0)\n',
+            )
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                self.assertEqual(1, drift.main(['--root', str(self.root)]))
+            self.assertIn('planned output docs/api.md (D08 T03 §2) exists before being promoted to outputs', buf.getvalue())
+            self.assertIn('--check modified docs/api.md; check mode must be read-only', buf.getvalue())
+            if (self.root / 'docs/api.md').is_dir():
+                shutil.rmtree(self.root / 'docs/api.md')
+
+            self.write(
+                'scripts/build-docs.py',
+                'import pathlib, sys\n'
+                'if "--check" in sys.argv:\n'
                 '    p = pathlib.Path("docs/research.md")\n'
                 '    p.write_text(p.read_text(encoding="utf-8") + "\\n<!-- cross-generator write -->\\n", encoding="utf-8")\n'
                 'sys.exit(0)\n',

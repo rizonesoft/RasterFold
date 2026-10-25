@@ -434,53 +434,72 @@ class Checker:
                 output[p.relative_to(base).as_posix()] = digest(p.read_bytes())
         return {'schema': 1, 'sources': {p: digest(self.path(p).read_bytes()) for p in paths}, 'outputs': output}
 
-    def _snapshot_paths(self, paths):
-        snap = {}
-        for rel in paths:
+    def _entry_state(self, rel):
+        try:
             p = self.path(rel)
-            snap[rel] = digest(p.read_bytes()) if p.is_file() else None
-        return snap
+        except ValueError as exc:
+            return ('invalid', str(exc))
+        try:
+            st = p.lstat()
+        except FileNotFoundError:
+            return ('absent', None)
+        if p.is_file():
+            return ('file', digest(p.read_bytes()))
+        if p.is_dir():
+            return ('dir', tuple(sorted(c.relative_to(p).as_posix() for c in p.rglob('*') if '__pycache__' not in c.parts)))
+        return ('other', st.st_mode)
+
+    def _watched_paths(self):
+        paths = {
+            *self.manifest.get('files', {}).keys(),
+            *(out for g in self.manifest['generators'] for out in g.get('outputs', [])),
+            *(out for g in self.manifest['generators'] for out in g.get('planned_outputs', {})),
+        }
+        for top in ('docs', 'todo', 'research', 'spec'):
+            base = self.root / top
+            if base.exists() or base.is_symlink():
+                paths.add(top)
+                if base.is_dir() and not base.is_symlink():
+                    for p in base.rglob('*'):
+                        if '__pycache__' not in p.parts:
+                            paths.add(p.relative_to(self.root).as_posix())
+        return sorted(paths)
+
+    def _snapshot_paths(self, paths):
+        return {rel: self._entry_state(rel) for rel in paths}
 
     def generators(self, fix=False):
         env = dict(os.environ)
         if self.git_dir:
             env.update(GIT_DIR=str(self.git_dir), GIT_WORK_TREE=str(self.root))
-        watched = sorted(
-            {
-                *self.manifest.get('files', {}).keys(),
-                *(out for g in self.manifest['generators'] for out in g.get('outputs', [])),
-                *(out for g in self.manifest['generators'] for out in g.get('planned_outputs', {})),
-            }
-        )
         for gen in self.manifest['generators']:
-            exists = self.path(gen['script']).is_file()
-            if not exists:
+            if self._entry_state(gen['script'])[0] != 'file':
                 if gen.get('planned_owner'):
                     continue
                 self.error('generator', gen['script'], 'required generator missing')
                 continue
             for out, owner in gen.get('planned_outputs', {}).items():
-                if self.path(out).is_file():
+                if self._entry_state(out)[0] != 'absent':
                     self.error('generator', gen['script'], f'planned output {out} ({owner}) exists before being promoted to outputs')
             for out in gen.get('outputs', []):
-                if not fix and not self.path(out).is_file():
+                if not fix and self._entry_state(out)[0] != 'file':
                     self.error('generator', gen['script'], f'missing generated output: {out}')
-            before_snap = self._snapshot_paths(watched) if not fix else None
+            before_snap = self._snapshot_paths(self._watched_paths()) if not fix else None
             args = gen['fix'] if fix else gen['check']
             result = subprocess.run([sys.executable, gen['script'], *args], cwd=self.root, env=env, capture_output=True, text=True, timeout=120)
             if result.returncode:
                 self.error('generator', gen['script'], (result.stdout + result.stderr).strip()[-1500:])
             for out, owner in gen.get('planned_outputs', {}).items():
-                if self.path(out).is_file() and (before_snap is None or before_snap.get(out) is None):
+                if self._entry_state(out)[0] != 'absent' and (before_snap is None or before_snap.get(out) == ('absent', None)):
                     self.error('generator', gen['script'], f'planned output {out} ({owner}) exists before being promoted to outputs')
             if not fix:
-                after_snap = self._snapshot_paths(watched)
-                for rel in watched:
-                    if after_snap[rel] != before_snap[rel]:
+                after_snap = self._snapshot_paths(sorted(set(before_snap) | set(self._watched_paths())))
+                for rel in sorted(after_snap):
+                    if after_snap[rel] != before_snap.get(rel, ('absent', None)):
                         self.error('generator', gen['script'], f'--check modified {rel}; check mode must be read-only')
             else:
                 for out in gen.get('outputs', []):
-                    if not self.path(out).is_file():
+                    if self._entry_state(out)[0] != 'file':
                         self.error('generator', gen['script'], f'missing generated output: {out}')
 
     def fix(self):
