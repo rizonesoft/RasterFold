@@ -1,0 +1,94 @@
+{
+  "ref": "D08 T02 \u00a74",
+  "title": "Staleness: Verified Dates and Data Revisions",
+  "implementation_sha": "9cd7129f592737a1a3f9c92594f63c63bc8e9447",
+  "date": "2026-10-25",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/08-docs/D08-T02-s4.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/08-docs/D08-T02-s4.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 3,
+      "report": "docs/reviews/08-docs/D08-T02-s4.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 scripts/drift-check.py -> drift: 212 supported documents; 0 error(s); 0 deterministic repair(s)",
+    "python3 -m unittest tests/test_drift.py tests/test_research_refs.py -v -> Ran 59 tests OK"
+  ],
+  "completion": {
+    "report": "docs/reviews/08-docs/D08-T02-s4.md",
+    "verdict": "completed",
+    "candidate": "5d9862b663eefa74f75108316bc580d6e454fc3c",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 3,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/08-docs/D08-T02-s4.md",
+    "candidate": "a0847bbf9863a4402f14d33e28bd2428a8d310fc",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}

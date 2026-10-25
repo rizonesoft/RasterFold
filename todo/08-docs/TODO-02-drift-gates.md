@@ -42,7 +42,7 @@ track: D2
 |   1   |   §1    | One facts file and claims everywhere | -- |  [x]   |
 |   2   |   §2    | Figures bound to their data | §1, D00 T02 §3 |  [x]   |
 |   3   |   §3    | Generated files match their sources | §1, D08 T01 §1 |  [x]   |
-|   4   |   §4    | Staleness: verified dates and data revisions | §2 |  [ ]   |
+|   4   |   §4    | Staleness: verified dates and data revisions | §2 |  [x]   |
 |   5   |   §5    | Links, and the gates wired everywhere | §3, §4 |  [ ]   |
 | 6 | §6 | Deterministic repair and complete file coverage | §1, §3 | [ ] |
 | 7 | §7 | Commit and built-site provenance | §5, §6 | [ ] |
@@ -100,6 +100,8 @@ track: D2
 
 **Test checkpoint:** `python3 -m unittest tests/test_drift.py tests/test_research_refs.py -v` passes (`Ran 59 tests in 17.8s, OK`); the two seeded staleness cases quoted from `python3 scripts/drift-check.py` with exit 1 (`scripts/build.py` same-day source change -> `stale: README.md: scripts/build.py changed since review ...`, `stale: CONTRIBUTING.md: scripts/build.py changed since review ...`, `stale: docs/building.md: scripts/build.py changed since review ...`, `stale: docs/getting-started.md: scripts/build.py changed since review ...`, `rc=1`, `after --fix rc=1`; `KAT_FOLD` change in `tests/test_correctness.py` -> `stale: benchmarks/corpus.csv: KAT_FOLD changed in tests/test_correctness.py since benchmarks/corpus.csv was produced at c8c1f78d74a423844c77da10d7d0dcde25f73056 (recorded b3012508fdcadc58e768baaba1c9fc3cf5cc2dd837643888b1ca2314fe79bb32, current b373321199f501d08ebd2d7b87cb5f0f6d7b8a749874ed945dc81eac1a02a369); regenerate benchmarks/corpus.csv with python3 research/ab.py size all --csv benchmarks/corpus.csv` and `stale: benchmarks/results.csv: KAT_FOLD changed in tests/test_correctness.py since benchmarks/results.csv was produced (stale sets: measure, photos, synthetic; ...); regenerate benchmarks/results.csv with python3 tests/benchmark.py`, `rc=1`, `after --fix rc=1`; partial `measure`-only rerun -> `stale: benchmarks/results.csv: KAT_FOLD changed in tests/test_correctness.py since benchmarks/results.csv was produced (stale sets: photos, synthetic; ...)`, `rc=1`); restored with `python3 scripts/drift-check.py` exiting 0 (`drift: 212 supported documents; 0 error(s); 0 deterministic repair(s)`).
 
+> **Verified:** 2026-10-25 | §4 | 9cd7129f592737a1a3f9c92594f63c63bc8e9447
+> **Review:** `docs/reviews/d08-t02-s4.json`
 ## 5. Links, and the Gates Wired Everywhere
 
 **Job:** A contributor meets the policy at every step: the commit hook, the local gates, and CI refuse drift the same way.
