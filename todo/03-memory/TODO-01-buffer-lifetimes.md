@@ -74,9 +74,11 @@ The padded stream copy exists so `rdec_bit` can load two bytes past a stream's e
 > **Review:** `docs/reviews/d03-t01-s2.json`
 ## 3. Encode Straight into the Output Buffer
 
+> **Started:** 2026-10-25T15:32:30Z
+
 `rf_encode` allocates the output file and `rf_cm_encode` three more stream buffers of `w*h + 64` bytes each.
 
-- [ ] Give stream `c` the region at offset `32 + 12 + c * (w*h + 64)` of the output buffer (grown by 256 bytes), and after coding `memmove` streams R and B down behind G. A stream that overflows its region makes the result raw, as today. Done when: `encode` writes files byte-identical to today's for every correctness case. Cheaper substitute: shrinking the stream buffers by guessing a compression ratio.
+- [ ] Give stream `c` the region at offset `32 + 12 + c * (w*h + 64)` of the output buffer (grown by 256 bytes in `src/fold.c`, and `raw + 256` in `research/bench.c`), and after coding `memmove` streams R and B down behind G in `src/cm.c`. A stream that overflows its region makes the result raw, as today. Done when: `encode` writes files byte-identical to today's for every correctness case and `python3 research/ab.py bench src/cm.c sub` builds and passes round-trip. Cheaper substitute: shrinking the stream buffers by guessing a compression ratio.
 - [ ] Measure `encode --time` on `measure/image.bmp`. Done when: `alloc_peak` is about 4.72 MB lower.
 - [ ] Commit: `"codec: encode straight into the output buffer"`
 
