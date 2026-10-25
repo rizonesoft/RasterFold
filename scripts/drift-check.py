@@ -434,10 +434,24 @@ class Checker:
                 output[p.relative_to(base).as_posix()] = digest(p.read_bytes())
         return {'schema': 1, 'sources': {p: digest(self.path(p).read_bytes()) for p in paths}, 'outputs': output}
 
+    def _snapshot_paths(self, paths):
+        snap = {}
+        for rel in paths:
+            p = self.path(rel)
+            snap[rel] = digest(p.read_bytes()) if p.is_file() else None
+        return snap
+
     def generators(self, fix=False):
         env = dict(os.environ)
         if self.git_dir:
             env.update(GIT_DIR=str(self.git_dir), GIT_WORK_TREE=str(self.root))
+        watched = sorted(
+            {
+                *self.manifest.get('files', {}).keys(),
+                *(out for g in self.manifest['generators'] for out in g.get('outputs', [])),
+                *(out for g in self.manifest['generators'] for out in g.get('planned_outputs', {})),
+            }
+        )
         for gen in self.manifest['generators']:
             exists = self.path(gen['script']).is_file()
             if not exists:
@@ -448,22 +462,26 @@ class Checker:
             for out, owner in gen.get('planned_outputs', {}).items():
                 if self.path(out).is_file():
                     self.error('generator', gen['script'], f'planned output {out} ({owner}) exists before being promoted to outputs')
-            before_outputs = {}
             for out in gen.get('outputs', []):
-                out_path = self.path(out)
-                if not fix and not out_path.is_file():
+                if not fix and not self.path(out).is_file():
                     self.error('generator', gen['script'], f'missing generated output: {out}')
-                elif out_path.is_file():
-                    before_outputs[out] = digest(out_path.read_bytes())
+            before_snap = self._snapshot_paths(watched) if not fix else None
             args = gen['fix'] if fix else gen['check']
             result = subprocess.run([sys.executable, gen['script'], *args], cwd=self.root, env=env, capture_output=True, text=True, timeout=120)
             if result.returncode:
                 self.error('generator', gen['script'], (result.stdout + result.stderr).strip()[-1500:])
+            for out, owner in gen.get('planned_outputs', {}).items():
+                if self.path(out).is_file() and (before_snap is None or before_snap.get(out) is None):
+                    self.error('generator', gen['script'], f'planned output {out} ({owner}) exists before being promoted to outputs')
             if not fix:
-                for out, before_hash in before_outputs.items():
-                    out_path = self.path(out)
-                    if not out_path.is_file() or digest(out_path.read_bytes()) != before_hash:
-                        self.error('generator', gen['script'], f'--check modified {out}; check mode must be read-only')
+                after_snap = self._snapshot_paths(watched)
+                for rel in watched:
+                    if after_snap[rel] != before_snap[rel]:
+                        self.error('generator', gen['script'], f'--check modified {rel}; check mode must be read-only')
+            else:
+                for out in gen.get('outputs', []):
+                    if not self.path(out).is_file():
+                        self.error('generator', gen['script'], f'missing generated output: {out}')
 
     def fix(self):
         for rel, (before, _) in self.repairs.items():

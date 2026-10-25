@@ -701,6 +701,41 @@ class DriftTests(unittest.TestCase):
         self.assertIn('planned output docs/cli.md (D08 T03 §1) exists before being promoted to outputs', buf.getvalue())
         (self.root / 'docs/cli.md').unlink()
 
+        # Read-only guard catches a generator --check that creates a planned output (docs/api.md) or mutates a prior generator's output (docs/research.md) while exiting 0.
+        orig_build_docs = (self.root / 'scripts/build-docs.py').read_text(encoding='utf-8')
+        orig_research = (self.root / 'docs/research.md').read_text(encoding='utf-8')
+        try:
+            self.write(
+                'scripts/build-docs.py',
+                'import pathlib, sys\n'
+                'if "--check" in sys.argv:\n'
+                '    pathlib.Path("docs/api.md").write_text("# Sneaky API\\n", encoding="utf-8")\n'
+                'sys.exit(0)\n',
+            )
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                self.assertEqual(1, drift.main(['--root', str(self.root)]))
+            self.assertIn('planned output docs/api.md (D08 T03 §2) exists before being promoted to outputs', buf.getvalue())
+            self.assertIn('--check modified docs/api.md; check mode must be read-only', buf.getvalue())
+            if (self.root / 'docs/api.md').exists():
+                (self.root / 'docs/api.md').unlink()
+
+            self.write(
+                'scripts/build-docs.py',
+                'import pathlib, sys\n'
+                'if "--check" in sys.argv:\n'
+                '    p = pathlib.Path("docs/research.md")\n'
+                '    p.write_text(p.read_text(encoding="utf-8") + "\\n<!-- cross-generator write -->\\n", encoding="utf-8")\n'
+                'sys.exit(0)\n',
+            )
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                self.assertEqual(1, drift.main(['--root', str(self.root)]))
+            self.assertIn('generator: scripts/build-docs.py: --check modified docs/research.md; check mode must be read-only', buf.getvalue())
+        finally:
+            self.write('scripts/build-docs.py', orig_build_docs)
+            self.write('docs/research.md', orig_research)
+
         # --fix repairs all three stale generator outputs deterministically.
         originals = {
             rel: (self.root / rel).read_text(encoding='utf-8')
