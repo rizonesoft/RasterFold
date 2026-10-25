@@ -4,7 +4,8 @@ Data (corpus, JPEG XL / WebP sizes, executables) lives in build/research; see re
   python research/ab.py bench [cm.c] [-r3] images...      time one cm.c (default: src/cm.c)
   python research/ab.py ab A.c B.c [-n 5] images...        alternate two variants, compare minima
   python research/ab.py size [cm.c] SET [--csv PATH]       exact sizes vs JPEG XL e7, e9, and WebP, in parallel
-Images may be names in build/research/ppm or set names: sub, kodak, ic, synth, photo, all, tp.
+  python research/ab.py compat [REF]                       build baseline REF into build/research/vs/rasterfold-m1.exe and cm_m1.c, verify 55-image .fold byte identity and decode
+Images may be names in build/research/ppm or set names: sub, kodak, ic, synth, photo, all, tp, tp-only.
 """
 import ast
 import csv
@@ -625,6 +626,138 @@ def main():
                 expected_snapshot=pre_snapshot,
             )
         print(summary)
+    elif mode == "compat":
+        baseline_ref = rest[0] if rest else "fbf1036de2cfd0eeaee1a55399563e2d2200328c"
+        if str(REPO / "tests") not in sys.path:
+            sys.path.insert(0, str(REPO / "tests"))
+        import rfi_ref as rf  # noqa: E402
+
+        m1_dir = RES / "m1_src"
+        m1_dir.mkdir(parents=True, exist_ok=True)
+        for fname in ("platform.c", "api.c", "crc32.c", "bmp.c", "fold.c", "cm.c", "mem.c", "sys.c", "main.c", "rf.h", "simd.h"):
+            txt = subprocess.check_output(["git", "show", f"{baseline_ref}:src/{fname}"], cwd=REPO)
+            (m1_dir / fname).write_bytes(txt)
+        inc_dir = m1_dir / "include"
+        inc_dir.mkdir(exist_ok=True)
+        (inc_dir / "rasterfold.h").write_bytes(
+            subprocess.check_output(["git", "show", f"{baseline_ref}:include/rasterfold.h"], cwd=REPO)
+        )
+        cc = (
+            REPO / "tools" / "llvm-mingw" / "bin" / "clang.exe"
+            if os.name == "nt"
+            else REPO / "tools" / "llvm-mingw-linux" / "bin" / "clang"
+        )
+        objs = []
+        for s in ("platform", "api", "crc32", "bmp", "fold", "cm", "mem", "sys", "main"):
+            obj = m1_dir / f"{s}.o"
+            subprocess.run(
+                [
+                    str(cc),
+                    "--target=x86_64-w64-mingw32",
+                    "-std=c11",
+                    "-O2",
+                    "-g",
+                    "-Wall",
+                    "-Wextra",
+                    "-Werror",
+                    "-Wno-unused-parameter",
+                    "-fno-builtin",
+                    "-fno-ident",
+                    "-fvisibility=hidden",
+                    "-march=x86-64-v2",
+                    "-mtune=generic",
+                    "-gcodeview",
+                    "-ffreestanding",
+                    "-fno-stack-protector",
+                    f"-I{m1_dir}",
+                    f"-I{inc_dir}",
+                    "-c",
+                    str(m1_dir / f"{s}.c"),
+                    "-o",
+                    str(obj),
+                ],
+                check=True,
+            )
+            objs.append(str(obj))
+        vs_dir = RES / "vs"
+        vs_dir.mkdir(parents=True, exist_ok=True)
+        m1_exe = vs_dir / "rasterfold-m1.exe"
+        subprocess.run(
+            [
+                str(cc),
+                "--target=x86_64-w64-mingw32",
+                "-fuse-ld=lld",
+                "-nostdlib",
+                *objs,
+                "-o",
+                str(m1_exe),
+                "-Wl,--entry=rf_start",
+                "-Wl,--subsystem,console",
+                "-lkernel32",
+                "-lshell32",
+            ],
+            check=True,
+        )
+        cm_m1 = (m1_dir / "cm.c").read_text(encoding="utf-8").replace(
+            "int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *rgb, uint32_t w, uint32_t h, int threads, rf_error *err) {",
+            "int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *rgb, size_t stride, uint32_t w, uint32_t h, int threads, rf_error *err) { (void)stride;",
+        )
+        (RES / "cm_m1.c").write_text(cm_m1, encoding="utf-8")
+        cand_exe = REPO / "bin" / "windows-x64" / "bin" / "rasterfold.exe"
+        print(f"m1_exe_sha256={hashlib.sha256(m1_exe.read_bytes()).hexdigest()}")
+        print(f"cand_exe_sha256={hashlib.sha256(cand_exe.read_bytes()).hexdigest()}")
+        cache: dict[str, bytes] = {}
+        with tempfile.TemporaryDirectory(prefix="rf_m1_eq_") as td:
+            work = Path(td)
+            for sname in ("photo", "tp", "tp-only", "synth"):
+                imgs = SETS[sname]
+                set_h = hashlib.sha256()
+                total_bytes = 0
+                for img in imgs:
+                    if img not in cache:
+                        ppm_path = PPM / f"{img}.ppm"
+                        w, h = ppm_dimensions(ppm_path)
+                        raw_len = w * h * 3
+                        rgb = ppm_path.read_bytes()[-raw_len:]
+                        bmp_path = work / f"{img}.bmp"
+                        bmp_path.write_bytes(rf.write_bmp24(w, h, rgb))
+                        ref_bytes: bytes | None = None
+                        for tag, exe in (("m1", m1_exe), ("cand", cand_exe)):
+                            for t in ("1", "3"):
+                                out_fold = work / f"{img}_{tag}_t{t}.fold"
+                                out_fold.unlink(missing_ok=True)
+                                subprocess.run(
+                                    [str(exe), "encode", "--threads", t, str(bmp_path), str(out_fold)],
+                                    stdin=subprocess.DEVNULL,
+                                    check=True,
+                                    capture_output=True,
+                                )
+                                b = out_fold.read_bytes()
+                                if ref_bytes is None:
+                                    ref_bytes = b
+                                elif b != ref_bytes:
+                                    raise SystemExit(f"MISMATCH on {img} ({tag} t={t})")
+                        m1_fold = work / f"{img}_m1_t1.fold"
+                        for t in ("1", "3"):
+                            dec_bmp = work / f"{img}_cand_dec_t{t}.bmp"
+                            dec_bmp.unlink(missing_ok=True)
+                            subprocess.run(
+                                [str(cand_exe), "decode", "--threads", t, str(m1_fold), str(dec_bmp)],
+                                stdin=subprocess.DEVNULL,
+                                check=True,
+                                capture_output=True,
+                            )
+                            if rf.read_bmp24(dec_bmp.read_bytes()) != (w, h, rgb):
+                                raise SystemExit(f"DECODE MISMATCH on {img} (cand t={t})")
+                        assert ref_bytes is not None
+                        cache[img] = ref_bytes
+                    ref_bytes = cache[img]
+                    total_bytes += len(ref_bytes)
+                    set_h.update(ref_bytes)
+                print(
+                    f"{sname:7s} n={len(imgs):2d} total_bytes={total_bytes} "
+                    f"fold_stream_sha256={set_h.hexdigest()} identical=True m1_decoded=True"
+                )
 
 
 if __name__ == "__main__":
