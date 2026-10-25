@@ -582,9 +582,10 @@ byte-identical.
 each, so `rdec_bit` can load two bytes past a stream's end without a bounds
 check. The copy is unnecessary: the decoder never uses a byte past `end` in a
 stream it accepts (`rdec_bit` loads `in[0]` and `in[1]` but shifts out what it
-does not consume); for G and R the two bytes after `end` are the next stream's;
-only B's lie past the end of the file. `rf_read_file` can allocate `size + 8`
-zeroed bytes and `rdec_init` point at the payload directly.
+does not consume); `rf_read_file` allocates `size + 8` zeroed bytes, `rdec_init`
+points at the payload directly, and `rdec` switches to a 16-byte zero-padded
+in-struct tail buffer for the last 4 bytes of each stream so borrowed `size`-byte
+C API inputs (`rf_decode_image`, `rf_inspect`) never read past `bytes + size`.
 
 ### 6.2 Decoder: write the BMP directly (-4.72 MB)
 
