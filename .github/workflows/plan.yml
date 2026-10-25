@@ -74,7 +74,7 @@ jobs:
           '
           python3 scripts/drift-check.py --site-dir build/site-artifact --write-site-receipt
           python3 scripts/drift-check.py --site-dir build/site-artifact
-          rm -rf build/site-source build/site-raw build/site-artifact
+          sudo rm -rf build/site-source build/site-raw build/site-artifact
       - name: Check commit fact declarations against each commit's own source
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
