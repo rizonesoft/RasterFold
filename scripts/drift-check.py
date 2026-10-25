@@ -39,7 +39,8 @@ FACT = re.compile(r'<!-- drift:fact ([a-z0-9_.-]+) = (.*?) -->')
 COMMIT = re.compile(r'<!-- drift:commit ([0-9a-f]{7,40})(?: (\S+))? -->')
 LINK = re.compile(r'!?\[[^\]\n]*\]\((?:<([^>\n]+)>|([^\s)]+))(?:\s+["\'][^\n]*?["\'])?\)')
 REFERENCE = re.compile(
-    r'^(?: {0,3}>[ \t]?)* {0,3}\[(?!\^)([^\]\n]+)\]:[ \t]*(?:\r?\n(?: {0,3}>[ \t]?)*[ \t]*)?(?:<([^>\n]+)>|([^\s>]+))',
+    r'^(?: {0,3}>[ \t]?)* {0,3}\[(?!\^)([^\]\n]+)\]:[ \t]*(?:\r?\n(?: {0,3}>[ \t]?)*[ \t]*)?(?:<([^>\n]+)>|([^\s>]+))'
+    r'(?:(?:[ \t]+|\r?\n(?: {0,3}>[ \t]?)*[ \t]*)(?:"(?:\\.|(?!\r?\n[ \t]*\r?\n)[^"])*"|\'(?:\\.|(?!\r?\n[ \t]*\r?\n)[^\'])*\'|\((?:\\.|(?!\r?\n[ \t]*\r?\n)[^)])*\))[ \t]*(?=\r?\n|\Z))?',
     re.M,
 )
 HTML_BLOCK_TAG_RE = re.compile(
@@ -66,19 +67,74 @@ def blank(text):
     return re.sub(r'[^\r\n]', ' ', text)
 
 
-def prose(text):
-    """Mask fenced examples while preserving original byte-decoded offsets."""
-    lines, fence = [], None
-    for line in text.splitlines(keepends=True):
-        match = re.match(r'^\s{0,3}(`{3,}|~{3,})', line)
-        if match and fence is None:
-            fence = match[1]
-            lines.append(blank(line))
-        elif fence and re.match(r'^\s{0,3}' + re.escape(fence[0]) + '{' + str(len(fence)) + r',}\s*$', line):
-            fence = None
-            lines.append(blank(line))
+def _leading_cols(s):
+    cols = 0
+    for ch in s:
+        if ch == ' ':
+            cols += 1
+        elif ch == '\t':
+            cols = (cols // 4 + 1) * 4
         else:
-            lines.append(blank(line) if fence else line)
+            break
+    return cols
+
+
+def prose(text):
+    """Mask fenced and indented code blocks while preserving original byte-decoded offsets."""
+    lines, fence = [], None
+    in_indented_code = False
+    can_start_indented_code = True
+    list_indent = 0
+    for line in text.splitlines(keepends=True):
+        inner = re.sub(r'^(?: {0,3}>[ \t]?)*', '', line)
+        match = re.match(r'^ {0,3}(`{3,}|~{3,})', inner)
+        if match and fence is None and not in_indented_code:
+            fence = match[1]
+            can_start_indented_code = True
+            list_indent = 0
+            lines.append(blank(line))
+            continue
+        if fence:
+            if re.match(r'^ {0,3}' + re.escape(fence[0]) + '{' + str(len(fence)) + r',}[ \t]*\r?$', inner):
+                fence = None
+                can_start_indented_code = True
+            lines.append(blank(line))
+            continue
+        if not inner.strip():
+            if in_indented_code:
+                lines.append(blank(line))
+            else:
+                can_start_indented_code = True
+                lines.append(line)
+            continue
+        cols = _leading_cols(inner)
+        if cols < list_indent:
+            list_indent = 0
+        code_threshold = list_indent + 4
+        if in_indented_code:
+            if cols >= code_threshold:
+                lines.append(blank(line))
+                continue
+            in_indented_code = False
+        if can_start_indented_code and cols >= code_threshold:
+            in_indented_code = True
+            lines.append(blank(line))
+            continue
+        m_list = re.match(r'^( {0,3}(?:[-*+]|\d+[.)])[ \t]+)', inner)
+        if m_list:
+            list_indent = len(m_list[1].expandtabs(4))
+            can_start_indented_code = False
+        elif (
+            re.match(
+                r'^ {0,3}(?:#{1,6}(?:[ \t]|$)|(?:=+|-+)[ \t]*$|(?:\*[ \t]*){3,}$|(?:-[ \t]*){3,}$|(?:_[ \t]*){3,}$)',
+                inner.rstrip('\r\n'),
+            )
+            or HTML_BLOCK_TAG_RE.match(inner)
+        ):
+            can_start_indented_code = True
+        else:
+            can_start_indented_code = False
+        lines.append(line)
     return ''.join(lines)
 
 
@@ -1196,7 +1252,7 @@ class Checker:
                     updated = updated[:start] + expected + updated[end:]
                 self.generated(rel, updated, before=original)
             if suffix in ('.md', '.markdown', '.html', '.htm'):
-                self.links(rel, scan, self.root)
+                self.links(rel, text, self.root)
             if role == 'current':
                 for rule in self.manifest.get('assertions', []):
                     if not fnmatch.fnmatchcase(rel, rule['pattern']):
@@ -1324,12 +1380,14 @@ class Checker:
                     self.error('eol', doc, f'{source}: working bytes contain CRLF despite eol=lf; preserve edits and normalize/refresh this file before renewing a review')
 
     def links(self, rel, text, base, site_prefix=None):
+        is_md = Path(rel).suffix in ('.md', '.markdown')
+        md_scan = code_spans(prose(text)) if is_md else text
         html = HTML()
-        html.feed(text)
+        html.feed(md_scan)
         links = html.links
-        if Path(rel).suffix in ('.md', '.markdown'):
-            links += _extract_markdown_links(text)
-            for ref_name in _extract_unresolved_references(text):
+        if is_md:
+            links += _extract_markdown_links(md_scan)
+            for ref_name in _extract_unresolved_references(md_scan):
                 self.error('link', rel, f'unresolved reference link: [{ref_name}]')
         for link in links:
             parts = urlsplit(unescape(link))

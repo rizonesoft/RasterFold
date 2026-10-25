@@ -1699,16 +1699,31 @@ class DriftTests(unittest.TestCase):
             '[guide](README.md "see [foo][bar]")\n'
             '[![badge](dir/badge.svg)](target.md#setext-h1)\n'
             '[ref-use][ref_ok]\n'
-            '[ref-nextline][ref_next]\n\n'
+            '[ref-nextline][ref_next]\n'
+            '[ref-titled][ref_titled]\n'
+            '[ref-titled2][ref_titled2]\n\n'
+            '    [literal][example]\n'
+            '\t[literal][example2]\n\n'
             '> [bq-guide][bq_ref]\n'
             '>\n'
             '> [bq_ref]:\n'
-            '>   README.md\n\n'
+            '>   README.md "see [bq_foo][bq_bar]"\n\n'
             '[ref_ok]: <dir/file (2).md#angle-target>\n'
             '[ref_next]:\n'
-            '  dir/file(1).md#paren-target\n',
+            '  dir/file(1).md#paren-target\n'
+            '[ref_titled]: README.md "see [foo][bar]"\n'
+            '[ref_titled2]: README.md\n'
+            '  \'see [baz][qux]\'\n',
         )
         self.assertEqual([], self.check().errors)
+
+        # Direct Checker.links probe on indented code followed by an adjacent live reference.
+        probe = drift.Checker(self.root)
+        probe.links('valid_links.md', '    [literal][example]\n\n[live][missing_after_code]\n', self.root)
+        self.assertEqual(
+            [{'kind': 'link', 'path': 'valid_links.md', 'detail': 'unresolved reference link: [missing_after_code]'}],
+            probe.errors,
+        )
 
         # Non-Setext constructs (frontmatter, tab-indented code blocks, block HTML, list item before ---, blockquote before ---, table separator) must not create anchors.
         for bad_frag in ('#title-target-frontmatter', '#tab-indented-code', '#tab-paragraph', '#block-html', '#list-item', '#blockquote-line', '#table-col'):
