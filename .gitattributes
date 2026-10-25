@@ -15,7 +15,9 @@
 *.yaml text eol=lf
 *.json text eol=lf
 *.toml text eol=lf
+*.csv text eol=lf
 *.ninja text eol=lf
+testdata/photos/NOTICE-imagecompression-info.txt -text
 .gitattributes text eol=lf
 .gitignore text eol=lf
 .clang-tidy text eol=lf

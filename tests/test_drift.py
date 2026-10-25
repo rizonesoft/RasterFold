@@ -27,7 +27,7 @@ class DriftTests(unittest.TestCase):
         self.git('init', '-q')
         self.git('config', 'user.email', 'fixture@example.invalid')
         self.git('config', 'user.name', 'Fixture')
-        self.write('.gitattributes', '* text=auto\n*.json text eol=lf\n*.md text eol=lf\n*.py text eol=lf\n*.h text eol=lf\n')
+        self.write('.gitattributes', '* text=auto\n*.json text eol=lf\n*.md text eol=lf\n*.py text eol=lf\n*.h text eol=lf\n*.csv text eol=lf\n')
         self.write('scripts/todo-claims.py', (REPO / 'scripts/todo-claims.py').read_text(encoding='utf-8'))
         self.write('src/version.h', '#define VERSION 2u\n')
         self.write('README.md', '# Guide\n\nAuthored words stay here.\n\n<!-- drift:begin version -->\nVersion 2.\n<!-- drift:end version -->\n')
@@ -647,6 +647,7 @@ class DriftTests(unittest.TestCase):
             else:
                 self.write(f'docs/{p.name}', p.read_text(encoding='utf-8'))
         self.write('include/rasterfold.h', (REPO / 'include/rasterfold.h').read_text(encoding='utf-8'))
+        self.write('tests/test_correctness.py', (REPO / 'tests/test_correctness.py').read_text(encoding='utf-8'))
         (self.root / 'examples').mkdir(parents=True, exist_ok=True)
         self.write('examples/encode_ppm.c', '/* fixture */\n')
         # Keep README.md matching the live repository for build-docs.py while keeping the fixture block for drift.json.
@@ -1057,6 +1058,7 @@ class DriftTests(unittest.TestCase):
         # Set up a full fixture with docs/benchmarks.md, CSVs, and historical research files.
         for rel in (
             'src/main.c', 'src/rf.h', 'include/rasterfold.h',
+            'tests/test_correctness.py',
             'benchmarks/results.csv', 'benchmarks/corpus.csv',
             'docs/benchmarks.md',
         ):
@@ -1242,7 +1244,9 @@ class DriftTests(unittest.TestCase):
             f'# codec_revision={new_rev} kat_fold_sha256={prev_meta["kat_fold_sha256"]} date=2026-10-26 '
             f'measured_sets=photos retained_sets=measure,synthetic '
             f'retained_revision={prov["retained_revision"]} retained_date={prov["retained_date"]} '
-            f'set_revisions={prov["set_revisions"]} set_dates={prov["set_dates"]}'
+            f'retained_kat_fold_sha256={prov["retained_kat_fold_sha256"]} '
+            f'set_revisions={prov["set_revisions"]} set_dates={prov["set_dates"]} '
+            f'set_kat_hashes={prov["set_kat_hashes"]}'
         )
         rerun_results = '\n'.join([new_header, *orig_results.splitlines()[1:]]) + '\n'
         self.write('benchmarks/results.csv', rerun_results)
@@ -1378,6 +1382,206 @@ class DriftTests(unittest.TestCase):
             c = self.check()
             c.fix()
             self.assertEqual(before_bytes, (self.root / hist_doc).read_bytes())
+
+    def test_staleness_verified_dates_and_data_revisions(self):
+        live_manifest = json.loads((REPO / 'docs/drift.json').read_text(encoding='utf-8'))
+        expected_docs = {
+            'README.md', 'AGENTS.md', 'GEMINI.md', 'CONTRIBUTING.md',
+            'docs/building.md', 'docs/library.md', 'docs/index.md',
+            'docs/getting-started.md', 'docs/benchmarks.md',
+            'docs/document-drift.md', 'docs/README.md',
+            'docs/agent-skills-and-rules-structure.md',
+            'spec/FOLD.md', 'research/README.md', 'testdata/photos/README.md',
+        }
+        self.assertTrue(expected_docs.issubset(set(live_manifest['reviews'])))
+        for doc in expected_docs:
+            rev = live_manifest['reviews'][doc]
+            self.assertRegex(rev['evidence'], r'\b\d{4}-\d{2}-\d{2}\b', doc)
+            self.assertIn(doc, rev['sources'], doc)
+            for src, exp_digest in rev['sources'].items():
+                self.assertEqual(exp_digest, drift.digest((REPO / src).read_bytes()), (doc, src))
+
+        # Populate fixture with reviewed prose documents, KAT_FOLD source, and benchmark CSVs.
+        bench_spec = importlib.util.spec_from_file_location('bench_mod', REPO / 'tests/benchmark.py')
+        bench_mod = importlib.util.module_from_spec(bench_spec)
+        bench_spec.loader.exec_module(bench_mod)
+
+        for rel in (
+            'src/main.c', 'src/rf.h', 'include/rasterfold.h',
+            'tests/test_correctness.py',
+            'benchmarks/results.csv', 'benchmarks/corpus.csv',
+            'docs/benchmarks.md', 'CONTRIBUTING.md',
+            'scripts/build.py', 'scripts/package.py', 'scripts/check-all.py',
+            'toolchain.json', 'measure/verdict.json',
+        ):
+            self.write(rel, (REPO / rel).read_text(encoding='utf-8'))
+        for hist_doc in ('docs/measurements.md', 'docs/research.md', 'docs/research-summary.md'):
+            self.write(hist_doc, f'# Historical record ({hist_doc})\n')
+        for link_target in ('AGENTS.md', 'docs/building.md', 'todo/README.md', 'docs/document-drift.md', 'SECURITY.md'):
+            self.write(link_target, f'# {link_target}\n')
+        for chart_name in build_docs.CHART_NAMES:
+            for kind, ext in (('charts', 'svg'), ('tables', 'md')):
+                rel = f'docs/_includes/generated/{kind}/{chart_name}.{ext}'
+                self.write(rel, (REPO / rel).read_text(encoding='utf-8'))
+        self.manifest['coverage'] = live_manifest['coverage']
+        self.manifest['facts'].update(live_manifest['facts'])
+        self.manifest['blocks']['benchmarks-measurements'] = live_manifest['blocks']['benchmarks-measurements']
+        self.manifest['reviews'] = {
+            'CONTRIBUTING.md': live_manifest['reviews']['CONTRIBUTING.md'],
+            'docs/benchmarks.md': live_manifest['reviews']['docs/benchmarks.md'],
+        }
+        self.save()
+        c = self.check()
+        c.fix()
+        self.assertEqual([], self.check().errors)
+
+        # 1. Same-day source change or date-only prose edit invalidates the review receipt; --fix cannot renew it.
+        orig_build_py = (self.root / 'scripts/build.py').read_text(encoding='utf-8')
+        self.write('scripts/build.py', orig_build_py + '\n# same-day source change\n')
+        c = self.check()
+        self.assertTrue(
+            any(
+                e['kind'] == 'stale'
+                and e['path'] == 'CONTRIBUTING.md'
+                and 'scripts/build.py changed since review' in e['detail']
+                for e in c.errors
+            ),
+            c.errors,
+        )
+        c.fix()
+        c_after_fix = self.check()
+        self.assertTrue(
+            any(
+                e['kind'] == 'stale'
+                and e['path'] == 'CONTRIBUTING.md'
+                and 'scripts/build.py changed since review' in e['detail']
+                for e in c_after_fix.errors
+            )
+        )
+        # Explicit --review renews the receipt.
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(
+                0,
+                drift.main(
+                    [
+                        '--root', str(self.root),
+                        '--review', 'CONTRIBUTING.md',
+                        '--evidence', 'Author-attested: 2026-10-25 re-read CONTRIBUTING.md after build.py edit',
+                    ]
+                ),
+            )
+        self.assertEqual([], self.check().errors)
+        # Restore scripts/build.py and original receipt.
+        self.write('scripts/build.py', orig_build_py)
+        self.manifest = json.loads((self.root / 'docs/drift.json').read_text(encoding='utf-8'))
+        self.manifest['reviews']['CONTRIBUTING.md'] = live_manifest['reviews']['CONTRIBUTING.md']
+        self.save()
+        self.check().fix()
+        self.assertEqual([], self.check().errors)
+
+        # 2. Regenerating KAT_FOLD in tests/test_correctness.py without rerunning benchmarks fails both CSVs; --fix cannot silence it.
+        orig_tc = (self.root / 'tests/test_correctness.py').read_text(encoding='utf-8')
+        orig_results = (self.root / 'benchmarks/results.csv').read_text(encoding='utf-8')
+        orig_corpus = (self.root / 'benchmarks/corpus.csv').read_text(encoding='utf-8')
+        mutated_tc = orig_tc.replace('"52464902', '"52464903', 1)
+        self.assertNotEqual(orig_tc, mutated_tc)
+        self.write('tests/test_correctness.py', mutated_tc)
+        c = self.check()
+        self.assertTrue(
+            any(
+                e['kind'] == 'stale'
+                and e['path'] == 'benchmarks/corpus.csv'
+                and 'KAT_FOLD changed in tests/test_correctness.py' in e['detail']
+                and 'regenerate benchmarks/corpus.csv' in e['detail']
+                for e in c.errors
+            ),
+            c.errors,
+        )
+        self.assertTrue(
+            any(
+                e['kind'] == 'stale'
+                and e['path'] == 'benchmarks/results.csv'
+                and 'stale sets: measure, photos, synthetic' in e['detail']
+                and 'regenerate benchmarks/results.csv' in e['detail']
+                for e in c.errors
+            ),
+            c.errors,
+        )
+        c.fix()
+        self.assertEqual(orig_results, (self.root / 'benchmarks/results.csv').read_text(encoding='utf-8'))
+        self.assertEqual(orig_corpus, (self.root / 'benchmarks/corpus.csv').read_text(encoding='utf-8'))
+        self.assertIn('stale', self.kinds(self.check()))
+
+        # 3. Partial rerun of only 'measure' after KAT_FOLD change updates measure's KAT hash but leaves retained photos and synthetic failing.
+        old_meta, rows = bench_mod.read_results_csv(self.root / 'benchmarks/results.csv', require_provenance=True)
+        new_kat = bench_mod.kat_fold_sha256(self.root)
+        partial_meta = bench_mod.resolve_set_provenance(
+            old_meta,
+            ['measure'],
+            ['photos', 'synthetic'],
+            '3' * 40,
+            '2026-10-26',
+            new_kat,
+        )
+        bench_mod.write_csv_rows(self.root / 'benchmarks/results.csv', rows, meta=partial_meta)
+        c_partial = self.check()
+        self.assertTrue(
+            any(
+                e['kind'] == 'stale'
+                and e['path'] == 'benchmarks/results.csv'
+                and 'stale sets: photos, synthetic' in e['detail']
+                for e in c_partial.errors
+            ),
+            c_partial.errors,
+        )
+
+        # 4. Missing or date-only provenance headers fail (date-only freshness inference is never accepted).
+        with self.assertRaisesRegex(ValueError, "missing CSV metadata key 'date'"):
+            self.write('benchmarks/corpus.csv', '\n'.join(orig_corpus.splitlines()[1:]) + '\n')
+            self.check()
+        self.write('benchmarks/corpus.csv', '\n'.join([f'# codec_revision={"4" * 40} date=2026-10-26', *orig_corpus.splitlines()[1:]]) + '\n')
+        c_missing = self.check()
+        self.assertTrue(
+            any(
+                e['kind'] == 'stale'
+                and e['path'] == 'benchmarks/corpus.csv'
+                and 'missing or malformed provenance header' in e['detail']
+                for e in c_missing.errors
+            ),
+            c_missing.errors,
+        )
+
+        # 5. Legitimate full regeneration of all sets + corpus CSV (plus renewing docs/benchmarks.md receipt) restores exit 0.
+        full_meta = bench_mod.resolve_set_provenance(
+            partial_meta,
+            ['measure', 'photos', 'synthetic'],
+            [],
+            '4' * 40,
+            '2026-10-26',
+            new_kat,
+        )
+        bench_mod.write_csv_rows(self.root / 'benchmarks/results.csv', rows, meta=full_meta)
+        regen_corpus = '\n'.join(
+            [
+                f'# codec_revision={"4" * 40} kat_fold_sha256={new_kat} date=2026-10-26',
+                *orig_corpus.splitlines()[1:],
+            ]
+        ) + '\n'
+        self.write('benchmarks/corpus.csv', regen_corpus)
+        c_regen = self.check()
+        c_regen.fix()
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(
+                0,
+                drift.main(
+                    [
+                        '--root', str(self.root),
+                        '--review', 'docs/benchmarks.md',
+                        '--evidence', 'Author-attested: 2026-10-26 re-read docs/benchmarks.md after full benchmark and corpus regeneration',
+                    ]
+                ),
+            )
+        self.assertEqual([], self.check().errors)
 
 
 if __name__ == '__main__':

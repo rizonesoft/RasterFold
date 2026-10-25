@@ -173,6 +173,18 @@ def _csv_meta(source):
     return meta
 
 
+def _parse_meta_map(raw):
+    out = {}
+    for item in (raw or '').split(','):
+        item = item.strip()
+        if ':' not in item:
+            continue
+        k, v = item.split(':', 1)
+        if k.strip() and v.strip() and k.strip() not in out:
+            out[k.strip()] = v.strip()
+    return out
+
+
 def _validate_csv_table(all_rows, key):
     if not all_rows:
         raise ValueError(f'{key}: CSV file has 0 data rows')
@@ -925,6 +937,72 @@ class Checker:
                 path = self.path(source)
                 if not path.is_file() or digest(path.read_bytes()) != expected:
                     self.error('stale', doc, f'{source} changed since review {review["evidence"]}; review prose and explicitly renew the receipt')
+        self.data_freshness()
+
+    def data_freshness(self):
+        data_files = [rel for rel in ('benchmarks/corpus.csv', 'benchmarks/results.csv') if rel in self.files]
+        if not data_files:
+            return
+        tc_rel = 'tests/test_correctness.py'
+        tc_path = self.path(tc_rel)
+        if not tc_path.is_file():
+            self.error('stale', tc_rel, 'missing tests/test_correctness.py required to verify KAT_FOLD data freshness')
+            return
+        tc_text = tc_path.read_text(encoding='utf-8')
+        m = re.search(r'KAT_FOLD\s*=\s*bytes\.fromhex\(\s*((?:"[^"]*"\s*)+)\)', tc_text, re.S)
+        hex_str = ''.join(re.findall(r'"([0-9a-fA-F]+)"', m.group(1))) if m else ''
+        if not hex_str or len(hex_str) % 2 != 0:
+            self.error('stale', tc_rel, 'missing or invalid KAT_FOLD hex literal in tests/test_correctness.py')
+            return
+        expected_kat = digest(bytes.fromhex(hex_str))
+
+        if 'benchmarks/corpus.csv' in self.files and self.path('benchmarks/corpus.csv').is_file():
+            meta = _csv_meta(self.read('benchmarks/corpus.csv'))
+            if (
+                not re.fullmatch(r'[0-9a-f]{40}', meta.get('codec_revision', ''))
+                or not re.fullmatch(r'[0-9a-f]{64}', meta.get('kat_fold_sha256', ''))
+                or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', meta.get('date', ''))
+            ):
+                self.error(
+                    'stale',
+                    'benchmarks/corpus.csv',
+                    'missing or malformed provenance header (codec_revision, kat_fold_sha256, date required); regenerate benchmarks/corpus.csv with python3 research/ab.py size all --csv benchmarks/corpus.csv',
+                )
+            elif meta['kat_fold_sha256'] != expected_kat:
+                self.error(
+                    'stale',
+                    'benchmarks/corpus.csv',
+                    f'KAT_FOLD changed in tests/test_correctness.py since benchmarks/corpus.csv was produced at {meta["codec_revision"]} (recorded {meta["kat_fold_sha256"]}, current {expected_kat}); regenerate benchmarks/corpus.csv with python3 research/ab.py size all --csv benchmarks/corpus.csv',
+                )
+
+        if 'benchmarks/results.csv' in self.files and self.path('benchmarks/results.csv').is_file():
+            meta = _csv_meta(self.read('benchmarks/results.csv'))
+            set_revs = _parse_meta_map(meta.get('set_revisions', ''))
+            set_dates = _parse_meta_map(meta.get('set_dates', ''))
+            set_kats = _parse_meta_map(meta.get('set_kat_hashes', ''))
+            req_sets = ('measure', 'photos', 'synthetic')
+            if (
+                not re.fullmatch(r'[0-9a-f]{40}', meta.get('codec_revision', ''))
+                or not re.fullmatch(r'[0-9a-f]{64}', meta.get('kat_fold_sha256', ''))
+                or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', meta.get('date', ''))
+                or any(not re.fullmatch(r'[0-9a-f]{40}', set_revs.get(s, '')) for s in req_sets)
+                or any(not re.fullmatch(r'\d{4}-\d{2}-\d{2}', set_dates.get(s, '')) for s in req_sets)
+                or any(not re.fullmatch(r'[0-9a-f]{64}', set_kats.get(s, '')) for s in req_sets)
+            ):
+                self.error(
+                    'stale',
+                    'benchmarks/results.csv',
+                    'missing or malformed provenance header (codec_revision, kat_fold_sha256, date, set_revisions, set_dates, set_kat_hashes required); regenerate benchmarks/results.csv with python3 tests/benchmark.py',
+                )
+            else:
+                stale_sets = [s for s in req_sets if set_kats[s] != expected_kat]
+                if meta['kat_fold_sha256'] != expected_kat or stale_sets:
+                    stale_desc = ', '.join(stale_sets) if stale_sets else 'header'
+                    self.error(
+                        'stale',
+                        'benchmarks/results.csv',
+                        f'KAT_FOLD changed in tests/test_correctness.py since benchmarks/results.csv was produced (stale sets: {stale_desc}; recorded {meta["kat_fold_sha256"]}, current {expected_kat}); regenerate benchmarks/results.csv with python3 tests/benchmark.py',
+                    )
 
     def review_policies(self, reviews=None):
         reviews = self.manifest.get('reviews', {}) if reviews is None else reviews
@@ -935,6 +1013,8 @@ class Checker:
             for i in range(0, len(raw) - 1, 3):
                 attributes.setdefault(raw[i], {})[raw[i + 1]] = raw[i + 2]
         for doc, review in reviews.items():
+            if not str(review.get('evidence', '')).strip():
+                self.error('review', doc, 'receipt must record non-empty review evidence')
             if doc not in review['sources']:
                 self.error('review', doc, 'receipt must bind the reviewed document itself')
             for source in review['sources']:

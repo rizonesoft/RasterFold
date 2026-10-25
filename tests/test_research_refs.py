@@ -664,6 +664,85 @@ class ResearchRefsTests(unittest.TestCase):
             drift_check.derive_facts(multi_manifest, lambda rel: sources[rel])
         self.assertIn("expected one CSV row, got 2", str(ctx.exception))
 
+    def test_benchmark_provenance_and_atomic_write(self) -> None:
+        from unittest import mock
+
+        fake_head = "c" * 40
+        kat_sha = benchmark.kat_fold_sha256()
+
+        def clean_runner(cmd, **kwargs):
+            if cmd[:3] == ["git", "rev-parse", "--verify"]:
+                return subprocess.CompletedProcess(cmd, 0, stdout=f"{fake_head}\n", stderr="")
+            if cmd[:3] == ["git", "status", "--porcelain"]:
+                return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+            if len(cmd) >= 3 and str(cmd[1]).endswith("build.py"):
+                return subprocess.CompletedProcess(cmd, 0, stdout="built\n", stderr="")
+            raise AssertionError(f"unexpected subprocess command: {cmd}")
+
+        head, got_kat, digests = benchmark.provenance_snapshot(ROOT, runner=clean_runner)
+        self.assertEqual(head, fake_head)
+        self.assertEqual(got_kat, kat_sha)
+        self.assertIn("src/cm.c", digests)
+
+        # Dirty git status refuses benchmark provenance.
+        def dirty_runner(cmd, **kwargs):
+            if cmd[:3] == ["git", "rev-parse", "--verify"]:
+                return subprocess.CompletedProcess(cmd, 0, stdout=f"{fake_head}\n", stderr="")
+            if cmd[:3] == ["git", "status", "--porcelain"]:
+                return subprocess.CompletedProcess(cmd, 0, stdout=" M src/cm.c\n", stderr="")
+            raise AssertionError(f"unexpected subprocess command: {cmd}")
+
+        with self.assertRaisesRegex(ValueError, "refuses modified codec/build/KAT sources"):
+            benchmark.codec_provenance(ROOT, runner=dirty_runner)
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            exe_path = root / "rasterfold.exe"
+            exe_path.write_bytes(b"exe")
+            benchmark.ensure_fresh_executable(ROOT, exe=exe_path, runner=clean_runner)
+
+            def failing_build_runner(cmd, **kwargs):
+                return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="compiler error")
+
+            with self.assertRaisesRegex(ValueError, "failed to build fresh benchmark executable"):
+                benchmark.ensure_fresh_executable(ROOT, exe=exe_path, runner=failing_build_runner)
+
+            csv_path = root / "results.csv"
+            _, seed_rows = benchmark.read_results_csv(ROOT / "benchmarks" / "results.csv", require_provenance=True)
+            meta = benchmark.resolve_set_provenance(
+                {},
+                ["measure", "photos", "synthetic"],
+                [],
+                fake_head,
+                "2026-10-25",
+                kat_sha,
+            )
+            snap = (fake_head, kat_sha, digests)
+            benchmark.write_csv_rows(csv_path, seed_rows[:7], meta=meta, expected_snapshot=snap, repo=ROOT, runner=clean_runner)
+            original_bytes = csv_path.read_bytes()
+            read_meta, read_rows = benchmark.read_results_csv(csv_path, require_provenance=True)
+            self.assertEqual(read_meta, meta)
+            self.assertEqual(len(read_rows), 7)
+
+            # Mid-run provenance change refuses write and preserves existing CSV bytes.
+            stale_snap = ("d" * 40, kat_sha, digests)
+            with self.assertRaisesRegex(ValueError, "provenance changed during measurement"):
+                benchmark.write_csv_rows(csv_path, seed_rows[:7], meta=meta, expected_snapshot=stale_snap, repo=ROOT, runner=clean_runner)
+            self.assertEqual(csv_path.read_bytes(), original_bytes)
+
+            # Injected fsync or replace error cleans up .tmp and preserves existing CSV bytes.
+            with mock.patch("os.fsync", side_effect=OSError("disk full")):
+                with self.assertRaises(OSError):
+                    benchmark.write_csv_rows(csv_path, seed_rows[:7], meta=meta, expected_snapshot=snap, repo=ROOT, runner=clean_runner)
+            self.assertEqual(csv_path.read_bytes(), original_bytes)
+            self.assertEqual([p.name for p in root.iterdir() if p.name.endswith(".tmp")], [])
+
+            with mock.patch("os.replace", side_effect=OSError("rename blocked")):
+                with self.assertRaises(OSError):
+                    benchmark.write_csv_rows(csv_path, seed_rows[:7], meta=meta, expected_snapshot=snap, repo=ROOT, runner=clean_runner)
+            self.assertEqual(csv_path.read_bytes(), original_bytes)
+            self.assertEqual([p.name for p in root.iterdir() if p.name.endswith(".tmp")], [])
+
 
 if __name__ == "__main__":
     unittest.main()

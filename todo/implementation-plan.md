@@ -153,7 +153,7 @@ The ported plan, hooks, gates, measurement references, HTML docs, and drift gate
 | [x] | `D08 T02 §3` | Generated files match their sources                           |   3   |
 | [x] | `D08 T01 §2` | Comparison charts                                             |   5   |
 | [x] | `D08 T02 §2` | Figures bound to their data                                   |   3   |
-| [ ] | `D08 T02 §4` | Staleness: verified dates and data revisions                  |   3   |
+| [ ] | `D08 T02 §4` | Staleness: verified dates and data revisions                  |   4   |
 | [ ] | `D08 T02 §5` | Links, and the gates wired everywhere                         |   3   |
 | [ ] | `D08 T02 §6` | Deterministic repair and complete file coverage               |   5   |
 | [ ] | `D08 T02 §7` | Commit and built-site provenance                              |   5   |

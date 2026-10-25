@@ -25,6 +25,7 @@ import shutil
 import statistics
 import subprocess
 import sys
+import tempfile
 import time
 from ctypes import wintypes
 from datetime import date
@@ -40,6 +41,7 @@ EXE = ROOT / "bin" / "windows-x64" / "bin" / "rasterfold.exe"
 OUT = ROOT / "benchmarks"
 WORK = ROOT / "build" / "benchmark"
 ALL_SETS = ("measure", "photos", "synthetic")
+PROVENANCE_PATHS = ("src", "include", "scripts/build.py", "tests/test_correctness.py")
 CSV_FIELDS = (
     "set",
     "image",
@@ -178,16 +180,85 @@ def parse_csv_row(raw: dict[str, str]) -> dict:
 
 def kat_fold_sha256(repo: Path = ROOT) -> str:
     tc_path = repo / "tests" / "test_correctness.py"
+    if not tc_path.is_file():
+        raise ValueError(f"missing {tc_path}")
     text = tc_path.read_text(encoding="utf-8")
     m = re.search(r"KAT_FOLD\s*=\s*bytes\.fromhex\(\s*((?:\"[^\"]*\"\s*)+)\)", text, re.S)
     if not m:
         raise ValueError(f"unable to locate KAT_FOLD in {tc_path}")
     hex_str = "".join(re.findall(r'"([0-9a-fA-F]+)"', m.group(1)))
-    return hashlib.sha256(bytes.fromhex(hex_str)).hexdigest()
+    if not hex_str or len(hex_str) % 2 != 0:
+        raise ValueError(f"invalid KAT_FOLD hex literal in {tc_path}")
+    raw = bytes.fromhex(hex_str)
+    if not raw:
+        raise ValueError(f"empty KAT_FOLD in {tc_path}")
+    return hashlib.sha256(raw).hexdigest()
 
 
-def read_results_csv(csv_path: Path) -> tuple[dict[str, str], list[dict]]:
+def _provenance_digests(repo: Path = ROOT) -> dict[str, str]:
+    digests: dict[str, str] = {}
+    for rel in PROVENANCE_PATHS:
+        target = repo / rel
+        if target.is_dir():
+            for child in sorted(target.rglob("*")):
+                if child.is_file():
+                    digests[child.relative_to(repo).as_posix()] = hashlib.sha256(child.read_bytes()).hexdigest()
+        elif target.is_file():
+            digests[target.relative_to(repo).as_posix()] = hashlib.sha256(target.read_bytes()).hexdigest()
+        else:
+            raise ValueError(f"missing provenance path: {target}")
+    return digests
+
+
+def codec_provenance(repo: Path = ROOT, runner=subprocess.run) -> tuple[str, str]:
+    rev_proc = runner(
+        ["git", "rev-parse", "--verify", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    head_sha = (rev_proc.stdout or "").strip() if rev_proc.returncode == 0 else ""
+    if not re.fullmatch(r"[0-9a-f]{40}", head_sha):
+        raise ValueError("unable to determine clean 40-char git HEAD for benchmark provenance")
+    status_proc = runner(
+        ["git", "status", "--porcelain", "--", *PROVENANCE_PATHS],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    if status_proc.returncode != 0:
+        raise ValueError("unable to check git status for benchmark provenance")
+    if (status_proc.stdout or "").strip():
+        raise ValueError(
+            f"benchmark refuses modified codec/build/KAT sources:\n{(status_proc.stdout or '').strip()}"
+        )
+    return head_sha, kat_fold_sha256(repo)
+
+
+def provenance_snapshot(repo: Path = ROOT, runner=subprocess.run) -> tuple[str, str, dict[str, str]]:
+    head_sha, kat_hash = codec_provenance(repo=repo, runner=runner)
+    return head_sha, kat_hash, _provenance_digests(repo)
+
+
+def ensure_fresh_executable(repo: Path = ROOT, exe: Path = EXE, runner=subprocess.run) -> None:
+    build_script = repo / "scripts" / "build.py"
+    proc = runner(
+        [sys.executable, str(build_script), "--target", "windows-x64"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        detail = ((proc.stdout or "") + (proc.stderr or "")).strip()
+        raise ValueError(f"failed to build fresh benchmark executable {exe}: {detail}")
+    if not exe.is_file():
+        raise ValueError(f"missing benchmark executable after build: {exe}")
+
+
+def read_results_csv(csv_path: Path, *, require_provenance: bool = False) -> tuple[dict[str, str], list[dict]]:
     if not csv_path.is_file():
+        if require_provenance:
+            raise ValueError(f"missing results CSV: {csv_path}")
         return {}, []
     raw_lines = csv_path.read_text(encoding="utf-8").splitlines(keepends=True)
     meta: dict[str, str] = {}
@@ -199,10 +270,32 @@ def read_results_csv(csv_path: Path) -> tuple[dict[str, str], list[dict]]:
                 k, v = token.split("=", 1)
                 meta[k.strip()] = v.strip()
         idx += 1
+    if require_provenance:
+        for req_key, pat in (
+            ("codec_revision", r"^[0-9a-f]{40}$"),
+            ("kat_fold_sha256", r"^[0-9a-f]{64}$"),
+            ("date", r"^\d{4}-\d{2}-\d{2}$"),
+        ):
+            val = meta.get(req_key, "")
+            if not re.fullmatch(pat, val):
+                raise ValueError(f"invalid or missing {req_key} in {csv_path}: {val!r}")
+        for map_key, pat in (
+            ("set_revisions", r"^[0-9a-f]{40}$"),
+            ("set_dates", r"^\d{4}-\d{2}-\d{2}$"),
+            ("set_kat_hashes", r"^[0-9a-f]{64}$"),
+        ):
+            parsed = parse_set_map(meta.get(map_key, ""))
+            if not parsed or any(not re.fullmatch(pat, v) for v in parsed.values()):
+                raise ValueError(f"invalid or missing {map_key} in {csv_path}: {meta.get(map_key, '')!r}")
     body = "".join(raw_lines[idx:])
     if not body.strip():
+        if require_provenance:
+            raise ValueError(f"empty results CSV body in {csv_path}")
         return meta, []
-    return meta, [parse_csv_row(r) for r in csv.DictReader(io.StringIO(body))]
+    rows = [parse_csv_row(r) for r in csv.DictReader(io.StringIO(body))]
+    if require_provenance and not rows:
+        raise ValueError(f"empty results CSV rows in {csv_path}")
+    return meta, rows
 
 
 def load_existing_rows(csv_path: Path) -> list[dict]:
@@ -229,15 +322,19 @@ def resolve_set_provenance(
     run_date: str,
     kat_sha: str | None = None,
 ) -> dict[str, str]:
+    cur_kat = kat_sha if kat_sha is not None else kat_fold_sha256(ROOT)
     prior_revs = parse_set_map(existing_meta.get("set_revisions", ""))
     prior_dates = parse_set_map(existing_meta.get("set_dates", ""))
+    prior_kats = parse_set_map(existing_meta.get("set_kat_hashes", ""))
     prev_measured = [s.strip() for s in existing_meta.get("measured_sets", "").split(",") if s.strip() and s.strip() != "none"]
     prev_retained = [s.strip() for s in existing_meta.get("retained_sets", "").split(",") if s.strip() and s.strip() != "none"]
     for s in prev_measured:
         prior_revs.setdefault(s, existing_meta.get("codec_revision", "unknown"))
         prior_dates.setdefault(s, existing_meta.get("date", "unknown"))
+        prior_kats.setdefault(s, existing_meta.get("kat_fold_sha256", cur_kat))
     prev_ret_rev_map = parse_set_map(existing_meta.get("retained_revision", ""))
     prev_ret_date_map = parse_set_map(existing_meta.get("retained_date", ""))
+    prev_ret_kat_map = parse_set_map(existing_meta.get("retained_kat_fold_sha256", ""))
     for s in prev_retained:
         prior_revs.setdefault(
             s,
@@ -251,15 +348,24 @@ def resolve_set_provenance(
             or existing_meta.get("retained_date")
             or existing_meta.get("date", "unknown"),
         )
+        prior_kats.setdefault(
+            s,
+            prev_ret_kat_map.get(s)
+            or existing_meta.get("retained_kat_fold_sha256")
+            or existing_meta.get("kat_fold_sha256", cur_kat),
+        )
 
     revs: dict[str, str] = {}
     dates: dict[str, str] = {}
+    kats: dict[str, str] = {}
     for s in measured_sets:
         revs[s] = head_sha
         dates[s] = run_date
+        kats[s] = cur_kat
     for s in retained_sets:
         revs[s] = prior_revs.get(s, "unknown")
         dates[s] = prior_dates.get(s, "unknown")
+        kats[s] = prior_kats.get(s, existing_meta.get("kat_fold_sha256", "unknown"))
 
     ordered = [s for s in ALL_SETS if s in revs]
     for s in (*measured_sets, *retained_sets):
@@ -269,48 +375,94 @@ def resolve_set_provenance(
     if not retained_sets:
         ret_rev = "none"
         ret_date = "none"
+        ret_kat = "none"
     else:
         uniq_revs = {revs[s] for s in retained_sets}
         uniq_dates = {dates[s] for s in retained_sets}
+        uniq_kats = {kats[s] for s in retained_sets}
         ret_rev = revs[retained_sets[0]] if len(uniq_revs) == 1 else ",".join(f"{s}:{revs[s]}" for s in retained_sets)
         ret_date = dates[retained_sets[0]] if len(uniq_dates) == 1 else ",".join(f"{s}:{dates[s]}" for s in retained_sets)
+        ret_kat = kats[retained_sets[0]] if len(uniq_kats) == 1 else ",".join(f"{s}:{kats[s]}" for s in retained_sets)
 
     return {
         "codec_revision": head_sha,
-        "kat_fold_sha256": kat_sha if kat_sha is not None else kat_fold_sha256(ROOT),
+        "kat_fold_sha256": cur_kat,
         "date": run_date,
         "measured_sets": ",".join(measured_sets),
         "retained_sets": ",".join(retained_sets) if retained_sets else "none",
         "retained_revision": ret_rev,
         "retained_date": ret_date,
+        "retained_kat_fold_sha256": ret_kat,
         "set_revisions": ",".join(f"{s}:{revs[s]}" for s in ordered),
         "set_dates": ",".join(f"{s}:{dates[s]}" for s in ordered),
+        "set_kat_hashes": ",".join(f"{s}:{kats[s]}" for s in ordered),
     }
 
 
-def write_csv_rows(csv_path: Path, rows: list[dict], meta: dict[str, str] | None = None) -> None:
-    with csv_path.open("w", newline="", encoding="utf-8") as fh:
-        if meta:
-            ordered_keys = (
-                "codec_revision",
-                "kat_fold_sha256",
-                "date",
-                "measured_sets",
-                "retained_sets",
-                "retained_revision",
-                "retained_date",
-                "set_revisions",
-                "set_dates",
-            )
-            parts = [f"{k}={meta[k]}" for k in ordered_keys if k in meta and meta[k]]
-            for k, v in meta.items():
-                if k not in ordered_keys and v:
-                    parts.append(f"{k}={v}")
-            if parts:
-                fh.write("# " + " ".join(parts) + "\n")
-        writer = csv.DictWriter(fh, fieldnames=list(CSV_FIELDS))
-        writer.writeheader()
-        writer.writerows(rows)
+def write_csv_rows(
+    csv_path: Path,
+    rows: list[dict],
+    meta: dict[str, str] | None = None,
+    *,
+    expected_snapshot: tuple[str, str, dict[str, str]] | None = None,
+    repo: Path = ROOT,
+    runner=subprocess.run,
+) -> None:
+    csv_path = Path(csv_path)
+    if csv_path.is_symlink() or csv_path.is_dir():
+        raise ValueError(f"refusing to write results CSV to symlink or directory: {csv_path}")
+    if expected_snapshot is not None:
+        post_snapshot = provenance_snapshot(repo=repo, runner=runner)
+        if post_snapshot != expected_snapshot:
+            raise ValueError("benchmark refused: codec/build/KAT provenance changed during measurement")
+    buf = io.StringIO()
+    if meta:
+        ordered_keys = (
+            "codec_revision",
+            "kat_fold_sha256",
+            "date",
+            "measured_sets",
+            "retained_sets",
+            "retained_revision",
+            "retained_date",
+            "retained_kat_fold_sha256",
+            "set_revisions",
+            "set_dates",
+            "set_kat_hashes",
+        )
+        parts = [f"{k}={meta[k]}" for k in ordered_keys if k in meta and meta[k]]
+        for k, v in meta.items():
+            if k not in ordered_keys and v:
+                parts.append(f"{k}={v}")
+        if parts:
+            buf.write("# " + " ".join(parts) + "\n")
+    writer = csv.DictWriter(buf, fieldnames=list(CSV_FIELDS), lineterminator="\n")
+    writer.writeheader()
+    writer.writerows(rows)
+    payload = buf.getvalue().encode("utf-8")
+
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path: Path | None = None
+    try:
+        fd, tmp_str = tempfile.mkstemp(
+            prefix=f".{csv_path.name}.",
+            suffix=".tmp",
+            dir=csv_path.parent,
+        )
+        tmp_path = Path(tmp_str)
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(payload)
+            fh.flush()
+            os.fsync(fh.fileno())
+        read_meta, read_rows = read_results_csv(tmp_path, require_provenance=bool(meta))
+        if len(read_rows) != len(rows) or (meta and read_meta != meta):
+            raise ValueError(f"read-back verification failed for {csv_path}")
+        os.replace(tmp_path, csv_path)
+        tmp_path = None
+    except Exception:
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
+        raise
 
 
 def normalize_sets(raw_sets: list[str]) -> list[str]:
@@ -411,12 +563,12 @@ def main() -> int:
         del args[i:i + 2]
     try:
         sets = normalize_sets(args)
+        pre_snapshot = provenance_snapshot(ROOT)
+        ensure_fresh_executable(ROOT, EXE)
     except ValueError as exc:
         print(str(exc))
         return 1
-    if not EXE.exists():
-        print(f"missing {EXE}; run build.ps1")
-        return 1
+    head_sha, kat_sha, _ = pre_snapshot
     OUT.mkdir(exist_ok=True)
     csv_path = OUT / "results.csv"
     existing_meta, existing = read_results_csv(csv_path)
@@ -432,22 +584,23 @@ def main() -> int:
                 measured.append({"set": set_name, "image": stem, "width": w, "height": h, "raw": w * h * 3, "codec": codec, **r})
     rows, retained_sets = merge_rows(existing, measured, sets)
     failures = [f"{r['codec']} {r['set']}/{r['image']}" for r in rows if not r["pixels_match"]]
-    rev_proc = subprocess.run(["git", "rev-parse", "--verify", "HEAD"], cwd=ROOT, capture_output=True, text=True)
-    head_sha = (rev_proc.stdout or "").strip() if rev_proc.returncode == 0 else "unknown"
+    if failures:
+        print(f"failures: {len(failures)}")
+        for f in failures:
+            print(" ", f)
+        return 1
     meta = resolve_set_provenance(
         existing_meta,
         sets,
         retained_sets,
         head_sha,
         date.today().isoformat(),
-        kat_fold_sha256(ROOT),
+        kat_sha,
     )
-    write_csv_rows(csv_path, rows, meta=meta)
+    write_csv_rows(csv_path, rows, meta=meta, expected_snapshot=pre_snapshot, repo=ROOT)
     report(rows, failures, sets, repeats, retained_sets=retained_sets)
-    print(f"failures: {len(failures)}")
-    for f in failures:
-        print(" ", f)
-    return 1 if failures else 0
+    print("failures: 0")
+    return 0
 
 
 def report(
