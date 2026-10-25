@@ -1,0 +1,107 @@
+{
+  "ref": "D02 T01 \u00a71",
+  "title": "Profile-Guided Optimization",
+  "implementation_sha": "f35ddd32ea7b4f2ace1c0ebf81a43f6593c3c12d",
+  "date": "2026-10-25",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/02-speed/D02-T01-s1.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/02-speed/D02-T01-s1.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 3,
+      "report": "docs/reviews/02-speed/D02-T01-s1.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 4,
+      "report": "docs/reviews/02-speed/D02-T01-s1.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 5,
+      "report": "docs/reviews/02-speed/D02-T01-s1.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 tests/test_correctness.py -> 36 passed, 0 failed",
+    "python3 tests/test_artifacts.py -> Ran 7 tests in 10.189s OK",
+    "python3 scripts/windows.py tests/test_artifacts.py -> Ran 7 tests in 108.521s OK (skipped=2)",
+    "python3 scripts/windows.py research/vsjxl.py -n5 --threads 1 --exe build/research/vs/rasterfold-base.exe --alt-exe build/research/vs/rasterfold-pgo.exe -> dec 1.079/0.991 min, enc 0.962/0.988 min",
+    "python3 scripts/windows.py research/vsjxl.py --corpus all -n 3 --threads 1 --pgo-profile build/pgo/rasterfold.profdata -> photo dec 1.009, tp dec 1.004, synth dec 0.995"
+  ],
+  "completion": {
+    "report": "docs/reviews/02-speed/D02-T01-s1.md",
+    "verdict": "completed",
+    "candidate": "5e277cd3c6a5843010d706ab06f6b95045f01ae0",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 5,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/02-speed/D02-T01-s1.md",
+    "candidate": "41b8a3f7ba1023643855d3ef9baaf2c12978adcd",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}
