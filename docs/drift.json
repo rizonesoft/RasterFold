@@ -1756,13 +1756,13 @@
       }
     },
     "docs/site-validation.md": {
-      "evidence": "Author-attested: 2026-10-25 verified single-XHR index loading, mobile shortcut header expansion, ArrowDown/Enter Clear search activation, and unpersisted session precedence in docs/site-validation.md (D08 T01 section 5)",
+      "evidence": "Author-attested: 2026-10-25 verified stale retry cancellation and full search-data.json entry schema validation in docs/site-validation.md (D08 T01 section 5)",
       "sources": {
         "docs/_config.yml": "d2459047e15f142133fb8206900c7921ca9c793559c63c264e7e43dbb1f00522",
-        "docs/_includes/head_custom.html": "cbf8e9a522472cf799a969011da6e850a2e7a2878ee64ce5ceae9e9f96e77716",
+        "docs/_includes/head_custom.html": "a3db05eb828ddef58712fcd5fb5525ca905ee9e0e20c4707c8bf910dbc4b21dc",
         "docs/_includes/header_custom.html": "b985261215544f807451a279b6409a960f1ba9b69a3bb4ddb7868b2efc8b67a8",
         "docs/assets/css/site-states.css": "a5b9a1dd538e73cd748b675ec990dec52669f62d7ab414848f88dd9260e9c01e",
-        "docs/assets/js/site-states.js": "9179c0ef0d5bbd30db9fa0017b698f9725ca92c06e24c30395b159e1c72fa8a8",
+        "docs/assets/js/site-states.js": "eddfda79289ae90c93a7576539404fd202f6e49995f435c959fd74535885578d",
         "docs/404.md": "eb1236932eb9ec7cf176d512088f398ebfaa9a4f1d4c1c141621ac3dc5dfc7f9",
         "docs/site-content.json": "3611e28cba68ff6ac17ace19115ebb014f06140322afcfc32ec39b78128c6f30",
         "docs/site-validation.md": "0bcebc28ec46cc0fa039e943f8d136b5ec6b9ff19eaea4cfd5b9ae5467de5617"

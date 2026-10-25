@@ -89,13 +89,26 @@
       return false;
     }
     var keys = Object.keys(data);
+    if (keys.length === 0) {
+      return false;
+    }
+    var optStringFields = ["title", "doc", "content", "relUrl"];
     for (var i = 0; i < keys.length; i++) {
       var item = data[keys[i]];
-      if (item && typeof item === "object" && typeof item.url === "string" && item.url.length > 0) {
-        return true;
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return false;
+      }
+      if (typeof item.url !== "string" || item.url.trim().length === 0) {
+        return false;
+      }
+      for (var f = 0; f < optStringFields.length; f++) {
+        var val = item[optStringFields[f]];
+        if (val !== undefined && typeof val !== "string") {
+          return false;
+        }
       }
     }
-    return false;
+    return true;
   }
 
   function markSearchIndexFailed() {

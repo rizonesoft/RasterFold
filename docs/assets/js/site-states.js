@@ -18,6 +18,7 @@
   var forceClipboardFail = false;
   var fallbackSearchData = null;
   var useFallbackSearch = false;
+  var searchLoadGeneration = 0;
 
   function announce(message) {
     var region = document.getElementById("rf-a11y-status");
@@ -345,13 +346,23 @@
     if (keys.length === 0) {
       return false;
     }
+    var optStringFields = ["title", "doc", "content", "relUrl"];
     for (var i = 0; i < keys.length; i++) {
       var entry = data[keys[i]];
-      if (entry && typeof entry === "object" && typeof entry.url === "string" && entry.url.length > 0) {
-        return true;
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        return false;
+      }
+      if (typeof entry.url !== "string" || entry.url.trim().length === 0) {
+        return false;
+      }
+      for (var f = 0; f < optStringFields.length; f++) {
+        var val = entry[optStringFields[f]];
+        if (val !== undefined && typeof val !== "string") {
+          return false;
+        }
       }
     }
-    return false;
+    return true;
   }
 
   function renderFallbackSearchResults(query) {
@@ -375,12 +386,12 @@
     var keys = Object.keys(fallbackSearchData);
     for (var i = 0; i < keys.length; i++) {
       var entry = fallbackSearchData[keys[i]];
-      if (!entry || !entry.url) {
+      if (!entry || typeof entry.url !== "string" || !entry.url) {
         continue;
       }
-      var hayTitle = (entry.title || "").toLowerCase();
-      var hayDoc = (entry.doc || "").toLowerCase();
-      var hayContent = (entry.content || "").toLowerCase();
+      var hayTitle = (typeof entry.title === "string" ? entry.title : "").toLowerCase();
+      var hayDoc = (typeof entry.doc === "string" ? entry.doc : "").toLowerCase();
+      var hayContent = (typeof entry.content === "string" ? entry.content : "").toLowerCase();
       var score = 0;
       var allMatched = true;
       for (var t = 0; t < terms.length; t++) {
@@ -446,6 +457,8 @@
   }
 
   function triggerSearchOffline() {
+    searchLoadGeneration++;
+    fallbackSearchData = null;
     useFallbackSearch = true;
     var banner = document.getElementById("rf-search-offline");
     var searchInput = document.getElementById("search-input");
@@ -459,6 +472,7 @@
   }
 
   function loadSearchIndex(isRetry) {
+    var reqGen = ++searchLoadGeneration;
     var banner = document.getElementById("rf-search-offline");
     var searchInput = document.getElementById("search-input");
     var fetchOpts = isRetry ? { cache: "no-store" } : {};
@@ -472,6 +486,9 @@
       .then(function (data) {
         if (!isValidSearchIndex(data)) {
           throw new Error("Invalid search-data.json payload");
+        }
+        if (reqGen !== searchLoadGeneration) {
+          return Boolean(fallbackSearchData);
         }
         fallbackSearchData = data;
         useFallbackSearch = true;
@@ -494,7 +511,9 @@
         return true;
       })
       .catch(function () {
-        fallbackSearchData = null;
+        if (reqGen !== searchLoadGeneration || fallbackSearchData) {
+          return Boolean(fallbackSearchData);
+        }
         triggerSearchOffline();
         return false;
       });
