@@ -1,0 +1,85 @@
+{
+  "ref": "D00 T02 \u00a71",
+  "title": "e9 and WebP References in the Research Tools",
+  "implementation_sha": "92ce6dcc484e9cca3b016144767f273ede8c87c1",
+  "date": "2026-10-25",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/00-workspace/D00-T02-s1.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 research/ab.py size photo -> total=30865211 jxl=31782058 ratio=0.9712 geomean=0.9728 worst=1.0037 (kodim17) e9=31400714 e9_ratio=0.9829 e9_geomean=0.9883 e9_worst=1.0193 (kodim16) webp=34138176 webp_ratio=0.9041 webp_geomean=0.8932 webp_worst=1.0104 (ic_deer)",
+    "python3 research/ab.py size synth -v -> syn_checker 5709 jxl= 316 18.0665 e9= 210 27.1857 webp= 82 69.6220; missing syn_checker:e9 exits 1 with missing reference in jxl_refs.json: syn_checker:e9",
+    "python3 -m unittest discover -s tests -p test_research_refs.py -v -> Ran 4 tests, OK (Linux and Windows)"
+  ],
+  "completion": {
+    "report": "docs/reviews/00-workspace/D00-T02-s1.md",
+    "verdict": "complete",
+    "candidate": "92ce6dcc484e9cca3b016144767f273ede8c87c1",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/00-workspace/D00-T02-s1.md",
+    "candidate": "6c7cc18add7140b6d9e4d5e2384344b5ecd05600",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}

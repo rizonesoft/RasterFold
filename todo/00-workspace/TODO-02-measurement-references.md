@@ -43,7 +43,7 @@ track: W2
 
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
-|   1   |   §1    | e9 and WebP references in the research tools | -- |  [ ]   |
+|   1   |   §1    | e9 and WebP references in the research tools | -- |  [x]   |
 |   2   |   §2    | JPEG XL e9 in the benchmark | -- |  [ ]   |
 |   3   |   §3    | The committed corpus results file | §1 |  [ ]   |
 
@@ -67,6 +67,8 @@ The roadmap measures milestones against JPEG XL e9 and WebP, so the tool that de
 
 **Test checkpoint:** `python3 research/ab.py size synth -v` lists `syn_checker` with e9 210 and WebP 82 bytes (`syn_checker 5709 jxl= 316 18.0665 e9= 210 27.1857 webp= 82 69.6220`, matching `build/research/jxl/syn_checker.e9.jxl` and `syn_checker.webp` produced by `ffmpeg 8.1.2-full_build-www.gyan.dev`); deleting `syn_checker:e9` makes `python3 research/ab.py size synth -v` exit 1 with `missing reference in jxl_refs.json: syn_checker:e9` and empty stdout instead of printing a ratio; `python3 -m unittest discover -s tests -p 'test_research_refs.py' -v` and `python3 scripts/windows.py tests/test_research_refs.py -v < /dev/null` exit 0.
 
+> **Verified:** 2026-10-25 | §1 | 92ce6dcc484e9cca3b016144767f273ede8c87c1
+> **Review:** `docs/reviews/d00-t02-s1.json`
 ## 2. JPEG XL e9 in the Benchmark
 
 **Needs:** ffmpeg with libjxl (benchmarks)
