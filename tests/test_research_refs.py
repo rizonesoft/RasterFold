@@ -341,6 +341,30 @@ class ResearchRefsTests(unittest.TestCase):
                     "2026-10-25",
                     kat_sha,
                 )
+            # Malformed existing metadata is rejected when retaining sets, but full regeneration (retained_sets=[]) recovers cleanly.
+            corrupt_meta = {**loaded_meta1, "set_kat_hashes": f"measure:{kat_sha},measure:{'0' * 64},photos:{kat_sha},synthetic:{kat_sha}"}
+            with self.assertRaisesRegex(ValueError, "duplicate set key 'measure'"):
+                benchmark.resolve_set_provenance(
+                    corrupt_meta,
+                    ["measure"],
+                    ["photos", "synthetic"],
+                    rev_nov,
+                    "2026-11-01",
+                    kat_sha,
+                )
+            recovered_meta = benchmark.resolve_set_provenance(
+                corrupt_meta,
+                ["measure", "photos", "synthetic"],
+                [],
+                rev_nov,
+                "2026-11-01",
+                kat_sha,
+            )
+            self.assertEqual(recovered_meta["retained_sets"], "none")
+            self.assertEqual(
+                benchmark.parse_set_map(recovered_meta["set_kat_hashes"]),
+                {"measure": kat_sha, "photos": kat_sha, "synthetic": kat_sha},
+            )
 
             with self.assertRaises(ValueError):
                 benchmark.parse_csv_row({**seed_rows[0], "pixels_match": "yes"})

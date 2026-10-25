@@ -362,38 +362,6 @@ def resolve_set_provenance(
     kat_sha: str | None = None,
 ) -> dict[str, str]:
     cur_kat = kat_sha if kat_sha is not None else kat_fold_sha256(ROOT)
-    prior_revs = parse_set_map(existing_meta.get("set_revisions", ""))
-    prior_dates = parse_set_map(existing_meta.get("set_dates", ""))
-    prior_kats = parse_set_map(existing_meta.get("set_kat_hashes", ""))
-    prev_measured = [s.strip() for s in existing_meta.get("measured_sets", "").split(",") if s.strip() and s.strip() != "none"]
-    prev_retained = [s.strip() for s in existing_meta.get("retained_sets", "").split(",") if s.strip() and s.strip() != "none"]
-    for s in prev_measured:
-        prior_revs.setdefault(s, existing_meta.get("codec_revision", ""))
-        prior_dates.setdefault(s, existing_meta.get("date", ""))
-        prior_kats.setdefault(s, existing_meta.get("kat_fold_sha256", ""))
-    scalar_ret_rev = existing_meta.get("retained_revision", "")
-    scalar_ret_date = existing_meta.get("retained_date", "")
-    scalar_ret_kat = existing_meta.get("retained_kat_fold_sha256", "")
-    prev_ret_rev_map = parse_set_map(scalar_ret_rev) if ":" in scalar_ret_rev else {}
-    prev_ret_date_map = parse_set_map(scalar_ret_date) if ":" in scalar_ret_date else {}
-    prev_ret_kat_map = parse_set_map(scalar_ret_kat) if ":" in scalar_ret_kat else {}
-    for s in prev_retained:
-        prior_revs.setdefault(
-            s,
-            prev_ret_rev_map.get(s)
-            or (scalar_ret_rev if scalar_ret_rev not in ("", "none") and ":" not in scalar_ret_rev else ""),
-        )
-        prior_dates.setdefault(
-            s,
-            prev_ret_date_map.get(s)
-            or (scalar_ret_date if scalar_ret_date not in ("", "none") and ":" not in scalar_ret_date else ""),
-        )
-        prior_kats.setdefault(
-            s,
-            prev_ret_kat_map.get(s)
-            or (scalar_ret_kat if scalar_ret_kat not in ("", "none") and ":" not in scalar_ret_kat else ""),
-        )
-
     revs: dict[str, str] = {}
     dates: dict[str, str] = {}
     kats: dict[str, str] = {}
@@ -401,19 +369,51 @@ def resolve_set_provenance(
         revs[s] = head_sha
         dates[s] = run_date
         kats[s] = cur_kat
-    for s in retained_sets:
-        rev_val = prior_revs.get(s, "")
-        date_val = prior_dates.get(s, "")
-        kat_val = prior_kats.get(s, "")
-        if (
-            not re.fullmatch(r"[0-9a-f]{40}", rev_val)
-            or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_val)
-            or not re.fullmatch(r"[0-9a-f]{64}", kat_val)
-        ):
-            raise ValueError(f"missing or unverified provenance for retained set {s!r}; rerun all benchmark sets")
-        revs[s] = rev_val
-        dates[s] = date_val
-        kats[s] = kat_val
+    if retained_sets:
+        prior_revs = parse_set_map(existing_meta.get("set_revisions", ""))
+        prior_dates = parse_set_map(existing_meta.get("set_dates", ""))
+        prior_kats = parse_set_map(existing_meta.get("set_kat_hashes", ""))
+        prev_measured = [s.strip() for s in existing_meta.get("measured_sets", "").split(",") if s.strip() and s.strip() != "none"]
+        prev_retained = [s.strip() for s in existing_meta.get("retained_sets", "").split(",") if s.strip() and s.strip() != "none"]
+        for s in prev_measured:
+            prior_revs.setdefault(s, existing_meta.get("codec_revision", ""))
+            prior_dates.setdefault(s, existing_meta.get("date", ""))
+            prior_kats.setdefault(s, existing_meta.get("kat_fold_sha256", ""))
+        scalar_ret_rev = existing_meta.get("retained_revision", "")
+        scalar_ret_date = existing_meta.get("retained_date", "")
+        scalar_ret_kat = existing_meta.get("retained_kat_fold_sha256", "")
+        prev_ret_rev_map = parse_set_map(scalar_ret_rev) if ":" in scalar_ret_rev else {}
+        prev_ret_date_map = parse_set_map(scalar_ret_date) if ":" in scalar_ret_date else {}
+        prev_ret_kat_map = parse_set_map(scalar_ret_kat) if ":" in scalar_ret_kat else {}
+        for s in prev_retained:
+            prior_revs.setdefault(
+                s,
+                prev_ret_rev_map.get(s)
+                or (scalar_ret_rev if scalar_ret_rev not in ("", "none") and ":" not in scalar_ret_rev else ""),
+            )
+            prior_dates.setdefault(
+                s,
+                prev_ret_date_map.get(s)
+                or (scalar_ret_date if scalar_ret_date not in ("", "none") and ":" not in scalar_ret_date else ""),
+            )
+            prior_kats.setdefault(
+                s,
+                prev_ret_kat_map.get(s)
+                or (scalar_ret_kat if scalar_ret_kat not in ("", "none") and ":" not in scalar_ret_kat else ""),
+            )
+        for s in retained_sets:
+            rev_val = prior_revs.get(s, "")
+            date_val = prior_dates.get(s, "")
+            kat_val = prior_kats.get(s, "")
+            if (
+                not re.fullmatch(r"[0-9a-f]{40}", rev_val)
+                or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_val)
+                or not re.fullmatch(r"[0-9a-f]{64}", kat_val)
+            ):
+                raise ValueError(f"missing or unverified provenance for retained set {s!r}; rerun all benchmark sets")
+            revs[s] = rev_val
+            dates[s] = date_val
+            kats[s] = kat_val
 
     ordered = [s for s in ALL_SETS if s in revs]
     for s in (*measured_sets, *retained_sets):
@@ -616,8 +616,8 @@ def main() -> int:
         pre_snapshot = provenance_snapshot(ROOT)
         head_sha, kat_sha, _ = pre_snapshot
         is_partial = set(sets) != set(ALL_SETS)
-        existing_meta, existing = read_results_csv(csv_path, require_provenance=is_partial)
         if is_partial:
+            existing_meta, existing = read_results_csv(csv_path, require_provenance=True)
             resolve_set_provenance(
                 existing_meta,
                 sets,
@@ -626,6 +626,8 @@ def main() -> int:
                 date.today().isoformat(),
                 kat_sha,
             )
+        else:
+            existing_meta, existing = {}, []
         ensure_fresh_executable(ROOT, EXE)
     except ValueError as exc:
         print(str(exc))
