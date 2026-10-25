@@ -6,6 +6,7 @@ Data (corpus, JPEG XL / WebP sizes, executables) lives in build/research; see re
   python research/ab.py size [cm.c] SET [--csv PATH]       exact sizes vs JPEG XL e7, e9, and WebP, in parallel
 Images may be names in build/research/ppm or set names: sub, kodak, ic, synth, photo, all, tp.
 """
+import ast
 import csv
 import hashlib
 import io
@@ -181,14 +182,35 @@ def kat_fold_sha256(repo: Path = REPO) -> str:
     if not tc_path.is_file():
         raise SystemExit(f"missing {tc_path}")
     text = tc_path.read_text(encoding="utf-8")
-    m = re.search(r"KAT_FOLD\s*=\s*bytes\.fromhex\(\s*((?:\"[^\"]*\"\s*)+)\)", text, re.S)
-    if not m:
-        raise SystemExit(f"unable to locate KAT_FOLD in {tc_path}")
-    hex_chunks = re.findall(r'"([0-9a-fA-F]+)"', m.group(1))
-    hex_str = "".join(hex_chunks)
-    if not hex_str or len(hex_str) % 2 != 0:
-        raise SystemExit(f"invalid KAT_FOLD hex literal in {tc_path}")
-    raw = bytes.fromhex(hex_str)
+    try:
+        tree = ast.parse(text, filename=str(tc_path))
+    except SyntaxError as exc:
+        raise SystemExit(f"syntax error in {tc_path}: {exc}") from exc
+    matches = []
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name) and node.targets[0].id == "KAT_FOLD":
+            matches.append(node.value)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == "KAT_FOLD" and node.value is not None:
+            matches.append(node.value)
+    if len(matches) != 1:
+        raise SystemExit(f"unable to locate unique KAT_FOLD in {tc_path}")
+    call = matches[0]
+    if (
+        not isinstance(call, ast.Call)
+        or not isinstance(call.func, ast.Attribute)
+        or not isinstance(call.func.value, ast.Name)
+        or call.func.value.id != "bytes"
+        or call.func.attr != "fromhex"
+        or len(call.args) != 1
+        or call.keywords
+        or not isinstance(call.args[0], ast.Constant)
+        or not isinstance(call.args[0].value, str)
+    ):
+        raise SystemExit(f"unsupported KAT_FOLD definition in {tc_path}")
+    try:
+        raw = bytes.fromhex(call.args[0].value)
+    except ValueError as exc:
+        raise SystemExit(f"invalid KAT_FOLD hex literal in {tc_path}: {exc}") from exc
     if not raw:
         raise SystemExit(f"empty KAT_FOLD in {tc_path}")
     return hashlib.sha256(raw).hexdigest()

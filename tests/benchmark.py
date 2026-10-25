@@ -13,6 +13,7 @@ jxl-e9 encodes at effort 9 and decodes with ffmpeg's default thread count.
 
 from __future__ import annotations
 
+import ast
 import csv
 import ctypes
 import hashlib
@@ -183,13 +184,35 @@ def kat_fold_sha256(repo: Path = ROOT) -> str:
     if not tc_path.is_file():
         raise ValueError(f"missing {tc_path}")
     text = tc_path.read_text(encoding="utf-8")
-    m = re.search(r"KAT_FOLD\s*=\s*bytes\.fromhex\(\s*((?:\"[^\"]*\"\s*)+)\)", text, re.S)
-    if not m:
-        raise ValueError(f"unable to locate KAT_FOLD in {tc_path}")
-    hex_str = "".join(re.findall(r'"([0-9a-fA-F]+)"', m.group(1)))
-    if not hex_str or len(hex_str) % 2 != 0:
-        raise ValueError(f"invalid KAT_FOLD hex literal in {tc_path}")
-    raw = bytes.fromhex(hex_str)
+    try:
+        tree = ast.parse(text, filename=str(tc_path))
+    except SyntaxError as exc:
+        raise ValueError(f"syntax error in {tc_path}: {exc}") from exc
+    matches = []
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name) and node.targets[0].id == "KAT_FOLD":
+            matches.append(node.value)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == "KAT_FOLD" and node.value is not None:
+            matches.append(node.value)
+    if len(matches) != 1:
+        raise ValueError(f"unable to locate unique KAT_FOLD in {tc_path}")
+    call = matches[0]
+    if (
+        not isinstance(call, ast.Call)
+        or not isinstance(call.func, ast.Attribute)
+        or not isinstance(call.func.value, ast.Name)
+        or call.func.value.id != "bytes"
+        or call.func.attr != "fromhex"
+        or len(call.args) != 1
+        or call.keywords
+        or not isinstance(call.args[0], ast.Constant)
+        or not isinstance(call.args[0].value, str)
+    ):
+        raise ValueError(f"unsupported KAT_FOLD definition in {tc_path}")
+    try:
+        raw = bytes.fromhex(call.args[0].value)
+    except ValueError as exc:
+        raise ValueError(f"invalid KAT_FOLD hex literal in {tc_path}: {exc}") from exc
     if not raw:
         raise ValueError(f"empty KAT_FOLD in {tc_path}")
     return hashlib.sha256(raw).hexdigest()
@@ -266,9 +289,17 @@ def read_results_csv(csv_path: Path, *, require_provenance: bool = False) -> tup
     while idx < len(raw_lines) and raw_lines[idx].lstrip().startswith("#"):
         comment = raw_lines[idx].lstrip()[1:].strip()
         for token in comment.split():
-            if "=" in token:
-                k, v = token.split("=", 1)
-                meta[k.strip()] = v.strip()
+            if "=" not in token:
+                if require_provenance:
+                    raise ValueError(f"malformed provenance header token in {csv_path}: {token!r}")
+                continue
+            k, v = token.split("=", 1)
+            k, v = k.strip(), v.strip()
+            if not k or not v or k in meta:
+                if require_provenance:
+                    raise ValueError(f"duplicate or empty provenance header key in {csv_path}: {token!r}")
+                continue
+            meta[k] = v
         idx += 1
     if require_provenance:
         for req_key, pat in (
@@ -285,7 +316,7 @@ def read_results_csv(csv_path: Path, *, require_provenance: bool = False) -> tup
             ("set_kat_hashes", r"^[0-9a-f]{64}$"),
         ):
             parsed = parse_set_map(meta.get(map_key, ""))
-            if not parsed or any(not re.fullmatch(pat, v) for v in parsed.values()):
+            if set(parsed) != set(ALL_SETS) or any(not re.fullmatch(pat, v) for v in parsed.values()):
                 raise ValueError(f"invalid or missing {map_key} in {csv_path}: {meta.get(map_key, '')!r}")
     body = "".join(raw_lines[idx:])
     if not body.strip():
@@ -304,13 +335,21 @@ def load_existing_rows(csv_path: Path) -> list[dict]:
 
 
 def parse_set_map(raw: str) -> dict[str, str]:
+    raw_s = (raw or "").strip()
+    if not raw_s or raw_s == "none":
+        return {}
     out: dict[str, str] = {}
-    for item in (raw or "").split(","):
+    for item in raw_s.split(","):
         item = item.strip()
-        if ":" in item:
-            k, v = item.split(":", 1)
-            if k.strip() and v.strip():
-                out[k.strip()] = v.strip()
+        if not item or ":" not in item:
+            raise ValueError(f"malformed set provenance map entry in {raw!r}: {item!r}")
+        k, v = item.split(":", 1)
+        k, v = k.strip(), v.strip()
+        if not k or not v:
+            raise ValueError(f"empty key or value in set provenance map {raw!r}: {item!r}")
+        if k in out:
+            raise ValueError(f"duplicate set key {k!r} in set provenance map {raw!r}")
+        out[k] = v
     return out
 
 
@@ -332,12 +371,12 @@ def resolve_set_provenance(
         prior_revs.setdefault(s, existing_meta.get("codec_revision", ""))
         prior_dates.setdefault(s, existing_meta.get("date", ""))
         prior_kats.setdefault(s, existing_meta.get("kat_fold_sha256", ""))
-    prev_ret_rev_map = parse_set_map(existing_meta.get("retained_revision", ""))
-    prev_ret_date_map = parse_set_map(existing_meta.get("retained_date", ""))
-    prev_ret_kat_map = parse_set_map(existing_meta.get("retained_kat_fold_sha256", ""))
     scalar_ret_rev = existing_meta.get("retained_revision", "")
     scalar_ret_date = existing_meta.get("retained_date", "")
     scalar_ret_kat = existing_meta.get("retained_kat_fold_sha256", "")
+    prev_ret_rev_map = parse_set_map(scalar_ret_rev) if ":" in scalar_ret_rev else {}
+    prev_ret_date_map = parse_set_map(scalar_ret_date) if ":" in scalar_ret_date else {}
+    prev_ret_kat_map = parse_set_map(scalar_ret_kat) if ":" in scalar_ret_kat else {}
     for s in prev_retained:
         prior_revs.setdefault(
             s,

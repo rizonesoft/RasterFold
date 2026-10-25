@@ -7,6 +7,7 @@ The manifest defines current documents, historical/planned evidence and generato
 from __future__ import annotations
 
 import argparse
+import ast
 import csv
 from decimal import Decimal, InvalidOperation
 import fnmatch
@@ -166,23 +167,65 @@ def _csv_meta(source):
         if not stripped.startswith('#'):
             break
         for token in stripped[1:].split():
-            if '=' in token:
-                k, v = token.split('=', 1)
-                if k and v:
-                    meta[k] = v
+            if '=' not in token:
+                return {}
+            k, v = token.split('=', 1)
+            k, v = k.strip(), v.strip()
+            if not k or not v or k in meta:
+                return {}
+            meta[k] = v
     return meta
 
 
 def _parse_meta_map(raw):
+    if not (raw or '').strip():
+        return {}
     out = {}
-    for item in (raw or '').split(','):
+    for item in raw.split(','):
         item = item.strip()
-        if ':' not in item:
-            continue
+        if not item or ':' not in item:
+            return {}
         k, v = item.split(':', 1)
-        if k.strip() and v.strip() and k.strip() not in out:
-            out[k.strip()] = v.strip()
+        k, v = k.strip(), v.strip()
+        if not k or not v or k in out:
+            return {}
+        out[k] = v
     return out
+
+
+def _extract_kat_fold_sha256(tc_text, tc_rel='tests/test_correctness.py'):
+    try:
+        tree = ast.parse(tc_text, filename=tc_rel)
+    except SyntaxError as exc:
+        raise ValueError(f'syntax error in {tc_rel}: {exc}') from exc
+    matches = []
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name) and node.targets[0].id == 'KAT_FOLD':
+            matches.append(node.value)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == 'KAT_FOLD' and node.value is not None:
+            matches.append(node.value)
+    if len(matches) != 1:
+        raise ValueError(f'missing or duplicate KAT_FOLD assignment in {tc_rel}')
+    call = matches[0]
+    if (
+        not isinstance(call, ast.Call)
+        or not isinstance(call.func, ast.Attribute)
+        or not isinstance(call.func.value, ast.Name)
+        or call.func.value.id != 'bytes'
+        or call.func.attr != 'fromhex'
+        or len(call.args) != 1
+        or call.keywords
+        or not isinstance(call.args[0], ast.Constant)
+        or not isinstance(call.args[0].value, str)
+    ):
+        raise ValueError(f'unsupported KAT_FOLD definition in {tc_rel}')
+    try:
+        raw = bytes.fromhex(call.args[0].value)
+    except ValueError as exc:
+        raise ValueError(f'invalid KAT_FOLD hex literal in {tc_rel}: {exc}') from exc
+    if not raw:
+        raise ValueError(f'empty KAT_FOLD in {tc_rel}')
+    return digest(raw)
 
 
 def _validate_csv_table(all_rows, key):
@@ -949,12 +992,11 @@ class Checker:
             self.error('stale', tc_rel, 'missing tests/test_correctness.py required to verify KAT_FOLD data freshness')
             return
         tc_text = tc_path.read_text(encoding='utf-8')
-        m = re.search(r'KAT_FOLD\s*=\s*bytes\.fromhex\(\s*((?:"[^"]*"\s*)+)\)', tc_text, re.S)
-        hex_str = ''.join(re.findall(r'"([0-9a-fA-F]+)"', m.group(1))) if m else ''
-        if not hex_str or len(hex_str) % 2 != 0:
+        try:
+            expected_kat = _extract_kat_fold_sha256(tc_text, tc_rel)
+        except ValueError:
             self.error('stale', tc_rel, 'missing or invalid KAT_FOLD hex literal in tests/test_correctness.py')
             return
-        expected_kat = digest(bytes.fromhex(hex_str))
 
         if 'benchmarks/corpus.csv' in self.files and self.path('benchmarks/corpus.csv').is_file():
             meta = _csv_meta(self.read('benchmarks/corpus.csv'))
@@ -985,6 +1027,9 @@ class Checker:
                 not re.fullmatch(r'[0-9a-f]{40}', meta.get('codec_revision', ''))
                 or not re.fullmatch(r'[0-9a-f]{64}', meta.get('kat_fold_sha256', ''))
                 or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', meta.get('date', ''))
+                or set(set_revs) != set(req_sets)
+                or set(set_dates) != set(req_sets)
+                or set(set_kats) != set(req_sets)
                 or any(not re.fullmatch(r'[0-9a-f]{40}', set_revs.get(s, '')) for s in req_sets)
                 or any(not re.fullmatch(r'\d{4}-\d{2}-\d{2}', set_dates.get(s, '')) for s in req_sets)
                 or any(not re.fullmatch(r'[0-9a-f]{64}', set_kats.get(s, '')) for s in req_sets)
@@ -1013,8 +1058,9 @@ class Checker:
             for i in range(0, len(raw) - 1, 3):
                 attributes.setdefault(raw[i], {})[raw[i + 1]] = raw[i + 2]
         for doc, review in reviews.items():
-            if not str(review.get('evidence', '')).strip():
-                self.error('review', doc, 'receipt must record non-empty review evidence')
+            evidence = str(review.get('evidence', '')).strip()
+            if not evidence or not re.search(r'\b\d{4}-\d{2}-\d{2}\b', evidence):
+                self.error('review', doc, 'receipt must record non-empty dated review evidence (YYYY-MM-DD)')
             if doc not in review['sources']:
                 self.error('review', doc, 'receipt must bind the reviewed document itself')
             for source in review['sources']:
@@ -1234,14 +1280,14 @@ def main(argv=None):
             raise ValueError('--write-site-receipt requires --site-dir and cannot repair or renew reviews')
         check.load()
         if args.review:
-            if not args.evidence or not args.evidence.strip() or args.fix:
-                raise ValueError('--review needs --evidence and cannot be combined with --fix')
+            if not args.evidence or not re.search(r'\b\d{4}-\d{2}-\d{2}\b', args.evidence.strip()) or args.fix:
+                raise ValueError('--review needs dated --evidence (YYYY-MM-DD) and cannot be combined with --fix')
             review = check.manifest['reviews'][args.review]
-            check.review_policies({args.review: review})
+            check.review_policies({args.review: {**review, 'evidence': args.evidence.strip()}})
             if check.errors:
                 raise ValueError('review receipt not renewed: ' + '; '.join(e['detail'] for e in check.errors))
             review['sources'] = {p: digest(check.path(p).read_bytes()) for p in review['sources']}
-            review['evidence'] = args.evidence
+            review['evidence'] = args.evidence.strip()
             check.generated(MANIFEST, json.dumps(check.manifest, indent=2) + '\n', before=check.manifest_bytes)
             check.fix()
             check.errors.clear()

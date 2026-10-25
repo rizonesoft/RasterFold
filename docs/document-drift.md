@@ -34,7 +34,7 @@ Repair writes only registered fact output, named generated blocks and the output
 Authored prose, source review receipts, historical measurements and Git history are never automatically rewritten. Unresolved manual errors still produce a failing exit after safe repairs. Correct the source or the supported assertion deliberately. After actually reading a document against its changed sources, renew only that receipt with concrete evidence:
 
 ```bash
-python3 scripts/drift-check.py --review docs/library.md --evidence 'Reviewed ownership and return codes against include/rasterfold.h and src/api.c; named test evidence in the review record'
+python3 scripts/drift-check.py --review docs/library.md --evidence 'Author-attested: 2026-10-25 reviewed ownership and return codes against include/rasterfold.h and src/api.c; named test evidence in the review record'
 ```
 
 The command records your review assertion; it cannot perform or certify that human review for you.

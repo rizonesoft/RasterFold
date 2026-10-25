@@ -105,16 +105,16 @@ class DriftTests(unittest.TestCase):
         self.assertNotIn('claim', self.kinds(self.check()))
 
     def test_same_day_staleness_is_not_auto_accepted(self):
-        self.manifest['reviews'] = {'README.md': {'evidence': 'fixture source review', 'sources': {'src/version.h': drift.digest((self.root / 'src/version.h').read_bytes()), 'README.md': drift.digest((self.root / 'README.md').read_bytes())}}}
+        self.manifest['reviews'] = {'README.md': {'evidence': '2026-10-25 fixture source review', 'sources': {'src/version.h': drift.digest((self.root / 'src/version.h').read_bytes()), 'README.md': drift.digest((self.root / 'README.md').read_bytes())}}}
         self.save()
         self.write('src/version.h', '#define VERSION 3u\n')
         c = self.check(); c.fix()
         self.assertIn('stale', self.kinds(self.check()))
-        self.assertEqual('fixture source review', json.loads((self.root / 'docs/drift.json').read_text(encoding='utf-8'))['reviews']['README.md']['evidence'])
+        self.assertEqual('2026-10-25 fixture source review', json.loads((self.root / 'docs/drift.json').read_text(encoding='utf-8'))['reviews']['README.md']['evidence'])
 
     def test_authored_document_change_invalidates_its_review_receipt(self):
         document = self.root / 'README.md'
-        self.manifest['reviews'] = {'README.md': {'evidence': 'author-attested source review', 'sources': {'README.md': drift.digest(document.read_bytes())}}}
+        self.manifest['reviews'] = {'README.md': {'evidence': '2026-10-25 author-attested source review', 'sources': {'README.md': drift.digest(document.read_bytes())}}}
         self.save()
         self.write('README.md', document.read_text(encoding='utf-8') + 'New unreviewed claim.\n')
         c = self.check(); c.fix()
@@ -123,6 +123,7 @@ class DriftTests(unittest.TestCase):
     def test_explicit_review_requires_evidence(self):
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(2, drift.main(['--root', str(self.root), '--review', 'README.md']))
+            self.assertEqual(2, drift.main(['--root', str(self.root), '--review', 'README.md', '--evidence', 'Undated evidence string']))
 
     def test_new_supported_files_are_checked(self):
         self.write('new/info.txt', '<!-- drift:fact version = 9 -->\n')
@@ -240,7 +241,7 @@ class DriftTests(unittest.TestCase):
     def test_receipts_require_self_binding_and_portable_byte_policy(self):
         self.write('src/exports.def', 'EXPORTS\n')
         sources = {path: drift.digest((self.root / path).read_bytes()) for path in ('README.md', 'src/exports.def')}
-        self.manifest['reviews'] = {'README.md': {'evidence': 'source audit', 'sources': sources}}; self.save()
+        self.manifest['reviews'] = {'README.md': {'evidence': '2026-10-25 source audit', 'sources': sources}}; self.save()
         self.assertIn('eol', self.kinds(self.check()))
         attrs = self.root / '.gitattributes'; self.write('.gitattributes', attrs.read_text(encoding='utf-8') + '*.def text eol=lf\n')
         self.assertEqual([], self.check().errors)
@@ -249,13 +250,13 @@ class DriftTests(unittest.TestCase):
 
     def test_old_crlf_checkout_cannot_poison_a_renewed_receipt(self):
         sources = {path: drift.digest((self.root / path).read_bytes()) for path in ('README.md', 'src/version.h')}
-        self.manifest['reviews'] = {'README.md': {'evidence': 'source audit', 'sources': sources}}; self.save()
+        self.manifest['reviews'] = {'README.md': {'evidence': '2026-10-25 source audit', 'sources': sources}}; self.save()
         self.assertEqual([], self.check().errors)
         header = self.root / 'src/version.h'; header.write_bytes(header.read_bytes().replace(b'\n', b'\r\n'))
         self.assertTrue(any(e['kind'] == 'eol' and 'working bytes contain CRLF' in e['detail'] for e in self.check().errors))
         before = (self.root / 'docs/drift.json').read_bytes()
         with contextlib.redirect_stderr(io.StringIO()):
-            self.assertEqual(2, drift.main(['--root', str(self.root), '--review', 'README.md', '--evidence', 'Attempted renewal']))
+            self.assertEqual(2, drift.main(['--root', str(self.root), '--review', 'README.md', '--evidence', '2026-10-25 Attempted renewal']))
         self.assertEqual(before, (self.root / 'docs/drift.json').read_bytes())
 
     def test_git_partial_commit_uses_temporary_index(self):
@@ -291,14 +292,14 @@ class DriftTests(unittest.TestCase):
 
     def test_review_changes_only_requested_receipt_and_records_evidence(self):
         self.write('other.md', 'Other document.\n')
-        self.manifest['reviews'] = {name: {'evidence': 'old evidence', 'sources': {'src/version.h': '0' * 64, name: drift.digest((self.root / name).read_bytes())}} for name in ('README.md', 'other.md')}
+        self.manifest['reviews'] = {name: {'evidence': '2026-10-20 old evidence', 'sources': {'src/version.h': '0' * 64, name: drift.digest((self.root / name).read_bytes())}} for name in ('README.md', 'other.md')}
         self.save()
         before = self.manifest['reviews']['other.md']
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(1, drift.main(['--root', str(self.root), '--review', 'README.md', '--evidence', 'Source read with named test evidence']))
+            self.assertEqual(1, drift.main(['--root', str(self.root), '--review', 'README.md', '--evidence', '2026-10-25 Source read with named test evidence']))
         after = json.loads((self.root / 'docs/drift.json').read_text(encoding='utf-8'))['reviews']
         self.assertEqual(before, after['other.md'])
-        self.assertEqual('Source read with named test evidence', after['README.md']['evidence'])
+        self.assertEqual('2026-10-25 Source read with named test evidence', after['README.md']['evidence'])
         self.assertEqual(drift.digest((self.root / 'src/version.h').read_bytes()), after['README.md']['sources']['src/version.h'])
 
     def test_missing_indexed_document_is_a_reported_error(self):
@@ -1582,6 +1583,46 @@ class DriftTests(unittest.TestCase):
                 ),
             )
         self.assertEqual([], self.check().errors)
+
+        # 6. Whitespace-containing KAT chunks, duplicate set keys, and undated review evidence are rejected.
+        ws_tc = mutated_tc.replace('efce5b"\n)', 'efce5b"\n    "00 00"\n)', 1)
+        self.assertNotEqual(mutated_tc, ws_tc)
+        self.write('tests/test_correctness.py', ws_tc)
+        c_ws = self.check()
+        self.assertTrue(any(e['kind'] == 'stale' and e['path'] == 'benchmarks/corpus.csv' for e in c_ws.errors))
+        self.assertTrue(any(e['kind'] == 'stale' and e['path'] == 'benchmarks/results.csv' for e in c_ws.errors))
+        self.write('tests/test_correctness.py', mutated_tc)
+
+        dup_results = (self.root / 'benchmarks/results.csv').read_text(encoding='utf-8').replace(
+            f'set_kat_hashes=measure:{new_kat},photos:{new_kat},synthetic:{new_kat}',
+            f'set_kat_hashes=measure:{new_kat},photos:{new_kat},synthetic:{new_kat},photos:{"0" * 64}',
+        )
+        self.write('benchmarks/results.csv', dup_results)
+        c_dup = self.check()
+        self.assertTrue(
+            any(
+                e['kind'] == 'stale'
+                and e['path'] == 'benchmarks/results.csv'
+                and 'missing or malformed provenance header' in e['detail']
+                for e in c_dup.errors
+            )
+        )
+        with self.assertRaisesRegex(ValueError, 'duplicate set key'):
+            bench_mod.read_results_csv(self.root / 'benchmarks/results.csv', require_provenance=True)
+        bench_mod.write_csv_rows(self.root / 'benchmarks/results.csv', rows, meta=full_meta)
+
+        self.manifest = json.loads((self.root / 'docs/drift.json').read_text(encoding='utf-8'))
+        self.manifest['reviews']['CONTRIBUTING.md']['evidence'] = 'Undated review evidence'
+        self.save()
+        c_undated = self.check()
+        self.assertTrue(
+            any(
+                e['kind'] == 'review'
+                and e['path'] == 'CONTRIBUTING.md'
+                and 'dated review evidence' in e['detail']
+                for e in c_undated.errors
+            )
+        )
 
 
 if __name__ == '__main__':

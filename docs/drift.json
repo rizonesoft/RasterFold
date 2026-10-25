@@ -1587,11 +1587,11 @@
       }
     },
     "docs/document-drift.md": {
-      "evidence": "Author-attested: 2026-10-25 re-read docs/document-drift.md against scripts/drift-check.py and scripts/plan-audit.py (D08 T02 section 4)",
+      "evidence": "Author-attested: 2026-10-25 re-read docs/document-drift.md against scripts/drift-check.py and docs/drift.json",
       "sources": {
-        "scripts/drift-check.py": "ea08ccc4f25ff566062e54d0c2e117329eb404e54c4042fd441b982c813b53f7",
+        "scripts/drift-check.py": "2c01000ce26c2206cbfa2ee024d85a01dcb654a1af5f6d215f91a501e5c60780",
         "scripts/plan-audit.py": "a75c0311c54108a195c8fbe9048df11458abfe946563bb7c248e798fcdb98d42",
-        "docs/document-drift.md": "f97725d31272ac2d50364d66e51afda378d9173b8c654839fccc7f2953d782a9"
+        "docs/document-drift.md": "b62a84a167647aeb8f431cc3981982e42c014ace8d602559db0d5e27fe03ab96"
       }
     },
     "docs/README.md": {
@@ -1630,7 +1630,7 @@
       "evidence": "Author-attested: 2026-10-25 re-read research/README.md against research/corpus.py, research/ab.py, research/vsjxl.py, research/prof.py, and research/bench.c (D08 T02 section 4)",
       "sources": {
         "research/corpus.py": "4434e32d8cdb5e70d887f03f7f4cdfbe9ada666ea680c7d6ce176cc9b2858bb7",
-        "research/ab.py": "347c72885a1fe4a07429043e5111917f65628309554d67a6dabbd8673b15c114",
+        "research/ab.py": "1c610cd4922caba9aa4e487506dcc90d77aaad67f6a98e0276b32ec44c96400f",
         "research/vsjxl.py": "cce73db6f3057b4bddefa5b1ec283517f0ac4b2c1224bfd6bb3c6f11fc5f3816",
         "research/prof.py": "7fa28a84aab62f0eb79fd579bcc01b6e2e55cc200bdaa96c0218b2ad4aa05605",
         "research/bench.c": "b7262c8d2c0a43a04802a19e8c0bd2c53e13ada3b6897212fb31633543be0748",
