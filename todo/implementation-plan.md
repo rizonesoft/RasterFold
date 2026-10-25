@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **29 of 227 sections complete (13%).** 227 sections (6 discovered); backlog 1 entry. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **30 of 227 sections complete (13%).** 227 sections (6 discovered); backlog 1 entry. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -155,7 +155,7 @@ The ported plan, hooks, gates, measurement references, HTML docs, and drift gate
 | [x] | `D08 T02 §2` | Figures bound to their data                                   |   3   |
 | [x] | `D08 T02 §4` | Staleness: verified dates and data revisions                  |   4   |
 | [x] | `D08 T02 §5` | Links, and the gates wired everywhere                         |   3   |
-| [ ] | `D08 T02 §6` | Deterministic repair and complete file coverage               |   5   |
+| [x] | `D08 T02 §6` | Deterministic repair and complete file coverage               |   5   |
 | [ ] | `D08 T02 §7` | Commit and built-site provenance                              |   5   |
 | [ ] | `D08 T01 §4` | Complete current documentation map                            |   5   |
 | [ ] | `D08 T01 §5` | Accessible navigation and site states                         |   5   |

@@ -44,7 +44,7 @@ track: D2
 |   3   |   §3    | Generated files match their sources | §1, D08 T01 §1 |  [x]   |
 |   4   |   §4    | Staleness: verified dates and data revisions | §2 |  [x]   |
 |   5   |   §5    | Links, and the gates wired everywhere | §3, §4 |  [x]   |
-| 6 | §6 | Deterministic repair and complete file coverage | §1, §3 | [ ] |
+| 6 | §6 | Deterministic repair and complete file coverage | §1, §3 | [x] |
 | 7 | §7 | Commit and built-site provenance | §5, §6 | [ ] |
 
 ---
@@ -130,6 +130,8 @@ track: D2
 
 **Test checkpoint:** `python3 -m unittest discover -s tests -p test_drift.py -v` passes (`Ran 52 tests in 25.875s, OK`); wrong-fact failure quoted (`fact: README.md: line 6: version must equal 2; review the surrounding sentence`, `rc=1`, still failing after `--fix` with `drift: 4 supported documents; 1 error(s); 0 deterministic repair(s)`); narrow repair diff quoted on both a generated block (`README.md`: `-Version 1.` / `+Version 2.`, authored `Authored intro.` preserved) and a staged generator output (`todo/implementation-plan.md`: `-| Phase 0 | stale |` / `+| Phase 0 | D08 T02 §6 |`); injected publication failure quoted (`INJ_RC= 2 ERR= drift: simulated replace failure TEMPS= [] MODE= 0o640`, original bytes and `0o640` file modes preserved, `.drift-*` temp files cleaned up, followed by clean recovery on retry); and second no-op repair quoted (`FIX2_RC= False drift: 4 supported documents; 0 error(s); 0 deterministic repair(s)`).
 
+> **Verified:** 2026-10-25 | §6 | 93cb9b2ec428b8d14e6ac31bde5ed2c319bca9d9
+> **Review:** `docs/reviews/d08-t02-s6.json`
 ## 7. Commit and built-site provenance
 
 **Job:** A maintainer can audit commit history and prove documentation and the published site correspond to their cited revisions and current inputs.
