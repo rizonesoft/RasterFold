@@ -1603,12 +1603,12 @@
       }
     },
     "docs/index.md": {
-      "evidence": "Author-attested: 2026-10-25 updated docs/index.md for complete documentation map and scope labels (D08 T01 section 4)",
+      "evidence": "2026-10-25: verified docs/index.md after D08 T01 section 5 site-content.json registration",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "51734a555f97e344771e8462284781429f04d5d5f6a8e5550e43e10e9c20e7c3",
         "src/main.c": "acc887478e30cf9aa71537eeb1da219da3638b699c79f5230dc34e98c8bdb6a6",
-        "docs/site-content.json": "f25284c5da98b25597b0bedc0457d86f0f6397d8eefa6911f41565b2cdbc4d99",
+        "docs/site-content.json": "3611e28cba68ff6ac17ace19115ebb014f06140322afcfc32ec39b78128c6f30",
         "docs/index.md": "34e8242f2213cda93e30b9076e3c159d1b2e093b279ac8cb38f05e600ad41723"
       }
     },
@@ -1637,9 +1637,9 @@
       }
     },
     "docs/document-drift.md": {
-      "evidence": "Author-attested: 2026-10-25 re-read docs/document-drift.md against scripts/drift-check.py, docs/drift.json, tools/githooks/pre-commit, tools/githooks/commit-msg, and .github/workflows/plan.yml (D08 T02 section 7)",
+      "evidence": "2026-10-25: verified docs/document-drift.md after D08 T01 section 5 404.html expected_outputs update",
       "sources": {
-        "scripts/drift-check.py": "5b2ab2369453676f3ba06646ad4c858b3306b5ff0c6e516042da4d6211487d8f",
+        "scripts/drift-check.py": "068494982604b888e242a917c7b132efa299954b6399c3fd9aba1e44bfcf5b69",
         "scripts/plan-audit.py": "a75c0311c54108a195c8fbe9048df11458abfe946563bb7c248e798fcdb98d42",
         "docs/document-drift.md": "d7495dc9d7c83acec4a427d8389e3dfdebccd68f8746a07baa1e829f7b95b59c"
       }
@@ -1647,9 +1647,9 @@
     "docs/README.md": {
       "evidence": "2026-10-25: verified docs/README.md after normalized mirror path check in scripts/build-docs.py",
       "sources": {
-        "docs/_config.yml": "9dd235a6744158160db4c0502a820303f0551db44dd2a197412f46fc4f800ff0",
-        "docs/site-content.json": "f25284c5da98b25597b0bedc0457d86f0f6397d8eefa6911f41565b2cdbc4d99",
-        "scripts/build-docs.py": "9e2ff9524ad79fda1a45c018a5c3149aa50be2b73e5378f06ce4602aefd180b6",
+        "docs/_config.yml": "8f46bcaed4f04d75e09c36bb28f1d02f47d8ec342e8efa2bdc5ebdda481f0003",
+        "docs/site-content.json": "3611e28cba68ff6ac17ace19115ebb014f06140322afcfc32ec39b78128c6f30",
+        "scripts/build-docs.py": "0bc41b9ae15cc8e41ce7f9e4fdb21b147c02566d16f0ce5088a199c482ac1c2d",
         "docs/README.md": "84881a5ecab24b8185b7d532bd2653b371ba21b42010df598ec765baeaff016e"
       }
     },
@@ -1746,6 +1746,27 @@
         "tools/provision.ps1": "836043df1f959726d5fa2b73d206fa896c9d3aacd12bf7e21b8193a4bb14ad96",
         "docs/licenses.md": "9ca8c09bff8b9fe4a2b645bcaf2551fc905b2b522148b184301d0a8ecb4cd258"
       }
+    },
+    "docs/404.md": {
+      "evidence": "Author-attested: 2026-10-25 authored docs/404.md missing-page recovery template (D08 T01 section 5)",
+      "sources": {
+        "docs/site-content.json": "3611e28cba68ff6ac17ace19115ebb014f06140322afcfc32ec39b78128c6f30",
+        "docs/_config.yml": "8f46bcaed4f04d75e09c36bb28f1d02f47d8ec342e8efa2bdc5ebdda481f0003",
+        "docs/404.md": "eb1236932eb9ec7cf176d512088f398ebfaa9a4f1d4c1c141621ac3dc5dfc7f9"
+      }
+    },
+    "docs/site-validation.md": {
+      "evidence": "Author-attested: 2026-10-25 recorded desktop/mobile browser and accessibility tree validation in docs/site-validation.md (D08 T01 section 5)",
+      "sources": {
+        "docs/_config.yml": "8f46bcaed4f04d75e09c36bb28f1d02f47d8ec342e8efa2bdc5ebdda481f0003",
+        "docs/_includes/head_custom.html": "44e2df7c5ae2733f3a4a4f411d8259ca99b13a37ce071696db5dd1322eb99c89",
+        "docs/_includes/header_custom.html": "b985261215544f807451a279b6409a960f1ba9b69a3bb4ddb7868b2efc8b67a8",
+        "docs/assets/css/site-states.css": "a5b9a1dd538e73cd748b675ec990dec52669f62d7ab414848f88dd9260e9c01e",
+        "docs/assets/js/site-states.js": "0554852bab9468df7ba6454fd917f91058c5ef414518f1c8e48268b0a80fe256",
+        "docs/404.md": "eb1236932eb9ec7cf176d512088f398ebfaa9a4f1d4c1c141621ac3dc5dfc7f9",
+        "docs/site-content.json": "3611e28cba68ff6ac17ace19115ebb014f06140322afcfc32ec39b78128c6f30",
+        "docs/site-validation.md": "8e13b203e6c1ebc0725fb08de0ccc21c09aed30dc812d282a5afdebc355e0bf6"
+      }
     }
   },
   "historical_links": {
@@ -1840,6 +1861,7 @@
     "docs/site-content.json",
     "docs/Gemfile",
     "docs/_*",
+    "docs/assets/*",
     "spec/*",
     "include/*",
     "src/rf.h",

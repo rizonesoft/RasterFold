@@ -6,6 +6,15 @@ remote_theme: just-the-docs/just-the-docs
 plugins:
   - jekyll-remote-theme
 search_enabled: true
+enable_copy_code_button: true
+search:
+  heading_level: 2
+  previews: 3
+  preview_words_before: 5
+  preview_words_after: 10
+  tokenizer_separator: /[\s\-/]+/
+  rel_url: true
+  button: true
 logo: "/assets/brand/icon.svg"
 favicon_ico: "/assets/brand/icon.svg"
 gh_edit_link: true

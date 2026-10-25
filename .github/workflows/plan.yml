@@ -124,6 +124,20 @@ jobs:
               page_html = page_path.read_text(encoding="utf-8")
               expected_edit = f"href=\"https://github.com/rizonesoft/RasterFold/tree/main/{src_rel}\" id=\"edit-this-page\""
               assert expected_edit in page_html, f"{slug}: missing expected edit link {expected_edit}"
+              for control_id in ("rf-theme-controls", "rf-density-controls", "rf-a11y-status", "rf-search-offline"):
+                  assert f"id=\"{control_id}\"" in page_html, f"{slug}: missing state control {control_id}"
+          p404 = site / "404.html"
+          assert p404.is_file(), "missing built 404.html"
+          assert "href=\"https://github.com/rizonesoft/RasterFold/tree/main/docs/404.md\" id=\"edit-this-page\"" in p404.read_text(encoding="utf-8")
+          for asset_rel in ("assets/css/site-states.css", "assets/js/site-states.js", "assets/js/search-data.json"):
+              assert (site / asset_rel).is_file(), f"missing built site asset: {asset_rel}"
+          search_data = __import__("json").loads((site / "assets/js/search-data.json").read_text(encoding="utf-8"))
+          assert len(search_data) > 0, "search-data.json is empty"
+          for entry in search_data.values():
+              u = entry.get("url", "")
+              assert "404.html" not in u, f"404.html leaked into search index: {u}"
+              for prefix in site_content.get("forbidden_prefixes", []):
+                  assert prefix not in u, f"forbidden prefix {prefix} in search index: {u}"
           bench_html = (site / "benchmarks.html").read_text(encoding="utf-8")
           for chart_name in ("corpus-size-ratio", "benchmark-size-ratio", "encode-time", "decode-time", "peak-memory", "scatter-e9", "size-vs-decode"):
               assert f"data-chart=\"{chart_name}\"" in bench_html, f"benchmarks.html: missing rendered SVG chart {chart_name}"

@@ -1616,11 +1616,14 @@ class Checker:
             raise ValueError('unsupported docs/site-content.json schema')
         patterns = self.manifest.get('site_sources', [])
         required_sources = [sc_rel]
+        expected_outputs = []
         for entry in site_cfg.get('config', []):
             if not isinstance(entry, dict) or not isinstance(entry.get('source'), str) or not entry['source']:
                 raise ValueError('invalid config entry in docs/site-content.json')
             required_sources.append(entry['source'])
-        expected_outputs = []
+            staged_cfg = entry.get('staged')
+            if isinstance(staged_cfg, str) and not staged_cfg.startswith('_') and staged_cfg.endswith('.md'):
+                expected_outputs.append(staged_cfg[:-3] + '.html')
         for page in site_cfg.get('pages', []):
             if not isinstance(page, dict) or not isinstance(page.get('source'), str) or not page['source'] or not isinstance(page.get('staged'), str) or not page['staged']:
                 raise ValueError('invalid page entry in docs/site-content.json')

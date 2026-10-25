@@ -29,6 +29,12 @@ FIXTURE_FILES = (
     'docs/facts.json',
     'docs/_config.yml',
     'docs/_includes/components/footer.html',
+    'docs/_includes/head_custom.html',
+    'docs/_includes/header_custom.html',
+    'docs/404.md',
+    'docs/site-validation.md',
+    'docs/assets/css/site-states.css',
+    'docs/assets/js/site-states.js',
     'docs/Gemfile',
     'docs/index.md',
     'docs/getting-started.md',
@@ -103,13 +109,33 @@ def _render_staged_markdown_to_html(staged_dir: Path, artifact_dir: Path, site_c
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(src, dst)
 
-    for page in pages:
+    render_entries = list(pages)
+    for cfg in site_content.get('config', []):
+        staged_cfg = cfg.get('staged', '')
+        if isinstance(staged_cfg, str) and not staged_cfg.startswith('_') and staged_cfg.endswith('.md'):
+            render_entries.append({'staged': staged_cfg, 'source': cfg['source'], 'title': 'Page not found'})
+
+    search_data = {}
+    search_idx = 0
+    for page in render_entries:
         staged_rel = page['staged']
         out_rel = re.sub(r'\.md$', '.html', staged_rel)
         md_text = (staged_dir / staged_rel).read_text(encoding='utf-8')
+        front_matter = md_text.split('---\n', 2)[1] if md_text.startswith('---\n') and md_text.count('---\n') >= 2 else ''
         body = md_text.split('---\n', 2)[2] if md_text.startswith('---\n') and md_text.count('---\n') >= 2 else md_text
 
-        # Expand generated SVG and table includes sobenchmarks.html carries its charts and tables.
+        if 'search_exclude: true' not in front_matter:
+            rel_url = '/' if out_rel == 'index.html' else f'/{out_rel}'
+            search_data[str(search_idx)] = {
+                'doc': page['title'],
+                'title': page['title'],
+                'content': body[:200],
+                'url': f'{base_path}{rel_url}',
+                'relUrl': rel_url,
+            }
+            search_idx += 1
+
+        # Expand generated SVG and table includes so benchmarks.html carries its charts and tables.
         def _expand_include(match: re.Match[str]) -> str:
             inc_rel = match.group(1).strip()
             inc_path = staged_dir / '_includes' / inc_rel
@@ -153,16 +179,41 @@ def _render_staged_markdown_to_html(staged_dir: Path, artifact_dir: Path, site_c
 
         edit_href = f'https://github.com/{repo_slug}/tree/main/{page["source"]}'
         footer_html = f'<footer><a href="{html.escape(edit_href, quote=True)}" id="edit-this-page">Edit this page on GitHub</a></footer>'
+        header_controls_html = (
+            '<div class="rf-header-controls" role="region" aria-label="Display preferences and version status">'
+            '<div id="rf-theme-controls" role="group" aria-label="Color theme">'
+            '<button type="button" class="rf-theme-btn" data-rf-theme-choice="light" aria-pressed="true">Light</button>'
+            '<button type="button" class="rf-theme-btn" data-rf-theme-choice="dark" aria-pressed="false">Dark</button>'
+            '<button type="button" class="rf-theme-btn" data-rf-theme-choice="hc-light" aria-pressed="false">HC Light</button>'
+            '<button type="button" class="rf-theme-btn" data-rf-theme-choice="hc-dark" aria-pressed="false">HC Dark</button>'
+            '</div>'
+            '<div id="rf-density-controls" role="group" aria-label="Layout density">'
+            '<button type="button" class="rf-density-btn" data-rf-density-choice="comfortable" aria-pressed="true">Comfortable</button>'
+            '<button type="button" class="rf-density-btn" data-rf-density-choice="compact" aria-pressed="false">Compact</button>'
+            '</div>'
+            '<div id="rf-a11y-status" role="status" aria-live="polite"></div>'
+            '</div>'
+            f'<div id="rf-search-offline" role="alert" hidden><button type="button" id="rf-search-retry">Retry</button>'
+            f'<a href="{base_path}/">Overview</a></div>'
+        )
         doc_html = (
             '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">'
-            f'<title>{html.escape(page["title"])}</title></head><body>\n'
-            f'{nav_html}\n<main id="main-content">\n'
+            f'<title>{html.escape(page["title"])}</title>'
+            f'<link rel="stylesheet" href="{base_path}/assets/css/site-states.css" id="rf-site-states-css">'
+            f'<script src="{base_path}/assets/js/site-states.js" defer id="rf-site-states-js"></script>'
+            '</head><body>\n'
+            '<a class="skip-to-main" href="#main-content">Skip to main content</a>\n'
+            f'{nav_html}\n{header_controls_html}\n<main id="main-content">\n'
             + '\n'.join(rendered_lines)
             + f'\n</main>\n{footer_html}\n</body></html>\n'
         )
         out_path = artifact_dir / out_rel
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(doc_html, encoding='utf-8', newline='\n')
+
+    search_json_path = artifact_dir / 'assets/js/search-data.json'
+    search_json_path.parent.mkdir(parents=True, exist_ok=True)
+    search_json_path.write_text(json.dumps(search_data, indent=2) + '\n', encoding='utf-8', newline='\n')
 
 
 class DocsMapTests(unittest.TestCase):
@@ -474,6 +525,110 @@ class DocsMapTests(unittest.TestCase):
             leaked_agents.unlink()
             with contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(0, drift.main(['--root', str(REPO), '--site-dir', rel_artifact]))
+
+    def test_accessible_navigation_site_states_base_path_and_anchors(self) -> None:
+        site_content = build_docs.load_site_content(self.root)
+        config_sources = {e['source']: e['staged'] for e in site_content['config']}
+        asset_sources = {e['source']: e['staged'] for e in site_content['assets']}
+
+        self.assertEqual('_includes/head_custom.html', config_sources.get('docs/_includes/head_custom.html'))
+        self.assertEqual('_includes/header_custom.html', config_sources.get('docs/_includes/header_custom.html'))
+        self.assertEqual('404.md', config_sources.get('docs/404.md'))
+        self.assertEqual('assets/css/site-states.css', asset_sources.get('docs/assets/css/site-states.css'))
+        self.assertEqual('assets/js/site-states.js', asset_sources.get('docs/assets/js/site-states.js'))
+
+        css_text = (self.root / 'docs/assets/css/site-states.css').read_text(encoding='utf-8')
+        for theme in ('light', 'dark', 'hc-light', 'hc-dark'):
+            self.assertIn(f'html[data-rf-theme="{theme}"]', css_text)
+        for density in ('comfortable', 'compact'):
+            self.assertIn(f'html[data-rf-density="{density}"]', css_text)
+        self.assertIn(':focus-visible', css_text)
+        self.assertIn('.rf-page-outline', css_text)
+        self.assertIn('.rf-copy-button', css_text)
+        self.assertIn('.search-no-result', css_text)
+        self.assertIn('.rf-search-offline', css_text)
+
+        staged = build_docs.stage_site(self.root, 'build/site-source')
+        for expected in (
+            '404.md',
+            '_includes/head_custom.html',
+            '_includes/header_custom.html',
+            'assets/css/site-states.css',
+            'assets/js/site-states.js',
+        ):
+            self.assertIn(expected, staged)
+
+        staged_404 = (self.root / 'build/site-source/404.md').read_text(encoding='utf-8')
+        self.assertIn('permalink: /404.html', staged_404)
+        self.assertIn('nav_exclude: true', staged_404)
+        self.assertIn('search_exclude: true', staged_404)
+        self.assertIn('(/RasterFold/index.html)', staged_404)
+        self.assertIn('(/RasterFold/troubleshooting.html)', staged_404)
+
+        artifact_dir = self.root / 'build/site-artifact'
+        _render_staged_markdown_to_html(self.root / 'build/site-source', artifact_dir, site_content)
+        self.assertTrue((artifact_dir / '404.html').is_file())
+        self.assertTrue((artifact_dir / 'assets/css/site-states.css').is_file())
+        self.assertTrue((artifact_dir / 'assets/js/site-states.js').is_file())
+
+        search_data = json.loads((artifact_dir / 'assets/js/search-data.json').read_text(encoding='utf-8'))
+        indexed_urls = {entry['url'].split('#')[0] for entry in search_data.values()}
+        self.assertEqual(14, len(indexed_urls))
+        self.assertNotIn('/RasterFold/404.html', indexed_urls)
+        for url in indexed_urls:
+            self.assertTrue(url.startswith('/RasterFold/'), url)
+
+        # Base-path, asset, 404.html, and fragment checks via drift-check.py --site-dir
+        (REPO / 'build').mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix='test-docs-states-', dir=REPO / 'build') as tmp_build:
+            tmp_build_path = Path(tmp_build)
+            rel_stage = (tmp_build_path / 'site-source').relative_to(REPO).as_posix()
+            rel_artifact = (tmp_build_path / 'site-artifact').relative_to(REPO).as_posix()
+            repo_artifact = REPO / rel_artifact
+
+            build_docs.stage_site(REPO, rel_stage)
+            _render_staged_markdown_to_html(REPO / rel_stage, repo_artifact, site_content)
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(0, drift.main(['--root', str(REPO), '--site-dir', rel_artifact, '--write-site-receipt']))
+                self.assertEqual(0, drift.main(['--root', str(REPO), '--site-dir', rel_artifact]))
+
+            # Missing 404.html or missing site-states.css fails expected_outputs
+            not_found_path = repo_artifact / '404.html'
+            saved_404 = not_found_path.read_bytes()
+            not_found_path.unlink()
+            buf_404 = io.StringIO()
+            with contextlib.redirect_stdout(buf_404):
+                self.assertEqual(1, drift.main(['--root', str(REPO), '--site-dir', rel_artifact]))
+            self.assertIn(f'site: {rel_artifact}: missing allowlisted built output: 404.html', buf_404.getvalue())
+            not_found_path.write_bytes(saved_404)
+
+            # Root-relative asset link outside /RasterFold/ or broken fragment fails drift-check.py --site-dir
+            index_path = repo_artifact / 'index.html'
+            saved_index = index_path.read_text(encoding='utf-8')
+            index_path.write_text(
+                saved_index.replace(
+                    '/RasterFold/assets/css/site-states.css',
+                    '/assets/css/site-states.css',
+                ).replace(
+                    '</main>',
+                    '<a href="/RasterFold/format.html#nonexistent-section-anchor">Bad anchor</a></main>',
+                ),
+                encoding='utf-8',
+                newline='\n',
+            )
+            c_site = drift.Checker(REPO)
+            c_site.manifest = json.loads((REPO / 'docs/drift.json').read_text(encoding='utf-8'))
+            c_site.files = set(c_site.git('ls-files', '-z').decode('utf-8').rstrip('\0').split('\0'))
+            (repo_artifact / 'drift-build.json').write_text(
+                json.dumps(c_site.site_receipt(rel_artifact)),
+                encoding='utf-8',
+                newline='\n',
+            )
+            buf_bad = io.StringIO()
+            with contextlib.redirect_stdout(buf_bad):
+                self.assertEqual(1, drift.main(['--root', str(REPO), '--site-dir', rel_artifact]))
+            self.assertIn('site-link: index.html: URL outside Pages base path: /assets/css/site-states.css', buf_bad.getvalue())
+            self.assertIn('anchor: index.html: missing heading or id: /RasterFold/format.html#nonexistent-section-anchor', buf_bad.getvalue())
 
 
 if __name__ == '__main__':

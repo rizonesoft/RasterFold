@@ -1890,6 +1890,10 @@ def stage_site(root: Path, stage_arg: str | Path) -> list[str]:
         html_rel = re.sub(r'\.md$', '.html', staged_rel)
         doc_to_staged_html[doc_rel] = html_rel
         doc_to_staged_html[page['source']] = html_rel
+    for entry in site_content['config']:
+        staged_rel = entry['staged']
+        if not staged_rel.startswith('_') and staged_rel.endswith('.md'):
+            doc_to_staged_html[entry['source']] = re.sub(r'\.md$', '.html', staged_rel)
 
     asset_to_staged_url: dict[str, str] = {}
     for asset in site_content['assets']:
@@ -1905,7 +1909,19 @@ def stage_site(root: Path, stage_arg: str | Path) -> list[str]:
             staged_rel = entry['staged']
             out_path = tmp_dir / staged_rel
             out_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(src, out_path, follow_symlinks=False)
+            if not staged_rel.startswith('_') and staged_rel.endswith('.md'):
+                raw_text = src.read_text(encoding='utf-8')
+                staged_text = rebase_staged_links(
+                    raw_text,
+                    entry['source'],
+                    root,
+                    site_content,
+                    doc_to_staged_html,
+                    asset_to_staged_url,
+                )
+                out_path.write_text(staged_text, encoding='utf-8', newline='\n')
+            else:
+                shutil.copyfile(src, out_path, follow_symlinks=False)
             expected_staged.add(staged_rel)
 
         for page in site_content['pages']:

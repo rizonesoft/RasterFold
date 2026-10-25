@@ -1,0 +1,19 @@
+<div class="rf-header-controls" role="region" aria-label="Display preferences and version status">
+  <span class="rf-version-pill" title="Current format and C API versions">Format v2 · C API 1.0</span>
+  <div id="rf-theme-controls" class="rf-control-group" role="group" aria-label="Color theme">
+    <button type="button" class="rf-theme-btn" data-rf-theme-choice="light" aria-pressed="true">Light</button>
+    <button type="button" class="rf-theme-btn" data-rf-theme-choice="dark" aria-pressed="false">Dark</button>
+    <button type="button" class="rf-theme-btn" data-rf-theme-choice="hc-light" aria-pressed="false">HC Light</button>
+    <button type="button" class="rf-theme-btn" data-rf-theme-choice="hc-dark" aria-pressed="false">HC Dark</button>
+  </div>
+  <div id="rf-density-controls" class="rf-control-group" role="group" aria-label="Layout density">
+    <button type="button" class="rf-density-btn" data-rf-density-choice="comfortable" aria-pressed="true">Comfortable</button>
+    <button type="button" class="rf-density-btn" data-rf-density-choice="compact" aria-pressed="false">Compact</button>
+  </div>
+  <div id="rf-a11y-status" class="rf-sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+</div>
+<div id="rf-search-offline" class="rf-search-offline" role="alert" hidden>
+  <span>Search index is unavailable offline.</span>
+  <button type="button" id="rf-search-retry" class="rf-inline-btn">Retry search index</button>
+  <span>or browse <a href="{{ '/' | relative_url }}">Overview</a>, <a href="{{ '/usage.html' | relative_url }}">CLI Usage</a>, <a href="{{ '/c-api.html' | relative_url }}">C API Guide</a>, and <a href="{{ '/troubleshooting.html' | relative_url }}">Troubleshooting</a>.</span>
+</div>

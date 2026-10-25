@@ -28,6 +28,18 @@
       "staged": "_includes/components/footer.html"
     },
     {
+      "source": "docs/_includes/head_custom.html",
+      "staged": "_includes/head_custom.html"
+    },
+    {
+      "source": "docs/_includes/header_custom.html",
+      "staged": "_includes/header_custom.html"
+    },
+    {
+      "source": "docs/404.md",
+      "staged": "404.md"
+    },
+    {
       "source": "docs/_includes/generated/charts/corpus-size-ratio.svg",
       "staged": "_includes/generated/charts/corpus-size-ratio.svg"
     },
@@ -213,6 +225,14 @@
     {
       "source": "assets/brand/cover.svg",
       "staged": "assets/brand/cover.svg"
+    },
+    {
+      "source": "docs/assets/css/site-states.css",
+      "staged": "assets/css/site-states.css"
+    },
+    {
+      "source": "docs/assets/js/site-states.js",
+      "staged": "assets/js/site-states.js"
     }
   ],
   "forbidden_prefixes": [

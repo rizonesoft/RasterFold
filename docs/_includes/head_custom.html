@@ -1,0 +1,45 @@
+<script id="rf-early-state-init">
+(function () {
+  var allowedThemes = { "light": true, "dark": true, "hc-light": true, "hc-dark": true };
+  var allowedDensities = { "comfortable": true, "compact": true };
+  var theme = "light";
+  var density = "comfortable";
+  try {
+    var savedTheme = window.localStorage.getItem("rf_docs_theme");
+    if (savedTheme && allowedThemes[savedTheme]) {
+      theme = savedTheme;
+    }
+    var savedDensity = window.localStorage.getItem("rf_docs_density");
+    if (savedDensity && allowedDensities[savedDensity]) {
+      density = savedDensity;
+    }
+  } catch (e) {
+    /* Storage unavailable: fall back to session attributes on documentElement */
+  }
+  document.documentElement.setAttribute("data-rf-theme", theme);
+  document.documentElement.setAttribute("data-rf-density", density);
+
+  var origScrollIntoView = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = function () {
+    if (this && this.classList && this.classList.contains("nav-list-link")) {
+      var nav = document.getElementById("site-nav");
+      if (nav && typeof this.offsetTop === "number") {
+        nav.scrollTop = Math.max(0, this.offsetTop - Math.floor(nav.clientHeight / 2));
+      }
+      return;
+    }
+    return origScrollIntoView.apply(this, arguments);
+  };
+
+  var origRemoveAttribute = Element.prototype.removeAttribute;
+  Element.prototype.removeAttribute = function (name) {
+    if (name === "href" && this && this.classList && this.classList.contains("nav-list-link")) {
+      this.setAttribute("aria-current", "page");
+      return;
+    }
+    return origRemoveAttribute.apply(this, arguments);
+  };
+})();
+</script>
+<link rel="stylesheet" href="{{ '/assets/css/site-states.css' | relative_url }}" id="rf-site-states-css">
+<script src="{{ '/assets/js/site-states.js' | relative_url }}" defer id="rf-site-states-js"></script>
