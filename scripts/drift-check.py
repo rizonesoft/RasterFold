@@ -331,92 +331,82 @@ VOID_TAGS = {
     'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input',
     'link', 'meta', 'param', 'source', 'track', 'wbr',
 }
-RAW_TEXT_TAGS = {'script', 'style'}
-HTML_TOKEN_RE = re.compile(
-    r'<!--.*?-->|<([/?!]?[A-Za-z][A-Za-z0-9:-]*)\b((?:[^>"\']|"[^"]*"|\'[^\']*\')*)>',
-    re.S,
-)
-ATTR_RE = re.compile(
-    r'([A-Za-z_:][A-Za-z0-9_.:-]*)(?:\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s"\'=<>`]+)))?'
-)
 HIDDEN_STYLE_RE = re.compile(
-    r'(?:display\s*:\s*none|visibility\s*:\s*(?:hidden|collapse)|opacity\s*:\s*0(?![.0-9])|font-size\s*:\s*0(?![.0-9]))',
+    r'(?:display\s*:\s*none|visibility\s*:\s*(?:hidden|collapse)|(?:opacity|font-size)\s*:\s*[+-]?(?:0+(?:\.0*)?|\.0+)(?:[a-z%]*)?(?![.0-9]))',
     re.I,
 )
 
 
-def _tag_is_hidden(tag_lower, attr_text):
+def _decode_css_text(val):
+    no_comments = re.sub(r'/\*.*?\*/', '', val, flags=re.S)
+    return re.sub(
+        r'\\([0-9a-fA-F]{1,6})\s?|\\(.)',
+        lambda m: chr(int(m.group(1), 16)) if m.group(1) else m.group(2),
+        no_comments,
+    )
+
+
+def _tag_is_hidden(tag_lower, attrs):
     if tag_lower in NON_RENDERED_TAGS:
         return True
-    for m in ATTR_RE.finditer(attr_text):
-        name = m.group(1).lower()
-        val = (m.group(2) if m.group(2) is not None else (m.group(3) if m.group(3) is not None else (m.group(4) or ''))).strip()
+    for k, v in attrs:
+        name = (k or '').lower()
+        val = unescape(v or '').strip()
         if name == 'hidden':
             return True
         if name == 'aria-hidden' and val.lower() == 'true':
             return True
-        if name == 'style' and HIDDEN_STYLE_RE.search(val):
+        if name == 'style' and HIDDEN_STYLE_RE.search(_decode_css_text(val)):
             return True
     return False
 
 
-def _consume_visible_html(segment, state):
-    if isinstance(state, list):
-        state = {'stack': state, 'pending': ''}
-    stack = state['stack']
-    masked = re.sub(r'`+<!--.*?-->`+', ' ', segment)
-    masked = re.sub(
-        r'(`+)([^`]*?)\1',
-        lambda m: m.group(1) + m.group(2).replace('<', '\x00LT\x00').replace('>', '\x00GT\x00') + m.group(1),
-        masked,
-    )
-    buf = state['pending'] + masked
-    state['pending'] = ''
-    out = []
-    pos = 0
-    for m in HTML_TOKEN_RE.finditer(buf):
-        if not any(h for _, h in stack):
-            out.append(buf[pos:m.start()])
-        pos = m.end()
-        raw_tag = m.group(1)
-        if not raw_tag or raw_tag.startswith(('!', '?')):
-            continue
-        attr_text = m.group(2) or ''
-        raw_top = stack[-1][0] if stack and stack[-1][0] in RAW_TEXT_TAGS else None
-        if raw_tag.startswith('/'):
-            t = raw_tag[1:].lower()
-            if raw_top is not None and t != raw_top:
-                continue
-            for idx in range(len(stack) - 1, -1, -1):
-                if stack[idx][0] == t:
-                    del stack[idx:]
-                    break
-        else:
-            if raw_top is not None:
-                continue
-            t = raw_tag.lower()
-            if ':' in t:
-                continue
-            if t not in VOID_TAGS:
-                hidden = any(h for _, h in stack) or _tag_is_hidden(t, attr_text)
-                stack.append((t, hidden))
-    tail = buf[pos:]
-    m_open = re.search(r'<(?:!--|[/?!]?[A-Za-z])', tail, re.S)
-    if m_open:
-        if not any(h for _, h in stack):
-            out.append(tail[:m_open.start()])
-        state['pending'] = tail[m_open.start():]
-    elif not any(h for _, h in stack):
-        out.append(tail)
-    return ''.join(out).replace('\x00LT\x00', '<').replace('\x00GT\x00', '>')
+class _VisibleHTMLState(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.stack = []
+        self.chunks = []
+
+    def is_hidden(self):
+        return bool(self.rawdata) or any(h for _, h in self.stack)
+
+    def handle_starttag(self, tag, attrs):
+        t = tag.lower()
+        if ':' in t or t in VOID_TAGS:
+            return
+        hidden = any(h for _, h in self.stack) or _tag_is_hidden(t, attrs)
+        self.stack.append((t, hidden))
+
+    def handle_startendtag(self, tag, attrs):
+        self.handle_starttag(tag, attrs)
+
+    def handle_endtag(self, tag):
+        t = tag.lower()
+        for idx in range(len(self.stack) - 1, -1, -1):
+            if self.stack[idx][0] == t:
+                del self.stack[idx:]
+                break
+
+    def handle_data(self, data):
+        if not any(h for _, h in self.stack):
+            self.chunks.append(data)
+
+    def consume(self, segment):
+        masked = re.sub(r'`+<!--.*?-->`+', ' ', segment)
+        masked = re.sub(
+            r'(`+)([^`]*?)\1',
+            lambda m: m.group(1) + m.group(2).replace('<', '\x00LT\x00').replace('>', '\x00GT\x00') + m.group(1),
+            masked,
+        )
+        self.chunks.clear()
+        self.feed(masked)
+        return ''.join(self.chunks).replace('\x00LT\x00', '<').replace('\x00GT\x00', '>')
 
 
 def _check_visible_fact(segment, expected_str, html_state=None):
-    state = {'stack': [], 'pending': ''} if html_state is None else (
-        {'stack': html_state, 'pending': ''} if isinstance(html_state, list) else html_state
-    )
-    cleaned = _consume_visible_html(segment, state)
-    if state['pending'] or any(h for _, h in state['stack']):
+    state = _VisibleHTMLState() if html_state is None else html_state
+    cleaned = state.consume(segment)
+    if state.is_hidden():
         return False
     cleaned = re.sub(r'(?m)^\s*\[[^\]\n]+\]:.*$', ' ', cleaned)
     cleaned = _strip_markdown_links(cleaned)
@@ -693,11 +683,22 @@ class Checker:
                     ET.fromstring(text)
             except (ValueError, ET.ParseError) as exc:
                 self.error('syntax', rel, str(exc))
-            prose_lines = (prose(text) if suffix in ('.md', '.markdown') else text).splitlines()
-            scan = code_spans(prose(text)) if suffix in ('.md', '.markdown') else text
+            prose_text = prose(text) if suffix in ('.md', '.markdown') else text
+            masked_prose = (
+                re.sub(
+                    r'(`+)(.+?)\1',
+                    lambda m: m.group(1) + m.group(2).replace('<', '\x00LT\x00').replace('>', '\x00GT\x00') + m.group(1),
+                    prose_text,
+                    flags=re.S,
+                )
+                if suffix in ('.md', '.markdown')
+                else prose_text
+            )
+            prose_lines = masked_prose.splitlines()
+            scan = code_spans(prose_text) if suffix in ('.md', '.markdown') else text
             if role == 'template' or rel == MANIFEST:
                 continue
-            html_state = {'stack': [], 'pending': ''}
+            html_state = _VisibleHTMLState()
             for line_no, line in enumerate(scan.splitlines(), 1):
                 raw_line = prose_lines[line_no - 1] if line_no - 1 < len(prose_lines) else line
                 for match in claims.CLAIM_RE.finditer(line):
@@ -717,11 +718,12 @@ class Checker:
                     segment = raw_line[prev_fact_end:match.start()]
                     prev_fact_end = match.end()
                     if match[1] not in self.facts or str(value) != match[2]:
-                        _consume_visible_html(segment, html_state)
+                        html_state.consume(segment)
                         self.error('fact', rel, f'line {line_no}: {match[1]} must equal {value!r}; review the surrounding sentence')
                     elif not _check_visible_fact(segment, str(value), html_state):
                         self.error('fact', rel, f'line {line_no}: visible figure before {match[1]} does not match {value!r}; review the surrounding sentence')
-                _consume_visible_html(raw_line[prev_fact_end:] + '\n', html_state)
+                    html_state.consume(raw_line[match.start():match.end()])
+                html_state.consume(raw_line[prev_fact_end:] + '\n')
                 for match in COMMIT.finditer(line):
                     try:
                         ref = match[1] + (':' + match[2] if match[2] else '^{commit}')
