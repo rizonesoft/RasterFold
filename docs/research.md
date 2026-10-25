@@ -553,12 +553,14 @@ third of each decision's time, which bounds the gain. It is a format change.
 
 **Owner:** `D04 T01 §1`.
 
-A 32768x1024 header with a 20-byte CM payload makes the decoder run all 100
-million samples before it rejects the file. Once a channel's read pointer
-reaches `end + 2`, the file will be rejected anyway. After each row,
-`run_channel` and `run_pipelined` can check `ch->dec.in >= ch->dec.lim`, set a
-shared abort flag and the channel's `bad`, and publish `done = h`, so no channel
-waits forever on another's progress counter.
+A 32768x1024 header with a minimal 27-byte CM payload (12 framing bytes plus
+three 5-byte streams; a 20-byte payload is rejected before `run()` by `sum != n`)
+makes the decoder run all 100 million samples before it rejects the file. Once a
+channel's read pointer reaches `end + 2`, the file will be rejected anyway.
+After each row, `run_channel` and `run_pipelined` can check
+`ch->dec.in >= ch->dec.lim`, set a shared abort flag and the channel's `bad`,
+and publish `done = h`, so no channel waits forever on another's progress
+counter.
 
 ### 5.6 AVX2 path with runtime dispatch
 
