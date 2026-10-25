@@ -1880,15 +1880,17 @@ class DriftTests(unittest.TestCase):
 
         # Set up a generator in the fixture manifest so both direct and generator repairs (including cache_outputs) are exercised.
         orig_gen = (
-            'import pathlib, sys\n'
+            'import json, os, pathlib, sys\n'
             'p = pathlib.Path("todo/implementation-plan.md")\n'
             'prog = pathlib.Path("build/todo-progress.json")\n'
             'want = "# Plan\\n"\n'
-            'want_prog = "{\\"ok\\": true}\\n"\n'
+            'ts = os.environ.get("TEST_PROGRESS_TS", "2026-10-25T08:00:01Z")\n'
+            'want_prog = json.dumps({"generated_at": ts, "ok": True}, indent=2, sort_keys=True) + "\\n"\n'
             'if "--check" in sys.argv:\n'
             '    ok = p.is_file() and p.read_text(encoding="utf-8") == want\n'
             '    if prog.exists():\n'
-            '        ok = ok and prog.read_text(encoding="utf-8") == want_prog\n'
+            '        data = json.loads(prog.read_text(encoding="utf-8"))\n'
+            '        ok = ok and isinstance(data, dict) and data.get("ok") is True and bool(data.get("generated_at"))\n'
             '    sys.exit(0 if ok else 1)\n'
             'if "--sync" in sys.argv:\n'
             '    p.parent.mkdir(parents=True, exist_ok=True)\n'
@@ -2168,27 +2170,54 @@ class DriftTests(unittest.TestCase):
         self.assertEqual(0o640, (self.root / 'README.md').stat().st_mode & 0o777)
         self.assertEqual([], list(self.root.rglob('.drift-*')))
 
-        # Recovery and idempotence: unpatched --fix succeeds, repairs build/todo-progress.json, preserves 0o640 mode, and second --fix makes 0 changes.
+        # Recovery and idempotence: unpatched --fix succeeds, repairs build/todo-progress.json, preserves 0o640 mode,
+        # and a second --fix in a later second (different generated_at) preserves build/todo-progress.json byte-for-byte.
         out_fix1 = io.StringIO()
-        with contextlib.redirect_stdout(out_fix1):
-            self.assertEqual(0, drift.main(['--root', str(self.root), '--fix']))
+        with mock.patch.dict(os.environ, {'TEST_PROGRESS_TS': '2026-10-25T08:00:01Z'}):
+            with contextlib.redirect_stdout(out_fix1):
+                self.assertEqual(0, drift.main(['--root', str(self.root), '--fix']))
         self.assertIn('0 error(s); 0 deterministic repair(s)', out_fix1.getvalue())
-        self.assertEqual('{"ok": true}\n', (self.root / 'build/todo-progress.json').read_text(encoding='utf-8'))
+        self.assertEqual(
+            json.dumps({'generated_at': '2026-10-25T08:00:01Z', 'ok': True}, indent=2, sort_keys=True) + '\n',
+            (self.root / 'build/todo-progress.json').read_text(encoding='utf-8'),
+        )
         for rel in ('README.md', 'docs/facts.json', 'todo/implementation-plan.md', 'build/todo-progress.json'):
             self.assertEqual(0o640, (self.root / rel).stat().st_mode & 0o777)
         snap_after_fix1 = {
             rel: drift.digest((self.root / rel).read_bytes())
-            for rel in ('README.md', 'docs/facts.json', 'todo/implementation-plan.md')
+            for rel in ('README.md', 'docs/facts.json', 'todo/implementation-plan.md', 'build/todo-progress.json')
         }
         out_fix2 = io.StringIO()
-        with contextlib.redirect_stdout(out_fix2):
-            self.assertEqual(0, drift.main(['--root', str(self.root), '--fix']))
+        with mock.patch.dict(os.environ, {'TEST_PROGRESS_TS': '2026-10-25T08:00:09Z'}):
+            with contextlib.redirect_stdout(out_fix2):
+                self.assertEqual(0, drift.main(['--root', str(self.root), '--fix']))
         self.assertIn('0 error(s); 0 deterministic repair(s)', out_fix2.getvalue())
         snap_after_fix2 = {
             rel: drift.digest((self.root / rel).read_bytes())
-            for rel in ('README.md', 'docs/facts.json', 'todo/implementation-plan.md')
+            for rel in ('README.md', 'docs/facts.json', 'todo/implementation-plan.md', 'build/todo-progress.json')
         }
         self.assertEqual(snap_after_fix1, snap_after_fix2)
+
+        # Also verify against real scripts/todo-graph.py generated_progress_text across distinct UTC seconds.
+        tg_spec = importlib.util.spec_from_file_location('todo_graph_mod', REPO / 'scripts/todo-graph.py')
+        tg_mod = importlib.util.module_from_spec(tg_spec)
+        sys.modules['todo_graph_mod'] = tg_mod
+        tg_spec.loader.exec_module(tg_mod)
+        real_todos = tg_mod.load_todos()
+        payload_t1 = tg_mod.generated_progress_text(real_todos, generated_at='2026-10-25T08:00:01Z').encode('utf-8')
+        payload_t2 = tg_mod.generated_progress_text(real_todos, generated_at='2026-10-25T08:00:02Z').encode('utf-8')
+        self.assertNotEqual(payload_t1, payload_t2)
+        self.assertTrue(drift.Checker._cache_output_semantically_equal(payload_t1, payload_t2))
+        payload_future = tg_mod.generated_progress_text(real_todos, generated_at='2099-01-01T00:00:00Z').encode('utf-8')
+        self.assertFalse(drift.Checker._cache_output_semantically_equal(payload_future, payload_t2))
+        mutated_obj = json.loads(payload_t2.decode('utf-8'))
+        mutated_obj['sentinel'] = -1
+        self.assertFalse(
+            drift.Checker._cache_output_semantically_equal(
+                payload_t1,
+                (json.dumps(mutated_obj, indent=2, sort_keys=True) + '\n').encode('utf-8'),
+            )
+        )
 
 
 if __name__ == '__main__':

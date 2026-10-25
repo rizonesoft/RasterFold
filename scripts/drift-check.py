@@ -10,6 +10,7 @@ import argparse
 import ast
 import codecs
 import csv
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 import fnmatch
 import hashlib
@@ -1691,6 +1692,38 @@ class Checker:
                 raise ValueError(f'unsupported checkout entry for staging: {rel}')
 
     @staticmethod
+    def _valid_generated_at(value):
+        if not isinstance(value, str) or re.fullmatch(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$', value) is None:
+            return False
+        try:
+            parsed = datetime.strptime(value, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc)
+        except ValueError:
+            return False
+        if parsed.strftime('%Y-%m-%dT%H:%M:%SZ') != value:
+            return False
+        now = datetime.now(timezone.utc)
+        return (now - timedelta(days=365 * 20)) <= parsed <= (now + timedelta(days=1))
+
+    @classmethod
+    def _cache_output_semantically_equal(cls, before_bytes, after_bytes):
+        if before_bytes == after_bytes:
+            return True
+        if before_bytes is None or after_bytes is None:
+            return False
+        try:
+            before_obj = json.loads(before_bytes.decode('utf-8'))
+            after_obj = json.loads(after_bytes.decode('utf-8'))
+        except (UnicodeDecodeError, ValueError):
+            return False
+        if not isinstance(before_obj, dict) or not isinstance(after_obj, dict):
+            return False
+        if not (cls._valid_generated_at(before_obj.get('generated_at')) and cls._valid_generated_at(after_obj.get('generated_at'))):
+            return False
+        b_copy = {k: v for k, v in before_obj.items() if k != 'generated_at'}
+        a_copy = {k: v for k, v in after_obj.items() if k != 'generated_at'}
+        return b_copy == a_copy
+
+    @staticmethod
     def _stage_change_allowed(rel, before_state, after_state, declared_outputs):
         if rel in declared_outputs:
             return True
@@ -1802,7 +1835,7 @@ class Checker:
                         if (self.root / cout).exists() and stage_checker._entry_state(cout)[0] == 'file':
                             staged_bytes = stage_checker.path(cout).read_bytes()
                             expected_before = self.generator_before.get(cout)
-                            if staged_bytes != expected_before:
+                            if not self._cache_output_semantically_equal(expected_before, staged_bytes):
                                 gen_repairs[cout] = (expected_before, staged_bytes)
                 if gen_repairs:
                     saved_repairs = dict(self.repairs)
