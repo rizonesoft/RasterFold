@@ -360,18 +360,23 @@ def _tag_is_hidden(tag_lower, attr_text):
     return False
 
 
-def _consume_visible_html(segment, stack):
+def _consume_visible_html(segment, state):
+    if isinstance(state, list):
+        state = {'stack': state, 'pending': ''}
+    stack = state['stack']
     masked = re.sub(r'`+<!--.*?-->`+', ' ', segment)
     masked = re.sub(
         r'(`+)([^`]*?)\1',
         lambda m: m.group(1) + m.group(2).replace('<', '\x00LT\x00').replace('>', '\x00GT\x00') + m.group(1),
         masked,
     )
+    buf = state['pending'] + masked
+    state['pending'] = ''
     out = []
     pos = 0
-    for m in HTML_TOKEN_RE.finditer(masked):
+    for m in HTML_TOKEN_RE.finditer(buf):
         if not any(h for _, h in stack):
-            out.append(masked[pos:m.start()])
+            out.append(buf[pos:m.start()])
         pos = m.end()
         raw_tag = m.group(1)
         if not raw_tag or raw_tag.startswith(('!', '?')):
@@ -392,19 +397,26 @@ def _consume_visible_html(segment, stack):
             t = raw_tag.lower()
             if ':' in t:
                 continue
-            self_closing = attr_text.rstrip().endswith('/') or t in VOID_TAGS
-            if not self_closing:
+            if t not in VOID_TAGS:
                 hidden = any(h for _, h in stack) or _tag_is_hidden(t, attr_text)
                 stack.append((t, hidden))
-    if not any(h for _, h in stack):
-        out.append(masked[pos:])
+    tail = buf[pos:]
+    m_open = re.search(r'<(?:!--|[/?!]?[A-Za-z])', tail, re.S)
+    if m_open:
+        if not any(h for _, h in stack):
+            out.append(tail[:m_open.start()])
+        state['pending'] = tail[m_open.start():]
+    elif not any(h for _, h in stack):
+        out.append(tail)
     return ''.join(out).replace('\x00LT\x00', '<').replace('\x00GT\x00', '>')
 
 
-def _check_visible_fact(segment, expected_str, html_stack=None):
-    stack = [] if html_stack is None else html_stack
-    cleaned = _consume_visible_html(segment, stack)
-    if any(h for _, h in stack):
+def _check_visible_fact(segment, expected_str, html_state=None):
+    state = {'stack': [], 'pending': ''} if html_state is None else (
+        {'stack': html_state, 'pending': ''} if isinstance(html_state, list) else html_state
+    )
+    cleaned = _consume_visible_html(segment, state)
+    if state['pending'] or any(h for _, h in state['stack']):
         return False
     cleaned = re.sub(r'(?m)^\s*\[[^\]\n]+\]:.*$', ' ', cleaned)
     cleaned = _strip_markdown_links(cleaned)
@@ -685,7 +697,7 @@ class Checker:
             scan = code_spans(prose(text)) if suffix in ('.md', '.markdown') else text
             if role == 'template' or rel == MANIFEST:
                 continue
-            html_stack = []
+            html_state = {'stack': [], 'pending': ''}
             for line_no, line in enumerate(scan.splitlines(), 1):
                 raw_line = prose_lines[line_no - 1] if line_no - 1 < len(prose_lines) else line
                 for match in claims.CLAIM_RE.finditer(line):
@@ -705,11 +717,11 @@ class Checker:
                     segment = raw_line[prev_fact_end:match.start()]
                     prev_fact_end = match.end()
                     if match[1] not in self.facts or str(value) != match[2]:
-                        _consume_visible_html(segment, html_stack)
+                        _consume_visible_html(segment, html_state)
                         self.error('fact', rel, f'line {line_no}: {match[1]} must equal {value!r}; review the surrounding sentence')
-                    elif not _check_visible_fact(segment, str(value), html_stack):
+                    elif not _check_visible_fact(segment, str(value), html_state):
                         self.error('fact', rel, f'line {line_no}: visible figure before {match[1]} does not match {value!r}; review the surrounding sentence')
-                _consume_visible_html(raw_line[prev_fact_end:], html_stack)
+                _consume_visible_html(raw_line[prev_fact_end:] + '\n', html_state)
                 for match in COMMIT.finditer(line):
                     try:
                         ref = match[1] + (':' + match[2] if match[2] else '^{commit}')

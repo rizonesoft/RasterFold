@@ -1173,6 +1173,8 @@ class DriftTests(unittest.TestCase):
             'Size: 999 bytes <script>1409028</script> <!-- drift:fact measurement_reference_bytes = 1409028 -->',
             'Size: 999 bytes <span hidden>1409028</span> <!-- drift:fact measurement_reference_bytes = 1409028 -->',
             'Size: 999 bytes <span hidden>1409028 <!-- drift:fact measurement_reference_bytes = 1409028 --></span>',
+            'Size: 999 bytes <span\nhidden>1409028 <!-- drift:fact measurement_reference_bytes = 1409028 --></span>',
+            'Size: 999 bytes <span hidden />1409028 <!-- drift:fact measurement_reference_bytes = 1409028 --></span>',
             'Size: 999 bytes <span hidden><span>1409028</span>1409028</span> <!-- drift:fact measurement_reference_bytes = 1409028 -->',
             '<div hidden>\nSize: 1,409,028 bytes <!-- drift:fact measurement_reference_bytes = 1409028 -->\n</div>',
             'Size: [999 bytes](README.md#1409028) <!-- drift:fact measurement_reference_bytes = 1409028 -->',
