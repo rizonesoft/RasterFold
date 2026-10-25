@@ -521,6 +521,10 @@ class Artifacts(unittest.TestCase):
             self.assertEqual(set(re.findall(r'DLL Name:\s*(\S+)', dll_pe)), {'KERNEL32.dll'})
             self.test_public_exports()
             self.test_c_cpp_static_and_dynamic_consumers()
+            for case in ('known-answer', 'odd3', 'corrupt', 'truncated-abort'):
+                run([sys.executable, ROOT / 'tests/test_correctness.py', '-k', case], cwd=ROOT)
+            if not WIN:
+                self.test_no_clobber_race_symlinks_and_fifo()
         finally:
             for t in targets:
                 build_mod.build(t, 2, False, lto=False)
