@@ -14,6 +14,7 @@ VERSION = 2
 HEADER = 32
 MAX_DIM = 32768
 MAX_PIXELS = 32 * 1024 * 1024
+MAX_FILE = 256 * 1024 * 1024
 METHOD_RAW = 0
 METHOD_CM = 1
 
@@ -477,6 +478,8 @@ def encode_image(width: int, height: int, rgb: bytes) -> bytes:
 def decode_image(blob: bytes) -> tuple[int, int, bytes]:
     if len(blob) < HEADER:
         raise FormatError("truncated")
+    if len(blob) > MAX_FILE:
+        raise FormatError("file size")
     if blob[0:3] != b"RFI":
         raise FormatError("magic")
     version, header_size = struct.unpack_from("<HH", blob, 4)
@@ -550,7 +553,7 @@ def write_bmp24(
 def read_bmp24(blob: bytes) -> tuple[int, int, bytes]:
     if len(blob) < 54 or blob[0:2] != b"BM":
         raise FormatError("bmp signature")
-    _bf_size, _r1, _r2, off = struct.unpack_from("<IHHI", blob, 2)
+    bf_size, _r1, _r2, off = struct.unpack_from("<IHHI", blob, 2)
     header = struct.unpack_from("<IiiHHIIiiII", blob, 14)
     bi_size, width, height, planes, bits, comp, sizeimage, _x, _y, _used, _imp = header
     if bi_size != 40 or planes != 1 or bits != 24 or comp != 0:
@@ -559,10 +562,14 @@ def read_bmp24(blob: bytes) -> tuple[int, int, bytes]:
         raise FormatError("bmp dimensions")
     topdown = height < 0
     height = abs(height)
+    if width > MAX_DIM or height > MAX_DIM or width * height > MAX_PIXELS:
+        raise FormatError("bmp size limit")
     stride = row_stride(width)
     need = off + stride * height
     if off < 54 or need > len(blob):
         raise FormatError("bmp truncated")
+    if bf_size not in (0,) and (bf_size < need or bf_size > len(blob)):
+        raise FormatError("bmp file size")
     if sizeimage not in (0,) and sizeimage < stride * height:
         raise FormatError("bmp image size")
     rgb = bytearray(width * height * 3)
@@ -573,7 +580,4 @@ def read_bmp24(blob: bytes) -> tuple[int, int, bytes]:
         dst = img_y * width * 3
         rgb[dst : dst + width * 3] = row
         rgb[dst : dst + width * 3 : 3], rgb[dst + 2 : dst + width * 3 : 3] = row[2::3], row[0::3]
-        pad = blob[src + width * 3 : src + stride]
-        if any(pad):
-            raise FormatError("bmp padding")
     return width, height, bytes(rgb)

@@ -13,7 +13,8 @@ unsupported version.
 
 - Multi-byte integers are little-endian.
 - Integer arithmetic is exact, on signed integers wide enough that nothing
-  overflows unless a step says otherwise. `a >> n` is an arithmetic shift: the
+  overflows unless a step says otherwise. Operators follow C11 precedence on
+  32-bit or wider signed integers. `a >> n` is an arithmetic shift: the
   floor of `a / 2^n`, also for negative `a`. `a / b` appears only for
   non-negative operands and is truncating integer division.
 - `clamp(v, lo, hi)` is `lo` if `v < lo`, `hi` if `v > hi`, otherwise `v`.
@@ -250,7 +251,7 @@ code the bit with probability p/4096 of a 1 (range coder below)
 e   = 4096*bit - p
 w_m = w_m + ((s_m * e + 4096) >> 13)       for m = 0..4, in 32-bit two's complement
 w_5 = w_5 + ((64 * e + 4096) >> 13)        likewise
-c_m = c_m + (((65535*bit) - c_m) * rate_m) >> 16          for m = 0..4
+c_m = c_m + ((((65535*bit) - c_m) * rate_m) >> 16)         for m = 0..4
 ```
 
 ```

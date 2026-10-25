@@ -7,6 +7,7 @@ import struct
 import os
 import subprocess
 import sys
+import tempfile
 import time
 import zlib
 from pathlib import Path
@@ -261,6 +262,12 @@ def corrupt_cases() -> None:
         dest.unlink(missing_ok=True)
         expect_fail(["decode", str(fold(blob)), str(dest)], code, text)
         check(not dest.exists(), f"{text}: an output was left behind")
+        try:
+            rf.decode_image(blob)
+        except rf.FormatError:
+            pass
+        else:
+            check(False, f"{text}: oracle accepted corrupt .fold")
 
     reject(good[:10], 4, "invalid fold: truncated")
     reject(b"XYZ" + good[3:], 4, "invalid fold: magic")
@@ -333,12 +340,19 @@ def corrupt_cases() -> None:
         ("limit.bmp", "limit", 5, "image exceeds size limit"),
     ]
     for filename, kind, code, text in bmp_cases:
+        bad_bmp = make_bad_bmp(kind)
         path = work / filename
-        path.write_bytes(make_bad_bmp(kind))
+        path.write_bytes(bad_bmp)
         dest = work / f"{filename}.fold"
         dest.unlink(missing_ok=True)
         expect_fail(["encode", str(path), str(dest)], code, text)
         check(not dest.exists(), f"{filename} left an output")
+        try:
+            rf.read_bmp24(bad_bmp)
+        except rf.FormatError:
+            pass
+        else:
+            check(False, f"{filename}: oracle accepted corrupt BMP ({text})")
 
     missing = work / "missing.bmp"
     expect_fail(["encode", str(missing), str(work / "missing.fold")], 2, "cannot read input")
@@ -365,6 +379,121 @@ def corrupt_cases() -> None:
     expect_fail(["encode", str(same), str(same)], 2, "output file already exists")
     check(same.read_bytes() == before, "input overwritten")
     expect_fail(["encode", "--threads", "0", str(src), str(work / "t0.fold")], 1, "usage")
+
+
+def padding_roundtrip() -> None:
+    work = WORK / "padding"
+    work.mkdir(parents=True, exist_ok=True)
+    w, h = 3, 2
+    rgb = gradient(w, h)
+    raw_bmp = bytearray(rf.write_bmp24(w, h, rgb))
+    stride = rf.row_stride(w)
+    for y in range(h):
+        row_start = 54 + y * stride
+        raw_bmp[row_start + w * 3 : row_start + stride] = b"\xA5\x5A\xFF"
+    src_bmp = work / "in.bmp"
+    out_fold = work / "out.fold"
+    out_bmp = work / "out.bmp"
+    for f in (out_fold, out_bmp):
+        f.unlink(missing_ok=True)
+    src_bmp.write_bytes(bytes(raw_bmp))
+    check(rf.read_bmp24(src_bmp.read_bytes()) == (w, h, rgb), "oracle rejected or misread nonzero BMP padding")
+    expect_ok(["encode", str(src_bmp), str(out_fold)])
+    oracle_fold = rf.encode_image(w, h, rgb)
+    check(out_fold.read_bytes() == oracle_fold, "codec .fold bytes on nonzero-padded BMP differ from oracle")
+    check(rf.decode_image(out_fold.read_bytes()) == (w, h, rgb), "oracle decode of nonzero-padded BMP .fold mismatch")
+    expect_ok(["decode", str(out_fold), str(out_bmp)])
+    check(rf.read_bmp24(out_bmp.read_bytes()) == (w, h, rgb), "codec decoded pixels mismatch on nonzero-padded BMP")
+
+
+def oracle_acceptance() -> None:
+    with tempfile.TemporaryDirectory(prefix="rf_accept_") as tmp_dir:
+        work = Path(tmp_dir)
+        _oracle_acceptance_in(work)
+
+
+def _oracle_acceptance_in(work: Path) -> None:
+
+    def make_bmp_full(w: int, h_signed: int, bf_size: int | None = None, trailing: bytes = b"") -> bytes:
+        h_abs = abs(h_signed)
+        stride = rf.row_stride(w)
+        total = 54 + stride * h_abs
+        buf = bytearray(total + len(trailing))
+        actual_bf = total if bf_size is None else bf_size
+        struct.pack_into("<2sIHHI", buf, 0, b"BM", actual_bf, 0, 0, 54)
+        struct.pack_into("<IiiHHIIiiII", buf, 14, 40, w, h_signed, 1, 24, 0, stride * h_abs, 3780, 3780, 0, 0)
+        if trailing:
+            buf[total:] = trailing
+        return bytes(buf)
+
+    def write_test_file(path: Path, blob: bytes, prefix_len: int) -> None:
+        if len(blob) > 65536 and blob[prefix_len:] == bytes(len(blob) - prefix_len):
+            with open(path, "wb") as f:
+                f.write(blob[:prefix_len])
+                f.truncate(len(blob))
+        else:
+            path.write_bytes(blob)
+
+    def check_bmp_refusal(name: str, blob: bytes, code: int, cli_text: str, oracle_text: str) -> None:
+        in_bmp = work / f"{name}.bmp"
+        out_fold = work / f"{name}.fold"
+        out_fold.unlink(missing_ok=True)
+        write_test_file(in_bmp, blob, 54)
+        try:
+            expect_fail(["encode", str(in_bmp), str(out_fold)], code, cli_text)
+            check(not out_fold.exists(), f"{name}: codec left output")
+        finally:
+            in_bmp.unlink(missing_ok=True)
+        try:
+            rf.read_bmp24(blob)
+        except rf.FormatError as exc:
+            check(oracle_text in str(exc), f"{name}: oracle raised {exc!r}, expected {oracle_text!r}")
+        else:
+            check(False, f"{name}: oracle accepted BMP that codec refused ({cli_text})")
+
+    # 1. Full-payload BMPs exceeding biWidth, |biHeight|, or MAX_PIXELS (not truncated).
+    check_bmp_refusal("bmp_w_32769", make_bmp_full(32769, 1), 5, "image exceeds size limit", "bmp size limit")
+    check_bmp_refusal("bmp_h_32769", make_bmp_full(1, 32769), 5, "image exceeds size limit", "bmp size limit")
+    check_bmp_refusal("bmp_h_neg32769", make_bmp_full(1, -32769), 5, "image exceeds size limit", "bmp size limit")
+    check_bmp_refusal("bmp_pixels_over", make_bmp_full(32768, 1025), 5, "image exceeds size limit", "bmp size limit")
+
+    # 2. Invalid bfSize bounds (0 < bfSize < pixel_end, and bfSize > file_size).
+    need_2x2 = 54 + rf.row_stride(2) * 2
+    check_bmp_refusal("bmp_bfsize_low", make_bmp_full(2, 2, bf_size=need_2x2 - 1), 4, "invalid BMP: file size", "bmp file size")
+    check_bmp_refusal("bmp_bfsize_high", make_bmp_full(2, 2, bf_size=need_2x2 + 1), 4, "invalid BMP: file size", "bmp file size")
+
+    # 3. Valid bfSize boundary cases: bfSize == 0 and pixel_end == bfSize < file_size.
+    for tag, bf_val, tail in (("bfsize_zero", 0, b""), ("bfsize_pixel_end_with_tail", need_2x2, b"\x00" * 16)):
+        valid_blob = make_bmp_full(2, 2, bf_size=bf_val, trailing=tail)
+        in_bmp = work / f"{tag}.bmp"
+        out_fold = work / f"{tag}.fold"
+        out_fold.unlink(missing_ok=True)
+        in_bmp.write_bytes(valid_blob)
+        w_got, h_got, rgb_got = rf.read_bmp24(valid_blob)
+        check((w_got, h_got, rgb_got) == (2, 2, bytes(12)), f"{tag}: oracle read mismatch")
+        expect_ok(["encode", str(in_bmp), str(out_fold)])
+        check(out_fold.read_bytes() == rf.encode_image(2, 2, bytes(12)), f"{tag}: codec and oracle .fold differ")
+
+    # 4. .fold file longer than 256 MiB (268,435,457 bytes).
+    over_fold = bytearray(rf.MAX_PIXELS * 8 + 1)
+    over_fold[: len(KAT_FOLD)] = KAT_FOLD
+    over_fold_bytes = bytes(over_fold)
+    del over_fold
+    in_fold = work / "over_256mib.fold"
+    out_bmp = work / "over_256mib.bmp"
+    out_bmp.unlink(missing_ok=True)
+    write_test_file(in_fold, over_fold_bytes, len(KAT_FOLD))
+    try:
+        expect_fail(["decode", str(in_fold), str(out_bmp)], 5, "input exceeds size limit")
+        check(not out_bmp.exists(), "over_256mib: codec left output")
+    finally:
+        in_fold.unlink(missing_ok=True)
+    try:
+        rf.decode_image(over_fold_bytes)
+    except rf.FormatError as exc:
+        check("file size" in str(exc), f"over_256mib: oracle raised {exc!r}, expected 'file size'")
+    else:
+        check(False, "over_256mib: oracle accepted >256 MiB .fold")
 
 
 def truncated_stream_abort() -> None:
@@ -474,6 +603,8 @@ def main() -> int:
         ),
     )
     case("grey", lambda: roundtrip("grey", 16, 8, solid(16, 8, (128, 128, 128))))
+    case("padding", padding_roundtrip)
+    case("acceptance", oracle_acceptance)
     case("corrupt", corrupt_cases)
     case("truncated-abort", truncated_stream_abort)
     # The checksum in a successful file matches zlib, not only our encoder.
