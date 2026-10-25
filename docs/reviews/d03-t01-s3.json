@@ -1,0 +1,91 @@
+{
+  "ref": "D03 T01 \u00a73",
+  "title": "Encode Straight into the Output Buffer",
+  "implementation_sha": "cc7cdbf8aa22df4e6f33430545470fcf82aa3035",
+  "date": "2026-10-25",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/03-memory/D03-T01-s3.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 tests/test_correctness.py -> 33 passed, 0 failed",
+    "python3 tests/test_api.py -> Ran 9 tests OK",
+    "python3 scripts/windows.py tests/test_api.py -> Ran 9 tests OK",
+    "python3 tests/test_artifacts.py -> Ran 6 tests OK",
+    "python3 scripts/windows.py tests/test_artifacts.py -> Ran 6 tests OK (skipped=2)",
+    "python3 tests/fuzz_decode.py 2000 3 -> 2000 mutated files: 1960 rejected, 40 still valid, no crash, hang or mismatch",
+    "python3 research/ab.py bench src/cm.c sub -> TOTAL 8240851 enc=2739.4ms dec=2646.7ms",
+    "bin/windows-x64/bin/rasterfold.exe encode --time measure/image.bmp -> alloc_peak=12472272 (1t) / 12472304 (3t), sha256=6a578a4a49a4bb8d1ec8eb017b0f4c13c43224d72203414149b7cc4d2a340368",
+    "python3 research/ab.py size src/cm.c photo -> total=30865211 jxl=31782058 ratio=0.9712 geomean=0.9728 worst=1.0037 (kodim17) measure=1409028"
+  ],
+  "completion": {
+    "report": "docs/reviews/03-memory/D03-T01-s3.md",
+    "verdict": "complete",
+    "candidate": "cc7cdbf8aa22df4e6f33430545470fcf82aa3035",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/03-memory/D03-T01-s3.md",
+    "candidate": "309843f369e992cedbe777560145e095ae3455dc",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}
