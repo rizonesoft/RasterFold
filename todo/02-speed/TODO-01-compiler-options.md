@@ -64,6 +64,8 @@ The hot paths (`code_bit`, `code_residual`, `cm_model`) are branchy; a profile t
 > **Review:** `docs/reviews/d02-t01-s1.json`
 ## 2. Link-Time Optimization
 
+> **Started:** 2026-10-25T18:48:00Z
+
 **Needs:** Idle machine (timing)
 
 The codec is small, but `cm.c`'s entry points are called through `fold.c`, and LTO can inline across that seam. Bar: any measurable gain (a minimum-time ratio below 0.97) with the imports unchanged.
