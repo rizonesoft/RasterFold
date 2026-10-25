@@ -557,20 +557,59 @@ def truncated_stream_abort() -> None:
             check_reject_fast(f"trunc_mid_ch{c}", mid_fold, t, "invalid fold: cm stream")
 
 
+def _row_end_tail_crossings(w: int, h: int, payload: bytes) -> set[int]:
+    """Return channels (0..2) whose stream has rem > 48 and crosses sz - 40 on
+    the final sample (x == w - 1) of a nonfinal row (y < h - 1)."""
+    sizes = struct.unpack_from("<III", payload, 0)
+    chans = [rf.Channel(w) for _ in range(3)]
+    pos = 12
+    for ch, size in zip(chans, sizes):
+        ch.dec = rf.RangeDecoder(payload[pos : pos + size])
+        pos += size
+    out = bytearray(w * h * 3)
+    crossed: set[int] = set()
+    for y in range(h):
+        for ch in chans:
+            ch.plane.append([0] * w)
+        for x in range(w):
+            i = (y * w + x) * 3
+            before = [ch.dec.pos for ch in chans]
+            gs: dict = {}
+            g = rf._code_sample(chans[0], 0, x, y, out[i + 1], gs)
+            out[i + 1] = g
+            cross = {"g": g, "eg": gs["r"], "feg": gs["fe"]}
+            rs = dict(cross)
+            out[i] = rf._code_sample(chans[1], 1, x, y, out[i], rs)
+            cross["er"], cross["fer"] = rs["r"], rs["fe"]
+            out[i + 2] = rf._code_sample(chans[2], 2, x, y, out[i + 2], dict(cross))
+            after = [ch.dec.pos for ch in chans]
+            if y < h - 1 and x == w - 1:
+                for c, sz in enumerate(sizes):
+                    if sz - 5 > 48 and before[c] < sz - 40 <= after[c]:
+                        crossed.add(c)
+        if y >= 2:
+            for ch in chans:
+                ch.plane[y - 2] = []
+    return crossed
+
+
 def tail_threshold_roundtrip() -> None:
     """Multi-row CM streams in both rdec_init regimes (rem <= 48 and rem > 48
-    crossing in + n - 40 across row boundaries) round-trip at 1 and 3 threads."""
+    crossing in + n - 40 on nonfinal row endings) round-trip at 1 and 3 threads."""
     work = WORK / "tail_threshold"
     work.mkdir(parents=True, exist_ok=True)
     fixtures = [
         ("tail_le48_solid", 6, 6, solid(6, 6, (42, 100, 200))),
         ("tail_le48_grad", 8, 6, gradient(8, 6)),
         ("tail_mixed_check16", 16, 12, checker(16, 12, 3)),
+        ("tail_rowend_ch0", 4, 22, photo(4, 22)),
+        ("tail_rowend_ch1", 6, 24, photo(6, 24)),
+        ("tail_rowend_ch2", 6, 23, photo(6, 23)),
         ("tail_gt48_photo16", 16, 12, photo(16, 12)),
         ("tail_gt48_photo20", 20, 16, photo(20, 16)),
     ]
     saw_le48 = False
-    saw_gt48_multirow_tail = False
+    row_end_channels: set[int] = set()
     for name, w, h, rgb in fixtures:
         oracle_fold = rf.encode_image(w, h, rgb)
         check(oracle_fold[16] == rf.METHOD_CM, f"{name} did not encode with METHOD_CM")
@@ -578,10 +617,7 @@ def tail_threshold_roundtrip() -> None:
         rems = (sz0 - 5, sz1 - 5, sz2 - 5)
         if all(0 <= r <= 48 for r in rems):
             saw_le48 = True
-        if all(r > 48 for r in rems) and all(sz < h * 25 for sz in (sz0, sz1, sz2)):
-            # With < 25 bytes per row on average and h >= 8, the last 40 stream
-            # bytes span multiple rows and cross in + n - 40 before row h - 1.
-            saw_gt48_multirow_tail = True
+        row_end_channels |= _row_end_tail_crossings(w, h, oracle_fold[32:])
         in_bmp = work / f"{name}_in.bmp"
         in_bmp.write_bytes(rf.write_bmp24(w, h, rgb))
         for t in ("1", "3"):
@@ -596,7 +632,7 @@ def tail_threshold_roundtrip() -> None:
             check(r_dec.returncode == 0, f"{name} decode t={t} failed: {r_dec.stderr.decode(errors='replace')}")
             check(rf.read_bmp24(out_bmp.read_bytes()) == (w, h, rgb), f"{name} decode t={t} pixel mismatch")
     check(saw_le48, "tail_threshold fixtures did not cover rem <= 48")
-    check(saw_gt48_multirow_tail, "tail_threshold fixtures did not cover multi-row rem > 48 crossing in + n - 40")
+    check(row_end_channels == {0, 1, 2}, f"tail_threshold fixtures did not cover nonfinal row-end tail crossings on all 3 channels: {row_end_channels}")
 
 
 def main() -> int:

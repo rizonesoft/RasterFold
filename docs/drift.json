@@ -1692,14 +1692,14 @@
       "evidence": "Author-attested: 2026-10-25 re-read research/README.md against scripts/build.py and research/vsjxl.py after D02 T01 section 2 (opt-in --lto flag; default release build, CLI, C API, and bitstream unchanged)",
       "sources": {
         "research/corpus.py": "4434e32d8cdb5e70d887f03f7f4cdfbe9ada666ea680c7d6ce176cc9b2858bb7",
-        "research/ab.py": "5392683d0d2bbdb162a34b9458d829d18cb0d9ea8cd2becd6ad12d3d42b5680e",
+        "research/ab.py": "adcb7b8b42db2c9517aefc6a702a24ced3f24705c6f4aacded13c81cbc812682",
         "research/vsjxl.py": "026a9ed3373408ff1236e2dd56e921dc68cd9af7e4143075f39998a61a2a1f3f",
         "research/prof.py": "7fa28a84aab62f0eb79fd579bcc01b6e2e55cc200bdaa96c0218b2ad4aa05605",
         "research/bench.c": "97d465a600a7ee3962b11636efd6c33d60d25c48354ee1210dd9a019c117a7ea",
         "research/README.md": "d9efe97cf58282fcbc0ba2696020c99cff696773b15473a456d9b57fdc63384a"
       },
       "review": "Author-attested: 2026-10-25 re-read research/README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)",
-      "reviewed": "Author-attested: 2026-10-25 re-read research/README.md against research/ab.py after D02 T01 section 4 (added ab -v reporting and tp-only set)"
+      "reviewed": "Author-attested: 2026-10-25 re-read research/README.md against research/ab.py after D02 T01 section 4 (added ab -v reporting and tp-only set without size-mismatch abort)"
     },
     "testdata/photos/README.md": {
       "evidence": "Author-attested: 2026-10-25 re-read testdata/photos/README.md against testdata/photos/manifest.json and testdata/photos/NOTICE-imagecompression-info.txt (D08 T02 section 4)",

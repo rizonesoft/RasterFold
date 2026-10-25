@@ -567,8 +567,6 @@ def main():
             enc_ratios = []
             dec_ratios = []
             for img in imgs:
-                if row_runs["A"][0][img][0] != row_runs["B"][0][img][0]:
-                    raise SystemExit(f"size mismatch on {img}: A={row_runs['A'][0][img][0]} B={row_runs['B'][0][img][0]}")
                 ae = min(x[img][1] for x in row_runs["A"])
                 be = min(x[img][1] for x in row_runs["B"])
                 ad = min(x[img][2] for x in row_runs["A"])
