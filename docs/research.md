@@ -282,6 +282,7 @@ Minimum-time ratios from alternating A/B runs on one thread:
 | pipeline G(x), R(x-1), B(x-2) on one thread (against sequential) | no measurable change | no measurable change |
 | one thread per channel | 3.3x faster | 3.2x faster |
 | profile-guided optimization (`-fprofile-instr-use`, 5.1, `D02 T01 §1`) | 0.962 to 0.988 (`measure`), 0.998 (`photo`), 0.978 (`tp`), 1.012 (`synth`) | 0.991 to 1.079 (`measure`), 1.009 (`photo`), 1.004 (`tp`), 0.995 (`synth`) -- below 5% bar; default release left unprofiled |
+| link-time optimization (`-flto`, 5.2, `D02 T01 §2`) | 0.968 to 0.986 (`measure`), 0.996 (`photo`), 0.991 (`tp`), 0.939 (`synth`) | 0.905 to 0.924 (`measure`), 1.008 (`photo`), 1.019 (`tp`), 0.937 (`synth`) -- fails corpus `<= 0.970` bar on `photo` and held-out `tp` (and 3-thread `tp` is `1.086` dec / `1.267` enc); default release left non-LTO |
 
 Assembly against C (the old version 1 assembly, rebuilt with ml64, against the
 current C): CRC-32 slicing-by-8 in C is 4.2x faster than the assembly CRC; the C
@@ -516,9 +517,16 @@ builds its own harness, so the executables are compared with `research/vsjxl.py`
 
 **Owner:** `D02 T01 §2`.
 
-`-flto` in `cflags` and `ldflags` of `build.ninja`, kept only if faster and the
-executable still imports nothing but `KERNEL32.dll` and `SHELL32.dll`
-(`tools\llvm-mingw\bin\llvm-objdump.exe -p Bin\rasterfold.exe`).
+`-flto` (`--lto` in `scripts/build.py` and `research/vsjxl.py`), compiling CLI
+and shared-library objects into `build/<target>/lto/*.o` with `-flto` while
+keeping `librasterfold.a` archive objects as native machine code so non-LTO
+static consumers link cleanly, and kept as the default only if faster (`<= 0.970`
+one-thread decode ratio across `measure/image.bmp`, `photo`, and held-out `tp`
+with no `> 1.020` encode or 3-thread regression) while `bin/windows-x64/bin/rasterfold.exe`
+still imports only `KERNEL32.dll` and `SHELL32.dll` and `bin/windows-x64/bin/rasterfold.dll`
+imports only `KERNEL32.dll`.
+
+**Measured effect.** Measured in `D02 T01 §2` (2026-10-25): on `measure/image.bmp`, one-thread decode min ratio is `0.905` to `0.924` (`0.985` to `1.044` median) and encode min ratio is `0.968` to `0.986` (`0.907` median), while 3-thread decode min ratio is `1.033` to `1.042` (`0.868` to `1.073` median) and encode min ratio is `1.041` to `1.098` (`0.847` to `0.959` median); across the corpus (`research/vsjxl.py --corpus all -n 3 --threads <1|3> --lto`), one-thread decode `min_tot` is `1.008` on `photo` (`n=39`, geomean `0.981`, encode `0.996` / geomean `0.989`), `1.019` on held-out `tp` (`n=10`, geomean `0.999`, encode `0.991` / geomean `0.981`), and `0.937` on `synth` (`n=11`, geomean `0.944`, encode `0.939` / geomean `0.950`), and 3-thread `tp` regresses to `1.086` decode (`geomean 1.073`) and `1.267` encode (`geomean 1.239`). Because `photo` and held-out `tp` miss the `<= 0.970` bar, `--lto` is retained as a tested opt-in flag in `scripts/build.py` and `research/vsjxl.py` while default release builds stay non-LTO.
 
 ### 5.3 More than three threads: horizontal strips
 

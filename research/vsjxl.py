@@ -46,7 +46,8 @@ def parse_args(argv):
     p.add_argument("--exe", type=Path, default=DEFAULT_EXE)
     p.add_argument("--alt-exe", type=Path, default=None)
     p.add_argument("--corpus", choices=("photo", "tp", "synth", "all"), default=None)
-    p.add_argument("--pgo-profile", type=Path, default=REPO / "build" / "pgo" / "rasterfold.profdata")
+    p.add_argument("--pgo-profile", type=Path, default=None)
+    p.add_argument("--lto", action="store_true", help="compare multi-TU non-LTO vs LTO corpus builds")
     return p.parse_args(norm)
 
 
@@ -73,7 +74,40 @@ def parse_bench_rows(stdout: str, expected_imgs: tuple[str, ...]) -> dict[str, t
     return rows
 
 
-def run_corpus_ab(set_name: str, n: int, threads: int, pgo_profile: Path) -> None:
+def build_bench_multi_tu(clang: Path, obj_dir: Path, out: Path, lto: bool, extra_cflags: tuple[str, ...] = ()) -> None:
+    obj_dir.mkdir(parents=True, exist_ok=True)
+    base_cflags = [
+        str(clang),
+        "-O2",
+        "-march=x86-64-v2",
+        "-mtune=generic",
+        "-g",
+        f"-I{REPO / 'src'}",
+        *extra_cflags,
+        *(["-flto"] if lto else []),
+    ]
+    units = (
+        ("bench", REPO / "research" / "bench.c"),
+        ("benchsys", REPO / "research" / "benchsys.c"),
+        ("cm", REPO / "src" / "cm.c"),
+        ("fold", REPO / "src" / "fold.c"),
+        ("bmp", REPO / "src" / "bmp.c"),
+        ("crc32", REPO / "src" / "crc32.c"),
+    )
+    objs: list[str] = []
+    for name, src in units:
+        obj = obj_dir / f"{name}.o"
+        proc = subprocess.run([*base_cflags, "-c", str(src), "-o", str(obj)], capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise SystemExit(proc.stderr)
+        objs.append(str(obj))
+    link_cmd = [str(clang), "-fuse-ld=lld", *(["-flto"] if lto else []), *objs, "-lwinmm", "-o", str(out)]
+    proc = subprocess.run(link_cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise SystemExit(proc.stderr)
+
+
+def run_corpus_ab(set_name: str, n: int, threads: int, pgo_profile: Path | None, lto: bool = False) -> None:
     if str(REPO / "scripts") not in sys.path:
         sys.path.insert(0, str(REPO / "scripts"))
     if str(REPO / "research") not in sys.path:
@@ -83,11 +117,20 @@ def run_corpus_ab(set_name: str, n: int, threads: int, pgo_profile: Path) -> Non
 
     suffix = ".exe" if os.name == "nt" else ""
     tools = REPO / ("tools/llvm-mingw/bin" if os.name == "nt" else "tools/llvm-mingw-linux/bin")
-    prof = build_mod.validate_pgo_profile(pgo_profile, tools, suffix)
     base_exe = ab.RES / "bench_base.exe"
-    pgo_exe = ab.RES / "bench_pgo.exe"
-    ab.build(REPO / "src" / "cm.c", base_exe, ())
-    ab.build(REPO / "src" / "cm.c", pgo_exe, (f"-fprofile-instr-use={prof}", "-Wno-profile-instr-unprofiled"))
+    cand_exe = ab.RES / ("bench_lto.exe" if lto else "bench_pgo.exe")
+    if lto:
+        extra: tuple[str, ...] = ()
+        if pgo_profile is not None:
+            prof = build_mod.validate_pgo_profile(pgo_profile, tools, suffix)
+            extra = (f"-fprofile-instr-use={prof}", "-Wno-profile-instr-unprofiled")
+        build_bench_multi_tu(ab.CLANG, ab.RES / "objs_base", base_exe, lto=False, extra_cflags=extra)
+        build_bench_multi_tu(ab.CLANG, ab.RES / "objs_lto", cand_exe, lto=True, extra_cflags=extra)
+    else:
+        prof_path = pgo_profile or (REPO / "build" / "pgo" / "rasterfold.profdata")
+        prof = build_mod.validate_pgo_profile(prof_path, tools, suffix)
+        ab.build(REPO / "src" / "cm.c", base_exe, ())
+        ab.build(REPO / "src" / "cm.c", cand_exe, (f"-fprofile-instr-use={prof}", "-Wno-profile-instr-unprofiled"))
     sets = ("photo", "tp", "synth") if set_name == "all" else (set_name,)
     t_flag = f"-t{threads}"
     for sname in sets:
@@ -95,7 +138,7 @@ def run_corpus_ab(set_name: str, n: int, threads: int, pgo_profile: Path) -> Non
         base_runs = []
         pgo_runs = []
         for r in range(n):
-            pair = [("base", base_exe, base_runs), ("pgo", pgo_exe, pgo_runs)]
+            pair = [("base", base_exe, base_runs), ("cand", cand_exe, pgo_runs)]
             if r % 2 == 1:
                 pair.reverse()
             for _, exe, lst in pair:
@@ -144,7 +187,7 @@ def run_corpus_ab(set_name: str, n: int, threads: int, pgo_profile: Path) -> Non
 def main():
     args = parse_args(sys.argv[1:])
     if args.corpus is not None:
-        run_corpus_ab(args.corpus, args.n, args.threads or 1, args.pgo_profile)
+        run_corpus_ab(args.corpus, args.n, args.threads or 1, args.pgo_profile, lto=args.lto)
         return
     src = Path(args.image)
     n = args.n

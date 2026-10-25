@@ -259,6 +259,7 @@ Minimum-time ratios from alternating A/B runs on one thread:
 | pipeline G(x), R(x-1), B(x-2) on one thread (against sequential) | no measurable change | no measurable change |
 | one thread per channel | 3.3x faster | 3.2x faster |
 | profile-guided optimization (`-fprofile-instr-use`, 5.1) | 0.962 to 0.988 (`measure`), 0.998 (`photo`), 0.978 (`tp`), 1.012 (`synth`) | 0.991 to 1.079 (`measure`), 1.009 (`photo`), 1.004 (`tp`), 0.995 (`synth`) -- below 5% bar; default release left unprofiled |
+| link-time optimization (`-flto`, 5.2) | 0.968 to 0.986 (`measure`), 0.996 (`photo`), 0.991 (`tp`), 0.939 (`synth`) | 0.905 to 0.924 (`measure`), 1.008 (`photo`), 1.019 (`tp`), 0.937 (`synth`) -- fails corpus `<= 0.970` bar on `photo` and held-out `tp` (and 3-thread `tp` is `1.086` dec / `1.267` enc); default release left non-LTO |
 
 Assembly against C (the old version 1 assembly, rebuilt with ml64, against the
 current C): CRC-32 slicing-by-8 in C is 4.2x faster than the assembly CRC; the C

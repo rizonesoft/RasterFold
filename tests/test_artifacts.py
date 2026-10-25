@@ -502,5 +502,28 @@ class Artifacts(unittest.TestCase):
             finally:
                 build_mod.build('windows-x64', 2, False, pgo_profile=None)
 
+    def test_lto_build_imports_and_consumers(self):
+        import sys
+        if str(ROOT / 'scripts') not in sys.path:
+            sys.path.insert(0, str(ROOT / 'scripts'))
+        import build as build_mod  # noqa: E402
+
+        targets = ['windows-x64'] if WIN else [t for t in build_mod.TARGETS if (ROOT / 'bin' / t).is_dir() or t in (TARGET, 'windows-x64')]
+        try:
+            for t in targets:
+                build_mod.build(t, 2, False, lto=True)
+            manifest = (ROOT / 'build' / 'windows-x64' / 'build.ninja').read_text(encoding='utf-8')
+            self.assertIn('rule cc_cm_lto', manifest)
+            self.assertIn(' -flto ', manifest)
+            exe_pe = run([tool('llvm-objdump'), '-p', ROOT / 'bin/windows-x64/bin/rasterfold.exe']).decode()
+            self.assertEqual(set(re.findall(r'DLL Name:\s*(\S+)', exe_pe)), {'KERNEL32.dll', 'SHELL32.dll'})
+            dll_pe = run([tool('llvm-objdump'), '-p', ROOT / 'bin/windows-x64/bin/rasterfold.dll']).decode()
+            self.assertEqual(set(re.findall(r'DLL Name:\s*(\S+)', dll_pe)), {'KERNEL32.dll'})
+            self.test_public_exports()
+            self.test_c_cpp_static_and_dynamic_consumers()
+        finally:
+            for t in targets:
+                build_mod.build(t, 2, False, lto=False)
+
 
 if __name__=='__main__':unittest.main(verbosity=2)

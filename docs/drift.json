@@ -1541,12 +1541,12 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "Author-attested: 2026-10-25 re-read README.md against scripts/build.py after D02 T01 section 1 Round 3 fix (consistent profile backup recovery; default release build, CLI, C API, and bitstream unchanged)",
+      "evidence": "Author-attested: 2026-10-25 re-read README.md against scripts/build.py and research/vsjxl.py after D02 T01 section 2 (opt-in --lto flag; default release build, CLI, C API, and bitstream unchanged)",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "1c5d4f886c30c90c0fdd8646ca8acecf9d36410645bac4472de79003f1e18d40",
         "src/main.c": "27da6f79448461f0d9301fc9c2f004ea1b8c61bee782cf4ce8499c45af164679",
-        "scripts/build.py": "742c8ba1c040f0af41fb2fb5dbdf56bd919f53f0fa49ee6e370e642408db7c1c",
+        "scripts/build.py": "ba46691db1ecf40e5eed8639356988f142585f7763ab9b6d269056b80b01b5ab",
         "scripts/package.py": "b9ef31c48c2c5f7dfdcb22a7b3e5bd1a14c36b84d5d3887f17646bf47eaad199",
         "scripts/check-all.py": "7432d7b4b4eb6c6f499376180fb5576851d1be22db76d7e1375e497e6cbe2637",
         "README.md": "3455c54eb81acc4f418fada24889bdb66475d7a5339c9ffc84f906794c8ef218"
@@ -1575,9 +1575,9 @@
       }
     },
     "CONTRIBUTING.md": {
-      "evidence": "Author-attested: 2026-10-25 re-read CONTRIBUTING.md against scripts/build.py after D02 T01 section 1 Round 3 fix (consistent profile backup recovery; default build and verification gates unchanged)",
+      "evidence": "Author-attested: 2026-10-25 re-read CONTRIBUTING.md against scripts/build.py and research/vsjxl.py after D02 T01 section 2 (opt-in --lto flag; default release build, CLI, C API, and bitstream unchanged)",
       "sources": {
-        "scripts/build.py": "742c8ba1c040f0af41fb2fb5dbdf56bd919f53f0fa49ee6e370e642408db7c1c",
+        "scripts/build.py": "ba46691db1ecf40e5eed8639356988f142585f7763ab9b6d269056b80b01b5ab",
         "scripts/package.py": "b9ef31c48c2c5f7dfdcb22a7b3e5bd1a14c36b84d5d3887f17646bf47eaad199",
         "scripts/check-all.py": "7432d7b4b4eb6c6f499376180fb5576851d1be22db76d7e1375e497e6cbe2637",
         "CONTRIBUTING.md": "01f5855ce18883d6930ce1ebb569ea9411ac21e3c4cf3faced1a56c155bf470f"
@@ -1585,10 +1585,10 @@
       "review": "Author-attested: 2026-10-25 re-read CONTRIBUTING.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/building.md": {
-      "evidence": "Author-attested: 2026-10-25 re-read docs/building.md against scripts/build.py after D02 T01 section 1 Round 3 fix (consistent profile backup recovery; default build flags and target layout unchanged)",
+      "evidence": "Author-attested: 2026-10-25 re-read docs/building.md against scripts/build.py and research/vsjxl.py after D02 T01 section 2 (opt-in --lto flag; default release build, CLI, C API, and bitstream unchanged)",
       "sources": {
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
-        "scripts/build.py": "742c8ba1c040f0af41fb2fb5dbdf56bd919f53f0fa49ee6e370e642408db7c1c",
+        "scripts/build.py": "ba46691db1ecf40e5eed8639356988f142585f7763ab9b6d269056b80b01b5ab",
         "scripts/package.py": "b9ef31c48c2c5f7dfdcb22a7b3e5bd1a14c36b84d5d3887f17646bf47eaad199",
         "scripts/check-all.py": "7432d7b4b4eb6c6f499376180fb5576851d1be22db76d7e1375e497e6cbe2637",
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
@@ -1617,12 +1617,12 @@
       "review": "Author-attested: 2026-10-25 re-read docs/index.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/getting-started.md": {
-      "evidence": "Author-attested: 2026-10-25 re-read docs/getting-started.md against scripts/build.py after D02 T01 section 1 Round 3 fix (consistent profile backup recovery; CLI and build commands unchanged)",
+      "evidence": "Author-attested: 2026-10-25 re-read docs/getting-started.md against scripts/build.py and research/vsjxl.py after D02 T01 section 2 (opt-in --lto flag; default release build, CLI, C API, and bitstream unchanged)",
       "sources": {
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
         "tools/provision.py": "b17ea42569b76d70edbcc235dbc86385c9c7ce50b1be7a3bb83383c30f848556",
         "tools/provision.ps1": "836043df1f959726d5fa2b73d206fa896c9d3aacd12bf7e21b8193a4bb14ad96",
-        "scripts/build.py": "742c8ba1c040f0af41fb2fb5dbdf56bd919f53f0fa49ee6e370e642408db7c1c",
+        "scripts/build.py": "ba46691db1ecf40e5eed8639356988f142585f7763ab9b6d269056b80b01b5ab",
         "scripts/check-all.py": "7432d7b4b4eb6c6f499376180fb5576851d1be22db76d7e1375e497e6cbe2637",
         "scripts/check-all.ps1": "7006b1871b52689461497fa676b3cb6472f0e436c9c5e240deb9da069321a528",
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
@@ -1687,11 +1687,11 @@
       "review": "Author-attested: 2026-10-25 re-read spec/FOLD.md against tests/rfi_ref.py, src/bmp.c, src/cm.c, and src/fold.c for D04 T01 section 3 (C11 operator precedence note, parenthesized counter update, and oracle BMP/size acceptance rules)"
     },
     "research/README.md": {
-      "evidence": "Author-attested: 2026-10-25 re-read research/README.md against research/vsjxl.py after D02 T01 section 1 Round 1 fixes (bench status validation, profile provenance check, and per-image min sum aggregation)",
+      "evidence": "Author-attested: 2026-10-25 re-read research/README.md against scripts/build.py and research/vsjxl.py after D02 T01 section 2 (opt-in --lto flag; default release build, CLI, C API, and bitstream unchanged)",
       "sources": {
         "research/corpus.py": "4434e32d8cdb5e70d887f03f7f4cdfbe9ada666ea680c7d6ce176cc9b2858bb7",
         "research/ab.py": "1c610cd4922caba9aa4e487506dcc90d77aaad67f6a98e0276b32ec44c96400f",
-        "research/vsjxl.py": "07ebd187a45f4ec6d91b098f6956097d276360effa1a9a5a1b0187cc0b9a66ad",
+        "research/vsjxl.py": "026a9ed3373408ff1236e2dd56e921dc68cd9af7e4143075f39998a61a2a1f3f",
         "research/prof.py": "7fa28a84aab62f0eb79fd579bcc01b6e2e55cc200bdaa96c0218b2ad4aa05605",
         "research/bench.c": "97d465a600a7ee3962b11636efd6c33d60d25c48354ee1210dd9a019c117a7ea",
         "research/README.md": "8008dce4077b8d8fb56cfc9b6a14ba5cfe6bd074ccd96b8aa0a59ca46fe93530"
