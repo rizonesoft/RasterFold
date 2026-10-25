@@ -1717,12 +1717,18 @@ class DriftTests(unittest.TestCase):
         )
         self.assertEqual([], self.check().errors)
 
-        # Direct Checker.links probe on indented code followed by an adjacent live reference.
+        # Direct Checker.links probe on indented code and unclosed blockquote fences followed by adjacent live links/references.
         probe = drift.Checker(self.root)
         probe.links('valid_links.md', '    [literal][example]\n\n[live][missing_after_code]\n', self.root)
         self.assertEqual(
             [{'kind': 'link', 'path': 'valid_links.md', 'detail': 'unresolved reference link: [missing_after_code]'}],
             probe.errors,
+        )
+        probe_bq = drift.Checker(self.root)
+        probe_bq.links('valid_links.md', '> ```\n> [literal](ignored.md)\n\n[live](missing-review-target.md)\n', self.root)
+        self.assertEqual(
+            [{'kind': 'link', 'path': 'valid_links.md', 'detail': 'missing target: missing-review-target.md'}],
+            probe_bq.errors,
         )
 
         # Non-Setext constructs (frontmatter, tab-indented code blocks, block HTML, list item before ---, blockquote before ---, table separator) must not create anchors.

@@ -82,21 +82,42 @@ def _leading_cols(s):
 def prose(text):
     """Mask fenced and indented code blocks while preserving original byte-decoded offsets."""
     lines, fence = [], None
+    fence_bq_depth = 0
     in_indented_code = False
+    indented_bq_depth = 0
+    prev_bq_depth = 0
     can_start_indented_code = True
     list_indent = 0
     for line in text.splitlines(keepends=True):
-        inner = re.sub(r'^(?: {0,3}>[ \t]?)*', '', line)
+        bq_match = re.match(r'^(?: {0,3}>[ \t]?)*', line)
+        bq_depth = bq_match[0].count('>')
+        inner = line[bq_match.end():]
+        if fence and bq_depth < fence_bq_depth:
+            fence = None
+            fence_bq_depth = 0
+            can_start_indented_code = True
+            list_indent = 0
+        if in_indented_code and bq_depth != indented_bq_depth:
+            in_indented_code = False
+            indented_bq_depth = 0
+            can_start_indented_code = True
+            list_indent = 0
+        if bq_depth != prev_bq_depth and not fence and not in_indented_code:
+            can_start_indented_code = True
+            list_indent = 0
+        prev_bq_depth = bq_depth
         match = re.match(r'^ {0,3}(`{3,}|~{3,})', inner)
         if match and fence is None and not in_indented_code:
             fence = match[1]
+            fence_bq_depth = bq_depth
             can_start_indented_code = True
             list_indent = 0
             lines.append(blank(line))
             continue
         if fence:
-            if re.match(r'^ {0,3}' + re.escape(fence[0]) + '{' + str(len(fence)) + r',}[ \t]*\r?$', inner):
+            if bq_depth == fence_bq_depth and re.match(r'^ {0,3}' + re.escape(fence[0]) + '{' + str(len(fence)) + r',}[ \t]*\r?$', inner):
                 fence = None
+                fence_bq_depth = 0
                 can_start_indented_code = True
             lines.append(blank(line))
             continue
@@ -116,8 +137,10 @@ def prose(text):
                 lines.append(blank(line))
                 continue
             in_indented_code = False
+            indented_bq_depth = 0
         if can_start_indented_code and cols >= code_threshold:
             in_indented_code = True
+            indented_bq_depth = bq_depth
             lines.append(blank(line))
             continue
         m_list = re.match(r'^( {0,3}(?:[-*+]|\d+[.)])[ \t]+)', inner)

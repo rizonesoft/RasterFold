@@ -1589,7 +1589,7 @@
     "docs/document-drift.md": {
       "evidence": "Author-attested: 2026-10-25 re-read docs/document-drift.md against scripts/drift-check.py and docs/drift.json (D08 T02 section 5)",
       "sources": {
-        "scripts/drift-check.py": "fec8e9b04bdd749b2cfcbe568ddc6e7aa2c4217918d839f3457e65fc10859124",
+        "scripts/drift-check.py": "42bbb001f51b1e180534df0c126e24b63a2c5bbc4b4f691a67be26766fa22d4d",
         "scripts/plan-audit.py": "a75c0311c54108a195c8fbe9048df11458abfe946563bb7c248e798fcdb98d42",
         "docs/document-drift.md": "1f8e84487a8c3c8ead3889e0116563508d65585275b7c5eb36209b738daea4fb"
       }
