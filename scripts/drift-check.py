@@ -444,9 +444,9 @@ class Checker:
         except FileNotFoundError:
             return ('absent', None)
         if p.is_file():
-            return ('file', digest(p.read_bytes()))
+            return ('file', st.st_mode, st.st_mtime_ns, digest(p.read_bytes()))
         if p.is_dir():
-            return ('dir', tuple(sorted(c.relative_to(p).as_posix() for c in p.rglob('*') if '__pycache__' not in c.parts)))
+            return ('dir', st.st_mode, tuple(sorted(c.relative_to(p).as_posix() for c in p.rglob('*') if '__pycache__' not in c.parts)))
         return ('other', st.st_mode)
 
     def _watched_paths(self):
