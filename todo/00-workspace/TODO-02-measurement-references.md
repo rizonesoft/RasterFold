@@ -13,8 +13,11 @@ track: W2
 > **Goal:** Every measurement RasterFold makes reports JPEG XL effort 7, JPEG XL effort 9, and lossless WebP side by side, from the research tools, the benchmark, and a committed per-image corpus file the docs and drift gates read, so no target in the roadmap is measured against a reference nobody reran.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-09-29):** `research/corpus.py` records JPEG XL e7 sizes only (`jxl_refs.json` keys `<image>:e7`), and `research/ab.py size` compares against e7 only. `tests/benchmark.py` runs `rasterfold`, `rasterfold-1t`, `jxl`, `jxl-1t` (both e7), `webp`, and `png`. A one-off script measured e9 and WebP on the corpus on 2026-09-29: photos 0.983 of e9 (28 of 39 below) and 0.904 of WebP; generated images geometric mean 2.29 of e9 and 3.66 of WebP. No per-image corpus results are committed.
+> **Current state (verified 2026-10-25):** `research/corpus.py` records JPEG XL e7 (`<image>:e7`), JPEG XL e9 (`<image>:e9`), and lossless WebP (`<image>:webp`) sizes in `build/research/jxl_refs.json`, and `research/ab.py` (`size` and `rsize`) compares against all three references via `summarize_sizes`. `tests/benchmark.py` runs `rasterfold`, `rasterfold-1t`, `jxl`, `jxl-1t` (both e7), `webp`, and `png`. On the 39-photo corpus, `research/ab.py size photo` reports 0.9712 of e7, 0.9829 (0.983) of e9, and 0.9041 (0.904) of WebP; on `synth`, geometric mean is 1.1986 of e7, 2.2860 (2.29) of e9, and 3.6626 (3.66) of WebP. No per-image corpus results are committed yet.
 <!-- claim: count "effort\", \"7\"" research/corpus.py = 1 -->
+<!-- claim: count "effort\", \"9\"" research/corpus.py = 1 -->
+<!-- claim: count "\"libwebp\"" research/corpus.py = 1 -->
+<!-- claim: exists tests/test_research_refs.py -->
 <!-- claim: count "\"jxl-e9\"" tests/benchmark.py = 0 -->
 <!-- claim: absent benchmarks/corpus.csv -->
 
@@ -48,17 +51,21 @@ track: W2
 
 ## 1. e9 and WebP References in the Research Tools
 
+> **Started:** 2026-10-25T00:45:00Z
+
 **Needs:** ffmpeg with libjxl (benchmarks)
 
 **Job:** A developer can see every size ratio against JPEG XL e7, JPEG XL e9, and WebP in one report.
 
 The roadmap measures milestones against JPEG XL e9 and WebP, so the tool that decides every compression experiment must report them.
 
-- [ ] Encode every corpus image with JPEG XL effort 9 (`-distance 0 -effort 9 -threads 1`) and lossless WebP (`-lossless 1 -quality 100 -compression_level 6 -threads 1`) in `research/corpus.py`, recording `<image>:e9` and `<image>:webp` in `build/research/jxl_refs.json`. Done when: every image has all three keys. Cheaper substitute: measuring e9 on `measure` alone.
-- [ ] Print `e9=` and `webp=` totals, geometric means, and worst images beside `jxl=` in `research/ab.py size`, and the three per-image ratios with `-v`. Done when: `python research/ab.py size photo` reports photos 0.983 of e9 and 0.904 of WebP (the 2026-09-29 figures).
-- [ ] Commit: `"research: report JPEG XL e9 and WebP beside e7"`
+**Corrected 2026-10-25:** Per the pre-build `--kind plan` review (`docs/reviews/00-workspace/D00-T02-s1.md`), `research/ab.py` shares `summarize_sizes` across both `size` and `rsize` modes, validates every image's `:e7`, `:e9`, and `:webp` entry in `jxl_refs.json` as a strict positive integer (`type(v) is int and v > 0`, rejecting missing, zero, negative, non-integer, and boolean values) before printing any `-v` ratio lines, and `research/corpus.py` (`update_refs` / `encode_ref`) fails non-zero if `ffmpeg` fails or writes a non-positive output file, reloads `build/research/jxl_refs.json` to verify all three positive integer keys per corpus stem, and is covered alongside `size`/`rsize` independent arithmetic checks in `tests/test_research_refs.py`.
 
-**Test checkpoint:** `python research/ab.py size synth -v` lists `syn_checker` with e9 210 and WebP 82 bytes; deleting one `:e9` key makes the tool name the missing reference instead of printing a ratio.
+- [x] Encode every corpus image with JPEG XL effort 9 (`-distance 0 -effort 9 -threads 1`) and lossless WebP (`-lossless 1 -quality 100 -compression_level 6 -threads 1`) in `research/corpus.py` (`REFS_SPEC`, `encode_ref`, `update_refs`), recording `<image>:e9` and `<image>:webp` beside `<image>:e7` in `build/research/jxl_refs.json`, failing non-zero on `ffmpeg` failure without corrupting `jxl_refs.json`, reloading `jxl_refs.json` to verify every corpus stem has positive integer `:e7`, `:e9`, and `:webp` keys, and updating this file's `Current state` and claims. Done when: all 55 stems in `build/research/ppm` have positive integer `:e7`, `:e9`, and `:webp` keys matching the encoded files on disk (`python3 scripts/windows.py research/corpus.py`), and `python3 scripts/todo-claims.py` exits 0. Cheaper substitute: measuring e9 on `measure` alone.
+- [x] Print `e9=` and `webp=` totals, ratios, geometric means, and worst images beside `jxl=` in `research/ab.py` (`size` and `rsize` via shared `summarize_sizes`), and the three per-image ratios with `-v`, validating all three references as strict positive integers before printing any ratios and verifying against independent arithmetic in `tests/test_research_refs.py`. Done when: `python3 research/ab.py size photo` reports `total=30865211 jxl=31782058 ratio=0.9712 geomean=0.9728 worst=1.0037 (kodim17) e9=31400714 e9_ratio=0.9829 e9_geomean=0.9883 e9_worst=1.0193 (kodim16) webp=34138176 webp_ratio=0.9041 webp_geomean=0.8932 webp_worst=1.0104 (ic_deer) measure=1409028 (0.9581 e9=0.9781 webp=0.8869)` (`0.9829` / `0.983` of e9 and `0.9041` / `0.904` of WebP, matching the 2026-09-29 `ffmpeg 8.1.2-full_build-www.gyan.dev` figures and independent arithmetic), and `tests/test_research_refs.py` passes on Linux and Windows.
+- [x] Commit: `"research: report JPEG XL e9 and WebP beside e7"`
+
+**Test checkpoint:** `python3 research/ab.py size synth -v` lists `syn_checker` with e9 210 and WebP 82 bytes (`syn_checker 5709 jxl= 316 18.0665 e9= 210 27.1857 webp= 82 69.6220`, matching `build/research/jxl/syn_checker.e9.jxl` and `syn_checker.webp` produced by `ffmpeg 8.1.2-full_build-www.gyan.dev`); deleting `syn_checker:e9` makes `python3 research/ab.py size synth -v` exit 1 with `missing reference in jxl_refs.json: syn_checker:e9` and empty stdout instead of printing a ratio; `python3 -m unittest discover -s tests -p 'test_research_refs.py' -v` and `python3 scripts/windows.py tests/test_research_refs.py -v < /dev/null` exit 0.
 
 ## 2. JPEG XL e9 in the Benchmark
 
