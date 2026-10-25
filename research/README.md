@@ -8,7 +8,7 @@ Tools for changing the codec with numbers instead of guesses. Data goes to
 | `python research/corpus.py` | builds `build/research/ppm/` (55 images: measure, 24 Kodak, 14 imagecompression.info crops, 5 test-pack crops, 11 generated) and `jxl_refs.json` (JPEG XL e7 sizes) |
 | `python research/ab.py size [file.c] SET [-v]` | exact `.fold` sizes of a `cm.c` variant on a set, against JPEG XL: total, geometric mean, worst image |
 | `python research/ab.py bench [file.c] [-r3] [-t1\|-t3] IMAGES` | encode and decode time of a `cm.c` variant, verified round trip |
-| `python research/ab.py ab A.c B.c [-n5] [-t1] IMAGES` | alternates two variants and compares their minimum times |
+| `python research/ab.py ab [-v] A.c B.c [-n5] [-t1] IMAGES` | alternates two variants and compares their minimum times (with `-v`, also reports set `min_tot`, per-image `geomean`, and `worst`) |
 | `python research/prof.py [N]` | line-level profile from `bench.exe -p` samples |
 | `python research/vsjxl.py [image.bmp] [-n5]` | process wall times of `bin/windows-x64/bin/rasterfold.exe` against ffmpeg libjxl |
 

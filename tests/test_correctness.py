@@ -557,6 +557,48 @@ def truncated_stream_abort() -> None:
             check_reject_fast(f"trunc_mid_ch{c}", mid_fold, t, "invalid fold: cm stream")
 
 
+def tail_threshold_roundtrip() -> None:
+    """Multi-row CM streams in both rdec_init regimes (rem <= 48 and rem > 48
+    crossing in + n - 40 across row boundaries) round-trip at 1 and 3 threads."""
+    work = WORK / "tail_threshold"
+    work.mkdir(parents=True, exist_ok=True)
+    fixtures = [
+        ("tail_le48_solid", 6, 6, solid(6, 6, (42, 100, 200))),
+        ("tail_le48_grad", 8, 6, gradient(8, 6)),
+        ("tail_mixed_check16", 16, 12, checker(16, 12, 3)),
+        ("tail_gt48_photo16", 16, 12, photo(16, 12)),
+        ("tail_gt48_photo20", 20, 16, photo(20, 16)),
+    ]
+    saw_le48 = False
+    saw_gt48_multirow_tail = False
+    for name, w, h, rgb in fixtures:
+        oracle_fold = rf.encode_image(w, h, rgb)
+        check(oracle_fold[16] == rf.METHOD_CM, f"{name} did not encode with METHOD_CM")
+        sz0, sz1, sz2 = struct.unpack_from("<III", oracle_fold, 32)
+        rems = (sz0 - 5, sz1 - 5, sz2 - 5)
+        if all(0 <= r <= 48 for r in rems):
+            saw_le48 = True
+        if all(r > 48 for r in rems) and all(sz < h * 25 for sz in (sz0, sz1, sz2)):
+            # With < 25 bytes per row on average and h >= 8, the last 40 stream
+            # bytes span multiple rows and cross in + n - 40 before row h - 1.
+            saw_gt48_multirow_tail = True
+        in_bmp = work / f"{name}_in.bmp"
+        in_bmp.write_bytes(rf.write_bmp24(w, h, rgb))
+        for t in ("1", "3"):
+            out_fold = work / f"{name}_t{t}.fold"
+            out_bmp = work / f"{name}_t{t}.bmp"
+            out_fold.unlink(missing_ok=True)
+            out_bmp.unlink(missing_ok=True)
+            r_enc = run(["encode", "--threads", t, str(in_bmp), str(out_fold)])
+            check(r_enc.returncode == 0, f"{name} encode t={t} failed: {r_enc.stderr.decode(errors='replace')}")
+            check(out_fold.read_bytes() == oracle_fold, f"{name} encode t={t} != oracle")
+            r_dec = run(["decode", "--threads", t, str(out_fold), str(out_bmp)])
+            check(r_dec.returncode == 0, f"{name} decode t={t} failed: {r_dec.stderr.decode(errors='replace')}")
+            check(rf.read_bmp24(out_bmp.read_bytes()) == (w, h, rgb), f"{name} decode t={t} pixel mismatch")
+    check(saw_le48, "tail_threshold fixtures did not cover rem <= 48")
+    check(saw_gt48_multirow_tail, "tail_threshold fixtures did not cover multi-row rem > 48 crossing in + n - 40")
+
+
 def main() -> int:
     if not EXE.exists():
         print(f"missing {EXE}; run build.ps1 first")
@@ -607,6 +649,7 @@ def main() -> int:
     case("acceptance", oracle_acceptance)
     case("corrupt", corrupt_cases)
     case("truncated-abort", truncated_stream_abort)
+    case("tail-threshold", tail_threshold_roundtrip)
     # The checksum in a successful file matches zlib, not only our encoder.
     case(
         "zlib-crc",

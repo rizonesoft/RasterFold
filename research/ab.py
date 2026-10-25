@@ -483,7 +483,7 @@ def names(args):
 def build(src, out, flags=()):
     cmd = [str(CLANG), "-O2", "-march=x86-64-v2", "-mtune=generic", "-g", *flags, f"-I{REPO / 'src'}", "-o", str(out),
            str(TOOLS / "bench.c"), str(TOOLS / "benchsys.c"), str(src), str(REPO / "src" / "crc32.c"), "-lwinmm"]
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    r = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True)
     if r.returncode:
         raise SystemExit(r.stderr)
 
@@ -492,7 +492,7 @@ THREADS = next((a for a in sys.argv if a.startswith("-t")), "-t1")
 
 
 def run(exe, imgs, reps=1):
-    out = subprocess.run([str(exe), f"-r{reps}", THREADS, *[f"ppm/{n}.ppm" for n in imgs]], capture_output=True, text=True, cwd=RES).stdout
+    out = subprocess.run([str(exe), f"-r{reps}", THREADS, *[f"ppm/{n}.ppm" for n in imgs]], stdin=subprocess.DEVNULL, capture_output=True, text=True, cwd=RES).stdout
     if "MISMATCH" in out or "failed" in out:
         raise SystemExit("bad run:\n" + out)
     return out
@@ -503,11 +503,36 @@ def total(out):
     return int(m.group(1)), float(m.group(2)), float(m.group(3))
 
 
+def parse_bench_rows(stdout: str, expected_imgs: list[str] | tuple[str, ...]) -> dict[str, tuple[int, float, float]]:
+    rows: dict[str, tuple[int, float, float]] = {}
+    for raw_line in stdout.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("encode failed"):
+            raise SystemExit(f"bench encode failure: {line}")
+        m = re.match(
+            r"^(\S+)\.ppm\s+(\d+)\s+bpp=\S+\s+enc=\s*([\d.]+)ms\s+dec=\s*([\d.]+)ms\s+\([^)]+\)\s+(\S+)$",
+            line,
+        )
+        if m:
+            status = m.group(5)
+            if status not in ("OK", "RAW"):
+                raise SystemExit(f"bench round-trip failure on {m.group(1)}: {status}")
+            rows[m.group(1)] = (int(m.group(2)), max(float(m.group(3)), 0.05), max(float(m.group(4)), 0.05))
+    missing = [img for img in expected_imgs if img not in rows]
+    if missing:
+        raise SystemExit(f"bench output missing expected images: {missing}")
+    return rows
+
+
 def main():
     mode, rest = sys.argv[1], sys.argv[2:]
     csv_path, rest = extract_csv_arg(rest)
     if csv_path is not None and mode != "size":
         raise SystemExit(f"--csv is only supported in size mode, not {mode!r}")
+    verbose = "-v" in sys.argv
+    rest = [a for a in rest if a != "-v"]
     flags = [a for a in rest if a.startswith("-D") or a.startswith("-O") or a.startswith("-m")]
     rest = [a for a in rest if a not in flags]
     if mode == "bench":
@@ -523,13 +548,46 @@ def main():
         build(a, RES / "benchA.exe", flags)
         build(b, RES / "benchB.exe", flags)
         res = {"A": [], "B": []}
+        row_runs = {"A": [], "B": []}
         for _ in range(n):
-            res["A"].append(total(run(RES / "benchA.exe", imgs)))
-            res["B"].append(total(run(RES / "benchB.exe", imgs)))
+            out_a = run(RES / "benchA.exe", imgs)
+            out_b = run(RES / "benchB.exe", imgs)
+            res["A"].append(total(out_a))
+            res["B"].append(total(out_b))
+            if verbose:
+                row_runs["A"].append(parse_bench_rows(out_a, imgs))
+                row_runs["B"].append(parse_bench_rows(out_b, imgs))
         for k, v in res.items():
             enc = [x[1] for x in v]; dec = [x[2] for x in v]
             print(f"{k}: size={v[0][0]}  enc min={min(enc):7.1f} med={statistics.median(enc):7.1f}   dec min={min(dec):7.1f} med={statistics.median(dec):7.1f}")
         print(f"B/A: enc {min(x[1] for x in res['B']) / min(x[1] for x in res['A']):.3f}  dec {min(x[2] for x in res['B']) / min(x[2] for x in res['A']):.3f}")
+        if verbose:
+            a_tot_enc = b_tot_enc = a_tot_dec = b_tot_dec = 0.0
+            enc_ratios = []
+            dec_ratios = []
+            for img in imgs:
+                if row_runs["A"][0][img][0] != row_runs["B"][0][img][0]:
+                    raise SystemExit(f"size mismatch on {img}: A={row_runs['A'][0][img][0]} B={row_runs['B'][0][img][0]}")
+                ae = min(x[img][1] for x in row_runs["A"])
+                be = min(x[img][1] for x in row_runs["B"])
+                ad = min(x[img][2] for x in row_runs["A"])
+                bd = min(x[img][2] for x in row_runs["B"])
+                a_tot_enc += ae
+                b_tot_enc += be
+                a_tot_dec += ad
+                b_tot_dec += bd
+                enc_ratios.append((be / ae, img))
+                dec_ratios.append((bd / ad, img))
+            g_enc = math.exp(sum(math.log(x[0]) for x in enc_ratios) / len(enc_ratios))
+            g_dec = math.exp(sum(math.log(x[0]) for x in dec_ratios) / len(dec_ratios))
+            w_enc = max(enc_ratios)
+            w_dec = max(dec_ratios)
+            print(
+                f"min_tot (n={len(imgs)}): dec={b_tot_dec/a_tot_dec:.3f} ({b_tot_dec:.1f}/{a_tot_dec:.1f}ms) "
+                f"geomean={g_dec:.3f} worst={w_dec[1]}({w_dec[0]:.3f}) | "
+                f"enc={b_tot_enc/a_tot_enc:.3f} ({b_tot_enc:.1f}/{a_tot_enc:.1f}ms) "
+                f"geomean={g_enc:.3f} worst={w_enc[1]}({w_enc[0]:.3f})"
+            )
     elif mode == "rsize":
         exe, cfg = RES / rest[0], rest[1]
         imgs = names(rest[2:])

@@ -80,10 +80,14 @@ RF_INLINE int med3(int w, int n, int nw) {
 }
 /* Per lane: sign(d) * (number of thresholds t_i with |d| >= t_i) + mid. The
    thresholds arrive as t_i - 1 so that a greater-than compare decides >=. */
+RF_INLINE __m128i qcount3(__m128i a, __m128i sgn, __m128i t1, __m128i t2, __m128i t3, int mid) {
+    __m128i m = _mm_add_epi32(_mm_add_epi32(_mm_cmpgt_epi32(a, t1), _mm_cmpgt_epi32(a, t2)), _mm_cmpgt_epi32(a, t3));
+    return _mm_sub_epi32(_mm_set1_epi32(mid), _mm_sign_epi32(m, sgn));
+}
 RF_INLINE __m128i qcount(__m128i a, __m128i sgn, __m128i t1, __m128i t2, __m128i t3, __m128i t4, int mid) {
     __m128i m = _mm_add_epi32(_mm_add_epi32(_mm_cmpgt_epi32(a, t1), _mm_cmpgt_epi32(a, t2)),
                               _mm_add_epi32(_mm_cmpgt_epi32(a, t3), _mm_cmpgt_epi32(a, t4)));
-    return _mm_add_epi32(_mm_sign_epi32(_mm_sub_epi32(_mm_setzero_si128(), m), sgn), _mm_set1_epi32(mid));
+    return _mm_sub_epi32(_mm_set1_epi32(mid), _mm_sign_epi32(m, sgn));
 }
 /* Dot product of four small lanes with int16 coefficients (high halves zero). */
 RF_INLINE int qdot(__m128i q, __m128i coef) {
@@ -129,13 +133,14 @@ RF_INLINE void renc_bit(renc *e, int bit, uint32_t p1) {
 static void renc_flush(renc *e) { for (int i = 0; i < 5; i++) renc_shift(e); }
 
 /* The decoder reads its stream straight from the input buffer, switching to a
-   16-byte zero-padded tail buffer for the last four bytes so renormalization
-   can load two bytes without reading past the stream. A stream that needs more
-   bytes than it has ends with in > end, which the caller rejects. */
+   128-byte zero-padded tail buffer for the last 40 bytes so one sample (up to
+   16 decisions / 32 stream bytes plus 2-byte lookahead) can decode before
+   checking the tail boundary. A stream that needs more bytes than it has ends
+   with in > end, which the caller rejects. */
 typedef struct {
     uint32_t range, code;
-    const uint8_t *in, *end, *lim;      /* lim = end - 4 before tail, then end + 2 */
-    uint8_t tail[16];
+    const uint8_t *in, *end, *lim;      /* lim = end - 40 before tail, then end + 2 */
+    uint8_t tail[128];
 } rdec;
 
 static void rdec_init(rdec *d, const uint8_t *in, size_t n) {
@@ -143,19 +148,19 @@ static void rdec_init(rdec *d, const uint8_t *in, size_t n) {
     for (int i = 0; i < 5; i++) d->code = (d->code << 8) | in[i];
     memset(d->tail, 0, sizeof d->tail);
     size_t rem = n - 5;
-    if (rem <= 8) {
+    if (rem <= 48) {
         if (rem) memcpy(d->tail, in + 5, rem);
         d->in = d->tail; d->end = d->tail + rem; d->lim = d->end + 2;
     } else {
-        memcpy(d->tail, in + n - 8, 8);
-        d->in = in + 5; d->end = in + n; d->lim = in + n - 4;
+        memcpy(d->tail, in + n - 48, 48);
+        d->in = in + 5; d->end = in + n; d->lim = in + n - 40;
     }
 }
 static RF_NOINLINE void rdec_tail(rdec *d) {
     if (d->lim < d->end) {
-        d->in = d->tail + 8 - (d->end - d->in);
-        d->end = d->tail + 8;
-        d->lim = d->tail + 10;
+        d->in = d->tail + 48 - (d->end - d->in);
+        d->end = d->tail + 48;
+        d->lim = d->tail + 50;
     }
     d->in = d->in > d->lim ? d->lim : d->in;
 }
@@ -172,7 +177,6 @@ RF_INLINE int rdec_bit(rdec *d, uint32_t p1) {
     d->code = (uint32_t)c64;
     d->range = range << (8 * n);
     d->in += n;
-    if (__builtin_expect(d->in >= d->lim, 0)) rdec_tail(d);
     return bit;
 }
 
@@ -254,23 +258,31 @@ static int cm_alloc(cm_t *m, uint32_t w, uint32_t h, uint8_t *rgb, size_t bmp_st
 RF_INLINE int code_bit(chan_t *ch, uint16_t *const cp[NMODEL], const uint32_t *rate, int32_t *wrow, int node, int bit, const int enc) {
     uint16_t *c0 = cp[0] + node, *c1 = cp[1] + node, *c2 = cp[2] + node, *c3 = cp[3] + node, *c4 = cp[4] + node;
     int32_t *w = wrow + node * WSTRIDE;
-    int s0 = STRETCH[*c0 >> 4], s1 = STRETCH[*c1 >> 4], s2 = STRETCH[*c2 >> 4];
-    int s3 = STRETCH[*c3 >> 4], s4 = STRETCH[*c4 >> 4];
+    uint32_t v0 = *c0, v1 = *c1, v2 = *c2, v3 = *c3, v4 = *c4;
+    int s0 = STRETCH[v0 >> 4], s1 = STRETCH[v1 >> 4], s2 = STRETCH[v2 >> 4];
+    int s3 = STRETCH[v3 >> 4], s4 = STRETCH[v4 >> 4];
+    __m128i wv0 = _mm_load_si128((const __m128i *)w);
+    __m128i wv1 = _mm_load_si128((const __m128i *)(w + 4));
+    __m128i sv = _mm_setr_epi16((int16_t)s0, (int16_t)s1, (int16_t)s2, (int16_t)s3, (int16_t)s4, 64, 0, 0);
     int64_t dot = (int64_t)w[0] * s0 + (int64_t)w[1] * s1 + (int64_t)w[2] * s2 +
                   (int64_t)w[3] * s3 + (int64_t)w[4] * s4 + (int64_t)w[5] * 64;
     int x = (int)(dot >> 16);
     x = x > 2047 ? 2047 : x < -2047 ? -2047 : x;
     uint32_t p = (uint32_t)SQUASH[x + 2047];
+    uint32_t rt0 = rate[0], rt1 = rate[1], rt2 = rate[2], rt3 = rate[3], rt4 = rate[4];
     if (enc) renc_bit(&ch->enc, bit, p);
     else bit = rdec_bit(&ch->dec, p);
     int err = (bit << 12) - (int)p;
-#define WUPD(k, s) w[k] = (int32_t)((uint32_t)w[k] + (uint32_t)(((s) * err + 4096) >> 13));
-    WUPD(0, s0) WUPD(1, s1) WUPD(2, s2) WUPD(3, s3) WUPD(4, s4) WUPD(5, 64)
-#undef WUPD
+    __m128i ev = _mm_set1_epi32((int32_t)((uint16_t)err | (4096u << 16)));
+    __m128i ones = _mm_set1_epi16(1);
+    _mm_store_si128((__m128i *)w, _mm_add_epi32(wv0, _mm_srai_epi32(_mm_madd_epi16(_mm_unpacklo_epi16(sv, ones), ev), 13)));
+    _mm_store_si128((__m128i *)(w + 4), _mm_add_epi32(wv1, _mm_srai_epi32(_mm_madd_epi16(_mm_unpackhi_epi16(sv, ones), ev), 13)));
     const int64_t target = bit ? 65535 : 0;
-#define CUPD(cc, k) *cc = (uint16_t)(*cc + (int32_t)(((target - *cc) * (int64_t)rate[k]) >> 16));
-    CUPD(c0, 0) CUPD(c1, 1) CUPD(c2, 2) CUPD(c3, 3) CUPD(c4, 4)
-#undef CUPD
+    *c0 = (uint16_t)(v0 + (int32_t)(((target - (int64_t)v0) * (int64_t)rt0) >> 16));
+    *c1 = (uint16_t)(v1 + (int32_t)(((target - (int64_t)v1) * (int64_t)rt1) >> 16));
+    *c2 = (uint16_t)(v2 + (int32_t)(((target - (int64_t)v2) * (int64_t)rt2) >> 16));
+    *c3 = (uint16_t)(v3 + (int32_t)(((target - (int64_t)v3) * (int64_t)rt3) >> 16));
+    *c4 = (uint16_t)(v4 + (int32_t)(((target - (int64_t)v4) * (int64_t)rt4) >> 16));
     return bit;
 }
 
@@ -314,11 +326,54 @@ RF_INLINE int code_residual(chan_t *ch, uint16_t *const cp[NMODEL], const uint32
 }
 
 /* ------------------------------------------------------------ one sample */
+/* Precomputed row pointers for row y across one or three channels. */
+typedef struct {
+    uint8_t *rgb_row;
+    size_t xs_row;
+    int16_t *r0[3], *r1[3], *r2[3];
+    pos_t *cur[3], *prv[3];
+    int c_off[3];
+} row_ctx_t;
+
+RF_INLINE void row_ctx_init_ch(const cm_t *m, uint32_t y, int c, row_ctx_t *rc) {
+    const size_t w = m->w;
+    const size_t ro0 = (size_t)(y % 3) * w, ro1 = (size_t)((y + 2) % 3) * w, ro2 = (size_t)((y + 1) % 3) * w;
+    const size_t cur_off = (y & 1) ? 0 : (w + 2), prv_off = (y & 1) ? (w + 2) : 0;
+    rc->rgb_row = m->rgb + (ptrdiff_t)y * m->stride;
+    rc->xs_row = (size_t)(y % XROWS) * w;
+    rc->c_off[c] = c == 0 ? 1 : c == 1 ? m->r_off : 2 - m->r_off;
+    const chan_t *ch = &m->ch[c];
+    rc->r0[c] = ch->rows + ro0;
+    rc->r1[c] = ch->rows + ro1;
+    rc->r2[c] = ch->rows + ro2;
+    rc->cur[c] = ch->pos + cur_off;
+    rc->prv[c] = ch->pos + prv_off;
+}
+
+RF_INLINE void row_ctx_init(const cm_t *m, uint32_t y, row_ctx_t *rc) {
+    const size_t w = m->w;
+    const size_t ro0 = (size_t)(y % 3) * w, ro1 = (size_t)((y + 2) % 3) * w, ro2 = (size_t)((y + 1) % 3) * w;
+    const size_t cur_off = (y & 1) ? 0 : (w + 2), prv_off = (y & 1) ? (w + 2) : 0;
+    rc->rgb_row = m->rgb + (ptrdiff_t)y * m->stride;
+    rc->xs_row = (size_t)(y % XROWS) * w;
+    rc->c_off[0] = 1;
+    rc->c_off[1] = m->r_off;
+    rc->c_off[2] = 2 - m->r_off;
+    for (int c = 0; c < 3; c++) {
+        const chan_t *ch = &m->ch[c];
+        rc->r0[c] = ch->rows + ro0;
+        rc->r1[c] = ch->rows + ro1;
+        rc->r2[c] = ch->rows + ro2;
+        rc->cur[c] = ch->pos + cur_off;
+        rc->prv[c] = ch->pos + prv_off;
+    }
+}
+
 /* State handed from the modelling phase to the coding phase of one sample. */
 typedef struct {
     uint16_t *cp[NMODEL];
     int32_t *wrow;
-    int32_t pr[4];
+    int32_t pr[4] __attribute__((aligned(16)));
     int32_t wpred, pred8;
     int predv, base;
     __m128i x0, x1, x2;
@@ -326,20 +381,16 @@ typedef struct {
 
 /* Prepare sample (x, y) of channel c: neighbours, prediction, contexts. The
    five context rows are prefetched here; the coding phase reads them. */
-RF_INLINE void cm_model(cm_t *m, const int c, uint32_t x, uint32_t y, stage_t *s) {
+RF_INLINE void cm_model(cm_t *m, const row_ctx_t *rc, const int c, uint32_t x, uint32_t y, const int interior, stage_t *s) {
     chan_t *ch = &m->ch[c];
     const int w = (int)m->w;
     const int xi = (int)x;
-    const size_t cur_off = (y & 1) ? 0 : (size_t)(w + 2), prv_off = (y & 1) ? (size_t)(w + 2) : 0;
-    int16_t *r0 = ch->rows + (size_t)(y % 3) * m->w;               /* row y */
-    int16_t *r1 = ch->rows + (size_t)((y + 2) % 3) * m->w;         /* row y-1 */
-    int16_t *r2 = ch->rows + (size_t)((y + 1) % 3) * m->w;         /* row y-2 */
-    pos_t *cur = ch->pos + cur_off;
-    pos_t *prv = ch->pos + prv_off;
+    const int16_t *r0 = rc->r0[c], *r1 = rc->r1[c], *r2 = rc->r2[c];
+    const pos_t *cur = rc->cur[c], *prv = rc->prv[c];
     int g = 0, eg = 0, feg = 0, er_r = 0, fer = 0;
-    const size_t xs = (size_t)(y % XROWS) * m->w + x;
+    const size_t xs = rc->xs_row + x;
     if (c >= 1) {
-        g = m->rgb[(ptrdiff_t)y * m->stride + (ptrdiff_t)x * 3 + 1];
+        g = rc->rgb_row[(size_t)x * 3 + 1];
         eg = m->xe[0][xs];
         feg = m->xf[0][xs];
     }
@@ -350,33 +401,39 @@ RF_INLINE void cm_model(cm_t *m, const int c, uint32_t x, uint32_t y, stage_t *s
 
     /* Neighbours, spec section "Neighbours". */
     int W, N, NW, NE, NN, NNE;
-    if (y >= 2 && x >= 1 && xi + 1 < w) {
+    const pos_t *pN = prv + x, *pNE, *pNW, *pW;
+    if (interior) {
         W = r0[x - 1]; N = r1[x]; NW = r1[x - 1]; NE = r1[x + 1];
         NN = r2[x]; NNE = r2[x + 1];
-    } else if (y == 0) {
-        W = x > 0 ? r0[x - 1] : 0;
-        N = NW = NE = NN = NNE = W;
+        pNE = pN + 1; pNW = pN - 1; pW = cur + x - 1;
     } else {
-        N = r1[x];
-        W = x > 0 ? r0[x - 1] : N;
-        NW = x > 0 ? r1[x - 1] : N;
-        NE = xi + 1 < w ? r1[x + 1] : N;
-        NN = y > 1 ? r2[x] : N;
-        NNE = (y > 1 && xi + 1 < w) ? r2[x + 1] : NE;
+        if (y >= 2 && x >= 1 && xi + 1 < w) {
+            W = r0[x - 1]; N = r1[x]; NW = r1[x - 1]; NE = r1[x + 1];
+            NN = r2[x]; NNE = r2[x + 1];
+        } else if (y == 0) {
+            W = x > 0 ? r0[x - 1] : 0;
+            N = NW = NE = NN = NNE = W;
+        } else {
+            N = r1[x];
+            W = x > 0 ? r0[x - 1] : N;
+            NW = x > 0 ? r1[x - 1] : N;
+            NE = xi + 1 < w ? r1[x + 1] : N;
+            NN = y > 1 ? r2[x] : N;
+            NNE = (y > 1 && xi + 1 < w) ? r2[x + 1] : NE;
+        }
+        pNE = xi + 1 < w ? pN + 1 : pN;
+        pNW = x > 0 ? pN - 1 : pN;
+        pW = x > 0 ? cur + x - 1 : cur;
     }
-    const pos_t *pN = prv + x;
-    const pos_t *pNE = xi + 1 < w ? pN + 1 : pN;
-    const pos_t *pNW = x > 0 ? pN - 1 : pN;
-    const pos_t *pW = x > 0 ? cur + x - 1 : 0;
 
     /* Weighted predictor (the JPEG XL self-correcting predictor). */
     int32_t *pr = s->pr;
     int32_t wpred;
     {
-        uint32_t wt[4], ev[4];
-        _mm_storeu_si128((__m128i *)ev, _mm_add_epi32(_mm_add_epi32(_mm_loadu_si128((const __m128i *)pN->perr),
-                                                                    _mm_loadu_si128((const __m128i *)pNE->perr)),
-                                                      _mm_loadu_si128((const __m128i *)pNW->perr)));
+        uint32_t wt[4], ev[4] __attribute__((aligned(16)));
+        _mm_store_si128((__m128i *)ev, _mm_add_epi32(_mm_add_epi32(_mm_loadu_si128((const __m128i *)pN->perr),
+                                                                   _mm_loadu_si128((const __m128i *)pNE->perr)),
+                                                     _mm_loadu_si128((const __m128i *)pNW->perr)));
         if (__builtin_expect((ev[0] | ev[1] | ev[2] | ev[3]) < 1024, 1)) {
             wt[0] = ERRW[0][ev[0]]; wt[1] = ERRW[1][ev[1]]; wt[2] = ERRW[1][ev[2]]; wt[3] = ERRW[1][ev[3]];
         } else {
@@ -388,7 +445,7 @@ RF_INLINE void cm_model(cm_t *m, const int c, uint32_t x, uint32_t y, stage_t *s
             }
         }
         int32_t n8 = N * 8, w8 = W * 8, ne8 = NE * 8;
-        int32_t teW = pW ? pW->err : 0, teN = pN->err, teNW = pNW->err, teNE = pNE->err;
+        int32_t teW = (interior || x > 0) ? pW->err : 0, teN = pN->err, teNW = pNW->err, teNE = pNE->err;
         int32_t sumWN = teN + teW;
         pr[0] = w8 + ne8 - n8;
         pr[1] = n8 - (((sumWN + teNE) * 16) >> 5);
@@ -409,12 +466,20 @@ RF_INLINE void cm_model(cm_t *m, const int c, uint32_t x, uint32_t y, stage_t *s
 
     /* LMS correction from neighbouring errors, the G and R errors at this pixel,
        and five local gradients. Inputs are clamped to +-2047. */
-    int32_t lin[LMSN];
-    lin[0] = x > 0 ? cur[x - 1].fe : 0;
-    lin[1] = y > 0 ? prv[x].fe : 0;
-    lin[2] = (x > 0 && y > 0) ? prv[x - 1].fe : 0;
-    lin[3] = (y > 0 && xi + 1 < w) ? prv[x + 1].fe : 0;
-    lin[4] = x > 1 ? cur[x - 2].fe : 0;
+    int32_t lin[LMSN] __attribute__((aligned(16)));
+    if (interior) {
+        lin[0] = cur[x - 1].fe;
+        lin[1] = prv[x].fe;
+        lin[2] = prv[x - 1].fe;
+        lin[3] = prv[x + 1].fe;
+        lin[4] = cur[x - 2].fe;
+    } else {
+        lin[0] = x > 0 ? cur[x - 1].fe : 0;
+        lin[1] = y > 0 ? prv[x].fe : 0;
+        lin[2] = (x > 0 && y > 0) ? prv[x - 1].fe : 0;
+        lin[3] = (y > 0 && xi + 1 < w) ? prv[x + 1].fe : 0;
+        lin[4] = x > 1 ? cur[x - 2].fe : 0;
+    }
     lin[5] = feg;
     lin[6] = fer;
     lin[7] = (N - W) * 8;
@@ -423,9 +488,9 @@ RF_INLINE void cm_model(cm_t *m, const int c, uint32_t x, uint32_t y, stage_t *s
     lin[10] = (NN - N) * 8;
     lin[11] = (NNE - NE) * 8;
     const __m128i lo = _mm_set1_epi32(-2047), hi = _mm_set1_epi32(2047);
-    __m128i x0 = _mm_min_epi32(_mm_max_epi32(_mm_loadu_si128((const __m128i *)lin), lo), hi);
-    __m128i x1 = _mm_min_epi32(_mm_max_epi32(_mm_loadu_si128((const __m128i *)(lin + 4)), lo), hi);
-    __m128i x2 = _mm_min_epi32(_mm_max_epi32(_mm_loadu_si128((const __m128i *)(lin + 8)), lo), hi);
+    __m128i x0 = _mm_min_epi32(_mm_max_epi32(_mm_load_si128((const __m128i *)lin), lo), hi);
+    __m128i x1 = _mm_min_epi32(_mm_max_epi32(_mm_load_si128((const __m128i *)(lin + 4)), lo), hi);
+    __m128i x2 = _mm_min_epi32(_mm_max_epi32(_mm_load_si128((const __m128i *)(lin + 8)), lo), hi);
     __m128i l0 = _mm_load_si128((const __m128i *)ch->lms), l1 = _mm_load_si128((const __m128i *)(ch->lms + 4));
     __m128i l2 = _mm_load_si128((const __m128i *)(ch->lms + 8));
     __m128i sacc = _mm_add_epi32(_mm_add_epi32(_mm_mullo_epi32(l0, x0), _mm_mullo_epi32(l1, x1)), _mm_mullo_epi32(l2, x2));
@@ -440,10 +505,15 @@ RF_INLINE void cm_model(cm_t *m, const int c, uint32_t x, uint32_t y, stage_t *s
     predv = predv < 0 ? 0 : predv > 255 ? 255 : predv;
 
     /* Contexts. */
-    int eW = x > 0 ? cur[x - 1].er : (y > 0 ? prv[x].er : 0);
-    int eN = y > 0 ? prv[x].er : eW;
-    int eNW = (x > 0 && y > 0) ? prv[x - 1].er : eN;
-    int eNE = (y > 0 && xi + 1 < w) ? prv[x + 1].er : eN;
+    int eW, eN, eNW, eNE;
+    if (interior) {
+        eW = cur[x - 1].er; eN = prv[x].er; eNW = prv[x - 1].er; eNE = prv[x + 1].er;
+    } else {
+        eW = x > 0 ? cur[x - 1].er : (y > 0 ? prv[x].er : 0);
+        eN = y > 0 ? prv[x].er : eW;
+        eNW = (x > 0 && y > 0) ? prv[x - 1].er : eN;
+        eNE = (y > 0 && xi + 1 < w) ? prv[x + 1].er : eN;
+    }
     const int E = 2 * iabs(eW) + 2 * iabs(eN) + iabs(eNW) + iabs(eNE);
     const int qE = qlog(E);
     const int gq = c ? q9(eg) : 4;
@@ -451,12 +521,11 @@ RF_INLINE void cm_model(cm_t *m, const int c, uint32_t x, uint32_t y, stage_t *s
     const int scl = (E >> 2) + 2;
     const int band = qE < 4 ? 0 : qE < 8 ? 1 : 2;
     const __m128i nb = _mm_setr_epi32(W, N, NE, NW);
-    const __m128i never = _mm_set1_epi32(0x7FFFFFFF);
     /* k0: W, N, NE and NW against the prediction, 7 levels of the local scale. */
     const __m128i d0 = _mm_sub_epi32(nb, _mm_set1_epi32(pred));
     const __m128i a0 = _mm_abs_epi32(d0);
     const __m128i a6 = _mm_add_epi32(_mm_slli_epi32(a0, 2), _mm_slli_epi32(a0, 1));
-    const __m128i q0 = qcount(a6, d0, _mm_set1_epi32(scl - 1), _mm_set1_epi32(3 * scl - 1), _mm_set1_epi32(7 * scl - 1), never, 3);
+    const __m128i q0 = qcount3(a6, d0, _mm_set1_epi32(scl - 1), _mm_set1_epi32(3 * scl - 1), _mm_set1_epi32(7 * scl - 1), 3);
     uint32_t k0 = (uint32_t)(qdot(q0, _mm_setr_epi16(343, 0, 49, 0, 7, 0, 1, 0)) * 3 + band);
     /* k1: local error energy with the G and R residuals at this pixel. */
     uint32_t k1 = (uint32_t)(qE * 81 + gq * 9 + rq);
@@ -466,7 +535,7 @@ RF_INLINE void cm_model(cm_t *m, const int c, uint32_t x, uint32_t y, stage_t *s
     uint32_t k2 = (uint32_t)(qdot(q2, _mm_setr_epi16(81, 0, 9, 0, 1, 0, 0, 0)) * 5 + (gq + 1) / 2);
     /* k3: four simple predictors against the prediction, 7 levels. */
     const __m128i d3 = _mm_sub_epi32(_mm_setr_epi32(med3(W, N, NW), W + N - NW, (W + NE + 1) >> 1, N + NE - NNE), _mm_set1_epi32(pred));
-    const __m128i q3 = qcount(_mm_abs_epi32(d3), d3, _mm_set1_epi32(0), _mm_set1_epi32(2), _mm_set1_epi32(6), never, 3);
+    const __m128i q3 = qcount3(_mm_abs_epi32(d3), d3, _mm_set1_epi32(0), _mm_set1_epi32(2), _mm_set1_epi32(6), 3);
     uint32_t k3 = (uint32_t)qdot(q3, _mm_setr_epi16(343, 0, 49, 0, 7, 0, 1, 0));
     /* k4: W and N against the prediction with the error energy. */
     uint32_t k4 = (uint32_t)((q9(W - pred) * 9 + q9(N - pred)) * 16 + qE);
@@ -486,13 +555,11 @@ RF_INLINE void cm_model(cm_t *m, const int c, uint32_t x, uint32_t y, stage_t *s
 
 /* Code the sample prepared by cm_model and update the channel state. The
    encoder passes the sample value; the decoder returns it. */
-RF_INLINE int cm_code(cm_t *m, const int c, uint32_t x, uint32_t y, int value, const stage_t *s, const int enc) {
+RF_INLINE int cm_code(cm_t *m, const row_ctx_t *rc, const int c, uint32_t x, int value, const stage_t *s, const int enc) {
     chan_t *ch = &m->ch[c];
-    const int w = (int)m->w;
-    const size_t cur_off = (y & 1) ? 0 : (size_t)(w + 2), prv_off = (y & 1) ? (size_t)(w + 2) : 0;
-    int16_t *r0 = ch->rows + (size_t)(y % 3) * m->w;
-    pos_t *cur = ch->pos + cur_off;
-    pos_t *prv = ch->pos + prv_off;
+    int16_t *r0 = rc->r0[c];
+    pos_t *cur = rc->cur[c];
+    pos_t *prv = rc->prv[c];
     uint16_t *const *cp = s->cp;
     uint32_t rate[NMODEL];
     for (int k = 0; k < NMODEL; k++) {
@@ -511,6 +578,7 @@ RF_INLINE int cm_code(cm_t *m, const int c, uint32_t x, uint32_t y, int value, c
         code_residual(ch, cp, rate, s->wrow, r, enc);
     } else {
         r = code_residual(ch, cp, rate, s->wrow, 0, enc);
+        if (__builtin_expect(ch->dec.in >= ch->dec.lim, 0)) rdec_tail(&ch->dec);
         ch->bad |= r == 128;
         value = (predv + r) & 255;
     }
@@ -532,25 +600,23 @@ RF_INLINE int cm_code(cm_t *m, const int c, uint32_t x, uint32_t y, int value, c
         pos_t *pc = cur + x;
         pos_t *pa = prv + x + 1;
         pc->err = wpred - v8;
-        for (int k = 0; k < 4; k++) {
-            int32_t e = (iabs(pr[k] - v8) + 3) >> 3;
-            pc->perr[k] = e;
-            pa->perr[k] += e;
-        }
+        __m128i ev = _mm_srli_epi32(_mm_add_epi32(_mm_abs_epi32(_mm_sub_epi32(_mm_load_si128((const __m128i *)pr), _mm_set1_epi32(v8))), _mm_set1_epi32(3)), 3);
+        _mm_storeu_si128((__m128i *)pc->perr, ev);
+        _mm_storeu_si128((__m128i *)pa->perr, _mm_add_epi32(_mm_loadu_si128((const __m128i *)pa->perr), ev));
         pc->er = r;
         pc->fe = ferr;
     }
     if (c < 2) {
-        const size_t xs = (size_t)(y % XROWS) * m->w + x;
+        const size_t xs = rc->xs_row + x;
         m->xe[c][xs] = (int8_t)r;
         m->xf[c][xs] = (int16_t)(ferr > 2047 ? 2047 : ferr < -2047 ? -2047 : ferr);
     }
-    if (!enc) m->rgb[(ptrdiff_t)y * m->stride + (ptrdiff_t)x * 3 + (c == 0 ? 1 : c == 1 ? m->r_off : 2 - m->r_off)] = (uint8_t)value;
+    if (!enc) rc->rgb_row[(size_t)x * 3 + (size_t)rc->c_off[c]] = (uint8_t)value;
     return value;
 }
 
-RF_INLINE int channel_value(const cm_t *m, int c, uint32_t x, uint32_t y) {
-    return m->rgb[((size_t)y * m->w + x) * 3 + (c == 0 ? 1 : c == 1 ? 0 : 2)];
+RF_INLINE int channel_value(const row_ctx_t *rc, int c, uint32_t x) {
+    return rc->rgb_row[(size_t)x * 3 + (size_t)rc->c_off[c]];
 }
 
 /* ------------------------------------------------------------ drivers */
@@ -560,15 +626,49 @@ RF_INLINE int channel_value(const cm_t *m, int c, uint32_t x, uint32_t y) {
 RF_INLINE void run_pipelined(cm_t *m, const int enc) {
     const uint32_t w = m->w;
     for (uint32_t y = 0; y < m->h; y++) {
-        for (uint32_t x = 0; x < w + 2; x++) {
-            stage_t sg, sr, sb;
-            const int dg = x < w, dr = x >= 1 && x - 1 < w, db = x >= 2;
-            if (dg) cm_model(m, 0, x, y, &sg);
-            if (dr) cm_model(m, 1, x - 1, y, &sr);
-            if (db) cm_model(m, 2, x - 2, y, &sb);
-            if (dg) cm_code(m, 0, x, y, enc ? channel_value(m, 0, x, y) : 0, &sg, enc);
-            if (dr) cm_code(m, 1, x - 1, y, enc ? channel_value(m, 1, x - 1, y) : 0, &sr, enc);
-            if (db) cm_code(m, 2, x - 2, y, enc ? channel_value(m, 2, x - 2, y) : 0, &sb, enc);
+        row_ctx_t rc;
+        row_ctx_init(m, y, &rc);
+        if (y >= 2 && w >= 6) {
+            for (uint32_t x = 0; x < 4; x++) {
+                stage_t sg, sr, sb;
+                const int dg = x < w, dr = x >= 1 && x - 1 < w, db = x >= 2;
+                if (dg) cm_model(m, &rc, 0, x, y, 0, &sg);
+                if (dr) cm_model(m, &rc, 1, x - 1, y, 0, &sr);
+                if (db) cm_model(m, &rc, 2, x - 2, y, 0, &sb);
+                if (dg) cm_code(m, &rc, 0, x, enc ? channel_value(&rc, 0, x) : 0, &sg, enc);
+                if (dr) cm_code(m, &rc, 1, x - 1, enc ? channel_value(&rc, 1, x - 1) : 0, &sr, enc);
+                if (db) cm_code(m, &rc, 2, x - 2, enc ? channel_value(&rc, 2, x - 2) : 0, &sb, enc);
+            }
+            for (uint32_t x = 4; x < w - 1; x++) {
+                stage_t sg, sr, sb;
+                cm_model(m, &rc, 0, x, y, 1, &sg);
+                cm_model(m, &rc, 1, x - 1, y, 1, &sr);
+                cm_model(m, &rc, 2, x - 2, y, 1, &sb);
+                cm_code(m, &rc, 0, x, enc ? channel_value(&rc, 0, x) : 0, &sg, enc);
+                cm_code(m, &rc, 1, x - 1, enc ? channel_value(&rc, 1, x - 1) : 0, &sr, enc);
+                cm_code(m, &rc, 2, x - 2, enc ? channel_value(&rc, 2, x - 2) : 0, &sb, enc);
+            }
+            for (uint32_t x = w - 1; x < w + 2; x++) {
+                stage_t sg, sr, sb;
+                const int dg = x < w, dr = x >= 1 && x - 1 < w, db = x >= 2;
+                if (dg) cm_model(m, &rc, 0, x, y, 0, &sg);
+                if (dr) cm_model(m, &rc, 1, x - 1, y, 0, &sr);
+                if (db) cm_model(m, &rc, 2, x - 2, y, 0, &sb);
+                if (dg) cm_code(m, &rc, 0, x, enc ? channel_value(&rc, 0, x) : 0, &sg, enc);
+                if (dr) cm_code(m, &rc, 1, x - 1, enc ? channel_value(&rc, 1, x - 1) : 0, &sr, enc);
+                if (db) cm_code(m, &rc, 2, x - 2, enc ? channel_value(&rc, 2, x - 2) : 0, &sb, enc);
+            }
+        } else {
+            for (uint32_t x = 0; x < w + 2; x++) {
+                stage_t sg, sr, sb;
+                const int dg = x < w, dr = x >= 1 && x - 1 < w, db = x >= 2;
+                if (dg) cm_model(m, &rc, 0, x, y, 0, &sg);
+                if (dr) cm_model(m, &rc, 1, x - 1, y, 0, &sr);
+                if (db) cm_model(m, &rc, 2, x - 2, y, 0, &sb);
+                if (dg) cm_code(m, &rc, 0, x, enc ? channel_value(&rc, 0, x) : 0, &sg, enc);
+                if (dr) cm_code(m, &rc, 1, x - 1, enc ? channel_value(&rc, 1, x - 1) : 0, &sr, enc);
+                if (db) cm_code(m, &rc, 2, x - 2, enc ? channel_value(&rc, 2, x - 2) : 0, &sb, enc);
+            }
         }
         if (!enc) {
             for (int c = 0; c < 3; c++) {
@@ -601,10 +701,31 @@ RF_INLINE void run_channel(cm_t *m, const int c, const int enc) {
         if (c == 2) wait_done(&m->ch[1].done, (int32_t)y + 1);
         if (c < 2 && y >= XROWS) wait_done(&m->ch[2].done, (int32_t)(y - XROWS + 1));
         if (!enc && __atomic_load_n(&m->abort, __ATOMIC_ACQUIRE)) break;
-        for (uint32_t x = 0; x < w; x++) {
-            stage_t s;
-            cm_model(m, c, x, y, &s);
-            cm_code(m, c, x, y, enc ? channel_value(m, c, x, y) : 0, &s, enc);
+        row_ctx_t rc;
+        row_ctx_init_ch(m, y, c, &rc);
+        if (y >= 2 && w >= 4) {
+            for (uint32_t x = 0; x < 2; x++) {
+                stage_t s;
+                cm_model(m, &rc, c, x, y, 0, &s);
+                cm_code(m, &rc, c, x, enc ? channel_value(&rc, c, x) : 0, &s, enc);
+            }
+            for (uint32_t x = 2; x < w - 1; x++) {
+                stage_t s;
+                cm_model(m, &rc, c, x, y, 1, &s);
+                cm_code(m, &rc, c, x, enc ? channel_value(&rc, c, x) : 0, &s, enc);
+            }
+            {
+                uint32_t x = w - 1;
+                stage_t s;
+                cm_model(m, &rc, c, x, y, 0, &s);
+                cm_code(m, &rc, c, x, enc ? channel_value(&rc, c, x) : 0, &s, enc);
+            }
+        } else {
+            for (uint32_t x = 0; x < w; x++) {
+                stage_t s;
+                cm_model(m, &rc, c, x, y, 0, &s);
+                cm_code(m, &rc, c, x, enc ? channel_value(&rc, c, x) : 0, &s, enc);
+            }
         }
         if (!enc) {
             if (m->ch[c].dec.in >= m->ch[c].dec.lim) {

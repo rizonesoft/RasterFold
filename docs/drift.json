@@ -1635,13 +1635,14 @@
       "evidence": "Author-attested: 2026-10-25 re-read docs/benchmarks.md against src/cm.c, src/fold.c, src/rf.h, and research/bench.c after D03 T01 section 3 (in-place CM stream encoding buffer lifetime; CLI, C API, and bitstream unchanged)",
       "sources": {
         "src/rf.h": "1c5d4f886c30c90c0fdd8646ca8acecf9d36410645bac4472de79003f1e18d40",
-        "measure/verdict.json": "2e25f04e8a079efb9a8362a1c6b1f0b425e02111395cec24cd36708a331193f9",
+        "measure/verdict.json": "cbd87898cdd7d174323a6f54a1178a1148c3e0b64bd1b19e8aa33cf72238a2c5",
         "benchmarks/results.csv": "fdc5133ca56445e5ac3b6e20fe0113170d3ab62908f9871aa6e0346d942998d6",
         "benchmarks/corpus.csv": "04968265628e655210a2c2199c6fe925c4307d23e3cffa5c8cc88e722bac3b67",
         "docs/benchmarks.md": "b14db5704a37fe4af57d1a7eab08003ba201b0e43b33a2a18240591ed0179788"
       },
       "reviewed_at": "2026-10-25",
-      "doc_sha256": "b14db5704a37fe4af57d1a7eab08003ba201b0e43b33a2a18240591ed0179788"
+      "doc_sha256": "b14db5704a37fe4af57d1a7eab08003ba201b0e43b33a2a18240591ed0179788",
+      "reviewed": "Author-attested: 2026-10-25 re-read docs/benchmarks.md against src/cm.c, src/simd.h, and measure/verdict.json after D02 T01 section 4 (byte-identical cm.c hot-loop vectorization and row-context specialization; CLI, C API, and bitstream unchanged)"
     },
     "docs/document-drift.md": {
       "evidence": "Author-attested: 2026-10-25 verified docs/document-drift.md against scripts/drift-check.py and .github/workflows/pages.yml for drift-build.json[\"commit\"] and --verify-live (D08 T01 section 3)",
@@ -1677,26 +1678,28 @@
       "sources": {
         "src/rf.h": "1c5d4f886c30c90c0fdd8646ca8acecf9d36410645bac4472de79003f1e18d40",
         "src/fold.c": "936a14aa60fbb4fa48526a0d001d885f8ddc234a21da39105f8c258b758f65a7",
-        "src/cm.c": "db67120719bce7804bb04140a4ca25b1a2a5b1e052301de082523d04c9329be3",
+        "src/cm.c": "a63802c1ec6eb629328ad3f9f96451a3c2c0154e6f0d6aeabf89a6d196f5f6b8",
         "src/crc32.c": "c6e682115185fcdcbfa0551823fc590f60c9c7b978a30009163288e664b3faec",
         "tests/rfi_ref.py": "9d22107858a796b3c97013b5fd4eeebc544103e6376f58dce67e78facd872254",
         "spec/FOLD.md": "656afd56836f95db7329d78f8f13bec0feb542c6e85033be8658c4b9955c4a46"
       },
       "reviewed_at": "2026-10-25",
       "reviewer": "Author-attested: 2026-10-25 re-read spec/FOLD.md against src/cm.c after D04 T01 section 1 (early row-boundary abort on exhausted CM stream; bitstream and format semantics unchanged)",
-      "review": "Author-attested: 2026-10-25 re-read spec/FOLD.md against tests/rfi_ref.py, src/bmp.c, src/cm.c, and src/fold.c for D04 T01 section 3 (C11 operator precedence note, parenthesized counter update, and oracle BMP/size acceptance rules)"
+      "review": "Author-attested: 2026-10-25 re-read spec/FOLD.md against tests/rfi_ref.py, src/bmp.c, src/cm.c, and src/fold.c for D04 T01 section 3 (C11 operator precedence note, parenthesized counter update, and oracle BMP/size acceptance rules)",
+      "reviewed": "Author-attested: 2026-10-25 re-read spec/FOLD.md against src/cm.c and src/simd.h after D02 T01 section 4 (byte-identical cm.c hot-loop vectorization and row-context specialization; format version 2 bitstream unchanged)"
     },
     "research/README.md": {
       "evidence": "Author-attested: 2026-10-25 re-read research/README.md against scripts/build.py and research/vsjxl.py after D02 T01 section 2 (opt-in --lto flag; default release build, CLI, C API, and bitstream unchanged)",
       "sources": {
         "research/corpus.py": "4434e32d8cdb5e70d887f03f7f4cdfbe9ada666ea680c7d6ce176cc9b2858bb7",
-        "research/ab.py": "1c610cd4922caba9aa4e487506dcc90d77aaad67f6a98e0276b32ec44c96400f",
+        "research/ab.py": "c8e9f3b8193dcc13e2bf7eec29e373a1c44493c05713874a30d393f0ec52bce1",
         "research/vsjxl.py": "026a9ed3373408ff1236e2dd56e921dc68cd9af7e4143075f39998a61a2a1f3f",
         "research/prof.py": "7fa28a84aab62f0eb79fd579bcc01b6e2e55cc200bdaa96c0218b2ad4aa05605",
         "research/bench.c": "97d465a600a7ee3962b11636efd6c33d60d25c48354ee1210dd9a019c117a7ea",
-        "research/README.md": "8008dce4077b8d8fb56cfc9b6a14ba5cfe6bd074ccd96b8aa0a59ca46fe93530"
+        "research/README.md": "841b8066d9edf654106be9f9e41900df3c368b8737371e24ade426ec0abc8543"
       },
-      "review": "Author-attested: 2026-10-25 re-read research/README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
+      "review": "Author-attested: 2026-10-25 re-read research/README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)",
+      "reviewed": "Author-attested: 2026-10-25 re-read research/README.md against research/ab.py after D02 T01 section 4 (added ab -v set min_tot, geomean, and worst reporting)"
     },
     "testdata/photos/README.md": {
       "evidence": "Author-attested: 2026-10-25 re-read testdata/photos/README.md against testdata/photos/manifest.json and testdata/photos/NOTICE-imagecompression-info.txt (D08 T02 section 4)",
