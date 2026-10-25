@@ -1627,13 +1627,13 @@
       }
     },
     "docs/benchmarks.md": {
-      "evidence": "Author-attested: 2026-10-25 updated docs/benchmarks.md for complete documentation map and scope labels (D08 T01 section 4)",
+      "evidence": "Author-attested: 2026-10-25 re-read docs/benchmarks.md against 3-repeat benchmarks/results.csv and benchmarks/corpus.csv (D05 T01 section 1)",
       "sources": {
         "src/rf.h": "51734a555f97e344771e8462284781429f04d5d5f6a8e5550e43e10e9c20e7c3",
         "measure/verdict.json": "54d71dd9a56dcefd46387ca16f850470921e41435dd22e87f0c1988ed7bd8a4e",
-        "benchmarks/results.csv": "55001c1736e37de88aa46c3b019dcadba16db4387541f26ff5db6512fc6c1fc3",
+        "benchmarks/results.csv": "09e541b77be8726b214d289acc0617e0d08a45e6ac24cc20aa4df477522ce1ed",
         "benchmarks/corpus.csv": "04968265628e655210a2c2199c6fe925c4307d23e3cffa5c8cc88e722bac3b67",
-        "docs/benchmarks.md": "99ee4dc84424aca0fe32da94513e58cb62a14502db598fa671fc4991a58483cb"
+        "docs/benchmarks.md": "18da80cc76a420304aa51b4a2d2392b76adb876fcc6959303ee44c363daac873"
       }
     },
     "docs/document-drift.md": {

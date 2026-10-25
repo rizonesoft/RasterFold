@@ -5,6 +5,7 @@ import importlib.util
 import io
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -1049,7 +1050,16 @@ class DriftTests(unittest.TestCase):
         self.assertIn('invalid or duplicate row', err.getvalue())
 
         # 8. Fractional microsecond medians (from even repeat counts) round-trip through regeneration and --self-test.
-        self.write('benchmarks/results.csv', res_orig.replace(',401129,384760,', ',401129.5,384760.5,', 1))
+        self.write(
+            'benchmarks/results.csv',
+            re.sub(
+                r'^(measure,image,1672,941,4720056,rasterfold,1409028,)[^,]+,[^,]+,',
+                r'\g<1>401129.5,384760.5,',
+                res_orig,
+                count=1,
+                flags=re.M,
+            ),
+        )
         build_docs.write_generated_pages(self.root)
         self.assertIn('401129.5', (self.root / 'docs/_includes/generated/tables/encode-time.md').read_text(encoding='utf-8'))
         self.assertIn('384760.5', (self.root / 'docs/_includes/generated/tables/decode-time.md').read_text(encoding='utf-8'))
@@ -1302,7 +1312,16 @@ class DriftTests(unittest.TestCase):
 
         # Fractional microsecond medians (from even repeat counts in tests/benchmark.py) derive and render cleanly.
         self.write('docs/benchmarks.md', orig_bm)
-        self.write('benchmarks/results.csv', orig_results.replace(',401129,384760,', ',401129.5,384760.5,', 1))
+        self.write(
+            'benchmarks/results.csv',
+            re.sub(
+                r'^(measure,image,1672,941,4720056,rasterfold,1409028,)[^,]+,[^,]+,',
+                r'\g<1>401129.5,384760.5,',
+                orig_results,
+                count=1,
+                flags=re.M,
+            ),
+        )
         c = self.check()
         c.fix()
         self.assertEqual([], self.check().errors)
