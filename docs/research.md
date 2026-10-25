@@ -498,13 +498,16 @@ The hot paths (`code_bit`, `code_residual`, `cm_model`) are branchy; a profile
 tells Clang which way the branches go. `-nostdlib` removes the profile runtime,
 so the instrumented build is a separate target that links
 `tools\llvm-mingw\lib\clang\23\lib\windows\libclang_rt.profile-x86_64.a` and
-the C runtime with the normal entry point; the release build stays
-runtime-free. The profile comes from encoding and decoding `measure/image.bmp`
-and the ten test-pack photos at one and three threads
-(`LLVM_PROFILE_FILE=build\pgo\%p.profraw`, merged with `llvm-profdata merge`),
-and must be reproducible from a clean checkout. `ab.py` builds its own harness,
-so the executables are compared with `research/vsjxl.py` or alternating
-`rasterfold.exe` runs.
+the C runtime with a hosted `main` entry point (`#ifdef RF_PGO_GEN`) that
+returns normally so the runtime flushes `.profraw`; the release build stays
+runtime-free. The profile comes from encoding and decoding the `photo` tuning
+set (or deterministic non-held-out training images when the downloaded corpus is
+absent, keeping held-out `tp` and `measure/image.bmp` out of training) at one
+and three threads (`LLVM_PROFILE_FILE=build\pgo\%p.profraw`, merged with
+`llvm-profdata merge`), and must be reproducible from a clean checkout. `ab.py`
+builds its own harness, so the executables are compared with `research/vsjxl.py`
+(extended with `--exe`, `--alt-exe`, and `--threads`) and corpus timing across
+`photo`, `tp`, and `synth`.
 
 **Expected effect.** 5% to 15% faster (estimate), from branch layout.
 
