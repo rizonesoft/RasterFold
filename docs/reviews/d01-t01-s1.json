@@ -1,0 +1,94 @@
+{
+  "ref": "D01 T01 \u00a71",
+  "title": "One Range Coder Shared between Methods",
+  "implementation_sha": "6f76629d1e64d81ee585d02d72e23a23268556f9",
+  "date": "2026-10-26",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/01-compression/D01-T01-s1.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/01-compression/D01-T01-s1.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "builds: python3 scripts/build.py --target linux-x64 -> 0 errors, 0 warnings",
+    "builds: python3 scripts/windows.py build -> 0 errors, 0 warnings",
+    "tidy: python3 scripts/tidy.py -> 11/11 translation units passed",
+    "tests: python3 tests/test_correctness.py -> 37 passed, 0 failed",
+    "tests: python3 scripts/windows.py test -> 37 passed, 0 failed",
+    "claims: python3 scripts/todo-claims.py -> 32 todos, 117 claims -- 0 failed, 0 warning(s)",
+    "drift: python3 scripts/drift-check.py -> 261 supported documents; 0 error(s)"
+  ],
+  "completion": {
+    "report": "docs/reviews/01-compression/D01-T01-s1.md",
+    "verdict": "complete",
+    "candidate": "1833a90e1c186e713ce7a47ff82be20355cfadd2",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 2,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/01-compression/D01-T01-s1.md",
+    "candidate": "32e5eaa4fd9b23b0a283e8bd97ac71e795406805",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}

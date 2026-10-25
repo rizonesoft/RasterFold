@@ -43,7 +43,7 @@ track: C1
 
 | Order | Section | Deliverable                                   | Depends On | Status |
 | :---: | :-----: | --------------------------------------------- | ---------- | :----: |
-|   1   |   §1    | One range coder shared between methods        | --         |  [ ]   |
+|   1   |   §1    | One range coder shared between methods        | --         |  [x]   |
 |   2   |   §2    | Method 2: palette encoder, decoder, oracle, spec | §1      |  [ ]   |
 |   3   |   §3    | Measure method 2 against JPEG XL and WebP     | §2         |  [ ]   |
 
@@ -66,6 +66,8 @@ Method 2 needs the same binary range coder as method 1. A second copy would drif
 
 **Freeze check:** `KAT_FOLD` is unchanged in `tests/test_correctness.py` (`sha256=b3012508fdcadc58e768baaba1c9fc3cf5cc2dd837643888b1ca2314fe79bb32`), and `git diff --stat -- tests/ spec/` prints nothing (no change under `tests/` or `spec/`).
 
+> **Verified:** 2026-10-26 | §1 | 6f76629d1e64d81ee585d02d72e23a23268556f9
+> **Review:** `docs/reviews/d01-t01-s1.json`
 ## 2. Method 2: Palette Encoder, Decoder, Oracle, Spec
 
 **Job:** A user can export an image with at most 256 colours to a small `.fold` file, import it back to identical pixels (the reverse of the export), and read the method and colour count that `inspect` reports.
