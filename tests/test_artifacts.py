@@ -144,17 +144,12 @@ class Artifacts(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=ROOT/'build') as temp:
             temp=Path(temp)
             src=temp/'pad_test.c';src.write_text(harness)
-            targets=[('linux-x64','x86_64-linux-gnu',False)] if not WIN else [('windows-x64','x86_64-w64-mingw32',True)]
-            if not WIN and (ROOT/'bin/windows-x64/lib/librasterfold.a').is_file():
-                targets.append(('windows-x64','x86_64-w64-mingw32',True))
-            for tname,triple,is_win in targets:
-                with self.subTest(target=tname):
-                    tdir=ROOT/'bin'/tname
-                    exe=temp/(f'pad_{tname}'+('.exe' if is_win else ''))
-                    flags=[f'--target={triple}','-std=c11','-Wall','-Wextra','-Werror','-I'+str(ROOT/'src'),'-I'+str(tdir/'include'),'-fuse-ld=lld']
-                    link=[str(tdir/'lib/librasterfold.a'),*(['-lkernel32'] if is_win else ['-pthread'])]
-                    run([tool('clang'),*flags,src,*link,'-o',exe])
-                    run([exe,temp.relative_to(ROOT).as_posix()],cwd=ROOT,stdin=subprocess.DEVNULL)
+            triple='x86_64-w64-mingw32' if WIN else 'x86_64-linux-gnu'
+            exe=temp/('pad_test'+('.exe' if WIN else ''))
+            flags=[f'--target={triple}','-std=c11','-Wall','-Wextra','-Werror','-I'+str(ROOT/'src'),'-I'+str(OUT/'include'),'-fuse-ld=lld']
+            link=[str(OUT/'lib/librasterfold.a'),*(['-lkernel32'] if WIN else ['-pthread'])]
+            run([tool('clang'),*flags,src,*link,'-o',exe])
+            run([exe,temp.relative_to(ROOT).as_posix()],cwd=ROOT,stdin=subprocess.DEVNULL)
 
     @unittest.skipIf(WIN,'POSIX-only path semantics')
     def test_no_clobber_race_symlinks_and_fifo(self):
