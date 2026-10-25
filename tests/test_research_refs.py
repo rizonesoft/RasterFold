@@ -272,7 +272,13 @@ class ResearchRefsTests(unittest.TestCase):
             rev_nov = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
             kat_sha = benchmark.kat_fold_sha256()
             meta_step1 = benchmark.resolve_set_provenance(
-                {"codec_revision": rev_sep, "date": "2026-09-29", "measured_sets": "measure,photos,synthetic", "retained_sets": "none"},
+                {
+                    "codec_revision": rev_sep,
+                    "kat_fold_sha256": kat_sha,
+                    "date": "2026-09-29",
+                    "measured_sets": "measure,photos,synthetic",
+                    "retained_sets": "none",
+                },
                 ["measure"],
                 ["photos", "synthetic"],
                 rev_oct,
@@ -312,6 +318,29 @@ class ResearchRefsTests(unittest.TestCase):
             )
             self.assertEqual(loaded_meta2["retained_revision"], f"measure:{rev_oct},synthetic:{rev_sep}")
             self.assertEqual(loaded_meta2["retained_date"], "measure:2026-10-25,synthetic:2026-09-29")
+
+            # Stripping per-set or retained KAT provenance must refuse partial reruns rather than falling back to file-level kat_fold_sha256.
+            stripped_meta = dict(loaded_meta1)
+            stripped_meta.pop("set_kat_hashes", None)
+            stripped_meta.pop("retained_kat_fold_sha256", None)
+            with self.assertRaisesRegex(ValueError, "missing or unverified provenance for retained set 'photos'"):
+                benchmark.resolve_set_provenance(
+                    stripped_meta,
+                    ["measure"],
+                    ["photos", "synthetic"],
+                    rev_nov,
+                    "2026-11-01",
+                    "f" * 64,
+                )
+            with self.assertRaisesRegex(ValueError, "missing or unverified provenance for retained set 'photos'"):
+                benchmark.resolve_set_provenance(
+                    {"codec_revision": rev_sep, "date": "2026-09-29", "measured_sets": "measure,photos,synthetic", "retained_sets": "none"},
+                    ["measure"],
+                    ["photos", "synthetic"],
+                    rev_oct,
+                    "2026-10-25",
+                    kat_sha,
+                )
 
             with self.assertRaises(ValueError):
                 benchmark.parse_csv_row({**seed_rows[0], "pixels_match": "yes"})
