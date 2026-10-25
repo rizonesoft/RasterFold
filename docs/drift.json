@@ -42,6 +42,16 @@
       "reason": "Mirrored public summary of dated research results from docs/research.md, checked by scripts/build-docs.py --check."
     },
     {
+      "pattern": "docs/installation.md",
+      "role": "generated",
+      "reason": "Mirrored installation and build guide from docs/building.md, checked by scripts/build-docs.py --check."
+    },
+    {
+      "pattern": "docs/c-api.md",
+      "role": "generated",
+      "reason": "Mirrored C API guide from docs/library.md, checked by scripts/build-docs.py --check."
+    },
+    {
       "pattern": "docs/format.md",
       "role": "generated",
       "reason": "Mirrored format specification from spec/FOLD.md, checked by scripts/build-docs.py --check."
@@ -50,6 +60,16 @@
       "pattern": "docs/usage.md",
       "role": "generated",
       "reason": "Mirrored CLI and library usage guide from README.md, checked by scripts/build-docs.py --check."
+    },
+    {
+      "pattern": "docs/contributing.md",
+      "role": "generated",
+      "reason": "Mirrored contribution guide from CONTRIBUTING.md, checked by scripts/build-docs.py --check."
+    },
+    {
+      "pattern": "docs/security.md",
+      "role": "generated",
+      "reason": "Mirrored security policy from SECURITY.md, checked by scripts/build-docs.py --check."
     },
     {
       "pattern": "docs/reviews/*",
@@ -1521,14 +1541,14 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "Author-attested: 2026-10-25 re-read README.md against scripts/drift-check.py and scripts/check-all.py (D08 T02 section 5)",
+      "evidence": "Author-attested: 2026-10-25 re-read README.md against updated documentation map and gates (D08 T01 section 4)",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "51734a555f97e344771e8462284781429f04d5d5f6a8e5550e43e10e9c20e7c3",
         "src/main.c": "acc887478e30cf9aa71537eeb1da219da3638b699c79f5230dc34e98c8bdb6a6",
         "scripts/build.py": "c56a6554b5956a1f3469b8436d8432b6c4692ba0c6e43dd02aa59d82c83fd3a0",
         "scripts/package.py": "b9ef31c48c2c5f7dfdcb22a7b3e5bd1a14c36b84d5d3887f17646bf47eaad199",
-        "scripts/check-all.py": "8b7272e7d8e1cc921a86b20c815569cd94004dca4a888fcd3261d872ddbb6e13",
+        "scripts/check-all.py": "7432d7b4b4eb6c6f499376180fb5576851d1be22db76d7e1375e497e6cbe2637",
         "README.md": "3455c54eb81acc4f418fada24889bdb66475d7a5339c9ffc84f906794c8ef218"
       }
     },
@@ -1554,21 +1574,21 @@
       }
     },
     "CONTRIBUTING.md": {
-      "evidence": "Author-attested: 2026-10-25 re-read CONTRIBUTING.md against scripts/drift-check.py and scripts/check-all.py (D08 T02 section 5)",
+      "evidence": "Author-attested: 2026-10-25 re-read CONTRIBUTING.md against updated documentation map and gates (D08 T01 section 4)",
       "sources": {
         "scripts/build.py": "c56a6554b5956a1f3469b8436d8432b6c4692ba0c6e43dd02aa59d82c83fd3a0",
         "scripts/package.py": "b9ef31c48c2c5f7dfdcb22a7b3e5bd1a14c36b84d5d3887f17646bf47eaad199",
-        "scripts/check-all.py": "8b7272e7d8e1cc921a86b20c815569cd94004dca4a888fcd3261d872ddbb6e13",
+        "scripts/check-all.py": "7432d7b4b4eb6c6f499376180fb5576851d1be22db76d7e1375e497e6cbe2637",
         "CONTRIBUTING.md": "01f5855ce18883d6930ce1ebb569ea9411ac21e3c4cf3faced1a56c155bf470f"
       }
     },
     "docs/building.md": {
-      "evidence": "Author-attested: 2026-10-25 re-read docs/building.md against scripts/drift-check.py and scripts/check-all.py (D08 T02 section 5)",
+      "evidence": "Author-attested: 2026-10-25 re-read docs/building.md against updated documentation map and gates (D08 T01 section 4)",
       "sources": {
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
         "scripts/build.py": "c56a6554b5956a1f3469b8436d8432b6c4692ba0c6e43dd02aa59d82c83fd3a0",
         "scripts/package.py": "b9ef31c48c2c5f7dfdcb22a7b3e5bd1a14c36b84d5d3887f17646bf47eaad199",
-        "scripts/check-all.py": "8b7272e7d8e1cc921a86b20c815569cd94004dca4a888fcd3261d872ddbb6e13",
+        "scripts/check-all.py": "7432d7b4b4eb6c6f499376180fb5576851d1be22db76d7e1375e497e6cbe2637",
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "docs/building.md": "968395713c92b23e8937eb81fff1d8c5a1edeca1684cb5e24e1a7c12fc717038"
       }
@@ -1583,23 +1603,23 @@
       }
     },
     "docs/index.md": {
-      "evidence": "Author-attested: 2026-10-25 re-read docs/index.md against include/rasterfold.h, src/rf.h, src/main.c, and docs/site-content.json (D08 T02 section 4)",
+      "evidence": "Author-attested: 2026-10-25 updated docs/index.md for complete documentation map and scope labels (D08 T01 section 4)",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "51734a555f97e344771e8462284781429f04d5d5f6a8e5550e43e10e9c20e7c3",
         "src/main.c": "acc887478e30cf9aa71537eeb1da219da3638b699c79f5230dc34e98c8bdb6a6",
-        "docs/site-content.json": "251675c80e18fafcfa1605d0c453bb4b37f21c9679c4fff7fd573cb7988b141d",
-        "docs/index.md": "0342e65cf329a0a440332b19eb7363b350f8e3b23a5e13407c4377d2c347a8b2"
+        "docs/site-content.json": "f25284c5da98b25597b0bedc0457d86f0f6397d8eefa6911f41565b2cdbc4d99",
+        "docs/index.md": "34e8242f2213cda93e30b9076e3c159d1b2e093b279ac8cb38f05e600ad41723"
       }
     },
     "docs/getting-started.md": {
-      "evidence": "Author-attested: 2026-10-25 re-read docs/getting-started.md against scripts/drift-check.py and scripts/check-all.py (D08 T02 section 5)",
+      "evidence": "Author-attested: 2026-10-25 re-read docs/getting-started.md against updated documentation map and gates (D08 T01 section 4)",
       "sources": {
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
         "tools/provision.py": "b17ea42569b76d70edbcc235dbc86385c9c7ce50b1be7a3bb83383c30f848556",
         "tools/provision.ps1": "836043df1f959726d5fa2b73d206fa896c9d3aacd12bf7e21b8193a4bb14ad96",
         "scripts/build.py": "c56a6554b5956a1f3469b8436d8432b6c4692ba0c6e43dd02aa59d82c83fd3a0",
-        "scripts/check-all.py": "8b7272e7d8e1cc921a86b20c815569cd94004dca4a888fcd3261d872ddbb6e13",
+        "scripts/check-all.py": "7432d7b4b4eb6c6f499376180fb5576851d1be22db76d7e1375e497e6cbe2637",
         "scripts/check-all.ps1": "7006b1871b52689461497fa676b3cb6472f0e436c9c5e240deb9da069321a528",
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/main.c": "acc887478e30cf9aa71537eeb1da219da3638b699c79f5230dc34e98c8bdb6a6",
@@ -1607,13 +1627,13 @@
       }
     },
     "docs/benchmarks.md": {
-      "evidence": "Author-attested: 2026-10-25 re-read docs/benchmarks.md against src/rf.h, measure/verdict.json, benchmarks/results.csv, and benchmarks/corpus.csv (D08 T02 section 4)",
+      "evidence": "Author-attested: 2026-10-25 updated docs/benchmarks.md for complete documentation map and scope labels (D08 T01 section 4)",
       "sources": {
         "src/rf.h": "51734a555f97e344771e8462284781429f04d5d5f6a8e5550e43e10e9c20e7c3",
         "measure/verdict.json": "54d71dd9a56dcefd46387ca16f850470921e41435dd22e87f0c1988ed7bd8a4e",
         "benchmarks/results.csv": "55001c1736e37de88aa46c3b019dcadba16db4387541f26ff5db6512fc6c1fc3",
         "benchmarks/corpus.csv": "04968265628e655210a2c2199c6fe925c4307d23e3cffa5c8cc88e722bac3b67",
-        "docs/benchmarks.md": "9275a2366825eee3f9569df51caa4a477e69716b67adb5d7c9a7089001695096"
+        "docs/benchmarks.md": "99ee4dc84424aca0fe32da94513e58cb62a14502db598fa671fc4991a58483cb"
       }
     },
     "docs/document-drift.md": {
@@ -1625,12 +1645,12 @@
       }
     },
     "docs/README.md": {
-      "evidence": "Author-attested: 2026-10-25 re-read docs/README.md against docs/_config.yml, docs/site-content.json, and scripts/build-docs.py (D08 T02 section 4)",
+      "evidence": "Author-attested: 2026-10-25 updated docs/README.md for complete documentation map and scope labels (D08 T01 section 4)",
       "sources": {
         "docs/_config.yml": "9dd235a6744158160db4c0502a820303f0551db44dd2a197412f46fc4f800ff0",
-        "docs/site-content.json": "251675c80e18fafcfa1605d0c453bb4b37f21c9679c4fff7fd573cb7988b141d",
-        "scripts/build-docs.py": "54729088fd6f4a29cc0fee1bf5b626b033e07501932c32597e76808c4a9cb550",
-        "docs/README.md": "64c7a229f2ee02c270e833503336f48131017e04ae11389c6a205f4d852ffafa"
+        "docs/site-content.json": "f25284c5da98b25597b0bedc0457d86f0f6397d8eefa6911f41565b2cdbc4d99",
+        "scripts/build-docs.py": "971a8eea53ceb563c2718ac13596f77c1a2125e7fda7fc5c0c1c6e6fedfb5e9c",
+        "docs/README.md": "84881a5ecab24b8185b7d532bd2653b371ba21b42010df598ec765baeaff016e"
       }
     },
     "docs/agent-skills-and-rules-structure.md": {
@@ -1673,6 +1693,58 @@
         "testdata/photos/manifest.json": "6c9cf4983d9527c981dde0bd906e9addccaab4f769b35b0c8c3a7470999f5c46",
         "testdata/photos/NOTICE-imagecompression-info.txt": "e455e6ea2a78ade37bf0d2bb0bf7f4d1f7c2bef2b81cd35a5628b0269d05e8cd",
         "testdata/photos/README.md": "f8d6f0d749fc5e795731c322fe192350b247afe167cb817c50f6faedc444303e"
+      }
+    },
+    "docs/examples.md": {
+      "evidence": "Author-attested: 2026-10-25 authored docs/examples.md against include/rasterfold.h, src/main.c, examples/encode.c, examples/decode.c, and examples/ppm.h (D08 T01 section 4)",
+      "sources": {
+        "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
+        "src/main.c": "acc887478e30cf9aa71537eeb1da219da3638b699c79f5230dc34e98c8bdb6a6",
+        "examples/encode.c": "f4cb5d6e4d04c302d17ce8d6aac0b0926218836ec96d8fa4bb676583234cdd66",
+        "examples/decode.c": "3f6ff6cfb0b847f5dae70fd6de5f96b0d49f470283326cf4149c368482639530",
+        "examples/ppm.h": "9683267ff2b024b14570548e94cfbc0acced5cd7ecd8eba2dab5c69b6677abf6",
+        "docs/examples.md": "6501c76e6ae317e7fded0a5163a3278f44fe1d9d1f74284da2be0608bb3940d4"
+      }
+    },
+    "docs/limitations.md": {
+      "evidence": "Author-attested: 2026-10-25 authored docs/limitations.md against include/rasterfold.h, src/rf.h, src/main.c, src/fold.c, src/bmp.c, src/api.c, and src/sys_posix.c (D08 T01 section 4)",
+      "sources": {
+        "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
+        "src/rf.h": "51734a555f97e344771e8462284781429f04d5d5f6a8e5550e43e10e9c20e7c3",
+        "src/main.c": "acc887478e30cf9aa71537eeb1da219da3638b699c79f5230dc34e98c8bdb6a6",
+        "src/fold.c": "3fd14db804458def6e0fb85ab3392bc1afec74854cdfe6f1a32965a482be1edd",
+        "src/bmp.c": "47af69770ae3ee7b0b49016503bfbf2c41f3e782bcb9f3f0c36e831a0cc161e1",
+        "src/api.c": "76f5277f1fce9b053ca1e75648d1d5a7aa5494bf46266361e437f3e17f80812c",
+        "src/sys_posix.c": "6cee065e06d0513dc12bad7f77db6d77a819b5926428fe7cdd66c351f81e9dfc",
+        "docs/limitations.md": "a5b84d05b0c469f0df8ffeac84babbd8e12959225c8eeb7b63fadaf548048a3e"
+      }
+    },
+    "docs/troubleshooting.md": {
+      "evidence": "Author-attested: 2026-10-25 authored docs/troubleshooting.md against include/rasterfold.h, src/rf.h, src/main.c, src/fold.c, src/bmp.c, src/api.c, src/sys_posix.c, tools/provision.py, and tools/provision.ps1 (D08 T01 section 4)",
+      "sources": {
+        "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
+        "src/rf.h": "51734a555f97e344771e8462284781429f04d5d5f6a8e5550e43e10e9c20e7c3",
+        "src/main.c": "acc887478e30cf9aa71537eeb1da219da3638b699c79f5230dc34e98c8bdb6a6",
+        "src/fold.c": "3fd14db804458def6e0fb85ab3392bc1afec74854cdfe6f1a32965a482be1edd",
+        "src/bmp.c": "47af69770ae3ee7b0b49016503bfbf2c41f3e782bcb9f3f0c36e831a0cc161e1",
+        "src/api.c": "76f5277f1fce9b053ca1e75648d1d5a7aa5494bf46266361e437f3e17f80812c",
+        "src/sys_posix.c": "6cee065e06d0513dc12bad7f77db6d77a819b5926428fe7cdd66c351f81e9dfc",
+        "tools/provision.py": "b17ea42569b76d70edbcc235dbc86385c9c7ce50b1be7a3bb83383c30f848556",
+        "tools/provision.ps1": "836043df1f959726d5fa2b73d206fa896c9d3aacd12bf7e21b8193a4bb14ad96",
+        "docs/troubleshooting.md": "5f90975861061f9c61ee7e434ffed425e4f3fc920280a4ffc19b2b1a15c5794f"
+      }
+    },
+    "docs/licenses.md": {
+      "evidence": "Author-attested: 2026-10-25 authored docs/licenses.md against CODE_OF_CONDUCT.md, testdata/photos/README.md, testdata/photos/manifest.json, testdata/photos/NOTICE-imagecompression-info.txt, toolchain.json, tools/provision.py, and tools/provision.ps1 (D08 T01 section 4)",
+      "sources": {
+        "CODE_OF_CONDUCT.md": "f945b73c121fdc7597bdfedabb63f1442ccbab3b2469cd1b7a59932e9eac7da0",
+        "testdata/photos/README.md": "f8d6f0d749fc5e795731c322fe192350b247afe167cb817c50f6faedc444303e",
+        "testdata/photos/manifest.json": "6c9cf4983d9527c981dde0bd906e9addccaab4f769b35b0c8c3a7470999f5c46",
+        "testdata/photos/NOTICE-imagecompression-info.txt": "e455e6ea2a78ade37bf0d2bb0bf7f4d1f7c2bef2b81cd35a5628b0269d05e8cd",
+        "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
+        "tools/provision.py": "b17ea42569b76d70edbcc235dbc86385c9c7ce50b1be7a3bb83383c30f848556",
+        "tools/provision.ps1": "836043df1f959726d5fa2b73d206fa896c9d3aacd12bf7e21b8193a4bb14ad96",
+        "docs/licenses.md": "9ca8c09bff8b9fe4a2b645bcaf2551fc905b2b522148b184301d0a8ecb4cd258"
       }
     }
   },
@@ -1729,9 +1801,13 @@
         "--write"
       ],
       "outputs": [
-        "docs/format.md",
+        "docs/installation.md",
         "docs/usage.md",
+        "docs/c-api.md",
+        "docs/format.md",
         "docs/research-summary.md",
+        "docs/contributing.md",
+        "docs/security.md",
         "docs/_includes/generated/charts/corpus-size-ratio.svg",
         "docs/_includes/generated/charts/benchmark-size-ratio.svg",
         "docs/_includes/generated/charts/encode-time.svg",
@@ -1755,6 +1831,10 @@
   ],
   "site_sources": [
     "README.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "CODE_OF_CONDUCT.md",
+    "LICENSE",
     "docs/*.md",
     "docs/facts.json",
     "docs/site-content.json",
@@ -1764,11 +1844,20 @@
     "include/*",
     "src/rf.h",
     "src/main.c",
+    "src/api.c",
+    "src/bmp.c",
+    "src/fold.c",
+    "src/sys.c",
+    "src/sys_posix.c",
+    "examples/*",
+    "testdata/photos/*",
+    "toolchain.json",
     "assets/*",
     "benchmarks/*",
     "scripts/build-docs.py",
     "scripts/drift-check.py",
-    "docs/drift.json"
+    "docs/drift.json",
+    "requirements-dev.txt"
   ],
   "encodings": {
     "testdata/photos/NOTICE-imagecompression-info.txt": "cp1252"

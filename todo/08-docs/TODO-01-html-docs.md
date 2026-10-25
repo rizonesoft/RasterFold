@@ -121,6 +121,8 @@ The workflow is GitHub's Jekyll starter adapted to this repository: it builds th
 
 ## 4. Complete current documentation map
 
+> **Started:** 2026-10-25T09:47:37Z
+
 **Job:** A reader can find accurate documentation for every currently shipped command, API and target.
 
 **Fidelity:** Documentation site -- the committed documentation design.
@@ -131,13 +133,15 @@ The workflow is GitHub's Jekyll starter adapted to this repository: it builds th
 
 **Chrome:** Shared Jekyll navigation, search, page outline and edit-source link.
 
-- [ ] Add the page inventory in `docs/site-content.json`. Done when: overview, four-target installation/build, current CLI/API, format, examples, measurements, limitations, troubleshooting, contribution, security and licenses each name one source.
-- [ ] Mirror `docs/building.md`, `docs/library.md` and `spec/FOLD.md` through `scripts/build-docs.py`. Done when: generated pages retain working links under `/RasterFold/` and current facts come from the source contracts.
-- [ ] Add current/planned/historical labels to `docs/index.md` and the benchmark pages. Done when: the native converter is not advertised as downloadable until its package exists.
-- [ ] Add `tests/test_docs.py` page-coverage fixtures. Done when: removing a required page or exporting a private source fails the build.
-- [ ] Commit: `"docs: complete current documentation map"`
+- [x] Add the complete current page inventory in `docs/site-content.json` and enforce `REQUIRED_PAGE_IDS` in `scripts/build-docs.py`. Done when: overview (`docs/index.md`), getting-started (`docs/getting-started.md`), four-target installation/build (`docs/building.md` -> `docs/installation.md`), current CLI (`README.md` -> `docs/usage.md`), current C API (`docs/library.md` -> `docs/c-api.md`), format (`spec/FOLD.md` -> `docs/format.md`), examples (`docs/examples.md`), measurements (`docs/benchmarks.md` and `docs/research.md` -> `docs/research-summary.md`), limitations (`docs/limitations.md`), troubleshooting (`docs/troubleshooting.md`), contribution (`CONTRIBUTING.md` -> `docs/contributing.md`), security (`SECURITY.md` -> `docs/security.md`), and licenses (`docs/licenses.md`) each name one canonical source and shrinking the required inventory fails `scripts/build-docs.py --check`.
+- [x] Mirror `docs/building.md`, `docs/library.md`, `spec/FOLD.md`, `CONTRIBUTING.md`, and `SECURITY.md` into distinct `output` files through `scripts/build-docs.py`, author `docs/examples.md`, `docs/limitations.md`, `docs/troubleshooting.md`, and `docs/licenses.md`, and register all new generated outputs and review receipts in `docs/drift.json`. Done when: generated pages retain working links under `/RasterFold/`, canonical sources are never overwritten in place, examples document `examples/encode.c`, `examples/decode.c`, and `examples/ppm.h`, troubleshooting documents exit codes `0..5` and refusal/recovery paths from `src/main.c`, `src/fold.c`, `src/bmp.c`, `src/api.c`, and `src/sys_posix.c`, and current facts come from the source contracts.
+- [x] Add current/planned/historical labels to `docs/index.md`, `docs/benchmarks.md`, and `docs/README.md`. Done when: current (`v2` format, `1.0` C API, 4-target CLI and libraries), historical (`2026-09-29` retained sets and `docs/measurements.md`), and planned (`D10` native converter and `D08 T03` generated reference pages) scope are explicitly labeled and the native converter is not advertised as downloadable until its package exists.
+- [x] Add `tests/test_docs.py` page-coverage fixtures and wire them into `scripts/check-all.py` and `.github/workflows/plan.yml`. Done when: removing a required page, shrinking the topic inventory, mutating a mirrored source without regenerating, or exporting a private source fails `tests/test_docs.py` and the build.
+- [x] Commit: `"docs: complete current documentation map"`
 
 **Test checkpoint:** Run the page-coverage fixtures added here, build Jekyll and run `python3 scripts/drift-check.py --site-dir build/site-artifact`; quote missing-page and leaked-private-file failures.
+- Correctness tests: `python3 -m unittest discover -s tests -p 'test_docs.py' -v` passed `Ran 5 tests ... OK`; `python3 scripts/build-docs.py --self-test` passed `build-docs: self-test passed (7 checks)`.
+- Driven run with evidence: `python3 scripts/build-docs.py --stage build/site-source` staged `32 file(s) into build/site-source`; `docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/github/workspace" -w /github/workspace -e GITHUB_WORKSPACE="/github/workspace" -e PAGES_REPO_NWO="rizonesoft/RasterFold" -e INPUT_SOURCE="build/site-source" -e INPUT_DESTINATION="build/site-artifact" ghcr.io/actions/jekyll-build-pages:v1.0.13` built `build/site-artifact` cleanly (`Remote Theme: Using theme just-the-docs/just-the-docs`, `done in 5.912 seconds`); `python3 scripts/drift-check.py --site-dir build/site-artifact --write-site-receipt && python3 scripts/drift-check.py --site-dir build/site-artifact` printed `drift: 228 supported documents; 0 error(s); 0 deterministic repair(s)`. Removing `build/site-artifact/troubleshooting.html` failed `python3 scripts/drift-check.py --site-dir build/site-artifact` with `site: build/site-artifact: missing allowlisted built output: troubleshooting.html`, `site: build/site-artifact: invalid source receipt drift-build.json: missing allowlisted built output in build/site-artifact: troubleshooting.html`, and 15 `link: ...: missing target: /RasterFold/troubleshooting.html` errors (`drift: 228 supported documents; 17 error(s)`). Injecting `todo/08-docs/TODO-01-html-docs.md` into `build/site-artifact/todo/08-docs/TODO-01-html-docs.md` failed `python3 scripts/drift-check.py --site-dir build/site-artifact` with `site-private: build/site-artifact: private path in artifact: todo/08-docs/TODO-01-html-docs.md` (`drift: 228 supported documents; 4 error(s)`).
 
 ## 5. Accessible navigation and site states
 

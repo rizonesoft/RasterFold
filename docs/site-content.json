@@ -102,12 +102,30 @@
       "kind": "authored"
     },
     {
+      "id": "installation",
+      "source": "docs/building.md",
+      "output": "docs/installation.md",
+      "staged": "installation.md",
+      "title": "Installation and Build",
+      "nav_order": 3,
+      "kind": "mirrored"
+    },
+    {
       "id": "usage",
       "source": "README.md",
       "output": "docs/usage.md",
       "staged": "usage.md",
       "title": "CLI and Library Usage",
-      "nav_order": 3,
+      "nav_order": 4,
+      "kind": "mirrored"
+    },
+    {
+      "id": "c-api",
+      "source": "docs/library.md",
+      "output": "docs/c-api.md",
+      "staged": "c-api.md",
+      "title": "C API Guide",
+      "nav_order": 5,
       "kind": "mirrored"
     },
     {
@@ -116,15 +134,23 @@
       "output": "docs/format.md",
       "staged": "format.md",
       "title": "Format Specification",
-      "nav_order": 4,
+      "nav_order": 6,
       "kind": "mirrored"
+    },
+    {
+      "id": "examples",
+      "source": "docs/examples.md",
+      "staged": "examples.md",
+      "title": "Examples",
+      "nav_order": 7,
+      "kind": "authored"
     },
     {
       "id": "benchmarks",
       "source": "docs/benchmarks.md",
       "staged": "benchmarks.md",
       "title": "Benchmarks",
-      "nav_order": 5,
+      "nav_order": 8,
       "kind": "authored"
     },
     {
@@ -133,8 +159,50 @@
       "output": "docs/research-summary.md",
       "staged": "research-summary.md",
       "title": "Research Summary",
-      "nav_order": 6,
+      "nav_order": 9,
       "kind": "mirrored"
+    },
+    {
+      "id": "limitations",
+      "source": "docs/limitations.md",
+      "staged": "limitations.md",
+      "title": "Limitations",
+      "nav_order": 10,
+      "kind": "authored"
+    },
+    {
+      "id": "troubleshooting",
+      "source": "docs/troubleshooting.md",
+      "staged": "troubleshooting.md",
+      "title": "Troubleshooting",
+      "nav_order": 11,
+      "kind": "authored"
+    },
+    {
+      "id": "contributing",
+      "source": "CONTRIBUTING.md",
+      "output": "docs/contributing.md",
+      "staged": "contributing.md",
+      "title": "Contributing",
+      "nav_order": 12,
+      "kind": "mirrored"
+    },
+    {
+      "id": "security",
+      "source": "SECURITY.md",
+      "output": "docs/security.md",
+      "staged": "security.md",
+      "title": "Security Policy",
+      "nav_order": 13,
+      "kind": "mirrored"
+    },
+    {
+      "id": "licenses",
+      "source": "docs/licenses.md",
+      "staged": "licenses.md",
+      "title": "Licenses and Provenance",
+      "nav_order": 14,
+      "kind": "authored"
     }
   ],
   "assets": [

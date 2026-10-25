@@ -1,7 +1,7 @@
 ---
 layout: default
 title: "CLI and Library Usage"
-nav_order: 3
+nav_order: 4
 source_path: README.md
 ---
 
@@ -35,7 +35,7 @@ source .venv/bin/activate
 python3 scripts/check-all.py --all-targets
 ```
 
-Outputs land in `bin/<target>/`, organized into `bin/` for executables and Windows DLLs, `lib/` for libraries, `include/` for headers and `symbols/` for Windows PDBs. The compiler and SDK downloads stay inside the repository and are not committed. Python, Git, PowerShell 7 (`pwsh`, for PowerShell gate and automation wrappers), and the native Linux C development headers are host prerequisites. [The build guide](building.md) covers Windows, individual targets, verification and packaging.
+Outputs land in `bin/<target>/`, organized into `bin/` for executables and Windows DLLs, `lib/` for libraries, `include/` for headers and `symbols/` for Windows PDBs. The compiler and SDK downloads stay inside the repository and are not committed. Python, Git, PowerShell 7 (`pwsh`, for PowerShell gate and automation wrappers), and the native Linux C development headers are host prerequisites. [The build guide](installation.md) covers Windows, individual targets, verification and packaging.
 
 ## Encode, decode, inspect
 
@@ -51,7 +51,7 @@ Use `bin/windows-x64/bin/rasterfold.exe` on Windows. `--threads 1` requests the 
 
 Include [`rasterfold.h`](../include/rasterfold.h), link a shared or static library, and release returned allocations with `rf_free`. The API accepts packed or padded top-down RGB8, uses per-call errors, and supports concurrent calls with distinct output objects. It performs no file I/O.
 
-[The library guide](library.md) explains ownership and linking. The [C examples](../examples/) encode and decode PPM images and are compiled and exercised by the artifact tests.
+[The library guide](c-api.md) explains ownership and linking. The [C examples](../examples/) encode and decode PPM images and are compiled and exercised by the artifact tests.
 
 ## Current Capabilities and Limits
 

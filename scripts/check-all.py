@@ -38,6 +38,7 @@ def main():
     ):python(name,path,*args)
     gates.append(('review and automation tests',[py,'-m','unittest','discover','-s','scripts/tests','-v']))
     gates.append(('document drift tests',[py,'-m','unittest','discover','-s','tests','-p','test_drift.py','-v']))
+    gates.append(('documentation site tests',[py,'-m','unittest','discover','-s','tests','-p','test_docs.py','-v']))
     gates.append(('plan audit tests',[py,'-m','unittest','discover','-s','tests','-p','test_plan_audit.py','-v']))
     gates.append(('package tests',[py,'-m','unittest','discover','-s','tests','-p','test_package.py','-v']))
     if os.name != 'nt':

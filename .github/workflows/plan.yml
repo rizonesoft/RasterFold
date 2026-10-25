@@ -49,6 +49,7 @@ jobs:
         run: |
           python3 scripts/drift-check.py
           python3 -m unittest discover -s tests -p test_drift.py -v
+          python3 -m unittest discover -s tests -p test_docs.py -v
           python3 -m unittest discover -s tests -p test_plan_audit.py -v
       - name: Stage allowlisted Jekyll site source
         run: |
@@ -101,17 +102,18 @@ jobs:
                           self.nav_depth -= 1
 
           site = pathlib.Path("build/site-artifact")
+          site_content = __import__("json").loads(pathlib.Path("docs/site-content.json").read_text(encoding="utf-8"))
+          pages = sorted(site_content["pages"], key=lambda p: p["nav_order"])
+          assert len(pages) >= 14, f"expected at least 14 pages in site-content.json, got {len(pages)}"
           parser = NavParser()
           parser.feed((site / "index.html").read_text(encoding="utf-8"))
           assert parser.nav_links, "no links found inside site-nav"
-          for slug, nav_hrefs, title, src_rel in [
-              ("index.html", ("/RasterFold/", "/RasterFold/index.html"), "Overview", "docs/index.md"),
-              ("getting-started.html", ("/RasterFold/getting-started.html",), "Getting Started", "docs/getting-started.md"),
-              ("usage.html", ("/RasterFold/usage.html",), "CLI and Library Usage", "README.md"),
-              ("format.html", ("/RasterFold/format.html",), "Format Specification", "spec/FOLD.md"),
-              ("benchmarks.html", ("/RasterFold/benchmarks.html",), "Benchmarks", "docs/benchmarks.md"),
-              ("research-summary.html", ("/RasterFold/research-summary.html",), "Research Summary", "docs/research.md"),
-          ]:
+          for page in pages:
+              staged = page["staged"]
+              slug = staged[:-3] + ".html" if staged.endswith(".md") else staged
+              nav_hrefs = ("/RasterFold/", "/RasterFold/index.html") if slug == "index.html" else (f"/RasterFold/{slug}",)
+              title = page["title"]
+              src_rel = page["source"]
               page_path = site / slug
               assert page_path.is_file(), f"missing built page: {slug}"
               matched_href = next((h for h in nav_hrefs if parser.nav_links.get(h) == title), None)
@@ -127,7 +129,8 @@ jobs:
               assert f"data-chart=\"{chart_name}\"" in bench_html, f"benchmarks.html: missing rendered SVG chart {chart_name}"
           table_count = bench_html.count("<table")
           assert table_count >= 7, f"benchmarks.html: expected at least 7 rendered tables, got {table_count}"
-          print("jekyll navigation, source links, and 7 benchmark charts/tables verified: 6 pages")
+          page_count = len(pages)
+          print(f"jekyll navigation, source links, and 7 benchmark charts/tables verified: {page_count} pages")
           '
           python3 scripts/drift-check.py --site-dir build/site-artifact --write-site-receipt
           python3 scripts/drift-check.py --site-dir build/site-artifact
@@ -187,6 +190,8 @@ jobs:
         shell: pwsh
         run: |
           python3 -m unittest discover -s tests -p test_drift.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python3 -m unittest discover -s tests -p test_docs.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python3 -m unittest discover -s tests -p test_plan_audit.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

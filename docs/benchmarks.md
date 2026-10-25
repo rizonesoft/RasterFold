@@ -1,11 +1,16 @@
 ---
 layout: default
 title: Benchmarks
-nav_order: 5
+nav_order: 8
 source_path: docs/benchmarks.md
 ---
 
 # Benchmarks
+
+**Scope labels:**
+- **Current measured data:** `measure` set in `benchmarks/results.csv` (`2026-10-25`) and the 55-image research corpus in `benchmarks/corpus.csv` (`2026-10-25`), both measured on `.fold` format version 2 <!-- drift:fact format_version = 2 --> and C API 1.0 (`RF_API_VERSION_MAJOR = 1` <!-- drift:fact api_major = 1 -->, `RF_API_VERSION_MINOR = 0` <!-- drift:fact api_minor = 0 -->).
+- **Historical retained data:** `photos` (`10` images) and `synthetic` (`11` images) sets in `benchmarks/results.csv` are retained from the `2026-09-29` baseline (`0159404532cf944c4265ecb8ea46c54f637bdfc2`, where `jxl-e9` was not timed; `N/A` is shown explicitly in those chart series and table cells). Pre-migration Windows measurements remain in [`docs/measurements.md`](measurements.md).
+- **Planned scope:** native converter application benchmarks are not shown because the converter application is planned work (`docs/vision.md`) and is not yet a downloadable package.
 
 All RasterFold size, speed, and memory figures come from committed measurement files produced by reproducible scripts in this repository:
 

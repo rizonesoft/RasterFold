@@ -1,7 +1,7 @@
 ---
 layout: default
 title: "Format Specification"
-nav_order: 4
+nav_order: 6
 source_path: spec/FOLD.md
 ---
 

@@ -1,7 +1,7 @@
 ---
 layout: default
 title: "Research Summary"
-nav_order: 6
+nav_order: 9
 source_path: docs/research.md
 ---
 

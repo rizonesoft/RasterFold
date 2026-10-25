@@ -495,8 +495,19 @@ class DriftTests(unittest.TestCase):
             'docs/Gemfile',
             'docs/index.md',
             'docs/getting-started.md',
+            'docs/examples.md',
             'docs/benchmarks.md',
+            'docs/limitations.md',
+            'docs/troubleshooting.md',
+            'docs/licenses.md',
+            'docs/document-drift.md',
             'README.md',
+            'CONTRIBUTING.md',
+            'SECURITY.md',
+            'CODE_OF_CONDUCT.md',
+            'LICENSE',
+            'requirements-dev.txt',
+            'toolchain.json',
             'spec/FOLD.md',
             'docs/research.md',
             'assets/brand/icon.svg',
@@ -506,12 +517,20 @@ class DriftTests(unittest.TestCase):
             'docs/library.md',
             'docs/vision.md',
             'include/rasterfold.h',
+            'src/rasterfold.def',
+            'examples/encode.c',
+            'examples/decode.c',
+            'examples/ppm.h',
             'research/README.md',
+            'testdata/photos/README.md',
+            'testdata/photos/manifest.json',
             'benchmarks/corpus.csv',
             'benchmarks/results.csv',
         ):
             self.write(rel, (REPO / rel).read_text(encoding='utf-8'))
-        (self.root / 'examples').mkdir(parents=True, exist_ok=True)
+        notice_dst = self.root / 'testdata/photos/NOTICE-imagecompression-info.txt'
+        notice_dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(REPO / 'testdata/photos/NOTICE-imagecompression-info.txt', notice_dst)
         self.write('examples/encode_ppm.c', '/* fixture */\n')
         self.write('todo/secret.md', '# Internal plan\n')
         self.write('AGENTS.md', '# Internal agent instructions\n')
@@ -522,8 +541,12 @@ class DriftTests(unittest.TestCase):
         written = build_docs.write_generated_pages(self.root)
         expected_written = sorted(
             [
+                'docs/c-api.md',
+                'docs/contributing.md',
                 'docs/format.md',
+                'docs/installation.md',
                 'docs/research-summary.md',
+                'docs/security.md',
                 'docs/usage.md',
                 *(f'docs/_includes/generated/charts/{n}.svg' for n in build_docs.CHART_NAMES),
                 *(f'docs/_includes/generated/tables/{n}.md' for n in build_docs.CHART_NAMES),
@@ -574,9 +597,9 @@ class DriftTests(unittest.TestCase):
         )
         build_docs.write_generated_pages(self.root)
         mirrored_usage = (self.root / 'docs/usage.md').read_text(encoding='utf-8')
-        self.assertIn('[The build guide](building.md?plain=1#L2)', mirrored_usage)
-        self.assertIn('[build]: building.md?raw=1#L3', mirrored_usage)
-        self.assertIn('<a href = "building.md?html=1#L4">', mirrored_usage)
+        self.assertIn('[The build guide](installation.md?plain=1#L2)', mirrored_usage)
+        self.assertIn('[build]: installation.md?raw=1#L3', mirrored_usage)
+        self.assertIn('<a href = "installation.md?html=1#L4">', mirrored_usage)
         self.write(
             'docs/index.md',
             sentinel.decode('utf-8')
@@ -584,13 +607,13 @@ class DriftTests(unittest.TestCase):
         )
         build_docs.stage_site(self.root, 'build/site-source')
         rebased_probe = (self.root / 'build/site-source/index.md').read_text(encoding='utf-8')
-        self.assertIn('[build]: https://github.com/rizonesoft/RasterFold/blob/main/docs/building.md?raw=1#L3', rebased_probe)
-        self.assertIn('<a href = "https://github.com/rizonesoft/RasterFold/blob/main/docs/building.md?plain=1#L2">', rebased_probe)
+        self.assertIn('[build]: /RasterFold/installation.html?raw=1#L3', rebased_probe)
+        self.assertIn('<a href = "/RasterFold/installation.html?plain=1#L2">', rebased_probe)
         self.assertIn('(https://github.com/rizonesoft/RasterFold/blob/main/include/rasterfold.h?plain=1#L1)', rebased_probe)
         rebased_usage = (self.root / 'build/site-source/usage.md').read_text(encoding='utf-8')
-        self.assertIn('[The build guide](https://github.com/rizonesoft/RasterFold/blob/main/docs/building.md?plain=1#L2)', rebased_usage)
-        self.assertIn('[build]: https://github.com/rizonesoft/RasterFold/blob/main/docs/building.md?raw=1#L3', rebased_usage)
-        self.assertIn('<a href = "https://github.com/rizonesoft/RasterFold/blob/main/docs/building.md?html=1#L4">', rebased_usage)
+        self.assertIn('[The build guide](/RasterFold/installation.html?plain=1#L2)', rebased_usage)
+        self.assertIn('[build]: /RasterFold/installation.html?raw=1#L3', rebased_usage)
+        self.assertIn('<a href = "/RasterFold/installation.html?html=1#L4">', rebased_usage)
         self.write('README.md', orig_readme)
         build_docs.write_generated_pages(self.root)
         self.write('docs/index.md', sentinel.decode('utf-8'))
@@ -609,10 +632,18 @@ class DriftTests(unittest.TestCase):
                     'assets/brand/cover.svg',
                     'assets/brand/icon.svg',
                     'benchmarks.md',
+                    'c-api.md',
+                    'contributing.md',
+                    'examples.md',
                     'format.md',
                     'getting-started.md',
                     'index.md',
+                    'installation.md',
+                    'licenses.md',
+                    'limitations.md',
                     'research-summary.md',
+                    'security.md',
+                    'troubleshooting.md',
                     'usage.md',
                 ]
             ),
@@ -649,6 +680,19 @@ class DriftTests(unittest.TestCase):
             else:
                 self.write(f'docs/{p.name}', p.read_text(encoding='utf-8'))
         self.write('include/rasterfold.h', (REPO / 'include/rasterfold.h').read_text(encoding='utf-8'))
+        for rel in (
+            'CONTRIBUTING.md',
+            'SECURITY.md',
+            'CODE_OF_CONDUCT.md',
+            'LICENSE',
+            'requirements-dev.txt',
+            'toolchain.json',
+            'src/rasterfold.def',
+            'examples/encode.c',
+            'examples/decode.c',
+            'examples/ppm.h',
+        ):
+            self.write(rel, (REPO / rel).read_text(encoding='utf-8'))
         self.write('tests/test_correctness.py', (REPO / 'tests/test_correctness.py').read_text(encoding='utf-8'))
         (self.root / 'examples').mkdir(parents=True, exist_ok=True)
         self.write('examples/encode_ppm.c', '/* fixture */\n')
@@ -662,6 +706,10 @@ class DriftTests(unittest.TestCase):
             {'pattern': 'todo/*', 'role': 'template', 'reason': 'fixture'},
             {'pattern': 'docs/*', 'role': 'template', 'reason': 'fixture'},
             {'pattern': 'README.md', 'role': 'template', 'reason': 'fixture'},
+            {'pattern': 'CONTRIBUTING.md', 'role': 'template', 'reason': 'fixture'},
+            {'pattern': 'SECURITY.md', 'role': 'template', 'reason': 'fixture'},
+            {'pattern': 'CODE_OF_CONDUCT.md', 'role': 'template', 'reason': 'fixture'},
+            {'pattern': 'toolchain.json', 'role': 'configuration', 'reason': 'fixture'},
             {'pattern': 'spec/*', 'role': 'template', 'reason': 'fixture'},
             {'pattern': 'research/*', 'role': 'template', 'reason': 'fixture'},
             {'pattern': 'benchmarks/*', 'role': 'data', 'reason': 'fixture'},
@@ -819,8 +867,16 @@ class DriftTests(unittest.TestCase):
             'docs/_includes/components/footer.html',
             'docs/index.md',
             'docs/getting-started.md',
+            'docs/building.md',
+            'docs/library.md',
+            'docs/examples.md',
             'docs/benchmarks.md',
+            'docs/limitations.md',
+            'docs/troubleshooting.md',
+            'docs/licenses.md',
             'README.md',
+            'CONTRIBUTING.md',
+            'SECURITY.md',
             'spec/FOLD.md',
             'docs/research.md',
             'assets/brand/icon.svg',
