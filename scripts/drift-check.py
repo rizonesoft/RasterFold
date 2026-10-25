@@ -1617,6 +1617,7 @@ class Checker:
         return ('other', *meta, st.st_size)
 
     def _watched_paths(self):
+        ignored_dirs = {'__pycache__', '.git', 'build', 'bin', '.venv'}
         paths = {
             '.',
             *self.files,
@@ -1626,17 +1627,13 @@ class Checker:
             *(out for g in self.manifest['generators'] for out in g.get('planned_outputs', {})),
         }
         if self.root.is_dir():
-            for child in self.root.iterdir():
-                if child.name not in ('__pycache__', '.git', 'build', 'bin', '.venv'):
-                    paths.add(child.name)
-        for top in ('docs', 'todo', 'research', 'spec', 'scripts'):
-            base = self.root / top
-            if base.exists() or base.is_symlink():
-                paths.add(top)
-                if base.is_dir() and not base.is_symlink():
-                    for p in base.rglob('*'):
-                        if '__pycache__' not in p.parts:
-                            paths.add(p.relative_to(self.root).as_posix())
+            for dirpath, dirnames, filenames in os.walk(self.root, topdown=True, followlinks=False):
+                dirnames[:] = [d for d in dirnames if d not in ignored_dirs]
+                rel_dir = Path(dirpath).relative_to(self.root)
+                if str(rel_dir) != '.':
+                    paths.add(rel_dir.as_posix())
+                for name in filenames:
+                    paths.add((rel_dir / name).as_posix() if str(rel_dir) != '.' else name)
         for rel in list(paths):
             if rel != '.':
                 for parent in Path(rel).parents:
@@ -1720,6 +1717,7 @@ class Checker:
                     self._copy_checkout_to_stage(stage_root)
                     stage_checker = Checker(stage_root, self.git_dir)
                     stage_checker.manifest = self.manifest
+                    stage_checker.files = set(self.files)
                     stage_before = stage_checker._snapshot_paths(stage_checker._watched_paths())
                     stage_env = dict(env)
                     if self.git_dir:

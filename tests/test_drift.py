@@ -1981,7 +1981,7 @@ class DriftTests(unittest.TestCase):
         # 4. Staged generator --fix safety: undeclared writes, planned_outputs writes, and concurrent edits.
         plan_before = (self.root / 'todo/implementation-plan.md').read_bytes()
 
-        # 4a. Generator --fix modifying an undeclared file (README.md) is refused in staging and leaves checkout untouched.
+        # 4a. Generator --fix modifying an undeclared file (README.md or nested src/version.h) is refused in staging and prevents publication.
         self.write(
             'scripts/todo-graph.py',
             'import pathlib, sys\n'
@@ -1996,6 +1996,25 @@ class DriftTests(unittest.TestCase):
             c_undecl.generators(fix=True)
         self.assertIn('modified undeclared path README.md', str(ctx.exception))
         self.assertEqual(readme_before, (self.root / 'README.md').read_bytes())
+
+        version_before = (self.root / 'src/version.h').read_bytes()
+        self.write('todo/implementation-plan.md', 'stale plan\n')
+        self.write(
+            'scripts/todo-graph.py',
+            'import pathlib, sys\n'
+            'if "--sync" in sys.argv:\n'
+            '    pathlib.Path("src/version.h").write_text("#define VERSION 99u\\n", encoding="utf-8")\n'
+            '    pathlib.Path("todo/implementation-plan.md").write_text("# Plan\\n", encoding="utf-8")\n'
+            'sys.exit(0)\n',
+        )
+        c_undecl_src = drift.Checker(self.root)
+        c_undecl_src.load()
+        with self.assertRaises(ValueError) as ctx:
+            c_undecl_src.generators(fix=True)
+        self.assertIn('modified undeclared path src/version.h', str(ctx.exception))
+        self.assertEqual(version_before, (self.root / 'src/version.h').read_bytes())
+        self.assertEqual(b'stale plan\n', (self.root / 'todo/implementation-plan.md').read_bytes())
+        (self.root / 'todo/implementation-plan.md').write_bytes(plan_before)
 
         # 4b. Generator --fix creating a planned_outputs path (docs/api.md) is refused in staging.
         self.write(
