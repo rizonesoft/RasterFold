@@ -1,0 +1,91 @@
+{
+  "ref": "D04 T01 \u00a73",
+  "title": "Oracle and Spec Agree on Padding and Counters",
+  "implementation_sha": "1a9f08782b79f663fbc7265d13104a08b795c464",
+  "date": "2026-10-25",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/04-robustness/D04-T01-s3.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/04-robustness/D04-T01-s3.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 tests/test_correctness.py -> 36 passed, 0 failed",
+    "python3 scripts/windows.py tests/test_correctness.py -> 36 passed, 0 failed",
+    "python3 scripts/build-docs.py --check -> build-docs: current",
+    "python3 scripts/drift-check.py -> drift: 250 supported documents; 0 error(s); 0 deterministic repair(s)"
+  ],
+  "completion": {
+    "report": "docs/reviews/04-robustness/D04-T01-s3.md",
+    "verdict": "complete",
+    "candidate": "af3489eba6f4a2cfde06712175bd6171fad9bee4",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 2,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/04-robustness/D04-T01-s3.md",
+    "candidate": "87482a005418cde5358f9a006814ff000a6e64bb",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}

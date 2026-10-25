@@ -39,7 +39,7 @@ track: R1
 | :---: | :-----: | --------------------------------------------- | ---------- | :----: |
 |   1   |   §1    | Stop decoding a stream that has run out       | --         |  [x]   |
 |   2   |   §2    | A long fuzz campaign over every method        | §1, D01 T01 §2 |  [ ]   |
-|   3   |   §3    | Oracle and spec agree on padding and counters | --         |  [ ]   |
+|   3   |   §3    | Oracle and spec agree on padding and counters | --         |  [x]   |
 
 ---
 
@@ -94,6 +94,8 @@ Admission: a defect in shipped work. `spec/FOLD.md:362` says row padding bytes a
 
 **Test checkpoint:** the new `tests/test_correctness.py` case passes, quoted, and the full `python3 tests/test_correctness.py` run passes every case (correctness test, proof 3): before the oracle update, `python3 tests/test_correctness.py -k padding` failed with `FAIL padding: bmp padding` and `python3 tests/test_correctness.py -k acceptance` failed with `FAIL acceptance: bmp_w_32769: oracle accepted BMP that codec refused (image exceeds size limit)`; after the update, `python3 tests/test_correctness.py` and `python3 scripts/windows.py tests/test_correctness.py` print `OK   padding`, `OK   acceptance`, `OK   corrupt`, and `36 passed, 0 failed` with `KAT_FOLD` unchanged (`OK   oracle`, `OK   known-answer`), `python3 scripts/build-docs.py --check` prints `build-docs: current`, and `python3 scripts/drift-check.py` prints `drift: 250 supported documents; 0 error(s); 0 deterministic repair(s)`.
 
+> **Verified:** 2026-10-25 | §3 | 1a9f08782b79f663fbc7265d13104a08b795c464
+> **Review:** `docs/reviews/d04-t01-s3.json`
 ## Verification
 
 - [ ] `pwsh scripts/check-all.ps1` -- exits 0
