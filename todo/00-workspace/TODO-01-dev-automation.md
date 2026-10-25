@@ -56,7 +56,7 @@ track: W1
 |   2   |   §2    | First push: CI green and read back            | §1, D99 T01 §2 |  [ ]   |
 |   3   |   §3    | The static analysis gate                      | §1         |  [x]   |
 |   4   |   §4    | Prove the review panel end to end             | §1, §6     |  [x]   |
-|   5   |   §5    | Raise the claims coverage floor               | §1         |  [ ]   |
+|   5   |   §5    | Raise the claims coverage floor               | §1         |  [x]   |
 |   6   |   §6    | Claude review rounds through the reviewer pin | §1         |  [x]   |
 | 7 | §7 | The campaign guard on a legacy console encoding | -- | [x] |
 | 8 | §8 | A read-only independent reviewer beside a live run | -- | [x] |
@@ -145,6 +145,8 @@ The build already fails on any compiler warning (`-Werror` in `scripts/build.py`
 
 **Checkpoint output (2026-10-25):** `python3 scripts/todo-claims.py` exited 0 (`todo-claims: 75 claim(s) -- 75 hold, 0 stale, 0 malformed; coverage 32/32, floor 32`); `python3 scripts/todo-claims.py --coverage` exited 0 (`todo-claims coverage: 32/32 Current state block(s) carry a claim`); `python3 scripts/todo-claims.py --self-test` and `python3 scripts/windows.py scripts/todo-claims.py --self-test < /dev/null` both exited 0 (`todo-claims self-test: 26 cases, 0 failed`); `python3 scripts/windows.py scripts/todo-claims.py --coverage --quiet < /dev/null` exited 0 (`todo-claims coverage: 32/32, floor 32`). Temporarily removing the claims from `todo/02-speed/TODO-01-compiler-options.md` made `python3 scripts/todo-claims.py --coverage --quiet` exit `1` with `FLOOR     coverage fell to 31, below the recorded floor of 32. The floor ratchets: raise it deliberately, never lower it to pass.` (`todo-claims coverage: 31/32, floor 32`); restoring `todo/02-speed/TODO-01-compiler-options.md` returned `--coverage --quiet` to exit `0` (`todo-claims coverage: 32/32, floor 32`).
 
+> **Verified:** 2026-10-25 | §5 | 55ab7b6cc9ddc6ea0337dc0b63ddf3d657436bc1
+> **Review:** `docs/reviews/d00-t01-s5.json`
 ## 6. Claude Review Rounds Through the Reviewer Pin
 
 > **Started:** 2026-10-24T21:13:30Z

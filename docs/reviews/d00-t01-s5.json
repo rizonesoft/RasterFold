@@ -1,0 +1,91 @@
+{
+  "ref": "D00 T01 \u00a75",
+  "title": "Raise the Claims Coverage Floor",
+  "implementation_sha": "55ab7b6cc9ddc6ea0337dc0b63ddf3d657436bc1",
+  "date": "2026-10-25",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/00-workspace/D00-T01-s5.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/00-workspace/D00-T01-s5.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 scripts/todo-claims.py --coverage -> 32/32 Current state block(s) carry a claim",
+    "python3 scripts/todo-claims.py --self-test -> 26 cases, 0 failed",
+    "python3 scripts/windows.py scripts/todo-claims.py --self-test -> 26 cases, 0 failed",
+    "negative probe (remove 1 block's claims) -> exit 1, FLOOR coverage fell to 31, below floor 32"
+  ],
+  "completion": {
+    "report": "docs/reviews/00-workspace/D00-T01-s5.md",
+    "verdict": "complete",
+    "candidate": "29258cb0c49a063cb791f0aba3a0facdff03ab08",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 2,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/00-workspace/D00-T01-s5.md",
+    "candidate": "32935e5075402bfb6cf8574f16fa73df42d7be33",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}
