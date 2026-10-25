@@ -1556,7 +1556,8 @@
     "docs/reviews/08-docs/D08-T02-s2.md -> /home/derickpayne/projects/RasterFold/scripts/drift-check.py:377": "Captured reviewer output (review-dispatch.py round 9, 2026-10-25), byte-exact under its digest; the target is an absolute file:line citation, not a repository link",
     "docs/reviews/08-docs/D08-T02-s2.md -> /home/derickpayne/projects/RasterFold/scripts/drift-check.py:343": "Captured reviewer output (review-dispatch.py round 9, 2026-10-25), byte-exact under its digest; the target is an absolute file:line citation, not a repository link",
     "docs/reviews/08-docs/D08-T02-s2.md -> /home/derickpayne/projects/RasterFold/scripts/drift-check.py:353": "Captured reviewer output (review-dispatch.py round 9, 2026-10-25), byte-exact under its digest; the target is an absolute file:line citation, not a repository link",
-    "docs/reviews/08-docs/D08-T02-s2.md -> /home/derickpayne/projects/RasterFold/scripts/drift-check.py:690": "Captured reviewer output (review-dispatch.py round 10, 2026-10-25), byte-exact under its digest; the target is an absolute file:line citation, not a repository link"
+    "docs/reviews/08-docs/D08-T02-s2.md -> /home/derickpayne/projects/RasterFold/scripts/drift-check.py:690": "Captured reviewer output (review-dispatch.py round 10, 2026-10-25), byte-exact under its digest; the target is an absolute file:line citation, not a repository link",
+    "docs/reviews/08-docs/D08-T02-s2.md -> /home/derickpayne/projects/RasterFold/scripts/drift-check.py:363": "Captured reviewer output (review-dispatch.py round 11, 2026-10-25), byte-exact under its digest; the target is an absolute file:line citation, not a repository link"
   },
   "generators": [
     {

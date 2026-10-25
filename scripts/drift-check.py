@@ -332,6 +332,38 @@ VOID_TAGS = {
     'link', 'meta', 'param', 'source', 'track', 'wbr',
 }
 ZERO_CSS_VALUE_RE = re.compile(r'[+-]?(?:0+(?:\.0*)?|\.0+)(?:[a-z%]*)?', re.I)
+VALID_DISPLAY_VALUES = {
+    'none', 'inline', 'block', 'inline-block', 'flex', 'inline-flex',
+    'grid', 'inline-grid', 'table', 'inline-table', 'table-row', 'table-cell',
+    'table-column', 'table-row-group', 'table-header-group',
+    'table-footer-group', 'table-column-group', 'table-caption', 'list-item',
+    'contents', 'flow-root', 'inherit', 'initial', 'unset', 'revert', 'revert-layer',
+}
+VALID_VISIBILITY_VALUES = {
+    'visible', 'hidden', 'collapse', 'inherit', 'initial', 'unset', 'revert', 'revert-layer',
+}
+VALID_FONT_SIZE_KEYWORDS = {
+    'xx-small', 'x-small', 'small', 'medium', 'large', 'x-large', 'xx-large',
+    'xxx-large', 'smaller', 'larger', 'inherit', 'initial', 'unset', 'revert', 'revert-layer',
+}
+VALID_OPACITY_RE = re.compile(r'[+-]?(?:\d+(?:\.\d*)?|\.\d+)%?', re.I)
+VALID_FONT_SIZE_LEN_RE = re.compile(
+    r'\+?(?:0+(?:\.0*)?|\.0+)|'
+    r'\+?(?:\d+(?:\.\d*)?|\.\d+)(?:px|em|rem|ex|ch|vw|vh|vmin|vmax|cm|mm|in|pt|pc|q|%)',
+    re.I,
+)
+
+
+def _is_valid_css_value(prop, val_lower):
+    if prop == 'display':
+        return val_lower in VALID_DISPLAY_VALUES
+    if prop == 'visibility':
+        return val_lower in VALID_VISIBILITY_VALUES
+    if prop == 'opacity':
+        return val_lower in {'inherit', 'initial', 'unset', 'revert', 'revert-layer'} or bool(VALID_OPACITY_RE.fullmatch(val_lower))
+    if prop == 'font-size':
+        return val_lower in VALID_FONT_SIZE_KEYWORDS or bool(VALID_FONT_SIZE_LEN_RE.fullmatch(val_lower))
+    return False
 
 
 def _decode_css_text(val):
@@ -358,19 +390,22 @@ def _style_is_hidden(style_text):
         imp = 1 if imp_match else 0
         if imp_match:
             val = val[:imp_match.start()].strip()
-        if not val:
+        val_lower = val.lower()
+        if not val_lower or not _is_valid_css_value(prop, val_lower):
             continue
         prev_imp, _ = effective.get(prop, (-1, ''))
         if imp >= prev_imp:
-            effective[prop] = (imp, val.lower())
+            effective[prop] = (imp, val_lower)
     if effective.get('display', (0, ''))[1] == 'none':
         return True
     if effective.get('visibility', (0, ''))[1] in ('hidden', 'collapse'):
         return True
-    for prop in ('opacity', 'font-size'):
-        v = effective.get(prop, (0, ''))[1]
-        if v and ZERO_CSS_VALUE_RE.fullmatch(v):
-            return True
+    op_val = effective.get('opacity', (0, ''))[1]
+    if op_val and VALID_OPACITY_RE.fullmatch(op_val) and float(op_val.rstrip('%')) <= 0.0:
+        return True
+    fs_val = effective.get('font-size', (0, ''))[1]
+    if fs_val and ZERO_CSS_VALUE_RE.fullmatch(fs_val):
+        return True
     return False
 
 
