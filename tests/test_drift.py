@@ -953,7 +953,31 @@ class DriftTests(unittest.TestCase):
         with contextlib.redirect_stderr(err):
             self.assertEqual(1, build_docs.main(['--root', str(self.root), '--self-test']))
         self.assertIn('benchmarks/results.csv: missing or invalid header codec_revision=', err.getvalue())
+
+        # 7. pixels_match=False or duplicate rows in benchmarks/results.csv fail --self-test.
+        self.write('benchmarks/results.csv', res_orig.replace(',True\n', ',False\n', 1))
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(1, build_docs.main(['--root', str(self.root), '--self-test']))
+        self.assertIn('pixels_match is not True', err.getvalue())
+
+        res_lines = res_orig.splitlines()
+        self.write('benchmarks/results.csv', '\n'.join([*res_lines, res_lines[2]]) + '\n')
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(1, build_docs.main(['--root', str(self.root), '--self-test']))
+        self.assertIn('invalid or duplicate row', err.getvalue())
+
+        # 8. Fractional microsecond medians (from even repeat counts) round-trip through regeneration and --self-test.
+        self.write('benchmarks/results.csv', res_orig.replace(',401129,384760,', ',401129.5,384760.5,', 1))
+        build_docs.write_generated_pages(self.root)
+        self.assertIn('401129.5', (self.root / 'docs/_includes/generated/tables/encode-time.md').read_text(encoding='utf-8'))
+        self.assertIn('384760.5', (self.root / 'docs/_includes/generated/tables/decode-time.md').read_text(encoding='utf-8'))
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(0, build_docs.main(['--root', str(self.root), '--self-test']))
+
         self.write('benchmarks/results.csv', res_orig)
+        build_docs.write_generated_pages(self.root)
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(0, build_docs.main(['--root', str(self.root), '--self-test']))
 

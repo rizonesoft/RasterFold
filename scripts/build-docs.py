@@ -357,6 +357,13 @@ def _geomean(values: list[float]) -> float:
     return math.exp(sum(math.log(v) for v in values) / len(values))
 
 
+def _fmt_us_sum(values: list[int | float | str]) -> str:
+    from decimal import Decimal
+
+    tot = sum((Decimal(str(v)) for v in values), Decimal(0))
+    return str(int(tot)) if tot == int(tot) else format(tot.normalize(), 'f')
+
+
 def load_csv_with_meta(root: Path, rel: str) -> tuple[dict[str, str], list[dict[str, str]]]:
     path = safe_repo_path(root, rel)
     if not path.is_file():
@@ -596,9 +603,9 @@ def compute_chart_datasets(root: Path) -> dict[str, dict]:
 
             total_bytes = sum(by_set_img[s][img][c]['bytes'] for img in imgs)
             size_geo = _geomean([by_set_img[s][img][c]['bytes'] / by_set_img[s][img]['jxl']['bytes'] for img in imgs])
-            total_enc = sum(by_set_img[s][img][c]['encode_us'] for img in imgs)
+            total_enc = _fmt_us_sum([by_set_img[s][img][c]['encode_us'] for img in imgs])
             enc_geo = _geomean([by_set_img[s][img][c]['encode_us'] / by_set_img[s][img]['jxl']['encode_us'] for img in imgs])
-            total_dec = sum(by_set_img[s][img][c]['decode_us'] for img in imgs)
+            total_dec = _fmt_us_sum([by_set_img[s][img][c]['decode_us'] for img in imgs])
             dec_geo = _geomean([by_set_img[s][img][c]['decode_us'] / by_set_img[s][img]['jxl']['decode_us'] for img in imgs])
             max_enc_pk = max(by_set_img[s][img][c]['encode_peak'] for img in imgs)
             max_dec_pk = max(by_set_img[s][img][c]['decode_peak'] for img in imgs)
@@ -606,11 +613,11 @@ def compute_chart_datasets(root: Path) -> dict[str, dict]:
             bench_size_bars.append({'group': s, 'series': c, 'value': f'{size_geo:.4f}', 'num': size_geo, 'total_bytes': str(total_bytes)})
             bench_size_table.append([s, c, str(n_imgs), str(total_bytes), f'{size_geo:.4f}'])
 
-            enc_time_bars.append({'group': s, 'series': c, 'value': f'{enc_geo:.4f}', 'num': enc_geo, 'total_us': str(total_enc)})
-            enc_time_table.append([s, c, CODEC_THREAD_LABELS[c], str(total_enc), f'{enc_geo:.4f}'])
+            enc_time_bars.append({'group': s, 'series': c, 'value': f'{enc_geo:.4f}', 'num': enc_geo, 'total_us': total_enc})
+            enc_time_table.append([s, c, CODEC_THREAD_LABELS[c], total_enc, f'{enc_geo:.4f}'])
 
-            dec_time_bars.append({'group': s, 'series': c, 'value': f'{dec_geo:.4f}', 'num': dec_geo, 'total_us': str(total_dec)})
-            dec_time_table.append([s, c, CODEC_THREAD_LABELS[c], str(total_dec), f'{dec_geo:.4f}'])
+            dec_time_bars.append({'group': s, 'series': c, 'value': f'{dec_geo:.4f}', 'num': dec_geo, 'total_us': total_dec})
+            dec_time_table.append([s, c, CODEC_THREAD_LABELS[c], total_dec, f'{dec_geo:.4f}'])
 
             enc_mib = f'{max_enc_pk / (1024 * 1024):.2f}'
             dec_mib = f'{max_dec_pk / (1024 * 1024):.2f}'
@@ -1170,6 +1177,22 @@ def _independent_csv_reference(root: Path) -> dict[str, dict]:
             for rk in ('measured_sets', 'retained_sets', 'retained_revision', 'retained_date', 'set_revisions', 'set_dates'):
                 if not meta.get(rk):
                     raise ValueError(f'{rel}: missing required header {rk}')
+            if meta['retained_sets'] != 'none':
+                for tok in meta['retained_revision'].split(','):
+                    rv = tok.split(':', 1)[1] if ':' in tok else tok
+                    if not re.fullmatch(r'^[0-9a-f]{40}$', rv):
+                        raise ValueError(f'{rel}: invalid retained_revision={meta["retained_revision"]!r}')
+                for tok in meta['retained_date'].split(','):
+                    dv = tok.split(':', 1)[1] if ':' in tok else tok
+                    if not re.fullmatch(r'^\d{4}-\d{2}-\d{2}$', dv):
+                        raise ValueError(f'{rel}: invalid retained_date={meta["retained_date"]!r}')
+            rev_p = dict(item.split(':', 1) for item in meta['set_revisions'].split(',') if ':' in item)
+            date_p = dict(item.split(':', 1) for item in meta['set_dates'].split(',') if ':' in item)
+            for s in BENCHMARK_SETS:
+                if not re.fullmatch(r'^[0-9a-f]{40}$', rev_p.get(s, '')):
+                    raise ValueError(f'{rel}: invalid or missing set_revisions entry for {s}')
+                if not re.fullmatch(r'^\d{4}-\d{2}-\d{2}$', date_p.get(s, '')):
+                    raise ValueError(f'{rel}: invalid or missing set_dates entry for {s}')
         reader = list(csv.reader(data_lines))
         if len(reader) < 2:
             raise ValueError(f'{rel}: missing header or rows')
@@ -1179,8 +1202,19 @@ def _independent_csv_reference(root: Path) -> dict[str, dict]:
     def _ref_gm(vals: list[float]) -> float:
         return math.prod(vals) ** (1.0 / len(vals))
 
+    from decimal import Decimal
+
     c_meta, c_rows = _raw_csv_read(CORPUS_CSV)
     r_meta, r_rows = _raw_csv_read(RESULTS_CSV)
+    seen_c_imgs: set[str] = set()
+    for r in c_rows:
+        img = r.get('image', '')
+        s_name = r.get('set', '')
+        if not img or s_name not in ('photo', 'tp', 'synth') or img in seen_c_imgs:
+            raise ValueError(f'{CORPUS_CSV}: invalid or duplicate row {r!r}')
+        seen_c_imgs.add(img)
+        if min(int(r['width']), int(r['height']), int(r['rasterfold']), int(r['jxl_e7']), int(r['jxl_e9']), int(r['webp'])) <= 0:
+            raise ValueError(f'{CORPUS_CSV}: non-positive value in row {r!r}')
     set_dates = dict(item.split(':', 1) for item in r_meta['set_dates'].split(',') if ':' in item)
 
     c_prov = {
@@ -1219,6 +1253,8 @@ def _independent_csv_reference(root: Path) -> dict[str, dict]:
     c_bars, c_tbl = [], []
     for g in ('photo', 'tp', 'tp-only', 'synth', 'all'):
         gr = c_groups[g]
+        if not gr:
+            raise ValueError(f'{CORPUS_CSV}: empty corpus group {g}')
         e7_tot = sum(int(r['jxl_e7']) for r in gr)
         tots = {c: sum(int(r[c]) for r in gr) for c in CORPUS_CODECS}
         rf_gm = _ref_gm([int(r['rasterfold']) / int(r['jxl_e7']) for r in gr])
@@ -1231,8 +1267,20 @@ def _independent_csv_reference(root: Path) -> dict[str, dict]:
         ])
 
     r_idx: dict[str, dict[str, dict[str, dict[str, str]]]] = {s: {} for s in BENCHMARK_SETS}
+    seen_r_keys: set[tuple[str, str, str]] = set()
     for r in r_rows:
-        r_idx[r['set']].setdefault(r['image'], {})[r['codec']] = r
+        s_name = r.get('set', '')
+        img = r.get('image', '')
+        codec = r.get('codec', '')
+        r_key = (s_name, img, codec)
+        if s_name not in BENCHMARK_SETS or codec not in BENCHMARK_CODECS or not img or r_key in seen_r_keys:
+            raise ValueError(f'{RESULTS_CSV}: invalid or duplicate row {r!r}')
+        seen_r_keys.add(r_key)
+        if r.get('pixels_match') != 'True':
+            raise ValueError(f'{RESULTS_CSV}: pixels_match is not True for {r_key}')
+        if min(int(r['width']), int(r['height']), int(r['raw']), int(r['bytes']), float(r['encode_us']), float(r['decode_us']), int(r['encode_peak']), int(r['decode_peak'])) <= 0:
+            raise ValueError(f'{RESULTS_CSV}: non-positive measurement in {r_key}')
+        r_idx[s_name].setdefault(img, {})[codec] = r
 
     bs_bars, bs_tbl = [], []
     et_bars, et_tbl = [], []
@@ -1241,8 +1289,16 @@ def _independent_csv_reference(root: Path) -> dict[str, dict]:
     svd_pts, svd_tbl = [], []
     for s in BENCHMARK_SETS:
         imgs = sorted(r_idx[s].keys())
+        if not imgs:
+            raise ValueError(f'{RESULTS_CSV}: empty benchmark set {s}')
+        for img in imgs:
+            if 'jxl' not in r_idx[s][img]:
+                raise ValueError(f'{RESULTS_CSV}: missing baseline jxl row for {s}/{img}')
         for c in BENCHMARK_CODECS:
-            if c not in r_idx[s][imgs[0]]:
+            present = [i for i in imgs if c in r_idx[s][i]]
+            if present and len(present) != len(imgs):
+                raise ValueError(f'{RESULTS_CSV}: partial codec coverage for {s}/{c}')
+            if not present:
                 for tb in (bs_bars, et_bars, dt_bars):
                     tb.append({'group': s, 'series': c, 'value': 'N/A', 'num': None})
                 pm_bars.append({'group': f'{s}-encode', 'series': c, 'value': 'N/A', 'num': None})
@@ -1257,18 +1313,20 @@ def _independent_csv_reference(root: Path) -> dict[str, dict]:
                 continue
             tb_val = sum(int(r_idx[s][i][c]['bytes']) for i in imgs)
             sg_val = _ref_gm([int(r_idx[s][i][c]['bytes']) / int(r_idx[s][i]['jxl']['bytes']) for i in imgs])
-            te_val = sum(int(float(r_idx[s][i][c]['encode_us'])) for i in imgs)
+            te_dec = sum((Decimal(r_idx[s][i][c]['encode_us']) for i in imgs), Decimal(0))
+            te_str = str(int(te_dec)) if te_dec == int(te_dec) else format(te_dec.normalize(), 'f')
             eg_val = _ref_gm([float(r_idx[s][i][c]['encode_us']) / float(r_idx[s][i]['jxl']['encode_us']) for i in imgs])
-            td_val = sum(int(float(r_idx[s][i][c]['decode_us'])) for i in imgs)
+            td_dec = sum((Decimal(r_idx[s][i][c]['decode_us']) for i in imgs), Decimal(0))
+            td_str = str(int(td_dec)) if td_dec == int(td_dec) else format(td_dec.normalize(), 'f')
             dg_val = _ref_gm([float(r_idx[s][i][c]['decode_us']) / float(r_idx[s][i]['jxl']['decode_us']) for i in imgs])
             ep_val = max(int(r_idx[s][i][c]['encode_peak']) for i in imgs)
             dp_val = max(int(r_idx[s][i][c]['decode_peak']) for i in imgs)
             bs_bars.append({'group': s, 'series': c, 'value': f'{sg_val:.4f}', 'num': sg_val})
             bs_tbl.append([s, c, str(len(imgs)), str(tb_val), f'{sg_val:.4f}'])
             et_bars.append({'group': s, 'series': c, 'value': f'{eg_val:.4f}', 'num': eg_val})
-            et_tbl.append([s, c, CODEC_THREAD_LABELS[c], str(te_val), f'{eg_val:.4f}'])
+            et_tbl.append([s, c, CODEC_THREAD_LABELS[c], te_str, f'{eg_val:.4f}'])
             dt_bars.append({'group': s, 'series': c, 'value': f'{dg_val:.4f}', 'num': dg_val})
-            dt_tbl.append([s, c, CODEC_THREAD_LABELS[c], str(td_val), f'{dg_val:.4f}'])
+            dt_tbl.append([s, c, CODEC_THREAD_LABELS[c], td_str, f'{dg_val:.4f}'])
             emib, dmib = f'{ep_val / 1048576:.2f}', f'{dp_val / 1048576:.2f}'
             pm_bars.append({'group': f'{s}-encode', 'series': c, 'value': str(ep_val), 'num': float(ep_val)})
             pm_bars.append({'group': f'{s}-decode', 'series': c, 'value': str(dp_val), 'num': float(dp_val)})
