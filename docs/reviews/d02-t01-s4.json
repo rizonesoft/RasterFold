@@ -1,0 +1,90 @@
+{
+  "ref": "D02 T01 \u00a74",
+  "title": "Hot-Loop Vectorization and Row-Context Specialization in `cm.c`",
+  "implementation_sha": "05618e8da3cffd5657172bf20e766f378c34df33",
+  "date": "2026-10-25",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/02-speed/D02-T01-s4.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/02-speed/D02-T01-s4.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 scripts/build.py --target all && python3 scripts/tidy.py -> 0 warnings (baseline 11)",
+    "python3 tests/test_correctness.py && python3 scripts/windows.py tests/test_correctness.py -> 37 passed, 0 failed (--portable and default SIMD; 55 corpus images byte-identical to Milestone 1 at -t1 and -t3)",
+    "python3 scripts/windows.py research/ab.py ab -v build/research/cm_m1.c src/cm.c measure photo tp tp-only synth -> measure -t1 dec 0.927 (vsjxl 0.926/0.940), photo -t1 dec min_tot=0.935 geomean=0.931, tp -t1 dec min_tot=0.928 geomean=0.937, tp-only -t1 dec min_tot=0.939 geomean=0.935, measure_final.py PASS"
+  ],
+  "completion": {
+    "report": "docs/reviews/02-speed/D02-T01-s4.md",
+    "verdict": "completed",
+    "candidate": "29b0c823690ce5b4244d0203c5e5a2e17e5f5392",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 2,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/02-speed/D02-T01-s4.md",
+    "candidate": "77190888bda92cfbf86c6eb84372b7d1dd36ee3f",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}
