@@ -403,9 +403,10 @@ def truncated_stream_abort() -> None:
         check_reject_fast("cm4096_27b", fold_27, t, "invalid fold: cm stream")
 
     # 2. Truncate each of the three streams (G, R, B) in turn on an image taller
-    #    than XROWS (64x64, h=64 > XROWS=32) so channel 2 truncation also exercises
-    #    the y >= XROWS backpressure wait in run_channel.
-    valid_64 = rf.encode_image(64, 64, gradient(64, 64))
+    #    than XROWS (64x64, h=64 > XROWS=32) both at 5 bytes (row-0 exhaustion)
+    #    and at 75% of the valid stream length (exhausting after row 32 so
+    #    y >= XROWS backpressure waits execute before abort).
+    valid_64 = rf.encode_image(64, 64, photo(64, 64))
     sz0, sz1, sz2 = struct.unpack_from("<III", valid_64, 32)
     s0 = valid_64[44 : 44 + sz0]
     s1 = valid_64[44 + sz0 : 44 + sz0 + sz1]
@@ -417,8 +418,14 @@ def truncated_stream_abort() -> None:
         parts[c] = short_stream
         trunc_payload = with_streams((len(parts[0]), len(parts[1]), len(parts[2])), b"".join(parts))
         trunc_fold = rf.build_file(64, 64, rf.METHOD_CM, trunc_payload)
+        mid_parts = list(orig_streams)
+        mid_len = max(5, (len(orig_streams[c]) * 3) // 4)
+        mid_parts[c] = orig_streams[c][:mid_len]
+        mid_payload = with_streams((len(mid_parts[0]), len(mid_parts[1]), len(mid_parts[2])), b"".join(mid_parts))
+        mid_fold = rf.build_file(64, 64, rf.METHOD_CM, mid_payload)
         for t in ("1", "3"):
             check_reject_fast(f"trunc_ch{c}", trunc_fold, t, "invalid fold: cm stream")
+            check_reject_fast(f"trunc_mid_ch{c}", mid_fold, t, "invalid fold: cm stream")
 
 
 def main() -> int:
