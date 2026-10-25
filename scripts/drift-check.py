@@ -244,13 +244,67 @@ def _select_csv_rows(source, rule, key):
     return rows
 
 
+def _strip_markdown_links(text):
+    out = []
+    i = 0
+    n = len(text)
+    while i < n:
+        if text[i] == ']':
+            j = i + 1
+            while j < n and text[j] in ' \t':
+                j += 1
+            if j < n and text[j] == '(':
+                k = j + 1
+                depth = 1
+                in_quote = None
+                while k < n and text[k] != '\n' and depth > 0:
+                    ch = text[k]
+                    if ch == '\\':
+                        k += 2
+                        continue
+                    if in_quote:
+                        if ch == in_quote:
+                            in_quote = None
+                    else:
+                        if ch in ('"', "'"):
+                            in_quote = ch
+                        elif ch == '(':
+                            depth += 1
+                        elif ch == ')':
+                            depth -= 1
+                    k += 1
+                if depth == 0:
+                    out.append(']')
+                    i = k
+                    continue
+            elif j < n and text[j] == '[':
+                k = j + 1
+                depth = 1
+                while k < n and text[k] != '\n' and depth > 0:
+                    ch = text[k]
+                    if ch == '\\':
+                        k += 2
+                        continue
+                    if ch == '[':
+                        depth += 1
+                    elif ch == ']':
+                        depth -= 1
+                    k += 1
+                if depth == 0:
+                    out.append(']')
+                    i = k
+                    continue
+        out.append(text[i])
+        i += 1
+    return ''.join(out)
+
+
 def _check_visible_fact(segment, expected_str):
     cleaned = re.sub(r'`+<!--.*?-->`+', ' ', segment)
     cleaned = re.sub(r'<!--.*?-->', ' ', cleaned)
     cleaned = re.sub(r'<[A-Za-z/!](?:[^>"\']|"[^"]*"|\'[^\']*\')*>', ' ', cleaned)
     cleaned = re.sub(r'(?m)^\s*\[[^\]\n]+\]:.*$', ' ', cleaned)
-    cleaned = re.sub(r'\]\((?:[^()\n"\']|"[^"\n]*"|\'[^\'\n]*\'|\([^()\n]*\))*\)', ']', cleaned)
-    cleaned = re.sub(r'\]\s*\[[^\]\n]*\]', ']', cleaned)
+    cleaned = _strip_markdown_links(cleaned)
     if re.fullmatch(r'-?\d+(?:\.\d+)?', expected_str):
         nums = re.findall(
             r'(?<![A-Za-z0-9_])-?\d+(?:,\d{3})*(?:\.\d+)?(?![A-Za-z0-9_])'
