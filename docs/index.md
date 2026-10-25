@@ -2,6 +2,7 @@
 layout: default
 title: Overview
 nav_order: 1
+source_path: docs/index.md
 ---
 
 # RasterFold Documentation

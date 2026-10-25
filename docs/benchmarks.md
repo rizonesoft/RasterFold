@@ -2,6 +2,7 @@
 layout: default
 title: Benchmarks
 nav_order: 5
+source_path: docs/benchmarks.md
 ---
 
 # Benchmarks
@@ -13,21 +14,20 @@ All RasterFold size, speed, and memory figures come from committed measurement f
 
 ## Reference Image (`measure/image.bmp`)
 
-On the reference image (`measure/image.bmp`, 1360x1156 RGB8, 4,716,534 BMP bytes), `benchmarks/results.csv` records:
+Recorded in `benchmarks/results.csv` and `benchmarks/results.md` on `2026-10-25` (Windows 11 `10.0.26300-SP0`, 12 logical processors, Clang `23.1.2`, FFmpeg `8.1.2-full_build`) on `measure/image.bmp` (`1672x941` RGB8, `4,720,056` raw RGB bytes, `4,720,110` BMP file bytes):
 
-- **RasterFold (`.fold` format version 2 <!-- drift:fact format_version = 2 -->):** `1409028` bytes <!-- drift:fact measurement_reference_bytes = 1409028 --> (`0.958` of JPEG XL `e7`, `0.978` of JPEG XL `e9`).
-- **JPEG XL `e7` (`libjxl -distance 0 -effort 7 -threads 1`):** `1,470,703` bytes.
-- **JPEG XL `e9` (`libjxl -distance 0 -effort 9 -threads 1`):** `1,440,564` bytes.
-- **Lossless WebP (`libwebp -lossless 1 -q 100 -compression_level 6`):** `1,488,712` bytes.
-- **PNG (`ffmpeg -pred mixed -compression_level 9`):** `2,248,015` bytes.
+- **RasterFold (`.fold` format version 2 <!-- drift:fact format_version = 2 -->):** `1409028` bytes <!-- drift:fact measurement_reference_bytes = 1409028 --> (`0.958` of JPEG XL `e7`, `0.978` of JPEG XL `e9`; encode `401,129` us at 3 threads / `735,338` us at `--threads 1`; decode `384,760` us at 3 threads / `892,713` us at `--threads 1`; peak working set `16,687,104` encode / `16,588,800` decode bytes).
+- **JPEG XL `e7` (`ffmpeg libjxl -distance 0 -effort 7 -threads 1`):** `1,470,703` bytes (encode `1,929,987` us; decode `533,991` us default threads / `999,276` us at `-threads 1`; peak working set `92,995,584` encode / `51,462,144` decode bytes).
+- **JPEG XL `e9` (`ffmpeg libjxl -distance 0 -effort 9 -threads 1`):** `1,440,564` bytes (encode `10,361,742` us; decode `573,121` us; peak working set `93,143,040` encode / `52,023,296` decode bytes).
+- **Lossless WebP (`ffmpeg libwebp -lossless 1 -quality 100 -compression_level 6 -threads 1`):** `1,588,708` bytes (encode `21,567,592` us; decode `231,342` us; peak working set `109,834,240` encode / `43,728,896` decode bytes).
+- **PNG (`ffmpeg -compression_level 9 -pred mixed -threads 1`):** `2,056,867` bytes (encode `1,405,222` us; decode `181,289` us; peak working set `35,016,704` encode / `38,854,656` decode bytes).
 
 ## Research Corpus (`benchmarks/corpus.csv`)
 
-Across the 39-image `photo` corpus (`measure` + 24 Kodak + 14 `imagecompression.info` crops) recorded in `benchmarks/corpus.csv`:
+Recorded in `benchmarks/corpus.csv` on `2026-10-25` (`codec_revision=c8c1f78d74a423844c77da10d7d0dcde25f73056`):
 
-- **RasterFold total:** `30,865,211` bytes
-- **JPEG XL `e7` total:** `31,782,058` bytes (RasterFold / `e7` ratio `0.9712`, geometric mean `0.9728`)
-- **JPEG XL `e9` total:** `31,400,714` bytes (RasterFold / `e9` ratio `0.9829`, geometric mean `0.9883`)
-- **Lossless WebP total:** `34,138,176` bytes (RasterFold / WebP ratio `0.9041`, geometric mean `0.8932`)
+- **`photo` set (39 images: `measure` + 24 Kodak + 14 `imagecompression.info` crops):** RasterFold `30,865,211` bytes; JPEG XL `e7` `31,782,058` bytes (total ratio `0.9712`, geometric mean `0.9728`); JPEG XL `e9` `31,400,714` bytes (total ratio `0.9829`, geometric mean `0.9883`); lossless WebP `34,138,176` bytes (total ratio `0.9041`, geometric mean `0.8932`).
+- **`tp` set (5 classic test images):** RasterFold `4,471,965` bytes; JPEG XL `e7` `4,615,919` bytes (total ratio `0.9688`, geometric mean `0.9584`); JPEG XL `e9` `4,551,159` bytes (total ratio `0.9826`, geometric mean `0.9762`); lossless WebP `4,909,874` bytes (total ratio `0.9108`, geometric mean `0.8781`).
+- **`synth` set (11 synthetic stress images):** RasterFold `214,773` bytes; JPEG XL `e7` `226,544` bytes (total ratio `0.9480`, geometric mean `1.1986`); JPEG XL `e9` `223,034` bytes (total ratio `0.9630`, geometric mean `2.2860`); lossless WebP `201,248` bytes (total ratio `1.0672`, geometric mean `3.6626`).
 
 > **Note:** Static SVG comparison charts and generated per-set Markdown tables under `docs/_includes/generated/` are added in the next documentation section (`D08 T01 §2`). See [Research Summary](research-summary.md) for the full measurement protocol and per-set breakdown.

@@ -60,17 +60,22 @@ jobs:
           import pathlib
           site = pathlib.Path("build/site-artifact")
           index = (site / "index.html").read_text(encoding="utf-8")
-          for slug, title in [
-              ("index.html", "Overview"),
-              ("getting-started.html", "Getting Started"),
-              ("usage.html", "CLI and Library Usage"),
-              ("format.html", "Format Specification"),
-              ("benchmarks.html", "Benchmarks"),
-              ("research-summary.html", "Research Summary"),
+          for slug, title, src_rel in [
+              ("index.html", "Overview", "docs/index.md"),
+              ("getting-started.html", "Getting Started", "docs/getting-started.md"),
+              ("usage.html", "CLI and Library Usage", "README.md"),
+              ("format.html", "Format Specification", "spec/FOLD.md"),
+              ("benchmarks.html", "Benchmarks", "docs/benchmarks.md"),
+              ("research-summary.html", "Research Summary", "docs/research.md"),
           ]:
-              assert (site / slug).is_file(), f"missing built page: {slug}"
+              page_path = site / slug
+              assert page_path.is_file(), f"missing built page: {slug}"
               assert title in index, f"missing nav title in index.html: {title}"
-          print("jekyll navigation verified: 6 pages")
+              assert pathlib.Path(src_rel).is_file(), f"missing repository source file: {src_rel}"
+              page_html = page_path.read_text(encoding="utf-8")
+              expected_edit = f"href=\"https://github.com/rizonesoft/RasterFold/tree/main/{src_rel}\" id=\"edit-this-page\""
+              assert expected_edit in page_html, f"{slug}: missing expected edit link {expected_edit}"
+          print("jekyll navigation and source links verified: 6 pages")
           '
           python3 scripts/drift-check.py --site-dir build/site-artifact --write-site-receipt
           python3 scripts/drift-check.py --site-dir build/site-artifact

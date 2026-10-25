@@ -1,0 +1,32 @@
+{% capture footer_custom %}
+  {%- include footer_custom.html -%}
+{% endcapture %}
+<hr>
+<footer>
+  {{ footer_custom }}
+
+  {% if
+    site.gh_edit_link and
+    site.gh_edit_link_text and
+    site.gh_edit_repository and
+    site.gh_edit_branch and
+    site.gh_edit_view_mode
+  %}
+    <div class="d-flex mt-2">
+      <p class="text-small mb-0">
+        <a href="{{ site.gh_edit_repository }}/{{ site.gh_edit_view_mode }}/{{ site.gh_edit_branch }}/{% if page.source_path %}{{ page.source_path }}{% elsif site.gh_edit_source %}{{ site.gh_edit_source }}/{{ page.path }}{% else %}{{ page.path }}{% endif %}" id="edit-this-page">{{ site.gh_edit_link_text }}</a>
+      </p>
+    </div>
+  {% endif %}
+
+  <div class="d-md-none mt-4 fs-2">
+    {% capture nav_footer_custom %}
+      {%- include nav_footer_custom.html -%}
+    {% endcapture %}
+    {% if nav_footer_custom != "" %}
+      {{ nav_footer_custom }}
+    {% else %}
+      This site uses <a href="https://github.com/just-the-docs/just-the-docs">Just the Docs</a>, a documentation theme for Jekyll.
+    {% endif %}
+  </div>
+</footer>

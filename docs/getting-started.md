@@ -2,6 +2,7 @@
 layout: default
 title: Getting Started
 nav_order: 2
+source_path: docs/getting-started.md
 ---
 
 # Getting Started

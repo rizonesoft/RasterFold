@@ -7,6 +7,11 @@
       "reason": "Placeholders are authoring examples, not current facts."
     },
     {
+      "pattern": "docs/_includes/*",
+      "role": "template",
+      "reason": "Jekyll HTML layout includes with Liquid expressions."
+    },
+    {
       "pattern": "docs/wsl-migration-audit.md",
       "role": "historical",
       "reason": "Dated migration evidence; source changes do not rewrite past proof."

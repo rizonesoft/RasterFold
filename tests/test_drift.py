@@ -488,6 +488,7 @@ class DriftTests(unittest.TestCase):
         for rel in (
             'docs/site-content.json',
             'docs/_config.yml',
+            'docs/_includes/components/footer.html',
             'docs/Gemfile',
             'docs/index.md',
             'docs/getting-started.md',
@@ -550,6 +551,7 @@ class DriftTests(unittest.TestCase):
         self.assertEqual(
             [
                 '_config.yml',
+                '_includes/components/footer.html',
                 'assets/brand/cover.svg',
                 'assets/brand/icon.svg',
                 'benchmarks.md',

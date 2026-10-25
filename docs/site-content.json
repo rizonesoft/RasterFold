@@ -22,6 +22,10 @@
     {
       "source": "docs/_config.yml",
       "staged": "_config.yml"
+    },
+    {
+      "source": "docs/_includes/components/footer.html",
+      "staged": "_includes/components/footer.html"
     }
   ],
   "pages": [
