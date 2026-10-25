@@ -23,9 +23,12 @@ unsupported version.
 - Multi-byte integers are little-endian.
 - Integer arithmetic is exact, on signed integers wide enough that nothing
   overflows unless a step says otherwise. Operators follow C11 precedence on
-  32-bit or wider signed integers. `a >> n` is an arithmetic shift: the
-  floor of `a / 2^n`, also for negative `a`. `a / b` appears only for
-  non-negative operands and is truncating integer division.
+  32-bit or wider signed integers, except that `2^n` is mathematical
+  exponentiation (`1 << n`, binding tighter than multiplicative operators) and
+  `a mod m` is the non-negative remainder in `0..m-1` (at multiplicative
+  precedence). `a >> n` is an arithmetic shift: the floor of `a / 2^n`, also for
+  negative `a`. `a / b` appears only for non-negative operands and is truncating
+  integer division.
 - `clamp(v, lo, hi)` is `lo` if `v < lo`, `hi` if `v > hi`, otherwise `v`.
 - `sign(v)` is -1, 0 or 1. `ilog2(v)` for `v >= 1` is the index of the highest
   set bit (`ilog2(1) = 0`).
@@ -142,7 +145,7 @@ pNW = position x-1 of prv if x > 0 else pN
 
 errw(e, m): s = max(0, ilog2(e + 1) - 5)
             return 4 + ((m * DIVL[e >> s]) >> s)
-            where DIVL[i] = 2^24 / (i + 1)
+            where DIVL[i] = (2^24) / (i + 1)
 
 wt_k = errw(perr_k[pN] + perr_k[pNE] + perr_k[pNW], m_k),  m = (13, 12, 12, 12)
 
@@ -279,7 +282,7 @@ node 1   bit r != 0                         (stop here when 0)
 node 2   bit r < 0
 a = |r|  (1..128), e = ilog2(a)
 nodes 3 .. 3+e-1: bit 1 each;  node 3+e: bit 0, only when e < 7
-mantissa m = a - 2^e, its e bits from the top:
+mantissa m = a - (2^e), its e bits from the top:
     bit e-1 at node 10 + e
     bit e-2 at node 14 + 2e + (bit e-1)
     lower bits with probability 2048/4096, no model and no update

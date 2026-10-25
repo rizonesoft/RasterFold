@@ -1675,7 +1675,7 @@
         "src/cm.c": "db67120719bce7804bb04140a4ca25b1a2a5b1e052301de082523d04c9329be3",
         "src/crc32.c": "c6e682115185fcdcbfa0551823fc590f60c9c7b978a30009163288e664b3faec",
         "tests/rfi_ref.py": "9d22107858a796b3c97013b5fd4eeebc544103e6376f58dce67e78facd872254",
-        "spec/FOLD.md": "6790017068a97d3c2bdf2ece0b1d5ec4a7298cd56eba84408b9484da996fab1c"
+        "spec/FOLD.md": "656afd56836f95db7329d78f8f13bec0feb542c6e85033be8658c4b9955c4a46"
       },
       "reviewed_at": "2026-10-25",
       "reviewer": "Author-attested: 2026-10-25 re-read spec/FOLD.md against src/cm.c after D04 T01 section 1 (early row-boundary abort on exhausted CM stream; bitstream and format semantics unchanged)",
