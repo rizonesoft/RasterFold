@@ -1617,11 +1617,11 @@
       }
     },
     "docs/document-drift.md": {
-      "evidence": "Author-attested: 2026-10-25 re-read docs/document-drift.md against scripts/drift-check.py and docs/drift.json (D08 T02 section 6)",
+      "evidence": "Author-attested: 2026-10-25 re-read docs/document-drift.md against scripts/drift-check.py, docs/drift.json, tools/githooks/pre-commit, tools/githooks/commit-msg, and .github/workflows/plan.yml (D08 T02 section 7)",
       "sources": {
-        "scripts/drift-check.py": "7463f3ba2a20d701800adf46795753a6516383f626d22ab782cb3157a73e8377",
+        "scripts/drift-check.py": "f2b7142b4631d69ef082d307ba3ece4091d9e9e8f087b019b4b06ae8c5da0c23",
         "scripts/plan-audit.py": "a75c0311c54108a195c8fbe9048df11458abfe946563bb7c248e798fcdb98d42",
-        "docs/document-drift.md": "2a5aeaee51a1835b1ae0c12d9da11d7c3083575b4efdedee6b1b4d56dda34e0d"
+        "docs/document-drift.md": "d7495dc9d7c83acec4a427d8389e3dfdebccd68f8746a07baa1e829f7b95b59c"
       }
     },
     "docs/README.md": {
@@ -1757,9 +1757,12 @@
     "README.md",
     "docs/*.md",
     "docs/facts.json",
+    "docs/site-content.json",
+    "docs/Gemfile",
     "docs/_*",
     "spec/*",
     "include/*",
+    "src/rf.h",
     "src/main.c",
     "assets/*",
     "benchmarks/*",
@@ -1771,6 +1774,7 @@
     "testdata/photos/NOTICE-imagecompression-info.txt": "cp1252"
   },
   "forbidden_site_paths": [
+    ".agents",
     ".claude",
     ".codex",
     ".intelligence",
@@ -1779,6 +1783,7 @@
     "reviews",
     "phase-runs",
     "agents.md",
+    "gemini.md",
     "claude.md"
   ]
 }

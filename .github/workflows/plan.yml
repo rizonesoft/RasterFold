@@ -23,9 +23,16 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           # Full history: the validator's git legs (provenance candidates,
           # fix-commit proofs, ancestry) cannot resolve on a shallow checkout.
           fetch-depth: 0
+      - name: Verify checked-out candidate commit
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          test "$ACTUAL_SHA" = "$HEAD_SHA" || { echo "checkout mismatch: HEAD=$ACTUAL_SHA expected=$HEAD_SHA" >&2; exit 1; }
       - name: Self-test the TODO graph tool
         run: python3 scripts/todo-graph.py self-test
       - name: Validate the TODO tree
@@ -129,8 +136,12 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          if [ -n "$BASE_SHA" ] && [ "$BASE_SHA" != "0000000000000000000000000000000000000000" ]; then
+          if [ -n "$BASE_SHA" ] && [ "$BASE_SHA" != "0000000000000000000000000000000000000000" ] && git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
             python3 scripts/drift-check.py --commit-range "$BASE_SHA..$HEAD_SHA"
+          elif git rev-parse --verify -q "$HEAD_SHA^^{commit}" >/dev/null 2>&1; then
+            python3 scripts/drift-check.py --commit-range "$(git rev-parse "$HEAD_SHA^")..$HEAD_SHA"
+          else
+            python3 scripts/drift-check.py --commit-range "$HEAD_SHA"
           fi
       - name: Check the findings ledger and run records
         run: |
@@ -166,6 +177,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
       - name: Self-test the campaign guard
         shell: pwsh

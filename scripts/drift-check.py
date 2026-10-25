@@ -40,7 +40,8 @@ ROLES = {'current', 'plan', 'historical', 'template', 'configuration', 'data', '
 UNREAD = object()
 BLOCK = re.compile(r'(?P<start><!-- drift:begin (?P<id>[a-z0-9-]+) -->\r?\n)(?P<body>.*?)(?P<end><!-- drift:end (?P=id) -->)', re.S)
 FACT = re.compile(r'<!-- drift:fact ([a-z0-9_.-]+) = (.*?) -->')
-COMMIT = re.compile(r'<!-- drift:commit ([0-9a-f]{7,40})(?: (\S+))? -->')
+COMMIT = re.compile(r'<!-- drift:commit ([0-9a-f]{7,40})(?: ((?:(?!-->)\S)+))? -->')
+DRIFT_FACT_LINE = re.compile(r'^[ \t]*drift-fact(?:\s*:|\b)', re.I | re.M)
 LINK = re.compile(r'!?\[[^\]\n]*\]\((?:<([^>\n]+)>|([^\s)]+))(?:\s+["\'][^\n]*?["\'])?\)')
 REFERENCE = re.compile(
     r'^(?: {0,3}>[ \t]?)* {0,3}\[(?!\^)([^\]\n]+)\]:[ \t]*(?:\r?\n(?: {0,3}>[ \t]?)*[ \t]*)?(?:<([^>\n]+)>|([^\s>]+))'
@@ -1271,6 +1272,12 @@ class Checker:
                 codecs.lookup(enc)
             except LookupError as exc:
                 raise ValueError(f'unknown encoding {enc!r} for {rel}') from exc
+        site_sources = self.manifest.get('site_sources', [])
+        if not isinstance(site_sources, list) or not all(isinstance(p, str) and p.strip() for p in site_sources):
+            raise ValueError('invalid site_sources list in drift manifest')
+        forbidden_site_paths = self.manifest.get('forbidden_site_paths', [])
+        if not isinstance(forbidden_site_paths, list) or not all(isinstance(p, str) and p.strip() for p in forbidden_site_paths):
+            raise ValueError('invalid forbidden_site_paths list in drift manifest')
 
     def load(self):
         self.manifest_bytes = self.path(MANIFEST).read_bytes()
@@ -1389,10 +1396,24 @@ class Checker:
                     html_state.consume(raw_line[match.start():match.end()])
                 html_state.consume(raw_line[prev_fact_end:] + '\n')
                 for match in COMMIT.finditer(line):
+                    commit_id, commit_path = match[1], match[2]
+                    if commit_path is not None and (
+                        not commit_path
+                        or commit_path.startswith('/')
+                        or commit_path.endswith('/')
+                        or '\\' in commit_path
+                        or '//' in commit_path
+                        or '..' in commit_path.split('/')
+                        or '.' in commit_path.split('/')
+                    ):
+                        self.error('commit', rel, f'line {line_no}: invalid committed path {commit_path}')
+                        continue
                     try:
-                        ref = match[1] + (':' + match[2] if match[2] else '^{commit}')
-                        self.git('cat-file', '-e', ref)
+                        self.git('cat-file', '-e', f'{commit_id}^{{commit}}')
+                        if commit_path:
+                            self.git('cat-file', '-e', f'{commit_id}^{{commit}}:{commit_path}')
                     except subprocess.SubprocessError:
+                        ref = commit_id + (':' + commit_path if commit_path else '^{commit}')
                         self.error('commit', rel, f'line {line_no}: unresolved commit or committed path {ref}')
             replacements = []
             for match in BLOCK.finditer(scan):
@@ -1583,18 +1604,83 @@ class Checker:
                 if unquote(parts.fragment) not in anchors(path.read_text(encoding='utf-8'), path.suffix in ('.md', '.markdown')):
                     self.error('anchor', rel, f'missing heading or id: {link}')
 
+    def _allowlisted_site_contract(self):
+        sc_rel = 'docs/site-content.json'
+        if sc_rel not in self.files and not (self.root / sc_rel).is_file():
+            return None
+        sc_path = self.path(sc_rel)
+        if not sc_path.is_file():
+            raise ValueError('missing docs/site-content.json')
+        site_cfg = json.loads(sc_path.read_text(encoding='utf-8'))
+        if not isinstance(site_cfg, dict) or site_cfg.get('schema') != 1:
+            raise ValueError('unsupported docs/site-content.json schema')
+        patterns = self.manifest.get('site_sources', [])
+        required_sources = [sc_rel]
+        for entry in site_cfg.get('config', []):
+            if not isinstance(entry, dict) or not isinstance(entry.get('source'), str) or not entry['source']:
+                raise ValueError('invalid config entry in docs/site-content.json')
+            required_sources.append(entry['source'])
+        expected_outputs = []
+        for page in site_cfg.get('pages', []):
+            if not isinstance(page, dict) or not isinstance(page.get('source'), str) or not page['source'] or not isinstance(page.get('staged'), str) or not page['staged']:
+                raise ValueError('invalid page entry in docs/site-content.json')
+            required_sources.append(page['source'])
+            if page.get('output'):
+                required_sources.append(page['output'])
+            staged = page['staged']
+            expected_outputs.append(staged[:-3] + '.html' if staged.endswith('.md') else staged)
+        for asset in site_cfg.get('assets', []):
+            if not isinstance(asset, dict) or not isinstance(asset.get('source'), str) or not asset['source'] or not isinstance(asset.get('staged'), str) or not asset['staged']:
+                raise ValueError('invalid asset entry in docs/site-content.json')
+            required_sources.append(asset['source'])
+            expected_outputs.append(asset['staged'])
+        for src_rel in required_sources:
+            if not any(fnmatch.fnmatchcase(src_rel, pat) for pat in patterns):
+                raise ValueError(f'allowlisted site source not covered by site_sources: {src_rel}')
+            if not self.path(src_rel).is_file():
+                raise ValueError(f'missing allowlisted site source: {src_rel}')
+        return {
+            'base_path': site_cfg.get('base_path'),
+            'sources': sorted(set(required_sources)),
+            'expected_outputs': sorted(set(expected_outputs)),
+        }
+
     def site(self, directory, prefix, require_receipt=True):
         base = self.path(directory)
         if not base.is_dir() or not (base / 'index.html').is_file():
             self.error('site', directory, 'built site or index.html is missing')
             return
+        has_unsafe = False
+        for path in sorted(base.rglob('*')):
+            if path.is_symlink() or not path.resolve().is_relative_to(base.resolve()):
+                self.error('site', directory, f'symlink escapes built site: {path.relative_to(base).as_posix()}')
+                has_unsafe = True
+        if has_unsafe:
+            return
+        try:
+            contract = self._allowlisted_site_contract()
+        except (OSError, ValueError) as exc:
+            self.error('site', directory, str(exc))
+            contract = None
+        if contract is not None:
+            if contract['base_path'] != prefix:
+                self.error('site', directory, f'site base_path {contract["base_path"]!r} does not match --site-prefix {prefix!r}')
+            for out_rel in contract['expected_outputs']:
+                out_path = (base / out_rel).resolve()
+                if not out_path.is_relative_to(base.resolve()) or not out_path.is_file():
+                    self.error('site', directory, f'missing allowlisted built output: {out_rel}')
         receipt = base / 'drift-build.json'
         if require_receipt and not receipt.is_file():
             self.error('site', directory, 'missing source receipt drift-build.json')
         elif require_receipt:
-            expected = self.site_receipt(directory)
-            if json.loads(receipt.read_text(encoding='utf-8')) != expected:
-                self.error('site', directory, 'site source receipt differs from current inputs; rebuild before publishing')
+            try:
+                actual_receipt = json.loads(receipt.read_text(encoding='utf-8'))
+                expected = self.site_receipt(directory)
+            except (UnicodeDecodeError, ValueError, OSError) as exc:
+                self.error('site', directory, f'invalid source receipt drift-build.json: {exc}')
+            else:
+                if actual_receipt != expected:
+                    self.error('site', directory, 'site source receipt differs from current inputs; rebuild before publishing')
         forbidden = set(self.manifest.get('forbidden_site_paths', []))
         for path in base.rglob('*'):
             if any(part.lower() in forbidden for part in path.relative_to(base).parts):
@@ -1606,15 +1692,23 @@ class Checker:
             self.links(path.relative_to(base).as_posix(), path.read_text(encoding='utf-8'), base, prefix)
 
     def site_receipt(self, directory):
-        paths = sorted(p for p in self.files if any(fnmatch.fnmatchcase(p, pat) for pat in self.manifest['site_sources']))
+        paths = {p for p in self.files if any(fnmatch.fnmatchcase(p, pat) for pat in self.manifest['site_sources']) and self.path(p).is_file()}
+        contract = self._allowlisted_site_contract()
+        if contract is not None:
+            paths.update(contract['sources'])
         base = self.path(directory)
         output = {}
         for p in sorted(base.rglob('*')):
-            if p.is_symlink() or not p.resolve().is_relative_to(base):
+            if p.is_symlink() or not p.resolve().is_relative_to(base.resolve()):
                 raise ValueError(f'unsafe built-site path: {p}')
-            if p.is_file() and p.name != 'drift-build.json':
-                output[p.relative_to(base).as_posix()] = digest(p.read_bytes())
-        return {'schema': 1, 'sources': {p: digest(self.path(p).read_bytes()) for p in paths}, 'outputs': output}
+            rel_out = p.relative_to(base).as_posix()
+            if p.is_file() and rel_out != 'drift-build.json':
+                output[rel_out] = digest(p.read_bytes())
+        if contract is not None:
+            for out_rel in contract['expected_outputs']:
+                if out_rel not in output:
+                    raise ValueError(f'missing allowlisted built output in {directory}: {out_rel}')
+        return {'schema': 1, 'sources': {p: digest(self.path(p).read_bytes()) for p in sorted(paths)}, 'outputs': output}
 
     def _entry_state(self, rel):
         try:
@@ -1942,7 +2036,7 @@ def main(argv=None):
             if args.fix or args.review or args.commit_range or args.site_dir:
                 raise ValueError('--commit-message cannot be combined with document/site operations')
             message = args.commit_message.read_text(encoding='utf-8')
-            if not re.search(r'^Drift-Fact:', message, re.M):
+            if not DRIFT_FACT_LINE.search(message):
                 return 0
             facts = check.revision_facts(':')
             declarations(message, facts, check, str(args.commit_message))
@@ -1975,11 +2069,19 @@ def main(argv=None):
             return main([*(['--root', str(args.root)]), *(['--git-dir', str(args.git_dir)] if args.git_dir else []), *(['--site-dir', args.site_dir, '--site-prefix', args.site_prefix] if args.site_dir else []), *(['--json'] if args.json else []), *(['--coverage'] if args.coverage else []), *(['--commit-range', args.commit_range] if args.commit_range else [])])
         check.generators()
         if args.commit_range:
-            if not re.fullmatch(r'[0-9a-f]{7,40}\.\.[0-9a-f]{7,40}', args.commit_range):
-                raise ValueError('--commit-range requires two explicit commit ids')
-            for oid in check.git('rev-list', args.commit_range).decode().splitlines():
+            if re.fullmatch(r'[0-9a-f]{7,40}\.\.[0-9a-f]{7,40}', args.commit_range):
+                base_oid, head_oid = args.commit_range.split('..', 1)
+                check.git('cat-file', '-e', f'{base_oid}^{{commit}}')
+                check.git('cat-file', '-e', f'{head_oid}^{{commit}}')
+                oids = check.git('rev-list', args.commit_range).decode().splitlines()
+            elif re.fullmatch(r'[0-9a-f]{7,40}', args.commit_range):
+                check.git('cat-file', '-e', f'{args.commit_range}^{{commit}}')
+                oids = [check.git('rev-parse', f'{args.commit_range}^{{commit}}').decode().strip()]
+            else:
+                raise ValueError('--commit-range requires two explicit commit ids or a single commit id')
+            for oid in oids:
                 message = check.git('show', '-s', '--format=%B', oid).decode()
-                if re.search(r'^Drift-Fact:', message, re.M):
+                if DRIFT_FACT_LINE.search(message):
                     # A historical declaration belongs to its own tree, not today's source.
                     facts = check.revision_facts(oid + ':')
                     declarations(message, facts, check, oid)
@@ -2010,9 +2112,9 @@ def main(argv=None):
 
 def declarations(message, facts, check, where):
     for line in message.splitlines():
-        if not line.startswith('Drift-Fact:'):
+        if not DRIFT_FACT_LINE.match(line):
             continue
-        match = re.fullmatch(r'Drift-Fact: ([a-z0-9_.-]+)=(.*)', line)
+        match = re.fullmatch(r'Drift-Fact: ([a-z0-9_.-]+)=(.+)', line)
         if not match or match[1] not in facts or str(facts[match[1]]) != match[2]:
             check.error('commit-fact', where, f'{line}: differs from that commit\'s facts; correct the new message or add a corrective commit, never rewrite history')
 

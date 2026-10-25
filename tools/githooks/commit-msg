@@ -4,8 +4,8 @@
 # footer, so GitHub never lists an assistant as a contributor. Human co-authors are kept.
 msg="$1"
 tmp="$msg.tmp.$$"
-grep -v -i -E '^[[:space:]]*co-authored-by:.*(anthropic|claude|openai|chatgpt|copilot|gemini|codex)' "$msg" \
-  | grep -v -i -E '(generated with|created with) \[?claude' > "$tmp"
+grep -v -i -E '^[[:space:]]*co-authored-by:.*(anthropic|claude|openai|chatgpt|copilot|gemini|codex|antigravity|astra)' "$msg" \
+  | grep -v -i -E '(generated with|created with) \[?(claude|antigravity)' > "$tmp"
 # drop trailing blank lines left behind
 sed -e ':a' -e '/^[[:space:]]*$/{$d;N;ba' -e '}' "$tmp" > "$msg"
 rm -f "$tmp"
@@ -13,6 +13,10 @@ rm -f "$tmp"
 # Unstaged repairs cannot hide a false declaration in the commit candidate.
 ROOT="$(git rev-parse --show-toplevel)" || exit 1
 GITDIR="$(git rev-parse --absolute-git-dir)" || exit 1
+if ! git cat-file -e :scripts/drift-check.py 2>/dev/null && git cat-file -e HEAD:scripts/drift-check.py 2>/dev/null; then
+  echo "commit-msg: required gate script scripts/drift-check.py removed from index" >&2
+  exit 1
+fi
 if git cat-file -e :scripts/drift-check.py 2>/dev/null; then
   PY=""
   for c in python3 python py; do
@@ -27,6 +31,6 @@ if git cat-file -e :scripts/drift-check.py 2>/dev/null; then
   trap 'rm -f "$CHECKER"; trap - EXIT; exit 130' INT
   trap 'rm -f "$CHECKER"; trap - EXIT; exit 143' TERM
   git show :scripts/drift-check.py > "$CHECKER" || exit 1
-  "$PY" "$CHECKER" --root "$ROOT" --commit-message "$msg" || exit 1
+  "$PY" "$CHECKER" --root "$ROOT" --git-dir "$GITDIR" --commit-message "$msg" || exit 1
 fi
 exit 0

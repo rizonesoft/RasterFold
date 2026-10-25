@@ -2244,6 +2244,208 @@ class DriftTests(unittest.TestCase):
             )
         )
 
+    def test_commit_and_built_site_provenance(self):
+        # 1. Explicit commit/path references: commit object required, normalized relative path required.
+        head0 = self.git('rev-parse', 'HEAD')
+        tree0 = self.git('rev-parse', 'HEAD^{tree}')
+        blob0 = self.git('rev-parse', 'HEAD:src/version.h')
+        self.write('history.md', f'Valid ref <!-- drift:commit {head0} src/version.h --> and commit <!-- drift:commit {head0} -->.\n')
+        self.assertEqual([], self.check().errors)
+
+        for bad_ref in (
+            '<!-- drift:commit deadbeefdeadbeef -->',
+            f'<!-- drift:commit {tree0} src/version.h -->',
+            f'<!-- drift:commit {blob0} -->',
+            f'<!-- drift:commit {head0} src/missing.h -->',
+            f'<!-- drift:commit {head0} /src/version.h -->',
+            f'<!-- drift:commit {head0} src/version.h/ -->',
+            f'<!-- drift:commit {head0} ../src/version.h -->',
+            f'<!-- drift:commit {head0} ./src/version.h -->',
+            f'<!-- drift:commit {head0} src//version.h -->',
+            f'<!-- drift:commit {head0} src\\version.h -->',
+        ):
+            self.write('history.md', bad_ref + '\n')
+            c_ref = self.check()
+            self.assertIn('commit', self.kinds(c_ref), bad_ref)
+        (self.root / 'history.md').unlink()
+
+        # 2. Historical Drift-Fact commit declarations evaluated against their own tree, plus malformed trailer rejection.
+        self.git('commit', '--allow-empty', '-qm', 'Declare v2\n\nDrift-Fact: version=2')
+        commit_v2 = self.git('rev-parse', 'HEAD')
+        self.write('src/version.h', '#define VERSION 3u\n')
+        c_up = self.check()
+        c_up.fix()
+        self.git('add', '.')
+        self.git('commit', '-qm', 'Advance to v3\n\nDrift-Fact: version=3')
+        commit_v3 = self.git('rev-parse', 'HEAD')
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(0, drift.main(['--root', str(self.root), '--commit-range', f'{head0}..{commit_v3}']))
+            self.assertEqual(0, drift.main(['--root', str(self.root), '--commit-range', commit_v2]))
+            self.assertEqual(0, drift.main(['--root', str(self.root), '--commit-range', commit_v3]))
+
+        for bad_msg in (
+            'Title\n\ndrift-fact: version=3\n',
+            'Title\n\n  Drift-Fact: version=3\n',
+            'Title\n\nDrift-Fact: version=\n',
+            'Title\n\nDrift-Fact version=3\n',
+            'Title\n\nDrift-Fact: version=2\n',
+        ):
+            self.write('msg.txt', bad_msg)
+            out_msg = io.StringIO()
+            with contextlib.redirect_stdout(out_msg):
+                self.assertEqual(1, drift.main(['--root', str(self.root), '--commit-message', str(self.root / 'msg.txt')]), bad_msg)
+            self.assertIn('commit-fact:', out_msg.getvalue())
+        (self.root / 'msg.txt').unlink()
+
+        # 3. Built-site provenance bound to docs/site-content.json allowlist and site_sources.
+        self.write('.gitignore', 'build/\n')
+        self.manifest['site_sources'] = [
+            'README.md',
+            'docs/*.md',
+            'docs/facts.json',
+            'docs/site-content.json',
+            'docs/_*',
+            'src/*',
+            'assets/*',
+            'docs/drift.json',
+        ]
+        self.manifest['forbidden_site_paths'] = ['.agents', '.claude', '.codex', 'todo', 'agents.md', 'gemini.md']
+        self.write('docs/_config.yml', 'title: RasterFold\n')
+        self.write('docs/index.md', '# Overview\n')
+        self.write('docs/usage.md', '# Usage\n')
+        self.write('assets/brand/icon.svg', '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>\n')
+        site_content = {
+            'schema': 1,
+            'repository': 'rizonesoft/RasterFold',
+            'visibility': 'public',
+            'base_path': '/RasterFold/',
+            'config': [{'source': 'docs/_config.yml', 'staged': '_config.yml'}],
+            'pages': [
+                {'id': 'overview', 'source': 'docs/index.md', 'staged': 'index.md', 'title': 'Overview', 'nav_order': 1, 'kind': 'authored'},
+                {'id': 'usage', 'source': 'README.md', 'output': 'docs/usage.md', 'staged': 'usage.md', 'title': 'Usage', 'nav_order': 2, 'kind': 'mirrored'},
+            ],
+            'assets': [{'source': 'assets/brand/icon.svg', 'staged': 'assets/brand/icon.svg'}],
+        }
+        self.write('docs/site-content.json', json.dumps(site_content, indent=2) + '\n')
+        self.save()
+        c_sync = self.check()
+        c_sync.fix()
+
+        self.write('build/site-artifact/index.html', '<html><body><h1 id="top">Overview</h1><a href="/RasterFold/usage.html#cli">Usage</a></body></html>\n')
+        self.write('build/site-artifact/usage.html', '<html><body><h1 id="cli">CLI</h1><a href="index.html#top">Home</a></body></html>\n')
+        self.write('build/site-artifact/assets/brand/icon.svg', '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>\n')
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(0, drift.main(['--root', str(self.root), '--site-dir', 'build/site-artifact', '--write-site-receipt']))
+            self.assertEqual(0, drift.main(['--root', str(self.root), '--site-dir', 'build/site-artifact']))
+
+        receipt_data = json.loads((self.root / 'build/site-artifact/drift-build.json').read_text(encoding='utf-8'))
+        for expected_src in ('docs/site-content.json', 'docs/_config.yml', 'docs/index.md', 'README.md', 'docs/usage.md', 'assets/brand/icon.svg'):
+            self.assertIn(expected_src, receipt_data['sources'])
+
+        # Changing docs/site-content.json mapping invalidates the built-site receipt.
+        mutated_sc = dict(site_content, pages=[dict(site_content['pages'][0], title='Changed Title'), site_content['pages'][1]])
+        self.write('docs/site-content.json', json.dumps(mutated_sc, indent=2) + '\n')
+        out_sc = io.StringIO()
+        with contextlib.redirect_stdout(out_sc):
+            self.assertEqual(1, drift.main(['--root', str(self.root), '--site-dir', 'build/site-artifact']))
+        self.assertIn('site source receipt differs from current inputs', out_sc.getvalue())
+        self.write('docs/site-content.json', json.dumps(site_content, indent=2) + '\n')
+
+        # Omitting docs/site-content.json from site_sources fails the allowlist coverage contract.
+        orig_sources = list(self.manifest['site_sources'])
+        self.manifest['site_sources'] = [p for p in orig_sources if p != 'docs/site-content.json']
+        self.save()
+        out_uncovered = io.StringIO()
+        with contextlib.redirect_stdout(out_uncovered):
+            self.assertEqual(1, drift.main(['--root', str(self.root), '--site-dir', 'build/site-artifact']))
+        self.assertIn('allowlisted site source not covered by site_sources: docs/site-content.json', out_uncovered.getvalue())
+        self.manifest['site_sources'] = orig_sources
+        self.save()
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(0, drift.main(['--root', str(self.root), '--site-dir', 'build/site-artifact', '--write-site-receipt']))
+
+        # Missing allowlisted built output, private path (.agents / gemini.md), or broken HTML fragment fails.
+        (self.root / 'build/site-artifact/usage.html').unlink()
+        out_missing_page = io.StringIO()
+        with contextlib.redirect_stdout(out_missing_page):
+            self.assertEqual(1, drift.main(['--root', str(self.root), '--site-dir', 'build/site-artifact']))
+        self.assertIn('missing allowlisted built output: usage.html', out_missing_page.getvalue())
+
+        self.write('build/site-artifact/usage.html', '<html><body><h1 id="wrong-id">CLI</h1></body></html>\n')
+        self.write('build/site-artifact/.agents/private.html', 'secret\n')
+        self.write('build/site-artifact/GEMINI.md', 'secret\n')
+        c_re = self.check()
+        self.write('build/site-artifact/drift-build.json', json.dumps(c_re.site_receipt('build/site-artifact')))
+        out_broken = io.StringIO()
+        with contextlib.redirect_stdout(out_broken):
+            self.assertEqual(1, drift.main(['--root', str(self.root), '--site-dir', 'build/site-artifact']))
+        self.assertIn('anchor: index.html: missing heading or id: /RasterFold/usage.html#cli', out_broken.getvalue())
+        self.assertIn('site-private: build/site-artifact: private path in artifact: .agents', out_broken.getvalue())
+        self.assertIn('site-private: build/site-artifact: private path in artifact: GEMINI.md', out_broken.getvalue())
+        shutil.rmtree(self.root / 'build/site-artifact')
+
+        # 4. Staged hooks (pre-commit and commit-msg) refuse unstaged cover-ups and staged gate-script removal.
+        if shutil.which('sh'):
+            self.write('scripts/drift-check.py', (REPO / 'scripts/drift-check.py').read_text(encoding='utf-8'))
+            self.git('add', '.')
+            self.git('commit', '-qm', 'Sync fixture with live drift-check.py')
+            self.git('config', 'core.hooksPath', str(REPO / 'tools/githooks'))
+            head_before = self.git('rev-parse', 'HEAD')
+
+            # (a) Bad staged document concealed by clean unstaged working copy -> refused by pre-commit.
+            good_readme = (self.root / 'README.md').read_text(encoding='utf-8')
+            self.write('README.md', good_readme.replace('Version 3.', 'Version 99.'))
+            self.git('add', 'README.md')
+            self.write('README.md', good_readme)
+            res_doc = subprocess.run(['git', 'commit', '-qm', 'Concealed bad staged doc'], cwd=self.root, capture_output=True, text=True, timeout=60)
+            self.assertNotEqual(0, res_doc.returncode)
+            self.assertIn('staged documentation drift', res_doc.stderr)
+            self.assertEqual(head_before, self.git('rev-parse', 'HEAD'))
+            self.git('add', 'README.md')
+
+            # (b) False staged Drift-Fact concealed by unstaged source modification -> refused by commit-msg.
+            self.write('src/version.h', '#define VERSION 4u\n')
+            c_v4 = self.check()
+            c_v4.fix()
+            self.git('add', 'src/version.h', 'README.md', 'docs/facts.json')
+            # Mutate unstaged working tree back to VERSION 2 so an unstaged reader would think version=2.
+            self.write('src/version.h', '#define VERSION 2u\n')
+            self.write('docs/facts.json', '{\n  "version": 2\n}\n')
+            res_fact = subprocess.run(['git', 'commit', '-qm', 'Concealed false fact\n\nDrift-Fact: version=2'], cwd=self.root, capture_output=True, text=True, timeout=60)
+            self.assertNotEqual(0, res_fact.returncode)
+            self.assertIn('commit-fact: Drift-Fact: version=2: differs from that commit\'s facts', res_fact.stdout + res_fact.stderr)
+            self.assertEqual(head_before, self.git('rev-parse', 'HEAD'))
+
+            # Restore unstaged files to match the valid v4 index and commit with Drift-Fact: version=4 -> succeeds.
+            self.git('checkout', '--', 'src/version.h', 'docs/facts.json')
+            res_ok = subprocess.run(['git', 'commit', '-qm', 'Valid v4 fact\n\nDrift-Fact: version=4'], cwd=self.root, capture_output=True, text=True, timeout=60)
+            self.assertEqual(0, res_ok.returncode, res_ok.stdout + res_ok.stderr)
+            self.assertNotEqual(head_before, self.git('rev-parse', 'HEAD'))
+
+            # (c) Staged removal of scripts/drift-check.py -> refused by both pre-commit and commit-msg.
+            head_v4 = self.git('rev-parse', 'HEAD')
+            self.git('rm', '-q', '--cached', 'scripts/drift-check.py')
+            res_rm = subprocess.run(['git', 'commit', '-qm', 'Attempt to drop gate script'], cwd=self.root, capture_output=True, text=True, timeout=60)
+            self.assertNotEqual(0, res_rm.returncode)
+            self.assertIn('required gate script scripts/drift-check.py removed from index', res_rm.stderr)
+            self.write('msg-rm.txt', 'Attempt\n')
+            res_cm_rm = subprocess.run(['sh', str(REPO / 'tools/githooks/commit-msg'), str(self.root / 'msg-rm.txt')], cwd=self.root, capture_output=True, text=True, timeout=60)
+            self.assertNotEqual(0, res_cm_rm.returncode)
+            self.assertIn('required gate script scripts/drift-check.py removed from index', res_cm_rm.stderr)
+            (self.root / 'msg-rm.txt').unlink()
+            self.git('reset', '-q', 'HEAD', 'scripts/drift-check.py')
+            self.assertEqual(head_v4, self.git('rev-parse', 'HEAD'))
+
+        # 5. Verify exact-candidate CI workflow configuration in .github/workflows/plan.yml.
+        plan_yml = (REPO / '.github/workflows/plan.yml').read_text(encoding='utf-8')
+        self.assertGreaterEqual(plan_yml.count('ref: ${{ github.event.pull_request.head.sha || github.sha }}'), 2)
+        self.assertIn('test "$ACTUAL_SHA" = "$HEAD_SHA"', plan_yml)
+        self.assertIn('python3 scripts/drift-check.py --commit-range "$BASE_SHA..$HEAD_SHA"', plan_yml)
+        self.assertIn('python3 scripts/drift-check.py --commit-range "$(git rev-parse "$HEAD_SHA^")..$HEAD_SHA"', plan_yml)
+        self.assertIn('python3 scripts/drift-check.py --commit-range "$HEAD_SHA"', plan_yml)
+
 
 if __name__ == '__main__':
     unittest.main()

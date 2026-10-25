@@ -49,17 +49,17 @@ Place a real annotation next to the prose it supports. These fenced examples are
 <!-- drift:commit <full-commit-id> include/rasterfold.h -->
 ```
 
-An optional commit trailer such as `Drift-Fact: format_version=2` must match facts derived from that commit's own manifest and source. `commit-msg` reads the index. CI checks declarations across the pushed or proposed commit range; ordinary commit subjects are not interpreted as machine facts. A false historical declaration calls for a corrective commit, never a history rewrite.
+An optional commit trailer such as `Drift-Fact: format_version=2` must match facts derived from that commit's own manifest and source. Malformed `Drift-Fact` trailer lines are rejected. `commit-msg` reads the index (`--git-dir`) and refuses if `scripts/drift-check.py` was removed from the index while present in `HEAD`. CI checks declarations across the pushed or proposed commit range (`BASE..HEAD`, falling back to `HEAD^..HEAD` or `HEAD` when `BASE` is absent or all-zeros); ordinary commit subjects are not interpreted as machine facts. A false historical declaration calls for a corrective commit, never a history rewrite.
 
-The pre-commit hook exports the index and runs TODO, vision and drift checks on those exact bytes. An unstaged fix cannot conceal a bad staged document. Plan checks always validate canonical Markdown from the selected working tree or staged export and also validate existing ignored caches; missing caches in a fresh clone or export are allowed and are never created by a check. Local `scripts/check-all.py` and CI run the same checks and regression fixtures. CI runs for every main-branch push and pull request, including documentation-only changes.
+The pre-commit hook exports the index, refuses if any tracked gate script in `HEAD` was removed from the index, and runs TODO, vision and drift checks on those exact bytes. An unstaged fix cannot conceal a bad staged document. Plan checks always validate canonical Markdown from the selected working tree or staged export and also validate existing ignored caches; missing caches in a fresh clone or export are allowed and are never created by a check. Local `scripts/check-all.py` and CI run the same checks and regression fixtures against the pinned candidate commit. CI runs for every main-branch push and pull request, including documentation-only changes.
 
 ## Check a built Pages artifact
 
-The full Pages site remains planned. Its publisher must build only the product-content allowlist described in [the documentation design](design/documentation.md), then run:
+The Pages build stages only the product-content allowlist declared in `docs/site-content.json` and described in [the documentation design](design/documentation.md), builds `build/site-artifact/`, and runs:
 
 ```bash
-python3 scripts/drift-check.py --site-dir _site --site-prefix /RasterFold/ --write-site-receipt
-python3 scripts/drift-check.py --site-dir _site --site-prefix /RasterFold/
+python3 scripts/drift-check.py --site-dir build/site-artifact --site-prefix /RasterFold/ --write-site-receipt
+python3 scripts/drift-check.py --site-dir build/site-artifact --site-prefix /RasterFold/
 ```
 
-Receipt creation requires clean source checks and a valid artifact. The checker hashes declared inputs and every output, checks local HTML links and fragments under the project base path, and refuses reserved private paths. Changed source or output bytes invalidate the receipt. This proves input/artifact correspondence after a trusted build; hashing cannot prove that an arbitrary HTML page tells the truth. The future Pages workflow must publish that checked artifact and compare the deployed receipt on readback. Local fixture success is not deployment evidence.
+Receipt creation (`build/site-artifact/drift-build.json`) requires clean source checks and a valid artifact. The checker verifies that `docs/site-content.json` and every allowlisted input (`config`, `pages`, `assets`) are covered by `site_sources`, hashes every declared input and every built output, verifies that every allowlisted page and asset was built, checks local HTML links and fragments under the project base path, and refuses symlinks or reserved private paths. Changed source, allowlist mapping or output bytes invalidate the receipt. This proves input/artifact correspondence after a trusted build; hashing cannot prove that an arbitrary HTML page tells the truth. The Pages deployment workflow (`D08 T01 §3`) publishes that checked artifact and compares the deployed receipt on readback. Local fixture success is not deployment evidence.
