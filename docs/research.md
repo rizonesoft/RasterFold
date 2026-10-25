@@ -584,6 +584,41 @@ renamed with `-D`), with a CPUID and `XGETBV` check in `main.c` choosing the v3
 path when the CPU and the operating system support AVX2. The output must be
 byte-identical.
 
+### 5.7 Hot-loop vectorization and row-context specialization in `src/cm.c`
+
+**Owner:** `D02 T01 §4`.
+
+After `D02 T01 §1` (PGO) and `D02 T01 §2` (LTO) missed their corpus bars, one-thread
+decode of `src/cm.c` remained within ~3% of Milestone 1. Profiling `src/cm.c` on
+`measure/image.bmp` (`research/prof.py`) shows four non-bitstream-changing hot-loop
+bottlenecks that can be removed on the portable/SSE4.1 (`x86-64-v2`) path while keeping
+every `.fold` file byte-identical:
+
+1. **Mixer weight update (`WUPD`) and counter aliasing in `code_bit`:** `s0..s4`, `64`,
+   and `err = (bit << 12) - p` all fit in `int16_t` (`[-2047, 2047]` and `[-4095, 4095]`),
+   so `((s * err + 4096) >> 13)` is computed for four lanes at a time by a single
+   `_mm_madd_epi16` (`pmaddwd`) on `(s_k, 1)` and `(err, 4096)` followed by
+   `_mm_srai_epi32(..., 13)`. Preloading `v0..v4 = *c0..*c4`, `rate[0..4]`, and `wv0, wv1`
+   into registers before `renc_bit` / `rdec_bit` avoids reloading or serializing stores
+   across `c0..c4` and `w[0..5]`.
+2. **Per-sample `rdec_tail` check in `cm_code`:** one sample (`code_residual`) makes at
+   most 16 binary decisions and advances `d->in` by at most 32 bytes (with a 2-byte
+   lookahead in `rdec_bit`). Widening `rdec.tail` from 16 to 128 bytes (copying the last
+   48 stream bytes plus 80 zero bytes, `lim = in + n - 40`) allows moving
+   `if (d->in >= d->lim) rdec_tail(d)` out of `rdec_bit` to once per sample in `cm_code`,
+   restoring `rdec_bit` to a branchless, call-free leaf expression.
+3. **Row-context precomputation and interior specialization:** precomputing `rgb_row`,
+   `xs_row`, `r0`, `r1`, `r2`, `cur`, `prv`, and `c_off` once per row `y` in `row_ctx_t`
+   removes per-pixel `% 3`, `% XROWS`, and `y * stride` addressing, and specializing
+   `cm_model` on compile-time `interior = 1` for `y >= 2 && 2 <= x < w - 1` eliminates 15
+   per-pixel boundary branches across the row interior.
+4. **3-threshold quantizer (`qcount3`) and 128-bit `perr` stores:** replacing
+   `_mm_add_epi32(_mm_sign_epi32(_mm_sub_epi32(zero, m), sgn), mid)` with
+   `_mm_sub_epi32(mid, _mm_sign_epi32(m, sgn))`, dropping the dummy fourth threshold
+   `0x7FFFFFFF` on `k0` and `k3` (`qcount3`), and writing `pc->perr` and `pa->perr` in
+   `cm_code` with 128-bit `_mm_storeu_si128` eliminates the four-scalar-store to
+   128-bit-load forwarding stall when the next pixel loads `pN->perr`.
+
 ---
 
 ## 6. Memory designs

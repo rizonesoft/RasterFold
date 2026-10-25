@@ -41,6 +41,7 @@ track: OP1
 
 - -> XREF: D10 T04 §3 -- production Android signing identity.
 - -> XREF: D10 T02 §7 -- HEVC distribution decision.
+- -> XREF: D02 T01 §4 -- Milestone 2 follow-up hot-loop speed section filed under §4.
 
 ## Implementation Order
 

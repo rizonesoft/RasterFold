@@ -10,10 +10,10 @@ track: S1
 
 # TODO-01 -- Compiler Options: PGO, LTO, AVX2
 
-> **Goal:** The release build uses every compiler option that makes it measurably faster without changing a byte it writes: profile-guided optimization from a reproducible profile, link-time optimization if it helps, and an AVX2 path chosen at run time only if building for AVX2 is worth at least 5%.
+> **Goal:** The release build uses every compiler option and byte-identical hot-loop refinement in `src/cm.c` that makes it measurably faster without changing a byte it writes: profile-guided optimization from a reproducible profile, link-time optimization if it helps, an AVX2 path chosen at run time only if building for AVX2 is worth at least 5%, and hot-loop vectorization and row-context specialization in `src/cm.c`.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-10-25; baseline timings remain 2026-09-29):** `scripts/build.py` compiles with `-O2 -march=x86-64-v2 -mtune=generic -Werror` and links its Windows executable with `-nostdlib` against `kernel32` and `shell32` only; POSIX targets use libc/pthreads; `--pgo-gen`, `--pgo-use` (`-fprofile-instr-generate` / `-fprofile-instr-use`), and `--lto` (`-flto`) are wired as opt-in targets (`D02 T01 §1` and `D02 T01 §2` missed their corpus speedup bars, so default release builds stay unprofiled and non-LTO); there is no instruction-set dispatch yet. Decode of `measure/image.bmp` takes 0.58 of JPEG XL's time with three threads and 0.80 with one thread each (`benchmarks/results.md`, 2026-09-29). The llvm-mingw toolchain carries `llvm-profdata.exe` and the Clang profile runtime.
+> **Current state (verified 2026-10-25; baseline timings remain 2026-09-29):** `scripts/build.py` compiles with `-O2 -march=x86-64-v2 -mtune=generic -Werror` and links its Windows executable with `-nostdlib` against `kernel32` and `shell32` only; POSIX targets use libc/pthreads; `--pgo-gen`, `--pgo-use` (`-fprofile-instr-generate` / `-fprofile-instr-use`), and `--lto` (`-flto`) are wired as opt-in targets (`D02 T01 §1` and `D02 T01 §2` missed their corpus speedup bars, so default release builds stay unprofiled and non-LTO); there is no instruction-set dispatch yet, and `src/cm.c` checks `rdec_tail` on every bit decision and recomputes row offsets and boundary branches per pixel. Decode of `measure/image.bmp` takes 0.58 of JPEG XL's time with three threads and 0.80 with one thread each (`benchmarks/results.md`, 2026-09-29). The llvm-mingw toolchain carries `llvm-profdata.exe` and the Clang profile runtime.
 <!-- claim: count "-march=x86-64-v2" scripts/build.py = 1 -->
 <!-- claim: count "flto" scripts/build.py = 3 -->
 <!-- claim: count "fprofile" scripts/build.py = 4 -->
@@ -21,26 +21,29 @@ track: S1
 
 ## Inputs
 
-- [`scripts/build.py`](../../scripts/build.py) -- the flags every section here changes
-- [`docs/research.md`](../../docs/research.md) -- sections 5.1, 5.2, and 5.6, the procedures
-- [`research/vsjxl.py`](../../research/vsjxl.py) -- process wall times against JPEG XL, the measurement for all three sections
+- [`scripts/build.py`](../../scripts/build.py) -- the flags §§1..3 change
+- [`src/cm.c`](../../src/cm.c) and [`src/simd.h`](../../src/simd.h) -- the Method 1 hot loop and portable SIMD fallback §4 optimizes
+- [`docs/research.md`](../../docs/research.md) -- sections 5.1, 5.2, 5.6, and 5.7, the procedures
+- [`research/vsjxl.py`](../../research/vsjxl.py) and [`research/ab.py`](../../research/ab.py) -- process wall times and alternating codec timings
+- -> XREF: D99 T01 §4 -- the missed-milestone policy under which §4 is filed for `D05 T01 §2`
 
 ## Outcome
 
-- `bin/windows-x64/bin/rasterfold.exe` is built with a committed or regenerated profile, and decodes `measure/image.bmp` at least 5% faster on one thread than before this file, or the file records that profile-guided optimization did not reach 5%.
+- `bin/windows-x64/bin/rasterfold.exe` decodes `measure/image.bmp` at least 5% faster on one thread than at Milestone 1 (`D05 T01 §1`), confirmed on `photo` and held-out `tp`, while `§1` and `§2` record that PGO and LTO did not clear their corpus bars.
 - The executable still imports only `KERNEL32.dll` and `SHELL32.dll`, and `KAT_FOLD` is unchanged.
 
-**Adjacency:** all=not-applicable (build flags; no byte, option, or output changes)
+**Adjacency:** all=not-applicable (build flags and byte-identical internal hot-loop optimizations; no byte, option, or output changes)
 
 **Adjacency rationale:** Every section proves the bytes did not move; none adds an option or an output.
 
 ## Implementation Order
 
-| Order | Section | Deliverable                                   | Depends On | Status |
-| :---: | :-----: | --------------------------------------------- | ---------- | :----: |
-|   1   |   §1    | Profile-guided optimization                   | --         |  [x]   |
-|   2   |   §2    | Link-time optimization                        | §1         |  [x]   |
-|   3   |   §3    | An AVX2 build, measured before dispatching    | §2         |  [ ]   |
+| Order | Section | Deliverable                                                      | Depends On                 | Status |
+| :---: | :-----: | ---------------------------------------------------------------- | -------------------------- | :----: |
+|   1   |   §1    | Profile-guided optimization                                      | --                         |  [x]   |
+|   2   |   §2    | Link-time optimization                                           | §1                         |  [x]   |
+|   3   |   §3    | An AVX2 build, measured before dispatching                       | §2                         |  [ ]   |
+|   4   |   §4    | Hot-loop vectorization and row-context specialization in `cm.c`  | §2, D03 T01 §2, D04 T01 §1 |  [ ]   |
 
 ---
 
@@ -89,6 +92,23 @@ Building for `x86-64-v3` might speed the LMS stage and the quantizers. Dispatch 
 - [ ] Commit: `"build: measure an AVX2 build and dispatch to it when it pays"`
 
 **Test checkpoint:** `python tests/test_correctness.py` passes; the scratch build's alternating timings are quoted against the 5% bar.
+
+## 4. Hot-Loop Vectorization and Row-Context Specialization in `cm.c`
+
+**Origin:** discovered run=39ad50798e4b 2026-10-25 -- missed-milestone policy (`D99 T01 §4`) after `D02 T01 §1` and `D02 T01 §2` missed the 5% Milestone 2 one-thread decode bar (`D05 T01 §2`)
+
+> **Started:** 2026-10-25T20:15:00Z
+
+**Needs:** Idle machine (timing)
+
+After `D02 T01 §1` (PGO) and `D02 T01 §2` (LTO) both missed their corpus bars, one-thread decode remained short of the 5% (`<= 0.950`) bar required by "Milestone 2, Same bytes, leaner and harder" in `todo/implementation-plan.md`'s acceptance bar and prerequisite gate `D05 T01 §2`. This section implements the byte-identical hot-loop design in `docs/research.md` section 5.7: vectorizing `code_bit`'s rounded mixer weight update with `_mm_madd_epi16` (`pmaddwd`) and preloading counter and rate values across `renc_bit`/`rdec_bit`, hoisting `rdec_tail` from per-bit in `rdec_bit` to once per sample in `cm_code` with a 128-byte tail buffer (48 stream bytes plus 80 zero bytes, `lim = in + n - 40`), precomputing row pointers (`row_ctx_t`) and specializing `cm_model` on `interior = 1` for `y >= 2 && 2 <= x < w - 1`, and simplifying `qcount`/`qcount3` and 128-bit `perr` stores in `cm_code`. Every `.fold` file written by `src/cm.c` must remain byte-identical to Milestone 1 (`KAT_FOLD` unchanged, `tests/rfi_ref.py` oracle agrees across the corpus), and unpadded borrowed C API buffers (`test_guard_page_exact_length_inputs`) and early stream-exhaustion aborts (`test_truncated_stream_early_abort`) must remain intact. Bar: one-thread decode at least 5% faster (`<= 0.950`) than Milestone 1 (`fbf1036de2cfd0eeaee1a55399563e2d2200328c`) on `measure/image.bmp` in both `research/ab.py ab` (`-n5 -t1`) and `research/vsjxl.py` (`-n5 --threads 1`), confirmed across `photo` and held-out `tp`, with no 3-thread or encode regression exceeding 3% and every `.fold` byte unchanged.
+
+- [ ] Extend `src/simd.h` with portable integer fallbacks for `_mm_set1_epi16`, `_mm_srli_epi32`, `_mm_srai_epi32`, `_mm_unpacklo_epi16`, and `_mm_unpackhi_epi16` so `RF_PORTABLE_SIMD` and `android-arm64` share the exact expressions of `src/cm.c`, and implement the four byte-identical optimizations of `docs/research.md` section 5.7 in `src/cm.c`: `_mm_madd_epi16` mixer weight updates with preloaded counters and rates in `code_bit`, per-sample `rdec_tail` with a 128-byte `rdec.tail` buffer (`48` stream bytes + `80` zero bytes, `lim = in + n - 40`), per-row `row_ctx_t` precomputation (`row_ctx_init` and `row_ctx_init_ch`) with `interior = 1` specialization for `y >= 2 && 2 <= x < w - 1`, and `qcount3` plus 128-bit `_mm_storeu_si128` updates of `pc->perr` and `pa->perr`. Done when: `python3 scripts/build.py --target all` and `python3 scripts/tidy.py` exit 0 with zero warnings across `windows-x64`, `linux-x64`, `android-arm64`, and `android-x64`.
+- [ ] Verify byte identity and decoder safety across `tests/test_correctness.py` (including `known-answer`, `oracle`, `truncated-abort`, and `RF_PORTABLE_SIMD`), `tests/test_api.py` (including `test_guard_page_exact_length_inputs`), `tests/test_artifacts.py`, and `research/ab.py size` on `photo`, `tp`, and `synth`. Done when: every test suite passes on Linux and Windows and every corpus image size matches Milestone 1 (`photo` `30,865,211`, `tp` `6,651,583`, `synth` `214,773`, `measure` `1,409,028`).
+- [ ] Measure alternating speed runs against Milestone 1 (`fbf1036de2cfd0eeaee1a55399563e2d2200328c`) on an observed idle machine using `python3 scripts/windows.py research/ab.py ab <m1_cm.c> src/cm.c measure -n5` at `-t1` and `-t3`, `python3 scripts/windows.py research/vsjxl.py -n5 --threads <1|3> --exe <m1_exe> --alt-exe bin/windows-x64/bin/rasterfold.exe` (twice each), and `python3 scripts/windows.py research/ab.py ab <m1_cm.c> src/cm.c <photo|tp|synth> -n3` at `-t1` and `-t3`, and record the measured ratios in `docs/research.md` sections 3.4 and 5.7. Done when: one-thread decode ratio is `<= 0.950` on `measure/image.bmp`, `photo`, and held-out `tp` with no 3-thread or encode regression exceeding `1.030`, and the figures are recorded in `docs/research.md`.
+- [ ] Commit: `"speed: vectorize cm hot loop and specialize row context"`
+
+**Test checkpoint:** `python3 scripts/check-all.py --all-targets` exits 0; `tests/test_correctness.py` and `tests/test_api.py` pass on Linux and Windows with `KAT_FOLD` and corpus sizes unchanged; alternating `ab.py` and `vsjxl.py` runs against Milestone 1 (`fbf1036de2cfd0eeaee1a55399563e2d2200328c`) quote one-thread decode ratio `<= 0.950` on `measure/image.bmp`, `photo`, and held-out `tp`.
 
 ## Verification
 

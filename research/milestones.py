@@ -42,7 +42,7 @@ M = [
      "every file byte-identical to milestone 1 (`KAT_FOLD` unchanged, the oracle agrees); decode `alloc_peak` at most 9.2 MB on `measure/image.bmp` (10.57 MB at milestone 1); one-thread decode at least 5% faster; a 4096x4096 header with a 20-byte payload refused in under a second",
      f"`bin/windows-x64/bin/rasterfold.exe decode --time`, {SPEED}, `python tests/test_correctness.py`",
      [IDLE], None,
-     "D03 T01 §1, D03 T01 §2, D03 T01 §3, D04 T01 §1, D02 T01 §1, D02 T01 §2"),
+     "D03 T01 §1, D03 T01 §2, D03 T01 §3, D04 T01 §1, D02 T01 §1, D02 T01 §2, D02 T01 §4"),
     (3, "Few-colour images solved",
      "method 2 shipped; `syn_checker` below 210 bytes and `syn_pixel` below 53 bytes (JPEG XL e9's sizes); photo sizes unchanged; 20,000 fuzz mutations over every method clean",
      SIZE, [FF], None,
