@@ -258,6 +258,7 @@ Minimum-time ratios from alternating A/B runs on one thread:
 | prefetch the five context rows in the model phase | -15% | -2% |
 | pipeline G(x), R(x-1), B(x-2) on one thread (against sequential) | no measurable change | no measurable change |
 | one thread per channel | 3.3x faster | 3.2x faster |
+| profile-guided optimization (`-fprofile-instr-use`, 5.1) | 0.962 to 0.988 (`measure`), 1.000 (`photo`), 0.977 (`tp`), 0.967 (`synth`) | 0.991 to 1.079 (`measure`), 0.999 (`photo`), 0.988 (`tp`), 0.982 (`synth`) -- below 5% bar; default release left unprofiled |
 
 Assembly against C (the old version 1 assembly, rebuilt with ml64, against the
 current C): CRC-32 slicing-by-8 in C is 4.2x faster than the assembly CRC; the C

@@ -1545,12 +1545,13 @@
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "1c5d4f886c30c90c0fdd8646ca8acecf9d36410645bac4472de79003f1e18d40",
-        "src/main.c": "7eed0eadd4d7aa69b9112803addc53c8e56842be5bf89d0c8ed1843441e72835",
-        "scripts/build.py": "c56a6554b5956a1f3469b8436d8432b6c4692ba0c6e43dd02aa59d82c83fd3a0",
+        "src/main.c": "27da6f79448461f0d9301fc9c2f004ea1b8c61bee782cf4ce8499c45af164679",
+        "scripts/build.py": "a1dd235137212d47883da2f01eeb7db70ec4d26343d0a037cf0d929438fa3529",
         "scripts/package.py": "b9ef31c48c2c5f7dfdcb22a7b3e5bd1a14c36b84d5d3887f17646bf47eaad199",
         "scripts/check-all.py": "7432d7b4b4eb6c6f499376180fb5576851d1be22db76d7e1375e497e6cbe2637",
         "README.md": "3455c54eb81acc4f418fada24889bdb66475d7a5339c9ffc84f906794c8ef218"
-      }
+      },
+      "review": "Author-attested: 2026-10-25 re-read README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "AGENTS.md": {
       "evidence": "Author-attested: 2026-10-25 re-read AGENTS.md against src/cm.c, src/fold.c, src/rf.h, and research/bench.c after D03 T01 section 3 (in-place CM stream encoding buffer lifetime; CLI, C API, and bitstream unchanged)",
@@ -1576,22 +1577,24 @@
     "CONTRIBUTING.md": {
       "evidence": "Author-attested: 2026-10-25 re-read CONTRIBUTING.md against updated documentation map and gates (D08 T01 section 4)",
       "sources": {
-        "scripts/build.py": "c56a6554b5956a1f3469b8436d8432b6c4692ba0c6e43dd02aa59d82c83fd3a0",
+        "scripts/build.py": "a1dd235137212d47883da2f01eeb7db70ec4d26343d0a037cf0d929438fa3529",
         "scripts/package.py": "b9ef31c48c2c5f7dfdcb22a7b3e5bd1a14c36b84d5d3887f17646bf47eaad199",
         "scripts/check-all.py": "7432d7b4b4eb6c6f499376180fb5576851d1be22db76d7e1375e497e6cbe2637",
         "CONTRIBUTING.md": "01f5855ce18883d6930ce1ebb569ea9411ac21e3c4cf3faced1a56c155bf470f"
-      }
+      },
+      "review": "Author-attested: 2026-10-25 re-read CONTRIBUTING.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/building.md": {
       "evidence": "Author-attested: 2026-10-25 re-read docs/building.md against updated documentation map and gates (D08 T01 section 4)",
       "sources": {
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
-        "scripts/build.py": "c56a6554b5956a1f3469b8436d8432b6c4692ba0c6e43dd02aa59d82c83fd3a0",
+        "scripts/build.py": "a1dd235137212d47883da2f01eeb7db70ec4d26343d0a037cf0d929438fa3529",
         "scripts/package.py": "b9ef31c48c2c5f7dfdcb22a7b3e5bd1a14c36b84d5d3887f17646bf47eaad199",
         "scripts/check-all.py": "7432d7b4b4eb6c6f499376180fb5576851d1be22db76d7e1375e497e6cbe2637",
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "docs/building.md": "968395713c92b23e8937eb81fff1d8c5a1edeca1684cb5e24e1a7c12fc717038"
-      }
+      },
+      "review": "Author-attested: 2026-10-25 re-read docs/building.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/library.md": {
       "evidence": "Author-attested: 2026-10-25 re-read docs/library.md against include/rasterfold.h, src/api.c, and src/rasterfold.def (D08 T02 section 4)",
@@ -1607,10 +1610,11 @@
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "1c5d4f886c30c90c0fdd8646ca8acecf9d36410645bac4472de79003f1e18d40",
-        "src/main.c": "7eed0eadd4d7aa69b9112803addc53c8e56842be5bf89d0c8ed1843441e72835",
+        "src/main.c": "27da6f79448461f0d9301fc9c2f004ea1b8c61bee782cf4ce8499c45af164679",
         "docs/site-content.json": "3611e28cba68ff6ac17ace19115ebb014f06140322afcfc32ec39b78128c6f30",
         "docs/index.md": "34e8242f2213cda93e30b9076e3c159d1b2e093b279ac8cb38f05e600ad41723"
-      }
+      },
+      "review": "Author-attested: 2026-10-25 re-read docs/index.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/getting-started.md": {
       "evidence": "Author-attested: 2026-10-25 re-read docs/getting-started.md against src/cm.c, src/fold.c, src/bmp.c, src/main.c, src/rf.h, and research/bench.c after D03 T01 section 2 (internal BMP decode buffer lifetime; CLI, C API, and bitstream unchanged)",
@@ -1618,13 +1622,14 @@
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
         "tools/provision.py": "b17ea42569b76d70edbcc235dbc86385c9c7ce50b1be7a3bb83383c30f848556",
         "tools/provision.ps1": "836043df1f959726d5fa2b73d206fa896c9d3aacd12bf7e21b8193a4bb14ad96",
-        "scripts/build.py": "c56a6554b5956a1f3469b8436d8432b6c4692ba0c6e43dd02aa59d82c83fd3a0",
+        "scripts/build.py": "a1dd235137212d47883da2f01eeb7db70ec4d26343d0a037cf0d929438fa3529",
         "scripts/check-all.py": "7432d7b4b4eb6c6f499376180fb5576851d1be22db76d7e1375e497e6cbe2637",
         "scripts/check-all.ps1": "7006b1871b52689461497fa676b3cb6472f0e436c9c5e240deb9da069321a528",
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
-        "src/main.c": "7eed0eadd4d7aa69b9112803addc53c8e56842be5bf89d0c8ed1843441e72835",
+        "src/main.c": "27da6f79448461f0d9301fc9c2f004ea1b8c61bee782cf4ce8499c45af164679",
         "docs/getting-started.md": "b5600b5480cbad54659f2f5c596586d19def8b29e9e8f14e486a28d6f0664e95"
-      }
+      },
+      "review": "Author-attested: 2026-10-25 re-read docs/getting-started.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/benchmarks.md": {
       "evidence": "Author-attested: 2026-10-25 re-read docs/benchmarks.md against src/cm.c, src/fold.c, src/rf.h, and research/bench.c after D03 T01 section 3 (in-place CM stream encoding buffer lifetime; CLI, C API, and bitstream unchanged)",
@@ -1686,11 +1691,12 @@
       "sources": {
         "research/corpus.py": "4434e32d8cdb5e70d887f03f7f4cdfbe9ada666ea680c7d6ce176cc9b2858bb7",
         "research/ab.py": "1c610cd4922caba9aa4e487506dcc90d77aaad67f6a98e0276b32ec44c96400f",
-        "research/vsjxl.py": "cce73db6f3057b4bddefa5b1ec283517f0ac4b2c1224bfd6bb3c6f11fc5f3816",
+        "research/vsjxl.py": "86d4d5eb479ce1b3160c3ab1403e0c5ca1a6ddf107882a441c1fa64412f496d7",
         "research/prof.py": "7fa28a84aab62f0eb79fd579bcc01b6e2e55cc200bdaa96c0218b2ad4aa05605",
         "research/bench.c": "97d465a600a7ee3962b11636efd6c33d60d25c48354ee1210dd9a019c117a7ea",
         "research/README.md": "8008dce4077b8d8fb56cfc9b6a14ba5cfe6bd074ccd96b8aa0a59ca46fe93530"
-      }
+      },
+      "review": "Author-attested: 2026-10-25 re-read research/README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "testdata/photos/README.md": {
       "evidence": "Author-attested: 2026-10-25 re-read testdata/photos/README.md against testdata/photos/manifest.json and testdata/photos/NOTICE-imagecompression-info.txt (D08 T02 section 4)",
@@ -1704,32 +1710,34 @@
       "evidence": "Author-attested: 2026-10-25 re-read docs/examples.md against src/cm.c, src/fold.c, src/bmp.c, src/main.c, src/rf.h, and research/bench.c after D03 T01 section 2 (internal BMP decode buffer lifetime; CLI, C API, and bitstream unchanged)",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
-        "src/main.c": "7eed0eadd4d7aa69b9112803addc53c8e56842be5bf89d0c8ed1843441e72835",
+        "src/main.c": "27da6f79448461f0d9301fc9c2f004ea1b8c61bee782cf4ce8499c45af164679",
         "examples/encode.c": "f4cb5d6e4d04c302d17ce8d6aac0b0926218836ec96d8fa4bb676583234cdd66",
         "examples/decode.c": "3f6ff6cfb0b847f5dae70fd6de5f96b0d49f470283326cf4149c368482639530",
         "examples/ppm.h": "9683267ff2b024b14570548e94cfbc0acced5cd7ecd8eba2dab5c69b6677abf6",
         "docs/examples.md": "6501c76e6ae317e7fded0a5163a3278f44fe1d9d1f74284da2be0608bb3940d4"
-      }
+      },
+      "review": "Author-attested: 2026-10-25 re-read docs/examples.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/limitations.md": {
       "evidence": "Author-attested: 2026-10-25 re-read docs/limitations.md against src/cm.c, src/fold.c, src/rf.h, and research/bench.c after D03 T01 section 3 (in-place CM stream encoding buffer lifetime; CLI, C API, and bitstream unchanged)",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "1c5d4f886c30c90c0fdd8646ca8acecf9d36410645bac4472de79003f1e18d40",
-        "src/main.c": "7eed0eadd4d7aa69b9112803addc53c8e56842be5bf89d0c8ed1843441e72835",
+        "src/main.c": "27da6f79448461f0d9301fc9c2f004ea1b8c61bee782cf4ce8499c45af164679",
         "src/fold.c": "936a14aa60fbb4fa48526a0d001d885f8ddc234a21da39105f8c258b758f65a7",
         "src/bmp.c": "50278e51120542ec686aee00385eba666239070533035e5d04e7d659b118317c",
         "src/api.c": "76f5277f1fce9b053ca1e75648d1d5a7aa5494bf46266361e437f3e17f80812c",
         "src/sys_posix.c": "507270096bb20f63a07fd0176551a6fc7dd37ee7ce441b6a5a3e57f00bcb6792",
         "docs/limitations.md": "a5b84d05b0c469f0df8ffeac84babbd8e12959225c8eeb7b63fadaf548048a3e"
-      }
+      },
+      "review": "Author-attested: 2026-10-25 re-read docs/limitations.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/troubleshooting.md": {
       "evidence": "Author-attested: 2026-10-25 re-read docs/troubleshooting.md against src/cm.c, src/fold.c, src/rf.h, and research/bench.c after D03 T01 section 3 (in-place CM stream encoding buffer lifetime; CLI, C API, and bitstream unchanged)",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "1c5d4f886c30c90c0fdd8646ca8acecf9d36410645bac4472de79003f1e18d40",
-        "src/main.c": "7eed0eadd4d7aa69b9112803addc53c8e56842be5bf89d0c8ed1843441e72835",
+        "src/main.c": "27da6f79448461f0d9301fc9c2f004ea1b8c61bee782cf4ce8499c45af164679",
         "src/fold.c": "936a14aa60fbb4fa48526a0d001d885f8ddc234a21da39105f8c258b758f65a7",
         "src/bmp.c": "50278e51120542ec686aee00385eba666239070533035e5d04e7d659b118317c",
         "src/api.c": "76f5277f1fce9b053ca1e75648d1d5a7aa5494bf46266361e437f3e17f80812c",
@@ -1737,7 +1745,8 @@
         "tools/provision.py": "b17ea42569b76d70edbcc235dbc86385c9c7ce50b1be7a3bb83383c30f848556",
         "tools/provision.ps1": "836043df1f959726d5fa2b73d206fa896c9d3aacd12bf7e21b8193a4bb14ad96",
         "docs/troubleshooting.md": "6cd9d0d5e51bb312be55fb56c3cd654739541c9db569f068e325300819510271"
-      }
+      },
+      "review": "Author-attested: 2026-10-25 re-read docs/troubleshooting.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/licenses.md": {
       "evidence": "Author-attested: 2026-10-25 authored docs/licenses.md against CODE_OF_CONDUCT.md, testdata/photos/README.md, testdata/photos/manifest.json, testdata/photos/NOTICE-imagecompression-info.txt, toolchain.json, tools/provision.py, and tools/provision.ps1 (D08 T01 section 4)",

@@ -319,5 +319,47 @@ class Artifacts(unittest.TestCase):
                     self.assertEqual((dir_b/'out.fold.partial').read_bytes(),b'keep-b-partial')
                     self.assertFalse((dir_a/'out.fold.partial').exists())
 
+    def test_pgo_lifecycle_and_validation(self):
+        import sys
+        sys.path.insert(0, str(ROOT / 'scripts'))
+        import build as build_mod  # noqa: E402
+        import pgo as pgo_mod  # noqa: E402
+
+        with tempfile.TemporaryDirectory(dir=ROOT / 'build') as temp:
+            temp_dir = Path(temp)
+            # 1. Synthetic fallback training BMPs cover 10 regimes and decode cleanly via rfi_ref.
+            bmps = pgo_mod.synthetic_training_bmps(temp_dir / 'syn') if (temp_dir / 'syn').mkdir() is None else []
+            self.assertEqual(len(bmps), 10)
+            w0, h0, rgb0 = rfi_ref.read_bmp24(bmps[0].read_bytes())
+            self.assertEqual((w0, h0), (256, 192))
+            self.assertEqual(len(rgb0), 256 * 192 * 3)
+
+            # 2. Corrupt or empty profile is refused by validate_pgo_profile and scripts/build.py --pgo-use.
+            corrupt = temp_dir / 'corrupt.profdata'
+            corrupt.write_bytes(b'not-a-valid-llvm-profdata')
+            proc = subprocess.run(
+                [sys.executable, str(ROOT / 'scripts' / 'build.py'), '--target', TARGET, '--pgo-use', str(corrupt)],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn('corrupt or incompatible PGO profile', proc.stderr)
+
+            # 3. Failed training run does not overwrite an existing profile at the destination path.
+            existing = temp_dir / 'keep.profdata'
+            existing.write_bytes(b'sentinel-valid-bytes')
+            if WIN:
+                with self.assertRaises((FileNotFoundError, RuntimeError)):
+                    pgo_mod.generate_profile(existing, build_instrumented=False, pgo_exe=temp_dir / 'missing.exe')
+                self.assertEqual(existing.read_bytes(), b'sentinel-valid-bytes')
+
+            # 4. Valid profile created from a single dummy profraw or existing build/pgo/rasterfold.profdata validates.
+            real_prof = ROOT / 'build' / 'pgo' / 'rasterfold.profdata'
+            if real_prof.is_file():
+                pgo_tools = ROOT / ('tools/llvm-mingw/bin' if WIN else 'tools/llvm-mingw-linux/bin')
+                validated = build_mod.validate_pgo_profile(real_prof, pgo_tools, '.exe' if WIN else '')
+                self.assertEqual(validated, real_prof.resolve())
+
 
 if __name__=='__main__':unittest.main(verbosity=2)

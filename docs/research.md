@@ -281,6 +281,7 @@ Minimum-time ratios from alternating A/B runs on one thread:
 | prefetch the five context rows in the model phase | -15% | -2% |
 | pipeline G(x), R(x-1), B(x-2) on one thread (against sequential) | no measurable change | no measurable change |
 | one thread per channel | 3.3x faster | 3.2x faster |
+| profile-guided optimization (`-fprofile-instr-use`, 5.1, `D02 T01 §1`) | 0.962 to 0.988 (`measure`), 1.000 (`photo`), 0.977 (`tp`), 0.967 (`synth`) | 0.991 to 1.079 (`measure`), 0.999 (`photo`), 0.988 (`tp`), 0.982 (`synth`) -- below 5% bar; default release left unprofiled |
 
 Assembly against C (the old version 1 assembly, rebuilt with ml64, against the
 current C): CRC-32 slicing-by-8 in C is 4.2x faster than the assembly CRC; the C
@@ -509,7 +510,7 @@ builds its own harness, so the executables are compared with `research/vsjxl.py`
 (extended with `--exe`, `--alt-exe`, and `--threads`) and corpus timing across
 `photo`, `tp`, and `synth`.
 
-**Expected effect.** 5% to 15% faster (estimate), from branch layout.
+**Expected effect.** 5% to 15% faster (estimate), from branch layout. Measured in `D02 T01 §1` (2026-10-25): one-thread decode ratio is `0.991` to `1.079` min (`1.005` to `1.034` median) on `measure/image.bmp`, `0.999` on `photo` (`n=39`, geomean `1.000`), `0.988` on held-out `tp` (`n=10`, geomean `0.980`), and `0.982` on `synth` (`n=11`, geomean `0.985`), missing the 5% (`<= 0.950`) bar; `--pgo-gen`, `scripts/pgo.ps1`, `scripts/pgo.py`, and `--pgo-use` are retained as opt-in tooling while default release builds stay unprofiled.
 
 ### 5.2 Link-time optimization
 

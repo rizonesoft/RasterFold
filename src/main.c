@@ -143,7 +143,7 @@ done:
 }
 
 #ifdef _WIN32
-void rf_start(void) {
+static int run_win32(void) {
     rf_error error = {0, 0};
     rf_error *err = &error;
     int argc = 0;
@@ -158,8 +158,14 @@ void rf_start(void) {
         rf_print(1, "" RF_EOL);
     }
     if (argv) LocalFree(argv);
-    ExitProcess((UINT)rc);
+    return rc;
 }
+
+#ifdef RF_PGO_GEN
+int main(void) { return run_win32(); }
+#else
+void rf_start(void) { ExitProcess((UINT)run_win32()); }
+#endif
 
 #else
 int main(int argc, char **argv) {
