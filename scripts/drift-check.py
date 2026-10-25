@@ -244,80 +244,116 @@ def _select_csv_rows(source, rule, key):
     return rows
 
 
+def _scan_link_tail(text, close_b):
+    n = len(text)
+    j = close_b + 1
+    while j < n and text[j] in ' \t':
+        j += 1
+    if j < n and text[j] == '(':
+        k = j + 1
+        while k < n and text[k] in ' \t':
+            k += 1
+        depth = 1
+        if k < n and text[k] == '<':
+            k += 1
+            while k < n and text[k] not in '>\n':
+                k += 2 if text[k] == '\\' else 1
+            if k < n and text[k] == '>':
+                k += 1
+        else:
+            while k < n and text[k] not in ' \t\n':
+                ch = text[k]
+                if ch == '\\':
+                    k += 2
+                    continue
+                if ch == '(':
+                    depth += 1
+                elif ch == ')':
+                    depth -= 1
+                    if depth == 0:
+                        k += 1
+                        break
+                k += 1
+        if depth > 0:
+            while k < n and text[k] in ' \t':
+                k += 1
+            if k < n and text[k] in ('"', "'", '('):
+                close_q = ')' if text[k] == '(' else text[k]
+                k += 1
+                while k < n and text[k] != '\n':
+                    if text[k] == '\\':
+                        k += 2
+                        continue
+                    if text[k] == close_q:
+                        k += 1
+                        break
+                    k += 1
+            while k < n and text[k] in ' \t':
+                k += 1
+            if k < n and text[k] == ')':
+                depth = 0
+                k += 1
+        if depth == 0:
+            return k
+    elif j < n and text[j] == '[':
+        k = j + 1
+        depth = 1
+        while k < n and text[k] != '\n' and depth > 0:
+            ch = text[k]
+            if ch == '\\':
+                k += 2
+                continue
+            if ch == '[':
+                depth += 1
+            elif ch == ']':
+                depth -= 1
+            k += 1
+        if depth == 0:
+            return k
+    return None
+
+
+def _strip_markdown_images(text):
+    out = []
+    i = 0
+    n = len(text)
+    while i < n:
+        if text[i:i + 2] == '![' and (i == 0 or text[i - 1] != '\\'):
+            k = i + 2
+            depth = 1
+            while k < n and text[k] != '\n' and depth > 0:
+                ch = text[k]
+                if ch == '\\':
+                    k += 2
+                    continue
+                if ch == '[':
+                    depth += 1
+                elif ch == ']':
+                    depth -= 1
+                k += 1
+            if depth == 0:
+                close_b = k - 1
+                tail_end = _scan_link_tail(text, close_b)
+                out.append(' ')
+                i = tail_end if tail_end is not None else k
+                continue
+        out.append(text[i])
+        i += 1
+    return ''.join(out)
+
+
 def _strip_markdown_links(text):
+    text = _strip_markdown_images(text)
     out = []
     i = 0
     n = len(text)
     while i < n:
         if text[i] == ']':
-            j = i + 1
-            while j < n and text[j] in ' \t':
-                j += 1
-            if j < n and text[j] == '(':
-                k = j + 1
-                while k < n and text[k] in ' \t':
-                    k += 1
-                depth = 1
-                if k < n and text[k] == '<':
-                    k += 1
-                    while k < n and text[k] not in '>\n':
-                        k += 2 if text[k] == '\\' else 1
-                    if k < n and text[k] == '>':
-                        k += 1
-                else:
-                    while k < n and text[k] not in ' \t\n':
-                        ch = text[k]
-                        if ch == '\\':
-                            k += 2
-                            continue
-                        if ch == '(':
-                            depth += 1
-                        elif ch == ')':
-                            depth -= 1
-                            if depth == 0:
-                                k += 1
-                                break
-                        k += 1
-                if depth > 0:
-                    while k < n and text[k] in ' \t':
-                        k += 1
-                    if k < n and text[k] in ('"', "'", '('):
-                        close_q = ')' if text[k] == '(' else text[k]
-                        k += 1
-                        while k < n and text[k] != '\n':
-                            if text[k] == '\\':
-                                k += 2
-                                continue
-                            if text[k] == close_q:
-                                k += 1
-                                break
-                            k += 1
-                    while k < n and text[k] in ' \t':
-                        k += 1
-                    if k < n and text[k] == ')':
-                        depth = 0
-                        k += 1
-                if depth == 0:
-                    out.append(']')
-                    i = k
-                    continue
-            elif j < n and text[j] == '[':
-                k = j + 1
-                depth = 1
-                while k < n and text[k] != '\n' and depth > 0:
-                    ch = text[k]
-                    if ch == '\\':
-                        k += 2
-                        continue
-                    if ch == '[':
-                        depth += 1
-                    elif ch == ']':
-                        depth -= 1
-                    k += 1
-                if depth == 0:
-                    out.append(']')
-                    i = k
-                    continue
+            tail_end = _scan_link_tail(text, i)
+            if tail_end is not None:
+                out.append(']')
+                i = tail_end
+                continue
         out.append(text[i])
         i += 1
     return ''.join(out)
