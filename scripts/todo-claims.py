@@ -48,13 +48,13 @@ CLAIM_RE = re.compile(r"<!--\s*claim:\s*(.+?)\s*-->")
 # reads "all hold": a check reporting success for its own absence. Found
 # 2026-09-17 by D00 T03 §4, which wrote two such claims by accident.
 CLAIM_OPEN_RE = re.compile(r"<!--\s*claim:")
-INLINE_CODE_RE = re.compile(r"`[^`]*`")
+INLINE_CODE_RE = re.compile(r"(`+)(?:(?!\1).)*\1")
 # count "<pattern>" <glob> = N   -- pattern is quoted because it may contain spaces
 COUNT_RE = re.compile(r'^count\s+"(.+)"\s+(\S+)\s*=\s*(\d+)$')
 LINES_RE = re.compile(r"^lines\s+(\S+)\s*=\s*(\d+)$")
 PATH_RE = re.compile(r"^(exists|absent)\s+(\S+)$")
 
-CURRENT_STATE_RE = re.compile(r"\*\*Current state\s*\(verified\s+(\d{4}-\d{2}-\d{2})(?:;[^)]*)?\)")
+CURRENT_STATE_RE = re.compile(r"^>\s*\*\*Current state\s*\(verified\s+(\d{4}-\d{2}-\d{2})(?:;[^)]*)?\)")
 HEADING_RE = re.compile(r"^#{1,6}\s")
 # A path cited in prose: backticked, containing a slash or a dot, no spaces.
 CITED_PATH_RE = re.compile(r"`([A-Za-z0-9_][A-Za-z0-9_./\-]*[A-Za-z0-9_/])`")
@@ -260,7 +260,7 @@ def current_state_blocks(paths: list[Path]) -> list[dict]:
                 continue
             end = len(lines)
             for j in range(i + 1, len(lines)):
-                if HEADING_RE.match(lines[j]):
+                if HEADING_RE.match(lines[j]) or CURRENT_STATE_RE.search(INLINE_CODE_RE.sub("", lines[j])):
                     end = j
                     break
             region = lines[i:end]
@@ -558,15 +558,16 @@ def _self_test() -> int:
         failed += 1
 
     # Coverage: a block with a claim is covered, one without is named, a
-    # parenthetical `; ...` note after the verified date is recognized, and a
-    # backticked reference in prose is not counted as a block.
+    # parenthetical `; ...` note after the verified date is recognized, and
+    # single- or multi-backticked references in prose are not counted as blocks
+    # and cannot share another block's claims.
     cov = tmp / "cov.md"
     cov.write_text(
         "# T\n\n> **Current state (verified 2020-01-01):** prose.\n"
         "<!-- claim: absent nowhere.txt -->\n\n"
-        "## S\n\n> **Current state (verified 2020-01-02):** prose with no claim.\n\n"
-        "## S2\n\n> **Current state (verified 2020-01-03; timings below remain the 2020-01-01 baseline):** prose.\n"
-        "Prose quoting `**Current state (verified 2020-01-04):**` in backticks.\n"
+        "## S\n\n> **Current state (verified 2020-01-02):** prose with no claim.\n"
+        "> **Current state (verified 2020-01-03; timings below remain the 2020-01-01 baseline):** prose.\n"
+        "Prose quoting `**Current state (verified 2020-01-04):**` and ``> **Current state (verified 2020-01-05; note):**`` in backticks.\n"
         "<!-- claim: absent nowhere2.txt -->\n",
         encoding="utf-8",
     )
