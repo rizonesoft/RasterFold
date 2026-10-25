@@ -13,7 +13,7 @@ track: W1
 > **Goal:** The plan polices itself on every clone and every push: the ported TODO system, skills, hooks, and gates are committed with the hooks executable, the commit hook refuses a broken staged tree, the first push comes back green from both workflows, a static analysis gate holds the C sources to a baseline that only shrinks, the review panel is proven end to end before the first stamp depends on it, and the claims ratchet sits at what the tree measures.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-10-24):** The port, four-target build, and sole-writer Antigravity (`agy`) + GPT-6 Astra (`scripts/review-dispatch.py`) review architecture are in place. This WSL checkout has `core.hooksPath=tools/githooks` and authenticated GitHub CLI; Windows/Linux build and plan workflows have succeeded. Clone provisioning remains required. `.clang-tidy`, `scripts/tidy.py`, and `todo/.tidy-baseline` (`count: 20`) gate static analysis across Windows/POSIX and x64/ARM64 compilation databases; `COVERAGE_FLOOR` is 31 after the 2026-09-30 audit measured 31/31 covered Current state blocks. Local/remote migration evidence is in `docs/wsl-migration-audit.md`, and formal TODO stamps remain open.
+> **Current state (verified 2026-10-25):** The port, four-target build, and sole-writer Antigravity (`agy`) + GPT-6 Astra (`scripts/review-dispatch.py`) review architecture are in place. This WSL checkout has `core.hooksPath=tools/githooks` and authenticated GitHub CLI; Windows/Linux build and plan workflows have succeeded. Clone provisioning remains required. `.clang-tidy`, `scripts/tidy.py`, and `todo/.tidy-baseline` (`count: 20`) gate static analysis across Windows/POSIX and x64/ARM64 compilation databases; `COVERAGE_FLOOR` is 32 after `D00 T01 §5` measured 32/32 covered `Current state` blocks across all 32 TODO files. Local/remote migration evidence is in `docs/wsl-migration-audit.md`.
 <!-- claim: exists tools/githooks/pre-commit -->
 <!-- claim: exists tools/githooks/commit-msg -->
 <!-- claim: exists tools/provision.ps1 -->
@@ -21,7 +21,7 @@ track: W1
 <!-- claim: exists .clang-tidy -->
 <!-- claim: exists scripts/tidy.py -->
 <!-- claim: exists todo/.tidy-baseline -->
-<!-- claim: count "^COVERAGE_FLOOR = 31$" scripts/todo-claims.py = 1 -->
+<!-- claim: count "^COVERAGE_FLOOR = 32$" scripts/todo-claims.py = 1 -->
 
 ## Inputs
 
@@ -133,13 +133,17 @@ The build already fails on any compiler warning (`-Werror` in `scripts/build.py`
 > **Review:** `docs/reviews/d00-t01-s4.json`
 ## 5. Raise the Claims Coverage Floor
 
-`COVERAGE_FLOOR` is the number of `Current state` blocks that must carry a claim. It is 31 after the 2026-09-30 measurement of 31/31 covered blocks; remeasure before raising it further.
+> **Started:** 2026-10-24T23:59:00Z
 
-- [ ] Run `python scripts/todo-claims.py --coverage` and set `COVERAGE_FLOOR` in `scripts/todo-claims.py` to the number of blocks it reports as carrying a claim. Done when: `python scripts/todo-claims.py --coverage` exits 0 and removing one claim from any block makes it exit 1. Cheaper substitute: raising the floor by an arbitrary number.
-- [ ] Update this file's claim on `COVERAGE_FLOOR` to the new value. Done when: `python scripts/todo-claims.py` exits 0.
-- [ ] Commit: `"workspace: raise the claims coverage floor to the measured count"`
+`COVERAGE_FLOOR` is the number of `Current state` blocks that must carry a claim. On 2026-09-30 it was set to 31 (`31/31`) because `CURRENT_STATE_RE` in `scripts/todo-claims.py` (`r"\*\*Current state\s*\(verified\s+(\d{4}-\d{2}-\d{2})\)"`) required an immediate closing `)` after the date and silently skipped `todo/02-speed/TODO-01-compiler-options.md:16` (`**Current state (verified 2026-09-30; timings below remain the 2026-09-29 baseline):**`), even though that block carries 4 claims. Allowing optional `; ...` notes inside `CURRENT_STATE_RE`, stripping inline code spans before matching `CURRENT_STATE_RE`, and passing `-c safe.directory=*` to `git` in `_ignored` and `_git_last_change` (so Windows `git` runs cleanly on the WSL UNC checkout) brings the measured count to `32/32` across all 32 TODO files, raising `COVERAGE_FLOOR` from `31` to `32`.
 
-**Test checkpoint:** `python scripts/todo-claims.py --coverage` exits 0 at the new floor and exits 1 with one claim removed (quoted, then restored).
+- [x] Teach `CURRENT_STATE_RE` in `scripts/todo-claims.py` to match `**Current state (verified YYYY-MM-DD; ...):**` blocks while ignoring inline-code quotations (with a self-test case in `_self_test()`), run `python3 scripts/todo-claims.py --coverage`, and set `COVERAGE_FLOOR` in `scripts/todo-claims.py` to `32` (`32/32` covered blocks). Done when: `python3 scripts/todo-claims.py --coverage` and `python3 scripts/todo-claims.py --self-test` exit 0 on Linux and Windows, and removing the claims from a block makes `--coverage` exit 1 (`coverage fell to 31, below the recorded floor of 32`). Cheaper substitute: raising the floor by an arbitrary number or leaving the 32nd block uncounted.
+- [x] Update this file's `Current state` prose and claim on `COVERAGE_FLOOR` (`^COVERAGE_FLOOR = 32$`) to the new value. Done when: `python3 scripts/todo-claims.py` exits 0.
+- [x] Commit: `"workspace: raise the claims coverage floor to the measured count"`
+
+**Test checkpoint:** `python3 scripts/todo-claims.py --coverage` and `python3 scripts/todo-claims.py --self-test` exit 0 at the new floor (`32/32`) and `--coverage` exits 1 with one block's claims removed (quoted, then restored).
+
+**Checkpoint output (2026-10-25):** `python3 scripts/todo-claims.py` exited 0 (`todo-claims: 75 claim(s) -- 75 hold, 0 stale, 0 malformed; coverage 32/32, floor 32`); `python3 scripts/todo-claims.py --coverage` exited 0 (`todo-claims coverage: 32/32 Current state block(s) carry a claim`); `python3 scripts/todo-claims.py --self-test` and `python3 scripts/windows.py scripts/todo-claims.py --self-test < /dev/null` both exited 0 (`todo-claims self-test: 26 cases, 0 failed`); `python3 scripts/windows.py scripts/todo-claims.py --coverage --quiet < /dev/null` exited 0 (`todo-claims coverage: 32/32, floor 32`). Temporarily removing the claims from `todo/02-speed/TODO-01-compiler-options.md` made `python3 scripts/todo-claims.py --coverage --quiet` exit `1` with `FLOOR     coverage fell to 31, below the recorded floor of 32. The floor ratchets: raise it deliberately, never lower it to pass.` (`todo-claims coverage: 31/32, floor 32`); restoring `todo/02-speed/TODO-01-compiler-options.md` returned `--coverage --quiet` to exit `0` (`todo-claims coverage: 32/32, floor 32`).
 
 ## 6. Claude Review Rounds Through the Reviewer Pin
 

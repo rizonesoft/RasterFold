@@ -54,7 +54,7 @@ COUNT_RE = re.compile(r'^count\s+"(.+)"\s+(\S+)\s*=\s*(\d+)$')
 LINES_RE = re.compile(r"^lines\s+(\S+)\s*=\s*(\d+)$")
 PATH_RE = re.compile(r"^(exists|absent)\s+(\S+)$")
 
-CURRENT_STATE_RE = re.compile(r"\*\*Current state\s*\(verified\s+(\d{4}-\d{2}-\d{2})\)")
+CURRENT_STATE_RE = re.compile(r"\*\*Current state\s*\(verified\s+(\d{4}-\d{2}-\d{2})(?:;[^)]*)?\)")
 HEADING_RE = re.compile(r"^#{1,6}\s")
 # A path cited in prose: backticked, containing a slash or a dot, no spaces.
 CITED_PATH_RE = re.compile(r"`([A-Za-z0-9_][A-Za-z0-9_./\-]*[A-Za-z0-9_/])`")
@@ -65,8 +65,9 @@ CITED_PATH_RE = re.compile(r"`([A-Za-z0-9_][A-Za-z0-9_./\-]*[A-Za-z0-9_/])`")
 # on day one and gets deleted rather than met. Resolute measured 3 of 20 on
 # 2026-09-17 (its D00 T04 §1); Isotone re-measured at the port, 2026-09-26, when
 # the tree held one `Current state` block and it carried a claim.
-# RasterFold re-measured 31 of 31 blocks on 2026-09-30 (docs/todo-vision-audit.md).
-COVERAGE_FLOOR = 31
+# RasterFold re-measured 31 of 31 blocks on 2026-09-30 (docs/todo-vision-audit.md)
+# and 32 of 32 blocks on 2026-10-25 (D00 T01 §5).
+COVERAGE_FLOOR = 32
 DEFAULT_ROOT = "todo"
 
 
@@ -116,7 +117,7 @@ def _ignored(target: str) -> bool:
         return False
     try:
         out = subprocess.run(
-            ["git", "check-ignore", "--", *probes],
+            ["git", "-c", "safe.directory=*", "check-ignore", "--", *probes],
             cwd=ROOT, capture_output=True, timeout=10,
         )
     except (OSError, subprocess.SubprocessError):
@@ -235,7 +236,7 @@ def _git_last_change(rel: str) -> str | None:
     """Committer date of the last commit touching `rel`, as YYYY-MM-DD, or None."""
     try:
         out = subprocess.run(
-            ["git", "log", "-1", "--format=%cs", "--", rel],
+            ["git", "-c", "safe.directory=*", "log", "-1", "--format=%cs", "--", rel],
             cwd=ROOT, capture_output=True, text=True, timeout=20,
         )
     except (OSError, subprocess.SubprocessError):
@@ -254,7 +255,7 @@ def current_state_blocks(paths: list[Path]) -> list[dict]:
     for path in paths:
         lines = io.open(path, encoding="utf-8", errors="replace").read().splitlines()
         for i, line in enumerate(lines):
-            m = CURRENT_STATE_RE.search(line)
+            m = CURRENT_STATE_RE.search(INLINE_CODE_RE.sub("", line))
             if not m:
                 continue
             end = len(lines)
@@ -556,20 +557,25 @@ def _self_test() -> int:
         print("  FAIL  a well-formed claim was reported as unterminated")
         failed += 1
 
-    # Coverage: a block with a claim is covered, one without is named.
+    # Coverage: a block with a claim is covered, one without is named, a
+    # parenthetical `; ...` note after the verified date is recognized, and a
+    # backticked reference in prose is not counted as a block.
     cov = tmp / "cov.md"
     cov.write_text(
         "# T\n\n> **Current state (verified 2020-01-01):** prose.\n"
         "<!-- claim: absent nowhere.txt -->\n\n"
-        "## S\n\n> **Current state (verified 2020-01-02):** prose with no claim.\n",
+        "## S\n\n> **Current state (verified 2020-01-02):** prose with no claim.\n\n"
+        "## S2\n\n> **Current state (verified 2020-01-03; timings below remain the 2020-01-01 baseline):** prose.\n"
+        "Prose quoting `**Current state (verified 2020-01-04):**` in backticks.\n"
+        "<!-- claim: absent nowhere2.txt -->\n",
         encoding="utf-8",
     )
     blocks = current_state_blocks([cov])
-    if len(blocks) != 2:
-        print(f"  FAIL  coverage: expected 2 blocks, got {len(blocks)}")
+    if len(blocks) != 3:
+        print(f"  FAIL  coverage: expected 3 blocks, got {len(blocks)}")
         failed += 1
-    elif blocks[0]["claims"] != 1 or blocks[1]["claims"] != 0:
-        print(f"  FAIL  coverage: claim attribution wrong: {[b['claims'] for b in blocks]}")
+    elif [b["claims"] for b in blocks] != [1, 0, 1] or blocks[2]["verified"] != "2020-01-03":
+        print(f"  FAIL  coverage: claim attribution wrong: {blocks}")
         failed += 1
 
     # --- the four findings the independent review of f875758 raised ---------
@@ -578,10 +584,10 @@ def _self_test() -> int:
     if probs:
         print("  FAIL  floor was applied to a subtree scan")
         failed += 1
-    # The fixture covers one block, so the probe pins a floor above it rather
+    # The fixture covers two blocks, so the probe pins a floor above it rather
     # than borrowing the live floor, which is this tree's own measurement.
     saved_floor = COVERAGE_FLOOR
-    globals()["COVERAGE_FLOOR"] = 2
+    globals()["COVERAGE_FLOOR"] = 3
     try:
         _, _, probs = run_coverage([cov], quiet=True, apply_floor=True)
     finally:
