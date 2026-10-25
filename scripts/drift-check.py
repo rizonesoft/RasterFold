@@ -102,7 +102,7 @@ def prose(text):
             indented_bq_depth = 0
             can_start_indented_code = True
             list_indent = 0
-        if bq_depth != prev_bq_depth and not fence and not in_indented_code:
+        if bq_depth > prev_bq_depth and not fence and not in_indented_code:
             can_start_indented_code = True
             list_indent = 0
         prev_bq_depth = bq_depth

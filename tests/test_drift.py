@@ -1730,6 +1730,12 @@ class DriftTests(unittest.TestCase):
             [{'kind': 'link', 'path': 'valid_links.md', 'detail': 'missing target: missing-review-target.md'}],
             probe_bq.errors,
         )
+        probe_lazy = drift.Checker(self.root)
+        probe_lazy.links('valid_links.md', '> paragraph\n    [live](missing-lazy-target.md)\n', self.root)
+        self.assertEqual(
+            [{'kind': 'link', 'path': 'valid_links.md', 'detail': 'missing target: missing-lazy-target.md'}],
+            probe_lazy.errors,
+        )
 
         # Non-Setext constructs (frontmatter, tab-indented code blocks, block HTML, list item before ---, blockquote before ---, table separator) must not create anchors.
         for bad_frag in ('#title-target-frontmatter', '#tab-indented-code', '#tab-paragraph', '#block-html', '#list-item', '#blockquote-line', '#table-col'):
