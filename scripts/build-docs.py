@@ -127,6 +127,7 @@ def load_site_content(root: Path) -> dict:
     if not isinstance(extra_forbidden, list) or not all(isinstance(x, str) for x in extra_forbidden):
         raise ValueError('forbidden_prefixes must be a list of strings')
     seen_staged = set()
+    canonical_source_paths: dict[Path, str] = {}
     for group in ('config', 'pages', 'assets'):
         entries = data.get(group)
         if not isinstance(entries, list) or not entries:
@@ -142,13 +143,16 @@ def load_site_content(root: Path) -> dict:
                     raise ValueError(f'{SITE_CONTENT}: invalid {label} path {rel!r}')
                 if is_forbidden_path(rel, extra_forbidden):
                     raise ValueError(f'{SITE_CONTENT}: forbidden {label} path {rel!r}')
-            safe_repo_path(root, src)
+            src_path = safe_repo_path(root, src)
+            canonical_source_paths.setdefault(src_path, src)
             if out:
                 safe_repo_path(root, out)
             if staged in seen_staged:
                 raise ValueError(f'{SITE_CONTENT}: duplicate staged path {staged!r}')
             seen_staged.add(staged)
     seen_page_ids: set[str] = set()
+    seen_page_sources: set[Path] = set()
+    seen_output_paths: set[Path] = set()
     for page in data['pages']:
         page_id = page.get('id')
         kind = page.get('kind')
@@ -159,13 +163,24 @@ def load_site_content(root: Path) -> dict:
         if page_id in seen_page_ids:
             raise ValueError(f'{SITE_CONTENT}: duplicate page id {page_id!r}')
         seen_page_ids.add(page_id)
+        src_path = safe_repo_path(root, src)
+        if src_path in seen_page_sources:
+            raise ValueError(f'{SITE_CONTENT}: duplicate page source {src!r}')
+        seen_page_sources.add(src_path)
         if kind not in ('authored', 'mirrored'):
             raise ValueError(f'{SITE_CONTENT}: page {page_id!r} has invalid kind {kind!r}')
         if kind == 'mirrored':
             if not isinstance(out, str) or not out:
                 raise ValueError(f'{SITE_CONTENT}: mirrored page {page_id!r} requires an output path')
-            if out == src:
-                raise ValueError(f'{SITE_CONTENT}: mirrored page {page_id!r} output cannot overwrite source {src!r}')
+            out_path = safe_repo_path(root, out)
+            if out == src or out_path in canonical_source_paths:
+                target_src = canonical_source_paths.get(out_path, src)
+                raise ValueError(
+                    f'{SITE_CONTENT}: mirrored page {page_id!r} output {out!r} cannot overwrite source {target_src!r}'
+                )
+            if out_path in seen_output_paths:
+                raise ValueError(f'{SITE_CONTENT}: duplicate mirrored output path {out!r}')
+            seen_output_paths.add(out_path)
         elif out is not None:
             raise ValueError(f'{SITE_CONTENT}: authored page {page_id!r} cannot specify output {out!r}')
     missing_ids = [pid for pid in REQUIRED_PAGE_IDS if pid not in seen_page_ids]
@@ -1640,6 +1655,13 @@ def self_test_charts(root: Path) -> list[str]:
 def render_generated_pages(root: Path, site_content: dict | None = None) -> dict[str, str]:
     if site_content is None:
         site_content = load_site_content(root)
+    canonical_sources = {
+        safe_repo_path(root, entry['source']): entry['source']
+        for group in ('config', 'pages', 'assets')
+        for entry in site_content.get(group, [])
+        if isinstance(entry, dict) and isinstance(entry.get('source'), str)
+    }
+    seen_outputs: set[Path] = set()
     outputs: dict[str, str] = {}
     renderers = {
         'installation': render_installation_page,
@@ -1655,7 +1677,8 @@ def render_generated_pages(root: Path, site_content: dict | None = None) -> dict
         **{
             p['source']: p['output']
             for p in site_content['pages']
-            if p.get('kind') == 'mirrored' and p.get('output')
+            for p_out in [p.get('output')]
+            if p.get('kind') == 'mirrored' and p_out
         },
     }
     for page in site_content['pages']:
@@ -1665,6 +1688,14 @@ def render_generated_pages(root: Path, site_content: dict | None = None) -> dict
         output_rel = page.get('output')
         if page_id not in renderers or not output_rel:
             raise ValueError(f'unsupported mirrored page entry: {page!r}')
+        out_path = safe_repo_path(root, output_rel)
+        if out_path in canonical_sources:
+            raise ValueError(
+                f'{SITE_CONTENT}: mirrored page {page_id!r} output {output_rel!r} cannot overwrite source {canonical_sources[out_path]!r}'
+            )
+        if out_path in seen_outputs:
+            raise ValueError(f'{SITE_CONTENT}: duplicate mirrored output path {output_rel!r}')
+        seen_outputs.add(out_path)
         outputs[output_rel] = renderers[page_id](root, page, mirrored_map)
     has_chart_config = any('generated/charts/' in entry.get('source', '') for entry in site_content.get('config', []))
     if has_chart_config or ((root / CORPUS_CSV).is_file() and (root / RESULTS_CSV).is_file()):

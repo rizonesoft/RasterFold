@@ -278,14 +278,36 @@ class DocsMapTests(unittest.TestCase):
                 self.assertEqual(1, build_docs.main(['--root', str(self.root), '--check']))
             self.assertIn(f'missing required page id(s): {required_id}', err.getvalue())
 
-        # Mirrored page overwriting its canonical source in place is rejected.
-        bad_mirror = json.loads(json.dumps(orig_sc))
-        for p in bad_mirror['pages']:
-            if p['id'] == 'installation':
-                p['output'] = p['source']
-        self.write('docs/site-content.json', json.dumps(bad_mirror, indent=2) + '\n')
-        with self.assertRaisesRegex(ValueError, "mirrored page 'installation' output cannot overwrite source"):
+        # Mirrored page overwriting its canonical source (exact or normalized path) or another canonical source is rejected.
+        building_before = (self.root / 'docs/building.md').read_bytes()
+        library_before = (self.root / 'docs/library.md').read_bytes()
+        index_before = (self.root / 'docs/index.md').read_bytes()
+        for bad_out in ('docs/building.md', './docs/building.md', 'docs/library.md', './docs/index.md'):
+            bad_mirror = json.loads(json.dumps(orig_sc))
+            for p in bad_mirror['pages']:
+                if p['id'] == 'installation':
+                    p['output'] = bad_out
+            self.write('docs/site-content.json', json.dumps(bad_mirror, indent=2) + '\n')
+            with self.assertRaisesRegex(ValueError, "mirrored page 'installation' output .* cannot overwrite source"):
+                build_docs.load_site_content(self.root)
+            with self.assertRaisesRegex(ValueError, "mirrored page 'installation' output .* cannot overwrite source"):
+                build_docs.render_generated_pages(self.root, bad_mirror)
+            with self.assertRaisesRegex(ValueError, "mirrored page 'installation' output .* cannot overwrite source"):
+                build_docs.write_generated_pages(self.root)
+        self.assertEqual(building_before, (self.root / 'docs/building.md').read_bytes())
+        self.assertEqual(library_before, (self.root / 'docs/library.md').read_bytes())
+        self.assertEqual(index_before, (self.root / 'docs/index.md').read_bytes())
+
+        # Duplicate normalized mirrored output path is rejected.
+        dup_out = json.loads(json.dumps(orig_sc))
+        for p in dup_out['pages']:
+            if p['id'] == 'c-api':
+                p['output'] = './docs/installation.md'
+        self.write('docs/site-content.json', json.dumps(dup_out, indent=2) + '\n')
+        with self.assertRaisesRegex(ValueError, 'duplicate mirrored output path'):
             build_docs.load_site_content(self.root)
+        with self.assertRaisesRegex(ValueError, 'duplicate mirrored output path'):
+            build_docs.render_generated_pages(self.root, dup_out)
 
         self.write('docs/site-content.json', json.dumps(orig_sc, indent=2) + '\n')
         self.assertEqual([], build_docs.check_generated_pages(self.root))

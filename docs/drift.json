@@ -1645,11 +1645,11 @@
       }
     },
     "docs/README.md": {
-      "evidence": "Author-attested: 2026-10-25 updated docs/README.md for complete documentation map and scope labels (D08 T01 section 4)",
+      "evidence": "2026-10-25: verified docs/README.md after normalized mirror path check in scripts/build-docs.py",
       "sources": {
         "docs/_config.yml": "9dd235a6744158160db4c0502a820303f0551db44dd2a197412f46fc4f800ff0",
         "docs/site-content.json": "f25284c5da98b25597b0bedc0457d86f0f6397d8eefa6911f41565b2cdbc4d99",
-        "scripts/build-docs.py": "971a8eea53ceb563c2718ac13596f77c1a2125e7fda7fc5c0c1c6e6fedfb5e9c",
+        "scripts/build-docs.py": "9e2ff9524ad79fda1a45c018a5c3149aa50be2b73e5378f06ce4602aefd180b6",
         "docs/README.md": "84881a5ecab24b8185b7d532bd2653b371ba21b42010df598ec765baeaff016e"
       }
     },
