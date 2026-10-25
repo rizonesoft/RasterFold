@@ -410,6 +410,9 @@ VALID_DISPLAY_VALUES = {
 VALID_VISIBILITY_VALUES = {
     'visible', 'hidden', 'collapse', 'inherit', 'initial', 'unset', 'revert', 'revert-layer',
 }
+VALID_CONTENT_VISIBILITY_VALUES = {
+    'visible', 'auto', 'hidden', 'inherit', 'initial', 'unset', 'revert', 'revert-layer',
+}
 VALID_FONT_SIZE_KEYWORDS = {
     'xx-small', 'x-small', 'small', 'medium', 'large', 'x-large', 'xx-large',
     'xxx-large', 'smaller', 'larger', 'inherit', 'initial', 'unset', 'revert', 'revert-layer',
@@ -427,6 +430,8 @@ def _is_valid_css_value(prop, val_lower):
         return val_lower in VALID_DISPLAY_VALUES
     if prop == 'visibility':
         return val_lower in VALID_VISIBILITY_VALUES
+    if prop == 'content-visibility':
+        return val_lower in VALID_CONTENT_VISIBILITY_VALUES
     if prop == 'opacity':
         return val_lower in {'inherit', 'initial', 'unset', 'revert', 'revert-layer'} or bool(VALID_OPACITY_RE.fullmatch(val_lower))
     if prop == 'font-size':
@@ -451,7 +456,7 @@ def _style_is_hidden(style_text):
             continue
         prop_raw, val_raw = decl.split(':', 1)
         prop = prop_raw.strip().lower()
-        if prop not in ('display', 'visibility', 'opacity', 'font-size'):
+        if prop not in ('display', 'visibility', 'content-visibility', 'opacity', 'font-size'):
             continue
         val = val_raw.strip()
         imp_match = re.search(r'!\s*important\s*$', val, re.I)
@@ -467,6 +472,8 @@ def _style_is_hidden(style_text):
     if effective.get('display', (0, ''))[1] == 'none':
         return True
     if effective.get('visibility', (0, ''))[1] in ('hidden', 'collapse'):
+        return True
+    if effective.get('content-visibility', (0, ''))[1] == 'hidden':
         return True
     op_val = effective.get('opacity', (0, ''))[1]
     if op_val and VALID_OPACITY_RE.fullmatch(op_val) and float(op_val.rstrip('%')) <= 0.0:
@@ -486,8 +493,6 @@ def _tag_is_hidden(tag_lower, attrs):
         name = (k or '').lower()
         val = unescape(v or '').strip()
         if name == 'hidden':
-            return True
-        if name == 'aria-hidden' and val.lower() == 'true':
             return True
         if name == 'style' and _style_is_hidden(val):
             return True

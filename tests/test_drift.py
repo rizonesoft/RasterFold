@@ -1187,6 +1187,9 @@ class DriftTests(unittest.TestCase):
             'Size: 999 bytes <span style="opacity:0;opacity:1.">1409028</span> <!-- drift:fact measurement_reference_bytes = 1409028 -->',
             'Size: 999 bytes <span style="font-size:0;font-size:16.px">1409028</span> <!-- drift:fact measurement_reference_bytes = 1409028 -->',
             'Size: 999 bytes <span style="opacity:0e0">1409028</span> <!-- drift:fact measurement_reference_bytes = 1409028 -->',
+            'Size: 999 bytes <div style="content-visibility:hidden">1409028</div> <!-- drift:fact measurement_reference_bytes = 1409028 -->',
+            'Size: 999 bytes <div style="content-visibility:hidden;content-visibility:bogus">1409028</div> <!-- drift:fact measurement_reference_bytes = 1409028 -->',
+            '1409028 <span aria-hidden="true">999</span> <!-- drift:fact measurement_reference_bytes = 1409028 -->',
             'Size: 999 bytes <span hidden><span>1409028</span>1409028</span> <!-- drift:fact measurement_reference_bytes = 1409028 -->',
             '<div hidden>\nSize: 1,409,028 bytes <!-- drift:fact measurement_reference_bytes = 1409028 -->\n</div>',
             'Size: [999 bytes](README.md#1409028) <!-- drift:fact measurement_reference_bytes = 1409028 -->',
@@ -1211,7 +1214,9 @@ class DriftTests(unittest.TestCase):
             )
         self.write(
             'docs/benchmarks.md',
-            orig_bm + '\nSize: [1,409,028 bytes](https://example.invalid/source) <!-- drift:fact measurement_reference_bytes = 1409028 -->\n',
+            orig_bm
+            + '\nSize: [1,409,028 bytes](https://example.invalid/source) <!-- drift:fact measurement_reference_bytes = 1409028 -->\n'
+            + 'Size: <span aria-hidden="true">1,409,028</span> bytes <!-- drift:fact measurement_reference_bytes = 1409028 -->\n',
         )
         self.assertEqual([], self.check().errors)
 
