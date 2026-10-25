@@ -1689,10 +1689,10 @@
       "reviewed": "Author-attested: 2026-10-25 re-read spec/FOLD.md against src/cm.c and src/simd.h after D02 T01 section 4 (byte-identical cm.c hot-loop vectorization and row-context specialization; format version 2 bitstream unchanged)"
     },
     "research/README.md": {
-      "evidence": "Author-attested: 2026-10-26 re-read research/README.md against research/ab.py after adding research/ab.py compat for D05 T01 section 2",
+      "evidence": "Author-attested: 2026-10-26 re-read research/README.md against research/ab.py after exporting all src headers in compat mode for D01 T01 section 1",
       "sources": {
         "research/corpus.py": "4434e32d8cdb5e70d887f03f7f4cdfbe9ada666ea680c7d6ce176cc9b2858bb7",
-        "research/ab.py": "6b31c73fb24ff0c68bf13eb6824f81ccfcde7ef77c3c6553bb8aae204039bada",
+        "research/ab.py": "aea93373d0c88cfa79b1283082f81fc67d1815d331957a5fa1b33cc8e5240ce3",
         "research/vsjxl.py": "026a9ed3373408ff1236e2dd56e921dc68cd9af7e4143075f39998a61a2a1f3f",
         "research/prof.py": "7fa28a84aab62f0eb79fd579bcc01b6e2e55cc200bdaa96c0218b2ad4aa05605",
         "research/bench.c": "97d465a600a7ee3962b11636efd6c33d60d25c48354ee1210dd9a019c117a7ea",

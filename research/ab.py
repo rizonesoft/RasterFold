@@ -634,7 +634,23 @@ def main():
 
         m1_dir = RES / "m1_src"
         m1_dir.mkdir(parents=True, exist_ok=True)
-        for fname in ("platform.c", "api.c", "crc32.c", "bmp.c", "fold.c", "cm.c", "mem.c", "sys.c", "main.c", "rf.h", "simd.h"):
+        for old in m1_dir.iterdir():
+            if old.is_file():
+                old.unlink()
+        src_entries = set(
+            subprocess.check_output(
+                ["git", "ls-tree", "--name-only", f"{baseline_ref}:src"],
+                cwd=REPO,
+                text=True,
+            ).splitlines()
+        )
+        c_stems = [
+            s
+            for s in ("platform", "api", "crc32", "bmp", "fold", "cm", "pal", "mem", "sys", "main")
+            if f"{s}.c" in src_entries
+        ]
+        h_files = sorted(f for f in src_entries if f.endswith(".h"))
+        for fname in [*(f"{s}.c" for s in c_stems), *h_files]:
             txt = subprocess.check_output(["git", "show", f"{baseline_ref}:src/{fname}"], cwd=REPO)
             (m1_dir / fname).write_bytes(txt)
         inc_dir = m1_dir / "include"
@@ -648,7 +664,7 @@ def main():
             else REPO / "tools" / "llvm-mingw-linux" / "bin" / "clang"
         )
         objs = []
-        for s in ("platform", "api", "crc32", "bmp", "fold", "cm", "mem", "sys", "main"):
+        for s in c_stems:
             obj = m1_dir / f"{s}.o"
             subprocess.run(
                 [
