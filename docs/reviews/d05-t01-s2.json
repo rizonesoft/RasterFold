@@ -1,0 +1,88 @@
+{
+  "ref": "D05 T01 \u00a72",
+  "title": "Milestone 2 Gate: Same bytes, leaner and harder",
+  "implementation_sha": "7c3f7c72f7b4100821039d34ae5ee2313d9a82ba",
+  "date": "2026-10-26",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/05-milestones/D05-T01-s2.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 scripts/windows.py research/ab.py compat fbf1036de2cfd0eeaee1a55399563e2d2200328c -> photo n=39 total_bytes=30865211 fold_stream_sha256=53289c0f674c2fec2a1775ab23d2c184d38282d2c03e3ae10f3e407bb1042f2a identical=True m1_decoded=True; tp n=10 total_bytes=6651583 fold_stream_sha256=5cb51c373fae35d3ec8e17e286917dd9507967b0f25b623ceac5221aa0519378 identical=True m1_decoded=True; tp-only n=5 total_bytes=4471965 fold_stream_sha256=4af26c9b1489151130635001bdef108355e76cb5116e962404977b1e7b5c673a identical=True m1_decoded=True; synth n=11 total_bytes=214773 fold_stream_sha256=5a843b95ae5ea82510d9be819c5dd23ca51fd0b7d9620d2617c975824a31779f identical=True m1_decoded=True",
+    "bin/windows-x64/bin/rasterfold.exe decode --time measure/image.bmp -> alloc_peak=9161050 (9.16 MB <= 9.2 MB, codec_us=219883, total_us=295720, peak_working_set=15233024) at 3T and alloc_peak=9161018 (9.16 MB <= 9.2 MB, codec_us=466779, total_us=526303, peak_working_set=15118336) at 1T; bin/linux-x64/bin/rasterfold decode --time -> alloc_peak=9161258 (9.16 MB) at 3T and alloc_peak=9161018 (9.16 MB) at 1T",
+    "python3 scripts/windows.py research/vsjxl.py -n5 --threads <1|3> --exe build/research/vs/rasterfold-m1.exe --alt-exe bin/windows-x64/bin/rasterfold.exe -> 1T decode ratio (min) 0.903 and 0.870, encode ratio (min) 0.865 and 0.883; 3T decode ratio (min) 0.894 and 0.854, encode ratio (min) 0.954 and 0.872; vsjxl.py -n5 vs jxl e7 -> decode ratio (median) 0.378 encode ratio 0.176",
+    "python3 scripts/windows.py research/ab.py ab -v build/research/cm_m1.c src/cm.c <set> -n<5|3> -t<1|3> -> -t1 measure dec=0.936 enc=0.886, photo dec=0.913 geomean=0.896 enc=0.852 geomean=0.843, tp dec=0.893 geomean=0.893 enc=0.843 geomean=0.847, tp-only dec=0.946 geomean=0.943 enc=0.889 geomean=0.886, synth dec=0.888 geomean=0.916 enc=0.831 geomean=0.847; -t3 measure dec=0.902 enc=0.799, photo dec=0.888 geomean=0.881 enc=0.854 geomean=0.876, tp dec=0.907 geomean=0.890 enc=0.866 geomean=0.869, tp-only dec=0.821 geomean=0.814 enc=0.825 geomean=0.812, synth dec=0.813 geomean=0.832 enc=0.855 geomean=0.878; -n7 outlier repeat: -t1 kodim17+syn_odd worst=0.927, -t3 kodim04+kodim08+tp_nightshot worst=0.949",
+    "python3 tests/test_correctness.py && python3 tests/fuzz_decode.py 300 20261025 && python3 scripts/windows.py tests/measure_final.py && python3 scripts/windows.py tests/benchmark.py -n 3 -> 37 passed, 0 failed (including truncated-abort < 1s); 300 mutated files: 290 rejected, 10 still valid; measure_final PASS (1409028 vs 1470703); benchmark.py failures: 0 across measure, photos, synthetic",
+    "python3 scripts/check-all.py --all-targets && python3 scripts/ci_status.py && python3 scripts/ci_status.py --workflow pages.yml -> check-all: 29/29 passed; build.yml green at 64c746f98223 (40243867586), plan.yml green at 64c746f98223 (40243867645), pages.yml green at 64c746f98223 (40243867488)"
+  ],
+  "completion": {
+    "report": "docs/reviews/05-milestones/D05-T01-s2.md",
+    "verdict": "completed",
+    "candidate": "3a3db72862ac95acf38932dcaf4b735eda8daa04",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/05-milestones/D05-T01-s2.md",
+    "candidate": "ae5713f45e9a7e2417f760cefdc4962f618e9621",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}

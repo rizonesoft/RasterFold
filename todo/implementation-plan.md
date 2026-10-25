@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **43 of 228 sections complete (19%).** 228 sections (7 discovered); backlog 1 entry. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **44 of 228 sections complete (19%).** 228 sections (7 discovered); backlog 1 entry. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -176,7 +176,7 @@ Changes that keep every byte, so they need no format decision and every later ti
 | [x] | `D02 T01 §1` | Profile-guided optimization                                     |   5   |
 | [x] | `D02 T01 §2` | Link-time optimization                                          |   3   |
 | [x] | `D02 T01 §4` | Hot-loop vectorization and row-context specialization in `cm.c` |   4   |
-| [ ] | `D05 T01 §2` | Milestone 2 gate: Same bytes, leaner and harder                 |   4   |
+| [x] | `D05 T01 §2` | Milestone 2 gate: Same bytes, leaner and harder                 |   4   |
 
 ### Phase 2 -- Milestone 3: Few-colour images solved
 
