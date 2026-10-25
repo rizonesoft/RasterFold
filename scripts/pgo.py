@@ -15,13 +15,21 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT / 'scripts') not in sys.path:
+    sys.path.insert(0, str(ROOT / 'scripts'))
+import build as build_mod  # noqa: E402
+
 DEFAULT_OUT = ROOT / 'build' / 'pgo' / 'rasterfold.profdata'
 PGO_EXE = ROOT / 'bin' / 'windows-x64-pgo' / 'bin' / 'rasterfold.exe'
-TRACKED_SOURCES = (
-    'src/cm.c', 'src/fold.c', 'src/bmp.c', 'src/crc32.c',
-    'src/api.c', 'src/main.c', 'src/sys.c', 'src/platform.c',
-    'src/rf.h', 'src/simd.h',
-)
+TRACKED_SOURCES = build_mod.PGO_TRACKED_SOURCES
+
+
+def has_wsl_bridge() -> bool:
+    return (
+        os.name != 'nt'
+        and shutil.which('wslpath') is not None
+        and Path('/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe').is_file()
+    )
 
 
 def write_bmp24(width: int, height: int, rgb: bytes) -> bytes:
@@ -147,7 +155,17 @@ def generate_profile(
     pgo_exe: Path = PGO_EXE,
     max_images: int | None = None,
 ) -> Path:
-    if os.name != 'nt':
+    suffix = '.exe' if os.name == 'nt' else ''
+    tools = ROOT / ('tools/llvm-mingw/bin' if os.name == 'nt' else 'tools/llvm-mingw-linux/bin')
+    profdata_tool = tools / ('llvm-profdata' + suffix)
+    clang_tool = tools / ('clang' + suffix)
+    if not profdata_tool.is_file() or not clang_tool.is_file():
+        raise FileNotFoundError(f'missing {profdata_tool}; run tools/bootstrap.py')
+    if not build_instrumented:
+        build_mod.validate_pgo_exe_provenance(pgo_exe, clang_tool)
+    if os.name != 'nt' and pgo_exe.suffix.lower() == '.exe':
+        if not has_wsl_bridge():
+            raise RuntimeError('Windows PGO training executable requires a Windows host or WSL interop')
         cmd = [sys.executable, str(ROOT / 'scripts' / 'windows.py'), 'scripts/pgo.py', '--out',
                out_path.resolve().relative_to(ROOT.resolve()).as_posix()]
         if not build_instrumented:
@@ -162,11 +180,7 @@ def generate_profile(
         subprocess.run([sys.executable, str(ROOT / 'scripts' / 'build.py'), '--pgo-gen'], cwd=ROOT, check=True)
     if not pgo_exe.is_file():
         raise FileNotFoundError(f'missing PGO executable: {pgo_exe}')
-    tools = ROOT / 'tools' / 'llvm-mingw' / 'bin'
-    profdata_tool = tools / 'llvm-profdata.exe'
-    clang_tool = tools / 'clang.exe'
-    if not profdata_tool.is_file():
-        raise FileNotFoundError(f'missing {profdata_tool}; run tools/bootstrap.ps1')
+    exe_meta = build_mod.validate_pgo_exe_provenance(pgo_exe, clang_tool)
 
     with tempfile.TemporaryDirectory(prefix='rf_pgo_') as tmp:
         tmp_dir = Path(tmp)
@@ -212,20 +226,21 @@ def generate_profile(
         if show_proc.returncode != 0:
             raise RuntimeError(f'llvm-profdata show validation failed: {show_proc.stderr.strip()}')
 
+        verified_exe_meta = build_mod.validate_pgo_exe_provenance(pgo_exe, clang_tool)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         partial = Path(str(out_path) + '.partial')
         partial.unlink(missing_ok=True)
         shutil.copy2(staged, partial)
         partial.replace(out_path)
 
-        compiler = subprocess.check_output([str(clang_tool), '--version'], text=True).splitlines()[0]
         meta = {
             'schema': 1,
             'dataset': dataset_label,
             'runs': len(raw_files),
-            'compiler': compiler,
+            'compiler': verified_exe_meta['compiler'],
+            'exe_sha256': verified_exe_meta['exe_sha256'],
             'profdata_sha256': hashlib.sha256(out_path.read_bytes()).hexdigest(),
-            'sources': {rel: hashlib.sha256((ROOT / rel).read_bytes()).hexdigest() for rel in TRACKED_SOURCES},
+            'sources': dict(verified_exe_meta['sources']),
         }
         meta_path = Path(str(out_path) + '.json')
         meta_partial = Path(str(meta_path) + '.partial')

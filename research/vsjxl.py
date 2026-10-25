@@ -50,11 +50,40 @@ def parse_args(argv):
     return p.parse_args(norm)
 
 
-def run_corpus_ab(set_name: str, n: int, threads: int, pgo_profile: Path) -> None:
-    sys.path.insert(0, str(REPO / "research"))
-    import ab  # noqa: E402
+def parse_bench_rows(stdout: str, expected_imgs: tuple[str, ...]) -> dict[str, tuple[int, float, float]]:
+    rows: dict[str, tuple[int, float, float]] = {}
+    for raw_line in stdout.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("encode failed"):
+            raise RuntimeError(f"bench encode failure: {line}")
+        m = re.match(
+            r"^(\S+)\.ppm\s+(\d+)\s+bpp=\S+\s+enc=\s*([\d.]+)ms\s+dec=\s*([\d.]+)ms\s+\([^)]+\)\s+(\S+)$",
+            line,
+        )
+        if m:
+            status = m.group(5)
+            if status not in ("OK", "RAW"):
+                raise RuntimeError(f"bench round-trip failure on {m.group(1)}: {status}")
+            rows[m.group(1)] = (int(m.group(2)), max(float(m.group(3)), 0.05), max(float(m.group(4)), 0.05))
+    missing = [img for img in expected_imgs if img not in rows]
+    if missing:
+        raise RuntimeError(f"bench output missing expected images: {missing}")
+    return rows
 
-    prof = pgo_profile.resolve()
+
+def run_corpus_ab(set_name: str, n: int, threads: int, pgo_profile: Path) -> None:
+    if str(REPO / "scripts") not in sys.path:
+        sys.path.insert(0, str(REPO / "scripts"))
+    if str(REPO / "research") not in sys.path:
+        sys.path.insert(0, str(REPO / "research"))
+    import ab  # noqa: E402
+    import build as build_mod  # noqa: E402
+
+    suffix = ".exe" if os.name == "nt" else ""
+    tools = REPO / ("tools/llvm-mingw/bin" if os.name == "nt" else "tools/llvm-mingw-linux/bin")
+    prof = build_mod.validate_pgo_profile(pgo_profile, tools, suffix)
     base_exe = ab.RES / "bench_base.exe"
     pgo_exe = ab.RES / "bench_pgo.exe"
     ab.build(REPO / "src" / "cm.c", base_exe, ())
@@ -78,25 +107,25 @@ def run_corpus_ab(set_name: str, n: int, threads: int, pgo_profile: Path) -> Non
                     cwd=ab.RES,
                     check=True,
                 )
-                rows = {}
-                for line in proc.stdout.splitlines():
-                    m = re.match(r"^(\S+)\.ppm\s+(\d+)\s+bpp=\S+\s+enc=\s*([\d.]+)ms\s+dec=\s*([\d.]+)ms", line.strip())
-                    if m:
-                        rows[m.group(1)] = (int(m.group(2)), max(float(m.group(3)), 0.05), max(float(m.group(4)), 0.05))
-                lst.append((rows, ab.total(proc.stdout)))
-        base_tot_enc = min(x[1][1] for x in base_runs)
-        pgo_tot_enc = min(x[1][1] for x in pgo_runs)
-        base_tot_dec = min(x[1][2] for x in base_runs)
-        pgo_tot_dec = min(x[1][2] for x in pgo_runs)
+                rows = parse_bench_rows(proc.stdout, imgs)
+                lst.append(rows)
+        base_tot_enc = 0.0
+        pgo_tot_enc = 0.0
+        base_tot_dec = 0.0
+        pgo_tot_dec = 0.0
         enc_ratios = []
         dec_ratios = []
         for img in imgs:
-            if base_runs[0][0][img][0] != pgo_runs[0][0][img][0]:
+            if base_runs[0][img][0] != pgo_runs[0][img][0]:
                 raise SystemExit(f"size mismatch on {img}")
-            be = min(x[0][img][1] for x in base_runs)
-            pe = min(x[0][img][1] for x in pgo_runs)
-            bd = min(x[0][img][2] for x in base_runs)
-            pd = min(x[0][img][2] for x in pgo_runs)
+            be = min(x[img][1] for x in base_runs)
+            pe = min(x[img][1] for x in pgo_runs)
+            bd = min(x[img][2] for x in base_runs)
+            pd = min(x[img][2] for x in pgo_runs)
+            base_tot_enc += be
+            pgo_tot_enc += pe
+            base_tot_dec += bd
+            pgo_tot_dec += pd
             enc_ratios.append((pe / be, img))
             dec_ratios.append((pd / bd, img))
         g_enc = math.exp(sum(math.log(x[0]) for x in enc_ratios) / len(enc_ratios))

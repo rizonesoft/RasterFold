@@ -321,11 +321,19 @@ class Artifacts(unittest.TestCase):
 
     def test_pgo_lifecycle_and_validation(self):
         import json
+        import stat
         import sys
         import time
-        sys.path.insert(0, str(ROOT / 'scripts'))
+        for extra_dir in (ROOT / 'scripts', ROOT / 'research'):
+            if str(extra_dir) not in sys.path:
+                sys.path.insert(0, str(extra_dir))
         import build as build_mod  # noqa: E402
         import pgo as pgo_mod  # noqa: E402
+        import vsjxl as vsjxl_mod  # noqa: E402
+
+        pgo_tools = ROOT / ('tools/llvm-mingw/bin' if WIN else 'tools/llvm-mingw-linux/bin')
+        suffix = '.exe' if WIN else ''
+        clang_bin = pgo_tools / ('clang' + suffix)
 
         with tempfile.TemporaryDirectory(dir=ROOT / 'build') as temp:
             temp_dir = Path(temp)
@@ -338,33 +346,71 @@ class Artifacts(unittest.TestCase):
             self.assertEqual((w0, h0), (256, 192))
             self.assertEqual(len(rgb0), 256 * 192 * 3)
 
-            # 2. Repeated profile generation (max_images=1) produces valid .profdata and .profdata.json.
+            # 2. Build pgo-gen and verify executable provenance metadata is emitted and validated.
+            build_mod.build_pgo_gen(2)
+            self.assertTrue(pgo_mod.PGO_EXE.is_file())
+            build_mod.validate_pgo_exe_provenance(pgo_mod.PGO_EXE, clang_bin)
+
+            if WIN:
+                train_exe = pgo_mod.PGO_EXE
+            else:
+                train_exe = temp_dir / 'host_pgo_runner'
+                train_exe.write_text(
+                    f'#!{sys.executable}\n'
+                    'import os, subprocess, sys\n'
+                    'from pathlib import Path\n'
+                    f'rc = subprocess.call([{str(OUT / "bin" / "rasterfold")!r}, *sys.argv[1:]])\n'
+                    'if rc == 0 and os.environ.get("LLVM_PROFILE_FILE"):\n'
+                    '    Path(os.environ["LLVM_PROFILE_FILE"]).write_text(\n'
+                    '        "__rf_pgo_synthetic_probe\\n# Func Hash:\\n0\\n# Num Counters:\\n1\\n# Counter Values:\\n1\\n\\n",\n'
+                    '        encoding="utf-8",\n'
+                    '    )\n'
+                    'raise SystemExit(rc)\n',
+                    encoding='utf-8',
+                )
+                train_exe.chmod(train_exe.stat().st_mode | stat.S_IXUSR)
+                build_mod.write_pgo_exe_provenance(train_exe, clang_bin)
+
+            # 3. Repeated profile generation (max_images=1) produces valid .profdata and .profdata.json.
             prof_out = temp_dir / 'test.profdata'
             meta_out = Path(str(prof_out) + '.json')
-            if not (ROOT / 'bin/windows-x64-pgo/bin/rasterfold.exe').is_file():
-                build_mod.build_pgo_gen(1)
-            pgo_mod.generate_profile(prof_out, build_instrumented=False, max_images=1)
+            pgo_mod.generate_profile(prof_out, build_instrumented=False, pgo_exe=train_exe, max_images=1)
             self.assertTrue(prof_out.is_file() and prof_out.stat().st_size > 0)
             self.assertTrue(meta_out.is_file())
-            first_bytes = prof_out.read_bytes()
-            first_meta = meta_out.read_text(encoding='utf-8')
-            pgo_mod.generate_profile(prof_out, build_instrumented=False, max_images=1)
+            pgo_mod.generate_profile(prof_out, build_instrumented=False, pgo_exe=train_exe, max_images=1)
             second_bytes = prof_out.read_bytes()
             second_meta = meta_out.read_text(encoding='utf-8')
             self.assertGreater(len(second_bytes), 0)
-            pgo_tools = ROOT / ('tools/llvm-mingw/bin' if WIN else 'tools/llvm-mingw-linux/bin')
-            suffix = '.exe' if WIN else ''
             self.assertEqual(build_mod.validate_pgo_profile(prof_out, pgo_tools, suffix), prof_out.resolve())
 
-            # 3. Failed training run preserves both existing .profdata and .profdata.json unchanged.
-            bad_exe = temp_dir / 'bad_pgo.exe'
-            bad_exe.write_bytes(b'not-an-executable')
-            with self.assertRaises((OSError, RuntimeError, subprocess.CalledProcessError)):
-                pgo_mod.generate_profile(prof_out, build_instrumented=False, pgo_exe=bad_exe, max_images=1)
+            # 4. Stale executable provenance (--no-build after source change) is rejected before training.
+            exe_meta_path = Path(str(train_exe.resolve()) + '.json')
+            saved_exe_meta = exe_meta_path.read_text(encoding='utf-8')
+            stale_exe_meta = json.loads(saved_exe_meta)
+            stale_exe_meta['sources']['src/cm.c'] = '0' * 64
+            exe_meta_path.write_text(json.dumps(stale_exe_meta), encoding='utf-8')
+            try:
+                with self.assertRaisesRegex(ValueError, 'stale or mismatched PGO executable provenance'):
+                    pgo_mod.generate_profile(prof_out, build_instrumented=False, pgo_exe=train_exe, max_images=1)
+            finally:
+                exe_meta_path.write_text(saved_exe_meta, encoding='utf-8')
             self.assertEqual(prof_out.read_bytes(), second_bytes)
             self.assertEqual(meta_out.read_text(encoding='utf-8'), second_meta)
 
-            # 4. Stale source provenance in .profdata.json is rejected by validate_pgo_profile.
+            # 5. Failed training run preserves both existing .profdata and .profdata.json unchanged.
+            fail_exe = temp_dir / ('fail_pgo.bat' if WIN else 'fail_pgo')
+            if WIN:
+                fail_exe.write_text('@exit /b 2\r\n', encoding='utf-8')
+            else:
+                fail_exe.write_text(f'#!{sys.executable}\nraise SystemExit(2)\n', encoding='utf-8')
+                fail_exe.chmod(fail_exe.stat().st_mode | stat.S_IXUSR)
+            build_mod.write_pgo_exe_provenance(fail_exe, clang_bin)
+            with self.assertRaises(RuntimeError):
+                pgo_mod.generate_profile(prof_out, build_instrumented=False, pgo_exe=fail_exe, max_images=1)
+            self.assertEqual(prof_out.read_bytes(), second_bytes)
+            self.assertEqual(meta_out.read_text(encoding='utf-8'), second_meta)
+
+            # 6. Stale source provenance in .profdata.json is rejected by validate_pgo_profile.
             stale_meta = json.loads(second_meta)
             stale_meta['sources']['src/cm.c'] = '0' * 64
             meta_out.write_text(json.dumps(stale_meta), encoding='utf-8')
@@ -372,7 +418,7 @@ class Artifacts(unittest.TestCase):
                 build_mod.validate_pgo_profile(prof_out, pgo_tools, suffix)
             meta_out.write_text(second_meta, encoding='utf-8')
 
-            # 5. Corrupt .profdata is refused by scripts/build.py --pgo-use.
+            # 7. Corrupt .profdata is refused by scripts/build.py --pgo-use.
             corrupt = temp_dir / 'corrupt.profdata'
             corrupt.write_bytes(b'not-a-valid-llvm-profdata')
             proc = subprocess.run(
@@ -384,7 +430,14 @@ class Artifacts(unittest.TestCase):
             self.assertNotEqual(proc.returncode, 0)
             self.assertIn('corrupt or incompatible PGO profile', proc.stderr)
 
-            # 6. Implicit Ninja dependency on .profdata triggers object rebuild when profile timestamp advances.
+            # 8. Corpus timing parser rejects MISMATCH rows and missing images.
+            with self.assertRaisesRegex(RuntimeError, 'bench round-trip failure'):
+                vsjxl_mod.parse_bench_rows(
+                    'kodim01.ppm       1000  bpp=1.0000  enc=   10.0ms dec=   10.0ms  (100/100 cyc/sample) MISMATCH\n',
+                    ('kodim01',),
+                )
+
+            # 9. Implicit Ninja dependency on .profdata triggers object rebuild when profile timestamp advances.
             manifest = ROOT / 'build' / 'windows-x64' / 'build.ninja'
             try:
                 build_mod.build('windows-x64', 2, False, pgo_profile=prof_out)

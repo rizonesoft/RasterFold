@@ -66,6 +66,50 @@ PGO_TRACKED_SOURCES = (
 )
 
 
+def pgo_source_hashes() -> dict[str, str]:
+    return {rel: hashlib.sha256((ROOT / rel).read_bytes()).hexdigest() for rel in PGO_TRACKED_SOURCES}
+
+
+def write_pgo_exe_provenance(exe: Path, cc: Path) -> Path:
+    compiler = subprocess.check_output([str(cc), '--version'], text=True).splitlines()[0]
+    meta = {
+        'schema': 1,
+        'compiler': compiler,
+        'exe_sha256': hashlib.sha256(exe.read_bytes()).hexdigest(),
+        'sources': pgo_source_hashes(),
+    }
+    meta_path = Path(str(exe.resolve()) + '.json')
+    partial = Path(str(meta_path) + '.partial')
+    partial.unlink(missing_ok=True)
+    partial.write_text(json.dumps(meta, indent=2) + '\n', encoding='utf-8')
+    partial.replace(meta_path)
+    return meta_path
+
+
+def validate_pgo_exe_provenance(exe: Path, cc: Path) -> dict[str, object]:
+    resolved = exe.resolve()
+    if not resolved.is_file() or resolved.stat().st_size == 0:
+        raise FileNotFoundError(f'missing PGO executable: {exe}')
+    meta_path = Path(str(resolved) + '.json')
+    if not meta_path.is_file():
+        raise ValueError(f'stale or mismatched PGO executable provenance: missing {meta_path}')
+    try:
+        meta = json.loads(meta_path.read_text(encoding='utf-8'))
+    except Exception as exc:
+        raise ValueError(f'stale or mismatched PGO executable provenance in {meta_path}: {exc}') from exc
+    actual_sha = hashlib.sha256(resolved.read_bytes()).hexdigest()
+    compiler = subprocess.check_output([str(cc), '--version'], text=True).splitlines()[0]
+    if meta.get('schema') != 1 or meta.get('exe_sha256') != actual_sha or meta.get('compiler') != compiler:
+        raise ValueError(f'stale or mismatched PGO executable provenance in {meta_path}: compiler or binary digest mismatch')
+    sources = meta.get('sources')
+    if not isinstance(sources, dict):
+        raise ValueError(f'stale or mismatched PGO executable provenance in {meta_path}: missing sources table')
+    for rel, current in pgo_source_hashes().items():
+        if sources.get(rel) != current:
+            raise ValueError(f'stale or mismatched PGO executable provenance for {rel} in {meta_path}; rebuild pgo-gen')
+    return meta
+
+
 def validate_pgo_profile(profile: Path, tools: Path, suffix: str) -> Path:
     resolved = profile.resolve()
     if not resolved.is_file() or resolved.stat().st_size == 0:
@@ -139,6 +183,7 @@ def build_pgo_gen(jobs: int) -> None:
     if not manifest.exists() or manifest.read_text() != text:
         manifest.write_text(text)
     subprocess.run([str(ninja), '-f', str(manifest), '-j', str(jobs)], cwd=ROOT, check=True)
+    write_pgo_exe_provenance(exe, cc)
     print(f'built {name}: {exe.relative_to(ROOT).as_posix()}', flush=True)
 
 
