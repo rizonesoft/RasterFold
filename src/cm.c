@@ -208,6 +208,7 @@ typedef struct {
     chan_t ch[3];
     void *block;
     volatile int cancel;    /* worker threads exit at once when set before they start */
+    volatile int abort;     /* set when a decoded stream runs out of bytes */
 } cm_t;
 
 static int cm_alloc(cm_t *m, uint32_t w, uint32_t h, uint8_t *rgb, size_t bmp_stride, rf_error *err) {
@@ -218,7 +219,7 @@ static int cm_alloc(cm_t *m, uint32_t w, uint32_t h, uint8_t *rgb, size_t bmp_st
     size_t xe = (((size_t)w * XROWS) + 63) & ~(size_t)63, xf = (((size_t)w * XROWS * 2) + 63) & ~(size_t)63;
     uint8_t *b = rf_alloc((ctr + wt + pos + rows) * 3 + (xe + xf) * 2);
     if (!b) return rf_fail(err, RF_ERR_LIMIT, "out of memory");
-    m->w = w; m->h = h; m->block = b;
+    m->w = w; m->h = h; m->block = b; m->abort = 0;
     if (bmp_stride) {
         m->rgb = rgb + 54 + bmp_stride * (h - 1);
         m->stride = -(ptrdiff_t)bmp_stride;
@@ -569,6 +570,15 @@ RF_INLINE void run_pipelined(cm_t *m, const int enc) {
             if (dr) cm_code(m, 1, x - 1, y, enc ? channel_value(m, 1, x - 1, y) : 0, &sr, enc);
             if (db) cm_code(m, 2, x - 2, y, enc ? channel_value(m, 2, x - 2, y) : 0, &sb, enc);
         }
+        if (!enc) {
+            for (int c = 0; c < 3; c++) {
+                if (m->ch[c].dec.in >= m->ch[c].dec.lim) {
+                    m->ch[c].bad = 1;
+                    m->abort = 1;
+                }
+            }
+            if (m->abort) break;
+        }
     }
 }
 static RF_NOINLINE void run_pipelined_enc(cm_t *m) { run_pipelined(m, 1); }
@@ -590,13 +600,22 @@ RF_INLINE void run_channel(cm_t *m, const int c, const int enc) {
         if (c >= 1) wait_done(&m->ch[0].done, (int32_t)y + 1);
         if (c == 2) wait_done(&m->ch[1].done, (int32_t)y + 1);
         if (c < 2 && y >= XROWS) wait_done(&m->ch[2].done, (int32_t)(y - XROWS + 1));
+        if (!enc && __atomic_load_n(&m->abort, __ATOMIC_ACQUIRE)) break;
         for (uint32_t x = 0; x < w; x++) {
             stage_t s;
             cm_model(m, c, x, y, &s);
             cm_code(m, c, x, y, enc ? channel_value(m, c, x, y) : 0, &s, enc);
         }
+        if (!enc) {
+            if (m->ch[c].dec.in >= m->ch[c].dec.lim) {
+                m->ch[c].bad = 1;
+                __atomic_store_n(&m->abort, 1, __ATOMIC_RELEASE);
+            }
+            if (__atomic_load_n(&m->abort, __ATOMIC_ACQUIRE)) break;
+        }
         __atomic_store_n(&m->ch[c].done, (int32_t)y + 1, __ATOMIC_RELEASE);
     }
+    if (!enc) __atomic_store_n(&m->ch[c].done, (int32_t)m->h, __ATOMIC_RELEASE);
 }
 static RF_NOINLINE void run_g_enc(void *p) { run_channel(p, 0, 1); }
 static RF_NOINLINE void run_r_enc(void *p) { if (!((cm_t *)p)->cancel) run_channel(p, 1, 1); }

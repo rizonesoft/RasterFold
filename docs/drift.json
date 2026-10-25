@@ -1672,11 +1672,14 @@
       "sources": {
         "src/rf.h": "1c5d4f886c30c90c0fdd8646ca8acecf9d36410645bac4472de79003f1e18d40",
         "src/fold.c": "936a14aa60fbb4fa48526a0d001d885f8ddc234a21da39105f8c258b758f65a7",
-        "src/cm.c": "60f17b954c1b2e007049825386edd634c28a7f7c8bba0460667140585b6d9105",
+        "src/cm.c": "db67120719bce7804bb04140a4ca25b1a2a5b1e052301de082523d04c9329be3",
         "src/crc32.c": "c6e682115185fcdcbfa0551823fc590f60c9c7b978a30009163288e664b3faec",
         "tests/rfi_ref.py": "4146e6f6cc7d30e6ea87e2266b03eb50b14a854c1cf0843fec42958d3450361d",
         "spec/FOLD.md": "b456bc87947b67c5c6cfa9f20e2dcec000207b0199a83434f1c1ca9810316fb9"
-      }
+      },
+      "reviewed_at": "2026-10-25",
+      "reviewer": "Author-attested: 2026-10-25 re-read spec/FOLD.md against src/cm.c after D04 T01 section 1 (early row-boundary abort on exhausted CM stream; bitstream and format semantics unchanged)",
+      "doc_sha256": "b456bc87947b67c5c6cfa9f20e2dcec000207b0199a83434f1c1ca9810316fb9"
     },
     "research/README.md": {
       "evidence": "Author-attested: 2026-10-25 re-read research/README.md against src/cm.c, src/fold.c, src/rf.h, and research/bench.c after D03 T01 section 3 (in-place CM stream encoding buffer lifetime; CLI, C API, and bitstream unchanged)",

@@ -7,6 +7,7 @@ import struct
 import os
 import subprocess
 import sys
+import time
 import zlib
 from pathlib import Path
 
@@ -366,6 +367,60 @@ def corrupt_cases() -> None:
     expect_fail(["encode", "--threads", "0", str(src), str(work / "t0.fold")], 1, "usage")
 
 
+def truncated_stream_abort() -> None:
+    work = WORK / "trunc_abort"
+    work.mkdir(parents=True, exist_ok=True)
+
+    def check_reject_fast(name: str, blob: bytes, threads: str, want_text: str) -> None:
+        in_fold = work / f"{name}_t{threads}.fold"
+        out_bmp = work / f"{name}_t{threads}.bmp"
+        partial = Path(str(out_bmp) + ".partial")
+        out_bmp.unlink(missing_ok=True)
+        partial.unlink(missing_ok=True)
+        in_fold.write_bytes(blob)
+        t0 = time.perf_counter()
+        result = subprocess.run(
+            [str(EXE), "decode", "--threads", threads, str(in_fold), str(out_bmp)],
+            capture_output=True,
+            timeout=5.0,
+        )
+        dt = time.perf_counter() - t0
+        err = result.stderr.decode(errors="replace")
+        check(result.returncode == 4, f"{name} t={threads} exit {result.returncode}, want 4: {err}")
+        check(want_text in err, f"{name} t={threads} stderr missing {want_text!r}: {err}")
+        check(result.stdout == b"", f"{name} t={threads} wrote stdout on failure")
+        check(dt < 1.0, f"{name} t={threads} took {dt:.3f}s (>= 1.0s)")
+        check(not out_bmp.exists(), f"{name} t={threads} left output BMP")
+        check(not partial.exists(), f"{name} t={threads} left .partial file")
+
+    # 1. 4096x4096 CM header with a 20-byte payload (framing rejection) and with
+    #    a structurally valid 27-byte CM payload (three 5-byte 0x80 streams that
+    #    enter run_pipelined / run_channel and exhaust dec.in >= dec.lim on row 0).
+    fold_20 = rf.build_file(4096, 4096, rf.METHOD_CM, with_streams((5, 5, 5), b"\x80" * 8))
+    fold_27 = rf.build_file(4096, 4096, rf.METHOD_CM, with_streams((5, 5, 5), b"\x80" * 15))
+    for t in ("1", "3"):
+        check_reject_fast("cm4096_20b", fold_20, t, "invalid fold: cm streams")
+        check_reject_fast("cm4096_27b", fold_27, t, "invalid fold: cm stream")
+
+    # 2. Truncate each of the three streams (G, R, B) in turn on an image taller
+    #    than XROWS (64x64, h=64 > XROWS=32) so channel 2 truncation also exercises
+    #    the y >= XROWS backpressure wait in run_channel.
+    valid_64 = rf.encode_image(64, 64, gradient(64, 64))
+    sz0, sz1, sz2 = struct.unpack_from("<III", valid_64, 32)
+    s0 = valid_64[44 : 44 + sz0]
+    s1 = valid_64[44 + sz0 : 44 + sz0 + sz1]
+    s2 = valid_64[44 + sz0 + sz1 : 44 + sz0 + sz1 + sz2]
+    orig_streams = [s0, s1, s2]
+    short_stream = b"\x80" * 5
+    for c in range(3):
+        parts = list(orig_streams)
+        parts[c] = short_stream
+        trunc_payload = with_streams((len(parts[0]), len(parts[1]), len(parts[2])), b"".join(parts))
+        trunc_fold = rf.build_file(64, 64, rf.METHOD_CM, trunc_payload)
+        for t in ("1", "3"):
+            check_reject_fast(f"trunc_ch{c}", trunc_fold, t, "invalid fold: cm stream")
+
+
 def main() -> int:
     if not EXE.exists():
         print(f"missing {EXE}; run build.ps1 first")
@@ -413,6 +468,7 @@ def main() -> int:
     )
     case("grey", lambda: roundtrip("grey", 16, 8, solid(16, 8, (128, 128, 128))))
     case("corrupt", corrupt_cases)
+    case("truncated-abort", truncated_stream_abort)
     # The checksum in a successful file matches zlib, not only our encoder.
     case(
         "zlib-crc",
