@@ -245,7 +245,7 @@ def _select_csv_rows(source, rule, key):
 
 
 def _check_visible_fact(segment, expected_str):
-    cleaned = re.sub(r'`+<!--.*?-->`+', ' ', segment)
+    cleaned = re.sub(r'<!--.*?-->', ' ', re.sub(r'`+<!--.*?-->`+', ' ', segment))
     if re.fullmatch(r'-?\d+(?:\.\d+)?', expected_str):
         nums = re.findall(
             r'(?<![A-Za-z0-9_])-?\d+(?:,\d{3})*(?:\.\d+)?(?![A-Za-z0-9_])'
@@ -256,7 +256,25 @@ def _check_visible_fact(segment, expected_str):
         if not nums:
             return False
         return nums[-1].replace(',', '').replace('_', '') == expected_str
-    return bool(expected_str) and expected_str in cleaned
+    return bool(expected_str) and bool(
+        re.search(r'(?<![A-Za-z0-9_.-])' + re.escape(expected_str) + r'(?![A-Za-z0-9_.-])[`\'")\s]*$', cleaned)
+    )
+
+
+def _parse_csv_scalar(raw_val, val_type, key):
+    if val_type == 'int':
+        if not re.fullmatch(r'-?\d+', str(raw_val)):
+            raise ValueError(f'{key}: expected integer CSV value, got {raw_val!r}')
+        return int(raw_val)
+    if val_type == 'number':
+        try:
+            d = Decimal(str(raw_val))
+        except InvalidOperation as exc:
+            raise ValueError(f'{key}: expected numeric CSV value, got {raw_val!r}') from exc
+        if not d.is_finite():
+            raise ValueError(f'{key}: non-finite numeric CSV value {raw_val!r}')
+        return int(d) if d == int(d) else float(d.normalize())
+    return raw_val
 
 
 def derive_facts(manifest, read):
@@ -289,17 +307,38 @@ def derive_facts(manifest, read):
             col = rule.get('column', '')
             if col not in rows[0] or rows[0][col] in (None, ''):
                 raise ValueError(f'{key}: missing or empty CSV column {col!r}')
-            value = rows[0][col]
-            if rule.get('type') == 'int':
-                value = int(value)
+            value = _parse_csv_scalar(rows[0][col], rule.get('type'), key)
         elif rule['kind'] == 'csv-meta':
             meta = _csv_meta(source)
             meta_key = rule.get('key', '')
-            if not meta_key or meta_key not in meta:
-                raise ValueError(f'{key}: missing CSV metadata key {meta_key!r} in {rule["source"]}')
-            value = meta[meta_key]
-            if rule.get('type') == 'int':
-                value = int(value)
+            if meta_key == 'set_status':
+                target_set = rule.get('set', '')
+                measured = {s for s in meta.get('measured_sets', '').split(',') if s}
+                retained = {s for s in meta.get('retained_sets', '').split(',') if s}
+                if target_set in measured and target_set not in retained:
+                    value = 'measured'
+                elif target_set in retained and target_set not in measured:
+                    value = 'retained'
+                else:
+                    raise ValueError(f'{key}: ambiguous or missing set_status for {target_set!r} in {rule["source"]}')
+            else:
+                if not meta_key or meta_key not in meta:
+                    raise ValueError(f'{key}: missing CSV metadata key {meta_key!r} in {rule["source"]}')
+                raw_meta = meta[meta_key]
+                subkey = rule.get('subkey')
+                if subkey is not None:
+                    pairs = {}
+                    for item in raw_meta.split(','):
+                        if ':' not in item:
+                            raise ValueError(f'{key}: malformed key:value entry {item!r} in {meta_key!r}')
+                        sk, sv = item.split(':', 1)
+                        if not sk or not sv or sk in pairs:
+                            raise ValueError(f'{key}: duplicate or empty subkey {sk!r} in {meta_key!r}')
+                        pairs[sk] = sv
+                    if subkey not in pairs:
+                        raise ValueError(f'{key}: missing subkey {subkey!r} in {meta_key!r}')
+                    raw_meta = pairs[subkey]
+                value = _parse_csv_scalar(raw_meta, rule.get('type'), key)
         elif rule['kind'] == 'csv-aggregate':
             rows = _select_csv_rows(source, rule, key)
             op = rule.get('op')
@@ -310,12 +349,12 @@ def derive_facts(manifest, read):
                 col = rule['column']
                 vals = [Decimal(r[col]) for r in rows]
                 total = sum(vals, Decimal(0))
-                value = int(total) if rule.get('type', 'int') == 'int' and total == int(total) else str(total)
+                value = _parse_csv_scalar(str(total), rule.get('type', 'int'), key)
             elif op == 'max':
                 col = rule['column']
                 vals = [Decimal(r[col]) for r in rows]
                 mx = max(vals)
-                value = int(mx) if rule.get('type', 'int') == 'int' and mx == int(mx) else str(mx)
+                value = _parse_csv_scalar(str(mx), rule.get('type', 'int'), key)
             elif op == 'ratio':
                 col = rule['column']
                 num = sum((Decimal(r[col]) for r in rows), Decimal(0))

@@ -343,26 +343,6 @@
       "column": "bytes",
       "type": "int"
     },
-    "results_date": {
-      "kind": "csv-meta",
-      "source": "benchmarks/results.csv",
-      "key": "date"
-    },
-    "results_codec_revision": {
-      "kind": "csv-meta",
-      "source": "benchmarks/results.csv",
-      "key": "codec_revision"
-    },
-    "results_retained_date": {
-      "kind": "csv-meta",
-      "source": "benchmarks/results.csv",
-      "key": "retained_date"
-    },
-    "results_retained_revision": {
-      "kind": "csv-meta",
-      "source": "benchmarks/results.csv",
-      "key": "retained_revision"
-    },
     "measurement_reference_width": {
       "kind": "csv",
       "source": "benchmarks/results.csv",
@@ -405,7 +385,7 @@
         "codec": "rasterfold"
       },
       "column": "encode_us",
-      "type": "int"
+      "type": "number"
     },
     "measurement_reference_rf_decode_us": {
       "kind": "csv",
@@ -416,7 +396,7 @@
         "codec": "rasterfold"
       },
       "column": "decode_us",
-      "type": "int"
+      "type": "number"
     },
     "measurement_reference_rf_encode_peak": {
       "kind": "csv",
@@ -449,7 +429,7 @@
         "codec": "rasterfold-1t"
       },
       "column": "encode_us",
-      "type": "int"
+      "type": "number"
     },
     "measurement_reference_rf_1t_decode_us": {
       "kind": "csv",
@@ -460,7 +440,7 @@
         "codec": "rasterfold-1t"
       },
       "column": "decode_us",
-      "type": "int"
+      "type": "number"
     },
     "measurement_reference_ratio_jxl_e7": {
       "kind": "csv-aggregate",
@@ -516,7 +496,7 @@
         "codec": "jxl"
       },
       "column": "encode_us",
-      "type": "int"
+      "type": "number"
     },
     "measurement_reference_jxl_e7_decode_us": {
       "kind": "csv",
@@ -527,7 +507,7 @@
         "codec": "jxl"
       },
       "column": "decode_us",
-      "type": "int"
+      "type": "number"
     },
     "measurement_reference_jxl_e7_encode_peak": {
       "kind": "csv",
@@ -571,7 +551,7 @@
         "codec": "jxl-e9"
       },
       "column": "encode_us",
-      "type": "int"
+      "type": "number"
     },
     "measurement_reference_jxl_e9_decode_us": {
       "kind": "csv",
@@ -582,7 +562,7 @@
         "codec": "jxl-e9"
       },
       "column": "decode_us",
-      "type": "int"
+      "type": "number"
     },
     "measurement_reference_jxl_e9_encode_peak": {
       "kind": "csv",
@@ -626,7 +606,7 @@
         "codec": "webp"
       },
       "column": "encode_us",
-      "type": "int"
+      "type": "number"
     },
     "measurement_reference_webp_decode_us": {
       "kind": "csv",
@@ -637,7 +617,7 @@
         "codec": "webp"
       },
       "column": "decode_us",
-      "type": "int"
+      "type": "number"
     },
     "measurement_reference_webp_encode_peak": {
       "kind": "csv",
@@ -681,7 +661,7 @@
         "codec": "png"
       },
       "column": "encode_us",
-      "type": "int"
+      "type": "number"
     },
     "measurement_reference_png_decode_us": {
       "kind": "csv",
@@ -692,7 +672,7 @@
         "codec": "png"
       },
       "column": "decode_us",
-      "type": "int"
+      "type": "number"
     },
     "measurement_reference_png_encode_peak": {
       "kind": "csv",
@@ -725,7 +705,7 @@
         "codec": "jxl-1t"
       },
       "column": "decode_us",
-      "type": "int"
+      "type": "number"
     },
     "results_photos_count": {
       "kind": "csv-aggregate",
@@ -1392,6 +1372,60 @@
       "column": "rasterfold",
       "denominator_column": "webp",
       "precision": 4
+    },
+    "results_measure_status": {
+      "kind": "csv-meta",
+      "source": "benchmarks/results.csv",
+      "key": "set_status",
+      "set": "measure"
+    },
+    "results_measure_date": {
+      "kind": "csv-meta",
+      "source": "benchmarks/results.csv",
+      "key": "set_dates",
+      "subkey": "measure"
+    },
+    "results_measure_revision": {
+      "kind": "csv-meta",
+      "source": "benchmarks/results.csv",
+      "key": "set_revisions",
+      "subkey": "measure"
+    },
+    "results_photos_status": {
+      "kind": "csv-meta",
+      "source": "benchmarks/results.csv",
+      "key": "set_status",
+      "set": "photos"
+    },
+    "results_photos_date": {
+      "kind": "csv-meta",
+      "source": "benchmarks/results.csv",
+      "key": "set_dates",
+      "subkey": "photos"
+    },
+    "results_photos_revision": {
+      "kind": "csv-meta",
+      "source": "benchmarks/results.csv",
+      "key": "set_revisions",
+      "subkey": "photos"
+    },
+    "results_synthetic_status": {
+      "kind": "csv-meta",
+      "source": "benchmarks/results.csv",
+      "key": "set_status",
+      "set": "synthetic"
+    },
+    "results_synthetic_date": {
+      "kind": "csv-meta",
+      "source": "benchmarks/results.csv",
+      "key": "set_dates",
+      "subkey": "synthetic"
+    },
+    "results_synthetic_revision": {
+      "kind": "csv-meta",
+      "source": "benchmarks/results.csv",
+      "key": "set_revisions",
+      "subkey": "synthetic"
     }
   },
   "blocks": {
@@ -1409,7 +1443,7 @@
     },
     "benchmarks-measurements": {
       "path": "docs/benchmarks.md",
-      "template": "## Reference Image (`measure/image.bmp`)\n\nRecorded in `benchmarks/results.csv` and `benchmarks/results.md` on `{results_date}` <!-- drift:fact results_date = {results_date} --> (`codec_revision={results_codec_revision}` <!-- drift:fact results_codec_revision = {results_codec_revision} -->; retained `photos` and `synthetic` sets from `{results_retained_date}` <!-- drift:fact results_retained_date = {results_retained_date} --> at `retained_revision={results_retained_revision}` <!-- drift:fact results_retained_revision = {results_retained_revision} -->) on `measure/image.bmp` (`{measurement_reference_width}` <!-- drift:fact measurement_reference_width = {measurement_reference_width} --> x `{measurement_reference_height}` <!-- drift:fact measurement_reference_height = {measurement_reference_height} --> RGB8, `{measurement_reference_raw_bytes:,}` raw RGB bytes <!-- drift:fact measurement_reference_raw_bytes = {measurement_reference_raw_bytes} -->):\n\n- **RasterFold (`.fold` format version {format_version} <!-- drift:fact format_version = {format_version} -->):** `{measurement_reference_bytes:,}` bytes <!-- drift:fact measurement_reference_bytes = {measurement_reference_bytes} --> (`{measurement_reference_ratio_jxl_e7}` <!-- drift:fact measurement_reference_ratio_jxl_e7 = {measurement_reference_ratio_jxl_e7} --> of JPEG XL `e7`, `{measurement_reference_ratio_jxl_e9}` <!-- drift:fact measurement_reference_ratio_jxl_e9 = {measurement_reference_ratio_jxl_e9} --> of JPEG XL `e9`; encode `{measurement_reference_rf_encode_us:,}` us <!-- drift:fact measurement_reference_rf_encode_us = {measurement_reference_rf_encode_us} --> at 3 channel threads / `{measurement_reference_rf_1t_encode_us:,}` us <!-- drift:fact measurement_reference_rf_1t_encode_us = {measurement_reference_rf_1t_encode_us} --> at `--threads 1`; decode `{measurement_reference_rf_decode_us:,}` us <!-- drift:fact measurement_reference_rf_decode_us = {measurement_reference_rf_decode_us} --> at 3 channel threads / `{measurement_reference_rf_1t_decode_us:,}` us <!-- drift:fact measurement_reference_rf_1t_decode_us = {measurement_reference_rf_1t_decode_us} --> at `--threads 1`; peak working set `{measurement_reference_rf_encode_peak:,}` encode <!-- drift:fact measurement_reference_rf_encode_peak = {measurement_reference_rf_encode_peak} --> / `{measurement_reference_rf_decode_peak:,}` decode bytes <!-- drift:fact measurement_reference_rf_decode_peak = {measurement_reference_rf_decode_peak} -->).\n- **JPEG XL `e7` (`ffmpeg libjxl -distance 0 -effort 7 -threads 1`):** `{measurement_reference_jxl_e7_bytes:,}` bytes <!-- drift:fact measurement_reference_jxl_e7_bytes = {measurement_reference_jxl_e7_bytes} --> (encode `{measurement_reference_jxl_e7_encode_us:,}` us <!-- drift:fact measurement_reference_jxl_e7_encode_us = {measurement_reference_jxl_e7_encode_us} -->; decode `{measurement_reference_jxl_e7_decode_us:,}` us <!-- drift:fact measurement_reference_jxl_e7_decode_us = {measurement_reference_jxl_e7_decode_us} --> default threads / `{measurement_reference_jxl_e7_1t_decode_us:,}` us <!-- drift:fact measurement_reference_jxl_e7_1t_decode_us = {measurement_reference_jxl_e7_1t_decode_us} --> at `-threads 1`; peak working set `{measurement_reference_jxl_e7_encode_peak:,}` encode <!-- drift:fact measurement_reference_jxl_e7_encode_peak = {measurement_reference_jxl_e7_encode_peak} --> / `{measurement_reference_jxl_e7_decode_peak:,}` decode bytes <!-- drift:fact measurement_reference_jxl_e7_decode_peak = {measurement_reference_jxl_e7_decode_peak} -->).\n- **JPEG XL `e9` (`ffmpeg libjxl -distance 0 -effort 9 -threads 1`):** `{measurement_reference_jxl_e9_bytes:,}` bytes <!-- drift:fact measurement_reference_jxl_e9_bytes = {measurement_reference_jxl_e9_bytes} --> (encode `{measurement_reference_jxl_e9_encode_us:,}` us <!-- drift:fact measurement_reference_jxl_e9_encode_us = {measurement_reference_jxl_e9_encode_us} -->; decode `{measurement_reference_jxl_e9_decode_us:,}` us <!-- drift:fact measurement_reference_jxl_e9_decode_us = {measurement_reference_jxl_e9_decode_us} -->; peak working set `{measurement_reference_jxl_e9_encode_peak:,}` encode <!-- drift:fact measurement_reference_jxl_e9_encode_peak = {measurement_reference_jxl_e9_encode_peak} --> / `{measurement_reference_jxl_e9_decode_peak:,}` decode bytes <!-- drift:fact measurement_reference_jxl_e9_decode_peak = {measurement_reference_jxl_e9_decode_peak} -->).\n- **Lossless WebP (`ffmpeg libwebp -lossless 1 -quality 100 -compression_level 6 -threads 1`):** `{measurement_reference_webp_bytes:,}` bytes <!-- drift:fact measurement_reference_webp_bytes = {measurement_reference_webp_bytes} --> (encode `{measurement_reference_webp_encode_us:,}` us <!-- drift:fact measurement_reference_webp_encode_us = {measurement_reference_webp_encode_us} -->; decode `{measurement_reference_webp_decode_us:,}` us <!-- drift:fact measurement_reference_webp_decode_us = {measurement_reference_webp_decode_us} -->; peak working set `{measurement_reference_webp_encode_peak:,}` encode <!-- drift:fact measurement_reference_webp_encode_peak = {measurement_reference_webp_encode_peak} --> / `{measurement_reference_webp_decode_peak:,}` decode bytes <!-- drift:fact measurement_reference_webp_decode_peak = {measurement_reference_webp_decode_peak} -->).\n- **PNG (`ffmpeg -compression_level 9 -pred mixed -threads 1`):** `{measurement_reference_png_bytes:,}` bytes <!-- drift:fact measurement_reference_png_bytes = {measurement_reference_png_bytes} --> (encode `{measurement_reference_png_encode_us:,}` us <!-- drift:fact measurement_reference_png_encode_us = {measurement_reference_png_encode_us} -->; decode `{measurement_reference_png_decode_us:,}` us <!-- drift:fact measurement_reference_png_decode_us = {measurement_reference_png_decode_us} -->; peak working set `{measurement_reference_png_encode_peak:,}` encode <!-- drift:fact measurement_reference_png_encode_peak = {measurement_reference_png_encode_peak} --> / `{measurement_reference_png_decode_peak:,}` decode bytes <!-- drift:fact measurement_reference_png_decode_peak = {measurement_reference_png_decode_peak} -->).\n- **Retained `photos` benchmark set (`{results_photos_count}` images <!-- drift:fact results_photos_count = {results_photos_count} -->):** RasterFold `{results_photos_rf_bytes:,}` bytes <!-- drift:fact results_photos_rf_bytes = {results_photos_rf_bytes} --> vs JPEG XL `e7` `{results_photos_jxl_bytes:,}` bytes <!-- drift:fact results_photos_jxl_bytes = {results_photos_jxl_bytes} --> (size geometric mean `{results_photos_size_geomean}` <!-- drift:fact results_photos_size_geomean = {results_photos_size_geomean} -->; encode time geometric mean `{results_photos_encode_geomean}` <!-- drift:fact results_photos_encode_geomean = {results_photos_encode_geomean} -->; decode time geometric mean `{results_photos_decode_geomean}` <!-- drift:fact results_photos_decode_geomean = {results_photos_decode_geomean} -->; max peak working set `{results_photos_rf_encode_peak_max:,}` encode <!-- drift:fact results_photos_rf_encode_peak_max = {results_photos_rf_encode_peak_max} --> / `{results_photos_rf_decode_peak_max:,}` decode bytes <!-- drift:fact results_photos_rf_decode_peak_max = {results_photos_rf_decode_peak_max} -->).\n- **Retained `synthetic` benchmark set (`{results_synthetic_count}` images <!-- drift:fact results_synthetic_count = {results_synthetic_count} -->):** RasterFold `{results_synthetic_rf_bytes:,}` bytes <!-- drift:fact results_synthetic_rf_bytes = {results_synthetic_rf_bytes} --> vs JPEG XL `e7` `{results_synthetic_jxl_bytes:,}` bytes <!-- drift:fact results_synthetic_jxl_bytes = {results_synthetic_jxl_bytes} --> (size geometric mean `{results_synthetic_size_geomean}` <!-- drift:fact results_synthetic_size_geomean = {results_synthetic_size_geomean} -->; encode time geometric mean `{results_synthetic_encode_geomean}` <!-- drift:fact results_synthetic_encode_geomean = {results_synthetic_encode_geomean} -->; decode time geometric mean `{results_synthetic_decode_geomean}` <!-- drift:fact results_synthetic_decode_geomean = {results_synthetic_decode_geomean} -->; max peak working set `{results_synthetic_rf_encode_peak_max:,}` encode <!-- drift:fact results_synthetic_rf_encode_peak_max = {results_synthetic_rf_encode_peak_max} --> / `{results_synthetic_rf_decode_peak_max:,}` decode bytes <!-- drift:fact results_synthetic_rf_decode_peak_max = {results_synthetic_rf_decode_peak_max} -->).\n\n## Research Corpus (`benchmarks/corpus.csv`)\n\nRecorded in `benchmarks/corpus.csv` on `{corpus_date}` <!-- drift:fact corpus_date = {corpus_date} --> (`codec_revision={corpus_codec_revision}` <!-- drift:fact corpus_codec_revision = {corpus_codec_revision} -->):\n\n- **`photo` set (`{corpus_photo_count}` images <!-- drift:fact corpus_photo_count = {corpus_photo_count} -->: `measure` + 24 Kodak + 14 `imagecompression.info` crops):** RasterFold `{corpus_photo_rf_bytes:,}` bytes <!-- drift:fact corpus_photo_rf_bytes = {corpus_photo_rf_bytes} -->; JPEG XL `e7` `{corpus_photo_jxl_e7_bytes:,}` bytes <!-- drift:fact corpus_photo_jxl_e7_bytes = {corpus_photo_jxl_e7_bytes} --> (total ratio `{corpus_photo_jxl_e7_ratio}` <!-- drift:fact corpus_photo_jxl_e7_ratio = {corpus_photo_jxl_e7_ratio} -->, geometric mean `{corpus_photo_jxl_e7_geomean}` <!-- drift:fact corpus_photo_jxl_e7_geomean = {corpus_photo_jxl_e7_geomean} -->); JPEG XL `e9` `{corpus_photo_jxl_e9_bytes:,}` bytes <!-- drift:fact corpus_photo_jxl_e9_bytes = {corpus_photo_jxl_e9_bytes} --> (total ratio `{corpus_photo_jxl_e9_ratio}` <!-- drift:fact corpus_photo_jxl_e9_ratio = {corpus_photo_jxl_e9_ratio} -->, geometric mean `{corpus_photo_jxl_e9_geomean}` <!-- drift:fact corpus_photo_jxl_e9_geomean = {corpus_photo_jxl_e9_geomean} -->); lossless WebP `{corpus_photo_webp_bytes:,}` bytes <!-- drift:fact corpus_photo_webp_bytes = {corpus_photo_webp_bytes} --> (total ratio `{corpus_photo_webp_ratio}` <!-- drift:fact corpus_photo_webp_ratio = {corpus_photo_webp_ratio} -->, geometric mean `{corpus_photo_webp_geomean}` <!-- drift:fact corpus_photo_webp_geomean = {corpus_photo_webp_geomean} -->).\n- **`tp` confirmation set (`{corpus_tp_count}` overlapping test-pack images <!-- drift:fact corpus_tp_count = {corpus_tp_count} -->):** RasterFold `{corpus_tp_rf_bytes:,}` bytes <!-- drift:fact corpus_tp_rf_bytes = {corpus_tp_rf_bytes} -->; JPEG XL `e7` `{corpus_tp_jxl_e7_bytes:,}` bytes <!-- drift:fact corpus_tp_jxl_e7_bytes = {corpus_tp_jxl_e7_bytes} --> (total ratio `{corpus_tp_jxl_e7_ratio}` <!-- drift:fact corpus_tp_jxl_e7_ratio = {corpus_tp_jxl_e7_ratio} -->, geometric mean `{corpus_tp_jxl_e7_geomean}` <!-- drift:fact corpus_tp_jxl_e7_geomean = {corpus_tp_jxl_e7_geomean} -->); JPEG XL `e9` `{corpus_tp_jxl_e9_bytes:,}` bytes <!-- drift:fact corpus_tp_jxl_e9_bytes = {corpus_tp_jxl_e9_bytes} --> (total ratio `{corpus_tp_jxl_e9_ratio}` <!-- drift:fact corpus_tp_jxl_e9_ratio = {corpus_tp_jxl_e9_ratio} -->, geometric mean `{corpus_tp_jxl_e9_geomean}` <!-- drift:fact corpus_tp_jxl_e9_geomean = {corpus_tp_jxl_e9_geomean} -->); lossless WebP `{corpus_tp_webp_bytes:,}` bytes <!-- drift:fact corpus_tp_webp_bytes = {corpus_tp_webp_bytes} --> (total ratio `{corpus_tp_webp_ratio}` <!-- drift:fact corpus_tp_webp_ratio = {corpus_tp_webp_ratio} -->, geometric mean `{corpus_tp_webp_geomean}` <!-- drift:fact corpus_tp_webp_geomean = {corpus_tp_webp_geomean} -->).\n- **`tp-only` subset (`{corpus_tp_only_count}` exclusive `tp` CSV rows <!-- drift:fact corpus_tp_only_count = {corpus_tp_only_count} -->):** RasterFold `{corpus_tp_only_rf_bytes:,}` bytes <!-- drift:fact corpus_tp_only_rf_bytes = {corpus_tp_only_rf_bytes} -->; JPEG XL `e7` `{corpus_tp_only_jxl_e7_bytes:,}` bytes <!-- drift:fact corpus_tp_only_jxl_e7_bytes = {corpus_tp_only_jxl_e7_bytes} --> (total ratio `{corpus_tp_only_jxl_e7_ratio}` <!-- drift:fact corpus_tp_only_jxl_e7_ratio = {corpus_tp_only_jxl_e7_ratio} -->, geometric mean `{corpus_tp_only_jxl_e7_geomean}` <!-- drift:fact corpus_tp_only_jxl_e7_geomean = {corpus_tp_only_jxl_e7_geomean} -->); JPEG XL `e9` `{corpus_tp_only_jxl_e9_bytes:,}` bytes <!-- drift:fact corpus_tp_only_jxl_e9_bytes = {corpus_tp_only_jxl_e9_bytes} --> (total ratio `{corpus_tp_only_jxl_e9_ratio}` <!-- drift:fact corpus_tp_only_jxl_e9_ratio = {corpus_tp_only_jxl_e9_ratio} -->, geometric mean `{corpus_tp_only_jxl_e9_geomean}` <!-- drift:fact corpus_tp_only_jxl_e9_geomean = {corpus_tp_only_jxl_e9_geomean} -->); lossless WebP `{corpus_tp_only_webp_bytes:,}` bytes <!-- drift:fact corpus_tp_only_webp_bytes = {corpus_tp_only_webp_bytes} --> (total ratio `{corpus_tp_only_webp_ratio}` <!-- drift:fact corpus_tp_only_webp_ratio = {corpus_tp_only_webp_ratio} -->, geometric mean `{corpus_tp_only_webp_geomean}` <!-- drift:fact corpus_tp_only_webp_geomean = {corpus_tp_only_webp_geomean} -->).\n- **`synth` set (`{corpus_synth_count}` synthetic stress images <!-- drift:fact corpus_synth_count = {corpus_synth_count} -->):** RasterFold `{corpus_synth_rf_bytes:,}` bytes <!-- drift:fact corpus_synth_rf_bytes = {corpus_synth_rf_bytes} -->; JPEG XL `e7` `{corpus_synth_jxl_e7_bytes:,}` bytes <!-- drift:fact corpus_synth_jxl_e7_bytes = {corpus_synth_jxl_e7_bytes} --> (total ratio `{corpus_synth_jxl_e7_ratio}` <!-- drift:fact corpus_synth_jxl_e7_ratio = {corpus_synth_jxl_e7_ratio} -->, geometric mean `{corpus_synth_jxl_e7_geomean}` <!-- drift:fact corpus_synth_jxl_e7_geomean = {corpus_synth_jxl_e7_geomean} -->); JPEG XL `e9` `{corpus_synth_jxl_e9_bytes:,}` bytes <!-- drift:fact corpus_synth_jxl_e9_bytes = {corpus_synth_jxl_e9_bytes} --> (total ratio `{corpus_synth_jxl_e9_ratio}` <!-- drift:fact corpus_synth_jxl_e9_ratio = {corpus_synth_jxl_e9_ratio} -->, geometric mean `{corpus_synth_jxl_e9_geomean}` <!-- drift:fact corpus_synth_jxl_e9_geomean = {corpus_synth_jxl_e9_geomean} -->); lossless WebP `{corpus_synth_webp_bytes:,}` bytes <!-- drift:fact corpus_synth_webp_bytes = {corpus_synth_webp_bytes} --> (total ratio `{corpus_synth_webp_ratio}` <!-- drift:fact corpus_synth_webp_ratio = {corpus_synth_webp_ratio} -->, geometric mean `{corpus_synth_webp_geomean}` <!-- drift:fact corpus_synth_webp_geomean = {corpus_synth_webp_geomean} -->).\n- **`all` corpus (`{corpus_all_count}` total CSV rows <!-- drift:fact corpus_all_count = {corpus_all_count} -->):** RasterFold `{corpus_all_rf_bytes:,}` bytes <!-- drift:fact corpus_all_rf_bytes = {corpus_all_rf_bytes} -->; JPEG XL `e7` `{corpus_all_jxl_e7_bytes:,}` bytes <!-- drift:fact corpus_all_jxl_e7_bytes = {corpus_all_jxl_e7_bytes} --> (total ratio `{corpus_all_jxl_e7_ratio}` <!-- drift:fact corpus_all_jxl_e7_ratio = {corpus_all_jxl_e7_ratio} -->, geometric mean `{corpus_all_jxl_e7_geomean}` <!-- drift:fact corpus_all_jxl_e7_geomean = {corpus_all_jxl_e7_geomean} -->); JPEG XL `e9` `{corpus_all_jxl_e9_bytes:,}` bytes <!-- drift:fact corpus_all_jxl_e9_bytes = {corpus_all_jxl_e9_bytes} --> (total ratio `{corpus_all_jxl_e9_ratio}` <!-- drift:fact corpus_all_jxl_e9_ratio = {corpus_all_jxl_e9_ratio} -->, geometric mean `{corpus_all_jxl_e9_geomean}` <!-- drift:fact corpus_all_jxl_e9_geomean = {corpus_all_jxl_e9_geomean} -->); lossless WebP `{corpus_all_webp_bytes:,}` bytes <!-- drift:fact corpus_all_webp_bytes = {corpus_all_webp_bytes} --> (total ratio `{corpus_all_webp_ratio}` <!-- drift:fact corpus_all_webp_ratio = {corpus_all_webp_ratio} -->, geometric mean `{corpus_all_webp_geomean}` <!-- drift:fact corpus_all_webp_geomean = {corpus_all_webp_geomean} -->)."
+      "template": "## Reference Image (`measure/image.bmp`)\n\nRecorded in `benchmarks/results.csv` and `benchmarks/results.md` (`measure` set `{results_measure_status}` <!-- drift:fact results_measure_status = {results_measure_status} --> on `{results_measure_date}` <!-- drift:fact results_measure_date = {results_measure_date} --> at `codec_revision={results_measure_revision}` <!-- drift:fact results_measure_revision = {results_measure_revision} -->) on `measure/image.bmp` (`{measurement_reference_width}` <!-- drift:fact measurement_reference_width = {measurement_reference_width} --> x `{measurement_reference_height}` <!-- drift:fact measurement_reference_height = {measurement_reference_height} --> RGB8, `{measurement_reference_raw_bytes:,}` raw RGB bytes <!-- drift:fact measurement_reference_raw_bytes = {measurement_reference_raw_bytes} -->):\n\n- **RasterFold (`.fold` format version {format_version} <!-- drift:fact format_version = {format_version} -->):** `{measurement_reference_bytes:,}` bytes <!-- drift:fact measurement_reference_bytes = {measurement_reference_bytes} --> (`{measurement_reference_ratio_jxl_e7}` <!-- drift:fact measurement_reference_ratio_jxl_e7 = {measurement_reference_ratio_jxl_e7} --> of JPEG XL `e7`, `{measurement_reference_ratio_jxl_e9}` <!-- drift:fact measurement_reference_ratio_jxl_e9 = {measurement_reference_ratio_jxl_e9} --> of JPEG XL `e9`; encode `{measurement_reference_rf_encode_us:,}` us <!-- drift:fact measurement_reference_rf_encode_us = {measurement_reference_rf_encode_us} --> at 3 channel threads / `{measurement_reference_rf_1t_encode_us:,}` us <!-- drift:fact measurement_reference_rf_1t_encode_us = {measurement_reference_rf_1t_encode_us} --> at `--threads 1`; decode `{measurement_reference_rf_decode_us:,}` us <!-- drift:fact measurement_reference_rf_decode_us = {measurement_reference_rf_decode_us} --> at 3 channel threads / `{measurement_reference_rf_1t_decode_us:,}` us <!-- drift:fact measurement_reference_rf_1t_decode_us = {measurement_reference_rf_1t_decode_us} --> at `--threads 1`; peak working set `{measurement_reference_rf_encode_peak:,}` encode <!-- drift:fact measurement_reference_rf_encode_peak = {measurement_reference_rf_encode_peak} --> / `{measurement_reference_rf_decode_peak:,}` decode bytes <!-- drift:fact measurement_reference_rf_decode_peak = {measurement_reference_rf_decode_peak} -->).\n- **JPEG XL `e7` (`ffmpeg libjxl -distance 0 -effort 7 -threads 1`):** `{measurement_reference_jxl_e7_bytes:,}` bytes <!-- drift:fact measurement_reference_jxl_e7_bytes = {measurement_reference_jxl_e7_bytes} --> (encode `{measurement_reference_jxl_e7_encode_us:,}` us <!-- drift:fact measurement_reference_jxl_e7_encode_us = {measurement_reference_jxl_e7_encode_us} -->; decode `{measurement_reference_jxl_e7_decode_us:,}` us <!-- drift:fact measurement_reference_jxl_e7_decode_us = {measurement_reference_jxl_e7_decode_us} --> default threads / `{measurement_reference_jxl_e7_1t_decode_us:,}` us <!-- drift:fact measurement_reference_jxl_e7_1t_decode_us = {measurement_reference_jxl_e7_1t_decode_us} --> at `-threads 1`; peak working set `{measurement_reference_jxl_e7_encode_peak:,}` encode <!-- drift:fact measurement_reference_jxl_e7_encode_peak = {measurement_reference_jxl_e7_encode_peak} --> / `{measurement_reference_jxl_e7_decode_peak:,}` decode bytes <!-- drift:fact measurement_reference_jxl_e7_decode_peak = {measurement_reference_jxl_e7_decode_peak} -->).\n- **JPEG XL `e9` (`ffmpeg libjxl -distance 0 -effort 9 -threads 1`):** `{measurement_reference_jxl_e9_bytes:,}` bytes <!-- drift:fact measurement_reference_jxl_e9_bytes = {measurement_reference_jxl_e9_bytes} --> (encode `{measurement_reference_jxl_e9_encode_us:,}` us <!-- drift:fact measurement_reference_jxl_e9_encode_us = {measurement_reference_jxl_e9_encode_us} -->; decode `{measurement_reference_jxl_e9_decode_us:,}` us <!-- drift:fact measurement_reference_jxl_e9_decode_us = {measurement_reference_jxl_e9_decode_us} -->; peak working set `{measurement_reference_jxl_e9_encode_peak:,}` encode <!-- drift:fact measurement_reference_jxl_e9_encode_peak = {measurement_reference_jxl_e9_encode_peak} --> / `{measurement_reference_jxl_e9_decode_peak:,}` decode bytes <!-- drift:fact measurement_reference_jxl_e9_decode_peak = {measurement_reference_jxl_e9_decode_peak} -->).\n- **Lossless WebP (`ffmpeg libwebp -lossless 1 -quality 100 -compression_level 6 -threads 1`):** `{measurement_reference_webp_bytes:,}` bytes <!-- drift:fact measurement_reference_webp_bytes = {measurement_reference_webp_bytes} --> (encode `{measurement_reference_webp_encode_us:,}` us <!-- drift:fact measurement_reference_webp_encode_us = {measurement_reference_webp_encode_us} -->; decode `{measurement_reference_webp_decode_us:,}` us <!-- drift:fact measurement_reference_webp_decode_us = {measurement_reference_webp_decode_us} -->; peak working set `{measurement_reference_webp_encode_peak:,}` encode <!-- drift:fact measurement_reference_webp_encode_peak = {measurement_reference_webp_encode_peak} --> / `{measurement_reference_webp_decode_peak:,}` decode bytes <!-- drift:fact measurement_reference_webp_decode_peak = {measurement_reference_webp_decode_peak} -->).\n- **PNG (`ffmpeg -compression_level 9 -pred mixed -threads 1`):** `{measurement_reference_png_bytes:,}` bytes <!-- drift:fact measurement_reference_png_bytes = {measurement_reference_png_bytes} --> (encode `{measurement_reference_png_encode_us:,}` us <!-- drift:fact measurement_reference_png_encode_us = {measurement_reference_png_encode_us} -->; decode `{measurement_reference_png_decode_us:,}` us <!-- drift:fact measurement_reference_png_decode_us = {measurement_reference_png_decode_us} -->; peak working set `{measurement_reference_png_encode_peak:,}` encode <!-- drift:fact measurement_reference_png_encode_peak = {measurement_reference_png_encode_peak} --> / `{measurement_reference_png_decode_peak:,}` decode bytes <!-- drift:fact measurement_reference_png_decode_peak = {measurement_reference_png_decode_peak} -->).\n- **`photos` benchmark set (`{results_photos_status}` <!-- drift:fact results_photos_status = {results_photos_status} --> on `{results_photos_date}` <!-- drift:fact results_photos_date = {results_photos_date} --> at `revision={results_photos_revision}` <!-- drift:fact results_photos_revision = {results_photos_revision} -->, `{results_photos_count}` images <!-- drift:fact results_photos_count = {results_photos_count} -->):** RasterFold `{results_photos_rf_bytes:,}` bytes <!-- drift:fact results_photos_rf_bytes = {results_photos_rf_bytes} --> vs JPEG XL `e7` `{results_photos_jxl_bytes:,}` bytes <!-- drift:fact results_photos_jxl_bytes = {results_photos_jxl_bytes} --> (size geometric mean `{results_photos_size_geomean}` <!-- drift:fact results_photos_size_geomean = {results_photos_size_geomean} -->; encode time geometric mean `{results_photos_encode_geomean}` <!-- drift:fact results_photos_encode_geomean = {results_photos_encode_geomean} -->; decode time geometric mean `{results_photos_decode_geomean}` <!-- drift:fact results_photos_decode_geomean = {results_photos_decode_geomean} -->; max peak working set `{results_photos_rf_encode_peak_max:,}` encode <!-- drift:fact results_photos_rf_encode_peak_max = {results_photos_rf_encode_peak_max} --> / `{results_photos_rf_decode_peak_max:,}` decode bytes <!-- drift:fact results_photos_rf_decode_peak_max = {results_photos_rf_decode_peak_max} -->).\n- **`synthetic` benchmark set (`{results_synthetic_status}` <!-- drift:fact results_synthetic_status = {results_synthetic_status} --> on `{results_synthetic_date}` <!-- drift:fact results_synthetic_date = {results_synthetic_date} --> at `revision={results_synthetic_revision}` <!-- drift:fact results_synthetic_revision = {results_synthetic_revision} -->, `{results_synthetic_count}` images <!-- drift:fact results_synthetic_count = {results_synthetic_count} -->):** RasterFold `{results_synthetic_rf_bytes:,}` bytes <!-- drift:fact results_synthetic_rf_bytes = {results_synthetic_rf_bytes} --> vs JPEG XL `e7` `{results_synthetic_jxl_bytes:,}` bytes <!-- drift:fact results_synthetic_jxl_bytes = {results_synthetic_jxl_bytes} --> (size geometric mean `{results_synthetic_size_geomean}` <!-- drift:fact results_synthetic_size_geomean = {results_synthetic_size_geomean} -->; encode time geometric mean `{results_synthetic_encode_geomean}` <!-- drift:fact results_synthetic_encode_geomean = {results_synthetic_encode_geomean} -->; decode time geometric mean `{results_synthetic_decode_geomean}` <!-- drift:fact results_synthetic_decode_geomean = {results_synthetic_decode_geomean} -->; max peak working set `{results_synthetic_rf_encode_peak_max:,}` encode <!-- drift:fact results_synthetic_rf_encode_peak_max = {results_synthetic_rf_encode_peak_max} --> / `{results_synthetic_rf_decode_peak_max:,}` decode bytes <!-- drift:fact results_synthetic_rf_decode_peak_max = {results_synthetic_rf_decode_peak_max} -->).\n\n## Research Corpus (`benchmarks/corpus.csv`)\n\nRecorded in `benchmarks/corpus.csv` on `{corpus_date}` <!-- drift:fact corpus_date = {corpus_date} --> (`codec_revision={corpus_codec_revision}` <!-- drift:fact corpus_codec_revision = {corpus_codec_revision} -->):\n\n- **`photo` set (`{corpus_photo_count}` images <!-- drift:fact corpus_photo_count = {corpus_photo_count} -->: `measure` + 24 Kodak + 14 `imagecompression.info` crops):** RasterFold `{corpus_photo_rf_bytes:,}` bytes <!-- drift:fact corpus_photo_rf_bytes = {corpus_photo_rf_bytes} -->; JPEG XL `e7` `{corpus_photo_jxl_e7_bytes:,}` bytes <!-- drift:fact corpus_photo_jxl_e7_bytes = {corpus_photo_jxl_e7_bytes} --> (total ratio `{corpus_photo_jxl_e7_ratio}` <!-- drift:fact corpus_photo_jxl_e7_ratio = {corpus_photo_jxl_e7_ratio} -->, geometric mean `{corpus_photo_jxl_e7_geomean}` <!-- drift:fact corpus_photo_jxl_e7_geomean = {corpus_photo_jxl_e7_geomean} -->); JPEG XL `e9` `{corpus_photo_jxl_e9_bytes:,}` bytes <!-- drift:fact corpus_photo_jxl_e9_bytes = {corpus_photo_jxl_e9_bytes} --> (total ratio `{corpus_photo_jxl_e9_ratio}` <!-- drift:fact corpus_photo_jxl_e9_ratio = {corpus_photo_jxl_e9_ratio} -->, geometric mean `{corpus_photo_jxl_e9_geomean}` <!-- drift:fact corpus_photo_jxl_e9_geomean = {corpus_photo_jxl_e9_geomean} -->); lossless WebP `{corpus_photo_webp_bytes:,}` bytes <!-- drift:fact corpus_photo_webp_bytes = {corpus_photo_webp_bytes} --> (total ratio `{corpus_photo_webp_ratio}` <!-- drift:fact corpus_photo_webp_ratio = {corpus_photo_webp_ratio} -->, geometric mean `{corpus_photo_webp_geomean}` <!-- drift:fact corpus_photo_webp_geomean = {corpus_photo_webp_geomean} -->).\n- **`tp` confirmation set (`{corpus_tp_count}` overlapping test-pack images <!-- drift:fact corpus_tp_count = {corpus_tp_count} -->):** RasterFold `{corpus_tp_rf_bytes:,}` bytes <!-- drift:fact corpus_tp_rf_bytes = {corpus_tp_rf_bytes} -->; JPEG XL `e7` `{corpus_tp_jxl_e7_bytes:,}` bytes <!-- drift:fact corpus_tp_jxl_e7_bytes = {corpus_tp_jxl_e7_bytes} --> (total ratio `{corpus_tp_jxl_e7_ratio}` <!-- drift:fact corpus_tp_jxl_e7_ratio = {corpus_tp_jxl_e7_ratio} -->, geometric mean `{corpus_tp_jxl_e7_geomean}` <!-- drift:fact corpus_tp_jxl_e7_geomean = {corpus_tp_jxl_e7_geomean} -->); JPEG XL `e9` `{corpus_tp_jxl_e9_bytes:,}` bytes <!-- drift:fact corpus_tp_jxl_e9_bytes = {corpus_tp_jxl_e9_bytes} --> (total ratio `{corpus_tp_jxl_e9_ratio}` <!-- drift:fact corpus_tp_jxl_e9_ratio = {corpus_tp_jxl_e9_ratio} -->, geometric mean `{corpus_tp_jxl_e9_geomean}` <!-- drift:fact corpus_tp_jxl_e9_geomean = {corpus_tp_jxl_e9_geomean} -->); lossless WebP `{corpus_tp_webp_bytes:,}` bytes <!-- drift:fact corpus_tp_webp_bytes = {corpus_tp_webp_bytes} --> (total ratio `{corpus_tp_webp_ratio}` <!-- drift:fact corpus_tp_webp_ratio = {corpus_tp_webp_ratio} -->, geometric mean `{corpus_tp_webp_geomean}` <!-- drift:fact corpus_tp_webp_geomean = {corpus_tp_webp_geomean} -->).\n- **`tp-only` subset (`{corpus_tp_only_count}` exclusive `tp` CSV rows <!-- drift:fact corpus_tp_only_count = {corpus_tp_only_count} -->):** RasterFold `{corpus_tp_only_rf_bytes:,}` bytes <!-- drift:fact corpus_tp_only_rf_bytes = {corpus_tp_only_rf_bytes} -->; JPEG XL `e7` `{corpus_tp_only_jxl_e7_bytes:,}` bytes <!-- drift:fact corpus_tp_only_jxl_e7_bytes = {corpus_tp_only_jxl_e7_bytes} --> (total ratio `{corpus_tp_only_jxl_e7_ratio}` <!-- drift:fact corpus_tp_only_jxl_e7_ratio = {corpus_tp_only_jxl_e7_ratio} -->, geometric mean `{corpus_tp_only_jxl_e7_geomean}` <!-- drift:fact corpus_tp_only_jxl_e7_geomean = {corpus_tp_only_jxl_e7_geomean} -->); JPEG XL `e9` `{corpus_tp_only_jxl_e9_bytes:,}` bytes <!-- drift:fact corpus_tp_only_jxl_e9_bytes = {corpus_tp_only_jxl_e9_bytes} --> (total ratio `{corpus_tp_only_jxl_e9_ratio}` <!-- drift:fact corpus_tp_only_jxl_e9_ratio = {corpus_tp_only_jxl_e9_ratio} -->, geometric mean `{corpus_tp_only_jxl_e9_geomean}` <!-- drift:fact corpus_tp_only_jxl_e9_geomean = {corpus_tp_only_jxl_e9_geomean} -->); lossless WebP `{corpus_tp_only_webp_bytes:,}` bytes <!-- drift:fact corpus_tp_only_webp_bytes = {corpus_tp_only_webp_bytes} --> (total ratio `{corpus_tp_only_webp_ratio}` <!-- drift:fact corpus_tp_only_webp_ratio = {corpus_tp_only_webp_ratio} -->, geometric mean `{corpus_tp_only_webp_geomean}` <!-- drift:fact corpus_tp_only_webp_geomean = {corpus_tp_only_webp_geomean} -->).\n- **`synth` set (`{corpus_synth_count}` synthetic stress images <!-- drift:fact corpus_synth_count = {corpus_synth_count} -->):** RasterFold `{corpus_synth_rf_bytes:,}` bytes <!-- drift:fact corpus_synth_rf_bytes = {corpus_synth_rf_bytes} -->; JPEG XL `e7` `{corpus_synth_jxl_e7_bytes:,}` bytes <!-- drift:fact corpus_synth_jxl_e7_bytes = {corpus_synth_jxl_e7_bytes} --> (total ratio `{corpus_synth_jxl_e7_ratio}` <!-- drift:fact corpus_synth_jxl_e7_ratio = {corpus_synth_jxl_e7_ratio} -->, geometric mean `{corpus_synth_jxl_e7_geomean}` <!-- drift:fact corpus_synth_jxl_e7_geomean = {corpus_synth_jxl_e7_geomean} -->); JPEG XL `e9` `{corpus_synth_jxl_e9_bytes:,}` bytes <!-- drift:fact corpus_synth_jxl_e9_bytes = {corpus_synth_jxl_e9_bytes} --> (total ratio `{corpus_synth_jxl_e9_ratio}` <!-- drift:fact corpus_synth_jxl_e9_ratio = {corpus_synth_jxl_e9_ratio} -->, geometric mean `{corpus_synth_jxl_e9_geomean}` <!-- drift:fact corpus_synth_jxl_e9_geomean = {corpus_synth_jxl_e9_geomean} -->); lossless WebP `{corpus_synth_webp_bytes:,}` bytes <!-- drift:fact corpus_synth_webp_bytes = {corpus_synth_webp_bytes} --> (total ratio `{corpus_synth_webp_ratio}` <!-- drift:fact corpus_synth_webp_ratio = {corpus_synth_webp_ratio} -->, geometric mean `{corpus_synth_webp_geomean}` <!-- drift:fact corpus_synth_webp_geomean = {corpus_synth_webp_geomean} -->).\n- **`all` corpus (`{corpus_all_count}` total CSV rows <!-- drift:fact corpus_all_count = {corpus_all_count} -->):** RasterFold `{corpus_all_rf_bytes:,}` bytes <!-- drift:fact corpus_all_rf_bytes = {corpus_all_rf_bytes} -->; JPEG XL `e7` `{corpus_all_jxl_e7_bytes:,}` bytes <!-- drift:fact corpus_all_jxl_e7_bytes = {corpus_all_jxl_e7_bytes} --> (total ratio `{corpus_all_jxl_e7_ratio}` <!-- drift:fact corpus_all_jxl_e7_ratio = {corpus_all_jxl_e7_ratio} -->, geometric mean `{corpus_all_jxl_e7_geomean}` <!-- drift:fact corpus_all_jxl_e7_geomean = {corpus_all_jxl_e7_geomean} -->); JPEG XL `e9` `{corpus_all_jxl_e9_bytes:,}` bytes <!-- drift:fact corpus_all_jxl_e9_bytes = {corpus_all_jxl_e9_bytes} --> (total ratio `{corpus_all_jxl_e9_ratio}` <!-- drift:fact corpus_all_jxl_e9_ratio = {corpus_all_jxl_e9_ratio} -->, geometric mean `{corpus_all_jxl_e9_geomean}` <!-- drift:fact corpus_all_jxl_e9_geomean = {corpus_all_jxl_e9_geomean} -->); lossless WebP `{corpus_all_webp_bytes:,}` bytes <!-- drift:fact corpus_all_webp_bytes = {corpus_all_webp_bytes} --> (total ratio `{corpus_all_webp_ratio}` <!-- drift:fact corpus_all_webp_ratio = {corpus_all_webp_ratio} -->, geometric mean `{corpus_all_webp_geomean}` <!-- drift:fact corpus_all_webp_geomean = {corpus_all_webp_geomean} -->)."
     }
   },
   "assertions": [

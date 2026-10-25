@@ -1029,8 +1029,12 @@ class DriftTests(unittest.TestCase):
         # Independently verify results.csv reference and retained set aggregates.
         results_raw = (REPO / 'benchmarks/results.csv').read_text(encoding='utf-8')
         results_rows = list(csv_mod.DictReader([ln for ln in results_raw.splitlines() if ln.strip() and not ln.startswith('#')]))
-        self.assertEqual('2026-10-25', live_facts['results_date'])
-        self.assertEqual('2026-09-29', live_facts['results_retained_date'])
+        self.assertEqual('measured', live_facts['results_measure_status'])
+        self.assertEqual('2026-10-25', live_facts['results_measure_date'])
+        self.assertEqual('retained', live_facts['results_photos_status'])
+        self.assertEqual('2026-09-29', live_facts['results_photos_date'])
+        self.assertEqual('retained', live_facts['results_synthetic_status'])
+        self.assertEqual('2026-09-29', live_facts['results_synthetic_date'])
         self.assertEqual('2026-10-25', live_facts['corpus_date'])
         self.assertEqual('0.958', live_facts['measurement_reference_ratio_jxl_e7'])
         self.assertEqual('0.978', live_facts['measurement_reference_ratio_jxl_e9'])
@@ -1110,12 +1114,12 @@ class DriftTests(unittest.TestCase):
             c.errors,
         )
 
-        # Also test non-numeric visible figure mismatch (changing date in prose while keeping annotation).
+        # Also test non-numeric visible figure mismatch (changing date or extension in prose while keeping annotation).
         self.write(
             'docs/benchmarks.md',
             orig_bm.replace(
-                'on `2026-10-25` <!-- drift:fact results_date = 2026-10-25 -->',
-                'on `2026-10-24` <!-- drift:fact results_date = 2026-10-25 -->',
+                'on `2026-10-25` <!-- drift:fact results_measure_date = 2026-10-25 -->',
+                'on `2026-10-24` <!-- drift:fact results_measure_date = 2026-10-25 -->',
                 1,
             ),
         )
@@ -1124,11 +1128,81 @@ class DriftTests(unittest.TestCase):
             any(
                 e['kind'] == 'fact'
                 and e['path'] == 'docs/benchmarks.md'
-                and "visible figure before results_date does not match '2026-10-25'" in e['detail']
+                and "visible figure before results_measure_date does not match '2026-10-25'" in e['detail']
                 for e in c.errors
             ),
             c.errors,
         )
+
+        # HTML comments cannot smuggle a matching number after a wrong visible figure, and substring prefixes (.folded vs .fold) fail.
+        self.write(
+            'docs/benchmarks.md',
+            orig_bm.replace(
+                '`1,409,028` bytes <!-- drift:fact measurement_reference_bytes = 1409028 -->',
+                '`999` bytes <!-- previous: 1409028 --> <!-- drift:fact measurement_reference_bytes = 1409028 -->',
+                1,
+            ),
+        )
+        c = self.check()
+        self.assertTrue(
+            any(
+                e['kind'] == 'fact'
+                and e['path'] == 'docs/benchmarks.md'
+                and 'visible figure before measurement_reference_bytes does not match 1409028' in e['detail']
+                for e in c.errors
+            ),
+            c.errors,
+        )
+        self.write(
+            'docs/benchmarks.md',
+            orig_bm + '\nEncode to `.folded` <!-- drift:fact encoded_ext = .fold -->.\n',
+        )
+        c = self.check()
+        self.assertTrue(
+            any(
+                e['kind'] == 'fact'
+                and e['path'] == 'docs/benchmarks.md'
+                and "visible figure before encoded_ext does not match '.fold'" in e['detail']
+                for e in c.errors
+            ),
+            c.errors,
+        )
+
+        # Fractional microsecond medians (from even repeat counts in tests/benchmark.py) derive and render cleanly.
+        self.write('docs/benchmarks.md', orig_bm)
+        self.write('benchmarks/results.csv', orig_results.replace(',401129,384760,', ',401129.5,384760.5,', 1))
+        c = self.check()
+        c.fix()
+        self.assertEqual([], self.check().errors)
+        self.assertIn('`401,129.5` us <!-- drift:fact measurement_reference_rf_encode_us = 401129.5 -->', (self.root / 'docs/benchmarks.md').read_text(encoding='utf-8'))
+        self.write('benchmarks/results.csv', orig_results)
+        self.write('docs/benchmarks.md', orig_bm)
+        self.check().fix()
+
+        # Partial benchmark rerun (e.g. photos-only on 2026-10-26 via tests/benchmark.py resolve_set_provenance) updates per-set status/date/revision without falsifying retained measure provenance.
+        bench_spec = importlib.util.spec_from_file_location('bench_mod', REPO / 'tests/benchmark.py')
+        bench_mod = importlib.util.module_from_spec(bench_spec)
+        bench_spec.loader.exec_module(bench_mod)
+        prev_meta = drift._csv_meta(orig_results)
+        new_rev = '9' * 40
+        prov = bench_mod.resolve_set_provenance(prev_meta, ['photos'], ['measure', 'synthetic'], new_rev, '2026-10-26')
+        new_header = (
+            f'# codec_revision={new_rev} kat_fold_sha256={prev_meta["kat_fold_sha256"]} date=2026-10-26 '
+            f'measured_sets=photos retained_sets=measure,synthetic '
+            f'retained_revision={prov["retained_revision"]} retained_date={prov["retained_date"]} '
+            f'set_revisions={prov["set_revisions"]} set_dates={prov["set_dates"]}'
+        )
+        rerun_results = '\n'.join([new_header, *orig_results.splitlines()[1:]]) + '\n'
+        self.write('benchmarks/results.csv', rerun_results)
+        c = self.check()
+        c.fix()
+        self.assertEqual([], self.check().errors)
+        rerun_bm = (self.root / 'docs/benchmarks.md').read_text(encoding='utf-8')
+        self.assertIn('(`measure` set `retained` <!-- drift:fact results_measure_status = retained --> on `2026-10-25` <!-- drift:fact results_measure_date = 2026-10-25 -->', rerun_bm)
+        self.assertIn('**`photos` benchmark set (`measured` <!-- drift:fact results_photos_status = measured --> on `2026-10-26` <!-- drift:fact results_photos_date = 2026-10-26 -->', rerun_bm)
+        self.write('benchmarks/results.csv', orig_results)
+        self.write('docs/benchmarks.md', orig_bm)
+        self.check().fix()
 
         # Removing the visible figure before an annotation (standalone drift:fact) also fails.
         self.write('docs/benchmarks.md', orig_bm + '\n<!-- drift:fact format_version = 2 -->\n')
