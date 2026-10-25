@@ -313,12 +313,21 @@ def _scan_link_tail(text, close_b):
     return None
 
 
+def _is_escaped(text, idx):
+    bs = 0
+    p = idx - 1
+    while p >= 0 and text[p] == '\\':
+        bs += 1
+        p -= 1
+    return (bs % 2) == 1
+
+
 def _strip_markdown_images(text):
     out = []
     i = 0
     n = len(text)
     while i < n:
-        if text[i:i + 2] == '![' and (i == 0 or text[i - 1] != '\\'):
+        if text[i:i + 2] == '![' and not _is_escaped(text, i):
             k = i + 2
             depth = 1
             while k < n and text[k] != '\n' and depth > 0:
@@ -348,7 +357,7 @@ def _strip_markdown_links(text):
     i = 0
     n = len(text)
     while i < n:
-        if text[i] == ']':
+        if text[i] == ']' and not _is_escaped(text, i):
             tail_end = _scan_link_tail(text, i)
             if tail_end is not None:
                 out.append(']')
