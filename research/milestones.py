@@ -13,7 +13,9 @@ table here, run --write, and commit the table and the generated files together.
 """
 from __future__ import annotations
 
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -296,16 +298,46 @@ def targets() -> dict[Path, str]:
     return files
 
 
+def atomic_write_text(path: Path, want: str, before: bytes | None) -> None:
+    if not path.resolve().is_relative_to(REPO.resolve()):
+        raise ValueError(f"path escapes repository: {path}")
+    cur = REPO
+    for part in path.relative_to(REPO).parts:
+        cur /= part
+        if cur.is_symlink():
+            raise ValueError(f"refusing to write through symlink: {path}")
+    current = path.read_bytes() if path.exists() else None
+    if current != before:
+        raise ValueError(f"{path.relative_to(REPO)} changed during write; refusing to overwrite")
+    data = want.encode("utf-8")
+    orig_mode = path.stat().st_mode if path.exists() else 0o644
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=".milestones-", dir=path.parent)
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(tmp_path, orig_mode)
+        os.replace(tmp_path, path)
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()
+    if path.read_bytes() != data:
+        raise ValueError(f"{path.relative_to(REPO)} read-back verification failed after write")
+
+
 def main() -> int:
     mode = sys.argv[1] if len(sys.argv) > 1 else "--check"
     stale = []
     for path, want in targets().items():
-        have = path.read_text(encoding="utf-8") if path.exists() else None
+        before = path.read_bytes() if path.exists() else None
+        have = before.decode("utf-8") if before is not None else None
         if have != want:
             stale.append(path)
             if mode == "--write":
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_bytes(want.encode("utf-8"))
+                atomic_write_text(path, want, before)
     if mode == "--write":
         print(f"milestones: wrote {len(stale)} file(s)")
         return 0

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import codecs
 import csv
 from decimal import Decimal, InvalidOperation
 import fnmatch
@@ -21,6 +22,8 @@ import math
 import os
 from pathlib import Path
 import re
+import shutil
+import string
 import subprocess
 import sys
 import tempfile
@@ -1104,6 +1107,8 @@ class Checker:
         self.facts = {}
         self.manifest = {}
         self.files = set()
+        self.generator_before = {}
+        self._before_generator_publish_hook = None
 
     def git(self, *args):
         prefix = ['git', '--no-replace-objects']
@@ -1140,11 +1145,116 @@ class Checker:
             self.error('generated', rel, 'deterministic output differs; run --fix')
             self.repairs[rel] = (before, data)
 
+    def validate_manifest(self):
+        coverage = self.manifest.get('coverage')
+        if not isinstance(coverage, list):
+            raise ValueError('invalid coverage rules in drift manifest')
+        for idx, rule in enumerate(coverage):
+            if (
+                not isinstance(rule, dict)
+                or not isinstance(rule.get('pattern'), str)
+                or not rule['pattern'].strip()
+                or rule.get('role') not in ROLES
+                or not isinstance(rule.get('reason'), str)
+                or not rule['reason'].strip()
+            ):
+                raise ValueError(f'invalid coverage rule at index {idx}')
+        facts = self.manifest.get('facts')
+        if not isinstance(facts, dict):
+            raise ValueError('invalid facts table in drift manifest')
+        valid_kinds = {'c-define', 'regex', 'json', 'file-sha256', 'line-count', 'csv', 'csv-meta', 'csv-aggregate'}
+        for key, rule in facts.items():
+            if not isinstance(key, str) or not key or not isinstance(rule, dict):
+                raise ValueError(f'invalid fact definition: {key!r}')
+            if rule.get('kind') not in valid_kinds:
+                raise ValueError(f'{key}: unknown provider kind {rule.get("kind")!r}')
+            self.path(rule.get('source', ''))
+        blocks = self.manifest.get('blocks')
+        if not isinstance(blocks, dict):
+            raise ValueError('invalid blocks table in drift manifest')
+        formatter = string.Formatter()
+        for name, block in blocks.items():
+            if not isinstance(name, str) or not name or not isinstance(block, dict):
+                raise ValueError(f'invalid block definition: {name!r}')
+            self.path(block.get('path', ''))
+            template = block.get('template')
+            if not isinstance(template, str):
+                raise ValueError(f'block {name}: template must be a string')
+            for _, field_name, _, _ in formatter.parse(template):
+                if field_name is not None and field_name not in facts:
+                    raise ValueError(f'block {name}: unknown fact placeholder {field_name!r}')
+        assertions = self.manifest.get('assertions', [])
+        if not isinstance(assertions, list):
+            raise ValueError('invalid assertions list in drift manifest')
+        for idx, rule in enumerate(assertions):
+            if (
+                not isinstance(rule, dict)
+                or not isinstance(rule.get('pattern'), str)
+                or not rule['pattern'].strip()
+                or not isinstance(rule.get('regex'), str)
+                or not rule['regex']
+                or rule.get('fact') not in facts
+            ):
+                raise ValueError(f'invalid assertion rule at index {idx}')
+            re.compile(rule['regex'])
+        reviews = self.manifest.get('reviews', {})
+        if not isinstance(reviews, dict):
+            raise ValueError('invalid reviews table in drift manifest')
+        for doc, review in reviews.items():
+            self.path(doc)
+            if not isinstance(review, dict) or not isinstance(review.get('evidence'), str):
+                raise ValueError(f'invalid review receipt for {doc}')
+            sources = review.get('sources')
+            if not isinstance(sources, dict) or not sources:
+                raise ValueError(f'invalid review sources for {doc}')
+            for src, sha in sources.items():
+                self.path(src)
+                if not isinstance(sha, str) or not re.fullmatch(r'[0-9a-f]{64}', sha):
+                    raise ValueError(f'invalid review source digest for {doc}: {src}')
+        generators = self.manifest.get('generators')
+        if not isinstance(generators, list):
+            raise ValueError('invalid generators list in drift manifest')
+        for idx, gen in enumerate(generators):
+            if not isinstance(gen, dict):
+                raise ValueError(f'invalid generator entry at index {idx}')
+            self.path(gen.get('script', ''))
+            if (
+                not isinstance(gen.get('check'), list)
+                or not all(isinstance(a, str) for a in gen['check'])
+                or not isinstance(gen.get('fix'), list)
+                or not all(isinstance(a, str) for a in gen['fix'])
+            ):
+                raise ValueError(f'invalid generator command arguments for {gen.get("script")!r}')
+            outputs = gen.get('outputs', [])
+            if not isinstance(outputs, list):
+                raise ValueError(f'invalid generator outputs for {gen.get("script")!r}')
+            for out in outputs:
+                self.path(out)
+            planned = gen.get('planned_outputs', {})
+            if not isinstance(planned, dict):
+                raise ValueError(f'invalid generator planned_outputs for {gen.get("script")!r}')
+            for out, owner in planned.items():
+                self.path(out)
+                if not isinstance(owner, str) or not owner.strip():
+                    raise ValueError(f'invalid planned_output owner for {out}')
+        encodings = self.manifest.get('encodings', {})
+        if not isinstance(encodings, dict):
+            raise ValueError('invalid encodings table in drift manifest')
+        for rel, enc in encodings.items():
+            self.path(rel)
+            if not isinstance(enc, str) or not enc.strip():
+                raise ValueError(f'invalid encoding for {rel}')
+            try:
+                codecs.lookup(enc)
+            except LookupError as exc:
+                raise ValueError(f'unknown encoding {enc!r} for {rel}') from exc
+
     def load(self):
         self.manifest_bytes = self.path(MANIFEST).read_bytes()
         self.manifest = json.loads(self.manifest_bytes.decode('utf-8'))
         if self.manifest.get('schema') != 1:
             raise ValueError('unsupported drift manifest schema')
+        self.validate_manifest()
         self.files = {p for p in self.git('ls-files', '--cached', '--others', '--exclude-standard', '-z').decode().split('\0') if p}
         for rel in sorted(self.files):
             p = Path(rel)
@@ -1193,7 +1303,12 @@ class Checker:
                 self.error('missing', rel, 'indexed document is missing; restore it or stage its deletion')
                 continue
             original = path.read_bytes()
-            text = original.decode(self.manifest.get('encodings', {}).get(rel, 'utf-8'))
+            encoding = self.manifest.get('encodings', {}).get(rel, 'utf-8')
+            try:
+                text = original.decode(encoding)
+            except UnicodeDecodeError as exc:
+                self.error('encoding', rel, f'cannot decode as {encoding}: {exc}')
+                continue
             suffix = Path(rel).suffix.lower()
             try:
                 if suffix == '.json':
@@ -1504,11 +1619,16 @@ class Checker:
     def _watched_paths(self):
         paths = {
             '.',
+            *self.files,
             *self.manifest.get('files', {}).keys(),
             *(gen['script'] for gen in self.manifest['generators']),
             *(out for g in self.manifest['generators'] for out in g.get('outputs', [])),
             *(out for g in self.manifest['generators'] for out in g.get('planned_outputs', {})),
         }
+        if self.root.is_dir():
+            for child in self.root.iterdir():
+                if child.name not in ('__pycache__', '.git', 'build', 'bin', '.venv'):
+                    paths.add(child.name)
         for top in ('docs', 'todo', 'research', 'spec', 'scripts'):
             base = self.root / top
             if base.exists() or base.is_symlink():
@@ -1527,6 +1647,39 @@ class Checker:
     def _snapshot_paths(self, paths):
         return {rel: self._entry_state(rel) for rel in paths}
 
+    def _copy_checkout_to_stage(self, stage_root):
+        shutil.copytree(
+            self.root,
+            stage_root,
+            dirs_exist_ok=True,
+            symlinks=True,
+            ignore=shutil.ignore_patterns('.git', 'build', 'bin', '.venv', '__pycache__'),
+        )
+
+    @staticmethod
+    def _stage_change_allowed(rel, before_state, after_state, declared_outputs):
+        if rel in declared_outputs:
+            return True
+        allowed_dir_children = {}
+        for out in declared_outputs:
+            parts = Path(out).parts
+            if parts:
+                allowed_dir_children.setdefault('.', set()).add(parts[0])
+                for idx in range(1, len(parts)):
+                    parent_rel = Path(*parts[:idx]).as_posix()
+                    allowed_dir_children.setdefault(parent_rel, set()).add(parts[idx])
+        if rel not in allowed_dir_children or after_state[0] != 'dir':
+            return False
+        if before_state[0] == 'dir':
+            if before_state[1:4] != after_state[1:4]:
+                return False
+            before_children = set(before_state[5])
+            after_children = set(after_state[5])
+            return before_children <= after_children and (after_children - before_children) <= allowed_dir_children[rel]
+        if before_state[0] == 'absent':
+            return set(after_state[5]) <= allowed_dir_children[rel]
+        return False
+
     def generators(self, fix=False):
         env = dict(os.environ, PYTHONDONTWRITEBYTECODE='1')
         if self.git_dir:
@@ -1541,28 +1694,117 @@ class Checker:
                 if self._entry_state(out)[0] != 'absent':
                     self.error('generator', gen['script'], f'planned output {out} ({owner}) exists before being promoted to outputs')
             for out in gen.get('outputs', []):
-                if not fix and self._entry_state(out)[0] != 'file':
-                    self.error('generator', gen['script'], f'missing generated output: {out}')
-            before_snap = self._snapshot_paths(self._watched_paths()) if not fix else None
-            args = gen['fix'] if fix else gen['check']
-            result = subprocess.run([sys.executable, gen['script'], *args], cwd=self.root, env=env, capture_output=True, text=True, timeout=120)
-            if result.returncode:
-                self.error('generator', gen['script'], (result.stdout + result.stderr).strip()[-1500:])
-            for out, owner in gen.get('planned_outputs', {}).items():
-                if self._entry_state(out)[0] != 'absent' and (before_snap is None or before_snap.get(out) == ('absent', None)):
-                    self.error('generator', gen['script'], f'planned output {out} ({owner}) exists before being promoted to outputs')
+                out_path = self.path(out)
+                if not fix:
+                    self.generator_before[out] = out_path.read_bytes() if out_path.is_file() else None
+                    if self._entry_state(out)[0] != 'file':
+                        self.error('generator', gen['script'], f'missing generated output: {out}')
+                elif out not in self.generator_before:
+                    self.generator_before[out] = out_path.read_bytes() if out_path.is_file() else None
             if not fix:
+                before_snap = self._snapshot_paths(self._watched_paths())
+                result = subprocess.run([sys.executable, gen['script'], *gen['check']], cwd=self.root, env=env, capture_output=True, text=True, timeout=120)
+                if result.returncode:
+                    self.error('generator', gen['script'], (result.stdout + result.stderr).strip()[-1500:])
+                for out, owner in gen.get('planned_outputs', {}).items():
+                    if self._entry_state(out)[0] != 'absent' and before_snap.get(out) == ('absent', None):
+                        self.error('generator', gen['script'], f'planned output {out} ({owner}) exists before being promoted to outputs')
                 after_snap = self._snapshot_paths(sorted(set(before_snap) | set(self._watched_paths())))
                 for rel in sorted(after_snap):
                     if after_snap[rel] != before_snap.get(rel, ('absent', None)):
                         self.error('generator', gen['script'], f'--check modified {rel}; check mode must be read-only')
             else:
-                for out in gen.get('outputs', []):
-                    if self._entry_state(out)[0] != 'file':
-                        self.error('generator', gen['script'], f'missing generated output: {out}')
+                declared_outputs = set(gen.get('outputs', []))
+                with tempfile.TemporaryDirectory(prefix='drift-gen-') as tmp:
+                    stage_root = Path(tmp)
+                    self._copy_checkout_to_stage(stage_root)
+                    stage_checker = Checker(stage_root, self.git_dir)
+                    stage_checker.manifest = self.manifest
+                    stage_before = stage_checker._snapshot_paths(stage_checker._watched_paths())
+                    stage_env = dict(env)
+                    if self.git_dir:
+                        stage_env.update(GIT_DIR=str(self.git_dir), GIT_WORK_TREE=str(stage_root))
+                    result = subprocess.run(
+                        [sys.executable, gen['script'], *gen['fix']],
+                        cwd=stage_root,
+                        env=stage_env,
+                        capture_output=True,
+                        text=True,
+                        timeout=120,
+                    )
+                    if result.returncode:
+                        self.error('generator', gen['script'], (result.stdout + result.stderr).strip()[-1500:])
+                        continue
+                    for out, owner in gen.get('planned_outputs', {}).items():
+                        if stage_checker._entry_state(out)[0] != 'absent':
+                            raise ValueError(f"{gen['script']}: planned output {out} ({owner}) written during --fix before being promoted to outputs")
+                    stage_after = stage_checker._snapshot_paths(sorted(set(stage_before) | set(stage_checker._watched_paths())))
+                    for rel in sorted(stage_after):
+                        before_state = stage_before.get(rel, ('absent', None))
+                        after_state = stage_after[rel]
+                        if after_state != before_state and not self._stage_change_allowed(rel, before_state, after_state, declared_outputs):
+                            raise ValueError(f"{gen['script']}: --fix modified undeclared path {rel}")
+                    for out in gen.get('outputs', []):
+                        if stage_checker._entry_state(out)[0] != 'file':
+                            raise ValueError(f"{gen['script']}: missing generated output: {out}")
+                    if self._before_generator_publish_hook is not None:
+                        self._before_generator_publish_hook(gen['script'])
+                    gen_repairs = {}
+                    for out in gen.get('outputs', []):
+                        staged_bytes = stage_checker.path(out).read_bytes()
+                        expected_before = self.generator_before.get(out)
+                        if staged_bytes != expected_before:
+                            gen_repairs[out] = (expected_before, staged_bytes)
+                if gen_repairs:
+                    saved_repairs = dict(self.repairs)
+                    try:
+                        self.repairs = gen_repairs
+                        self.fix()
+                    finally:
+                        self.repairs = saved_repairs
+                    for out, (_, staged_bytes) in gen_repairs.items():
+                        self.generator_before[out] = staged_bytes
 
-    def fix(self):
-        for rel, (before, _) in self.repairs.items():
+    def _allowed_repair_paths(self, extra=()):
+        generated_paths = {
+            'docs/facts.json',
+            *(out for gen in self.manifest.get('generators', []) for out in gen.get('outputs', [])),
+            *extra,
+        }
+        block_paths = {block['path'] for block in self.manifest.get('blocks', {}).values()}
+        return generated_paths, block_paths - generated_paths
+
+    def _strip_registered_blocks(self, rel, raw_bytes):
+        encoding = self.manifest.get('encodings', {}).get(rel, 'utf-8')
+        text = raw_bytes.decode(encoding)
+        suffix = Path(rel).suffix.lower()
+        scan = code_spans(prose(text)) if suffix in ('.md', '.markdown') else text
+        blocks = self.manifest.get('blocks', {})
+        spans = []
+        ids = []
+        for match in BLOCK.finditer(scan):
+            name = match['id']
+            if name in blocks and blocks[name]['path'] == rel:
+                ids.append(name)
+                spans.append((match.start('body'), match.end('body')))
+        stripped = text
+        for start, end in reversed(spans):
+            stripped = stripped[:start] + stripped[end:]
+        return ids, stripped
+
+    def fix(self, allowed_extra=()):
+        generated_paths, block_only_paths = self._allowed_repair_paths(allowed_extra)
+        allowed_all = generated_paths | block_only_paths
+        for rel, (before, after) in self.repairs.items():
+            if rel not in allowed_all:
+                raise ValueError(f'refusing to repair unregistered path: {rel}')
+            if rel in block_only_paths:
+                if before is None or after is None:
+                    raise ValueError(f'{rel}: block repair requires existing document bytes')
+                before_ids, before_outside = self._strip_registered_blocks(rel, before)
+                after_ids, after_outside = self._strip_registered_blocks(rel, after)
+                if not before_ids or before_ids != after_ids or before_outside != after_outside:
+                    raise ValueError(f'{rel}: refusing to modify content outside registered generated blocks')
             path = self.path(rel)
             if (path.read_bytes() if path.exists() else None) != before:
                 raise ValueError(f'{rel} changed during repair; refusing to overwrite')
@@ -1571,6 +1813,9 @@ class Checker:
             current = path.read_bytes() if path.exists() else None
             if current != before:
                 raise ValueError(f'{rel} changed during repair; refusing to overwrite')
+            if current == after:
+                continue
+            mode = path.stat().st_mode if path.exists() else 0o644
             path.parent.mkdir(parents=True, exist_ok=True)
             fd, temp = tempfile.mkstemp(prefix='.drift-', dir=path.parent)
             try:
@@ -1578,10 +1823,12 @@ class Checker:
                     out.write(after)
                     out.flush()
                     os.fsync(out.fileno())
-                os.chmod(temp, path.stat().st_mode if path.exists() else 0o644)
+                os.chmod(temp, mode)
                 os.replace(temp, path)
             finally:
                 if os.path.exists(temp): os.unlink(temp)
+            if not path.is_file() or path.read_bytes() != after:
+                raise ValueError(f'{rel}: read-back verification failed after repair')
 
 
 def main(argv=None):
@@ -1624,13 +1871,14 @@ def main(argv=None):
             review['sources'] = {p: digest(check.path(p).read_bytes()) for p in review['sources']}
             review['evidence'] = args.evidence.strip()
             check.generated(MANIFEST, json.dumps(check.manifest, indent=2) + '\n', before=check.manifest_bytes)
-            check.fix()
+            check.fix(allowed_extra=(MANIFEST,))
             check.errors.clear()
             check.repairs.clear()
         check.derive()
         check.documents()
         if args.fix:
             check.fix()
+            check.repairs.clear()
             check.generators(fix=True)
             if any(e['kind'] == 'generator' for e in check.errors):
                 raise ValueError('generator repair failed; inspect output and rerun check')
@@ -1651,7 +1899,7 @@ def main(argv=None):
             check.site(args.site_dir, args.site_prefix, require_receipt=False)
             if not check.errors:
                 check.generated(args.site_dir + '/drift-build.json', json.dumps(check.site_receipt(args.site_dir), indent=2) + '\n')
-                check.fix()
+                check.fix(allowed_extra=(args.site_dir + '/drift-build.json',))
                 check.errors = [e for e in check.errors if e['path'] != args.site_dir + '/drift-build.json']
                 check.repairs.clear()
         if args.site_dir:

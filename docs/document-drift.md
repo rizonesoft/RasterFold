@@ -6,7 +6,7 @@ Use `--root` only with a checkout whose Git configuration you trust. For an ordi
 
 ## What is checked
 
-`docs/drift.json` defines the checked facts, document roles, generated blocks, source review receipts and generators. `docs/facts.json` is derived from exact source matches and uniquely selected data rows. Facts describe the checked source, not the last binary built on disk.
+`docs/drift.json` defines the checked facts, document roles, generated blocks, source review receipts and generators, and is validated on load against unknown roles, missing reasons, unknown fact providers or placeholders, invalid encodings and escaping paths. `docs/facts.json` is derived from exact source matches and uniquely selected data rows. Facts describe the checked source, not the last binary built on disk.
 
 Every tracked or newly added supported information file is inventoried. Supported extensions are Markdown, RST, AsciiDoc, text, HTML, JSON/JSONL, YAML, TOML, INI/CFG, CSV, SVG and XML, plus LICENSE, NOTICE, COPYING, `.gitignore` and `.gitattributes`. Ignored outputs and downloaded third-party trees are excluded. Explicit encoding rules preserve original license bytes.
 
@@ -29,7 +29,7 @@ python3 scripts/drift-check.py --fix
 python3 scripts/drift-check.py
 ```
 
-Repair writes only registered fact output, named generated blocks and the outputs of registered repository generators. It compares bytes before replacing a file, uses atomic replacement, preserves file modes and refuses symlink or parent traversal. Run it with the repository's single writer rule; it is not a multi-file transaction. Inspect the resulting Git diff and stage the intended files. A second repair on clean inputs makes no change.
+Repair writes only registered fact output, named generated blocks and the outputs of registered repository generators. Generator repairs run in an isolated staging copy of the checkout, refuse undeclared or planned-output writes, and publish changed outputs through the same safe writer as direct repairs. Every repair compares bytes before replacing a file, uses atomic replacement with `os.fsync`, preserves file modes, verifies the written bytes on read-back and refuses symlink or parent traversal. Run it with the repository's single writer rule; it is not a multi-file transaction. Inspect the resulting Git diff and stage the intended files. A second repair on clean inputs makes no change.
 
 Authored prose, source review receipts, historical measurements and Git history are never automatically rewritten. Unresolved manual errors still produce a failing exit after safe repairs. Correct the source or the supported assertion deliberately. After actually reading a document against its changed sources, renew only that receipt with concrete evidence:
 

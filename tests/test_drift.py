@@ -1863,6 +1863,245 @@ class DriftTests(unittest.TestCase):
             self.assertEqual(0, proc_ok.returncode, (proc_ok.stdout or '') + (proc_ok.stderr or ''))
             self.assertNotEqual(head_before, self.git('rev-parse', 'HEAD'))
 
+    def test_deterministic_repair_and_complete_file_coverage(self):
+        import os
+        from unittest import mock
+
+        # 1. Live repository coverage inventory: every supported file has an explicit role, all 7 roles are represented,
+        # docs/facts.json is generated, and .gitattributes/.gitignore are configuration.
+        live = drift.Checker(REPO)
+        live.load()
+        self.assertEqual([], [e for e in live.errors if e['kind'] == 'coverage'])
+        role_by_path = {entry['path']: entry['role'] for entry in live.inventory}
+        self.assertEqual('generated', role_by_path.get('docs/facts.json'))
+        self.assertEqual('configuration', role_by_path.get('.gitattributes'))
+        self.assertEqual('configuration', role_by_path.get('.gitignore'))
+        self.assertEqual(drift.ROLES, {entry['role'] for entry in live.inventory})
+
+        # Set up a generator in the fixture manifest so both direct and generator repairs are exercised.
+        orig_gen = (
+            'import pathlib, sys\n'
+            'p = pathlib.Path("todo/implementation-plan.md")\n'
+            'want = "# Plan\\n"\n'
+            'if "--check" in sys.argv:\n'
+            '    sys.exit(0 if p.is_file() and p.read_text(encoding="utf-8") == want else 1)\n'
+            'if "--sync" in sys.argv:\n'
+            '    p.parent.mkdir(parents=True, exist_ok=True)\n'
+            '    p.write_text(want, encoding="utf-8")\n'
+            '    sys.exit(0)\n'
+        )
+        self.write('scripts/todo-graph.py', orig_gen)
+        self.write('todo/implementation-plan.md', '# Plan\n')
+        self.manifest['encodings'] = {}
+        self.manifest['generators'] = [
+            {
+                'script': 'scripts/todo-graph.py',
+                'check': ['plan', '--check'],
+                'fix': ['plan', '--sync'],
+                'outputs': ['todo/implementation-plan.md'],
+                'planned_outputs': {'docs/api.md': 'D08 T01 §4'},
+            }
+        ]
+        self.save()
+        self.git('add', '.')
+        self.git('commit', '-qm', 'Add generator fixture for deterministic repair tests')
+
+        # 2. Manifest contract validation catches invalid rules even if they do not match a file in the working tree.
+        base_manifest = json.loads((self.root / 'docs/drift.json').read_text(encoding='utf-8'))
+
+        def assert_manifest_rejected(mutator, msg_fragment):
+            m = json.loads(json.dumps(base_manifest))
+            mutator(m)
+            self.write('docs/drift.json', json.dumps(m, indent=2) + '\n')
+            c = drift.Checker(self.root)
+            with self.assertRaises(ValueError) as ctx:
+                c.load()
+            self.assertIn(msg_fragment, str(ctx.exception))
+
+        try:
+            assert_manifest_rejected(
+                lambda m: m['coverage'].append({'pattern': 'never-matches-*.md', 'role': 'not-a-role', 'reason': 'bad'}),
+                'invalid coverage rule',
+            )
+            assert_manifest_rejected(
+                lambda m: m['coverage'].append({'pattern': 'never-matches-*.md', 'role': 'current', 'reason': '   '}),
+                'invalid coverage rule',
+            )
+            assert_manifest_rejected(
+                lambda m: m['blocks']['version'].update({'template': 'Version {unknown_fact}\n'}),
+                "unknown fact placeholder 'unknown_fact'",
+            )
+            assert_manifest_rejected(
+                lambda m: m['blocks']['version'].update({'path': '../escape.md'}),
+                'path escapes repository',
+            )
+            assert_manifest_rejected(
+                lambda m: m['assertions'].append({'pattern': 'README.md', 'regex': r'v(\d+)', 'fact': 'no_such_fact'}),
+                'invalid assertion rule',
+            )
+            assert_manifest_rejected(
+                lambda m: m['encodings'].update({'README.md': 'not-a-real-codec-name'}),
+                'unknown encoding',
+            )
+            assert_manifest_rejected(
+                lambda m: m['generators'][0]['outputs'].append('../escape.md'),
+                'path escapes repository',
+            )
+        finally:
+            self.write('docs/drift.json', json.dumps(base_manifest, indent=2) + '\n')
+
+        # Invalid bytes under a declared encoding report an encoding error cleanly.
+        orig_readme_text = (self.root / 'README.md').read_text(encoding='utf-8')
+        (self.root / 'README.md').write_bytes(b'\xff\xfeinvalid utf-8\n')
+        c_enc = self.check()
+        self.assertIn('encoding', self.kinds(c_enc))
+        self.write('README.md', orig_readme_text)
+
+        # 3. Registered repair target & block-boundary enforcement in Checker.fix().
+        c_unreg = self.check()
+        self.write('docs/authored.md', '# Authored\n')
+        self.git('add', 'docs/authored.md')
+        c_unreg.repairs['docs/authored.md'] = (b'# Authored\n', b'# Tampered\n')
+        with self.assertRaises(ValueError) as ctx:
+            c_unreg.fix()
+        self.assertIn('refusing to repair unregistered path: docs/authored.md', str(ctx.exception))
+        self.assertEqual('# Authored\n', (self.root / 'docs/authored.md').read_text(encoding='utf-8'))
+
+        readme_before = (self.root / 'README.md').read_bytes()
+        c_outside = self.check()
+        c_outside.repairs['README.md'] = (
+            readme_before,
+            readme_before.replace(b'# Guide\n', b'# Altered Heading\n'),
+        )
+        with self.assertRaises(ValueError) as ctx:
+            c_outside.fix()
+        self.assertIn('README.md: refusing to modify content outside registered generated blocks', str(ctx.exception))
+        self.assertEqual(readme_before, (self.root / 'README.md').read_bytes())
+
+        # 4. Staged generator --fix safety: undeclared writes, planned_outputs writes, and concurrent edits.
+        plan_before = (self.root / 'todo/implementation-plan.md').read_bytes()
+
+        # 4a. Generator --fix modifying an undeclared file (README.md) is refused in staging and leaves checkout untouched.
+        self.write(
+            'scripts/todo-graph.py',
+            'import pathlib, sys\n'
+            'if "--sync" in sys.argv:\n'
+            '    pathlib.Path("README.md").write_text("tampered\\n", encoding="utf-8")\n'
+            '    pathlib.Path("todo/implementation-plan.md").write_text("# Plan\\n", encoding="utf-8")\n'
+            'sys.exit(0)\n',
+        )
+        c_undecl = drift.Checker(self.root)
+        c_undecl.load()
+        with self.assertRaises(ValueError) as ctx:
+            c_undecl.generators(fix=True)
+        self.assertIn('modified undeclared path README.md', str(ctx.exception))
+        self.assertEqual(readme_before, (self.root / 'README.md').read_bytes())
+
+        # 4b. Generator --fix creating a planned_outputs path (docs/api.md) is refused in staging.
+        self.write(
+            'scripts/todo-graph.py',
+            'import pathlib, sys\n'
+            'if "--sync" in sys.argv:\n'
+            '    pathlib.Path("docs/api.md").write_text("planned\\n", encoding="utf-8")\n'
+            'sys.exit(0)\n',
+        )
+        c_planned = drift.Checker(self.root)
+        c_planned.load()
+        with self.assertRaises(ValueError) as ctx:
+            c_planned.generators(fix=True)
+        self.assertIn('planned output docs/api.md', str(ctx.exception))
+        self.assertFalse((self.root / 'docs/api.md').exists())
+
+        # 4c. Concurrent edit to a generator output while staging is refused by compare-before-write publication.
+        self.write('scripts/todo-graph.py', orig_gen)
+        self.write('todo/implementation-plan.md', 'stale plan\n')
+        c_race = drift.Checker(self.root)
+        c_race.load()
+
+        def concurrent_plan_edit(script):
+            if script == 'scripts/todo-graph.py':
+                (self.root / 'todo/implementation-plan.md').write_text('concurrent user edit\n', encoding='utf-8')
+
+        c_race._before_generator_publish_hook = concurrent_plan_edit
+        with self.assertRaises(ValueError) as ctx:
+            c_race.generators(fix=True)
+        self.assertIn('todo/implementation-plan.md changed during repair; refusing to overwrite', str(ctx.exception))
+        self.assertEqual('concurrent user edit\n', (self.root / 'todo/implementation-plan.md').read_text(encoding='utf-8'))
+        (self.root / 'todo/implementation-plan.md').write_bytes(plan_before)
+
+        # 4d. Direct test of research/milestones.py atomic_write_text safety (compare-before-write, symlink refusal, failure cleanup).
+        ms_spec = importlib.util.spec_from_file_location('milestones_mod', REPO / 'research/milestones.py')
+        ms_mod = importlib.util.module_from_spec(ms_spec)
+        ms_spec.loader.exec_module(ms_mod)
+        ms_mod.REPO = self.root
+        ms_target = self.root / 'todo/05-milestones/TODO-01-milestone-gates.md'
+        ms_target.parent.mkdir(parents=True, exist_ok=True)
+        ms_target.write_bytes(b'original milestone bytes\n')
+        os.chmod(ms_target, 0o640)
+        with self.assertRaises(ValueError) as ctx:
+            ms_mod.atomic_write_text(ms_target, 'new bytes\n', b'wrong before bytes\n')
+        self.assertIn('changed during write; refusing to overwrite', str(ctx.exception))
+        self.assertEqual(b'original milestone bytes\n', ms_target.read_bytes())
+        with mock.patch('os.replace', side_effect=OSError('simulated milestone replace failure')):
+            with self.assertRaises(OSError):
+                ms_mod.atomic_write_text(ms_target, 'new bytes\n', b'original milestone bytes\n')
+        self.assertEqual(b'original milestone bytes\n', ms_target.read_bytes())
+        self.assertEqual(0o640, ms_target.stat().st_mode & 0o777)
+        self.assertEqual([], list(ms_target.parent.glob('.milestones-*')))
+        ms_mod.atomic_write_text(ms_target, 'updated milestone bytes\n', b'original milestone bytes\n')
+        self.assertEqual(b'updated milestone bytes\n', ms_target.read_bytes())
+        self.assertEqual(0o640, ms_target.stat().st_mode & 0o777)
+        ms_target.unlink()
+
+        # 5. Injected write/replacement failure preservation, temp cleanup, permission preservation, and idempotent recovery.
+        self.write('README.md', '# Guide\n\nAuthored words stay here.\n\n<!-- drift:begin version -->\nstale block\n<!-- drift:end version -->\n')
+        self.write('docs/facts.json', '{\n  "version": 999\n}\n')
+        self.write('todo/implementation-plan.md', 'stale plan\n')
+        for rel in ('README.md', 'docs/facts.json', 'todo/implementation-plan.md'):
+            os.chmod(self.root / rel, 0o640)
+        drifted_readme = (self.root / 'README.md').read_bytes()
+        drifted_facts = (self.root / 'docs/facts.json').read_bytes()
+        drifted_plan = (self.root / 'todo/implementation-plan.md').read_bytes()
+
+        with mock.patch('os.fsync', side_effect=OSError('simulated fsync failure')):
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(2, drift.main(['--root', str(self.root), '--fix']))
+        self.assertEqual(drifted_readme, (self.root / 'README.md').read_bytes())
+        self.assertEqual(drifted_facts, (self.root / 'docs/facts.json').read_bytes())
+        self.assertEqual(drifted_plan, (self.root / 'todo/implementation-plan.md').read_bytes())
+        self.assertEqual(0o640, (self.root / 'README.md').stat().st_mode & 0o777)
+        self.assertEqual([], list(self.root.rglob('.drift-*')))
+
+        with mock.patch('os.replace', side_effect=OSError('simulated replace failure')):
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(2, drift.main(['--root', str(self.root), '--fix']))
+        self.assertEqual(drifted_readme, (self.root / 'README.md').read_bytes())
+        self.assertEqual(drifted_facts, (self.root / 'docs/facts.json').read_bytes())
+        self.assertEqual(drifted_plan, (self.root / 'todo/implementation-plan.md').read_bytes())
+        self.assertEqual(0o640, (self.root / 'README.md').stat().st_mode & 0o777)
+        self.assertEqual([], list(self.root.rglob('.drift-*')))
+
+        # Recovery and idempotence: unpatched --fix succeeds, preserves 0o640 mode, and second --fix makes 0 changes.
+        out_fix1 = io.StringIO()
+        with contextlib.redirect_stdout(out_fix1):
+            self.assertEqual(0, drift.main(['--root', str(self.root), '--fix']))
+        self.assertIn('0 error(s); 0 deterministic repair(s)', out_fix1.getvalue())
+        for rel in ('README.md', 'docs/facts.json', 'todo/implementation-plan.md'):
+            self.assertEqual(0o640, (self.root / rel).stat().st_mode & 0o777)
+        snap_after_fix1 = {
+            rel: drift.digest((self.root / rel).read_bytes())
+            for rel in ('README.md', 'docs/facts.json', 'todo/implementation-plan.md')
+        }
+        out_fix2 = io.StringIO()
+        with contextlib.redirect_stdout(out_fix2):
+            self.assertEqual(0, drift.main(['--root', str(self.root), '--fix']))
+        self.assertIn('0 error(s); 0 deterministic repair(s)', out_fix2.getvalue())
+        snap_after_fix2 = {
+            rel: drift.digest((self.root / rel).read_bytes())
+            for rel in ('README.md', 'docs/facts.json', 'todo/implementation-plan.md')
+        }
+        self.assertEqual(snap_after_fix1, snap_after_fix2)
+
 
 if __name__ == '__main__':
     unittest.main()
