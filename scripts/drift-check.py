@@ -38,7 +38,7 @@ BLOCK = re.compile(r'(?P<start><!-- drift:begin (?P<id>[a-z0-9-]+) -->\r?\n)(?P<
 FACT = re.compile(r'<!-- drift:fact ([a-z0-9_.-]+) = (.*?) -->')
 COMMIT = re.compile(r'<!-- drift:commit ([0-9a-f]{7,40})(?: (\S+))? -->')
 LINK = re.compile(r'!?\[[^\]\n]*\]\((?:<([^>\n]+)>|([^\s)]+))(?:\s+["\'][^\n]*?["\'])?\)')
-REFERENCE = re.compile(r'^[ \t]{0,3}\[(?!\^)[^\]\n]+\]:[ \t]*(?:<([^>\n]+)>|([^\s>]+))', re.M)
+REFERENCE = re.compile(r'^[ \t]{0,3}\[(?!\^)([^\]\n]+)\]:[ \t]*(?:\r?\n[ \t]*)?(?:<([^>\n]+)>|([^\s>]+))', re.M)
 BYTE_UNITS = {
     '': 1, 'b': 1, 'byte': 1, 'bytes': 1,
     'kib': 1024, 'mib': 1024 ** 2, 'gib': 1024 ** 3, 'tib': 1024 ** 4,
@@ -171,6 +171,50 @@ def _parse_inline_link_at(text, bracket_pos):
     return label, dest, m + 1
 
 
+def _find_closing_bracket(text, bracket_pos):
+    n = len(text)
+    if bracket_pos > 0 and text[bracket_pos - 1] == '\\' and (bracket_pos < 2 or text[bracket_pos - 2] != '\\'):
+        return None
+    depth = 0
+    i = bracket_pos
+    while i < n:
+        ch = text[i]
+        if ch == '\\':
+            i += 2
+            continue
+        if ch == '[':
+            depth += 1
+        elif ch == ']':
+            depth -= 1
+            if depth == 0:
+                return i
+        elif ch == '\n' and re.match(r'[ \t]*\r?\n', text[i + 1:]):
+            return None
+        i += 1
+    return None
+
+
+def _parse_reference_link_at(text, bracket_pos):
+    close_bracket = _find_closing_bracket(text, bracket_pos)
+    if close_bracket is None or close_bracket + 1 >= len(text) or text[close_bracket + 1] != '[':
+        return None
+    if bracket_pos == 0 or text[bracket_pos - 1] not in ('\n', '\r'):
+        pass
+    close_ref = _find_closing_bracket(text, close_bracket + 1)
+    if close_ref is None:
+        return None
+    ref_raw = text[close_bracket + 2:close_ref]
+    if '\n' in ref_raw or '\r' in ref_raw or ref_raw.startswith('^'):
+        return None
+    label = text[bracket_pos + 1:close_bracket]
+    if label.startswith('^'):
+        return None
+    ref_name = (ref_raw if ref_raw.strip() else label).strip()
+    if not ref_name:
+        return None
+    return label, ref_name, close_ref + 1
+
+
 def _extract_markdown_links(text):
     out = []
     for idx, ch in enumerate(text):
@@ -178,8 +222,34 @@ def _extract_markdown_links(text):
             res = _parse_inline_link_at(text, idx)
             if res is not None and res[1]:
                 out.append(res[1])
-    out.extend(m[1] or m[2] for m in REFERENCE.finditer(text))
+    out.extend(m[2] or m[3] for m in REFERENCE.finditer(text))
     return out
+
+
+def _extract_unresolved_references(text):
+    defined = {re.sub(r'\s+', ' ', m[1].strip()).casefold() for m in REFERENCE.finditer(text)}
+    unresolved = []
+    i = 0
+    n = len(text)
+    while i < n:
+        if text[i] == '\\':
+            i += 2
+            continue
+        if text[i] == '[':
+            inline = _parse_inline_link_at(text, i)
+            if inline is not None:
+                i += 1
+                continue
+            ref = _parse_reference_link_at(text, i)
+            if ref is not None:
+                _, ref_name, end_pos = ref
+                key = re.sub(r'\s+', ' ', ref_name).casefold()
+                if key not in defined:
+                    unresolved.append(ref_name)
+                i = end_pos
+                continue
+        i += 1
+    return unresolved
 
 
 def _strip_markdown_links_to_text(raw):
@@ -188,14 +258,14 @@ def _strip_markdown_links_to_text(raw):
     n = len(raw)
     while i < n:
         if raw[i] == '!' and i + 1 < n and raw[i + 1] == '[':
-            res = _parse_inline_link_at(raw, i + 1)
+            res = _parse_inline_link_at(raw, i + 1) or _parse_reference_link_at(raw, i + 1)
             if res is not None:
                 label, _, end_pos = res
                 out.append(_strip_markdown_links_to_text(label))
                 i = end_pos
                 continue
         if raw[i] == '[':
-            res = _parse_inline_link_at(raw, i)
+            res = _parse_inline_link_at(raw, i) or _parse_reference_link_at(raw, i)
             if res is not None:
                 label, _, end_pos = res
                 out.append(_strip_markdown_links_to_text(label))
@@ -223,8 +293,9 @@ def anchors(text, markdown=True):
     found, seen = html.anchors, {}
     if markdown:
         body = re.sub(r'\A---\r?\n.*?\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|\Z)', '', text, count=1, flags=re.S)
+        prose_body = REFERENCE.sub(lambda m: blank(m[0]), prose(body))
         para_lines = []
-        for line in prose(body).splitlines():
+        for line in prose_body.splitlines():
             atx = re.match(r'^[ \t]{0,3}#{1,6}[ \t]+(.+?)[ \t]*#*[ \t]*$', line)
             if atx:
                 para_lines.clear()
@@ -1219,6 +1290,8 @@ class Checker:
         links = html.links
         if Path(rel).suffix in ('.md', '.markdown'):
             links += _extract_markdown_links(text)
+            for ref_name in _extract_unresolved_references(text):
+                self.error('link', rel, f'unresolved reference link: [{ref_name}]')
         for link in links:
             parts = urlsplit(unescape(link))
             if parts.scheme or parts.netloc or not link or link.startswith('{{'):

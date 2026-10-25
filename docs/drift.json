@@ -1491,14 +1491,14 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "Author-attested: 2026-10-25 re-read README.md against include/rasterfold.h, src/rf.h, src/main.c, scripts/build.py, scripts/package.py, and scripts/check-all.py (D08 T02 section 4)",
+      "evidence": "Author-attested: 2026-10-25 re-read README.md against scripts/drift-check.py and scripts/check-all.py (D08 T02 section 5)",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "51734a555f97e344771e8462284781429f04d5d5f6a8e5550e43e10e9c20e7c3",
         "src/main.c": "acc887478e30cf9aa71537eeb1da219da3638b699c79f5230dc34e98c8bdb6a6",
         "scripts/build.py": "c56a6554b5956a1f3469b8436d8432b6c4692ba0c6e43dd02aa59d82c83fd3a0",
         "scripts/package.py": "b9ef31c48c2c5f7dfdcb22a7b3e5bd1a14c36b84d5d3887f17646bf47eaad199",
-        "scripts/check-all.py": "9445bd7167f80afdd5e9c558defbfea1ec28cd69600d59a794d0addf2fc28d8c",
+        "scripts/check-all.py": "8b7272e7d8e1cc921a86b20c815569cd94004dca4a888fcd3261d872ddbb6e13",
         "README.md": "3455c54eb81acc4f418fada24889bdb66475d7a5339c9ffc84f906794c8ef218"
       }
     },
@@ -1524,21 +1524,21 @@
       }
     },
     "CONTRIBUTING.md": {
-      "evidence": "Author-attested: 2026-10-25 re-read CONTRIBUTING.md against scripts/build.py, scripts/package.py, and scripts/check-all.py (D08 T02 section 4)",
+      "evidence": "Author-attested: 2026-10-25 re-read CONTRIBUTING.md against scripts/drift-check.py and scripts/check-all.py (D08 T02 section 5)",
       "sources": {
         "scripts/build.py": "c56a6554b5956a1f3469b8436d8432b6c4692ba0c6e43dd02aa59d82c83fd3a0",
         "scripts/package.py": "b9ef31c48c2c5f7dfdcb22a7b3e5bd1a14c36b84d5d3887f17646bf47eaad199",
-        "scripts/check-all.py": "9445bd7167f80afdd5e9c558defbfea1ec28cd69600d59a794d0addf2fc28d8c",
+        "scripts/check-all.py": "8b7272e7d8e1cc921a86b20c815569cd94004dca4a888fcd3261d872ddbb6e13",
         "CONTRIBUTING.md": "01f5855ce18883d6930ce1ebb569ea9411ac21e3c4cf3faced1a56c155bf470f"
       }
     },
     "docs/building.md": {
-      "evidence": "Author-attested: 2026-10-25 re-read docs/building.md against toolchain.json, scripts/build.py, scripts/package.py, scripts/check-all.py, and include/rasterfold.h (D08 T02 section 4)",
+      "evidence": "Author-attested: 2026-10-25 re-read docs/building.md against scripts/drift-check.py and scripts/check-all.py (D08 T02 section 5)",
       "sources": {
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
         "scripts/build.py": "c56a6554b5956a1f3469b8436d8432b6c4692ba0c6e43dd02aa59d82c83fd3a0",
         "scripts/package.py": "b9ef31c48c2c5f7dfdcb22a7b3e5bd1a14c36b84d5d3887f17646bf47eaad199",
-        "scripts/check-all.py": "9445bd7167f80afdd5e9c558defbfea1ec28cd69600d59a794d0addf2fc28d8c",
+        "scripts/check-all.py": "8b7272e7d8e1cc921a86b20c815569cd94004dca4a888fcd3261d872ddbb6e13",
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "docs/building.md": "968395713c92b23e8937eb81fff1d8c5a1edeca1684cb5e24e1a7c12fc717038"
       }
@@ -1563,14 +1563,14 @@
       }
     },
     "docs/getting-started.md": {
-      "evidence": "Author-attested: 2026-10-25 re-read docs/getting-started.md against toolchain.json, tools/provision.py, tools/provision.ps1, scripts/build.py, scripts/check-all.py, scripts/check-all.ps1, include/rasterfold.h, and src/main.c (D08 T02 section 4)",
+      "evidence": "Author-attested: 2026-10-25 re-read docs/getting-started.md against scripts/drift-check.py and scripts/check-all.py (D08 T02 section 5)",
       "sources": {
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
         "tools/provision.py": "b17ea42569b76d70edbcc235dbc86385c9c7ce50b1be7a3bb83383c30f848556",
         "tools/provision.ps1": "836043df1f959726d5fa2b73d206fa896c9d3aacd12bf7e21b8193a4bb14ad96",
         "scripts/build.py": "c56a6554b5956a1f3469b8436d8432b6c4692ba0c6e43dd02aa59d82c83fd3a0",
-        "scripts/check-all.py": "9445bd7167f80afdd5e9c558defbfea1ec28cd69600d59a794d0addf2fc28d8c",
-        "scripts/check-all.ps1": "c6fe379651476523e56cd1a85a6af7343fa73d43993bb384002b047dafecc853",
+        "scripts/check-all.py": "8b7272e7d8e1cc921a86b20c815569cd94004dca4a888fcd3261d872ddbb6e13",
+        "scripts/check-all.ps1": "7006b1871b52689461497fa676b3cb6472f0e436c9c5e240deb9da069321a528",
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/main.c": "acc887478e30cf9aa71537eeb1da219da3638b699c79f5230dc34e98c8bdb6a6",
         "docs/getting-started.md": "b5600b5480cbad54659f2f5c596586d19def8b29e9e8f14e486a28d6f0664e95"
@@ -1587,9 +1587,9 @@
       }
     },
     "docs/document-drift.md": {
-      "evidence": "Author-attested: 2026-10-25 re-read docs/document-drift.md against scripts/drift-check.py and docs/drift.json (D08 T02 section 5)",
+      "evidence": "Author-attested: 2026-10-25 re-read docs/document-drift.md against scripts/drift-check.py and scripts/check-all.py (D08 T02 section 5)",
       "sources": {
-        "scripts/drift-check.py": "157f2f4fea1868ecd388808af7d2ea4cf69091a7e39aeb2d8a30910a837eddb3",
+        "scripts/drift-check.py": "3d0f3df5e533cd0f62feb95dda807e81c05688238248597e0b88ffbe0e2f61dc",
         "scripts/plan-audit.py": "a75c0311c54108a195c8fbe9048df11458abfe946563bb7c248e798fcdb98d42",
         "docs/document-drift.md": "1f8e84487a8c3c8ead3889e0116563508d65585275b7c5eb36209b738daea4fb"
       }

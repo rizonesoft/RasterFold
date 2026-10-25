@@ -6,6 +6,7 @@ import io
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -1644,8 +1645,16 @@ class DriftTests(unittest.TestCase):
             '----------\n\n'
             '   ## Indented ATX\n\n'
             '## [Linked Heading](README.md)\n\n'
+            '## [Guide][guide]\n\n'
+            '## [Collapsed][]\n\n'
             '[Linked Setext [Inner]](README.md)\n'
             '----------------------------------\n\n'
+            'Setext [Ref Heading][guide]\n'
+            '===========================\n\n'
+            '[guide]:\n'
+            '  README.md\n'
+            '[collapsed]:\n'
+            '  <dir/file (2).md>\n\n'
             'Paragraph before thematic break.\n\n'
             '---\n\n'
             '- List item\n'
@@ -1667,12 +1676,18 @@ class DriftTests(unittest.TestCase):
             '[dup1](target.md#setext-dup-1)\n'
             '[indented](target.md#indented-atx)\n'
             '[linked](target.md#linked-heading)\n'
+            '[ref-atx](target.md#guide)\n'
+            '[ref-collapsed](target.md#collapsed)\n'
             '[linked-setext](target.md#linked-setext-inner)\n'
+            '[ref-setext](target.md#setext-ref-heading)\n'
             '[paren-file](dir/file(1).md#paren-target "title")\n'
             '[angle-file](<dir/file (2).md#angle-target>)\n'
             '[![badge](dir/badge.svg)](target.md#setext-h1)\n'
-            '[ref-use][ref_ok]\n\n'
-            '[ref_ok]: <dir/file (2).md#angle-target>\n',
+            '[ref-use][ref_ok]\n'
+            '[ref-nextline][ref_next]\n\n'
+            '[ref_ok]: <dir/file (2).md#angle-target>\n'
+            '[ref_next]:\n'
+            '  dir/file(1).md#paren-target\n',
         )
         self.assertEqual([], self.check().errors)
 
@@ -1686,13 +1701,15 @@ class DriftTests(unittest.TestCase):
             )
         (self.root / 'bad_anchor.md').unlink()
 
-        # Broken nested-label, parenthesized, angle-bracketed, nested-image, and reference links must each report a link error.
+        # Broken nested-label, parenthesized, angle-bracketed, nested-image, next-line reference, and unresolved reference links must each report a link error.
         for bad_md, expected_target in (
             ('[a [nested] label](gone.md)\n', 'gone.md'),
             ('[paren](dir/missing(1).md)\n', 'dir/missing(1).md'),
             ('[angle](<dir/missing (2).md>)\n', 'dir/missing (2).md'),
             ('[![badge](dir/missing.svg)](target.md)\n', 'dir/missing.svg'),
             ('[ref][r]\n\n[r]: <dir/missing (3).md>\n', 'dir/missing (3).md'),
+            ('[guide][g]\n\n[g]:\n  dir/missing_nextline.md\n', 'dir/missing_nextline.md'),
+            ('[Guide][undefined_ref]\n', 'unresolved reference link: [undefined_ref]'),
         ):
             self.write('bad_link.md', bad_md)
             c_link = self.check()
@@ -1736,7 +1753,7 @@ class DriftTests(unittest.TestCase):
             self.assertEqual(0, drift.main(['--root', str(self.root), '--site-dir', 'build/site-artifact', '--write-site-receipt']))
             self.assertEqual(0, drift.main(['--root', str(self.root), '--site-dir', 'build/site-artifact']))
 
-        # Verify gate entrypoints (scripts/check-all.ps1, scripts/check-all.py, .github/workflows/plan.yml, tools/githooks/pre-commit).
+        # Verify and execute gate entrypoints (scripts/check-all.ps1, scripts/check-all.py, .github/workflows/plan.yml, tools/githooks/pre-commit).
         ps1_text = (REPO / 'scripts/check-all.ps1').read_text(encoding='utf-8')
         self.assertIn('scripts/check-all.py', ps1_text)
         self.assertIn('exit $LASTEXITCODE', ps1_text)
@@ -1747,18 +1764,56 @@ class DriftTests(unittest.TestCase):
         self.assertIn('python3 scripts/drift-check.py --site-dir build/site-artifact --write-site-receipt', plan_yml_text)
         self.assertIn('python3 scripts/drift-check.py --site-dir build/site-artifact\n', plan_yml_text)
 
+        self.write('scripts/drift-check.py', (REPO / 'scripts/drift-check.py').read_text(encoding='utf-8'))
+        self.write('scripts/check-all.py', (REPO / 'scripts/check-all.py').read_text(encoding='utf-8'))
+        self.write('scripts/check-all.ps1', (REPO / 'scripts/check-all.ps1').read_text(encoding='utf-8'))
+        self.git('add', '-A')
+        self.git('commit', '-qm', 'Install updated drift-check and check-all for entrypoint tests')
+
+        orig_readme = (self.root / 'README.md').read_text(encoding='utf-8')
+        # Seed a dead link in README.md and verify failure across local runner (check-all.py / check-all.ps1) and CI drift-check command.
+        self.write('README.md', orig_readme + '\nSee [broken [nested] link](nonexistent.md).\n')
+        local_fail = subprocess.run([sys.executable, 'scripts/check-all.py', '--gate', 'document drift'], cwd=self.root, capture_output=True, text=True, timeout=60)
+        self.assertEqual(1, local_fail.returncode)
+        self.assertIn('FAIL document drift', local_fail.stdout)
+        self.assertIn('missing target: nonexistent.md', local_fail.stdout)
+        if shutil.which('pwsh'):
+            ps_fail = subprocess.run(['pwsh', 'scripts/check-all.ps1', '-Gate', 'document drift'], cwd=self.root, capture_output=True, text=True, timeout=60)
+            self.assertEqual(1, ps_fail.returncode)
+            self.assertIn('FAIL document drift', ps_fail.stdout)
+        ci_fail = subprocess.run([sys.executable, 'scripts/drift-check.py'], cwd=self.root, capture_output=True, text=True, timeout=60)
+        self.assertEqual(1, ci_fail.returncode)
+        self.assertIn('missing target: nonexistent.md', ci_fail.stdout)
+
+        # Restore README.md and verify clean exit 0 across local runner and CI drift-check command.
+        self.write('README.md', orig_readme)
+        local_ok = subprocess.run([sys.executable, 'scripts/check-all.py', '--gate', 'document drift'], cwd=self.root, capture_output=True, text=True, timeout=60)
+        self.assertEqual(0, local_ok.returncode, local_ok.stdout + local_ok.stderr)
+        self.assertIn('PASS document drift', local_ok.stdout)
+        if shutil.which('pwsh'):
+            ps_ok = subprocess.run(['pwsh', 'scripts/check-all.ps1', '-Gate', 'document drift'], cwd=self.root, capture_output=True, text=True, timeout=60)
+            self.assertEqual(0, ps_ok.returncode, ps_ok.stdout + ps_ok.stderr)
+            self.assertIn('PASS document drift', ps_ok.stdout)
+        ci_ok = subprocess.run([sys.executable, 'scripts/drift-check.py'], cwd=self.root, capture_output=True, text=True, timeout=60)
+        self.assertEqual(0, ci_ok.returncode)
+        ci_site_ok = subprocess.run([sys.executable, 'scripts/drift-check.py', '--site-dir', 'build/site-artifact'], cwd=self.root, capture_output=True, text=True, timeout=60)
+        self.assertEqual(0, ci_site_ok.returncode)
+
         if shutil.which('sh'):
-            self.write('scripts/drift-check.py', (REPO / 'scripts/drift-check.py').read_text(encoding='utf-8'))
-            self.git('add', '-A')
-            self.git('commit', '-qm', 'Install updated drift-check for hook link test')
             self.git('config', 'core.hooksPath', str(REPO / 'tools/githooks'))
             head_before = self.git('rev-parse', 'HEAD')
-            self.write('README.md', (self.root / 'README.md').read_text(encoding='utf-8') + '\nSee [broken [nested] link](nonexistent.md).\n')
+            self.write('README.md', orig_readme + '\nSee [broken [nested] link](nonexistent.md).\n')
             self.git('add', 'README.md')
             proc = subprocess.run(['git', 'commit', '-m', 'Should fail on broken link'], cwd=self.root, capture_output=True, text=True, timeout=60)
             self.assertNotEqual(0, proc.returncode)
             self.assertIn('missing target: nonexistent.md', (proc.stdout or '') + (proc.stderr or ''))
             self.assertEqual(head_before, self.git('rev-parse', 'HEAD'))
+            # Restore valid link and verify hook recovery (commit succeeds and HEAD advances).
+            self.write('README.md', orig_readme + '\nSee [valid [nested] link](target.md#guide).\n')
+            self.git('add', 'README.md')
+            proc_ok = subprocess.run(['git', 'commit', '-m', 'Recovered commit after fixing broken link'], cwd=self.root, capture_output=True, text=True, timeout=60)
+            self.assertEqual(0, proc_ok.returncode, (proc_ok.stdout or '') + (proc_ok.stderr or ''))
+            self.assertNotEqual(head_before, self.git('rev-parse', 'HEAD'))
 
 
 if __name__ == '__main__':

@@ -14,6 +14,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--skip-build',action='store_true');p.add_argument('--quick',action='store_true')
     p.add_argument('--all-targets',action='store_true',help='also build Windows and both Android ABIs on Linux')
+    p.add_argument('--gate',help='run only the named gate')
     a=p.parse_args();py=sys.executable
     gates=[]
     def python(name,path,*args):gates.append((name,[py,path,*args]))
@@ -42,6 +43,11 @@ def main():
     if os.name != 'nt':
         gates.append(('toolchain installer tests',[py,'-m','unittest','discover','-s','tests','-p','test_toolchain.py','-v']))
     gates.append(('provision',(['powershell','-NoProfile','-ExecutionPolicy','Bypass','-File','tools/provision.ps1','-Verify'] if os.name=='nt' else [py,'tools/provision.py','--verify'])))
+    if a.gate:
+        gates=[g for g in gates if g[0]==a.gate]
+        if not gates:
+            print(f'check-all: unknown gate: {a.gate}',flush=True)
+            return True
     logs=ROOT/'build/logs';logs.mkdir(parents=True,exist_ok=True)
     failed=0
     for name,cmd in gates:
