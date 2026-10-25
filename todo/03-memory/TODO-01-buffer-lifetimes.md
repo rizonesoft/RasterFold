@@ -88,7 +88,7 @@ The padded stream copy exists so `rdec_bit` can load two bytes past a stream's e
 > **Review:** `docs/reviews/d03-t01-s3.json`
 ## Verification
 
-- [ ] `pwsh scripts/check-all.ps1` -- exits 0
-- [ ] `python tests/measure_final.py` PASS, with the decode peak working set quoted
-- [ ] `python tests/benchmark.py -n 3` rerun and the README memory figures updated
-- [ ] `python scripts/todo-graph.py validate` clean
+- [x] `pwsh scripts/check-all.ps1` -- exits 0 (`python3 scripts/check-all.py --all-targets` passes 29/29 checks; `python3 tests/fuzz_decode.py 5000 3` reports `5000 mutated files: 4895 rejected, 105 still valid, no crash, hang or mismatch`)
+- [x] `python tests/measure_final.py` PASS, with the decode peak working set quoted (`python3 scripts/windows.py tests/measure_final.py`: `PASS`, `rasterfold bytes=1409028 decode_wall_us=375722 decode_peak_ws=15163392 pixels=True`, `decode_codec_us=236541` vs `jxl bytes=1470703 decode_wall_us=513129 decode_peak_ws=50761728 pixels=True`, committed in `measure/verdict.json`)
+- [x] `python tests/benchmark.py -n 3` rerun and the README memory figures updated (`python3 scripts/windows.py tests/benchmark.py -n 3` exits 0 with `failures: 0`; `benchmarks/results.csv`, `benchmarks/results.md`, `docs/facts.json`, `docs/benchmarks.md`, and `docs/_includes/generated/{charts,tables}/*` updated with `measure` `encode_peak=16138240` / `decode_peak=15159296`, `photos` max `encode_peak=13238272` / `decode_peak=12632064`, and `synthetic` max `encode_peak=11649024` / `decode_peak=11640832`; live benchmark tables moved from `README.md` to `docs/benchmarks.md` in `D08 T01`)
+- [x] `python scripts/todo-graph.py validate` clean (`0 fatal, 0 warning(s)`)

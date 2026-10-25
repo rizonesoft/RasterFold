@@ -700,6 +700,8 @@ class DriftTests(unittest.TestCase):
                 shutil.copytree(p, self.root / 'docs' / p.name, dirs_exist_ok=True)
             else:
                 self.write(f'docs/{p.name}', p.read_text(encoding='utf-8'))
+        for rjson in (REPO / 'docs/reviews').glob('d05-*.json'):
+            self.write(f'docs/reviews/{rjson.name}', rjson.read_text(encoding='utf-8'))
         self.write('include/rasterfold.h', (REPO / 'include/rasterfold.h').read_text(encoding='utf-8'))
         for rel in (
             'CONTRIBUTING.md',
@@ -913,12 +915,13 @@ class DriftTests(unittest.TestCase):
             self.assertEqual(0, build_docs.main(['--root', str(self.root), '--self-test']))
         self.assertIn('7 chart(s) and 7 table(s) match CSV data', out.getvalue())
 
-        # Verify tp (10 overlapping images) vs tp-only (5 exclusive CSV rows) and N/A on retained jxl-e9 sets.
+        # Verify tp (10 overlapping images) vs tp-only (5 exclusive CSV rows) and measured jxl-e9 sets.
         corpus_table = (self.root / 'docs/_includes/generated/tables/corpus-size-ratio.md').read_text(encoding='utf-8')
         self.assertIn('| tp | 10 |', corpus_table)
         self.assertIn('| tp-only | 5 |', corpus_table)
         bench_table = (self.root / 'docs/_includes/generated/tables/benchmark-size-ratio.md').read_text(encoding='utf-8')
-        self.assertIn('N/A (not measured in retained 2026-09-29 set)', bench_table)
+        self.assertIn('| photos | jxl-e9 | 10 | 6740249 | 0.9858 |', bench_table)
+        self.assertIn('| synthetic | jxl-e9 | 11 | 223034 | 0.5243 |', bench_table)
 
         # Independently compute corpus and benchmark aggregates directly from raw CSV rows and verify tables & SVG attributes.
         import csv as csv_mod
@@ -948,14 +951,38 @@ class DriftTests(unittest.TestCase):
         svd_svg = ET.fromstring((self.root / 'docs/_includes/generated/charts/size-vs-decode.svg').read_text(encoding='utf-8'))
         svd_pt = next(el for el in svd_svg.iter() if el.attrib.get('data-kind') == 'point' and el.attrib.get('data-group') == 'photos' and el.attrib.get('data-series') == 'rasterfold')
         self.assertEqual((exp_photos_dec_gm, exp_photos_size_gm), (svd_pt.attrib.get('data-x'), svd_pt.attrib.get('data-y')))
-        # Verify scatter-sets N/A elements have distinct coordinates and point-label + legend + ticks exist.
-        na_els = [el for el in svd_svg.iter() if el.attrib.get('data-kind') == 'na']
-        self.assertEqual(2, len(na_els))
-        self.assertEqual(2, len({(el.attrib.get('data-x'), el.attrib.get('data-y')) for el in na_els}))
         self.assertTrue(any(el.attrib.get('data-kind') == 'point-label' and (el.text or '') == 'P:rasterfold' for el in svd_svg.iter()))
         pm_svg = ET.fromstring((self.root / 'docs/_includes/generated/charts/peak-memory.svg').read_text(encoding='utf-8'))
         pm_bar = next(el for el in pm_svg.iter() if el.attrib.get('data-kind') == 'bar' and el.attrib.get('data-group') == 'photos-encode' and el.attrib.get('data-series') == 'rasterfold')
         self.assertEqual(exp_photos_enc_pk, pm_bar.attrib.get('data-value'))
+
+        # Verify scatter-sets N/A elements and table cell when retained sets omit jxl-e9.
+        res_live = (self.root / 'benchmarks/results.csv').read_text(encoding='utf-8')
+        retained_header = (
+            '# codec_revision=dd9e910fe46d6007909f25482658b448ebeeb52d '
+            'kat_fold_sha256=b3012508fdcadc58e768baaba1c9fc3cf5cc2dd837643888b1ca2314fe79bb32 '
+            'date=2026-10-25 measured_sets=measure retained_sets=photos,synthetic '
+            'retained_revision=0159404532cf944c4265ecb8ea46c54f637bdfc2 retained_date=2026-09-29 '
+            'retained_kat_fold_sha256=b3012508fdcadc58e768baaba1c9fc3cf5cc2dd837643888b1ca2314fe79bb32 '
+            'set_revisions=measure:dd9e910fe46d6007909f25482658b448ebeeb52d,photos:0159404532cf944c4265ecb8ea46c54f637bdfc2,synthetic:0159404532cf944c4265ecb8ea46c54f637bdfc2 '
+            'set_dates=measure:2026-10-25,photos:2026-09-29,synthetic:2026-09-29 '
+            'set_kat_hashes=measure:b3012508fdcadc58e768baaba1c9fc3cf5cc2dd837643888b1ca2314fe79bb32,photos:b3012508fdcadc58e768baaba1c9fc3cf5cc2dd837643888b1ca2314fe79bb32,synthetic:b3012508fdcadc58e768baaba1c9fc3cf5cc2dd837643888b1ca2314fe79bb32'
+        )
+        retained_lines = [
+            retained_header if i == 0 else ln
+            for i, ln in enumerate(res_live.splitlines())
+            if not (ln.startswith(('photos,', 'synthetic,')) and ',jxl-e9,' in ln)
+        ]
+        self.write('benchmarks/results.csv', '\n'.join(retained_lines) + '\n')
+        build_docs.write_generated_pages(self.root)
+        bench_table_ret = (self.root / 'docs/_includes/generated/tables/benchmark-size-ratio.md').read_text(encoding='utf-8')
+        self.assertIn('N/A (not measured in retained 2026-09-29 set)', bench_table_ret)
+        svd_svg_ret = ET.fromstring((self.root / 'docs/_includes/generated/charts/size-vs-decode.svg').read_text(encoding='utf-8'))
+        na_els = [el for el in svd_svg_ret.iter() if el.attrib.get('data-kind') == 'na']
+        self.assertEqual(2, len(na_els))
+        self.assertEqual(2, len({(el.attrib.get('data-x'), el.attrib.get('data-y')) for el in na_els}))
+        self.write('benchmarks/results.csv', res_live)
+        build_docs.write_generated_pages(self.root)
 
         # Verify that an aggregation bug in compute_chart_datasets followed by full regeneration is caught by --self-test.
         real_compute = build_docs.compute_chart_datasets
@@ -1120,10 +1147,10 @@ class DriftTests(unittest.TestCase):
         results_rows = list(csv_mod.DictReader([ln for ln in results_raw.splitlines() if ln.strip() and not ln.startswith('#')]))
         self.assertEqual('measured', live_facts['results_measure_status'])
         self.assertEqual('2026-10-25', live_facts['results_measure_date'])
-        self.assertEqual('retained', live_facts['results_photos_status'])
-        self.assertEqual('2026-09-29', live_facts['results_photos_date'])
-        self.assertEqual('retained', live_facts['results_synthetic_status'])
-        self.assertEqual('2026-09-29', live_facts['results_synthetic_date'])
+        self.assertEqual('measured', live_facts['results_photos_status'])
+        self.assertEqual('2026-10-25', live_facts['results_photos_date'])
+        self.assertEqual('measured', live_facts['results_synthetic_status'])
+        self.assertEqual('2026-10-25', live_facts['results_synthetic_date'])
         self.assertEqual('2026-10-25', live_facts['corpus_date'])
         self.assertEqual('0.958', live_facts['measurement_reference_ratio_jxl_e7'])
         self.assertEqual('0.978', live_facts['measurement_reference_ratio_jxl_e9'])
@@ -1395,7 +1422,7 @@ class DriftTests(unittest.TestCase):
         # 6. Missing or ambiguous CSV selections and malformed aggregate rules fail derive_facts.
         for bad_rule, expected_msg in (
             ({'kind': 'csv', 'source': 'benchmarks/results.csv', 'where': {'set': 'no_such_set'}, 'column': 'bytes'}, 'expected one CSV row, got 0'),
-            ({'kind': 'csv', 'source': 'benchmarks/results.csv', 'where': {'set': 'photos'}, 'column': 'bytes'}, 'expected one CSV row, got 60'),
+            ({'kind': 'csv', 'source': 'benchmarks/results.csv', 'where': {'set': 'photos'}, 'column': 'bytes'}, 'expected one CSV row, got 70'),
             ({'kind': 'csv-meta', 'source': 'benchmarks/results.csv', 'key': 'missing_meta_key'}, "missing CSV metadata key 'missing_meta_key'"),
             ({'kind': 'csv-aggregate', 'source': 'benchmarks/corpus.csv', 'op': 'count', 'group': 'bad_group'}, "unknown corpus group 'bad_group'"),
             ({'kind': 'csv-aggregate', 'source': 'benchmarks/corpus.csv', 'op': 'count', 'where': {'set': 'missing'}}, 'CSV selector matched 0 rows'),

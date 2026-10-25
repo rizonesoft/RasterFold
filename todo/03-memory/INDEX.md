@@ -8,12 +8,12 @@ Peak memory of encode and decode. Every change here shortens buffer lifetimes or
 
 | TODO | Title | Status |
 | ---- | ----- | :----: |
-| [TODO-01](./TODO-01-buffer-lifetimes.md) | Buffer Lifetimes and Copies | draft |
 
 ## Completed
 
 | TODO | Title | Completed |
 | ---- | ----- | :-------: |
+| [TODO-01](./TODO-01-buffer-lifetimes.md) | Buffer Lifetimes and Copies | 2026-10-25 |
 
 ## In scope
 
