@@ -1,0 +1,150 @@
+name: pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: "Immutable 40-character commit SHA on main to build and deploy (defaults to github.sha)"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    outputs:
+      target_sha: ${{ steps.resolve.outputs.target_sha }}
+    steps:
+      - name: Checkout repository with full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Resolve and checkout immutable source commit
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_SOURCE_REF: ${{ inputs.source_ref }}
+          DEFAULT_SHA: ${{ github.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$INPUT_SOURCE_REF" ]; then
+            if ! printf '%s\n' "$INPUT_SOURCE_REF" | grep -Eq '^[0-9a-f]{40}$'; then
+              echo "error: workflow_dispatch inputs.source_ref must be a 40-character lowercase hex commit SHA (got: $INPUT_SOURCE_REF)" >&2
+              exit 1
+            fi
+            if ! git cat-file -e "${INPUT_SOURCE_REF}^{commit}" 2>/dev/null; then
+              echo "error: commit $INPUT_SOURCE_REF does not exist in repository history" >&2
+              exit 1
+            fi
+            if ! git merge-base --is-ancestor "$INPUT_SOURCE_REF" origin/main; then
+              echo "error: commit $INPUT_SOURCE_REF is not an ancestor of origin/main" >&2
+              exit 1
+            fi
+            TARGET_SHA="$INPUT_SOURCE_REF"
+          else
+            TARGET_SHA="$DEFAULT_SHA"
+          fi
+          git checkout --detach "$TARGET_SHA"
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          if [ "$ACTUAL_SHA" != "$TARGET_SHA" ]; then
+            echo "error: checkout mismatch: HEAD=$ACTUAL_SHA expected=$TARGET_SHA" >&2
+            exit 1
+          fi
+          echo "target_sha=$TARGET_SHA" >> "$GITHUB_OUTPUT"
+          echo "Resolved target_sha=$TARGET_SHA"
+
+      - name: Cache checked compiler archives
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: tools/downloads
+          key: linux-toolchain-${{ hashFiles('toolchain.json') }}
+
+      - name: Install pinned local toolchains and build native CLI
+        run: |
+          python3 tools/bootstrap.py
+          python3 scripts/build.py --target linux-x64
+
+      - name: Verify and stage allowlisted documentation site source
+        run: |
+          python3 scripts/build-docs.py --self-test
+          python3 scripts/build-docs.py --check
+          python3 scripts/build-docs.py --stage build/site-source
+
+      - name: Setup Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - name: Build with Jekyll
+        uses: actions/jekyll-build-pages@44a6e6beabd48582f863aeeb6cb2151cc1716697 # v1.0.13
+        with:
+          source: build/site-source
+          destination: build/site-raw
+
+      - name: Write and verify site drift receipt
+        env:
+          TARGET_SHA: ${{ steps.resolve.outputs.target_sha }}
+        run: |
+          rm -rf build/site-artifact
+          cp -R build/site-raw build/site-artifact
+          python3 scripts/drift-check.py --site-dir build/site-artifact --write-site-receipt
+          python3 scripts/drift-check.py --site-dir build/site-artifact
+          python3 -c 'import json, os, pathlib; r = json.loads(pathlib.Path("build/site-artifact/drift-build.json").read_text(encoding="utf-8")); assert r.get("commit") == os.environ["TARGET_SHA"], (r.get("commit"), os.environ["TARGET_SHA"])'
+
+      - name: Upload trusted site build receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: drift-build-receipt
+          path: build/site-artifact/drift-build.json
+          if-no-files-found: error
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: build/site-artifact
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+
+      - name: Checkout target commit for live verification
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.build.outputs.target_sha }}
+          fetch-depth: 0
+
+      - name: Download trusted site build receipt
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: drift-build-receipt
+          path: build/expected-receipt
+
+      - name: Verify live GitHub Pages publication against build receipt
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          TARGET_SHA: ${{ needs.build.outputs.target_sha }}
+        run: |
+          python3 scripts/build-docs.py \
+            --verify-live "${PAGE_URL:-https://rizonesoft.github.io/RasterFold/}" \
+            --expected-receipt build/expected-receipt/drift-build.json \
+            --expected-commit "$TARGET_SHA" \
+            --retries 18 \
+            --retry-delay 5

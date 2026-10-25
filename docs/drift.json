@@ -1637,20 +1637,20 @@
       }
     },
     "docs/document-drift.md": {
-      "evidence": "2026-10-25: verified docs/document-drift.md after D08 T01 section 5 404.html expected_outputs update",
+      "evidence": "Author-attested: 2026-10-25 verified docs/document-drift.md against scripts/drift-check.py and .github/workflows/pages.yml for drift-build.json[\"commit\"] and --verify-live (D08 T01 section 3)",
       "sources": {
-        "scripts/drift-check.py": "068494982604b888e242a917c7b132efa299954b6399c3fd9aba1e44bfcf5b69",
+        "scripts/drift-check.py": "c7d614554852002beea11cb55fee8f119e5e1dfc93370e27a74a4755f553925c",
         "scripts/plan-audit.py": "a75c0311c54108a195c8fbe9048df11458abfe946563bb7c248e798fcdb98d42",
-        "docs/document-drift.md": "d7495dc9d7c83acec4a427d8389e3dfdebccd68f8746a07baa1e829f7b95b59c"
+        "docs/document-drift.md": "d8c1e71d87da45c2ac562b37ad3c25157d1bcb2b93a091b3f8fe3126361347e2"
       }
     },
     "docs/README.md": {
-      "evidence": "Author-attested: 2026-10-25 verified docs/README.md after setting enable_copy_code_button: false in docs/_config.yml (D08 T01 section 5)",
+      "evidence": "Author-attested: 2026-10-25 verified docs/README.md against scripts/build-docs.py and .github/workflows/pages.yml for GitHub Pages publication and --verify-live (D08 T01 section 3)",
       "sources": {
         "docs/_config.yml": "d2459047e15f142133fb8206900c7921ca9c793559c63c264e7e43dbb1f00522",
         "docs/site-content.json": "3611e28cba68ff6ac17ace19115ebb014f06140322afcfc32ec39b78128c6f30",
-        "scripts/build-docs.py": "0bc41b9ae15cc8e41ce7f9e4fdb21b147c02566d16f0ce5088a199c482ac1c2d",
-        "docs/README.md": "84881a5ecab24b8185b7d532bd2653b371ba21b42010df598ec765baeaff016e"
+        "scripts/build-docs.py": "9927e168f0f04c4c6b27c7017ef43df6c89e5b753f32c6558911f0bd9079b3fc",
+        "docs/README.md": "c3c21417c182d9e2ee23541965e110085b75cf92f27c52dadb8725543f9d490b"
       }
     },
     "docs/agent-skills-and-rules-structure.md": {

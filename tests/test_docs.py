@@ -630,6 +630,188 @@ class DocsMapTests(unittest.TestCase):
             self.assertIn('site-link: index.html: URL outside Pages base path: /assets/css/site-states.css', buf_bad.getvalue())
             self.assertIn('anchor: index.html: missing heading or id: /RasterFold/format.html#nonexistent-section-anchor', buf_bad.getvalue())
 
+    def test_verify_live_publication_and_pages_workflow_contract(self) -> None:
+        pages_yml_path = REPO / '.github/workflows/pages.yml'
+        self.assertTrue(pages_yml_path.is_file(), 'missing .github/workflows/pages.yml')
+        pages_yml = pages_yml_path.read_text(encoding='utf-8')
+        self.assertIn('branches: [main]', pages_yml)
+        self.assertIn('workflow_dispatch:', pages_yml)
+        self.assertIn('source_ref:', pages_yml)
+        self.assertIn('contents: read', pages_yml)
+        self.assertIn('pages: write', pages_yml)
+        self.assertIn('id-token: write', pages_yml)
+        self.assertIn('group: pages', pages_yml)
+        self.assertIn('cancel-in-progress: false', pages_yml)
+        self.assertIn("grep -Eq '^[0-9a-f]{40}$'", pages_yml)
+        self.assertIn('git merge-base --is-ancestor "$INPUT_SOURCE_REF" origin/main', pages_yml)
+        self.assertIn('git checkout --detach "$TARGET_SHA"', pages_yml)
+        self.assertIn('python3 scripts/build-docs.py --self-test', pages_yml)
+        self.assertIn('python3 scripts/build-docs.py --check', pages_yml)
+        self.assertIn('python3 scripts/build-docs.py --stage build/site-source', pages_yml)
+        self.assertIn('python3 scripts/drift-check.py --site-dir build/site-artifact --write-site-receipt', pages_yml)
+        self.assertIn('python3 scripts/drift-check.py --site-dir build/site-artifact', pages_yml)
+        self.assertIn('name: drift-build-receipt', pages_yml)
+        self.assertIn('--verify-live', pages_yml)
+        self.assertIn('--expected-receipt build/expected-receipt/drift-build.json', pages_yml)
+        self.assertIn('--expected-commit "$TARGET_SHA"', pages_yml)
+
+        # Every action uses: line in pages.yml must be pinned to a 40-hex SHA with a version comment.
+        uses_lines = [line.strip() for line in pages_yml.splitlines() if re.match(r'^\s*-?\s*uses:\s*', line)]
+        self.assertGreaterEqual(len(uses_lines), 8)
+        for line in uses_lines:
+            self.assertRegex(
+                line,
+                r'^(- )?uses: [A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40} # v\d+\.\d+\.\d+$',
+                f'unpinned or uncommented action in pages.yml: {line}',
+            )
+
+        # Build a staged and rendered fixture site with a valid drift-build.json receipt.
+        (REPO / 'build').mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix='test-docs-live-', dir=REPO / 'build') as tmp_build:
+            tmp_build_path = Path(tmp_build)
+            rel_stage = (tmp_build_path / 'site-source').relative_to(REPO).as_posix()
+            rel_artifact = (tmp_build_path / 'site-artifact').relative_to(REPO).as_posix()
+            artifact_dir = REPO / rel_artifact
+
+            build_docs.stage_site(REPO, rel_stage)
+            site_content = build_docs.load_site_content(REPO)
+            _render_staged_markdown_to_html(REPO / rel_stage, artifact_dir, site_content)
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(0, drift.main(['--root', str(REPO), '--site-dir', rel_artifact, '--write-site-receipt']))
+
+            receipt_path = artifact_dir / 'drift-build.json'
+            expected_receipt = json.loads(receipt_path.read_text(encoding='utf-8'))
+            expected_commit = expected_receipt['commit']
+            self.assertRegex(expected_commit, r'^[0-9a-f]{40}$')
+
+            base_url = 'https://rizonesoft.github.io/RasterFold'
+            served_files: dict[str, bytes] = {
+                f'{base_url}/drift-build.json': receipt_path.read_bytes(),
+            }
+            for rel_page in build_docs.LIVE_SAMPLE_PAGES:
+                served_files[f'{base_url}/{rel_page}'] = (artifact_dir / rel_page).read_bytes()
+
+            def _fetcher_from(mapping: dict[str, bytes]):
+                def _fetch(url: str) -> tuple[int, bytes]:
+                    if url not in mapping:
+                        raise ValueError(f'HTTP 404 for {url}')
+                    return 200, mapping[url]
+                return _fetch
+
+            # 1. Exact match passes verify_live_publication and CLI --verify-live.
+            summary = build_docs.verify_live_publication(
+                base_url,
+                receipt_path,
+                expected_commit,
+                retries=1,
+                retry_delay=0.0,
+                fetcher=_fetcher_from(served_files),
+            )
+            self.assertEqual(expected_commit, summary['commit'])
+            self.assertEqual(len(expected_receipt['outputs']), summary['outputs_count'])
+
+            # 2. Stale same-commit deployment (same commit SHA, different outputs map) is rejected.
+            stale_same_commit = json.loads(json.dumps(expected_receipt))
+            stale_same_commit['outputs']['index.html'] = '0' * 64
+            stale_map = dict(served_files)
+            stale_map[f'{base_url}/drift-build.json'] = (json.dumps(stale_same_commit) + '\n').encode('utf-8')
+            with self.assertRaisesRegex(ValueError, 'outputs differs from expected build receipt'):
+                build_docs.verify_live_publication(
+                    base_url,
+                    receipt_path,
+                    expected_commit,
+                    retries=1,
+                    retry_delay=0.0,
+                    fetcher=_fetcher_from(stale_map),
+                )
+
+            # 3. Wrong commit SHA in live drift-build.json is rejected.
+            wrong_commit_receipt = json.loads(json.dumps(expected_receipt))
+            wrong_commit_receipt['commit'] = 'a' * 40
+            wrong_commit_map = dict(served_files)
+            wrong_commit_map[f'{base_url}/drift-build.json'] = (json.dumps(wrong_commit_receipt) + '\n').encode('utf-8')
+            with self.assertRaisesRegex(ValueError, 'live receipt commit'):
+                build_docs.verify_live_publication(
+                    base_url,
+                    receipt_path,
+                    expected_commit,
+                    retries=1,
+                    retry_delay=0.0,
+                    fetcher=_fetcher_from(wrong_commit_map),
+                )
+
+            # 4. Missing or malformed live drift-build.json is rejected.
+            missing_receipt_map = dict(served_files)
+            del missing_receipt_map[f'{base_url}/drift-build.json']
+            with self.assertRaisesRegex(ValueError, 'HTTP 404'):
+                build_docs.verify_live_publication(
+                    base_url,
+                    receipt_path,
+                    expected_commit,
+                    retries=1,
+                    retry_delay=0.0,
+                    fetcher=_fetcher_from(missing_receipt_map),
+                )
+
+            malformed_map = dict(served_files)
+            malformed_map[f'{base_url}/drift-build.json'] = b'{not-valid-json'
+            with self.assertRaisesRegex(ValueError, 'invalid JSON'):
+                build_docs.verify_live_publication(
+                    base_url,
+                    receipt_path,
+                    expected_commit,
+                    retries=1,
+                    retry_delay=0.0,
+                    fetcher=_fetcher_from(malformed_map),
+                )
+
+            # 5. Sampled live page SHA-256 mismatch against drift-build.json["outputs"] is rejected.
+            tampered_page_map = dict(served_files)
+            tampered_page_map[f'{base_url}/benchmarks.html'] = served_files[f'{base_url}/benchmarks.html'] + b'<!-- tampered -->'
+            with self.assertRaisesRegex(ValueError, 'live page benchmarks.html sha256'):
+                build_docs.verify_live_publication(
+                    base_url,
+                    receipt_path,
+                    expected_commit,
+                    retries=1,
+                    retry_delay=0.0,
+                    fetcher=_fetcher_from(tampered_page_map),
+                )
+
+            # 6. Transient failure recovers within retry budget.
+            attempts = {'count': 0}
+
+            def _flaky_fetcher(url: str) -> tuple[int, bytes]:
+                if url.endswith('/drift-build.json') and attempts['count'] < 2:
+                    attempts['count'] += 1
+                    raise ValueError('transient CDN propagation delay')
+                return _fetcher_from(served_files)(url)
+
+            recovered = build_docs.verify_live_publication(
+                base_url,
+                receipt_path,
+                expected_commit,
+                retries=3,
+                retry_delay=0.0,
+                fetcher=_flaky_fetcher,
+            )
+            self.assertEqual(2, attempts['count'])
+            self.assertEqual(expected_commit, recovered['commit'])
+
+            # 7. Retry exhaustion raises the last error.
+            def _always_failing_fetcher(url: str) -> tuple[int, bytes]:
+                raise ValueError(f'persistent CDN 503 for {url}')
+
+            with self.assertRaisesRegex(ValueError, 'persistent CDN 503'):
+                build_docs.verify_live_publication(
+                    base_url,
+                    receipt_path,
+                    expected_commit,
+                    retries=2,
+                    retry_delay=0.0,
+                    fetcher=_always_failing_fetcher,
+                )
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -1978,6 +1978,154 @@ def stage_site(root: Path, stage_arg: str | Path) -> list[str]:
         raise
 
 
+LIVE_SAMPLED_PAGES: tuple[str, ...] = (
+    'index.html',
+    'format.html',
+    'c-api.html',
+    'benchmarks.html',
+    '404.html',
+)
+
+
+def _default_http_fetcher(url: str) -> tuple[int, bytes]:
+    import urllib.error
+    import urllib.request
+
+    sep = '&' if '?' in url else '?'
+    bust_url = f'{url}{sep}_rf_verify={int(__import__("time").time() * 1000)}'
+    req = urllib.request.Request(
+        bust_url,
+        headers={
+            'Cache-Control': 'no-cache, no-store, max-age=0',
+            'Pragma': 'no-cache',
+            'User-Agent': 'RasterFold-Pages-Verifier/1.0',
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            return int(resp.status), resp.read()
+    except urllib.error.HTTPError as exc:
+        body = exc.read() if hasattr(exc, 'read') else b''
+        return int(exc.code), body
+    except (OSError, urllib.error.URLError) as exc:
+        raise ValueError(f'HTTP request failed for {url}: {exc}') from None
+
+
+def verify_live_publication(
+    site_url: str,
+    expected_receipt_path: Path,
+    expected_commit: str,
+    *,
+    pages: tuple[str, ...] = LIVE_SAMPLED_PAGES,
+    retries: int = 12,
+    delay_seconds: float = 5.0,
+    fetcher=None,
+    sleep_fn=None,
+) -> dict:
+    import time
+
+    if not isinstance(expected_commit, str) or re.fullmatch(r'[0-9a-f]{40}', expected_commit) is None:
+        raise ValueError(f'expected_commit must be a 40-character lowercase hex SHA, got {expected_commit!r}')
+    if retries < 1:
+        raise ValueError(f'retries must be >= 1, got {retries}')
+    if delay_seconds < 0:
+        raise ValueError(f'delay_seconds must be >= 0, got {delay_seconds}')
+    if not isinstance(site_url, str) or not site_url.strip():
+        raise ValueError('site_url must be a non-empty URL')
+    norm_url = site_url.strip()
+    if not norm_url.endswith('/'):
+        norm_url += '/'
+    if not (norm_url.startswith('https://') or norm_url.startswith('http://127.0.0.1:') or norm_url.startswith('http://localhost:')):
+        raise ValueError(f'site_url must use https:// (or local loopback http:// for tests), got {site_url!r}')
+
+    receipt_file = Path(expected_receipt_path)
+    if not receipt_file.is_file():
+        raise ValueError(f'expected receipt file not found: {expected_receipt_path}')
+    try:
+        expected_receipt = json.loads(receipt_file.read_text(encoding='utf-8'))
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        raise ValueError(f'invalid expected receipt JSON in {expected_receipt_path}: {exc}') from None
+    if not isinstance(expected_receipt, dict) or expected_receipt.get('schema') != 1:
+        raise ValueError(f'expected receipt in {expected_receipt_path} must have schema=1')
+    if expected_receipt.get('commit') != expected_commit:
+        raise ValueError(
+            f'expected receipt commit {expected_receipt.get("commit")!r} does not match expected_commit {expected_commit!r}'
+        )
+    expected_sources = expected_receipt.get('sources')
+    expected_outputs = expected_receipt.get('outputs')
+    if not isinstance(expected_sources, dict) or not expected_sources:
+        raise ValueError(f'expected receipt in {expected_receipt_path} has empty or invalid sources')
+    if not isinstance(expected_outputs, dict) or not expected_outputs:
+        raise ValueError(f'expected receipt in {expected_receipt_path} has empty or invalid outputs')
+    for page_rel in pages:
+        if page_rel not in expected_outputs or not isinstance(expected_outputs[page_rel], str):
+            raise ValueError(f'expected receipt missing output digest for sampled page {page_rel}')
+
+    do_fetch = fetcher if fetcher is not None else _default_http_fetcher
+    do_sleep = sleep_fn if sleep_fn is not None else time.sleep
+    last_error = 'unknown verification error'
+
+    for attempt in range(1, retries + 1):
+        try:
+            receipt_url = f'{norm_url}drift-build.json'
+            status, body = do_fetch(receipt_url)
+            if status != 200:
+                raise ValueError(f'{receipt_url} returned HTTP {status}')
+            try:
+                live_receipt = json.loads(body.decode('utf-8'))
+            except (UnicodeDecodeError, ValueError) as exc:
+                raise ValueError(f'{receipt_url} returned invalid JSON: {exc}') from None
+            if not isinstance(live_receipt, dict) or live_receipt.get('schema') != 1:
+                raise ValueError(f'{receipt_url} has invalid schema: {live_receipt!r}')
+            if live_receipt.get('commit') != expected_commit:
+                raise ValueError(
+                    f'live receipt commit {live_receipt.get("commit")!r} != expected {expected_commit!r}'
+                )
+            if live_receipt != expected_receipt:
+                raise ValueError(
+                    'live drift-build.json differs from expected build receipt (stale same-commit or tampered artifact)'
+                )
+
+            verified_hashes: dict[str, str] = {}
+            # Check bare site_url root as well as each sampled page
+            root_status, root_body = do_fetch(norm_url)
+            if root_status != 200:
+                raise ValueError(f'{norm_url} returned HTTP {root_status}')
+            root_hash = hashlib.sha256(root_body).hexdigest()
+            if root_hash != expected_outputs['index.html']:
+                raise ValueError(
+                    f'{norm_url} SHA-256 {root_hash} != expected index.html {expected_outputs["index.html"]}'
+                )
+
+            for page_rel in pages:
+                page_url = f'{norm_url}{page_rel}'
+                p_status, p_body = do_fetch(page_url)
+                allowed_statuses = (200, 404) if page_rel == '404.html' else (200,)
+                if p_status not in allowed_statuses:
+                    raise ValueError(f'{page_url} returned HTTP {p_status}')
+                actual_hash = hashlib.sha256(p_body).hexdigest()
+                expected_hash = expected_outputs[page_rel]
+                if actual_hash != expected_hash:
+                    raise ValueError(
+                        f'{page_rel} SHA-256 {actual_hash} != expected receipt digest {expected_hash}'
+                    )
+                verified_hashes[page_rel] = actual_hash
+
+            return {
+                'site_url': norm_url,
+                'commit': expected_commit,
+                'attempt': attempt,
+                'verified_pages': list(pages),
+                'page_hashes': verified_hashes,
+            }
+        except ValueError as exc:
+            last_error = str(exc)
+            if attempt < retries:
+                do_sleep(delay_seconds)
+
+    raise ValueError(f'live site verification failed after {retries} attempt(s): {last_error}')
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, default=ROOT)
@@ -1985,11 +2133,30 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--check', action='store_true', help='Verify generated pages, charts, tables, and site allowlist without modifying files')
     parser.add_argument('--self-test', action='store_true', help='Independently parse generated SVG charts and Markdown tables and assert numerical agreement with CSVs')
     parser.add_argument('--stage', metavar='DIR', help='Stage the allowlisted Jekyll source tree into DIR (must be inside build/)')
+    parser.add_argument('--verify-live', metavar='URL', help='Verify live published site URL and drift-build.json against a build job receipt')
+    parser.add_argument('--expected-receipt', type=Path, help='Path to expected drift-build.json from the build job (required with --verify-live)')
+    parser.add_argument('--expected-commit', help='Expected 40-char commit SHA for --verify-live')
+    parser.add_argument('--retries', type=int, default=12, help='Maximum attempts for --verify-live (default: 12)')
+    parser.add_argument('--retry-delay', type=float, default=5.0, help='Seconds between --verify-live attempts (default: 5.0)')
     args = parser.parse_args(argv)
     try:
         root = args.root.resolve()
-        if (args.check or args.self_test) and (args.write or args.stage):
-            raise ValueError('--check and --self-test cannot be combined with --write or --stage')
+        if (args.check or args.self_test or args.verify_live) and (args.write or args.stage):
+            raise ValueError('--check, --self-test, and --verify-live cannot be combined with --write or --stage')
+        if args.verify_live:
+            if not args.expected_receipt or not args.expected_commit:
+                raise ValueError('--verify-live requires both --expected-receipt and --expected-commit')
+            res = verify_live_publication(
+                args.verify_live,
+                args.expected_receipt,
+                args.expected_commit,
+                retries=args.retries,
+                delay_seconds=args.retry_delay,
+            )
+            print(
+                f'build-docs: verify-live: verified {len(res["verified_pages"])} page(s) and drift-build.json at {res["site_url"]} for commit {res["commit"]} (attempt {res["attempt"]})'
+            )
+            return 0
         if args.self_test and not args.check:
             errors = self_test_charts(root)
             for err in errors:

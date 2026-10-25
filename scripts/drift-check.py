@@ -1682,8 +1682,17 @@ class Checker:
             except (UnicodeDecodeError, ValueError, OSError) as exc:
                 self.error('site', directory, f'invalid source receipt drift-build.json: {exc}')
             else:
-                if actual_receipt != expected:
-                    self.error('site', directory, 'site source receipt differs from current inputs; rebuild before publishing')
+                if not isinstance(actual_receipt, dict):
+                    self.error('site', directory, 'invalid source receipt drift-build.json: root must be a JSON object')
+                elif actual_receipt != expected:
+                    if actual_receipt.get('commit') != expected.get('commit'):
+                        self.error(
+                            'site',
+                            directory,
+                            f'site source receipt commit {actual_receipt.get("commit")!r} differs from HEAD {expected.get("commit")!r}; site source receipt differs from current inputs; rebuild before publishing',
+                        )
+                    else:
+                        self.error('site', directory, 'site source receipt differs from current inputs; rebuild before publishing')
         forbidden = set(self.manifest.get('forbidden_site_paths', []))
         for path in base.rglob('*'):
             if any(part.lower() in forbidden for part in path.relative_to(base).parts):
@@ -1693,6 +1702,13 @@ class Checker:
                 self.error('site', directory, 'symlink escapes built site')
                 continue
             self.links(path.relative_to(base).as_posix(), path.read_text(encoding='utf-8'), base, prefix)
+
+    def _git_head_sha(self):
+        try:
+            head = self.git('rev-parse', 'HEAD').decode('utf-8', errors='replace').strip()
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return head if re.fullmatch(r'[0-9a-f]{40}', head) else None
 
     def site_receipt(self, directory):
         paths = {p for p in self.files if any(fnmatch.fnmatchcase(p, pat) for pat in self.manifest['site_sources']) and self.path(p).is_file()}
@@ -1711,7 +1727,11 @@ class Checker:
             for out_rel in contract['expected_outputs']:
                 if out_rel not in output:
                     raise ValueError(f'missing allowlisted built output in {directory}: {out_rel}')
-        return {'schema': 1, 'sources': {p: digest(self.path(p).read_bytes()) for p in sorted(paths)}, 'outputs': output}
+        receipt = {'schema': 1, 'sources': {p: digest(self.path(p).read_bytes()) for p in sorted(paths)}, 'outputs': output}
+        head_sha = self._git_head_sha()
+        if head_sha is not None:
+            receipt['commit'] = head_sha
+        return receipt
 
     def _entry_state(self, rel):
         try:

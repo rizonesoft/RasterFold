@@ -333,6 +333,16 @@ class DriftTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(0, drift.main(['--root', str(self.root), '--site-dir', '_site', '--write-site-receipt']))
             self.assertEqual(0, drift.main(['--root', str(self.root), '--site-dir', '_site']))
+        receipt_path = self.root / '_site/drift-build.json'
+        receipt = json.loads(receipt_path.read_text(encoding='utf-8'))
+        expected_head = self.git('rev-parse', 'HEAD')
+        self.assertEqual(expected_head, receipt.get('commit'))
+        stale_receipt = dict(receipt, commit='0' * 40)
+        receipt_path.write_text(json.dumps(stale_receipt, indent=2) + '\n', encoding='utf-8', newline='\n')
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.assertEqual(1, drift.main(['--root', str(self.root), '--site-dir', '_site']))
+        self.assertIn("site source receipt commit '0000000000000000000000000000000000000000' differs from HEAD", buf.getvalue())
 
     def test_commit_range_uses_own_source_and_detects_false_history(self):
         base = self.git('rev-parse', 'HEAD')
@@ -1910,8 +1920,10 @@ class DriftTests(unittest.TestCase):
             self.assertIn('PASS document drift', ps_ok.stdout)
         ci_ok = subprocess.run([sys.executable, 'scripts/drift-check.py'], cwd=self.root, capture_output=True, text=True, timeout=60)
         self.assertEqual(0, ci_ok.returncode)
+        ci_site_write = subprocess.run([sys.executable, 'scripts/drift-check.py', '--site-dir', 'build/site-artifact', '--write-site-receipt'], cwd=self.root, capture_output=True, text=True, timeout=60)
+        self.assertEqual(0, ci_site_write.returncode, ci_site_write.stdout + ci_site_write.stderr)
         ci_site_ok = subprocess.run([sys.executable, 'scripts/drift-check.py', '--site-dir', 'build/site-artifact'], cwd=self.root, capture_output=True, text=True, timeout=60)
-        self.assertEqual(0, ci_site_ok.returncode)
+        self.assertEqual(0, ci_site_ok.returncode, ci_site_ok.stdout + ci_site_ok.stderr)
 
         if shutil.which('sh'):
             self.git('config', 'core.hooksPath', str(REPO / 'tools/githooks'))

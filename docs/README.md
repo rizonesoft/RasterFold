@@ -18,4 +18,4 @@
 | [Runner intelligence](../.intelligence/README.md) | Family-owned observations and stopped maintenance |
 | [Execution plan](../todo/implementation-plan.md) | Canonical planned work and section ownership |
 
-The Jekyll documentation site sources are staged from the allowlist in `docs/site-content.json` by `scripts/build-docs.py`. Live GitHub Pages deployment (`D08 T01 §3`) and the native converter application (`docs/vision.md`) remain separate planned work; these guides do not claim either has been deployed or published as a download.
+The Jekyll documentation site sources are staged from the allowlist in `docs/site-content.json` by `scripts/build-docs.py` and published to GitHub Pages by `.github/workflows/pages.yml` (`D08 T01 §3`), which verifies the live deployment against the build job's `drift-build.json` receipt via `scripts/build-docs.py --verify-live`. The native converter application (`docs/vision.md`) remains separate planned work; these guides do not claim it has been built or published as a download.
