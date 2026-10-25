@@ -8,7 +8,6 @@ The toolchain, gates, hooks, CI, and the TODO system every later domain leans on
 
 | TODO | Title | Status |
 | ---- | ----- | :----: |
-| [TODO-01](./TODO-01-dev-automation.md) | Dev-Automation Wiring | draft |
 | [TODO-02](./TODO-02-measurement-references.md) | Measurement References: JPEG XL e9 and WebP | draft |
 | [TODO-03](./TODO-03-held-out-validation.md) | Held-Out Validation | draft |
 
@@ -16,6 +15,7 @@ The toolchain, gates, hooks, CI, and the TODO system every later domain leans on
 
 | TODO | Title | Completed |
 | ---- | ----- | :-------: |
+| [TODO-01](./TODO-01-dev-automation.md) | Dev-Automation Wiring | 2026-10-25 |
 | [TODO-04](./TODO-04-wsl-and-runners.md) | WSL, Local Toolchains, and Isolated Runners | 2026-10-25 |
 
 ## In scope

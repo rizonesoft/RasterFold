@@ -230,6 +230,6 @@ Admission: a defect in shipped work (`scripts/review-dispatch.py:309`). On Windo
 > **Review:** `docs/reviews/d00-t01-s9.json`
 ## Verification
 
-- [ ] `pwsh scripts/check-all.ps1` -- exits 0 with every gate `PASS`, the static analysis gate included
-- [ ] `python scripts/todo-graph.py validate` clean
-- [ ] Both workflows green on the last push, read back with `python3 scripts/ci_status.py`
+- [x] `pwsh scripts/check-all.ps1` -- exits 0 with every gate `PASS`, the static analysis gate included (`PASS clang-tidy (32.1s)`, `check-all: 28/28 passed`)
+- [x] `python scripts/todo-graph.py validate` clean (`32 todos, 227 sections -- 0 fatal, 0 warning(s)`)
+- [x] Both workflows green on the last push, read back with `python3 scripts/ci_status.py` (`build.yml: green at f4dc09160602 (https://github.com/rizonesoft/RasterFold/actions/runs/40147208946)` and `plan.yml: green at f4dc09160602 (https://github.com/rizonesoft/RasterFold/actions/runs/40147208820)`, exit 0)
