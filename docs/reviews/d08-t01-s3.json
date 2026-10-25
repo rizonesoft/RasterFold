@@ -1,0 +1,91 @@
+{
+  "ref": "D08 T01 \u00a73",
+  "title": "Publish with GitHub Pages",
+  "implementation_sha": "b65010d0c4ac06f77d34545a4d4d2f9aa6340eac",
+  "date": "2026-10-25",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/08-docs/D08-T01-s3.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/08-docs/D08-T01-s3.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 scripts/ci_status.py --workflow pages.yml -> pages.yml: green at f16c0ce332f7 (https://github.com/rizonesoft/RasterFold/actions/runs/40191995086) and workflow_dispatch (https://github.com/rizonesoft/RasterFold/actions/runs/40192164197)",
+    "python3 scripts/build-docs.py --verify-live https://rizonesoft.github.io/RasterFold/ --expected-receipt build/live-receipt-dispatch/drift-build.json --expected-commit d484225c71005589236b8e932271ca8b9d1ab64e -> verified 5 page(s) and drift-build.json (attempt 1)",
+    "python3 -m unittest discover -s tests -p test_docs.py -v -> Ran 7 tests OK",
+    "python3 -m unittest discover -s tests -p test_drift.py -v -> Ran 53 tests OK"
+  ],
+  "completion": {
+    "report": "docs/reviews/08-docs/D08-T01-s3.md",
+    "verdict": "complete",
+    "candidate": "7505328f43dfaecebe4d197b3afcfe1d2f3275af",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 2,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/08-docs/D08-T01-s3.md",
+    "candidate": "03e01a09de3b2fe2f10a77b1b992d25c570fd946",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}

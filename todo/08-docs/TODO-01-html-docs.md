@@ -52,7 +52,7 @@ track: D1
 | :---: | :-----: | ----------- | ---------- | :----: |
 |   1   |   §1    | The Jekyll site and its generated pages | D08 T02 §1 |  [x]   |
 |   2   |   §2    | Comparison charts | §1, D00 T02 §3 |  [x]   |
-| 3 | §3 | Publish with GitHub Pages | §2, §4, §5, D08 T02 §5, D08 T02 §7, D99 T01 §5 | [ ] |
+| 3 | §3 | Publish with GitHub Pages | §2, §4, §5, D08 T02 §5, D08 T02 §7, D99 T01 §5 | [x] |
 | 4 | §4 | Complete current documentation map | §1, D08 T02 §7 | [x] |
 | 5 | §5 | Accessible navigation and site states | §4 | [x] |
 | 6 | §6 | Converter user guide and capability reference | §4, D10 T03 §8, D10 T04 §1 | [ ] |
@@ -122,6 +122,8 @@ The workflow is GitHub's Jekyll starter adapted to this repository: it builds th
 
 **Groomed 2026-09-30:** The initial publication documents current capabilities. The converter manual and final complete-product site are later sections in Phase 9; the existing Phase 0 publication is not made dependent on future converter implementation.
 
+> **Verified:** 2026-10-25 | §3 | b65010d0c4ac06f77d34545a4d4d2f9aa6340eac
+> **Review:** `docs/reviews/d08-t01-s3.json`
 ## 4. Complete current documentation map
 
 > **Started:** 2026-10-25T09:47:37Z
