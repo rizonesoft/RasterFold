@@ -1,0 +1,93 @@
+{
+  "ref": "D02 T01 \u00a72",
+  "title": "Link-Time Optimization",
+  "implementation_sha": "efca2e968ab631a6fab86c77896689ef1c8792c4",
+  "date": "2026-10-25",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/02-speed/D02-T01-s2.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/02-speed/D02-T01-s2.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 scripts/build.py --target all --lto -> built linux-x64, windows-x64, android-arm64, android-x64",
+    "python3 tests/test_correctness.py (LTO and non-LTO, Linux and Windows) -> 36 passed, 0 failed",
+    "python3 tests/test_api.py (LTO and non-LTO, Linux and Windows) -> Ran 9 tests OK",
+    "python3 tests/test_artifacts.py -> Ran 8 tests OK (Linux) / Ran 8 tests OK (skipped=2, Windows)",
+    "python3 scripts/windows.py research/vsjxl.py -n5 --threads 1 --exe build/research/vs/rasterfold-base.exe --alt-exe build/research/vs/rasterfold-lto.exe -> dec 0.924/0.905 min, enc 0.968/0.986 min",
+    "python3 scripts/windows.py research/vsjxl.py --corpus all -n 3 --threads 1 --lto -> photo dec 1.008, tp dec 1.019, synth dec 0.937"
+  ],
+  "completion": {
+    "report": "docs/reviews/02-speed/D02-T01-s2.md",
+    "verdict": "completed",
+    "candidate": "7e7d680cc6567f9ff9146296556789d826af5ea6",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 2,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/02-speed/D02-T01-s2.md",
+    "candidate": "f84c47adf90989939bd0eb89520858651f27908b",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}
