@@ -549,7 +549,20 @@ class DriftTests(unittest.TestCase):
         except OSError:
             pass
 
-        # Reference-style Markdown links, HTML attributes with whitespace around =, and query strings are rebased cleanly.
+        # Reference-style Markdown links, HTML attributes with whitespace around =, and query strings are rebased cleanly across both authored and mirrored pages.
+        orig_readme = (self.root / 'README.md').read_text(encoding='utf-8')
+        self.write(
+            'README.md',
+            orig_readme.replace(
+                '[The build guide](docs/building.md)',
+                '[The build guide](docs/building.md?plain=1#L2) and [Build Ref][build] and <a href = "docs/building.md?html=1#L4">HTML Build</a>\n\n[build]: docs/building.md?raw=1#L3',
+            ),
+        )
+        build_docs.write_generated_pages(self.root)
+        mirrored_usage = (self.root / 'docs/usage.md').read_text(encoding='utf-8')
+        self.assertIn('[The build guide](building.md?plain=1#L2)', mirrored_usage)
+        self.assertIn('[build]: building.md?raw=1#L3', mirrored_usage)
+        self.assertIn('<a href = "building.md?html=1#L4">', mirrored_usage)
         self.write(
             'docs/index.md',
             sentinel.decode('utf-8')
@@ -560,6 +573,12 @@ class DriftTests(unittest.TestCase):
         self.assertIn('[build]: https://github.com/rizonesoft/RasterFold/blob/main/docs/building.md?raw=1#L3', rebased_probe)
         self.assertIn('<a href = "https://github.com/rizonesoft/RasterFold/blob/main/docs/building.md?plain=1#L2">', rebased_probe)
         self.assertIn('(https://github.com/rizonesoft/RasterFold/blob/main/include/rasterfold.h?plain=1#L1)', rebased_probe)
+        rebased_usage = (self.root / 'build/site-source/usage.md').read_text(encoding='utf-8')
+        self.assertIn('[The build guide](https://github.com/rizonesoft/RasterFold/blob/main/docs/building.md?plain=1#L2)', rebased_usage)
+        self.assertIn('[build]: https://github.com/rizonesoft/RasterFold/blob/main/docs/building.md?raw=1#L3', rebased_usage)
+        self.assertIn('<a href = "https://github.com/rizonesoft/RasterFold/blob/main/docs/building.md?html=1#L4">', rebased_usage)
+        self.write('README.md', orig_readme)
+        build_docs.write_generated_pages(self.root)
         self.write('docs/index.md', sentinel.decode('utf-8'))
 
         # Repeated staging removes obsolete files from build/site-source and stages only the allowlist.
