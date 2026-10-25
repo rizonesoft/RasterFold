@@ -16,6 +16,7 @@ from html.parser import HTMLParser
 import importlib.util
 import io
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -106,12 +107,87 @@ def anchors(text, markdown=True):
 
 
 
+TP_OVERLAP_PHOTO = (
+    'ic_deer',
+    'ic_fireworks',
+    'ic_flower_foveon',
+    'ic_nightshot_iso_1600',
+    'ic_spider_web',
+)
+CORPUS_GROUP_EXPECTED_COUNTS = {
+    'photo': 39,
+    'tp': 10,
+    'tp-only': 5,
+    'synth': 11,
+    'all': 55,
+}
+
+
 def _csv_stream(source):
     lines = source.splitlines(keepends=True)
     idx = 0
     while idx < len(lines) and lines[idx].lstrip().startswith('#'):
         idx += 1
     return io.StringIO(''.join(lines[idx:]))
+
+
+def _csv_meta(source):
+    meta = {}
+    for line in source.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith('#'):
+            break
+        for token in stripped[1:].split():
+            if '=' in token:
+                k, v = token.split('=', 1)
+                if k and v:
+                    meta[k] = v
+    return meta
+
+
+def _select_csv_rows(source, rule, key):
+    all_rows = list(csv.DictReader(_csv_stream(source)))
+    if 'group' in rule:
+        group = rule['group']
+        if group == 'photo':
+            rows = [r for r in all_rows if r.get('set') == 'photo']
+        elif group == 'tp':
+            rows = [r for r in all_rows if r.get('set') == 'tp' or r.get('image') in TP_OVERLAP_PHOTO]
+        elif group == 'tp-only':
+            rows = [r for r in all_rows if r.get('set') == 'tp']
+        elif group == 'synth':
+            rows = [r for r in all_rows if r.get('set') == 'synth']
+        elif group == 'all':
+            rows = list(all_rows)
+        else:
+            raise ValueError(f'{key}: unknown corpus group {group!r}')
+        exp_count = CORPUS_GROUP_EXPECTED_COUNTS[group]
+        if len(rows) != exp_count:
+            raise ValueError(f'{key}: corpus group {group!r} expected {exp_count} rows, got {len(rows)}')
+        if 'where' in rule:
+            rows = [r for r in rows if all(r.get(k) == v for k, v in rule['where'].items())]
+    elif 'where' in rule and isinstance(rule['where'], dict) and rule['where']:
+        rows = [r for r in all_rows if all(r.get(k) == v for k, v in rule['where'].items())]
+    else:
+        raise ValueError(f'{key}: csv-aggregate requires non-empty group or where selector')
+    if not rows:
+        raise ValueError(f'{key}: CSV selector matched 0 rows')
+    return rows
+
+
+def _check_visible_fact(segment, expected_str):
+    cleaned = re.sub(r'`+<!--.*?-->`+', ' ', segment)
+    if re.fullmatch(r'-?\d+(?:\.\d+)?', expected_str):
+        nums = re.findall(
+            r'(?<![A-Za-z0-9_])-?\d+(?:,\d{3})*(?:\.\d+)?(?![A-Za-z0-9_])'
+            r'|(?<![A-Za-z0-9_])-?\d+(?:_\d{3})*(?:\.\d+)?(?![A-Za-z0-9_])'
+            r'|(?<![A-Za-z0-9_])-?\d+(?:\.\d+)?(?![A-Za-z0-9_])',
+            cleaned,
+        )
+        if not nums:
+            return False
+        return nums[-1].replace(',', '').replace('_', '') == expected_str
+    return bool(expected_str) and expected_str in cleaned
 
 
 def derive_facts(manifest, read):
@@ -136,11 +212,77 @@ def derive_facts(manifest, read):
             for part in rule['key'].split('.'):
                 value = value[part]
         elif rule['kind'] == 'csv':
+            if not isinstance(rule.get('where'), dict) or not rule['where']:
+                raise ValueError(f'{key}: csv provider requires non-empty where selector')
             rows = [r for r in csv.DictReader(_csv_stream(source)) if all(r.get(k) == v for k, v in rule['where'].items())]
             if len(rows) != 1:
                 raise ValueError(f'{key}: expected one CSV row, got {len(rows)}')
-            value = rows[0][rule['column']]
-            if rule.get('type') == 'int': value = int(value)
+            col = rule.get('column', '')
+            if col not in rows[0] or rows[0][col] in (None, ''):
+                raise ValueError(f'{key}: missing or empty CSV column {col!r}')
+            value = rows[0][col]
+            if rule.get('type') == 'int':
+                value = int(value)
+        elif rule['kind'] == 'csv-meta':
+            meta = _csv_meta(source)
+            meta_key = rule.get('key', '')
+            if not meta_key or meta_key not in meta:
+                raise ValueError(f'{key}: missing CSV metadata key {meta_key!r} in {rule["source"]}')
+            value = meta[meta_key]
+            if rule.get('type') == 'int':
+                value = int(value)
+        elif rule['kind'] == 'csv-aggregate':
+            rows = _select_csv_rows(source, rule, key)
+            op = rule.get('op')
+            precision = int(rule.get('precision', 4))
+            if op == 'count':
+                value = len(rows)
+            elif op == 'sum':
+                col = rule['column']
+                vals = [Decimal(r[col]) for r in rows]
+                total = sum(vals, Decimal(0))
+                value = int(total) if rule.get('type', 'int') == 'int' and total == int(total) else str(total)
+            elif op == 'max':
+                col = rule['column']
+                vals = [Decimal(r[col]) for r in rows]
+                mx = max(vals)
+                value = int(mx) if rule.get('type', 'int') == 'int' and mx == int(mx) else str(mx)
+            elif op == 'ratio':
+                col = rule['column']
+                num = sum((Decimal(r[col]) for r in rows), Decimal(0))
+                if 'denominator_column' in rule:
+                    den_col = rule['denominator_column']
+                    den = sum((Decimal(r[den_col]) for r in rows), Decimal(0))
+                elif 'denominator_where' in rule:
+                    den_rows = _select_csv_rows(source, {'where': rule['denominator_where']}, f'{key}.denominator')
+                    den_col = rule.get('denominator_where_column', col)
+                    den = sum((Decimal(r[den_col]) for r in den_rows), Decimal(0))
+                else:
+                    raise ValueError(f'{key}: ratio requires denominator_column or denominator_where')
+                if den <= 0:
+                    raise ValueError(f'{key}: non-positive ratio denominator {den}')
+                value = f'{float(num / den):.{precision}f}'
+            elif op == 'geomean':
+                col = rule['column']
+                if 'denominator_column' in rule:
+                    den_col = rule['denominator_column']
+                    ratios = [float(Decimal(r[col]) / Decimal(r[den_col])) for r in rows]
+                elif 'denominator_where' in rule:
+                    den_rows = _select_csv_rows(source, {'where': rule['denominator_where']}, f'{key}.denominator')
+                    join_key = rule.get('join_key', 'image')
+                    den_by_key = {r[join_key]: r for r in den_rows}
+                    if len(den_by_key) != len(den_rows) or set(den_by_key) != {r[join_key] for r in rows}:
+                        raise ValueError(f'{key}: geomean denominator rows do not match numerator keys on {join_key!r}')
+                    den_col = rule.get('denominator_where_column', col)
+                    ratios = [float(Decimal(r[col]) / Decimal(den_by_key[r[join_key]][den_col])) for r in rows]
+                else:
+                    raise ValueError(f'{key}: geomean requires denominator_column or denominator_where')
+                if any(v <= 0 for v in ratios):
+                    raise ValueError(f'{key}: non-positive ratio in geomean')
+                gm = math.exp(sum(math.log(v) for v in ratios) / len(ratios))
+                value = f'{gm:.{precision}f}'
+            else:
+                raise ValueError(f'{key}: unknown csv-aggregate op {op!r}')
         else:
             raise ValueError(f'{key}: unknown provider kind')
         facts[key] = value
@@ -262,10 +404,12 @@ class Checker:
                     ET.fromstring(text)
             except (ValueError, ET.ParseError) as exc:
                 self.error('syntax', rel, str(exc))
+            prose_lines = (prose(text) if suffix in ('.md', '.markdown') else text).splitlines()
             scan = code_spans(prose(text)) if suffix in ('.md', '.markdown') else text
-            if role == 'template':
+            if role == 'template' or rel == MANIFEST:
                 continue
             for line_no, line in enumerate(scan.splitlines(), 1):
+                raw_line = prose_lines[line_no - 1] if line_no - 1 < len(prose_lines) else line
                 for match in claims.CLAIM_RE.finditer(line):
                     try:
                         claims.evaluate(match[1])
@@ -277,10 +421,15 @@ class Checker:
                     self.error('fact', rel, f'line {line_no}: malformed fact binding')
                 if line.count('<!-- drift:commit ') != len(list(COMMIT.finditer(line))):
                     self.error('commit', rel, f'line {line_no}: malformed commit reference')
+                prev_fact_end = 0
                 for match in FACT.finditer(line):
                     value = self.facts.get(match[1])
+                    segment = raw_line[prev_fact_end:match.start()]
+                    prev_fact_end = match.end()
                     if match[1] not in self.facts or str(value) != match[2]:
                         self.error('fact', rel, f'line {line_no}: {match[1]} must equal {value!r}; review the surrounding sentence')
+                    elif not _check_visible_fact(segment, str(value)):
+                        self.error('fact', rel, f'line {line_no}: visible figure before {match[1]} does not match {value!r}; review the surrounding sentence')
                 for match in COMMIT.finditer(line):
                     try:
                         ref = match[1] + (':' + match[2] if match[2] else '^{commit}')

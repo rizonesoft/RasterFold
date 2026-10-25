@@ -392,7 +392,7 @@ class DriftTests(unittest.TestCase):
         live_facts = drift.derive_facts(live_manifest, lambda rel: (REPO / rel).read_text(encoding='utf-8'))
         committed_facts = json.loads((REPO / 'docs/facts.json').read_text(encoding='utf-8'))
         self.assertEqual(committed_facts, live_facts)
-        expected_keys = {
+        core_keys = {
             'product_name', 'format_name', 'format_version', 'header_bytes',
             'max_dimension', 'max_pixels', 'max_file_bytes', 'api_major', 'api_minor',
             'exit_ok', 'exit_ok_meaning', 'exit_usage', 'exit_usage_meaning',
@@ -401,7 +401,8 @@ class DriftTests(unittest.TestCase):
             'cmd_encode', 'cmd_decode', 'cmd_inspect', 'input_image_ext', 'encoded_ext',
             'measurement_reference_bytes',
         }
-        self.assertEqual(expected_keys, set(live_facts))
+        self.assertTrue(core_keys <= set(live_facts))
+        self.assertEqual(set(live_manifest['facts']), set(live_facts))
         for mutated, target, old, new in [
             ('format_version', 'src/rf.h', '#define RF_VERSION 2u', '#define RF_VERSION 3u'),
             ('exit_limit', 'include/rasterfold.h', '#define RF_ERR_LIMIT 5', '#define RF_ERR_LIMIT 6'),
@@ -980,6 +981,218 @@ class DriftTests(unittest.TestCase):
         build_docs.write_generated_pages(self.root)
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(0, build_docs.main(['--root', str(self.root), '--self-test']))
+
+    def test_measured_figures_bound_to_data_and_aggregates(self):
+        import csv as csv_mod
+        from decimal import Decimal
+        import math as math_mod
+        import re as re_mod
+
+        live_manifest = json.loads((REPO / 'docs/drift.json').read_text(encoding='utf-8'))
+        live_facts = drift.derive_facts(live_manifest, lambda rel: (REPO / rel).read_text(encoding='utf-8'))
+
+        # 1. Independently verify corpus group memberships (photo 39, tp 10 overlapping, tp-only 5 exclusive, synth 11, all 55) and aggregate values.
+        corpus_raw = (REPO / 'benchmarks/corpus.csv').read_text(encoding='utf-8')
+        corpus_rows = list(csv_mod.DictReader([ln for ln in corpus_raw.splitlines() if ln.strip() and not ln.startswith('#')]))
+        tp_overlap = {'ic_deer', 'ic_fireworks', 'ic_flower_foveon', 'ic_nightshot_iso_1600', 'ic_spider_web'}
+        expected_groups = {
+            'photo': (39, [r for r in corpus_rows if r['set'] == 'photo']),
+            'tp': (10, [r for r in corpus_rows if r['set'] == 'tp' or r['image'] in tp_overlap]),
+            'tp_only': (5, [r for r in corpus_rows if r['set'] == 'tp']),
+            'synth': (11, [r for r in corpus_rows if r['set'] == 'synth']),
+            'all': (55, corpus_rows),
+        }
+        for key_prefix, (exp_count, grp_rows) in expected_groups.items():
+            self.assertEqual(exp_count, len(grp_rows), key_prefix)
+            self.assertEqual(exp_count, live_facts[f'corpus_{key_prefix}_count'])
+            exp_rf = sum(int(r['rasterfold']) for r in grp_rows)
+            self.assertEqual(exp_rf, live_facts[f'corpus_{key_prefix}_rf_bytes'])
+            for ref_col in ('jxl_e7', 'jxl_e9', 'webp'):
+                exp_ref = sum(int(r[ref_col]) for r in grp_rows)
+                exp_ratio = f'{float(Decimal(exp_rf) / Decimal(exp_ref)):.4f}'
+                exp_gm = f'{math_mod.exp(sum(math_mod.log(float(Decimal(r["rasterfold"]) / Decimal(r[ref_col]))) for r in grp_rows) / len(grp_rows)):.4f}'
+                self.assertEqual(exp_ref, live_facts[f'corpus_{key_prefix}_{ref_col}_bytes'])
+                self.assertEqual(exp_ratio, live_facts[f'corpus_{key_prefix}_{ref_col}_ratio'])
+                self.assertEqual(exp_gm, live_facts[f'corpus_{key_prefix}_{ref_col}_geomean'])
+
+        # Independently verify results.csv reference and retained set aggregates.
+        results_raw = (REPO / 'benchmarks/results.csv').read_text(encoding='utf-8')
+        results_rows = list(csv_mod.DictReader([ln for ln in results_raw.splitlines() if ln.strip() and not ln.startswith('#')]))
+        self.assertEqual('2026-10-25', live_facts['results_date'])
+        self.assertEqual('2026-09-29', live_facts['results_retained_date'])
+        self.assertEqual('2026-10-25', live_facts['corpus_date'])
+        self.assertEqual('0.958', live_facts['measurement_reference_ratio_jxl_e7'])
+        self.assertEqual('0.978', live_facts['measurement_reference_ratio_jxl_e9'])
+        for bset, exp_cnt in (('photos', 10), ('synthetic', 11)):
+            rf_set = {r['image']: r for r in results_rows if r['set'] == bset and r['codec'] == 'rasterfold'}
+            jxl_set = {r['image']: r for r in results_rows if r['set'] == bset and r['codec'] == 'jxl'}
+            self.assertEqual(exp_cnt, live_facts[f'results_{bset}_count'])
+            self.assertEqual(sum(int(r['bytes']) for r in rf_set.values()), live_facts[f'results_{bset}_rf_bytes'])
+            self.assertEqual(sum(int(r['bytes']) for r in jxl_set.values()), live_facts[f'results_{bset}_jxl_bytes'])
+            self.assertEqual(max(int(r['encode_peak']) for r in rf_set.values()), live_facts[f'results_{bset}_rf_encode_peak_max'])
+            self.assertEqual(max(int(r['decode_peak']) for r in rf_set.values()), live_facts[f'results_{bset}_rf_decode_peak_max'])
+
+        # Verify every measured figure in docs/benchmarks.md has an active drift:fact binding.
+        bm_text = (REPO / 'docs/benchmarks.md').read_text(encoding='utf-8')
+        self.assertIn('<!-- drift:begin benchmarks-measurements -->', bm_text)
+        self.assertIn('<!-- drift:end benchmarks-measurements -->', bm_text)
+        fact_matches = list(drift.FACT.finditer(bm_text))
+        self.assertGreaterEqual(len(fact_matches), 110)
+
+        # Set up a full fixture with docs/benchmarks.md, CSVs, and historical research files.
+        for rel in (
+            'src/main.c', 'src/rf.h', 'include/rasterfold.h',
+            'benchmarks/results.csv', 'benchmarks/corpus.csv',
+            'docs/benchmarks.md',
+        ):
+            self.write(rel, (REPO / rel).read_text(encoding='utf-8'))
+        for hist_doc in ('docs/measurements.md', 'docs/research.md', 'docs/research-summary.md'):
+            self.write(hist_doc, f'# Historical record ({hist_doc})\n\nFormat version 1 measured in 2020: 9999999 bytes.\n')
+        for chart_name in build_docs.CHART_NAMES:
+            for kind, ext in (('charts', 'svg'), ('tables', 'md')):
+                rel = f'docs/_includes/generated/{kind}/{chart_name}.{ext}'
+                self.write(rel, (REPO / rel).read_text(encoding='utf-8'))
+        self.manifest['coverage'] = live_manifest['coverage']
+        self.manifest['facts'].update(live_manifest['facts'])
+        self.manifest['blocks']['benchmarks-measurements'] = live_manifest['blocks']['benchmarks-measurements']
+        self.save()
+        c = self.check()
+        c.fix()
+        self.assertEqual([], self.check().errors)
+
+        # 2. Mutating a CSV cell in benchmarks/results.csv or benchmarks/corpus.csv fails with fact + generated errors.
+        orig_results = (self.root / 'benchmarks/results.csv').read_text(encoding='utf-8')
+        self.write('benchmarks/results.csv', orig_results.replace(',1409028,', ',1409999,', 1))
+        c = self.check()
+        self.assertIn('fact', self.kinds(c))
+        self.assertIn('generated', self.kinds(c))
+        self.assertTrue(any(e['path'] == 'docs/benchmarks.md' and 'measurement_reference_bytes' in e['detail'] for e in c.errors))
+        self.write('benchmarks/results.csv', orig_results)
+        self.assertEqual([], self.check().errors)
+
+        orig_corpus = (self.root / 'benchmarks/corpus.csv').read_text(encoding='utf-8')
+        self.write('benchmarks/corpus.csv', orig_corpus.replace('photo,measure,1672,941,1409028,', 'photo,measure,1672,941,1409999,', 1))
+        c = self.check()
+        self.assertIn('fact', self.kinds(c))
+        self.assertTrue(any(e['path'] == 'docs/benchmarks.md' and 'corpus_photo_rf_bytes' in e['detail'] for e in c.errors))
+        self.write('benchmarks/corpus.csv', orig_corpus)
+        self.assertEqual([], self.check().errors)
+
+        # 3. Changing a visible figure while keeping its <!-- drift:fact ... --> annotation unchanged fails with a fact error.
+        orig_bm = (self.root / 'docs/benchmarks.md').read_text(encoding='utf-8')
+        self.write(
+            'docs/benchmarks.md',
+            orig_bm.replace(
+                '`1,409,028` bytes <!-- drift:fact measurement_reference_bytes = 1409028 -->',
+                '`1,409,999` bytes <!-- drift:fact measurement_reference_bytes = 1409028 -->',
+                1,
+            ),
+        )
+        c = self.check()
+        self.assertTrue(
+            any(
+                e['kind'] == 'fact'
+                and e['path'] == 'docs/benchmarks.md'
+                and 'visible figure before measurement_reference_bytes does not match 1409028' in e['detail']
+                for e in c.errors
+            ),
+            c.errors,
+        )
+
+        # Also test non-numeric visible figure mismatch (changing date in prose while keeping annotation).
+        self.write(
+            'docs/benchmarks.md',
+            orig_bm.replace(
+                'on `2026-10-25` <!-- drift:fact results_date = 2026-10-25 -->',
+                'on `2026-10-24` <!-- drift:fact results_date = 2026-10-25 -->',
+                1,
+            ),
+        )
+        c = self.check()
+        self.assertTrue(
+            any(
+                e['kind'] == 'fact'
+                and e['path'] == 'docs/benchmarks.md'
+                and "visible figure before results_date does not match '2026-10-25'" in e['detail']
+                for e in c.errors
+            ),
+            c.errors,
+        )
+
+        # Removing the visible figure before an annotation (standalone drift:fact) also fails.
+        self.write('docs/benchmarks.md', orig_bm + '\n<!-- drift:fact format_version = 2 -->\n')
+        c = self.check()
+        self.assertTrue(
+            any(
+                e['kind'] == 'fact'
+                and e['path'] == 'docs/benchmarks.md'
+                and 'visible figure before format_version does not match 2' in e['detail']
+                for e in c.errors
+            ),
+            c.errors,
+        )
+
+        # 4. Editing non-fact text inside the generated benchmarks-measurements block fails with generated.
+        self.write('docs/benchmarks.md', orig_bm.replace('RGB8,', 'RGB24,', 1))
+        c = self.check()
+        self.assertIn('generated', self.kinds(c))
+        self.assertIn('docs/benchmarks.md', c.repairs)
+
+        # 5. Removing required block markers fails with block.
+        stripped_markers = re_mod.sub(r'<!-- drift:(?:begin|end) benchmarks-measurements -->\n?', '', orig_bm)
+        self.write('docs/benchmarks.md', stripped_markers)
+        c = self.check()
+        self.assertTrue(
+            any(
+                e['kind'] == 'block'
+                and e['path'] == 'docs/benchmarks.md'
+                and 'required block benchmarks-measurements is missing' in e['detail']
+                for e in c.errors
+            ),
+            c.errors,
+        )
+        self.write('docs/benchmarks.md', orig_bm)
+        self.assertEqual([], self.check().errors)
+
+        # 6. Missing or ambiguous CSV selections and malformed aggregate rules fail derive_facts.
+        for bad_rule, expected_msg in (
+            ({'kind': 'csv', 'source': 'benchmarks/results.csv', 'where': {'set': 'no_such_set'}, 'column': 'bytes'}, 'expected one CSV row, got 0'),
+            ({'kind': 'csv', 'source': 'benchmarks/results.csv', 'where': {'set': 'photos'}, 'column': 'bytes'}, 'expected one CSV row, got 60'),
+            ({'kind': 'csv-meta', 'source': 'benchmarks/results.csv', 'key': 'missing_meta_key'}, "missing CSV metadata key 'missing_meta_key'"),
+            ({'kind': 'csv-aggregate', 'source': 'benchmarks/corpus.csv', 'op': 'count', 'group': 'bad_group'}, "unknown corpus group 'bad_group'"),
+            ({'kind': 'csv-aggregate', 'source': 'benchmarks/corpus.csv', 'op': 'count', 'where': {'set': 'missing'}}, 'CSV selector matched 0 rows'),
+            (
+                {
+                    'kind': 'csv-aggregate',
+                    'source': 'benchmarks/results.csv',
+                    'op': 'geomean',
+                    'where': {'set': 'photos', 'codec': 'rasterfold'},
+                    'column': 'bytes',
+                    'denominator_where': {'set': 'synthetic', 'codec': 'jxl'},
+                },
+                'geomean denominator rows do not match numerator keys',
+            ),
+        ):
+            bad_manifest = {'facts': {'probe': bad_rule}}
+            with self.assertRaisesRegex(ValueError, expected_msg):
+                drift.derive_facts(bad_manifest, lambda rel: (self.root / rel).read_text(encoding='utf-8'))
+
+        # Wrong corpus group row count fails derive_facts.
+        truncated_corpus = '\n'.join(orig_corpus.splitlines()[:-1]) + '\n'
+        with self.assertRaisesRegex(ValueError, "corpus group 'synth' expected 11 rows, got 10"):
+            drift.derive_facts(
+                {'facts': {'probe': {'kind': 'csv-aggregate', 'source': 'benchmarks/corpus.csv', 'op': 'count', 'group': 'synth'}}},
+                lambda _rel: truncated_corpus,
+            )
+
+        # 7. Historical research documents remain historical and untouched by --fix.
+        hist_roles = {i['path']: i['role'] for i in self.check().inventory}
+        for hist_doc in ('docs/measurements.md', 'docs/research.md', 'docs/research-summary.md'):
+            self.assertEqual('historical', hist_roles[hist_doc])
+            before_bytes = (self.root / hist_doc).read_bytes()
+            c = self.check()
+            c.fix()
+            self.assertEqual(before_bytes, (self.root / hist_doc).read_bytes())
 
 
 if __name__ == '__main__':
