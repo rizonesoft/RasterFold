@@ -6,8 +6,9 @@ Writes benchmarks/results.md and benchmarks/results.csv. Every time is a
 process wall time (median of the repeats) and every memory figure a process
 peak working set (maximum of the repeats), so RasterFold and ffmpeg are
 measured the same way, startup included. A result counts only when the decoded
-pixels equal the source. JPEG XL is decoded twice: with ffmpeg's default thread
-count, as tests/measure_final.py does, and with -threads 1.
+pixels equal the source. JPEG XL is decoded twice at effort 7: with ffmpeg's
+default thread count, as tests/measure_final.py does, and with -threads 1;
+jxl-e9 encodes at effort 9 and decodes with ffmpeg's default thread count.
 """
 
 from __future__ import annotations
@@ -17,6 +18,8 @@ import ctypes
 import math
 import os
 import platform
+import re
+import shutil
 import statistics
 import subprocess
 import sys
@@ -34,12 +37,28 @@ from test_correctness import checker, draw_ui, gradient, noise, solid, stripes  
 EXE = ROOT / "bin" / "windows-x64" / "bin" / "rasterfold.exe"
 OUT = ROOT / "benchmarks"
 WORK = ROOT / "build" / "benchmark"
+ALL_SETS = ("measure", "photos", "synthetic")
+CSV_FIELDS = (
+    "set",
+    "image",
+    "width",
+    "height",
+    "raw",
+    "codec",
+    "bytes",
+    "encode_us",
+    "decode_us",
+    "encode_peak",
+    "decode_peak",
+    "pixels_match",
+)
 
 CODECS = {
     "rasterfold": {"ext": "fold"},
     "rasterfold-1t": {"ext": "fold", "extra": ["--threads", "1"]},
     "jxl": {"ext": "jxl", "args": ["-c:v", "libjxl", "-distance", "0", "-effort", "7", "-threads", "1"]},
     "jxl-1t": {"ext": "jxl", "reuse": "jxl", "dec": ["-threads", "1"]},
+    "jxl-e9": {"ext": "jxl", "args": ["-c:v", "libjxl", "-distance", "0", "-effort", "9", "-threads", "1"]},
     "webp": {"ext": "webp", "args": ["-c:v", "libwebp", "-lossless", "1", "-quality", "100", "-compression_level", "6", "-threads", "1"]},
     "png": {"ext": "png", "args": ["-c:v", "png", "-compression_level", "9", "-pred", "mixed", "-threads", "1"]},
 }
@@ -60,9 +79,10 @@ class PMC(ctypes.Structure):
     ]
 
 
-_meminfo = ctypes.WinDLL("kernel32", use_last_error=True).K32GetProcessMemoryInfo
-_meminfo.argtypes = [wintypes.HANDLE, ctypes.POINTER(PMC), wintypes.DWORD]
-_meminfo.restype = wintypes.BOOL
+_meminfo = ctypes.WinDLL("kernel32", use_last_error=True).K32GetProcessMemoryInfo if os.name == "nt" else None
+if _meminfo is not None:
+    _meminfo.argtypes = [wintypes.HANDLE, ctypes.POINTER(PMC), wintypes.DWORD]
+    _meminfo.restype = wintypes.BOOL
 
 
 def run(cmd: list[str]) -> tuple[int, int, int]:
@@ -73,7 +93,11 @@ def run(cmd: list[str]) -> tuple[int, int, int]:
     wall = (time.perf_counter_ns() - started) // 1000
     pmc = PMC()
     pmc.cb = ctypes.sizeof(PMC)
-    peak = int(pmc.PeakWorkingSetSize) if _meminfo(wintypes.HANDLE(int(proc._handle)), ctypes.byref(pmc), pmc.cb) else 0
+    peak = (
+        int(pmc.PeakWorkingSetSize)
+        if _meminfo is not None and _meminfo(wintypes.HANDLE(int(proc._handle)), ctypes.byref(pmc), pmc.cb)
+        else 0
+    )
     return proc.returncode, wall, peak
 
 
@@ -116,6 +140,80 @@ def sources(name: str, folder: Path) -> list[tuple[str, Path]]:
                 Image.frombytes("RGB", (w, h), rgb).save(bmp, format="BMP")
             out.append((img, bmp))
     return out
+
+
+def _parse_num(raw: str) -> int | float:
+    text = raw.strip()
+    if re.fullmatch(r"-?\d+", text):
+        return int(text)
+    return float(text)
+
+
+def parse_csv_row(raw: dict[str, str]) -> dict:
+    match_str = (raw.get("pixels_match") or "").strip()
+    if match_str == "True":
+        pixels_match = True
+    elif match_str == "False":
+        pixels_match = False
+    else:
+        raise ValueError(f"invalid pixels_match value in results.csv: {match_str!r}")
+    bytes_str = (raw.get("bytes") or "").strip()
+    return {
+        "set": (raw.get("set") or "").strip(),
+        "image": (raw.get("image") or "").strip(),
+        "width": int(raw["width"]),
+        "height": int(raw["height"]),
+        "raw": int(raw["raw"]),
+        "codec": (raw.get("codec") or "").strip(),
+        "bytes": int(bytes_str) if bytes_str != "" else None,
+        "encode_us": _parse_num(raw["encode_us"]),
+        "decode_us": _parse_num(raw["decode_us"]),
+        "encode_peak": int(raw["encode_peak"]),
+        "decode_peak": int(raw["decode_peak"]),
+        "pixels_match": pixels_match,
+    }
+
+
+def load_existing_rows(csv_path: Path) -> list[dict]:
+    if not csv_path.is_file():
+        return []
+    with csv_path.open("r", newline="", encoding="utf-8") as fh:
+        return [parse_csv_row(r) for r in csv.DictReader(fh)]
+
+
+def write_csv_rows(csv_path: Path, rows: list[dict]) -> None:
+    with csv_path.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=list(CSV_FIELDS))
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def merge_rows(existing: list[dict], measured: list[dict], measured_sets: list[str]) -> tuple[list[dict], list[str]]:
+    measured_set_names = set(measured_sets)
+    retained = [r for r in existing if r["set"] not in measured_set_names]
+    retained_sets = [s for s in ALL_SETS if s not in measured_set_names and any(r["set"] == s for r in retained)]
+    for r in retained:
+        if r["set"] not in retained_sets:
+            retained_sets.append(r["set"])
+    ordered_sets: list[str] = []
+    for s in (*ALL_SETS, *measured_sets, *retained_sets):
+        if s not in ordered_sets and (s in measured_set_names or s in retained_sets):
+            ordered_sets.append(s)
+    by_set: dict[str, list[dict]] = {s: [] for s in ordered_sets}
+    for r in measured:
+        by_set.setdefault(r["set"], []).append(r)
+    for r in retained:
+        by_set.setdefault(r["set"], []).append(r)
+    combined: list[dict] = []
+    seen: set[tuple[str, str, str]] = set()
+    for s in ordered_sets:
+        for r in by_set.get(s, []):
+            key = (r["set"], r["image"], r["codec"])
+            if key in seen:
+                continue
+            seen.add(key)
+            combined.append(r)
+    return combined, retained_sets
 
 
 def measure(codec: str, src: Path, folder: Path, stem: str, repeats: int, done: dict) -> dict:
@@ -167,11 +265,14 @@ def main() -> int:
         i = args.index("-n")
         repeats = int(args[i + 1])
         del args[i:i + 2]
-    sets = args or ["measure", "photos", "synthetic"]
+    sets = args or list(ALL_SETS)
     if not EXE.exists():
         print(f"missing {EXE}; run build.ps1")
         return 1
-    rows, failures = [], []
+    OUT.mkdir(exist_ok=True)
+    csv_path = OUT / "results.csv"
+    existing = load_existing_rows(csv_path)
+    measured = []
     for set_name in sets:
         folder = WORK / set_name
         for stem, src in sources(set_name, folder):
@@ -180,37 +281,58 @@ def main() -> int:
             done: dict = {}
             for codec in CODECS:
                 r = done[codec] = measure(codec, src, folder, stem, repeats, done)
-                if not r["pixels_match"]:
-                    failures.append(f"{codec} {set_name}/{stem}")
-                rows.append({"set": set_name, "image": stem, "width": w, "height": h, "raw": w * h * 3, "codec": codec, **r})
-    OUT.mkdir(exist_ok=True)
-    with (OUT / "results.csv").open("w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
-        writer.writeheader()
-        writer.writerows(rows)
-    report(rows, failures, sets, repeats)
+                measured.append({"set": set_name, "image": stem, "width": w, "height": h, "raw": w * h * 3, "codec": codec, **r})
+    rows, retained_sets = merge_rows(existing, measured, sets)
+    failures = [f"{r['codec']} {r['set']}/{r['image']}" for r in rows if not r["pixels_match"]]
+    write_csv_rows(csv_path, rows)
+    report(rows, failures, sets, repeats, retained_sets=retained_sets)
     print(f"failures: {len(failures)}")
     for f in failures:
         print(" ", f)
     return 1 if failures else 0
 
 
-def report(rows: list[dict], failures: list[str], sets: list[str], repeats: int) -> None:
+def report(
+    rows: list[dict],
+    failures: list[str],
+    sets: list[str],
+    repeats: int,
+    retained_sets: list[str] | tuple[str, ...] = (),
+    out_dir: Path = OUT,
+) -> None:
     toolchain = ROOT / "build" / "toolchain.txt"
-    ffv = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True).stdout.splitlines()[0]
+    ff_exe = shutil.which("ffmpeg") or shutil.which("ffmpeg.exe") or "ffmpeg"
+    try:
+        ff_proc = subprocess.run([ff_exe, "-version"], capture_output=True, text=True)
+        ffv = ff_proc.stdout.splitlines()[0] if ff_proc.returncode == 0 and ff_proc.stdout.splitlines() else "ffmpeg unknown"
+    except OSError:
+        ffv = "ffmpeg unknown"
+    if retained_sets:
+        intro_line = (
+            "Generated by `tests/benchmark.py`. Measured sets come from this run; retained sets keep previously recorded rows from "
+            "`benchmarks/results.csv` (prior run repeat count and host metadata are not stored in CSV). The numbers are measurements, not targets."
+        )
+        times_bullet = (
+            f"- Times: median process wall time of {repeats} runs for measured sets ({', '.join(sets)}), startup included; "
+            f"retained sets ({', '.join(retained_sets)}) keep their previously recorded measurements from `benchmarks/results.csv` (prior run metadata unavailable). "
+            "Memory: maximum process peak working set."
+        )
+    else:
+        intro_line = "Generated by `tests/benchmark.py`. One machine, one run; the numbers are measurements, not targets."
+        times_bullet = f"- Times: median process wall time of {repeats} runs, startup included. Memory: maximum process peak working set."
     lines = [
         "# RasterFold measurements",
         "",
-        "Generated by `tests/benchmark.py`. One machine, one run; the numbers are measurements, not targets.",
+        intro_line,
         "",
         f"- Date: {date.today().isoformat()}",
         f"- Machine: {platform.platform()}, {os.cpu_count()} logical processors",
         f"- Python {platform.python_version()}, Pillow {Image.__version__}",
         f"- {ffv}",
-        f"- RasterFold toolchain: {toolchain.read_text().splitlines()[0] if toolchain.exists() else 'unknown'}",
-        f"- Times: median process wall time of {repeats} runs, startup included. Memory: maximum process peak working set.",
+        f"- RasterFold toolchain: {toolchain.read_text(encoding='utf-8').splitlines()[0] if toolchain.exists() else 'unknown'}",
+        times_bullet,
         "- `rasterfold` uses its default three threads (one per channel); `rasterfold-1t` passes `--threads 1`.",
-        "- JPEG XL: ffmpeg libjxl `-distance 0 -effort 7`, encoded with `-threads 1`. `jxl` decodes with ffmpeg's default",
+        "- JPEG XL: ffmpeg libjxl `-distance 0 -effort 7` (`jxl`, `jxl-1t`) and `-effort 9` (`jxl-e9`), encoded with `-threads 1`. `jxl` and `jxl-e9` decode with ffmpeg's default",
         "  threads (as `tests/measure_final.py` does), `jxl-1t` with `-threads 1`. WebP: `-lossless 1 -quality 100",
         "  -compression_level 6 -threads 1`. PNG: `-compression_level 9 -pred mixed -threads 1`.",
         "",
@@ -218,35 +340,62 @@ def report(rows: list[dict], failures: list[str], sets: list[str], repeats: int)
     if failures:
         lines += ["## Failures", ""] + [f"- {f}" for f in failures] + [""]
     codecs = list(CODECS)
-    for set_name in sets:
+    report_sets: list[str] = []
+    for s in (*ALL_SETS, *sets, *retained_sets):
+        if s not in report_sets and any(r["set"] == s for r in rows):
+            report_sets.append(s)
+    for set_name in report_sets:
         srows = [r for r in rows if r["set"] == set_name]
         images = list(dict.fromkeys(r["image"] for r in srows))
         by = {(r["image"], r["codec"]): r for r in srows}
-        lines += [f"## {set_name}", "", "Totals and geometric means of the per-image ratio to `jxl` (lower is better):", ""]
+        lines += [f"## {set_name}", ""]
+        if set_name in retained_sets:
+            lines += ["Retained from existing `benchmarks/results.csv` (not re-measured in this run).", ""]
+        lines += ["Totals and geometric means of the per-image ratio to `jxl` (lower is better):", ""]
         lines += ["| codec | total bytes | size | encode time | decode time | encode memory | decode memory |", "|---|---:|---:|---:|---:|---:|---:|"]
         for c in codecs:
-            ok = [i for i in images if by[(i, c)]["pixels_match"] and by[(i, "jxl")]["pixels_match"]]
+            ok = [
+                i
+                for i in images
+                if (i, c) in by
+                and (i, "jxl") in by
+                and by[(i, c)]["pixels_match"]
+                and by[(i, "jxl")]["pixels_match"]
+            ]
+            if not images or len(ok) < len(images):
+                lines.append(f"| {c} | -- | -- | -- | -- | -- | -- |")
+                continue
             tot = sum(by[(i, c)]["bytes"] or 0 for i in ok)
 
             def g(key: str) -> str:
-                return f"{geomean([by[(i, c)][key] / by[(i, 'jxl')][key] for i in ok if by[(i, 'jxl')][key]]):.3f}"
+                vals = [by[(i, c)][key] / by[(i, "jxl")][key] for i in ok if by[(i, "jxl")][key]]
+                return f"{geomean(vals):.3f}" if vals else "--"
+
             lines.append(f"| {c} | {tot} | {g('bytes')} | {g('encode_us')} | {g('decode_us')} | {g('encode_peak')} | {g('decode_peak')} |")
         lines += ["", "Bytes per image:", "", "| image | size | raw | " + " | ".join(codecs) + " |", "|---|---|---:|" + "---:|" * len(codecs)]
         for i in images:
-            r0 = by[(i, codecs[0])]
-            cells = [str(by[(i, c)]["bytes"]) if by[(i, c)]["pixels_match"] else "FAIL" for c in codecs]
+            r0 = next(r for r in srows if r["image"] == i)
+            cells = [
+                "--"
+                if (i, c) not in by
+                else (str(by[(i, c)]["bytes"]) if by[(i, c)]["pixels_match"] else "FAIL")
+                for c in codecs
+            ]
             lines.append(f"| {i} | {r0['width']}x{r0['height']} | {r0['raw']} | " + " | ".join(cells) + " |")
         lines += ["", "Decode wall time, microseconds:", "", "| image | " + " | ".join(codecs) + " |", "|---|" + "---:|" * len(codecs)]
         for i in images:
-            lines.append(f"| {i} | " + " | ".join(str(int(by[(i, c)]["decode_us"])) for c in codecs) + " |")
+            cells = ["--" if (i, c) not in by else str(int(round(float(by[(i, c)]["decode_us"])))) for c in codecs]
+            lines.append(f"| {i} | " + " | ".join(cells) + " |")
         lines += ["", "Encode wall time, microseconds:", "", "| image | " + " | ".join(codecs) + " |", "|---|" + "---:|" * len(codecs)]
         for i in images:
-            lines.append(f"| {i} | " + " | ".join(str(int(by[(i, c)]["encode_us"])) for c in codecs) + " |")
+            cells = ["--" if (i, c) not in by else str(int(round(float(by[(i, c)]["encode_us"])))) for c in codecs]
+            lines.append(f"| {i} | " + " | ".join(cells) + " |")
         lines += ["", "Decode peak working set, bytes:", "", "| image | " + " | ".join(codecs) + " |", "|---|" + "---:|" * len(codecs)]
         for i in images:
-            lines.append(f"| {i} | " + " | ".join(str(by[(i, c)]["decode_peak"]) for c in codecs) + " |")
+            cells = ["--" if (i, c) not in by else str(by[(i, c)]["decode_peak"]) for c in codecs]
+            lines.append(f"| {i} | " + " | ".join(cells) + " |")
         lines.append("")
-    (OUT / "results.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (out_dir / "results.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

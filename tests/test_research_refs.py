@@ -16,8 +16,10 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "research"))
+sys.path.insert(0, str(ROOT / "tests"))
 
 import ab  # noqa: E402
+import benchmark  # noqa: E402
 import corpus  # noqa: E402
 
 
@@ -178,6 +180,107 @@ class ResearchRefsTests(unittest.TestCase):
                 corpus.update_refs(ppm_dir, jxl_dir, refs_path, runner=fail_runner)
             self.assertIn("ffmpeg failed for sample:e9", str(ctx.exception))
             self.assertEqual(json.loads(refs_path.read_text(encoding="utf-8")), partial)
+
+    def test_benchmark_jxl_e9_subset_merge_and_provenance(self) -> None:
+        self.assertIn("jxl-e9", benchmark.CODECS)
+        self.assertEqual(
+            benchmark.CODECS["jxl-e9"],
+            {"ext": "jxl", "args": ["-c:v", "libjxl", "-distance", "0", "-effort", "9", "-threads", "1"]},
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp)
+            csv_path = out_dir / "results.csv"
+            six_codecs = ["rasterfold", "rasterfold-1t", "jxl", "jxl-1t", "webp", "png"]
+            seed_rows = []
+            for set_name, img in (("measure", "image"), ("photos", "kodim01"), ("synthetic", "checker")):
+                for idx, c in enumerate(six_codecs):
+                    seed_rows.append(
+                        {
+                            "set": set_name,
+                            "image": img,
+                            "width": "64",
+                            "height": "64",
+                            "raw": "12288",
+                            "codec": c,
+                            "bytes": "" if (set_name == "synthetic" and c == "png") else str(1000 + idx * 10),
+                            "encode_us": str(500 + idx * 5),
+                            "decode_us": str(400 + idx * 5),
+                            "encode_peak": str(8192 + idx * 64),
+                            "decode_peak": str(4096 + idx * 64),
+                            "pixels_match": "False" if (set_name == "synthetic" and c == "png") else "True",
+                        }
+                    )
+            import csv as csv_mod
+
+            with csv_path.open("w", newline="", encoding="utf-8") as fh:
+                writer = csv_mod.DictWriter(fh, fieldnames=list(benchmark.CSV_FIELDS))
+                writer.writeheader()
+                writer.writerows(seed_rows)
+
+            existing = benchmark.load_existing_rows(csv_path)
+            self.assertEqual(len(existing), 18)
+            synth_png = next(r for r in existing if r["set"] == "synthetic" and r["codec"] == "png")
+            self.assertFalse(synth_png["pixels_match"])
+            self.assertIsNone(synth_png["bytes"])
+
+            measured = []
+            for idx, c in enumerate(benchmark.CODECS):
+                measured.append(
+                    {
+                        "set": "measure",
+                        "image": "image",
+                        "width": 1672,
+                        "height": 941,
+                        "raw": 4720056,
+                        "codec": c,
+                        "bytes": 1440564 if c == "jxl-e9" else 1409028 + idx,
+                        "encode_us": 200000 + idx * 1000,
+                        "decode_us": 150000 + idx * 1000,
+                        "encode_peak": 16000000,
+                        "decode_peak": 15000000,
+                        "pixels_match": True,
+                    }
+                )
+            combined, retained_sets = benchmark.merge_rows(existing, measured, ["measure"])
+            self.assertEqual(retained_sets, ["photos", "synthetic"])
+            # 7 rows for measure + 6 for photos + 6 for synthetic = 19 rows (no duplicates).
+            self.assertEqual(len(combined), 19)
+            self.assertEqual(
+                len({(r["set"], r["image"], r["codec"]) for r in combined}),
+                19,
+            )
+            # Unrequested rows (photos, synthetic) must match existing exactly.
+            self.assertEqual(
+                [r for r in combined if r["set"] in ("photos", "synthetic")],
+                [r for r in existing if r["set"] in ("photos", "synthetic")],
+            )
+            # Requested set (measure) must be replaced by measured rows without duplicates.
+            self.assertEqual(
+                [r for r in combined if r["set"] == "measure"],
+                measured,
+            )
+            failures = [f"{r['codec']} {r['set']}/{r['image']}" for r in combined if not r["pixels_match"]]
+            self.assertEqual(failures, ["png synthetic/checker"])
+
+            benchmark.write_csv_rows(csv_path, combined)
+            reloaded = benchmark.load_existing_rows(csv_path)
+            self.assertEqual(reloaded, combined)
+
+            with self.assertRaises(ValueError):
+                benchmark.parse_csv_row({**seed_rows[0], "pixels_match": "yes"})
+
+            benchmark.report(reloaded, failures, ["measure"], 1, retained_sets=retained_sets, out_dir=out_dir)
+            md = (out_dir / "results.md").read_text(encoding="utf-8")
+            self.assertNotIn("One machine, one run;", md)
+            self.assertIn("retained sets (photos, synthetic) keep their previously recorded measurements", md)
+            self.assertIn("Retained from existing `benchmarks/results.csv` (not re-measured in this run).", md)
+            self.assertIn("| jxl-e9 | 1440564 |", md)
+            self.assertIn("| jxl-e9 | -- | -- | -- | -- | -- | -- |", md)
+            for r in reloaded:
+                if r["pixels_match"]:
+                    self.assertIn(str(r["bytes"]), md)
+                else:
+                    self.assertIn("FAIL", md)
 
 
 if __name__ == "__main__":

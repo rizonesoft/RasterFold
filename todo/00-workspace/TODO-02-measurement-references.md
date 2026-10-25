@@ -13,12 +13,12 @@ track: W2
 > **Goal:** Every measurement RasterFold makes reports JPEG XL effort 7, JPEG XL effort 9, and lossless WebP side by side, from the research tools, the benchmark, and a committed per-image corpus file the docs and drift gates read, so no target in the roadmap is measured against a reference nobody reran.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-10-25):** `research/corpus.py` records JPEG XL e7 (`<image>:e7`), JPEG XL e9 (`<image>:e9`), and lossless WebP (`<image>:webp`) sizes in `build/research/jxl_refs.json`, and `research/ab.py` (`size` and `rsize`) compares against all three references via `summarize_sizes`. `tests/benchmark.py` runs `rasterfold`, `rasterfold-1t`, `jxl`, `jxl-1t` (both e7), `webp`, and `png`. On the 39-photo corpus, `research/ab.py size photo` reports 0.9712 of e7, 0.9829 (0.983) of e9, and 0.9041 (0.904) of WebP; on `synth`, geometric mean is 1.1986 of e7, 2.2860 (2.29) of e9, and 3.6626 (3.66) of WebP. No per-image corpus results are committed yet.
+> **Current state (verified 2026-10-25):** `research/corpus.py` records JPEG XL e7 (`<image>:e7`), JPEG XL e9 (`<image>:e9`), and lossless WebP (`<image>:webp`) sizes in `build/research/jxl_refs.json`, and `research/ab.py` (`size` and `rsize`) compares against all three references via `summarize_sizes`. `tests/benchmark.py` runs `rasterfold`, `rasterfold-1t`, `jxl`, `jxl-1t` (both e7), `jxl-e9` (effort 9), `webp`, and `png`, merges subset runs with existing `benchmarks/results.csv` rows via `load_existing_rows`/`merge_rows`, and labels retained sets in `benchmarks/results.md`. On the 39-photo corpus, `research/ab.py size photo` reports 0.9712 of e7, 0.9829 (0.983) of e9, and 0.9041 (0.904) of WebP; on `synth`, geometric mean is 1.1986 of e7, 2.2860 (2.29) of e9, and 3.6626 (3.66) of WebP. No per-image corpus results are committed yet.
 <!-- claim: count "effort\", \"7\"" research/corpus.py = 1 -->
 <!-- claim: count "effort\", \"9\"" research/corpus.py = 1 -->
 <!-- claim: count "\"libwebp\"" research/corpus.py = 1 -->
 <!-- claim: exists tests/test_research_refs.py -->
-<!-- claim: count "\"jxl-e9\"" tests/benchmark.py = 0 -->
+<!-- claim: count "\"jxl-e9\"" tests/benchmark.py = 1 -->
 <!-- claim: absent benchmarks/corpus.csv -->
 
 ## Inputs
@@ -71,12 +71,16 @@ The roadmap measures milestones against JPEG XL e9 and WebP, so the tool that de
 > **Review:** `docs/reviews/d00-t02-s1.json`
 ## 2. JPEG XL e9 in the Benchmark
 
+> **Started:** 2026-10-25T01:01:00Z
+
 **Needs:** ffmpeg with libjxl (benchmarks)
 
-- [ ] Add a `jxl-e9` codec (`-effort 9 -threads 1`) to `CODECS` in `tests/benchmark.py`, decoded like `jxl`. Done when: `python tests/benchmark.py measure -n 1` writes a `jxl-e9` column in `benchmarks/results.md`. Cheaper substitute: quoting e9 from the research tool, which has no times.
-- [ ] Commit: `"test: benchmark JPEG XL effort 9"`
+**Corrected 2026-10-25:** Per the pre-build `--kind plan` review (`docs/reviews/00-workspace/D00-T02-s2.md`), `tests/benchmark.py` defines typed CSV loading (`parse_csv_row`, `load_existing_rows`, `write_csv_rows`) with strict `pixels_match` boolean parsing (`"True"` / `"False"`) and nullable integer `bytes`, merges subset runs with unrequested sets in `benchmarks/results.csv` via `merge_rows` without duplicating rows or inventing results (`report()` renders `--` for unmeasured codec cells in retained sets), explicitly labels retained sets in `benchmarks/results.md` as retained from `benchmarks/results.csv` without claiming a single run/repeat count across retained sets, and covers subset merge, failure preservation, and CSV/Markdown agreement in `tests/test_research_refs.py`.
 
-**Test checkpoint:** the `measure` table shows `jxl-e9` at 1,440,564 bytes with its encode and decode times.
+- [x] Add a `jxl-e9` codec (`-effort 9 -threads 1`) to `CODECS` in `tests/benchmark.py`, decoded like `jxl`, together with typed CSV persistence (`parse_csv_row`, `load_existing_rows`, `write_csv_rows`, `merge_rows`), `--` rendering for unmeasured codec cells in retained sets, explicit retained-set provenance notes in `report()`, and regression coverage in `tests/test_research_refs.py`. Done when: `python3 scripts/windows.py tests/benchmark.py measure -n 1` updates `measure` in `benchmarks/results.csv` and `benchmarks/results.md` with a `jxl-e9` column while retaining `photos` and `synthetic` rows unchanged with explicit provenance notes, and `tests/test_research_refs.py` passes on Linux and Windows. Cheaper substitute: quoting e9 from the research tool, which has no times.
+- [x] Commit: `"test: benchmark JPEG XL effort 9"`
+
+**Test checkpoint:** the `measure` table in `benchmarks/results.md` (and `benchmarks/results.csv`) shows `jxl-e9` at 1,440,564 bytes (`0.980` of `jxl`) with its encode time (`10361742` us, `5.369x` `jxl`) and decode time (`573121` us, `1.073x` `jxl`), while `photos` and `synthetic` retain their 126 six-codec rows in `benchmarks/results.csv` (`133` total rows) and render `--` for `jxl-e9` under explicit `Retained from existing benchmarks/results.csv (not re-measured in this run).` notes; `python3 -m unittest discover -s tests -p 'test_research_refs.py' -v` and `python3 scripts/windows.py tests/test_research_refs.py -v < /dev/null` exit 0.
 
 ## 3. The Committed Corpus Results File
 
