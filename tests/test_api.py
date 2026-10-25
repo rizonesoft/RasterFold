@@ -1,14 +1,18 @@
 """Public ABI, ownership, concurrency, fidelity and native consumer tests."""
 from __future__ import annotations
 
-import ctypes as C
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+import ctypes as C
+import mmap
 import os
 from pathlib import Path
+import struct
 import subprocess
 import sys
 import tempfile
 import unittest
+import zlib
 
 import rfi_ref
 from test_correctness import KAT_FOLD, KAT_RGB, KAT_W, KAT_H
@@ -144,6 +148,102 @@ class Api(unittest.TestCase):
         out = Pixels()
         self.assertEqual(LIBRARY.rf_decode_image(KAT_FOLD, C.c_size_t(-1).value, None, C.byref(out), None), 5)
         self.assertEqual(LIBRARY.rf_inspect(KAT_FOLD, len(KAT_FOLD), None, None), 1)
+
+    def test_guard_page_exact_length_inputs(self):
+        @contextmanager
+        def guarded_slice(blob: bytes):
+            page = mmap.PAGESIZE
+            data_pages = max(1, (len(blob) + page - 1) // page)
+            total = (data_pages + 1) * page
+            if os.name == 'nt':
+                kernel32 = C.windll.kernel32
+                kernel32.VirtualAlloc.argtypes = [C.c_void_p, C.c_size_t, C.c_uint32, C.c_uint32]
+                kernel32.VirtualAlloc.restype = C.c_void_p
+                kernel32.VirtualProtect.argtypes = [C.c_void_p, C.c_size_t, C.c_uint32, C.POINTER(C.c_uint32)]
+                kernel32.VirtualProtect.restype = C.c_int
+                kernel32.VirtualFree.argtypes = [C.c_void_p, C.c_size_t, C.c_uint32]
+                kernel32.VirtualFree.restype = C.c_int
+                base = kernel32.VirtualAlloc(None, total, 0x3000, 0x04)
+                self.assertTrue(base)
+                try:
+                    old = C.c_uint32()
+                    guard = base + data_pages * page
+                    self.assertTrue(kernel32.VirtualProtect(C.c_void_p(guard), page, 0x01, C.byref(old)))
+                    ptr = guard - len(blob)
+                    C.memmove(C.c_void_p(ptr), blob, len(blob))
+                    yield C.c_void_p(ptr), len(blob)
+                finally:
+                    kernel32.VirtualFree(C.c_void_p(base), 0, 0x8000)
+            else:
+                libc = C.CDLL(None)
+                libc.mprotect.argtypes = [C.c_void_p, C.c_size_t, C.c_int]
+                libc.mprotect.restype = C.c_int
+                mm = mmap.mmap(-1, total, prot=mmap.PROT_READ | mmap.PROT_WRITE)
+                try:
+                    base = C.addressof(C.c_char.from_buffer(mm))
+                    guard = base + data_pages * page
+                    self.assertEqual(libc.mprotect(C.c_void_p(guard), page, 0), 0)
+                    try:
+                        ptr = guard - len(blob)
+                        C.memmove(C.c_void_p(ptr), blob, len(blob))
+                        yield C.c_void_p(ptr), len(blob)
+                    finally:
+                        libc.mprotect(C.c_void_p(guard), page, mmap.PROT_READ | mmap.PROT_WRITE)
+                finally:
+                    mm.close()
+
+        def rebuild_fold(header_template: bytes, payload: bytes) -> bytes:
+            hdr = bytearray(header_template[:20])
+            hdr += struct.pack('<III', len(payload), zlib.crc32(payload) & 0xFFFFFFFF, 0)
+            hdr[28:32] = struct.pack('<I', zlib.crc32(hdr[:28]) & 0xFFFFFFFF)
+            return bytes(hdr) + payload
+
+        large_w, large_h = 32, 16
+        large_rgb = bytes(((x * 13 + y * 7 + c * 53 + ((x ^ y) & 7)) & 255)
+                          for y in range(large_h) for x in range(large_w) for c in range(3))
+        large_fold = encode(large_w, large_h, large_rgb, threads=1)
+        raw_w, raw_h = 4, 4
+        raw_rgb = bytes(((i * 197 + 53) & 255) for i in range(raw_w * raw_h * 3))
+        raw_fold = encode(raw_w, raw_h, raw_rgb, threads=1)
+
+        for label, blob, exp_w, exp_h, exp_rgb in [
+            ('kat_short_tail', KAT_FOLD, KAT_W, KAT_H, KAT_RGB),
+            ('large_long_tail', large_fold, large_w, large_h, large_rgb),
+            ('raw_method0', raw_fold, raw_w, raw_h, raw_rgb),
+        ]:
+            for threads in (1, 3):
+                with self.subTest(case=label, threads=threads), guarded_slice(blob) as (ptr, size):
+                    opt = Options(C.sizeof(Options), threads)
+                    out, err, info = Pixels(), Error(), Info()
+                    self.assertEqual(LIBRARY.rf_decode_image(ptr, size, C.byref(opt), C.byref(out), C.byref(err)), 0)
+                    try:
+                        self.assertEqual((out.width, out.height, out.size), (exp_w, exp_h, len(exp_rgb)))
+                        self.assertEqual(C.string_at(out.data, out.size), exp_rgb)
+                    finally:
+                        LIBRARY.rf_free(out.data)
+                    self.assertEqual(LIBRARY.rf_inspect(ptr, size, C.byref(info), C.byref(err)), 0)
+                    self.assertEqual((info.width, info.height), (exp_w, exp_h))
+
+        # Checksum-valid malformed CM streams where each channel stream is replaced
+        # by 5 zero bytes (forcing stream exhaustion right against the guard page).
+        sz = list(struct.unpack_from('<III', large_fold, 32))
+        streams = [
+            large_fold[44:44 + sz[0]],
+            large_fold[44 + sz[0]:44 + sz[0] + sz[1]],
+            large_fold[44 + sz[0] + sz[1]:],
+        ]
+        for ch in range(3):
+            mod = list(streams)
+            mod[ch] = b'\x00' * 5
+            payload = struct.pack('<III', len(mod[0]), len(mod[1]), len(mod[2])) + b''.join(mod)
+            bad_fold = rebuild_fold(large_fold[:32], payload)
+            for threads in (1, 3):
+                with self.subTest(case=f'exhaust_ch{ch}', threads=threads), guarded_slice(bad_fold) as (ptr, size):
+                    opt = Options(C.sizeof(Options), threads)
+                    out, err, info = Pixels(), Error(), Info()
+                    self.assertEqual(LIBRARY.rf_decode_image(ptr, size, C.byref(opt), C.byref(out), C.byref(err)), 4)
+                    self.assertFalse(out.data)
+                    self.assertEqual(LIBRARY.rf_inspect(ptr, size, C.byref(info), C.byref(err)), 4)
 
 
 if __name__ == '__main__':

@@ -1666,11 +1666,11 @@
       }
     },
     "spec/FOLD.md": {
-      "evidence": "Author-attested: 2026-10-25 re-read spec/FOLD.md against src/rf.h, src/fold.c, src/cm.c, src/crc32.c, and tests/rfi_ref.py (D08 T02 section 4)",
+      "evidence": "Author-attested: 2026-10-25 re-read spec/FOLD.md against src/cm.c after D03 T01 section 1 (no bitstream or spec changes)",
       "sources": {
         "src/rf.h": "51734a555f97e344771e8462284781429f04d5d5f6a8e5550e43e10e9c20e7c3",
         "src/fold.c": "3fd14db804458def6e0fb85ab3392bc1afec74854cdfe6f1a32965a482be1edd",
-        "src/cm.c": "7e3e737ddf7561145d72ca81462f59c4e9122cdf16cf1d8b1ef3da2bb4a1ff7b",
+        "src/cm.c": "965be8d56512df3d444ac459f258fd5ef8694c5d4fe7c04615aaf475165e94f7",
         "src/crc32.c": "c6e682115185fcdcbfa0551823fc590f60c9c7b978a30009163288e664b3faec",
         "tests/rfi_ref.py": "4146e6f6cc7d30e6ea87e2266b03eb50b14a854c1cf0843fec42958d3450361d",
         "spec/FOLD.md": "b456bc87947b67c5c6cfa9f20e2dcec000207b0199a83434f1c1ca9810316fb9"
@@ -1707,7 +1707,7 @@
       }
     },
     "docs/limitations.md": {
-      "evidence": "Author-attested: 2026-10-25 authored docs/limitations.md against include/rasterfold.h, src/rf.h, src/main.c, src/fold.c, src/bmp.c, src/api.c, and src/sys_posix.c (D08 T01 section 4)",
+      "evidence": "Author-attested: 2026-10-25 re-read docs/limitations.md against src/sys_posix.c after D03 T01 section 1",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "51734a555f97e344771e8462284781429f04d5d5f6a8e5550e43e10e9c20e7c3",
@@ -1715,12 +1715,12 @@
         "src/fold.c": "3fd14db804458def6e0fb85ab3392bc1afec74854cdfe6f1a32965a482be1edd",
         "src/bmp.c": "47af69770ae3ee7b0b49016503bfbf2c41f3e782bcb9f3f0c36e831a0cc161e1",
         "src/api.c": "76f5277f1fce9b053ca1e75648d1d5a7aa5494bf46266361e437f3e17f80812c",
-        "src/sys_posix.c": "6cee065e06d0513dc12bad7f77db6d77a819b5926428fe7cdd66c351f81e9dfc",
+        "src/sys_posix.c": "507270096bb20f63a07fd0176551a6fc7dd37ee7ce441b6a5a3e57f00bcb6792",
         "docs/limitations.md": "a5b84d05b0c469f0df8ffeac84babbd8e12959225c8eeb7b63fadaf548048a3e"
       }
     },
     "docs/troubleshooting.md": {
-      "evidence": "2026-10-25: D08 T01 \u00a74 completion review fixes",
+      "evidence": "Author-attested: 2026-10-25 re-read docs/troubleshooting.md against src/sys_posix.c after D03 T01 section 1",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "51734a555f97e344771e8462284781429f04d5d5f6a8e5550e43e10e9c20e7c3",
@@ -1728,7 +1728,7 @@
         "src/fold.c": "3fd14db804458def6e0fb85ab3392bc1afec74854cdfe6f1a32965a482be1edd",
         "src/bmp.c": "47af69770ae3ee7b0b49016503bfbf2c41f3e782bcb9f3f0c36e831a0cc161e1",
         "src/api.c": "76f5277f1fce9b053ca1e75648d1d5a7aa5494bf46266361e437f3e17f80812c",
-        "src/sys_posix.c": "6cee065e06d0513dc12bad7f77db6d77a819b5926428fe7cdd66c351f81e9dfc",
+        "src/sys_posix.c": "507270096bb20f63a07fd0176551a6fc7dd37ee7ce441b6a5a3e57f00bcb6792",
         "tools/provision.py": "b17ea42569b76d70edbcc235dbc86385c9c7ce50b1be7a3bb83383c30f848556",
         "tools/provision.ps1": "836043df1f959726d5fa2b73d206fa896c9d3aacd12bf7e21b8193a4bb14ad96",
         "docs/troubleshooting.md": "6cd9d0d5e51bb312be55fb56c3cd654739541c9db569f068e325300819510271"

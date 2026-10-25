@@ -96,6 +96,66 @@ class Artifacts(unittest.TestCase):
                 run([commands[0],source,encoded]);self.assertEqual(encoded.read_bytes(),KAT_FOLD)
                 run([commands[1],encoded,decoded]);self.assertEqual(decoded.read_bytes(),source.read_bytes())
 
+    def test_rf_read_file_eight_byte_zero_padding(self):
+        harness = (
+            '#include <stdio.h>\n'
+            '#include <string.h>\n'
+            '#include "rf.h"\n'
+            'int main(int argc, char **argv) {\n'
+            '    if (argc < 2) return 2;\n'
+            '    const char *dir = argv[1];\n'
+            '    static const size_t lengths[] = {1, 7, 8, 63, 64, 109};\n'
+            '    for (size_t i = 0; i < sizeof(lengths) / sizeof(lengths[0]); i++) {\n'
+            '        size_t want = lengths[i];\n'
+            '        char path_utf8[512];\n'
+            '        snprintf(path_utf8, sizeof path_utf8, "%s/pad_%zu.bin", dir, want);\n'
+            '        FILE *f = fopen(path_utf8, "wb");\n'
+            '        if (!f) return 3;\n'
+            '        for (size_t k = 0; k < want; k++) {\n'
+            '            unsigned char b = (unsigned char)((0xA5u ^ (unsigned)k) | 1u);\n'
+            '            if (fputc(b, f) == EOF) { fclose(f); return 4; }\n'
+            '        }\n'
+            '        fclose(f);\n'
+            '        rf_path_char path[512];\n'
+            '        for (size_t k = 0; ; k++) { path[k] = (rf_path_char)(unsigned char)path_utf8[k]; if (!path_utf8[k]) break; }\n'
+            '        uint8_t *data = 0;\n'
+            '        size_t got = 0;\n'
+            '        rf_error err = {0, 0};\n'
+            '        if (rf_read_file(path, &data, &got, &err) != RF_OK) return 5;\n'
+            '        if (got != want || !data) { rf_free(data); return 6; }\n'
+            '#ifdef _WIN32\n'
+            '        size_t alloc_sz = ((size_t *)data)[-2];\n'
+            '#else\n'
+            '        size_t alloc_sz = ((size_t *)data)[-1];\n'
+            '#endif\n'
+            '        if (alloc_sz != want + 8) { rf_free(data); return 7; }\n'
+            '        for (size_t k = 0; k < want; k++) {\n'
+            '            uint8_t exp = (uint8_t)((0xA5u ^ (unsigned)k) | 1u);\n'
+            '            if (data[k] != exp) { rf_free(data); return 8; }\n'
+            '        }\n'
+            '        for (size_t k = 0; k < 8; k++) {\n'
+            '            if (data[want + k] != 0) { rf_free(data); return 9; }\n'
+            '        }\n'
+            '        rf_free(data);\n'
+            '    }\n'
+            '    return 0;\n'
+            '}\n'
+        )
+        with tempfile.TemporaryDirectory(dir=ROOT/'build') as temp:
+            temp=Path(temp)
+            src=temp/'pad_test.c';src.write_text(harness)
+            targets=[('linux-x64','x86_64-linux-gnu',False)] if not WIN else [('windows-x64','x86_64-w64-mingw32',True)]
+            if not WIN and (ROOT/'bin/windows-x64/lib/librasterfold.a').is_file():
+                targets.append(('windows-x64','x86_64-w64-mingw32',True))
+            for tname,triple,is_win in targets:
+                with self.subTest(target=tname):
+                    tdir=ROOT/'bin'/tname
+                    exe=temp/(f'pad_{tname}'+('.exe' if is_win else ''))
+                    flags=[f'--target={triple}','-std=c11','-Wall','-Wextra','-Werror','-I'+str(ROOT/'src'),'-I'+str(tdir/'include'),'-fuse-ld=lld']
+                    link=[str(tdir/'lib/librasterfold.a'),*(['-lkernel32'] if is_win else ['-pthread'])]
+                    run([tool('clang'),*flags,src,*link,'-o',exe])
+                    run([exe,temp.relative_to(ROOT).as_posix()],cwd=ROOT,stdin=subprocess.DEVNULL)
+
     @unittest.skipIf(WIN,'POSIX-only path semantics')
     def test_no_clobber_race_symlinks_and_fifo(self):
         with tempfile.TemporaryDirectory(dir=ROOT/'build') as temp:

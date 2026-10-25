@@ -35,7 +35,7 @@ int rf_read_file(const rf_path_char *path, uint8_t **data, size_t *size, rf_erro
     if (!GetFileSizeEx(f, &len)) rc = rf_fail(err, RF_ERR_IO, "cannot read input");
     else if (len.QuadPart <= 0) rc = rf_fail(err, RF_ERR_FORMAT, "invalid input: empty file");
     else if ((uint64_t)len.QuadPart > RF_MAX_FILE) rc = rf_fail(err, RF_ERR_LIMIT, "input exceeds size limit");
-    else if (!(buf = rf_alloc((size_t)len.QuadPart))) rc = rf_fail(err, RF_ERR_LIMIT, "out of memory");
+    else if (!(buf = rf_alloc((size_t)len.QuadPart + 8))) rc = rf_fail(err, RF_ERR_LIMIT, "out of memory");
     else {
         size_t done = 0, want = (size_t)len.QuadPart;
         while (done < want) {

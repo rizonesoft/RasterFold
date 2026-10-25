@@ -128,18 +128,36 @@ RF_INLINE void renc_bit(renc *e, int bit, uint32_t p1) {
 }
 static void renc_flush(renc *e) { for (int i = 0; i < 5; i++) renc_shift(e); }
 
-/* The decoder reads its stream through a private copy with 8 zero bytes of
-   padding, so renormalization can load two bytes without a bounds check. A
-   stream that needs more bytes than it has ends with in > end, which the
-   caller rejects. */
+/* The decoder reads its stream straight from the input buffer, switching to a
+   16-byte zero-padded tail buffer for the last four bytes so renormalization
+   can load two bytes without reading past the stream. A stream that needs more
+   bytes than it has ends with in > end, which the caller rejects. */
 typedef struct {
     uint32_t range, code;
-    const uint8_t *in, *end, *lim;      /* lim = end + 2 stays inside the padding */
+    const uint8_t *in, *end, *lim;      /* lim = end - 4 before tail, then end + 2 */
+    uint8_t tail[16];
 } rdec;
 
 static void rdec_init(rdec *d, const uint8_t *in, size_t n) {
-    d->in = in; d->end = in + n; d->lim = in + n + 2; d->range = 0xFFFFFFFFu; d->code = 0;
-    for (int i = 0; i < 5; i++) d->code = (d->code << 8) | *d->in++;
+    d->range = 0xFFFFFFFFu; d->code = 0;
+    for (int i = 0; i < 5; i++) d->code = (d->code << 8) | in[i];
+    memset(d->tail, 0, sizeof d->tail);
+    size_t rem = n - 5;
+    if (rem <= 8) {
+        if (rem) memcpy(d->tail, in + 5, rem);
+        d->in = d->tail; d->end = d->tail + rem; d->lim = d->end + 2;
+    } else {
+        memcpy(d->tail, in + n - 8, 8);
+        d->in = in + 5; d->end = in + n; d->lim = in + n - 4;
+    }
+}
+static RF_NOINLINE void rdec_tail(rdec *d) {
+    if (d->lim < d->end) {
+        d->in = d->tail + 8 - (d->end - d->in);
+        d->end = d->tail + 8;
+        d->lim = d->tail + 10;
+    }
+    d->in = d->in > d->lim ? d->lim : d->in;
 }
 /* After any decision range >= 2^12, so at most two bytes restore range >= 2^24. */
 RF_INLINE int rdec_bit(rdec *d, uint32_t p1) {
@@ -154,7 +172,7 @@ RF_INLINE int rdec_bit(rdec *d, uint32_t p1) {
     d->code = (uint32_t)c64;
     d->range = range << (8 * n);
     d->in += n;
-    d->in = d->in > d->lim ? d->lim : d->in;
+    if (__builtin_expect(d->in >= d->lim, 0)) rdec_tail(d);
     return bit;
 }
 
@@ -647,23 +665,16 @@ int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *rgb, uint32_t w, uint32_t
     if (sum != n) return rf_fail(err, RF_ERR_FORMAT, "invalid fold: cm streams");
     cm_t m;
     if (cm_alloc(&m, w, h, rgb, err) != RF_OK) return RF_ERR_LIMIT;
-    /* Each stream gets its own copy followed by 8 zero bytes. */
-    uint8_t *copy = rf_alloc((size_t)(n - 12) + 3 * 8);
-    if (!copy) { rf_free(m.block); return rf_fail(err, RF_ERR_LIMIT, "out of memory"); }
     const uint8_t *p = in + 12;
-    uint8_t *q = copy;
     for (int c = 0; c < 3; c++) {
-        memcpy(q, p, (size_t)sz[c]);
-        rdec_init(&m.ch[c].dec, q, (size_t)sz[c]);
+        rdec_init(&m.ch[c].dec, p, (size_t)sz[c]);
         p += sz[c];
-        q += sz[c] + 8;
     }
     run(&m, threads, 0);
     /* Every stream must end exactly on its last byte. A residual of +128 has no
        encoder, so a stream that decodes one is malformed too. */
     int bad = 0;
     for (int c = 0; c < 3; c++) bad |= m.ch[c].bad | (m.ch[c].dec.in != m.ch[c].dec.end);
-    rf_free(copy);
     rf_free(m.block);
     return bad ? rf_fail(err, RF_ERR_FORMAT, "invalid fold: cm stream") : RF_OK;
 }
