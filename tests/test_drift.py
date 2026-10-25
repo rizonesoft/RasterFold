@@ -762,6 +762,19 @@ class DriftTests(unittest.TestCase):
                 self.assertEqual(1, drift.main(['--root', str(self.root)]))
             self.assertIn('generator: scripts/build-docs.py: --check modified docs/format.md; check mode must be read-only', buf.getvalue())
             (self.root / 'docs/format.md').chmod(orig_mode)
+
+            self.write(
+                'scripts/build-docs.py',
+                'import os, sys\n'
+                'if "--check" in sys.argv:\n'
+                '    st = os.stat("docs")\n'
+                '    os.utime("docs", ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000_000))\n'
+                'sys.exit(0)\n',
+            )
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                self.assertEqual(1, drift.main(['--root', str(self.root)]))
+            self.assertIn('generator: scripts/build-docs.py: --check modified docs; check mode must be read-only', buf.getvalue())
         finally:
             self.write('scripts/build-docs.py', orig_build_docs)
             self.write('docs/research.md', orig_research)

@@ -436,26 +436,36 @@ class Checker:
 
     def _entry_state(self, rel):
         try:
-            p = self.path(rel)
+            p = self.root if rel == '.' else self.path(rel)
         except ValueError as exc:
             return ('invalid', str(exc))
         try:
             st = p.lstat()
         except FileNotFoundError:
             return ('absent', None)
+        meta = (st.st_mode, st.st_uid, st.st_gid, st.st_mtime_ns)
         if p.is_file():
-            return ('file', st.st_mode, st.st_mtime_ns, digest(p.read_bytes()))
+            return ('file', *meta, st.st_size, digest(p.read_bytes()))
         if p.is_dir():
-            return ('dir', st.st_mode, tuple(sorted(c.relative_to(p).as_posix() for c in p.rglob('*') if '__pycache__' not in c.parts)))
-        return ('other', st.st_mode)
+            children = tuple(
+                sorted(
+                    c.name
+                    for c in p.iterdir()
+                    if c.name not in ('__pycache__', '.git', 'build', 'bin', '.venv')
+                )
+            )
+            return ('dir', *meta, children)
+        return ('other', *meta, st.st_size)
 
     def _watched_paths(self):
         paths = {
+            '.',
             *self.manifest.get('files', {}).keys(),
+            *(gen['script'] for gen in self.manifest['generators']),
             *(out for g in self.manifest['generators'] for out in g.get('outputs', [])),
             *(out for g in self.manifest['generators'] for out in g.get('planned_outputs', {})),
         }
-        for top in ('docs', 'todo', 'research', 'spec'):
+        for top in ('docs', 'todo', 'research', 'spec', 'scripts'):
             base = self.root / top
             if base.exists() or base.is_symlink():
                 paths.add(top)
@@ -463,13 +473,18 @@ class Checker:
                     for p in base.rglob('*'):
                         if '__pycache__' not in p.parts:
                             paths.add(p.relative_to(self.root).as_posix())
+        for rel in list(paths):
+            if rel != '.':
+                for parent in Path(rel).parents:
+                    if str(parent) != '.':
+                        paths.add(parent.as_posix())
         return sorted(paths)
 
     def _snapshot_paths(self, paths):
         return {rel: self._entry_state(rel) for rel in paths}
 
     def generators(self, fix=False):
-        env = dict(os.environ)
+        env = dict(os.environ, PYTHONDONTWRITEBYTECODE='1')
         if self.git_dir:
             env.update(GIT_DIR=str(self.git_dir), GIT_WORK_TREE=str(self.root))
         for gen in self.manifest['generators']:
