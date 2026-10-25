@@ -1169,7 +1169,9 @@ class DriftTests(unittest.TestCase):
         )
         for smuggled in (
             'Size: <span data-bytes="1409028">999</span> bytes <!-- drift:fact measurement_reference_bytes = 1409028 -->',
+            'Size: 999 bytes <span title="x > 1409028">wrong</span> <!-- drift:fact measurement_reference_bytes = 1409028 -->',
             'Size: [999 bytes](README.md#1409028) <!-- drift:fact measurement_reference_bytes = 1409028 -->',
+            'Size: 999 bytes [source][1409028] <!-- drift:fact measurement_reference_bytes = 1409028 -->\n\n[1409028]: README.md',
         ):
             self.write('docs/benchmarks.md', orig_bm + '\n' + smuggled + '\n')
             c = self.check()
