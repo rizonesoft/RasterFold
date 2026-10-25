@@ -1,0 +1,89 @@
+{
+  "ref": "D00 T02 \u00a73",
+  "title": "The Committed Corpus Results File",
+  "implementation_sha": "f5ab0d637c458014a05f5e79fb009e8558ac92e0",
+  "date": "2026-10-25",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/00-workspace/D00-T02-s3.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/00-workspace/D00-T02-s3.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 -c \"import csv; rows=[r for r in csv.DictReader(l for l in open('benchmarks/corpus.csv', encoding='utf-8') if not l.startswith('#')) if r['set']=='photo']; rf=sum(int(r['rasterfold']) for r in rows); e7=sum(int(r['jxl_e7']) for r in rows); e9=sum(int(r['jxl_e9']) for r in rows); wb=sum(int(r['webp']) for r in rows); print(f'n={len(rows)} rf={rf} e7={e7} ratio={rf/e7:.4f} e9={e9} e9_ratio={rf/e9:.4f} webp={wb} webp_ratio={rf/wb:.4f}')\" -> n=39 rf=30865211 e7=31782058 ratio=0.9712 e9=31400714 e9_ratio=0.9829 webp=34138176 webp_ratio=0.9041",
+    "python3 -m unittest discover -s tests -p test_research_refs.py -v -> Ran 8 tests, OK (Linux and Windows)"
+  ],
+  "completion": {
+    "report": "docs/reviews/00-workspace/D00-T02-s3.md",
+    "verdict": "completed",
+    "candidate": "5705e0d18d105955ff82bfeb199b78073fb2c9a7",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 2,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/00-workspace/D00-T02-s3.md",
+    "candidate": "c8c1f78d74a423844c77da10d7d0dcde25f73056",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}

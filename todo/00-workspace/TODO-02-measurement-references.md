@@ -2,7 +2,7 @@
 schema_version: 1
 id: measurement-references
 domain: 00-workspace
-status: draft
+status: done
 title: "TODO-02 -- Measurement References: JPEG XL e9 and WebP"
 depends_on: []
 track: W2
@@ -45,7 +45,7 @@ track: W2
 | :---: | :-----: | ----------- | ---------- | :----: |
 |   1   |   §1    | e9 and WebP references in the research tools | -- |  [x]   |
 |   2   |   §2    | JPEG XL e9 in the benchmark | -- |  [x]   |
-|   3   |   §3    | The committed corpus results file | §1 |  [ ]   |
+|   3   |   §3    | The committed corpus results file | §1 |  [x]   |
 
 ---
 
@@ -98,6 +98,8 @@ The roadmap measures milestones against JPEG XL e9 and WebP, so the tool that de
 
 **Test checkpoint:** `python3 -c "import csv; rows=[r for r in csv.DictReader(l for l in open('benchmarks/corpus.csv', encoding='utf-8') if not l.startswith('#')) if r['set']=='photo']; rf=sum(int(r['rasterfold']) for r in rows); e7=sum(int(r['jxl_e7']) for r in rows); e9=sum(int(r['jxl_e9']) for r in rows); wb=sum(int(r['webp']) for r in rows); print(f'n={len(rows)} rf={rf} e7={e7} ratio={rf/e7:.4f} e9={e9} e9_ratio={rf/e9:.4f} webp={wb} webp_ratio={rf/wb:.4f}')"` prints `n=39 rf=30865211 e7=31782058 ratio=0.9712 e9=31400714 e9_ratio=0.9829 webp=34138176 webp_ratio=0.9041` (reproducing `docs/research.md` section 1's `0.9712` of e7); `python3 -m unittest discover -s tests -p 'test_research_refs.py' -v` and `python3 scripts/windows.py tests/test_research_refs.py -v < /dev/null` (`8 tests OK`, covering all five `docs/research.md` section 1 summaries, provenance/failure preservation, and `scripts/drift-check.py` `derive_facts` CSV providers) exit 0.
 
+> **Verified:** 2026-10-25 | §3 | f5ab0d637c458014a05f5e79fb009e8558ac92e0
+> **Review:** `docs/reviews/d00-t02-s3.json`
 ## Verification
 
 - [ ] `pwsh scripts/check-all.ps1` exits 0
