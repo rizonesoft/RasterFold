@@ -149,6 +149,43 @@ def prepare_training_bmps(work: Path) -> tuple[list[Path], str]:
     return synthetic_training_bmps(work), 'synthetic:10-regime'
 
 
+def publish_profile_pair(
+    staged_prof: Path,
+    out_path: Path,
+    meta: dict[str, object],
+    replace_fn=None,
+) -> None:
+    if replace_fn is None:
+        replace_fn = lambda src, dst: src.replace(dst)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    meta_path = Path(str(out_path) + '.json')
+    partial = Path(str(out_path) + '.partial')
+    meta_partial = Path(str(meta_path) + '.partial')
+    bak_prof = Path(str(out_path) + '.bak')
+    bak_meta = Path(str(meta_path) + '.bak')
+    for p in (partial, meta_partial, bak_prof, bak_meta):
+        p.unlink(missing_ok=True)
+    shutil.copy2(staged_prof, partial)
+    meta_partial.write_text(json.dumps(meta, indent=2) + '\n', encoding='utf-8')
+    had_prev = out_path.is_file() and meta_path.is_file()
+    if had_prev:
+        shutil.copy2(out_path, bak_prof)
+        shutil.copy2(meta_path, bak_meta)
+    try:
+        replace_fn(partial, out_path)
+        replace_fn(meta_partial, meta_path)
+    except BaseException:
+        partial.unlink(missing_ok=True)
+        meta_partial.unlink(missing_ok=True)
+        if had_prev and bak_prof.is_file() and bak_meta.is_file():
+            bak_prof.replace(out_path)
+            bak_meta.replace(meta_path)
+        raise
+    finally:
+        bak_prof.unlink(missing_ok=True)
+        bak_meta.unlink(missing_ok=True)
+
+
 def generate_profile(
     out_path: Path,
     build_instrumented: bool = True,
@@ -227,26 +264,16 @@ def generate_profile(
             raise RuntimeError(f'llvm-profdata show validation failed: {show_proc.stderr.strip()}')
 
         verified_exe_meta = build_mod.validate_pgo_exe_provenance(pgo_exe, clang_tool)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        partial = Path(str(out_path) + '.partial')
-        partial.unlink(missing_ok=True)
-        shutil.copy2(staged, partial)
-        partial.replace(out_path)
-
         meta = {
             'schema': 1,
             'dataset': dataset_label,
             'runs': len(raw_files),
             'compiler': verified_exe_meta['compiler'],
             'exe_sha256': verified_exe_meta['exe_sha256'],
-            'profdata_sha256': hashlib.sha256(out_path.read_bytes()).hexdigest(),
+            'profdata_sha256': hashlib.sha256(staged.read_bytes()).hexdigest(),
             'sources': dict(verified_exe_meta['sources']),
         }
-        meta_path = Path(str(out_path) + '.json')
-        meta_partial = Path(str(meta_path) + '.partial')
-        meta_partial.unlink(missing_ok=True)
-        meta_partial.write_text(json.dumps(meta, indent=2) + '\n', encoding='utf-8')
-        meta_partial.replace(meta_path)
+        publish_profile_pair(staged, out_path, meta)
 
     print(f'generated {out_path.relative_to(ROOT).as_posix()} ({len(raw_files)} runs, {dataset_label})', flush=True)
     return out_path

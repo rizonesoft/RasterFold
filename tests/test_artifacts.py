@@ -383,17 +383,18 @@ class Artifacts(unittest.TestCase):
             self.assertGreater(len(second_bytes), 0)
             self.assertEqual(build_mod.validate_pgo_profile(prof_out, pgo_tools, suffix), prof_out.resolve())
 
-            # 4. Stale executable provenance (--no-build after source change) is rejected before training.
+            # 4. Stale executable provenance (--no-build after source/header change) is rejected before training.
             exe_meta_path = Path(str(train_exe.resolve()) + '.json')
             saved_exe_meta = exe_meta_path.read_text(encoding='utf-8')
-            stale_exe_meta = json.loads(saved_exe_meta)
-            stale_exe_meta['sources']['src/cm.c'] = '0' * 64
-            exe_meta_path.write_text(json.dumps(stale_exe_meta), encoding='utf-8')
-            try:
-                with self.assertRaisesRegex(ValueError, 'stale or mismatched PGO executable provenance'):
-                    pgo_mod.generate_profile(prof_out, build_instrumented=False, pgo_exe=train_exe, max_images=1)
-            finally:
-                exe_meta_path.write_text(saved_exe_meta, encoding='utf-8')
+            for tracked_key in ('src/cm.c', 'include/rasterfold.h'):
+                stale_exe_meta = json.loads(saved_exe_meta)
+                stale_exe_meta['sources'][tracked_key] = '0' * 64
+                exe_meta_path.write_text(json.dumps(stale_exe_meta), encoding='utf-8')
+                try:
+                    with self.assertRaisesRegex(ValueError, f'stale or mismatched PGO executable provenance for {tracked_key}'):
+                        pgo_mod.generate_profile(prof_out, build_instrumented=False, pgo_exe=train_exe, max_images=1)
+                finally:
+                    exe_meta_path.write_text(saved_exe_meta, encoding='utf-8')
             self.assertEqual(prof_out.read_bytes(), second_bytes)
             self.assertEqual(meta_out.read_text(encoding='utf-8'), second_meta)
 
@@ -410,12 +411,30 @@ class Artifacts(unittest.TestCase):
             self.assertEqual(prof_out.read_bytes(), second_bytes)
             self.assertEqual(meta_out.read_text(encoding='utf-8'), second_meta)
 
-            # 6. Stale source provenance in .profdata.json is rejected by validate_pgo_profile.
-            stale_meta = json.loads(second_meta)
-            stale_meta['sources']['src/cm.c'] = '0' * 64
-            meta_out.write_text(json.dumps(stale_meta), encoding='utf-8')
-            with self.assertRaisesRegex(ValueError, 'stale or mismatched PGO profile provenance'):
-                build_mod.validate_pgo_profile(prof_out, pgo_tools, suffix)
+            # 6. Interrupted publication between .profdata and .profdata.json rolls back to the previous valid pair.
+            staged_new = temp_dir / 'staged_new.profdata'
+            staged_new.write_bytes(second_bytes + b'\x00')
+            new_meta = json.loads(second_meta)
+            new_meta['profdata_sha256'] = hashlib.sha256(staged_new.read_bytes()).hexdigest()
+
+            def interrupt_on_meta(src: Path, dst: Path) -> None:
+                if dst == meta_out:
+                    raise OSError('simulated interruption before metadata replace')
+                src.replace(dst)
+
+            with self.assertRaisesRegex(OSError, 'simulated interruption'):
+                pgo_mod.publish_profile_pair(staged_new, prof_out, new_meta, replace_fn=interrupt_on_meta)
+            self.assertEqual(prof_out.read_bytes(), second_bytes)
+            self.assertEqual(meta_out.read_text(encoding='utf-8'), second_meta)
+            self.assertEqual(build_mod.validate_pgo_profile(prof_out, pgo_tools, suffix), prof_out.resolve())
+
+            # 7. Stale source or header provenance in .profdata.json is rejected by validate_pgo_profile.
+            for tracked_key in ('src/cm.c', 'include/rasterfold.h'):
+                stale_meta = json.loads(second_meta)
+                stale_meta['sources'][tracked_key] = '0' * 64
+                meta_out.write_text(json.dumps(stale_meta), encoding='utf-8')
+                with self.assertRaisesRegex(ValueError, f'stale or mismatched PGO profile provenance for {tracked_key}'):
+                    build_mod.validate_pgo_profile(prof_out, pgo_tools, suffix)
             meta_out.write_text(second_meta, encoding='utf-8')
 
             # 7. Corrupt .profdata is refused by scripts/build.py --pgo-use.

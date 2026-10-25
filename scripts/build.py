@@ -60,14 +60,21 @@ def base_x64_flags() -> list[str]:
 
 
 PGO_TRACKED_SOURCES = (
+    'include/rasterfold.h',
     'src/cm.c', 'src/fold.c', 'src/bmp.c', 'src/crc32.c',
-    'src/api.c', 'src/main.c', 'src/sys.c', 'src/platform.c',
+    'src/api.c', 'src/main.c', 'src/mem.c', 'src/sys.c',
+    'src/sys_posix.c', 'src/platform.c', 'src/rasterfold.def',
     'src/rf.h', 'src/simd.h',
 )
 
 
 def pgo_source_hashes() -> dict[str, str]:
-    return {rel: hashlib.sha256((ROOT / rel).read_bytes()).hexdigest() for rel in PGO_TRACKED_SOURCES}
+    rels = set(PGO_TRACKED_SOURCES)
+    for folder in ('include', 'src'):
+        for p in sorted((ROOT / folder).glob('*')):
+            if p.is_file() and p.suffix in ('.c', '.h', '.def'):
+                rels.add(p.relative_to(ROOT).as_posix())
+    return {rel: hashlib.sha256((ROOT / rel).read_bytes()).hexdigest() for rel in sorted(rels)}
 
 
 def write_pgo_exe_provenance(exe: Path, cc: Path) -> Path:
@@ -104,7 +111,10 @@ def validate_pgo_exe_provenance(exe: Path, cc: Path) -> dict[str, object]:
     sources = meta.get('sources')
     if not isinstance(sources, dict):
         raise ValueError(f'stale or mismatched PGO executable provenance in {meta_path}: missing sources table')
-    for rel, current in pgo_source_hashes().items():
+    expected_hashes = pgo_source_hashes()
+    if set(sources.keys()) != set(expected_hashes.keys()):
+        raise ValueError(f'stale or mismatched PGO executable provenance in {meta_path}: tracked source set mismatch; rebuild pgo-gen')
+    for rel, current in expected_hashes.items():
         if sources.get(rel) != current:
             raise ValueError(f'stale or mismatched PGO executable provenance for {rel} in {meta_path}; rebuild pgo-gen')
     return meta
@@ -112,6 +122,12 @@ def validate_pgo_exe_provenance(exe: Path, cc: Path) -> dict[str, object]:
 
 def validate_pgo_profile(profile: Path, tools: Path, suffix: str) -> Path:
     resolved = profile.resolve()
+    meta_path = Path(str(resolved) + '.json')
+    bak_prof = Path(str(resolved) + '.bak')
+    bak_meta = Path(str(meta_path) + '.bak')
+    if bak_prof.is_file() and bak_meta.is_file():
+        bak_prof.replace(resolved)
+        bak_meta.replace(meta_path)
     if not resolved.is_file() or resolved.stat().st_size == 0:
         raise ValueError(f'missing or empty PGO profile: {profile}')
     profdata = tools / ('llvm-profdata' + suffix)
@@ -122,7 +138,6 @@ def validate_pgo_profile(profile: Path, tools: Path, suffix: str) -> Path:
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout or 'invalid profile').strip().splitlines()[0]
         raise ValueError(f'corrupt or incompatible PGO profile {profile}: {detail}')
-    meta_path = Path(str(resolved) + '.json')
     if not meta_path.is_file():
         raise ValueError(f'stale or mismatched PGO profile provenance: missing {meta_path}')
     try:
@@ -136,10 +151,11 @@ def validate_pgo_profile(profile: Path, tools: Path, suffix: str) -> Path:
     sources = meta.get('sources')
     if not isinstance(sources, dict):
         raise ValueError(f'stale or mismatched PGO profile provenance in {meta_path}: missing sources table')
-    for rel in PGO_TRACKED_SOURCES:
-        expected = sources.get(rel)
-        current = hashlib.sha256((ROOT / rel).read_bytes()).hexdigest()
-        if expected != current:
+    expected_hashes = pgo_source_hashes()
+    if set(sources.keys()) != set(expected_hashes.keys()):
+        raise ValueError(f'stale or mismatched PGO profile provenance in {meta_path}: tracked source set mismatch; regenerate with scripts/pgo.ps1')
+    for rel, current in expected_hashes.items():
+        if sources.get(rel) != current:
             raise ValueError(f'stale or mismatched PGO profile provenance for {rel} in {meta_path}; regenerate with scripts/pgo.ps1')
     return resolved
 
