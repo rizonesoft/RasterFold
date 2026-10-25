@@ -167,9 +167,10 @@ def roundtrip(name: str, width: int, height: int, rgb: bytes, **bmp_kw) -> None:
     one_fold = work / "one.fold"
     out_bmp = work / "out.bmp"
     one_bmp = work / "one.bmp"
+    three_bmp = work / "three.bmp"
     oracle_fold = work / "oracle.fold"
     oracle_bmp = work / "oracle.bmp"
-    for stale in (out_fold, one_fold, out_bmp, one_bmp, oracle_fold, oracle_bmp, Path(str(out_fold) + ".partial")):
+    for stale in (out_fold, one_fold, out_bmp, one_bmp, three_bmp, oracle_fold, oracle_bmp, Path(str(out_fold) + ".partial")):
         stale.unlink(missing_ok=True)
     src_bmp.write_bytes(rf.write_bmp24(width, height, rgb, **bmp_kw))
     check(rf.read_bmp24(src_bmp.read_bytes()) == (width, height, rgb), "independent BMP reader mismatch")
@@ -182,10 +183,12 @@ def roundtrip(name: str, width: int, height: int, rgb: bytes, **bmp_kw) -> None:
     check(rf.decode_image(encoded) == (width, height, rgb), "oracle decode of codec file")
     expect_ok(["decode", str(out_fold), str(out_bmp)])
     expect_ok(["decode", "--threads", "1", str(out_fold), str(one_bmp)])
+    expect_ok(["decode", "--threads", "3", str(out_fold), str(three_bmp)])
     canonical_bmp = rf.write_bmp24(width, height, rgb)
     check(rf.read_bmp24(out_bmp.read_bytes()) == (width, height, rgb), "decoded BMP pixels")
     check(out_bmp.read_bytes() == canonical_bmp, "decoded BMP bytes differ from canonical BMP")
     check(one_bmp.read_bytes() == out_bmp.read_bytes(), "one-thread and default decodes differ")
+    check(three_bmp.read_bytes() == canonical_bmp, "three-thread decoded BMP bytes differ from canonical BMP")
     with Image.open(out_bmp) as pillow:
         check(pillow.size == (width, height), "pillow size")
         check(pillow.convert("RGB").tobytes() == rgb, "pillow pixels")
