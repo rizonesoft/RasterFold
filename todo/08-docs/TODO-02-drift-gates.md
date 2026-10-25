@@ -41,7 +41,7 @@ track: D2
 | :---: | :-----: | ----------- | ---------- | :----: |
 |   1   |   §1    | One facts file and claims everywhere | -- |  [x]   |
 |   2   |   §2    | Figures bound to their data | §1, D00 T02 §3 |  [ ]   |
-|   3   |   §3    | Generated files match their sources | §1, D08 T01 §1 |  [ ]   |
+|   3   |   §3    | Generated files match their sources | §1, D08 T01 §1 |  [x]   |
 |   4   |   §4    | Staleness: verified dates and data revisions | §2 |  [ ]   |
 |   5   |   §5    | Links, and the gates wired everywhere | §3, §4 |  [ ]   |
 | 6 | §6 | Deterministic repair and complete file coverage | §1, §3 | [ ] |
@@ -81,6 +81,8 @@ track: D2
 
 **Test checkpoint:** `python3 -m unittest tests/test_drift.py -v` passes (`Ran 47 tests in 5.519s, OK`); each seeded stale output quoted from `python3 scripts/drift-check.py` with its failure line and exit 1 (`docs/format.md`: `generator: scripts/build-docs.py: build-docs: docs/format.md: generated file differs from source (run python3 scripts/build-docs.py)`, `rc=1`; `todo/05-milestones/TODO-01-beat-jxl-and-webp.md`: `generator: research/milestones.py: milestones: todo/05-milestones/TODO-01-beat-jxl-and-webp.md is stale; run python research/milestones.py --write`, `rc=1`; `todo/implementation-plan.md`: `generator: scripts/todo-graph.py: ::error::todo/implementation-plan.md is stale -- D08 T01 §1: plan says [ ], graph says [x]`, `rc=1`), then restored with `python3 scripts/drift-check.py` exiting 0 (`drift: 192 supported documents; 0 error(s); 0 deterministic repair(s)`).
 
+> **Verified:** 2026-10-25 | §3 | 98d424b95225e798d795d4e31d92e46d2074d2ad
+> **Review:** `docs/reviews/d08-t02-s3.json`
 ## 4. Staleness: Verified Dates and Data Revisions
 
 **Job:** A maintainer can read a report of every stale page and data file, and why it is stale.
