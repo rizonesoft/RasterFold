@@ -16,8 +16,8 @@
   var SESSION_PREFIX = "rf_docs_session:";
   var forceStorageUnavailable = false;
   var forceClipboardFail = false;
-  var initialSearchFailed = false;
   var fallbackSearchData = null;
+  var useFallbackSearch = false;
 
   function announce(message) {
     var region = document.getElementById("rf-a11y-status");
@@ -44,14 +44,22 @@
     return {};
   }
 
-  function writeSessionFallback(theme, density) {
+  function writeSessionFallback(updates) {
     try {
       var cur = readSessionFallback();
-      if (theme && ALLOWED_THEMES[theme]) {
-        cur.theme = theme;
-      }
-      if (density && ALLOWED_DENSITIES[density]) {
-        cur.density = density;
+      if (updates && typeof updates === "object") {
+        if (updates.theme && ALLOWED_THEMES[updates.theme]) {
+          cur.theme = updates.theme;
+        }
+        if (typeof updates.themeUnpersisted === "boolean") {
+          cur.themeUnpersisted = updates.themeUnpersisted;
+        }
+        if (updates.density && ALLOWED_DENSITIES[updates.density]) {
+          cur.density = updates.density;
+        }
+        if (typeof updates.densityUnpersisted === "boolean") {
+          cur.densityUnpersisted = updates.densityUnpersisted;
+        }
       }
       window.name = SESSION_PREFIX + JSON.stringify(cur);
     } catch (e) {
@@ -103,13 +111,13 @@
       return false;
     }
     document.documentElement.setAttribute("data-rf-theme", theme);
-    writeSessionFallback(theme, getDensity());
     var persisted = true;
     try {
       safeStorageSet("rf_docs_theme", theme);
     } catch (e) {
       persisted = false;
     }
+    writeSessionFallback({ theme: theme, themeUnpersisted: !persisted });
     syncToolbarButtons();
     if (shouldAnnounce !== false) {
       announce(
@@ -124,13 +132,13 @@
       return false;
     }
     document.documentElement.setAttribute("data-rf-density", density);
-    writeSessionFallback(getTheme(), density);
     var persisted = true;
     try {
       safeStorageSet("rf_docs_density", density);
     } catch (e) {
       persisted = false;
     }
+    writeSessionFallback({ density: density, densityUnpersisted: !persisted });
     syncToolbarButtons();
     if (shouldAnnounce !== false) {
       announce(
@@ -141,21 +149,38 @@
   }
 
   function initToolbarControls() {
+    var sess = readSessionFallback();
     var resolvedTheme = null;
     var resolvedDensity = null;
+    var themeUnpersisted = Boolean(sess.themeUnpersisted);
+    var densityUnpersisted = Boolean(sess.densityUnpersisted);
+
+    if (themeUnpersisted && sess.theme && ALLOWED_THEMES[sess.theme]) {
+      resolvedTheme = sess.theme;
+    }
+    if (densityUnpersisted && sess.density && ALLOWED_DENSITIES[sess.density]) {
+      resolvedDensity = sess.density;
+    }
+
     try {
-      var savedTheme = safeStorageGet("rf_docs_theme");
-      if (savedTheme && ALLOWED_THEMES[savedTheme]) {
-        resolvedTheme = savedTheme;
+      if (!resolvedTheme) {
+        var savedTheme = safeStorageGet("rf_docs_theme");
+        if (savedTheme && ALLOWED_THEMES[savedTheme]) {
+          resolvedTheme = savedTheme;
+          themeUnpersisted = false;
+        }
       }
-      var savedDensity = safeStorageGet("rf_docs_density");
-      if (savedDensity && ALLOWED_DENSITIES[savedDensity]) {
-        resolvedDensity = savedDensity;
+      if (!resolvedDensity) {
+        var savedDensity = safeStorageGet("rf_docs_density");
+        if (savedDensity && ALLOWED_DENSITIES[savedDensity]) {
+          resolvedDensity = savedDensity;
+          densityUnpersisted = false;
+        }
       }
     } catch (e) {
       /* Storage unavailable; fall back to window.name session state */
     }
-    var sess = readSessionFallback();
+
     if (!resolvedTheme && sess.theme && ALLOWED_THEMES[sess.theme]) {
       resolvedTheme = sess.theme;
     }
@@ -168,7 +193,12 @@
     if (resolvedDensity) {
       document.documentElement.setAttribute("data-rf-density", resolvedDensity);
     }
-    writeSessionFallback(getTheme(), getDensity());
+    writeSessionFallback({
+      theme: getTheme(),
+      themeUnpersisted: themeUnpersisted,
+      density: getDensity(),
+      densityUnpersisted: densityUnpersisted
+    });
     syncToolbarButtons();
 
     var themeBtns = document.querySelectorAll(".rf-theme-btn[data-rf-theme-choice]");
@@ -270,12 +300,6 @@
     var blocks = main.querySelectorAll("div.highlighter-rouge, figure.highlight");
     for (var i = 0; i < blocks.length; i++) {
       (function (block) {
-        var existingBtns = block.querySelectorAll("button");
-        for (var k = 0; k < existingBtns.length; k++) {
-          if (!existingBtns[k].classList.contains("rf-copy-button")) {
-            existingBtns[k].parentNode.removeChild(existingBtns[k]);
-          }
-        }
         if (block.querySelector(".rf-copy-button")) {
           return;
         }
@@ -311,6 +335,23 @@
         });
       })(blocks[i]);
     }
+  }
+
+  function isValidSearchIndex(data) {
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      return false;
+    }
+    var keys = Object.keys(data);
+    if (keys.length === 0) {
+      return false;
+    }
+    for (var i = 0; i < keys.length; i++) {
+      var entry = data[keys[i]];
+      if (entry && typeof entry === "object" && typeof entry.url === "string" && entry.url.length > 0) {
+        return true;
+      }
+    }
+    return false;
   }
 
   function renderFallbackSearchResults(query) {
@@ -375,6 +416,7 @@
     if (matches.length === 0) {
       var noRes = document.createElement("div");
       noRes.className = "search-no-result";
+      noRes.setAttribute("data-rf-fallback", "true");
       noRes.textContent = "No results found";
       searchResults.appendChild(noRes);
       enhanceSearchResults();
@@ -383,6 +425,7 @@
 
     var ul = document.createElement("ul");
     ul.className = "search-results-list";
+    ul.setAttribute("data-rf-fallback", "true");
     var limit = Math.min(matches.length, 20);
     for (var m = 0; m < limit; m++) {
       var item = matches[m].entry;
@@ -403,7 +446,7 @@
   }
 
   function triggerSearchOffline() {
-    initialSearchFailed = true;
+    useFallbackSearch = true;
     var banner = document.getElementById("rf-search-offline");
     var searchInput = document.getElementById("search-input");
     if (banner) {
@@ -415,10 +458,11 @@
     announce("Search index is unavailable offline");
   }
 
-  function retrySearchIndex() {
+  function loadSearchIndex(isRetry) {
     var banner = document.getElementById("rf-search-offline");
     var searchInput = document.getElementById("search-input");
-    return window.fetch("/RasterFold/assets/js/search-data.json", { cache: "no-store" })
+    var fetchOpts = isRetry ? { cache: "no-store" } : {};
+    return window.fetch("/RasterFold/assets/js/search-data.json", fetchOpts)
       .then(function (resp) {
         if (!resp.ok) {
           throw new Error("HTTP " + resp.status);
@@ -426,24 +470,59 @@
         return resp.json();
       })
       .then(function (data) {
+        if (!isValidSearchIndex(data)) {
+          throw new Error("Invalid search-data.json payload");
+        }
         fallbackSearchData = data;
+        useFallbackSearch = true;
+        window.__rfSearchIndexState = { status: "loaded", data: data };
         if (banner) {
           banner.setAttribute("hidden", "hidden");
         }
         if (searchInput) {
           searchInput.removeAttribute("aria-invalid");
-          searchInput.focus();
-          if (searchInput.value && searchInput.value.trim()) {
-            renderFallbackSearchResults(searchInput.value);
+          if (isRetry) {
+            ensureSearchInputVisibleAndFocus(searchInput);
+            if (searchInput.value && searchInput.value.trim()) {
+              renderFallbackSearchResults(searchInput.value);
+            }
           }
         }
-        announce("Search index loaded");
+        if (isRetry) {
+          announce("Search index loaded");
+        }
         return true;
       })
       .catch(function () {
+        fallbackSearchData = null;
         triggerSearchOffline();
         return false;
       });
+  }
+
+  function retrySearchIndex() {
+    return loadSearchIndex(true);
+  }
+
+  function ensureSearchInputVisibleAndFocus(searchInput) {
+    if (!searchInput) {
+      return;
+    }
+    var mainHeader = document.getElementById("main-header");
+    var siteNav = document.getElementById("site-nav");
+    var menuButton = document.getElementById("menu-button");
+    if (mainHeader && window.getComputedStyle(mainHeader).display === "none") {
+      mainHeader.classList.add("nav-open");
+      if (siteNav) {
+        siteNav.classList.add("nav-open");
+      }
+      if (menuButton) {
+        menuButton.classList.add("nav-open");
+        menuButton.setAttribute("aria-expanded", "true");
+      }
+    }
+    searchInput.focus();
+    searchInput.select();
   }
 
   function clearSearchAndFocus() {
@@ -457,7 +536,7 @@
       searchInput.value = "";
       searchInput.setAttribute("aria-expanded", "false");
       searchInput.dispatchEvent(new Event("keyup", { bubbles: true }));
-      searchInput.focus();
+      ensureSearchInputVisibleAndFocus(searchInput);
     }
     announce("Search cleared");
   }
@@ -522,6 +601,21 @@
     }
   }
 
+  function maybeRunFallbackSearch() {
+    var searchInput = document.getElementById("search-input");
+    var searchResults = document.getElementById("search-results");
+    if (!searchInput || !searchResults) {
+      return;
+    }
+    if (!fallbackSearchData && window.__rfSearchIndexState && window.__rfSearchIndexState.data) {
+      fallbackSearchData = window.__rfSearchIndexState.data;
+    }
+    if (!useFallbackSearch || !fallbackSearchData) {
+      return;
+    }
+    renderFallbackSearchResults(searchInput.value || "");
+  }
+
   function initSearchEnhancements() {
     var searchInput = document.getElementById("search-input");
     var searchResults = document.getElementById("search-results");
@@ -538,27 +632,58 @@
       searchInput.setAttribute("aria-controls", "search-results");
       searchInput.setAttribute("aria-expanded", "false");
       searchInput.addEventListener("input", function () {
-        if (initialSearchFailed && fallbackSearchData) {
-          renderFallbackSearchResults(searchInput.value);
-        }
+        maybeRunFallbackSearch();
       });
       searchInput.addEventListener("keyup", function (ev) {
-        if (ev.key === "Escape") {
+        if (ev.key === "Escape" || ev.key === "ArrowDown" || ev.key === "ArrowUp" || ev.key === "Enter") {
           return;
         }
-        if (initialSearchFailed && fallbackSearchData) {
-          renderFallbackSearchResults(searchInput.value);
-        }
+        maybeRunFallbackSearch();
       });
-      searchInput.addEventListener("keydown", function (ev) {
-        if (ev.key === "Enter" && searchResults) {
-          var targetLink = searchResults.querySelector("a.search-result.active") || searchResults.querySelector("a.search-result");
-          if (targetLink && targetLink.getAttribute("href")) {
-            ev.preventDefault();
-            window.location.assign(targetLink.getAttribute("href"));
+      searchInput.addEventListener(
+        "keydown",
+        function (ev) {
+          if (!searchResults) {
+            return;
           }
-        }
-      });
+          if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+            var results = searchResults.querySelectorAll(".search-result");
+            if (results.length > 0) {
+              ev.preventDefault();
+              ev.stopImmediatePropagation();
+              var curIdx = -1;
+              for (var r = 0; r < results.length; r++) {
+                if (results[r].classList.contains("active")) {
+                  curIdx = r;
+                  results[r].classList.remove("active");
+                }
+              }
+              var nextIdx = ev.key === "ArrowDown"
+                ? (curIdx + 1) % results.length
+                : (curIdx <= 0 ? results.length - 1 : curIdx - 1);
+              results[nextIdx].classList.add("active");
+            }
+            return;
+          }
+          if (ev.key === "Enter") {
+            var activeEl =
+              searchResults.querySelector(".search-result.active") ||
+              searchResults.querySelector(".search-result");
+            if (!activeEl) {
+              return;
+            }
+            ev.preventDefault();
+            ev.stopImmediatePropagation();
+            var href = activeEl.getAttribute("href");
+            if (href) {
+              window.location.assign(href);
+            } else if (typeof activeEl.click === "function") {
+              activeEl.click();
+            }
+          }
+        },
+        true
+      );
     }
     if (searchResults) {
       searchResults.setAttribute("role", "region");
@@ -578,15 +703,13 @@
 
       if ((ev.ctrlKey || ev.metaKey) && (ev.key === "k" || ev.key === "K")) {
         ev.preventDefault();
-        searchInput.focus();
-        searchInput.select();
+        ensureSearchInputVisibleAndFocus(searchInput);
         announce("Search input focused");
         return;
       }
       if (ev.key === "/" && !inEditable && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
         ev.preventDefault();
-        searchInput.focus();
-        searchInput.select();
+        ensureSearchInputVisibleAndFocus(searchInput);
         announce("Search input focused");
         return;
       }
@@ -600,16 +723,14 @@
       }
     });
 
-    if (window.fetch) {
-      window.fetch("/RasterFold/assets/js/search-data.json")
-        .then(function (resp) {
-          if (!resp.ok) {
-            triggerSearchOffline();
-          }
-        })
-        .catch(function () {
-          triggerSearchOffline();
-        });
+    if (window.__rfSearchIndexState) {
+      if (window.__rfSearchIndexState.status === "failed") {
+        triggerSearchOffline();
+      } else if (window.__rfSearchIndexState.status === "loaded" && window.__rfSearchIndexState.data) {
+        fallbackSearchData = window.__rfSearchIndexState.data;
+      }
+    } else if (window.fetch) {
+      loadSearchIndex(false);
     }
   }
 

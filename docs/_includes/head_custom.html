@@ -2,39 +2,64 @@
 (function () {
   var allowedThemes = { "light": true, "dark": true, "hc-light": true, "hc-dark": true };
   var allowedDensities = { "comfortable": true, "compact": true };
+  var sess = {};
+  try {
+    if (typeof window.name === "string" && window.name.indexOf("rf_docs_session:") === 0) {
+      var parsed = JSON.parse(window.name.slice("rf_docs_session:".length));
+      if (parsed && typeof parsed === "object") {
+        sess = parsed;
+      }
+    }
+  } catch (e0) {
+    /* Ignore malformed window.name */
+  }
+
   var theme = null;
   var density = null;
+  if (sess.themeUnpersisted && sess.theme && allowedThemes[sess.theme]) {
+    theme = sess.theme;
+  }
+  if (sess.densityUnpersisted && sess.density && allowedDensities[sess.density]) {
+    density = sess.density;
+  }
+
   try {
-    var savedTheme = window.localStorage.getItem("rf_docs_theme");
-    if (savedTheme && allowedThemes[savedTheme]) {
-      theme = savedTheme;
+    if (!theme) {
+      var savedTheme = window.localStorage.getItem("rf_docs_theme");
+      if (savedTheme && allowedThemes[savedTheme]) {
+        theme = savedTheme;
+      }
     }
-    var savedDensity = window.localStorage.getItem("rf_docs_density");
-    if (savedDensity && allowedDensities[savedDensity]) {
-      density = savedDensity;
+    if (!density) {
+      var savedDensity = window.localStorage.getItem("rf_docs_density");
+      if (savedDensity && allowedDensities[savedDensity]) {
+        density = savedDensity;
+      }
     }
-  } catch (e) {
+  } catch (e1) {
     /* Storage unavailable: fall back to window.name session state below */
   }
-  if (!theme || !density) {
-    try {
-      if (typeof window.name === "string" && window.name.indexOf("rf_docs_session:") === 0) {
-        var sess = JSON.parse(window.name.slice("rf_docs_session:".length));
-        if (!theme && sess && sess.theme && allowedThemes[sess.theme]) {
-          theme = sess.theme;
-        }
-        if (!density && sess && sess.density && allowedDensities[sess.density]) {
-          density = sess.density;
-        }
-      }
-    } catch (e2) {
-      /* Ignore malformed window.name */
-    }
+
+  if (!theme && sess.theme && allowedThemes[sess.theme]) {
+    theme = sess.theme;
   }
+  if (!density && sess.density && allowedDensities[sess.density]) {
+    density = sess.density;
+  }
+
   document.documentElement.setAttribute("data-rf-theme", theme || "light");
   document.documentElement.setAttribute("data-rf-density", density || "comfortable");
 
+  /* WORKAROUND(just-the-docs scrollNav): Upstream remote_theme just-the-docs/just-the-docs
+   * runs scrollNav() on DOMContentLoaded with no _config.yml option to disable it.
+   * scrollNav() calls targetLink.scrollIntoView() (which advances Chromium's sequential
+   * focus starting point past a.skip-to-main into #site-nav) and targetLink.removeAttribute("href")
+   * (which removes keyboard focusability from the active sidebar item). Guard both calls on
+   * .nav-list-link during initial DOMContentLoaded setup, then restore the native Element.prototype
+   * methods immediately after DOMContentLoaded completes. */
   var origScrollIntoView = Element.prototype.scrollIntoView;
+  var origRemoveAttribute = Element.prototype.removeAttribute;
+
   Element.prototype.scrollIntoView = function () {
     if (this && this.classList && this.classList.contains("nav-list-link")) {
       var nav = document.getElementById("site-nav");
@@ -46,7 +71,6 @@
     return origScrollIntoView.apply(this, arguments);
   };
 
-  var origRemoveAttribute = Element.prototype.removeAttribute;
   Element.prototype.removeAttribute = function (name) {
     if (name === "href" && this && this.classList && this.classList.contains("nav-list-link")) {
       this.setAttribute("aria-current", "page");
@@ -54,6 +78,92 @@
     }
     return origRemoveAttribute.apply(this, arguments);
   };
+
+  /* WORKAROUND(just-the-docs initSearch): Upstream just-the-docs.js loads search-data.json
+   * via XMLHttpRequest in initSearch() on DOMContentLoaded, logging HTTP/network errors only
+   * to console.log and calling JSON.parse(request.responseText) without try/catch or exposing
+   * any failure hook. Observe the single search-data.json XMLHttpRequest during startup so
+   * site-states.js reports the actual index-loading outcome without issuing a second probe. */
+  function isValidSearchPayload(data) {
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      return false;
+    }
+    var keys = Object.keys(data);
+    for (var i = 0; i < keys.length; i++) {
+      var item = data[keys[i]];
+      if (item && typeof item === "object" && typeof item.url === "string" && item.url.length > 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function markSearchIndexFailed() {
+    window.__rfSearchIndexState = { status: "failed", data: null };
+    if (window.rfDocsState && typeof window.rfDocsState.triggerSearchOffline === "function") {
+      window.rfDocsState.triggerSearchOffline();
+    }
+  }
+
+  if (typeof window.XMLHttpRequest === "function") {
+    var origXhrOpen = window.XMLHttpRequest.prototype.open;
+    var origXhrSend = window.XMLHttpRequest.prototype.send;
+
+    window.XMLHttpRequest.prototype.open = function (method, url) {
+      this.__rfIsSearchIndex = typeof url === "string" && url.indexOf("search-data.json") !== -1;
+      if (this.__rfIsSearchIndex) {
+        window.__rfSearchIndexState = { status: "loading", data: null };
+      }
+      return origXhrOpen.apply(this, arguments);
+    };
+
+    window.XMLHttpRequest.prototype.send = function () {
+      if (this.__rfIsSearchIndex) {
+        var xhr = this;
+        var upstreamOnload = xhr.onload;
+        xhr.onload = function () {
+          if (xhr.status >= 200 && xhr.status < 400) {
+            var parsed = null;
+            try {
+              parsed = JSON.parse(xhr.responseText);
+            } catch (err) {
+              markSearchIndexFailed();
+              return;
+            }
+            if (!isValidSearchPayload(parsed)) {
+              markSearchIndexFailed();
+              return;
+            }
+            try {
+              if (typeof upstreamOnload === "function") {
+                upstreamOnload.apply(xhr, arguments);
+              }
+              window.__rfSearchIndexState = { status: "loaded", data: parsed };
+            } catch (err2) {
+              markSearchIndexFailed();
+            }
+          } else {
+            markSearchIndexFailed();
+          }
+        };
+        xhr.addEventListener("error", markSearchIndexFailed);
+        xhr.addEventListener("abort", markSearchIndexFailed);
+        xhr.addEventListener("timeout", markSearchIndexFailed);
+      }
+      return origXhrSend.apply(this, arguments);
+    };
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    window.setTimeout(function () {
+      Element.prototype.scrollIntoView = origScrollIntoView;
+      Element.prototype.removeAttribute = origRemoveAttribute;
+      if (typeof window.XMLHttpRequest === "function" && origXhrOpen && origXhrSend) {
+        window.XMLHttpRequest.prototype.open = origXhrOpen;
+        window.XMLHttpRequest.prototype.send = origXhrSend;
+      }
+    }, 0);
+  });
 })();
 </script>
 <link rel="stylesheet" href="{{ '/assets/css/site-states.css' | relative_url }}" id="rf-site-states-css">
