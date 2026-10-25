@@ -2,7 +2,7 @@
 schema_version: 1
 id: drift-gates
 domain: 08-docs
-status: draft
+status: done
 title: "TODO-02 -- Drift and Staleness Gates for Docs, READMEs, and Supporting Files"
 depends_on: []
 track: D2
@@ -13,7 +13,7 @@ track: D2
 > **Goal:** No document in the repository can quietly disagree with the code or the data. Names, versions, limits, exit codes, and messages come from one facts file; every measured figure in a README or doc is bound to the committed data it came from; generated files are checked against their sources; every page states when it was verified against the files it describes and goes stale when they change; and every link resolves. The commit hook, `scripts/check-all.ps1`, and CI all refuse drift.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-10-25):** `scripts/drift-check.py` and `docs/drift.json` are implemented by the attended 2026-09-30 maintenance task and extended in §1-§3, together with staged hooks, local gates and CI. They cover all supported tracked/new information files, explicit source facts, data bindings (`csv`, `csv-meta`, and `csv-aggregate`), generated blocks, source review hashes, references, built-site receipts and deterministic repair. Historical measurements retain their dates and limitations; absent future data and a not-yet-built Pages site cannot be called current proof. Formal section stamps remain separate from this implementation.
+> **Current state (verified 2026-10-25):** `scripts/drift-check.py` and `docs/drift.json` are implemented, verified, and stamped across §1-§7, together with staged hooks (`tools/githooks/pre-commit`, `tools/githooks/commit-msg`), local gates (`scripts/check-all.py`, `scripts/check-all.ps1`) and CI (`.github/workflows/plan.yml`). They cover all supported tracked/new information files, explicit source facts, data bindings (`csv`, `csv-meta`, and `csv-aggregate`), generated blocks, source review hashes, commit/path references, `Drift-Fact:` commit fact declarations, built-site receipts (`build/site-artifact/drift-build.json`) bound to `docs/site-content.json`, and deterministic repair. Historical measurements retain their dates and limitations; live GitHub Pages deployment enforcement and deployed receipt read-back are owned by `D08 T01 §3`.
 <!-- claim: exists scripts/drift-check.py -->
 <!-- claim: exists docs/drift.json -->
 
@@ -45,7 +45,7 @@ track: D2
 |   4   |   §4    | Staleness: verified dates and data revisions | §2 |  [x]   |
 |   5   |   §5    | Links, and the gates wired everywhere | §3, §4 |  [x]   |
 | 6 | §6 | Deterministic repair and complete file coverage | §1, §3 | [x] |
-| 7 | §7 | Commit and built-site provenance | §5, §6 | [ ] |
+| 7 | §7 | Commit and built-site provenance | §5, §6 | [x] |
 
 ---
 
@@ -148,7 +148,9 @@ track: D2
 
 **Groomed 2026-09-30:** Mechanical coverage is explicit, not a claim that arbitrary prose can be understood perfectly. Future measurement producers remain prerequisites of complete live measurement coverage. Repair never fabricates a benchmark, a review stamp or a deployment.
 
+> **Verified:** 2026-10-25 | §7 | 9155346a2220a432d9074f5b92e3e4227751263b
+> **Review:** `docs/reviews/d08-t02-s7.json`
 ## Verification
 
-- [ ] `python scripts/drift-check.py` exits 0
-- [ ] `python scripts/todo-graph.py validate` clean
+- [x] `python scripts/drift-check.py` exits 0 (`drift: 219 supported documents; 0 error(s); 0 deterministic repair(s)`)
+- [x] `python scripts/todo-graph.py validate` clean (`32 todos, 227 sections -- 0 fatal, 0 warning(s)`)
