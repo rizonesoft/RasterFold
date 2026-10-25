@@ -464,6 +464,34 @@ class ResearchRefsTests(unittest.TestCase):
             self.assertIn("invalid PPM payload length", str(ctx.exception))
             self.assertEqual(csv_path.read_bytes(), original_bytes)
 
+            # Restore valid PPM and test injected I/O failures during write/fsync/replace.
+            (ppm_dir / "kodim01.ppm").write_bytes(b"P6\n# comment\n2 1\n255\n\x01\x02\x03\x04\x05\x06")
+            with mock.patch("os.fsync", side_effect=OSError("disk full on fsync")):
+                with self.assertRaises(SystemExit) as ctx:
+                    ab.write_corpus_csv(
+                        csv_path,
+                        [("kodim01", 999999), ("syn_checker", 5709)],
+                        refs,
+                        ppm_dir=ppm_dir,
+                        runner=clean_runner,
+                    )
+                self.assertIn("failed writing corpus CSV", str(ctx.exception))
+            self.assertEqual(csv_path.read_bytes(), original_bytes)
+            self.assertEqual([p.name for p in root.iterdir() if p.name.endswith(".tmp")], [])
+
+            with mock.patch("os.replace", side_effect=OSError("permission denied on replace")):
+                with self.assertRaises(SystemExit) as ctx:
+                    ab.write_corpus_csv(
+                        csv_path,
+                        [("kodim01", 999999), ("syn_checker", 5709)],
+                        refs,
+                        ppm_dir=ppm_dir,
+                        runner=clean_runner,
+                    )
+                self.assertIn("failed writing corpus CSV", str(ctx.exception))
+            self.assertEqual(csv_path.read_bytes(), original_bytes)
+            self.assertEqual([p.name for p in root.iterdir() if p.name.endswith(".tmp")], [])
+
     def test_drift_check_derive_facts_csv_with_and_without_comments(self) -> None:
         import importlib.util
 
