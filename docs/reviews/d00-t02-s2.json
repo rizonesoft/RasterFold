@@ -1,0 +1,89 @@
+{
+  "ref": "D00 T02 \u00a72",
+  "title": "JPEG XL e9 in the Benchmark",
+  "implementation_sha": "98ce3193d3be595a103e0628372f00d3818cf5f4",
+  "date": "2026-10-25",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/00-workspace/D00-T02-s2.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/00-workspace/D00-T02-s2.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 scripts/windows.py tests/benchmark.py measure -n 1 -> jxl-e9 1440564 bytes, encode_us=10361742, decode_us=573121, failures: 0, 133 total rows",
+    "python3 -m unittest discover -s tests -p test_research_refs.py -v -> Ran 5 tests, OK (Linux and Windows)"
+  ],
+  "completion": {
+    "report": "docs/reviews/00-workspace/D00-T02-s2.md",
+    "verdict": "complete",
+    "candidate": "ce0479eeaeb7e23e8fe6550325e602bfb77a87a1",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 2,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/00-workspace/D00-T02-s2.md",
+    "candidate": "cef02a8d7061e42d95807f5b458961dc9b699c3b",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}

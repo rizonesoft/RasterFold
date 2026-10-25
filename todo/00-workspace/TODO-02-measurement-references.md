@@ -44,7 +44,7 @@ track: W2
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
 |   1   |   §1    | e9 and WebP references in the research tools | -- |  [x]   |
-|   2   |   §2    | JPEG XL e9 in the benchmark | -- |  [ ]   |
+|   2   |   §2    | JPEG XL e9 in the benchmark | -- |  [x]   |
 |   3   |   §3    | The committed corpus results file | §1 |  [ ]   |
 
 ---
@@ -82,6 +82,8 @@ The roadmap measures milestones against JPEG XL e9 and WebP, so the tool that de
 
 **Test checkpoint:** the `measure` table in `benchmarks/results.md` (and `benchmarks/results.csv`) shows `jxl-e9` at 1,440,564 bytes (`0.980` of `jxl`) with its encode time (`10361742` us, `5.369x` `jxl`) and decode time (`573121` us, `1.073x` `jxl`), while `photos` and `synthetic` retain their 126 six-codec rows in `benchmarks/results.csv` (`133` total rows) and render `--` for `jxl-e9` under explicit `Retained from existing benchmarks/results.csv (not re-measured in this run).` notes; `python3 -m unittest discover -s tests -p 'test_research_refs.py' -v` and `python3 scripts/windows.py tests/test_research_refs.py -v < /dev/null` exit 0.
 
+> **Verified:** 2026-10-25 | §2 | 98ce3193d3be595a103e0628372f00d3818cf5f4
+> **Review:** `docs/reviews/d00-t02-s2.json`
 ## 3. The Committed Corpus Results File
 
 **Job:** A reader of the docs can check every quoted corpus figure against the committed file the size tool exports, which names the revision it came from.
