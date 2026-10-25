@@ -50,7 +50,7 @@ track: D1
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
 |   1   |   §1    | The Jekyll site and its generated pages | D08 T02 §1 |  [x]   |
-|   2   |   §2    | Comparison charts | §1, D00 T02 §3 |  [ ]   |
+|   2   |   §2    | Comparison charts | §1, D00 T02 §3 |  [x]   |
 | 3 | §3 | Publish with GitHub Pages | §2, §4, §5, D08 T02 §5, D08 T02 §7, D99 T01 §5 | [ ] |
 | 4 | §4 | Complete current documentation map | §1, D08 T02 §7 | [ ] |
 | 5 | §5 | Accessible navigation and site states | §4 | [ ] |
@@ -104,6 +104,8 @@ Charts are generated as static SVG by `scripts/build-docs.py`, not drawn by Java
 
 **Test checkpoint:** `python3 scripts/build-docs.py --self-test` prints `build-docs: self-test: 7 chart(s) and 7 table(s) match CSV data` (exit 0) and `--check` prints `build-docs: current` (exit 0); `python3 -m unittest tests/test_drift.py tests/test_research_refs.py -v` passes (`Ran 56 tests in 10.067s OK`); seeded mutations fail `python3 scripts/build-docs.py --self-test` with exit 1 on a hand-edited bar (`build-docs: self-test: docs/_includes/generated/charts/corpus-size-ratio.svg: ('photo', 'rasterfold') data-value='0.1234' != '0.9712'`), scatter point (`build-docs: self-test: docs/_includes/generated/charts/scatter-e9.svg: ('photo', 'measure') point data-x/data-y=('4720056', '0.5000') != ('4720056', '0.9781')`), deleted series (`build-docs: self-test: docs/_includes/generated/charts/benchmark-size-ratio.svg: missing series element for ('photos', 'jxl-e9')`), and table cell (`build-docs: self-test: docs/_includes/generated/tables/corpus-size-ratio.md: table rows do not match CSV calculation`), then regenerate cleanly to `build-docs: self-test: 7 chart(s) and 7 table(s) match CSV data` (exit 0).
 
+> **Verified:** 2026-10-25 | §2 | aada421fbfbf53389764a342b19aba159d6af0be
+> **Review:** `docs/reviews/d08-t01-s2.json`
 ## 3. Publish with GitHub Pages
 
 **Job:** A reader can open the site the `pages` workflow exports to GitHub Pages.

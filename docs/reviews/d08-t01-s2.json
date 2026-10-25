@@ -1,0 +1,91 @@
+{
+  "ref": "D08 T01 \u00a72",
+  "title": "Comparison Charts",
+  "implementation_sha": "aada421fbfbf53389764a342b19aba159d6af0be",
+  "date": "2026-10-25",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/08-docs/D08-T01-s2.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/08-docs/D08-T01-s2.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 scripts/build-docs.py --self-test -> build-docs: self-test: 7 chart(s) and 7 table(s) match CSV data",
+    "python3 scripts/build-docs.py --check -> build-docs: current",
+    "python3 -m unittest tests/test_drift.py tests/test_research_refs.py -v -> Ran 56 tests in 9.493s OK",
+    "python3 scripts/drift-check.py -> drift: 208 supported documents; 0 error(s); 0 deterministic repair(s)"
+  ],
+  "completion": {
+    "report": "docs/reviews/08-docs/D08-T01-s2.md",
+    "verdict": "completed",
+    "candidate": "cbb83008a3410ad4e8314907286d5197ab3adb97",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 2,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/08-docs/D08-T01-s2.md",
+    "candidate": "38b421891a2c9544618dddad14f537edae2ae3c5",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}
