@@ -1147,12 +1147,14 @@ class DriftTests(unittest.TestCase):
         results_rows = list(csv_mod.DictReader([ln for ln in results_raw.splitlines() if ln.strip() and not ln.startswith('#')]))
         m_match = re.search(r'measured_sets=([^\s]+)', results_raw.splitlines()[0])
         m_sets = set(m_match.group(1).split(',')) if m_match and m_match.group(1) != 'none' else set()
+        d_match = re.search(r'set_dates=([^\s]+)', results_raw.splitlines()[0])
+        s_dates = dict(item.split(':', 1) for item in d_match.group(1).split(',')) if d_match else {}
         self.assertEqual('measured' if 'measure' in m_sets else 'retained', live_facts['results_measure_status'])
-        self.assertEqual('2026-10-25', live_facts['results_measure_date'])
+        self.assertEqual(s_dates.get('measure', '2026-10-25'), live_facts['results_measure_date'])
         self.assertEqual('measured' if 'photos' in m_sets else 'retained', live_facts['results_photos_status'])
-        self.assertEqual('2026-10-25', live_facts['results_photos_date'])
+        self.assertEqual(s_dates.get('photos', '2026-10-25'), live_facts['results_photos_date'])
         self.assertEqual('measured' if 'synthetic' in m_sets else 'retained', live_facts['results_synthetic_status'])
-        self.assertEqual('2026-10-25', live_facts['results_synthetic_date'])
+        self.assertEqual(s_dates.get('synthetic', '2026-10-25'), live_facts['results_synthetic_date'])
         self.assertEqual('2026-10-25', live_facts['corpus_date'])
         self.assertEqual('0.958', live_facts['measurement_reference_ratio_jxl_e7'])
         self.assertEqual('0.978', live_facts['measurement_reference_ratio_jxl_e9'])
@@ -1234,11 +1236,12 @@ class DriftTests(unittest.TestCase):
         )
 
         # Also test non-numeric visible figure mismatch (changing date or extension in prose while keeping annotation).
+        mdate = live_facts['results_measure_date']
         self.write(
             'docs/benchmarks.md',
             orig_bm.replace(
-                'on `2026-10-25` <!-- drift:fact results_measure_date = 2026-10-25 -->',
-                'on `2026-10-24` <!-- drift:fact results_measure_date = 2026-10-25 -->',
+                f'on `{mdate}` <!-- drift:fact results_measure_date = {mdate} -->',
+                f'on `2026-10-24` <!-- drift:fact results_measure_date = {mdate} -->',
                 1,
             ),
         )
@@ -1247,7 +1250,7 @@ class DriftTests(unittest.TestCase):
             any(
                 e['kind'] == 'fact'
                 and e['path'] == 'docs/benchmarks.md'
-                and "visible figure before results_measure_date does not match '2026-10-25'" in e['detail']
+                and f"visible figure before results_measure_date does not match '{mdate}'" in e['detail']
                 for e in c.errors
             ),
             c.errors,
@@ -1365,9 +1368,9 @@ class DriftTests(unittest.TestCase):
         bench_spec.loader.exec_module(bench_mod)
         prev_meta = drift._csv_meta(orig_results)
         new_rev = '9' * 40
-        prov = bench_mod.resolve_set_provenance(prev_meta, ['photos'], ['measure', 'synthetic'], new_rev, '2026-10-26')
+        prov = bench_mod.resolve_set_provenance(prev_meta, ['photos'], ['measure', 'synthetic'], new_rev, '2099-01-01')
         new_header = (
-            f'# codec_revision={new_rev} kat_fold_sha256={prev_meta["kat_fold_sha256"]} date=2026-10-26 '
+            f'# codec_revision={new_rev} kat_fold_sha256={prev_meta["kat_fold_sha256"]} date=2099-01-01 '
             f'measured_sets=photos retained_sets=measure,synthetic '
             f'retained_revision={prov["retained_revision"]} retained_date={prov["retained_date"]} '
             f'retained_kat_fold_sha256={prov["retained_kat_fold_sha256"]} '
@@ -1380,8 +1383,8 @@ class DriftTests(unittest.TestCase):
         c.fix()
         self.assertEqual([], self.check().errors)
         rerun_bm = (self.root / 'docs/benchmarks.md').read_text(encoding='utf-8')
-        self.assertIn('(`measure` set `retained` <!-- drift:fact results_measure_status = retained --> on `2026-10-25` <!-- drift:fact results_measure_date = 2026-10-25 -->', rerun_bm)
-        self.assertIn('**`photos` benchmark set (`measured` <!-- drift:fact results_photos_status = measured --> on `2026-10-26` <!-- drift:fact results_photos_date = 2026-10-26 -->', rerun_bm)
+        self.assertIn(f'(`measure` set `retained` <!-- drift:fact results_measure_status = retained --> on `{mdate}` <!-- drift:fact results_measure_date = {mdate} -->', rerun_bm)
+        self.assertIn('**`photos` benchmark set (`measured` <!-- drift:fact results_photos_status = measured --> on `2099-01-01` <!-- drift:fact results_photos_date = 2099-01-01 -->', rerun_bm)
         self.write('benchmarks/results.csv', orig_results)
         self.write('docs/benchmarks.md', orig_bm)
         self.check().fix()

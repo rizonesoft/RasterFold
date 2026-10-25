@@ -1632,17 +1632,17 @@
       "review": "Author-attested: 2026-10-25 re-read docs/getting-started.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/benchmarks.md": {
-      "evidence": "Author-attested: 2026-10-25 re-read docs/benchmarks.md against src/cm.c, src/fold.c, src/rf.h, and research/bench.c after D03 T01 section 3 (in-place CM stream encoding buffer lifetime; CLI, C API, and bitstream unchanged)",
+      "evidence": "Author-attested: 2026-10-25 re-read docs/benchmarks.md against src/cm.c, src/fold.c, src/rf.h, research/bench.c, measure/verdict.json, and benchmarks/results.csv after D05 T01 section 2 (Milestone 2 gate: Same bytes, leaner and harder)",
       "sources": {
         "src/rf.h": "1c5d4f886c30c90c0fdd8646ca8acecf9d36410645bac4472de79003f1e18d40",
-        "measure/verdict.json": "cbd87898cdd7d174323a6f54a1178a1148c3e0b64bd1b19e8aa33cf72238a2c5",
-        "benchmarks/results.csv": "75224d18a189df781431bac7161654625ca232411a4ba57efdc18a6234c5615d",
+        "measure/verdict.json": "1afd571fe6fa817e8a0201cdd5f1fd670b673822bfddbc4cca64fb255d728e54",
+        "benchmarks/results.csv": "699190ea4f98448e53646e4aa52c087b5c1426d3ed9d41120085494de0c1c534",
         "benchmarks/corpus.csv": "04968265628e655210a2c2199c6fe925c4307d23e3cffa5c8cc88e722bac3b67",
-        "docs/benchmarks.md": "6073fd459f58dbbd43e2bcb6dcc7ed3d40323c8dc294e9d118fa6f0b4ca7121f"
+        "docs/benchmarks.md": "cb432a027a1da6cf87a7b6ea38912c56736b0eb0c4802bd4ac2e31a17ce4358d"
       },
       "reviewed_at": "2026-10-25",
-      "doc_sha256": "b14db5704a37fe4af57d1a7eab08003ba201b0e43b33a2a18240591ed0179788",
-      "reviewed": "Author-attested: 2026-10-25 re-read docs/benchmarks.md against src/cm.c, src/simd.h, benchmarks/results.csv, and measure/verdict.json after D02 T01 section 4 (refreshed measure benchmark at ef1cdeed87a0cf84289f544632f0103a8f1ba23d)"
+      "doc_sha256": "cb432a027a1da6cf87a7b6ea38912c56736b0eb0c4802bd4ac2e31a17ce4358d",
+      "reviewed": "Author-attested: 2026-10-25 re-read docs/benchmarks.md against src/cm.c, src/fold.c, src/rf.h, research/bench.c, measure/verdict.json, and benchmarks/results.csv after D05 T01 section 2 (Milestone 2 gate: Same bytes, leaner and harder)"
     },
     "docs/document-drift.md": {
       "evidence": "Author-attested: 2026-10-25 verified docs/document-drift.md against scripts/drift-check.py and .github/workflows/pages.yml for drift-build.json[\"commit\"] and --verify-live (D08 T01 section 3)",
