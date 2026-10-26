@@ -62,14 +62,19 @@ Once a channel's read pointer has reached `end + 2`, the file will be rejected a
 > **Review:** `docs/reviews/d04-t01-s1.json`
 ## 2. A Long Fuzz Campaign over Every Method
 
+> **Started:** 2026-10-26T03:08:30Z
+
 **Needs:** Idle machine (timing)
 
 **Job:** A user can import any file of any method and get either identical pixels or a clean refusal, as a 20,000-mutation campaign shows.
 
 The recorded fuzz runs are short. A campaign of 20,000 mutations over seeds that reach every method, including method 2's decoder once `D01 T01 §2` ships it, is the evidence that the decoder refuses cleanly: every method a decoder imports is fuzzed.
 
-- [ ] Add seed images to `tests/fuzz_decode.py`: a crop of each test-pack photo (method 1 with long streams), a noise image (method 0), and a 2-colour and a 200-colour image (method 2). Done when: `python tests/fuzz_decode.py 10 1` reports mutations of files of every method the decoder imports.
-- [ ] Run `python tests/fuzz_decode.py 5000 <seed>` for four seeds and record the seeds and summary lines in `docs/fuzz.md`. Done when: the file lists 20,000 mutations with no crash, hang, or mismatch.
+> [!NOTE]
+> **Corrected 2026-10-26:** After `D01 T01 §2` (`RF_METHOD_PAL = 2u`) and `D01 T01 §4` (`RF_METHOD_PAL2 = 3u`), the decoder imports four methods (`0` raw, `1` CM, `2` 5-bit palette, `3` 7-bit palette with two-colour deduction). `seeds()` in `tests/fuzz_decode.py` builds 15 seeds covering all four methods -- a high-entropy noise image (`method == 0`), a crop of each of the 10 test-pack photos in `testdata/photos/*.png` (`method == 1`), a 2-colour and a 200-colour image encoded with `method == 2` (`pal_encode(..., method=rf.METHOD_PAL)`), and the 2-colour and 200-colour images encoded with `method == 3` (`encode_image`) -- ordered with methods `0, 1, 2, 3` in the first 6 slots so `python3 tests/fuzz_decode.py 10 1` mutates files of every method (`0, 1, 2, 3`) and reports per-method mutation counts (`methods 0:<n0>, 1:<n1>, 2:<n2>, 3:<n3>`) alongside the summary line. `mutate()` in `tests/fuzz_decode.py` adds dedicated `method == 0` (`rf.METHOD_RAW`) mutation branches (bit flips, payload truncation/extension, header dimension changes, header `payload_size` mismatch, and random byte replacements) rather than falling through to the `method == 1` 3-stream size table, and `main()` passes `stdin=subprocess.DEVNULL` and asserts that neither `.bmp` nor `.bmp.partial` remains on exit 4. `docs/fuzz.md` is registered under `coverage` (`role: "historical"`) in `docs/drift.json`.
+
+- [ ] Add seed images to `tests/fuzz_decode.py`: a crop of each test-pack photo (method 1 with long streams, all 10 PNGs in `testdata/photos/`), a noise image (method 0), and a 2-colour and a 200-colour image (methods 2 and 3, plus dedicated `method == 0` mutation branches in `mutate()`, `stdin=subprocess.DEVNULL`, `.partial` cleanup checks, and per-method mutation counts in the summary line). Done when: `python3 tests/fuzz_decode.py 10 1` (and `python3 scripts/windows.py tests/fuzz_decode.py 10 1`) reports mutations of files of every method the decoder imports (`methods 0:..., 1:..., 2:..., 3:...`).
+- [ ] Run `python3 tests/fuzz_decode.py 5000 <seed>` for four seeds (`1`, `2`, `3`, `4`) and record the seeds and summary lines in `docs/fuzz.md` (with `docs/fuzz.md` added to `coverage` in `docs/drift.json`). Done when: the file lists 20,000 mutations with no crash, hang, or mismatch and `python3 scripts/drift-check.py` exits 0.
 - [ ] Commit: `"test: fuzz every method with 20,000 mutations"`
 
 **Test checkpoint:** the four summary lines quoted from `docs/fuzz.md`, and `python tests/fuzz_decode.py 10 1` showing every method among the seeds.
