@@ -455,12 +455,13 @@ destination or temporary file is never touched.
 
 ## Reference encoder policy (non-normative)
 
-The encoder codes the image with method 1 and, when the image has at most 256
-distinct colours, also with method 2. It writes whichever of method 0 (raw),
-method 1, and method 2 has the smallest payload, breaking ties in order
-method 0, then method 1, then method 2. The streams of method 1's three
-channels are independent of the schedule, so one thread or three produce the
-same bytes.
+The encoder codes the image with method 1 (kept when each of the three channel
+streams is at most `width * height + 64` bytes) and, when the image has at most
+256 distinct colours, also with method 2. It writes whichever eligible candidate
+of method 0 (raw), method 1, and method 2 has the smallest payload, breaking
+ties in order method 0, then method 1, then method 2. The streams of method 1's
+three channels are independent of the schedule, so one thread or three produce
+the same bytes.
 
 ## BMP subset accepted by the reference tool
 

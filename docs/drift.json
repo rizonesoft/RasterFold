@@ -1674,14 +1674,14 @@
       }
     },
     "spec/FOLD.md": {
-      "evidence": "Author-attested: 2026-10-26 re-read spec/FOLD.md against src/pal.c, src/fold.c, src/rf.h, src/main.c, spec/FOLD.md, tests/rfi_ref.py, scripts/build.py, and research/vsjxl.py after D01 T01 section 2 (Method 2 palette coder, decoder, oracle, and spec)",
+      "evidence": "Author-attested: 2026-10-26 re-read spec/FOLD.md against src/cm.c, src/pal.c, src/fold.c, and tests/rfi_ref.py after D01 T01 section 2 Round 1 review",
       "sources": {
         "src/rf.h": "17a77e519a610a4b58f3f40685f06b4eb441792ad4abea5871185121e11ad7f7",
         "src/fold.c": "6328cce3f78dfe71b4ae1eeccc813b3f336177237e340a1c0affd22d68004381",
         "src/cm.c": "a6fb1f5c7cc0ae43f5c3c4b249c5f2bdeb054fc7a8d387d347beb2de02e8adb1",
         "src/crc32.c": "c6e682115185fcdcbfa0551823fc590f60c9c7b978a30009163288e664b3faec",
-        "tests/rfi_ref.py": "7db73311647b4d043e4b331095bd1f50da438038519440931fbf40aca24a4c39",
-        "spec/FOLD.md": "b6b5640b1b424fa9c78bab4fb57875a52a0541ccf8dbfe44ce771043d82d2cca"
+        "tests/rfi_ref.py": "7f3ab5b71f3c3cc0ff6aecbc8f03565f37ffa55e486da462c0c4cc97f2377dfa",
+        "spec/FOLD.md": "ae9a77ecffa8d01506561fc630923959d3a4469f00e5905945cde8d64c649afd"
       },
       "reviewed_at": "2026-10-25",
       "reviewer": "Author-attested: 2026-10-25 re-read spec/FOLD.md against src/cm.c after D04 T01 section 1 (early row-boundary abort on exhausted CM stream; bitstream and format semantics unchanged)",
@@ -1736,7 +1736,7 @@
       "review": "Author-attested: 2026-10-25 re-read docs/limitations.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/troubleshooting.md": {
-      "evidence": "Author-attested: 2026-10-26 re-read docs/troubleshooting.md against AGENTS.md, src/pal.c, src/fold.c, src/rf.h, src/main.c, and spec/FOLD.md after D01 T01 section 2 (Method 2 palette coder, decoder, oracle, and spec)",
+      "evidence": "Author-attested: 2026-10-26 re-read docs/troubleshooting.md against src/fold.c, src/cm.c, and src/pal.c after D01 T01 section 2 Round 1 review",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "17a77e519a610a4b58f3f40685f06b4eb441792ad4abea5871185121e11ad7f7",
@@ -1747,7 +1747,7 @@
         "src/sys_posix.c": "507270096bb20f63a07fd0176551a6fc7dd37ee7ce441b6a5a3e57f00bcb6792",
         "tools/provision.py": "b17ea42569b76d70edbcc235dbc86385c9c7ce50b1be7a3bb83383c30f848556",
         "tools/provision.ps1": "836043df1f959726d5fa2b73d206fa896c9d3aacd12bf7e21b8193a4bb14ad96",
-        "docs/troubleshooting.md": "2be289eef01fc304c0477cd1a468c0f12b613d4872e9d73e0febeddd5faaa75c"
+        "docs/troubleshooting.md": "8437de297aba17f8db37424f1c65800a5c35faec99fb6bf0c99af691645df1e4"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/troubleshooting.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },

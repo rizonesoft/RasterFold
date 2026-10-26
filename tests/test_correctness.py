@@ -787,6 +787,14 @@ def palette_method() -> None:
     fold_clamp = WORK / "pal_clamp" / "out.fold"
     check(fold_clamp.read_bytes()[16] == rf.METHOD_PAL, "pal_clamp did not select METHOD_PAL")
 
+    # 5. Per-channel CM stream overflow (channel 1 is 2129 > w*h+64 = 2112 bytes while total CM payload < raw):
+    #    both C (1 and 3 threads) and oracle discard the overflowed CM candidate and select METHOD_PAL byte-identically.
+    rng_ovf = random.Random(1)
+    rgb_ch_ovf = b"".join(bytes((rng_ovf.randrange(256), 0, 0)) for _ in range(64 * 32))
+    roundtrip("pal_cm_ch_overflow", 64, 32, rgb_ch_ovf)
+    fold_ovf = WORK / "pal_cm_ch_overflow" / "out.fold"
+    check(fold_ovf.read_bytes()[16] == rf.METHOD_PAL, "pal_cm_ch_overflow did not select METHOD_PAL")
+
 
 def main() -> int:
     if not EXE.exists():

@@ -622,7 +622,8 @@ def encode_image(width: int, height: int, rgb: bytes) -> bytes:
     best_method = METHOD_RAW
     best_payload = rgb
     cm_payload = cm_encode(width, height, rgb)
-    if len(cm_payload) < len(best_payload):
+    cm_sizes = struct.unpack_from("<III", cm_payload, 0)
+    if all(s <= width * height + 64 for s in cm_sizes) and len(cm_payload) < len(best_payload):
         best_method = METHOD_CM
         best_payload = cm_payload
     pal_payload = pal_encode(width, height, rgb)
