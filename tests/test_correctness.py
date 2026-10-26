@@ -1030,11 +1030,78 @@ def fuzz_harness() -> None:
         unsup_blob = bytearray(KAT_PAL2)
         unsup_blob[16] = 99
         unsup_bytes = fuzz_decode.recrc(unsup_blob)
-        par_tasks = [(i, unsup_bytes, "1", str(EXE), str(td)) for i in range(20)]
+        sleep_blob = bytearray(KAT_PAL2)
+        sleep_blob[16] = 98
+        sleep_bytes = fuzz_decode.recrc(sleep_blob)
+
+        clang = ROOT / ("tools/llvm-mingw/bin/clang.exe" if os.name == "nt" else "tools/llvm-mingw-linux/bin/clang")
+        check(clang.is_file(), f"pinned clang compiler missing: {clang}")
+        helper_c = td / "hang_helper.c"
+        helper_exe = td / ("hang_helper.exe" if os.name == "nt" else "hang_helper")
+        helper_c.write_text(
+            "#include <stdio.h>\n"
+            "#ifdef _WIN32\n"
+            "#include <windows.h>\n"
+            "static int my_pid(void) { return (int)GetCurrentProcessId(); }\n"
+            "static void my_sleep_ms(int ms) { Sleep((DWORD)ms); }\n"
+            "#else\n"
+            "#include <unistd.h>\n"
+            "static int my_pid(void) { return (int)getpid(); }\n"
+            "static void my_sleep_ms(int ms) { usleep((unsigned)ms * 1000u); }\n"
+            "#endif\n"
+            "int main(int argc, char **argv) {\n"
+            "    if (argc < 6) return 2;\n"
+            "    FILE *f = fopen(argv[4], \"rb\");\n"
+            "    if (!f) return 1;\n"
+            "    unsigned char hdr[32];\n"
+            "    size_t n = fread(hdr, 1, 32, f);\n"
+            "    fclose(f);\n"
+            "    if (n < 32) return 4;\n"
+            "    if (hdr[16] == 98) {\n"
+            "        char pid_path[512];\n"
+            "        snprintf(pid_path, sizeof(pid_path), \"%s.childpid\", argv[5]);\n"
+            "        FILE *pf = fopen(pid_path, \"wb\");\n"
+            "        if (pf) { fprintf(pf, \"%d\\n\", my_pid()); fclose(pf); }\n"
+            "        my_sleep_ms(30000);\n"
+            "        return 0;\n"
+            "    }\n"
+            "    my_sleep_ms(150);\n"
+            "    return 3;\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        subprocess.check_call([str(clang), "-O1", str(helper_c), "-o", str(helper_exe)], stdin=subprocess.DEVNULL)
+
+        par_tasks = [
+            (0, sleep_bytes, "1", str(helper_exe), str(td)),
+            *[(i, unsup_bytes, "1", str(helper_exe), str(td)) for i in range(1, 20)],
+        ]
+        t_par = time.perf_counter()
         _, par_err = fuzz_decode.run_tasks_parallel(par_tasks, workers=2)
+        par_elapsed = time.perf_counter() - t_par
         check(par_err is not None and "BAD exit 0x3 at iteration" in par_err, f"expected run_tasks_parallel to fail promptly, got {par_err}")
+        check(par_elapsed < 5.0, f"run_tasks_parallel took {par_elapsed:.2f}s (expected < 5.0s after killing sibling child)")
         bad_artifacts = list(td.glob("bad*.fold"))
         check(1 <= len(bad_artifacts) <= 6, f"expected bounded parallel execution on failure (1..6 tasks), got {len(bad_artifacts)}")
+        check(list(td.glob("f_*.fold")) == [] and list(td.glob("f_*.bmp")) == [], "worker temporary f_* files were not cleaned up after sibling failure")
+        pid_files = list(td.glob("*.childpid"))
+        check(len(pid_files) == 1, f"expected 1 recorded childpid file from sleeping sibling, got {len(pid_files)}")
+        child_pid = int(pid_files[0].read_text(encoding="utf-8").strip())
+        if os.name == "nt":
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            h_proc = kernel32.OpenProcess(0x00100000, False, child_pid)  # SYNCHRONIZE
+            if h_proc:
+                wait_rc = kernel32.WaitForSingleObject(h_proc, 0)
+                kernel32.CloseHandle(h_proc)
+                check(wait_rc == 0, f"sleeping child process {child_pid} still alive on Windows (WaitForSingleObject={wait_rc})")
+        else:
+            alive = True
+            try:
+                os.kill(child_pid, 0)
+            except ProcessLookupError:
+                alive = False
+            check(not alive, f"sleeping child process {child_pid} survived run_tasks_parallel shutdown")
 
 
 def main() -> int:

@@ -21,8 +21,11 @@ import random
 import struct
 import subprocess
 import sys
+import time
 
 from PIL import Image
+
+_ORIG_SUBPROCESS_RUN = subprocess.run
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tests"))
@@ -240,28 +243,73 @@ def mutate(blob: bytes, rng: random.Random) -> bytes:
     return recrc(b)
 
 
+class _AbortedByPeer(Exception):
+    pass
+
+
+def _run_decoder_cmd(
+    cmd: list[str],
+    timeout: float,
+    stop_file: Path | None,
+) -> subprocess.CompletedProcess[bytes]:
+    if subprocess.run is not _ORIG_SUBPROCESS_RUN:
+        return subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout)
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    deadline = time.monotonic() + timeout
+    try:
+        while True:
+            if stop_file is not None and stop_file.exists():
+                proc.kill()
+                proc.communicate()
+                raise _AbortedByPeer()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                proc.kill()
+                proc.communicate()
+                raise subprocess.TimeoutExpired(cmd, timeout)
+            try:
+                out, err = proc.communicate(timeout=min(0.05, remaining))
+                return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
+            except subprocess.TimeoutExpired:
+                continue
+    except BaseException:
+        if proc.poll() is None:
+            proc.kill()
+            proc.communicate()
+        raise
+
+
 def verify_mutation(
     i: int,
     blob: bytes,
     threads: str,
     exe: Path = EXE,
     work_dir: Path = WORK,
+    stop_file: Path | None = None,
 ) -> tuple[int, str | None]:
     pid = os.getpid()
     src = work_dir / f"f_{pid}_{i}.fold"
     dest = work_dir / f"f_{pid}_{i}.bmp"
     partial = Path(f"{dest}.partial")
+    if stop_file is not None and stop_file.exists():
+        return -2, None
     src.write_bytes(blob)
     dest.unlink(missing_ok=True)
     partial.unlink(missing_ok=True)
     try:
         try:
-            r = subprocess.run(
+            r = _run_decoder_cmd(
                 [str(exe), "decode", "--threads", threads, str(src), str(dest)],
-                stdin=subprocess.DEVNULL,
-                capture_output=True,
-                timeout=60,
+                timeout=60.0,
+                stop_file=stop_file,
             )
+        except _AbortedByPeer:
+            return -2, None
         except subprocess.TimeoutExpired:
             (work_dir / f"hang{i}.fold").write_bytes(blob)
             return -1, f"HANG at iteration {i}"
@@ -302,23 +350,40 @@ def verify_mutation(
 
 def _worker_verify(args: tuple[int, bytes, str, str, str]) -> tuple[int, int, str | None]:
     i, blob, threads, exe_str, work_str = args
-    rc, err = verify_mutation(i, blob, threads, Path(exe_str), Path(work_str))
+    work_dir = Path(work_str)
+    rc, err = verify_mutation(i, blob, threads, Path(exe_str), work_dir, work_dir / ".fuzz_stop")
     return i, rc, err
 
 
-def _terminate_pool(pool: ProcessPoolExecutor) -> None:
+def _stop_and_drain_pool(
+    pool: ProcessPoolExecutor,
+    pending: set[Future[tuple[int, int, str | None]]],
+    stop_file: Path | None,
+) -> None:
+    if stop_file is not None:
+        try:
+            stop_file.write_bytes(b"1")
+        except OSError:
+            pass
+    for fut in pending:
+        fut.cancel()
+    if pending:
+        _, still_running = wait(pending, timeout=3.0)
+    else:
+        still_running = set()
     procs = list((getattr(pool, "_processes", None) or {}).values())
-    pool.shutdown(wait=False, cancel_futures=True)
-    for proc in procs:
-        try:
-            proc.terminate()
-        except OSError:
-            pass
-    for proc in procs:
-        try:
-            proc.join(timeout=2.0)
-        except OSError:
-            pass
+    pool.shutdown(wait=not still_running, cancel_futures=True)
+    if still_running:
+        for proc in procs:
+            try:
+                proc.terminate()
+            except OSError:
+                pass
+        for proc in procs:
+            try:
+                proc.join(timeout=2.0)
+            except OSError:
+                pass
 
 
 def run_tasks_parallel(
@@ -327,6 +392,9 @@ def run_tasks_parallel(
     worker_fn=_worker_verify,
 ) -> tuple[dict[int, int], str | None]:
     counts = {0: 0, 4: 0}
+    stop_file = Path(tasks[0][4]) / ".fuzz_stop" if tasks else None
+    if stop_file is not None:
+        stop_file.unlink(missing_ok=True)
     it = iter(tasks)
     max_inflight = max(1, workers * 2)
     pool = ProcessPoolExecutor(max_workers=workers)
@@ -342,16 +410,20 @@ def run_tasks_parallel(
             for fut in done:
                 _, rc, err = fut.result()
                 if err is not None:
-                    _terminate_pool(pool)
+                    _stop_and_drain_pool(pool, pending, stop_file)
                     return counts, err
-                counts[rc] += 1
+                if rc in counts:
+                    counts[rc] += 1
                 try:
                     pending.add(pool.submit(worker_fn, next(it)))
                 except StopIteration:
                     pass
     except BaseException:
-        _terminate_pool(pool)
+        _stop_and_drain_pool(pool, pending, stop_file)
         raise
+    finally:
+        if stop_file is not None:
+            stop_file.unlink(missing_ok=True)
     pool.shutdown(wait=True)
     return counts, None
 
