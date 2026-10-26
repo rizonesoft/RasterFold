@@ -44,7 +44,7 @@ track: C1
 | Order | Section | Deliverable                                   | Depends On | Status |
 | :---: | :-----: | --------------------------------------------- | ---------- | :----: |
 |   1   |   §1    | One range coder shared between methods        | --         |  [x]   |
-|   2   |   §2    | Method 2: palette encoder, decoder, oracle, spec | §1      |  [ ]   |
+|   2   |   §2    | Method 2: palette encoder, decoder, oracle, spec | §1      |  [x]   |
 |   3   |   §3    | Measure method 2 against JPEG XL and WebP     | §2         |  [ ]   |
 
 ---
@@ -91,6 +91,8 @@ The method itself, in one commit with every place a format change owes. The desi
 
 **Freeze check:** `KAT_FOLD` decodes to its pixels and is byte-identical when re-encoded (`OK   known-answer`, `sha256=b3012508fdcadc58e768baaba1c9fc3cf5cc2dd837643888b1ca2314fe79bb32`); and giving `KAT_PAL` (`tests/work/kat/pal_out.fold`) to the version 2 decoder built from the commit before this section (`4635a04f1042f3983d8f56222e1521745a191a6d`) exits 3 with `rasterfold: unsupported fold: method` and leaves no output file (`build/pre_s2/rasterfold exit: 3 stderr: rasterfold: unsupported fold: method exists: False`; `build/pre_s2/rasterfold.exe exit: 3 stderr: rasterfold: unsupported fold: method exists: False`).
 
+> **Verified:** 2026-10-26 | §2 | 0a033aa744264d076716c3f78ea5796e5edda0ae
+> **Review:** `docs/reviews/d01-t01-s2.json`
 ## 3. Measure Method 2 against JPEG XL and WebP
 
 **Needs:** ffmpeg with libjxl (benchmarks)
