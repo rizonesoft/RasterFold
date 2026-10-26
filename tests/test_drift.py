@@ -1155,7 +1155,8 @@ class DriftTests(unittest.TestCase):
         self.assertEqual(s_dates.get('photos', '2026-10-25'), live_facts['results_photos_date'])
         self.assertEqual('measured' if 'synthetic' in m_sets else 'retained', live_facts['results_synthetic_status'])
         self.assertEqual(s_dates.get('synthetic', '2026-10-25'), live_facts['results_synthetic_date'])
-        self.assertEqual('2026-10-25', live_facts['corpus_date'])
+        c_date_match = re.search(r'date=([^\s]+)', corpus_raw.splitlines()[0])
+        self.assertEqual(c_date_match.group(1) if c_date_match else '2026-10-25', live_facts['corpus_date'])
         self.assertEqual('0.958', live_facts['measurement_reference_ratio_jxl_e7'])
         self.assertEqual('0.978', live_facts['measurement_reference_ratio_jxl_e9'])
         for bset, exp_cnt in (('photos', 10), ('synthetic', 11)):

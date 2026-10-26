@@ -1,0 +1,99 @@
+{
+  "ref": "D01 T01 \u00a74",
+  "title": "Two-Step Neighbour Pattern and Two-Colour Deduction for Palette Coding",
+  "implementation_sha": "3725d4f2058bcf0de6095fa90c9502807cf509ae",
+  "date": "2026-10-26",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/01-compression/D01-T01-s4.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/01-compression/D01-T01-s4.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "builds: python3 scripts/build.py --target all -> 0 errors, 0 warnings",
+    "tidy: python3 scripts/tidy.py -> 11/11 unique warning(s) across 6 target databases",
+    "tests: python3 tests/test_correctness.py -> 38 passed, 0 failed",
+    "tests: python3 scripts/windows.py tests/test_correctness.py -> 38 passed, 0 failed",
+    "tests: python3 tests/test_api.py -> Ran 9 tests OK",
+    "tests: python3 scripts/windows.py tests/test_api.py -> Ran 9 tests OK",
+    "tests: python3 tests/test_artifacts.py -> Ran 8 tests OK",
+    "tests: python3 tests/test_research_refs.py -> Ran 11 tests OK",
+    "corpus: python3 research/ab.py size all --csv benchmarks/corpus.csv -> photo 30,865,211, tp 6,651,583, synth 206,566 (syn_checker 138 < 210 e9, syn_pixel 52 < 53 e9)",
+    "benchmark: python3 scripts/windows.py tests/benchmark.py synthetic -n 3 -> synthetic 206,566 bytes, 0 failures",
+    "fuzz: python3 tests/fuzz_decode.py 1000 11 -> 1000 mutated files: 960 rejected, 40 still valid, no crash, hang or mismatch",
+    "drift: python3 scripts/drift-check.py -> 267 supported documents; 0 error(s)"
+  ],
+  "completion": {
+    "report": "docs/reviews/01-compression/D01-T01-s4.md",
+    "verdict": "complete",
+    "candidate": "2fb73c8ba974d49b65d20d30d400f2ff1341d7e1",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 2,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/01-compression/D01-T01-s4.md",
+    "candidate": "de475fa149b662f0e16b1f775aefb7fe52a0db45",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}

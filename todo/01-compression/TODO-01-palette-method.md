@@ -2,7 +2,7 @@
 schema_version: 1
 id: palette-method
 domain: 01-compression
-status: draft
+status: done
 title: "TODO-01 -- Palette Method for Images with Few Colours"
 depends_on: []
 frozen: true
@@ -47,7 +47,7 @@ track: C1
 |   1   |   §1    | One range coder shared between methods                                | --         |  [x]   |
 |   2   |   §2    | Method 2: palette encoder, decoder, oracle, spec                      | §1         |  [x]   |
 |   3   |   §3    | Measure method 2 against JPEG XL and WebP                             | §2         |  [x]   |
-|   4   |   §4    | Two-step neighbour pattern and two-colour deduction for palette coding | §3         |  [ ]   |
+|   4   |   §4    | Two-step neighbour pattern and two-colour deduction for palette coding | §3         |  [x]   |
 
 ---
 
@@ -143,9 +143,11 @@ Admission: required by an acceptance-bar aim (`D05 T01 §3`, Milestone 3: `syn_c
 
 **Freeze check:** `KAT_FOLD` (`sha256=b3012508fdcadc58e768baaba1c9fc3cf5cc2dd837643888b1ca2314fe79bb32`) and `KAT_PAL` (`method == 2` from `§2`, 87 bytes) are unchanged and decode to their exact pixels in both C and the oracle, `KAT_PAL2` (`method == 3`, 81 bytes) decodes to its exact pixels and re-encodes byte-identically with the oracle, giving `KAT_PAL2` to both the pre-method-2 decoder (`4635a04f1042f3983d8f56222e1521745a191a6d`) and the shipped `§2` decoder (`1cd84f3`) exits 3 with `rasterfold: unsupported fold: method` and leaves no output file (verified inside `case_palette_method` in `tests/test_correctness.py`), and `photo` (`30,865,211` bytes) and `tp` (`6,651,583` bytes) corpus totals are unchanged.
 
+> **Verified:** 2026-10-26 | §4 | 3725d4f2058bcf0de6095fa90c9502807cf509ae
+> **Review:** `docs/reviews/d01-t01-s4.json`
 ## Verification
 
-- [ ] `pwsh scripts/check-all.ps1` -- exits 0: build, correctness, fuzz, TODO gates green
-- [ ] `python tests/test_correctness.py` exits 0 with every case run, the method 2 cases included
-- [ ] `python tests/measure_final.py` PASS (the reference image is a photograph and must not change)
-- [ ] `python scripts/todo-graph.py validate` clean
+- [x] `pwsh scripts/check-all.ps1` -- exits 0: build, correctness, fuzz, TODO gates green (`python3 scripts/check-all.py`: all 29 checks pass; `python3 tests/fuzz_decode.py 5000 13`: `5000 mutated files: 4813 rejected, 187 still valid, no crash, hang or mismatch`)
+- [x] `python tests/test_correctness.py` exits 0 with every case run, the method 2 cases included (`38 passed, 0 failed` on Linux and Windows)
+- [x] `python tests/measure_final.py` PASS (the reference image is a photograph and must not change: `rasterfold bytes=1409028 decode_wall_us=311301 decode_peak_ws=15228928 pixels=True`, `PASS`)
+- [x] `python scripts/todo-graph.py validate` clean (`32 todos, 229 sections -- 0 fatal, 0 warning(s)`)
