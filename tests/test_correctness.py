@@ -918,67 +918,71 @@ def palette_method() -> None:
     #    - literal fallback (d, c, ww all in {a, b} -> e = a, D3 skipped, coded via 8-bit tree)
     grid_rows = [
         [0, 1, 2, 3],
-        [0, 2, 1, 3],   # (0,1): a=0,b=0,d=1 -> e=d=1; (1,1): a=0,b=1,c=0,d=2,I=2 -> e=d=2 (D3=1)
-        [2, 0, 2, 3],   # (1,2): a=2,b=2,c=0,d=1,I=1 -> e=d=1; (2,2): a=0,b=1,c=2,d=3
-        [0, 2, 0, 1],   # (1,3): a=0,b=0,c=2,d=2 -> e=c=2, I=2 (D3=1 via e=c!)
+        [0, 2, 1, 3],   # (1,1): a=0,b=1,c=0,d=2,I=2 -> d!=a,b so e=d=2, I==e (D3=1 via e=d)
+        [2, 0, 0, 3],   # sets up row 2 for (1,3): I(0,2)=2, I(1,2)=0, I(2,2)=0
+        [0, 2, 0, 1],   # (1,3): a=I(0,3)=0,b=I(1,2)=0,c=I(0,2)=2,d=I(2,2)=0 -> d in {a,b}, c!=a,b so e=c=2, I==e (D3=1 via e=c)
         [1, 0, 0, 1],
-        [2, 0, 2, 3],   # (2,5): a=0,b=0,c=0,d=1; at (2,4) row 4 is [1,0,0,1], let's also hit e=ww and literal
+        [2, 0, 2, 3],
         [0, 0, 0, 0],
-        [2, 0, 2, 3],   # (2,7): row 6 is [0,0,0,0], row 7 is [2,0,2,3] -> at (2,7), a=0,b=0,c=0,d=0,ww=2 -> e=ww=2, I=2 (D3=1 via e=ww!); at (3,7), a=2,b=0,c=0,d=0,ww=0 -> e=a=2, I=3 (literal fallback!)
+        [2, 0, 2, 3],   # (2,7): a=0,b=0,c=0,d=0,ww=2 -> d,c in {a,b}, ww!=a,b so e=ww=2, I==e (D3=1 via e=ww); (3,7): a=2,b=0,c=0,d=0,ww=0 -> e=a=2, I=3 (literal fallback)
     ]
     rgb_d3_all = b"".join(cols4[idx] for row in grid_rows for idx in (row * 4))
     roundtrip("pal_d3_candidates", 16, 8, rgb_d3_all)
     check((WORK / "pal_d3_candidates" / "out.fold").read_bytes()[16] == rf.METHOD_PAL2, "pal_d3_candidates did not select METHOD_PAL2")
 
     # 8. Historical decoder compatibility: both the pre-§2 decoder (4635a04f1042f3983d8f56222e1521745a191a6d)
-    #    and the shipped §2 decoder (1cd84f3) refuse KAT_PAL2 (method == 3) at the header with exit 3
-    #    (unsupported fold: method) and leave no output file, while shipped §2 decodes KAT_PAL (method == 2).
+    #    and the shipped §2 decoder (1cd84f3edd687e5fa622733ce9e68884d0cadab0) refuse KAT_PAL2 (method == 3)
+    #    at the header with exit 3 (unsupported fold: method) and leave no output file, while shipped §2
+    #    decodes KAT_PAL (method == 2).
     clang = ROOT / ("tools/llvm-mingw/bin/clang.exe" if os.name == "nt" else "tools/llvm-mingw-linux/bin/clang")
-    if clang.is_file():
-        with tempfile.TemporaryDirectory(prefix="rf_hist_pal_") as htmp:
-            ht = Path(htmp)
-            kat_pal_path = ht / "kat_pal.fold"
-            kat_pal2_path = ht / "kat_pal2.fold"
-            kat_pal_path.write_bytes(KAT_PAL)
-            kat_pal2_path.write_bytes(KAT_PAL2)
-            for tag, ref in (("pre_s2", "4635a04f1042f3983d8f56222e1521745a191a6d"), ("shipped_s2", "1cd84f3")):
-                if subprocess.run(["git", "cat-file", "-e", f"{ref}^{{commit}}"], cwd=ROOT, stdin=subprocess.DEVNULL, capture_output=True).returncode != 0:
+    check(clang.is_file(), f"pinned clang compiler missing for historical decoder compatibility test: {clang}")
+    with tempfile.TemporaryDirectory(prefix="rf_hist_pal_") as htmp:
+        ht = Path(htmp)
+        kat_pal_path = ht / "kat_pal.fold"
+        kat_pal2_path = ht / "kat_pal2.fold"
+        kat_pal_path.write_bytes(KAT_PAL)
+        kat_pal2_path.write_bytes(KAT_PAL2)
+        for tag, ref in (
+            ("pre_s2", "4635a04f1042f3983d8f56222e1521745a191a6d"),
+            ("shipped_s2", "1cd84f3edd687e5fa622733ce9e68884d0cadab0"),
+        ):
+            r_cat = subprocess.run(["git", "cat-file", "-e", f"{ref}^{{commit}}"], cwd=ROOT, stdin=subprocess.DEVNULL, capture_output=True)
+            check(r_cat.returncode == 0, f"historical commit {ref} ({tag}) missing from checkout; fetch full git history")
+            d = ht / tag
+            (d / "src").mkdir(parents=True)
+            (d / "include").mkdir(parents=True)
+            (d / "include" / "rasterfold.h").write_bytes(subprocess.check_output(["git", "show", f"{ref}:include/rasterfold.h"], cwd=ROOT, stdin=subprocess.DEVNULL))
+            c_files = []
+            for s in subprocess.check_output(["git", "ls-tree", "--name-only", f"{ref}:src"], cwd=ROOT, stdin=subprocess.DEVNULL, text=True).splitlines():
+                if os.name == "nt" and s == "sys_posix.c":
                     continue
-                d = ht / tag
-                (d / "src").mkdir(parents=True)
-                (d / "include").mkdir(parents=True)
-                (d / "include" / "rasterfold.h").write_bytes(subprocess.check_output(["git", "show", f"{ref}:include/rasterfold.h"], cwd=ROOT, stdin=subprocess.DEVNULL))
-                c_files = []
-                for s in subprocess.check_output(["git", "ls-tree", "--name-only", f"{ref}:src"], cwd=ROOT, stdin=subprocess.DEVNULL, text=True).splitlines():
-                    if os.name == "nt" and s == "sys_posix.c":
-                        continue
-                    if os.name != "nt" and s in ("sys.c", "mem.c"):
-                        continue
-                    p = d / "src" / s
-                    p.write_bytes(subprocess.check_output(["git", "show", f"{ref}:src/{s}"], cwd=ROOT, stdin=subprocess.DEVNULL))
-                    if s.endswith(".c"):
-                        c_files.append(str(p))
-                hist_exe = d / ("rasterfold.exe" if os.name == "nt" else "rasterfold")
-                if os.name == "nt":
-                    cmd = [
-                        str(clang), "-std=c11", "-O1", "-march=x86-64-v2",
-                        "-ffreestanding", "-fno-builtin", "-nostdlib",
-                        "-I", str(d / "include"), *c_files,
-                        "-Wl,-e,rf_start", "-Wl,--subsystem,console",
-                        "-lkernel32", "-lshell32", "-o", str(hist_exe),
-                    ]
-                else:
-                    cmd = [str(clang), "-std=c11", "-O1", "-march=x86-64-v2", "-I", str(d / "include"), *c_files, "-lpthread", "-o", str(hist_exe)]
-                subprocess.check_call(cmd, stdin=subprocess.DEVNULL)
-                hist_bmp = d / "out.bmp"
-                r_refuse = subprocess.run([str(hist_exe), "decode", str(kat_pal2_path), str(hist_bmp)], stdin=subprocess.DEVNULL, capture_output=True, text=True)
-                check(r_refuse.returncode == 3, f"{tag} ({ref}) on KAT_PAL2 exit {r_refuse.returncode}, want 3: {r_refuse.stderr}")
-                check("unsupported fold: method" in r_refuse.stderr, f"{tag} ({ref}) stderr missing 'unsupported fold: method': {r_refuse.stderr}")
-                check(not hist_bmp.exists(), f"{tag} ({ref}) left output BMP on refused KAT_PAL2")
-                if tag == "shipped_s2":
-                    r_ok = subprocess.run([str(hist_exe), "decode", str(kat_pal_path), str(hist_bmp)], stdin=subprocess.DEVNULL, capture_output=True, text=True)
-                    check(r_ok.returncode == 0, f"{tag} ({ref}) failed on KAT_PAL: {r_ok.stderr}")
-                    check(rf.read_bmp24(hist_bmp.read_bytes()) == (KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), f"{tag} ({ref}) decoded pixels mismatch on KAT_PAL")
+                if os.name != "nt" and s in ("sys.c", "mem.c"):
+                    continue
+                p = d / "src" / s
+                p.write_bytes(subprocess.check_output(["git", "show", f"{ref}:src/{s}"], cwd=ROOT, stdin=subprocess.DEVNULL))
+                if s.endswith(".c"):
+                    c_files.append(str(p))
+            hist_exe = d / ("rasterfold.exe" if os.name == "nt" else "rasterfold")
+            if os.name == "nt":
+                cmd = [
+                    str(clang), "-std=c11", "-O1", "-march=x86-64-v2",
+                    "-ffreestanding", "-fno-builtin", "-nostdlib",
+                    "-I", str(d / "include"), *c_files,
+                    "-Wl,-e,rf_start", "-Wl,--subsystem,console",
+                    "-lkernel32", "-lshell32", "-o", str(hist_exe),
+                ]
+            else:
+                cmd = [str(clang), "-std=c11", "-O1", "-march=x86-64-v2", "-I", str(d / "include"), *c_files, "-lpthread", "-o", str(hist_exe)]
+            subprocess.check_call(cmd, stdin=subprocess.DEVNULL)
+            hist_bmp = d / "out.bmp"
+            r_refuse = subprocess.run([str(hist_exe), "decode", str(kat_pal2_path), str(hist_bmp)], stdin=subprocess.DEVNULL, capture_output=True, text=True)
+            check(r_refuse.returncode == 3, f"{tag} ({ref}) on KAT_PAL2 exit {r_refuse.returncode}, want 3: {r_refuse.stderr}")
+            check("unsupported fold: method" in r_refuse.stderr, f"{tag} ({ref}) stderr missing 'unsupported fold: method': {r_refuse.stderr}")
+            check(not hist_bmp.exists(), f"{tag} ({ref}) left output BMP on refused KAT_PAL2")
+            if tag == "shipped_s2":
+                r_ok = subprocess.run([str(hist_exe), "decode", str(kat_pal_path), str(hist_bmp)], stdin=subprocess.DEVNULL, capture_output=True, text=True)
+                check(r_ok.returncode == 0, f"{tag} ({ref}) failed on KAT_PAL: {r_ok.stderr}")
+                check(rf.read_bmp24(hist_bmp.read_bytes()) == (KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), f"{tag} ({ref}) decoded pixels mismatch on KAT_PAL")
 
 
 def main() -> int:
