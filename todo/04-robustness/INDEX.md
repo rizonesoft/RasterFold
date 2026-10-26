@@ -8,12 +8,12 @@ Decoder hardening: malformed and hostile files are rejected quickly and cleanly,
 
 | TODO | Title | Status |
 | ---- | ----- | :----: |
-| [TODO-01](./TODO-01-decoder-hardening.md) | Decoder Hardening | draft |
 
 ## Completed
 
 | TODO | Title | Completed |
 | ---- | ----- | :-------: |
+| [TODO-01](./TODO-01-decoder-hardening.md) | Decoder Hardening | 2026-10-26 |
 
 ## In scope
 

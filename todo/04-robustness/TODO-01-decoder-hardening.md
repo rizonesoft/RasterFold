@@ -2,7 +2,7 @@
 schema_version: 1
 id: decoder-hardening
 domain: 04-robustness
-status: draft
+status: done
 title: "TODO-01 -- Decoder Hardening"
 depends_on: []
 track: R1
@@ -39,7 +39,7 @@ track: R1
 | Order | Section | Deliverable                                   | Depends On | Status |
 | :---: | :-----: | --------------------------------------------- | ---------- | :----: |
 |   1   |   §1    | Stop decoding a stream that has run out       | --         |  [x]   |
-|   2   |   §2    | A long fuzz campaign over every method        | §1, D01 T01 §2, D01 T01 §4 |  [ ]   |
+|   2   |   §2    | A long fuzz campaign over every method        | §1, D01 T01 §2, D01 T01 §4 |  [x]   |
 |   3   |   §3    | Oracle and spec agree on padding and counters | --         |  [x]   |
 
 ---
@@ -80,6 +80,8 @@ The recorded fuzz runs are short. A campaign of 20,000 mutations over seeds that
 
 **Test checkpoint:** `python3 tests/fuzz_decode.py 10 1` and `python3 scripts/windows.py tests/fuzz_decode.py 10 1` both print `10 mutated files (methods 0:1, 1:5, 2:2, 3:2): 10 rejected, 0 still valid, no crash, hang or mismatch`; the four 5,000-mutation runs recorded in `docs/fuzz.md` print `5000 mutated files (methods 0:334, 1:3331, 2:668, 3:667): 4769 rejected, 231 still valid, no crash, hang or mismatch` (`seed = 1`), `5000 mutated files (methods 0:334, 1:3331, 2:668, 3:667): 4751 rejected, 249 still valid, no crash, hang or mismatch` (`seed = 2`), `5000 mutated files (methods 0:334, 1:3331, 2:668, 3:667): 4757 rejected, 243 still valid, no crash, hang or mismatch` (`seed = 3`), and `5000 mutated files (methods 0:334, 1:3331, 2:668, 3:667): 4784 rejected, 216 still valid, no crash, hang or mismatch` (`seed = 4`) -- `20,000` mutated files total (`methods 0:1336, 1:13324, 2:2672, 3:2668`, `19,061` rejected, `939` still valid, `0` crashes, `0` hangs, `0` oracle mismatches); `python3 tests/test_correctness.py` and `python3 scripts/windows.py tests/test_correctness.py` print `OK   fuzz-harness` (`39 passed, 0 failed`); and `python3 scripts/drift-check.py` exits 0 (`drift: 270 supported documents; 0 error(s); 0 deterministic repair(s)`).
 
+> **Verified:** 2026-10-26 | §2 | 54d537c5591e585630c115b7f25d2b35c2fbc896
+> **Review:** `docs/reviews/d04-t01-s2.json`
 ## 3. Oracle and Spec Agree on Padding and Counters
 
 > **Started:** 2026-10-25T17:03:00Z
@@ -104,5 +106,5 @@ Admission: a defect in shipped work. `spec/FOLD.md:362` says row padding bytes a
 > **Review:** `docs/reviews/d04-t01-s3.json`
 ## Verification
 
-- [ ] `pwsh scripts/check-all.ps1` -- exits 0
-- [ ] `python scripts/todo-graph.py validate` clean
+- [x] `pwsh scripts/check-all.ps1` -- exits 0 (`python3 scripts/check-all.py`: `check-all: 29/29 passed`; `python3 tests/test_correctness.py`: `39 passed, 0 failed`; `python3 tests/fuzz_decode.py 5000 1..4`: `20,000` mutated files across methods `0, 1, 2, 3`, `19,061` rejected, `939` valid, no crash, hang, or mismatch; `python3 scripts/windows.py tests/measure_final.py`: `PASS`)
+- [x] `python scripts/todo-graph.py validate` clean (`32 todos, 229 sections -- 0 fatal, 0 warning(s)`)

@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **48 of 229 sections complete (21%).** 229 sections (8 discovered); backlog 1 entry. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **49 of 229 sections complete (21%).** 229 sections (8 discovered); backlog 1 entry. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -188,7 +188,7 @@ The palette method is a new method number, so it needs no version decision and r
 | [x] | `D01 T01 §2` | Method 2: palette encoder, decoder, oracle, spec                 |   7   |
 | [x] | `D01 T01 §3` | Measure method 2 against JPEG XL and WebP                        |   4   |
 | [x] | `D01 T01 §4` | Two-step neighbour pattern and two-colour deduction for method 2 |   4   |
-| [ ] | `D04 T01 §2` | A long fuzz campaign over every method                           |   3   |
+| [x] | `D04 T01 §2` | A long fuzz campaign over every method                           |   3   |
 | [ ] | `D05 T01 §3` | Milestone 3 gate: Few-colour images solved                       |   4   |
 
 ### Phase 3 -- Milestone 4: Format version 3: beat JPEG XL e9 on photographs

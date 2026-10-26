@@ -1,0 +1,103 @@
+{
+  "ref": "D04 T01 \u00a72",
+  "title": "A Long Fuzz Campaign over Every Method",
+  "implementation_sha": "54d537c5591e585630c115b7f25d2b35c2fbc896",
+  "date": "2026-10-26",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/04-robustness/D04-T01-s2.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/04-robustness/D04-T01-s2.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 3,
+      "report": "docs/reviews/04-robustness/D04-T01-s2.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 4,
+      "report": "docs/reviews/04-robustness/D04-T01-s2.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "smoke: python3 tests/fuzz_decode.py 10 1 -> 10 mutated files (methods 0:1, 1:5, 2:2, 3:2): 10 rejected, 0 still valid, no crash, hang or mismatch",
+    "smoke-win: python3 scripts/windows.py tests/fuzz_decode.py 10 1 -> 10 mutated files (methods 0:1, 1:5, 2:2, 3:2): 10 rejected, 0 still valid, no crash, hang or mismatch",
+    "campaign: python3 tests/fuzz_decode.py 5000 1..4 -> 20,000 mutated files (methods 0:1336, 1:13324, 2:2672, 3:2668): 19,061 rejected, 939 still valid, no crash, hang or mismatch (docs/fuzz.md)",
+    "tests: python3 tests/test_correctness.py -> 39 passed, 0 failed (including fuzz-harness)",
+    "tests: python3 scripts/windows.py tests/test_correctness.py -> 39 passed, 0 failed (including fuzz-harness)",
+    "drift: python3 scripts/drift-check.py -> 270 supported documents; 0 error(s)"
+  ],
+  "completion": {
+    "report": "docs/reviews/04-robustness/D04-T01-s2.md",
+    "verdict": "completed",
+    "candidate": "518dcb6776583481e4191c8baa7b50b2691fe53b",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 4,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/04-robustness/D04-T01-s2.md",
+    "candidate": "551f16e0059a982e0aaff7debdfa43a66e176334",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}
