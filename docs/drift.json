@@ -32,6 +32,11 @@
       "reason": "Historical measurements retain their original conditions."
     },
     {
+      "pattern": "docs/fuzz.md",
+      "role": "historical",
+      "reason": "Dated fuzz campaign records retain their original seeds and summary outputs."
+    },
+    {
       "pattern": "docs/research.md",
       "role": "historical",
       "reason": "Dated research results and forward roadmap; live generated portions are checked separately."

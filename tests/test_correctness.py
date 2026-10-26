@@ -985,6 +985,35 @@ def palette_method() -> None:
                 check(rf.read_bmp24(hist_bmp.read_bytes()) == (KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), f"{tag} ({ref}) decoded pixels mismatch on KAT_PAL")
 
 
+def fuzz_harness() -> None:
+    import unittest.mock as mock
+    import fuzz_decode
+
+    records = fuzz_decode.seed_records()
+    check(len(records) == 15, f"expected 15 fuzz seeds, got {len(records)}")
+    check({m for _, _, _, m, _ in records[:4]} == {0, 1, 2, 3}, "first 4 fuzz seeds do not cover methods 0, 1, 2, 3")
+    for name, w, h, m, blob in records:
+        check(w >= 36 and h >= 34 and w * h > 1200, f"seed {name} dimensions {w}x{h} smaller than 36x34 (>1200 px)")
+        check(blob[16] == m, f"seed {name} header method {blob[16]} != {m}")
+        check(struct.unpack_from("<II", blob, 8) == (w, h), f"seed {name} header dimensions mismatch")
+
+    with tempfile.TemporaryDirectory(prefix="rf_fuzz_test_") as tmp:
+        td = Path(tmp)
+        rc, err = fuzz_decode.verify_mutation(0, KAT_PAL2, "1", EXE, td)
+        check(rc == 0 and err is None, f"expected valid KAT_PAL2 to pass verify_mutation, got {(rc, err)}")
+
+        bad_blob = bytearray(KAT_PAL2)
+        bad_blob[-1] ^= 0xFF
+        rc_bad, err_bad = fuzz_decode.verify_mutation(1, bytes(bad_blob), "1", EXE, td)
+        check(rc_bad == 4 and err_bad is None, f"expected corrupt KAT_PAL2 to be rejected cleanly, got {(rc_bad, err_bad)}")
+
+        fake_reject = subprocess.CompletedProcess(args=[], returncode=4, stdout=b"", stderr=b"invalid fold\n")
+        with mock.patch.object(fuzz_decode.subprocess, "run", return_value=fake_reject):
+            rc_mis, err_mis = fuzz_decode.verify_mutation(999, KAT_PAL2, "1", EXE, td)
+        check(rc_mis == -1 and err_mis is not None and "native rejected oracle-valid input" in err_mis, f"expected native exit 4 on oracle-valid input to fail harness, got {(rc_mis, err_mis)}")
+        check((td / "mismatch999.fold").read_bytes() == KAT_PAL2, "mismatch999.fold was not retained on false rejection")
+
+
 def main() -> int:
     if not EXE.exists():
         print(f"missing {EXE}; run build.ps1 first")
@@ -1037,6 +1066,7 @@ def main() -> int:
     case("truncated-abort", truncated_stream_abort)
     case("tail-threshold", tail_threshold_roundtrip)
     case("palette-method", palette_method)
+    case("fuzz-harness", fuzz_harness)
     # The checksum in a successful file matches zlib, not only our encoder.
     case(
         "zlib-crc",

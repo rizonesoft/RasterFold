@@ -2,20 +2,25 @@
 
 Each case mutates a valid file (byte flips, truncation, inserted bytes, changed
 stream sizes, changed dimensions) and recomputes both checksums so the damage
-reaches the CM decoder. The decoder must exit 0 (the mutation happened to be
-valid) or 4 (malformed), leave no output on failure, and finish in time.
+reaches the method decoders. The decoder must exit 0 (the mutation happened to be
+valid) or 4 (malformed), agree with the independent oracle on both acceptance and
+rejection, leave no output or .partial file on failure, and finish in time.
 
   python tests/fuzz_decode.py [iterations] [seed]
 """
 
 from __future__ import annotations
 
+import base64
+from concurrent.futures import ProcessPoolExecutor
+import hashlib
+import json
+import os
+from pathlib import Path
 import random
 import struct
-import os
 import subprocess
 import sys
-from pathlib import Path
 
 from PIL import Image
 
@@ -26,36 +31,144 @@ import rfi_ref as rf  # noqa: E402
 EXE = Path(os.environ.get("RF_TEST_EXE", ROOT / "bin" / ("windows-x64/bin/rasterfold.exe" if os.name == "nt" else "linux-x64/bin/rasterfold")))
 WORK = ROOT / "tests" / "work" / "fuzz"
 
+PHOTO_CROPS: tuple[tuple[str, int, int, int, int], ...] = (
+    ("kodim01.png", 120, 80, 48, 36),
+    ("kodim03.png", 160, 120, 48, 36),
+    ("kodim05.png", 180, 140, 64, 40),
+    ("kodim13.png", 200, 140, 36, 34),
+    ("kodim23.png", 200, 160, 36, 34),
+    ("deer_crop.png", 220, 160, 36, 34),
+    ("fireworks_crop.png", 140, 200, 36, 34),
+    ("flower_foveon_crop.png", 240, 180, 36, 34),
+    ("nightshot_iso_1600_crop.png", 150, 220, 36, 34),
+    ("spider_web_crop.png", 160, 240, 36, 34),
+)
 
-def recrc(b: bytearray) -> bytes:
-    struct.pack_into("<I", b, 20, len(b) - 32)
+
+def recrc(b: bytearray, update_payload_size: bool = True) -> bytes:
+    if update_payload_size:
+        struct.pack_into("<I", b, 20, len(b) - 32)
     struct.pack_into("<I", b, 24, rf.crc32(bytes(b[32:])))
     struct.pack_into("<I", b, 28, rf.crc32(bytes(b[:28])))
     return bytes(b)
 
 
-def seeds() -> list[bytes]:
-    out = []
-    with Image.open(ROOT / "testdata" / "photos" / "kodim05.png") as im:
-        for (x, y, w, h) in ((100, 100, 40, 30), (0, 0, 17, 9), (300, 200, 64, 3)):
+def seed_records() -> list[tuple[str, int, int, int, bytes]]:
+    WORK.mkdir(parents=True, exist_ok=True)
+    cache_key = hashlib.sha256((ROOT / "tests" / "rfi_ref.py").read_bytes()).hexdigest()[:16]
+    cache_path = WORK / f"seeds_v2_{cache_key}.json"
+    if cache_path.is_file():
+        try:
+            raw = json.loads(cache_path.read_text(encoding="utf-8"))
+            records = [(r["name"], int(r["w"]), int(r["h"]), int(r["method"]), base64.b64decode(r["b64"])) for r in raw]
+            if len(records) == 15:
+                return records
+        except (KeyError, ValueError, json.JSONDecodeError):
+            pass
+
+    noise_rng = random.Random(101)
+    noise_w, noise_h = 64, 48
+    noise_rgb = bytes(noise_rng.randrange(256) for _ in range(noise_w * noise_h * 3))
+    noise_fold = rf.encode_image(noise_w, noise_h, noise_rgb)
+    assert noise_fold[16] == rf.METHOD_RAW
+
+    pal_w, pal_h = 64, 48
+    chk_rgb = b"".join(
+        b"\x20\x30\x40" if ((x // 3) ^ (y // 3)) & 1 else b"\xE0\xE8\xF0"
+        for y in range(pal_h)
+        for x in range(pal_w)
+    )
+    pal3_2col = rf.encode_image(pal_w, pal_h, chk_rgb)
+    assert pal3_2col[16] == rf.METHOD_PAL2
+    pal2_2col_payload = rf.pal_encode(pal_w, pal_h, chk_rgb, method=rf.METHOD_PAL)
+    assert pal2_2col_payload is not None
+    pal2_2col = rf.build_file(pal_w, pal_h, rf.METHOD_PAL, pal2_2col_payload)
+
+    pal200 = [bytes(((i * 53 + 17) & 0xFF, (i * 97 + 43) & 0xFF, (i * 151 + 89) & 0xFF)) for i in range(200)]
+    pal200_rgb = b"".join(
+        pal200[((x * 7 + y * 13 + ((x ^ y) & 3)) % 200) if (x + y) >= 200 else (x + y)]
+        for y in range(pal_h)
+        for x in range(pal_w)
+    )
+    pal3_200col = rf.encode_image(pal_w, pal_h, pal200_rgb)
+    assert pal3_200col[16] == rf.METHOD_PAL2
+    pal2_200col_payload = rf.pal_encode(pal_w, pal_h, pal200_rgb, method=rf.METHOD_PAL)
+    assert pal2_200col_payload is not None
+    pal2_200col = rf.build_file(pal_w, pal_h, rf.METHOD_PAL, pal2_200col_payload)
+
+    photo_folds: list[tuple[str, int, int, int, bytes]] = []
+    photos_dir = ROOT / "testdata" / "photos"
+    assert sorted(p.name for p in photos_dir.glob("*.png")) == sorted(name for name, _, _, _, _ in PHOTO_CROPS)
+    for name, x, y, w, h in PHOTO_CROPS:
+        assert w >= 36 and h >= 34 and w * h > 1200
+        with Image.open(photos_dir / name) as im:
             crop = im.convert("RGB").crop((x, y, x + w, y + h))
-            out.append(rf.encode_image(w, h, crop.tobytes()))
-    # Methods 2 and 3 (palette) seeds: a 2-colour checkerboard and a 4-colour pattern.
-    chk_rgb = b"".join(b"\x20\x30\x40" if ((x // 3) ^ (y // 3)) & 1 else b"\xE0\xE8\xF0" for y in range(24) for x in range(32))
-    out.append(rf.encode_image(32, 24, chk_rgb))
-    pal4 = (b"\x10\x20\x30", b"\xE0\x40\x20", b"\x20\xC0\x50", b"\xF0\xF4\xF8")
-    pal4_rgb = b"".join(pal4[((x // 3) + (y // 2) + ((x + y) & 1)) & 3] for y in range(8) for x in range(16))
-    out.append(rf.encode_image(16, 8, pal4_rgb))
-    pal4_m2 = rf.pal_encode(16, 8, pal4_rgb, method=rf.METHOD_PAL)
-    assert pal4_m2 is not None
-    out.append(rf.build_file(16, 8, rf.METHOD_PAL, pal4_m2))
-    return [b for b in out if b[16] in (rf.METHOD_CM, rf.METHOD_PAL, rf.METHOD_PAL2)]
+            blob = rf.encode_image(w, h, crop.tobytes())
+        assert blob[16] == rf.METHOD_CM
+        stem = name.removesuffix(".png")
+        photo_folds.append((f"{stem}_{w}x{h}", w, h, rf.METHOD_CM, blob))
+
+    # Order the first 6 slots so small runs (e.g. 10 iterations) exercise methods 0, 1, 2, 3.
+    records = [
+        ("noise_64x48", noise_w, noise_h, rf.METHOD_RAW, noise_fold),
+        photo_folds[0],
+        ("pal2_2col_64x48", pal_w, pal_h, rf.METHOD_PAL, pal2_2col),
+        ("pal3_200col_64x48", pal_w, pal_h, rf.METHOD_PAL2, pal3_200col),
+        ("pal2_200col_64x48", pal_w, pal_h, rf.METHOD_PAL, pal2_200col),
+        ("pal3_2col_64x48", pal_w, pal_h, rf.METHOD_PAL2, pal3_2col),
+        *photo_folds[1:],
+    ]
+    assert len(records) == 15
+    assert {m for _, _, _, m, _ in records[:4]} == {rf.METHOD_RAW, rf.METHOD_CM, rf.METHOD_PAL, rf.METHOD_PAL2}
+    for _, w, h, m, blob in records:
+        assert w >= 36 and h >= 34 and w * h > 1200
+        assert struct.unpack_from("<II", blob, 8) == (w, h)
+        assert blob[16] == m
+    cache_path.write_text(
+        json.dumps(
+            [{"name": n, "w": w, "h": h, "method": m, "b64": base64.b64encode(b).decode("ascii")} for n, w, h, m, b in records],
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return records
+
+
+def seeds() -> list[bytes]:
+    return [blob for _, _, _, _, blob in seed_records()]
 
 
 def mutate(blob: bytes, rng: random.Random) -> bytes:
     b = bytearray(blob)
     method = b[16]
     kind = rng.randrange(6)
+    if method == rf.METHOD_RAW:
+        payload_len = len(b) - 32
+        if kind == 0:                               # flip bits in raw RGB payload
+            for _ in range(rng.randrange(1, 4)):
+                i = rng.randrange(32, len(b))
+                b[i] ^= 1 << rng.randrange(8)
+        elif kind == 1:                             # truncate raw payload
+            cut = rng.randrange(1, min(64, max(2, payload_len)))
+            del b[len(b) - cut :]
+        elif kind == 2:                             # extend raw payload
+            add = bytes(rng.randrange(256) for _ in range(rng.randrange(1, 17)))
+            b.extend(add)
+        elif kind == 3:                             # header payload_size disagrees with byte length
+            delta = rng.choice((-3, -1, 1, 3, 64))
+            struct.pack_into("<I", b, 20, max(0, payload_len + delta))
+            return recrc(b, update_payload_size=False)
+        elif kind == 4:                             # other dimensions for the same raw bytes
+            w, h = struct.unpack_from("<II", b, 8)
+            dw, dh = rng.randrange(-3, 4), rng.randrange(-3, 4)
+            if dw == 0 and dh == 0:
+                dw = 1
+            struct.pack_into("<II", b, 8, max(1, w + dw), max(1, h + dh))
+        else:                                       # random byte replacements in raw payload
+            for i in range(32, len(b)):
+                if rng.random() < 0.05:
+                    b[i] = rng.randrange(256)
+        return recrc(b)
     if method in (rf.METHOD_PAL, rf.METHOD_PAL2):
         count = struct.unpack_from("<H", b, 32)[0] + 1
         s_off = 32 + 2 + 3 * count
@@ -95,7 +208,7 @@ def mutate(blob: bytes, rng: random.Random) -> bytes:
         sizes = list(struct.unpack_from("<III", b, 32))
         cut = rng.randrange(1, max(2, sizes[c]))
         start = 44 + sum(sizes[:c]) + sizes[c] - cut
-        del b[start:start + cut]
+        del b[start : start + cut]
         sizes[c] -= cut
         struct.pack_into("<III", b, 32, *sizes)
     elif kind == 2:                                 # extend one stream
@@ -122,36 +235,98 @@ def mutate(blob: bytes, rng: random.Random) -> bytes:
     return recrc(b)
 
 
+def verify_mutation(
+    i: int,
+    blob: bytes,
+    threads: str,
+    exe: Path = EXE,
+    work_dir: Path = WORK,
+) -> tuple[int, str | None]:
+    pid = os.getpid()
+    src = work_dir / f"f_{pid}_{i}.fold"
+    dest = work_dir / f"f_{pid}_{i}.bmp"
+    partial = Path(f"{dest}.partial")
+    src.write_bytes(blob)
+    dest.unlink(missing_ok=True)
+    partial.unlink(missing_ok=True)
+    try:
+        try:
+            r = subprocess.run(
+                [str(exe), "decode", "--threads", threads, str(src), str(dest)],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                timeout=60,
+            )
+        except subprocess.TimeoutExpired:
+            (work_dir / f"hang{i}.fold").write_bytes(blob)
+            return -1, f"HANG at iteration {i}"
+
+        if r.returncode not in (0, 4) or partial.exists() or (r.returncode == 4 and dest.exists()) or (r.returncode == 0 and not dest.exists()):
+            (work_dir / f"bad{i}.fold").write_bytes(blob)
+            return -1, f"BAD exit {r.returncode:#x} at iteration {i}: {r.stderr.decode(errors='replace').strip()}"
+
+        oracle_res: tuple[int, int, bytes] | None = None
+        try:
+            oracle_res = rf.decode_image(blob)
+        except rf.FormatError:
+            oracle_res = None
+
+        if r.returncode == 0:
+            w, h, rgb = rf.read_bmp24(dest.read_bytes())
+            if oracle_res != (w, h, rgb):
+                (work_dir / f"mismatch{i}.fold").write_bytes(blob)
+                return -1, f"MISMATCH with the oracle at iteration {i}"
+        else:
+            if oracle_res is not None:
+                (work_dir / f"mismatch{i}.fold").write_bytes(blob)
+                return -1, f"MISMATCH with the oracle at iteration {i} (native rejected oracle-valid input)"
+
+        return r.returncode, None
+    finally:
+        src.unlink(missing_ok=True)
+        dest.unlink(missing_ok=True)
+        partial.unlink(missing_ok=True)
+
+
+def _worker_verify(args: tuple[int, bytes, str, str, str]) -> tuple[int, int, str | None]:
+    i, blob, threads, exe_str, work_str = args
+    rc, err = verify_mutation(i, blob, threads, Path(exe_str), Path(work_str))
+    return i, rc, err
+
+
 def main() -> int:
     iterations = int(sys.argv[1]) if len(sys.argv) > 1 else 300
     rng = random.Random(int(sys.argv[2]) if len(sys.argv) > 2 else 1)
     WORK.mkdir(parents=True, exist_ok=True)
     base = seeds()
     counts = {0: 0, 4: 0}
+    method_counts = {0: 0, 1: 0, 2: 0, 3: 0}
+    tasks: list[tuple[int, bytes, str, str, str]] = []
     for i in range(iterations):
-        blob = mutate(base[i % len(base)], rng)
-        src, dest = WORK / "f.fold", WORK / "f.bmp"
-        src.write_bytes(blob)
-        dest.unlink(missing_ok=True)
+        seed_blob = base[i % len(base)]
+        method_counts[seed_blob[16]] += 1
+        blob = mutate(seed_blob, rng)
         threads = "1" if i % 2 else "3"
-        try:
-            r = subprocess.run([str(EXE), "decode", "--threads", threads, str(src), str(dest)], capture_output=True, timeout=60)
-        except subprocess.TimeoutExpired:
-            print(f"HANG at iteration {i}")
-            (WORK / f"hang{i}.fold").write_bytes(blob)
-            return 1
-        if r.returncode not in (0, 4) or (r.returncode == 4 and dest.exists()):
-            print(f"BAD exit {r.returncode:#x} at iteration {i}: {r.stderr.decode(errors='replace').strip()}")
-            (WORK / f"bad{i}.fold").write_bytes(blob)
-            return 1
-        if r.returncode == 0:
-            w, h, rgb = rf.read_bmp24(dest.read_bytes())
-            if rf.decode_image(blob) != (w, h, rgb):
-                print(f"MISMATCH with the oracle at iteration {i}")
-                (WORK / f"mismatch{i}.fold").write_bytes(blob)
+        tasks.append((i, blob, threads, str(EXE), str(WORK)))
+
+    if iterations <= 20:
+        for i, blob, threads, _, _ in tasks:
+            rc, err = verify_mutation(i, blob, threads, EXE, WORK)
+            if err is not None:
+                print(err)
                 return 1
-        counts[r.returncode] += 1
-    print(f"{iterations} mutated files: {counts[4]} rejected, {counts[0]} still valid, no crash, hang or mismatch")
+            counts[rc] += 1
+    else:
+        workers = min(os.cpu_count() or 4, 12)
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            for _, rc, err in pool.map(_worker_verify, tasks, chunksize=8):
+                if err is not None:
+                    print(err)
+                    return 1
+                counts[rc] += 1
+
+    m_summary = ", ".join(f"{m}:{method_counts[m]}" for m in (0, 1, 2, 3))
+    print(f"{iterations} mutated files (methods {m_summary}): {counts[4]} rejected, {counts[0]} still valid, no crash, hang or mismatch")
     return 0
 
 
