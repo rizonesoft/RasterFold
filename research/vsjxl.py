@@ -60,12 +60,12 @@ def parse_bench_rows(stdout: str, expected_imgs: tuple[str, ...]) -> dict[str, t
         if line.startswith("encode failed"):
             raise RuntimeError(f"bench encode failure: {line}")
         m = re.match(
-            r"^(\S+)\.ppm\s+(\d+)\s+bpp=\S+\s+enc=\s*([\d.]+)ms\s+dec=\s*([\d.]+)ms\s+\([^)]+\)\s+(\S+)$",
+            r"^(?:ppm/)?(\S+)\.ppm\s+(\d+)\s+bpp=\S+\s+enc=\s*([\d.]+)ms\s+dec=\s*([\d.]+)ms\s+\([^)]+\)\s+(\S+)$",
             line,
         )
         if m:
             status = m.group(5)
-            if status not in ("OK", "RAW"):
+            if status not in ("OK", "RAW", "PAL"):
                 raise RuntimeError(f"bench round-trip failure on {m.group(1)}: {status}")
             rows[m.group(1)] = (int(m.group(2)), max(float(m.group(3)), 0.05), max(float(m.group(4)), 0.05))
     missing = [img for img in expected_imgs if img not in rows]

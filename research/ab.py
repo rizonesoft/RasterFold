@@ -482,12 +482,20 @@ def names(args):
     return out
 
 
+def is_palette_source(src_path: Path) -> bool:
+    if src_path.is_file():
+        src_text = src_path.read_text(encoding="utf-8", errors="ignore")
+        has_pal = bool(re.search(r"\brf_pal_encode\b", src_text))
+        has_cm = bool(re.search(r"\brf_cm_encode\b", src_text))
+        if has_pal != has_cm:
+            return has_pal
+    name = src_path.name.lower()
+    return "pal" in name and "cm" not in name
+
+
 def build(src, out, flags=()):
     src_path = Path(src)
-    src_text = src_path.read_text(encoding="utf-8", errors="ignore") if src_path.is_file() else ""
-    is_pal_variant = ("rf_pal_encode" in src_text and "rf_cm_encode" not in src_text) or (
-        "pal" in src_path.name.lower() and "cm" not in src_path.name.lower()
-    )
+    is_pal_variant = is_palette_source(src_path)
     cm_src = REPO / "src" / "cm.c" if is_pal_variant else src_path
     pal_src = src_path if is_pal_variant else REPO / "src" / "pal.c"
     cmd = [

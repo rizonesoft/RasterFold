@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 import ab  # noqa: E402
 import benchmark  # noqa: E402
 import corpus  # noqa: E402
+import vsjxl  # noqa: E402
 
 
 class ResearchRefsTests(unittest.TestCase):
@@ -803,10 +804,11 @@ class ResearchRefsTests(unittest.TestCase):
             "kat_pal.ppm                 127  bpp=3.9688    enc=    0.1ms dec=    0.1ms  (30/25 cyc/sample) PAL\n"
             "TOTAL 698  enc=0.5ms dec=0.4ms  (50/40 cyc/sample)\n"
         )
-        rows = ab.parse_bench_rows(stdout, ["raw_1x1", "kat_cm", "kat_pal"])
-        self.assertEqual(rows["raw_1x1"], (35, 0.05, 0.05))
-        self.assertEqual(rows["kat_cm"], (536, 0.4, 0.3))
-        self.assertEqual(rows["kat_pal"], (127, 0.1, 0.1))
+        for parser in (ab.parse_bench_rows, vsjxl.parse_bench_rows):
+            rows = parser(stdout, ("raw_1x1", "kat_cm", "kat_pal"))
+            self.assertEqual(rows["raw_1x1"], (35, 0.05, 0.05))
+            self.assertEqual(rows["kat_cm"], (536, 0.4, 0.3))
+            self.assertEqual(rows["kat_pal"], (127, 0.1, 0.1))
 
         for bad_line, expected_msg in (
             (
@@ -825,10 +827,26 @@ class ResearchRefsTests(unittest.TestCase):
             with self.assertRaises(SystemExit) as ctx:
                 ab.parse_bench_rows(bad_line, ["kat_pal"])
             self.assertIn(expected_msg, str(ctx.exception))
+            with self.assertRaises(RuntimeError) as rctx:
+                vsjxl.parse_bench_rows(bad_line, ("kat_pal",))
+            self.assertIn(expected_msg, str(rctx.exception))
 
         with self.assertRaises(SystemExit) as ctx:
             ab.parse_bench_rows(stdout, ["raw_1x1", "missing_img"])
         self.assertIn("bench output missing expected images: ['missing_img']", str(ctx.exception))
+        with self.assertRaises(RuntimeError) as rctx:
+            vsjxl.parse_bench_rows(stdout, ("raw_1x1", "missing_img"))
+        self.assertIn("bench output missing expected images: ['missing_img']", str(rctx.exception))
+
+        # Verify symbol-based variant classification takes precedence over misleading filenames.
+        with tempfile.TemporaryDirectory() as tmp:
+            td = Path(tmp)
+            cm_named_pal = td / "palette_probe.c"
+            cm_named_pal.write_bytes((ROOT / "src" / "cm.c").read_bytes())
+            pal_named_cm = td / "cm_probe.c"
+            pal_named_cm.write_bytes((ROOT / "src" / "pal.c").read_bytes())
+            self.assertFalse(ab.is_palette_source(cm_named_pal))
+            self.assertTrue(ab.is_palette_source(pal_named_cm))
 
         # Verify size --csv refuses to overwrite existing corpus.csv when bench output fails validation.
         with tempfile.TemporaryDirectory() as tmp:
@@ -861,7 +879,26 @@ class ResearchRefsTests(unittest.TestCase):
                 self.assertEqual(csv_path.read_bytes(), sentinel)
 
     def test_bench_container_round_trips_and_variant_builds(self) -> None:
+        import os as os_mod
         import test_correctness as tc
+
+        if not ab.CLANG.is_file():
+            self.skipTest(f"missing mingw clang toolchain at {ab.CLANG}")
+
+        def can_run_pe(exe_path: Path) -> bool:
+            if os_mod.name == "nt":
+                return True
+            try:
+                proc = subprocess.run(
+                    [str(exe_path)],
+                    stdin=subprocess.DEVNULL,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                return proc.returncode == 0
+            except OSError:
+                return False
 
         def write_ppm(path: Path, w: int, h: int, rgb: bytes) -> None:
             path.write_bytes(f"P6\n{w} {h}\n255\n".encode("ascii") + rgb)
@@ -874,14 +911,23 @@ class ResearchRefsTests(unittest.TestCase):
             write_ppm(ppm_dir / "kat_cm.ppm", tc.KAT_W, tc.KAT_H, tc.KAT_RGB)
             write_ppm(ppm_dir / "kat_pal.ppm", tc.KAT_PAL_W, tc.KAT_PAL_H, tc.KAT_PAL_RGB)
 
-            cm_var = res_dir / "cm_variant.c"
+            # Use misleading filenames to verify ab.build links by actual symbol interface.
+            cm_var = res_dir / "palette_probe.c"
             cm_var.write_bytes((ROOT / "src" / "cm.c").read_bytes())
-            pal_var = res_dir / "pal_variant.c"
+            pal_var = res_dir / "cm_probe.c"
             pal_var.write_bytes((ROOT / "src" / "pal.c").read_bytes())
 
+            built_exes: list[Path] = []
             for idx, src in enumerate((ROOT / "src" / "cm.c", cm_var, pal_var)):
                 exe = res_dir / f"bench_{idx}.exe"
                 ab.build(src, exe, flags=("-O0",) if idx > 0 else ())
+                self.assertTrue(exe.is_file())
+                built_exes.append(exe)
+
+            if not can_run_pe(built_exes[0]):
+                self.skipTest("Windows PE execution requires Windows or WSL interop")
+
+            for exe in built_exes:
                 with mock.patch.object(ab, "RES", res_dir):
                     out = ab.run(exe, ["raw_1x1", "kat_cm", "kat_pal"], reps=1)
                 self.assertIn("raw_1x1.ppm", out)
