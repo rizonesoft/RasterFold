@@ -70,9 +70,14 @@ Method 2 needs the same binary range coder as method 1. A second copy would drif
 > **Review:** `docs/reviews/d01-t01-s1.json`
 ## 2. Method 2: Palette Encoder, Decoder, Oracle, Spec
 
+> **Started:** 2026-10-26T00:06:00Z
+
 **Job:** A user can export an image with at most 256 colours to a small `.fold` file, import it back to identical pixels (the reverse of the export), and read the method and colour count that `inspect` reports.
 
 The method itself, in one commit with every place a format change owes. The design is `docs/research.md` section 4.1: a first-seen palette of up to 256 colours, index decisions `I == W`, `I == N`, `I == NE` under a 5-bit equality pattern of the neighbours' indices, and an 8-bit literal tree for the rest, each decision one adaptive counter with method 1's update rule. Exchange and its reverse ship together: the encoder exports a method 2 file only when the decoder of the same commit imports it back to identical pixels, and `inspect` reports the method and the colour count.
+
+> [!NOTE]
+> **Corrected 2026-10-26:** Adding `src/pal.c` and method 2 (`RF_METHOD_PAL = 2u`) also updates `COMMON` and `PGO_TRACKED_SOURCES` in `scripts/build.py`, `COMMON` in `scripts/tidy.py`, `units` in `research/vsjxl.py`, `docs/format.md` via `python3 scripts/build-docs.py --write`, and the `Current state` claims in this file (`src/pal.c` from `absent` to `exists`, `RF_METHOD_PAL 2u` in `src/rf.h`, and `method > RF_METHOD_PAL` in `src/fold.c`). In `src/pal.c`, `tests/rfi_ref.py`, and `spec/FOLD.md`, each counter's 12-bit coding probability is `max(1, p >> 4)` so `p < 16` after repeated zero bits can never pass `p1 = 0` (`bound = 0`) into the binary range coder. In `tests/test_correctness.py`, `corrupt_cases` tests `method[16] = 3` for `unsupported fold: method`, and `tail_threshold_roundtrip` tests forced-CM streams on `tail_le48_solid` and `tail_mixed_check16` alongside `encode` (which selects method 2 on those two fixtures).
 
 - [ ] Add `src/pal.c` with `rf_pal_build` (a 1024-slot open-addressing hash of `R<<16|G<<8|B`, stopping at the 257th colour), `rf_pal_encode`, and `rf_pal_decode`, using `src/rc.h`. Done when: it builds with no warning.
 - [ ] Extend `rf_encode` in `src/fold.c` to try method 2 when the image has at most 256 colours and keep the smaller of methods 1 and 2 (ties: method 1), and `rf_decode` to accept method 2 with its checks (colour count, no duplicate palette entry, stream size, every literal index below the count and not an excluded candidate, the stream ending exactly). Done when: a 2-colour BMP encodes to a file whose byte 16 is `2`, and the decoder imports it back to identical pixels (the reverse of the encode).
