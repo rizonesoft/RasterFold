@@ -25,17 +25,22 @@ int rf_encode(const rf_image *img, uint8_t **file, size_t *size, int threads, rf
     size_t pal_n = 0;
     rc = rf_pal_encode(img->rgb, img->width, img->height, f + RF_HEADER_SIZE, raw - 1, &pal_n, err);
     if (rc) { rf_free(f); return rc; }
+    uint8_t pal_small[2048];
     uint8_t *pal_buf = 0;
     size_t cm_cap = raw - 1;
     if (pal_n > 0) {
-        pal_buf = rf_alloc(pal_n);
-        if (!pal_buf) { rf_free(f); return rf_fail(err, RF_ERR_LIMIT, "out of memory"); }
+        if (pal_n <= sizeof(pal_small)) {
+            pal_buf = pal_small;
+        } else {
+            pal_buf = rf_alloc(pal_n);
+            if (!pal_buf) { rf_free(f); return rf_fail(err, RF_ERR_LIMIT, "out of memory"); }
+        }
         memcpy(pal_buf, f + RF_HEADER_SIZE, pal_n);
         cm_cap = pal_n;
     }
     size_t n = 0;
     rc = rf_cm_encode(img->rgb, img->width, img->height, f + RF_HEADER_SIZE, cm_cap, &n, threads, err);
-    if (rc) { rf_free(pal_buf); rf_free(f); return rc; }
+    if (rc) { if (pal_buf != pal_small) rf_free(pal_buf); rf_free(f); return rc; }
     uint32_t method = RF_METHOD_CM;
     if (n == 0) {
         if (pal_n > 0) {
@@ -48,7 +53,7 @@ int rf_encode(const rf_image *img, uint8_t **file, size_t *size, int threads, rf
             method = RF_METHOD_RAW;
         }
     }
-    rf_free(pal_buf);
+    if (pal_buf != pal_small) rf_free(pal_buf);
     f[0] = 'R'; f[1] = 'F'; f[2] = 'I'; f[3] = (uint8_t)RF_VERSION;
     wr16(f + 4, RF_VERSION);
     wr16(f + 6, RF_HEADER_SIZE);

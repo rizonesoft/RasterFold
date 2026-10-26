@@ -599,7 +599,7 @@ RF_INLINE void run_pipelined(cm_t *m, const int enc) {
                 }
             }
             if (m->abort) break;
-        } else {
+        } else if (m->cap < (size_t)m->w * m->h * 3u - 1u && (y & 31u) == 0u) {
             size_t tot = 24u;
             for (int c = 0; c < 3; c++) tot += m->ch[c].enc.pos + (size_t)m->ch[c].enc.pending;
             if (tot > m->cap) {
@@ -624,11 +624,12 @@ static void wait_done(volatile int32_t *done, int32_t need) {
 
 RF_INLINE void run_channel(cm_t *m, const int c, const int enc) {
     const uint32_t w = m->w;
+    const int check_cap = enc && (m->cap < (size_t)w * m->h * 3u - 1u);
     for (uint32_t y = 0; y < m->h; y++) {
         if (c >= 1) wait_done(&m->ch[0].done, (int32_t)y + 1);
         if (c == 2) wait_done(&m->ch[1].done, (int32_t)y + 1);
         if (c < 2 && y >= XROWS) wait_done(&m->ch[2].done, (int32_t)(y - XROWS + 1));
-        if (__atomic_load_n(&m->abort, __ATOMIC_ACQUIRE)) break;
+        if (!enc && __atomic_load_n(&m->abort, __ATOMIC_ACQUIRE)) break;
         row_ctx_t rc;
         row_ctx_init_ch(m, y, c, &rc);
         if (y >= 2 && w >= 4) {
@@ -661,7 +662,7 @@ RF_INLINE void run_channel(cm_t *m, const int c, const int enc) {
                 __atomic_store_n(&m->abort, 1, __ATOMIC_RELEASE);
             }
             if (__atomic_load_n(&m->abort, __ATOMIC_ACQUIRE)) break;
-        } else {
+        } else if (check_cap && (y & 31u) == 0u) {
             __atomic_store_n(&m->ch[c].bytes, m->ch[c].enc.pos + (size_t)m->ch[c].enc.pending + 4u, __ATOMIC_RELAXED);
             size_t tot = 12u + __atomic_load_n(&m->ch[0].bytes, __ATOMIC_RELAXED)
                        + __atomic_load_n(&m->ch[1].bytes, __ATOMIC_RELAXED)

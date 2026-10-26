@@ -1149,17 +1149,22 @@ class ResearchRefsTests(unittest.TestCase):
                     "    size_t pal_n = 0;\n"
                     "    rc = rf_pal_encode(img->rgb, img->width, img->height, f + RF_HEADER_SIZE, raw - 1, &pal_n, err);\n"
                     "    if (rc) { rf_free(f); return rc; }\n"
+                    "    uint8_t pal_small[2048];\n"
                     "    uint8_t *pal_buf = 0;\n"
                     "    size_t cm_cap = raw - 1;\n"
                     "    if (pal_n > 0) {\n"
-                    "        pal_buf = rf_alloc(pal_n);\n"
-                    "        if (!pal_buf) { rf_free(f); return rf_fail(err, RF_ERR_LIMIT, \"out of memory\"); }\n"
+                    "        if (pal_n <= sizeof(pal_small)) {\n"
+                    "            pal_buf = pal_small;\n"
+                    "        } else {\n"
+                    "            pal_buf = rf_alloc(pal_n);\n"
+                    "            if (!pal_buf) { rf_free(f); return rf_fail(err, RF_ERR_LIMIT, \"out of memory\"); }\n"
+                    "        }\n"
                     "        memcpy(pal_buf, f + RF_HEADER_SIZE, pal_n);\n"
                     "        cm_cap = pal_n;\n"
                     "    }\n"
                     "    size_t n = 0;\n"
                     "    rc = rf_cm_encode(img->rgb, img->width, img->height, f + RF_HEADER_SIZE, cm_cap, &n, threads, err);\n"
-                    "    if (rc) { rf_free(pal_buf); rf_free(f); return rc; }\n"
+                    "    if (rc) { if (pal_buf != pal_small) rf_free(pal_buf); rf_free(f); return rc; }\n"
                     "    uint32_t method = RF_METHOD_CM;\n"
                     "    if (n == 0) {\n"
                     "        if (pal_n > 0) {\n"
@@ -1172,7 +1177,7 @@ class ResearchRefsTests(unittest.TestCase):
                     "            method = RF_METHOD_RAW;\n"
                     "        }\n"
                     "    }\n"
-                    "    rf_free(pal_buf);\n",
+                    "    if (pal_buf != pal_small) rf_free(pal_buf);\n",
                     "    size_t n = 0;\n"
                     "    rc = rf_cm_encode(img->rgb, img->width, img->height, f + RF_HEADER_SIZE, raw - 1, &n, threads, err);\n"
                     "    if (rc) { rf_free(f); return rc; }\n"
@@ -1231,6 +1236,51 @@ class ResearchRefsTests(unittest.TestCase):
                     self.assertEqual(rows_cur["kat_pal"][0], len(tc.KAT_PAL2))
                     self.assertEqual(rows_m1["kat_pal"][0], 32 + tc.KAT_PAL_W * tc.KAT_PAL_H * 3)
                     self.assertLess(rows_cur["solid_16x16"][0], rows_m1["solid_16x16"][0])
+
+                # 4. Also verify Milestone 1's 7-parameter rf_cm_decode signature (without stride) builds and runs cleanly.
+                rf_h_7arg = (
+                    (m1_dir / "rf.h")
+                    .read_text(encoding="utf-8")
+                    .replace(
+                        "int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *out, size_t stride, uint32_t w, uint32_t h, int threads, rf_error *err);",
+                        "int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *rgb, uint32_t w, uint32_t h, int threads, rf_error *err);",
+                    )
+                )
+                self.assertIn(
+                    "int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *rgb, uint32_t w, uint32_t h, int threads, rf_error *err);",
+                    rf_h_7arg,
+                )
+                (m1_dir / "rf.h").write_text(rf_h_7arg, encoding="utf-8")
+                fold_7arg = (
+                    fold_no_pal.replace(
+                        "rf_cm_decode(payload, hdr.payload_size, rgb, 0, hdr.width, hdr.height, threads, err)",
+                        "rf_cm_decode(payload, hdr.payload_size, rgb, hdr.width, hdr.height, threads, err)",
+                    ).replace(
+                        "rf_cm_decode(payload, hdr.payload_size, *bmp, stride, hdr.width, hdr.height, threads, err)",
+                        "rf_cm_decode(payload, hdr.payload_size, *bmp, hdr.width, hdr.height, threads, err)",
+                    )
+                )
+                (m1_dir / "fold.c").write_text(fold_7arg, encoding="utf-8")
+                cm_7arg = (
+                    (ROOT / "src" / "cm.c")
+                    .read_text(encoding="utf-8")
+                    .replace(
+                        "int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *out, size_t stride, uint32_t w, uint32_t h, int threads, rf_error *err) {",
+                        "int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *out, uint32_t w, uint32_t h, int threads, rf_error *err) {\n    size_t stride = 0;",
+                    )
+                )
+                cm_m1_path.write_text(cm_7arg, encoding="utf-8")
+                bench_m1_7arg_exe = res_dir / "bench_m1_7arg.exe"
+                ab.build(cm_m1_path, bench_m1_7arg_exe, flags=("-O0",))
+                if os_mod.name == "nt" or subprocess.run(
+                    [str(bench_m1_7arg_exe)],
+                    stdin=subprocess.DEVNULL,
+                    capture_output=True,
+                ).returncode == 0:
+                    out_m1_7arg = ab.run(bench_m1_7arg_exe, ["kat_pal", "solid_16x16"], reps=1)
+                    rows_m1_7arg = ab.parse_bench_rows(out_m1_7arg, ["kat_pal", "solid_16x16"])
+                    self.assertEqual(rows_m1_7arg["kat_pal"][0], rows_m1["kat_pal"][0])
+                    self.assertEqual(rows_m1_7arg["solid_16x16"][0], rows_m1["solid_16x16"][0])
 
 
 if __name__ == "__main__":

@@ -874,30 +874,7 @@ def main():
             ],
             check=True,
         )
-        old_cm_text = (m1_dir / "cm.c").read_text(encoding="utf-8")
-        old_sig = "int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *rgb, uint32_t w, uint32_t h, int threads, rf_error *err)"
-        new_sig = "int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *rgb, size_t stride, uint32_t w, uint32_t h, int threads, rf_error *err)"
-        cm_m1 = old_cm_text.replace(
-            f"{old_sig} {{",
-            f"{new_sig} {{ (void)stride;",
-        )
-        (RES / "cm_m1.c").write_text(cm_m1, encoding="utf-8")
-        if old_sig in old_cm_text:
-            rf_h_path = m1_dir / "rf.h"
-            if rf_h_path.is_file():
-                rf_h_path.write_text(
-                    rf_h_path.read_text(encoding="utf-8").replace(f"{old_sig};", f"{new_sig};"),
-                    encoding="utf-8",
-                )
-            fold_c_path = m1_dir / "fold.c"
-            if fold_c_path.is_file():
-                fold_c_path.write_text(
-                    fold_c_path.read_text(encoding="utf-8").replace(
-                        "rf_cm_decode(in + 32, n - 32, out->rgb, w, h, threads, err)",
-                        "rf_cm_decode(in + 32, n - 32, out->rgb, (size_t)w * 3, w, h, threads, err)",
-                    ),
-                    encoding="utf-8",
-                )
+        (RES / "cm_m1.c").write_bytes((m1_dir / "cm.c").read_bytes())
         bench_m1_exe = RES / "bench_m1.exe"
         build(RES / "cm_m1.c", bench_m1_exe)
         all_imgs = list(dict.fromkeys(img for sname in COMPAT_SETS for img in SETS[sname]))

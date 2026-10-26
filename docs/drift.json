@@ -1682,8 +1682,8 @@
       "evidence": "2026-10-26: Reviewed spec/FOLD.md against src/fold.c, src/cm.c, and src/pal.c for D05 T01 section 3",
       "sources": {
         "src/rf.h": "c72a8dbb03d1698fd8f9b12957884ac894f8aede680182c78821eb3a7f2c3fed",
-        "src/fold.c": "a45485791758aef2d20c4f79bad61801bdd91bed7cebbf2a3109607efe7abb8e",
-        "src/cm.c": "9647f768f2ba8b94654c050f112fcf75b09c8985fc9ac39d4e35f2a8f5c973cf",
+        "src/fold.c": "e8c76fedf331529b1bbb2de5219bb452f73a91f0d2d1ad7fc139db29ba914b55",
+        "src/cm.c": "dd9d4475088907544d7a4b1aee0e54445e8d2c5c1c3abd720fbec5d413cb9dd9",
         "src/crc32.c": "c6e682115185fcdcbfa0551823fc590f60c9c7b978a30009163288e664b3faec",
         "tests/rfi_ref.py": "14f27223ea0bddce73fb79030db55424da976c3e60382ba2abeec067b5e92746",
         "spec/FOLD.md": "2fbb0479cc3c46c484e0e34cdadbb6934b463b19d530be5df261cb12cf5112d5"
@@ -1697,7 +1697,7 @@
       "evidence": "2026-10-26: Reviewed research/README.md against research/ab.py for D05 T01 section 3",
       "sources": {
         "research/corpus.py": "4434e32d8cdb5e70d887f03f7f4cdfbe9ada666ea680c7d6ce176cc9b2858bb7",
-        "research/ab.py": "f8a62c34e06a6cf44d94ca27baa05e383a97a5d9a90b19ecfba620db715f0394",
+        "research/ab.py": "89671ac895de5539637163f01cd909bd3dcb5e526cae408664d43c253cb9a4e3",
         "research/vsjxl.py": "0ebfdf2fb1acb0ed129400399590f6d962c844eb743b07f92d1083766aa6f14c",
         "research/prof.py": "7fa28a84aab62f0eb79fd579bcc01b6e2e55cc200bdaa96c0218b2ad4aa05605",
         "research/bench.c": "3887d90de6528fe4588d6a74a17604b05f01a61a0972bf87d7bdc84bcc574a1b",
@@ -1732,7 +1732,7 @@
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "c72a8dbb03d1698fd8f9b12957884ac894f8aede680182c78821eb3a7f2c3fed",
         "src/main.c": "91f7ec3adab2f071d225bf38b7148a16faa748961978f8a6f0dc2b83b7da1ca2",
-        "src/fold.c": "a45485791758aef2d20c4f79bad61801bdd91bed7cebbf2a3109607efe7abb8e",
+        "src/fold.c": "e8c76fedf331529b1bbb2de5219bb452f73a91f0d2d1ad7fc139db29ba914b55",
         "src/bmp.c": "50278e51120542ec686aee00385eba666239070533035e5d04e7d659b118317c",
         "src/api.c": "76f5277f1fce9b053ca1e75648d1d5a7aa5494bf46266361e437f3e17f80812c",
         "src/sys_posix.c": "507270096bb20f63a07fd0176551a6fc7dd37ee7ce441b6a5a3e57f00bcb6792",
@@ -1746,7 +1746,7 @@
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "c72a8dbb03d1698fd8f9b12957884ac894f8aede680182c78821eb3a7f2c3fed",
         "src/main.c": "91f7ec3adab2f071d225bf38b7148a16faa748961978f8a6f0dc2b83b7da1ca2",
-        "src/fold.c": "a45485791758aef2d20c4f79bad61801bdd91bed7cebbf2a3109607efe7abb8e",
+        "src/fold.c": "e8c76fedf331529b1bbb2de5219bb452f73a91f0d2d1ad7fc139db29ba914b55",
         "src/bmp.c": "50278e51120542ec686aee00385eba666239070533035e5d04e7d659b118317c",
         "src/api.c": "76f5277f1fce9b053ca1e75648d1d5a7aa5494bf46266361e437f3e17f80812c",
         "src/sys_posix.c": "507270096bb20f63a07fd0176551a6fc7dd37ee7ce441b6a5a3e57f00bcb6792",

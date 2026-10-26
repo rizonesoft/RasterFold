@@ -47,6 +47,10 @@ RF_INLINE void pal_update_m3(uint16_t *c, uint32_t r, int bit) {
 
 RF_INLINE void pal_enc_bit(renc *enc, const uint16_t *rate_tab, uint16_t *c, uint8_t *n, int bit) {
     uint32_t cur = (uint32_t)*c;
+    if (bit && cur == 65535u && *n == 60u) {
+        renc_bit(enc, 1, 4095u);
+        return;
+    }
     uint32_t p = cur >> 4;
     if (p == 0) p = 1u;
     uint8_t cnt = *n;
@@ -130,6 +134,16 @@ RF_INLINE uint32_t pal_third_m3(uint32_t a, uint32_t b, uint32_t c, uint32_t d, 
     return (d != a && d != b) ? d : ((c != a && c != b) ? c : ((ww != a && ww != b) ? ww : a));
 }
 
+RF_INLINE int pal_same4(const uint8_t *p) {
+    uint64_t a, b;
+    uint32_t c, d;
+    __builtin_memcpy(&a, p, 8u);
+    __builtin_memcpy(&b, p + 3u, 8u);
+    __builtin_memcpy(&c, p + 8u, 4u);
+    __builtin_memcpy(&d, p + 11u, 4u);
+    return a == b && c == d;
+}
+
 /* 1024-slot open-addressing hash of R<<16|G<<8|B (stopping at the 257th colour),
    packed in 1024 stack bytes (< 4096) so Windows x64 freestanding builds never
    emit ___chkstk_ms and >256-colour photographs do zero heap allocations. */
@@ -148,7 +162,12 @@ static RF_NOINLINE uint32_t pal_build_internal(const uint8_t *rgb, uint32_t w, u
     for (size_t i = 1; i < npix; i++) {
         uint32_t r = rgb[3 * i + 0], g = rgb[3 * i + 1], b = rgb[3 * i + 2];
         uint32_t key = (r << 16) | (g << 8) | b;
-        if (key == prev_key0 || key == prev_key1) continue;
+        if (key == prev_key0) {
+            while (i + 9u <= npix && pal_same4(rgb + 3u * i) && pal_same4(rgb + 3u * (i + 4u))) i += 8u;
+            while (i + 5u <= npix && pal_same4(rgb + 3u * i)) i += 4u;
+            continue;
+        }
+        if (key == prev_key1) continue;
         prev_key1 = prev_key0;
         prev_key0 = key;
         if (key == first_key) continue;
@@ -186,14 +205,13 @@ int rf_pal_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size
     size_t stream_cap = cap - hdr_len;
     size_t row_bytes = (size_t)w * 3u;
     size_t scratch_bytes = (sizeof(pal_scratch) + 63u) & ~(size_t)63u;
-    uint8_t *alloc_buf = rf_alloc(scratch_bytes + cap + 64u + row_bytes);
+    uint8_t *alloc_buf = rf_alloc(scratch_bytes + row_bytes);
     if (!alloc_buf) return rf_fail(err, RF_ERR_LIMIT, "out of memory");
     pal_scratch *sc = (pal_scratch *)alloc_buf;
-    uint8_t *work = alloc_buf + scratch_bytes;
-    uint8_t *rows = work + cap + 64u;
+    uint8_t *rows = alloc_buf + scratch_bytes;
     pal_model_init(&sc->m);
     renc enc;
-    renc_init(&enc, work + hdr_len, stream_cap + 32u);
+    renc_init(&enc, out + hdr_len, stream_cap);
     uint32_t hit = 0;
     if (count == 1u) {
         size_t npix = (size_t)w * h;
@@ -234,6 +252,39 @@ int rf_pal_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size
                         uint32_t d1_ctx = pat * 2u + hit;
                         pal_enc_bit(&enc, sc->m.rate, &sc->m.d1[d1_ctx], &sc->m.d1_n[d1_ctx], 1);
                         hit = 1u;
+                        if (ww == idx && b == c && b == d) {
+                            uint32_t run_ctx = pat * 2u + 1u;
+                            uint32_t idx4 = idx * 0x01010101u;
+                            uint32_t b4 = b * 0x01010101u;
+                            uint32_t nn4 = nn * 0x01010101u;
+                            while (x + 5u < w && pal_same4(p + 3u * (size_t)x)) {
+                                uint32_t pb4, pnn4;
+                                __builtin_memcpy(&pb4, prv_row + x + 2u, 4u);
+                                __builtin_memcpy(&pnn4, prv2_row + x + 1u, 4u);
+                                if (pb4 != b4 || pnn4 != nn4) break;
+                                __builtin_memcpy(cur_row + x + 1u, &idx4, 4u);
+                                if (sc->m.d1[run_ctx] == 65535u && sc->m.d1_n[run_ctx] == 60u) {
+                                    if (enc.range >= (1u << 25)) {
+                                        uint32_t rg = enc.range;
+                                        rg = (rg >> 12) * 4095u;
+                                        rg = (rg >> 12) * 4095u;
+                                        rg = (rg >> 12) * 4095u;
+                                        enc.range = (rg >> 12) * 4095u;
+                                    } else {
+                                        renc_bit(&enc, 1, 4095u);
+                                        renc_bit(&enc, 1, 4095u);
+                                        renc_bit(&enc, 1, 4095u);
+                                        renc_bit(&enc, 1, 4095u);
+                                    }
+                                } else {
+                                    pal_enc_bit(&enc, sc->m.rate, &sc->m.d1[run_ctx], &sc->m.d1_n[run_ctx], 1);
+                                    pal_enc_bit(&enc, sc->m.rate, &sc->m.d1[run_ctx], &sc->m.d1_n[run_ctx], 1);
+                                    pal_enc_bit(&enc, sc->m.rate, &sc->m.d1[run_ctx], &sc->m.d1_n[run_ctx], 1);
+                                    pal_enc_bit(&enc, sc->m.rate, &sc->m.d1[run_ctx], &sc->m.d1_n[run_ctx], 1);
+                                }
+                                x += 4u;
+                            }
+                        }
                         continue;
                     }
                 } else if (key == prev_key1) {
@@ -310,18 +361,16 @@ int rf_pal_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size
         return RF_OK;
     }
     uint32_t c_m1 = count - 1u;
-    work[0] = (uint8_t)c_m1;
-    work[1] = (uint8_t)(c_m1 >> 8);
-    memcpy(work + 2, pal, 3u * (size_t)count);
+    out[0] = (uint8_t)c_m1;
+    out[1] = (uint8_t)(c_m1 >> 8);
+    memcpy(out + 2, pal, 3u * (size_t)count);
     size_t s_off = 2u + 3u * (size_t)count;
     uint32_t s32 = (uint32_t)stream_len;
-    work[s_off + 0] = (uint8_t)s32;
-    work[s_off + 1] = (uint8_t)(s32 >> 8);
-    work[s_off + 2] = (uint8_t)(s32 >> 16);
-    work[s_off + 3] = (uint8_t)(s32 >> 24);
-    size_t total = hdr_len + stream_len;
-    memcpy(out, work, total);
-    *written = total;
+    out[s_off + 0] = (uint8_t)s32;
+    out[s_off + 1] = (uint8_t)(s32 >> 8);
+    out[s_off + 2] = (uint8_t)(s32 >> 16);
+    out[s_off + 3] = (uint8_t)(s32 >> 24);
+    *written = hdr_len + stream_len;
     rf_free(alloc_buf);
     return RF_OK;
 }
