@@ -40,20 +40,23 @@ def seeds() -> list[bytes]:
         for (x, y, w, h) in ((100, 100, 40, 30), (0, 0, 17, 9), (300, 200, 64, 3)):
             crop = im.convert("RGB").crop((x, y, x + w, y + h))
             out.append(rf.encode_image(w, h, crop.tobytes()))
-    # Method 2 (palette) seeds: a 2-colour checkerboard and a 4-colour pattern.
+    # Methods 2 and 3 (palette) seeds: a 2-colour checkerboard and a 4-colour pattern.
     chk_rgb = b"".join(b"\x20\x30\x40" if ((x // 3) ^ (y // 3)) & 1 else b"\xE0\xE8\xF0" for y in range(24) for x in range(32))
     out.append(rf.encode_image(32, 24, chk_rgb))
     pal4 = (b"\x10\x20\x30", b"\xE0\x40\x20", b"\x20\xC0\x50", b"\xF0\xF4\xF8")
     pal4_rgb = b"".join(pal4[((x // 3) + (y // 2) + ((x + y) & 1)) & 3] for y in range(8) for x in range(16))
     out.append(rf.encode_image(16, 8, pal4_rgb))
-    return [b for b in out if b[16] in (rf.METHOD_CM, rf.METHOD_PAL)]
+    pal4_m2 = rf.pal_encode(16, 8, pal4_rgb, method=rf.METHOD_PAL)
+    assert pal4_m2 is not None
+    out.append(rf.build_file(16, 8, rf.METHOD_PAL, pal4_m2))
+    return [b for b in out if b[16] in (rf.METHOD_CM, rf.METHOD_PAL, rf.METHOD_PAL2)]
 
 
 def mutate(blob: bytes, rng: random.Random) -> bytes:
     b = bytearray(blob)
     method = b[16]
     kind = rng.randrange(6)
-    if method == rf.METHOD_PAL:
+    if method in (rf.METHOD_PAL, rf.METHOD_PAL2):
         count = struct.unpack_from("<H", b, 32)[0] + 1
         s_off = 32 + 2 + 3 * count
         s_start = s_off + 4

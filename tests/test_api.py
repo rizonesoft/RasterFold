@@ -15,7 +15,7 @@ import unittest
 import zlib
 
 import rfi_ref
-from test_correctness import KAT_FOLD, KAT_RGB, KAT_W, KAT_H, KAT_PAL, KAT_PAL_RGB, KAT_PAL_W, KAT_PAL_H
+from test_correctness import KAT_FOLD, KAT_RGB, KAT_W, KAT_H, KAT_PAL, KAT_PAL2, KAT_PAL_RGB, KAT_PAL_W, KAT_PAL_H
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = 'windows-x64' if os.name == 'nt' else 'linux-x64'
@@ -97,15 +97,30 @@ class Api(unittest.TestCase):
             LIBRARY.rf_free(out.data)
         self.assertEqual(LIBRARY.rf_inspect(KAT_FOLD, len(KAT_FOLD), C.byref(info), None), 0)
         self.assertEqual((info.width, info.height, info.method), (16, 8, 1))
-        self.assertEqual(encode(KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), KAT_PAL)
-        self.assertEqual(LIBRARY.rf_decode_image(KAT_PAL, len(KAT_PAL), None, C.byref(out), C.byref(err)), 0)
-        try:
-            self.assertEqual((out.width, out.height, out.stride, out.layout, out.size), (16, 8, 48, 1, 384))
-            self.assertEqual(C.string_at(out.data, out.size), KAT_PAL_RGB)
-        finally:
-            LIBRARY.rf_free(out.data)
-        self.assertEqual(LIBRARY.rf_inspect(KAT_PAL, len(KAT_PAL), C.byref(info), None), 0)
-        self.assertEqual((info.width, info.height, info.method, tuple(info.stream_size)), (16, 8, 2, (0, 0, 0)))
+        self.assertEqual(encode(KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), KAT_PAL2)
+        for m_val, pal_blob in ((2, KAT_PAL), (3, KAT_PAL2)):
+            self.assertEqual(LIBRARY.rf_decode_image(pal_blob, len(pal_blob), None, C.byref(out), C.byref(err)), 0)
+            try:
+                self.assertEqual((out.width, out.height, out.stride, out.layout, out.size), (16, 8, 48, 1, 384))
+                self.assertEqual(C.string_at(out.data, out.size), KAT_PAL_RGB)
+            finally:
+                LIBRARY.rf_free(out.data)
+            self.assertEqual(LIBRARY.rf_inspect(pal_blob, len(pal_blob), C.byref(info), None), 0)
+            self.assertEqual((info.width, info.height, info.method, tuple(info.stream_size)), (16, 8, m_val, (0, 0, 0)))
+        # Verify legacy method 2 long zero-run and long one-run fixtures through the RGB (stride == 0) library decoder.
+        c0, c1, c2 = b"\x12\x34\x56", b"\xFE\xDC\xBA", b"\x44\x88\xCC"
+        rgb_m2_zero = b"".join((c1 if (x & 1) else c0) if x < 450 else c1 for x in range(512))
+        rgb_m2_one = b"".join(c0 if x < 520 else (c0 if (x & 1) else (c1 if (x & 2) else c2)) for x in range(600))
+        for lw, lh, lrgb in ((512, 1, rgb_m2_zero), (600, 1, rgb_m2_one)):
+            pay_m2 = rfi_ref.pal_encode(lw, lh, lrgb, method=rfi_ref.METHOD_PAL)
+            self.assertIsNotNone(pay_m2)
+            blob_m2 = rfi_ref.build_file(lw, lh, rfi_ref.METHOD_PAL, pay_m2)
+            self.assertEqual(LIBRARY.rf_decode_image(blob_m2, len(blob_m2), None, C.byref(out), C.byref(err)), 0)
+            try:
+                self.assertEqual((out.width, out.height, out.size), (lw, lh, len(lrgb)))
+                self.assertEqual(C.string_at(out.data, out.size), lrgb)
+            finally:
+                LIBRARY.rf_free(out.data)
 
     def test_corpus_matches_cli_and_oracle(self):
         count = 0
@@ -218,13 +233,14 @@ class Api(unittest.TestCase):
         pal_cols = [bytes(((i * 29) & 255, (i * 61 + 11) & 255, (i * 103 + 7) & 255)) for i in range(16)]
         pal_long_rgb = b''.join(pal_cols[((x * 3 + y * 5 + ((x ^ y) & 3)) & 15)] for y in range(pal_long_h) for x in range(pal_long_w))
         pal_long_fold = encode(pal_long_w, pal_long_h, pal_long_rgb, threads=1)
-        self.assertEqual(pal_long_fold[16], 2)
+        self.assertEqual(pal_long_fold[16], 3)
 
         for label, blob, exp_w, exp_h, exp_rgb in [
             ('kat_short_tail', KAT_FOLD, KAT_W, KAT_H, KAT_RGB),
             ('large_long_tail', large_fold, large_w, large_h, large_rgb),
             ('raw_method0', raw_fold, raw_w, raw_h, raw_rgb),
-            ('pal_short_tail', KAT_PAL, KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB),
+            ('pal_m2_short_tail', KAT_PAL, KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB),
+            ('pal_m3_short_tail', KAT_PAL2, KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB),
             ('pal_long_tail', pal_long_fold, pal_long_w, pal_long_h, pal_long_rgb),
         ]:
             for threads in (1, 3):

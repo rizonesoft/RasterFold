@@ -114,7 +114,7 @@ static int run(int argc, rf_path_char **argv, rf_error *err) {
             info_line("width", info.width);
             info_line("height", info.height);
             rf_print(0, info.method == RF_METHOD_CM ? "method: cm" RF_EOL :
-                        info.method == RF_METHOD_PAL ? "method: palette" RF_EOL : "method: raw" RF_EOL);
+                        (info.method == RF_METHOD_PAL || info.method == RF_METHOD_PAL2) ? "method: palette" RF_EOL : "method: raw" RF_EOL);
             info_line("uncompressed_rgb_bytes", (uint64_t)info.width * info.height * 3);
             info_line("payload_size", info.payload_size);
             info_line("file_size", file_size);
@@ -124,7 +124,7 @@ static int run(int argc, rf_path_char **argv, rf_error *err) {
                 info_line("stream_g", info.stream_size[0]);
                 info_line("stream_r", info.stream_size[1]);
                 info_line("stream_b", info.stream_size[2]);
-            } else if (info.method == RF_METHOD_PAL) {
+            } else if (info.method == RF_METHOD_PAL || info.method == RF_METHOD_PAL2) {
                 info_line("palette_colours", pal_colours);
             }
             rf_print(0, "status: ok" RF_EOL);

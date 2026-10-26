@@ -937,7 +937,7 @@ class ResearchRefsTests(unittest.TestCase):
                 rows = ab.parse_bench_rows(out, ["raw_1x1", "kat_cm", "kat_pal"])
                 self.assertEqual(rows["raw_1x1"][0], 35)
                 self.assertEqual(rows["kat_cm"][0], len(tc.KAT_FOLD))
-                self.assertEqual(rows["kat_pal"][0], len(tc.KAT_PAL))
+                self.assertEqual(rows["kat_pal"][0], len(tc.KAT_PAL2))
 
             # Inject a pixel mismatch in a palette variant decode and verify ab.run rejects it.
             bad_pal = res_dir / "pal_bad.c"

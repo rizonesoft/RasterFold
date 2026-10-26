@@ -23,6 +23,7 @@ typedef char rf_path_char;
 #define RF_METHOD_RAW 0u
 #define RF_METHOD_CM 1u
 #define RF_METHOD_PAL 2u
+#define RF_METHOD_PAL2 3u
 
 #define RF_INLINE static inline __attribute__((always_inline))
 #define RF_NOINLINE __attribute__((noinline))
@@ -81,10 +82,10 @@ int rf_decode_bmp(const uint8_t *file, size_t size, uint8_t **bmp, size_t *bmp_s
 int rf_cm_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size_t cap, size_t *written, int threads, rf_error *err);
 int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *out, size_t stride, uint32_t w, uint32_t h, int threads, rf_error *err);
 
-/* pal.c: method 2, palette with equality contexts and binary range coding. */
+/* pal.c: methods 2 and 3, palette with equality contexts and binary range coding. */
 uint32_t rf_pal_build(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *pal);
 int rf_pal_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size_t cap, size_t *written, rf_error *err);
-int rf_pal_decode(const uint8_t *in, size_t n, uint8_t *out, size_t stride, uint32_t w, uint32_t h, rf_error *err);
+int rf_pal_decode(const uint8_t *in, size_t n, uint8_t *out, size_t stride, uint32_t w, uint32_t h, uint32_t method, rf_error *err);
 
 /* mem.c */
 void *memcpy(void *dst, const void *src, size_t n);

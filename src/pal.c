@@ -1,14 +1,14 @@
-/* Method 2: palette with equality contexts and binary range coding. */
+/* Methods 2 and 3: palette with equality contexts and binary range coding. */
 #include "rf.h"
 #include "rc.h"
 
 typedef struct {
-    uint16_t d1[64];
-    uint8_t d1_n[64];
-    uint16_t d2[32];
-    uint8_t d2_n[32];
-    uint16_t d3[32];
-    uint8_t d3_n[32];
+    uint16_t d1[256];
+    uint8_t d1_n[256];
+    uint16_t d2[128];
+    uint8_t d2_n[128];
+    uint16_t d3[128];
+    uint8_t d3_n[128];
     uint16_t tree[256];
     uint8_t tree_n[256];
     uint16_t rate[61];
@@ -22,10 +22,27 @@ typedef struct {
 
 static void pal_model_init(pal_model *m) {
     memset(m, 0, sizeof(*m));
-    for (int i = 0; i < 64; i++) m->d1[i] = 32768u;
-    for (int i = 0; i < 32; i++) { m->d2[i] = 32768u; m->d3[i] = 32768u; }
+    for (int i = 0; i < 256; i++) m->d1[i] = 32768u;
+    for (int i = 0; i < 128; i++) { m->d2[i] = 32768u; m->d3[i] = 32768u; }
     for (int i = 0; i < 256; i++) m->tree[i] = 32768u;
     for (int n = 0; n <= 60; n++) m->rate[n] = (uint16_t)((65536 * 2) / (2 * n + 3));
+}
+
+RF_INLINE void pal_update_m3(uint16_t *c, uint32_t r, int bit) {
+    uint32_t cur = (uint32_t)*c;
+    if (bit) {
+        if (cur < 65535u) {
+            uint32_t step = ((65535u - cur) * r) >> 16;
+            if (step == 0u) step = 1u;
+            *c = (uint16_t)(cur + step);
+        }
+    } else {
+        if (cur > 0u) {
+            uint32_t step = (cur * r) >> 16;
+            if (step == 0u) step = 1u;
+            *c = (uint16_t)(cur - step);
+        }
+    }
 }
 
 RF_INLINE void pal_enc_bit(renc *enc, const uint16_t *rate_tab, uint16_t *c, uint8_t *n, int bit) {
@@ -34,25 +51,27 @@ RF_INLINE void pal_enc_bit(renc *enc, const uint16_t *rate_tab, uint16_t *c, uin
     uint32_t r = rate_tab[*n];
     if (*n < 60u) (*n)++;
     renc_bit(enc, bit, p);
-    int32_t target = bit ? 65535 : 0;
-    int32_t cur = (int32_t)*c;
-    *c = (uint16_t)(cur + (((target - cur) * (int32_t)r) >> 16));
+    pal_update_m3(c, r, bit);
 }
 
-RF_INLINE int pal_dec_bit(rdec *dec, const uint16_t *rate_tab, uint16_t *c, uint8_t *n) {
+RF_INLINE int pal_dec_bit(rdec *dec, const uint16_t *rate_tab, uint16_t *c, uint8_t *n, int m3) {
     uint32_t p = (uint32_t)(*c >> 4);
     if (p == 0) p = 1u;
     uint32_t r = rate_tab[*n];
     if (*n < 60u) (*n)++;
     int bit = rdec_bit(dec, p);
-    int32_t target = bit ? 65535 : 0;
-    int32_t cur = (int32_t)*c;
-    *c = (uint16_t)(cur + (((target - cur) * (int32_t)r) >> 16));
+    if (m3) {
+        pal_update_m3(c, r, bit);
+    } else {
+        int32_t target = bit ? 65535 : 0;
+        int32_t cur = (int32_t)*c;
+        *c = (uint16_t)(cur + (((target - cur) * (int32_t)r) >> 16));
+    }
     return bit;
 }
 
-RF_INLINE uint32_t pal_neighbours(const uint8_t *cur_row, const uint8_t *prv_row, uint32_t w, uint32_t x, uint32_t y,
-                                  uint32_t *a_out, uint32_t *b_out, uint32_t *d_out) {
+RF_INLINE uint32_t pal_neighbours_m2(const uint8_t *cur_row, const uint8_t *prv_row, uint32_t w, uint32_t x, uint32_t y,
+                                     uint32_t *a_out, uint32_t *b_out, uint32_t *d_out) {
     uint32_t a, b, c, d;
     if (y == 0) {
         a = x > 0 ? cur_row[x - 1] : 0u;
@@ -68,6 +87,31 @@ RF_INLINE uint32_t pal_neighbours(const uint8_t *cur_row, const uint8_t *prv_row
     *d_out = d;
     return (uint32_t)(a == b) | ((uint32_t)(a == c) << 1) | ((uint32_t)(a == d) << 2)
          | ((uint32_t)(b == c) << 3) | ((uint32_t)(b == d) << 4);
+}
+
+RF_INLINE uint32_t pal_neighbours_m3(const uint8_t *cur_row, const uint8_t *prv_row, const uint8_t *prv2_row,
+                                     uint32_t w, uint32_t x, uint32_t y,
+                                     uint32_t *a_out, uint32_t *b_out, uint32_t *e_out) {
+    uint32_t a, b, c, d, ww, nn;
+    if (y == 0) {
+        a = x > 0 ? cur_row[x - 1] : 0u;
+        b = c = d = a;
+        nn = a;
+    } else {
+        b = prv_row[x];
+        a = x > 0 ? cur_row[x - 1] : b;
+        c = x > 0 ? prv_row[x - 1] : b;
+        d = (x + 1u < w) ? prv_row[x + 1u] : b;
+        nn = (y == 1u) ? b : prv2_row[x];
+    }
+    ww = (x >= 2u) ? cur_row[x - 2u] : a;
+    uint32_t e = (d != a && d != b) ? d : ((c != a && c != b) ? c : ((ww != a && ww != b) ? ww : a));
+    *a_out = a;
+    *b_out = b;
+    *e_out = e;
+    return (uint32_t)(a == b) | ((uint32_t)(a == c) << 1) | ((uint32_t)(a == d) << 2)
+         | ((uint32_t)(b == c) << 3) | ((uint32_t)(b == d) << 4)
+         | ((uint32_t)(ww == a) << 5) | ((uint32_t)(nn == b) << 6);
 }
 
 /* 1024-slot open-addressing hash of R<<16|G<<8|B (stopping at the 257th colour),
@@ -113,7 +157,7 @@ int rf_pal_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size
     size_t hdr_len = 2u + 3u * (size_t)count + 4u;
     if (cap < hdr_len + 5u) return RF_OK;
     size_t stream_cap = cap - hdr_len;
-    size_t row_bytes = (size_t)w * 2u;
+    size_t row_bytes = (size_t)w * 3u;
     size_t scratch_bytes = (sizeof(pal_scratch) + 63u) & ~(size_t)63u;
     uint8_t *alloc_buf = rf_alloc(scratch_bytes + cap + 64u + row_bytes);
     if (!alloc_buf) return rf_fail(err, RF_ERR_LIMIT, "out of memory");
@@ -133,8 +177,9 @@ int rf_pal_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size
     renc_init(&enc, work + hdr_len, stream_cap + 32u);
     uint32_t hit = 0;
     for (uint32_t y = 0; y < h; y++) {
-        uint8_t *cur_row = rows + (size_t)(y & 1u) * w;
-        const uint8_t *prv_row = rows + (size_t)((y ^ 1u) & 1u) * w;
+        uint8_t *cur_row = rows + (size_t)(y % 3u) * w;
+        const uint8_t *prv_row = rows + (size_t)((y + 2u) % 3u) * w;
+        const uint8_t *prv2_row = rows + (size_t)((y + 1u) % 3u) * w;
         const uint8_t *p = rgb + (size_t)y * w * 3u;
         for (uint32_t x = 0; x < w; x++) {
             uint32_t key = ((uint32_t)p[3 * x + 0] << 16) | ((uint32_t)p[3 * x + 1] << 8) | (uint32_t)p[3 * x + 2];
@@ -142,8 +187,8 @@ int rf_pal_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size
             while (sc->ht_key[slot] != key) slot = (slot + 1u) & 1023u;
             uint32_t idx = sc->ht_idx[slot];
             cur_row[x] = (uint8_t)idx;
-            uint32_t a, b, d;
-            uint32_t pat = pal_neighbours(cur_row, prv_row, w, x, y, &a, &b, &d);
+            uint32_t a, b, e;
+            uint32_t pat = pal_neighbours_m3(cur_row, prv_row, prv2_row, w, x, y, &a, &b, &e);
             uint32_t d1_ctx = pat * 2u + hit;
             if (idx == a) {
                 pal_enc_bit(&enc, sc->m.rate, &sc->m.d1[d1_ctx], &sc->m.d1_n[d1_ctx], 1);
@@ -152,6 +197,7 @@ int rf_pal_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size
             }
             pal_enc_bit(&enc, sc->m.rate, &sc->m.d1[d1_ctx], &sc->m.d1_n[d1_ctx], 0);
             hit = 0;
+            if (count == 2u) continue;
             if (b != a) {
                 if (idx == b) {
                     pal_enc_bit(&enc, sc->m.rate, &sc->m.d2[pat], &sc->m.d2_n[pat], 1);
@@ -159,8 +205,8 @@ int rf_pal_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size
                 }
                 pal_enc_bit(&enc, sc->m.rate, &sc->m.d2[pat], &sc->m.d2_n[pat], 0);
             }
-            if (d != a && d != b) {
-                if (idx == d) {
+            if (e != a && e != b) {
+                if (idx == e) {
                     pal_enc_bit(&enc, sc->m.rate, &sc->m.d3[pat], &sc->m.d3_n[pat], 1);
                     continue;
                 }
@@ -201,7 +247,7 @@ int rf_pal_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size
     return RF_OK;
 }
 
-int rf_pal_decode(const uint8_t *in, size_t n, uint8_t *out, size_t stride, uint32_t w, uint32_t h, rf_error *err) {
+int rf_pal_decode(const uint8_t *in, size_t n, uint8_t *out, size_t stride, uint32_t w, uint32_t h, uint32_t method, rf_error *err) {
     if (n < 6u) return rf_fail(err, RF_ERR_FORMAT, "invalid fold: palette");
     uint32_t count_m1 = (uint32_t)in[0] | ((uint32_t)in[1] << 8);
     if (count_m1 > 255u) return rf_fail(err, RF_ERR_FORMAT, "invalid fold: palette");
@@ -214,7 +260,7 @@ int rf_pal_decode(const uint8_t *in, size_t n, uint8_t *out, size_t stride, uint
     if (stream_len < 5u || (uint64_t)stream_len != (uint64_t)(n - 6u - pal_bytes))
         return rf_fail(err, RF_ERR_FORMAT, "invalid fold: palette");
     size_t scratch_bytes = (sizeof(pal_scratch) + 63u) & ~(size_t)63u;
-    uint8_t *alloc_buf = rf_alloc(scratch_bytes + (size_t)w * 2u);
+    uint8_t *alloc_buf = rf_alloc(scratch_bytes + (size_t)w * 3u);
     if (!alloc_buf) return rf_fail(err, RF_ERR_LIMIT, "out of memory");
     pal_scratch *sc = (pal_scratch *)alloc_buf;
     uint8_t *rows = alloc_buf + scratch_bytes;
@@ -236,32 +282,38 @@ int rf_pal_decode(const uint8_t *in, size_t n, uint8_t *out, size_t stride, uint
     rdec_init(&dec, sp + 4, stream_len);
     uint32_t hit = 0;
     int bad = 0;
+    int m3 = (method == RF_METHOD_PAL2);
     for (uint32_t y = 0; y < h; y++) {
-        uint8_t *cur_row = rows + (size_t)(y & 1u) * w;
-        const uint8_t *prv_row = rows + (size_t)((y ^ 1u) & 1u) * w;
+        uint8_t *cur_row = rows + (size_t)(y % 3u) * w;
+        const uint8_t *prv_row = rows + (size_t)((y + 2u) % 3u) * w;
+        const uint8_t *prv2_row = rows + (size_t)((y + 1u) % 3u) * w;
         uint8_t *dst = stride ? (out + 54u + (size_t)(h - 1u - y) * stride) : (out + (size_t)y * w * 3u);
         for (uint32_t x = 0; x < w; x++) {
-            uint32_t a, b, d;
-            uint32_t pat = pal_neighbours(cur_row, prv_row, w, x, y, &a, &b, &d);
+            uint32_t a, b, e;
+            uint32_t pat = m3 ? pal_neighbours_m3(cur_row, prv_row, prv2_row, w, x, y, &a, &b, &e)
+                              : pal_neighbours_m2(cur_row, prv_row, w, x, y, &a, &b, &e);
             uint32_t d1_ctx = pat * 2u + hit;
             uint32_t idx;
-            if (pal_dec_bit(&dec, sc->m.rate, &sc->m.d1[d1_ctx], &sc->m.d1_n[d1_ctx])) {
+            if (pal_dec_bit(&dec, sc->m.rate, &sc->m.d1[d1_ctx], &sc->m.d1_n[d1_ctx], m3)) {
                 idx = a;
                 hit = 1u;
+            } else if (m3 && count == 2u) {
+                idx = 1u - a;
+                hit = 0;
             } else {
                 hit = 0;
-                if (b != a && pal_dec_bit(&dec, sc->m.rate, &sc->m.d2[pat], &sc->m.d2_n[pat])) {
+                if (b != a && pal_dec_bit(&dec, sc->m.rate, &sc->m.d2[pat], &sc->m.d2_n[pat], m3)) {
                     idx = b;
-                } else if (d != a && d != b && pal_dec_bit(&dec, sc->m.rate, &sc->m.d3[pat], &sc->m.d3_n[pat])) {
-                    idx = d;
+                } else if (e != a && e != b && pal_dec_bit(&dec, sc->m.rate, &sc->m.d3[pat], &sc->m.d3_n[pat], m3)) {
+                    idx = e;
                 } else {
                     uint32_t node = 1u;
                     for (int bit_pos = 0; bit_pos < 8; bit_pos++) {
-                        int bit = pal_dec_bit(&dec, sc->m.rate, &sc->m.tree[node], &sc->m.tree_n[node]);
+                        int bit = pal_dec_bit(&dec, sc->m.rate, &sc->m.tree[node], &sc->m.tree_n[node], m3);
                         node = node * 2u + (uint32_t)bit;
                     }
                     idx = node - 256u;
-                    if (idx >= count || idx == a || idx == b || idx == d) {
+                    if (idx >= count || idx == a || idx == b || idx == e) {
                         bad = 1;
                         break;
                     }

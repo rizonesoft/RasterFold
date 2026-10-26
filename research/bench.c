@@ -73,7 +73,7 @@ int main(int argc, char **argv) {
             if (t3 - t2 < bd) bd = t3 - t2;
         }
         const char *b = strrchr(argv[a], '/'); b = b ? b + 1 : argv[a];
-        const char *status = !ok ? "MISMATCH" : (method == RF_METHOD_RAW ? "RAW" : (method == RF_METHOD_PAL ? "PAL" : "OK"));
+        const char *status = !ok ? "MISMATCH" : (method == RF_METHOD_RAW ? "RAW" : ((method == RF_METHOD_PAL || method == RF_METHOD_PAL2) ? "PAL" : "OK"));
         double px = (double)im.w * im.h;
         printf("%-24s %9zu  bpp=%.4f  enc=%7.1fms dec=%7.1fms  (%.0f/%.0f cyc/sample) %s\n", b, fold_sz, fold_sz * 8.0 / px, be, bd,
                be * 3.9e6 / (px * 3), bd * 3.9e6 / (px * 3), status);

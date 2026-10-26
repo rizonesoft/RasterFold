@@ -18,6 +18,7 @@ MAX_FILE = 256 * 1024 * 1024
 METHOD_RAW = 0
 METHOD_CM = 1
 METHOD_PAL = 2
+METHOD_PAL2 = 3
 
 
 class FormatError(Exception):
@@ -451,12 +452,13 @@ def cm_decode(payload: bytes, width: int, height: int) -> bytes:
     return bytes(rgb)
 
 
-# ---------------------------------------------------------------- palette (method 2)
+# ---------------------------------------------------------------- palette (methods 2 and 3)
 
 class _PalCounter:
-    def __init__(self) -> None:
+    def __init__(self, m3: bool = True) -> None:
         self.c = 32768
         self.n = 0
+        self.m3 = m3
 
     def code(self, enc: RangeEncoder | None, dec: RangeDecoder | None, bit: int = 0) -> int:
         p = max(1, self.c >> 4)
@@ -468,12 +470,18 @@ class _PalCounter:
         else:
             assert dec is not None
             bit = dec.bit(p)
-        target = 65535 if bit else 0
-        self.c += ((target - self.c) * rate) >> 16
+        if self.m3:
+            if bit == 1 and self.c < 65535:
+                self.c += max(1, ((65535 - self.c) * rate) >> 16)
+            elif bit == 0 and self.c > 0:
+                self.c -= max(1, (self.c * rate) >> 16)
+        else:
+            target = 65535 if bit else 0
+            self.c += ((target - self.c) * rate) >> 16
         return bit
 
 
-def _pal_neighbours(rows: list[list[int]], width: int, x: int, y: int) -> tuple[int, int, int, int, int]:
+def _pal_neighbours_m2(rows: list[list[int]], width: int, x: int, y: int) -> tuple[int, int, int, int, int]:
     if y == 0:
         a = rows[0][x - 1] if x > 0 else 0
         b = c = d = a
@@ -493,9 +501,44 @@ def _pal_neighbours(rows: list[list[int]], width: int, x: int, y: int) -> tuple[
     return a, b, c, d, pattern
 
 
-def pal_encode(width: int, height: int, rgb: bytes) -> bytes | None:
+def _pal_neighbours_m3(rows: list[list[int]], width: int, x: int, y: int) -> tuple[int, int, int, int]:
+    if y == 0:
+        a = rows[0][x - 1] if x > 0 else 0
+        b = c = d = a
+        nn = a
+    else:
+        prv = rows[y - 1]
+        b = prv[x]
+        a = rows[y][x - 1] if x > 0 else b
+        c = prv[x - 1] if x > 0 else b
+        d = prv[x + 1] if x + 1 < width else b
+        nn = b if y == 1 else rows[y - 2][x]
+    ww = rows[y][x - 2] if x >= 2 else a
+    if d != a and d != b:
+        e = d
+    elif c != a and c != b:
+        e = c
+    elif ww != a and ww != b:
+        e = ww
+    else:
+        e = a
+    pattern = (
+        (1 if a == b else 0)
+        | ((1 if a == c else 0) << 1)
+        | ((1 if a == d else 0) << 2)
+        | ((1 if b == c else 0) << 3)
+        | ((1 if b == d else 0) << 4)
+        | ((1 if ww == a else 0) << 5)
+        | ((1 if nn == b else 0) << 6)
+    )
+    return a, b, e, pattern
+
+
+def pal_encode(width: int, height: int, rgb: bytes, *, method: int = METHOD_PAL2) -> bytes | None:
     if len(rgb) != width * height * 3:
         raise ValueError("rgb size")
+    if method not in (METHOD_PAL, METHOD_PAL2):
+        raise ValueError("palette method")
     palette: list[bytes] = []
     index_of: dict[bytes, int] = {}
     for pos in range(0, len(rgb), 3):
@@ -506,10 +549,11 @@ def pal_encode(width: int, height: int, rgb: bytes) -> bytes | None:
             index_of[col] = len(palette)
             palette.append(col)
     count = len(palette)
-    d1 = [_PalCounter() for _ in range(64)]
-    d2 = [_PalCounter() for _ in range(32)]
-    d3 = [_PalCounter() for _ in range(32)]
-    tree = [_PalCounter() for _ in range(256)]
+    m3 = method == METHOD_PAL2
+    d1 = [_PalCounter(m3) for _ in range(256 if m3 else 64)]
+    d2 = [_PalCounter(m3) for _ in range(128 if m3 else 32)]
+    d3 = [_PalCounter(m3) for _ in range(128 if m3 else 32)]
+    tree = [_PalCounter(m3) for _ in range(256)]
     enc = RangeEncoder()
     rows: list[list[int]] = []
     hit = 0
@@ -519,27 +563,34 @@ def pal_encode(width: int, height: int, rgb: bytes) -> bytes | None:
             pos = (y * width + x) * 3
             idx = index_of[rgb[pos : pos + 3]]
             rows[y][x] = idx
-            a, b, _c, d, pattern = _pal_neighbours(rows, width, x, y)
+            if m3:
+                a, b, e, pattern = _pal_neighbours_m3(rows, width, x, y)
+            else:
+                a, b, _c, e, pattern = _pal_neighbours_m2(rows, width, x, y)
             if d1[pattern * 2 + hit].code(enc, None, 1 if idx == a else 0):
                 hit = 1
                 continue
             hit = 0
+            if m3 and count == 2:
+                continue
             if b != a and d2[pattern].code(enc, None, 1 if idx == b else 0):
                 continue
-            if d != a and d != b and d3[pattern].code(enc, None, 1 if idx == d else 0):
+            if e != a and e != b and d3[pattern].code(enc, None, 1 if idx == e else 0):
                 continue
             node = 1
             for bit_pos in range(7, -1, -1):
                 bit = (idx >> bit_pos) & 1
                 tree[node].code(enc, None, bit)
                 node = node * 2 + bit
-        if y >= 2:
-            rows[y - 2] = []
+        if y >= 3:
+            rows[y - 3] = []
     stream = enc.finish()
     return struct.pack("<H", count - 1) + b"".join(palette) + struct.pack("<I", len(stream)) + stream
 
 
-def pal_decode(payload: bytes, width: int, height: int) -> bytes:
+def pal_decode(payload: bytes, width: int, height: int, *, method: int = METHOD_PAL2) -> bytes:
+    if method not in (METHOD_PAL, METHOD_PAL2):
+        raise ValueError("palette method")
     if len(payload) < 6:
         raise FormatError("palette")
     count_m1 = struct.unpack_from("<H", payload, 0)[0]
@@ -561,41 +612,48 @@ def pal_decode(payload: bytes, width: int, height: int) -> bytes:
     if stream_size < 5 or pal_end + 4 + stream_size != len(payload):
         raise FormatError("palette")
     dec = RangeDecoder(payload[pal_end + 4 :])
-    d1 = [_PalCounter() for _ in range(64)]
-    d2 = [_PalCounter() for _ in range(32)]
-    d3 = [_PalCounter() for _ in range(32)]
-    tree = [_PalCounter() for _ in range(256)]
+    m3 = method == METHOD_PAL2
+    d1 = [_PalCounter(m3) for _ in range(256 if m3 else 64)]
+    d2 = [_PalCounter(m3) for _ in range(128 if m3 else 32)]
+    d3 = [_PalCounter(m3) for _ in range(128 if m3 else 32)]
+    tree = [_PalCounter(m3) for _ in range(256)]
     rows: list[list[int]] = []
     rgb = bytearray(width * height * 3)
     hit = 0
     for y in range(height):
         rows.append([0] * width)
         for x in range(width):
-            a, b, _c, d, pattern = _pal_neighbours(rows, width, x, y)
+            if m3:
+                a, b, e, pattern = _pal_neighbours_m3(rows, width, x, y)
+            else:
+                a, b, _c, e, pattern = _pal_neighbours_m2(rows, width, x, y)
             if d1[pattern * 2 + hit].code(None, dec) == 1:
                 idx = a
                 hit = 1
+            elif m3 and count == 2:
+                idx = 1 - a
+                hit = 0
             else:
                 hit = 0
                 if b != a and d2[pattern].code(None, dec) == 1:
                     idx = b
-                elif d != a and d != b and d3[pattern].code(None, dec) == 1:
-                    idx = d
+                elif e != a and e != b and d3[pattern].code(None, dec) == 1:
+                    idx = e
                 else:
                     node = 1
                     for _ in range(8):
                         bit = tree[node].code(None, dec)
                         node = node * 2 + bit
                     idx = node - 256
-                    if idx >= count or idx == a or idx == b or idx == d:
+                    if idx >= count or idx == a or idx == b or idx == e:
                         raise FormatError("palette stream")
             rows[y][x] = idx
             pos = (y * width + x) * 3
             rgb[pos : pos + 3] = palette[idx]
         if dec.pos > len(dec.data) + 2:
             raise FormatError("palette stream")
-        if y >= 2:
-            rows[y - 2] = []
+        if y >= 3:
+            rows[y - 3] = []
     if not dec.exhausted_exactly():
         raise FormatError("palette stream")
     return bytes(rgb)
@@ -626,9 +684,9 @@ def encode_image(width: int, height: int, rgb: bytes) -> bytes:
     if all(s <= width * height + 64 for s in cm_sizes) and len(cm_payload) < len(best_payload):
         best_method = METHOD_CM
         best_payload = cm_payload
-    pal_payload = pal_encode(width, height, rgb)
+    pal_payload = pal_encode(width, height, rgb, method=METHOD_PAL2)
     if pal_payload is not None and len(pal_payload) < len(best_payload):
-        best_method = METHOD_PAL
+        best_method = METHOD_PAL2
         best_payload = pal_payload
     return build_file(width, height, best_method, best_payload)
 
@@ -650,7 +708,7 @@ def decode_image(blob: bytes) -> tuple[int, int, bytes]:
     if crc32(blob[:28]) != struct.unpack_from("<I", blob, 28)[0]:
         raise FormatError("header checksum")
     method, reserved = blob[16], blob[17]
-    if method > METHOD_PAL:
+    if method > METHOD_PAL2:
         raise FormatError("method")
     if reserved != 0:
         raise FormatError("reserved byte")
@@ -667,8 +725,8 @@ def decode_image(blob: bytes) -> tuple[int, int, bytes]:
         if size != width * height * 3:
             raise FormatError("raw length")
         return width, height, bytes(payload)
-    if method == METHOD_PAL:
-        return width, height, pal_decode(payload, width, height)
+    if method in (METHOD_PAL, METHOD_PAL2):
+        return width, height, pal_decode(payload, width, height, method=method)
     return width, height, cm_decode(payload, width, height)
 
 
