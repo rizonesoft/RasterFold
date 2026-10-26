@@ -15,7 +15,7 @@ import unittest
 import zlib
 
 import rfi_ref
-from test_correctness import KAT_FOLD, KAT_RGB, KAT_W, KAT_H
+from test_correctness import KAT_FOLD, KAT_RGB, KAT_W, KAT_H, KAT_PAL, KAT_PAL_RGB, KAT_PAL_W, KAT_PAL_H
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = 'windows-x64' if os.name == 'nt' else 'linux-x64'
@@ -97,6 +97,15 @@ class Api(unittest.TestCase):
             LIBRARY.rf_free(out.data)
         self.assertEqual(LIBRARY.rf_inspect(KAT_FOLD, len(KAT_FOLD), C.byref(info), None), 0)
         self.assertEqual((info.width, info.height, info.method), (16, 8, 1))
+        self.assertEqual(encode(KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), KAT_PAL)
+        self.assertEqual(LIBRARY.rf_decode_image(KAT_PAL, len(KAT_PAL), None, C.byref(out), C.byref(err)), 0)
+        try:
+            self.assertEqual((out.width, out.height, out.stride, out.layout, out.size), (16, 8, 48, 1, 384))
+            self.assertEqual(C.string_at(out.data, out.size), KAT_PAL_RGB)
+        finally:
+            LIBRARY.rf_free(out.data)
+        self.assertEqual(LIBRARY.rf_inspect(KAT_PAL, len(KAT_PAL), C.byref(info), None), 0)
+        self.assertEqual((info.width, info.height, info.method, tuple(info.stream_size)), (16, 8, 2, (0, 0, 0)))
 
     def test_corpus_matches_cli_and_oracle(self):
         count = 0
@@ -205,11 +214,18 @@ class Api(unittest.TestCase):
         raw_w, raw_h = 4, 4
         raw_rgb = bytes(((i * 197 + 53) & 255) for i in range(raw_w * raw_h * 3))
         raw_fold = encode(raw_w, raw_h, raw_rgb, threads=1)
+        pal_long_w, pal_long_h = 32, 32
+        pal_cols = [bytes(((i * 29) & 255, (i * 61 + 11) & 255, (i * 103 + 7) & 255)) for i in range(16)]
+        pal_long_rgb = b''.join(pal_cols[((x * 3 + y * 5 + ((x ^ y) & 3)) & 15)] for y in range(pal_long_h) for x in range(pal_long_w))
+        pal_long_fold = encode(pal_long_w, pal_long_h, pal_long_rgb, threads=1)
+        self.assertEqual(pal_long_fold[16], 2)
 
         for label, blob, exp_w, exp_h, exp_rgb in [
             ('kat_short_tail', KAT_FOLD, KAT_W, KAT_H, KAT_RGB),
             ('large_long_tail', large_fold, large_w, large_h, large_rgb),
             ('raw_method0', raw_fold, raw_w, raw_h, raw_rgb),
+            ('pal_short_tail', KAT_PAL, KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB),
+            ('pal_long_tail', pal_long_fold, pal_long_w, pal_long_h, pal_long_rgb),
         ]:
             for threads in (1, 3):
                 with self.subTest(case=label, threads=threads), guarded_slice(blob) as (ptr, size):

@@ -11,7 +11,7 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-COMMON = ('platform', 'api', 'crc32', 'bmp', 'fold', 'cm')
+COMMON = ('platform', 'api', 'crc32', 'bmp', 'fold', 'cm', 'pal')
 BASELINE_RE = re.compile(r'^count:\s*(\d+)\s*$')
 WARNING_RE = re.compile(
     r'^(?P<file>.+?):(?P<line>\d+):(?P<col>\d+):\s+warning:\s+(?P<msg>.+?)\s+\[(?P<check>[^\]]+)\]\s*$'

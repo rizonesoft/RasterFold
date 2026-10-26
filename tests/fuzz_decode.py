@@ -40,12 +40,49 @@ def seeds() -> list[bytes]:
         for (x, y, w, h) in ((100, 100, 40, 30), (0, 0, 17, 9), (300, 200, 64, 3)):
             crop = im.convert("RGB").crop((x, y, x + w, y + h))
             out.append(rf.encode_image(w, h, crop.tobytes()))
-    return [b for b in out if b[16] == rf.METHOD_CM]
+    # Method 2 (palette) seeds: a 2-colour checkerboard and a 4-colour pattern.
+    chk_rgb = b"".join(b"\x20\x30\x40" if ((x // 3) ^ (y // 3)) & 1 else b"\xE0\xE8\xF0" for y in range(24) for x in range(32))
+    out.append(rf.encode_image(32, 24, chk_rgb))
+    pal4 = (b"\x10\x20\x30", b"\xE0\x40\x20", b"\x20\xC0\x50", b"\xF0\xF4\xF8")
+    pal4_rgb = b"".join(pal4[((x // 3) + (y // 2) + ((x + y) & 1)) & 3] for y in range(8) for x in range(16))
+    out.append(rf.encode_image(16, 8, pal4_rgb))
+    return [b for b in out if b[16] in (rf.METHOD_CM, rf.METHOD_PAL)]
 
 
 def mutate(blob: bytes, rng: random.Random) -> bytes:
     b = bytearray(blob)
+    method = b[16]
     kind = rng.randrange(6)
+    if method == rf.METHOD_PAL:
+        count = struct.unpack_from("<H", b, 32)[0] + 1
+        s_off = 32 + 2 + 3 * count
+        s_start = s_off + 4
+        s_len = struct.unpack_from("<I", b, s_off)[0]
+        if kind == 0:                               # flip bits in palette or stream
+            for _ in range(rng.randrange(1, 4)):
+                i = rng.randrange(32, len(b))
+                b[i] ^= 1 << rng.randrange(8)
+        elif kind == 1:                             # truncate index stream
+            cut = rng.randrange(1, max(2, s_len))
+            del b[len(b) - cut :]
+            struct.pack_into("<I", b, s_off, max(0, s_len - cut))
+        elif kind == 2:                             # extend index stream
+            add = bytes(rng.randrange(256) for _ in range(rng.randrange(1, 9)))
+            b.extend(add)
+            struct.pack_into("<I", b, s_off, s_len + len(add))
+        elif kind == 3:                             # mutate count or stream_size field
+            if rng.randrange(2) == 0:
+                struct.pack_into("<H", b, 32, (count - 1 + rng.choice((-1, 1, 256))) & 0xFFFF)
+            else:
+                struct.pack_into("<I", b, s_off, max(0, s_len + rng.choice((-2, -1, 1, 2))))
+        elif kind == 4:                             # other dimensions for the same stream
+            w, h = struct.unpack_from("<II", b, 8)
+            struct.pack_into("<II", b, 8, max(1, w + rng.randrange(-3, 4)), max(1, h + rng.randrange(-3, 4)))
+        else:                                       # random stream bytes
+            for i in range(s_start, len(b)):
+                if rng.random() < 0.1:
+                    b[i] = rng.randrange(256)
+        return recrc(b)
     if kind == 0:                                   # flip bits in the streams
         for _ in range(rng.randrange(1, 4)):
             i = rng.randrange(44, len(b))

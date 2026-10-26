@@ -90,6 +90,7 @@ def build_bench_multi_tu(clang: Path, obj_dir: Path, out: Path, lto: bool, extra
         ("bench", REPO / "research" / "bench.c"),
         ("benchsys", REPO / "research" / "benchsys.c"),
         ("cm", REPO / "src" / "cm.c"),
+        ("pal", REPO / "src" / "pal.c"),
         ("fold", REPO / "src" / "fold.c"),
         ("bmp", REPO / "src" / "bmp.c"),
         ("crc32", REPO / "src" / "crc32.c"),

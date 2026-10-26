@@ -32,6 +32,15 @@ KAT_FOLD = bytes.fromhex(
     "9a240a210014024daf691d221f14715e2e6c0001c05edda7566f6e0041f37cefce5b"
 )
 
+# A 16x8 4-colour image and its complete .fold file (method 2, palette).
+KAT_PAL_W, KAT_PAL_H = 16, 8
+_PAL4 = (b"\x10\x20\x30", b"\xE0\x40\x20", b"\x20\xC0\x50", b"\xF0\xF4\xF8")
+KAT_PAL_RGB = b"".join(_PAL4[((x // 3) + (y // 2) + ((x + y) & 1)) & 3] for y in range(KAT_PAL_H) for x in range(KAT_PAL_W))
+KAT_PAL = bytes.fromhex(
+    "524649020200200010000000080000000200010037000000c37a39f65a940d240300102030e0402020c050f0f4f825000000007fbfd92ae2"
+    "7bb32a51a99f783de3fe8c97d3903c25a6c11cbfdbfe894c315c5a39db7400"
+)
+
 
 class Fail(Exception):
     pass
@@ -87,6 +96,8 @@ def oracle_self_check() -> None:
     check(all(rf.SQUASH[rf.STRETCH[p] + 2047] >= p or rf.STRETCH[p] == 2047 for p in range(1, 4096)), "stretch inverts squash")
     check(rf.encode_image(KAT_W, KAT_H, KAT_RGB) == KAT_FOLD, "known-answer file")
     check(rf.decode_image(KAT_FOLD) == (KAT_W, KAT_H, KAT_RGB), "known-answer decode")
+    check(rf.encode_image(KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB) == KAT_PAL, "known-answer palette file")
+    check(rf.decode_image(KAT_PAL) == (KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), "known-answer palette decode")
 
 
 def known_answer() -> None:
@@ -100,6 +111,17 @@ def known_answer() -> None:
     check(out.read_bytes() == KAT_FOLD, "codec bytes differ from the known-answer file")
     expect_ok(["decode", str(out), str(back)])
     check(rf.read_bmp24(back.read_bytes()) == (KAT_W, KAT_H, KAT_RGB), "known-answer pixels")
+
+    psrc, pout, pback = work / "pal_in.bmp", work / "pal_out.fold", work / "pal_out.bmp"
+    for f in (pout, pback):
+        f.unlink(missing_ok=True)
+    psrc.write_bytes(rf.write_bmp24(KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB))
+    expect_ok(["encode", str(psrc), str(pout)])
+    check(pout.read_bytes() == KAT_PAL, "codec bytes differ from the palette known-answer file")
+    expect_ok(["decode", str(pout), str(pback)])
+    check(rf.read_bmp24(pback.read_bytes()) == (KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), "palette known-answer pixels")
+    insp = expect_ok(["inspect", str(pout)]).stdout.decode("utf-8", errors="replace")
+    check("method: palette" in insp and "palette_colours: 4" in insp, f"inspect output missing palette fields: {insp}")
 
 
 def solid(w: int, h: int, color: tuple[int, int, int]) -> bytes:
@@ -287,7 +309,7 @@ def corrupt_cases() -> None:
     pcrc[-1] ^= 1
     reject(bytes(pcrc), 4, "invalid fold: payload checksum")
     method = bytearray(good)
-    method[16] = 2
+    method[16] = 3
     reject(recrc(method), 3, "unsupported fold: method")
     res = bytearray(good)
     res[17] = 1
@@ -318,6 +340,87 @@ def corrupt_cases() -> None:
     flipped = bytearray(good)
     flipped[44 + sizes[0] // 2] ^= 0x40
     reject(recrc(flipped), 4, "invalid fold: cm stream")
+
+    # Method 2 (palette) framing and stream rejection cases, with checksums recomputed.
+    reject(rf.build_file(2, 2, rf.METHOD_PAL, b"\x00\x00\x01\x02\x03"), 4, "invalid fold: palette")
+    pal_257 = (
+        struct.pack("<H", 256)
+        + b"".join(bytes((i & 255, (i * 3) & 255, (i * 7) & 255)) for i in range(257))
+        + struct.pack("<I", 5)
+        + b"\x00" * 5
+    )
+    reject(rf.build_file(16, 17, rf.METHOD_PAL, pal_257), 4, "invalid fold: palette")
+    pal_short_colors = bytearray(KAT_PAL)
+    struct.pack_into("<H", pal_short_colors, 32, 4)
+    reject(recrc(pal_short_colors), 4, "invalid fold: palette")
+    pal_stream_lt5 = struct.pack("<H", 0) + b"\x10\x20\x30" + struct.pack("<I", 4) + b"\x00" * 4
+    reject(rf.build_file(2, 2, rf.METHOD_PAL, pal_stream_lt5), 4, "invalid fold: palette")
+    pal_bad_len = bytearray(KAT_PAL)
+    pal_s_off = 32 + 2 + 4 * 3
+    pal_s_len = struct.unpack_from("<I", pal_bad_len, pal_s_off)[0]
+    struct.pack_into("<I", pal_bad_len, pal_s_off, pal_s_len + 1)
+    reject(recrc(pal_bad_len), 4, "invalid fold: palette")
+    pal_dup = bytearray(KAT_PAL)
+    pal_dup[34 + 3 : 34 + 6] = pal_dup[34 : 34 + 3]
+    reject(recrc(pal_dup), 4, "invalid fold: duplicate palette colour")
+    pal_trunc = bytearray(KAT_PAL[:-1])
+    struct.pack_into("<I", pal_trunc, pal_s_off, pal_s_len - 1)
+    reject(recrc(pal_trunc), 4, "invalid fold: palette stream")
+    pal_trail = bytearray(KAT_PAL) + b"\x00"
+    struct.pack_into("<I", pal_trail, pal_s_off, pal_s_len + 1)
+    reject(recrc(pal_trail), 4, "invalid fold: palette stream")
+
+    def _build_bad_pal_literal(mode: str) -> bytes:
+        d1 = [rf._PalCounter() for _ in range(64)]
+        d2 = [rf._PalCounter() for _ in range(32)]
+        d3 = [rf._PalCounter() for _ in range(32)]
+        tree = [rf._PalCounter() for _ in range(256)]
+        enc = rf.RangeEncoder()
+
+        def code_lit(idx: int) -> None:
+            node = 1
+            for bit_pos in range(7, -1, -1):
+                bit = (idx >> bit_pos) & 1
+                tree[node].code(enc, None, bit)
+                node = node * 2 + bit
+
+        if mode in ("ge_count", "eq_a"):
+            # 2x1, 2 colours; at (0, 0), a=b=c=d=0, pat=31, hit=0 -> D1=0, literal = 2 (>= count) or 0 (== a).
+            d1[31 * 2 + 0].code(enc, None, 0)
+            code_lit(2 if mode == "ge_count" else 0)
+            stream = enc.finish()
+            pay = struct.pack("<H", 1) + b"\x10\x20\x30\x40\x50\x60" + struct.pack("<I", len(stream)) + stream
+            return rf.build_file(2, 1, rf.METHOD_PAL, pay)
+        if mode == "eq_b":
+            # 2x2, 3 colours: row 0 is [0, 1]; at (1, 1), b=1, a=0 (from (0, 1)=0), c=0, d=1 -> pat = (0)|(1<<1)|(0)|(0)|(1<<4) = 18.
+            # (0, 0): I=0 -> a=0, pat=31, hit=0 -> D1=1 (hit=1)
+            d1[31 * 2 + 0].code(enc, None, 1)
+            # (1, 0): I=1 -> a=0, pat=31, hit=1 -> D1=0 (hit=0), lit=1
+            d1[31 * 2 + 1].code(enc, None, 0)
+            code_lit(1)
+            # (0, 1): I=0 -> b=0, a=0, c=0, d=1 -> pat = 1|2|8 = 11, hit=0 -> D1=1 (hit=1)
+            d1[11 * 2 + 0].code(enc, None, 1)
+            # (1, 1): a=0, b=1, c=0, d=1 -> pat = 2|16 = 18, hit=1 -> D1=0, b!=a -> D2=0, d==b -> lit=1 (== b, excluded!)
+            d1[18 * 2 + 1].code(enc, None, 0)
+            d2[18].code(enc, None, 0)
+            code_lit(1)
+            stream = enc.finish()
+            pay = struct.pack("<H", 2) + b"\x10\x20\x30\x40\x50\x60\x70\x80\x90" + struct.pack("<I", len(stream)) + stream
+            return rf.build_file(2, 2, rf.METHOD_PAL, pay)
+        assert mode == "eq_d"
+        # 2x2, 3 colours: row 0 is [0, 1]; at (0, 1), b=0, a=0, c=0, d=1 -> pat=11, hit=0 -> D1=0, b==a, d!=a && d!=b -> D3=0, lit=1 (== d, excluded!)
+        d1[31 * 2 + 0].code(enc, None, 1)
+        d1[31 * 2 + 1].code(enc, None, 0)
+        code_lit(1)
+        d1[11 * 2 + 0].code(enc, None, 0)
+        d3[11].code(enc, None, 0)
+        code_lit(1)
+        stream = enc.finish()
+        pay = struct.pack("<H", 2) + b"\x10\x20\x30\x40\x50\x60\x70\x80\x90" + struct.pack("<I", len(stream)) + stream
+        return rf.build_file(2, 2, rf.METHOD_PAL, pay)
+
+    for bad_mode in ("ge_count", "eq_a", "eq_b", "eq_d"):
+        reject(_build_bad_pal_literal(bad_mode), 4, "invalid fold: palette stream")
 
     # A hand-built raw file decodes.
     one = bytes([4, 5, 6])
@@ -612,27 +715,77 @@ def tail_threshold_roundtrip() -> None:
     row_end_channels: set[int] = set()
     for name, w, h, rgb in fixtures:
         oracle_fold = rf.encode_image(w, h, rgb)
-        check(oracle_fold[16] == rf.METHOD_CM, f"{name} did not encode with METHOD_CM")
-        sz0, sz1, sz2 = struct.unpack_from("<III", oracle_fold, 32)
+        cm_fold = oracle_fold if oracle_fold[16] == rf.METHOD_CM else rf.build_file(w, h, rf.METHOD_CM, rf.cm_encode(w, h, rgb))
+        sz0, sz1, sz2 = struct.unpack_from("<III", cm_fold, 32)
         rems = (sz0 - 5, sz1 - 5, sz2 - 5)
         if all(0 <= r <= 48 for r in rems):
             saw_le48 = True
-        row_end_channels |= _row_end_tail_crossings(w, h, oracle_fold[32:])
+        row_end_channels |= _row_end_tail_crossings(w, h, cm_fold[32:])
         in_bmp = work / f"{name}_in.bmp"
         in_bmp.write_bytes(rf.write_bmp24(w, h, rgb))
+        cm_in = work / f"{name}_cm.fold"
+        cm_in.write_bytes(cm_fold)
         for t in ("1", "3"):
             out_fold = work / f"{name}_t{t}.fold"
             out_bmp = work / f"{name}_t{t}.bmp"
+            cm_bmp = work / f"{name}_cm_t{t}.bmp"
             out_fold.unlink(missing_ok=True)
             out_bmp.unlink(missing_ok=True)
+            cm_bmp.unlink(missing_ok=True)
             r_enc = run(["encode", "--threads", t, str(in_bmp), str(out_fold)])
             check(r_enc.returncode == 0, f"{name} encode t={t} failed: {r_enc.stderr.decode(errors='replace')}")
             check(out_fold.read_bytes() == oracle_fold, f"{name} encode t={t} != oracle")
             r_dec = run(["decode", "--threads", t, str(out_fold), str(out_bmp)])
             check(r_dec.returncode == 0, f"{name} decode t={t} failed: {r_dec.stderr.decode(errors='replace')}")
             check(rf.read_bmp24(out_bmp.read_bytes()) == (w, h, rgb), f"{name} decode t={t} pixel mismatch")
+            r_cm_dec = run(["decode", "--threads", t, str(cm_in), str(cm_bmp)])
+            check(r_cm_dec.returncode == 0, f"{name} cm decode t={t} failed: {r_cm_dec.stderr.decode(errors='replace')}")
+            check(rf.read_bmp24(cm_bmp.read_bytes()) == (w, h, rgb), f"{name} cm decode t={t} pixel mismatch")
     check(saw_le48, "tail_threshold fixtures did not cover rem <= 48")
     check(row_end_channels == {0, 1, 2}, f"tail_threshold fixtures did not cover nonfinal row-end tail crossings on all 3 channels: {row_end_channels}")
+
+
+def palette_method() -> None:
+    """Method 2 selection (raw vs CM vs palette), 256/257 colour boundary,
+    inspect reporting, and counter probability floor max(1, c >> 4)."""
+    work = WORK / "palette_method"
+    work.mkdir(parents=True, exist_ok=True)
+
+    # 1. Method selection: 1x1 1-colour uses raw (0), 68-colour KAT_RGB uses CM (1), 4-colour KAT_PAL_RGB uses palette (2).
+    check(rf.encode_image(1, 1, b"\x00\x00\x00")[16] == rf.METHOD_RAW, "1x1 did not select METHOD_RAW")
+    check(KAT_FOLD[16] == rf.METHOD_CM, "KAT_FOLD did not select METHOD_CM")
+    check(KAT_PAL[16] == rf.METHOD_PAL, "KAT_PAL did not select METHOD_PAL")
+
+    # 2. Exactly 256 colours where each colour is a 8-pixel horizontal run (64x32 = 2048 pixels): selects method 2 and inspect reports palette_colours: 256.
+    w256, h256 = 64, 32
+    pal256 = [bytes(((i * 17) & 255, (i * 43 + 9) & 255, (i * 97 + 3) & 255)) for i in range(256)]
+    rgb256 = b"".join(pal256[(y * 8 + (x // 8)) & 255] for y in range(h256) for x in range(w256))
+    roundtrip("pal_256", w256, h256, rgb256)
+    fold256 = WORK / "pal_256" / "out.fold"
+    check(fold256.read_bytes()[16] == rf.METHOD_PAL, "256-colour run image did not select METHOD_PAL")
+    insp256 = expect_ok(["inspect", str(fold256)]).stdout.decode("utf-8", errors="replace")
+    check("method: palette" in insp256 and "palette_colours: 256" in insp256, f"256-colour inspect output: {insp256}")
+
+    # 3. 257th colour fallback: replace the last pixel with a 257th unique colour -> falls back to METHOD_CM (1).
+    used256 = set(pal256)
+    extra_col = next(bytes((r, g, 255)) for r in range(256) for g in range(256) if bytes((r, g, 255)) not in used256)
+    rgb257 = rgb256[:-3] + extra_col
+    roundtrip("pal_257_fallback", w256, h256, rgb257)
+    fold257 = WORK / "pal_257_fallback" / "out.fold"
+    check(fold257.read_bytes()[16] == rf.METHOD_CM, "257-colour image did not fall back to METHOD_CM")
+    insp257 = expect_ok(["inspect", str(fold257)]).stdout.decode("utf-8", errors="replace")
+    check("method: cm" in insp257 and "palette_colours" not in insp257, f"257-colour inspect output: {insp257}")
+
+    # 4. Long counter run (>= 400 zero bits in a row on D1[31*2 + 0] followed by a 1 bit) exercising max(1, c >> 4).
+    #    On row 0 (y == 0), every pixel has b=c=d=a, so pattern is always 31.
+    #    Alternating 2 colours on x = 0..449 makes I != a (D1=0, hit=0) 449 times in a row on D1[62], driving c < 16;
+    #    then x = 450..511 repeats the colour so I == a (D1=1 on D1[62] when c >> 4 == 0, clamped to p = 1).
+    w_clamp, h_clamp = 512, 1
+    c0, c1 = b"\x12\x34\x56", b"\xFE\xDC\xBA"
+    rgb_clamp = b"".join((c1 if (x & 1) else c0) if x < 450 else c1 for x in range(w_clamp))
+    roundtrip("pal_clamp", w_clamp, h_clamp, rgb_clamp)
+    fold_clamp = WORK / "pal_clamp" / "out.fold"
+    check(fold_clamp.read_bytes()[16] == rf.METHOD_PAL, "pal_clamp did not select METHOD_PAL")
 
 
 def main() -> int:
@@ -686,6 +839,7 @@ def main() -> int:
     case("corrupt", corrupt_cases)
     case("truncated-abort", truncated_stream_abort)
     case("tail-threshold", tail_threshold_roundtrip)
+    case("palette-method", palette_method)
     # The checksum in a successful file matches zlib, not only our encoder.
     case(
         "zlib-crc",

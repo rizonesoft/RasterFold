@@ -43,7 +43,7 @@ offset  size  field
 6       2     header_size = 32
 8       4     width
 12      4     height
-16      1     method: 0 = raw, 1 = CM
+16      1     method: 0 = raw, 1 = CM, 2 = palette
 17      1     reserved = 0
 18      2     pixel_format = 1
 20      4     payload_size
@@ -336,6 +336,98 @@ and `FG`; those of R are `ER` and `FR`. `FG` and `FR` are clamped to
 -2047..2047. A decoder that produced `r = 128` passes it on as -128; the file is
 rejected anyway.
 
+## Method 2, palette
+
+### Payload
+
+```
+offset    size        field
+0         2           count - 1     (count = number of colours, 1..256)
+2         3 * count   palette: R, G, B of entry 0, then entry 1, ...
+2 + 3c    4           size of the index stream (at least 5)
+6 + 3c    ...         index stream: one binary range coder ("Range coder" above)
+```
+
+`1 <= count <= 256` (so the 16-bit `count - 1` field is in `0..255`), the
+`count` palette triples `(R, G, B)` are distinct, the stream size `S` is at
+least 5, and `6 + 3 * count + S = payload_size`. The reference encoder lists
+colours in first-seen raster order: entry 0 is the colour of pixel `(0, 0)`,
+and each new colour takes the next index.
+
+### Index neighbours and contexts
+
+Pixels are coded in raster order, `y = 0 .. height - 1`, `x = 0 .. width - 1`.
+`I(x, y)` is the palette index (`0 .. count - 1`) of pixel `(x, y)`, and the
+colour of `(x, y)` is palette entry `I(x, y)`.
+
+For `(x, y)`, the four causal neighbour indices `a = W`, `b = N`, `c = NW`,
+and `d = NE` follow the boundary rules of method 1 ("Neighbours"):
+
+```
+if y == 0:
+    a = I(x-1, 0) if x > 0 else 0
+    b = c = d = a
+else:
+    b = I(x, y-1)
+    a = I(x-1, y)   if x > 0         else b
+    c = I(x-1, y-1) if x > 0         else b
+    d = I(x+1, y-1) if x+1 < width   else b
+```
+
+The equality pattern `pattern` (`0..31`) and previous-pixel hit flag `hit`
+(`0..1`) are:
+
+```
+pattern = (a == b) | ((a == c) << 1) | ((a == d) << 2) | ((b == c) << 3) | ((b == d) << 4)
+hit     = 0 for (0, 0); thereafter 1 if the previous pixel in raster order coded 1 on D1, else 0
+```
+
+### Counters and decisions
+
+Method 2 keeps four tables of adaptive counters: `D1[0..63]`, `D2[0..31]`,
+`D3[0..31]`, and `T[1..255]`. Each counter has a 16-bit probability `c`
+(starting at `32768`) and a visit count `n` (starting at `0`). Coding a bit
+with a counter `(c, n)` uses the range coder of method 1 ("Range coder") and
+method 1's counter update rule:
+
+```
+p    = max(1, c >> 4)
+rate = (65536 * 2) / (2n + 3)
+n    = n + 1 if n < 60 else n
+code the bit with probability p/4096 of a 1
+c    = c + ((((65535 * bit) - c) * rate) >> 16)
+```
+
+At each pixel `(x, y)`:
+
+```
+D1: code bit (I == a) with counter D1[pattern * 2 + hit]
+if D1 coded 1:
+    I = a
+else:
+    if b != a:
+        D2: code bit (I == b) with counter D2[pattern]
+    if b != a and D2 coded 1:
+        I = b
+    else:
+        if d != a and d != b:
+            D3: code bit (I == d) with counter D3[pattern]
+        if d != a and d != b and D3 coded 1:
+            I = d
+        else:
+            node = 1
+            for bit_pos in 7 down to 0:
+                code bit ((I >> bit_pos) & 1) with counter T[node]
+                node = node * 2 + bit
+            I = node - 256
+```
+
+When the literal tree is reached, the decoded index `I` must satisfy
+`I < count` and `I not in {a, b, d}` (every candidate already excluded either
+by a `0` decision on `D1`, `D2`, or `D3`, or by equality with an excluded
+candidate); otherwise the file is rejected. The index stream must end at
+exactly `S` bytes after the last pixel.
+
 ## Rejection rules
 
 Reject, and do not produce a completed output file, when:
@@ -343,14 +435,19 @@ Reject, and do not produce a completed output file, when:
 - the file is shorter than 32 bytes or longer than 256 MiB;
 - the magic is not `RFI` (malformed), or the fourth magic byte and `version`
   are not 2, `header_size` is not 32, `pixel_format` is not 1, or `method` is
-  not 0 or 1 (unsupported);
+  not 0, 1, or 2 (unsupported);
 - `header_crc32` or `payload_crc32` does not match, `reserved` is not 0, or
   `payload_size` is not `file_size - 32`;
 - a dimension is 0 (malformed) or outside the limits (size limit);
 - method 0 has `payload_size != width * height * 3`;
 - method 1 has a payload shorter than 12 bytes, a stream shorter than 5 bytes,
   stream sizes that do not add up, a stream that runs out or has bytes left, or
-  a decoded residual of +128.
+  a decoded residual of +128;
+- method 2 has a payload shorter than 6 bytes, `count - 1 > 255`, a payload
+  shorter than `6 + 3 * count`, a duplicate colour in the palette, a stream
+  shorter than 5 bytes, `6 + 3 * count + stream_size != payload_size`, a
+  decoded literal index `>= count` or equal to `a`, `b`, or `d`, or a stream
+  that runs out or has bytes left.
 
 The reference tool writes outputs to `destination.partial` with `CREATE_NEW`,
 flushes, and renames onto the destination only after success. An existing
@@ -358,10 +455,12 @@ destination or temporary file is never touched.
 
 ## Reference encoder policy (non-normative)
 
-The encoder codes the image with method 1 and keeps it when the payload is
-smaller than the raw image; otherwise it writes method 0. The streams of the
-three channels are independent of the schedule, so one thread or three produce
-the same bytes.
+The encoder codes the image with method 1 and, when the image has at most 256
+distinct colours, also with method 2. It writes whichever of method 0 (raw),
+method 1, and method 2 has the smallest payload, breaking ties in order
+method 0, then method 1, then method 2. The streams of method 1's three
+channels are independent of the schedule, so one thread or three produce the
+same bytes.
 
 ## BMP subset accepted by the reference tool
 

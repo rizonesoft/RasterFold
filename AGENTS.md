@@ -8,7 +8,7 @@ Agent instructions for this repository. Human orientation lives in `README.md`. 
 
 | Path | Purpose |
 | ---- | ------- |
-| `src/` | The codec: `cm.c` (method 1, the CM coder and its threads), `fold.c` (the container), `bmp.c`, `crc32.c`, `sys.c` (Win32), `main.c`, `mem.c`, `rf.h` |
+| `src/` | The codec: `cm.c` (method 1, the CM coder and its threads), `pal.c` (method 2, the palette coder), `rc.h` (the shared range coder), `fold.c` (the container), `bmp.c`, `crc32.c`, `sys.c` (Win32), `main.c`, `mem.c`, `rf.h` |
 | `spec/FOLD.md` | The normative format specification |
 | `build.sh`, `build.ps1`, `scripts/build.py` | Native and cross builds over pinned local LLVM/Ninja, output `bin/<target>/`; root `build.ninja` is a compatibility front door |
 | `tools/bootstrap.py`, `tools/bootstrap.ps1`, `toolchain.json` | Verified repository-local Linux/Windows LLVM, Ninja and Android NDK pins; downloaded tools and archives are ignored |
