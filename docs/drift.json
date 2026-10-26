@@ -1640,10 +1640,10 @@
       "evidence": "2026-10-26: Reviewed docs/benchmarks.md against benchmarks/corpus.csv and benchmarks/results.csv for D05 T01 section 3",
       "sources": {
         "src/rf.h": "c72a8dbb03d1698fd8f9b12957884ac894f8aede680182c78821eb3a7f2c3fed",
-        "measure/verdict.json": "7194c624e48fa2590ab0689481417db892f2cde23a27b4958b4c2e983d93cd84",
-        "benchmarks/results.csv": "1285833e4dc3428a234606b2293018cc9427595dc2bb3cb1db7b7b26ebf8570a",
-        "benchmarks/corpus.csv": "0302f06e4149da73199cb20c8aecbd30e26a5c34c99a769429e389b322d4dfb6",
-        "docs/benchmarks.md": "b7fe5bcaa60c27da4fd50ec6d38fb7fb6eece3610d8efde8bc8ab9fae89eaaa3"
+        "measure/verdict.json": "4724b5f4ab0388181c2f12c606b308f9356ab98d680d371b28f0fefff13f5cee",
+        "benchmarks/results.csv": "5be61b099263a91136873d71862e3f30f8a9342a9e87a5aaaae63a9712c6acfb",
+        "benchmarks/corpus.csv": "f4e8caa4f2e8df439e0f6e1f241120572c7f5287de57f7a706d795a83b21a558",
+        "docs/benchmarks.md": "53339e0f8e88d8fa70c731fa6a4c092c63e3aa3c6632ce86bbccd67c7a74c1ab"
       },
       "reviewed_at": "2026-10-25",
       "doc_sha256": "cb432a027a1da6cf87a7b6ea38912c56736b0eb0c4802bd4ac2e31a17ce4358d",
