@@ -11,8 +11,8 @@ Every seed has `w >= 36`, `h >= 34 > XROWS = 32` (crossing the 32-row channel ba
 | 0 | `noise_64x48` | `0` (`RAW`) | `64x48` | 9,248 | High-entropy pseudorandom RGB (`random.Random(101)`) |
 | 1 | `kodim01_48x36` | `1` (`CM`) | `48x36` | 2,238 | Crop `(120, 80, 48, 36)` of `testdata/photos/kodim01.png` |
 | 2 | `pal2_2col_64x48` | `2` (`PAL`) | `64x48` | 121 | 2-colour checkerboard encoded with Method 2 (`pal_encode(..., method=2)`) |
-| 3 | `pal3_200col_64x48` | `3` (`PAL2`) | `64x48` | 501 | 200-colour pattern encoded with Method 3 (`encode_image`) |
-| 4 | `pal2_200col_64x48` | `2` (`PAL`) | `64x48` | 500 | 200-colour pattern encoded with Method 2 (`pal_encode(..., method=2)`) |
+| 3 | `pal3_200col_64x48` | `3` (`PAL2`) | `64x48` | 3,311 | 200-colour pattern encoded with Method 3 (`encode_image`) |
+| 4 | `pal2_200col_64x48` | `2` (`PAL`) | `64x48` | 3,308 | 200-colour pattern encoded with Method 2 (`pal_encode(..., method=2)`) |
 | 5 | `pal3_2col_64x48` | `3` (`PAL2`) | `64x48` | 65 | 2-colour checkerboard encoded with Method 3 (`encode_image`) |
 | 6 | `kodim03_48x36` | `1` (`CM`) | `48x36` | 2,536 | Crop `(160, 120, 48, 36)` of `testdata/photos/kodim03.png` |
 | 7 | `kodim05_64x40` | `1` (`CM`) | `64x40` | 3,722 | Crop `(180, 140, 64, 40)` of `testdata/photos/kodim05.png` |
@@ -43,7 +43,7 @@ python3 scripts/windows.py tests/fuzz_decode.py 10 1
 Output:
 
 ```text
-10 mutated files (methods 0:1, 1:5, 2:2, 3:2): 9 rejected, 1 still valid, no crash, hang or mismatch
+10 mutated files (methods 0:1, 1:5, 2:2, 3:2): 10 rejected, 0 still valid, no crash, hang or mismatch
 ```
 
 ## 20,000-Mutation Campaign (`4 x 5,000` mutations across seeds `1..4`)
@@ -52,16 +52,16 @@ Commands and summary lines:
 
 ```text
 $ python3 tests/fuzz_decode.py 5000 1
-5000 mutated files (methods 0:334, 1:3331, 2:668, 3:667): 4720 rejected, 280 still valid, no crash, hang or mismatch
+5000 mutated files (methods 0:334, 1:3331, 2:668, 3:667): 4769 rejected, 231 still valid, no crash, hang or mismatch
 
 $ python3 tests/fuzz_decode.py 5000 2
-5000 mutated files (methods 0:334, 1:3331, 2:668, 3:667): 4720 rejected, 280 still valid, no crash, hang or mismatch
+5000 mutated files (methods 0:334, 1:3331, 2:668, 3:667): 4751 rejected, 249 still valid, no crash, hang or mismatch
 
 $ python3 tests/fuzz_decode.py 5000 3
-5000 mutated files (methods 0:334, 1:3331, 2:668, 3:667): 4727 rejected, 273 still valid, no crash, hang or mismatch
+5000 mutated files (methods 0:334, 1:3331, 2:668, 3:667): 4757 rejected, 243 still valid, no crash, hang or mismatch
 
 $ python3 tests/fuzz_decode.py 5000 4
-5000 mutated files (methods 0:334, 1:3331, 2:668, 3:667): 4724 rejected, 276 still valid, no crash, hang or mismatch
+5000 mutated files (methods 0:334, 1:3331, 2:668, 3:667): 4784 rejected, 216 still valid, no crash, hang or mismatch
 ```
 
-Aggregate across `20,000` mutated files (`methods 0:1336, 1:13324, 2:2672, 3:2668`): `18,891` rejected with exit code `4`, `1,109` accepted with exit code `0` and identical pixels to `tests/rfi_ref.py`, `0` crashes, `0` hangs, and `0` oracle mismatches.
+Aggregate across `20,000` mutated files (`methods 0:1336, 1:13324, 2:2672, 3:2668`): `19,061` rejected with exit code `4`, `939` accepted with exit code `0` and identical pixels to `tests/rfi_ref.py`, `0` crashes, `0` hangs, and `0` oracle mismatches.

@@ -996,6 +996,10 @@ def fuzz_harness() -> None:
         check(w >= 36 and h >= 34 and w * h > 1200, f"seed {name} dimensions {w}x{h} smaller than 36x34 (>1200 px)")
         check(blob[16] == m, f"seed {name} header method {blob[16]} != {m}")
         check(struct.unpack_from("<II", blob, 8) == (w, h), f"seed {name} header dimensions mismatch")
+        if "2col" in name:
+            check(struct.unpack_from("<H", blob, 32)[0] + 1 == 2, f"seed {name} palette count != 2")
+        if "200col" in name:
+            check(struct.unpack_from("<H", blob, 32)[0] + 1 == 200, f"seed {name} palette count != 200")
 
     with tempfile.TemporaryDirectory(prefix="rf_fuzz_test_") as tmp:
         td = Path(tmp)

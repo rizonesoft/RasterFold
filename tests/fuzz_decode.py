@@ -56,7 +56,7 @@ def recrc(b: bytearray, update_payload_size: bool = True) -> bytes:
 def seed_records() -> list[tuple[str, int, int, int, bytes]]:
     WORK.mkdir(parents=True, exist_ok=True)
     cache_key = hashlib.sha256((ROOT / "tests" / "rfi_ref.py").read_bytes()).hexdigest()[:16]
-    cache_path = WORK / f"seeds_v2_{cache_key}.json"
+    cache_path = WORK / f"seeds_v3_{cache_key}.json"
     if cache_path.is_file():
         try:
             raw = json.loads(cache_path.read_text(encoding="utf-8"))
@@ -80,21 +80,26 @@ def seed_records() -> list[tuple[str, int, int, int, bytes]]:
     )
     pal3_2col = rf.encode_image(pal_w, pal_h, chk_rgb)
     assert pal3_2col[16] == rf.METHOD_PAL2
+    assert struct.unpack_from("<H", pal3_2col, 32)[0] + 1 == 2
     pal2_2col_payload = rf.pal_encode(pal_w, pal_h, chk_rgb, method=rf.METHOD_PAL)
     assert pal2_2col_payload is not None
     pal2_2col = rf.build_file(pal_w, pal_h, rf.METHOD_PAL, pal2_2col_payload)
+    assert struct.unpack_from("<H", pal2_2col, 32)[0] + 1 == 2
 
     pal200 = [bytes(((i * 53 + 17) & 0xFF, (i * 97 + 43) & 0xFF, (i * 151 + 89) & 0xFF)) for i in range(200)]
+    assert len(set(pal200)) == 200
     pal200_rgb = b"".join(
-        pal200[((x * 7 + y * 13 + ((x ^ y) & 3)) % 200) if (x + y) >= 200 else (x + y)]
+        pal200[(y * pal_w + x) if (y * pal_w + x) < 200 else ((x * 7 + y * 13 + ((x ^ y) & 3)) % 200)]
         for y in range(pal_h)
         for x in range(pal_w)
     )
     pal3_200col = rf.encode_image(pal_w, pal_h, pal200_rgb)
     assert pal3_200col[16] == rf.METHOD_PAL2
+    assert struct.unpack_from("<H", pal3_200col, 32)[0] + 1 == 200
     pal2_200col_payload = rf.pal_encode(pal_w, pal_h, pal200_rgb, method=rf.METHOD_PAL)
     assert pal2_200col_payload is not None
     pal2_200col = rf.build_file(pal_w, pal_h, rf.METHOD_PAL, pal2_200col_payload)
+    assert struct.unpack_from("<H", pal2_200col, 32)[0] + 1 == 200
 
     photo_folds: list[tuple[str, int, int, int, bytes]] = []
     photos_dir = ROOT / "testdata" / "photos"
