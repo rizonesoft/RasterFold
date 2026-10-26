@@ -69,7 +69,6 @@ int main(int argc, char **argv) {
             ok &= rc == 0 && dec_im.rgb != 0 && dec_im.width == (uint32_t)im.w && dec_im.height == (uint32_t)im.h && memcmp(dec_im.rgb, im.rgb, raw) == 0;
             rf_free(dec_im.rgb);
             rf_free(fold);
-            if (method == RF_METHOD_RAW) { be = bd = t1 - t0; break; }   /* container stores raw */
             if (t1 - t0 < be) be = t1 - t0;
             if (t3 - t2 < bd) bd = t3 - t2;
         }

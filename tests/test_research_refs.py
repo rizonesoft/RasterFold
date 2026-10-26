@@ -901,12 +901,41 @@ class ResearchRefsTests(unittest.TestCase):
                 1,
             )
             bad_pal.write_text(bad_pal_text, encoding="utf-8")
-            bad_exe = res_dir / "bench_bad.exe"
+            bad_exe = res_dir / "bench_bad.c.exe"
             ab.build(bad_pal, bad_exe, flags=("-O0",))
             with mock.patch.object(ab, "RES", res_dir):
                 with self.assertRaises(SystemExit) as ctx:
                     ab.run(bad_exe, ["kat_pal"], reps=1)
                 self.assertIn("MISMATCH", str(ctx.exception))
+
+            # Verify RAW runs all requested repetitions and measures decode timing independently of encode timing.
+            rep_cm = res_dir / "cm_rep_raw.c"
+            rep_cm_text = (
+                "#include <stdio.h>\n"
+                + (ROOT / "src" / "cm.c").read_text(encoding="utf-8").replace(
+                    "int rf_cm_encode(",
+                    "int rf_cm_encode_orig(",
+                    1,
+                )
+                + "\nstatic int g_raw_enc_calls = 0;\n"
+                "int rf_cm_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size_t cap, size_t *written, int threads, rf_error *err) {\n"
+                "    g_raw_enc_calls++;\n"
+                "    if (w == 1 && h == 1) {\n"
+                "        for (volatile int spin = 0; spin < 15000000; spin++) {}\n"
+                "        printf(\"RAW_ENC_CALL=%d\\n\", g_raw_enc_calls);\n"
+                "    }\n"
+                "    return rf_cm_encode_orig(rgb, w, h, out, cap, written, threads, err);\n"
+                "}\n"
+            )
+            rep_cm.write_text(rep_cm_text, encoding="utf-8")
+            rep_exe = res_dir / "bench_rep.exe"
+            ab.build(rep_cm, rep_exe, flags=("-O0",))
+            with mock.patch.object(ab, "RES", res_dir):
+                rep_out = ab.run(rep_exe, ["raw_1x1"], reps=2)
+            self.assertIn("RAW_ENC_CALL=1", rep_out)
+            self.assertIn("RAW_ENC_CALL=2", rep_out)
+            rep_rows = ab.parse_bench_rows(rep_out, ["raw_1x1"])
+            self.assertGreater(rep_rows["raw_1x1"][1], rep_rows["raw_1x1"][2] * 5.0)
 
 
 if __name__ == "__main__":

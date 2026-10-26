@@ -1689,13 +1689,13 @@
       "reviewed": "Author-attested: 2026-10-25 re-read spec/FOLD.md against src/cm.c and src/simd.h after D02 T01 section 4 (byte-identical cm.c hot-loop vectorization and row-context specialization; format version 2 bitstream unchanged)"
     },
     "research/README.md": {
-      "evidence": "Author-attested: 2026-10-26 re-read research/README.md against research/bench.c, research/ab.py, and src/fold.c after updating bench.c and ab.py to measure through rf_encode and rf_decode",
+      "evidence": "Author-attested: 2026-10-26 re-read research/README.md against research/bench.c and research/ab.py after preserving RAW decode timings across reps",
       "sources": {
         "research/corpus.py": "4434e32d8cdb5e70d887f03f7f4cdfbe9ada666ea680c7d6ce176cc9b2858bb7",
         "research/ab.py": "68176afdb2e862344be06deaa3e5b830183dbc1181890a6be0121ebdf303e51a",
         "research/vsjxl.py": "521d2b99dba81de9061f1c0b3eb2af4480ca0be97dd9dfb5feeb6c7bcf868b89",
         "research/prof.py": "7fa28a84aab62f0eb79fd579bcc01b6e2e55cc200bdaa96c0218b2ad4aa05605",
-        "research/bench.c": "31239f6ac5e5721d0b8f061b24fbb320521dc20848529a450e5f1709aa9fb6ea",
+        "research/bench.c": "9a7cc6abb5c0249a143257bf40588871152a9bcb80fea27e9c1481a00499b588",
         "research/README.md": "07577555b23fc1e222538295d5bb13193423c77e175095dbcd50dd9571f044ca"
       },
       "review": "Author-attested: 2026-10-25 re-read research/README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)",
