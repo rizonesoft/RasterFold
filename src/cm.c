@@ -115,6 +115,7 @@ typedef struct {
     int32_t lms[LMSN] __attribute__((aligned(16)));
     renc enc;
     rdec dec;
+    size_t bytes;       /* lower bound on flushed stream size (pos + pending + 4) */
     int bad;            /* decoder saw the impossible residual +128 */
     volatile int32_t done;  /* rows finished, published to the other channels */
     uint8_t pad[64];
@@ -122,6 +123,7 @@ typedef struct {
 
 typedef struct {
     uint32_t w, h;
+    size_t cap;         /* payload cap for encode early-exit */
     uint8_t *rgb;       /* row 0 pixel base: read by the encoder, written by the decoder */
     ptrdiff_t stride;   /* signed byte step from row y to row y + 1 */
     int r_off;          /* byte offset of R in a 3-byte pixel: 0 for RGB, 2 for BGR */
@@ -130,7 +132,7 @@ typedef struct {
     chan_t ch[3];
     void *block;
     volatile int cancel;    /* worker threads exit at once when set before they start */
-    volatile int abort;     /* set when a decoded stream runs out of bytes */
+    volatile int abort;     /* set when a decoded stream runs out of bytes or encode exceeds cap */
 } cm_t;
 
 static int cm_alloc(cm_t *m, uint32_t w, uint32_t h, uint8_t *rgb, size_t bmp_stride, rf_error *err) {
@@ -161,6 +163,7 @@ static int cm_alloc(cm_t *m, uint32_t w, uint32_t h, uint8_t *rgb, size_t bmp_st
         for (size_t i = 0; i < (size_t)WSEL * NODES; i++)
             for (int k = 0; k < WSTRIDE; k++) ch->wt[i * WSTRIDE + k] = k < NMODEL ? 19661 : 0;
         for (int k = 0; k < LMSN; k++) ch->lms[k] = 0;
+        ch->bytes = 5u;
         ch->bad = 0;
         ch->done = 0;
     }
@@ -596,6 +599,13 @@ RF_INLINE void run_pipelined(cm_t *m, const int enc) {
                 }
             }
             if (m->abort) break;
+        } else {
+            size_t tot = 24u;
+            for (int c = 0; c < 3; c++) tot += m->ch[c].enc.pos + (size_t)m->ch[c].enc.pending;
+            if (tot > m->cap) {
+                m->abort = 1;
+                break;
+            }
         }
     }
 }
@@ -618,7 +628,7 @@ RF_INLINE void run_channel(cm_t *m, const int c, const int enc) {
         if (c >= 1) wait_done(&m->ch[0].done, (int32_t)y + 1);
         if (c == 2) wait_done(&m->ch[1].done, (int32_t)y + 1);
         if (c < 2 && y >= XROWS) wait_done(&m->ch[2].done, (int32_t)(y - XROWS + 1));
-        if (!enc && __atomic_load_n(&m->abort, __ATOMIC_ACQUIRE)) break;
+        if (__atomic_load_n(&m->abort, __ATOMIC_ACQUIRE)) break;
         row_ctx_t rc;
         row_ctx_init_ch(m, y, c, &rc);
         if (y >= 2 && w >= 4) {
@@ -651,10 +661,20 @@ RF_INLINE void run_channel(cm_t *m, const int c, const int enc) {
                 __atomic_store_n(&m->abort, 1, __ATOMIC_RELEASE);
             }
             if (__atomic_load_n(&m->abort, __ATOMIC_ACQUIRE)) break;
+        } else {
+            __atomic_store_n(&m->ch[c].bytes, m->ch[c].enc.pos + (size_t)m->ch[c].enc.pending + 4u, __ATOMIC_RELAXED);
+            size_t tot = 12u + __atomic_load_n(&m->ch[0].bytes, __ATOMIC_RELAXED)
+                       + __atomic_load_n(&m->ch[1].bytes, __ATOMIC_RELAXED)
+                       + __atomic_load_n(&m->ch[2].bytes, __ATOMIC_RELAXED);
+            if (tot > m->cap) {
+                __atomic_store_n(&m->abort, 1, __ATOMIC_RELEASE);
+                break;
+            }
+            if (__atomic_load_n(&m->abort, __ATOMIC_ACQUIRE)) break;
         }
         __atomic_store_n(&m->ch[c].done, (int32_t)y + 1, __ATOMIC_RELEASE);
     }
-    if (!enc) __atomic_store_n(&m->ch[c].done, (int32_t)m->h, __ATOMIC_RELEASE);
+    __atomic_store_n(&m->ch[c].done, (int32_t)m->h, __ATOMIC_RELEASE);
 }
 static RF_NOINLINE void run_g_enc(void *p) { run_channel(p, 0, 1); }
 static RF_NOINLINE void run_r_enc(void *p) { if (!((cm_t *)p)->cancel) run_channel(p, 1, 1); }
@@ -693,9 +713,10 @@ static void run(cm_t *m, int threads, const int enc) {
 int rf_cm_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size_t cap, size_t *written, int threads, rf_error *err) {
     cm_tables();
     *written = 0;
-    if (cap < 12) return RF_OK;
+    if (cap < 27u) return RF_OK;
     cm_t m;
     if (cm_alloc(&m, w, h, (uint8_t *)rgb, 0, err) != RF_OK) return RF_ERR_LIMIT;
+    m.cap = cap;
     size_t each = (size_t)w * h + 64;
     for (int c = 0; c < 3; c++) renc_init(&m.ch[c].enc, out + 12 + each * c, each);
     run(&m, threads, 1);
@@ -704,7 +725,7 @@ int rf_cm_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size_
         renc_flush(&m.ch[c].enc);
         total += m.ch[c].enc.pos;
     }
-    int fits = total <= cap;
+    int fits = !m.abort && total <= cap;
     for (int c = 0; c < 3; c++) fits &= m.ch[c].enc.pos <= each;
     if (fits) {
         uint8_t *o = out + 12;

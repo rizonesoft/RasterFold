@@ -46,10 +46,12 @@ RF_INLINE void pal_update_m3(uint16_t *c, uint32_t r, int bit) {
 }
 
 RF_INLINE void pal_enc_bit(renc *enc, const uint16_t *rate_tab, uint16_t *c, uint8_t *n, int bit) {
-    uint32_t p = (uint32_t)(*c >> 4);
+    uint32_t cur = (uint32_t)*c;
+    uint32_t p = cur >> 4;
     if (p == 0) p = 1u;
-    uint32_t r = rate_tab[*n];
-    if (*n < 60u) (*n)++;
+    uint8_t cnt = *n;
+    uint32_t r = rate_tab[cnt];
+    if (cnt < 60u) *n = (uint8_t)(cnt + 1u);
     renc_bit(enc, bit, p);
     pal_update_m3(c, r, bit);
 }
@@ -89,57 +91,77 @@ RF_INLINE uint32_t pal_neighbours_m2(const uint8_t *cur_row, const uint8_t *prv_
          | ((uint32_t)(b == c) << 3) | ((uint32_t)(b == d) << 4);
 }
 
-RF_INLINE uint32_t pal_neighbours_m3(const uint8_t *cur_row, const uint8_t *prv_row, const uint8_t *prv2_row,
-                                     uint32_t w, uint32_t x, uint32_t y,
-                                     uint32_t *a_out, uint32_t *b_out, uint32_t *e_out) {
+RF_INLINE uint32_t pal_pat_m3(const uint8_t *cur_row, const uint8_t *prv_row, const uint8_t *prv2_row,
+                              uint32_t w, uint32_t x, uint32_t y,
+                              uint32_t *a_out, uint32_t *b_out, uint32_t *c_out, uint32_t *d_out, uint32_t *ww_out) {
     uint32_t a, b, c, d, ww, nn;
-    if (y == 0) {
-        a = x > 0 ? cur_row[x - 1] : 0u;
-        b = c = d = a;
-        nn = a;
-    } else {
+    if (y >= 2u && x >= 2u && x + 1u < w) {
+        a = cur_row[x - 1u];
         b = prv_row[x];
-        a = x > 0 ? cur_row[x - 1] : b;
-        c = x > 0 ? prv_row[x - 1] : b;
-        d = (x + 1u < w) ? prv_row[x + 1u] : b;
-        nn = (y == 1u) ? b : prv2_row[x];
+        c = prv_row[x - 1u];
+        d = prv_row[x + 1u];
+        ww = cur_row[x - 2u];
+        nn = prv2_row[x];
+    } else {
+        if (y == 0) {
+            a = x > 0 ? cur_row[x - 1] : 0u;
+            b = c = d = a;
+            nn = a;
+        } else {
+            b = prv_row[x];
+            a = x > 0 ? cur_row[x - 1] : b;
+            c = x > 0 ? prv_row[x - 1] : b;
+            d = (x + 1u < w) ? prv_row[x + 1u] : b;
+            nn = (y == 1u) ? b : prv2_row[x];
+        }
+        ww = (x >= 2u) ? cur_row[x - 2u] : a;
     }
-    ww = (x >= 2u) ? cur_row[x - 2u] : a;
-    uint32_t e = (d != a && d != b) ? d : ((c != a && c != b) ? c : ((ww != a && ww != b) ? ww : a));
     *a_out = a;
     *b_out = b;
-    *e_out = e;
+    *c_out = c;
+    *d_out = d;
+    *ww_out = ww;
     return (uint32_t)(a == b) | ((uint32_t)(a == c) << 1) | ((uint32_t)(a == d) << 2)
          | ((uint32_t)(b == c) << 3) | ((uint32_t)(b == d) << 4)
          | ((uint32_t)(ww == a) << 5) | ((uint32_t)(nn == b) << 6);
 }
 
+RF_INLINE uint32_t pal_third_m3(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t ww) {
+    return (d != a && d != b) ? d : ((c != a && c != b) ? c : ((ww != a && ww != b) ? ww : a));
+}
+
 /* 1024-slot open-addressing hash of R<<16|G<<8|B (stopping at the 257th colour),
-   packed in 3200 stack bytes (< 4096) so Windows x64 freestanding builds never
+   packed in 1024 stack bytes (< 4096) so Windows x64 freestanding builds never
    emit ___chkstk_ms and >256-colour photographs do zero heap allocations. */
-RF_NOINLINE uint32_t rf_pal_build(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *pal) {
-    uint8_t ht_rgb[1024 * 3];
-    uint64_t ht_used[16];
-    memset(ht_used, 0, sizeof(ht_used));
-    uint32_t count = 0;
+static RF_NOINLINE uint32_t pal_build_internal(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *pal, uint8_t *ht_idx_out) {
     size_t npix = (size_t)w * h;
-    for (size_t i = 0; i < npix; i++) {
+    if (npix == 0) return 0;
+    uint8_t ht_idx_local[1024];
+    uint8_t *ht_idx = ht_idx_out ? ht_idx_out : ht_idx_local;
+    memset(ht_idx, 0, 1024u);
+    pal[0] = rgb[0];
+    pal[1] = rgb[1];
+    pal[2] = rgb[2];
+    uint32_t first_key = ((uint32_t)rgb[0] << 16) | ((uint32_t)rgb[1] << 8) | (uint32_t)rgb[2];
+    uint32_t count = 1u;
+    uint32_t prev_key0 = first_key, prev_key1 = first_key;
+    for (size_t i = 1; i < npix; i++) {
         uint32_t r = rgb[3 * i + 0], g = rgb[3 * i + 1], b = rgb[3 * i + 2];
         uint32_t key = (r << 16) | (g << 8) | b;
+        if (key == prev_key0 || key == prev_key1) continue;
+        prev_key1 = prev_key0;
+        prev_key0 = key;
+        if (key == first_key) continue;
         uint32_t slot = (key * 0x9E3779B1u) >> 22;
-        while ((ht_used[slot >> 6] >> (slot & 63u)) & 1u) {
-            uint32_t cur = ((uint32_t)ht_rgb[3 * slot + 0] << 16)
-                         | ((uint32_t)ht_rgb[3 * slot + 1] << 8)
-                         | (uint32_t)ht_rgb[3 * slot + 2];
-            if (cur == key) break;
+        while (ht_idx[slot] != 0) {
+            uint32_t idx = ht_idx[slot];
+            if (pal[3 * idx + 0] == (uint8_t)r && pal[3 * idx + 1] == (uint8_t)g && pal[3 * idx + 2] == (uint8_t)b)
+                break;
             slot = (slot + 1u) & 1023u;
         }
-        if (!((ht_used[slot >> 6] >> (slot & 63u)) & 1u)) {
+        if (ht_idx[slot] == 0) {
             if (count == 256u) return 0;
-            ht_used[slot >> 6] |= 1ull << (slot & 63u);
-            ht_rgb[3 * slot + 0] = (uint8_t)r;
-            ht_rgb[3 * slot + 1] = (uint8_t)g;
-            ht_rgb[3 * slot + 2] = (uint8_t)b;
+            ht_idx[slot] = (uint8_t)count;
             pal[3 * count + 0] = (uint8_t)r;
             pal[3 * count + 1] = (uint8_t)g;
             pal[3 * count + 2] = (uint8_t)b;
@@ -149,10 +171,15 @@ RF_NOINLINE uint32_t rf_pal_build(const uint8_t *rgb, uint32_t w, uint32_t h, ui
     return count;
 }
 
+RF_NOINLINE uint32_t rf_pal_build(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *pal) {
+    return pal_build_internal(rgb, w, h, pal, 0);
+}
+
 int rf_pal_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size_t cap, size_t *written, rf_error *err) {
     *written = 0;
     uint8_t pal[256 * 3];
-    uint32_t count = rf_pal_build(rgb, w, h, pal);
+    uint8_t ht_idx[1024];
+    uint32_t count = pal_build_internal(rgb, w, h, pal, ht_idx);
     if (count == 0) return RF_OK;
     size_t hdr_len = 2u + 3u * (size_t)count + 4u;
     if (cap < hdr_len + 5u) return RF_OK;
@@ -164,64 +191,116 @@ int rf_pal_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size
     pal_scratch *sc = (pal_scratch *)alloc_buf;
     uint8_t *work = alloc_buf + scratch_bytes;
     uint8_t *rows = work + cap + 64u;
-    memset(sc->ht_key, 0xFF, sizeof(sc->ht_key));
-    for (uint32_t i = 0; i < count; i++) {
-        uint32_t key = ((uint32_t)pal[3 * i + 0] << 16) | ((uint32_t)pal[3 * i + 1] << 8) | (uint32_t)pal[3 * i + 2];
-        uint32_t slot = (key * 0x9E3779B1u) >> 22;
-        while (sc->ht_key[slot] != 0xFFFFFFFFu) slot = (slot + 1u) & 1023u;
-        sc->ht_key[slot] = key;
-        sc->ht_idx[slot] = (uint8_t)i;
-    }
     pal_model_init(&sc->m);
     renc enc;
     renc_init(&enc, work + hdr_len, stream_cap + 32u);
     uint32_t hit = 0;
-    for (uint32_t y = 0; y < h; y++) {
-        uint8_t *cur_row = rows + (size_t)(y % 3u) * w;
-        const uint8_t *prv_row = rows + (size_t)((y + 2u) % 3u) * w;
-        const uint8_t *prv2_row = rows + (size_t)((y + 1u) % 3u) * w;
-        const uint8_t *p = rgb + (size_t)y * w * 3u;
-        for (uint32_t x = 0; x < w; x++) {
-            uint32_t key = ((uint32_t)p[3 * x + 0] << 16) | ((uint32_t)p[3 * x + 1] << 8) | (uint32_t)p[3 * x + 2];
-            uint32_t slot = (key * 0x9E3779B1u) >> 22;
-            while (sc->ht_key[slot] != key) slot = (slot + 1u) & 1023u;
-            uint32_t idx = sc->ht_idx[slot];
-            cur_row[x] = (uint8_t)idx;
-            uint32_t a, b, e;
-            uint32_t pat = pal_neighbours_m3(cur_row, prv_row, prv2_row, w, x, y, &a, &b, &e);
-            uint32_t d1_ctx = pat * 2u + hit;
-            if (idx == a) {
-                pal_enc_bit(&enc, sc->m.rate, &sc->m.d1[d1_ctx], &sc->m.d1_n[d1_ctx], 1);
-                hit = 1u;
-                continue;
-            }
-            pal_enc_bit(&enc, sc->m.rate, &sc->m.d1[d1_ctx], &sc->m.d1_n[d1_ctx], 0);
-            hit = 0;
-            if (count == 2u) continue;
-            if (b != a) {
-                if (idx == b) {
-                    pal_enc_bit(&enc, sc->m.rate, &sc->m.d2[pat], &sc->m.d2_n[pat], 1);
-                    continue;
-                }
-                pal_enc_bit(&enc, sc->m.rate, &sc->m.d2[pat], &sc->m.d2_n[pat], 0);
-            }
-            if (e != a && e != b) {
-                if (idx == e) {
-                    pal_enc_bit(&enc, sc->m.rate, &sc->m.d3[pat], &sc->m.d3_n[pat], 1);
-                    continue;
-                }
-                pal_enc_bit(&enc, sc->m.rate, &sc->m.d3[pat], &sc->m.d3_n[pat], 0);
-            }
-            uint32_t node = 1u;
-            for (int bit_pos = 7; bit_pos >= 0; bit_pos--) {
-                int bit = (int)((idx >> bit_pos) & 1u);
-                pal_enc_bit(&enc, sc->m.rate, &sc->m.tree[node], &sc->m.tree_n[node], bit);
-                node = node * 2u + (uint32_t)bit;
-            }
+    if (count == 1u) {
+        size_t npix = (size_t)w * h;
+        for (size_t i = 0; i < npix; i++) {
+            uint32_t d1_ctx = 127u * 2u + hit;
+            pal_enc_bit(&enc, sc->m.rate, &sc->m.d1[d1_ctx], &sc->m.d1_n[d1_ctx], 1);
+            hit = 1u;
         }
         if (enc.pos > stream_cap) {
             rf_free(alloc_buf);
             return RF_OK;
+        }
+    } else {
+        uint32_t first_key = ((uint32_t)pal[0] << 16) | ((uint32_t)pal[1] << 8) | (uint32_t)pal[2];
+        uint32_t prev_key0 = first_key, prev_idx0 = 0;
+        uint32_t prev_key1 = first_key, prev_idx1 = 0;
+        for (uint32_t y = 0; y < h; y++) {
+            uint8_t *cur_row = rows + (size_t)(y % 3u) * w;
+            const uint8_t *prv_row = rows + (size_t)((y + 2u) % 3u) * w;
+            const uint8_t *prv2_row = rows + (size_t)((y + 1u) % 3u) * w;
+            const uint8_t *p = rgb + (size_t)y * w * 3u;
+            for (uint32_t x = 0; x < w; x++) {
+                uint32_t r = p[3 * x + 0], g = p[3 * x + 1], bl = p[3 * x + 2];
+                uint32_t key = (r << 16) | (g << 8) | bl;
+                uint32_t idx;
+                if (key == prev_key0) {
+                    idx = prev_idx0;
+                    cur_row[x] = (uint8_t)idx;
+                    if (y >= 2u && x >= 2u && x + 1u < w) {
+                        uint32_t b = prv_row[x];
+                        uint32_t c = prv_row[x - 1u];
+                        uint32_t d = prv_row[x + 1u];
+                        uint32_t ww = cur_row[x - 2u];
+                        uint32_t nn = prv2_row[x];
+                        uint32_t pat = (uint32_t)(idx == b) | ((uint32_t)(idx == c) << 1) | ((uint32_t)(idx == d) << 2)
+                                     | ((uint32_t)(b == c) << 3) | ((uint32_t)(b == d) << 4)
+                                     | ((uint32_t)(ww == idx) << 5) | ((uint32_t)(nn == b) << 6);
+                        uint32_t d1_ctx = pat * 2u + hit;
+                        pal_enc_bit(&enc, sc->m.rate, &sc->m.d1[d1_ctx], &sc->m.d1_n[d1_ctx], 1);
+                        hit = 1u;
+                        continue;
+                    }
+                } else if (key == prev_key1) {
+                    idx = prev_idx1;
+                    prev_key1 = prev_key0;
+                    prev_idx1 = prev_idx0;
+                    prev_key0 = key;
+                    prev_idx0 = idx;
+                    cur_row[x] = (uint8_t)idx;
+                } else if (key == first_key) {
+                    idx = 0;
+                    prev_key1 = prev_key0;
+                    prev_idx1 = prev_idx0;
+                    prev_key0 = key;
+                    prev_idx0 = 0;
+                    cur_row[x] = 0;
+                } else {
+                    uint32_t slot = (key * 0x9E3779B1u) >> 22;
+                    for (;;) {
+                        idx = ht_idx[slot];
+                        if (idx != 0 && pal[3 * idx + 0] == (uint8_t)r && pal[3 * idx + 1] == (uint8_t)g && pal[3 * idx + 2] == (uint8_t)bl)
+                            break;
+                        slot = (slot + 1u) & 1023u;
+                    }
+                    prev_key1 = prev_key0;
+                    prev_idx1 = prev_idx0;
+                    prev_key0 = key;
+                    prev_idx0 = idx;
+                    cur_row[x] = (uint8_t)idx;
+                }
+                uint32_t a, b, c, d, ww;
+                uint32_t pat = pal_pat_m3(cur_row, prv_row, prv2_row, w, x, y, &a, &b, &c, &d, &ww);
+                uint32_t d1_ctx = pat * 2u + hit;
+                if (idx == a) {
+                    pal_enc_bit(&enc, sc->m.rate, &sc->m.d1[d1_ctx], &sc->m.d1_n[d1_ctx], 1);
+                    hit = 1u;
+                    continue;
+                }
+                pal_enc_bit(&enc, sc->m.rate, &sc->m.d1[d1_ctx], &sc->m.d1_n[d1_ctx], 0);
+                hit = 0;
+                if (count == 2u) continue;
+                if (b != a) {
+                    if (idx == b) {
+                        pal_enc_bit(&enc, sc->m.rate, &sc->m.d2[pat], &sc->m.d2_n[pat], 1);
+                        continue;
+                    }
+                    pal_enc_bit(&enc, sc->m.rate, &sc->m.d2[pat], &sc->m.d2_n[pat], 0);
+                }
+                uint32_t e = pal_third_m3(a, b, c, d, ww);
+                if (e != a && e != b) {
+                    if (idx == e) {
+                        pal_enc_bit(&enc, sc->m.rate, &sc->m.d3[pat], &sc->m.d3_n[pat], 1);
+                        continue;
+                    }
+                    pal_enc_bit(&enc, sc->m.rate, &sc->m.d3[pat], &sc->m.d3_n[pat], 0);
+                }
+                uint32_t node = 1u;
+                for (int bit_pos = 7; bit_pos >= 0; bit_pos--) {
+                    int bit = (int)((idx >> bit_pos) & 1u);
+                    pal_enc_bit(&enc, sc->m.rate, &sc->m.tree[node], &sc->m.tree_n[node], bit);
+                    node = node * 2u + (uint32_t)bit;
+                }
+            }
+            if (enc.pos > stream_cap) {
+                rf_free(alloc_buf);
+                return RF_OK;
+            }
         }
     }
     renc_flush(&enc);
@@ -289,8 +368,8 @@ int rf_pal_decode(const uint8_t *in, size_t n, uint8_t *out, size_t stride, uint
         const uint8_t *prv2_row = rows + (size_t)((y + 1u) % 3u) * w;
         uint8_t *dst = stride ? (out + 54u + (size_t)(h - 1u - y) * stride) : (out + (size_t)y * w * 3u);
         for (uint32_t x = 0; x < w; x++) {
-            uint32_t a, b, e;
-            uint32_t pat = m3 ? pal_neighbours_m3(cur_row, prv_row, prv2_row, w, x, y, &a, &b, &e)
+            uint32_t a, b, c = 0, d = 0, ww = 0, e = 0;
+            uint32_t pat = m3 ? pal_pat_m3(cur_row, prv_row, prv2_row, w, x, y, &a, &b, &c, &d, &ww)
                               : pal_neighbours_m2(cur_row, prv_row, w, x, y, &a, &b, &e);
             uint32_t d1_ctx = pat * 2u + hit;
             uint32_t idx;
@@ -304,33 +383,36 @@ int rf_pal_decode(const uint8_t *in, size_t n, uint8_t *out, size_t stride, uint
                 hit = 0;
                 if (b != a && pal_dec_bit(&dec, sc->m.rate, &sc->m.d2[pat], &sc->m.d2_n[pat], m3)) {
                     idx = b;
-                } else if (e != a && e != b && pal_dec_bit(&dec, sc->m.rate, &sc->m.d3[pat], &sc->m.d3_n[pat], m3)) {
-                    idx = e;
                 } else {
-                    uint32_t node = 1u;
-                    for (int bit_pos = 0; bit_pos < 8; bit_pos++) {
-                        int bit = pal_dec_bit(&dec, sc->m.rate, &sc->m.tree[node], &sc->m.tree_n[node], m3);
-                        node = node * 2u + (uint32_t)bit;
-                    }
-                    idx = node - 256u;
-                    if (idx >= count || idx == a || idx == b || idx == e) {
-                        bad = 1;
-                        break;
+                    if (m3) e = pal_third_m3(a, b, c, d, ww);
+                    if (e != a && e != b && pal_dec_bit(&dec, sc->m.rate, &sc->m.d3[pat], &sc->m.d3_n[pat], m3)) {
+                        idx = e;
+                    } else {
+                        uint32_t node = 1u;
+                        for (int bit_pos = 0; bit_pos < 8; bit_pos++) {
+                            int bit = pal_dec_bit(&dec, sc->m.rate, &sc->m.tree[node], &sc->m.tree_n[node], m3);
+                            node = node * 2u + (uint32_t)bit;
+                        }
+                        idx = node - 256u;
+                        if (idx >= count || idx == a || idx == b || idx == e) {
+                            bad = 1;
+                            break;
+                        }
                     }
                 }
             }
             if (dec.in >= dec.lim) rdec_tail(&dec);
             cur_row[x] = (uint8_t)idx;
-            const uint8_t *c = pal + 3u * (size_t)idx;
+            const uint8_t *col = pal + 3u * (size_t)idx;
             size_t px = 3u * (size_t)x;
             if (stride) {
-                dst[px + 0] = c[2];
-                dst[px + 1] = c[1];
-                dst[px + 2] = c[0];
+                dst[px + 0] = col[2];
+                dst[px + 1] = col[1];
+                dst[px + 2] = col[0];
             } else {
-                dst[px + 0] = c[0];
-                dst[px + 1] = c[1];
-                dst[px + 2] = c[2];
+                dst[px + 0] = col[0];
+                dst[px + 1] = col[1];
+                dst[px + 2] = col[2];
             }
         }
         if (bad || dec.in >= dec.lim) {

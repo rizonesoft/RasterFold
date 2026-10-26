@@ -1146,16 +1146,42 @@ class ResearchRefsTests(unittest.TestCase):
                 (ROOT / "src" / "fold.c")
                 .read_text(encoding="utf-8")
                 .replace(
-                    "    if (n > 0) {\n"
-                    "        size_t pal_n = 0;\n"
-                    "        rc = rf_pal_encode(img->rgb, img->width, img->height, f + RF_HEADER_SIZE, n - 1, &pal_n, err);\n"
-                    "        if (rc) { rf_free(f); return rc; }\n"
+                    "    size_t pal_n = 0;\n"
+                    "    rc = rf_pal_encode(img->rgb, img->width, img->height, f + RF_HEADER_SIZE, raw - 1, &pal_n, err);\n"
+                    "    if (rc) { rf_free(f); return rc; }\n"
+                    "    uint8_t *pal_buf = 0;\n"
+                    "    size_t cm_cap = raw - 1;\n"
+                    "    if (pal_n > 0) {\n"
+                    "        pal_buf = rf_alloc(pal_n);\n"
+                    "        if (!pal_buf) { rf_free(f); return rf_fail(err, RF_ERR_LIMIT, \"out of memory\"); }\n"
+                    "        memcpy(pal_buf, f + RF_HEADER_SIZE, pal_n);\n"
+                    "        cm_cap = pal_n;\n"
+                    "    }\n"
+                    "    size_t n = 0;\n"
+                    "    rc = rf_cm_encode(img->rgb, img->width, img->height, f + RF_HEADER_SIZE, cm_cap, &n, threads, err);\n"
+                    "    if (rc) { rf_free(pal_buf); rf_free(f); return rc; }\n"
+                    "    uint32_t method = RF_METHOD_CM;\n"
+                    "    if (n == 0) {\n"
                     "        if (pal_n > 0) {\n"
+                    "            memcpy(f + RF_HEADER_SIZE, pal_buf, pal_n);\n"
                     "            n = pal_n;\n"
                     "            method = RF_METHOD_PAL2;\n"
+                    "        } else {\n"
+                    "            memcpy(f + RF_HEADER_SIZE, img->rgb, raw);\n"
+                    "            n = raw;\n"
+                    "            method = RF_METHOD_RAW;\n"
                     "        }\n"
+                    "    }\n"
+                    "    rf_free(pal_buf);\n",
+                    "    size_t n = 0;\n"
+                    "    rc = rf_cm_encode(img->rgb, img->width, img->height, f + RF_HEADER_SIZE, raw - 1, &n, threads, err);\n"
+                    "    if (rc) { rf_free(f); return rc; }\n"
+                    "    uint32_t method = RF_METHOD_CM;\n"
+                    "    if (n == 0) {\n"
+                    "        memcpy(f + RF_HEADER_SIZE, img->rgb, raw);\n"
+                    "        n = raw;\n"
+                    "        method = RF_METHOD_RAW;\n"
                     "    }\n",
-                    "",
                 )
                 .replace(
                     "    else if (hdr.method == RF_METHOD_PAL || hdr.method == RF_METHOD_PAL2) {\n"

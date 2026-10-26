@@ -704,9 +704,13 @@ def main():
         build(b, RES / "benchB.exe", flags)
         res = {"A": [], "B": []}
         row_runs = {"A": [], "B": []}
-        for _ in range(n):
-            out_a = run(RES / "benchA.exe", imgs)
-            out_b = run(RES / "benchB.exe", imgs)
+        for i in range(n):
+            if i % 2 == 0:
+                out_a = run(RES / "benchA.exe", imgs)
+                out_b = run(RES / "benchB.exe", imgs)
+            else:
+                out_b = run(RES / "benchB.exe", imgs)
+                out_a = run(RES / "benchA.exe", imgs)
             rows_a = parse_bench_rows(out_a, imgs)
             rows_b = parse_bench_rows(out_b, imgs)
             res["A"].append(total(out_a))

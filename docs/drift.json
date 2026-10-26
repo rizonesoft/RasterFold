@@ -1637,10 +1637,10 @@
       "review": "Author-attested: 2026-10-25 re-read docs/getting-started.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/benchmarks.md": {
-      "evidence": "2026-10-26: Reviewed docs/benchmarks.md against benchmarks/corpus.csv and benchmarks/results.csv for D05 T01 section 3 (Milestone 3 gate)",
+      "evidence": "2026-10-26: Reviewed docs/benchmarks.md against measure/verdict.json for D05 T01 section 3",
       "sources": {
         "src/rf.h": "c72a8dbb03d1698fd8f9b12957884ac894f8aede680182c78821eb3a7f2c3fed",
-        "measure/verdict.json": "1afd571fe6fa817e8a0201cdd5f1fd670b673822bfddbc4cca64fb255d728e54",
+        "measure/verdict.json": "7194c624e48fa2590ab0689481417db892f2cde23a27b4958b4c2e983d93cd84",
         "benchmarks/results.csv": "cc2fb0b336081131c5ad57b8795a51b07ac36fb14942619e1d02e7002fb72e22",
         "benchmarks/corpus.csv": "2d9a564a8f899041c884fc6235b2cf33b28344b50595e260c78bf25ebde1b980",
         "docs/benchmarks.md": "0c694e4885aede9ba3a3af155de1688f76b0534a824ab3580a4833fcc28d033e"
@@ -1679,11 +1679,11 @@
       }
     },
     "spec/FOLD.md": {
-      "evidence": "2026-10-26: Reviewed Method 3 (extended palette) in spec/FOLD.md against src/pal.c and tests/rfi_ref.py",
+      "evidence": "2026-10-26: Reviewed spec/FOLD.md against src/fold.c, src/cm.c, and src/pal.c for D05 T01 section 3",
       "sources": {
         "src/rf.h": "c72a8dbb03d1698fd8f9b12957884ac894f8aede680182c78821eb3a7f2c3fed",
-        "src/fold.c": "694028ec59454f75d8848f82a24fc5baea641dbf2ba80a54adade44ff320fa5c",
-        "src/cm.c": "a6fb1f5c7cc0ae43f5c3c4b249c5f2bdeb054fc7a8d387d347beb2de02e8adb1",
+        "src/fold.c": "a45485791758aef2d20c4f79bad61801bdd91bed7cebbf2a3109607efe7abb8e",
+        "src/cm.c": "9647f768f2ba8b94654c050f112fcf75b09c8985fc9ac39d4e35f2a8f5c973cf",
         "src/crc32.c": "c6e682115185fcdcbfa0551823fc590f60c9c7b978a30009163288e664b3faec",
         "tests/rfi_ref.py": "14f27223ea0bddce73fb79030db55424da976c3e60382ba2abeec067b5e92746",
         "spec/FOLD.md": "2fbb0479cc3c46c484e0e34cdadbb6934b463b19d530be5df261cb12cf5112d5"
@@ -1694,10 +1694,10 @@
       "reviewed": "Author-attested: 2026-10-25 re-read spec/FOLD.md against src/cm.c and src/simd.h after D02 T01 section 4 (byte-identical cm.c hot-loop vectorization and row-context specialization; format version 2 bitstream unchanged)"
     },
     "research/README.md": {
-      "evidence": "2026-10-26: Reviewed research/README.md against research/ab.py and research/bench.c for D05 T01 section 3 (Milestone 3 gate)",
+      "evidence": "2026-10-26: Reviewed research/README.md against research/ab.py for D05 T01 section 3",
       "sources": {
         "research/corpus.py": "4434e32d8cdb5e70d887f03f7f4cdfbe9ada666ea680c7d6ce176cc9b2858bb7",
-        "research/ab.py": "4ecfa2e3ff70b1456daab54463b7819f3ed990e5e7d33cb4a6ae1aebe92bb80d",
+        "research/ab.py": "f8a62c34e06a6cf44d94ca27baa05e383a97a5d9a90b19ecfba620db715f0394",
         "research/vsjxl.py": "0ebfdf2fb1acb0ed129400399590f6d962c844eb743b07f92d1083766aa6f14c",
         "research/prof.py": "7fa28a84aab62f0eb79fd579bcc01b6e2e55cc200bdaa96c0218b2ad4aa05605",
         "research/bench.c": "3887d90de6528fe4588d6a74a17604b05f01a61a0972bf87d7bdc84bcc574a1b",
@@ -1727,12 +1727,12 @@
       "review": "Author-attested: 2026-10-25 re-read docs/examples.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/limitations.md": {
-      "evidence": "2026-10-26: Reviewed docs/limitations.md against src/rf.h, src/fold.c, src/pal.c, src/main.c, research/bench.c, and spec/FOLD.md for D01 T01 section 4 (Method 3 extended palette)",
+      "evidence": "2026-10-26: Reviewed docs/limitations.md against src/fold.c and src/pal.c for D05 T01 section 3",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "c72a8dbb03d1698fd8f9b12957884ac894f8aede680182c78821eb3a7f2c3fed",
         "src/main.c": "91f7ec3adab2f071d225bf38b7148a16faa748961978f8a6f0dc2b83b7da1ca2",
-        "src/fold.c": "694028ec59454f75d8848f82a24fc5baea641dbf2ba80a54adade44ff320fa5c",
+        "src/fold.c": "a45485791758aef2d20c4f79bad61801bdd91bed7cebbf2a3109607efe7abb8e",
         "src/bmp.c": "50278e51120542ec686aee00385eba666239070533035e5d04e7d659b118317c",
         "src/api.c": "76f5277f1fce9b053ca1e75648d1d5a7aa5494bf46266361e437f3e17f80812c",
         "src/sys_posix.c": "507270096bb20f63a07fd0176551a6fc7dd37ee7ce441b6a5a3e57f00bcb6792",
@@ -1741,12 +1741,12 @@
       "review": "Author-attested: 2026-10-25 re-read docs/limitations.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/troubleshooting.md": {
-      "evidence": "2026-10-26: Reviewed docs/troubleshooting.md against src/rf.h, src/fold.c, src/pal.c, src/main.c, research/bench.c, and spec/FOLD.md for D01 T01 section 4 (Method 3 extended palette)",
+      "evidence": "2026-10-26: Reviewed docs/troubleshooting.md against src/fold.c and src/pal.c for D05 T01 section 3",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "c72a8dbb03d1698fd8f9b12957884ac894f8aede680182c78821eb3a7f2c3fed",
         "src/main.c": "91f7ec3adab2f071d225bf38b7148a16faa748961978f8a6f0dc2b83b7da1ca2",
-        "src/fold.c": "694028ec59454f75d8848f82a24fc5baea641dbf2ba80a54adade44ff320fa5c",
+        "src/fold.c": "a45485791758aef2d20c4f79bad61801bdd91bed7cebbf2a3109607efe7abb8e",
         "src/bmp.c": "50278e51120542ec686aee00385eba666239070533035e5d04e7d659b118317c",
         "src/api.c": "76f5277f1fce9b053ca1e75648d1d5a7aa5494bf46266361e437f3e17f80812c",
         "src/sys_posix.c": "507270096bb20f63a07fd0176551a6fc7dd37ee7ce441b6a5a3e57f00bcb6792",
