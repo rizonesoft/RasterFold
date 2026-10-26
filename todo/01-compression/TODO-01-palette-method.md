@@ -95,16 +95,25 @@ The method itself, in one commit with every place a format change owes. The desi
 > **Review:** `docs/reviews/d01-t01-s2.json`
 ## 3. Measure Method 2 against JPEG XL and WebP
 
+> **Started:** 2026-10-26T01:08:30Z
+
 **Needs:** ffmpeg with libjxl (benchmarks)
+
+**Job:** A reader can inspect the measured `.fold` sizes of method 2 across `photo`, `tp`, and `synth` against JPEG XL (`e7` and `e9`) and lossless WebP in `benchmarks/corpus.csv`, `benchmarks/results.csv`, `benchmarks/results.md`, `docs/benchmarks.md`, and `docs/research.md`, with photographs unchanged and the `syn_pixel` stop-condition follow-up filed as `D01 T01 §4`.
 
 The method exists to close the synthetic gap without touching photographs. This section proves both and puts the result on the public record.
 
+> [!NOTE]
+> **Corrected 2026-10-26:** `research/bench.c` calls `rf_encode` and `rf_decode` (cleaning up `fold` and `dec_im.rgb` via `rf_free`, using `fold_sz` directly since `rf_encode` includes the 32-byte `.fold` header, and printing `"RAW"`, `"PAL"`, or `"OK"` from `info.method`), and `research/ab.py` links `src/fold.c`, `src/pal.c` (or `src/cm.c` when `src` is a `pal.c` variant), `src/bmp.c`, and `src/crc32.c`, accepts `"PAL"` in `parse_bench_rows`, and checks `("src", "include", "tests/test_correctness.py")` in `codec_provenance`'s `git status --porcelain` check (keeping `PROVENANCE_PATHS` for `_provenance_digests` mid-run snapshot hashing) so `python3 research/ab.py size all --csv benchmarks/corpus.csv` runs cleanly in the same commit that updates `research/bench.c`. Because live benchmark tables moved from `README.md` to `docs/benchmarks.md` in `D08 T01`, item 3 updates `benchmarks/corpus.csv`, `benchmarks/results.csv`, `benchmarks/results.md`, `tests/test_research_refs.py` (`test_corpus_csv_reconstructs_all_five_research_summaries`), `docs/research.md` (sections 1 and 3), `research/README.md`, and `docs/benchmarks.md` + `docs/facts.json` + `docs/_includes/generated/{charts,tables}/*` via `python3 scripts/build-docs.py --write`. On `synth`, `syn_checker` drops from `5,709` to `297` bytes (below JPEG XL e7's `316` bytes) while `syn_pixel` drops from `599` to `90` bytes (still above JPEG XL e7's `66` bytes), triggering item 2's stop condition to file follow-up section `D01 T01 §4` through `add-todo` and ship this measurement as is.
+
 - [ ] Extend `research/bench.c` and `research/ab.py` to measure through `rf_encode` and `rf_decode` (the container), so method 2 is reachable from `ab.py size`. Done when: `python research/ab.py size synth -v` lists `syn_checker` with its method 2 size.
 - [ ] Measure `python research/ab.py size photo`, `tp`, and `synth -v`. Done when: the synthetic images with at most 256 colours are below JPEG XL e7, and the photo and test-pack totals are unchanged. Stop condition: if `syn_pixel` stays above JPEG XL's 66 bytes, add `WW == a` and `NN == b` to the pattern (`docs/research.md` section 4.1, stop condition) in a follow-up section filed through `add-todo`, and ship this measurement as is.
-- [ ] Rerun `python tests/benchmark.py synthetic -n 3`, commit `benchmarks/results.md` and `benchmarks/results.csv`, and update the generated-image paragraph of `README.md` and the synthetic row of `docs/research.md` section 1. Done when: the README quotes the new synthetic figures.
+- [ ] Rerun `python tests/benchmark.py synthetic -n 3` and `python3 research/ab.py size all --csv benchmarks/corpus.csv`, commit `benchmarks/results.md`, `benchmarks/results.csv`, and `benchmarks/corpus.csv`, and update `docs/benchmarks.md` (which replaced the generated-image benchmark section of `README.md` in `D08 T01`, regenerated via `python3 scripts/build-docs.py --write`) and the synthetic row of `docs/research.md` section 1 (plus section 3). Done when: `docs/benchmarks.md` and `docs/research.md` quote the new synthetic figures and `python3 scripts/drift-check.py` exits 0.
 - [ ] Commit: `"codec: measure method 2 against JPEG XL and WebP"`
 
-**Test checkpoint:** the three `ab.py size` summary lines before and after are quoted; `syn_checker` and `syn_pixel` are below JPEG XL e7 or the stop condition's follow-up is filed and named.
+**Test checkpoint:** the three `ab.py size` summary lines before and after are quoted; `syn_checker` and `syn_pixel` are below JPEG XL e7 or the stop condition's follow-up (`D01 T01 §4`) is filed and named.
+
+**Freeze check:** `KAT_FOLD` (`sha256=b3012508fdcadc58e768baaba1c9fc3cf5cc2dd837643888b1ca2314fe79bb32`) and `KAT_PAL` decode to their exact pixels and re-encode byte-identically (`python3 tests/test_correctness.py`: `38 passed, 0 failed`), and `photo` (`30,865,211` bytes) and `tp` (`6,651,583` bytes) corpus totals are unchanged.
 
 ## Verification
 
