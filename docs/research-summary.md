@@ -21,10 +21,10 @@ format is `.fold` version 2. Method 0 is raw RGB, method 1 ("CM") is the
 context-mixing coder in `src/cm.c` (the JPEG XL weighted predictor corrected by
 a 12-tap sign-sign LMS stage, five context models mixed by a logistic mixer,
 and one binary range coder per channel G, R-G, B-G, with one thread per
-channel), and method 2 ("palette") is the palette index coder in `src/pal.c` for
-images with at most 256 distinct colours. The Python oracle `tests/rfi_ref.py`
-implements the same format independently and stays byte-identical with the C
-encoder.
+channel), and methods 2 and 3 ("palette" and "extended palette") are the palette
+index coders in `src/pal.c` for images with at most 256 distinct colours. The
+Python oracle `tests/rfi_ref.py` implements the same format independently and
+stays byte-identical with the C encoder.
 
 `python tests/measure_final.py` (exit 0, PASS) on `measure/image.bmp`:
 
@@ -48,21 +48,21 @@ RasterFold bytes / JPEG XL e7 bytes:
 | kodak | 24 | 0.9859 | 0.9860 | kodim17 1.0037 |
 | ic | 14 | 0.9647 | 0.9517 | ic_nightshot_iso_1600 0.9942 |
 | tp (test pack) | 10 | 0.9743 | 0.9722 | tp_nightshot 0.9931 |
-| synth | 11 | 0.9144 | 0.7081 | syn_gradient 1.5665 |
+| synth | 11 | 0.9118 | 0.5883 | syn_gradient 1.5665 |
 
 Only kodim17 (+0.37%) and kodim09 (+0.19%) are larger than JPEG XL among the
-photographs. On the generated images, with method 2 (`D01 T01 §2`, `§3`),
-stripes, solid fills, 16-pixel checker (`syn_checker`, 297 vs 316 bytes e7,
-down from 5,709), UI (1,560 vs 2,316), text (1,540 vs 2,164), diagram (1,553 vs
-2,160), wide, and noise are smaller than JPEG XL e7 (`synth` total `207,146` vs
-`226,544` bytes, geometric mean `0.7081`, down from `214,773` and `1.1986`).
-`syn_gradient` is 1.57 times JPEG XL e7 (4,521 vs 2,886 bytes), `syn_pixel`
-(1-pixel checker) is 1.36 times e7 (90 vs 66 bytes, down from 599; `D01 T01 §4`
-adds two-step neighbour bits and two-colour deduction to close the remaining gap
-against e7's 66 and e9's 53 bytes), and `syn_odd` (a 65x63 gradient) is 1.23
-times (163 vs 132 bytes). Lossless WebP is smaller than both codecs on most
-generated images, and on `syn_gradient` it takes 180 bytes where RasterFold
-takes 4,521 (its backward references copy shifted rows; the match model answers it).
+photographs. On the generated images, with methods 2 and 3 (`D01 T01 §2` to `§4`),
+stripes, solid fills, 16-pixel checker (`syn_checker`, 138 vs 316 bytes e7 and
+210 bytes e9, down from 5,709), 1-pixel checker (`syn_pixel`, 52 vs 66 bytes e7,
+53 bytes e9, and 58 bytes WebP, down from 599), UI (1,410 vs 2,316 e7 and 2,195
+e9), text (1,447 vs 2,164 e7 and 2,038 e9), diagram (1,452 vs 2,160 e7 and 2,049
+e9), wide, and noise are smaller than JPEG XL e7 (`synth` total `206,566` vs
+`226,544` bytes, geometric mean `0.5883`, down from `214,773` and `1.1986`).
+`syn_gradient` is 1.57 times JPEG XL e7 (4,521 vs 2,886 bytes) and `syn_odd`
+(a 65x63 gradient) is 1.23 times (163 vs 132 bytes). Lossless WebP is smaller
+than both codecs on most generated images, and on `syn_gradient` it takes 180
+bytes where RasterFold takes 4,521 (its backward references copy shifted rows;
+the match model answers it).
 
 Speed: `research/bench.c` measures about 440 CPU cycles per sample on one
 thread (G, R, and B each count as one sample) on the i5-11600K, and about 190
@@ -241,6 +241,7 @@ experiment is repeated only when its plan says what differs this time.
 | context rows capped at 1024 per model (4-model design) | +0.35% sub | rejected |
 | context rows capped at 256 per model | +1.8% on measure + kodim01 | rejected |
 | method 2 palette coder (first-seen <= 256 colours, 5-bit neighbour equality pattern, D1/D2/D3 + 8-bit literal tree, 4.1, `§3`) | -3.55% `synth` total (`214,773` -> `207,146` bytes, `0.9480` -> `0.9144` of e7, geomean `1.1986` -> `0.7081` of e7; `syn_checker` `5,709` -> `297`, `syn_pixel` `599` -> `90`, `syn_ui` `2,107` -> `1,560`, `syn_text` `2,118` -> `1,540`, `syn_diagram` `2,134` -> `1,553`; `photo` `30,865,211` and `tp` `6,651,583` unchanged) | kept; `syn_pixel` (`90` vs `66` e7 / `53` e9) and `syn_checker` (`297` vs `210` e9) follow-up filed as `D01 T01 §4` |
+| method 3 extended palette coder (7-bit neighbour pattern adding `WW == a` and `NN == b`, fallback candidate `e` in `(d, c, ww)`, two-colour deduction after `D1 = 0`, minimum-1 counter step, 4.1) | -3.82% `synth` total vs M2 (`214,773` -> `206,566` bytes, `-580` vs method 2; `0.9118` of e7, geomean `0.5883` of e7 and `1.1220` of e9; `syn_checker` `297` -> `138` `< 210` e9, `syn_pixel` `90` -> `52` `< 53` e9 and `< 58` WebP, `syn_ui` `1,560` -> `1,410`, `syn_text` `1,540` -> `1,447`, `syn_diagram` `1,553` -> `1,452`; `photo` `30,865,211` and `tp` `6,651,583` unchanged) | kept (`RF_METHOD_PAL2 = 3u`; method 2 files continue to decode) |
 
 ### 3.3 Mixing and counters
 
