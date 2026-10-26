@@ -12,7 +12,7 @@ rejection, leave no output or .partial file on failure, and finish in time.
 from __future__ import annotations
 
 import base64
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
 import hashlib
 import json
 import os
@@ -277,9 +277,16 @@ def verify_mutation(
             oracle_res = None
 
         if r.returncode == 0:
-            w, h, rgb = rf.read_bmp24(dest.read_bytes())
+            bmp_bytes = dest.read_bytes()
+            try:
+                w, h, rgb = rf.read_bmp24(bmp_bytes)
+            except rf.FormatError as exc:
+                (work_dir / f"mismatch{i}.fold").write_bytes(blob)
+                (work_dir / f"mismatch{i}.bmp").write_bytes(bmp_bytes)
+                return -1, f"MISMATCH invalid BMP output at iteration {i}: {exc}"
             if oracle_res != (w, h, rgb):
                 (work_dir / f"mismatch{i}.fold").write_bytes(blob)
+                (work_dir / f"mismatch{i}.bmp").write_bytes(bmp_bytes)
                 return -1, f"MISMATCH with the oracle at iteration {i}"
         else:
             if oracle_res is not None:
@@ -297,6 +304,56 @@ def _worker_verify(args: tuple[int, bytes, str, str, str]) -> tuple[int, int, st
     i, blob, threads, exe_str, work_str = args
     rc, err = verify_mutation(i, blob, threads, Path(exe_str), Path(work_str))
     return i, rc, err
+
+
+def _terminate_pool(pool: ProcessPoolExecutor) -> None:
+    procs = list((getattr(pool, "_processes", None) or {}).values())
+    pool.shutdown(wait=False, cancel_futures=True)
+    for proc in procs:
+        try:
+            proc.terminate()
+        except OSError:
+            pass
+    for proc in procs:
+        try:
+            proc.join(timeout=2.0)
+        except OSError:
+            pass
+
+
+def run_tasks_parallel(
+    tasks: list[tuple[int, bytes, str, str, str]],
+    workers: int,
+    worker_fn=_worker_verify,
+) -> tuple[dict[int, int], str | None]:
+    counts = {0: 0, 4: 0}
+    it = iter(tasks)
+    max_inflight = max(1, workers * 2)
+    pool = ProcessPoolExecutor(max_workers=workers)
+    pending: set[Future[tuple[int, int, str | None]]] = set()
+    try:
+        for _ in range(max_inflight):
+            try:
+                pending.add(pool.submit(worker_fn, next(it)))
+            except StopIteration:
+                break
+        while pending:
+            done, pending = wait(pending, return_when=FIRST_COMPLETED)
+            for fut in done:
+                _, rc, err = fut.result()
+                if err is not None:
+                    _terminate_pool(pool)
+                    return counts, err
+                counts[rc] += 1
+                try:
+                    pending.add(pool.submit(worker_fn, next(it)))
+                except StopIteration:
+                    pass
+    except BaseException:
+        _terminate_pool(pool)
+        raise
+    pool.shutdown(wait=True)
+    return counts, None
 
 
 def main() -> int:
@@ -323,12 +380,10 @@ def main() -> int:
             counts[rc] += 1
     else:
         workers = min(os.cpu_count() or 4, 12)
-        with ProcessPoolExecutor(max_workers=workers) as pool:
-            for _, rc, err in pool.map(_worker_verify, tasks, chunksize=8):
-                if err is not None:
-                    print(err)
-                    return 1
-                counts[rc] += 1
+        counts, err = run_tasks_parallel(tasks, workers)
+        if err is not None:
+            print(err)
+            return 1
 
     m_summary = ", ".join(f"{m}:{method_counts[m]}" for m in (0, 1, 2, 3))
     print(f"{iterations} mutated files (methods {m_summary}): {counts[4]} rejected, {counts[0]} still valid, no crash, hang or mismatch")

@@ -1017,6 +1017,25 @@ def fuzz_harness() -> None:
         check(rc_mis == -1 and err_mis is not None and "native rejected oracle-valid input" in err_mis, f"expected native exit 4 on oracle-valid input to fail harness, got {(rc_mis, err_mis)}")
         check((td / "mismatch999.fold").read_bytes() == KAT_PAL2, "mismatch999.fold was not retained on false rejection")
 
+        def fake_malformed_bmp(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+            Path(cmd[-1]).write_bytes(b"NOT_A_BMP")
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=b"", stderr=b"")
+
+        with mock.patch.object(fuzz_decode.subprocess, "run", side_effect=fake_malformed_bmp):
+            rc_bmp, err_bmp = fuzz_decode.verify_mutation(998, KAT_PAL2, "1", EXE, td)
+        check(rc_bmp == -1 and err_bmp is not None and "invalid BMP output at iteration 998" in err_bmp, f"expected malformed BMP on exit 0 to fail cleanly, got {(rc_bmp, err_bmp)}")
+        check((td / "mismatch998.fold").read_bytes() == KAT_PAL2, "mismatch998.fold was not retained on malformed BMP")
+        check((td / "mismatch998.bmp").read_bytes() == b"NOT_A_BMP", "mismatch998.bmp was not retained on malformed BMP")
+
+        unsup_blob = bytearray(KAT_PAL2)
+        unsup_blob[16] = 99
+        unsup_bytes = fuzz_decode.recrc(unsup_blob)
+        par_tasks = [(i, unsup_bytes, "1", str(EXE), str(td)) for i in range(20)]
+        _, par_err = fuzz_decode.run_tasks_parallel(par_tasks, workers=2)
+        check(par_err is not None and "BAD exit 0x3 at iteration" in par_err, f"expected run_tasks_parallel to fail promptly, got {par_err}")
+        bad_artifacts = list(td.glob("bad*.fold"))
+        check(1 <= len(bad_artifacts) <= 6, f"expected bounded parallel execution on failure (1..6 tasks), got {len(bad_artifacts)}")
+
 
 def main() -> int:
     if not EXE.exists():
