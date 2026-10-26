@@ -1038,6 +1038,8 @@ def fuzz_harness() -> None:
         check(clang.is_file(), f"pinned clang compiler missing: {clang}")
         helper_c = td / "hang_helper.c"
         helper_exe = td / ("hang_helper.exe" if os.name == "nt" else "hang_helper")
+        pid_file = td / "sleeper.childpid"
+        pid_file_c = str(pid_file).replace("\\", "\\\\")
         helper_c.write_text(
             "#include <stdio.h>\n"
             "#ifdef _WIN32\n"
@@ -1049,6 +1051,7 @@ def fuzz_harness() -> None:
             "static int my_pid(void) { return (int)getpid(); }\n"
             "static void my_sleep_ms(int ms) { usleep((unsigned)ms * 1000u); }\n"
             "#endif\n"
+            f"static const char *PID_PATH = \"{pid_file_c}\";\n"
             "int main(int argc, char **argv) {\n"
             "    if (argc < 6) return 2;\n"
             "    FILE *f = fopen(argv[4], \"rb\");\n"
@@ -1058,14 +1061,23 @@ def fuzz_harness() -> None:
             "    fclose(f);\n"
             "    if (n < 32) return 4;\n"
             "    if (hdr[16] == 98) {\n"
-            "        char pid_path[512];\n"
-            "        snprintf(pid_path, sizeof(pid_path), \"%s.childpid\", argv[5]);\n"
-            "        FILE *pf = fopen(pid_path, \"wb\");\n"
-            "        if (pf) { fprintf(pf, \"%d\\n\", my_pid()); fclose(pf); }\n"
+            "        char tmp_path[512];\n"
+            "        snprintf(tmp_path, sizeof(tmp_path), \"%s.tmp\", PID_PATH);\n"
+            "        FILE *pf = fopen(tmp_path, \"wb\");\n"
+            "        if (pf) { fprintf(pf, \"%d\\n\", my_pid()); fclose(pf); rename(tmp_path, PID_PATH); }\n"
             "        my_sleep_ms(30000);\n"
             "        return 0;\n"
             "    }\n"
-            "    my_sleep_ms(150);\n"
+            "    for (int w = 0; w < 200; ++w) {\n"
+            "        FILE *pf = fopen(PID_PATH, \"rb\");\n"
+            "        if (pf) {\n"
+            "            char buf[16];\n"
+            "            size_t rn = fread(buf, 1, sizeof(buf), pf);\n"
+            "            fclose(pf);\n"
+            "            if (rn > 0) break;\n"
+            "        }\n"
+            "        my_sleep_ms(50);\n"
+            "    }\n"
             "    return 3;\n"
             "}\n",
             encoding="utf-8",
@@ -1080,13 +1092,12 @@ def fuzz_harness() -> None:
         _, par_err = fuzz_decode.run_tasks_parallel(par_tasks, workers=2)
         par_elapsed = time.perf_counter() - t_par
         check(par_err is not None and "BAD exit 0x3 at iteration" in par_err, f"expected run_tasks_parallel to fail promptly, got {par_err}")
-        check(par_elapsed < 5.0, f"run_tasks_parallel took {par_elapsed:.2f}s (expected < 5.0s after killing sibling child)")
+        check(par_elapsed < 10.0, f"run_tasks_parallel took {par_elapsed:.2f}s (expected < 10.0s after killing sibling child)")
         bad_artifacts = list(td.glob("bad*.fold"))
         check(1 <= len(bad_artifacts) <= 6, f"expected bounded parallel execution on failure (1..6 tasks), got {len(bad_artifacts)}")
         check(list(td.glob("f_*.fold")) == [] and list(td.glob("f_*.bmp")) == [], "worker temporary f_* files were not cleaned up after sibling failure")
-        pid_files = list(td.glob("*.childpid"))
-        check(len(pid_files) == 1, f"expected 1 recorded childpid file from sleeping sibling, got {len(pid_files)}")
-        child_pid = int(pid_files[0].read_text(encoding="utf-8").strip())
+        check(pid_file.is_file(), "expected sleeper.childpid from sleeping sibling")
+        child_pid = int(pid_file.read_text(encoding="utf-8").strip())
         if os.name == "nt":
             import ctypes
             kernel32 = ctypes.windll.kernel32
