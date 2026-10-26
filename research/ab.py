@@ -472,6 +472,41 @@ def extract_csv_arg(args: list[str]) -> tuple[Path | None, list[str]]:
     return csv_path, cleaned
 
 
+COMPAT_SETS = ("photo", "tp", "tp-only", "synth")
+
+
+def extract_allow_diff_args(args: list[str]) -> tuple[set[str], list[str]]:
+    allowed: set[str] = set()
+    cleaned: list[str] = []
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--allow-diff":
+            if i + 1 >= len(args) or not args[i + 1].strip() or args[i + 1].startswith("-"):
+                raise SystemExit("--allow-diff requires a set name")
+            raw_val = args[i + 1].strip()
+            i += 2
+        elif arg.startswith("--allow-diff="):
+            raw_val = arg.split("=", 1)[1].strip()
+            if not raw_val:
+                raise SystemExit("--allow-diff requires a set name")
+            i += 1
+        elif arg.startswith("--"):
+            raise SystemExit(f"unknown option: {arg}")
+        else:
+            cleaned.append(arg)
+            i += 1
+            continue
+        parts = [p.strip() for p in raw_val.split(",") if p.strip()]
+        if not parts:
+            raise SystemExit("--allow-diff requires a set name")
+        for p in parts:
+            if p not in COMPAT_SETS:
+                raise SystemExit(f"unknown compat set for --allow-diff: {p!r}")
+            allowed.add(p)
+    return allowed, cleaned
+
+
 def names(args):
     out = []
     for a in args:
@@ -493,18 +528,50 @@ def is_palette_source(src_path: Path) -> bool:
     return "pal" in name and "cm" not in name
 
 
+def is_m1_baseline_source(src_path: Path) -> bool:
+    m1_dir = RES / "m1_src"
+    if not (m1_dir / "fold.c").is_file():
+        return False
+    try:
+        resolved = src_path.resolve()
+        if resolved == (RES / "cm_m1.c").resolve():
+            return True
+        if resolved.parent == m1_dir.resolve():
+            return True
+    except OSError:
+        pass
+    return src_path.name == "cm_m1.c"
+
+
 def build(src, out, flags=()):
     src_path = Path(src)
-    is_pal_variant = is_palette_source(src_path)
-    cm_src = REPO / "src" / "cm.c" if is_pal_variant else src_path
-    pal_src = src_path if is_pal_variant else REPO / "src" / "pal.c"
-    cmd = [
-        str(CLANG), "-O2", "-march=x86-64-v2", "-mtune=generic", "-g", *flags,
-        f"-I{REPO / 'src'}", "-o", str(out),
-        str(TOOLS / "bench.c"), str(TOOLS / "benchsys.c"),
-        str(REPO / "src" / "fold.c"), str(cm_src), str(pal_src),
-        str(REPO / "src" / "bmp.c"), str(REPO / "src" / "crc32.c"), "-lwinmm",
-    ]
+    if is_m1_baseline_source(src_path):
+        m1_dir = RES / "m1_src"
+        rf_h_text = (m1_dir / "rf.h").read_text(encoding="utf-8", errors="ignore") if (m1_dir / "rf.h").is_file() else ""
+        extra_defs = []
+        if "RF_METHOD_PAL" not in rf_h_text:
+            extra_defs.append("-DRF_METHOD_PAL=2u")
+        if "RF_METHOD_PAL2" not in rf_h_text:
+            extra_defs.append("-DRF_METHOD_PAL2=3u")
+        pal_srcs = [str(m1_dir / "pal.c")] if (m1_dir / "pal.c").is_file() else []
+        cmd = [
+            str(CLANG), "-O2", "-march=x86-64-v2", "-mtune=generic", "-g", *extra_defs, *flags,
+            f"-I{m1_dir}", f"-I{REPO / 'src'}", "-o", str(out),
+            str(TOOLS / "bench.c"), str(TOOLS / "benchsys.c"),
+            str(m1_dir / "fold.c"), str(src_path), *pal_srcs,
+            str(m1_dir / "bmp.c"), str(m1_dir / "crc32.c"), "-lwinmm",
+        ]
+    else:
+        is_pal_variant = is_palette_source(src_path)
+        cm_src = REPO / "src" / "cm.c" if is_pal_variant else src_path
+        pal_src = src_path if is_pal_variant else REPO / "src" / "pal.c"
+        cmd = [
+            str(CLANG), "-O2", "-march=x86-64-v2", "-mtune=generic", "-g", *flags,
+            f"-I{REPO / 'src'}", "-o", str(out),
+            str(TOOLS / "bench.c"), str(TOOLS / "benchsys.c"),
+            str(REPO / "src" / "fold.c"), str(cm_src), str(pal_src),
+            str(REPO / "src" / "bmp.c"), str(REPO / "src" / "crc32.c"), "-lwinmm",
+        ]
     r = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True)
     if r.returncode:
         raise SystemExit(r.stderr)
@@ -548,11 +615,77 @@ def parse_bench_rows(stdout: str, expected_imgs: list[str] | tuple[str, ...]) ->
     return rows
 
 
+def verify_compat_sets(
+    sets_map: dict[str, list[str]],
+    load_image,
+    encode_blob,
+    decode_blob,
+    allow_diff_sets: set[str],
+    bench_m1_sizes: dict[str, int] | None = None,
+) -> list[str]:
+    cache: dict[str, tuple[bytes, bytes]] = {}
+    lines: list[str] = []
+    for sname in COMPAT_SETS:
+        imgs = sets_map[sname]
+        m1_h = hashlib.sha256()
+        cand_h = hashlib.sha256()
+        m1_total = 0
+        cand_total = 0
+        changed = 0
+        for img in imgs:
+            if img not in cache:
+                w, h, rgb = load_image(img)
+                m1_t1 = encode_blob("m1", "1", img, w, h, rgb)
+                m1_t3 = encode_blob("m1", "3", img, w, h, rgb)
+                if m1_t3 != m1_t1:
+                    raise SystemExit(f"MISMATCH on {img} (m1 t=3)")
+                cand_t1 = encode_blob("cand", "1", img, w, h, rgb)
+                cand_t3 = encode_blob("cand", "3", img, w, h, rgb)
+                if cand_t3 != cand_t1:
+                    raise SystemExit(f"MISMATCH on {img} (cand t=3)")
+                if bench_m1_sizes is not None:
+                    if img not in bench_m1_sizes or bench_m1_sizes[img] != len(m1_t1):
+                        got_sz = bench_m1_sizes.get(img)
+                        raise SystemExit(
+                            f"BENCH MISMATCH on {img}: bench_m1={got_sz} vs m1_cli={len(m1_t1)}"
+                        )
+                for src_tag, blob in (("m1", m1_t1), ("cand", cand_t1)):
+                    for t in ("1", "3"):
+                        if decode_blob("cand", t, img, src_tag, blob) != (w, h, rgb):
+                            raise SystemExit(f"DECODE MISMATCH on {img} ({src_tag}->cand t={t})")
+                cache[img] = (m1_t1, cand_t1)
+            m1_b, cand_b = cache[img]
+            if cand_b != m1_b:
+                if sname not in allow_diff_sets:
+                    raise SystemExit(f"MISMATCH on {img} in set {sname} (cand vs m1)")
+                changed += 1
+            m1_total += len(m1_b)
+            cand_total += len(cand_b)
+            m1_h.update(m1_b)
+            cand_h.update(cand_b)
+        bench_flag = " bench_m1_verified=True" if bench_m1_sizes is not None else ""
+        if changed == 0:
+            lines.append(
+                f"{sname:7s} n={len(imgs):2d} total_bytes={cand_total} "
+                f"fold_stream_sha256={cand_h.hexdigest()} identical=True m1_decoded=True cand_decoded=True{bench_flag}"
+            )
+        else:
+            lines.append(
+                f"{sname:7s} n={len(imgs):2d} total_bytes={cand_total} m1_total_bytes={m1_total} "
+                f"fold_stream_sha256={cand_h.hexdigest()} m1_fold_stream_sha256={m1_h.hexdigest()} "
+                f"identical=False ({changed}/{len(imgs)} changed) m1_decoded=True cand_decoded=True{bench_flag}"
+            )
+    return lines
+
+
 def main():
     mode, rest = sys.argv[1], sys.argv[2:]
     csv_path, rest = extract_csv_arg(rest)
     if csv_path is not None and mode != "size":
         raise SystemExit(f"--csv is only supported in size mode, not {mode!r}")
+    allow_diff_sets, rest = extract_allow_diff_args(rest)
+    if allow_diff_sets and mode != "compat":
+        raise SystemExit(f"--allow-diff is only supported in compat mode, not {mode!r}")
     verbose = "-v" in sys.argv
     rest = [a for a in rest if a != "-v"]
     flags = [a for a in rest if a.startswith("-D") or a.startswith("-O") or a.startswith("-m")]
@@ -737,66 +870,86 @@ def main():
             ],
             check=True,
         )
-        cm_m1 = (m1_dir / "cm.c").read_text(encoding="utf-8").replace(
-            "int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *rgb, uint32_t w, uint32_t h, int threads, rf_error *err) {",
-            "int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *rgb, size_t stride, uint32_t w, uint32_t h, int threads, rf_error *err) { (void)stride;",
+        old_cm_text = (m1_dir / "cm.c").read_text(encoding="utf-8")
+        old_sig = "int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *rgb, uint32_t w, uint32_t h, int threads, rf_error *err)"
+        new_sig = "int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *rgb, size_t stride, uint32_t w, uint32_t h, int threads, rf_error *err)"
+        cm_m1 = old_cm_text.replace(
+            f"{old_sig} {{",
+            f"{new_sig} {{ (void)stride;",
         )
         (RES / "cm_m1.c").write_text(cm_m1, encoding="utf-8")
+        if old_sig in old_cm_text:
+            rf_h_path = m1_dir / "rf.h"
+            if rf_h_path.is_file():
+                rf_h_path.write_text(
+                    rf_h_path.read_text(encoding="utf-8").replace(f"{old_sig};", f"{new_sig};"),
+                    encoding="utf-8",
+                )
+            fold_c_path = m1_dir / "fold.c"
+            if fold_c_path.is_file():
+                fold_c_path.write_text(
+                    fold_c_path.read_text(encoding="utf-8").replace(
+                        "rf_cm_decode(in + 32, n - 32, out->rgb, w, h, threads, err)",
+                        "rf_cm_decode(in + 32, n - 32, out->rgb, (size_t)w * 3, w, h, threads, err)",
+                    ),
+                    encoding="utf-8",
+                )
+        bench_m1_exe = RES / "bench_m1.exe"
+        build(RES / "cm_m1.c", bench_m1_exe)
+        all_imgs = list(dict.fromkeys(img for sname in COMPAT_SETS for img in SETS[sname]))
+        bench_m1_rows = parse_bench_rows(run(bench_m1_exe, all_imgs, reps=1), all_imgs)
+        bench_m1_sizes = {img: row[0] for img, row in bench_m1_rows.items()}
         cand_exe = REPO / "bin" / "windows-x64" / "bin" / "rasterfold.exe"
         print(f"m1_exe_sha256={hashlib.sha256(m1_exe.read_bytes()).hexdigest()}")
         print(f"cand_exe_sha256={hashlib.sha256(cand_exe.read_bytes()).hexdigest()}")
-        cache: dict[str, bytes] = {}
+        print(f"bench_m1_exe_sha256={hashlib.sha256(bench_m1_exe.read_bytes()).hexdigest()}")
         with tempfile.TemporaryDirectory(prefix="rf_m1_eq_") as td:
             work = Path(td)
-            for sname in ("photo", "tp", "tp-only", "synth"):
-                imgs = SETS[sname]
-                set_h = hashlib.sha256()
-                total_bytes = 0
-                for img in imgs:
-                    if img not in cache:
-                        ppm_path = PPM / f"{img}.ppm"
-                        w, h = ppm_dimensions(ppm_path)
-                        raw_len = w * h * 3
-                        rgb = ppm_path.read_bytes()[-raw_len:]
-                        bmp_path = work / f"{img}.bmp"
-                        bmp_path.write_bytes(rf.write_bmp24(w, h, rgb))
-                        ref_bytes: bytes | None = None
-                        for tag, exe in (("m1", m1_exe), ("cand", cand_exe)):
-                            for t in ("1", "3"):
-                                out_fold = work / f"{img}_{tag}_t{t}.fold"
-                                out_fold.unlink(missing_ok=True)
-                                subprocess.run(
-                                    [str(exe), "encode", "--threads", t, str(bmp_path), str(out_fold)],
-                                    stdin=subprocess.DEVNULL,
-                                    check=True,
-                                    capture_output=True,
-                                )
-                                b = out_fold.read_bytes()
-                                if ref_bytes is None:
-                                    ref_bytes = b
-                                elif b != ref_bytes:
-                                    raise SystemExit(f"MISMATCH on {img} ({tag} t={t})")
-                        m1_fold = work / f"{img}_m1_t1.fold"
-                        for t in ("1", "3"):
-                            dec_bmp = work / f"{img}_cand_dec_t{t}.bmp"
-                            dec_bmp.unlink(missing_ok=True)
-                            subprocess.run(
-                                [str(cand_exe), "decode", "--threads", t, str(m1_fold), str(dec_bmp)],
-                                stdin=subprocess.DEVNULL,
-                                check=True,
-                                capture_output=True,
-                            )
-                            if rf.read_bmp24(dec_bmp.read_bytes()) != (w, h, rgb):
-                                raise SystemExit(f"DECODE MISMATCH on {img} (cand t={t})")
-                        assert ref_bytes is not None
-                        cache[img] = ref_bytes
-                    ref_bytes = cache[img]
-                    total_bytes += len(ref_bytes)
-                    set_h.update(ref_bytes)
-                print(
-                    f"{sname:7s} n={len(imgs):2d} total_bytes={total_bytes} "
-                    f"fold_stream_sha256={set_h.hexdigest()} identical=True m1_decoded=True"
+            exe_map = {"m1": m1_exe, "cand": cand_exe}
+
+            def load_image(img: str) -> tuple[int, int, bytes]:
+                ppm_path = PPM / f"{img}.ppm"
+                w, h = ppm_dimensions(ppm_path)
+                raw_len = w * h * 3
+                rgb = ppm_path.read_bytes()[-raw_len:]
+                bmp_path = work / f"{img}.bmp"
+                bmp_path.write_bytes(rf.write_bmp24(w, h, rgb))
+                return w, h, rgb
+
+            def encode_blob(tag: str, t: str, img: str, _w: int, _h: int, _rgb: bytes) -> bytes:
+                out_fold = work / f"{img}_{tag}_t{t}.fold"
+                out_fold.unlink(missing_ok=True)
+                subprocess.run(
+                    [str(exe_map[tag]), "encode", "--threads", t, str(work / f"{img}.bmp"), str(out_fold)],
+                    stdin=subprocess.DEVNULL,
+                    check=True,
+                    capture_output=True,
                 )
+                return out_fold.read_bytes()
+
+            def decode_blob(tag: str, t: str, img: str, src_tag: str, blob: bytes) -> tuple[int, int, bytes]:
+                src_fold = work / f"{img}_{src_tag}_t1.fold"
+                if not src_fold.is_file() or src_fold.read_bytes() != blob:
+                    src_fold.write_bytes(blob)
+                dec_bmp = work / f"{img}_{src_tag}_to_{tag}_dec_t{t}.bmp"
+                dec_bmp.unlink(missing_ok=True)
+                subprocess.run(
+                    [str(exe_map[tag]), "decode", "--threads", t, str(src_fold), str(dec_bmp)],
+                    stdin=subprocess.DEVNULL,
+                    check=True,
+                    capture_output=True,
+                )
+                return rf.read_bmp24(dec_bmp.read_bytes())
+
+            for line in verify_compat_sets(
+                SETS,
+                load_image,
+                encode_blob,
+                decode_blob,
+                allow_diff_sets,
+                bench_m1_sizes=bench_m1_sizes,
+            ):
+                print(line)
 
 
 if __name__ == "__main__":

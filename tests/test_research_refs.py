@@ -983,6 +983,229 @@ class ResearchRefsTests(unittest.TestCase):
             rep_rows = ab.parse_bench_rows(rep_out, ["raw_1x1"])
             self.assertGreater(rep_rows["raw_1x1"][1], rep_rows["raw_1x1"][2] * 5.0)
 
+    def test_compat_allow_diff_and_m1_baseline_build(self) -> None:
+        import os as os_mod
+        import test_correctness as tc
+
+        # 1. Option parsing and mode validation for --allow-diff.
+        allowed, cleaned = ab.extract_allow_diff_args(["7c3f7c7", "--allow-diff", "synth"])
+        self.assertEqual(allowed, {"synth"})
+        self.assertEqual(cleaned, ["7c3f7c7"])
+        allowed2, cleaned2 = ab.extract_allow_diff_args(["--allow-diff=photo,tp-only", "7c3f7c7"])
+        self.assertEqual(allowed2, {"photo", "tp-only"})
+        self.assertEqual(cleaned2, ["7c3f7c7"])
+
+        for bad_args in (
+            ["--allow-diff"],
+            ["--allow-diff", "-v"],
+            ["--allow-diff="],
+            ["--allow-diff", "unknown_set"],
+            ["--allow-diff=synth,bogus"],
+            ["--unknown-flag"],
+        ):
+            with self.assertRaises(SystemExit):
+                ab.extract_allow_diff_args(bad_args)
+
+        with mock.patch.object(sys, "argv", ["ab.py", "size", "photo", "--allow-diff", "synth"]):
+            with self.assertRaises(SystemExit) as ctx:
+                ab.main()
+            self.assertIn("only supported in compat mode", str(ctx.exception))
+
+        # 2. verify_compat_sets enforces thread determinism, allowed-set scoping,
+        # both-version decode fidelity, and bench_m1 size agreement.
+        sets_map = {
+            "photo": ["p1"],
+            "tp": ["t1"],
+            "tp-only": ["to1"],
+            "synth": ["s_same", "s_pal"],
+        }
+        pixels = {
+            name: (4, 4, bytes([(i + idx) & 0xFF for i in range(48)]))
+            for idx, name in enumerate(("p1", "t1", "to1", "s_same", "s_pal"))
+        }
+        base_blobs = {name: f"m1:{name}".encode("ascii") for name in pixels}
+        cand_blobs = {
+            name: (b"cand:s_pal_pal2" if name == "s_pal" else base_blobs[name])
+            for name in pixels
+        }
+        bench_sizes = {name: len(blob) for name, blob in base_blobs.items()}
+
+        def load_img(img: str) -> tuple[int, int, bytes]:
+            return pixels[img]
+
+        def make_enc(overrides: dict[tuple[str, str, str], bytes] | None = None):
+            ov = overrides or {}
+
+            def _enc(tag: str, t: str, img: str, _w: int, _h: int, _rgb: bytes) -> bytes:
+                if (tag, t, img) in ov:
+                    return ov[(tag, t, img)]
+                return base_blobs[img] if tag == "m1" else cand_blobs[img]
+
+            return _enc
+
+        def make_dec(bad_key: tuple[str, str, str] | None = None):
+            def _dec(_tag: str, t: str, img: str, src_tag: str, _blob: bytes) -> tuple[int, int, bytes]:
+                w, h, rgb = pixels[img]
+                if bad_key == (src_tag, t, img):
+                    return (w, h, bytes([rgb[0] ^ 1]) + rgb[1:])
+                return (w, h, rgb)
+
+            return _dec
+
+        lines = ab.verify_compat_sets(
+            sets_map,
+            load_img,
+            make_enc(),
+            make_dec(),
+            {"synth"},
+            bench_m1_sizes=bench_sizes,
+        )
+        self.assertEqual(len(lines), 4)
+        self.assertTrue(any(l.startswith("photo ") and "identical=True" in l and "bench_m1_verified=True" in l for l in lines))
+        self.assertTrue(any(l.startswith("synth ") and "identical=False (1/2 changed)" in l and "cand_decoded=True" in l for l in lines))
+
+        # Rejects synthetic diff when synth is not in allow_diff_sets.
+        with self.assertRaises(SystemExit) as ctx:
+            ab.verify_compat_sets(sets_map, load_img, make_enc(), make_dec(), set(), bench_m1_sizes=bench_sizes)
+        self.assertIn("MISMATCH on s_pal in set synth", str(ctx.exception))
+
+        # Rejects photo diff even when synth is in allow_diff_sets.
+        with self.assertRaises(SystemExit) as ctx:
+            ab.verify_compat_sets(
+                sets_map,
+                load_img,
+                make_enc({("cand", "1", "p1"): b"cand:p1_diff", ("cand", "3", "p1"): b"cand:p1_diff"}),
+                make_dec(),
+                {"synth"},
+                bench_m1_sizes=bench_sizes,
+            )
+        self.assertIn("MISMATCH on p1 in set photo", str(ctx.exception))
+
+        # Rejects thread nondeterminism on m1 or cand even inside an allowed-diff set.
+        for tag in ("m1", "cand"):
+            with self.assertRaises(SystemExit) as ctx:
+                ab.verify_compat_sets(
+                    sets_map,
+                    load_img,
+                    make_enc({(tag, "3", "s_pal"): b"nondeterministic_t3"}),
+                    make_dec(),
+                    {"synth"},
+                    bench_m1_sizes=bench_sizes,
+                )
+            self.assertIn(f"MISMATCH on s_pal ({tag} t=3)", str(ctx.exception))
+
+        # Rejects decode mismatch on either m1 or cand files at either thread count.
+        for src_tag in ("m1", "cand"):
+            for t in ("1", "3"):
+                with self.assertRaises(SystemExit) as ctx:
+                    ab.verify_compat_sets(
+                        sets_map,
+                        load_img,
+                        make_enc(),
+                        make_dec((src_tag, t, "s_pal")),
+                        {"synth"},
+                        bench_m1_sizes=bench_sizes,
+                    )
+                self.assertIn(f"DECODE MISMATCH on s_pal ({src_tag}->cand t={t})", str(ctx.exception))
+
+        # Rejects bench_m1 size disagreement with m1 CLI output.
+        bad_bench = dict(bench_sizes)
+        bad_bench["s_pal"] += 1
+        with self.assertRaises(SystemExit) as ctx:
+            ab.verify_compat_sets(
+                sets_map,
+                load_img,
+                make_enc(),
+                make_dec(),
+                {"synth"},
+                bench_m1_sizes=bad_bench,
+            )
+        self.assertIn("BENCH MISMATCH on s_pal", str(ctx.exception))
+
+        # 3. Verify ab.build links cm_m1.c against m1_src/ container/codec sources (without current pal.c).
+        if not ab.CLANG.is_file():
+            self.skipTest(f"missing mingw clang toolchain at {ab.CLANG}")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            res_dir = Path(tmp)
+            m1_dir = res_dir / "m1_src"
+            m1_dir.mkdir(parents=True, exist_ok=True)
+            ppm_dir = res_dir / "ppm"
+            ppm_dir.mkdir(parents=True, exist_ok=True)
+            (ppm_dir / "kat_pal.ppm").write_bytes(
+                f"P6\n{tc.KAT_PAL_W} {tc.KAT_PAL_H}\n255\n".encode("ascii") + tc.KAT_PAL_RGB
+            )
+            (ppm_dir / "solid_16x16.ppm").write_bytes(
+                b"P6\n16 16\n255\n" + bytes([40, 80, 120] * (16 * 16))
+            )
+
+            # Populate m1_src with pre-palette sources (fold.c calling only rf_cm_encode/rf_cm_decode, no pal.c).
+            for fname in ("rf.h", "rc.h", "bmp.c", "crc32.c", "cm.c"):
+                (m1_dir / fname).write_bytes((ROOT / "src" / fname).read_bytes())
+            fold_no_pal = (
+                (ROOT / "src" / "fold.c")
+                .read_text(encoding="utf-8")
+                .replace(
+                    "    if (n > 0) {\n"
+                    "        size_t pal_n = 0;\n"
+                    "        rc = rf_pal_encode(img->rgb, img->width, img->height, f + RF_HEADER_SIZE, n - 1, &pal_n, err);\n"
+                    "        if (rc) { rf_free(f); return rc; }\n"
+                    "        if (pal_n > 0) {\n"
+                    "            n = pal_n;\n"
+                    "            method = RF_METHOD_PAL2;\n"
+                    "        }\n"
+                    "    }\n",
+                    "",
+                )
+                .replace(
+                    "    else if (hdr.method == RF_METHOD_PAL || hdr.method == RF_METHOD_PAL2) {\n"
+                    "        if ((rc = rf_pal_decode(payload, hdr.payload_size, rgb, 0, hdr.width, hdr.height, hdr.method, err)) != RF_OK) { rf_free(rgb); return rc; }\n"
+                    "    }",
+                    "",
+                )
+                .replace(
+                    "    else if (hdr.method == RF_METHOD_PAL || hdr.method == RF_METHOD_PAL2) {\n"
+                    "        if ((rc = rf_pal_decode(payload, hdr.payload_size, *bmp, stride, hdr.width, hdr.height, hdr.method, err)) != RF_OK) {\n"
+                    "            rf_free(*bmp);\n"
+                    "            *bmp = 0;\n"
+                    "            *bmp_size = 0;\n"
+                    "            return rc;\n"
+                    "        }\n"
+                    "    }",
+                    "",
+                )
+            )
+            self.assertNotIn("rf_pal_encode", fold_no_pal)
+            self.assertNotIn("rf_pal_decode", fold_no_pal)
+            (m1_dir / "fold.c").write_text(fold_no_pal, encoding="utf-8")
+            cm_m1_path = res_dir / "cm_m1.c"
+            cm_m1_path.write_bytes((ROOT / "src" / "cm.c").read_bytes())
+
+            bench_m1_exe = res_dir / "bench_m1.exe"
+            bench_cur_exe = res_dir / "bench_cur.exe"
+            with mock.patch.object(ab, "RES", res_dir):
+                self.assertTrue(ab.is_m1_baseline_source(cm_m1_path))
+                self.assertFalse(ab.is_m1_baseline_source(ROOT / "src" / "cm.c"))
+                ab.build(cm_m1_path, bench_m1_exe, flags=("-O0",))
+                ab.build(ROOT / "src" / "cm.c", bench_cur_exe, flags=("-O0",))
+
+                if os_mod.name == "nt" or subprocess.run(
+                    [str(bench_m1_exe)],
+                    stdin=subprocess.DEVNULL,
+                    capture_output=True,
+                ).returncode == 0:
+                    out_m1 = ab.run(bench_m1_exe, ["kat_pal", "solid_16x16"], reps=1)
+                    out_cur = ab.run(bench_cur_exe, ["kat_pal", "solid_16x16"], reps=1)
+                    self.assertIn(" RAW\n", out_m1)
+                    self.assertIn(" OK\n", out_m1)
+                    self.assertNotIn(" PAL\n", out_m1)
+                    self.assertIn(" PAL\n", out_cur)
+                    rows_m1 = ab.parse_bench_rows(out_m1, ["kat_pal", "solid_16x16"])
+                    rows_cur = ab.parse_bench_rows(out_cur, ["kat_pal", "solid_16x16"])
+                    self.assertEqual(rows_cur["kat_pal"][0], len(tc.KAT_PAL2))
+                    self.assertEqual(rows_m1["kat_pal"][0], 32 + tc.KAT_PAL_W * tc.KAT_PAL_H * 3)
+                    self.assertLess(rows_cur["solid_16x16"][0], rows_m1["solid_16x16"][0])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -189,7 +189,7 @@ The palette method is a new method number, so it needs no version decision and r
 | [x] | `D01 T01 §3` | Measure method 2 against JPEG XL and WebP                        |   4   |
 | [x] | `D01 T01 §4` | Two-step neighbour pattern and two-colour deduction for method 2 |   4   |
 | [x] | `D04 T01 §2` | A long fuzz campaign over every method                           |   3   |
-| [ ] | `D05 T01 §3` | Milestone 3 gate: Few-colour images solved                       |   4   |
+| [ ] | `D05 T01 §3` | Milestone 3 gate: Few-colour images solved                       |   5   |
 
 ### Phase 3 -- Milestone 4: Format version 3: beat JPEG XL e9 on photographs
 
