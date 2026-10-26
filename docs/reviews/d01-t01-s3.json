@@ -1,0 +1,98 @@
+{
+  "ref": "D01 T01 \u00a73",
+  "title": "Measure Method 2 against JPEG XL and WebP",
+  "implementation_sha": "526aca425d441614371cd98b8cdfc8ab0786f40e",
+  "date": "2026-10-26",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/01-compression/D01-T01-s3.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/01-compression/D01-T01-s3.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "builds: python3 scripts/build.py --target all -> 0 errors, 0 warnings",
+    "tidy: python3 scripts/tidy.py -> 11/11 unique warning(s) across 6 target databases",
+    "tests: python3 tests/test_research_refs.py -> Ran 10 tests OK",
+    "tests: python3 scripts/windows.py tests/test_research_refs.py -> Ran 10 tests OK",
+    "tests: python3 tests/test_correctness.py -> 38 passed, 0 failed",
+    "corpus: python3 research/ab.py size all --csv benchmarks/corpus.csv -> photo 30,865,211, tp 6,651,583, synth 207,146 (-7,627 vs 214,773)",
+    "benchmark: python3 scripts/windows.py tests/benchmark.py synthetic -n 3 -> synthetic 6,753 bytes across 10 images",
+    "claims: python3 scripts/todo-claims.py -> 32 todos, 119 claims -- 0 failed, 0 warning(s)",
+    "drift: python3 scripts/drift-check.py -> 263 supported documents; 0 error(s)"
+  ],
+  "completion": {
+    "report": "docs/reviews/01-compression/D01-T01-s3.md",
+    "verdict": "filed",
+    "candidate": "cdbbe5841bd32d033ceb7cf2f0f495038fa4f5a8",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": [
+      "D01 T01 \u00a74"
+    ]
+  },
+  "rounds_spent": 2,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/01-compression/D01-T01-s3.md",
+    "candidate": "f0db30e90da71a8a26a010140216c7bd0b3f9da1",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}

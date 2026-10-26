@@ -45,7 +45,7 @@ track: C1
 | :---: | :-----: | --------------------------------------------------------------------- | ---------- | :----: |
 |   1   |   §1    | One range coder shared between methods                                | --         |  [x]   |
 |   2   |   §2    | Method 2: palette encoder, decoder, oracle, spec                      | §1         |  [x]   |
-|   3   |   §3    | Measure method 2 against JPEG XL and WebP                             | §2         |  [ ]   |
+|   3   |   §3    | Measure method 2 against JPEG XL and WebP                             | §2         |  [x]   |
 |   4   |   §4    | Two-step neighbour pattern and two-colour deduction for palette coding | §3         |  [ ]   |
 
 ---
@@ -116,6 +116,8 @@ The method exists to close the synthetic gap without touching photographs. This 
 
 **Freeze check:** `KAT_FOLD` (`sha256=b3012508fdcadc58e768baaba1c9fc3cf5cc2dd837643888b1ca2314fe79bb32`) and `KAT_PAL` decode to their exact pixels and re-encode byte-identically (`python3 tests/test_correctness.py`: `38 passed, 0 failed`), and `photo` (`30,865,211` bytes) and `tp` (`6,651,583` bytes) corpus totals are unchanged.
 
+> **Verified:** 2026-10-26 | §3 | 526aca425d441614371cd98b8cdfc8ab0786f40e
+> **Review:** `docs/reviews/d01-t01-s3.json`
 ## 4. Two-Step Neighbour Pattern and Two-Colour Deduction for Palette Coding
 
 **Origin:** discovered run=fb78eefa5121 2026-10-26
