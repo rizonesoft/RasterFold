@@ -796,6 +796,118 @@ class ResearchRefsTests(unittest.TestCase):
             self.assertEqual(csv_path.read_bytes(), original_bytes)
             self.assertEqual([p.name for p in root.iterdir() if p.name.endswith(".tmp")], [])
 
+    def test_parse_bench_rows_accepts_ok_raw_pal_and_rejects_failures(self) -> None:
+        stdout = (
+            "raw_1x1.ppm                  35  bpp=280.0000  enc=    0.0ms dec=    0.0ms  (10/10 cyc/sample) RAW\n"
+            "kat_cm.ppm                  536  bpp=16.7500   enc=    0.4ms dec=    0.3ms  (100/80 cyc/sample) OK\n"
+            "kat_pal.ppm                 127  bpp=3.9688    enc=    0.1ms dec=    0.1ms  (30/25 cyc/sample) PAL\n"
+            "TOTAL 698  enc=0.5ms dec=0.4ms  (50/40 cyc/sample)\n"
+        )
+        rows = ab.parse_bench_rows(stdout, ["raw_1x1", "kat_cm", "kat_pal"])
+        self.assertEqual(rows["raw_1x1"], (35, 0.05, 0.05))
+        self.assertEqual(rows["kat_cm"], (536, 0.4, 0.3))
+        self.assertEqual(rows["kat_pal"], (127, 0.1, 0.1))
+
+        for bad_line, expected_msg in (
+            (
+                "kat_pal.ppm                 127  bpp=3.9688  enc=  0.1ms dec=  0.1ms  (30/25 cyc/sample) MISMATCH\n",
+                "bench round-trip failure on kat_pal: MISMATCH",
+            ),
+            (
+                "kat_pal.ppm                 127  bpp=3.9688  enc=  0.1ms dec=  0.1ms  (30/25 cyc/sample) UNKNOWN\n",
+                "bench round-trip failure on kat_pal: UNKNOWN",
+            ),
+            (
+                "encode failed ppm/kat_pal.ppm\n",
+                "bench encode failure: encode failed ppm/kat_pal.ppm",
+            ),
+        ):
+            with self.assertRaises(SystemExit) as ctx:
+                ab.parse_bench_rows(bad_line, ["kat_pal"])
+            self.assertIn(expected_msg, str(ctx.exception))
+
+        with self.assertRaises(SystemExit) as ctx:
+            ab.parse_bench_rows(stdout, ["raw_1x1", "missing_img"])
+        self.assertIn("bench output missing expected images: ['missing_img']", str(ctx.exception))
+
+        # Verify size --csv refuses to overwrite existing corpus.csv when bench output fails validation.
+        with tempfile.TemporaryDirectory() as tmp:
+            res_dir = Path(tmp)
+            ppm_dir = res_dir / "ppm"
+            ppm_dir.mkdir(parents=True, exist_ok=True)
+            (ppm_dir / "syn_checker.ppm").write_bytes(b"P6\n1 1\n255\n\x00\x00\x00")
+            (res_dir / "jxl_refs.json").write_text(
+                json.dumps({"syn_checker:e7": 316, "syn_checker:e9": 210, "syn_checker:webp": 82}),
+                encoding="utf-8",
+            )
+            csv_path = res_dir / "corpus.csv"
+            sentinel = b"# existing corpus csv\n"
+            csv_path.write_bytes(sentinel)
+
+            for bad_out in (
+                "syn_checker.ppm  297  bpp=0.5801  enc=0.1ms dec=0.1ms (1/1 cyc/sample) MISMATCH\n",
+                "encode failed ppm/syn_checker.ppm\n",
+            ):
+                with (
+                    mock.patch.object(ab, "RES", res_dir),
+                    mock.patch.object(ab, "PPM", ppm_dir),
+                    mock.patch.object(ab, "provenance_snapshot", return_value=("a" * 40, "b" * 64, {})),
+                    mock.patch.object(ab, "build", lambda *a, **kw: None),
+                    mock.patch.object(ab, "run", return_value=bad_out),
+                    mock.patch.object(sys, "argv", ["ab.py", "size", "syn_checker", "--csv", str(csv_path)]),
+                ):
+                    with self.assertRaises(SystemExit):
+                        ab.main()
+                self.assertEqual(csv_path.read_bytes(), sentinel)
+
+    def test_bench_container_round_trips_and_variant_builds(self) -> None:
+        import test_correctness as tc
+
+        def write_ppm(path: Path, w: int, h: int, rgb: bytes) -> None:
+            path.write_bytes(f"P6\n{w} {h}\n255\n".encode("ascii") + rgb)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            res_dir = Path(tmp)
+            ppm_dir = res_dir / "ppm"
+            ppm_dir.mkdir(parents=True, exist_ok=True)
+            write_ppm(ppm_dir / "raw_1x1.ppm", 1, 1, bytes([12, 34, 56]))
+            write_ppm(ppm_dir / "kat_cm.ppm", tc.KAT_W, tc.KAT_H, tc.KAT_RGB)
+            write_ppm(ppm_dir / "kat_pal.ppm", tc.KAT_PAL_W, tc.KAT_PAL_H, tc.KAT_PAL_RGB)
+
+            cm_var = res_dir / "cm_variant.c"
+            cm_var.write_bytes((ROOT / "src" / "cm.c").read_bytes())
+            pal_var = res_dir / "pal_variant.c"
+            pal_var.write_bytes((ROOT / "src" / "pal.c").read_bytes())
+
+            for idx, src in enumerate((ROOT / "src" / "cm.c", cm_var, pal_var)):
+                exe = res_dir / f"bench_{idx}.exe"
+                ab.build(src, exe, flags=("-O0",) if idx > 0 else ())
+                with mock.patch.object(ab, "RES", res_dir):
+                    out = ab.run(exe, ["raw_1x1", "kat_cm", "kat_pal"], reps=1)
+                self.assertIn("raw_1x1.ppm", out)
+                self.assertIn(" RAW\n", out)
+                self.assertIn(" OK\n", out)
+                self.assertIn(" PAL\n", out)
+                rows = ab.parse_bench_rows(out, ["raw_1x1", "kat_cm", "kat_pal"])
+                self.assertEqual(rows["raw_1x1"][0], 35)
+                self.assertEqual(rows["kat_cm"][0], len(tc.KAT_FOLD))
+                self.assertEqual(rows["kat_pal"][0], len(tc.KAT_PAL))
+
+            # Inject a pixel mismatch in a palette variant decode and verify ab.run rejects it.
+            bad_pal = res_dir / "pal_bad.c"
+            bad_pal_text = (ROOT / "src" / "pal.c").read_text(encoding="utf-8").replace(
+                'if (bad || dec.in != dec.end) return rf_fail(err, RF_ERR_FORMAT, "invalid fold: palette stream");\n    return RF_OK;',
+                'if (bad || dec.in != dec.end) return rf_fail(err, RF_ERR_FORMAT, "invalid fold: palette stream");\n    out[0] ^= 1u;\n    return RF_OK;',
+                1,
+            )
+            bad_pal.write_text(bad_pal_text, encoding="utf-8")
+            bad_exe = res_dir / "bench_bad.exe"
+            ab.build(bad_pal, bad_exe, flags=("-O0",))
+            with mock.patch.object(ab, "RES", res_dir):
+                with self.assertRaises(SystemExit) as ctx:
+                    ab.run(bad_exe, ["kat_pal"], reps=1)
+                self.assertIn("MISMATCH", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

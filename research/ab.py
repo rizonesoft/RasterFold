@@ -483,8 +483,20 @@ def names(args):
 
 
 def build(src, out, flags=()):
-    cmd = [str(CLANG), "-O2", "-march=x86-64-v2", "-mtune=generic", "-g", *flags, f"-I{REPO / 'src'}", "-o", str(out),
-           str(TOOLS / "bench.c"), str(TOOLS / "benchsys.c"), str(src), str(REPO / "src" / "crc32.c"), "-lwinmm"]
+    src_path = Path(src)
+    src_text = src_path.read_text(encoding="utf-8", errors="ignore") if src_path.is_file() else ""
+    is_pal_variant = ("rf_pal_encode" in src_text and "rf_cm_encode" not in src_text) or (
+        "pal" in src_path.name.lower() and "cm" not in src_path.name.lower()
+    )
+    cm_src = REPO / "src" / "cm.c" if is_pal_variant else src_path
+    pal_src = src_path if is_pal_variant else REPO / "src" / "pal.c"
+    cmd = [
+        str(CLANG), "-O2", "-march=x86-64-v2", "-mtune=generic", "-g", *flags,
+        f"-I{REPO / 'src'}", "-o", str(out),
+        str(TOOLS / "bench.c"), str(TOOLS / "benchsys.c"),
+        str(REPO / "src" / "fold.c"), str(cm_src), str(pal_src),
+        str(REPO / "src" / "bmp.c"), str(REPO / "src" / "crc32.c"), "-lwinmm",
+    ]
     r = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True)
     if r.returncode:
         raise SystemExit(r.stderr)
@@ -514,12 +526,12 @@ def parse_bench_rows(stdout: str, expected_imgs: list[str] | tuple[str, ...]) ->
         if line.startswith("encode failed"):
             raise SystemExit(f"bench encode failure: {line}")
         m = re.match(
-            r"^(\S+)\.ppm\s+(\d+)\s+bpp=\S+\s+enc=\s*([\d.]+)ms\s+dec=\s*([\d.]+)ms\s+\([^)]+\)\s+(\S+)$",
+            r"^(?:ppm/)?(\S+)\.ppm\s+(\d+)\s+bpp=\S+\s+enc=\s*([\d.]+)ms\s+dec=\s*([\d.]+)ms\s+\([^)]+\)\s+(\S+)$",
             line,
         )
         if m:
             status = m.group(5)
-            if status not in ("OK", "RAW"):
+            if status not in ("OK", "RAW", "PAL"):
                 raise SystemExit(f"bench round-trip failure on {m.group(1)}: {status}")
             rows[m.group(1)] = (int(m.group(2)), max(float(m.group(3)), 0.05), max(float(m.group(4)), 0.05))
     missing = [img for img in expected_imgs if img not in rows]
@@ -554,11 +566,13 @@ def main():
         for _ in range(n):
             out_a = run(RES / "benchA.exe", imgs)
             out_b = run(RES / "benchB.exe", imgs)
+            rows_a = parse_bench_rows(out_a, imgs)
+            rows_b = parse_bench_rows(out_b, imgs)
             res["A"].append(total(out_a))
             res["B"].append(total(out_b))
             if verbose:
-                row_runs["A"].append(parse_bench_rows(out_a, imgs))
-                row_runs["B"].append(parse_bench_rows(out_b, imgs))
+                row_runs["A"].append(rows_a)
+                row_runs["B"].append(rows_b)
         for k, v in res.items():
             enc = [x[1] for x in v]; dec = [x[2] for x in v]
             print(f"{k}: size={v[0][0]}  enc min={min(enc):7.1f} med={statistics.median(enc):7.1f}   dec min={min(dec):7.1f} med={statistics.median(dec):7.1f}")
@@ -607,11 +621,12 @@ def main():
         refs = json.loads((RES / "jxl_refs.json").read_text(encoding="utf-8"))
 
         def one(n):
+            out = ""
             for _ in range(3):
                 out = run(RES / "benchS.exe", [n])
-                m = re.search(r"^\S+\s+(\d+)", out, re.M)
-                if m:
-                    return n, int(m.group(1))
+                rows = parse_bench_rows(out, [n])
+                if n in rows:
+                    return n, rows[n][0]
             raise SystemExit(f"no size for {n}: {out!r}")
         with ThreadPoolExecutor(8) as pool:
             got = list(pool.map(one, imgs))

@@ -1,4 +1,4 @@
-// bench.c - time src/cm.c encode/decode in thread cycles (best of N); verifies round trip.
+// bench.c - time .fold encode/decode (src/fold.c, src/cm.c, src/pal.c) in thread cycles (best of N); verifies round trip.
 // Optional -p: sample the thread's RIP ~1 kHz into prof_rips.txt (see prof.py).
 #include <stdio.h>
 #include <stdlib.h>
@@ -45,33 +45,41 @@ int main(int argc, char **argv) {
     }
     double te_all = 0, td_all = 0, px_all = 0; size_t tot = 0;
     for (int a = 1; a < argc; a++) {
-        if (!strncmp(argv[a], "-r", 2)) { reps = atoi(argv[a] + 2); continue; }
+        if (!strncmp(argv[a], "-r", 2)) { reps = atoi(argv[a] + 2); if (reps < 1) reps = 1; continue; }
         if (!strcmp(argv[a], "-p")) continue;
         if (!strncmp(argv[a], "-t", 2)) { threads = atoi(argv[a] + 2); continue; }
         Image im; if (!load_ppm(argv[a], &im)) { fprintf(stderr, "bad %s\n", argv[a]); return 1; }
         size_t raw = (size_t)im.w * im.h * 3;
-        uint8_t *buf = malloc(raw + 256), *out = malloc(raw);
-        size_t n = 0; double be = 1e30, bd = 1e30; int ok = 1;
-        int is_raw = 0;
+        rf_image rfi = { (uint32_t)im.w, (uint32_t)im.h, im.rgb };
+        size_t fold_sz = 0; double be = 1e30, bd = 1e30; int ok = 1;
+        uint32_t method = RF_METHOD_CM;
         for (int r = 0; r < reps; r++) {
+            uint8_t *fold = 0;
+            size_t sz = 0;
             double t0 = cyc_ms();
-            if (rf_cm_encode(im.rgb, im.w, im.h, buf, raw - 1, &n, threads, 0)) { printf("encode failed %s\n", argv[a]); ok = 0; break; }
+            if (rf_encode(&rfi, &fold, &sz, threads, 0)) { printf("encode failed %s\n", argv[a]); ok = 0; break; }
             double t1 = cyc_ms();
-            if (n == 0) { is_raw = 1; n = raw; be = bd = t1 - t0; break; }   /* container stores raw */
-            memset(out, 0, raw);
+            fold_sz = sz;
+            rf_image dec_im = {0};
+            rf_info info = {0};
             double t2 = cyc_ms();
-            int rc = rf_cm_decode(buf, n, out, 0, im.w, im.h, threads, 0);
+            int rc = rf_decode(fold, sz, &dec_im, &info, threads, 0);
             double t3 = cyc_ms();
-            ok &= rc == 0 && memcmp(out, im.rgb, raw) == 0;
+            method = info.method;
+            ok &= rc == 0 && dec_im.rgb != 0 && dec_im.width == (uint32_t)im.w && dec_im.height == (uint32_t)im.h && memcmp(dec_im.rgb, im.rgb, raw) == 0;
+            rf_free(dec_im.rgb);
+            rf_free(fold);
+            if (method == RF_METHOD_RAW) { be = bd = t1 - t0; break; }   /* container stores raw */
             if (t1 - t0 < be) be = t1 - t0;
             if (t3 - t2 < bd) bd = t3 - t2;
         }
         const char *b = strrchr(argv[a], '/'); b = b ? b + 1 : argv[a];
+        const char *status = !ok ? "MISMATCH" : (method == RF_METHOD_RAW ? "RAW" : (method == RF_METHOD_PAL ? "PAL" : "OK"));
         double px = (double)im.w * im.h;
-        printf("%-24s %9zu  bpp=%.4f  enc=%7.1fms dec=%7.1fms  (%.0f/%.0f cyc/sample) %s\n", b, n + 32, (n + 32) * 8.0 / px, be, bd,
-               be * 3.9e6 / (px * 3), bd * 3.9e6 / (px * 3), ok ? (is_raw ? "RAW" : "OK") : "MISMATCH");
-        te_all += be; td_all += bd; tot += n + 32; px_all += px;
-        free(buf); free(out); free(im.rgb);
+        printf("%-24s %9zu  bpp=%.4f  enc=%7.1fms dec=%7.1fms  (%.0f/%.0f cyc/sample) %s\n", b, fold_sz, fold_sz * 8.0 / px, be, bd,
+               be * 3.9e6 / (px * 3), bd * 3.9e6 / (px * 3), status);
+        te_all += be; td_all += bd; tot += fold_sz; px_all += px;
+        free(im.rgb);
     }
     printf("TOTAL %zu  enc=%.1fms dec=%.1fms  (%.0f/%.0f cyc/sample)\n", tot, te_all, td_all, te_all * 3.9e6 / (px_all * 3), td_all * 3.9e6 / (px_all * 3));
     if (prof) {
