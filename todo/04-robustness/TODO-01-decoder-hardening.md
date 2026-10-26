@@ -22,7 +22,7 @@ track: R1
 - [`src/cm.c`](../../src/cm.c) -- `rdec_bit`, `run_channel`, and `run_pipelined`, where §1 adds the early exit
 - [`tests/fuzz_decode.py`](../../tests/fuzz_decode.py) -- the fuzzer §2 extends
 - [`docs/research.md`](../../docs/research.md) -- sections 5.5 and 7.1
-- -> XREF: D01 T01 §2 -- method 2, whose decoder §2's seeds must reach
+- -> XREF: D01 T01 §2, D01 T01 §4 -- method 2, whose decoder §2's seeds must reach
 
 ## Outcome
 
@@ -38,7 +38,7 @@ track: R1
 | Order | Section | Deliverable                                   | Depends On | Status |
 | :---: | :-----: | --------------------------------------------- | ---------- | :----: |
 |   1   |   §1    | Stop decoding a stream that has run out       | --         |  [x]   |
-|   2   |   §2    | A long fuzz campaign over every method        | §1, D01 T01 §2 |  [ ]   |
+|   2   |   §2    | A long fuzz campaign over every method        | §1, D01 T01 §2, D01 T01 §4 |  [ ]   |
 |   3   |   §3    | Oracle and spec agree on padding and counters | --         |  [x]   |
 
 ---

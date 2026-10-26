@@ -33,7 +33,7 @@ track: G1
 | :---: | :-----: | ----------- | ---------- | :----: |
 |   1   |  §1   | Milestone 1 gate: Locked baseline | D00 T01 §1, D00 T01 §2, D00 T01 §3, D00 T01 §4, D00 T01 §5, D00 T02 §1, D00 T02 §2, D00 T02 §3, D08 T01 §1, D08 T01 §2, D08 T01 §3, D08 T02 §1, D08 T02 §2, D08 T02 §3, D08 T02 §4, D08 T02 §5, D08 T02 §6, D08 T02 §7, D00 T04 §1, D00 T04 §2, D00 T04 §3, D00 T04 §4, D08 T04 §1, D99 T01 §3, D99 T01 §4 |  [x]   |
 |   2   |  §2   | Milestone 2 gate: Same bytes, leaner and harder | D03 T01 §1, D03 T01 §2, D03 T01 §3, D04 T01 §1, D02 T01 §1, D02 T01 §2, D02 T01 §4, §1 |  [x]   |
-|   3   |  §3   | Milestone 3 gate: Few-colour images solved | D01 T01 §1, D01 T01 §2, D01 T01 §3, D04 T01 §2, §2 |  [ ]   |
+|   3   |  §3   | Milestone 3 gate: Few-colour images solved | D01 T01 §1, D01 T01 §2, D01 T01 §3, D01 T01 §4, D04 T01 §2, §2 |  [ ]   |
 |   4   |  §4   | Milestone 4 gate: Format version 3: beat JPEG XL e9 on photographs | D01 T02 §1, D01 T02 §2, D01 T02 §3, D01 T02 §4, D01 T02 §5, D01 T02 §6, D01 T02 §7, D01 T03 §1, §3 |  [ ]   |
 |   5   |  §5   | Milestone 5 gate: Exact repeats | D01 T04 §1, D01 T04 §2, D01 T04 §3, §4 |  [ ]   |
 |   6   |  §6   | Milestone 6 gate: Faster than WebP to decode | D02 T02 §1, D01 T03 §2, §5 |  [ ]   |

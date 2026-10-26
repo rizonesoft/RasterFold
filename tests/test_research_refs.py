@@ -442,10 +442,10 @@ class ResearchRefsTests(unittest.TestCase):
         synth = ab.reconstruct_set_summary(csv_path, "synth")
         self.assertEqual(synth["images"], ab.SETS["synth"])
         self.assertEqual(synth["count"], 11)
-        self.assertEqual(f"{synth['e7_ratio']:.4f}", "0.9480")
-        self.assertEqual(f"{synth['e7_geomean']:.4f}", "1.1986")
-        self.assertEqual(synth["worst_image"], "syn_checker")
-        self.assertEqual(f"{synth['worst_e7_ratio']:.4f}", "18.0665")
+        self.assertEqual(f"{synth['e7_ratio']:.4f}", "0.9144")
+        self.assertEqual(f"{synth['e7_geomean']:.4f}", "0.7081")
+        self.assertEqual(synth["worst_image"], "syn_gradient")
+        self.assertEqual(f"{synth['worst_e7_ratio']:.4f}", "1.5665")
 
     def test_corpus_csv_provenance_and_failure_preservation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

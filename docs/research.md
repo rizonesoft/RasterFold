@@ -42,12 +42,14 @@ what the encoder writes is.
 
 The codec is C with no C runtime, built by `build.ps1` with the pinned
 toolchain in `tools/` (Clang 23, LLD, Ninja; pins in `toolchain.json`). The
-format is `.fold` version 2. Method 0 is raw RGB and method 1 ("CM") is the
-context-mixing coder in `src/cm.c`: the JPEG XL weighted predictor corrected by
+format is `.fold` version 2. Method 0 is raw RGB, method 1 ("CM") is the
+context-mixing coder in `src/cm.c` (the JPEG XL weighted predictor corrected by
 a 12-tap sign-sign LMS stage, five context models mixed by a logistic mixer,
-and one binary range coder per channel (G, R-G, B-G), with one thread per
-channel. The Python oracle `tests/rfi_ref.py` implements the same format
-independently and stays byte-identical with the C encoder.
+and one binary range coder per channel G, R-G, B-G, with one thread per
+channel), and method 2 ("palette") is the palette index coder in `src/pal.c` for
+images with at most 256 distinct colours. The Python oracle `tests/rfi_ref.py`
+implements the same format independently and stays byte-identical with the C
+encoder.
 
 `python tests/measure_final.py` (exit 0, PASS) on `measure/image.bmp`:
 
@@ -71,17 +73,22 @@ RasterFold bytes / JPEG XL e7 bytes:
 | kodak | 24 | 0.9859 | 0.9860 | kodim17 1.0037 |
 | ic | 14 | 0.9647 | 0.9517 | ic_nightshot_iso_1600 0.9942 |
 | tp (test pack) | 10 | 0.9743 | 0.9722 | tp_nightshot 0.9931 |
-| synth | 11 | 0.9480 | 1.1986 | syn_checker 18.07 |
+| synth | 11 | 0.9144 | 0.7081 | syn_gradient 1.5665 |
 
 Only kodim17 (+0.37%) and kodim09 (+0.19%) are larger than JPEG XL among the
-photographs. On the generated images, stripes, solid fills, UI, text, diagram,
-and noise are smaller. `syn_checker` (16-pixel cells) is 18.1 times larger,
-`syn_pixel` (1-pixel checker) 9.1 times, `syn_gradient` 1.57 times, and
-`syn_odd` (a 65x63 gradient) 1.23 times. JPEG XL has a palette transform for the
-checkers; the palette design (4.1) addresses them. Lossless WebP is smaller than
-both codecs on most generated images, and on `syn_gradient` it takes 180 bytes
-where RasterFold takes 4,521 (its backward references copy shifted rows; the
-match model of `D01 T04` answers it).
+photographs. On the generated images, with method 2 (`D01 T01 §2`, `§3`),
+stripes, solid fills, 16-pixel checker (`syn_checker`, 297 vs 316 bytes e7,
+down from 5,709), UI (1,560 vs 2,316), text (1,540 vs 2,164), diagram (1,553 vs
+2,160), wide, and noise are smaller than JPEG XL e7 (`synth` total `207,146` vs
+`226,544` bytes, geometric mean `0.7081`, down from `214,773` and `1.1986`).
+`syn_gradient` is 1.57 times JPEG XL e7 (4,521 vs 2,886 bytes), `syn_pixel`
+(1-pixel checker) is 1.36 times e7 (90 vs 66 bytes, down from 599; `D01 T01 §4`
+adds two-step neighbour bits and two-colour deduction to close the remaining gap
+against e7's 66 and e9's 53 bytes), and `syn_odd` (a 65x63 gradient) is 1.23
+times (163 vs 132 bytes). Lossless WebP is smaller than both codecs on most
+generated images, and on `syn_gradient` it takes 180 bytes where RasterFold
+takes 4,521 (its backward references copy shifted rows; the match model of
+`D01 T04` answers it).
 
 Speed: `research/bench.c` measures about 440 CPU cycles per sample on one
 thread (G, R, and B each count as one sample) on the i5-11600K, and about 190
@@ -257,6 +264,7 @@ experiment is repeated only when its plan says what differs this time.
 | context rows capped at 2048 per model (instead of unbounded; 4-model design) | +0.12% sub | kept: bounded memory |
 | context rows capped at 1024 per model (4-model design) | +0.35% sub | rejected |
 | context rows capped at 256 per model | +1.8% on measure + kodim01 | rejected |
+| method 2 palette coder (first-seen <= 256 colours, 5-bit neighbour equality pattern, D1/D2/D3 + 8-bit literal tree, 4.1, `D01 T01 §2`, `§3`) | -3.55% `synth` total (`214,773` -> `207,146` bytes, `0.9480` -> `0.9144` of e7, geomean `1.1986` -> `0.7081` of e7; `syn_checker` `5,709` -> `297`, `syn_pixel` `599` -> `90`, `syn_ui` `2,107` -> `1,560`, `syn_text` `2,118` -> `1,540`, `syn_diagram` `2,134` -> `1,553`; `photo` `30,865,211` and `tp` `6,651,583` unchanged) | kept; `syn_pixel` (`90` vs `66` e7 / `53` e9) and `syn_checker` (`297` vs `210` e9) follow-up filed as `D01 T01 §4` |
 
 ### 3.3 Mixing and counters
 
@@ -303,7 +311,7 @@ reintroducing any needs an A/B run (2.4) that shows a gain.
 
 ### 4.1 Palette method for images with few colours (method 2)
 
-**Owner:** `D01 T01 §1` to `§3`.
+**Owner:** `D01 T01 §1` to `§4`.
 
 **Problem.** `syn_checker` is 18.07 times JPEG XL's size and `syn_pixel` 9.08
 times; both have two colours. The weighted predictor mispredicts every cell

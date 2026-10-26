@@ -46,7 +46,7 @@ M = [
     (3, "Few-colour images solved",
      "method 2 shipped; `syn_checker` below 210 bytes and `syn_pixel` below 53 bytes (JPEG XL e9's sizes); photo sizes unchanged; 20,000 fuzz mutations over every method clean",
      SIZE, [FF], None,
-     "D01 T01 §1, D01 T01 §2, D01 T01 §3, D04 T01 §2"),
+     "D01 T01 §1, D01 T01 §2, D01 T01 §3, D01 T01 §4, D04 T01 §2"),
     (4, "Format version 3: beat JPEG XL e9 on photographs",
      "format version 3 with the accepted model changes: photo total at most 0.975 of JPEG XL e9, test pack at most 0.980, at least 35 of 39 photos below e9, three-thread decode at most 0.6 of JPEG XL's",
      f"{SIZE}, {BENCH}", [FF, IDLE], None,
