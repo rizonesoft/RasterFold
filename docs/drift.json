@@ -1791,7 +1791,9 @@
     "docs/reviews/conclave-guard-port.md -> /home/derickpayne/projects/RasterFold/scripts/campaign_guard.py:849": "Captured reviewer output (review-dispatch.py round 1, 2026-10-21), byte-exact under its digest; the targets are absolute file:line citations, not repository links",
     "docs/reviews/conclave-guard-port.md -> /home/derickpayne/projects/RasterFold/scripts/campaign_guard.py:346": "Captured reviewer output (review-dispatch.py round 1, 2026-10-21), byte-exact under its digest; the targets are absolute file:line citations, not repository links",
     "docs/reviews/conclave-guard-port.md -> /home/derickpayne/projects/RasterFold/.claude/skills/process-plan/SKILL.md:69": "Captured reviewer output (review-dispatch.py round 1, 2026-10-21), byte-exact under its digest; the targets are absolute file:line citations, not repository links",
-    "docs/reviews/conclave-guard-port.md -> /home/derickpayne/projects/RasterFold/scripts/campaign_guard.py:1827": "Captured reviewer output (review-dispatch.py round 1, 2026-10-21), byte-exact under its digest; the targets are absolute file:line citations, not repository links"
+    "docs/reviews/conclave-guard-port.md -> /home/derickpayne/projects/RasterFold/scripts/campaign_guard.py:1827": "Captured reviewer output (review-dispatch.py round 1, 2026-10-21), byte-exact under its digest; the targets are absolute file:line citations, not repository links",
+    "docs/reviews/01-compression/D01-T01-s4.md -> /home/derickpayne/projects/RasterFold/todo/01-compression/TODO-01-palette-method.md:142": "Captured reviewer output (review-dispatch.py completion, 2026-10-26), byte-exact under its digest; the targets are absolute file:line citations, not repository links",
+    "docs/reviews/01-compression/D01-T01-s4.md -> /home/derickpayne/projects/RasterFold/tests/test_correctness.py:923": "Captured reviewer output (review-dispatch.py completion, 2026-10-26), byte-exact under its digest; the targets are absolute file:line citations, not repository links"
   },
   "generators": [
     {
