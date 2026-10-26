@@ -1546,7 +1546,7 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "2026-10-26: Reviewed README.md against src/rf.h, src/fold.c, src/pal.c, src/main.c, research/bench.c, and spec/FOLD.md for D01 T01 section 4 (Method 3 extended palette)",
+      "evidence": "2026-10-26: Reviewed README.md against benchmarks/corpus.csv and benchmarks/results.csv for D05 T01 section 3",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "c72a8dbb03d1698fd8f9b12957884ac894f8aede680182c78821eb3a7f2c3fed",
@@ -1611,7 +1611,7 @@
       }
     },
     "docs/index.md": {
-      "evidence": "2026-10-26: Reviewed docs/index.md against src/rf.h, src/fold.c, src/pal.c, src/main.c, research/bench.c, and spec/FOLD.md for D01 T01 section 4 (Method 3 extended palette)",
+      "evidence": "2026-10-26: Reviewed docs/index.md against benchmarks/corpus.csv and benchmarks/results.csv for D05 T01 section 3",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "c72a8dbb03d1698fd8f9b12957884ac894f8aede680182c78821eb3a7f2c3fed",
@@ -1637,13 +1637,13 @@
       "review": "Author-attested: 2026-10-25 re-read docs/getting-started.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/benchmarks.md": {
-      "evidence": "2026-10-26: Reviewed docs/benchmarks.md against measure/verdict.json for D05 T01 section 3",
+      "evidence": "2026-10-26: Reviewed docs/benchmarks.md against benchmarks/corpus.csv and benchmarks/results.csv for D05 T01 section 3",
       "sources": {
         "src/rf.h": "c72a8dbb03d1698fd8f9b12957884ac894f8aede680182c78821eb3a7f2c3fed",
         "measure/verdict.json": "7194c624e48fa2590ab0689481417db892f2cde23a27b4958b4c2e983d93cd84",
-        "benchmarks/results.csv": "cc2fb0b336081131c5ad57b8795a51b07ac36fb14942619e1d02e7002fb72e22",
-        "benchmarks/corpus.csv": "2d9a564a8f899041c884fc6235b2cf33b28344b50595e260c78bf25ebde1b980",
-        "docs/benchmarks.md": "0c694e4885aede9ba3a3af155de1688f76b0534a824ab3580a4833fcc28d033e"
+        "benchmarks/results.csv": "1285833e4dc3428a234606b2293018cc9427595dc2bb3cb1db7b7b26ebf8570a",
+        "benchmarks/corpus.csv": "0302f06e4149da73199cb20c8aecbd30e26a5c34c99a769429e389b322d4dfb6",
+        "docs/benchmarks.md": "b7fe5bcaa60c27da4fd50ec6d38fb7fb6eece3610d8efde8bc8ab9fae89eaaa3"
       },
       "reviewed_at": "2026-10-25",
       "doc_sha256": "cb432a027a1da6cf87a7b6ea38912c56736b0eb0c4802bd4ac2e31a17ce4358d",
