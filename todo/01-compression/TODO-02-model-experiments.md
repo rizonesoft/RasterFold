@@ -2,7 +2,7 @@
 schema_version: 1
 id: model-experiments
 domain: 01-compression
-status: draft
+status: done
 title: "TODO-02 -- Model Experiments for Method 1"
 depends_on: []
 track: C2
@@ -48,7 +48,7 @@ track: C2
 |   4   |   §4    | Learning cost on small images                 | --         |  [x]   |
 |   5   |   §5    | An exact-repeat context                       | --         |  [x]   |
 |   6   |   §6    | The ceiling of encoder-chosen parameters      | --         |  [x]   |
-|   7   |   §7    | The accepted variants measured together       | §1, §2, §3, §4, §5, §6 |  [ ]   |
+|   7   |   §7    | The accepted variants measured together       | §1, §2, §3, §4, §5, §6 |  [x]   |
 
 ---
 
@@ -208,6 +208,8 @@ Gains measured one at a time do not simply add: two models can capture the same 
 
 **Test checkpoint:** the combined `ab.py size photo`, `tp`, and `synth` lines against the baseline (photo against the 2026-09-29 figure 0.9712), the `tp` held-out verdict, the agreed decode ratios, and (accepted only) `git apply --check research/variants/version-3.patch` exiting 0; on rejection, the quoted rejection record and no patch file.
 
+> **Verified:** 2026-10-27 | §7 | fb27c317d4cae74e7d5aadd38789e3fbc68fc80c
+> **Review:** `docs/reviews/d01-t02-s7.json`
 ## Verification
 
 - [ ] Every section's row in `docs/research.md` section 3 exists and matches its stamp

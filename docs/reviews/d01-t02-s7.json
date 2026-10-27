@@ -1,0 +1,88 @@
+{
+  "ref": "D01 T02 \u00a77",
+  "title": "The Accepted Variants Measured Together",
+  "implementation_sha": "fb27c317d4cae74e7d5aadd38789e3fbc68fc80c",
+  "date": "2026-10-27",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/01-compression/D01-T02-s7.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/01-compression/D01-T02-s7.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "check-all 29/29; validate 0 fatal; claims 81 hold; timing repeated to agreement"
+  ],
+  "completion": {
+    "report": "docs/reviews/01-compression/D01-T02-s7.md",
+    "verdict": "complete",
+    "candidate": "1f1555eeba08ba72c56d72f00ad7344e48a21b68",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 2,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/01-compression/D01-T02-s7.md",
+    "candidate": "779d0279237aef5de52c7f3c7ac3aee1bc4f890d",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}
