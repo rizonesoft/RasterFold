@@ -79,6 +79,70 @@ def report(tables, labels, expected):
     return 0
 
 
+CHAN = re.compile(r"^(\S+)\.ppm\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)")
+
+
+def parse_chan(path):
+    rows = {}
+    for ln in open(path):
+        m = CHAN.match(ln)
+        if not m:
+            continue
+        name = m.group(1)
+        if name in rows:
+            raise SystemExit(f"ceiling: duplicate row {name} in {path}")
+        rows[name] = tuple(int(m.group(i)) for i in (2, 3, 4, 5))
+    return rows
+
+
+def compute_channels(tables, labels, expected, overhead):
+    """Per-channel ceiling: overhead[i] plus 12 plus, per channel, the
+    smallest stream any candidate produced. Tables map name -> (g, r, b,
+    written); overhead maps name -> fold bytes outside the cm payload."""
+    for label, rows in zip(labels, tables):
+        if set(rows) != set(expected):
+            raise SystemExit(
+                f"ceiling: {label} does not hold exactly the photo set")
+    winners = Counter()
+    ceiling_total = 0
+    base_total = 0
+    for img in expected:
+        base_total += overhead[img] + tables[0][img][3]
+        total = overhead[img] + 12
+        for c in range(3):
+            best = min(range(len(tables)), key=lambda i: tables[i][img][c])
+            winners[labels[best]] += 1
+            total += tables[best][img][c]
+        ceiling_total += total
+    return ceiling_total, base_total, winners
+
+
+def report_channels(files, labels, expected):
+    vrows = parse(files[0])
+    tables = [parse_chan(f) for f in files[1:]]
+    for label, rows in zip(labels[1:], tables):
+        if set(rows) != set(vrows):
+            raise SystemExit(
+                f"ceiling: {label} does not hold exactly the photo set")
+    overhead = {}
+    base_chan = tables[0]
+    for img in expected:
+        overhead[img] = vrows[img][0] - base_chan[img][3]
+        if overhead[img] < 0:
+            raise SystemExit(f"ceiling: negative overhead for {img}")
+    ceiling_total, base_total, winners = compute_channels(
+        tables, labels[1:], expected, overhead)
+    gain = (base_total - ceiling_total) / base_total * 100
+    print(f"baseline total: {base_total}")
+    print(f"per-channel ceiling total: {ceiling_total} "
+          f"({gain:+.3f}% vs baseline)")
+    print("channel winners: " + ", ".join(
+        f"{label}={winners.get(label, 0)}" for label in labels[1:]))
+    print(f"bar (ceiling at least 0.3% below baseline): "
+          f"{'cleared' if gain >= 0.3 else 'not cleared'}")
+    return 0
+
+
 def self_test():
     expected = ["a", "b", "c"]
     base = {"a": (1000, 900), "b": (2000, 1900), "c": (4000, 3900)}
@@ -101,14 +165,28 @@ def self_test():
         pass
     else:
         raise AssertionError("missing rows not refused")
+    # Per-channel: independent selection beats whole-image selection.
+    ca = {"x": (100, 200, 100, 412), "y": (500, 500, 500, 1512)}
+    cb = {"x": (200, 100, 100, 412), "y": (500, 400, 500, 1412)}
+    total, base_total, winners = compute_channels(
+        [ca, cb], ["base", "var"], ["x", "y"], {"x": 20, "y": 30})
+    assert (total, base_total) == (1774, 1974), (total, base_total)
+    assert winners == Counter({"var": 2, "base": 4}), winners
     print("ceiling self-test: PASS (minima, percentages, ties, "
-          "winner counts, 0.3% boundary, truncated input refused)")
+          "winner counts, 0.3% boundary, truncated input refused, "
+          "per-channel minima)")
     return 0
 
 
 def main(argv):
     if argv == ["--self-test"]:
         return self_test()
+    if argv[:1] == ["channels"]:
+        # ceiling.py channels <baseline -v> <chanbench base> <chanbench var>...
+        if len(argv) < 4:
+            raise SystemExit(__doc__)
+        labels = [Path(a).stem for a in argv[1:]]
+        return report_channels(argv[1:], labels, ab.SETS["photo"])
     if len(argv) < 2:
         raise SystemExit(__doc__)
     labels = [Path(a).stem for a in argv]
