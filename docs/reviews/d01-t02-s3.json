@@ -1,0 +1,88 @@
+{
+  "ref": "D01 T02 \u00a73",
+  "title": "A Second Mixer Weight Set",
+  "implementation_sha": "c492fd51e6db224f539c9b0e1aacfd440ddf98cf",
+  "date": "2026-10-27",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/01-compression/D01-T02-s3.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/01-compression/D01-T02-s3.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "check-all 26/29 then 3 failed gates re-run green after plan --sync (docs tests OK); validate 0 fatal; claims 81 hold"
+  ],
+  "completion": {
+    "report": "docs/reviews/01-compression/D01-T02-s3.md",
+    "verdict": "complete",
+    "candidate": "12d7842dc9b758f06c4b84af89c02b8a1129c4d3",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 2,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/01-compression/D01-T02-s3.md",
+    "candidate": "2ab6f120ec76e9bf80c6c0b01b2ea893309e179c",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}

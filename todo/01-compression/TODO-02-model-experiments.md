@@ -44,7 +44,7 @@ track: C2
 | :---: | :-----: | --------------------------------------------- | ---------- | :----: |
 |   1   |   §1    | A sixth and seventh context model             | --         |  [x]   |
 |   2   |   §2    | Two adaptation speeds per context             | --         |  [x]   |
-|   3   |   §3    | A second mixer weight set                     | --         |  [ ]   |
+|   3   |   §3    | A second mixer weight set                     | --         |  [x]   |
 |   4   |   §4    | Learning cost on small images                 | --         |  [ ]   |
 |   5   |   §5    | An exact-repeat context                       | --         |  [ ]   |
 |   6   |   §6    | The ceiling of encoder-chosen parameters      | --         |  [ ]   |
@@ -117,6 +117,9 @@ Mixer weights depend only on `wsel` (the error energy and the G residual class).
 - [x] Commit: `"research: measure a second mixer weight set"`
 
 **Test checkpoint:** the quoted `ab.py size` and `ab` lines for the variant against the baseline; if the bar was cleared, its quoted `vsjxl.py` three-thread minimum-time decode ratio against the 0.6 bar and `git apply --check research/variants/second-mixer.patch` exiting 0, else the quoted rejection record and no patch file (a timing rejection quotes the `vsjxl.py` minimum-time ratio it failed).
+
+> **Verified:** 2026-10-27 | §3 | c492fd51e6db224f539c9b0e1aacfd440ddf98cf
+> **Review:** `docs/reviews/d01-t02-s3.json`
 ## 4. Learning Cost on Small Images
 
 kodim17 (+0.37%) and kodim09 (+0.19%), both 768x512, are the only photographs still larger than JPEG XL; small images spend a larger share of their samples learning from counters that start at 1/2. Bar: at least 0.1% on the `kodak` total with no image of `photo` worse by more than 0.05%.
