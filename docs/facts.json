@@ -75,7 +75,7 @@
   "exit_usage": 1,
   "exit_usage_meaning": "usage",
   "format_name": "fold",
-  "format_version": 2,
+  "format_version": 3,
   "header_bytes": 32,
   "input_image_ext": ".bmp",
   "max_dimension": 32768,

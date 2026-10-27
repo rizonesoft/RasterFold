@@ -100,6 +100,7 @@ static int run(int argc, rf_path_char **argv, rf_error *err) {
         uint32_t pal_colours = (file_size >= RF_HEADER_SIZE + 2)
             ? (uint32_t)file[RF_HEADER_SIZE] + ((uint32_t)file[RF_HEADER_SIZE + 1] << 8) + 1u
             : 0u;
+        uint32_t fold_version = file_size >= 4 ? file[3] : 0;
         if (inspect) rc = rf_inspect(file, file_size, &info, err);
         else rc = rf_decode_bmp(file, file_size, &out, &out_size, threads, err);
         rf_free(file);
@@ -110,7 +111,7 @@ static int run(int argc, rf_path_char **argv, rf_error *err) {
             rc = rf_write_atomic(pos[2], out, out_size, err);
             written = out_size;
         } else {
-            rf_print(0, "RasterFold fold version 2" RF_EOL);
+            rf_print(0, fold_version == 3 ? "RasterFold fold version 3" RF_EOL : "RasterFold fold version 2" RF_EOL);
             info_line("width", info.width);
             info_line("height", info.height);
             rf_print(0, info.method == RF_METHOD_CM ? "method: cm" RF_EOL :

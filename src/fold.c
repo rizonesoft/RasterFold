@@ -1,4 +1,4 @@
-/* The .fold container, version 2. spec/FOLD.md defines every field. */
+/* The .fold container, versions 2 and 3. spec/FOLD.md defines every field. */
 #include "rf.h"
 
 static uint32_t rd16(const uint8_t *p) { return (uint32_t)p[0] | ((uint32_t)p[1] << 8); }
@@ -70,10 +70,11 @@ int rf_encode(const rf_image *img, uint8_t **file, size_t *size, int threads, rf
     return RF_OK;
 }
 
-static int parse_fold(const uint8_t *f, size_t size, rf_info *info, const uint8_t **payload_out, rf_error *err) {
+static int parse_fold(const uint8_t *f, size_t size, rf_info *info, const uint8_t **payload_out, uint32_t *version_out, rf_error *err) {
     if (size < RF_HEADER_SIZE) return rf_fail(err, RF_ERR_FORMAT, "invalid fold: truncated");
     if (f[0] != 'R' || f[1] != 'F' || f[2] != 'I') return rf_fail(err, RF_ERR_FORMAT, "invalid fold: magic");
-    if (f[3] != RF_VERSION || rd16(f + 4) != RF_VERSION) return rf_fail(err, RF_ERR_UNSUPPORTED, "unsupported fold: version");
+    if (f[3] != rd16(f + 4) || (f[3] != 2 && f[3] != RF_VERSION)) return rf_fail(err, RF_ERR_UNSUPPORTED, "unsupported fold: version");
+    *version_out = f[3];
     if (rd16(f + 6) != RF_HEADER_SIZE) return rf_fail(err, RF_ERR_UNSUPPORTED, "unsupported fold: header size");
     if (rd16(f + 18) != RF_FORMAT_RGB8) return rf_fail(err, RF_ERR_UNSUPPORTED, "unsupported fold: pixel format");
     if (rf_crc32(f, 28) != rd32(f + 28)) return rf_fail(err, RF_ERR_FORMAT, "invalid fold: header checksum");
@@ -100,7 +101,8 @@ int rf_decode(const uint8_t *f, size_t size, rf_image *out, rf_info *info, int t
     out->rgb = 0;
     rf_info hdr = {0};
     const uint8_t *payload = 0;
-    int rc = parse_fold(f, size, &hdr, &payload, err);
+    uint32_t version = 0;
+    int rc = parse_fold(f, size, &hdr, &payload, &version, err);
     if (rc || !payload) return rc;
     if (info) *info = hdr;
     size_t raw = (size_t)hdr.width * hdr.height * 3;
@@ -109,7 +111,7 @@ int rf_decode(const uint8_t *f, size_t size, rf_image *out, rf_info *info, int t
     if (hdr.method == RF_METHOD_RAW) memcpy(rgb, payload, raw);
     else if (hdr.method == RF_METHOD_PAL || hdr.method == RF_METHOD_PAL2) {
         if ((rc = rf_pal_decode(payload, hdr.payload_size, rgb, 0, hdr.width, hdr.height, hdr.method, err)) != RF_OK) { rf_free(rgb); return rc; }
-    } else if ((rc = rf_cm_decode(payload, hdr.payload_size, rgb, 0, hdr.width, hdr.height, threads, err)) != RF_OK) { rf_free(rgb); return rc; }
+    } else if ((rc = rf_cm_decode(payload, hdr.payload_size, rgb, 0, hdr.width, hdr.height, threads, (int)version, err)) != RF_OK) { rf_free(rgb); return rc; }
     out->width = hdr.width;
     out->height = hdr.height;
     out->rgb = rgb;
@@ -121,7 +123,8 @@ int rf_decode_bmp(const uint8_t *f, size_t size, uint8_t **bmp, size_t *bmp_size
     *bmp_size = 0;
     rf_info hdr = {0};
     const uint8_t *payload = 0;
-    int rc = parse_fold(f, size, &hdr, &payload, err);
+    uint32_t version = 0;
+    int rc = parse_fold(f, size, &hdr, &payload, &version, err);
     if (rc || !payload) return rc;
     size_t stride = 0;
     rc = rf_bmp_alloc(hdr.width, hdr.height, bmp, bmp_size, &stride, err);
@@ -134,7 +137,7 @@ int rf_decode_bmp(const uint8_t *f, size_t size, uint8_t **bmp, size_t *bmp_size
             *bmp_size = 0;
             return rc;
         }
-    } else if ((rc = rf_cm_decode(payload, hdr.payload_size, *bmp, stride, hdr.width, hdr.height, threads, err)) != RF_OK) {
+    } else if ((rc = rf_cm_decode(payload, hdr.payload_size, *bmp, stride, hdr.width, hdr.height, threads, (int)version, err)) != RF_OK) {
         rf_free(*bmp);
         *bmp = 0;
         *bmp_size = 0;

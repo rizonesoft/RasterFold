@@ -9,7 +9,7 @@ source_path: docs/building.md
 
 # Build and verify RasterFold
 
-RasterFold builds a command-line codec, shared library and static library for Windows x64, Linux x64, Android ARM64 (`arm64-v8a`) and Android x64 (`x86_64`). x64 binaries require the x86-64-v2 instruction set. The format stays at version 2; the public C API starts at 1.0.
+RasterFold builds a command-line codec, shared library and static library for Windows x64, Linux x64, Android ARM64 (`arm64-v8a`) and Android x64 (`x86_64`). x64 binaries require the x86-64-v2 instruction set. The current format version is 3; the public C API starts at 1.0.
 
 ## Linux and WSL
 
@@ -117,4 +117,4 @@ Packages and SHA-256 sidecars land in `build/packages/`. They preserve the targe
 
 The full gate runner retains logs under `build/logs/` and reports every failed command. `--quick` and `--skip-build` are iteration shortcuts, not full verification. Comparative benchmarks additionally require ffmpeg with libjxl and follow the quiet-machine protocol in [research.md](research-summary.md).
 
-The sources currently declare format 2, API 1.0, a 32768-pixel dimension limit and a 33554432-pixel image limit. See [the document drift policy](document-drift.md) for validation and repair.
+The sources currently declare format 3, API 1.0, a 32768-pixel dimension limit and a 33554432-pixel image limit. See [the document drift policy](document-drift.md) for validation and repair.

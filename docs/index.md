@@ -13,7 +13,7 @@ RasterFold is a lossless RGB image codec written in C11 for Windows x64, Linux x
 
 ## Current Version and Limits
 
-- **Current encoded format:** `.fold` format version 2 <!-- drift:fact format_version = 2 --> (`32`-byte header <!-- drift:fact header_bytes = 32 -->, CRC-32 verified header and payload).
+- **Current encoded format:** `.fold` format version 3 <!-- drift:fact format_version = 3 --> (`32`-byte header <!-- drift:fact header_bytes = 32 -->, CRC-32 verified header and payload).
 - **Current public C API:** version 1.0 (`RF_API_VERSION_MAJOR = 1` <!-- drift:fact api_major = 1 -->, `RF_API_VERSION_MINOR = 0` <!-- drift:fact api_minor = 0 -->).
 - **Current image limits:** maximum dimension `32768` pixels <!-- drift:fact max_dimension = 32768 -->; maximum image `33554432` pixels <!-- drift:fact max_pixels = 33554432 -->; maximum file size `268435456` bytes <!-- drift:fact max_file_bytes = 268435456 -->.
 - **Current vs. historical vs. planned scope:**
@@ -27,7 +27,7 @@ RasterFold is a lossless RGB image codec written in C11 for Windows x64, Linux x
 - [Installation and Build](installation.md): four-target host prerequisites, Linux/WSL and Windows build commands, artifact layout, Android NDK cross-builds, and development archives mirrored from `docs/building.md`.
 - [CLI and Library Usage](usage.md): target artifacts, CLI commands and flags, exit codes, and C API embedding overview mirrored from `README.md`.
 - [C API Guide](c-api.md): buffer ownership, concurrency, options validation, static/shared linking on Linux/Windows/Android, and return codes mirrored from `docs/library.md`.
-- [Format Specification](format.md): the normative `.fold` version 2 container and context-mixing (CM) bitstream specification mirrored from `spec/FOLD.md`.
+- [Format Specification](format.md): the normative `.fold` version 3 container and context-mixing (CM) bitstream specification mirrored from `spec/FOLD.md`.
 - [Examples](examples.md): CLI round-trip workflows and complete C11 PPM encode/decode consumer examples (`examples/encode.c`, `examples/decode.c`, `examples/ppm.h`).
 - [Benchmarks](benchmarks.md): corpus and reference-image measurements, static SVG comparison charts, and data tables comparing RasterFold with JPEG XL (`e7` and `e9`), lossless WebP, and PNG.
 - [Research Summary](research-summary.md): where the codec stands, the measurement protocol, experiments already tried, and prior art mirrored from `docs/research.md`.

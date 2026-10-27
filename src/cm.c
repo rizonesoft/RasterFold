@@ -12,7 +12,7 @@
 #include "rc.h"
 #include "simd.h"
 
-#define NMODEL 5
+#define NMODEL 7
 #define NROWS 2048          /* context rows per model */
 #define NODES 32            /* node 0: row visit count; nodes 1..29: decisions */
 #define WSEL 128            /* mixer weight sets per channel */
@@ -73,6 +73,14 @@ static void cm_tables(void) {
 RF_INLINE int clampq(int v) { return v < -1024 ? -1024 : v > 1023 ? 1023 : v; }
 RF_INLINE int q9(int v) { return Q9T[clampq(v) + 1024]; }
 RF_INLINE int iabs(int v) { return v < 0 ? -v : v; }
+/* k0's scaled 7-level quantizer as a scalar: 3 plus or minus the number of
+   thresholds scl, 3*scl, 7*scl that 6*|v| reaches (mirrors the qcount3 call
+   that builds k0). */
+RF_INLINE int qn7(int v, int scl) {
+    const int a = 6 * iabs(v);
+    const int n = (a >= scl) + (a >= 3 * scl) + (a >= 7 * scl);
+    return v > 0 ? 3 + n : v < 0 ? 3 - n : 3;
+}
 RF_INLINE int ilog2(uint32_t v) { return 31 - __builtin_clz(v | 1); }
 RF_INLINE int qlog(int v) { return v <= 0 ? 0 : (v >= 16384 ? 15 : ilog2((uint32_t)v) + 1); }
 RF_INLINE int med3(int w, int n, int nw) {
@@ -108,7 +116,8 @@ typedef struct {
 } pos_t;
 
 typedef struct {
-    uint16_t *ctr;      /* NMODEL * NROWS * NODES counters */
+    int nmodel;         /* 5 for a version 2 stream, 7 for version 3 */
+    uint16_t *ctr;      /* nmodel * NROWS * NODES counters */
     int32_t *wt;        /* WSEL * NODES * WSTRIDE mixer weights */
     pos_t *pos;         /* 2 rows of w + 2 */
     int16_t *rows;      /* 3 rows of w plane samples */
@@ -135,8 +144,8 @@ typedef struct {
     volatile int abort;     /* set when a decoded stream runs out of bytes or encode exceeds cap */
 } cm_t;
 
-static int cm_alloc(cm_t *m, uint32_t w, uint32_t h, uint8_t *rgb, size_t bmp_stride, rf_error *err) {
-    size_t ctr = (size_t)NMODEL * NROWS * NODES * 2;
+static int cm_alloc(cm_t *m, uint32_t w, uint32_t h, uint8_t *rgb, size_t bmp_stride, int nmodel, rf_error *err) {
+    size_t ctr = (size_t)nmodel * NROWS * NODES * 2;
     size_t wt = (size_t)WSEL * NODES * WSTRIDE * 4;
     size_t pos = ((((size_t)w + 2) * 2 * sizeof(pos_t)) + 63) & ~(size_t)63;
     size_t rows = (((size_t)w * 3 * 2) + 63) & ~(size_t)63;
@@ -155,13 +164,14 @@ static int cm_alloc(cm_t *m, uint32_t w, uint32_t h, uint8_t *rgb, size_t bmp_st
     }
     for (int c = 0; c < 3; c++) {
         chan_t *ch = &m->ch[c];
+        ch->nmodel = nmodel;
         ch->ctr = (uint16_t *)b; b += ctr;
         ch->wt = (int32_t *)b; b += wt;
         ch->pos = (pos_t *)b; b += pos;
         ch->rows = (int16_t *)b; b += rows;
-        for (size_t i = 0; i < (size_t)NMODEL * NROWS * NODES; i++) ch->ctr[i] = (i % NODES) ? 32768 : 0;
+        for (size_t i = 0; i < (size_t)nmodel * NROWS * NODES; i++) ch->ctr[i] = (i % NODES) ? 32768 : 0;
         for (size_t i = 0; i < (size_t)WSEL * NODES; i++)
-            for (int k = 0; k < WSTRIDE; k++) ch->wt[i * WSTRIDE + k] = k < NMODEL ? 19661 : 0;
+            for (int k = 0; k < WSTRIDE; k++) ch->wt[i * WSTRIDE + k] = k < nmodel ? 19661 : 0;
         for (int k = 0; k < LMSN; k++) ch->lms[k] = 0;
         ch->bytes = 5u;
         ch->bad = 0;
@@ -175,10 +185,48 @@ static int cm_alloc(cm_t *m, uint32_t w, uint32_t h, uint8_t *rgb, size_t bmp_st
 }
 
 /* ------------------------------------------------------------ coding */
-/* One adaptive decision: mix five counters, code the bit, update. */
-RF_INLINE int code_bit(chan_t *ch, uint16_t *const cp[NMODEL], const uint32_t *rate, int32_t *wrow, int node, int bit, const int enc) {
+/* One adaptive decision, version 3 form: mix seven counters. */
+RF_INLINE int code_bit7(chan_t *ch, uint16_t *const cp[NMODEL], const uint32_t *rate, int32_t *wrow, int node, int bit, const int enc) {
+    uint16_t *c0 = cp[0] + node, *c1 = cp[1] + node, *c2 = cp[2] + node, *c3 = cp[3] + node;
+    uint16_t *c4 = cp[4] + node, *c5 = cp[5] + node, *c6 = cp[6] + node;
+    int32_t *w = wrow + (size_t)node * WSTRIDE;
+    uint32_t v0 = *c0, v1 = *c1, v2 = *c2, v3 = *c3, v4 = *c4, v5 = *c5, v6 = *c6;
+    int s0 = STRETCH[v0 >> 4], s1 = STRETCH[v1 >> 4], s2 = STRETCH[v2 >> 4];
+    int s3 = STRETCH[v3 >> 4], s4 = STRETCH[v4 >> 4], s5 = STRETCH[v5 >> 4], s6 = STRETCH[v6 >> 4];
+    __m128i wv0 = _mm_load_si128((const __m128i *)w);
+    __m128i wv1 = _mm_load_si128((const __m128i *)(w + 4));
+    __m128i sv = _mm_setr_epi16((int16_t)s0, (int16_t)s1, (int16_t)s2, (int16_t)s3,
+                                (int16_t)s4, (int16_t)s5, (int16_t)s6, 64);
+    int64_t dot = (int64_t)w[0] * s0 + (int64_t)w[1] * s1 + (int64_t)w[2] * s2 +
+                  (int64_t)w[3] * s3 + (int64_t)w[4] * s4 + (int64_t)w[5] * s5 +
+                  (int64_t)w[6] * s6 + (int64_t)w[7] * 64;
+    int x = (int)(dot >> 16);
+    x = x > 2047 ? 2047 : x < -2047 ? -2047 : x;
+    uint32_t p = (uint32_t)SQUASH[x + 2047];
+    uint32_t rt0 = rate[0], rt1 = rate[1], rt2 = rate[2], rt3 = rate[3];
+    uint32_t rt4 = rate[4], rt5 = rate[5], rt6 = rate[6];
+    if (enc) renc_bit(&ch->enc, bit, p);
+    else bit = rdec_bit(&ch->dec, p);
+    int err = (bit << 12) - (int)p;
+    __m128i ev = _mm_set1_epi32((int32_t)((uint16_t)err | (4096u << 16)));
+    __m128i ones = _mm_set1_epi16(1);
+    _mm_store_si128((__m128i *)w, _mm_add_epi32(wv0, _mm_srai_epi32(_mm_madd_epi16(_mm_unpacklo_epi16(sv, ones), ev), 13)));
+    _mm_store_si128((__m128i *)(w + 4), _mm_add_epi32(wv1, _mm_srai_epi32(_mm_madd_epi16(_mm_unpackhi_epi16(sv, ones), ev), 13)));
+    const int64_t target = bit ? 65535 : 0;
+    *c0 = (uint16_t)(v0 + (int32_t)(((target - (int64_t)v0) * (int64_t)rt0) >> 16));
+    *c1 = (uint16_t)(v1 + (int32_t)(((target - (int64_t)v1) * (int64_t)rt1) >> 16));
+    *c2 = (uint16_t)(v2 + (int32_t)(((target - (int64_t)v2) * (int64_t)rt2) >> 16));
+    *c3 = (uint16_t)(v3 + (int32_t)(((target - (int64_t)v3) * (int64_t)rt3) >> 16));
+    *c4 = (uint16_t)(v4 + (int32_t)(((target - (int64_t)v4) * (int64_t)rt4) >> 16));
+    *c5 = (uint16_t)(v5 + (int32_t)(((target - (int64_t)v5) * (int64_t)rt5) >> 16));
+    *c6 = (uint16_t)(v6 + (int32_t)(((target - (int64_t)v6) * (int64_t)rt6) >> 16));
+    return bit;
+}
+
+/* One adaptive decision, version 2 form: mix five counters. */
+RF_INLINE int code_bit5(chan_t *ch, uint16_t *const cp[NMODEL], const uint32_t *rate, int32_t *wrow, int node, int bit, const int enc) {
     uint16_t *c0 = cp[0] + node, *c1 = cp[1] + node, *c2 = cp[2] + node, *c3 = cp[3] + node, *c4 = cp[4] + node;
-    int32_t *w = wrow + node * WSTRIDE;
+    int32_t *w = wrow + (size_t)node * WSTRIDE;
     uint32_t v0 = *c0, v1 = *c1, v2 = *c2, v3 = *c3, v4 = *c4;
     int s0 = STRETCH[v0 >> 4], s1 = STRETCH[v1 >> 4], s2 = STRETCH[v2 >> 4];
     int s3 = STRETCH[v3 >> 4], s4 = STRETCH[v4 >> 4];
@@ -205,6 +253,11 @@ RF_INLINE int code_bit(chan_t *ch, uint16_t *const cp[NMODEL], const uint32_t *r
     *c3 = (uint16_t)(v3 + (int32_t)(((target - (int64_t)v3) * (int64_t)rt3) >> 16));
     *c4 = (uint16_t)(v4 + (int32_t)(((target - (int64_t)v4) * (int64_t)rt4) >> 16));
     return bit;
+}
+
+RF_INLINE int code_bit(chan_t *ch, uint16_t *const cp[NMODEL], const uint32_t *rate, int32_t *wrow, int node, int bit, const int enc) {
+    if (ch->nmodel == NMODEL) return code_bit7(ch, cp, rate, wrow, node, bit, enc);
+    return code_bit5(ch, cp, rate, wrow, node, bit, enc);
 }
 
 RF_INLINE int code_raw(chan_t *ch, int bit, const int enc) {
@@ -301,7 +354,7 @@ typedef struct {
 } stage_t;
 
 /* Prepare sample (x, y) of channel c: neighbours, prediction, contexts. The
-   five context rows are prefetched here; the coding phase reads them. */
+   seven context rows are prefetched here; the coding phase reads them. */
 RF_INLINE void cm_model(cm_t *m, const row_ctx_t *rc, const int c, uint32_t x, uint32_t y, const int interior, stage_t *s) {
     chan_t *ch = &m->ch[c];
     const int w = (int)m->w;
@@ -321,7 +374,7 @@ RF_INLINE void cm_model(cm_t *m, const row_ctx_t *rc, const int c, uint32_t x, u
     }
 
     /* Neighbours, spec section "Neighbours". */
-    int W, N, NW, NE, NN, NNE;
+    int W, N, NW, NE, NN, NNE, WW;
     const pos_t *pN = prv + x, *pNE, *pNW, *pW;
     if (interior) {
         W = r0[x - 1]; N = r1[x]; NW = r1[x - 1]; NE = r1[x + 1];
@@ -346,6 +399,7 @@ RF_INLINE void cm_model(cm_t *m, const row_ctx_t *rc, const int c, uint32_t x, u
         pNW = x > 0 ? pN - 1 : pN;
         pW = x > 0 ? cur + x - 1 : cur;
     }
+    WW = x > 1 ? r0[x - 2] : W;
 
     /* Weighted predictor (the JPEG XL self-correcting predictor). */
     int32_t *pr = s->pr;
@@ -460,8 +514,13 @@ RF_INLINE void cm_model(cm_t *m, const row_ctx_t *rc, const int c, uint32_t x, u
     uint32_t k3 = (uint32_t)qdot(q3, _mm_setr_epi16(343, 0, 49, 0, 7, 0, 1, 0));
     /* k4: W and N against the prediction with the error energy. */
     uint32_t k4 = (uint32_t)((q9(W - pred) * 9 + q9(N - pred)) * 16 + qE);
-    const uint32_t kk[NMODEL] = {k0, k1, k2, k3, k4};
-    for (int k = 0; k < NMODEL; k++) {
+    /* k5: NE and NW against the prediction with the error energy. */
+    uint32_t k5 = (uint32_t)((q9(NE - pred) * 9 + q9(NW - pred)) * 16 + qE);
+    /* k6: WW, NN and NNE against the prediction, 7 levels of the local scale. */
+    uint32_t k6 = (uint32_t)(((qn7(WW - pred, scl) * 7 + qn7(NN - pred, scl)) * 7 +
+                              qn7(NNE - pred, scl)) * 16 + qE);
+    const uint32_t kk[NMODEL] = {k0, k1, k2, k3, k4, k5, k6};
+    for (int k = 0; k < ch->nmodel; k++) {
         s->cp[k] = ch->ctr + ((size_t)k * NROWS + kk[k] % NROWS) * NODES;
         _mm_prefetch((const char *)s->cp[k], _MM_HINT_T0);
     }
@@ -483,7 +542,7 @@ RF_INLINE int cm_code(cm_t *m, const row_ctx_t *rc, const int c, uint32_t x, int
     pos_t *prv = rc->prv[c];
     uint16_t *const *cp = s->cp;
     uint32_t rate[NMODEL];
-    for (int k = 0; k < NMODEL; k++) {
+    for (int k = 0; k < ch->nmodel; k++) {
         uint32_t n = cp[k][0];
         rate[k] = RATE[n];
         cp[k][0] = (uint16_t)(n + (n < 60));
@@ -716,7 +775,7 @@ int rf_cm_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size_
     *written = 0;
     if (cap < 27u) return RF_OK;
     cm_t m;
-    if (cm_alloc(&m, w, h, (uint8_t *)rgb, 0, err) != RF_OK) return RF_ERR_LIMIT;
+    if (cm_alloc(&m, w, h, (uint8_t *)rgb, 0, NMODEL, err) != RF_OK) return RF_ERR_LIMIT;
     m.cap = cap;
     size_t each = (size_t)w * h + 64;
     for (int c = 0; c < 3; c++) renc_init(&m.ch[c].enc, out + 12 + each * c, each);
@@ -743,7 +802,7 @@ int rf_cm_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size_
     return RF_OK;
 }
 
-int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *out, size_t stride, uint32_t w, uint32_t h, int threads, rf_error *err) {
+int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *out, size_t stride, uint32_t w, uint32_t h, int threads, int version, rf_error *err) {
     cm_tables();
     if (n < 12) return rf_fail(err, RF_ERR_FORMAT, "invalid fold: cm streams");
     uint64_t sz[3], sum = 12;
@@ -754,7 +813,7 @@ int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *out, size_t stride, uint3
     }
     if (sum != n) return rf_fail(err, RF_ERR_FORMAT, "invalid fold: cm streams");
     cm_t m;
-    if (cm_alloc(&m, w, h, out, stride, err) != RF_OK) return RF_ERR_LIMIT;
+    if (cm_alloc(&m, w, h, out, stride, version == 3 ? NMODEL : 5, err) != RF_OK) return RF_ERR_LIMIT;
     const uint8_t *p = in + 12;
     for (int c = 0; c < 3; c++) {
         rdec_init(&m.ch[c].dec, p, (size_t)sz[c]);

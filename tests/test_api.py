@@ -15,7 +15,7 @@ import unittest
 import zlib
 
 import rfi_ref
-from test_correctness import KAT_FOLD, KAT_RGB, KAT_W, KAT_H, KAT_PAL, KAT_PAL2, KAT_PAL_RGB, KAT_PAL_W, KAT_PAL_H
+from test_correctness import KAT_FOLD, KAT_FOLD3, KAT_RGB, KAT_W, KAT_H, KAT_PAL, KAT_PAL2, KAT_PAL2_3, KAT_PAL_RGB, KAT_PAL_W, KAT_PAL_H
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = 'windows-x64' if os.name == 'nt' else 'linux-x64'
@@ -76,7 +76,7 @@ class Api(unittest.TestCase):
         # First encoding calls race the predictor's once-only table setup.
         with ThreadPoolExecutor(max_workers=4) as pool:
             result = list(pool.map(lambda _: encode(KAT_W, KAT_H, KAT_RGB), range(4)))
-        self.assertEqual(result, [KAT_FOLD] * 4)
+        self.assertEqual(result, [KAT_FOLD3] * 4)
 
     def test_version(self):
         self.assertEqual(LIBRARY.rf_version(), 1 << 16)
@@ -85,7 +85,7 @@ class Api(unittest.TestCase):
     def test_threads_prefix_and_padded_rows(self):
         padded = b''.join(KAT_RGB[y * 48:(y + 1) * 48] + b'padding' for y in range(8))
         for threads in (0, 1, 3, 9):
-            self.assertEqual(encode(16, 8, padded, threads, 55, prefix=True), KAT_FOLD)
+            self.assertEqual(encode(16, 8, padded, threads, 55, prefix=True), KAT_FOLD3)
 
     def test_decode_and_inspect(self):
         out, err, info = Pixels(), Error(), Info()
@@ -97,8 +97,8 @@ class Api(unittest.TestCase):
             LIBRARY.rf_free(out.data)
         self.assertEqual(LIBRARY.rf_inspect(KAT_FOLD, len(KAT_FOLD), C.byref(info), None), 0)
         self.assertEqual((info.width, info.height, info.method), (16, 8, 1))
-        self.assertEqual(encode(KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), KAT_PAL2)
-        for m_val, pal_blob in ((2, KAT_PAL), (3, KAT_PAL2)):
+        self.assertEqual(encode(KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), KAT_PAL2_3)
+        for m_val, pal_blob in ((2, KAT_PAL), (3, KAT_PAL2), (3, KAT_PAL2_3)):
             self.assertEqual(LIBRARY.rf_decode_image(pal_blob, len(pal_blob), None, C.byref(out), C.byref(err)), 0)
             try:
                 self.assertEqual((out.width, out.height, out.stride, out.layout, out.size), (16, 8, 48, 1, 384))

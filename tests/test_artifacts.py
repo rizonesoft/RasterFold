@@ -208,7 +208,7 @@ class Artifacts(unittest.TestCase):
             '        if (ti == 0) { ref_written = written; memcpy(ref_out, guard + 64, written); }\n'
             '        else if (written != ref_written || memcmp(ref_out, guard + 64, written) != 0) return 6;\n'
             '        memset(dec, 0, raw);\n'
-            '        if (rf_cm_decode(guard + 64, written, dec, 0, w, h, threads, &err) != RF_OK) return 7;\n'
+            '        if (rf_cm_decode(guard + 64, written, dec, 0, w, h, threads, 3, &err) != RF_OK) return 7;\n'
             '        if (memcmp(dec, rgb1, raw) != 0) return 8;\n'
             '        /* 2. Aggregate payload overflow: each stream fits <= each, but total > cap. */\n'
             '        memset(guard, 0xA5, 64);\n'

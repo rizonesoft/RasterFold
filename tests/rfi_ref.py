@@ -9,8 +9,9 @@ from __future__ import annotations
 import struct
 import zlib
 
-MAGIC = b"RFI\x02"
-VERSION = 2
+MAGIC = b"RFI\x03"
+VERSION = 3
+SUPPORTED_VERSIONS = (2, 3)
 HEADER = 32
 MAX_DIM = 32768
 MAX_PIXELS = 32 * 1024 * 1024
@@ -193,7 +194,8 @@ class RangeDecoder:
 
 # ---------------------------------------------------------------- CM model
 
-NMODEL = 5
+NMODEL = 7          # models written by this implementation (version 3)
+NMODEL_V2 = 5       # models in a version 2 file
 NROWS = 2048
 NODES = 32
 LMSN = 12
@@ -202,10 +204,11 @@ LMSN = 12
 class Channel:
     """Model state of one channel (G, R-G or B-G) and its coder."""
 
-    def __init__(self, w: int) -> None:
+    def __init__(self, w: int, nmodel: int = NMODEL) -> None:
         self.w = w
-        self.ctr = [[0 if node == 0 else 32768 for node in range(NODES)] for _ in range(NMODEL * NROWS)]
-        self.wt = [[19661, 19661, 19661, 19661, 19661, 0] for _ in range(128 * NODES)]
+        self.nmodel = nmodel
+        self.ctr = [[0 if node == 0 else 32768 for node in range(NODES)] for _ in range(nmodel * NROWS)]
+        self.wt = [[19661] * nmodel + [0] for _ in range(128 * NODES)]
         self.lms = [0] * LMSN
         # weighted predictor state, two rows of w + 2 positions (JPEG XL layout)
         self.perr = [[0, 0, 0, 0] for _ in range(2 * (w + 2))]
@@ -219,10 +222,11 @@ class Channel:
 
     # one decision
     def code_bit(self, rows, rates, wrow, node: int, bit: int) -> int:
+        nm = self.nmodel
         w = self.wt[wrow + node]
         cs = [self.ctr[r] for r in rows]
         st = [STRETCH[c[node] >> 4] for c in cs]
-        dot = sum(w[k] * st[k] for k in range(NMODEL)) + w[5] * 64
+        dot = sum(w[k] * st[k] for k in range(nm)) + w[nm] * 64
         x = _clamp(dot >> 16, -2047, 2047)
         p = SQUASH[x + 2047]
         if self.enc is not None:
@@ -230,11 +234,11 @@ class Channel:
         else:
             bit = self.dec.bit(p)
         err = (bit << 12) - p
-        for k in range(NMODEL):
+        for k in range(nm):
             w[k] = _wrap32(w[k] + ((st[k] * err + 4096) >> 13))
-        w[5] = _wrap32(w[5] + ((64 * err + 4096) >> 13))
+        w[nm] = _wrap32(w[nm] + ((64 * err + 4096) >> 13))
         target = 65535 if bit else 0
-        for k in range(NMODEL):
+        for k in range(nm):
             c = cs[k]
             c[node] += ((target - c[node]) * rates[k]) >> 16
         return bit
@@ -364,7 +368,14 @@ def _code_sample(ch: Channel, c: int, x: int, y: int, value: int, cross: dict) -
     k2 = (_qj(NE - N) * 81 + _qj(N - NW) * 9 + _qj(NW - W)) * 5 + (gq + 1) // 2
     k3 = ((_q7(_med3(W, N, NW) - pred) * 7 + _q7(W + N - NW - pred)) * 7 + _q7(((W + NE + 1) >> 1) - pred)) * 7 + _q7(N + NE - NNE - pred)
     k4 = (_q9(W - pred) * 9 + _q9(N - pred)) * 16 + qE
-    rows = [k * NROWS + kk % NROWS for k, kk in enumerate((k0, k1, k2, k3, k4))]
+    if ch.nmodel == NMODEL:
+        WW = r0[x - 2] if x > 1 else W
+        k5 = (_q9(NE - pred) * 9 + _q9(NW - pred)) * 16 + qE
+        k6 = ((_qn7(WW - pred, scl) * 7 + _qn7(NN - pred, scl)) * 7 + _qn7(NNE - pred, scl)) * 16 + qE
+        ks = (k0, k1, k2, k3, k4, k5, k6)
+    else:
+        ks = (k0, k1, k2, k3, k4)
+    rows = [k * NROWS + kk % NROWS for k, kk in enumerate(ks)]
     rates = []
     for r in rows:
         n = ch.ctr[r][0]
@@ -426,7 +437,7 @@ def _run(width: int, height: int, chans: list[Channel], rgb: bytearray) -> None:
 
 
 def cm_encode(width: int, height: int, rgb: bytes) -> bytes:
-    chans = [Channel(width) for _ in range(3)]
+    chans = [Channel(width, NMODEL) for _ in range(3)]
     for ch in chans:
         ch.enc = RangeEncoder()
     _run(width, height, chans, bytearray(rgb))
@@ -434,13 +445,13 @@ def cm_encode(width: int, height: int, rgb: bytes) -> bytes:
     return b"".join(struct.pack("<I", len(s)) for s in streams) + b"".join(streams)
 
 
-def cm_decode(payload: bytes, width: int, height: int) -> bytes:
+def cm_decode(payload: bytes, width: int, height: int, version: int = VERSION) -> bytes:
     if len(payload) < 12:
         raise FormatError("cm streams")
     sizes = struct.unpack_from("<III", payload, 0)
     if any(s < 5 for s in sizes) or 12 + sum(sizes) != len(payload):
         raise FormatError("cm streams")
-    chans = [Channel(width) for _ in range(3)]
+    chans = [Channel(width, NMODEL if version == 3 else NMODEL_V2) for _ in range(3)]
     pos = 12
     for ch, size in zip(chans, sizes):
         ch.dec = RangeDecoder(payload[pos:pos + size])
@@ -699,7 +710,7 @@ def decode_image(blob: bytes) -> tuple[int, int, bytes]:
     if blob[0:3] != b"RFI":
         raise FormatError("magic")
     version, header_size = struct.unpack_from("<HH", blob, 4)
-    if blob[3] != VERSION or version != VERSION:
+    if blob[3] != version or version not in SUPPORTED_VERSIONS:
         raise FormatError("version")
     if header_size != HEADER:
         raise FormatError("header size")
@@ -727,7 +738,7 @@ def decode_image(blob: bytes) -> tuple[int, int, bytes]:
         return width, height, bytes(payload)
     if method in (METHOD_PAL, METHOD_PAL2):
         return width, height, pal_decode(payload, width, height, method=method)
-    return width, height, cm_decode(payload, width, height)
+    return width, height, cm_decode(payload, width, height, version)
 
 
 # ---------------------------------------------------------------- BMP

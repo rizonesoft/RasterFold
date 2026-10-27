@@ -4,7 +4,7 @@
 <a href="https://github.com/rizonesoft/RasterFold/actions/workflows/build.yml?query=branch%3Amain+event%3Apush"><img src="https://github.com/rizonesoft/RasterFold/actions/workflows/build.yml/badge.svg?branch=main&amp;event=push" alt="Build and codec tests"></a>
 <a href="https://github.com/rizonesoft/RasterFold/actions/workflows/plan.yml?query=branch%3Amain+event%3Apush"><img src="https://github.com/rizonesoft/RasterFold/actions/workflows/plan.yml/badge.svg?branch=main&amp;event=push" alt="Plan and runner checks"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-orange" alt="GPL-3.0 license"></a>
-<a href="spec/FOLD.md"><img src="https://img.shields.io/badge/format-v2-36d7d1" alt="Format version 2"></a>
+<a href="spec/FOLD.md"><img src="https://img.shields.io/badge/format-v3-36d7d1" alt="Format version 3"></a>
 </p>
 
 <p align="center"><a href="docs/building.md">Build</a> · <a href="docs/library.md">Use the library</a> · <a href="spec/FOLD.md">Read the format</a> · <a href="docs/research.md">Explore the research</a> · <a href="CONTRIBUTING.md">Contribute</a></p>
@@ -15,7 +15,7 @@ The project is in active development. Windows and Linux executables and librarie
 
 ## What is here
 
-- **One format, identical bytes.** Format v2 has an independent Python oracle and a frozen known-answer file. Thread count does not change encoded output.
+- **One format, identical bytes.** Format v3 has an independent Python oracle and frozen known-answer files (version 2 files still decode). Thread count does not change encoded output.
 - **CLI and library.** Five C entry points provide encoding, decoding, validated inspection, version discovery and memory release. Shared and static libraries use the same core as the CLI.
 - **Careful file handling.** The CLI refuses existing destinations, writes an exclusive `.partial` file, flushes it, and publishes without replacing another file.
 - **A local, pinned toolchain.** LLVM, Ninja and the Android NDK live under ignored `tools/` directories, with checked download hashes. Windows builds retain their freestanding Win32 core.
@@ -64,5 +64,5 @@ Contributions should improve images in general. A size or speed claim needs the 
 Read the [contribution guide](CONTRIBUTING.md), [security policy](SECURITY.md) and [code of conduct](CODE_OF_CONDUCT.md). RasterFold is licensed under [GPL-3.0](LICENSE).
 
 <!-- drift:begin readme-capabilities -->
-Current codec: format 2, C API 1.0, RGB8. Maximum dimension: 32768; maximum image: 33554432 pixels. The native converter and full Pages site are planned in [the product vision](docs/vision.md).
+Current codec: format 3, C API 1.0, RGB8. Maximum dimension: 32768; maximum image: 33554432 pixels. The native converter and full Pages site are planned in [the product vision](docs/vision.md).
 <!-- drift:end readme-capabilities -->

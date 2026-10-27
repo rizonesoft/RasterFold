@@ -13,7 +13,7 @@ RasterFold is a lossless RGB image codec written in C11. It turns 24-bit BMP ima
 
 ## What is here
 
-- **One format, identical bytes.** Format v2 has an independent Python oracle and a frozen known-answer file. Thread count does not change encoded output.
+- **One format, identical bytes.** Format v3 has an independent Python oracle and frozen known-answer files (version 2 files still decode). Thread count does not change encoded output.
 - **CLI and library.** Five C entry points provide encoding, decoding, validated inspection, version discovery and memory release. Shared and static libraries use the same core as the CLI.
 - **Careful file handling.** The CLI refuses existing destinations, writes an exclusive `.partial` file, flushes it, and publishes without replacing another file.
 - **A local, pinned toolchain.** LLVM, Ninja and the Android NDK live under ignored `tools/` directories, with checked download hashes. Windows builds retain their freestanding Win32 core.
@@ -55,4 +55,4 @@ Include [`rasterfold.h`](../include/rasterfold.h), link a shared or static libra
 
 ## Current Capabilities and Limits
 
-Current codec: format 2, C API 1.0, RGB8. Maximum dimension: 32768; maximum image: 33554432 pixels. The native converter and full Pages site are planned in [the product vision](vision.md).
+Current codec: format 3, C API 1.0, RGB8. Maximum dimension: 32768; maximum image: 33554432 pixels. The native converter and full Pages site are planned in [the product vision](vision.md).

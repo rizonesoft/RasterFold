@@ -7,7 +7,7 @@ source_path: docs/troubleshooting.md
 
 # Troubleshooting
 
-**Status:** Current (`.fold` format version 2 <!-- drift:fact format_version = 2 -->, public C API 1.0 (`RF_API_VERSION_MAJOR = 1` <!-- drift:fact api_major = 1 -->, `RF_API_VERSION_MINOR = 0` <!-- drift:fact api_minor = 0 -->)).
+**Status:** Current (`.fold` format version 3 <!-- drift:fact format_version = 3 -->, public C API 1.0 (`RF_API_VERSION_MAJOR = 1` <!-- drift:fact api_major = 1 -->, `RF_API_VERSION_MINOR = 0` <!-- drift:fact api_minor = 0 -->)).
 
 This guide lists every CLI exit code, C API return code, exact diagnostic string from `src/main.c`, `src/fold.c`, `src/cm.c`, `src/pal.c`, `src/bmp.c`, `src/api.c`, and `src/sys_posix.c`, and the recovery steps for build and runtime failures.
 
@@ -42,7 +42,7 @@ RasterFold writes to an exclusive sibling `<destination>.partial` file, flushes 
 
 ### `.fold` Container, CM Stream, and Palette Stream Diagnostics (`src/fold.c`, `src/cm.c`, `src/pal.c`)
 
-- `unsupported fold: version`, `unsupported fold: header size`, `unsupported fold: pixel format`, `unsupported fold: method` (exit code `3` <!-- drift:fact exit_unsupported = 3 -->): the file was written by an incompatible `.fold` version or uses an unknown coding method. Current decoders accept `.fold` format version 2 <!-- drift:fact format_version = 2 --> (`32`-byte header <!-- drift:fact header_bytes = 32 -->, `RGB8`, method `0` raw, method `1` CM, method `2` palette, or method `3` extended palette).
+- `unsupported fold: version`, `unsupported fold: header size`, `unsupported fold: pixel format`, `unsupported fold: method` (exit code `3` <!-- drift:fact exit_unsupported = 3 -->): the file was written by an incompatible `.fold` version or uses an unknown coding method. Current decoders accept `.fold` format version 3 <!-- drift:fact format_version = 3 --> and version 2 files (`32`-byte header <!-- drift:fact header_bytes = 32 -->, `RGB8`, method `0` raw, method `1` CM, method `2` palette, or method `3` extended palette).
 - `invalid fold: truncated`, `invalid fold: magic`, `invalid fold: header checksum`, `invalid fold: reserved byte`, `invalid fold: dimensions`, `invalid fold: payload length`, `invalid fold: payload checksum`, `invalid fold: raw length`, `invalid fold: cm streams`, `invalid fold: cm stream`, `invalid fold: palette`, `invalid fold: duplicate palette colour`, `invalid fold: palette stream` (exit code `4` <!-- drift:fact exit_malformed = 4 -->): the `.fold` file is corrupted or truncated. Both the 28-byte header prefix and the compressed payload are protected by CRC-32 (`spec/FOLD.md`).
 - `image exceeds size limit` or `input exceeds size limit` (exit code `5` <!-- drift:fact exit_limit = 5 -->): dimensions exceed `32768` pixels <!-- drift:fact max_dimension = 32768 -->, total pixels exceed `33554432` <!-- drift:fact max_pixels = 33554432 -->, or file size exceeds `268435456` bytes <!-- drift:fact max_file_bytes = 268435456 -->.
 

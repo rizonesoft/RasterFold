@@ -18,7 +18,7 @@ typedef char rf_path_char;
 #define RF_MAX_FILE 268435456ull
 
 #define RF_HEADER_SIZE 32u
-#define RF_VERSION 2u
+#define RF_VERSION 3u
 #define RF_FORMAT_RGB8 1u
 #define RF_METHOD_RAW 0u
 #define RF_METHOD_CM 1u
@@ -80,7 +80,7 @@ int rf_decode_bmp(const uint8_t *file, size_t size, uint8_t **bmp, size_t *bmp_s
    count. When stride is 0, rf_cm_decode writes packed top-down RGB to out;
    otherwise it writes bottom-up BGR rows of stride bytes starting at out + 54. */
 int rf_cm_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size_t cap, size_t *written, int threads, rf_error *err);
-int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *out, size_t stride, uint32_t w, uint32_t h, int threads, rf_error *err);
+int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *out, size_t stride, uint32_t w, uint32_t h, int threads, int version, rf_error *err);
 
 /* pal.c: methods 2 and 3, palette with equality contexts and binary range coding. */
 uint32_t rf_pal_build(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *pal);

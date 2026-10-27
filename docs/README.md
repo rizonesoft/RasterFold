@@ -4,7 +4,7 @@
 | --- | --- |
 | [Build and verify](building.md) | Repository-local toolchains, target artifacts, host requirements and packages |
 | [Use the C library](library.md) | API ownership, threading, errors and linking |
-| [Format specification](../spec/FOLD.md) | Normative `.fold` version 2 contract |
+| [Format specification](../spec/FOLD.md) | Normative `.fold` version 3 contract |
 | [Examples](examples.md) | CLI workflows and C11 PPM encode/decode examples (`examples/`) |
 | [Benchmarks](benchmarks.md) | Current and retained corpus/reference measurements, SVG charts and data tables |
 | [Limitations](limitations.md) | Current format, pixel layout, dimension/file caps, memory model and platform scope |

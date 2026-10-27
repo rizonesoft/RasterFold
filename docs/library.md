@@ -63,5 +63,5 @@ On failure, the output object is zeroed. Successful calls clear a supplied error
 The [encode](../examples/encode.c) and [decode](../examples/decode.c) examples show PPM file handling and ownership. They are demonstration programs; the production CLI adds flushed partial-file publication. `tests/test_api.py` covers API behavior and oracle fidelity, while `tests/test_artifacts.py` verifies exports and compiles/runs C and C++ consumers against shared and static libraries.
 
 <!-- drift:begin api-capabilities -->
-Current public API: 1.0. Current encoded format: 2. Image limits: 32768 pixels per dimension and 33554432 pixels total. These values are generated from the C headers.
+Current public API: 1.0. Current encoded format: 3. Image limits: 32768 pixels per dimension and 33554432 pixels total. These values are generated from the C headers.
 <!-- drift:end api-capabilities -->

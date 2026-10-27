@@ -7,7 +7,7 @@ source_path: docs/licenses.md
 
 # Licenses and Provenance
 
-**Status:** Current (`.fold` format version 2 <!-- drift:fact format_version = 2 -->, public C API 1.0 (`RF_API_VERSION_MAJOR = 1` <!-- drift:fact api_major = 1 -->, `RF_API_VERSION_MINOR = 0` <!-- drift:fact api_minor = 0 -->)).
+**Status:** Current (`.fold` format version 3 <!-- drift:fact format_version = 3 -->, public C API 1.0 (`RF_API_VERSION_MAJOR = 1` <!-- drift:fact api_major = 1 -->, `RF_API_VERSION_MINOR = 0` <!-- drift:fact api_minor = 0 -->)).
 
 This page records the license of the RasterFold source code and documentation, the project code of conduct, the provenance and redistribution terms of the committed test photographs, and the pinned build/test toolchain components.
 

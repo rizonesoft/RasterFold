@@ -1,6 +1,6 @@
 # Documentation Site Navigation, States, and Accessibility Validation
 
-**Status:** Current (`.fold` format version 2 <!-- drift:fact format_version = 2 -->, public C API 1.0 (`RF_API_VERSION_MAJOR = 1` <!-- drift:fact api_major = 1 -->, `RF_API_VERSION_MINOR = 0` <!-- drift:fact api_minor = 0 -->)).
+**Status:** Current (`.fold` format version 3 <!-- drift:fact format_version = 3 -->, public C API 1.0 (`RF_API_VERSION_MAJOR = 1` <!-- drift:fact api_major = 1 -->, `RF_API_VERSION_MINOR = 0` <!-- drift:fact api_minor = 0 -->)).
 
 This record documents the browser, responsive-layout, keyboard-navigation, state-transition, and accessibility-tree verification of the RasterFold Jekyll documentation site built from `docs/site-content.json` (`14` published pages plus `/RasterFold/404.html`).
 

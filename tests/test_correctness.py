@@ -32,6 +32,12 @@ KAT_FOLD = bytes.fromhex(
     "9a240a210014024daf691d221f14715e2e6c0001c05edda7566f6e0041f37cefce5b"
 )
 
+# The same 16x8 image encoded as format version 3 (the version 2 file above stays as a decode-only vector).
+KAT_FOLD3 = bytes.fromhex(
+    "52464903030020001000000008000000010001003b00000009465d96a17b30581f000000090000000700000000423381"
+    "26cc498ba9a6b6b1c645d0e27c11e14eaef626e7e715d5edbb4ef60001c6e4c966bef3bf0042386d9d0395"
+)
+
 # A 16x8 4-colour image and its complete .fold files: KAT_PAL (method 2, §2) and KAT_PAL2 (method 3, §4).
 KAT_PAL_W, KAT_PAL_H = 16, 8
 _PAL4 = (b"\x10\x20\x30", b"\xE0\x40\x20", b"\x20\xC0\x50", b"\xF0\xF4\xF8")
@@ -43,6 +49,16 @@ KAT_PAL = bytes.fromhex(
 KAT_PAL2 = bytes.fromhex(
     "5246490202002000100000000800000003000100310000002401b19f3de4ffad0300102030e0402020c050f0f4f81f000000007faf571d6a"
     "5deb2169648eec1824c0967cb266634581100506fe76b6c630"
+)
+
+# The same palette files with version 3 headers (payloads identical to the version 2 files above).
+KAT_PAL3 = bytes.fromhex(
+    "524649030300200010000000080000000200010037000000c37a39f67361a3000300102030e0402020c050f0f4f82500"
+    "0000007fbfd92ae27bb32a51a99f783de3fe8c97d3903c25a6c11cbfdbfe894c315c5a39db7400"
+)
+KAT_PAL2_3 = bytes.fromhex(
+    "5246490303002000100000000800000003000100310000002401b19f141151890300102030e0402020c050f0f4f81f00"
+    "0000007faf571d6a5deb2169648eec1824c0967cb266634581100506fe76b6c630"
 )
 
 
@@ -98,13 +114,15 @@ def oracle_self_check() -> None:
     check(rf.crc32(b"123456789") == 0xCBF43926, "crc vector")
     check(rf.SQUASH[2047] == 2047 and rf.SQUASH[0] == 1 and rf.SQUASH[4094] == 4094, "squash endpoints")
     check(all(rf.SQUASH[rf.STRETCH[p] + 2047] >= p or rf.STRETCH[p] == 2047 for p in range(1, 4096)), "stretch inverts squash")
-    check(rf.encode_image(KAT_W, KAT_H, KAT_RGB) == KAT_FOLD, "known-answer file")
+    check(rf.encode_image(KAT_W, KAT_H, KAT_RGB) == KAT_FOLD3, "known-answer file")
     check(rf.decode_image(KAT_FOLD) == (KAT_W, KAT_H, KAT_RGB), "known-answer decode")
     pal_m2 = rf.pal_encode(KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB, method=rf.METHOD_PAL)
     assert pal_m2 is not None
-    check(rf.build_file(KAT_PAL_W, KAT_PAL_H, rf.METHOD_PAL, pal_m2) == KAT_PAL, "known-answer method 2 palette file")
+    check(rf.build_file(KAT_PAL_W, KAT_PAL_H, rf.METHOD_PAL, pal_m2) == KAT_PAL3, "known-answer method 2 palette file")
+    check(rf.decode_image(KAT_PAL3) == (KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), "known-answer method 2 palette v3 decode")
     check(rf.decode_image(KAT_PAL) == (KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), "known-answer method 2 palette decode")
-    check(rf.encode_image(KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB) == KAT_PAL2, "known-answer method 3 palette file")
+    check(rf.encode_image(KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB) == KAT_PAL2_3, "known-answer method 3 palette file")
+    check(rf.decode_image(KAT_PAL2_3) == (KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), "known-answer method 3 palette v3 decode")
     check(rf.decode_image(KAT_PAL2) == (KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), "known-answer method 3 palette decode")
 
 
@@ -116,7 +134,7 @@ def known_answer() -> None:
         f.unlink(missing_ok=True)
     src.write_bytes(rf.write_bmp24(KAT_W, KAT_H, KAT_RGB))
     expect_ok(["encode", str(src), str(out)])
-    check(out.read_bytes() == KAT_FOLD, "codec bytes differ from the known-answer file")
+    check(out.read_bytes() == KAT_FOLD3, "codec bytes differ from the known-answer file")
     expect_ok(["decode", str(out), str(back)])
     check(rf.read_bmp24(back.read_bytes()) == (KAT_W, KAT_H, KAT_RGB), "known-answer pixels")
 
@@ -126,7 +144,7 @@ def known_answer() -> None:
         f.unlink(missing_ok=True)
     psrc.write_bytes(rf.write_bmp24(KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB))
     expect_ok(["encode", str(psrc), str(pout)])
-    check(pout.read_bytes() == KAT_PAL2, "codec bytes differ from the method 3 palette known-answer file")
+    check(pout.read_bytes() == KAT_PAL2_3, "codec bytes differ from the method 3 palette known-answer file")
     expect_ok(["decode", str(pout), str(pback)])
     check(rf.read_bmp24(pback.read_bytes()) == (KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), "method 3 palette known-answer pixels")
     insp = expect_ok(["inspect", str(pout)]).stdout.decode("utf-8", errors="replace")
@@ -311,9 +329,16 @@ def corrupt_cases() -> None:
     v1 = bytearray(good)
     v1[3] = 1
     reject(bytes(v1), 3, "unsupported fold: version")
-    ver = bytearray(good)
-    struct.pack_into("<H", ver, 4, 3)
-    reject(bytes(ver), 3, "unsupported fold: version")
+    v4 = bytearray(good)
+    v4[3] = 4
+    struct.pack_into("<H", v4, 4, 4)
+    reject(recrc(v4), 3, "unsupported fold: version")
+    m23 = bytearray(good)
+    struct.pack_into("<H", m23, 4, 3)
+    reject(recrc(m23), 3, "unsupported fold: version")
+    m32 = bytearray(good)
+    m32[3] = 3
+    reject(recrc(m32), 3, "unsupported fold: version")
     hs = bytearray(good)
     struct.pack_into("<H", hs, 6, 40)
     reject(bytes(hs), 3, "unsupported fold: header size")
@@ -793,7 +818,7 @@ def tail_threshold_roundtrip() -> None:
         ("tail_le48_grad", 8, 6, gradient(8, 6)),
         ("tail_mixed_check16", 16, 12, checker(16, 12, 3)),
         ("tail_rowend_ch0", 4, 22, photo(4, 22)),
-        ("tail_rowend_ch1", 6, 24, photo(6, 24)),
+        ("tail_rowend_ch1", 6, 22, photo(6, 22)),
         ("tail_rowend_ch2", 6, 23, photo(6, 23)),
         ("tail_gt48_photo16", 16, 12, photo(16, 12)),
         ("tail_gt48_photo20", 20, 16, photo(20, 16)),

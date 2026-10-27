@@ -14,8 +14,8 @@ track: S2
 
 > [!IMPORTANT]
 > **Current state (verified 2026-10-25; baseline timings remain 2026-09-29):** Method 1 runs one thread per channel, three in all; a 12-thread CPU leaves nine idle. The mixer uses int32 weights with an int64 dot product and a `_mm_madd_epi16` rounded update into those int32 weights (`D02 T01 §4`); the research harness measured an int16 mixer at scale 2^12 with a rounded saturating update at +0.09% size against it (`docs/research.md` section 3.3), speed unmeasured. Decode of `measure/image.bmp` takes 0.58 of JPEG XL's time with three threads (`benchmarks/results.md`, 2026-09-29).
-<!-- claim: count "_mm_madd_epi16\(_mm_unpacklo_epi16\(sv, ones\), ev\)" src/cm.c = 1 -->
-<!-- claim: count "int64_t dot = " src/cm.c = 1 -->
+<!-- claim: count "_mm_madd_epi16\(_mm_unpacklo_epi16\(sv, ones\), ev\)" src/cm.c = 2 -->
+<!-- claim: count "int64_t dot = " src/cm.c = 2 -->
 
 ## Inputs
 

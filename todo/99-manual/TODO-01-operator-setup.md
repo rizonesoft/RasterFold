@@ -13,10 +13,10 @@ track: OP1
 > **Goal:** Every step only the operator can take is written down with the exact command or decision, so no agent run stalls wondering whether it may act: the retired run-guard folders are gone, the GitHub CLI is logged in for the CI read-back, GitHub Pages is enabled for the docs, and the two standing decisions that let a campaign run through the roadmap (format-version approval and the missed-milestone policy) are recorded in the operator's words. Production Android signing identity and the concrete HEVC distribution decision are release-only prerequisites.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-10-24):** The operator deleted the folders `.grok/`, `guard/`, and `build/review-20260928/` from the previous developer's tooling on 2026-09-29 (the agent session's safety rules had refused the deletion), and `.gitignore` no longer lists `.grok/` or `guard/`. The WSL checkout now has an authenticated GitHub CLI, verified by successful CI readback and pushes on 2026-09-30; a new clone must verify its own identity. No format version 3 exists; on 2026-09-29 the operator gave the standing approval and the missed-milestone policy recorded in §3 and §4. GitHub Pages is enabled (`build_type: workflow`, public project-site visibility at `/RasterFold/`), recorded in `docs/site-content.json`.
+> **Current state (verified 2026-10-24):** The operator deleted the folders `.grok/`, `guard/`, and `build/review-20260928/` from the previous developer's tooling on 2026-09-29 (the agent session's safety rules had refused the deletion), and `.gitignore` no longer lists `.grok/` or `guard/`. The WSL checkout now has an authenticated GitHub CLI, verified by successful CI readback and pushes on 2026-09-30; a new clone must verify its own identity. Format version 3 exists since `D01 T03 §1` (2026-10-27); on 2026-09-29 the operator gave the standing approval and the missed-milestone policy recorded in §3 and §4. GitHub Pages is enabled (`build_type: workflow`, public project-site visibility at `/RasterFold/`), recorded in `docs/site-content.json`.
 <!-- claim: count "^\.grok/$" .gitignore = 0 -->
 <!-- claim: count "^guard/$" .gitignore = 0 -->
-<!-- claim: count "^#define RF_VERSION 2u$" src/rf.h = 1 -->
+<!-- claim: count "^#define RF_VERSION 3u$" src/rf.h = 1 -->
 <!-- claim: exists docs/site-content.json -->
 <!-- claim: count "\"base_path\": \"/RasterFold/\"" docs/site-content.json = 1 -->
 

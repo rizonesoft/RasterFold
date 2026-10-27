@@ -4,7 +4,7 @@ Agent instructions for this repository. Human orientation lives in `README.md`. 
 
 ## What this project is
 
-**RasterFold** is a lossless RGB image codec in C11 for Windows/Linux x64 and Android ARM64/x64. It supplies a CLI plus shared and static libraries through `include/rasterfold.h`. Windows codec artifacts remain freestanding; Linux and Android use libc and pthreads. The format is version 2 ([`spec/FOLD.md`](spec/FOLD.md)); its main method is a context-mixing coder (`src/cm.c`). The goal is general improvements in compression, speed and memory, measured on a corpus rather than tuned to one image.
+**RasterFold** is a lossless RGB image codec in C11 for Windows/Linux x64 and Android ARM64/x64. It supplies a CLI plus shared and static libraries through `include/rasterfold.h`. Windows codec artifacts remain freestanding; Linux and Android use libc and pthreads. The format is version 3 ([`spec/FOLD.md`](spec/FOLD.md)); its main method is a context-mixing coder (`src/cm.c`). The goal is general improvements in compression, speed and memory, measured on a corpus rather than tuned to one image.
 
 | Path | Purpose |
 | ---- | ------- |
