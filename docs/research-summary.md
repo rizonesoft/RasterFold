@@ -232,7 +232,7 @@ experiment is repeated only when its plan says what differs this time.
 |---|---:|---|
 | 3 models instead of 5 | +0.81% sub | rejected |
 | 4 models instead of 5 (three of the five dropped in turn) | +0.16% to +0.24% sub | rejected |
-| 7 models: 5 plus two more neighbour contexts (4.2) | -0.22% sub | not tried in the integer codec yet |
+| 7 models: 5 plus k5/k6 neighbour contexts (4.2) | integer codec: `photo` -0.170% (`30,865,211` -> `30,812,732`, `0.9712` -> `0.9695` of e7, `0.9829` -> `0.9813` of e9), worst kodim17 `1.0037` -> `1.0000`; `tp` -0.153% (`6,651,583` -> `6,641,390`); `synth` `206,566` -> `206,229`; k5-only -0.092%, k6-only -0.125% on `photo`; decode ~1.24x src (`ab -n5` B/A dec `1.217` -t1 / `1.267` -t3); scratch-CLI three-thread decode vs JPEG XL on `measure/image.bmp`: min `0.578`/`0.571` (both 3-thread), `0.400` (JXL 1-thread), all below the 0.6 bar | accepted: `research/variants/models-6-7.patch`, ported by `D01 T03 §1` |
 | half-octave error-energy quantizer | +0.07% sub | rejected |
 | fractional part of the prediction as a context | +0.03% to +0.23% sub | rejected |
 | 8-level binary tree over the folded residual instead of the exponent code | -0.09% to -0.13% sub, but 8.0 decisions per sample instead of 3.2 | exponent code kept for speed |
