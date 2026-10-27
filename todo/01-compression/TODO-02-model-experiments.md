@@ -74,16 +74,20 @@ In the floating-point research harness two more neighbour contexts took the `sub
 > **Review:** `docs/reviews/d01-t02-s1.json`
 ## 2. Two Adaptation Speeds per Context
 
+> **Started:** 2026-10-27T17:28:14Z
+
 **Needs:** Idle machine (timing)
 
 The counters slow to 1/61.5 once a row has been visited 60 times. A second, fast counter per node (fixed rate 1/16) reacts to local change, and the mixer learns when to trust each (the two-rate state of lpaq and paq8). Bar: as §1, and decode no more than 10% slower per 0.1% gained.
 
-- [ ] In `build/research/try.c`, double `NODES` to 64, keep slot `node` as the adaptive counter and slot `node + 32` as a fast counter starting at 32768 updated by `c += ((target - c) * 4096) >> 16`, and feed model 0's fast counter to the mixer as a sixth input. Done when: `python research/ab.py size build/research/try.c sub` decodes every image.
-- [ ] Measure `photo`, `tp`, and `synth`, then extend the fast counters to models 0 and 1, then to all five (`WSTRIDE` 16). Done when: each variant's summary line and its `-t1` decode ratio are quoted.
-- [ ] Record the result in `docs/research.md` section 3, and save a winner as `research/variants/fast-counters.patch`. Done when: the table row exists, and the patch exists exactly when the bar was cleared.
+**Corrected 2026-10-27:** "Bar: as §1" imports §1's JPEG XL clause (three-thread decode below 0.6), but no item measured it (same gap class as the `D01 T02 §1` plan P1); item 2 now times `-t3` and runs the scratch-CLI `vsjxl.py` comparison for the winner. The stages now keep per-stage files so the winner's patch is generatable (evolving one `try.c` would lose the earlier stages), and item 3 uses the `diff --label` patch recipe (per the §1 plan P2).
+
+- [ ] In `build/research/try-f0.c` (a copy of `src/cm.c`), double `NODES` to 64, keep slot `node` as the adaptive counter and slot `node + 32` as a fast counter starting at 32768 updated by `c += ((target - c) * 4096) >> 16`, and feed model 0's fast counter to the mixer as a sixth input. Done when: `python research/ab.py size build/research/try-f0.c sub` decodes every image.
+- [ ] Measure `photo`, `tp`, and `synth` on `try-f0.c`, then build `try-f01.c` (fast counters on models 0 and 1, bias slot 7) and `try-fall.c` (all five models, `WSTRIDE` 16, bias slot 11) and measure all three sets on each. Time each variant with `python research/ab.py ab src/cm.c <variant> -n5 -t1 measure kodim01` and `-t3`. For the winner (largest `photo` gain clearing the size bar), build a scratch Windows CLI from its file (same recipe as §1: compile stems `platform/api/crc32/bmp/fold/cm/pal/mem/sys/main` from `src/` with the variant in place of `src/cm.c`, following the per-stem flags and `rf_start` link in `research/ab.py` compat) and run `python3 scripts/windows.py research/vsjxl.py -n5 --threads 3 --exe <scratch>` on `measure/image.bmp`. Done when: each variant's full summary lines and `-t1`/`-t3` ratios are quoted, and the winner's three-thread decode ratio against JPEG XL is quoted against the 0.6 bar.
+- [ ] Record the winner's result in `docs/research.md` section 3, and save a winner as `research/variants/fast-counters.patch` with `diff -u --label a/src/cm.c --label b/src/cm.c src/cm.c <winner file> > research/variants/fast-counters.patch` (`diff` exits 1 when the files differ, the expected case). Done when: the table row exists, and the patch exists exactly when the bar was cleared.
 - [ ] Commit: `"research: measure two adaptation speeds per context"`
 
-**Test checkpoint:** the quoted `ab.py size` and `ab` lines against the baseline.
+**Test checkpoint:** the quoted `ab.py size` and `ab` lines against the baseline and the winner's quoted `vsjxl.py` three-thread decode ratio against the 0.6 bar; if a patch was saved, `git apply --check research/variants/fast-counters.patch` exits 0.
 
 ## 3. A Second Mixer Weight Set
 
