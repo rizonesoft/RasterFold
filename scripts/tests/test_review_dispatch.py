@@ -1,4 +1,4 @@
-"""scripts/review-dispatch.py: the one route, read-only invocation, refusals and records, with a fake Codex CLI."""
+"""scripts/review-dispatch.py: the pinned routes, read-only invocation, refusals and records, with a fake Codex CLI."""
 import importlib.util
 import json
 import os
@@ -17,8 +17,9 @@ import unittest.mock
 SCRIPTS = Path(__file__).resolve().parents[1]
 REPO_PIN = SCRIPTS.parent / ".conclave" / "reviewers.toml"
 
-# The shape the owner decided on 2026-10-24: Antigravity CLI (writer `agy`) is the only writer and GPT-6 Astra through
-# the Codex CLI the only reviewer, one route, no fallback. The suite exercises the dispatcher against this fixture.
+# The shape the owner decided on 2026-10-27: Claude Code, Muse Code and Antigravity write, GPT-6 Astra through the
+# Codex CLI is the only reviewer, and Codex never writes: three routes, no fallback. The suite exercises the
+# dispatcher against this fixture.
 FIXTURE_PIN = textwrap.dedent('''    schema_version = 1
 
     [reviewers.sol]
@@ -27,6 +28,8 @@ FIXTURE_PIN = textwrap.dedent('''    schema_version = 1
     effort = "xhigh"
 
     [routes]
+    claude = ["sol"]
+    muse = ["sol"]
     agy = ["sol"]
 ''')
 
@@ -203,14 +206,20 @@ class Dispatch(Harness):
         self.assertIsNone(summary["reviewer"])
         self.assertIn("not an approval", record.read_text())
 
-    def test_only_agy_is_a_writer(self):
-        # Claude CLI and Codex CLI no longer write in this repository, so neither is a writer the dispatcher accepts.
-        for writer in ("claude", "codex", "gemini"):
+    def test_writers_write_and_codex_never_does(self):
+        # Claude Code, Muse Code and Antigravity write; Codex only reviews, so it is not a writer the dispatcher accepts.
+        for writer in ("codex", "gemini"):
             with self.subTest(writer):
                 result, _ = self.dispatch("--writer", writer, "--prompt", str(self.prompt))
                 self.assertEqual(result.returncode, 2)
                 self.assertIn("invalid choice", result.stderr)
         self.assertEqual(self.calls(), [])
+        for writer in ("claude", "muse", "agy"):
+            with self.subTest(writer):
+                result, summary = self.dispatch("--writer", writer, "--prompt", str(self.prompt))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual((summary["writer"], summary["reviewer"]), (writer, "sol"))
+        self.assertEqual(len(self.calls()), 3)
 
     def test_rounds_are_numbered_and_appended(self):
         record = self.repo / "docs/reviews/round.md"
@@ -257,7 +266,7 @@ class Dispatch(Harness):
         self.assertEqual(self.calls(), [])
 
     def test_the_removed_shapes_are_refused_with_their_reason(self):
-        # The strict loader names what is wrong: another reviewer CLI, a fallback, a route for another writer.
+        # The strict loader names what is wrong: another reviewer CLI, a fallback, a route for a non-writer.
         module, pin, good = self.module(), self.repo / ".conclave/reviewers.toml", FIXTURE_PIN
         mini = '\n[reviewers.mini]\ncli = "codex"\nmodel = "gpt-6-mini"\neffort = "low"\n'
         cases = {good.replace('cli = "codex"', 'cli = "agy"'): "reviewer 'sol' needs cli = one of codex",
@@ -266,9 +275,8 @@ class Dispatch(Harness):
                      "route 'agy' must list exactly one reviewer, with no fallback",
                  good.replace('agy = ["sol"]', 'agy = []'):
                      "route 'agy' must list exactly one reviewer, with no fallback",
-                 good + 'claude = ["sol"]\n': "[routes] may only name the writers agy",
-                 good + 'codex = ["sol"]\n': "[routes] may only name the writers agy",
-                 good + 'gemini = ["sol"]\n': "[routes] may only name the writers agy",
+                 good + 'codex = ["sol"]\n': "[routes] may only name the writers claude, muse, agy",
+                 good + 'gemini = ["sol"]\n': "[routes] may only name the writers claude, muse, agy",
                  good.replace('effort = "xhigh"', 'effort = "xhigh"\nsandbox = "workspace-write"'):
                      "reviewer 'sol' has unknown keys: sandbox"}
         for text, message in cases.items():
@@ -279,8 +287,8 @@ class Dispatch(Harness):
                 self.assertEqual(str(refused.exception), message)
 
     def test_a_reviewer_of_the_writers_own_family_is_refused(self):
-        # Only the Codex CLI reviews and only Antigravity writes, so no pin can name a same-family reviewer today; the
-        # rule still holds in load_pin, proved by giving the writer the reviewer's family.
+        # Only the Codex CLI reviews, so no pin can name a same-family reviewer for any writer today; the rule still
+        # holds in load_pin, proved by giving the writer the reviewer's family.
         module = self.module()
         with unittest.mock.patch.dict(module.WRITER_FAMILY, {"agy": "openai"}):
             with self.assertRaises(module.Refused) as refused:
@@ -1204,14 +1212,14 @@ class RepositoryPin(unittest.TestCase):
         pin = module.load_pin(REPO_PIN)
         self.assertTrue(pin["routes"], "the repository pin routes no writer")
 
-    def test_the_repository_pin_is_astra_reviewing_agy_and_nothing_else(self):
-        # Owner decisions 2026-10-24: Antigravity CLI (`agy`) is the sole writer and GPT-6 Astra through Codex the
-        # sole reviewer, on the dispatcher-owned schedule: a medium plan review, a medium completion review, rounds at
-        # high, medium and low adversarial effort, then one low-effort lens per round.
+    def test_the_repository_pin_is_astra_reviewing_every_writer_and_nothing_else(self):
+        # Owner decision 2026-10-27: Claude Code, Muse Code and Antigravity write, GPT-6 Astra through Codex is the sole
+        # reviewer and Codex never writes, on the dispatcher-owned schedule: a medium plan review, a medium completion
+        # review, rounds at high, medium and low adversarial effort, then one low-effort lens per round.
         with open(REPO_PIN, "rb") as handle:
             pin = tomllib.load(handle)
         self.assertEqual(pin["reviewers"], {"astra": {"cli": "codex", "model": "gpt-6-astra", "effort": "medium"}})
-        self.assertEqual(pin["routes"], {"agy": ["astra"]})
+        self.assertEqual(pin["routes"], {"claude": ["astra"], "muse": ["astra"], "agy": ["astra"]})
         schedule = pin["schedule"]
         self.assertEqual(schedule["plan"], {"effort": "medium", "lenses": ["plan"]})
         self.assertEqual(schedule["completion"], {"effort": "medium"})

@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """Run one independent review round with the reviewer pinned in .conclave/reviewers.toml.
 
-    python3 scripts/review-dispatch.py --writer agy --prompt review-prompt.md --record docs/reviews/x.md
-    python3 scripts/review-dispatch.py --kind completion --candidate <40-char SHA> --writer agy \
+    python3 scripts/review-dispatch.py --writer <claude|muse|agy> --prompt review-prompt.md --record docs/reviews/x.md
+    python3 scripts/review-dispatch.py --kind completion --candidate <40-char SHA> --writer <claude|muse|agy> \
         --prompt completion-prompt.md --record docs/reviews/x.md     the one-pass completion and excellence review
     python3 scripts/review-dispatch.py --check-pin [--json] [--pin <path>]     the pin's verdict; runs no reviewer
     python3 scripts/review-dispatch.py --list-rounds [--json] [--records <dir>]  recorded rounds; runs no reviewer
 
-`--writer` is the agent whose work is under review. Antigravity (`agy`) is the only writer in this
-repository, and its route in the pin names exactly one reviewer of a different model family, run through the Codex CLI
-(owner decision 2026-10-24: one reviewer, no fallback). A reviewer that is not installed, exits non-zero, times out,
+`--writer` is the agent whose work is under review: `claude` (Claude Code), `muse` (Muse Code), or
+`agy` (Antigravity). Codex never writes. Every writer's route in the pin names exactly one reviewer of a different
+model family, run through the Codex CLI (owner decision 2026-10-27: three writers, one reviewer, no fallback).
+A reviewer that is not installed, exits non-zero, times out,
 returns nothing, or ends its reply `OVERALL: blocked` (it could not reach the candidate, for example a sandbox that
 cannot read the repository) returned no review, and the reason is recorded: exit 1, which never counts as approval.
 A review that finds problems is still a review (exit 0).
@@ -60,12 +61,13 @@ import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 PIN = ROOT / ".conclave" / "reviewers.toml"
-# Antigravity (`agy`) is the only writer, and the Codex CLI the only reviewer CLI (owner decision 2026-10-24).
-WRITERS = ("agy",)
+# Claude Code, Muse Code and Antigravity write; the Codex CLI is the only reviewer CLI, and Codex never writes
+# (owner decision 2026-10-27).
+WRITERS = ("claude", "muse", "agy")
 CLIS = ("codex",)
 # A reviewer is never of the writer's own model family: its CLI names the family, and so does the writer.
 FAMILY = {"codex": "openai"}
-WRITER_FAMILY = {"agy": "agy"}
+WRITER_FAMILY = {"claude": "anthropic", "muse": "meta", "agy": "agy"}
 EFFORTS = {"codex": ("low", "medium", "high", "xhigh")}
 MODEL = re.compile(r"^[a-z0-9][a-z0-9.-]*$")
 NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")

@@ -12,6 +12,7 @@ guard file it reads is written and deleted only through this module
     python3 scripts/campaign_guard.py acquire --session S --phase N --run-file F --cron-id J [--scope plan|phase] [--generation G] [--handover REASON]
     python3 scripts/campaign_guard.py end --session S --reason closeout|park|plan-done|operator-stop|escalation|stall
     python3 scripts/campaign_guard.py hook-error [--session S] [--ack LINE]
+    python3 scripts/campaign_guard.py heartbeat-still --session S
     python3 scripts/campaign_guard.py mint-generation
     python3 scripts/campaign_guard.py whoami --session S --generation G
     python3 scripts/campaign_guard.py reset-state --session S | --expect-no-guard yes
@@ -34,12 +35,15 @@ hook and the heartbeat resume only what was asked for.
 heading, a column-0 `PARKED` line, `0 runnable now`, or nothing for an
 operator stop), then deletes the guard file and the state file and
 names the heartbeat job still to `CronDelete`. `hook-error` prints and
-clears an error the hook recorded, for the heartbeat to report. Every
+clears an error the hook recorded, for the heartbeat to report.
+`heartbeat-still` notes one heartbeat resumption against the run's
+progress, so a harness with no Stop hook still trips the stall counter
+after repeated resumptions with no tree change. Every
 command takes `--root` to act on a fixture workspace instead of this
 repository.
 
 The self-test drives the real hook, as a subprocess and through the
-command `.claude/settings.json` wires, with Stop payloads against a
+command `.agents/hooks.json` wires, with Stop payloads against a
 throwaway workspace (a git repository, a guard file, a run file, and a
 fake `scripts/todo-graph.py` whose runnable count the test controls) and
 asserts every allow and block case, the stall breaker, and the
@@ -80,6 +84,12 @@ REPO = os.path.normpath(os.path.join(HERE, ".."))
 END_REASONS = ("closeout", "park", "plan-done", "operator-stop", "escalation", "stall")
 SCOPES = ("plan", "phase")
 MAX_BLOCKS_WITHOUT_PROGRESS = 3
+# Heartbeat resumptions in a row with no tree change that count one stall
+# trip on a harness with no Stop hook (owner decision 2026-10-27): at one
+# heartbeat per 5 minutes, 6 stills are ~30 minutes of resumptions with
+# zero progress, and two trips end the run, so a stuck run terminates
+# after ~1 hour instead of resuming forever.
+MAX_HEARTBEAT_STILLS = 6
 # Claude Code stops a Stop hook at the timeout .claude/settings.json gives
 # it (60 seconds) and treats that as a non-blocking error, so the hook
 # keeps its own deadline well inside it and still has time to record a
@@ -758,6 +768,71 @@ def _guard_lock(root: str, wait_ms: int) -> _Lock:
     return lock
 
 
+def heartbeat_still(root: str, session: str) -> str:
+    """One heartbeat's progress accounting, for runs on a harness with no
+    Stop hook (owner decision 2026-10-27: Muse runs rest on the guard file
+    plus the heartbeat, so no hook ever counts their still turns). It
+    hashes the same progress fingerprint the hook does: a changed tree
+    resets the still count and the stall trips, and
+    MAX_HEARTBEAT_STILLS resumptions in a row with no change count one
+    trip, so the heartbeat's trips-of-2 stall check and `end --reason
+    stall` terminate a stuck run on every harness. Hook runs may call it
+    too: progress is progress, whoever observes it."""
+    try:
+        guard = read_guard(root)
+    except GuardError:
+        raise GuardError("the guard is unreadable; refusing to note a heartbeat still")
+    if guard is None or str(guard.get("session_id", "")) != session:
+        raise GuardError("heartbeat-still needs the owning --session of a live guard")
+    run_rel = str(guard.get("run_file", ""))
+    if not run_rel or os.path.isabs(run_rel):
+        raise GuardError(f"run file {run_rel!r} is not a repo-relative path")
+    full_root = os.path.normcase(os.path.abspath(root)).rstrip(os.sep)
+    full_run = os.path.normcase(os.path.abspath(os.path.join(root, run_rel)))
+    if not full_run.startswith(full_root + os.sep):
+        raise GuardError(f"run file {run_rel!r} escapes the workspace")
+    try:
+        _, data = _read_regular(os.path.join(root, run_rel))
+    except FileNotFoundError:
+        raise GuardError(f"the run file {run_rel} is missing")
+    if data is None:
+        raise GuardError(f"the run file {run_rel} is not a regular file")
+    run_text = data.decode("utf-8-sig", "replace")
+    deadline = time.monotonic() + _env_int("CAMPAIGN_HEARTBEAT_BUDGET_SECONDS", 120)
+    print_ = fingerprint(root, run_rel, run_text, deadline)
+    _, state_path = _paths(root)
+    with _Lock(root):
+        try:
+            still = read_guard(root)
+        except GuardError:
+            still = None
+        if not _same_run(still, guard):
+            return "heartbeat-still: the guard changed while noting; nothing written"
+        try:
+            old = _read_json(state_path)
+        except FileNotFoundError:
+            old = {}
+        if not isinstance(old, dict):
+            raise GuardError(f"the state file {state_path} is not an object")
+        state = {"fingerprint": str(old.get("fingerprint", "")), "blocks": int(old.get("blocks", 0) or 0),
+                 "trips": int(old.get("trips", 0) or 0), "stalled": bool(old.get("stalled", False)),
+                 "hb_fingerprint": str(old.get("hb_fingerprint", "")),
+                 "hb_still": int(old.get("hb_still", 0) or 0)}
+        state.update({k: old[k] for k in ("hook_error", "hook_error_at") if old.get(k)})
+        if state["hb_fingerprint"] != print_:
+            state.update(hb_fingerprint=print_, hb_still=0, trips=0)
+            _write_state(state_path, state)
+            return "heartbeat-still: progress (still count and trips reset)"
+        state["hb_still"] += 1
+        if state["hb_still"] >= MAX_HEARTBEAT_STILLS:
+            state.update(hb_still=0, trips=state["trips"] + 1, stalled=True, stalled_at=_utc_now())
+            _write_state(state_path, state)
+            return (f"heartbeat-still: trip {state['trips']} after {MAX_HEARTBEAT_STILLS} "
+                    f"resumptions with no tree change")
+        _write_state(state_path, state)
+        return f"heartbeat-still: still {state['hb_still']} of {MAX_HEARTBEAT_STILLS}"
+
+
 def stop_decision(root: str, session: str) -> dict | None:
     """The hook's decision for one Stop event: None allows the stop, a
     dict is the `block` payload. Only the session named in the guard is
@@ -819,13 +894,15 @@ def stop_decision(root: str, session: str) -> dict | None:
         if not isinstance(old, dict):
             raise GuardError(f"the state file {state_path} is not an object")
         state = {"fingerprint": str(old.get("fingerprint", "")), "blocks": int(old.get("blocks", 0) or 0),
-                 "trips": int(old.get("trips", 0) or 0), "stalled": False}
+                 "trips": int(old.get("trips", 0) or 0), "stalled": False,
+                 "hb_fingerprint": str(old.get("hb_fingerprint", "")),
+                 "hb_still": int(old.get("hb_still", 0) or 0)}
         # An error the heartbeat has not acknowledged stays until it is
         # (`hook-error --ack`), however many hook runs come between.
         state.update({k: old[k] for k in ("hook_error", "hook_error_at") if old.get(k)})
         if state["fingerprint"] != print_:
             # The tree moved since the last stop: real progress resets the breaker.
-            state.update(fingerprint=print_, blocks=0, trips=0)
+            state.update(fingerprint=print_, blocks=0, trips=0, hb_fingerprint=print_, hb_still=0)
         if state["blocks"] >= MAX_BLOCKS_WITHOUT_PROGRESS:
             # Repeated pushes with no change to the tree mean the session is
             # stuck, not idle. Let it stop and say so.
@@ -880,12 +957,15 @@ def _record_hook_error(root: str, guard: dict | None, reason: str) -> None:
     if lock is not None:
         try:
             _, state_path = _paths(root)
-            state = {"fingerprint": "", "blocks": 0, "trips": 0, "stalled": False}
+            state = {"fingerprint": "", "blocks": 0, "trips": 0, "stalled": False,
+                     "hb_fingerprint": "", "hb_still": 0}
             old = {}
             try:
                 old = _read_json(state_path)
                 state.update(fingerprint=str(old.get("fingerprint", "")), blocks=int(old.get("blocks", 0)),
-                             trips=int(old.get("trips", 0)))
+                             trips=int(old.get("trips", 0)),
+                             hb_fingerprint=str(old.get("hb_fingerprint", "")),
+                             hb_still=int(old.get("hb_still", 0) or 0))
             except (OSError, ValueError, TypeError, AttributeError):
                 old = old if isinstance(old, dict) else {}
             # An unacknowledged error is never replaced: the new one goes to
@@ -1163,7 +1243,7 @@ def run_hook(root: str, session: str, script: str | None = None,
 
 
 def configured_command() -> str | None:
-    """The Stop hook command exactly as `.claude/settings.json` wires it."""
+    """The Stop hook command exactly as `.agents/hooks.json` wires it."""
     try:
         with open(SETTINGS, encoding="utf-8") as fh:
             doc = json.load(fh)
@@ -1292,6 +1372,14 @@ def _self_test() -> int:
             code, out, err = run_configured(root, SESSION, shell)
             check(f"configured-command-launches-through-{label}",
                   isinstance(out, dict) and out.get("decision") == "block", f"{code} {out} {err[:300]}")
+        try:
+            with open(os.path.join(REPO, ".claude", "settings.json"), encoding="utf-8") as fh:
+                claude_cmd = json.load(fh)["hooks"]["Stop"][0]["hooks"][0]["command"]
+        except (OSError, ValueError, KeyError, IndexError, TypeError):
+            claude_cmd = None
+        check("claude-and-agents-wire-the-same-stop-hook",
+              claude_cmd is not None and claude_cmd == configured_command(),
+              f"{claude_cmd!r} vs {configured_command()!r}")
         state_path = os.path.join(root, "build", "claude-campaign-state.json")
         if os.path.exists(state_path):
             os.remove(state_path)
@@ -2063,6 +2151,41 @@ def _self_test() -> int:
         check("a-bom-closeout-that-ends-the-hook-also-ends-the-run",
               out is None and ended.startswith("end:") and read_guard(sroot) is None, f"{out} {ended}")
 
+    # Owner decision 2026-10-27: a harness with no Stop hook (Muse) still
+    # terminates a stuck run: consecutive unchanged heartbeat resumptions
+    # count trips on the same counter the hook feeds.
+    with tempfile.TemporaryDirectory(prefix="campaign-still-") as htmp:
+        hroot = _workspace(htmp)
+        acquire(hroot, SESSION, 3, RUN_FILE, "job-h")
+        msg = heartbeat_still(hroot, SESSION)
+        check("heartbeat-still-baselines-first",
+              "progress" in msg and _state(hroot).get("hb_still") == 0, f"{msg} {_state(hroot)}")
+        for _ in range(MAX_HEARTBEAT_STILLS - 1):
+            heartbeat_still(hroot, SESSION)
+        st = _state(hroot)
+        check("heartbeat-still-counts-unchanged-resumptions",
+              st.get("hb_still") == MAX_HEARTBEAT_STILLS - 1 and st.get("trips") == 0, str(st))
+        msg = heartbeat_still(hroot, SESSION)
+        st = _state(hroot)
+        check("heartbeat-still-trips-at-the-bound",
+              "trip 1" in msg and st.get("trips") == 1 and st.get("hb_still") == 0, f"{msg} {st}")
+        with open(os.path.join(hroot, "progress.txt"), "w", encoding="utf-8") as fh:
+            fh.write("moved\n")
+        msg = heartbeat_still(hroot, SESSION)
+        st = _state(hroot)
+        check("heartbeat-still-progress-resets-stills-and-trips",
+              "progress" in msg and st.get("hb_still") == 0 and st.get("trips") == 0, f"{msg} {st}")
+        code, out, _ = run_hook(hroot, SESSION)
+        st = _state(hroot)
+        check("hook-blocks-preserve-heartbeat-counters",
+              isinstance(out, dict) and st.get("hb_fingerprint") and st.get("hb_still") == 0,
+              f"{out} {st}")
+        try:
+            heartbeat_still(hroot, "99999999-0000-0000-0000-000000000000")
+            check("heartbeat-still-refuses-another-session", False)
+        except GuardError as exc:
+            check("heartbeat-still-refuses-another-session", "owning --session" in str(exc), str(exc))
+
     # D00 T04 §35, §37: the repair episode survives a restart, refuses a
     # fourth attempt, binds its identity, counts a repeat once, closes only
     # on proven green, and is restored from the run file when lost.
@@ -2268,6 +2391,9 @@ def main(argv: list[str]) -> int:
             line = hook_error(root, opts.get("session"), opts.get("ack"))
             if line:
                 print(line)
+            return 0
+        if argv[0] == "heartbeat-still":
+            print(heartbeat_still(root, opts.get("session", "")))
             return 0
         if argv[0] == "mint-generation" and not opts:
             print(mint_generation())

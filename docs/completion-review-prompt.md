@@ -1,6 +1,6 @@
 # Completion review prompt
 
-Copy this into a scratch file, fill in the placeholders, and pass it to `scripts/review-dispatch.py --kind completion --candidate <FULL_SHA> --writer agy --prompt <file> --record docs/reviews/<domain>/<slug>.md`. It runs once per TODO section, after the section's gates pass and before Round 1 of the adversarial code review.
+Copy this into a scratch file, fill in the placeholders, and pass it to `scripts/review-dispatch.py --kind completion --candidate <FULL_SHA> --writer <claude|muse|agy> --prompt <file> --record docs/reviews/<domain>/<slug>.md` (this session's writer key). It runs once per TODO section, after the section's gates pass and before Round 1 of the adversarial code review.
 
 ---
 

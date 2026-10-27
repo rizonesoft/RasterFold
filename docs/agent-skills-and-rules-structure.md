@@ -1,6 +1,6 @@
 # Agent Skills and Rules Structure
 
-This repository uses Google Antigravity (`agy`) as the sole writer and OpenAI Codex (`codex`, running `gpt-6-astra`) as the sole independent reviewer via `scripts/review-dispatch.py` and `.conclave/reviewers.toml`.
+This repository uses Claude Code (`claude`), Muse Code (`muse`) and Google Antigravity (`agy`) as writers (Codex never writes) and OpenAI Codex (`codex`, running `gpt-6-astra`) as the sole independent reviewer via `scripts/review-dispatch.py` and `.conclave/reviewers.toml`.
 
 ## Skill Locations
 

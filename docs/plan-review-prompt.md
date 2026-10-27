@@ -1,6 +1,6 @@
 # Plan review prompt
 
-Before writing code for a TODO section, copy this into a scratch file, fill in the placeholders, and run one pass through `scripts/review-dispatch.py --kind plan --candidate <HEAD_SHA> --writer agy --prompt <scratch> --record <findings.md>`. The dispatcher sets medium effort and appends the `plan` lens from `.conclave/reviewers.toml`.
+Before writing code for a TODO section, copy this into a scratch file, fill in the placeholders, and run one pass through `scripts/review-dispatch.py --kind plan --candidate <HEAD_SHA> --writer <claude|muse|agy> --prompt <scratch> --record <findings.md>` (this session's writer key). The dispatcher sets medium effort and appends the `plan` lens from `.conclave/reviewers.toml`.
 
 ---
 

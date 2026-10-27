@@ -5,10 +5,12 @@ description: Get an independent review of your own work from GPT-6 Astra, the on
 
 # Independent review
 
-Your own review is not enough for a nontrivial change: a different model reviews it. Antigravity (writer `agy`) is the only writer in this repository and GPT-6 Astra, through the Codex CLI in its read-only sandbox, is the only reviewer, and the pin's `[schedule]` sets each pass's effort and lenses (plan and completion reviews at `medium`, round 1 `high`, round 2 `medium`, round 3 `low`, then `low` with one lens per round; owner decisions 2026-10-24, with a proportionality rule in the round and completion prompts: only failures that can happen in real operation are `P1` or `P2`, contrived scenarios are `P3`). `.conclave/reviewers.toml` pins that one route, and `scripts/review-dispatch.py` runs the round.
+Your own review is not enough for a nontrivial change: a different model reviews it. Claude Code, Muse Code and Antigravity write in this repository (writers `claude`, `muse`, `agy`; Codex never writes) and GPT-6 Astra, through the Codex CLI in its read-only sandbox, is the only reviewer, and the pin's `[schedule]` sets each pass's effort and lenses (plan and completion reviews at `medium`, round 1 `high`, round 2 `medium`, round 3 `low`, then `low` with one lens per round; owner decision 2026-10-27, with a proportionality rule in the round and completion prompts: only failures that can happen in real operation are `P1` or `P2`, contrived scenarios are `P3`). `.conclave/reviewers.toml` pins the three routes, and `scripts/review-dispatch.py` runs the round.
 
 | Work written by | Reviewer | Fallback |
 | --- | --- | --- |
+| Claude Code (`claude`) | GPT-6 Astra (`codex`, scheduled effort) | none |
+| Muse Code (`muse`) | GPT-6 Astra (`codex`, scheduled effort) | none |
 | Antigravity (`agy`) | GPT-6 Astra (`codex`, scheduled effort) | none |
 
 The pin refuses any other writer, any other reviewer CLI, a second reviewer in a route, and a reviewer of the writer's own model family.
@@ -20,7 +22,7 @@ The pin refuses any other writer, any other reviewer CLI, a second reviewer in a
 3. Run the round:
 
    ```bash
-   python3 scripts/review-dispatch.py --writer agy --prompt <scratch>/review-prompt.md --record docs/reviews/<topic>.md
+   python3 scripts/review-dispatch.py --writer <this session's key: claude|muse|agy> --prompt <scratch>/review-prompt.md --record docs/reviews/<topic>.md
    ```
 
    On Windows use `python` instead of `python3`; the command is otherwise the same.

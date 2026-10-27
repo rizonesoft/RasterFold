@@ -1546,7 +1546,7 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "2026-10-26: Reviewed README.md against benchmarks/corpus.csv and benchmarks/results.csv for D05 T01 section 3",
+      "evidence": "2026-10-27: Reviewed README.md writer paragraph against AGENTS.md, .conclave/reviewers.toml and scripts/review-dispatch.py for the 2026-10-27 three-writer decision (claude, muse, agy; Codex never writes)",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "c72a8dbb03d1698fd8f9b12957884ac894f8aede680182c78821eb3a7f2c3fed",
@@ -1554,29 +1554,29 @@
         "scripts/build.py": "824893947ad3d19fc1abb9538f5e53e93a12255da94ff5ac38536743715b21fe",
         "scripts/package.py": "b9ef31c48c2c5f7dfdcb22a7b3e5bd1a14c36b84d5d3887f17646bf47eaad199",
         "scripts/check-all.py": "7432d7b4b4eb6c6f499376180fb5576851d1be22db76d7e1375e497e6cbe2637",
-        "README.md": "3455c54eb81acc4f418fada24889bdb66475d7a5339c9ffc84f906794c8ef218"
+        "README.md": "56210c060b04d1577bdd743a9c0f29a157d3b1c7c93c953f39da4dde898079b0"
       },
       "review": "Author-attested: 2026-10-25 re-read README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "AGENTS.md": {
-      "evidence": "2026-10-26: Reviewed AGENTS.md against src/rf.h, src/fold.c, src/pal.c, src/main.c, research/bench.c, and spec/FOLD.md for D01 T01 section 4 (Method 3 extended palette)",
+      "evidence": "2026-10-27: Reviewed AGENTS.md kits paragraph (.claude/ holds the Stop hook and skill shims) for the Round 1 fix",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "c72a8dbb03d1698fd8f9b12957884ac894f8aede680182c78821eb3a7f2c3fed",
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
-        ".conclave/reviewers.toml": "2bc2a259cc2d6cebcfeda7dd6afa5bb554b87abef3c2cff88e36152a511f2caa",
-        "scripts/review-dispatch.py": "0cf0d35afe6a8f59f2f304f72b1af3f127a743d75db983f04f80680fb1995b82",
-        "AGENTS.md": "bf01534bd08c847282e5eec9a5eaf4bdd08869d859c1ca334ab1e6ff97da3f51"
+        ".conclave/reviewers.toml": "ddb09f2d21e8b4f4160c376c6cbc074eac941373adbd73518aeb02129bcac301",
+        "scripts/review-dispatch.py": "24573801c23e1845b6ab1959f3064582c09b0779a720b2ad85416efdcfc630d1",
+        "AGENTS.md": "c0274613d65ba9e07336fbaec98d345da9844c61bd224374252df1bdefc74332"
       }
     },
     "GEMINI.md": {
-      "evidence": "2026-10-26: Reviewed GEMINI.md against AGENTS.md after D01 T01 section 4",
+      "evidence": "2026-10-27: Re-reviewed GEMINI.md against AGENTS.md (kits paragraph only; writer rules unchanged)",
       "sources": {
-        "AGENTS.md": "bf01534bd08c847282e5eec9a5eaf4bdd08869d859c1ca334ab1e6ff97da3f51",
-        ".conclave/reviewers.toml": "2bc2a259cc2d6cebcfeda7dd6afa5bb554b87abef3c2cff88e36152a511f2caa",
-        "scripts/review-dispatch.py": "0cf0d35afe6a8f59f2f304f72b1af3f127a743d75db983f04f80680fb1995b82",
+        "AGENTS.md": "c0274613d65ba9e07336fbaec98d345da9844c61bd224374252df1bdefc74332",
+        ".conclave/reviewers.toml": "ddb09f2d21e8b4f4160c376c6cbc074eac941373adbd73518aeb02129bcac301",
+        "scripts/review-dispatch.py": "24573801c23e1845b6ab1959f3064582c09b0779a720b2ad85416efdcfc630d1",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
-        "GEMINI.md": "ecc7f39725b8228d7e2529fb8d6a7d3195a2d851ebd45b83c9a08704845d7efa"
+        "GEMINI.md": "413a9585ebfd766518612feb23c5d2002e7a5b964ccf01dd2bf3a99e06ba497b"
       }
     },
     "CONTRIBUTING.md": {
@@ -1667,15 +1667,15 @@
       }
     },
     "docs/agent-skills-and-rules-structure.md": {
-      "evidence": "2026-10-26: Reviewed docs/agent-skills-and-rules-structure.md against AGENTS.md after D01 T01 section 4",
+      "evidence": "2026-10-27: Re-reviewed docs/agent-skills-and-rules-structure.md against AGENTS.md (kits paragraph only; writer rules unchanged)",
       "sources": {
-        "AGENTS.md": "bf01534bd08c847282e5eec9a5eaf4bdd08869d859c1ca334ab1e6ff97da3f51",
-        "GEMINI.md": "ecc7f39725b8228d7e2529fb8d6a7d3195a2d851ebd45b83c9a08704845d7efa",
+        "AGENTS.md": "c0274613d65ba9e07336fbaec98d345da9844c61bd224374252df1bdefc74332",
+        "GEMINI.md": "413a9585ebfd766518612feb23c5d2002e7a5b964ccf01dd2bf3a99e06ba497b",
         ".conclave/kits.json": "56785267af421d6deac2d4e5cfdda58be63684fb6f3893cece8043a6f0578105",
-        ".conclave/reviewers.toml": "2bc2a259cc2d6cebcfeda7dd6afa5bb554b87abef3c2cff88e36152a511f2caa",
+        ".conclave/reviewers.toml": "ddb09f2d21e8b4f4160c376c6cbc074eac941373adbd73518aeb02129bcac301",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
-        "scripts/review-dispatch.py": "0cf0d35afe6a8f59f2f304f72b1af3f127a743d75db983f04f80680fb1995b82",
-        "docs/agent-skills-and-rules-structure.md": "7c77e978c39ea1dc1a394b926da889c0b2f982f37d8ed302802cbbb2ea3aa2f9"
+        "scripts/review-dispatch.py": "24573801c23e1845b6ab1959f3064582c09b0779a720b2ad85416efdcfc630d1",
+        "docs/agent-skills-and-rules-structure.md": "36cb7b1eba7b85a40d38ff1321fefdf2a58e6a4e0cd55cb0ad90b01cb9b42e53"
       }
     },
     "spec/FOLD.md": {

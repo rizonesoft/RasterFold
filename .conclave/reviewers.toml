@@ -1,6 +1,9 @@
 # Reviewer pin for independent-review (scripts/review-dispatch.py).
 #
-# Antigravity CLI (writer `agy`, serving Claude or Gemini models) is the only writer in this repository and GPT-6 Astra through the Codex CLI is the only reviewer: one route, no fallback. When Astra returns no review, nothing else runs and the round is not an approval.
+# Owner decision 2026-10-27 (supersedes the 2026-10-24 sole-writer decision): Claude Code (writer `claude`), Muse Code
+# (writer `muse`) and Antigravity (writer `agy`) write in this repository, and GPT-6 Astra through the Codex CLI is the
+# only reviewer. Codex never writes. Three routes, one reviewer, no fallback. When Astra returns no review, nothing
+# else runs and the round is not an approval.
 #
 # Every pass's effort and lenses come from [schedule] below, enforced by scripts/review-dispatch.py from the findings file passed to --record:
 #   - before the build, one pass of --kind plan at medium effort (adversarial, completeness, consistency, integration, and record on the section's plan);
@@ -15,6 +18,8 @@ model = "gpt-6-astra"
 effort = "medium"
 
 [routes]
+claude = ["astra"]
+muse = ["astra"]
 agy = ["astra"]
 
 [schedule]
