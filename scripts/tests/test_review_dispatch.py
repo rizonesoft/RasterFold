@@ -17,9 +17,7 @@ import unittest.mock
 SCRIPTS = Path(__file__).resolve().parents[1]
 REPO_PIN = SCRIPTS.parent / ".conclave" / "reviewers.toml"
 
-# The shape the owner decided on 2026-10-27: Claude Code, Muse Code and Antigravity write, GPT-6 Astra through the
-# Codex CLI is the only reviewer, and Codex never writes: three routes, no fallback. The suite exercises the
-# dispatcher against this fixture.
+# A historical three-writer pin stays supported. The Codex-to-Muse route is exercised separately.
 FIXTURE_PIN = textwrap.dedent('''    schema_version = 1
 
     [reviewers.sol]
@@ -61,7 +59,7 @@ FAKE_CLI = textwrap.dedent('''\
                 out.write("x" * 65536)
                 out.flush()
                 time.sleep(0.01)
-    text = "" if mode == "empty" else "VERDICT: needs-attention, calc.py:2 subtracts. (" + name + ")"
+    text = "" if mode == "empty" else "VERDICT: needs-attention, calc.py:2 subtracts. (" + name + ")\\nHIGHEST: P2\\nOVERALL: needs-attention"
     if mode == "headings":
         text = "## Round trip serialization\\n\\nFine.\\n\\n```\\n## Round 9: none\\n\\n- Writer: agy\\n- Run: 2026-01-01T00:00:00Z\\n```\\n\\nOVERALL: approve"
     if mode == "blocked":
@@ -206,13 +204,14 @@ class Dispatch(Harness):
         self.assertIsNone(summary["reviewer"])
         self.assertIn("not an approval", record.read_text())
 
-    def test_writers_write_and_codex_never_does(self):
-        # Claude Code, Muse Code and Antigravity write; Codex only reviews, so it is not a writer the dispatcher accepts.
-        for writer in ("codex", "gemini"):
-            with self.subTest(writer):
-                result, _ = self.dispatch("--writer", writer, "--prompt", str(self.prompt))
-                self.assertEqual(result.returncode, 2)
-                self.assertIn("invalid choice", result.stderr)
+    def test_unrouted_and_unknown_writers_are_refused(self):
+        # Historical pins do not acquire a route just because the current dispatcher knows another writer.
+        result, _ = self.dispatch("--writer", "codex", "--prompt", str(self.prompt))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("no route for writer 'codex'", result.stderr)
+        result, _ = self.dispatch("--writer", "gemini", "--prompt", str(self.prompt))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("invalid choice", result.stderr)
         self.assertEqual(self.calls(), [])
         for writer in ("claude", "muse", "agy"):
             with self.subTest(writer):
@@ -247,7 +246,7 @@ class Dispatch(Harness):
         pin = module.load_pin(self.repo / ".conclave/reviewers.toml")
         self.assertEqual((report["ok"], report["schema_version"]), (True, 1))
         self.assertEqual((report["reviewers"], report["routes"]), (pin["reviewers"], pin["routes"]))
-        self.assertEqual(report["clis"], {"codex": True}, "codex is the only reviewer CLI, and its fake is on PATH")
+        self.assertEqual(report["clis"], {"codex": True, "muse": False})
         self.assertEqual(self.calls(), [], "--check-pin ran a reviewer")
 
     def test_check_pin_reports_a_refused_pin(self):
@@ -269,14 +268,14 @@ class Dispatch(Harness):
         # The strict loader names what is wrong: another reviewer CLI, a fallback, a route for a non-writer.
         module, pin, good = self.module(), self.repo / ".conclave/reviewers.toml", FIXTURE_PIN
         mini = '\n[reviewers.mini]\ncli = "codex"\nmodel = "gpt-6-mini"\neffort = "low"\n'
-        cases = {good.replace('cli = "codex"', 'cli = "agy"'): "reviewer 'sol' needs cli = one of codex",
-                 good.replace('cli = "codex"', 'cli = "claude"'): "reviewer 'sol' needs cli = one of codex",
+        cases = {good.replace('cli = "codex"', 'cli = "agy"'): "reviewer 'sol' needs cli = one of codex, muse",
+                 good.replace('cli = "codex"', 'cli = "claude"'): "reviewer 'sol' needs cli = one of codex, muse",
                  good.replace('agy = ["sol"]', 'agy = ["sol", "mini"]') + mini:
                      "route 'agy' must list exactly one reviewer, with no fallback",
                  good.replace('agy = ["sol"]', 'agy = []'):
                      "route 'agy' must list exactly one reviewer, with no fallback",
-                 good + 'codex = ["sol"]\n': "[routes] may only name the writers claude, muse, agy",
-                 good + 'gemini = ["sol"]\n': "[routes] may only name the writers claude, muse, agy",
+                 good + 'codex = ["sol"]\n': "route 'codex' names sol, of the writer's own family; a review comes from a different family",
+                 good + 'gemini = ["sol"]\n': "[routes] may only name the writers claude, muse, agy, codex",
                  good.replace('effort = "xhigh"', 'effort = "xhigh"\nsandbox = "workspace-write"'):
                      "reviewer 'sol' has unknown keys: sandbox"}
         for text, message in cases.items():
@@ -287,8 +286,7 @@ class Dispatch(Harness):
                 self.assertEqual(str(refused.exception), message)
 
     def test_a_reviewer_of_the_writers_own_family_is_refused(self):
-        # Only the Codex CLI reviews, so no pin can name a same-family reviewer for any writer today; the rule still
-        # holds in load_pin, proved by giving the writer the reviewer's family.
+        # Even a historical pin is refused when its reviewer is changed to the writer's family.
         module = self.module()
         with unittest.mock.patch.dict(module.WRITER_FAMILY, {"agy": "openai"}):
             with self.assertRaises(module.Refused) as refused:
@@ -1212,14 +1210,13 @@ class RepositoryPin(unittest.TestCase):
         pin = module.load_pin(REPO_PIN)
         self.assertTrue(pin["routes"], "the repository pin routes no writer")
 
-    def test_the_repository_pin_is_astra_reviewing_every_writer_and_nothing_else(self):
-        # Owner decision 2026-10-27: Claude Code, Muse Code and Antigravity write, GPT-6 Astra through Codex is the sole
-        # reviewer and Codex never writes, on the dispatcher-owned schedule: a medium plan review, a medium completion
-        # review, rounds at high, medium and low adversarial effort, then one low-effort lens per round.
+    def test_the_repository_pin_routes_codex_to_spark_and_other_writers_to_astra(self):
         with open(REPO_PIN, "rb") as handle:
             pin = tomllib.load(handle)
-        self.assertEqual(pin["reviewers"], {"astra": {"cli": "codex", "model": "gpt-6-astra", "effort": "medium"}})
-        self.assertEqual(pin["routes"], {"claude": ["astra"], "muse": ["astra"], "agy": ["astra"]})
+        self.assertEqual(pin["reviewers"], {"astra": {"cli": "codex", "model": "gpt-6-astra", "effort": "medium"},
+                                           "spark": {"cli": "muse", "model": "muse-spark-1.3", "effort": "high"}})
+        self.assertEqual(pin["routes"], {"claude": ["astra"], "muse": ["astra"], "agy": ["astra"],
+                                         "codex": ["spark"]})
         schedule = pin["schedule"]
         self.assertEqual(schedule["plan"], {"effort": "medium", "lenses": ["plan"]})
         self.assertEqual(schedule["completion"], {"effort": "medium"})

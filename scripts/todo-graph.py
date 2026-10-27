@@ -1165,19 +1165,17 @@ _GPT_OUTAGE_RE = re.compile(r"gpt outage", re.IGNORECASE)
 
 
 def codex_implementer(body: str) -> bool:
-    """Explicit Codex provenance opts new stamps into the independent Claude panel.
+    """Recognize Codex GPT implementers for the legacy panel fallback rules.
 
-    Historical or absent provenance retains its original family policy.
+    Current dispatcher receipts use the pin and recorded writer instead.
     """
     implementer = _implementer(body)
     if not implementer or not re.fullmatch(r'Codex(?: .*)?', implementer['name'], re.I):
         return False
-    # Load the canonical registry by path: imported clients may already have
-    # their family-private dispatcher registered under the same module name.
-    spec = importlib.util.spec_from_file_location('canonical_panel_slots', Path(__file__).with_name('panel_slots.py'))
-    registry = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(registry)
-    return registry.family_accepts('codex', implementer['model'])
+    # This is the legacy panel rule, not today's dispatch pin. Recognize GPT
+    # models conservatively so new Codex model names cannot make a GPT panel
+    # appear independent. The old panel_slots.py registry was retired.
+    return re.fullmatch(r'gpt-[a-z0-9][a-z0-9.-]*', implementer['model']) is not None
 
 
 def panel_fallback(stripped_text: str, stamped_on: str | None, implementer_body: str = '') -> tuple[bool, bool]:

@@ -1,6 +1,6 @@
 # Review round prompt
 
-Copy this into a scratch file, fill in the placeholders, delete the lines that do not apply, and pass it to `scripts/review-dispatch.py --prompt`. When `.conclave/reviewers.toml` has a `[schedule]` table, the dispatcher appends the `## Lenses for this pass` block for the round's position automatically, and the writer passes `--surface` when the section touches a user-facing surface (`Surface: yes`).
+Copy this into a scratch file, fill in the placeholders, delete the lines that do not apply, and pass it to `scripts/review-dispatch.py --prompt`. When `.conclave/reviewers.toml` has a `[schedule]` table, the dispatcher appends the `## Lenses for this pass` block for the round's position automatically, and the writer passes `--surface` when the section touches a user-facing surface (`Surface: yes`). For `--writer codex`, include the exact candidate diff in the prompt or name a readable scratch file containing it; the Muse reviewer's shell is disabled.
 
 ---
 
@@ -8,7 +8,7 @@ You are an independent, adversarial code reviewer. Do not modify any file. Revie
 
 ## Candidate
 
-- Commit or range: `<FULL_SHA>` or `<BASE_SHA>..<TIP_SHA>` (inspect it with `git show` or `git diff`).
+- Commit or range: `<FULL_SHA>` or `<BASE_SHA>..<TIP_SHA>` (inspect the supplied patch, or use `git show` or `git diff` when shell access is available).
 - What it is meant to do: `<one or two sentences>`.
 - TODO section, when there is one: `<DNN TNN §N>` (its contract: `python3 scripts/todo-graph.py resolve "<DNN TNN §N>"`).
 - Governing documents: `AGENTS.md` and `<the spec, plan or design file that applies, e.g. spec/FOLD.md, docs/research.md>`.

@@ -7,7 +7,7 @@ description: Quality-gate a just-implemented TODO section with self-review, comp
 
 The gate between "code exists" and "the row says `[x]`". Nothing else may flip that row, and the flip happens only through `python3 scripts/todo-graph.py stamp`, which refuses a section with unticked items, an open prerequisite, a waiting Need, or no review evidence.
 
-Review is mandatory and independent: the implementing session self-reviews, and every external pass comes from the reviewer pinned in `.conclave/reviewers.toml`: GPT-6 Astra (`gpt-6-astra`) through the Codex CLI, of a different model family from the writer (writers `claude`, `muse`, `agy`; Codex never writes; one reviewer, no fallback; owner decision 2026-10-27), run through `scripts/review-dispatch.py`. The pin's `[schedule]` owns each pass's reasoning effort and lenses, so the writer never picks them: the plan review (`process-todo-section` step 3a) and the completion review run at `medium`, round 1 at `high` (`adversarial`, `integration`), round 2 at `medium` (`adversarial`), round 3 at `low` (`adversarial`), and every later round at `low` with one lens in rotation (`consistency`, `design` when `--surface` is passed, `record`). A `low` round that declares `HIGHEST: P1` makes the next round the `medium` adversarial escalation. Every pass and round is recorded in a findings file (`docs/reviews/<NN-domain>/D<NN>-T<NN>-s<N>.md`); the stamp's receipt (`docs/reviews/<NN-domain>/D<NN>-T<NN>-s<N>.json`) names them. A verdict with no record is an opinion.
+Review is mandatory and independent: the implementing session self-reviews, and every external pass comes from the reviewer pinned for that writer in `.conclave/reviewers.toml`, run through `scripts/review-dispatch.py`. Codex work goes to Muse Spark 1.3; Claude Code, Muse Code and Antigravity work goes to GPT-6 Astra. Each route has one reviewer of another family and no fallback. The shared `[schedule]` owns each pass's reasoning effort and lenses: plan and completion run at `medium`, round 1 at `high` (`adversarial`, `integration`), round 2 at `medium` (`adversarial`), round 3 at `low` (`adversarial`), and every later round at `low` with one lens in rotation (`consistency`, `design` when `--surface` is passed, `record`). A `low` round that declares `HIGHEST: P1` makes the next round the `medium` adversarial escalation. Every pass and round is recorded in a findings file (`docs/reviews/<NN-domain>/D<NN>-T<NN>-s<N>.md`); the stamp's receipt (`docs/reviews/<NN-domain>/D<NN>-T<NN>-s<N>.json`) names them. A verdict with no record is an opinion.
 
 ## Use this skill when
 
@@ -52,7 +52,7 @@ Work the three questions across the diff and its blast radius. Fix what you find
 Before the regular rounds, once per section, the pinned reviewer reviews the built feature or codec change against the contract and the strongest reference codecs / tools. Write the prompt to a scratch file under `build/` from `docs/completion-review-prompt.md` (the candidate SHA, the section contract, the TODO file's Goal and Outcome, the governing spec/design sections, the delivered diff), then run it:
 
 ```bash
-python3 scripts/review-dispatch.py --kind completion --candidate <full candidate SHA> --writer <this session's key: claude|muse|agy> --prompt <scratch-completion-prompt.md> --record docs/reviews/<NN-domain>/D<NN>-T<NN>-s<N>.md
+python3 scripts/review-dispatch.py --kind completion --candidate <full candidate SHA> --writer <this session's key: claude|muse|agy|codex> --prompt <scratch-completion-prompt.md> --record docs/reviews/<NN-domain>/D<NN>-T<NN>-s<N>.md
 ```
 
 The dispatcher appends a `## Completion review` section (reviewer, model, candidate SHA), not a round: it is not counted against the cap, and a findings file takes one returned completion review. The review ends `COMPLETION: complete` or `COMPLETION: gaps`.
@@ -64,7 +64,7 @@ Then, before any regular round, implement every `missing-in-scope` gap and every
 The dispatcher picks each round's lenses and effort from the pin's schedule, at least one round by the pinned independent reviewer. Write the prompt to a scratch file under `build/` from `docs/review-round-prompt.md` (candidate SHA, section contract, governing documents), then run it with `--writer <this session's key>` (adding `--surface` when `resolve` printed `surface    yes`):
 
 ```bash
-python3 scripts/review-dispatch.py --writer <claude|muse|agy> [--surface] --prompt <scratch-review-prompt.md> --record docs/reviews/<NN-domain>/D<NN>-T<NN>-s<N>.md
+python3 scripts/review-dispatch.py --writer <claude|muse|agy|codex> [--surface] --prompt <scratch-review-prompt.md> --record docs/reviews/<NN-domain>/D<NN>-T<NN>-s<N>.md
 ```
 
 The dispatcher appends a `## Round N` section naming the reviewer, its model, effort, and lenses, or `none` with the reason when the reviewer returned no review. Headings that start `## Round`, `## Completion review` or `## Plan review` are reserved for what `--record` writes: a writer's own note in a findings file uses another heading (for example `## Writer note: ...`), or the file stops being readable and the next review is refused with the offending line named.

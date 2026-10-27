@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """Run one independent review round with the reviewer pinned in .conclave/reviewers.toml.
 
-    python3 scripts/review-dispatch.py --writer <claude|muse|agy> --prompt review-prompt.md --record docs/reviews/x.md
-    python3 scripts/review-dispatch.py --kind completion --candidate <40-char SHA> --writer <claude|muse|agy> \
+    python3 scripts/review-dispatch.py --writer <claude|muse|agy|codex> --prompt review-prompt.md --record docs/reviews/x.md
+    python3 scripts/review-dispatch.py --kind completion --candidate <40-char SHA> --writer <claude|muse|agy|codex> \
         --prompt completion-prompt.md --record docs/reviews/x.md     the one-pass completion and excellence review
     python3 scripts/review-dispatch.py --check-pin [--json] [--pin <path>]     the pin's verdict; runs no reviewer
     python3 scripts/review-dispatch.py --list-rounds [--json] [--records <dir>]  recorded rounds; runs no reviewer
 
-`--writer` is the agent whose work is under review: `claude` (Claude Code), `muse` (Muse Code), or
-`agy` (Antigravity). Codex never writes. Every writer's route in the pin names exactly one reviewer of a different
-model family, run through the Codex CLI (owner decision 2026-10-27: three writers, one reviewer, no fallback).
+`--writer` is the agent whose work is under review: `claude`, `muse`, `agy`, or `codex`. Every writer's route in the
+pin names exactly one reviewer of a different model family, with no fallback.
 A reviewer that is not installed, exits non-zero, times out,
 returns nothing, or ends its reply `OVERALL: blocked` (it could not reach the candidate, for example a sandbox that
 cannot read the repository) returned no review, and the reason is recorded: exit 1, which never counts as approval.
@@ -19,7 +18,8 @@ A review that finds problems is still a review (exit 0).
 with `--json`, `{"ok": true, "schema_version", "reviewers", "routes", "clis": {cli: on PATH}}` and exit 0, or
 `{"ok": false, "error": "<the Refused message>"}` and exit 2; without `--json`, `ok` or `refused: <message>`.
 
-The reviewer runs read-only in the repository root, in the Codex read-only sandbox. The script prints a JSON summary;
+The reviewer runs read-only in the repository root. Muse's shell and write tools are disabled, so its prompt must
+include the exact candidate diff and the reviewer reads repository files with its read-only tools. The script prints a JSON summary;
 `--record` also appends a `## Round N` section to the findings file with an atomic write, and writes nothing (exit 2,
 the summary still printed) to a findings file it cannot read back. Works the same from PowerShell and from WSL.
 Stdlib only.
@@ -61,14 +61,13 @@ import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 PIN = ROOT / ".conclave" / "reviewers.toml"
-# Claude Code, Muse Code and Antigravity write; the Codex CLI is the only reviewer CLI, and Codex never writes
-# (owner decision 2026-10-27).
-WRITERS = ("claude", "muse", "agy")
-CLIS = ("codex",)
+WRITERS = ("claude", "muse", "agy", "codex")
+CLIS = ("codex", "muse")
 # A reviewer is never of the writer's own model family: its CLI names the family, and so does the writer.
-FAMILY = {"codex": "openai"}
-WRITER_FAMILY = {"claude": "anthropic", "muse": "meta", "agy": "agy"}
-EFFORTS = {"codex": ("low", "medium", "high", "xhigh")}
+FAMILY = {"codex": "openai", "muse": "meta"}
+WRITER_FAMILY = {"claude": "anthropic", "muse": "meta", "agy": "agy", "codex": "openai"}
+EFFORTS = {"codex": ("low", "medium", "high", "xhigh"),
+           "muse": ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")}
 MODEL = re.compile(r"^[a-z0-9][a-z0-9.-]*$")
 NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 # A review is prose. Output past this size is a runaway reviewer, not a review.
@@ -319,10 +318,14 @@ def fully_qualified(directory):
     return drive.startswith(("\\\\", "//")) or (len(drive) == 2 and rest[:1] in ("\\", "/"))
 
 
-def command(reviewer, executable, output_path, effort=None):
-    """The argv for one read-only Codex review. The prompt goes on stdin, never on the command line, so a Windows
-    .cmd shim never re-parses prose as commands. The model comes only from the pin, and the effort from the pin's
-    reviewer or, when the pin has a [schedule], from the step it schedules for this pass."""
+def command(reviewer, executable, output_path, effort=None, prompt_path=None):
+    """The argv for one read-only review. Prompt text never appears on the command line."""
+    if reviewer["cli"] == "muse":
+        return [executable, "exec", "--json", "--provider", "meta", "--model", reviewer["model"],
+                "--reasoning-effort", effort or reviewer["effort"],
+                "--disable-write", "--disable-shell", "--disable-web-tools", "--disable-reminders",
+                "--disable-request-user-input", "--approval-mode", "never", "--no-session-log",
+                "--no-foreign-personal-context", "--prompt-file", str(prompt_path)]
     return [executable, "exec", "-m", reviewer["model"], "-c", f"model_reasoning_effort={effort or reviewer['effort']}",
             "--sandbox", "read-only", "--ephemeral", "--skip-git-repo-check", "-o", str(output_path), "-"]
 
@@ -500,6 +503,28 @@ def run(argv, stdin_text, timeout, watched):
     return process.returncode, None
 
 
+def muse_response(path, model):
+    """Extract the completed answer from Muse's JSONL stream, never its progress or tool output."""
+    try:
+        events = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        if not events:
+            return None, "returned no review"
+        if not all(isinstance(event, dict) and isinstance(event.get("payload"), dict) for event in events):
+            return None, "returned malformed Muse events"
+        models = [event["payload"] for event in events if event.get("payload_type") == "run.model.configured"]
+        terminals = [event for event in events if str(event.get("payload_type", "")).startswith("run.terminal.")]
+        if len(models) != 1 or models[0].get("model_id") != model or models[0].get("provider_id") != "meta":
+            return None, "did not confirm the pinned Muse model and provider"
+        if len(terminals) != 1 or terminals[0].get("payload_type") != "run.terminal.completed":
+            return None, "did not complete a Muse run"
+        final = terminals[0]["payload"]
+        if final.get("terminal") != "completed" or not isinstance(final.get("text"), str):
+            return None, "returned malformed Muse completion"
+        return final["text"], None
+    except (OSError, UnicodeDecodeError, ValueError, RecursionError, MemoryError):
+        return None, "returned malformed Muse events"
+
+
 def review(pin, writer, prompt_path, timeout, plan=None, kind="round"):
     """Run the writer's one reviewer. Returns the summary dict: `reviewer` is None when no review came back, and
     `skipped` then names the reviewer and why (there is no fallback). `plan` is the scheduled step (see `scheduled`):
@@ -530,12 +555,18 @@ def review(pin, writer, prompt_path, timeout, plan=None, kind="round"):
     text = None
     tmp = Path(tempfile.mkdtemp())
     try:
-        stdout_path, message_path = tmp / "stdout.txt", tmp / "last-message.md"
-        _, problem = run(command(reviewer, executable, message_path, effort), prompt, timeout,
+        stdout_path, message_path, muse_prompt = tmp / "stdout.txt", tmp / "last-message.md", tmp / "prompt.md"
+        if reviewer["cli"] == "muse":
+            muse_prompt.write_text(prompt, encoding="utf-8")
+        _, problem = run(command(reviewer, executable, message_path, effort, muse_prompt),
+                         "" if reviewer["cli"] == "muse" else prompt, timeout,
                          [stdout_path, message_path])
         if problem is None:
-            # Codex writes its final message to the -o file; stdout carries its progress, not the review.
-            text = message_path.read_text(encoding="utf-8", errors="replace") if message_path.is_file() else ""
+            if reviewer["cli"] == "muse":
+                text, problem = muse_response(stdout_path, reviewer["model"])
+            else:
+                # Codex writes its final message to -o; stdout carries progress.
+                text = message_path.read_text(encoding="utf-8", errors="replace") if message_path.is_file() else ""
     finally:
         remove_scratch(tmp)
     if problem is None and not (text or "").strip():
@@ -544,6 +575,10 @@ def review(pin, writer, prompt_path, timeout, plan=None, kind="round"):
         problem = blocked(text)
     if problem is None and kind in PASSES and not valid_one_pass_footer(text, kind):
         problem = f"returned no {kind} verdict"
+    if problem is None and kind == "round":
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        if not lines or lines[-1] not in ("OVERALL: approve", "OVERALL: needs-attention"):
+            problem = "returned no round verdict"
     if problem:
         return none(problem)
     return {"writer": writer, "reviewer": name, "cli": reviewer["cli"], "model": reviewer["model"],

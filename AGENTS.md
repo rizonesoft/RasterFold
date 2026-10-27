@@ -29,7 +29,7 @@ Agent instructions for this repository. Human orientation lives in `README.md`. 
 | `.agents/` | Antigravity-owned skills (`.agents/skills/`), rules (`.agents/rules/`), and native `Stop` hook (`.agents/hooks.json`) |
 | `.intelligence/` | Retained runner intelligence registers and archives; disposition requires the campaign guard stopped |
 | `.conclave/kits.json`, `GEMINI.md`, `.agents/rules/` | The Conclave-SDK kits (`base`, `reviewer`, `automations`) this checkout took from `rizonetech/Conclave-SDK` through its `forge.py`, the Antigravity entry file, and the kits' output and safety rules; see Conclave-SDK kits below |
-| `.conclave/reviewers.toml`, `scripts/review-dispatch.py`, `docs/review-round-prompt.md`, `docs/plan-review-prompt.md`, `docs/completion-review-prompt.md` | The reviewer kit: the `agy -> astra` reviewer pin, the 3-stage adaptive review schedule (`plan`, `completion`, and adaptive rounds), and the dispatcher |
+| `.conclave/reviewers.toml`, `scripts/review-dispatch.py`, `docs/review-round-prompt.md`, `docs/plan-review-prompt.md`, `docs/completion-review-prompt.md` | The reviewer pin, the 3-stage adaptive review schedule (`plan`, `completion`, and adaptive rounds), and the dispatcher |
 | `.conclave/automations/` | The automations kit: `tasks.json` (folder `\\RasterFold\\`, no tasks yet), the runner, the failure email, and the Task Scheduler and systemd installers; tests in `scripts/tests/` |
 | `bin/`, `build/` | Build output, scratch, caches, the research corpus, and campaign guard state; ignored, never authoritative |
 
@@ -60,7 +60,7 @@ For TODO work, read the target section, `todo/README.md`, its dependencies, and 
 
 The lifecycle is: capture, author, validate the plan and source claims, record `Started:`, run the pre-build `--kind plan` review, implement, run the section's gates, commit, run the post-build `--kind completion` review, run adaptive code review rounds and stamp through `review-todo-section`, then sync the plan. Each section must be executable with zero conversation context. **One section = one commit.** Preserve section addresses and bidirectional cross-references. A TODO Implementation Order row turns `[x]` only with its `Verified:` stamp through `python3 scripts/todo-graph.py stamp`. Do not rewrite a stamped checklist or transfer evidence across changed candidates. File new work with its own owner and dependency.
 
-`process-plan` is the campaign front door. It audits the plan, starts `scripts/campaign_guard.py` (enforced by `.agents/hooks.json`'s `Stop` hook) and the native in-session `schedule` (`3-59/5 * * * *`) heartbeat, and processes dependency-safe phases. No isolated worktrees or checkpoint recovery layer is required or created.
+`process-plan` is the campaign front door. It audits the plan, starts `scripts/campaign_guard.py` with the writer's available `Stop` hook and a native in-session heartbeat (`3-59/5 * * * *`), and processes dependency-safe phases. Codex campaigns require the hook and heartbeat preflight in `process-plan`. No isolated worktrees or checkpoint recovery layer is required or created.
 
 ## What counts as proof
 
@@ -79,7 +79,7 @@ A checkpoint citing a gate that does not exist yet is unfalsifiable and is not a
 
 - **Output discipline:** bound every command (`build.ps1` filtered to errors and warnings, `test_correctness.py -k` while iterating, `tail`/`head` on logs and on `ab.py -v` tables, field extraction on JSON). Keep full logs in ignored scratch under `build/`.
 - **Act, then report:** complete authorized work and report evidence. Explicit operator stop instructions take effect immediately.
-- **Writers never review themselves:** Claude Code (`claude`), Muse Code (`muse`) and Google Antigravity (`agy`) write in this repository, and Codex never writes (2026-10-27 operator decision, superseding the 2026-10-24 sole-writer decision). Every independent review (`--kind plan` pre-build, `--kind completion` post-build, and the adaptive code review rounds `high -> medium -> low -> low ...`) runs GPT-6 Astra (`gpt-6-astra` via `codex`) through `scripts/review-dispatch.py` and `.conclave/reviewers.toml` (one route per writer, each to `astra`, no fallback). A writer never reviews its own candidate. Historical stamps retain their original rules. No fallback slots or fabricated reviews: a failed review stops or parks the run.
+- **Writers never review themselves:** Claude Code (`claude`), Muse Code (`muse`), Google Antigravity (`agy`) and Codex (`codex`) can write in this repository (operator decision 2026-10-27). Codex-written work routes to Muse Spark 1.3 (`muse-spark-1.3` via `muse`); the other writers route to GPT-6 Astra (`gpt-6-astra` via `codex`). All independent reviews run through `scripts/review-dispatch.py` and `.conclave/reviewers.toml` with one reviewer and no fallback. All routes use medium for plan and completion, then `high -> medium -> low -> low ...` for rounds. A writer never reviews its own candidate. Historical stamps retain their original rules. A failed review stops or parks the run.
 - **Writes are serial:** one session owns the working tree. Check `git status` before building over unfamiliar work.
 - **Section atomicity is the candidate range:** one section ships as one logical change, and review fix-loop commits append to that range (never amend); each fix is re-reviewed and the stamp names the whole range. "One section = one commit" never means "one hash".
 - **Experiments end in a result, not a change:** a compression or speed section that misses its stop condition ships the negative result (stamped measurement, a row in `docs/research.md`'s "Already tried" table), and its change is not ported.
@@ -93,8 +93,8 @@ The `base`, `reviewer` and `automations` kits came from `rizonetech/Conclave-SDK
 
 These local adaptations differ from the kit files, and `forge.py sync` would undo them (it rewrites every kit's skills and rules, and with `--include-scripts` its scripts), so a sync always runs `--dry-run` first and keeps them:
 
-- Claude Code, Muse Code and Antigravity write (`WRITERS = ("claude", "muse", "agy")` in `scripts/review-dispatch.py`); `.codex/` stays retired, `.claude/` holds only the campaign `Stop` hook (`settings.json`) and skill shims (`.claude/skills/`, pointing at the canonical files), and `.agents/skills/` holds the canonical skill files directly.
-- `.conclave/reviewers.toml` pins `astra` (`gpt-6-astra` via `codex`) as the sole reviewer for `agy` (`[routes] agy = ["astra"]`, no fallback) and defines the `[schedule]` table for `--kind plan`, `--kind completion`, and adaptive code review rounds (operator decision 2026-10-24).
+- Claude Code, Muse Code, Antigravity and Codex write (`WRITERS` in `scripts/review-dispatch.py`); `.claude/` holds the campaign `Stop` hook and skill shims, `.codex/` holds Codex's campaign `Stop` hook, and `.agents/skills/` holds the canonical skill files directly.
+- `.conclave/reviewers.toml` pins `codex -> spark` and the other writers to `astra`, without fallback, and defines the shared `[schedule]` table for `--kind plan`, `--kind completion`, and adaptive code review rounds.
 - `GEMINI.md` and `docs/agent-skills-and-rules-structure.md` describe this repository's layout, not the SDK default.
 
 ## The commit hook

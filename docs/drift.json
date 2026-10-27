@@ -1546,7 +1546,7 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "2026-10-27: Reviewed README.md writer paragraph against AGENTS.md, .conclave/reviewers.toml and scripts/review-dispatch.py for the 2026-10-27 three-writer decision (claude, muse, agy; Codex never writes)",
+      "evidence": "2026-10-27: Reviewed writer and review routing against AGENTS.md and the reviewer pin.",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "c72a8dbb03d1698fd8f9b12957884ac894f8aede680182c78821eb3a7f2c3fed",
@@ -1554,29 +1554,35 @@
         "scripts/build.py": "824893947ad3d19fc1abb9538f5e53e93a12255da94ff5ac38536743715b21fe",
         "scripts/package.py": "b9ef31c48c2c5f7dfdcb22a7b3e5bd1a14c36b84d5d3887f17646bf47eaad199",
         "scripts/check-all.py": "7432d7b4b4eb6c6f499376180fb5576851d1be22db76d7e1375e497e6cbe2637",
-        "README.md": "56210c060b04d1577bdd743a9c0f29a157d3b1c7c93c953f39da4dde898079b0"
+        "README.md": "e06f760eb50c0a33b522670e722ce4c140c4fa3e0e1594660f7f74362d27221c",
+        "AGENTS.md": "bdde72d3e2f0b477e204fbdd0951ff64fedbde3503f711f00d3d3b1b7dad44a5",
+        ".conclave/reviewers.toml": "ef301c3821fadb8c764bf7c02aa8a2765c66774c7f62b55a885c7558baf53d14",
+        "scripts/review-dispatch.py": "a79c8f06b8d5111dcd41c2b9860546e484216da6b2cb76fbdd095d166fcd2ee9"
       },
       "review": "Author-attested: 2026-10-25 re-read README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "AGENTS.md": {
-      "evidence": "2026-10-27: Reviewed AGENTS.md kits paragraph (.claude/ holds the Stop hook and skill shims) for the Round 1 fix",
+      "evidence": "2026-10-27: Reviewed writer routes, shared schedule and Codex campaign hook against their source files.",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "c72a8dbb03d1698fd8f9b12957884ac894f8aede680182c78821eb3a7f2c3fed",
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
-        ".conclave/reviewers.toml": "ddb09f2d21e8b4f4160c376c6cbc074eac941373adbd73518aeb02129bcac301",
-        "scripts/review-dispatch.py": "24573801c23e1845b6ab1959f3064582c09b0779a720b2ad85416efdcfc630d1",
-        "AGENTS.md": "c0274613d65ba9e07336fbaec98d345da9844c61bd224374252df1bdefc74332"
+        ".conclave/reviewers.toml": "ef301c3821fadb8c764bf7c02aa8a2765c66774c7f62b55a885c7558baf53d14",
+        "scripts/review-dispatch.py": "a79c8f06b8d5111dcd41c2b9860546e484216da6b2cb76fbdd095d166fcd2ee9",
+        "AGENTS.md": "bdde72d3e2f0b477e204fbdd0951ff64fedbde3503f711f00d3d3b1b7dad44a5",
+        ".codex/hooks.json": "c67e7762d0970280c653a74601012d01971d05f677182ae70e4eda0aa783c150",
+        "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",
+        "scripts/campaign_guard.py": "a4e15e753ac265152070e9d5ae93f36cba78e58e4feb4c11a6e0f2a58203c432"
       }
     },
     "GEMINI.md": {
-      "evidence": "2026-10-27: Re-reviewed GEMINI.md against AGENTS.md (kits paragraph only; writer rules unchanged)",
+      "evidence": "2026-10-27: Reviewed writer routes and Antigravity campaign instructions against AGENTS.md and the reviewer pin.",
       "sources": {
-        "AGENTS.md": "c0274613d65ba9e07336fbaec98d345da9844c61bd224374252df1bdefc74332",
-        ".conclave/reviewers.toml": "ddb09f2d21e8b4f4160c376c6cbc074eac941373adbd73518aeb02129bcac301",
-        "scripts/review-dispatch.py": "24573801c23e1845b6ab1959f3064582c09b0779a720b2ad85416efdcfc630d1",
+        "AGENTS.md": "bdde72d3e2f0b477e204fbdd0951ff64fedbde3503f711f00d3d3b1b7dad44a5",
+        ".conclave/reviewers.toml": "ef301c3821fadb8c764bf7c02aa8a2765c66774c7f62b55a885c7558baf53d14",
+        "scripts/review-dispatch.py": "a79c8f06b8d5111dcd41c2b9860546e484216da6b2cb76fbdd095d166fcd2ee9",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
-        "GEMINI.md": "413a9585ebfd766518612feb23c5d2002e7a5b964ccf01dd2bf3a99e06ba497b"
+        "GEMINI.md": "ca2b82f19b9aceba602092ec5790b163a0d85fdc3780a3d85be0627c6d1cfa2a"
       }
     },
     "CONTRIBUTING.md": {
@@ -1667,15 +1673,18 @@
       }
     },
     "docs/agent-skills-and-rules-structure.md": {
-      "evidence": "2026-10-27: Re-reviewed docs/agent-skills-and-rules-structure.md against AGENTS.md (kits paragraph only; writer rules unchanged)",
+      "evidence": "2026-10-27: Reviewed writer routes, skills and campaign hooks against their source files.",
       "sources": {
-        "AGENTS.md": "c0274613d65ba9e07336fbaec98d345da9844c61bd224374252df1bdefc74332",
-        "GEMINI.md": "413a9585ebfd766518612feb23c5d2002e7a5b964ccf01dd2bf3a99e06ba497b",
+        "AGENTS.md": "bdde72d3e2f0b477e204fbdd0951ff64fedbde3503f711f00d3d3b1b7dad44a5",
+        "GEMINI.md": "ca2b82f19b9aceba602092ec5790b163a0d85fdc3780a3d85be0627c6d1cfa2a",
         ".conclave/kits.json": "56785267af421d6deac2d4e5cfdda58be63684fb6f3893cece8043a6f0578105",
-        ".conclave/reviewers.toml": "ddb09f2d21e8b4f4160c376c6cbc074eac941373adbd73518aeb02129bcac301",
+        ".conclave/reviewers.toml": "ef301c3821fadb8c764bf7c02aa8a2765c66774c7f62b55a885c7558baf53d14",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
-        "scripts/review-dispatch.py": "24573801c23e1845b6ab1959f3064582c09b0779a720b2ad85416efdcfc630d1",
-        "docs/agent-skills-and-rules-structure.md": "36cb7b1eba7b85a40d38ff1321fefdf2a58e6a4e0cd55cb0ad90b01cb9b42e53"
+        "scripts/review-dispatch.py": "a79c8f06b8d5111dcd41c2b9860546e484216da6b2cb76fbdd095d166fcd2ee9",
+        "docs/agent-skills-and-rules-structure.md": "81289224156277399cae1a4056f801786055259303d6adc4632a1493d6cc262b",
+        ".codex/hooks.json": "c67e7762d0970280c653a74601012d01971d05f677182ae70e4eda0aa783c150",
+        "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",
+        "scripts/campaign_guard.py": "a4e15e753ac265152070e9d5ae93f36cba78e58e4feb4c11a6e0f2a58203c432"
       }
     },
     "spec/FOLD.md": {

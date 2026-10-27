@@ -1021,7 +1021,7 @@ def stop_hook(stdin: str, project_dir: str | None) -> tuple[int, str]:
         if "error" in seen:
             raise seen["error"]
         decision = seen.get("decision")
-        if decision and "conversationId" in event:
+        if decision and event.get("conversationId"):
             decision = {"decision": "continue", "reason": decision["reason"]}
         return 0, json.dumps(decision) if decision else ""
     except Exception as error:  # fail open; the heartbeat reports what is recorded here

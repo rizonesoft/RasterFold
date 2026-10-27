@@ -1,6 +1,6 @@
 # Completion review prompt
 
-Copy this into a scratch file, fill in the placeholders, and pass it to `scripts/review-dispatch.py --kind completion --candidate <FULL_SHA> --writer <claude|muse|agy> --prompt <file> --record docs/reviews/<domain>/<slug>.md` (this session's writer key). It runs once per TODO section, after the section's gates pass and before Round 1 of the adversarial code review.
+Copy this into a scratch file, fill in the placeholders, and pass it to `scripts/review-dispatch.py --kind completion --candidate <FULL_SHA> --writer <claude|muse|agy|codex> --prompt <file> --record docs/reviews/<domain>/<slug>.md` (this session's writer key). It runs once per TODO section, after the section's gates pass and before Round 1 of the adversarial code review. For `--writer codex`, include the exact candidate diff in the prompt or name a readable scratch file containing it; the Muse reviewer's shell is disabled.
 
 ---
 
@@ -9,7 +9,7 @@ You are an independent product and codec completeness reviewer. Do not modify an
 ## Candidate
 
 - TODO section: `<DNN TNN §N>` (read its contract with `python3 scripts/todo-graph.py resolve "<DNN TNN §N>"` and read the surrounding file).
-- Commit or range: `<FULL_SHA>` or `<BASE_SHA>..<TIP_SHA>` (inspect with `git show` or `git diff`).
+- Commit or range: `<FULL_SHA>` or `<BASE_SHA>..<TIP_SHA>` (inspect the supplied patch, or use `git show` or `git diff` when shell access is available).
 - What was built: `<two or three sentences naming the files, symbols, format paths, CLI flags, or UI controls>`.
 - Governing documents: `AGENTS.md`, `spec/FOLD.md`, `docs/research.md`, and `<the design doc or plan file that applies>`.
 
