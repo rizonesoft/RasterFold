@@ -417,7 +417,7 @@ class DriftTests(unittest.TestCase):
         self.assertTrue(core_keys <= set(live_facts))
         self.assertEqual(set(live_manifest['facts']), set(live_facts))
         for mutated, target, old, new in [
-            ('format_version', 'src/rf.h', '#define RF_VERSION 2u', '#define RF_VERSION 3u'),
+            ('format_version', 'src/rf.h', '#define RF_VERSION 3u', '#define RF_VERSION 4u'),
             ('exit_limit', 'include/rasterfold.h', '#define RF_ERR_LIMIT 5', '#define RF_ERR_LIMIT 6'),
             ('cmd_inspect', 'src/main.c', 'wide_eq(pos[0], "inspect")', 'wide_eq(pos[0], "check")'),
         ]:
@@ -1391,13 +1391,13 @@ class DriftTests(unittest.TestCase):
         self.check().fix()
 
         # Removing the visible figure before an annotation (standalone drift:fact) also fails.
-        self.write('docs/benchmarks.md', orig_bm + '\n<!-- drift:fact format_version = 2 -->\n')
+        self.write('docs/benchmarks.md', orig_bm + '\n<!-- drift:fact format_version = 3 -->\n')
         c = self.check()
         self.assertTrue(
             any(
                 e['kind'] == 'fact'
                 and e['path'] == 'docs/benchmarks.md'
-                and 'visible figure before format_version does not match 2' in e['detail']
+                and 'visible figure before format_version does not match 3' in e['detail']
                 for e in c.errors
             ),
             c.errors,
