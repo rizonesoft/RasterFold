@@ -52,6 +52,8 @@ track: C2
 
 ## 1. A Sixth and Seventh Context Model
 
+> **Started:** 2026-10-27T16:23:58Z
+
 **Needs:** Idle machine (timing)
 
 In the floating-point research harness two more neighbour contexts took the `sub` total from 8,246,827 to 8,228,829 bytes (-0.22%) and improved the worst image; the integer codec has never tried them. Bar: at least 0.1% on the `photo` total with the worst image no more than 0.1% worse, confirmed on `tp`, and three-thread decode still below 0.6 of JPEG XL's on `measure/image.bmp`; otherwise the negative result ships.
@@ -124,6 +126,8 @@ An encoder that tries a few parameter sets per channel and signals the best in t
 **Test checkpoint:** `python research/ceiling.py` output quoted beside the baseline total.
 
 ## 7. The Accepted Variants Measured Together
+
+**Needs:** Idle machine (timing)
 
 Gains measured one at a time do not simply add: two models can capture the same redundancy. Before the port, the accepted variants of §1 to §6 are combined and measured once, so `D01 T03 §1` ports a measured whole.
 
