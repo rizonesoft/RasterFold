@@ -46,7 +46,7 @@ track: C2
 |   2   |   §2    | Two adaptation speeds per context             | --         |  [x]   |
 |   3   |   §3    | A second mixer weight set                     | --         |  [x]   |
 |   4   |   §4    | Learning cost on small images                 | --         |  [x]   |
-|   5   |   §5    | An exact-repeat context                       | --         |  [ ]   |
+|   5   |   §5    | An exact-repeat context                       | --         |  [x]   |
 |   6   |   §6    | The ceiling of encoder-chosen parameters      | --         |  [ ]   |
 |   7   |   §7    | The accepted variants measured together       | §1, §2, §3, §4, §5, §6 |  [ ]   |
 
@@ -164,6 +164,8 @@ Anti-aliased screenshots and diagrams with more than 256 colours still contain l
 
 **Test checkpoint:** the quoted `ab.py size synth`, `photo`, and `tp` lines for all six variants against the baseline, with the `synth` geometric means and the `tp` verdict; if a winner cleared the bar, its agreed `-t1`/`-t3` decode ratios and `git apply --check research/variants/repeat-context.patch` exiting 0, else the quoted rejection record and no patch file.
 
+> **Verified:** 2026-10-27 | §5 | 4b275760aa37a7ebf5dafd71c534de649b6f1099
+> **Review:** `docs/reviews/d01-t02-s5.json`
 ## 6. The Ceiling of Encoder-Chosen Parameters
 
 An encoder that tries a few parameter sets per channel and signals the best in the header keeps the decoder's cost unchanged. Before building it, measure its ceiling: the sum over images of the best fixed candidate per image. Bar: a ceiling at least 0.3% below the `photo` total; otherwise the idea is recorded as not worth a header byte.
