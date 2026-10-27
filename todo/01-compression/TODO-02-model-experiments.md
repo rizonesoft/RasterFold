@@ -45,7 +45,7 @@ track: C2
 |   1   |   §1    | A sixth and seventh context model             | --         |  [x]   |
 |   2   |   §2    | Two adaptation speeds per context             | --         |  [x]   |
 |   3   |   §3    | A second mixer weight set                     | --         |  [x]   |
-|   4   |   §4    | Learning cost on small images                 | --         |  [ ]   |
+|   4   |   §4    | Learning cost on small images                 | --         |  [x]   |
 |   5   |   §5    | An exact-repeat context                       | --         |  [ ]   |
 |   6   |   §6    | The ceiling of encoder-chosen parameters      | --         |  [ ]   |
 |   7   |   §7    | The accepted variants measured together       | §1, §2, §3, §4, §5, §6 |  [ ]   |
@@ -141,6 +141,8 @@ kodim17 (+0.37%) and kodim09 (+0.19%), both 768x512, are the only photographs st
 
 **Test checkpoint:** the quoted `ab.py size kodak`, `photo`, `tp`, and `synth` lines for both variants against the baseline, with kodim17's and kodim09's per-image ratios, the worst `photo` per-image change, the `tp` verdict, and the agreed `-t1`/`-t3` decode ratios; if a winner cleared the bar, `git apply --check research/variants/small-image-start.patch` exiting 0, else the quoted rejection record and no patch file.
 
+> **Verified:** 2026-10-27 | §4 | b82de3505a55a74c88f71b01c856373b29912be9
+> **Review:** `docs/reviews/d01-t02-s4.json`
 ## 5. An Exact-Repeat Context
 
 Anti-aliased screenshots and diagrams with more than 256 colours still contain long exact runs, which a context of neighbour equalities captures and method 2 cannot reach. Bar: a clear gain on `synth` (geometric mean at least 2% lower) with the `photo` total no more than 0.05% worse.
