@@ -122,14 +122,20 @@ Mixer weights depend only on `wsel` (the error energy and the G residual class).
 > **Review:** `docs/reviews/d01-t02-s3.json`
 ## 4. Learning Cost on Small Images
 
+> **Started:** 2026-10-27T18:30:34Z
+
 kodim17 (+0.37%) and kodim09 (+0.19%), both 768x512, are the only photographs still larger than JPEG XL; small images spend a larger share of their samples learning from counters that start at 1/2. Bar: at least 0.1% on the `kodak` total with no image of `photo` worse by more than 0.05%.
 
-- [ ] In `build/research/try.c`, initialize model 1's zero-flag counter (node 1) from its row's energy `qE = k1 / 81` as `p = 65535 - 4096 * qE` clamped to `[8192, 57344]`. This needs `cm_alloc` to know each row's `qE`, which for model 1 is the row index divided by 81. Done when: `python research/ab.py size build/research/try.c kodak` decodes every image. Cheaper substitute: a constant tuned on kodim17.
-- [ ] Measure `kodak`, `photo`, and `tp`; then, separately, start model 0's mixer weight at 29491 (0.45) and the others at 16384 (0.25), and measure again. Done when: both variants' summary lines are quoted.
-- [ ] Record the result in `docs/research.md` section 3, and save a winner as `research/variants/small-image-start.patch`. Done when: the table row exists, and the patch exists exactly when the bar was cleared.
+**Acceptance:** a variant clears the bar when its `kodak` total gain against the baseline is at least 0.1% AND no `photo` image is more than 0.05% worse than the baseline (per-image sizes from `ab.py size -v`). If both variants clear, the winner is the one with the larger `kodak` gain. Both variants change initialisation only, so the decode path and its speed are unchanged by construction and no timing or JPEG XL clause applies. If neither clears, there is no winner and no patch.
+
+**Corrected 2026-10-27:** §4 as written repeats the gap classes the §1-§3 reviews caught, so before building: the two variants are built as separate fresh copies of `src/cm.c` (`build/research/try-s1.c` and `build/research/try-s2.c`), each measured against the same baseline (`build/research/try.c` still holds §1's 7-model winner). Item 1 names the exact counter cell (model 1, node 1, per row) and the clamp; item 2 names the per-image evidence the Bar needs (`size -v` on `photo` for baseline and both variants, quoting kodim17 and kodim09); the **Acceptance** paragraph defines the winner when both variants clear and states why no timing clause applies; item 3 and the checkpoint spell out the negative branch and the `diff --label` patch recipe. The 'cheaper substitute' sentence in item 1 is dropped: tuning a constant on kodim17 alone would tune to one image, which the measurement rules forbid.
+
+- [ ] In a fresh copy of `src/cm.c` at `build/research/try-s1.c`, initialize model 1's zero-flag counter (node 1) from its row's energy: in `cm_alloc`, after the flat counter init, for each row `r` of model 1 set the node-1 counter to `65535 - 4096 * (r / 81)` clamped to `[8192, 57344]` (model 1's row index is `k1`, and `k1 / 81` is its `qE`). Done when: `python research/ab.py size build/research/try-s1.c kodak` decodes every image.
+- [ ] In a second fresh copy at `build/research/try-s2.c`, start model 0's mixer weight at 29491 (0.45) and the other models' at 16384 (0.25) in the `cm_alloc` weight init (slot 0 to 29491, slots 1-4 to 16384, the rest 0, all `WSEL` rows). Measure `kodak`, `photo`, and `tp` on both variants, plus `python research/ab.py size -v <file> photo` per-image lines for the baseline and both variants. Done when: both variants' summary lines are quoted and kodim17's and kodim09's per-image ratios against the baseline are quoted.
+- [ ] Record the result in `docs/research.md` section 3, and save a winner as `research/variants/small-image-start.patch` with `diff -u --label a/src/cm.c --label b/src/cm.c src/cm.c <winner file> > research/variants/small-image-start.patch` (`diff` exits 1 when the files differ, the expected case) verified with `git apply --check`; if neither variant clears the bar, record both rejections and save no patch. Done when: the table row exists, and the patch exists exactly when the bar was cleared.
 - [ ] Commit: `"research: measure the learning cost on small images"`
 
-**Test checkpoint:** the quoted `ab.py size kodak` and `photo` lines against the baseline, with kodim17's and kodim09's ratios.
+**Test checkpoint:** the quoted `ab.py size kodak`, `photo`, and `tp` lines for both variants against the baseline, with kodim17's and kodim09's per-image ratios and the worst `photo` per-image change; if a winner cleared the bar, `git apply --check research/variants/small-image-start.patch` exiting 0, else the quoted rejection record and no patch file.
 
 ## 5. An Exact-Repeat Context
 
