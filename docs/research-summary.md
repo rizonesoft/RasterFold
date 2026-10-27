@@ -262,7 +262,7 @@ experiment is repeated only when its plan says what differs this time.
 | 13-bit probability plus 3-bit count, shift schedule | +0.10% sub, synthetic geometric mean +10% | rejected |
 | visit-count limit 30 / 120 instead of 60 | +0.08% photo / +0.05% sub | 60 kept |
 | two adaptation speeds per context: fast counter (rate 1/16) in node+32 beside the slow counter, mixer learns the split (4.3) | model 0 fast: `photo` +0.025% (`30,865,211` -> `30,872,973`), `tp` +0.039%, `synth` -0.033%; models 0+1 fast: `photo` +0.008% (`30,867,640`), `tp` +0.021%, `synth` +0.010%; all five fast (WSTRIDE 16): `photo` +0.186% (`30,922,501`), `tp` +0.234%, `synth` -0.024%; decode slower everywhere (`ab -n5` B/A dec: f0 `1.054` -t1 / `1.078` -t3; f01 `1.103` / `1.352`; fall `1.214` / `1.340`) | rejected: no stage gains on photo, so no winner, no patch, no `vsjxl.py` run |
-| second mixer weight set chosen by `k2 % 128`, outputs averaged before `SQUASH` (4.4) | `photo` +0.030% (`30,865,211` -> `30,874,474`; geomean `0.9728` -> `0.9731`; worst kodim17 `1.0037` -> `1.0044`), `tp` +0.036% (`6,653,991`), `synth` -0.052% (`206,459`); decode slower (`ab -n5` B/A dec `1.130` -t1 / `1.099` -t3) against an expected -0.2% to -0.6% | rejected: size rejection (no patch, no `vsjxl.py` run) |
+| second mixer weight set chosen by `k2 % 128`, outputs averaged before `SQUASH` (4.4) | `photo` +0.030% (`30,865,211` -> `30,874,474`; geomean `0.9728` -> `0.9731`; worst kodim17 `1.0037` -> `1.0044`), `tp` +0.036% (`6,653,991`), `synth` -0.052% (`206,459`); decode slower (`ab -n5` B/A dec `1.130`/`1.098` -t1 and `1.099`/`1.150` -t3 across two agreeing runs) against an expected -0.2% to -0.6% | rejected: size rejection (no patch, no `vsjxl.py` run) |
 
 ### 3.4 Speed
 
