@@ -43,7 +43,7 @@ track: C2
 | Order | Section | Deliverable                                   | Depends On | Status |
 | :---: | :-----: | --------------------------------------------- | ---------- | :----: |
 |   1   |   §1    | A sixth and seventh context model             | --         |  [x]   |
-|   2   |   §2    | Two adaptation speeds per context             | --         |  [ ]   |
+|   2   |   §2    | Two adaptation speeds per context             | --         |  [x]   |
 |   3   |   §3    | A second mixer weight set                     | --         |  [ ]   |
 |   4   |   §4    | Learning cost on small images                 | --         |  [ ]   |
 |   5   |   §5    | An exact-repeat context                       | --         |  [ ]   |
@@ -95,6 +95,8 @@ The counters slow to 1/61.5 once a row has been visited 60 times. A second, fast
 
 **Test checkpoint:** the quoted `ab.py size` and `ab` lines for all three stages against the baseline; if a winner cleared the bar, its quoted `vsjxl.py` three-thread minimum-time decode ratio against the 0.6 bar and `git apply --check research/variants/fast-counters.patch` exiting 0, else the quoted rejection record and no patch file.
 
+> **Verified:** 2026-10-27 | §2 | 05fa6ae7b159fe9511be9a313832c0a0261e27d9
+> **Review:** `docs/reviews/d01-t02-s2.json`
 ## 3. A Second Mixer Weight Set
 
 **Needs:** Idle machine (timing)

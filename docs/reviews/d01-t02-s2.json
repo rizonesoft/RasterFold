@@ -1,0 +1,88 @@
+{
+  "ref": "D01 T02 \u00a72",
+  "title": "Two Adaptation Speeds per Context",
+  "implementation_sha": "05fa6ae7b159fe9511be9a313832c0a0261e27d9",
+  "date": "2026-10-27",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/01-compression/D01-T02-s2.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/01-compression/D01-T02-s2.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "check-all 29/29 (after one flake re-run); validate 0 fatal; claims 81 hold"
+  ],
+  "completion": {
+    "report": "docs/reviews/01-compression/D01-T02-s2.md",
+    "verdict": "completed",
+    "candidate": "6caaf9b6c8aac478c9888e3391aa0e92f805847a",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 2,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/01-compression/D01-T02-s2.md",
+    "candidate": "f00a75e10e4b33bd5d18fc2b32a60063ef2b366f",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}
