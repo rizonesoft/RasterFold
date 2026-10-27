@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 import unittest
 
-from test_correctness import KAT_FOLD, KAT_RGB
+from test_correctness import KAT_FOLD, KAT_FOLD3, KAT_RGB
 import rfi_ref
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -93,7 +93,7 @@ class Artifacts(unittest.TestCase):
                 source=temp/'in.ppm';source.write_bytes(b'P6\n16 8\n255\n'+KAT_RGB)
                 encoded=temp/'out.fold';decoded=temp/'out.ppm'
                 encoded.unlink(missing_ok=True);decoded.unlink(missing_ok=True)
-                run([commands[0],source,encoded]);self.assertEqual(encoded.read_bytes(),KAT_FOLD)
+                run([commands[0],source,encoded]);self.assertEqual(encoded.read_bytes(),KAT_FOLD3)
                 run([commands[1],encoded,decoded]);self.assertEqual(decoded.read_bytes(),source.read_bytes())
 
     def test_rf_read_file_eight_byte_zero_padding(self):
@@ -272,7 +272,7 @@ class Artifacts(unittest.TestCase):
             dest=temp/'out.fold';exe=OUT/'bin/rasterfold'
             def encode(_):return subprocess.run([exe,'encode',src,dest],capture_output=True,timeout=15).returncode
             with ThreadPoolExecutor(max_workers=2) as pool:codes=list(pool.map(encode,range(2)))
-            self.assertEqual(sorted(codes),[0,2]);self.assertEqual(dest.read_bytes(),KAT_FOLD)
+            self.assertEqual(sorted(codes),[0,2]);self.assertEqual(dest.read_bytes(),KAT_FOLD3)
             self.assertFalse(Path(str(dest)+'.partial').exists())
             dest.unlink();dest.symlink_to(temp/'missing')
             self.assertEqual(encode(0),2);self.assertTrue(dest.is_symlink());dest.unlink()
@@ -300,7 +300,7 @@ class Artifacts(unittest.TestCase):
                     env=dict(os.environ,LD_PRELOAD=str(lib))
                     result=subprocess.run([OUT/'bin/rasterfold','encode',src,dest],env=env,capture_output=True,timeout=15)
                     self.assertEqual(result.returncode,code,result.stderr)
-                    self.assertIn(message,result.stderr);self.assertEqual(dest.read_bytes(),KAT_FOLD)
+                    self.assertIn(message,result.stderr);self.assertEqual(dest.read_bytes(),KAT_FOLD3)
             for mode,err_code in (('renameat2','EEXIST'),('linkat','ENOSYS')):
                 with self.subTest(name=f'parent_retarget_{mode}'):
                     dir_a=temp/f'dir_a_{mode}';dir_b=temp/f'dir_b_{mode}';dir_a.mkdir();dir_b.mkdir()
