@@ -168,14 +168,20 @@ Anti-aliased screenshots and diagrams with more than 256 colours still contain l
 > **Review:** `docs/reviews/d01-t02-s5.json`
 ## 6. The Ceiling of Encoder-Chosen Parameters
 
+> **Started:** 2026-10-27T19:14:01Z
+
 An encoder that tries a few parameter sets per channel and signals the best in the header keeps the decoder's cost unchanged. Before building it, measure its ceiling: the sum over images of the best fixed candidate per image. Bar: a ceiling at least 0.3% below the `photo` total; otherwise the idea is recorded as not worth a header byte.
 
-- [ ] Build one `cm.c` variant per candidate in `build/research/`: LMS step 6, 10 (today), and 16; WP sub-predictor weight maxima `{13, 12, 12, 12}` (today) and `{16, 10, 10, 10}`. Done when: `python research/ab.py size <variant> photo -v` runs for each.
-- [ ] Compute the per-image minimum over the candidates from the `-v` outputs with a short script under `research/` (`research/ceiling.py`), and its total against JPEG XL. Done when: the script prints the ceiling total and the per-image winner counts.
-- [ ] Record the ceiling in `docs/research.md` section 3 (with the candidate list) and, if it clears the bar, file the encoder search and its header byte through `add-todo` as a section of this file. Done when: the table row exists, and the follow-up section exists exactly when the bar was cleared.
+**Acceptance:** the ceiling is the per-image minimum over the four candidates (the shipped baseline included) summed over `photo`. It clears the bar when that sum is at least 0.3% below the baseline `photo` total. This section measures an oracle bound only: no codec variant is a winner, no patch is saved, and no timing applies (the candidates change constants, not the decode path; the encoder search itself is judged by the follow-up section if one is filed).
+
+**Corrected 2026-10-27:** §6 as written leaves the candidate set ambiguous, so before building: the four candidates are the shipped baseline (`src/cm.c`: LMS step 10, WP maxima `{13, 12, 12, 12}`), LMS step 6, LMS step 16, and WP maxima `{16, 10, 10, 10}`, each variant a fresh copy of `src/cm.c` in `build/research/` (`try-c6.c`, `try-c16.c`, `try-cw.c`) changing exactly one constant (the LMS sign step `ferr > 0 ? 10 : -10` in `cm_code`, or the `maxw` table in `cm_model`). The ceiling script is a tracked tool at `research/ceiling.py` taking the four `-v` outputs; item 3 names the follow-up filing rule and the negative branch.
+
+- [ ] Build the three variants (`build/research/try-c6.c` LMS step 6, `build/research/try-c16.c` LMS step 16, `build/research/try-cw.c` WP maxima `{16, 10, 10, 10}`), each changing exactly one constant from `src/cm.c`. Done when: `python research/ab.py size <variant> photo -v` runs for each and decodes every image, and the baseline `photo -v` output is captured the same day.
+- [ ] Write `research/ceiling.py`: it reads the baseline and variant `-v` outputs, computes the per-image minimum summed over `photo` (the ceiling), its percentage against the baseline total and against the summed JPEG XL e7 sizes, and the per-image winner counts; it prints all three. Done when: the script prints the ceiling total and the per-image winner counts.
+- [ ] Record the ceiling in `docs/research.md` section 3 (with the candidate list) and, if it clears the bar, file the encoder search and its header byte through `add-todo` as a section of this file; if it does not clear, record the ceiling as not worth a header byte and file nothing. Done when: the table row exists, and the follow-up section exists exactly when the bar was cleared.
 - [ ] Commit: `"research: measure the ceiling of encoder-chosen parameters"`
 
-**Test checkpoint:** `python research/ceiling.py` output quoted beside the baseline total.
+**Test checkpoint:** `python research/ceiling.py` output quoted beside the baseline total, with the winner counts; a follow-up section filed through `add-todo` exactly when the ceiling cleared the bar.
 
 ## 7. The Accepted Variants Measured Together
 
