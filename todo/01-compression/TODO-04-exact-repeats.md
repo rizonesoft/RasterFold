@@ -44,6 +44,8 @@ track: C4
 
 ## 1. Where the Repeats Are
 
+> **Started:** 2026-10-27T22:58:21Z
+
 Before designing the model, measure what it could catch: how many samples equal a sample at a fixed offset earlier in the image.
 
 - [ ] Add `research/repeats.py`, which reports per image the share of samples equal to the sample at the best vertical offset (`N` shifted by `-8..8` columns) and at the best earlier-row match of 8 or more samples. Done when: `python research/repeats.py synth` and `photo` print the shares. Cheaper substitute: eyeballing the images.
