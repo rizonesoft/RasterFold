@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **50 of 229 sections complete (22%).** 229 sections (8 discovered); backlog 1 entry. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **51 of 229 sections complete (22%).** 229 sections (8 discovered); backlog 1 entry. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -197,7 +197,7 @@ The model experiments, measured together and ported as format version 3.
 
 |  ✔  | Section      | Deliverable                                                        | Items |
 | :-: | ------------ | ------------------------------------------------------------------ | :---: |
-| [ ] | `D01 T02 §1` | A sixth and seventh context model                                  |   5   |
+| [x] | `D01 T02 §1` | A sixth and seventh context model                                  |   5   |
 | [ ] | `D01 T02 §2` | Two adaptation speeds per context                                  |   4   |
 | [ ] | `D01 T02 §3` | A second mixer weight set                                          |   4   |
 | [ ] | `D01 T02 §4` | Learning cost on small images                                      |   4   |

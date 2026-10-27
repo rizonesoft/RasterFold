@@ -1,0 +1,88 @@
+{
+  "ref": "D01 T02 \u00a71",
+  "title": "A Sixth and Seventh Context Model",
+  "implementation_sha": "03d278868985ea92edd8a2f80f2d448e60a65ff2",
+  "date": "2026-10-27",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/01-compression/D01-T02-s1.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 research/ab.py size build/research/try.c photo/tp/synth -> 30812732/6641390/206229, worst improved, bar cleared; ab B/A dec 1.217/1.267; vsjxl decode min 0.578/0.571/0.400",
+    "git apply --check research/variants/models-6-7.patch -> exit 0",
+    "python3 scripts/check-all.py -> 29/29 passed",
+    "python3 tests/test_correctness.py -> 39 passed, 0 failed",
+    "python3 scripts/todo-graph.py validate -> 0 fatal, 0 warnings",
+    "python3 scripts/todo-claims.py -> 81 hold, coverage 32/32"
+  ],
+  "completion": {
+    "report": "docs/reviews/01-compression/D01-T02-s1.md",
+    "verdict": "completed",
+    "candidate": "2f0ac910a40adbaaedd6caf621ef4ca169d43a3d",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/01-compression/D01-T02-s1.md",
+    "candidate": "1a943a4cd7b5aec4945aa8caf41af347996b169e",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}

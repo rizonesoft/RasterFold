@@ -42,7 +42,7 @@ track: C2
 
 | Order | Section | Deliverable                                   | Depends On | Status |
 | :---: | :-----: | --------------------------------------------- | ---------- | :----: |
-|   1   |   §1    | A sixth and seventh context model             | --         |  [ ]   |
+|   1   |   §1    | A sixth and seventh context model             | --         |  [x]   |
 |   2   |   §2    | Two adaptation speeds per context             | --         |  [ ]   |
 |   3   |   §3    | A second mixer weight set                     | --         |  [ ]   |
 |   4   |   §4    | Learning cost on small images                 | --         |  [ ]   |
@@ -70,6 +70,8 @@ In the floating-point research harness two more neighbour contexts took the `sub
 
 **Test checkpoint:** the quoted `ab.py size` and `ab` lines against the baseline and the quoted `vsjxl.py` three-thread decode ratio against JPEG XL against the 0.6 bar; if a patch was saved, `git apply --check research/variants/models-6-7.patch` exits 0.
 
+> **Verified:** 2026-10-27 | §1 | 03d278868985ea92edd8a2f80f2d448e60a65ff2
+> **Review:** `docs/reviews/d01-t02-s1.json`
 ## 2. Two Adaptation Speeds per Context
 
 **Needs:** Idle machine (timing)
