@@ -189,16 +189,22 @@ An encoder that tries a few parameter sets per channel and signals the best in t
 > **Review:** `docs/reviews/d01-t02-s6.json`
 ## 7. The Accepted Variants Measured Together
 
+> **Started:** 2026-10-27T21:38:42Z
+
 **Needs:** Idle machine (timing)
 
 Gains measured one at a time do not simply add: two models can capture the same redundancy. Before the port, the accepted variants of §1 to §6 are combined and measured once, so `D01 T03 §1` ports a measured whole.
 
-- [ ] Apply every patch under `research/variants/` to a fresh copy of `src/cm.c` in `build/research/combined.c`, resolving overlaps. Done when: `python research/ab.py size build/research/combined.c sub` decodes every image. If no variant was accepted, record that here, strike the remaining items with that reason, and stop.
-- [ ] Measure `photo`, `tp`, `synth`, and `-t1`/`-t3` decode ratios, and drop any variant whose removal costs less than 0.05% on `photo`. Done when: the combined summary lines and the drop decisions are quoted.
-- [ ] Save the combination as `research/variants/version-3.patch` and list its parts in `D01 T03 §1`'s context paragraph. Done when: `git apply --check research/variants/version-3.patch` exits 0.
+**Acceptance:** the combination ships to `D01 T03 §1` when its `photo` total beats the baseline (30,865,211) and no part is dropped by the removal rule in item 2. Decode timing is measured and recorded; the port section re-verifies speed and the JPEG XL clause on the shipped codec, and §1's JPEG XL evidence carries to the combination only if the combined file is byte-identical to §1's measured variant.
+
+**Corrected 2026-10-27:** of §1 to §6 only §1 was accepted, so the combination is exactly one patch (`research/variants/models-6-7.patch`); item 1 names that and requires the combined file to be diffed against §1's measured variant (`build/research/try.c`) so carried evidence is justified. Item 2's timing is repeated until two runs agree, per the `Needs` rule. Item 3 names the `diff --label` recipe for `version-3.patch` (regenerated from the combined file, not copied from §1's patch) and the exact place parts are listed (`D01 T03 §1`'s context).
+
+- [ ] Apply every patch under `research/variants/` (only `models-6-7.patch` exists; §2 to §6 accepted nothing) to a fresh copy of `src/cm.c` in `build/research/combined.c`, resolving overlaps. Diff the result against §1's measured variant `build/research/try.c` and record whether they are byte-identical. Done when: `python research/ab.py size build/research/combined.c sub` decodes every image and the diff verdict is recorded.
+- [ ] Measure `photo`, `tp`, `synth`, and the `-t1`/`-t3` decode ratios (`python research/ab.py ab src/cm.c build/research/combined.c -n5 -t1 measure kodim01` and `-t3`, repeated until two runs agree). Drop any variant whose removal costs less than 0.05% on `photo` (with one part, removal cost is the part's whole gain). Done when: the combined summary lines, the agreed decode ratios, and the drop decision are quoted.
+- [ ] Save the combination as `research/variants/version-3.patch` with `diff -u --label a/src/cm.c --label b/src/cm.c src/cm.c build/research/combined.c > research/variants/version-3.patch` (`diff` exits 1 when the files differ, the expected case), verify `git apply --check research/variants/version-3.patch` exits 0 on a fresh copy, and list its parts in `D01 T03 §1`'s context paragraph in `todo/01-compression/TODO-03-format-version-3.md`. Done when: the patch verifies and the parts are listed.
 - [ ] Commit: `"research: measure the accepted variants together for format version 3"`
 
-**Test checkpoint:** the combined `ab.py size photo` line against the 2026-09-29 baseline (0.9712), and `git apply --check` output.
+**Test checkpoint:** the combined `ab.py size photo` line against the 2026-09-29 baseline (0.9712), the agreed decode ratios, and `git apply --check research/variants/version-3.patch` exiting 0.
 
 ## Verification
 
