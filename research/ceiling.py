@@ -92,6 +92,11 @@ def parse_chan(path):
         if name in rows:
             raise SystemExit(f"ceiling: duplicate row {name} in {path}")
         rows[name] = tuple(int(m.group(i)) for i in (2, 3, 4, 5))
+        g, r, b, written = rows[name]
+        if min(g, r, b) < 5 or written != 12 + g + r + b:
+            raise SystemExit(
+                f"ceiling: impossible stream sizes for {name} in {path} "
+                f"({g}, {r}, {b}, written {written})")
     return rows
 
 
@@ -103,6 +108,12 @@ def compute_channels(tables, labels, expected, overhead):
         if set(rows) != set(expected):
             raise SystemExit(
                 f"ceiling: {label} does not hold exactly the photo set")
+        for img in expected:
+            g, r, b, written = rows[img]
+            if min(g, r, b) < 5 or written != 12 + g + r + b:
+                raise SystemExit(
+                    f"ceiling: impossible stream sizes for {img} in "
+                    f"{label} ({g}, {r}, {b}, written {written})")
     winners = Counter()
     ceiling_total = 0
     base_total = 0
@@ -172,6 +183,24 @@ def self_test():
         [ca, cb], ["base", "var"], ["x", "y"], {"x": 20, "y": 30})
     assert (total, base_total) == (1774, 1974), (total, base_total)
     assert winners == Counter({"var": 2, "base": 4}), winners
+    # Impossible stream sizes are refused (spec: streams at least 5 bytes,
+    # written == 12 + G + R + B).
+    bad = {"x": (0, 200, 100, 412), "y": (500, 500, 500, 1512)}
+    try:
+        compute_channels([bad, cb], ["bad", "var"], ["x", "y"],
+                         {"x": 20, "y": 30})
+    except SystemExit:
+        pass
+    else:
+        raise AssertionError("zero stream not refused")
+    bad2 = {"x": (100, 200, 100, 999), "y": (500, 500, 500, 1512)}
+    try:
+        compute_channels([bad2, cb], ["bad", "var"], ["x", "y"],
+                         {"x": 20, "y": 30})
+    except SystemExit:
+        pass
+    else:
+        raise AssertionError("written mismatch not refused")
     print("ceiling self-test: PASS (minima, percentages, ties, "
           "winner counts, 0.3% boundary, truncated input refused, "
           "per-channel minima)")
