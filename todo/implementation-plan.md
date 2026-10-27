@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **55 of 229 sections complete (24%).** 229 sections (8 discovered); backlog 1 entry. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **56 of 229 sections complete (24%).** 229 sections (8 discovered); backlog 1 entry. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -202,7 +202,7 @@ The model experiments, measured together and ported as format version 3.
 | [x] | `D01 T02 §3` | A second mixer weight set                                          |   4   |
 | [x] | `D01 T02 §4` | Learning cost on small images                                      |   4   |
 | [x] | `D01 T02 §5` | An exact-repeat context                                            |   4   |
-| [ ] | `D01 T02 §6` | The ceiling of encoder-chosen parameters                           |   4   |
+| [x] | `D01 T02 §6` | The ceiling of encoder-chosen parameters                           |   4   |
 | [ ] | `D01 T02 §7` | The accepted variants measured together                            |   4   |
 | [ ] | `D01 T03 §1` | Version 3: the accepted model changes                              |   7   |
 | [ ] | `D05 T01 §4` | Milestone 4 gate: Format version 3: beat JPEG XL e9 on photographs |   4   |

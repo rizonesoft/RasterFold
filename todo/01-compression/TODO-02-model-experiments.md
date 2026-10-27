@@ -47,7 +47,7 @@ track: C2
 |   3   |   §3    | A second mixer weight set                     | --         |  [x]   |
 |   4   |   §4    | Learning cost on small images                 | --         |  [x]   |
 |   5   |   §5    | An exact-repeat context                       | --         |  [x]   |
-|   6   |   §6    | The ceiling of encoder-chosen parameters      | --         |  [ ]   |
+|   6   |   §6    | The ceiling of encoder-chosen parameters      | --         |  [x]   |
 |   7   |   §7    | The accepted variants measured together       | §1, §2, §3, §4, §5, §6 |  [ ]   |
 
 ---
@@ -185,6 +185,8 @@ An encoder that tries a few parameter sets per channel and signals the best in t
 
 **Test checkpoint:** `python research/ceiling.py` output quoted beside the baseline total, with the winner counts, `python3 research/ceiling.py --self-test` passing, and the `D01 T05 §2` consequence named in the section 3 row.
 
+> **Verified:** 2026-10-27 | §6 | f0bd7d74b2ebb9fe1b15868e9a8310034c32e749
+> **Review:** `docs/reviews/d01-t02-s6.json`
 ## 7. The Accepted Variants Measured Together
 
 **Needs:** Idle machine (timing)
