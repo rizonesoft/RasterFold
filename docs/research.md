@@ -716,7 +716,20 @@ output, models) on `measure/image.bmp`. The working set is measured with
    own models and stream.
 4. **Exactly repeated content** (`D01 T04`, milestone 5): a match model predicting from
    the longest earlier match, as lossless WebP's backward references and lpaq's
-   match model do, for shifted copies of earlier rows.
+   match model do, for shifted copies of earlier rows. Measured 2026-10-27
+   (`D01 T04 §1`, `python3 research/repeats.py synth` and `photo` on raw RGB
+   planes; shifted-N is the per-channel best share of samples equal to the
+   sample one row above at shifts -8..8, pooled over channels; match>=8 is
+   retrospective coverage by earlier-row matches of 8 or more samples):
+   `syn_ui` 97.67% / 99.46%, `syn_text` 97.22% / 99.30%, `syn_gradient` 66.67%
+   (R 100% at shift 0, G 0%, B 100% at shift +2) / 82.25%, `syn_stripes`
+   33.33% / 52.65%, `syn_noise` 0.43% / 0.00%. Photographs hold far less:
+   pooled shifted-N shares of 5% to 21% on the Kodak images and match>=8
+   coverage mostly 0.2% to 12%, with flat or synthetic-like outliers
+   (`ic_artificial` 92.70% / 96.76%, `ic_nightshot_iso_100` 38.90% / 53.74%,
+   `measure` 32.87% / 47.35%). Exact repeats are a generated-content
+   phenomenon; on photographs the match model can only be a small win, which
+   is what `D01 T04 §2`'s bar (photo total no more than 0.05% worse) guards.
 
 ---
 
