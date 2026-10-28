@@ -206,9 +206,10 @@ class Dispatch(Harness):
 
     def test_unrouted_and_unknown_writers_are_refused(self):
         # Historical pins do not acquire a route just because the current dispatcher knows another writer.
-        result, _ = self.dispatch("--writer", "codex", "--prompt", str(self.prompt))
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("no route for writer 'codex'", result.stderr)
+        for unrouted in ("codex", "opencode"):
+            result, _ = self.dispatch("--writer", unrouted, "--prompt", str(self.prompt))
+            self.assertEqual(result.returncode, 2)
+            self.assertIn(f"no route for writer '{unrouted}'", result.stderr)
         result, _ = self.dispatch("--writer", "gemini", "--prompt", str(self.prompt))
         self.assertEqual(result.returncode, 2)
         self.assertIn("invalid choice", result.stderr)
@@ -219,6 +220,14 @@ class Dispatch(Harness):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual((summary["writer"], summary["reviewer"]), (writer, "sol"))
         self.assertEqual(len(self.calls()), 3)
+
+    def test_an_opencode_writer_dispatches_through_its_own_route(self):
+        # Owner decision 2026-10-29: OpenCode (an Anthropic model) writes, and its route is the pin's, never claude's.
+        (self.repo / ".conclave/reviewers.toml").write_text(FIXTURE_PIN + 'opencode = ["sol"]\n', encoding="utf-8")
+        result, summary = self.dispatch("--writer", "opencode", "--prompt", str(self.prompt))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((summary["writer"], summary["reviewer"]), ("opencode", "sol"))
+        self.assertEqual(len(self.calls()), 1)
 
     def test_rounds_are_numbered_and_appended(self):
         record = self.repo / "docs/reviews/round.md"
@@ -275,7 +284,7 @@ class Dispatch(Harness):
                  good.replace('agy = ["sol"]', 'agy = []'):
                      "route 'agy' must list exactly one reviewer, with no fallback",
                  good + 'codex = ["sol"]\n': "route 'codex' names sol, of the writer's own family; a review comes from a different family",
-                 good + 'gemini = ["sol"]\n': "[routes] may only name the writers claude, muse, agy, codex",
+                 good + 'gemini = ["sol"]\n': "[routes] may only name the writers claude, muse, agy, codex, opencode",
                  good.replace('effort = "xhigh"', 'effort = "xhigh"\nsandbox = "workspace-write"'):
                      "reviewer 'sol' has unknown keys: sandbox"}
         for text, message in cases.items():
@@ -1216,7 +1225,7 @@ class RepositoryPin(unittest.TestCase):
         self.assertEqual(pin["reviewers"], {"astra": {"cli": "codex", "model": "gpt-6-astra", "effort": "medium"},
                                            "spark": {"cli": "muse", "model": "muse-spark-1.3", "effort": "high"}})
         self.assertEqual(pin["routes"], {"claude": ["astra"], "muse": ["astra"], "agy": ["astra"],
-                                         "codex": ["spark"]})
+                                         "codex": ["spark"], "opencode": ["astra"]})
         schedule = pin["schedule"]
         self.assertEqual(schedule["plan"], {"effort": "medium", "lenses": ["plan"]})
         self.assertEqual(schedule["completion"], {"effort": "medium"})

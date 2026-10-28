@@ -5,7 +5,7 @@ description: Get an independent review of your work from the reviewer pinned for
 
 # Independent review
 
-Your own review is not enough for a nontrivial change: a different model reviews it. Codex-written work goes to Muse Spark 1.3 via Muse; Claude Code, Muse Code and Antigravity work goes to GPT-6 Astra via Codex. `.conclave/reviewers.toml` pins one reviewer per writer with no fallback. The shared `[schedule]` sets each pass's effort and lenses: plan and completion at `medium`, round 1 `high`, round 2 `medium`, round 3 `low`, then `low` with one lens per round.
+Your own review is not enough for a nontrivial change: a different model reviews it. Codex-written work goes to Muse Spark 1.3 via Muse; Claude Code, Muse Code, Antigravity and OpenCode work goes to GPT-6 Astra via Codex. `.conclave/reviewers.toml` pins one reviewer per writer with no fallback. The shared `[schedule]` sets each pass's effort and lenses: plan and completion at `medium`, round 1 `high`, round 2 `medium`, round 3 `low`, then `low` with one lens per round.
 
 | Work written by | Reviewer | Fallback |
 | --- | --- | --- |
@@ -13,6 +13,7 @@ Your own review is not enough for a nontrivial change: a different model reviews
 | Muse Code (`muse`) | GPT-6 Astra (`codex`, scheduled effort) | none |
 | Antigravity (`agy`) | GPT-6 Astra (`codex`, scheduled effort) | none |
 | Codex (`codex`) | Muse Spark 1.3 (`muse`, scheduled effort) | none |
+| OpenCode (`opencode`, Anthropic model) | GPT-6 Astra (`codex`, scheduled effort) | none |
 
 The pin refuses any other writer, any other reviewer CLI, a second reviewer in a route, and a reviewer of the writer's own model family.
 
@@ -23,7 +24,7 @@ The pin refuses any other writer, any other reviewer CLI, a second reviewer in a
 3. Run the round:
 
    ```bash
-   python3 scripts/review-dispatch.py --writer <this session's key: claude|muse|agy|codex> --prompt <scratch>/review-prompt.md --record docs/reviews/<topic>.md
+   python3 scripts/review-dispatch.py --writer <this session's key: claude|muse|agy|codex|opencode> --prompt <scratch>/review-prompt.md --record docs/reviews/<topic>.md
    ```
 
    On Windows use `python` instead of `python3`; the command is otherwise the same.

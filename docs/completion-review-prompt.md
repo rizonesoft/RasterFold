@@ -1,6 +1,6 @@
 # Completion review prompt
 
-Copy this into a scratch file, fill in the placeholders, and pass it to `scripts/review-dispatch.py --kind completion --candidate <FULL_SHA> --writer <claude|muse|agy|codex> --prompt <file> --record docs/reviews/<domain>/<slug>.md` (this session's writer key). It runs once per TODO section, after the section's gates pass and before Round 1 of the adversarial code review. For `--writer codex`, include the exact candidate diff in the prompt or name a readable scratch file containing it; the Muse reviewer's shell is disabled.
+Copy this into a scratch file, fill in the placeholders, and pass it to `scripts/review-dispatch.py --kind completion --candidate <FULL_SHA> --writer <claude|muse|agy|codex|opencode> --prompt <file> --record docs/reviews/<domain>/<slug>.md` (this session's writer key). It runs once per TODO section, after the section's gates pass and before Round 1 of the adversarial code review. For `--writer codex`, include the exact candidate diff in the prompt or name a readable scratch file containing it; the Muse reviewer's shell is disabled.
 
 ---
 

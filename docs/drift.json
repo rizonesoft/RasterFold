@@ -1546,7 +1546,7 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "2026-10-27: Reviewed README.md against its drift sources for D01 T03 section 1 (format version 3 port: encoder writes version 3, decoders accept versions 2 and 3, inspect prints the file version)",
+      "evidence": "2026-10-29: Reviewed README.md against its drift sources for the OpenCode writer route (operator decision 2026-10-29: opencode in WRITERS, opencode -> astra in .conclave/reviewers.toml, attended-only until D00 T01 \u00a710)",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "3b8f6c4144c739df78c4e08b3233bdb80ad006fcaebf1d1f63411c474a12c68e",
@@ -1554,35 +1554,35 @@
         "scripts/build.py": "824893947ad3d19fc1abb9538f5e53e93a12255da94ff5ac38536743715b21fe",
         "scripts/package.py": "b9ef31c48c2c5f7dfdcb22a7b3e5bd1a14c36b84d5d3887f17646bf47eaad199",
         "scripts/check-all.py": "7432d7b4b4eb6c6f499376180fb5576851d1be22db76d7e1375e497e6cbe2637",
-        "README.md": "1bc623a68e800e2df83d0618c99d02997e2a8e4d348379120c315c22ea97158b",
-        "AGENTS.md": "dccaad45a21b827372b73eadc7ffcbc2a263aa9263799888c8764dfe0d558fdb",
-        ".conclave/reviewers.toml": "ef301c3821fadb8c764bf7c02aa8a2765c66774c7f62b55a885c7558baf53d14",
-        "scripts/review-dispatch.py": "a79c8f06b8d5111dcd41c2b9860546e484216da6b2cb76fbdd095d166fcd2ee9"
+        "README.md": "371205d560a24ad539197695b8aab88c2a6423f22970754b5bf188e98b1682e8",
+        "AGENTS.md": "7d3792ae6011c163696697b84687d0aa016b47b63256ec2f6cbcfd8629bd1605",
+        ".conclave/reviewers.toml": "1896371d23d95294c0cd942f0a8a279a04a96f62117c10ca953d356077ce7257",
+        "scripts/review-dispatch.py": "e03efcc8159090fdb7a90e9605879460b5342d3086e72ca4a863b0785bd0c047"
       },
       "review": "Author-attested: 2026-10-25 re-read README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "AGENTS.md": {
-      "evidence": "2026-10-27: Reviewed AGENTS.md against its drift sources for D01 T03 section 1 (format version 3 port: encoder writes version 3, decoders accept versions 2 and 3, inspect prints the file version)",
+      "evidence": "2026-10-29: Reviewed AGENTS.md against its drift sources for the OpenCode writer route (operator decision 2026-10-29: opencode in WRITERS, opencode -> astra in .conclave/reviewers.toml, attended-only until D00 T01 \u00a710)",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "3b8f6c4144c739df78c4e08b3233bdb80ad006fcaebf1d1f63411c474a12c68e",
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
-        ".conclave/reviewers.toml": "ef301c3821fadb8c764bf7c02aa8a2765c66774c7f62b55a885c7558baf53d14",
-        "scripts/review-dispatch.py": "a79c8f06b8d5111dcd41c2b9860546e484216da6b2cb76fbdd095d166fcd2ee9",
-        "AGENTS.md": "dccaad45a21b827372b73eadc7ffcbc2a263aa9263799888c8764dfe0d558fdb",
+        ".conclave/reviewers.toml": "1896371d23d95294c0cd942f0a8a279a04a96f62117c10ca953d356077ce7257",
+        "scripts/review-dispatch.py": "e03efcc8159090fdb7a90e9605879460b5342d3086e72ca4a863b0785bd0c047",
+        "AGENTS.md": "7d3792ae6011c163696697b84687d0aa016b47b63256ec2f6cbcfd8629bd1605",
         ".codex/hooks.json": "c67e7762d0970280c653a74601012d01971d05f677182ae70e4eda0aa783c150",
         "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",
         "scripts/campaign_guard.py": "a4e15e753ac265152070e9d5ae93f36cba78e58e4feb4c11a6e0f2a58203c432"
       }
     },
     "GEMINI.md": {
-      "evidence": "2026-10-27: Reviewed GEMINI.md against its drift sources for D01 T03 section 1 (format version 3 port)",
+      "evidence": "2026-10-29: Reviewed GEMINI.md against its drift sources for the OpenCode writer route (operator decision 2026-10-29: opencode in WRITERS, opencode -> astra in .conclave/reviewers.toml, attended-only until D00 T01 \u00a710)",
       "sources": {
-        "AGENTS.md": "dccaad45a21b827372b73eadc7ffcbc2a263aa9263799888c8764dfe0d558fdb",
-        ".conclave/reviewers.toml": "ef301c3821fadb8c764bf7c02aa8a2765c66774c7f62b55a885c7558baf53d14",
-        "scripts/review-dispatch.py": "a79c8f06b8d5111dcd41c2b9860546e484216da6b2cb76fbdd095d166fcd2ee9",
+        "AGENTS.md": "7d3792ae6011c163696697b84687d0aa016b47b63256ec2f6cbcfd8629bd1605",
+        ".conclave/reviewers.toml": "1896371d23d95294c0cd942f0a8a279a04a96f62117c10ca953d356077ce7257",
+        "scripts/review-dispatch.py": "e03efcc8159090fdb7a90e9605879460b5342d3086e72ca4a863b0785bd0c047",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
-        "GEMINI.md": "ca2b82f19b9aceba602092ec5790b163a0d85fdc3780a3d85be0627c6d1cfa2a"
+        "GEMINI.md": "3b7e0514754a6a53086947284b38610241d6588247dc70174adc9a73b8e2f7de"
       }
     },
     "CONTRIBUTING.md": {
@@ -1673,15 +1673,15 @@
       }
     },
     "docs/agent-skills-and-rules-structure.md": {
-      "evidence": "2026-10-27: Reviewed docs/agent-skills-and-rules-structure.md against its drift sources for D01 T03 section 1 (format version 3 port)",
+      "evidence": "2026-10-29: Reviewed docs/agent-skills-and-rules-structure.md against its drift sources for the OpenCode writer route (operator decision 2026-10-29: opencode in WRITERS, opencode -> astra in .conclave/reviewers.toml, attended-only until D00 T01 \u00a710)",
       "sources": {
-        "AGENTS.md": "dccaad45a21b827372b73eadc7ffcbc2a263aa9263799888c8764dfe0d558fdb",
-        "GEMINI.md": "ca2b82f19b9aceba602092ec5790b163a0d85fdc3780a3d85be0627c6d1cfa2a",
+        "AGENTS.md": "7d3792ae6011c163696697b84687d0aa016b47b63256ec2f6cbcfd8629bd1605",
+        "GEMINI.md": "3b7e0514754a6a53086947284b38610241d6588247dc70174adc9a73b8e2f7de",
         ".conclave/kits.json": "56785267af421d6deac2d4e5cfdda58be63684fb6f3893cece8043a6f0578105",
-        ".conclave/reviewers.toml": "ef301c3821fadb8c764bf7c02aa8a2765c66774c7f62b55a885c7558baf53d14",
+        ".conclave/reviewers.toml": "1896371d23d95294c0cd942f0a8a279a04a96f62117c10ca953d356077ce7257",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
-        "scripts/review-dispatch.py": "a79c8f06b8d5111dcd41c2b9860546e484216da6b2cb76fbdd095d166fcd2ee9",
-        "docs/agent-skills-and-rules-structure.md": "81289224156277399cae1a4056f801786055259303d6adc4632a1493d6cc262b",
+        "scripts/review-dispatch.py": "e03efcc8159090fdb7a90e9605879460b5342d3086e72ca4a863b0785bd0c047",
+        "docs/agent-skills-and-rules-structure.md": "e1939ceb4fab98fa4bf70e720567a81ff5c91e72a26a3be2bd6a8f98d6b488b3",
         ".codex/hooks.json": "c67e7762d0970280c653a74601012d01971d05f677182ae70e4eda0aa783c150",
         "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",
         "scripts/campaign_guard.py": "a4e15e753ac265152070e9d5ae93f36cba78e58e4feb4c11a6e0f2a58203c432"

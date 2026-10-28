@@ -57,7 +57,7 @@ Include [`rasterfold.h`](include/rasterfold.h), link a shared or static library,
 
 ## Development and automation
 
-The [execution plan](todo/implementation-plan.md) owns planned work. [AGENTS.md](AGENTS.md) and [GEMINI.md](GEMINI.md) define format fidelity, review and measurement rules. Claude Code, Muse Code, Antigravity and Codex can write, with skills in `.agents/skills/`, campaign `Stop` hooks and `scripts/campaign_guard.py`. Independent reviews route through `scripts/review-dispatch.py` to Muse Spark 1.3 for Codex and GPT-6 Astra for the other writers.
+The [execution plan](todo/implementation-plan.md) owns planned work. [AGENTS.md](AGENTS.md) and [GEMINI.md](GEMINI.md) define format fidelity, review and measurement rules. Claude Code, Muse Code, Antigravity, Codex and OpenCode can write, with skills in `.agents/skills/`, campaign `Stop` hooks and `scripts/campaign_guard.py`. Independent reviews route through `scripts/review-dispatch.py` to Muse Spark 1.3 for Codex and GPT-6 Astra for the other writers.
 
 Contributions should improve images in general. A size or speed claim needs the [measurement protocol](docs/research.md), its inputs, command and thread count. Reproducing one attractive result is not enough to claim a general win over JPEG XL.
 

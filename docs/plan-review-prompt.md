@@ -1,6 +1,6 @@
 # Plan review prompt
 
-Before writing code for a TODO section, copy this into a scratch file, fill in the placeholders, and run one pass through `scripts/review-dispatch.py --kind plan --candidate <HEAD_SHA> --writer <claude|muse|agy|codex> --prompt <scratch> --record <findings.md>` (this session's writer key). The dispatcher sets medium effort and appends the `plan` lens from `.conclave/reviewers.toml`. For `--writer codex`, include the exact candidate diff in the prompt or name a readable scratch file containing it; the Muse reviewer's shell is disabled.
+Before writing code for a TODO section, copy this into a scratch file, fill in the placeholders, and run one pass through `scripts/review-dispatch.py --kind plan --candidate <HEAD_SHA> --writer <claude|muse|agy|codex|opencode> --prompt <scratch> --record <findings.md>` (this session's writer key). The dispatcher sets medium effort and appends the `plan` lens from `.conclave/reviewers.toml`. For `--writer codex`, include the exact candidate diff in the prompt or name a readable scratch file containing it; the Muse reviewer's shell is disabled.
 
 ---
 

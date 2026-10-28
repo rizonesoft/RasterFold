@@ -78,7 +78,7 @@ Escalation ends the run before its report: a report to the operator (an exhauste
 
 Operator stop: pressing Esc interrupts without the hook firing (`USER_CANCELED`). A stop or pause said in words deletes the guard file, the state file, and the job, in that order (`end --reason operator-stop`, then `CronDelete`), before confirming. Resume recreates all three before any other step.
 
-Claude Code, Muse Code, Antigravity and Codex can write in this repository. Only one session may own a campaign guard at a time.
+Claude Code, Muse Code, Antigravity, Codex and OpenCode can write in this repository. Only one session may own a campaign guard at a time. OpenCode (`opencode`) has no `Stop` hook or in-session heartbeat yet, so it never starts or acquires a campaign: it stops at the audit and ships sections attended through `process-todo-section` and `review-todo-section` until `D00 T01 §10` maps it onto the guard.
 
 Canonical prompt:
 

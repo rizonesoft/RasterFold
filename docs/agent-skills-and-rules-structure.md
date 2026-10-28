@@ -1,6 +1,6 @@
 # Agent Skills and Rules Structure
 
-This repository uses Claude Code (`claude`), Muse Code (`muse`), Google Antigravity (`agy`) and OpenAI Codex (`codex`) as writers. Independent reviews route Codex work to Muse Spark 1.3 and other writers' work to GPT-6 Astra through `scripts/review-dispatch.py` and `.conclave/reviewers.toml`.
+This repository uses Claude Code (`claude`), Muse Code (`muse`), Google Antigravity (`agy`), OpenAI Codex (`codex`) and OpenCode (`opencode`, running an Anthropic model) as writers. Independent reviews route Codex work to Muse Spark 1.3 and other writers' work to GPT-6 Astra through `scripts/review-dispatch.py` and `.conclave/reviewers.toml`.
 
 ## Skill Locations
 
