@@ -2,7 +2,7 @@
 schema_version: 1
 id: dev-automation
 domain: 00-workspace
-status: done
+status: active
 title: "TODO-01 -- Dev-Automation Wiring"
 depends_on: []
 track: W1
@@ -61,6 +61,7 @@ track: W1
 | 7 | §7 | The campaign guard on a legacy console encoding | -- | [x] |
 | 8 | §8 | A read-only independent reviewer beside a live run | -- | [x] |
 | 9 | §9 | Windows Job Object process-tree cleanup in review-dispatch.py | §8 | [x] |
+| 10 | §10 | OpenCode campaign Stop hook and heartbeat | §8 | [ ] |
 
 ---
 
@@ -228,6 +229,17 @@ Admission: a defect in shipped work (`scripts/review-dispatch.py:309`). On Windo
 
 > **Verified:** 2026-10-24 | §9 | 32bcc7acb05189ccd93d3517931df67c10d3848e
 > **Review:** `docs/reviews/d00-t01-s9.json`
+## 10. OpenCode Campaign Stop Hook and Heartbeat
+
+Operator decision 2026-10-29: OpenCode (`opencode`, running an Anthropic model) writes in this repository, with its work reviewed by GPT-6 Astra (`opencode = ["astra"]` in `.conclave/reviewers.toml`, `opencode` in `WRITERS` in `scripts/review-dispatch.py`). OpenCode has no campaign `Stop` hook and no in-session recurring-job tool wired here, so `process-plan` and `process-phase` cannot start a guarded campaign under it, and OpenCode ships sections attended, one at a time, until this section lands. OpenCode V2 server plugins under `.opencode/plugins/` load automatically, can subscribe to the server's `session.idle` events (`ctx.event.subscribe`), queue a prompt into a session (`ctx.session.prompt`), and own timers in `setup` with a cleanup function; the running session's id is `$OPENCODE_SESSION_ID`. This section builds the two missing guard parts on those primitives, through the shared `scripts/campaign_guard.py`, the way `scripts/codex-campaign-hook.py` adapts it for Codex.
+
+- [ ] Write `scripts/opencode-campaign-hook.py`, an adapter like `scripts/codex-campaign-hook.py`: it reads one JSON payload (`{"session_id": ..., "cwd": ...}`) on stdin, bounds its size, passes it to `campaign_guard.stop_hook`, prints the guard's decision (or `{}`), and fails open (prints `{}`, exits 0, records the error through the guard) on any malformed payload or thrown error. Done when: `scripts/tests/test_opencode_campaign_hook.py` proves it blocks only the owning session from a subdirectory, lets a non-owner and a missing guard pass, and fails open on an oversized or malformed payload.
+- [ ] Write the server plugin `.opencode/plugins/rasterfold-campaign/index.ts`: on `session.idle` for a session in this checkout it runs the adapter with that session's id and, when the adapter returns a block decision, queues its `reason` into the same session with `ctx.session.prompt`; it also owns the heartbeat (a recurring `3-59/5 * * * *` timer, created, listed and cancelled through plugin-registered tools named in the run file) that queues the `process-plan` canonical heartbeat prompt only while that session is idle and the guard names it. Every failure fails open (no prompt), and the plugin does nothing outside a RasterFold checkout. Done when: a disposable campaign under OpenCode (`acquire`, an idle turn the plugin blocks with the guard's reason, a heartbeat firing that `whoami` accepts, `end --reason operator-stop`, the job cancelled and `cancel-confirmed`) is driven end to end and its outputs are quoted.
+- [ ] Map OpenCode onto the run guard in `.agents/skills/process-plan/SKILL.md` and `.agents/skills/process-phase/SKILL.md` (the session id `$OPENCODE_SESSION_ID`, the plugin's heartbeat tools as `CronCreate`/`CronList`/`CronDelete`, the hook through the plugin), and replace the attended-only rule in `AGENTS.md`. Done when: `python3 scripts/drift-check.py` exits 0 and the skills name the OpenCode mapping.
+- [ ] Commit: `"runner: OpenCode campaign Stop hook and heartbeat (D00 T01 §10)"`
+
+**Test checkpoint:** `python3 -m unittest discover -s scripts/tests -v` and `python3 scripts/campaign_guard.py --self-test` exit 0 with `scripts/tests/test_opencode_campaign_hook.py` running, and the driven disposable campaign under OpenCode is quoted (the plugin's block, the heartbeat's `whoami` line, and the `end` and `cancel-confirmed` output).
+
 ## Verification
 
 - [x] `pwsh scripts/check-all.ps1` -- exits 0 with every gate `PASS`, the static analysis gate included (`PASS clang-tidy (32.1s)`, `check-all: 28/28 passed`)

@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **57 of 229 sections complete (25%).** 229 sections (8 discovered); backlog 1 entry. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **57 of 230 sections complete (25%).** 230 sections (8 discovered); backlog 1 entry. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -195,17 +195,18 @@ The palette method is a new method number, so it needs no version decision and r
 
 The model experiments, measured together and ported as format version 3.
 
-|  ✔  | Section      | Deliverable                                                        | Items |
-| :-: | ------------ | ------------------------------------------------------------------ | :---: |
-| [x] | `D01 T02 §1` | A sixth and seventh context model                                  |   5   |
-| [x] | `D01 T02 §2` | Two adaptation speeds per context                                  |   4   |
-| [x] | `D01 T02 §3` | A second mixer weight set                                          |   4   |
-| [x] | `D01 T02 §4` | Learning cost on small images                                      |   4   |
-| [x] | `D01 T02 §5` | An exact-repeat context                                            |   4   |
-| [x] | `D01 T02 §6` | The ceiling of encoder-chosen parameters                           |   4   |
-| [x] | `D01 T02 §7` | The accepted variants measured together                            |   4   |
-| [ ] | `D01 T03 §1` | Version 3: the accepted model changes                              |   8   |
-| [ ] | `D05 T01 §4` | Milestone 4 gate: Format version 3: beat JPEG XL e9 on photographs |   4   |
+|  ✔  | Section       | Deliverable                                                        | Items |
+| :-: | ------------- | ------------------------------------------------------------------ | :---: |
+| [x] | `D01 T02 §1`  | A sixth and seventh context model                                  |   5   |
+| [x] | `D01 T02 §2`  | Two adaptation speeds per context                                  |   4   |
+| [x] | `D01 T02 §3`  | A second mixer weight set                                          |   4   |
+| [x] | `D01 T02 §4`  | Learning cost on small images                                      |   4   |
+| [x] | `D01 T02 §5`  | An exact-repeat context                                            |   4   |
+| [x] | `D01 T02 §6`  | The ceiling of encoder-chosen parameters                           |   4   |
+| [x] | `D01 T02 §7`  | The accepted variants measured together                            |   4   |
+| [ ] | `D00 T01 §10` | OpenCode campaign Stop hook and heartbeat                          |   4   |
+| [ ] | `D01 T03 §1`  | Version 3: the accepted model changes                              |   8   |
+| [ ] | `D05 T01 §4`  | Milestone 4 gate: Format version 3: beat JPEG XL e9 on photographs |   4   |
 
 ### Phase 4 -- Milestone 5: Exact repeats
 

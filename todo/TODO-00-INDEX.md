@@ -22,7 +22,7 @@ Domains are numbered in **allocation order**. `DNN TNN §N` cross-references enc
 
 | No. | Domain | Phase | Purpose |
 | :-: | ------ | :---: | ------- |
-| 00 | [Workspace](./00-workspace/INDEX.md) | 0, 8 | Toolchain, gates, hooks, CI, static analysis, the review panel, the TODO system, measurement references, and held-out validation. |
+| 00 | [Workspace](./00-workspace/INDEX.md) | 0, 3, 8 | Toolchain, gates, hooks, CI, static analysis, the review panel, the TODO system, measurement references, and held-out validation. |
 | 01 | [Compression](./01-compression/INDEX.md) | 2-7 | The palette method, the model experiments, format version 3, exact repeats, every photo below JPEG XL e9, and screen content against WebP. |
 | 02 | [Speed](./02-speed/INDEX.md) | 1, 5, 10 | Compiler options, and the measurements of strips and the SIMD mixer. |
 | 03 | [Memory](./03-memory/INDEX.md) | 1 | Buffer lifetimes and copies. |
