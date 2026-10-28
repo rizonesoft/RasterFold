@@ -204,7 +204,7 @@ The model experiments, measured together and ported as format version 3.
 | [x] | `D01 T02 §5`  | An exact-repeat context                                            |   4   |
 | [x] | `D01 T02 §6`  | The ceiling of encoder-chosen parameters                           |   4   |
 | [x] | `D01 T02 §7`  | The accepted variants measured together                            |   4   |
-| [ ] | `D00 T01 §10` | OpenCode campaign Stop hook and heartbeat                          |   4   |
+| [ ] | `D00 T01 §10` | OpenCode campaign Stop hook and heartbeat                          |   5   |
 | [ ] | `D01 T03 §1`  | Version 3: the accepted model changes                              |   8   |
 | [ ] | `D05 T01 §4`  | Milestone 4 gate: Format version 3: beat JPEG XL e9 on photographs |   4   |
 
