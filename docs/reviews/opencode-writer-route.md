@@ -17,3 +17,19 @@
 
 HIGHEST: P2
 OVERALL: needs-attention
+
+## Round 2: astra (`gpt-6-astra` via `codex`)
+
+- Writer: opencode
+- Run: 2026-10-28T22:46:01Z
+- Effort: medium
+- Lenses: adversarial
+- Lines: 6
+- Digest: 0b7c850c014f9b9b
+
+### adversarial: needs-attention
+
+1. P2 `todo/00-workspace/TODO-01-dev-automation.md:239` still requires `session.idle` to invoke the adapter, but OpenCode V2 has a reproduced upstream defect where that event is declared but never emitted. Normal completion emits `session.execution.succeeded` instead, so the prescribed hook never checks the guard or queues continuation. Recording execution outcomes does not fix the missing trigger. The required driven checkpoint consequently cannot pass on affected versions. Specify execution lifecycle events as the trigger, or require a verified OpenCode version that emits `session.idle`, with a real event-capture test before enabling campaigns. See [upstream issue #55358](https://github.com/anomalyco/opencode/issues/55358).
+
+HIGHEST: P2
+OVERALL: needs-attention
