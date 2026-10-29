@@ -1643,13 +1643,13 @@
       "review": "Author-attested: 2026-10-25 re-read docs/getting-started.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/benchmarks.md": {
-      "evidence": "2026-10-27: Reviewed docs/benchmarks.md against its drift sources for D01 T03 section 1 (format version 3 port: encoder writes version 3, decoders accept versions 2 and 3, inspect prints the file version)",
+      "evidence": "2026-10-29: Reviewed docs/benchmarks.md against measure/verdict.json, benchmarks/results.csv, and benchmarks/corpus.csv for D05 T01 section 4 (Milestone 4 Format Version 3 measurements)",
       "sources": {
         "src/rf.h": "3b8f6c4144c739df78c4e08b3233bdb80ad006fcaebf1d1f63411c474a12c68e",
-        "measure/verdict.json": "4724b5f4ab0388181c2f12c606b308f9356ab98d680d371b28f0fefff13f5cee",
-        "benchmarks/results.csv": "5be61b099263a91136873d71862e3f30f8a9342a9e87a5aaaae63a9712c6acfb",
-        "benchmarks/corpus.csv": "f4e8caa4f2e8df439e0f6e1f241120572c7f5287de57f7a706d795a83b21a558",
-        "docs/benchmarks.md": "e287c3808c12bae48d36a6b869bdc4ff927c786e624487fd8c6318e3bc51ea36"
+        "measure/verdict.json": "b8fb3bc64785456d9072765b41f3ba628fde53d00d991559c9819e0c9127e531",
+        "benchmarks/results.csv": "33253fe8cc86eeaf5b44c18e3819749f64b775631065042637cfb45478bcf92d",
+        "benchmarks/corpus.csv": "4ea50653b15fde8b5fb955d2a55223954b4bbfe4e684f704acf6ab19d1674193",
+        "docs/benchmarks.md": "872527677785371d7b94b7347d7f7d5411fda07e428766010ecacaab193b0e3e"
       },
       "reviewed_at": "2026-10-25",
       "doc_sha256": "cb432a027a1da6cf87a7b6ea38912c56736b0eb0c4802bd4ac2e31a17ce4358d",
