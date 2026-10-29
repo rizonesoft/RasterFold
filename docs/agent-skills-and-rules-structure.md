@@ -30,7 +30,7 @@ Use the word "rules" carefully:
 
 - Durable project behavior belongs in [`AGENTS.md`](../AGENTS.md).
 - Antigravity-specific entry instructions live in [`GEMINI.md`](../GEMINI.md) and rules in `.agents/rules/`.
-- The campaign `Stop` hook is wired in `.agents/hooks.json`, `.claude/settings.json`, and `.codex/hooks.json`; each uses `scripts/campaign_guard.py`.
+- The campaign `Stop` hook is wired in `.agents/hooks.json`, `.claude/settings.json`, `.codex/hooks.json`, and the OpenCode plugin `.opencode/plugins/rasterfold-campaign/index.js` (which also delivers OpenCode's heartbeat from `scripts/opencode-heartbeat.py`); each uses `scripts/campaign_guard.py`.
 - Markdown checklists or rule references belong in a skill `references/` folder or in `docs/`.
 
 ## Adding a New Skill
