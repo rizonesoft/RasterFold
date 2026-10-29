@@ -44,7 +44,7 @@ track: C3
 
 | Order | Section | Deliverable                                   | Depends On | Status |
 | :---: | :-----: | --------------------------------------------- | ---------- | :----: |
-|   1   |   §1    | Version 3: the accepted model changes         | D01 T02 §7, D99 T01 §3 |  [ ]   |
+|   1   |   §1    | Version 3: the accepted model changes         | D01 T02 §7, D99 T01 §3 |  [x]   |
 |   2   |   §2    | Version 3: horizontal strips                  | §1, D02 T02 §1 |  [ ]   |
 
 ---
@@ -76,6 +76,8 @@ Ports `research/variants/version-3.patch` (the combination `D01 T02 §7` measure
 
 **Freeze check:** version 2 files decode unchanged: `KAT_FOLD` and every file under `build/research/fold-v2/` (the research corpus encoded by the commit before this section, kept for this check) decode to pixels identical to their sources; approval quoted from `D99 T01 §3`.
 
+> **Verified:** 2026-10-29 | §1 | 207073ea371317ef34ce3230ba6836bd0d445e6f
+> **Review:** `docs/reviews/d01-t03-s1.json`
 ## 2. Version 3: Horizontal Strips
 
 **Needs:** Idle machine (timing)

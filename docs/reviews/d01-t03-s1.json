@@ -1,0 +1,93 @@
+{
+  "ref": "D01 T03 \u00a71",
+  "title": "Version 3: The Accepted Model Changes",
+  "implementation_sha": "207073ea371317ef34ce3230ba6836bd0d445e6f",
+  "date": "2026-10-29",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/01-compression/D01-T03-s1.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/01-compression/D01-T03-s1.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 scripts/check-all.py -> check-all: 29/29 passed",
+    "python3 tests/test_correctness.py -> 39 passed, 0 failed",
+    "python3 tests/fuzz_decode.py 2000 11 -> 2000 mutated files (methods 0:134, 1:1331, 2:268, 3:267): 1905 rejected, 95 still valid, no crash, hang or mismatch",
+    "python3 research/ab.py size src/cm.c photo|tp|synth -> photo total=30812732 ratio=0.9695 geomean=0.9698 worst=1.0000 (kodim17) e9=31400714 e9_ratio=0.9813; tp total=6641390 ratio=0.9728 geomean=0.9700 worst=0.9928; synth total=206229 ratio=0.9103 geomean=0.5760 worst=1.4647",
+    "python3 scripts/windows.py research/vsjxl.py -n5 --threads 3 -> rf_dec min 308.6 / jxl_dec min 564.6 = 0.547 and 264.2 / 493.1 = 0.536 (< 0.6 bar); default vsjxl.py -n5 -> 329.9 / 696.0 = 0.474",
+    "freeze check -> KAT_FOLD and 55/55 version 2 freeze files in build/research/fold-v2/ decoded to identical pixels; D99 T01 \u00a73 standing approval dd4d46d79914b59c50cf317ab11c52d2cf66e008"
+  ],
+  "completion": {
+    "report": "docs/reviews/01-compression/D01-T03-s1.md",
+    "verdict": "completed",
+    "candidate": "b9cda8d0330f5f6a72051f87b86b269e1b138f34",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 2,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/01-compression/D01-T03-s1.md",
+    "candidate": "03f4dcdecd989c675edf9fd9dc17dd866069f83c",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}
