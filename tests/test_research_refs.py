@@ -936,8 +936,8 @@ class ResearchRefsTests(unittest.TestCase):
                 self.assertIn(" PAL\n", out)
                 rows = ab.parse_bench_rows(out, ["raw_1x1", "kat_cm", "kat_pal"])
                 self.assertEqual(rows["raw_1x1"][0], 35)
-                self.assertEqual(rows["kat_cm"][0], len(tc.KAT_FOLD))
-                self.assertEqual(rows["kat_pal"][0], len(tc.KAT_PAL2))
+                self.assertEqual(rows["kat_cm"][0], len(tc.KAT_FOLD3))
+                self.assertEqual(rows["kat_pal"][0], len(tc.KAT_PAL2_3))
 
             # Inject a pixel mismatch in a palette variant decode and verify ab.run rejects it.
             bad_pal = res_dir / "pal_bad.c"
@@ -1233,7 +1233,7 @@ class ResearchRefsTests(unittest.TestCase):
                     self.assertIn(" PAL\n", out_cur)
                     rows_m1 = ab.parse_bench_rows(out_m1, ["kat_pal", "solid_16x16"])
                     rows_cur = ab.parse_bench_rows(out_cur, ["kat_pal", "solid_16x16"])
-                    self.assertEqual(rows_cur["kat_pal"][0], len(tc.KAT_PAL2))
+                    self.assertEqual(rows_cur["kat_pal"][0], len(tc.KAT_PAL2_3))
                     self.assertEqual(rows_m1["kat_pal"][0], 32 + tc.KAT_PAL_W * tc.KAT_PAL_H * 3)
                     self.assertLess(rows_cur["solid_16x16"][0], rows_m1["solid_16x16"][0])
 
@@ -1242,7 +1242,7 @@ class ResearchRefsTests(unittest.TestCase):
                     (m1_dir / "rf.h")
                     .read_text(encoding="utf-8")
                     .replace(
-                        "int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *out, size_t stride, uint32_t w, uint32_t h, int threads, rf_error *err);",
+                        "int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *out, size_t stride, uint32_t w, uint32_t h, int threads, int version, rf_error *err);",
                         "int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *rgb, uint32_t w, uint32_t h, int threads, rf_error *err);",
                     )
                 )
@@ -1253,10 +1253,10 @@ class ResearchRefsTests(unittest.TestCase):
                 (m1_dir / "rf.h").write_text(rf_h_7arg, encoding="utf-8")
                 fold_7arg = (
                     fold_no_pal.replace(
-                        "rf_cm_decode(payload, hdr.payload_size, rgb, 0, hdr.width, hdr.height, threads, err)",
+                        "rf_cm_decode(payload, hdr.payload_size, rgb, 0, hdr.width, hdr.height, threads, (int)version, err)",
                         "rf_cm_decode(payload, hdr.payload_size, rgb, hdr.width, hdr.height, threads, err)",
                     ).replace(
-                        "rf_cm_decode(payload, hdr.payload_size, *bmp, stride, hdr.width, hdr.height, threads, err)",
+                        "rf_cm_decode(payload, hdr.payload_size, *bmp, stride, hdr.width, hdr.height, threads, (int)version, err)",
                         "rf_cm_decode(payload, hdr.payload_size, *bmp, hdr.width, hdr.height, threads, err)",
                     )
                 )
@@ -1265,8 +1265,8 @@ class ResearchRefsTests(unittest.TestCase):
                     (ROOT / "src" / "cm.c")
                     .read_text(encoding="utf-8")
                     .replace(
-                        "int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *out, size_t stride, uint32_t w, uint32_t h, int threads, rf_error *err) {",
-                        "int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *out, uint32_t w, uint32_t h, int threads, rf_error *err) {\n    size_t stride = 0;",
+                        "int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *out, size_t stride, uint32_t w, uint32_t h, int threads, int version, rf_error *err) {",
+                        "int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *out, uint32_t w, uint32_t h, int threads, rf_error *err) {\n    size_t stride = 0;\n    int version = 3;",
                     )
                 )
                 cm_m1_path.write_text(cm_7arg, encoding="utf-8")
