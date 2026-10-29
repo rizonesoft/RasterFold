@@ -68,6 +68,24 @@ class OpenCodeCampaignHook(unittest.TestCase):
             payload = json.dumps({"session_id": "owner-session", "cwd": str(root), "interrupted": False})
             self.assertEqual(self.run_hook(root, payload), {})
 
+    def test_records_each_turn_end_and_seen_verifies_the_session(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self.workspace(tmp)
+            before = subprocess.run(
+                [sys.executable, str(root / "scripts/opencode-campaign-hook.py"), "--seen", "--session", "ses_probe"],
+                capture_output=True, text=True, cwd=root, timeout=60,
+            )
+            self.assertEqual(before.returncode, 1)
+            self.assertIn("unseen ses_probe", before.stderr)
+            payload = json.dumps({"session_id": "ses_probe", "cwd": str(root), "interrupted": False})
+            self.assertEqual(self.run_hook(root, payload), {})
+            after = subprocess.run(
+                [sys.executable, str(root / "scripts/opencode-campaign-hook.py"), "--seen", "--session", "ses_probe"],
+                capture_output=True, text=True, cwd=root, timeout=60,
+            )
+            self.assertEqual(after.returncode, 0, after.stderr)
+            self.assertRegex(after.stdout.strip(), r"^seen ses_probe at \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+
 
 if __name__ == "__main__":
     unittest.main()

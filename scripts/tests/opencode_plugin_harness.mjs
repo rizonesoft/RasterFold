@@ -149,8 +149,10 @@ cases["a plugin loaded mid-execution queues nothing until the execution ends"] =
 cases["a session outside the checkout is never asked about"] = async () => {
   let asked = 0
   const f = fixture({ hook: () => { asked += 1; return { decision: "block", reason: "x" } },
+                      due: () => [{ id: "ohb-1", session: "ses_a", prompt: "heartbeat" }],
                       info: () => ({ location: { directory: "/elsewhere/project" }, time: { updated: 1, idle: 2 } }) })
   await f.campaign.onEvent(ev("session.execution.succeeded"))
+  await f.campaign.tick()
   assert.equal(asked, 0)
   assert.deepEqual(f.prompts, [])
 }

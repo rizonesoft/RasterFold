@@ -72,7 +72,7 @@ export function createCampaign({ root, runJSON, sessionGet, prompt, subscribe, n
     if (epoch !== undefined && s.epoch !== epoch) return false
     s.pending = true
     try {
-      if (!(await isIdle(id))) return false
+      if (!(await inScope(id)) || !(await isIdle(id))) return false
       if (disposed || s.inFlightUntil > now() || (epoch !== undefined && s.epoch !== epoch)) return false
       s.inFlightUntil = now() + IN_FLIGHT_MS
       await prompt(id, text)
