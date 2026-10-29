@@ -401,6 +401,17 @@ class DocsMapTests(unittest.TestCase):
             self.assertEqual(originals[src_rel], (self.root / src_rel).read_bytes())
             self.assertEqual([], build_docs.check_generated_pages(self.root))
 
+    def test_liquid_delimiters_in_mirrored_source_fail_check(self) -> None:
+        original = (self.root / 'docs/research.md').read_text(encoding='utf-8')
+        for token in ('{{13, 12}, {16, 10}}', '{% raw %}'):
+            self.write('docs/research.md', original.replace('## 8. Prior art\n', f'## 8. Prior art\n\nMaxima {token}.\n', 1))
+            build_docs.write_generated_pages(self.root)
+            errors = build_docs.check_generated_pages(self.root)
+            self.assertTrue(any('docs/research-summary.md:' in e and 'Liquid delimiter' in e for e in errors), (token, errors))
+        self.write('docs/research.md', original)
+        build_docs.write_generated_pages(self.root)
+        self.assertEqual([], build_docs.check_generated_pages(self.root))
+
     def test_staged_links_rebased_under_base_path_and_private_sources_refused(self) -> None:
         staged = build_docs.stage_site(self.root, 'build/site-source')
         for page in build_docs.load_site_content(self.root)['pages']:

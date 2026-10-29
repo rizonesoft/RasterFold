@@ -1664,11 +1664,11 @@
       }
     },
     "docs/README.md": {
-      "evidence": "2026-10-27: Reviewed docs/README.md against its drift sources for D01 T03 section 1 (format version 3 port)",
+      "evidence": "2026-10-30: Reviewed docs/README.md line 21 against scripts/build-docs.py after the generated-page Liquid delimiter check: staging from docs/site-content.json, pages.yml publication and --verify-live remain accurate; no prose change needed",
       "sources": {
         "docs/_config.yml": "d2459047e15f142133fb8206900c7921ca9c793559c63c264e7e43dbb1f00522",
         "docs/site-content.json": "3611e28cba68ff6ac17ace19115ebb014f06140322afcfc32ec39b78128c6f30",
-        "scripts/build-docs.py": "92c17f5bc4ad2229a35ca84fe303d4ed3b885adc595de817da216e8f19c3bc29",
+        "scripts/build-docs.py": "75169909be31e3374a680ba5c62c21705ed5aa385cd1bd11f6029c6d3627bd9e",
         "docs/README.md": "594ad9dc13e033e71277b00930241a3d5f6308cd95d4b22658475098e2012878"
       }
     },

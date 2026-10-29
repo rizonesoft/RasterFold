@@ -1739,6 +1739,19 @@ def write_generated_pages(root: Path) -> list[str]:
     return written
 
 
+LIQUID_DELIMITERS = ('{{', '{%')
+
+
+def liquid_delimiter_errors(rel: str, text: str) -> list[str]:
+    """Generated output is copied from plain Markdown, so Jekyll must not see Liquid in it."""
+    errors: list[str] = []
+    for lineno, line in enumerate(text.splitlines(), 1):
+        for token in LIQUID_DELIMITERS:
+            if token in line:
+                errors.append(f'{rel}:{lineno}: Liquid delimiter {token!r} would break the Jekyll build; reword the source')
+    return errors
+
+
 def check_generated_pages(root: Path) -> list[str]:
     site_content = load_site_content(root)
     generated = render_generated_pages(root, site_content)
@@ -1751,6 +1764,7 @@ def check_generated_pages(root: Path) -> list[str]:
         actual = path.read_text(encoding='utf-8')
         if actual != expected:
             errors.append(f'{rel}: generated file differs from source (run python3 scripts/build-docs.py)')
+        errors.extend(liquid_delimiter_errors(rel, expected))
     for group in ('config', 'pages', 'assets'):
         for entry in site_content[group]:
             check_rel = entry.get('output') or entry['source']
