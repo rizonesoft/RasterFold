@@ -10,6 +10,7 @@ Encode and decode speed. A change here leaves every `.fold` byte unchanged (the 
 | ---- | ----- | :----: |
 | [TODO-01](./TODO-01-compiler-options.md) | Compiler Options: PGO, LTO, AVX2 | draft |
 | [TODO-02](./TODO-02-parallel-and-simd.md) | Parallel Strips and the SIMD Mixer: Measurements | draft |
+| [TODO-03](./TODO-03-small-image-setup.md) | Small-Image Setup Cost | draft |
 
 ## Completed
 
@@ -21,6 +22,7 @@ Encode and decode speed. A change here leaves every `.fold` byte unchanged (the 
 - Build options (profile-guided and link-time optimization, instruction-set dispatch)
 - Measurements of format-changing speed ideas (strips, int16 mixer) before `01-compression` ports them
 - Hot-loop work in `src/cm.c` that keeps the bytes identical
+- Per-image setup cost of the model state (`TODO-03`)
 
 ## Out of scope
 
