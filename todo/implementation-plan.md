@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **58 of 230 sections complete (25%).** 230 sections (8 discovered); backlog 1 entry. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **59 of 230 sections complete (26%).** 230 sections (8 discovered); backlog 1 entry. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -214,7 +214,7 @@ Exact repeats extend version 3 before release.
 
 |  ✔  | Section      | Deliverable                         | Items |
 | :-: | ------------ | ----------------------------------- | :---: |
-| [ ] | `D01 T04 §1` | Where the repeats are               |   3   |
+| [x] | `D01 T04 §1` | Where the repeats are               |   3   |
 | [ ] | `D01 T04 §2` | A match model, measured             |   4   |
 | [ ] | `D01 T04 §3` | The match model in format version 3 |   3   |
 | [ ] | `D05 T01 §5` | Milestone 5 gate: Exact repeats     |   4   |

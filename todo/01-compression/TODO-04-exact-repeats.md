@@ -36,7 +36,7 @@ track: C4
 
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
-|   1   |   §1    | Where the repeats are | -- |  [ ]   |
+|   1   |   §1    | Where the repeats are | -- |  [x]   |
 |   2   |   §2    | A match model, measured | §1 |  [ ]   |
 |   3   |   §3    | The match model in format version 3 | §2, D01 T03 §1 |  [ ]   |
 
@@ -56,6 +56,8 @@ Before designing the model, measure what it could catch: how many samples equal 
 
 **Test checkpoint:** `python3 research/repeats.py synth` shows `syn_gradient` metric A per-channel best shares of 100% (shift 0), 0%, and 100% (shift +2), pooled 66.67%, and `syn_noise` pooled metric A below 1% with metric B at 0%; `python3 research/repeats.py --self-test` passes its exact-count fixtures (an 8-sample earlier-row match covers 8 samples, a 7-sample match covers none, a match may not cross into the current row, and overlapping coverage is counted once).
 
+> **Verified:** 2026-10-29 | §1 | 64c66a977c99d78f3ad39ee1d8b6ee5849552f3c
+> **Review:** `docs/reviews/d01-t04-s1.json`
 ## 2. A Match Model, Measured
 
 **Needs:** ffmpeg with libjxl (benchmarks)
