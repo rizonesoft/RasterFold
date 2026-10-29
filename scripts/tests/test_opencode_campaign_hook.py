@@ -53,8 +53,17 @@ class OpenCodeCampaignHook(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = self.workspace(tmp)
             guard._guard(str(root), "owner-session")
-            cases = ("not json", "[]", json.dumps({"cwd": str(root)}), json.dumps({"session_id": ""}),
-                     json.dumps({"session_id": "owner-session", "pad": "x" * 2_000_001}))
+            cases = (
+                "not json",
+                "[]",
+                json.dumps({"cwd": str(root)}),
+                json.dumps({"session_id": ""}),
+                json.dumps({"session_id": "owner-session", "cwd": str(root)}),
+                json.dumps({"session_id": "owner-session", "cwd": str(root), "interrupted": "true"}),
+                json.dumps({"session_id": "owner-session", "cwd": str(root), "interrupted": None}),
+                json.dumps({"session_id": "owner-session", "cwd": str(root), "interrupted": 1}),
+                json.dumps({"session_id": "owner-session", "interrupted": False, "pad": "x" * 2_000_001}),
+            )
             for payload in cases:
                 with self.subTest(payload=payload[:40]):
                     (root / "build/claude-campaign-state.json").unlink(missing_ok=True)

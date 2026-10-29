@@ -100,7 +100,12 @@ def main(argv=None):
             event = json.loads(payload)
         except (ValueError, RecursionError):
             event = None
-        if not isinstance(event, dict) or not isinstance(event.get("session_id"), str) or not event["session_id"]:
+        if (
+            not isinstance(event, dict)
+            or not isinstance(event.get("session_id"), str)
+            or not event["session_id"]
+            or not isinstance(event.get("interrupted"), bool)
+        ):
             campaign_guard._record_hook_error(root, campaign_guard.read_guard(root), "malformed OpenCode turn-end payload")
             print("{}")
             return 0
