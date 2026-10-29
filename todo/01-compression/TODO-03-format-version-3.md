@@ -14,7 +14,7 @@ track: C3
 > **Goal:** The measured winners of the model experiments and, if its size cost is accepted, horizontal strips for parallel decode become format version 3: new files carry version 3, version 2 files still decode to the same pixels, and every place a format change owes (the C code, the oracle, the spec, the known-answer files, the freeze check) moves in one commit per change.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-09-29):** The format is version 2 (`RF_VERSION 2u` in `src/rf.h`, magic `RFI\x02`); `rf_decode` rejects any other version as `unsupported fold: version`. The known-answer file `KAT_FOLD` in `tests/test_correctness.py` is a 90-byte version 2 file. No experiment of `D01 T02 §1` to `§6` has run, so nothing is accepted yet.
+> **Current state (verified 2026-10-27):** `D01 T02 §7` accepted the 7-model change (`research/variants/version-3.patch`: `photo` 30,812,732, `tp` 6,641,390, `synth` 206,229), and §1 ported it into `src/cm.c`, `spec/FOLD.md`, and `tests/rfi_ref.py`: the format is version 3 (`RF_VERSION 3u` in `src/rf.h`, magic `RFI\x03`), `rf_decode` accepts versions 2 and 3 (refusing mixed headers and version 4+), and both `KAT_FOLD` (version 2 decode-only) and `KAT_FOLD3` (version 3) are in `tests/test_correctness.py`.
 <!-- claim: count "^#define RF_VERSION 3u$" src/rf.h = 1 -->
 <!-- claim: count "^VERSION = 3$" tests/rfi_ref.py = 1 -->
 <!-- claim: count "^# RasterFold image format, version 3$" spec/FOLD.md = 1 -->

@@ -73,14 +73,6 @@ static void cm_tables(void) {
 RF_INLINE int clampq(int v) { return v < -1024 ? -1024 : v > 1023 ? 1023 : v; }
 RF_INLINE int q9(int v) { return Q9T[clampq(v) + 1024]; }
 RF_INLINE int iabs(int v) { return v < 0 ? -v : v; }
-/* k0's scaled 7-level quantizer as a scalar: 3 plus or minus the number of
-   thresholds scl, 3*scl, 7*scl that 6*|v| reaches (mirrors the qcount3 call
-   that builds k0). */
-RF_INLINE int qn7(int v, int scl) {
-    const int a = 6 * iabs(v);
-    const int n = (a >= scl) + (a >= 3 * scl) + (a >= 7 * scl);
-    return v > 0 ? 3 + n : v < 0 ? 3 - n : 3;
-}
 RF_INLINE int ilog2(uint32_t v) { return 31 - __builtin_clz(v | 1); }
 RF_INLINE int qlog(int v) { return v <= 0 ? 0 : (v >= 16384 ? 15 : ilog2((uint32_t)v) + 1); }
 RF_INLINE int med3(int w, int n, int nw) {
@@ -203,8 +195,6 @@ RF_INLINE int code_bit7(chan_t *ch, uint16_t *const cp[NMODEL], const uint32_t *
     int x = (int)(dot >> 16);
     x = x > 2047 ? 2047 : x < -2047 ? -2047 : x;
     uint32_t p = (uint32_t)SQUASH[x + 2047];
-    uint32_t rt0 = rate[0], rt1 = rate[1], rt2 = rate[2], rt3 = rate[3];
-    uint32_t rt4 = rate[4], rt5 = rate[5], rt6 = rate[6];
     if (enc) renc_bit(&ch->enc, bit, p);
     else bit = rdec_bit(&ch->dec, p);
     int err = (bit << 12) - (int)p;
@@ -213,13 +203,13 @@ RF_INLINE int code_bit7(chan_t *ch, uint16_t *const cp[NMODEL], const uint32_t *
     _mm_store_si128((__m128i *)w, _mm_add_epi32(wv0, _mm_srai_epi32(_mm_madd_epi16(_mm_unpacklo_epi16(sv, ones), ev), 13)));
     _mm_store_si128((__m128i *)(w + 4), _mm_add_epi32(wv1, _mm_srai_epi32(_mm_madd_epi16(_mm_unpackhi_epi16(sv, ones), ev), 13)));
     const int64_t target = bit ? 65535 : 0;
-    *c0 = (uint16_t)(v0 + (int32_t)(((target - (int64_t)v0) * (int64_t)rt0) >> 16));
-    *c1 = (uint16_t)(v1 + (int32_t)(((target - (int64_t)v1) * (int64_t)rt1) >> 16));
-    *c2 = (uint16_t)(v2 + (int32_t)(((target - (int64_t)v2) * (int64_t)rt2) >> 16));
-    *c3 = (uint16_t)(v3 + (int32_t)(((target - (int64_t)v3) * (int64_t)rt3) >> 16));
-    *c4 = (uint16_t)(v4 + (int32_t)(((target - (int64_t)v4) * (int64_t)rt4) >> 16));
-    *c5 = (uint16_t)(v5 + (int32_t)(((target - (int64_t)v5) * (int64_t)rt5) >> 16));
-    *c6 = (uint16_t)(v6 + (int32_t)(((target - (int64_t)v6) * (int64_t)rt6) >> 16));
+    *c0 = (uint16_t)(v0 + (int32_t)(((target - (int64_t)v0) * (int64_t)rate[0]) >> 16));
+    *c1 = (uint16_t)(v1 + (int32_t)(((target - (int64_t)v1) * (int64_t)rate[1]) >> 16));
+    *c2 = (uint16_t)(v2 + (int32_t)(((target - (int64_t)v2) * (int64_t)rate[2]) >> 16));
+    *c3 = (uint16_t)(v3 + (int32_t)(((target - (int64_t)v3) * (int64_t)rate[3]) >> 16));
+    *c4 = (uint16_t)(v4 + (int32_t)(((target - (int64_t)v4) * (int64_t)rate[4]) >> 16));
+    *c5 = (uint16_t)(v5 + (int32_t)(((target - (int64_t)v5) * (int64_t)rate[5]) >> 16));
+    *c6 = (uint16_t)(v6 + (int32_t)(((target - (int64_t)v6) * (int64_t)rate[6]) >> 16));
     return bit;
 }
 
@@ -238,7 +228,6 @@ RF_INLINE int code_bit5(chan_t *ch, uint16_t *const cp[NMODEL], const uint32_t *
     int x = (int)(dot >> 16);
     x = x > 2047 ? 2047 : x < -2047 ? -2047 : x;
     uint32_t p = (uint32_t)SQUASH[x + 2047];
-    uint32_t rt0 = rate[0], rt1 = rate[1], rt2 = rate[2], rt3 = rate[3], rt4 = rate[4];
     if (enc) renc_bit(&ch->enc, bit, p);
     else bit = rdec_bit(&ch->dec, p);
     int err = (bit << 12) - (int)p;
@@ -247,16 +236,16 @@ RF_INLINE int code_bit5(chan_t *ch, uint16_t *const cp[NMODEL], const uint32_t *
     _mm_store_si128((__m128i *)w, _mm_add_epi32(wv0, _mm_srai_epi32(_mm_madd_epi16(_mm_unpacklo_epi16(sv, ones), ev), 13)));
     _mm_store_si128((__m128i *)(w + 4), _mm_add_epi32(wv1, _mm_srai_epi32(_mm_madd_epi16(_mm_unpackhi_epi16(sv, ones), ev), 13)));
     const int64_t target = bit ? 65535 : 0;
-    *c0 = (uint16_t)(v0 + (int32_t)(((target - (int64_t)v0) * (int64_t)rt0) >> 16));
-    *c1 = (uint16_t)(v1 + (int32_t)(((target - (int64_t)v1) * (int64_t)rt1) >> 16));
-    *c2 = (uint16_t)(v2 + (int32_t)(((target - (int64_t)v2) * (int64_t)rt2) >> 16));
-    *c3 = (uint16_t)(v3 + (int32_t)(((target - (int64_t)v3) * (int64_t)rt3) >> 16));
-    *c4 = (uint16_t)(v4 + (int32_t)(((target - (int64_t)v4) * (int64_t)rt4) >> 16));
+    *c0 = (uint16_t)(v0 + (int32_t)(((target - (int64_t)v0) * (int64_t)rate[0]) >> 16));
+    *c1 = (uint16_t)(v1 + (int32_t)(((target - (int64_t)v1) * (int64_t)rate[1]) >> 16));
+    *c2 = (uint16_t)(v2 + (int32_t)(((target - (int64_t)v2) * (int64_t)rate[2]) >> 16));
+    *c3 = (uint16_t)(v3 + (int32_t)(((target - (int64_t)v3) * (int64_t)rate[3]) >> 16));
+    *c4 = (uint16_t)(v4 + (int32_t)(((target - (int64_t)v4) * (int64_t)rate[4]) >> 16));
     return bit;
 }
 
-RF_INLINE int code_bit(chan_t *ch, uint16_t *const cp[NMODEL], const uint32_t *rate, int32_t *wrow, int node, int bit, const int enc) {
-    if (ch->nmodel == NMODEL) return code_bit7(ch, cp, rate, wrow, node, bit, enc);
+RF_INLINE int code_bit(chan_t *ch, uint16_t *const cp[NMODEL], const uint32_t *rate, int32_t *wrow, int node, int bit, const int enc, const int nmodel) {
+    if (nmodel == NMODEL) return code_bit7(ch, cp, rate, wrow, node, bit, enc);
     return code_bit5(ch, cp, rate, wrow, node, bit, enc);
 }
 
@@ -268,30 +257,30 @@ RF_INLINE int code_raw(chan_t *ch, int bit, const int enc) {
 /* Code the residual r (-128..127): zero flag, sign, exponent in unary, then the
    mantissa, two bits adaptive and the rest at probability 1/2. The decoder can
    produce +128 from a malformed stream; the caller rejects it. */
-RF_INLINE int code_residual(chan_t *ch, uint16_t *const cp[NMODEL], const uint32_t *rate, int32_t *wrow, int r, const int enc) {
-    if (!code_bit(ch, cp, rate, wrow, 1, r != 0, enc)) return 0;
-    int neg = code_bit(ch, cp, rate, wrow, 2, r < 0, enc);
+RF_INLINE int code_residual(chan_t *ch, uint16_t *const cp[NMODEL], const uint32_t *rate, int32_t *wrow, int r, const int enc, const int nmodel) {
+    if (!code_bit(ch, cp, rate, wrow, 1, r != 0, enc, nmodel)) return 0;
+    int neg = code_bit(ch, cp, rate, wrow, 2, r < 0, enc, nmodel);
     int e = 0, got = 0;
     if (enc) {
         int a = iabs(r);                 /* 1..128 */
         e = ilog2((uint32_t)a);          /* a in [2^e, 2^(e+1)) */
-        for (int k = 0; k < e; k++) code_bit(ch, cp, rate, wrow, 3 + k, 1, enc);
-        if (e < 7) code_bit(ch, cp, rate, wrow, 3 + e, 0, enc);
+        for (int k = 0; k < e; k++) code_bit(ch, cp, rate, wrow, 3 + k, 1, enc, nmodel);
+        if (e < 7) code_bit(ch, cp, rate, wrow, 3 + e, 0, enc, nmodel);
         int rem = a - (1 << e);
         for (int b = e - 1; b >= 0; b--) {
             int bit = (rem >> b) & 1;
-            if (b == e - 1) code_bit(ch, cp, rate, wrow, 10 + e, bit, enc);
-            else if (b == e - 2) code_bit(ch, cp, rate, wrow, 14 + 2 * e + (got & 1), bit, enc);
+            if (b == e - 1) code_bit(ch, cp, rate, wrow, 10 + e, bit, enc, nmodel);
+            else if (b == e - 2) code_bit(ch, cp, rate, wrow, 14 + 2 * e + (got & 1), bit, enc, nmodel);
             else code_raw(ch, bit, enc);
             got = (got << 1) | bit;
         }
         return r;
     }
-    while (e < 7 && code_bit(ch, cp, rate, wrow, 3 + e, 0, enc)) e++;
+    while (e < 7 && code_bit(ch, cp, rate, wrow, 3 + e, 0, enc, nmodel)) e++;
     for (int b = e - 1; b >= 0; b--) {
         int bit;
-        if (b == e - 1) bit = code_bit(ch, cp, rate, wrow, 10 + e, 0, enc);
-        else if (b == e - 2) bit = code_bit(ch, cp, rate, wrow, 14 + 2 * e + (got & 1), 0, enc);
+        if (b == e - 1) bit = code_bit(ch, cp, rate, wrow, 10 + e, 0, enc, nmodel);
+        else if (b == e - 2) bit = code_bit(ch, cp, rate, wrow, 14 + 2 * e + (got & 1), 0, enc, nmodel);
         else bit = code_raw(ch, 0, enc);
         got = (got << 1) | bit;
     }
@@ -355,7 +344,7 @@ typedef struct {
 
 /* Prepare sample (x, y) of channel c: neighbours, prediction, contexts. The
    seven context rows are prefetched here; the coding phase reads them. */
-RF_INLINE void cm_model(cm_t *m, const row_ctx_t *rc, const int c, uint32_t x, uint32_t y, const int interior, stage_t *s) {
+RF_INLINE void cm_model(cm_t *m, const row_ctx_t *rc, const int c, uint32_t x, uint32_t y, const int interior, stage_t *s, const int nmodel) {
     chan_t *ch = &m->ch[c];
     const int w = (int)m->w;
     const int xi = (int)x;
@@ -374,7 +363,7 @@ RF_INLINE void cm_model(cm_t *m, const row_ctx_t *rc, const int c, uint32_t x, u
     }
 
     /* Neighbours, spec section "Neighbours". */
-    int W, N, NW, NE, NN, NNE, WW;
+    int W, N, NW, NE, NN, NNE, WW = 0;
     const pos_t *pN = prv + x, *pNE, *pNW, *pW;
     if (interior) {
         W = r0[x - 1]; N = r1[x]; NW = r1[x - 1]; NE = r1[x + 1];
@@ -399,7 +388,7 @@ RF_INLINE void cm_model(cm_t *m, const row_ctx_t *rc, const int c, uint32_t x, u
         pNW = x > 0 ? pN - 1 : pN;
         pW = x > 0 ? cur + x - 1 : cur;
     }
-    WW = x > 1 ? r0[x - 2] : W;
+    if (nmodel == NMODEL) WW = (interior || x > 1) ? r0[x - 2] : W;
 
     /* Weighted predictor (the JPEG XL self-correcting predictor). */
     int32_t *pr = s->pr;
@@ -495,12 +484,14 @@ RF_INLINE void cm_model(cm_t *m, const row_ctx_t *rc, const int c, uint32_t x, u
     const int rq = c == 2 ? q9(er_r) : 4;
     const int scl = (E >> 2) + 2;
     const int band = qE < 4 ? 0 : qE < 8 ? 1 : 2;
+    const __m128i pv = _mm_set1_epi32(pred);
+    const __m128i t1 = _mm_set1_epi32(scl - 1), t2 = _mm_set1_epi32(3 * scl - 1), t3 = _mm_set1_epi32(7 * scl - 1);
     const __m128i nb = _mm_setr_epi32(W, N, NE, NW);
     /* k0: W, N, NE and NW against the prediction, 7 levels of the local scale. */
-    const __m128i d0 = _mm_sub_epi32(nb, _mm_set1_epi32(pred));
+    const __m128i d0 = _mm_sub_epi32(nb, pv);
     const __m128i a0 = _mm_abs_epi32(d0);
     const __m128i a6 = _mm_add_epi32(_mm_slli_epi32(a0, 2), _mm_slli_epi32(a0, 1));
-    const __m128i q0 = qcount3(a6, d0, _mm_set1_epi32(scl - 1), _mm_set1_epi32(3 * scl - 1), _mm_set1_epi32(7 * scl - 1), 3);
+    const __m128i q0 = qcount3(a6, d0, t1, t2, t3, 3);
     uint32_t k0 = (uint32_t)(qdot(q0, _mm_setr_epi16(343, 0, 49, 0, 7, 0, 1, 0)) * 3 + band);
     /* k1: local error energy with the G and R residuals at this pixel. */
     uint32_t k1 = (uint32_t)(qE * 81 + gq * 9 + rq);
@@ -509,18 +500,23 @@ RF_INLINE void cm_model(cm_t *m, const row_ctx_t *rc, const int c, uint32_t x, u
     const __m128i q2 = qcount(_mm_abs_epi32(d2), d2, _mm_set1_epi32(0), _mm_set1_epi32(2), _mm_set1_epi32(6), _mm_set1_epi32(20), 4);
     uint32_t k2 = (uint32_t)(qdot(q2, _mm_setr_epi16(81, 0, 9, 0, 1, 0, 0, 0)) * 5 + (gq + 1) / 2);
     /* k3: four simple predictors against the prediction, 7 levels. */
-    const __m128i d3 = _mm_sub_epi32(_mm_setr_epi32(med3(W, N, NW), W + N - NW, (W + NE + 1) >> 1, N + NE - NNE), _mm_set1_epi32(pred));
+    const __m128i d3 = _mm_sub_epi32(_mm_setr_epi32(med3(W, N, NW), W + N - NW, (W + NE + 1) >> 1, N + NE - NNE), pv);
     const __m128i q3 = qcount3(_mm_abs_epi32(d3), d3, _mm_set1_epi32(0), _mm_set1_epi32(2), _mm_set1_epi32(6), 3);
     uint32_t k3 = (uint32_t)qdot(q3, _mm_setr_epi16(343, 0, 49, 0, 7, 0, 1, 0));
     /* k4: W and N against the prediction with the error energy. */
     uint32_t k4 = (uint32_t)((q9(W - pred) * 9 + q9(N - pred)) * 16 + qE);
-    /* k5: NE and NW against the prediction with the error energy. */
-    uint32_t k5 = (uint32_t)((q9(NE - pred) * 9 + q9(NW - pred)) * 16 + qE);
-    /* k6: WW, NN and NNE against the prediction, 7 levels of the local scale. */
-    uint32_t k6 = (uint32_t)(((qn7(WW - pred, scl) * 7 + qn7(NN - pred, scl)) * 7 +
-                              qn7(NNE - pred, scl)) * 16 + qE);
+    uint32_t k5 = 0, k6 = 0;
+    if (nmodel == NMODEL) {
+        /* k5: NE and NW against the prediction with the error energy. */
+        k5 = (uint32_t)((q9(NE - pred) * 9 + q9(NW - pred)) * 16 + qE);
+        /* k6: WW, NN and NNE against the prediction, 7 levels of the local scale. */
+        const __m128i d6 = _mm_sub_epi32(_mm_setr_epi32(WW, NN, NNE, 0), pv);
+        const __m128i a6_k = _mm_abs_epi32(d6);
+        const __m128i q6 = qcount3(_mm_add_epi32(_mm_slli_epi32(a6_k, 2), _mm_slli_epi32(a6_k, 1)), d6, t1, t2, t3, 3);
+        k6 = (uint32_t)(qdot(q6, _mm_setr_epi16(49, 0, 7, 0, 1, 0, 0, 0)) * 16 + qE);
+    }
     const uint32_t kk[NMODEL] = {k0, k1, k2, k3, k4, k5, k6};
-    for (int k = 0; k < ch->nmodel; k++) {
+    for (int k = 0; k < nmodel; k++) {
         s->cp[k] = ch->ctr + ((size_t)k * NROWS + kk[k] % NROWS) * NODES;
         _mm_prefetch((const char *)s->cp[k], _MM_HINT_T0);
     }
@@ -535,14 +531,14 @@ RF_INLINE void cm_model(cm_t *m, const row_ctx_t *rc, const int c, uint32_t x, u
 
 /* Code the sample prepared by cm_model and update the channel state. The
    encoder passes the sample value; the decoder returns it. */
-RF_INLINE int cm_code(cm_t *m, const row_ctx_t *rc, const int c, uint32_t x, int value, const stage_t *s, const int enc) {
+RF_INLINE int cm_code(cm_t *m, const row_ctx_t *rc, const int c, uint32_t x, int value, const stage_t *s, const int enc, const int nmodel) {
     chan_t *ch = &m->ch[c];
     int16_t *r0 = rc->r0[c];
     pos_t *cur = rc->cur[c];
     pos_t *prv = rc->prv[c];
     uint16_t *const *cp = s->cp;
     uint32_t rate[NMODEL];
-    for (int k = 0; k < ch->nmodel; k++) {
+    for (int k = 0; k < nmodel; k++) {
         uint32_t n = cp[k][0];
         rate[k] = RATE[n];
         cp[k][0] = (uint16_t)(n + (n < 60));
@@ -555,9 +551,9 @@ RF_INLINE int cm_code(cm_t *m, const row_ctx_t *rc, const int c, uint32_t x, int
     if (enc) {
         r = (value - predv) & 255;
         r = r >= 128 ? r - 256 : r;
-        code_residual(ch, cp, rate, s->wrow, r, enc);
+        code_residual(ch, cp, rate, s->wrow, r, enc, nmodel);
     } else {
-        r = code_residual(ch, cp, rate, s->wrow, 0, enc);
+        r = code_residual(ch, cp, rate, s->wrow, 0, enc, nmodel);
         if (__builtin_expect(ch->dec.in >= ch->dec.lim, 0)) rdec_tail(&ch->dec);
         ch->bad |= r == 128;
         value = (predv + r) & 255;
@@ -603,7 +599,7 @@ RF_INLINE int channel_value(const row_ctx_t *rc, int c, uint32_t x) {
 /* One thread: a three-stage pipeline per row, G at x, R at x - 1, B at x - 2.
    The three samples of one step do not depend on each other, so their
    dependency chains and cache misses overlap. */
-RF_INLINE void run_pipelined(cm_t *m, const int enc) {
+RF_INLINE void run_pipelined(cm_t *m, const int enc, const int nmodel) {
     const uint32_t w = m->w;
     for (uint32_t y = 0; y < m->h; y++) {
         row_ctx_t rc;
@@ -612,42 +608,42 @@ RF_INLINE void run_pipelined(cm_t *m, const int enc) {
             for (uint32_t x = 0; x < 4; x++) {
                 stage_t sg, sr, sb;
                 const int dg = x < w, dr = x >= 1 && x - 1 < w, db = x >= 2;
-                if (dg) cm_model(m, &rc, 0, x, y, 0, &sg);
-                if (dr) cm_model(m, &rc, 1, x - 1, y, 0, &sr);
-                if (db) cm_model(m, &rc, 2, x - 2, y, 0, &sb);
-                if (dg) cm_code(m, &rc, 0, x, enc ? channel_value(&rc, 0, x) : 0, &sg, enc);
-                if (dr) cm_code(m, &rc, 1, x - 1, enc ? channel_value(&rc, 1, x - 1) : 0, &sr, enc);
-                if (db) cm_code(m, &rc, 2, x - 2, enc ? channel_value(&rc, 2, x - 2) : 0, &sb, enc);
+                if (dg) cm_model(m, &rc, 0, x, y, 0, &sg, nmodel);
+                if (dr) cm_model(m, &rc, 1, x - 1, y, 0, &sr, nmodel);
+                if (db) cm_model(m, &rc, 2, x - 2, y, 0, &sb, nmodel);
+                if (dg) cm_code(m, &rc, 0, x, enc ? channel_value(&rc, 0, x) : 0, &sg, enc, nmodel);
+                if (dr) cm_code(m, &rc, 1, x - 1, enc ? channel_value(&rc, 1, x - 1) : 0, &sr, enc, nmodel);
+                if (db) cm_code(m, &rc, 2, x - 2, enc ? channel_value(&rc, 2, x - 2) : 0, &sb, enc, nmodel);
             }
             for (uint32_t x = 4; x < w - 1; x++) {
                 stage_t sg, sr, sb;
-                cm_model(m, &rc, 0, x, y, 1, &sg);
-                cm_model(m, &rc, 1, x - 1, y, 1, &sr);
-                cm_model(m, &rc, 2, x - 2, y, 1, &sb);
-                cm_code(m, &rc, 0, x, enc ? channel_value(&rc, 0, x) : 0, &sg, enc);
-                cm_code(m, &rc, 1, x - 1, enc ? channel_value(&rc, 1, x - 1) : 0, &sr, enc);
-                cm_code(m, &rc, 2, x - 2, enc ? channel_value(&rc, 2, x - 2) : 0, &sb, enc);
+                cm_model(m, &rc, 0, x, y, 1, &sg, nmodel);
+                cm_model(m, &rc, 1, x - 1, y, 1, &sr, nmodel);
+                cm_model(m, &rc, 2, x - 2, y, 1, &sb, nmodel);
+                cm_code(m, &rc, 0, x, enc ? channel_value(&rc, 0, x) : 0, &sg, enc, nmodel);
+                cm_code(m, &rc, 1, x - 1, enc ? channel_value(&rc, 1, x - 1) : 0, &sr, enc, nmodel);
+                cm_code(m, &rc, 2, x - 2, enc ? channel_value(&rc, 2, x - 2) : 0, &sb, enc, nmodel);
             }
             for (uint32_t x = w - 1; x < w + 2; x++) {
                 stage_t sg, sr, sb;
                 const int dg = x < w, dr = x >= 1 && x - 1 < w, db = x >= 2;
-                if (dg) cm_model(m, &rc, 0, x, y, 0, &sg);
-                if (dr) cm_model(m, &rc, 1, x - 1, y, 0, &sr);
-                if (db) cm_model(m, &rc, 2, x - 2, y, 0, &sb);
-                if (dg) cm_code(m, &rc, 0, x, enc ? channel_value(&rc, 0, x) : 0, &sg, enc);
-                if (dr) cm_code(m, &rc, 1, x - 1, enc ? channel_value(&rc, 1, x - 1) : 0, &sr, enc);
-                if (db) cm_code(m, &rc, 2, x - 2, enc ? channel_value(&rc, 2, x - 2) : 0, &sb, enc);
+                if (dg) cm_model(m, &rc, 0, x, y, 0, &sg, nmodel);
+                if (dr) cm_model(m, &rc, 1, x - 1, y, 0, &sr, nmodel);
+                if (db) cm_model(m, &rc, 2, x - 2, y, 0, &sb, nmodel);
+                if (dg) cm_code(m, &rc, 0, x, enc ? channel_value(&rc, 0, x) : 0, &sg, enc, nmodel);
+                if (dr) cm_code(m, &rc, 1, x - 1, enc ? channel_value(&rc, 1, x - 1) : 0, &sr, enc, nmodel);
+                if (db) cm_code(m, &rc, 2, x - 2, enc ? channel_value(&rc, 2, x - 2) : 0, &sb, enc, nmodel);
             }
         } else {
             for (uint32_t x = 0; x < w + 2; x++) {
                 stage_t sg, sr, sb;
                 const int dg = x < w, dr = x >= 1 && x - 1 < w, db = x >= 2;
-                if (dg) cm_model(m, &rc, 0, x, y, 0, &sg);
-                if (dr) cm_model(m, &rc, 1, x - 1, y, 0, &sr);
-                if (db) cm_model(m, &rc, 2, x - 2, y, 0, &sb);
-                if (dg) cm_code(m, &rc, 0, x, enc ? channel_value(&rc, 0, x) : 0, &sg, enc);
-                if (dr) cm_code(m, &rc, 1, x - 1, enc ? channel_value(&rc, 1, x - 1) : 0, &sr, enc);
-                if (db) cm_code(m, &rc, 2, x - 2, enc ? channel_value(&rc, 2, x - 2) : 0, &sb, enc);
+                if (dg) cm_model(m, &rc, 0, x, y, 0, &sg, nmodel);
+                if (dr) cm_model(m, &rc, 1, x - 1, y, 0, &sr, nmodel);
+                if (db) cm_model(m, &rc, 2, x - 2, y, 0, &sb, nmodel);
+                if (dg) cm_code(m, &rc, 0, x, enc ? channel_value(&rc, 0, x) : 0, &sg, enc, nmodel);
+                if (dr) cm_code(m, &rc, 1, x - 1, enc ? channel_value(&rc, 1, x - 1) : 0, &sr, enc, nmodel);
+                if (db) cm_code(m, &rc, 2, x - 2, enc ? channel_value(&rc, 2, x - 2) : 0, &sb, enc, nmodel);
             }
         }
         if (!enc) {
@@ -668,8 +664,9 @@ RF_INLINE void run_pipelined(cm_t *m, const int enc) {
         }
     }
 }
-static RF_NOINLINE void run_pipelined_enc(cm_t *m) { run_pipelined(m, 1); }
-static RF_NOINLINE void run_pipelined_dec(cm_t *m) { run_pipelined(m, 0); }
+static RF_NOINLINE void run_pipelined_enc(cm_t *m) { run_pipelined(m, 1, NMODEL); }
+static RF_NOINLINE void run_pipelined_dec7(cm_t *m) { run_pipelined(m, 0, NMODEL); }
+static RF_NOINLINE void run_pipelined_dec5(cm_t *m) { run_pipelined(m, 0, 5); }
 
 /* One thread per channel. Row y of R starts after G finished row y, row y of B
    after G and R finished it. G and R stay less than XROWS rows ahead of B, so
@@ -681,7 +678,7 @@ static void wait_done(volatile int32_t *done, int32_t need) {
     }
 }
 
-RF_INLINE void run_channel(cm_t *m, const int c, const int enc) {
+RF_INLINE void run_channel(cm_t *m, const int c, const int enc, const int nmodel) {
     const uint32_t w = m->w;
     const int check_cap = enc && (m->cap < (size_t)w * m->h * 3u - 1u);
     for (uint32_t y = 0; y < m->h; y++) {
@@ -694,25 +691,25 @@ RF_INLINE void run_channel(cm_t *m, const int c, const int enc) {
         if (y >= 2 && w >= 4) {
             for (uint32_t x = 0; x < 2; x++) {
                 stage_t s;
-                cm_model(m, &rc, c, x, y, 0, &s);
-                cm_code(m, &rc, c, x, enc ? channel_value(&rc, c, x) : 0, &s, enc);
+                cm_model(m, &rc, c, x, y, 0, &s, nmodel);
+                cm_code(m, &rc, c, x, enc ? channel_value(&rc, c, x) : 0, &s, enc, nmodel);
             }
             for (uint32_t x = 2; x < w - 1; x++) {
                 stage_t s;
-                cm_model(m, &rc, c, x, y, 1, &s);
-                cm_code(m, &rc, c, x, enc ? channel_value(&rc, c, x) : 0, &s, enc);
+                cm_model(m, &rc, c, x, y, 1, &s, nmodel);
+                cm_code(m, &rc, c, x, enc ? channel_value(&rc, c, x) : 0, &s, enc, nmodel);
             }
             {
                 uint32_t x = w - 1;
                 stage_t s;
-                cm_model(m, &rc, c, x, y, 0, &s);
-                cm_code(m, &rc, c, x, enc ? channel_value(&rc, c, x) : 0, &s, enc);
+                cm_model(m, &rc, c, x, y, 0, &s, nmodel);
+                cm_code(m, &rc, c, x, enc ? channel_value(&rc, c, x) : 0, &s, enc, nmodel);
             }
         } else {
             for (uint32_t x = 0; x < w; x++) {
                 stage_t s;
-                cm_model(m, &rc, c, x, y, 0, &s);
-                cm_code(m, &rc, c, x, enc ? channel_value(&rc, c, x) : 0, &s, enc);
+                cm_model(m, &rc, c, x, y, 0, &s, nmodel);
+                cm_code(m, &rc, c, x, enc ? channel_value(&rc, c, x) : 0, &s, enc, nmodel);
             }
         }
         if (!enc) {
@@ -736,25 +733,29 @@ RF_INLINE void run_channel(cm_t *m, const int c, const int enc) {
     }
     __atomic_store_n(&m->ch[c].done, (int32_t)m->h, __ATOMIC_RELEASE);
 }
-static RF_NOINLINE void run_g_enc(void *p) { run_channel(p, 0, 1); }
-static RF_NOINLINE void run_r_enc(void *p) { if (!((cm_t *)p)->cancel) run_channel(p, 1, 1); }
-static RF_NOINLINE void run_b_enc(void *p) { if (!((cm_t *)p)->cancel) run_channel(p, 2, 1); }
-static RF_NOINLINE void run_g_dec(void *p) { run_channel(p, 0, 0); }
-static RF_NOINLINE void run_r_dec(void *p) { if (!((cm_t *)p)->cancel) run_channel(p, 1, 0); }
-static RF_NOINLINE void run_b_dec(void *p) { if (!((cm_t *)p)->cancel) run_channel(p, 2, 0); }
+static RF_NOINLINE void run_g_enc(void *p) { run_channel(p, 0, 1, NMODEL); }
+static RF_NOINLINE void run_r_enc(void *p) { if (!((cm_t *)p)->cancel) run_channel(p, 1, 1, NMODEL); }
+static RF_NOINLINE void run_b_enc(void *p) { if (!((cm_t *)p)->cancel) run_channel(p, 2, 1, NMODEL); }
+static RF_NOINLINE void run_g_dec7(void *p) { run_channel(p, 0, 0, NMODEL); }
+static RF_NOINLINE void run_r_dec7(void *p) { if (!((cm_t *)p)->cancel) run_channel(p, 1, 0, NMODEL); }
+static RF_NOINLINE void run_b_dec7(void *p) { if (!((cm_t *)p)->cancel) run_channel(p, 2, 0, NMODEL); }
+static RF_NOINLINE void run_g_dec5(void *p) { run_channel(p, 0, 0, 5); }
+static RF_NOINLINE void run_r_dec5(void *p) { if (!((cm_t *)p)->cancel) run_channel(p, 1, 0, 5); }
+static RF_NOINLINE void run_b_dec5(void *p) { if (!((cm_t *)p)->cancel) run_channel(p, 2, 0, 5); }
 
 /* Runs channel 0 here and channels 1 and 2 on their own threads. The threads
    are created suspended and started only when both exist; otherwise they are
    released with cancel set, and the single-thread pipeline codes the image. */
 static void run(cm_t *m, int threads, const int enc) {
+    const int v3 = m->ch[0].nmodel == NMODEL;
     if (threads >= 2) {
         m->cancel = 0;
-        void *t1 = rf_thread_create(enc ? run_r_enc : run_r_dec, m);
-        void *t2 = rf_thread_create(enc ? run_b_enc : run_b_dec, m);
+        void *t1 = rf_thread_create(enc ? run_r_enc : (v3 ? run_r_dec7 : run_r_dec5), m);
+        void *t2 = rf_thread_create(enc ? run_b_enc : (v3 ? run_b_dec7 : run_b_dec5), m);
         if (t1 && t2) {
             rf_thread_resume(t1);
             rf_thread_resume(t2);
-            if (enc) run_g_enc(m); else run_g_dec(m);
+            if (enc) run_g_enc(m); else if (v3) run_g_dec7(m); else run_g_dec5(m);
             rf_thread_join(t1);
             rf_thread_join(t2);
             return;
@@ -763,7 +764,7 @@ static void run(cm_t *m, int threads, const int enc) {
         if (t1) { rf_thread_resume(t1); rf_thread_join(t1); }
         if (t2) { rf_thread_resume(t2); rf_thread_join(t2); }
     }
-    if (enc) run_pipelined_enc(m); else run_pipelined_dec(m);
+    if (enc) run_pipelined_enc(m); else if (v3) run_pipelined_dec7(m); else run_pipelined_dec5(m);
 }
 
 /* ------------------------------------------------------------ interface */

@@ -1688,11 +1688,11 @@
       }
     },
     "spec/FOLD.md": {
-      "evidence": "2026-10-27: Reviewed spec/FOLD.md against its drift sources for D01 T03 section 1 (format version 3 port: encoder writes version 3, decoders accept versions 2 and 3, inspect prints the file version)",
+      "evidence": "2026-10-29: Reviewed spec/FOLD.md against its drift sources for D01 T03 section 1 (format version 3 port: encoder writes version 3, decoders accept versions 2 and 3, compile-time nmodel specialization and SIMD k6 in src/cm.c keep bitstream byte-identical)",
       "sources": {
         "src/rf.h": "3b8f6c4144c739df78c4e08b3233bdb80ad006fcaebf1d1f63411c474a12c68e",
         "src/fold.c": "1659a4119aa181aab784bdd1457a1bd20233e6ea80a997cea019787bd8c6a846",
-        "src/cm.c": "7db8fa03e77e1c28fa546f0ca721134d32f209d1c22aa9eca0e1b5af623391df",
+        "src/cm.c": "2d11945fe826bce5dfcdbf189bcc618be7b95f9342b60d621112c65618813a1c",
         "src/crc32.c": "c6e682115185fcdcbfa0551823fc590f60c9c7b978a30009163288e664b3faec",
         "tests/rfi_ref.py": "4b14dac40039ff2ddcd509691d520dfb00c9363c104cee359ceebaac91e29035",
         "spec/FOLD.md": "80841ef2df587850add9bd37eb2067582a7e714ee0beee7779ba7fbb865eb9f7"
