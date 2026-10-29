@@ -724,12 +724,14 @@ output, models) on `measure/image.bmp`. The working set is measured with
    `syn_ui` 97.67% / 99.46%, `syn_text` 97.22% / 99.30%, `syn_gradient` 66.67%
    (R 100% at shift 0, G 0%, B 100% at shift +2) / 82.25%, `syn_stripes`
    33.33% / 52.65%, `syn_noise` 0.43% / 0.00%. Photographs hold far less:
-   pooled shifted-N shares of 5% to 21% on the Kodak images and match>=8
-   coverage mostly 0.2% to 12%, with flat or synthetic-like outliers
-   (`ic_artificial` 92.70% / 96.76%, `ic_nightshot_iso_100` 38.90% / 53.74%,
-   `measure` 32.87% / 47.35%). Exact repeats are a generated-content
-   phenomenon; on photographs the match model can only be a small win, which
-   is what `D01 T04 §2`'s bar (photo total no more than 0.05% worse) guards.
+   pooled shifted-N shares of 5.33% to 21.43% and match>=8 coverage of 0.17%
+   to 11.93% across 23 of the 24 Kodak images (`kodim20`, with its flat sky
+   backdrop, reaches 39.89% / 34.39%), with flat or synthetic-like `photo`
+   outliers (`ic_artificial` 92.70% / 96.76%, `ic_nightshot_iso_100` 38.90% /
+   53.74%, `ic_flower_foveon` 38.66% / 46.57%, `measure` 32.87% / 47.35%).
+   Exact repeats are a generated-content phenomenon; on photographs the match
+   model can only be a small win, which is what `D01 T04 §2`'s bar (photo total
+   no more than 0.05% worse) guards.
 
 ---
 
