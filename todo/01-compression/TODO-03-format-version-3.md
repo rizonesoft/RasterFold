@@ -26,7 +26,7 @@ track: C3
 - -> XREF: D01 T02 §1 -- the model experiments whose accepted variants §1 ports
 - -> XREF: D99 T01 §3 -- the operator's approval of a new format version, which §1 needs before it starts
 - -> XREF: D02 T02 §1 -- the strips measurement whose accepted size cost §2 ports
-- -> XREF: D01 T04 §3 -- the match model, which extends version 3 before the 1.0 release
+- -> XREF: D01 T04 §2, D01 T04 §3 -- the match model, which measures against and extends version 3 before the 1.0 release
 - -> XREF: D01 T05 §2 -- encoder-chosen parameters, which extend version 3 before the 1.0 release
 - -> XREF: D01 T06 §2 -- the colour-cache model, which extends version 3 before the 1.0 release
 

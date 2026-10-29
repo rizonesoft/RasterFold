@@ -21,7 +21,7 @@ track: C4
 
 - [`docs/research.md`](../../docs/research.md) -- section 7 item 4 and section 8 (lpaq's match model, WebP's backward references)
 - [`src/cm.c`](../../src/cm.c) -- `cm_model` and `code_bit`, where a match model adds a context and a mixer input
-- -> XREF: D01 T03 §1 -- format version 3, which §3 extends before the 1.0 release freezes it
+- -> XREF: D01 T03 §1 -- format version 3, which §2 measures against and §3 extends before the 1.0 release freezes it
 
 ## Outcome
 
@@ -37,7 +37,7 @@ track: C4
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
 |   1   |   §1    | Where the repeats are | -- |  [x]   |
-|   2   |   §2    | A match model, measured | §1 |  [ ]   |
+|   2   |   §2    | A match model, measured | §1, D01 T03 §1 |  [ ]   |
 |   3   |   §3    | The match model in format version 3 | §2, D01 T03 §1 |  [ ]   |
 
 ---
@@ -70,12 +70,14 @@ The model keeps, per channel, a pointer to the best earlier match (found by hash
 
 **Corrected 2026-10-29:** `src/cm.c` now has 7 models (`NMODEL 7`, `WSTRIDE 8`) after `D01 T03 §1`, so adding the match model in `build/research/try.c` makes it an eighth model (`NMODEL 8`, `WSTRIDE 16`, weights `0..7` initialized to `19661` and bias `64` at slot `8`, with the mixer dot product and weight update covering all 9 slots `0..8`). Because `ch->rows` is a 3-row ring buffer (`ro0`, `ro1`, `ro2`), `build/research/try.c` allocates a causal plane buffer `(size_t)w * h * sizeof(int16_t)` and a `2^16`-entry `uint32_t` hash table (`0xFFFFFFFFu` empty) per channel, keeping 1-thread and 3-thread outputs byte-identical. At sample `(x, y)` in channel `c`, before coding `pv`, if an active match pointer `match_pos < (uint32_t)(y * w)` exists (`match_len > 0`), the match prediction is `match_pv = plane[match_pos]`, the clamped residual is `d_m = clamp(match_pv - pred, -15, 15)` shifted by `+15` into `0..30`, and `k7 = (uint32_t)((d_m + 15) * 16 + min(match_len, 15))` (`0..495 < NROWS`); when `match_len == 0`, `k7 = 240` (`d_m = 0`, `match_len = 0`). After coding/decoding `pv = plane[y * w + x]`, if `match_len > 0 && pv == match_pv && match_pos + 1 < (uint32_t)(y * w)`, advance `match_pos++` and `match_len++`; else reset `match_len = 0`, and when `match_len == 0 && y > 0 && x >= 7`, hash `plane[y * w + x - 7 .. y * w + x]` into `htab[h16]`: if `cand = htab[h16]` satisfies `cand >= 7 && cand + 1 < (uint32_t)(y * w)` and all 8 samples `plane[cand - 7 .. cand]` equal `plane[y * w + x - 7 .. y * w + x]`, set `match_pos = cand + 1` and `match_len = 8`. At the end of row `y`, all 8-sample positions ending in row `y` (`pos >= 7`) are written into `htab` so matches only reference strictly earlier rows. Both acceptance and rejection outcomes are covered by the checkpoint below.
 
-- [ ] In `build/research/try.c`, add the causal channel plane buffer, the match pointer, a 2^16-entry hash of positions per channel, and an eighth model (`NMODEL 8`, `WSTRIDE 16`) whose context is `(clamp(match_pv - pred, -15, 15) + 15) * 16 + min(match length, 15)` (`240` when `match_len == 0`). Done when: `python3 research/ab.py size build/research/try.c synth -v` decodes every image.
-- [ ] Measure `synth`, `photo`, and `tp`, and the `-t1` (and `-t3`) decode ratio (`python3 research/ab.py ab src/cm.c build/research/try.c -n5 measure kodim01`). Done when: the summary lines and the four target sizes are quoted.
-- [ ] Record the result in `docs/research.md` section 3 and save a winner as `research/variants/match-model.patch` if and only if the bar is cleared. Done when: the row exists, and the patch exists exactly when the bar was cleared.
+**Corrected 2026-10-29 (plan review `docs/reviews/01-compression/D01-T04-s2.md`):** three gaps folded in. (1) `D01 T03 §1` is now declared in `§2`'s `Depends On` column (`§1, D01 T03 §1`), and `§2` waits until `D01 T03 §1` is stamped `[x]` and names that stamped baseline commit explicitly before accepting or rejecting measurements against the 7-model `30,812,732` `photo` and `6,641,390` `tp` baselines. (2) Item 1 now explicitly verifies 1-thread vs 3-thread compressed byte identity and cross-thread decoding (`1 -> 3` and `3 -> 1`) of `build/research/try.c` across the 55-image research corpus (`photo`, `tp-only`, `synth`). (3) Item 3 and the checkpoint now require held-out `tp` confirmation (`tp` total no worse than the `6,641,390` baseline, per `docs/research.md` section 2.3 item 6) alongside the four `synth` target sizes and the `photo` ceiling before saving `research/variants/match-model.patch`; a `tp` regression rejects the variant as overfitted and records the negative result.
+
+- [ ] In `build/research/try.c` (starting from the stamped `D01 T03 §1` `src/cm.c` commit), add the causal channel plane buffer, the match pointer, a 2^16-entry hash of positions per channel, and an eighth model (`NMODEL 8`, `WSTRIDE 16`) whose context is `(clamp(match_pv - pred, -15, 15) + 15) * 16 + min(match length, 15)` (`240` when `match_len == 0`), and verify 1-thread vs 3-thread `.fold` byte identity and cross-thread decoding (`1 -> 3` and `3 -> 1`) across all 55 corpus images (`photo`, `tp-only`, `synth`). Done when: `python3 research/ab.py size build/research/try.c synth -v` decodes every image and 55/55 corpus images produce identical bytes at `-t1` and `-t3` and round-trip across thread counts.
+- [ ] Measure `synth`, `photo`, and `tp`, and the `-t1` and `-t3` decode ratios (`python3 research/ab.py ab src/cm.c build/research/try.c -n5 -t1 measure kodim01` and `-t3`). Done when: the summary lines, the baseline commit SHA, and the four target sizes are quoted.
+- [ ] Record the result in `docs/research.md` section 3 and save a winner as `research/variants/match-model.patch` if and only if the bar is cleared (`syn_gradient < 616`, `syn_stripes < 271`, `syn_ui < 2,195`, `syn_text < 2,038`, `photo <= 30,828,138`, and held-out `tp <= 6,641,390`). Done when: the row exists, and the patch exists exactly when the bar and held-out confirmation were cleared.
 - [ ] Commit: `"research: measure a match model"`
 
-**Test checkpoint:** the four target sizes against 616 (`syn_gradient`), 271 (`syn_stripes`), 2,195 (`syn_ui`), and 2,038 (`syn_text`) bytes, and the `photo` total against milestone 4's `30,812,732` bytes (bar: all four below JPEG XL e9 and `photo <= 30,828,138`; if missed, `docs/research.md` section 3 records the negative result with full `synth`, `photo`, and `tp` summary lines and `-t1`/`-t3` decode ratios, and `research/variants/match-model.patch` is absent).
+**Test checkpoint:** 55/55 corpus images produce byte-identical `.fold` output at 1 thread and 3 threads and decode across thread counts; the four target sizes are quoted against 616 (`syn_gradient`), 271 (`syn_stripes`), 2,195 (`syn_ui`), and 2,038 (`syn_text`) bytes, the `photo` total against the stamped `D01 T03 §1` `30,812,732` baseline (`<= 30,828,138`), and the held-out `tp` total against `6,641,390` (`<= 6,641,390`); if any condition misses, `docs/research.md` section 3 records the negative result with full `synth`, `photo`, and `tp` summary lines and `-t1`/`-t3` decode ratios, and `research/variants/match-model.patch` is absent.
 
 ## 3. The Match Model in Format Version 3
 
