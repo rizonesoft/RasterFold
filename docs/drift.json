@@ -1546,7 +1546,7 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "2026-10-30: Reviewed README.md against its drift sources for the copilot writer (GitHub Copilot CLI pinned to an Anthropic model, routed to GPT-6 Astra; WRITERS and WRITER_FAMILY in scripts/review-dispatch.py, [routes] in .conclave/reviewers.toml; Stop hook read from .claude/settings.json per the GitHub Copilot hooks reference)",
+      "evidence": "2026-10-30: Reviewed README.md against the Copilot writer policy after the operator requested remove the model pin; any model including Auto is allowed, WRITER_FAMILY copilot is unknown, the separate Astra reviewer and no-fallback schedule are unchanged.",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "3b8f6c4144c739df78c4e08b3233bdb80ad006fcaebf1d1f63411c474a12c68e",
@@ -1555,32 +1555,32 @@
         "scripts/package.py": "b9ef31c48c2c5f7dfdcb22a7b3e5bd1a14c36b84d5d3887f17646bf47eaad199",
         "scripts/check-all.py": "7432d7b4b4eb6c6f499376180fb5576851d1be22db76d7e1375e497e6cbe2637",
         "README.md": "053e9cb906572514f5f42d449bade36b1d2afb430b4e136c917f79241fc5ec9d",
-        "AGENTS.md": "03eea42d564412e48c61fa2ee7c6b68b988ae61eb32bf9e42c80f0b8bc7e792c",
-        ".conclave/reviewers.toml": "efef5f5ec05b3a984f04128bfe3fee2d57e47f8eeace1d681edb916611150658",
-        "scripts/review-dispatch.py": "76de0bd235b70452c98181130b6b7e9af0cf30100c9f10186a1f91795a602d56"
+        "AGENTS.md": "d0c6d61b74e2a65b11207ffe5e52947dc68b9b988da6367834c74e6133cf3df6",
+        ".conclave/reviewers.toml": "a2b59c31a7099441486ec17bb8a4ffbc3d1ff30ebdca958a557c7864c099e918",
+        "scripts/review-dispatch.py": "8bdc830f3e9b9f98fe3bd0cec5e4ecd00fc4c1b50021e264958f30bd8d0f03e4"
       },
       "review": "Author-attested: 2026-10-25 re-read README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "AGENTS.md": {
-      "evidence": "2026-10-30: Reviewed AGENTS.md against its drift sources for the copilot writer (GitHub Copilot CLI pinned to an Anthropic model, routed to GPT-6 Astra; WRITERS and WRITER_FAMILY in scripts/review-dispatch.py, [routes] in .conclave/reviewers.toml; Stop hook read from .claude/settings.json per the GitHub Copilot hooks reference)",
+      "evidence": "2026-10-30: Reviewed AGENTS.md against the Copilot writer policy after the operator requested remove the model pin; any model including Auto is allowed, WRITER_FAMILY copilot is unknown, the separate Astra reviewer and no-fallback schedule are unchanged.",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "3b8f6c4144c739df78c4e08b3233bdb80ad006fcaebf1d1f63411c474a12c68e",
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
-        ".conclave/reviewers.toml": "efef5f5ec05b3a984f04128bfe3fee2d57e47f8eeace1d681edb916611150658",
-        "scripts/review-dispatch.py": "76de0bd235b70452c98181130b6b7e9af0cf30100c9f10186a1f91795a602d56",
-        "AGENTS.md": "03eea42d564412e48c61fa2ee7c6b68b988ae61eb32bf9e42c80f0b8bc7e792c",
+        ".conclave/reviewers.toml": "a2b59c31a7099441486ec17bb8a4ffbc3d1ff30ebdca958a557c7864c099e918",
+        "scripts/review-dispatch.py": "8bdc830f3e9b9f98fe3bd0cec5e4ecd00fc4c1b50021e264958f30bd8d0f03e4",
+        "AGENTS.md": "d0c6d61b74e2a65b11207ffe5e52947dc68b9b988da6367834c74e6133cf3df6",
         ".codex/hooks.json": "c67e7762d0970280c653a74601012d01971d05f677182ae70e4eda0aa783c150",
         "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",
         "scripts/campaign_guard.py": "a4e15e753ac265152070e9d5ae93f36cba78e58e4feb4c11a6e0f2a58203c432"
       }
     },
     "GEMINI.md": {
-      "evidence": "2026-10-30: Reviewed GEMINI.md against its drift sources for the copilot writer (GitHub Copilot CLI pinned to an Anthropic model, routed to GPT-6 Astra; WRITERS and WRITER_FAMILY in scripts/review-dispatch.py, [routes] in .conclave/reviewers.toml; Stop hook read from .claude/settings.json per the GitHub Copilot hooks reference)",
+      "evidence": "2026-10-30: Reviewed GEMINI.md against the Copilot writer policy after the operator requested remove the model pin; any model including Auto is allowed, WRITER_FAMILY copilot is unknown, the separate Astra reviewer and no-fallback schedule are unchanged.",
       "sources": {
-        "AGENTS.md": "03eea42d564412e48c61fa2ee7c6b68b988ae61eb32bf9e42c80f0b8bc7e792c",
-        ".conclave/reviewers.toml": "efef5f5ec05b3a984f04128bfe3fee2d57e47f8eeace1d681edb916611150658",
-        "scripts/review-dispatch.py": "76de0bd235b70452c98181130b6b7e9af0cf30100c9f10186a1f91795a602d56",
+        "AGENTS.md": "d0c6d61b74e2a65b11207ffe5e52947dc68b9b988da6367834c74e6133cf3df6",
+        ".conclave/reviewers.toml": "a2b59c31a7099441486ec17bb8a4ffbc3d1ff30ebdca958a557c7864c099e918",
+        "scripts/review-dispatch.py": "8bdc830f3e9b9f98fe3bd0cec5e4ecd00fc4c1b50021e264958f30bd8d0f03e4",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
         "GEMINI.md": "f21631fd90f34871c126266867866ec87c238494b2c61de9568cd1de12f47ee4"
       }
@@ -1673,15 +1673,15 @@
       }
     },
     "docs/agent-skills-and-rules-structure.md": {
-      "evidence": "2026-10-30: Reviewed docs/agent-skills-and-rules-structure.md against its drift sources for the copilot writer (GitHub Copilot CLI pinned to an Anthropic model, routed to GPT-6 Astra; WRITERS and WRITER_FAMILY in scripts/review-dispatch.py, [routes] in .conclave/reviewers.toml; Stop hook read from .claude/settings.json per the GitHub Copilot hooks reference)",
+      "evidence": "2026-10-30: Reviewed docs/agent-skills-and-rules-structure.md against the Copilot writer policy after the operator requested remove the model pin; any model including Auto is allowed, WRITER_FAMILY copilot is unknown, the separate Astra reviewer and no-fallback schedule are unchanged.",
       "sources": {
-        "AGENTS.md": "03eea42d564412e48c61fa2ee7c6b68b988ae61eb32bf9e42c80f0b8bc7e792c",
+        "AGENTS.md": "d0c6d61b74e2a65b11207ffe5e52947dc68b9b988da6367834c74e6133cf3df6",
         "GEMINI.md": "f21631fd90f34871c126266867866ec87c238494b2c61de9568cd1de12f47ee4",
         ".conclave/kits.json": "56785267af421d6deac2d4e5cfdda58be63684fb6f3893cece8043a6f0578105",
-        ".conclave/reviewers.toml": "efef5f5ec05b3a984f04128bfe3fee2d57e47f8eeace1d681edb916611150658",
+        ".conclave/reviewers.toml": "a2b59c31a7099441486ec17bb8a4ffbc3d1ff30ebdca958a557c7864c099e918",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
-        "scripts/review-dispatch.py": "76de0bd235b70452c98181130b6b7e9af0cf30100c9f10186a1f91795a602d56",
-        "docs/agent-skills-and-rules-structure.md": "ac4c94cc8fd5f07b260bf2fe7ebc5e8b017a0756f0eea6b566768ec7afcbc120",
+        "scripts/review-dispatch.py": "8bdc830f3e9b9f98fe3bd0cec5e4ecd00fc4c1b50021e264958f30bd8d0f03e4",
+        "docs/agent-skills-and-rules-structure.md": "9b42c9a8a5a3ff06f6e6c6283440760371e877b87515c160f66a5cf1f99fa5f8",
         ".codex/hooks.json": "c67e7762d0970280c653a74601012d01971d05f677182ae70e4eda0aa783c150",
         "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",
         "scripts/campaign_guard.py": "a4e15e753ac265152070e9d5ae93f36cba78e58e4feb4c11a6e0f2a58203c432"

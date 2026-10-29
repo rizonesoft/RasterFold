@@ -5,7 +5,7 @@ description: Get an independent review of your work from the reviewer pinned for
 
 # Independent review
 
-Your own review is not enough for a nontrivial change: a different model reviews it. Codex-written work goes to Muse Spark 1.3 via Muse; Claude Code, Muse Code, Antigravity, OpenCode and Copilot CLI work goes to GPT-6 Astra via Codex. `.conclave/reviewers.toml` pins one reviewer per writer with no fallback. The shared `[schedule]` sets each pass's effort and lenses: plan and completion at `medium`, round 1 `high`, round 2 `medium`, round 3 `low`, then `low` with one lens per round.
+Your own review is not enough for a nontrivial change: a separate reviewer invocation reviews it. Codex-written work goes to Muse Spark 1.3 via Muse; Claude Code, Muse Code, Antigravity, OpenCode and Copilot CLI work goes to GPT-6 Astra via Codex. `.conclave/reviewers.toml` pins one reviewer per writer with no fallback. The shared `[schedule]` sets each pass's effort and lenses: plan and completion at `medium`, round 1 `high`, round 2 `medium`, round 3 `low`, then `low` with one lens per round.
 
 | Work written by | Reviewer | Fallback |
 | --- | --- | --- |
@@ -14,9 +14,9 @@ Your own review is not enough for a nontrivial change: a different model reviews
 | Antigravity (`agy`) | GPT-6 Astra (`codex`, scheduled effort) | none |
 | Codex (`codex`) | Muse Spark 1.3 (`muse`, scheduled effort) | none |
 | OpenCode (`opencode`, Anthropic model) | GPT-6 Astra (`codex`, scheduled effort) | none |
-| Copilot CLI (`copilot`, pinned Anthropic model) | GPT-6 Astra (`codex`, scheduled effort) | none |
+| Copilot CLI (`copilot`, any model including Auto) | GPT-6 Astra (`codex`, scheduled effort) | none |
 
-The pin refuses any other writer, any other reviewer CLI, a second reviewer in a route, and a reviewer of the writer's own model family.
+The pin refuses any other writer, any other reviewer CLI, a second reviewer in a route, and a reviewer of a known writer model family. Copilot CLI has no writer model pin (operator decision 2026-10-30), so its separate reviewer may share the writer's model family; the pinned reviewer and no-fallback rule still apply.
 
 ## Steps
 

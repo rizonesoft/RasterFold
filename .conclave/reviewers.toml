@@ -5,8 +5,9 @@
 # never an approval. Both reviewers use the same schedule.
 # Owner decision 2026-10-29: OpenCode (`opencode`, running an Anthropic model) can also write, reviewed by GPT-6
 # Astra.
-# Owner decision 2026-10-30: GitHub Copilot CLI (`copilot`, pinned to an Anthropic model, never Auto) can also
-# write, reviewed by GPT-6 Astra.
+# Owner decision 2026-10-30: GitHub Copilot CLI (`copilot`) can also write, reviewed by GPT-6 Astra.
+# The operator removed its writer model pin ("remove the model pin"): any model, including Auto, is allowed.
+# Copilot's review is a separate invocation, not a guarantee of a different model family.
 #
 # Every pass's effort and lenses come from [schedule] below, enforced by scripts/review-dispatch.py from the findings file passed to --record:
 #   - before the build, one pass of --kind plan at medium effort (adversarial, completeness, consistency, integration, and record on the section's plan);

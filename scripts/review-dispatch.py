@@ -8,7 +8,8 @@
     python3 scripts/review-dispatch.py --list-rounds [--json] [--records <dir>]  recorded rounds; runs no reviewer
 
 `--writer` is the agent whose work is under review: `claude`, `muse`, `agy`, `codex`, `opencode`, or `copilot`. Every writer's route in the
-pin names exactly one reviewer of a different model family, with no fallback.
+pin names exactly one reviewer, with no fallback. Known writer model families must differ from the reviewer's;
+Copilot CLI has no model pin (including Auto), so its separate reviewer invocation may share the writer's family.
 A reviewer that is not installed, exits non-zero, times out,
 returns nothing, or ends its reply `OVERALL: blocked` (it could not reach the candidate, for example a sandbox that
 cannot read the repository) returned no review, and the reason is recorded: exit 1, which never counts as approval.
@@ -63,13 +64,13 @@ ROOT = Path(__file__).resolve().parents[1]
 PIN = ROOT / ".conclave" / "reviewers.toml"
 WRITERS = ("claude", "muse", "agy", "codex", "opencode", "copilot")
 CLIS = ("codex", "muse")
-# A reviewer is never of the writer's own model family: its CLI names the family, and so does the writer.
+# Enforce different families where the writer's family is known.
 FAMILY = {"codex": "openai", "muse": "meta"}
 # `opencode` is OpenCode running an Anthropic model (owner decision 2026-10-29); OpenCode on another family is not
-# this writer key. `copilot` is GitHub Copilot CLI pinned to an Anthropic model (owner decision 2026-10-30); its
-# Auto mode, which may switch families, is not this writer key.
+# this writer key. Copilot CLI has no model pin, including Auto (owner decision 2026-10-30);
+# None means no family assertion, not an exemption from the pinned separate reviewer.
 WRITER_FAMILY = {"claude": "anthropic", "muse": "meta", "agy": "agy", "codex": "openai", "opencode": "anthropic",
-                 "copilot": "anthropic"}
+                 "copilot": None}
 EFFORTS = {"codex": ("low", "medium", "high", "xhigh"),
            "muse": ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")}
 MODEL = re.compile(r"^[a-z0-9][a-z0-9.-]*$")
@@ -216,9 +217,9 @@ def highest(review):
 
 
 def returned_review(entry):
-    """A recorded round that is a review: a reviewer of another model family than the writer ran and replied with the
-    prompt's final `OVERALL: approve` or `OVERALL: needs-attention` line. An outage, a self-review (a reviewer of the
-    writer's own family, or of no known family) and a reply without that line are recorded rounds, not reviews.
+    """A recorded round that is a review: a known reviewer ran and replied with the
+    prompt's final `OVERALL: approve` or `OVERALL: needs-attention` line. Known writer families must differ;
+    Copilot's unpinned family is not asserted. An outage or a reply without that line is not a review.
     scripts/todo-graph.py `stamp` uses this same predicate, so the schedule and the receipt count the same rounds."""
     lines = [x.strip() for x in (entry.get("review") or "").splitlines() if x.strip()]
     return bool(entry.get("reviewer")) and entry.get("writer") in WRITER_FAMILY \
@@ -239,7 +240,7 @@ def valid_one_pass_footer(text, kind):
 
 
 def returned_one_pass(entry, kind):
-    """A recorded completion or plan pass that is a valid returned review from another model family.
+    """A recorded completion or plan pass satisfying the same family policy as returned_review.
     scripts/todo-graph.py `stamp` uses this same predicate."""
     return bool(entry.get("reviewer")) and entry.get("writer") in WRITER_FAMILY \
         and FAMILY.get(entry.get("cli")) not in (None, WRITER_FAMILY[entry["writer"]]) \

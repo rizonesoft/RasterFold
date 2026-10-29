@@ -230,12 +230,29 @@ class Dispatch(Harness):
         self.assertEqual(len(self.calls()), 1)
 
     def test_a_copilot_writer_dispatches_through_its_own_route(self):
-        # Owner decision 2026-10-30: Copilot CLI (pinned to an Anthropic model) writes, and its route is the pin's.
+        # Copilot has no writer model pin; its separate reviewer still comes from its own route.
         (self.repo / ".conclave/reviewers.toml").write_text(FIXTURE_PIN + 'copilot = ["sol"]\n', encoding="utf-8")
         result, summary = self.dispatch("--writer", "copilot", "--prompt", str(self.prompt))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual((summary["writer"], summary["reviewer"]), ("copilot", "sol"))
         self.assertEqual(len(self.calls()), 1)
+
+    def test_copilot_reviews_do_not_assert_a_writer_model_family(self):
+        module = self.module()
+        pin = self.repo / ".conclave/reviewers.toml"
+        pin.write_text(FIXTURE_PIN.split("[routes]")[0] + '[routes]\ncopilot = ["sol"]\n', encoding="utf-8")
+        entry = {**self.RESULT, "writer": "copilot"}
+        for family in ("anthropic", "openai", "meta"):
+            with self.subTest(family=family), unittest.mock.patch.dict(module.FAMILY, {"codex": family}):
+                module.load_pin(pin)
+                self.assertTrue(module.returned_review({**entry, "review": "OVERALL: approve"}))
+                self.assertTrue(module.returned_one_pass(
+                    {**entry, "review": "PLAN: complete\nOVERALL: approve"}, "plan"))
+                self.assertTrue(module.returned_one_pass(
+                    {**entry, "review": "COMPLETION: complete"}, "completion"))
+        for cli, review in (("unknown", "OVERALL: approve"), ("codex", "OVERALL: blocked")):
+            with self.subTest(cli=cli, review=review):
+                self.assertFalse(module.returned_review({**entry, "cli": cli, "review": review}))
 
     def test_rounds_are_numbered_and_appended(self):
         record = self.repo / "docs/reviews/round.md"
