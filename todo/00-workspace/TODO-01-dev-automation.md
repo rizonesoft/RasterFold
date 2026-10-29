@@ -2,7 +2,7 @@
 schema_version: 1
 id: dev-automation
 domain: 00-workspace
-status: active
+status: done
 title: "TODO-01 -- Dev-Automation Wiring"
 depends_on: []
 track: W1
@@ -61,7 +61,7 @@ track: W1
 | 7 | §7 | The campaign guard on a legacy console encoding | -- | [x] |
 | 8 | §8 | A read-only independent reviewer beside a live run | -- | [x] |
 | 9 | §9 | Windows Job Object process-tree cleanup in review-dispatch.py | §8 | [x] |
-| 10 | §10 | OpenCode campaign Stop hook and heartbeat | §8 | [ ] |
+| 10 | §10 | OpenCode campaign Stop hook and heartbeat | §8 | [x] |
 
 ---
 
@@ -253,6 +253,8 @@ Operator decision 2026-10-29: OpenCode (`opencode`, running an Anthropic model) 
 
 **Test checkpoint:** `python3 -m unittest discover -s scripts/tests -v` and `python3 scripts/campaign_guard.py --self-test` exit 0 with `scripts/tests/test_opencode_campaign_hook.py`, `scripts/tests/test_opencode_heartbeat.py` and `scripts/tests/test_opencode_plugin.py` running, and the driven disposable campaign under OpenCode is quoted (the plugin's block, the uncontinued interrupted turn, the heartbeat's `whoami` line, the `pending-cancel` recovery after a skipped cancel, the handed-over job's NOT THE OWNER self-deletion, and the `end` and `cancel-confirmed` output).
 
+> **Verified:** 2026-10-29 | §10 | 2f25f9c7d674695eda60e1f62de8e1e3064ae16a
+> **Review:** `docs/reviews/d00-t01-s10.json`
 ## Verification
 
 - [x] `pwsh scripts/check-all.ps1` -- exits 0 with every gate `PASS`, the static analysis gate included (`PASS clang-tidy (32.1s)`, `check-all: 28/28 passed`)
