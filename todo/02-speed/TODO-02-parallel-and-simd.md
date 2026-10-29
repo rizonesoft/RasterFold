@@ -19,8 +19,8 @@ track: S2
 
 ## Inputs
 
-- [`docs/research.md`](../../docs/research.md) -- sections 5.3 (the SIMD mixer) and 5.4 (strips)
-- [`research/ab.py`](../../research/ab.py) -- `size` for the strip cost, `ab` for the mixer speed
+- [`docs/research.md`](../../docs/research.md) -- sections 5.3 (strips) and 5.4 (the SIMD mixer)
+- [`research/ab.py`](../../research/ab.py) -- `size` (`ab.build` and `ab.parse_bench_rows`) for the strip cost, `ab` for the mixer speed
 - -> XREF: D01 T03 §2 -- ports strips into format version 3 when §1 accepts their size cost
 
 ## Outcome
@@ -43,14 +43,18 @@ track: S2
 
 ## 1. The Size Cost of Horizontal Strips
 
+> **Started:** 2026-10-29T18:20:58Z
+
 A strip starts with fresh model state, so it pays the learning cost again. The cost is measured without writing any strip code: code each strip as a separate image and add up the sizes. Bar: 4 strips cost at most 0.3% on the `photo` total, confirmed on `tp`.
 
-- [ ] Add `research/strips.py`, which cuts every image of a set into `S` horizontal strips of rows `floor(s*H/S)` to `floor((s+1)*H/S) - 1` as PPM files under `build/research/strips/S<n>/`, runs `research/ab.py size` over them, and prints the summed size against the whole-image size per image and in total. Done when: `python research/strips.py photo 2` and `photo 4` print their totals. Cheaper substitute: estimating the cost from one image.
-- [ ] Run it for `S = 2` and `S = 4` on `photo` and `tp`, and for `S = 4` on the images of height 768 or less (the ones a height-based rule would split least). Done when: the totals and the worst images are quoted.
-- [ ] Record the result in `docs/research.md` section 3 with the accept or reject decision against the bar. Done when: the row exists and `D01 T03 §2`'s context paragraph can cite it.
+**Corrected 2026-10-29:** (1) `docs/research.md` section 5.3 is horizontal strips and section 5.4 is the int16 SIMD mixer (swapped in `## Inputs` above). (2) `research/ab.py size` requires `ppm/<name>.ppm` paths and per-image `jxl_refs.json` keys (which exist only for the 55 whole corpus images, not for strip crops), so `research/strips.py` imports `research/ab.py` (`ab.build`, `ab.parse_bench_rows`, `ab.ppm_dimensions`, `ab.SETS`) to build `build/research/benchS.exe` and measure both the whole images and the strip PPMs written under `build/research/strips/S<n>/<name>_s<s>.ppm`. (3) Coding `S` strips as `S` standalone `.fold` files via `benchS.exe` includes `(S - 1) * 32` extra `.fold` container header bytes per image compared with `D01 T03 §2`'s single-container strip payload (which carries one 32-byte header, a 1-byte strip count `S`, and `3 * S` 4-byte stream sizes); `research/strips.py` reports both the raw summed standalone `.fold` size (`raw_sum`) and the single-container payload-adjusted size (`adj_sum = raw_sum - (S - 1) * 32 + 1` per image), along with percentage deltas (`+X.XXX%`), geometric means of per-image ratios, and worst images, on both the current 7-model `src/cm.c` (matching stamped `D01 T02 §7`, `fb27c31197ce87977979d1527eb1e0ee202c3d9b`, `photo` `30,812,732`, `tp` `6,641,390`) and the 5-model `build/research/cm_m1.c` baseline (matching stamped `D05 T01 §3`, `b181fb1edef63b42d29350a8b24096307a8596ee`, `photo` `30,865,211`, `tp` `6,651,583`). (4) Held-out confirmation requires `S = 4` to cost at most `+0.300%` on `photo` AND at most `+0.300%` on held-out `tp`; if either exceeds `+0.300%`, fixed 4-strip splitting is rejected and the negative result is recorded in `docs/research.md` section 3 (`### 3.4 Speed`). A `--self-test` mode verifies exact row partitioning (`floor(s*H/S)` to `floor((s+1)*H/S) - 1`) and byte-exact reconstruction of the source PPM rows.
+
+- [ ] Add `research/strips.py`, which cuts every image of a set (or subset filtered by `--max-height <H>`) into `S` horizontal strips of rows `floor(s*H/S)` to `floor((s+1)*H/S) - 1` as PPM files under `build/research/strips/S<n>/`, measures them through `research/ab.py` (`ab.build` and `ab.parse_bench_rows`), prints the per-image and total raw summed and container-adjusted sizes, percentage deltas, geometric means, and worst images against the whole-image size, and provides a `--self-test` mode checking exact row partitioning and concatenation. Done when: `python3 research/strips.py --self-test` passes and `python3 research/strips.py photo 2` and `photo 4` print their totals. Cheaper substitute: estimating the cost from one image.
+- [ ] Run it for `S = 2` and `S = 4` on `photo` and `tp`, and for `S = 4` on the images of height 768 or less (`python3 research/strips.py photo 4 --max-height 768`, the 24 Kodak images in `photo`, plus all 10 `tp` images which are `<= 768`), on both `src/cm.c` (7-model `D01 T02 §7`) and `--cm build/research/cm_m1.c` (5-model `D05 T01 §3`). Done when: the totals, geometric means, and worst images are quoted.
+- [ ] Record the result in `docs/research.md` section 3 with the accept or reject decision against the bar (`<= +0.300%` on `photo` and confirmed `<= +0.300%` on `tp`). Done when: the row exists and `D01 T03 §2`'s context paragraph can cite it.
 - [ ] Commit: `"research: measure the size cost of horizontal strips"`
 
-**Test checkpoint:** `python research/strips.py photo 4` output quoted against the bar.
+**Test checkpoint:** `python3 research/strips.py --self-test` passes; `python3 research/strips.py photo 4` and `python3 research/strips.py tp 4` outputs (plus `photo 2`, `tp 2`, and `photo 4 --max-height 768`) are quoted against the 0.3% (`+0.300%`) bar on `photo` and held-out `tp`, with the accept/reject decision recorded in `docs/research.md` section 3.
 
 ## 2. The Speed of an Int16 SIMD Mixer
 
