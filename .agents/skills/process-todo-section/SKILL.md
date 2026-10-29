@@ -95,7 +95,7 @@ Fix findings in the TODO file, before implementation, so the plan and the build 
 Once the section is corrected and `Started:` is written, commit the TODO file (with `plan --sync` if any heading or deliverable moved) so the reviewer reads the exact contract you will build, then have the reviewer pinned for this writer judge whether that contract produces a 100% complete feature or codec change. Write the prompt to a scratch file under `build/` from `docs/plan-review-prompt.md`, then run:
 
 ```bash
-python3 scripts/review-dispatch.py --kind plan --candidate <full SHA of that commit> --writer <this session's key: claude|muse|agy|codex|opencode> --prompt <scratch-plan-prompt.md> --record docs/reviews/<NN-domain>/D<NN>-T<NN>-s<N>.md
+python3 scripts/review-dispatch.py --kind plan --candidate <full SHA of that commit> --writer <this session's key: claude|muse|agy|codex|opencode|copilot> --prompt <scratch-plan-prompt.md> --record docs/reviews/<NN-domain>/D<NN>-T<NN>-s<N>.md
 ```
 
 The dispatcher sets the effort (`medium`) and the `plan` lens from the pin's `[schedule] plan` step and appends a `## Plan review` section; it is not a round, it does not move the round schedule, and a findings file takes one returned plan review. Fix every `P1` and `P2` gap in the section the same way as step 3 (corrected in place, dated), and file a `P3` you do not take through `add-todo`. Under the plan review in the findings file, add one line per gap: `- Planned: <gap> in <commit>` or `- Filed: DNN TNN §N (<gap>)`. When the dispatcher exits 1, run the pass again before building. `stamp` requires this review as `--plan 'docs/reviews/<NN-domain>/D<NN>-T<NN>-s<N>.md'`.
