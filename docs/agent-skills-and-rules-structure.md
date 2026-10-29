@@ -1,6 +1,6 @@
 # Agent Skills and Rules Structure
 
-This repository uses Claude Code (`claude`), Muse Code (`muse`), Google Antigravity (`agy`), OpenAI Codex (`codex`), OpenCode (`opencode`, running an Anthropic model) and GitHub Copilot CLI (`copilot`, any model including Auto) as writers. Independent reviews route Codex work to Muse Spark 1.3 and other writers' work to GPT-6 Astra through `scripts/review-dispatch.py` and `.conclave/reviewers.toml`. Copilot has no writer model pin, so its separate reviewer invocation may share its model family.
+This repository uses Claude Code (`claude`), Muse Code (`muse`), Google Antigravity (`agy`), OpenAI Codex (`codex`), OpenCode (`opencode`, running an Anthropic model) and GitHub Copilot CLI (`copilot`, pinned to an Anthropic model) as writers. Independent reviews route Codex work to Muse Spark 1.3 and other writers' work to GPT-6 Astra through `scripts/review-dispatch.py` and `.conclave/reviewers.toml`.
 
 ## Skill Locations
 
