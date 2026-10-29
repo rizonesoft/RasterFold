@@ -30,18 +30,31 @@ MAX_CANDIDATES = 16
 
 def read_ppm(path: Path) -> tuple[int, int, list[bytes]]:
     data = path.read_bytes()
+    n = len(data)
     idx, toks = 0, []
     while len(toks) < 4:
-        while data[idx:idx + 1].isspace():
-            idx += 1
+        while idx < n:
+            if data[idx:idx + 1].isspace():
+                idx += 1
+            elif data[idx:idx + 1] == b"#":
+                nl = data.find(b"\n", idx + 1)
+                idx = n if nl < 0 else nl + 1
+            else:
+                break
+        if idx >= n:
+            raise ValueError(f"{path}: truncated PPM header")
         start = idx
-        while not data[idx:idx + 1].isspace():
+        while idx < n and not data[idx:idx + 1].isspace() and data[idx:idx + 1] != b"#":
             idx += 1
         toks.append(data[start:idx])
+    if idx >= n or not data[idx:idx + 1].isspace():
+        raise ValueError(f"{path}: missing delimiter after maxval")
     idx += 1  # single whitespace byte after maxval
     if toks[0] != b"P6" or int(toks[3]) != 255:
         raise ValueError(f"{path}: not an 8-bit P6 PPM")
     w, h = int(toks[1]), int(toks[2])
+    if w <= 0 or h <= 0:
+        raise ValueError(f"{path}: invalid dimensions {w}x{h}")
     pix = data[idx:]
     if len(pix) != w * h * 3:
         raise ValueError(f"{path}: payload {len(pix)} bytes, expected {w * h * 3}")
@@ -49,25 +62,32 @@ def read_ppm(path: Path) -> tuple[int, int, list[bytes]]:
 
 
 def _eq_count(a: bytes, b: bytes) -> int:
+    if not a:
+        return 0
     x = int.from_bytes(a, "little") ^ int.from_bytes(b, "little")
     return x.to_bytes(len(a), "little").count(0)
 
 
 def shifted_shares(plane: bytes, w: int, h: int) -> tuple[int, float]:
     """Best (shift, share) of samples equal to the sample one row above."""
+    if h <= 1 or w <= 0:
+        return 0, 0.0
     best_shift, best_share = 0, -1.0
     for s in range(-8, 9):
+        span = w - abs(s)
+        if span <= 0:
+            continue
         eq = tot = 0
         for y in range(1, h):
             row = plane[y * w:(y + 1) * w]
             up = plane[(y - 1) * w:y * w]
-            a, b = (row[:w - s], up[s:]) if s >= 0 else (row[-s:], up[:w + s])
+            a, b = (row[:span], up[s:s + span]) if s >= 0 else (row[-s:-s + span], up[:span])
             eq += _eq_count(a, b)
-            tot += len(a)
+            tot += span
         share = eq / tot if tot else 0.0
         if share > best_share:
             best_shift, best_share = s, share
-    return best_shift, best_share
+    return (0, 0.0) if best_share < 0.0 else (best_shift, best_share)
 
 
 def match_coverage(plane: bytes, w: int, h: int) -> tuple[int, int]:
@@ -134,6 +154,10 @@ def self_test() -> int:
         plane = bytes(v for row in rows for v in row)
         return match_coverage(plane, len(rows[0]), len(rows))
 
+    def shf(rows: list[list[int]]) -> tuple[int, float]:
+        plane = bytes(v for row in rows for v in row)
+        return shifted_shares(plane, len(rows[0]), len(rows))
+
     cases = [
         # an exact 8-sample earlier-row match covers 8 of row 1's 16 samples
         ("8-match covers", cov([list(range(1, 17)), list(range(1, 9)) + [99] * 8]), (8, 16)),
@@ -143,6 +167,8 @@ def self_test() -> int:
         ("no crossing", cov([[9, 1, 2, 3, 4, 5, 6, 7], [1, 2, 3, 4, 5, 6, 7, 8]]), (0, 8)),
         # full-row repeat covers every sample exactly once (no double count)
         ("overlap once", cov([[7] * 16, [7] * 16]), (16, 16)),
+        # a shifted-copy row (row[y][x] == row[y-1][x+2]) scores 100% (>90%) at shift +2
+        ("shifted copy +2", shf([[((x + 2 * y) * 17) & 0xFF for x in range(16)] for y in range(4)]), (2, 1.0)),
     ]
     failed = 0
     for label, got, want in cases:
@@ -162,8 +188,12 @@ def main(argv: list[str]) -> int:
     names: list[str] = []
     for arg in argv:
         names.extend(SETS[arg] if arg in SETS else [arg])
-    for name in names:
-        print(report(name), flush=True)
+    try:
+        for name in names:
+            print(report(name), flush=True)
+    except (OSError, ValueError) as exc:
+        print(f"repeats: {exc}", file=sys.stderr)
+        return 2
     return 0
 
 
