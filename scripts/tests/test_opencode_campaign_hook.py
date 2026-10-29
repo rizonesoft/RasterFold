@@ -72,7 +72,8 @@ class OpenCodeCampaignHook(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = self.workspace(tmp)
             before = subprocess.run(
-                [sys.executable, str(root / "scripts/opencode-campaign-hook.py"), "--seen", "--session", "ses_probe"],
+                [sys.executable, str(root / "scripts/opencode-campaign-hook.py"),
+                 "--seen", "--session", "ses_probe", "--since", "2026-10-29T00:00:00Z"],
                 capture_output=True, text=True, cwd=root, timeout=60,
             )
             self.assertEqual(before.returncode, 1)
@@ -80,11 +81,37 @@ class OpenCodeCampaignHook(unittest.TestCase):
             payload = json.dumps({"session_id": "ses_probe", "cwd": str(root), "interrupted": False})
             self.assertEqual(self.run_hook(root, payload), {})
             after = subprocess.run(
-                [sys.executable, str(root / "scripts/opencode-campaign-hook.py"), "--seen", "--session", "ses_probe"],
+                [sys.executable, str(root / "scripts/opencode-campaign-hook.py"),
+                 "--seen", "--session", "ses_probe", "--since", "2020-01-01T00:00:00Z"],
                 capture_output=True, text=True, cwd=root, timeout=60,
             )
             self.assertEqual(after.returncode, 0, after.stderr)
             self.assertRegex(after.stdout.strip(), r"^seen ses_probe at \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+            stale = subprocess.run(
+                [sys.executable, str(root / "scripts/opencode-campaign-hook.py"),
+                 "--seen", "--session", "ses_probe", "--since", "2099-01-01T00:00:00Z"],
+                capture_output=True, text=True, cwd=root, timeout=60,
+            )
+            self.assertEqual(stale.returncode, 1)
+            self.assertIn("stale ses_probe", stale.stderr)
+            bad_since = subprocess.run(
+                [sys.executable, str(root / "scripts/opencode-campaign-hook.py"),
+                 "--seen", "--session", "ses_probe", "--since", "not-a-timestamp"],
+                capture_output=True, text=True, cwd=root, timeout=60,
+            )
+            self.assertEqual(bad_since.returncode, 2)
+            self.assertIn("invalid --since", bad_since.stderr)
+
+    def test_seen_record_failure_is_recorded_and_does_not_bypass_the_guard(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self.workspace(tmp)
+            guard._guard(str(root), "owner-session")
+            # Make the atomic replace into build/opencode-hook-seen.json fail by placing a directory there.
+            (root / "build/opencode-hook-seen.json").mkdir(parents=True, exist_ok=True)
+            payload = json.dumps({"session_id": "owner-session", "cwd": str(root), "interrupted": False})
+            decision = self.run_hook(root, payload)
+            self.assertEqual(decision.get("decision"), "block")
+            self.assertIn("seen-record failed", guard._state(str(root)).get("hook_error", ""))
 
 
 if __name__ == "__main__":

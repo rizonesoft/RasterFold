@@ -26,7 +26,6 @@ export function createCampaign({ root, runJSON, sessionGet, prompt, subscribe, n
                                  setInterval: startTimer = setInterval, clearInterval: stopTimer = clearInterval,
                                  log = () => {} }) {
   const sessions = new Map()
-  const scope = new Map()
   let disposed = false
   let timer
   let ticking = false
@@ -38,14 +37,11 @@ export function createCampaign({ root, runJSON, sessionGet, prompt, subscribe, n
   }
 
   async function inScope(id) {
-    if (scope.has(id)) return scope.get(id)
     try {
       const dir = (await sessionGet(id))?.location?.directory
       if (typeof dir !== "string") return false
       const resolved = path.resolve(dir)
-      const inside = resolved === root || resolved.startsWith(root + path.sep)
-      scope.set(id, inside)
-      return inside
+      return resolved === root || resolved.startsWith(root + path.sep)
     } catch (error) {
       log(`scope check failed for ${id}: ${error}`)
       return false
@@ -68,12 +64,12 @@ export function createCampaign({ root, runJSON, sessionGet, prompt, subscribe, n
 
   async function submit(id, text, epoch) {
     const s = get(id)
-    if (disposed || s.pending || s.inFlightUntil > now()) return false
-    if (epoch !== undefined && s.epoch !== epoch) return false
+    const targetEpoch = epoch === undefined ? s.epoch : epoch
+    if (disposed || s.pending || s.inFlightUntil > now() || s.epoch !== targetEpoch) return false
     s.pending = true
     try {
       if (!(await inScope(id)) || !(await isIdle(id))) return false
-      if (disposed || s.inFlightUntil > now() || (epoch !== undefined && s.epoch !== epoch)) return false
+      if (disposed || s.inFlightUntil > now() || s.epoch !== targetEpoch || s.state === "busy") return false
       s.inFlightUntil = now() + IN_FLIGHT_MS
       await prompt(id, text)
       return true
@@ -119,7 +115,8 @@ export function createCampaign({ root, runJSON, sessionGet, prompt, subscribe, n
       for (const job of due) {
         if (disposed) return
         if (typeof job?.session !== "string" || typeof job?.prompt !== "string" || !job.prompt) continue
-        await submit(job.session, job.prompt)
+        const s = get(job.session)
+        await submit(job.session, job.prompt, s.epoch)
       }
     } catch (error) {
       log(`heartbeat poll failed: ${error}`)
@@ -140,8 +137,11 @@ export function createCampaign({ root, runJSON, sessionGet, prompt, subscribe, n
         if (!disposed) log(`event stream failed: ${error}`)
       }
       if (disposed) return
-      // Events may have been missed: nothing is known about any session until it reports again.
-      for (const s of sessions.values()) s.state = undefined
+      // Events may have been missed: invalidate in-flight decisions and forget cached execution state.
+      for (const s of sessions.values()) {
+        s.epoch += 1
+        s.state = undefined
+      }
       await new Promise((resolve) => setTimeout(resolve, 1000))
     }
   }
