@@ -728,7 +728,7 @@ output, models) on `measure/image.bmp`. The working set is measured with
    to 11.93% across 23 of the 24 Kodak images (`kodim20`, with its flat sky
    backdrop, reaches 39.89% / 34.39%), with flat or synthetic-like `photo`
    outliers (`ic_artificial` 92.70% / 96.76%, `ic_nightshot_iso_100` 38.90% /
-   53.74%, `ic_flower_foveon` 38.66% / 46.57%, `measure` 32.87% / 47.35%).
+   53.75%, `ic_flower_foveon` 38.66% / 46.58%, `measure` 32.87% / 47.36%).
    Exact repeats are a generated-content phenomenon; on photographs the match
    model can only be a small win, which is what `D01 T04 §2`'s bar (photo total
    no more than 0.05% worse) guards.

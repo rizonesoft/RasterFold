@@ -94,14 +94,18 @@ def match_coverage(plane: bytes, w: int, h: int) -> tuple[int, int]:
     """(covered, total) samples in rows 1..H-1 under greedy >=8 matches."""
     covered = total = 0
     index: dict[bytes, list[int]] = {}
+    indexed_until = 0
 
-    def add_row(y: int) -> None:
-        base = y * w
-        for x in range(0, w - MIN_MATCH + 1):
-            index.setdefault(plane[base + x:base + x + MIN_MATCH], []).append(base + x)
+    def add_through(limit_end: int) -> None:
+        nonlocal indexed_until
+        stop = limit_end - MIN_MATCH + 1
+        if stop > indexed_until:
+            for pos in range(indexed_until, stop):
+                index.setdefault(plane[pos:pos + MIN_MATCH], []).append(pos)
+            indexed_until = stop
 
     if h > 1:
-        add_row(0)
+        add_through(w)
     for y in range(1, h):
         limit = y * w  # sources must lie entirely before this row
         row = y * w
@@ -126,7 +130,7 @@ def match_coverage(plane: bytes, w: int, h: int) -> tuple[int, int]:
             else:
                 total += 1
                 x += 1
-        add_row(y)
+        add_through((y + 1) * w)
     return covered, total
 
 
@@ -167,6 +171,8 @@ def self_test() -> int:
         ("no crossing", cov([[9, 1, 2, 3, 4, 5, 6, 7], [1, 2, 3, 4, 5, 6, 7, 8]]), (0, 8)),
         # full-row repeat covers every sample exactly once (no double count)
         ("overlap once", cov([[7] * 16, [7] * 16]), (16, 16)),
+        # an 8-sample segment spanning two earlier rows is still entirely in earlier rows
+        ("earlier boundary span", cov([list(range(1, 9)), list(range(9, 17)), list(range(5, 13))]), (8, 16)),
         # a shifted-copy row (row[y][x] == row[y-1][x+2]) scores 100% (>90%) at shift +2
         ("shifted copy +2", shf([[((x + 2 * y) * 17) & 0xFF for x in range(16)] for y in range(4)]), (2, 1.0)),
     ]
