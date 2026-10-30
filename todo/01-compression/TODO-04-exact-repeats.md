@@ -40,7 +40,7 @@ track: C4
 |   1   |   §1    | Where the repeats are | -- |  [x]   |
 |   2   |   §2    | A match model, measured | §1, D01 T03 §1 |  [x]   |
 |   3   |   §3    | The match model in format version 3 | §2, D01 T03 §1 |  [x]   |
-|   4   |   §4    | Exact modular planes, measured | §3, D01 T03 §1 |  [ ]   |
+|   4   |   §4    | Exact modular planes, measured | §3, D01 T03 §1 |  [x]   |
 |   5   |   §5    | Exact modular planes in format version 3 | §4, D01 T03 §1 |  [ ]   |
 
 ---
@@ -137,6 +137,8 @@ The grid is listed now and nothing else is tried: the counter context (the 64 ab
 
 **Test checkpoint:** `python3 research/ab.py size build/research/try.c synth -v` shows the candidate's `syn_gradient` and `syn_stripes` against 616 and 271; the four variants' eligibility, the candidate's `photo` and `tp` totals against their bars, the `ab -v` set-total and worst-image ratios for `photo`, `synth`, and `tp-only` against the timing bar at `-t1` and `-t3`, the `alloc_peak` figures against the baseline, and the 55/55 thread identity count per variant are quoted; a miss ships the measurement and the section 3.2 row, and §5 takes its rejection path.
 
+> **Verified:** 2026-10-30 | §4 | b8d3b191f7088625b141674c0bec097a96e8e26c
+> **Review:** `docs/reviews/d01-t04-s4.json`
 ## 5. Exact Modular Planes in Format Version 3
 
 **Origin:** discovered run=28dc11967304 2026-10-30 -- missed-milestone policy (`D99 T01 §4`) after `D01 T04 §2` missed the Milestone 5 bars (`D05 T01 §5`); the port of follow-up 1

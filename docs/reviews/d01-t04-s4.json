@@ -1,0 +1,89 @@
+{
+  "ref": "D01 T04 \u00a74",
+  "title": "Exact Modular Planes, Measured",
+  "implementation_sha": "b8d3b191f7088625b141674c0bec097a96e8e26c",
+  "date": "2026-10-30",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/01-compression/D01-T04-s4.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/01-compression/D01-T04-s4.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    ".venv/bin/python build/d01-t04-s4/threads.py build/d01-t04-s4/bin/rasterfold-v{1,2,3,4} -> identical_and_roundtrip=55/55 bad=[] for each",
+    "python3 research/ab.py size build/research/try.c synth -v (and photo -v, per variant -D) -> syn_stripes 357/451/355/440 >= 271 and photo +0.474% to +0.572%: none eligible, rejected"
+  ],
+  "completion": {
+    "report": "docs/reviews/01-compression/D01-T04-s4.md",
+    "verdict": "completed",
+    "candidate": "66ad4dc769e618392ce668956ead818824fc3f68",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 2,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/01-compression/D01-T04-s4.md",
+    "candidate": "36b9d86fcbe796be1bf8ac912ad55b0f6804fd4e",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}
