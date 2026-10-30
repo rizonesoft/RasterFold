@@ -1,0 +1,91 @@
+{
+  "ref": "D05 T01 \u00a74",
+  "title": "Milestone 4 Gate: Format version 3: beat JPEG XL e9 on photographs",
+  "implementation_sha": "0c1ec08ab66b2eca8d8ac66a1bce83c9e25cffe8",
+  "date": "2026-10-30",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/05-milestones/D05-T01-s4.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/05-milestones/D05-T01-s4.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 scripts/check-all.py --all-targets -> check-all: 29/29 passed",
+    "python3 scripts/ci_status.py -> build.yml green at 0c1ec08ab66b (run 40978592003), plan.yml green at 0c1ec08ab66b (run 40978591912)",
+    "python3 scripts/ci_status.py --workflow pages.yml -> pages.yml green at 0c1ec08ab66b (run 40978591989)",
+    "python3 research/milestones.py --check -> milestones: current"
+  ],
+  "completion": {
+    "report": "docs/reviews/05-milestones/D05-T01-s4.md",
+    "verdict": "completed",
+    "candidate": "882faee39d7531322dd3d2115acd8a18a35cfeb3",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 2,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/05-milestones/D05-T01-s4.md",
+    "candidate": "ec142c85d7d58ce204a22511545659a2816cff60",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}
