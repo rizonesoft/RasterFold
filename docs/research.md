@@ -602,6 +602,18 @@ synth total=201628 jxl=226544 ratio=0.8900 geomean=0.3247 worst=0.9241 (syn_nois
 photo total=30827515 jxl=31782058 ratio=0.9700 geomean=0.9710 worst=1.0007 (kodim17) e9=31400714 e9_ratio=0.9817 e9_geomean=0.9865 e9_worst=1.0166 (kodim16) webp=34138176 webp_ratio=0.9030 webp_geomean=0.8916 webp_worst=1.0098 (ic_deer) measure=1416501 (0.9631 e9=0.9833 webp=0.8916)
 ```
 
+### 4.11 Learned gated modular prediction
+
+**Owner:** `D01 T04 §8` (measured), `D01 T04 §9` (the port).
+
+Follow-up 3, the last, of Milestone 5's missed-milestone policy (`D99 T01 §4`). Section 4.10's gate proved the exact-plane cost removable (`syn_gradient` 111 to 118 bytes, `syn_stripes` 103 to 106) but replaced the prediction wherever the gate opened, which made 10 to 33 of 39 photographs more than 0.1% larger (section 3.2, "gated modular prediction in method 1"). The gate says only that `gp` was exact at the neighbours; it never compares `gp` with the prediction it displaces, so on photographs it displaced a prediction that was often as good or better.
+
+The design adds that comparison and nothing else. Each channel keeps two running absolute-error sums over gated samples, one for `gp` and one for today's prediction, each sample's error capped at 32 and both sums halved when either reaches 4,096, optionally one pair per error-energy band `qE`. Inside the gate `gp` is used only when its sum times a margin (1 or 2) is below today's; ties and the empty start keep today's prediction, so a channel where `gp` is never clearly better codes exactly as today. On an exact plane `gp`'s sum stays 0 while today's grows from the first gated sample, so the choice flips to `gp` at once. Encoder and decoder update the sums from samples already coded, so nothing is signalled, and the sums live in the stack-held coder state, so nothing is allocated. §6's weight-set offset now marks the choice rather than the gate.
+
+Non-goals: no new decision bit, counter row, or model row; no change to WP, LMS, or the context models' inputs; no backward references or colour cache (`D01 T06`).
+
+Prior art: CALIC and JPEG-LS switch predictors on local gradient evidence; JPEG XL's weighted predictor weighs its sub-predictors by their recent errors at the neighbours; lpaq and paq8 mix or select models by their running success. This choice is a two-way selection by running error, learned per channel and optionally per error band.
+
 ---
 
 ## 5. Speed designs

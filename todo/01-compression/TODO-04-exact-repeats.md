@@ -2,7 +2,7 @@
 schema_version: 1
 id: exact-repeats
 domain: 01-compression
-status: done
+status: active
 title: "TODO-04 -- Exact Repeats: a Match Model"
 depends_on: []
 frozen: true
@@ -24,6 +24,7 @@ track: C4
 - -> XREF: D01 T03 §1 -- format version 3, which §2 measures against and §3 extends before the 1.0 release freezes it
 - [`docs/research.md`](../../docs/research.md) -- section 4.9 (exact modular planes), the design §4 measures and §5 ports
 - [`docs/research.md`](../../docs/research.md) -- section 4.10 (gated modular prediction), the design §6 measures and §7 ports
+- [`docs/research.md`](../../docs/research.md) -- section 4.11 (learned gated modular prediction), the design §8 measures and §9 ports
 
 ## Outcome
 
@@ -45,6 +46,8 @@ track: C4
 |   5   |   §5    | Exact modular planes in format version 3 | §4, D01 T03 §1, D00 T01 §11 |  [x]   |
 |   6   |   §6    | Gated modular prediction, measured | §5, D01 T03 §1 |  [x]   |
 |   7   |   §7    | Gated modular prediction in format version 3 | §6, D01 T03 §1 |  [x]   |
+|   8   |   §8    | Learned gated modular prediction, measured | §7, D01 T03 §1 |  [ ]   |
+|   9   |   §9    | Learned gated modular prediction in format version 3 | §8, D01 T03 §1 |  [ ]   |
 
 ---
 
@@ -239,6 +242,44 @@ Ports §6's accepted variant into format version 3 before the 1.0 release freeze
 
 > **Verified:** 2026-10-30 | §7 | 1063ff950b4e8166fbaad1f37b32812aea159f69
 > **Review:** `docs/reviews/d01-t04-s7.json`
+## 8. Learned Gated Modular Prediction, Measured
+
+**Origin:** discovered run=28dc11967304 2026-10-30 -- missed-milestone policy (`D99 T01 §4`) after `D01 T04 §6` missed the Milestone 5 per-image `photo` bar (`D05 T01 §5`); follow-up 3 of up to 3, the last
+
+**Needs:** Idle machine (timing)
+
+Implements `docs/research.md` section 4.11 as a prototype in `build/research/try.c` and measures it against Milestone 5's bars. §6 showed that the gated modular gradient `gp` clears both `synth` bars (`syn_gradient` 111 to 118 bytes, `syn_stripes` 103 to 106) but, replacing the prediction wherever its gate opened, made 10 to 33 of 39 `photo` images more than 0.1% larger (section 3.2, "gated modular prediction in method 1"). This design keeps §6's `gp`, its column-0 and row-0 forms, its gates, and its weight-set offset, and adds a per-sample choice: inside the gate, `gp` replaces the prediction only where its recent absolute error, learned per channel by encoder and decoder alike from samples already coded, is below today's prediction's by a fixed margin. Where `gp` is not clearly better, the sample is coded exactly as today.
+
+Baseline, measured 2026-10-30 on `src/cm.c` (unchanged since `D01 T03 §1`'s `207073e`; the implementer re-runs it before relying on it): `python3 research/ab.py size src/cm.c synth -v` gives `synth` total 206,229 (`syn_gradient` 4,227, e9 616; `syn_stripes` 368, e9 271; `syn_ui` 1,410, e9 2,195; `syn_text` 1,447, e9 2,038); `photo` total 30,812,732 (`python3 research/ab.py size src/cm.c photo -v`, per-image figures in `build/d01-t04-s6/size-photo-base.log`); `python3 research/ab.py size src/cm.c tp -v` gives `tp` total 6,641,390 (re-measured 2026-10-30, `build/d01-t04-s7/base-tp.log`); `python3 research/ab.py bench -r3 -t1 measure kodim01` TOTAL enc 760.5 ms, dec 793.8 ms; `-t3` enc 402.3 ms, dec 405.1 ms; `bin/linux-x64/bin/rasterfold decode --time` of `measure/image.bmp` encoded by the same binary prints `alloc_peak=9943749` at `--threads 3` and `alloc_peak=9943509` at `--threads 1`.
+
+Design, fixed before any run (the implementer does not choose these): `v`, `gp`, `ex`, and the gates `g2` and `g4` are exactly §6's, and `ex` is kept in `pos_t.pad` as §6's prototype keeps it. Let `pt` be today's prediction (`predv`: the clamped WP plus LMS prediction plus the G base), and `d(p) = min(m, 32)` where `m = (v - p) & 255` folded to `min(m, 256 - m)`. Each channel keeps error sums `Eg[k]` and `Et[k]`, `uint16_t`, zero at the start of each channel, for `k` in one slot (context off) or the 16 values of `qE` (context on). Inside the gate the coded prediction is `gp` when `M * Eg[k] < Et[k]` (`M` is the margin, 1 or 2; strict, so `0 < 0` keeps `pt` at the start and on ties), else `pt`; outside the gate it is `pt`. After the sample is coded, when the gate was open, `Eg[k] += d(gp)` and `Et[k] += d(pt)` whichever was used, then both are halved (`>>= 1`) when either is at least 4,096. The residual `r = fold(v - prediction)` is coded by the unchanged residual coder with the unchanged counters. Every other state keeps its today's formula, as in §6: `err = wpred - v8`, `perr`, the LMS error and `ferr = pv * 8 - pred8` (so `fe` and `xf`), the contexts `k0` to `k6` from `pred`, and `er` and `xe` storing the coded `r`. The mixer weight set is `wsel + 4` when `gp` was used (§6's offset, now on the choice rather than the gate), else unchanged; `WSEL` stays 128. The sums live in `chan_t`, which lives in the `cm_t` that `rf_cm_encode` and the decoder hold on the stack (`src/cm.c`, `cm_t m;` in both), so nothing is allocated and decode `alloc_peak` must not grow at all. The sums are read for sample `x` and updated after it by that channel's own code path in raster order, and the gate reads only that channel's own bytes, so the three channel threads and the one-thread pipeline stay byte-identical.
+
+The grid is listed now and nothing else is tried: (`g4`, context off, `M` 1), (`g4`, context off, `M` 2), (`g4`, context on, `M` 2), (`g2`, context off, `M` 2), in that order. Selection, the bars and the confirmation are §6's, unchanged: a variant is eligible when it clears every `synth` and `photo` bar (`syn_gradient` below 616, `syn_stripes` below 271, `syn_ui` below 2,195, `syn_text` below 2,038 bytes; `photo` total at most 30,828,138, baseline +0.05%, with no `photo` image more than 0.1% larger); eligible variants rank by `photo` total ascending, ties by grid order; the timing and memory bars are tried in rank order and the first variant to clear them is the candidate; `tp` sizes and `tp`-only timing are measured once for that candidate alone (when its `photo` total is below the baseline, `tp` must not exceed 6,641,390; otherwise at most 6,644,710, +0.05%), and a failed confirmation is a miss with no other variant tried. Timing bar, per thread count (`-t1` and `-t3`) on the minima of alternating runs: encode and decode B/A at most 1.03 for each set total and every image of at least 16,384 pixels, and at most 1 ms slower for each smaller image.
+
+- [ ] Build `build/research/try.c` from `src/cm.c` with the design above by a scripted edit (`build/d01-t04-s8/mktry.py`; version 3 path only; `-DGS_2N` selects `g2` over `g4`, `-DGS_QE` turns the context on, `-DGS_M2` sets `M` to 2, `-DGS_OFF` disables the gate for a neutral check, and `-DGS_TRACE` prints each channel's gate-open and `gp`-used counts to standard error after encoding), link scratch CLIs from the release objects with the prototype in place of `cm.o` (as `build/d01-t04-s6/mkcli.sh` does, so `src/cm.c` is never touched), and check it: `-DGS_OFF` output byte-identical to today's CLI on `measure/image.bmp`; for each variant one-thread and three-thread output byte-identical and round-tripping on all 55 distinct corpus images (`synth`, `photo`, `tp`); and on §6's boundary fixtures (`build/d01-t04-s6/edges.py`'s six images 1 and 2 samples wide and tall, 3 wide, and 40 by 40, each with wrapping planes, deliberate misses and a noise band), each variant's fixtures are `method: cm`, round-trip at both thread counts with identical bytes, and its `-DGS_TRACE` gate-open counts equal the Python counts the script computes from §6's gate definitions (the `gp`-used counts depend on today's prediction, which the script does not model, so they are quoted, and the round trip proves encoder and decoder chose alike). Done when: the neutral `cmp`, the identity count (55/55 per variant), and the fixtures' method, identity, round trip, and gate-count agreement per variant are quoted with the commands that produced them.
+- [ ] Measure each variant's sizes with `python3 research/ab.py size build/research/try.c synth -v` and `photo -v` (with its `-D` flags). Done when: each variant is listed as eligible or not against the size bars above, with `syn_gradient`, `syn_stripes`, the `photo` total, the count of `photo` images more than 0.1% larger, and the worst `photo` image quoted.
+- [ ] In rank order, measure each eligible variant's time and memory until one clears: `python3 research/ab.py ab src/cm.c build/research/try.c -n5 -v -t1 photo` and `-t3 photo`, and the same for `synth` (alternating, per-image minima), repeated until two runs agree, and decode `alloc_peak` on `measure/image.bmp` at `--threads 3` and `--threads 1` from the variant's scratch CLI (without `-DGS_TRACE`). Done when: each tried variant's encode and decode B/A for each set total and its worst image are quoted against the timing bar at both thread counts, its `alloc_peak` against the baseline (at most 9,943,749 at 3 threads and 9,943,509 at 1 thread), and the candidate (or none) is named.
+- [ ] Confirm the candidate once with `python3 research/ab.py size build/research/try.c tp -v` and `python3 research/ab.py ab src/cm.c build/research/try.c -n5 -v -t1 tp-only` and `-t3 tp-only`. Done when: the `tp` total is quoted against the bar stated above for the candidate's `photo` result, and the `tp-only` total and worst-image ratios against the timing bar, or the item records that no candidate exists.
+- [ ] On a pass, export the candidate as `research/variants/learned-gradient.patch` against `src/cm.c` (its variant fixed, the `-D` choices removed), and update `docs/research.md` section 4.11 with the result; on a miss, record the negative result as a row of `docs/research.md` section 3.2 with every variant's `synth` and `photo` summary lines (and `tp` when a candidate reached it), update section 4.11, and leave no patch. Done when: the patch exists with the bar quoted beside it, or the row does.
+- [ ] Commit: `"research: measure learned gated modular prediction"`
+
+**Test checkpoint:** `python3 research/ab.py size build/research/try.c synth -v` shows the candidate's `syn_gradient` and `syn_stripes` against 616 and 271; the four variants' eligibility, the candidate's `photo` and `tp` totals against their bars, the `ab -v` set-total and worst-image ratios for `photo`, `synth`, and `tp-only` against the timing bar at `-t1` and `-t3`, the `alloc_peak` figures against the baseline, and the 55/55 thread identity count per variant are quoted; a miss ships the measurement and the section 3.2 row, and §9 takes its rejection path.
+
+## 9. Learned Gated Modular Prediction in Format Version 3
+
+**Origin:** discovered run=28dc11967304 2026-10-30 -- missed-milestone policy (`D99 T01 §4`) after `D01 T04 §6` missed the Milestone 5 bars (`D05 T01 §5`); the port of follow-up 3
+
+Ports §8's accepted variant into format version 3 before the 1.0 release freezes it (the pre-release rule in `todo/README.md`, Frozen behavior). If §8 rejects every variant, this section records that instead: the port items move out of the checklist as struck prose (an unticked struck item in a shipped section fails `validate`), a ticked record item cites §8's stamp, and a ticked item proves version 3 unchanged (`git diff --stat 207073ea371317ef34ce3230ba6836bd0d445e6f HEAD -- src/cm.c src/rc.h src/rf.h tests/rfi_ref.py spec/FOLD.md tests/test_correctness.py` prints nothing, `research/variants/learned-gradient.patch` is absent, and `python3 tests/test_correctness.py` passes), with `Started:` committed together with that rewrite, before its plan review (`process-todo-section` step 3a).
+
+- [ ] Apply `research/variants/learned-gradient.patch` to the version 3 path of `src/cm.c`, keeping version 2 decoding unchanged. Done when: `python3 scripts/build.py --target linux-x64` and `--target windows-x64` exit 0 with no warning, and the decoder imports every version 2 and version 3 corpus file back to its pixels at `--threads 1` and `--threads 3`.
+- [ ] Specify the choice in `spec/FOLD.md` (method 1, version 3: `gp`, `ex`, the accepted gate, the error sums with their context, margin, cap and halving, the chosen prediction, and the weight-set offset), write it into `tests/rfi_ref.py` from that text (not from the C), and regenerate `KAT_FOLD3` in `tests/test_correctness.py`. Done when: codec and oracle agree byte for byte on every round-trip case, including the `gradient` and `stripes` cases.
+- [ ] Run `python3 tests/fuzz_decode.py 300 1` on Linux and Windows. Done when: every mutated file is rejected or decoded without a crash, with the seed quoted.
+- [ ] Commit: `"codec: version 3 chooses a gated gradient where it has been better"`
+
+**Test checkpoint:** `python3 research/ab.py size src/cm.c synth -v` shows `syn_gradient` below 616 and `syn_stripes` below 271 bytes, and `python3 tests/test_correctness.py` passes every case with codec and oracle byte-identical; on §8's rejection, the `git diff --stat` above prints nothing and `python3 tests/test_correctness.py` passes on the unchanged version 3 path.
+
+**Freeze check:** `KAT_FOLD` (version 2) decodes unchanged; the operator's standing approval (`D99 T01 §3`) covers extending the unreleased version 3.
+
 ## Verification
 
 - [ ] `pwsh scripts/check-all.ps1` exits 0

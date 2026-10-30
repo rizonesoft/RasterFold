@@ -54,7 +54,7 @@ M = [
     (5, "Exact repeats",
      "a match model in version 3: `syn_gradient`, `syn_stripes`, `syn_ui`, and `syn_text` below JPEG XL e9 (616, 271, 2195, and 2038 bytes); photos no worse than milestone 4",
      SIZE, [FF], None,
-     "D01 T04 §1, D01 T04 §2, D01 T04 §3, D01 T04 §4, D01 T04 §5, D01 T04 §6, D01 T04 §7"),
+     "D01 T04 §1, D01 T04 §2, D01 T04 §3, D01 T04 §4, D01 T04 §5, D01 T04 §6, D01 T04 §7, D01 T04 §8, D01 T04 §9"),
     (6, "Faster than WebP to decode",
      "horizontal strips in version 3: photo decode wall time below lossless WebP's on the 12-thread development machine; strip size cost at most 0.3%",
      f"{BENCH}, {SIZE}", [FF, IDLE], None,
