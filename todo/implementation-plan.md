@@ -225,7 +225,7 @@ Exact repeats extend version 3 before release.
 | [x] | `D01 T04 §8`  | Learned gated modular prediction, measured              |   6   |
 | [x] | `D01 T04 §9`  | Learned gated modular prediction in format version 3    |   3   |
 | [x] | `D01 T04 §10` | Learned gated modular prediction v2 in format version 3 |   6   |
-| [ ] | `D05 T01 §5`  | Milestone 5 gate: Exact repeats                         |   4   |
+| [ ] | `D05 T01 §5`  | Milestone 5 gate: Exact repeats                         |   7   |
 
 ### Phase 5 -- Milestone 6: Faster than WebP to decode
 
