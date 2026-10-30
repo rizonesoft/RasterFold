@@ -116,6 +116,8 @@ Ports an accepted match model into version 3 before the 1.0 release freezes it (
 
 **Origin:** discovered run=28dc11967304 2026-10-30 -- missed-milestone policy (`D99 T01 §4`) after `D01 T04 §2` missed the Milestone 5 `syn_gradient` and `syn_stripes` bars (`D05 T01 §5`); follow-up 1 of up to 3
 
+> **Started:** 2026-10-30T01:15:35Z
+
 **Needs:** Idle machine (timing)
 
 Implements `docs/research.md` section 4.9 as a prototype in `build/research/try.c` and measures it against Milestone 5's bars. The two images the match model could not bring under JPEG XL e9 are exact linear planes modulo 256 in every channel, and their bytes go to wraparounds and row starts, not to a per-sample floor (section 4.9 quotes the per-stream sizes). A flag coded when a modular gradient was exact at W and at N says "this sample equals the modular gradient" and skips the residual.
