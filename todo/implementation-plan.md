@@ -217,7 +217,7 @@ Exact repeats extend version 3 before release.
 | [x] | `D01 T04 §1` | Where the repeats are                    |   3   |
 | [x] | `D01 T04 §2` | A match model, measured                  |   4   |
 | [x] | `D01 T04 §3` | The match model in format version 3      |   3   |
-| [ ] | `D01 T04 §4` | Exact modular planes, measured           |   4   |
+| [ ] | `D01 T04 §4` | Exact modular planes, measured           |   6   |
 | [ ] | `D01 T04 §5` | Exact modular planes in format version 3 |   4   |
 | [ ] | `D05 T01 §5` | Milestone 5 gate: Exact repeats          |   4   |
 
