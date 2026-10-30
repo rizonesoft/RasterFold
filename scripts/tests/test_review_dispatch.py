@@ -933,16 +933,27 @@ class Dispatch(Harness):
         self.assertFalse(summary["recorded"])
         self.assertEqual(record.read_bytes(), before, "a second completion review was appended")
 
-    def test_a_completion_review_needs_a_full_candidate_and_a_round_takes_none(self):
+    def test_a_completion_review_needs_a_full_candidate_and_a_round_takes_an_optional_one(self):
         for candidate in (None, "abc1234", self.CANDIDATE.upper(), self.CANDIDATE + "0"):
             with self.subTest(candidate=candidate):
                 args = ["--kind", "completion", "--writer", "agy", "--prompt", str(self.prompt)]
                 result, _ = self.dispatch(*args, *(["--candidate", candidate] if candidate else []))
                 self.assertEqual(result.returncode, 2)
                 self.assertIn("--kind completion needs --candidate", result.stderr)
-        result, _ = self.dispatch("--candidate", self.CANDIDATE, "--writer", "agy", "--prompt", str(self.prompt))
-        self.assertEqual(result.returncode, 2)
+        for short in ("abc1234", self.CANDIDATE.upper()):
+            with self.subTest(round_candidate=short):
+                result, _ = self.dispatch("--candidate", short, "--writer", "agy", "--prompt", str(self.prompt))
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("--candidate must be the full", result.stderr)
         self.assertEqual(self.calls(), [])
+        record = self.repo / "docs/reviews/round.md"
+        result, summary = self.dispatch("--candidate", self.CANDIDATE, "--writer", "agy", "--prompt",
+                                        str(self.prompt), "--record", str(record))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(summary["candidate"], self.CANDIDATE)
+        self.assertIn(f"- Candidate: {self.CANDIDATE}\n", record.read_text(encoding="utf-8"))
+        self.assertEqual(self.module().read_findings(record.read_text(encoding="utf-8"))["rounds"][0]["candidate"],
+                         self.CANDIDATE)
 
     def test_a_completion_review_edited_by_hand_is_unreadable(self):
         record = self.repo / "docs/reviews/c.md"
@@ -1425,11 +1436,9 @@ class RestartedMarkerTests(unittest.TestCase):
         return subprocess.run(["git", "-C", str(self.root), "-c", "user.name=Test", "-c", "user.email=t@example.com",
                                *args], capture_output=True, text=True, check=True).stdout.strip()
 
-    def commit(self, message, at=None):
+    def commit(self, message):
         self.git("add", "-A")
-        env = {**os.environ, "GIT_COMMITTER_DATE": at} if at else None
-        subprocess.run(["git", "-C", str(self.root), "-c", "user.name=Test", "-c", "user.email=t@example.com",
-                        "commit", "-q", "-m", message], capture_output=True, text=True, check=True, env=env)
+        self.git("commit", "-q", "-m", message)
         return self.git("rev-parse", "HEAD")
 
     def write(self, prose="Fixture prose.", restart="", started="2026-10-30T01:00:00Z", crlf=False):
@@ -1437,7 +1446,7 @@ class RestartedMarkerTests(unittest.TestCase):
             "> **Started:** 2026-10-30T01:00:00Z", f"> **Started:** {started}")
         (self.root / self.TODO).write_bytes(text.replace("\n", "\r\n" if crlf else "\n").encode("utf-8"))
 
-    def reviewed(self, kind, candidate=None, highest="none", at=None):
+    def reviewed(self, kind, candidate=None, highest="none"):
         report = self.root / self.REPORT
         report.parent.mkdir(parents=True, exist_ok=True)
         base = {"writer": "copilot", "reviewer": "astra", "cli": "codex", "model": "gpt-6-astra", "skipped": []}
@@ -1447,7 +1456,7 @@ class RestartedMarkerTests(unittest.TestCase):
             self.dispatch.record(report, {**base, "effort": step["effort"], "lenses": step["lenses"],
                                           "review": f"HIGHEST: {highest}\nOVERALL: "
                                                     f"{'approve' if highest == 'none' else 'needs-attention'}"},
-                                 at or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+                                 "2026-10-30T03:00:00Z", candidate)
             return
         step = self.dispatch.scheduled(self.schedule, kind, [], False)
         footer = "HIGHEST: none\nPLAN: complete\nOVERALL: approve" if kind == "plan" else "COMPLETION: complete"
@@ -1474,7 +1483,7 @@ class RestartedMarkerTests(unittest.TestCase):
         head = self.git("rev-parse", "HEAD")
         self.reviewed("completion", head)
         if round_after:
-            self.reviewed("round")
+            self.reviewed("round", head)
         return self.commit("build and review")
 
     def stamp(self, sha, sync_plan=False):
@@ -1517,8 +1526,8 @@ class RestartedMarkerTests(unittest.TestCase):
         self.reviewed("round", highest="P2")
         self.commit("build, completion and round 1")
         self.write(prose="Corrected fixture prose.", restart="\n" + self.line(fixed[:7]))
-        self.commit("restart")
-        self.reviewed("round")
+        restarted = self.commit("restart")
+        self.reviewed("round", restarted)
         sha = self.commit("round 2")
         receipt = self.tg.stamp(self.root, self.REF, sha,
                                 [{"round": 1, "report": self.REPORT, "verdict": "fixed"},
@@ -1566,31 +1575,35 @@ class RestartedMarkerTests(unittest.TestCase):
     def test_stamping_a_commit_older_than_the_restart_is_refused(self):
         fixed = self.late_review(restart=lambda fixed: self.line(fixed[:12]))
         self.reviewed("completion", fixed)
-        self.reviewed("round")
+        self.reviewed("round", self.git("rev-parse", "HEAD"))
         self.commit("review an implementation older than the restart")
         self.refused(fixed, f"the restart commit {self.git('rev-parse', 'HEAD~1')} is not the stamped commit")
 
-    def test_a_round_run_before_the_restart_and_committed_after_it_is_refused(self):
+    def test_a_round_of_a_pre_restart_candidate_is_refused(self):
+        """A review started before the restart that returns after it records the old candidate, so it does not count."""
         self.late_review()
         fixed = self.git("log", "--format=%H", "-n1", "--grep=correct the section")
-        self.reviewed("completion", self.git("rev-parse", "HEAD"))
-        self.reviewed("round", at="2026-10-30T03:00:00Z")
-        report = self.root / self.REPORT
-        pending = report.read_bytes()
-        self.git("checkout", "--", self.REPORT)
+        before = self.git("rev-parse", "HEAD")
+        self.reviewed("completion", before)
         self.write(prose="Corrected fixture prose.", restart="\n" + self.line(fixed[:12]))
-        self.commit("restart, with the round left uncommitted", at="2026-10-30T03:30:00+00:00")
-        report.write_bytes(pending)
-        self.refused(self.commit("commit the earlier round"), "was run after the restart commit")
+        self.commit("restart while a round of the old candidate is in flight")
+        self.reviewed("round", before)
+        self.refused(self.commit("record the in-flight round"), "records a candidate")
+
+    def test_a_round_with_no_candidate_is_refused(self):
+        self.late_review(restart=lambda fixed: self.line(fixed[:12]))
+        self.reviewed("completion", self.git("rev-parse", "HEAD"))
+        self.reviewed("round")
+        self.refused(self.commit("a round that names no candidate"), "records a candidate")
 
     def test_restart_without_a_later_round_is_refused(self):
         self.late_review()
         head = self.git("rev-parse", "HEAD")
         self.reviewed("completion", head)
-        self.reviewed("round")
+        self.reviewed("round", head)
         fixed = self.git("log", "--format=%H", "-n1", "--grep=correct the section")
         self.write(prose="Corrected fixture prose.", restart="\n" + self.line(fixed[:12]))
-        self.refused(self.commit("restart after the only round"), "no returned review round")
+        self.refused(self.commit("restart after the only round"), "records a candidate")
 
     def test_malformed_repeated_and_misplaced_lines_are_refused(self):
         fixed = self.late_review()

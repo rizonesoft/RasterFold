@@ -624,7 +624,7 @@ def atomic_write(path, text):
 # past Python's digit limit raises). A review is at most MAX_OUTPUT_BYTES, so it has at most MAX_OUTPUT_BYTES + 1 lines,
 # and the count's width follows from that: whatever `record` writes, the reader reads.
 ROUND_HEADING = re.compile(r"^## Round ([0-9]{1,6}): (none|([a-z0-9][a-z0-9-]*) \(`([^`]+)` via `([a-z]+)`\))$")
-ROUND_LINE = re.compile(r"^- (Writer|Run|Effort|Lenses|Lines|Digest|Skipped): (\S.*)$")
+ROUND_LINE = re.compile(r"^- (Writer|Run|Candidate|Effort|Lenses|Lines|Digest|Skipped): (\S.*)$")
 # The one-pass completion review, recorded beside the rounds and never counted as one. It always carries Lines, Digest
 # and the Candidate commit it reviewed; the writer's notes after it (its `- Filed:` lines) run to the next `## ` line.
 COMPLETION_HEADING = re.compile(r"^## Completion review: (none|([a-z0-9][a-z0-9-]*) \(`([^`]+)` via `([a-z]+)`\))$")
@@ -661,7 +661,7 @@ def _read_findings(text):
     `{"rounds": [...], "completions": [...]}`, or None when anything they write is not as they write it.
 
     A round is a `## Round` heading, a blank line, and a metadata block to the next blank line in which every line is
-    one of `record`'s fields (Writer and Run exactly once, Effort, Lines and Digest at most once, any number of Skipped;
+    one of `record`'s fields (Writer and Run exactly once, Candidate (a full sha), Effort, Lines and Digest at most once, any number of Skipped;
     Digest only with Lines). With Lines, the next N lines are the review, skipped unread, and a blank line or the end of
     the file must follow them; with Digest, they must also hash to it, so a hand edit inside a review shows as
     unreadable even when it keeps the count. Without Lines (a round recorded before the count), the round runs to the
@@ -688,8 +688,8 @@ def _read_findings(text):
                      "run": None, "candidate": None, "effort": None, "lenses": None, "skipped": []}
         else:
             entry = {"number": int(heading.group(1)), "reviewer": heading.group(3), "model": heading.group(4),
-                     "cli": heading.group(5), "writer": None, "run": None, "effort": None, "lenses": None,
-                     "skipped": []}
+                     "cli": heading.group(5), "writer": None, "run": None, "candidate": None, "effort": None,
+                     "lenses": None, "skipped": []}
         count = sealed = None
         i += 2
         while i < len(lines) and lines[i] != "":
@@ -803,7 +803,7 @@ def append_findings(path, existing, lines):
     atomic_write(path, existing + separator + "\n".join(lines))
 
 
-def record(path, result, when):
+def record(path, result, when, candidate=None):
     """Append one round and return its number. A findings file the reader cannot read back gets nothing appended:
     numbering it would have to guess (counting headings counts quoted ones), so `Unrecorded` is raised instead."""
     existing = existing_findings(path, "round")
@@ -818,6 +818,7 @@ def record(path, result, when):
         raise Unrecorded(f"the review or the round number is past what {path} can be read back with, "
                          f"so the round was not recorded")
     lines = [f"## Round {number}: {who}", "", f"- Writer: {result['writer']}", f"- Run: {when}"]
+    lines += [f"- Candidate: {candidate}"] if candidate else []
     lines += metadata(result)
     lines += [f"- Lines: {len(review)}", f"- Digest: {digest(review)}", "", *review, ""]
     append_findings(path, existing, lines)
@@ -907,8 +908,10 @@ def main(argv=None):
                         help="round (default): one review round; completion: the one-pass completion and excellence "
                              "review, recorded as a ## Completion review section and not counted as a round; plan: "
                              "the one-pass plan review before the build, recorded as a ## Plan review section")
-    parser.add_argument("--candidate", help="With --kind completion or plan: the full 40-character commit under "
-                                            "review (for a plan review, the commit holding the section as reviewed)")
+    parser.add_argument("--candidate", help="The full 40-character commit under review: required with --kind "
+                                            "completion or plan (for a plan review, the commit holding the section "
+                                            "as reviewed); optional for a round, recorded as its Candidate line "
+                                            "(a section carrying Restarted needs one round after the restart with it)")
     parser.add_argument("--surface", action="store_true",
                         help="The section has Surface: yes, so the schedule's rotation includes the design lens")
     parser.add_argument("--timeout", type=int, default=1800,
@@ -958,8 +961,8 @@ def main(argv=None):
     one_pass = args.kind in PASSES
     if one_pass and not (args.candidate and CANDIDATE.fullmatch(args.candidate)):
         parser.error(f"--kind {args.kind} needs --candidate, the full 40-character commit under review")
-    if args.kind == "round" and args.candidate:
-        parser.error("--candidate goes with --kind completion or plan; a round names its candidate in its prompt")
+    if args.kind == "round" and args.candidate and not CANDIDATE.fullmatch(args.candidate):
+        parser.error("--candidate must be the full 40-character commit under review")
     try:
         pin = load_pin(args.pin)
         plan = None
@@ -980,7 +983,7 @@ def main(argv=None):
         print("review-dispatch refused: " + str(exc), file=sys.stderr)
         return 2
     when = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    if one_pass:
+    if one_pass or args.candidate:
         result.update(kind=args.kind, candidate=args.candidate)
     if plan and plan["position"]:
         result.update(position=plan["position"], escalated=plan["escalated"])
@@ -995,7 +998,7 @@ def main(argv=None):
                 record_completion(Path(args.record), result, when, args.candidate, args.kind)
                 result["recorded"] = True
             else:
-                result["round"] = record(Path(args.record), result, when)
+                result["round"] = record(Path(args.record), result, when, args.candidate)
         except Unrecorded as exc:
             # The review still reaches stdout; only the findings file is left as it was.
             unrecorded = {"recorded": False} if one_pass else {"round": None}

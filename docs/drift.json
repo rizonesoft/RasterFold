@@ -1546,7 +1546,7 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "2026-10-30: Reviewed README.md against its drift sources for the copilot writer (GitHub Copilot CLI pinned to an Anthropic model, routed to GPT-6 Astra; WRITERS and WRITER_FAMILY in scripts/review-dispatch.py, [routes] in .conclave/reviewers.toml; Stop hook read from .claude/settings.json per the GitHub Copilot hooks reference)",
+      "evidence": "2026-10-30: Reviewed README.md against scripts/review-dispatch.py after D00 T01 \u00a711 added an optional round --candidate recorded as a Candidate line; the document's writer, route, and Stop hook statements are unchanged and still hold",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "3b8f6c4144c739df78c4e08b3233bdb80ad006fcaebf1d1f63411c474a12c68e",
@@ -1557,18 +1557,18 @@
         "README.md": "053e9cb906572514f5f42d449bade36b1d2afb430b4e136c917f79241fc5ec9d",
         "AGENTS.md": "03eea42d564412e48c61fa2ee7c6b68b988ae61eb32bf9e42c80f0b8bc7e792c",
         ".conclave/reviewers.toml": "efef5f5ec05b3a984f04128bfe3fee2d57e47f8eeace1d681edb916611150658",
-        "scripts/review-dispatch.py": "76de0bd235b70452c98181130b6b7e9af0cf30100c9f10186a1f91795a602d56"
+        "scripts/review-dispatch.py": "c17cdeec6244c60cde495e17aa48d60273c3dfb5fb3ba118161fbc5111182063"
       },
       "review": "Author-attested: 2026-10-25 re-read README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "AGENTS.md": {
-      "evidence": "2026-10-30: Reviewed AGENTS.md against its drift sources for the copilot writer (GitHub Copilot CLI pinned to an Anthropic model, routed to GPT-6 Astra; WRITERS and WRITER_FAMILY in scripts/review-dispatch.py, [routes] in .conclave/reviewers.toml; Stop hook read from .claude/settings.json per the GitHub Copilot hooks reference)",
+      "evidence": "2026-10-30: Reviewed AGENTS.md against scripts/review-dispatch.py after D00 T01 \u00a711 added an optional round --candidate recorded as a Candidate line; the document's writer, route, and Stop hook statements are unchanged and still hold",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "3b8f6c4144c739df78c4e08b3233bdb80ad006fcaebf1d1f63411c474a12c68e",
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
         ".conclave/reviewers.toml": "efef5f5ec05b3a984f04128bfe3fee2d57e47f8eeace1d681edb916611150658",
-        "scripts/review-dispatch.py": "76de0bd235b70452c98181130b6b7e9af0cf30100c9f10186a1f91795a602d56",
+        "scripts/review-dispatch.py": "c17cdeec6244c60cde495e17aa48d60273c3dfb5fb3ba118161fbc5111182063",
         "AGENTS.md": "03eea42d564412e48c61fa2ee7c6b68b988ae61eb32bf9e42c80f0b8bc7e792c",
         ".codex/hooks.json": "c67e7762d0970280c653a74601012d01971d05f677182ae70e4eda0aa783c150",
         "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",
@@ -1576,11 +1576,11 @@
       }
     },
     "GEMINI.md": {
-      "evidence": "2026-10-30: Reviewed GEMINI.md against its drift sources for the copilot writer (GitHub Copilot CLI pinned to an Anthropic model, routed to GPT-6 Astra; WRITERS and WRITER_FAMILY in scripts/review-dispatch.py, [routes] in .conclave/reviewers.toml; Stop hook read from .claude/settings.json per the GitHub Copilot hooks reference)",
+      "evidence": "2026-10-30: Reviewed GEMINI.md against scripts/review-dispatch.py after D00 T01 \u00a711 added an optional round --candidate recorded as a Candidate line; the document's writer, route, and Stop hook statements are unchanged and still hold",
       "sources": {
         "AGENTS.md": "03eea42d564412e48c61fa2ee7c6b68b988ae61eb32bf9e42c80f0b8bc7e792c",
         ".conclave/reviewers.toml": "efef5f5ec05b3a984f04128bfe3fee2d57e47f8eeace1d681edb916611150658",
-        "scripts/review-dispatch.py": "76de0bd235b70452c98181130b6b7e9af0cf30100c9f10186a1f91795a602d56",
+        "scripts/review-dispatch.py": "c17cdeec6244c60cde495e17aa48d60273c3dfb5fb3ba118161fbc5111182063",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
         "GEMINI.md": "f21631fd90f34871c126266867866ec87c238494b2c61de9568cd1de12f47ee4"
       }
@@ -1673,14 +1673,14 @@
       }
     },
     "docs/agent-skills-and-rules-structure.md": {
-      "evidence": "2026-10-30: Reviewed docs/agent-skills-and-rules-structure.md against its drift sources for the copilot writer (GitHub Copilot CLI pinned to an Anthropic model, routed to GPT-6 Astra; WRITERS and WRITER_FAMILY in scripts/review-dispatch.py, [routes] in .conclave/reviewers.toml; Stop hook read from .claude/settings.json per the GitHub Copilot hooks reference)",
+      "evidence": "2026-10-30: Reviewed docs/agent-skills-and-rules-structure.md against scripts/review-dispatch.py after D00 T01 \u00a711 added an optional round --candidate recorded as a Candidate line; the document's writer, route, and Stop hook statements are unchanged and still hold",
       "sources": {
         "AGENTS.md": "03eea42d564412e48c61fa2ee7c6b68b988ae61eb32bf9e42c80f0b8bc7e792c",
         "GEMINI.md": "f21631fd90f34871c126266867866ec87c238494b2c61de9568cd1de12f47ee4",
         ".conclave/kits.json": "56785267af421d6deac2d4e5cfdda58be63684fb6f3893cece8043a6f0578105",
         ".conclave/reviewers.toml": "efef5f5ec05b3a984f04128bfe3fee2d57e47f8eeace1d681edb916611150658",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
-        "scripts/review-dispatch.py": "76de0bd235b70452c98181130b6b7e9af0cf30100c9f10186a1f91795a602d56",
+        "scripts/review-dispatch.py": "c17cdeec6244c60cde495e17aa48d60273c3dfb5fb3ba118161fbc5111182063",
         "docs/agent-skills-and-rules-structure.md": "ac4c94cc8fd5f07b260bf2fe7ebc5e8b017a0756f0eea6b566768ec7afcbc120",
         ".codex/hooks.json": "c67e7762d0970280c653a74601012d01971d05f677182ae70e4eda0aa783c150",
         "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",

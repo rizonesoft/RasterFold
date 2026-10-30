@@ -6659,7 +6659,7 @@ def build_start(root: Path, path: str, body: str, ref: str) -> str:
 def restart_ok(root: Path, ref: str, plan: dict, named: str, start: str, stamp_sha: str) -> None:
     """The stamp-time checks a `> **Restarted:**` line owes beyond `plan_record`'s candidate-before-start check:
     it names the recorded plan review, that review was already recorded when the restart was committed, the restart
-    precedes the stamped commit, and a returned review round followed the restart."""
+    precedes the stamped commit, and a returned review round recorded a candidate between the restart and the stamp."""
     candidate, report = plan["candidate"], plan["report"]
     require(
         candidate.startswith(named),
@@ -6682,28 +6682,22 @@ def restart_ok(root: Path, ref: str, plan: dict, named: str, start: str, stamp_s
         ancestor.returncode == 0,
         f"the restart commit {start} is not the stamped commit {stamp_sha} or an ancestor of it: {ref}",
     )
-    # Rounds record no candidate, so a round counts as after the restart only when it is absent from the findings
-    # file at the restart commit and the dispatcher's `Run:` instant is not earlier than that commit: a round run
-    # before the restart and committed after it does not count.
-    when = subprocess.run(["git", "-C", str(root), "show", "-s", "--format=%ct", start],
-                          capture_output=True, text=True, timeout=30)
-    restarted_at = int(when.stdout.strip()) if when.returncode == 0 and when.stdout.strip().isdigit() else None
-    require(restarted_at is not None, f"cannot read the restart commit's time {start}: {ref}")
-    now = dispatch.read_findings((Path(root) / report).read_bytes().decode("utf-8"))
-    seen = sum(1 for e in then["rounds"] if dispatch.returned_review(e))
-
-    def _ran_after(entry: dict) -> bool:
-        try:
-            ran = datetime.strptime(str(entry.get("run")), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-        except ValueError:
+    # The round after the restart is bound by its recorded candidate (`review-dispatch.py --candidate`): a round of
+    # an older candidate, whenever it ran or was committed, does not count.
+    def _between(candidate: object) -> bool:
+        if not isinstance(candidate, str):
             return False
-        return ran.timestamp() >= restarted_at
+        return all(
+            subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", older, newer],
+                           capture_output=True, timeout=30).returncode == 0
+            for older, newer in ((start, candidate), (candidate, stamp_sha))
+        )
 
-    later = [e for e in [e for e in (now or {"rounds": []})["rounds"] if dispatch.returned_review(e)][seen:]
-             if _ran_after(e)]
+    now = dispatch.read_findings((Path(root) / report).read_bytes().decode("utf-8"))
     require(
-        bool(later),
-        f"no returned review round in {report} was run after the restart commit {start}: run the next round on the "
+        any(dispatch.returned_review(e) and _between(e.get("candidate")) for e in (now or {"rounds": []})["rounds"]),
+        f"no returned review round in {report} records a candidate (review-dispatch.py --candidate) that descends "
+        f"from the restart commit {start} and is the stamped commit or an ancestor of it: run the next round on the "
         f"restarted candidate before stamping: {ref}",
     )
 
