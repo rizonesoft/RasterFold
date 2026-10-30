@@ -143,6 +143,8 @@ The grid is listed now and nothing else is tried: the counter context (the 64 ab
 
 **Origin:** discovered run=28dc11967304 2026-10-30 -- missed-milestone policy (`D99 T01 §4`) after `D01 T04 §2` missed the Milestone 5 bars (`D05 T01 §5`); the port of follow-up 1
 
+> **Started:** 2026-10-30T01:46:37Z
+
 Ports §4's accepted flag into format version 3 before the 1.0 release freezes it (the pre-release rule in `todo/README.md`, Frozen behavior). If §4 rejected the flag, this section records that: the port items below move out of the checklist as struck prose (an unticked struck item in a shipped section fails `validate`, the lesson of §3), a ticked record item cites §4's stamp, and a ticked item proves version 3 unchanged (`git diff --stat` of `src/cm.c`, `tests/rfi_ref.py`, `spec/FOLD.md`, and `tests/test_correctness.py` from §4's stamp prints nothing, and `python3 tests/test_correctness.py` passes).
 
 - [ ] Apply `research/variants/exact-plane.patch` to the version 3 path of `src/cm.c`, keeping version 2 decoding unchanged. Done when: `python3 scripts/build.py --target linux-x64` and `--target windows-x64` exit 0 with no warning, and the decoder imports every version 2 and version 3 corpus file back to its pixels at `--threads 1` and `--threads 3`.
