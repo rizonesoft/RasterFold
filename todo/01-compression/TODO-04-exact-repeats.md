@@ -182,6 +182,8 @@ Ports §4's accepted flag into format version 3 before the 1.0 release freezes i
 
 **Origin:** discovered run=28dc11967304 2026-10-30 -- missed-milestone policy (`D99 T01 §4`) after `D01 T04 §4` missed the Milestone 5 `syn_stripes` and `photo` bars (`D05 T01 §5`); follow-up 2 of up to 3
 
+> **Started:** 2026-10-30T02:46:08Z
+
 **Needs:** Idle machine (timing)
 
 Implements `docs/research.md` section 4.10 as a prototype in `build/research/try.c` and measures it against Milestone 5's bars. §4 showed that the modular gradient `gp` predicts the two missing images exactly, but its flag missed for three measured or inferred reasons (section 3.2, "exact-plane flag in method 1"): column 0 lay outside its gate, a hit froze the residual counters and mixer, and an unmixed direct counter could not weigh its own evidence. This design adds no decision: inside a gate that now covers column 0 and row 0, `gp` replaces the prediction, so a hit is the residual path's own zero decision (mixed, learning as today) and a miss pays once; the gate state selects the mixer's weight set.
