@@ -2,7 +2,7 @@
 schema_version: 1
 id: dev-automation
 domain: 00-workspace
-status: active
+status: done
 title: "TODO-01 -- Dev-Automation Wiring"
 depends_on: []
 track: W1
@@ -62,7 +62,7 @@ track: W1
 | 8 | §8 | A read-only independent reviewer beside a live run | -- | [x] |
 | 9 | §9 | Windows Job Object process-tree cleanup in review-dispatch.py | §8 | [x] |
 | 10 | §10 | OpenCode campaign Stop hook and heartbeat | §8 | [x] |
-| 11 | §11 | Restarting a build after a late plan review | -- | [ ] |
+| 11 | §11 | Restarting a build after a late plan review | -- | [x] |
 
 ---
 
@@ -273,12 +273,14 @@ Corrected 2026-10-30 (plan review, `docs/reviews/00-workspace/D00-T01-s11.md`): 
 - [x] In `scripts/todo-graph.py`, add `RESTARTED_LINE_RE` and make `build_start` honour a well-formed `Restarted:` line (the first commit carrying it and the same `Started:` line), refusing a malformed line (bad instant, short or non-hex sha, empty reason), a second line, a line with no `Started:`, or a line not directly under `Started:`; add the stamp-time restart checks above (prefix, review recorded at the restart commit, restart ancestor of the stamped commit, a returned round after the restart). Done when: the unit cases below pass and `python3 scripts/todo-graph.py self-test` stays green.
 - [x] Add cases to `scripts/tests/test_review_dispatch.py` that build a throwaway git repository with a section, a findings file and a pin, and drive `stamp`: with no `Restarted:` line, a plan review on a commit after `Started:` is refused; with a `Restarted:` line naming that review's candidate, committed after the review was recorded, followed by a round, `stamp` succeeds, the receipt reads back through `receipt_data_ok`, and the section keeps its original `Started:` line; refusals, each leaving the TODO file and receipt unchanged: naming another sha, a restart committed before the review was recorded, a stamped commit older than the restart, no round after the restart, a malformed line (instant, sha, empty reason), a second line, a line with no `Started:`, and a line not directly under `Started:`. Done when: `python3 -m unittest discover -s scripts/tests -v` runs them and exits 0.
 - [x] Document the marker: the `Restarted:` entry in `todo/README.md` beside `Started:` (shape, when to write it, the stamp checks, that `Started:` is never overwritten and `Duration:` still runs from it), the recovery in `.agents/skills/process-todo-section/SKILL.md` step 3a (when the plan review followed `Started:`, write `Restarted:` after the review is recorded and committed, then re-run and re-quote every item ticked before it), and the stamp-side rule in `.agents/skills/review-todo-section/SKILL.md` (a pre-restart completion stays valid; at least one returned round must follow the restart). Done when: `python3 scripts/drift-check.py` and `python3 scripts/todo-graph.py validate` are clean.
-- [ ] Commit: `"todo: a Restarted marker recovers a build whose plan review followed Started"`
+- [x] Commit: `"todo: a Restarted marker recovers a build whose plan review followed Started"`
 
 Evidence 2026-10-30: `restart_line`, `restart_ok` and the `build_start` change in `scripts/todo-graph.py`; `RestartedMarkerTests` (13 cases; review round 2 replaced round 1's time checks with a recorded round candidate, so two cases refuse a round of a candidate older than the restart (started before it, recorded after it) and a round that records no candidate; the late review refused without the line; a restart stamping and reading back through `receipt_data_ok` with `Started:` kept, also with CRLF line endings and with a sibling section carrying its own malformed `Restarted:` line; the `D01 T04 §5` path, where a completion and a round precede the restart, one round follows it, the receipt keeps the pre-restart completion candidate, and a whole-interval `Duration:` parses to 180 minutes from the kept `Started:`; and the refusals for another sha, a restart before the review was recorded, a findings file unreadable at the restart commit, a `Started:` changed after the restart, an older stamped commit, no round after the restart, and the malformed (instant shape, an off-calendar instant `2026-02-30T25:61:61Z`, 6-digit sha, uppercase sha, empty reason), repeated, misplaced and `Started:`-less lines, each leaving the TODO file, the receipt, and the plan untouched with plan sync on). Completion review gaps (calendar check, coverage) implemented 2026-10-30. `scripts/review-dispatch.py` takes an optional full `--candidate` on a round and records it as `- Candidate:`, which `read_findings` parses (a short one is refused; the dispatcher test covers both). `python3 -m unittest discover -s scripts/tests -v` -> `Ran 152 tests` `OK (skipped=1)`, 13 `RestartedMarkerTests` cases ok; `python3 scripts/todo-graph.py self-test` -> `772 cases, 0 failed`; `python3 scripts/todo-graph.py validate` -> `0 fatal, 0 warning(s)`; `python3 scripts/drift-check.py` -> `0 error(s)`.
 
 **Test checkpoint:** `python3 -m unittest discover -s scripts/tests -v` exits 0 with the new `Restarted:` cases running (a successful stamp and every refusal above), and `python3 scripts/todo-graph.py self-test` and `python3 scripts/todo-graph.py validate` stay green.
 
+> **Verified:** 2026-10-30 | §11 | 03c4add07976535ee01623d44f7508a9e9844506
+> **Review:** `docs/reviews/d00-t01-s11.json`
 ## Verification
 
 - [x] `pwsh scripts/check-all.ps1` -- exits 0 with every gate `PASS`, the static analysis gate included (`PASS clang-tidy (32.1s)`, `check-all: 28/28 passed`)
