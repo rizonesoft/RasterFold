@@ -143,9 +143,10 @@ The grid is listed now and nothing else is tried: the counter context (the 64 ab
 
 **Origin:** discovered run=28dc11967304 2026-10-30 -- missed-milestone policy (`D99 T01 §4`) after `D01 T04 §2` missed the Milestone 5 bars (`D05 T01 §5`); the port of follow-up 1
 
-> **Started:** 2026-10-30T01:54:21Z
+> **Started:** 2026-10-30T01:46:37Z
+> **Restarted:** 2026-10-30T02:36:23Z | plan review ea829a7aebfb | the plan review read the rejection-path correction committed after Started
 
-**Corrected 2026-10-30:** `Started:` first said `2026-10-30T01:46:37Z` (commit `7b7966b`), written before step 3 corrected the section onto its rejection path (`ea829a7`), so the plan review (candidate `ea829a7`) followed it, against `process-todo-section` step 3a (`Started:` is committed with the corrected section, then the plan is reviewed). No build work preceded the plan review: `ea829a7` ticks no item, and the first ticked items are in `4e9751f`, after the review returned. The instant now records when the build of the reviewed contract began (`adfd529`); the version 3 checks were re-run after it and re-quoted in `8e0fa36`. The run file's Critical events record the refused stamp and the mislabeled `e2f188d`.
+**Corrected 2026-10-30:** `Started:` (commit `7b7966b`) was written before step 3 corrected the section onto its rejection path (`ea829a7`), so the plan review (candidate `ea829a7`) followed it, against `process-todo-section` step 3a. No build work preceded the plan review: `ea829a7` ticks no item, and the first ticked items are in `4e9751f`, after the review returned. Overwriting `Started:` (first to `01:54:21Z`) was refused by review rounds 2 and 3, so `D00 T01 §11` added the `Restarted:` marker: `Started:` keeps its original instant, the `Restarted:` line above names the recorded plan review, and every ticked item was re-run after the restart and re-quoted. The run file's Critical events record the refused stamp and the mislabeled `e2f188d`.
 
 Ports §4's accepted flag into format version 3 before the 1.0 release freezes it (the pre-release rule in `todo/README.md`, Frozen behavior). If §4 rejected the flag, this section records that: the port items below move out of the checklist as struck prose (an unticked struck item in a shipped section fails `validate`, the lesson of §3), a ticked record item cites §4's stamp, and a ticked item proves version 3 unchanged (`git diff --stat` of `src/cm.c`, `tests/rfi_ref.py`, `spec/FOLD.md`, and `tests/test_correctness.py` from §4's stamp prints nothing, and `python3 tests/test_correctness.py` passes).
 
