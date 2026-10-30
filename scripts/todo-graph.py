@@ -6423,7 +6423,7 @@ PLAN_KEYS = {"report", "candidate", "reviewer", "model", "effort", "lenses"}
 STARTED_LINE_RE = re.compile(r"^> \*\*Started:\*\* .+$", re.M)
 RESTARTED_PREFIX = "> **Restarted:**"
 RESTARTED_LINE_RE = re.compile(
-    r"^> \*\*Restarted:\*\* \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z \| plan review (?P<sha>[0-9a-f]{7,40}) \| \S.*$"
+    r"^> \*\*Restarted:\*\* (?P<at>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z) \| plan review (?P<sha>[0-9a-f]{7,40}) \| \S.*$"
 )
 ROUND_RECORD_RE = re.compile(r"^## Round ([0-9]+): ", re.M)
 RECEIPT_REVIEW_RE = re.compile(r"^`?(?P<path>docs/reviews/[a-z0-9][a-z0-9.-]*\.json)`?$")
@@ -6592,6 +6592,11 @@ def restart_line(body: str, ref: str) -> tuple[str, str] | None:
     require(len(marks) == 1, f"a section carries at most one '{RESTARTED_PREFIX}' line, not {len(marks)}: {ref}")
     (i,) = marks
     m = RESTARTED_LINE_RE.fullmatch(lines[i])
+    if m is not None:
+        try:
+            datetime.strptime(m["at"], "%Y-%m-%dT%H:%M:%SZ")
+        except ValueError:
+            m = None
     require(
         m is not None,
         f"malformed '{RESTARTED_PREFIX}' line (want '{RESTARTED_PREFIX} <YYYY-MM-DDTHH:MM:SSZ> | plan review "

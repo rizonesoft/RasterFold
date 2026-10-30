@@ -1357,6 +1357,7 @@ track: Z1
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
 |   1   |   §1    | The restarted thing | - |  [ ]   |
+|   2   |   §2    | A sibling | - |  [ ]   |
 
 ---
 
@@ -1370,6 +1371,15 @@ track: Z1
 - [ ] Commit: `"fixture: the thing"`
 
 **Test checkpoint:** `true` proves the fixture.
+
+## 2. A Sibling
+
+> **Started:** 2026-10-30T00:00:00Z
+> **Restarted:** not a restart line, and it belongs to §2 only
+
+- [ ] Something else
+
+**Test checkpoint:** `true` proves the sibling.
 """
 
 
@@ -1403,6 +1413,8 @@ class RestartedMarkerTests(unittest.TestCase):
         self.tg.REPO = self.root
         self.tg.TODO_DIR = self.root / "todo"
         self.tg.PLAN = self.root / "todo/implementation-plan.md"
+        self.plan = self.root / "todo/implementation-plan.md"
+        self.plan.write_text("# Plan sentinel\n", encoding="utf-8")
         self.git("init", "-q")
 
     def tearDown(self):
@@ -1418,8 +1430,10 @@ class RestartedMarkerTests(unittest.TestCase):
         self.git("commit", "-q", "-m", message)
         return self.git("rev-parse", "HEAD")
 
-    def write(self, prose="Fixture prose.", restart=""):
-        (self.root / self.TODO).write_text(RESTART_TODO.format(prose=prose, restart=restart), encoding="utf-8")
+    def write(self, prose="Fixture prose.", restart="", started="2026-10-30T01:00:00Z", crlf=False):
+        text = RESTART_TODO.format(prose=prose, restart=restart).replace(
+            "> **Started:** 2026-10-30T01:00:00Z", f"> **Started:** {started}")
+        (self.root / self.TODO).write_bytes(text.replace("\n", "\r\n" if crlf else "\n").encode("utf-8"))
 
     def reviewed(self, kind, candidate=None, highest="none"):
         report = self.root / self.REPORT
@@ -1429,26 +1443,28 @@ class RestartedMarkerTests(unittest.TestCase):
             rounds = self.dispatch.read_rounds(report.read_text(encoding="utf-8"))
             step = self.dispatch.scheduled(self.schedule, "round", rounds, False)
             self.dispatch.record(report, {**base, "effort": step["effort"], "lenses": step["lenses"],
-                                          "review": f"HIGHEST: {highest}\nOVERALL: approve"}, "2026-10-30T03:00:00Z")
+                                          "review": f"HIGHEST: {highest}\nOVERALL: "
+                                                    f"{'approve' if highest == 'none' else 'needs-attention'}"},
+                                 "2026-10-30T03:00:00Z")
             return
         step = self.dispatch.scheduled(self.schedule, kind, [], False)
         footer = "HIGHEST: none\nPLAN: complete\nOVERALL: approve" if kind == "plan" else "COMPLETION: complete"
         self.dispatch.record_completion(report, {**base, "effort": step["effort"], "lenses": step["lenses"],
                                                  "review": footer}, "2026-10-30T02:00:00Z", candidate, kind)
 
-    def late_review(self, restart=None, restart_before_review=False):
+    def late_review(self, restart=None, restart_before_review=False, crlf=False):
         """Started, then a correction, then the plan review of the correction; returns the corrected commit."""
-        self.write()
+        self.write(crlf=crlf)
         self.commit("start")
-        self.write(prose="Corrected fixture prose.")
+        self.write(prose="Corrected fixture prose.", crlf=crlf)
         fixed = self.commit("correct the section after Started")
         if restart_before_review:
-            self.write(prose="Corrected fixture prose.", restart="\n" + restart(fixed))
+            self.write(prose="Corrected fixture prose.", restart="\n" + restart(fixed), crlf=crlf)
             self.commit("restart")
         self.reviewed("plan", fixed)
         self.commit("record the plan review")
         if restart and not restart_before_review:
-            self.write(prose="Corrected fixture prose.", restart="\n" + restart(fixed))
+            self.write(prose="Corrected fixture prose.", restart="\n" + restart(fixed), crlf=crlf)
             self.commit("restart")
         return fixed
 
@@ -1459,17 +1475,18 @@ class RestartedMarkerTests(unittest.TestCase):
             self.reviewed("round")
         return self.commit("build and review")
 
-    def stamp(self, sha):
+    def stamp(self, sha, sync_plan=False):
         return self.tg.stamp(self.root, self.REF, sha, [{"round": 1, "report": self.REPORT, "verdict": "clean"}],
-                             ["true -> ok"], "2026-10-30", sync_plan=False,
+                             ["true -> ok"], "2026-10-30", sync_plan=sync_plan,
                              completion={"report": self.REPORT, "verdict": "complete"}, plan=self.REPORT)
 
     def refused(self, sha, needle):
-        before = (self.root / self.TODO).read_bytes()
+        before, plan = (self.root / self.TODO).read_bytes(), self.plan.read_bytes()
         with self.assertRaises(self.tg.Refused) as caught:
-            self.stamp(sha)
+            self.stamp(sha, sync_plan=True)
         self.assertIn(needle, str(caught.exception))
         self.assertEqual((self.root / self.TODO).read_bytes(), before, "a refusal leaves the TODO file untouched")
+        self.assertEqual(self.plan.read_bytes(), plan, "a refusal leaves the plan untouched")
         self.assertFalse((self.root / "docs/reviews/d00-t01-s1.json").exists(), "a refusal writes no receipt")
 
     @staticmethod
@@ -1489,6 +1506,52 @@ class RestartedMarkerTests(unittest.TestCase):
         text = (self.root / self.TODO).read_text(encoding="utf-8")
         self.assertIn("> **Started:** 2026-10-30T01:00:00Z\n> **Restarted:** ", text, "Started keeps its instant")
         self.assertIn(f"> **Verified:** 2026-10-30 | §1 | {sha}", text)
+
+    def test_restart_keeps_a_completion_recorded_before_it(self):
+        """The D01 T04 §5 path: completion and a round before the restart, then the restart and one more round."""
+        self.late_review()
+        fixed = self.git("log", "--format=%H", "-n1", "--grep=correct the section")
+        self.reviewed("completion", self.git("rev-parse", "HEAD"))
+        self.reviewed("round", highest="P2")
+        self.commit("build, completion and round 1")
+        self.write(prose="Corrected fixture prose.", restart="\n" + self.line(fixed[:7]))
+        self.commit("restart")
+        self.reviewed("round")
+        sha = self.commit("round 2")
+        receipt = self.tg.stamp(self.root, self.REF, sha,
+                                [{"round": 1, "report": self.REPORT, "verdict": "fixed"},
+                                 {"round": 2, "report": self.REPORT, "verdict": "clean"}],
+                                ["true -> ok"], "2026-10-30", sync_plan=False,
+                                completion={"report": self.REPORT, "verdict": "complete"}, plan=self.REPORT)
+        data = json.loads((self.root / receipt).read_text(encoding="utf-8"))
+        self.tg.receipt_data_ok(data, self.REF, sha, root=self.root)
+        self.assertNotEqual(data["completion"]["candidate"], sha)
+        path = self.root / self.TODO
+        path.write_text(path.read_text(encoding="utf-8").replace(
+            "> **Review:**", "> **Duration:** 2026-10-30T01:00:00Z to 2026-10-30T04:00:00Z\n> **Review:**", 1),
+            encoding="utf-8")
+        (todo,) = [t for t in self.tg.load_todos() if t.number == "01"]
+        self.assertEqual(todo.sections[1].duration_minutes, 180, "Duration still runs from the kept Started")
+
+    def test_crlf_section_restarts(self):
+        self.late_review(restart=lambda fixed: self.line(fixed[:12]), crlf=True)
+        self.stamp(self.finish())
+
+    def test_started_changed_after_restart_is_refused(self):
+        fixed = self.late_review(restart=lambda fixed: self.line(fixed[:12]))
+        self.write(prose="Corrected fixture prose.", restart="\n" + self.line(fixed[:12]),
+                   started="2026-10-30T02:45:00Z")
+        self.refused(self.finish(), "changed after the restart commit")
+
+    def test_unreadable_findings_at_restart_commit_is_refused(self):
+        fixed = self.late_review()
+        report = self.root / self.REPORT
+        good = report.read_bytes()
+        report.write_bytes(good + b"\n## Round junk: not a record\n")
+        self.write(prose="Corrected fixture prose.", restart="\n" + self.line(fixed[:12]))
+        self.commit("restart over an unreadable findings file")
+        report.write_bytes(good)
+        self.refused(self.finish(), "does not yet hold the returned plan review")
 
     def test_restart_naming_another_sha_is_refused(self):
         self.late_review(restart=lambda fixed: self.line("abcdef1234567"))
@@ -1518,6 +1581,7 @@ class RestartedMarkerTests(unittest.TestCase):
         good = self.line(fixed[:12])
         cases = [
             ("\n" + good.replace("2026-10-30T02:30:00Z", "2026-10-30 02:30"), "malformed"),
+            ("\n" + good.replace("2026-10-30T02:30:00Z", "2026-02-30T25:61:61Z"), "malformed"),
             ("\n" + good.replace(fixed[:12], fixed[:6]), "malformed"),
             ("\n" + good.replace(fixed[:12], fixed[:12].upper()), "malformed"),
             ("\n" + self.line(fixed[:12], reason=""), "malformed"),
