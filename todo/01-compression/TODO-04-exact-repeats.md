@@ -2,7 +2,7 @@
 schema_version: 1
 id: exact-repeats
 domain: 01-compression
-status: draft
+status: done
 title: "TODO-04 -- Exact Repeats: a Match Model"
 depends_on: []
 frozen: true
@@ -38,7 +38,7 @@ track: C4
 | :---: | :-----: | ----------- | ---------- | :----: |
 |   1   |   §1    | Where the repeats are | -- |  [x]   |
 |   2   |   §2    | A match model, measured | §1, D01 T03 §1 |  [x]   |
-|   3   |   §3    | The match model in format version 3 | §2, D01 T03 §1 |  [ ]   |
+|   3   |   §3    | The match model in format version 3 | §2, D01 T03 §1 |  [x]   |
 
 ---
 
@@ -107,6 +107,8 @@ Ports an accepted match model into version 3 before the 1.0 release freezes it (
 
 **Freeze check:** `KAT_FOLD` (version 2) decodes unchanged; the operator's standing approval (`D99 T01 §3`) covers extending the unreleased version 3.
 
+> **Verified:** 2026-10-30 | §3 | 3bc5bdb6a23447e2aa24d8ccadee9ee96d4d7ef8
+> **Review:** `docs/reviews/d01-t04-s3.json`
 ## Verification
 
 - [ ] `pwsh scripts/check-all.ps1` exits 0
