@@ -1,0 +1,90 @@
+{
+  "ref": "D01 T04 \u00a76",
+  "title": "Gated Modular Prediction, Measured",
+  "implementation_sha": "5108661c8e7eb3be29eab479f3295fba704ee3b5",
+  "date": "2026-10-30",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/01-compression/D01-T04-s6.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/01-compression/D01-T04-s6.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    ".venv/bin/python build/d01-t04-s6/threads.py build/d01-t04-s6/bin/rasterfold-v{1,2,3,4} -> identical_and_roundtrip=55/55 bad=[] for each",
+    ".venv/bin/python build/d01-t04-s6/edges.py v{1,2,3,4} -> fixtures_ok=6/6 for each",
+    "python3 research/ab.py size build/research/try.c synth -v (and photo -v, per variant -D) -> syn_gradient 111-118 < 616 and syn_stripes 103-106 < 271, but every variant has 10 to 33 photo images more than 0.1% worse: none eligible, rejected"
+  ],
+  "completion": {
+    "report": "docs/reviews/01-compression/D01-T04-s6.md",
+    "verdict": "completed",
+    "candidate": "fb32b0fc5052b14b75314a1658dae300ddff6f89",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 2,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/01-compression/D01-T04-s6.md",
+    "candidate": "e219bad0fe66bcf7c1a60fae3ce3d1a207af756b",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}
