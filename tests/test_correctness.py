@@ -34,8 +34,8 @@ KAT_FOLD = bytes.fromhex(
 
 # The same 16x8 image encoded as format version 3 (the version 2 file above stays as a decode-only vector).
 KAT_FOLD3 = bytes.fromhex(
-    "52464903030020001000000008000000010001003b00000009465d96a17b30581f000000090000000700000000423381"
-    "26cc498ba9a6b6b1c645d0e27c11e14eaef626e7e715d5edbb4ef60001c6e4c966bef3bf0042386d9d0395"
+    "52464903030020001000000008000000010001002f000000af7e562957c1935a13000000090000000700000000423381"
+    "26cc498ba9a6b6b1c645d58c572c380001c6e4c96685f5370042386d7982ba"
 )
 
 # A 16x8 4-colour image and its complete .fold files: KAT_PAL (method 2, §2) and KAT_PAL2 (method 3, §4).
@@ -785,7 +785,7 @@ def _row_end_tail_crossings(w: int, h: int, payload: bytes) -> set[int]:
     crossed: set[int] = set()
     for y in range(h):
         for ch in chans:
-            ch.plane.append([0] * w)
+            ch.begin_row()
         for x in range(w):
             i = (y * w + x) * 3
             before = [ch.dec.pos for ch in chans]
@@ -804,7 +804,7 @@ def _row_end_tail_crossings(w: int, h: int, payload: bytes) -> set[int]:
                         crossed.add(c)
         if y >= 2:
             for ch in chans:
-                ch.plane[y - 2] = []
+                ch.drop_row(y - 2)
     return crossed
 
 
@@ -872,10 +872,14 @@ def palette_method() -> None:
     check(KAT_PAL2[16] == rf.METHOD_PAL2, "KAT_PAL2 did not select METHOD_PAL2")
 
     # 2. Exactly 256 colours where each colour is an 8-pixel horizontal run (64x32 = 2048 pixels):
-    #    selects method 3 and inspect reports palette_colours: 256.
+    #    selects method 3 and inspect reports palette_colours: 256. The colours are placed in a shuffled order:
+    #    in palette order their channel values step by a constant across rows, which version 3's gated gradient
+    #    predicts exactly, and method 1 would win.
     w256, h256 = 64, 32
     pal256 = [bytes(((i * 17) & 255, (i * 43 + 9) & 255, (i * 97 + 3) & 255)) for i in range(256)]
-    rgb256 = b"".join(pal256[(y * 8 + (x // 8)) & 255] for y in range(h256) for x in range(w256))
+    order256 = list(range(256))
+    random.Random(256).shuffle(order256)
+    rgb256 = b"".join(pal256[order256[(y * 8 + (x // 8)) & 255]] for y in range(h256) for x in range(w256))
     roundtrip("pal_256", w256, h256, rgb256)
     fold256 = WORK / "pal_256" / "out.fold"
     check(fold256.read_bytes()[16] == rf.METHOD_PAL2, "256-colour run image did not select METHOD_PAL2")
@@ -1140,6 +1144,66 @@ def fuzz_harness() -> None:
             check(not alive, f"sleeping child process {child_pid} survived run_tasks_parallel shutdown")
 
 
+def gated_fixtures() -> dict[str, tuple[int, int, bytes]]:
+    """D01 T04 §10's boundary fixtures for the version 3 gated gradient: narrow and short images whose planes
+    wrap modulo 256, with deliberate misses and a noise band so method 1 is chosen."""
+    rnd = random.Random(20261030)
+    out = {}
+
+    def make(name, w, h, plane_rows, plane_cols, f, misses):
+        px = [[None] * w for _ in range(h)]
+        for y in range(h):
+            for x in range(w):
+                if y < plane_rows and x < plane_cols:
+                    px[y][x] = f(x, y)
+                else:
+                    px[y][x] = tuple(rnd.randrange(256) for _ in range(3))
+        for (x, y, c, d) in misses:
+            p = list(px[y][x])
+            p[c] = (p[c] + d) & 255
+            px[y][x] = tuple(p)
+        check(len({p for row in px for p in row}) > 256, f"{name}: fewer than 257 colours")
+        out[name] = (w, h, bytes(b for row in px for p in row for b in p))
+
+    def pl(x, y):
+        return ((3 * x + 7 * y + 9) & 255, (5 * x + 3 * y + 200) & 255, (250 - 7 * x - 5 * y) & 255)
+
+    make("w1", 1, 700, 400, 1, pl, [(0, 200, 0, 100)])
+    make("h1", 700, 1, 1, 400, pl, [(200, 0, 1, 77)])
+    make("w2", 2, 600, 400, 2, pl, [(1, 150, 2, 31), (0, 300, 0, 9)])
+    make("h2", 600, 2, 2, 400, pl, [(150, 1, 0, 31), (300, 0, 2, 9)])
+    make("w3", 3, 500, 300, 3, pl, [(2, 100, 1, 50), (0, 200, 0, 1)])
+    make("sq", 40, 40, 40, 25, pl, [(10, 10, 0, 3), (0, 20, 1, 4), (20, 0, 2, 5)])
+
+    # gl: R is a non-wrapping plane x + y with +100 glitches on odd rows at x % 4 == 0, so gated misses reach
+    # the cap and drive Eg to its halving; G and B wrap.
+    def gl(x, y):
+        return ((x + y) & 255, (5 * x + 3 * y + 200) & 255, (250 - 7 * x - 5 * y) & 255)
+
+    make("gl", 120, 120, 120, 100, gl, [(x, y, 0, 100) for y in range(1, 120, 2) for x in range(4, 100, 4)])
+    # ge: in the top half, isolated +100 glitches on all three channels, spaced so their neighbours stay exact and
+    # the gate stays open: R and B keep their plane values (minus G), so the default prediction hits where the raw
+    # gradient misses and Eg alone reaches its halving. The clean bottom half then shows the halving's effect on
+    # when the gradient is chosen again.
+    make("ge", 60, 120, 120, 50, gl, [(x, y, c, 100) for y in range(1, 60, 3) for x in range(4, 50, 4) for c in range(3)])
+    return out
+
+
+GATED_BOUNDARIES = (
+    "empty-start", "tie-keeps-pt", "margin-keeps-pt", "gp-chosen", "fold", "cap",
+    "halve-by-eg", "halve-by-et", "closed", "open-col0", "open-row0",
+)
+
+
+def gated_gradient() -> None:
+    rf.GG_STATS.clear()
+    for name, (w, h, rgb) in gated_fixtures().items():
+        roundtrip(f"gated-{name}", w, h, rgb)
+        check((WORK / f"gated-{name}" / "out.fold").read_bytes()[16] == 1, f"gated-{name}: method is not 1")
+    missing = [k for k in GATED_BOUNDARIES if not rf.GG_STATS.get(k)]
+    check(not missing, f"gated-gradient boundaries never reached: {missing} (counts {rf.GG_STATS})")
+
+
 def main() -> int:
     if not EXE.exists():
         print(f"missing {EXE}; run build.ps1 first")
@@ -1186,6 +1250,7 @@ def main() -> int:
         ),
     )
     case("grey", lambda: roundtrip("grey", 16, 8, solid(16, 8, (128, 128, 128))))
+    case("gated-gradient", gated_gradient)
     case("padding", padding_roundtrip)
     case("acceptance", oracle_acceptance)
     case("corrupt", corrupt_cases)

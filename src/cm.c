@@ -104,7 +104,7 @@ typedef struct {
     int32_t err;        /* weighted predictor error, 1/8 units */
     int32_t er;         /* coded residual, -128..127 */
     int32_t fe;         /* final prediction error, 1/8 units */
-    int32_t pad;
+    int32_t ex;         /* version 3: the gated gradient was defined here and equalled the sample */
 } pos_t;
 
 typedef struct {
@@ -118,6 +118,7 @@ typedef struct {
     rdec dec;
     size_t bytes;       /* lower bound on flushed stream size (pos + pending + 4) */
     int bad;            /* decoder saw the impossible residual +128 */
+    uint16_t eg, et;    /* version 3: gated-gradient and default prediction error sums */
     volatile int32_t done;  /* rows finished, published to the other channels */
     uint8_t pad[64];
 } chan_t;
@@ -168,6 +169,7 @@ static int cm_alloc(cm_t *m, uint32_t w, uint32_t h, uint8_t *rgb, size_t bmp_st
         ch->bytes = 5u;
         ch->bad = 0;
         ch->done = 0;
+        ch->eg = ch->et = 0;
     }
     for (int c = 0; c < 2; c++) {
         m->xe[c] = (int8_t *)b; b += xe;
@@ -339,8 +341,16 @@ typedef struct {
     int32_t pr[4] __attribute__((aligned(16)));
     int32_t wpred, pred8;
     int predv, base;
+    int gp, gpdef, pt, gate;
     __m128i x0, x1, x2;
 } stage_t;
+
+/* Distance of a sample from a prediction modulo 256, capped at 32. */
+static inline int gg_dist(int v, int p) {
+    int d = (v - p) & 255;
+    d = d < 256 - d ? d : 256 - d;
+    return d < 32 ? d : 32;
+}
 
 /* Prepare sample (x, y) of channel c: neighbours, prediction, contexts. The
    seven context rows are prefetched here; the coding phase reads them. */
@@ -520,12 +530,39 @@ RF_INLINE void cm_model(cm_t *m, const row_ctx_t *rc, const int c, uint32_t x, u
         s->cp[k] = ch->ctr + ((size_t)k * NROWS + kk[k] % NROWS) * NODES;
         _mm_prefetch((const char *)s->cp[k], _MM_HINT_T0);
     }
-    const int wsel = qE * 8 + (c ? (gq == 4 ? 0 : 1 + (iabs(eg) > 3)) : 3);
+    /* Version 3 gated gradient: where the gradient of the raw channel values
+       was exact at every neighbour it reads, and it has been more than twice
+       as accurate as the default prediction on this channel, code against it. */
+    const int pt = predv;
+    int gate = 0, gp = 0, gpdef = 0, use = 0;
+    if (nmodel == NMODEL) {
+        const ptrdiff_t st = m->stride;
+        const uint8_t *v0 = rc->rgb_row + rc->c_off[c];
+        if (x > 0 && y > 0) {
+            const uint8_t *v1 = v0 - st;
+            gp = (v0[(size_t)(x - 1) * 3] + v1[(size_t)x * 3] - v1[(size_t)(x - 1) * 3]) & 255;
+            gpdef = 1;
+            gate = cur[x - 1].ex && prv[x].ex && prv[x - 1].ex && (xi + 1 == w || prv[x + 1].ex);
+        } else if (x == 0 && y >= 2) {
+            gp = (2 * v0[-st] - v0[-2 * st]) & 255;
+            gpdef = 1;
+            /* cur and prv alternate rows, so cur[0] still holds row y - 2. */
+            gate = prv[0].ex && (w == 1 || prv[1].ex) && cur[0].ex;
+        } else if (y == 0 && x >= 2) {
+            gp = (2 * v0[(size_t)(x - 1) * 3] - v0[(size_t)(x - 2) * 3]) & 255;
+            gpdef = 1;
+            gate = cur[x - 1].ex && cur[x - 2].ex;
+        }
+        if (gate) use = 2 * (int)ch->eg < (int)ch->et;
+        if (use) predv = gp;
+    }
+    const int wsel = qE * 8 + (c ? (gq == 4 ? 0 : 1 + (iabs(eg) > 3)) : 3) + use * 4;
     s->wrow = ch->wt + (size_t)wsel * NODES * WSTRIDE;
     s->wpred = wpred;
     s->pred8 = pred8;
     s->predv = predv;
     s->base = base;
+    s->gp = gp; s->gpdef = gpdef; s->pt = pt; s->gate = gate;
     s->x0 = x0; s->x1 = x1; s->x2 = x2;
 }
 
@@ -581,6 +618,12 @@ RF_INLINE int cm_code(cm_t *m, const row_ctx_t *rc, const int c, uint32_t x, int
         _mm_storeu_si128((__m128i *)pa->perr, _mm_add_epi32(_mm_loadu_si128((const __m128i *)pa->perr), ev));
         pc->er = r;
         pc->fe = ferr;
+        pc->ex = s->gpdef && value == s->gp;
+        if (s->gate) {
+            ch->eg = (uint16_t)(ch->eg + gg_dist(value, s->gp));
+            ch->et = (uint16_t)(ch->et + gg_dist(value, s->pt));
+            if (ch->eg >= 4096 || ch->et >= 4096) { ch->eg >>= 1; ch->et >>= 1; }
+        }
     }
     if (c < 2) {
         const size_t xs = rc->xs_row + x;

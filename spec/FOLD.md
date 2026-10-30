@@ -134,6 +134,10 @@ except for the accumulation described in "Updates". (This is the layout of the
 JPEG XL weighted predictor; `prv` of row 0 is the same array that row 1 will
 overwrite as `cur`.)
 
+Version 3 adds, at the same positions, the flag `ex` (0 or 1, starting at 0;
+`ex(x, y)` below is the value written when sample `(x, y)` was coded), and two
+per-channel error sums `Eg` and `Et`, unsigned 16-bit values that start at 0.
+
 ### Weighted predictor
 
 This is the JPEG XL self-correcting predictor with its default parameters,
@@ -193,11 +197,40 @@ pred  = (pred8 + 4) >> 3
 predv = clamp(pred + b_c, 0, 255)
 ```
 
+### Gated gradient (version 3)
+
+`V(x, y)` is the channel value `v_c` (not the plane value) of an already coded
+pixel. The gated gradient `gp` and its gate are:
+
+```
+if x > 0 and y > 0:
+    gp   = (V(x-1, y) + V(x, y-1) - V(x-1, y-1)) mod 256
+    gate = ex(x-1, y) and ex(x, y-1) and ex(x-1, y-1)
+           and (x+1 == width or ex(x+1, y-1))
+else if x == 0 and y >= 2:
+    gp   = (2 V(0, y-1) - V(0, y-2)) mod 256
+    gate = ex(0, y-1) and (width == 1 or ex(1, y-1)) and ex(0, y-2)
+else if y == 0 and x >= 2:
+    gp   = (2 V(x-1, 0) - V(x-2, 0)) mod 256
+    gate = ex(x-1, 0) and ex(x-2, 0)
+else:
+    gp is undefined, gate = 0
+
+pt   = predv
+use  = 1 if gate and 2 Eg < Et, else 0
+pc   = gp if use else pt                                (the chosen prediction)
+```
+
+In the two-row layout, `ex(0, y-2)` is still held at position 0 of `cur` when
+sample `(0, y)` is modelled. Version 2 files have `use = 0` and `pc = predv`
+everywhere. Everything else (`pred`, `pred8`, the contexts) uses `pred` as
+before.
+
 ### Residual
 
 ```
-r = (v_c - predv) mod 256;  if r >= 128: r = r - 256        (r in -128..127)
-decoder: v_c = (predv + r) mod 256
+r = (v_c - pc) mod 256;  if r >= 128: r = r - 256           (r in -128..127)
+decoder: v_c = (pc + r) mod 256
 ```
 
 ### Contexts
@@ -231,7 +264,7 @@ k4 = (q9(W-pred)*9 + q9(N-pred))*16 + qE
 k5 = (q9(NE-pred)*9 + q9(NW-pred))*16 + qE                          (version 3 only)
 k6 = ((qn(WW-pred)*7 + qn(NN-pred))*7 + qn(NNE-pred))*16 + qE       (version 3 only)
 row_m = k_m mod 2048                                   for model m = 0..M-1
-wsel = qE*8 + j,  j = 3 for channel 0; for channels 1, 2 j = 0 if gq = 4,
+wsel = qE*8 + j + 4 use,  j = 3 for channel 0; for channels 1, 2 j = 0 if gq = 4,
        else 1 if |EG| <= 3, else 2
 ```
 
@@ -335,6 +368,17 @@ err[cur, x]     = wpred - v8
 perr_k[cur, x]  = (|pr_k - v8| + 3) >> 3                 (k = 0..3)
 perr_k[prv, x+1] = perr_k[prv, x+1] + that value         (k = 0..3)
 er[cur, x] = r,  fe[cur, x] = fe_e
+```
+
+Version 3 then updates the gated gradient state:
+
+```
+d(v, p) = min(m, 256 - m, 32)  where m = (v - p) mod 256
+ex[cur, x] = 1 if gp is defined and v_c == gp, else 0
+if gate:
+    Eg = Eg + d(v_c, gp)
+    Et = Et + d(v_c, pt)
+    if Eg >= 4096 or Et >= 4096:  Eg = Eg >> 1,  Et = Et >> 1
 ```
 
 The G residual and final error at this pixel are what R and B read as `EG`

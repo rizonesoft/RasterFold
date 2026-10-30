@@ -200,6 +200,19 @@ NROWS = 2048
 NODES = 32
 LMSN = 12
 
+# Gated gradient (version 3) boundary counts, accumulated by every coded sample;
+# tests reset and read it to show which parts of the selector a file exercised.
+GG_STATS: dict[str, int] = {}
+
+
+def _gg_count(key: str) -> None:
+    GG_STATS[key] = GG_STATS.get(key, 0) + 1
+
+
+def _gg_dist(v: int, p: int) -> int:
+    m = (v - p) % 256
+    return min(m, 256 - m, 32)
+
 
 class Channel:
     """Model state of one channel (G, R-G or B-G) and its coder."""
@@ -216,9 +229,24 @@ class Channel:
         self.er = [0] * (2 * (w + 2))
         self.fe = [0] * (2 * (w + 2))
         self.plane: list[list[int]] = []       # plane rows (values minus the G base)
+        self.vals: list[list[int]] = []        # version 3: channel value rows V
+        self.exs: list[list[int]] = []         # version 3: ex rows
+        self.eg = 0                            # version 3: Eg and Et
+        self.et = 0
         self.enc: RangeEncoder | None = None
         self.dec: RangeDecoder | None = None
         self.bad = False
+
+    def begin_row(self) -> None:
+        self.plane.append([0] * self.w)
+        self.vals.append([0] * self.w)
+        self.exs.append([0] * self.w)
+
+    def drop_row(self, y: int) -> None:
+        """Rows below y + 1 are no longer read."""
+        self.plane[y] = []
+        self.vals[y] = []
+        self.exs[y] = []
 
     # one decision
     def code_bit(self, rows, rates, wrow, node: int, bit: int) -> int:
@@ -349,6 +377,42 @@ def _code_sample(ch: Channel, c: int, x: int, y: int, value: int, cross: dict) -
     pred = (pred8 + 4) >> 3
     predv = _clamp(pred + g, 0, 255)
 
+    # gated gradient (version 3)
+    pt = predv
+    gp = None
+    gate = use = False
+    form = ""
+    if ch.nmodel == NMODEL:
+        V, EX = ch.vals, ch.exs
+        if x > 0 and y > 0:
+            form = "interior"
+            gp = (V[y][x - 1] + V[y - 1][x] - V[y - 1][x - 1]) % 256
+            gate = bool(EX[y][x - 1] and EX[y - 1][x] and EX[y - 1][x - 1] and (x + 1 == w or EX[y - 1][x + 1]))
+        elif x == 0 and y >= 2:
+            form = "col0"
+            gp = (2 * V[y - 1][0] - V[y - 2][0]) % 256
+            gate = bool(EX[y - 1][0] and (w == 1 or EX[y - 1][1]) and EX[y - 2][0])
+        elif y == 0 and x >= 2:
+            form = "row0"
+            gp = (2 * V[0][x - 1] - V[0][x - 2]) % 256
+            gate = bool(EX[0][x - 1] and EX[0][x - 2])
+        use = gate and 2 * ch.eg < ch.et
+        if gp is not None:
+            if not gate:
+                _gg_count("closed")
+            else:
+                _gg_count(f"open-{form}")
+                if ch.eg == 0 and ch.et == 0:
+                    _gg_count("empty-start")
+                elif 2 * ch.eg == ch.et:
+                    _gg_count("tie-keeps-pt")
+                elif ch.eg < ch.et <= 2 * ch.eg:
+                    _gg_count("margin-keeps-pt")
+                if use:
+                    _gg_count("gp-chosen")
+                    _gg_count(f"gp-chosen-{form}")
+    pc = gp if use else pt
+
     # contexts
     if x > 0:
         eW = ch.er[cur + x - 1]
@@ -381,12 +445,12 @@ def _code_sample(ch: Channel, c: int, x: int, y: int, value: int, cross: dict) -
         n = ch.ctr[r][0]
         rates.append(RATE[n])
         ch.ctr[r][0] = n + (1 if n < 60 else 0)
-    wsel = qE * 8 + ((0 if gq == 4 else 1 + (1 if abs(eg) > 3 else 0)) if c else 3)
+    wsel = qE * 8 + ((0 if gq == 4 else 1 + (1 if abs(eg) > 3 else 0)) if c else 3) + 4 * use
     wrow = wsel * NODES
 
     # code
     if ch.enc is not None:
-        r = (value - predv) & 255
+        r = (value - pc) & 255
         if r >= 128:
             r -= 256
         ch.code_residual(rows, rates, wrow, r)
@@ -394,7 +458,7 @@ def _code_sample(ch: Channel, c: int, x: int, y: int, value: int, cross: dict) -
         r = ch.code_residual(rows, rates, wrow, 0)
         if r == 128:
             ch.bad = True
-        value = (predv + r) & 255
+        value = (pc + r) & 255
 
     # update
     pv = value - g
@@ -412,6 +476,25 @@ def _code_sample(ch: Channel, c: int, x: int, y: int, value: int, cross: dict) -
         ch.perr[prv + x + 1][k] += e
     ch.er[cur + x] = r
     ch.fe[cur + x] = ferr
+    if ch.nmodel == NMODEL:
+        ch.vals[y][x] = value
+        ch.exs[y][x] = 1 if gp is not None and value == gp else 0
+        if gate:
+            for p_ in (gp, pt):
+                m = (value - p_) % 256
+                if 256 - m < 32:
+                    _gg_count("fold")
+                if min(m, 256 - m) > 32:
+                    _gg_count("cap")
+            ch.eg += _gg_dist(value, gp)
+            ch.et += _gg_dist(value, pt)
+            if ch.eg >= 4096:
+                _gg_count("halve-by-eg")
+            if ch.et >= 4096:
+                _gg_count("halve-by-et")
+            if ch.eg >= 4096 or ch.et >= 4096:
+                ch.eg >>= 1
+                ch.et >>= 1
     cross["r"] = ((r + 128) & 255) - 128                 # stored as a signed byte
     cross["fe"] = _clamp(ferr, -2047, 2047)
     return value
@@ -420,7 +503,7 @@ def _code_sample(ch: Channel, c: int, x: int, y: int, value: int, cross: dict) -
 def _run(width: int, height: int, chans: list[Channel], rgb: bytearray) -> None:
     for y in range(height):
         for ch in chans:
-            ch.plane.append([0] * width)
+            ch.begin_row()
         for x in range(width):
             i = (y * width + x) * 3
             gs: dict = {}
@@ -433,7 +516,7 @@ def _run(width: int, height: int, chans: list[Channel], rgb: bytearray) -> None:
             rgb[i + 2] = _code_sample(chans[2], 2, x, y, rgb[i + 2], dict(cross))
         if y >= 2:
             for ch in chans:
-                ch.plane[y - 2] = []                        # rows below y - 1 are no longer read
+                ch.drop_row(y - 2)
 
 
 def cm_encode(width: int, height: int, rgb: bytes) -> bytes:

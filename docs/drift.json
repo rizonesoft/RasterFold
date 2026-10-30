@@ -1688,14 +1688,14 @@
       }
     },
     "spec/FOLD.md": {
-      "evidence": "2026-10-29: Reviewed spec/FOLD.md against its drift sources for D01 T03 section 1 (format version 3 port: encoder writes version 3, decoders accept versions 2 and 3, compile-time nmodel specialization and SIMD k6 in src/cm.c keep bitstream byte-identical)",
+      "evidence": "2026-10-30: Reviewed spec/FOLD.md against src/cm.c and tests/rfi_ref.py for D01 T04 section 10 (version 3 gated gradient: gp with column-0 and row-0 forms, ex, g4 gate, Eg/Et sums with fold, cap 32 and halving, margin-2 choice feeding the residual, wsel + 4), including the size_t index casts added for clang-tidy, which change no value; the oracle written from the spec text is byte-identical to the codec on every tests/test_correctness.py case and KAT_FOLD3",
       "sources": {
         "src/rf.h": "3b8f6c4144c739df78c4e08b3233bdb80ad006fcaebf1d1f63411c474a12c68e",
         "src/fold.c": "1659a4119aa181aab784bdd1457a1bd20233e6ea80a997cea019787bd8c6a846",
-        "src/cm.c": "2d11945fe826bce5dfcdbf189bcc618be7b95f9342b60d621112c65618813a1c",
+        "src/cm.c": "4183692c4518b6c9e27edea2b4d09a0cb3c37cb83e1a03713e6fdb8e1fb18999",
         "src/crc32.c": "c6e682115185fcdcbfa0551823fc590f60c9c7b978a30009163288e664b3faec",
-        "tests/rfi_ref.py": "4b14dac40039ff2ddcd509691d520dfb00c9363c104cee359ceebaac91e29035",
-        "spec/FOLD.md": "80841ef2df587850add9bd37eb2067582a7e714ee0beee7779ba7fbb865eb9f7"
+        "tests/rfi_ref.py": "c62f333ee4aa1b642112e0168b220efd80cccfa96b1acee865a091db15eca550",
+        "spec/FOLD.md": "fd8e87a935f350332097f2cdb8ae6cf2f125a1b45e23802dba93330aa332c89e"
       },
       "reviewed_at": "2026-10-25",
       "reviewer": "Author-attested: 2026-10-25 re-read spec/FOLD.md against src/cm.c after D04 T01 section 1 (early row-boundary abort on exhausted CM stream; bitstream and format semantics unchanged)",

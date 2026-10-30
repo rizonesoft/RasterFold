@@ -45,8 +45,9 @@ toolchain in `tools/` (Clang 23, LLD, Ninja; pins in `toolchain.json`). The
 format is `.fold` version 3 (with full backward-compatibility decoding of
 `.fold` version 2 files). Method 0 is raw RGB, method 1 ("CM") is the
 context-mixing coder in `src/cm.c` (the JPEG XL weighted predictor corrected by
-a 12-tap sign-sign LMS stage, seven context models mixed by a logistic mixer in
-version 3 and five in version 2, and one binary range coder per channel G, R-G,
+a 12-tap sign-sign LMS stage, in version 3 replaced by a gated modular gradient
+where that has been more than twice as accurate on the channel (section 4.11),
+seven context models mixed by a logistic mixer in version 3 and five in version 2, and one binary range coder per channel G, R-G,
 B-G, with one thread per channel), and methods 2 and 3 ("palette" and "extended
 palette") are the palette index coders in `src/pal.c` for images with at most
 256 distinct colours. The Python oracle `tests/rfi_ref.py` implements the same
@@ -605,7 +606,7 @@ photo total=30827515 jxl=31782058 ratio=0.9700 geomean=0.9710 worst=1.0007 (kodi
 
 ### 4.11 Learned gated modular prediction
 
-**Owner:** `D01 T04 §8` (measured), `D01 T04 §9` (the port).
+**Owner:** `D01 T04 §8` (measured), `D01 T04 §9` (the port under the old bars, struck), `D01 T04 §10` (the port).
 
 Follow-up 3, the last, of Milestone 5's missed-milestone policy (`D99 T01 §4`). Section 4.10's gate proved the exact-plane cost removable (`syn_gradient` 111 to 118 bytes, `syn_stripes` 103 to 106) but replaced the prediction wherever the gate opened, which made 10 to 33 of 39 photographs more than 0.1% larger (section 3.2, "gated modular prediction in method 1"). The gate says only that `gp` was exact at the neighbours; it never compares `gp` with the prediction it displaces, so on photographs it displaced a prediction that was often as good or better.
 
@@ -616,6 +617,8 @@ Non-goals: no new decision bit, counter row, or model row; no change to WP, LMS,
 Prior art: CALIC and JPEG-LS switch predictors on local gradient evidence; JPEG XL's weighted predictor weighs its sub-predictors by their recent errors at the neighbours; lpaq and paq8 mix or select models by their running success. This choice is a two-way selection by running error, learned per channel and optionally per error band.
 
 **Result (`D01 T04 §8`, 2026-10-30): rejected.** All four variants clear `syn_gradient < 616` (112 to 127 bytes) and `syn_stripes < 271` (105 to 117). The error-sum choice does what section 4.10 lacked on size: v2 (`g4`, context off, margin 2) keeps every photograph within 0.1% of the baseline, which no variant of section 4.10 did, (worst `kodim03` +0.032%) while cutting the `photo` total by 0.057%. v1, v3 and v4 each leave `ic_artificial` 0.74% to 1.69% larger. v2 then misses the timing bar: on the `synth` set at one thread, encode and decode totals are 8% to 9% and 13% to 14% slower in two disjoint pools of alternating runs, and `photo` decode at one thread is 2% to 4% slower with single images up to 25%. Its decode `alloc_peak` on `measure/image.bmp` is 31 bytes over the baseline, exactly the growth of that file, which the frozen bar counts. No candidate exists, so `tp` was not run, no patch exists, and nothing is ported. Follow-up 3 was the last under `D99 T01 §4`, so Milestone 5 goes to the operator. Summary lines (`python3 research/ab.py size build/research/try.c <set> -v`; the baseline lines are section 4.10's):
+
+**Ported (`D01 T04 §10`, 2026-10-30).** The operator relaxed Milestone 5's timing and memory rule for v2 (`D99 T01 §4`: encode and decode time at most 1.15x Milestone 4's on every set total and 1.5x on any image of at least 16,384 pixels, codec working memory unchanged with the input file's growth not counted), so v2 is now part of format version 3 (`spec/FOLD.md`, "Gated gradient (version 3)"), with `KAT_FOLD3` regenerated and a `gated-gradient` correctness case whose eight boundary fixtures reach every selector boundary and fail all eight listed mutations. The port's files equal the prototype's on all 55 corpus images and the fixtures, and its sizes are §8's: `syn_gradient` 119, `syn_stripes` 108, `photo` 30,795,260 (-0.057%, worst `kodim03` +0.032%), `tp` 6,640,275 against 6,641,390 (-0.017%). Timing and memory are measured by the Milestone 5 gate (`D05 T01 §5`).
 
 ```text
 # v1 (g4, off, M 1) no -D

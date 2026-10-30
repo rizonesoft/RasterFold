@@ -20,8 +20,9 @@ toolchain in `tools/` (Clang 23, LLD, Ninja; pins in `toolchain.json`). The
 format is `.fold` version 3 (with full backward-compatibility decoding of
 `.fold` version 2 files). Method 0 is raw RGB, method 1 ("CM") is the
 context-mixing coder in `src/cm.c` (the JPEG XL weighted predictor corrected by
-a 12-tap sign-sign LMS stage, seven context models mixed by a logistic mixer in
-version 3 and five in version 2, and one binary range coder per channel G, R-G,
+a 12-tap sign-sign LMS stage, in version 3 replaced by a gated modular gradient
+where that has been more than twice as accurate on the channel (section 4.11),
+seven context models mixed by a logistic mixer in version 3 and five in version 2, and one binary range coder per channel G, R-G,
 B-G, with one thread per channel), and methods 2 and 3 ("palette" and "extended
 palette") are the palette index coders in `src/pal.c` for images with at most
 256 distinct colours. The Python oracle `tests/rfi_ref.py` implements the same
