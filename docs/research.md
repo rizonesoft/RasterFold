@@ -568,6 +568,19 @@ synth total=202711 jxl=226544 ratio=0.8948 geomean=0.5102 worst=1.6818 (syn_odd)
 photo total=30988986 jxl=31782058 ratio=0.9750 geomean=0.9802 worst=1.0595 (ic_artificial) e9=31400714 e9_ratio=0.9869 e9_geomean=0.9958 e9_worst=1.1508 (ic_artificial) webp=34138176 webp_ratio=0.9078 webp_geomean=0.8999 webp_worst=1.1410 (ic_artificial) measure=1437177 (0.9772 e9=0.9976 webp=0.9046)
 ```
 
+
+### 4.10 Gated modular prediction
+
+**Owner:** `D01 T04 §6` (measured), `D01 T04 §7` (the port).
+
+Follow-up 2 of Milestone 5's missed-milestone policy (`D99 T01 §4`). Section 4.9's flag proved the target right and the mechanism wrong: the modular gradient `gp` predicts `syn_gradient` and `syn_stripes` exactly, but the flag missed `syn_stripes < 271` and cost `photo` +0.47% to +0.57% (section 3.2, "exact-plane flag in method 1"). Three causes are carried forward: column 0 lay outside the gate, so every row start paid a full residual; a hit skipped the residual coder, so its counters and the mixer stopped learning exactly where the image was predictable; and a direct counter with no mixer could not weigh its own record against the neighbourhood.
+
+The design removes the decision instead of tuning it. Inside a gate that `gp` was exact at the causal neighbours (now also defined in column 0 from `2N - NN` and in row 0 from `2W - WW`), `gp` replaces the prediction, so a hit is the residual coder's own zero decision, mixed and learning as today, and a miss is one residual with no flag. The gate state selects a weight set from the four unused slots of each `qE` group (`wsel + 4`), so the mixer learns the gate's reliability per error-energy band with no memory growth. A planning probe (2026-10-30, quoted in `D01 T04 §6`) found the two-neighbour gate open on 99.9% or more of every exact-plane image with every gated sample exact, and on photos open on 1.9% to 18% of samples at 45% to 98% exactness; the four-neighbour gate halves to quarters the photo openings and lifts exactness above 90% on the natural photos, while `measure` and `ic_spider_web` stay near 50%. On a miss `gp` is a worse prediction than today's on every photo measured, so the photo bar is the question.
+
+Non-goals: no new decision, counter, or model row; no change to WP, LMS, or the context models' inputs; no backward references or colour cache (`D01 T06`).
+
+Prior art: the PNG Paeth and WebP lossless predictors choose among neighbour predictors per image or block, not per sample; JPEG XL's modular mode selects a gradient predictor per tree leaf; JPEG-LS switches into run mode on a flat-neighbourhood gate. This gate is per sample and learned only through the mixer's weight set.
+
 ---
 
 ## 5. Speed designs
