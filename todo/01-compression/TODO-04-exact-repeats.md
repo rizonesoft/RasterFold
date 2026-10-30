@@ -46,7 +46,7 @@ track: C4
 |   5   |   §5    | Exact modular planes in format version 3 | §4, D01 T03 §1, D00 T01 §11 |  [x]   |
 |   6   |   §6    | Gated modular prediction, measured | §5, D01 T03 §1 |  [x]   |
 |   7   |   §7    | Gated modular prediction in format version 3 | §6, D01 T03 §1 |  [x]   |
-|   8   |   §8    | Learned gated modular prediction, measured | §7, D01 T03 §1 |  [ ]   |
+|   8   |   §8    | Learned gated modular prediction, measured | §7, D01 T03 §1 |  [x]   |
 |   9   |   §9    | Learned gated modular prediction in format version 3 | §8, D01 T03 §1 |  [ ]   |
 
 ---
@@ -269,6 +269,8 @@ The grid is listed now and nothing else is tried: (`g4`, context off, `M` 1), (`
 
 **Test checkpoint:** `python3 research/ab.py size build/research/try.c synth -v` shows the candidate's `syn_gradient` and `syn_stripes` against 616 and 271; the four variants' eligibility, the candidate's `photo` and `tp` totals against their bars, the `ab -v` set-total and worst-image ratios for `photo`, `synth`, and `tp-only` against the timing bar at `-t1` and `-t3`, the `alloc_peak` figures against the baseline, and the 55/55 thread identity count per variant are quoted; a miss ships the measurement and the section 3.2 row, and §9 takes its rejection path.
 
+> **Verified:** 2026-10-30 | §8 | daa02cb215429c851f506266b3eda2f440e37515
+> **Review:** `docs/reviews/d01-t04-s8.json`
 ## 9. Learned Gated Modular Prediction in Format Version 3
 
 **Origin:** discovered run=28dc11967304 2026-10-30 -- missed-milestone policy (`D99 T01 §4`) after `D01 T04 §6` missed the Milestone 5 bars (`D05 T01 §5`); the port of follow-up 3
