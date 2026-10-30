@@ -89,11 +89,17 @@ The model keeps, per channel, a pointer to the best earlier match (found by hash
 
 Ports an accepted match model into version 3 before the 1.0 release freezes it (the pre-release rule in `todo/README.md`, Frozen behavior). If §2 rejected the model, this section records that and strikes its items.
 
-**Rejected 2026-10-30:** §2 rejected the model (stamped `df0ccc9`, `docs/reviews/01-compression/D01-T04-s2.md`): `syn_gradient` 3,326 bytes against the 616 bar and `syn_stripes` 381 against 271, so `research/variants/match-model.patch` does not exist and nothing is ported. The two port items and the port commit are struck with no owner, because no accepted variant exists to hand on; the measured photo gain is a separate lead in `todo/backlog.md` B-002, not this section's debt. What remains is proving version 3 unchanged: `src/cm.c`, `tests/rfi_ref.py`, `spec/FOLD.md`, and `tests/test_correctness.py` (with its `KAT_FOLD3`) carry no change since the `D01 T03 §1` stamp `207073e`, and the correctness suite passes.
+**Rejected 2026-10-30:** §2 rejected the model (stamped `df0ccc9`, `docs/reviews/01-compression/D01-T04-s2.md`): `syn_gradient` 3,326 bytes against the 616 bar and `syn_stripes` 381 against 271, so `research/variants/match-model.patch` does not exist and nothing is ported. The two port items and the port commit are struck (as prose below, outside the checklist) with no owner, because no accepted variant exists to hand on; the measured photo gain is a separate lead in `todo/backlog.md` B-002, not this section's debt. What remains is proving version 3 unchanged: `src/cm.c`, `tests/rfi_ref.py`, `spec/FOLD.md`, and `tests/test_correctness.py` (with its `KAT_FOLD3`) carry no change since the `D01 T03 §1` stamp `207073e`, and the correctness suite passes.
 
-- [ ] ~~Apply `research/variants/match-model.patch` to the version 3 path of `src/cm.c`, keeping version 2 decoding unchanged. Done when: `build.ps1` exits 0 and the decoder imports every version 2 and version 3 file back to its pixels (the reverse of the export).~~
-- [ ] ~~Write the model into `tests/rfi_ref.py` from the spec change, update `spec/FOLD.md`, and regenerate `KAT_FOLD3`. Done when: codec and oracle agree on every round-trip case.~~
-- [ ] ~~Commit: `"codec: version 3 predicts exact repeats from a match model"`~~
+**Port steps struck by the rejection** (the plan as written before §2 measured; never built, no owner):
+
+~~Apply `research/variants/match-model.patch` to the version 3 path of `src/cm.c`, keeping version 2 decoding unchanged. Done when: `build.ps1` exits 0 and the decoder imports every version 2 and version 3 file back to its pixels (the reverse of the export).~~
+
+~~Write the model into `tests/rfi_ref.py` from the spec change, update `spec/FOLD.md`, and regenerate `KAT_FOLD3`. Done when: codec and oracle agree on every round-trip case.~~
+
+~~Commit: `"codec: version 3 predicts exact repeats from a match model"`~~
+
+- [x] Record the rejection: the **Rejected 2026-10-30** note above cites §2's stamp and its failed bars, and the three port steps are struck as prose outside the checklist. Done when: the note and the struck steps are in this section.
 - [x] Confirm version 3 is unchanged by the rejection: `git diff --stat 207073ea371317ef34ce3230ba6836bd0d445e6f HEAD -- src/cm.c src/rc.h src/rf.h tests/rfi_ref.py spec/FOLD.md tests/test_correctness.py` prints nothing, `research/variants/match-model.patch` is absent, and `python3 tests/test_correctness.py` passes every case. Done when: all three are quoted. Done 2026-10-30: the `git diff --stat` printed nothing, `test -e research/variants/match-model.patch` reports it absent, and `.venv/bin/python tests/test_correctness.py` (against `bin/linux-x64/bin/rasterfold` built after the last `src/` change) printed `39 passed, 0 failed`, including `OK   known-answer` (the `KAT_FOLD` freeze check) and `OK   oracle`.
 - [x] Commit: `"todo: record the match model's rejection in version 3"`
 
