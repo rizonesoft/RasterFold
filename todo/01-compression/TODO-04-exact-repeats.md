@@ -2,7 +2,7 @@
 schema_version: 1
 id: exact-repeats
 domain: 01-compression
-status: active
+status: done
 title: "TODO-04 -- Exact Repeats: a Match Model"
 depends_on: []
 frozen: true
@@ -48,7 +48,7 @@ track: C4
 |   7   |   §7    | Gated modular prediction in format version 3 | §6, D01 T03 §1 |  [x]   |
 |   8   |   §8    | Learned gated modular prediction, measured | §7, D01 T03 §1 |  [x]   |
 |   9   |   §9    | Learned gated modular prediction in format version 3 | §8, D01 T03 §1 |  [x]   |
-|  10   |   §10   | Learned gated modular prediction v2 in format version 3 | §8, §9, D01 T03 §1 |  [ ]   |
+|  10   |   §10   | Learned gated modular prediction v2 in format version 3 | §8, §9, D01 T03 §1 |  [x]   |
 
 ---
 
@@ -325,6 +325,8 @@ Measured at §8 (2026-10-30; the implementer re-runs the sizes on the port): `sy
 
 **Freeze check:** `KAT_FOLD` (version 2) and every version 2 file in `build/research/fold-v2/` decode unchanged; version 3 is unreleased, so the operator's standing approval (`D99 T01 §3`) covers extending it in place with `KAT_FOLD3` regenerated.
 
+> **Verified:** 2026-10-30 | §10 | 45e5618c7429feb210281ed9fe06f6ac3f21ca06
+> **Review:** `docs/reviews/d01-t04-s10.json`
 ## Verification
 
 - [ ] `pwsh scripts/check-all.ps1` exits 0

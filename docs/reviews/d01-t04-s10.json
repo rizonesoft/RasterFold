@@ -1,0 +1,86 @@
+{
+  "ref": "D01 T04 \u00a710",
+  "title": "Learned Gated Modular Prediction v2 in Format Version 3",
+  "implementation_sha": "45e5618c7429feb210281ed9fe06f6ac3f21ca06",
+  "date": "2026-10-30",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/01-compression/D01-T04-s10.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 tests/test_correctness.py -> 40 passed, 0 failed",
+    "python3 build/d01-t04-s10/ref.py check bin/linux-x64/bin/rasterfold -> ref_match=62/62 t1_eq_t3=62/62 roundtrip=62/62 v2_decode=55/55 bad=[]",
+    "python3 tests/fuzz_decode.py 300 1 -> 292 rejected, 8 still valid, no crash, hang or mismatch",
+    "python3 scripts/tidy.py -> exit 0, 10/10 unique warnings at baseline"
+  ],
+  "completion": {
+    "report": "docs/reviews/01-compression/D01-T04-s10.md",
+    "verdict": "complete",
+    "candidate": "45e5618c7429feb210281ed9fe06f6ac3f21ca06",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/01-compression/D01-T04-s10.md",
+    "candidate": "7d3fa0fe3abaef1c359fc2268150110b9a1f25cc",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}
