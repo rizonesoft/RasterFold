@@ -246,6 +246,8 @@ Ports §6's accepted variant into format version 3 before the 1.0 release freeze
 
 **Origin:** discovered run=28dc11967304 2026-10-30 -- missed-milestone policy (`D99 T01 §4`) after `D01 T04 §6` missed the Milestone 5 per-image `photo` bar (`D05 T01 §5`); follow-up 3 of up to 3, the last
 
+> **Started:** 2026-10-30T03:27:14Z
+
 **Needs:** Idle machine (timing)
 
 Implements `docs/research.md` section 4.11 as a prototype in `build/research/try.c` and measures it against Milestone 5's bars. §6 showed that the gated modular gradient `gp` clears both `synth` bars (`syn_gradient` 111 to 118 bytes, `syn_stripes` 103 to 106) but, replacing the prediction wherever its gate opened, made 10 to 33 of 39 `photo` images more than 0.1% larger (section 3.2, "gated modular prediction in method 1"). This design keeps §6's `gp`, its column-0 and row-0 forms, its gates, and its weight-set offset, and adds a per-sample choice: inside the gate, `gp` replaces the prediction only where its recent absolute error, learned per channel by encoder and decoder alike from samples already coded, is below today's prediction's by a fixed margin. Where `gp` is not clearly better, the sample is coded exactly as today.
