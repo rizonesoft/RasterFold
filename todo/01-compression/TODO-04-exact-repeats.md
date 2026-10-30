@@ -2,7 +2,7 @@
 schema_version: 1
 id: exact-repeats
 domain: 01-compression
-status: active
+status: done
 title: "TODO-04 -- Exact Repeats: a Match Model"
 depends_on: []
 frozen: true
@@ -44,7 +44,7 @@ track: C4
 |   4   |   §4    | Exact modular planes, measured | §3, D01 T03 §1 |  [x]   |
 |   5   |   §5    | Exact modular planes in format version 3 | §4, D01 T03 §1, D00 T01 §11 |  [x]   |
 |   6   |   §6    | Gated modular prediction, measured | §5, D01 T03 §1 |  [x]   |
-|   7   |   §7    | Gated modular prediction in format version 3 | §6, D01 T03 §1 |  [ ]   |
+|   7   |   §7    | Gated modular prediction in format version 3 | §6, D01 T03 §1 |  [x]   |
 
 ---
 
@@ -237,6 +237,8 @@ Ports §6's accepted variant into format version 3 before the 1.0 release freeze
 
 **Freeze check:** `KAT_FOLD` (version 2) decodes unchanged; the operator's standing approval (`D99 T01 §3`) covers extending the unreleased version 3.
 
+> **Verified:** 2026-10-30 | §7 | 1063ff950b4e8166fbaad1f37b32812aea159f69
+> **Review:** `docs/reviews/d01-t04-s7.json`
 ## Verification
 
 - [ ] `pwsh scripts/check-all.ps1` exits 0

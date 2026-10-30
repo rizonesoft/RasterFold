@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **67 of 236 sections complete (28%).** 236 sections (13 discovered); backlog 2 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **68 of 236 sections complete (29%).** 236 sections (13 discovered); backlog 2 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -221,7 +221,7 @@ Exact repeats extend version 3 before release.
 | [x] | `D00 T01 §11` | Restarting a build after a late plan review  |   4   |
 | [x] | `D01 T04 §5`  | Exact modular planes in format version 3     |   3   |
 | [x] | `D01 T04 §6`  | Gated modular prediction, measured           |   6   |
-| [ ] | `D01 T04 §7`  | Gated modular prediction in format version 3 |   3   |
+| [x] | `D01 T04 §7`  | Gated modular prediction in format version 3 |   3   |
 | [ ] | `D05 T01 §5`  | Milestone 5 gate: Exact repeats              |   4   |
 
 ### Phase 5 -- Milestone 6: Faster than WebP to decode

@@ -1,0 +1,89 @@
+{
+  "ref": "D01 T04 \u00a77",
+  "title": "Gated Modular Prediction in Format Version 3",
+  "implementation_sha": "1063ff950b4e8166fbaad1f37b32812aea159f69",
+  "date": "2026-10-30",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/01-compression/D01-T04-s7.md",
+      "verdict": "clean"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/01-compression/D01-T04-s7.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "git diff --stat 207073ea371317ef34ce3230ba6836bd0d445e6f HEAD -- src/cm.c src/rc.h src/rf.h tests/rfi_ref.py spec/FOLD.md tests/test_correctness.py -> empty; research/variants/gated-gradient.patch absent",
+    ".venv/bin/python tests/test_correctness.py -> 39 passed, 0 failed (gradient, stripes, oracle, known-answer OK)"
+  ],
+  "completion": {
+    "report": "docs/reviews/01-compression/D01-T04-s7.md",
+    "verdict": "complete",
+    "candidate": "57f41a56d80368f6ac3316761ac31e7ce5d438c4",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 2,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/01-compression/D01-T04-s7.md",
+    "candidate": "b80b5db62f0a1ee5d735dbb00056c0039f4327f1",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}
