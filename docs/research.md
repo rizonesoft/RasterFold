@@ -535,6 +535,16 @@ redundancy. The accepted ideas of 4.2 to 4.7 are combined and measured once,
 then ported together as one new format version, so users see one format change
 rather than one per experiment. Version 2 files keep decoding.
 
+### 4.9 Exact modular planes
+
+**Owner:** `D01 T04 §4` (measured), `D01 T04 §5` (the port).
+
+Milestone 5's two missing images are exact linear planes modulo 256 in every channel (`tests/test_correctness.py`: `syn_gradient` R = `3x mod 256`, G = `5y mod 256`, B = `(x + 2y) mod 256`; `syn_stripes` one colour per row, R = `17y mod 256`, G = 40, B = `(200 - 3y) mod 256`). Their cost is not a per-sample floor but the wraparounds and row starts: `rasterfold inspect` on today's files (2026-10-30) gives `syn_gradient` streams G 129, R 1,624, B 2,430 bytes and `syn_stripes` G 17, R 214, B 93 bytes, so the constant-step G planes are almost free while each wrap of R and B costs bits, because method 1 predicts the unwrapped value and clamps. A modular gradient on a channel's own sample values, `gp = (W + N - NW) mod 256` inside the image, `(2N - NN) mod 256` in column 0 from row 2, and `(2W - WW) mod 256` in row 0 from column 2, is exact on every such plane, wraps included. A planning probe on 2026-10-30 (raw RGB planes, all three channels) found `gp` exact on 100% of defined samples of `syn_gradient`, `syn_stripes`, `syn_wide`, and `syn_odd`; gated on `gp` having been exact at W and at N, the gate opens on 99.6% of `syn_gradient`'s samples and 99.6% of `syn_stripes`' with every gated sample exact, on 1.6% of `kodim01`'s with 58% exact, on 32.5% of `kodim20`'s (its flat sky) with 97.9% exact, on 88.8% of `ic_artificial`'s with 98.8% exact, and on none of `syn_noise`'s.
+
+The design is a flag, not a model. Inside the gate one binary decision says whether the sample equals `gp`; when it does, the value is `gp` and the residual is not coded, so a gated hit costs one well-predicted decision instead of the residual's three or more. Outside the gate, and after a miss, the residual is coded exactly as today. The flag's probability comes from a direct counter (not mixed) chosen by the length of the current run of gated hits and whether `gp` was exact at NE and NW. Everything is per channel, so the three channel threads and the one-thread pipeline stay byte-identical. Prior art: PNG's filters predict modulo 256 (`Sub`, `Up`, `Average`, `Paeth`, ISO/IEC 15948 section 9), lossless WebP adds its predicted residuals modulo 256 per component (RFC 9649, the predictor transform of the lossless format), JPEG XL's `Gradient` predictor clamps `W + N - NW` to the range of W and N (ISO/IEC 18181-1, modular predictor 5) and so cannot follow a wrap, and JPEG-LS enters a run mode when the local gradients are zero, coding run lengths instead of residuals (ITU-T T.87, section A.7). The flag borrows the run-mode idea, gated on exactness of a modular predictor instead of on flatness.
+
+Non-goals: no change to the WP, LMS, or context models; no backward references or colour cache (`D01 T06`); no eighth model (the alternative-prediction context is follow-up 2 if this misses, the shape `D01 T04 §2` measured for the match model).
+
 ---
 
 ## 5. Speed designs

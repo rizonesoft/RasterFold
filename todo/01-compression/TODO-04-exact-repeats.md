@@ -2,7 +2,7 @@
 schema_version: 1
 id: exact-repeats
 domain: 01-compression
-status: done
+status: active
 title: "TODO-04 -- Exact Repeats: a Match Model"
 depends_on: []
 frozen: true
@@ -22,6 +22,7 @@ track: C4
 - [`docs/research.md`](../../docs/research.md) -- section 7 item 4 and section 8 (lpaq's match model, WebP's backward references)
 - [`src/cm.c`](../../src/cm.c) -- `cm_model` and `code_bit`, where a match model adds a context and a mixer input
 - -> XREF: D01 T03 §1 -- format version 3, which §2 measures against and §3 extends before the 1.0 release freezes it
+- [`docs/research.md`](../../docs/research.md) -- section 4.9 (exact modular planes), the design §4 measures and §5 ports
 
 ## Outcome
 
@@ -39,6 +40,8 @@ track: C4
 |   1   |   §1    | Where the repeats are | -- |  [x]   |
 |   2   |   §2    | A match model, measured | §1, D01 T03 §1 |  [x]   |
 |   3   |   §3    | The match model in format version 3 | §2, D01 T03 §1 |  [x]   |
+|   4   |   §4    | Exact modular planes, measured | §3, D01 T03 §1 |  [ ]   |
+|   5   |   §5    | Exact modular planes in format version 3 | §4, D01 T03 §1 |  [ ]   |
 
 ---
 
@@ -109,6 +112,40 @@ Ports an accepted match model into version 3 before the 1.0 release freezes it (
 
 > **Verified:** 2026-10-30 | §3 | 3bc5bdb6a23447e2aa24d8ccadee9ee96d4d7ef8
 > **Review:** `docs/reviews/d01-t04-s3.json`
+## 4. Exact Modular Planes, Measured
+
+**Origin:** discovered run=28dc11967304 2026-10-30 -- missed-milestone policy (`D99 T01 §4`) after `D01 T04 §2` missed the Milestone 5 `syn_gradient` and `syn_stripes` bars (`D05 T01 §5`); follow-up 1 of up to 3
+
+**Needs:** Idle machine (timing)
+
+Implements `docs/research.md` section 4.9 as a prototype in `build/research/try.c` and measures it against Milestone 5's bars. The two images the match model could not bring under JPEG XL e9 are exact linear planes modulo 256 in every channel, and their bytes go to wraparounds and row starts, not to a per-sample floor (section 4.9 quotes the per-stream sizes). A flag coded when a modular gradient was exact at W and at N says "this sample equals the modular gradient" and skips the residual.
+
+Baseline, measured 2026-10-30 on `src/cm.c` (unchanged since `D01 T03 §1`'s `207073e`): `python3 research/ab.py size src/cm.c synth -v` gives `synth` total 206,229 (`syn_gradient` 4,227, e9 616; `syn_stripes` 368, e9 271; `syn_ui` 1,410, e9 2,195; `syn_text` 1,447, e9 2,038); `photo` total 30,812,732 and `tp` total 6,641,390 (`D01 T04 §2`'s re-measured baseline, same code); `python3 research/ab.py bench -r3 -t1 measure kodim01` TOTAL enc 760.5 ms, dec 793.8 ms; `-t3` enc 402.3 ms, dec 405.1 ms.
+
+Design, fixed before any run (the implementer does not choose these): for each channel, on that channel's own coded sample values `v` (0 to 255), `gp(x, y)` is `(W + N - NW) & 255` when `x > 0` and `y > 0`, `(2N - NN) & 255` when `x == 0` and `y >= 2`, `(2W - WW) & 255` when `y == 0` and `x >= 2`, and undefined otherwise; `ex(x, y)` is true when `gp(x, y)` is defined and `v(x, y) == gp(x, y)`. The gate is `x > 0 && y > 0 && ex(x - 1, y) && ex(x, y - 1)`. Inside the gate the encoder codes one binary decision `f = (v == gp)` on the channel's range coder before any residual decision, with a 16-bit probability from one of 64 direct counters per channel, chosen by `min(run, 15) * 4 + ex(x + 1, y - 1) * 2 + ex(x - 1, y - 1)` (`ex(x + 1, y - 1)` is false in the last column; `run` counts the consecutive gated hits in this row ending at `x - 1`, reset at each row start and by a gated miss), starting at one half and updated with the codec's existing visit-count rate schedule (`RATE`, the visit count capped at 60 as for the model rows). On `f == 1` the sample is `gp` and no residual decision is coded; the residual `r = fold(v - predv)` still feeds every later state update (`r0`, LMS, the WP errors, `xe`, `xf`) exactly as if it had been coded, while the residual counters and mixer weights are not updated. Outside the gate, and on `f == 0`, the residual is coded as today. The parameter grid is listed now and nothing else is tried: the counter context (the 64 above, or `min(run, 15)` alone) times the rate (the `RATE` schedule, or a fixed shift of 5), four variants; `photo` picks among variants that clear every bar, `tp` confirms.
+
+- [ ] Build `build/research/try.c` from `src/cm.c` with the design above (version 3 path only), and check it: one-thread and three-thread output byte-identical and round-tripping on all 55 distinct corpus images (`synth`, `photo`, `tp`). Done when: the identity count is quoted (55/55) with the command that produced it.
+- [ ] Measure each of the four variants with `python3 research/ab.py size build/research/try.c synth -v`, `photo`, and `tp`, and the chosen one's time with `python3 research/ab.py ab src/cm.c build/research/try.c -n5 -t1 measure kodim01` and `-t3`, alternating. Done when: every figure is quoted against the bar: `syn_gradient` below 616 and `syn_stripes` below 271 bytes, `syn_ui` below 2,195 and `syn_text` below 2,038, `photo` total at most 30,828,138 (baseline +0.05%) with no `photo` image more than 0.1% larger, `tp` total at most 6,644,710 (baseline +0.05%), and min-time encode and decode B/A at most 1.03 at `-t1` and at `-t3` (Milestone 5's no-regression rule).
+- [ ] On a pass, export the winner as `research/variants/exact-plane.patch` against `src/cm.c`; on a miss, record the negative result as a row of `docs/research.md` section 3.2 with the full `synth`, `photo`, and `tp` summary lines, update section 4.9, and leave no patch. Done when: the patch exists with the bar quoted beside it, or the row does.
+- [ ] Commit: `"research: measure exact modular planes"`
+
+**Test checkpoint:** `python3 research/ab.py size build/research/try.c synth -v` shows the chosen variant's `syn_gradient` and `syn_stripes` against 616 and 271, `photo` and `tp` totals are quoted against 30,828,138 and 6,644,710, the `ab` ratios against 1.03, and the 55/55 thread identity count; a miss ships the measurement and the section 3.2 row, and §5 takes its rejection path.
+
+## 5. Exact Modular Planes in Format Version 3
+
+**Origin:** discovered run=28dc11967304 2026-10-30 -- missed-milestone policy (`D99 T01 §4`) after `D01 T04 §2` missed the Milestone 5 bars (`D05 T01 §5`); the port of follow-up 1
+
+Ports §4's accepted flag into format version 3 before the 1.0 release freezes it (the pre-release rule in `todo/README.md`, Frozen behavior). If §4 rejected the flag, this section records that: the port items below move out of the checklist as struck prose (an unticked struck item in a shipped section fails `validate`, the lesson of §3), a ticked record item cites §4's stamp, and a ticked item proves version 3 unchanged (`git diff --stat` of `src/cm.c`, `tests/rfi_ref.py`, `spec/FOLD.md`, and `tests/test_correctness.py` from §4's stamp prints nothing, and `python3 tests/test_correctness.py` passes).
+
+- [ ] Apply `research/variants/exact-plane.patch` to the version 3 path of `src/cm.c`, keeping version 2 decoding unchanged. Done when: `python3 scripts/build.py --target linux-x64` and `--target windows-x64` exit 0 with no warning, and the decoder imports every version 2 and version 3 corpus file back to its pixels at `--threads 1` and `--threads 3`.
+- [ ] Specify the flag in `spec/FOLD.md` (method 1, version 3: `gp`, `ex`, the gate, the 64 counters and their update, and that a hit codes no residual), write it into `tests/rfi_ref.py` from that text (not from the C), and regenerate `KAT_FOLD3` in `tests/test_correctness.py`. Done when: codec and oracle agree byte for byte on every round-trip case, including the `gradient` and `stripes` cases.
+- [ ] Run `python3 tests/fuzz_decode.py 300 1` on Linux and Windows. Done when: every mutated file is rejected or decoded without a crash, with the seed quoted.
+- [ ] Commit: `"codec: version 3 codes exact modular planes with a flag"`
+
+**Test checkpoint:** `python3 tests/test_correctness.py` passes every case with the oracle agreeing; `python3 research/ab.py size src/cm.c synth -v` shows `syn_gradient` below 616 and `syn_stripes` below 271 bytes.
+
+**Freeze check:** `KAT_FOLD` (version 2) decodes unchanged; the operator's standing approval (`D99 T01 §3`) covers extending the unreleased version 3.
+
 ## Verification
 
 - [ ] `pwsh scripts/check-all.ps1` exits 0
