@@ -275,14 +275,27 @@ The grid is listed now and nothing else is tried: (`g4`, context off, `M` 1), (`
 
 **Origin:** discovered run=28dc11967304 2026-10-30 -- missed-milestone policy (`D99 T01 §4`) after `D01 T04 §6` missed the Milestone 5 bars (`D05 T01 §5`); the port of follow-up 3
 
+> **Started:** 2026-10-30T04:44:13Z
+
 Ports §8's accepted variant into format version 3 before the 1.0 release freezes it (the pre-release rule in `todo/README.md`, Frozen behavior). If §8 rejects every variant, this section records that instead: the port items move out of the checklist as struck prose (an unticked struck item in a shipped section fails `validate`), a ticked record item cites §8's stamp, and a ticked item proves version 3 unchanged (`git diff --stat 207073ea371317ef34ce3230ba6836bd0d445e6f HEAD -- src/cm.c src/rc.h src/rf.h tests/rfi_ref.py spec/FOLD.md tests/test_correctness.py` prints nothing, `research/variants/learned-gradient.patch` is absent, and `python3 tests/test_correctness.py` passes), with `Started:` committed together with that rewrite, before its plan review (`process-todo-section` step 3a).
 
-- [ ] Apply `research/variants/learned-gradient.patch` to the version 3 path of `src/cm.c`, keeping version 2 decoding unchanged. Done when: `python3 scripts/build.py --target linux-x64` and `--target windows-x64` exit 0 with no warning, and the decoder imports every version 2 and version 3 corpus file back to its pixels at `--threads 1` and `--threads 3`.
-- [ ] Specify the choice in `spec/FOLD.md` (method 1, version 3: `gp`, `ex`, the accepted gate, the error sums with their context, margin, cap and halving, the chosen prediction, and the weight-set offset), write it into `tests/rfi_ref.py` from that text (not from the C), and regenerate `KAT_FOLD3` in `tests/test_correctness.py`. Done when: codec and oracle agree byte for byte on every round-trip case, including the `gradient` and `stripes` cases.
-- [ ] Run `python3 tests/fuzz_decode.py 300 1` on Linux and Windows. Done when: every mutated file is rejected or decoded without a crash, with the seed quoted.
-- [ ] Commit: `"codec: version 3 chooses a gated gradient where it has been better"`
+**Rejected 2026-10-30:** §8 rejected every variant (stamped `daa02cb215429c851f506266b3eda2f440e37515`, stamp commit `06477c0`, `docs/reviews/01-compression/D01-T04-s8.md`): all four cleared `syn_gradient < 616` (112 to 127 bytes) and `syn_stripes < 271` (105 to 117), and only v2 (`g4`, context off, margin 2) kept every `photo` image within 0.1%, but v2 missed the timing bar (`synth` at one thread, encode totals 1.094 and 1.080 and decode totals 1.136 and 1.127 in two disjoint pools of alternating runs, against 1.03) and its decode `alloc_peak` on `measure/image.bmp` exceeded the frozen bar by 31 bytes, so no candidate exists, `research/variants/learned-gradient.patch` does not exist, and nothing is ported. The three port items and the port commit are struck (as prose below, outside the checklist) with no owner, because no accepted variant exists to hand on; follow-up 3 was the last the missed-milestone policy (`D99 T01 §4`) allows, so the Milestone 5 miss (`D05 T01 §5`) goes to the operator. What remains is proving version 3 unchanged: `src/cm.c`, `src/rc.h`, `src/rf.h`, `tests/rfi_ref.py`, `spec/FOLD.md`, and `tests/test_correctness.py` (with its `KAT_FOLD3`) carry no change since the `D01 T03 §1` stamp `207073e`, which covers §8's whole candidate range, and the correctness suite passes.
 
-**Test checkpoint:** `python3 research/ab.py size src/cm.c synth -v` shows `syn_gradient` below 616 and `syn_stripes` below 271 bytes, and `python3 tests/test_correctness.py` passes every case with codec and oracle byte-identical; on §8's rejection, the `git diff --stat` above prints nothing and `python3 tests/test_correctness.py` passes on the unchanged version 3 path.
+**Port steps struck by the rejection** (the plan as written before §8 measured; never built, no owner):
+
+~~Apply `research/variants/learned-gradient.patch` to the version 3 path of `src/cm.c`, keeping version 2 decoding unchanged. Done when: `python3 scripts/build.py --target linux-x64` and `--target windows-x64` exit 0 with no warning, and the decoder imports every version 2 and version 3 corpus file back to its pixels at `--threads 1` and `--threads 3`.~~
+
+~~Specify the choice in `spec/FOLD.md` (method 1, version 3: `gp`, `ex`, the accepted gate, the error sums with their context, margin, cap and halving, the chosen prediction, and the weight-set offset), write it into `tests/rfi_ref.py` from that text (not from the C), and regenerate `KAT_FOLD3` in `tests/test_correctness.py`. Done when: codec and oracle agree byte for byte on every round-trip case, including the `gradient` and `stripes` cases.~~
+
+~~Run `python3 tests/fuzz_decode.py 300 1` on Linux and Windows. Done when: every mutated file is rejected or decoded without a crash, with the seed quoted.~~
+
+~~Commit: `"codec: version 3 chooses a gated gradient where it has been better"`~~
+
+- [ ] Record the rejection: the **Rejected 2026-10-30** note above cites §8's stamp and its failed bars, and the four port steps are struck as prose outside the checklist. Done when: the note and the struck steps are in this section.
+- [ ] Confirm version 3 is unchanged by the rejection: `git diff --stat 207073ea371317ef34ce3230ba6836bd0d445e6f HEAD -- src/cm.c src/rc.h src/rf.h tests/rfi_ref.py spec/FOLD.md tests/test_correctness.py` prints nothing, `research/variants/learned-gradient.patch` is absent, and `python3 tests/test_correctness.py` passes every case. Done when: all three are quoted.
+- [ ] Commit: `"todo: record the learned gradient's rejection in version 3"`
+
+**Test checkpoint:** `python3 research/ab.py size src/cm.c synth -v` shows `syn_gradient` below 616 and `syn_stripes` below 271 bytes, and `python3 tests/test_correctness.py` passes every case with codec and oracle byte-identical; on §8's rejection, the `git diff --stat` above prints nothing and `python3 tests/test_correctness.py` passes on the unchanged version 3 path. §8 rejected every variant, so the accepted-variant checkpoint does not apply and the rejection checkpoint is the one this section proves.
 
 **Freeze check:** `KAT_FOLD` (version 2) decodes unchanged; the operator's standing approval (`D99 T01 §3`) covers extending the unreleased version 3.
 
