@@ -1425,9 +1425,11 @@ class RestartedMarkerTests(unittest.TestCase):
         return subprocess.run(["git", "-C", str(self.root), "-c", "user.name=Test", "-c", "user.email=t@example.com",
                                *args], capture_output=True, text=True, check=True).stdout.strip()
 
-    def commit(self, message):
+    def commit(self, message, at=None):
         self.git("add", "-A")
-        self.git("commit", "-q", "-m", message)
+        env = {**os.environ, "GIT_COMMITTER_DATE": at} if at else None
+        subprocess.run(["git", "-C", str(self.root), "-c", "user.name=Test", "-c", "user.email=t@example.com",
+                        "commit", "-q", "-m", message], capture_output=True, text=True, check=True, env=env)
         return self.git("rev-parse", "HEAD")
 
     def write(self, prose="Fixture prose.", restart="", started="2026-10-30T01:00:00Z", crlf=False):
@@ -1435,7 +1437,7 @@ class RestartedMarkerTests(unittest.TestCase):
             "> **Started:** 2026-10-30T01:00:00Z", f"> **Started:** {started}")
         (self.root / self.TODO).write_bytes(text.replace("\n", "\r\n" if crlf else "\n").encode("utf-8"))
 
-    def reviewed(self, kind, candidate=None, highest="none"):
+    def reviewed(self, kind, candidate=None, highest="none", at=None):
         report = self.root / self.REPORT
         report.parent.mkdir(parents=True, exist_ok=True)
         base = {"writer": "copilot", "reviewer": "astra", "cli": "codex", "model": "gpt-6-astra", "skipped": []}
@@ -1445,7 +1447,7 @@ class RestartedMarkerTests(unittest.TestCase):
             self.dispatch.record(report, {**base, "effort": step["effort"], "lenses": step["lenses"],
                                           "review": f"HIGHEST: {highest}\nOVERALL: "
                                                     f"{'approve' if highest == 'none' else 'needs-attention'}"},
-                                 "2026-10-30T03:00:00Z")
+                                 at or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
             return
         step = self.dispatch.scheduled(self.schedule, kind, [], False)
         footer = "HIGHEST: none\nPLAN: complete\nOVERALL: approve" if kind == "plan" else "COMPLETION: complete"
@@ -1563,8 +1565,23 @@ class RestartedMarkerTests(unittest.TestCase):
 
     def test_stamping_a_commit_older_than_the_restart_is_refused(self):
         fixed = self.late_review(restart=lambda fixed: self.line(fixed[:12]))
-        self.finish()
-        self.refused(fixed, "is not the stamped commit")
+        self.reviewed("completion", fixed)
+        self.reviewed("round")
+        self.commit("review an implementation older than the restart")
+        self.refused(fixed, f"the restart commit {self.git('rev-parse', 'HEAD~1')} is not the stamped commit")
+
+    def test_a_round_run_before_the_restart_and_committed_after_it_is_refused(self):
+        self.late_review()
+        fixed = self.git("log", "--format=%H", "-n1", "--grep=correct the section")
+        self.reviewed("completion", self.git("rev-parse", "HEAD"))
+        self.reviewed("round", at="2026-10-30T03:00:00Z")
+        report = self.root / self.REPORT
+        pending = report.read_bytes()
+        self.git("checkout", "--", self.REPORT)
+        self.write(prose="Corrected fixture prose.", restart="\n" + self.line(fixed[:12]))
+        self.commit("restart, with the round left uncommitted", at="2026-10-30T03:30:00+00:00")
+        report.write_bytes(pending)
+        self.refused(self.commit("commit the earlier round"), "was run after the restart commit")
 
     def test_restart_without_a_later_round_is_refused(self):
         self.late_review()
