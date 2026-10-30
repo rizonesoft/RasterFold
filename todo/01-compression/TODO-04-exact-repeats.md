@@ -85,13 +85,19 @@ The model keeps, per channel, a pointer to the best earlier match (found by hash
 > **Review:** `docs/reviews/d01-t04-s2.json`
 ## 3. The Match Model in Format Version 3
 
+> **Started:** 2026-10-30T00:58:03Z
+
 Ports an accepted match model into version 3 before the 1.0 release freezes it (the pre-release rule in `todo/README.md`, Frozen behavior). If §2 rejected the model, this section records that and strikes its items.
 
-- [ ] Apply `research/variants/match-model.patch` to the version 3 path of `src/cm.c`, keeping version 2 decoding unchanged. Done when: `build.ps1` exits 0 and the decoder imports every version 2 and version 3 file back to its pixels (the reverse of the export).
-- [ ] Write the model into `tests/rfi_ref.py` from the spec change, update `spec/FOLD.md`, and regenerate `KAT_FOLD3`. Done when: codec and oracle agree on every round-trip case.
-- [ ] Commit: `"codec: version 3 predicts exact repeats from a match model"`
+**Rejected 2026-10-30:** §2 rejected the model (stamped `df0ccc9`, `docs/reviews/01-compression/D01-T04-s2.md`): `syn_gradient` 3,326 bytes against the 616 bar and `syn_stripes` 381 against 271, so `research/variants/match-model.patch` does not exist and nothing is ported. The two port items and the port commit are struck with no owner, because no accepted variant exists to hand on; the measured photo gain is a separate lead in `todo/backlog.md` B-002, not this section's debt. What remains is proving version 3 unchanged: `src/cm.c`, `tests/rfi_ref.py`, `spec/FOLD.md`, and `tests/test_correctness.py` (with its `KAT_FOLD3`) carry no change since the `D01 T03 §1` stamp `207073e`, and the correctness suite passes.
 
-**Test checkpoint:** `python tests/test_correctness.py` passes every case; `python research/ab.py size synth -v` shows the four target images below JPEG XL e9.
+- [ ] ~~Apply `research/variants/match-model.patch` to the version 3 path of `src/cm.c`, keeping version 2 decoding unchanged. Done when: `build.ps1` exits 0 and the decoder imports every version 2 and version 3 file back to its pixels (the reverse of the export).~~
+- [ ] ~~Write the model into `tests/rfi_ref.py` from the spec change, update `spec/FOLD.md`, and regenerate `KAT_FOLD3`. Done when: codec and oracle agree on every round-trip case.~~
+- [ ] ~~Commit: `"codec: version 3 predicts exact repeats from a match model"`~~
+- [ ] Confirm version 3 is unchanged by the rejection: `git diff --stat 207073ea371317ef34ce3230ba6836bd0d445e6f HEAD -- src/cm.c src/rc.h src/rf.h tests/rfi_ref.py spec/FOLD.md tests/test_correctness.py` prints nothing, `research/variants/match-model.patch` is absent, and `python3 tests/test_correctness.py` passes every case. Done when: all three are quoted.
+- [ ] Commit: `"todo: record the match model's rejection in version 3"`
+
+**Test checkpoint:** `python3 tests/test_correctness.py` passes every case on the unchanged version 3 path, and the `git diff --stat` above prints nothing. The accepted-model checkpoint (`python research/ab.py size synth -v` showing the four target images below JPEG XL e9) does not apply: §2's rejection left nothing to port, and the missed target passes to `D05 T01 §5`'s missed-milestone policy.
 
 **Freeze check:** `KAT_FOLD` (version 2) decodes unchanged; the operator's standing approval (`D99 T01 §3`) covers extending the unreleased version 3.
 
