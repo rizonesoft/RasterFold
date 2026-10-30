@@ -1339,5 +1339,200 @@ class RepositoryPin(unittest.TestCase):
                 todo_graph.schedule_ok(root, data, "D00 T01 §6", False)
 
 
+RESTART_TODO = """---
+schema_version: 1
+id: restart-fixture
+domain: 00-workspace
+status: active
+title: "TODO-01 -- Restart fixture"
+track: Z1
+---
+
+# TODO-01 -- Restart fixture
+
+> **Goal:** Fixture for the Restarted marker.
+
+## Implementation Order
+
+| Order | Section | Deliverable | Depends On | Status |
+| :---: | :-----: | ----------- | ---------- | :----: |
+|   1   |   §1    | The restarted thing | - |  [ ]   |
+
+---
+
+## 1. The Restarted Thing
+
+{prose}
+
+> **Started:** 2026-10-30T01:00:00Z{restart}
+
+- [x] Did the thing
+- [ ] Commit: `"fixture: the thing"`
+
+**Test checkpoint:** `true` proves the fixture.
+"""
+
+
+class RestartedMarkerTests(unittest.TestCase):
+    """`stamp` with a plan review that followed `Started:` (D00 T01 §11): refused without `> **Restarted:**`, accepted
+    with a well-formed one recorded after the review, and every refusal leaves the TODO file and receipt untouched."""
+
+    REF = "D00 T01 §1"
+    TODO = "todo/00-workspace/TODO-01-restart-fixture.md"
+    REPORT = "docs/reviews/00-workspace/D00-T01-s1.md"
+
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location("todo_graph_restart", SCRIPTS / "todo-graph.py")
+        cls.tg = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = cls.tg
+        try:
+            spec.loader.exec_module(cls.tg)
+        finally:
+            del sys.modules[spec.name]
+        cls.dispatch = cls.tg.review_dispatch()
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        (self.root / ".conclave").mkdir()
+        (self.root / ".conclave/reviewers.toml").write_bytes(REPO_PIN.read_bytes())
+        self.schedule = self.dispatch.load_pin(str(self.root / ".conclave/reviewers.toml"))["schedule"]
+        (self.root / "todo/00-workspace").mkdir(parents=True)
+        self.saved = (self.tg.REPO, self.tg.TODO_DIR, self.tg.PLAN)
+        self.tg.REPO = self.root
+        self.tg.TODO_DIR = self.root / "todo"
+        self.tg.PLAN = self.root / "todo/implementation-plan.md"
+        self.git("init", "-q")
+
+    def tearDown(self):
+        self.tg.REPO, self.tg.TODO_DIR, self.tg.PLAN = self.saved
+        self._tmp.cleanup()
+
+    def git(self, *args):
+        return subprocess.run(["git", "-C", str(self.root), "-c", "user.name=Test", "-c", "user.email=t@example.com",
+                               *args], capture_output=True, text=True, check=True).stdout.strip()
+
+    def commit(self, message):
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", message)
+        return self.git("rev-parse", "HEAD")
+
+    def write(self, prose="Fixture prose.", restart=""):
+        (self.root / self.TODO).write_text(RESTART_TODO.format(prose=prose, restart=restart), encoding="utf-8")
+
+    def reviewed(self, kind, candidate=None, highest="none"):
+        report = self.root / self.REPORT
+        report.parent.mkdir(parents=True, exist_ok=True)
+        base = {"writer": "copilot", "reviewer": "astra", "cli": "codex", "model": "gpt-6-astra", "skipped": []}
+        if kind == "round":
+            rounds = self.dispatch.read_rounds(report.read_text(encoding="utf-8"))
+            step = self.dispatch.scheduled(self.schedule, "round", rounds, False)
+            self.dispatch.record(report, {**base, "effort": step["effort"], "lenses": step["lenses"],
+                                          "review": f"HIGHEST: {highest}\nOVERALL: approve"}, "2026-10-30T03:00:00Z")
+            return
+        step = self.dispatch.scheduled(self.schedule, kind, [], False)
+        footer = "HIGHEST: none\nPLAN: complete\nOVERALL: approve" if kind == "plan" else "COMPLETION: complete"
+        self.dispatch.record_completion(report, {**base, "effort": step["effort"], "lenses": step["lenses"],
+                                                 "review": footer}, "2026-10-30T02:00:00Z", candidate, kind)
+
+    def late_review(self, restart=None, restart_before_review=False):
+        """Started, then a correction, then the plan review of the correction; returns the corrected commit."""
+        self.write()
+        self.commit("start")
+        self.write(prose="Corrected fixture prose.")
+        fixed = self.commit("correct the section after Started")
+        if restart_before_review:
+            self.write(prose="Corrected fixture prose.", restart="\n" + restart(fixed))
+            self.commit("restart")
+        self.reviewed("plan", fixed)
+        self.commit("record the plan review")
+        if restart and not restart_before_review:
+            self.write(prose="Corrected fixture prose.", restart="\n" + restart(fixed))
+            self.commit("restart")
+        return fixed
+
+    def finish(self, round_after=True):
+        head = self.git("rev-parse", "HEAD")
+        self.reviewed("completion", head)
+        if round_after:
+            self.reviewed("round")
+        return self.commit("build and review")
+
+    def stamp(self, sha):
+        return self.tg.stamp(self.root, self.REF, sha, [{"round": 1, "report": self.REPORT, "verdict": "clean"}],
+                             ["true -> ok"], "2026-10-30", sync_plan=False,
+                             completion={"report": self.REPORT, "verdict": "complete"}, plan=self.REPORT)
+
+    def refused(self, sha, needle):
+        before = (self.root / self.TODO).read_bytes()
+        with self.assertRaises(self.tg.Refused) as caught:
+            self.stamp(sha)
+        self.assertIn(needle, str(caught.exception))
+        self.assertEqual((self.root / self.TODO).read_bytes(), before, "a refusal leaves the TODO file untouched")
+        self.assertFalse((self.root / "docs/reviews/d00-t01-s1.json").exists(), "a refusal writes no receipt")
+
+    @staticmethod
+    def line(sha, reason="the plan review read the correction"):
+        return f"> **Restarted:** 2026-10-30T02:30:00Z | plan review {sha} | {reason}"
+
+    def test_without_restart_a_late_plan_review_is_refused(self):
+        self.late_review()
+        self.refused(self.finish(), "is not the commit the build began at")
+
+    def test_restart_after_the_review_stamps_and_reads_back(self):
+        self.late_review(restart=lambda fixed: self.line(fixed[:12]))
+        sha = self.finish()
+        receipt = self.stamp(sha)
+        data = json.loads((self.root / receipt).read_text(encoding="utf-8"))
+        self.tg.receipt_data_ok(data, self.REF, sha, root=self.root)
+        text = (self.root / self.TODO).read_text(encoding="utf-8")
+        self.assertIn("> **Started:** 2026-10-30T01:00:00Z\n> **Restarted:** ", text, "Started keeps its instant")
+        self.assertIn(f"> **Verified:** 2026-10-30 | §1 | {sha}", text)
+
+    def test_restart_naming_another_sha_is_refused(self):
+        self.late_review(restart=lambda fixed: self.line("abcdef1234567"))
+        self.refused(self.finish(), "names plan review abcdef1234567")
+
+    def test_restart_committed_before_the_review_was_recorded_is_refused(self):
+        self.late_review(restart=lambda fixed: self.line(fixed[:12]), restart_before_review=True)
+        self.refused(self.finish(), "does not yet hold the returned plan review")
+
+    def test_stamping_a_commit_older_than_the_restart_is_refused(self):
+        fixed = self.late_review(restart=lambda fixed: self.line(fixed[:12]))
+        self.finish()
+        self.refused(fixed, "is not the stamped commit")
+
+    def test_restart_without_a_later_round_is_refused(self):
+        self.late_review()
+        head = self.git("rev-parse", "HEAD")
+        self.reviewed("completion", head)
+        self.reviewed("round")
+        fixed = self.git("log", "--format=%H", "-n1", "--grep=correct the section")
+        self.write(prose="Corrected fixture prose.", restart="\n" + self.line(fixed[:12]))
+        self.refused(self.commit("restart after the only round"), "no returned review round")
+
+    def test_malformed_repeated_and_misplaced_lines_are_refused(self):
+        fixed = self.late_review()
+        sha = self.finish()
+        good = self.line(fixed[:12])
+        cases = [
+            ("\n" + good.replace("2026-10-30T02:30:00Z", "2026-10-30 02:30"), "malformed"),
+            ("\n" + good.replace(fixed[:12], fixed[:6]), "malformed"),
+            ("\n" + good.replace(fixed[:12], fixed[:12].upper()), "malformed"),
+            ("\n" + self.line(fixed[:12], reason=""), "malformed"),
+            ("\n" + good + "\n" + good, "at most one"),
+            ("\n\n" + good, "directly under"),
+        ]
+        for restart, needle in cases:
+            with self.subTest(needle=needle, restart=restart):
+                self.write(prose="Corrected fixture prose.", restart=restart)
+                self.refused(sha, needle)
+        text = RESTART_TODO.format(prose="Corrected fixture prose.", restart="")
+        (self.root / self.TODO).write_text(
+            text.replace("> **Started:** 2026-10-30T01:00:00Z", good), encoding="utf-8")
+        self.refused(sha, "needs the section's '> **Started:**' line")
+
+
 if __name__ == "__main__":
     unittest.main()

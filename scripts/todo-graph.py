@@ -6421,6 +6421,10 @@ FILED_GAP_RE = re.compile(r"^- Filed: (D\d{2} T\d{2} §[1-9]\d*)(?![\w§]|\.\d)"
 PIN_PATH = ".conclave/reviewers.toml"
 PLAN_KEYS = {"report", "candidate", "reviewer", "model", "effort", "lenses"}
 STARTED_LINE_RE = re.compile(r"^> \*\*Started:\*\* .+$", re.M)
+RESTARTED_PREFIX = "> **Restarted:**"
+RESTARTED_LINE_RE = re.compile(
+    r"^> \*\*Restarted:\*\* \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z \| plan review (?P<sha>[0-9a-f]{7,40}) \| \S.*$"
+)
 ROUND_RECORD_RE = re.compile(r"^## Round ([0-9]+): ", re.M)
 RECEIPT_REVIEW_RE = re.compile(r"^`?(?P<path>docs/reviews/[a-z0-9][a-z0-9.-]*\.json)`?$")
 
@@ -6575,11 +6579,40 @@ def _raw_section_text(text: str, number: int | str) -> str | None:
     return text[head.start():head.end() + end.start() if end else len(text)]
 
 
+def restart_line(body: str, ref: str) -> tuple[str, str] | None:
+    """The section's `> **Restarted:**` line and the plan review sha it names, or None when it has none.
+
+    A restart re-anchors the build start after a plan review that followed `Started:` (see todo/README.md). It is
+    refused, never ignored, when it does not parse, repeats, or does not sit directly under `Started:`, so a typo
+    cannot fall back silently to the old start."""
+    lines = [line.rstrip("\r") for line in (body or "").split("\n")]
+    marks = [i for i, line in enumerate(lines) if line.startswith(RESTARTED_PREFIX)]
+    if not marks:
+        return None
+    require(len(marks) == 1, f"a section carries at most one '{RESTARTED_PREFIX}' line, not {len(marks)}: {ref}")
+    (i,) = marks
+    m = RESTARTED_LINE_RE.fullmatch(lines[i])
+    require(
+        m is not None,
+        f"malformed '{RESTARTED_PREFIX}' line (want '{RESTARTED_PREFIX} <YYYY-MM-DDTHH:MM:SSZ> | plan review "
+        f"<7-40 hex sha> | <reason>'): {lines[i]!r}: {ref}",
+    )
+    require(STARTED_LINE_RE.search("\n".join(lines)) is not None,
+            f"'{RESTARTED_PREFIX}' needs the section's '> **Started:**' line above it: {ref}")
+    require(
+        i > 0 and STARTED_LINE_RE.fullmatch(lines[i - 1]) is not None,
+        f"'{RESTARTED_PREFIX}' must sit on the line directly under '> **Started:**': {ref}",
+    )
+    return lines[i], m["sha"]
+
+
 def build_start(root: Path, path: str, body: str, ref: str) -> str:
     started = STARTED_LINE_RE.search(body or "")
+    restart = restart_line(body, ref)
     first = None
     if started:
         line = started[0].rstrip("\r")
+        anchor = restart[0] if restart else line
         number = ref.rsplit("§", 1)[1]
         out = subprocess.run(
             ["git", "-C", str(root), "log", "--reverse", "--format=%H", "--", path],
@@ -6591,9 +6624,19 @@ def build_start(root: Path, path: str, body: str, ref: str) -> str:
                 capture_output=True, timeout=30,
             )
             section = _raw_section_text(shown.stdout.decode("utf-8", "replace"), number) if shown.returncode == 0 else None
-            if section is not None and line in section.splitlines():
+            held = [s.rstrip("\r") for s in section.split("\n")] if section is not None else []
+            if anchor in held:
+                require(
+                    line in held,
+                    f"the '> **Started:**' line changed after the restart commit {sha}; Started is never "
+                    f"overwritten: {ref}",
+                )
                 first = sha
                 break
+        require(
+            first is not None or not restart,
+            f"cannot find the commit that recorded the '{RESTARTED_PREFIX}' line: commit it before stamping: {ref}",
+        )
     else:
         out = subprocess.run(
             ["git", "-C", str(root), "log", "--reverse", "--format=%H", "-E",
@@ -6606,6 +6649,42 @@ def build_start(root: Path, path: str, body: str, ref: str) -> str:
         f"cannot find the commit the build began at: record '> **Started:**' in the section before the build: {ref}",
     )
     return first
+
+
+def restart_ok(root: Path, ref: str, plan: dict, named: str, start: str, stamp_sha: str) -> None:
+    """The stamp-time checks a `> **Restarted:**` line owes beyond `plan_record`'s candidate-before-start check:
+    it names the recorded plan review, that review was already recorded when the restart was committed, the restart
+    precedes the stamped commit, and a returned review round followed the restart."""
+    candidate, report = plan["candidate"], plan["report"]
+    require(
+        candidate.startswith(named),
+        f"'{RESTARTED_PREFIX}' names plan review {named}, but the recorded plan review's candidate is {candidate}: {ref}",
+    )
+    dispatch = review_dispatch()
+    shown = subprocess.run(["git", "-C", str(root), "show", f"{start}:{report}"], capture_output=True, timeout=30)
+    then = dispatch.read_findings(shown.stdout.decode("utf-8", "replace")) if shown.returncode == 0 else None
+    require(
+        then is not None and any(
+            dispatch.returned_one_pass(e, "plan") and e["candidate"] == candidate for e in then["plans"]
+        ),
+        f"the restart commit {start} does not yet hold the returned plan review of {candidate} in {report}: "
+        f"commit '{RESTARTED_PREFIX}' only after the review it names is recorded: {ref}",
+    )
+    ancestor = subprocess.run(
+        ["git", "-C", str(root), "merge-base", "--is-ancestor", start, stamp_sha], capture_output=True, timeout=30,
+    )
+    require(
+        ancestor.returncode == 0,
+        f"the restart commit {start} is not the stamped commit {stamp_sha} or an ancestor of it: {ref}",
+    )
+    now = dispatch.read_findings((Path(root) / report).read_bytes().decode("utf-8"))
+    rounds_then = sum(1 for e in then["rounds"] if dispatch.returned_review(e))
+    rounds_now = sum(1 for e in (now or {"rounds": []})["rounds"] if dispatch.returned_review(e))
+    require(
+        rounds_now > rounds_then,
+        f"no returned review round in {report} follows the restart commit {start}: run the next round on the "
+        f"restarted candidate before stamping: {ref}",
+    )
 
 
 def section_findings_path(root: Path, ref: str) -> str:
@@ -7080,7 +7159,11 @@ def stamp(
     data["round_cap"] = REVIEW_ROUND_CAP
     if stopped:
         data["cap_outcome"] = cap_outcome.strip()
-    data["plan"] = plan_record(root, plan, ref, start=build_start(root, target.path, body, ref))
+    start = build_start(root, target.path, body, ref)
+    data["plan"] = plan_record(root, plan, ref, start=start)
+    restart = restart_line(body, ref)
+    if restart is not None:
+        restart_ok(root, ref, data["plan"], restart[1], start, sha)
     data["schedule"] = pin_schedule(root, sha, ref)
     receipt_data_ok(data, ref, sha, root=root, surface=surface)
     receipt_path = root / receipt
