@@ -1,0 +1,90 @@
+{
+  "ref": "D01 T04 \u00a72",
+  "title": "A Match Model, Measured",
+  "implementation_sha": "df0ccc95407b67cb98f15880ebefedd507357f9f",
+  "date": "2026-10-30",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/01-compression/D01-T04-s2.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "build/d01-t04-s2/threads.py on the try.c Linux CLI (-Werror build, no warning) -> identical_and_roundtrip=55/55 bad=[] (t1 vs t3 bytes, decode 1->3 and 3->1)",
+    "python3 research/ab.py size build/research/try.c synth -v -> total=205363 geomean=0.5696; syn_gradient 3326 (bar <616), syn_stripes 381 (bar <271), syn_ui 1410, syn_text 1447",
+    "python3 research/ab.py size build/research/try.c photo -v -> total=30766711 (baseline 30812732, ceiling 30828138) worst=0.9989 (kodim17)",
+    "python3 research/ab.py size build/research/try.c tp -v -> total=6633374 (baseline 6641390)",
+    "python3 research/ab.py ab src/cm.c build/research/try.c -n5 -t1|-t3 measure kodim01 -> B/A enc 2.131 dec 1.618 (-t1), enc 1.683 dec 1.537 (-t3)",
+    "bar missed -> negative result in docs/research.md 3.2, research/variants/match-model.patch absent",
+    "python3 scripts/check-all.py --all-targets (at 5e89c7c; df0ccc9 changes docs only) -> 29/29 passed",
+    "python3 scripts/todo-graph.py validate -> 0 fatal, 0 warning(s); python3 scripts/todo-claims.py -> 86 hold, 0 stale; python3 scripts/drift-check.py -> 0 error(s)"
+  ],
+  "completion": {
+    "report": "docs/reviews/01-compression/D01-T04-s2.md",
+    "verdict": "completed",
+    "candidate": "5e89c7c2123dad4bed1185bf2f8969cd4520e343",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/01-compression/D01-T04-s2.md",
+    "candidate": "e819f4d9edd97c3ca965349b9c8e288877036606",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}

@@ -37,7 +37,7 @@ track: C4
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
 |   1   |   §1    | Where the repeats are | -- |  [x]   |
-|   2   |   §2    | A match model, measured | §1, D01 T03 §1 |  [ ]   |
+|   2   |   §2    | A match model, measured | §1, D01 T03 §1 |  [x]   |
 |   3   |   §3    | The match model in format version 3 | §2, D01 T03 §1 |  [ ]   |
 
 ---
@@ -81,6 +81,8 @@ The model keeps, per channel, a pointer to the best earlier match (found by hash
 
 **Test checkpoint:** 55/55 corpus images produce byte-identical `.fold` output at 1 thread and 3 threads and decode across thread counts; the four target sizes are quoted against 616 (`syn_gradient`), 271 (`syn_stripes`), 2,195 (`syn_ui`), and 2,038 (`syn_text`) bytes, the `photo` total against the stamped `D01 T03 §1` `30,812,732` baseline (`<= 30,828,138`), and the held-out `tp` total against `6,641,390` (`<= 6,641,390`); if any condition misses, `docs/research.md` section 3 records the negative result with full `synth`, `photo`, and `tp` summary lines and `-t1`/`-t3` decode ratios, and `research/variants/match-model.patch` is absent.
 
+> **Verified:** 2026-10-30 | §2 | df0ccc95407b67cb98f15880ebefedd507357f9f
+> **Review:** `docs/reviews/d01-t04-s2.json`
 ## 3. The Match Model in Format Version 3
 
 Ports an accepted match model into version 3 before the 1.0 release freezes it (the pre-release rule in `todo/README.md`, Frozen behavior). If §2 rejected the model, this section records that and strikes its items.
