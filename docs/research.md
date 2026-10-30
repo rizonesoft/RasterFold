@@ -548,6 +548,26 @@ Non-goals: no change to the WP, LMS, or context models; no backward references o
 
 **Result (`D01 T04 §4`, 2026-10-30): rejected.** All four variants of the frozen grid miss `syn_stripes < 271` (`357`, `451`, `355`, `440` bytes) and the `photo` bar (+0.474% to +0.572%, 25 of 39 images more than 0.1% worse, `ic_artificial` up to +24%), while `syn_gradient` falls from `4,227` to `366`-`442`, under e9's `616` in every variant. The section 3.2 row gives the figures and the causes: row starts outside the gate, a direct counter's `floor` ceiling (`p = 4092`), and a hit that freezes residual learning; and the design's premise that a hit replaces "the residual's three or more" decisions was wrong, because a zero residual is itself one decision (node 1), so the flag saves nothing where the residual path already predicts well. What carries forward is the evidence that `gp` is the right predictor for wrapped planes; follow-up 2 feeds it to the mixer as model context, covering column 0, instead of escaping around the mixer.
 
+The summary lines `python3 research/ab.py size build/research/try.c <set> -v` printed on 2026-10-30 (geometric means and worst images are ratios against JPEG XL `-e 7`, `e9`, and lossless WebP as `research/ab.py` reports them):
+
+```text
+# baseline src/cm.c at 207073e
+synth total=206229 jxl=226544 ratio=0.9103 geomean=0.5760 worst=1.4647 (syn_gradient) e9=223034 e9_ratio=0.9247 e9_geomean=1.0986 e9_worst=6.8620 (syn_gradient) webp=201248 webp_ratio=1.0248 webp_geomean=1.7601 webp_worst=23.4833 (syn_gradient)
+photo total=30812732 jxl=31782058 ratio=0.9695 geomean=0.9698 worst=1.0000 (kodim17) e9=31400714 e9_ratio=0.9813 e9_geomean=0.9853 e9_worst=1.0152 (kodim16) webp=34138176 webp_ratio=0.9026 webp_geomean=0.8905 webp_worst=1.0100 (ic_deer) measure=1405087 (0.9554 e9=0.9754 webp=0.8844)
+# (64 counters, RATE) no -D
+synth total=202396 jxl=226544 ratio=0.8934 geomean=0.4527 worst=0.9241 (syn_noise) e9=223034 e9_ratio=0.9075 e9_geomean=0.8635 e9_worst=1.7689 (syn_wide) webp=201248 webp_ratio=1.0057 webp_geomean=1.3834 webp_worst=2.3800 (syn_stripes)
+photo total=30958665 jxl=31782058 ratio=0.9741 geomean=0.9780 worst=1.0074 (ic_artificial) e9=31400714 e9_ratio=0.9859 e9_geomean=0.9936 e9_worst=1.0941 (ic_artificial) webp=34138176 webp_ratio=0.9069 webp_geomean=0.8980 webp_worst=1.0848 (ic_artificial) measure=1436665 (0.9769 e9=0.9973 webp=0.9043)
+# (64 counters, fixed rate) -DEP_FIXED
+synth total=202753 jxl=226544 ratio=0.8950 geomean=0.5156 worst=1.7500 (syn_odd) e9=223034 e9_ratio=0.9091 e9_geomean=0.9833 e9_worst=3.5538 (syn_odd) webp=201248 webp_ratio=1.0075 webp_geomean=1.5754 webp_worst=3.8500 (syn_odd)
+photo total=30964709 jxl=31782058 ratio=0.9743 geomean=0.9786 worst=1.0252 (ic_artificial) e9=31400714 e9_ratio=0.9861 e9_geomean=0.9942 e9_worst=1.1135 (ic_artificial) webp=34138176 webp_ratio=0.9070 webp_geomean=0.8985 webp_worst=1.1041 (ic_artificial) measure=1437022 (0.9771 e9=0.9975 webp=0.9045)
+# (16 counters, RATE) -DEP_CTX16
+synth total=202388 jxl=226544 ratio=0.8934 geomean=0.4512 worst=0.9241 (syn_noise) e9=223034 e9_ratio=0.9074 e9_geomean=0.8606 e9_worst=1.7594 (syn_wide) webp=201248 webp_ratio=1.0057 webp_geomean=1.3787 webp_worst=2.3667 (syn_stripes)
+photo total=30982672 jxl=31782058 ratio=0.9748 geomean=0.9795 worst=1.0390 (ic_artificial) e9=31400714 e9_ratio=0.9867 e9_geomean=0.9951 e9_worst=1.1285 (ic_artificial) webp=34138176 webp_ratio=0.9076 webp_geomean=0.8994 webp_worst=1.1189 (ic_artificial) measure=1436816 (0.9770 e9=0.9974 webp=0.9044)
+# (16 counters, fixed rate) -DEP_CTX16 -DEP_FIXED
+synth total=202711 jxl=226544 ratio=0.8948 geomean=0.5102 worst=1.6818 (syn_odd) e9=223034 e9_ratio=0.9089 e9_geomean=0.9730 e9_worst=3.4154 (syn_odd) webp=201248 webp_ratio=1.0073 webp_geomean=1.5590 webp_worst=3.7000 (syn_odd)
+photo total=30988986 jxl=31782058 ratio=0.9750 geomean=0.9802 worst=1.0595 (ic_artificial) e9=31400714 e9_ratio=0.9869 e9_geomean=0.9958 e9_worst=1.1508 (ic_artificial) webp=34138176 webp_ratio=0.9078 webp_geomean=0.8999 webp_worst=1.1410 (ic_artificial) measure=1437177 (0.9772 e9=0.9976 webp=0.9046)
+```
+
 ---
 
 ## 5. Speed designs
