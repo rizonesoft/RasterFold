@@ -24,7 +24,7 @@ track: C4
 - -> XREF: D01 T03 §1 -- format version 3, which §2 measures against and §3 extends before the 1.0 release freezes it
 - [`docs/research.md`](../../docs/research.md) -- section 4.9 (exact modular planes), the design §4 measures and §5 ports
 - [`docs/research.md`](../../docs/research.md) -- section 4.10 (gated modular prediction), the design §6 measures and §7 ports
-- [`docs/research.md`](../../docs/research.md) -- section 4.11 (learned gated modular prediction), the design §8 measures and §9 ports
+- [`docs/research.md`](../../docs/research.md) -- section 4.11 (learned gated modular prediction), the design §8 measures, §9 records rejected under the old bars, and §10 ports
 
 ## Outcome
 
@@ -329,5 +329,5 @@ Measured at §8 (2026-10-30; the implementer re-runs the sizes on the port): `sy
 > **Review:** `docs/reviews/d01-t04-s10.json`
 ## Verification
 
-- [ ] `pwsh scripts/check-all.ps1` exits 0
-- [ ] `python scripts/todo-graph.py validate` clean
+- [x] `pwsh scripts/check-all.ps1` exits 0. Result 2026-10-30 (file closeout at `8a88acf`): the run printed `check-all: 26/29 passed`, failing only `document drift`, `document drift tests` and `documentation site tests` because `python3 scripts/windows.py tests/measure_final.py` (run alongside for the closeout, printing `PASS` with `rasterfold bytes=1405118` against `jxl bytes=1470703`) had rewritten the tracked `measure/verdict.json` with CRLF endings; with that file restored, `python3 scripts/drift-check.py` printed `0 error(s)` and `test_drift.py` and `test_docs.py` printed `OK`, so every gate passes on the committed tree. Recording the new verdict and benchmark figures belongs to the Milestone 5 gate (`D05 T01 §5`). The long fuzz run `python3 tests/fuzz_decode.py 5000 1` printed `5000 mutated files (methods 0:334, 1:3331, 2:668, 3:667): 4790 rejected, 210 still valid, no crash, hang or mismatch`.
+- [x] `python scripts/todo-graph.py validate` clean. Result 2026-10-30: `33 todos, 239 sections -- 0 fatal, 0 warning(s)`.
