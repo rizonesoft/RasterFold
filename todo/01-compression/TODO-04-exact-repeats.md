@@ -147,12 +147,23 @@ The grid is listed now and nothing else is tried: the counter context (the 64 ab
 
 Ports §4's accepted flag into format version 3 before the 1.0 release freezes it (the pre-release rule in `todo/README.md`, Frozen behavior). If §4 rejected the flag, this section records that: the port items below move out of the checklist as struck prose (an unticked struck item in a shipped section fails `validate`, the lesson of §3), a ticked record item cites §4's stamp, and a ticked item proves version 3 unchanged (`git diff --stat` of `src/cm.c`, `tests/rfi_ref.py`, `spec/FOLD.md`, and `tests/test_correctness.py` from §4's stamp prints nothing, and `python3 tests/test_correctness.py` passes).
 
-- [ ] Apply `research/variants/exact-plane.patch` to the version 3 path of `src/cm.c`, keeping version 2 decoding unchanged. Done when: `python3 scripts/build.py --target linux-x64` and `--target windows-x64` exit 0 with no warning, and the decoder imports every version 2 and version 3 corpus file back to its pixels at `--threads 1` and `--threads 3`.
-- [ ] Specify the flag in `spec/FOLD.md` (method 1, version 3: `gp`, `ex`, the gate, the 64 counters and their update, and that a hit codes no residual), write it into `tests/rfi_ref.py` from that text (not from the C), and regenerate `KAT_FOLD3` in `tests/test_correctness.py`. Done when: codec and oracle agree byte for byte on every round-trip case, including the `gradient` and `stripes` cases.
-- [ ] Run `python3 tests/fuzz_decode.py 300 1` on Linux and Windows. Done when: every mutated file is rejected or decoded without a crash, with the seed quoted.
-- [ ] Commit: `"codec: version 3 codes exact modular planes with a flag"`
+**Rejected 2026-10-30:** §4 rejected the flag (stamped `b8d3b191f7088625b141674c0bec097a96e8e26c`, stamp commit `b4786c6`, `docs/reviews/01-compression/D01-T04-s4.md`): every variant of its frozen grid missed `syn_stripes < 271` (357 to 451 bytes) and the `photo` bar (+0.474% to +0.572%), so `research/variants/exact-plane.patch` does not exist and nothing is ported. The three port items and the port commit are struck (as prose below, outside the checklist) with no owner, because no accepted variant exists to hand on; the Milestone 5 miss stays with `D05 T01 §5` and its missed-milestone policy (`D99 T01 §4`), which files follow-up 2. What remains is proving version 3 unchanged: `src/cm.c`, `src/rc.h`, `src/rf.h`, `tests/rfi_ref.py`, `spec/FOLD.md`, and `tests/test_correctness.py` (with its `KAT_FOLD3`) carry no change since the `D01 T03 §1` stamp `207073e`, which covers §4's whole candidate range, and the correctness suite passes.
 
-**Test checkpoint:** `python3 tests/test_correctness.py` passes every case with the oracle agreeing; `python3 research/ab.py size src/cm.c synth -v` shows `syn_gradient` below 616 and `syn_stripes` below 271 bytes.
+**Port steps struck by the rejection** (the plan as written before §4 measured; never built, no owner):
+
+~~Apply `research/variants/exact-plane.patch` to the version 3 path of `src/cm.c`, keeping version 2 decoding unchanged. Done when: `python3 scripts/build.py --target linux-x64` and `--target windows-x64` exit 0 with no warning, and the decoder imports every version 2 and version 3 corpus file back to its pixels at `--threads 1` and `--threads 3`.~~
+
+~~Specify the flag in `spec/FOLD.md` (method 1, version 3: `gp`, `ex`, the gate, the 64 counters and their update, and that a hit codes no residual), write it into `tests/rfi_ref.py` from that text (not from the C), and regenerate `KAT_FOLD3` in `tests/test_correctness.py`. Done when: codec and oracle agree byte for byte on every round-trip case, including the `gradient` and `stripes` cases.~~
+
+~~Run `python3 tests/fuzz_decode.py 300 1` on Linux and Windows. Done when: every mutated file is rejected or decoded without a crash, with the seed quoted.~~
+
+~~Commit: `"codec: version 3 codes exact modular planes with a flag"`~~
+
+- [ ] Record the rejection: the **Rejected 2026-10-30** note above cites §4's stamp and its failed bars, and the four port steps are struck as prose outside the checklist. Done when: the note and the struck steps are in this section.
+- [ ] Confirm version 3 is unchanged by the rejection: `git diff --stat 207073ea371317ef34ce3230ba6836bd0d445e6f HEAD -- src/cm.c src/rc.h src/rf.h tests/rfi_ref.py spec/FOLD.md tests/test_correctness.py` prints nothing, `research/variants/exact-plane.patch` is absent, and `python3 tests/test_correctness.py` passes every case. Done when: all three are quoted.
+- [ ] Commit: `"todo: record the exact-plane flag's rejection in version 3"`
+
+**Test checkpoint:** `python3 tests/test_correctness.py` passes every case on the unchanged version 3 path, and the `git diff --stat` above prints nothing. The accepted-flag checkpoint (`python3 research/ab.py size src/cm.c synth -v` showing `syn_gradient` below 616 and `syn_stripes` below 271 bytes) does not apply: §4's rejection left nothing to port, and the missed target passes to `D05 T01 §5`'s missed-milestone policy.
 
 **Freeze check:** `KAT_FOLD` (version 2) decodes unchanged; the operator's standing approval (`D99 T01 §3`) covers extending the unreleased version 3.
 
