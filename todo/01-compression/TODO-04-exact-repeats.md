@@ -41,7 +41,7 @@ track: C4
 |   2   |   §2    | A match model, measured | §1, D01 T03 §1 |  [x]   |
 |   3   |   §3    | The match model in format version 3 | §2, D01 T03 §1 |  [x]   |
 |   4   |   §4    | Exact modular planes, measured | §3, D01 T03 §1 |  [x]   |
-|   5   |   §5    | Exact modular planes in format version 3 | §4, D01 T03 §1 |  [ ]   |
+|   5   |   §5    | Exact modular planes in format version 3 | §4, D01 T03 §1, D00 T01 §11 |  [ ]   |
 
 ---
 
@@ -150,6 +150,8 @@ The grid is listed now and nothing else is tried: the counter context (the 64 ab
 Ports §4's accepted flag into format version 3 before the 1.0 release freezes it (the pre-release rule in `todo/README.md`, Frozen behavior). If §4 rejected the flag, this section records that: the port items below move out of the checklist as struck prose (an unticked struck item in a shipped section fails `validate`, the lesson of §3), a ticked record item cites §4's stamp, and a ticked item proves version 3 unchanged (`git diff --stat` of `src/cm.c`, `tests/rfi_ref.py`, `spec/FOLD.md`, and `tests/test_correctness.py` from §4's stamp prints nothing, and `python3 tests/test_correctness.py` passes).
 
 **Rejected 2026-10-30:** §4 rejected the flag (stamped `b8d3b191f7088625b141674c0bec097a96e8e26c`, stamp commit `b4786c6`, `docs/reviews/01-compression/D01-T04-s4.md`): every variant of its frozen grid missed `syn_stripes < 271` (355 to 451 bytes) and the `photo` bar (+0.474% to +0.572%), so `research/variants/exact-plane.patch` does not exist and nothing is ported. The three port items and the port commit are struck (as prose below, outside the checklist) with no owner, because no accepted variant exists to hand on; the Milestone 5 miss stays with `D05 T01 §5` and its missed-milestone policy (`D99 T01 §4`), which files follow-up 2. What remains is proving version 3 unchanged: `src/cm.c`, `src/rc.h`, `src/rf.h`, `tests/rfi_ref.py`, `spec/FOLD.md`, and `tests/test_correctness.py` (with its `KAT_FOLD3`) carry no change since the `D01 T03 §1` stamp `207073e`, which covers §4's whole candidate range, and the correctness suite passes.
+
+-> XREF: D00 T01 §11 (the `Restarted:` recovery this section's build needs)
 
 **Port steps struck by the rejection** (the plan as written before §4 measured; never built, no owner):
 

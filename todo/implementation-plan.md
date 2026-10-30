@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **64 of 233 sections complete (27%).** 233 sections (10 discovered); backlog 2 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **64 of 234 sections complete (27%).** 234 sections (11 discovered); backlog 2 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -212,14 +212,15 @@ The model experiments, measured together and ported as format version 3.
 
 Exact repeats extend version 3 before release.
 
-|  ✔  | Section      | Deliverable                              | Items |
-| :-: | ------------ | ---------------------------------------- | :---: |
-| [x] | `D01 T04 §1` | Where the repeats are                    |   3   |
-| [x] | `D01 T04 §2` | A match model, measured                  |   4   |
-| [x] | `D01 T04 §3` | The match model in format version 3      |   3   |
-| [x] | `D01 T04 §4` | Exact modular planes, measured           |   6   |
-| [ ] | `D01 T04 §5` | Exact modular planes in format version 3 |   3   |
-| [ ] | `D05 T01 §5` | Milestone 5 gate: Exact repeats          |   4   |
+|  ✔  | Section       | Deliverable                                 | Items |
+| :-: | ------------- | ------------------------------------------- | :---: |
+| [x] | `D01 T04 §1`  | Where the repeats are                       |   3   |
+| [x] | `D01 T04 §2`  | A match model, measured                     |   4   |
+| [x] | `D01 T04 §3`  | The match model in format version 3         |   3   |
+| [x] | `D01 T04 §4`  | Exact modular planes, measured              |   6   |
+| [ ] | `D00 T01 §11` | Restarting a build after a late plan review |   4   |
+| [ ] | `D01 T04 §5`  | Exact modular planes in format version 3    |   3   |
+| [ ] | `D05 T01 §5`  | Milestone 5 gate: Exact repeats             |   4   |
 
 ### Phase 5 -- Milestone 6: Faster than WebP to decode
 

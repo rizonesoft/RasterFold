@@ -2,7 +2,7 @@
 schema_version: 1
 id: dev-automation
 domain: 00-workspace
-status: done
+status: active
 title: "TODO-01 -- Dev-Automation Wiring"
 depends_on: []
 track: W1
@@ -62,6 +62,7 @@ track: W1
 | 8 | §8 | A read-only independent reviewer beside a live run | -- | [x] |
 | 9 | §9 | Windows Job Object process-tree cleanup in review-dispatch.py | §8 | [x] |
 | 10 | §10 | OpenCode campaign Stop hook and heartbeat | §8 | [x] |
+| 11 | §11 | Restarting a build after a late plan review | -- | [ ] |
 
 ---
 
@@ -255,6 +256,23 @@ Operator decision 2026-10-29: OpenCode (`opencode`, running an Anthropic model) 
 
 > **Verified:** 2026-10-29 | §10 | 2f25f9c7d674695eda60e1f62de8e1e3064ae16a
 > **Review:** `docs/reviews/d00-t01-s10.json`
+## 11. Restarting a Build After a Late Plan Review
+
+**Origin:** discovered run=28dc11967304 2026-10-30 -- `todo-graph.py stamp 'D01 T04 §5'` refused because the section's plan review followed its `Started:` commit, and Rounds 2 and 3 in `docs/reviews/01-compression/D01-T04-s5.md` refused overwriting `Started:` without a supported recovery contract
+
+Admission: a prerequisite of a planned row (clause 3): `D01 T04 §5` cannot stamp without it. `stamp` takes the build start from the first commit that carries the section's exact `> **Started:**` line (`build_start` in `scripts/todo-graph.py`) and requires the recorded plan review's candidate to be that commit or an ancestor of it (`plan_record`). `process-todo-section` step 3a orders it so: correct the section, write `Started:`, commit both, then review that commit. When a writer commits `Started:` first and the correction after it, and the plan review reads the correction, nothing can repair the order: a findings file takes one plan review (`review-dispatch.py` refuses a second), and `todo/README.md` says `Started:` is not overwritten, so the section can never stamp, however honest its build.
+
+-> XREF: D01 T04 §5 (the section that needs the recovery)
+
+The contract this section adds: a `> **Restarted:** <UTC> | plan review <sha> | <reason>` line directly under `Started:`, committed after the plan review returned. `Started:` keeps its instant, so `Duration:` still covers the whole interval. When the line is present, the build start is the first commit carrying it, and `stamp` requires the line's `<sha>` to be a prefix of the recorded plan review's candidate (at least 7 hex digits) and that candidate to be an ancestor of the restart commit, so the restart can only follow the review it names. A `> **Restarted:**` line that does not parse, a second one, or one with no `Started:` above it is refused, never ignored, so a typo cannot fall back silently to the old start. Items ticked before the restart are re-run after it and re-quoted; `stamp` cannot check that, so the step 3a text says it.
+
+- [ ] In `scripts/todo-graph.py`, add `RESTARTED_LINE_RE` and make `build_start` honour a well-formed `Restarted:` line (the first commit carrying it), refusing a malformed line, a second line, or a line with no `Started:`; have `cmd_stamp` refuse a restart whose `<sha>` is not a prefix of the plan review's candidate. Done when: the unit cases below pass and `python3 scripts/todo-graph.py self-test` stays green.
+- [ ] Add cases to `scripts/tests/test_review_dispatch.py` that build a throwaway git repository with a section and a findings file: with no `Restarted:` line, a plan review on a commit after `Started:` is refused; with a `Restarted:` line naming that review's candidate, committed after it, the build start is the restart commit and the plan check passes; naming another sha is refused; a restart commit that precedes the reviewed commit is refused; a malformed line and a second line are refused. Done when: `python3 -m unittest discover -s scripts/tests -v` runs them and exits 0.
+- [ ] Document the marker: the `Restarted:` entry in `todo/README.md` beside `Started:` (shape, when to write it, that `Started:` is never overwritten), and the recovery in `.agents/skills/process-todo-section/SKILL.md` step 3a (when the plan review followed `Started:`, write `Restarted:` after the review, then re-run and re-quote every item ticked before it). Done when: `python3 scripts/drift-check.py` and `python3 scripts/todo-graph.py validate` are clean.
+- [ ] Commit: `"todo: a Restarted marker recovers a build whose plan review followed Started"`
+
+**Test checkpoint:** `python3 -m unittest discover -s scripts/tests -v` exits 0 with the new `Restarted:` cases running, and `python3 scripts/todo-graph.py self-test` and `python3 scripts/todo-graph.py validate` stay green.
+
 ## Verification
 
 - [x] `pwsh scripts/check-all.ps1` -- exits 0 with every gate `PASS`, the static analysis gate included (`PASS clang-tidy (32.1s)`, `check-all: 28/28 passed`)
