@@ -221,7 +221,7 @@ Exact repeats extend version 3 before release.
 | [x] | `D00 T01 §11` | Restarting a build after a late plan review  |   4   |
 | [x] | `D01 T04 §5`  | Exact modular planes in format version 3     |   3   |
 | [x] | `D01 T04 §6`  | Gated modular prediction, measured           |   6   |
-| [ ] | `D01 T04 §7`  | Gated modular prediction in format version 3 |   4   |
+| [ ] | `D01 T04 §7`  | Gated modular prediction in format version 3 |   3   |
 | [ ] | `D05 T01 §5`  | Milestone 5 gate: Exact repeats              |   4   |
 
 ### Phase 5 -- Milestone 6: Faster than WebP to decode

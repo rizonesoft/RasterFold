@@ -213,14 +213,27 @@ The grid is listed now and nothing else is tried: the gate (`g2` or `g4`) times 
 
 **Origin:** discovered run=28dc11967304 2026-10-30 -- missed-milestone policy (`D99 T01 §4`) after `D01 T04 §4` missed the Milestone 5 bars (`D05 T01 §5`); the port of follow-up 2
 
+> **Started:** 2026-10-30T03:11:43Z
+
 Ports §6's accepted variant into format version 3 before the 1.0 release freezes it (the pre-release rule in `todo/README.md`, Frozen behavior). If §6 rejects every variant, this section records that instead: the port items move out of the checklist as struck prose (an unticked struck item in a shipped section fails `validate`), a ticked record item cites §6's stamp, and a ticked item proves version 3 unchanged (`git diff --stat 207073ea371317ef34ce3230ba6836bd0d445e6f HEAD -- src/cm.c src/rc.h src/rf.h tests/rfi_ref.py spec/FOLD.md tests/test_correctness.py` prints nothing, `research/variants/gated-gradient.patch` is absent, and `python3 tests/test_correctness.py` passes), with `Started:` committed together with that rewrite, before its plan review (`process-todo-section` step 3a).
 
-- [ ] Apply `research/variants/gated-gradient.patch` to the version 3 path of `src/cm.c`, keeping version 2 decoding unchanged. Done when: `python3 scripts/build.py --target linux-x64` and `--target windows-x64` exit 0 with no warning, and the decoder imports every version 2 and version 3 corpus file back to its pixels at `--threads 1` and `--threads 3`.
-- [ ] Specify the gate in `spec/FOLD.md` (method 1, version 3: `gp`, `ex`, the accepted gate, the replaced prediction, and the weight-set offset when the accepted variant has it), write it into `tests/rfi_ref.py` from that text (not from the C), and regenerate `KAT_FOLD3` in `tests/test_correctness.py`. Done when: codec and oracle agree byte for byte on every round-trip case, including the `gradient` and `stripes` cases.
-- [ ] Run `python3 tests/fuzz_decode.py 300 1` on Linux and Windows. Done when: every mutated file is rejected or decoded without a crash, with the seed quoted.
-- [ ] Commit: `"codec: version 3 predicts exact modular planes from a gated gradient"`
+**Rejected 2026-10-30:** §6 rejected every variant (stamped `5108661c8e7eb3be29eab479f3295fba704ee3b5`, stamp commit `dfbd59f`, `docs/reviews/01-compression/D01-T04-s6.md`): all four cleared `syn_gradient < 616` (111 to 118 bytes) and `syn_stripes < 271` (103 to 106) but missed the per-image `photo` bar (10 to 33 of 39 images more than 0.1% larger; the best, (`g4`, on), -0.002% in total with `ic_artificial` +1.17%), so `research/variants/gated-gradient.patch` does not exist and nothing is ported. The three port items and the port commit are struck (as prose below, outside the checklist) with no owner, because no accepted variant exists to hand on; the Milestone 5 miss stays with `D05 T01 §5` and its missed-milestone policy (`D99 T01 §4`), which files follow-up 3, the last. What remains is proving version 3 unchanged: `src/cm.c`, `src/rc.h`, `src/rf.h`, `tests/rfi_ref.py`, `spec/FOLD.md`, and `tests/test_correctness.py` (with its `KAT_FOLD3`) carry no change since the `D01 T03 §1` stamp `207073e`, which covers §6's whole candidate range, and the correctness suite passes.
 
-**Test checkpoint:** `python3 research/ab.py size src/cm.c synth -v` shows `syn_gradient` below 616 and `syn_stripes` below 271 bytes, and `python3 tests/test_correctness.py` passes every case with codec and oracle byte-identical; on §6's rejection, the `git diff --stat` above prints nothing and `python3 tests/test_correctness.py` passes on the unchanged version 3 path.
+**Port steps struck by the rejection** (the plan as written before §6 measured; never built, no owner):
+
+~~Apply `research/variants/gated-gradient.patch` to the version 3 path of `src/cm.c`, keeping version 2 decoding unchanged. Done when: `python3 scripts/build.py --target linux-x64` and `--target windows-x64` exit 0 with no warning, and the decoder imports every version 2 and version 3 corpus file back to its pixels at `--threads 1` and `--threads 3`.~~
+
+~~Specify the gate in `spec/FOLD.md` (method 1, version 3: `gp`, `ex`, the accepted gate, the replaced prediction, and the weight-set offset when the accepted variant has it), write it into `tests/rfi_ref.py` from that text (not from the C), and regenerate `KAT_FOLD3` in `tests/test_correctness.py`. Done when: codec and oracle agree byte for byte on every round-trip case, including the `gradient` and `stripes` cases.~~
+
+~~Run `python3 tests/fuzz_decode.py 300 1` on Linux and Windows. Done when: every mutated file is rejected or decoded without a crash, with the seed quoted.~~
+
+~~Commit: `"codec: version 3 predicts exact modular planes from a gated gradient"`~~
+
+- [ ] Record the rejection: the **Rejected 2026-10-30** note above cites §6's stamp and its failed bar, and the four port steps are struck as prose outside the checklist. Done when: the note and the struck steps are in this section.
+- [ ] Confirm version 3 is unchanged by the rejection: `git diff --stat 207073ea371317ef34ce3230ba6836bd0d445e6f HEAD -- src/cm.c src/rc.h src/rf.h tests/rfi_ref.py spec/FOLD.md tests/test_correctness.py` prints nothing, `research/variants/gated-gradient.patch` is absent, and `python3 tests/test_correctness.py` passes every case. Done when: all three are quoted.
+- [ ] Commit: `"todo: record the gated gradient's rejection in version 3"`
+
+**Test checkpoint:** `python3 research/ab.py size src/cm.c synth -v` shows `syn_gradient` below 616 and `syn_stripes` below 271 bytes, and `python3 tests/test_correctness.py` passes every case with codec and oracle byte-identical; on §6's rejection, the `git diff --stat` above prints nothing and `python3 tests/test_correctness.py` passes on the unchanged version 3 path. §6 rejected every variant, so the accepted-variant checkpoint does not apply and the rejection checkpoint is the one this section proves.
 
 **Freeze check:** `KAT_FOLD` (version 2) decodes unchanged; the operator's standing approval (`D99 T01 §3`) covers extending the unreleased version 3.
 
