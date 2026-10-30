@@ -260,6 +260,8 @@ Operator decision 2026-10-29: OpenCode (`opencode`, running an Anthropic model) 
 
 **Origin:** discovered run=28dc11967304 2026-10-30 -- `todo-graph.py stamp 'D01 T04 §5'` refused because the section's plan review followed its `Started:` commit, and Rounds 2 and 3 in `docs/reviews/01-compression/D01-T04-s5.md` refused overwriting `Started:` without a supported recovery contract
 
+> **Started:** 2026-10-30T02:03:40Z
+
 Admission: a prerequisite of a planned row (clause 3): `D01 T04 §5` cannot stamp without it. `stamp` takes the build start from the first commit that carries the section's exact `> **Started:**` line (`build_start` in `scripts/todo-graph.py`) and requires the recorded plan review's candidate to be that commit or an ancestor of it (`plan_record`). `process-todo-section` step 3a orders it so: correct the section, write `Started:`, commit both, then review that commit. When a writer commits `Started:` first and the correction after it, and the plan review reads the correction, nothing can repair the order: a findings file takes one plan review (`review-dispatch.py` refuses a second), and `todo/README.md` says `Started:` is not overwritten, so the section can never stamp, however honest its build.
 
 -> XREF: D01 T04 §5 (the section that needs the recovery)
