@@ -97,7 +97,7 @@ times JPEG XL e7 (4,227 vs 2,886 bytes, down from 4,521) and `syn_odd` (a 65x63
 gradient) is 1.16 times (153 vs 132 bytes, down from 163). Lossless WebP is
 smaller than both codecs on most generated images, and on `syn_gradient` it
 takes 180 bytes where RasterFold takes 4,227 (its backward references copy
-shifted rows; the match model of `D01 T04` answers it).
+shifted rows; a match model as an eighth method 1 model took it only to 3,326, `D01 T04 §2`, section 3.2).
 
 Speed: `research/bench.c` measures about 500 CPU cycles per sample on one
 thread (G, R, and B each count as one sample) on the i5-11600K for the 7-model
@@ -282,6 +282,7 @@ experiment is repeated only when its plan says what differs this time.
 | context rows capped at 256 per model | +1.8% on measure + kodim01 | rejected |
 | method 2 palette coder (first-seen <= 256 colours, 5-bit neighbour equality pattern, D1/D2/D3 + 8-bit literal tree, 4.1, `D01 T01 §2`, `§3`) | -3.55% `synth` total (`214,773` -> `207,146` bytes, `0.9480` -> `0.9144` of e7, geomean `1.1986` -> `0.7081` of e7; `syn_checker` `5,709` -> `297`, `syn_pixel` `599` -> `90`, `syn_ui` `2,107` -> `1,560`, `syn_text` `2,118` -> `1,540`, `syn_diagram` `2,134` -> `1,553`; `photo` `30,865,211` and `tp` `6,651,583` unchanged) | kept; `syn_pixel` (`90` vs `66` e7 / `53` e9) and `syn_checker` (`297` vs `210` e9) follow-up filed as `D01 T01 §4` |
 | method 3 extended palette coder (7-bit neighbour pattern adding `WW == a` and `NN == b`, fallback candidate `e` in `(d, c, ww)`, two-colour deduction after `D1 = 0`, minimum-1 counter step, 4.1, `D01 T01 §4`) | -3.82% `synth` total vs M2 (`214,773` -> `206,566` bytes, `-580` vs method 2; `0.9118` of e7, geomean `0.5883` of e7 and `1.1220` of e9; `syn_checker` `297` -> `138` `< 210` e9, `syn_pixel` `90` -> `52` `< 53` e9 and `< 58` WebP, `syn_ui` `1,560` -> `1,410`, `syn_text` `1,540` -> `1,447`, `syn_diagram` `1,553` -> `1,452`; `photo` `30,865,211` and `tp` `6,651,583` unchanged) | kept (`RF_METHOD_PAL2 = 3u`; method 2 files continue to decode) |
+| match model as an eighth method 1 model (`D01 T04 §2`, 2026-10-30): per channel a causal int16 plane, a 2^16-entry hash of 8-sample runs ending in earlier rows (multiplicative hash, top 16 bits, a recorded default), a pointer followed while it predicts, context `(clamp(match - pred, -15, 15) + 15) * 16 + min(len, 15)` (240 with no match), `NMODEL 8`, `WSTRIDE 16`; baseline `src/cm.c` at the `D01 T03 §1` stamp `207073e` | `synth` `206,229` -> `205,363` (geomean `0.5760` -> `0.5696` of e7): `syn_gradient` `4,227` -> `3,326` (bar `< 616` e9), `syn_stripes` `368` -> `381` (bar `< 271`), `syn_wide` `281` -> `301`, `syn_odd` `153` -> `155`, `syn_ui` `1,410` and `syn_text` `1,447` unchanged (palette method 3, which a method 1 model cannot reach; bars `< 2,195` and `< 2,038` already held); `photo` -0.149% (`30,812,732` -> `30,766,711`; `0.9695` -> `0.9681` of e7, geomean `0.9698` -> `0.9666`; every image smaller, ic_artificial -7.58%, smallest gain kodim05 -0.055%); `tp` -0.121% (`6,641,390` -> `6,633,374`; geomean `0.9700` -> `0.9687`); 55/55 corpus images byte-identical at -t1 and -t3 and decoded 1 -> 3 and 3 -> 1; `ab -n5 measure kodim01` B/A enc `2.131` / dec `1.618` -t1, enc `1.683` / dec `1.537` -t3 (unoptimized prototype: scalar 9-slot dot product, a 6-byte-per-pixel plane plus 768 KiB of hash tables) | rejected: `syn_gradient` and `syn_stripes` miss the bar, so no `research/variants/match-model.patch` and `D01 T04 §3` strikes its items; the uniform photo gain is a separate lead, backlog `B-002` |
 
 ### 3.3 Mixing and counters
 
@@ -744,7 +745,10 @@ output, models) on `measure/image.bmp`. The working set is measured with
    53.75%, `ic_flower_foveon` 38.66% / 46.58%, `measure` 32.87% / 47.36%).
    Exact repeats are a generated-content phenomenon; on photographs the match
    model can only be a small win, which is what `D01 T04 §2`'s bar (photo total
-   no more than 0.05% worse) guards.
+   no more than 0.05% worse) guards. Measured 2026-10-30 (`D01 T04 §2`, section
+   3.2): the eighth-model match model gained 0.149% on `photo` but missed the
+   `syn_gradient` and `syn_stripes` bars and doubled encode time, so it was
+   rejected.
 
 ---
 
