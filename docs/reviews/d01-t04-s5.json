@@ -1,0 +1,100 @@
+{
+  "ref": "D01 T04 \u00a75",
+  "title": "Exact Modular Planes in Format Version 3",
+  "implementation_sha": "471596c0982b308fdcb9ad775da284bc1b5d11c7",
+  "date": "2026-10-30",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/01-compression/D01-T04-s5.md",
+      "verdict": "clean"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/01-compression/D01-T04-s5.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 3,
+      "report": "docs/reviews/01-compression/D01-T04-s5.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 4,
+      "report": "docs/reviews/01-compression/D01-T04-s5.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "git diff --stat 207073ea371317ef34ce3230ba6836bd0d445e6f HEAD -- src/cm.c src/rc.h src/rf.h tests/rfi_ref.py spec/FOLD.md tests/test_correctness.py -> empty",
+    "test -e research/variants/exact-plane.patch -> absent",
+    ".venv/bin/python tests/test_correctness.py -> 39 passed, 0 failed"
+  ],
+  "completion": {
+    "report": "docs/reviews/01-compression/D01-T04-s5.md",
+    "verdict": "complete",
+    "candidate": "4e9751f5a17afb6148ec6a545fb052649e541941",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 4,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/01-compression/D01-T04-s5.md",
+    "candidate": "ea829a7aebfb858ed898b838ee538215206e7ca2",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}
