@@ -874,10 +874,15 @@ The designs above build on these published codecs and papers:
 
 <!-- BEGIN milestones (research/milestones.py) -->
 
-Each milestone keeps everything the one before it reached and adds one measurable step: no photo size more than
-0.1% worse, no encode or decode time more than 3% worse, no higher peak memory (unless a milestone's target
-explicitly specifies a new model-count envelope under `D99 T01 §4`, such as Milestone 4's 7-model Format Version 3
-envelope), and every older file still decoding. Milestones 1 to 10 are measured against JPEG XL and WebP; from
+Each milestone keeps everything the one before it reached and adds one measurable step. Milestones 2 to 4 held
+the original rule: no photo size more than 0.1% worse, no encode or decode time more than 3% worse, no higher peak
+memory (Milestone 4 under its 7-model Format Version 3 envelope, `D99 T01 §4`), and every older file still decoding.
+On 2026-10-30 the operator replaced it (`D99 T01 §4`): Milestone 5 carries its own envelope for learned gated modular
+prediction, and from milestone 6 the rule is a cost envelope: the `photo` and `tp` totals no more than 0.1% larger and
+no photograph more than 0.5% larger; encode and decode time at most 1.10x on the `measure`, `photo`, `tp`, and
+`tp-only` totals and 1.20x on the `synth` total, and at most 1.5x on any image of at least 16,384 pixels (smaller
+images at most 1 ms slower), from pooled alternating runs whose disjoint pools agree; codec working memory (decode
+`alloc_peak` less the input file) at most 5% higher; and every older file still decoding. Milestones 1 to 10 are measured against JPEG XL and WebP; from
 milestone 11 RasterFold is measured against its own previous release. Targets past milestone 10 are estimates:
 each is re-derived from the previous milestone's measured results when its planning section runs. The gates live
 in `todo/05-milestones/`; this table is generated from `research/milestones.py`.
@@ -890,12 +895,12 @@ in `todo/05-milestones/`; this table is generated from `research/milestones.py`.
 | 2 | Same bytes, leaner and harder | every file byte-identical to milestone 1 (`KAT_FOLD` unchanged, the oracle agrees); decode `alloc_peak` at most 9.2 MB on `measure/image.bmp` (10.57 MB at milestone 1); one-thread decode at least 5% faster; a 4096x4096 header with a 20-byte payload refused in under a second | `D05 T01 §2` (reached 2026-10-25) |
 | 3 | Few-colour images solved | method 2 shipped; `syn_checker` below 210 bytes and `syn_pixel` below 53 bytes (JPEG XL e9's sizes); photo sizes unchanged; 20,000 fuzz mutations over every method clean | `D05 T01 §3` (reached 2026-10-26) |
 | 4 | Format version 3: beat JPEG XL e9 on photographs | format version 3 with the accepted model changes (`D01 T02 §1`, `D01 T02 §7`, `D01 T03 §1`; operator decision 2026-10-29 under `D99 T01 §4` after `D01 T02 §2` to `§6` missed): photo total at most 0.982 of JPEG XL e9 (and at most 0.970 of JPEG XL e7), test pack at most 0.986 of JPEG XL e9 (and at most 0.973 of e7), at least 31 of 39 photos below e9 (and 38 of 39 at or below e7), three-thread decode at most 0.6 of JPEG XL's, 7-model decode `alloc_peak` at most 10.0 MB (+786 KB for the `k5`/`k6` counter tables over Milestone 3's 5-model 9.16 MB), and 7-model encode/decode time at most 1.27x Milestone 3's 5-model baseline on every set total and every image (images under 16K pixels allowed a fixed +1 ms instead of the ratio) | `D05 T01 §4` (reached 2026-10-29) |
-| 5 | Exact repeats | a match model in version 3: `syn_gradient`, `syn_stripes`, `syn_ui`, and `syn_text` below JPEG XL e9 (616, 271, 2195, and 2038 bytes); photos no worse than milestone 4 | `D05 T01 §5` |
+| 5 | Exact repeats | learned gated modular prediction in version 3 (`D01 T04 §8`'s variant v2, ported in `D01 T04 §10`; operator decision 2026-10-30 under `D99 T01 §4` after `D01 T04 §2` to `§9` missed): `syn_gradient`, `syn_stripes`, `syn_ui`, and `syn_text` below JPEG XL e9 (616, 271, 2195, and 2038 bytes); the photo total no larger than milestone 4's and no photograph more than 0.1% larger | `D05 T01 §5` |
 | 6 | Faster than WebP to decode | horizontal strips in version 3: photo decode wall time below lossless WebP's on the 12-thread development machine; strip size cost at most 0.3% | `D05 T01 §6` |
-| 7 | Every photograph beats JPEG XL e9 | 39 of 39 photos and 10 of 10 test-pack photos below JPEG XL e9; encode at most 0.3 of JPEG XL e7's time | `D05 T01 §7` |
-| 8 | Beat WebP on generated images | the generated set's total and geometric mean below lossless WebP's, and every generated image within 1.1 times WebP's size | `D05 T01 §8` |
-| 9 | Holds on images never tuned on | milestones 4, 7, and 8 hold on the held-out set (`python research/ab.py size heldout`) without any retuning | `D05 T01 §9` |
-| 10 | RasterFold 1.0 | `rasterfold-v1.0.0` released: format version 3 frozen; Windows/Linux x64 and Android ARM64/x64 CLI, shared/static C libraries and the complete native converter; BMP, PNG, and PPM in the CLI; the full HTML docs published; 100,000 fuzz mutations clean; smaller than JPEG XL e9 and lossless WebP on every set, and faster and leaner than JPEG XL on encode, decode, and memory | `D05 T01 §10` |
+| 7 | Photographs beat JPEG XL e9 | at least 34 of 39 photos and 8 of 10 test-pack photos below JPEG XL e9, and no photo or test-pack photo more than 1.0% larger than e9 (milestone 4: 31 of 39, 7 of 10, worst `kodim16` 1.52%); encode at most 0.3 of JPEG XL e7's time, both at one thread (`python research/vsjxl.py -n5`) | `D05 T01 §7` |
+| 8 | Beat WebP on generated images | the generated set's total and geometric mean below lossless WebP's, and every generated image within 1.1 times WebP's size or at most 32 bytes larger, whichever allows more | `D05 T01 §8` |
+| 9 | Holds on images never tuned on | the set-total and geometric-mean ratios that milestones 4, 7, and 8 reached against JPEG XL e9 and lossless WebP hold on the held-out set (`python research/ab.py size heldout`) within 1% of each tuned figure, without any retuning; the per-image counts are reported beside them, not gated | `D05 T01 §9` |
+| 10 | RasterFold 1.0 | `rasterfold-v1.0.0` released: format version 3 frozen; Windows/Linux x64 and Android ARM64/x64 CLI, shared/static C libraries and the complete native converter; BMP, PNG, and PPM in the CLI; the full HTML docs published; 100,000 fuzz mutations clean; smaller than JPEG XL e9 and lossless WebP on every set total, and faster and leaner than JPEG XL e7 on the `tests/benchmark.py` set totals for encode, decode, and peak memory, each codec at its default thread count | `D05 T01 §10` |
 
 ### Milestones 11 to 20: RasterFold Beats RasterFold (2.0)
 
@@ -904,9 +909,9 @@ in `todo/05-milestones/`; this table is generated from `research/milestones.py`.
 | 11 | SIMD decisions | one-thread decode at least 10% faster than 1.0, bytes within 0.1% | `D05 T02 §2` |
 | 12 | Two-layer mixing | photo total at least 0.4% smaller than milestone 11 | `D05 T02 §4` |
 | 13 | Stronger prediction | photo total at least 0.5% smaller than milestone 12 | `D05 T02 §6` |
-| 14 | Adaptive colour transform | photo total at least 0.3% smaller than milestone 13, decode cost unchanged | `D05 T02 §8` |
+| 14 | Adaptive colour transform | photo total at least 0.3% smaller than milestone 13, decode time within the no-regression envelope | `D05 T02 §8` |
 | 15 | Effort levels | a fast level decoding at least twice as fast as the default and still smaller than JPEG XL e7; the default unchanged | `D05 T02 §10` |
-| 16 | Max-effort encoder search | the max level at least 1% smaller than the default at the same decode cost | `D05 T02 §12` |
+| 16 | Max-effort encoder search | the max level at least 1% smaller than the default, its decode time within the no-regression envelope of the default's | `D05 T02 §12` |
 | 17 | Trained starting state | images of Kodak size and below at least 0.5% smaller, confirmed on the held-out set | `D05 T02 §14` |
 | 18 | Streaming | peak memory on a 24-megapixel image at most one third of milestone 17's | `D05 T02 §16` |
 | 19 | Many-core scaling | decode throughput on 16 or more threads at least twice milestone 18's, size within 0.2% | `D05 T02 §18` |
@@ -917,10 +922,10 @@ in `todo/05-milestones/`; this table is generated from `research/milestones.py`.
 | # | milestone | target | gate |
 |---|---|---|---|
 | 21 | Run mode for flat regions | generated images decode at least twice as fast and photos at least 5% faster, sizes no worse | `D05 T03 §2` |
-| 22 | Verified hashed context tables | decode at least 10% faster at equal memory, size within 0.1% | `D05 T03 §4` |
+| 22 | Verified hashed context tables | decode at least 10% faster with codec memory within the no-regression envelope, size within 0.1% | `D05 T03 §4` |
 | 23 | Higher-precision coder | generated-image geometric mean at least 10% smaller, photos unchanged | `D05 T03 §6` |
 | 24 | Learned predictor at the max level | the max level at least 1% smaller on photos, fast and default byte-identical, confirmed on the held-out set | `D05 T03 §8` |
-| 25 | Texture-gated models | the default level at least 0.4% smaller at equal decode time | `D05 T03 §10` |
+| 25 | Texture-gated models | the default level at least 0.4% smaller, decode time within the no-regression envelope | `D05 T03 §10` |
 | 26 | Random-access decode | decoding a 1/16 region at least 8 times faster than a full decode, size within 0.1% | `D05 T03 §12` |
 | 27 | Portable and byte-exact | Linux, macOS, and Windows on ARM64 builds with identical bytes on every platform | `D05 T03 §14` |
 | 28 | Alpha, 16-bit, and metadata | alpha, 16-bit samples, and ICC and EXIF preserved, 8-bit RGB files byte-identical to milestone 27, the 16-bit set below JPEG XL e9 | `D05 T03 §16` |

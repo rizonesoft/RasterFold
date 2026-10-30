@@ -11,7 +11,7 @@ track: C6
 
 # TODO-06 -- Beat WebP on Generated Images
 
-> **Goal:** On generated and screen content (flat fills, gradients, UI, text, diagrams, pixel art) RasterFold is smaller than lossless WebP in total and in geometric mean, and within 1.1 times WebP on every image.
+> **Goal:** On generated and screen content (flat fills, gradients, UI, text, diagrams, pixel art) RasterFold is smaller than lossless WebP in total and in geometric mean, and on every image within 1.1 times WebP or at most 32 bytes larger, whichever allows more (Milestone 8's target as revised by the operator on 2026-10-30, `D99 T01 §4`).
 
 > [!IMPORTANT]
 > **Current state (verified 2026-09-29):** On the generated set RasterFold's geometric mean is 3.66 times WebP's (2026-09-29, before the palette method and the match model). WebP's advantages are its colour cache (recently used colours coded as a short index) and its 2D backward references; milestones 3 and 5 close part of the gap first, so §1 re-measures before anything is designed.

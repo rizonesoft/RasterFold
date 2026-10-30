@@ -11,7 +11,7 @@ track: C5
 
 # TODO-05 -- Every Photograph Beats JPEG XL e9
 
-> **Goal:** No photograph in the research sets is larger than JPEG XL effort 9, closing the last per-image losses after milestone 4, with encode time still at most 0.3 of JPEG XL e7's.
+> **Goal:** At least 34 of 39 photos and 8 of 10 test-pack photos are smaller than JPEG XL effort 9 and none is more than 1.0% larger (Milestone 7's target as revised by the operator on 2026-10-30, `D99 T01 §4`), closing most of the per-image losses left after milestone 4, with encode time still at most 0.3 of JPEG XL e7's at one thread.
 
 > [!IMPORTANT]
 > **Current state (verified 2026-09-29):** On 2026-09-29, 28 of 39 photos and 7 of 10 test-pack photos are below JPEG XL e9; the worst are kodim16 (1.0193 of e9) and `tp_nightshot_iso_1600_crop` (1.0131). Milestone 4's experiments (`D01 T02 §1` to `§7`) will move these figures before this file runs, so §1 re-measures first. `D01 T02 §6` measures the ceiling of encoder-chosen parameters.

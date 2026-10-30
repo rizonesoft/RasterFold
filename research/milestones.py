@@ -52,44 +52,44 @@ M = [
      f"{SIZE}, {BENCH}", [FF, IDLE], None,
      "D01 T02 §1, D01 T02 §2, D01 T02 §3, D01 T02 §4, D01 T02 §5, D01 T02 §6, D01 T02 §7, D01 T03 §1"),
     (5, "Exact repeats",
-     "a match model in version 3: `syn_gradient`, `syn_stripes`, `syn_ui`, and `syn_text` below JPEG XL e9 (616, 271, 2195, and 2038 bytes); photos no worse than milestone 4",
+     "learned gated modular prediction in version 3 (`D01 T04 §8`'s variant v2, ported in `D01 T04 §10`; operator decision 2026-10-30 under `D99 T01 §4` after `D01 T04 §2` to `§9` missed): `syn_gradient`, `syn_stripes`, `syn_ui`, and `syn_text` below JPEG XL e9 (616, 271, 2195, and 2038 bytes); the photo total no larger than milestone 4's and no photograph more than 0.1% larger",
      SIZE, [FF], None,
-     "D01 T04 §1, D01 T04 §2, D01 T04 §3, D01 T04 §4, D01 T04 §5, D01 T04 §6, D01 T04 §7, D01 T04 §8, D01 T04 §9"),
+     "D01 T04 §1, D01 T04 §2, D01 T04 §3, D01 T04 §4, D01 T04 §5, D01 T04 §6, D01 T04 §7, D01 T04 §8, D01 T04 §9, D01 T04 §10"),
     (6, "Faster than WebP to decode",
      "horizontal strips in version 3: photo decode wall time below lossless WebP's on the 12-thread development machine; strip size cost at most 0.3%",
      f"{BENCH}, {SIZE}", [FF, IDLE], None,
      "D02 T02 §1, D01 T03 §2"),
-    (7, "Every photograph beats JPEG XL e9",
-     "39 of 39 photos and 10 of 10 test-pack photos below JPEG XL e9; encode at most 0.3 of JPEG XL e7's time",
+    (7, "Photographs beat JPEG XL e9",
+     "at least 34 of 39 photos and 8 of 10 test-pack photos below JPEG XL e9, and no photo or test-pack photo more than 1.0% larger than e9 (milestone 4: 31 of 39, 7 of 10, worst `kodim16` 1.52%); encode at most 0.3 of JPEG XL e7's time, both at one thread (`python research/vsjxl.py -n5`)",
      f"{SIZE}, {BENCH}", [FF, IDLE], None,
      "D01 T05 §1, D01 T05 §2"),
     (8, "Beat WebP on generated images",
-     "the generated set's total and geometric mean below lossless WebP's, and every generated image within 1.1 times WebP's size",
+     "the generated set's total and geometric mean below lossless WebP's, and every generated image within 1.1 times WebP's size or at most 32 bytes larger, whichever allows more",
      SIZE, [FF], None,
      "D01 T06 §1, D01 T06 §2, D01 T06 §3"),
     (9, "Holds on images never tuned on",
-     "milestones 4, 7, and 8 hold on the held-out set (`python research/ab.py size heldout`) without any retuning",
+     "the set-total and geometric-mean ratios that milestones 4, 7, and 8 reached against JPEG XL e9 and lossless WebP hold on the held-out set (`python research/ab.py size heldout`) within 1% of each tuned figure, without any retuning; the per-image counts are reported beside them, not gated",
      "`python research/ab.py size heldout` against JPEG XL e9 and WebP", [FF], None,
      "D00 T03 §1, D00 T03 §2"),
     (10, "RasterFold 1.0",
-     "`rasterfold-v1.0.0` released: format version 3 frozen; Windows/Linux x64 and Android ARM64/x64 CLI, shared/static C libraries and the complete native converter; BMP, PNG, and PPM in the CLI; the full HTML docs published; 100,000 fuzz mutations clean; smaller than JPEG XL e9 and lossless WebP on every set, and faster and leaner than JPEG XL on encode, decode, and memory",
+     "`rasterfold-v1.0.0` released: format version 3 frozen; Windows/Linux x64 and Android ARM64/x64 CLI, shared/static C libraries and the complete native converter; BMP, PNG, and PPM in the CLI; the full HTML docs published; 100,000 fuzz mutations clean; smaller than JPEG XL e9 and lossless WebP on every set total, and faster and leaner than JPEG XL e7 on the `tests/benchmark.py` set totals for encode, decode, and peak memory, each codec at its default thread count",
      f"{SIZE}, {BENCH}, `python tests/fuzz_decode.py`", [FF, IDLE], None,
      "D06 T01 §1, D06 T01 §2, D06 T01 §3, D06 T01 §4, D06 T01 §5, D07 T01 §1, D07 T01 §2, D07 T01 §3, D07 T01 §4, D08 T03 §1, D08 T03 §2, D09 T01 §1, D09 T01 §2, D09 T01 §3, D09 T01 §4"),
     (11, "SIMD decisions", "one-thread decode at least 10% faster than 1.0, bytes within 0.1%", SPEED, [IDLE], None, "D02 T01 §3, D02 T02 §2"),
     (12, "Two-layer mixing", "photo total at least 0.4% smaller than milestone 11", SIZE, [FF], None, None),
     (13, "Stronger prediction", "photo total at least 0.5% smaller than milestone 12", SIZE, [FF], None, None),
-    (14, "Adaptive colour transform", "photo total at least 0.3% smaller than milestone 13, decode cost unchanged", f"{SIZE}, {SPEED}", [FF, IDLE], None, None),
+    (14, "Adaptive colour transform", "photo total at least 0.3% smaller than milestone 13, decode time within the no-regression envelope", f"{SIZE}, {SPEED}", [FF, IDLE], None, None),
     (15, "Effort levels", "a fast level decoding at least twice as fast as the default and still smaller than JPEG XL e7; the default unchanged", f"{SPEED}, {SIZE}", [FF, IDLE], None, None),
-    (16, "Max-effort encoder search", "the max level at least 1% smaller than the default at the same decode cost", f"{SIZE}, {SPEED}", [FF, IDLE], None, None),
+    (16, "Max-effort encoder search", "the max level at least 1% smaller than the default, its decode time within the no-regression envelope of the default's", f"{SIZE}, {SPEED}", [FF, IDLE], None, None),
     (17, "Trained starting state", "images of Kodak size and below at least 0.5% smaller, confirmed on the held-out set", "`python research/ab.py size kodak` and `heldout`", [FF], None, None),
     (18, "Streaming", "peak memory on a 24-megapixel image at most one third of milestone 17's", "`bin/windows-x64/bin/rasterfold.exe decode --time` on a 24-megapixel image", [], None, None),
     (19, "Many-core scaling", "decode throughput on 16 or more threads at least twice milestone 18's, size within 0.2%", f"{SPEED}, {SIZE}", [IDLE], None, None),
     (20, "RasterFold 2.0", "`rasterfold-v2.0.0`: against 1.0, the default at least 1.5% smaller, the max level at least 2.5% smaller, one-thread decode at least 1.2 times faster, memory at most one third", f"{SIZE}, {BENCH}", [FF, IDLE], None, None),
     (21, "Run mode for flat regions", "generated images decode at least twice as fast and photos at least 5% faster, sizes no worse", SPEED, [IDLE], None, None),
-    (22, "Verified hashed context tables", "decode at least 10% faster at equal memory, size within 0.1%", SPEED, [IDLE], None, None),
+    (22, "Verified hashed context tables", "decode at least 10% faster with codec memory within the no-regression envelope, size within 0.1%", SPEED, [IDLE], None, None),
     (23, "Higher-precision coder", "generated-image geometric mean at least 10% smaller, photos unchanged", SIZE, [FF], None, None),
     (24, "Learned predictor at the max level", "the max level at least 1% smaller on photos, fast and default byte-identical, confirmed on the held-out set", SIZE, [FF], None, None),
-    (25, "Texture-gated models", "the default level at least 0.4% smaller at equal decode time", f"{SIZE}, {SPEED}", [FF, IDLE], None, None),
+    (25, "Texture-gated models", "the default level at least 0.4% smaller, decode time within the no-regression envelope", f"{SIZE}, {SPEED}", [FF, IDLE], None, None),
     (26, "Random-access decode", "decoding a 1/16 region at least 8 times faster than a full decode, size within 0.1%", "`bin/windows-x64/bin/rasterfold.exe decode --region` timings", [IDLE], None, None),
     (27, "Portable and byte-exact", "Linux, macOS, and Windows on ARM64 builds with identical bytes on every platform", "the known-answer vectors on every CI platform", [], None, None),
     (28, "Alpha, 16-bit, and metadata", "alpha, 16-bit samples, and ICC and EXIF preserved, 8-bit RGB files byte-identical to milestone 27, the 16-bit set below JPEG XL e9", "`python research/ab.py size rgba16`", [FF], None, None),
@@ -137,6 +137,16 @@ BANDS = [
 RELEASES = {10: "1.0.0", 20: "2.0.0", 30: "3.0.0", 40: "4.0.0", 50: "5.0.0", 60: "6.0.0"}
 RULE = ("It keeps everything milestone {prev} reached: no photo size more than 0.1% worse, no encode or decode time "
         "more than 3% worse, no higher peak memory, and every older file still decoding.")
+RULE_2026_10_30 = (
+    "It keeps everything milestone {prev} reached, within the cost envelope the operator set on 2026-10-30 (`D99 T01 §4`): "
+    "the `photo` and `tp` totals no more than 0.1% larger and no photograph more than 0.5% larger; encode and decode time "
+    "at most 1.10x milestone {prev}'s on the `measure`, `photo`, `tp`, and `tp-only` totals and at most 1.20x on the `synth` "
+    "total, at `-t1` and `-t3`, and at most 1.5x on any image of at least 16,384 pixels (a smaller image at most 1 ms slower), "
+    "each ratio from per-image minima of alternating runs pooled until two disjoint pools agree (a ratio that moves between "
+    "pools by more than its bar is noise and is re-measured on an idle machine, never counted as a miss) with any single-image "
+    "outlier confirmed at `-n7`; codec working memory (decode `alloc_peak` less the input file's bytes, which `alloc_peak` "
+    "holds) at most 5% above milestone {prev}'s; and every older file still decoding. A target that names its own size, time, "
+    "or memory figure replaces the matching envelope figure.")
 POLICY = ("If the target is missed, the missed-milestone policy applies (`D99 T01 §4`): up to three follow-up experiments "
           "from `docs/research.md` are filed through `add-todo`, and the operator is asked only when all three miss.")
 
@@ -251,6 +261,21 @@ GATE_STATE: dict[int, dict[str, object]] = {
             "`python3 scripts/windows.py tests/benchmark.py -n 3` (all sets: `measure`, `photos`, `synthetic`, committed in `benchmarks/results.csv` and `benchmarks/results.md`) exits 0 (`failures: 0`, `measure` `rasterfold` `1405087` bytes / `0.955x` `jxl`, `encode_us=397167` / `0.243x` `jxl`, `decode_us=418628` / `0.816x` `jxl`, `encode_peak=17002496` / `0.182x` `jxl`, `decode_peak=16093184` / `0.315x` `jxl`, `rasterfold-1t` `encode_us=1039277` / `0.635x` `jxl`, `decode_us=1126239` / `2.195x` `jxl`, `encode_peak=17022976`, `decode_peak=15978496`, `photos` `rasterfold` `6641390` bytes / `0.970x` `jxl`, `encode=0.277x` `jxl`, `decode=0.856x` `jxl`, `encode_mem=0.217x` `jxl`, `decode_mem=0.323x` `jxl`, `synthetic` `rasterfold` `206229` bytes / `0.576x` `jxl`, `encode=0.693x` `jxl`, `decode=0.935x` `jxl`, `encode_mem=0.280x` `jxl`, `decode_mem=0.267x` `jxl`); "
             "and `python3 research/milestones.py --check`, `python3 scripts/build-docs.py --check`, `python3 scripts/build-docs.py --self-test`, `python3 scripts/build-docs.py --stage build/site-source` (`staged 37 file(s) into build/site-source`), `python3 -m unittest discover -s tests -p test_docs.py -v` (`Ran 8 tests ... OK`), `python3 scripts/drift-check.py`, and `python3 scripts/check-all.py --all-targets` exit 0 (`check-all: 29/29 passed`, re-run 2026-10-30 on the completion-review fix), and `python3 scripts/ci_status.py` and `python3 scripts/ci_status.py --workflow pages.yml` report `build.yml: green at 1292dcef1ae7 (https://github.com/rizonesoft/RasterFold/actions/runs/40976497307)`, `plan.yml: green at 1292dcef1ae7 (https://github.com/rizonesoft/RasterFold/actions/runs/40976497341)` (including `actions/jekyll-build-pages` HTML build and `drift-check.py --site-dir build/site-raw`), and `pages.yml: green at 1292dcef1ae7 (https://github.com/rizonesoft/RasterFold/actions/runs/40976497709)` on `1292dcef1ae7eaaaa40bb98523983637e317f548` (the final code/test commit before this CI-citation-only commit; `ec3af7283274`, which added the Liquid-delimiter check after `plan.yml` failed on `ebd6a60f1ef9`, is also green on all three)."
         ),
+    },
+    5: {
+        "rule": (
+            "It keeps everything milestone 4 reached under the envelope the operator set for learned gated modular prediction "
+            "(`D01 T04 §8`'s v2) on 2026-10-30 (`D99 T01 §4`): the `photo` total no larger than milestone 4's, no photograph more "
+            "than 0.1% larger, and the `tp` total no more than 0.1% larger; encode and decode time at most 1.15x milestone 4's on "
+            "every set total (`measure`, `photo`, `tp`, `tp-only`, `synth`) at `-t1` and `-t3`, and at most 1.5x on any image of "
+            "at least 16,384 pixels (a smaller image at most 1 ms slower), each ratio from per-image minima of alternating runs "
+            "pooled until two disjoint pools agree, with any single-image outlier confirmed at `-n7`; codec working memory "
+            "unchanged: decode `alloc_peak` on `measure/image.bmp` at most milestone 4's `9,943,749` (3 threads) and `9,943,509` "
+            "(`--threads 1`) bytes plus the growth of the input file, which `alloc_peak` holds; and every older file still decoding."
+        ),
+        "notes": [
+            "**Corrected 2026-10-30 (operator decision under `D99 T01 §4`):** All three follow-ups the missed-milestone policy allows missed (exact modular planes `D01 T04 §4`/`§5`, gated modular prediction `D01 T04 §6`/`§7`, learned gated modular prediction `D01 T04 §8`/`§9`), after the match model (`D01 T04 §2`/`§3`) missed first, so the run escalated (`docs/phase-runs/2026-10-30-phase-4.md`). The nearest candidate was `D01 T04 §8`'s v2 (`g4`, context off, margin 2): `syn_gradient` 119 and `syn_stripes` 108 bytes (bars 616 and 271), `photo` total 30,795,260 (-0.057% against milestone 4's 30,812,732) with no photograph more than 0.1% larger (worst `kodim03` +0.032%), but `synth` at one thread measured encode totals 1.094 and 1.080 and decode totals 1.136 and 1.127 in two disjoint pools against the 1.03 bar, and decode `alloc_peak` was 31 bytes over, exactly the larger input file. The operator chose, in the session's words: \"Relax the timing or memory rule for this milestone; v2 is the nearest candidate. And revise all other milestones to avoid more blockers like this.\" This gate's rule is therefore v2's envelope above (time at most 1.15x on set totals, which covers v2's largest pooled total 1.136, and 1.5x per image, which covers its worst pooled image 1.434; memory counted as codec working memory, so the input file's growth is not a regression), the target names the learned gated modular prediction, and the port is `D01 T04 §10`. The decision is recorded in `todo/99-manual/TODO-01-operator-setup.md` Current state.",
+        ],
     },
 }
 
@@ -438,7 +463,7 @@ def render_band(b: int) -> str:
             p_verified_block = _format_verification_tail(p, prel, preceipt, p_reopened_lines)
             body.append(f"""## {p}. Plan Milestone {n}: {name}
 
-{p_started_block}{capture}Milestone {n}'s work is authored here, one milestone ahead, from what milestone {n - 1} actually measured: its target is *{target}*. The design notes are `docs/research.md` section 9 (milestone {n}) and the sections of `docs/research.md` it points at; the baseline is milestone {n - 1}'s gate stamp (`{gate_ref(n - 1)}`), never a figure from memory.
+{p_started_block}{capture}Milestone {n}'s work is authored here, one milestone ahead, from what milestone {n - 1} actually measured: its target is *{target}*. The design notes are `docs/research.md` section 9 (milestone {n}) and the sections of `docs/research.md` it points at; the baseline is milestone {n - 1}'s gate stamp (`{gate_ref(n - 1)}`), never a figure from memory. The target above is an estimate: this section re-derives it from that baseline, states every bar with its tolerance (set totals, or a count with a worst-image margin, rather than every image; a byte floor for images under 16,384 pixels; timing from pooled alternating runs), and keeps time and memory inside the gate's cost envelope unless the target itself names a speed or memory figure (operator decision 2026-10-30, `D99 T01 §4`).
 {p_notes_block}
 {p_checklist_block}- {p_commit_box} Commit: `"todo: plan milestone {n} -- {name.lower()}"`
 
@@ -484,7 +509,7 @@ def render_band(b: int) -> str:
         verified_block = _format_verification_tail(g, grel, greceipt, g_reopened_lines)
         rule_text = str(
             state.get("rule")
-            or (RULE.format(prev=n - 1) if n > 1 else "It is the baseline every later milestone is measured against.")
+            or ((RULE if n <= 4 else RULE_2026_10_30).format(prev=n - 1) if n > 1 else "It is the baseline every later milestone is measured against.")
         )
         body.append(f"""## {g}. Milestone {n} Gate: {name}
 
@@ -550,10 +575,15 @@ track: G{t}
 
 def render_research() -> str:
     out = [BEGIN, "",
-           "Each milestone keeps everything the one before it reached and adds one measurable step: no photo size more than",
-           "0.1% worse, no encode or decode time more than 3% worse, no higher peak memory (unless a milestone's target",
-           "explicitly specifies a new model-count envelope under `D99 T01 §4`, such as Milestone 4's 7-model Format Version 3",
-           "envelope), and every older file still decoding. Milestones 1 to 10 are measured against JPEG XL and WebP; from",
+           "Each milestone keeps everything the one before it reached and adds one measurable step. Milestones 2 to 4 held",
+           "the original rule: no photo size more than 0.1% worse, no encode or decode time more than 3% worse, no higher peak",
+           "memory (Milestone 4 under its 7-model Format Version 3 envelope, `D99 T01 §4`), and every older file still decoding.",
+           "On 2026-10-30 the operator replaced it (`D99 T01 §4`): Milestone 5 carries its own envelope for learned gated modular",
+           "prediction, and from milestone 6 the rule is a cost envelope: the `photo` and `tp` totals no more than 0.1% larger and",
+           "no photograph more than 0.5% larger; encode and decode time at most 1.10x on the `measure`, `photo`, `tp`, and",
+           "`tp-only` totals and 1.20x on the `synth` total, and at most 1.5x on any image of at least 16,384 pixels (smaller",
+           "images at most 1 ms slower), from pooled alternating runs whose disjoint pools agree; codec working memory (decode",
+           "`alloc_peak` less the input file) at most 5% higher; and every older file still decoding. Milestones 1 to 10 are measured against JPEG XL and WebP; from",
            "milestone 11 RasterFold is measured against its own previous release. Targets past milestone 10 are estimates:",
            "each is re-derived from the previous milestone's measured results when its planning section runs. The gates live",
            "in `todo/05-milestones/`; this table is generated from `research/milestones.py`.", ""]

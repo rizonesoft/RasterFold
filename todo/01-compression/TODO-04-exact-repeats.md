@@ -2,7 +2,7 @@
 schema_version: 1
 id: exact-repeats
 domain: 01-compression
-status: done
+status: active
 title: "TODO-04 -- Exact Repeats: a Match Model"
 depends_on: []
 frozen: true
@@ -48,6 +48,7 @@ track: C4
 |   7   |   §7    | Gated modular prediction in format version 3 | §6, D01 T03 §1 |  [x]   |
 |   8   |   §8    | Learned gated modular prediction, measured | §7, D01 T03 §1 |  [x]   |
 |   9   |   §9    | Learned gated modular prediction in format version 3 | §8, D01 T03 §1 |  [x]   |
+|  10   |   §10   | Learned gated modular prediction v2 in format version 3 | §8, §9, D01 T03 §1 |  [ ]   |
 
 ---
 
@@ -301,6 +302,24 @@ Ports §8's accepted variant into format version 3 before the 1.0 release freeze
 
 > **Verified:** 2026-10-30 | §9 | a4ff3eb0e77da5ec4cd529f1fef6fac6ebc6bae6
 > **Review:** `docs/reviews/d01-t04-s9.json`
+## 10. Learned Gated Modular Prediction v2 in Format Version 3
+
+**Operator decision 2026-10-30** (under `D99 T01 §4`, recorded in `todo/99-manual/TODO-01-operator-setup.md` Current state): "Relax the timing or memory rule for this milestone; v2 is the nearest candidate. And revise all other milestones to avoid more blockers like this." Milestone 5 (`D05 T01 §5`) now carries v2's envelope: encode and decode time at most 1.15x Milestone 4's on every set total and 1.5x on any image of at least 16,384 pixels, and codec working memory unchanged, with the input file's growth not counted. §9 shipped §8's rejection under the old bars and stays as stamped; this section ports v2 under the new ones.
+
+Ports §8's variant v2 into the version 3 path of method 1 before the 1.0 release freezes version 3 (`todo/README.md`, Frozen behavior: an unreleased version is extended in place, regenerating its known-answer file). The design is §8's **Design** paragraph with the variant fixed: gate `g4`, context off (one error-sum slot per channel), margin `M` 2. Nothing else changes: `gp`, `ex`, the gate, the `uint16_t` error sums `Eg` and `Et` zeroed at each channel start, the fold `d(p) = min(m, 32)`, the strict `2 * Eg < Et` choice, the update when the gate was open and the halving when either sum reaches 4,096, the weight-set offset `wsel + 4` when `gp` was used, and every other state keeping today's formula. The sums live in `chan_t` inside the stack `cm_t`, so nothing is allocated. §8's prototype CLI `build/d01-t04-s8/bin/rasterfold-v2` (built from `build/d01-t04-s8/mktry.py` with `-DGS_M2`) is the reference the port must equal byte for byte; if the scratch is gone, rebuild it with `mktry.py` and `mkcli.sh` from §8 first.
+
+Measured at §8 (2026-10-30; the implementer re-runs the sizes on the port): `syn_gradient` 119 and `syn_stripes` 108 bytes (bars 616 and 271), `syn_ui` 1,410 and `syn_text` 1,447, `photo` total 30,795,260 (-0.057% against 30,812,732) with no photograph more than 0.1% larger (worst `kodim03` +0.032%); `tp` was not measured at §8.
+
+- [ ] Port v2 into the version 3 path of `src/cm.c`, version 2 decoding unchanged, with no `-D` switch and no trace code. Done when: `python3 scripts/build.py --target linux-x64` and `--target windows-x64` exit 0 with no warning; the port's `.fold` files are byte-identical to `build/d01-t04-s8/bin/rasterfold-v2`'s on all 55 distinct corpus images (`synth`, `photo`, `tp`) and on §8's seven boundary fixtures; one-thread and three-thread output is byte-identical and round-trips to the source pixels on all of them; and every version 2 file in `build/research/fold-v2/` still decodes to its pixels at `--threads 1` and `--threads 3`.
+- [ ] Specify the choice in `spec/FOLD.md` (method 1, version 3: `gp` with its column-0 and row-0 forms, `ex`, the `g4` gate, the per-channel error sums with their fold, cap and halving, the margin-2 choice, the chosen prediction feeding the residual, and the weight-set offset), write it into `tests/rfi_ref.py` from that text (not from the C), and regenerate `KAT_FOLD3` in `tests/test_correctness.py`. Done when: `python3 tests/test_correctness.py` passes every case with codec and oracle byte-identical, including `gradient` and `stripes`, and the version 2 vectors `KAT_FOLD`, `KAT_PAL` and `KAT_PAL2` still decode.
+- [ ] Measure the port's sizes with `python3 research/ab.py size src/cm.c synth -v`, `photo -v` and `tp -v`. Done when: `syn_gradient` below 616, `syn_stripes` below 271, `syn_ui` below 2,195 and `syn_text` below 2,038 bytes, the `photo` total no larger than 30,812,732 with no photograph more than 0.1% larger, and the `tp` total no more than 0.1% above 6,641,390 are quoted (timing and memory are the Milestone 5 gate's measurement).
+- [ ] Run `python3 tests/fuzz_decode.py 300 1` on Linux and Windows. Done when: every mutated file is rejected or decoded without a crash, hang or mismatch, with the seed quoted.
+- [ ] Commit: `"codec: version 3 chooses a gated gradient where it has been better"`
+
+**Test checkpoint:** format fidelity: `python3 tests/test_correctness.py` passes every case with codec and oracle byte-identical (`gradient` and `stripes` included) and the regenerated `KAT_FOLD3` round-trips; the port's files equal §8's v2 prototype's on all 55 corpus images with one-thread and three-thread bytes identical; `python3 research/ab.py size src/cm.c synth -v` shows `syn_gradient` below 616 and `syn_stripes` below 271 bytes.
+
+**Freeze check:** `KAT_FOLD` (version 2) and every version 2 file in `build/research/fold-v2/` decode unchanged; version 3 is unreleased, so the operator's standing approval (`D99 T01 §3`) covers extending it in place with `KAT_FOLD3` regenerated.
+
 ## Verification
 
 - [ ] `pwsh scripts/check-all.ps1` exits 0
