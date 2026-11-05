@@ -204,10 +204,16 @@ def baseline_source_digest(
     baseline_key: str,
     force_cm: bool,
     extra_inputs: tuple[Path, ...] = (),
+    compiler_path: Path | None = None,
 ) -> str:
+    clang_path = ab.CLANG if compiler_path is None else compiler_path
     src_dir = RES / "m1_src" if baseline_key == "m1" else REPO / "src"
     seen: set[Path] = set()
     files: list[Path] = []
+    compiler_companions: list[Path] = [clang_path]
+    if clang_path.parent.is_dir():
+        for cname in ("clang", "clang.exe", "x86_64-w64-windows-gnu.cfg"):
+            compiler_companions.append(clang_path.parent / cname)
     for candidate in [
         cm_path,
         *sorted(src_dir.glob("*.[ch]")),
@@ -215,21 +221,26 @@ def baseline_source_digest(
         *sorted((REPO / "include").glob("*.h")),
         TOOLS / "bench.c",
         TOOLS / "benchsys.c",
+        REPO / "toolchain.json",
+        *compiler_companions,
         *extra_inputs,
     ]:
-        resolved = candidate.resolve()
-        if resolved not in seen and candidate.is_file():
-            seen.add(resolved)
-            files.append(candidate)
+        if candidate.is_file():
+            resolved = candidate.resolve()
+            if resolved not in seen:
+                seen.add(resolved)
+                files.append(resolved)
     recipe_str = (
-        f"baseline={baseline_key}:force_cm={int(force_cm)}:clang={ab.CLANG}\n"
+        f"baseline={baseline_key}:force_cm={int(force_cm)}:clang={clang_path}\n"
         + inspect.getsource(build_strips_bench)
         + "\n"
         + inspect.getsource(ab.build)
     )
     h = hashlib.sha256(recipe_str.encode("utf-8"))
+    if not clang_path.is_file():
+        h.update(f"missing_clang:{clang_path}\0".encode("utf-8"))
     for p in files:
-        h.update(p.name.encode("ascii") + b"\0" + p.read_bytes() + b"\0")
+        h.update(p.name.encode("ascii") + b"\0" + file_sha256(p).encode("ascii") + b"\0")
     return h.hexdigest()
 
 
@@ -413,7 +424,24 @@ def measure_strips_for_set(
     max_height: int | None = None,
     verbose: bool = False,
     force_cm: bool = False,
+    ppm_dir: Path | None = None,
+    set_images: list[str] | None = None,
 ) -> dict[str, object]:
+    if max_height is not None and max_height <= 0:
+        raise ValueError(f"no images in set {set_name!r} match max_height={max_height}")
+    src_ppm_dir = ab.PPM if ppm_dir is None else ppm_dir
+    candidate_imgs = ab.SETS[set_name] if set_images is None else set_images
+
+    selected_ppms: list[tuple[str, int, int, bytes]] = []
+    for img in candidate_imgs:
+        ppm_path = src_ppm_dir / f"{img}.ppm"
+        w, h, rgb = read_ppm(ppm_path)
+        if max_height is not None and h > max_height:
+            continue
+        selected_ppms.append((img, w, h, rgb))
+    if not selected_ppms:
+        raise ValueError(f"no images in set {set_name!r} match max_height={max_height}")
+
     baseline_key = ensure_baseline_sources(cm_path)
     tag = f"{baseline_key}{'_cm' if force_cm else ''}"
     exe = RES / f"bench_strips_{tag}.exe"
@@ -431,11 +459,7 @@ def measure_strips_for_set(
     dims: dict[str, tuple[int, int]] = {}
     strip_relpaths: list[str] = []
     strip_ppm_shas: dict[str, str] = {}
-    for img in ab.SETS[set_name]:
-        ppm_path = ab.PPM / f"{img}.ppm"
-        w, h, rgb = read_ppm(ppm_path)
-        if max_height is not None and h > max_height:
-            continue
+    for img, w, h, rgb in selected_ppms:
         imgs.append(img)
         dims[img] = (w, h)
         strips = split_ppm_strips(w, h, rgb, num_strips)
@@ -444,8 +468,6 @@ def measure_strips_for_set(
             out_ppm = RES / f"{rel}.ppm"
             strip_ppm_shas[rel] = write_ppm(out_ppm, sw, sh, srgb)
             strip_relpaths.append(rel)
-    if not imgs:
-        raise ValueError(f"no images in set {set_name!r} match max_height={max_height}")
 
     strip_cache_path = RES / "strips" / f"strips_{tag}_S{num_strips}.json"
     strip_cached: dict[str, object] = {}
@@ -670,25 +692,52 @@ def self_test() -> int:
         assert sha1 == sha2
         assert tmp_ppm.read_bytes() == b"P6\n2 2\n255\n" + bytes([10] * 12)
 
-        # 5. Build provenance digest includes headers (simd.h / rasterfold.h) and build recipe
+        # 5. Build provenance digest includes headers, build recipe, and compiler binary content at same path
         tmp_hdr = Path(tmpdir) / "simd_probe.h"
+        tmp_clang = Path(tmpdir) / "x86_64-w64-mingw32-clang"
         tmp_hdr.write_text("#define SIMD_PROBE 1\n", encoding="utf-8")
-        d1 = baseline_source_digest(REPO / "src" / "cm.c", "m5", False, extra_inputs=(tmp_hdr,))
+        tmp_clang.write_bytes(b"fake-compiler-binary-v1")
+        d1 = baseline_source_digest(
+            REPO / "src" / "cm.c", "m5", False, extra_inputs=(tmp_hdr,), compiler_path=tmp_clang
+        )
         tmp_hdr.write_text("#define SIMD_PROBE 2\n", encoding="utf-8")
-        d2 = baseline_source_digest(REPO / "src" / "cm.c", "m5", False, extra_inputs=(tmp_hdr,))
+        d2 = baseline_source_digest(
+            REPO / "src" / "cm.c", "m5", False, extra_inputs=(tmp_hdr,), compiler_path=tmp_clang
+        )
         assert d1 != d2, "changing an included header must change baseline_source_digest"
-        d_force = baseline_source_digest(REPO / "src" / "cm.c", "m5", True, extra_inputs=(tmp_hdr,))
+        d_force = baseline_source_digest(
+            REPO / "src" / "cm.c", "m5", True, extra_inputs=(tmp_hdr,), compiler_path=tmp_clang
+        )
         assert d2 != d_force, "force_cm flag must change baseline_source_digest"
+        # Replace compiler binary in place at the exact same path
+        tmp_clang.write_bytes(b"fake-compiler-binary-v2")
+        d_clang_v2 = baseline_source_digest(
+            REPO / "src" / "cm.c", "m5", False, extra_inputs=(tmp_hdr,), compiler_path=tmp_clang
+        )
+        assert d2 != d_clang_v2, "replacing compiler binary at same path must change baseline_source_digest"
 
-        # 6. Empty height-filtered subset raises ValueError before aggregation
+        # 6. Empty height-filtered subset raises ValueError in isolation without compiler or corpus
+        saved_clang = ab.CLANG
         try:
-            measure_strips_for_set("photo", 2, REPO / "src" / "cm.c", max_height=0)
-        except ValueError as exc:
-            assert "max_height=0" in str(exc)
-        else:
-            raise AssertionError("expected ValueError on empty height-filtered subset")
+            ab.CLANG = Path(tmpdir) / "nonexistent_compiler"
+            for bad_h in (0, 1):
+                try:
+                    measure_strips_for_set(
+                        "photo",
+                        2,
+                        REPO / "src" / "cm.c",
+                        max_height=bad_h,
+                        ppm_dir=Path(tmpdir),
+                        set_images=["test"],
+                    )
+                except ValueError as exc:
+                    assert f"max_height={bad_h}" in str(exc)
+                else:
+                    raise AssertionError(f"expected ValueError on empty height-filtered subset (max_height={bad_h})")
+        finally:
+            ab.CLANG = saved_clang
 
-    print("strips.py self-test: 9/9 passed")
+    print("strips.py self-test: 10/10 passed")
     return 0
 
 
