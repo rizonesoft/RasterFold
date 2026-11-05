@@ -1,0 +1,91 @@
+{
+  "ref": "D05 T01 \u00a75",
+  "title": "Milestone 5 Gate: Exact repeats",
+  "implementation_sha": "b4d6b8b112169ab6199070451c38a00ed51834c2",
+  "date": "2026-11-05",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/05-milestones/D05-T01-s5.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/05-milestones/D05-T01-s5.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 scripts/check-all.py --all-targets -> check-all: 29/29 passed",
+    "python3 scripts/ci_status.py -> build.yml green at be5cd7a7b418 (run 42091341595), plan.yml green at e4b0243eb92a (run 42092922402)",
+    "python3 scripts/ci_status.py --workflow pages.yml -> pages.yml green at b4d6b8b11216 (run 42094152849)",
+    "python3 research/milestones.py --check -> milestones: current"
+  ],
+  "completion": {
+    "report": "docs/reviews/05-milestones/D05-T01-s5.md",
+    "verdict": "completed",
+    "candidate": "be5cd7a7b418b4f91f524ca01671417fcdd30e8c",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 2,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/05-milestones/D05-T01-s5.md",
+    "candidate": "c37abb33b4285214c6d0c67cd3c040b05002c632",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}
