@@ -998,20 +998,20 @@ class DriftTests(unittest.TestCase):
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
             self.assertEqual(1, build_docs.main(['--root', str(self.root), '--self-test']))
-        self.assertIn("('photo', 'rasterfold') data-value='0.8888' != '0.9695'", err.getvalue())
+        self.assertIn("('photo', 'rasterfold') data-value='0.8888' != '0.9690'", err.getvalue())
         build_docs.write_generated_pages(self.root)
 
         # 1. Hand-edited bar data-value fails --self-test.
         csr_rel = 'docs/_includes/generated/charts/corpus-size-ratio.svg'
         csr_orig = (self.root / csr_rel).read_text(encoding='utf-8')
-        self.write(csr_rel, csr_orig.replace('data-value="0.9695"', 'data-value="0.1234"', 1))
+        self.write(csr_rel, csr_orig.replace('data-value="0.9690"', 'data-value="0.1234"', 1))
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
             self.assertEqual(1, build_docs.main(['--root', str(self.root), '--self-test']))
-        self.assertIn("('photo', 'rasterfold') data-value='0.1234' != '0.9695'", err.getvalue())
+        self.assertIn("('photo', 'rasterfold') data-value='0.1234' != '0.9690'", err.getvalue())
 
         # 2. Hand-edited bar SVG geometry height fails --self-test even when data-value is untouched.
-        self.write(csr_rel, csr_orig.replace('height="209.41"', 'height="100.00"', 1))
+        self.write(csr_rel, csr_orig.replace('height="209.29"', 'height="100.00"', 1))
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
             self.assertEqual(1, build_docs.main(['--root', str(self.root), '--self-test']))
@@ -1047,7 +1047,7 @@ class DriftTests(unittest.TestCase):
         # 5. Hand-edited Markdown table cell fails --self-test.
         tbl_rel = 'docs/_includes/generated/tables/corpus-size-ratio.md'
         tbl_orig = (self.root / tbl_rel).read_text(encoding='utf-8')
-        self.write(tbl_rel, tbl_orig.replace('30812732', '99999999', 1))
+        self.write(tbl_rel, tbl_orig.replace('30795260', '99999999', 1))
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
             self.assertEqual(1, build_docs.main(['--root', str(self.root), '--self-test']))
@@ -1080,7 +1080,7 @@ class DriftTests(unittest.TestCase):
         self.write(
             'benchmarks/results.csv',
             re.sub(
-                r'^(measure,image,1672,941,4720056,rasterfold,1405087,)[^,]+,[^,]+,',
+                r'^(measure,image,1672,941,4720056,rasterfold,1405118,)[^,]+,[^,]+,',
                 r'\g<1>401129.5,384760.5,',
                 res_orig,
                 count=1,
@@ -1126,9 +1126,9 @@ class DriftTests(unittest.TestCase):
             'synth': (11, [r for r in corpus_rows if r['set'] == 'synth']),
             'all': (55, corpus_rows),
         }
-        self.assertEqual(6641390, live_facts['corpus_tp_rf_bytes'])
-        self.assertEqual('0.9728', live_facts['corpus_tp_jxl_e7_ratio'])
-        self.assertEqual('0.9700', live_facts['corpus_tp_jxl_e7_geomean'])
+        self.assertEqual(6640275, live_facts['corpus_tp_rf_bytes'])
+        self.assertEqual('0.9727', live_facts['corpus_tp_jxl_e7_ratio'])
+        self.assertEqual('0.9698', live_facts['corpus_tp_jxl_e7_geomean'])
         for key_prefix, (exp_count, grp_rows) in expected_groups.items():
             self.assertEqual(exp_count, len(grp_rows), key_prefix)
             self.assertEqual(exp_count, live_facts[f'corpus_{key_prefix}_count'])
@@ -1199,7 +1199,7 @@ class DriftTests(unittest.TestCase):
 
         # 2. Mutating a CSV cell in benchmarks/results.csv or benchmarks/corpus.csv fails with fact + generated errors.
         orig_results = (self.root / 'benchmarks/results.csv').read_text(encoding='utf-8')
-        self.write('benchmarks/results.csv', orig_results.replace(',1405087,', ',1409999,', 1))
+        self.write('benchmarks/results.csv', orig_results.replace(',1405118,', ',1409999,', 1))
         c = self.check()
         self.assertIn('fact', self.kinds(c))
         self.assertIn('generated', self.kinds(c))
@@ -1208,7 +1208,7 @@ class DriftTests(unittest.TestCase):
         self.assertEqual([], self.check().errors)
 
         orig_corpus = (self.root / 'benchmarks/corpus.csv').read_text(encoding='utf-8')
-        self.write('benchmarks/corpus.csv', orig_corpus.replace('photo,measure,1672,941,1405087,', 'photo,measure,1672,941,1409999,', 1))
+        self.write('benchmarks/corpus.csv', orig_corpus.replace('photo,measure,1672,941,1405118,', 'photo,measure,1672,941,1409999,', 1))
         c = self.check()
         self.assertIn('fact', self.kinds(c))
         self.assertTrue(any(e['path'] == 'docs/benchmarks.md' and 'corpus_photo_rf_bytes' in e['detail'] for e in c.errors))
@@ -1220,8 +1220,8 @@ class DriftTests(unittest.TestCase):
         self.write(
             'docs/benchmarks.md',
             orig_bm.replace(
-                '`1,405,087` bytes <!-- drift:fact measurement_reference_bytes = 1405087 -->',
-                '`1,409,999` bytes <!-- drift:fact measurement_reference_bytes = 1405087 -->',
+                '`1,405,118` bytes <!-- drift:fact measurement_reference_bytes = 1405118 -->',
+                '`1,409,999` bytes <!-- drift:fact measurement_reference_bytes = 1405118 -->',
                 1,
             ),
         )
@@ -1230,7 +1230,7 @@ class DriftTests(unittest.TestCase):
             any(
                 e['kind'] == 'fact'
                 and e['path'] == 'docs/benchmarks.md'
-                and 'visible figure before measurement_reference_bytes does not match 1405087' in e['detail']
+                and 'visible figure before measurement_reference_bytes does not match 1405118' in e['detail']
                 for e in c.errors
             ),
             c.errors,
@@ -1261,8 +1261,8 @@ class DriftTests(unittest.TestCase):
         self.write(
             'docs/benchmarks.md',
             orig_bm.replace(
-                '`1,405,087` bytes <!-- drift:fact measurement_reference_bytes = 1405087 -->',
-                '`999` bytes <!-- previous: 1405087 --> <!-- drift:fact measurement_reference_bytes = 1405087 -->',
+                '`1,405,118` bytes <!-- drift:fact measurement_reference_bytes = 1405118 -->',
+                '`999` bytes <!-- previous: 1405118 --> <!-- drift:fact measurement_reference_bytes = 1405118 -->',
                 1,
             ),
         )
@@ -1271,7 +1271,7 @@ class DriftTests(unittest.TestCase):
             any(
                 e['kind'] == 'fact'
                 and e['path'] == 'docs/benchmarks.md'
-                and 'visible figure before measurement_reference_bytes does not match 1405087' in e['detail']
+                and 'visible figure before measurement_reference_bytes does not match 1405118' in e['detail']
                 for e in c.errors
             ),
             c.errors,
@@ -1291,38 +1291,38 @@ class DriftTests(unittest.TestCase):
             c.errors,
         )
         for smuggled in (
-            'Size: <span data-bytes="1405087">999</span> bytes <!-- drift:fact measurement_reference_bytes = 1405087 -->',
-            'Size: 999 bytes <span title="x > 1405087">wrong</span> <!-- drift:fact measurement_reference_bytes = 1405087 -->',
-            'Size: 999 bytes <script>1405087</script> <!-- drift:fact measurement_reference_bytes = 1405087 -->',
-            'Size: 999 bytes <span hidden>1405087</span> <!-- drift:fact measurement_reference_bytes = 1405087 -->',
-            'Size: 999 bytes <span hidden>1405087 <!-- drift:fact measurement_reference_bytes = 1405087 --></span>',
-            'Size: 999 bytes <span\nhidden>1405087 <!-- drift:fact measurement_reference_bytes = 1405087 --></span>',
-            'Size: 999 bytes <span hidden />1405087 <!-- drift:fact measurement_reference_bytes = 1405087 --></span>',
-            '<!--\n<span>1405087</span> <!-- drift:fact measurement_reference_bytes = 1405087 -->',
-            'Size: 999 bytes <span style="display&#58;none">1405087</span> <!-- drift:fact measurement_reference_bytes = 1405087 -->',
-            'Size: 999 bytes <span style="opacity:0.0">1405087</span> <!-- drift:fact measurement_reference_bytes = 1405087 -->',
-            'For `<x>`, size: 1405087 9999 <!-- drift:fact measurement_reference_bytes = 1405087 -->',
-            '1405087 <span style="--opacity:0">999</span> <!-- drift:fact measurement_reference_bytes = 1405087 -->',
-            '1405087 <span style="opacity:0;opacity:1">999</span> <!-- drift:fact measurement_reference_bytes = 1405087 -->',
-            'Size: 999 bytes <span style="display:none;display:bogus">1405087</span> <!-- drift:fact measurement_reference_bytes = 1405087 -->',
-            'Size: 999 bytes <span style="visibility:hidden;visibility:bogus">1405087</span> <!-- drift:fact measurement_reference_bytes = 1405087 -->',
-            'Size: 999 bytes <span style="opacity:0;opacity:bogus">1405087</span> <!-- drift:fact measurement_reference_bytes = 1405087 -->',
-            'Size: 999 bytes <span style="opacity:0;opacity:1.">1405087</span> <!-- drift:fact measurement_reference_bytes = 1405087 -->',
-            'Size: 999 bytes <span style="font-size:0;font-size:16.px">1405087</span> <!-- drift:fact measurement_reference_bytes = 1405087 -->',
-            'Size: 999 bytes <span style="opacity:0e0">1405087</span> <!-- drift:fact measurement_reference_bytes = 1405087 -->',
-            'Size: 999 bytes <div style="content-visibility:hidden">1405087</div> <!-- drift:fact measurement_reference_bytes = 1405087 -->',
-            'Size: 999 bytes <div style="content-visibility:hidden;content-visibility:bogus">1405087</div> <!-- drift:fact measurement_reference_bytes = 1405087 -->',
-            '1405087 <span aria-hidden="true">999</span> <!-- drift:fact measurement_reference_bytes = 1405087 -->',
-            'Size: 999 bytes <span hidden><span>1405087</span>1405087</span> <!-- drift:fact measurement_reference_bytes = 1405087 -->',
-            '<div hidden>\nSize: 1,405,087 bytes <!-- drift:fact measurement_reference_bytes = 1405087 -->\n</div>',
-            'Size: [999 bytes](README.md#1405087) <!-- drift:fact measurement_reference_bytes = 1405087 -->',
-            'Size: [999 bytes](https://example.invalid/a(b(c))#1405087) <!-- drift:fact measurement_reference_bytes = 1405087 -->',
-            "Size: [999 bytes](https://example.invalid/it's#1405087) <!-- drift:fact measurement_reference_bytes = 1405087 -->",
-            'Size: 999 bytes ![1405087](_includes/generated/charts/corpus-size-ratio.svg) <!-- drift:fact measurement_reference_bytes = 1405087 -->',
-            'Wrong size: 999 bytes. ![1,405,087 <!-- drift:fact measurement_reference_bytes = 1405087 -->](_includes/generated/charts/corpus-size-ratio.svg)',
-            'Wrong size: 999 bytes. ![\n1,405,087 <!-- drift:fact measurement_reference_bytes = 1405087 -->\n](_includes/generated/charts/corpus-size-ratio.svg)',
-            r'Size: 999 bytes \\![1405087](_includes/generated/charts/corpus-size-ratio.svg) <!-- drift:fact measurement_reference_bytes = 1405087 -->',
-            'Size: 999 bytes [source][1405087] <!-- drift:fact measurement_reference_bytes = 1405087 -->\n\n[1405087]: README.md',
+            'Size: <span data-bytes="1405118">999</span> bytes <!-- drift:fact measurement_reference_bytes = 1405118 -->',
+            'Size: 999 bytes <span title="x > 1405118">wrong</span> <!-- drift:fact measurement_reference_bytes = 1405118 -->',
+            'Size: 999 bytes <script>1405118</script> <!-- drift:fact measurement_reference_bytes = 1405118 -->',
+            'Size: 999 bytes <span hidden>1405118</span> <!-- drift:fact measurement_reference_bytes = 1405118 -->',
+            'Size: 999 bytes <span hidden>1405118 <!-- drift:fact measurement_reference_bytes = 1405118 --></span>',
+            'Size: 999 bytes <span\nhidden>1405118 <!-- drift:fact measurement_reference_bytes = 1405118 --></span>',
+            'Size: 999 bytes <span hidden />1405118 <!-- drift:fact measurement_reference_bytes = 1405118 --></span>',
+            '<!--\n<span>1405118</span> <!-- drift:fact measurement_reference_bytes = 1405118 -->',
+            'Size: 999 bytes <span style="display&#58;none">1405118</span> <!-- drift:fact measurement_reference_bytes = 1405118 -->',
+            'Size: 999 bytes <span style="opacity:0.0">1405118</span> <!-- drift:fact measurement_reference_bytes = 1405118 -->',
+            'For `<x>`, size: 1405118 9999 <!-- drift:fact measurement_reference_bytes = 1405118 -->',
+            '1405118 <span style="--opacity:0">999</span> <!-- drift:fact measurement_reference_bytes = 1405118 -->',
+            '1405118 <span style="opacity:0;opacity:1">999</span> <!-- drift:fact measurement_reference_bytes = 1405118 -->',
+            'Size: 999 bytes <span style="display:none;display:bogus">1405118</span> <!-- drift:fact measurement_reference_bytes = 1405118 -->',
+            'Size: 999 bytes <span style="visibility:hidden;visibility:bogus">1405118</span> <!-- drift:fact measurement_reference_bytes = 1405118 -->',
+            'Size: 999 bytes <span style="opacity:0;opacity:bogus">1405118</span> <!-- drift:fact measurement_reference_bytes = 1405118 -->',
+            'Size: 999 bytes <span style="opacity:0;opacity:1.">1405118</span> <!-- drift:fact measurement_reference_bytes = 1405118 -->',
+            'Size: 999 bytes <span style="font-size:0;font-size:16.px">1405118</span> <!-- drift:fact measurement_reference_bytes = 1405118 -->',
+            'Size: 999 bytes <span style="opacity:0e0">1405118</span> <!-- drift:fact measurement_reference_bytes = 1405118 -->',
+            'Size: 999 bytes <div style="content-visibility:hidden">1405118</div> <!-- drift:fact measurement_reference_bytes = 1405118 -->',
+            'Size: 999 bytes <div style="content-visibility:hidden;content-visibility:bogus">1405118</div> <!-- drift:fact measurement_reference_bytes = 1405118 -->',
+            '1405118 <span aria-hidden="true">999</span> <!-- drift:fact measurement_reference_bytes = 1405118 -->',
+            'Size: 999 bytes <span hidden><span>1405118</span>1405118</span> <!-- drift:fact measurement_reference_bytes = 1405118 -->',
+            '<div hidden>\nSize: 1,405,118 bytes <!-- drift:fact measurement_reference_bytes = 1405118 -->\n</div>',
+            'Size: [999 bytes](README.md#1405118) <!-- drift:fact measurement_reference_bytes = 1405118 -->',
+            'Size: [999 bytes](https://example.invalid/a(b(c))#1405118) <!-- drift:fact measurement_reference_bytes = 1405118 -->',
+            "Size: [999 bytes](https://example.invalid/it's#1405118) <!-- drift:fact measurement_reference_bytes = 1405118 -->",
+            'Size: 999 bytes ![1405118](_includes/generated/charts/corpus-size-ratio.svg) <!-- drift:fact measurement_reference_bytes = 1405118 -->',
+            'Wrong size: 999 bytes. ![1,405,118 <!-- drift:fact measurement_reference_bytes = 1405118 -->](_includes/generated/charts/corpus-size-ratio.svg)',
+            'Wrong size: 999 bytes. ![\n1,405,118 <!-- drift:fact measurement_reference_bytes = 1405118 -->\n](_includes/generated/charts/corpus-size-ratio.svg)',
+            r'Size: 999 bytes \\![1405118](_includes/generated/charts/corpus-size-ratio.svg) <!-- drift:fact measurement_reference_bytes = 1405118 -->',
+            'Size: 999 bytes [source][1405118] <!-- drift:fact measurement_reference_bytes = 1405118 -->\n\n[1405118]: README.md',
         ):
             self.write('docs/benchmarks.md', orig_bm + '\n' + smuggled + '\n')
             c = self.check()
@@ -1330,7 +1330,7 @@ class DriftTests(unittest.TestCase):
                 any(
                     e['kind'] == 'fact'
                     and e['path'] == 'docs/benchmarks.md'
-                    and 'visible figure before measurement_reference_bytes does not match 1405087' in e['detail']
+                    and 'visible figure before measurement_reference_bytes does not match 1405118' in e['detail']
                     for e in c.errors
                 ),
                 (smuggled, c.errors),
@@ -1338,8 +1338,8 @@ class DriftTests(unittest.TestCase):
         self.write(
             'docs/benchmarks.md',
             orig_bm
-            + '\nSize: [1,405,087 bytes](https://example.invalid/source) <!-- drift:fact measurement_reference_bytes = 1405087 -->\n'
-            + 'Size: <span aria-hidden="true">1,405,087</span> bytes <!-- drift:fact measurement_reference_bytes = 1405087 -->\n',
+            + '\nSize: [1,405,118 bytes](https://example.invalid/source) <!-- drift:fact measurement_reference_bytes = 1405118 -->\n'
+            + 'Size: <span aria-hidden="true">1,405,118</span> bytes <!-- drift:fact measurement_reference_bytes = 1405118 -->\n',
         )
         self.assertEqual([], self.check().errors)
 
@@ -1348,7 +1348,7 @@ class DriftTests(unittest.TestCase):
         self.write(
             'benchmarks/results.csv',
             re.sub(
-                r'^(measure,image,1672,941,4720056,rasterfold,1405087,)[^,]+,[^,]+,',
+                r'^(measure,image,1672,941,4720056,rasterfold,1405118,)[^,]+,[^,]+,',
                 r'\g<1>401129.5,384760.5,',
                 orig_results,
                 count=1,
