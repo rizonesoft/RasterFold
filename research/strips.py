@@ -157,6 +157,8 @@ def validate_and_adjust_strip_size(
     num_strips = len(strip_sizes)
     if num_strips < 1 or len(strip_statuses) != num_strips:
         raise ValueError("mismatched strip_sizes and strip_statuses")
+    if whole_size <= 0 or any(s <= 0 for s in strip_sizes):
+        raise ValueError("whole_size and strip_sizes must be positive")
     raw_sum = sum(strip_sizes)
     all_ok = whole_status == "OK" and all(st == "OK" for st in strip_statuses)
     if set_name != "synth" and not all_ok:
@@ -244,14 +246,27 @@ def baseline_source_digest(
     return h.hexdigest()
 
 
+def _is_valid_timing(val: object) -> bool:
+    return (
+        not isinstance(val, bool)
+        and isinstance(val, (int, float))
+        and math.isfinite(float(val))
+        and float(val) > 0.0
+    )
+
+
 def is_valid_cache_entry(entry: object, expected_ppm_sha: str) -> bool:
     return (
         isinstance(entry, list)
         and len(entry) == 5
+        and not isinstance(entry[0], bool)
         and isinstance(entry[0], int)
         and entry[0] > 0
+        and _is_valid_timing(entry[1])
+        and _is_valid_timing(entry[2])
         and isinstance(entry[3], str)
         and entry[3] in ("OK", "RAW", "PAL")
+        and isinstance(entry[4], str)
         and entry[4] == expected_ppm_sha
     )
 
@@ -674,6 +689,10 @@ def self_test() -> int:
     assert is_valid_cache_entry([500, 1.0, 1.0, "OK", "abc123"], "abc123")
     assert not is_valid_cache_entry([500, 1.0, 1.0, "OK"], "abc123")
     assert not is_valid_cache_entry([500, 1.0, 1.0, "OK", "wrong_sha"], "abc123")
+    assert not is_valid_cache_entry([500, None, 1.0, "OK", "abc123"], "abc123")
+    assert not is_valid_cache_entry([500, 1.0, "bad", "OK", "abc123"], "abc123")
+    assert not is_valid_cache_entry([500, -1.0, 1.0, "OK", "abc123"], "abc123")
+    assert not is_valid_cache_entry([True, 1.0, 1.0, "OK", "abc123"], "abc123")
     try:
         verify_whole_baselines(RES / "nonexistent_bench_exe.exe", "m5", ("photo",))
     except FileNotFoundError:
