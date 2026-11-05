@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **72 of 239 sections complete (30%).** 239 sections (15 discovered); backlog 3 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **73 of 239 sections complete (31%).** 239 sections (15 discovered); backlog 3 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -233,7 +233,7 @@ Strips extend version 3 and make decode scale past three threads.
 
 |  ✔  | Section      | Deliverable                                   | Items |
 | :-: | ------------ | --------------------------------------------- | :---: |
-| [ ] | `D02 T02 §1` | The size cost of horizontal strips            |   4   |
+| [x] | `D02 T02 §1` | The size cost of horizontal strips            |   4   |
 | [ ] | `D02 T03 §1` | Initialize only the model state an image uses |   6   |
 | [ ] | `D01 T03 §2` | Version 3: horizontal strips                  |   5   |
 | [ ] | `D05 T01 §6` | Milestone 6 gate: Faster than WebP to decode  |   4   |
