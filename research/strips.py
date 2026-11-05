@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import importlib.util
+import inspect
 import json
 import math
 import re
@@ -198,20 +199,35 @@ def ensure_baseline_sources(cm_path: Path) -> str:
     raise ValueError(f"unsupported baseline cm path: {cm_path}")
 
 
-def baseline_source_digest(cm_path: Path, baseline_key: str, force_cm: bool) -> str:
+def baseline_source_digest(
+    cm_path: Path,
+    baseline_key: str,
+    force_cm: bool,
+    extra_inputs: tuple[Path, ...] = (),
+) -> str:
     src_dir = RES / "m1_src" if baseline_key == "m1" else REPO / "src"
-    files = [
+    seen: set[Path] = set()
+    files: list[Path] = []
+    for candidate in [
         cm_path,
-        src_dir / "fold.c",
-        src_dir / "pal.c",
-        src_dir / "bmp.c",
-        src_dir / "crc32.c",
-        src_dir / "rf.h",
-        src_dir / "rc.h",
+        *sorted(src_dir.glob("*.[ch]")),
+        *sorted((REPO / "src").glob("*.[ch]")),
+        *sorted((REPO / "include").glob("*.h")),
         TOOLS / "bench.c",
         TOOLS / "benchsys.c",
-    ]
-    h = hashlib.sha256(f"baseline={baseline_key}:force_cm={int(force_cm)}\n".encode("ascii"))
+        *extra_inputs,
+    ]:
+        resolved = candidate.resolve()
+        if resolved not in seen and candidate.is_file():
+            seen.add(resolved)
+            files.append(candidate)
+    recipe_str = (
+        f"baseline={baseline_key}:force_cm={int(force_cm)}:clang={ab.CLANG}\n"
+        + inspect.getsource(build_strips_bench)
+        + "\n"
+        + inspect.getsource(ab.build)
+    )
+    h = hashlib.sha256(recipe_str.encode("utf-8"))
     for p in files:
         h.update(p.name.encode("ascii") + b"\0" + p.read_bytes() + b"\0")
     return h.hexdigest()
@@ -327,7 +343,7 @@ def build_strips_bench(cm_path: Path, exe: Path, baseline_key: str, force_cm: bo
     fold_cm = (
         fold_src.replace(
             "uint8_t *f = rf_alloc(RF_HEADER_SIZE + raw + 256);",
-            "size_t max_cm = raw * 2 + 4096;\n    uint8_t *f = rf_alloc(RF_HEADER_SIZE + max_cm);",
+            "size_t max_cm = 12u + 3u * ((size_t)img->width * img->height * 2u + 1024u);\n    uint8_t *f = rf_alloc(RF_HEADER_SIZE + max_cm);",
         )
         .replace(
             "rc = rf_pal_encode(img->rgb, img->width, img->height, f + RF_HEADER_SIZE, raw - 1, &pal_n, err);",
@@ -343,6 +359,17 @@ def build_strips_bench(cm_path: Path, exe: Path, baseline_key: str, force_cm: bo
     fold_cm_path = RES / "strips" / f"fold_cm_{baseline_key}.c"
     fold_cm_path.parent.mkdir(parents=True, exist_ok=True)
     fold_cm_path.write_text(fold_cm, encoding="utf-8")
+
+    cm_src = cm_path.read_text(encoding="utf-8")
+    cm_force = cm_src.replace(
+        "size_t each = (size_t)w * h + 64;",
+        "size_t each = (size_t)w * h * 2u + 1024u;",
+    )
+    if "size_t each = (size_t)w * h * 2u + 1024u;" not in cm_force:
+        raise RuntimeError(f"failed to patch cm.c per-channel cap for force_cm on baseline {baseline_key}")
+    cm_force_path = RES / "strips" / f"cm_force_{baseline_key}.c"
+    cm_force_path.write_text(cm_force, encoding="utf-8")
+
     extra_defs: list[str] = []
     inc_dirs = [f"-I{REPO / 'src'}"]
     if is_m1:
@@ -365,7 +392,7 @@ def build_strips_bench(cm_path: Path, exe: Path, baseline_key: str, force_cm: bo
         str(TOOLS / "bench.c"),
         str(TOOLS / "benchsys.c"),
         str(fold_cm_path),
-        str(cm_path),
+        str(cm_force_path),
         str(src_dir / "pal.c"),
         str(src_dir / "bmp.c"),
         str(src_dir / "crc32.c"),
@@ -417,6 +444,8 @@ def measure_strips_for_set(
             out_ppm = RES / f"{rel}.ppm"
             strip_ppm_shas[rel] = write_ppm(out_ppm, sw, sh, srgb)
             strip_relpaths.append(rel)
+    if not imgs:
+        raise ValueError(f"no images in set {set_name!r} match max_height={max_height}")
 
     strip_cache_path = RES / "strips" / f"strips_{tag}_S{num_strips}.json"
     strip_cached: dict[str, object] = {}
@@ -469,7 +498,7 @@ def measure_strips_for_set(
         raw_sum, adj_sum, is_cm = validate_and_adjust_strip_size(
             set_name, img, w_sz, w_st, s_sizes, s_sts
         )
-        if force_cm and img != "syn_noise" and not is_cm:
+        if force_cm and not is_cm:
             raise ValueError(f"force_cm expected OK on {img}, got whole={w_st} strips={s_sts}")
         if not is_cm:
             non_cm_count += 1
@@ -522,6 +551,26 @@ def measure_strips_for_set(
         f"worst={worst_adj[0]} {(worst_adj[1]-1.0)*100.0:+.3f}% [{worst_adj[2]}->{worst_adj[3]}])"
         + (f" non_cm={non_cm_count}" if non_cm_count else "")
     )
+    if force_cm and set_name == "synth" and any(r["image"] == "syn_noise" for r in per_image):
+        nn_rows = [r for r in per_image if r["image"] != "syn_noise"]
+        if nn_rows:
+            nn_whole = sum(int(r["whole"]) for r in nn_rows)
+            nn_raw = sum(int(r["raw_sum"]) for r in nn_rows)
+            nn_adj = sum(int(r["adj_sum"]) for r in nn_rows)
+            nn_raw_gm = math.exp(sum(math.log(int(r["raw_sum"]) / int(r["whole"])) for r in nn_rows) / len(nn_rows))
+            nn_adj_gm = math.exp(sum(math.log(int(r["adj_sum"]) / int(r["whole"])) for r in nn_rows) / len(nn_rows))
+            nn_w_raw = max(nn_rows, key=lambda r: int(r["raw_sum"]) / int(r["whole"]))
+            nn_w_adj = max(nn_rows, key=lambda r: int(r["adj_sum"]) / int(r["whole"]))
+            nn_raw_pct = (nn_raw / nn_whole - 1.0) * 100.0
+            nn_adj_pct = (nn_adj / nn_whole - 1.0) * 100.0
+            nn_label = f"{set_name}" + (f"(H<={max_height})" if max_height is not None else "") + " [pure-CM, no-noise]"
+            print(
+                f"strips baseline={baseline_key} set={nn_label} n={len(nn_rows)} S={num_strips} "
+                f"whole={nn_whole} raw_sum={nn_raw} ({nn_raw_pct:+.3f}%, geomean={nn_raw_gm:.6f}, "
+                f"worst={nn_w_raw['image']} {float(nn_w_raw['raw_pct']):+.3f}% [{nn_w_raw['whole']}->{nn_w_raw['raw_sum']}]) "
+                f"adj_sum={nn_adj} ({nn_adj_pct:+.3f}%, geomean={nn_adj_gm:.6f}, "
+                f"worst={nn_w_adj['image']} {float(nn_w_adj['adj_pct']):+.3f}% [{nn_w_adj['whole']}->{nn_w_adj['adj_sum']}])"
+            )
     return {
         "baseline": baseline_key,
         "set": label,
@@ -621,7 +670,25 @@ def self_test() -> int:
         assert sha1 == sha2
         assert tmp_ppm.read_bytes() == b"P6\n2 2\n255\n" + bytes([10] * 12)
 
-    print("strips.py self-test: 7/7 passed")
+        # 5. Build provenance digest includes headers (simd.h / rasterfold.h) and build recipe
+        tmp_hdr = Path(tmpdir) / "simd_probe.h"
+        tmp_hdr.write_text("#define SIMD_PROBE 1\n", encoding="utf-8")
+        d1 = baseline_source_digest(REPO / "src" / "cm.c", "m5", False, extra_inputs=(tmp_hdr,))
+        tmp_hdr.write_text("#define SIMD_PROBE 2\n", encoding="utf-8")
+        d2 = baseline_source_digest(REPO / "src" / "cm.c", "m5", False, extra_inputs=(tmp_hdr,))
+        assert d1 != d2, "changing an included header must change baseline_source_digest"
+        d_force = baseline_source_digest(REPO / "src" / "cm.c", "m5", True, extra_inputs=(tmp_hdr,))
+        assert d2 != d_force, "force_cm flag must change baseline_source_digest"
+
+        # 6. Empty height-filtered subset raises ValueError before aggregation
+        try:
+            measure_strips_for_set("photo", 2, REPO / "src" / "cm.c", max_height=0)
+        except ValueError as exc:
+            assert "max_height=0" in str(exc)
+        else:
+            raise AssertionError("expected ValueError on empty height-filtered subset")
+
+    print("strips.py self-test: 9/9 passed")
     return 0
 
 
