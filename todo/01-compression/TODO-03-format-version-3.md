@@ -2,7 +2,7 @@
 schema_version: 1
 id: format-version-3
 domain: 01-compression
-status: draft
+status: done
 title: "TODO-03 -- Format Version 3"
 depends_on: []
 frozen: true
@@ -45,7 +45,7 @@ track: C3
 | Order | Section | Deliverable                                   | Depends On | Status |
 | :---: | :-----: | --------------------------------------------- | ---------- | :----: |
 |   1   |   §1    | Version 3: the accepted model changes         | D01 T02 §7, D99 T01 §3 |  [x]   |
-|   2   |   §2    | Version 3: horizontal strips                  | §1, D02 T02 §1 |  [ ]   |
+|   2   |   §2    | Version 3: horizontal strips                  | §1, D02 T02 §1 |  [x]   |
 
 ---
 
@@ -100,6 +100,8 @@ Three threads leave most of a 12-thread CPU idle. If `D02 T02 §1` measured the 
 
 **Freeze check:** Verified on 2026-11-05: because `D02 T02 §1` rejected horizontal strips, format version 3's layout is unchanged since §1 (no version 3 files need re-encoding), `KAT_FOLD` and `KAT_FOLD3` pass in `tests/test_correctness.py` (`40 passed, 0 failed`), and all 55 version 2 `.fold` files under `build/research/fold-v2/` (verified header magic/version `RFI\x02\x02\x00`) decode with `bin/linux-x64/bin/rasterfold decode` to pixels identical to their source PPMs in `build/research/ppm/` (`fold-v2 verification: 55/55 version 2 files decoded pixel-identically to source PPMs`).
 
+> **Verified:** 2026-11-06 | §2 | 226d010e11f8ed2e90e8ee9d73b753e509d1525c
+> **Review:** `docs/reviews/d01-t03-s2.json`
 ## Verification
 
 - [ ] `pwsh scripts/check-all.ps1` -- exits 0: build, correctness, fuzz, TODO gates green
