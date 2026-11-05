@@ -8,7 +8,9 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
+import json
 import math
 import re
 import subprocess
@@ -68,12 +70,21 @@ def read_ppm(path: Path) -> tuple[int, int, bytes]:
     return w, h, rgb
 
 
-def write_ppm(path: Path, w: int, h: int, rgb: bytes) -> None:
+def file_sha256(path: Path) -> str:
+    if not path.is_file():
+        raise FileNotFoundError(f"missing file for sha256: {path}")
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def write_ppm(path: Path, w: int, h: int, rgb: bytes) -> str:
     if len(rgb) != w * h * 3:
         raise ValueError(f"RGB length {len(rgb)} != {w * h * 3}")
-    path.parent.mkdir(parents=True, exist_ok=True)
     header = f"P6\n{w} {h}\n255\n".encode("ascii")
-    path.write_bytes(header + rgb)
+    payload = header + rgb
+    if not path.is_file() or path.read_bytes() != payload:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payload)
+    return hashlib.sha256(payload).hexdigest()
 
 
 def strip_row_bounds(height: int, num_strips: int) -> list[tuple[int, int]]:
@@ -158,7 +169,6 @@ def validate_and_adjust_strip_size(
 
 
 def git_show_to(ref_path: str, dest: Path) -> None:
-    dest.parent.mkdir(parents=True, exist_ok=True)
     proc = subprocess.run(
         ["git", "show", ref_path],
         cwd=REPO,
@@ -166,28 +176,57 @@ def git_show_to(ref_path: str, dest: Path) -> None:
         capture_output=True,
         check=True,
     )
-    dest.write_bytes(proc.stdout)
+    if not dest.is_file() or dest.read_bytes() != proc.stdout:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(proc.stdout)
 
 
 def ensure_baseline_sources(cm_path: Path) -> str:
-    """Ensure baseline source files exist and return baseline key ('m5', 'm4', or 'm1')."""
+    """Ensure baseline source files exist and match pinned git objects; return baseline key ('m5', 'm4', or 'm1')."""
     name = cm_path.name
     if name == "cm_m1.c":
         m1_dir = RES / "m1_src"
         for fname in ("fold.c", "pal.c", "bmp.c", "crc32.c", "rf.h", "rc.h"):
-            target = m1_dir / fname
-            if not target.is_file():
-                git_show_to(f"{M3_REF}:src/{fname}", target)
-        if not cm_path.is_file():
-            git_show_to(f"{M3_REF}:src/cm.c", cm_path)
+            git_show_to(f"{M3_REF}:src/{fname}", m1_dir / fname)
+        git_show_to(f"{M3_REF}:src/cm.c", cm_path)
         return "m1"
     if name == "cm_m4.c":
-        if not cm_path.is_file():
-            git_show_to(f"{M4_GATE_REF}:src/cm.c", cm_path)
+        git_show_to(f"{M4_GATE_REF}:src/cm.c", cm_path)
         return "m4"
     if cm_path.resolve() == (REPO / "src" / "cm.c").resolve():
         return "m5"
     raise ValueError(f"unsupported baseline cm path: {cm_path}")
+
+
+def baseline_source_digest(cm_path: Path, baseline_key: str, force_cm: bool) -> str:
+    src_dir = RES / "m1_src" if baseline_key == "m1" else REPO / "src"
+    files = [
+        cm_path,
+        src_dir / "fold.c",
+        src_dir / "pal.c",
+        src_dir / "bmp.c",
+        src_dir / "crc32.c",
+        src_dir / "rf.h",
+        src_dir / "rc.h",
+        TOOLS / "bench.c",
+        TOOLS / "benchsys.c",
+    ]
+    h = hashlib.sha256(f"baseline={baseline_key}:force_cm={int(force_cm)}\n".encode("ascii"))
+    for p in files:
+        h.update(p.name.encode("ascii") + b"\0" + p.read_bytes() + b"\0")
+    return h.hexdigest()
+
+
+def is_valid_cache_entry(entry: object, expected_ppm_sha: str) -> bool:
+    return (
+        isinstance(entry, list)
+        and len(entry) == 5
+        and isinstance(entry[0], int)
+        and entry[0] > 0
+        and isinstance(entry[3], str)
+        and entry[3] in ("OK", "RAW", "PAL")
+        and entry[4] == expected_ppm_sha
+    )
 
 
 def run_bench_relpaths(exe: Path, rel_no_ext: list[str]) -> dict[str, tuple[int, float, float, str]]:
@@ -212,29 +251,52 @@ def run_bench_relpaths(exe: Path, rel_no_ext: list[str]) -> dict[str, tuple[int,
     return out
 
 
-def verify_whole_baselines(exe: Path, baseline_key: str, sets_to_check: tuple[str, ...]) -> dict[str, dict[str, tuple[int, float, float, str]]]:
-    import json
+def verify_whole_baselines(
+    exe: Path,
+    baseline_key: str,
+    sets_to_check: tuple[str, ...],
+    src_digest: str = "",
+) -> dict[str, dict[str, tuple[int, float, float, str]]]:
+    exe_sha = file_sha256(exe)
     cache_path = RES / "strips" / f"whole_{baseline_key}.json"
-    cached: dict[str, dict[str, list[object]]] = {}
+    cached: dict[str, object] = {}
     if cache_path.is_file():
         try:
-            cached = json.loads(cache_path.read_text(encoding="utf-8"))
+            loaded = json.loads(cache_path.read_text(encoding="utf-8"))
+            if (
+                isinstance(loaded, dict)
+                and loaded.get("_exe_sha256") == exe_sha
+                and (not src_digest or loaded.get("_src_digest") == src_digest)
+            ):
+                cached = loaded
         except Exception:
             cached = {}
+    dirty = False
+    if cached.get("_exe_sha256") != exe_sha or (src_digest and cached.get("_src_digest") != src_digest):
+        cached = {"_exe_sha256": exe_sha, "_src_digest": src_digest}
+        dirty = True
     expected_map = EXPECTED_BASELINES.get(baseline_key, {})
     results: dict[str, dict[str, tuple[int, float, float, str]]] = {}
-    dirty = False
     for sname in sets_to_check:
         imgs = ab.SETS[sname]
-        if sname in cached and all(img in cached[sname] for img in imgs):
+        ppm_shas = {img: file_sha256(ab.PPM / f"{img}.ppm") for img in imgs}
+        set_cache = cached.get(sname)
+        if isinstance(set_cache, dict) and all(
+            is_valid_cache_entry(set_cache.get(img), ppm_shas[img]) for img in imgs
+        ):
             rows_map = {
-                img: (int(cached[sname][img][0]), float(cached[sname][img][1]), float(cached[sname][img][2]), str(cached[sname][img][3]))
+                img: (
+                    int(set_cache[img][0]),
+                    float(set_cache[img][1]),
+                    float(set_cache[img][2]),
+                    str(set_cache[img][3]),
+                )
                 for img in imgs
             }
         else:
             rows = run_bench_relpaths(exe, [f"ppm/{img}" for img in imgs])
             rows_map = {img: rows[f"ppm/{img}"] for img in imgs}
-            cached[sname] = {img: list(rows_map[img]) for img in imgs}
+            cached[sname] = {img: [*rows_map[img], ppm_shas[img]] for img in imgs}
             dirty = True
         tot = sum(rows_map[img][0] for img in imgs)
         exp = expected_map.get(sname)
@@ -249,10 +311,16 @@ def verify_whole_baselines(exe: Path, baseline_key: str, sets_to_check: tuple[st
     return results
 
 
-def build_strips_bench(cm_path: Path, exe: Path, baseline_key: str, force_cm: bool) -> None:
+def build_strips_bench(cm_path: Path, exe: Path, baseline_key: str, force_cm: bool) -> str:
+    src_digest = baseline_source_digest(cm_path, baseline_key, force_cm)
+    stamp_path = RES / "strips" / f"{exe.name}.src_sha256"
+    if exe.is_file() and stamp_path.is_file() and stamp_path.read_text(encoding="utf-8").strip() == src_digest:
+        return src_digest
     if not force_cm:
         ab.build(cm_path, exe)
-        return
+        stamp_path.parent.mkdir(parents=True, exist_ok=True)
+        stamp_path.write_text(src_digest + "\n", encoding="utf-8")
+        return src_digest
     is_m1 = baseline_key == "m1"
     src_dir = RES / "m1_src" if is_m1 else REPO / "src"
     fold_src = (src_dir / "fold.c").read_text(encoding="utf-8")
@@ -306,6 +374,9 @@ def build_strips_bench(cm_path: Path, exe: Path, baseline_key: str, force_cm: bo
     r = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True)
     if r.returncode:
         raise RuntimeError(f"clang build failed for {exe}:\n{r.stderr}")
+    stamp_path.parent.mkdir(parents=True, exist_ok=True)
+    stamp_path.write_text(src_digest + "\n", encoding="utf-8")
+    return src_digest
 
 
 def measure_strips_for_set(
@@ -319,18 +390,20 @@ def measure_strips_for_set(
     baseline_key = ensure_baseline_sources(cm_path)
     tag = f"{baseline_key}{'_cm' if force_cm else ''}"
     exe = RES / f"bench_strips_{tag}.exe"
-    build_strips_bench(cm_path, exe, baseline_key, force_cm)
+    src_digest = build_strips_bench(cm_path, exe, baseline_key, force_cm)
+    exe_sha = file_sha256(exe)
 
     if not force_cm:
-        whole_by_set = verify_whole_baselines(exe, baseline_key, (set_name,))
+        whole_by_set = verify_whole_baselines(exe, baseline_key, (set_name,), src_digest=src_digest)
         whole_rows = whole_by_set[set_name]
     else:
-        whole_by_set = verify_whole_baselines(exe, f"{baseline_key}_cm", (set_name,))
+        whole_by_set = verify_whole_baselines(exe, f"{baseline_key}_cm", (set_name,), src_digest=src_digest)
         whole_rows = whole_by_set[set_name]
 
     imgs: list[str] = []
     dims: dict[str, tuple[int, int]] = {}
     strip_relpaths: list[str] = []
+    strip_ppm_shas: dict[str, str] = {}
     for img in ab.SETS[set_name]:
         ppm_path = ab.PPM / f"{img}.ppm"
         w, h, rgb = read_ppm(ppm_path)
@@ -342,27 +415,40 @@ def measure_strips_for_set(
         for s_idx, (sw, sh, srgb) in enumerate(strips):
             rel = f"strips/S{num_strips}/{img}_s{s_idx}"
             out_ppm = RES / f"{rel}.ppm"
-            if not out_ppm.is_file() or ab.ppm_dimensions(out_ppm) != (sw, sh):
-                write_ppm(out_ppm, sw, sh, srgb)
+            strip_ppm_shas[rel] = write_ppm(out_ppm, sw, sh, srgb)
             strip_relpaths.append(rel)
 
-    import json
     strip_cache_path = RES / "strips" / f"strips_{tag}_S{num_strips}.json"
-    strip_cached: dict[str, list[object]] = {}
+    strip_cached: dict[str, object] = {}
     if strip_cache_path.is_file():
         try:
-            strip_cached = json.loads(strip_cache_path.read_text(encoding="utf-8"))
+            loaded = json.loads(strip_cache_path.read_text(encoding="utf-8"))
+            if (
+                isinstance(loaded, dict)
+                and loaded.get("_exe_sha256") == exe_sha
+                and loaded.get("_src_digest") == src_digest
+            ):
+                strip_cached = loaded
         except Exception:
             strip_cached = {}
-    missing_relpaths = [r for r in strip_relpaths if r not in strip_cached]
+    if strip_cached.get("_exe_sha256") != exe_sha or strip_cached.get("_src_digest") != src_digest:
+        strip_cached = {"_exe_sha256": exe_sha, "_src_digest": src_digest}
+    missing_relpaths = [
+        r for r in strip_relpaths if not is_valid_cache_entry(strip_cached.get(r), strip_ppm_shas[r])
+    ]
     if missing_relpaths:
         fresh_rows = run_bench_relpaths(exe, missing_relpaths)
         for r in missing_relpaths:
-            strip_cached[r] = list(fresh_rows[r])
+            strip_cached[r] = [*fresh_rows[r], strip_ppm_shas[r]]
         strip_cache_path.parent.mkdir(parents=True, exist_ok=True)
         strip_cache_path.write_text(json.dumps(strip_cached, indent=2), encoding="utf-8")
     strip_rows = {
-        r: (int(strip_cached[r][0]), float(strip_cached[r][1]), float(strip_cached[r][2]), str(strip_cached[r][3]))
+        r: (
+            int(strip_cached[r][0]),
+            float(strip_cached[r][1]),
+            float(strip_cached[r][2]),
+            str(strip_cached[r][3]),
+        )
         for r in strip_relpaths
     }
 
@@ -513,7 +599,29 @@ def self_test() -> int:
     else:
         raise AssertionError("expected ValueError on MISMATCH!")
 
-    print("strips.py self-test: 6/6 passed")
+    # 4. Cache and crop provenance verification on repeat runs
+    assert is_valid_cache_entry([500, 1.0, 1.0, "OK", "abc123"], "abc123")
+    assert not is_valid_cache_entry([500, 1.0, 1.0, "OK"], "abc123")
+    assert not is_valid_cache_entry([500, 1.0, 1.0, "OK", "wrong_sha"], "abc123")
+    try:
+        verify_whole_baselines(RES / "nonexistent_bench_exe.exe", "m5", ("photo",))
+    except FileNotFoundError:
+        pass
+    else:
+        raise AssertionError("expected FileNotFoundError when exe does not exist")
+
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_ppm = Path(tmpdir) / "test.ppm"
+        sha1 = write_ppm(tmp_ppm, 2, 2, bytes([10] * 12))
+        # Overwrite with same dimensions (2x2) but different pixel bytes
+        tmp_ppm.write_bytes(b"P6\n2 2\n255\n" + bytes([20] * 12))
+        assert ab.ppm_dimensions(tmp_ppm) == (2, 2)
+        sha2 = write_ppm(tmp_ppm, 2, 2, bytes([10] * 12))
+        assert sha1 == sha2
+        assert tmp_ppm.read_bytes() == b"P6\n2 2\n255\n" + bytes([10] * 12)
+
+    print("strips.py self-test: 7/7 passed")
     return 0
 
 
