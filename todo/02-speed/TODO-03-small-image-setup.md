@@ -70,7 +70,7 @@ Every method 1 encode and decode writes all `2.75` MB of counters and `384` KB o
 > **Review:** `docs/reviews/d02-t03-s1.json`
 ## Verification
 
-- [ ] `python3 scripts/check-all.py` -- exits 0: build, correctness suite, fuzz, TODO gates green
-- [ ] `python3 tests/test_correctness.py` exits 0 with the known-answer vectors unchanged
-- [ ] The section's `docs/research.md` row exists and matches its stamp
-- [ ] `python3 scripts/todo-graph.py validate` clean
+- [x] `python3 scripts/check-all.py` -- exits 0: build, correctness suite, fuzz, TODO gates green (`check-all: 29/29 passed`, plus `python3 tests/fuzz_decode.py 5000 1` -> `5000 mutated files (methods 0:334, 1:3331, 2:668, 3:667): 4790 rejected, 210 still valid, no crash, hang or mismatch`, and `python3 scripts/windows.py tests/measure_final.py` -> `PASS`)
+- [x] `python3 tests/test_correctness.py` exits 0 with the known-answer vectors unchanged (`40 passed, 0 failed`)
+- [x] The section's `docs/research.md` row exists and matches its stamp (`docs/research.md` section 3.4 `small-image model-state setup (D02 T03 §1)` matches `docs/reviews/d02-t03-s1.json`)
+- [x] `python3 scripts/todo-graph.py validate` clean (`33 todos, 239 sections -- 0 fatal, 0 warning(s)`)

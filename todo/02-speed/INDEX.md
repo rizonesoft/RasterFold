@@ -10,12 +10,12 @@ Encode and decode speed. A change here leaves every `.fold` byte unchanged (the 
 | ---- | ----- | :----: |
 | [TODO-01](./TODO-01-compiler-options.md) | Compiler Options: PGO, LTO, AVX2 | draft |
 | [TODO-02](./TODO-02-parallel-and-simd.md) | Parallel Strips and the SIMD Mixer: Measurements | draft |
-| [TODO-03](./TODO-03-small-image-setup.md) | Small-Image Setup Cost | draft |
 
 ## Completed
 
 | TODO | Title | Completed |
 | ---- | ----- | :-------: |
+| [TODO-03](./TODO-03-small-image-setup.md) | Small-Image Setup Cost | 2026-11-05 |
 
 ## In scope
 
