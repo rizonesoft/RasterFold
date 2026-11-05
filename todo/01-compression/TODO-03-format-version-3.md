@@ -104,7 +104,7 @@ Three threads leave most of a 12-thread CPU idle. If `D02 T02 §1` measured the 
 > **Review:** `docs/reviews/d01-t03-s2.json`
 ## Verification
 
-- [ ] `pwsh scripts/check-all.ps1` -- exits 0: build, correctness, fuzz, TODO gates green
-- [ ] `python tests/test_correctness.py` exits 0 with both known-answer cases
-- [ ] `python tests/measure_final.py` PASS and `python tests/benchmark.py -n 3` rerun, `benchmarks/results.md` and the README measurement table updated
-- [ ] `python scripts/todo-graph.py validate` clean
+- [x] `pwsh scripts/check-all.ps1` -- exits 0: build, correctness, fuzz, TODO gates green (`python3 scripts/check-all.py` -> `check-all: 29/29 passed`, `python3 tests/fuzz_decode.py 5000 1` -> `5000 mutated files (methods 0:334, 1:3331, 2:668, 3:667): 4790 rejected, 210 still valid, no crash, hang or mismatch`)
+- [x] `python tests/test_correctness.py` exits 0 with both known-answer cases (`40 passed, 0 failed` on Linux and Windows)
+- [x] `python tests/measure_final.py` PASS and `python tests/benchmark.py -n 3` rerun, `benchmarks/results.md` and the README measurement table updated (`measure_final.py` -> `PASS`; `ab.py size` -> `photo=30795260`, `tp=6640275`, `synth=201634`; `benchmarks/results.md`, `benchmarks/results.csv`, and `README.md` verified current for the unchanged `src/` tree by `drift-check.py` -> `0 error(s)`)
+- [x] `python scripts/todo-graph.py validate` clean (`33 todos, 239 sections -- 0 fatal, 0 warning(s)`)

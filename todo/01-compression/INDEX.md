@@ -9,7 +9,6 @@ The models, predictors, and coding methods that make `.fold` files smaller. Ever
 | TODO | Title | Status |
 | ---- | ----- | :----: |
 | [TODO-02](./TODO-02-model-experiments.md) | Model Experiments for Method 1 | draft |
-| [TODO-03](./TODO-03-format-version-3.md) | Format Version 3 | draft |
 | [TODO-05](./TODO-05-every-photo-beats-e9.md) | Every Photograph Beats JPEG XL e9 | draft |
 | [TODO-06](./TODO-06-beat-webp-generated.md) | Beat WebP on Generated Images | draft |
 
@@ -19,6 +18,7 @@ The models, predictors, and coding methods that make `.fold` files smaller. Ever
 | ---- | ----- | :-------: |
 | [TODO-01](./TODO-01-palette-method.md) | Palette Method for Images with Few Colours | 2026-10-26 |
 | [TODO-04](./TODO-04-exact-repeats.md) | Exact Repeats: a Match Model | 2026-10-30 |
+| [TODO-03](./TODO-03-format-version-3.md) | Format Version 3 | 2026-11-05 |
 
 ## In scope
 
