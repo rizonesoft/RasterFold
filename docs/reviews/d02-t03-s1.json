@@ -1,0 +1,83 @@
+{
+  "ref": "D02 T03 \u00a71",
+  "title": "Initialize Only the Model State an Image Uses",
+  "implementation_sha": "eaf7c77dd47ddb2e639e1e992f279a942d862b87",
+  "date": "2026-11-05",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/02-speed/D02-T03-s1.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "syn_odd A/B -> try-a 0.8575/0.8178 (-t1) 0.6667/0.6699 (-t3), try-b 0.8520/0.8478 (-t1) 0.6755/0.6944 (-t3); ab.py ab -v -n5 -> try-a photo 1.061/1.048 (-t1) 1.074/1.017 (-t3), tp 1.045/1.033 (-t1) 1.042/1.070 (-t3), synth 3-run 1.023/0.988..1.011/0.987 (-t1) 1.033/1.005..0.988/0.973 (-t3); try-b photo 1.049/1.070 (-t1) 1.032/1.055 (-t3), tp 1.023/1.030 (-t1) 1.075/1.065 (-t3), synth 3-run 1.027/1.059..1.022/1.057 (-t1) 1.008/1.053..0.971/0.957 (-t3); rejected (> 1.005 set-total bar); python3 tests/test_correctness.py -> 40 passed, 0 failed"
+  ],
+  "completion": {
+    "report": "docs/reviews/02-speed/D02-T03-s1.md",
+    "verdict": "completed",
+    "candidate": "b46ecef569a77be62fa72642f42e5943759399a0",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/02-speed/D02-T03-s1.md",
+    "candidate": "73cc04d8da22de00a0f22b4e106ab0ad6e950b88",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}
