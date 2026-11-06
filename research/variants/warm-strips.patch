@@ -1,5 +1,5 @@
 diff --git a/src/cm.c b/build/research/try.c
-index 3509a97..8505e5b 100644
+index 3509a97..9bb6ec4 100644
 --- a/src/cm.c
 +++ b/build/research/try.c
 @@ -1,3 +1,6 @@
@@ -668,7 +668,7 @@ index 3509a97..8505e5b 100644
          if (!enc) {
              if (m->ch[c].dec.in >= m->ch[c].dec.lim) {
                  m->ch[c].bad = 1;
-@@ -775,26 +958,53 @@ RF_INLINE void run_channel(cm_t *m, const int c, const int enc, const int nmodel
+@@ -775,99 +958,261 @@ RF_INLINE void run_channel(cm_t *m, const int c, const int enc, const int nmodel
          __atomic_store_n(&m->ch[c].done, (int32_t)y + 1, __ATOMIC_RELEASE);
      }
      __atomic_store_n(&m->ch[c].done, (int32_t)m->h, __ATOMIC_RELEASE);
@@ -684,21 +684,7 @@ index 3509a97..8505e5b 100644
 +}
 +static RF_NOINLINE void run_channel_enc(cm_t *m, int c) {
 +    for (; m && !m->cancel; m = m->chain_next) run_channel(m, c, 1, NMODEL);
- }
--static RF_NOINLINE void run_g_enc(void *p) { run_channel(p, 0, 1, NMODEL); }
--static RF_NOINLINE void run_r_enc(void *p) { if (!((cm_t *)p)->cancel) run_channel(p, 1, 1, NMODEL); }
--static RF_NOINLINE void run_b_enc(void *p) { if (!((cm_t *)p)->cancel) run_channel(p, 2, 1, NMODEL); }
--static RF_NOINLINE void run_g_dec7(void *p) { run_channel(p, 0, 0, NMODEL); }
--static RF_NOINLINE void run_r_dec7(void *p) { if (!((cm_t *)p)->cancel) run_channel(p, 1, 0, NMODEL); }
--static RF_NOINLINE void run_b_dec7(void *p) { if (!((cm_t *)p)->cancel) run_channel(p, 2, 0, NMODEL); }
--static RF_NOINLINE void run_g_dec5(void *p) { run_channel(p, 0, 0, 5); }
--static RF_NOINLINE void run_r_dec5(void *p) { if (!((cm_t *)p)->cancel) run_channel(p, 1, 0, 5); }
--static RF_NOINLINE void run_b_dec5(void *p) { if (!((cm_t *)p)->cancel) run_channel(p, 2, 0, 5); }
--
--/* Runs channel 0 here and channels 1 and 2 on their own threads. The threads
--   are created suspended and started only when both exist; otherwise they are
--   released with cancel set, and the single-thread pipeline codes the image. */
--static void run(cm_t *m, int threads, const int enc) {
++}
 +static RF_NOINLINE void run_channel_dec7(cm_t *m, int c) {
 +    for (; m && !m->cancel; m = m->chain_next) run_channel(m, c, 0, NMODEL);
 +}
@@ -716,14 +702,41 @@ index 3509a97..8505e5b 100644
 +static void run_b_dec5(void *p) { run_channel_dec5((cm_t *)p, 2); }
 +
 +#ifdef RF_TEST_THREAD_FAIL
-+extern int g_test_thread_fail_at;
++extern uint32_t g_test_thread_fail_mask;
 +extern int g_test_thread_calls;
++extern int g_test_thread_injected;
++extern int g_test_thread_live;
 +static inline void *cm_thread_create(void (*fn)(void *), void *arg) {
-+    if (g_test_thread_fail_at >= 0 && g_test_thread_calls++ == g_test_thread_fail_at) return 0;
-+    return rf_thread_create(fn, arg);
++    int idx = g_test_thread_calls++;
++    if (idx < 32 && ((g_test_thread_fail_mask >> idx) & 1u)) {
++        g_test_thread_injected++;
++        return 0;
++    }
++    void *h = rf_thread_create(fn, arg);
++    if (h) g_test_thread_live++;
++    return h;
+ }
+-static RF_NOINLINE void run_g_enc(void *p) { run_channel(p, 0, 1, NMODEL); }
+-static RF_NOINLINE void run_r_enc(void *p) { if (!((cm_t *)p)->cancel) run_channel(p, 1, 1, NMODEL); }
+-static RF_NOINLINE void run_b_enc(void *p) { if (!((cm_t *)p)->cancel) run_channel(p, 2, 1, NMODEL); }
+-static RF_NOINLINE void run_g_dec7(void *p) { run_channel(p, 0, 0, NMODEL); }
+-static RF_NOINLINE void run_r_dec7(void *p) { if (!((cm_t *)p)->cancel) run_channel(p, 1, 0, NMODEL); }
+-static RF_NOINLINE void run_b_dec7(void *p) { if (!((cm_t *)p)->cancel) run_channel(p, 2, 0, NMODEL); }
+-static RF_NOINLINE void run_g_dec5(void *p) { run_channel(p, 0, 0, 5); }
+-static RF_NOINLINE void run_r_dec5(void *p) { if (!((cm_t *)p)->cancel) run_channel(p, 1, 0, 5); }
+-static RF_NOINLINE void run_b_dec5(void *p) { if (!((cm_t *)p)->cancel) run_channel(p, 2, 0, 5); }
+-
+-/* Runs channel 0 here and channels 1 and 2 on their own threads. The threads
+-   are created suspended and started only when both exist; otherwise they are
+-   released with cancel set, and the single-thread pipeline codes the image. */
+-static void run(cm_t *m, int threads, const int enc) {
++static inline void cm_thread_join(void *h) {
++    rf_thread_join(h);
++    g_test_thread_live--;
 +}
 +#else
 +#define cm_thread_create rf_thread_create
++#define cm_thread_join rf_thread_join
 +#endif
 +
 +static void run_one_strip(cm_t *m, int threads, const int enc) {
@@ -738,7 +751,19 @@ index 3509a97..8505e5b 100644
          if (t1 && t2) {
              rf_thread_resume(t1);
              rf_thread_resume(t2);
-@@ -810,64 +1020,186 @@ static void run(cm_t *m, int threads, const int enc) {
+             if (enc) run_g_enc(m); else if (v3) run_g_dec7(m); else run_g_dec5(m);
+-            rf_thread_join(t1);
+-            rf_thread_join(t2);
++            cm_thread_join(t1);
++            cm_thread_join(t2);
+             return;
+         }
+         m->cancel = 1;
+-        if (t1) { rf_thread_resume(t1); rf_thread_join(t1); }
+-        if (t2) { rf_thread_resume(t2); rf_thread_join(t2); }
++        if (t1) { rf_thread_resume(t1); cm_thread_join(t1); }
++        if (t2) { rf_thread_resume(t2); cm_thread_join(t2); }
+     }
      if (enc) run_pipelined_enc(m); else if (v3) run_pipelined_dec7(m); else run_pipelined_dec5(m);
  }
  
@@ -776,7 +801,7 @@ index 3509a97..8505e5b 100644
 +            rf_thread_resume(m[0].ch[1].th_handle);
 +            rf_thread_resume(m[0].ch[2].th_handle);
 +            fn_g(&m[0]);
-+            for (int i = 0; i < nth; i++) rf_thread_join(th[i]);
++            for (int i = 0; i < nth; i++) cm_thread_join(th[i]);
 +            return;
 +        }
 +        for (int s = 0; s < S; s++) {
@@ -784,7 +809,7 @@ index 3509a97..8505e5b 100644
 +            for (int c = 0; c < 3; c++) m[s].ch[c].th_handle = 0;
 +        }
 +        for (int i = 0; i < nth; i++) {
-+            if (th[i]) { rf_thread_resume(th[i]); rf_thread_join(th[i]); }
++            if (th[i]) { rf_thread_resume(th[i]); cm_thread_join(th[i]); }
 +        }
 +    }
 +    if (S > 1 && threads >= 2 && v3) {
@@ -795,13 +820,13 @@ index 3509a97..8505e5b 100644
 +            rf_thread_resume(t1);
 +            rf_thread_resume(t2);
 +            if (enc) run_g_enc(&m[0]); else run_g_dec7(&m[0]);
-+            rf_thread_join(t1);
-+            rf_thread_join(t2);
++            cm_thread_join(t1);
++            cm_thread_join(t2);
 +            return;
 +        }
 +        for (int s = 0; s < S; s++) m[s].cancel = 1;
-+        if (t1) { rf_thread_resume(t1); rf_thread_join(t1); }
-+        if (t2) { rf_thread_resume(t2); rf_thread_join(t2); }
++        if (t1) { rf_thread_resume(t1); cm_thread_join(t1); }
++        if (t2) { rf_thread_resume(t2); cm_thread_join(t2); }
 +    }
 +    for (int s = 0; s < S; s++) run_one_strip(&m[s], S == 1 ? threads : 1, enc);
 +}
