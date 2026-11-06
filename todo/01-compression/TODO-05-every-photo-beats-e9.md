@@ -36,7 +36,7 @@ track: C5
 
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
-|   1   |   §1    | Why the losing photos lose | -- |  [ ]   |
+|   1   |   §1    | Why the losing photos lose | -- |  [x]   |
 |   2   |   §2    | Encoder-chosen parameters in version 3 | §1, D01 T02 §6, D01 T03 §1 |  [ ]   |
 |   3   |   §3    | Strip-adaptation priors, collision-reduced contexts, and noise-damped prediction | §1, §2 |  [ ]   |
 |   4   |   §4    | Port Milestone 7 CM improvements into version 3 | §3 |  [ ]   |
@@ -60,6 +60,8 @@ track: C5
 
 **Freeze check:** `D01 T05 §1` modifies only `research/bench.c`, `research/ab.py`, `research/README.md`, `docs/drift.json`, `tests/test_research_refs.py`, `docs/research.md`, and the TODO/milestone plan files (`todo/01-compression/TODO-05-every-photo-beats-e9.md`, `todo/01-compression/INDEX.md`, `research/milestones.py`, `todo/05-milestones/TODO-01-beat-jxl-and-webp.md`, `todo/implementation-plan.md`); `src/`, `spec/FOLD.md`, `tests/rfi_ref.py`, and `KAT_FOLD` / `KAT_FOLD3` are unchanged.
 
+> **Verified:** 2026-11-06 | §1 | 03308c0f7b9561ee05e8ace9afa3887f63300dbb
+> **Review:** `docs/reviews/d01-t05-s1.json`
 ## 2. Encoder-Chosen Parameters in Version 3
 
 **Needs:** Idle machine (timing)

@@ -1,0 +1,94 @@
+{
+  "ref": "D01 T05 \u00a71",
+  "title": "Why the Losing Photos Lose",
+  "implementation_sha": "03308c0f7b9561ee05e8ace9afa3887f63300dbb",
+  "date": "2026-11-06",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/01-compression/D01-T05-s1.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/01-compression/D01-T05-s1.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 -m unittest tests.test_research_refs -v -> Ran 14 tests in 47.707s ... OK (test_bench_breakdown_reconciles_channels_kinds_and_variants)",
+    "python3 research/ab.py size src/cm.c photo -v -> total=30868254 jxl=31782058 ratio=0.9712 geomean=0.9719 worst=1.0037 (kodim17) e9=31400714 e9_ratio=0.9830 e9_geomean=0.9874 e9_worst=1.0186 (kodim16) (27/39 below e9, 12 above e9, 7 > 1.0100)",
+    "python3 research/ab.py size src/cm.c tp -v -> total=6656840 jxl=6826895 ratio=0.9751 geomean=0.9726 worst=0.9946 (tp_nightshot_iso_1600_crop) e9=6740249 e9_ratio=0.9876 e9_geomean=0.9866 e9_worst=1.0146 (tp_nightshot_iso_1600_crop) (7/10 below e9, 3 above e9, 2 > 1.0100)",
+    "python3 scripts/todo-graph.py validate -> 33 todos, 243 sections -- 0 fatal, 0 warning(s)",
+    "python3 scripts/todo-claims.py -> todo-claims: 87 claim(s) -- 87 hold, 0 stale, 0 malformed; coverage 33/33, floor 32",
+    "python3 scripts/drift-check.py -> drift: 361 supported documents; 0 error(s); 0 deterministic repair(s)"
+  ],
+  "completion": {
+    "report": "docs/reviews/01-compression/D01-T05-s1.md",
+    "verdict": "completed",
+    "candidate": "37ae7d1a131a08d7283cb0f0c0db2fc8159cbb86",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 2,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/01-compression/D01-T05-s1.md",
+    "candidate": "927e608f0bc062d6a10efbc69e9e6ef48f592ad0",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "927e608f0bc062d6a10efbc69e9e6ef48f592ad0",
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}
