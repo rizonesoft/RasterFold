@@ -415,6 +415,53 @@ class ResearchRefsTests(unittest.TestCase):
         self.assertEqual(sum(1 for r in rows if r["set"] == "synth"), 11)
         by_img = {r["image"]: r for r in rows}
 
+        photo = ab.reconstruct_set_summary(csv_path, "photo")
+        self.assertEqual(photo["images"], ab.SETS["photo"])
+        self.assertEqual(photo["count"], 39)
+        self.assertEqual(photo["rasterfold"], 30868254)
+        self.assertEqual(photo["jxl_e7"], 31782058)
+        self.assertEqual(photo["jxl_e9"], 31400714)
+        self.assertEqual(photo["webp"], 34138176)
+        self.assertEqual(f"{photo['e7_ratio']:.4f}", "0.9712")
+        self.assertEqual(f"{photo['e7_geomean']:.4f}", "0.9719")
+        self.assertEqual(photo["worst_image"], "kodim17")
+        self.assertEqual(f"{photo['worst_e7_ratio']:.4f}", "1.0037")
+        self.assertEqual(f"{photo['e9_ratio']:.4f}", "0.9830")
+        self.assertEqual(f"{photo['webp_ratio']:.4f}", "0.9042")
+        self.assertEqual(photo["below_e9"], 27)
+
+        kodak = ab.reconstruct_set_summary(csv_path, "kodak")
+        self.assertEqual(kodak["images"], ab.SETS["kodak"])
+        self.assertEqual(kodak["count"], 24)
+        self.assertEqual(f"{kodak['e7_ratio']:.4f}", "0.9856")
+        self.assertEqual(f"{kodak['e7_geomean']:.4f}", "0.9854")
+        self.assertEqual(kodak["worst_image"], "kodim17")
+        self.assertEqual(f"{kodak['worst_e7_ratio']:.4f}", "1.0037")
+
+        ic = ab.reconstruct_set_summary(csv_path, "ic")
+        self.assertEqual(ic["images"], ab.SETS["ic"])
+        self.assertEqual(ic["count"], 14)
+        self.assertEqual(f"{ic['e7_ratio']:.4f}", "0.9650")
+        self.assertEqual(f"{ic['e7_geomean']:.4f}", "0.9501")
+        self.assertEqual(ic["worst_image"], "ic_nightshot_iso_1600")
+        self.assertEqual(f"{ic['worst_e7_ratio']:.4f}", "0.9951")
+
+        tp = ab.reconstruct_set_summary(csv_path, "tp")
+        self.assertEqual(tp["images"], ab.SETS["tp"])
+        self.assertEqual(tp["count"], 10)
+        self.assertEqual(f"{tp['e7_ratio']:.4f}", "0.9751")
+        self.assertEqual(f"{tp['e7_geomean']:.4f}", "0.9726")
+        self.assertEqual(tp["worst_image"], "tp_nightshot_iso_1600_crop")
+        self.assertEqual(f"{tp['worst_e7_ratio']:.4f}", "0.9946")
+
+        synth = ab.reconstruct_set_summary(csv_path, "synth")
+        self.assertEqual(synth["images"], ab.SETS["synth"])
+        self.assertEqual(synth["count"], 11)
+        self.assertEqual(f"{synth['e7_ratio']:.4f}", "0.8901")
+        self.assertEqual(f"{synth['e7_geomean']:.4f}", "0.3275")
+        self.assertEqual(synth["worst_image"], "syn_noise")
+        self.assertEqual(f"{synth['worst_e7_ratio']:.4f}", "0.9241")
+
         for set_name, count in (("photo", 39), ("kodak", 24), ("ic", 14), ("tp", 10), ("synth", 11)):
             summary = ab.reconstruct_set_summary(csv_path, set_name)
             imgs = ab.SETS[set_name]
@@ -424,6 +471,11 @@ class ResearchRefsTests(unittest.TestCase):
             exp_e7 = sum(by_img[i]["jxl_e7"] for i in imgs)
             exp_e9 = sum(by_img[i]["jxl_e9"] for i in imgs)
             exp_wb = sum(by_img[i]["webp"] for i in imgs)
+            exp_e7_gm = math.exp(sum(math.log(by_img[i]["rasterfold"] / by_img[i]["jxl_e7"]) for i in imgs) / count)
+            exp_e9_gm = math.exp(sum(math.log(by_img[i]["rasterfold"] / by_img[i]["jxl_e9"]) for i in imgs) / count)
+            exp_wb_gm = math.exp(sum(math.log(by_img[i]["rasterfold"] / by_img[i]["webp"]) for i in imgs) / count)
+            exp_worst_ratio, exp_worst_img = max((by_img[i]["rasterfold"] / by_img[i]["jxl_e7"], i) for i in imgs)
+            exp_below_e9 = sum(1 for i in imgs if by_img[i]["rasterfold"] < by_img[i]["jxl_e9"])
             self.assertEqual(summary["rasterfold"], exp_rf)
             self.assertEqual(summary["jxl_e7"], exp_e7)
             self.assertEqual(summary["jxl_e9"], exp_e9)
@@ -431,6 +483,12 @@ class ResearchRefsTests(unittest.TestCase):
             self.assertAlmostEqual(summary["e7_ratio"], exp_rf / exp_e7, places=9)
             self.assertAlmostEqual(summary["e9_ratio"], exp_rf / exp_e9, places=9)
             self.assertAlmostEqual(summary["webp_ratio"], exp_rf / exp_wb, places=9)
+            self.assertAlmostEqual(summary["e7_geomean"], exp_e7_gm, places=9)
+            self.assertAlmostEqual(summary["e9_geomean"], exp_e9_gm, places=9)
+            self.assertAlmostEqual(summary["webp_geomean"], exp_wb_gm, places=9)
+            self.assertEqual(summary["worst_image"], exp_worst_img)
+            self.assertAlmostEqual(summary["worst_e7_ratio"], exp_worst_ratio, places=9)
+            self.assertEqual(summary["below_e9"], exp_below_e9)
 
     def test_corpus_csv_provenance_and_failure_preservation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

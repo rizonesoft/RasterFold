@@ -96,8 +96,23 @@ def parse_run_args(argv: list[str]) -> tuple[Path, Path, Path, str, int, list[st
     return log_path, base_cm, cand_cm, t_flag, rounds, raw_sets, flags
 
 
+def infer_set_name(imgs: list[str], ab_mod) -> str:
+    target = tuple(imgs)
+    sets = getattr(ab_mod, "SETS", {})
+    for sname, smembers in sets.items():
+        if tuple(smembers) == target:
+            return sname
+    return "custom"
+
+
 def verify_existing_log_provenance(
-    log_path: Path, a_sha: str, b_sha: str, t_flag: str
+    log_path: Path,
+    a_sha: str,
+    b_sha: str,
+    t_flag: str,
+    imgs: list[str],
+    flags: list[str],
+    set_name: str,
 ) -> None:
     if not log_path.is_file():
         return
@@ -112,6 +127,31 @@ def verify_existing_log_provenance(
                 f"{log_path}:{lineno}: provenance mismatch in existing log "
                 f"(existing A={rec_a} B={rec_b}, new A={a_sha} B={b_sha})"
             )
+        rec_t = rec.get("t")
+        if rec_t != t_flag:
+            raise SystemExit(
+                f"{log_path}:{lineno}: provenance mismatch in thread flag "
+                f"(existing t={rec_t!r}, new t={t_flag!r})"
+            )
+        rec_flags = list(rec.get("flags", []))
+        if rec_flags != list(flags):
+            raise SystemExit(
+                f"{log_path}:{lineno}: provenance mismatch in build flags "
+                f"(existing flags={rec_flags!r}, new flags={list(flags)!r})"
+            )
+        rec_rows = rec.get("rows")
+        rec_imgs = list(rec.get("images") or (rec_rows.keys() if isinstance(rec_rows, dict) else ()))
+        if rec_imgs != list(imgs) or (isinstance(rec_rows, dict) and list(rec_rows.keys()) != list(imgs)):
+            raise SystemExit(
+                f"{log_path}:{lineno}: provenance mismatch in image membership "
+                f"(existing images={rec_imgs!r}, new images={list(imgs)!r})"
+            )
+        rec_set = rec.get("set")
+        if rec_set is not None and rec_set != set_name:
+            raise SystemExit(
+                f"{log_path}:{lineno}: provenance mismatch in set identity "
+                f"(existing set={rec_set!r}, new set={set_name!r})"
+            )
 
 
 def run_pool(argv: list[str], ab_mod=None, repo: Path = REPO) -> dict[str, object]:
@@ -120,21 +160,22 @@ def run_pool(argv: list[str], ab_mod=None, repo: Path = REPO) -> dict[str, objec
     b_sha = file_sha256(cand_cm)
     a_label = _rel_or_str(base_cm, repo)
     b_label = _rel_or_str(cand_cm, repo)
-    verify_existing_log_provenance(log_path, a_sha, b_sha, t_flag)
 
     orig_argv = list(sys.argv)
     try:
         sys.argv = ["ab.py", t_flag]
         ab = ab_mod if ab_mod is not None else _load_ab()
         ab.T = t_flag
-        imgs = ab.names(raw_sets)
+        imgs = list(ab.names(raw_sets))
+        set_name = infer_set_name(imgs, ab)
+        verify_existing_log_provenance(log_path, a_sha, b_sha, t_flag, imgs, flags, set_name)
         bench_a = ab.RES / "benchA.exe"
         bench_b = ab.RES / "benchB.exe"
         ab.build(base_cm, bench_a, flags)
         ab.build(cand_cm, bench_b, flags)
         print(
             f"abpool build: A={a_label} (sha256={a_sha}) B={b_label} (sha256={b_sha}) "
-            f"t={t_flag} rounds={rounds} images={len(imgs)}"
+            f"t={t_flag} rounds={rounds} set={set_name} images={len(imgs)} flags={list(flags)}"
         )
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with log_path.open("a", encoding="utf-8", newline="\n") as fh:
@@ -147,6 +188,9 @@ def run_pool(argv: list[str], ab_mod=None, repo: Path = REPO) -> dict[str, objec
                     rec = {
                         "t": t_flag,
                         "k": k,
+                        "set": set_name,
+                        "images": imgs,
+                        "flags": list(flags),
                         "a_path": a_label,
                         "a_sha256": a_sha,
                         "b_path": b_label,
@@ -164,17 +208,21 @@ def run_pool(argv: list[str], ab_mod=None, repo: Path = REPO) -> dict[str, objec
         "b_path": b_label,
         "b_sha256": b_sha,
         "t": t_flag,
+        "set": set_name,
+        "images": imgs,
+        "flags": list(flags),
         "rounds": rounds,
     }
 
 
-def parse_report_args(argv: list[str]) -> tuple[Path, int, int, float | None, float, float]:
+def parse_report_args(argv: list[str]) -> tuple[Path, int, int | None, float | None, float, float]:
     if not argv:
         raise SystemExit(
             "usage: abpool.py report <jsonl> [lo:hi] [--tot-bar F] [--img-bar F] [--small-ms F]"
         )
     log_path = Path(argv[0])
-    lo, hi = 0, 999
+    lo: int = 0
+    hi: int | None = None
     tot_bar: float | None = None
     img_bar = 1.50
     small_ms = 1.0
@@ -196,37 +244,98 @@ def parse_report_args(argv: list[str]) -> tuple[Path, int, int, float | None, fl
             idx += 1
         else:
             raise SystemExit(f"unknown report argument: {arg}")
-    if lo < 0 or hi <= lo:
+    if lo < 0 or (hi is not None and hi <= lo):
         raise SystemExit(f"invalid slice [{lo}:{hi}]")
     return log_path, lo, hi, tot_bar, img_bar, small_ms
 
 
 def report_pool(argv: list[str], ab_mod=None) -> list[dict[str, object]]:
-    log_path, lo, hi, explicit_tot_bar, img_bar, small_ms = parse_report_args(argv)
+    log_path, lo, explicit_hi, explicit_tot_bar, img_bar, small_ms = parse_report_args(argv)
     if not log_path.is_file():
         raise SystemExit(f"missing pool log: {log_path}")
     ab = ab_mod if ab_mod is not None else _load_ab()
     recs = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     if not recs:
         raise SystemExit(f"empty pool log: {log_path}")
-    tot_bar = explicit_tot_bar if explicit_tot_bar is not None else (1.20 if "synth" in log_path.name else 1.10)
     summaries: list[dict[str, object]] = []
-    for t in sorted({r["t"] for r in recs}):
-        rr = [r for r in recs if r["t"] == t][2 * lo : 2 * hi]
-        if not rr:
-            continue
-        a_shas = {r.get("a_sha256") for r in rr}
-        b_shas = {r.get("b_sha256") for r in rr}
+    for t in sorted({r.get("t") for r in recs if isinstance(r.get("t"), str)}):
+        t_recs = [r for r in recs if r.get("t") == t]
+        if len(t_recs) % 2 != 0:
+            raise SystemExit(
+                f"{log_path.name} {t}: incomplete A/B pair ({len(t_recs)} records in log)"
+            )
+        total_rounds = len(t_recs) // 2
+        hi = explicit_hi if explicit_hi is not None else total_rounds
+        if explicit_hi is not None and explicit_hi > total_rounds:
+            raise SystemExit(
+                f"{log_path.name} {t} [{lo}:{hi}]: requested {hi - lo} rounds (up to {hi}), "
+                f"but log only has {total_rounds} complete rounds"
+            )
+        if lo >= total_rounds:
+            raise SystemExit(
+                f"{log_path.name} {t} [{lo}:{hi}]: slice start {lo} is beyond available {total_rounds} rounds"
+            )
+
+        # Validate full log provenance and consistency before slicing so incompatible records cannot hide.
+        a_shas = {r.get("a_sha256") for r in t_recs}
+        b_shas = {r.get("b_sha256") for r in t_recs}
         if None in a_shas or None in b_shas or len(a_shas) != 1 or len(b_shas) != 1:
             raise SystemExit(
                 f"{log_path.name} {t} [{lo}:{hi}]: missing or inconsistent source SHA-256 provenance "
                 f"(A={sorted(str(x) for x in a_shas)}, B={sorted(str(x) for x in b_shas)})"
             )
+        base_rows = t_recs[0].get("rows")
+        if not isinstance(base_rows, dict) or not base_rows:
+            raise SystemExit(f"{log_path.name} {t} [{lo}:{hi}]: missing rows in record")
+        imgs = list(base_rows.keys())
+        inferred_set = infer_set_name(imgs, ab)
+        first_flags = list(t_recs[0].get("flags", []))
+        first_set = t_recs[0].get("set", inferred_set)
+        if first_set != inferred_set:
+            raise SystemExit(
+                f"{log_path.name} {t} [{lo}:{hi}]: recorded set {first_set!r} does not match "
+                f"measured images (inferred {inferred_set!r})"
+            )
+        for idx_r, r in enumerate(t_recs):
+            r_rows = r.get("rows")
+            r_imgs = list(r_rows.keys()) if isinstance(r_rows, dict) else []
+            decl_imgs = list(r.get("images", r_imgs))
+            if r_imgs != imgs or decl_imgs != imgs:
+                raise SystemExit(
+                    f"{log_path.name} {t} record {idx_r}: inconsistent image membership "
+                    f"(expected {imgs!r}, got rows={r_imgs!r} images={decl_imgs!r})"
+                )
+            r_flags = list(r.get("flags", []))
+            if r_flags != first_flags:
+                raise SystemExit(
+                    f"{log_path.name} {t} record {idx_r}: inconsistent build flags "
+                    f"(expected {first_flags!r}, got {r_flags!r})"
+                )
+            r_set = r.get("set", inferred_set)
+            if r_set != first_set:
+                raise SystemExit(
+                    f"{log_path.name} {t} record {idx_r}: inconsistent set identity "
+                    f"(expected {first_set!r}, got {r_set!r})"
+                )
+        for p in range(total_rounds):
+            pair_ks = {t_recs[2 * p].get("k"), t_recs[2 * p + 1].get("k")}
+            if pair_ks != {"A", "B"}:
+                raise SystemExit(
+                    f"{log_path.name} {t} round {p}: invalid A/B pair {pair_ks!r}"
+                )
+
+        rr = t_recs[2 * lo : 2 * hi]
+        if not rr:
+            raise SystemExit(f"{log_path.name} {t} [{lo}:{hi}]: empty slice")
+        tot_bar = (
+            explicit_tot_bar
+            if explicit_tot_bar is not None
+            else (1.20 if first_set == "synth" else 1.10)
+        )
         a_sha = next(iter(a_shas))
         b_sha = next(iter(b_shas))
         a_path = rr[0].get("a_path", "A")
         b_path = rr[0].get("b_path", "B")
-        imgs = list(rr[0]["rows"])
         n = {k: sum(1 for r in rr if r["k"] == k) for k in ("A", "B")}
         if n["A"] == 0 or n["B"] == 0 or n["A"] != n["B"]:
             raise SystemExit(
@@ -323,10 +432,17 @@ class _AbpoolSelfTests(unittest.TestCase):
             class FakeAb:
                 RES = res
                 T = "-t1"
+                SETS = {
+                    "photo": ["big_img", "tiny_img"],
+                    "synth": ["syn_img"],
+                }
 
                 @staticmethod
                 def names(args: list[str]) -> list[str]:
-                    return list(args)
+                    out_names: list[str] = []
+                    for a in args:
+                        out_names.extend(FakeAb.SETS.get(a, [a]))
+                    return out_names
 
                 @staticmethod
                 def build(src: Path, exe: Path, flags: list[str]) -> None:
@@ -341,12 +457,14 @@ class _AbpoolSelfTests(unittest.TestCase):
                 @staticmethod
                 def parse_bench_rows(out: str, imgs: list[str]) -> dict[str, list[float]]:
                     if out == "A":
-                        return {"big_img": [1000, 100.0, 80.0], "tiny_img": [50, 1.0, 1.0]}
-                    return {"big_img": [1002, 104.0, 82.0], "tiny_img": [50, 1.4, 1.3]}
+                        return {i: ([1000, 100.0, 80.0] if "tiny" not in i else [50, 1.0, 1.0]) for i in imgs}
+                    return {i: ([1002, 104.0, 82.0] if "tiny" not in i else [50, 1.4, 1.3]) for i in imgs}
 
                 @staticmethod
                 def ppm_dimensions(p: Path) -> tuple[int, int]:
-                    return (128, 128) if "big" in p.name else (4, 4)
+                    return (4, 4) if "tiny" in p.name else (128, 128)
+
+            (ppm / "syn_img.ppm").write_bytes(b"P6\n128 128\n255\n" + b"\x00" * (128 * 128 * 3))
 
             log_file = root / "photo_t1.jsonl"
             buf = io.StringIO()
@@ -358,6 +476,7 @@ class _AbpoolSelfTests(unittest.TestCase):
                 )
             self.assertEqual(meta["a_sha256"], file_sha256(base_c))
             self.assertEqual(meta["b_sha256"], file_sha256(cand_c))
+            self.assertEqual(meta["set"], "photo")
             self.assertEqual(run_orders, ["A", "B", "B", "A"])
             self.assertEqual(len(built_calls), 2)
             self.assertEqual(built_calls[0][0], base_c)
@@ -372,6 +491,32 @@ class _AbpoolSelfTests(unittest.TestCase):
                 )
             self.assertIn("provenance mismatch", str(ctx.exception))
 
+            # Appending with different build flags or image membership is refused.
+            with self.assertRaises(SystemExit) as ctx_flags:
+                run_pool(
+                    [str(log_file), str(base_c), str(cand_c), "-t1", "1", "big_img", "tiny_img", "-DSTRIP_MODE=3"],
+                    ab_mod=FakeAb,
+                    repo=root,
+                )
+            self.assertIn("provenance mismatch in build flags", str(ctx_flags.exception))
+
+            with self.assertRaises(SystemExit) as ctx_imgs:
+                run_pool(
+                    [str(log_file), str(base_c), str(cand_c), "-t1", "1", "big_img"],
+                    ab_mod=FakeAb,
+                    repo=root,
+                )
+            self.assertIn("provenance mismatch in image membership", str(ctx_imgs.exception))
+
+            # Incomplete pool or out-of-range slice is rejected.
+            with self.assertRaises(SystemExit) as ctx_short:
+                report_pool([str(log_file), "0:5"], ab_mod=FakeAb)
+            self.assertIn("requested 5 rounds (up to 5), but log only has 2 complete rounds", str(ctx_short.exception))
+
+            with self.assertRaises(SystemExit) as ctx_beyond:
+                report_pool([str(log_file), "5:10"], ab_mod=FakeAb)
+            self.assertIn("only has 2 complete rounds", str(ctx_beyond.exception))
+
             rep_buf = io.StringIO()
             with redirect_stdout(rep_buf):
                 summaries = report_pool([str(log_file), "0:2"], ab_mod=FakeAb)
@@ -380,6 +525,56 @@ class _AbpoolSelfTests(unittest.TestCase):
             self.assertIn("over bar: 0 []", rep_buf.getvalue())
             self.assertIn(meta["a_sha256"][:12], rep_buf.getvalue())
             self.assertIn(meta["b_sha256"][:12], rep_buf.getvalue())
+
+            # Set limit (1.10 vs 1.20) is determined from set identity / image membership, never from the filename.
+            photo_named_synth = root / "photo_synth.jsonl"
+            photo_named_synth.write_text(
+                json.dumps({
+                    "t": "-t1", "k": "A", "a_sha256": "11" * 32, "b_sha256": "22" * 32,
+                    "rows": {"big_img": [1000, 100.0, 100.0], "tiny_img": [50, 1.0, 1.0]},
+                }) + "\n"
+                + json.dumps({
+                    "t": "-t1", "k": "B", "a_sha256": "11" * 32, "b_sha256": "22" * 32,
+                    "rows": {"big_img": [1000, 115.0, 115.0], "tiny_img": [50, 1.0, 1.0]},
+                }) + "\n",
+                encoding="utf-8",
+            )
+            with redirect_stdout(io.StringIO()):
+                s_photo_named_synth = report_pool([str(photo_named_synth), "0:1"], ab_mod=FakeAb)
+            self.assertEqual(len(s_photo_named_synth[0]["fails"]), 2)
+
+            synth_arbitrary = root / "arbitrary.jsonl"
+            synth_arbitrary.write_text(
+                json.dumps({
+                    "t": "-t1", "k": "A", "a_sha256": "11" * 32, "b_sha256": "22" * 32,
+                    "rows": {"syn_img": [1000, 100.0, 100.0]},
+                }) + "\n"
+                + json.dumps({
+                    "t": "-t1", "k": "B", "a_sha256": "11" * 32, "b_sha256": "22" * 32,
+                    "rows": {"syn_img": [1000, 115.0, 115.0]},
+                }) + "\n",
+                encoding="utf-8",
+            )
+            with redirect_stdout(io.StringIO()):
+                s_synth_arb = report_pool([str(synth_arbitrary), "0:1"], ab_mod=FakeAb)
+            self.assertEqual(s_synth_arb[0]["fails"], [])
+
+            # Tampered log with inconsistent image membership across records is rejected by report_pool.
+            inconsistent_imgs = root / "inconsistent.jsonl"
+            inconsistent_imgs.write_text(
+                json.dumps({
+                    "t": "-t1", "k": "A", "a_sha256": "11" * 32, "b_sha256": "22" * 32,
+                    "rows": {"big_img": [1000, 100.0, 100.0]},
+                }) + "\n"
+                + json.dumps({
+                    "t": "-t1", "k": "B", "a_sha256": "11" * 32, "b_sha256": "22" * 32,
+                    "rows": {"big_img": [1000, 100.0, 100.0], "tiny_img": [50, 9.0, 9.0]},
+                }) + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(SystemExit) as ctx_inc:
+                report_pool([str(inconsistent_imgs), "0:1"], ab_mod=FakeAb)
+            self.assertIn("inconsistent image membership", str(ctx_inc.exception))
 
             # Legacy/untagged log lines without a_sha256/b_sha256 are rejected by report_pool.
             untagged = root / "untagged.jsonl"
