@@ -247,7 +247,7 @@ Most of the photographs still losing to JPEG XL e9, within the gate's tolerance.
 |  ✔  | Section      | Deliverable                                                                      | Items |
 | :-: | ------------ | -------------------------------------------------------------------------------- | :---: |
 | [x] | `D01 T05 §1` | Why the losing photos lose                                                       |   4   |
-| [ ] | `D01 T05 §2` | Encoder-chosen parameters in version 3                                           |   4   |
+| [ ] | `D01 T05 §2` | Encoder-chosen parameters in version 3                                           |   5   |
 | [ ] | `D01 T05 §3` | Strip-adaptation priors, collision-reduced contexts, and noise-damped prediction |   3   |
 | [ ] | `D01 T05 §4` | Port Milestone 7 CM improvements into version 3                                  |   3   |
 | [ ] | `D05 T01 §7` | Milestone 7 gate: Photographs beat JPEG XL e9                                    |   4   |
