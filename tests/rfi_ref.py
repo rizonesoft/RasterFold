@@ -564,8 +564,11 @@ def _run_strips(width: int, height: int, nstrips: int, strips: list[list[Channel
                     ch.drop_row(y - 2)
 
 
-def cm_encode(width: int, height: int, rgb: bytes) -> bytes:
-    nstrips = 3 if height >= 768 else 2 if height >= 512 else 1
+def cm_encode(width: int, height: int, rgb: bytes, nstrips: int | None = None) -> bytes:
+    if nstrips is None:
+        nstrips = 3 if height >= 768 else 2 if height >= 512 else 1
+    if nstrips < 1 or nstrips > 4 or nstrips > height:
+        raise ValueError("cm strips")
     strips = [[Channel(width, NMODEL) for _ in range(3)] for _ in range(nstrips)]
     for chans in strips:
         for ch in chans:

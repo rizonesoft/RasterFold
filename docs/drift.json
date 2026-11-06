@@ -1694,7 +1694,7 @@
         "src/fold.c": "7cecdf9622aa6d98be195cf43b1e77de7f9676f2a7c1f1129cc08dbe7497e8aa",
         "src/cm.c": "e0f098205d6fe32e3d9b21cb3006386510310b195d18e610d9471e918906e870",
         "src/crc32.c": "c6e682115185fcdcbfa0551823fc590f60c9c7b978a30009163288e664b3faec",
-        "tests/rfi_ref.py": "2ff8f5130df9af75fa665e685c0ec7d4e5fb2d779071600e9ec1e9711685d961",
+        "tests/rfi_ref.py": "30437ac5ad4118395d589ea0f8e832105b3283f560aa752f3556995a1df14ea8",
         "spec/FOLD.md": "6de7c37d2076544235821082fc81bbd6ed38a356f2db5c2623e0584dfeba075a"
       },
       "reviewed_at": "2026-10-25",
