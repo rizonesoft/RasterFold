@@ -36,16 +36,20 @@ WORK = ROOT / "tests" / "work" / "fuzz"
 
 PHOTO_CROPS: tuple[tuple[str, int, int, int, int], ...] = (
     ("kodim01.png", 120, 80, 48, 36),
-    ("kodim03.png", 160, 120, 48, 36),
+    ("kodim03.png", 160, 0, 36, 512),
     ("kodim05.png", 180, 140, 64, 40),
-    ("kodim13.png", 200, 140, 36, 34),
+    ("kodim13.png", 200, 0, 36, 512),
     ("kodim23.png", 200, 160, 36, 34),
-    ("deer_crop.png", 220, 160, 36, 34),
+    ("deer_crop.png", 220, 0, 36, 768),
     ("fireworks_crop.png", 140, 200, 36, 34),
-    ("flower_foveon_crop.png", 240, 180, 36, 34),
+    ("flower_foveon_crop.png", 240, 0, 36, 768),
     ("nightshot_iso_1600_crop.png", 150, 220, 36, 34),
     ("spider_web_crop.png", 160, 240, 36, 34),
 )
+FORCE_STRIPS: dict[str, int] = {
+    "nightshot_iso_1600_crop.png": 4,
+    "spider_web_crop.png": 4,
+}
 
 
 def recrc(b: bytearray, update_payload_size: bool = True) -> bytes:
@@ -58,7 +62,8 @@ def recrc(b: bytearray, update_payload_size: bool = True) -> bytes:
 
 def seed_records() -> list[tuple[str, int, int, int, bytes]]:
     WORK.mkdir(parents=True, exist_ok=True)
-    cache_key = hashlib.sha256((ROOT / "tests" / "rfi_ref.py").read_bytes()).hexdigest()[:16]
+    seed_src = (ROOT / "tests" / "rfi_ref.py").read_bytes() + repr((PHOTO_CROPS, FORCE_STRIPS)).encode("utf-8")
+    cache_key = hashlib.sha256(seed_src).hexdigest()[:16]
     cache_path = WORK / f"seeds_v3_{cache_key}.json"
     if cache_path.is_file():
         try:
@@ -111,7 +116,12 @@ def seed_records() -> list[tuple[str, int, int, int, bytes]]:
         assert w >= 36 and h >= 34 and w * h > 1200
         with Image.open(photos_dir / name) as im:
             crop = im.convert("RGB").crop((x, y, x + w, y + h))
-            blob = rf.encode_image(w, h, crop.tobytes())
+            rgb = crop.tobytes()
+            force_s = FORCE_STRIPS.get(name)
+            if force_s is not None:
+                blob = rf.build_file(w, h, rf.METHOD_CM, rf.cm_encode(w, h, rgb, nstrips=force_s))
+            else:
+                blob = rf.encode_image(w, h, rgb)
         assert blob[16] == rf.METHOD_CM
         stem = name.removesuffix(".png")
         photo_folds.append((f"{stem}_{w}x{h}", w, h, rf.METHOD_CM, blob))
@@ -132,6 +142,7 @@ def seed_records() -> list[tuple[str, int, int, int, bytes]]:
         assert w >= 36 and h >= 34 and w * h > 1200
         assert struct.unpack_from("<II", blob, 8) == (w, h)
         assert blob[16] == m
+    assert {blob[32] for _, _, _, m, blob in records if m == rf.METHOD_CM} == {1, 2, 3, 4}
     cache_path.write_text(
         json.dumps(
             [{"name": n, "w": w, "h": h, "method": m, "b64": base64.b64encode(b).decode("ascii")} for n, w, h, m, b in records],

@@ -1165,6 +1165,20 @@ def fuzz_harness() -> None:
             check(struct.unpack_from("<H", blob, 32)[0] + 1 == 2, f"seed {name} palette count != 2")
         if "200col" in name:
             check(struct.unpack_from("<H", blob, 32)[0] + 1 == 200, f"seed {name} palette count != 200")
+    cm_strips = {blob[32] for _, _, _, m, blob in records if m == 1}
+    check(cm_strips == {1, 2, 3, 4}, f"expected CM fuzz seeds to cover S in {{1, 2, 3, 4}}, got {cm_strips}")
+    mut_rng = random.Random(7)
+    for want_s in (2, 3, 4):
+        s_seed = next(blob for _, _, _, m, blob in records if m == 1 and blob[32] == want_s)
+        saw_decoded = False
+        for _ in range(16):
+            mut_blob = fuzz_decode.mutate(s_seed, mut_rng)
+            if len(mut_blob) >= 32 + 1 + 12 * want_s and mut_blob[32] == want_s:
+                sizes = struct.unpack_from(f"<{3 * want_s}I", mut_blob, 33)
+                if all(sz >= 5 for sz in sizes) and 32 + 1 + 12 * want_s + sum(sizes) == len(mut_blob):
+                    saw_decoded = True
+                    break
+        check(saw_decoded, f"mutations of S={want_s} seed did not preserve multi-strip framing")
 
     with tempfile.TemporaryDirectory(prefix="rf_fuzz_test_") as tmp:
         td = Path(tmp)
