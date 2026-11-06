@@ -1,0 +1,74 @@
+{
+  "ref": "D01 T05 \u00a72",
+  "title": "Encoder-Chosen Parameters in Version 3",
+  "implementation_sha": "45182ecbdc677a2c483788dc1e188d795b5f3fce",
+  "date": "2026-11-06",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/01-compression/D01-T05-s2.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "D01 T02 \u00a76 (f0bd7d74b2ebb9fe1b15868e9a8310034c32e749) -> rejected encoder-chosen parameters (ceiling -0.018% / -0.026% / -0.030% < 0.3% bar); python3 research/ceiling.py --self-test -> ceiling self-test: PASS; python3 tests/test_correctness.py -> 41 passed, 0 failed; python3 scripts/windows.py tests/test_correctness.py -> 41 passed, 0 failed; fold-v2 freeze check -> fold-v2 verification: 55/55 version 2 files decoded pixel-identically to source PPMs; python3 scripts/check-all.py -> check-all: 29/29 passed"
+  ],
+  "completion": {
+    "report": "docs/reviews/01-compression/D01-T05-s2.md",
+    "verdict": "complete",
+    "candidate": "45182ecbdc677a2c483788dc1e188d795b5f3fce",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/01-compression/D01-T05-s2.md",
+    "candidate": "bc44de2fc408f65c9a46b735b9f452b3321088cb",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "bc44de2fc408f65c9a46b735b9f452b3321088cb",
+  "schedule": {
+    "policy": "three-pass",
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}

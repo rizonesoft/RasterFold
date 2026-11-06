@@ -37,7 +37,7 @@ track: C5
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
 |   1   |   §1    | Why the losing photos lose | -- |  [x]   |
-|   2   |   §2    | Encoder-chosen parameters in version 3 | §1, D01 T02 §6, D01 T03 §1 |  [ ]   |
+|   2   |   §2    | Encoder-chosen parameters in version 3 | §1, D01 T02 §6, D01 T03 §1 |  [x]   |
 |   3   |   §3    | Strip-adaptation priors, collision-reduced contexts, and noise-damped prediction | §1, §2 |  [ ]   |
 |   4   |   §4    | Port Milestone 7 CM improvements into version 3 | §3 |  [ ]   |
 
@@ -84,6 +84,8 @@ Builds the per-channel parameter search `docs/research.md` section 4.5 designs, 
 
 **Freeze check:** Verified on 2026-11-06: because `D01 T02 §6` rejected encoder-chosen parameters, `src/`, `spec/FOLD.md`, `tests/rfi_ref.py`, `KAT_FOLD` (version 2), and `KAT_FOLD3` (version 3) are unchanged, `tests/test_correctness.py` passes (`41 passed, 0 failed`), and all 55 version 2 `.fold` files in `build/research/fold-v2/` (verified header magic/version `RFI\x02\x02\x00`) decode with `bin/linux-x64/bin/rasterfold decode` to pixels identical to their source PPMs in `build/research/ppm/` (`fold-v2 verification: 55/55 version 2 files decoded pixel-identically to source PPMs`).
 
+> **Verified:** 2026-11-06 | §2 | 45182ecbdc677a2c483788dc1e188d795b5f3fce
+> **Review:** `docs/reviews/d01-t05-s2.json`
 ## 3. Strip-Adaptation Priors, Collision-Reduced Contexts, and Noise-Damped Prediction
 
 **Origin:** discovered run=69e45b93535e 2026-11-06
