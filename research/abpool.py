@@ -96,6 +96,41 @@ def parse_run_args(argv: list[str]) -> tuple[Path, Path, Path, str, int, list[st
     return log_path, base_cm, cand_cm, t_flag, rounds, raw_sets, flags
 
 
+def _parse_json_line(line: str, src: str) -> dict[str, object]:
+    def _reject_const(c: str):
+        raise SystemExit(f"{src}: non-finite JSON constant {c!r} in record")
+
+    try:
+        obj = json.loads(line, parse_constant=_reject_const)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"{src}: malformed JSON record: {exc}") from exc
+    if not isinstance(obj, dict):
+        raise SystemExit(f"{src}: expected JSON object record, got {type(obj).__name__}")
+    return obj
+
+
+def _is_valid_t_flag(val: object) -> bool:
+    return isinstance(val, str) and val.startswith("-t") and val[2:].isdigit() and int(val[2:]) > 0
+
+
+def _validate_rows_dict(rows: object, expected_imgs: list[str], src: str) -> None:
+    if not isinstance(rows, dict) or not rows:
+        raise SystemExit(f"{src}: missing or empty rows mapping")
+    if list(rows.keys()) != expected_imgs:
+        raise SystemExit(
+            f"{src}: inconsistent image membership (expected {expected_imgs!r}, got {list(rows.keys())!r})"
+        )
+    for img, vals in rows.items():
+        if not isinstance(vals, list) or len(vals) < 3:
+            raise SystemExit(f"{src}: invalid row for {img!r}: expected [size, enc_ms, dec_ms]")
+        for j, label in ((0, "size"), (1, "enc_ms"), (2, "dec_ms")):
+            v = vals[j]
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(float(v)) or float(v) <= 0.0:
+                raise SystemExit(
+                    f"{src}: non-positive or non-finite {label} value {v!r} for image {img!r}"
+                )
+
+
 def infer_set_name(imgs: list[str], ab_mod) -> str:
     target = tuple(imgs)
     sets = getattr(ab_mod, "SETS", {})
@@ -119,7 +154,7 @@ def verify_existing_log_provenance(
     for lineno, line in enumerate(log_path.read_text(encoding="utf-8").splitlines(), 1):
         if not line.strip():
             continue
-        rec = json.loads(line)
+        rec = _parse_json_line(line, f"{log_path}:{lineno}")
         rec_a = rec.get("a_sha256")
         rec_b = rec.get("b_sha256")
         if rec_a != a_sha or rec_b != b_sha:
@@ -146,6 +181,7 @@ def verify_existing_log_provenance(
                 f"{log_path}:{lineno}: provenance mismatch in image membership "
                 f"(existing images={rec_imgs!r}, new images={list(imgs)!r})"
             )
+        _validate_rows_dict(rec_rows, list(imgs), f"{log_path}:{lineno}")
         rec_set = rec.get("set")
         if rec_set is not None and rec_set != set_name:
             raise SystemExit(
@@ -185,6 +221,7 @@ def run_pool(argv: list[str], ab_mod=None, repo: Path = REPO) -> dict[str, objec
                     exe = bench_a if k == "A" else bench_b
                     out = ab.run(exe, imgs)
                     rows = ab.parse_bench_rows(out, imgs)
+                    _validate_rows_dict(rows, imgs, f"{log_path}:round-{i}-{k}")
                     rec = {
                         "t": t_flag,
                         "k": k,
@@ -197,7 +234,7 @@ def run_pool(argv: list[str], ab_mod=None, repo: Path = REPO) -> dict[str, objec
                         "b_sha256": b_sha,
                         "rows": rows,
                     }
-                    fh.write(json.dumps(rec) + "\n")
+                    fh.write(json.dumps(rec, allow_nan=False) + "\n")
                     fh.flush()
     finally:
         sys.argv = orig_argv
@@ -254,11 +291,20 @@ def report_pool(argv: list[str], ab_mod=None) -> list[dict[str, object]]:
     if not log_path.is_file():
         raise SystemExit(f"missing pool log: {log_path}")
     ab = ab_mod if ab_mod is not None else _load_ab()
-    recs = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    recs: list[dict[str, object]] = []
+    for lineno, line in enumerate(log_path.read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        rec = _parse_json_line(line, f"{log_path.name}:{lineno}")
+        if not _is_valid_t_flag(rec.get("t")):
+            raise SystemExit(
+                f"{log_path.name}:{lineno}: missing or invalid thread flag {rec.get('t')!r}"
+            )
+        recs.append(rec)
     if not recs:
         raise SystemExit(f"empty pool log: {log_path}")
     summaries: list[dict[str, object]] = []
-    for t in sorted({r.get("t") for r in recs if isinstance(r.get("t"), str)}):
+    for t in sorted({str(r["t"]) for r in recs}):
         t_recs = [r for r in recs if r.get("t") == t]
         if len(t_recs) % 2 != 0:
             raise SystemExit(
@@ -305,6 +351,7 @@ def report_pool(argv: list[str], ab_mod=None) -> list[dict[str, object]]:
                     f"{log_path.name} {t} record {idx_r}: inconsistent image membership "
                     f"(expected {imgs!r}, got rows={r_imgs!r} images={decl_imgs!r})"
                 )
+            _validate_rows_dict(r_rows, imgs, f"{log_path.name} {t} record {idx_r}")
             r_flags = list(r.get("flags", []))
             if r_flags != first_flags:
                 raise SystemExit(
@@ -406,6 +453,8 @@ def report_pool(argv: list[str], ab_mod=None) -> list[dict[str, object]]:
                 "fails": fails,
             }
         )
+    if not summaries:
+        raise SystemExit(f"{log_path.name}: no summaries produced")
     return summaries
 
 
@@ -586,6 +635,42 @@ class _AbpoolSelfTests(unittest.TestCase):
             with self.assertRaises(SystemExit) as ctx2:
                 report_pool([str(untagged), "0:1"], ab_mod=FakeAb)
             self.assertIn("missing or inconsistent source SHA-256 provenance", str(ctx2.exception))
+
+            # Missing or non-string thread metadata is rejected before grouping.
+            bad_t = root / "bad_t.jsonl"
+            bad_t.write_text("{}\n", encoding="utf-8")
+            with self.assertRaises(SystemExit) as ctx_bad_t:
+                report_pool([str(bad_t), "0:5"], ab_mod=FakeAb)
+            self.assertIn("missing or invalid thread flag", str(ctx_bad_t.exception))
+
+            # Non-finite (NaN / Infinity) or non-positive timings are rejected.
+            nan_log = root / "nan_log.jsonl"
+            nan_log.write_text(
+                '{"t":"-t1","k":"A","a_sha256":"' + ("11" * 32) + '","b_sha256":"' + ("22" * 32)
+                + '","rows":{"big_img":[1000,100.0,80.0]}}\n'
+                '{"t":"-t1","k":"B","a_sha256":"' + ("11" * 32) + '","b_sha256":"' + ("22" * 32)
+                + '","rows":{"big_img":[1000,NaN,NaN]}}\n',
+                encoding="utf-8",
+            )
+            with self.assertRaises(SystemExit) as ctx_nan:
+                report_pool([str(nan_log), "0:1"], ab_mod=FakeAb)
+            self.assertIn("non-finite JSON constant", str(ctx_nan.exception))
+
+            zero_log = root / "zero_log.jsonl"
+            zero_log.write_text(
+                json.dumps({
+                    "t": "-t1", "k": "A", "a_sha256": "11" * 32, "b_sha256": "22" * 32,
+                    "rows": {"big_img": [1000, 100.0, 80.0]},
+                }) + "\n"
+                + json.dumps({
+                    "t": "-t1", "k": "B", "a_sha256": "11" * 32, "b_sha256": "22" * 32,
+                    "rows": {"big_img": [1000, 0.0, 80.0]},
+                }) + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(SystemExit) as ctx_zero:
+                report_pool([str(zero_log), "0:1"], ab_mod=FakeAb)
+            self.assertIn("non-positive or non-finite enc_ms", str(ctx_zero.exception))
 
 
 def main(argv: list[str] | None = None) -> int:
