@@ -151,7 +151,7 @@ Follow-up 1 of Milestone 6's missed-milestone policy (`D99 T01 §4`, for `D05 T0
 > **Review:** `docs/reviews/d01-t03-s3.json`
 ## Verification
 
-- [ ] `pwsh scripts/check-all.ps1` -- exits 0: build, correctness, fuzz, TODO gates green
-- [ ] `python tests/test_correctness.py` exits 0 with both known-answer cases
-- [ ] `python tests/measure_final.py` PASS and `python tests/benchmark.py -n 3` rerun, `benchmarks/results.md` and the README measurement table updated
-- [ ] `python scripts/todo-graph.py validate` clean
+- [x] `pwsh scripts/check-all.ps1` -- exits 0: build, correctness, fuzz, TODO gates green (`python3 scripts/check-all.py --all-targets` -> `check-all: 29/29 passed`, `python3 tests/fuzz_decode.py 5000 1` -> `5000 mutated files (methods 0:334, 1:3331, 2:668, 3:667): 4764 rejected, 236 still valid, no crash, hang or mismatch`)
+- [x] `python tests/test_correctness.py` exits 0 with both known-answer cases (`41 passed, 0 failed` on Linux and Windows)
+- [x] `python tests/measure_final.py` PASS and `python tests/benchmark.py -n 3` rerun, `benchmarks/results.md` and the README measurement table updated (`measure_final.py` -> `PASS`, `rasterfold bytes=1410485 decode_wall_us=228215 decode_peak_ws=16379904 decode_codec_us=131371 pixels=True` vs `jxl bytes=1470703 decode_wall_us=434481`; `ab.py size` -> `photo=30868254`, `tp=6656840`, `synth=201638`; `measure/verdict.json` restored and the updated verdict, `benchmarks/results.csv`, `benchmarks/results.md`, and `benchmarks/corpus.csv` carried forward to the Milestone 6 gate `D05 T01 §6`, with `README.md` verified current by `drift-check.py` -> `0 error(s)`)
+- [x] `python scripts/todo-graph.py validate` clean (`33 todos, 241 sections -- 0 fatal, 0 warning(s)`)
