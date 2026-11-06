@@ -1,0 +1,93 @@
+{
+  "ref": "D02 T02 \u00a73",
+  "title": "Warm-Started Horizontal Strips, Measured",
+  "implementation_sha": "2f8c4167c02d14a0bfce88d8fe5dd9de4e65be2e",
+  "date": "2026-11-06",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/02-speed/D02-T02-s3.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 2,
+      "report": "docs/reviews/02-speed/D02-T02-s3.md",
+      "verdict": "fixed"
+    },
+    {
+      "round": 3,
+      "report": "docs/reviews/02-speed/D02-T02-s3.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "build/research/test_simd_eq + test_strip_fail + verify_det_v2.py -> counter_updates=7995392 mismatches=0 dot_checks=1000008 dot_mismatches=0; thread_fail_injections=28 early_abort=33 live_threads=0 live_alloc=0 PASS; det_images=55 (threads 1,3,6,9 byte-identical & lossless) v2_images=55; size S=3 warm=64 photo +0.181% tp +0.175% tp-only +0.203% H<=768 +0.214% synth +0.111% (pure-CM +0.343%, no-noise +0.272%); Windows WebP decode -t9 rf=1270062 us vs webp=1431200 us (ratio=0.887, geomean=0.937) default_threads rf=1284773 us vs 1414107 us (ratio=0.909, geomean=0.950); Linux WebP decode -t9 rf=629757 us vs 1588709 us (ratio=0.396, geomean=0.399); 10/10 abpool suites over_bar=0; measure/image.bmp codec_mem +4.01% Win / +4.02% Linux <= +5.00%; ACCEPTED"
+  ],
+  "completion": {
+    "report": "docs/reviews/02-speed/D02-T02-s3.md",
+    "verdict": "completed",
+    "candidate": "0fee78cfd94d66e6e27f6a12ff2050d34c7340a8",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 3,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/02-speed/D02-T02-s3.md",
+    "candidate": "80fc7c85305015a50109c8a709be7764eaaffa51",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule": {
+    "severity_stop_after": 0,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "completion": {
+      "effort": "medium"
+    },
+    "rounds": [
+      {
+        "effort": "high",
+        "lenses": [
+          "adversarial",
+          "integration"
+        ]
+      },
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial"
+        ]
+      },
+      {
+        "effort": "low",
+        "lenses": [
+          "adversarial"
+        ]
+      }
+    ],
+    "rotation": {
+      "effort": "low",
+      "lenses": [
+        "consistency",
+        "design",
+        "record"
+      ]
+    },
+    "escalation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial"
+      ]
+    }
+  }
+}
