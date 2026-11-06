@@ -16,6 +16,57 @@ import unittest.mock
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 REPO_PIN = SCRIPTS.parent / ".conclave" / "reviewers.toml"
+# The repository pin as it stood before the three-pass policy (2026-11-06): older sections stay on it to their stamp.
+LEGACY_PIN = """schema_version = 1
+
+[reviewers.astra]
+cli = "codex"
+model = "gpt-6-astra"
+effort = "medium"
+
+[reviewers.spark]
+cli = "muse"
+model = "muse-spark-1.3"
+effort = "high"
+
+[routes]
+claude = ["astra"]
+muse = ["astra"]
+agy = ["astra"]
+codex = ["spark"]
+opencode = ["astra"]
+copilot = ["astra"]
+
+[schedule]
+severity_stop_after = 0
+
+[schedule.plan]
+effort = "medium"
+lenses = ["plan"]
+
+[schedule.completion]
+effort = "medium"
+
+[[schedule.rounds]]
+effort = "high"
+lenses = ["adversarial", "integration"]
+
+[[schedule.rounds]]
+effort = "medium"
+lenses = ["adversarial"]
+
+[[schedule.rounds]]
+effort = "low"
+lenses = ["adversarial"]
+
+[schedule.rotation]
+effort = "low"
+lenses = ["consistency", "design", "record"]
+
+[schedule.escalation]
+effort = "medium"
+lenses = ["adversarial"]
+"""
 
 # A historical three-writer pin stays supported. The Codex-to-Muse route is exercised separately.
 FIXTURE_PIN = textwrap.dedent('''    schema_version = 1
@@ -70,7 +121,11 @@ FAKE_CLI = textwrap.dedent('''\
         text = os.environ["FAKE_SAY"]
     if mode == "completionblocked":
         text = "I could not read the candidate commit.\\n\\nCOMPLETION: blocked"
-    open(args[args.index("-o") + 1], "w").write(text)
+    # Codex writes its reply to its -o file; Antigravity prints it.
+    if "-o" in args:
+        open(args[args.index("-o") + 1], "w").write(text)
+    else:
+        sys.stdout.write(text)
     if mode == "linger":
         # A process the reviewer started outlives it and holds the message file open for a moment, as a CLI's helper
         # process can; the reviewer exits first, so a detached helper would keep the scratch file locked.
@@ -206,11 +261,11 @@ class Dispatch(Harness):
 
     def test_unrouted_and_unknown_writers_are_refused(self):
         # Historical pins do not acquire a route just because the current dispatcher knows another writer.
-        for unrouted in ("codex", "opencode", "copilot"):
+        for unrouted in ("codex", "gemini", "opencode", "copilot"):
             result, _ = self.dispatch("--writer", unrouted, "--prompt", str(self.prompt))
             self.assertEqual(result.returncode, 2)
             self.assertIn(f"no route for writer '{unrouted}'", result.stderr)
-        result, _ = self.dispatch("--writer", "gemini", "--prompt", str(self.prompt))
+        result, _ = self.dispatch("--writer", "hermes", "--prompt", str(self.prompt))
         self.assertEqual(result.returncode, 2)
         self.assertIn("invalid choice", result.stderr)
         self.assertEqual(self.calls(), [])
@@ -263,7 +318,7 @@ class Dispatch(Harness):
         pin = module.load_pin(self.repo / ".conclave/reviewers.toml")
         self.assertEqual((report["ok"], report["schema_version"]), (True, 1))
         self.assertEqual((report["reviewers"], report["routes"]), (pin["reviewers"], pin["routes"]))
-        self.assertEqual(report["clis"], {"codex": True, "muse": False})
+        self.assertEqual(report["clis"], {"codex": True, "agy": False, "muse": False})
         self.assertEqual(self.calls(), [], "--check-pin ran a reviewer")
 
     def test_check_pin_reports_a_refused_pin(self):
@@ -285,14 +340,14 @@ class Dispatch(Harness):
         # The strict loader names what is wrong: another reviewer CLI, a fallback, a route for a non-writer.
         module, pin, good = self.module(), self.repo / ".conclave/reviewers.toml", FIXTURE_PIN
         mini = '\n[reviewers.mini]\ncli = "codex"\nmodel = "gpt-6-mini"\neffort = "low"\n'
-        cases = {good.replace('cli = "codex"', 'cli = "agy"'): "reviewer 'sol' needs cli = one of codex, muse",
-                 good.replace('cli = "codex"', 'cli = "claude"'): "reviewer 'sol' needs cli = one of codex, muse",
+        cases = {good.replace('cli = "codex"', 'cli = "agy"'): "reviewer 'sol': Antigravity carries the effort in the model name, so set no effort",
+                 good.replace('cli = "codex"', 'cli = "claude"'): "reviewer 'sol' needs cli = one of codex, agy, muse",
                  good.replace('agy = ["sol"]', 'agy = ["sol", "mini"]') + mini:
                      "route 'agy' must list exactly one reviewer, with no fallback",
                  good.replace('agy = ["sol"]', 'agy = []'):
                      "route 'agy' must list exactly one reviewer, with no fallback",
                  good + 'codex = ["sol"]\n': "route 'codex' names sol, of the writer's own family; a review comes from a different family",
-                 good + 'gemini = ["sol"]\n': "[routes] may only name the writers claude, muse, agy, codex, opencode, copilot",
+                 good + 'hermes = ["sol"]\n': "[routes] may only name the writers claude, codex, gemini, muse, opencode, agy, copilot",
                  good.replace('effort = "xhigh"', 'effort = "xhigh"\nsandbox = "workspace-write"'):
                      "reviewer 'sol' has unknown keys: sandbox"}
         for text, message in cases.items():
@@ -1000,7 +1055,7 @@ def bad_pins(good):
             good.replace('agy = ["sol"]', 'agy = []'),
             good + 'claude = ["sol"]\n',
             good + 'codex = ["sol"]\n',
-            good + 'gemini = ["sol"]\n')
+            good + 'hermes = ["sol"]\n')
 
 
 SCHEDULED_PIN = FIXTURE_PIN + textwrap.dedent('''
@@ -1238,20 +1293,21 @@ class RepositoryPin(unittest.TestCase):
         pin = module.load_pin(REPO_PIN)
         self.assertTrue(pin["routes"], "the repository pin routes no writer")
 
-    def test_the_repository_pin_routes_codex_to_spark_and_other_writers_to_astra(self):
+    def test_the_repository_pin_is_the_three_pass_policy_at_medium(self):
         with open(REPO_PIN, "rb") as handle:
             pin = tomllib.load(handle)
         self.assertEqual(pin["reviewers"], {"astra": {"cli": "codex", "model": "gpt-6-astra", "effort": "medium"},
-                                           "spark": {"cli": "muse", "model": "muse-spark-1.3", "effort": "high"}})
-        self.assertEqual(pin["routes"], {"claude": ["astra"], "muse": ["astra"], "agy": ["astra"],
-                                         "codex": ["spark"], "opencode": ["astra"], "copilot": ["astra"]})
+                                           "argon": {"cli": "agy", "model": "gemini-4-argon-medium"}})
+        self.assertEqual(pin["routes"], {"claude": ["astra"], "codex": ["argon"], "gemini": ["astra"],
+                                         "muse": ["astra"], "opencode": ["astra"]})
         schedule = pin["schedule"]
+        self.assertEqual(schedule["policy"], "three-pass")
         self.assertEqual(schedule["plan"], {"effort": "medium", "lenses": ["plan"]})
         self.assertEqual(schedule["completion"], {"effort": "medium"})
-        self.assertEqual([(r["effort"], r["lenses"][0]) for r in schedule["rounds"]],
-                         [("high", "adversarial"), ("medium", "adversarial"), ("low", "adversarial")])
-        self.assertEqual(schedule["rotation"]["effort"], "low")
-        self.assertEqual(schedule["escalation"], {"effort": "medium", "lenses": ["adversarial"]})
+        self.assertEqual(schedule["rounds"], [{"effort": "medium", "lenses": [
+            "adversarial", "integration", "source-defect", "plan-delivery", "consistency", "record", "quality",
+            "optimization", "design"]}])
+        self.assertEqual(schedule["reconciliation"]["effort"], "medium")
 
     def test_the_pins_severity_stop_is_the_stamps_cutoff(self):
         # The dispatcher reports severity_stop from the pin and `stamp` re-checks it against SEVERITY_CUTOFF_ROUND: the
@@ -1263,8 +1319,7 @@ class RepositoryPin(unittest.TestCase):
             spec.loader.exec_module(todo_graph)
         finally:
             del sys.modules[spec.name]
-        with open(REPO_PIN, "rb") as handle:
-            pin = tomllib.load(handle)
+        pin = tomllib.loads(LEGACY_PIN)
         self.assertEqual(pin["schedule"]["severity_stop_after"], todo_graph.SEVERITY_CUTOFF_ROUND)
 
     def test_stamp_schedule_rejects_unpinned_reviewer_and_allows_retry_after_invalid_one_pass(self):
@@ -1280,7 +1335,7 @@ class RepositoryPin(unittest.TestCase):
             root = Path(tmp)
             (root / "todo/00-workspace").mkdir(parents=True)
             (root / ".conclave").mkdir(parents=True)
-            (root / ".conclave/reviewers.toml").write_bytes(REPO_PIN.read_bytes())
+            (root / ".conclave/reviewers.toml").write_text(LEGACY_PIN, encoding="utf-8", newline="\n")
             subprocess.run(["git", "-C", str(root), "init", "-q"], check=True)
             subprocess.run(["git", "-C", str(root), "add", ".conclave/reviewers.toml"], check=True)
             subprocess.run(
@@ -1292,8 +1347,7 @@ class RepositoryPin(unittest.TestCase):
             report = root / report_rel
             head = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
                                   capture_output=True, text=True, check=True).stdout.strip()
-            with open(REPO_PIN, "rb") as handle:
-                pin = tomllib.load(handle)
+            pin = tomllib.loads(LEGACY_PIN)
             # Pre-seed an invalid completion entry (missing COMPLETION:) with valid digest, then verify
             # record_completion allows a valid retry rather than permanently consuming the slot.
             bad_lines = ["1. Incomplete reply without footer."]
@@ -1394,10 +1448,10 @@ track: Z1
 """
 
 
-class RestartedMarkerTests(unittest.TestCase):
-    """`stamp` with a plan review that followed `Started:` (D00 T01 §11): refused without `> **Restarted:**`, accepted
-    with a well-formed one recorded after the review, and every refusal leaves the TODO file and receipt untouched."""
+class StampRepo(unittest.TestCase):
+    """A scratch repository holding one section and a pin, with the real `stamp`; holds no tests itself."""
 
+    PIN_TEXT = LEGACY_PIN
     REF = "D00 T01 §1"
     TODO = "todo/00-workspace/TODO-01-restart-fixture.md"
     REPORT = "docs/reviews/00-workspace/D00-T01-s1.md"
@@ -1417,7 +1471,7 @@ class RestartedMarkerTests(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name)
         (self.root / ".conclave").mkdir()
-        (self.root / ".conclave/reviewers.toml").write_bytes(REPO_PIN.read_bytes())
+        (self.root / ".conclave/reviewers.toml").write_text(self.PIN_TEXT, encoding="utf-8", newline="\n")
         self.schedule = self.dispatch.load_pin(str(self.root / ".conclave/reviewers.toml"))["schedule"]
         (self.root / "todo/00-workspace").mkdir(parents=True)
         self.saved = (self.tg.REPO, self.tg.TODO_DIR, self.tg.PLAN)
@@ -1445,6 +1499,11 @@ class RestartedMarkerTests(unittest.TestCase):
         text = RESTART_TODO.format(prose=prose, restart=restart).replace(
             "> **Started:** 2026-10-30T01:00:00Z", f"> **Started:** {started}")
         (self.root / self.TODO).write_bytes(text.replace("\n", "\r\n" if crlf else "\n").encode("utf-8"))
+
+
+class RestartedMarkerTests(StampRepo):
+    """`stamp` with a plan review that followed `Started:` (D00 T01 §11): refused without `> **Restarted:**`, accepted
+    with a well-formed one recorded after the review, and every refusal leaves the TODO file and receipt untouched."""
 
     def reviewed(self, kind, candidate=None, highest="none"):
         report = self.root / self.REPORT
@@ -1626,6 +1685,330 @@ class RestartedMarkerTests(unittest.TestCase):
         (self.root / self.TODO).write_text(
             text.replace("> **Started:** 2026-10-30T01:00:00Z", good), encoding="utf-8")
         self.refused(sha, "needs the section's '> **Started:**' line")
+
+
+class ThreePassStamp(StampRepo):
+    """`stamp` under the three-pass policy: plan, one round, completion, and one reconciliation after gaps."""
+
+    PIN_TEXT = REPO_PIN.read_text(encoding="utf-8")
+    ROUND_LENSES = ["adversarial", "integration", "source-defect", "plan-delivery", "consistency", "record", "quality",
+                    "optimization"]
+    BASE = {"writer": "claude", "reviewer": "astra", "cli": "codex", "model": "gpt-6-astra", "skipped": []}
+
+    def one_pass(self, kind, candidate, footer, lenses=()):
+        report = self.root / self.REPORT
+        report.parent.mkdir(parents=True, exist_ok=True)
+        self.clock = getattr(self, "clock", 0) + 1
+        self.dispatch.record_completion(report, {**self.BASE, "effort": "medium", "lenses": list(lenses),
+                                                 "review": footer}, f"2026-11-06T00:{self.clock:02d}:00Z", candidate, kind)
+
+    def plan_pass(self, candidate):
+        self.one_pass("plan", candidate, "HIGHEST: none\nPLAN: complete\nOVERALL: approve", ["plan"])
+
+    def round_pass(self, candidate, overall="needs-attention", effort="medium"):
+        report = self.root / self.REPORT
+        self.clock = getattr(self, "clock", 0) + 1
+        self.dispatch.record(report, {**self.BASE, "effort": effort, "lenses": self.ROUND_LENSES,
+                                      "review": f"HIGHEST: {'none' if overall == 'approve' else 'P2'}\nOVERALL: {overall}"},
+                             f"2026-11-06T00:{self.clock:02d}:00Z", candidate)
+
+    def completion_pass(self, candidate, verdict="complete"):
+        self.one_pass("completion", candidate, f"COMPLETION: {verdict}")
+
+    def reconciliation_pass(self, candidate, verdict="complete"):
+        self.one_pass("reconciliation", candidate, f"RECONCILIATION: {verdict}",
+                      ["adversarial", "integration", "plan-delivery", "record"])
+
+    def build(self, name):
+        (self.root / name).write_text(name, encoding="utf-8")
+        return self.commit(f"build {name}")
+
+    def started(self):
+        self.write()
+        start = self.commit("start")
+        self.plan_pass(start)
+        return start
+
+    def stamp(self, sha, verdict="complete", round_verdict="fixed", number=1):
+        return self.tg.stamp(self.root, self.REF, sha, [{"round": number, "report": self.REPORT, "verdict": round_verdict}],
+                             ["true -> ok"], "2026-11-06", sync_plan=False,
+                             completion={"report": self.REPORT, "verdict": verdict}, plan=self.REPORT)
+
+    def refused(self, needle, sha, **stamp):
+        with self.assertRaises(self.tg.Refused) as caught:
+            self.stamp(sha, **stamp)
+        self.assertIn(needle, str(caught.exception))
+        self.assertFalse((self.root / "docs/reviews/d00-t01-s1.json").exists(), "a refusal writes no receipt")
+
+    def test_plan_round_fix_completion_stamps_and_replays(self):
+        start = self.started()
+        self.round_pass(self.build("a"))
+        fixed = self.build("fix")
+        self.completion_pass(fixed)
+        receipt = self.stamp(fixed)
+        data = json.loads((self.root / receipt).read_text(encoding="utf-8"))
+        self.assertEqual((data["schedule_sha"], data["schedule"]["policy"]), (start, "three-pass"))
+        self.tg.receipt_data_ok(data, self.REF, fixed, root=self.root, surface=False)
+
+    def test_a_clean_round_on_the_same_candidate_stamps(self):
+        self.started()
+        built = self.build("a")
+        self.round_pass(built, overall="approve")
+        self.completion_pass(built)
+        self.stamp(built, round_verdict="clean")
+
+    def test_completion_before_the_round_is_refused(self):
+        self.started()
+        built = self.build("a")
+        self.completion_pass(built)
+        self.round_pass(built, overall="approve")
+        self.refused("must run after", built, round_verdict="clean")
+
+    def test_a_second_round_is_refused(self):
+        self.started()
+        built = self.build("a")
+        self.round_pass(built)
+        self.round_pass(built)
+        self.completion_pass(built)
+        self.refused("must end at its last reviewed round", built)
+        self.refused("exactly one returned round", built, number=2)
+
+    def test_a_round_above_medium_is_refused(self):
+        self.started()
+        built = self.build("a")
+        self.round_pass(built, effort="high")
+        self.completion_pass(built)
+        self.refused("schedule expects medium", built)
+
+    def test_commits_after_the_last_review_are_refused(self):
+        self.started()
+        built = self.build("a")
+        self.round_pass(built)
+        self.completion_pass(built)
+        self.refused("not the stamped commit", self.build("unreviewed"))
+
+    def test_gaps_block_the_stamp_until_one_reconciliation_passes(self):
+        self.started()
+        built = self.build("a")
+        self.round_pass(built)
+        self.completion_pass(built, "gaps")
+        self.refused("needs a review ending COMPLETION: complete", built)
+        self.refused("exactly one returned ## Reconciliation review", built, verdict="reconciled")
+        repaired = self.build("repair")
+        self.reconciliation_pass(repaired)
+        receipt = self.stamp(repaired, verdict="reconciled")
+        data = json.loads((self.root / receipt).read_text(encoding="utf-8"))
+        self.assertEqual(data["completion"]["candidate"], repaired)
+        self.tg.receipt_data_ok(data, self.REF, repaired, root=self.root, surface=False)
+
+    def test_a_reconciliation_with_gaps_stays_blocked(self):
+        self.started()
+        built = self.build("a")
+        self.round_pass(built)
+        self.completion_pass(built, "gaps")
+        repaired = self.build("repair")
+        self.reconciliation_pass(repaired, "gaps")
+        self.refused("RECONCILIATION: complete", repaired, verdict="reconciled")
+
+    def test_a_reconciliation_that_narrowed_the_section_is_refused(self):
+        self.started()
+        built = self.build("a")
+        self.round_pass(built)
+        self.completion_pass(built, "gaps")
+        self.write(prose="A narrower promise.")
+        repaired = self.commit("narrow the section")
+        self.reconciliation_pass(repaired)
+        self.refused("contract changed", repaired, verdict="reconciled")
+
+    def test_a_section_stays_on_the_pin_at_its_plan_review(self):
+        pin = self.root / ".conclave/reviewers.toml"
+        pin.write_text(LEGACY_PIN, encoding="utf-8", newline="\n")
+        self.write()
+        start = self.commit("start under the legacy pin")
+        report = self.root / self.REPORT
+        report.parent.mkdir(parents=True, exist_ok=True)
+        base = {**self.BASE, "writer": "agy"}
+        self.dispatch.record_completion(report, {**base, "effort": "medium", "lenses": ["plan"],
+                                                 "review": "HIGHEST: none\nPLAN: complete\nOVERALL: approve"},
+                                        "2026-11-06T00:01:00Z", start, "plan")
+        (self.root / "built").write_text("x", encoding="utf-8")
+        built = self.commit("build")
+        self.dispatch.record_completion(report, {**base, "effort": "medium", "review": "COMPLETION: complete"},
+                                        "2026-11-06T00:02:00Z", built, "completion")
+        pin.write_text(self.PIN_TEXT, encoding="utf-8", newline="\n")
+        self.commit("the pin moves to three-pass while the section is under review")
+        self.dispatch.record(report, {**base, "effort": "high", "lenses": ["adversarial", "integration"],
+                                      "review": "HIGHEST: none\nOVERALL: approve"}, "2026-11-06T00:03:00Z", built)
+        tip = self.git("rev-parse", "HEAD")
+        receipt = self.stamp(tip, round_verdict="clean")
+        data = json.loads((self.root / receipt).read_text(encoding="utf-8"))
+        self.assertEqual(data["schedule_sha"], start)
+        self.assertEqual(data["schedule"]["rounds"][0]["effort"], "high")
+        self.tg.receipt_data_ok(data, self.REF, tip, root=self.root, surface=False)
+
+
+class ThreePassDispatch(Harness):
+    """The dispatcher under the three-pass policy: every pass at medium, in order, refused before a review is spent."""
+
+    FINDINGS = "docs/reviews/00-workspace/D00-T01-s1.md"
+    PLAN = "HIGHEST: none\nPLAN: complete\nOVERALL: approve"
+    ROUND = "HIGHEST: none\nOVERALL: approve"
+
+    def setUp(self):
+        super().setUp()
+        (self.repo / ".conclave/reviewers.toml").write_text(REPO_PIN.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
+        self.findings = self.repo / self.FINDINGS
+        self.git("init", "-q")
+        self.head = self.commit("start")
+
+    def git(self, *args):
+        return subprocess.run(["git", "-C", str(self.repo), "-c", "user.name=Test", "-c", "user.email=t@example.com",
+                               *args], capture_output=True, text=True, check=True).stdout.strip()
+
+    def commit(self, message):
+        self.git("add", ".conclave", "scripts")
+        self.git("commit", "-q", "--allow-empty", "-m", message)
+        return self.git("rev-parse", "HEAD")
+
+    def run_pass(self, kind, say, *extra, writer="claude", candidate=None):
+        self.log.unlink(missing_ok=True)
+        args = ["--kind", kind, "--writer", writer, "--prompt", str(self.prompt), "--record", str(self.findings),
+                "--candidate", candidate or self.head, *extra]
+        return self.dispatch(*args, codex="say", say=say)
+
+    def effort(self):
+        (call,) = self.calls()
+        return next(a.split("=", 1)[1] for a in call["argv"] if a.startswith("model_reasoning_effort="))
+
+    def test_plan_then_round_then_completion_all_at_medium(self):
+        seen = []
+        for kind, say in (("plan", self.PLAN), ("round", self.ROUND), ("completion", "COMPLETION: complete")):
+            result, summary = self.run_pass(kind, say)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            seen.append((kind, self.effort(), summary.get("lenses")))
+        self.assertEqual(seen, [("plan", "medium", ["plan"]),
+                                ("round", "medium", ["adversarial", "integration", "source-defect", "plan-delivery",
+                                                     "consistency", "record", "quality", "optimization"]),
+                                ("completion", "medium", [])])
+
+    def test_the_design_lens_needs_a_surface(self):
+        self.run_pass("plan", self.PLAN)
+        result, summary = self.run_pass("round", self.ROUND, "--surface")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(summary["lenses"][-1], "design")
+
+    def test_passes_out_of_order_are_refused_before_a_review_is_spent(self):
+        for kind, needle in (("round", "returned plan review first"), ("completion", "returned plan review first"),
+                             ("reconciliation", "returned plan review first")):
+            result, _ = self.run_pass(kind, self.ROUND)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn(needle, result.stderr)
+            self.assertEqual(self.calls(), [])
+        self.run_pass("plan", self.PLAN)
+        for kind, needle in (("plan", "runs once"), ("completion", "after the section's returned adversarial round")):
+            result, _ = self.run_pass(kind, self.PLAN)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn(needle, result.stderr)
+            self.assertEqual(self.calls(), [])
+        self.run_pass("round", self.ROUND)
+        result, _ = self.run_pass("round", self.ROUND)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("one adversarial round", result.stderr)
+        self.assertEqual(self.calls(), [])
+
+    def test_an_outage_may_be_retried(self):
+        self.run_pass("plan", self.PLAN)
+        result, _ = self.run_pass("round", "OVERALL: blocked")
+        self.assertEqual(result.returncode, 1)
+        result, summary = self.run_pass("round", self.ROUND)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(summary["reviewer"], "astra")
+
+    def test_a_reconciliation_needs_gaps_and_runs_once(self):
+        self.run_pass("plan", self.PLAN)
+        self.run_pass("round", self.ROUND)
+        self.run_pass("completion", "COMPLETION: gaps")
+        repaired = self.commit("repair")
+        result, summary = self.run_pass("reconciliation", "RECONCILIATION: complete", candidate=repaired)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.effort(), "medium")
+        self.assertEqual(self.module().read_findings(self.findings.read_text(encoding="utf-8"))["reconciliations"][0]["candidate"], repaired)
+        self.log.unlink()
+        result, _ = self.run_pass("reconciliation", "RECONCILIATION: complete", candidate=repaired)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("one reconciliation", result.stderr)
+        self.assertEqual(self.calls(), [])
+
+    def test_a_reconciliation_after_a_complete_completion_is_refused(self):
+        self.run_pass("plan", self.PLAN)
+        self.run_pass("round", self.ROUND)
+        self.run_pass("completion", "COMPLETION: complete")
+        result, _ = self.run_pass("reconciliation", "RECONCILIATION: complete")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("returned gaps", result.stderr)
+
+    def test_a_retired_writer_has_no_route_on_a_new_section(self):
+        for writer in ("agy", "copilot"):
+            result, _ = self.run_pass("plan", self.PLAN, writer=writer)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn(f"no route for writer '{writer}'", result.stderr)
+
+    def test_a_section_under_the_legacy_pin_keeps_its_route_and_schedule(self):
+        pin = self.repo / ".conclave/reviewers.toml"
+        current = pin.read_text(encoding="utf-8")
+        pin.write_text(LEGACY_PIN, encoding="utf-8", newline="\n")
+        start = self.commit("the section's plan review ran under this pin")
+        self.findings.parent.mkdir(parents=True)
+        self.module().record_completion(self.findings, {
+            "writer": "agy", "reviewer": "astra", "cli": "codex", "model": "gpt-6-astra", "effort": "medium",
+            "lenses": ["plan"], "skipped": [], "review": self.PLAN}, "2026-11-06T00:00:00Z", start, "plan")
+        pin.write_text(current, encoding="utf-8", newline="\n")
+        self.head = self.commit("the pin moves to three-pass")
+        result, summary = self.dispatch("--writer", "agy", "--prompt", str(self.prompt), "--record", str(self.findings),
+                                        "--candidate", self.head, codex="say", say=self.ROUND)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((summary["reviewer"], self.effort()), ("astra", "high"))
+
+    def test_codex_work_goes_to_argon_read_only_through_a_prompt_file(self):
+        fake = Path(self._tmp.name) / "fake_cli.py"
+        write_launcher(self.bin, "agy", fake)
+        result, summary = self.dispatch("--writer", "codex", "--prompt", str(self.prompt), agy="say", say=self.ROUND)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((summary["reviewer"], summary["model"], summary["cli"], summary["effort"]),
+                         ("argon", "gemini-4-argon-medium", "agy", "medium"))
+        (call,) = self.calls()
+        self.assertEqual(call["cli"], "agy")
+        self.assertEqual(call["argv"][:5], ["--model", "gemini-4-argon-medium", "--mode", "plan", "--sandbox"])
+        self.assertTrue(call["argv"][5].startswith("--print-timeout="))
+        self.assertNotIn("Review calc.py", " ".join(call["argv"]), "review prose never reaches the command line")
+        self.assertIn("Follow the review instructions in the file", call["argv"][6])
+
+    def test_an_argon_schedule_above_its_model_name_is_refused(self):
+        module = self.module()
+        text = REPO_PIN.read_text(encoding="utf-8")
+        loaded = module.load_pin(data=text.encode())
+        self.assertEqual(loaded["routes"]["codex"], ["argon"])
+        high = text.replace('[[schedule.rounds]]\neffort = "medium"', '[[schedule.rounds]]\neffort = "high"')
+        self.assertNotEqual(high, text)
+        with self.assertRaisesRegex(module.Refused, "effort in its model name"):
+            module.load_pin(data=high.encode())
+
+    def test_opencode_work_goes_to_astra(self):
+        result, summary = self.dispatch("--writer", "opencode", "--prompt", str(self.prompt), codex="say", say=self.ROUND)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(summary["reviewer"], "astra")
+
+    def test_a_standalone_review_has_no_order(self):
+        result, summary = self.dispatch("--writer", "claude", "--prompt", str(self.prompt), codex="say", say=self.ROUND)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.effort(), "medium")
+        other = self.repo / "docs/reviews/standalone-note.md"
+        other.parent.mkdir(parents=True, exist_ok=True)
+        for _ in range(2):
+            self.log.unlink(missing_ok=True)
+            result, _ = self.dispatch("--writer", "claude", "--prompt", str(self.prompt), "--record", str(other),
+                                      codex="say", say=self.ROUND)
+            self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == "__main__":

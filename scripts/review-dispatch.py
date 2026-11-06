@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Run one independent review round with the reviewer pinned in .conclave/reviewers.toml.
 
-    python3 scripts/review-dispatch.py --writer <claude|muse|agy|codex|opencode|copilot> --prompt review-prompt.md --record docs/reviews/x.md
-    python3 scripts/review-dispatch.py --kind completion --candidate <40-char SHA> --writer <claude|muse|agy|codex|opencode|copilot> \
+    python3 scripts/review-dispatch.py --writer <claude|codex|gemini|muse|opencode> --prompt review-prompt.md --record docs/reviews/x.md
+    python3 scripts/review-dispatch.py --kind completion --candidate <40-char SHA> --writer <claude|codex|gemini|muse|opencode> \
         --prompt completion-prompt.md --record docs/reviews/x.md     the one-pass completion and excellence review
     python3 scripts/review-dispatch.py --check-pin [--json] [--pin <path>]     the pin's verdict; runs no reviewer
     python3 scripts/review-dispatch.py --list-rounds [--json] [--records <dir>]  recorded rounds; runs no reviewer
 
-`--writer` is the agent whose work is under review: `claude`, `muse`, `agy`, `codex`, `opencode`, or `copilot`. Every writer's route in the
+`--writer` is the agent whose work is under review: `claude`, `codex`, `gemini`, `muse` or `opencode`. Every writer's route in the
 pin names exactly one reviewer of a different model family, with no fallback.
 A reviewer that is not installed, exits non-zero, times out,
 returns nothing, or ends its reply `OVERALL: blocked` (it could not reach the candidate, for example a sandbox that
@@ -18,8 +18,9 @@ A review that finds problems is still a review (exit 0).
 with `--json`, `{"ok": true, "schema_version", "reviewers", "routes", "clis": {cli: on PATH}}` and exit 0, or
 `{"ok": false, "error": "<the Refused message>"}` and exit 2; without `--json`, `ok` or `refused: <message>`.
 
-The reviewer runs read-only in the repository root. Muse's shell and write tools are disabled, so its prompt must
-include the exact candidate diff and the reviewer reads repository files with its read-only tools. The script prints a JSON summary;
+The reviewer runs read-only in the repository root: Codex in its read-only sandbox, Antigravity in plan mode inside its
+sandbox. Muse Code is no longer routed, but older sections' pins may name it: its shell and write tools are disabled,
+so its prompt must include the exact candidate diff. The script prints a JSON summary;
 `--record` also appends a `## Round N` section to the findings file with an atomic write, and writes nothing (exit 2,
 the summary still printed) to a findings file it cannot read back. Works the same from PowerShell and from WSL.
 Stdlib only.
@@ -33,6 +34,15 @@ pass that returned no review (`## Completion review: none`) may be followed by a
 `--kind plan` runs the one-pass plan review (`docs/plan-review-prompt.md`) on the section as written, before the build:
 it asks whether building the section exactly as planned produces a 100% complete feature. It is recorded as a
 `## Plan review` section with the same one-pass rule, and it is not counted as a round.
+
+The current pin's `policy = "three-pass"` (owner decision 2026-11-06) runs one plan review before the build, one
+combined adversarial round after the build and its gates, then one completion review of the final candidate, every pass
+at medium. A findings file named for a section (`docs/reviews/<NN-domain>/D<NN>-T<NN>-s<N>.md`) has that order enforced
+before a review is spent. `--kind reconciliation` (`docs/reconciliation-review-prompt.md`) is the one further pass after
+a completion that returned gaps, on a candidate descending from it; it ends `RECONCILIATION: complete` or `gaps`.
+
+A section stays on the policy of the pin at its plan review's candidate, so a section already in its rounds keeps the
+schedule and route it started under, and scripts/todo-graph.py `stamp` holds its receipt to that same pin.
 
 When the pin has a `[schedule]`, the dispatcher owns each pass's effort and lenses (owner decision 2026-10-24): the
 plan and completion passes take their scheduled effort, and a round's place in `[[schedule.rounds]]` comes from the
@@ -61,15 +71,16 @@ import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 PIN = ROOT / ".conclave" / "reviewers.toml"
-WRITERS = ("claude", "muse", "agy", "codex", "opencode", "copilot")
-CLIS = ("codex", "muse")
+CLIS = ("codex", "agy", "muse")
 # A reviewer is never of the writer's own model family: its CLI names the family, and so does the writer.
-FAMILY = {"codex": "openai", "muse": "meta"}
-# `opencode` is OpenCode running an Anthropic model (owner decision 2026-10-29); OpenCode on another family is not
-# this writer key. `copilot` is GitHub Copilot CLI pinned to an Anthropic model (owner decision 2026-10-30); its
-# Auto mode, which may switch families, is not this writer key.
-WRITER_FAMILY = {"claude": "anthropic", "muse": "meta", "agy": "agy", "codex": "openai", "opencode": "anthropic",
-                 "copilot": "anthropic"}
+FAMILY = {"codex": "openai", "agy": "google", "muse": "meta"}
+# `gemini` is Antigravity running a Gemini model; `opencode` is OpenCode running an Anthropic model. The pin's [routes]
+# names who may write today (owner decision 2026-11-06: claude, codex, gemini, muse, opencode). `agy` and `copilot` stay
+# here only because recorded reviews and the pins of older sections name them, and those must keep reading back.
+WRITER_FAMILY = {"claude": "anthropic", "codex": "openai", "gemini": "google", "muse": "meta",
+                 "opencode": "anthropic", "agy": "google", "copilot": "anthropic"}
+WRITERS = tuple(WRITER_FAMILY)
+# Antigravity carries the effort in its model name, so it takes none; load_pin holds that name to the schedule.
 EFFORTS = {"codex": ("low", "medium", "high", "xhigh"),
            "muse": ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")}
 MODEL = re.compile(r"^[a-z0-9][a-z0-9.-]*$")
@@ -130,11 +141,14 @@ def load_pin(path=PIN, data=None):
             raise Refused(f"reviewer {name!r} needs cli = one of {', '.join(CLIS)}")
         if not isinstance(model, str) or not MODEL.fullmatch(model):
             raise Refused(f"reviewer {name!r} has a malformed model")
-        if effort not in EFFORTS[cli]:
+        if cli == "agy":
+            if effort is not None:
+                raise Refused(f"reviewer {name!r}: Antigravity carries the effort in the model name, so set no effort")
+        elif effort not in EFFORTS[cli]:
             raise Refused(f"reviewer {name!r} needs effort = one of {', '.join(EFFORTS[cli])}")
     routes = pin["routes"]
-    if not isinstance(routes, dict) or set(routes) - set(WRITERS):
-        raise Refused(f"[routes] may only name the writers {', '.join(WRITERS)}")
+    if not isinstance(routes, dict) or set(routes) - set(WRITER_FAMILY):
+        raise Refused(f"[routes] may only name the writers {', '.join(WRITER_FAMILY)}")
     for writer, chain in routes.items():
         # One reviewer, no fallback (owner decision 2026-10-24).
         if not isinstance(chain, list) or len(chain) != 1 or not isinstance(chain[0], str):
@@ -145,7 +159,11 @@ def load_pin(path=PIN, data=None):
             raise Refused(f"route {writer!r} names {chain[0]}, of the writer's own family; "
                           f"a review comes from a different family")
     if "schedule" in pin:
-        check_schedule(pin["schedule"], {reviewers[chain[0]]["cli"] for chain in routes.values()})
+        routed = {chain[0] for chain in routes.values()}
+        check_schedule(pin["schedule"], {reviewers[name]["cli"] for name in routed} - {"agy"})
+        for name in routed:
+            if reviewers[name]["cli"] == "agy":
+                check_agy_effort(name, reviewers[name]["model"], pin["schedule"])
     return pin
 
 
@@ -169,6 +187,7 @@ LENSES = {
     "record": "Does the evidence match what ran, with owned deferrals and an earned flip of every item?",
 }
 STEP_KEYS = {"effort", "lenses"}
+THREE_PASS = "three-pass"
 
 
 def check_step(where, step, efforts, lenses=True):
@@ -186,9 +205,31 @@ def check_step(where, step, efforts, lenses=True):
                           f"{', '.join(LENSES)}")
 
 
+def check_agy_effort(name, model, schedule):
+    """An Antigravity reviewer runs at its model name's effort whatever the schedule says, so the two must agree, or a
+    pass would be recorded at an effort it did not run at."""
+    steps = [schedule[k] for k in ("plan", "completion", "reconciliation", "rotation", "escalation") if k in schedule]
+    for effort in {step["effort"] for step in [*steps, *schedule["rounds"]]}:
+        if not model.endswith(f"-{effort}"):
+            raise Refused(f"reviewer {name!r} runs at the effort in its model name {model}, but the schedule has a "
+                          f"pass at {effort}")
+
+
 def check_schedule(schedule, clis):
     """The review schedule, as strictly as the reviewers: every effort valid for every routed CLI, every lens known."""
     efforts = [e for e in EFFORTS["codex"] if all(e in EFFORTS[cli] for cli in clis)]
+    if isinstance(schedule, dict) and schedule.get("policy") == THREE_PASS:
+        keys = {"policy", "plan", "completion", "rounds", "reconciliation"}
+        if set(schedule) != keys:
+            raise Refused(f"[schedule] with policy = \"{THREE_PASS}\" needs exactly {', '.join(sorted(keys))}")
+        check_step("plan", schedule["plan"], efforts)
+        check_step("completion", schedule["completion"], efforts, lenses=False)
+        check_step("reconciliation", schedule["reconciliation"], efforts)
+        rounds = schedule["rounds"]
+        if not isinstance(rounds, list) or len(rounds) != 1:
+            raise Refused(f"[schedule] with policy = \"{THREE_PASS}\" needs exactly one round")
+        check_step("round 1", rounds[0], efforts)
+        return
     keys = {"plan", "completion", "rounds", "rotation", "escalation", "severity_stop_after"}
     if not isinstance(schedule, dict) or set(schedule) != keys:
         raise Refused(f"[schedule] needs exactly {', '.join(sorted(keys))}")
@@ -227,10 +268,12 @@ def returned_review(entry):
 
 
 def valid_one_pass_footer(text, kind):
-    """True when a one-pass reply (`completion` or `plan`) ends with the footer lines `stamp` requires."""
+    """True when a one-pass reply (`completion`, `reconciliation` or `plan`) ends with the footer lines `stamp` requires."""
     lines = [x.strip() for x in (text or "").splitlines() if x.strip()]
     if kind == "completion":
         return bool(lines) and lines[-1] in ("COMPLETION: complete", "COMPLETION: gaps")
+    if kind == "reconciliation":
+        return bool(lines) and lines[-1] in ("RECONCILIATION: complete", "RECONCILIATION: gaps")
     if kind == "plan":
         return (len(lines) >= 2
                 and lines[-2] in ("PLAN: complete", "PLAN: gaps")
@@ -239,7 +282,7 @@ def valid_one_pass_footer(text, kind):
 
 
 def returned_one_pass(entry, kind):
-    """A recorded completion or plan pass that is a valid returned review from another model family.
+    """A recorded completion, reconciliation or plan pass that is a valid returned review from another model family.
     scripts/todo-graph.py `stamp` uses this same predicate."""
     return bool(entry.get("reviewer")) and entry.get("writer") in WRITER_FAMILY \
         and FAMILY.get(entry.get("cli")) not in (None, WRITER_FAMILY[entry["writer"]]) \
@@ -253,13 +296,18 @@ def scheduled(schedule, kind, rounds, surface):
     final OVERALL line do not move it. Rounds past the fixed list rotate through `rotation`'s lenses, one per round,
     skipping `design` when the section has no surface. After a low-effort round that declared `HIGHEST: P1`, the next
     round is the `escalation` step instead. scripts/todo-graph.py `stamp` replays this to check every recorded
-    pass, so it is the one copy of the schedule rule."""
-    if kind in ("plan", "completion"):
+    pass, so it is the one copy of the schedule rule. The three-pass policy has one round, whose `design` lens applies
+    only to a section with a surface; `check_three_pass_order` and the stamp refuse a second round."""
+    if kind in ("plan", "completion", "reconciliation"):
         step = schedule[kind]
         return {"position": None, "effort": step["effort"], "lenses": list(step.get("lenses", [])),
                 "escalated": False}
     returned = [r for r in rounds if returned_review(r)]
     position = len(returned) + 1
+    if schedule.get("policy") == THREE_PASS:
+        step = schedule["rounds"][0]
+        return {"position": position, "effort": step["effort"],
+                "lenses": [n for n in step["lenses"] if surface or n != "design"], "escalated": False}
     last = returned[-1] if returned else None
     if last is not None and last.get("effort") == "low" and highest(last.get("review")) == "P1":
         step, escalated = schedule["escalation"], True
@@ -322,8 +370,14 @@ def fully_qualified(directory):
     return drive.startswith(("\\\\", "//")) or (len(drive) == 2 and rest[:1] in ("\\", "/"))
 
 
-def command(reviewer, executable, output_path, effort=None, prompt_path=None):
+def command(reviewer, executable, output_path, effort=None, prompt_path=None, timeout=None):
     """The argv for one read-only review. Prompt text never appears on the command line."""
+    if reviewer["cli"] == "agy":
+        # A file pointer, not the prompt: review prose never reaches the command line, where a Windows .cmd shim would
+        # re-parse it. The model name carries the effort.
+        return [executable, "--model", reviewer["model"], "--mode", "plan", "--sandbox",
+                f"--print-timeout={timeout}s" if timeout else "--print-timeout=0s",
+                f"-p=Follow the review instructions in the file {prompt_path} exactly. Do not modify any file."]
     if reviewer["cli"] == "muse":
         return [executable, "exec", "--json", "--provider", "meta", "--model", reviewer["model"],
                 "--reasoning-effort", effort or reviewer["effort"],
@@ -560,14 +614,16 @@ def review(pin, writer, prompt_path, timeout, plan=None, kind="round"):
     tmp = Path(tempfile.mkdtemp())
     try:
         stdout_path, message_path, muse_prompt = tmp / "stdout.txt", tmp / "last-message.md", tmp / "prompt.md"
-        if reviewer["cli"] == "muse":
+        if reviewer["cli"] != "codex":
             muse_prompt.write_text(prompt, encoding="utf-8")
-        _, problem = run(command(reviewer, executable, message_path, effort, muse_prompt),
-                         "" if reviewer["cli"] == "muse" else prompt, timeout,
+        _, problem = run(command(reviewer, executable, message_path, effort, muse_prompt, timeout),
+                         prompt if reviewer["cli"] == "codex" else "", timeout,
                          [stdout_path, message_path])
         if problem is None:
             if reviewer["cli"] == "muse":
                 text, problem = muse_response(stdout_path, reviewer["model"])
+            elif reviewer["cli"] == "agy":
+                text = stdout_path.read_text(encoding="utf-8", errors="replace") if stdout_path.is_file() else ""
             else:
                 # Codex writes its final message to -o; stdout carries progress.
                 text = message_path.read_text(encoding="utf-8", errors="replace") if message_path.is_file() else ""
@@ -629,12 +685,15 @@ ROUND_LINE = re.compile(r"^- (Writer|Run|Candidate|Effort|Lenses|Lines|Digest|Sk
 # and the Candidate commit it reviewed; the writer's notes after it (its `- Filed:` lines) run to the next `## ` line.
 COMPLETION_HEADING = re.compile(r"^## Completion review: (none|([a-z0-9][a-z0-9-]*) \(`([^`]+)` via `([a-z]+)`\))$")
 PLAN_HEADING = re.compile(r"^## Plan review: (none|([a-z0-9][a-z0-9-]*) \(`([^`]+)` via `([a-z]+)`\))$")
+RECONCILIATION_HEADING = re.compile(r"^## Reconciliation review: (none|([a-z0-9][a-z0-9-]*) \(`([^`]+)` via `([a-z]+)`\))$")
 COMPLETION_LINE = re.compile(r"^- (Writer|Run|Candidate|Effort|Lenses|Lines|Digest|Skipped): (\S.*)$")
 # The one-pass reviews, by --kind: the heading each is recorded under and the key read_findings lists them under.
 PASSES = {"completion": ("## Completion review", COMPLETION_HEADING, "completions"),
-          "plan": ("## Plan review", PLAN_HEADING, "plans")}
+          "plan": ("## Plan review", PLAN_HEADING, "plans"),
+          "reconciliation": ("## Reconciliation review", RECONCILIATION_HEADING, "reconciliations")}
 RESERVED = ("## Round", *(prefix for prefix, _, _ in PASSES.values()))
-RESERVED_NAMES = "headings starting `## Round`, `## Completion review` or `## Plan review` are reserved for --record"
+RESERVED_NAMES = ("headings starting `## Round`, `## Completion review`, `## Plan review` or "
+                  "`## Reconciliation review` are reserved for --record")
 CANDIDATE = re.compile(r"[0-9a-f]{40}")
 SKIPPED = re.compile(r"^([a-z0-9][a-z0-9-]*) \((.*)\)$")
 COUNT = re.compile(r"[0-9]{1,%d}" % len(str(MAX_OUTPUT_BYTES + 1)))
@@ -669,7 +728,7 @@ def _read_findings(text):
     Writer, Run, Candidate, Lines and Digest required; the lines after it up to the next `## ` line are its `notes`,
     the writer's own record of what was done with each gap. Lenses, when present, is the comma-separated list the
     schedule gave the pass. Anything else makes the file unreadable rather than losing a field."""
-    found = {"rounds": [], "completions": [], "plans": []}
+    found = {"rounds": [], "completions": [], "plans": [], "reconciliations": []}
     raw = raw_lines(text)
     lines = [canonical(line) for line in raw]
     i = 0
@@ -832,6 +891,76 @@ def metadata(result):
     return lines + [f"- Skipped: {f['reviewer']} ({f['reason']})" for f in result["skipped"]]
 
 
+def descends(older, newer):
+    """True when commit `older` is `newer` or an ancestor of it."""
+    return subprocess.run(["git", "-C", str(ROOT), "merge-base", "--is-ancestor", older, newer],
+                          capture_output=True, timeout=30).returncode == 0
+
+
+def section_pin(current, record_path):
+    """The pin a section's passes run under: the one at its returned plan review's candidate, so a pin change never
+    moves a section already under review. A section with no plan review yet, or a candidate whose pin cannot be read
+    or no longer loads, takes `current`; the stamp replays the same rule."""
+    if not record_path or not Path(record_path).exists():
+        return current
+    found = read_findings(existing_findings(Path(record_path), "review"))
+    plans = [e for e in (found or {"plans": []})["plans"] if returned_one_pass(e, "plan")]
+    if len(plans) != 1:
+        return current
+    shown = subprocess.run(["git", "-C", str(ROOT), "show", f"{plans[0]['candidate']}:.conclave/reviewers.toml"],
+                           capture_output=True, timeout=30)
+    if shown.returncode != 0:
+        return current
+    try:
+        return load_pin(data=shown.stdout)
+    except Refused:
+        return current
+
+
+SECTION_FINDINGS = re.compile(r"(?:^|/)docs/reviews/[0-9]{2}-[A-Za-z0-9_-]+/D[0-9]{2}-T[0-9]{2}-s[1-9][0-9]*\.md$")
+
+
+def check_three_pass_order(kind, record_path, candidate):
+    """Plan, one round, completion, and one reconciliation only after a completion with gaps. Refused here so a pass
+    out of order never spends a review; the stamp holds the receipt to the same order. A findings file not named for a
+    section (a standalone independent review) has no order."""
+    if not record_path or not SECTION_FINDINGS.search(Path(record_path).as_posix()):
+        return
+    found = read_findings(existing_findings(Path(record_path), f"{kind} review"))
+    if found is None:
+        raise Unrecorded(f"{record_path} cannot be read back ({RESERVED_NAMES}), so no {kind} review was run")
+    plans = [e for e in found["plans"] if returned_one_pass(e, "plan")]
+    rounds = [e for e in found["rounds"] if returned_review(e)]
+    completions = [e for e in found["completions"] if returned_one_pass(e, "completion")]
+    reconciled = [e for e in found["reconciliations"] if returned_one_pass(e, "reconciliation")]
+    if kind == "plan":
+        if plans or rounds or completions:
+            raise Refused("the plan review runs once, before the build and every other pass")
+        return
+    if len(plans) != 1:
+        raise Refused(f"the {kind} pass needs the section's returned plan review first")
+    if kind == "round":
+        if rounds or completions:
+            raise Refused("the three-pass policy allows one adversarial round, before the completion review")
+        if not candidate:
+            raise Refused("a section's adversarial round needs --candidate")
+        if not descends(plans[0]["candidate"], candidate):
+            raise Refused(f"the round's candidate does not descend from the plan review's {plans[0]['candidate']}")
+    elif kind == "completion":
+        if len(rounds) != 1 or completions:
+            raise Refused("the completion review runs once, after the section's returned adversarial round")
+        if rounds[0]["candidate"] is None or not descends(rounds[0]["candidate"], candidate):
+            raise Refused(f"the completion's candidate does not descend from the round's {rounds[0]['candidate']}")
+    elif kind == "reconciliation":
+        if len(rounds) != 1 or len(completions) != 1 or not completions[0]["review"].rstrip().endswith("COMPLETION: gaps"):
+            raise Refused("a reconciliation follows one round and a completion review that returned gaps")
+        if reconciled:
+            raise Refused("a section gets one reconciliation; a second is refused, and the section stays blocked")
+        if not descends(completions[0]["candidate"], candidate):
+            raise Refused(f"the reconciliation's candidate does not descend from the completion's "
+                          f"{completions[0]['candidate']}")
+
+
 def record_completion(path, result, when, candidate, kind="completion"):
     """Append the completion review (or, with kind "plan", the plan review). Each is one pass: a findings file that
     already holds a returned one gets nothing appended (`Unrecorded`), and neither does one the reader cannot read."""
@@ -892,10 +1021,11 @@ def list_rounds(records_dir):
             found = None
         if found is None:
             unreadable.append(shown(path))
-        elif found["rounds"] or found["completions"] or found["plans"]:
+        elif found["rounds"] or found["completions"] or found["plans"] or found["reconciliations"]:
             records.append({"path": shown(path), "rounds": found["rounds"],
                             **({"completions": found["completions"]} if found["completions"] else {}),
-                            **({"plans": found["plans"]} if found["plans"] else {})})
+                            **({"plans": found["plans"]} if found["plans"] else {}),
+                            **({"reconciliations": found["reconciliations"]} if found["reconciliations"] else {})})
     return {"records": records, **({"unreadable": unreadable} if unreadable else {})}
 
 
@@ -904,10 +1034,11 @@ def main(argv=None):
     parser.add_argument("--writer", choices=WRITERS, help="The agent whose work is under review")
     parser.add_argument("--prompt", help="File holding the review prompt")
     parser.add_argument("--record", help="Findings file to append this round (or completion review) to")
-    parser.add_argument("--kind", choices=("round", "completion", "plan"), default="round",
+    parser.add_argument("--kind", choices=("round", "completion", "plan", "reconciliation"), default="round",
                         help="round (default): one review round; completion: the one-pass completion and excellence "
                              "review, recorded as a ## Completion review section and not counted as a round; plan: "
-                             "the one-pass plan review before the build, recorded as a ## Plan review section")
+                             "the one-pass plan review before the build, recorded as a ## Plan review section; "
+                             "reconciliation: the one pass after a completion that returned gaps")
     parser.add_argument("--candidate", help="The full 40-character commit under review: required with --kind "
                                             "completion or plan (for a plan review, the commit holding the section "
                                             "as reviewed); optional for a round, recorded as its Candidate line "
@@ -950,6 +1081,9 @@ def main(argv=None):
                 for c in entry.get("completions", []):
                     who = f"{c['reviewer']} ({c['model']} via {c['cli']})" if c["reviewer"] else "no review"
                     print(f"{entry['path']}  Completion review: {who}, candidate {c['candidate']}, {c['run']}")
+                for c in entry.get("reconciliations", []):
+                    who = f"{c['reviewer']} ({c['model']} via {c['cli']})" if c["reviewer"] else "no review"
+                    print(f"{entry['path']}  Reconciliation review: {who}, candidate {c['candidate']}, {c['run']}")
                 for r in entry["rounds"]:
                     who = f"{r['reviewer']} ({r['model']} via {r['cli']})" if r["reviewer"] else "no review"
                     print(f"{entry['path']}  Round {r['number']}: {who}, writer {r['writer']}, {r['run']}")
@@ -964,7 +1098,12 @@ def main(argv=None):
     if args.kind == "round" and args.candidate and not CANDIDATE.fullmatch(args.candidate):
         parser.error("--candidate must be the full 40-character commit under review")
     try:
-        pin = load_pin(args.pin)
+        pin = section_pin(load_pin(args.pin), args.record)
+        three_pass = pin.get("schedule", {}).get("policy") == THREE_PASS
+        if three_pass:
+            check_three_pass_order(args.kind, args.record, args.candidate)
+        elif args.kind == "reconciliation":
+            raise Refused("this section's pin has no reconciliation pass; only the three-pass policy takes one")
         plan = None
         if "schedule" in pin:
             rounds = []
@@ -987,11 +1126,11 @@ def main(argv=None):
         result.update(kind=args.kind, candidate=args.candidate)
     if plan and plan["position"]:
         result.update(position=plan["position"], escalated=plan["escalated"])
-        stop_after = pin["schedule"]["severity_stop_after"]
-        # The severity stop: past `severity_stop_after` (0 in the current pin, so from round 1 on), a returned round
-        # whose worst finding is P3 ends the loop (todo-graph.py SEVERITY_CUTOFF_ROUND is the same number).
-        result["severity_stop"] = returned_review(result) and plan["position"] > stop_after \
-            and highest(result["review"]) == "P3"
+        # The severity stop: past `severity_stop_after` (0 in the legacy pin, so from round 1 on), a returned round
+        # whose worst finding is P3 ends the loop (todo-graph.py SEVERITY_CUTOFF_ROUND is the same number). The
+        # three-pass policy has no loop to stop.
+        result["severity_stop"] = not three_pass and returned_review(result) \
+            and plan["position"] > pin["schedule"]["severity_stop_after"] and highest(result["review"]) == "P3"
     if args.record:
         try:
             if one_pass:

@@ -6416,7 +6416,7 @@ VERDICTS = {
 REVIEW_ROUND_CAP = 33
 EARLIER_CAPS = {8, 13, 22}
 SEVERITY_CUTOFF_ROUND = 0
-COMPLETION_VERDICTS = ("complete", "completed", "filed")
+COMPLETION_VERDICTS = ("complete", "completed", "filed", "reconciled")
 FILED_GAP_RE = re.compile(r"^- Filed: (D\d{2} T\d{2} §[1-9]\d*)(?![\w§]|\.\d)")
 PIN_PATH = ".conclave/reviewers.toml"
 PLAN_KEYS = {"report", "candidate", "reviewer", "model", "effort", "lenses"}
@@ -6533,6 +6533,7 @@ def completion_record(root: Path, completion: dict, ref: str, stamp_sha: str, co
     found = dispatch.read_completions(path.read_bytes().decode("utf-8"))
     require(found is not None, f"{report} is not a findings file the dispatcher can read: {ref}")
     require(bool(found), f"{report} holds no ## Completion review; run review-dispatch.py --kind completion: {ref}")
+    reconciliations = dispatch.read_findings(path.read_bytes().decode("utf-8"))["reconciliations"]
     returned = [e for e in found if dispatch.returned_one_pass(e, "completion")]
     require(
         len(returned) == 1,
@@ -6542,6 +6543,21 @@ def completion_record(root: Path, completion: dict, ref: str, stamp_sha: str, co
     (entry,) = returned
     last = [x.strip() for x in entry["review"].splitlines() if x.strip()][-1]
     expected = "COMPLETION: complete" if verdict == "complete" else "COMPLETION: gaps"
+    final = entry
+    if verdict == "reconciled":
+        passed = [e for e in reconciliations if dispatch.returned_one_pass(e, "reconciliation")]
+        require(
+            len(passed) == 1,
+            f"completion verdict reconciled needs exactly one returned ## Reconciliation review in {report}, "
+            f"not {len(passed)}: {ref}",
+        )
+        (final,) = passed
+        ended = [x.strip() for x in final["review"].splitlines() if x.strip()][-1]
+        require(
+            ended == "RECONCILIATION: complete",
+            f"completion verdict reconciled needs a reconciliation ending RECONCILIATION: complete, and {report} "
+            f"ends {ended}: {ref}",
+        )
     require(
         last == expected,
         f"completion verdict {verdict} needs a review ending {expected}, and {report} ends {last}: {ref}",
@@ -6553,7 +6569,7 @@ def completion_record(root: Path, completion: dict, ref: str, stamp_sha: str, co
         f"review in {report}, and only filed lists any: {ref}",
     )
     require(ref not in filed, f"{ref} cannot file a completion gap to itself: {ref}")
-    candidate = entry["candidate"]
+    candidate = final["candidate"]
     if commits is None or candidate not in commits:
         commit_ok(root, candidate)
     if commits is None:
@@ -6567,7 +6583,7 @@ def completion_record(root: Path, completion: dict, ref: str, stamp_sha: str, co
         )
     return {
         "report": report, "verdict": verdict, "candidate": candidate,
-        "reviewer": entry["reviewer"], "model": entry["model"], "filed": filed,
+        "reviewer": final["reviewer"], "model": final["model"], "filed": filed,
     }
 
 
@@ -6766,7 +6782,9 @@ def pin_schedule(root: Path, sha: str, ref: str) -> dict:
 def schedule_ok(root: Path, data: dict, ref: str, surface: bool) -> None:
     require(isinstance(surface, bool), f"the section's Surface is needed to check the review schedule: {ref}")
     dispatch = review_dispatch()
-    pin = committed_pin(root, data["implementation_sha"], ref)
+    # A receipt naming `schedule_sha` is held to the pin at its plan review's candidate; older receipts to the stamped
+    # commit's pin, as they were stamped.
+    pin = committed_pin(root, data.get("schedule_sha", data["implementation_sha"]), ref)
     schedule = data["schedule"]
 
     def _check_route(where: str, recorded: dict) -> None:
@@ -6803,15 +6821,26 @@ def schedule_ok(root: Path, data: dict, ref: str, surface: bool) -> None:
         if dispatch.returned_one_pass(entry, "plan"):
             _check(f"the plan review in {plan_report}", entry, dispatch.scheduled(schedule, "plan", [], surface))
     completion = data["completion"]["report"]
-    completions = dispatch.read_completions((Path(root) / completion).read_bytes().decode("utf-8"))
+    found = dispatch.read_findings((Path(root) / completion).read_bytes().decode("utf-8"))
+    completions = found["completions"]
+    final_kind, final_key = (
+        ("reconciliation", "reconciliations") if data["completion"].get("verdict") == "reconciled"
+        else ("completion", "completions")
+    )
     require(
         sum(
-            1 for e in completions
-            if dispatch.returned_one_pass(e, "completion")
+            1 for e in found[final_key]
+            if dispatch.returned_one_pass(e, final_kind)
             and e["candidate"] == data["completion"]["candidate"]
         ) == 1,
-        f"{completion} must hold exactly one returned completion review: {ref}",
+        f"{completion} must hold exactly one returned {final_kind} review: {ref}",
     )
+    if schedule.get("policy") == dispatch.THREE_PASS:
+        for entry in found["reconciliations"]:
+            if dispatch.returned_one_pass(entry, "reconciliation"):
+                _check(f"the reconciliation review in {completion}", entry,
+                       dispatch.scheduled(schedule, "reconciliation", [], surface))
+        three_pass_ok(root, data, ref, found)
     for entry in completions:
         if dispatch.returned_one_pass(entry, "completion"):
             _check(f"the completion review in {completion}", entry, dispatch.scheduled(schedule, "completion", [], surface))
@@ -6822,6 +6851,66 @@ def schedule_ok(root: Path, data: dict, ref: str, surface: bool) -> None:
                 _check(f"{report} round {entry['number']}", entry, dispatch.scheduled(schedule, "round", recorded[:i], surface))
             else:
                 _check_route(f"{report} round {entry['number']}", entry)
+
+
+def section_contract(root: Path, sha: str, ref: str) -> str:
+    """The section's text at a commit with its ticks and stamp lines neutral, so a reconciliation can tell a build that
+    ticked boxes from one that narrowed what the section promised."""
+    m = re.fullmatch(r"D(\d{2}) T(\d{2}) §([1-9]\d*)", ref)
+    require(m is not None, f"not a full section reference: {ref}")
+    paths = sorted((Path(root) / "todo").glob(f"{m[1]}-*/TODO-{m[2]}-*.md"))
+    require(len(paths) == 1, f"no single TODO file for: {ref}")
+    rel = paths[0].relative_to(root).as_posix()
+    shown = subprocess.run(["git", "-C", str(root), "show", f"{sha}:{rel}"], capture_output=True, timeout=30)
+    require(shown.returncode == 0, f"{rel} is not in {sha}: {ref}")
+    body = _raw_section_text(shown.stdout.decode("utf-8").replace("\r\n", "\n"), int(m[3]))
+    require(body is not None, f"the section is not in {rel} at {sha}: {ref}")
+    body = re.sub(r"^(\s*- )\[[xX ]\](?= )", r"\1[ ]", body, flags=re.M)
+    return re.sub(r"^> \*\*(?:Verified|Review):\*\*[^\n]*(?:\n|$)", "", body, flags=re.M).rstrip()
+
+
+def three_pass_ok(root: Path, data: dict, ref: str, found: dict) -> None:
+    """The three-pass chain: one plan review, one round, then the completion review (and at most one reconciliation),
+    each on a candidate at or after the one before, in the order they ran, and the last on the stamped commit."""
+    dispatch = review_dispatch()
+    sha = data["implementation_sha"]
+    returned = [e for e in found["rounds"] if dispatch.returned_review(e)]
+    require(len(returned) == 1, f"the three-pass policy needs exactly one returned round, not {len(returned)}: {ref}")
+    (round_entry,) = returned
+    claimed = data["reviews"]
+    require(
+        len(claimed) == 1 and claimed[0]["round"] == round_entry["number"]
+        and claimed[0]["verdict"] in ("clean", "fixed"),
+        f"the three-pass receipt names its one round, clean or fixed: {ref}",
+    )
+    require(round_entry.get("candidate") is not None, f"the three-pass round recorded no --candidate: {ref}")
+    (completion,) = [e for e in found["completions"] if dispatch.returned_one_pass(e, "completion")]
+    passed = [e for e in found["reconciliations"] if dispatch.returned_one_pass(e, "reconciliation")]
+    require(len(passed) <= 1, f"the three-pass policy allows one reconciliation, not {len(passed)}: {ref}")
+    verdict = data["completion"]["verdict"]
+    require(
+        verdict in ("complete", "reconciled"),
+        f"the three-pass policy takes completion verdict complete or reconciled, not {verdict}: {ref}",
+    )
+    require(verdict == "reconciled" or not passed, f"a recorded reconciliation needs completion verdict reconciled: {ref}")
+    (plan,) = [e for e in found["plans"] if dispatch.returned_one_pass(e, "plan")]
+    chain = [("plan review", plan), ("round", round_entry), ("completion review", completion), *[("reconciliation", e) for e in passed]]
+    for (older_name, older), (newer_name, newer) in zip(chain, chain[1:]):
+        require(
+            older["run"] <= newer["run"]
+            and subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", older["candidate"], newer["candidate"]],
+                               capture_output=True, timeout=30).returncode == 0,
+            f"the {newer_name} must run after the {older_name}, on a candidate at or after it: {ref}",
+        )
+    require(
+        chain[-1][1]["candidate"] == sha,
+        f"the last review ({chain[-1][0]}) reviewed {chain[-1][1]['candidate']}, not the stamped commit {sha}: {ref}",
+    )
+    if passed:
+        require(
+            section_contract(root, completion["candidate"], ref) == section_contract(root, passed[0]["candidate"], ref),
+            f"the section's contract changed between the failed completion and its reconciliation: {ref}",
+        )
 
 
 def rounds_recorded(root: Path, reviews: list[dict]) -> int:
@@ -6948,9 +7037,12 @@ def receipt_data_ok(
                     f"the review loop in {report} ends with round {len(recorded)}, which returned no review; "
                     f"run another round before stamping: {ref}",
                 )
+                # The three-pass policy's one round may end fixed: the completion review after it checks the fixes.
+                three_pass = (data.get("schedule") or {}).get("policy") == dispatch.THREE_PASS
                 require(
                     claimed[-1]["round"] == max(reviewed)
-                    and (claimed[-1]["verdict"] == "clean" or claimed[-1]["verdict"].startswith("stopped-")),
+                    and (claimed[-1]["verdict"] == "clean" or claimed[-1]["verdict"].startswith("stopped-")
+                         or (three_pass and claimed[-1]["verdict"] == "fixed")),
                     f"the review loop in {report} must end at its last reviewed round ({max(reviewed)}), clean or "
                     f"stopped, and the receipt must name that round: {ref}",
                 )
@@ -6986,9 +7078,14 @@ def receipt_data_ok(
                 plan_record(root, recorded_p["report"], ref, commits) == recorded_p,
                 f"receipt plan does not match its findings file {recorded_p['report']}: {ref}",
             )
+            schedule_sha = data.get("schedule_sha", stamp_sha)
             require(
-                pin_schedule(root, stamp_sha, ref) == data["schedule"],
-                f"receipt schedule is not the [schedule] in {PIN_PATH} at the stamped commit: {ref}",
+                "schedule_sha" not in data or schedule_sha == recorded_p["candidate"],
+                f"receipt schedule_sha is not its plan review's candidate: {ref}",
+            )
+            require(
+                pin_schedule(root, schedule_sha, ref) == data["schedule"],
+                f"receipt schedule is not the [schedule] in {PIN_PATH} at {schedule_sha}: {ref}",
             )
             schedule_ok(root, data, ref, bool(surface))
     checks = data.get("checks")
@@ -7144,7 +7241,7 @@ def stamp(
     require(
         completion is not None,
         f"--completion '<findings file>:<{'|'.join(COMPLETION_VERDICTS)}>' is required: run the one-pass completion "
-        f"review (scripts/review-dispatch.py --kind completion) before the rounds and name its verdict: {ref}",
+        f"review (scripts/review-dispatch.py --kind completion) and name its verdict: {ref}",
     )
     require(
         plan is not None,
@@ -7179,7 +7276,9 @@ def stamp(
     restart = restart_line(body, ref)
     if restart is not None:
         restart_ok(root, ref, data["plan"], restart[1], start, sha)
-    data["schedule"] = pin_schedule(root, sha, ref)
+    # The section stays on the pin at its plan review's candidate (review-dispatch.py `section_pin`).
+    data["schedule_sha"] = data["plan"]["candidate"]
+    data["schedule"] = pin_schedule(root, data["schedule_sha"], ref)
     receipt_data_ok(data, ref, sha, root=root, surface=surface)
     receipt_path = root / receipt
     require(not receipt_path.exists(), f"receipt already exists: {receipt}")
@@ -12309,7 +12408,7 @@ def main() -> int:
     st.add_argument("--cap-outcome", help="required when a review stopped at the cap or on severity")
     st.add_argument("--plan", help="required: <findings file> from review-dispatch.py --kind plan")
     st.add_argument("--completion", type=_completion_review_arg,
-                    help="required: <findings file>:<complete|completed|filed> from review-dispatch.py --kind completion")
+                    help="required: <findings file>:<complete|completed|filed|reconciled> from review-dispatch.py --kind completion")
     st.set_defaults(fn=cmd_stamp)
     un = sub.add_parser("unstamp", help="reopen a stamped section and keep its revoked receipt")
     un.add_argument("ref", help="'DNN TNN §N'")

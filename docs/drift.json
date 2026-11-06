@@ -1546,7 +1546,7 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "2026-11-06: Reviewed README.md against src/rf.h, src/cm.c, src/fold.c, src/api.c, src/main.c, tests/rfi_ref.py, and spec/FOLD.md for D01 T03 section 3 (version 3 warm-started horizontal strips, 16-node context rows, 1 + 12*S strip framing, and default up-to-9 threads)",
+      "evidence": "2026-11-06: Re-read against the three-pass review policy in .conclave/reviewers.toml and scripts/review-dispatch.py, and the writers claude, codex, gemini, muse and opencode with reviewers Astra and Argon; the prose states them",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "c7f9919e34924b6686ce876fd96550d28c39d025ed6233e6f338e03f37ce47a1",
@@ -1554,35 +1554,35 @@
         "scripts/build.py": "824893947ad3d19fc1abb9538f5e53e93a12255da94ff5ac38536743715b21fe",
         "scripts/package.py": "b9ef31c48c2c5f7dfdcb22a7b3e5bd1a14c36b84d5d3887f17646bf47eaad199",
         "scripts/check-all.py": "7432d7b4b4eb6c6f499376180fb5576851d1be22db76d7e1375e497e6cbe2637",
-        "README.md": "05c903ae46f0b509dfa1baa8b27e9e95d175ddcfe206be9c3e34a78fb0a99e74",
-        "AGENTS.md": "799a204753b1573a3f34a4711cac80f66b892ef8d7b213b90561a703b9ac6bab",
-        ".conclave/reviewers.toml": "efef5f5ec05b3a984f04128bfe3fee2d57e47f8eeace1d681edb916611150658",
-        "scripts/review-dispatch.py": "c17cdeec6244c60cde495e17aa48d60273c3dfb5fb3ba118161fbc5111182063"
+        "README.md": "aee300b8a07e1bf0bc1109279447ce3cba35f5498eef058676ceaa7ec7fa8044",
+        "AGENTS.md": "af79c81f56db57d212f222ccadfdcfba573527c02bf90da1b398c8dbb069b599",
+        ".conclave/reviewers.toml": "3d53255ab0db8dd94bbdd79bf2cc84d8688dcc14f4e07426c3a3413cafc36990",
+        "scripts/review-dispatch.py": "1bf2cb0ca2e6401e05d7cd987980ca0cdf9afa2a8fe119c93b3bf3ff365bd973"
       },
       "review": "Author-attested: 2026-10-25 re-read README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "AGENTS.md": {
-      "evidence": "2026-11-06: Reviewed AGENTS.md against src/rf.h, src/cm.c, src/fold.c, src/api.c, src/main.c, tests/rfi_ref.py, and spec/FOLD.md for D01 T03 section 3 (version 3 warm-started horizontal strips, 16-node context rows, 1 + 12*S strip framing, and default up-to-9 threads)",
+      "evidence": "2026-11-06: Re-read against the three-pass review policy in .conclave/reviewers.toml and scripts/review-dispatch.py, and the writers claude, codex, gemini, muse and opencode with reviewers Astra and Argon; the prose states them",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
         "src/rf.h": "c7f9919e34924b6686ce876fd96550d28c39d025ed6233e6f338e03f37ce47a1",
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
-        ".conclave/reviewers.toml": "efef5f5ec05b3a984f04128bfe3fee2d57e47f8eeace1d681edb916611150658",
-        "scripts/review-dispatch.py": "c17cdeec6244c60cde495e17aa48d60273c3dfb5fb3ba118161fbc5111182063",
-        "AGENTS.md": "799a204753b1573a3f34a4711cac80f66b892ef8d7b213b90561a703b9ac6bab",
+        ".conclave/reviewers.toml": "3d53255ab0db8dd94bbdd79bf2cc84d8688dcc14f4e07426c3a3413cafc36990",
+        "scripts/review-dispatch.py": "1bf2cb0ca2e6401e05d7cd987980ca0cdf9afa2a8fe119c93b3bf3ff365bd973",
+        "AGENTS.md": "af79c81f56db57d212f222ccadfdcfba573527c02bf90da1b398c8dbb069b599",
         ".codex/hooks.json": "c67e7762d0970280c653a74601012d01971d05f677182ae70e4eda0aa783c150",
         "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",
         "scripts/campaign_guard.py": "a4e15e753ac265152070e9d5ae93f36cba78e58e4feb4c11a6e0f2a58203c432"
       }
     },
     "GEMINI.md": {
-      "evidence": "2026-11-06: Reviewed GEMINI.md against src/rf.h, src/cm.c, src/fold.c, src/api.c, src/main.c, tests/rfi_ref.py, and spec/FOLD.md for D01 T03 section 3 (version 3 warm-started horizontal strips, 16-node context rows, 1 + 12*S strip framing, and default up-to-9 threads)",
+      "evidence": "2026-11-06: Re-read against the three-pass review policy in .conclave/reviewers.toml and scripts/review-dispatch.py, and the writers claude, codex, gemini, muse and opencode with reviewers Astra and Argon; the prose states them",
       "sources": {
-        "AGENTS.md": "799a204753b1573a3f34a4711cac80f66b892ef8d7b213b90561a703b9ac6bab",
-        ".conclave/reviewers.toml": "efef5f5ec05b3a984f04128bfe3fee2d57e47f8eeace1d681edb916611150658",
-        "scripts/review-dispatch.py": "c17cdeec6244c60cde495e17aa48d60273c3dfb5fb3ba118161fbc5111182063",
+        "AGENTS.md": "af79c81f56db57d212f222ccadfdcfba573527c02bf90da1b398c8dbb069b599",
+        ".conclave/reviewers.toml": "3d53255ab0db8dd94bbdd79bf2cc84d8688dcc14f4e07426c3a3413cafc36990",
+        "scripts/review-dispatch.py": "1bf2cb0ca2e6401e05d7cd987980ca0cdf9afa2a8fe119c93b3bf3ff365bd973",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
-        "GEMINI.md": "f21631fd90f34871c126266867866ec87c238494b2c61de9568cd1de12f47ee4"
+        "GEMINI.md": "80dd5e3bf1639e1f542dc0e5b7760a3ce2d53f852790bc5d6d6ee39fdf79e0b9"
       }
     },
     "CONTRIBUTING.md": {
@@ -1664,24 +1664,24 @@
       }
     },
     "docs/README.md": {
-      "evidence": "2026-11-06: Reviewed docs/README.md against scripts/build-docs.py after updating default thread labels to up to 9T for D05 T01 section 6.",
+      "evidence": "2026-11-06: Re-read against the three-pass review policy in .conclave/reviewers.toml and scripts/review-dispatch.py, and the writers claude, codex, gemini, muse and opencode with reviewers Astra and Argon; the prose states them",
       "sources": {
         "docs/_config.yml": "d2459047e15f142133fb8206900c7921ca9c793559c63c264e7e43dbb1f00522",
         "docs/site-content.json": "3611e28cba68ff6ac17ace19115ebb014f06140322afcfc32ec39b78128c6f30",
         "scripts/build-docs.py": "5eb4e86d0d5cf8abee3e6873175f518a97e0c0163ac71d03c247dfc2d0205cd9",
-        "docs/README.md": "594ad9dc13e033e71277b00930241a3d5f6308cd95d4b22658475098e2012878"
+        "docs/README.md": "35dddde5d7cbf1f7353813bebd7272749de00d2f705fc277cd4b51cb7b8189a0"
       }
     },
     "docs/agent-skills-and-rules-structure.md": {
-      "evidence": "2026-11-06: Reviewed docs/agent-skills-and-rules-structure.md against src/rf.h, src/cm.c, src/fold.c, src/api.c, src/main.c, tests/rfi_ref.py, and spec/FOLD.md for D01 T03 section 3 (version 3 warm-started horizontal strips, 16-node context rows, 1 + 12*S strip framing, and default up-to-9 threads)",
+      "evidence": "2026-11-06: Re-read against the three-pass review policy in .conclave/reviewers.toml and scripts/review-dispatch.py, and the writers claude, codex, gemini, muse and opencode with reviewers Astra and Argon; the prose states them",
       "sources": {
-        "AGENTS.md": "799a204753b1573a3f34a4711cac80f66b892ef8d7b213b90561a703b9ac6bab",
-        "GEMINI.md": "f21631fd90f34871c126266867866ec87c238494b2c61de9568cd1de12f47ee4",
+        "AGENTS.md": "af79c81f56db57d212f222ccadfdcfba573527c02bf90da1b398c8dbb069b599",
+        "GEMINI.md": "80dd5e3bf1639e1f542dc0e5b7760a3ce2d53f852790bc5d6d6ee39fdf79e0b9",
         ".conclave/kits.json": "56785267af421d6deac2d4e5cfdda58be63684fb6f3893cece8043a6f0578105",
-        ".conclave/reviewers.toml": "efef5f5ec05b3a984f04128bfe3fee2d57e47f8eeace1d681edb916611150658",
+        ".conclave/reviewers.toml": "3d53255ab0db8dd94bbdd79bf2cc84d8688dcc14f4e07426c3a3413cafc36990",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
-        "scripts/review-dispatch.py": "c17cdeec6244c60cde495e17aa48d60273c3dfb5fb3ba118161fbc5111182063",
-        "docs/agent-skills-and-rules-structure.md": "ac4c94cc8fd5f07b260bf2fe7ebc5e8b017a0756f0eea6b566768ec7afcbc120",
+        "scripts/review-dispatch.py": "1bf2cb0ca2e6401e05d7cd987980ca0cdf9afa2a8fe119c93b3bf3ff365bd973",
+        "docs/agent-skills-and-rules-structure.md": "a66cd2db7ad4ee6ed83bc4d1709346dbc6bfa7bffdff9606aab3b12258473e8b",
         ".codex/hooks.json": "c67e7762d0970280c653a74601012d01971d05f677182ae70e4eda0aa783c150",
         "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",
         "scripts/campaign_guard.py": "a4e15e753ac265152070e9d5ae93f36cba78e58e4feb4c11a6e0f2a58203c432"

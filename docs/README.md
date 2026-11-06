@@ -14,7 +14,7 @@
 | [Historical measurements](measurements.md) | Preserved pre-migration Windows comparison, with its limits |
 | [WSL migration audit](wsl-migration-audit.md) | Actual build/test evidence and remaining runtime limits |
 | [Document drift policy](document-drift.md) | Drift facts, review receipts, generated outputs and site verification |
-| [Agent skills and rules](agent-skills-and-rules-structure.md) | Antigravity skills, rules, native Stop hook and adaptive review dispatch |
+| [Agent skills and rules](agent-skills-and-rules-structure.md) | Antigravity skills, rules, native Stop hook and three-pass review dispatch |
 | [Runner intelligence](../.intelligence/README.md) | Family-owned observations and stopped maintenance |
 | [Execution plan](../todo/implementation-plan.md) | Canonical planned work and section ownership |
 

@@ -8,10 +8,17 @@
 # Owner decision 2026-10-30: GitHub Copilot CLI (`copilot`, pinned to an Anthropic model, never Auto) can also
 # write, reviewed by GPT-6 Astra.
 #
-# Every pass's effort and lenses come from [schedule] below, enforced by scripts/review-dispatch.py from the findings file passed to --record:
-#   - before the build, one pass of --kind plan at medium effort (adversarial, completeness, consistency, integration, and record on the section's plan);
-#   - after the build, one pass of --kind completion at medium effort (completeness and excellence against the domain and reference codecs);
-#   - then the review rounds: round 1 at high effort (adversarial + integration), round 2 at medium (adversarial), round 3 at low (adversarial), and from round 4 on one lens per round at low effort, rotating consistency, design (only when --surface is passed), and record. If a low-effort round reports HIGHEST: P1, the next round escalates once to medium adversarial. Any round with no Critical (P1) or Important (P2) finding (HIGHEST: none or HIGHEST: P3) may stop the loop on the first such round (`severity_stop_after = 0`).
+# Owner decision 2026-11-06: the writers are Claude Code, Codex, Gemini (through Antigravity), Muse Code and OpenCode.
+# The only reviewers are GPT-6 Astra through the Codex CLI and Gemini 4 Argon through the Antigravity CLI: Codex work goes
+# to Argon so no writer reviews itself, and every other writer's work goes to Astra. Antigravity carries the effort in
+# the model name, which the pin's loader holds to the schedule. The review shape
+# is three passes at medium effort, from Is It Legit's three-pass chain:
+#   - before the build, one plan review (--kind plan);
+#   - after the build and its gates, one combined adversarial round (--kind round); its findings are fixed and the gates rerun;
+#   - on that final candidate, one completion review (--kind completion).
+# A completion that returns gaps blocks the stamp until the one reconciliation pass (--kind reconciliation) passes on
+# the repaired candidate. A second reconciliation is refused.
+# A section keeps the pin at its plan review's candidate, so sections already under review finish on their own rules.
 
 schema_version = 1
 
@@ -20,45 +27,31 @@ cli = "codex"
 model = "gpt-6-astra"
 effort = "medium"
 
-[reviewers.spark]
-cli = "muse"
-model = "muse-spark-1.3"
-effort = "high"
+[reviewers.argon]
+cli = "agy"
+model = "gemini-4-argon-medium"
 
 [routes]
 claude = ["astra"]
+codex = ["argon"]
+gemini = ["astra"]
 muse = ["astra"]
-agy = ["astra"]
-codex = ["spark"]
 opencode = ["astra"]
-copilot = ["astra"]
 
 [schedule]
-severity_stop_after = 0
+policy = "three-pass"
 
 [schedule.plan]
 effort = "medium"
 lenses = ["plan"]
 
+[[schedule.rounds]]
+effort = "medium"
+lenses = ["adversarial", "integration", "source-defect", "plan-delivery", "consistency", "record", "quality", "optimization", "design"]
+
 [schedule.completion]
 effort = "medium"
 
-[[schedule.rounds]]
-effort = "high"
-lenses = ["adversarial", "integration"]
-
-[[schedule.rounds]]
+[schedule.reconciliation]
 effort = "medium"
-lenses = ["adversarial"]
-
-[[schedule.rounds]]
-effort = "low"
-lenses = ["adversarial"]
-
-[schedule.rotation]
-effort = "low"
-lenses = ["consistency", "design", "record"]
-
-[schedule.escalation]
-effort = "medium"
-lenses = ["adversarial"]
+lenses = ["adversarial", "integration", "plan-delivery", "record"]
