@@ -1470,6 +1470,31 @@ class ResearchRefsTests(unittest.TestCase):
             rows_var = ab.parse_bench_rows(out_var, ["noisy_cm", "kat_pal", "raw_1x1"])
             self.assertNotEqual(rows_var["noisy_cm"][0], rows_bd["noisy_cm"][0])
 
+            # 3. Verify a breakdown payload mismatch reports the failure reason on stderr and exits nonzero
+            bad_bd_cm = res_dir / "cm_bad_bd.c"
+            bad_bd_cm.write_text(
+                (ROOT / "src" / "cm.c")
+                .read_text(encoding="utf-8")
+                .replace(
+                    "*written = total;",
+                    "#ifdef RF_BENCH_BREAKDOWN_PASS\n        out[0] ^= 0xFFu;\n#endif\n        *written = total;",
+                ),
+                encoding="utf-8",
+            )
+            bench_bad_exe = res_dir / "bench_bad_bd.exe"
+            with mock.patch.object(ab, "RES", res_dir):
+                ab.build(bad_bd_cm, bench_bad_exe, flags=("-O0",))
+            proc_bad = subprocess.run(
+                [str(bench_bad_exe), "-r1", "-t1", "--breakdown", "ppm/noisy_cm.ppm"],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                cwd=res_dir,
+            )
+            self.assertEqual(proc_bad.returncode, 1, msg=proc_bad.stdout + proc_bad.stderr)
+            self.assertIn("MISMATCH", proc_bad.stdout)
+            self.assertIn("instrumented payload mismatch", proc_bad.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

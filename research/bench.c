@@ -50,12 +50,14 @@ static inline void bd_renc_bit_hook(renc *rc, int bit, uint32_t p1, int nd) {
     renc_bit(rc, bit, p1);
 }
 
+#define RF_BENCH_BREAKDOWN_PASS 1
 #define renc_init(rc_ptr, buf, cap) bd_renc_init_hook((rc_ptr), (buf), (cap), (c))
 #define renc_bit(rc_ptr, bit_v, p1_v) bd_renc_bit_hook((rc_ptr), (bit_v), (p1_v), (node))
 #define rf_cm_encode bd_cm_encode_inner
 #define rf_cm_encode_orig bd_cm_encode_orig_inner
 #define rf_cm_decode bd_cm_decode_unused
 #include RF_BENCH_CM_PATH
+#undef RF_BENCH_BREAKDOWN_PASS
 #undef renc_init
 #undef renc_bit
 #undef rf_cm_encode
@@ -68,20 +70,32 @@ static int run_breakdown(const char *b, int w, int h, const uint8_t *rgb, const 
         printf("  breakdown %-20s non-CM method=%u (%s) fold=%zu\n", b, (unsigned)method, mname, fold_sz);
         return 1;
     }
-    if (fold_sz < RF_HEADER_SIZE) return 0;
+    if (fold_sz < RF_HEADER_SIZE) {
+        fprintf(stderr, "breakdown %s: short fold header (%zu)\n", b, fold_sz);
+        return 0;
+    }
     uint8_t version = fold[3];
     const uint8_t *payload = fold + RF_HEADER_SIZE;
     size_t payload_sz = fold_sz - RF_HEADER_SIZE;
     size_t raw = (size_t)w * (size_t)h * 3u;
+    if (raw == 0) {
+        fprintf(stderr, "breakdown %s: empty image (%dx%d)\n", b, w, h);
+        return 0;
+    }
     size_t cap = raw + 256u;
     uint8_t *bd_buf = (uint8_t *)malloc(cap);
-    if (!bd_buf) return 0;
+    if (!bd_buf) {
+        fprintf(stderr, "breakdown %s: out of memory (%zu)\n", b, cap);
+        return 0;
+    }
     memset(g_bd_bits, 0, sizeof(g_bd_bits));
     g_bd_nmap = 0;
     size_t bd_written = 0;
     rf_error err = {0};
     int rc = bd_cm_encode_inner(rgb, (uint32_t)w, (uint32_t)h, bd_buf, raw - 1u, &bd_written, 1, &err);
     if (rc != RF_OK || bd_written != payload_sz || memcmp(bd_buf, payload, payload_sz) != 0) {
+        fprintf(stderr, "breakdown %s: instrumented payload mismatch (rc=%d written=%zu expected=%zu)\n",
+                b, rc, bd_written, payload_sz);
         free(bd_buf);
         return 0;
     }
@@ -89,7 +103,10 @@ static int run_breakdown(const char *b, int w, int h, const uint8_t *rgb, const 
     int S = (version == 3) ? (int)payload[0] : 1;
     size_t dir_off = (version == 3) ? 1u : 0u;
     size_t payload_hdr = dir_off + (size_t)S * 12u;
-    if (S < 1 || S > 4 || payload_sz < payload_hdr) return 0;
+    if (S < 1 || S > 4 || payload_sz < payload_hdr) {
+        fprintf(stderr, "breakdown %s: invalid strip header (S=%d payload=%zu)\n", b, S, payload_sz);
+        return 0;
+    }
     size_t ch_stream[3] = {0, 0, 0};
     for (int s = 0; s < S; s++) {
         for (int c = 0; c < 3; c++) {
@@ -99,7 +116,11 @@ static int run_breakdown(const char *b, int w, int h, const uint8_t *rgb, const 
         }
     }
     size_t stream_all = ch_stream[0] + ch_stream[1] + ch_stream[2];
-    if (payload_hdr + stream_all != payload_sz) return 0;
+    if (payload_hdr + stream_all != payload_sz) {
+        fprintf(stderr, "breakdown %s: stream sum mismatch (hdr=%zu streams=%zu payload=%zu)\n",
+                b, payload_hdr, stream_all, payload_sz);
+        return 0;
+    }
     static const char *const ch_names[3] = {"G", "R-G", "B-G"};
     double kind_all[4] = {0.0, 0.0, 0.0, 0.0};
     double dec_all = 0.0;
@@ -184,6 +205,7 @@ int main(int argc, char **argv) {
         SetThreadPriority(t, THREAD_PRIORITY_TIME_CRITICAL);
     }
     double te_all = 0, td_all = 0, px_all = 0; size_t tot = 0;
+    int exit_code = 0;
     for (int a = 1; a < argc; a++) {
         if (!strncmp(argv[a], "-r", 2)) { reps = atoi(argv[a] + 2); if (reps < 1) reps = 1; continue; }
         if (!strcmp(argv[a], "-p")) continue;
@@ -222,6 +244,7 @@ int main(int argc, char **argv) {
         }
 #endif
         if (last_fold) rf_free(last_fold);
+        if (!ok) exit_code = 1;
         const char *status = !ok ? "MISMATCH" : (method == RF_METHOD_RAW ? "RAW" : ((method == RF_METHOD_PAL || method == RF_METHOD_PAL2) ? "PAL" : "OK"));
         double px = (double)im.w * im.h;
         printf("%-24s %9zu  bpp=%.4f  enc=%7.1fms dec=%7.1fms  (%.0f/%.0f cyc/sample) %s\n", b, fold_sz, fold_sz * 8.0 / px, be, bd,
@@ -238,5 +261,5 @@ int main(int argc, char **argv) {
         fclose(f);
         printf("samples %ld written to prof_rips.txt\n", g_nrip);
     }
-    return 0;
+    return exit_code;
 }
