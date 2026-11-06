@@ -84,7 +84,7 @@ class Api(unittest.TestCase):
 
     def test_threads_prefix_and_padded_rows(self):
         padded = b''.join(KAT_RGB[y * 48:(y + 1) * 48] + b'padding' for y in range(8))
-        for threads in (0, 1, 3, 9):
+        for threads in (0, 1, 3, 6, 9):
             self.assertEqual(encode(16, 8, padded, threads, 55, prefix=True), KAT_FOLD3)
 
     def test_decode_and_inspect(self):
@@ -96,7 +96,27 @@ class Api(unittest.TestCase):
         finally:
             LIBRARY.rf_free(out.data)
         self.assertEqual(LIBRARY.rf_inspect(KAT_FOLD, len(KAT_FOLD), C.byref(info), None), 0)
-        self.assertEqual((info.width, info.height, info.method), (16, 8, 1))
+        self.assertEqual((info.width, info.height, info.method, tuple(info.stream_size)), (16, 8, 1, struct.unpack_from('<III', KAT_FOLD, 32)))
+        self.assertEqual(LIBRARY.rf_inspect(KAT_FOLD3, len(KAT_FOLD3), C.byref(info), None), 0)
+        self.assertEqual((info.width, info.height, info.method, tuple(info.stream_size)), (16, 8, 1, struct.unpack_from('<III', KAT_FOLD3, 33)))
+        # Verify S = 2 (h = 512) and S = 3 (h = 768) version 3 CM stream_size[0..2] sums and multi-thread decoding.
+        for mw, mh, want_s in ((8, 512, 2), (6, 768, 3)):
+            mrgb = bytes(((x * 29 + y * 13 + c * 41 + ((x * 7 + y * 5) % 11)) & 255)
+                         for y in range(mh) for x in range(mw) for c in range(3))
+            mfold = encode(mw, mh, mrgb, threads=1)
+            self.assertEqual((mfold[16], mfold[32]), (1, want_s))
+            msizes = struct.unpack_from(f'<{3 * want_s}I', mfold, 33)
+            exp_sums = tuple(sum(msizes[3 * s + c] for s in range(want_s)) for c in range(3))
+            self.assertEqual(LIBRARY.rf_inspect(mfold, len(mfold), C.byref(info), C.byref(err)), 0)
+            self.assertEqual((info.width, info.height, info.method, tuple(info.stream_size)), (mw, mh, 1, exp_sums))
+            for t in (1, 3, 6, 9):
+                opt = Options(C.sizeof(Options), t)
+                self.assertEqual(LIBRARY.rf_decode_image(mfold, len(mfold), C.byref(opt), C.byref(out), C.byref(err)), 0)
+                try:
+                    self.assertEqual((out.width, out.height, out.size), (mw, mh, len(mrgb)))
+                    self.assertEqual(C.string_at(out.data, out.size), mrgb)
+                finally:
+                    LIBRARY.rf_free(out.data)
         self.assertEqual(encode(KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), KAT_PAL2_3)
         for m_val, pal_blob in ((2, KAT_PAL), (3, KAT_PAL2), (3, KAT_PAL2_3)):
             self.assertEqual(LIBRARY.rf_decode_image(pal_blob, len(pal_blob), None, C.byref(out), C.byref(err)), 0)
@@ -258,16 +278,16 @@ class Api(unittest.TestCase):
 
         # Checksum-valid malformed CM streams where each channel stream is replaced
         # by 5 zero bytes (forcing stream exhaustion right against the guard page).
-        sz = list(struct.unpack_from('<III', large_fold, 32))
+        sz = list(struct.unpack_from('<III', large_fold, 33))
         streams = [
-            large_fold[44:44 + sz[0]],
-            large_fold[44 + sz[0]:44 + sz[0] + sz[1]],
-            large_fold[44 + sz[0] + sz[1]:],
+            large_fold[45:45 + sz[0]],
+            large_fold[45 + sz[0]:45 + sz[0] + sz[1]],
+            large_fold[45 + sz[0] + sz[1]:],
         ]
         for ch in range(3):
             mod = list(streams)
             mod[ch] = b'\x00' * 5
-            payload = struct.pack('<III', len(mod[0]), len(mod[1]), len(mod[2])) + b''.join(mod)
+            payload = b'\x01' + struct.pack('<III', len(mod[0]), len(mod[1]), len(mod[2])) + b''.join(mod)
             bad_fold = rebuild_fold(large_fold[:32], payload)
             for threads in (1, 3):
                 with self.subTest(case=f'exhaust_ch{ch}', threads=threads), guarded_slice(bad_fold) as (ptr, size):

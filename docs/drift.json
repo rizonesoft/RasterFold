@@ -1546,39 +1546,39 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "2026-10-30: Reviewed README.md against scripts/review-dispatch.py after D00 T01 \u00a711 added an optional round --candidate recorded as a Candidate line; the document's writer, route, and Stop hook statements are unchanged and still hold",
+      "evidence": "2026-11-06: Reviewed README.md against src/rf.h, src/cm.c, src/fold.c, src/api.c, src/main.c, tests/rfi_ref.py, and spec/FOLD.md for D01 T03 section 3 (version 3 warm-started horizontal strips, 16-node context rows, 1 + 12*S strip framing, and default up-to-9 threads)",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
-        "src/rf.h": "3b8f6c4144c739df78c4e08b3233bdb80ad006fcaebf1d1f63411c474a12c68e",
-        "src/main.c": "e5eb55c74c71d531dbaa40a6cb726636d031c467848ec2628ab6a83d9a35d89b",
+        "src/rf.h": "c7f9919e34924b6686ce876fd96550d28c39d025ed6233e6f338e03f37ce47a1",
+        "src/main.c": "0a9f391a283d94e8d63e2a953f7d5c46a6fb4d4fe041c04f060a0118aae4ed4c",
         "scripts/build.py": "824893947ad3d19fc1abb9538f5e53e93a12255da94ff5ac38536743715b21fe",
         "scripts/package.py": "b9ef31c48c2c5f7dfdcb22a7b3e5bd1a14c36b84d5d3887f17646bf47eaad199",
         "scripts/check-all.py": "7432d7b4b4eb6c6f499376180fb5576851d1be22db76d7e1375e497e6cbe2637",
-        "README.md": "053e9cb906572514f5f42d449bade36b1d2afb430b4e136c917f79241fc5ec9d",
-        "AGENTS.md": "03eea42d564412e48c61fa2ee7c6b68b988ae61eb32bf9e42c80f0b8bc7e792c",
+        "README.md": "05c903ae46f0b509dfa1baa8b27e9e95d175ddcfe206be9c3e34a78fb0a99e74",
+        "AGENTS.md": "799a204753b1573a3f34a4711cac80f66b892ef8d7b213b90561a703b9ac6bab",
         ".conclave/reviewers.toml": "efef5f5ec05b3a984f04128bfe3fee2d57e47f8eeace1d681edb916611150658",
         "scripts/review-dispatch.py": "c17cdeec6244c60cde495e17aa48d60273c3dfb5fb3ba118161fbc5111182063"
       },
       "review": "Author-attested: 2026-10-25 re-read README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "AGENTS.md": {
-      "evidence": "2026-10-30: Reviewed AGENTS.md against scripts/review-dispatch.py after D00 T01 \u00a711 added an optional round --candidate recorded as a Candidate line; the document's writer, route, and Stop hook statements are unchanged and still hold",
+      "evidence": "2026-11-06: Reviewed AGENTS.md against src/rf.h, src/cm.c, src/fold.c, src/api.c, src/main.c, tests/rfi_ref.py, and spec/FOLD.md for D01 T03 section 3 (version 3 warm-started horizontal strips, 16-node context rows, 1 + 12*S strip framing, and default up-to-9 threads)",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
-        "src/rf.h": "3b8f6c4144c739df78c4e08b3233bdb80ad006fcaebf1d1f63411c474a12c68e",
+        "src/rf.h": "c7f9919e34924b6686ce876fd96550d28c39d025ed6233e6f338e03f37ce47a1",
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
         ".conclave/reviewers.toml": "efef5f5ec05b3a984f04128bfe3fee2d57e47f8eeace1d681edb916611150658",
         "scripts/review-dispatch.py": "c17cdeec6244c60cde495e17aa48d60273c3dfb5fb3ba118161fbc5111182063",
-        "AGENTS.md": "03eea42d564412e48c61fa2ee7c6b68b988ae61eb32bf9e42c80f0b8bc7e792c",
+        "AGENTS.md": "799a204753b1573a3f34a4711cac80f66b892ef8d7b213b90561a703b9ac6bab",
         ".codex/hooks.json": "c67e7762d0970280c653a74601012d01971d05f677182ae70e4eda0aa783c150",
         "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",
         "scripts/campaign_guard.py": "a4e15e753ac265152070e9d5ae93f36cba78e58e4feb4c11a6e0f2a58203c432"
       }
     },
     "GEMINI.md": {
-      "evidence": "2026-10-30: Reviewed GEMINI.md against scripts/review-dispatch.py after D00 T01 \u00a711 added an optional round --candidate recorded as a Candidate line; the document's writer, route, and Stop hook statements are unchanged and still hold",
+      "evidence": "2026-11-06: Reviewed GEMINI.md against src/rf.h, src/cm.c, src/fold.c, src/api.c, src/main.c, tests/rfi_ref.py, and spec/FOLD.md for D01 T03 section 3 (version 3 warm-started horizontal strips, 16-node context rows, 1 + 12*S strip framing, and default up-to-9 threads)",
       "sources": {
-        "AGENTS.md": "03eea42d564412e48c61fa2ee7c6b68b988ae61eb32bf9e42c80f0b8bc7e792c",
+        "AGENTS.md": "799a204753b1573a3f34a4711cac80f66b892ef8d7b213b90561a703b9ac6bab",
         ".conclave/reviewers.toml": "efef5f5ec05b3a984f04128bfe3fee2d57e47f8eeace1d681edb916611150658",
         "scripts/review-dispatch.py": "c17cdeec6244c60cde495e17aa48d60273c3dfb5fb3ba118161fbc5111182063",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
@@ -1608,27 +1608,27 @@
       "review": "Author-attested: 2026-10-25 re-read docs/building.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/library.md": {
-      "evidence": "2026-10-27: Reviewed docs/library.md against its drift sources for D01 T03 section 1 (format version 3 port: encoder writes version 3, decoders accept versions 2 and 3, inspect prints the file version)",
+      "evidence": "2026-11-06: Reviewed docs/library.md against src/rf.h, src/cm.c, src/fold.c, src/api.c, src/main.c, tests/rfi_ref.py, and spec/FOLD.md for D01 T03 section 3 (version 3 warm-started horizontal strips, 16-node context rows, 1 + 12*S strip framing, and default up-to-9 threads)",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
-        "src/api.c": "76f5277f1fce9b053ca1e75648d1d5a7aa5494bf46266361e437f3e17f80812c",
+        "src/api.c": "774c4e0a2a22f5a01e174e541cd1e725da05019ece20927345938cbe10fe0f02",
         "src/rasterfold.def": "8beeb2fc7b0e5e95bbe68623dc90732ab5fe6c97abc21026406801773f2ea783",
         "docs/library.md": "4f520b3bd9184c6937c79869a14460a030b72eb1256b5f01ec27925590a57257"
       }
     },
     "docs/index.md": {
-      "evidence": "2026-10-27: Reviewed docs/index.md against its drift sources for D01 T03 section 1 (format version 3 port: encoder writes version 3, decoders accept versions 2 and 3, inspect prints the file version)",
+      "evidence": "2026-11-06: Reviewed docs/index.md against src/rf.h, src/cm.c, src/fold.c, src/api.c, src/main.c, tests/rfi_ref.py, and spec/FOLD.md for D01 T03 section 3 (version 3 warm-started horizontal strips, 16-node context rows, 1 + 12*S strip framing, and default up-to-9 threads)",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
-        "src/rf.h": "3b8f6c4144c739df78c4e08b3233bdb80ad006fcaebf1d1f63411c474a12c68e",
-        "src/main.c": "e5eb55c74c71d531dbaa40a6cb726636d031c467848ec2628ab6a83d9a35d89b",
+        "src/rf.h": "c7f9919e34924b6686ce876fd96550d28c39d025ed6233e6f338e03f37ce47a1",
+        "src/main.c": "0a9f391a283d94e8d63e2a953f7d5c46a6fb4d4fe041c04f060a0118aae4ed4c",
         "docs/site-content.json": "3611e28cba68ff6ac17ace19115ebb014f06140322afcfc32ec39b78128c6f30",
         "docs/index.md": "df4d8ce9cefeedba38ef918f995079c831c7156c90d2582002c847ac24174150"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/index.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/getting-started.md": {
-      "evidence": "2026-10-27: Reviewed docs/getting-started.md against its drift sources for D01 T03 section 1 (format version 3 port: encoder writes version 3, decoders accept versions 2 and 3, inspect prints the file version)",
+      "evidence": "2026-11-06: Reviewed docs/getting-started.md against src/rf.h, src/cm.c, src/fold.c, src/api.c, src/main.c, tests/rfi_ref.py, and spec/FOLD.md for D01 T03 section 3 (version 3 warm-started horizontal strips, 16-node context rows, 1 + 12*S strip framing, and default up-to-9 threads)",
       "sources": {
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
         "tools/provision.py": "b17ea42569b76d70edbcc235dbc86385c9c7ce50b1be7a3bb83383c30f848556",
@@ -1637,15 +1637,15 @@
         "scripts/check-all.py": "7432d7b4b4eb6c6f499376180fb5576851d1be22db76d7e1375e497e6cbe2637",
         "scripts/check-all.ps1": "7006b1871b52689461497fa676b3cb6472f0e436c9c5e240deb9da069321a528",
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
-        "src/main.c": "e5eb55c74c71d531dbaa40a6cb726636d031c467848ec2628ab6a83d9a35d89b",
+        "src/main.c": "0a9f391a283d94e8d63e2a953f7d5c46a6fb4d4fe041c04f060a0118aae4ed4c",
         "docs/getting-started.md": "b5600b5480cbad54659f2f5c596586d19def8b29e9e8f14e486a28d6f0664e95"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/getting-started.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/benchmarks.md": {
-      "evidence": "2026-11-05: Reviewed docs/benchmarks.md against measure/verdict.json, benchmarks/results.csv, and benchmarks/corpus.csv for D05 T01 section 5 (Milestone 5 Exact repeats measurements)",
+      "evidence": "2026-11-06: Reviewed docs/benchmarks.md against src/rf.h, src/cm.c, src/fold.c, src/api.c, src/main.c, tests/rfi_ref.py, and spec/FOLD.md for D01 T03 section 3 (version 3 warm-started horizontal strips, 16-node context rows, 1 + 12*S strip framing, and default up-to-9 threads)",
       "sources": {
-        "src/rf.h": "3b8f6c4144c739df78c4e08b3233bdb80ad006fcaebf1d1f63411c474a12c68e",
+        "src/rf.h": "c7f9919e34924b6686ce876fd96550d28c39d025ed6233e6f338e03f37ce47a1",
         "measure/verdict.json": "f62ff7f59aa935fbdf2543fce4b00dc0a09079d229cbe8b8c0a407b4533c4b6b",
         "benchmarks/results.csv": "e4af434b27ef4671f9ab7aed2521a412405611b7c8a3b63e5bc257dd13d96311",
         "benchmarks/corpus.csv": "7ef53a344cfad370e134262644ab08d265f4afcf16c792dcc7cec93ce221cc15",
@@ -1673,9 +1673,9 @@
       }
     },
     "docs/agent-skills-and-rules-structure.md": {
-      "evidence": "2026-10-30: Reviewed docs/agent-skills-and-rules-structure.md against scripts/review-dispatch.py after D00 T01 \u00a711 added an optional round --candidate recorded as a Candidate line; the document's writer, route, and Stop hook statements are unchanged and still hold",
+      "evidence": "2026-11-06: Reviewed docs/agent-skills-and-rules-structure.md against src/rf.h, src/cm.c, src/fold.c, src/api.c, src/main.c, tests/rfi_ref.py, and spec/FOLD.md for D01 T03 section 3 (version 3 warm-started horizontal strips, 16-node context rows, 1 + 12*S strip framing, and default up-to-9 threads)",
       "sources": {
-        "AGENTS.md": "03eea42d564412e48c61fa2ee7c6b68b988ae61eb32bf9e42c80f0b8bc7e792c",
+        "AGENTS.md": "799a204753b1573a3f34a4711cac80f66b892ef8d7b213b90561a703b9ac6bab",
         "GEMINI.md": "f21631fd90f34871c126266867866ec87c238494b2c61de9568cd1de12f47ee4",
         ".conclave/kits.json": "56785267af421d6deac2d4e5cfdda58be63684fb6f3893cece8043a6f0578105",
         ".conclave/reviewers.toml": "efef5f5ec05b3a984f04128bfe3fee2d57e47f8eeace1d681edb916611150658",
@@ -1688,14 +1688,14 @@
       }
     },
     "spec/FOLD.md": {
-      "evidence": "2026-10-30: Reviewed spec/FOLD.md against src/cm.c and tests/rfi_ref.py for D01 T04 section 10 (version 3 gated gradient: gp with column-0 and row-0 forms, ex, g4 gate, Eg/Et sums with fold, cap 32 and halving, margin-2 choice feeding the residual, wsel + 4), including the size_t index casts added for clang-tidy, which change no value; the oracle written from the spec text is byte-identical to the codec on every tests/test_correctness.py case and KAT_FOLD3",
+      "evidence": "2026-11-06: Reviewed spec/FOLD.md against src/rf.h, src/cm.c, src/fold.c, src/api.c, src/main.c, tests/rfi_ref.py, and spec/FOLD.md for D01 T03 section 3 (version 3 warm-started horizontal strips, 16-node context rows, 1 + 12*S strip framing, and default up-to-9 threads)",
       "sources": {
-        "src/rf.h": "3b8f6c4144c739df78c4e08b3233bdb80ad006fcaebf1d1f63411c474a12c68e",
-        "src/fold.c": "1659a4119aa181aab784bdd1457a1bd20233e6ea80a997cea019787bd8c6a846",
-        "src/cm.c": "4183692c4518b6c9e27edea2b4d09a0cb3c37cb83e1a03713e6fdb8e1fb18999",
+        "src/rf.h": "c7f9919e34924b6686ce876fd96550d28c39d025ed6233e6f338e03f37ce47a1",
+        "src/fold.c": "7cecdf9622aa6d98be195cf43b1e77de7f9676f2a7c1f1129cc08dbe7497e8aa",
+        "src/cm.c": "e0f098205d6fe32e3d9b21cb3006386510310b195d18e610d9471e918906e870",
         "src/crc32.c": "c6e682115185fcdcbfa0551823fc590f60c9c7b978a30009163288e664b3faec",
-        "tests/rfi_ref.py": "c62f333ee4aa1b642112e0168b220efd80cccfa96b1acee865a091db15eca550",
-        "spec/FOLD.md": "fd8e87a935f350332097f2cdb8ae6cf2f125a1b45e23802dba93330aa332c89e"
+        "tests/rfi_ref.py": "2ff8f5130df9af75fa665e685c0ec7d4e5fb2d779071600e9ec1e9711685d961",
+        "spec/FOLD.md": "6de7c37d2076544235821082fc81bbd6ed38a356f2db5c2623e0584dfeba075a"
       },
       "reviewed_at": "2026-10-25",
       "reviewer": "Author-attested: 2026-10-25 re-read spec/FOLD.md against src/cm.c after D04 T01 section 1 (early row-boundary abort on exhausted CM stream; bitstream and format semantics unchanged)",
@@ -1724,10 +1724,10 @@
       }
     },
     "docs/examples.md": {
-      "evidence": "2026-10-27: Reviewed docs/examples.md against its drift sources for D01 T03 section 1 (format version 3 port: encoder writes version 3, decoders accept versions 2 and 3, inspect prints the file version)",
+      "evidence": "2026-11-06: Reviewed docs/examples.md against src/rf.h, src/cm.c, src/fold.c, src/api.c, src/main.c, tests/rfi_ref.py, and spec/FOLD.md for D01 T03 section 3 (version 3 warm-started horizontal strips, 16-node context rows, 1 + 12*S strip framing, and default up-to-9 threads)",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
-        "src/main.c": "e5eb55c74c71d531dbaa40a6cb726636d031c467848ec2628ab6a83d9a35d89b",
+        "src/main.c": "0a9f391a283d94e8d63e2a953f7d5c46a6fb4d4fe041c04f060a0118aae4ed4c",
         "examples/encode.c": "f4cb5d6e4d04c302d17ce8d6aac0b0926218836ec96d8fa4bb676583234cdd66",
         "examples/decode.c": "3f6ff6cfb0b847f5dae70fd6de5f96b0d49f470283326cf4149c368482639530",
         "examples/ppm.h": "9683267ff2b024b14570548e94cfbc0acced5cd7ecd8eba2dab5c69b6677abf6",
@@ -1736,32 +1736,32 @@
       "review": "Author-attested: 2026-10-25 re-read docs/examples.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/limitations.md": {
-      "evidence": "2026-10-27: Reviewed docs/limitations.md against its drift sources for D01 T03 section 1 (format version 3 port: encoder writes version 3, decoders accept versions 2 and 3, inspect prints the file version)",
+      "evidence": "2026-11-06: Reviewed docs/limitations.md against src/rf.h, src/cm.c, src/fold.c, src/api.c, src/main.c, tests/rfi_ref.py, and spec/FOLD.md for D01 T03 section 3 (version 3 warm-started horizontal strips, 16-node context rows, 1 + 12*S strip framing, and default up-to-9 threads)",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
-        "src/rf.h": "3b8f6c4144c739df78c4e08b3233bdb80ad006fcaebf1d1f63411c474a12c68e",
-        "src/main.c": "e5eb55c74c71d531dbaa40a6cb726636d031c467848ec2628ab6a83d9a35d89b",
-        "src/fold.c": "1659a4119aa181aab784bdd1457a1bd20233e6ea80a997cea019787bd8c6a846",
+        "src/rf.h": "c7f9919e34924b6686ce876fd96550d28c39d025ed6233e6f338e03f37ce47a1",
+        "src/main.c": "0a9f391a283d94e8d63e2a953f7d5c46a6fb4d4fe041c04f060a0118aae4ed4c",
+        "src/fold.c": "7cecdf9622aa6d98be195cf43b1e77de7f9676f2a7c1f1129cc08dbe7497e8aa",
         "src/bmp.c": "50278e51120542ec686aee00385eba666239070533035e5d04e7d659b118317c",
-        "src/api.c": "76f5277f1fce9b053ca1e75648d1d5a7aa5494bf46266361e437f3e17f80812c",
+        "src/api.c": "774c4e0a2a22f5a01e174e541cd1e725da05019ece20927345938cbe10fe0f02",
         "src/sys_posix.c": "507270096bb20f63a07fd0176551a6fc7dd37ee7ce441b6a5a3e57f00bcb6792",
-        "docs/limitations.md": "fcf203db703ae7190e4c2e57c97b058e7402a673526cc28a5193b2bcb2ef44da"
+        "docs/limitations.md": "68cf87dfe7a79a053dfca4c7de7904c5f1d74d0d74e1b0cee6fd8636517044c2"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/limitations.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/troubleshooting.md": {
-      "evidence": "2026-10-27: Reviewed docs/troubleshooting.md against its drift sources for D01 T03 section 1 (format version 3 port: encoder writes version 3, decoders accept versions 2 and 3, inspect prints the file version)",
+      "evidence": "2026-11-06: Reviewed docs/troubleshooting.md against src/rf.h, src/cm.c, src/fold.c, src/api.c, src/main.c, tests/rfi_ref.py, and spec/FOLD.md for D01 T03 section 3 (version 3 warm-started horizontal strips, 16-node context rows, 1 + 12*S strip framing, and default up-to-9 threads)",
       "sources": {
         "include/rasterfold.h": "656855f1873caf500435f6934d8f8ff98592e5754d9539593c9d29029ee9ffcd",
-        "src/rf.h": "3b8f6c4144c739df78c4e08b3233bdb80ad006fcaebf1d1f63411c474a12c68e",
-        "src/main.c": "e5eb55c74c71d531dbaa40a6cb726636d031c467848ec2628ab6a83d9a35d89b",
-        "src/fold.c": "1659a4119aa181aab784bdd1457a1bd20233e6ea80a997cea019787bd8c6a846",
+        "src/rf.h": "c7f9919e34924b6686ce876fd96550d28c39d025ed6233e6f338e03f37ce47a1",
+        "src/main.c": "0a9f391a283d94e8d63e2a953f7d5c46a6fb4d4fe041c04f060a0118aae4ed4c",
+        "src/fold.c": "7cecdf9622aa6d98be195cf43b1e77de7f9676f2a7c1f1129cc08dbe7497e8aa",
         "src/bmp.c": "50278e51120542ec686aee00385eba666239070533035e5d04e7d659b118317c",
-        "src/api.c": "76f5277f1fce9b053ca1e75648d1d5a7aa5494bf46266361e437f3e17f80812c",
+        "src/api.c": "774c4e0a2a22f5a01e174e541cd1e725da05019ece20927345938cbe10fe0f02",
         "src/sys_posix.c": "507270096bb20f63a07fd0176551a6fc7dd37ee7ce441b6a5a3e57f00bcb6792",
         "tools/provision.py": "b17ea42569b76d70edbcc235dbc86385c9c7ce50b1be7a3bb83383c30f848556",
         "tools/provision.ps1": "836043df1f959726d5fa2b73d206fa896c9d3aacd12bf7e21b8193a4bb14ad96",
-        "docs/troubleshooting.md": "3f08c3942dc13055105acdf68b72cbe29197960b8c2a6b76832708d85afc341e"
+        "docs/troubleshooting.md": "4af65035b3b7f1e914e7dee9b029871f5bf0ac11ef28b90fb94b9211ae536de5"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/troubleshooting.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },

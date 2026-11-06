@@ -92,7 +92,19 @@ static int parse_fold(const uint8_t *f, size_t size, rf_info *info, const uint8_
     if (method == RF_METHOD_RAW && n != raw) return rf_fail(err, RF_ERR_FORMAT, "invalid fold: raw length");
     info->width = w; info->height = h; info->method = method;
     info->payload_size = n; info->payload_crc = rd32(f + 24); info->header_crc = rd32(f + 28);
-    for (int c = 0; c < 3; c++) info->stream_size[c] = (method == RF_METHOD_CM && n >= 12) ? rd32(payload + 4 * c) : 0;
+    for (int c = 0; c < 3; c++) info->stream_size[c] = 0;
+    if (method == RF_METHOD_CM) {
+        if (*version_out == 2 && n >= 12) {
+            for (size_t c = 0; c < 3; c++) info->stream_size[c] = rd32(payload + 4u * c);
+        } else if (*version_out == 3 && n >= 1 && payload[0] >= 1 && payload[0] <= 4 && n >= 1u + 12u * payload[0]) {
+            size_t S = payload[0];
+            for (size_t c = 0; c < 3; c++) {
+                uint64_t sum_c = 0;
+                for (size_t s = 0; s < S; s++) sum_c += rd32(payload + 1u + 4u * (3u * s + c));
+                info->stream_size[c] = sum_c <= n ? (uint32_t)sum_c : 0u;
+            }
+        }
+    }
     *payload_out = payload;
     return RF_OK;
 }

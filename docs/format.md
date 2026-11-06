@@ -15,11 +15,12 @@ text alone; `tests/rfi_ref.py` is such an implementation, written from it.
 The reference encoder's choice between methods is not part of the contract.
 
 Version 3 differs from version 2 only in method 1: its context mixer has
-seven models instead of five (contexts `k5` and `k6` below). Methods 0, 2
-and 3 are identical in versions 2 and 3. A decoder reads both versions;
-an encoder writes version 3. Version 2 replaced the experimental version 1
-(64×64 blocks with PackBits, palette, Rice and binary rANS modes). Version 1
-files are rejected as an unsupported version.
+seven models instead of five (contexts `k5` and `k6` below), 16 nodes per
+context row instead of 32, a gated gradient selector, and warm-started
+horizontal strips. Methods 0, 2 and 3 are identical in versions 2 and 3. A
+decoder reads both versions; an encoder writes version 3. Version 2 replaced
+the experimental version 1 (64×64 blocks with PackBits, palette, Rice and
+binary rANS modes). Version 1 files are rejected as an unsupported version.
 
 ## Conventions
 
@@ -82,6 +83,8 @@ right, bytes R, G, B. `payload_size = width * height * 3`.
 
 ### Payload
 
+In version 2:
+
 ```
 offset  size  field
 0       4     size of stream G
@@ -93,6 +96,85 @@ offset  size  field
 `12 + size G + size R + size B = payload_size`, and each stream is at least 5
 bytes long. Stream c carries every binary decision of channel c (below) and
 nothing else.
+
+In version 3:
+
+```
+offset     size      field
+0          1         S = number of horizontal strips (1..4, S <= height)
+1          12 * S    3 * S 4-byte stream sizes:
+                     strip 0 (G, R, B), strip 1 (G, R, B), ..., strip S-1 (G, R, B)
+1 + 12 S   ...       3 * S streams in the same order:
+                     strip 0 (G, R, B), strip 1 (G, R, B), ..., strip S-1 (G, R, B)
+```
+
+`1 <= S <= 4`, `S <= height`, `1 + 12 * S + sum(stream sizes) = payload_size`,
+and each of the `3 * S` streams is at least 5 bytes long. Stream `(s, c)`
+carries every binary decision of channel `c` in strip `s` (below) and nothing
+else.
+
+### Strips and warm start (version 3)
+
+Version 2 files have a single strip (`S = 1`, `y0_0 = 0`, `y1_0 = height`,
+`h_0 = height`).
+
+In version 3, the `height` image rows `0 .. height - 1` are partitioned into
+`S` contiguous non-empty horizontal strips `s = 0 .. S - 1` covering image rows
+`[y0_s, y1_s)` of height `h_s = y1_s - y0_s >= 1`:
+
+```
+w_rows      = 68 if S == 2 else max(64, height / 10)
+total_extra = (S * (S - 1) / 2) * w_rows
+if S == 1 or height <= total_extra + 32 * S:
+    y0_s = (s * height) / S
+    y1_s = ((s + 1) * height) / S
+else:
+    rem   = height - total_extra
+    q     = rem / S
+    r_rem = rem mod S
+    h_k   = q + (1 if k < r_rem else 0) + (S - 1 - k) * w_rows    (k = 0 .. S - 1)
+    y0_s  = sum_{k < s} h_k
+    y1_s  = y0_s + h_s
+```
+
+Each strip `s` codes its `h_s` rows using strip-local row coordinates
+`y = 0 .. h_s - 1` (corresponding to image row `y0_s + y`). Every row-dependent
+rule below ("Neighbours", "Per-channel state", "LMS correction", "Gated
+gradient", "Contexts") uses the strip's local row `y`: in particular, local row
+`y = 0` of every strip uses the `y == 0` top-edge neighbour rule
+(`N = NW = NE = NN = NNE = W`, with `W = 0` at `x = 0`), local row `y = 1` uses
+`y == 1` (`NN = N`, `NNE = NE`), and each strip starts with its two-row
+predictor arrays (`perr`, `err`, `er`, `fe`, `ex`) and gated-gradient sums
+(`Eg`, `Et`) set to 0.
+
+Strip 0 starts cold: for each channel `c`, all `M * 2048` model rows have visit
+count `cell 0 = 0` and probabilities `cell 1 .. N_nodes - 1 = 32768`, all
+`128 * N_nodes` weight sets have weights `0 .. M - 1 = 19661` and bias weight
+`M = 0`, and all twelve LMS weights `u_0 .. u_11 = 0`.
+
+For `S > 1`, each strip `s < S - 1` warm-starts strip `s + 1` after coding
+`warm_rows_s` local rows of strip `s`:
+
+```
+warm_rows_s = min(h_s, 68 if S == 2 else max(96, height / 6))
+```
+
+Immediately after strip `s` finishes coding its local row `y = warm_rows_s - 1`
+on channel `c` (and before strip `s` codes row `y = warm_rows_s`, if any),
+strip `s + 1`'s channel `c` is initialized from strip `s`'s channel `c` state
+at that instant:
+
+- For every model row `0 .. M * 2048 - 1`: `cell 0 = min(strip_s.cell 0, 6)`,
+  and `cell d = strip_s.cell d` for `d = 1 .. N_nodes - 1`.
+- Every weight set `(wsel, d)` and the gated-gradient accumulators `Eg` and
+  `Et` are copied verbatim from `strip_s`.
+- Every LMS weight is halved by arithmetic shift: `u_k = strip_s.u_k >> 1` for
+  `k = 0 .. 11`.
+- Strip `s + 1`'s two-row predictor buffers (`perr`, `err`, `er`, `fe`, `ex`)
+  remain 0.
+
+Once initialized after row `warm_rows_s - 1` of strip `s`, strip `s + 1`
+evolves independently on its own streams.
 
 ### Channels and order
 
@@ -278,14 +360,16 @@ wsel = qE*8 + j + 4 use,  j = 3 for channel 0; for channels 1, 2 j = 0 if gq = 4
 ```
 
 `M`, the number of models, is 5 for version 2 files and 7 for version 3
-files.
+files. `N_nodes`, the number of cells per model row and nodes per `wsel`, is
+32 for version 2 files and 16 for version 3 files.
 
 ### Models
 
-Each channel has `M` tables of 2048 rows by 32 16-bit cells. Cell 0 of a row
-is its visit count `n`, starting at 0. Cells 1..31 are probabilities of a 1 bit
-in units of 1/65536, starting at 32768. Before the sample is coded, for each
-model m in order 0..M-1:
+Each channel has `M` tables of 2048 rows by `N_nodes` 16-bit cells. Cell 0 of a
+row is its visit count `n`, starting at 0 (or capped at 6 on warm-start
+handoff). Cells `1 .. N_nodes - 1` are probabilities of a 1 bit in units of
+1/65536, starting at 32768. Before the sample is coded, for each model m in
+order 0..M-1:
 
 ```
 n = cell 0 of row_m
@@ -293,14 +377,15 @@ rate_m = 65536 * 2 / (2n + 3)
 cell 0 of row_m = n + 1 if n < 60 else n
 ```
 
-Each channel has 128 × 32 weight sets of `M + 1` signed 32-bit weights, all
-`19661` except the last (the bias weight), which starts at 0. The set for a
+Each channel has `128 * N_nodes` weight sets of `M + 1` signed 32-bit weights,
+all `19661` except the last (the bias weight), which starts at 0. The set for a
 decision is `(wsel, node)`.
 
 ### One decision
 
-A decision codes one bit at node `d` (1..29) with the `M` cells
-`c_m = cell d of row_m` and the weight set `w = (wsel, d)`:
+A decision codes one bit at node `d` (`1..29` in version 2, `1..15` in version
+3) with the `M` cells `c_m = cell d of row_m` and the weight set
+`w = (wsel, d)`:
 
 ```
 STRETCH, SQUASH: see below
@@ -325,6 +410,8 @@ STRETCH[q] for q in 0..4095 is the smallest x in -2047..2047 with SQUASH(x) >= q
 
 ### Binarization of the residual
 
+In version 2 (`N_nodes = 32`):
+
 ```
 node 1   bit r != 0                         (stop here when 0)
 node 2   bit r < 0
@@ -333,6 +420,21 @@ nodes 3 .. 3+e-1: bit 1 each;  node 3+e: bit 0, only when e < 7
 mantissa m = a - (2^e), its e bits from the top:
     bit e-1 at node 10 + e
     bit e-2 at node 14 + 2e + (bit e-1)
+    lower bits with probability 2048/4096, no model and no update
+```
+
+In version 3 (`N_nodes = 16`), high-exponent unary and mantissa decisions pool
+into nodes `8`, `12`, and `15`:
+
+```
+node 1   bit r != 0                         (stop here when 0)
+node 2   bit r < 0
+a = |r|  (1..128), e = ilog2(a)
+for k = 0 .. e-1: bit 1 at node (3 + min(k, 5))
+if e < 7:         bit 0 at node (3 + min(e, 5))
+mantissa m = a - (2^e), its e bits from the top:
+    bit e-1 at node (8 + min(e, 4))
+    bit e-2 at node (13 + (bit e-1) if e == 2 else 15)
     lower bits with probability 2048/4096, no model and no update
 ```
 
@@ -578,15 +680,17 @@ Reject, and do not produce a completed output file, when:
 
 - the file is shorter than 32 bytes or longer than 256 MiB;
 - the magic is not `RFI` (malformed), or the fourth magic byte and `version`
-  are not 2, `header_size` is not 32, `pixel_format` is not 1, or `method` is
-  not 0, 1, 2, or 3 (unsupported);
+  do not agree or are not 2 or 3, `header_size` is not 32, `pixel_format` is
+  not 1, or `method` is not 0, 1, 2, or 3 (unsupported);
 - `header_crc32` or `payload_crc32` does not match, `reserved` is not 0, or
   `payload_size` is not `file_size - 32`;
 - a dimension is 0 (malformed) or outside the limits (size limit);
 - method 0 has `payload_size != width * height * 3`;
-- method 1 has a payload shorter than 12 bytes, a stream shorter than 5 bytes,
-  stream sizes that do not add up, a stream that runs out or has bytes left, or
-  a decoded residual of +128;
+- method 1 in version 2 has a payload shorter than 12 bytes, or in version 3
+  has an empty payload, `S < 1`, `S > 4`, `S > height`, or a payload shorter
+  than `1 + 12 * S` bytes; or in either version has a stream shorter than 5
+  bytes, stream sizes that do not add up to `payload_size`, a stream that runs
+  out or has bytes left, or a decoded residual of +128;
 - method 2 or 3 has a payload shorter than 6 bytes, `count - 1 > 255`, a
   payload shorter than `6 + 3 * count`, a duplicate colour in the palette, a
   stream shorter than 5 bytes, `6 + 3 * count + stream_size != payload_size`, a
@@ -600,13 +704,15 @@ destination or temporary file is never touched.
 
 ## Reference encoder policy (non-normative)
 
-The encoder codes the image with method 1 (kept when each of the three channel
-streams is at most `width * height + 64` bytes) and, when the image has at most
+The encoder codes the image with method 1 using `S = 3` strips when
+`height >= 768`, `S = 2` when `512 <= height < 768`, and `S = 1` when
+`height < 512` (kept when every strip stream `(s, c)` is at most
+`width * h_s + 64 / S` bytes) and, when the image has at most
 256 distinct colours, also with method 3. It writes whichever eligible candidate
 of method 0 (raw), method 1, and method 3 has the smallest payload, breaking
-ties in order method 0, then method 1, then method 3. The streams of method 1's
-three channels are independent of the schedule, so one thread or three produce
-the same bytes.
+ties in order method 0, then method 1, then method 3. The `3 * S` streams of
+method 1 depend only on the warm-start handoff rows and same-pixel channel
+values, so any thread count produces the same bytes.
 
 ## BMP subset accepted by the reference tool
 

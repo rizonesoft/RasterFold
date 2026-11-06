@@ -17,7 +17,7 @@ static const char usage_text[] =
     "  rasterfold encode [--time] [--threads N] input.bmp output.fold" RF_EOL
     "  rasterfold decode [--time] [--threads N] input.fold output.bmp" RF_EOL
     "  rasterfold inspect [--time] input.fold" RF_EOL
-    "--threads 1 codes on one thread; the default uses three when the CPU has them." RF_EOL
+    "--threads 1 codes on one thread; the default uses up to 9 when the CPU has them." RF_EOL
     "exit codes: 0 ok, 1 usage, 2 io, 3 unsupported, 4 malformed, 5 limit" RF_EOL;
 
 static int wide_eq(const rf_path_char *a, const char *b) {
@@ -50,7 +50,8 @@ static void info_hex(const char *key, uint32_t v) {
 static int run(int argc, rf_path_char **argv, rf_error *err) {
     rf_path_char *pos[3] = {0, 0, 0};
     int npos = 0, timing = 0;
-    int threads = rf_cpu_count() >= 3 ? 3 : 1;
+    int ncpu = rf_cpu_count();
+    int threads = ncpu < 1 ? 1 : (ncpu > 9 ? 9 : ncpu);
     for (int i = 1; i < argc; i++) {
         if (wide_eq(argv[i], "--time")) { timing = 1; continue; }
         if (wide_eq(argv[i], "--threads")) {

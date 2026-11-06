@@ -22,83 +22,88 @@ format is `.fold` version 3 (with full backward-compatibility decoding of
 context-mixing coder in `src/cm.c` (the JPEG XL weighted predictor corrected by
 a 12-tap sign-sign LMS stage, in version 3 replaced by a gated modular gradient
 where that has been more than twice as accurate on the channel (section 4.11),
-seven context models mixed by a logistic mixer in version 3 and five in version 2, and one binary range coder per channel G, R-G,
-B-G, with one thread per channel), and methods 2 and 3 ("palette" and "extended
-palette") are the palette index coders in `src/pal.c` for images with at most
-256 distinct colours. The Python oracle `tests/rfi_ref.py` implements the same
+seven context models mixed by a logistic mixer in version 3 and five in version 2,
+16-node context rows in version 3 and 32-node rows in version 2, and up to three
+warm-started horizontal strips per channel G, R-G, B-G in version 3 (`S = 1` for
+`h < 512`, `S = 2` for `512 <= h < 768`, `S = 3` for `h >= 768`, section 5.8),
+running up to nine strip threads in parallel), and methods 2 and 3 ("palette" and
+"extended palette") are the palette index coders in `src/pal.c` for images with at
+most 256 distinct colours. The Python oracle `tests/rfi_ref.py` implements the same
 format independently and stays byte-identical with the C encoder.
 
 `python tests/measure_final.py` (exit 0, PASS) on `measure/image.bmp`:
 
 | | RasterFold | JPEG XL e7 |
 |---|---:|---:|
-| bytes | 1,405,118 | 1,470,703 |
-| decode wall | 304 ms (3 threads, codec 178 ms) | 446 ms (ffmpeg default threads) |
-| decode peak working set | 16.1 MB | 51.9 MB |
+| bytes | 1,410,485 | 1,470,703 |
+| decode wall | 242 ms (9 threads, codec 135 ms) | 451 ms (ffmpeg default threads) |
+| decode peak working set | 16.4 MB | 51.8 MB |
 
-JPEG XL effort 9 gives 1,440,564 bytes on the same image (`0.9754` ratio), which
+JPEG XL effort 9 gives 1,440,564 bytes on the same image (`0.9791` ratio), which
 is still larger. `benchmarks/results.md` (from `python tests/benchmark.py`) has
-the encode times and the one-thread comparisons: encode takes 0.23 of JPEG XL's
-time, and three-thread decode (`research/vsjxl.py -n5 --threads 3`) takes 0.568
-to 0.586 of three-thread JPEG XL's minimum time (0.541 to 0.587 median).
+the encode times and the one-thread comparisons. On the 10-photo test pack
+(`testdata/photos/`), default 9-thread decode takes `1.27..1.29` s on Windows
+(vs lossless WebP `1.44..1.45` s, `0.874..0.893` ratio) and `0.68` s on Linux
+(vs lossless WebP `1.62..1.64` s, `0.415..0.422` ratio).
 
 Compression on the research corpus (`python research/ab.py size SET -v`), as
 RasterFold bytes / JPEG XL e7 bytes (and JPEG XL e9 in parentheses):
 
 | set | images | total | geometric mean | worst |
 |---|---:|---:|---:|---|
-| photo (measure + Kodak + imagecompression.info crops) | 39 | 0.9690 (0.9807 e9) | 0.9691 (0.9846 e9) | kodim17 1.0000 (kodim16 1.0152 e9) |
-| kodak | 24 | 0.9821 (0.9942 e9) | 0.9819 (0.9946 e9) | kodim17 1.0000 (kodim16 1.0152 e9) |
-| ic | 14 | 0.9633 (0.9743 e9) | 0.9485 (0.9683 e9) | ic_nightshot_iso_1600 0.9935 (1.0129 e9) |
-| tp (test pack) | 10 | 0.9727 (0.9852 e9) | 0.9698 (0.9838 e9) | tp_nightshot 0.9926 (1.0126 e9) |
-| synth | 11 | 0.8900 (0.9041 e9) | 0.3264 (0.6225 e9) | syn_noise 0.9241 (syn_odd 1.2000 e9) |
+| photo (measure + Kodak + imagecompression.info crops) | 39 | 0.9712 (0.9830 e9) | 0.9719 (0.9874 e9) | kodim17 1.0037 (kodim16 1.0186 e9) |
+| kodak | 24 | 0.9856 (0.9977 e9) | 0.9854 (0.9981 e9) | kodim17 1.0037 (kodim16 1.0186 e9) |
+| ic | 14 | 0.9650 (0.9760 e9) | 0.9501 (0.9699 e9) | ic_nightshot_iso_1600 0.9951 (1.0145 e9) |
+| tp (test pack) | 10 | 0.9751 (0.9876 e9) | 0.9726 (0.9866 e9) | tp_nightshot 0.9942 (1.0143 e9) |
+| synth | 11 | 0.8901 (0.9041 e9) | 0.3270 (0.6236 e9) | syn_noise 0.9241 (syn_odd 1.2000 e9) |
 
-38 of 39 photographs are smaller than JPEG XL e7; `kodim17` is 12 bytes larger
-(`384,835` vs `384,823`, `1.00003`, which the four-decimal table rounds to
-`1.0000`), and 31 of 39 photographs are below JPEG
-XL e9, with `photo` total `30,795,260` bytes (`-17,472` bytes vs Milestone 4's
-`30,812,732`, and no photograph more than 0.1% larger; worst vs Milestone 4 is
-`kodim03` at `325,824` vs `325,720`, `+0.032%`, and best is `kodim20` at
-`319,213` vs `322,418`, `-0.994%`) and `tp` total `6,640,275` bytes (`-1,115`
-bytes vs Milestone 4's `6,641,390`). On the generated images, with methods 2 and
-3 (`D01 T01 §2` to `§4`), the 7-model CM coder, and learned gated modular prediction (`D01 T04 §8` v2, ported in
-`D01 T04 §10`), all 11 `synth` images are smaller than JPEG XL e7 and 10 of 11
-are below JPEG XL e9: `syn_gradient` (`119` vs `2,886` e7, `616` e9, and `180`
+38 of 39 photographs are smaller than JPEG XL e7; `kodim17` is `386,238` vs
+`384,823` (`1.0037`), and 29 of 39 photographs are below JPEG
+XL e9, with `photo` total `30,868,254` bytes (`+72,994` bytes = `+0.237% <= +0.300%`
+over Milestone 5's single-strip `30,795,260`, and no photograph more than `+0.5%`
+larger; worst vs Milestone 5 is `kodim24` at `435,918` vs `434,031`, `+0.435%`,
+and best is `ic_artificial` at `105,266` vs `105,420`, `-0.146%`) and `tp` total
+`6,656,840` bytes (`+16,565` bytes = `+0.249% <= +0.300%` over Milestone 5's
+`6,640,275`, worst `tp_flower_foveon_crop` `+0.425%`). On the generated images, with methods 2 and
+3 (`D01 T01 §2` to `§4`), the 7-model CM coder, learned gated modular prediction (`D01 T04 §8` v2, ported in
+`D01 T04 §10`), and warm-started horizontal strips with 16-node context rows
+(`D02 T02 §3`, ported in `D01 T03 §3`), all 11 `synth` images are smaller than JPEG XL e7 and 10 of 11
+are below JPEG XL e9: `syn_gradient` (`120` vs `2,886` e7, `616` e9, and `180`
 WebP, down from `4,227` at Milestone 4 and `4,521` at Milestone 1),
-`syn_stripes` (`108` vs `1,689` e7, `271` e9, and `150` WebP, down from `368`),
+`syn_stripes` (`109` vs `1,689` e7, `271` e9, and `150` WebP, down from `368`),
 `syn_solid` (`61` vs `125` e7 and `120` e9), `syn_checker` (`138` vs `316` e7
 and `210` e9, down from `5,709`), `syn_pixel` (`52` vs `66` e7, `53` e9, and
 `58` WebP, down from `599`), `syn_ui` (`1,410` vs `2,316` e7 and `2,195` e9),
 `syn_text` (`1,447` vs `2,164` e7 and `2,038` e9), `syn_diagram` (`1,452` vs
-`2,160` e7 and `2,049` e9), `syn_wide` (`129` vs `1,906` e7, `212` e9, and `202`
+`2,160` e7 and `2,049` e9), `syn_wide` (`131` vs `1,906` e7, `212` e9, and `202`
 WebP, down from `281`), `syn_odd` (`78` vs `132` e7 and `65` e9, `1.2000` of e9,
 down from `153`), and `syn_noise` (`196,640` vs `212,784` e7 and `215,205` e9),
-giving `synth` total `201,634` vs `226,544` bytes e7 (`0.8900`, geometric mean
-`0.3264`) and `223,034` bytes e9 (`0.9041`, geometric mean `0.6225`, down from
+giving `synth` total `201,638` vs `226,544` bytes e7 (`0.8901`, geometric mean
+`0.3270`) and `223,034` bytes e9 (`0.9041`, geometric mean `0.6236`, down from
 `206,229` at Milestone 4, `206,566` at Milestone 3, and `214,773` at Milestone
-1), and `201,248` bytes for lossless WebP (`1.0019` total, `0.9974` geometric
+1), and `201,248` bytes for lossless WebP (`1.0019` total, `0.9992` geometric
 mean).
 
-Speed: `research/bench.c` measures about 500 CPU cycles per sample on one
+Speed: `research/bench.c` measures about 450 CPU cycles per sample on one
 thread (G, R, and B each count as one sample) on the i5-11600K for the 7-model
-version 3 CM coder, and about 205 wall-clock cycles per sample with three
-threads, one per channel. Profile the current split between modelling and
-decisions (2.4, item 3) before choosing a speed idea.
+version 3 CM coder with 16-node context rows and 16-bit SIMD counter updates,
+about 155 ms decode on `measure/image.bmp` with three threads, and about 115 ms
+decode with nine threads across `S = 3` warm-started horizontal strips. Profile
+the current split between modelling and decisions (2.4, item 3) before choosing
+a speed idea.
 
-Memory, from `rasterfold.exe decode --time` on `measure/image.bmp`:
-`alloc_peak` is 9.94 MB (`9,943,572` bytes at 3 threads and `9,943,540` bytes
-at `--threads 1` on Windows; `9,943,780` and `9,943,540` bytes on Linux, each
-`+31` bytes over Milestone 4's `9,943,541` / `9,943,509` on Windows and
-`9,943,749` / `9,943,509` on Linux for the `1,405,118` vs `1,405,087` byte input
-file, with codec working memory unchanged; vs 9.16 MB for 5-model version 2 at
-Milestones 2 and 3, adding `2 * 2048 * 32 * 2 * 3 = 786,432` bytes for the `k5`
-and `k6` counter tables): the input file (1.41 MB), the
-output BMP buffer (4.72 MB), and the three 7-model channel contexts (3.74 MB).
-The process peak working set is 16.08 MB on Windows and 12.44 MB on Linux.
-Encode `alloc_peak` is 13.26 MB (`13,258,736` bytes on Windows and `13,258,944`
-bytes on Linux): the input RGB image (4.72 MB), the output buffer holding the
-three channel stream slices in place (4.72 MB), and the three 7-model channel
-contexts (3.74 MB).
+Memory, from `rasterfold.exe decode --time` on `measure/image.bmp` (`S = 3`,
+`1,410,485` bytes): `alloc_peak` is 10.29 MB (`10,291,371` bytes at `--threads 9`,
+`10,291,275` bytes at `--threads 3` and `--threads 6`, and `10,291,243` bytes at
+`--threads 1` on Windows; `10,292,203`, `10,291,483`, `10,291,483`, and `10,291,243`
+bytes on Linux), giving codec working memory (`alloc_peak - file_size`) of
+`8,880,886` bytes (`8.88 MB`) at `--threads 9` on Windows (`8,881,718` bytes on
+Linux, `+4.01%` / `+4.02% <= +5.00%` over Milestone 5's single-strip `8,538,454`
+bytes): the input file (1.41 MB), the output BMP buffer (4.72 MB), and the three
+concurrent 7-model strip allocations (`3 * 1.39 MB = 4.16 MB`, down from `3.82 MB`
+for a single strip before 16-node context rows and exact reachable model row
+counts). The process peak working set is 16.25..16.37 MB on Windows and
+12.23..12.37 MB on Linux.
 
 **Milestone 1 (`D05 T01 §1`, Locked baseline) reached 2026-10-25:** `pwsh scripts/check-all.ps1 -AllTargets` exits 0 (`check-all: 29/29 passed`); `build.yml` (`https://github.com/rizonesoft/RasterFold/actions/runs/40199974368`), `plan.yml` (`https://github.com/rizonesoft/RasterFold/actions/runs/40199974415`), and `pages.yml` (`https://github.com/rizonesoft/RasterFold/actions/runs/40199974421`) pass on `main` (`f5e7e8a8ba4cbb131b00cf3f0c4a30143c8e548c`, and `8aeee4c707ff593c12df8ab095c9c9c117712037` at runs `40198760222`, `40198760291`, `40198760263`, `35eb5c4d11766d01026604bc788ab4663d9de073` at runs `40197473962`, `40197473971`, `40197473951`, and `91b43d439f0c19b4a42d0ac9fe62a63d4f125ba4` at runs `40195950978`, `40195950906`, `40195950947`); `benchmarks/corpus.csv` and `benchmarks/results.md` report JPEG XL e7, JPEG XL e9, and lossless WebP (`photo` 39 images: `30,865,211` bytes, `0.9712` total and `0.9728` geomean of e7, `0.9829` total and `0.9883` geomean of e9 with `28 of 39` photos below e9, `0.9041` total and `0.8932` geomean of WebP; `tp` 10 images: `6,651,583` bytes, `0.9743` total and `0.9722` geomean of e7, `0.9868` total and `0.9862` geomean of e9, `0.9027` total and `0.8811` geomean of WebP; `synth` 11 images: `214,773` bytes, `0.9480` total and `1.1986` geomean of e7, `0.9630` total and `2.2860` geomean of e9, `1.0672` total and `3.6626` geomean of WebP); `python3 scripts/windows.py tests/measure_final.py` exits 0 (`PASS`, `bytes=1409028`, `decode_wall_us=295854`, `decode_peak_ws=16576512`, `decode_codec_us=183840` vs JPEG XL e7 `bytes=1470703`, `decode_wall_us=459807`, `decode_peak_ws=51281920`); `tests/benchmark.py measure -n 3` (committed in `benchmarks/results.csv` and `benchmarks/results.md`) exits 0 (`failures: 0`, `rasterfold` `1,409,028` bytes, encode `308,760` us / `0.194x` `jxl`, decode `319,315` us / `0.647x` `jxl`, `encode_peak=16699392`, `decode_peak=16580608`, `rasterfold-1t` encode `640,604` us / `0.402x` `jxl`, decode `601,611` us / `1.220x` `jxl`, `encode_peak=16625664`, `decode_peak=16461824`, `jxl` `1,470,703` bytes, encode `1,595,197` us, decode `493,267` us, `jxl-1t` decode `721,246` us, `jxl-e9` `1,440,564` bytes, encode `10,492,083` us, decode `491,123` us, `webp` `1,588,708` bytes, encode `23,548,198` us, decode `219,895` us); `bin/windows-x64/bin/rasterfold.exe decode --time` on `measure/image.bmp` records `alloc_peak=10569996` (`10.57 MB`, `codec_us=183820`, `total_us=240767`, `peak_working_set=16576512`) at 3 threads and `alloc_peak=10569964` (`10.57 MB`, `codec_us=488047`, `total_us=557786`, `peak_working_set=16465920`) at `--threads 1` (`bin/linux-x64/bin/rasterfold decode --time` at 3 threads records `alloc_peak=10570204`, `10.57 MB`, `codec_us=196505`, `total_us=205643`); `research/vsjxl.py -n5` records `rf_enc` median `292.8` ms (min `271.6`), `rf_dec` median `287.7` ms (min `284.0`), `jxl_enc` median `1582.9` ms (min `1549.6`), `jxl_dec` median `480.8` ms (min `465.2`), decode ratio `0.598`, encode ratio `0.185`; and `research/ab.py ab src/cm.c src/cm.c measure -n5` records `-t1` `size=1409028`, `enc min=482.7..484.1` ms (`med=496.4..499.6`), `dec min=453.5..467.2` ms (`med=481.7..498.2`) and `-t3` `enc min=152.2..168.6` ms (`med=177.9..187.6`), `dec min=167.3..177.9` ms (`med=185.2..193.2`).
 

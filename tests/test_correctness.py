@@ -34,8 +34,8 @@ KAT_FOLD = bytes.fromhex(
 
 # The same 16x8 image encoded as format version 3 (the version 2 file above stays as a decode-only vector).
 KAT_FOLD3 = bytes.fromhex(
-    "52464903030020001000000008000000010001002f000000af7e562957c1935a13000000090000000700000000423381"
-    "26cc498ba9a6b6b1c645d58c572c380001c6e4c96685f5370042386d7982ba"
+    "52464903030020001000000008000000010001003000000019abe5d334e2d3de011300000009000000070000000042338a"
+    "b4b12f7ecf18b4578b279762426cb00001c6e4ca3c0242270042386d7982ba"
 )
 
 # A 16x8 4-colour image and its complete .fold files: KAT_PAL (method 2, §2) and KAT_PAL2 (method 3, §4).
@@ -299,6 +299,10 @@ def with_streams(sizes: tuple[int, int, int], data: bytes) -> bytes:
     return struct.pack("<III", *sizes) + data
 
 
+def with_streams3(sizes: tuple[int, ...], data: bytes, nstrips: int = 1) -> bytes:
+    return bytes([nstrips]) + struct.pack(f"<{len(sizes)}I", *sizes) + data
+
+
 def corrupt_cases() -> None:
     work = WORK / "corrupt"
     work.mkdir(parents=True, exist_ok=True)
@@ -380,6 +384,13 @@ def corrupt_cases() -> None:
     flipped = bytearray(good)
     flipped[44 + sizes[0] // 2] ^= 0x40
     reject(recrc(flipped), 4, "invalid fold: cm stream")
+
+    # Version 3 CM strip-header rejection cases (empty payload, S=0, S=5, S > h, payload < 1 + 12*S).
+    reject(rf.build_file(4, 2, rf.METHOD_CM, b""), 4, "invalid fold: cm streams")
+    reject(rf.build_file(4, 2, rf.METHOD_CM, with_streams3((5, 5, 5), b"\x00" * 15, nstrips=0)), 4, "invalid fold: cm strips")
+    reject(rf.build_file(4, 8, rf.METHOD_CM, with_streams3((5,) * 15, b"\x00" * 75, nstrips=5)), 4, "invalid fold: cm strips")
+    reject(rf.build_file(4, 2, rf.METHOD_CM, with_streams3((5,) * 9, b"\x00" * 45, nstrips=3)), 4, "invalid fold: cm strips")
+    reject(rf.build_file(4, 4, rf.METHOD_CM, b"\x02" + b"\x00" * 20), 4, "invalid fold: cm streams")
 
     # Methods 2 and 3 (palette) framing and stream rejection cases, with checksums recomputed.
     for pal_method, kat_blob in ((rf.METHOD_PAL, KAT_PAL), (rf.METHOD_PAL2, KAT_PAL2)):
@@ -738,11 +749,11 @@ def truncated_stream_abort() -> None:
         check(not partial.exists(), f"{name} t={threads} left .partial file")
 
     # 1. 4096x4096 CM header with a 20-byte payload (framing rejection) and with
-    #    a structurally valid 27-byte CM payload (three 5-byte 0x80 streams that
+    #    a structurally valid 28-byte CM payload (S=1 plus three 5-byte 0x80 streams that
     #    enter run_pipelined / run_channel and exhaust dec.in >= dec.lim on row 0).
-    fold_20 = rf.build_file(4096, 4096, rf.METHOD_CM, with_streams((5, 5, 5), b"\x80" * 8))
-    fold_27 = rf.build_file(4096, 4096, rf.METHOD_CM, with_streams((5, 5, 5), b"\x80" * 15))
-    for t in ("1", "3"):
+    fold_20 = rf.build_file(4096, 4096, rf.METHOD_CM, with_streams3((5, 5, 5), b"\x80" * 7))
+    fold_27 = rf.build_file(4096, 4096, rf.METHOD_CM, with_streams3((5, 5, 5), b"\x80" * 15))
+    for t in ("1", "3", "6", "9"):
         check_reject_fast("cm4096_20b", fold_20, t, "invalid fold: cm streams")
         check_reject_fast("cm4096_27b", fold_27, t, "invalid fold: cm stream")
 
@@ -751,33 +762,66 @@ def truncated_stream_abort() -> None:
     #    and at 75% of the valid stream length (exhausting after row 32 so
     #    y >= XROWS backpressure waits execute before abort).
     valid_64 = rf.encode_image(64, 64, photo(64, 64))
-    sz0, sz1, sz2 = struct.unpack_from("<III", valid_64, 32)
-    s0 = valid_64[44 : 44 + sz0]
-    s1 = valid_64[44 + sz0 : 44 + sz0 + sz1]
-    s2 = valid_64[44 + sz0 + sz1 : 44 + sz0 + sz1 + sz2]
+    sz0, sz1, sz2 = struct.unpack_from("<III", valid_64, 33)
+    s0 = valid_64[45 : 45 + sz0]
+    s1 = valid_64[45 + sz0 : 45 + sz0 + sz1]
+    s2 = valid_64[45 + sz0 + sz1 : 45 + sz0 + sz1 + sz2]
     orig_streams = [s0, s1, s2]
     short_stream = b"\x80" * 5
     for c in range(3):
         parts = list(orig_streams)
         parts[c] = short_stream
-        trunc_payload = with_streams((len(parts[0]), len(parts[1]), len(parts[2])), b"".join(parts))
+        trunc_payload = with_streams3((len(parts[0]), len(parts[1]), len(parts[2])), b"".join(parts))
         trunc_fold = rf.build_file(64, 64, rf.METHOD_CM, trunc_payload)
         mid_parts = list(orig_streams)
         mid_len = max(5, (len(orig_streams[c]) * 3) // 4)
         mid_parts[c] = orig_streams[c][:mid_len]
-        mid_payload = with_streams((len(mid_parts[0]), len(mid_parts[1]), len(mid_parts[2])), b"".join(mid_parts))
+        mid_payload = with_streams3((len(mid_parts[0]), len(mid_parts[1]), len(mid_parts[2])), b"".join(mid_parts))
         mid_fold = rf.build_file(64, 64, rf.METHOD_CM, mid_payload)
-        for t in ("1", "3"):
+        for t in ("1", "3", "6", "9"):
             check_reject_fast(f"trunc_ch{c}", trunc_fold, t, "invalid fold: cm stream")
             check_reject_fast(f"trunc_mid_ch{c}", mid_fold, t, "invalid fold: cm stream")
+
+    # 3. Multi-strip (S=2 at 8x512 and S=3 at 6x768) pre-warm (5-byte 0x80 stream,
+    #    aborting before warm_rows) and post-warm (75% stream length, aborting after
+    #    warm_ready handoff) stream exhaustion across every strip and channel.
+    for mw, mh, want_s in ((8, 512, 2), (6, 768, 3)):
+        mrgb = bytearray(mw * mh * 3)
+        mrng = random.Random(mh)
+        for y in range(mh):
+            for x in range(mw):
+                idx = (y * mw + x) * 3
+                mrgb[idx] = (x * 29 + y * 13 + mrng.randrange(-15, 16)) & 255
+                mrgb[idx + 1] = (x * 17 + y * 7 + mrng.randrange(-11, 12)) & 255
+                mrgb[idx + 2] = (x * 31 + y * 19 + mrng.randrange(-19, 20)) & 255
+        v_multi = rf.encode_image(mw, mh, bytes(mrgb))
+        check(v_multi[16] == rf.METHOD_CM and v_multi[32] == want_s, f"expected S={want_s} at {mw}x{mh}")
+        hdr_len = 1 + 12 * want_s
+        msizes = list(struct.unpack_from(f"<{3 * want_s}I", v_multi, 33))
+        mpos = 32 + hdr_len
+        mstreams = []
+        for msz in msizes:
+            mstreams.append(v_multi[mpos : mpos + msz])
+            mpos += msz
+        for sc in range(3 * want_s):
+            pre_parts = list(mstreams)
+            pre_parts[sc] = short_stream
+            pre_fold = rf.build_file(mw, mh, rf.METHOD_CM, with_streams3(tuple(len(p) for p in pre_parts), b"".join(pre_parts), nstrips=want_s))
+            post_parts = list(mstreams)
+            post_len = max(5, (len(mstreams[sc]) * 3) // 4)
+            post_parts[sc] = mstreams[sc][:post_len]
+            post_fold = rf.build_file(mw, mh, rf.METHOD_CM, with_streams3(tuple(len(p) for p in post_parts), b"".join(post_parts), nstrips=want_s))
+            for t in ("1", "3", "6", "9"):
+                check_reject_fast(f"s{want_s}_pre_sc{sc}", pre_fold, t, "invalid fold: cm stream")
+                check_reject_fast(f"s{want_s}_post_sc{sc}", post_fold, t, "invalid fold: cm stream")
 
 
 def _row_end_tail_crossings(w: int, h: int, payload: bytes) -> set[int]:
     """Return channels (0..2) whose stream has rem > 48 and crosses sz - 40 on
     the final sample (x == w - 1) of a nonfinal row (y < h - 1)."""
-    sizes = struct.unpack_from("<III", payload, 0)
+    sizes = struct.unpack_from("<III", payload, 1)
     chans = [rf.Channel(w) for _ in range(3)]
-    pos = 12
+    pos = 13
     for ch, size in zip(chans, sizes):
         ch.dec = rf.RangeDecoder(payload[pos : pos + size])
         pos += size
@@ -817,9 +861,9 @@ def tail_threshold_roundtrip() -> None:
         ("tail_le48_solid", 6, 6, solid(6, 6, (42, 100, 200))),
         ("tail_le48_grad", 8, 6, gradient(8, 6)),
         ("tail_mixed_check16", 16, 12, checker(16, 12, 3)),
-        ("tail_rowend_ch0", 4, 22, photo(4, 22)),
-        ("tail_rowend_ch1", 6, 22, photo(6, 22)),
-        ("tail_rowend_ch2", 6, 23, photo(6, 23)),
+        ("tail_rowend_ch0", 6, 27, photo(6, 27)),
+        ("tail_rowend_ch1", 5, 28, photo(5, 28)),
+        ("tail_rowend_ch2", 5, 30, photo(5, 30)),
         ("tail_gt48_photo16", 16, 12, photo(16, 12)),
         ("tail_gt48_photo20", 20, 16, photo(20, 16)),
     ]
@@ -828,7 +872,7 @@ def tail_threshold_roundtrip() -> None:
     for name, w, h, rgb in fixtures:
         oracle_fold = rf.encode_image(w, h, rgb)
         cm_fold = oracle_fold if oracle_fold[16] == rf.METHOD_CM else rf.build_file(w, h, rf.METHOD_CM, rf.cm_encode(w, h, rgb))
-        sz0, sz1, sz2 = struct.unpack_from("<III", cm_fold, 32)
+        sz0, sz1, sz2 = struct.unpack_from("<III", cm_fold, 33)
         rems = (sz0 - 5, sz1 - 5, sz2 - 5)
         if all(0 <= r <= 48 for r in rems):
             saw_le48 = True
@@ -855,6 +899,60 @@ def tail_threshold_roundtrip() -> None:
             check(rf.read_bmp24(cm_bmp.read_bytes()) == (w, h, rgb), f"{name} cm decode t={t} pixel mismatch")
     check(saw_le48, "tail_threshold fixtures did not cover rem <= 48")
     check(row_end_channels == {0, 1, 2}, f"tail_threshold fixtures did not cover nonfinal row-end tail crossings on all 3 channels: {row_end_channels}")
+
+
+def warm_strips() -> None:
+    """Multi-strip (S=2 at h=512, S=3 at h=768) and single-strip (S=1) byte identity
+    across --threads 1, 3, 6, 9, oracle round-trip, and CLI inspect stream_g/r/b sums."""
+    work = WORK / "warm_strips"
+    work.mkdir(parents=True, exist_ok=True)
+
+    # Verify CLI inspect stream_g/r/b on version 2 KAT_FOLD and version 3 KAT_FOLD3 (S=1).
+    for tag, blob, v_hdr in (("v2_kat", KAT_FOLD, 2), ("v3_kat", KAT_FOLD3, 3)):
+        f_path = work / f"{tag}.fold"
+        f_path.write_bytes(blob)
+        insp = expect_ok(["inspect", str(f_path)]).stdout.decode("utf-8", errors="replace")
+        if v_hdr == 2:
+            exp_g, exp_r, exp_b = struct.unpack_from("<III", blob, 32)
+        else:
+            exp_g, exp_r, exp_b = struct.unpack_from("<III", blob, 33)
+        check(
+            f"stream_g: {exp_g}" in insp and f"stream_r: {exp_r}" in insp and f"stream_b: {exp_b}" in insp,
+            f"{tag} inspect mismatch: {insp}",
+        )
+
+    for w, h, want_s in ((12, 512, 2), (10, 768, 3)):
+        rng = random.Random(w * 1000 + h)
+        rgb_buf = bytearray(w * h * 3)
+        for y in range(h):
+            for x in range(w):
+                idx = (y * w + x) * 3
+                rgb_buf[idx] = (x * 29 + y * 13 + rng.randrange(-15, 16)) & 255
+                rgb_buf[idx + 1] = (x * 17 + y * 7 + rng.randrange(-11, 12)) & 255
+                rgb_buf[idx + 2] = (x * 31 + y * 19 + rng.randrange(-19, 20)) & 255
+        rgb = bytes(rgb_buf)
+        oracle_fold = rf.encode_image(w, h, rgb)
+        check(oracle_fold[16] == rf.METHOD_CM and oracle_fold[32] == want_s, f"expected method 1 S={want_s} at {w}x{h}")
+        check(rf.decode_image(oracle_fold) == (w, h, rgb), f"oracle decode failed at {w}x{h}")
+        in_bmp = work / f"in_{h}.bmp"
+        in_bmp.write_bytes(rf.write_bmp24(w, h, rgb))
+        canonical_bmp = rf.write_bmp24(w, h, rgb)
+        for t in ("1", "3", "6", "9"):
+            out_fold = work / f"out_{h}_t{t}.fold"
+            out_bmp = work / f"out_{h}_t{t}.bmp"
+            out_fold.unlink(missing_ok=True)
+            out_bmp.unlink(missing_ok=True)
+            expect_ok(["encode", "--threads", t, str(in_bmp), str(out_fold)])
+            check(out_fold.read_bytes() == oracle_fold, f"{w}x{h} encode t={t} != oracle")
+            expect_ok(["decode", "--threads", t, str(out_fold), str(out_bmp)])
+            check(out_bmp.read_bytes() == canonical_bmp, f"{w}x{h} decode t={t} != canonical BMP")
+        sizes = struct.unpack_from(f"<{3 * want_s}I", oracle_fold, 33)
+        exp_sums = [sum(sizes[3 * s + c] for s in range(want_s)) for c in range(3)]
+        insp = expect_ok(["inspect", str(work / f"out_{h}_t1.fold")]).stdout.decode("utf-8", errors="replace")
+        check(
+            f"stream_g: {exp_sums[0]}" in insp and f"stream_r: {exp_sums[1]}" in insp and f"stream_b: {exp_sums[2]}" in insp,
+            f"S={want_s} inspect stream sums mismatch: {insp} vs {exp_sums}",
+        )
 
 
 def palette_method() -> None:
@@ -1168,7 +1266,7 @@ def gated_fixtures() -> dict[str, tuple[int, int, bytes]]:
     def pl(x, y):
         return ((3 * x + 7 * y + 9) & 255, (5 * x + 3 * y + 200) & 255, (250 - 7 * x - 5 * y) & 255)
 
-    make("w1", 1, 700, 400, 1, pl, [(0, 200, 0, 100)])
+    make("w1", 1, 700, 500, 1, pl, [(0, 200, 0, 100)])
     make("h1", 700, 1, 1, 400, pl, [(200, 0, 1, 77)])
     make("w2", 2, 600, 400, 2, pl, [(1, 150, 2, 31), (0, 300, 0, 9)])
     make("h2", 600, 2, 2, 400, pl, [(150, 1, 0, 31), (300, 0, 2, 9)])
@@ -1256,6 +1354,7 @@ def main() -> int:
     case("corrupt", corrupt_cases)
     case("truncated-abort", truncated_stream_abort)
     case("tail-threshold", tail_threshold_roundtrip)
+    case("warm-strips", warm_strips)
     case("palette-method", palette_method)
     case("fuzz-harness", fuzz_harness)
     # The checksum in a successful file matches zlib, not only our encoder.

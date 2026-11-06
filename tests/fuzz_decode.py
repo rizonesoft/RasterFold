@@ -207,37 +207,46 @@ def mutate(blob: bytes, rng: random.Random) -> bytes:
                 if rng.random() < 0.1:
                     b[i] = rng.randrange(256)
         return recrc(b)
-    if kind == 0:                                   # flip bits in the streams
-        for _ in range(rng.randrange(1, 4)):
-            i = rng.randrange(44, len(b))
-            b[i] ^= 1 << rng.randrange(8)
+    version = b[4]
+    nstrips = 1 if version == 2 else max(1, min(4, b[32]))
+    hdr_off = 32 if version == 2 else 33
+    n_streams = 3 * nstrips
+    s_start = 32 + (12 if version == 2 else 1 + 12 * nstrips)
+    if kind == 0:                                   # flip bits in the streams (or strip count)
+        if version == 3 and rng.randrange(8) == 0:
+            b[32] = rng.choice((0, 2, 3, 4, 5, 255))
+        else:
+            for _ in range(rng.randrange(1, 4)):
+                i = rng.randrange(s_start, len(b))
+                b[i] ^= 1 << rng.randrange(8)
     elif kind == 1:                                 # truncate one stream
-        c = rng.randrange(3)
-        sizes = list(struct.unpack_from("<III", b, 32))
+        c = rng.randrange(n_streams)
+        sizes = list(struct.unpack_from(f"<{n_streams}I", b, hdr_off))
         cut = rng.randrange(1, max(2, sizes[c]))
-        start = 44 + sum(sizes[:c]) + sizes[c] - cut
+        start = s_start + sum(sizes[:c]) + sizes[c] - cut
         del b[start : start + cut]
         sizes[c] -= cut
-        struct.pack_into("<III", b, 32, *sizes)
+        struct.pack_into(f"<{n_streams}I", b, hdr_off, *sizes)
     elif kind == 2:                                 # extend one stream
-        c = rng.randrange(3)
-        sizes = list(struct.unpack_from("<III", b, 32))
+        c = rng.randrange(n_streams)
+        sizes = list(struct.unpack_from(f"<{n_streams}I", b, hdr_off))
         add = bytes(rng.randrange(256) for _ in range(rng.randrange(1, 9)))
-        at = 44 + sum(sizes[: c + 1])
+        at = s_start + sum(sizes[: c + 1])
         b[at:at] = add
         sizes[c] += len(add)
-        struct.pack_into("<III", b, 32, *sizes)
+        struct.pack_into(f"<{n_streams}I", b, hdr_off, *sizes)
     elif kind == 3:                                 # shuffle bytes between streams
-        sizes = list(struct.unpack_from("<III", b, 32))
+        sizes = list(struct.unpack_from(f"<{n_streams}I", b, hdr_off))
         d = rng.randrange(-4, 5)
-        sizes[0] += d
-        sizes[1] -= d
-        struct.pack_into("<III", b, 32, *[s & 0xFFFFFFFF for s in sizes])
+        c0 = rng.randrange(n_streams - 1)
+        sizes[c0] += d
+        sizes[c0 + 1] -= d
+        struct.pack_into(f"<{n_streams}I", b, hdr_off, *[s & 0xFFFFFFFF for s in sizes])
     elif kind == 4:                                 # other dimensions for the same streams
         w, h = struct.unpack_from("<II", b, 8)
         struct.pack_into("<II", b, 8, max(1, w + rng.randrange(-3, 4)), max(1, h + rng.randrange(-3, 4)))
     else:                                           # random stream bytes
-        for i in range(44, len(b)):
+        for i in range(s_start, len(b)):
             if rng.random() < 0.05:
                 b[i] = rng.randrange(256)
     return recrc(b)
@@ -440,7 +449,7 @@ def main() -> int:
         seed_blob = base[i % len(base)]
         method_counts[seed_blob[16]] += 1
         blob = mutate(seed_blob, rng)
-        threads = "1" if i % 2 else "3"
+        threads = ("1", "3", "6", "9")[i % 4]
         tasks.append((i, blob, threads, str(EXE), str(WORK)))
 
     if iterations <= 20:

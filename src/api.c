@@ -18,7 +18,9 @@ static int options_threads(const rf_options *options, int *threads, rf_error *er
         for (size_t i = 2; i < words; i++)
             if (options->reserved[i - 2]) return rf_fail(err, RF_ERR_UNSUPPORTED, "options: reserved field");
     }
-    *threads = n ? (int)n : (rf_cpu_count() >= 3 ? 3 : 1);
+    int ncpu = rf_cpu_count();
+    int def_t = ncpu < 1 ? 1 : (ncpu > 9 ? 9 : ncpu);
+    *threads = n ? (int)n : def_t;
     return RF_OK;
 }
 

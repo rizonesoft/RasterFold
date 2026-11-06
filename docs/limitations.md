@@ -29,7 +29,7 @@ Enforced identically by the CLI, C API, and container parser (`src/rf.h`, `src/f
 
 - **Whole-image buffer model:** `rf_encode_image`, `rf_decode_image`, and `rf_inspect` operate on complete in-memory buffers rather than incremental row-by-row streaming I/O.
 - **Full verification on `inspect`:** `rf_inspect` (and `rasterfold inspect` <!-- drift:fact cmd_inspect = inspect -->) verifies the header CRC-32, payload CRC-32, and decodes the complete payload to confirm that the bitstream is valid before reporting `status: ok`.
-- **Channel parallelism:** method 1 (CM) splits the image into 3 decorrelated channel streams (`G`, `R - G`, `B - G`), so parallel coding uses at most 3 worker threads even when `--threads` is set higher (`1..9` are accepted; `1` runs sequentially and `>= 3` runs one thread per channel stream). All thread counts produce byte-identical `.fold` output.
+- **Channel and strip parallelism:** method 1 (CM) splits the image into 3 decorrelated channels (`G`, `R - G`, `B - G`) and up to 4 horizontal strips per channel (`S = min(4, max(1, height / 256))`), running up to `3 * S` strips in parallel across `--threads 1..9` (default `clamp(rf_cpu_count(), 1, 9)`). All thread counts produce byte-identical `.fold` output.
 
 ## Platform and Target Scope
 

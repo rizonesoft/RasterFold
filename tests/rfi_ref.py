@@ -1,4 +1,4 @@
-"""Independent RasterFold .fold (version 2) codec and 24-bit BMP helpers.
+"""Independent RasterFold .fold (versions 2 and 3) codec and 24-bit BMP helpers.
 
 This module is the test oracle, written from spec/FOLD.md. It is not the
 codec implementation. It is slow: a few hundred thousand samples per minute.
@@ -197,7 +197,8 @@ class RangeDecoder:
 NMODEL = 7          # models written by this implementation (version 3)
 NMODEL_V2 = 5       # models in a version 2 file
 NROWS = 2048
-NODES = 32
+NODES = 16          # nodes per row in version 3
+NODES_V2 = 32       # nodes per row in a version 2 file
 LMSN = 12
 
 # Gated gradient (version 3) boundary counts, accumulated by every coded sample;
@@ -220,8 +221,9 @@ class Channel:
     def __init__(self, w: int, nmodel: int = NMODEL) -> None:
         self.w = w
         self.nmodel = nmodel
-        self.ctr = [[0 if node == 0 else 32768 for node in range(NODES)] for _ in range(nmodel * NROWS)]
-        self.wt = [[19661] * nmodel + [0] for _ in range(128 * NODES)]
+        self.nodes = NODES if nmodel == NMODEL else NODES_V2
+        self.ctr = [[0 if node == 0 else 32768 for node in range(self.nodes)] for _ in range(nmodel * NROWS)]
+        self.wt = [[19661] * nmodel + [0] for _ in range(128 * self.nodes)]
         self.lms = [0] * LMSN
         # weighted predictor state, two rows of w + 2 positions (JPEG XL layout)
         self.perr = [[0, 0, 0, 0] for _ in range(2 * (w + 2))]
@@ -236,6 +238,17 @@ class Channel:
         self.enc: RangeEncoder | None = None
         self.dec: RangeDecoder | None = None
         self.bad = False
+
+    def copy_warm_from(self, src: Channel) -> None:
+        for r, src_row in enumerate(src.ctr):
+            row = src_row.copy()
+            if row[0] > 6:
+                row[0] = 6
+            self.ctr[r] = row
+        self.wt = [w.copy() for w in src.wt]
+        self.lms = [u >> 1 for u in src.lms]
+        self.eg = src.eg
+        self.et = src.et
 
     def begin_row(self) -> None:
         self.plane.append([0] * self.w)
@@ -279,6 +292,7 @@ class Channel:
 
     def code_residual(self, rows, rates, wrow, r: int) -> int:
         enc = self.enc is not None
+        v3 = self.nodes == NODES
         if not self.code_bit(rows, rates, wrow, 1, 1 if r != 0 else 0):
             return 0
         neg = self.code_bit(rows, rates, wrow, 2, 1 if r < 0 else 0)
@@ -287,27 +301,36 @@ class Channel:
             a = abs(r)
             e = _ilog2(a)
             for k in range(e):
-                self.code_bit(rows, rates, wrow, 3 + k, 1)
+                unode = (3 + k if k < 5 else 8) if v3 else (3 + k)
+                self.code_bit(rows, rates, wrow, unode, 1)
             if e < 7:
-                self.code_bit(rows, rates, wrow, 3 + e, 0)
+                unode = (3 + e if e < 5 else 8) if v3 else (3 + e)
+                self.code_bit(rows, rates, wrow, unode, 0)
             rem = a - (1 << e)
             for b in range(e - 1, -1, -1):
                 bit = (rem >> b) & 1
                 if b == e - 1:
-                    self.code_bit(rows, rates, wrow, 10 + e, bit)
+                    mnode = (8 + min(e, 4)) if v3 else (10 + e)
+                    self.code_bit(rows, rates, wrow, mnode, bit)
                 elif b == e - 2:
-                    self.code_bit(rows, rates, wrow, 14 + 2 * e + (got & 1), bit)
+                    mnode = (13 + (got & 1) if e == 2 else 15) if v3 else (14 + 2 * e + (got & 1))
+                    self.code_bit(rows, rates, wrow, mnode, bit)
                 else:
                     self.code_raw(bit)
                 got = (got << 1) | bit
             return r
-        while e < 7 and self.code_bit(rows, rates, wrow, 3 + e, 0):
+        while e < 7:
+            unode = (3 + e if e < 5 else 8) if v3 else (3 + e)
+            if not self.code_bit(rows, rates, wrow, unode, 0):
+                break
             e += 1
         for b in range(e - 1, -1, -1):
             if b == e - 1:
-                bit = self.code_bit(rows, rates, wrow, 10 + e, 0)
+                mnode = (8 + min(e, 4)) if v3 else (10 + e)
+                bit = self.code_bit(rows, rates, wrow, mnode, 0)
             elif b == e - 2:
-                bit = self.code_bit(rows, rates, wrow, 14 + 2 * e + (got & 1), 0)
+                mnode = (13 + (got & 1) if e == 2 else 15) if v3 else (14 + 2 * e + (got & 1))
+                bit = self.code_bit(rows, rates, wrow, mnode, 0)
             else:
                 bit = self.code_raw(0)
             got = (got << 1) | bit
@@ -446,7 +469,7 @@ def _code_sample(ch: Channel, c: int, x: int, y: int, value: int, cross: dict) -
         rates.append(RATE[n])
         ch.ctr[r][0] = n + (1 if n < 60 else 0)
     wsel = qE * 8 + ((0 if gq == 4 else 1 + (1 if abs(eg) > 3 else 0)) if c else 3) + 4 * use
-    wrow = wsel * NODES
+    wrow = wsel * ch.nodes
 
     # code
     if ch.enc is not None:
@@ -500,48 +523,90 @@ def _code_sample(ch: Channel, c: int, x: int, y: int, value: int, cross: dict) -
     return value
 
 
-def _run(width: int, height: int, chans: list[Channel], rgb: bytearray) -> None:
-    for y in range(height):
-        for ch in chans:
-            ch.begin_row()
-        for x in range(width):
-            i = (y * width + x) * 3
-            gs: dict = {}
-            g = _code_sample(chans[0], 0, x, y, rgb[i + 1], gs)
-            rgb[i + 1] = g
-            cross = {"g": g, "eg": gs["r"], "feg": gs["fe"]}
-            rs = dict(cross)
-            rgb[i] = _code_sample(chans[1], 1, x, y, rgb[i], rs)
-            cross["er"], cross["fer"] = rs["r"], rs["fe"]
-            rgb[i + 2] = _code_sample(chans[2], 2, x, y, rgb[i + 2], dict(cross))
-        if y >= 2:
+def strip_bounds(height: int, nstrips: int, s: int) -> tuple[int, int]:
+    w_rows = 68 if nstrips == 2 else max(64, height // 10)
+    total_extra = (nstrips * (nstrips - 1) // 2) * w_rows
+    if nstrips == 1 or height <= total_extra + 32 * nstrips:
+        return (s * height) // nstrips, ((s + 1) * height) // nstrips
+    rem = height - total_extra
+    q, r_rem = divmod(rem, nstrips)
+    y0 = 0
+    for k in range(s):
+        y0 += q + (1 if k < r_rem else 0) + (nstrips - 1 - k) * w_rows
+    sh = q + (1 if s < r_rem else 0) + (nstrips - 1 - s) * w_rows
+    return y0, y0 + sh
+
+
+def _run_strips(width: int, height: int, nstrips: int, strips: list[list[Channel]], rgb: bytearray) -> None:
+    for s in range(nstrips):
+        chans = strips[s]
+        y0, y1 = strip_bounds(height, nstrips, s)
+        sh = y1 - y0
+        warm_rows = min(sh, 68 if nstrips == 2 else max(96, height // 6))
+        for y in range(sh):
             for ch in chans:
-                ch.drop_row(y - 2)
+                ch.begin_row()
+            for x in range(width):
+                i = ((y0 + y) * width + x) * 3
+                gs: dict = {}
+                g = _code_sample(chans[0], 0, x, y, rgb[i + 1], gs)
+                rgb[i + 1] = g
+                cross = {"g": g, "eg": gs["r"], "feg": gs["fe"]}
+                rs = dict(cross)
+                rgb[i] = _code_sample(chans[1], 1, x, y, rgb[i], rs)
+                cross["er"], cross["fer"] = rs["r"], rs["fe"]
+                rgb[i + 2] = _code_sample(chans[2], 2, x, y, rgb[i + 2], dict(cross))
+            if s + 1 < nstrips and y == warm_rows - 1:
+                for c in range(3):
+                    strips[s + 1][c].copy_warm_from(chans[c])
+            if y >= 2:
+                for ch in chans:
+                    ch.drop_row(y - 2)
 
 
 def cm_encode(width: int, height: int, rgb: bytes) -> bytes:
-    chans = [Channel(width, NMODEL) for _ in range(3)]
-    for ch in chans:
-        ch.enc = RangeEncoder()
-    _run(width, height, chans, bytearray(rgb))
-    streams = [ch.enc.finish() for ch in chans]
-    return b"".join(struct.pack("<I", len(s)) for s in streams) + b"".join(streams)
+    nstrips = 3 if height >= 768 else 2 if height >= 512 else 1
+    strips = [[Channel(width, NMODEL) for _ in range(3)] for _ in range(nstrips)]
+    for chans in strips:
+        for ch in chans:
+            ch.enc = RangeEncoder()
+    _run_strips(width, height, nstrips, strips, bytearray(rgb))
+    streams = [ch.enc.finish() for chans in strips for ch in chans]
+    return bytes([nstrips]) + b"".join(struct.pack("<I", len(st)) for st in streams) + b"".join(streams)
 
 
 def cm_decode(payload: bytes, width: int, height: int, version: int = VERSION) -> bytes:
-    if len(payload) < 12:
-        raise FormatError("cm streams")
-    sizes = struct.unpack_from("<III", payload, 0)
-    if any(s < 5 for s in sizes) or 12 + sum(sizes) != len(payload):
-        raise FormatError("cm streams")
-    chans = [Channel(width, NMODEL if version == 3 else NMODEL_V2) for _ in range(3)]
-    pos = 12
-    for ch, size in zip(chans, sizes):
-        ch.dec = RangeDecoder(payload[pos:pos + size])
-        pos += size
+    if version == 2:
+        if len(payload) < 12:
+            raise FormatError("cm streams")
+        sizes = struct.unpack_from("<III", payload, 0)
+        if any(s < 5 for s in sizes) or 12 + sum(sizes) != len(payload):
+            raise FormatError("cm streams")
+        nstrips = 1
+        pos = 12
+    else:
+        if len(payload) < 1:
+            raise FormatError("cm streams")
+        nstrips = payload[0]
+        if nstrips < 1 or nstrips > 4 or nstrips > height:
+            raise FormatError("cm streams")
+        hdr = 1 + 12 * nstrips
+        if len(payload) < hdr:
+            raise FormatError("cm streams")
+        sizes = struct.unpack_from(f"<{3 * nstrips}I", payload, 1)
+        if any(s < 5 for s in sizes) or hdr + sum(sizes) != len(payload):
+            raise FormatError("cm streams")
+        pos = hdr
+    nmodel = NMODEL if version == 3 else NMODEL_V2
+    strips = [[Channel(width, nmodel) for _ in range(3)] for _ in range(nstrips)]
+    for s in range(nstrips):
+        for c in range(3):
+            size = sizes[3 * s + c]
+            strips[s][c].dec = RangeDecoder(payload[pos:pos + size])
+            pos += size
     rgb = bytearray(width * height * 3)
-    _run(width, height, chans, rgb)
-    if any(ch.bad or not ch.dec.exhausted_exactly() for ch in chans):
+    _run_strips(width, height, nstrips, strips, rgb)
+    if any(ch.bad or not ch.dec.exhausted_exactly() for chans in strips for ch in chans):
         raise FormatError("cm stream")
     return bytes(rgb)
 
@@ -774,8 +839,16 @@ def encode_image(width: int, height: int, rgb: bytes) -> bytes:
     best_method = METHOD_RAW
     best_payload = rgb
     cm_payload = cm_encode(width, height, rgb)
-    cm_sizes = struct.unpack_from("<III", cm_payload, 0)
-    if all(s <= width * height + 64 for s in cm_sizes) and len(cm_payload) < len(best_payload):
+    nstrips = cm_payload[0]
+    cm_sizes = struct.unpack_from(f"<{3 * nstrips}I", cm_payload, 1)
+    strip_ok = True
+    for s in range(nstrips):
+        y0, y1 = strip_bounds(height, nstrips, s)
+        cap = width * (y1 - y0) + 64 // nstrips
+        if any(cm_sizes[3 * s + c] > cap for c in range(3)):
+            strip_ok = False
+            break
+    if strip_ok and len(cm_payload) < len(best_payload):
         best_method = METHOD_CM
         best_payload = cm_payload
     pal_payload = pal_encode(width, height, rgb, method=METHOD_PAL2)
