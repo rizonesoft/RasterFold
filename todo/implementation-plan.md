@@ -238,7 +238,7 @@ Strips extend version 3 and make decode scale past three threads.
 | [x] | `D01 T03 §2` | Version 3: horizontal strips                  |   5   |
 | [x] | `D02 T02 §3` | Warm-started horizontal strips, measured      |   5   |
 | [x] | `D01 T03 §3` | Version 3: warm-started horizontal strips     |   4   |
-| [ ] | `D05 T01 §6` | Milestone 6 gate: Faster than WebP to decode  |   4   |
+| [ ] | `D05 T01 §6` | Milestone 6 gate: Faster than WebP to decode  |   5   |
 
 ### Phase 6 -- Milestone 7: Photographs beat JPEG XL e9
 
