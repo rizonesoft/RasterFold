@@ -2,7 +2,7 @@
 schema_version: 1
 id: format-version-3
 domain: 01-compression
-status: done
+status: active
 title: "TODO-03 -- Format Version 3"
 depends_on: []
 frozen: true
@@ -26,6 +26,8 @@ track: C3
 - -> XREF: D01 T02 §1 -- the model experiments whose accepted variants §1 ports
 - -> XREF: D99 T01 §3 -- the operator's approval of a new format version, which §1 needs before it starts
 - -> XREF: D02 T02 §1 -- the strips measurement whose accepted size cost §2 ports
+- -> XREF: D02 T02 §3 -- the warm-started strips measurement whose accepted variant §3 ports
+- Milestone 6 gate (`D05 T01 §6`, `Faster than WebP to decode`), which triggered §3 under `D99 T01 §4`
 - -> XREF: D01 T04 §2, D01 T04 §3 -- the match model, which measures against and extends version 3 before the 1.0 release
 - -> XREF: D01 T05 §2 -- encoder-chosen parameters, which extend version 3 before the 1.0 release
 - -> XREF: D01 T06 §2 -- the colour-cache model, which extends version 3 before the 1.0 release
@@ -35,10 +37,11 @@ track: C3
 - `bin/windows-x64/bin/rasterfold.exe encode` writes version 3 files; `inspect` prints `RasterFold fold version 3`.
 - The version 2 `KAT_FOLD` still decodes to its pixels (kept as a decode-only vector), and a version 3 known-answer file exists.
 - `python research/ab.py size photo` shows the combined gain `D01 T02 §7` measured, and `python tests/measure_final.py` still passes.
+- Warm-started horizontal strips (`S = 1` for `h < 512`, `S = 2` for `512 <= h < 768`, `S = 3` for `h >= 768`) and 16-node context rows from `D02 T02 §3` are ported into format version 3 (`src/cm.c`, `spec/FOLD.md`, `tests/rfi_ref.py`, `KAT_FOLD3`), with default multi-strip thread selection up to `rf_cpu_count()` in `src/api.c` and `src/main.c`.
 
 **Adjacency:** list=not-applicable (a codec has no records to browse); document=not-applicable (no printed output); settings=not-applicable (no new option; strips are chosen from the image height); reporting=applicable @ D01 T03 §1; notifications=not-applicable (the existing exit codes and messages); permissions=not-applicable (file safety is unchanged); audit=not-applicable (git history is the audit); exchange=applicable @ D01 T03 §1; reverse=applicable @ D01 T03 §1
 
-**Adjacency rationale:** Exchange is the crux: every version 2 file written before this TODO must keep decoding. Reporting is `inspect` naming the version (with no strip count added because `D02 T02 §1` rejected horizontal strips).
+**Adjacency rationale:** Exchange is the crux: every version 2 file written before this TODO must keep decoding. Reporting is `inspect` naming the version.
 
 ## Implementation Order
 
@@ -46,6 +49,7 @@ track: C3
 | :---: | :-----: | --------------------------------------------- | ---------- | :----: |
 |   1   |   §1    | Version 3: the accepted model changes         | D01 T02 §7, D99 T01 §3 |  [x]   |
 |   2   |   §2    | Version 3: horizontal strips                  | §1, D02 T02 §1 |  [x]   |
+|   3   |   §3    | Version 3: warm-started horizontal strips     | §2, D02 T02 §3 |  [ ]   |
 
 ---
 
@@ -102,9 +106,27 @@ Three threads leave most of a 12-thread CPU idle. If `D02 T02 §1` measured the 
 
 > **Verified:** 2026-11-06 | §2 | 226d010e11f8ed2e90e8ee9d73b753e509d1525c
 > **Review:** `docs/reviews/d01-t03-s2.json`
+## 3. Version 3: Warm-Started Horizontal Strips
+**Origin:** discovered run=a67bdea1ae48 2026-11-05 -- missed-milestone policy D99 T01 §4, follow-up 1 of 3 for D05 T01 §6
+
+**Depends on:** §2 (recorded rejection of cold-start strips), -> XREF: D02 T02 §3
+
+**Needs:** Idle machine (timing)
+
+Follow-up 1 of Milestone 6's missed-milestone policy (`D99 T01 §4`, for `D05 T01 §6`), porting `research/variants/warm-strips.patch` from `D02 T02 §3` (`docs/research.md` section 5.8) into format version 3 before the 1.0 release freezes version 3 (`todo/README.md`, Frozen behavior: an unreleased version is extended in place, regenerating its known-answer file under `D99 T01 §3`). If `D02 T02 §3` rejected warm-started strips, this section records that rejection, strikes its port items, and confirms version 3 is unchanged.
+
+- [ ] Port `research/variants/warm-strips.patch` into `src/cm.c` (version 3 carries the 1-byte strip count `S`, `3 * S` 4-byte stream sizes, and `3 * S` streams in strip order with `S = (h >= 768 ? 3 : (h >= 512 ? 2 : 1))`, balanced cascaded `strip_bounds` with `w_rows = (S == 2 ? 68 : max(64, h / 10))` and `warm_rows = (S == 2 ? 68 : max(96, h / 6))`, `NODES = 16` pooled residual decision nodes for version 3 while keeping `NODES_V2 = 27` and single-strip 12-byte framing for version 2 decoding, exact reachable model row counts `MROWS_C` and `WSEL_C = {32, 96, 96}`, single-block `cm_alloc_strips`, and branchless 16-bit SIMD counter updates), and update `src/api.c` and `src/main.c` so default thread selection (`threads == 0`) uses up to `9` threads (`3 * S` capped at `rf_cpu_count()`) and Windows CLI command-line parsing (`run_win32` in `src/main.c`) parses `GetCommandLineW()` directly without importing `CommandLineToArgvW` from `shell32.dll`. Done when: `python3 scripts/build.py --target linux-x64` and `--target windows-x64` exit 0 with no warning, encoded corpus `.fold` files match `D02 T02 §3`'s prototype byte for byte across all 55 corpus images, and all 55 version 2 files in `build/research/fold-v2/` decode to their source pixels. Cheaper substitute: breaking version 2 decoding.
+- [ ] Update `spec/FOLD.md` to specify version 3's warm-started horizontal strips (`S` selection from `H`, `strip_bounds`, `warm_rows`, `chan_copy_warm` visit-count cap `6` and `lms >> 1`, and version 3's 16-node `code_residual` mapping alongside version 2's 27-node single-strip format), implement the version 3 changes in `tests/rfi_ref.py` from `spec/FOLD.md` (keeping the version 2 path intact), regenerate `KAT_FOLD3` in `tests/test_correctness.py`, and add correctness cases covering multi-strip round trips (`S = 2` at `h = 512` and `S = 3` at `h = 768` with byte identity between C codec and `tests/rfi_ref.py` across `--threads 1`, `3`, `6`, `9`) and malformed strip headers (`S = 0`, `S = 5`, `S > h`). Done when: `python3 tests/test_correctness.py` and `python3 scripts/windows.py tests/test_correctness.py` pass every case with codec and oracle byte-identical. Cheaper substitute: translating `tests/rfi_ref.py` from C instead of `spec/FOLD.md`, or omitting multi-strip oracle round-trip cases.
+- [ ] Run `python3 tests/fuzz_decode.py 300 1` and `python3 scripts/windows.py tests/fuzz_decode.py 300 1`, measure `python3 research/ab.py size src/cm.c photo -v`, `tp -v`, and `synth -v`, and run `python3 scripts/windows.py tests/measure_final.py`. Done when: both fuzz runs report 0 crashes/hangs/mismatches, the `photo`, `tp`, and `synth` sizes match `D02 T02 §3` identically, and `measure_final.py` prints `PASS` (with `measure/verdict.json` restored if rewritten before `D05 T01 §6`).
+- [ ] Commit: `"codec: version 3 codes tall images as warm-started horizontal strips"`
+
+**Test checkpoint:** format fidelity: `python3 tests/test_correctness.py` and `python3 scripts/windows.py tests/test_correctness.py` pass every case (including `KAT_FOLD`, regenerated `KAT_FOLD3`, multi-strip `S = 2` and `S = 3` oracle round-trip cases, and malformed strip header rejections); `python3 tests/fuzz_decode.py 300 1` passes on Linux and Windows; `python3 research/ab.py size src/cm.c photo -v`, `tp -v`, and `synth -v` match `D02 T02 §3`'s accepted totals (`photo=30,868,254`, `tp=6,656,840`, `synth=201,638`); `python3 scripts/check-all.py --all-targets` passes all 29 gates.
+
+**Freeze check:** `KAT_FOLD` (version 2) and all 55 version 2 `.fold` files in `build/research/fold-v2/` decode to pixels identical to their sources; version 3 is unreleased, so the operator's standing approval (`D99 T01 §3`) covers extending it in place with `KAT_FOLD3` regenerated.
+
 ## Verification
 
-- [x] `pwsh scripts/check-all.ps1` -- exits 0: build, correctness, fuzz, TODO gates green (`python3 scripts/check-all.py` -> `check-all: 29/29 passed`, `python3 tests/fuzz_decode.py 5000 1` -> `5000 mutated files (methods 0:334, 1:3331, 2:668, 3:667): 4790 rejected, 210 still valid, no crash, hang or mismatch`)
-- [x] `python tests/test_correctness.py` exits 0 with both known-answer cases (`40 passed, 0 failed` on Linux and Windows)
-- [x] `python tests/measure_final.py` PASS and `python tests/benchmark.py -n 3` rerun, `benchmarks/results.md` and the README measurement table updated (`measure_final.py` -> `PASS`; `ab.py size` -> `photo=30795260`, `tp=6640275`, `synth=201634`; `benchmarks/results.md`, `benchmarks/results.csv`, and `README.md` verified current for the unchanged `src/` tree by `drift-check.py` -> `0 error(s)`)
-- [x] `python scripts/todo-graph.py validate` clean (`33 todos, 239 sections -- 0 fatal, 0 warning(s)`)
+- [ ] `pwsh scripts/check-all.ps1` -- exits 0: build, correctness, fuzz, TODO gates green
+- [ ] `python tests/test_correctness.py` exits 0 with both known-answer cases
+- [ ] `python tests/measure_final.py` PASS and `python tests/benchmark.py -n 3` rerun, `benchmarks/results.md` and the README measurement table updated
+- [ ] `python scripts/todo-graph.py validate` clean

@@ -19,14 +19,17 @@ track: S2
 
 ## Inputs
 
-- [`docs/research.md`](../../docs/research.md) -- sections 5.3 (strips) and 5.4 (the SIMD mixer)
+- [`docs/research.md`](../../docs/research.md) -- sections 5.3 (strips), 5.4 (the SIMD mixer), and 5.8 (warm-started horizontal strips and compact model tables)
 - [`research/ab.py`](../../research/ab.py) -- `size` (`ab.build` and `ab.parse_bench_rows`) for the strip cost, `ab` for the mixer speed
 - -> XREF: D01 T03 §2 -- ports strips into format version 3 when §1 accepts their size cost
+- -> XREF: D01 T03 §3 -- ports warm-started horizontal strips into format version 3 when §3 accepts their size, speed, and memory
+- Milestone 6 gate (`D05 T01 §6`, `Faster than WebP to decode`), which triggered §3 under `D99 T01 §4`
 
 ## Outcome
 
 - The size cost of 2 and 4 strips is measured on `photo` and `tp`, and accepted (at most 0.3% for 4 strips) or rejected.
 - The int16 mixer's decode speed is measured; it is accepted for a later format version only if decode gets at least 5% faster.
+- Warm-started horizontal strips (`S = 2` for `512 <= h < 768`, `S = 3` for `h >= 768`) with compact 16-node context rows, exact reachable model row counts, and branchless 16-bit SIMD counter updates are measured on `photo`, `tp`, and `synth` against Milestone 6's size (`<= +0.3%` on `photo` and `tp`, no image `> +0.5%`), decode speed (faster than lossless WebP on `testdata/photos/`), and memory (`<= +5%` codec working memory on `measure/image.bmp`) bars, and saved to `research/variants/warm-strips.patch` when accepted.
 
 **Adjacency:** all=not-applicable (research measurements; nothing here changes what the tool reads, writes, or reports)
 
@@ -38,6 +41,7 @@ track: S2
 | :---: | :-----: | --------------------------------------------- | ---------- | :----: |
 |   1   |   §1    | The size cost of horizontal strips            | --         |  [x]   |
 |   2   |   §2    | The speed of an int16 SIMD mixer              | --         |  [ ]   |
+|   3   |   §3    | Warm-started horizontal strips, measured      | §1         |  [ ]   |
 
 ---
 
@@ -75,7 +79,26 @@ The mixer is about a third of each decision's time. With int16 weights, the dot 
 
 **Test checkpoint:** the quoted `ab` ratios against the 5% bar and the `size photo` line against 0.9712.
 
+---
+
+## 3. Warm-Started Horizontal Strips, Measured
+**Origin:** discovered run=a67bdea1ae48 2026-11-05 -- missed-milestone policy D99 T01 §4, follow-up 1 of 3 for D05 T01 §6
+
+**Depends on:** §1 (rejected cold-start independent strips), -> XREF: D01 T03 §3
+
+**Needs:** Idle machine (timing)
+
+Follow-up 1 of Milestone 6's missed-milestone policy (`D99 T01 §4`). §1 rejected cold-start independent strips (`S = 4` cost `+0.976%` on `photo` and `+1.130%` on `tp`, and `S = 2` cost `+0.389%` on `photo` and `+0.426%` on `tp` with 8 of 39 photographs above `+0.5%`), so `D01 T03 §2` took its rejection path and version 3 still codes on 1 strip (`3` threads), leaving `photos` decode wall time (`2.16 s`) above lossless WebP's (`1.56 s`). `docs/research.md` section 5.8 designs per-channel warm-started horizontal strips (`S = 1` for `h < 512`, `S = 2` for `512 <= h < 768`, `S = 3` for `h >= 768`, balanced cascaded split with `w_rows = (S == 2 ? 68 : max(64, h / 10))` and `warm_rows = (S == 2 ? 68 : max(96, h / 6))` where strip `s` copies its adapted `(ctr, wt, lms, eg, et)` state into strip `s + 1` after `warm_rows` rows with visit counts `ctr[r * NODES]` capped at `CAP_VISIT = 6` and `lms[k] >> 1`, then wakes strip `s + 1`'s channel thread via `rf_thread_resume`), paired with 16-node context rows (`NODES = 16`, 32 bytes per row, pooling rare large-residual nodes `3 + min(k, 5)`, `8 + min(e, 4)`, and `e == 2 ? 13 + (got & 1) : 15` with the two adaptive mantissa decisions hoisted out of the raw-bit loop), exact reachable model row counts (`MROWS_C` = `32,489` rows across the 3 channels, `WSEL_C = {32, 96, 96}`), 16-byte `pos_t`, `XROWS = 4`, single-block `cm_alloc_strips`, and branchless 16-bit SIMD counter updates (`_mm_mulhi_epu16` / `_mm_mullo_epi16`) with an 8-lane SIMD dot product in `code_bit7`. Baseline: `src/cm.c` at `HEAD` (`photo` `30,795,260`, `tp` `6,640,275`, `synth` `201,634`, Milestone 5 codec working memory `8,538,454` bytes on `measure/image.bmp`). Bar: (1) `photo` total size growth `<= +0.300%` (`<= 30,887,645` bytes) AND held-out `tp` total size growth `<= +0.300%` (`<= 6,660,195` bytes), with no individual photograph in `photo` or `tp` growing by more than `+0.500%` (`0 of 39` on `photo` and `0 of 10` on `tp`), and `synth` total unchanged within `+0.05%` with `syn_gradient < 616` and `syn_stripes < 271`; (2) byte-identical `.fold` output across `--threads 1`, `--threads 3`, `--threads 6`, and `--threads 9` on all 55 corpus images, with all 55 round-tripping losslessly; (3) codec working memory (`alloc_peak - file_size`) on `measure/image.bmp` (`1672x1254`, `S = 3`) at `--threads 9` within `+5.00%` of Milestone 5's `8,538,454` bytes (`<= 8,965,376` bytes); and (4) on `testdata/photos/` (`photos` set, 10 images), multi-threaded CLI decode wall time (`decode_us` sum across the 10 photos) below lossless WebP's on the 12-thread development machine.
+
+- [ ] Implement the `docs/research.md` section 5.8 prototype in `build/research/try.c`: `NODES = 16` (`3 + min(k, 5)` for unary exponent `k = 0..6`, `8 + min(e, 4)` for first mantissa bit `e = 1..7`, `e == 2 ? 13 + (got & 1) : 15` for second mantissa bit `e = 2..7`, with the two adaptive mantissa decisions hoisted before the raw-bit loop), exact reachable model row counts `MROWS_C` (`32,489` rows across the 3 channels) and `WSEL_C = {32, 96, 96}`, 16-byte `pos_t`, `XROWS = 4`, single-block `cm_alloc_strips`, branchless 16-bit SIMD counter updates (`_mm_mulhi_epu16` / `_mm_mullo_epi16`) and SIMD dot product in `code_bit7`, strip count `S = (h >= 768 ? 3 : (h >= 512 ? 2 : 1))`, balanced cascaded `strip_bounds` with `w_rows = (S == 2 ? 68 : max(64, h / 10))` and `warm_rows = (S == 2 ? 68 : max(96, h / 6))`, per-channel `chan_copy_warm` (`_mm_min_epu16` capping `ctr[r * NODES]` at `CAP_VISIT = 6` and `lms[k] >> 1`), and OS-suspended worker threads for strips `s >= 1` woken via `rf_thread_resume` when `warm_ready` is published. Done when: `python3 research/ab.py size build/research/try.c photo -v`, `tp -v`, and `synth -v` exit 0 and decode all 55 corpus images. Cheaper substitute: measuring only `photo` without `tp` or `synth`.
+- [ ] Verify multi-thread determinism (`--threads 1`, `--threads 3`, `--threads 6`, `--threads 9`) and round-trip pixel identity across all 55 corpus images, and measure codec working memory (`alloc_peak - file_size`) on `measure/image.bmp` at `--threads 1`, `--threads 3`, `--threads 6`, and `--threads 9` with a scratch CLI built from `build/research/try.c`. Done when: all 55 images produce identical SHA-256 digests across thread counts `1, 3, 6, 9`, round-trip losslessly across cross-thread encode/decode pairs (`1 -> 9` and `9 -> 1`), and codec working memory on `measure/image.bmp` is quoted against the `<= 8,965,376`-byte (`+5.00%`) bar. Cheaper substitute: checking determinism on a subset of images.
+- [ ] Measure multi-threaded decode speed on `testdata/photos/` (10 images, `repeats = 3`, median process wall time matching `tests/benchmark.py` against lossless WebP, plus `research/ab.py ab src/cm.c build/research/try.c` at `-t1` and multi-thread) on the 12-thread development machine. Done when: per-image and total `photos` decode wall times for RasterFold and lossless WebP are quoted alongside the `ab` ratios. Cheaper substitute: timing only `measure/image.bmp`.
+- [ ] Record the measured results in `docs/research.md` sections 3.4 and 5.8 (and regenerate `docs/research-summary.md` via `python3 scripts/build-docs.py --write`), and if all four bars hold, save `research/variants/warm-strips.patch` (`git diff --no-index src/cm.c build/research/try.c`) for `D01 T03 §3`. Done when: `docs/research.md`, `docs/research-summary.md`, and `research/variants/warm-strips.patch` are on disk and `python3 scripts/drift-check.py` exits 0.
+- [ ] Commit: `"research: measure warm-started horizontal strips"`
+
+**Test checkpoint:** the quoted `ab.py size` summary lines and per-image worst deltas on `photo` (`<= +0.300%`, `0 of 39 > +0.5%`), `tp` (`<= +0.300%`, `0 of 10 > +0.5%`), and `synth`, the 55/55 thread-count determinism (`1, 3, 6, 9`) and `measure/image.bmp` `alloc_peak` evidence (`codec_mem <= 8,965,376`), the `testdata/photos/` decode wall-time table against lossless WebP, and `research/variants/warm-strips.patch`.
+
 ## Verification
 
-- [ ] Both sections' rows in `docs/research.md` section 3 exist and match their stamps
+- [ ] Every completed section's row in `docs/research.md` section 3 exists and matches its stamp
 - [ ] `python scripts/todo-graph.py validate` clean
