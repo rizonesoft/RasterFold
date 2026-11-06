@@ -2,7 +2,7 @@
 schema_version: 1
 id: format-version-3
 domain: 01-compression
-status: active
+status: done
 title: "TODO-03 -- Format Version 3"
 depends_on: []
 frozen: true
@@ -50,7 +50,7 @@ track: C3
 | :---: | :-----: | --------------------------------------------- | ---------- | :----: |
 |   1   |   §1    | Version 3: the accepted model changes         | D01 T02 §7, D99 T01 §3 |  [x]   |
 |   2   |   §2    | Version 3: horizontal strips                  | §1, D02 T02 §1 |  [x]   |
-|   3   |   §3    | Version 3: warm-started horizontal strips     | §2, D02 T02 §3 |  [ ]   |
+|   3   |   §3    | Version 3: warm-started horizontal strips     | §2, D02 T02 §3 |  [x]   |
 
 ---
 
@@ -147,6 +147,8 @@ Follow-up 1 of Milestone 6's missed-milestone policy (`D99 T01 §4`, for `D05 T0
 
 **Freeze check:** Verified on 2026-11-06: `KAT_FOLD` (version 2) passes in `tests/test_correctness.py` and `tests/test_api.py`, and all 55 version 2 `.fold` files in `build/research/fold-v2/` (`RFI\x02\x02\x00`) decode to pixels identical to their source PPMs in `build/research/ppm/` across `--threads 1, 3, 6, 9` (`fold-v2 verification: 55/55 version 2 files decoded pixel-identically at --threads 1, 3, 6, 9 (and Windows measure.fold at 1, 3, 6, 9)`); version 3 is unreleased, so the operator's standing approval (`D99 T01 §3`) covers extending it in place with `KAT_FOLD3` regenerated.
 
+> **Verified:** 2026-11-06 | §3 | 80f1b141f67bb8ed9cec81f167ec628fdfafe6ba
+> **Review:** `docs/reviews/d01-t03-s3.json`
 ## Verification
 
 - [ ] `pwsh scripts/check-all.ps1` -- exits 0: build, correctness, fuzz, TODO gates green
