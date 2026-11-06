@@ -548,7 +548,7 @@ def build(src, out, flags=()):
     if is_m1_baseline_source(src_path):
         m1_dir = RES / "m1_src"
         rf_h_text = (m1_dir / "rf.h").read_text(encoding="utf-8", errors="ignore") if (m1_dir / "rf.h").is_file() else ""
-        extra_defs = []
+        extra_defs = ["-DRF_NO_BREAKDOWN=1"]
         if "RF_METHOD_PAL" not in rf_h_text:
             extra_defs.append("-DRF_METHOD_PAL=2u")
         if "RF_METHOD_PAL2" not in rf_h_text:
@@ -565,8 +565,9 @@ def build(src, out, flags=()):
         is_pal_variant = is_palette_source(src_path)
         cm_src = REPO / "src" / "cm.c" if is_pal_variant else src_path
         pal_src = src_path if is_pal_variant else REPO / "src" / "pal.c"
+        cm_def = f'-DRF_BENCH_CM_PATH="{cm_src.resolve().as_posix()}"'
         cmd = [
-            str(CLANG), "-O2", "-march=x86-64-v2", "-mtune=generic", "-g", *flags,
+            str(CLANG), "-O2", "-march=x86-64-v2", "-mtune=generic", "-g", cm_def, *flags,
             f"-I{REPO / 'src'}", "-o", str(out),
             str(TOOLS / "bench.c"), str(TOOLS / "benchsys.c"),
             str(REPO / "src" / "fold.c"), str(cm_src), str(pal_src),

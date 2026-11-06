@@ -7,7 +7,7 @@ Tools for changing the codec with numbers instead of guesses. Data goes to
 |---|---|
 | `python research/corpus.py` | builds `build/research/ppm/` (55 images: measure, 24 Kodak, 14 imagecompression.info crops, 5 test-pack crops, 11 generated) and `jxl_refs.json` (JPEG XL e7 sizes) |
 | `python research/ab.py size [file.c] SET [-v]` | exact `.fold` sizes of a `cm.c` or `pal.c` variant on a set, against JPEG XL and WebP: total, geometric mean, worst image |
-| `python research/ab.py bench [file.c] [-r3] [-t1\|-t3] IMAGES` | encode and decode time of a `cm.c` or `pal.c` variant through `rf_encode`/`rf_decode`, verified round trip |
+| `python research/ab.py bench [file.c] [-r3] [-t1\|-t3] IMAGES` | encode and decode time of a `cm.c` or `pal.c` variant through `rf_encode`/`rf_decode`, verified round trip (`bench.exe --breakdown` also attributes CM bytes per channel `G`, `R-G`, `B-G` and decision kind `zero`, `sign`, `exp`, `mant`) |
 | `python research/ab.py ab [-v] A.c B.c [-n5] [-t1] IMAGES` | alternates two variants and compares their minimum times (with `-v`, also reports set `min_tot`, per-image `geomean`, and `worst`) |
 | `python research/abpool.py run <jsonl> <base_cm> <cand_cm> -t<N> <rounds> SET` | appends SHA-256-tagged alternating A/B runs to `<jsonl>`, and `abpool.py report <jsonl> [lo:hi]` evaluates pooled per-image minima against the set-total and per-image bars |
 | `python research/ab.py compat [REF] [--allow-diff SET]` | builds baseline `REF` (`build/research/vs/rasterfold-m1.exe`, `build/research/cm_m1.c`, and `build/research/bench_m1.exe`) and verifies 55-image `.fold` byte identity (except any permitted `--allow-diff SET`), `bench_m1` size identity, and baseline/candidate decode at `-t1` and `-t3` |

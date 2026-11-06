@@ -1323,6 +1323,152 @@ class ResearchRefsTests(unittest.TestCase):
                     rows_m1_7arg = ab.parse_bench_rows(out_m1_7arg, ["kat_pal", "solid_16x16"])
                     self.assertEqual(rows_m1_7arg["kat_pal"][0], rows_m1["kat_pal"][0])
                     self.assertEqual(rows_m1_7arg["solid_16x16"][0], rows_m1["solid_16x16"][0])
+                    p_no_bd = subprocess.run(
+                        [str(bench_m1_7arg_exe), "--breakdown", "ppm/solid_16x16.ppm"],
+                        stdin=subprocess.DEVNULL,
+                        capture_output=True,
+                        text=True,
+                        cwd=res_dir,
+                    )
+                    self.assertEqual(p_no_bd.returncode, 2)
+                    self.assertIn("--breakdown is not supported", p_no_bd.stderr)
+
+    def test_bench_breakdown_reconciles_channels_kinds_and_variants(self):
+        import os as os_mod
+        import re
+        import test_correctness as tc
+
+        with tempfile.TemporaryDirectory() as td:
+            res_dir = Path(td) / "research"
+            ppm_dir = res_dir / "ppm"
+            ppm_dir.mkdir(parents=True)
+
+            # 1. Write a PAL image (kat_pal), a RAW image (raw_1x1), and a CM image (>256 colours with smooth regions + spikes |r| >= 64)
+            if not ab.CLANG.is_file():
+                self.skipTest(f"missing mingw clang toolchain at {ab.CLANG}")
+            pal_ppm = f"P6\n{tc.KAT_PAL_W} {tc.KAT_PAL_H}\n255\n".encode("ascii") + tc.KAT_PAL_RGB
+            (ppm_dir / "kat_pal.ppm").write_bytes(pal_ppm)
+            (ppm_dir / "raw_1x1.ppm").write_bytes(b"P6\n1 1\n255\n\x10\x20\x30")
+
+            w, h = 64, 32
+            raw_pixels = bytearray(w * h * 3)
+            for y in range(h):
+                for x in range(w):
+                    idx = (y * w + x) * 3
+                    spike = 96 if ((x & 7) == 3 and (y & 3) == 2) else 0
+                    raw_pixels[idx + 0] = ((x * 3 + y * 5 + spike) + (x & 1)) & 0xFF
+                    raw_pixels[idx + 1] = ((x * 4 + y * 2) ^ (spike >> 1)) & 0xFF
+                    raw_pixels[idx + 2] = ((x * 2 + y * 7 + spike) - (y & 1)) & 0xFF
+            (ppm_dir / "noisy_cm.ppm").write_bytes(f"P6\n{w} {h}\n255\n".encode("ascii") + bytes(raw_pixels))
+
+            bench_exe = res_dir / "bench_bd.exe"
+            with mock.patch.object(ab, "RES", res_dir):
+                ab.build(ROOT / "src" / "cm.c", bench_exe, flags=("-O0",))
+
+            if os_mod.name != "nt" and subprocess.run(
+                [str(bench_exe)],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+            ).returncode != 0:
+                return
+
+            def run_bd(*extra_args, exe=bench_exe):
+                proc = subprocess.run(
+                    [str(exe), *extra_args, "ppm/noisy_cm.ppm", "ppm/kat_pal.ppm", "ppm/raw_1x1.ppm"],
+                    stdin=subprocess.DEVNULL,
+                    capture_output=True,
+                    text=True,
+                    cwd=res_dir,
+                )
+                self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+                self.assertNotIn("MISMATCH", proc.stdout)
+                return proc.stdout
+
+            out_plain = run_bd("-r1", "-t1")
+            out_r1_t1 = run_bd("-r1", "-t1", "--breakdown")
+            out_r2_t1 = run_bd("-r2", "-t1", "--breakdown")
+            out_r1_t3 = run_bd("-r1", "-t3", "--breakdown")
+
+            rows_plain = ab.parse_bench_rows(out_plain, ["noisy_cm", "kat_pal", "raw_1x1"])
+            rows_bd = ab.parse_bench_rows(out_r1_t1, ["noisy_cm", "kat_pal", "raw_1x1"])
+            self.assertEqual(rows_plain["noisy_cm"][0], rows_bd["noisy_cm"][0])
+            self.assertEqual(rows_plain["kat_pal"][0], rows_bd["kat_pal"][0])
+            self.assertEqual(rows_plain["raw_1x1"][0], rows_bd["raw_1x1"][0])
+
+            bd_lines_r1_t1 = [ln for ln in out_r1_t1.splitlines() if ln.startswith("  breakdown ")]
+            bd_lines_r2_t1 = [ln for ln in out_r2_t1.splitlines() if ln.startswith("  breakdown ")]
+            bd_lines_r1_t3 = [ln for ln in out_r1_t3.splitlines() if ln.startswith("  breakdown ")]
+            self.assertEqual(bd_lines_r1_t1, bd_lines_r2_t1)
+            self.assertEqual(bd_lines_r1_t1, bd_lines_r1_t3)
+            self.assertEqual(len(bd_lines_r1_t1), 6)
+            self.assertIn("breakdown kat_pal.ppm          non-CM method=3 (PAL)", bd_lines_r1_t1[4])
+            self.assertIn("breakdown raw_1x1.ppm          non-CM method=0 (RAW)", bd_lines_r1_t1[5])
+
+            ch_re = re.compile(
+                r"^  breakdown noisy_cm\.ppm\s+(G|R-G|B-G|ALL)\s+"
+                r"stream=\s*(\d+)\s+\(\s*[\d.]+%\)\s+"
+                r"dec=\s*([\d.]+)\s+"
+                r"zero=\s*([\d.]+)\s+\(\s*[\d.]+%\)\s+"
+                r"sign=\s*([\d.]+)\s+\(\s*[\d.]+%\)\s+"
+                r"exp=\s*([\d.]+)\s+\(\s*[\d.]+%\)\s+"
+                r"mant=\s*([\d.]+)\s+\(\s*[\d.]+%\)\s+"
+                r"flush=\s*([+-][\d.]+)"
+                r"(?:\s+hdr=(\d+)\s+fold=(\d+))?$"
+            )
+            parsed = {}
+            for ln in bd_lines_r1_t1[:4]:
+                m = ch_re.match(ln)
+                self.assertIsNotNone(m, msg=f"unmatched breakdown line: {ln}")
+                tag = m.group(1)
+                parsed[tag] = {
+                    "stream": int(m.group(2)),
+                    "dec": float(m.group(3)),
+                    "zero": float(m.group(4)),
+                    "sign": float(m.group(5)),
+                    "exp": float(m.group(6)),
+                    "mant": float(m.group(7)),
+                    "flush": float(m.group(8)),
+                    "hdr": int(m.group(9)) if m.group(9) else None,
+                    "fold": int(m.group(10)) if m.group(10) else None,
+                }
+            for tag in ("G", "R-G", "B-G", "ALL"):
+                row = parsed[tag]
+                self.assertGreater(row["zero"], 0.0)
+                self.assertGreater(row["sign"], 0.0)
+                self.assertGreater(row["exp"], 0.0)
+                self.assertGreater(row["mant"], 100.0)
+                self.assertAlmostEqual(
+                    row["zero"] + row["sign"] + row["exp"] + row["mant"],
+                    row["dec"],
+                    delta=0.3,
+                )
+                self.assertAlmostEqual(row["dec"] + row["flush"], row["stream"], delta=0.3)
+
+            self.assertEqual(
+                parsed["G"]["stream"] + parsed["R-G"]["stream"] + parsed["B-G"]["stream"],
+                parsed["ALL"]["stream"],
+            )
+            self.assertEqual(parsed["ALL"]["hdr"], 45)
+            self.assertEqual(parsed["ALL"]["stream"] + parsed["ALL"]["hdr"], parsed["ALL"]["fold"])
+            self.assertEqual(parsed["ALL"]["fold"], rows_bd["noisy_cm"][0])
+
+            # 2. Verify a variant CM source that changes the bitstream is also instrumented via RF_BENCH_CM_PATH
+            variant_cm = res_dir / "cm_variant.c"
+            variant_cm.write_text(
+                (ROOT / "src" / "cm.c")
+                .read_text(encoding="utf-8")
+                .replace(
+                    "for (int k = 0; k < LMSN; k++) ch->lms[k] = 0;",
+                    "for (int k = 0; k < LMSN; k++) ch->lms[k] = (c == 2 && k == 6) ? 16384 : 0;",
+                ),
+                encoding="utf-8",
+            )
+            bench_var_exe = res_dir / "bench_var.exe"
+            with mock.patch.object(ab, "RES", res_dir):
+                ab.build(variant_cm, bench_var_exe, flags=("-O0",))
+            out_var = run_bd("-r1", "-t1", "--breakdown", exe=bench_var_exe)
+            rows_var = ab.parse_bench_rows(out_var, ["noisy_cm", "kat_pal", "raw_1x1"])
+            self.assertNotEqual(rows_var["noisy_cm"][0], rows_bd["noisy_cm"][0])
 
 
 if __name__ == "__main__":

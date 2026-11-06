@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **78 of 241 sections complete (32%).** 241 sections (17 discovered); backlog 3 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **78 of 243 sections complete (32%).** 243 sections (19 discovered); backlog 3 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -244,11 +244,13 @@ Strips extend version 3 and make decode scale past three threads.
 
 Most of the photographs still losing to JPEG XL e9, within the gate's tolerance.
 
-|  ✔  | Section      | Deliverable                                         | Items |
-| :-: | ------------ | --------------------------------------------------- | :---: |
-| [ ] | `D01 T05 §1` | Why the losing photos lose                          |   4   |
-| [ ] | `D01 T05 §2` | Encoder-chosen parameters in version 3              |   4   |
-| [ ] | `D05 T01 §7` | Milestone 7 gate: Every photograph beats JPEG XL e9 |   4   |
+|  ✔  | Section      | Deliverable                                                                      | Items |
+| :-: | ------------ | -------------------------------------------------------------------------------- | :---: |
+| [ ] | `D01 T05 §1` | Why the losing photos lose                                                       |   4   |
+| [ ] | `D01 T05 §2` | Encoder-chosen parameters in version 3                                           |   4   |
+| [ ] | `D01 T05 §3` | Strip-adaptation priors, collision-reduced contexts, and noise-damped prediction |   3   |
+| [ ] | `D01 T05 §4` | Port Milestone 7 CM improvements into version 3                                  |   3   |
+| [ ] | `D05 T01 §7` | Milestone 7 gate: Photographs beat JPEG XL e9                                    |   4   |
 
 ### Phase 7 -- Milestone 8: Beat WebP on generated images
 

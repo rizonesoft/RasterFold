@@ -498,10 +498,9 @@ same error.
 **Expected effect.** An estimate of -0.2% to -0.6%, for about 15% slower
 decisions.
 
-### 4.5 Encoder-chosen parameters
+### 4.5 Encoder-chosen parameters and why the losing photos lose
 
-**Owner:** `D01 T02 §6` (the ceiling measurement); the encoder search is filed
-only if the ceiling clears 0.3%.
+**Owner:** `D01 T02 §6` (the ceiling measurement), `D01 T05 §1` (the per-channel and per-decision-kind breakdown of the losing photographs), and `D01 T05 §2` (the encoder search, filed only if the ceiling clears 0.3%).
 
 **Idea.** Adapt to each image without changing decoder cost: the encoder tries a
 few parameter sets per channel and signals the best in a header byte (JPEG XL's
@@ -513,8 +512,60 @@ the colour transform for channel 2 (`B - G` or `B - (R + G) / 2`). Encode time
 grows by the number of candidates; encode takes 0.15 of JPEG XL's time, so two
 or three candidates fit.
 
-**Ceiling.** The sum over images of the best fixed candidate per image bounds
-the gain; it is computed from `ab.py size -v` outputs before anything is built.
+**Ceiling (`D01 T02 §6`, 2026-10-25): rejected.** The sum over `photo` (`n = 39`) of the best fixed candidate per image from the 18-point grid `{LMS_STEP in {6, 10, 16}} x {WP_MAX in {{13,12,12,12}, {16,10,10,10}, {11,11,11,11}}} x {CH2 in {B-G, B-(R+G)/2}}` (`research/ceiling.py`) is `31,040,127` bytes against `31,045,708` bytes (`-5,581` bytes = `-0.0180%`, well below the `0.300%` bar, with `31 of 39` photographs selecting the default `{10, {13,12,12,12}, B-G}`), so `D01 T05 §2` takes its rejection path.
+
+**Losing photographs at Milestone 6 (`D01 T05 §1`, 2026-11-06).** At the Milestone 6 codec (`b3eb341`, format version 3 with 7 context models, learned gated modular prediction, and warm-started horizontal strips), `python3 research/ab.py size src/cm.c photo -v` measures `total=30868254` (`0.9830` of JPEG XL e9 `31,400,714`, geomean `0.9881`, `27 of 39` photographs below e9, `12` above e9, `7` above `1.0100` of e9, worst `kodim16` `1.0186`), and `python3 research/ab.py size src/cm.c tp -v` measures `total=6656840` (`0.9876` of JPEG XL e9 `6,740,249`, geomean `0.9866`, `7 of 10` test-pack photographs below e9, `3` above e9, `2` above `1.0100` of e9, worst `tp_nightshot_iso_1600_crop` `1.0146`). Across both sets (`kodim01` belongs to both `photo` and `tp`), 14 distinct photographs are above JPEG XL e9:
+
+| Set | Image | Dimensions (`S`) | RasterFold (`.fold`) | JPEG XL e9 | Diff vs e9 | Ratio vs e9 | vs `1.0100` cap |
+| :--- | :--- | :---: | ---: | ---: | ---: | ---: | ---: |
+| `photo` | `kodim16` | `768x512` (`S=2`) | `371,397` | `364,606` | `+6,791` | `1.0186` | `+3,145` (`> 1.01`) |
+| `photo` | `kodim17` | `512x768` (`S=3`) | `386,263` | `379,664` | `+6,599` | `1.0174` | `+2,802` (`> 1.01`) |
+| `photo` | `ic_nightshot_iso_1600` | `1200x1200` (`S=3`) | `1,861,309` | `1,834,973` | `+26,336` | `1.0144` | `+7,986` (`> 1.01`) |
+| `tp` | `tp_nightshot_iso_1600_crop` | `960x960` (`S=3`) | `1,205,267` | `1,187,904` | `+17,363` | `1.0146` | `+5,484` (`> 1.01`) |
+| `photo` | `kodim12` | `768x512` (`S=2`) | `356,496` | `351,572` | `+4,924` | `1.0140` | `+1,408` (`> 1.01`) |
+| `photo` | `ic_flower_foveon` | `1512x1008` (`S=3`) | `773,339` | `763,241` | `+10,098` | `1.0132` | `+2,466` (`> 1.01`) |
+| `tp` | `tp_flower_foveon_crop` | `1200x800` (`S=3`) | `518,444` | `512,356` | `+6,088` | `1.0119` | `+964` (`> 1.01`) |
+| `photo` | `kodim09` | `512x768` (`S=3`) | `381,080` | `376,729` | `+4,351` | `1.0115` | `+584` (`> 1.01`) |
+| `photo` | `kodim10` | `512x768` (`S=3`) | `389,124` | `384,869` | `+4,255` | `1.0111` | `+406` (`> 1.01`) |
+| `photo`, `tp` | `kodim01` | `768x512` (`S=2`) | `456,861` | `453,425` | `+3,436` | `1.0076` | `-1,098` (`<= 1.01`) |
+| `photo` | `kodim06` | `768x512` (`S=2`) | `420,817` | `418,487` | `+2,330` | `1.0056` | `-1,855` (`<= 1.01`) |
+| `photo` | `kodim21` | `768x512` (`S=2`) | `436,841` | `434,536` | `+2,305` | `1.0053` | `-2,040` (`<= 1.01`) |
+| `photo` | `kodim08` | `768x512` (`S=2`) | `502,137` | `499,839` | `+2,298` | `1.0046` | `-2,700` (`<= 1.01`) |
+| `photo` | `kodim24` | `768x512` (`S=2`) | `435,918` | `434,637` | `+1,281` | `1.0029` | `-3,065` (`<= 1.01`) |
+
+**Decision-cost attribution rule (`research/bench.c --breakdown`).** Because range-coder output bytes are delayed through `cache` and `pending` and flushed outside `renc_bit` (`src/rc.h`), counting emitted output bytes per `renc_bit` call would misattribute earlier decisions to whichever later decision triggers `renc_shift`. Instead, `--breakdown` compiles an instrumented second pass (`bd_cm_encode_inner`) from `RF_BENCH_CM_PATH` (`../src/cm.c` by default) that wraps `renc_init` to bind each strip's `renc` state to its channel `c in {0, 1, 2}` (`G`, `R-G`, `B-G`) and wraps `renc_bit(rc, bit, p1)` to accumulate the exact sub-interval code length `bits = -log2((double)nr / (double)rc->range)` (`bytes = bits / 8.0`), where `bound = (rc->range >> 12) * p1` and `nr = bit ? bound : (rc->range - bound)` (`src/rc.h:35`), into four decision categories: `zero` (`node == 1`), `sign` (`node == 2`), `exp` (`3 <= node <= 8`), and `mant` (`9 <= node <= 15` adaptive mantissa bits plus `code_raw` raw bits at `p1 = 2048`). After verifying that `bd_cm_encode_inner` writes a payload byte-identical to `rf_encode`'s `.fold` payload, `run_breakdown` sums each channel's exact flushed stream bytes across all `S` strips from the `.fold` stream directory (`stream_G + stream_R-G + stream_B-G == payload_sz - payload_hdr`), reports `flush = stream - dec` (`~ +4.4` bytes per range-coder stream from the 5-byte `renc_flush` trailer and integer interval truncation), and reports `hdr = 32 + 1 + 12*S` (`45`, `57`, or `69` bytes for `S = 1, 2, 3`) so `stream_ALL + hdr == fold_sz` holds identically on every CM image.
+
+**Per-channel and per-decision-kind breakdown across all 14 losers and 6 winning reference photos.** Running `bench_m6_bd.exe -r1 -t1 --breakdown` across all 14 losing photographs and 6 winning reference photographs (`measure` `0.9791` of e9, `kodim03` `0.9854`, `kodim20` `0.9613`, `kodim23` `0.9776`, `ic_cathedral` `0.9690`, `ic_artificial` `0.6285`) gives:
+
+| Image (status vs e9) | `G` stream (`%`) | `R-G` stream (`%`) | `B-G` stream (`%`) | `ALL` stream | `zero` (`%` of `dec`) | `sign` (`%`) | `exp` (`%`) | `mant` (`%`) | `flush` / `hdr` / `fold` |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `kodim16` (`1.0186` lose) | `190,101` (`51.2%`) | `85,907` (`23.1%`) | `95,332` (`25.7%`) | `371,340` | `103,943.6` (`28.0%`) | `83,537.1` (`22.5%`) | `121,636.1` (`32.8%`) | `62,196.4` (`16.8%`) | `+26.7` / `57` / `371,397` |
+| `kodim17` (`1.0174` lose) | `191,196` (`49.5%`) | `94,377` (`24.4%`) | `100,621` (`26.1%`) | `386,194` | `101,742.3` (`26.3%`) | `89,716.8` (`23.2%`) | `130,024.7` (`33.7%`) | `64,670.8` (`16.7%`) | `+39.4` / `69` / `386,263` |
+| `ic_nightshot_iso_1600` (`1.0144` lose) | `572,724` (`30.8%`) | `606,115` (`32.6%`) | `682,401` (`36.7%`) | `1,861,240` | `262,092.1` (`14.1%`) | `375,806.3` (`20.2%`) | `725,373.8` (`39.0%`) | `497,927.3` (`26.8%`) | `+40.4` / `69` / `1,861,309` |
+| `tp_nightshot_iso_1600_crop` (`1.0146` lose) | `371,314` (`30.8%`) | `393,784` (`32.7%`) | `440,100` (`36.5%`) | `1,205,198` | `166,962.2` (`13.9%`) | `241,822.8` (`20.1%`) | `470,186.6` (`39.0%`) | `326,185.4` (`27.1%`) | `+41.0` / `69` / `1,205,267` |
+| `kodim12` (`1.0140` lose) | `174,984` (`49.1%`) | `88,927` (`24.9%`) | `92,528` (`26.0%`) | `356,439` | `103,720.5` (`29.1%`) | `80,966.4` (`22.7%`) | `116,856.0` (`32.8%`) | `54,869.2` (`15.4%`) | `+26.9` / `57` / `356,496` |
+| `ic_flower_foveon` (`1.0132` lose) | `229,709` (`29.7%`) | `297,095` (`38.4%`) | `246,466` (`31.9%`) | `773,270` | `359,137.0` (`46.4%`) | `170,797.2` (`22.1%`) | `179,444.5` (`23.2%`) | `63,851.5` (`8.3%`) | `+39.7` / `69` / `773,339` |
+| `tp_flower_foveon_crop` (`1.0119` lose) | `158,298` (`30.5%`) | `193,244` (`37.3%`) | `166,833` (`32.2%`) | `518,375` | `233,331.0` (`45.0%`) | `117,222.5` (`22.6%`) | `123,640.0` (`23.9%`) | `44,142.2` (`8.5%`) | `+39.3` / `69` / `518,444` |
+| `kodim09` (`1.0115` lose) | `184,954` (`48.5%`) | `96,753` (`25.4%`) | `99,304` (`26.1%`) | `381,011` | `103,276.3` (`27.1%`) | `89,596.0` (`23.5%`) | `128,129.0` (`33.6%`) | `59,970.1` (`15.7%`) | `+39.6` / `69` / `381,080` |
+| `kodim10` (`1.0111` lose) | `185,104` (`47.6%`) | `99,149` (`25.5%`) | `104,802` (`26.9%`) | `389,055` | `104,262.3` (`26.8%`) | `91,039.9` (`23.4%`) | `131,358.9` (`33.8%)` | `62,352.5` (`16.0%`) | `+41.5` / `69` / `389,124` |
+| `kodim01` (`1.0076` lose) | `248,932` (`54.5%`) | `104,567` (`22.9%`) | `103,305` (`22.6%`) | `456,804` | `95,896.4` (`21.0%`) | `96,806.7` (`21.2%`) | `156,677.8` (`34.3%`) | `107,396.2` (`23.5%`) | `+27.0` / `57` / `456,861` |
+| `kodim06` (`1.0056` lose) | `211,327` (`50.2%`) | `96,129` (`22.8%`) | `113,304` (`26.9%`) | `420,760` | `95,727.1` (`22.8%`) | `92,007.9` (`21.9%`) | `144,551.8` (`34.4%`) | `88,446.8` (`21.0%`) | `+26.4` / `57` / `420,817` |
+| `kodim21` (`1.0053` lose) | `213,332` (`48.8%`) | `102,436` (`23.5%`) | `121,016` (`27.7%`) | `436,784` | `101,363.0` (`23.2%`) | `98,706.2` (`22.6%`) | `149,664.0` (`34.3%`) | `87,023.7` (`19.9%`) | `+27.1` / `57` / `436,841` |
+| `kodim08` (`1.0046` lose) | `249,442` (`49.7%`) | `123,129` (`24.5%`) | `129,509` (`25.8%`) | `502,080` | `93,875.0` (`18.7%`) | `103,280.3` (`20.6%`) | `180,833.6` (`36.0%`) | `124,065.1` (`24.7%`) | `+26.0` / `57` / `502,137` |
+| `kodim24` (`1.0029` lose) | `210,857` (`48.4%`) | `107,029` (`24.6%`) | `117,975` (`27.1%`) | `435,861` | `96,123.6` (`22.1%`) | `90,422.1` (`20.7%`) | `150,288.2` (`34.5%`) | `98,999.6` (`22.7%`) | `+27.5` / `57` / `435,918` |
+| `measure` (`0.9791` win) | `531,398` (`37.7%`) | `436,468` (`30.9%`) | `442,550` (`31.4%`) | `1,410,416` | `474,238.9` (`33.6%`) | `276,716.8` (`19.6%`) | `397,118.6` (`28.2%`) | `262,299.7` (`18.6%`) | `+42.0` / `69` / `1,410,485` |
+| `kodim03` (`0.9854` win) | `157,093` (`48.1%`) | `81,182` (`24.9%`) | `88,406` (`27.1%`) | `326,681` | `105,344.7` (`32.2%`) | `72,367.8` (`22.2%`) | `101,901.7` (`31.2%`) | `47,039.4` (`14.4%`) | `+27.4` / `57` / `326,738` |
+| `kodim20` (`0.9613` win) | `132,061` (`41.2%`) | `61,119` (`19.1%`) | `127,031` (`39.7%`) | `320,211` | `66,828.5` (`20.9%`) | `69,216.3` (`21.6%`) | `114,476.0` (`35.8%`) | `69,663.4` (`21.8%`) | `+26.8` / `57` / `320,268` |
+| `kodim23` (`0.9776` win) | `164,378` (`44.4%`) | `101,557` (`27.4%`) | `104,133` (`28.1%`) | `370,068` | `110,075.2` (`29.7%`) | `87,631.7` (`23.7%`) | `121,526.6` (`32.8%`) | `50,807.2` (`13.7%`) | `+27.3` / `57` / `370,125` |
+| `ic_cathedral` (`0.9690` win) | `482,106` (`30.8%`) | `527,780` (`33.8%`) | `553,287` (`35.4%`) | `1,563,173` | `323,663.4` (`20.7%`) | `357,509.8` (`22.9%`) | `583,798.5` (`37.3%`) | `298,161.5` (`19.1%`) | `+39.8` / `69` / `1,563,242` |
+| `ic_artificial` (`0.6285` win) | `44,569` (`42.4%`) | `32,344` (`30.7%`) | `28,284` (`26.9%`) | `105,197` | `31,274.8` (`29.7%`) | `11,946.7` (`11.4%`) | `31,840.9` (`30.3%`) | `30,094.8` (`28.6%`) | `+39.8` / `69` / `105,266` |
+
+**Normalized findings and testable hypotheses.** Comparing normalized channel shares (`stream_c / stream_ALL`) and decision-kind shares (`kind / dec`) between the 14 losing photographs and the 6 winning reference photographs separates the excess bytes into four testable mechanisms, evaluated in section 4.12 (`D01 T05 §3` and `D01 T05 §4`):
+
+1. **Counter initialization priors, initial adaptation step, and strip boundary warm-up on medium-height (`512 <= h <= 1008`) and noisy photographs:** Every portrait Kodak image (`kodim09`, `kodim10`, `kodim17`, `512x768`, `S = 3`, `256` rows/strip) and every landscape Kodak loser (`kodim01`, `kodim06`, `kodim08`, `kodim12`, `kodim16`, `kodim21`, `kodim24`, `768x512`, `S = 2`, `256` rows/strip), plus `tp_flower_foveon_crop` (`1200x800`, `S = 3`, `266` rows/strip) and `ic_flower_foveon` (`1512x1008`, `S = 3`, `336` rows/strip), are split into short strips below section 5.3's `>= 512` rows/strip threshold (`choose_strips(h)` currently uses `h >= 768 ? 3 : (h >= 512 ? 2 : 1)`), while `chan_copy_warm` halves the learned LMS weights (`dst->lms[k] = src->lms[k] >> 1`) at each strip boundary. Furthermore, `chan_init_cold` initializes all 15 decision nodes `c[1..15]` to `32,768` (`p = 0.5`) and `RATE[0]` steps by `2/3` (`(65536 * 2) / (2 * n + 3)` for `n = 0..60`), even though high unary-exponent nodes (`nodes 3..8`, where `exp` consumes `32.8%` to `39.0%` of all bytes on the losers vs `28.2%` to `31.2%` on `measure` and `kodim03`) and adaptive mantissa nodes (`nodes 9..15`) have empirical bit-1 rates well below `0.5`, and a `2/3` first-visit update over-saturates sparse context rows on noisy images (`ic_nightshot_iso_1600`, `tp_nightshot_iso_1600_crop`).
+2. **Chroma (`R-G` and `B-G`) stream share and cross-channel conditioning:** On `ic_flower_foveon` (`R-G` `38.4%`, `B-G` `31.9%`, chroma `70.3%` of all bytes, with `zero` taking `46.4%` of all bytes), `tp_flower_foveon_crop` (`R-G` `37.3%`, `B-G` `32.2%`, chroma `69.5%`), and `ic_nightshot_iso_1600` (`R-G` `32.6%`, `B-G` `36.7%`, chroma `69.2%`, with `B-G` alone `109,677` bytes larger than `G`), the two chroma channels dominate the file. In `cm_model`, `k2`, `k4`, `k5`, and `wsel` on `c == 2` (`B - G`) currently condition on `gq = q9(eg)` (luma residual) or omit residual signs in `k4`/`k5`, ignoring `rq = q9(er_r)` (the just-coded `R - G` residual at the same pixel, which is much more strongly correlated with `B - G` than `G` is), and `c == 2`'s `lms[6]` (`fer`, the `R - G` residual tap) starts at `0` instead of positive correlation.
+3. **Modulo-2048 hash-table wraparound collisions in `k0`, `k3`, and `k6`:** Models `k0` and `k3` pack a 4-tuple of 7-level quantized differences (`0..6`) with radix-7 weights `(343, 49, 7, 1)` into `2,048` rows (`(qdot * 3 + band) & 2047` for `k0`, leaving only `682` distinct `qdot` slots before `* 3`, and `qdot & 2047` for `k3` where `7^4 = 2,401 > 2,048`), and `k6` multiplies `qdot in [0, 342]` by `16` (`343 * 16 = 5,488`) before `& 2047`, folding opposite-sign large residuals (`q = 6` vs `q = 0`) onto the same context row.
+4. **High-frequency noise amplification in weighted predictor `wpred` (`pr[0..3]`):** On `ic_nightshot_iso_1600` (`exp + mant = 65.8%` of all bytes, `1,223,301` bytes) and `tp_nightshot_iso_1600_crop` (`exp + mant = 66.1%`, `796,372` bytes), `pr[0] = w8 + ne8 - n8` applies full unit gain (`+1`) to the diagonal difference `NE - N`, giving `Var(pr[0]) = 3 * sigma^2` under independent sensor noise, while `pr[1..3]` apply `16/32`, `10/32`, and `7/32` neighbour-error corrections that overshoot on high-ISO grain.
 
 ### 4.6 Learning cost on small images
 
@@ -655,6 +706,27 @@ photo total=30796521 jxl=31782058 ratio=0.9690 geomean=0.9694 worst=1.0001 (kodi
 synth total=201615 jxl=226544 ratio=0.8900 geomean=0.3209 worst=0.9241 (syn_noise) e9=223034 e9_ratio=0.9040 e9_geomean=0.6121 e9_worst=1.1231 (syn_odd) webp=201248 webp_ratio=1.0018 webp_geomean=0.9806 webp_worst=1.6829 (syn_checker)
 photo total=30807923 jxl=31782058 ratio=0.9693 geomean=0.9697 worst=1.0000 (kodim17) e9=31400714 e9_ratio=0.9811 e9_geomean=0.9851 e9_worst=1.0152 (kodim16) webp=34138176 webp_ratio=0.9024 webp_geomean=0.8903 webp_worst=1.0100 (ic_deer) measure=1405118 (0.9554 e9=0.9754 webp=0.8844)
 ```
+
+### 4.12 Strip-adaptation priors, collision-reduced contexts, and noise-damped prediction
+
+**Owner:** `D01 T05 §3` (measured), `D01 T05 §4` (the port into format version 3).
+
+Section 4.5's `--breakdown` diagnosis of the 14 losing photographs at Milestone 6 (`D01 T05 §1`) identified four sources of excess bytes across medium-height Kodak and Foveon photographs and high-ISO nightshots (`ic_nightshot_iso_1600`, `tp_nightshot_iso_1600_crop`), while `D01 T02 §6` ruled out encoder-chosen parameters (`-0.018% < 0.3%`). Rather than adding a new pass, context model, or allocation, this design combines four zero-hot-loop-overhead improvements inside format version 3 (`src/cm.c`):
+
+1. **Empirical counter priors (`chan_init_cold`) and damped initial adaptation schedule (`RATE[0..72]`):**
+   - `chan_init_cold` initializes the 16-node context row (`c[0..15]`) in version 3 (`nmodel == 7`) to `c0_v = (0, 32768, 32768, 30000, 28000, 24000, 18000, 12000)` and `c1_v = (6000, 29000, 29000, 29000, 29000, 30000, 30000, 30000)` instead of `32,768` across all `c[1..15]`, matching the empirical `< 0.5` continuation probabilities of unary exponent nodes `3..8` and adaptive mantissa nodes `9..15` from the first sample in a row.
+   - `RATE[n]` is extended from `n = 0..60` to `n = 0..72` (`RATE[73]`) with `RATE[n] = (uint32_t)((65536 * 2) / (2 * n + 7))` and `cp[k][0] = n + (n < 72)`. When the linear predictor is active (`s->predv == s->base`), `rate[k] = RATE[n]` (`2/7` on the first visit, settling to `2/151` at `n = 72`), damping first-visit counter overshoot on sparse context rows in noisy images; when gated modular prediction is active (`s->predv != s->base`) and `n >= 2`, `rate[k] = RATE[n - 2]` (`2 / (2n + 3)`), preserving fast tracking on sharp synthetic edges (`ic_artificial`).
+2. **Strip-height threshold (`choose_strips`) and unhalved warm LMS state (`chan_copy_warm`):**
+   - `choose_strips(h)` uses `h >= 1024 ? 3 : 1` (instead of `h >= 768 ? 3 : (h >= 512 ? 2 : 1)`), so medium-height photographs (`512 <= h <= 1008`, including the 24 Kodak `768x512` / `512x768` images, `tp_flower_foveon_crop` `1200x800`, and `ic_flower_foveon` `1512x1008`, as well as `measure/image.bmp` `1672x941` at `S = 1` where single-strip allocation drops from `4.16 MB` to `1.39 MB`) are coded as a single continuous strip without strip-boundary resets, while tall high-resolution photographs (`h >= 1024`, including `ic_nightshot_iso_1600`, `ic_cathedral`, `ic_deer`, `ic_big_building`, `ic_spider_web`, `tp_deer_crop`, `tp_fireworks_crop`, `tp_spider_web_crop`) use `S = 3` (`9` threads).
+   - `chan_copy_warm` copies `dst->lms[k] = src->lms[k]` without halving (`>> 1`), and `cm_alloc_strips` initializes `ch->lms[6] = 20000` on channel `c == 2` (`B - G`'s `fer` cross-channel tap for the `R - G` residual).
+3. **Collision-reduced context indexing and `B - G` (`c == 2`) cross-channel conditioning (`cm_model`):**
+   - `scl = (E >> 2) + 3` (instead of `+ 2`), slightly widening the local quantization scale on low-energy textures.
+   - `k0` uses coprime strides `(195, 31, 5, 1) * 3 + band` (`6 * 195 + 6 * 31 + 6 * 5 + 6 = 1,392`, `* 3 + 2 = 4,178`, eliminating radix-7 power-of-two aliasing), `k3` uses `(289, 43, 7, 1)` (`6 * 289 + 6 * 43 + 6 * 7 + 6 = 2,040 < 2,048`, eliminating the `7^4 = 2,401 > 2,048` wraparound collision entirely), and `k6` uses `(qdot * 6u + ((qE * 3) >> 3)) & 2047u` (`342 * 6 + 5 = 2,057`, eliminating the `343 * 16 = 5,488` `2.68x` wraparound).
+   - On chroma channels (`c >= 1`), `k2`, `k4`, `k5`, and `wsel` condition `c == 2` (`B - G`) on `rq = q9(er_r)` (the just-coded `R - G` residual at the same pixel) instead of `gq` alone: `k2 = (q2d * 3u + ((c == 2 ? rq : gq) < 3 ? 0 : (c == 2 ? rq : gq) > 5 ? 2 : 1)) & 2047u`, `k4` and `k5` replace `qE` on `c >= 1` with `((qE >> 1) * 2 + ((c == 2 ? rq : gq) != 4))` (keeping `MROWS_C` at `1,296` rows), and `wsel` on `c == 2` tests `(rq == 4 && gq == 4) ? 0 : 1 + (iabs(er_r) > 3)`.
+4. **High-frequency noise damping in `wpred` (`pr[0..3]`):**
+   - `pr[0] = w8 + (((ne8 - n8) * 5) >> 3)` (damping the diagonal `NE - N` difference from `1.0` to `5/8 = 0.625`, reducing `Var(pr[0])` under independent noise from `3.0 * sigma^2` to `1.78 * sigma^2`), `pr[1] = n8 - (((sumWN + teNE) * 13) >> 5)`, `pr[2] = w8 - (((sumWN + teNW) * 9) >> 5)`, and `pr[3] = n8 - (((teNW + teN + teNE) * 6) >> 5)`.
+
+**Expected effect and stop condition.** Tested in `D01 T05 §3` (`build/research/try.c`) against Milestone 6 (`src/cm.c`): `photo` total must drop by at least `0.5%`, at least `34 of 39` photographs in `photo` and `8 of 10` photographs in `tp` must be smaller than JPEG XL e9, no photograph in `photo` or `tp` may be more than `1.0%` larger than JPEG XL e9 (`<= 1.0100`), no single photograph in `photo` or `tp` may regress by more than `+0.5%` vs Milestone 6, one-thread encode time on `measure/image.bmp` must stay at most `0.3` of JPEG XL e7, and multi-threaded decode on `testdata/photos/` (`n = 10`, `--threads 9` and default threads) must remain faster than lossless WebP (`< 1.00x`).
 
 ---
 
