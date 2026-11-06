@@ -252,6 +252,17 @@ def run_pool(argv: list[str], ab_mod=None, repo: Path = REPO) -> dict[str, objec
     }
 
 
+def _parse_finite_float(raw: str, opt: str, *, allow_zero: bool = False) -> float:
+    try:
+        val = float(raw)
+    except ValueError as exc:
+        raise SystemExit(f"invalid {opt} value {raw!r}: {exc}") from exc
+    if not math.isfinite(val) or (val < 0.0 if allow_zero else val <= 0.0):
+        bound = ">= 0" if allow_zero else "> 0"
+        raise SystemExit(f"invalid {opt} value {raw!r}: expected finite float {bound}")
+    return val
+
+
 def parse_report_args(argv: list[str]) -> tuple[Path, int, int | None, float | None, float, float]:
     if not argv:
         raise SystemExit(
@@ -266,18 +277,23 @@ def parse_report_args(argv: list[str]) -> tuple[Path, int, int | None, float | N
     idx = 1
     while idx < len(argv):
         arg = argv[idx]
-        if arg == "--tot-bar":
-            tot_bar = float(argv[idx + 1])
-            idx += 2
-        elif arg == "--img-bar":
-            img_bar = float(argv[idx + 1])
-            idx += 2
-        elif arg == "--small-ms":
-            small_ms = float(argv[idx + 1])
+        if arg in ("--tot-bar", "--img-bar", "--small-ms"):
+            if idx + 1 >= len(argv):
+                raise SystemExit(f"missing value after {arg}")
+            raw_val = argv[idx + 1]
+            if arg == "--tot-bar":
+                tot_bar = _parse_finite_float(raw_val, "--tot-bar")
+            elif arg == "--img-bar":
+                img_bar = _parse_finite_float(raw_val, "--img-bar")
+            else:
+                small_ms = _parse_finite_float(raw_val, "--small-ms", allow_zero=True)
             idx += 2
         elif ":" in arg and not arg.startswith("-"):
             parts = arg.split(":", 1)
-            lo, hi = int(parts[0]), int(parts[1])
+            try:
+                lo, hi = int(parts[0]), int(parts[1])
+            except ValueError as exc:
+                raise SystemExit(f"invalid slice {arg!r}: {exc}") from exc
             idx += 1
         else:
             raise SystemExit(f"unknown report argument: {arg}")
@@ -671,6 +687,19 @@ class _AbpoolSelfTests(unittest.TestCase):
             with self.assertRaises(SystemExit) as ctx_zero:
                 report_pool([str(zero_log), "0:1"], ab_mod=FakeAb)
             self.assertIn("non-positive or non-finite enc_ms", str(ctx_zero.exception))
+
+            # Non-finite or non-positive threshold options are rejected before reporting.
+            for bad_args in (
+                [str(log_file), "0:2", "--tot-bar", "nan"],
+                [str(log_file), "0:2", "--img-bar", "inf"],
+                [str(log_file), "0:2", "--small-ms", "nan"],
+                [str(log_file), "0:2", "--tot-bar", "0"],
+                [str(log_file), "0:2", "--img-bar", "-1.0"],
+                [str(log_file), "0:2", "--small-ms", "-0.1"],
+            ):
+                with self.assertRaises(SystemExit) as ctx_bar:
+                    report_pool(bad_args, ab_mod=FakeAb)
+                self.assertIn("expected finite float", str(ctx_bar.exception))
 
 
 def main(argv: list[str] | None = None) -> int:
