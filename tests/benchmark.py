@@ -712,7 +712,7 @@ def report(
         f"- {ffv}",
         f"- RasterFold toolchain: {toolchain.read_text(encoding='utf-8').splitlines()[0] if toolchain.exists() else 'unknown'}",
         times_bullet,
-        "- `rasterfold` uses its default three threads (one per channel); `rasterfold-1t` passes `--threads 1`.",
+        "- `rasterfold` uses its default thread count (up to nine channel and strip threads); `rasterfold-1t` passes `--threads 1`.",
         "- JPEG XL: ffmpeg libjxl `-distance 0 -effort 7` (`jxl`, `jxl-1t`) and `-effort 9` (`jxl-e9`), encoded with `-threads 1`. `jxl` and `jxl-e9` decode with ffmpeg's default",
         "  threads (as `tests/measure_final.py` does), `jxl-1t` with `-threads 1`. WebP: `-lossless 1 -quality 100",
         "  -compression_level 6 -threads 1`. PNG: `-compression_level 9 -pred mixed -threads 1`.",

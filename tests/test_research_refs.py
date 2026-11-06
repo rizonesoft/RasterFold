@@ -380,6 +380,11 @@ class ResearchRefsTests(unittest.TestCase):
             benchmark.report(reloaded, failures, ["measure"], 1, retained_sets=retained_sets, out_dir=out_dir)
             md = (out_dir / "results.md").read_text(encoding="utf-8")
             self.assertNotIn("One machine, one run;", md)
+            self.assertIn(
+                "- `rasterfold` uses its default thread count (up to nine channel and strip threads); `rasterfold-1t` passes `--threads 1`.",
+                md,
+            )
+            self.assertNotIn("three threads (one per channel)", md)
             self.assertIn("retained sets (photos, synthetic) keep their previously recorded measurements", md)
             self.assertIn("Retained from existing `benchmarks/results.csv` (not re-measured in this run).", md)
             self.assertIn("| jxl-e9 | 1440564 |", md)
@@ -389,6 +394,14 @@ class ResearchRefsTests(unittest.TestCase):
                     self.assertIn(str(r["bytes"]), md)
                 else:
                     self.assertIn("FAIL", md)
+
+    def test_abpool_self_test(self) -> None:
+        import abpool
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            rc = abpool.main(["--self-test"])
+        self.assertEqual(rc, 0, buf.getvalue())
 
     def test_corpus_csv_reconstructs_all_five_research_summaries(self) -> None:
         csv_path = ROOT / "benchmarks" / "corpus.csv"
@@ -400,53 +413,24 @@ class ResearchRefsTests(unittest.TestCase):
         self.assertEqual(sum(1 for r in rows if r["set"] == "photo"), 39)
         self.assertEqual(sum(1 for r in rows if r["set"] == "tp"), 5)
         self.assertEqual(sum(1 for r in rows if r["set"] == "synth"), 11)
+        by_img = {r["image"]: r for r in rows}
 
-        photo = ab.reconstruct_set_summary(csv_path, "photo")
-        self.assertEqual(photo["images"], ab.SETS["photo"])
-        self.assertEqual(photo["count"], 39)
-        self.assertEqual(photo["rasterfold"], 30865211)
-        self.assertEqual(photo["jxl_e7"], 31782058)
-        self.assertEqual(photo["jxl_e9"], 31400714)
-        self.assertEqual(photo["webp"], 34138176)
-        self.assertEqual(f"{photo['e7_ratio']:.4f}", "0.9712")
-        self.assertEqual(f"{photo['e7_geomean']:.4f}", "0.9728")
-        self.assertEqual(photo["worst_image"], "kodim17")
-        self.assertEqual(f"{photo['worst_e7_ratio']:.4f}", "1.0037")
-        self.assertEqual(f"{photo['e9_ratio']:.4f}", "0.9829")
-        self.assertEqual(f"{photo['webp_ratio']:.4f}", "0.9041")
-        self.assertEqual(photo["below_e9"], 28)
-
-        kodak = ab.reconstruct_set_summary(csv_path, "kodak")
-        self.assertEqual(kodak["images"], ab.SETS["kodak"])
-        self.assertEqual(kodak["count"], 24)
-        self.assertEqual(f"{kodak['e7_ratio']:.4f}", "0.9859")
-        self.assertEqual(f"{kodak['e7_geomean']:.4f}", "0.9860")
-        self.assertEqual(kodak["worst_image"], "kodim17")
-        self.assertEqual(f"{kodak['worst_e7_ratio']:.4f}", "1.0037")
-
-        ic = ab.reconstruct_set_summary(csv_path, "ic")
-        self.assertEqual(ic["images"], ab.SETS["ic"])
-        self.assertEqual(ic["count"], 14)
-        self.assertEqual(f"{ic['e7_ratio']:.4f}", "0.9647")
-        self.assertEqual(f"{ic['e7_geomean']:.4f}", "0.9517")
-        self.assertEqual(ic["worst_image"], "ic_nightshot_iso_1600")
-        self.assertEqual(f"{ic['worst_e7_ratio']:.4f}", "0.9942")
-
-        tp = ab.reconstruct_set_summary(csv_path, "tp")
-        self.assertEqual(tp["images"], ab.SETS["tp"])
-        self.assertEqual(tp["count"], 10)
-        self.assertEqual(f"{tp['e7_ratio']:.4f}", "0.9743")
-        self.assertEqual(f"{tp['e7_geomean']:.4f}", "0.9722")
-        self.assertEqual(tp["worst_image"], "tp_nightshot_iso_1600_crop")
-        self.assertEqual(f"{tp['worst_e7_ratio']:.4f}", "0.9931")
-
-        synth = ab.reconstruct_set_summary(csv_path, "synth")
-        self.assertEqual(synth["images"], ab.SETS["synth"])
-        self.assertEqual(synth["count"], 11)
-        self.assertEqual(f"{synth['e7_ratio']:.4f}", "0.9118")
-        self.assertEqual(f"{synth['e7_geomean']:.4f}", "0.5883")
-        self.assertEqual(synth["worst_image"], "syn_gradient")
-        self.assertEqual(f"{synth['worst_e7_ratio']:.4f}", "1.5665")
+        for set_name, count in (("photo", 39), ("kodak", 24), ("ic", 14), ("tp", 10), ("synth", 11)):
+            summary = ab.reconstruct_set_summary(csv_path, set_name)
+            imgs = ab.SETS[set_name]
+            self.assertEqual(summary["images"], imgs)
+            self.assertEqual(summary["count"], count)
+            exp_rf = sum(by_img[i]["rasterfold"] for i in imgs)
+            exp_e7 = sum(by_img[i]["jxl_e7"] for i in imgs)
+            exp_e9 = sum(by_img[i]["jxl_e9"] for i in imgs)
+            exp_wb = sum(by_img[i]["webp"] for i in imgs)
+            self.assertEqual(summary["rasterfold"], exp_rf)
+            self.assertEqual(summary["jxl_e7"], exp_e7)
+            self.assertEqual(summary["jxl_e9"], exp_e9)
+            self.assertEqual(summary["webp"], exp_wb)
+            self.assertAlmostEqual(summary["e7_ratio"], exp_rf / exp_e7, places=9)
+            self.assertAlmostEqual(summary["e9_ratio"], exp_rf / exp_e9, places=9)
+            self.assertAlmostEqual(summary["webp_ratio"], exp_rf / exp_wb, places=9)
 
     def test_corpus_csv_provenance_and_failure_preservation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

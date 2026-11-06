@@ -435,7 +435,7 @@ SET_COLORS = {
     'synthetic': '#d97706',
 }
 CODEC_THREAD_LABELS = {
-    'rasterfold': 'enc 3T / dec 3T',
+    'rasterfold': 'enc default (up to 9T) / dec default (up to 9T)',
     'rasterfold-1t': 'enc 1T / dec 1T',
     'jxl': 'enc 1T / dec default',
     'jxl-1t': 'enc 1T / dec 1T',
@@ -584,7 +584,7 @@ def compute_chart_datasets(root: Path) -> dict[str, dict]:
         'codec_revision': corpus_meta['codec_revision'],
         'kat_fold_sha256': corpus_meta['kat_fold_sha256'],
         'date': corpus_meta['date'],
-        'threads': 'rasterfold: 3T default; jxl_e7, jxl_e9, webp: -threads 1',
+        'threads': 'rasterfold: default (up to 9T); jxl_e7, jxl_e9, webp: -threads 1',
         'limitations': 'Size-only research corpus (55 images: photo 39, tp 10 overlapping / tp-only 5 exclusive, synth 11); PNG, wall time, and memory are measured in benchmarks/results.csv.',
     }
     set_rev_map = dict(item.split(':', 1) for item in results_meta['set_revisions'].split(',') if ':' in item)
@@ -600,7 +600,7 @@ def compute_chart_datasets(root: Path) -> dict[str, dict]:
         'retained_date': results_meta['retained_date'],
         'set_revisions': results_meta['set_revisions'],
         'set_dates': results_meta['set_dates'],
-        'threads': 'rasterfold: 3T; rasterfold-1t: 1T; jxl/jxl-e9: enc 1T, dec default; jxl-1t: enc 1T, dec 1T; webp/png: 1T',
+        'threads': 'rasterfold: default (up to 9T); rasterfold-1t: 1T; jxl/jxl-e9: enc 1T, dec default; jxl-1t: enc 1T, dec 1T; webp/png: 1T',
         'limitations': (
             f'measured_sets={results_meta["measured_sets"]} ({results_meta["date"]}, rev {results_meta["codec_revision"][:12]}); '
             f'retained_sets={results_meta["retained_sets"]} ({results_meta["retained_date"]}, rev {results_meta["retained_revision"][:12]}, jxl-e9 not measured).'
@@ -1316,7 +1316,7 @@ def _independent_csv_reference(root: Path) -> dict[str, dict]:
         'codec_revision': c_meta['codec_revision'],
         'kat_fold_sha256': c_meta['kat_fold_sha256'],
         'date': c_meta['date'],
-        'threads': 'rasterfold: 3T default; jxl_e7, jxl_e9, webp: -threads 1',
+        'threads': 'rasterfold: default (up to 9T); jxl_e7, jxl_e9, webp: -threads 1',
         'limitations': 'Size-only research corpus (55 images: photo 39, tp 10 overlapping / tp-only 5 exclusive, synth 11); PNG, wall time, and memory are measured in benchmarks/results.csv.',
     }
     r_prov = {
@@ -1330,7 +1330,7 @@ def _independent_csv_reference(root: Path) -> dict[str, dict]:
         'retained_date': r_meta['retained_date'],
         'set_revisions': r_meta['set_revisions'],
         'set_dates': r_meta['set_dates'],
-        'threads': 'rasterfold: 3T; rasterfold-1t: 1T; jxl/jxl-e9: enc 1T, dec default; jxl-1t: enc 1T, dec 1T; webp/png: 1T',
+        'threads': 'rasterfold: default (up to 9T); rasterfold-1t: 1T; jxl/jxl-e9: enc 1T, dec default; jxl-1t: enc 1T, dec 1T; webp/png: 1T',
         'limitations': (
             f'measured_sets={r_meta["measured_sets"]} ({r_meta["date"]}, rev {r_meta["codec_revision"][:12]}); '
             f'retained_sets={r_meta["retained_sets"]} ({r_meta["retained_date"]}, rev {r_meta["retained_revision"][:12]}, jxl-e9 not measured).'

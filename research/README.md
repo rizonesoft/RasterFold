@@ -9,6 +9,7 @@ Tools for changing the codec with numbers instead of guesses. Data goes to
 | `python research/ab.py size [file.c] SET [-v]` | exact `.fold` sizes of a `cm.c` or `pal.c` variant on a set, against JPEG XL and WebP: total, geometric mean, worst image |
 | `python research/ab.py bench [file.c] [-r3] [-t1\|-t3] IMAGES` | encode and decode time of a `cm.c` or `pal.c` variant through `rf_encode`/`rf_decode`, verified round trip |
 | `python research/ab.py ab [-v] A.c B.c [-n5] [-t1] IMAGES` | alternates two variants and compares their minimum times (with `-v`, also reports set `min_tot`, per-image `geomean`, and `worst`) |
+| `python research/abpool.py run <jsonl> <base_cm> <cand_cm> -t<N> <rounds> SET` | appends SHA-256-tagged alternating A/B runs to `<jsonl>`, and `abpool.py report <jsonl> [lo:hi]` evaluates pooled per-image minima against the set-total and per-image bars |
 | `python research/ab.py compat [REF] [--allow-diff SET]` | builds baseline `REF` (`build/research/vs/rasterfold-m1.exe`, `build/research/cm_m1.c`, and `build/research/bench_m1.exe`) and verifies 55-image `.fold` byte identity (except any permitted `--allow-diff SET`), `bench_m1` size identity, and baseline/candidate decode at `-t1` and `-t3` |
 | `python research/prof.py [N]` | line-level profile from `bench.exe -p` samples |
 | `python research/vsjxl.py [image.bmp] [-n5]` | process wall times of `bin/windows-x64/bin/rasterfold.exe` against ffmpeg libjxl |
