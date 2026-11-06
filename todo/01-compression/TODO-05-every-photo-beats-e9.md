@@ -90,6 +90,8 @@ Builds the per-channel parameter search `docs/research.md` section 4.5 designs, 
 
 **Origin:** discovered run=69e45b93535e 2026-11-06
 
+> **Started:** 2026-11-06T20:18:02Z
+
 **Needs:** Idle machine (timing)
 
 Tests `docs/research.md` section 4.12 in `build/research/try.c` against the Milestone 6 `src/cm.c` baseline (`b3eb341`): empirical counter priors in `chan_init_cold` (`c0_v = (0, 32768, 32768, 30000, 28000, 24000, 18000, 12000)`, `c1_v = (6000, 29000, 29000, 29000, 29000, 30000, 30000, 30000)`), damped adaptation schedule `RATE[0..72]` (`(65536 * 2) / (2 * n + 7)` with `(s->predv != s->base && n >= 2) ? (n - 2) : n`), `choose_strips(h)` (`h >= 1024 ? 3 : 1`) with unhalved `chan_copy_warm` LMS weights and `c == 2` `lms[6] = 20000`, collision-reduced context hashes `k0`, `k2`, `k3`, `k4`, `k5`, `k6`, and `wsel` with `scl = (E >> 2) + 3` and `rq` cross-channel conditioning on `c == 2`, and high-frequency noise damping in `wpred` (`pr[0] = w8 + (((ne8 - n8) * 5) >> 3)`, `pr[1..3]` with weights `13, 9, 6`).
