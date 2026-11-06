@@ -64,18 +64,22 @@ track: C5
 > **Review:** `docs/reviews/d01-t05-s1.json`
 ## 2. Encoder-Chosen Parameters in Version 3
 
+> **Started:** 2026-11-06T17:32:35Z
+
 **Needs:** Idle machine (timing)
 
 Builds the per-channel parameter search `docs/research.md` section 4.5 designs, if `D01 T02 §6` measured its ceiling at 0.3% or more; otherwise this section records that and strikes its items.
 
+**Corrected 2026-11-06:** `D01 T02 §6` (`docs/reviews/d01-t02-s6.json`, `f0bd7d74b2ebb9fe1b15868e9a8310034c32e749`, `docs/research.md` sections 3.1 and 4.5, `research/ceiling.py`) measured the ceiling of encoder-chosen parameters across `photo` (`n = 39`) over the four candidates (`src/cm.c` baseline with LMS step `10` and WP maxima `{13, 12, 12, 12}`, `try-c6.c` LMS step `6` at `30,864,012`, `try-c16.c` LMS step `16` at `30,869,437`, and `try-cw.c` WP maxima `{16, 10, 10, 10}` at `30,891,641` vs baseline `30,865,211`): the per-image best of the four candidates sums to `30,859,686` (`-5,525` bytes = `-0.018%`, winners: baseline `9`, LMS 6: `15`, LMS 16: `11`, WP alt `4`), the per-channel stream bound sums to `30,857,198` (`-8,013` bytes = `-0.026%`), and the exact 64-assignment mixed per-channel oracle sums to `30,855,916` (`-9,295` bytes = `-0.030%`). Because all three bounds miss the `0.3%` (`0.300%`) bar by an order of magnitude, this section takes its negative-result rejection path (`todo/README.md`, Completion-first): items 1 to 3 are struck with a pointer to `D01 T02 §6`'s stamp (`docs/reviews/d01-t02-s6.json`, `f0bd7d74b2ebb9fe1b15868e9a8310034c32e749`), `docs/research.md` section 4.5's ceiling paragraph is aligned with section 3.1's exact `D01 T02 §6` figures (`30,859,686` / `30,857,198` / `30,855,916` vs `30,865,211`, renewing `docs/drift.json`), format version 3 (`src/cm.c`, `src/fold.c`, `spec/FOLD.md`, `tests/rfi_ref.py`, `KAT_FOLD3`) remains unchanged without a per-channel parameter byte, and the Test checkpoint and Freeze check verify `python3 research/ceiling.py --self-test`, `python3 tests/test_correctness.py` (on Linux and Windows), and decoding of all 55 released version 2 files in `build/research/fold-v2/` while `D01 T05 §3` and `D01 T05 §4` address the losing photographs and `vsjxl.py -n5` timing.
+
 - [ ] Add one parameter byte per channel to the version 3 payload and the search to `rf_cm_encode` (each candidate coded once, the smallest kept per channel). Done when: every candidate's file decodes, and the decoder imports each back to identical pixels (the reverse of the export).
 - [ ] Write the parameter byte into `tests/rfi_ref.py`, `spec/FOLD.md`, and `KAT_FOLD3`. Done when: codec and oracle agree on every case.
 - [ ] Measure `photo`, `tp`, and the encode ratio with `python research/vsjxl.py -n5`. Done when: the losing photos' ratios and the encode time are quoted.
-- [ ] Commit: `"codec: version 3 carries encoder-chosen parameters per channel"`
+- [ ] Commit: `"codec: version 3 carries encoder-chosen parameters per channel"` (or on the rejection path: `"codec: record encoder-chosen parameters rejection in D01 T05 §2"`)
 
-**Test checkpoint:** `python tests/test_correctness.py` passes; the per-image ratios of the formerly losing photos against JPEG XL e9; encode at most 0.3 of JPEG XL e7's time.
+**Test checkpoint:** On the rejection path (`D01 T02 §6` ceiling `-0.018%` / `-0.026%` / `-0.030% < 0.3%` in `docs/reviews/d01-t02-s6.json`, `f0bd7d74b2ebb9fe1b15868e9a8310034c32e749`): `python3 research/ceiling.py --self-test` passes; `python3 tests/test_correctness.py` and `python3 scripts/windows.py tests/test_correctness.py` pass with `KAT_FOLD` and `KAT_FOLD3` unchanged; `docs/research.md` sections 3.1 and 4.5 record the exact ceiling figures (`30,859,686`, `30,857,198`, `30,855,916` vs `30,865,211`); the losing photos' ratios and `-t 1` encode ratio (`<= 0.3x` JPEG XL e7) are measured on the Milestone 7 CM refinements in `D01 T05 §3`, `D01 T05 §4`, and `D05 T01 §7`.
 
-**Freeze check:** `KAT_FOLD` (version 2) decodes unchanged; the operator's standing approval (`D99 T01 §3`) covers extending the unreleased version 3.
+**Freeze check:** Because `D01 T02 §6` rejected encoder-chosen parameters, `src/`, `spec/FOLD.md`, `tests/rfi_ref.py`, `KAT_FOLD` (version 2), and `KAT_FOLD3` (version 3) are unchanged, and all 55 version 2 `.fold` files in `build/research/fold-v2/` decode pixel-identically to their source PPMs.
 
 ## 3. Strip-Adaptation Priors, Collision-Reduced Contexts, and Noise-Damped Prediction
 
