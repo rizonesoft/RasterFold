@@ -198,6 +198,10 @@ int main(int argc, char **argv) {
         return 2;
     }
 #endif
+    if (prof && breakdown) {
+        fprintf(stderr, "-p and --breakdown cannot be combined\n");
+        return 2;
+    }
     if (prof) {
         g_rip = malloc(sizeof(DWORD64) * MAXRIP);
         DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &g_main, 0, FALSE, DUPLICATE_SAME_ACCESS);
