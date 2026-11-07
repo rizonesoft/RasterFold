@@ -69,11 +69,11 @@ is still larger. `benchmarks/results.md` (from `python tests/benchmark.py`) has
 the encode times and the one-thread comparisons (`python research/vsjxl.py -n5`
 records default-thread encode `0.153x` on Windows and `0.129x` on Linux, both
 `<= 0.300x` of JPEG XL e7). On the 10-photo test pack
-(`testdata/photos/`), default-thread decode takes `1.48` s in `tests/benchmark.py -n 3`
-(vs lossless WebP `1.64` s, `0.8994` total / `0.9469` geomean, and JPEG XL e7 `2.37` s,
-`0.609` geomean vs WebP `0.643` geomean) and `0.96..1.00` s in alternating CLI runs on Windows
-(vs lossless WebP `0.97..1.03` s, `0.971..0.982` ratio) and `0.91..0.94` s on Linux
-(vs lossless WebP `1.88..1.94` s, `0.482..0.486` ratio).
+(`testdata/photos/`), default-thread decode takes `1.48` s (`1,478,922` us) in `tests/benchmark.py -n 3`
+(vs lossless WebP `1.64` s / `1,644,275` us, `0.8994` total ratio and `1.0037` sequential per-image geomean where `tests/benchmark.py` runs codecs sequentially per image, and JPEG XL e7 `2.49` s / `2,490,472` us,
+`0.6089` geomean vs WebP `0.6066` geomean) while alternating per-image CLI runs (`python research/vsjxl.py --webp-photos -n3`) take `0.96..1.00` s on Windows
+(vs lossless WebP `0.97..1.03` s, `0.971..0.982` total ratio and `0.967..0.971` geomean) and `0.91..0.94` s on Linux
+(vs lossless WebP `1.88..1.94` s, `0.482..0.486` total ratio and `0.489..0.490` geomean).
 
 Compression on the research corpus (`python research/ab.py size SET -v`), as
 RasterFold bytes / JPEG XL e7 bytes (and JPEG XL e9 in parentheses):
