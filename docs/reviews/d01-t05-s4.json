@@ -1,0 +1,79 @@
+{
+  "ref": "D01 T05 \u00a74",
+  "title": "Port Milestone 7 CM Improvements into Version 3",
+  "implementation_sha": "dcd6fa49b54280e090a85a66020cc306ed60dbb6",
+  "date": "2026-11-07",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/01-compression/D01-T05-s4.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "build-clean:ok:python3 scripts/build.py --target linux-x64 & windows-x64 clean",
+    "static-analysis:ok:python3 scripts/tidy.py clean (0 new)",
+    "correctness-test:ok:python3 tests/test_correctness.py 16 passed & fuzz_decode.py 300 passed",
+    "driven-run:ok:bin/windows-x64/bin/rasterfold.exe inspect & vsjxl.py -n5 <= 0.3x & --webp-photos decode < WebP",
+    "format-fidelity:ok:tests/rfi_ref.py & KAT_FOLD3 byte-identical on all 59 corpus images",
+    "corpus-measurement:ok:photo 30,634,873 B (0.9554 e9, 38/39 <= 1.0000), tp 6,598,954 B (0.9693 e9), synth 201,640 B"
+  ],
+  "completion": {
+    "report": "docs/reviews/01-compression/D01-T05-s4.md",
+    "verdict": "reconciled",
+    "candidate": "dcd6fa49b54280e090a85a66020cc306ed60dbb6",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/01-compression/D01-T05-s4.md",
+    "candidate": "b090f0cd73b311f24e4fa88af09c4768e6b6d2b1",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "b090f0cd73b311f24e4fa88af09c4768e6b6d2b1",
+  "schedule": {
+    "policy": "three-pass",
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}

@@ -2,7 +2,7 @@
 schema_version: 1
 id: every-photo-beats-e9
 domain: 01-compression
-status: active
+status: done
 title: "TODO-05 -- Every Photograph Beats JPEG XL e9"
 depends_on: []
 frozen: true
@@ -39,7 +39,7 @@ track: C5
 |   1   |   §1    | Why the losing photos lose | -- |  [x]   |
 |   2   |   §2    | Encoder-chosen parameters in version 3 | §1, D01 T02 §6, D01 T03 §1 |  [x]   |
 |   3   |   §3    | Strip-adaptation priors, collision-reduced contexts, and noise-damped prediction | §1, §2 |  [x]   |
-|   4   |   §4    | Port Milestone 7 CM improvements into version 3 | §3 |  [ ]   |
+|   4   |   §4    | Port Milestone 7 CM improvements into version 3 | §3 |  [x]   |
 
 ---
 
@@ -146,6 +146,8 @@ Ports the accepted design of §3 (`docs/research.md` section 4.12) into format v
 
 **Freeze check:** Verified on 2026-11-07: `KAT_FOLD` (version 2) passes in `tests/test_correctness.py` and `tests/test_api.py`, and all 55 preserved version 2 `.fold` files in `build/research/fold-v2/` (`RFI\x02\x02\x00`) decode pixel-identically to their source PPMs in `build/research/ppm/` across `--threads 1, 3, 6, 9`; version 3 is unreleased, so the operator's standing approval (`D99 T01 §3`) covers extending it in place across `src/cm.c`, `spec/FOLD.md`, `tests/rfi_ref.py`, and `KAT_FOLD3` in one commit.
 
+> **Verified:** 2026-11-07 | §4 | dcd6fa49b54280e090a85a66020cc306ed60dbb6
+> **Review:** `docs/reviews/d01-t05-s4.json`
 ## Verification
 
 - [ ] `pwsh scripts/check-all.ps1` exits 0
