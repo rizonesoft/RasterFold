@@ -1,0 +1,79 @@
+{
+  "ref": "D01 T05 \u00a73",
+  "title": "Strip-Adaptation Priors, Collision-Reduced Contexts, and Noise-Damped Prediction",
+  "implementation_sha": "5a8200f29edb561373e75fef42961f5f47bc4224",
+  "date": "2026-11-07",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/01-compression/D01-T05-s3.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "python3 research/ab.py size build/research/try.c photo -v -> total=30634873 jxl=31782058 ratio=0.9639 geomean=0.9622 worst=0.9934 (kodim17) e9=31400714 e9_ratio=0.9756 e9_geomean=0.9775 e9_worst=1.0097 (ic_nightshot_iso_1600) webp=34138176 webp_ratio=0.8974 webp_geomean=0.8834 webp_worst=1.0044 (ic_deer) measure=1400388 (0.9522 e9=0.9721 webp=0.8815) (35/39 below e9, 0/39 > 1.0100 e9, -233381 B = -0.7561% vs M6)",
+    "python3 research/ab.py size build/research/try.c tp -v -> total=6598954 jxl=6826895 ratio=0.9666 geomean=0.9625 worst=0.9897 (tp_nightshot_iso_1600_crop) e9=6740249 e9_ratio=0.9790 e9_geomean=0.9764 e9_worst=1.0096 (tp_nightshot_iso_1600_crop) webp=7368948 webp_ratio=0.8955 webp_geomean=0.8723 webp_worst=1.0014 (tp_deer_crop) (9/10 below e9, 0/10 > 1.0100 e9, -57886 B = -0.8696% vs M6)",
+    "python3 research/ab.py size build/research/try.c synth -v -> total=201640 jxl=226544 ratio=0.8901 geomean=0.3275 worst=0.9241 (syn_noise) e9=223034 e9_ratio=0.9041 e9_geomean=0.6246 e9_worst=1.1538 (syn_odd) webp=201248 webp_ratio=1.0019 webp_geomean=1.0007 webp_worst=1.6829 (syn_checker) (+2 B vs M6)",
+    "python3 research/ab.py ab src/cm.c build/research/try.c -n9 -t<1|3> measure -> -t1 Run 1 B/A enc 0.986 dec 1.026, Run 2 B/A enc 0.993 dec 1.013; -t3 Run 1 B/A enc 1.105 dec 1.020, Run 2 B/A enc 0.983 dec 0.933 (all <= 1.03x)",
+    "python3 research/ab.py ab src/cm.c build/research/try.c -n9 -t<1|3|9> ic_nightshot_iso_1600 ic_cathedral ic_deer -v -> -t1 Run 1 dec 0.975/0.975, Run 2 dec 0.954/0.970; -t3 Run 1 dec 0.979/1.022, Run 2 dec 1.035/0.999; -t9 Run 1 dec 1.009/0.997, Run 2 dec 0.972/0.990 (all <= 1.05x)",
+    "python3 scripts/todo-graph.py validate && python3 scripts/todo-claims.py && python3 scripts/drift-check.py -> 0 fatal, 0 warning(s); 87 claim(s) hold; 0 drift error(s)"
+  ],
+  "completion": {
+    "report": "docs/reviews/01-compression/D01-T05-s3.md",
+    "verdict": "reconciled",
+    "candidate": "5a8200f29edb561373e75fef42961f5f47bc4224",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/01-compression/D01-T05-s3.md",
+    "candidate": "0231b73a09bce26933295b5e1fb91ddadc7106da",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "0231b73a09bce26933295b5e1fb91ddadc7106da",
+  "schedule": {
+    "policy": "three-pass",
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}

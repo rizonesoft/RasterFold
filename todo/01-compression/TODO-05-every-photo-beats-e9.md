@@ -38,7 +38,7 @@ track: C5
 | :---: | :-----: | ----------- | ---------- | :----: |
 |   1   |   §1    | Why the losing photos lose | -- |  [x]   |
 |   2   |   §2    | Encoder-chosen parameters in version 3 | §1, D01 T02 §6, D01 T03 §1 |  [x]   |
-|   3   |   §3    | Strip-adaptation priors, collision-reduced contexts, and noise-damped prediction | §1, §2 |  [ ]   |
+|   3   |   §3    | Strip-adaptation priors, collision-reduced contexts, and noise-damped prediction | §1, §2 |  [x]   |
 |   4   |   §4    | Port Milestone 7 CM improvements into version 3 | §3 |  [ ]   |
 
 ---
@@ -106,6 +106,8 @@ Tests `docs/research.md` section 4.12 in `build/research/try.c` against the Mile
 
 **Freeze check:** Verified 2026-11-07: `src/` (`src/cm.c`), `spec/FOLD.md`, `tests/rfi_ref.py`, `KAT_FOLD` (version 2), and `KAT_FOLD3` (version 3) are untouched in §3 (`git diff -- src/ spec/ tests/` empty); the accepted candidate lives in `build/research/try.c` until §4 ports it into format version 3.
 
+> **Verified:** 2026-11-07 | §3 | 5a8200f29edb561373e75fef42961f5f47bc4224
+> **Review:** `docs/reviews/d01-t05-s3.json`
 ## 4. Port Milestone 7 CM Improvements into Version 3
 
 **Origin:** discovered run=69e45b93535e 2026-11-06
