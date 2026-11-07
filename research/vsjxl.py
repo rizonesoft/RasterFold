@@ -297,7 +297,16 @@ def main():
     alt = args.alt_exe
     t_args = ["--threads", str(args.threads)] if args.threads else []
 
-    with tempfile.TemporaryDirectory(prefix="rf_vsjxl_") as td:
+    if os.name == "nt":
+        ctx = tempfile.TemporaryDirectory(prefix="rf_vsjxl_")
+    else:
+        ctx = tempfile.TemporaryDirectory(prefix="rf_vsjxl_", dir=TMP)
+    ffmpeg = (
+        shutil.which("ffmpeg")
+        or shutil.which("ffmpeg.exe")
+        or "/mnt/c/Users/DerickPayne/AppData/Local/Microsoft/WinGet/Links/ffmpeg.exe"
+    )
+    with ctx as td:
         work = Path(td)
         local_src = work / "in.bmp"
         shutil.copy2(src, local_src)
@@ -339,9 +348,9 @@ def main():
             res["rf_enc"].append(wall([str(exe), "encode", *t_args, str(local_src), str(fold)]))
             res["rf_dec"].append(wall([str(exe), "decode", *t_args, str(fold), str(work / "t.bmp")]))
             jxl.unlink(missing_ok=True)
-            res["jxl_enc"].append(wall(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(local_src), "-c:v", "libjxl",
+            res["jxl_enc"].append(wall([ffmpeg, "-y", "-hide_banner", "-loglevel", "error", "-i", str(local_src), "-c:v", "libjxl",
                                         "-distance", "0", "-effort", "7", "-threads", jxl_threads, "-update", "1", str(jxl)]))
-            res["jxl_dec"].append(wall(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-threads", jxl_threads, "-i", str(jxl), "-frames:v", "1",
+            res["jxl_dec"].append(wall([ffmpeg, "-y", "-hide_banner", "-loglevel", "error", "-threads", jxl_threads, "-i", str(jxl), "-frames:v", "1",
                                         "-update", "1", str(work / "j.bmp")]))
         for k, v in res.items():
             print(f"{k:8s} median {statistics.median(v):8.1f} ms   min {min(v):8.1f}")

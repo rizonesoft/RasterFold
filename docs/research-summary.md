@@ -25,7 +25,7 @@ where that has been more than twice as accurate on the channel (section 4.11),
 seven context models mixed by a logistic mixer in version 3 and five in version 2,
 16-node context rows in version 3 and 32-node rows in version 2, and up to three
 warm-started horizontal strips per channel G, R-G, B-G in version 3 (`S = 1` for
-`h < 512`, `S = 2` for `512 <= h < 768`, `S = 3` for `h >= 768`, section 5.8),
+`h < 768` and `S = 3` for `h >= 768`, sections 4.13 and 5.8),
 running up to nine strip threads in parallel), and methods 2 and 3 ("palette" and
 "extended palette") are the palette index coders in `src/pal.c` for images with at
 most 256 distinct colours. The Python oracle `tests/rfi_ref.py` implements the same
@@ -35,55 +35,61 @@ format independently and stays byte-identical with the C encoder.
 
 | | RasterFold | JPEG XL e7 |
 |---|---:|---:|
-| bytes | 1,410,485 | 1,470,703 |
-| decode wall | 235 ms (9 threads, codec 130 ms) | 435 ms (ffmpeg default threads) |
-| decode peak working set | 16.4 MB | 52.1 MB |
+| bytes | 1,400,388 | 1,470,703 |
+| decode wall | 229 ms (9 threads, codec 137 ms) | 467 ms (ffmpeg default threads) |
+| decode peak working set | 16.4 MB | 51.3 MB |
 
-JPEG XL effort 9 gives 1,440,564 bytes on the same image (`0.9791` ratio), which
+JPEG XL effort 9 gives 1,440,564 bytes on the same image (`0.9721` ratio), which
 is still larger. `benchmarks/results.md` (from `python tests/benchmark.py`) has
-the encode times and the one-thread comparisons. On the 10-photo test pack
-(`testdata/photos/`), default 9-thread decode takes `1.30` s in `tests/benchmark.py -n 3`
-(vs lossless WebP `1.50` s, `0.8665` total / `0.8988` geomean, and JPEG XL e7 `2.26` s,
-`0.568` geomean vs WebP `0.632` geomean) and `1.27..1.29` s in alternating CLI runs on Windows
-(vs lossless WebP `1.41..1.45` s, `0.874..0.902` ratio) and `0.63..0.68` s on Linux
-(vs lossless WebP `1.62..1.66` s, `0.379..0.422` ratio).
+the encode times and the one-thread comparisons (`python research/vsjxl.py -n5`
+records default-thread encode `0.153x` on Windows and `0.129x` on Linux, both
+`<= 0.300x` of JPEG XL e7). On the 10-photo test pack
+(`testdata/photos/`), default-thread decode takes `1.48` s in `tests/benchmark.py -n 3`
+(vs lossless WebP `1.64` s, `0.8994` total / `0.9469` geomean, and JPEG XL e7 `2.37` s,
+`0.609` geomean vs WebP `0.643` geomean) and `0.96..1.00` s in alternating CLI runs on Windows
+(vs lossless WebP `0.97..1.03` s, `0.971..0.982` ratio) and `0.91..0.94` s on Linux
+(vs lossless WebP `1.88..1.94` s, `0.482..0.486` ratio).
 
 Compression on the research corpus (`python research/ab.py size SET -v`), as
 RasterFold bytes / JPEG XL e7 bytes (and JPEG XL e9 in parentheses):
 
 | set | images | total | geometric mean | worst |
 |---|---:|---:|---:|---|
-| photo (measure + Kodak + imagecompression.info crops) | 39 | 0.9712 (0.9830 e9) | 0.9719 (0.9874 e9) | kodim17 1.0037 (kodim16 1.0186 e9) |
-| kodak | 24 | 0.9856 (0.9977 e9) | 0.9854 (0.9981 e9) | kodim17 1.0037 (kodim16 1.0186 e9) |
-| ic | 14 | 0.9650 (0.9760 e9) | 0.9501 (0.9699 e9) | ic_nightshot_iso_1600 0.9951 (1.0145 e9) |
-| tp (test pack) | 10 | 0.9751 (0.9876 e9) | 0.9726 (0.9866 e9) | tp_nightshot 0.9946 (1.0146 e9) |
-| synth | 11 | 0.8901 (0.9041 e9) | 0.3275 (0.6247 e9) | syn_noise 0.9241 (syn_odd 1.2154 e9) |
+| photo (measure + Kodak + imagecompression.info crops) | 39 | 0.9639 (0.9756 e9) | 0.9622 (0.9775 e9) | kodim17 0.9934 (ic_nightshot_iso_1600 1.0097 e9) |
+| kodak | 24 | 0.9729 (0.9849 e9) | 0.9726 (0.9851 e9) | kodim17 0.9934 (kodim17 1.0050 e9) |
+| ic | 14 | 0.9602 (0.9712 e9) | 0.9453 (0.9650 e9) | ic_nightshot_iso_1600 0.9904 (1.0097 e9) |
+| tp (test pack) | 10 | 0.9666 (0.9790 e9) | 0.9625 (0.9764 e9) | tp_nightshot 0.9897 (1.0096 e9) |
+| synth | 11 | 0.8901 (0.9041 e9) | 0.3275 (0.6246 e9) | syn_noise 0.9241 (syn_odd 1.1538 e9) |
 
-38 of 39 photographs are smaller than JPEG XL e7; `kodim17` is `386,238` vs
-`384,823` (`1.0037`), and 29 of 39 photographs are below JPEG
-XL e9, with `photo` total `30,868,254` bytes (`+72,994` bytes = `+0.237% <= +0.300%`
-over Milestone 5's single-strip `30,795,260`, and no photograph more than `+0.5%`
-larger; worst vs Milestone 5 is `kodim24` at `435,918` vs `434,031`, `+0.435%`,
-and best is `ic_artificial` at `105,266` vs `105,420`, `-0.146%`) and `tp` total
-`6,656,840` bytes (`+16,565` bytes = `+0.249% <= +0.300%` over Milestone 5's
-`6,640,275`, worst `tp_flower_foveon_crop` `+0.425%`). On the generated images, with methods 2 and
+All 39 of 39 photographs are smaller than JPEG XL e7 (`worst=kodim17` at `382,299` vs
+`384,823`, `0.9934`), and 35 of 39 photographs (`9 of 10` on `tp`) are below JPEG
+XL e9 with no photograph more than `1.0%` larger than e9 (`e9_worst = 1.0097` on
+`ic_nightshot_iso_1600` at `1,852,542` vs `1,834,783`, and `1.0096` on
+`tp_nightshot_iso_1600_crop` at `1,199,268` vs `1,187,909`), with `photo` total
+`30,634,873` bytes (`-233,381` bytes = `-0.756%` vs Milestone 6's `30,868,254`,
+and `0 of 39` larger than Milestone 6; worst vs Milestone 6 is `ic_artificial` at
+`105,262` vs `105,266`, `-0.004%`, and best is `kodim03` at `320,826` vs `326,738`,
+`-1.809%`) and `tp` total `6,598,954` bytes (`-57,886` bytes = `-0.870%` vs
+Milestone 6's `6,656,840`, `0 of 10` larger, worst `tp_nightshot_iso_1600_crop`
+`-0.498%`). On the generated images, with methods 2 and
 3 (`D01 T01 §2` to `§4`), the 7-model CM coder, learned gated modular prediction (`D01 T04 §8` v2, ported in
-`D01 T04 §10`), and warm-started horizontal strips with 16-node context rows
-(`D02 T02 §3`, ported in `D01 T03 §3`), all 11 `synth` images are smaller than JPEG XL e7 and 10 of 11
-are below JPEG XL e9: `syn_gradient` (`120` vs `2,886` e7, `616` e9, and `180`
+`D01 T04 §10`), warm-started horizontal strips with 16-node context rows
+(`D02 T02 §3`, ported in `D01 T03 §3`), and the Milestone 7 four-part CM refinement
+(`D01 T05 §3`, ported in `D01 T05 §4`), all 11 `synth` images are smaller than JPEG XL e7 and 10 of 11
+are below JPEG XL e9: `syn_gradient` (`119` vs `2,886` e7, `616` e9, and `180`
 WebP, down from `4,227` at Milestone 4 and `4,521` at Milestone 1),
-`syn_stripes` (`109` vs `1,689` e7, `271` e9, and `150` WebP, down from `368`),
+`syn_stripes` (`113` vs `1,689` e7, `271` e9, and `150` WebP, down from `368`),
 `syn_solid` (`61` vs `125` e7 and `120` e9), `syn_checker` (`138` vs `316` e7
 and `210` e9, down from `5,709`), `syn_pixel` (`52` vs `66` e7, `53` e9, and
 `58` WebP, down from `599`), `syn_ui` (`1,410` vs `2,316` e7 and `2,195` e9),
 `syn_text` (`1,447` vs `2,164` e7 and `2,038` e9), `syn_diagram` (`1,452` vs
-`2,160` e7 and `2,049` e9), `syn_wide` (`130` vs `1,906` e7, `212` e9, and `202`
-WebP, down from `281`), `syn_odd` (`79` vs `132` e7 and `65` e9, `1.2154` of e9,
+`2,160` e7 and `2,049` e9), `syn_wide` (`133` vs `1,906` e7, `212` e9, and `202`
+WebP, down from `281`), `syn_odd` (`75` vs `132` e7 and `65` e9, `1.1538` of e9,
 down from `153`), and `syn_noise` (`196,640` vs `212,784` e7 and `215,205` e9),
-giving `synth` total `201,638` vs `226,544` bytes e7 (`0.8901`, geometric mean
-`0.3275`) and `223,034` bytes e9 (`0.9041`, geometric mean `0.6247`, down from
+giving `synth` total `201,640` vs `226,544` bytes e7 (`0.8901`, geometric mean
+`0.3275`) and `223,034` bytes e9 (`0.9041`, geometric mean `0.6246`, down from
 `206,229` at Milestone 4, `206,566` at Milestone 3, and `214,773` at Milestone
-1), and `201,248` bytes for lossless WebP (`1.0019` total, `1.0008` geometric
+1), and `201,248` bytes for lossless WebP (`1.0019` total, `1.0007` geometric
 mean).
 
 Speed: `research/bench.c` measures about 450 CPU cycles per sample on one

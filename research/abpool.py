@@ -121,7 +121,7 @@ def _validate_rows_dict(rows: object, expected_imgs: list[str], src: str) -> Non
             f"{src}: inconsistent image membership (expected {expected_imgs!r}, got {list(rows.keys())!r})"
         )
     for img, vals in rows.items():
-        if not isinstance(vals, list) or len(vals) < 3:
+        if not isinstance(vals, (list, tuple)) or len(vals) < 3:
             raise SystemExit(f"{src}: invalid row for {img!r}: expected [size, enc_ms, dec_ms]")
         for j, label in ((0, "size"), (1, "enc_ms"), (2, "dec_ms")):
             v = vals[j]
@@ -202,6 +202,7 @@ def run_pool(argv: list[str], ab_mod=None, repo: Path = REPO) -> dict[str, objec
         sys.argv = ["ab.py", t_flag]
         ab = ab_mod if ab_mod is not None else _load_ab()
         ab.T = t_flag
+        ab.THREADS = t_flag
         imgs = list(ab.names(raw_sets))
         set_name = infer_set_name(imgs, ab)
         verify_existing_log_provenance(log_path, a_sha, b_sha, t_flag, imgs, flags, set_name)

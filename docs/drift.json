@@ -1643,13 +1643,13 @@
       "review": "Author-attested: 2026-10-25 re-read docs/getting-started.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/benchmarks.md": {
-      "evidence": "2026-11-06: Reviewed docs/benchmarks.md against measure/verdict.json, benchmarks/results.csv, and benchmarks/corpus.csv for D05 T01 section 6 (Milestone 6 Gate: Faster than WebP to decode).",
+      "evidence": "2026-11-07: Reviewed docs/benchmarks.md against measure/verdict.json, benchmarks/results.csv, and benchmarks/corpus.csv for D05 T01 section 7 (Milestone 7 Gate: Photographs beat JPEG XL e9).",
       "sources": {
         "src/rf.h": "c7f9919e34924b6686ce876fd96550d28c39d025ed6233e6f338e03f37ce47a1",
-        "measure/verdict.json": "43c934b79834aa0105e6b06a785a406812ddcb06908cd3b968ecc121a855e904",
-        "benchmarks/results.csv": "988d9756227a91637bff804a8ab9a50cd5007abfaeb3283d43487f80bc108ab3",
-        "benchmarks/corpus.csv": "6e6288d83a0b660484bf4bdf868914c449fcaafe0f604793c968a312c43c5e35",
-        "docs/benchmarks.md": "a7c8a3fb5fd43d882514dea69f40cb5a923f92dc047e4d2467702069fcf9af4c"
+        "measure/verdict.json": "9e8869c965a6bee3420ae27e095c436f7017a2a5615d8d5f0f2e843ae23f79d5",
+        "benchmarks/results.csv": "3e8c24e975a26dc122650bec99e4852003777e2053762cb6008f2f51e4a83182",
+        "benchmarks/corpus.csv": "313210c9c98f2e63d115868b8d51ad5ce688bd88f900305ea850b7f28f5e4a02",
+        "docs/benchmarks.md": "362fd979812a684977670c2356d86ac72da44b8814f36697aa8688b3e0bb9f3d"
       },
       "reviewed_at": "2026-10-25",
       "doc_sha256": "cb432a027a1da6cf87a7b6ea38912c56736b0eb0c4802bd4ac2e31a17ce4358d",
@@ -1703,15 +1703,15 @@
       "reviewed": "Author-attested: 2026-10-25 re-read spec/FOLD.md against src/cm.c and src/simd.h after D02 T01 section 4 (byte-identical cm.c hot-loop vectorization and row-context specialization; format version 2 bitstream unchanged)"
     },
     "research/README.md": {
-      "evidence": "2026-11-07: Verified research/README.md against research/vsjxl.py (--webp-photos and --threads {1,3,6,9}), research/bench.c, and research/ab.py",
+      "evidence": "2026-11-07: Verified research/README.md against research/vsjxl.py (--webp-photos, --jxl-e7-photos, and --threads {1,3,6,9}), research/abpool.py, research/bench.c, and research/ab.py for D05 T01 section 7.",
       "sources": {
         "research/corpus.py": "4434e32d8cdb5e70d887f03f7f4cdfbe9ada666ea680c7d6ce176cc9b2858bb7",
         "research/ab.py": "231ee24354eafa5b84961ea341713b2eebac57519e35da235a4f10c6837c41dc",
-        "research/vsjxl.py": "0635eb00336c325fa2335d2ba50b7b0e12625ba270ee261896754fc624abef5d",
+        "research/vsjxl.py": "821677b613130d43126b919c47c6af64d68c7b6dac1b9bd896f9e4c98ab9a092",
         "research/prof.py": "7fa28a84aab62f0eb79fd579bcc01b6e2e55cc200bdaa96c0218b2ad4aa05605",
         "research/bench.c": "0054db75d713113580bba46629c0577895f0297c17afd3051004115d74a7a513",
-        "research/README.md": "3ca4b71f157248eeea73bf60f6da49a513cfb0b351d68025d945d1f72cca1106",
-        "research/abpool.py": "67337cdfa5dfe221e2adb70ab8aadcc56d924b591dd6ef6d9e77c7b2d7a006b7"
+        "research/README.md": "1166aaf8502d44c05175506a7a95fad7e7965eba2e4974342ab027d1d1b4e0ad",
+        "research/abpool.py": "194e5457ec686e5818be853ddebfd9eb50146296a81b106bacf1b22dff3030f3"
       },
       "review": "Author-attested: 2026-10-25 re-read research/README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)",
       "reviewed": "Author-attested: 2026-10-25 re-read research/README.md against research/ab.py after D02 T01 section 4 (added ab -v reporting and tp-only set without size-mismatch abort)"

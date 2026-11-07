@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 460" role="img" aria-labelledby="title-corpus-size-ratio desc-corpus-size-ratio" data-chart="corpus-size-ratio" data-kind="bar-chart" data-plot-left="80.00" data-plot-top="74.00" data-plot-width="830.00" data-plot-height="270.00" data-plot-bottom="344.00" data-y-max="1.2500" data-source="benchmarks/corpus.csv" data-codec-revision="ae1b5105a2bd98867bd6b736998b7afd2a20e0c5" data-kat-fold-sha256="b3012508fdcadc58e768baaba1c9fc3cf5cc2dd837643888b1ca2314fe79bb32" data-date="2026-11-06" data-threads="rasterfold: default (up to 9T); jxl_e7, jxl_e9, webp: -threads 1" data-limitations="Size-only research corpus (55 images: photo 39, tp 10 overlapping / tp-only 5 exclusive, synth 11); PNG, wall time, and memory are measured in benchmarks/results.csv.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 460" role="img" aria-labelledby="title-corpus-size-ratio desc-corpus-size-ratio" data-chart="corpus-size-ratio" data-kind="bar-chart" data-plot-left="80.00" data-plot-top="74.00" data-plot-width="830.00" data-plot-height="270.00" data-plot-bottom="344.00" data-y-max="1.2500" data-source="benchmarks/corpus.csv" data-codec-revision="a5c5a84c4c0d8a1dc6076cddba711a89e6dafc40" data-kat-fold-sha256="b3012508fdcadc58e768baaba1c9fc3cf5cc2dd837643888b1ca2314fe79bb32" data-date="2026-11-07" data-threads="rasterfold: default (up to 9T); jxl_e7, jxl_e9, webp: -threads 1" data-limitations="Size-only research corpus (55 images: photo 39, tp 10 overlapping / tp-only 5 exclusive, synth 11); PNG, wall time, and memory are measured in benchmarks/results.csv.">
   <title id="title-corpus-size-ratio">Research Corpus: Total Compressed Size Ratio vs JPEG XL e7 (Lower Is Smaller)</title>
-  <desc id="desc-corpus-size-ratio">Source: benchmarks/corpus.csv | revision: ae1b5105a2bd98867bd6b736998b7afd2a20e0c5 | date: 2026-11-06 | threads: rasterfold: default (up to 9T); jxl_e7, jxl_e9, webp: -threads 1 | limitations: Size-only research corpus (55 images: photo 39, tp 10 overlapping / tp-only 5 exclusive, synth 11); PNG, wall time, and memory are measured in benchmarks/results.csv.</desc>
+  <desc id="desc-corpus-size-ratio">Source: benchmarks/corpus.csv | revision: a5c5a84c4c0d8a1dc6076cddba711a89e6dafc40 | date: 2026-11-07 | threads: rasterfold: default (up to 9T); jxl_e7, jxl_e9, webp: -threads 1 | limitations: Size-only research corpus (55 images: photo 39, tp 10 overlapping / tp-only 5 exclusive, synth 11); PNG, wall time, and memory are measured in benchmarks/results.csv.</desc>
   <rect x="0" y="0" width="940" height="460" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
   <text x="16" y="26" font-family="system-ui, sans-serif" font-size="14" font-weight="700" fill="#0f172a">Research Corpus: Total Compressed Size Ratio vs JPEG XL e7 (Lower Is Smaller)</text>
   <text x="16" y="44" font-family="system-ui, sans-serif" font-size="11" fill="#475569">Total compressed bytes / JPEG XL e7 bytes</text>
@@ -25,8 +25,8 @@
   <line x1="80.00" y1="74.00" x2="80.00" y2="344.00" stroke="#94a3b8" stroke-width="1"/>
   <line x1="80.00" y1="344.00" x2="910.00" y2="344.00" stroke="#94a3b8" stroke-width="1"/>
   <text x="163.00" y="362.00" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#1e293b">photo</text>
-  <rect data-kind="bar" data-group="photo" data-series="rasterfold" data-value="0.9712" x="93.28" y="134.21" width="32.86" height="209.79" fill="#2563eb"><title>photo / rasterfold: 0.9712</title></rect>
-  <text data-kind="bar-label" data-group="photo" data-series="rasterfold" x="109.71" y="131.21" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">0.9712</text>
+  <rect data-kind="bar" data-group="photo" data-series="rasterfold" data-value="0.9639" x="93.28" y="135.80" width="32.86" height="208.20" fill="#2563eb"><title>photo / rasterfold: 0.9639</title></rect>
+  <text data-kind="bar-label" data-group="photo" data-series="rasterfold" x="109.71" y="132.80" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">0.9639</text>
   <rect data-kind="bar" data-group="photo" data-series="jxl_e7" data-value="1.0000" x="128.14" y="128.00" width="32.86" height="216.00" fill="#059669"><title>photo / jxl_e7: 1.0000</title></rect>
   <text data-kind="bar-label" data-group="photo" data-series="jxl_e7" x="144.57" y="125.00" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">1.0000</text>
   <rect data-kind="bar" data-group="photo" data-series="jxl_e9" data-value="0.9880" x="163.00" y="130.59" width="32.86" height="213.41" fill="#7c3aed"><title>photo / jxl_e9: 0.9880</title></rect>
@@ -34,8 +34,8 @@
   <rect data-kind="bar" data-group="photo" data-series="webp" data-value="1.0741" x="197.86" y="111.99" width="32.86" height="232.01" fill="#d97706"><title>photo / webp: 1.0741</title></rect>
   <text data-kind="bar-label" data-group="photo" data-series="webp" x="214.29" y="108.99" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">1.0741</text>
   <text x="329.00" y="362.00" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#1e293b">tp</text>
-  <rect data-kind="bar" data-group="tp" data-series="rasterfold" data-value="0.9751" x="259.28" y="133.38" width="32.86" height="210.62" fill="#2563eb"><title>tp / rasterfold: 0.9751</title></rect>
-  <text data-kind="bar-label" data-group="tp" data-series="rasterfold" x="275.71" y="130.38" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">0.9751</text>
+  <rect data-kind="bar" data-group="tp" data-series="rasterfold" data-value="0.9666" x="259.28" y="135.21" width="32.86" height="208.79" fill="#2563eb"><title>tp / rasterfold: 0.9666</title></rect>
+  <text data-kind="bar-label" data-group="tp" data-series="rasterfold" x="275.71" y="132.21" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">0.9666</text>
   <rect data-kind="bar" data-group="tp" data-series="jxl_e7" data-value="1.0000" x="294.14" y="128.00" width="32.86" height="216.00" fill="#059669"><title>tp / jxl_e7: 1.0000</title></rect>
   <text data-kind="bar-label" data-group="tp" data-series="jxl_e7" x="310.57" y="125.00" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">1.0000</text>
   <rect data-kind="bar" data-group="tp" data-series="jxl_e9" data-value="0.9873" x="329.00" y="130.74" width="32.86" height="213.26" fill="#7c3aed"><title>tp / jxl_e9: 0.9873</title></rect>
@@ -43,8 +43,8 @@
   <rect data-kind="bar" data-group="tp" data-series="webp" data-value="1.0794" x="363.86" y="110.85" width="32.86" height="233.15" fill="#d97706"><title>tp / webp: 1.0794</title></rect>
   <text data-kind="bar-label" data-group="tp" data-series="webp" x="380.29" y="107.85" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">1.0794</text>
   <text x="495.00" y="362.00" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#1e293b">tp-only</text>
-  <rect data-kind="bar" data-group="tp-only" data-series="rasterfold" data-value="0.9699" x="425.28" y="134.50" width="32.86" height="209.50" fill="#2563eb"><title>tp-only / rasterfold: 0.9699</title></rect>
-  <text data-kind="bar-label" data-group="tp-only" data-series="rasterfold" x="441.71" y="131.50" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">0.9699</text>
+  <rect data-kind="bar" data-group="tp-only" data-series="rasterfold" data-value="0.9635" x="425.28" y="135.89" width="32.86" height="208.11" fill="#2563eb"><title>tp-only / rasterfold: 0.9635</title></rect>
+  <text data-kind="bar-label" data-group="tp-only" data-series="rasterfold" x="441.71" y="132.89" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">0.9635</text>
   <rect data-kind="bar" data-group="tp-only" data-series="jxl_e7" data-value="1.0000" x="460.14" y="128.00" width="32.86" height="216.00" fill="#059669"><title>tp-only / jxl_e7: 1.0000</title></rect>
   <text data-kind="bar-label" data-group="tp-only" data-series="jxl_e7" x="476.57" y="125.00" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">1.0000</text>
   <rect data-kind="bar" data-group="tp-only" data-series="jxl_e9" data-value="0.9860" x="495.00" y="131.03" width="32.86" height="212.97" fill="#7c3aed"><title>tp-only / jxl_e9: 0.9860</title></rect>
@@ -52,8 +52,8 @@
   <rect data-kind="bar" data-group="tp-only" data-series="webp" data-value="1.0637" x="529.86" y="114.24" width="32.86" height="229.76" fill="#d97706"><title>tp-only / webp: 1.0637</title></rect>
   <text data-kind="bar-label" data-group="tp-only" data-series="webp" x="546.29" y="111.24" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">1.0637</text>
   <text x="661.00" y="362.00" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#1e293b">synth</text>
-  <rect data-kind="bar" data-group="synth" data-series="rasterfold" data-value="0.8901" x="591.28" y="151.75" width="32.86" height="192.25" fill="#2563eb"><title>synth / rasterfold: 0.8901</title></rect>
-  <text data-kind="bar-label" data-group="synth" data-series="rasterfold" x="607.71" y="148.75" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">0.8901</text>
+  <rect data-kind="bar" data-group="synth" data-series="rasterfold" data-value="0.8901" x="591.28" y="151.74" width="32.86" height="192.26" fill="#2563eb"><title>synth / rasterfold: 0.8901</title></rect>
+  <text data-kind="bar-label" data-group="synth" data-series="rasterfold" x="607.71" y="148.74" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">0.8901</text>
   <rect data-kind="bar" data-group="synth" data-series="jxl_e7" data-value="1.0000" x="626.14" y="128.00" width="32.86" height="216.00" fill="#059669"><title>synth / jxl_e7: 1.0000</title></rect>
   <text data-kind="bar-label" data-group="synth" data-series="jxl_e7" x="642.57" y="125.00" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">1.0000</text>
   <rect data-kind="bar" data-group="synth" data-series="jxl_e9" data-value="0.9845" x="661.00" y="131.35" width="32.86" height="212.65" fill="#7c3aed"><title>synth / jxl_e9: 0.9845</title></rect>
@@ -61,15 +61,15 @@
   <rect data-kind="bar" data-group="synth" data-series="webp" data-value="0.8883" x="695.86" y="152.12" width="32.86" height="191.88" fill="#d97706"><title>synth / webp: 0.8883</title></rect>
   <text data-kind="bar-label" data-group="synth" data-series="webp" x="712.29" y="149.12" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">0.8883</text>
   <text x="827.00" y="362.00" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#1e293b">all</text>
-  <rect data-kind="bar" data-group="all" data-series="rasterfold" data-value="0.9706" x="757.28" y="134.36" width="32.86" height="209.64" fill="#2563eb"><title>all / rasterfold: 0.9706</title></rect>
-  <text data-kind="bar-label" data-group="all" data-series="rasterfold" x="773.71" y="131.36" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">0.9706</text>
+  <rect data-kind="bar" data-group="all" data-series="rasterfold" data-value="0.9634" x="757.28" y="135.91" width="32.86" height="208.09" fill="#2563eb"><title>all / rasterfold: 0.9634</title></rect>
+  <text data-kind="bar-label" data-group="all" data-series="rasterfold" x="773.71" y="132.91" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">0.9634</text>
   <rect data-kind="bar" data-group="all" data-series="jxl_e7" data-value="1.0000" x="792.14" y="128.00" width="32.86" height="216.00" fill="#059669"><title>all / jxl_e7: 1.0000</title></rect>
   <text data-kind="bar-label" data-group="all" data-series="jxl_e7" x="808.57" y="125.00" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">1.0000</text>
   <rect data-kind="bar" data-group="all" data-series="jxl_e9" data-value="0.9877" x="827.00" y="130.65" width="32.86" height="213.35" fill="#7c3aed"><title>all / jxl_e9: 0.9877</title></rect>
   <text data-kind="bar-label" data-group="all" data-series="jxl_e9" x="843.43" y="127.65" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">0.9877</text>
   <rect data-kind="bar" data-group="all" data-series="webp" data-value="1.0717" x="861.86" y="112.52" width="32.86" height="231.48" fill="#d97706"><title>all / webp: 1.0717</title></rect>
   <text data-kind="bar-label" data-group="all" data-series="webp" x="878.29" y="109.52" text-anchor="middle" font-family="monospace" font-size="7" fill="#0f172a">1.0717</text>
-  <text data-kind="provenance" x="16" y="414" font-family="monospace" font-size="9.5" fill="#334155">Source: benchmarks/corpus.csv | codec_revision=ae1b5105a2bd98867bd6b736998b7afd2a20e0c5 | date=2026-11-06</text>
+  <text data-kind="provenance" x="16" y="414" font-family="monospace" font-size="9.5" fill="#334155">Source: benchmarks/corpus.csv | codec_revision=a5c5a84c4c0d8a1dc6076cddba711a89e6dafc40 | date=2026-11-07</text>
   <text data-kind="threads" x="16" y="430" font-family="monospace" font-size="9.5" fill="#334155">Threads: rasterfold: default (up to 9T); jxl_e7, jxl_e9, webp: -threads 1</text>
   <text data-kind="limitations" x="16" y="446" font-family="monospace" font-size="9.5" fill="#475569">Limitations: Size-only research corpus (55 images: photo 39, tp 10 overlapping / tp-only 5 exclusive, synth 11); PNG, wall time, and memory are measured in benchmarks/results.csv.</text>
 </svg>

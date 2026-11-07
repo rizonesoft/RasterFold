@@ -12,7 +12,7 @@ Tools for changing the codec with numbers instead of guesses. Data goes to
 | `python research/abpool.py run <jsonl> <base_cm> <cand_cm> -t<N> <rounds> SET` | appends SHA-256-tagged alternating A/B runs to `<jsonl>`, and `abpool.py report <jsonl> [lo:hi]` evaluates pooled per-image minima against the set-total and per-image bars |
 | `python research/ab.py compat [REF] [--allow-diff SET]` | builds baseline `REF` (`build/research/vs/rasterfold-m1.exe`, `build/research/cm_m1.c`, and `build/research/bench_m1.exe`) and verifies 55-image `.fold` byte identity (except any permitted `--allow-diff SET`), `bench_m1` size identity, and baseline/candidate decode at `-t1` and `-t3` |
 | `python research/prof.py [N]` | line-level profile from `bench.exe -p` samples |
-| `python research/vsjxl.py [image.bmp] [-n5]` | process wall times of `bin/windows-x64/bin/rasterfold.exe` against ffmpeg libjxl (`--webp-photos` times `testdata/photos/` decode against lossless WebP) |
+| `python research/vsjxl.py [image.bmp] [-n5]` | process wall times of `bin/windows-x64/bin/rasterfold.exe` against ffmpeg libjxl (`--webp-photos` times `testdata/photos/` decode against lossless WebP; `--jxl-e7-photos` times `testdata/photos/` encode and decode against JPEG XL `e7`) |
 
 Sets for `ab.py`: `sub` (8 mixed photos), `kodak`, `ic`, `tp` (test pack),
 `tp-only` (5 exclusive test-pack crops), `photo` (measure + kodak + ic), `synth`,
