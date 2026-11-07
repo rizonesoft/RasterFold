@@ -34,8 +34,8 @@ KAT_FOLD = bytes.fromhex(
 
 # The same 16x8 image encoded as format version 3 (the version 2 file above stays as a decode-only vector).
 KAT_FOLD3 = bytes.fromhex(
-    "52464903030020001000000008000000010001003000000019abe5d334e2d3de011300000009000000070000000042338a"
-    "b4b12f7ecf18b4578b279762426cb00001c6e4ca3c0242270042386d7982ba"
+    "5246490303002000100000000800000001000100340000009d827f7a11c99a2b01160000000900000008000000004071dc90"
+    "e22c1ade83da77723fbbf53a1fc445a60c000001b7edd8bfbf83004070d8ea017875"
 )
 
 # A 16x8 4-colour image and its complete .fold files: KAT_PAL (method 2, §2) and KAT_PAL2 (method 3, §4).
@@ -782,12 +782,13 @@ def truncated_stream_abort() -> None:
             check_reject_fast(f"trunc_ch{c}", trunc_fold, t, "invalid fold: cm stream")
             check_reject_fast(f"trunc_mid_ch{c}", mid_fold, t, "invalid fold: cm stream")
 
-    # 3. Multi-strip (S=2 at 8x512, S=3 at 6x768, and valid S=4 decoder-interoperability
+    # 3. Single-strip (S=1 at 8x512) and multi-strip (valid S=2 decoder-interoperability
+    #    fixture at 8x512, S=3 at 6x768, and valid S=4 decoder-interoperability
     #    fixtures at 6x400 and short-strip 16x16 where warm_rows == h_s) pre-warm
     #    (5-byte 0x80 stream, aborting before warm_rows) and post-warm (75% stream
     #    length, aborting after warm_ready handoff) stream exhaustion across every
     #    strip and channel.
-    for mw, mh, want_s, force_s in ((8, 512, 2, None), (6, 768, 3, None), (6, 400, 4, 4), (16, 16, 4, 4)):
+    for mw, mh, want_s, force_s in ((8, 512, 1, None), (8, 512, 2, 2), (6, 768, 3, None), (6, 400, 4, 4), (16, 16, 4, 4)):
         mrgb = bytearray(mw * mh * 3)
         mrng = random.Random(mh * 10 + want_s)
         for y in range(mh):
@@ -825,7 +826,7 @@ def _row_end_tail_crossings(w: int, h: int, payload: bytes) -> set[int]:
     """Return channels (0..2) whose stream has rem > 48 and crosses sz - 40 on
     the final sample (x == w - 1) of a nonfinal row (y < h - 1)."""
     sizes = struct.unpack_from("<III", payload, 1)
-    chans = [rf.Channel(w) for _ in range(3)]
+    chans = [rf.Channel(w, rf.NMODEL, c) for c in range(3)]
     pos = 13
     for ch, size in zip(chans, sizes):
         ch.dec = rf.RangeDecoder(payload[pos : pos + size])
@@ -866,9 +867,9 @@ def tail_threshold_roundtrip() -> None:
         ("tail_le48_solid", 6, 6, solid(6, 6, (42, 100, 200))),
         ("tail_le48_grad", 8, 6, gradient(8, 6)),
         ("tail_mixed_check16", 16, 12, checker(16, 12, 3)),
-        ("tail_rowend_ch0", 6, 27, photo(6, 27)),
-        ("tail_rowend_ch1", 5, 28, photo(5, 28)),
-        ("tail_rowend_ch2", 5, 30, photo(5, 30)),
+        ("tail_rowend_ch0", 4, 25, photo(4, 25)),
+        ("tail_rowend_ch1", 4, 43, photo(4, 43)),
+        ("tail_rowend_ch2", 4, 37, photo(4, 37)),
         ("tail_gt48_photo16", 16, 12, photo(16, 12)),
         ("tail_gt48_photo20", 20, 16, photo(20, 16)),
     ]
@@ -926,7 +927,7 @@ def warm_strips() -> None:
             f"{tag} inspect mismatch: {insp}",
         )
 
-    for w, h, want_s in ((12, 512, 2), (10, 768, 3)):
+    for w, h, want_s in ((12, 512, 1), (10, 768, 3)):
         rng = random.Random(w * 1000 + h)
         rgb_buf = bytearray(w * h * 3)
         for y in range(h):
@@ -959,12 +960,12 @@ def warm_strips() -> None:
             f"S={want_s} inspect stream sums mismatch: {insp} vs {exp_sums}",
         )
 
-    # Verify decoder interoperability on valid S=4 version 3 files constructed by the
-    # independent oracle, including short strips where warm_rows reaches the strip's
-    # final row (h=12, h_s=3) and tall strips (h=400, warm_rows=96 < h_s), across
-    # --threads 1, 3, 6, 9 and CLI inspect stream_g/r/b sums.
-    for w, h in ((12, 12), (8, 400)):
-        rng = random.Random(w * 2000 + h)
+    # Verify decoder interoperability on valid S=2 and S=4 version 3 files constructed by the
+    # independent oracle, including S=2 (h=512, warm_rows=68), short strips where warm_rows
+    # reaches the strip's final row (h=12, S=4, h_s=3), and tall strips (h=400, S=4, warm_rows=96 < h_s),
+    # across --threads 1, 3, 6, 9 and CLI inspect stream_g/r/b sums.
+    for w, h, want_s in ((12, 512, 2), (12, 12, 4), (8, 400, 4)):
+        rng = random.Random(w * 2000 + h + want_s)
         rgb_buf = bytearray(w * h * 3)
         for y in range(h):
             for x in range(w):
@@ -973,23 +974,23 @@ def warm_strips() -> None:
                 rgb_buf[idx + 1] = (x * 19 + y * 11 + rng.randrange(-11, 12)) & 255
                 rgb_buf[idx + 2] = (x * 23 + y * 29 + rng.randrange(-19, 20)) & 255
         rgb = bytes(rgb_buf)
-        s4_fold = rf.build_file(w, h, rf.METHOD_CM, rf.cm_encode(w, h, rgb, nstrips=4))
-        check(s4_fold[16] == rf.METHOD_CM and s4_fold[32] == 4, f"expected method 1 S=4 at {w}x{h}")
-        check(rf.decode_image(s4_fold) == (w, h, rgb), f"oracle S=4 decode failed at {w}x{h}")
-        s4_path = work / f"s4_{h}.fold"
-        s4_path.write_bytes(s4_fold)
+        s_fold = rf.build_file(w, h, rf.METHOD_CM, rf.cm_encode(w, h, rgb, nstrips=want_s))
+        check(s_fold[16] == rf.METHOD_CM and s_fold[32] == want_s, f"expected method 1 S={want_s} at {w}x{h}")
+        check(rf.decode_image(s_fold) == (w, h, rgb), f"oracle S={want_s} decode failed at {w}x{h}")
+        s_path = work / f"s{want_s}_{h}.fold"
+        s_path.write_bytes(s_fold)
         canonical_bmp = rf.write_bmp24(w, h, rgb)
         for t in ("1", "3", "6", "9"):
-            out_bmp = work / f"s4_{h}_t{t}.bmp"
+            out_bmp = work / f"s{want_s}_{h}_t{t}.bmp"
             out_bmp.unlink(missing_ok=True)
-            expect_ok(["decode", "--threads", t, str(s4_path), str(out_bmp)])
-            check(out_bmp.read_bytes() == canonical_bmp, f"S=4 {w}x{h} decode t={t} != canonical BMP")
-        sizes = struct.unpack_from("<12I", s4_fold, 33)
-        exp_sums = [sum(sizes[3 * s + c] for s in range(4)) for c in range(3)]
-        insp = expect_ok(["inspect", str(s4_path)]).stdout.decode("utf-8", errors="replace")
+            expect_ok(["decode", "--threads", t, str(s_path), str(out_bmp)])
+            check(out_bmp.read_bytes() == canonical_bmp, f"S={want_s} {w}x{h} decode t={t} != canonical BMP")
+        sizes = struct.unpack_from(f"<{3 * want_s}I", s_fold, 33)
+        exp_sums = [sum(sizes[3 * s + c] for s in range(want_s)) for c in range(3)]
+        insp = expect_ok(["inspect", str(s_path)]).stdout.decode("utf-8", errors="replace")
         check(
             f"stream_g: {exp_sums[0]}" in insp and f"stream_r: {exp_sums[1]}" in insp and f"stream_b: {exp_sums[2]}" in insp,
-            f"S=4 {w}x{h} inspect stream sums mismatch: {insp} vs {exp_sums}",
+            f"S={want_s} {w}x{h} inspect stream sums mismatch: {insp} vs {exp_sums}",
         )
 
 

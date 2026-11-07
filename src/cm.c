@@ -25,7 +25,8 @@
 /* ------------------------------------------------------------------ tables */
 static int16_t STRETCH[4096];
 static int16_t SQUASH[4095];            /* squash(x) at [x + 2047] */
-static uint32_t RATE[61];               /* floor(65536 / (n + 1.5)) */
+static uint32_t RATE[73];               /* v3: floor(65536 * 2 / (2 * n + 7)) */
+static uint32_t RATE_V2[61];            /* v2: floor(65536 * 2 / (2 * n + 3)) */
 static uint32_t DIVL[64];
 static uint32_t ERRW[2][1024];          /* errw(e, 13) and errw(e, 12) for e < 1024 */
 static uint8_t Q9T[2048];
@@ -56,7 +57,8 @@ static void cm_tables(void) {
         pi = v + 1;
     }
     for (int j = pi; j < 4096; j++) STRETCH[j] = 2047;
-    for (int n = 0; n <= 60; n++) RATE[n] = (uint32_t)((65536 * 2) / (2 * n + 3));
+    for (int n = 0; n <= 72; n++) RATE[n] = (uint32_t)((65536 * 2) / (2 * n + 7));
+    for (int n = 0; n <= 60; n++) RATE_V2[n] = (uint32_t)((65536 * 2) / (2 * n + 3));
     for (int i = 0; i < 64; i++) DIVL[i] = (1u << 24) / (uint32_t)(i + 1);
     for (uint32_t e = 0; e < 1024; e++) {
         int sh = 31 - __builtin_clz(e + 1) - 5;
@@ -156,7 +158,7 @@ typedef struct cm_s {
 #define WARM_ROWS 96
 #endif
 #ifndef CAP_VISIT
-#define CAP_VISIT 6
+#define CAP_VISIT 24
 #endif
 
 static const uint16_t MROWS_C[3][NMODEL] = {
@@ -174,8 +176,8 @@ static void chan_init_cold(chan_t *ch) {
             for (int k = 0; k < WSTRIDE; k++) ch->wt[i * WSTRIDE + k] = k < nmodel ? 19661 : 0;
         return;
     }
-    const __m128i c0_v = _mm_setr_epi16(0, -32768, -32768, -32768, -32768, -32768, -32768, -32768);
-    const __m128i c1_v = _mm_set1_epi16(-32768);
+    const __m128i c0_v = _mm_setr_epi16(0, -32768, -32768, 30000, 28000, 24000, 18000, 12000);
+    const __m128i c1_v = _mm_setr_epi16(6000, 29000, 29000, 29000, 29000, 30000, 30000, 30000);
     for (size_t r = 0; r < ch->ctr_rows; r++) {
         _mm_store_si128((__m128i *)(ch->ctr + r * NODES), c0_v);
         _mm_store_si128((__m128i *)(ch->ctr + r * NODES + 8), c1_v);
@@ -198,7 +200,7 @@ static void chan_copy_warm(chan_t *dst, const chan_t *src) {
         _mm_store_si128((__m128i *)(dst->ctr + r * NODES + 8), v1);
     }
     memcpy(dst->wt, src->wt, src->wsel_cnt * NODES * WSTRIDE * sizeof(int32_t));
-    for (int k = 0; k < LMSN; k++) dst->lms[k] = src->lms[k] >> 1;
+    for (int k = 0; k < LMSN; k++) dst->lms[k] = src->lms[k];
     dst->eg = src->eg;
     dst->et = src->et;
 }
@@ -265,7 +267,7 @@ static cm_t *cm_alloc_strips(int S, uint32_t w, uint32_t h, uint8_t *rgb, size_t
                 ch->mbase[k] = mp;
                 mp += (size_t)((nmodel == NMODEL) ? MROWS_C[c][k] : NROWS) * nodes;
             }
-            for (int k = 0; k < LMSN; k++) ch->lms[k] = 0;
+            for (int k = 0; k < LMSN; k++) ch->lms[k] = (nmodel == NMODEL && c == 2 && k == 6) ? 20000 : 0;
             ch->bytes = 5u;
             ch->bad = 0;
             ch->done = 0;
@@ -536,10 +538,17 @@ RF_INLINE void cm_model(cm_t *m, const row_ctx_t *rc, const int c, uint32_t x, u
         int32_t n8 = N * 8, w8 = W * 8, ne8 = NE * 8;
         int32_t teW = (interior || x > 0) ? pW->err : 0, teN = pN->err, teNW = pNW->err, teNE = pNE->err;
         int32_t sumWN = teN + teW;
-        pr[0] = w8 + ne8 - n8;
-        pr[1] = n8 - (((sumWN + teNE) * 16) >> 5);
-        pr[2] = w8 - (((sumWN + teNW) * 10) >> 5);
-        pr[3] = n8 - (((teNW + teN + teNE) * 7) >> 5);
+        if (nmodel == NMODEL) {
+            pr[0] = w8 + (((ne8 - n8) * 3) >> 3);
+            pr[1] = n8 - (((sumWN + teNE) * 12) >> 5);
+            pr[2] = w8 - (((sumWN + teNW) * 8) >> 5);
+            pr[3] = n8 - (((teNW + teN + teNE) * 5) >> 5);
+        } else {
+            pr[0] = w8 + ne8 - n8;
+            pr[1] = n8 - (((sumWN + teNE) * 16) >> 5);
+            pr[2] = w8 - (((sumWN + teNW) * 10) >> 5);
+            pr[3] = n8 - (((teNW + teN + teNE) * 7) >> 5);
+        }
         uint32_t ws = wt[0] + wt[1] + wt[2] + wt[3];
         int lw = ilog2(ws) - 4;
         wt[0] >>= lw; wt[1] >>= lw; wt[2] >>= lw; wt[3] >>= lw;
@@ -607,7 +616,7 @@ RF_INLINE void cm_model(cm_t *m, const row_ctx_t *rc, const int c, uint32_t x, u
     const int qE = qlog(E);
     const int gq = c ? q9(eg) : 4;
     const int rq = c == 2 ? q9(er_r) : 4;
-    const int scl = (E >> 2) + 2;
+    const int scl = (E >> 2) + ((nmodel == NMODEL) ? 3 : 2);
     const int band = qE < 4 ? 0 : qE < 8 ? 1 : 2;
     const __m128i pv = _mm_set1_epi32(pred);
     const __m128i t1 = _mm_set1_epi32(scl - 1), t2 = _mm_set1_epi32(3 * scl - 1), t3 = _mm_set1_epi32(7 * scl - 1);
@@ -617,29 +626,31 @@ RF_INLINE void cm_model(cm_t *m, const row_ctx_t *rc, const int c, uint32_t x, u
     const __m128i a0 = _mm_abs_epi32(d0);
     const __m128i a6 = _mm_add_epi32(_mm_slli_epi32(a0, 2), _mm_slli_epi32(a0, 1));
     const __m128i q0 = qcount3(a6, d0, t1, t2, t3, 3);
-    uint32_t k0 = (uint32_t)(qdot(q0, _mm_setr_epi16(343, 0, 49, 0, 7, 0, 1, 0)) * 3 + band);
+    uint32_t k0 = (uint32_t)(qdot(q0, (nmodel == NMODEL) ? _mm_setr_epi16(195, 0, 31, 0, 5, 0, 1, 0) : _mm_setr_epi16(343, 0, 49, 0, 7, 0, 1, 0)) * 3 + band);
     /* k1: local error energy with the G and R residuals at this pixel. */
     uint32_t k1 = (uint32_t)((nmodel == NMODEL) ? (c == 0 ? qE : c == 1 ? qE * 9 + gq : qE * 81 + gq * 9 + rq) : (qE * 81 + gq * 9 + rq));
     /* k2: the JPEG-LS gradients NE-N, N-NW and NW-W, 9 levels. */
     const __m128i d2 = _mm_sub_epi32(_mm_shuffle_epi32(nb, _MM_SHUFFLE(0, 3, 1, 2)), _mm_shuffle_epi32(nb, _MM_SHUFFLE(0, 0, 3, 1)));
     const __m128i q2 = qcount(_mm_abs_epi32(d2), d2, _mm_set1_epi32(0), _mm_set1_epi32(2), _mm_set1_epi32(6), _mm_set1_epi32(20), 4);
     uint32_t q2d = (uint32_t)qdot(q2, _mm_setr_epi16(81, 0, 9, 0, 1, 0, 0, 0));
-    uint32_t k2 = (nmodel == NMODEL && c == 0) ? q2d : ((q2d * 5u + (uint32_t)((gq + 1) / 2)) & 2047u);
+    const int cq = (c == 2 ? rq : gq);
+    uint32_t k2 = (nmodel == NMODEL) ? (c == 0 ? q2d : ((q2d * 3u + (uint32_t)(cq < 3 ? 0 : cq > 5 ? 2 : 1)) & 2047u)) : ((q2d * 5u + (uint32_t)((gq + 1) / 2)) & 2047u);
     /* k3: four simple predictors against the prediction, 7 levels. */
     const __m128i d3 = _mm_sub_epi32(_mm_setr_epi32(med3(W, N, NW), W + N - NW, (W + NE + 1) >> 1, N + NE - NNE), pv);
     const __m128i q3 = qcount3(_mm_abs_epi32(d3), d3, _mm_set1_epi32(0), _mm_set1_epi32(2), _mm_set1_epi32(6), 3);
-    uint32_t k3 = (uint32_t)qdot(q3, _mm_setr_epi16(343, 0, 49, 0, 7, 0, 1, 0)) & 2047u;
+    uint32_t k3 = (uint32_t)qdot(q3, (nmodel == NMODEL) ? _mm_setr_epi16(289, 0, 43, 0, 7, 0, 1, 0) : _mm_setr_epi16(343, 0, 49, 0, 7, 0, 1, 0)) & 2047u;
     /* k4: W and N against the prediction with the error energy. */
-    uint32_t k4 = (uint32_t)((q9(W - pred) * 9 + q9(N - pred)) * 16 + qE);
+    const int qe_c = (nmodel == NMODEL && c >= 1) ? (((qE >> 1) * 2) + (cq != 4)) : qE;
+    uint32_t k4 = (uint32_t)((q9(W - pred) * 9 + q9(N - pred)) * 16 + qe_c);
     uint32_t k5 = 0, k6 = 0;
     if (nmodel == NMODEL) {
         /* k5: NE and NW against the prediction with the error energy. */
-        k5 = (uint32_t)((q9(NE - pred) * 9 + q9(NW - pred)) * 16 + qE);
+        k5 = (uint32_t)((q9(NE - pred) * 9 + q9(NW - pred)) * 16 + qe_c);
         /* k6: WW, NN and NNE against the prediction, 7 levels of the local scale. */
         const __m128i d6 = _mm_sub_epi32(_mm_setr_epi32(WW, NN, NNE, 0), pv);
         const __m128i a6_k = _mm_abs_epi32(d6);
         const __m128i q6 = qcount3(_mm_add_epi32(_mm_slli_epi32(a6_k, 2), _mm_slli_epi32(a6_k, 1)), d6, t1, t2, t3, 3);
-        k6 = ((uint32_t)qdot(q6, _mm_setr_epi16(49, 0, 7, 0, 1, 0, 0, 0)) * 16u + (uint32_t)qE) & 2047u;
+        k6 = ((uint32_t)qdot(q6, _mm_setr_epi16(49, 0, 7, 0, 1, 0, 0, 0)) * 6u + (uint32_t)((qE * 3) >> 3)) & 2047u;
     }
     const uint32_t kk[NMODEL] = {k0 & 2047u, k1, k2, k3, k4, k5, k6};
     const size_t nodes = (nmodel == NMODEL) ? NODES : NODES_V2;
@@ -673,7 +684,7 @@ RF_INLINE void cm_model(cm_t *m, const row_ctx_t *rc, const int c, uint32_t x, u
         if (gate) use = 2 * (int)ch->eg < (int)ch->et;
         if (use) predv = gp;
     }
-    const int wsel = (nmodel == NMODEL) ? (c ? ((qE * 3 + (gq == 4 ? 0 : 1 + (iabs(eg) > 3))) * 2 + use) : (qE * 2 + use)) : (qE * 8 + (c ? (gq == 4 ? 0 : 1 + (iabs(eg) > 3)) : 3));
+    const int wsel = (nmodel == NMODEL) ? (c == 0 ? (qE * 2 + use) : c == 1 ? ((qE * 3 + (gq == 4 ? 0 : 1 + (iabs(eg) > 3))) * 2 + use) : ((qE * 3 + ((rq == 4 && gq == 4) ? 0 : 1 + (iabs(er_r) > 3))) * 2 + use)) : (qE * 8 + (c ? (gq == 4 ? 0 : 1 + (iabs(eg) > 3)) : 3));
     s->wrow = ch->wt + (size_t)wsel * nodes * WSTRIDE;
     s->wpred = wpred;
     s->pred8 = pred8;
@@ -692,10 +703,20 @@ RF_INLINE int cm_code(cm_t *m, const row_ctx_t *rc, const int c, uint32_t x, int
     pos_t *prv = rc->prv[c];
     uint16_t *const *cp = s->cp;
     uint16_t rate[8] __attribute__((aligned(16)));
-    for (int k = 0; k < nmodel; k++) {
-        uint32_t n = cp[k][0];
-        rate[k] = (uint16_t)RATE[n];
-        cp[k][0] = (uint16_t)(n + (n < 60));
+    if (nmodel == NMODEL) {
+        const int is_gg = (s->predv != s->base);
+        for (int k = 0; k < NMODEL; k++) {
+            uint32_t n = cp[k][0];
+            uint32_t rn = (is_gg && n >= 2) ? (n - 2) : n;
+            rate[k] = (uint16_t)RATE[rn];
+            cp[k][0] = (uint16_t)(n + (n < 72));
+        }
+    } else {
+        for (int k = 0; k < nmodel; k++) {
+            uint32_t n = cp[k][0];
+            rate[k] = (uint16_t)RATE_V2[n];
+            cp[k][0] = (uint16_t)(n + (n < 60));
+        }
     }
     const int predv = s->predv, base = s->base;
     const int32_t pred8 = s->pred8, wpred = s->wpred;
@@ -1107,7 +1128,7 @@ static void strip_bounds(uint32_t h, int S, int s, uint32_t *y0_out, uint32_t *y
 }
 
 static int choose_strips(uint32_t h) {
-    return h >= 768 ? 3 : (h >= 512 ? 2 : 1);
+    return h >= 768 ? 3 : 1;
 }
 
 /* ------------------------------------------------------------ interface */

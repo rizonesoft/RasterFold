@@ -1437,7 +1437,7 @@ class ResearchRefsTests(unittest.TestCase):
             self.assertIn("breakdown kat_pal.ppm          non-CM method=3 (PAL)", bd_lines_r1_t1[12])
             self.assertIn("breakdown raw_1x1.ppm          non-CM method=0 (RAW)", bd_lines_r1_t1[13])
 
-            for idx, (stem, strips) in enumerate((("noisy_cm", 1), ("noisy_s2", 2), ("noisy_s3", 3))):
+            for idx, (stem, strips) in enumerate((("noisy_cm", 1), ("noisy_s2", 1), ("noisy_s3", 3))):
                 ch_re = re.compile(
                     rf"^  breakdown {re.escape(stem)}\.ppm\s+(G|R-G|B-G|ALL)\s+"
                     r"stream=\s*(\d+)\s+\(\s*[\d.]+%\)\s+"
@@ -1495,7 +1495,7 @@ class ResearchRefsTests(unittest.TestCase):
                 (ROOT / "src" / "cm.c")
                 .read_text(encoding="utf-8")
                 .replace(
-                    "for (int k = 0; k < LMSN; k++) ch->lms[k] = 0;",
+                    "for (int k = 0; k < LMSN; k++) ch->lms[k] = (nmodel == NMODEL && c == 2 && k == 6) ? 20000 : 0;",
                     "for (int k = 0; k < LMSN; k++) ch->lms[k] = (c == 2 && k == 6) ? 16384 : 0;",
                 ),
                 encoding="utf-8",

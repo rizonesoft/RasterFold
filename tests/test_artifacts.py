@@ -266,7 +266,7 @@ class Artifacts(unittest.TestCase):
             'int main(void) {\n'
             '    int rc;\n'
             '    if ((rc = test_one_geom(64, 64, 1)) != 0) return 10 + rc;\n'
-            '    if ((rc = test_one_geom(16, 512, 2)) != 0) return 40 + rc;\n'
+            '    if ((rc = test_one_geom(16, 512, 1)) != 0) return 40 + rc;\n'
             '    if ((rc = test_one_geom(12, 768, 3)) != 0) return 70 + rc;\n'
             '    return 0;\n'
             '}\n'

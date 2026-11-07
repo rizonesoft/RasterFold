@@ -1688,14 +1688,14 @@
       }
     },
     "spec/FOLD.md": {
-      "evidence": "2026-11-06: Reviewed spec/FOLD.md against src/rf.h, src/cm.c, src/fold.c, src/api.c, src/main.c, tests/rfi_ref.py, and spec/FOLD.md for D01 T03 section 3 (version 3 warm-started horizontal strips, 16-node context rows, 1 + 12*S strip framing, and default up-to-9 threads)",
+      "evidence": "2026-11-07: Reviewed spec/FOLD.md against src/cm.c, tests/rfi_ref.py, and spec/FOLD.md for D01 T05 section 4 (version 3 cold counter priors, damped RATE[0..72] schedule, choose_strips h >= 768 ? 3 : 1, CAP_VISIT = 24, unhalved warm LMS, c == 2 lms[6] = 20000, noise-damped wpred, and collision-reduced k0..k6 / wsel)",
       "sources": {
         "src/rf.h": "c7f9919e34924b6686ce876fd96550d28c39d025ed6233e6f338e03f37ce47a1",
         "src/fold.c": "7cecdf9622aa6d98be195cf43b1e77de7f9676f2a7c1f1129cc08dbe7497e8aa",
-        "src/cm.c": "e0f098205d6fe32e3d9b21cb3006386510310b195d18e610d9471e918906e870",
+        "src/cm.c": "54a7f232e08c392b99fb5b23f3584e1e1334abb81baa790d2ef3181622e5bdda",
         "src/crc32.c": "c6e682115185fcdcbfa0551823fc590f60c9c7b978a30009163288e664b3faec",
-        "tests/rfi_ref.py": "30437ac5ad4118395d589ea0f8e832105b3283f560aa752f3556995a1df14ea8",
-        "spec/FOLD.md": "6de7c37d2076544235821082fc81bbd6ed38a356f2db5c2623e0584dfeba075a"
+        "tests/rfi_ref.py": "694d39a27a703c033ef057aee4a3bf3352df5cf019f29e67f37d725d44c9b5fa",
+        "spec/FOLD.md": "10351c4d32f71d8228a9313f04a3050cc789846d164548fcb3a940488c0e1e26"
       },
       "reviewed_at": "2026-10-25",
       "reviewer": "Author-attested: 2026-10-25 re-read spec/FOLD.md against src/cm.c after D04 T01 section 1 (early row-boundary abort on exhausted CM stream; bitstream and format semantics unchanged)",

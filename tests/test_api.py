@@ -99,10 +99,10 @@ class Api(unittest.TestCase):
         self.assertEqual((info.width, info.height, info.method, tuple(info.stream_size)), (16, 8, 1, struct.unpack_from('<III', KAT_FOLD, 32)))
         self.assertEqual(LIBRARY.rf_inspect(KAT_FOLD3, len(KAT_FOLD3), C.byref(info), None), 0)
         self.assertEqual((info.width, info.height, info.method, tuple(info.stream_size)), (16, 8, 1, struct.unpack_from('<III', KAT_FOLD3, 33)))
-        # Verify S = 2 (h = 512), S = 3 (h = 768), and valid S = 4 (h = 12 short-strip and h = 400)
+        # Verify S = 1 (h = 512), valid S = 2 (h = 512), S = 3 (h = 768), and valid S = 4 (h = 12 short-strip and h = 400)
         # version 3 CM stream_size[0..2] sums and multi-thread decoding.
-        for mw, mh, want_s, force_s in ((8, 512, 2, None), (6, 768, 3, None), (8, 12, 4, 4), (6, 400, 4, 4)):
-            mrgb = bytes(((x * 29 + y * 13 + c * 41 + ((x * 7 + y * 5) % 11)) & 255)
+        for mw, mh, want_s, force_s in ((8, 512, 1, None), (8, 512, 2, 2), (6, 768, 3, None), (8, 12, 4, 4), (6, 400, 4, 4)):
+            mrgb = bytes(((x * (29 + c * 7) + y * (13 + c * 5) + ((x * 7 + y * 5 + c * 3) % 11)) & 255)
                          for y in range(mh) for x in range(mw) for c in range(3))
             if force_s is None:
                 mfold = encode(mw, mh, mrgb, threads=1)

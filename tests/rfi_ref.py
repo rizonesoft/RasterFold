@@ -55,6 +55,8 @@ for _x in range(-2047, 2048):
 for _j in range(_pi, 4096):
     STRETCH[_j] = 2047
 RATE = [(65536 * 2) // (2 * n + 3) for n in range(61)]
+RATE_V3 = [(65536 * 2) // (2 * n + 7) for n in range(73)]
+COLD_CTR_V3 = (0, 32768, 32768, 30000, 28000, 24000, 18000, 12000, 6000, 29000, 29000, 29000, 29000, 30000, 30000, 30000)
 DIVL = [(1 << 24) // (i + 1) for i in range(64)]
 
 
@@ -218,13 +220,17 @@ def _gg_dist(v: int, p: int) -> int:
 class Channel:
     """Model state of one channel (G, R-G or B-G) and its coder."""
 
-    def __init__(self, w: int, nmodel: int = NMODEL) -> None:
+    def __init__(self, w: int, nmodel: int = NMODEL, c: int = 0) -> None:
         self.w = w
         self.nmodel = nmodel
         self.nodes = NODES if nmodel == NMODEL else NODES_V2
-        self.ctr = [[0 if node == 0 else 32768 for node in range(self.nodes)] for _ in range(nmodel * NROWS)]
+        if nmodel == NMODEL:
+            self.ctr = [list(COLD_CTR_V3) for _ in range(nmodel * NROWS)]
+            self.lms = [20000 if (c == 2 and k == 6) else 0 for k in range(LMSN)]
+        else:
+            self.ctr = [[0 if node == 0 else 32768 for node in range(self.nodes)] for _ in range(nmodel * NROWS)]
+            self.lms = [0] * LMSN
         self.wt = [[19661] * nmodel + [0] for _ in range(128 * self.nodes)]
-        self.lms = [0] * LMSN
         # weighted predictor state, two rows of w + 2 positions (JPEG XL layout)
         self.perr = [[0, 0, 0, 0] for _ in range(2 * (w + 2))]
         self.err = [0] * (2 * (w + 2))
@@ -242,11 +248,11 @@ class Channel:
     def copy_warm_from(self, src: Channel) -> None:
         for r, src_row in enumerate(src.ctr):
             row = src_row.copy()
-            if row[0] > 6:
-                row[0] = 6
+            if row[0] > 24:
+                row[0] = 24
             self.ctr[r] = row
         self.wt = [w.copy() for w in src.wt]
-        self.lms = [u >> 1 for u in src.lms]
+        self.lms = src.lms.copy()
         self.eg = src.eg
         self.et = src.et
 
@@ -373,10 +379,16 @@ def _code_sample(ch: Channel, c: int, x: int, y: int, value: int, cross: dict) -
     teW = ch.err[cur + x - 1] if x > 0 else 0
     teN, teNW, teNE = ch.err[pN], ch.err[pNW], ch.err[pNE]
     sumWN = teN + teW
-    pr = [w8 + ne8 - n8,
-          n8 - (((sumWN + teNE) * 16) >> 5),
-          w8 - (((sumWN + teNW) * 10) >> 5),
-          n8 - (((teNW + teN + teNE) * 7) >> 5)]
+    if ch.nmodel == NMODEL:
+        pr = [w8 + (((ne8 - n8) * 3) >> 3),
+              n8 - (((sumWN + teNE) * 12) >> 5),
+              w8 - (((sumWN + teNW) * 8) >> 5),
+              n8 - (((teNW + teN + teNE) * 5) >> 5)]
+    else:
+        pr = [w8 + ne8 - n8,
+              n8 - (((sumWN + teNE) * 16) >> 5),
+              w8 - (((sumWN + teNW) * 10) >> 5),
+              n8 - (((teNW + teN + teNE) * 7) >> 5)]
     ws = sum(wt)
     lw = _ilog2(ws) - 4
     wt = [v >> lw for v in wt]
@@ -448,27 +460,50 @@ def _code_sample(ch: Channel, c: int, x: int, y: int, value: int, cross: dict) -
     qE = _qlog(E)
     gq = _q9(eg) if c else 4
     rq = _q9(er_r) if c == 2 else 4
-    scl = (E >> 2) + 2
     band = 0 if qE < 4 else 1 if qE < 8 else 2
-    k0 = (((_qn7(W - pred, scl) * 7 + _qn7(N - pred, scl)) * 7 + _qn7(NE - pred, scl)) * 7 + _qn7(NW - pred, scl)) * 3 + band
-    k1 = qE * 81 + gq * 9 + rq
-    k2 = (_qj(NE - N) * 81 + _qj(N - NW) * 9 + _qj(NW - W)) * 5 + (gq + 1) // 2
-    k3 = ((_q7(_med3(W, N, NW) - pred) * 7 + _q7(W + N - NW - pred)) * 7 + _q7(((W + NE + 1) >> 1) - pred)) * 7 + _q7(N + NE - NNE - pred)
-    k4 = (_q9(W - pred) * 9 + _q9(N - pred)) * 16 + qE
+    q2d = _qj(NE - N) * 81 + _qj(N - NW) * 9 + _qj(NW - W)
     if ch.nmodel == NMODEL:
+        scl = (E >> 2) + 3
+        cq = rq if c == 2 else gq
+        qe_c = ((qE >> 1) * 2) + (1 if cq != 4 else 0) if c >= 1 else qE
+        k0 = (_qn7(W - pred, scl) * 195 + _qn7(N - pred, scl) * 31 + _qn7(NE - pred, scl) * 5 + _qn7(NW - pred, scl)) * 3 + band
+        k1 = qE if c == 0 else qE * 9 + gq if c == 1 else qE * 81 + gq * 9 + rq
+        k2 = q2d if c == 0 else q2d * 3 + (0 if cq < 3 else 2 if cq > 5 else 1)
+        k3 = _q7(_med3(W, N, NW) - pred) * 289 + _q7(W + N - NW - pred) * 43 + _q7(((W + NE + 1) >> 1) - pred) * 7 + _q7(N + NE - NNE - pred)
+        k4 = (_q9(W - pred) * 9 + _q9(N - pred)) * 16 + qe_c
         WW = r0[x - 2] if x > 1 else W
-        k5 = (_q9(NE - pred) * 9 + _q9(NW - pred)) * 16 + qE
-        k6 = ((_qn7(WW - pred, scl) * 7 + _qn7(NN - pred, scl)) * 7 + _qn7(NNE - pred, scl)) * 16 + qE
+        k5 = (_q9(NE - pred) * 9 + _q9(NW - pred)) * 16 + qe_c
+        k6 = ((_qn7(WW - pred, scl) * 7 + _qn7(NN - pred, scl)) * 7 + _qn7(NNE - pred, scl)) * 6 + ((qE * 3) >> 3)
         ks = (k0, k1, k2, k3, k4, k5, k6)
+        rows = [k * NROWS + kk % NROWS for k, kk in enumerate(ks)]
+        rates = []
+        g_use = pc != g
+        for r in rows:
+            n = ch.ctr[r][0]
+            rn = n - 2 if (g_use and n >= 2) else n
+            rates.append(RATE_V3[rn])
+            ch.ctr[r][0] = n + (1 if n < 72 else 0)
+        if c == 0:
+            wsel = qE * 2 + (1 if use else 0)
+        elif c == 1:
+            wsel = (qE * 3 + (0 if gq == 4 else 1 + (1 if abs(eg) > 3 else 0))) * 2 + (1 if use else 0)
+        else:
+            wsel = (qE * 3 + (0 if (rq == 4 and gq == 4) else 1 + (1 if abs(er_r) > 3 else 0))) * 2 + (1 if use else 0)
     else:
+        scl = (E >> 2) + 2
+        k0 = (((_qn7(W - pred, scl) * 7 + _qn7(N - pred, scl)) * 7 + _qn7(NE - pred, scl)) * 7 + _qn7(NW - pred, scl)) * 3 + band
+        k1 = qE * 81 + gq * 9 + rq
+        k2 = q2d * 5 + (gq + 1) // 2
+        k3 = ((_q7(_med3(W, N, NW) - pred) * 7 + _q7(W + N - NW - pred)) * 7 + _q7(((W + NE + 1) >> 1) - pred)) * 7 + _q7(N + NE - NNE - pred)
+        k4 = (_q9(W - pred) * 9 + _q9(N - pred)) * 16 + qE
         ks = (k0, k1, k2, k3, k4)
-    rows = [k * NROWS + kk % NROWS for k, kk in enumerate(ks)]
-    rates = []
-    for r in rows:
-        n = ch.ctr[r][0]
-        rates.append(RATE[n])
-        ch.ctr[r][0] = n + (1 if n < 60 else 0)
-    wsel = qE * 8 + ((0 if gq == 4 else 1 + (1 if abs(eg) > 3 else 0)) if c else 3) + 4 * use
+        rows = [k * NROWS + kk % NROWS for k, kk in enumerate(ks)]
+        rates = []
+        for r in rows:
+            n = ch.ctr[r][0]
+            rates.append(RATE[n])
+            ch.ctr[r][0] = n + (1 if n < 60 else 0)
+        wsel = qE * 8 + ((0 if gq == 4 else 1 + (1 if abs(eg) > 3 else 0)) if c else 3)
     wrow = wsel * ch.nodes
 
     # code
@@ -566,10 +601,10 @@ def _run_strips(width: int, height: int, nstrips: int, strips: list[list[Channel
 
 def cm_encode(width: int, height: int, rgb: bytes, nstrips: int | None = None) -> bytes:
     if nstrips is None:
-        nstrips = 3 if height >= 768 else 2 if height >= 512 else 1
+        nstrips = 3 if height >= 768 else 1
     if nstrips < 1 or nstrips > 4 or nstrips > height:
         raise ValueError("cm strips")
-    strips = [[Channel(width, NMODEL) for _ in range(3)] for _ in range(nstrips)]
+    strips = [[Channel(width, NMODEL, c) for c in range(3)] for _ in range(nstrips)]
     for chans in strips:
         for ch in chans:
             ch.enc = RangeEncoder()
@@ -601,7 +636,7 @@ def cm_decode(payload: bytes, width: int, height: int, version: int = VERSION) -
             raise FormatError("cm streams")
         pos = hdr
     nmodel = NMODEL if version == 3 else NMODEL_V2
-    strips = [[Channel(width, nmodel) for _ in range(3)] for _ in range(nstrips)]
+    strips = [[Channel(width, nmodel, c) for c in range(3)] for _ in range(nstrips)]
     for s in range(nstrips):
         for c in range(3):
             size = sizes[3 * s + c]

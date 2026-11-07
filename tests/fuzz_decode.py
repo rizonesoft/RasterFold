@@ -47,6 +47,7 @@ PHOTO_CROPS: tuple[tuple[str, int, int, int, int], ...] = (
     ("spider_web_crop.png", 160, 240, 36, 34),
 )
 FORCE_STRIPS: dict[str, int] = {
+    "kodim13.png": 2,
     "nightshot_iso_1600_crop.png": 4,
     "spider_web_crop.png": 4,
 }

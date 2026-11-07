@@ -118,7 +118,9 @@ else.
 Version 2 files have a single strip (`S = 1`, `y0_0 = 0`, `y1_0 = height`,
 `h_0 = height`).
 
-In version 3, the `height` image rows `0 .. height - 1` are partitioned into
+In version 3, the reference encoder chooses `S = 3` when `height >= 768` and
+`S = 1` when `height < 768` (a decoder accepts any `S` in `1..4` with
+`S <= height`). The `height` image rows `0 .. height - 1` are partitioned into
 `S` contiguous non-empty horizontal strips `s = 0 .. S - 1` covering image rows
 `[y0_s, y1_s)` of height `h_s = y1_s - y0_s >= 1`:
 
@@ -148,9 +150,12 @@ predictor arrays (`perr`, `err`, `er`, `fe`, `ex`) and gated-gradient sums
 (`Eg`, `Et`) set to 0.
 
 Strip 0 starts cold: for each channel `c`, all `M * 2048` model rows have visit
-count `cell 0 = 0` and probabilities `cell 1 .. N_nodes - 1 = 32768`, all
-`128 * N_nodes` weight sets have weights `0 .. M - 1 = 19661` and bias weight
-`M = 0`, and all twelve LMS weights `u_0 .. u_11 = 0`.
+count `cell 0 = 0`. In version 2 (`M = 5`, `N_nodes = 32`), `cell 1 .. 31 = 32768`
+and all twelve LMS weights `u_0 .. u_11 = 0`. In version 3 (`M = 7`, `N_nodes = 16`),
+`cell 1 .. 15 = (32768, 32768, 30000, 28000, 24000, 18000, 12000, 6000, 29000, 29000, 29000, 29000, 30000, 30000, 30000)`,
+and the twelve LMS weights start at `u_0 .. u_11 = 0` except on channel 2
+(`B - G`), where `u_6 = 20000`. In both versions, all `128 * N_nodes` weight
+sets have weights `0 .. M - 1 = 19661` and bias weight `M = 0`.
 
 For `S > 1`, each strip `s < S - 1` warm-starts strip `s + 1` after coding
 `warm_rows_s` local rows of strip `s`:
@@ -164,12 +169,11 @@ on channel `c` (and before strip `s` codes row `y = warm_rows_s`, if any),
 strip `s + 1`'s channel `c` is initialized from strip `s`'s channel `c` state
 at that instant:
 
-- For every model row `0 .. M * 2048 - 1`: `cell 0 = min(strip_s.cell 0, 6)`,
+- For every model row `0 .. M * 2048 - 1`: `cell 0 = min(strip_s.cell 0, 24)`,
   and `cell d = strip_s.cell d` for `d = 1 .. N_nodes - 1`.
-- Every weight set `(wsel, d)` and the gated-gradient accumulators `Eg` and
-  `Et` are copied verbatim from `strip_s`.
-- Every LMS weight is halved by arithmetic shift: `u_k = strip_s.u_k >> 1` for
-  `k = 0 .. 11`.
+- Every weight set `(wsel, d)`, the gated-gradient accumulators `Eg` and `Et`,
+  and all twelve LMS weights `u_0 .. u_11` (`u_k = strip_s.u_k` for
+  `k = 0 .. 11`) are copied verbatim from `strip_s`.
 - Strip `s + 1`'s two-row predictor buffers (`perr`, `err`, `er`, `fe`, `ex`)
   remain 0.
 
@@ -248,10 +252,16 @@ wt_k = errw(perr_k[pN] + perr_k[pNE] + perr_k[pNW], m_k),  m = (13, 12, 12, 12)
 teW  = err[cur, x-1] if x > 0 else 0
 teN  = err[pN],  teNW = err[pNW],  teNE = err[pNE]
 n8, w8, ne8 = 8N, 8W, 8NE
-pr_0 = w8 + ne8 - n8
-pr_1 = n8 - (((teN + teW + teNE) * 16) >> 5)
-pr_2 = w8 - (((teN + teW + teNW) * 10) >> 5)
-pr_3 = n8 - (((teNW + teN + teNE) * 7) >> 5)
+if version == 2:
+    pr_0 = w8 + ne8 - n8
+    pr_1 = n8 - (((teN + teW + teNE) * 16) >> 5)
+    pr_2 = w8 - (((teN + teW + teNW) * 10) >> 5)
+    pr_3 = n8 - (((teNW + teN + teNE) * 7) >> 5)
+else:                                                  (version 3)
+    pr_0 = w8 + (((ne8 - n8) * 3) >> 3)
+    pr_1 = n8 - (((teN + teW + teNE) * 12) >> 5)
+    pr_2 = w8 - (((teN + teW + teNW) * 8) >> 5)
+    pr_3 = n8 - (((teNW + teN + teNE) * 5) >> 5)
 
 S  = wt_0 + wt_1 + wt_2 + wt_3
 L  = ilog2(S) - 4
@@ -279,7 +289,9 @@ x_10 = 8(NN - N), x_11 = 8(NNE - NE)
 ```
 
 `FG` and `FR` are the final errors of G and R at this pixel, clamped to
--2047..2047. The channel has twelve weights `u_k`, all 0 at the start.
+-2047..2047. The channel has twelve weights `u_k`, starting at 0 in strip 0
+(except `u_6 = 20000` on channel 2 in version 3; for `S > 1`, strip `s + 1`
+copies `u_0 .. u_11` from strip `s` at the warm-start handoff).
 
 ```
 corr  = clamp((sum_k u_k * x_k) >> 16, -256, 256)
@@ -336,7 +348,7 @@ eNE = er[prv, x+1] if y > 0 and x+1 < width else eN
 E   = 2|eW| + 2|eN| + |eNW| + |eNE|
 qE  = 0 if E <= 0, 15 if E >= 16384, else ilog2(E) + 1
 band = 0 if qE < 4, 1 if qE < 8, else 2
-scl = (E >> 2) + 2
+scl = (E >> 2) + 2  in version 2;  (E >> 2) + 3  in version 3
 
 count(a, t...) = number of thresholds t_i with a >= t_i
 q9(v)  = 4 + sign(v) * count(|v|, 1, 2, 4, 8)
@@ -346,17 +358,30 @@ qn(v)  = 3 + sign(v) * count(6|v|, scl, 3 scl, 7 scl)
 med(a, b, c) = min(a, b) if c >= max(a, b); max(a, b) if c <= min(a, b); else a + b - c
 gq = q9(EG) for channels 1, 2, else 4
 rq = q9(ER) for channel 2, else 4
+q2d = qj(NE-N)*81 + qj(N-NW)*9 + qj(NW-W)
 
-k0 = ((((qn(W-pred)*7 + qn(N-pred))*7 + qn(NE-pred))*7 + qn(NW-pred))*3 + band
-k1 = qE*81 + gq*9 + rq
-k2 = (qj(NE-N)*81 + qj(N-NW)*9 + qj(NW-W))*5 + (gq+1)/2
-k3 = ((q7(med(W,N,NW)-pred)*7 + q7(W+N-NW-pred))*7 + q7(((W+NE+1)>>1)-pred))*7 + q7(N+NE-NNE-pred)
-k4 = (q9(W-pred)*9 + q9(N-pred))*16 + qE
-k5 = (q9(NE-pred)*9 + q9(NW-pred))*16 + qE                          (version 3 only)
-k6 = ((qn(WW-pred)*7 + qn(NN-pred))*7 + qn(NNE-pred))*16 + qE       (version 3 only)
+if version == 2:
+    k0 = ((((qn(W-pred)*7 + qn(N-pred))*7 + qn(NE-pred))*7 + qn(NW-pred))*3 + band
+    k1 = qE*81 + gq*9 + rq
+    k2 = q2d*5 + (gq+1)/2
+    k3 = ((q7(med(W,N,NW)-pred)*7 + q7(W+N-NW-pred))*7 + q7(((W+NE+1)>>1)-pred))*7 + q7(N+NE-NNE-pred)
+    k4 = (q9(W-pred)*9 + q9(N-pred))*16 + qE
+    wsel = qE*8 + j,  j = 3 for channel 0; for channels 1, 2 j = 0 if gq = 4,
+           else 1 if |EG| <= 3, else 2
+else:                                                  (version 3)
+    cq   = rq for channel 2, else gq
+    qe_c = (qE >> 1)*2 + (1 if cq != 4 else 0) for channels 1, 2, else qE
+    k0 = (qn(W-pred)*195 + qn(N-pred)*31 + qn(NE-pred)*5 + qn(NW-pred))*3 + band
+    k1 = qE for channel 0;  qE*9 + gq for channel 1;  qE*81 + gq*9 + rq for channel 2
+    k2 = q2d for channel 0;  q2d*3 + (0 if cq < 3 else 2 if cq > 5 else 1) for channels 1, 2
+    k3 = q7(med(W,N,NW)-pred)*289 + q7(W+N-NW-pred)*43 + q7(((W+NE+1)>>1)-pred)*7 + q7(N+NE-NNE-pred)
+    k4 = (q9(W-pred)*9 + q9(N-pred))*16 + qe_c
+    k5 = (q9(NE-pred)*9 + q9(NW-pred))*16 + qe_c
+    k6 = ((qn(WW-pred)*7 + qn(NN-pred))*7 + qn(NNE-pred))*6 + ((qE*3) >> 3)
+    wsel = qE*2 + use                                                          (channel 0)
+           (qE*3 + (0 if gq = 4 else 1 if |EG| <= 3 else 2))*2 + use           (channel 1)
+           (qE*3 + (0 if rq = 4 and gq = 4 else 1 if |ER| <= 3 else 2))*2 + use (channel 2)
 row_m = k_m mod 2048                                   for model m = 0..M-1
-wsel = qE*8 + j + 4 use,  j = 3 for channel 0; for channels 1, 2 j = 0 if gq = 4,
-       else 1 if |EG| <= 3, else 2
 ```
 
 `M`, the number of models, is 5 for version 2 files and 7 for version 3
@@ -366,15 +391,21 @@ files. `N_nodes`, the number of cells per model row and nodes per `wsel`, is
 ### Models
 
 Each channel has `M` tables of 2048 rows by `N_nodes` 16-bit cells. Cell 0 of a
-row is its visit count `n`, starting at 0 (or capped at 6 on warm-start
+row is its visit count `n`, starting at 0 (or capped at 24 on warm-start
 handoff). Cells `1 .. N_nodes - 1` are probabilities of a 1 bit in units of
-1/65536, starting at 32768. Before the sample is coded, for each model m in
-order 0..M-1:
+1/65536, starting at 32768 in version 2 and at the version 3 cold vector in
+"Strips and warm start (version 3)" above. Before the sample is coded, for each
+model m in order 0..M-1:
 
 ```
 n = cell 0 of row_m
-rate_m = 65536 * 2 / (2n + 3)
-cell 0 of row_m = n + 1 if n < 60 else n
+if version == 2:
+    rate_m = 65536 * 2 / (2n + 3)
+    cell 0 of row_m = n + 1 if n < 60 else n
+else:                                                  (version 3)
+    rn = n - 2 if pc != b_c and n >= 2 else n
+    rate_m = 65536 * 2 / (2 rn + 7)
+    cell 0 of row_m = n + 1 if n < 72 else n
 ```
 
 Each channel has `128 * N_nodes` weight sets of `M + 1` signed 32-bit weights,
