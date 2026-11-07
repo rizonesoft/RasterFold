@@ -494,10 +494,12 @@ class _AbpoolSelfTests(unittest.TestCase):
 
             built_calls: list[tuple[Path, Path, list[str]]] = []
             run_orders: list[str] = []
+            run_threads: list[tuple[str, str]] = []
 
             class FakeAb:
                 RES = res
                 T = "-t1"
+                THREADS = "-t1"
                 SETS = {
                     "photo": ["big_img", "tiny_img"],
                     "synth": ["syn_img"],
@@ -518,13 +520,14 @@ class _AbpoolSelfTests(unittest.TestCase):
                 def run(exe: Path, imgs: list[str]) -> str:
                     tag = "A" if exe.name == "benchA.exe" else "B"
                     run_orders.append(tag)
+                    run_threads.append((FakeAb.T, FakeAb.THREADS))
                     return tag
 
                 @staticmethod
-                def parse_bench_rows(out: str, imgs: list[str]) -> dict[str, list[float]]:
+                def parse_bench_rows(out: str, imgs: list[str]) -> dict[str, tuple[int, float, float]]:
                     if out == "A":
-                        return {i: ([1000, 100.0, 80.0] if "tiny" not in i else [50, 1.0, 1.0]) for i in imgs}
-                    return {i: ([1002, 104.0, 82.0] if "tiny" not in i else [50, 1.4, 1.3]) for i in imgs}
+                        return {i: ((1000, 100.0, 80.0) if "tiny" not in i else (50, 1.0, 1.0)) for i in imgs}
+                    return {i: ((1002, 104.0, 82.0) if "tiny" not in i else (50, 1.4, 1.3)) for i in imgs}
 
                 @staticmethod
                 def ppm_dimensions(p: Path) -> tuple[int, int]:
@@ -536,7 +539,7 @@ class _AbpoolSelfTests(unittest.TestCase):
             buf = io.StringIO()
             with redirect_stdout(buf):
                 meta = run_pool(
-                    [str(log_file), str(base_c), str(cand_c), "-t1", "2", "big_img", "tiny_img"],
+                    [str(log_file), str(base_c), str(cand_c), "-t3", "2", "big_img", "tiny_img"],
                     ab_mod=FakeAb,
                     repo=root,
                 )
@@ -544,6 +547,7 @@ class _AbpoolSelfTests(unittest.TestCase):
             self.assertEqual(meta["b_sha256"], file_sha256(cand_c))
             self.assertEqual(meta["set"], "photo")
             self.assertEqual(run_orders, ["A", "B", "B", "A"])
+            self.assertEqual(run_threads, [("-t3", "-t3")] * 4)
             self.assertEqual(len(built_calls), 2)
             self.assertEqual(built_calls[0][0], base_c)
             self.assertEqual(built_calls[1][0], cand_c)
@@ -551,7 +555,7 @@ class _AbpoolSelfTests(unittest.TestCase):
             # Appending with a different baseline or candidate into the same log is refused.
             with self.assertRaises(SystemExit) as ctx:
                 run_pool(
-                    [str(log_file), str(other_c), str(cand_c), "-t1", "1", "big_img", "tiny_img"],
+                    [str(log_file), str(other_c), str(cand_c), "-t3", "1", "big_img", "tiny_img"],
                     ab_mod=FakeAb,
                     repo=root,
                 )
@@ -560,7 +564,7 @@ class _AbpoolSelfTests(unittest.TestCase):
             # Appending with different build flags or image membership is refused.
             with self.assertRaises(SystemExit) as ctx_flags:
                 run_pool(
-                    [str(log_file), str(base_c), str(cand_c), "-t1", "1", "big_img", "tiny_img", "-DSTRIP_MODE=3"],
+                    [str(log_file), str(base_c), str(cand_c), "-t3", "1", "big_img", "tiny_img", "-DSTRIP_MODE=3"],
                     ab_mod=FakeAb,
                     repo=root,
                 )
@@ -568,7 +572,7 @@ class _AbpoolSelfTests(unittest.TestCase):
 
             with self.assertRaises(SystemExit) as ctx_imgs:
                 run_pool(
-                    [str(log_file), str(base_c), str(cand_c), "-t1", "1", "big_img"],
+                    [str(log_file), str(base_c), str(cand_c), "-t3", "1", "big_img"],
                     ab_mod=FakeAb,
                     repo=root,
                 )

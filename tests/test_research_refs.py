@@ -1567,6 +1567,7 @@ class ResearchRefsTests(unittest.TestCase):
             with (
                 mock.patch.object(vsjxl, "TMP", td),
                 mock.patch.object(vsjxl.os, "name", "posix"),
+                mock.patch.object(vsjxl, "_ffmpeg_bin", return_value="ffmpeg"),
                 mock.patch.object(benchmark, "run", side_effect=fake_run),
                 contextlib.redirect_stdout(buf),
             ):
@@ -1577,6 +1578,14 @@ class ResearchRefsTests(unittest.TestCase):
             rf_dec_calls = [c for c in calls if "decode" in c and str(fake_exe) in c[0]]
             self.assertEqual(len(rf_dec_calls), 30)
             self.assertTrue(all("--threads" in c and "9" in c for c in rf_dec_calls))
+
+            with (
+                mock.patch.object(vsjxl.os, "name", "posix"),
+                mock.patch.object(vsjxl.subprocess, "check_output", return_value="C:\\wsl\\tmp\\in.bmp\n") as m_wsl,
+            ):
+                self.assertEqual(vsjxl._ff_path("/mnt/c/ffmpeg.exe", td / "in.bmp"), "C:\\wsl\\tmp\\in.bmp")
+                m_wsl.assert_called_once()
+                self.assertEqual(vsjxl._ff_path("ffmpeg", td / "in.bmp"), str(td / "in.bmp"))
 
 
 if __name__ == "__main__":

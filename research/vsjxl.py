@@ -187,6 +187,21 @@ def run_corpus_ab(set_name: str, n: int, threads: int, pgo_profile: Path | None,
         )
 
 
+def _ffmpeg_bin() -> str:
+    return (
+        shutil.which("ffmpeg")
+        or shutil.which("ffmpeg.exe")
+        or "/mnt/c/Users/DerickPayne/AppData/Local/Microsoft/WinGet/Links/ffmpeg.exe"
+    )
+
+
+def _ff_path(ffmpeg_bin: str, path: Path) -> str:
+    s = str(path.resolve())
+    if os.name != "nt" and ffmpeg_bin.lower().endswith(".exe") and s.startswith("/"):
+        return subprocess.check_output(["wslpath", "-w", s], text=True).strip()
+    return str(path)
+
+
 def run_webp_photos(exe: Path, n: int, threads: int | None) -> None:
     from PIL import Image
 
@@ -194,11 +209,7 @@ def run_webp_photos(exe: Path, n: int, threads: int | None) -> None:
         sys.path.insert(0, str(REPO / "tests"))
     import benchmark
 
-    ffmpeg = (
-        shutil.which("ffmpeg")
-        or shutil.which("ffmpeg.exe")
-        or "/mnt/c/Users/DerickPayne/AppData/Local/Microsoft/WinGet/Links/ffmpeg.exe"
-    )
+    ffmpeg = _ffmpeg_bin()
     photos = sorted((REPO / "testdata" / "photos").glob("*.png"))
     tag = str(threads) if threads else "default"
 
@@ -224,7 +235,7 @@ def run_webp_photos(exe: Path, n: int, threads: int | None) -> None:
             if rc_enc != 0:
                 raise SystemExit(f"encode failed on {stem}")
             rc_wenc, _, _ = benchmark.run(
-                [ffmpeg, "-y", "-v", "error", "-i", str(bmp), "-c:v", "libwebp", "-lossless", "1", "-quality", "100", "-compression_level", "6", "-threads", "1", str(webp)]
+                [ffmpeg, "-y", "-v", "error", "-i", _ff_path(ffmpeg, bmp), "-c:v", "libwebp", "-lossless", "1", "-quality", "100", "-compression_level", "6", "-threads", "1", _ff_path(ffmpeg, webp)]
             )
             if rc_wenc != 0:
                 raise SystemExit(f"webp encode failed on {stem}")
@@ -232,7 +243,7 @@ def run_webp_photos(exe: Path, n: int, threads: int | None) -> None:
             if threads:
                 cmd_rf += ["--threads", str(threads)]
             cmd_rf += ["decode", str(fold), str(out_rf)]
-            cmd_webp = [ffmpeg, "-y", "-v", "error", "-i", str(webp), str(out_webp)]
+            cmd_webp = [ffmpeg, "-y", "-v", "error", "-i", _ff_path(ffmpeg, webp), _ff_path(ffmpeg, out_webp)]
             rf_times: list[int] = []
             webp_times: list[int] = []
             for r in range(n):
@@ -301,11 +312,7 @@ def main():
         ctx = tempfile.TemporaryDirectory(prefix="rf_vsjxl_")
     else:
         ctx = tempfile.TemporaryDirectory(prefix="rf_vsjxl_", dir=TMP)
-    ffmpeg = (
-        shutil.which("ffmpeg")
-        or shutil.which("ffmpeg.exe")
-        or "/mnt/c/Users/DerickPayne/AppData/Local/Microsoft/WinGet/Links/ffmpeg.exe"
-    )
+    ffmpeg = _ffmpeg_bin()
     with ctx as td:
         work = Path(td)
         local_src = work / "in.bmp"
@@ -348,10 +355,10 @@ def main():
             res["rf_enc"].append(wall([str(exe), "encode", *t_args, str(local_src), str(fold)]))
             res["rf_dec"].append(wall([str(exe), "decode", *t_args, str(fold), str(work / "t.bmp")]))
             jxl.unlink(missing_ok=True)
-            res["jxl_enc"].append(wall([ffmpeg, "-y", "-hide_banner", "-loglevel", "error", "-i", str(local_src), "-c:v", "libjxl",
-                                        "-distance", "0", "-effort", "7", "-threads", jxl_threads, "-update", "1", str(jxl)]))
-            res["jxl_dec"].append(wall([ffmpeg, "-y", "-hide_banner", "-loglevel", "error", "-threads", jxl_threads, "-i", str(jxl), "-frames:v", "1",
-                                        "-update", "1", str(work / "j.bmp")]))
+            res["jxl_enc"].append(wall([ffmpeg, "-y", "-hide_banner", "-loglevel", "error", "-i", _ff_path(ffmpeg, local_src), "-c:v", "libjxl",
+                                        "-distance", "0", "-effort", "7", "-threads", jxl_threads, "-update", "1", _ff_path(ffmpeg, jxl)]))
+            res["jxl_dec"].append(wall([ffmpeg, "-y", "-hide_banner", "-loglevel", "error", "-threads", jxl_threads, "-i", _ff_path(ffmpeg, jxl), "-frames:v", "1",
+                                        "-update", "1", _ff_path(ffmpeg, work / "j.bmp")]))
         for k, v in res.items():
             print(f"{k:8s} median {statistics.median(v):8.1f} ms   min {min(v):8.1f}")
         print(f"size rf={fold.stat().st_size} jxl={jxl.stat().st_size} ratio={fold.stat().st_size / jxl.stat().st_size:.4f}")
