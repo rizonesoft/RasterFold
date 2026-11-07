@@ -60,7 +60,7 @@ M = [
      f"{BENCH}, {SIZE}", [FF, IDLE], None,
      "D02 T02 §1, D01 T03 §2, D02 T02 §3, D01 T03 §3"),
     (7, "Photographs beat JPEG XL e9",
-     "at least 34 of 39 photos and 8 of 10 test-pack photos below JPEG XL e9, and no photo or test-pack photo more than 1.0% larger than e9 (milestone 4: 31 of 39, 7 of 10, worst `kodim16` 1.52%); encode at most 0.3 of JPEG XL e7's time, both at one thread (`python research/vsjxl.py -n5`)",
+     "at least 34 of 39 photos and 8 of 10 test-pack photos below JPEG XL e9, and no photo or test-pack photo more than 1.0% larger than e9 (milestone 4: 31 of 39, 7 of 10, worst `kodim16` 1.52%); encode at most 0.3 of JPEG XL e7's time (`python research/vsjxl.py -n5`)",
      f"{SIZE}, {BENCH}", [FF, IDLE], None,
      "D01 T05 §1, D01 T05 §2, D01 T05 §3, D01 T05 §4"),
     (8, "Beat WebP on generated images",

@@ -1,7 +1,8 @@
 """Alternate RasterFold and ffmpeg/libjxl (or two RasterFold executables / corpus sets) runs; report medians and mins.
 
-usage: python research/vsjxl.py [image.bmp] [-n 5] [--threads 1|3] [--exe PATH] [--alt-exe PATH]
+usage: python research/vsjxl.py [image.bmp] [-n 5] [--threads 1|3|6|9] [--exe PATH] [--alt-exe PATH]
        python research/vsjxl.py --corpus photo|tp|synth [-n 3] [--threads 1|3] [--pgo-profile PATH]
+       python research/vsjxl.py --webp-photos [-n 3] [--threads 1|3|6|9] [--exe PATH]
 """
 import argparse
 import math
@@ -42,10 +43,11 @@ def parse_args(argv):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("image", nargs="?", default=str(REPO / "measure" / "image.bmp"))
     p.add_argument("-n", type=int, default=5)
-    p.add_argument("--threads", type=int, choices=(1, 3), default=None)
+    p.add_argument("--threads", type=int, choices=(1, 3, 6, 9), default=None)
     p.add_argument("--exe", type=Path, default=DEFAULT_EXE)
     p.add_argument("--alt-exe", type=Path, default=None)
     p.add_argument("--corpus", choices=("photo", "tp", "synth", "all"), default=None)
+    p.add_argument("--webp-photos", action="store_true", help="compare RasterFold and lossless WebP decode wall time on testdata/photos")
     p.add_argument("--pgo-profile", type=Path, default=None)
     p.add_argument("--lto", action="store_true", help="compare multi-TU non-LTO vs LTO corpus builds")
     return p.parse_args(norm)
@@ -185,8 +187,107 @@ def run_corpus_ab(set_name: str, n: int, threads: int, pgo_profile: Path | None,
         )
 
 
+def run_webp_photos(exe: Path, n: int, threads: int | None) -> None:
+    from PIL import Image
+
+    if str(REPO / "tests") not in sys.path:
+        sys.path.insert(0, str(REPO / "tests"))
+    import benchmark
+
+    ffmpeg = (
+        shutil.which("ffmpeg")
+        or shutil.which("ffmpeg.exe")
+        or "/mnt/c/Users/DerickPayne/AppData/Local/Microsoft/WinGet/Links/ffmpeg.exe"
+    )
+    photos = sorted((REPO / "testdata" / "photos").glob("*.png"))
+    tag = str(threads) if threads else "default"
+
+    def _run_in(work_dir: Path) -> None:
+        if os.name == "nt":
+            local_exe = work_dir / "rasterfold.exe"
+            shutil.copy2(exe, local_exe)
+        else:
+            local_exe = exe
+        rf_totals: list[int] = []
+        webp_totals: list[int] = []
+        ratios: list[float] = []
+        for p in photos:
+            stem = p.stem
+            bmp = work_dir / f"{stem}.bmp"
+            fold = work_dir / f"{stem}.fold"
+            webp = work_dir / f"{stem}.webp"
+            out_rf = work_dir / f"{stem}.rf.bmp"
+            out_webp = work_dir / f"{stem}.webp.bmp"
+            with Image.open(p) as im:
+                im.convert("RGB").save(bmp, "BMP")
+            rc_enc, _, _ = benchmark.run([str(local_exe), "encode", str(bmp), str(fold)])
+            if rc_enc != 0:
+                raise SystemExit(f"encode failed on {stem}")
+            rc_wenc, _, _ = benchmark.run(
+                [ffmpeg, "-y", "-v", "error", "-i", str(bmp), "-c:v", "libwebp", "-lossless", "1", "-quality", "100", "-compression_level", "6", "-threads", "1", str(webp)]
+            )
+            if rc_wenc != 0:
+                raise SystemExit(f"webp encode failed on {stem}")
+            cmd_rf = [str(local_exe)]
+            if threads:
+                cmd_rf += ["--threads", str(threads)]
+            cmd_rf += ["decode", str(fold), str(out_rf)]
+            cmd_webp = [ffmpeg, "-y", "-v", "error", "-i", str(webp), str(out_webp)]
+            rf_times: list[int] = []
+            webp_times: list[int] = []
+            for r in range(n):
+                if r % 2 == 0:
+                    out_rf.unlink(missing_ok=True)
+                    rc, dt_rf, _ = benchmark.run(cmd_rf)
+                    if rc != 0:
+                        raise SystemExit(f"rf decode failed on {stem}")
+                    rf_times.append(dt_rf)
+                    out_webp.unlink(missing_ok=True)
+                    rc, dt_w, _ = benchmark.run(cmd_webp)
+                    if rc != 0:
+                        raise SystemExit(f"webp decode failed on {stem}")
+                    webp_times.append(dt_w)
+                else:
+                    out_webp.unlink(missing_ok=True)
+                    rc, dt_w, _ = benchmark.run(cmd_webp)
+                    if rc != 0:
+                        raise SystemExit(f"webp decode failed on {stem}")
+                    webp_times.append(dt_w)
+                    out_rf.unlink(missing_ok=True)
+                    rc, dt_rf, _ = benchmark.run(cmd_rf)
+                    if rc != 0:
+                        raise SystemExit(f"rf decode failed on {stem}")
+                    rf_times.append(dt_rf)
+            rf_med = sorted(rf_times)[len(rf_times) // 2]
+            w_med = sorted(webp_times)[len(webp_times) // 2]
+            rf_totals.append(rf_med)
+            webp_totals.append(w_med)
+            ratios.append(rf_med / w_med)
+            print(f"{stem:28s} rf={rf_med:8.0f} us  webp={w_med:8.0f} us  ratio={rf_med/w_med:.3f}", flush=True)
+        tot_rf = sum(rf_totals)
+        tot_w = sum(webp_totals)
+        geomean = math.exp(sum(math.log(r) for r in ratios) / len(ratios))
+        print(
+            f"TOTAL threads={tag}: rf={tot_rf:.0f} ({tot_rf/1e6:.2f}s) webp={tot_w:.0f} ({tot_w/1e6:.2f}s) ratio={tot_rf/tot_w:.3f} geomean={geomean:.3f}",
+            flush=True,
+        )
+
+    if os.name == "nt":
+        with tempfile.TemporaryDirectory(prefix="rf_vsjxl_webp_") as td:
+            _run_in(Path(td))
+    else:
+        work = TMP / f"webp_photos_{tag}"
+        if work.exists():
+            shutil.rmtree(work)
+        work.mkdir(parents=True, exist_ok=True)
+        _run_in(work)
+
+
 def main():
     args = parse_args(sys.argv[1:])
+    if args.webp_photos:
+        run_webp_photos(args.exe, args.n, args.threads)
+        return
     if args.corpus is not None:
         run_corpus_ab(args.corpus, args.n, args.threads or 1, args.pgo_profile, lto=args.lto)
         return

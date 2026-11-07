@@ -1532,6 +1532,52 @@ class ResearchRefsTests(unittest.TestCase):
             self.assertIn("MISMATCH", proc_bad.stdout)
             self.assertIn("instrumented payload mismatch", proc_bad.stderr)
 
+    def test_vsjxl_webp_photos_parses_args_and_runs_alternating_benchmark(self) -> None:
+        args = vsjxl.parse_args(["--webp-photos", "-n3", "--threads", "9"])
+        self.assertTrue(args.webp_photos)
+        self.assertEqual(args.n, 3)
+        self.assertEqual(args.threads, 9)
+
+        args_def = vsjxl.parse_args(["--webp-photos", "-n", "2"])
+        self.assertTrue(args_def.webp_photos)
+        self.assertEqual(args_def.n, 2)
+        self.assertIsNone(args_def.threads)
+
+        import benchmark
+
+        with tempfile.TemporaryDirectory() as tmp:
+            td = Path(tmp)
+            fake_exe = td / "rasterfold"
+            fake_exe.write_bytes(b"fake")
+            calls: list[list[str]] = []
+
+            def fake_run(cmd: list[str]) -> tuple[int, int, int]:
+                calls.append(list(cmd))
+                out_path = Path(cmd[-1])
+                out_path.write_bytes(b"out")
+                if "encode" in cmd:
+                    return (0, 100, 0)
+                if str(fake_exe) in cmd[0]:
+                    return (0, 80000, 0)
+                if "-c:v" in cmd:
+                    return (0, 100, 0)
+                return (0, 100000, 0)
+
+            buf = io.StringIO()
+            with (
+                mock.patch.object(vsjxl, "TMP", td),
+                mock.patch.object(vsjxl.os, "name", "posix"),
+                mock.patch.object(benchmark, "run", side_effect=fake_run),
+                contextlib.redirect_stdout(buf),
+            ):
+                vsjxl.run_webp_photos(fake_exe, 3, 9)
+
+            out = buf.getvalue()
+            self.assertIn("TOTAL threads=9: rf=800000 (0.80s) webp=1000000 (1.00s) ratio=0.800 geomean=0.800", out)
+            rf_dec_calls = [c for c in calls if "decode" in c and str(fake_exe) in c[0]]
+            self.assertEqual(len(rf_dec_calls), 30)
+            self.assertTrue(all("--threads" in c and "9" in c for c in rf_dec_calls))
+
 
 if __name__ == "__main__":
     unittest.main()
