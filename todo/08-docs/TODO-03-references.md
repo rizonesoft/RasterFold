@@ -51,11 +51,13 @@ track: D3
 
 > **Started:** 2026-11-09T04:35:48Z
 
+**Corrected 2026-11-09 (plan review):** Four gaps are folded in before building. (1) The new `generated` page kind is wired through the manifest validation and output protections in `scripts/build-docs.py` (today only `authored` and `mirrored` are accepted, and rendering skips other kinds), retaining the source-overwrite and duplicate-output protections, and `docs/api.md` moves from `planned_outputs` to `outputs` in `docs/drift.json`. (2) `tests/test_docs.py` gains the page in its fixture files, its source mapping, and its generated-output classification, and asserts the expected URL inventory including `/RasterFold/api.html` instead of only a page count; `nav_order: 15` appends after `licenses` without renumbering. (3) The header parser's subset is stated and enforced: it handles the header's shared comments over macro groups, comma-separated and array fields, single-line structs, and multi-line signatures, preserves the header-wide contract comment at the top, and fails explicitly on any public declaration outside that subset rather than dropping it silently; coverage asserts every type and field, every documented constant, and the ownership prose, not only the five export names. The undocumented-export proof removes a function's doc comment in a scratch copy. (4) The checkpoint also proves site delivery (staging plus a Jekyll build with `api.html` in navigation and search), and the stale `docs/library.md` format-version sentence (says 2, the encoder writes 3) is corrected with its mirror `docs/c-api.md` regenerated in this section's range.
+
 - [ ] Generate `docs/api.md` (with Jekyll front matter) from the doc comments in `include/rasterfold.h` (every function, type, constant, and error code, with its ownership rule), and render it into the site. Done when: every exported function in `src/rasterfold.def` appears in the page.
 - [ ] Add it to the generated-files check, and fail when a `.def` export has no documentation. Done when: an undocumented export makes the check exit 1.
 - [ ] Commit: `"docs: generate the API reference from the header"`
 
-**Test checkpoint:** the undocumented-export failure quoted, then fixed; `python scripts/drift-check.py` exits 0.
+**Test checkpoint:** the undocumented-export failure quoted, then fixed; `python scripts/drift-check.py` exits 0; the staged site builds with `api.html` present in its navigation and search index.
 
 ## Verification
 
