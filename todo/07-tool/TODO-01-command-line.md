@@ -49,6 +49,8 @@ track: T1
 
 ## 1. Commands and Options
 
+> **Started:** 2026-11-09T03:40:00Z
+
 **Job:** A user can write a document file with `encode` or `decode`, configure the settings (`--threads`, `--overwrite`), and read a summary report from `inspect` or `verify` as text or JSON.
 
 - [ ] Add `verify` (decode in memory, check every checksum and the stream ends, print the pixel hash, write nothing), `inspect --json`, `help` (the usage text), and `version` / `--version` (codec version, format versions read and written, API version) to `src/main.c`. Done when: each command's output matches the reference `D08 T03 §1` generates. Cheaper substitute: `verify` implemented as decode to a temporary file.
