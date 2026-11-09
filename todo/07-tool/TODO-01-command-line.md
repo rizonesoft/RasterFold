@@ -14,9 +14,10 @@ track: T1
 > **Goal:** `rasterfold.exe` is a complete tool for 1.0: it converts between `.fold` and BMP, PNG, and PPM, verifies files without writing them, reports what a file holds as text or JSON, names its version, and keeps its promise never to overwrite a file unless told to.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-11-09):** The commands are `encode`, `decode`, `inspect`, `verify`, `help`, and `version`, with `--time`, `--threads N`, and `inspect --json`; input and output are the 24-bit BMP subset only, dispatched by extension (PNG and PPM report unsupported until §2 and §3 land); an existing target file is always refused; there is no `--overwrite` (§4) and no PNG or PPM support yet.
+> **Current state (verified 2026-11-09):** The commands are `encode`, `decode`, `inspect`, `verify`, `help`, and `version`, with `--time`, `--threads N`, and `inspect --json`; input and output are the 24-bit BMP subset and 8-bit RGB/RGBA PNG, dispatched by extension (PPM reports unsupported until §3 lands); an existing target file is always refused; there is no `--overwrite` (§4) and no PPM support yet.
 <!-- claim: count "rasterfold inspect \[--time\] \[--json\] input.fold" src/main.c = 2 -->
-<!-- claim: absent src/png.c -->
+<!-- claim: exists src/png.c -->
+<!-- claim: exists src/zlib.c -->
 
 ## Inputs
 
@@ -75,11 +76,11 @@ PNG needs zlib's inflate and deflate, written here in C without a runtime: infla
 
 **Corrected 2026-11-09 (plan review `docs/reviews/07-tool/D07-T01-s2.md`):** integration is explicit: declarations in `src/rf.h`, the new sources in every build list that compiles them (including PGO provenance), and extension dispatch in `src/main.c` (PNG as encode input and decode output, CLI round trips through `rf_write_atomic`, PNG decode through packed RGB preserving the BMP allocation contract, help text no longer BMP-only). Transparency: `tRNS` on RGB input is refused with exit 3 exactly like a non-opaque alpha channel; fully opaque RGBA is accepted. Fuzzing gets a PNG-specific encode path in `tests/fuzz_decode.py` with chunk-CRC-recomputed mutations, exit classes 0, 3, and 4, and pixel verification for accepted conversions. Coverage fixtures are named below and interlaced input must succeed with exact pixels.
 
-- [ ] Write `src/zlib.c` (inflate and deflate with the Adler-32 check) and `src/png.c` (8-bit RGB and RGBA in, 8-bit RGB out; an alpha channel other than fully opaque is refused with exit 3 until alpha exists), with its declarations, build wiring, and CLI dispatch. Done when: every PNG in `testdata/photos/` decodes to the pixels Pillow reads, and every PNG written re-reads identically in Pillow. Cheaper substitute: a PNG writer using only stored blocks.
-- [ ] Add PNG cases to `tests/test_correctness.py` (including interlaced input, 16-bit input refused with exit 3, a truncated file refused with exit 4) and PNG seeds to `tests/fuzz_decode.py`'s reader fuzzing. Done when: the cases pass and 2,000 PNG mutations produce no crash or hang.
-- [ ] Commit: `"cli: read and write PNG"`
+- [x] Write `src/zlib.c` (inflate and deflate with the Adler-32 check) and `src/png.c` (8-bit RGB and RGBA in, 8-bit RGB out; an alpha channel other than fully opaque is refused with exit 3 until alpha exists), with its declarations, build wiring, and CLI dispatch. Done when: every PNG in `testdata/photos/` decodes to the pixels Pillow reads, and every PNG written re-reads identically in Pillow. Cheaper substitute: a PNG writer using only stored blocks.
+- [x] Add PNG cases to `tests/test_correctness.py` (including interlaced input, 16-bit input refused with exit 3, a truncated file refused with exit 4) and PNG seeds to `tests/fuzz_decode.py`'s reader fuzzing. Done when: the cases pass and 2,000 PNG mutations produce no crash or hang.
+- [x] Commit: `"cli: read and write PNG"`
 
-**Test checkpoint:** the Pillow comparison over `testdata/photos/*.png` quoted; `python tests/test_correctness.py` passes.
+**Test checkpoint:** Pillow comparison over `testdata/photos/*.png`: all ten photos encode and decode with exit 0 and Pillow-identical pixels (`PHOTOS OK 10 /10`, 2026-11-09); `python3 tests/test_correctness.py` passes 43 cases including the new `png-io` case (interlaced exact, opaque RGBA accepted, non-opaque alpha/tRNS/16-bit/grey refused with exit 3, truncated/bad-CRC/bad-Adler/bad-filter refused with exit 4, no output on refusal, PNG and BMP encode to identical `.fold` bytes); `python3 tests/fuzz_decode.py --png 2000 1` reports 275 accepted, 237 unsupported, 1488 malformed, no crash or hang.
 
 ## 3. PPM In and Out
 

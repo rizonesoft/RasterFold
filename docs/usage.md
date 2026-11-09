@@ -45,7 +45,7 @@ bin/linux-x64/bin/rasterfold decode output.fold restored.bmp
 bin/linux-x64/bin/rasterfold inspect output.fold
 ```
 
-Use `bin/windows-x64/bin/rasterfold.exe` on Windows. `--threads 1` requests the single-thread path; the default uses up to nine channel and strip threads when the CPU allows it. The current CLI accepts RGB8 BMP, not PNG, JPEG, alpha or animation. Those are future work, not hidden capabilities.
+Use `bin/windows-x64/bin/rasterfold.exe` on Windows. `--threads 1` requests the single-thread path; the default uses up to nine channel and strip threads when the CPU allows it. The current CLI accepts RGB8 BMP and 8-bit RGB or fully opaque RGBA PNG. JPEG, a non-opaque alpha channel, and animation are not accepted; those are future work, not hidden capabilities.
 
 ## Embed the codec
 

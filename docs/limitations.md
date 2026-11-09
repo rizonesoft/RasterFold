@@ -13,7 +13,7 @@ This page documents the technical boundaries of the currently shipped RasterFold
 
 ## Input and Pixel Format Boundaries
 
-- **CLI image format (`rasterfold` / `rasterfold.exe`):** the command-line tool currently reads and writes uncompressed 24-bit RGB8 BMP files (`BITMAPINFOHEADER`, `.fold` header size `32` bytes <!-- drift:fact header_bytes = 32 -->, 1 plane, 24 bits per pixel, top-down or bottom-up rows). BMP files with palettes, bitfields, RLE compression, 16/32-bit samples, or non-40-byte DIB headers are refused with exit code `3` <!-- drift:fact exit_unsupported = 3 --> (`unsupported`).
+- **CLI image format (`rasterfold` / `rasterfold.exe`):** the command-line tool currently reads and writes uncompressed 24-bit RGB8 BMP files and 8-bit RGB or fully opaque RGBA PNG files (`BITMAPINFOHEADER` for BMP, `.fold` header size `32` bytes <!-- drift:fact header_bytes = 32 -->, 1 plane, 24 bits per pixel, top-down or bottom-up rows). BMP files with palettes, bitfields, RLE compression, 16/32-bit samples, or non-40-byte DIB headers are refused with exit code `3` <!-- drift:fact exit_unsupported = 3 --> (`unsupported`).
 - **C API pixel layout (`include/rasterfold.h`):** `rf_encode_image` and `rf_decode_image` currently support `RF_LAYOUT_RGB8` (`1`, packed or row-padded 8-bit RGB, 3 bytes per pixel). Alpha channels (RGBA), grayscale, 16-bit integer channels, HDR/floating-point samples, ICC profiles, and EXIF/XMP metadata are not part of `.fold` format version 3 <!-- drift:fact format_version = 3 -->.
 
 ## Dimension, Pixel, and File Size Caps

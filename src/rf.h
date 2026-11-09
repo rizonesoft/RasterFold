@@ -67,6 +67,15 @@ int rf_bmp_alloc(uint32_t w, uint32_t h, uint8_t **file, size_t *size, size_t *s
 int rf_bmp_load(const uint8_t *file, size_t size, rf_image *out, rf_error *err);
 int rf_bmp_store(const rf_image *img, uint8_t **file, size_t *size, rf_error *err);
 
+/* zlib.c */
+uint32_t rf_adler32(const uint8_t *data, size_t size);
+int rf_zlib_inflate(const uint8_t *in, size_t size, uint8_t *out, size_t out_size, rf_error *err);
+int rf_zlib_deflate(const uint8_t *in, size_t size, uint8_t **out, size_t *out_size, rf_error *err);
+
+/* png.c */
+int rf_png_load(const uint8_t *file, size_t size, rf_image *out, rf_error *err);
+int rf_png_store(const rf_image *img, uint8_t **file, size_t *size, rf_error *err);
+
 /* fold.c */
 int rf_encode(const rf_image *img, uint8_t **file, size_t *size, int threads, rf_error *err);
 int rf_decode(const uint8_t *file, size_t size, rf_image *out, rf_info *info, int threads, rf_error *err);

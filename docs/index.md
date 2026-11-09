@@ -18,7 +18,7 @@ RasterFold is a lossless RGB image codec written in C11 for Windows x64, Linux x
 - **Current public C API:** version 1.0 (`RF_API_VERSION_MAJOR = 1` <!-- drift:fact api_major = 1 -->, `RF_API_VERSION_MINOR = 0` <!-- drift:fact api_minor = 0 -->).
 - **Current image limits:** maximum dimension `32768` pixels <!-- drift:fact max_dimension = 32768 -->; maximum image `33554432` pixels <!-- drift:fact max_pixels = 33554432 -->; maximum file size `268435456` bytes <!-- drift:fact max_file_bytes = 268435456 -->.
 - **Current vs. historical vs. planned scope:**
-  - **Current:** the CLI (`encode` <!-- drift:fact cmd_encode = encode -->, `decode` <!-- drift:fact cmd_decode = decode -->, `inspect` <!-- drift:fact cmd_inspect = inspect -->) and C library (`include/rasterfold.h`) for 24-bit RGB8 BMP and in-memory RGB8 buffers are shipped in source and built for `windows-x64`, `linux-x64`, `android-arm64`, and `android-x64`.
+  - **Current:** the CLI (`encode` <!-- drift:fact cmd_encode = encode -->, `decode` <!-- drift:fact cmd_decode = decode -->, `inspect` <!-- drift:fact cmd_inspect = inspect -->) and C library (`include/rasterfold.h`) for 24-bit RGB8 BMP, 8-bit PNG, and in-memory RGB8 buffers are shipped in source and built for `windows-x64`, `linux-x64`, `android-arm64`, and `android-x64`.
   - **Historical:** the `photos` and `synthetic` sets in `benchmarks/results.csv` are retained from `2026-09-29` (`0159404532cf944c4265ecb8ea46c54f637bdfc2`), and pre-migration Windows measurements are preserved in [`docs/measurements.md`](measurements.md).
   - **Planned (not downloadable yet):** the native desktop/mobile converter application and downloadable release packages are planned in [the product vision](vision.md) and are not yet offered as downloads.
 

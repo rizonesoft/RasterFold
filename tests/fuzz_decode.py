@@ -14,6 +14,7 @@ from __future__ import annotations
 import base64
 from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -449,9 +450,153 @@ def run_tasks_parallel(
     return counts, None
 
 
+def png_seeds() -> list[bytes]:
+    w, h = 48, 36
+    gradient = bytes(((x * 5 + y * 9 + c * 31) & 255) for y in range(h) for x in range(w) for c in range(3))
+    rng = random.Random(77)
+    noise = bytes(rng.randrange(256) for _ in range(w * h * 3))
+    checker = b"".join(b"\x18\x28\x38" if ((x // 4) ^ (y // 4)) & 1 else b"\xd8\xe0\xe8" for y in range(h) for x in range(w))
+    blobs: list[bytes] = []
+    for rgb in (gradient, noise, checker):
+        buf = io.BytesIO()
+        Image.frombytes("RGB", (w, h), rgb).save(buf, format="PNG")
+        blobs.append(buf.getvalue())
+    rgba = bytearray()
+    for i in range(0, len(gradient), 3):
+        rgba += gradient[i:i + 3] + b"\xff"
+    buf = io.BytesIO()
+    Image.frombytes("RGBA", (w, h), bytes(rgba)).save(buf, format="PNG")
+    blobs.append(buf.getvalue())
+    buf = io.BytesIO()
+    Image.frombytes("RGB", (w, h), gradient).save(buf, format="PNG", interlace=True)
+    blobs.append(buf.getvalue())
+    return blobs
+
+
+def _png_chunks(blob: bytes) -> list[tuple[bytes, bytes]] | None:
+    if len(blob) < 8 or blob[:8] != b"\x89PNG\r\n\x1a\n":
+        return None
+    chunks: list[tuple[bytes, bytes]] = []
+    pos = 8
+    while pos + 12 <= len(blob):
+        length = struct.unpack_from(">I", blob, pos)[0]
+        if pos + 12 + length > len(blob):
+            return None
+        chunks.append((bytes(blob[pos + 4:pos + 8]), bytes(blob[pos + 8:pos + 8 + length])))
+        pos += 12 + length
+        if chunks[-1][0] == b"IEND":
+            break
+    return chunks or None
+
+
+def _png_build(chunks: list[tuple[bytes, bytes]]) -> bytes:
+    out = bytearray(b"\x89PNG\r\n\x1a\n")
+    for typ, data in chunks:
+        out += struct.pack(">I", len(data)) + typ + data
+        out += struct.pack(">I", zlib_crc(typ + data))
+    return bytes(out)
+
+
+def zlib_crc(data: bytes) -> int:
+    import zlib as _zlib
+
+    return _zlib.crc32(data) & 0xFFFFFFFF
+
+
+def mutate_png(blob: bytes, rng: random.Random) -> bytes:
+    chunks = _png_chunks(blob)
+    kind = rng.randrange(5)
+    if chunks is None or kind == 1:
+        cut = rng.randrange(1, len(blob))
+        return blob[:cut]
+    mutated = [(typ, bytearray(data)) for typ, data in chunks]
+    if kind == 0:  # flip bytes inside one chunk's data; CRC recomputed on rebuild
+        idx = rng.randrange(len(mutated))
+        data = mutated[idx][1]
+        if data:
+            start = 8 if mutated[idx][0] == b"IHDR" else 0
+            for _ in range(rng.randrange(1, 4)):
+                data[rng.randrange(start, len(data))] ^= 1 << rng.randrange(8)
+    elif kind == 2:  # damage IHDR fields (depth, type, methods, interlace)
+        data = mutated[0][1]
+        at = rng.randrange(8, len(data))
+        data[at] = rng.randrange(256)
+    elif kind == 3:  # insert bytes into IDAT data; CRC recomputed on rebuild
+        for idx, (typ, data) in enumerate(mutated):
+            if typ == b"IDAT":
+                at = rng.randrange(len(data) + 1)
+                data[at:at] = bytes(rng.randrange(256) for _ in range(rng.randrange(1, 9)))
+                break
+    else:  # delete bytes from a chunk's data; CRC recomputed on rebuild
+        idx = rng.randrange(len(mutated))
+        data = mutated[idx][1]
+        if len(data) > 1:
+            at = rng.randrange(len(data))
+            del data[at:at + rng.randrange(1, min(8, len(data) - at) + 1)]
+    return _png_build([(typ, bytes(data)) for typ, data in mutated])
+
+
+def verify_png_mutation(i: int, blob: bytes) -> tuple[int, str | None]:
+    pid = os.getpid()
+    src = WORK / f"p_{pid}_{i}.png"
+    dest = WORK / f"p_{pid}_{i}.fold"
+    partial = Path(f"{dest}.partial")
+    src.write_bytes(blob)
+    dest.unlink(missing_ok=True)
+    partial.unlink(missing_ok=True)
+    try:
+        try:
+            r = _run_decoder_cmd([str(EXE), "encode", str(src), str(dest)], timeout=60.0, stop_file=None)
+        except subprocess.TimeoutExpired:
+            (WORK / f"pnghang{i}.png").write_bytes(blob)
+            return -1, f"PNG HANG at iteration {i}"
+        if r.returncode not in (0, 3, 4) or partial.exists() or (r.returncode != 0 and dest.exists()) or (r.returncode == 0 and not dest.exists()):
+            (WORK / f"pngbad{i}.png").write_bytes(blob)
+            return -1, f"PNG BAD exit {r.returncode:#x} at iteration {i}: {r.stderr.decode(errors='replace').strip()}"
+        if r.returncode == 0:
+            try:
+                with Image.open(src) as im:
+                    rgba = im.convert("RGBA")
+                    if any(a != 255 for a in rgba.tobytes()[3::4]):
+                        return -1, f"PNG MISMATCH non-opaque alpha accepted at iteration {i}"
+                    want = (im.width, im.height, im.convert("RGB").tobytes())
+            except Exception as exc:
+                return -1, f"PNG MISMATCH Pillow rejected encoder-accepted input at iteration {i}: {exc}"
+            try:
+                got = rf.decode_image(dest.read_bytes())
+            except rf.FormatError as exc:
+                return -1, f"PNG MISMATCH oracle rejected encoded output at iteration {i}: {exc}"
+            if got != want:
+                return -1, f"PNG MISMATCH pixels differ at iteration {i}"
+        return r.returncode, None
+    finally:
+        src.unlink(missing_ok=True)
+        dest.unlink(missing_ok=True)
+        partial.unlink(missing_ok=True)
+
+
+def run_png_fuzz(iterations: int, rng: random.Random) -> int:
+    WORK.mkdir(parents=True, exist_ok=True)
+    base = png_seeds()
+    counts = {0: 0, 3: 0, 4: 0}
+    for i in range(iterations):
+        blob = mutate_png(base[i % len(base)], rng)
+        rc, err = verify_png_mutation(i, blob)
+        if err is not None:
+            print(err)
+            return 1
+        counts[rc] += 1
+    print(f"{iterations} mutated PNG files: {counts[0]} accepted, {counts[3]} unsupported, {counts[4]} malformed, no crash or hang")
+    return 0
+
+
 def main() -> int:
-    iterations = int(sys.argv[1]) if len(sys.argv) > 1 else 300
-    rng = random.Random(int(sys.argv[2]) if len(sys.argv) > 2 else 1)
+    png_mode = "--png" in sys.argv
+    argv = [a for a in sys.argv[1:] if a != "--png"]
+    iterations = int(argv[0]) if len(argv) > 0 else 300
+    rng = random.Random(int(argv[1]) if len(argv) > 1 else 1)
+    if png_mode:
+        return run_png_fuzz(iterations, rng)
     WORK.mkdir(parents=True, exist_ok=True)
     base = seeds()
     counts = {0: 0, 4: 0}

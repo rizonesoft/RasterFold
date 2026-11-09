@@ -15,15 +15,15 @@
 static const char usage_text[] =
     "RasterFold lossless image codec" RF_EOL
     "usage:" RF_EOL
-    "  rasterfold encode [--time] [--threads N] input.bmp output.fold" RF_EOL
-    "  rasterfold decode [--time] [--threads N] input.fold output.bmp" RF_EOL
+    "  rasterfold encode [--time] [--threads N] input.bmp|input.png output.fold" RF_EOL
+    "  rasterfold decode [--time] [--threads N] input.fold output.bmp|output.png" RF_EOL
     "  rasterfold inspect [--time] [--json] input.fold" RF_EOL
     "  rasterfold verify [--threads N] input.fold" RF_EOL
     "  rasterfold help [command]" RF_EOL
     "  rasterfold version" RF_EOL
     "commands:" RF_EOL
-    "  encode   encode a BMP image into a .fold file" RF_EOL
-    "  decode   decode a .fold file into a BMP image" RF_EOL
+    "  encode   encode a BMP or PNG image into a .fold file" RF_EOL
+    "  decode   decode a .fold file into a BMP or PNG image" RF_EOL
     "  inspect  print what a .fold file holds, as text or JSON" RF_EOL
     "  verify   decode a .fold file in memory and print its pixel hash; writes nothing" RF_EOL
     "  help     print this summary, or one command's usage with `help <command>`" RF_EOL
@@ -32,15 +32,15 @@ static const char usage_text[] =
     "exit codes: 0 ok, 1 usage, 2 io, 3 unsupported, 4 malformed, 5 limit" RF_EOL;
 
 static const char help_encode[] =
-    "usage: rasterfold encode [--time] [--threads N] input.bmp output.fold" RF_EOL
-    "Encode a 24-bit BMP image into a .fold file. The output must not already exist." RF_EOL
+    "usage: rasterfold encode [--time] [--threads N] input.bmp|input.png output.fold" RF_EOL
+    "Encode a 24-bit BMP or 8-bit PNG image into a .fold file. The output must not already exist." RF_EOL
     "options: --time prints timing statistics; --threads N codes on N threads (1 to 9)." RF_EOL
     "exit codes: 0 ok, 1 usage, 2 io, 3 unsupported, 4 malformed, 5 limit" RF_EOL
     "example: rasterfold encode photo.bmp photo.fold" RF_EOL;
 
 static const char help_decode[] =
-    "usage: rasterfold decode [--time] [--threads N] input.fold output.bmp" RF_EOL
-    "Decode a .fold file into a 24-bit BMP image. The output must not already exist." RF_EOL
+    "usage: rasterfold decode [--time] [--threads N] input.fold output.bmp|output.png" RF_EOL
+    "Decode a .fold file into a 24-bit BMP or 8-bit PNG image. The output must not already exist." RF_EOL
     "options: --time prints timing statistics; --threads N codes on N threads (1 to 9)." RF_EOL
     "exit codes: 0 ok, 1 usage, 2 io, 3 unsupported, 4 malformed, 5 limit" RF_EOL
     "example: rasterfold decode photo.fold photo.bmp" RF_EOL;
@@ -202,19 +202,22 @@ static int run(int argc, rf_path_char **argv, rf_error *err) {
 
     if (rf_crc32((const uint8_t *)"123456789", 9) != 0xCBF43926u)
         return rf_fail(err, RF_ERR_LIMIT, "internal self-test failed");
+    int in_ext = EXT_NONE, out_ext = EXT_NONE;
     {
-        int in_ext = ext_of(pos[1]);
+        in_ext = ext_of(pos[1]);
         int want_in = encode ? EXT_BMP : EXT_FOLD;
         if (in_ext == EXT_UNKNOWN) return -1;
+        if (encode && in_ext == EXT_PNG) want_in = EXT_PNG;
         if (in_ext != EXT_NONE && in_ext != want_in)
-            return rf_fail(err, RF_ERR_UNSUPPORTED, encode ? "unsupported input format: encode reads .bmp" : "unsupported input format: this command reads .fold");
+            return rf_fail(err, RF_ERR_UNSUPPORTED, encode ? "unsupported input format: encode reads .bmp or .png" : "unsupported input format: this command reads .fold");
         if ((encode || decode) && rf_path_blocked(pos[2], err)) return err->code;
         if (encode || decode) {
-            int out_ext = ext_of(pos[2]);
+            out_ext = ext_of(pos[2]);
             int want_out = encode ? EXT_FOLD : EXT_BMP;
+            if (decode && out_ext == EXT_PNG) want_out = EXT_PNG;
             if (out_ext == EXT_UNKNOWN) return -1;
             if (out_ext != EXT_NONE && out_ext != want_out)
-                return rf_fail(err, RF_ERR_UNSUPPORTED, encode ? "unsupported output format: encode writes .fold" : "unsupported output format: decode writes .bmp");
+                return rf_fail(err, RF_ERR_UNSUPPORTED, encode ? "unsupported output format: encode writes .fold" : "unsupported output format: decode writes .bmp or .png");
         }
     }
 
@@ -228,7 +231,8 @@ static int run(int argc, rf_path_char **argv, rf_error *err) {
     if (rc) goto done;
     rf_options options = {sizeof(rf_options), (uint32_t)threads, {0}};
     if (encode) {
-        rc = rf_bmp_load(file, file_size, &img, err);
+        rc = in_ext == EXT_PNG ? rf_png_load(file, file_size, &img, err)
+                               : rf_bmp_load(file, file_size, &img, err);
         rf_free(file);
         file = 0;
         t2 = rf_ticks();
@@ -264,6 +268,14 @@ static int run(int argc, rf_path_char **argv, rf_error *err) {
             goto timing_out;
         }
         if (inspect) rc = rf_inspect(file, file_size, &info, err);
+        else if (decode && out_ext == EXT_PNG) {
+            rf_image decoded = {0, 0, 0};
+            rc = rf_decode(file, file_size, &decoded, &info, threads, err);
+            if (!rc) {
+                rc = rf_png_store(&decoded, &out, &out_size, err);
+                rf_free(decoded.rgb);
+            }
+        }
         else rc = rf_decode_bmp(file, file_size, &out, &out_size, threads, err);
         rf_free(file);
         file = 0;

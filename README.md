@@ -9,7 +9,7 @@
 
 <p align="center"><a href="docs/building.md">Build</a> · <a href="docs/library.md">Use the library</a> · <a href="spec/FOLD.md">Read the format</a> · <a href="docs/research.md">Explore the research</a> · <a href="CONTRIBUTING.md">Contribute</a></p>
 
-RasterFold is a lossless RGB image codec written in C11. It turns 24-bit BMP images into `.fold` files and restores every pixel exactly. Use the command line, or embed the same codec through a small, versioned C API.
+RasterFold is a lossless RGB image codec written in C11. It turns 24-bit BMP and 8-bit PNG images into `.fold` files and restores every pixel exactly. Use the command line, or embed the same codec through a small, versioned C API.
 
 The project is in active development. Windows and Linux executables and libraries are exercised locally. Android ARM64 and x64 artifacts are cross-compiled with the NDK; device execution remains a separate validation step. There is no claim that Android performance has been measured.
 
@@ -47,7 +47,7 @@ bin/linux-x64/bin/rasterfold decode output.fold restored.bmp
 bin/linux-x64/bin/rasterfold inspect output.fold
 ```
 
-Use `bin/windows-x64/bin/rasterfold.exe` on Windows. `--threads 1` requests the single-thread path; the default uses up to nine channel and strip threads when the CPU allows it. The current CLI accepts RGB8 BMP, not PNG, JPEG, alpha or animation. Those are future work, not hidden capabilities.
+Use `bin/windows-x64/bin/rasterfold.exe` on Windows. `--threads 1` requests the single-thread path; the default uses up to nine channel and strip threads when the CPU allows it. The current CLI accepts RGB8 BMP and 8-bit RGB or fully opaque RGBA PNG. JPEG, a non-opaque alpha channel, and animation are not accepted; those are future work, not hidden capabilities.
 
 ## Embed the codec
 

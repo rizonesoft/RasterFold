@@ -9,7 +9,7 @@ source_path: docs/examples.md
 
 **Status:** Current (`.fold` format version 3 <!-- drift:fact format_version = 3 -->, public C API 1.0 (`RF_API_VERSION_MAJOR = 1` <!-- drift:fact api_major = 1 -->, `RF_API_VERSION_MINOR = 0` <!-- drift:fact api_minor = 0 -->)).
 
-This guide provides working command-line and C library examples for the currently shipped 24-bit RGB8 BMP CLI and in-memory RGB8 C API (`include/rasterfold.h`). The standalone C example programs live in [`examples/encode.c`](../examples/encode.c), [`examples/decode.c`](../examples/decode.c), and [`examples/ppm.h`](../examples/ppm.h).
+This guide provides working command-line and C library examples for the currently shipped 24-bit RGB8 BMP and 8-bit PNG CLI and in-memory RGB8 C API (`include/rasterfold.h`). The standalone C example programs live in [`examples/encode.c`](../examples/encode.c), [`examples/decode.c`](../examples/decode.c), and [`examples/ppm.h`](../examples/ppm.h).
 
 ## Command-Line Examples
 

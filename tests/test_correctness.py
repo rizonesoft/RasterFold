@@ -1429,12 +1429,16 @@ def cli_commands() -> None:
     expect_fail(["encode", str(v3), str(work / "x.fold")], 3, "unsupported input format")
     expect_fail(["encode", str(bmp), str(work / "x.bmp")], 3, "unsupported output format")
     expect_fail(["encode", str(bmp), str(work / "x.gif")], 1, "usage")
-    expect_fail(["decode", str(v3), str(work / "x.png")], 3, "unsupported output format")
+    png_out = work / "x.png"
+    png_out.unlink(missing_ok=True)
+    expect_ok(["decode", str(v3), str(png_out)])
+    with Image.open(png_out) as im:
+        check(im.convert("RGB").tobytes() == KAT_RGB, "decode to PNG pixels differ from the BMP path")
     expect_fail(["inspect", str(bmp)], 3, "unsupported input format")
     expect_fail(["inspect", str(work / "x.gif")], 1, "usage")
     png_named = work / "in.png"
     png_named.write_bytes(bmp.read_bytes())
-    expect_fail(["encode", str(png_named), str(work / "x2.fold")], 3, "unsupported input format")
+    expect_fail(["encode", str(png_named), str(work / "x2.fold")], 4, "invalid PNG")
     # Dotfiles classify by basename, identically under either spelling:
     # a leading dot is not an extension, so both reach the .fold reader
     # and fail as malformed .fold (4), not as an unsupported format (3).
@@ -1450,6 +1454,99 @@ def cli_commands() -> None:
         expect_fail(["inspect", "missing.fold\\x"], 1, "usage")
 
 
+def png_io() -> None:
+    work = WORK / "png"
+    work.mkdir(parents=True, exist_ok=True)
+
+    def chunk(typ: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + typ + data + struct.pack(">I", zlib.crc32(typ + data) & 0xFFFFFFFF)
+
+    def crafted(w: int, h: int, bitdepth: int, ctype: int, raw: bytes, extra: bytes = b"", interlace: int = 0) -> bytes:
+        ihdr = struct.pack(">IIBBBBB", w, h, bitdepth, ctype, 0, 0, interlace)
+        return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + extra + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
+
+    def fresh(path: Path) -> Path:
+        path.unlink(missing_ok=True)
+        Path(f"{path}.partial").unlink(missing_ok=True)
+        return path
+
+    def pillow_pixels(path: Path) -> bytes:
+        with Image.open(path) as im:
+            return im.convert("RGB").tobytes()
+
+    w, h = 37, 23
+    rgb = bytes(((x * 7 + y * 13 + c * 41) & 255) for y in range(h) for x in range(w) for c in range(3))
+    src = work / "in.png"
+    Image.frombytes("RGB", (w, h), rgb).save(src)
+    fold = fresh(work / "in.fold")
+    expect_ok(["encode", str(src), str(fold)])
+    check(rf.decode_image(fold.read_bytes()) == (w, h, rgb), "PNG encode pixels differ from the oracle decode")
+    bmp = work / "in.bmp"
+    bmp.write_bytes(rf.write_bmp24(w, h, rgb))
+    fold_from_bmp = fresh(work / "in_bmp.fold")
+    expect_ok(["encode", str(bmp), str(fold_from_bmp)])
+    check(fold.read_bytes() == fold_from_bmp.read_bytes(), "PNG and BMP encode produced different .fold bytes")
+    out_png = fresh(work / "out.png")
+    expect_ok(["decode", str(fold), str(out_png)])
+    check(pillow_pixels(out_png) == rgb, "written PNG re-reads with different pixels in Pillow")
+    out_bmp = fresh(work / "out.bmp")
+    expect_ok(["decode", str(fold), str(out_bmp)])
+    check(rf.read_bmp24(out_bmp.read_bytes()) == (w, h, rgb), "PNG-sourced fold decodes differently to BMP")
+
+    # Interlaced (Adam7) input succeeds with exact pixels.
+    iw, ih = 31, 17
+    irgb = bytes(((x * 11 + y * 5 + c * 67) & 255) for y in range(ih) for x in range(iw) for c in range(3))
+    isrc = work / "interlaced.png"
+    Image.frombytes("RGB", (iw, ih), irgb).save(isrc, interlace=True)
+    with Image.open(isrc) as im:
+        check(im.info.get("interlace") in (1, True) or im.format == "PNG", "interlaced fixture was not written")
+    ifold = fresh(work / "interlaced.fold")
+    expect_ok(["encode", str(isrc), str(ifold)])
+    check(rf.decode_image(ifold.read_bytes()) == (iw, ih, irgb), "interlaced PNG pixels differ")
+
+    # Fully opaque RGBA is accepted; any other alpha is refused with 3.
+    rgba = bytearray()
+    for i in range(0, len(rgb), 3):
+        rgba += rgb[i:i + 3] + b"\xff"
+    asrc = work / "opaque.png"
+    Image.frombytes("RGBA", (w, h), bytes(rgba)).save(asrc)
+    afold = fresh(work / "opaque.fold")
+    expect_ok(["encode", str(asrc), str(afold)])
+    check(rf.decode_image(afold.read_bytes()) == (w, h, rgb), "opaque RGBA pixels differ")
+    rgba[3] = 128
+    nsrc = work / "alpha.png"
+    Image.frombytes("RGBA", (w, h), bytes(rgba)).save(nsrc)
+    nfold = fresh(work / "alpha.fold")
+    expect_fail(["encode", str(nsrc), str(nfold)], 3, "alpha")
+    check(not nfold.exists(), "non-opaque alpha produced an output file")
+
+    def refusal(name: str, data: bytes, code: int, text: str) -> None:
+        bad = work / name
+        bad.write_bytes(data)
+        dest = fresh(work / (name + ".fold"))
+        expect_fail(["encode", str(bad), str(dest)], code, text)
+        check(not dest.exists(), f"{name} produced an output file on refusal")
+
+    raw2 = b"\x00" + bytes([255, 0, 0, 0, 255, 0]) + b"\x00" + bytes([0, 0, 255, 255, 255, 0])
+    refusal("trns.png", crafted(2, 2, 8, 2, raw2, extra=chunk(b"tRNS", b"\x00\x00\x00\x00\x00\x00")), 3, "transparency")
+    raw16 = b"\x00" + struct.pack(">HHH", 1000, 2000, 3000) * 2 + b"\x00" + struct.pack(">HHH", 4000, 5000, 6000) * 2
+    refusal("depth16.png", crafted(2, 2, 16, 2, raw16), 3, "bit depth")
+    refusal("gray.png", crafted(2, 2, 8, 0, b"\x00\x01\x02\x00\x03\x04"), 3, "colour type")
+    good = crafted(2, 2, 8, 2, raw2)
+    refusal("truncated.png", good[: len(good) // 2], 4, "invalid PNG")
+    badcrc = bytearray(good)
+    at = good.index(b"IDAT")
+    badcrc[at + 6] ^= 0xFF
+    refusal("badcrc.png", bytes(badcrc), 4, "chunk CRC")
+    stream = bytearray(zlib.compress(raw2))
+    stream[-1] ^= 0xFF
+    ihdr = struct.pack(">IIBBBBB", 2, 2, 8, 2, 0, 0, 0)
+    badadler = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", bytes(stream)) + chunk(b"IEND", b"")
+    refusal("badadler.png", badadler, 4, "Adler")
+    badfilter_raw = b"\x05" + raw2[1:7] + b"\x00" + raw2[8:]
+    refusal("badfilter.png", crafted(2, 2, 8, 2, badfilter_raw), 4, "filter")
+
+
 def main() -> int:
     if not EXE.exists():
         print(f"missing {EXE}; run build.ps1 first")
@@ -1457,6 +1554,7 @@ def main() -> int:
     WORK.mkdir(parents=True, exist_ok=True)
     case("oracle", oracle_self_check)
     case("cli-commands", cli_commands)
+    case("png-io", png_io)
     case("known-answer", known_answer)
     images = [
         ("px1", 1, 1, bytes([0, 0, 0])),
