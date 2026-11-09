@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **98 of 246 sections complete (40%).** 246 sections (22 discovered); backlog 4 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **99 of 246 sections complete (40%).** 246 sections (22 discovered); backlog 4 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -294,7 +294,7 @@ The 1.0 product: library, command line, references, and the release that freezes
 | [ ] | `D07 T01 §3`  | PPM in and out                                   |   2   |
 | [ ] | `D07 T01 §4`  | Exit codes, messages, and overwrite              |   3   |
 | [ ] | `D08 T03 §1`  | The command-line reference                       |   3   |
-| [ ] | `D08 T03 §2`  | The API reference                                |   3   |
+| [x] | `D08 T03 §2`  | The API reference                                |   3   |
 | [x] | `D09 T01 §1`  | One version source and the changelog             |   5   |
 | [ ] | `D10 T01 §1`  | Pixel contract and capability registry           |   8   |
 | [ ] | `D10 T01 §2`  | Pinned bundled codec builds                      |   9   |

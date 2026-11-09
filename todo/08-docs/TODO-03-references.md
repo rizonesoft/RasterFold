@@ -35,7 +35,7 @@ track: D3
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
 |   1   |   §1    | The command-line reference | D07 T01 §1, D08 T01 §1 |  [ ]   |
-|   2   |   §2    | The API reference | D06 T01 §1, D08 T01 §1 |  [ ]   |
+|   2   |   §2    | The API reference | D06 T01 §1, D08 T01 §1 |  [x]   |
 
 ---
 
@@ -59,6 +59,8 @@ track: D3
 
 **Test checkpoint:** removing the `rf_free` doc comment in a scratch header makes the generator fail with `undocumented function: RF_API void rf_free(void *pointer);`, and a seeded stale line in `docs/api.md` makes `python3 scripts/build-docs.py --check` report the generated file differs, then pass when restored; `python3 scripts/drift-check.py` exits 0 and `tests/test_docs.py` passes with `api.html` in the asserted navigation and search URL inventory (2026-11-09).
 
+> **Verified:** 2026-11-09 | §2 | 064a41dff9b848c9237c365e78befb3e5968f3ac
+> **Review:** `docs/reviews/d08-t03-s2.json`
 ## Verification
 
 - [ ] `python scripts/drift-check.py` exits 0
