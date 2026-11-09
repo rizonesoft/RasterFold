@@ -84,6 +84,7 @@ static void print_version(void) {
 enum { EXT_NONE, EXT_UNKNOWN, EXT_BMP, EXT_PNG, EXT_PPM, EXT_FOLD };
 
 static int ext_of(const rf_path_char *path) {
+    if (!path) return EXT_NONE;
     const rf_path_char *dot = 0;
     for (const rf_path_char *p = path; *p; p++) {
         if (*p == '.' && p != path) dot = p;
@@ -95,8 +96,9 @@ static int ext_of(const rf_path_char *path) {
     for (const rf_path_char *p = dot + 1; *p; p++) {
         if (n + 1 >= sizeof ext) return EXT_UNKNOWN;
         rf_path_char c = *p;
-        if (c > 127) return EXT_UNKNOWN;
-        if (c >= 'A' && c <= 'Z') c = (rf_path_char)(c - 'A' + 'a');
+        uint32_t v = (uint32_t)c;
+        if (v > 127u) return EXT_UNKNOWN;
+        if (v >= (uint32_t)'A' && v <= (uint32_t)'Z') c = (rf_path_char)(v - (uint32_t)'A' + (uint32_t)'a');
         ext[n++] = (char)c;
     }
     ext[n] = 0;
