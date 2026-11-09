@@ -261,7 +261,7 @@ Generated and screen content against WebP.
 | [x] | `D01 T06 §1` | Where WebP still wins                           |   4   |
 | [x] | `D01 T06 §2` | A colour-cache model in version 3               |   3   |
 | [x] | `D01 T06 §3` | Copy runs for palette images                    |   3   |
-| [ ] | `D05 T01 §8` | Milestone 8 gate: Beat WebP on generated images |   4   |
+| [ ] | `D05 T01 §8` | Milestone 8 gate: Beat WebP on generated images |   5   |
 
 ### Phase 8 -- Milestone 9: Holds on images never tuned on
 
