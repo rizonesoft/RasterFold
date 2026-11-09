@@ -50,9 +50,9 @@ track: C6
 **Corrected 2026-11-09:** The `heldout` set this section cites does not exist yet (`research/ab.py` has no `heldout` set; it is authored by `D00 T03 §1`, whose own claim records that absence). The heldout screenshot measurement is therefore owned by `D00 T03 §2` and the Milestone 9 gate (`D05 T01 §9`), which re-measure against WebP; this section measures the `synth` generated set, which is the set §2 and §3 are designed against.
 **Corrected 2026-11-09:** `docs/research.md` section 7 is now Robustness and format scope; the compression findings belong in section 4 (Compression designs) as a new subsection, next to §4.7 (exact-repeat context for screenshots).
 
-- [ ] Measure `python research/ab.py size synth -v` against WebP at the current codec. Done when: every image above 1.1 times WebP is listed.
-- [ ] For each listed image, break RasterFold's bytes down by decision kind (the `--breakdown` mode of `D01 T05 §1`) and by region. Done when: the table names where WebP's bytes are fewer. Cheaper substitute: assuming the cause without the breakdown.
-- [ ] Record the findings in `docs/research.md` section 4 as a new subsection. Done when: the findings name which of §2 and §3 targets which images.
+- [ ] Measure `python research/ab.py size synth -v` against WebP at the current codec, recording the codec revision, command, date, thread count, and the full `synth` total, geometric-mean, and worst-image WebP ratios. Done when: every image above 1.1 times WebP is listed, with the encoder-selected method recorded per image.
+- [ ] For each listed image, attribute RasterFold's bytes at the level its selected method supports: for method 1 (CM) images, the `--breakdown` mode of `D01 T05 §1` (per channel and decision kind, with the instrumented payload verified byte-identical); for palette-method images, structural attribution from the container (header, palette bytes at 3 bytes per colour, and the index stream, per `spec/FOLD.md`), because `--breakdown` does not instrument the palette coder. State that limit in the table; a forced-CM measurement is not evidence about a palette file. Done when: the table gives each listed image's RasterFold attribution beside its whole-file WebP size and difference, and any claim about which WebP mechanism (colour cache, backward references) saves the bytes is labelled a hypothesis unless the attribution itself proves it. Cheaper substitute: assuming the cause without the breakdown.
+- [ ] Record the findings in `docs/research.md` section 4 as a new subsection. Done when: the findings name which of §2 and §3 targets which images, and the stop condition (complete diagnostic coverage of every listed image, with supported or explicitly hypothesised causes) is met; this section ships no codec change and no compression improvement is its bar.
 - [ ] Commit: `"research: explain where WebP still wins"`
 
 **Test checkpoint:** the breakdown table for every image above 1.1 times WebP.
@@ -75,7 +75,9 @@ A context model over recently seen colours: a small hash of the last colours per
 
 For method 2, a run token that copies a span of indices from the row above (at offsets -2 to 2) or from the left, coded before the per-pixel decisions. Bar: palette images at least 20% smaller, no photo affected.
 
-- [ ] Prototype the run token in the method 2 encoder and decoder (`src/pal.c`) behind a research switch, and measure the palette images of `synth` and `heldout`. Done when: the sizes are quoted against the bar.
+**Corrected 2026-11-09:** the `heldout` set does not exist yet (authored by `D00 T03 §1`); its screenshots are owned by `D00 T03 §2`. This section measures the palette images of `synth`.
+
+- [ ] Prototype the run token in the method 2 encoder and decoder (`src/pal.c`) behind a research switch, and measure the palette images of `synth`. Done when: the sizes are quoted against the bar.
 - [ ] If accepted, make it part of method 2 with `tests/rfi_ref.py`, `spec/FOLD.md`, and `KAT_PAL`. Done when: codec and oracle agree.
 - [ ] Commit: `"codec: copy runs for palette images"`
 
