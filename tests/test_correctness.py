@@ -1400,7 +1400,7 @@ def cli_commands() -> None:
         before = path.read_bytes()
         result = run(["verify", str(path)])
         check(result.returncode == 4, f"verify on {path.name} exited {result.returncode}, want 4: {result.stdout!r} {result.stderr!r}")
-        check(diag in result.stderr, f"verify diagnostic for {path.name}: {result.stderr!r}")
+        check(result.stderr.strip() == b"rasterfold: " + diag, f"verify diagnostic for {path.name}: {result.stderr!r}")
         check(b"status: ok" not in result.stdout, f"verify reported success for {path.name}")
         check(path.read_bytes() == before, f"verify modified {path.name}")
     # inspect --json: one JSON object on stdout; --json --time is refused.
