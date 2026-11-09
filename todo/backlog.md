@@ -4,7 +4,9 @@ Ideas worth keeping that are not planned work. Nothing here is a section: an ent
 
 **Entry grammar.** One line per entry: the id in brackets, the title, then ` -- key: value` fields. Required: `source` (one key token: a `docs/research.md` item, a finding ID, or the `-> SOURCE:` key the section would carry), `added` (YYYY-MM-DD), `why deferred`, and `promote when`. Optional: `app` (`rasterfold` or `suite`), `summary`, and `needs` (full `DNN TNN §N` refs to live sections, or other backlog ids). Ids are `B-NNN`, taken in order and never reused.
 
-**Promotion** is `add-todo` on the entry: the promoting commit writes the real section (carrying this entry's source as its `-> SOURCE:` line) and deletes the entry. An entry leaves this file only by that promotion, by a merge that keeps its key as a merge marker on the surviving entry, or with the operator's words in a record under `## Removed with operator approval`.
+**Promotion** is `add-todo` on the entry: the promoting commit writes the real section (carrying this entry's source as its `-> SOURCE:` line) and deletes the entry. An entry leaves this file only by that promotion, by a merge that keeps its key as a merge marker on the surviving entry, or with the operator's words in a record under `- [B-004] Example host-I/O diagnostics for seek, allocation, oversized-input and write failures -- app: rasterfold -- source: D06-T01-S5-completion -- added: 2026-11-09 -- summary: examples/decode.c exits silently on fseek, ftell, malloc, oversized-input and output-write failures, and examples/encode.c on allocation and read failures beyond its current diagnostics; give every failure path a stderr diagnostic and a fixture -- needs: D06 T01 §5 -- why deferred: fails the admission test; the section's malformed-input and existing-destination refusals are covered, and this is hardening polish on demonstration programs, not a defect in shipped behaviour -- promote when: the examples are next touched, or a user reports a silent example failure
+
+## Removed with operator approval`.
 
 ## Entries
 

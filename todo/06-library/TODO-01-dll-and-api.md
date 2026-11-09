@@ -2,7 +2,7 @@
 schema_version: 1
 id: dll-and-api
 domain: 06-library
-status: active
+status: done
 title: "TODO-01 -- rasterfold.dll and the C API"
 depends_on: []
 frozen: true
@@ -47,7 +47,7 @@ track: L1
 |   2   |   §2    | Shared/static libraries and Windows import libraries | §1 |  [x]   |
 |   3   |   §3    | The command line on the library | §2 |  [x]   |
 |   4   |   §4    | API tests and the ABI list | §2 |  [x]   |
-|   5   |   §5    | Example programs | §4 |  [ ]   |
+|   5   |   §5    | Example programs | §4 |  [x]   |
 
 ---
 
@@ -126,6 +126,8 @@ The executable uses the same code path as the library for encode and inspect (li
 
 **Test checkpoint:** `python3 tests/test_artifacts.py` proves the native examples against static and shared libraries, including the refusal and PPM-subset fixtures; the `build` workflow runs the same suite in its Linux and Windows jobs, with remote results reported only after observation.
 
+> **Verified:** 2026-11-09 | §5 | 7ba73e174a441747bb0be9f51d3b774a358e77e1
+> **Review:** `docs/reviews/d06-t01-s5.json`
 ## Verification
 
 - [ ] `pwsh scripts/check-all.ps1` exits 0 with the API tests

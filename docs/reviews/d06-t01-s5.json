@@ -1,0 +1,76 @@
+{
+  "ref": "D06 T01 \u00a75",
+  "title": "Example Programs",
+  "implementation_sha": "7ba73e174a441747bb0be9f51d3b774a358e77e1",
+  "date": "2026-11-09",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/06-library/D06-T01-s5.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "python3 scripts/check-all.py --all-targets -> EXIT 0, 29 PASS, 0 FAIL",
+    "python3 tests/test_correctness.py -> 41 passed, 0 failed; KAT_FOLD and KAT_FOLD3 unchanged",
+    "GitHub build workflow for 7ba73e1 -> success (run 42556324187); build for 65baac4 also success (run 42555128869)"
+  ],
+  "completion": {
+    "report": "docs/reviews/06-library/D06-T01-s5.md",
+    "verdict": "complete",
+    "candidate": "7ba73e174a441747bb0be9f51d3b774a358e77e1",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/06-library/D06-T01-s5.md",
+    "candidate": "cad0f14df39e399cdb16c48cd99fe4312dc2bc21",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "cad0f14df39e399cdb16c48cd99fe4312dc2bc21",
+  "schedule": {
+    "policy": "three-pass",
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}
