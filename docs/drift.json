@@ -1546,9 +1546,9 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "2026-11-09: Re-read README.md against include/rasterfold.h for D06 T01 section 1 (header documentation only: comments for constants, fields, return codes, and aliasing rules; no signature, code, or .fold byte changed).",
+      "evidence": "2026-11-09: Re-read README.md against include/rasterfold.h for D06 T01 section 1 round fixes (non-overlap preconditions, options refusal codes, stream_size channel order; comments only, no signature or byte changed).",
       "sources": {
-        "include/rasterfold.h": "197dc639337109fbc1e37a19c182a0073ac4565e836cf877a013affaf898554c",
+        "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "c7f9919e34924b6686ce876fd96550d28c39d025ed6233e6f338e03f37ce47a1",
         "src/main.c": "0a9f391a283d94e8d63e2a953f7d5c46a6fb4d4fe041c04f060a0118aae4ed4c",
         "scripts/build.py": "824893947ad3d19fc1abb9538f5e53e93a12255da94ff5ac38536743715b21fe",
@@ -1562,9 +1562,9 @@
       "review": "Author-attested: 2026-10-25 re-read README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "AGENTS.md": {
-      "evidence": "2026-11-09: Re-read AGENTS.md against include/rasterfold.h for D06 T01 section 1 (header documentation only: comments for constants, fields, return codes, and aliasing rules; no signature, code, or .fold byte changed).",
+      "evidence": "2026-11-09: Re-read AGENTS.md against include/rasterfold.h for D06 T01 section 1 round fixes (non-overlap preconditions, options refusal codes, stream_size channel order; comments only, no signature or byte changed).",
       "sources": {
-        "include/rasterfold.h": "197dc639337109fbc1e37a19c182a0073ac4565e836cf877a013affaf898554c",
+        "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "c7f9919e34924b6686ce876fd96550d28c39d025ed6233e6f338e03f37ce47a1",
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
         ".conclave/reviewers.toml": "3d53255ab0db8dd94bbdd79bf2cc84d8688dcc14f4e07426c3a3413cafc36990",
@@ -1596,30 +1596,30 @@
       "review": "Author-attested: 2026-10-25 re-read CONTRIBUTING.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/building.md": {
-      "evidence": "2026-11-09: Re-read docs/building.md against include/rasterfold.h for D06 T01 section 1 (header documentation only: comments for constants, fields, return codes, and aliasing rules; no signature, code, or .fold byte changed).",
+      "evidence": "2026-11-09: Re-read docs/building.md against include/rasterfold.h for D06 T01 section 1 round fixes (non-overlap preconditions, options refusal codes, stream_size channel order; comments only, no signature or byte changed).",
       "sources": {
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
         "scripts/build.py": "824893947ad3d19fc1abb9538f5e53e93a12255da94ff5ac38536743715b21fe",
         "scripts/package.py": "b9ef31c48c2c5f7dfdcb22a7b3e5bd1a14c36b84d5d3887f17646bf47eaad199",
         "scripts/check-all.py": "7432d7b4b4eb6c6f499376180fb5576851d1be22db76d7e1375e497e6cbe2637",
-        "include/rasterfold.h": "197dc639337109fbc1e37a19c182a0073ac4565e836cf877a013affaf898554c",
+        "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "docs/building.md": "481144590cfd899e520659aee9ad544f56b3c4403225060e285d1ea648d49c27"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/building.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/library.md": {
-      "evidence": "2026-11-09: Re-read docs/library.md against include/rasterfold.h for D06 T01 section 1 (header documentation only: comments for constants, fields, return codes, and aliasing rules; no signature, code, or .fold byte changed).",
+      "evidence": "2026-11-09: Re-read docs/library.md against include/rasterfold.h for D06 T01 section 1 round fixes (non-overlap preconditions, options refusal codes, stream_size channel order; comments only, no signature or byte changed).",
       "sources": {
-        "include/rasterfold.h": "197dc639337109fbc1e37a19c182a0073ac4565e836cf877a013affaf898554c",
+        "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/api.c": "774c4e0a2a22f5a01e174e541cd1e725da05019ece20927345938cbe10fe0f02",
         "src/rasterfold.def": "8beeb2fc7b0e5e95bbe68623dc90732ab5fe6c97abc21026406801773f2ea783",
         "docs/library.md": "4f520b3bd9184c6937c79869a14460a030b72eb1256b5f01ec27925590a57257"
       }
     },
     "docs/index.md": {
-      "evidence": "2026-11-09: Re-read docs/index.md against include/rasterfold.h for D06 T01 section 1 (header documentation only: comments for constants, fields, return codes, and aliasing rules; no signature, code, or .fold byte changed).",
+      "evidence": "2026-11-09: Re-read docs/index.md against include/rasterfold.h for D06 T01 section 1 round fixes (non-overlap preconditions, options refusal codes, stream_size channel order; comments only, no signature or byte changed).",
       "sources": {
-        "include/rasterfold.h": "197dc639337109fbc1e37a19c182a0073ac4565e836cf877a013affaf898554c",
+        "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "c7f9919e34924b6686ce876fd96550d28c39d025ed6233e6f338e03f37ce47a1",
         "src/main.c": "0a9f391a283d94e8d63e2a953f7d5c46a6fb4d4fe041c04f060a0118aae4ed4c",
         "docs/site-content.json": "3611e28cba68ff6ac17ace19115ebb014f06140322afcfc32ec39b78128c6f30",
@@ -1628,7 +1628,7 @@
       "review": "Author-attested: 2026-10-25 re-read docs/index.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/getting-started.md": {
-      "evidence": "2026-11-09: Re-read docs/getting-started.md against include/rasterfold.h for D06 T01 section 1 (header documentation only: comments for constants, fields, return codes, and aliasing rules; no signature, code, or .fold byte changed).",
+      "evidence": "2026-11-09: Re-read docs/getting-started.md against include/rasterfold.h for D06 T01 section 1 round fixes (non-overlap preconditions, options refusal codes, stream_size channel order; comments only, no signature or byte changed).",
       "sources": {
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
         "tools/provision.py": "b17ea42569b76d70edbcc235dbc86385c9c7ce50b1be7a3bb83383c30f848556",
@@ -1636,7 +1636,7 @@
         "scripts/build.py": "824893947ad3d19fc1abb9538f5e53e93a12255da94ff5ac38536743715b21fe",
         "scripts/check-all.py": "7432d7b4b4eb6c6f499376180fb5576851d1be22db76d7e1375e497e6cbe2637",
         "scripts/check-all.ps1": "7006b1871b52689461497fa676b3cb6472f0e436c9c5e240deb9da069321a528",
-        "include/rasterfold.h": "197dc639337109fbc1e37a19c182a0073ac4565e836cf877a013affaf898554c",
+        "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/main.c": "0a9f391a283d94e8d63e2a953f7d5c46a6fb4d4fe041c04f060a0118aae4ed4c",
         "docs/getting-started.md": "b5600b5480cbad54659f2f5c596586d19def8b29e9e8f14e486a28d6f0664e95"
       },
@@ -1725,9 +1725,9 @@
       }
     },
     "docs/examples.md": {
-      "evidence": "2026-11-09: Re-read docs/examples.md against include/rasterfold.h for D06 T01 section 1 (header documentation only: comments for constants, fields, return codes, and aliasing rules; no signature, code, or .fold byte changed).",
+      "evidence": "2026-11-09: Re-read docs/examples.md against include/rasterfold.h for D06 T01 section 1 round fixes (non-overlap preconditions, options refusal codes, stream_size channel order; comments only, no signature or byte changed).",
       "sources": {
-        "include/rasterfold.h": "197dc639337109fbc1e37a19c182a0073ac4565e836cf877a013affaf898554c",
+        "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/main.c": "0a9f391a283d94e8d63e2a953f7d5c46a6fb4d4fe041c04f060a0118aae4ed4c",
         "examples/encode.c": "f4cb5d6e4d04c302d17ce8d6aac0b0926218836ec96d8fa4bb676583234cdd66",
         "examples/decode.c": "3f6ff6cfb0b847f5dae70fd6de5f96b0d49f470283326cf4149c368482639530",
@@ -1737,9 +1737,9 @@
       "review": "Author-attested: 2026-10-25 re-read docs/examples.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/limitations.md": {
-      "evidence": "2026-11-09: Re-read docs/limitations.md against include/rasterfold.h for D06 T01 section 1 (header documentation only: comments for constants, fields, return codes, and aliasing rules; no signature, code, or .fold byte changed).",
+      "evidence": "2026-11-09: Re-read docs/limitations.md against include/rasterfold.h for D06 T01 section 1 round fixes (non-overlap preconditions, options refusal codes, stream_size channel order; comments only, no signature or byte changed).",
       "sources": {
-        "include/rasterfold.h": "197dc639337109fbc1e37a19c182a0073ac4565e836cf877a013affaf898554c",
+        "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "c7f9919e34924b6686ce876fd96550d28c39d025ed6233e6f338e03f37ce47a1",
         "src/main.c": "0a9f391a283d94e8d63e2a953f7d5c46a6fb4d4fe041c04f060a0118aae4ed4c",
         "src/fold.c": "7cecdf9622aa6d98be195cf43b1e77de7f9676f2a7c1f1129cc08dbe7497e8aa",
@@ -1751,9 +1751,9 @@
       "review": "Author-attested: 2026-10-25 re-read docs/limitations.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/troubleshooting.md": {
-      "evidence": "2026-11-09: Re-read docs/troubleshooting.md against include/rasterfold.h for D06 T01 section 1 (header documentation only: comments for constants, fields, return codes, and aliasing rules; no signature, code, or .fold byte changed).",
+      "evidence": "2026-11-09: Re-read docs/troubleshooting.md against include/rasterfold.h for D06 T01 section 1 round fixes (non-overlap preconditions, options refusal codes, stream_size channel order; comments only, no signature or byte changed).",
       "sources": {
-        "include/rasterfold.h": "197dc639337109fbc1e37a19c182a0073ac4565e836cf877a013affaf898554c",
+        "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "c7f9919e34924b6686ce876fd96550d28c39d025ed6233e6f338e03f37ce47a1",
         "src/main.c": "0a9f391a283d94e8d63e2a953f7d5c46a6fb4d4fe041c04f060a0118aae4ed4c",
         "src/fold.c": "7cecdf9622aa6d98be195cf43b1e77de7f9676f2a7c1f1129cc08dbe7497e8aa",

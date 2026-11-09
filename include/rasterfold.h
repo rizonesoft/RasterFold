@@ -27,8 +27,8 @@ extern "C" {
 #define RF_LAYOUT_RGB8 1u
 /* Return codes. Every function that can fail returns RF_OK (0) or one of
  * these and, when err is not NULL, also fills *err with the same code:
- *   RF_OK success; RF_ERR_USAGE a required pointer is NULL, aliased, or
- *   inconsistent; RF_ERR_IO reserved for callers' I/O layers (the library
+ *   RF_OK success; RF_ERR_USAGE a required pointer is NULL or inconsistent
+ *   (non-overlap below is a caller precondition, not a detected error); RF_ERR_IO reserved for callers' I/O layers (the library
  *   does no I/O); RF_ERR_UNSUPPORTED a layout, option size, or reserved
  *   field this version refuses; RF_ERR_FORMAT the input is not a
  *   well-formed .fold file or image; RF_ERR_LIMIT a size limit would be
@@ -42,8 +42,11 @@ extern "C" {
 
 /* Initialize size to sizeof(rf_options), threads to 0 (automatic) or 1..9,
  * and reserved to zero. NULL selects defaults. The original 8-byte prefix
- * (size, threads) is accepted. Sizes must be multiples of four; a size larger
- * than this library's structure is refused. Known reserved fields must be zero. */
+ * (size, threads) is accepted. Refusals: size below 8, a size not a multiple
+ * of four, or threads above 9 is RF_ERR_USAGE; a size larger than this
+ * library's structure, or a nonzero reserved word covered by size, is
+ * RF_ERR_UNSUPPORTED. Reserved words beyond size are absent, not read, and
+ * may hold anything; reserved words covered by size must be zero. */
 typedef struct {
     uint32_t size, threads;
     uint32_t reserved[4];
@@ -81,8 +84,9 @@ typedef struct { int code; const char *message; } rf_error;
  *   payload_size: bytes of payload after the 32-byte header.
  *   payload_crc, header_crc: the CRC-32 values stored in the file, verified
  *     against the bytes before this structure is filled.
- *   stream_size: per-channel coded stream sizes for method 1; zero for the
- *     raw method. */
+ *   stream_size: coded stream sizes in G, R, B channel order for method 1
+ *     (version 3 reports the sum across strips); zero for the raw and
+ *     palette methods. */
 typedef struct {
     uint32_t width, height, method;
     uint32_t payload_size, payload_crc, header_crc;
@@ -100,8 +104,10 @@ RF_API uint32_t rf_version(void);
  *     with rf_free; on failure it is zeroed. Existing out.data is never
  *     freed implicitly.
  *   err: NULL, or a per-call result object.
- * No output object (out, err) may overlap pixels, options, or each other,
- * and shared inputs must stay immutable while concurrent calls use them.
+ * Precondition: no output object (out, err) and no input storage (the
+ * pixels struct, its data, options) may overlap each other; the library
+ * clears outputs before reading inputs and does not detect overlap.
+ * Shared inputs must stay immutable while concurrent calls use them.
  * Returns RF_OK or RF_ERR_USAGE / RF_ERR_UNSUPPORTED / RF_ERR_FORMAT /
  * RF_ERR_LIMIT as described at the codes above. */
 RF_API int rf_encode_image(const rf_pixels *pixels, const rf_options *options,
@@ -110,14 +116,15 @@ RF_API int rf_encode_image(const rf_pixels *pixels, const rf_options *options,
  * tightly packed RGB8. out is required and zeroed on failure; its data is
  * a library allocation freed with rf_free. The same non-overlap and
  * immutability rules as rf_encode_image apply to out, err, options, and
- * bytes. Returns the same codes as rf_encode_image; malformed input is
+ * bytes. out, err, options, and the input bytes may not overlap each
+ * other. Returns the same codes as rf_encode_image; malformed input is
  * RF_ERR_FORMAT and is never partially decoded into out. */
 RF_API int rf_decode_image(const void *bytes, size_t size, const rf_options *options,
                            rf_pixels *out, rf_error *err);
 /* Validate a complete .fold file, including decoding its payload, and fill
- * info. This is not a header-only fast path. info is required, may not
- * overlap bytes or err, and is zeroed on failure. Returns the same codes
- * as rf_encode_image. */
+ * info. This is not a header-only fast path. info is required; info, err,
+ * and the input bytes may not overlap each other; info is zeroed on
+ * failure. Returns the same codes as rf_encode_image. */
 RF_API int rf_inspect(const void *bytes, size_t size, rf_info *info, rf_error *err);
 /* Release the base pointer of a live allocation returned by this library
  * (rf_buffer.data or decoded rf_pixels.data), exactly once. NULL is
