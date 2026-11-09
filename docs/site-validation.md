@@ -4,6 +4,8 @@
 
 This record documents the browser, responsive-layout, keyboard-navigation, state-transition, and accessibility-tree verification of the RasterFold Jekyll documentation site built from `docs/site-content.json` (`14` published pages plus `/RasterFold/404.html`).
 
+**Addendum 2026-11-09:** the site has since gained a 15th published page, the generated API Reference (`docs/api.md`, D08 T03 §2). That page's delivery evidence is its section checkpoint and the Pages workflow, not this validation record, which still describes the 14-page site it measured.
+
 ## 1. Environment and Build Provenance
 
 - **Staged source tree:** `python3 scripts/build-docs.py --stage build/site-source` (`37` allowlisted files staged).
@@ -17,7 +19,7 @@ This record documents the browser, responsive-layout, keyboard-navigation, state
   - `docs/_includes/head_custom.html` overrides `Element.prototype.scrollIntoView` and `Element.prototype.removeAttribute` on `.nav-list-link` so Just the Docs' sidebar initialization does not move the sequential focus starting point into `#site-nav` or strip the `href` attribute from the active navigation item.
   - Pressing `Tab` once on `/RasterFold/` focuses `<a class="skip-to-main" href="#main-content">Skip to main content</a>` with computed `outline-style: solid` and `outline-width: 3px`. Activating `.skip-to-main` moves focus to `<main id="main-content" tabindex="-1">`.
 - **Main sidebar navigation (`#site-nav`):**
-  - All `15` allowlisted pages (`Overview`, `Getting Started`, `Installation and Build`, `CLI and Library Usage`, `C API Guide`, `Format Specification`, `Examples`, `Benchmarks`, `Research Summary`, `Limitations`, `Troubleshooting`, `Contributing`, `Security Policy`, `Licenses and Provenance`, `API Reference`) are present in `<nav id="site-nav" aria-label="Main">`, retain valid `/RasterFold/*.html` `href` attributes, and mark the active page with `aria-current="page"`.
+  - All `14` allowlisted pages (`Overview`, `Getting Started`, `Installation and Build`, `CLI and Library Usage`, `C API Guide`, `Format Specification`, `Examples`, `Benchmarks`, `Research Summary`, `Limitations`, `Troubleshooting`, `Contributing`, `Security Policy`, `Licenses and Provenance`) are present in `<nav id="site-nav" aria-label="Main">`, retain valid `/RasterFold/*.html` `href` attributes, and mark the active page with `aria-current="page"`.
 - **Page outline (`#page-outline`):**
   - On pages with two or more `<h2>` sections (`docs/assets/js/site-states.js`), `<nav id="page-outline" class="rf-page-outline" aria-label="On this page">` is inserted after `<h1>`.
   - On `/RasterFold/format.html`, `#page-outline` exposes `7` section links (`#conventions` through `#decoder-validation-summary`), all resolving to matching `h2[id]` anchors on the page.

@@ -1664,11 +1664,11 @@
       }
     },
     "docs/README.md": {
-      "evidence": "2026-11-09 Re-read docs/README.md against docs/site-content.json and scripts/build-docs.py for D08 T03 section 2: the site gains a generated API Reference page (docs/api.md from include/rasterfold.h, nav_order 15); navigation and inventories in prose remain accurate.",
+      "evidence": "2026-11-09 Re-read docs/README.md against scripts/build-docs.py after the D08 T03 section 2 parser hardening: generated page kinds, unsupported-declaration refusals, and the API Reference output are as the prose describes.",
       "sources": {
         "docs/_config.yml": "d2459047e15f142133fb8206900c7921ca9c793559c63c264e7e43dbb1f00522",
         "docs/site-content.json": "b96463cde4f9b48008f95150e1e4e90695cd920d17a106a92bf513e71e008400",
-        "scripts/build-docs.py": "6aa441b5240bd188317a9b9837bf4878f413aba85b524b01d36c7dbfe6bf2e26",
+        "scripts/build-docs.py": "bb5f569c96d2d969d1eb14531723099f73557a6a3f55b00a68f15fd4187f8cc4",
         "docs/README.md": "35dddde5d7cbf1f7353813bebd7272749de00d2f705fc277cd4b51cb7b8189a0"
       }
     },
@@ -1788,7 +1788,7 @@
       }
     },
     "docs/site-validation.md": {
-      "evidence": "2026-11-09 Updated the allowlisted page count in docs/site-validation.md from 14 to 15 and named the API Reference for D08 T03 section 2.",
+      "evidence": "2026-11-09 Reconciled docs/site-validation.md as the historical 14-page validation record and added a dated addendum naming the 15th page (generated API Reference, D08 T03 section 2) and where its delivery evidence lives.",
       "sources": {
         "docs/_config.yml": "d2459047e15f142133fb8206900c7921ca9c793559c63c264e7e43dbb1f00522",
         "docs/_includes/head_custom.html": "a3db05eb828ddef58712fcd5fb5525ca905ee9e0e20c4707c8bf910dbc4b21dc",
@@ -1797,7 +1797,7 @@
         "docs/assets/js/site-states.js": "eddfda79289ae90c93a7576539404fd202f6e49995f435c959fd74535885578d",
         "docs/404.md": "013ab6c1d44954956b54444048f96b973ddccfbb50068f5b4044d6ea08957f90",
         "docs/site-content.json": "b96463cde4f9b48008f95150e1e4e90695cd920d17a106a92bf513e71e008400",
-        "docs/site-validation.md": "88ed282fb9ea3369e000b225e447370041b8e2cc49b97010776251d0ba84409f"
+        "docs/site-validation.md": "0949ab1e65ad52c3db0068945ac86ac4c03879caa9f8dce4e9faf5a81b944541"
       }
     }
   },

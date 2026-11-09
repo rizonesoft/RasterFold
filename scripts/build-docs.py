@@ -336,10 +336,21 @@ def parse_api_header(root: Path, header_rel: str, def_rel: str) -> dict:
     """
     text = safe_repo_path(root, header_rel).read_text(encoding='utf-8')
     def_text = safe_repo_path(root, def_rel).read_text(encoding='utf-8')
-    exports = dict(
-        (name, int(ordinal))
-        for name, ordinal in re.findall(r'(rf_\w+)\s+@(\d+)', def_text)
-    )
+    exports: dict[str, int] = {}
+    in_exports = False
+    for raw_line in def_text.splitlines():
+        entry = raw_line.strip()
+        if entry == 'EXPORTS':
+            in_exports = True
+            continue
+        if not in_exports or not entry:
+            continue
+        m = re.fullmatch(r'([A-Za-z_][A-Za-z0-9_]*) @([0-9]+)', entry)
+        if not m:
+            raise ValueError(f'{def_rel}: unsupported export entry: {entry}')
+        if m.group(1) in exports:
+            raise ValueError(f'{def_rel}: duplicate export entry: {entry}')
+        exports[m.group(1)] = int(m.group(2))
     if not exports:
         raise ValueError(f'{def_rel}: no exports parsed')
     intro = None
@@ -347,6 +358,7 @@ def parse_api_header(root: Path, header_rel: str, def_rel: str) -> dict:
     types: list[dict] = []
     functions: list[dict] = []
     comment: str | None = None
+    comment_used = False
     lines = text.splitlines()
     i = 0
 
@@ -356,6 +368,8 @@ def parse_api_header(root: Path, header_rel: str, def_rel: str) -> dict:
         while j < len(lines):
             parts.append(lines[j].strip())
             joined = ' '.join(parts)
+            if '//' in joined or '/*' in joined:
+                raise ValueError(f'{header_rel}:{start + 1}: unsupported comment inside a declaration')
             if re.search(r'\}\s*[a-z_][a-z0-9_]*\s*;', joined) if struct else ';' in lines[j]:
                 break
             j += 1
@@ -368,30 +382,43 @@ def parse_api_header(root: Path, header_rel: str, def_rel: str) -> dict:
             while '*/' not in raw and i + 1 < len(lines):
                 i += 1
                 raw += '\n' + lines[i]
-            raw = raw.split('*/', 1)[0]
+            raw, _, rest = raw.partition('*/')
             if intro is None:
                 intro = _header_comment_text(raw)
             else:
                 comment = _header_comment_text(raw)
-            i += 1
-            continue
-        if not line or line.startswith('#include') or line in ('#ifdef __cplusplus', '#endif', '}') or line.startswith('extern "C"'):
+                comment_used = False
+            if rest.strip():
+                # A declaration may share the line with the comment's end;
+                # it still has to be parsed, never discarded.
+                lines[i] = rest
+                line = rest.strip()
+            else:
+                i += 1
+                continue
+        if not line or line.startswith('#include') or line in ('#endif', '}') or line.startswith('extern "C"'):
             i += 1
             continue
         if line.startswith('#ifndef') or line.startswith('#define RASTERFOLD_H'):
             i += 1
             continue
-        if line.startswith('#if') or line.startswith('#elif'):
-            # RF_API visibility selection; not part of the documented API.
-            while i < len(lines) and not lines[i].strip().startswith('#else') and '#endif' not in lines[i]:
-                i += 1
+        if line == '#ifdef __cplusplus':
             i += 1
             continue
-        if line == '#else':
-            while i < len(lines) and '#endif' not in lines[i]:
-                i += 1
+        if line == '#if defined(_WIN32) && defined(RF_SHARED)':
+            # The one conditional block in the supported subset: RF_API
+            # visibility selection. Only its own directives may appear.
+            i += 1
+            while i < len(lines) and lines[i].strip() != '#endif':
+                inner = lines[i].strip()
+                if inner.startswith('#define RF_API') or inner in ('#elif !defined(_WIN32)', '#else'):
+                    i += 1
+                    continue
+                raise ValueError(f'{header_rel}:{i + 1}: unsupported declaration in the RF_API visibility block: {inner}')
             i += 1
             continue
+        if line.startswith('#if') or line.startswith('#elif') or line == '#else':
+            raise ValueError(f'{header_rel}:{i + 1}: unsupported conditional: {line}')
         if line.startswith('#define'):
             if line == '#define RF_API' or line.startswith('#define RF_API '):
                 i += 1
@@ -405,10 +432,11 @@ def parse_api_header(root: Path, header_rel: str, def_rel: str) -> dict:
             if comment is None:
                 raise ValueError(f'{header_rel}:{i + 1}: undocumented constant {m.group(1)}')
             constants.append({'name': m.group(1), 'value': m.group(2).strip(), 'doc': comment})
+            comment_used = True
             i += 1
             continue
         if line.startswith('typedef struct'):
-            if comment is None:
+            if comment is None or comment_used:
                 raise ValueError(f'{header_rel}:{i + 1}: undocumented type: {line}')
             stmt, j = take_statement(i, struct=True)
             m = re.fullmatch(r'typedef struct \{(.*)\}\s*([a-z_][a-z0-9_]*);', stmt)
@@ -417,10 +445,11 @@ def parse_api_header(root: Path, header_rel: str, def_rel: str) -> dict:
             fields = [f.strip() for f in m.group(1).split(';') if f.strip()]
             types.append({'name': m.group(2), 'fields': fields, 'doc': comment, 'decl': stmt})
             comment = None
+            comment_used = False
             i = j + 1
             continue
         if line.startswith('RF_API'):
-            if comment is None:
+            if comment is None or comment_used:
                 raise ValueError(f'{header_rel}:{i + 1}: undocumented function: {line}')
             stmt, j = take_statement(i)
             m = re.fullmatch(r'RF_API\s+(.+?)\s+(rf_\w+)\s*\((.*)\)\s*;', stmt)
@@ -432,6 +461,7 @@ def parse_api_header(root: Path, header_rel: str, def_rel: str) -> dict:
                 'doc': comment,
             })
             comment = None
+            comment_used = False
             i = j + 1
             continue
         raise ValueError(f'{header_rel}:{i + 1}: unsupported public declaration: {line}')

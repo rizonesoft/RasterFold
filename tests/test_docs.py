@@ -244,6 +244,50 @@ class DocsMapTests(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding='utf-8', newline='\n')
 
+    def test_api_reference_content_and_parser_refusals(self) -> None:
+        api = build_docs.parse_api_header(REPO, 'include/rasterfold.h', 'src/rasterfold.def')
+        page = build_docs.render_api_page(REPO, {'source': 'include/rasterfold.h', 'title': 'API Reference', 'nav_order': 15})
+        for fn in ('rf_version', 'rf_encode_image', 'rf_decode_image', 'rf_inspect', 'rf_free'):
+            self.assertIn(f'### `{fn}`', page)
+        for ty in api['types']:
+            self.assertIn(f'### `{ty["name"]}`', page)
+            for field in ty['fields']:
+                self.assertIn(f'- `{field};`', page)
+        for const in api['constants']:
+            self.assertIn(f'### `{const["name"]}`', page)
+        for ownership in ('release data using rf_free', 'caller releases it with rf_free', 'never free it', 'Cannot fail'):
+            self.assertIn(ownership, page)
+        self.assertIn('safe for concurrent calls', page)
+
+        header = (self.root / 'include/rasterfold.h').read_text(encoding='utf-8')
+        definitions = (self.root / 'src/rasterfold.def').read_text(encoding='utf-8')
+
+        def refuses(mutate, pattern, defs=None):
+            self.write('include/rasterfold.h', mutate(header))
+            if defs is not None:
+                self.write('src/rasterfold.def', defs)
+            with self.assertRaisesRegex(ValueError, pattern):
+                build_docs.parse_api_header(self.root, 'include/rasterfold.h', 'src/rasterfold.def')
+            self.write('include/rasterfold.h', header)
+            self.write('src/rasterfold.def', definitions)
+
+        # Undocumented function: drop the rf_free comment entirely.
+        free_doc = '/* Release the base pointer of a live allocation returned by this library\n * (rf_buffer.data or decoded rf_pixels.data), exactly once. NULL is\n * allowed. Never pass a caller allocation, an interior pointer, or a\n * pointer obtained from another loaded copy of the library. */\n'
+        self.assertIn(free_doc, header)
+        refuses(lambda t: t.replace(free_doc, ''), 'undocumented function')
+        # A constant hidden inside an unsupported conditional is refused.
+        refuses(lambda t: t.replace('#define RF_LAYOUT_RGB8 1u', '#if 1\n#define RF_HIDDEN 42\n#endif\n#define RF_LAYOUT_RGB8 1u'), 'unsupported conditional')
+        # A declaration sharing the comment's closing line is not discarded.
+        refuses(lambda t: t.replace('/* Returns the packed API version', '/* Public enum. */ typedef enum { RF_X } rf_x;\n/* Returns the packed API version'), 'unsupported public declaration')
+        # The macro group's comment cannot document the following type.
+        options_doc_start = header.index('/* Initialize size to sizeof(rf_options)')
+        options_end = header.index('typedef struct {', options_doc_start)
+        refuses(lambda t: t.replace(header[options_doc_start:options_end], ''), 'undocumented type')
+        # A comment inside a multi-line signature is refused, not rendered.
+        refuses(lambda t: t.replace('RF_API int rf_encode_image(const rf_pixels *pixels, const rf_options *options,\n', 'RF_API int rf_encode_image(const rf_pixels *pixels, const rf_options *options,\n                           // output buffer\n'), 'unsupported comment inside a declaration')
+        # An ordinal-free export entry is refused, not silently skipped.
+        refuses(lambda t: t, 'unsupported export entry', defs=definitions + 'rf_new\n')
+
     def test_required_page_inventory_and_source_mapping(self) -> None:
         site_content = build_docs.load_site_content(REPO)
         pages_by_id = {p['id']: p for p in site_content['pages']}
