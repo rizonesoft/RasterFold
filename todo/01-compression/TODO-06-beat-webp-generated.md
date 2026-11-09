@@ -73,7 +73,7 @@ A context model over recently seen colours: a small hash of the last colours per
 - [x] ~~If accepted, port it into the version 3 path of `src/cm.c` with `tests/rfi_ref.py`, `spec/FOLD.md`, and `KAT_FOLD3`.~~ Not accepted: the prototype missed the `synth` bar (candidate/baseline GM `1.0000` against `<= 0.90`; `photo` `0.99997` within its `<= 1.0005` bar), so nothing was ported, per the negative-result rule. Measured 2026-11-09, recorded in `docs/research.md` section 3.2.
 - [x] Commit: `"codec: a colour-cache model for screen content"`
 
-**Test checkpoint:** the generated geometric mean candidate/baseline is `1.0000` (`synth` total `201640` -> `201640`, all 11 encoder-selected sizes identical) against the `GM <= 0.90` bar, and `photo` is `30634873` -> `30634089` (`0.99997`, bar `<= 1.0005`), from `python3 scripts/windows.py research/ab.py size <source> <set> -v -t1` on 2026-11-09; negative result, no port, so `python tests/test_correctness.py` owes no new case.
+**Test checkpoint:** the generated geometric mean candidate/baseline is `1.0000` (`synth` total `201640` -> `201640`, all 11 encoder-selected sizes identical) against the `GM <= 0.90` bar, and `photo` is `30634873` -> `30634088` (`0.99997`, bar `<= 1.0005`), from `python3 scripts/windows.py research/ab.py size <source> <set> -v -t1` on 2026-11-09; negative result, no port, so `python tests/test_correctness.py` owes no new case.
 
 **Freeze check:** `KAT_FOLD` (version 2) decodes unchanged; the operator's standing approval (`D99 T01 §3`) covers extending the unreleased version 3.
 
