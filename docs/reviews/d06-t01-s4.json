@@ -1,0 +1,77 @@
+{
+  "ref": "D06 T01 \u00a74",
+  "title": "API Tests and the ABI List",
+  "implementation_sha": "e9abc2b08bb0387e6edc69b29f1792bfb0246313",
+  "date": "2026-11-09",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/06-library/D06-T01-s4.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "python3 tests/test_api.py -> 11 tests OK, full 48-fixture corpus assertions",
+    "python3 scripts/check-all.py --all-targets -> 26/29, three stale-progress-JSON failures repaired by plan --sync and re-run green (plan --check current, drift 0 errors, test_docs 8 passed)",
+    "python3 tests/test_correctness.py -> 41 passed, 0 failed",
+    "removed-export experiment -> test_public_exports fails at the binary export comparison with rf_free missing, passes after rebuilding the restored DLL"
+  ],
+  "completion": {
+    "report": "docs/reviews/06-library/D06-T01-s4.md",
+    "verdict": "complete",
+    "candidate": "e9abc2b08bb0387e6edc69b29f1792bfb0246313",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/06-library/D06-T01-s4.md",
+    "candidate": "83d86ae507dc5b8345b0b23dea9bf0e3aef58731",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "83d86ae507dc5b8345b0b23dea9bf0e3aef58731",
+  "schedule": {
+    "policy": "three-pass",
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}

@@ -46,7 +46,7 @@ track: L1
 |   1   |   §1    | The public header | -- |  [x]   |
 |   2   |   §2    | Shared/static libraries and Windows import libraries | §1 |  [x]   |
 |   3   |   §3    | The command line on the library | §2 |  [x]   |
-|   4   |   §4    | API tests and the ABI list | §2 |  [ ]   |
+|   4   |   §4    | API tests and the ABI list | §2 |  [x]   |
 |   5   |   §5    | Example programs | §4 |  [ ]   |
 
 ---
@@ -113,6 +113,8 @@ The executable uses the same code path as the library for encode and inspect (li
 
 **Test checkpoint:** `python3 tests/test_api.py` passes 11 tests including the full 48-fixture corpus assertions; `tests/test_artifacts.py` passes on all four targets built by `python3 scripts/check-all.py --all-targets`; removing `rf_free @5` from `src/rasterfold.def`, rebuilding windows-x64, then restoring the .def over the altered DLL made `test_public_exports` fail at the binary export comparison (`tests/test_artifacts.py`, actual table missing `rf_free`), and rebuilding the restored DLL made it pass again (2026-11-09).
 
+> **Verified:** 2026-11-09 | §4 | e9abc2b08bb0387e6edc69b29f1792bfb0246313
+> **Review:** `docs/reviews/d06-t01-s4.json`
 ## 5. Example Programs
 
 - [ ] Add `examples/encode.c` and `examples/decode.c` (PPM in and out, error handling shown), built and run by `tests/test_artifacts.py` against native shared and static libraries. Done when: both build and round-trip an image locally and in the configured native CI jobs; remote CI proof is recorded separately. Cheaper substitute: code snippets in the docs that nothing compiles.
