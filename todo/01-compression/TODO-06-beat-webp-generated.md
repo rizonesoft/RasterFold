@@ -61,6 +61,8 @@ track: C6
 > **Review:** `docs/reviews/d01-t06-s1.json`
 ## 2. A Colour-Cache Model in Version 3
 
+> **Started:** 2026-11-09T00:27:02Z
+
 **Needs:** ffmpeg with libjxl (benchmarks)
 
 A context model over recently seen colours: a small hash of the last colours per position class, whose hit (the current pixel equals a cached colour) becomes a strong mixer input for G, R, and B together. Bar: the generated geometric mean at least 10% lower with the photo total no more than 0.05% worse; otherwise the negative result ships.
