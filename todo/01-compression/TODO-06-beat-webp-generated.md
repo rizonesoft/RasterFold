@@ -73,12 +73,14 @@ A context model over recently seen colours: a small hash of the last colours per
 
 ## 3. Copy Runs for Palette Images
 
-For method 2, a run token that copies a span of indices from the row above (at offsets -2 to 2) or from the left, coded before the per-pixel decisions. Bar: palette images at least 20% smaller, no photo affected.
+For method 3 (extended palette, the palette method the encoder actually selects; `RF_METHOD_PAL2` in `src/pal.c`), a run token that copies a span of indices from the row above (at offsets -2 to 2) or from the left, coded before the per-pixel decisions. Bar: palette images at least 20% smaller, no photo affected.
+
+**Corrected 2026-11-09:** this section originally named method 2, but the encoder never selects method 2 (`src/fold.c` selects `RF_METHOD_PAL2`, file method 3, when the palette wins, and every palette file measured in §1 is method 3). The run token therefore belongs in the method 3 path of `src/pal.c`; method 2 files remain decode-only legacy. This changes what the encoder writes for method 3, so the four format duties in item 2 apply to method 3.
 
 **Corrected 2026-11-09:** the `heldout` set does not exist yet (authored by `D00 T03 §1`); its screenshots are owned by `D00 T03 §2`. This section measures the palette images of `synth`.
 
-- [ ] Prototype the run token in the method 2 encoder and decoder (`src/pal.c`) behind a research switch, and measure the palette images of `synth`. Done when: the sizes are quoted against the bar.
-- [ ] If accepted, make it part of method 2 with `tests/rfi_ref.py`, `spec/FOLD.md`, and `KAT_PAL`. Done when: codec and oracle agree.
+- [ ] Prototype the run token in the method 3 encoder and decoder (`src/pal.c`) behind a research switch, and measure the palette images of `synth`. Done when: the sizes are quoted against the bar.
+- [ ] If accepted, make it part of method 3 with `tests/rfi_ref.py`, `spec/FOLD.md`, and `KAT_PAL`. Done when: codec and oracle agree.
 - [ ] Commit: `"codec: copy runs for palette images"`
 
 **Test checkpoint:** `python tests/test_correctness.py` passes; the palette images' sizes against WebP quoted before and after.
