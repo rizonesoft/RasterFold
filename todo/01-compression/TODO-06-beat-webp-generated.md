@@ -39,7 +39,7 @@ track: C6
 |   2   |   §2    | A colour-cache model in version 3 | §1, D01 T03 §1 |  [x]   |
 |   3   |   §3    | Copy runs for palette images | §1, D01 T01 §2 |  [x]   |
 |   4   |   §4    | Coding the palette itself for palette images | §3 |  [x]   |
-|   5   |   §5    | Above-copy runs for palette images | §3 |  [ ]   |
+|   5   |   §5    | Above-copy runs for palette images | §3 |  [x]   |
 |   6   |   §6    | A neighbour-candidate colour cache in version 3 | §2 |  [ ]   |
 
 ---
@@ -150,6 +150,8 @@ The palette field is the largest single component on the many-colour generated i
 
 **Freeze check:** method 3 is part of the unreleased format version 3, so its files may change; `KAT_FOLD` (version 2, method 1) and the method 2 fixtures decode unchanged.
 
+> **Verified:** 2026-11-09 | §5 | 6c8beb941ac03fcc7f73b7744f7f8219ff866183
+> **Review:** `docs/reviews/d01-t06-s5.json`
 ## 6. A Neighbour-Candidate Colour Cache in Version 3
 
 **Origin:** discovered run=f64ec873f271 2026-11-09 -- Milestone 8 gate (D05 T01 §8) missed its target on 2026-11-09; this is follow-up 3 of up to three under the missed-milestone policy (D99 T01 §4), required by that gate's acceptance bar.
