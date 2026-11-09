@@ -1,0 +1,77 @@
+{
+  "ref": "D07 T01 \u00a72",
+  "title": "PNG In and Out",
+  "implementation_sha": "54ee274e6e7bd053e948a118ba91e0fce81471b3",
+  "date": "2026-11-09",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/07-tool/D07-T01-s2.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "python3 tests/test_correctness.py -> 43 passed including png-io",
+    "python3 tests/fuzz_decode.py --png 2000 1 -> 288 accepted, 3 unsupported, 1709 malformed, no crash or hang",
+    "Pillow comparison over testdata/photos/*.png -> PHOTOS OK 10 /10",
+    "python3 scripts/build.py --target linux-x64 -> built clean"
+  ],
+  "completion": {
+    "report": "docs/reviews/07-tool/D07-T01-s2.md",
+    "verdict": "reconciled",
+    "candidate": "54ee274e6e7bd053e948a118ba91e0fce81471b3",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/07-tool/D07-T01-s2.md",
+    "candidate": "4eddc5c2152875e199b104ddc6294226eb875811",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "4eddc5c2152875e199b104ddc6294226eb875811",
+  "schedule": {
+    "policy": "three-pass",
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}

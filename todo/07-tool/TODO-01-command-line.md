@@ -42,7 +42,7 @@ track: T1
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
 |   1   |   §1    | Commands and options | D06 T01 §3 |  [x]   |
-|   2   |   §2    | PNG in and out | §1 |  [ ]   |
+|   2   |   §2    | PNG in and out | §1 |  [x]   |
 |   3   |   §3    | PPM in and out | §1 |  [ ]   |
 |   4   |   §4    | Exit codes, messages, and overwrite | §1 |  [ ]   |
 
@@ -82,6 +82,8 @@ PNG needs zlib's inflate and deflate, written here in C without a runtime: infla
 
 **Test checkpoint:** Pillow comparison over `testdata/photos/*.png`: all ten photos encode and decode with exit 0 and Pillow-identical pixels (`PHOTOS OK 10 /10`, 2026-11-09); `python3 tests/test_correctness.py` passes 43 cases including the new `png-io` case (interlaced exact, opaque RGBA accepted, non-opaque alpha/tRNS/16-bit/grey refused with exit 3, truncated/bad-CRC/bad-Adler/bad-filter refused with exit 4, no output on refusal, PNG and BMP encode to identical `.fold` bytes); `python3 tests/fuzz_decode.py --png 2000 1` reports 288 accepted, 3 unsupported, 1709 malformed, no crash or hang (after the adversarial round tightened Huffman, Adam7, chunk-structure and CINFO validation, with genuine Adam7 fixtures and seed-acceptance checks).
 
+> **Verified:** 2026-11-09 | §2 | 54ee274e6e7bd053e948a118ba91e0fce81471b3
+> **Review:** `docs/reviews/d07-t01-s2.json`
 ## 3. PPM In and Out
 
 - [ ] Write P6 PPM (maxval 255) reading and writing in `src/ppm.c`, refusing other maxvals and P3 with exit 3. Done when: PPM round trips match Pillow. Cheaper substitute: none needed; it is small.
