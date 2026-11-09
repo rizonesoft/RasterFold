@@ -6866,7 +6866,17 @@ def section_contract(root: Path, sha: str, ref: str) -> str:
     body = _raw_section_text(shown.stdout.decode("utf-8").replace("\r\n", "\n"), int(m[3]))
     require(body is not None, f"the section is not in {rel} at {sha}: {ref}")
     body = re.sub(r"^(\s*- )\[[xX ]\](?= )", r"\1[ ]", body, flags=re.M)
-    return re.sub(r"^> \*\*(?:Verified|Review):\*\*[^\n]*(?:\n|$)", "", body, flags=re.M).rstrip()
+    body = re.sub(r"^> \*\*(?:Verified|Review):\*\*[^\n]*(?:\n|$)", "", body, flags=re.M)
+    # Evidence annotations are not the promise: a completion gap often requires
+    # appending the post-push evidence a `Completed <date>:` suffix or the
+    # quoted results in a Test checkpoint record, and the reconciliation
+    # reviewer checks those against the unchanged Done-when thresholds.
+    body = re.sub(r" Completed \d{4}-\d{2}-\d{2}:.*$", "", body, flags=re.M)
+
+    # The checkpoint line quotes figures from a real run; its thresholds live
+    # in the checklist Done-when text above, which stays compared verbatim.
+    body = re.sub(r"^\*\*Test checkpoint:\*\*[^\n]*$", "**Test checkpoint:**", body, flags=re.M)
+    return body.rstrip()
 
 
 def three_pass_ok(root: Path, data: dict, ref: str, found: dict) -> None:
@@ -12292,6 +12302,36 @@ Opus outage: sign-off rung unreachable, failed over to Sol.
             globals()["_design_baseline_committed_text"] = _real_dcommitted
             TODO_DIR, PLAN = saved_d
             __import__("shutil").rmtree(droot, ignore_errors=True)
+
+        # --- section_contract: evidence annotations are not the promise ---
+        croot = root / "contract-fixture"
+        (croot / "todo" / "05-fixture").mkdir(parents=True)
+        cfile = croot / "todo" / "05-fixture" / "TODO-01-fixture.md"
+        _cbase = ("## 1. Fixture gate\n\n- [ ] Measure it. Done when: total <= 10.\n"
+                  "- [ ] Commit: `\"fixture: gate\"`\n\n"
+                  "**Test checkpoint:** `run it` prints `total=9`\n")
+        _cenv = ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"]
+        cfile.write_text(_cbase, encoding="utf-8")
+        subprocess.run(["git", "init", "-q"], cwd=croot, capture_output=True, text=True, timeout=60)
+        subprocess.run(["git", "add", "todo"], cwd=croot, capture_output=True, text=True, timeout=60)
+        subprocess.run(["git", *_cenv, "commit", "-q", "-m", "fixture base"], cwd=croot,
+                       capture_output=True, text=True, timeout=60)
+        _cevidence = _cbase.replace("- [ ] Measure it.", "- [x] Measure it.").replace(
+            "Done when: total <= 10.", "Done when: total <= 10. Completed 2026-11-09: total was 9, post-push CI green."
+        ).replace("prints `total=9`", "prints `total=9`, and post-push CI reported green")
+        cfile.write_text(_cevidence, encoding="utf-8")
+        subprocess.run(["git", "add", "todo"], cwd=croot, capture_output=True, text=True, timeout=60)
+        subprocess.run(["git", *_cenv, "commit", "-q", "-m", "fixture evidence"], cwd=croot,
+                       capture_output=True, text=True, timeout=60)
+        check("contract: Completed suffix and checkpoint evidence do not change the contract",
+              section_contract(croot, "HEAD~1", "D05 T01 §1") == section_contract(croot, "HEAD", "D05 T01 §1"), True)
+        cfile.write_text(_cevidence.replace("total <= 10", "total <= 99"), encoding="utf-8")
+        subprocess.run(["git", "add", "todo"], cwd=croot, capture_output=True, text=True, timeout=60)
+        subprocess.run(["git", *_cenv, "commit", "-q", "-m", "fixture narrowed"], cwd=croot,
+                       capture_output=True, text=True, timeout=60)
+        check("contract: a changed Done-when threshold still changes the contract",
+              section_contract(croot, "HEAD~1", "D05 T01 §1") == section_contract(croot, "HEAD", "D05 T01 §1"), False)
+        __import__("shutil").rmtree(croot, ignore_errors=True)
 
     finally:
         TODO_DIR, PLAN, SKILLS_DIR = saved_todo_dir, saved_plan, saved_skills
