@@ -348,6 +348,9 @@ GATE_STATE: dict[int, dict[str, object]] = {
             "and `python3 tests/test_correctness.py` (`41 passed, 0 failed` on Linux and Windows), `python3 tests/test_api.py` (`Ran 9 tests ... OK`), `python3 tests/test_artifacts.py` (`Ran 15 tests ... OK`), `python3 tests/fuzz_decode.py 300 1` and `python3 scripts/windows.py tests/fuzz_decode.py 300 1` (`300 mutated files (methods 0:20, 1:200, 2:40, 3:40): 287 rejected, 13 still valid, no crash, hang or mismatch`), `python3 research/abpool.py --self-test` (`Ran 1 test ... OK`), `python3 tests/test_research_refs.py` (`Ran 15 tests ... OK`), `python3 research/milestones.py --check`, `python3 scripts/build-docs.py --check`, `python3 scripts/build-docs.py --self-test`, `python3 scripts/build-docs.py --stage build/site-source` (`staged 37 file(s) into build/site-source`), `python3 -m unittest discover -s tests -p test_docs.py -v` (`Ran 8 tests ... OK`), `python3 -m unittest discover -s tests -p test_drift.py -v`, `python3 scripts/drift-check.py`, `python3 scripts/check-all.py --all-targets` (`check-all: 29/29 passed`), and post-push `python3 scripts/ci_status.py` and `python3 scripts/ci_status.py --workflow pages.yml` (`build.yml: green at 81400445a9c8 (https://github.com/rizonesoft/RasterFold/actions/runs/42367353607)`, `plan.yml: green at 81400445a9c8 (https://github.com/rizonesoft/RasterFold/actions/runs/42367353604)`, `pages.yml: green at 81400445a9c8 (https://github.com/rizonesoft/RasterFold/actions/runs/42367353602)`, with the final candidate tip's post-push CI output retained in `build/d05-t01-s7/ci-status.log` and `build/d05-t01-s7/ci-status.json`) exit 0."
         ),
     },
+    8: {
+        "started": "2026-11-09T08:16:51Z",
+    },
 }
 
 BAND_CURRENT_STATE: dict[int, str] = {

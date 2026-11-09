@@ -208,6 +208,8 @@ Milestone 7 of the roadmap (`docs/research.md` section 9). It keeps everything m
 > **Review:** `docs/reviews/d05-t01-s7.json`
 ## 8. Milestone 8 Gate: Beat WebP on generated images
 
+> **Started:** 2026-11-09T08:16:51Z
+
 **Needs:** ffmpeg with libjxl (benchmarks)
 
 **Job:** A user can rely on milestone 8: the generated set's total and geometric mean below lossless WebP's, and every generated image within 1.1 times WebP's size or at most 32 bytes larger, whichever allows more.
