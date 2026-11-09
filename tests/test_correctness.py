@@ -1630,6 +1630,139 @@ def png_io() -> None:
     put_code(1, 1); put(106, 7)    # 117 zeros (11 + 106): 255 in all
     over = bytes(bits)
     ihdr1 = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+    refusal("overhuff.png", b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr1) + chunk(b"IDAT", b"\x78\x9c" + over + b"\x00\x00\x00\x01") + chunk(b"IEND", b""), 4, "invalid deflate")
+
+    # The same bit writer builds an incomplete literal code (two
+    # length-2 codes, Kraft sum one half), which must also be refused.
+    bits = bits[:0]
+    bitpos[0] = 0
+    put(1, 1); put(2, 2); put(0, 5); put(0, 5); put(14, 4)
+    cl_lengths2 = {2: 1, 18: 1}
+    for sym in order[:18]:
+        put(cl_lengths2.get(sym, 0), 3)
+    # Canonical CL codes at length 1: symbol 2 -> 0, symbol 18 -> 1.
+    put_code(0, 1); put_code(0, 1)   # literal lengths 2, 2
+    put_code(1, 1); put(127, 7)      # 138 zeros
+    put_code(1, 1); put(107, 7)      # 118 zeros: 258 entries in all
+    refusal("incomplete.png", b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr1) + chunk(b"IDAT", b"\x78\x9c" + bytes(bits) + b"\x00\x00\x00\x01") + chunk(b"IEND", b""), 4, "invalid deflate")
+
+    # A fixed-block stream whose back-reference reaches before the
+    # first output byte must be refused.
+    bits = bits[:0]
+    bitpos[0] = 0
+    put(1, 1); put(1, 2)             # BFINAL, BTYPE fixed
+    put_code(0x30 + 65, 8)           # literal 'A' (fixed code)
+    put_code(1, 7)                   # length symbol 257 (fixed code)
+    put_code(1, 5)                   # distance symbol 1: distance 2 > 1 byte out
+    refusal("badref.png", b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr1) + chunk(b"IDAT", b"\x78\x9c" + bytes(bits) + b"\x00\x00\x00\x01") + chunk(b"IEND", b""), 4, "invalid deflate")
+
+    # Every filter, exercised on crafted rows of a known image.
+    fw, fh = 24, 9
+    frgb = bytes(((x * 9 + y * 31 + c * 53) & 255) for y in range(fh) for x in range(fw) for c in range(3))
+
+    def filtered_row(row: bytes, prev: bytes | None, ftype: int) -> bytes:
+        out = bytearray()
+        for x, v in enumerate(row):
+            a = row[x - 3] if x >= 3 else 0
+            b = prev[x] if prev else 0
+            c = prev[x - 3] if (prev and x >= 3) else 0
+            if ftype == 0: fv = v
+            elif ftype == 1: fv = (v - a) & 255
+            elif ftype == 2: fv = (v - b) & 255
+            elif ftype == 3: fv = (v - (a + b) // 2) & 255
+            else:
+                pp = a + b - c
+                pa, pb, pc = abs(pp - a), abs(pp - b), abs(pp - c)
+                pr = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
+                fv = (v - pr) & 255
+            out.append(fv)
+        return bytes(out)
+
+    for ftype in range(5):
+        rawf = bytearray()
+        prev = None
+        for yy in range(fh):
+            row = frgb[yy * fw * 3:(yy + 1) * fw * 3]
+            rawf.append(ftype)
+            rawf += filtered_row(row, prev, ftype)
+            prev = row
+        fsrc = work / f"filter{ftype}.png"
+        fsrc.write_bytes(crafted(fw, fh, 8, 2, bytes(rawf)))
+        fdest = fresh(work / f"filter{ftype}.fold")
+        expect_ok(["encode", str(fsrc), str(fdest)])
+        check(rf.decode_image(fdest.read_bytes()) == (fw, fh, frgb), f"filter {ftype} pixels differ")
+
+    # Stored, fixed-Huffman, and dynamic-Huffman inflate blocks.
+    def block_type(stream: bytes) -> int:
+        first = stream[2]
+        return (first >> 1) & 3
+
+    raw_fixed = b"".join(b"\x00" + bytes([yy * 20] * 72) for yy in range(fh))
+    fixed_pixels = b"".join(bytes([yy * 20] * 72) for yy in range(fh))
+    comp_stored = zlib.compressobj(0)
+    stored_stream = comp_stored.compress(raw_fixed) + comp_stored.flush()
+    comp_fixed = zlib.compressobj(6, zlib.DEFLATED, 15, 8, zlib.Z_FIXED)
+    fixed_stream = comp_fixed.compress(raw_fixed) + comp_fixed.flush()
+    big_raw = bytearray()
+    rng_bytes = random.Random(42)
+    big_rgb = bytes(((x * 9 + y * 31 + c * 53) & 255) for y in range(64) for x in range(64) for c in range(3))
+    for yy in range(64):
+        big_raw.append(0)
+        big_raw += big_rgb[yy * 64 * 3:(yy + 1) * 64 * 3]
+    comp_dyn = zlib.compressobj(9)
+    dyn_stream = comp_dyn.compress(bytes(big_raw)) + comp_dyn.flush()
+    for name, stream, exp_type, dims, pixels in (
+        ("stored", stored_stream, 0, (24, fh), fixed_pixels),
+        ("fixed", fixed_stream, 1, (24, fh), fixed_pixels),
+        ("dynamic", dyn_stream, 2, (64, 64), big_rgb),
+    ):
+        check(block_type(stream) == exp_type, f"{name} fixture has block type {block_type(stream)}, want {exp_type}")
+        bsrc = work / f"block_{name}.png"
+        ihdr_b = struct.pack(">IIBBBBB", dims[0], dims[1], 8, 2, 0, 0, 0)
+        bsrc.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr_b) + chunk(b"IDAT", stream) + chunk(b"IEND", b""))
+        bdest = fresh(work / f"block_{name}.fold")
+        expect_ok(["encode", str(bsrc), str(bdest)])
+        check(rf.decode_image(bdest.read_bytes()) == (dims[0], dims[1], pixels), f"{name} block pixels differ")
+
+    # Inflated data longer than the dimension-derived size is refused.
+    refusal("toobig.png", crafted(2, 2, 8, 2, raw2 + raw2), 4, "invalid deflate")
+    # Illegal depth/colour combinations are malformed, not unsupported.
+    refusal("rgbdepth1.png", crafted(2, 2, 1, 2, raw2), 4, "depth and colour")
+    refusal("index16.png", crafted(2, 2, 16, 3, raw2), 4, "depth and colour")
+    # A suggested palette on an RGB image is accepted only when whole.
+    ok_plte = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr2) + chunk(b"PLTE", b"\x01\x02\x03")
+               + chunk(b"IDAT", zlib.compress(raw2)) + chunk(b"IEND", b""))
+    psrc = work / "plte_ok.png"
+    psrc.write_bytes(ok_plte)
+    pdest = fresh(work / "plte_ok.fold")
+    expect_ok(["encode", str(psrc), str(pdest)])
+    refusal("plte_short.png", b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr2) + chunk(b"PLTE", b"\x01") + chunk(b"IDAT", zlib.compress(raw2)) + chunk(b"IEND", b""), 4, "PLTE")
+    refusal("plte_late.png", b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr2) + chunk(b"IDAT", zlib.compress(raw2)) + chunk(b"PLTE", b"\x01\x02\x03") + chunk(b"IEND", b""), 4, "PLTE")
+
+    # Export across the writer's block bound: a 600x600 noise image's
+    # filtered rows exceed 1 MiB, and the written PNG (dynamic blocks)
+    # re-reads exactly; a tiny export uses a fixed block.
+    nrgb = bytes(random.Random(7).randrange(256) for _ in range(600 * 600 * 3))
+    nbmp = work / "big.bmp"
+    nbmp.write_bytes(rf.write_bmp24(600, 600, nrgb))
+    nfold = fresh(work / "big.fold")
+    expect_ok(["encode", str(nbmp), str(nfold)])
+    npng = fresh(work / "big.png")
+    expect_ok(["decode", str(nfold), str(npng)])
+    with Image.open(npng) as im:
+        check(im.convert("RGB").tobytes() == nrgb, "multi-block PNG export pixels differ")
+    ndata = npng.read_bytes()
+    idat_at = ndata.index(b"IDAT")
+    idat_len = struct.unpack(">I", ndata[idat_at - 4:idat_at])[0]
+    idat = ndata[idat_at + 4:idat_at + 4 + idat_len]
+    check(len(zlib.decompress(idat)) > 1 << 20, "multi-block fixture did not cross the block bound")
+    check(block_type(idat) == 2, "multi-block export did not use dynamic blocks")
+    tiny_png = fresh(work / "tiny.png")
+    expect_ok(["decode", str(fold_from_bmp), str(tiny_png)])
+    tdata = tiny_png.read_bytes()
+    tidat_at = tdata.index(b"IDAT")
+    tidat_len = struct.unpack(">I", tdata[tidat_at - 4:tidat_at])[0]
+    check(block_type(tdata[tidat_at + 4:tidat_at + 4 + tidat_len]) in (0, 1), "tiny export used a dynamic block")
     
 
 def main() -> int:

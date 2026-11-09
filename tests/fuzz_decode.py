@@ -557,6 +557,76 @@ def mutate_png(blob: bytes, rng: random.Random) -> bytes:
     return _png_build([(typ, bytes(data)) for typ, data in mutated])
 
 
+_PNG_KNOWN_CHUNKS = {b"IHDR", b"PLTE", b"IDAT", b"IEND", b"tRNS", b"gAMA", b"cHRM", b"sRGB", b"iCCP", b"tEXt", b"zTXt", b"iTXt", b"bKGD", b"hIST", b"pHYs", b"sBIT", b"sPLT", b"tIME"}
+
+
+def _png_is_supported_valid(blob: bytes) -> bool:
+    """True when the blob is a valid PNG inside the supported subset
+    (8-bit RGB or opaque RGBA, sound chunk structure), independently
+    of the native reader: such a mutation must be accepted."""
+    chunks = _png_chunks(blob)
+    if not chunks or chunks[0][0] != b"IHDR" or chunks[-1][0] != b"IEND" or chunks[-1][1] != b"":
+        return False
+    seen_idat = False
+    idat_ended = False
+    for typ, data in chunks:
+        if typ == b"IDAT":
+            if idat_ended:
+                return False
+            seen_idat = True
+        elif seen_idat and typ != b"IEND":
+            idat_ended = True
+        if typ not in _PNG_KNOWN_CHUNKS and b"A" <= typ[:1] <= b"Z":
+            return False
+        if typ == b"tRNS":
+            return False
+    if not seen_idat:
+        return False
+    ihdr = chunks[0][1]
+    if len(ihdr) != 13 or ihdr[8] != 8 or ihdr[9] not in (2, 6) or ihdr[10] != 0 or ihdr[11] != 0 or ihdr[12] > 1:
+        return False
+    # Pillow tolerates some stream damage (a bad Adler-32 loads with a
+    # warning), so verify the zlib stream strictly here as well.
+    import zlib as _zlib
+
+    w, h = struct.unpack_from(">II", ihdr, 0)
+    channels = 3 if ihdr[9] == 2 else 4
+    if ihdr[12]:
+        x0 = (0, 4, 0, 2, 0, 1, 0)
+        y0 = (0, 0, 4, 0, 2, 0, 1)
+        dx = (8, 8, 4, 4, 2, 2, 1)
+        dy = (8, 8, 8, 4, 4, 2, 2)
+        want_raw = 0
+        for p in range(7):
+            pw = (w - x0[p] + dx[p] - 1) // dx[p] if w > x0[p] else 0
+            ph = (h - y0[p] + dy[p] - 1) // dy[p] if h > y0[p] else 0
+            if pw and ph:
+                want_raw += ph * (pw * channels + 1)
+    else:
+        want_raw = h * (w * channels + 1)
+    try:
+        streamer = _zlib.decompressobj()
+        raw = streamer.decompress(b"".join(data for typ, data in chunks if typ == b"IDAT"))
+        # Bytes after the zlib stream ends are not valid IDAT content,
+        # however lenient a decompressor is about ignoring them.
+        if not streamer.eof or streamer.unused_data:
+            return False
+    except Exception:
+        return False
+    if len(raw) != want_raw:
+        return False
+    try:
+        with Image.open(io.BytesIO(blob)) as im:
+            im.load()
+            if im.mode not in ("RGB", "RGBA"):
+                return False
+            if im.mode == "RGBA" and any(a != 255 for a in im.convert("RGBA").tobytes()[3::4]):
+                return False
+    except Exception:
+        return False
+    return True
+
+
 def verify_png_mutation(i: int, blob: bytes) -> tuple[int, str | None]:
     pid = os.getpid()
     src = WORK / f"p_{pid}_{i}.png"
@@ -574,6 +644,8 @@ def verify_png_mutation(i: int, blob: bytes) -> tuple[int, str | None]:
         if r.returncode not in (0, 3, 4) or partial.exists() or (r.returncode != 0 and dest.exists()) or (r.returncode == 0 and not dest.exists()):
             (WORK / f"pngbad{i}.png").write_bytes(blob)
             return -1, f"PNG BAD exit {r.returncode:#x} at iteration {i}: {r.stderr.decode(errors='replace').strip()}"
+        if r.returncode != 0 and _png_is_supported_valid(blob):
+            return -1, f"PNG MISMATCH valid supported PNG refused with exit {r.returncode} at iteration {i}"
         if r.returncode == 0:
             try:
                 with Image.open(src) as im:

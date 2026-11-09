@@ -30,7 +30,7 @@ int rf_png_load(const uint8_t *f, size_t size, rf_image *out, rf_error *err) {
         if (f[i] != PNG_SIG[i]) return rf_fail(err, RF_ERR_FORMAT, "invalid PNG: signature");
     uint32_t w = 0, h = 0, channels = 0;
     int have_ihdr = 0, have_iend = 0, interlace = 0;
-    int seen_idat = 0, idat_ended = 0;
+    int seen_idat = 0, idat_ended = 0, seen_plte = 0;
     uint8_t *idat = 0;
     size_t idat_size = 0, idat_cap = 0;
     size_t pos = 8;
@@ -53,18 +53,33 @@ int rf_png_load(const uint8_t *f, size_t size, rf_image *out, rf_error *err) {
             if (w > RF_MAX_DIM || h > RF_MAX_DIM || (uint64_t)w * h > RF_MAX_PIXELS) {
                 rc = rf_fail(err, RF_ERR_LIMIT, "image exceeds size limit"); goto done;
             }
+            /* Validate every IHDR field and the depth/colour
+               combination before classifying the format: an illegal
+               value or combination is malformed (exit 4), and only a
+               legal PNG outside the supported subset is unsupported
+               (exit 3). */
             if (data[8] != 1 && data[8] != 2 && data[8] != 4 && data[8] != 8 && data[8] != 16) {
                 rc = rf_fail(err, RF_ERR_FORMAT, "invalid PNG: bit depth"); goto done;
             }
             if (data[9] != 0 && data[9] != 2 && data[9] != 3 && data[9] != 4 && data[9] != 6) {
                 rc = rf_fail(err, RF_ERR_FORMAT, "invalid PNG: colour type"); goto done;
             }
+            {
+                int combo;
+                switch (data[9]) {
+                    case 0: combo = 1; break;
+                    case 2: combo = data[8] == 8 || data[8] == 16; break;
+                    case 3: combo = data[8] != 16; break;
+                    default: combo = data[8] == 8 || data[8] == 16; break;
+                }
+                if (!combo) { rc = rf_fail(err, RF_ERR_FORMAT, "invalid PNG: depth and colour"); goto done; }
+            }
+            if (data[10] != 0 || data[11] != 0) { rc = rf_fail(err, RF_ERR_FORMAT, "invalid PNG: IHDR methods"); goto done; }
+            if (data[12] > 1) { rc = rf_fail(err, RF_ERR_FORMAT, "invalid PNG: interlace"); goto done; }
             if (data[8] != 8) { rc = rf_fail(err, RF_ERR_UNSUPPORTED, "unsupported PNG: bit depth"); goto done; }
             if (data[9] == 2) channels = 3;
             else if (data[9] == 6) channels = 4;
             else { rc = rf_fail(err, RF_ERR_UNSUPPORTED, "unsupported PNG: colour type"); goto done; }
-            if (data[10] != 0 || data[11] != 0) { rc = rf_fail(err, RF_ERR_FORMAT, "invalid PNG: IHDR methods"); goto done; }
-            if (data[12] > 1) { rc = rf_fail(err, RF_ERR_FORMAT, "invalid PNG: interlace"); goto done; }
             interlace = data[12];
             have_ihdr = 1;
         } else if (type[0] == 't' && type[1] == 'R' && type[2] == 'N' && type[3] == 'S') {
@@ -91,6 +106,14 @@ int rf_png_load(const uint8_t *f, size_t size, rf_image *out, rf_error *err) {
             have_iend = 1;
             pos += 12 + length;
             break;
+        } else if (type[0] == 'P' && type[1] == 'L' && type[2] == 'T' && type[3] == 'E') {
+            /* A palette must precede IDAT, appear at most once, and
+               hold whole RGB entries; a suggested palette on an RGB
+               image is otherwise ignored. */
+            if (!have_ihdr || seen_plte || seen_idat || length == 0 || length % 3 != 0 || length > 768) {
+                rc = rf_fail(err, RF_ERR_FORMAT, "invalid PNG: PLTE"); goto done;
+            }
+            seen_plte = 1;
         } else if (type[0] >= 'A' && type[0] <= 'Z' &&
                    !(type[0] == 'P' && type[1] == 'L' && type[2] == 'T' && type[3] == 'E')) {
             /* An unknown critical chunk can change how the pixels must
