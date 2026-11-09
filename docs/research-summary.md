@@ -103,6 +103,8 @@ are filed: coding the palette itself, above-copy runs, and a neighbour-candidate
 gate stays unstamped until a follow-up reaches its bar and the gate is
 re-measured.
 
+**Held-out validation** (`D00 T03 §2`, 2026-11-09, `python3 scripts/windows.py research/ab.py size src/cm.c heldout -v -t1`, per-image sizes grouped by the frozen manifest's kind in `research/heldout.json`): photographs (30) total `33,307,797` bytes, `0.9412` of JPEG XL e9 and `0.9345` of e7, geometric mean `0.9324` against e9, 30 of 30 below e9 and 30 of 30 at or below e7, worst `ho_p06` at `0.9822` of e9: Milestone 4's photograph targets (total ratios and win counts) and Milestone 7's photograph targets (win counts scaled proportionally to 30 images, the 1.0% worst cap applied directly) all hold on images the codec was never tuned on. Screenshots (10) total `3,326,125` bytes against lossless WebP's `711,772` (`4.6730`), geometric mean `4.6534` against WebP, and every screenshot is over Milestone 8's per-image allowance (worst `ho_s10`, `402,076` against `78,482`, `5.1232`): Milestone 8 does not generalise to browser screenshots of rendered documentation, many-colour text images that neither the palette methods nor the CM coder prices near WebP. Reported, not tuned against: the held-out set stays evaluation-only, and the screenshot miss joins the Milestone 8 gate's parked operator decision.
+
 Speed: `research/bench.c` measures about 450 CPU cycles per sample on one
 thread (G, R, and B each count as one sample) on the i5-11600K for the 7-model
 version 3 CM coder with 16-node context rows and 16-bit SIMD counter updates,
