@@ -1708,14 +1708,14 @@
       "reviewed": "Author-attested: 2026-10-25 re-read spec/FOLD.md against src/cm.c and src/simd.h after D02 T01 section 4 (byte-identical cm.c hot-loop vectorization and row-context specialization; format version 2 bitstream unchanged)"
     },
     "research/README.md": {
-      "evidence": "2026-11-09: Verified research/README.md against research/corpus.py for D00 T03 section 1 (per-read socket deadline enforcement in held-out downloads).",
+      "evidence": "2026-11-09: Verified research/README.md against research/corpus.py for D00 T03 section 1 (per-read socket deadline enforcement in held-out downloads; frozen screenshot assets in research/heldout-assets/ with pinned Chrome for Testing provisioning for authoring).",
       "sources": {
-        "research/corpus.py": "bbc28c5b5428caa0bb343da0da7fb9b9c973e8bcf716d340eb16a38d767d02d2",
+        "research/corpus.py": "a11db50d12aa8009a1fa0d0a10821aec7fde3b81e5df06376ab8138be0fd0f46",
         "research/ab.py": "228a8a44610a803f9ba54ef1d3e5a91f5b46260bc878167a3e7fb32e1a7e7a90",
         "research/vsjxl.py": "bb0a1fbdcb0a84edcee8a988c1de100b168a7949a8c7b59378775af5d42a5563",
         "research/prof.py": "7fa28a84aab62f0eb79fd579bcc01b6e2e55cc200bdaa96c0218b2ad4aa05605",
         "research/bench.c": "0054db75d713113580bba46629c0577895f0297c17afd3051004115d74a7a513",
-        "research/README.md": "4470bdd3ebf4c00b3c4ccd637cabba1ce5dde32bed33adcfac9e4d28d8b732ca",
+        "research/README.md": "a0f39c4bebe3d4cd54bc0cce1eed2bb2df708ef413d91f20c1cd2a701df9b36f",
         "research/abpool.py": "05f5d4b3b31e1c5144eda013aceb661be9f591665ac1e046fc480bd595d5cb55"
       },
       "review": "Author-attested: 2026-10-25 re-read research/README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)",

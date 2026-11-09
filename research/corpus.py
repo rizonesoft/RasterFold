@@ -570,13 +570,49 @@ def verify_heldout(ppm_dir: Path = PPM) -> list[dict]:
     return entries
 
 
+def _provision_browser(browser_version: str) -> Path:
+    """Download the pinned Chrome for Testing headless shell (recovery path).
+
+    The recorded browser identity is a full `Google Chrome for Testing
+    <x.y.z.w>` string; that exact build is fetched from the Chrome for
+    Testing public archive into ignored build space and verified by its
+    own `--version` output before use, so a fresh host recovers the frozen
+    screenshots instead of failing on an empty browser cache.
+    """
+    import io
+    import re as _re
+    import urllib.request
+    import zipfile
+    m = _re.search(r"(\d+\.\d+\.\d+\.\d+)", browser_version)
+    if not m:
+        raise SystemExit(f"heldout screenshots: cannot parse a version from recorded browser {browser_version!r}")
+    ver = m.group(1)
+    root = REPO / "build" / "heldout-browser" / ver
+    shell = root / "chrome-headless-shell-linux64" / "chrome-headless-shell"
+    if not shell.is_file():
+        url = f"https://storage.googleapis.com/chrome-for-testing-public/{ver}/linux64/chrome-headless-shell-linux64.zip"
+        req = urllib.request.Request(url, headers={"User-Agent": "RasterFold-research/1.0 (held-out set)"})
+        try:
+            with urllib.request.urlopen(req, timeout=120) as r:
+                blob = r.read()
+        except Exception as exc:
+            raise SystemExit(f"heldout screenshots: provisioning pinned browser {ver} failed: {exc}") from exc
+        root.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(io.BytesIO(blob)) as z:
+            z.extractall(root)
+        shell.chmod(0o755)
+    got = subprocess.run([str(shell), "--version"], capture_output=True, text=True).stdout.strip()
+    if got != browser_version:
+        raise SystemExit(f"heldout screenshots: provisioned browser reports {got!r}, recorded is {browser_version!r}; refusing to regenerate")
+    return shell
+
+
 def _screenshot_pages(browser_version: str | None = None) -> list[dict]:
     stage = REPO / "build" / "site-source"
     subprocess.run([sys.executable, str(REPO / "scripts" / "build-docs.py"), "--stage", "build/site-source"],
                    cwd=REPO, check=True, capture_output=True, text=True)
     shells = sorted(Path.home().glob(".cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell"))
-    if not shells:
-        raise SystemExit("heldout screenshots: no cached headless Chromium shell under ~/.cache/ms-playwright")
+    shells += sorted((REPO / "build" / "heldout-browser").glob("*/chrome-headless-shell-linux64/chrome-headless-shell"))
     shell = version = None
     for cand in shells:
         v = subprocess.run([str(cand), "--version"], capture_output=True, text=True).stdout.strip()
@@ -584,8 +620,11 @@ def _screenshot_pages(browser_version: str | None = None) -> list[dict]:
             shell, version = str(cand), v
             if browser_version is not None:
                 break
+    if shell is None and browser_version is not None:
+        shell_path = _provision_browser(browser_version)
+        shell, version = str(shell_path), browser_version
     if shell is None:
-        raise SystemExit(f"heldout screenshots: recorded browser {browser_version!r} not in the local Chromium cache; recovery needs that pinned browser")
+        raise SystemExit("heldout screenshots: no cached headless Chromium shell under ~/.cache/ms-playwright and no recorded browser version to provision")
     entries = []
     html_dir = REPO / "build" / "heldout-html"
     html_dir.mkdir(parents=True, exist_ok=True)
@@ -628,6 +667,19 @@ def heldout(ppm_dir: Path = PPM) -> None:
         # Regenerate only the missing crops, then verify against the frozen manifest.
         by_name = {p["name"]: p for p in HELDOUT_PHOTOS}
         shots = [e for e in missing if e["kind"] == "screenshot"]
+        # Frozen assets first: the committed PNGs under
+        # research/heldout-assets/ are the exact frozen pixels, so recovery
+        # on any host is a file copy, never a re-render. Rendering (with
+        # its pinned browser) remains only for authoring a new set.
+        frozen_done = []
+        for e in shots:
+            asset = REPO / "research" / "heldout-assets" / f"{e['name']}.png"
+            if asset.is_file():
+                with Image.open(asset) as im:
+                    im.convert("RGB").save(ppm_dir / f"{e['name']}.ppm")
+                frozen_done.append(e["name"])
+        shots = [e for e in shots if e["name"] not in frozen_done]
+        missing = [e for e in missing if e["name"] not in frozen_done]
         if shots:
             import hashlib as _hl
             _stage = REPO / "build" / "site-source"
