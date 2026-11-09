@@ -1703,9 +1703,9 @@
       "reviewed": "Author-attested: 2026-10-25 re-read spec/FOLD.md against src/cm.c and src/simd.h after D02 T01 section 4 (byte-identical cm.c hot-loop vectorization and row-context specialization; format version 2 bitstream unchanged)"
     },
     "research/README.md": {
-      "evidence": "2026-11-09: Verified research/README.md against research/corpus.py and research/ab.py for D00 T03 section 1 round fixes (PPM validation, bounded downloads, ab.py held-out verification, screenshot regeneration).",
+      "evidence": "2026-11-09: Verified research/README.md against research/corpus.py and research/ab.py for D00 T03 section 1 completion repairs (pinned screenshot recovery, chunked download deadline, provenance in the generator).",
       "sources": {
-        "research/corpus.py": "ca2f04def7a03b6cd708169e005dfca3fee08a7b22e42d3ba66301eeb7899b60",
+        "research/corpus.py": "0e76e219271f931cc08c046ef9feb27d8de05174f42a2e1de8cf9e598fdce6d1",
         "research/ab.py": "228a8a44610a803f9ba54ef1d3e5a91f5b46260bc878167a3e7fb32e1a7e7a90",
         "research/vsjxl.py": "bb0a1fbdcb0a84edcee8a988c1de100b168a7949a8c7b59378775af5d42a5563",
         "research/prof.py": "7fa28a84aab62f0eb79fd579bcc01b6e2e55cc200bdaa96c0218b2ad4aa05605",

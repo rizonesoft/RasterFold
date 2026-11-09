@@ -43,6 +43,7 @@ HELDOUT_PHOTOS = [
         "licence": "CC BY-SA 4.0",
         "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
         "artist": "Giles Laurent",
+        "source_revision": 1279771862,
         "download": "https://upload.wikimedia.org/wikipedia/commons/6/66/014_Wild_Red_Deer_Switzerland_Photo_by_Giles_Laurent.jpg"
     },
     {
@@ -52,6 +53,7 @@ HELDOUT_PHOTOS = [
         "licence": "CC BY 3.0",
         "licence_url": "https://creativecommons.org/licenses/by/3.0",
         "artist": "Ralf Roletschek",
+        "source_revision": 1159208277,
         "download": "https://upload.wikimedia.org/wikipedia/commons/d/dc/13-04-13-st-poelten-landhausviertel-628.jpg"
     },
     {
@@ -61,6 +63,7 @@ HELDOUT_PHOTOS = [
         "licence": "CC BY-SA 4.0",
         "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
         "artist": "Faj2323",
+        "source_revision": 1279785633,
         "download": "https://upload.wikimedia.org/wikipedia/commons/2/2d/160316-031_Bridge_near_Tatopani.jpg"
     },
     {
@@ -70,6 +73,7 @@ HELDOUT_PHOTOS = [
         "licence": "CC BY-SA 3.0 pl",
         "licence_url": "https://creativecommons.org/licenses/by-sa/3.0/pl/deed.en",
         "artist": "Jacek Halicki",
+        "source_revision": 1237945286,
         "download": "https://upload.wikimedia.org/wikipedia/commons/5/5b/2014_K%C5%82odzko%2C_star%C3%B3wka_12.jpg"
     },
     {
@@ -77,8 +81,9 @@ HELDOUT_PHOTOS = [
         "title": "A Bukharan dance performed by members of the Rina Nikova ballet in the citadel of Jerusalem - Restoration.jpg",
         "page": "https://commons.wikimedia.org/wiki/File:A_Bukharan_dance_performed_by_members_of_the_Rina_Nikova_ballet_in_the_citadel_of_Jerusalem_-_Restoration.jpg",
         "licence": "Public domain",
-        "licence_url": "",
+        "licence_url": "https://commons.wikimedia.org/wiki/Commons:Public_domain",
         "artist": "Zoltan Kluger / Adam Cuerden",
+        "source_revision": 996216388,
         "download": "https://upload.wikimedia.org/wikipedia/commons/8/88/A_Bukharan_dance_performed_by_members_of_the_Rina_Nikova_ballet_in_the_citadel_of_Jerusalem_-_Restoration.jpg"
     },
     {
@@ -88,6 +93,7 @@ HELDOUT_PHOTOS = [
         "licence": "CC BY-SA 4.0",
         "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
         "artist": "Dominicus Johannes Bergsma",
+        "source_revision": 1283140152,
         "download": "https://upload.wikimedia.org/wikipedia/commons/a/af/Afgevallen_kastanje_van_een_Tamme_kastanje_%28Castanea_sativa%29_17-10-2021_%28d.j.b.%29_01.jpg"
     },
     {
@@ -97,6 +103,7 @@ HELDOUT_PHOTOS = [
         "licence": "CC BY-SA 4.0",
         "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
         "artist": "Agnes Monkelbaan",
+        "source_revision": 1281061212,
         "download": "https://upload.wikimedia.org/wikipedia/commons/f/f6/Amaryllis_%28Hippeastrum%29_26-01-2021._%28actm.%29_05.jpg"
     },
     {
@@ -106,6 +113,7 @@ HELDOUT_PHOTOS = [
         "licence": "CC BY-SA 4.0",
         "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
         "artist": "Jairmoreirafotografia",
+        "source_revision": 1255978386,
         "download": "https://upload.wikimedia.org/wikipedia/commons/e/ef/Ariramba-de-cauda-ruiva_%28cropped%29.jpg"
     },
     {
@@ -115,6 +123,7 @@ HELDOUT_PHOTOS = [
         "licence": "CC BY-SA 4.0",
         "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
         "artist": "Agnes Monkelbaan",
+        "source_revision": 1178999879,
         "download": "https://upload.wikimedia.org/wikipedia/commons/d/df/Breil-Brigels%2C_Lag_da_Breil-_Flem._23-09-2022._%28actm.%29_11.jpg"
     },
     {
@@ -124,6 +133,7 @@ HELDOUT_PHOTOS = [
         "licence": "CC BY 2.0",
         "licence_url": "https://creativecommons.org/licenses/by/2.0",
         "artist": "Bernd Thaller from Graz, Austria",
+        "source_revision": 1113601838,
         "download": "https://upload.wikimedia.org/wikipedia/commons/c/cf/Cappuchin_Bridge_%2830706076020%29.jpg"
     },
     {
@@ -133,6 +143,7 @@ HELDOUT_PHOTOS = [
         "licence": "CC BY-SA 4.0",
         "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
         "artist": "Diego Delso",
+        "source_revision": 1110838213,
         "download": "https://upload.wikimedia.org/wikipedia/commons/a/a0/Catedral_de_Santa_Mar%C3%ADa%2C_Sig%C3%BCenza%2C_Espa%C3%B1a%2C_2015-12-28%2C_DD_118-120_HDR.JPG"
     },
     {
@@ -142,6 +153,7 @@ HELDOUT_PHOTOS = [
         "licence": "CC BY-SA 4.0",
         "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
         "artist": "kallerna",
+        "source_revision": 1261675782,
         "download": "https://upload.wikimedia.org/wikipedia/commons/4/4a/Church_of_St._John_at_Kaneo_6.jpg"
     },
     {
@@ -151,6 +163,7 @@ HELDOUT_PHOTOS = [
         "licence": "CC0",
         "licence_url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
         "artist": "Wilfredor",
+        "source_revision": 1281145559,
         "download": "https://upload.wikimedia.org/wikipedia/commons/2/29/Coccinella_in_Parc_du_Bois-de-Coulonge_uncut_version.jpg"
     },
     {
@@ -160,6 +173,7 @@ HELDOUT_PHOTOS = [
         "licence": "CC BY-SA 4.0",
         "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
         "artist": "Pudelek",
+        "source_revision": 1154699554,
         "download": "https://upload.wikimedia.org/wikipedia/commons/2/27/Czech_Republic_-_landscape_near_Kory%C4%8Dany.jpg"
     },
     {
@@ -169,6 +183,7 @@ HELDOUT_PHOTOS = [
         "licence": "CC BY-SA 4.0",
         "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
         "artist": "Dietmar Rabich",
+        "source_revision": 1296635051,
         "download": "https://upload.wikimedia.org/wikipedia/commons/1/11/D%C3%BClmen%2C_Heilig-Kreuz-Kirche%2C_The_Cast_Whale_Project_--_2022_--_0509-13.jpg"
     },
     {
@@ -178,6 +193,7 @@ HELDOUT_PHOTOS = [
         "licence": "CC BY-SA 4.0",
         "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
         "artist": "Dietmar Rabich",
+        "source_revision": 1297670992,
         "download": "https://upload.wikimedia.org/wikipedia/commons/f/f9/D%C3%BClmen%2C_M%C3%BCnsterstra%C3%9Fe%2C_Viktorkirmes%2C_Riesenrad_--_2023_--_9053_%28kreativ%29.jpg"
     },
     {
@@ -185,8 +201,9 @@ HELDOUT_PHOTOS = [
         "title": "Edinburgh Castle from Grass Market.jpg",
         "page": "https://commons.wikimedia.org/wiki/File:Edinburgh_Castle_from_Grass_Market.jpg",
         "licence": "Public domain",
-        "licence_url": "",
+        "licence_url": "https://commons.wikimedia.org/wiki/Commons:Public_domain",
         "artist": "George Washington Wilson / Adam Cuerden",
+        "source_revision": 1223836504,
         "download": "https://upload.wikimedia.org/wikipedia/commons/c/c4/Edinburgh_Castle_from_Grass_Market.jpg"
     },
     {
@@ -196,6 +213,7 @@ HELDOUT_PHOTOS = [
         "licence": "CC BY-SA 4.0",
         "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
         "artist": "WAVRIK",
+        "source_revision": 1277542930,
         "download": "https://upload.wikimedia.org/wikipedia/commons/5/5a/Ethiopia_Banna_tribe_kids.jpg"
     },
     {
@@ -205,6 +223,7 @@ HELDOUT_PHOTOS = [
         "licence": "CC BY-SA 4.0",
         "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
         "artist": "Basile Morin",
+        "source_revision": 1294128498,
         "download": "https://upload.wikimedia.org/wikipedia/commons/4/41/Five_children_on_a_motorcycle.jpg"
     },
     {
@@ -214,6 +233,7 @@ HELDOUT_PHOTOS = [
         "licence": "CC BY-SA 4.0",
         "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
         "artist": "Agnes Monkelbaan",
+        "source_revision": 1281651901,
         "download": "https://upload.wikimedia.org/wikipedia/commons/4/42/Gele_trilzwam_%28Tremella_mesenterica%29_op_dode_tak_van_een_eik_15-01-2021._%28actm.%29_02.jpg"
     },
     {
@@ -223,6 +243,7 @@ HELDOUT_PHOTOS = [
         "licence": "CC BY-SA 4.0",
         "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
         "artist": "Ivar Leidus",
+        "source_revision": 1275156055,
         "download": "https://upload.wikimedia.org/wikipedia/commons/0/0f/Golden_Delicious_apples.jpg"
     },
     {
@@ -232,6 +253,7 @@ HELDOUT_PHOTOS = [
         "licence": "CC BY-SA 3.0",
         "licence_url": "https://creativecommons.org/licenses/by-sa/3.0",
         "artist": "Yossi Zwecker",
+        "source_revision": 1290524574,
         "download": "https://upload.wikimedia.org/wikipedia/commons/c/c5/Habibi2006pr%D7%A6%D7%99%D7%9C%D7%95%D7%9D_%D7%97%D7%91%D7%99%D7%91%D7%99_-_%D7%99%D7%95%D7%A1%D7%99_%D7%A6%D7%91%D7%A7%D7%A8.jpg"
     },
     {
@@ -241,6 +263,7 @@ HELDOUT_PHOTOS = [
         "licence": "CC BY-SA 4.0",
         "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
         "artist": "Original:  Azonesa\nDerivative work:  Radomianin",
+        "source_revision": 1296896671,
         "download": "https://upload.wikimedia.org/wikipedia/commons/f/f3/Herding_sheep353_%28edited%29.jpg"
     },
     {
@@ -250,6 +273,7 @@ HELDOUT_PHOTOS = [
         "licence": "CC BY-SA 3.0",
         "licence_url": "https://creativecommons.org/licenses/by-sa/3.0",
         "artist": "CEphoto, Uwe Aranas",
+        "source_revision": 1204446923,
         "download": "https://upload.wikimedia.org/wikipedia/commons/8/88/Hue_Vietnam_Thien-Mu-Temple-and-Pagoda-03.jpg"
     },
     {
@@ -259,6 +283,7 @@ HELDOUT_PHOTOS = [
         "licence": "CC BY-SA 4.0",
         "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
         "artist": "Agnes Monkelbaan",
+        "source_revision": 1178999246,
         "download": "https://upload.wikimedia.org/wikipedia/commons/3/3f/Katholische_Pfarrkirche_St._Julitta_und_Quiricus%2C_Andiast._%28actm%29_06.jpg"
     },
     {
@@ -268,6 +293,7 @@ HELDOUT_PHOTOS = [
         "licence": "CC BY-SA 4.0",
         "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
         "artist": "Dietmar Rabich",
+        "source_revision": 1270874735,
         "download": "https://upload.wikimedia.org/wikipedia/commons/3/34/Korfu_%28GR%29%2C_Korfu%2C_Alte_Festung_--_2018_--_1137.jpg"
     },
     {
@@ -277,6 +303,7 @@ HELDOUT_PHOTOS = [
         "licence": "CC BY-SA 3.0",
         "licence_url": "https://creativecommons.org/licenses/by-sa/3.0",
         "artist": "CEphoto, Uwe Aranas",
+        "source_revision": 1239631490,
         "download": "https://upload.wikimedia.org/wikipedia/commons/9/9a/Lahad-Datu_Sabah_Mount-Silam-Red-Crab-Geosesarma-aurantium-02.jpg"
     },
     {
@@ -286,6 +313,7 @@ HELDOUT_PHOTOS = [
         "licence": "CC BY-SA 4.0",
         "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
         "artist": "Original:  Florian Kriechbaumer\nDerivative work:  Aristeas",
+        "source_revision": 1082913674,
         "download": "https://upload.wikimedia.org/wikipedia/commons/5/59/Mountains_of_Wadi_Shawka_denoised.jpg"
     },
     {
@@ -295,6 +323,7 @@ HELDOUT_PHOTOS = [
         "licence": "CC BY-SA 4.0",
         "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
         "artist": "This Photo was taken by Timothy A. Gonsalves.  Feel free to use my photos, but please mention me as the author.  I would much appreciate if you send me an email",
+        "source_revision": 1286690103,
         "download": "https://upload.wikimedia.org/wikipedia/commons/1/1c/Male_Bush_Elephant_Head_Trunk_Up_Kafue_Jul23_A7R_05195.jpg"
     },
     {
@@ -304,6 +333,7 @@ HELDOUT_PHOTOS = [
         "licence": "CC BY-SA 3.0",
         "licence_url": "https://creativecommons.org/licenses/by-sa/3.0",
         "artist": "Diego Delso",
+        "source_revision": 1068292507,
         "download": "https://upload.wikimedia.org/wikipedia/commons/a/ab/Mercado_de_Col%C3%B3n%2C_Valencia%2C_Espa%C3%B1a%2C_2014-06-29%2C_DD_07.JPG"
     }
 ]
@@ -454,7 +484,7 @@ def _download_validated(url: str, dest: Path) -> bytes:
             chunks, total = [], 0
             with urllib.request.urlopen(req, timeout=60) as r:
                 while True:
-                    chunk = r.read(1 << 20)
+                    chunk = r.read(65536)
                     if not chunk:
                         break
                     total += len(chunk)
@@ -535,15 +565,22 @@ def verify_heldout(ppm_dir: Path = PPM) -> list[dict]:
     return entries
 
 
-def _screenshot_pages() -> list[dict]:
+def _screenshot_pages(browser_version: str | None = None) -> list[dict]:
     stage = REPO / "build" / "site-source"
     subprocess.run([sys.executable, str(REPO / "scripts" / "build-docs.py"), "--stage", "build/site-source"],
                    cwd=REPO, check=True, capture_output=True, text=True)
     shells = sorted(Path.home().glob(".cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell"))
     if not shells:
         raise SystemExit("heldout screenshots: no cached headless Chromium shell under ~/.cache/ms-playwright")
-    shell = str(shells[-1])
-    version = subprocess.run([shell, "--version"], capture_output=True, text=True).stdout.strip()
+    shell = version = None
+    for cand in shells:
+        v = subprocess.run([str(cand), "--version"], capture_output=True, text=True).stdout.strip()
+        if browser_version is None or v == browser_version:
+            shell, version = str(cand), v
+            if browser_version is not None:
+                break
+    if shell is None:
+        raise SystemExit(f"heldout screenshots: recorded browser {browser_version!r} not in the local Chromium cache; recovery needs that pinned browser")
     entries = []
     html_dir = REPO / "build" / "heldout-html"
     html_dir.mkdir(parents=True, exist_ok=True)
@@ -567,7 +604,9 @@ def _screenshot_pages() -> list[dict]:
                            capture_output=True, text=True, timeout=120)
         if r.returncode != 0 or not png.is_file():
             raise SystemExit(f"heldout screenshot failed for {page}: {r.stderr[:200]}")
-        entries.append({"page": page, "png": png, "browser": f"{shell} ({version})"})
+        import hashlib as _hl
+        entries.append({"page": page, "png": png, "browser": f"{shell} ({version})",
+                        "source_sha256": _hl.sha256(md.read_bytes()).hexdigest()})
     return entries
 
 
@@ -585,7 +624,16 @@ def heldout(ppm_dir: Path = PPM) -> None:
         by_name = {p["name"]: p for p in HELDOUT_PHOTOS}
         shots = [e for e in missing if e["kind"] == "screenshot"]
         if shots:
-            rendered = {s["page"]: s for s in _screenshot_pages()}
+            import hashlib as _hl
+            _stage = REPO / "build" / "site-source"
+            subprocess.run([sys.executable, str(REPO / "scripts" / "build-docs.py"), "--stage", "build/site-source"],
+                           cwd=REPO, check=True, capture_output=True, text=True)
+            for e in shots:
+                _page = e["source_page"].removeprefix("build/site-source/").removesuffix(".md")
+                _md = _stage / f"{_page}.md"
+                if not _md.is_file() or _hl.sha256(_md.read_bytes()).hexdigest() != e.get("source_sha256"):
+                    raise SystemExit(f"heldout screenshot recovery: staged source for {_page} differs from the frozen source hash; refusing to regenerate a changed page")
+            rendered = {s["page"]: s for s in _screenshot_pages(shots[0].get("browser_version"))}
             page_of = {e["name"]: e["source_page"].removeprefix("build/site-source/").removesuffix(".md") for e in shots}
             for e in shots:
                 shot = rendered[page_of[e["name"]]]
@@ -619,6 +667,8 @@ def heldout(ppm_dir: Path = PPM) -> None:
             "source_page": src["page"], "download_url": src["download"],
             "download_sha256": hashlib.sha256(data).hexdigest(),
             "licence": src["licence"], "licence_url": src["licence_url"], "author": src["artist"],
+            "source_revision": src["source_revision"],
+            "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision",
             "licence_verified": "Commons API imageinfo extmetadata at authoring, 2026-11-09",
             "alteration": "original download, center crop to 1280x960",
             "rgb_sha256": _rgb_sha256(crop), "width": 1280, "height": 960,
@@ -634,7 +684,8 @@ def heldout(ppm_dir: Path = PPM) -> None:
         entries.append({
             "name": name, "kind": "screenshot", "source_page": f"build/site-source/{shot['page']}.md",
             "rendered_with": "markdown-it 14.1.0 via npx, minimal owned HTML template",
-            "browser": shot["browser"], "repository_revision": subprocess.run(
+            "source_sha256": shot["source_sha256"],
+            "browser": shot["browser"], "browser_version": shot["browser"].rsplit("(", 1)[-1].removesuffix(")"), "repository_revision": subprocess.run(
                 ["git", "rev-parse", "HEAD"], cwd=REPO, capture_output=True, text=True).stdout.strip(),
             "rgb_sha256": _rgb_sha256(rgb), "width": 1280, "height": 960,
         })

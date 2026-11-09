@@ -552,7 +552,9 @@
    "repository_revision": "f5dcbd40ab57bbb3c5713bb8e45216629acb5cba",
    "rgb_sha256": "9dc305126088c97046033332633fda1960ae824e63685d231b48d7d4285db028",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "browser_version": "Google Chrome for Testing 156.0.8078.4",
+   "source_sha256": "39a370e417b039dd5240b3027015a2ff77730e902d51a6919e241b5ef6d240b4"
   },
   {
    "name": "ho_s02",
@@ -563,7 +565,9 @@
    "repository_revision": "f5dcbd40ab57bbb3c5713bb8e45216629acb5cba",
    "rgb_sha256": "3a77c093abda725f914008fb5389d4ce875e6d69728fced9c9103f3e5fb04f13",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "browser_version": "Google Chrome for Testing 156.0.8078.4",
+   "source_sha256": "2d39ba8a24158d850dd5881a249697c9cbc061c446935fb7b89c0f89d041ce73"
   },
   {
    "name": "ho_s03",
@@ -574,7 +578,9 @@
    "repository_revision": "f5dcbd40ab57bbb3c5713bb8e45216629acb5cba",
    "rgb_sha256": "84ac6f38476602de6a94fb0485180f405f76ad214528574066d657d48cd8b5bf",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "browser_version": "Google Chrome for Testing 156.0.8078.4",
+   "source_sha256": "715bddbd892b4061c25b7b6d559fe2e5a4c6969c6c0a81b97475fdfbf26695e0"
   },
   {
    "name": "ho_s04",
@@ -585,7 +591,9 @@
    "repository_revision": "f5dcbd40ab57bbb3c5713bb8e45216629acb5cba",
    "rgb_sha256": "5e4c9261ec1ae36c79cb0958f0884e775defebf9a5ac3d3dfd09f5164472b29b",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "browser_version": "Google Chrome for Testing 156.0.8078.4",
+   "source_sha256": "12c878adef48e864154ba0ddeb51edccf52c5c435b7c840aef3134d7c45aa284"
   },
   {
    "name": "ho_s05",
@@ -596,7 +604,9 @@
    "repository_revision": "f5dcbd40ab57bbb3c5713bb8e45216629acb5cba",
    "rgb_sha256": "486d010b444ed03e7f22e1cdbc9a953d84f33985e0584bb1d934d55f47c6ec64",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "browser_version": "Google Chrome for Testing 156.0.8078.4",
+   "source_sha256": "5ce4397d063a791586e2fec912fb1275f24f4d0fa7d4b6b2263ce7c37ffa44d3"
   },
   {
    "name": "ho_s06",
@@ -607,7 +617,9 @@
    "repository_revision": "f5dcbd40ab57bbb3c5713bb8e45216629acb5cba",
    "rgb_sha256": "d3b7b81e398cbc07c9f64951ede3b28fa226a7c7c5dd033c39bcda962577252a",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "browser_version": "Google Chrome for Testing 156.0.8078.4",
+   "source_sha256": "52a77a1a7ce36e03640d9f7d45c09fc351628231079b1c046f8424f70dc7179b"
   },
   {
    "name": "ho_s07",
@@ -618,7 +630,9 @@
    "repository_revision": "f5dcbd40ab57bbb3c5713bb8e45216629acb5cba",
    "rgb_sha256": "0835f8d79f8f40d946d957e8054f7f618c881f7010de0b82f17d10eebe58a5de",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "browser_version": "Google Chrome for Testing 156.0.8078.4",
+   "source_sha256": "49277fe42868a4f56e82d1e1c68b51510744fdde89eb6e7c45c57d09f2d0cce3"
   },
   {
    "name": "ho_s08",
@@ -629,7 +643,9 @@
    "repository_revision": "f5dcbd40ab57bbb3c5713bb8e45216629acb5cba",
    "rgb_sha256": "5a4a2d298d1745ad57241d9af533849c2f676ce036310cd69b9a84fbf1cd3b92",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "browser_version": "Google Chrome for Testing 156.0.8078.4",
+   "source_sha256": "d2967eb069950ab231a56245b36a6a7b1d98b732f2d96b2bb350739b2dc29bbf"
   },
   {
    "name": "ho_s09",
@@ -640,7 +656,9 @@
    "repository_revision": "f5dcbd40ab57bbb3c5713bb8e45216629acb5cba",
    "rgb_sha256": "ebc9f014eae324d6601ef358b7d87bb99399c7d58b1b52b2c712b6ad9d524168",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "browser_version": "Google Chrome for Testing 156.0.8078.4",
+   "source_sha256": "ecd203427954426416ef21b5d339ddd079af2b57a8f6b74e0773d019b2ced8a5"
   },
   {
    "name": "ho_s10",
@@ -651,7 +669,9 @@
    "repository_revision": "f5dcbd40ab57bbb3c5713bb8e45216629acb5cba",
    "rgb_sha256": "2b60bab79a58604e4789bbda3cbd769e1fdf09ce50118276e1807729044ae367",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "browser_version": "Google Chrome for Testing 156.0.8078.4",
+   "source_sha256": "ccc35d4b5d1fee4f88db0920937ae7992e53bfcc23aa44b1268bccee73abf193"
   }
  ]
 }
