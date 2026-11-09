@@ -1,0 +1,75 @@
+{
+  "ref": "D00 T03 \u00a71",
+  "title": "The Held-Out Set",
+  "implementation_sha": "ae1392ca1f046c774bf1bdcbb3cbf4816bbe405c",
+  "date": "2026-11-09",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/00-workspace/D00-T03-s1.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "research/corpus.py --verify-heldout -> heldout verified: 30 photographs, 10 screenshots, hashes match",
+    "python3 scripts/todo-graph.py validate -> 0 fatal, 0 warnings, 3 adjacency advisories"
+  ],
+  "completion": {
+    "report": "docs/reviews/00-workspace/D00-T03-s1.md",
+    "verdict": "reconciled",
+    "candidate": "ae1392ca1f046c774bf1bdcbb3cbf4816bbe405c",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/00-workspace/D00-T03-s1.md",
+    "candidate": "4ce1811f80b63cbd69ecf29963a638831ff8d72a",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "4ce1811f80b63cbd69ecf29963a638831ff8d72a",
+  "schedule": {
+    "policy": "three-pass",
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}

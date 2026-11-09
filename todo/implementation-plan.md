@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **95 of 246 sections complete (39%).** 246 sections (22 discovered); backlog 4 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **96 of 246 sections complete (39%).** 246 sections (22 discovered); backlog 4 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -272,7 +272,7 @@ Everything so far confirmed on images nobody tuned on, before anything is frozen
 
 |  ✔  | Section      | Deliverable                                      | Items |
 | :-: | ------------ | ------------------------------------------------ | :---: |
-| [ ] | `D00 T03 §1` | The held-out set                                 |   4   |
+| [x] | `D00 T03 §1` | The held-out set                                 |   4   |
 | [ ] | `D00 T03 §2` | Validate the milestones on it                    |   3   |
 | [ ] | `D05 T01 §9` | Milestone 9 gate: Holds on images never tuned on |   4   |
 

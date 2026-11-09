@@ -35,7 +35,7 @@ track: W3
 
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
-|   1   |   §1    | The held-out set | -- |  [ ]   |
+|   1   |   §1    | The held-out set | -- |  [x]   |
 |   2   |   §2    | Validate the milestones on it | §1 |  [ ]   |
 
 ---
@@ -55,6 +55,8 @@ Photographs come from a second openly licensed source (Wikimedia Commons feature
 
 **Test checkpoint:** `python3 scripts/windows.py research/ab.py size src/cm.c heldout` over 40 images prints `total=36633922 jxl=38421779 ratio=0.9535 geomean=0.9866 worst=1.2372 (ho_s02) e9=37850228 e9_ratio=0.9679 e9_geomean=1.0239 e9_worst=1.4236 (ho_s02) webp=40259242 webp_ratio=0.9100 webp_geomean=1.2775 webp_worst=5.1232 (ho_s10)`, and `python research/corpus.py --verify-heldout` prints `heldout verified: 30 photographs, 10 screenshots, hashes match` (2026-11-09).
 
+> **Verified:** 2026-11-09 | §1 | ae1392ca1f046c774bf1bdcbb3cbf4816bbe405c
+> **Review:** `docs/reviews/d00-t03-s1.json`
 ## 2. Validate the Milestones on It
 
 **Needs:** ffmpeg with libjxl (benchmarks)
