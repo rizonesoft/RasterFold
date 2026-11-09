@@ -85,6 +85,8 @@ The API is a contract that outlives releases, so it is designed before code: pla
 > **Review:** `docs/reviews/d06-t01-s2.json`
 ## 3. The Command Line on the Library
 
+> **Started:** 2026-11-09T02:23:00Z
+
 The executable uses the same code path as the library (linked statically, so `rasterfold.exe` stays one file), which guarantees the two cannot drift apart.
 
 - [ ] Rebuild `src/main.c` on the public API calls. Done when: `python tests/test_correctness.py` passes unchanged. Cheaper substitute: two code paths kept in step by hand.
