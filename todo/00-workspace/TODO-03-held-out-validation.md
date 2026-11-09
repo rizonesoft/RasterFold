@@ -59,6 +59,8 @@ Photographs come from a second openly licensed source (Wikimedia Commons feature
 > **Review:** `docs/reviews/d00-t03-s1.json`
 ## 2. Validate the Milestones on It
 
+> **Started:** 2026-11-09T09:41:23Z
+
 **Needs:** ffmpeg with libjxl (benchmarks)
 
 - [ ] Measure `python research/ab.py size heldout` at the codec of milestone 8 and compare with milestones 4, 7, and 8's targets (photos below JPEG XL e9, every photo below e9, screenshots against WebP). Done when: each target is reported held or missed, with the worst images named. Cheaper substitute: retuning a constant on the held-out images, which turns them into tuning data.
