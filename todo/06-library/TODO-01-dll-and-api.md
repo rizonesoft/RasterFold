@@ -44,7 +44,7 @@ track: L1
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
 |   1   |   §1    | The public header | -- |  [x]   |
-|   2   |   §2    | Shared/static libraries and Windows import libraries | §1 |  [ ]   |
+|   2   |   §2    | Shared/static libraries and Windows import libraries | §1 |  [x]   |
 |   3   |   §3    | The command line on the library | §2 |  [ ]   |
 |   4   |   §4    | API tests and the ABI list | §2 |  [ ]   |
 |   5   |   §5    | Example programs | §4 |  [ ]   |
@@ -81,6 +81,8 @@ The API is a contract that outlives releases, so it is designed before code: pla
 
 **Freeze check:** `KAT_FOLD`, `KAT_FOLD3`, and every oracle comparison are unchanged, proven by `python3 tests/test_correctness.py` on the candidate.
 
+> **Verified:** 2026-11-09 | §2 | 6ff0a68a2ef66ca1bc57e4abcc6ce81209023ff0
+> **Review:** `docs/reviews/d06-t01-s2.json`
 ## 3. The Command Line on the Library
 
 The executable uses the same code path as the library (linked statically, so `rasterfold.exe` stays one file), which guarantees the two cannot drift apart.

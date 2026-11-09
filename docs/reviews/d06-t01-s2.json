@@ -1,0 +1,76 @@
+{
+  "ref": "D06 T01 \u00a72",
+  "title": "The DLL and Its Import Libraries",
+  "implementation_sha": "6ff0a68a2ef66ca1bc57e4abcc6ce81209023ff0",
+  "date": "2026-11-09",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/06-library/D06-T01-s2.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "llvm-objdump -p rasterfold.dll -> five .def exports, imports only KERNEL32.dll",
+    "C consumers vs librasterfold.dll.a and rasterfold.lib -> both exit 0 on Windows",
+    "python3 tests/test_api.py -> 10 tests OK; python3 tests/test_correctness.py -> 41 passed"
+  ],
+  "completion": {
+    "report": "docs/reviews/06-library/D06-T01-s2.md",
+    "verdict": "reconciled",
+    "candidate": "6ff0a68a2ef66ca1bc57e4abcc6ce81209023ff0",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/06-library/D06-T01-s2.md",
+    "candidate": "f77abf6887151805f1883d749f05baca12007cc4",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "f77abf6887151805f1883d749f05baca12007cc4",
+  "schedule": {
+    "policy": "three-pass",
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}
