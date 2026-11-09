@@ -49,6 +49,8 @@ track: D3
 
 ## 2. The API Reference
 
+> **Started:** 2026-11-09T04:35:48Z
+
 - [ ] Generate `docs/api.md` (with Jekyll front matter) from the doc comments in `include/rasterfold.h` (every function, type, constant, and error code, with its ownership rule), and render it into the site. Done when: every exported function in `src/rasterfold.def` appears in the page.
 - [ ] Add it to the generated-files check, and fail when a `.def` export has no documentation. Done when: an undocumented export makes the check exit 1.
 - [ ] Commit: `"docs: generate the API reference from the header"`
