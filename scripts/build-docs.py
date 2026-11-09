@@ -445,11 +445,13 @@ def parse_api_header(root: Path, header_rel: str, def_rel: str) -> dict:
             stmt, j = take_statement(i, struct=True)
             if stmt.count('typedef') != 1:
                 raise ValueError(f'{header_rel}:{i + 1}: unsupported multiple declarations: {stmt}')
-            m = re.fullmatch(r'typedef struct \{(.*)\}\s*([a-z_][a-z0-9_]*);', stmt)
-            if not m:
+            # Non-greedy body plus an explicit end check: a greedy match
+            # would swallow a second declaration sharing the line (a
+            # typedef or a bare struct) into the fields and name the
+            # result after the hidden type.
+            m = re.match(r'typedef struct \{(.*?)\}\s*([a-z_][a-z0-9_]*);', stmt)
+            if not m or m.end() != len(stmt):
                 raise ValueError(f'{header_rel}:{i + 1}: unsupported typedef shape: {stmt}')
-            if stmt[m.end():].strip():
-                raise ValueError(f'{header_rel}:{i + 1}: unsupported text after typedef: {stmt}')
             fields = [f.strip() for f in m.group(1).split(';') if f.strip()]
             types.append({'name': m.group(2), 'fields': fields, 'doc': comment, 'decl': stmt})
             comment = None
