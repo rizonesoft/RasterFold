@@ -177,7 +177,7 @@ int rf_zlib_inflate(const uint8_t *in, size_t size, uint8_t *out, size_t out_siz
                 uint32_t hlit = take_bits(&br, 5) + 257;
                 uint32_t hdist = take_bits(&br, 5) + 1;
                 uint32_t hclen = take_bits(&br, 4) + 4;
-                if (br.bad || hlit > 288 || hdist > 30)
+                if (br.bad || hlit > 286 || hdist > 32)
                     return rf_fail(err, RF_ERR_FORMAT, "invalid deflate: tables");
                 static const uint8_t ORDER[19] = {16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
                 uint8_t clen[19] = {0};
