@@ -71,6 +71,8 @@ The API is a contract that outlives releases, so it is designed before code: pla
 > **Review:** `docs/reviews/d06-t01-s1.json`
 ## 2. The DLL and Its Import Libraries
 
+> **Started:** 2026-11-09T02:10:26Z
+
 - [ ] Add Windows DLL/static and Linux/Android shared/static targets through `scripts/build.py` (same objects without `main.c`, Windows entry `DllMain`-free with no C runtime, exports from `src/rasterfold.def`), plus a MinGW import library (`librasterfold.dll.a`) and an MSVC one (`rasterfold.lib`, from `llvm-dlltool`). Done when: `tools/llvm-mingw/bin/llvm-objdump.exe -p bin/windows-x64/bin/rasterfold.dll` lists exactly the `.def` exports and imports only `KERNEL32.dll`. Cheaper substitute: a DLL that exports every internal symbol.
 - [ ] Replace the error globals with the `rf_error` the caller passes (the executable keeps printing it). Done when: two threads of one process can encode concurrently with separate errors, shown by a test.
 - [ ] Commit: `"api: build rasterfold.dll with MinGW and MSVC import libraries"`
