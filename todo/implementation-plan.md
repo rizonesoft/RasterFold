@@ -293,7 +293,7 @@ The 1.0 product: library, command line, references, and the release that freezes
 | [ ] | `D08 T03 §1`  | The command-line reference                       |   3   |
 | [ ] | `D08 T03 §2`  | The API reference                                |   3   |
 | [x] | `D09 T01 §1`  | One version source and the changelog             |   5   |
-| [ ] | `D10 T01 §1`  | Pixel contract and capability registry           |   7   |
+| [ ] | `D10 T01 §1`  | Pixel contract and capability registry           |   8   |
 | [ ] | `D10 T01 §2`  | Pinned bundled codec builds                      |   9   |
 | [ ] | `D10 T01 §3`  | Bounded asynchronous jobs                        |   6   |
 | [ ] | `D10 T01 §4`  | Exactness verification and differential fixtures |   7   |
