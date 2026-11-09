@@ -449,8 +449,21 @@ def _download_validated(url: str, dest: Path) -> bytes:
     data = None
     for attempt in range(5):
         try:
-            with urllib.request.urlopen(req, timeout=120) as r:
-                data = r.read()
+            import time as _time
+            deadline = _time.monotonic() + 300
+            chunks, total = [], 0
+            with urllib.request.urlopen(req, timeout=60) as r:
+                while True:
+                    chunk = r.read(1 << 20)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > 96 * 1024 * 1024:
+                        raise SystemExit(f"heldout download exceeds 96 MiB for {url}")
+                    if _time.monotonic() > deadline:
+                        raise SystemExit(f"heldout download exceeds 300s for {url}")
+                    chunks.append(chunk)
+            data = b"".join(chunks)
             break
         except Exception as exc:
             if attempt == 4:
@@ -477,10 +490,18 @@ def _download_validated(url: str, dest: Path) -> bytes:
 def _ppm_pixels(ppm_path: Path):
     data = ppm_path.read_bytes()
     parts = data.split(b"\n", 3)
-    # P6 header: magic, "w h", maxval, then payload (no comments in our PPMs).
+    if len(parts) != 4 or parts[0] != b"P6":
+        raise SystemExit(f"invalid PPM in {ppm_path}: bad magic")
     dims = parts[1].split()
+    if len(dims) != 2:
+        raise SystemExit(f"invalid PPM in {ppm_path}: bad dimensions")
     w, h = int(dims[0]), int(dims[1])
-    return w, h, b"\n".join(parts[3:]) if False else data[len(parts[0]) + len(parts[1]) + len(parts[2]) + 3:]
+    if parts[2] != b"255":
+        raise SystemExit(f"invalid PPM in {ppm_path}: maxval {parts[2]!r}, expected 255")
+    payload = parts[3]
+    if len(payload) != w * h * 3:
+        raise SystemExit(f"invalid PPM in {ppm_path}: payload {len(payload)} bytes, expected {w * h * 3}")
+    return w, h, payload
 
 
 def verify_heldout(ppm_dir: Path = PPM) -> list[dict]:
@@ -562,9 +583,16 @@ def heldout(ppm_dir: Path = PPM) -> None:
             return
         # Regenerate only the missing crops, then verify against the frozen manifest.
         by_name = {p["name"]: p for p in HELDOUT_PHOTOS}
+        shots = [e for e in missing if e["kind"] == "screenshot"]
+        if shots:
+            rendered = {s["page"]: s for s in _screenshot_pages()}
+            page_of = {e["name"]: e["source_page"].removeprefix("build/site-source/").removesuffix(".md") for e in shots}
+            for e in shots:
+                shot = rendered[page_of[e["name"]]]
+                with Image.open(shot["png"]) as im:
+                    im.convert("RGB").save(ppm_dir / f"{e['name']}.ppm")
+            missing = [e for e in missing if e["kind"] == "photograph"]
         for e in missing:
-            if e["kind"] != "photograph":
-                raise SystemExit(f"heldout screenshot {e['name']} is missing; refusing to change a frozen screenshot set")
             src = by_name[e["name"]]
             raw = cache / (e["name"] + ".jpg")
             data = _download_validated(src["download"], raw)

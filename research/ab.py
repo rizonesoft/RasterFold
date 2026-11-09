@@ -763,6 +763,24 @@ def main():
             got = list(pool.map(one, imgs))
         print(summarize_sizes(got, refs, verbose="-v" in sys.argv, prefix=f"{rest[0]} {cfg} "))
     elif mode == "size":
+        _ho = [n for n in names(rest) if n in SETS["heldout"]]
+        if _ho:
+            import hashlib as _hl
+            _man = json.loads((REPO / "research" / "heldout.json").read_text(encoding="utf-8"))
+            _entries = {e["name"]: e for e in _man["images"]}
+            for _n in _ho:
+                _e = _entries.get(_n)
+                if _e is None:
+                    raise SystemExit(f"heldout image {_n} is not in research/heldout.json")
+                _data = (RES / "ppm" / f"{_n}.ppm").read_bytes()
+                _hdr = _data.split(b"\n", 3)
+                if len(_hdr) != 4 or _hdr[0] != b"P6" or _hdr[2] != b"255":
+                    raise SystemExit(f"heldout {_n}: invalid PPM header")
+                _dims = _hdr[1].split()
+                if (int(_dims[0]), int(_dims[1])) != (1280, 960) or len(_hdr[3]) != 1280 * 960 * 3:
+                    raise SystemExit(f"heldout {_n}: dimensions or payload mismatch")
+                if _hl.sha256(_hdr[3]).hexdigest() != _e["rgb_sha256"]:
+                    raise SystemExit(f"heldout {_n}: RGB SHA-256 mismatch against the frozen manifest; refusing to reuse references")
         src = Path(rest.pop(0)) if rest and rest[0].endswith(".c") else REPO / "src" / "cm.c"
         pre_snapshot = provenance_snapshot(src, flags) if csv_path is not None else None
         imgs = names(rest)

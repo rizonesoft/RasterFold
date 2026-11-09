@@ -1703,10 +1703,10 @@
       "reviewed": "Author-attested: 2026-10-25 re-read spec/FOLD.md against src/cm.c and src/simd.h after D02 T01 section 4 (byte-identical cm.c hot-loop vectorization and row-context specialization; format version 2 bitstream unchanged)"
     },
     "research/README.md": {
-      "evidence": "2026-11-09: Verified research/README.md against research/corpus.py and research/ab.py for D00 T03 section 1 (held-out set: corpus authoring, --verify-heldout, SETS heldout and CSV labels).",
+      "evidence": "2026-11-09: Verified research/README.md against research/corpus.py and research/ab.py for D00 T03 section 1 round fixes (PPM validation, bounded downloads, ab.py held-out verification, screenshot regeneration).",
       "sources": {
-        "research/corpus.py": "b248ba785d1bd87fe27356ea5775038ad9809e1ca2c0bf1e958df1f92ca34397",
-        "research/ab.py": "7e28a8f7c9cfee1de1d2cd505dcb232f84d7b409d6ea01cc0d98ba32c05cd70d",
+        "research/corpus.py": "ca2f04def7a03b6cd708169e005dfca3fee08a7b22e42d3ba66301eeb7899b60",
+        "research/ab.py": "228a8a44610a803f9ba54ef1d3e5a91f5b46260bc878167a3e7fb32e1a7e7a90",
         "research/vsjxl.py": "bb0a1fbdcb0a84edcee8a988c1de100b168a7949a8c7b59378775af5d42a5563",
         "research/prof.py": "7fa28a84aab62f0eb79fd579bcc01b6e2e55cc200bdaa96c0218b2ad4aa05605",
         "research/bench.c": "0054db75d713113580bba46629c0577895f0297c17afd3051004115d74a7a513",

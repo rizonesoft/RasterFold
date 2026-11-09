@@ -17,7 +17,9 @@
    "alteration": "original download, center crop to 1280x960",
    "rgb_sha256": "4e5333b85d080a08d798949cd7b4def87c925a28887bac344f5df0cac0f33821",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "source_revision": 1279771862,
+   "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision"
   },
   {
    "name": "ho_p02",
@@ -33,7 +35,9 @@
    "alteration": "original download, center crop to 1280x960",
    "rgb_sha256": "66267a32ddac361a8552b678767a23d868b51a2794586f1d9577e243ac9b40d2",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "source_revision": 1159208277,
+   "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision"
   },
   {
    "name": "ho_p03",
@@ -49,7 +53,9 @@
    "alteration": "original download, center crop to 1280x960",
    "rgb_sha256": "2e91845cd396f57f85678ba9fddfe01d15db7846a36b50b8592b0847746563b5",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "source_revision": 1279785633,
+   "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision"
   },
   {
    "name": "ho_p04",
@@ -65,7 +71,9 @@
    "alteration": "original download, center crop to 1280x960",
    "rgb_sha256": "235ec0e4d6c3cc6718be385ae4bde0d6a0133a79b1eea9469630757786ce9690",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "source_revision": 1237945286,
+   "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision"
   },
   {
    "name": "ho_p05",
@@ -75,13 +83,15 @@
    "download_url": "https://upload.wikimedia.org/wikipedia/commons/8/88/A_Bukharan_dance_performed_by_members_of_the_Rina_Nikova_ballet_in_the_citadel_of_Jerusalem_-_Restoration.jpg",
    "download_sha256": "1626f2d21e19456a79623f92a861377eac4a89517a038bd2dfbdf754f4380f64",
    "licence": "Public domain",
-   "licence_url": "",
+   "licence_url": "https://commons.wikimedia.org/wiki/Commons:Public_domain",
    "author": "Zoltan Kluger / Adam Cuerden",
    "licence_verified": "Commons API imageinfo extmetadata at authoring, 2026-11-09",
    "alteration": "original download, center crop to 1280x960",
    "rgb_sha256": "74075caedbb9127a5e040dfdbe6a30868750cc3baee26f624cc2ca10a2e1f514",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "source_revision": 996216388,
+   "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision"
   },
   {
    "name": "ho_p06",
@@ -97,7 +107,9 @@
    "alteration": "original download, center crop to 1280x960",
    "rgb_sha256": "802f13e48345fdb7daae6be2c003e083eb515ee6b5dd81ed9c5daf7a821ed3fe",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "source_revision": 1283140152,
+   "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision"
   },
   {
    "name": "ho_p07",
@@ -113,7 +125,9 @@
    "alteration": "original download, center crop to 1280x960",
    "rgb_sha256": "ee212fcb33d40696591e37edda843ebabce5437e6f142100a56bd6ebef94f4bb",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "source_revision": 1281061212,
+   "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision"
   },
   {
    "name": "ho_p08",
@@ -129,7 +143,9 @@
    "alteration": "original download, center crop to 1280x960",
    "rgb_sha256": "dae6cd967ae66c82b71a64dac54116aef85d9dc8201f717983214867a4fc1f4f",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "source_revision": 1255978386,
+   "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision"
   },
   {
    "name": "ho_p09",
@@ -145,7 +161,9 @@
    "alteration": "original download, center crop to 1280x960",
    "rgb_sha256": "8d7a900ee8dcf45d110af924243cb8d4d8d7739990775e5572d8db9bbf41b6a0",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "source_revision": 1178999879,
+   "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision"
   },
   {
    "name": "ho_p10",
@@ -161,7 +179,9 @@
    "alteration": "original download, center crop to 1280x960",
    "rgb_sha256": "f190017b8de6bc84401d3366d49683a647cde910496092caed33354f0d3580f1",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "source_revision": 1113601838,
+   "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision"
   },
   {
    "name": "ho_p11",
@@ -177,7 +197,9 @@
    "alteration": "original download, center crop to 1280x960",
    "rgb_sha256": "f2e944231d856be8477e577bd7f83207f5aa86428dfcb9f1bd24becb48bb6dc6",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "source_revision": 1110838213,
+   "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision"
   },
   {
    "name": "ho_p12",
@@ -193,7 +215,9 @@
    "alteration": "original download, center crop to 1280x960",
    "rgb_sha256": "f6ea75e5986d09c259bbcfddd77dd64546d83c3d2eb4a8a1b76ccbc20f79889c",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "source_revision": 1261675782,
+   "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision"
   },
   {
    "name": "ho_p13",
@@ -209,7 +233,9 @@
    "alteration": "original download, center crop to 1280x960",
    "rgb_sha256": "f50600357f7baef1c8402278913910102f0dc53d50a9a904460112c0c626a216",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "source_revision": 1281145559,
+   "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision"
   },
   {
    "name": "ho_p14",
@@ -225,7 +251,9 @@
    "alteration": "original download, center crop to 1280x960",
    "rgb_sha256": "18d6178b998d5c481e5372eeb0fd88722ad9b150ddeef5e906e7420485371582",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "source_revision": 1154699554,
+   "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision"
   },
   {
    "name": "ho_p15",
@@ -241,7 +269,9 @@
    "alteration": "original download, center crop to 1280x960",
    "rgb_sha256": "d4e8ed6fa7ce63eaa3dd4565d06d20d9a224e4fc9dca0e249bb29cd93ff81de6",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "source_revision": 1296635051,
+   "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision"
   },
   {
    "name": "ho_p16",
@@ -257,7 +287,9 @@
    "alteration": "original download, center crop to 1280x960",
    "rgb_sha256": "67e996e058267b1096957f1b3a093fad36488f9d6d70acb7eeba2a1ffbf1d641",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "source_revision": 1297670992,
+   "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision"
   },
   {
    "name": "ho_p17",
@@ -267,13 +299,15 @@
    "download_url": "https://upload.wikimedia.org/wikipedia/commons/c/c4/Edinburgh_Castle_from_Grass_Market.jpg",
    "download_sha256": "1e47d506ef4233686c1f62aed631c0c9fe1d0e80f03acce492b15d74cda7236c",
    "licence": "Public domain",
-   "licence_url": "",
+   "licence_url": "https://commons.wikimedia.org/wiki/Commons:Public_domain",
    "author": "George Washington Wilson / Adam Cuerden",
    "licence_verified": "Commons API imageinfo extmetadata at authoring, 2026-11-09",
    "alteration": "original download, center crop to 1280x960",
    "rgb_sha256": "e5c3e5c910cf3ffc82e148c3b213b3904876e3df55de9fa8398392a25fad8d92",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "source_revision": 1223836504,
+   "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision"
   },
   {
    "name": "ho_p18",
@@ -289,7 +323,9 @@
    "alteration": "original download, center crop to 1280x960",
    "rgb_sha256": "149a9a5548ec5ea2bbbceba47e0fa822c785de4b6ff14337192eaffbc4a468a7",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "source_revision": 1277542930,
+   "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision"
   },
   {
    "name": "ho_p19",
@@ -305,7 +341,9 @@
    "alteration": "original download, center crop to 1280x960",
    "rgb_sha256": "0f99117b34c7c5b2963995315ebcebaf2623a1d73006e7239422eb8f211b4c8b",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "source_revision": 1294128498,
+   "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision"
   },
   {
    "name": "ho_p20",
@@ -321,7 +359,9 @@
    "alteration": "original download, center crop to 1280x960",
    "rgb_sha256": "72ff7e5df8e99cc90b2d588595a7e1658863a1bebe2ded03a91a775ac95decb5",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "source_revision": 1281651901,
+   "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision"
   },
   {
    "name": "ho_p21",
@@ -337,7 +377,9 @@
    "alteration": "original download, center crop to 1280x960",
    "rgb_sha256": "50e3c25a951c23c717bee548cebb50b1542098301eede112cf80938245202de8",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "source_revision": 1275156055,
+   "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision"
   },
   {
    "name": "ho_p22",
@@ -353,7 +395,9 @@
    "alteration": "original download, center crop to 1280x960",
    "rgb_sha256": "407469b7933e8476c243ddc9e8fe1fd8fddd12dda8bbc5b456702dc9183f596a",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "source_revision": 1290524574,
+   "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision"
   },
   {
    "name": "ho_p23",
@@ -369,7 +413,9 @@
    "alteration": "original download, center crop to 1280x960",
    "rgb_sha256": "395f60b696bc1a1e76bdfa694c9105d6500717c6bf972dbfb0aa16ab525785ff",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "source_revision": 1296896671,
+   "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision"
   },
   {
    "name": "ho_p24",
@@ -385,7 +431,9 @@
    "alteration": "original download, center crop to 1280x960",
    "rgb_sha256": "247eece26bc5e80fcac741306da2f6b35c1ff422bbc1729129a71c1f84d37f76",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "source_revision": 1204446923,
+   "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision"
   },
   {
    "name": "ho_p25",
@@ -401,7 +449,9 @@
    "alteration": "original download, center crop to 1280x960",
    "rgb_sha256": "c7a23ae46f8942eba3eaae04ef6492cc2d9730454e0926dda498055b01c1214e",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "source_revision": 1178999246,
+   "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision"
   },
   {
    "name": "ho_p26",
@@ -417,7 +467,9 @@
    "alteration": "original download, center crop to 1280x960",
    "rgb_sha256": "56a40082fdcbdbfb3fd8c649764acc2b264fe3217cf896595e2513367e367f9f",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "source_revision": 1270874735,
+   "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision"
   },
   {
    "name": "ho_p27",
@@ -433,7 +485,9 @@
    "alteration": "original download, center crop to 1280x960",
    "rgb_sha256": "6eb934fc9138156b2a578b2ab6f9a0f8f7e34603be362876b12f84aa8514bd03",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "source_revision": 1239631490,
+   "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision"
   },
   {
    "name": "ho_p28",
@@ -449,7 +503,9 @@
    "alteration": "original download, center crop to 1280x960",
    "rgb_sha256": "3c3524e035794597565e0c5f67ee4ccbfe3c664b9562a07f32b66606a7f5e75a",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "source_revision": 1082913674,
+   "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision"
   },
   {
    "name": "ho_p29",
@@ -465,7 +521,9 @@
    "alteration": "original download, center crop to 1280x960",
    "rgb_sha256": "4df0a55d461a0e66ffc5006bfb03a61cac2a2528f00873e7c4be835ec007f98a",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "source_revision": 1286690103,
+   "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision"
   },
   {
    "name": "ho_p30",
@@ -481,7 +539,9 @@
    "alteration": "original download, center crop to 1280x960",
    "rgb_sha256": "7489162e6ebc9537d93f11491b17716592bf84a8b6bae9592ae8524fb5772f6c",
    "width": 1280,
-   "height": 960
+   "height": 960,
+   "source_revision": 1068292507,
+   "licence_evidence": "Commons API imageinfo/extmetadata and revisions query, 2026-11-09; page revision id in source_revision"
   },
   {
    "name": "ho_s01",

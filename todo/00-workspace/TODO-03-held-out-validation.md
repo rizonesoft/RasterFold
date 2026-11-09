@@ -14,7 +14,7 @@ track: W3
 
 > [!IMPORTANT]
 > **Current state (verified 2026-09-29, updated 2026-11-09):** The research sets are `photo` (measure, 24 Kodak, 14 imagecompression.info crops), `tp` (the 10-photo test pack), and `synth` (11 generated images). All three have been looked at while tuning. §1 added the `heldout` set (30 Wikimedia Commons photographs and 10 locally rendered screenshots, frozen in `research/heldout.json`), which is never used to choose a parameter.
-<!-- claim: count "\"heldout\"" research/ab.py = 4 -->
+<!-- claim: count "\"heldout\"" research/ab.py = 5 -->
 
 ## Inputs
 
