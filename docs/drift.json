@@ -1551,12 +1551,12 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "2026-11-09 Round 1 fixes re-read against version wiring: VERSION 1.0.0 feeds generated header, CLI product line, build manifest identity, revision-validated dev package names, facts and site; build refuses stale generated header.",
+      "evidence": "2026-11-09 Completion gap fix re-read: every build entry point (normal and PGO generation) verifies src/product_version.h against VERSION before compiling; regression fixture covers both paths.",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "c7f9919e34924b6686ce876fd96550d28c39d025ed6233e6f338e03f37ce47a1",
         "src/main.c": "199525d4c6edd31d663adf0cf23d91b8e04219aa19dd4d4589b003a3b5f8c113",
-        "scripts/build.py": "4b3130b6e05549c42fe495067f948c2fe25be2ef4dae30631d79288aa1279e34",
+        "scripts/build.py": "fa7f8d117253b9e58efad15445db50a0ae6f210ecf148756ec3d48b550c92466",
         "scripts/package.py": "ef69de2da770ea647e2841f4c2ce16db8bae22544c086a389983bdbeb1e50b37",
         "scripts/check-all.py": "0d7009f7af3dea1ffdfaf8893cb5c32f802075607a5b2d5500318ed8af70c777",
         "README.md": "aee300b8a07e1bf0bc1109279447ce3cba35f5498eef058676ceaa7ec7fa8044",
@@ -1591,9 +1591,9 @@
       }
     },
     "CONTRIBUTING.md": {
-      "evidence": "2026-11-09 Round 1 fixes re-read against version wiring: VERSION 1.0.0 feeds generated header, CLI product line, build manifest identity, revision-validated dev package names, facts and site; build refuses stale generated header.",
+      "evidence": "2026-11-09 Completion gap fix re-read: every build entry point (normal and PGO generation) verifies src/product_version.h against VERSION before compiling; regression fixture covers both paths.",
       "sources": {
-        "scripts/build.py": "4b3130b6e05549c42fe495067f948c2fe25be2ef4dae30631d79288aa1279e34",
+        "scripts/build.py": "fa7f8d117253b9e58efad15445db50a0ae6f210ecf148756ec3d48b550c92466",
         "scripts/package.py": "ef69de2da770ea647e2841f4c2ce16db8bae22544c086a389983bdbeb1e50b37",
         "scripts/check-all.py": "0d7009f7af3dea1ffdfaf8893cb5c32f802075607a5b2d5500318ed8af70c777",
         "CONTRIBUTING.md": "01f5855ce18883d6930ce1ebb569ea9411ac21e3c4cf3faced1a56c155bf470f"
@@ -1601,10 +1601,10 @@
       "review": "Author-attested: 2026-10-25 re-read CONTRIBUTING.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/building.md": {
-      "evidence": "2026-11-09 Round 1 fixes re-read against version wiring: VERSION 1.0.0 feeds generated header, CLI product line, build manifest identity, revision-validated dev package names, facts and site; build refuses stale generated header.",
+      "evidence": "2026-11-09 Completion gap fix re-read: every build entry point (normal and PGO generation) verifies src/product_version.h against VERSION before compiling; regression fixture covers both paths.",
       "sources": {
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
-        "scripts/build.py": "4b3130b6e05549c42fe495067f948c2fe25be2ef4dae30631d79288aa1279e34",
+        "scripts/build.py": "fa7f8d117253b9e58efad15445db50a0ae6f210ecf148756ec3d48b550c92466",
         "scripts/package.py": "ef69de2da770ea647e2841f4c2ce16db8bae22544c086a389983bdbeb1e50b37",
         "scripts/check-all.py": "0d7009f7af3dea1ffdfaf8893cb5c32f802075607a5b2d5500318ed8af70c777",
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
@@ -1633,12 +1633,12 @@
       "review": "Author-attested: 2026-10-25 re-read docs/index.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/getting-started.md": {
-      "evidence": "2026-11-09 Round 1 fixes re-read against version wiring: VERSION 1.0.0 feeds generated header, CLI product line, build manifest identity, revision-validated dev package names, facts and site; build refuses stale generated header.",
+      "evidence": "2026-11-09 Completion gap fix re-read: every build entry point (normal and PGO generation) verifies src/product_version.h against VERSION before compiling; regression fixture covers both paths.",
       "sources": {
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
         "tools/provision.py": "b17ea42569b76d70edbcc235dbc86385c9c7ce50b1be7a3bb83383c30f848556",
         "tools/provision.ps1": "836043df1f959726d5fa2b73d206fa896c9d3aacd12bf7e21b8193a4bb14ad96",
-        "scripts/build.py": "4b3130b6e05549c42fe495067f948c2fe25be2ef4dae30631d79288aa1279e34",
+        "scripts/build.py": "fa7f8d117253b9e58efad15445db50a0ae6f210ecf148756ec3d48b550c92466",
         "scripts/check-all.py": "0d7009f7af3dea1ffdfaf8893cb5c32f802075607a5b2d5500318ed8af70c777",
         "scripts/check-all.ps1": "7006b1871b52689461497fa676b3cb6472f0e436c9c5e240deb9da069321a528",
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",

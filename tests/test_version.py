@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION_PY = ROOT / 'scripts' / 'version.py'
@@ -101,6 +102,16 @@ class VersionSource(unittest.TestCase):
         (empty / 'VERSION').write_text('1.0.0\n', encoding='utf-8')
         result = run_version(empty, '--dev')
         self.assertEqual(result.stdout.strip(), '1.0.0-dev+unknown')
+
+    def test_build_paths_verify_header_first(self):
+        sys.path.insert(0, str(ROOT / 'scripts'))
+        import build as build_mod
+        self.write('src/product_version.h', '#define RF_PRODUCT_VERSION "9.9.9"\n')
+        with mock.patch.object(build_mod, 'ROOT', self.root):
+            with self.assertRaises(SystemExit):
+                build_mod.build('linux-x64', 1, False)
+            with self.assertRaises(SystemExit):
+                build_mod.build_pgo_gen(1)
 
     def test_cli_and_manifest_agree(self):
         target = 'windows-x64' if os.name == 'nt' else 'linux-x64'

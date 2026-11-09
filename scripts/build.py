@@ -213,6 +213,7 @@ def validate_pgo_profile(profile: Path, tools: Path, suffix: str) -> Path:
 
 
 def build_pgo_gen(jobs: int) -> None:
+    check_product_header()
     suffix = '.exe' if os.name == 'nt' else ''
     tools = ROOT / ('tools/llvm-mingw/bin' if os.name == 'nt' else 'tools/llvm-mingw-linux/bin')
     triple = 'x86_64-w64-mingw32'
