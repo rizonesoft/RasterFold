@@ -1710,7 +1710,7 @@
     "research/README.md": {
       "evidence": "2026-11-09: Verified research/README.md against research/corpus.py for D00 T03 section 1 (download deadline enforced by a deadline-joined worker thread cancelling its published connection in held-out downloads; frozen screenshot assets in research/heldout-assets/ with pinned Chrome for Testing provisioning for authoring).",
       "sources": {
-        "research/corpus.py": "0456aafc4cba7bcc5ce887b990b8bf570e5d0885b8949ae2bb78f3bb977eb269",
+        "research/corpus.py": "f39f1608461184f92791c94f36849f859d176f3d25646a48b1dfbf19bfe7bf13",
         "research/ab.py": "228a8a44610a803f9ba54ef1d3e5a91f5b46260bc878167a3e7fb32e1a7e7a90",
         "research/vsjxl.py": "bb0a1fbdcb0a84edcee8a988c1de100b168a7949a8c7b59378775af5d42a5563",
         "research/prof.py": "7fa28a84aab62f0eb79fd579bcc01b6e2e55cc200bdaa96c0218b2ad4aa05605",

@@ -490,6 +490,7 @@ def _download_validated(url: str, dest: Path) -> bytes:
             # the socket is shut down, which forces the blocked read out.
             box: dict = {}
             conn_box: list = []
+            sock_box: list = []
 
             def _fetch() -> None:
                 # The connection object is published before connect() so
@@ -503,6 +504,11 @@ def _download_validated(url: str, dest: Path) -> bytes:
                     conn = conn_cls(parts.hostname, parts.port, timeout=60)
                     conn_box.append(conn)
                     conn.connect()
+                    # Retain the raw socket independently: getresponse()
+                    # may clear conn.sock (a Connection: close response),
+                    # which would otherwise lose cancellation ownership.
+                    if conn.sock is not None:
+                        sock_box.append(conn.sock)
                     path = parts.path or "/"
                     if parts.query:
                         path += "?" + parts.query
@@ -532,22 +538,20 @@ def _download_validated(url: str, dest: Path) -> bytes:
                 # forces the blocked read out in the daemon worker, whose
                 # cleanup then finishes in the background without holding
                 # the caller past the deadline.
-                for c in conn_box:
-                    # Act on the raw socket, never HTTPConnection.close():
-                    # closing the connection also closes the response's
-                    # buffered reader, which can wait on the worker's read
-                    # lock. shutdown() wakes a blocked receive at once and
-                    # takes no parser lock.
-                    s = getattr(c, "sock", None)
-                    if s is not None:
-                        try:
-                            s.shutdown(2)
-                        except Exception:
-                            pass
-                        try:
-                            s.close()
-                        except Exception:
-                            pass
+                # Act on the retained raw sockets, never
+                # HTTPConnection.close(): closing the connection also
+                # closes the response's buffered reader, which can wait on
+                # the worker's read lock. shutdown() wakes a blocked
+                # receive at once and takes no parser lock.
+                for s in sock_box:
+                    try:
+                        s.shutdown(2)
+                    except Exception:
+                        pass
+                    try:
+                        s.close()
+                    except Exception:
+                        pass
                 raise SystemExit(f"heldout download exceeds 300s for {url}")
             if "error" in box:
                 raise box["error"]
