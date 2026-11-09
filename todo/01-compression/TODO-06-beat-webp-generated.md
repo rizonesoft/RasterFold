@@ -154,6 +154,8 @@ The palette field is the largest single component on the many-colour generated i
 > **Review:** `docs/reviews/d01-t06-s5.json`
 ## 6. A Neighbour-Candidate Colour Cache in Version 3
 
+> **Started:** 2026-11-09T08:55:00Z
+
 **Origin:** discovered run=f64ec873f271 2026-11-09 -- Milestone 8 gate (D05 T01 §8) missed its target on 2026-11-09; this is follow-up 3 of up to three under the missed-milestone policy (D99 T01 §4), required by that gate's acceptance bar.
 
 **Needs:** ffmpeg with libjxl (benchmarks)
