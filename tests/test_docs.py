@@ -289,6 +289,8 @@ class DocsMapTests(unittest.TestCase):
         # directive inside a struct body.
         refuses(lambda t: t.replace('#define RF_LAYOUT_RGB8 1u', '#ifndef RF_DISABLE_EXTRA\n#define RF_EXTRA 1\n#endif\n#define RF_LAYOUT_RGB8 1u'), 'unsupported conditional')
         refuses(lambda t: t.replace('    uint32_t size, threads;', '#if 0\n    uint32_t hidden;\n#endif\n    uint32_t size, threads;'), 'unsupported directive inside a declaration')
+        # A forward typedef before the struct cannot be skipped either.
+        refuses(lambda t: t.replace('typedef struct { uint8_t *data; size_t size; } rf_buffer;', 'typedef struct rf_hidden_tag rf_hidden; struct { uint8_t *data; size_t size; } rf_buffer;'), 'unsupported typedef shape')
         # Spacing before the semicolon cannot smuggle a second declaration.
         refuses(lambda t: t.replace('typedef struct { uint8_t *data; size_t size; } rf_buffer;', 'typedef struct { uint8_t *data; size_t size; } rf_buffer ; struct { int hidden; } rf_hidden;'), 'unsupported typedef shape')
         # A bare struct after a typedef on one line cannot hide it either.

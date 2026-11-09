@@ -450,6 +450,11 @@ def parse_api_header(root: Path, header_rel: str, def_rel: str) -> dict:
             # everything after it must be exactly the type name and its
             # semicolon. Any second declaration sharing the statement (a
             # typedef or a bare struct, with any spacing) then refuses.
+            # The prefix must be exactly the typedef keyword and struct:
+            # a declaration before the first brace (for example a forward
+            # typedef sharing the statement) is refused, not skipped.
+            if stmt[:stmt.index('{')].strip() != 'typedef struct':
+                raise ValueError(f'{header_rel}:{i + 1}: unsupported typedef shape: {stmt}')
             open_brace = stmt.index('{')
             close_brace = stmt.index('}', open_brace)
             body = stmt[open_brace + 1:close_brace]
