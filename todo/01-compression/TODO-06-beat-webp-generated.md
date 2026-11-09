@@ -67,11 +67,13 @@ track: C6
 
 A context model over recently seen colours: a small hash of the last colours per position class, whose hit (the current pixel equals a cached colour) becomes a strong mixer input for G, R, and B together. Bar: the generated geometric mean at least 10% lower with the photo total no more than 0.05% worse; otherwise the negative result ships.
 
-- [ ] Prototype the model in `build/research/try.c` and measure `synth`, `photo`, and `tp`. Done when: the summary lines are quoted against the bar.
-- [ ] If accepted, port it into the version 3 path of `src/cm.c` with `tests/rfi_ref.py`, `spec/FOLD.md`, and `KAT_FOLD3`. Done when: codec and oracle agree on every case and the decoder imports every file back to identical pixels (the reverse of the export).
-- [ ] Commit: `"codec: a colour-cache model for screen content"`
+**Prototype form (2026-11-09, from the plan review):** the true-colour hit is not causal (the decoder cannot know the current colour before coding it), so the prototype tests the causal narrowing of the idea: per channel and per strip, a 32-sample recent-value cache over coded byte values (timestamp per byte value, refreshed on each coded sample, a value older than 32 samples is evicted, state resets with the strip's zeroed `cm_t`). The hit queried before coding is whether the context prediction byte `pred` (the pre-gate prediction the other contexts read) carries a timestamp within the last 32 samples of this channel; the hit replaces the low bit of the version 3 `k6` context (`k6 = (k6 & ~1) | hit`, row count unchanged). The cache updates in `cm_code` with the coded value, identically on encode and decode. A miss of the bar rejects this causal variant only, not colour caching in general; the stronger neighbour-candidate form the plan review named is a separate experiment if this one shows promise. Acceptance is `GM(candidate/baseline) <= 0.90` over the encoder-selected `synth` sizes and `photo` candidate total / baseline total `<= 1.0005`, both from `research/ab.py size <source> <set> -v -t1`, with per-image baseline/candidate sizes and selected methods recorded for `syn_ui`, `syn_text`, and `syn_diagram` (the many-colour screen images §1 named).
 
-**Test checkpoint:** `python tests/test_correctness.py` passes; the generated geometric mean against WebP quoted before and after.
+- [x] Prototype the model in `build/research/try.c` and measure `synth`, `photo`, and `tp`. Done when: the summary lines are quoted against the bar.
+- [x] ~~If accepted, port it into the version 3 path of `src/cm.c` with `tests/rfi_ref.py`, `spec/FOLD.md`, and `KAT_FOLD3`.~~ Not accepted: the prototype missed the `synth` bar (candidate/baseline GM `1.0000` against `<= 0.90`; `photo` `0.99997` within its `<= 1.0005` bar), so nothing was ported, per the negative-result rule. Measured 2026-11-09, recorded in `docs/research.md` section 3.2.
+- [x] Commit: `"codec: a colour-cache model for screen content"`
+
+**Test checkpoint:** the generated geometric mean candidate/baseline is `1.0000` (`synth` total `201640` -> `201640`, all 11 encoder-selected sizes identical) against the `GM <= 0.90` bar, and `photo` is `30634873` -> `30634089` (`0.99997`, bar `<= 1.0005`), from `python3 scripts/windows.py research/ab.py size <source> <set> -v -t1` on 2026-11-09; negative result, no port, so `python tests/test_correctness.py` owes no new case.
 
 **Freeze check:** `KAT_FOLD` (version 2) decodes unchanged; the operator's standing approval (`D99 T01 §3`) covers extending the unreleased version 3.
 
