@@ -50,6 +50,8 @@ track: R1
 
 ## 1. One Version Source and the Changelog
 
+> **Started:** 2026-11-09T05:30:00Z
+
 **Job:** A user can read a report of the version they run, and a history of what changed in each release.
 
 - [ ] Define product SemVer once in `VERSION`, feeding a generated codec-version header, `--version`, `docs/facts.json`, package names and the site; preserve the independent `rf_version()` ABI contract. Done when: `scripts/drift-check.py` fails when any of them disagree. Cheaper substitute: the version typed in four places.
