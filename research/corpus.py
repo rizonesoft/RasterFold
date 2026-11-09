@@ -479,30 +479,56 @@ def _download_validated(url: str, dest: Path) -> bytes:
     data = None
     for attempt in range(5):
         try:
+            import threading
             import time as _time
             deadline = _time.monotonic() + 300
-            chunks, total = [], 0
-            with urllib.request.urlopen(req, timeout=60) as r:
-                _sock = r.fp.raw._sock
-                while True:
-                    _remaining = deadline - _time.monotonic()
-                    if _remaining <= 0:
-                        raise SystemExit(f"heldout download exceeds 300s for {url}")
-                    _sock.settimeout(min(30.0, _remaining))
-                    # read1 performs at most one raw receive per call, so
-                    # the deadline check above runs between receives; a
-                    # buffered read(65536) could loop over many receives
-                    # (a one-byte-per-second trickle) inside one call.
-                    chunk = r.read1(65536) if hasattr(r, "read1") else r.read(65536)
-                    if not chunk:
-                        break
-                    total += len(chunk)
-                    if total > 96 * 1024 * 1024:
-                        raise SystemExit(f"heldout download exceeds 96 MiB for {url}")
-                    if _time.monotonic() > deadline:
-                        raise SystemExit(f"heldout download exceeds 300s for {url}")
-                    chunks.append(chunk)
-            data = b"".join(chunks)
+            # The transfer runs in a worker thread joined against the
+            # deadline, because no read pattern enforces a total bound on
+            # its own: buffered reads and chunk-framing reads can each
+            # perform many receives inside one call (a one-byte-per-second
+            # trickle keeps every inactivity timeout satisfied). On expiry
+            # the socket is shut down, which forces the blocked read out.
+            box: dict = {}
+            sock_box: list = []
+
+            def _fetch() -> None:
+                try:
+                    chunks, total = [], 0
+                    with urllib.request.urlopen(req, timeout=60) as r:
+                        try:
+                            sock_box.append(r.fp.raw._sock)
+                        except Exception:
+                            pass
+                        while True:
+                            chunk = r.read1(65536) if hasattr(r, "read1") else r.read(65536)
+                            if not chunk:
+                                break
+                            total += len(chunk)
+                            if total > 96 * 1024 * 1024:
+                                raise SystemExit(f"heldout download exceeds 96 MiB for {url}")
+                            chunks.append(chunk)
+                    box["data"] = b"".join(chunks)
+                except BaseException as exc:  # ferried to the joining thread
+                    box["error"] = exc
+
+            worker = threading.Thread(target=_fetch, daemon=True)
+            worker.start()
+            worker.join(max(0.0, deadline - _time.monotonic()))
+            if worker.is_alive():
+                for s in sock_box:
+                    try:
+                        s.shutdown(2)
+                    except Exception:
+                        pass
+                    try:
+                        s.close()
+                    except Exception:
+                        pass
+                worker.join(5)
+                raise SystemExit(f"heldout download exceeds 300s for {url}")
+            if "error" in box:
+                raise box["error"]
+            data = box["data"]
             break
         except Exception as exc:
             if attempt == 4:
