@@ -2,7 +2,7 @@
 schema_version: 1
 id: beat-webp-generated
 domain: 01-compression
-status: active
+status: done
 title: "TODO-06 -- Beat WebP on Generated Images"
 depends_on: []
 frozen: true
@@ -40,7 +40,7 @@ track: C6
 |   3   |   §3    | Copy runs for palette images | §1, D01 T01 §2 |  [x]   |
 |   4   |   §4    | Coding the palette itself for palette images | §3 |  [x]   |
 |   5   |   §5    | Above-copy runs for palette images | §3 |  [x]   |
-|   6   |   §6    | A neighbour-candidate colour cache in version 3 | §2 |  [ ]   |
+|   6   |   §6    | A neighbour-candidate colour cache in version 3 | §2 |  [x]   |
 
 ---
 
@@ -174,6 +174,8 @@ The palette field is the largest single component on the many-colour generated i
 
 **Freeze check:** `KAT_FOLD` (version 2) decodes unchanged; the operator's standing approval (`D99 T01 §3`) covers extending the unreleased version 3.
 
+> **Verified:** 2026-11-09 | §6 | e936cb9fbb4070b8d308d7dbafbeb49b82efb25d
+> **Review:** `docs/reviews/d01-t06-s6.json`
 ## Verification
 
 - [ ] `pwsh scripts/check-all.ps1` exits 0

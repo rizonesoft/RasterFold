@@ -1,0 +1,74 @@
+{
+  "ref": "D01 T06 \u00a76",
+  "title": "A Neighbour-Candidate Colour Cache in Version 3",
+  "implementation_sha": "e936cb9fbb4070b8d308d7dbafbeb49b82efb25d",
+  "date": "2026-11-09",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/01-compression/D01-T06-s6.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "python3 scripts/todo-graph.py validate -> 0 fatal, 0 warnings, 3 adjacency advisories"
+  ],
+  "completion": {
+    "report": "docs/reviews/01-compression/D01-T06-s6.md",
+    "verdict": "reconciled",
+    "candidate": "e936cb9fbb4070b8d308d7dbafbeb49b82efb25d",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/01-compression/D01-T06-s6.md",
+    "candidate": "fa112ebb8e18ebbc0b53f559edee89bcf8674e4b",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "fa112ebb8e18ebbc0b53f559edee89bcf8674e4b",
+  "schedule": {
+    "policy": "three-pass",
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}
