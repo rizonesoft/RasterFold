@@ -1,0 +1,75 @@
+{
+  "ref": "D00 T03 \u00a72",
+  "title": "Validate the Milestones on It",
+  "implementation_sha": "e0ec13709a59a78131d53c22fb527e20f5f345c8",
+  "date": "2026-11-09",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/00-workspace/D00-T03-s2.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "ab.py size heldout -v -> photographs hold M4/M7 targets; screenshots miss M8 (4.6730x WebP)",
+    "python3 scripts/build-docs.py --check -> current"
+  ],
+  "completion": {
+    "report": "docs/reviews/00-workspace/D00-T03-s2.md",
+    "verdict": "complete",
+    "candidate": "e0ec13709a59a78131d53c22fb527e20f5f345c8",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/00-workspace/D00-T03-s2.md",
+    "candidate": "30ba02cba474d61a1ad57adee11c9b8abd1599d7",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "30ba02cba474d61a1ad57adee11c9b8abd1599d7",
+  "schedule": {
+    "policy": "three-pass",
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}

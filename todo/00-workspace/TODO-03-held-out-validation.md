@@ -2,7 +2,7 @@
 schema_version: 1
 id: held-out-validation
 domain: 00-workspace
-status: draft
+status: done
 title: "TODO-03 -- Held-Out Validation"
 depends_on: []
 track: W3
@@ -36,7 +36,7 @@ track: W3
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
 |   1   |   §1    | The held-out set | -- |  [x]   |
-|   2   |   §2    | Validate the milestones on it | §1 |  [ ]   |
+|   2   |   §2    | Validate the milestones on it | §1 |  [x]   |
 
 ---
 
@@ -71,6 +71,8 @@ Photographs come from a second openly licensed source (Wikimedia Commons feature
 
 **Test checkpoint:** `python3 scripts/windows.py research/ab.py size src/cm.c heldout -v -t1` on 2026-11-09, grouped by manifest kind. Photographs (30): total `33307797`, `0.9412` of JPEG XL e9 (Milestone 4 bar at most 0.982, held), `0.9345` of e7 (bar at most 0.970, held), 30/30 below e9 (scaled bar at least 24, held), 30/30 at or below e7 (bar 30, held), geometric mean vs e9 `0.9324`, worst `ho_p06` at `0.9822` (Milestone 7 worst cap 1.0100, held; at least 27 of 30 below e9 required, 30 measured, held). Screenshots (10): total `3326125` against WebP `711772` (`4.6730`, Milestone 8 bar below 1, missed), geometric mean `4.6534` (missed), and all ten screenshots over the per-image allowance `max(1.1 * WebP, WebP + 32)` (worst `ho_s10` `402076` vs `78482`, `5.1232`), so Milestone 8 is missed on held-out screenshots; no parameter was retuned on this evidence, and the miss is recorded beside the parked Milestone 8 gate's operator decision (its three follow-ups under `D99 T01 §4` already shipped negative).
 
+> **Verified:** 2026-11-09 | §2 | e0ec13709a59a78131d53c22fb527e20f5f345c8
+> **Review:** `docs/reviews/d00-t03-s2.json`
 ## Verification
 
 - [ ] `python scripts/todo-graph.py validate` clean
