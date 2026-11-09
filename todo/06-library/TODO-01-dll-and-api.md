@@ -59,9 +59,9 @@ track: L1
 
 The API is a contract that outlives releases, so it is designed before code: plain C, no global state, caller-visible ownership, and a version check.
 
-- [ ] Write `include/rasterfold.h`: `RF_API_VERSION` macros and `rf_version()`; an options structure with a size field for forward compatibility (`threads`, reserved fields); `rf_encode_image(const rf_pixels *, const rf_options *, rf_buffer *out, rf_error *err)`, `rf_decode_image(const void *data, size_t size, const rf_options *, rf_pixels *out, rf_error *err)`, `rf_inspect(const void *, size_t, rf_info *, rf_error *)`, and `rf_free(void *)` for everything the library allocates; `rf_pixels` naming width, height, stride, and layout (RGB8 for 1.0). Done when: the header compiles as C11 and C++ with `-Wall -Wextra -Werror`. Cheaper substitute: exporting the internal functions with their globals.
-- [ ] Document every function, parameter, ownership rule, and error code in the header's comments in the form `D08 T03 §2` generates the reference from. Done when: every declaration carries its comment.
-- [ ] Commit: `"api: the public rasterfold.h header"`
+- [x] Write `include/rasterfold.h`: `RF_API_VERSION` macros and `rf_version()`; an options structure with a size field for forward compatibility (`threads`, reserved fields); `rf_encode_image(const rf_pixels *, const rf_options *, rf_buffer *out, rf_error *err)`, `rf_decode_image(const void *data, size_t size, const rf_options *, rf_pixels *out, rf_error *err)`, `rf_inspect(const void *, size_t, rf_info *, rf_error *)`, and `rf_free(void *)` for everything the library allocates; `rf_pixels` naming width, height, stride, and layout (RGB8 for 1.0). Done when: the header compiles as C11 and C++ with `-Wall -Wextra -Werror`. Cheaper substitute: exporting the internal functions with their globals.
+- [x] Document every function, parameter, ownership rule, and error code in the header's comments in the form `D08 T03 §2` generates the reference from. Done when: every declaration carries its comment.
+- [x] Commit: `"api: the public rasterfold.h header"`
 
 **Test checkpoint:** `clang -std=c11 -Wall -Wextra -Werror -fsyntax-only include/rasterfold.h` and `clang++ -std=c++17 -Wall -Wextra -Werror -fsyntax-only -x c++ include/rasterfold.h` exit 0; separately, the freeze check below is the fidelity evidence that no encoded byte changed.
 
