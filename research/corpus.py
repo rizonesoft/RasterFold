@@ -489,24 +489,37 @@ def _download_validated(url: str, dest: Path) -> bytes:
             # trickle keeps every inactivity timeout satisfied). On expiry
             # the socket is shut down, which forces the blocked read out.
             box: dict = {}
-            sock_box: list = []
+            conn_box: list = []
 
             def _fetch() -> None:
+                # The connection object is published before connect() so
+                # the joining thread can cancel the transfer at any point,
+                # including while response headers are still arriving.
+                import http.client
+                import urllib.parse
                 try:
+                    parts = urllib.parse.urlsplit(url)
+                    conn_cls = http.client.HTTPSConnection if parts.scheme == "https" else http.client.HTTPConnection
+                    conn = conn_cls(parts.hostname, parts.port, timeout=60)
+                    conn_box.append(conn)
+                    conn.connect()
+                    path = parts.path or "/"
+                    if parts.query:
+                        path += "?" + parts.query
+                    conn.request("GET", path, headers={"User-Agent": "RasterFold-research/1.0 (held-out set)"})
+                    r = conn.getresponse()
+                    if r.status != 200:
+                        raise SystemExit(f"heldout download HTTP {r.status} for {url}")
                     chunks, total = [], 0
-                    with urllib.request.urlopen(req, timeout=60) as r:
-                        try:
-                            sock_box.append(r.fp.raw._sock)
-                        except Exception:
-                            pass
-                        while True:
-                            chunk = r.read1(65536) if hasattr(r, "read1") else r.read(65536)
-                            if not chunk:
-                                break
-                            total += len(chunk)
-                            if total > 96 * 1024 * 1024:
-                                raise SystemExit(f"heldout download exceeds 96 MiB for {url}")
-                            chunks.append(chunk)
+                    while True:
+                        chunk = r.read1(65536) if hasattr(r, "read1") else r.read(65536)
+                        if not chunk:
+                            break
+                        total += len(chunk)
+                        if total > 96 * 1024 * 1024:
+                            raise SystemExit(f"heldout download exceeds 96 MiB for {url}")
+                        chunks.append(chunk)
+                    conn.close()
                     box["data"] = b"".join(chunks)
                 except BaseException as exc:  # ferried to the joining thread
                     box["error"] = exc
@@ -515,16 +528,15 @@ def _download_validated(url: str, dest: Path) -> bytes:
             worker.start()
             worker.join(max(0.0, deadline - _time.monotonic()))
             if worker.is_alive():
-                for s in sock_box:
+                # Cancel and raise at the deadline: closing the connection
+                # forces the blocked read out in the daemon worker, whose
+                # cleanup then finishes in the background without holding
+                # the caller past the deadline.
+                for c in conn_box:
                     try:
-                        s.shutdown(2)
+                        c.close()
                     except Exception:
                         pass
-                    try:
-                        s.close()
-                    except Exception:
-                        pass
-                worker.join(5)
                 raise SystemExit(f"heldout download exceeds 300s for {url}")
             if "error" in box:
                 raise box["error"]

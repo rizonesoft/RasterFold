@@ -1708,9 +1708,9 @@
       "reviewed": "Author-attested: 2026-10-25 re-read spec/FOLD.md against src/cm.c and src/simd.h after D02 T01 section 4 (byte-identical cm.c hot-loop vectorization and row-context specialization; format version 2 bitstream unchanged)"
     },
     "research/README.md": {
-      "evidence": "2026-11-09: Verified research/README.md against research/corpus.py for D00 T03 section 1 (download deadline enforced by a deadline-joined worker thread with socket shutdown in held-out downloads; frozen screenshot assets in research/heldout-assets/ with pinned Chrome for Testing provisioning for authoring).",
+      "evidence": "2026-11-09: Verified research/README.md against research/corpus.py for D00 T03 section 1 (download deadline enforced by a deadline-joined worker thread cancelling its published connection in held-out downloads; frozen screenshot assets in research/heldout-assets/ with pinned Chrome for Testing provisioning for authoring).",
       "sources": {
-        "research/corpus.py": "b98fc8fb1cd201e859073ff34510c6a796306c8e0460594d49ace5e4cc33eb08",
+        "research/corpus.py": "fed3f5d421ea0ea201b8c87722d6175f6af34f45357ad5412dc239f1a99379b2",
         "research/ab.py": "228a8a44610a803f9ba54ef1d3e5a91f5b46260bc878167a3e7fb32e1a7e7a90",
         "research/vsjxl.py": "bb0a1fbdcb0a84edcee8a988c1de100b168a7949a8c7b59378775af5d42a5563",
         "research/prof.py": "7fa28a84aab62f0eb79fd579bcc01b6e2e55cc200bdaa96c0218b2ad4aa05605",
