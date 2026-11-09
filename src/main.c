@@ -5,6 +5,7 @@
 #include <shellapi.h>
 #endif
 #include "rf.h"
+#include "product_version.h"
 #ifdef _WIN32
 #define RF_EOL "\r\n"
 #else
@@ -76,6 +77,7 @@ static void print_fold_version(uint32_t fold_version) {
 
 static void print_version(void) {
     rf_print(0, "RasterFold codec" RF_EOL);
+    rf_print(0, "product version: " RF_PRODUCT_VERSION RF_EOL);
     rf_print(0, "format versions read: 2, 3" RF_EOL);
     rf_print(0, "format version written: 3" RF_EOL);
     rf_print(0, "api version: 1.0 (0x00010000)" RF_EOL);

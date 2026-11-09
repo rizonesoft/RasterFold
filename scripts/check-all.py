@@ -41,6 +41,7 @@ def main():
     gates.append(('documentation site tests',[py,'-m','unittest','discover','-s','tests','-p','test_docs.py','-v']))
     gates.append(('plan audit tests',[py,'-m','unittest','discover','-s','tests','-p','test_plan_audit.py','-v']))
     gates.append(('package tests',[py,'-m','unittest','discover','-s','tests','-p','test_package.py','-v']))
+    gates.append(('version tests',[py,'-m','unittest','discover','-s','tests','-p','test_version.py','-v']))
     if os.name != 'nt':
         gates.append(('toolchain installer tests',[py,'-m','unittest','discover','-s','tests','-p','test_toolchain.py','-v']))
     gates.append(('provision',(['powershell','-NoProfile','-ExecutionPolicy','Bypass','-File','tools/provision.ps1','-Verify'] if os.name=='nt' else [py,'tools/provision.py','--verify'])))

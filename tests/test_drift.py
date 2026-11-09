@@ -693,8 +693,10 @@ class DriftTests(unittest.TestCase):
     def test_all_three_generators_reject_stale_outputs_and_leave_files_unchanged(self):
         for d in ('todo', 'research', 'spec', 'assets', 'benchmarks'):
             shutil.copytree(REPO / d, self.root / d, dirs_exist_ok=True)
-        for s in ('todo-graph.py', 'build-docs.py', 'todo-claims.py'):
+        for s in ('todo-graph.py', 'build-docs.py', 'todo-claims.py', 'version.py'):
             self.write(f'scripts/{s}', (REPO / 'scripts' / s).read_text(encoding='utf-8'))
+        for rel in ('VERSION', 'src/product_version.h'):
+            self.write(rel, (REPO / rel).read_text(encoding='utf-8'))
         for p in (REPO / 'docs').iterdir():
             if p.name in ('reviews', 'phase-runs', 'design', 'drift.json', 'facts.json'):
                 continue
@@ -1181,6 +1183,7 @@ class DriftTests(unittest.TestCase):
 
         # Set up a full fixture with docs/benchmarks.md, CSVs, and historical research files.
         for rel in (
+            'VERSION',
             'src/main.c', 'src/rf.h', 'include/rasterfold.h',
             'tests/test_correctness.py',
             'benchmarks/results.csv', 'benchmarks/corpus.csv',
@@ -1541,6 +1544,7 @@ class DriftTests(unittest.TestCase):
         bench_spec.loader.exec_module(bench_mod)
 
         for rel in (
+            'VERSION',
             'src/main.c', 'src/rf.h', 'include/rasterfold.h',
             'tests/test_correctness.py',
             'benchmarks/results.csv', 'benchmarks/corpus.csv',

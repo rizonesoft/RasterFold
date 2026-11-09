@@ -34,6 +34,18 @@ def package(target: str) -> None:
         raise ValueError('unsupported build manifest; rebuild before packaging') from exc
     if not isinstance(manifest, dict) or manifest.get('schema') != 2 or manifest.get('target') != target:
         raise ValueError('unsupported build manifest; rebuild before packaging')
+    import importlib.util as _ilu
+    _spec = _ilu.spec_from_file_location('rf_version_tool', Path(__file__).resolve().parent / 'version.py')
+    _vt = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_vt)
+    current_version = _vt.read_version(ROOT)
+    if manifest.get('product_version') != current_version:
+        raise ValueError(
+            f'stale build: manifest product version {manifest.get("product_version")!r} '
+            f'!= VERSION {current_version}; rebuild before packaging')
+    revision = manifest.get('revision')
+    if not isinstance(revision, str) or not revision:
+        raise ValueError('incomplete build manifest (revision); rebuild before packaging')
+    label = _vt.dev_label(current_version, revision, bool(manifest.get('dirty')))
     required = set(target_artifacts(target))
     artifacts = manifest.get('artifacts')
     if not isinstance(artifacts, dict) or required - set(artifacts):
@@ -56,7 +68,7 @@ def package(target: str) -> None:
     for doc_name in ('LICENSE', 'docs/building.md', 'docs/library.md'):
         doc_path = ROOT / doc_name
         files.append((doc_path, doc_name, read_snapshot(doc_path, 'package document')))
-    dest = ROOT / 'build/packages' / f'rasterfold-{target}-dev.zip'
+    dest = ROOT / 'build/packages' / f'rasterfold-{target}-{label}.zip'
     dest.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(dest, 'w', compression=zipfile.ZIP_DEFLATED) as z:
         for file, name, data in files:

@@ -570,7 +570,7 @@ def render_band(b: int) -> str:
             checklist_block = (
                 f"- {item_box} Measure the target with {measure}. Done when: {target}, each figure quoted with its command.\n"
                 f"- {item_box} {item2}\n"
-                f"- {item_box} Record the milestone in `docs/research.md` sections 1 and 9 and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.\n"
+                f"- {item_box} Record the milestone in `docs/research.md` sections 1 and 9, append the gate's summary line to the Unreleased section of `CHANGELOG.md`, and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.\n"
                 f"{release_items}"
             )
         checkpoint_text = str(

@@ -115,6 +115,7 @@
   "measurement_reference_webp_encode_us": 23666327,
   "measurement_reference_width": 1672,
   "product_name": "RasterFold",
+  "product_version": "1.0.0",
   "results_measure_date": "2026-11-07",
   "results_measure_revision": "a5c5a84c4c0d8a1dc6076cddba711a89e6dafc40",
   "results_measure_status": "measured",

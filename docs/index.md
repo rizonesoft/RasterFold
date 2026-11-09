@@ -14,6 +14,7 @@ RasterFold is a lossless RGB image codec written in C11 for Windows x64, Linux x
 ## Current Version and Limits
 
 - **Current encoded format:** `.fold` format version 3 <!-- drift:fact format_version = 3 --> (`32`-byte header <!-- drift:fact header_bytes = 32 -->, CRC-32 verified header and payload).
+- **Current product version:** 1.0.0 <!-- drift:fact product_version = 1.0.0 --> (pre-1.0 development; the release is D09 T01 §4).
 - **Current public C API:** version 1.0 (`RF_API_VERSION_MAJOR = 1` <!-- drift:fact api_major = 1 -->, `RF_API_VERSION_MINOR = 0` <!-- drift:fact api_minor = 0 -->).
 - **Current image limits:** maximum dimension `32768` pixels <!-- drift:fact max_dimension = 32768 -->; maximum image `33554432` pixels <!-- drift:fact max_pixels = 33554432 -->; maximum file size `268435456` bytes <!-- drift:fact max_file_bytes = 268435456 -->.
 - **Current vs. historical vs. planned scope:**

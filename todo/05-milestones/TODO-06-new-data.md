@@ -75,7 +75,7 @@ Milestone 51 of the roadmap (`docs/research.md` section 9). It keeps everything 
 
 - [ ] Measure the target with `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns), `python research/ab.py ab <previous> <current> -n5` at `-t1` and `-t3`, and `python research/vsjxl.py -n5`. Done when: the default photo size at least 2% smaller at no more than 1.2 times decode time, each figure quoted with its command.
 - [ ] Measure the no-regression rule against milestone 50's gate stamp: `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns), `python tests/benchmark.py -n 3`, `decode --time`, and `python tests/test_correctness.py`. Done when: each rule holds, quoted beside milestone 50's figures.
-- [ ] Record the milestone in `docs/research.md` sections 1 and 9 and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
+- [ ] Record the milestone in `docs/research.md` sections 1 and 9, append the gate's summary line to the Unreleased section of `CHANGELOG.md`, and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
 - [ ] Commit: `"milestone: reach milestone 51 -- learned model at the default level"`
 
 **Test checkpoint:** every target figure and every no-regression figure quoted from a run at the commit; a figure that misses its bar blocks the stamp and triggers the missed-milestone policy instead.
@@ -101,7 +101,7 @@ Milestone 52 of the roadmap (`docs/research.md` section 9). It keeps everything 
 
 - [ ] Measure the target with `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns). Done when: images under 1 megapixel at least 1% smaller, each figure quoted with its command.
 - [ ] Measure the no-regression rule against milestone 51's gate stamp: `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns), `python tests/benchmark.py -n 3`, `decode --time`, and `python tests/test_correctness.py`. Done when: each rule holds, quoted beside milestone 51's figures.
-- [ ] Record the milestone in `docs/research.md` sections 1 and 9 and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
+- [ ] Record the milestone in `docs/research.md` sections 1 and 9, append the gate's summary line to the Unreleased section of `CHANGELOG.md`, and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
 - [ ] Commit: `"milestone: reach milestone 52 -- transmitted priors"`
 
 **Test checkpoint:** every target figure and every no-regression figure quoted from a run at the commit; a figure that misses its bar blocks the stamp and triggers the missed-milestone policy instead.
@@ -127,7 +127,7 @@ Milestone 53 of the roadmap (`docs/research.md` section 9). It keeps everything 
 
 - [ ] Measure the target with a raw corpus. Done when: raw sensor data smaller than DNG's lossless JPEG and than JPEG XL on the same raw files, each figure quoted with its command.
 - [ ] Measure the no-regression rule against milestone 52's gate stamp: `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns), `python tests/benchmark.py -n 3`, `decode --time`, and `python tests/test_correctness.py`. Done when: each rule holds, quoted beside milestone 52's figures.
-- [ ] Record the milestone in `docs/research.md` sections 1 and 9 and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
+- [ ] Record the milestone in `docs/research.md` sections 1 and 9, append the gate's summary line to the Unreleased section of `CHANGELOG.md`, and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
 - [ ] Commit: `"milestone: reach milestone 53 -- camera raw"`
 
 **Test checkpoint:** every target figure and every no-regression figure quoted from a run at the commit; a figure that misses its bar blocks the stamp and triggers the missed-milestone policy instead.
@@ -153,7 +153,7 @@ Milestone 54 of the roadmap (`docs/research.md` section 9). It keeps everything 
 
 - [ ] Measure the target with the medical and satellite corpora. Done when: 16-bit grayscale and multi-channel images smaller than JPEG-LS and JPEG XL on public medical and satellite sets, each figure quoted with its command.
 - [ ] Measure the no-regression rule against milestone 53's gate stamp: `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns), `python tests/benchmark.py -n 3`, `decode --time`, and `python tests/test_correctness.py`. Done when: each rule holds, quoted beside milestone 53's figures.
-- [ ] Record the milestone in `docs/research.md` sections 1 and 9 and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
+- [ ] Record the milestone in `docs/research.md` sections 1 and 9, append the gate's summary line to the Unreleased section of `CHANGELOG.md`, and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
 - [ ] Commit: `"milestone: reach milestone 54 -- medical and scientific imagery"`
 
 **Test checkpoint:** every target figure and every no-regression figure quoted from a run at the commit; a figure that misses its bar blocks the stamp and triggers the missed-milestone policy instead.
@@ -177,7 +177,7 @@ Milestone 55 of the roadmap (`docs/research.md` section 9). It keeps everything 
 
 - [ ] Measure the target with a corruption-injection test. Done when: a file with a damaged byte still yields every undamaged tile, each figure quoted with its command.
 - [ ] Measure the no-regression rule against milestone 54's gate stamp: `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns), `python tests/benchmark.py -n 3`, `decode --time`, and `python tests/test_correctness.py`. Done when: each rule holds, quoted beside milestone 54's figures.
-- [ ] Record the milestone in `docs/research.md` sections 1 and 9 and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
+- [ ] Record the milestone in `docs/research.md` sections 1 and 9, append the gate's summary line to the Unreleased section of `CHANGELOG.md`, and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
 - [ ] Commit: `"milestone: reach milestone 55 -- error resilience"`
 
 **Test checkpoint:** every target figure and every no-regression figure quoted from a run at the commit; a figure that misses its bar blocks the stamp and triggers the missed-milestone policy instead.
@@ -203,7 +203,7 @@ Milestone 56 of the roadmap (`docs/research.md` section 9). It keeps everything 
 
 - [ ] Measure the target with `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns). Done when: a usable preview from the first 5% of the bytes, lossless at the end, for at most 1% size cost, each figure quoted with its command.
 - [ ] Measure the no-regression rule against milestone 55's gate stamp: `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns), `python tests/benchmark.py -n 3`, `decode --time`, and `python tests/test_correctness.py`. Done when: each rule holds, quoted beside milestone 55's figures.
-- [ ] Record the milestone in `docs/research.md` sections 1 and 9 and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
+- [ ] Record the milestone in `docs/research.md` sections 1 and 9, append the gate's summary line to the Unreleased section of `CHANGELOG.md`, and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
 - [ ] Commit: `"milestone: reach milestone 56 -- progressive decoding"`
 
 **Test checkpoint:** every target figure and every no-regression figure quoted from a run at the commit; a figure that misses its bar blocks the stamp and triggers the missed-milestone policy instead.
@@ -227,7 +227,7 @@ Milestone 57 of the roadmap (`docs/research.md` section 9). It keeps everything 
 
 - [ ] Measure the target with an edit corpus. Done when: an edited copy of an image stored in at most 10% of a full file, each figure quoted with its command.
 - [ ] Measure the no-regression rule against milestone 56's gate stamp: `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns), `python tests/benchmark.py -n 3`, `decode --time`, and `python tests/test_correctness.py`. Done when: each rule holds, quoted beside milestone 56's figures.
-- [ ] Record the milestone in `docs/research.md` sections 1 and 9 and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
+- [ ] Record the milestone in `docs/research.md` sections 1 and 9, append the gate's summary line to the Unreleased section of `CHANGELOG.md`, and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
 - [ ] Commit: `"milestone: reach milestone 57 -- lossless edit deltas"`
 
 **Test checkpoint:** every target figure and every no-regression figure quoted from a run at the commit; a figure that misses its bar blocks the stamp and triggers the missed-milestone policy instead.
@@ -253,7 +253,7 @@ Milestone 58 of the roadmap (`docs/research.md` section 9). It keeps everything 
 
 - [ ] Measure the target with the FPGA testbench on the conformance suite. Done when: an FPGA decoder of the fast or tiny profile at 100 megapixels per second or more, byte-exact with the software, each figure quoted with its command.
 - [ ] Measure the no-regression rule against milestone 57's gate stamp: `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns), `python tests/benchmark.py -n 3`, `decode --time`, and `python tests/test_correctness.py`. Done when: each rule holds, quoted beside milestone 57's figures.
-- [ ] Record the milestone in `docs/research.md` sections 1 and 9 and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
+- [ ] Record the milestone in `docs/research.md` sections 1 and 9, append the gate's summary line to the Unreleased section of `CHANGELOG.md`, and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
 - [ ] Commit: `"milestone: reach milestone 58 -- hardware decoder"`
 
 **Test checkpoint:** every target figure and every no-regression figure quoted from a run at the commit; a figure that misses its bar blocks the stamp and triggers the missed-milestone policy instead.
@@ -277,7 +277,7 @@ Milestone 59 of the roadmap (`docs/research.md` section 9). It keeps everything 
 
 - [ ] Measure the target with the compatibility corpus in CI. Done when: every file written by every release since version 2 decodes in the newest release, proven by a permanent compatibility corpus, each figure quoted with its command.
 - [ ] Measure the no-regression rule against milestone 58's gate stamp: `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns), `python tests/benchmark.py -n 3`, `decode --time`, and `python tests/test_correctness.py`. Done when: each rule holds, quoted beside milestone 58's figures.
-- [ ] Record the milestone in `docs/research.md` sections 1 and 9 and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
+- [ ] Record the milestone in `docs/research.md` sections 1 and 9, append the gate's summary line to the Unreleased section of `CHANGELOG.md`, and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
 - [ ] Commit: `"milestone: reach milestone 59 -- twenty-year compatibility"`
 
 **Test checkpoint:** every target figure and every no-regression figure quoted from a run at the commit; a figure that misses its bar blocks the stamp and triggers the missed-milestone policy instead.
@@ -303,7 +303,7 @@ Milestone 60 of the roadmap (`docs/research.md` section 9). It keeps everything 
 
 - [ ] Measure the target with `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns), `python tests/benchmark.py -n 3`. Done when: `rasterfold-v6.0.0`: the learned default model, raw and scientific data, resilience, progressive decoding, edit deltas, and the hardware reference, each figure quoted with its command.
 - [ ] Measure the no-regression rule against milestone 59's gate stamp: `python research/ab.py size photo`, `tp`, and `synth` (with the JPEG XL e9 and WebP columns), `python tests/benchmark.py -n 3`, `decode --time`, and `python tests/test_correctness.py`. Done when: each rule holds, quoted beside milestone 59's figures.
-- [ ] Record the milestone in `docs/research.md` sections 1 and 9 and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
+- [ ] Record the milestone in `docs/research.md` sections 1 and 9, append the gate's summary line to the Unreleased section of `CHANGELOG.md`, and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.
 - [ ] Push the tag `rasterfold-v6.0.0`. Done when: the release workflow publishes the package and its checksums.
 - [ ] Run the backlog review for `rasterfold-v6.0.0`: promote each backlog entry into a section or record the operator's deferral on it. Done when: every entry carries a `reviewed: rasterfold-v6.0.0` field or has been promoted.
 - [ ] Commit: `"milestone: reach milestone 60 -- rasterfold 6.0"`

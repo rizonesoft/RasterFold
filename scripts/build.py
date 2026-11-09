@@ -390,9 +390,14 @@ def build(target: str, jobs: int, portable: bool, pgo_profile: Path | None = Non
     if emitted != target_artifacts(target):
         raise ValueError(f'emitted artifacts {emitted} do not match target_artifacts({target!r})')
     compiler = subprocess.check_output([str(cc), '--version'], text=True).splitlines()[0]
+    import importlib.util as _ilu
+    _spec = _ilu.spec_from_file_location('rf_version_tool', Path(__file__).resolve().parent / 'version.py')
+    _vt = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_vt)
+    _revision, _dirty = _vt.git_state(ROOT)
     (out / 'build.json').write_text(json.dumps({
         'schema': 2, 'target': target, 'triple': triple, 'portable_simd': portable, 'compiler': compiler,
-        'format_version': 2, 'api_version': 1,
+        'format_version': 3, 'api_version': 1,
+        'product_version': _vt.read_version(ROOT), 'revision': _revision, 'dirty': _dirty,
         'artifacts': {p.relative_to(out).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in artifacts},
     }, indent=2) + '\n')
     print(f'built {name}: CLI, shared and static libraries ({compiler})', flush=True)

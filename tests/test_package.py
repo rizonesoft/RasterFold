@@ -26,6 +26,7 @@ class Packages(unittest.TestCase):
         self.patch = patch.object(package, 'ROOT', self.root)
         self.patch.start()
         self.addCleanup(self.patch.stop)
+        (self.root / 'VERSION').write_text('1.0.0\n', encoding='utf-8')
         for name in ('LICENSE', 'docs/building.md', 'docs/library.md'):
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -40,7 +41,8 @@ class Packages(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(name.encode('utf-8'))
             artifacts[name] = hashlib.sha256(path.read_bytes()).hexdigest()
-        manifest = {'schema': 2, 'target': target, 'artifacts': artifacts}
+        manifest = {'schema': 2, 'target': target, 'artifacts': artifacts,
+                    'product_version': '1.0.0', 'revision': 'abc123def456', 'dirty': False}
         self.write_manifest(target, manifest)
         return manifest
 
@@ -62,7 +64,7 @@ class Packages(unittest.TestCase):
                 manifest = self.fixture(target)
                 with contextlib.redirect_stdout(io.StringIO()):
                     package.package(target)
-                dest = self.root / 'build/packages' / f'rasterfold-{target}-dev.zip'
+                dest = self.root / 'build/packages' / f'rasterfold-{target}-1.0.0-dev+abc123def456.zip'
                 with zipfile.ZipFile(dest) as archive:
                     prefix = f'rasterfold-{target}/'
                     expected = set(manifest['artifacts']) | {'build.json', 'LICENSE', 'docs/building.md', 'docs/library.md'}
@@ -133,7 +135,7 @@ class Packages(unittest.TestCase):
         self.write_manifest('linux-x64', manifest)
         with contextlib.redirect_stdout(io.StringIO()):
             package.package('linux-x64')
-        dest = self.root / 'build/packages/rasterfold-linux-x64-dev.zip'
+        dest = self.root / 'build/packages/rasterfold-linux-x64-1.0.0-dev+abc123def456.zip'
         with zipfile.ZipFile(dest) as archive:
             self.assertEqual(archive.read('rasterfold-linux-x64/lib/librasterfold.so'), b'elf-shared-object-v1')
             self.assertEqual(archive.read('rasterfold-linux-x64/lib/librasterfold.so.1'), b'elf-shared-object-v1')
@@ -153,7 +155,7 @@ class Packages(unittest.TestCase):
         with patch.object(package, 'read_snapshot', side_effect=mutating_read):
             with contextlib.redirect_stdout(io.StringIO()):
                 package.package('linux-x64')
-        dest = self.root / 'build/packages/rasterfold-linux-x64-dev.zip'
+        dest = self.root / 'build/packages/rasterfold-linux-x64-1.0.0-dev+abc123def456.zip'
         with zipfile.ZipFile(dest) as archive:
             archived_manifest = json.loads(archive.read('rasterfold-linux-x64/build.json').decode('utf-8'))
             self.assertEqual(archived_manifest, original_manifest)
