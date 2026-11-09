@@ -38,8 +38,10 @@ it asks whether building the section exactly as planned produces a 100% complete
 The current pin's `policy = "three-pass"` (owner decision 2026-11-06) runs one plan review before the build, one
 combined adversarial round after the build and its gates, then one completion review of the final candidate, every pass
 at medium. A findings file named for a section (`docs/reviews/<NN-domain>/D<NN>-T<NN>-s<N>.md`) has that order enforced
-before a review is spent. `--kind reconciliation` (`docs/reconciliation-review-prompt.md`) is the one further pass after
-a completion that returned gaps, on a candidate descending from it; it ends `RECONCILIATION: complete` or `gaps`.
+before a review is spent. `--kind reconciliation` (`docs/reconciliation-review-prompt.md`) is the further pass after
+a completion that returned gaps, on a candidate descending from it; it ends `RECONCILIATION: complete` or `gaps`. A
+reconciliation that returned gaps may be followed by another on a candidate descending from it, until one returns
+complete or the section reaches `REVIEW_PASS_CAP` (33) returned passes in all.
 
 A section stays on the policy of the pin at its plan review's candidate, so a section already in its rounds keeps the
 schedule and route it started under, and scripts/todo-graph.py `stamp` holds its receipt to that same pin.
@@ -188,6 +190,10 @@ LENSES = {
 }
 STEP_KEYS = {"effort", "lenses"}
 THREE_PASS = "three-pass"
+# Operator decision 2026-11-09: a three-pass section takes at most this many returned review passes (plan, round,
+# completion and every reconciliation together), so an unattended run repairs and re-reconciles instead of parking
+# after one failed reconciliation. scripts/todo-graph.py `stamp` holds receipts to the same number.
+REVIEW_PASS_CAP = 33
 
 
 def check_step(where, step, efforts, lenses=True):
@@ -921,7 +927,8 @@ SECTION_FINDINGS = re.compile(r"(?:^|/)docs/reviews/[0-9]{2}-[A-Za-z0-9_-]+/D[0-
 
 
 def check_three_pass_order(kind, record_path, candidate):
-    """Plan, one round, completion, and one reconciliation only after a completion with gaps. Refused here so a pass
+    """Plan, one round, completion, then reconciliations only after a completion with gaps, each after a reconciliation
+    with gaps, up to REVIEW_PASS_CAP returned passes in all. Refused here so a pass
     out of order never spends a review; the stamp holds the receipt to the same order. A findings file not named for a
     section (a standalone independent review) has no order."""
     if not record_path or not SECTION_FINDINGS.search(Path(record_path).as_posix()):
@@ -954,11 +961,14 @@ def check_three_pass_order(kind, record_path, candidate):
     elif kind == "reconciliation":
         if len(rounds) != 1 or len(completions) != 1 or not completions[0]["review"].rstrip().endswith("COMPLETION: gaps"):
             raise Refused("a reconciliation follows one round and a completion review that returned gaps")
-        if reconciled:
-            raise Refused("a section gets one reconciliation; a second is refused, and the section stays blocked")
-        if not descends(completions[0]["candidate"], candidate):
-            raise Refused(f"the reconciliation's candidate does not descend from the completion's "
-                          f"{completions[0]['candidate']}")
+        if reconciled and reconciled[-1]["review"].rstrip().endswith("RECONCILIATION: complete"):
+            raise Refused("the section's reconciliation already returned complete; it needs no further pass")
+        if len(plans) + len(rounds) + len(completions) + len(reconciled) >= REVIEW_PASS_CAP:
+            raise Refused(f"the section has spent its {REVIEW_PASS_CAP} review passes; it stays blocked")
+        previous = (reconciled or completions)[-1]
+        if not descends(previous["candidate"], candidate):
+            raise Refused(f"the reconciliation's candidate does not descend from the last pass's "
+                          f"{previous['candidate']}")
 
 
 def record_completion(path, result, when, candidate, kind="completion"):
@@ -971,7 +981,8 @@ def record_completion(path, result, when, candidate, kind="completion"):
     if found is None:
         raise Unrecorded(f"{path} cannot be read back (a heading or line is not in the format --record writes"
                          f"{unreadable_heading(existing)}; {RESERVED_NAMES}), so the {what} was not recorded")
-    if any(returned_one_pass(entry, kind) for entry in found[key]):
+    # Reconciliations repeat (check_three_pass_order bounds them); the plan and completion passes run once.
+    if kind != "reconciliation" and any(returned_one_pass(entry, kind) for entry in found[key]):
         raise Unrecorded(f"{path} already holds a {what}; it is one pass, so this one was not recorded")
     who = f"{result['reviewer']} (`{result['model']}` via `{result['cli']}`)" if result["reviewer"] else "none"
     review = raw_lines(result["review"] or f"No reviewer returned a {what}. This pass is not an approval.")

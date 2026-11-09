@@ -6547,11 +6547,15 @@ def completion_record(root: Path, completion: dict, ref: str, stamp_sha: str, co
     if verdict == "reconciled":
         passed = [e for e in reconciliations if dispatch.returned_one_pass(e, "reconciliation")]
         require(
-            len(passed) == 1,
-            f"completion verdict reconciled needs exactly one returned ## Reconciliation review in {report}, "
-            f"not {len(passed)}: {ref}",
+            bool(passed),
+            f"completion verdict reconciled needs a returned ## Reconciliation review in {report}: {ref}",
         )
-        (final,) = passed
+        for earlier in passed[:-1]:
+            require(
+                earlier["review"].rstrip().endswith("RECONCILIATION: gaps"),
+                f"only the last reconciliation in {report} may end RECONCILIATION: complete: {ref}",
+            )
+        final = passed[-1]
         ended = [x.strip() for x in final["review"].splitlines() if x.strip()][-1]
         require(
             ended == "RECONCILIATION: complete",
@@ -6827,13 +6831,12 @@ def schedule_ok(root: Path, data: dict, ref: str, surface: bool) -> None:
         ("reconciliation", "reconciliations") if data["completion"].get("verdict") == "reconciled"
         else ("completion", "completions")
     )
+    returned_final = [e for e in found[final_key] if dispatch.returned_one_pass(e, final_kind)]
+    # Reconciliations repeat after gaps, so the receipt names the last one; a completion runs once.
     require(
-        sum(
-            1 for e in found[final_key]
-            if dispatch.returned_one_pass(e, final_kind)
-            and e["candidate"] == data["completion"]["candidate"]
-        ) == 1,
-        f"{completion} must hold exactly one returned {final_kind} review: {ref}",
+        (len(returned_final) == 1 or (final_kind == "reconciliation" and returned_final))
+        and returned_final[-1]["candidate"] == data["completion"]["candidate"],
+        f"{completion} must end with one returned {final_kind} review of the stamped candidate: {ref}",
     )
     if schedule.get("policy") == dispatch.THREE_PASS:
         for entry in found["reconciliations"]:
@@ -6880,7 +6883,8 @@ def section_contract(root: Path, sha: str, ref: str) -> str:
 
 
 def three_pass_ok(root: Path, data: dict, ref: str, found: dict) -> None:
-    """The three-pass chain: one plan review, one round, then the completion review (and at most one reconciliation),
+    """The three-pass chain: one plan review, one round, then the completion review (and its reconciliations, up to
+    the review-pass cap),
     each on a candidate at or after the one before, in the order they ran, and the last on the stamped commit."""
     dispatch = review_dispatch()
     sha = data["implementation_sha"]
@@ -6896,7 +6900,10 @@ def three_pass_ok(root: Path, data: dict, ref: str, found: dict) -> None:
     require(round_entry.get("candidate") is not None, f"the three-pass round recorded no --candidate: {ref}")
     (completion,) = [e for e in found["completions"] if dispatch.returned_one_pass(e, "completion")]
     passed = [e for e in found["reconciliations"] if dispatch.returned_one_pass(e, "reconciliation")]
-    require(len(passed) <= 1, f"the three-pass policy allows one reconciliation, not {len(passed)}: {ref}")
+    require(
+        3 + len(passed) <= dispatch.REVIEW_PASS_CAP,
+        f"the three-pass policy allows {dispatch.REVIEW_PASS_CAP} review passes, not {3 + len(passed)}: {ref}",
+    )
     verdict = data["completion"]["verdict"]
     require(
         verdict in ("complete", "reconciled"),
@@ -6916,9 +6923,9 @@ def three_pass_ok(root: Path, data: dict, ref: str, found: dict) -> None:
         chain[-1][1]["candidate"] == sha,
         f"the last review ({chain[-1][0]}) reviewed {chain[-1][1]['candidate']}, not the stamped commit {sha}: {ref}",
     )
-    if passed:
+    for entry in passed:
         require(
-            section_contract(root, completion["candidate"], ref) == section_contract(root, passed[0]["candidate"], ref),
+            section_contract(root, completion["candidate"], ref) == section_contract(root, entry["candidate"], ref),
             f"the section's contract changed between the failed completion and its reconciliation: {ref}",
         )
 

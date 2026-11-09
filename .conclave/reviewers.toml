@@ -16,8 +16,11 @@
 #   - before the build, one plan review (--kind plan);
 #   - after the build and its gates, one combined adversarial round (--kind round); its findings are fixed and the gates rerun;
 #   - on that final candidate, one completion review (--kind completion).
-# A completion that returns gaps blocks the stamp until the one reconciliation pass (--kind reconciliation) passes on
-# the repaired candidate. A second reconciliation is refused.
+# A completion that returns gaps blocks the stamp until a reconciliation pass (--kind reconciliation) passes on the
+# repaired candidate.
+# Owner decision 2026-11-09: a reconciliation that returns gaps is repaired and followed by another, up to 33 returned
+# review passes per section in all (REVIEW_PASS_CAP in scripts/review-dispatch.py), so an unattended run never parks
+# waiting for another review.
 # A section keeps the pin at its plan review's candidate, so sections already under review finish on their own rules.
 
 schema_version = 1

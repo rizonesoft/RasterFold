@@ -1,6 +1,6 @@
 ---
 name: review-todo-section
-description: Quality-gate a just-implemented TODO section with self-review, one combined adversarial round, a final completion review, and one reconciliation if the completion returns gaps, then write the Verified stamp through the stamp command. Also runs in audit stance on shipped sections. Use after process-todo-section or when asked whether a section is really done.
+description: Quality-gate a just-implemented TODO section with self-review, one combined adversarial round, a final completion review, and reconciliations if the completion returns gaps (up to 33 review passes), then write the Verified stamp through the stamp command. Also runs in audit stance on shipped sections. Use after process-todo-section or when asked whether a section is really done.
 ---
 
 # Review TODO Section
@@ -83,13 +83,13 @@ python3 scripts/review-dispatch.py --kind completion --candidate <full candidate
 
 The review ends `COMPLETION: complete` or `COMPLETION: gaps`, and a findings file takes one returned completion review. The stamp must name this exact commit, so nothing lands on the candidate after it except on the reconciliation route. File each `out-of-scope` item through `add-todo`; those alone do not force gaps. When the dispatcher exits 1, run the pass again.
 
-**On `COMPLETION: gaps`, the stamp is blocked.** The failed review stays on record. Implement every in-scope gap in new commits, without changing what the section promises, add one line per gap under the completion review (`- Implemented: <gap> in <commit>`), re-run the gates, then run the one reconciliation pass on the repaired candidate, from `docs/reconciliation-review-prompt.md`:
+**On `COMPLETION: gaps`, the stamp is blocked.** The failed review stays on record. Implement every in-scope gap in new commits, without changing what the section promises, add one line per gap under the completion review (`- Implemented: <gap> in <commit>`), re-run the gates, then run a reconciliation pass on the repaired candidate, from `docs/reconciliation-review-prompt.md`:
 
 ```bash
 python3 scripts/review-dispatch.py --kind reconciliation --candidate <full repaired SHA> --writer <this session's key: claude|codex|gemini|muse|opencode> --prompt <scratch-reconciliation-prompt.md> --record docs/reviews/<NN-domain>/D<NN>-T<NN>-s<N>.md
 ```
 
-It ends `RECONCILIATION: complete` or `RECONCILIATION: gaps`. A section gets one: the dispatcher refuses a second, and `RECONCILIATION: gaps` leaves the section blocked, so stop and report it to the operator. The stamp refuses a reconciliation if the section's contract changed since the failed completion.
+It ends `RECONCILIATION: complete` or `RECONCILIATION: gaps`. On `RECONCILIATION: gaps`, repair those gaps the same way (new commits, `- Implemented:` lines, gates rerun) and run another reconciliation on the new candidate; do not stop to ask the operator. The dispatcher allows reconciliations until one returns complete or the section reaches 33 returned review passes in all (plan, round, completion and reconciliations; `REVIEW_PASS_CAP` in `scripts/review-dispatch.py`), and only a section at the cap stays blocked and is reported. The stamp refuses a reconciliation if the section's contract changed since the failed completion.
 
 ### 5. Measurement, bitstream, surface, and frozen checks
 
@@ -114,7 +114,7 @@ On an already-`[x]` section: run steps 1, 2, the round in step 3, and step 5 aga
 
 ## Guardrails
 
-- Do not stamp without a findings file, its one plan review, its one adversarial round, and its one completion review that passed, directly or through its one reconciliation.
+- Do not stamp without a findings file, its one plan review, its one adversarial round, and its one completion review that passed, directly or through its last reconciliation.
 - Do not stamp an unaccounted control on a surface section, a skipped format duty, or a moved frozen behavior.
 - Do not hand-write `Verified:` lines, hand-flip rows, or edit a receipt. `stamp` owns the record.
 - Do not review the working tree when the candidate is a commit or range. Name the hashes.

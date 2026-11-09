@@ -1551,7 +1551,7 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "2026-11-09 Completion gap fix re-read: every build entry point (normal and PGO generation) verifies src/product_version.h against VERSION before compiling; regression fixture covers both paths.",
+      "evidence": "Re-read 2026-11-09 after the review-pass cap change (reconciliations repeat up to REVIEW_PASS_CAP = 33 in scripts/review-dispatch.py, pin comment in .conclave/reviewers.toml): the document's writer, reviewer route and three-pass claims are unchanged and still true; AGENTS.md states the new cap.",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "c7f9919e34924b6686ce876fd96550d28c39d025ed6233e6f338e03f37ce47a1",
@@ -1560,32 +1560,32 @@
         "scripts/package.py": "ef69de2da770ea647e2841f4c2ce16db8bae22544c086a389983bdbeb1e50b37",
         "scripts/check-all.py": "0d7009f7af3dea1ffdfaf8893cb5c32f802075607a5b2d5500318ed8af70c777",
         "README.md": "aee300b8a07e1bf0bc1109279447ce3cba35f5498eef058676ceaa7ec7fa8044",
-        "AGENTS.md": "af79c81f56db57d212f222ccadfdcfba573527c02bf90da1b398c8dbb069b599",
-        ".conclave/reviewers.toml": "3d53255ab0db8dd94bbdd79bf2cc84d8688dcc14f4e07426c3a3413cafc36990",
-        "scripts/review-dispatch.py": "1bf2cb0ca2e6401e05d7cd987980ca0cdf9afa2a8fe119c93b3bf3ff365bd973"
+        "AGENTS.md": "9a08868439b33d0e607ee58c013ec9a5d9b300d0db6621ab68ab89b18f430b1c",
+        ".conclave/reviewers.toml": "455ff6445e7812a8ee41a0f456710bf4210c59ebaed1703cd6abc1a4df7d2b5a",
+        "scripts/review-dispatch.py": "5e6b214c36c1cdf30c1c75fcf343edc415e47a93c3437785f16c45d7f56f639f"
       },
       "review": "Author-attested: 2026-10-25 re-read README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "AGENTS.md": {
-      "evidence": "2026-11-09: Re-read AGENTS.md against include/rasterfold.h for D06 T01 section 1 round fixes (non-overlap preconditions, options refusal codes, stream_size channel order; comments only, no signature or byte changed).",
+      "evidence": "Re-read 2026-11-09 after the review-pass cap change (reconciliations repeat up to REVIEW_PASS_CAP = 33 in scripts/review-dispatch.py, pin comment in .conclave/reviewers.toml): the document's writer, reviewer route and three-pass claims are unchanged and still true; AGENTS.md states the new cap.",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "c7f9919e34924b6686ce876fd96550d28c39d025ed6233e6f338e03f37ce47a1",
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
-        ".conclave/reviewers.toml": "3d53255ab0db8dd94bbdd79bf2cc84d8688dcc14f4e07426c3a3413cafc36990",
-        "scripts/review-dispatch.py": "1bf2cb0ca2e6401e05d7cd987980ca0cdf9afa2a8fe119c93b3bf3ff365bd973",
-        "AGENTS.md": "af79c81f56db57d212f222ccadfdcfba573527c02bf90da1b398c8dbb069b599",
+        ".conclave/reviewers.toml": "455ff6445e7812a8ee41a0f456710bf4210c59ebaed1703cd6abc1a4df7d2b5a",
+        "scripts/review-dispatch.py": "5e6b214c36c1cdf30c1c75fcf343edc415e47a93c3437785f16c45d7f56f639f",
+        "AGENTS.md": "9a08868439b33d0e607ee58c013ec9a5d9b300d0db6621ab68ab89b18f430b1c",
         ".codex/hooks.json": "c67e7762d0970280c653a74601012d01971d05f677182ae70e4eda0aa783c150",
         "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",
         "scripts/campaign_guard.py": "a4e15e753ac265152070e9d5ae93f36cba78e58e4feb4c11a6e0f2a58203c432"
       }
     },
     "GEMINI.md": {
-      "evidence": "2026-11-06: Re-read against the three-pass review policy in .conclave/reviewers.toml and scripts/review-dispatch.py, and the writers claude, codex, gemini, muse and opencode with reviewers Astra and Argon; the prose states them",
+      "evidence": "Re-read 2026-11-09 after the review-pass cap change (reconciliations repeat up to REVIEW_PASS_CAP = 33 in scripts/review-dispatch.py, pin comment in .conclave/reviewers.toml): the document's writer, reviewer route and three-pass claims are unchanged and still true; AGENTS.md states the new cap.",
       "sources": {
-        "AGENTS.md": "af79c81f56db57d212f222ccadfdcfba573527c02bf90da1b398c8dbb069b599",
-        ".conclave/reviewers.toml": "3d53255ab0db8dd94bbdd79bf2cc84d8688dcc14f4e07426c3a3413cafc36990",
-        "scripts/review-dispatch.py": "1bf2cb0ca2e6401e05d7cd987980ca0cdf9afa2a8fe119c93b3bf3ff365bd973",
+        "AGENTS.md": "9a08868439b33d0e607ee58c013ec9a5d9b300d0db6621ab68ab89b18f430b1c",
+        ".conclave/reviewers.toml": "455ff6445e7812a8ee41a0f456710bf4210c59ebaed1703cd6abc1a4df7d2b5a",
+        "scripts/review-dispatch.py": "5e6b214c36c1cdf30c1c75fcf343edc415e47a93c3437785f16c45d7f56f639f",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
         "GEMINI.md": "80dd5e3bf1639e1f542dc0e5b7760a3ce2d53f852790bc5d6d6ee39fdf79e0b9"
       }
@@ -1678,14 +1678,14 @@
       }
     },
     "docs/agent-skills-and-rules-structure.md": {
-      "evidence": "2026-11-06: Re-read against the three-pass review policy in .conclave/reviewers.toml and scripts/review-dispatch.py, and the writers claude, codex, gemini, muse and opencode with reviewers Astra and Argon; the prose states them",
+      "evidence": "Re-read 2026-11-09 after the review-pass cap change (reconciliations repeat up to REVIEW_PASS_CAP = 33 in scripts/review-dispatch.py, pin comment in .conclave/reviewers.toml): the document's writer, reviewer route and three-pass claims are unchanged and still true; AGENTS.md states the new cap.",
       "sources": {
-        "AGENTS.md": "af79c81f56db57d212f222ccadfdcfba573527c02bf90da1b398c8dbb069b599",
+        "AGENTS.md": "9a08868439b33d0e607ee58c013ec9a5d9b300d0db6621ab68ab89b18f430b1c",
         "GEMINI.md": "80dd5e3bf1639e1f542dc0e5b7760a3ce2d53f852790bc5d6d6ee39fdf79e0b9",
         ".conclave/kits.json": "56785267af421d6deac2d4e5cfdda58be63684fb6f3893cece8043a6f0578105",
-        ".conclave/reviewers.toml": "3d53255ab0db8dd94bbdd79bf2cc84d8688dcc14f4e07426c3a3413cafc36990",
+        ".conclave/reviewers.toml": "455ff6445e7812a8ee41a0f456710bf4210c59ebaed1703cd6abc1a4df7d2b5a",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
-        "scripts/review-dispatch.py": "1bf2cb0ca2e6401e05d7cd987980ca0cdf9afa2a8fe119c93b3bf3ff365bd973",
+        "scripts/review-dispatch.py": "5e6b214c36c1cdf30c1c75fcf343edc415e47a93c3437785f16c45d7f56f639f",
         "docs/agent-skills-and-rules-structure.md": "a66cd2db7ad4ee6ed83bc4d1709346dbc6bfa7bffdff9606aab3b12258473e8b",
         ".codex/hooks.json": "c67e7762d0970280c653a74601012d01971d05f677182ae70e4eda0aa783c150",
         "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",

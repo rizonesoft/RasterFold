@@ -1688,7 +1688,7 @@ class RestartedMarkerTests(StampRepo):
 
 
 class ThreePassStamp(StampRepo):
-    """`stamp` under the three-pass policy: plan, one round, completion, and one reconciliation after gaps."""
+    """`stamp` under the three-pass policy: plan, one round, completion, and reconciliations after gaps (capped)."""
 
     PIN_TEXT = REPO_PIN.read_text(encoding="utf-8")
     ROUND_LENSES = ["adversarial", "integration", "source-defect", "plan-delivery", "consistency", "record", "quality",
@@ -1793,7 +1793,7 @@ class ThreePassStamp(StampRepo):
         self.round_pass(built)
         self.completion_pass(built, "gaps")
         self.refused("needs a review ending COMPLETION: complete", built)
-        self.refused("exactly one returned ## Reconciliation review", built, verdict="reconciled")
+        self.refused("needs a returned ## Reconciliation review", built, verdict="reconciled")
         repaired = self.build("repair")
         self.reconciliation_pass(repaired)
         receipt = self.stamp(repaired, verdict="reconciled")
@@ -1809,6 +1809,41 @@ class ThreePassStamp(StampRepo):
         repaired = self.build("repair")
         self.reconciliation_pass(repaired, "gaps")
         self.refused("RECONCILIATION: complete", repaired, verdict="reconciled")
+
+    def test_a_reconciliation_with_gaps_is_repaired_and_reconciled_again(self):
+        self.started()
+        built = self.build("a")
+        self.round_pass(built)
+        self.completion_pass(built, "gaps")
+        first = self.build("repair")
+        self.reconciliation_pass(first, "gaps")
+        second = self.build("repair again")
+        self.reconciliation_pass(second)
+        receipt = self.stamp(second, verdict="reconciled")
+        data = json.loads((self.root / receipt).read_text(encoding="utf-8"))
+        self.tg.receipt_data_ok(data, self.REF, second, root=self.root, surface=False)
+
+    def test_a_complete_reconciliation_before_the_last_is_refused(self):
+        self.started()
+        built = self.build("a")
+        self.round_pass(built)
+        self.completion_pass(built, "gaps")
+        repaired = self.build("repair")
+        self.reconciliation_pass(repaired)
+        self.reconciliation_pass(repaired)
+        self.refused("only the last reconciliation", repaired, verdict="reconciled")
+
+    def test_reconciliations_past_the_review_pass_cap_are_refused(self):
+        self.started()
+        built = self.build("a")
+        self.round_pass(built)
+        self.completion_pass(built, "gaps")
+        repaired = self.build("repair")
+        spare = self.dispatch.REVIEW_PASS_CAP - 3
+        for _ in range(spare):
+            self.reconciliation_pass(repaired, "gaps")
+        self.reconciliation_pass(repaired)
+        self.refused(f"allows {self.dispatch.REVIEW_PASS_CAP} review passes", repaired, verdict="reconciled")
 
     def test_a_reconciliation_that_narrowed_the_section_is_refused(self):
         self.started()
@@ -1924,19 +1959,43 @@ class ThreePassDispatch(Harness):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(summary["reviewer"], "astra")
 
-    def test_a_reconciliation_needs_gaps_and_runs_once(self):
+    def test_reconciliations_repeat_after_gaps_and_stop_at_complete(self):
         self.run_pass("plan", self.PLAN)
         self.run_pass("round", self.ROUND)
         self.run_pass("completion", "COMPLETION: gaps")
-        repaired = self.commit("repair")
-        result, summary = self.run_pass("reconciliation", "RECONCILIATION: complete", candidate=repaired)
+        first = self.commit("repair")
+        result, _ = self.run_pass("reconciliation", "RECONCILIATION: gaps", candidate=first)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.effort(), "medium")
-        self.assertEqual(self.module().read_findings(self.findings.read_text(encoding="utf-8"))["reconciliations"][0]["candidate"], repaired)
-        self.log.unlink()
-        result, _ = self.run_pass("reconciliation", "RECONCILIATION: complete", candidate=repaired)
+        result, _ = self.run_pass("reconciliation", "RECONCILIATION: complete", candidate=self.head)
         self.assertEqual(result.returncode, 2)
-        self.assertIn("one reconciliation", result.stderr)
+        self.assertIn("does not descend from the last pass", result.stderr)
+        self.assertEqual(self.calls(), [])
+        second = self.commit("repair again")
+        result, _ = self.run_pass("reconciliation", "RECONCILIATION: complete", candidate=second)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        recorded = self.module().read_findings(self.findings.read_text(encoding="utf-8"))["reconciliations"]
+        self.assertEqual([e["candidate"] for e in recorded], [first, second])
+        result, _ = self.run_pass("reconciliation", "RECONCILIATION: complete", candidate=second)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("already returned complete", result.stderr)
+        self.assertEqual(self.calls(), [])
+
+    def test_reconciliations_stop_at_the_review_pass_cap(self):
+        self.run_pass("plan", self.PLAN)
+        self.run_pass("round", self.ROUND)
+        self.run_pass("completion", "COMPLETION: gaps")
+        module = self.module()
+        for i in range(module.REVIEW_PASS_CAP - 4):
+            module.record_completion(self.findings, {"writer": "claude", "reviewer": "astra", "cli": "codex",
+                                                     "model": "gpt-6-astra", "effort": "medium", "skipped": [],
+                                                     "lenses": [], "review": "RECONCILIATION: gaps"},
+                                     f"2026-11-09T01:{i:02d}:00Z", self.head, "reconciliation")
+        result, _ = self.run_pass("reconciliation", "RECONCILIATION: gaps")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        result, _ = self.run_pass("reconciliation", "RECONCILIATION: complete")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn(f"spent its {module.REVIEW_PASS_CAP} review passes", result.stderr)
         self.assertEqual(self.calls(), [])
 
     def test_a_reconciliation_after_a_complete_completion_is_refused(self):
