@@ -46,7 +46,7 @@ track: GUI1
 
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
-| 1 | §1 | Pixel contract and capability registry | D06 T01 §1 | [ ] |
+| 1 | §1 | Pixel contract and capability registry | D06 T01 §1 | [x] |
 | 2 | §2 | Pinned bundled codec builds | §1, D00 T04 §1 | [ ] |
 | 3 | §3 | Bounded asynchronous jobs | §1, §2 | [ ] |
 | 4 | §4 | Exactness verification and differential fixtures | §1, §3 | [ ] |
@@ -76,6 +76,8 @@ Build in the listed order. This section adds the named test driver before using 
 
 **Freeze check:** Existing `.fold` v2 files and the oracle remain unchanged. Each new output receives a fresh bundled decode and the format-specific verification contract before acceptance; independent fixture coverage is reported separately; input and existing destination bytes survive refusal, cancellation and failure.
 
+> **Verified:** 2026-11-09 | §1 | c059106524b5bed845c2b48098f1841246f920f2
+> **Review:** `docs/reviews/d10-t01-s1.json`
 ## 2. Pinned bundled codec builds
 
 **Requires:** windows-runtime, linux-runtime, android-arm64-runtime, android-x64-runtime -- Native loader smoke tests require each target runtime; source checkpoint audit in docs/todo-vision-audit.md.
