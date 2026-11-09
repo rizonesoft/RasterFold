@@ -117,6 +117,8 @@ The executable uses the same code path as the library for encode and inspect (li
 > **Review:** `docs/reviews/d06-t01-s4.json`
 ## 5. Example Programs
 
+> **Started:** 2026-11-09T03:08:53Z
+
 - [ ] Add `examples/encode.c` and `examples/decode.c` (PPM in and out, error handling shown), built and run by `tests/test_artifacts.py` against native shared and static libraries. Done when: both build and round-trip an image locally and in the configured native CI jobs; remote CI proof is recorded separately. Cheaper substitute: code snippets in the docs that nothing compiles.
 - [ ] Commit: `"api: example programs built in CI"`
 
