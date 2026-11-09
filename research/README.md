@@ -5,7 +5,7 @@ Tools for changing the codec with numbers instead of guesses. Data goes to
 
 | command | what it does |
 |---|---|
-| `python research/corpus.py` | builds `build/research/ppm/` (55 images: measure, 24 Kodak, 14 imagecompression.info crops, 5 test-pack crops, 11 generated) and `jxl_refs.json` (JPEG XL e7 sizes) |
+| `python research/corpus.py` | builds `build/research/ppm/` (95 images: measure, 24 Kodak, 14 imagecompression.info crops, 5 test-pack crops, 11 generated, and the 40-image held-out set of 30 Wikimedia Commons photographs and 10 locally rendered screenshots frozen in `research/heldout.json`; `--verify-heldout` checks membership, dimensions, and hashes without regenerating) and `jxl_refs.json` (JPEG XL e7 and e9 and lossless WebP sizes) |
 | `python research/ab.py size [file.c] SET [-v]` | exact `.fold` sizes of a `cm.c` or `pal.c` variant on a set, against JPEG XL and WebP: total, geometric mean, worst image |
 | `python research/ab.py bench [file.c] [-r3] [-t1\|-t3] IMAGES` | encode and decode time of a `cm.c` or `pal.c` variant through `rf_encode`/`rf_decode`, verified round trip (`bench.exe --breakdown` also attributes CM bytes per channel `G`, `R-G`, `B-G` and decision kind `zero`, `sign`, `exp`, `mant`) |
 | `python research/ab.py ab [-v] A.c B.c [-n5] [-t1] IMAGES` | alternates two variants and compares their minimum times (with `-v`, also reports set `min_tot`, per-image `geomean`, and `worst`) |
@@ -14,7 +14,7 @@ Tools for changing the codec with numbers instead of guesses. Data goes to
 | `python research/prof.py [N]` | line-level profile from `bench.exe -p` samples |
 | `python research/vsjxl.py [image.bmp] [-n5]` | process wall times of `bin/windows-x64/bin/rasterfold.exe` against ffmpeg libjxl (`--webp-photos` times `testdata/photos/` decode against lossless WebP; `--threads {1,3,6,9}` sets the thread count) |
 
-Sets for `ab.py`: `sub` (8 mixed photos), `kodak`, `ic`, `tp` (test pack),
+Sets for `ab.py`: `sub` (8 mixed photos), `kodak`, `ic`, `tp` (test pack), `heldout` (the 40 held-out images; never used to choose a parameter),
 `tp-only` (5 exclusive test-pack crops), `photo` (measure + kodak + ic), `synth`,
 `all`. A name without a set is one
 image from `build/research/ppm`.

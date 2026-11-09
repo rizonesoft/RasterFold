@@ -30,6 +30,288 @@ DATA = REPO / "build" / "research"
 PPM = DATA / "ppm"
 sys.path.insert(0, str(REPO / "tests"))
 
+# Held-out photographs: Wikimedia Commons featured pictures (Pictures of the
+# Day are drawn from featured pictures), pinned at authoring on 2026-11-09.
+# Licence, author, and page were verified against the Commons API
+# (imageinfo/extmetadata) at authoring; the frozen manifest in
+# research/heldout.json is the record later runs verify against.
+HELDOUT_PHOTOS = [
+    {
+        "name": "ho_p01",
+        "title": "014 Wild Red Deer Switzerland Photo by Giles Laurent.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:014_Wild_Red_Deer_Switzerland_Photo_by_Giles_Laurent.jpg",
+        "licence": "CC BY-SA 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+        "artist": "Giles Laurent",
+        "download": "https://upload.wikimedia.org/wikipedia/commons/6/66/014_Wild_Red_Deer_Switzerland_Photo_by_Giles_Laurent.jpg"
+    },
+    {
+        "name": "ho_p02",
+        "title": "13-04-13-st-poelten-landhausviertel-628.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:13-04-13-st-poelten-landhausviertel-628.jpg",
+        "licence": "CC BY 3.0",
+        "licence_url": "https://creativecommons.org/licenses/by/3.0",
+        "artist": "Ralf Roletschek",
+        "download": "https://upload.wikimedia.org/wikipedia/commons/d/dc/13-04-13-st-poelten-landhausviertel-628.jpg"
+    },
+    {
+        "name": "ho_p03",
+        "title": "160316-031 Bridge near Tatopani.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:160316-031_Bridge_near_Tatopani.jpg",
+        "licence": "CC BY-SA 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+        "artist": "Faj2323",
+        "download": "https://upload.wikimedia.org/wikipedia/commons/2/2d/160316-031_Bridge_near_Tatopani.jpg"
+    },
+    {
+        "name": "ho_p04",
+        "title": "2014 Kłodzko, starówka 12.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:2014_K%C5%82odzko,_star%C3%B3wka_12.jpg",
+        "licence": "CC BY-SA 3.0 pl",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/3.0/pl/deed.en",
+        "artist": "Jacek Halicki",
+        "download": "https://upload.wikimedia.org/wikipedia/commons/5/5b/2014_K%C5%82odzko%2C_star%C3%B3wka_12.jpg"
+    },
+    {
+        "name": "ho_p05",
+        "title": "A Bukharan dance performed by members of the Rina Nikova ballet in the citadel of Jerusalem - Restoration.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:A_Bukharan_dance_performed_by_members_of_the_Rina_Nikova_ballet_in_the_citadel_of_Jerusalem_-_Restoration.jpg",
+        "licence": "Public domain",
+        "licence_url": "",
+        "artist": "Zoltan Kluger / Adam Cuerden",
+        "download": "https://upload.wikimedia.org/wikipedia/commons/8/88/A_Bukharan_dance_performed_by_members_of_the_Rina_Nikova_ballet_in_the_citadel_of_Jerusalem_-_Restoration.jpg"
+    },
+    {
+        "name": "ho_p06",
+        "title": "Afgevallen kastanje van een Tamme kastanje (Castanea sativa) 17-10-2021 (d.j.b.) 01.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:Afgevallen_kastanje_van_een_Tamme_kastanje_(Castanea_sativa)_17-10-2021_(d.j.b.)_01.jpg",
+        "licence": "CC BY-SA 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+        "artist": "Dominicus Johannes Bergsma",
+        "download": "https://upload.wikimedia.org/wikipedia/commons/a/af/Afgevallen_kastanje_van_een_Tamme_kastanje_%28Castanea_sativa%29_17-10-2021_%28d.j.b.%29_01.jpg"
+    },
+    {
+        "name": "ho_p07",
+        "title": "Amaryllis (Hippeastrum) 26-01-2021. (actm.) 05.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:Amaryllis_(Hippeastrum)_26-01-2021._(actm.)_05.jpg",
+        "licence": "CC BY-SA 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+        "artist": "Agnes Monkelbaan",
+        "download": "https://upload.wikimedia.org/wikipedia/commons/f/f6/Amaryllis_%28Hippeastrum%29_26-01-2021._%28actm.%29_05.jpg"
+    },
+    {
+        "name": "ho_p08",
+        "title": "Ariramba-de-cauda-ruiva (cropped).jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:Ariramba-de-cauda-ruiva_(cropped).jpg",
+        "licence": "CC BY-SA 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+        "artist": "Jairmoreirafotografia",
+        "download": "https://upload.wikimedia.org/wikipedia/commons/e/ef/Ariramba-de-cauda-ruiva_%28cropped%29.jpg"
+    },
+    {
+        "name": "ho_p09",
+        "title": "Breil-Brigels, Lag da Breil- Flem. 23-09-2022. (actm.) 11.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:Breil-Brigels,_Lag_da_Breil-_Flem._23-09-2022._(actm.)_11.jpg",
+        "licence": "CC BY-SA 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+        "artist": "Agnes Monkelbaan",
+        "download": "https://upload.wikimedia.org/wikipedia/commons/d/df/Breil-Brigels%2C_Lag_da_Breil-_Flem._23-09-2022._%28actm.%29_11.jpg"
+    },
+    {
+        "name": "ho_p10",
+        "title": "Cappuchin Bridge (30706076020).jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:Cappuchin_Bridge_(30706076020).jpg",
+        "licence": "CC BY 2.0",
+        "licence_url": "https://creativecommons.org/licenses/by/2.0",
+        "artist": "Bernd Thaller from Graz, Austria",
+        "download": "https://upload.wikimedia.org/wikipedia/commons/c/cf/Cappuchin_Bridge_%2830706076020%29.jpg"
+    },
+    {
+        "name": "ho_p11",
+        "title": "Catedral de Santa María, Sigüenza, España, 2015-12-28, DD 118-120 HDR.JPG",
+        "page": "https://commons.wikimedia.org/wiki/File:Catedral_de_Santa_Mar%C3%ADa,_Sig%C3%BCenza,_Espa%C3%B1a,_2015-12-28,_DD_118-120_HDR.JPG",
+        "licence": "CC BY-SA 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+        "artist": "Diego Delso",
+        "download": "https://upload.wikimedia.org/wikipedia/commons/a/a0/Catedral_de_Santa_Mar%C3%ADa%2C_Sig%C3%BCenza%2C_Espa%C3%B1a%2C_2015-12-28%2C_DD_118-120_HDR.JPG"
+    },
+    {
+        "name": "ho_p12",
+        "title": "Church of St. John at Kaneo 6.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:Church_of_St._John_at_Kaneo_6.jpg",
+        "licence": "CC BY-SA 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+        "artist": "kallerna",
+        "download": "https://upload.wikimedia.org/wikipedia/commons/4/4a/Church_of_St._John_at_Kaneo_6.jpg"
+    },
+    {
+        "name": "ho_p13",
+        "title": "Coccinella in Parc du Bois-de-Coulonge uncut version.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:Coccinella_in_Parc_du_Bois-de-Coulonge_uncut_version.jpg",
+        "licence": "CC0",
+        "licence_url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+        "artist": "Wilfredor",
+        "download": "https://upload.wikimedia.org/wikipedia/commons/2/29/Coccinella_in_Parc_du_Bois-de-Coulonge_uncut_version.jpg"
+    },
+    {
+        "name": "ho_p14",
+        "title": "Czech Republic - landscape near Koryčany.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:Czech_Republic_-_landscape_near_Kory%C4%8Dany.jpg",
+        "licence": "CC BY-SA 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+        "artist": "Pudelek",
+        "download": "https://upload.wikimedia.org/wikipedia/commons/2/27/Czech_Republic_-_landscape_near_Kory%C4%8Dany.jpg"
+    },
+    {
+        "name": "ho_p15",
+        "title": "Dülmen, Heilig-Kreuz-Kirche, The Cast Whale Project -- 2022 -- 0509-13.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:D%C3%BClmen,_Heilig-Kreuz-Kirche,_The_Cast_Whale_Project_--_2022_--_0509-13.jpg",
+        "licence": "CC BY-SA 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+        "artist": "Dietmar Rabich",
+        "download": "https://upload.wikimedia.org/wikipedia/commons/1/11/D%C3%BClmen%2C_Heilig-Kreuz-Kirche%2C_The_Cast_Whale_Project_--_2022_--_0509-13.jpg"
+    },
+    {
+        "name": "ho_p16",
+        "title": "Dülmen, Münsterstraße, Viktorkirmes, Riesenrad -- 2023 -- 9053 (kreativ).jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:D%C3%BClmen,_M%C3%BCnsterstra%C3%9Fe,_Viktorkirmes,_Riesenrad_--_2023_--_9053_(kreativ).jpg",
+        "licence": "CC BY-SA 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+        "artist": "Dietmar Rabich",
+        "download": "https://upload.wikimedia.org/wikipedia/commons/f/f9/D%C3%BClmen%2C_M%C3%BCnsterstra%C3%9Fe%2C_Viktorkirmes%2C_Riesenrad_--_2023_--_9053_%28kreativ%29.jpg"
+    },
+    {
+        "name": "ho_p17",
+        "title": "Edinburgh Castle from Grass Market.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:Edinburgh_Castle_from_Grass_Market.jpg",
+        "licence": "Public domain",
+        "licence_url": "",
+        "artist": "George Washington Wilson / Adam Cuerden",
+        "download": "https://upload.wikimedia.org/wikipedia/commons/c/c4/Edinburgh_Castle_from_Grass_Market.jpg"
+    },
+    {
+        "name": "ho_p18",
+        "title": "Ethiopia Banna tribe kids.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:Ethiopia_Banna_tribe_kids.jpg",
+        "licence": "CC BY-SA 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+        "artist": "WAVRIK",
+        "download": "https://upload.wikimedia.org/wikipedia/commons/5/5a/Ethiopia_Banna_tribe_kids.jpg"
+    },
+    {
+        "name": "ho_p19",
+        "title": "Five children on a motorcycle.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:Five_children_on_a_motorcycle.jpg",
+        "licence": "CC BY-SA 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+        "artist": "Basile Morin",
+        "download": "https://upload.wikimedia.org/wikipedia/commons/4/41/Five_children_on_a_motorcycle.jpg"
+    },
+    {
+        "name": "ho_p20",
+        "title": "Gele trilzwam (Tremella mesenterica) op dode tak van een eik 15-01-2021. (actm.) 02.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:Gele_trilzwam_(Tremella_mesenterica)_op_dode_tak_van_een_eik_15-01-2021._(actm.)_02.jpg",
+        "licence": "CC BY-SA 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+        "artist": "Agnes Monkelbaan",
+        "download": "https://upload.wikimedia.org/wikipedia/commons/4/42/Gele_trilzwam_%28Tremella_mesenterica%29_op_dode_tak_van_een_eik_15-01-2021._%28actm.%29_02.jpg"
+    },
+    {
+        "name": "ho_p21",
+        "title": "Golden Delicious apples.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:Golden_Delicious_apples.jpg",
+        "licence": "CC BY-SA 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+        "artist": "Ivar Leidus",
+        "download": "https://upload.wikimedia.org/wikipedia/commons/0/0f/Golden_Delicious_apples.jpg"
+    },
+    {
+        "name": "ho_p22",
+        "title": "Habibi2006prצילום חביבי - יוסי צבקר.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:Habibi2006pr%D7%A6%D7%99%D7%9C%D7%95%D7%9D_%D7%97%D7%91%D7%99%D7%91%D7%99_-_%D7%99%D7%95%D7%A1%D7%99_%D7%A6%D7%91%D7%A7%D7%A8.jpg",
+        "licence": "CC BY-SA 3.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/3.0",
+        "artist": "Yossi Zwecker",
+        "download": "https://upload.wikimedia.org/wikipedia/commons/c/c5/Habibi2006pr%D7%A6%D7%99%D7%9C%D7%95%D7%9D_%D7%97%D7%91%D7%99%D7%91%D7%99_-_%D7%99%D7%95%D7%A1%D7%99_%D7%A6%D7%91%D7%A7%D7%A8.jpg"
+    },
+    {
+        "name": "ho_p23",
+        "title": "Herding sheep353 (edited).jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:Herding_sheep353_(edited).jpg",
+        "licence": "CC BY-SA 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+        "artist": "Original:  Azonesa\nDerivative work:  Radomianin",
+        "download": "https://upload.wikimedia.org/wikipedia/commons/f/f3/Herding_sheep353_%28edited%29.jpg"
+    },
+    {
+        "name": "ho_p24",
+        "title": "Hue Vietnam Thien-Mu-Temple-and-Pagoda-03.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:Hue_Vietnam_Thien-Mu-Temple-and-Pagoda-03.jpg",
+        "licence": "CC BY-SA 3.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/3.0",
+        "artist": "CEphoto, Uwe Aranas",
+        "download": "https://upload.wikimedia.org/wikipedia/commons/8/88/Hue_Vietnam_Thien-Mu-Temple-and-Pagoda-03.jpg"
+    },
+    {
+        "name": "ho_p25",
+        "title": "Katholische Pfarrkirche St. Julitta und Quiricus, Andiast. (actm) 06.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:Katholische_Pfarrkirche_St._Julitta_und_Quiricus,_Andiast._(actm)_06.jpg",
+        "licence": "CC BY-SA 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+        "artist": "Agnes Monkelbaan",
+        "download": "https://upload.wikimedia.org/wikipedia/commons/3/3f/Katholische_Pfarrkirche_St._Julitta_und_Quiricus%2C_Andiast._%28actm%29_06.jpg"
+    },
+    {
+        "name": "ho_p26",
+        "title": "Korfu (GR), Korfu, Alte Festung -- 2018 -- 1137.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:Korfu_(GR),_Korfu,_Alte_Festung_--_2018_--_1137.jpg",
+        "licence": "CC BY-SA 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+        "artist": "Dietmar Rabich",
+        "download": "https://upload.wikimedia.org/wikipedia/commons/3/34/Korfu_%28GR%29%2C_Korfu%2C_Alte_Festung_--_2018_--_1137.jpg"
+    },
+    {
+        "name": "ho_p27",
+        "title": "Lahad-Datu Sabah Mount-Silam-Red-Crab-Geosesarma-aurantium-02.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:Lahad-Datu_Sabah_Mount-Silam-Red-Crab-Geosesarma-aurantium-02.jpg",
+        "licence": "CC BY-SA 3.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/3.0",
+        "artist": "CEphoto, Uwe Aranas",
+        "download": "https://upload.wikimedia.org/wikipedia/commons/9/9a/Lahad-Datu_Sabah_Mount-Silam-Red-Crab-Geosesarma-aurantium-02.jpg"
+    },
+    {
+        "name": "ho_p28",
+        "title": "Mountains of Wadi Shawka denoised.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:Mountains_of_Wadi_Shawka_denoised.jpg",
+        "licence": "CC BY-SA 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+        "artist": "Original:  Florian Kriechbaumer\nDerivative work:  Aristeas",
+        "download": "https://upload.wikimedia.org/wikipedia/commons/5/59/Mountains_of_Wadi_Shawka_denoised.jpg"
+    },
+    {
+        "name": "ho_p29",
+        "title": "Male Bush Elephant Head Trunk Up Kafue Jul23 A7R 05195.jpg",
+        "page": "https://commons.wikimedia.org/wiki/File:Male_Bush_Elephant_Head_Trunk_Up_Kafue_Jul23_A7R_05195.jpg",
+        "licence": "CC BY-SA 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+        "artist": "This Photo was taken by Timothy A. Gonsalves.  Feel free to use my photos, but please mention me as the author.  I would much appreciate if you send me an email",
+        "download": "https://upload.wikimedia.org/wikipedia/commons/1/1c/Male_Bush_Elephant_Head_Trunk_Up_Kafue_Jul23_A7R_05195.jpg"
+    },
+    {
+        "name": "ho_p30",
+        "title": "Mercado de Colón, Valencia, España, 2014-06-29, DD 07.JPG",
+        "page": "https://commons.wikimedia.org/wiki/File:Mercado_de_Col%C3%B3n,_Valencia,_Espa%C3%B1a,_2014-06-29,_DD_07.JPG",
+        "licence": "CC BY-SA 3.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/3.0",
+        "artist": "Diego Delso",
+        "download": "https://upload.wikimedia.org/wikipedia/commons/a/ab/Mercado_de_Col%C3%B3n%2C_Valencia%2C_Espa%C3%B1a%2C_2014-06-29%2C_DD_07.JPG"
+    }
+]
+
+HELDOUT_PAGES = ["index", "getting-started", "installation", "usage", "examples",
+                 "format", "c-api", "benchmarks", "limitations", "troubleshooting"]
+HELDOUT_MANIFEST = REPO / "research" / "heldout.json"
+
 REFS_SPEC = (
     ("e7", ".e7.jxl", ["-c:v", "libjxl", "-distance", "0", "-effort", "7", "-threads", "1", "-update", "1"]),
     ("e9", ".e9.jxl", ["-c:v", "libjxl", "-distance", "0", "-effort", "9", "-threads", "1", "-update", "1"]),
@@ -146,6 +428,196 @@ def update_refs(
     return reloaded
 
 
+
+
+def _rgb_sha256(im) -> str:
+    import hashlib
+    return hashlib.sha256(im.convert("RGB").tobytes()).hexdigest()
+
+
+def _download_validated(url: str, dest: Path) -> bytes:
+    """Bounded download to a temporary file, validated as a large image, then published."""
+    if dest.is_file():
+        try:
+            with Image.open(dest) as im:
+                im.load()
+                if im.width >= 1280 and im.height >= 960:
+                    return dest.read_bytes()
+        except Exception:
+            pass
+    req = urllib.request.Request(url, headers={"User-Agent": "RasterFold-research/1.0 (held-out set)"})
+    data = None
+    for attempt in range(5):
+        try:
+            with urllib.request.urlopen(req, timeout=120) as r:
+                data = r.read()
+            break
+        except Exception as exc:
+            if attempt == 4:
+                raise SystemExit(f"heldout download failed for {url}: {exc}") from exc
+            import time as _time
+            _time.sleep(15 * (attempt + 1))
+    tmp = dest.with_suffix(".tmp")
+    tmp.write_bytes(data)
+    try:
+        with Image.open(tmp) as im:
+            im.load()
+            if im.width < 1280 or im.height < 960:
+                raise SystemExit(f"heldout source too small for {url}: {im.width}x{im.height}")
+    except SystemExit:
+        tmp.unlink(missing_ok=True)
+        raise
+    except Exception as exc:
+        tmp.unlink(missing_ok=True)
+        raise SystemExit(f"heldout download is not a valid image for {url}: {exc}") from exc
+    tmp.replace(dest)
+    return data
+
+
+def _ppm_pixels(ppm_path: Path):
+    data = ppm_path.read_bytes()
+    parts = data.split(b"\n", 3)
+    # P6 header: magic, "w h", maxval, then payload (no comments in our PPMs).
+    dims = parts[1].split()
+    w, h = int(dims[0]), int(dims[1])
+    return w, h, b"\n".join(parts[3:]) if False else data[len(parts[0]) + len(parts[1]) + len(parts[2]) + 3:]
+
+
+def verify_heldout(ppm_dir: Path = PPM) -> list[dict]:
+    """Membership, dimensions, and hash verification against the frozen manifest. No regeneration."""
+    import hashlib
+    if not HELDOUT_MANIFEST.is_file():
+        raise SystemExit("heldout manifest missing: research/heldout.json (run python research/corpus.py to author it)")
+    manifest = json.loads(HELDOUT_MANIFEST.read_text(encoding="utf-8"))
+    entries = manifest["images"]
+    names = [e["name"] for e in entries]
+    photos = [e for e in entries if e["kind"] == "photograph"]
+    shots = [e for e in entries if e["kind"] == "screenshot"]
+    if len(photos) < 30 or len(shots) < 10:
+        raise SystemExit(f"heldout membership: {len(photos)} photographs, {len(shots)} screenshots (need 30 + 10)")
+    if len(names) != len(set(names)):
+        raise SystemExit("heldout membership: duplicate names in manifest")
+    sys.path.insert(0, str(REPO / "research"))
+    import ab
+    if names != ab.SETS["heldout"]:
+        raise SystemExit("heldout membership: manifest names do not match SETS['heldout'] in research/ab.py")
+    for e in entries:
+        ppm_path = ppm_dir / f"{e['name']}.ppm"
+        if not ppm_path.is_file():
+            raise SystemExit(f"heldout missing image: {e['name']}")
+        w, h, pixels = _ppm_pixels(ppm_path)
+        if (w, h) != (1280, 960):
+            raise SystemExit(f"heldout {e['name']}: {w}x{h}, expected 1280x960")
+        if hashlib.sha256(pixels).hexdigest() != e["rgb_sha256"]:
+            raise SystemExit(f"heldout {e['name']}: RGB SHA-256 mismatch against the frozen manifest")
+    print(f"heldout verified: {len(photos)} photographs, {len(shots)} screenshots, hashes match")
+    return entries
+
+
+def _screenshot_pages() -> list[dict]:
+    stage = REPO / "build" / "site-source"
+    subprocess.run([sys.executable, str(REPO / "scripts" / "build-docs.py"), "--stage", "build/site-source"],
+                   cwd=REPO, check=True, capture_output=True, text=True)
+    shells = sorted(Path.home().glob(".cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell"))
+    if not shells:
+        raise SystemExit("heldout screenshots: no cached headless Chromium shell under ~/.cache/ms-playwright")
+    shell = str(shells[-1])
+    version = subprocess.run([shell, "--version"], capture_output=True, text=True).stdout.strip()
+    entries = []
+    html_dir = REPO / "build" / "heldout-html"
+    html_dir.mkdir(parents=True, exist_ok=True)
+    for i, page in enumerate(HELDOUT_PAGES, 1):
+        md = stage / f"{page}.md"
+        if not md.is_file():
+            raise SystemExit(f"heldout screenshot source missing: {md}")
+        r = subprocess.run(["npx", "-y", "markdown-it@14.1.0", str(md)],
+                           capture_output=True, text=True, timeout=120)
+        if r.returncode != 0:
+            raise SystemExit(f"heldout markdown render failed for {page}: {r.stderr[:200]}")
+        html = ("<!DOCTYPE html><html><head><meta charset='utf-8'><style>"
+                "body{font-family:sans-serif;margin:24px;line-height:1.45;color:#111;background:#fff}"
+                "pre,code{background:#f2f2f2}table{border-collapse:collapse}td,th{border:1px solid #999;padding:2px 8px}"
+                "</style></head><body>" + r.stdout + "</body></html>")
+        html_path = html_dir / f"{page}.html"
+        html_path.write_text(html, encoding="utf-8")
+        png = html_dir / f"{page}.png"
+        r = subprocess.run([shell, "--headless", "--disable-gpu", "--hide-scrollbars",
+                            "--window-size=1280,960", f"--screenshot={png}", f"file://{html_path}"],
+                           capture_output=True, text=True, timeout=120)
+        if r.returncode != 0 or not png.is_file():
+            raise SystemExit(f"heldout screenshot failed for {page}: {r.stderr[:200]}")
+        entries.append({"page": page, "png": png, "browser": f"{shell} ({version})"})
+    return entries
+
+
+def heldout(ppm_dir: Path = PPM) -> None:
+    ppm_dir.mkdir(parents=True, exist_ok=True)
+    cache = DATA / "corpus" / "heldout"
+    cache.mkdir(parents=True, exist_ok=True)
+    if HELDOUT_MANIFEST.is_file():
+        manifest = json.loads(HELDOUT_MANIFEST.read_text(encoding="utf-8"))
+        missing = [e for e in manifest["images"] if not (ppm_dir / f"{e['name']}.ppm").is_file()]
+        if not missing:
+            verify_heldout(ppm_dir)
+            return
+        # Regenerate only the missing crops, then verify against the frozen manifest.
+        by_name = {p["name"]: p for p in HELDOUT_PHOTOS}
+        for e in missing:
+            if e["kind"] != "photograph":
+                raise SystemExit(f"heldout screenshot {e['name']} is missing; refusing to change a frozen screenshot set")
+            src = by_name[e["name"]]
+            raw = cache / (e["name"] + ".jpg")
+            data = _download_validated(src["download"], raw)
+            with Image.open(raw) as im:
+                rgb = im.convert("RGB")
+            w, h = rgb.size
+            rgb.crop(((w - 1280) // 2, (h - 960) // 2, (w - 1280) // 2 + 1280, (h - 960) // 2 + 960)).save(ppm_dir / f"{e['name']}.ppm")
+        verify_heldout(ppm_dir)
+        return
+    entries = []
+    for src in HELDOUT_PHOTOS:
+        raw = cache / (src["name"] + ".jpg")
+        import hashlib
+        data = _download_validated(src["download"], raw)
+        with Image.open(raw) as im:
+            rgb = im.convert("RGB")
+        w, h = rgb.size
+        crop = rgb.crop(((w - 1280) // 2, (h - 960) // 2, (w - 1280) // 2 + 1280, (h - 960) // 2 + 960))
+        crop.save(ppm_dir / f"{src['name']}.ppm")
+        import time as _time
+        _time.sleep(3)
+        entries.append({
+            "name": src["name"], "kind": "photograph", "title": src["title"],
+            "source_page": src["page"], "download_url": src["download"],
+            "download_sha256": hashlib.sha256(data).hexdigest(),
+            "licence": src["licence"], "licence_url": src["licence_url"], "author": src["artist"],
+            "licence_verified": "Commons API imageinfo extmetadata at authoring, 2026-11-09",
+            "alteration": "original download, center crop to 1280x960",
+            "rgb_sha256": _rgb_sha256(crop), "width": 1280, "height": 960,
+        })
+        print("heldout", src["name"], flush=True)
+    for i, shot in enumerate(_screenshot_pages(), 1):
+        name = f"ho_s{i:02d}"
+        with Image.open(shot["png"]) as im:
+            rgb = im.convert("RGB")
+        if rgb.size != (1280, 960):
+            raise SystemExit(f"heldout screenshot {name}: {rgb.size}, expected (1280, 960)")
+        rgb.save(ppm_dir / f"{name}.ppm")
+        entries.append({
+            "name": name, "kind": "screenshot", "source_page": f"build/site-source/{shot['page']}.md",
+            "rendered_with": "markdown-it 14.1.0 via npx, minimal owned HTML template",
+            "browser": shot["browser"], "repository_revision": subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=REPO, capture_output=True, text=True).stdout.strip(),
+            "rgb_sha256": _rgb_sha256(rgb), "width": 1280, "height": 960,
+        })
+        print("heldout", name, flush=True)
+    HELDOUT_MANIFEST.write_text(json.dumps(
+        {"set": "heldout", "frozen": True,
+         "note": "Never used to choose a parameter. Later runs verify against these hashes and refuse mismatches without rewriting this file.",
+         "images": entries}, indent=1) + "\n", encoding="utf-8")
+    verify_heldout(ppm_dir)
+
+
 def main() -> None:
     PPM.mkdir(parents=True, exist_ok=True)
     Image.open(REPO / "measure" / "image.bmp").convert("RGB").save(PPM / "measure.ppm")
@@ -169,9 +641,14 @@ def main() -> None:
     for name, w, h, rgb in synthetic():
         Image.frombytes("RGB", (w, h), rgb).save(PPM / f"syn_{name}.ppm")
 
+    heldout(PPM)
+
     update_refs(PPM, DATA / "jxl", DATA / "jxl_refs.json")
     print(f"{len(list(PPM.glob('*.ppm')))} images in {PPM}")
 
 
 if __name__ == "__main__":
-    main()
+    if "--verify-heldout" in sys.argv:
+        verify_heldout()
+    else:
+        main()

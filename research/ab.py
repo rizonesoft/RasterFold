@@ -43,6 +43,7 @@ SETS = {
     "synth": ["syn_solid", "syn_checker", "syn_stripes", "syn_gradient", "syn_noise", "syn_pixel", "syn_ui", "syn_text",
               "syn_diagram", "syn_odd", "syn_wide"],
 }
+SETS["heldout"] = [f"ho_p{i:02d}" for i in range(1, 31)] + [f"ho_s{i:02d}" for i in range(1, 11)]
 SETS["photo"] = ["measure"] + SETS["kodak"] + SETS["ic"]
 SETS["tp-only"] = [n for n in SETS["tp"] if n not in SETS["photo"]]
 SETS["all"] = SETS["photo"] + SETS["tp-only"] + SETS["synth"]
@@ -176,6 +177,8 @@ def image_set_label(name: str) -> str:
         return "tp"
     if name in SETS["synth"]:
         return "synth"
+    if name in SETS["heldout"]:
+        return "heldout"
     raise SystemExit(f"unknown corpus set for image: {name}")
 
 
@@ -299,7 +302,7 @@ def read_corpus_csv(csv_path: Path) -> tuple[dict[str, str], list[dict]]:
         if not img or img in seen_images:
             raise SystemExit(f"duplicate or empty image row in {csv_path}: {img!r}")
         seen_images.add(img)
-        if set_name not in ("photo", "tp", "synth") or image_set_label(img) != set_name:
+        if set_name not in ("photo", "tp", "synth", "heldout") or image_set_label(img) != set_name:
             raise SystemExit(f"invalid set label for {img} in {csv_path}: {set_name!r}")
         try:
             row = {
