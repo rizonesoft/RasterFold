@@ -50,19 +50,27 @@ typedef struct {
     uint16_t symbols[288];
 } huffman;
 
-static int huffman_build(huffman *hf, const uint8_t *lengths, uint32_t n) {
+static int huffman_build(huffman *hf, const uint8_t *lengths, uint32_t n, int allow_incomplete) {
     for (int i = 0; i < 16; i++) hf->counts[i] = 0;
     for (uint32_t i = 0; i < n; i++) {
         if (lengths[i] > 15) return 0;
         hf->counts[lengths[i]]++;
     }
     if (hf->counts[0] == n) return 1; /* no symbols: only an empty dist set may use this */
+    /* Kraft check over every length: oversubscribed at any depth is
+       malformed, and an incomplete code is accepted only as the one
+       permitted single-symbol case (one code of length 1); decoding a
+       missing symbol then fails in huffman_decode. */
+    int32_t left = 1;
+    for (int len = 1; len <= 15; len++) {
+        left <<= 1;
+        left -= (int32_t)hf->counts[len];
+        if (left < 0) return 0;
+    }
+    if (left > 0 && !allow_incomplete && !(n - hf->counts[0] == 1 && hf->counts[1] == 1)) return 0;
     uint32_t offs[16];
     offs[1] = 0;
-    for (int i = 1; i < 15; i++) {
-        offs[i + 1] = offs[i] + hf->counts[i];
-        if (hf->counts[i] && (offs[i] + hf->counts[i]) > (1u << i)) return 0; /* overfull */
-    }
+    for (int i = 1; i < 15; i++) offs[i + 1] = offs[i] + hf->counts[i];
     for (uint32_t i = 0; i < n; i++)
         if (lengths[i]) hf->symbols[offs[lengths[i]]++] = (uint16_t)i;
     return 1;
@@ -131,7 +139,7 @@ static int inflate_block(bitreader *br, const huffman *lit, const huffman *dist,
 int rf_zlib_inflate(const uint8_t *in, size_t size, uint8_t *out, size_t out_size, rf_error *err) {
     if (size < 2) return rf_fail(err, RF_ERR_FORMAT, "invalid zlib: truncated");
     uint32_t cmf = in[0], flg = in[1];
-    if ((cmf * 256u + flg) % 31u != 0 || (cmf & 0x0Fu) != 8u || (flg & 0x20u))
+    if ((cmf * 256u + flg) % 31u != 0 || (cmf & 0x0Fu) != 8u || (flg & 0x20u) || (cmf >> 4) > 7u)
         return rf_fail(err, RF_ERR_FORMAT, "invalid zlib: header");
     if (size < 6) return rf_fail(err, RF_ERR_FORMAT, "invalid zlib: truncated");
     bitreader br = {in + 2, size - 6, 0, 0, 0, 0};
@@ -161,10 +169,10 @@ int rf_zlib_inflate(const uint8_t *in, size_t size, uint8_t *out, size_t out_siz
             if (type == 1) {
                 uint8_t lengths[288];
                 for (int i = 0; i < 288; i++) lengths[i] = (uint8_t)(i < 144 ? 8 : i < 256 ? 9 : i < 280 ? 7 : 8);
-                if (!huffman_build(&lit, lengths, 288)) return rf_fail(err, RF_ERR_FORMAT, "invalid deflate: tables");
+                if (!huffman_build(&lit, lengths, 288, 0)) return rf_fail(err, RF_ERR_FORMAT, "invalid deflate: tables");
                 uint8_t dlengths[30];
                 for (int i = 0; i < 30; i++) dlengths[i] = 5;
-                if (!huffman_build(&dist, dlengths, 30)) return rf_fail(err, RF_ERR_FORMAT, "invalid deflate: tables");
+                if (!huffman_build(&dist, dlengths, 30, 1)) return rf_fail(err, RF_ERR_FORMAT, "invalid deflate: tables");
             } else {
                 uint32_t hlit = take_bits(&br, 5) + 257;
                 uint32_t hdist = take_bits(&br, 5) + 1;
@@ -175,7 +183,7 @@ int rf_zlib_inflate(const uint8_t *in, size_t size, uint8_t *out, size_t out_siz
                 uint8_t clen[19] = {0};
                 for (uint32_t i = 0; i < hclen; i++) clen[ORDER[i]] = (uint8_t)take_bits(&br, 3);
                 huffman chf;
-                if (br.bad || !huffman_build(&chf, clen, 19) || chf.counts[0] == 19)
+                if (br.bad || !huffman_build(&chf, clen, 19, 0) || chf.counts[0] == 19)
                     return rf_fail(err, RF_ERR_FORMAT, "invalid deflate: tables");
                 uint8_t lengths[288 + 30];
                 uint32_t total = hlit + hdist;
@@ -200,11 +208,11 @@ int rf_zlib_inflate(const uint8_t *in, size_t size, uint8_t *out, size_t out_siz
                     if (br.bad || i + repeat > total) return rf_fail(err, RF_ERR_FORMAT, "invalid deflate: tables");
                     while (repeat--) lengths[i++] = value;
                 }
-                if (!huffman_build(&lit, lengths, hlit)) return rf_fail(err, RF_ERR_FORMAT, "invalid deflate: tables");
+                if (!huffman_build(&lit, lengths, hlit, 0)) return rf_fail(err, RF_ERR_FORMAT, "invalid deflate: tables");
                 /* A single distance code of length 1, or an empty distance
                    set with no codes, is legal; an empty set is caught the
                    first time a distance is decoded. */
-                if (!huffman_build(&dist, lengths + hlit, hdist)) return rf_fail(err, RF_ERR_FORMAT, "invalid deflate: tables");
+                if (!huffman_build(&dist, lengths + hlit, hdist, 0)) return rf_fail(err, RF_ERR_FORMAT, "invalid deflate: tables");
             }
             if (!inflate_block(&br, &lit, &dist, out, out_size, &out_pos))
                 return rf_fail(err, RF_ERR_FORMAT, "invalid deflate: data");
@@ -382,154 +390,162 @@ int rf_zlib_deflate(const uint8_t *in, size_t size, uint8_t **out, size_t *out_s
     size_t cap = size + size / 8 + 65536;
     uint8_t *buf = rf_alloc(cap);
     if (!buf) return rf_fail(err, RF_ERR_LIMIT, "out of memory");
-    /* Tokenize: greedy LZ77 with a 3-byte hash and bounded chain walk. */
+    /* Deflate is emitted in bounded blocks so token and history
+       storage stay proportional to the block, not the whole input:
+       a maximum-size image no longer needs a token per input byte
+       held beside four history bytes per input byte. */
+    static const size_t DEFLATE_BLOCK = 1u << 20;
+    size_t block_span = size < DEFLATE_BLOCK ? (size ? size : 1) : DEFLATE_BLOCK;
     typedef struct { uint32_t pos; uint16_t len; uint16_t dist; } token;
-    size_t max_tokens = size + 1;
-    token *tokens = rf_alloc(max_tokens * sizeof(token));
+    token *tokens = rf_alloc((block_span + 1) * sizeof(token));
     int32_t *head = rf_alloc(8192 * sizeof(int32_t));
-    int32_t *prev = rf_alloc((size ? size : 1) * sizeof(int32_t));
+    int32_t *prev = rf_alloc(block_span * sizeof(int32_t));
     if (!tokens || !head || !prev) {
         rf_free(tokens); rf_free(head); rf_free(prev); rf_free(buf);
         return rf_fail(err, RF_ERR_LIMIT, "out of memory");
     }
-    for (int i = 0; i < 8192; i++) head[i] = -1;
-    uint32_t lit_freq[288] = {0};
-    uint32_t dist_freq[30] = {0};
-    size_t ntok = 0;
-    size_t i = 0;
-    while (i < size) {
-        uint32_t best_len = 0, best_dist = 0;
-        if (i + 3 <= size) {
-            uint32_t h = ((uint32_t)in[i] << 16) ^ ((uint32_t)in[i + 1] << 8) ^ in[i + 2];
-            h = (h * 0x9E37u) >> 13;
-            int32_t cand = head[h & 8191u];
-            int32_t budget = 64;
-            while (cand >= 0 && budget-- > 0) {
-                size_t c = (size_t)cand;
-                if (i - c > 32768) break;
-                size_t l = 0;
-                while (i + l < size && l < 258 && in[c + l] == in[i + l]) l++;
-                if (l >= 3 && l > best_len) { best_len = (uint32_t)l; best_dist = (uint32_t)(i - c); if (l >= 258) break; }
-                cand = prev[c];
-            }
-            prev[i] = head[h & 8191u];
-            head[h & 8191u] = (int32_t)i;
-            /* Insert the remaining positions of a taken match lazily: only
-               the match start is hashed, which bounds the walk. */
-        }
-        if (best_len >= 3) {
-            if (best_len > 258) best_len = 258;
-            uint32_t ev;
-            int ls = length_symbol(best_len, &ev);
-            int ds = dist_symbol(best_dist, &ev);
-            tokens[ntok++] = (token){(uint32_t)i, (uint16_t)best_len, (uint16_t)best_dist};
-            lit_freq[ls]++;
-            dist_freq[ds]++;
-            i += best_len;
-        } else {
-            tokens[ntok++] = (token){(uint32_t)i, 0, 0};
-            lit_freq[in[i]]++;
-            i++;
-        }
-    }
-    lit_freq[256]++;
-    uint8_t lit_lengths[288], dist_lengths[30];
-    build_lengths(lit_freq, 288, lit_lengths, 15);
-    build_lengths(dist_freq, 30, dist_lengths, 15);
-    /* Rough bit estimate for fixed versus dynamic, counting the dynamic
-       header at about 5 bits per transmitted length. */
-    double fixed_cost = 0, dynamic_cost = 0;
-    {
-        uint8_t fl[288];
-        for (int k = 0; k < 288; k++) fl[k] = (uint8_t)(k < 144 ? 8 : k < 256 ? 9 : k < 280 ? 7 : 8);
-        for (int k = 0; k < 288; k++) if (lit_freq[k]) fixed_cost += (double)lit_freq[k] * fl[k];
-        for (int k = 0; k < 30; k++) if (dist_freq[k]) fixed_cost += (double)dist_freq[k] * 5;
-        for (int k = 0; k < 288; k++) if (lit_freq[k]) dynamic_cost += (double)lit_freq[k] * (lit_lengths[k] ? lit_lengths[k] : 8);
-        for (int k = 0; k < 30; k++) if (dist_freq[k]) dynamic_cost += (double)dist_freq[k] * (dist_lengths[k] ? dist_lengths[k] : 5);
-        dynamic_cost += 288 * 3 + 30 * 3;
-        /* Extra bits for matches are the same in both modes. */
-        for (size_t k = 0; k < ntok; k++) {
-            if (!tokens[k].len) continue;
-            uint32_t ev;
-            int ls = length_symbol(tokens[k].len, &ev);
-            int ds = dist_symbol(tokens[k].dist, &ev);
-            fixed_cost += LENGTH_EXTRA[ls - 257] + DIST_EXTRA[ds];
-            dynamic_cost += LENGTH_EXTRA[ls - 257] + DIST_EXTRA[ds];
-        }
-    }
-    int use_dynamic = dynamic_cost < fixed_cost && size > 512;
     buf[0] = 0x78;
     buf[1] = 0x9C;
     bitwriter bw = {buf, cap, 2, 0, 0, 0};
-    put_bits(&bw, 1, 1); /* BFINAL */
-    if (!use_dynamic) {
-        put_bits(&bw, 1, 2); /* BTYPE fixed */
-        uint8_t fl[288];
-        for (int k = 0; k < 288; k++) fl[k] = (uint8_t)(k < 144 ? 8 : k < 256 ? 9 : k < 280 ? 7 : 8);
-        uint16_t lit_codes[288], dist_codes[30];
-        lengths_to_codes(fl, 288, lit_codes);
-        uint8_t fd[30];
-        for (int k = 0; k < 30; k++) fd[k] = 5;
-        lengths_to_codes(fd, 30, dist_codes);
-        for (size_t k = 0; k < ntok; k++) {
-            if (!tokens[k].len) {
-                uint32_t v = in[tokens[k].pos];
-                put_code(&bw, lit_codes[v], fl[v]);
+    size_t offset = 0;
+    for (;;) {
+        size_t blen = size - offset < DEFLATE_BLOCK ? size - offset : DEFLATE_BLOCK;
+        int last = offset + blen >= size;
+        const uint8_t *blk = in + offset;
+        /* Tokenize this block: greedy LZ77 with a 3-byte hash and a
+           bounded chain walk; matches never cross the block edge. */
+        for (int i = 0; i < 8192; i++) head[i] = -1;
+        uint32_t lit_freq[288] = {0};
+        uint32_t dist_freq[30] = {0};
+        size_t ntok = 0;
+        size_t i = 0;
+        while (i < blen) {
+            uint32_t best_len = 0, best_dist = 0;
+            if (i + 3 <= blen) {
+                uint32_t h = ((uint32_t)blk[i] << 16) ^ ((uint32_t)blk[i + 1] << 8) ^ blk[i + 2];
+                h = (h * 0x9E37u) >> 13;
+                int32_t cand = head[h & 8191u];
+                int32_t budget = 64;
+                while (cand >= 0 && budget-- > 0) {
+                    size_t c = (size_t)cand;
+                    if (i - c > 32768) break;
+                    size_t l = 0;
+                    while (i + l < blen && l < 258 && blk[c + l] == blk[i + l]) l++;
+                    if (l >= 3 && l > best_len) { best_len = (uint32_t)l; best_dist = (uint32_t)(i - c); if (l >= 258) break; }
+                    cand = prev[c];
+                }
+                prev[i] = head[h & 8191u];
+                head[h & 8191u] = (int32_t)i;
+            }
+            if (best_len >= 3) {
+                if (best_len > 258) best_len = 258;
+                uint32_t ev;
+                int ls = length_symbol(best_len, &ev);
+                int ds = dist_symbol(best_dist, &ev);
+                tokens[ntok++] = (token){(uint32_t)i, (uint16_t)best_len, (uint16_t)best_dist};
+                lit_freq[ls]++;
+                dist_freq[ds]++;
+                i += best_len;
             } else {
-                uint32_t ev_len, ev_dist;
-                int ls = length_symbol(tokens[k].len, &ev_len);
-                int ds = dist_symbol(tokens[k].dist, &ev_dist);
-                put_code(&bw, lit_codes[ls], fl[ls]);
-                if (LENGTH_EXTRA[ls - 257]) put_bits(&bw, ev_len, LENGTH_EXTRA[ls - 257]);
-                put_code(&bw, dist_codes[ds], 5);
-                if (DIST_EXTRA[ds]) put_bits(&bw, ev_dist, DIST_EXTRA[ds]);
+                tokens[ntok++] = (token){(uint32_t)i, 0, 0};
+                lit_freq[blk[i]]++;
+                i++;
             }
         }
-        put_code(&bw, lit_codes[256], fl[256]);
-    } else {
-        put_bits(&bw, 2, 2); /* BTYPE dynamic */
-        uint32_t hlit = 288;
-        while (hlit > 257 && lit_lengths[hlit - 1] == 0) hlit--;
-        uint32_t hdist = 30;
-        while (hdist > 1 && dist_lengths[hdist - 1] == 0) hdist--;
-        /* Code-length code: order the 19 lengths and trim trailing zeros. */
-        static const uint8_t ORDER[19] = {16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
-        uint8_t all[288 + 30];
-        for (int k = 0; k < 288; k++) all[k] = lit_lengths[k];
-        for (int k = 0; k < 30; k++) all[288 + k] = dist_lengths[k];
-        uint32_t cl_freq[19] = {0};
-        for (uint32_t k = 0; k < hlit; k++) cl_freq[all[k]]++;
-        for (uint32_t k = 0; k < hdist; k++) cl_freq[all[288 + k]]++;
-        uint8_t cl_lengths[19];
-        build_lengths(cl_freq, 19, cl_lengths, 7);
-        uint16_t cl_codes[19];
-        lengths_to_codes(cl_lengths, 19, cl_codes);
-        uint32_t hclen = 19;
-        while (hclen > 4 && cl_lengths[ORDER[hclen - 1]] == 0) hclen--;
-        put_bits(&bw, hlit - 257, 5);
-        put_bits(&bw, hdist - 1, 5);
-        put_bits(&bw, hclen - 4, 4);
-        for (uint32_t k = 0; k < hclen; k++) put_bits(&bw, cl_lengths[ORDER[k]], 3);
-        for (uint32_t k = 0; k < hlit; k++) put_code(&bw, cl_codes[all[k]], cl_lengths[all[k]]);
-        for (uint32_t k = 0; k < hdist; k++) put_code(&bw, cl_codes[all[288 + k]], cl_lengths[all[288 + k]]);
-        uint16_t lit_codes[288], dist_codes[30];
-        lengths_to_codes(lit_lengths, 288, lit_codes);
-        lengths_to_codes(dist_lengths, 30, dist_codes);
-        for (size_t k = 0; k < ntok; k++) {
-            if (!tokens[k].len) {
-                uint32_t v = in[tokens[k].pos];
-                put_code(&bw, lit_codes[v], lit_lengths[v]);
-            } else {
-                uint32_t ev_len, ev_dist;
-                int ls = length_symbol(tokens[k].len, &ev_len);
-                int ds = dist_symbol(tokens[k].dist, &ev_dist);
-                put_code(&bw, lit_codes[ls], lit_lengths[ls]);
-                if (LENGTH_EXTRA[ls - 257]) put_bits(&bw, ev_len, LENGTH_EXTRA[ls - 257]);
-                put_code(&bw, dist_codes[ds], dist_lengths[ds]);
-                if (DIST_EXTRA[ds]) put_bits(&bw, ev_dist, DIST_EXTRA[ds]);
+        lit_freq[256]++;
+        uint8_t lit_lengths[288], dist_lengths[30];
+        build_lengths(lit_freq, 288, lit_lengths, 15);
+        build_lengths(dist_freq, 30, dist_lengths, 15);
+        double fixed_cost = 0, dynamic_cost = 0;
+        {
+            uint8_t fl[288];
+            for (int k = 0; k < 288; k++) fl[k] = (uint8_t)(k < 144 ? 8 : k < 256 ? 9 : k < 280 ? 7 : 8);
+            for (int k = 0; k < 288; k++) if (lit_freq[k]) fixed_cost += (double)lit_freq[k] * fl[k];
+            for (int k = 0; k < 30; k++) if (dist_freq[k]) fixed_cost += (double)dist_freq[k] * 5;
+            for (int k = 0; k < 288; k++) if (lit_freq[k]) dynamic_cost += (double)lit_freq[k] * (lit_lengths[k] ? lit_lengths[k] : 8);
+            for (int k = 0; k < 30; k++) if (dist_freq[k]) dynamic_cost += (double)dist_freq[k] * (dist_lengths[k] ? dist_lengths[k] : 5);
+            dynamic_cost += 288 * 3 + 30 * 3;
+            for (size_t k = 0; k < ntok; k++) {
+                if (!tokens[k].len) continue;
+                uint32_t ev;
+                int ls = length_symbol(tokens[k].len, &ev);
+                int ds = dist_symbol(tokens[k].dist, &ev);
+                fixed_cost += LENGTH_EXTRA[ls - 257] + DIST_EXTRA[ds];
+                dynamic_cost += LENGTH_EXTRA[ls - 257] + DIST_EXTRA[ds];
             }
         }
-        put_code(&bw, lit_codes[256], lit_lengths[256]);
+        int use_dynamic = dynamic_cost < fixed_cost && blen > 512;
+        put_bits(&bw, last ? 1 : 0, 1); /* BFINAL on the last block only */
+        if (!use_dynamic) {
+            put_bits(&bw, 1, 2); /* BTYPE fixed */
+            uint8_t fl[288];
+            for (int k = 0; k < 288; k++) fl[k] = (uint8_t)(k < 144 ? 8 : k < 256 ? 9 : k < 280 ? 7 : 8);
+            uint16_t lit_codes[288], dist_codes[30];
+            lengths_to_codes(fl, 288, lit_codes);
+            uint8_t fd[30];
+            for (int k = 0; k < 30; k++) fd[k] = 5;
+            lengths_to_codes(fd, 30, dist_codes);
+            for (size_t k = 0; k < ntok; k++) {
+                if (!tokens[k].len) {
+                    uint32_t v = blk[tokens[k].pos];
+                    put_code(&bw, lit_codes[v], fl[v]);
+                } else {
+                    uint32_t ev_len, ev_dist;
+                    int ls = length_symbol(tokens[k].len, &ev_len);
+                    int ds = dist_symbol(tokens[k].dist, &ev_dist);
+                    put_code(&bw, lit_codes[ls], fl[ls]);
+                    if (LENGTH_EXTRA[ls - 257]) put_bits(&bw, ev_len, LENGTH_EXTRA[ls - 257]);
+                    put_code(&bw, dist_codes[ds], 5);
+                    if (DIST_EXTRA[ds]) put_bits(&bw, ev_dist, DIST_EXTRA[ds]);
+                }
+            }
+            put_code(&bw, lit_codes[256], fl[256]);
+        } else {
+            put_bits(&bw, 2, 2); /* BTYPE dynamic */
+            uint32_t hlit = 288;
+            while (hlit > 257 && lit_lengths[hlit - 1] == 0) hlit--;
+            uint32_t hdist = 30;
+            while (hdist > 1 && dist_lengths[hdist - 1] == 0) hdist--;
+            static const uint8_t ORDER[19] = {16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
+            uint8_t all[288 + 30];
+            for (int k = 0; k < 288; k++) all[k] = lit_lengths[k];
+            for (int k = 0; k < 30; k++) all[288 + k] = dist_lengths[k];
+            uint32_t cl_freq[19] = {0};
+            for (uint32_t k = 0; k < hlit; k++) cl_freq[all[k]]++;
+            for (uint32_t k = 0; k < hdist; k++) cl_freq[all[288 + k]]++;
+            uint8_t cl_lengths[19];
+            build_lengths(cl_freq, 19, cl_lengths, 7);
+            uint16_t cl_codes[19];
+            lengths_to_codes(cl_lengths, 19, cl_codes);
+            uint32_t hclen = 19;
+            while (hclen > 4 && cl_lengths[ORDER[hclen - 1]] == 0) hclen--;
+            put_bits(&bw, hlit - 257, 5);
+            put_bits(&bw, hdist - 1, 5);
+            put_bits(&bw, hclen - 4, 4);
+            for (uint32_t k = 0; k < hclen; k++) put_bits(&bw, cl_lengths[ORDER[k]], 3);
+            for (uint32_t k = 0; k < hlit; k++) put_code(&bw, cl_codes[all[k]], cl_lengths[all[k]]);
+            for (uint32_t k = 0; k < hdist; k++) put_code(&bw, cl_codes[all[288 + k]], cl_lengths[all[288 + k]]);
+            uint16_t lit_codes[288], dist_codes[30];
+            lengths_to_codes(lit_lengths, 288, lit_codes);
+            lengths_to_codes(dist_lengths, 30, dist_codes);
+            for (size_t k = 0; k < ntok; k++) {
+                if (!tokens[k].len) {
+                    uint32_t v = blk[tokens[k].pos];
+                    put_code(&bw, lit_codes[v], lit_lengths[v]);
+                } else {
+                    uint32_t ev_len, ev_dist;
+                    int ls = length_symbol(tokens[k].len, &ev_len);
+                    int ds = dist_symbol(tokens[k].dist, &ev_dist);
+                    put_code(&bw, lit_codes[ls], lit_lengths[ls]);
+                    if (LENGTH_EXTRA[ls - 257]) put_bits(&bw, ev_len, LENGTH_EXTRA[ls - 257]);
+                    put_code(&bw, dist_codes[ds], dist_lengths[ds]);
+                    if (DIST_EXTRA[ds]) put_bits(&bw, ev_dist, DIST_EXTRA[ds]);
+                }
+            }
+            put_code(&bw, lit_codes[256], lit_lengths[256]);
+        }
+        offset += blen;
+        if (last) break;
     }
     flush_bits(&bw);
     if (bw.bad) {

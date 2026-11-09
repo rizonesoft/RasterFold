@@ -1493,16 +1493,47 @@ def png_io() -> None:
     expect_ok(["decode", str(fold), str(out_bmp)])
     check(rf.read_bmp24(out_bmp.read_bytes()) == (w, h, rgb), "PNG-sourced fold decodes differently to BMP")
 
-    # Interlaced (Adam7) input succeeds with exact pixels.
-    iw, ih = 31, 17
-    irgb = bytes(((x * 11 + y * 5 + c * 67) & 255) for y in range(ih) for x in range(iw) for c in range(3))
-    isrc = work / "interlaced.png"
-    Image.frombytes("RGB", (iw, ih), irgb).save(isrc, interlace=True)
-    with Image.open(isrc) as im:
-        check(im.info.get("interlace") in (1, True) or im.format == "PNG", "interlaced fixture was not written")
-    ifold = fresh(work / "interlaced.fold")
-    expect_ok(["encode", str(isrc), str(ifold)])
-    check(rf.decode_image(ifold.read_bytes()) == (iw, ih, irgb), "interlaced PNG pixels differ")
+    # Interlaced (Adam7) input succeeds with exact pixels. The fixture
+    # is built pass by pass here, so its IHDR interlace byte is 1 by
+    # construction (a Pillow save was verified to write interlace 0).
+    def adam7_png(w: int, h: int, rgb: bytes, channels: int = 3) -> bytes:
+        x0 = (0, 4, 0, 2, 0, 1, 0)
+        y0 = (0, 0, 4, 0, 2, 0, 1)
+        dx = (8, 8, 4, 4, 2, 2, 1)
+        dy = (8, 8, 8, 4, 4, 2, 2)
+        raw = bytearray()
+        for p in range(7):
+            pw = (w - x0[p] + dx[p] - 1) // dx[p] if w > x0[p] else 0
+            ph = (h - y0[p] + dy[p] - 1) // dy[p] if h > y0[p] else 0
+            if not pw or not ph:
+                continue
+            for yy in range(ph):
+                raw.append(0)
+                for xx in range(pw):
+                    gx, gy = x0[p] + xx * dx[p], y0[p] + yy * dy[p]
+                    px = rgb[((gy * w + gx) * channels):((gy * w + gx) * channels) + channels]
+                    raw += px
+        ihdr = struct.pack(">IIBBBBB", w, h, 8, 2 if channels == 3 else 6, 0, 0, 1)
+        return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(bytes(raw))) + chunk(b"IEND", b"")
+
+    for (iw, ih) in ((31, 17), (1, 1), (5, 3), (32, 32)):
+        irgb = bytes(((x * 11 + y * 5 + c * 67) & 255) for y in range(ih) for x in range(iw) for c in range(3))
+        isrc = work / f"interlaced_{iw}x{ih}.png"
+        isrc.write_bytes(adam7_png(iw, ih, irgb))
+        with Image.open(isrc) as im:
+            check(im.convert("RGB").tobytes() == irgb, f"Pillow disagrees on the {iw}x{ih} Adam7 fixture")
+        ifold = fresh(work / f"interlaced_{iw}x{ih}.fold")
+        expect_ok(["encode", str(isrc), str(ifold)])
+        check(rf.decode_image(ifold.read_bytes()) == (iw, ih, irgb), f"interlaced {iw}x{ih} PNG pixels differ")
+    argb = bytes(((x * 3 + y * 17 + c * 29) & 255) for y in range(5) for x in range(7) for c in range(3))
+    argba = bytearray()
+    for i in range(0, len(argb), 3):
+        argba += argb[i:i + 3] + b"\xff"
+    asrc7 = work / "interlaced_rgba.png"
+    asrc7.write_bytes(adam7_png(7, 5, bytes(argba), channels=4))
+    afold7 = fresh(work / "interlaced_rgba.fold")
+    expect_ok(["encode", str(asrc7), str(afold7)])
+    check(rf.decode_image(afold7.read_bytes()) == (7, 5, argb), "interlaced RGBA PNG pixels differ")
 
     # Fully opaque RGBA is accepted; any other alpha is refused with 3.
     rgba = bytearray()
@@ -1545,7 +1576,61 @@ def png_io() -> None:
     refusal("badadler.png", badadler, 4, "Adler")
     badfilter_raw = b"\x05" + raw2[1:7] + b"\x00" + raw2[8:]
     refusal("badfilter.png", crafted(2, 2, 8, 2, badfilter_raw), 4, "filter")
+    ihdr2 = struct.pack(">IIBBBBB", 2, 2, 8, 2, 0, 0, 0)
+    refusal("critical.png", b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr2) + chunk(b"ABCD", b"xx") + chunk(b"IDAT", zlib.compress(raw2)) + chunk(b"IEND", b""), 4, "unknown critical chunk")
+    stream2 = zlib.compress(raw2)
+    half = len(stream2) // 2
+    split = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr2) + chunk(b"IDAT", stream2[:half])
+             + chunk(b"tEXt", b"k\x00v") + chunk(b"IDAT", stream2[half:]) + chunk(b"IEND", b""))
+    refusal("splitidat.png", split, 4, "IDAT sequence")
+    refusal("ienddata.png", b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr2) + chunk(b"IDAT", stream2) + chunk(b"IEND", b"x"), 4, "IEND")
+    refusal("trailing.png", crafted(2, 2, 8, 2, raw2) + b"x", 4, "trailing data")
+    refusal("depth3.png", crafted(2, 2, 3, 2, raw2), 4, "bit depth")
+    # A zlib header declaring a window larger than 32K (CINFO 8) is
+    # malformed even when FCHECK is recomputed to match.
+    cmf = 0x88
+    flg = 0
+    while (cmf * 256 + flg) % 31 != 0:
+        flg += 1
+    badcinfo_stream = bytes([cmf, flg]) + stream2[2:]
+    refusal("badcinfo.png", b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr2) + chunk(b"IDAT", badcinfo_stream) + chunk(b"IEND", b""), 4, "invalid zlib")
+    # A dynamic block whose literal code is oversubscribed (three
+    # length-1 codes) must be refused while its tables are read.
+    bits = bytearray()
+    bitpos = [0]
 
+    def put(value: int, n: int) -> None:
+        for i in range(n):
+            at = bitpos[0] // 8
+            while at >= len(bits):
+                bits.append(0)
+            if (value >> i) & 1:
+                bits[at] |= 1 << (bitpos[0] % 8)
+            bitpos[0] += 1
+
+    def put_code(code: int, n: int) -> None:
+        rev = 0
+        for i in range(n):
+            rev = (rev << 1) | ((code >> i) & 1)
+        put(rev, n)
+
+    put(1, 1)          # BFINAL
+    put(2, 2)          # BTYPE dynamic
+    put(0, 5)          # HLIT 257
+    put(0, 5)          # HDIST 1
+    put(14, 4)         # HCLEN 18
+    order = (16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15)
+    cl_lengths = {1: 1, 18: 1}
+    for sym in order[:18]:
+        put(cl_lengths.get(sym, 0), 3)
+    # Canonical CL codes at length 1: symbol 1 -> 0, symbol 18 -> 1.
+    for _ in range(3):
+        put_code(0, 1)             # literal lengths 1, 1, 1
+    put_code(1, 1); put(127, 7)    # 138 zeros (11 + 127)
+    put_code(1, 1); put(106, 7)    # 117 zeros (11 + 106): 255 in all
+    over = bytes(bits)
+    ihdr1 = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+    
 
 def main() -> int:
     if not EXE.exists():

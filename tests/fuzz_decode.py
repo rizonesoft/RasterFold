@@ -467,10 +467,31 @@ def png_seeds() -> list[bytes]:
     buf = io.BytesIO()
     Image.frombytes("RGBA", (w, h), bytes(rgba)).save(buf, format="PNG")
     blobs.append(buf.getvalue())
-    buf = io.BytesIO()
-    Image.frombytes("RGB", (w, h), gradient).save(buf, format="PNG", interlace=True)
-    blobs.append(buf.getvalue())
+    blobs.append(_adam7_png(w, h, gradient))
     return blobs
+
+
+def _adam7_png(w: int, h: int, rgb: bytes) -> bytes:
+    """A genuine Adam7 PNG, built pass by pass with filter-0 rows."""
+    import zlib as _zlib
+
+    x0 = (0, 4, 0, 2, 0, 1, 0)
+    y0 = (0, 0, 4, 0, 2, 0, 1)
+    dx = (8, 8, 4, 4, 2, 2, 1)
+    dy = (8, 8, 8, 4, 4, 2, 2)
+    raw = bytearray()
+    for p in range(7):
+        pw = (w - x0[p] + dx[p] - 1) // dx[p] if w > x0[p] else 0
+        ph = (h - y0[p] + dy[p] - 1) // dy[p] if h > y0[p] else 0
+        if not pw or not ph:
+            continue
+        for yy in range(ph):
+            raw.append(0)
+            for xx in range(pw):
+                gx, gy = x0[p] + xx * dx[p], y0[p] + yy * dy[p]
+                raw += rgb[(gy * w + gx) * 3:(gy * w + gx) * 3 + 3]
+    ihdr = struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 1)
+    return _png_build([(b"IHDR", ihdr), (b"IDAT", _zlib.compress(bytes(raw))), (b"IEND", b"")])
 
 
 def _png_chunks(blob: bytes) -> list[tuple[bytes, bytes]] | None:
@@ -578,6 +599,17 @@ def verify_png_mutation(i: int, blob: bytes) -> tuple[int, str | None]:
 def run_png_fuzz(iterations: int, rng: random.Random) -> int:
     WORK.mkdir(parents=True, exist_ok=True)
     base = png_seeds()
+    # Every unmutated seed is a supported, valid PNG: it must be
+    # accepted with exact pixels, so a reader that refused everything
+    # could not pass this fuzz run.
+    for s, seed in enumerate(base):
+        rc, err = verify_png_mutation(-(s + 1), seed)
+        if err is not None:
+            print(err)
+            return 1
+        if rc != 0:
+            print(f"PNG seed {s} refused with exit {rc}, want 0")
+            return 1
     counts = {0: 0, 3: 0, 4: 0}
     for i in range(iterations):
         blob = mutate_png(base[i % len(base)], rng)

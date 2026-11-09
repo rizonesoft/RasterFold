@@ -30,6 +30,7 @@ int rf_png_load(const uint8_t *f, size_t size, rf_image *out, rf_error *err) {
         if (f[i] != PNG_SIG[i]) return rf_fail(err, RF_ERR_FORMAT, "invalid PNG: signature");
     uint32_t w = 0, h = 0, channels = 0;
     int have_ihdr = 0, have_iend = 0, interlace = 0;
+    int seen_idat = 0, idat_ended = 0;
     uint8_t *idat = 0;
     size_t idat_size = 0, idat_cap = 0;
     size_t pos = 8;
@@ -42,6 +43,8 @@ int rf_png_load(const uint8_t *f, size_t size, rf_image *out, rf_error *err) {
         uint32_t stored_crc = rd_be32(f + pos + 8 + length);
         if (png_crc(type, 4 + (size_t)length) != stored_crc) { rc = rf_fail(err, RF_ERR_FORMAT, "invalid PNG: chunk CRC"); goto done; }
         const uint8_t *data = f + pos + 8;
+        int is_idat = type[0] == 'I' && type[1] == 'D' && type[2] == 'A' && type[3] == 'T';
+        if (seen_idat && !is_idat) idat_ended = 1;
         if (type[0] == 'I' && type[1] == 'H' && type[2] == 'D' && type[3] == 'R') {
             if (pos != 8 || length != 13) { rc = rf_fail(err, RF_ERR_FORMAT, "invalid PNG: IHDR"); goto done; }
             w = rd_be32(data);
@@ -49,6 +52,12 @@ int rf_png_load(const uint8_t *f, size_t size, rf_image *out, rf_error *err) {
             if (w == 0 || h == 0) { rc = rf_fail(err, RF_ERR_FORMAT, "invalid PNG: dimensions"); goto done; }
             if (w > RF_MAX_DIM || h > RF_MAX_DIM || (uint64_t)w * h > RF_MAX_PIXELS) {
                 rc = rf_fail(err, RF_ERR_LIMIT, "image exceeds size limit"); goto done;
+            }
+            if (data[8] != 1 && data[8] != 2 && data[8] != 4 && data[8] != 8 && data[8] != 16) {
+                rc = rf_fail(err, RF_ERR_FORMAT, "invalid PNG: bit depth"); goto done;
+            }
+            if (data[9] != 0 && data[9] != 2 && data[9] != 3 && data[9] != 4 && data[9] != 6) {
+                rc = rf_fail(err, RF_ERR_FORMAT, "invalid PNG: colour type"); goto done;
             }
             if (data[8] != 8) { rc = rf_fail(err, RF_ERR_UNSUPPORTED, "unsupported PNG: bit depth"); goto done; }
             if (data[9] == 2) channels = 3;
@@ -63,6 +72,8 @@ int rf_png_load(const uint8_t *f, size_t size, rf_image *out, rf_error *err) {
             goto done;
         } else if (type[0] == 'I' && type[1] == 'D' && type[2] == 'A' && type[3] == 'T') {
             if (!have_ihdr) { rc = rf_fail(err, RF_ERR_FORMAT, "invalid PNG: IDAT before IHDR"); goto done; }
+            if (idat_ended) { rc = rf_fail(err, RF_ERR_FORMAT, "invalid PNG: IDAT sequence"); goto done; }
+            seen_idat = 1;
             if (idat_size + length > idat_cap) {
                 size_t ncap = (idat_size + length) * 2 + 64;
                 uint8_t *nbuf = rf_alloc(ncap);
@@ -75,9 +86,17 @@ int rf_png_load(const uint8_t *f, size_t size, rf_image *out, rf_error *err) {
             for (uint32_t i = 0; i < length; i++) idat[idat_size + i] = data[i];
             idat_size += length;
         } else if (type[0] == 'I' && type[1] == 'E' && type[2] == 'N' && type[3] == 'D') {
+            if (length != 0) { rc = rf_fail(err, RF_ERR_FORMAT, "invalid PNG: IEND"); goto done; }
+            if ((uint64_t)pos + 12 + length != (uint64_t)size) { rc = rf_fail(err, RF_ERR_FORMAT, "invalid PNG: trailing data"); goto done; }
             have_iend = 1;
             pos += 12 + length;
             break;
+        } else if (type[0] >= 'A' && type[0] <= 'Z' &&
+                   !(type[0] == 'P' && type[1] == 'L' && type[2] == 'T' && type[3] == 'E')) {
+            /* An unknown critical chunk can change how the pixels must
+               be read; only unknown ancillary chunks may be skipped. */
+            rc = rf_fail(err, RF_ERR_FORMAT, "invalid PNG: unknown critical chunk");
+            goto done;
         }
         pos += 12 + length;
     }
@@ -85,19 +104,20 @@ int rf_png_load(const uint8_t *f, size_t size, rf_image *out, rf_error *err) {
     if (idat_size == 0) { rc = rf_fail(err, RF_ERR_FORMAT, "invalid PNG: no image data"); goto done; }
     {
         uint32_t passes = interlace ? 7 : 1;
-        uint8_t *raw = rf_alloc(((size_t)w * channels + 1) * h + 7);
+        /* Compute the exact inflated size across passes; a pass with
+           no pixels in either dimension contributes no filter bytes. */
+        size_t raw_size = 0;
+        for (uint32_t p = 0; p < passes; p++) {
+            uint32_t pw = interlace ? (w > ADAM_X0[p] ? (w - ADAM_X0[p] + ADAM_DX[p] - 1) / ADAM_DX[p] : 0) : w;
+            uint32_t ph = interlace ? (h > ADAM_Y0[p] ? (h - ADAM_Y0[p] + ADAM_DY[p] - 1) / ADAM_DY[p] : 0) : h;
+            if (pw && ph) raw_size += (size_t)ph * ((size_t)pw * channels + 1);
+        }
+        uint8_t *raw = rf_alloc(raw_size ? raw_size : 1);
         uint8_t *rgb = rf_alloc((size_t)w * h * 3);
         if (!raw || !rgb) {
             rf_free(raw); rf_free(rgb);
             rc = rf_fail(err, RF_ERR_LIMIT, "out of memory");
             goto done;
-        }
-        /* Compute the exact inflated size across passes. */
-        size_t raw_size = 0;
-        for (uint32_t p = 0; p < passes; p++) {
-            uint32_t pw = interlace ? (w > ADAM_X0[p] ? (w - ADAM_X0[p] + ADAM_DX[p] - 1) / ADAM_DX[p] : 0) : w;
-            uint32_t ph = interlace ? (h > ADAM_Y0[p] ? (h - ADAM_Y0[p] + ADAM_DY[p] - 1) / ADAM_DY[p] : 0) : h;
-            raw_size += (size_t)ph * ((size_t)pw * channels + 1);
         }
         rc = rf_zlib_inflate(idat, idat_size, raw, raw_size, err);
         if (rc) { rf_free(raw); rf_free(rgb); goto done; }
@@ -107,6 +127,7 @@ int rf_png_load(const uint8_t *f, size_t size, rf_image *out, rf_error *err) {
             uint32_t dx = interlace ? ADAM_DX[p] : 1, dy = interlace ? ADAM_DY[p] : 1;
             uint32_t pw = (w > x0) ? (w - x0 + dx - 1) / dx : 0;
             uint32_t ph = (h > y0) ? (h - y0 + dy - 1) / dy : 0;
+            if (!pw || !ph) continue;
             size_t row_bytes = (size_t)pw * channels;
             const uint8_t *prev = 0;
             for (uint32_t y = 0; y < ph; y++) {
