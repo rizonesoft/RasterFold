@@ -81,6 +81,8 @@ A context model over recently seen colours: a small hash of the last colours per
 > **Review:** `docs/reviews/d01-t06-s2.json`
 ## 3. Copy Runs for Palette Images
 
+> **Started:** 2026-11-09T00:38:30Z
+
 For method 3 (extended palette, the palette method the encoder actually selects; `RF_METHOD_PAL2` in `src/pal.c`), a run token that copies a span of indices from the row above (at offsets -2 to 2) or from the left, coded before the per-pixel decisions. Bar: palette images at least 20% smaller, no photo affected.
 
 **Corrected 2026-11-09:** this section originally named method 2, but the encoder never selects method 2 (`src/fold.c` selects `RF_METHOD_PAL2`, file method 3, when the palette wins, and every palette file measured in §1 is method 3). The run token therefore belongs in the method 3 path of `src/pal.c`; method 2 files remain decode-only legacy. This changes what the encoder writes for method 3, so the four format duties in item 2 apply to method 3.
