@@ -1381,12 +1381,23 @@ def cli_commands() -> None:
         work / "truncstream.fold",
         work / "trailstream.fold",
     ]
-    variants[1].write_bytes(recrc(KAT_FOLD3[:-1]))
-    variants[2].write_bytes(recrc(KAT_FOLD3 + b"\x00"))
+    # Truncated and trailing coded streams: adjust the last stream's size
+    # in the payload's stream table so the container checks all pass and
+    # the refusal comes from stream decoding itself.
+    nstreams = KAT_FOLD3[32]
+    size_at = 33 + 4 * (3 * nstreams - 1)
+    last = struct.unpack_from("<I", KAT_FOLD3, size_at)[0]
+    trunc = bytearray(KAT_FOLD3[:-1])
+    struct.pack_into("<I", trunc, size_at, last - 1)
+    trail = bytearray(KAT_FOLD3 + b"\x00")
+    struct.pack_into("<I", trail, size_at, last + 1)
+    variants[1].write_bytes(recrc(bytes(trunc)))
+    variants[2].write_bytes(recrc(bytes(trail)))
     for path in variants:
         before = path.read_bytes()
         result = run(["verify", str(path)])
-        check(result.returncode != 0, f"verify accepted {path.name}: {result.stdout!r}")
+        check(result.returncode == 4, f"verify on {path.name} exited {result.returncode}, want 4: {result.stdout!r} {result.stderr!r}")
+        check(b"invalid fold" in result.stderr, f"verify diagnostic for {path.name}: {result.stderr!r}")
         check(b"status: ok" not in result.stdout, f"verify reported success for {path.name}")
         check(path.read_bytes() == before, f"verify modified {path.name}")
     # inspect --json: one JSON object on stdout; --json --time is refused.

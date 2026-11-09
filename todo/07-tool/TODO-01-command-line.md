@@ -14,7 +14,7 @@ track: T1
 > **Goal:** `rasterfold.exe` is a complete tool for 1.0: it converts between `.fold` and BMP, PNG, and PPM, verifies files without writing them, reports what a file holds as text or JSON, names its version, and keeps its promise never to overwrite a file unless told to.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-09-29):** The commands are `encode`, `decode`, and `inspect`, with `--time` and `--threads N`; input and output are the 24-bit BMP subset only; an existing target file is always refused; there is no `--version`, no `verify`, no JSON output, and no PNG or PPM support.
+> **Current state (verified 2026-11-09):** The commands are `encode`, `decode`, `inspect`, `verify`, `help`, and `version`, with `--time`, `--threads N`, and `inspect --json`; input and output are the 24-bit BMP subset only, dispatched by extension (PNG and PPM report unsupported until §2 and §3 land); an existing target file is always refused; there is no `--overwrite` (§4) and no PNG or PPM support yet.
 <!-- claim: count "rasterfold inspect \[--time\] \[--json\] input.fold" src/main.c = 2 -->
 <!-- claim: absent src/png.c -->
 

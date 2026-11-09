@@ -46,7 +46,7 @@ static const char help_decode[] =
 
 static const char help_inspect[] =
     "usage: rasterfold inspect [--time] [--json] input.fold" RF_EOL
-    "Print what a .fold file holds without decoding it. --json prints one JSON object and refuses --time." RF_EOL
+    "Print what a .fold file holds, fully validating its payload. --json prints one JSON object and refuses --time." RF_EOL
     "options: --time prints timing statistics (text form only); --json selects the JSON form." RF_EOL
     "exit codes: 0 ok, 1 usage, 2 io, 3 unsupported, 4 malformed, 5 limit" RF_EOL
     "example: rasterfold inspect --json photo.fold" RF_EOL;
@@ -85,12 +85,18 @@ enum { EXT_NONE, EXT_UNKNOWN, EXT_BMP, EXT_PNG, EXT_PPM, EXT_FOLD };
 
 static int ext_of(const rf_path_char *path) {
     if (!path) return EXT_NONE;
-    const rf_path_char *dot = 0;
+    const rf_path_char *base = path;
     for (const rf_path_char *p = path; *p; p++) {
-        if (*p == '.' && p != path) dot = p;
-        if (*p == '/' || *p == '\\') dot = 0;
+        if (*p == '/'
+#ifdef _WIN32
+            || *p == '\\'
+#endif
+        ) base = p + 1;
     }
-    if (!dot || !dot[1]) return EXT_NONE;
+    const rf_path_char *dot = 0;
+    for (const rf_path_char *p = base; *p; p++)
+        if (*p == '.') dot = p;
+    if (!dot || dot == base || !dot[1]) return EXT_NONE;
     char ext[8];
     size_t n = 0;
     for (const rf_path_char *p = dot + 1; *p; p++) {
