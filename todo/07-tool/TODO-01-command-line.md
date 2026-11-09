@@ -49,17 +49,19 @@ track: T1
 
 ## 1. Commands and Options
 
-> **Started:** 2026-11-09T03:40:00Z
+> **Started:** 2026-11-09T03:38:18Z
 
-**Job:** A user can write a document file with `encode` or `decode`, configure the settings (`--threads`, `--overwrite`), and read a summary report from `inspect` or `verify` as text or JSON.
+**Job:** A user can write a document file with `encode` or `decode`, configure the settings (`--threads`; `--overwrite` stays in §4), and read a summary report from `inspect` as text or JSON and from `verify` as text.
 
-- [ ] Add `verify` (decode in memory, check every checksum and the stream ends, print the pixel hash, write nothing), `inspect --json`, `help` (the usage text), and `version` / `--version` (codec version, format versions read and written, API version) to `src/main.c`. Done when: each command's output matches the reference `D08 T03 §1` generates. Cheaper substitute: `verify` implemented as decode to a temporary file.
+**Corrected 2026-11-09 (plan review):** Six gaps are folded in before building. (1) The Job above no longer promises `--overwrite` (it is §4's) or JSON verify output. (2) The help contract is recorded here, not by reference to the later generated page: `rasterfold help` prints the summary (every command, its one-line purpose, the global options, and the exit codes), and `rasterfold help <command>` prints that command's usage line, its options, the exit codes it can return, and one example, for `encode`, `decode`, `inspect`, `verify`, `help`, and `version`; `D08 T03 §1` generates its reference from exactly this output. Product SemVer in `--version` is deferred to `D09 T01 §1`, which owns the single `VERSION` source; here `version` / `--version` prints the format versions read (2, 3) and written (3) and the API version (1.0, `0x00010000`). (3) `inspect --json` refuses `--time` with exit 1, so its stdout stays the one JSON object; text inspect keeps the existing `rf_stat` timing lines. (4) The verify cases are named in the checkpoint below. (5) Extension matrix and precedence: `encode` reads `.bmp` (`.png`/`.ppm` report unsupported with exit 3 until §2/§3, `.fold` input likewise exit 3) and writes `.fold` only (any other known output extension exit 3); `decode` reads `.fold` and writes `.bmp` (`.png`/`.ppm` exit 3 until §2/§3, `.fold` output exit 3); `inspect` and `verify` read `.fold` only (any other known extension exit 3); an unknown extension anywhere is exit 1. Validation order is: usage shape, input extension, the existing destination-blocked check (its exit 2 is unchanged, so encoding a BMP onto itself still returns 2), then output extension. (6) The Freeze check names both known-answer vectors.
+
+- [ ] Add `verify` (decode in memory, check every checksum and the stream ends, print the pixel hash, write nothing), `inspect --json`, `help` (the usage text), and `version` / `--version` (codec version, format versions read and written, API version) to `src/main.c`. Done when: each command's output matches the help contract recorded above. Cheaper substitute: `verify` implemented as decode to a temporary file.
 - [ ] Choose input and output formats by file extension (`.bmp`, `.png`, `.ppm`, `.fold`), refusing an unknown extension with exit 1. Done when: BMP dispatch passes and PNG/PPM report unsupported until their own sections land; their end-to-end cases belong to §2 and §3.
 - [ ] Commit: `"cli: verify, JSON inspect, help, and version"`
 
-**Test checkpoint:** new cases in `tests/test_correctness.py` for each command and each extension pair pass; `python tests/test_correctness.py` passes every case.
+**Test checkpoint:** new cases in `tests/test_correctness.py` for each command and each extension pair pass; verify is proven on valid version 2 and 3 files with the pixel CRC32 calculated independently over the packed top-down RGB, and refused on a bad payload checksum and on truncated and trailing coded-stream bytes with the container checksums recomputed, with no success report printed and the input byte-identical afterwards; `inspect --json` stdout parses as one JSON object and `inspect --json --time` returns exit 1; `python tests/test_correctness.py` passes every case.
 
-**Freeze check:** the commands add no byte to the `.fold` format: `KAT_FOLD` unchanged.
+**Freeze check:** the commands add no byte to the `.fold` format: `KAT_FOLD`, `KAT_FOLD3`, and every oracle comparison are unchanged.
 
 ## 2. PNG In and Out
 
