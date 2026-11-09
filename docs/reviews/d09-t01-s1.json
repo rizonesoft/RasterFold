@@ -1,0 +1,78 @@
+{
+  "ref": "D09 T01 \u00a71",
+  "title": "One Version Source and the Changelog",
+  "implementation_sha": "eb1881b8a8dd3a154a188e4b41d7718ea9386964",
+  "date": "2026-11-09",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/09-release/D09-T01-s1.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "python3 scripts/check-all.py --all-targets -> check-all: 30/30 passed on ecaf4a7; repaired candidate eb1881b rerun 29/30 with only the findings record-format failure, since fixed and re-verified",
+    "tests/test_version.py + tests/test_package.py -> 19 passed, 37 subtests (repaired: test_version 9 passed incl. test_build_paths_verify_header_first)",
+    "rasterfold --version -> product version: 1.0.0, format version written: 3, api version: 1.0 (0x00010000)",
+    "python3 scripts/drift-check.py -> 398 supported documents; 0 error(s)",
+    "python3 scripts/todo-claims.py -> 87 hold, 0 stale"
+  ],
+  "completion": {
+    "report": "docs/reviews/09-release/D09-T01-s1.md",
+    "verdict": "reconciled",
+    "candidate": "eb1881b8a8dd3a154a188e4b41d7718ea9386964",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/09-release/D09-T01-s1.md",
+    "candidate": "746c57b1100045084798fc2b5c15ecd7d24135c3",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "746c57b1100045084798fc2b5c15ecd7d24135c3",
+  "schedule": {
+    "policy": "three-pass",
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}

@@ -41,7 +41,7 @@ track: R1
 
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
-|   1   |   §1    | One version source and the changelog | -- |  [ ]   |
+|   1   |   §1    | One version source and the changelog | -- |  [x]   |
 | 2 | §2 | The four-target release package | §1, D06 T01 §2, D10 T04 §3 | [ ] |
 |   3   |   §3    | The release workflow | §2 |  [ ]   |
 | 4 | §4 | Release rasterfold-v1.0.0 | §3, D05 T01 §9, D10 T04 §4 | [ ] |
@@ -64,6 +64,8 @@ track: R1
 
 **Test checkpoint:** `tests/test_version.py` passes (a seeded header mismatch fails, header regeneration from a prerelease VERSION, the tag matrix including prerelease and build-metadata refusals, clean/dirty/unknown dev labels, and CLI plus build-manifest agreement); a seeded `docs/facts.json` product mismatch fails through drift's generated-facts comparison; `rasterfold --version` prints `product version: 1.0.0` beside format written 3 and API 1.0; changing a fixture manifest's product version makes packaging refuse the stale build; `python3 scripts/drift-check.py` exits 0 (2026-11-09).
 
+> **Verified:** 2026-11-09 | §1 | eb1881b8a8dd3a154a188e4b41d7718ea9386964
+> **Review:** `docs/reviews/d09-t01-s1.json`
 ## 2. The Release Package
 
 **Job:** A user can download one document package holding everything the release ships, with checksums to verify it.
