@@ -67,6 +67,8 @@ track: T1
 > **Review:** `docs/reviews/d07-t01-s1.json`
 ## 2. PNG In and Out
 
+> **Started:** 2026-11-09T10:17:10Z
+
 **Job:** A user can import a PNG, export a PNG, and get identical pixels back (the reverse of every conversion).
 
 PNG needs zlib's inflate and deflate, written here in C without a runtime: inflate complete (every block type, every filter), deflate as a simple greedy LZ77 with fixed and dynamic Huffman codes (the output is lossless; its size is not the point).
