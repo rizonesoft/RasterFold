@@ -9,7 +9,8 @@ int main(int argc, char **argv) {
     if (!in) { perror("input"); return 1; }
     if (fseek(in, 0, SEEK_END)) { fclose(in); return 1; }
     long length = ftell(in);
-    if (length <= 0 || length > 512L * 1024 * 1024 || fseek(in, 0, SEEK_SET)) { fclose(in); return 1; }
+    if (length == 0) { fprintf(stderr, "empty input\n"); fclose(in); return 1; }
+    if (length < 0 || length > 512L * 1024 * 1024 || fseek(in, 0, SEEK_SET)) { fclose(in); return 1; }
     unsigned char *bytes = malloc((size_t)length);
     if (!bytes) { fclose(in); return 1; }
     int valid = fread(bytes, 1, (size_t)length, in) == (size_t)length; fclose(in);

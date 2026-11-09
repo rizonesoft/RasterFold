@@ -125,12 +125,25 @@ class Artifacts(unittest.TestCase):
                 # Refusals: bad magic, non-255 maxval, truncated raster,
                 # malformed .fold, and existing destinations, each with a
                 # diagnostic and no new or changed output.
+                # Separator boundary: with an LF separator, and with a
+                # CRLF separator, a raster beginning with any whitespace
+                # byte or '#' round-trips byte for byte.
+                for tag,ppmheader in (('lf',b'P6\n16 8\n255\n'),('crlf',b'P6\r\n16 8\r\n255\r\n')):
+                    for first in (35,32,9,13,10):
+                        raster=bytes([first])+bytes((i*7+3)&255 for i in range(16*8*3-1))
+                        wsource=temp/f'lead-{tag}-{first}.ppm';wsource.write_bytes(ppmheader+raster)
+                        wenc=temp/f'lead-{tag}-{first}.fold';wdec=temp/f'lead-{tag}-{first}.out.ppm'
+                        for f in (wenc,wdec):f.unlink(missing_ok=True)
+                        run([commands[0],wsource,wenc]);run([commands[1],wenc,wdec])
+                        self.assertEqual(wdec.read_bytes(),b'P6\n16 8\n255\n'+raster,(tag,first))
                 badppm=temp/'bad.ppm';badout=temp/'bad.fold';badout.unlink(missing_ok=True)
-                for blob in (b'P3\n16 8\n255\n'+KAT_RGB,b'P6\n16 8\n65535\n'+KAT_RGB,b'P6\n16 8\n255\n'+KAT_RGB[:10]):
+                raster16=b''.join(bytes((b,b)) for b in KAT_RGB)  # a complete 16-bit raster, so maxval rejection cannot hide behind truncation
+                for blob in (b'P3\n16 8\n255\n'+KAT_RGB,b'P6\n16 8\n65535\n'+raster16,b'P6\n16 8\n255\n'+KAT_RGB[:10]):
                     badppm.write_bytes(blob);refused([commands[0],badppm,badout]);self.assertFalse(badout.exists())
-                badfold=temp/'bad.fold';badfold.write_bytes(KAT_FOLD3[:20])
+                badfold=temp/'bad.fold'
                 badback=temp/'bad.out.ppm';badback.unlink(missing_ok=True)
-                refused([commands[1],badfold,badback]);self.assertFalse(badback.exists())
+                for blob in (KAT_FOLD3[:20],b''):
+                    badfold.write_bytes(blob);refused([commands[1],badfold,badback]);self.assertFalse(badback.exists())
                 before=encoded.read_bytes();refused([commands[0],source,encoded]);self.assertEqual(encoded.read_bytes(),before)
                 beforeppm=decoded.read_bytes();refused([commands[1],encoded,decoded]);self.assertEqual(decoded.read_bytes(),beforeppm)
 

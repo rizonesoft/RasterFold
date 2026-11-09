@@ -1725,12 +1725,12 @@
       }
     },
     "docs/examples.md": {
-      "evidence": "2026-11-09 Re-read docs/examples.md against examples/encode.c, examples/decode.c and examples/ppm.h for D06 T01 section 5: P6-only, maxval exactly 255, 1..65535 dimensions, 100000000 pixel bound, comments and CRLF in the header, exclusive outputs and refusal behaviour; prose updated for the maxval and pixel bounds.",
+      "evidence": "2026-11-09 Re-read docs/examples.md against examples/encode.c and examples/decode.c after the D06 T01 section 5 round fixes: CRLF counts as the one maxval separator, empty .fold input prints a diagnostic, P6/255 bounds and exclusive outputs unchanged in prose.",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/main.c": "0a9f391a283d94e8d63e2a953f7d5c46a6fb4d4fe041c04f060a0118aae4ed4c",
-        "examples/encode.c": "ec11d39245432913d370a7f01b4d01bc508e71719f20b138a965fbfc2822b51c",
-        "examples/decode.c": "3f6ff6cfb0b847f5dae70fd6de5f96b0d49f470283326cf4149c368482639530",
+        "examples/encode.c": "546d3a2b5932008bcf46dce5e1b0f5ef04b3b8d4405cbb5b66ad909a7a844e66",
+        "examples/decode.c": "2983d63583c0424f558b67224a2438e8eea495505eef61f5477bf2ff81f246b8",
         "examples/ppm.h": "9683267ff2b024b14570548e94cfbc0acced5cd7ecd8eba2dab5c69b6677abf6",
         "docs/examples.md": "e3f49cadab393de97bc2cc0ef55b85e05b0c000be54b1bf537f511af3017c747"
       },

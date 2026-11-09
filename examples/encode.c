@@ -1,9 +1,12 @@
 /* Usage: encode input.ppm output.fold. Output must not already exist.
    The PPM subset read here is binary P6 only, maxval exactly 255, each
    dimension 1..65535 and at most 100000000 pixels. The header accepts
-   `#` comments between tokens and CRLF line endings; exactly one
-   whitespace byte separates the maxval from the raster, so a raster
-   whose first byte is whitespace or `#` is preserved as pixels. */
+   `#` comments between tokens and CRLF line endings; a single
+   whitespace character separates the maxval from the raster, where a
+   CRLF pair counts as that one character, so a raster whose first
+   byte is whitespace or `#` is preserved as pixels (a raster cannot
+   begin with an LF byte immediately after a CR separator, because
+   that pair is read as the CRLF separator). */
 #include "rasterfold.h"
 #include "ppm.h"
 
