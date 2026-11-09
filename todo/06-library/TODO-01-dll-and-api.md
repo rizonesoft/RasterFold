@@ -53,6 +53,8 @@ track: L1
 
 ## 1. The Public Header
 
+> **Started:** 2026-11-09T01:59:26Z
+
 **Job:** A developer can choose the settings (the thread count) through an options structure, read a file's inspect report, and receive a notification of every failure as an error code with a message.
 
 The API is a contract that outlives releases, so it is designed before code: plain C, no global state, caller-visible ownership, and a version check.
