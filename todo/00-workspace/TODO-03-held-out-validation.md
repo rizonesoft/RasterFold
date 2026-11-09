@@ -42,6 +42,8 @@ track: W3
 
 ## 1. The Held-Out Set
 
+> **Started:** 2026-11-09T00:53:30Z
+
 **Needs:** Network (downloads)
 
 Photographs come from a second openly licensed source (Wikimedia Commons featured pictures under CC0, CC BY, or CC BY-SA, attribution recorded per file); screenshots are captured locally from the RasterFold HTML docs and other content this repository owns, so no licence question arises. Once added, the set is never used to choose a parameter.
