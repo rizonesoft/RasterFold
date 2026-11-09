@@ -1,6 +1,6 @@
 # Use the RasterFold C API
 
-Include `rasterfold.h` and link one library from the matching target directory. The API is plain C11 with C++ linkage guards. `rf_version()` reports API 1.0 as `0x00010000`; the encoded file format has its own version, currently 2.
+Include `rasterfold.h` and link one library from the matching target directory. The API is plain C11 with C++ linkage guards. `rf_version()` reports API 1.0 as `0x00010000`; the encoded file format has its own version, currently 3.
 
 | Function | Result |
 | --- | --- |

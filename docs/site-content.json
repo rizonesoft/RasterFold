@@ -215,6 +215,15 @@
       "title": "Licenses and Provenance",
       "nav_order": 14,
       "kind": "authored"
+    },
+    {
+      "id": "api",
+      "source": "include/rasterfold.h",
+      "output": "docs/api.md",
+      "staged": "api.md",
+      "title": "API Reference",
+      "nav_order": 15,
+      "kind": "generated"
     }
   ],
   "assets": [

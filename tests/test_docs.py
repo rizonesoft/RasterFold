@@ -41,6 +41,7 @@ FIXTURE_FILES = (
     'docs/installation.md',
     'docs/usage.md',
     'docs/c-api.md',
+    'docs/api.md',
     'docs/format.md',
     'docs/examples.md',
     'docs/benchmarks.md',
@@ -263,6 +264,7 @@ class DocsMapTests(unittest.TestCase):
             'contributing': ('CONTRIBUTING.md', 'docs/contributing.md', 'mirrored'),
             'security': ('SECURITY.md', 'docs/security.md', 'mirrored'),
             'licenses': ('docs/licenses.md', None, 'authored'),
+            'api': ('include/rasterfold.h', 'docs/api.md', 'generated'),
         }
         drift_manifest = json.loads((REPO / 'docs/drift.json').read_text(encoding='utf-8'))
         build_docs_gen = next(g for g in drift_manifest['generators'] if g['script'] == 'scripts/build-docs.py')
@@ -274,7 +276,7 @@ class DocsMapTests(unittest.TestCase):
             self.assertEqual(exp_src, page['source'], pid)
             self.assertEqual(exp_kind, page['kind'], pid)
             self.assertEqual(exp_out, page.get('output'), pid)
-            if exp_kind == 'mirrored':
+            if exp_kind in ('mirrored', 'generated'):
                 self.assertNotEqual(page['source'], page['output'], pid)
                 self.assertIn(exp_out, gen_outputs, f'{pid} output must be registered in docs/drift.json generators')
             else:
@@ -584,7 +586,12 @@ class DocsMapTests(unittest.TestCase):
 
         search_data = json.loads((artifact_dir / 'assets/js/search-data.json').read_text(encoding='utf-8'))
         indexed_urls = {entry['url'].split('#')[0] for entry in search_data.values()}
-        self.assertEqual(14, len(indexed_urls))
+        expected_urls = {
+            '/RasterFold/' if page['staged'] == 'index.md' else f"/RasterFold/{page['staged'][:-3]}.html"
+            for page in site_content['pages']
+        }
+        self.assertEqual(expected_urls, indexed_urls)
+        self.assertIn('/RasterFold/api.html', indexed_urls)
         self.assertNotIn('/RasterFold/404.html', indexed_urls)
         for url in indexed_urls:
             self.assertTrue(url.startswith('/RasterFold/'), url)

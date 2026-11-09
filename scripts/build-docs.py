@@ -29,6 +29,7 @@ REQUIRED_PAGE_IDS = (
     'installation',
     'usage',
     'c-api',
+    'api',
     'format',
     'examples',
     'benchmarks',
@@ -168,11 +169,11 @@ def load_site_content(root: Path) -> dict:
         if src_path in seen_page_sources:
             raise ValueError(f'{SITE_CONTENT}: duplicate page source {src!r}')
         seen_page_sources.add(src_path)
-        if kind not in ('authored', 'mirrored'):
+        if kind not in ('authored', 'mirrored', 'generated'):
             raise ValueError(f'{SITE_CONTENT}: page {page_id!r} has invalid kind {kind!r}')
-        if kind == 'mirrored':
+        if kind in ('mirrored', 'generated'):
             if not isinstance(out, str) or not out:
-                raise ValueError(f'{SITE_CONTENT}: mirrored page {page_id!r} requires an output path')
+                raise ValueError(f'{SITE_CONTENT}: {kind} page {page_id!r} requires an output path')
             out_path = safe_repo_path(root, out)
             if out == src or out_path in canonical_source_paths:
                 target_src = canonical_source_paths.get(out_path, src)
@@ -312,6 +313,155 @@ def render_c_api_page(root: Path, page_meta: dict, mirrored_map: dict[str, str] 
     lib_text = _strip_drift_block_markers(safe_repo_path(root, source_rel).read_text(encoding='utf-8'))
     body = relocate_mirrored_links(lib_text.lstrip(), source_rel, output_rel, mirrored_map)
     return _mirrored_front_matter(page_meta) + body
+
+
+def _header_comment_text(raw: str) -> str:
+    lines = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if line.startswith('*'):
+            line = line[1:].lstrip()
+        lines.append(line)
+    return '\n'.join(lines).strip()
+
+
+def parse_api_header(root: Path, header_rel: str, def_rel: str) -> dict:
+    """Parse the documented subset of the public header.
+
+    Supported: `#define` constants under a shared comment, `typedef struct`
+    types (single-line or multi-line, comma-separated and array fields), and
+    `RF_API` function declarations (possibly multi-line), each preceded by a
+    doc comment. Anything else public fails explicitly rather than being
+    dropped from the reference silently.
+    """
+    text = safe_repo_path(root, header_rel).read_text(encoding='utf-8')
+    def_text = safe_repo_path(root, def_rel).read_text(encoding='utf-8')
+    exports = dict(
+        (name, int(ordinal))
+        for name, ordinal in re.findall(r'(rf_\w+)\s+@(\d+)', def_text)
+    )
+    if not exports:
+        raise ValueError(f'{def_rel}: no exports parsed')
+    intro = None
+    constants: list[dict] = []
+    types: list[dict] = []
+    functions: list[dict] = []
+    comment: str | None = None
+    lines = text.splitlines()
+    i = 0
+
+    def take_statement(start: int, struct: bool = False) -> tuple[str, int]:
+        parts = []
+        j = start
+        while j < len(lines):
+            parts.append(lines[j].strip())
+            joined = ' '.join(parts)
+            if re.search(r'\}\s*[a-z_][a-z0-9_]*\s*;', joined) if struct else ';' in lines[j]:
+                break
+            j += 1
+        return ' '.join(parts), j
+
+    while i < len(lines):
+        line = lines[i].strip()
+        if line.startswith('/*'):
+            raw = line[2:]
+            while '*/' not in raw and i + 1 < len(lines):
+                i += 1
+                raw += '\n' + lines[i]
+            raw = raw.split('*/', 1)[0]
+            if intro is None:
+                intro = _header_comment_text(raw)
+            else:
+                comment = _header_comment_text(raw)
+            i += 1
+            continue
+        if not line or line.startswith('#include') or line in ('#ifdef __cplusplus', '#endif', '}') or line.startswith('extern "C"'):
+            i += 1
+            continue
+        if line.startswith('#ifndef') or line.startswith('#define RASTERFOLD_H'):
+            i += 1
+            continue
+        if line.startswith('#if') or line.startswith('#elif'):
+            # RF_API visibility selection; not part of the documented API.
+            while i < len(lines) and not lines[i].strip().startswith('#else') and '#endif' not in lines[i]:
+                i += 1
+            i += 1
+            continue
+        if line == '#else':
+            while i < len(lines) and '#endif' not in lines[i]:
+                i += 1
+            i += 1
+            continue
+        if line.startswith('#define'):
+            if line == '#define RF_API' or line.startswith('#define RF_API '):
+                i += 1
+                continue
+            m = re.fullmatch(r'#define\s+([A-Z_][A-Z0-9_]*)\s+(.+)', line)
+            if not m:
+                raise ValueError(f'{header_rel}:{i + 1}: unsupported #define: {line}')
+            if m.group(1) == 'RF_API':
+                i += 1
+                continue
+            if comment is None:
+                raise ValueError(f'{header_rel}:{i + 1}: undocumented constant {m.group(1)}')
+            constants.append({'name': m.group(1), 'value': m.group(2).strip(), 'doc': comment})
+            i += 1
+            continue
+        if line.startswith('typedef struct'):
+            if comment is None:
+                raise ValueError(f'{header_rel}:{i + 1}: undocumented type: {line}')
+            stmt, j = take_statement(i, struct=True)
+            m = re.fullmatch(r'typedef struct \{(.*)\}\s*([a-z_][a-z0-9_]*);', stmt)
+            if not m:
+                raise ValueError(f'{header_rel}:{i + 1}: unsupported typedef shape: {stmt}')
+            fields = [f.strip() for f in m.group(1).split(';') if f.strip()]
+            types.append({'name': m.group(2), 'fields': fields, 'doc': comment, 'decl': stmt})
+            comment = None
+            i = j + 1
+            continue
+        if line.startswith('RF_API'):
+            if comment is None:
+                raise ValueError(f'{header_rel}:{i + 1}: undocumented function: {line}')
+            stmt, j = take_statement(i)
+            m = re.fullmatch(r'RF_API\s+(.+?)\s+(rf_\w+)\s*\((.*)\)\s*;', stmt)
+            if not m:
+                raise ValueError(f'{header_rel}:{i + 1}: unsupported function declaration: {stmt}')
+            functions.append({
+                'name': m.group(2),
+                'decl': f'{m.group(1)} {m.group(2)}({m.group(3)});',
+                'doc': comment,
+            })
+            comment = None
+            i = j + 1
+            continue
+        raise ValueError(f'{header_rel}:{i + 1}: unsupported public declaration: {line}')
+    if intro is None:
+        raise ValueError(f'{header_rel}: header contract comment not found')
+    documented = {f['name'] for f in functions}
+    missing = sorted(set(exports) - documented)
+    if missing:
+        raise ValueError(f'{header_rel}: exported function(s) without documentation: {", ".join(missing)}')
+    extra = sorted(documented - set(exports))
+    if extra:
+        raise ValueError(f'{header_rel}: documented function(s) not exported in {def_rel}: {", ".join(extra)}')
+    return {'intro': intro, 'constants': constants, 'types': types, 'functions': functions, 'exports': exports}
+
+
+def render_api_page(root: Path, page_meta: dict) -> str:
+    header_rel = page_meta['source']
+    api = parse_api_header(root, header_rel, 'src/rasterfold.def')
+    out = [f'# C API Reference\n\n{api["intro"]}\n']
+    out.append('## Functions\n')
+    for fn in api['functions']:
+        out.append(f'### `{fn["name"]}`\n\n```c\n{fn["decl"]}\n```\n\n{fn["doc"]}\n')
+    out.append('## Types\n')
+    for ty in api['types']:
+        fields = '\n'.join(f'- `{field};`' for field in ty['fields'])
+        out.append(f'### `{ty["name"]}`\n\n```c\n{ty["decl"]}\n```\n\n{fields}\n\n{ty["doc"]}\n')
+    out.append('## Constants\n')
+    for const in api['constants']:
+        out.append(f'### `{const["name"]}`\n\n```c\n#define {const["name"]} {const["value"]}\n```\n\n{const["doc"]}\n')
+    return _mirrored_front_matter(page_meta) + '\n'.join(out)
 
 
 def render_contributing_page(root: Path, page_meta: dict, mirrored_map: dict[str, str] | None = None) -> str:
@@ -1673,6 +1823,9 @@ def render_generated_pages(root: Path, site_content: dict | None = None) -> dict
         'contributing': render_contributing_page,
         'security': render_security_page,
     }
+    generated_renderers = {
+        'api': render_api_page,
+    }
     mirrored_map = {
         **DEFAULT_MIRRORED_MAP,
         **{
@@ -1683,12 +1836,14 @@ def render_generated_pages(root: Path, site_content: dict | None = None) -> dict
         },
     }
     for page in site_content['pages']:
-        if page.get('kind') != 'mirrored':
+        kind = page.get('kind')
+        if kind not in ('mirrored', 'generated'):
             continue
         page_id = page.get('id')
         output_rel = page.get('output')
-        if page_id not in renderers or not output_rel:
-            raise ValueError(f'unsupported mirrored page entry: {page!r}')
+        renderer_map = renderers if kind == 'mirrored' else generated_renderers
+        if page_id not in renderer_map or not output_rel:
+            raise ValueError(f'unsupported {kind} page entry: {page!r}')
         out_path = safe_repo_path(root, output_rel)
         if out_path in canonical_sources:
             raise ValueError(
@@ -1697,7 +1852,10 @@ def render_generated_pages(root: Path, site_content: dict | None = None) -> dict
         if out_path in seen_outputs:
             raise ValueError(f'{SITE_CONTENT}: duplicate mirrored output path {output_rel!r}')
         seen_outputs.add(out_path)
-        outputs[output_rel] = renderers[page_id](root, page, mirrored_map)
+        if kind == 'mirrored':
+            outputs[output_rel] = renderer_map[page_id](root, page, mirrored_map)
+        else:
+            outputs[output_rel] = renderer_map[page_id](root, page)
     has_chart_config = any('generated/charts/' in entry.get('source', '') for entry in site_content.get('config', []))
     if has_chart_config or ((root / CORPUS_CSV).is_file() and (root / RESULTS_CSV).is_file()):
         outputs.update(render_generated_charts_and_tables(root))

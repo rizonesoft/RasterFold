@@ -1608,21 +1608,21 @@
       "review": "Author-attested: 2026-10-25 re-read docs/building.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/library.md": {
-      "evidence": "2026-11-09: Re-read docs/library.md against include/rasterfold.h for D06 T01 section 1 round fixes (non-overlap preconditions, options refusal codes, stream_size channel order; comments only, no signature or byte changed).",
+      "evidence": "2026-11-09 Corrected the format-version sentence in docs/library.md from 2 to 3 for D08 T03 section 2; the encoder has written version 3 since the version 3 format landed, and docs/c-api.md was regenerated.",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/api.c": "774c4e0a2a22f5a01e174e541cd1e725da05019ece20927345938cbe10fe0f02",
         "src/rasterfold.def": "8beeb2fc7b0e5e95bbe68623dc90732ab5fe6c97abc21026406801773f2ea783",
-        "docs/library.md": "4f520b3bd9184c6937c79869a14460a030b72eb1256b5f01ec27925590a57257"
+        "docs/library.md": "6f896d5099ef0c6db120e4d6c1a3d5caf4bd82bf5fa2be8c75f9acb5b24ae8d7"
       }
     },
     "docs/index.md": {
-      "evidence": "2026-11-09 Re-read docs/index.md against src/main.c after the D07 T01 section 1 round fixes: extension dispatch classifies dotfiles by basename and treats backslash as a separator on Windows only, and inspect help describes full payload validation; no command, message, or exit code changed in prose.",
+      "evidence": "2026-11-09 Re-read docs/index.md against docs/site-content.json and scripts/build-docs.py for D08 T03 section 2: the site gains a generated API Reference page (docs/api.md from include/rasterfold.h, nav_order 15); navigation and inventories in prose remain accurate.",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "c7f9919e34924b6686ce876fd96550d28c39d025ed6233e6f338e03f37ce47a1",
         "src/main.c": "c430d758bd431ec945f9e0aab9288b8f711909f5c5b6eafdcf323d02e163b64f",
-        "docs/site-content.json": "3611e28cba68ff6ac17ace19115ebb014f06140322afcfc32ec39b78128c6f30",
+        "docs/site-content.json": "b96463cde4f9b48008f95150e1e4e90695cd920d17a106a92bf513e71e008400",
         "docs/index.md": "df4d8ce9cefeedba38ef918f995079c831c7156c90d2582002c847ac24174150"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/index.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
@@ -1664,11 +1664,11 @@
       }
     },
     "docs/README.md": {
-      "evidence": "2026-11-06: Re-read against the three-pass review policy in .conclave/reviewers.toml and scripts/review-dispatch.py, and the writers claude, codex, gemini, muse and opencode with reviewers Astra and Argon; the prose states them",
+      "evidence": "2026-11-09 Re-read docs/README.md against docs/site-content.json and scripts/build-docs.py for D08 T03 section 2: the site gains a generated API Reference page (docs/api.md from include/rasterfold.h, nav_order 15); navigation and inventories in prose remain accurate.",
       "sources": {
         "docs/_config.yml": "d2459047e15f142133fb8206900c7921ca9c793559c63c264e7e43dbb1f00522",
-        "docs/site-content.json": "3611e28cba68ff6ac17ace19115ebb014f06140322afcfc32ec39b78128c6f30",
-        "scripts/build-docs.py": "5eb4e86d0d5cf8abee3e6873175f518a97e0c0163ac71d03c247dfc2d0205cd9",
+        "docs/site-content.json": "b96463cde4f9b48008f95150e1e4e90695cd920d17a106a92bf513e71e008400",
+        "scripts/build-docs.py": "6aa441b5240bd188317a9b9837bf4878f413aba85b524b01d36c7dbfe6bf2e26",
         "docs/README.md": "35dddde5d7cbf1f7353813bebd7272749de00d2f705fc277cd4b51cb7b8189a0"
       }
     },
@@ -1780,15 +1780,15 @@
       }
     },
     "docs/404.md": {
-      "evidence": "2026-10-27: Reviewed docs/404.md against its drift sources for D01 T03 section 1 (format version 3 port: encoder writes version 3, decoders accept versions 2 and 3, inspect prints the file version)",
+      "evidence": "2026-11-09 Re-read docs/404.md against docs/site-content.json and scripts/build-docs.py for D08 T03 section 2: the site gains a generated API Reference page (docs/api.md from include/rasterfold.h, nav_order 15); navigation and inventories in prose remain accurate.",
       "sources": {
-        "docs/site-content.json": "3611e28cba68ff6ac17ace19115ebb014f06140322afcfc32ec39b78128c6f30",
+        "docs/site-content.json": "b96463cde4f9b48008f95150e1e4e90695cd920d17a106a92bf513e71e008400",
         "docs/_config.yml": "d2459047e15f142133fb8206900c7921ca9c793559c63c264e7e43dbb1f00522",
         "docs/404.md": "013ab6c1d44954956b54444048f96b973ddccfbb50068f5b4044d6ea08957f90"
       }
     },
     "docs/site-validation.md": {
-      "evidence": "2026-10-27: Reviewed docs/site-validation.md against its drift sources for D01 T03 section 1 (format version 3 port: encoder writes version 3, decoders accept versions 2 and 3, inspect prints the file version)",
+      "evidence": "2026-11-09 Updated the allowlisted page count in docs/site-validation.md from 14 to 15 and named the API Reference for D08 T03 section 2.",
       "sources": {
         "docs/_config.yml": "d2459047e15f142133fb8206900c7921ca9c793559c63c264e7e43dbb1f00522",
         "docs/_includes/head_custom.html": "a3db05eb828ddef58712fcd5fb5525ca905ee9e0e20c4707c8bf910dbc4b21dc",
@@ -1796,8 +1796,8 @@
         "docs/assets/css/site-states.css": "a5b9a1dd538e73cd748b675ec990dec52669f62d7ab414848f88dd9260e9c01e",
         "docs/assets/js/site-states.js": "eddfda79289ae90c93a7576539404fd202f6e49995f435c959fd74535885578d",
         "docs/404.md": "013ab6c1d44954956b54444048f96b973ddccfbb50068f5b4044d6ea08957f90",
-        "docs/site-content.json": "3611e28cba68ff6ac17ace19115ebb014f06140322afcfc32ec39b78128c6f30",
-        "docs/site-validation.md": "b40760049179e6ded4190266f8ffdcfafadb8529ba5f1b6a8610a43e6fabb5b0"
+        "docs/site-content.json": "b96463cde4f9b48008f95150e1e4e90695cd920d17a106a92bf513e71e008400",
+        "docs/site-validation.md": "88ed282fb9ea3369e000b225e447370041b8e2cc49b97010776251d0ba84409f"
       }
     }
   },
@@ -1859,6 +1859,7 @@
         "docs/installation.md",
         "docs/usage.md",
         "docs/c-api.md",
+        "docs/api.md",
         "docs/format.md",
         "docs/research-summary.md",
         "docs/contributing.md",
@@ -1879,8 +1880,7 @@
         "docs/_includes/generated/tables/size-vs-decode.md"
       ],
       "planned_outputs": {
-        "docs/cli.md": "D08 T03 \u00a71",
-        "docs/api.md": "D08 T03 \u00a72"
+        "docs/cli.md": "D08 T03 \u00a71"
       }
     }
   ],
