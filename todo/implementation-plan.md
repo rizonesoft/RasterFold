@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **92 of 243 sections complete (38%).** 243 sections (19 discovered); backlog 4 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **92 of 246 sections complete (37%).** 246 sections (22 discovered); backlog 4 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -261,6 +261,9 @@ Generated and screen content against WebP.
 | [x] | `D01 T06 §1` | Where WebP still wins                           |   4   |
 | [x] | `D01 T06 §2` | A colour-cache model in version 3               |   3   |
 | [x] | `D01 T06 §3` | Copy runs for palette images                    |   3   |
+| [ ] | `D01 T06 §4` | Coding the palette itself for palette images    |   3   |
+| [ ] | `D01 T06 §5` | Above-copy runs for palette images              |   3   |
+| [ ] | `D01 T06 §6` | A neighbour-candidate colour cache in version 3 |   3   |
 | [ ] | `D05 T01 §8` | Milestone 8 gate: Beat WebP on generated images |   5   |
 
 ### Phase 8 -- Milestone 9: Holds on images never tuned on

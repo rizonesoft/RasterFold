@@ -2,7 +2,7 @@
 schema_version: 1
 id: beat-webp-generated
 domain: 01-compression
-status: done
+status: active
 title: "TODO-06 -- Beat WebP on Generated Images"
 depends_on: []
 frozen: true
@@ -38,6 +38,9 @@ track: C6
 |   1   |   §1    | Where WebP still wins | -- |  [x]   |
 |   2   |   §2    | A colour-cache model in version 3 | §1, D01 T03 §1 |  [x]   |
 |   3   |   §3    | Copy runs for palette images | §1, D01 T01 §2 |  [x]   |
+|   4   |   §4    | Coding the palette itself for palette images | §3 |  [ ]   |
+|   5   |   §5    | Above-copy runs for palette images | §3 |  [ ]   |
+|   6   |   §6    | A neighbour-candidate colour cache in version 3 | §2 |  [ ]   |
 
 ---
 
@@ -101,6 +104,60 @@ For method 3 (extended palette, the palette method the encoder actually selects;
 
 > **Verified:** 2026-11-09 | §3 | 9644892a45c33501af8a9905e3e32ac8ad5fff2f
 > **Review:** `docs/reviews/d01-t06-s3.json`
+## 4. Coding the Palette Itself for Palette Images
+
+**Origin:** discovered run=f64ec873f271 2026-11-09 -- Milestone 8 gate (D05 T01 §8) missed its target on 2026-11-09; this is follow-up 1 of up to three under the missed-milestone policy (D99 T01 §4), required by that gate's acceptance bar.
+
+**Needs:** ffmpeg with libjxl (benchmarks)
+
+The palette field is the largest single component on the many-colour generated images: `syn_text` and `syn_diagram` each pay 753 raw palette bytes of 1447 and 1452 total (52%), and `syn_ui` pays 720 of 1410 (`docs/research.md` section 4.13). Section 4.13 named this follow-up in advance: if §2 and §3 both landed and the palette bytes still dominate, coding the palette itself (delta or entropy coding of the triples) is the next experiment. Both landed as negative results and the palette bytes still dominate. Hypothesis: palette triples in first-seen order are predictable (sorted-ish screens, repeated channels), so coding each channel byte with the method 3 range coder under neighbour-palette contexts (previous entry's same channel, channel differences) costs materially less than 3 raw bytes per colour. Non-goal: changing the index stream (that is §5) or the CM coder (that is §6). Prior art: lossless WebP codes its palette with a colour cache and delta coding of the palette entries; JPEG XL modular mode entropy-codes the palette channel. Baseline measured 2026-11-09 at `8160619`: the six palette-coded `synth` images total 4560 (`syn_solid` 61, `syn_checker` 138, `syn_pixel` 52, `syn_ui` 1410, `syn_text` 1447, `syn_diagram` 1452) and `photo` totals 30634873, from `python3 scripts/windows.py research/ab.py size src/cm.c synth -v -t1`.
+
+**Prototype form:** in `build/research/try_pal.c` (a copy of `src/pal.c`), method 3 writes the palette as range-coded channel deltas instead of raw triples: entry 0 raw, each later entry coded as signed differences from the previous entry per channel under adaptive counters shared with the existing palette coder's update rule, in the version 3 palette field only; the decoder reconstructs entries in order and rejects a count or stream that overruns the field. Exactly this one grammar is tested; sorted-palette remapping and per-channel plane coding are different experiments. Acceptance is the six palette-coded `synth` images totalling at most 4104 bytes (10% below the 4560 baseline) with `syn_text` at most 1318 and `syn_diagram` at most 1351 (each within 1.1 times its WebP size), and no `photo` image changed in size beyond +0.05% on the total (any palette-coded photo is quoted per image).
+
+- [ ] Prototype the palette coding as above in `build/research/try_pal.c` and measure the palette images of `synth` and the `photo` set. Done when: the sizes are quoted against the bar.
+- [ ] If accepted, make it part of method 3 in version 3 with `tests/rfi_ref.py` (written from the spec text), `spec/FOLD.md`, and `KAT_PAL2_3`, including version-aware palette dispatch in `src/fold.c` (version 2 method 3 files keep the old grammar: `KAT_PAL2` decodes unchanged through C and oracle on the RGB and strided BMP paths), a fixture whose palette coding actually engages, targeted malformed-palette rejection tests (overlong count, truncated delta stream, valid container checksums), and seeded fuzzing. If not accepted, strike this item with a pointer to the stamp. Done when: the four format places agree or the strike is recorded.
+- [ ] Commit: `"codec: code the palette itself for palette images"`
+
+**Test checkpoint:** the six palette-coded `synth` images' candidate total against the 4560-byte baseline and the at-most-4104 acceptance total, with `syn_text` and `syn_diagram` against 1318 and 1351, and `photo` per-image sizes against baseline, from `python3 scripts/windows.py research/ab.py size build/research/try_pal.c synth -v -t1` and `photo -t1`; on acceptance also `python tests/test_correctness.py` green and `python tests/fuzz_decode.py 300` clean, quoted at the commit. A miss ships as a negative result with a row in `docs/research.md` section 3 and nothing ported.
+
+**Freeze check:** method 3 is part of the unreleased format version 3, so its files may change; `KAT_FOLD` (version 2, method 1) and the method 2 fixtures decode unchanged.
+
+## 5. Above-Copy Runs for Palette Images
+
+**Origin:** discovered run=f64ec873f271 2026-11-09 -- Milestone 8 gate (D05 T01 §8) missed its target on 2026-11-09; this is follow-up 2 of up to three under the missed-milestone policy (D99 T01 §4), required by that gate's acceptance bar.
+
+**Needs:** ffmpeg with libjxl (benchmarks)
+
+§3 measured a left-copy run token and rejected that variant only: "above-copy tokens and other length codes are untested" (`docs/research.md` section 3). The index streams §3 targeted repeat from above as often as from the left (`syn_text` above repeat 97.1%, `syn_diagram` 97.1%, `syn_checker` left/above 93.8%, section 4.13), and `syn_checker` (138 vs WebP 82) cannot be reached by palette coding because its palette field is only 12 bytes. Hypothesis: a run token copying indices from the row above at offsets -2 to 2 captures the vertical structure the left-copy token could not. Non-goal: re-testing §3's left-copy grammar unchanged, or changing the palette field (that is §4). Baseline measured 2026-11-09 at `8160619`: the six palette-coded `synth` images total 4560 and `photo` totals 30634873, from `python3 scripts/windows.py research/ab.py size src/cm.c synth -v -t1`.
+
+**Prototype form:** in `build/research/try_pal.c`, method 3 gains an above-copy token in the index stream: where the coming indices equal the row above's indices at a fixed offset in -2..2 for at least 8 pixels, one flag decision (adaptive counter per neighbour pattern, as in §3) plus a coded offset (5 adaptive counters) and the §3 unary length (`runlen - 8`, counters by position capped at 31) replace the per-pixel decisions; the decoder checks the remaining row width and the row-above bounds before filling, does tail and exhaustion checks inside the unary loop, and keeps exact stream-consumption validation. Every D1-hit path routes through the token exactly as §3 specified (no `prev_key0` bypass, `count == 1` exempt, two-colour shortcut preserved); skipped pixels fill the three-row neighbour buffer and do not update D1 counters. Acceptance is the six palette-coded `synth` images totalling at most 4104 bytes with `syn_checker` at most 114 (within 1.1 times WebP or 32 bytes larger, whichever allows more), and no `photo` image changed in size (any palette-coded photo is quoted per image).
+
+- [ ] Prototype the above-copy token as above in `build/research/try_pal.c` and measure the palette images of `synth` and the `photo` set. Done when: the sizes are quoted against the bar.
+- [ ] If accepted, make it part of method 3 in version 3 with `tests/rfi_ref.py` (written from the spec text), `spec/FOLD.md`, and `KAT_PAL2_3`, including version-aware palette dispatch in `src/fold.c` (`KAT_PAL2` decodes unchanged through C and oracle on both output paths), a fixture that actually exercises an above-copy run, targeted malformed-run rejection tests (overlong, unterminated, and truncated tokens with valid container checksums), and seeded fuzzing. If not accepted, strike this item with a pointer to the stamp. Done when: the four format places agree or the strike is recorded.
+- [ ] Commit: `"codec: above-copy runs for palette images"`
+
+**Test checkpoint:** the six palette-coded `synth` images' candidate total against the 4560-byte baseline and the at-most-4104 acceptance total, with `syn_checker` against 114, and `photo` per-image sizes against baseline, from `python3 scripts/windows.py research/ab.py size build/research/try_pal.c synth -v -t1` and `photo -t1`; on acceptance also `python tests/test_correctness.py` green and `python tests/fuzz_decode.py 300` clean, quoted at the commit. A miss ships as a negative result with a row in `docs/research.md` section 3 and nothing ported.
+
+**Freeze check:** method 3 is part of the unreleased format version 3, so its files may change; `KAT_FOLD` (version 2, method 1) and the method 2 fixtures decode unchanged.
+
+## 6. A Neighbour-Candidate Colour Cache in Version 3
+
+**Origin:** discovered run=f64ec873f271 2026-11-09 -- Milestone 8 gate (D05 T01 §8) missed its target on 2026-11-09; this is follow-up 3 of up to three under the missed-milestone policy (D99 T01 §4), required by that gate's acceptance bar.
+
+**Needs:** ffmpeg with libjxl (benchmarks)
+
+§2 tested a causal predicted-byte colour cache and rejected that variant only: "the neighbour-candidate form is a separate experiment" (`docs/research.md` section 3). The generated set's CM-coded images are the ones §4 and §5 cannot reach, and the gate's geometric mean (1.0007) needs every class moving. Hypothesis: the current colour often equals a neighbour's actual colour (W, N, NE, or the W+N-NE gradient candidate), so a hit decision naming which candidate matches, coded before the channel residuals, is stronger evidence than §2's predicted-byte timestamp. Non-goal: re-testing §2's timestamp cache, or touching the palette methods (those are §4 and §5). Prior art: lossless WebP's colour cache indexes recently used colours; CALIC and JPEG-LS use the gradient candidate as a predictor. Baseline measured 2026-11-09 at `8160619`: `synth` total 201640 (WebP 201248, geomean ratio 1.0007), `photo` 30634873, from `python3 scripts/windows.py research/ab.py size src/cm.c synth -v -t1`. This differs from §2 in the hit definition (actual neighbour colours and the gradient candidate, not the prediction byte's cache timestamp) and in coding all three channels from one hit.
+
+**Prototype form:** in `build/research/try.c` (a copy of `src/cm.c`), before the G residual at each pixel after the first row and column, one hit decision under an adaptive counter per strip: hit when the pixel's colour equals W's, N's, NE's, or the clamped W+N-NE candidate's colour, followed on a hit by a 2-bit candidate index under adaptive counters; on a hit all three channel residuals are skipped and the models see the colour exactly as if it had been coded. State resets per strip exactly as the version 3 models do. Acceptance is the encoder-selected `synth` candidate/baseline geometric mean at most 0.90 with the `photo` total at most 1.0005 times baseline, per-image sizes and selected methods recorded for the CM-coded `synth` images.
+
+- [ ] Prototype the neighbour-candidate cache as above in `build/research/try.c` and measure `synth`, `photo`, and `tp`. Done when: the summary lines are quoted against the bar.
+- [ ] If accepted, port it into the version 3 path of `src/cm.c` with `tests/rfi_ref.py` (written from the spec text), `spec/FOLD.md`, and `KAT_FOLD3`, plus the rejection cases the new decoder path must refuse and seeded fuzzing. If not accepted, strike this item with a pointer to the stamp. Done when: the four format places agree or the strike is recorded.
+- [ ] Commit: `"codec: a neighbour-candidate colour cache for screen content"`
+
+**Test checkpoint:** the generated geometric mean candidate/baseline against the at-most-0.90 bar and the `photo` ratio against at most 1.0005, from `python3 scripts/windows.py research/ab.py size <source> <set> -v -t1` on `synth`, `photo`, and `tp`; on acceptance also `python tests/test_correctness.py` green and `python tests/fuzz_decode.py 300` clean, quoted at the commit. A miss ships as a negative result with a row in `docs/research.md` section 3 and nothing ported.
+
+**Freeze check:** `KAT_FOLD` (version 2) decodes unchanged; the operator's standing approval (`D99 T01 §3`) covers extending the unreleased version 3.
+
 ## Verification
 
 - [ ] `pwsh scripts/check-all.ps1` exits 0

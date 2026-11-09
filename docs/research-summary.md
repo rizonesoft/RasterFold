@@ -92,6 +92,17 @@ giving `synth` total `201,640` vs `226,544` bytes e7 (`0.8901`, geometric mean
 1), and `201,248` bytes for lossless WebP (`1.0019` total, `1.0007` geometric
 mean).
 
+Milestone 8 (Beat WebP on generated images) was measured on
+2026-11-09 and missed: `synth` total `201,640` vs WebP `201,248` (`1.0019`,
+bar below), geometric mean `1.0007` (bar below), and `syn_checker` (`138` vs
+`82`), `syn_text` (`1,447` vs `1,198`), and `syn_diagram` (`1,452` vs `1,228`)
+over the per-image bar (within 1.1 times WebP or at most 32 bytes larger),
+from `python3 scripts/windows.py research/ab.py size src/cm.c synth -v -t1`.
+Under the missed-milestone policy three follow-up experiments
+are filed: coding the palette itself, above-copy runs, and a neighbour-candidate colour cache. The
+gate stays unstamped until a follow-up reaches its bar and the gate is
+re-measured.
+
 Speed: `research/bench.c` measures about 450 CPU cycles per sample on one
 thread (G, R, and B each count as one sample) on the i5-11600K for the 7-model
 version 3 CM coder with 16-node context rows and 16-bit SIMD counter updates,
