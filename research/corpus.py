@@ -508,14 +508,21 @@ def _download_validated(url: str, dest: Path) -> bytes:
             try:
                 _, err_text = proc.communicate(timeout=300)
             except subprocess.TimeoutExpired:
-                proc.terminate()
-                try:
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    proc.wait()
                 part.unlink(missing_ok=True)
                 raise SystemExit(f"heldout download exceeds 300s for {url}")
+            finally:
+                # Every exit, timeout, interruption of the caller
+                # (KeyboardInterrupt), or error, terminates and reaps the
+                # child: the transfer never outlives its parent. The 300
+                # seconds bound the transfer; termination and reaping may
+                # add up to five seconds before the kill escalation.
+                if proc.poll() is None:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.wait()
             if proc.returncode != 0:
                 part.unlink(missing_ok=True)
                 raise SystemExit(f"heldout download failed for {url}: {err_text.strip()}")
