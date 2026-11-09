@@ -353,7 +353,7 @@
     "cmd_inspect": {
       "kind": "regex",
       "source": "src/main.c",
-      "pattern": "^    \"  rasterfold (inspect) \\[--time\\] input\\.fold\" RF_EOL$",
+      "pattern": "^    \"  rasterfold (inspect) \\[--time\\] \\[--json\\] input\\.fold\" RF_EOL$",
       "also_match": [
         {
           "source": "src/main.c",
@@ -383,7 +383,7 @@
         },
         {
           "source": "src/main.c",
-          "pattern": "^    \"  rasterfold inspect \\[--time\\] input(\\.fold)\" RF_EOL$"
+          "pattern": "^    \"  rasterfold inspect \\[--time\\] \\[--json\\] input(\\.fold)\" RF_EOL$"
         }
       ]
     },
@@ -1546,11 +1546,11 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "2026-11-09: Re-read README.md against include/rasterfold.h for D06 T01 section 1 round fixes (non-overlap preconditions, options refusal codes, stream_size channel order; comments only, no signature or byte changed).",
+      "evidence": "2026-11-09 Re-read README.md against src/main.c after D07 T01 section 1: the CLI gains verify, inspect --json, help and help <command>, version and --version, and extension dispatch; exit codes, refusal behaviour, BMP-only conversion and format/API versions unchanged in prose.",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "c7f9919e34924b6686ce876fd96550d28c39d025ed6233e6f338e03f37ce47a1",
-        "src/main.c": "0a9f391a283d94e8d63e2a953f7d5c46a6fb4d4fe041c04f060a0118aae4ed4c",
+        "src/main.c": "7418b8f1a7ebe5de5a4de665cee297ed4f8e912ae66ebf2390c1b07377421100",
         "scripts/build.py": "824893947ad3d19fc1abb9538f5e53e93a12255da94ff5ac38536743715b21fe",
         "scripts/package.py": "b9ef31c48c2c5f7dfdcb22a7b3e5bd1a14c36b84d5d3887f17646bf47eaad199",
         "scripts/check-all.py": "7432d7b4b4eb6c6f499376180fb5576851d1be22db76d7e1375e497e6cbe2637",
@@ -1617,18 +1617,18 @@
       }
     },
     "docs/index.md": {
-      "evidence": "2026-11-09: Re-read docs/index.md against include/rasterfold.h for D06 T01 section 1 round fixes (non-overlap preconditions, options refusal codes, stream_size channel order; comments only, no signature or byte changed).",
+      "evidence": "2026-11-09 Re-read docs/index.md against src/main.c after D07 T01 section 1: the CLI gains verify, inspect --json, help and help <command>, version and --version, and extension dispatch; exit codes, refusal behaviour, BMP-only conversion and format/API versions unchanged in prose.",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "c7f9919e34924b6686ce876fd96550d28c39d025ed6233e6f338e03f37ce47a1",
-        "src/main.c": "0a9f391a283d94e8d63e2a953f7d5c46a6fb4d4fe041c04f060a0118aae4ed4c",
+        "src/main.c": "7418b8f1a7ebe5de5a4de665cee297ed4f8e912ae66ebf2390c1b07377421100",
         "docs/site-content.json": "3611e28cba68ff6ac17ace19115ebb014f06140322afcfc32ec39b78128c6f30",
         "docs/index.md": "df4d8ce9cefeedba38ef918f995079c831c7156c90d2582002c847ac24174150"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/index.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/getting-started.md": {
-      "evidence": "2026-11-09: Re-read docs/getting-started.md against include/rasterfold.h for D06 T01 section 1 round fixes (non-overlap preconditions, options refusal codes, stream_size channel order; comments only, no signature or byte changed).",
+      "evidence": "2026-11-09 Re-read docs/getting-started.md against src/main.c after D07 T01 section 1: the CLI gains verify, inspect --json, help and help <command>, version and --version, and extension dispatch; exit codes, refusal behaviour, BMP-only conversion and format/API versions unchanged in prose.",
       "sources": {
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
         "tools/provision.py": "b17ea42569b76d70edbcc235dbc86385c9c7ce50b1be7a3bb83383c30f848556",
@@ -1637,7 +1637,7 @@
         "scripts/check-all.py": "7432d7b4b4eb6c6f499376180fb5576851d1be22db76d7e1375e497e6cbe2637",
         "scripts/check-all.ps1": "7006b1871b52689461497fa676b3cb6472f0e436c9c5e240deb9da069321a528",
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
-        "src/main.c": "0a9f391a283d94e8d63e2a953f7d5c46a6fb4d4fe041c04f060a0118aae4ed4c",
+        "src/main.c": "7418b8f1a7ebe5de5a4de665cee297ed4f8e912ae66ebf2390c1b07377421100",
         "docs/getting-started.md": "b5600b5480cbad54659f2f5c596586d19def8b29e9e8f14e486a28d6f0664e95"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/getting-started.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
@@ -1725,10 +1725,10 @@
       }
     },
     "docs/examples.md": {
-      "evidence": "2026-11-09 Re-read docs/examples.md against examples/encode.c and examples/decode.c after the D06 T01 section 5 round fixes: CRLF counts as the one maxval separator, empty .fold input prints a diagnostic, P6/255 bounds and exclusive outputs unchanged in prose.",
+      "evidence": "2026-11-09 Re-read docs/examples.md against src/main.c after D07 T01 section 1: the CLI gains verify, inspect --json, help and help <command>, version and --version, and extension dispatch; exit codes, refusal behaviour, BMP-only conversion and format/API versions unchanged in prose.",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
-        "src/main.c": "0a9f391a283d94e8d63e2a953f7d5c46a6fb4d4fe041c04f060a0118aae4ed4c",
+        "src/main.c": "7418b8f1a7ebe5de5a4de665cee297ed4f8e912ae66ebf2390c1b07377421100",
         "examples/encode.c": "546d3a2b5932008bcf46dce5e1b0f5ef04b3b8d4405cbb5b66ad909a7a844e66",
         "examples/decode.c": "2983d63583c0424f558b67224a2438e8eea495505eef61f5477bf2ff81f246b8",
         "examples/ppm.h": "9683267ff2b024b14570548e94cfbc0acced5cd7ecd8eba2dab5c69b6677abf6",
@@ -1737,25 +1737,25 @@
       "review": "Author-attested: 2026-10-25 re-read docs/examples.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/limitations.md": {
-      "evidence": "2026-11-09: Re-read docs/limitations.md against include/rasterfold.h for D06 T01 section 1 round fixes (non-overlap preconditions, options refusal codes, stream_size channel order; comments only, no signature or byte changed).",
+      "evidence": "2026-11-09 Re-read docs/limitations.md against src/main.c after D07 T01 section 1: the CLI gains verify, inspect --json, help and help <command>, version and --version, and extension dispatch; exit codes, refusal behaviour, BMP-only conversion and format/API versions unchanged in prose.",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "c7f9919e34924b6686ce876fd96550d28c39d025ed6233e6f338e03f37ce47a1",
-        "src/main.c": "0a9f391a283d94e8d63e2a953f7d5c46a6fb4d4fe041c04f060a0118aae4ed4c",
+        "src/main.c": "7418b8f1a7ebe5de5a4de665cee297ed4f8e912ae66ebf2390c1b07377421100",
         "src/fold.c": "7cecdf9622aa6d98be195cf43b1e77de7f9676f2a7c1f1129cc08dbe7497e8aa",
         "src/bmp.c": "50278e51120542ec686aee00385eba666239070533035e5d04e7d659b118317c",
         "src/api.c": "774c4e0a2a22f5a01e174e541cd1e725da05019ece20927345938cbe10fe0f02",
         "src/sys_posix.c": "507270096bb20f63a07fd0176551a6fc7dd37ee7ce441b6a5a3e57f00bcb6792",
-        "docs/limitations.md": "68cf87dfe7a79a053dfca4c7de7904c5f1d74d0d74e1b0cee6fd8636517044c2"
+        "docs/limitations.md": "65e474f460c16ea64f0b6e5943d81076fec47d802dd86eb180cc7495290c1bc6"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/limitations.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/troubleshooting.md": {
-      "evidence": "2026-11-09: Re-read docs/troubleshooting.md against include/rasterfold.h for D06 T01 section 1 round fixes (non-overlap preconditions, options refusal codes, stream_size channel order; comments only, no signature or byte changed).",
+      "evidence": "2026-11-09 Re-read docs/troubleshooting.md against src/main.c after D07 T01 section 1: the CLI gains verify, inspect --json, help and help <command>, version and --version, and extension dispatch; exit codes, refusal behaviour, BMP-only conversion and format/API versions unchanged in prose.",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "c7f9919e34924b6686ce876fd96550d28c39d025ed6233e6f338e03f37ce47a1",
-        "src/main.c": "0a9f391a283d94e8d63e2a953f7d5c46a6fb4d4fe041c04f060a0118aae4ed4c",
+        "src/main.c": "7418b8f1a7ebe5de5a4de665cee297ed4f8e912ae66ebf2390c1b07377421100",
         "src/fold.c": "7cecdf9622aa6d98be195cf43b1e77de7f9676f2a7c1f1129cc08dbe7497e8aa",
         "src/bmp.c": "50278e51120542ec686aee00385eba666239070533035e5d04e7d659b118317c",
         "src/api.c": "774c4e0a2a22f5a01e174e541cd1e725da05019ece20927345938cbe10fe0f02",

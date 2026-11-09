@@ -1355,12 +1355,81 @@ def gated_gradient() -> None:
     check(not missing, f"gated-gradient boundaries never reached: {missing} (counts {rf.GG_STATS})")
 
 
+def cli_commands() -> None:
+    import json
+
+    work = WORK / "cli"
+    work.mkdir(parents=True, exist_ok=True)
+    v3 = work / "kat3.fold"
+    v3.write_bytes(KAT_FOLD3)
+    v2 = work / "kat2.fold"
+    v2.write_bytes(KAT_FOLD)
+    want_hash = f"pixel_crc32: 0x{zlib.crc32(KAT_RGB) & 0xFFFFFFFF:08x}".encode()
+    for path in (v3, v2):
+        result = expect_ok(["verify", str(path)])
+        check(want_hash in result.stdout, f"verify hash for {path}: {result.stdout!r}")
+        check(b"status: ok" in result.stdout, f"verify status for {path}")
+    # verify refuses a bad payload checksum and stream damage hidden behind
+    # recomputed container checksums, prints no success report, and leaves
+    # the input byte-identical.
+    payload = bytearray(KAT_FOLD3[32:])
+    payload[-1] ^= 0xFF
+    bad_crc = work / "badcrc.fold"
+    bad_crc.write_bytes(KAT_FOLD3[:32] + bytes(payload))
+    variants = [
+        bad_crc,
+        work / "truncstream.fold",
+        work / "trailstream.fold",
+    ]
+    variants[1].write_bytes(recrc(KAT_FOLD3[:-1]))
+    variants[2].write_bytes(recrc(KAT_FOLD3 + b"\x00"))
+    for path in variants:
+        before = path.read_bytes()
+        result = run(["verify", str(path)])
+        check(result.returncode != 0, f"verify accepted {path.name}: {result.stdout!r}")
+        check(b"status: ok" not in result.stdout, f"verify reported success for {path.name}")
+        check(path.read_bytes() == before, f"verify modified {path.name}")
+    # inspect --json: one JSON object on stdout; --json --time is refused.
+    result = expect_ok(["inspect", "--json", str(v3)])
+    report = json.loads(result.stdout.decode())
+    check(report["width"] == KAT_W and report["height"] == KAT_H, f"json dims: {report}")
+    check(report["method"] == "cm" and report["version"] == 3, f"json method/version: {report}")
+    check(report["status"] == "ok", f"json status: {report}")
+    expect_fail(["inspect", "--json", "--time", str(v3)], 1, "usage")
+    # help and version.
+    for args, text in [
+        (["help"], b"verify"),
+        (["--help"], b"verify"),
+        (["help", "encode"], b"rasterfold encode"),
+        (["help", "verify"], b"CRC32 of the decoded pixels"),
+        (["version"], b"api version: 1.0"),
+        (["--version"], b"format version written: 3"),
+    ]:
+        result = expect_ok(list(args))
+        check(text in result.stdout, f"{args} missing {text!r}: {result.stdout!r}")
+    expect_fail(["help", "bogus"], 1, "usage")
+    # Extension dispatch: known formats in the wrong place report
+    # unsupported (3); unknown extensions are usage errors (1).
+    bmp = work / "pic.bmp"
+    bmp.write_bytes(rf.write_bmp24(KAT_W, KAT_H, KAT_RGB))
+    expect_fail(["encode", str(v3), str(work / "x.fold")], 3, "unsupported input format")
+    expect_fail(["encode", str(bmp), str(work / "x.bmp")], 3, "unsupported output format")
+    expect_fail(["encode", str(bmp), str(work / "x.gif")], 1, "usage")
+    expect_fail(["decode", str(v3), str(work / "x.png")], 3, "unsupported output format")
+    expect_fail(["inspect", str(bmp)], 3, "unsupported input format")
+    expect_fail(["inspect", str(work / "x.gif")], 1, "usage")
+    png_named = work / "in.png"
+    png_named.write_bytes(bmp.read_bytes())
+    expect_fail(["encode", str(png_named), str(work / "x2.fold")], 3, "unsupported input format")
+
+
 def main() -> int:
     if not EXE.exists():
         print(f"missing {EXE}; run build.ps1 first")
         return 1
     WORK.mkdir(parents=True, exist_ok=True)
     case("oracle", oracle_self_check)
+    case("cli-commands", cli_commands)
     case("known-answer", known_answer)
     images = [
         ("px1", 1, 1, bytes([0, 0, 0])),

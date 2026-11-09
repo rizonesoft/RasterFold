@@ -16,9 +16,101 @@ static const char usage_text[] =
     "usage:" RF_EOL
     "  rasterfold encode [--time] [--threads N] input.bmp output.fold" RF_EOL
     "  rasterfold decode [--time] [--threads N] input.fold output.bmp" RF_EOL
-    "  rasterfold inspect [--time] input.fold" RF_EOL
+    "  rasterfold inspect [--time] [--json] input.fold" RF_EOL
+    "  rasterfold verify [--threads N] input.fold" RF_EOL
+    "  rasterfold help [command]" RF_EOL
+    "  rasterfold version" RF_EOL
+    "commands:" RF_EOL
+    "  encode   encode a BMP image into a .fold file" RF_EOL
+    "  decode   decode a .fold file into a BMP image" RF_EOL
+    "  inspect  print what a .fold file holds, as text or JSON" RF_EOL
+    "  verify   decode a .fold file in memory and print its pixel hash; writes nothing" RF_EOL
+    "  help     print this summary, or one command's usage with `help <command>`" RF_EOL
+    "  version  print the format and API versions" RF_EOL
     "--threads 1 codes on one thread; the default uses up to 9 when the CPU has them." RF_EOL
     "exit codes: 0 ok, 1 usage, 2 io, 3 unsupported, 4 malformed, 5 limit" RF_EOL;
+
+static const char help_encode[] =
+    "usage: rasterfold encode [--time] [--threads N] input.bmp output.fold" RF_EOL
+    "Encode a 24-bit BMP image into a .fold file. The output must not already exist." RF_EOL
+    "options: --time prints timing statistics; --threads N codes on N threads (1 to 9)." RF_EOL
+    "exit codes: 0 ok, 1 usage, 2 io, 3 unsupported, 4 malformed, 5 limit" RF_EOL
+    "example: rasterfold encode photo.bmp photo.fold" RF_EOL;
+
+static const char help_decode[] =
+    "usage: rasterfold decode [--time] [--threads N] input.fold output.bmp" RF_EOL
+    "Decode a .fold file into a 24-bit BMP image. The output must not already exist." RF_EOL
+    "options: --time prints timing statistics; --threads N codes on N threads (1 to 9)." RF_EOL
+    "exit codes: 0 ok, 1 usage, 2 io, 3 unsupported, 4 malformed, 5 limit" RF_EOL
+    "example: rasterfold decode photo.fold photo.bmp" RF_EOL;
+
+static const char help_inspect[] =
+    "usage: rasterfold inspect [--time] [--json] input.fold" RF_EOL
+    "Print what a .fold file holds without decoding it. --json prints one JSON object and refuses --time." RF_EOL
+    "options: --time prints timing statistics (text form only); --json selects the JSON form." RF_EOL
+    "exit codes: 0 ok, 1 usage, 2 io, 3 unsupported, 4 malformed, 5 limit" RF_EOL
+    "example: rasterfold inspect --json photo.fold" RF_EOL;
+
+static const char help_verify[] =
+    "usage: rasterfold verify [--threads N] input.fold" RF_EOL
+    "Decode a .fold file in memory, checking every checksum and stream end, and print the CRC32 of the decoded pixels. Writes nothing." RF_EOL
+    "options: --threads N decodes on N threads (1 to 9)." RF_EOL
+    "exit codes: 0 ok, 1 usage, 2 io, 3 unsupported, 4 malformed, 5 limit" RF_EOL
+    "example: rasterfold verify photo.fold" RF_EOL;
+
+static const char help_help[] =
+    "usage: rasterfold help [command]" RF_EOL
+    "Print the command summary, or one command's usage, options, exit codes, and example." RF_EOL
+    "exit codes: 0 ok, 1 usage" RF_EOL
+    "example: rasterfold help encode" RF_EOL;
+
+static const char help_version[] =
+    "usage: rasterfold version" RF_EOL
+    "Print the .fold format versions this build reads and writes and the C API version. --version is the same command." RF_EOL
+    "exit codes: 0 ok, 1 usage" RF_EOL
+    "example: rasterfold version" RF_EOL;
+
+static void print_fold_version(uint32_t fold_version) {
+    rf_print(0, fold_version == 3 ? "RasterFold fold version 3" RF_EOL : "RasterFold fold version 2" RF_EOL);
+}
+
+static void print_version(void) {
+    rf_print(0, "RasterFold codec" RF_EOL);
+    rf_print(0, "format versions read: 2, 3" RF_EOL);
+    rf_print(0, "format version written: 3" RF_EOL);
+    rf_print(0, "api version: 1.0 (0x00010000)" RF_EOL);
+}
+
+enum { EXT_NONE, EXT_UNKNOWN, EXT_BMP, EXT_PNG, EXT_PPM, EXT_FOLD };
+
+static int ext_of(const rf_path_char *path) {
+    const rf_path_char *dot = 0;
+    for (const rf_path_char *p = path; *p; p++) {
+        if (*p == '.' && p != path) dot = p;
+        if (*p == '/' || *p == '\\') dot = 0;
+    }
+    if (!dot || !dot[1]) return EXT_NONE;
+    char ext[8];
+    size_t n = 0;
+    for (const rf_path_char *p = dot + 1; *p; p++) {
+        if (n + 1 >= sizeof ext) return EXT_UNKNOWN;
+        rf_path_char c = *p;
+        if (c > 127) return EXT_UNKNOWN;
+        if (c >= 'A' && c <= 'Z') c = (rf_path_char)(c - 'A' + 'a');
+        ext[n++] = (char)c;
+    }
+    ext[n] = 0;
+    {
+        static const char *const names[] = {"bmp", "png", "ppm", "fold"};
+        static const int kinds[] = {EXT_BMP, EXT_PNG, EXT_PPM, EXT_FOLD};
+        for (int k = 0; k < 4; k++) {
+            size_t i = 0;
+            while (names[k][i] && ext[i] == names[k][i]) i++;
+            if (!names[k][i] && !ext[i]) return kinds[k];
+        }
+    }
+    return EXT_UNKNOWN;
+}
 
 static int wide_eq(const rf_path_char *a, const char *b) {
     while (*a && *a == (uint8_t)*b) { a++; b++; }
@@ -49,11 +141,14 @@ static void info_hex(const char *key, uint32_t v) {
 
 static int run(int argc, rf_path_char **argv, rf_error *err) {
     rf_path_char *pos[3] = {0, 0, 0};
-    int npos = 0, timing = 0;
+    int npos = 0, timing = 0, json = 0, want_help = 0, want_version = 0;
     int ncpu = rf_cpu_count();
     int threads = ncpu < 1 ? 1 : (ncpu > 9 ? 9 : ncpu);
     for (int i = 1; i < argc; i++) {
         if (wide_eq(argv[i], "--time")) { timing = 1; continue; }
+        if (wide_eq(argv[i], "--json")) { json = 1; continue; }
+        if (wide_eq(argv[i], "--help")) { want_help = 1; continue; }
+        if (wide_eq(argv[i], "--version")) { want_version = 1; continue; }
         if (wide_eq(argv[i], "--threads")) {
             if (i + 1 >= argc) return -1;
             const rf_path_char *v = argv[++i];
@@ -64,13 +159,54 @@ static int run(int argc, rf_path_char **argv, rf_error *err) {
         if (npos == 3) return -1;
         pos[npos++] = argv[i];
     }
+    if (want_help || want_version) {
+        if (npos != 0 || timing || json) return -1;
+        if (want_help && want_version) return -1;
+        if (want_help) rf_print(0, usage_text);
+        else print_version();
+        return RF_OK;
+    }
     if (npos == 0) return -1;
-    int encode = wide_eq(pos[0], "encode"), decode = wide_eq(pos[0], "decode"), inspect = wide_eq(pos[0], "inspect");
-    if (!(encode || decode || inspect) || npos != (inspect ? 2 : 3)) return -1;
+    if (wide_eq(pos[0], "help")) {
+        if (json || timing || npos > 2) return -1;
+        if (npos == 1) { rf_print(0, usage_text); return RF_OK; }
+        if (wide_eq(pos[1], "encode")) rf_print(0, help_encode);
+        else if (wide_eq(pos[1], "decode")) rf_print(0, help_decode);
+        else if (wide_eq(pos[1], "inspect")) rf_print(0, help_inspect);
+        else if (wide_eq(pos[1], "verify")) rf_print(0, help_verify);
+        else if (wide_eq(pos[1], "help")) rf_print(0, help_help);
+        else if (wide_eq(pos[1], "version")) rf_print(0, help_version);
+        else return -1;
+        return RF_OK;
+    }
+    if (wide_eq(pos[0], "version")) {
+        if (json || timing || npos != 1) return -1;
+        print_version();
+        return RF_OK;
+    }
+    int encode = wide_eq(pos[0], "encode"), decode = wide_eq(pos[0], "decode"), inspect = wide_eq(pos[0], "inspect"), verify = wide_eq(pos[0], "verify");
+    if (!(encode || decode || inspect || verify) || npos != ((inspect || verify) ? 2 : 3)) return -1;
+    if (json && !inspect) return -1;
+    if (json && timing) return -1;
+    if (verify && timing) return -1;
 
     if (rf_crc32((const uint8_t *)"123456789", 9) != 0xCBF43926u)
         return rf_fail(err, RF_ERR_LIMIT, "internal self-test failed");
-    if (!inspect && rf_path_blocked(pos[2], err)) return err->code;
+    {
+        int in_ext = ext_of(pos[1]);
+        int want_in = encode ? EXT_BMP : EXT_FOLD;
+        if (in_ext == EXT_UNKNOWN) return -1;
+        if (in_ext != EXT_NONE && in_ext != want_in)
+            return rf_fail(err, RF_ERR_UNSUPPORTED, encode ? "unsupported input format: encode reads .bmp" : "unsupported input format: this command reads .fold");
+        if ((encode || decode) && rf_path_blocked(pos[2], err)) return err->code;
+        if (encode || decode) {
+            int out_ext = ext_of(pos[2]);
+            int want_out = encode ? EXT_FOLD : EXT_BMP;
+            if (out_ext == EXT_UNKNOWN) return -1;
+            if (out_ext != EXT_NONE && out_ext != want_out)
+                return rf_fail(err, RF_ERR_UNSUPPORTED, encode ? "unsupported output format: encode writes .fold" : "unsupported output format: decode writes .bmp");
+        }
+    }
 
     uint64_t t0 = rf_ticks(), t1, t2, t3, t4;
     uint8_t *file = 0, *out = 0;
@@ -102,6 +238,21 @@ static int run(int argc, rf_path_char **argv, rf_error *err) {
             ? (uint32_t)file[RF_HEADER_SIZE] + ((uint32_t)file[RF_HEADER_SIZE + 1] << 8) + 1u
             : 0u;
         uint32_t fold_version = file_size >= 4 ? file[3] : 0;
+        if (verify) {
+            rf_pixels pixels = {0, 0, 0, 0, 0, 0};
+            rc = rf_decode_image(file, file_size, &options, &pixels, err);
+            rf_free(file);
+            file = 0;
+            t3 = rf_ticks();
+            if (rc) goto done;
+            print_fold_version(fold_version);
+            info_line("width", pixels.width);
+            info_line("height", pixels.height);
+            info_hex("pixel_crc32", rf_crc32((const uint8_t *)pixels.data, pixels.size));
+            rf_print(0, "status: ok" RF_EOL);
+            rf_free(pixels.data);
+            goto timing_out;
+        }
         if (inspect) rc = rf_inspect(file, file_size, &info, err);
         else rc = rf_decode_bmp(file, file_size, &out, &out_size, threads, err);
         rf_free(file);
@@ -111,8 +262,42 @@ static int run(int argc, rf_path_char **argv, rf_error *err) {
         if (decode) {
             rc = rf_write_atomic(pos[2], out, out_size, err);
             written = out_size;
+        } else if (json) {
+            const char *method = info.method == RF_METHOD_CM ? "cm" :
+                (info.method == RF_METHOD_PAL || info.method == RF_METHOD_PAL2) ? "palette" : "raw";
+            rf_print(0, "{\"version\": ");
+            rf_print_u64(0, fold_version);
+            rf_print(0, ", \"width\": ");
+            rf_print_u64(0, info.width);
+            rf_print(0, ", \"height\": ");
+            rf_print_u64(0, info.height);
+            rf_print(0, ", \"method\": \"");
+            rf_print(0, method);
+            rf_print(0, "\", \"uncompressed_rgb_bytes\": ");
+            rf_print_u64(0, (uint64_t)info.width * info.height * 3);
+            rf_print(0, ", \"payload_size\": ");
+            rf_print_u64(0, info.payload_size);
+            rf_print(0, ", \"file_size\": ");
+            rf_print_u64(0, file_size);
+            rf_print(0, ", \"payload_crc32\": \"0x");
+            rf_print_hex32(0, info.payload_crc);
+            rf_print(0, "\", \"header_crc32\": \"0x");
+            rf_print_hex32(0, info.header_crc);
+            rf_print(0, "\"");
+            if (info.method == RF_METHOD_CM) {
+                rf_print(0, ", \"stream_g\": ");
+                rf_print_u64(0, info.stream_size[0]);
+                rf_print(0, ", \"stream_r\": ");
+                rf_print_u64(0, info.stream_size[1]);
+                rf_print(0, ", \"stream_b\": ");
+                rf_print_u64(0, info.stream_size[2]);
+            } else if (info.method == RF_METHOD_PAL || info.method == RF_METHOD_PAL2) {
+                rf_print(0, ", \"palette_colours\": ");
+                rf_print_u64(0, pal_colours);
+            }
+            rf_print(0, ", \"status\": \"ok\"}" RF_EOL);
         } else {
-            rf_print(0, fold_version == 3 ? "RasterFold fold version 3" RF_EOL : "RasterFold fold version 2" RF_EOL);
+            print_fold_version(fold_version);
             info_line("width", info.width);
             info_line("height", info.height);
             rf_print(0, info.method == RF_METHOD_CM ? "method: cm" RF_EOL :
@@ -132,6 +317,7 @@ static int run(int argc, rf_path_char **argv, rf_error *err) {
             rf_print(0, "status: ok" RF_EOL);
         }
     }
+timing_out:
     t4 = rf_ticks();
     if (rc == RF_OK && timing) {
         stat_line("read_us", rf_elapsed_us(t0, t1));
