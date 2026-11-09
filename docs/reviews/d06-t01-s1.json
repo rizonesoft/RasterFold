@@ -1,0 +1,76 @@
+{
+  "ref": "D06 T01 \u00a71",
+  "title": "The Public Header",
+  "implementation_sha": "105d86eada94be9e459ec83009433737202cc35e",
+  "date": "2026-11-09",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/06-library/D06-T01-s1.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "tools/llvm-mingw-linux/bin/clang -std=c11 -Wall -Wextra -Werror -fsyntax-only include/rasterfold.h -> exit 0",
+    "tools/llvm-mingw-linux/bin/clang++ -std=c++17 -Wall -Wextra -Werror -fsyntax-only -x c++ include/rasterfold.h -> exit 0",
+    "freeze: no src/, spec/, or tests/ change in the candidate range; KAT_FOLD unchanged"
+  ],
+  "completion": {
+    "report": "docs/reviews/06-library/D06-T01-s1.md",
+    "verdict": "complete",
+    "candidate": "105d86eada94be9e459ec83009433737202cc35e",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/06-library/D06-T01-s1.md",
+    "candidate": "8a4723e8482f638ea06bc2e03c1e80299ec0ba15",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "8a4723e8482f638ea06bc2e03c1e80299ec0ba15",
+  "schedule": {
+    "policy": "three-pass",
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}

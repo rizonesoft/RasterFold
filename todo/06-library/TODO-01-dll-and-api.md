@@ -43,7 +43,7 @@ track: L1
 
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
-|   1   |   §1    | The public header | -- |  [ ]   |
+|   1   |   §1    | The public header | -- |  [x]   |
 |   2   |   §2    | Shared/static libraries and Windows import libraries | §1 |  [ ]   |
 |   3   |   §3    | The command line on the library | §2 |  [ ]   |
 |   4   |   §4    | API tests and the ABI list | §2 |  [ ]   |
@@ -61,12 +61,14 @@ The API is a contract that outlives releases, so it is designed before code: pla
 
 - [x] Write `include/rasterfold.h`: `RF_API_VERSION` macros and `rf_version()`; an options structure with a size field for forward compatibility (`threads`, reserved fields); `rf_encode_image(const rf_pixels *, const rf_options *, rf_buffer *out, rf_error *err)`, `rf_decode_image(const void *data, size_t size, const rf_options *, rf_pixels *out, rf_error *err)`, `rf_inspect(const void *, size_t, rf_info *, rf_error *)`, and `rf_free(void *)` for everything the library allocates; `rf_pixels` naming width, height, stride, and layout (RGB8 for 1.0). Done when: the header compiles as C11 and C++ with `-Wall -Wextra -Werror`. Cheaper substitute: exporting the internal functions with their globals.
 - [x] Document every function, parameter, ownership rule, and error code in the header's comments in the form `D08 T03 §2` generates the reference from. Done when: every declaration carries its comment.
-- [x] Commit: `"api: the public rasterfold.h header"`
+- [x] Commit: `"api: document rasterfold.h contracts and aliasing rules"`
 
 **Test checkpoint:** `clang -std=c11 -Wall -Wextra -Werror -fsyntax-only include/rasterfold.h` and `clang++ -std=c++17 -Wall -Wextra -Werror -fsyntax-only -x c++ include/rasterfold.h` exit 0; separately, the freeze check below is the fidelity evidence that no encoded byte changed.
 
 **Freeze check:** the header adds an interface and changes no `.fold` byte: `KAT_FOLD` and every oracle comparison are unchanged.
 
+> **Verified:** 2026-11-09 | §1 | 105d86eada94be9e459ec83009433737202cc35e
+> **Review:** `docs/reviews/d06-t01-s1.json`
 ## 2. The DLL and Its Import Libraries
 
 - [ ] Add Windows DLL/static and Linux/Android shared/static targets through `scripts/build.py` (same objects without `main.c`, Windows entry `DllMain`-free with no C runtime, exports from `src/rasterfold.def`), plus a MinGW import library (`librasterfold.dll.a`) and an MSVC one (`rasterfold.lib`, from `llvm-dlltool`). Done when: `tools/llvm-mingw/bin/llvm-objdump.exe -p bin/windows-x64/bin/rasterfold.dll` lists exactly the `.def` exports and imports only `KERNEL32.dll`. Cheaper substitute: a DLL that exports every internal symbol.
