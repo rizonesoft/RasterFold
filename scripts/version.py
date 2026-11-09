@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SEMVER = re.compile(r'^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?$')
+SEMVER = re.compile(r'^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-((?:0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*))*))?$')
 HEADER_REL = 'src/product_version.h'
 
 
@@ -52,7 +52,7 @@ def header_text(version: str) -> str:
     return '\n'.join(lines) + '\n'
 
 
-def git_state(root: Path) -> tuple[str, bool]:
+def git_state(root: Path) -> tuple[str, bool | None]:
     def git(*argv: str) -> str | None:
         try:
             result = subprocess.run(
@@ -65,15 +65,21 @@ def git_state(root: Path) -> tuple[str, bool]:
 
     revision = git('rev-parse', '--short=12', 'HEAD')
     if revision is None:
-        return 'unknown', False
+        return 'unknown', None
     status = git('status', '--porcelain')
+    if status is None:
+        return revision, None
     return revision, bool(status)
 
 
-def dev_label(version: str, revision: str, dirty: bool) -> str:
+def dev_label(version: str, revision: str, dirty: bool | None) -> str:
     label = f'{version}-dev+{revision}'
-    if dirty:
+    if revision == 'unknown':
+        return label
+    if dirty is True:
         label += '.dirty'
+    elif dirty is None:
+        label += '.status-unknown'
     return label
 
 

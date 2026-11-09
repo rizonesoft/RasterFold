@@ -103,10 +103,11 @@ class VersionSource(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), '1.0.0-dev+unknown')
 
     def test_cli_and_manifest_agree(self):
-        exe = ROOT / 'bin/linux-x64/bin/rasterfold'
-        manifest = ROOT / 'bin/linux-x64/build.json'
-        if os.name == 'nt' or not exe.is_file() or not manifest.is_file():
-            self.skipTest('linux-x64 build not present')
+        target = 'windows-x64' if os.name == 'nt' else 'linux-x64'
+        exe = ROOT / f'bin/{target}/bin' / ('rasterfold.exe' if os.name == 'nt' else 'rasterfold')
+        manifest = ROOT / f'bin/{target}/build.json'
+        if not exe.is_file() or not manifest.is_file():
+            self.skipTest(f'{target} build not present')
         want = (ROOT / 'VERSION').read_text(encoding='utf-8').strip()
         out = subprocess.run([str(exe), '--version'], capture_output=True, text=True, check=True).stdout
         self.assertIn(f'product version: {want}', out)

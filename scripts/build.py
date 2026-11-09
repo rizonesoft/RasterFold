@@ -255,7 +255,17 @@ def build_pgo_gen(jobs: int) -> None:
     print(f'built {name}: {exe.relative_to(ROOT).as_posix()}', flush=True)
 
 
+def check_product_header() -> None:
+    import importlib.util as _ilu
+    _spec = _ilu.spec_from_file_location('rf_version_tool', Path(__file__).resolve().parent / 'version.py')
+    _vt = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_vt)
+    problems = _vt.check(ROOT)
+    if problems:
+        raise SystemExit('build: ' + '; '.join(problems))
+
+
 def build(target: str, jobs: int, portable: bool, pgo_profile: Path | None = None, lto: bool = False) -> None:
+    check_product_header()
     windows = target == 'windows-x64'
     android = target.startswith('android-')
     suffix = '.exe' if os.name == 'nt' else ''

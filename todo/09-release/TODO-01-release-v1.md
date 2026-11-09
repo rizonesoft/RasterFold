@@ -14,7 +14,7 @@ track: R1
 > **Goal:** `rasterfold-v1.0.0` ships as a signed-off, reproducible package: Windows/Linux x64 and Android ARM64/x64 CLI and native converter packages, shared/static libraries, headers, applicable symbols and import libraries, complete HTML docs, notices and checksums, built by CI from the tag, with the format frozen at version 3 and the backlog reviewed.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-09-30):** API 1.0 and format 2 are defined in separate C headers. `scripts/package.py` creates checked development packages for four targets. There is no product release version, changelog, release workflow or release tag. Release automation must extend this packager and keep product, format and ABI versions independent.
+> **Current state (verified 2026-11-09):** API 1.0 and format 3 are independent contracts; product SemVer 1.0.0 lives only in `VERSION` and feeds the CLI report, build manifests, development package names, facts, and the site through `scripts/version.py`, and `CHANGELOG.md` records changes since the version 2 codec. There is no release workflow or release tag yet (§3, §4). Release automation must extend this packager and keep product, format and ABI versions independent.
 <!-- claim: exists CHANGELOG.md -->
 <!-- claim: exists scripts/package.py -->
 <!-- claim: absent .github/workflows/release.yml -->

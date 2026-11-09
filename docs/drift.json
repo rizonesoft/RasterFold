@@ -1551,13 +1551,13 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "2026-11-09 Re-read README.md against the version wiring for D09 T01 section 1: VERSION 1.0.0 feeds the generated header, CLI product line, build manifest identity, dev package names, facts and site; scripts/check-all.py runs tests/test_version.py.",
+      "evidence": "2026-11-09 Round 1 fixes re-read against version wiring: VERSION 1.0.0 feeds generated header, CLI product line, build manifest identity, revision-validated dev package names, facts and site; build refuses stale generated header.",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "c7f9919e34924b6686ce876fd96550d28c39d025ed6233e6f338e03f37ce47a1",
         "src/main.c": "199525d4c6edd31d663adf0cf23d91b8e04219aa19dd4d4589b003a3b5f8c113",
-        "scripts/build.py": "a7828415dd9d02c55f7e28848b0a3ae607f2f5824aed40324b107015ca40d519",
-        "scripts/package.py": "c00e7a35232eeb3987fc361029e4b2e748b07c8441e43d18e3a0ddc08987c580",
+        "scripts/build.py": "4b3130b6e05549c42fe495067f948c2fe25be2ef4dae30631d79288aa1279e34",
+        "scripts/package.py": "ef69de2da770ea647e2841f4c2ce16db8bae22544c086a389983bdbeb1e50b37",
         "scripts/check-all.py": "0d7009f7af3dea1ffdfaf8893cb5c32f802075607a5b2d5500318ed8af70c777",
         "README.md": "aee300b8a07e1bf0bc1109279447ce3cba35f5498eef058676ceaa7ec7fa8044",
         "AGENTS.md": "af79c81f56db57d212f222ccadfdcfba573527c02bf90da1b398c8dbb069b599",
@@ -1591,21 +1591,21 @@
       }
     },
     "CONTRIBUTING.md": {
-      "evidence": "2026-11-09 Re-read CONTRIBUTING.md against the version wiring for D09 T01 section 1: VERSION 1.0.0 feeds the generated header, CLI product line, build manifest identity, dev package names, facts and site; scripts/check-all.py runs tests/test_version.py.",
+      "evidence": "2026-11-09 Round 1 fixes re-read against version wiring: VERSION 1.0.0 feeds generated header, CLI product line, build manifest identity, revision-validated dev package names, facts and site; build refuses stale generated header.",
       "sources": {
-        "scripts/build.py": "a7828415dd9d02c55f7e28848b0a3ae607f2f5824aed40324b107015ca40d519",
-        "scripts/package.py": "c00e7a35232eeb3987fc361029e4b2e748b07c8441e43d18e3a0ddc08987c580",
+        "scripts/build.py": "4b3130b6e05549c42fe495067f948c2fe25be2ef4dae30631d79288aa1279e34",
+        "scripts/package.py": "ef69de2da770ea647e2841f4c2ce16db8bae22544c086a389983bdbeb1e50b37",
         "scripts/check-all.py": "0d7009f7af3dea1ffdfaf8893cb5c32f802075607a5b2d5500318ed8af70c777",
         "CONTRIBUTING.md": "01f5855ce18883d6930ce1ebb569ea9411ac21e3c4cf3faced1a56c155bf470f"
       },
       "review": "Author-attested: 2026-10-25 re-read CONTRIBUTING.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/building.md": {
-      "evidence": "2026-11-09 Re-read docs/building.md against the version wiring for D09 T01 section 1: VERSION 1.0.0 feeds the generated header, CLI product line, build manifest identity, dev package names, facts and site; scripts/check-all.py runs tests/test_version.py.",
+      "evidence": "2026-11-09 Round 1 fixes re-read against version wiring: VERSION 1.0.0 feeds generated header, CLI product line, build manifest identity, revision-validated dev package names, facts and site; build refuses stale generated header.",
       "sources": {
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
-        "scripts/build.py": "a7828415dd9d02c55f7e28848b0a3ae607f2f5824aed40324b107015ca40d519",
-        "scripts/package.py": "c00e7a35232eeb3987fc361029e4b2e748b07c8441e43d18e3a0ddc08987c580",
+        "scripts/build.py": "4b3130b6e05549c42fe495067f948c2fe25be2ef4dae30631d79288aa1279e34",
+        "scripts/package.py": "ef69de2da770ea647e2841f4c2ce16db8bae22544c086a389983bdbeb1e50b37",
         "scripts/check-all.py": "0d7009f7af3dea1ffdfaf8893cb5c32f802075607a5b2d5500318ed8af70c777",
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "docs/building.md": "481144590cfd899e520659aee9ad544f56b3c4403225060e285d1ea648d49c27"
@@ -1633,12 +1633,12 @@
       "review": "Author-attested: 2026-10-25 re-read docs/index.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/getting-started.md": {
-      "evidence": "2026-11-09 Re-read docs/getting-started.md against the version wiring for D09 T01 section 1: VERSION 1.0.0 feeds the generated header, CLI product line, build manifest identity, dev package names, facts and site; scripts/check-all.py runs tests/test_version.py.",
+      "evidence": "2026-11-09 Round 1 fixes re-read against version wiring: VERSION 1.0.0 feeds generated header, CLI product line, build manifest identity, revision-validated dev package names, facts and site; build refuses stale generated header.",
       "sources": {
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
         "tools/provision.py": "b17ea42569b76d70edbcc235dbc86385c9c7ce50b1be7a3bb83383c30f848556",
         "tools/provision.ps1": "836043df1f959726d5fa2b73d206fa896c9d3aacd12bf7e21b8193a4bb14ad96",
-        "scripts/build.py": "a7828415dd9d02c55f7e28848b0a3ae607f2f5824aed40324b107015ca40d519",
+        "scripts/build.py": "4b3130b6e05549c42fe495067f948c2fe25be2ef4dae30631d79288aa1279e34",
         "scripts/check-all.py": "0d7009f7af3dea1ffdfaf8893cb5c32f802075607a5b2d5500318ed8af70c777",
         "scripts/check-all.ps1": "7006b1871b52689461497fa676b3cb6472f0e436c9c5e240deb9da069321a528",
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
@@ -1793,7 +1793,7 @@
       }
     },
     "docs/site-validation.md": {
-      "evidence": "2026-11-09 Reconciled docs/site-validation.md as the historical 14-page validation record and added a dated addendum naming the 15th page (generated API Reference, D08 T03 section 2) and where its delivery evidence lives.",
+      "evidence": "2026-11-09 Round 1 fixes re-read against the version wiring: VERSION 1.0.0 feeds the generated header, CLI product line, build manifest identity, revision-validated dev package names, facts and site; the build refuses a stale generated header.",
       "sources": {
         "docs/_config.yml": "d2459047e15f142133fb8206900c7921ca9c793559c63c264e7e43dbb1f00522",
         "docs/_includes/head_custom.html": "a3db05eb828ddef58712fcd5fb5525ca905ee9e0e20c4707c8bf910dbc4b21dc",

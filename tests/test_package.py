@@ -166,6 +166,22 @@ class Packages(unittest.TestCase):
                 archived_manifest['artifacts']['include/rasterfold.h'],
             )
 
+    def test_stale_build_manifest_refused(self):
+        manifest = self.fixture('linux-x64')
+        manifest['product_version'] = '0.9.0'
+        self.write_manifest('linux-x64', manifest)
+        with self.assertRaisesRegex(ValueError, 'stale build'):
+            package.package('linux-x64')
+        self.assertFalse((self.root / 'build/packages').exists())
+
+    def test_manifest_revision_escape_refused(self):
+        manifest = self.fixture('linux-x64')
+        manifest['revision'] = '/../../outside'
+        self.write_manifest('linux-x64', manifest)
+        with self.assertRaisesRegex(ValueError, 'revision'):
+            package.package('linux-x64')
+        self.assertFalse((self.root / 'build/packages').exists())
+
     def test_unsafe_manifest_path_refused(self):
         for name in ('../outside', '/absolute', 'lib/../outside', 'lib\\outside', 'C:/outside'):
             with self.subTest(name=name):

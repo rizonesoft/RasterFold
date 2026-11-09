@@ -43,9 +43,13 @@ def package(target: str) -> None:
             f'stale build: manifest product version {manifest.get("product_version")!r} '
             f'!= VERSION {current_version}; rebuild before packaging')
     revision = manifest.get('revision')
-    if not isinstance(revision, str) or not revision:
+    if not isinstance(revision, str) or not (
+        revision == 'unknown'
+        or (len(revision) == 12 and all(c in '0123456789abcdef' for c in revision))
+    ):
         raise ValueError('incomplete build manifest (revision); rebuild before packaging')
-    label = _vt.dev_label(current_version, revision, bool(manifest.get('dirty')))
+    dirty = manifest.get('dirty')
+    label = _vt.dev_label(current_version, revision, dirty if isinstance(dirty, bool) else None)
     required = set(target_artifacts(target))
     artifacts = manifest.get('artifacts')
     if not isinstance(artifacts, dict) or required - set(artifacts):
@@ -68,7 +72,10 @@ def package(target: str) -> None:
     for doc_name in ('LICENSE', 'docs/building.md', 'docs/library.md'):
         doc_path = ROOT / doc_name
         files.append((doc_path, doc_name, read_snapshot(doc_path, 'package document')))
-    dest = ROOT / 'build/packages' / f'rasterfold-{target}-{label}.zip'
+    packages_dir = (ROOT / 'build/packages').resolve()
+    dest = packages_dir / f'rasterfold-{target}-{label}.zip'
+    if dest.parent != packages_dir:
+        raise ValueError('package destination escapes build/packages')
     dest.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(dest, 'w', compression=zipfile.ZIP_DEFLATED) as z:
         for file, name, data in files:
