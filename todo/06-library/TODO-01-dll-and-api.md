@@ -100,6 +100,8 @@ The executable uses the same code path as the library for encode and inspect (li
 > **Review:** `docs/reviews/d06-t01-s3.json`
 ## 4. API Tests and the ABI List
 
+> **Started:** 2026-11-09T02:42:30Z
+
 **Job:** A developer can rely on every decode through the DLL reversing its encode, byte for byte.
 
 - [ ] Add `tests/test_api.py`, which drives the DLL through `ctypes`: round trips byte-identical to `rasterfold.exe` on every correctness image, every error code reachable, options with an older `size` accepted. Done when: `python tests/test_api.py` passes and `scripts/check-all.ps1` runs it.
