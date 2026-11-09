@@ -14,9 +14,9 @@ track: GUI1
 > **Goal:** A bounded C conversion engine preserves source files and verifies exact output through a versioned adapter contract.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-09-30):** `include/rasterfold.h` and the four-target build exist. There is no native converter, adapter registry, GUI or bundled third-party codec source. These sections implement the operator-approved native C application with bundled codec source and no additional user installs.
+> **Current state (verified 2026-09-30):** `include/rasterfold.h` and the four-target build exist. There is no native converter application, GUI or bundled third-party codec source yet; D10 T01 §1 (2026-11-09) added the pixel contract, the capability registry in `converter/`, and its validator, with every format still `planned`. These sections implement the operator-approved native C application with bundled codec source and no additional user installs.
 <!-- claim: exists include/rasterfold.h -->
-<!-- claim: absent converter/ -->
+<!-- claim: exists converter/include/rfc_codec.h -->
 
 ## Inputs
 
@@ -63,14 +63,14 @@ track: GUI1
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
-- [ ] Define owned pixel/frame/metadata types in `converter/include/rfc_image.h`. Done when: stride, byte order, sample depth, alpha mode, orientation, ICC and frame duration have explicit invariants.
-- [ ] Define adapter lifecycle and result codes in `converter/include/rfc_codec.h`. Done when: C callers can enumerate, probe, encode, decode, cancel and free through one versioned ABI.
-- [ ] Write `converter/codecs.json` from the format matrix in `docs/vision.md`. Done when: every required format names a provider, native sample support, read/write modes, an availability state (`planned` visible with a refusal reason and not selectable for execution, or `usable` only when its provider section has shipped), a per-capability owning section (APNG with the PNG family in D10 T02 §1, animation and multi-page extensions in D10 T02 §12), and its settings: identifiers, types, defaults, allowed values, combination constraints and refusal reasons, with no setting able to silently reduce precision, alpha, metadata or frames (`docs/vision.md`).
-- [ ] Document exactness classes in `docs/converter-exactness.md`. Done when: pixel equality, metadata preservation, coefficient optimization and original-byte reconstruction cannot share an ambiguous lossless label.
-- [ ] Implement the registry in `converter/src/registry.c` over the `rfc_codec.h` ABI. Done when: C callers can enumerate formats, query capabilities and settings, validate a setting combination with a named refusal reason, and register an adapter lifecycle (probe, encode, decode, cancel, free) through the versioned ABI; planned providers cannot be selected for execution.
-- [ ] Add `tests/converter/test_contract.c`, compiled and linked against `converter/src/registry.c` and executed by the checkpoint. Done when: a valid registry query succeeds, and invalid strides, overflow, opaque ownership and unsupported capability combinations fail before allocation, proven by a counting allocator that records zero allocations on every refusal path.
-- [ ] Add a registry validator to `scripts/check-converter.py`. Done when: a missing format, missing owner or advertised unsupported mode fails with the exact row.
-- [ ] Commit: `"converter: pixel contract and capability registry"`
+- [x] Define owned pixel/frame/metadata types in `converter/include/rfc_image.h`. Done when: stride, byte order, sample depth, alpha mode, orientation, ICC and frame duration have explicit invariants.
+- [x] Define adapter lifecycle and result codes in `converter/include/rfc_codec.h`. Done when: C callers can enumerate, probe, encode, decode, cancel and free through one versioned ABI.
+- [x] Write `converter/codecs.json` from the format matrix in `docs/vision.md`. Done when: every required format names a provider, native sample support, read/write modes, an availability state (`planned` visible with a refusal reason and not selectable for execution, or `usable` only when its provider section has shipped), a per-capability owning section (APNG with the PNG family in D10 T02 §1, animation and multi-page extensions in D10 T02 §12), and its settings: identifiers, types, defaults, allowed values, combination constraints and refusal reasons, with no setting able to silently reduce precision, alpha, metadata or frames (`docs/vision.md`).
+- [x] Document exactness classes in `docs/converter-exactness.md`. Done when: pixel equality, metadata preservation, coefficient optimization and original-byte reconstruction cannot share an ambiguous lossless label.
+- [x] Implement the registry in `converter/src/registry.c` over the `rfc_codec.h` ABI. Done when: C callers can enumerate formats, query capabilities and settings, validate a setting combination with a named refusal reason, and register an adapter lifecycle (probe, encode, decode, cancel, free) through the versioned ABI; planned providers cannot be selected for execution.
+- [x] Add `tests/converter/test_contract.c`, compiled and linked against `converter/src/registry.c` and executed by the checkpoint. Done when: a valid registry query succeeds, and invalid strides, overflow, opaque ownership and unsupported capability combinations fail before allocation, proven by a counting allocator that records zero allocations on every refusal path.
+- [x] Add a registry validator to `scripts/check-converter.py`. Done when: a missing format, missing owner or advertised unsupported mode fails with the exact row.
+- [x] Commit: `"converter: pixel contract and capability registry"`
 
 **Test checkpoint:** Build the C header as C11 and C++; run `python3 scripts/check-converter.py --case contract` with overflow and unsupported-mode fixtures.
 

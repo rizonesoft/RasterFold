@@ -1,0 +1,792 @@
+{
+  "schema": 1,
+  "abi_version": 1,
+  "source": "docs/vision.md required format matrix",
+  "formats": [
+    {
+      "format": "rasterfold",
+      "provider": "RasterFold (this repository)",
+      "owner": "D10 T02 §1",
+      "availability": "planned",
+      "unavailable_reason": "converter adapter not yet shipped",
+      "modes": {
+        "read": true,
+        "write": true
+      },
+      "native_samples": [
+        "rgb8"
+      ],
+      "settings": [
+        {
+          "id": "metadata",
+          "type": "enum",
+          "default": "preserve",
+          "allowed": [
+            "preserve",
+            "strip"
+          ],
+          "refusal_reason": "metadata=strip is explicit; metadata is never dropped silently"
+        },
+        {
+          "id": "exactness",
+          "type": "enum",
+          "default": "pixel-exact",
+          "allowed": [
+            "pixel-exact",
+            "byte-identical"
+          ],
+          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+        }
+      ]
+    },
+    {
+      "format": "bmp",
+      "provider": "in-tree converter code",
+      "owner": "D10 T02 §1",
+      "availability": "planned",
+      "unavailable_reason": "converter adapter not yet shipped",
+      "modes": {
+        "read": true,
+        "write": true
+      },
+      "native_samples": [
+        "gray8",
+        "rgb8",
+        "rgba8"
+      ],
+      "settings": [
+        {
+          "id": "metadata",
+          "type": "enum",
+          "default": "preserve",
+          "allowed": [
+            "preserve",
+            "strip"
+          ],
+          "refusal_reason": "metadata=strip is explicit; metadata is never dropped silently"
+        },
+        {
+          "id": "exactness",
+          "type": "enum",
+          "default": "pixel-exact",
+          "allowed": [
+            "pixel-exact",
+            "byte-identical"
+          ],
+          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+        }
+      ]
+    },
+    {
+      "format": "png",
+      "provider": "libpng (bundled, pinned by D10 T01 §2)",
+      "owner": "D10 T02 §1",
+      "availability": "planned",
+      "unavailable_reason": "converter adapter not yet shipped",
+      "modes": {
+        "read": true,
+        "write": true
+      },
+      "native_samples": [
+        "gray8",
+        "gray16",
+        "rgb8",
+        "rgba8",
+        "rgb16",
+        "rgba16"
+      ],
+      "settings": [
+        {
+          "id": "metadata",
+          "type": "enum",
+          "default": "preserve",
+          "allowed": [
+            "preserve",
+            "strip"
+          ],
+          "refusal_reason": "metadata=strip is explicit; metadata is never dropped silently"
+        },
+        {
+          "id": "exactness",
+          "type": "enum",
+          "default": "pixel-exact",
+          "allowed": [
+            "pixel-exact",
+            "byte-identical"
+          ],
+          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+        }
+      ]
+    },
+    {
+      "format": "apng",
+      "provider": "libpng (bundled, pinned by D10 T01 §2)",
+      "owner": "D10 T02 §1",
+      "availability": "planned",
+      "unavailable_reason": "converter adapter not yet shipped; animation extensions owned by D10 T02 §12",
+      "modes": {
+        "read": true,
+        "write": true
+      },
+      "native_samples": [
+        "gray8",
+        "gray16",
+        "rgb8",
+        "rgba8",
+        "rgb16",
+        "rgba16"
+      ],
+      "settings": [
+        {
+          "id": "metadata",
+          "type": "enum",
+          "default": "preserve",
+          "allowed": [
+            "preserve",
+            "strip"
+          ],
+          "refusal_reason": "metadata=strip is explicit; metadata is never dropped silently"
+        },
+        {
+          "id": "exactness",
+          "type": "enum",
+          "default": "pixel-exact",
+          "allowed": [
+            "pixel-exact",
+            "byte-identical"
+          ],
+          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+        },
+        {
+          "id": "frames",
+          "type": "enum",
+          "default": "all",
+          "allowed": [
+            "all",
+            "first-only"
+          ],
+          "refusal_reason": "frames=first-only discards frames and is refused for exact conversion"
+        }
+      ]
+    },
+    {
+      "format": "pnm",
+      "provider": "in-tree converter code",
+      "owner": "D10 T02 §1",
+      "availability": "planned",
+      "unavailable_reason": "converter adapter not yet shipped",
+      "modes": {
+        "read": true,
+        "write": true
+      },
+      "native_samples": [
+        "gray8",
+        "gray16",
+        "rgb8",
+        "rgb16"
+      ],
+      "settings": [
+        {
+          "id": "metadata",
+          "type": "enum",
+          "default": "preserve",
+          "allowed": [
+            "preserve",
+            "strip"
+          ],
+          "refusal_reason": "metadata=strip is explicit; metadata is never dropped silently"
+        },
+        {
+          "id": "exactness",
+          "type": "enum",
+          "default": "pixel-exact",
+          "allowed": [
+            "pixel-exact",
+            "byte-identical"
+          ],
+          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+        }
+      ]
+    },
+    {
+      "format": "pam",
+      "provider": "in-tree converter code",
+      "owner": "D10 T02 §1",
+      "availability": "planned",
+      "unavailable_reason": "converter adapter not yet shipped",
+      "modes": {
+        "read": true,
+        "write": true
+      },
+      "native_samples": [
+        "gray8",
+        "gray16",
+        "rgb8",
+        "rgba8",
+        "rgb16",
+        "rgba16"
+      ],
+      "settings": [
+        {
+          "id": "metadata",
+          "type": "enum",
+          "default": "preserve",
+          "allowed": [
+            "preserve",
+            "strip"
+          ],
+          "refusal_reason": "metadata=strip is explicit; metadata is never dropped silently"
+        },
+        {
+          "id": "exactness",
+          "type": "enum",
+          "default": "pixel-exact",
+          "allowed": [
+            "pixel-exact",
+            "byte-identical"
+          ],
+          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+        }
+      ]
+    },
+    {
+      "format": "webp",
+      "provider": "libwebp (bundled, pinned by D10 T01 §2)",
+      "owner": "D10 T02 §2",
+      "availability": "planned",
+      "unavailable_reason": "converter adapter not yet shipped",
+      "modes": {
+        "read": true,
+        "write": true
+      },
+      "native_samples": [
+        "rgb8",
+        "rgba8"
+      ],
+      "settings": [
+        {
+          "id": "metadata",
+          "type": "enum",
+          "default": "preserve",
+          "allowed": [
+            "preserve",
+            "strip"
+          ],
+          "refusal_reason": "metadata=strip is explicit; metadata is never dropped silently"
+        },
+        {
+          "id": "exactness",
+          "type": "enum",
+          "default": "pixel-exact",
+          "allowed": [
+            "pixel-exact",
+            "byte-identical"
+          ],
+          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+        }
+      ]
+    },
+    {
+      "format": "jpeg-xl",
+      "provider": "libjxl (bundled, pinned by D10 T01 §2)",
+      "owner": "D10 T02 §3",
+      "availability": "planned",
+      "unavailable_reason": "converter adapter not yet shipped",
+      "modes": {
+        "read": true,
+        "write": true
+      },
+      "native_samples": [
+        "gray8",
+        "gray16",
+        "rgb8",
+        "rgba8",
+        "rgb16",
+        "rgba16"
+      ],
+      "settings": [
+        {
+          "id": "metadata",
+          "type": "enum",
+          "default": "preserve",
+          "allowed": [
+            "preserve",
+            "strip"
+          ],
+          "refusal_reason": "metadata=strip is explicit; metadata is never dropped silently"
+        },
+        {
+          "id": "exactness",
+          "type": "enum",
+          "default": "pixel-exact",
+          "allowed": [
+            "pixel-exact",
+            "byte-identical"
+          ],
+          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+        },
+        {
+          "id": "frames",
+          "type": "enum",
+          "default": "all",
+          "allowed": [
+            "all",
+            "first-only"
+          ],
+          "refusal_reason": "frames=first-only discards frames and is refused for exact conversion"
+        }
+      ]
+    },
+    {
+      "format": "avif",
+      "provider": "libavif (bundled, pinned by D10 T01 §2)",
+      "owner": "D10 T02 §4",
+      "availability": "planned",
+      "unavailable_reason": "converter adapter not yet shipped",
+      "modes": {
+        "read": true,
+        "write": true
+      },
+      "native_samples": [
+        "rgb8",
+        "rgba8",
+        "rgb16",
+        "rgba16"
+      ],
+      "settings": [
+        {
+          "id": "metadata",
+          "type": "enum",
+          "default": "preserve",
+          "allowed": [
+            "preserve",
+            "strip"
+          ],
+          "refusal_reason": "metadata=strip is explicit; metadata is never dropped silently"
+        },
+        {
+          "id": "exactness",
+          "type": "enum",
+          "default": "pixel-exact",
+          "allowed": [
+            "pixel-exact",
+            "byte-identical"
+          ],
+          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+        }
+      ]
+    },
+    {
+      "format": "jpeg",
+      "provider": "libjpeg-turbo (bundled, pinned by D10 T01 §2)",
+      "owner": "D10 T02 §5",
+      "availability": "planned",
+      "unavailable_reason": "converter adapter not yet shipped",
+      "modes": {
+        "read": true,
+        "write": false
+      },
+      "native_samples": [
+        "gray8",
+        "rgb8"
+      ],
+      "settings": [
+        {
+          "id": "metadata",
+          "type": "enum",
+          "default": "preserve",
+          "allowed": [
+            "preserve",
+            "strip"
+          ],
+          "refusal_reason": "metadata=strip is explicit; metadata is never dropped silently"
+        },
+        {
+          "id": "exactness",
+          "type": "enum",
+          "default": "pixel-exact",
+          "allowed": [
+            "pixel-exact",
+            "byte-identical"
+          ],
+          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+        }
+      ]
+    },
+    {
+      "format": "gif",
+      "provider": "in-tree converter code",
+      "owner": "D10 T02 §6",
+      "availability": "planned",
+      "unavailable_reason": "converter adapter not yet shipped",
+      "modes": {
+        "read": true,
+        "write": true
+      },
+      "native_samples": [
+        "rgb8",
+        "rgba8"
+      ],
+      "settings": [
+        {
+          "id": "metadata",
+          "type": "enum",
+          "default": "preserve",
+          "allowed": [
+            "preserve",
+            "strip"
+          ],
+          "refusal_reason": "metadata=strip is explicit; metadata is never dropped silently"
+        },
+        {
+          "id": "exactness",
+          "type": "enum",
+          "default": "pixel-exact",
+          "allowed": [
+            "pixel-exact",
+            "byte-identical"
+          ],
+          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+        },
+        {
+          "id": "frames",
+          "type": "enum",
+          "default": "all",
+          "allowed": [
+            "all",
+            "first-only"
+          ],
+          "refusal_reason": "frames=first-only discards frames and is refused for exact conversion"
+        }
+      ]
+    },
+    {
+      "format": "tiff",
+      "provider": "libtiff (bundled, pinned by D10 T01 §2)",
+      "owner": "D10 T02 §6",
+      "availability": "planned",
+      "unavailable_reason": "converter adapter not yet shipped",
+      "modes": {
+        "read": true,
+        "write": true
+      },
+      "native_samples": [
+        "gray8",
+        "gray16",
+        "rgb8",
+        "rgba8",
+        "rgb16",
+        "rgba16"
+      ],
+      "settings": [
+        {
+          "id": "metadata",
+          "type": "enum",
+          "default": "preserve",
+          "allowed": [
+            "preserve",
+            "strip"
+          ],
+          "refusal_reason": "metadata=strip is explicit; metadata is never dropped silently"
+        },
+        {
+          "id": "exactness",
+          "type": "enum",
+          "default": "pixel-exact",
+          "allowed": [
+            "pixel-exact",
+            "byte-identical"
+          ],
+          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+        },
+        {
+          "id": "frames",
+          "type": "enum",
+          "default": "all",
+          "allowed": [
+            "all",
+            "first-only"
+          ],
+          "refusal_reason": "frames=first-only discards frames and is refused for exact conversion"
+        }
+      ]
+    },
+    {
+      "format": "heif",
+      "provider": "libheif (bundled, pinned by D10 T01 §2)",
+      "owner": "D10 T02 §7",
+      "availability": "planned",
+      "unavailable_reason": "converter adapter not yet shipped; distribution decision owned by D99 T01 §7",
+      "modes": {
+        "read": true,
+        "write": true
+      },
+      "native_samples": [
+        "rgb8",
+        "rgba8",
+        "rgb16",
+        "rgba16"
+      ],
+      "settings": [
+        {
+          "id": "metadata",
+          "type": "enum",
+          "default": "preserve",
+          "allowed": [
+            "preserve",
+            "strip"
+          ],
+          "refusal_reason": "metadata=strip is explicit; metadata is never dropped silently"
+        },
+        {
+          "id": "exactness",
+          "type": "enum",
+          "default": "pixel-exact",
+          "allowed": [
+            "pixel-exact",
+            "byte-identical"
+          ],
+          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+        }
+      ]
+    },
+    {
+      "format": "heic",
+      "provider": "libheif (bundled, pinned by D10 T01 §2)",
+      "owner": "D10 T02 §7",
+      "availability": "planned",
+      "unavailable_reason": "converter adapter not yet shipped; distribution decision owned by D99 T01 §7",
+      "modes": {
+        "read": true,
+        "write": true
+      },
+      "native_samples": [
+        "rgb8",
+        "rgba8",
+        "rgb16",
+        "rgba16"
+      ],
+      "settings": [
+        {
+          "id": "metadata",
+          "type": "enum",
+          "default": "preserve",
+          "allowed": [
+            "preserve",
+            "strip"
+          ],
+          "refusal_reason": "metadata=strip is explicit; metadata is never dropped silently"
+        },
+        {
+          "id": "exactness",
+          "type": "enum",
+          "default": "pixel-exact",
+          "allowed": [
+            "pixel-exact",
+            "byte-identical"
+          ],
+          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+        }
+      ]
+    },
+    {
+      "format": "jpeg-2000",
+      "provider": "OpenJPEG (bundled, pinned by D10 T01 §2)",
+      "owner": "D10 T02 §9",
+      "availability": "planned",
+      "unavailable_reason": "converter adapter not yet shipped",
+      "modes": {
+        "read": true,
+        "write": true
+      },
+      "native_samples": [
+        "gray8",
+        "gray16",
+        "rgb8",
+        "rgba8",
+        "rgb16",
+        "rgba16"
+      ],
+      "settings": [
+        {
+          "id": "metadata",
+          "type": "enum",
+          "default": "preserve",
+          "allowed": [
+            "preserve",
+            "strip"
+          ],
+          "refusal_reason": "metadata=strip is explicit; metadata is never dropped silently"
+        },
+        {
+          "id": "exactness",
+          "type": "enum",
+          "default": "pixel-exact",
+          "allowed": [
+            "pixel-exact",
+            "byte-identical"
+          ],
+          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+        }
+      ]
+    },
+    {
+      "format": "qoi",
+      "provider": "in-tree converter code",
+      "owner": "D10 T02 §8",
+      "availability": "planned",
+      "unavailable_reason": "converter adapter not yet shipped",
+      "modes": {
+        "read": true,
+        "write": true
+      },
+      "native_samples": [
+        "rgb8",
+        "rgba8"
+      ],
+      "settings": [
+        {
+          "id": "metadata",
+          "type": "enum",
+          "default": "preserve",
+          "allowed": [
+            "preserve",
+            "strip"
+          ],
+          "refusal_reason": "metadata=strip is explicit; metadata is never dropped silently"
+        },
+        {
+          "id": "exactness",
+          "type": "enum",
+          "default": "pixel-exact",
+          "allowed": [
+            "pixel-exact",
+            "byte-identical"
+          ],
+          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+        }
+      ]
+    },
+    {
+      "format": "openexr",
+      "provider": "OpenEXR (bundled, pinned by D10 T01 §2)",
+      "owner": "D10 T02 §10",
+      "availability": "planned",
+      "unavailable_reason": "converter adapter not yet shipped",
+      "modes": {
+        "read": true,
+        "write": true
+      },
+      "native_samples": [
+        "rgb-half",
+        "rgba-half",
+        "rgb-float",
+        "rgba-float"
+      ],
+      "settings": [
+        {
+          "id": "metadata",
+          "type": "enum",
+          "default": "preserve",
+          "allowed": [
+            "preserve",
+            "strip"
+          ],
+          "refusal_reason": "metadata=strip is explicit; metadata is never dropped silently"
+        },
+        {
+          "id": "exactness",
+          "type": "enum",
+          "default": "pixel-exact",
+          "allowed": [
+            "pixel-exact",
+            "byte-identical"
+          ],
+          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+        }
+      ]
+    },
+    {
+      "format": "camera-raw",
+      "provider": "LibRaw (bundled, pinned by D10 T01 §2)",
+      "owner": "D10 T02 §11",
+      "availability": "planned",
+      "unavailable_reason": "import-only adapter not yet shipped",
+      "modes": {
+        "read": true,
+        "write": false
+      },
+      "native_samples": [
+        "gray8",
+        "gray16",
+        "rgb8",
+        "rgba8",
+        "rgb16",
+        "rgba16"
+      ],
+      "settings": [
+        {
+          "id": "metadata",
+          "type": "enum",
+          "default": "preserve",
+          "allowed": [
+            "preserve",
+            "strip"
+          ],
+          "refusal_reason": "metadata=strip is explicit; metadata is never dropped silently"
+        },
+        {
+          "id": "exactness",
+          "type": "enum",
+          "default": "pixel-exact",
+          "allowed": [
+            "pixel-exact",
+            "byte-identical"
+          ],
+          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+        }
+      ]
+    },
+    {
+      "format": "dng",
+      "provider": "LibRaw (bundled, pinned by D10 T01 §2)",
+      "owner": "D10 T02 §11",
+      "availability": "planned",
+      "unavailable_reason": "import-only adapter not yet shipped",
+      "modes": {
+        "read": true,
+        "write": false
+      },
+      "native_samples": [
+        "gray8",
+        "gray16",
+        "rgb8",
+        "rgba8",
+        "rgb16",
+        "rgba16"
+      ],
+      "settings": [
+        {
+          "id": "metadata",
+          "type": "enum",
+          "default": "preserve",
+          "allowed": [
+            "preserve",
+            "strip"
+          ],
+          "refusal_reason": "metadata=strip is explicit; metadata is never dropped silently"
+        },
+        {
+          "id": "exactness",
+          "type": "enum",
+          "default": "pixel-exact",
+          "allowed": [
+            "pixel-exact",
+            "byte-identical"
+          ],
+          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+        }
+      ]
+    }
+  ]
+}

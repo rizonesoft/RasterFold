@@ -14,9 +14,9 @@ track: GUI4
 > **Goal:** The complete native converter ships as tested, documented, self-contained packages with an exact capability and device matrix.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-09-30):** `include/rasterfold.h` and the four-target build exist. There is no native converter, adapter registry, GUI or bundled third-party codec source. These sections implement the operator-approved native C application with bundled codec source and no additional user installs.
+> **Current state (verified 2026-09-30):** `include/rasterfold.h` and the four-target build exist. There is no native converter application, GUI or bundled third-party codec source yet; D10 T01 §1 (2026-11-09) added the pixel contract, the capability registry in `converter/`, and its validator, with every format still `planned`. These sections implement the operator-approved native C application with bundled codec source and no additional user installs.
 <!-- claim: exists include/rasterfold.h -->
-<!-- claim: absent converter/ -->
+<!-- claim: exists converter/include/rfc_codec.h -->
 
 ## Inputs
 
