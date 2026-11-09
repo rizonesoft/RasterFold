@@ -491,11 +491,17 @@ def _download_validated(url: str, dest: Path) -> bytes:
             box: dict = {}
             conn_box: list = []
             sock_box: list = []
+            cancelled = threading.Event()
 
             def _fetch() -> None:
-                # The connection object is published before connect() so
-                # the joining thread can cancel the transfer at any point,
-                # including while response headers are still arriving.
+                # The connection object is published before connect() and
+                # a cancellation flag is shared with the joining thread, so
+                # cancellation covers header and body reads on an
+                # established connection, and a worker whose connect()
+                # returns after the deadline aborts before issuing its
+                # request. (A connect() blocked in DNS cannot be woken;
+                # that worker is a daemon and the caller's deadline, which
+                # is the obligation, is unaffected.)
                 import http.client
                 import urllib.parse
                 try:
@@ -503,7 +509,11 @@ def _download_validated(url: str, dest: Path) -> bytes:
                     conn_cls = http.client.HTTPSConnection if parts.scheme == "https" else http.client.HTTPConnection
                     conn = conn_cls(parts.hostname, parts.port, timeout=60)
                     conn_box.append(conn)
+                    if cancelled.is_set():
+                        raise SystemExit(f"heldout download exceeds 300s for {url}")
                     conn.connect()
+                    if cancelled.is_set():
+                        raise SystemExit(f"heldout download exceeds 300s for {url}")
                     # Retain the raw socket independently: getresponse()
                     # may clear conn.sock (a Connection: close response),
                     # which would otherwise lose cancellation ownership.
@@ -512,12 +522,16 @@ def _download_validated(url: str, dest: Path) -> bytes:
                     path = parts.path or "/"
                     if parts.query:
                         path += "?" + parts.query
+                    if cancelled.is_set():
+                        raise SystemExit(f"heldout download exceeds 300s for {url}")
                     conn.request("GET", path, headers={"User-Agent": "RasterFold-research/1.0 (held-out set)"})
                     r = conn.getresponse()
                     if r.status != 200:
                         raise SystemExit(f"heldout download HTTP {r.status} for {url}")
                     chunks, total = [], 0
                     while True:
+                        if cancelled.is_set():
+                            raise SystemExit(f"heldout download exceeds 300s for {url}")
                         chunk = r.read1(65536) if hasattr(r, "read1") else r.read(65536)
                         if not chunk:
                             break
@@ -534,6 +548,7 @@ def _download_validated(url: str, dest: Path) -> bytes:
             worker.start()
             worker.join(max(0.0, deadline - _time.monotonic()))
             if worker.is_alive():
+                cancelled.set()
                 # Cancel and raise at the deadline: closing the connection
                 # forces the blocked read out in the daemon worker, whose
                 # cleanup then finishes in the background without holding
