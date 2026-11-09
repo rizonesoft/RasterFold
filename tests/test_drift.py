@@ -557,6 +557,7 @@ class DriftTests(unittest.TestCase):
         written = build_docs.write_generated_pages(self.root)
         expected_written = sorted(
             [
+                'docs/api.md',
                 'docs/c-api.md',
                 'docs/contributing.md',
                 'docs/format.md',
@@ -625,7 +626,7 @@ class DriftTests(unittest.TestCase):
         rebased_probe = (self.root / 'build/site-source/index.md').read_text(encoding='utf-8')
         self.assertIn('[build]: /RasterFold/installation.html?raw=1#L3', rebased_probe)
         self.assertIn('<a href = "/RasterFold/installation.html?plain=1#L2">', rebased_probe)
-        self.assertIn('(https://github.com/rizonesoft/RasterFold/blob/main/include/rasterfold.h?plain=1#L1)', rebased_probe)
+        self.assertIn('[Header](/RasterFold/api.html?plain=1#L1)', rebased_probe)
         rebased_usage = (self.root / 'build/site-source/usage.md').read_text(encoding='utf-8')
         self.assertIn('[The build guide](/RasterFold/installation.html?plain=1#L2)', rebased_usage)
         self.assertIn('[build]: /RasterFold/installation.html?raw=1#L3', rebased_usage)
@@ -650,6 +651,7 @@ class DriftTests(unittest.TestCase):
                     *(f'_includes/generated/tables/{n}.md' for n in build_docs.CHART_NAMES),
                     'assets/brand/cover.svg',
                     'assets/brand/icon.svg',
+                    'api.md',
                     'assets/css/site-states.css',
                     'assets/js/site-states.js',
                     'benchmarks.md',
@@ -784,7 +786,7 @@ class DriftTests(unittest.TestCase):
             with contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(0, drift.main(['--root', str(self.root)]))
 
-        # Planned outputs (docs/cli.md, docs/api.md) are rejected if created before promotion to mandatory outputs.
+        # Planned outputs (docs/cli.md) are rejected if created before promotion to mandatory outputs.
         self.write('docs/cli.md', '# Unregistered CLI reference\n')
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
@@ -792,7 +794,7 @@ class DriftTests(unittest.TestCase):
         self.assertIn('planned output docs/cli.md (D08 T03 §1) exists before being promoted to outputs', buf.getvalue())
         (self.root / 'docs/cli.md').unlink()
 
-        # Read-only guard catches a generator --check that creates a planned output (docs/api.md) or mutates a prior generator's output (docs/research.md) while exiting 0.
+        # Read-only guard catches a generator --check that creates a planned output (docs/cli.md) or mutates a prior generator's output (docs/research.md) while exiting 0.
         orig_build_docs = (self.root / 'scripts/build-docs.py').read_text(encoding='utf-8')
         orig_research = (self.root / 'docs/research.md').read_text(encoding='utf-8')
         try:
@@ -800,31 +802,31 @@ class DriftTests(unittest.TestCase):
                 'scripts/build-docs.py',
                 'import pathlib, sys\n'
                 'if "--check" in sys.argv:\n'
-                '    pathlib.Path("docs/api.md").write_text("# Sneaky API\\n", encoding="utf-8")\n'
+                '    pathlib.Path("docs/cli.md").write_text("# Sneaky CLI\\n", encoding="utf-8")\n'
                 'sys.exit(0)\n',
             )
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
                 self.assertEqual(1, drift.main(['--root', str(self.root)]))
-            self.assertIn('planned output docs/api.md (D08 T03 §2) exists before being promoted to outputs', buf.getvalue())
-            self.assertIn('--check modified docs/api.md; check mode must be read-only', buf.getvalue())
-            if (self.root / 'docs/api.md').exists():
-                (self.root / 'docs/api.md').unlink()
+            self.assertIn('planned output docs/cli.md (D08 T03 §1) exists before being promoted to outputs', buf.getvalue())
+            self.assertIn('--check modified docs/cli.md; check mode must be read-only', buf.getvalue())
+            if (self.root / 'docs/cli.md').exists():
+                (self.root / 'docs/cli.md').unlink()
 
             self.write(
                 'scripts/build-docs.py',
                 'import pathlib, sys\n'
                 'if "--check" in sys.argv:\n'
-                '    pathlib.Path("docs/api.md").mkdir(parents=True, exist_ok=True)\n'
+                '    pathlib.Path("docs/cli.md").mkdir(parents=True, exist_ok=True)\n'
                 'sys.exit(0)\n',
             )
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
                 self.assertEqual(1, drift.main(['--root', str(self.root)]))
-            self.assertIn('planned output docs/api.md (D08 T03 §2) exists before being promoted to outputs', buf.getvalue())
-            self.assertIn('--check modified docs/api.md; check mode must be read-only', buf.getvalue())
-            if (self.root / 'docs/api.md').is_dir():
-                shutil.rmtree(self.root / 'docs/api.md')
+            self.assertIn('planned output docs/cli.md (D08 T03 §1) exists before being promoted to outputs', buf.getvalue())
+            self.assertIn('--check modified docs/cli.md; check mode must be read-only', buf.getvalue())
+            if (self.root / 'docs/cli.md').is_dir():
+                shutil.rmtree(self.root / 'docs/cli.md')
 
             self.write(
                 'scripts/build-docs.py',
@@ -906,6 +908,8 @@ class DriftTests(unittest.TestCase):
             'assets/brand/cover.svg',
             'benchmarks/corpus.csv',
             'benchmarks/results.csv',
+            'include/rasterfold.h',
+            'src/rasterfold.def',
         ):
             self.write(rel, (REPO / rel).read_text(encoding='utf-8'))
 

@@ -1617,13 +1617,13 @@
       }
     },
     "docs/index.md": {
-      "evidence": "2026-11-09 Re-read docs/index.md against docs/site-content.json and scripts/build-docs.py for D08 T03 section 2: the site gains a generated API Reference page (docs/api.md from include/rasterfold.h, nav_order 15); navigation and inventories in prose remain accurate.",
+      "evidence": "2026-11-09 Added the generated API Reference to the documentation map in docs/index.md for D08 T03 section 2.",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "c7f9919e34924b6686ce876fd96550d28c39d025ed6233e6f338e03f37ce47a1",
         "src/main.c": "c430d758bd431ec945f9e0aab9288b8f711909f5c5b6eafdcf323d02e163b64f",
         "docs/site-content.json": "b96463cde4f9b48008f95150e1e4e90695cd920d17a106a92bf513e71e008400",
-        "docs/index.md": "df4d8ce9cefeedba38ef918f995079c831c7156c90d2582002c847ac24174150"
+        "docs/index.md": "83352ed6dadbb36b8ca524bc67b964ae7df1010865e70b283b38a6e832470f9d"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/index.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
