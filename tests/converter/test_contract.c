@@ -35,9 +35,10 @@ static void fake_free(void *ctx) { (void)ctx; }
 static void dump_registry(void) {
     for (size_t i = 0; i < rfc_registry_count(); i++) {
         const rfc_capability *c = rfc_registry_at(i);
-        printf("%s|%s|%s|%s|%s|%d|%d|", c->name, c->provider, c->owner,
+        printf("%s|%s|%s|%s|%s|%s|%d|%d|", c->name, c->provider, c->owner,
                c->extension_owner ? c->extension_owner : "-",
                c->availability == RFC_AVAILABILITY_USABLE ? "usable" : "planned",
+               c->unavailable_reason ? c->unavailable_reason : "-",
                c->can_read, c->can_write);
         for (size_t j = 0; j < c->sample_count; j++) printf("%s,", rfc_sample_name(c->samples[j]));
         printf("|");
@@ -45,13 +46,15 @@ static void dump_registry(void) {
             const rfc_setting_def *s = &c->settings[j];
             printf("%s:%s:%s:", s->id, s->type, s->default_value);
             for (size_t k = 0; k < s->allowed_count; k++) printf("%s,", s->allowed[k]);
-            printf(";");
+            printf(":%lld:%lld:%s;", (long long)s->min_value, (long long)s->max_value,
+                   s->refusal_reason);
         }
         printf("|");
         for (size_t j = 0; j < c->rule_count; j++) {
             const rfc_combination_rule *r = &c->rules[j];
-            printf("%s=%s&%s=%s;", r->setting_a, r->value_a,
-                   r->setting_b ? r->setting_b : "-", r->value_b ? r->value_b : "-");
+            printf("%s=%s&%s=%s:%s;", r->setting_a, r->value_a,
+                   r->setting_b ? r->setting_b : "-", r->value_b ? r->value_b : "-",
+                   r->reason);
         }
         printf("\n");
     }
@@ -62,7 +65,7 @@ int main(int argc, char **argv) {
     rfc_allocator alloc = {counting_alloc, counting_free, NULL};
 
     /* Valid layout succeeds and reports the total. */
-    rfc_layout good = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 4, 3, 12};
+    rfc_layout good = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 4, 3, 12, 8};
     size_t total = 0;
     CHECK(rfc_layout_validate(&good, &total) == RFC_OK && total == 36);
 
@@ -70,16 +73,21 @@ int main(int argc, char **argv) {
      * record zero calls across every refusal below. */
     alloc_calls = 0;
     rfc_frame frame;
-    rfc_layout bad_stride = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 4, 3, 11};
+    rfc_layout bad_stride = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 4, 3, 11, 8};
     CHECK(rfc_frame_alloc(&frame, &bad_stride, NULL, &alloc) == RFC_ERR_INVALID_ARGUMENT);
-    rfc_layout overflow = {RFC_SAMPLE_RGBA16, RFC_ALPHA_STRAIGHT, 10, 3, SIZE_MAX / 2};
+    rfc_layout overflow = {RFC_SAMPLE_RGBA16, RFC_ALPHA_STRAIGHT, 10, 3, SIZE_MAX / 2, 16};
     CHECK(rfc_frame_alloc(&frame, &overflow, NULL, &alloc) == RFC_ERR_OVERFLOW);
-    rfc_layout bad_alpha_value = {RFC_SAMPLE_RGBA8, (rfc_alpha_mode)99, 2, 2, 8};
+    rfc_layout bad_alpha_value = {RFC_SAMPLE_RGBA8, (rfc_alpha_mode)99, 2, 2, 8, 8};
     CHECK(rfc_frame_alloc(&frame, &bad_alpha_value, NULL, &alloc) == RFC_ERR_UNSUPPORTED_ALPHA);
-    rfc_layout bad_alpha = {RFC_SAMPLE_RGB8, RFC_ALPHA_STRAIGHT, 2, 2, 6};
+    rfc_layout bad_alpha = {RFC_SAMPLE_RGB8, RFC_ALPHA_STRAIGHT, 2, 2, 6, 8};
     CHECK(rfc_frame_alloc(&frame, &bad_alpha, NULL, &alloc) == RFC_ERR_UNSUPPORTED_ALPHA);
-    rfc_layout zero = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 0, 2, 0};
+    rfc_layout zero = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 0, 2, 0, 8};
     CHECK(rfc_frame_alloc(&frame, &zero, NULL, &alloc) == RFC_ERR_INVALID_ARGUMENT);
+    rfc_layout bad_depth = {RFC_SAMPLE_RGB16, RFC_ALPHA_NONE, 2, 2, 12, 24};
+    CHECK(rfc_frame_alloc(&frame, &bad_depth, NULL, &alloc) == RFC_ERR_UNSUPPORTED_SAMPLE);
+    rfc_layout ten_bit = {RFC_SAMPLE_RGB16, RFC_ALPHA_NONE, 2, 2, 12, 10};
+    size_t ten_total = 0;
+    CHECK(rfc_layout_validate(&ten_bit, &ten_total) == RFC_OK && ten_total == 24);
     CHECK(alloc_calls == 0);
 
     /* A valid frame allocates, owns a copy of the ICC bytes, and frees. */
@@ -113,6 +121,10 @@ int main(int argc, char **argv) {
           RFC_ERR_UNSUPPORTED_COMBINATION);
     rfc_setting_value null_id[] = {{NULL, "preserve"}};
     CHECK(rfc_registry_validate_settings(RFC_FORMAT_PNG, null_id, 1, &reason) ==
+          RFC_ERR_INVALID_ARGUMENT);
+    rfc_setting_value duplicate[] = {{"metadata", "strip"}, {"metadata", "preserve"},
+                                     {"exactness", "byte-identical"}};
+    CHECK(rfc_registry_validate_settings(RFC_FORMAT_PNG, duplicate, 3, &reason) ==
           RFC_ERR_INVALID_ARGUMENT);
     rfc_setting_value unknown[] = {{"bogus", "1"}};
     CHECK(rfc_registry_validate_settings(RFC_FORMAT_PNG, unknown, 1, &reason) ==

@@ -59,6 +59,14 @@ typedef struct rfc_layout {
     uint32_t width;
     uint32_t height;
     size_t stride_bytes;
+    /* Significant bits per channel (native depth), distinct from the
+     * storage format: 8 for RGB8, 10 or 12 for AVIF/HEIF sources stored
+     * in a 16-bit format, 16 for half float, 32 for single float.
+     * Integer samples are left-aligned: a native value v occupies the
+     * high bits_per_sample bits of its storage channel, so the full
+     * native range maps onto the full storage range. Must be nonzero
+     * and no greater than the storage bits per channel. */
+    uint32_t bits_per_sample;
 } rfc_layout;
 
 /* Per-frame metadata. icc borrows caller memory unless the frame owns it

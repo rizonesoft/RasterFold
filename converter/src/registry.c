@@ -17,6 +17,15 @@ size_t rfc_sample_bytes(rfc_sample_format format) {
     }
 }
 
+static uint32_t channel_bits(rfc_sample_format f) {
+    switch (f) {
+        case RFC_SAMPLE_GRAY8: case RFC_SAMPLE_RGB8: case RFC_SAMPLE_RGBA8: return 8;
+        case RFC_SAMPLE_GRAY16: case RFC_SAMPLE_RGB16: case RFC_SAMPLE_RGBA16:
+        case RFC_SAMPLE_RGB_HALF: case RFC_SAMPLE_RGBA_HALF: return 16;
+        case RFC_SAMPLE_RGB_FLOAT: case RFC_SAMPLE_RGBA_FLOAT: return 32;
+        default: return 0;
+    }
+}
 static int has_alpha(rfc_sample_format f) {
     return f == RFC_SAMPLE_RGBA8 || f == RFC_SAMPLE_RGBA16 ||
            f == RFC_SAMPLE_RGBA_HALF || f == RFC_SAMPLE_RGBA_FLOAT;
@@ -29,6 +38,14 @@ rfc_status rfc_layout_validate(const rfc_layout *layout, size_t *total_out) {
     if (layout->width == 0 || layout->height == 0 ||
         layout->width > RFC_MAX_DIMENSION || layout->height > RFC_MAX_DIMENSION)
         return RFC_ERR_INVALID_ARGUMENT;
+    if (layout->bits_per_sample == 0 || layout->bits_per_sample > channel_bits(layout->format))
+        return RFC_ERR_UNSUPPORTED_SAMPLE;
+    if ((layout->format == RFC_SAMPLE_RGB_HALF || layout->format == RFC_SAMPLE_RGBA_HALF) &&
+        layout->bits_per_sample != 16)
+        return RFC_ERR_UNSUPPORTED_SAMPLE;
+    if ((layout->format == RFC_SAMPLE_RGB_FLOAT || layout->format == RFC_SAMPLE_RGBA_FLOAT) &&
+        layout->bits_per_sample != 32)
+        return RFC_ERR_UNSUPPORTED_SAMPLE;
     if (layout->alpha < RFC_ALPHA_NONE || layout->alpha > RFC_ALPHA_PREMULTIPLIED)
         return RFC_ERR_UNSUPPORTED_ALPHA;
     if (has_alpha(layout->format) && layout->alpha == RFC_ALPHA_NONE)
@@ -110,18 +127,18 @@ const char *rfc_sample_name(rfc_sample_format f) {
 
 /* Setting definitions shared by formats. */
 static const char *const k_metadata_values[] = {"preserve", "strip", NULL};
-static const char *const k_exactness_values[] = {"pixel-exact", "byte-identical", NULL};
+static const char *const k_exactness_values[] = {"pixel-exact", "byte-identical", "coefficient-exact", "original-byte-reconstruction", NULL};
 static const char *const k_frames_values[] = {"all", "first-only", NULL};
 static const rfc_setting_def k_common_settings[] = {
     {"metadata", "enum", "preserve", k_metadata_values, 2, 0, 0,
      "metadata=strip is explicit; metadata is never dropped silently"},
-    {"exactness", "enum", "pixel-exact", k_exactness_values, 2, 0, 0,
+    {"exactness", "enum", "pixel-exact", k_exactness_values, 4, 0, 0,
      "exactness names the claim proved after conversion; see docs/converter-exactness.md"},
 };
 static const rfc_setting_def k_anim_settings[] = {
     {"metadata", "enum", "preserve", k_metadata_values, 2, 0, 0,
      "metadata=strip is explicit; metadata is never dropped silently"},
-    {"exactness", "enum", "pixel-exact", k_exactness_values, 2, 0, 0,
+    {"exactness", "enum", "pixel-exact", k_exactness_values, 4, 0, 0,
      "exactness names the claim proved after conversion; see docs/converter-exactness.md"},
     {"frames", "enum", "all", k_frames_values, 2, 0, 0,
      "frames=first-only discards frames and is refused for exact conversion"},
@@ -200,6 +217,12 @@ rfc_status rfc_registry_validate_settings(rfc_format_id id, const rfc_setting_va
     const char *metadata = NULL, *exactness = NULL;
     for (size_t i = 0; i < value_count; i++) {
         if (!values[i].id || !values[i].value) return RFC_ERR_INVALID_ARGUMENT;
+        for (size_t k = 0; k < i; k++) {
+            if (strcmp(values[k].id, values[i].id) == 0) {
+                if (reason_out) *reason_out = "duplicate setting; deliver one value per setting";
+                return RFC_ERR_INVALID_ARGUMENT;
+            }
+        }
         const rfc_setting_def *def = NULL;
         for (size_t j = 0; j < cap->setting_count; j++)
             if (strcmp(cap->settings[j].id, values[i].id) == 0) def = &cap->settings[j];

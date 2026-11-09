@@ -33,7 +33,9 @@
           "default": "pixel-exact",
           "allowed": [
             "pixel-exact",
-            "byte-identical"
+            "byte-identical",
+            "coefficient-exact",
+            "original-byte-reconstruction"
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         }
@@ -81,7 +83,9 @@
           "default": "pixel-exact",
           "allowed": [
             "pixel-exact",
-            "byte-identical"
+            "byte-identical",
+            "coefficient-exact",
+            "original-byte-reconstruction"
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         }
@@ -132,7 +136,9 @@
           "default": "pixel-exact",
           "allowed": [
             "pixel-exact",
-            "byte-identical"
+            "byte-identical",
+            "coefficient-exact",
+            "original-byte-reconstruction"
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         }
@@ -183,7 +189,9 @@
           "default": "pixel-exact",
           "allowed": [
             "pixel-exact",
-            "byte-identical"
+            "byte-identical",
+            "coefficient-exact",
+            "original-byte-reconstruction"
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         },
@@ -249,7 +257,9 @@
           "default": "pixel-exact",
           "allowed": [
             "pixel-exact",
-            "byte-identical"
+            "byte-identical",
+            "coefficient-exact",
+            "original-byte-reconstruction"
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         }
@@ -300,7 +310,9 @@
           "default": "pixel-exact",
           "allowed": [
             "pixel-exact",
-            "byte-identical"
+            "byte-identical",
+            "coefficient-exact",
+            "original-byte-reconstruction"
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         }
@@ -347,7 +359,9 @@
           "default": "pixel-exact",
           "allowed": [
             "pixel-exact",
-            "byte-identical"
+            "byte-identical",
+            "coefficient-exact",
+            "original-byte-reconstruction"
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         }
@@ -398,7 +412,9 @@
           "default": "pixel-exact",
           "allowed": [
             "pixel-exact",
-            "byte-identical"
+            "byte-identical",
+            "coefficient-exact",
+            "original-byte-reconstruction"
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         },
@@ -464,7 +480,9 @@
           "default": "pixel-exact",
           "allowed": [
             "pixel-exact",
-            "byte-identical"
+            "byte-identical",
+            "coefficient-exact",
+            "original-byte-reconstruction"
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         }
@@ -511,7 +529,9 @@
           "default": "pixel-exact",
           "allowed": [
             "pixel-exact",
-            "byte-identical"
+            "byte-identical",
+            "coefficient-exact",
+            "original-byte-reconstruction"
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         }
@@ -558,7 +578,9 @@
           "default": "pixel-exact",
           "allowed": [
             "pixel-exact",
-            "byte-identical"
+            "byte-identical",
+            "coefficient-exact",
+            "original-byte-reconstruction"
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         },
@@ -626,7 +648,9 @@
           "default": "pixel-exact",
           "allowed": [
             "pixel-exact",
-            "byte-identical"
+            "byte-identical",
+            "coefficient-exact",
+            "original-byte-reconstruction"
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         },
@@ -692,7 +716,9 @@
           "default": "pixel-exact",
           "allowed": [
             "pixel-exact",
-            "byte-identical"
+            "byte-identical",
+            "coefficient-exact",
+            "original-byte-reconstruction"
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         }
@@ -741,7 +767,9 @@
           "default": "pixel-exact",
           "allowed": [
             "pixel-exact",
-            "byte-identical"
+            "byte-identical",
+            "coefficient-exact",
+            "original-byte-reconstruction"
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         }
@@ -792,7 +820,9 @@
           "default": "pixel-exact",
           "allowed": [
             "pixel-exact",
-            "byte-identical"
+            "byte-identical",
+            "coefficient-exact",
+            "original-byte-reconstruction"
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         }
@@ -839,7 +869,9 @@
           "default": "pixel-exact",
           "allowed": [
             "pixel-exact",
-            "byte-identical"
+            "byte-identical",
+            "coefficient-exact",
+            "original-byte-reconstruction"
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         }
@@ -888,7 +920,9 @@
           "default": "pixel-exact",
           "allowed": [
             "pixel-exact",
-            "byte-identical"
+            "byte-identical",
+            "coefficient-exact",
+            "original-byte-reconstruction"
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         }
@@ -939,7 +973,9 @@
           "default": "pixel-exact",
           "allowed": [
             "pixel-exact",
-            "byte-identical"
+            "byte-identical",
+            "coefficient-exact",
+            "original-byte-reconstruction"
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         }
@@ -990,7 +1026,9 @@
           "default": "pixel-exact",
           "allowed": [
             "pixel-exact",
-            "byte-identical"
+            "byte-identical",
+            "coefficient-exact",
+            "original-byte-reconstruction"
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         }

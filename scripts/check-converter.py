@@ -79,6 +79,27 @@ def validate_registry():
         for rule in row.get("rules", []):
             if not rule.get("setting_a") or not rule.get("value_a") or not rule.get("reason"):
                 return fail(f"{where}: combination rule is incomplete: {rule!r}")
+        by_id = {s.get("id"): s for s in row.get("settings", [])}
+        for setting in row.get("settings", []):
+            if not setting.get("refusal_reason"):
+                return fail(f"{where}: setting {setting.get('id')!r} has no refusal_reason")
+        for rule in row.get("rules", []):
+            for key in ("setting_a", "setting_b"):
+                sid = rule.get(key)
+                if sid is not None and sid not in by_id:
+                    return fail(f"{where}: rule references unknown setting {sid!r}")
+            for key, vkey in (("setting_a", "value_a"), ("setting_b", "value_b")):
+                sid, val = rule.get(key), rule.get(vkey)
+                if sid in by_id and by_id[sid].get("type") == "enum" and val is not None \
+                        and val not in by_id[sid].get("allowed", []):
+                    return fail(f"{where}: rule value {val!r} is not allowed for setting {sid!r}")
+        rules = {(r.get("setting_a"), r.get("value_a"), r.get("setting_b"), r.get("value_b"))
+                 for r in row.get("rules", [])}
+        if ("metadata", "strip", "exactness", "byte-identical") not in rules:
+            return fail(f"{where}: missing the metadata-strip/byte-identical safety rule")
+        has_frames = "frames" in by_id
+        if has_frames and ("frames", "first-only", None, None) not in rules:
+            return fail(f"{where}: missing the frames=first-only safety rule")
         samples = row.get("native_samples", [])
         if not samples or any(s not in KNOWN_SAMPLES for s in samples):
             return fail(f"{where}: native_samples missing or unknown: {samples!r}")
@@ -139,13 +160,17 @@ def case_contract():
             settings = ""
             for s in row["settings"]:
                 allowed = ",".join(s.get("allowed", [])) + ("," if s.get("allowed") else "")
-                settings += f"{s['id']}:{s['type']}:{s['default']}:{allowed};"
+                settings += (f"{s['id']}:{s['type']}:{s['default']}:{allowed}"
+                             f":{s.get('min_value', 0)}:{s.get('max_value', 0)}"
+                             f":{s.get('refusal_reason')};")
             rules = ""
             for r in row.get("rules", []):
-                rules += f"{r['setting_a']}={r['value_a']}&{r.get('setting_b') or '-'}={r.get('value_b') or '-'};"
+                rules += (f"{r['setting_a']}={r['value_a']}&{r.get('setting_b') or '-'}"
+                          f"={r.get('value_b') or '-'}:{r.get('reason')};")
             expected.append(
                 f"{row['format']}|{row['provider']}|{row['owner']}|"
                 f"{row.get('extension_owner') or '-'}|{row['availability']}|"
+                f"{row.get('unavailable_reason') or '-'}|"
                 f"{1 if row['modes']['read'] else 0}|{1 if row['modes']['write'] else 0}|"
                 f"{','.join(row['native_samples'])},|{settings}|{rules}")
         actual = dump.stdout.strip().splitlines()
@@ -154,7 +179,7 @@ def case_contract():
                 if a != e:
                     return fail(f"registry JSON/C mismatch:\n  json: {e}\n  c:    {a}")
             return fail(f"registry JSON/C row count differs: {len(actual)} vs {len(expected)}")
-        print("contract: registry JSON and C registry agree on every field")
+        print("contract: registry JSON and C registry agree on the complete public contract")
     print("contract: PASS")
     return 0
 

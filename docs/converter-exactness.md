@@ -1,14 +1,15 @@
 # Converter exactness classes
 
-A conversion carries exactly one exactness class. The classes never share a label, and a result may only be reported with the class it actually proved.
+A conversion report carries two independent fields that never share a label space: one operation label from the table below, and one metadata outcome (`preserved`, `stripped-explicitly`, or `unsupported-items-named`). A result may only be reported with the label it actually proved.
 
-| Class | What is proved | What it does not promise |
+| Operation label | What is proved | What it does not promise |
 | ----- | -------------- | ------------------------ |
-| `pixel-exact` | A fresh decode of the produced file yields the same dimensions, sample format, alpha mode (including RGB under transparent pixels), every native sample, frame count and frame durations as the agreed source, under the named metadata policy. | Identical file bytes, identical metadata bytes, or identical encoded coefficients. |
-| `byte-identical` | The produced file is byte-for-byte the source file. Only a copy or a format-native reconstruction path (for example JPEG reconstruction through JPEG XL) may claim it, and only after hashing both files. | That a re-encode would produce the same bytes. |
-| `metadata-preserved` | A modifier on `pixel-exact`: every metadata item the target format can carry is present with equal meaning (ICC bytes, orientation, frame timing), checked item by item. `metadata=strip` conversions can never carry this modifier. | That metadata the target cannot represent survived: unsupported items are a distinct, named outcome, never a silent drop. |
-| `coefficient-exact` | For JPEG optimization and import: the quantized DCT coefficients and JPEG coding parameters are preserved exactly, checked in the coefficient domain. | Identical decoded pixels from unrelated IDCT implementations. |
-| `original-byte-reconstruction` | A JPEG XL file produced from JPEG reconstructs the original JPEG bytes exactly (the `byte-identical` claim for that pair), verified by hashing the reconstruction against the source. | Pixel equality beyond what the reconstruction implies. |
+| `pixel-exact` | A fresh decode of the produced file yields the same dimensions, sample format, native bit depth, alpha mode (including RGB under transparent pixels), every native sample, frame count and frame durations as the agreed source. | Identical file bytes, metadata preservation, or identical encoded coefficients. |
+| `byte-identical` | The produced file is byte-for-byte the source file (a copy), verified by hashing both files. | That a decode/re-encode would produce the same bytes, or that any pixel comparison ran. |
+| `coefficient-exact` | For JPEG optimization and import: the quantized DCT coefficients and JPEG coding parameters are preserved exactly, checked in the coefficient domain. | Identical decoded pixels from unrelated IDCT implementations, or byte-identical output. |
+| `original-byte-reconstruction` | Decoding a JPEG XL file produced from JPEG reconstructs the original JPEG bytes exactly, verified by hashing the reconstruction against the source JPEG. This is its own label: it is not `byte-identical`, which names a copy. | A pixel comparison beyond what the reconstruction implies. |
+
+The metadata outcome is not an operation label: `preserved` means every metadata item the target format can carry is present with equal meaning (ICC bytes, orientation, frame timing), checked item by item; items the target cannot represent are named in the report, never dropped silently. `metadata=strip` conversions report `stripped-explicitly` and can never claim byte-oriented labels whose bytes the strip changes.
 
 Rules:
 
