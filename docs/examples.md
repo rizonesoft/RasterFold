@@ -41,7 +41,7 @@ All CLI commands refuse to overwrite an existing output path and produce identic
 
 The repository includes two complete C11 command-line programs that convert binary P6 PPM images (`examples/ppm.h`) to and from `.fold` buffers using `rf_encode_image`, `rf_decode_image`, and `rf_free`:
 
-- [`examples/encode.c`](../examples/encode.c): reads a bounded binary P6 RGB8 PPM file using the header helper in [`examples/ppm.h`](../examples/ppm.h), populates `rf_pixels` (`RF_LAYOUT_RGB8`, stride `width * 3`), calls `rf_encode_image(&pixels, &options, &encoded, &error)`, writes the resulting `.fold` buffer to an exclusive output file (`fopen(..., "wbx")`), and releases `encoded.data` with `rf_free`.
+- [`examples/encode.c`](../examples/encode.c): reads a bounded binary P6 RGB8 PPM file (maxval 255, at most 100000000 pixels) using the header helper in [`examples/ppm.h`](../examples/ppm.h), populates `rf_pixels` (`RF_LAYOUT_RGB8`, stride `width * 3`), calls `rf_encode_image(&pixels, &options, &encoded, &error)`, writes the resulting `.fold` buffer to an exclusive output file (`fopen(..., "wbx")`), and releases `encoded.data` with `rf_free`.
 - [`examples/decode.c`](../examples/decode.c): reads a `.fold` file into memory, calls `rf_decode_image(bytes, length, NULL, &image, &error)`, writes the returned packed top-down RGB8 pixels (`image.data`, `image.size`) as a binary P6 PPM file without overwriting an existing destination, and releases `image.data` with `rf_free`.
 - [`examples/ppm.h`](../examples/ppm.h): minimal P6 header tokenizer (`token` and `dimension`) that accepts `#` comments, whitespace, and CRLF line endings.
 

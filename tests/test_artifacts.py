@@ -109,6 +109,30 @@ class Artifacts(unittest.TestCase):
                 encoded.unlink(missing_ok=True);decoded.unlink(missing_ok=True)
                 run([commands[0],source,encoded]);self.assertEqual(encoded.read_bytes(),KAT_FOLD3)
                 run([commands[1],encoded,decoded]);self.assertEqual(decoded.read_bytes(),source.read_bytes())
+                def refused(args):
+                    result=subprocess.run(list(map(str,args)),capture_output=True)
+                    self.assertNotEqual(result.returncode,0)
+                    self.assertTrue(result.stderr,result)
+                # PPM subset: commented CRLF header accepted, and a raster
+                # starting with '#' and whitespace bytes survives intact.
+                tricky=b'# '+bytes(range(254))*1
+                tricky=(tricky*2)[:16*8*3]
+                csource=temp/'commented.ppm';csource.write_bytes(b'P6\r\n# a comment\r\n16 8\r\n255\r\n'+tricky)
+                cencoded=temp/'commented.fold';cdecoded=temp/'commented.out.ppm'
+                for f in (cencoded,cdecoded):f.unlink(missing_ok=True)
+                run([commands[0],csource,cencoded]);run([commands[1],cencoded,cdecoded])
+                self.assertEqual(cdecoded.read_bytes(),b'P6\n16 8\n255\n'+tricky)
+                # Refusals: bad magic, non-255 maxval, truncated raster,
+                # malformed .fold, and existing destinations, each with a
+                # diagnostic and no new or changed output.
+                badppm=temp/'bad.ppm';badout=temp/'bad.fold';badout.unlink(missing_ok=True)
+                for blob in (b'P3\n16 8\n255\n'+KAT_RGB,b'P6\n16 8\n65535\n'+KAT_RGB,b'P6\n16 8\n255\n'+KAT_RGB[:10]):
+                    badppm.write_bytes(blob);refused([commands[0],badppm,badout]);self.assertFalse(badout.exists())
+                badfold=temp/'bad.fold';badfold.write_bytes(KAT_FOLD3[:20])
+                badback=temp/'bad.out.ppm';badback.unlink(missing_ok=True)
+                refused([commands[1],badfold,badback]);self.assertFalse(badback.exists())
+                before=encoded.read_bytes();refused([commands[0],source,encoded]);self.assertEqual(encoded.read_bytes(),before)
+                beforeppm=decoded.read_bytes();refused([commands[1],encoded,decoded]);self.assertEqual(decoded.read_bytes(),beforeppm)
 
     def test_rf_read_file_eight_byte_zero_padding(self):
         harness = (

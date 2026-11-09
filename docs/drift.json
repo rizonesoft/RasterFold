@@ -1725,14 +1725,14 @@
       }
     },
     "docs/examples.md": {
-      "evidence": "2026-11-09: Re-read docs/examples.md against include/rasterfold.h for D06 T01 section 1 round fixes (non-overlap preconditions, options refusal codes, stream_size channel order; comments only, no signature or byte changed).",
+      "evidence": "2026-11-09 Re-read docs/examples.md against examples/encode.c, examples/decode.c and examples/ppm.h for D06 T01 section 5: P6-only, maxval exactly 255, 1..65535 dimensions, 100000000 pixel bound, comments and CRLF in the header, exclusive outputs and refusal behaviour; prose updated for the maxval and pixel bounds.",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/main.c": "0a9f391a283d94e8d63e2a953f7d5c46a6fb4d4fe041c04f060a0118aae4ed4c",
-        "examples/encode.c": "f4cb5d6e4d04c302d17ce8d6aac0b0926218836ec96d8fa4bb676583234cdd66",
+        "examples/encode.c": "ec11d39245432913d370a7f01b4d01bc508e71719f20b138a965fbfc2822b51c",
         "examples/decode.c": "3f6ff6cfb0b847f5dae70fd6de5f96b0d49f470283326cf4149c368482639530",
         "examples/ppm.h": "9683267ff2b024b14570548e94cfbc0acced5cd7ecd8eba2dab5c69b6677abf6",
-        "docs/examples.md": "0ae7be50b16bd5392b55f814539fee3aa1e971a38afb0919381d45cafd393835"
+        "docs/examples.md": "e3f49cadab393de97bc2cc0ef55b85e05b0c000be54b1bf537f511af3017c747"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/examples.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
