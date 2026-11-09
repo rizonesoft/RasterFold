@@ -1,0 +1,76 @@
+{
+  "ref": "D01 T06 \u00a71",
+  "title": "Where WebP Still Wins",
+  "implementation_sha": "b10b5d4f990041a367fc7fd289fb91d7c23ac85d",
+  "date": "2026-11-09",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/01-compression/D01-T06-s1.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "python3 scripts/windows.py research/ab.py size src/cm.c synth -v -> total=201640 webp=201248 ratio=1.0019 geomean=1.0007 worst=1.6829",
+    "python3 scripts/todo-graph.py validate -> 0 fatal",
+    "python3 scripts/drift-check.py -> 0 errors"
+  ],
+  "completion": {
+    "report": "docs/reviews/01-compression/D01-T06-s1.md",
+    "verdict": "reconciled",
+    "candidate": "b10b5d4f990041a367fc7fd289fb91d7c23ac85d",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/01-compression/D01-T06-s1.md",
+    "candidate": "07baf7b4b8e3fdb7750bfff0ae93559d8e2002ab",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "07baf7b4b8e3fdb7750bfff0ae93559d8e2002ab",
+  "schedule": {
+    "policy": "three-pass",
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}

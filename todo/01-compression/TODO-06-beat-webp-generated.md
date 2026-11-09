@@ -35,7 +35,7 @@ track: C6
 
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
-|   1   |   §1    | Where WebP still wins | -- |  [ ]   |
+|   1   |   §1    | Where WebP still wins | -- |  [x]   |
 |   2   |   §2    | A colour-cache model in version 3 | §1, D01 T03 §1 |  [ ]   |
 |   3   |   §3    | Copy runs for palette images | §1, D01 T01 §2 |  [ ]   |
 
@@ -57,6 +57,8 @@ track: C6
 
 **Test checkpoint:** the breakdown table for every image above 1.1 times WebP: `docs/research.md` section 4.13 lists `syn_checker` 138 vs WebP 82 (1.6829, method 3, index stream 94), `syn_text` 1447 vs 1198 (1.2078, method 3, palette 753, index stream 656), `syn_diagram` 1452 vs 1228 (1.1824, method 3, palette 753, index stream 661), and `syn_odd` 75 vs 60 (1.2500, method 1, header 45, stream 30), from `python3 scripts/windows.py research/ab.py size src/cm.c synth -v` (`total=201640 webp=201248 webp_ratio=1.0019 webp_geomean=1.0007`) at codec revision `b22dec2` on 2026-11-09.
 
+> **Verified:** 2026-11-09 | §1 | b10b5d4f990041a367fc7fd289fb91d7c23ac85d
+> **Review:** `docs/reviews/d01-t06-s1.json`
 ## 2. A Colour-Cache Model in Version 3
 
 **Needs:** ffmpeg with libjxl (benchmarks)
