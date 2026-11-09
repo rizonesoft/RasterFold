@@ -57,6 +57,8 @@ track: GUI1
 
 ## 1. Pixel contract and capability registry
 
+> **Started:** 2026-11-09T06:57:03Z
+
 **Job:** A developer can list supported formats and choose settings from a versioned capability registry before conversion allocates or writes anything.
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
