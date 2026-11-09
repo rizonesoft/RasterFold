@@ -1393,11 +1393,14 @@ def cli_commands() -> None:
     struct.pack_into("<I", trail, size_at, last + 1)
     variants[1].write_bytes(recrc(bytes(trunc)))
     variants[2].write_bytes(recrc(bytes(trail)))
-    for path in variants:
+    variant_diag = [(variants[0], b"invalid fold: payload checksum"),
+                    (variants[1], b"invalid fold: cm stream"),
+                    (variants[2], b"invalid fold: cm stream")]
+    for path, diag in variant_diag:
         before = path.read_bytes()
         result = run(["verify", str(path)])
         check(result.returncode == 4, f"verify on {path.name} exited {result.returncode}, want 4: {result.stdout!r} {result.stderr!r}")
-        check(b"invalid fold" in result.stderr, f"verify diagnostic for {path.name}: {result.stderr!r}")
+        check(diag in result.stderr, f"verify diagnostic for {path.name}: {result.stderr!r}")
         check(b"status: ok" not in result.stdout, f"verify reported success for {path.name}")
         check(path.read_bytes() == before, f"verify modified {path.name}")
     # inspect --json: one JSON object on stdout; --json --time is refused.
@@ -1432,6 +1435,19 @@ def cli_commands() -> None:
     png_named = work / "in.png"
     png_named.write_bytes(bmp.read_bytes())
     expect_fail(["encode", str(png_named), str(work / "x2.fold")], 3, "unsupported input format")
+    # Dotfiles classify by basename, identically under either spelling:
+    # a leading dot is not an extension, so both reach the .fold reader
+    # and fail as malformed .fold (4), not as an unsupported format (3).
+    dotfile = work / ".bmp"
+    dotfile.write_bytes(bmp.read_bytes())
+    dotted = "./" + dotfile.relative_to(ROOT).as_posix()
+    for spelling in (str(dotfile), dotted):
+        result = run(["inspect", spelling])
+        check(result.returncode == 4, f"inspect {spelling} exited {result.returncode}, want 4: {result.stderr!r}")
+    if os.name != "nt":
+        # On POSIX a backslash is a filename character, not a separator:
+        # the unknown extension is a usage error (1).
+        expect_fail(["inspect", "missing.fold\\x"], 1, "usage")
 
 
 def main() -> int:
