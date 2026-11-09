@@ -43,11 +43,16 @@ track: C6
 
 ## 1. Where WebP Still Wins
 
+> **Started:** 2026-11-09T00:13:20Z
+
 **Needs:** ffmpeg with libjxl (benchmarks)
 
-- [ ] Measure `python research/ab.py size synth -v` and `heldout` (its screenshots) against WebP at the current codec. Done when: every image above 1.1 times WebP is listed.
+**Corrected 2026-11-09:** The `heldout` set this section cites does not exist yet (`research/ab.py` has no `heldout` set; it is authored by `D00 T03 §1`, whose own claim records that absence). The heldout screenshot measurement is therefore owned by `D00 T03 §2` and the Milestone 9 gate (`D05 T01 §9`), which re-measure against WebP; this section measures the `synth` generated set, which is the set §2 and §3 are designed against.
+**Corrected 2026-11-09:** `docs/research.md` section 7 is now Robustness and format scope; the compression findings belong in section 4 (Compression designs) as a new subsection, next to §4.7 (exact-repeat context for screenshots).
+
+- [ ] Measure `python research/ab.py size synth -v` against WebP at the current codec. Done when: every image above 1.1 times WebP is listed.
 - [ ] For each listed image, break RasterFold's bytes down by decision kind (the `--breakdown` mode of `D01 T05 §1`) and by region. Done when: the table names where WebP's bytes are fewer. Cheaper substitute: assuming the cause without the breakdown.
-- [ ] Record the findings in `docs/research.md` section 7. Done when: the findings name which of §2 and §3 targets which images.
+- [ ] Record the findings in `docs/research.md` section 4 as a new subsection. Done when: the findings name which of §2 and §3 targets which images.
 - [ ] Commit: `"research: explain where WebP still wins"`
 
 **Test checkpoint:** the breakdown table for every image above 1.1 times WebP.
