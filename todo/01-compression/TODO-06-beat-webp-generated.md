@@ -130,6 +130,8 @@ The palette field is the largest single component on the many-colour generated i
 > **Review:** `docs/reviews/d01-t06-s4.json`
 ## 5. Above-Copy Runs for Palette Images
 
+> **Started:** 2026-11-09T08:38:00Z
+
 **Origin:** discovered run=f64ec873f271 2026-11-09 -- Milestone 8 gate (D05 T01 §8) missed its target on 2026-11-09; this is follow-up 2 of up to three under the missed-milestone policy (D99 T01 §4), required by that gate's acceptance bar.
 
 **Needs:** ffmpeg with libjxl (benchmarks)
