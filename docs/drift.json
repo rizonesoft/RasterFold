@@ -1664,11 +1664,11 @@
       }
     },
     "docs/README.md": {
-      "evidence": "2026-11-09 Re-read docs/README.md against scripts/build-docs.py after the D08 T03 section 2 completion fixes: only the header guard conditional is skipped, directives inside declarations and multiple declarations per line are refused, and api.html is in the live-verification sample.",
+      "evidence": "2026-11-09 Re-read docs/README.md against scripts/build-docs.py after the D08 T03 section 2 post-reconciliation fix: multiple declarations of any kind on one line are refused; no prose change.",
       "sources": {
         "docs/_config.yml": "d2459047e15f142133fb8206900c7921ca9c793559c63c264e7e43dbb1f00522",
         "docs/site-content.json": "b96463cde4f9b48008f95150e1e4e90695cd920d17a106a92bf513e71e008400",
-        "scripts/build-docs.py": "b4097a443c7106a5cb0d7f78e4304d13dc7303d545d2c6de37bef4f466b67a07",
+        "scripts/build-docs.py": "5ea82f415d5b4211b32c74b45c4328a23881e5ea064c9d58f5a17f5d0cd28ae5",
         "docs/README.md": "35dddde5d7cbf1f7353813bebd7272749de00d2f705fc277cd4b51cb7b8189a0"
       }
     },

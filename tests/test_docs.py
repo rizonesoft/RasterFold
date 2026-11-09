@@ -289,6 +289,8 @@ class DocsMapTests(unittest.TestCase):
         # directive inside a struct body.
         refuses(lambda t: t.replace('#define RF_LAYOUT_RGB8 1u', '#ifndef RF_DISABLE_EXTRA\n#define RF_EXTRA 1\n#endif\n#define RF_LAYOUT_RGB8 1u'), 'unsupported conditional')
         refuses(lambda t: t.replace('    uint32_t size, threads;', '#if 0\n    uint32_t hidden;\n#endif\n    uint32_t size, threads;'), 'unsupported directive inside a declaration')
+        # Two typedefs on one line cannot hide the second one either.
+        refuses(lambda t: t.replace('typedef struct { uint8_t *data; size_t size; } rf_buffer;', 'typedef struct { uint8_t *data; size_t size; } rf_buffer; typedef struct { int hidden; } rf_hidden;'), 'unsupported multiple declarations')
         # Two declarations on one line cannot hide the second one.
         refuses(lambda t: t.replace('RF_API uint32_t rf_version(void);', 'RF_API uint32_t rf_version(void); RF_API int rf_new(void);'), 'unsupported multiple declarations')
         # An ordinal-free export entry is refused, not silently skipped.

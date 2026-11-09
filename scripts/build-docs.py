@@ -443,6 +443,8 @@ def parse_api_header(root: Path, header_rel: str, def_rel: str) -> dict:
             if comment is None or comment_used:
                 raise ValueError(f'{header_rel}:{i + 1}: undocumented type: {line}')
             stmt, j = take_statement(i, struct=True)
+            if stmt.count('typedef') != 1:
+                raise ValueError(f'{header_rel}:{i + 1}: unsupported multiple declarations: {stmt}')
             m = re.fullmatch(r'typedef struct \{(.*)\}\s*([a-z_][a-z0-9_]*);', stmt)
             if not m:
                 raise ValueError(f'{header_rel}:{i + 1}: unsupported typedef shape: {stmt}')
@@ -458,7 +460,7 @@ def parse_api_header(root: Path, header_rel: str, def_rel: str) -> dict:
             if comment is None or comment_used:
                 raise ValueError(f'{header_rel}:{i + 1}: undocumented function: {line}')
             stmt, j = take_statement(i)
-            if stmt.split(';', 1)[1].strip():
+            if stmt.split(';', 1)[1].strip() or stmt.count('RF_API') != 1:
                 raise ValueError(f'{header_rel}:{i + 1}: unsupported multiple declarations on one line: {stmt}')
             m = re.fullmatch(r'RF_API\s+(.+?)\s+(rf_\w+)\s*\((.*)\)\s*;', stmt)
             if not m:
