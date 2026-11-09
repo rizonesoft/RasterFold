@@ -127,23 +127,41 @@ const char *rfc_sample_name(rfc_sample_format f) {
 
 /* Setting definitions shared by formats. */
 static const char *const k_metadata_values[] = {"preserve", "strip", NULL};
-static const char *const k_exactness_values[] = {"pixel-exact", "byte-identical", "coefficient-exact", "original-byte-reconstruction", NULL};
+static const char *const k_exactness_values[] = {"pixel-exact", "byte-identical", NULL};
+static const char *const k_exactness_jpeg[] = {"pixel-exact", "byte-identical", "coefficient-exact", NULL};
+static const char *const k_exactness_jxl[] = {"pixel-exact", "byte-identical", "coefficient-exact", "original-byte-reconstruction", NULL};
 static const char *const k_frames_values[] = {"all", "first-only", NULL};
 static const rfc_setting_def k_common_settings[] = {
     {"metadata", "enum", "preserve", k_metadata_values, 2, 0, 0,
      "metadata=strip is explicit; metadata is never dropped silently"},
-    {"exactness", "enum", "pixel-exact", k_exactness_values, 4, 0, 0,
+    {"exactness", "enum", "pixel-exact", k_exactness_values, 2, 0, 0,
      "exactness names the claim proved after conversion; see docs/converter-exactness.md"},
 };
 static const rfc_setting_def k_anim_settings[] = {
     {"metadata", "enum", "preserve", k_metadata_values, 2, 0, 0,
      "metadata=strip is explicit; metadata is never dropped silently"},
-    {"exactness", "enum", "pixel-exact", k_exactness_values, 4, 0, 0,
+    {"exactness", "enum", "pixel-exact", k_exactness_values, 2, 0, 0,
+     "exactness names the claim proved after conversion; see docs/converter-exactness.md"},
+    {"frames", "enum", "all", k_frames_values, 2, 0, 0,
+     "frames=first-only discards frames and is refused for exact conversion"},
+};
+static const rfc_setting_def k_jpeg_settings[] = {
+    {"metadata", "enum", "preserve", k_metadata_values, 2, 0, 0,
+     "metadata=strip is explicit; metadata is never dropped silently"},
+    {"exactness", "enum", "pixel-exact", k_exactness_jpeg, 3, 0, 0,
+     "exactness names the claim proved after conversion; see docs/converter-exactness.md"},
+};
+static const rfc_setting_def k_jxl_settings[] = {
+    {"metadata", "enum", "preserve", k_metadata_values, 2, 0, 0,
+     "metadata=strip is explicit; metadata is never dropped silently"},
+    {"exactness", "enum", "pixel-exact", k_exactness_jxl, 4, 0, 0,
      "exactness names the claim proved after conversion; see docs/converter-exactness.md"},
     {"frames", "enum", "all", k_frames_values, 2, 0, 0,
      "frames=first-only discards frames and is refused for exact conversion"},
 };
 #define COMMON k_common_settings, 2
+#define JPEGSET k_jpeg_settings, 2
+#define JXLSET k_jxl_settings, 3
 #define ANIM k_anim_settings, 3
 static const rfc_combination_rule k_common_rules[] = {
     {"metadata", "strip", "exactness", "byte-identical",
@@ -156,6 +174,15 @@ static const rfc_combination_rule k_anim_rules[] = {
      "frames=first-only discards frames and is refused for exact conversion"},
 };
 #define COMMON_RULES k_common_rules, 1
+static const rfc_combination_rule k_jxl_rules[] = {
+    {"metadata", "strip", "exactness", "byte-identical",
+     "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"},
+    {"metadata", "strip", "exactness", "original-byte-reconstruction",
+     "stripping metadata changes the reconstructed bytes, so it cannot claim original-byte-reconstruction"},
+    {"frames", "first-only", NULL, NULL,
+     "frames=first-only discards frames and is refused for exact conversion"},
+};
+#define JXL_RULES k_jxl_rules, 3
 #define ANIM_RULES k_anim_rules, 2
 
 static const rfc_sample_format k_rgb8[] = {RFC_SAMPLE_RGB8};
@@ -182,9 +209,9 @@ static const rfc_capability k_registry[] = {
     {RFC_FORMAT_PNM, "pnm", "in-tree converter code", "D10 T02 \xc2\xa7" "1", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_pnm, 4, COMMON, COMMON_RULES},
     {RFC_FORMAT_PAM, "pam", "in-tree converter code", "D10 T02 \xc2\xa7" "1", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_pam, 6, COMMON, COMMON_RULES},
     {RFC_FORMAT_WEBP, "webp", "libwebp (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "2", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_rgba8, 2, COMMON, COMMON_RULES},
-    {RFC_FORMAT_JPEG_XL, "jpeg-xl", "libjxl (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "3", "D10 T02 \xc2\xa7" "12", PLANNED, "converter adapter not yet shipped", 1, 1, k_png, 6, ANIM, ANIM_RULES},
+    {RFC_FORMAT_JPEG_XL, "jpeg-xl", "libjxl (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "3", "D10 T02 \xc2\xa7" "12", PLANNED, "converter adapter not yet shipped", 1, 1, k_png, 6, JXLSET, JXL_RULES},
     {RFC_FORMAT_AVIF, "avif", "libavif (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "4", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_10bit, 4, COMMON, COMMON_RULES},
-    {RFC_FORMAT_JPEG, "jpeg", "libjpeg-turbo (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "5", NULL, PLANNED, "converter adapter not yet shipped", 1, 0, k_jpeg, 2, COMMON, COMMON_RULES},
+    {RFC_FORMAT_JPEG, "jpeg", "libjpeg-turbo (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "5", NULL, PLANNED, "converter adapter not yet shipped", 1, 0, k_jpeg, 2, JPEGSET, COMMON_RULES},
     {RFC_FORMAT_GIF, "gif", "in-tree converter code", "D10 T02 \xc2\xa7" "6", "D10 T02 \xc2\xa7" "12", PLANNED, "converter adapter not yet shipped", 1, 1, k_rgba8, 2, ANIM, ANIM_RULES},
     {RFC_FORMAT_TIFF, "tiff", "libtiff (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "6", "D10 T02 \xc2\xa7" "12", PLANNED, "converter adapter not yet shipped", 1, 1, k_png, 6, ANIM, ANIM_RULES},
     {RFC_FORMAT_HEIF, "heif", "libheif (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "7", NULL, PLANNED, "converter adapter not yet shipped; distribution decision owned by D99 T01 \xc2\xa7" "7", 1, 1, k_10bit, 4, COMMON, COMMON_RULES},
@@ -241,6 +268,7 @@ rfc_status rfc_registry_validate_settings(rfc_format_id id, const rfc_setting_va
             if (strcmp(values[i].id, rule->setting_a) == 0) va = values[i].value;
             if (rule->setting_b && strcmp(values[i].id, rule->setting_b) == 0) vb = values[i].value;
         }
+        if (rule->setting_b && !rule->value_b) continue; /* malformed rule: never dereference */
         if (va && strcmp(va, rule->value_a) == 0 &&
             (!rule->setting_b || (vb && strcmp(vb, rule->value_b) == 0))) {
             if (reason_out) *reason_out = rule->reason;

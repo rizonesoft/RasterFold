@@ -88,6 +88,8 @@ def validate_registry():
                 sid = rule.get(key)
                 if sid is not None and sid not in by_id:
                     return fail(f"{where}: rule references unknown setting {sid!r}")
+            if (rule.get("setting_b") is None) != (rule.get("value_b") is None):
+                return fail(f"{where}: rule pairs setting_b with value_b or neither: {rule!r}")
             for key, vkey in (("setting_a", "value_a"), ("setting_b", "value_b")):
                 sid, val = rule.get(key), rule.get(vkey)
                 if sid in by_id and by_id[sid].get("type") == "enum" and val is not None \
@@ -98,6 +100,10 @@ def validate_registry():
         if ("metadata", "strip", "exactness", "byte-identical") not in rules:
             return fail(f"{where}: missing the metadata-strip/byte-identical safety rule")
         has_frames = "frames" in by_id
+        if name in ANIMATED and not has_frames:
+            return fail(f"{where}: animated format is missing its frames setting")
+        if name in ANIMATED and ("frames", "first-only", None, None) not in rules:
+            return fail(f"{where}: missing the frames=first-only safety rule")
         if has_frames and ("frames", "first-only", None, None) not in rules:
             return fail(f"{where}: missing the frames=first-only safety rule")
         samples = row.get("native_samples", [])

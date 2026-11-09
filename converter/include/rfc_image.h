@@ -62,10 +62,12 @@ typedef struct rfc_layout {
     /* Significant bits per channel (native depth), distinct from the
      * storage format: 8 for RGB8, 10 or 12 for AVIF/HEIF sources stored
      * in a 16-bit format, 16 for half float, 32 for single float.
-     * Integer samples are left-aligned: a native value v occupies the
-     * high bits_per_sample bits of its storage channel, so the full
-     * native range maps onto the full storage range. Must be nonzero
-     * and no greater than the storage bits per channel. */
+     * Integer samples are left-aligned with zero fill: the stored value
+     * is exactly v << (storage_bits - bits_per_sample), the unused low
+     * bits are zero, and the native maximum (2^bits - 1) therefore maps
+     * to 2^storage - 2^(storage - bits), never to the storage maximum.
+     * Adapters must produce and consume exactly this mapping. Must be
+     * nonzero and no greater than the storage bits per channel. */
     uint32_t bits_per_sample;
 } rfc_layout;
 
