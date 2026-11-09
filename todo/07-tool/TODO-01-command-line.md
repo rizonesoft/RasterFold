@@ -40,7 +40,7 @@ track: T1
 
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
-|   1   |   §1    | Commands and options | D06 T01 §3 |  [ ]   |
+|   1   |   §1    | Commands and options | D06 T01 §3 |  [x]   |
 |   2   |   §2    | PNG in and out | §1 |  [ ]   |
 |   3   |   §3    | PPM in and out | §1 |  [ ]   |
 |   4   |   §4    | Exit codes, messages, and overwrite | §1 |  [ ]   |
@@ -63,6 +63,8 @@ track: T1
 
 **Freeze check:** the commands add no byte to the `.fold` format: `KAT_FOLD`, `KAT_FOLD3`, and every oracle comparison are unchanged.
 
+> **Verified:** 2026-11-09 | §1 | 04db7f13996881df08bf6ed95308f82257bce098
+> **Review:** `docs/reviews/d07-t01-s1.json`
 ## 2. PNG In and Out
 
 **Job:** A user can import a PNG, export a PNG, and get identical pixels back (the reverse of every conversion).

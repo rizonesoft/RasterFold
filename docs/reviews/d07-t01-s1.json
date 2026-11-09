@@ -1,0 +1,74 @@
+{
+  "ref": "D07 T01 \u00a71",
+  "title": "Commands and Options",
+  "implementation_sha": "04db7f13996881df08bf6ed95308f82257bce098",
+  "date": "2026-11-09",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/07-tool/D07-T01-s1.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "python3 scripts/todo-graph.py validate -> 0 fatal"
+  ],
+  "completion": {
+    "report": "docs/reviews/07-tool/D07-T01-s1.md",
+    "verdict": "reconciled",
+    "candidate": "04db7f13996881df08bf6ed95308f82257bce098",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/07-tool/D07-T01-s1.md",
+    "candidate": "f850696121c4f12ce60fcf161f3a1b005960aadb",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "f850696121c4f12ce60fcf161f3a1b005960aadb",
+  "schedule": {
+    "policy": "three-pass",
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}
