@@ -63,7 +63,7 @@ The API is a contract that outlives releases, so it is designed before code: pla
 - [ ] Document every function, parameter, ownership rule, and error code in the header's comments in the form `D08 T03 §2` generates the reference from. Done when: every declaration carries its comment.
 - [ ] Commit: `"api: the public rasterfold.h header"`
 
-**Test checkpoint:** `clang -std=c11 -fsyntax-only include/rasterfold.h` and `clang++ -fsyntax-only -x c++ include/rasterfold.h` exit 0 with `-Werror`.
+**Test checkpoint:** `clang -std=c11 -Wall -Wextra -Werror -fsyntax-only include/rasterfold.h` and `clang++ -std=c++17 -Wall -Wextra -Werror -fsyntax-only -x c++ include/rasterfold.h` exit 0; separately, the freeze check below is the fidelity evidence that no encoded byte changed.
 
 **Freeze check:** the header adds an interface and changes no `.fold` byte: `KAT_FOLD` and every oracle comparison are unchanged.
 
