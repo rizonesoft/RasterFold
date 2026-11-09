@@ -298,7 +298,8 @@ experiment is repeated only when its plan says what differs this time.
 | int32 mixer, scale 2^16, floor update instead of rounded | +0.06% sub | rounding kept |
 | int32 mixer, scale 2^14, clamped weights, floor update | +0.32% to +0.92% sub | rejected |
 | int16 mixer, floor update | +1.30% sub | rejected |
-| int16 mixer, scale 2^12, rounded saturating update | +0.09% sub against the int32 mixer | speed unmeasured (5.4) |
+| int16 mixer, scale 2^12, rounded saturating update | +0.09% sub against the int32 mixer (five-model era) | speed unmeasured (5.4) |
+| int16 SIMD mixer measured (`D02 T02 §2`, 2026-11-09): seven-model int16 weights at scale 2^12 (init 1229, dot `>> 12`, update `(err * stretch + 32768) >> 16` with saturating add) in `build/research/try.c` against current `src/cm.c` | `photo` 30,634,873 -> 30,634,064 (-0.003%), `tp` 6,598,954 -> 6,598,160 (-0.012%), `synth` 201,640 -> 201,640 (identical); all sets round-trip in the harness | decode B/A 1.006 and 1.029 in two alternating `ab -n5 -t1` passes on `measure kodim01` (bar `<= 0.950`), 0.953 at `-t3`; encode 0.929/0.947 at `-t1` and 0.884 at `-t3`. Rejected on the one-thread decode bar: the mixer dot is no longer the bottleneck the section assumed (the current `code_bit7` already vectorizes counter updates); no patch saved and no port filed. Host load 1.15 to 5.63 during timing (other sessions active), but both decode minima sit above 1.0, far from the bar |
 | mixer learning rate 2x / 0.5x | -0.02% / +0.08% photo | unchanged |
 | initial mixer weight 0.2 / 0.4 instead of 0.3 | +0.03% / +0.08% photo | unchanged |
 | counters 12-bit probability plus 4-bit count per node | +0.07% sub | superseded |
