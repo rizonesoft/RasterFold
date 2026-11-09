@@ -71,6 +71,24 @@ def encode(w, h, rgb, threads=1, stride=None, prefix=False):
         LIBRARY.rf_free(out.data)
 
 
+# The correctness suite's round-trip fixture set (tests/work/<name>/in.bmp
+# with its out.fold). Asserted by name, independently of what a scratch
+# corpus happens to hold, so a partial corpus fails instead of passing on
+# the fixtures it has. Grow this list when test_correctness.py gains a
+# round-trip case.
+EXPECTED_FIXTURES = frozenset({
+    'b127', 'b64', 'b65', 'bfsize0', 'checker', 'col64', 'extremes', 'gap',
+    'gated-ge', 'gated-gl', 'gated-h1', 'gated-h2', 'gated-sq', 'gated-w1',
+    'gated-w2', 'gated-w3', 'gradient', 'grey', 'kat', 'noise', 'noise2',
+    'odd1', 'odd2', 'odd3', 'odd7', 'padding', 'pal_256',
+    'pal_257_fallback', 'pal_bound_w1_c2', 'pal_bound_w1_c4',
+    'pal_bound_w2_c2', 'pal_bound_w2_c4', 'pal_clamp', 'pal_cm_ch_overflow',
+    'pal_d3_candidates', 'pal_ones_run', 'photo', 'px1', 'reserved', 'rgb',
+    'row64', 'sizeimage0', 'solid', 'stripes', 'text', 'topdown', 'ui',
+    'white',
+})
+
+
 class Api(unittest.TestCase):
     def test_00_concurrent_first_initialization(self):
         # First encoding calls race the predictor's once-only table setup.
@@ -185,7 +203,8 @@ class Api(unittest.TestCase):
 
     def test_corpus_matches_cli_and_oracle(self):
         fixtures = sorted((ROOT / 'tests/work').glob('*/in.bmp'))
-        self.assertTrue(fixtures, 'run correctness before API corpus coverage')
+        self.assertEqual({src.parent.name for src in fixtures}, EXPECTED_FIXTURES,
+                         'run the full correctness suite before API corpus coverage')
         count = 0
         for src in fixtures:
             encoded = src.parent / 'out.fold'
@@ -204,7 +223,8 @@ class Api(unittest.TestCase):
         exe = ROOT / 'bin' / TARGET / 'bin' / ('rasterfold.exe' if os.name == 'nt' else 'rasterfold')
         self.assertTrue(exe.is_file(), 'CLI not built for this target')
         fixtures = sorted((ROOT / 'tests/work').glob('*/in.bmp'))
-        self.assertTrue(fixtures, 'run correctness before API corpus coverage')
+        self.assertEqual({src.parent.name for src in fixtures}, EXPECTED_FIXTURES,
+                         'run the full correctness suite before API corpus coverage')
         count = 0
         for src in fixtures:
             encoded = src.parent / 'out.fold'

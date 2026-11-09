@@ -111,7 +111,7 @@ The executable uses the same code path as the library for encode and inspect (li
 - [x] Inspect exported symbol/version sets for Windows, Linux and both Android ABIs in `tests/test_artifacts.py`. Done when: a leaked internal symbol or missing public API fails on any target, with no Windows-only ABI assumption.
 - [x] Commit: `"test: API round trips and the frozen export list"`
 
-**Test checkpoint:** `python3 tests/test_api.py` passes 11 tests including the full 48-fixture corpus assertions; `tests/test_artifacts.py` passes on all four targets built by `python3 scripts/check-all.py --all-targets`; removing `rf_free @5` from `src/rasterfold.def` and rebuilding windows-x64 made `test_public_exports` fail with the missing export, and restoring the line and rebuilding made it pass again (2026-11-09).
+**Test checkpoint:** `python3 tests/test_api.py` passes 11 tests including the full 48-fixture corpus assertions; `tests/test_artifacts.py` passes on all four targets built by `python3 scripts/check-all.py --all-targets`; removing `rf_free @5` from `src/rasterfold.def`, rebuilding windows-x64, then restoring the .def over the altered DLL made `test_public_exports` fail at the binary export comparison (`tests/test_artifacts.py`, actual table missing `rf_free`), and rebuilding the restored DLL made it pass again (2026-11-09).
 
 ## 5. Example Programs
 
