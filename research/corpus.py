@@ -475,102 +475,52 @@ def _download_validated(url: str, dest: Path) -> bytes:
                     return dest.read_bytes()
         except Exception:
             pass
-    req = urllib.request.Request(url, headers={"User-Agent": "RasterFold-research/1.0 (held-out set)"})
     data = None
     for attempt in range(5):
         try:
-            import threading
+            import subprocess
             import time as _time
-            deadline = _time.monotonic() + 300
-            # The transfer runs in a worker thread joined against the
-            # deadline, because no read pattern enforces a total bound on
-            # its own: buffered reads and chunk-framing reads can each
-            # perform many receives inside one call (a one-byte-per-second
-            # trickle keeps every inactivity timeout satisfied). On expiry
-            # the socket is shut down, which forces the blocked read out.
-            box: dict = {}
-            conn_box: list = []
-            sock_box: list = []
-            cancelled = threading.Event()
-
-            def _fetch() -> None:
-                # The connection object is published before connect() and
-                # a cancellation flag is shared with the joining thread, so
-                # cancellation covers header and body reads on an
-                # established connection, and a worker whose connect()
-                # returns after the deadline aborts before issuing its
-                # request. (A connect() blocked in DNS cannot be woken;
-                # that worker is a daemon and the caller's deadline, which
-                # is the obligation, is unaffected.)
-                import http.client
-                import urllib.parse
+            # The transfer runs in a child process the parent waits on
+            # with the 300-second deadline and terminates on expiry. No
+            # in-process read pattern enforces a total bound (buffered
+            # and chunk-framing reads perform many receives per call, and
+            # a thread blocked in connect()/DNS cannot be woken), while
+            # process termination cancels every stage at once and the
+            # operating system reclaims the child's sockets, so cleanup
+            # is owned by the worker's exit, never by shared state.
+            fetch = (
+                "import sys, urllib.request\n"
+                "url, dest = sys.argv[1], sys.argv[2]\n"
+                "req = urllib.request.Request(url, headers={'User-Agent': 'RasterFold-research/1.0 (held-out set)'})\n"
+                "total = 0\n"
+                "with urllib.request.urlopen(req, timeout=60) as r, open(dest, 'wb') as f:\n"
+                "    while True:\n"
+                "        chunk = r.read(65536)\n"
+                "        if not chunk: break\n"
+                "        total += len(chunk)\n"
+                "        if total > 96 * 1024 * 1024: sys.exit('heldout download exceeds 96 MiB')\n"
+                "        f.write(chunk)\n"
+            )
+            part = dest.with_suffix(".part")
+            proc = subprocess.Popen(
+                [sys.executable, "-B", "-c", fetch, url, str(part)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+            try:
+                _, err_text = proc.communicate(timeout=300)
+            except subprocess.TimeoutExpired:
+                proc.terminate()
                 try:
-                    parts = urllib.parse.urlsplit(url)
-                    conn_cls = http.client.HTTPSConnection if parts.scheme == "https" else http.client.HTTPConnection
-                    conn = conn_cls(parts.hostname, parts.port, timeout=60)
-                    conn_box.append(conn)
-                    if cancelled.is_set():
-                        raise SystemExit(f"heldout download exceeds 300s for {url}")
-                    conn.connect()
-                    if cancelled.is_set():
-                        raise SystemExit(f"heldout download exceeds 300s for {url}")
-                    # Retain the raw socket independently: getresponse()
-                    # may clear conn.sock (a Connection: close response),
-                    # which would otherwise lose cancellation ownership.
-                    if conn.sock is not None:
-                        sock_box.append(conn.sock)
-                    path = parts.path or "/"
-                    if parts.query:
-                        path += "?" + parts.query
-                    if cancelled.is_set():
-                        raise SystemExit(f"heldout download exceeds 300s for {url}")
-                    conn.request("GET", path, headers={"User-Agent": "RasterFold-research/1.0 (held-out set)"})
-                    r = conn.getresponse()
-                    if r.status != 200:
-                        raise SystemExit(f"heldout download HTTP {r.status} for {url}")
-                    chunks, total = [], 0
-                    while True:
-                        if cancelled.is_set():
-                            raise SystemExit(f"heldout download exceeds 300s for {url}")
-                        chunk = r.read1(65536) if hasattr(r, "read1") else r.read(65536)
-                        if not chunk:
-                            break
-                        total += len(chunk)
-                        if total > 96 * 1024 * 1024:
-                            raise SystemExit(f"heldout download exceeds 96 MiB for {url}")
-                        chunks.append(chunk)
-                    conn.close()
-                    box["data"] = b"".join(chunks)
-                except BaseException as exc:  # ferried to the joining thread
-                    box["error"] = exc
-
-            worker = threading.Thread(target=_fetch, daemon=True)
-            worker.start()
-            worker.join(max(0.0, deadline - _time.monotonic()))
-            if worker.is_alive():
-                cancelled.set()
-                # Cancel and raise at the deadline: closing the connection
-                # forces the blocked read out in the daemon worker, whose
-                # cleanup then finishes in the background without holding
-                # the caller past the deadline.
-                # Act on the retained raw sockets, never
-                # HTTPConnection.close(): closing the connection also
-                # closes the response's buffered reader, which can wait on
-                # the worker's read lock. shutdown() wakes a blocked
-                # receive at once and takes no parser lock.
-                for s in sock_box:
-                    try:
-                        s.shutdown(2)
-                    except Exception:
-                        pass
-                    try:
-                        s.close()
-                    except Exception:
-                        pass
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+                part.unlink(missing_ok=True)
                 raise SystemExit(f"heldout download exceeds 300s for {url}")
-            if "error" in box:
-                raise box["error"]
-            data = box["data"]
+            if proc.returncode != 0:
+                part.unlink(missing_ok=True)
+                raise SystemExit(f"heldout download failed for {url}: {err_text.strip()}")
+            data = part.read_bytes()
+            part.unlink(missing_ok=True)
             break
         except Exception as exc:
             if attempt == 4:
