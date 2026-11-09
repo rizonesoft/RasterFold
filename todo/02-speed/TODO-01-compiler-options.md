@@ -83,6 +83,8 @@ The codec is small, but `cm.c`'s entry points are called through `fold.c`, and L
 > **Review:** `docs/reviews/d02-t01-s2.json`
 ## 3. An AVX2 Build, Measured before Dispatching
 
+> **Started:** 2026-11-09T02:30:00Z
+
 **Needs:** Idle machine (timing)
 
 Building for `x86-64-v3` might speed the LMS stage and the quantizers. Dispatch costs a second copy of `cm.c` and a CPUID check, so it is built only if the whole-codec `-march=x86-64-v3` build is at least 5% faster.
