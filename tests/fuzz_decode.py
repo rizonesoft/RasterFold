@@ -503,6 +503,9 @@ def _png_chunks(blob: bytes) -> list[tuple[bytes, bytes]] | None:
         length = struct.unpack_from(">I", blob, pos)[0]
         if pos + 12 + length > len(blob):
             return None
+        stored_crc = struct.unpack_from(">I", blob, pos + 8 + length)[0]
+        if zlib_crc(bytes(blob[pos + 4:pos + 8 + length])) != stored_crc:
+            return None  # a chunk whose CRC fails is not valid framing
         chunks.append((bytes(blob[pos + 4:pos + 8]), bytes(blob[pos + 8:pos + 8 + length])))
         pos += 12 + length
         if chunks[-1][0] == b"IEND":
@@ -568,6 +571,8 @@ def _png_is_supported_valid(blob: bytes) -> bool:
     of the native reader: such a mutation must be accepted."""
     chunks = _png_chunks(blob)
     if not chunks or chunks[0][0] != b"IHDR" or chunks[-1][0] != b"IEND" or chunks[-1][1] != b"":
+        return False
+    if sum(1 for typ, _ in chunks if typ == b"IHDR") != 1:
         return False
     seen_idat = False
     idat_ended = False
@@ -696,7 +701,11 @@ def run_png_fuzz(iterations: int, rng: random.Random) -> int:
     trailing = base[0] + b"x"
     plte_late = _png_build(seed_chunks[:-1] + [(b"PLTE", b"\x01\x02\x03"), seed_chunks[-1]])
     plte_dup = _png_build(seed_chunks[:1] + [(b"PLTE", b"\x01\x02\x03"), (b"PLTE", b"\x04\x05\x06")] + seed_chunks[1:])
-    for name, variant in (("trailing", trailing), ("plte_late", plte_late), ("plte_dup", plte_dup)):
+    ihdr_dup = _png_build(seed_chunks[:1] + seed_chunks[:1] + seed_chunks[1:])
+    bad_crc = bytearray(base[0])
+    bad_crc[29] ^= 0xFF  # inside IHDR data; its CRC no longer matches
+    for name, variant in (("trailing", trailing), ("plte_late", plte_late), ("plte_dup", plte_dup),
+                          ("ihdr_dup", ihdr_dup), ("bad_crc", bytes(bad_crc))):
         if _png_is_supported_valid(variant):
             print(f"PNG oracle self-check failed: {name} judged valid")
             return 1
