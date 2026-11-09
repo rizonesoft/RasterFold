@@ -45,7 +45,7 @@ track: L1
 | :---: | :-----: | ----------- | ---------- | :----: |
 |   1   |   §1    | The public header | -- |  [x]   |
 |   2   |   §2    | Shared/static libraries and Windows import libraries | §1 |  [x]   |
-|   3   |   §3    | The command line on the library | §2 |  [ ]   |
+|   3   |   §3    | The command line on the library | §2 |  [x]   |
 |   4   |   §4    | API tests and the ABI list | §2 |  [ ]   |
 |   5   |   §5    | Example programs | §4 |  [ ]   |
 
@@ -96,6 +96,8 @@ The executable uses the same code path as the library for encode and inspect (li
 
 **Test checkpoint:** `python3 tests/test_correctness.py` passes 41, 0 failed; `python3 tests/test_api.py` passes 11 tests; `KAT_FOLD` unchanged (2026-11-09).
 
+> **Verified:** 2026-11-09 | §3 | 83120d5016c606e79869c8bdd9380ba71ec4b560
+> **Review:** `docs/reviews/d06-t01-s3.json`
 ## 4. API Tests and the ABI List
 
 **Job:** A developer can rely on every decode through the DLL reversing its encode, byte for byte.

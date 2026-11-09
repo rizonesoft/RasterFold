@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **87 of 243 sections complete (36%).** 243 sections (19 discovered); backlog 3 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **88 of 243 sections complete (36%).** 243 sections (19 discovered); backlog 3 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -283,7 +283,7 @@ The 1.0 product: library, command line, references, and the release that freezes
 | [ ] | `D99 T01 §7`  | HEVC distribution decision                       |   3   |
 | [x] | `D06 T01 §1`  | The public header                                |   3   |
 | [x] | `D06 T01 §2`  | The DLL and its import libraries                 |   3   |
-| [ ] | `D06 T01 §3`  | The command line on the library                  |   2   |
+| [x] | `D06 T01 §3`  | The command line on the library                  |   2   |
 | [ ] | `D06 T01 §4`  | API tests and the ABI list                       |   4   |
 | [ ] | `D06 T01 §5`  | Example programs                                 |   2   |
 | [ ] | `D07 T01 §1`  | Commands and options                             |   3   |

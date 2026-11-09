@@ -1,0 +1,76 @@
+{
+  "ref": "D06 T01 \u00a73",
+  "title": "The Command Line on the Library",
+  "implementation_sha": "83120d5016c606e79869c8bdd9380ba71ec4b560",
+  "date": "2026-11-09",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/06-library/D06-T01-s3.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "python3 tests/test_correctness.py -> 41 passed",
+    "python3 tests/test_api.py -> 11 tests OK incl decode_matches_cli",
+    "freeze: KAT_FOLD unchanged, no src change in range"
+  ],
+  "completion": {
+    "report": "docs/reviews/06-library/D06-T01-s3.md",
+    "verdict": "reconciled",
+    "candidate": "83120d5016c606e79869c8bdd9380ba71ec4b560",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/06-library/D06-T01-s3.md",
+    "candidate": "a5a4b3d8d74a399345f1dfb6b6aae852ab8385fb",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "a5a4b3d8d74a399345f1dfb6b6aae852ab8385fb",
+  "schedule": {
+    "policy": "three-pass",
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}
