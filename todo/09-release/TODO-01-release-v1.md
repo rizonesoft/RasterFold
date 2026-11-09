@@ -50,17 +50,19 @@ track: R1
 
 ## 1. One Version Source and the Changelog
 
-> **Started:** 2026-11-09T05:30:00Z
+> **Started:** 2026-11-09T05:26:29Z
 
 **Job:** A user can read a report of the version they run, and a history of what changed in each release.
 
 - [ ] Define product SemVer once in `VERSION`, feeding a generated codec-version header, `--version`, `docs/facts.json`, package names and the site; preserve the independent `rf_version()` ABI contract. Done when: `scripts/drift-check.py` fails when any of them disagree. Cheaper substitute: the version typed in four places.
 - [ ] Add `scripts/version.py` to derive development build metadata from the source revision and require release tags to match `VERSION`. Done when: dirty builds are labeled, contradictory tags fail, SemVer prerelease tags require the matching prerelease VERSION, and no push invents a semantic version increment.
+**Corrected 2026-11-09 (plan review):** Four gaps are folded in before building. (1) Product identity is recorded at build time: `scripts/build.py` writes the product version, source revision, and dirty flag into each target's `build.json`, and `scripts/package.py` refuses to package a build whose recorded product version disagrees with `VERSION` (a stale build), with a refusal fixture; the archive is named from the manifest's identity, not from a live guess. (2) The development identity's consumers are specified: the build manifest and the development package name `rasterfold-<target>-<version>-dev+<revision>[.dirty].zip` derived from that manifest; `scripts/version.py --dev` computes the same label from a checkout. (3) `tests/test_version.py` is registered in `scripts/check-all.py`'s test list, and the checkpoint below names the full matrix. The exact tag grammar is pinned here for §3's workflow: `rasterfold-v<MAJOR>.<MINOR>.<PATCH>` with an optional `-<prerelease>` that must equal `VERSION`'s prerelease; SemVer build metadata (`+...`) in a tag is refused, and no command invents an increment. (4) The changelog obligation is wired at its source: the milestone gate checklist template in `research/milestones.py` directs each gate commit to append its summary to `CHANGELOG.md`'s Unreleased section, and the generated milestone files are regenerated; completion here means that wiring exists, not that future commits are proven.
+
 - [ ] Add version/ref mismatch fixtures in `tests/test_version.py`. Done when: packages, CLI and site agree while changing product SemVer does not change the ABI or file-format version.
 - [ ] Write `CHANGELOG.md` with an Unreleased section and the history since the version 2 codec. Done when: every milestone gate's commit appends to Unreleased.
 - [ ] Commit: `"release: one version source and a changelog"`
 
-**Test checkpoint:** a seeded version mismatch fails the drift check; `rasterfold --version` output quoted.
+**Test checkpoint:** seeded mismatches fail the drift check (VERSION against the generated header, `docs/facts.json`, and the site citation); a stale-build manifest makes packaging refuse; `rasterfold version` and `rasterfold --version` both quote product 1.0.0 beside the unchanged format and API versions; malformed, mismatched, prerelease, and build-metadata tags are refused by `scripts/version.py --tag`; clean, dirty, and unknown-revision checkouts produce the specified dev labels; `python3 scripts/check-all.py` runs `tests/test_version.py` green.
 
 ## 2. The Release Package
 
