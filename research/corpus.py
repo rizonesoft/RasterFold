@@ -483,7 +483,12 @@ def _download_validated(url: str, dest: Path) -> bytes:
             deadline = _time.monotonic() + 300
             chunks, total = [], 0
             with urllib.request.urlopen(req, timeout=60) as r:
+                _sock = r.fp.raw._sock
                 while True:
+                    _remaining = deadline - _time.monotonic()
+                    if _remaining <= 0:
+                        raise SystemExit(f"heldout download exceeds 300s for {url}")
+                    _sock.settimeout(min(30.0, _remaining))
                     chunk = r.read(65536)
                     if not chunk:
                         break
