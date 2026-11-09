@@ -119,6 +119,8 @@ The executable uses the same code path as the library for encode and inspect (li
 
 > **Started:** 2026-11-09T03:08:53Z
 
+**Corrected 2026-11-09 (plan review):** Two gaps are folded in before building. (1) The artifact test exercises the examples' refusal paths, not only the happy path: malformed and truncated PPM, malformed `.fold`, and existing destinations each return nonzero with a diagnostic and an absent or unchanged output, against both the static and shared libraries. (2) The examples' PPM subset is documented in `examples/encode.c`: binary `P6` only, maxval exactly 255, dimensions 1..65535 and at most 100,000,000 pixels, with `#` comments and CRLF accepted in the header; fixtures prove commented/CRLF headers, rejected `P3` and non-255 inputs, and a raster whose first bytes are whitespace or `#` surviving intact.
+
 - [ ] Add `examples/encode.c` and `examples/decode.c` (PPM in and out, error handling shown), built and run by `tests/test_artifacts.py` against native shared and static libraries. Done when: both build and round-trip an image locally and in the configured native CI jobs; remote CI proof is recorded separately. Cheaper substitute: code snippets in the docs that nothing compiles.
 - [ ] Commit: `"api: example programs built in CI"`
 
