@@ -445,15 +445,20 @@ def parse_api_header(root: Path, header_rel: str, def_rel: str) -> dict:
             stmt, j = take_statement(i, struct=True)
             if stmt.count('typedef') != 1:
                 raise ValueError(f'{header_rel}:{i + 1}: unsupported multiple declarations: {stmt}')
-            # Non-greedy body plus an explicit end check: a greedy match
-            # would swallow a second declaration sharing the line (a
-            # typedef or a bare struct) into the fields and name the
-            # result after the hidden type.
-            m = re.match(r'typedef struct \{(.*?)\}\s*([a-z_][a-z0-9_]*);', stmt)
-            if not m or m.end() != len(stmt):
+            # Parse structurally, not by one match: the body is the text
+            # up to the first closing brace (no nested brace allowed), and
+            # everything after it must be exactly the type name and its
+            # semicolon. Any second declaration sharing the statement (a
+            # typedef or a bare struct, with any spacing) then refuses.
+            open_brace = stmt.index('{')
+            close_brace = stmt.index('}', open_brace)
+            body = stmt[open_brace + 1:close_brace]
+            rest = stmt[close_brace + 1:].strip()
+            m = re.fullmatch(r'([a-z_][a-z0-9_]*);', rest)
+            if '{' in body or not m:
                 raise ValueError(f'{header_rel}:{i + 1}: unsupported typedef shape: {stmt}')
-            fields = [f.strip() for f in m.group(1).split(';') if f.strip()]
-            types.append({'name': m.group(2), 'fields': fields, 'doc': comment, 'decl': stmt})
+            fields = [f.strip() for f in body.split(';') if f.strip()]
+            types.append({'name': m.group(1), 'fields': fields, 'doc': comment, 'decl': stmt})
             comment = None
             comment_used = False
             i = j + 1
