@@ -135,13 +135,13 @@ static const rfc_setting_def k_common_settings[] = {
     {"metadata", "enum", "preserve", k_metadata_values, 2, 0, 0,
      "metadata=strip is explicit; metadata is never dropped silently"},
     {"exactness", "enum", "pixel-exact", k_exactness_values, 2, 0, 0,
-     "exactness names the claim proved after conversion; see docs/converter-exactness.md"},
+     "exactness supports pixel-exact and byte-identical only: coefficient-exact needs JPEG DCT coefficients and original-byte-reconstruction needs JPEG XL reconstruction data, neither of which this format carries"},
 };
 static const rfc_setting_def k_anim_settings[] = {
     {"metadata", "enum", "preserve", k_metadata_values, 2, 0, 0,
      "metadata=strip is explicit; metadata is never dropped silently"},
     {"exactness", "enum", "pixel-exact", k_exactness_values, 2, 0, 0,
-     "exactness names the claim proved after conversion; see docs/converter-exactness.md"},
+     "exactness supports pixel-exact and byte-identical only: coefficient-exact needs JPEG DCT coefficients and original-byte-reconstruction needs JPEG XL reconstruction data, neither of which this format carries"},
     {"frames", "enum", "all", k_frames_values, 2, 0, 0,
      "frames=first-only discards frames and is refused for exact conversion"},
 };
@@ -149,13 +149,13 @@ static const rfc_setting_def k_jpeg_settings[] = {
     {"metadata", "enum", "preserve", k_metadata_values, 2, 0, 0,
      "metadata=strip is explicit; metadata is never dropped silently"},
     {"exactness", "enum", "pixel-exact", k_exactness_jpeg, 3, 0, 0,
-     "exactness names the claim proved after conversion; see docs/converter-exactness.md"},
+     "exactness supports pixel-exact, byte-identical, and coefficient-exact only: original-byte-reconstruction needs JPEG XL reconstruction data, which JPEG does not carry"},
 };
 static const rfc_setting_def k_jxl_settings[] = {
     {"metadata", "enum", "preserve", k_metadata_values, 2, 0, 0,
      "metadata=strip is explicit; metadata is never dropped silently"},
     {"exactness", "enum", "pixel-exact", k_exactness_jxl, 4, 0, 0,
-     "exactness names the claim proved after conversion; see docs/converter-exactness.md"},
+     "exactness supports pixel-exact, byte-identical, coefficient-exact, and original-byte-reconstruction; any other label is not an exactness class"},
     {"frames", "enum", "all", k_frames_values, 2, 0, 0,
      "frames=first-only discards frames and is refused for exact conversion"},
 };

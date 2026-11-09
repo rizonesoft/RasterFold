@@ -6,7 +6,7 @@
     {
       "format": "rasterfold",
       "provider": "RasterFold (this repository)",
-      "owner": "D10 T02 §1",
+      "owner": "D10 T02 \u00a71",
       "availability": "planned",
       "unavailable_reason": "converter adapter not yet shipped",
       "modes": {
@@ -35,7 +35,7 @@
             "pixel-exact",
             "byte-identical"
           ],
-          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+          "refusal_reason": "exactness supports pixel-exact and byte-identical only: coefficient-exact needs JPEG DCT coefficients and original-byte-reconstruction needs JPEG XL reconstruction data, neither of which this format carries"
         }
       ],
       "rules": [
@@ -52,7 +52,7 @@
     {
       "format": "bmp",
       "provider": "in-tree converter code",
-      "owner": "D10 T02 §1",
+      "owner": "D10 T02 \u00a71",
       "availability": "planned",
       "unavailable_reason": "converter adapter not yet shipped",
       "modes": {
@@ -83,7 +83,7 @@
             "pixel-exact",
             "byte-identical"
           ],
-          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+          "refusal_reason": "exactness supports pixel-exact and byte-identical only: coefficient-exact needs JPEG DCT coefficients and original-byte-reconstruction needs JPEG XL reconstruction data, neither of which this format carries"
         }
       ],
       "rules": [
@@ -99,8 +99,8 @@
     },
     {
       "format": "png",
-      "provider": "libpng (bundled, pinned by D10 T01 §2)",
-      "owner": "D10 T02 §1",
+      "provider": "libpng (bundled, pinned by D10 T01 \u00a72)",
+      "owner": "D10 T02 \u00a71",
       "availability": "planned",
       "unavailable_reason": "converter adapter not yet shipped",
       "modes": {
@@ -134,7 +134,7 @@
             "pixel-exact",
             "byte-identical"
           ],
-          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+          "refusal_reason": "exactness supports pixel-exact and byte-identical only: coefficient-exact needs JPEG DCT coefficients and original-byte-reconstruction needs JPEG XL reconstruction data, neither of which this format carries"
         }
       ],
       "rules": [
@@ -150,10 +150,10 @@
     },
     {
       "format": "apng",
-      "provider": "libpng (bundled, pinned by D10 T01 §2)",
-      "owner": "D10 T02 §1",
+      "provider": "libpng (bundled, pinned by D10 T01 \u00a72)",
+      "owner": "D10 T02 \u00a71",
       "availability": "planned",
-      "unavailable_reason": "converter adapter not yet shipped; animation extensions owned by D10 T02 §12",
+      "unavailable_reason": "converter adapter not yet shipped; animation extensions owned by D10 T02 \u00a712",
       "modes": {
         "read": true,
         "write": true
@@ -185,7 +185,7 @@
             "pixel-exact",
             "byte-identical"
           ],
-          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+          "refusal_reason": "exactness supports pixel-exact and byte-identical only: coefficient-exact needs JPEG DCT coefficients and original-byte-reconstruction needs JPEG XL reconstruction data, neither of which this format carries"
         },
         {
           "id": "frames",
@@ -214,12 +214,12 @@
           "reason": "frames=first-only discards frames and is refused for exact conversion"
         }
       ],
-      "extension_owner": "D10 T02 §12"
+      "extension_owner": "D10 T02 \u00a712"
     },
     {
       "format": "pnm",
       "provider": "in-tree converter code",
-      "owner": "D10 T02 §1",
+      "owner": "D10 T02 \u00a71",
       "availability": "planned",
       "unavailable_reason": "converter adapter not yet shipped",
       "modes": {
@@ -251,7 +251,7 @@
             "pixel-exact",
             "byte-identical"
           ],
-          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+          "refusal_reason": "exactness supports pixel-exact and byte-identical only: coefficient-exact needs JPEG DCT coefficients and original-byte-reconstruction needs JPEG XL reconstruction data, neither of which this format carries"
         }
       ],
       "rules": [
@@ -268,7 +268,7 @@
     {
       "format": "pam",
       "provider": "in-tree converter code",
-      "owner": "D10 T02 §1",
+      "owner": "D10 T02 \u00a71",
       "availability": "planned",
       "unavailable_reason": "converter adapter not yet shipped",
       "modes": {
@@ -302,7 +302,7 @@
             "pixel-exact",
             "byte-identical"
           ],
-          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+          "refusal_reason": "exactness supports pixel-exact and byte-identical only: coefficient-exact needs JPEG DCT coefficients and original-byte-reconstruction needs JPEG XL reconstruction data, neither of which this format carries"
         }
       ],
       "rules": [
@@ -318,8 +318,8 @@
     },
     {
       "format": "webp",
-      "provider": "libwebp (bundled, pinned by D10 T01 §2)",
-      "owner": "D10 T02 §2",
+      "provider": "libwebp (bundled, pinned by D10 T01 \u00a72)",
+      "owner": "D10 T02 \u00a72",
       "availability": "planned",
       "unavailable_reason": "converter adapter not yet shipped",
       "modes": {
@@ -349,7 +349,7 @@
             "pixel-exact",
             "byte-identical"
           ],
-          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+          "refusal_reason": "exactness supports pixel-exact and byte-identical only: coefficient-exact needs JPEG DCT coefficients and original-byte-reconstruction needs JPEG XL reconstruction data, neither of which this format carries"
         }
       ],
       "rules": [
@@ -365,8 +365,8 @@
     },
     {
       "format": "jpeg-xl",
-      "provider": "libjxl (bundled, pinned by D10 T01 §2)",
-      "owner": "D10 T02 §3",
+      "provider": "libjxl (bundled, pinned by D10 T01 \u00a72)",
+      "owner": "D10 T02 \u00a73",
       "availability": "planned",
       "unavailable_reason": "converter adapter not yet shipped",
       "modes": {
@@ -402,7 +402,7 @@
             "coefficient-exact",
             "original-byte-reconstruction"
           ],
-          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+          "refusal_reason": "exactness supports pixel-exact, byte-identical, coefficient-exact, and original-byte-reconstruction; any other label is not an exactness class"
         },
         {
           "id": "frames",
@@ -438,12 +438,12 @@
           "reason": "frames=first-only discards frames and is refused for exact conversion"
         }
       ],
-      "extension_owner": "D10 T02 §12"
+      "extension_owner": "D10 T02 \u00a712"
     },
     {
       "format": "avif",
-      "provider": "libavif (bundled, pinned by D10 T01 §2)",
-      "owner": "D10 T02 §4",
+      "provider": "libavif (bundled, pinned by D10 T01 \u00a72)",
+      "owner": "D10 T02 \u00a74",
       "availability": "planned",
       "unavailable_reason": "converter adapter not yet shipped",
       "modes": {
@@ -475,7 +475,7 @@
             "pixel-exact",
             "byte-identical"
           ],
-          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+          "refusal_reason": "exactness supports pixel-exact and byte-identical only: coefficient-exact needs JPEG DCT coefficients and original-byte-reconstruction needs JPEG XL reconstruction data, neither of which this format carries"
         }
       ],
       "rules": [
@@ -491,8 +491,8 @@
     },
     {
       "format": "jpeg",
-      "provider": "libjpeg-turbo (bundled, pinned by D10 T01 §2)",
-      "owner": "D10 T02 §5",
+      "provider": "libjpeg-turbo (bundled, pinned by D10 T01 \u00a72)",
+      "owner": "D10 T02 \u00a75",
       "availability": "planned",
       "unavailable_reason": "converter adapter not yet shipped",
       "modes": {
@@ -523,7 +523,7 @@
             "byte-identical",
             "coefficient-exact"
           ],
-          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+          "refusal_reason": "exactness supports pixel-exact, byte-identical, and coefficient-exact only: original-byte-reconstruction needs JPEG XL reconstruction data, which JPEG does not carry"
         }
       ],
       "rules": [
@@ -540,7 +540,7 @@
     {
       "format": "gif",
       "provider": "in-tree converter code",
-      "owner": "D10 T02 §6",
+      "owner": "D10 T02 \u00a76",
       "availability": "planned",
       "unavailable_reason": "converter adapter not yet shipped",
       "modes": {
@@ -570,7 +570,7 @@
             "pixel-exact",
             "byte-identical"
           ],
-          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+          "refusal_reason": "exactness supports pixel-exact and byte-identical only: coefficient-exact needs JPEG DCT coefficients and original-byte-reconstruction needs JPEG XL reconstruction data, neither of which this format carries"
         },
         {
           "id": "frames",
@@ -599,12 +599,12 @@
           "reason": "frames=first-only discards frames and is refused for exact conversion"
         }
       ],
-      "extension_owner": "D10 T02 §12"
+      "extension_owner": "D10 T02 \u00a712"
     },
     {
       "format": "tiff",
-      "provider": "libtiff (bundled, pinned by D10 T01 §2)",
-      "owner": "D10 T02 §6",
+      "provider": "libtiff (bundled, pinned by D10 T01 \u00a72)",
+      "owner": "D10 T02 \u00a76",
       "availability": "planned",
       "unavailable_reason": "converter adapter not yet shipped",
       "modes": {
@@ -638,7 +638,7 @@
             "pixel-exact",
             "byte-identical"
           ],
-          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+          "refusal_reason": "exactness supports pixel-exact and byte-identical only: coefficient-exact needs JPEG DCT coefficients and original-byte-reconstruction needs JPEG XL reconstruction data, neither of which this format carries"
         },
         {
           "id": "frames",
@@ -667,14 +667,14 @@
           "reason": "frames=first-only discards frames and is refused for exact conversion"
         }
       ],
-      "extension_owner": "D10 T02 §12"
+      "extension_owner": "D10 T02 \u00a712"
     },
     {
       "format": "heif",
-      "provider": "libheif (bundled, pinned by D10 T01 §2)",
-      "owner": "D10 T02 §7",
+      "provider": "libheif (bundled, pinned by D10 T01 \u00a72)",
+      "owner": "D10 T02 \u00a77",
       "availability": "planned",
-      "unavailable_reason": "converter adapter not yet shipped; distribution decision owned by D99 T01 §7",
+      "unavailable_reason": "converter adapter not yet shipped; distribution decision owned by D99 T01 \u00a77",
       "modes": {
         "read": true,
         "write": true
@@ -704,7 +704,7 @@
             "pixel-exact",
             "byte-identical"
           ],
-          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+          "refusal_reason": "exactness supports pixel-exact and byte-identical only: coefficient-exact needs JPEG DCT coefficients and original-byte-reconstruction needs JPEG XL reconstruction data, neither of which this format carries"
         }
       ],
       "rules": [
@@ -720,10 +720,10 @@
     },
     {
       "format": "heic",
-      "provider": "libheif (bundled, pinned by D10 T01 §2)",
-      "owner": "D10 T02 §7",
+      "provider": "libheif (bundled, pinned by D10 T01 \u00a72)",
+      "owner": "D10 T02 \u00a77",
       "availability": "planned",
-      "unavailable_reason": "converter adapter not yet shipped; distribution decision owned by D99 T01 §7",
+      "unavailable_reason": "converter adapter not yet shipped; distribution decision owned by D99 T01 \u00a77",
       "modes": {
         "read": true,
         "write": true
@@ -753,7 +753,7 @@
             "pixel-exact",
             "byte-identical"
           ],
-          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+          "refusal_reason": "exactness supports pixel-exact and byte-identical only: coefficient-exact needs JPEG DCT coefficients and original-byte-reconstruction needs JPEG XL reconstruction data, neither of which this format carries"
         }
       ],
       "rules": [
@@ -769,8 +769,8 @@
     },
     {
       "format": "jpeg-2000",
-      "provider": "OpenJPEG (bundled, pinned by D10 T01 §2)",
-      "owner": "D10 T02 §9",
+      "provider": "OpenJPEG (bundled, pinned by D10 T01 \u00a72)",
+      "owner": "D10 T02 \u00a79",
       "availability": "planned",
       "unavailable_reason": "converter adapter not yet shipped",
       "modes": {
@@ -804,7 +804,7 @@
             "pixel-exact",
             "byte-identical"
           ],
-          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+          "refusal_reason": "exactness supports pixel-exact and byte-identical only: coefficient-exact needs JPEG DCT coefficients and original-byte-reconstruction needs JPEG XL reconstruction data, neither of which this format carries"
         }
       ],
       "rules": [
@@ -821,7 +821,7 @@
     {
       "format": "qoi",
       "provider": "in-tree converter code",
-      "owner": "D10 T02 §8",
+      "owner": "D10 T02 \u00a78",
       "availability": "planned",
       "unavailable_reason": "converter adapter not yet shipped",
       "modes": {
@@ -851,7 +851,7 @@
             "pixel-exact",
             "byte-identical"
           ],
-          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+          "refusal_reason": "exactness supports pixel-exact and byte-identical only: coefficient-exact needs JPEG DCT coefficients and original-byte-reconstruction needs JPEG XL reconstruction data, neither of which this format carries"
         }
       ],
       "rules": [
@@ -867,8 +867,8 @@
     },
     {
       "format": "openexr",
-      "provider": "OpenEXR (bundled, pinned by D10 T01 §2)",
-      "owner": "D10 T02 §10",
+      "provider": "OpenEXR (bundled, pinned by D10 T01 \u00a72)",
+      "owner": "D10 T02 \u00a710",
       "availability": "planned",
       "unavailable_reason": "converter adapter not yet shipped",
       "modes": {
@@ -900,7 +900,7 @@
             "pixel-exact",
             "byte-identical"
           ],
-          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+          "refusal_reason": "exactness supports pixel-exact and byte-identical only: coefficient-exact needs JPEG DCT coefficients and original-byte-reconstruction needs JPEG XL reconstruction data, neither of which this format carries"
         }
       ],
       "rules": [
@@ -916,8 +916,8 @@
     },
     {
       "format": "camera-raw",
-      "provider": "LibRaw (bundled, pinned by D10 T01 §2)",
-      "owner": "D10 T02 §11",
+      "provider": "LibRaw (bundled, pinned by D10 T01 \u00a72)",
+      "owner": "D10 T02 \u00a711",
       "availability": "planned",
       "unavailable_reason": "import-only adapter not yet shipped",
       "modes": {
@@ -951,7 +951,7 @@
             "pixel-exact",
             "byte-identical"
           ],
-          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+          "refusal_reason": "exactness supports pixel-exact and byte-identical only: coefficient-exact needs JPEG DCT coefficients and original-byte-reconstruction needs JPEG XL reconstruction data, neither of which this format carries"
         }
       ],
       "rules": [
@@ -967,8 +967,8 @@
     },
     {
       "format": "dng",
-      "provider": "LibRaw (bundled, pinned by D10 T01 §2)",
-      "owner": "D10 T02 §11",
+      "provider": "LibRaw (bundled, pinned by D10 T01 \u00a72)",
+      "owner": "D10 T02 \u00a711",
       "availability": "planned",
       "unavailable_reason": "import-only adapter not yet shipped",
       "modes": {
@@ -1002,7 +1002,7 @@
             "pixel-exact",
             "byte-identical"
           ],
-          "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
+          "refusal_reason": "exactness supports pixel-exact and byte-identical only: coefficient-exact needs JPEG DCT coefficients and original-byte-reconstruction needs JPEG XL reconstruction data, neither of which this format carries"
         }
       ],
       "rules": [

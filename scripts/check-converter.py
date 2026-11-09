@@ -99,6 +99,10 @@ def validate_registry():
                  for r in row.get("rules", [])}
         if ("metadata", "strip", "exactness", "byte-identical") not in rules:
             return fail(f"{where}: missing the metadata-strip/byte-identical safety rule")
+        exactness_setting = by_id.get("exactness", {})
+        if "original-byte-reconstruction" in exactness_setting.get("allowed", []):
+            if ("metadata", "strip", "exactness", "original-byte-reconstruction") not in rules:
+                return fail(f"{where}: missing the metadata-strip/original-byte-reconstruction safety rule")
         has_frames = "frames" in by_id
         if name in ANIMATED and not has_frames:
             return fail(f"{where}: animated format is missing its frames setting")
