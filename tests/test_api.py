@@ -78,6 +78,29 @@ class Api(unittest.TestCase):
             result = list(pool.map(lambda _: encode(KAT_W, KAT_H, KAT_RGB), range(4)))
         self.assertEqual(result, [KAT_FOLD3] * 4)
 
+    def test_concurrent_encode_error_isolation(self):
+        # Concurrent encodes keep per-call errors: a bad layout, an invalid
+        # thread count, and a successful encode must not contaminate each other.
+        def attempt(kind):
+            raw = C.create_string_buffer(KAT_RGB)
+            pix = Pixels(KAT_W, KAT_H, KAT_W * 3, 99 if kind == 'layout' else 1,
+                         C.addressof(raw), len(KAT_RGB))
+            opt = Options(C.sizeof(Options), 42 if kind == 'threads' else 1)
+            out, err = Buffer(), Error(99, b'stale')
+            rc = LIBRARY.rf_encode_image(C.byref(pix), C.byref(opt), C.byref(out), C.byref(err))
+            if out.data:
+                LIBRARY.rf_free(out.data)
+            return rc, err.code, err.message
+
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            layout, threads, good = list(pool.map(attempt, ('layout', 'threads', 'good')))
+        self.assertEqual(layout[:2], (3, 3))   # RF_ERR_UNSUPPORTED, retained after the others finished
+        self.assertEqual(threads[:2], (1, 1))  # RF_ERR_USAGE
+        self.assertEqual(good[:2], (0, 0))
+        self.assertIn(b'layout', layout[2])
+        self.assertIn(b'threads', threads[2])
+        self.assertIsNone(good[2])
+
     def test_version(self):
         self.assertEqual(LIBRARY.rf_version(), 1 << 16)
         LIBRARY.rf_free(None)

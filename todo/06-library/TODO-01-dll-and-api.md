@@ -73,11 +73,13 @@ The API is a contract that outlives releases, so it is designed before code: pla
 
 > **Started:** 2026-11-09T02:10:26Z
 
-- [ ] Add Windows DLL/static and Linux/Android shared/static targets through `scripts/build.py` (same objects without `main.c`, Windows entry `DllMain`-free with no C runtime, exports from `src/rasterfold.def`), plus a MinGW import library (`librasterfold.dll.a`) and an MSVC one (`rasterfold.lib`, from `llvm-dlltool`). Done when: `tools/llvm-mingw/bin/llvm-objdump.exe -p bin/windows-x64/bin/rasterfold.dll` lists exactly the `.def` exports and imports only `KERNEL32.dll`. Cheaper substitute: a DLL that exports every internal symbol.
-- [ ] Replace the error globals with the `rf_error` the caller passes (the executable keeps printing it). Done when: two threads of one process can encode concurrently with separate errors, shown by a test.
-- [ ] Commit: `"api: build rasterfold.dll with MinGW and MSVC import libraries"`
+- [x] Add Windows DLL/static and Linux/Android shared/static targets through `scripts/build.py` (same objects without `main.c`, Windows entry `DllMain`-free with no C runtime, exports from `src/rasterfold.def`), plus a MinGW import library (`librasterfold.dll.a`) and an MSVC one (`rasterfold.lib`, from `llvm-dlltool`). Done when: `tools/llvm-mingw/bin/llvm-objdump.exe -p bin/windows-x64/bin/rasterfold.dll` lists exactly the `.def` exports and imports only `KERNEL32.dll`. Cheaper substitute: a DLL that exports every internal symbol.
+- [x] Replace the error globals with the `rf_error` the caller passes (the executable keeps printing it). Done when: two threads of one process can encode concurrently with separate errors, shown by a test that runs concurrent encode calls with distinct expected failures beside a successful encode and checks each caller's retained code and message after all finish.
+- [x] Commit: `"api: verify rasterfold.dll import libraries and error isolation"`
 
-**Test checkpoint:** the export and import listings quoted; a C test linked against each import library runs.
+**Test checkpoint:** `tools/llvm-mingw-linux/bin/llvm-objdump -p bin/windows-x64/bin/rasterfold.dll` lists exactly the five `src/rasterfold.def` exports (`rf_version`, `rf_encode_image`, `rf_decode_image`, `rf_inspect`, `rf_free`) and imports only `KERNEL32.dll`; the C consumer in `build/consumer.c` linked against `librasterfold.dll.a` and against `rasterfold.lib` both run on Windows with exit code 0 (`consumer_mingw.exe`, `consumer_msvc.exe`); `python3 tests/test_api.py` passes 10 tests including `test_concurrent_encode_error_isolation` (2026-11-09).
+
+**Freeze check:** `KAT_FOLD`, `KAT_FOLD3`, and every oracle comparison are unchanged, proven by `python3 tests/test_correctness.py` on the candidate.
 
 ## 3. The Command Line on the Library
 
