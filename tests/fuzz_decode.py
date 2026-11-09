@@ -507,6 +507,8 @@ def _png_chunks(blob: bytes) -> list[tuple[bytes, bytes]] | None:
         pos += 12 + length
         if chunks[-1][0] == b"IEND":
             break
+    if chunks and chunks[-1][0] == b"IEND" and pos != len(blob):
+        return None  # trailing bytes after IEND are not valid framing
     return chunks or None
 
 
@@ -569,7 +571,12 @@ def _png_is_supported_valid(blob: bytes) -> bool:
         return False
     seen_idat = False
     idat_ended = False
+    seen_plte = False
     for typ, data in chunks:
+        if typ == b"PLTE":
+            if seen_plte or seen_idat or len(data) == 0 or len(data) % 3 != 0 or len(data) > 768:
+                return False
+            seen_plte = True
         if typ == b"IDAT":
             if idat_ended:
                 return False
@@ -681,6 +688,17 @@ def run_png_fuzz(iterations: int, rng: random.Random) -> int:
             return 1
         if rc != 0:
             print(f"PNG seed {s} refused with exit {rc}, want 0")
+            return 1
+    # The valid-supported oracle itself must refuse the malformed
+    # framings the native reader refuses: trailing bytes after IEND,
+    # a palette after IDAT, and a duplicate palette.
+    seed_chunks = _png_chunks(base[0]) or []
+    trailing = base[0] + b"x"
+    plte_late = _png_build(seed_chunks[:-1] + [(b"PLTE", b"\x01\x02\x03"), seed_chunks[-1]])
+    plte_dup = _png_build(seed_chunks[:1] + [(b"PLTE", b"\x01\x02\x03"), (b"PLTE", b"\x04\x05\x06")] + seed_chunks[1:])
+    for name, variant in (("trailing", trailing), ("plte_late", plte_late), ("plte_dup", plte_dup)):
+        if _png_is_supported_valid(variant):
+            print(f"PNG oracle self-check failed: {name} judged valid")
             return 1
     counts = {0: 0, 3: 0, 4: 0}
     for i in range(iterations):
