@@ -68,11 +68,13 @@ A strip starts with fresh model state, so it pays the learning cost again. The c
 > **Review:** `docs/reviews/d02-t02-s1.json`
 ## 2. The Speed of an Int16 SIMD Mixer
 
+> **Started:** 2026-11-09T07:22:25Z
+
 **Needs:** Idle machine (timing)
 
 The mixer is about a third of each decision's time. With int16 weights, the dot product and the update become a few SSE instructions. Bar: decode at least 5% faster at one thread (`research/ab.py ab`), for the known +0.09% size.
 
-- [ ] In `build/research/try.c`, keep the five stretch values and the bias input as int16 lanes, compute the dot product with `_mm_madd_epi16` and a horizontal add, and update the weights with a multiply, a rounding add, a shift, and a saturating add (scale 2^12, rounded update with shift 16, as the research harness measured). Done when: `python research/ab.py size build/research/try.c photo` decodes every image and shows the +0.09% cost within 0.02%.
+- [ ] In `build/research/try.c`, keep the model's stretch values and the bias input as int16 lanes (seven models plus bias in the version 3 path, five plus bias in the version 2 path; **Corrected 2026-11-09:** the section was authored against five models, version 3 has seven, `NMODEL` in `src/cm.c`), compute the dot product with `_mm_madd_epi16` and a horizontal add, and update the weights with a multiply, a rounding add, a shift, and a saturating add (scale 2^12, rounded update with shift 16, as the research harness measured). Done when: `python research/ab.py size build/research/try.c photo` decodes every image and shows the +0.09% cost within 0.02%.
 - [ ] Measure with `python research/ab.py ab src/cm.c build/research/try.c -n5 -t1 measure kodim01` and `-t3`. Done when: both ratios are quoted.
 - [ ] Record the result in `docs/research.md` section 3; if it clears the bar, save `research/variants/int16-mixer.patch` for a later format version and file its port through `add-todo`. Done when: the row exists, and the patch and the filed section exist exactly when the bar was cleared.
 - [ ] Commit: `"research: measure an int16 SIMD mixer"`
