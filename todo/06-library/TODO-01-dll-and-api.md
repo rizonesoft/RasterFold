@@ -87,7 +87,7 @@ The API is a contract that outlives releases, so it is designed before code: pla
 
 > **Started:** 2026-11-09T02:22:06Z
 
-The executable uses the same code path as the library (linked statically, so `rasterfold.exe` stays one file), which guarantees the two cannot drift apart.
+The executable uses the same code path as the library for encode and inspect (linked statically, so `rasterfold.exe` stays one file); decode keeps its strided path and is held to the library by the byte-identity comparison in `tests/test_api.py`, so the two cannot drift apart silently.
 
 - [x] Rebuild `src/main.c` on the public API calls. Done when: `python tests/test_correctness.py` passes unchanged. Cheaper substitute: two code paths kept in step by hand.
 

@@ -199,6 +199,51 @@ class Api(unittest.TestCase):
             count += 1
         self.assertGreaterEqual(count, 10, 'run correctness before API corpus coverage')
 
+    def test_decode_matches_cli(self):
+        # The CLI decode path (rf_decode_bmp) and the library decoder
+        # (rf_decode_image) must produce identical pixels on the corpus,
+        # and both must refuse the same malformed file.
+        exe = ROOT / 'bin' / TARGET / 'bin' / ('rasterfold.exe' if os.name == 'nt' else 'rasterfold')
+        if not exe.is_file():
+            self.skipTest('CLI not built for this target')
+        count = 0
+        for src in sorted((ROOT / 'tests/work').glob('*/in.bmp')):
+            encoded = src.parent / 'out.fold'
+            if not encoded.is_file():
+                continue
+            try:
+                w, h, rgb = rfi_ref.read_bmp24(src.read_bytes())
+            except ValueError:
+                continue
+            out, err = Pixels(), Error()
+            self.assertEqual(LIBRARY.rf_decode_image(encoded.read_bytes(), encoded.stat().st_size,
+                                                     None, C.byref(out), C.byref(err)), 0, str(src))
+            try:
+                lib_rgb = C.string_at(out.data, out.size)
+            finally:
+                LIBRARY.rf_free(out.data)
+            with tempfile.TemporaryDirectory() as td:
+                bmp = Path(td) / 'out.bmp'
+                r = subprocess.run([str(exe), 'decode', str(encoded), str(bmp)],
+                                   capture_output=True, timeout=120)
+                self.assertEqual(r.returncode, 0, (str(src), r.stderr))
+                cw, ch, cli_rgb = rfi_ref.read_bmp24(bmp.read_bytes())
+            self.assertEqual((cw, ch), (w, h), str(src))
+            self.assertEqual(lib_rgb, cli_rgb, str(src))
+            self.assertEqual(lib_rgb, rgb, str(src))
+            count += 1
+        self.assertGreaterEqual(count, 10, 'run correctness before API corpus coverage')
+        # Both paths refuse a truncated file.
+        bad = KAT_FOLD3[:40]
+        out, err = Pixels(), Error()
+        self.assertEqual(LIBRARY.rf_decode_image(bad, len(bad), None, C.byref(out), C.byref(err)), 4)
+        with tempfile.TemporaryDirectory() as td:
+            fold = Path(td) / 'bad.fold'
+            fold.write_bytes(bad)
+            r = subprocess.run([str(exe), 'decode', str(fold), str(Path(td) / 'x.bmp')],
+                               capture_output=True, timeout=120)
+            self.assertNotEqual(r.returncode, 0)
+
     def test_encode_refusals_zero_output(self):
         raw = C.create_string_buffer(KAT_RGB)
         for field, value, code in [('width', 0, 4), ('width', 0xffffffff, 5), ('layout', 2, 3),
