@@ -89,10 +89,12 @@ The API is a contract that outlives releases, so it is designed before code: pla
 
 The executable uses the same code path as the library (linked statically, so `rasterfold.exe` stays one file), which guarantees the two cannot drift apart.
 
-- [ ] Rebuild `src/main.c` on the public API calls. Done when: `python tests/test_correctness.py` passes unchanged. Cheaper substitute: two code paths kept in step by hand.
-- [ ] Commit: `"cli: build the command line on the public API"`
+- [x] Rebuild `src/main.c` on the public API calls. Done when: `python tests/test_correctness.py` passes unchanged. Cheaper substitute: two code paths kept in step by hand.
 
-**Test checkpoint:** `python tests/test_correctness.py` passes every case; `KAT_FOLD` unchanged.
+**Corrected 2026-11-09:** encode and inspect in `src/main.c` call the public API; decode deliberately keeps the internal strided `rf_decode_bmp` path, the buffer-lifetime contract of `D03 T01` (decoding straight into the BMP layout avoids a second full-image allocation). The no-drift promise for decode is therefore proven by byte identity (`python3 tests/test_correctness.py` and `python3 tests/test_api.py`, including its CLI/library comparison), not by routing decode through `rf_decode_image`. This section changes no routing.
+- [x] Commit: `"cli: verify the command line on the public API"`
+
+**Test checkpoint:** `python3 tests/test_correctness.py` passes 41, 0 failed; `python3 tests/test_api.py` passes 10 tests; `KAT_FOLD` unchanged (2026-11-09).
 
 ## 4. API Tests and the ABI List
 
