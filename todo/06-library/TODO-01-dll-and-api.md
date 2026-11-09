@@ -106,12 +106,12 @@ The executable uses the same code path as the library for encode and inspect (li
 
 **Corrected 2026-11-09 (plan review):** Three gaps are folded in before building. (1) The Windows COFF export check in `tests/test_artifacts.py` compares the complete export table, not only names matching `rf_`, so a leaked non-`rf_` export fails. (2) The corpus tests in `tests/test_api.py` do not skip silently: every `tests/work/*/in.bmp` fixture the correctness suite produced must carry its `out.fold`, encode and decode, and the counted total must equal the fixture count, so a partial scratch corpus fails instead of passing on any ten cases. (3) The Test checkpoint quotes an all-target artifact run on Linux proving all four targets' export checks executed, the deliberate removed-export failure from a rebuilt DLL, and the passing rerun after restoration. `RF_ERR_IO` (2) stays excluded from "every error code reachable": `include/rasterfold.h` reserves it for callers' I/O layers because the library does no I/O; codes 1, 3, 4 and 5 are the reachable set.
 
-- [ ] Add `tests/test_api.py`, which drives the DLL through `ctypes`: round trips byte-identical to `rasterfold.exe` on every correctness image, every error code reachable, options with an older `size` accepted. Done when: `python tests/test_api.py` passes and `scripts/check-all.ps1` runs it.
-- [ ] Freeze `src/rasterfold.def` as the ABI list and add a check that fails when an export disappears or changes ordinal. Done when: removing an export from a build makes the check fail.
-- [ ] Inspect exported symbol/version sets for Windows, Linux and both Android ABIs in `tests/test_artifacts.py`. Done when: a leaked internal symbol or missing public API fails on any target, with no Windows-only ABI assumption.
-- [ ] Commit: `"test: API round trips and the frozen export list"`
+- [x] Add `tests/test_api.py`, which drives the DLL through `ctypes`: round trips byte-identical to `rasterfold.exe` on every correctness image, every error code reachable, options with an older `size` accepted. Done when: `python tests/test_api.py` passes and `scripts/check-all.ps1` runs it.
+- [x] Freeze `src/rasterfold.def` as the ABI list and add a check that fails when an export disappears or changes ordinal. Done when: removing an export from a build makes the check fail.
+- [x] Inspect exported symbol/version sets for Windows, Linux and both Android ABIs in `tests/test_artifacts.py`. Done when: a leaked internal symbol or missing public API fails on any target, with no Windows-only ABI assumption.
+- [x] Commit: `"test: API round trips and the frozen export list"`
 
-**Test checkpoint:** `python tests/test_api.py` output quoted; the ABI check's failure on a removed export quoted, then restored.
+**Test checkpoint:** `python3 tests/test_api.py` passes 11 tests including the full 48-fixture corpus assertions; `tests/test_artifacts.py` passes on all four targets built by `python3 scripts/check-all.py --all-targets`; removing `rf_free @5` from `src/rasterfold.def` and rebuilding windows-x64 made `test_public_exports` fail with the missing export, and restoring the line and rebuilding made it pass again (2026-11-09).
 
 ## 5. Example Programs
 

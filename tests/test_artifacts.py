@@ -24,6 +24,12 @@ EXPORTS={'rf_version':1,'rf_encode_image':2,'rf_decode_image':3,'rf_inspect':4,'
 def tool(name):return str(TOOLS/(name+('.exe' if WIN else '')))
 
 
+def coff_exports(text):
+    # The complete export table, not only rf_* names: a leaked internal or
+    # foreign export must make the comparison against EXPORTS fail.
+    return {name:int(n) for n,name in re.findall(r'Ordinal: (\d+)\s+Name: (\S+)',text)}
+
+
 def run(args, **kw):
     try:
         return subprocess.check_output(list(map(str,args)),stderr=subprocess.STDOUT,**kw)
@@ -32,6 +38,14 @@ def run(args, **kw):
 
 
 class Artifacts(unittest.TestCase):
+    def test_coff_export_table_is_complete(self):
+        good=''.join(f'Export {{\n  Ordinal: {n}\n  Name: {name}\n}}\n' for name,n in sorted(EXPORTS.items(),key=lambda kv:kv[1]))
+        self.assertEqual(coff_exports(good),EXPORTS)
+        leaked=good+'Export {\n  Ordinal: 6\n  Name: memcpy\n}\n'
+        self.assertNotEqual(coff_exports(leaked),EXPORTS)
+        missing=good.replace('  Name: rf_free\n','  Name: rf_free_renamed\n')
+        self.assertNotEqual(coff_exports(missing),EXPORTS)
+
     def test_public_exports(self):
         source=dict((name,int(ordinal)) for name,ordinal in re.findall(r'(rf_\w+)\s+@(\d+)',(ROOT/'src/rasterfold.def').read_text()))
         self.assertEqual(source,EXPORTS)
@@ -42,7 +56,7 @@ class Artifacts(unittest.TestCase):
             if not directory.is_dir():continue
             if target=='windows-x64':
                 text=run([tool('llvm-readobj'),'--coff-exports',directory/'bin/rasterfold.dll']).decode()
-                actual={name:int(n) for n,name in re.findall(r'Ordinal: (\d+)\s+Name: (rf_\w+)',text)}
+                actual=coff_exports(text)
                 self.assertEqual(actual,EXPORTS)
                 imports=run([tool('llvm-objdump'),'-p',directory/'bin/rasterfold.dll']).decode()
                 self.assertEqual(set(re.findall(r'DLL Name: (\S+)',imports)),{'KERNEL32.dll'})

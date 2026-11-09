@@ -184,37 +184,32 @@ class Api(unittest.TestCase):
                 LIBRARY.rf_free(out.data)
 
     def test_corpus_matches_cli_and_oracle(self):
+        fixtures = sorted((ROOT / 'tests/work').glob('*/in.bmp'))
+        self.assertTrue(fixtures, 'run correctness before API corpus coverage')
         count = 0
-        for src in sorted((ROOT / 'tests/work').glob('*/in.bmp')):
+        for src in fixtures:
             encoded = src.parent / 'out.fold'
-            if not encoded.is_file():
-                continue
-            try:
-                w, h, rgb = rfi_ref.read_bmp24(src.read_bytes())
-            except ValueError:
-                continue
+            self.assertTrue(encoded.is_file(), str(src))
+            w, h, rgb = rfi_ref.read_bmp24(src.read_bytes())
             actual = encode(w, h, rgb)
             self.assertEqual(actual, encoded.read_bytes(), str(src))
             self.assertEqual(rfi_ref.decode_image(actual), (w, h, rgb))
             count += 1
-        self.assertGreaterEqual(count, 10, 'run correctness before API corpus coverage')
+        self.assertEqual(count, len(fixtures))
 
     def test_decode_matches_cli(self):
         # The CLI decode path (rf_decode_bmp) and the library decoder
         # (rf_decode_image) must produce identical pixels on the corpus,
         # and both must refuse the same malformed file.
         exe = ROOT / 'bin' / TARGET / 'bin' / ('rasterfold.exe' if os.name == 'nt' else 'rasterfold')
-        if not exe.is_file():
-            self.skipTest('CLI not built for this target')
+        self.assertTrue(exe.is_file(), 'CLI not built for this target')
+        fixtures = sorted((ROOT / 'tests/work').glob('*/in.bmp'))
+        self.assertTrue(fixtures, 'run correctness before API corpus coverage')
         count = 0
-        for src in sorted((ROOT / 'tests/work').glob('*/in.bmp')):
+        for src in fixtures:
             encoded = src.parent / 'out.fold'
-            if not encoded.is_file():
-                continue
-            try:
-                w, h, rgb = rfi_ref.read_bmp24(src.read_bytes())
-            except ValueError:
-                continue
+            self.assertTrue(encoded.is_file(), str(src))
+            w, h, rgb = rfi_ref.read_bmp24(src.read_bytes())
             out, err = Pixels(), Error()
             self.assertEqual(LIBRARY.rf_decode_image(encoded.read_bytes(), encoded.stat().st_size,
                                                      None, C.byref(out), C.byref(err)), 0, str(src))
@@ -232,7 +227,7 @@ class Api(unittest.TestCase):
             self.assertEqual(lib_rgb, cli_rgb, str(src))
             self.assertEqual(lib_rgb, rgb, str(src))
             count += 1
-        self.assertGreaterEqual(count, 10, 'run correctness before API corpus coverage')
+        self.assertEqual(count, len(fixtures))
         # Both paths refuse a truncated file.
         bad = KAT_FOLD3[:40]
         out, err = Pixels(), Error()
