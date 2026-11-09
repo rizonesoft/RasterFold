@@ -19,13 +19,46 @@ static void counting_free(void *ctx, void *ptr) { (void)ctx; free(ptr); }
 static rfc_status fake_probe(void *ctx, const uint8_t *d, size_t n) {
     (void)ctx; (void)d; (void)n; return RFC_OK;
 }
-static rfc_status fake_code(void *ctx, const rfc_frame *in, rfc_frame *out) {
-    (void)ctx; (void)in; (void)out; return RFC_OK;
+static rfc_status fake_encode(void *ctx, const rfc_frame *in,
+                              const rfc_setting_value *s, size_t n,
+                              const rfc_allocator *a, rfc_encoded *out) {
+    (void)ctx; (void)in; (void)s; (void)n; (void)a; (void)out; return RFC_OK;
+}
+static rfc_status fake_decode(void *ctx, const rfc_encoded *in,
+                              const rfc_setting_value *s, size_t n,
+                              const rfc_allocator *a, rfc_frame *out) {
+    (void)ctx; (void)in; (void)s; (void)n; (void)a; (void)out; return RFC_OK;
 }
 static rfc_status fake_cancel(void *ctx) { (void)ctx; return RFC_OK; }
 static void fake_free(void *ctx) { (void)ctx; }
 
-int main(void) {
+static void dump_registry(void) {
+    for (size_t i = 0; i < rfc_registry_count(); i++) {
+        const rfc_capability *c = rfc_registry_at(i);
+        printf("%s|%s|%s|%s|%s|%d|%d|", c->name, c->provider, c->owner,
+               c->extension_owner ? c->extension_owner : "-",
+               c->availability == RFC_AVAILABILITY_USABLE ? "usable" : "planned",
+               c->can_read, c->can_write);
+        for (size_t j = 0; j < c->sample_count; j++) printf("%s,", rfc_sample_name(c->samples[j]));
+        printf("|");
+        for (size_t j = 0; j < c->setting_count; j++) {
+            const rfc_setting_def *s = &c->settings[j];
+            printf("%s:%s:%s:", s->id, s->type, s->default_value);
+            for (size_t k = 0; k < s->allowed_count; k++) printf("%s,", s->allowed[k]);
+            printf(";");
+        }
+        printf("|");
+        for (size_t j = 0; j < c->rule_count; j++) {
+            const rfc_combination_rule *r = &c->rules[j];
+            printf("%s=%s&%s=%s;", r->setting_a, r->value_a,
+                   r->setting_b ? r->setting_b : "-", r->value_b ? r->value_b : "-");
+        }
+        printf("\n");
+    }
+}
+
+int main(int argc, char **argv) {
+    if (argc > 1 && strcmp(argv[1], "dump") == 0) { dump_registry(); return 0; }
     rfc_allocator alloc = {counting_alloc, counting_free, NULL};
 
     /* Valid layout succeeds and reports the total. */
@@ -39,8 +72,10 @@ int main(void) {
     rfc_frame frame;
     rfc_layout bad_stride = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 4, 3, 11};
     CHECK(rfc_frame_alloc(&frame, &bad_stride, NULL, &alloc) == RFC_ERR_INVALID_ARGUMENT);
-    rfc_layout overflow = {RFC_SAMPLE_RGBA16, RFC_ALPHA_STRAIGHT, 0xFFFFFFFFu, 0xFFFFFFFFu, SIZE_MAX};
-    CHECK(rfc_frame_alloc(&frame, &overflow, NULL, &alloc) != RFC_OK);
+    rfc_layout overflow = {RFC_SAMPLE_RGBA16, RFC_ALPHA_STRAIGHT, 10, 3, SIZE_MAX / 2};
+    CHECK(rfc_frame_alloc(&frame, &overflow, NULL, &alloc) == RFC_ERR_OVERFLOW);
+    rfc_layout bad_alpha_value = {RFC_SAMPLE_RGBA8, (rfc_alpha_mode)99, 2, 2, 8};
+    CHECK(rfc_frame_alloc(&frame, &bad_alpha_value, NULL, &alloc) == RFC_ERR_UNSUPPORTED_ALPHA);
     rfc_layout bad_alpha = {RFC_SAMPLE_RGB8, RFC_ALPHA_STRAIGHT, 2, 2, 6};
     CHECK(rfc_frame_alloc(&frame, &bad_alpha, NULL, &alloc) == RFC_ERR_UNSUPPORTED_ALPHA);
     rfc_layout zero = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 0, 2, 0};
@@ -76,6 +111,9 @@ int main(void) {
     rfc_setting_value first_frame[] = {{"frames", "first-only"}};
     CHECK(rfc_registry_validate_settings(RFC_FORMAT_GIF, first_frame, 1, &reason) ==
           RFC_ERR_UNSUPPORTED_COMBINATION);
+    rfc_setting_value null_id[] = {{NULL, "preserve"}};
+    CHECK(rfc_registry_validate_settings(RFC_FORMAT_PNG, null_id, 1, &reason) ==
+          RFC_ERR_INVALID_ARGUMENT);
     rfc_setting_value unknown[] = {{"bogus", "1"}};
     CHECK(rfc_registry_validate_settings(RFC_FORMAT_PNG, unknown, 1, &reason) ==
           RFC_ERR_UNKNOWN_SETTING);
@@ -89,7 +127,7 @@ int main(void) {
     /* Adapter lifecycle: ABI and entry points are enforced; a registered
      * adapter is findable and a duplicate is refused. */
     rfc_adapter fake = {RFC_CODEC_ABI_VERSION, RFC_FORMAT_QOI, fake_probe,
-                        fake_code, fake_code, fake_cancel, fake_free, NULL};
+                        fake_encode, fake_decode, fake_cancel, fake_free, NULL};
     CHECK(rfc_registry_register(&fake) == RFC_OK);
     CHECK(rfc_registry_adapter(RFC_FORMAT_QOI) == &fake);
     CHECK(rfc_registry_register(&fake) == RFC_ERR_DUPLICATE);

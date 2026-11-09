@@ -22,6 +22,12 @@ REQUIRED = ["rasterfold", "bmp", "png", "apng", "pnm", "pam", "webp",
 KNOWN_SAMPLES = {"gray8", "gray16", "rgb8", "rgba8", "rgb16", "rgba16",
                  "rgb-half", "rgba-half", "rgb-float", "rgba-float"}
 SETTING_TYPES = {"enum", "int", "bool"}
+EXPECTED_OWNER = {"rasterfold": 1, "bmp": 1, "png": 1, "apng": 1, "pnm": 1,
+                  "pam": 1, "webp": 2, "jpeg-xl": 3, "avif": 4, "jpeg": 5,
+                  "gif": 6, "tiff": 6, "heif": 7, "heic": 7, "jpeg-2000": 9,
+                  "qoi": 8, "openexr": 10, "camera-raw": 11, "dng": 11}
+IMPORT_ONLY = {"camera-raw", "dng"}  # docs/vision.md: explicit import-only adapter
+ANIMATED = {"apng", "jpeg-xl", "gif", "tiff"}
 
 
 def fail(msg):
@@ -40,6 +46,11 @@ def validate_registry():
     codecs_md = open(os.path.join(
         ROOT, "todo", "10-converter", "TODO-02-codecs.md"), encoding="utf-8").read()
     sections = {int(n) for n in re.findall(r"^## (\d+)\.", codecs_md, re.M)}
+    shipped = set()
+    for line in codecs_md.splitlines():
+        m = re.match(r"\|\s*\d+\s*\|\s*§(\d+)\s*\|.*\|\s*\[x\]\s*\|", line)
+        if m:
+            shipped.add(int(m.group(1)))
     seen = set()
     for row in doc.get("formats", []):
         name = row.get("format")
@@ -56,6 +67,18 @@ def validate_registry():
         modes = row.get("modes", {})
         if not modes.get("read") and not modes.get("write"):
             return fail(f"{where}: advertises neither read nor write")
+        if name in IMPORT_ONLY and modes.get("write"):
+            return fail(f"{where}: import-only format advertises write")
+        if name in EXPECTED_OWNER and m and int(m.group(1)) != EXPECTED_OWNER[name]:
+            return fail(f"{where}: owner §{m.group(1)} does not own this format "
+                        f"(expected §{EXPECTED_OWNER[name]} in TODO-02-codecs.md)")
+        if name in ANIMATED and row.get("extension_owner") != "D10 T02 §12":
+            return fail(f"{where}: animation/multi-page extension owner must be D10 T02 §12")
+        if name not in ANIMATED and row.get("extension_owner"):
+            return fail(f"{where}: unexpected extension_owner")
+        for rule in row.get("rules", []):
+            if not rule.get("setting_a") or not rule.get("value_a") or not rule.get("reason"):
+                return fail(f"{where}: combination rule is incomplete: {rule!r}")
         samples = row.get("native_samples", [])
         if not samples or any(s not in KNOWN_SAMPLES for s in samples):
             return fail(f"{where}: native_samples missing or unknown: {samples!r}")
@@ -63,6 +86,8 @@ def validate_registry():
             return fail(f"{where}: availability must be planned or usable")
         if row.get("availability") == "planned" and not row.get("unavailable_reason"):
             return fail(f"{where}: planned format needs an unavailable_reason")
+        if row.get("availability") == "usable" and m and int(m.group(1)) not in shipped:
+            return fail(f"{where}: marked usable but owning section §{m.group(1)} has not shipped")
         for setting in row.get("settings", []):
             if setting.get("type") not in SETTING_TYPES:
                 return fail(f"{where}: setting {setting.get('id')!r} has unknown type")
@@ -105,6 +130,31 @@ def case_contract():
             return fail("contract test does not build")
         if run([exe]):
             return fail("contract test failed")
+        dump = subprocess.run([exe, "dump"], cwd=ROOT, capture_output=True, text=True)
+        if dump.returncode:
+            return fail("registry dump failed")
+        doc = json.load(open(os.path.join(ROOT, "converter", "codecs.json"), encoding="utf-8"))
+        expected = []
+        for row in doc["formats"]:
+            settings = ""
+            for s in row["settings"]:
+                allowed = ",".join(s.get("allowed", [])) + ("," if s.get("allowed") else "")
+                settings += f"{s['id']}:{s['type']}:{s['default']}:{allowed};"
+            rules = ""
+            for r in row.get("rules", []):
+                rules += f"{r['setting_a']}={r['value_a']}&{r.get('setting_b') or '-'}={r.get('value_b') or '-'};"
+            expected.append(
+                f"{row['format']}|{row['provider']}|{row['owner']}|"
+                f"{row.get('extension_owner') or '-'}|{row['availability']}|"
+                f"{1 if row['modes']['read'] else 0}|{1 if row['modes']['write'] else 0}|"
+                f"{','.join(row['native_samples'])},|{settings}|{rules}")
+        actual = dump.stdout.strip().splitlines()
+        if actual != expected:
+            for a, e in zip(actual, expected):
+                if a != e:
+                    return fail(f"registry JSON/C mismatch:\n  json: {e}\n  c:    {a}")
+            return fail(f"registry JSON/C row count differs: {len(actual)} vs {len(expected)}")
+        print("contract: registry JSON and C registry agree on every field")
     print("contract: PASS")
     return 0
 

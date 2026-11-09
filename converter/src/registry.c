@@ -29,6 +29,8 @@ rfc_status rfc_layout_validate(const rfc_layout *layout, size_t *total_out) {
     if (layout->width == 0 || layout->height == 0 ||
         layout->width > RFC_MAX_DIMENSION || layout->height > RFC_MAX_DIMENSION)
         return RFC_ERR_INVALID_ARGUMENT;
+    if (layout->alpha < RFC_ALPHA_NONE || layout->alpha > RFC_ALPHA_PREMULTIPLIED)
+        return RFC_ERR_UNSUPPORTED_ALPHA;
     if (has_alpha(layout->format) && layout->alpha == RFC_ALPHA_NONE)
         return RFC_ERR_UNSUPPORTED_ALPHA;
     if (!has_alpha(layout->format) && layout->alpha != RFC_ALPHA_NONE &&
@@ -83,6 +85,29 @@ void rfc_frame_free(rfc_frame *frame) {
     memset(frame, 0, sizeof(*frame));
 }
 
+void rfc_encoded_free(rfc_encoded *encoded) {
+    if (!encoded) return;
+    if (encoded->data && encoded->allocator)
+        encoded->allocator->free(encoded->allocator->ctx, encoded->data);
+    encoded->data = NULL; encoded->len = 0; encoded->allocator = NULL;
+}
+
+const char *rfc_sample_name(rfc_sample_format f) {
+    switch (f) {
+        case RFC_SAMPLE_GRAY8: return "gray8";
+        case RFC_SAMPLE_GRAY16: return "gray16";
+        case RFC_SAMPLE_RGB8: return "rgb8";
+        case RFC_SAMPLE_RGBA8: return "rgba8";
+        case RFC_SAMPLE_RGB16: return "rgb16";
+        case RFC_SAMPLE_RGBA16: return "rgba16";
+        case RFC_SAMPLE_RGB_HALF: return "rgb-half";
+        case RFC_SAMPLE_RGBA_HALF: return "rgba-half";
+        case RFC_SAMPLE_RGB_FLOAT: return "rgb-float";
+        case RFC_SAMPLE_RGBA_FLOAT: return "rgba-float";
+        default: return "unknown";
+    }
+}
+
 /* Setting definitions shared by formats. */
 static const char *const k_metadata_values[] = {"preserve", "strip", NULL};
 static const char *const k_exactness_values[] = {"pixel-exact", "byte-identical", NULL};
@@ -103,6 +128,18 @@ static const rfc_setting_def k_anim_settings[] = {
 };
 #define COMMON k_common_settings, 2
 #define ANIM k_anim_settings, 3
+static const rfc_combination_rule k_common_rules[] = {
+    {"metadata", "strip", "exactness", "byte-identical",
+     "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"},
+};
+static const rfc_combination_rule k_anim_rules[] = {
+    {"metadata", "strip", "exactness", "byte-identical",
+     "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"},
+    {"frames", "first-only", NULL, NULL,
+     "frames=first-only discards frames and is refused for exact conversion"},
+};
+#define COMMON_RULES k_common_rules, 1
+#define ANIM_RULES k_anim_rules, 2
 
 static const rfc_sample_format k_rgb8[] = {RFC_SAMPLE_RGB8};
 static const rfc_sample_format k_bmp[] = {RFC_SAMPLE_GRAY8, RFC_SAMPLE_RGB8, RFC_SAMPLE_RGBA8};
@@ -121,25 +158,25 @@ static const rfc_sample_format k_exr[] = {RFC_SAMPLE_RGB_HALF, RFC_SAMPLE_RGBA_H
 #define PLANNED RFC_AVAILABILITY_PLANNED
 
 static const rfc_capability k_registry[] = {
-    {RFC_FORMAT_RASTERFOLD, "rasterfold", "RasterFold (this repository)", "D10 T02 \xc2\xa7" "1", PLANNED, "converter adapter not yet shipped", 1, 1, k_rgb8, 1, COMMON},
-    {RFC_FORMAT_BMP, "bmp", "in-tree converter code", "D10 T02 \xc2\xa7" "1", PLANNED, "converter adapter not yet shipped", 1, 1, k_bmp, 3, COMMON},
-    {RFC_FORMAT_PNG, "png", "libpng (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "1", PLANNED, "converter adapter not yet shipped", 1, 1, k_png, 6, COMMON},
-    {RFC_FORMAT_APNG, "apng", "libpng (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "1", PLANNED, "converter adapter not yet shipped; animation extensions owned by D10 T02 \xc2\xa7" "12", 1, 1, k_png, 6, ANIM},
-    {RFC_FORMAT_PNM, "pnm", "in-tree converter code", "D10 T02 \xc2\xa7" "1", PLANNED, "converter adapter not yet shipped", 1, 1, k_pnm, 4, COMMON},
-    {RFC_FORMAT_PAM, "pam", "in-tree converter code", "D10 T02 \xc2\xa7" "1", PLANNED, "converter adapter not yet shipped", 1, 1, k_pam, 6, COMMON},
-    {RFC_FORMAT_WEBP, "webp", "libwebp (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "2", PLANNED, "converter adapter not yet shipped", 1, 1, k_rgba8, 2, COMMON},
-    {RFC_FORMAT_JPEG_XL, "jpeg-xl", "libjxl (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "3", PLANNED, "converter adapter not yet shipped", 1, 1, k_png, 6, ANIM},
-    {RFC_FORMAT_AVIF, "avif", "libavif (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "4", PLANNED, "converter adapter not yet shipped", 1, 1, k_10bit, 4, COMMON},
-    {RFC_FORMAT_JPEG, "jpeg", "libjpeg-turbo (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "5", PLANNED, "converter adapter not yet shipped", 1, 0, k_jpeg, 2, COMMON},
-    {RFC_FORMAT_GIF, "gif", "in-tree converter code", "D10 T02 \xc2\xa7" "6", PLANNED, "converter adapter not yet shipped", 1, 1, k_rgba8, 2, ANIM},
-    {RFC_FORMAT_TIFF, "tiff", "libtiff (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "6", PLANNED, "converter adapter not yet shipped", 1, 1, k_png, 6, ANIM},
-    {RFC_FORMAT_HEIF, "heif", "libheif (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "7", PLANNED, "converter adapter not yet shipped; distribution decision owned by D99 T01 \xc2\xa7" "7", 1, 1, k_10bit, 4, COMMON},
-    {RFC_FORMAT_HEIC, "heic", "libheif (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "7", PLANNED, "converter adapter not yet shipped; distribution decision owned by D99 T01 \xc2\xa7" "7", 1, 1, k_10bit, 4, COMMON},
-    {RFC_FORMAT_JPEG2000, "jpeg-2000", "OpenJPEG (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "9", PLANNED, "converter adapter not yet shipped", 1, 1, k_png, 6, COMMON},
-    {RFC_FORMAT_QOI, "qoi", "in-tree converter code", "D10 T02 \xc2\xa7" "8", PLANNED, "converter adapter not yet shipped", 1, 1, k_rgba8, 2, COMMON},
-    {RFC_FORMAT_OPENEXR, "openexr", "OpenEXR (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "10", PLANNED, "converter adapter not yet shipped", 1, 1, k_exr, 4, COMMON},
-    {RFC_FORMAT_CAMERA_RAW, "camera-raw", "LibRaw (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "11", PLANNED, "import-only adapter not yet shipped", 1, 0, k_png, 6, COMMON},
-    {RFC_FORMAT_DNG, "dng", "LibRaw (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "11", PLANNED, "import-only adapter not yet shipped", 1, 0, k_png, 6, COMMON},
+    {RFC_FORMAT_RASTERFOLD, "rasterfold", "RasterFold (this repository)", "D10 T02 \xc2\xa7" "1", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_rgb8, 1, COMMON, COMMON_RULES},
+    {RFC_FORMAT_BMP, "bmp", "in-tree converter code", "D10 T02 \xc2\xa7" "1", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_bmp, 3, COMMON, COMMON_RULES},
+    {RFC_FORMAT_PNG, "png", "libpng (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "1", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_png, 6, COMMON, COMMON_RULES},
+    {RFC_FORMAT_APNG, "apng", "libpng (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "1", "D10 T02 \xc2\xa7" "12", PLANNED, "converter adapter not yet shipped; animation extensions owned by D10 T02 \xc2\xa7" "12", 1, 1, k_png, 6, ANIM, ANIM_RULES},
+    {RFC_FORMAT_PNM, "pnm", "in-tree converter code", "D10 T02 \xc2\xa7" "1", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_pnm, 4, COMMON, COMMON_RULES},
+    {RFC_FORMAT_PAM, "pam", "in-tree converter code", "D10 T02 \xc2\xa7" "1", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_pam, 6, COMMON, COMMON_RULES},
+    {RFC_FORMAT_WEBP, "webp", "libwebp (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "2", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_rgba8, 2, COMMON, COMMON_RULES},
+    {RFC_FORMAT_JPEG_XL, "jpeg-xl", "libjxl (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "3", "D10 T02 \xc2\xa7" "12", PLANNED, "converter adapter not yet shipped", 1, 1, k_png, 6, ANIM, ANIM_RULES},
+    {RFC_FORMAT_AVIF, "avif", "libavif (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "4", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_10bit, 4, COMMON, COMMON_RULES},
+    {RFC_FORMAT_JPEG, "jpeg", "libjpeg-turbo (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "5", NULL, PLANNED, "converter adapter not yet shipped", 1, 0, k_jpeg, 2, COMMON, COMMON_RULES},
+    {RFC_FORMAT_GIF, "gif", "in-tree converter code", "D10 T02 \xc2\xa7" "6", "D10 T02 \xc2\xa7" "12", PLANNED, "converter adapter not yet shipped", 1, 1, k_rgba8, 2, ANIM, ANIM_RULES},
+    {RFC_FORMAT_TIFF, "tiff", "libtiff (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "6", "D10 T02 \xc2\xa7" "12", PLANNED, "converter adapter not yet shipped", 1, 1, k_png, 6, ANIM, ANIM_RULES},
+    {RFC_FORMAT_HEIF, "heif", "libheif (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "7", NULL, PLANNED, "converter adapter not yet shipped; distribution decision owned by D99 T01 \xc2\xa7" "7", 1, 1, k_10bit, 4, COMMON, COMMON_RULES},
+    {RFC_FORMAT_HEIC, "heic", "libheif (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "7", NULL, PLANNED, "converter adapter not yet shipped; distribution decision owned by D99 T01 \xc2\xa7" "7", 1, 1, k_10bit, 4, COMMON, COMMON_RULES},
+    {RFC_FORMAT_JPEG2000, "jpeg-2000", "OpenJPEG (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "9", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_png, 6, COMMON, COMMON_RULES},
+    {RFC_FORMAT_QOI, "qoi", "in-tree converter code", "D10 T02 \xc2\xa7" "8", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_rgba8, 2, COMMON, COMMON_RULES},
+    {RFC_FORMAT_OPENEXR, "openexr", "OpenEXR (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "10", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_exr, 4, COMMON, COMMON_RULES},
+    {RFC_FORMAT_CAMERA_RAW, "camera-raw", "LibRaw (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "11", NULL, PLANNED, "import-only adapter not yet shipped", 1, 0, k_png, 6, COMMON, COMMON_RULES},
+    {RFC_FORMAT_DNG, "dng", "LibRaw (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "11", NULL, PLANNED, "import-only adapter not yet shipped", 1, 0, k_png, 6, COMMON, COMMON_RULES},
 };
 #define REGISTRY_COUNT (sizeof(k_registry) / sizeof(k_registry[0]))
 
@@ -162,26 +199,30 @@ rfc_status rfc_registry_validate_settings(rfc_format_id id, const rfc_setting_va
     if (value_count && !values) return RFC_ERR_INVALID_ARGUMENT;
     const char *metadata = NULL, *exactness = NULL;
     for (size_t i = 0; i < value_count; i++) {
+        if (!values[i].id || !values[i].value) return RFC_ERR_INVALID_ARGUMENT;
         const rfc_setting_def *def = NULL;
         for (size_t j = 0; j < cap->setting_count; j++)
             if (strcmp(cap->settings[j].id, values[i].id) == 0) def = &cap->settings[j];
         if (!def) { if (reason_out) *reason_out = "unknown setting for this format"; return RFC_ERR_UNKNOWN_SETTING; }
-        if (!values[i].value) return RFC_ERR_INVALID_ARGUMENT;
         if (strcmp(def->type, "enum") == 0) {
             int ok = 0;
             for (size_t j = 0; j < def->allowed_count; j++) if (strcmp(def->allowed[j], values[i].value) == 0) ok = 1;
             if (!ok) { if (reason_out) *reason_out = def->refusal_reason; return RFC_ERR_SETTING_VALUE; }
         }
-        if (strcmp(values[i].id, "frames") == 0 && strcmp(values[i].value, "first-only") == 0) {
-            if (reason_out) *reason_out = def->refusal_reason;
+        (void)metadata; (void)exactness;
+    }
+    for (size_t r = 0; r < cap->rule_count; r++) {
+        const rfc_combination_rule *rule = &cap->rules[r];
+        const char *va = NULL, *vb = NULL;
+        for (size_t i = 0; i < value_count; i++) {
+            if (strcmp(values[i].id, rule->setting_a) == 0) va = values[i].value;
+            if (rule->setting_b && strcmp(values[i].id, rule->setting_b) == 0) vb = values[i].value;
+        }
+        if (va && strcmp(va, rule->value_a) == 0 &&
+            (!rule->setting_b || (vb && strcmp(vb, rule->value_b) == 0))) {
+            if (reason_out) *reason_out = rule->reason;
             return RFC_ERR_UNSUPPORTED_COMBINATION;
         }
-        if (strcmp(values[i].id, "metadata") == 0) metadata = values[i].value;
-        if (strcmp(values[i].id, "exactness") == 0) exactness = values[i].value;
-    }
-    if (metadata && exactness && strcmp(metadata, "strip") == 0 && strcmp(exactness, "byte-identical") == 0) {
-        if (reason_out) *reason_out = "stripping metadata changes the bytes, so it cannot claim byte-identical exactness";
-        return RFC_ERR_UNSUPPORTED_COMBINATION;
     }
     return RFC_OK;
 }

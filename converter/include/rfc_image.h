@@ -87,6 +87,17 @@ typedef struct rfc_frame {
     const rfc_allocator *allocator; /* borrowed; must outlive the frame */
 } rfc_frame;
 
+/* An owned encoded byte buffer, produced by an adapter encode and freed
+ * by rfc_encoded_free with the allocator that created it. Encoded bytes
+ * have no pixel layout; rfc_frame is only for decoded pixels. */
+typedef struct rfc_encoded {
+    uint8_t *data;
+    size_t len;
+    const rfc_allocator *allocator; /* borrowed; must outlive the buffer */
+} rfc_encoded;
+
+void rfc_encoded_free(rfc_encoded *encoded);
+
 /* Bytes per pixel for a sample format, or 0 for an unknown format. */
 size_t rfc_sample_bytes(rfc_sample_format format);
 

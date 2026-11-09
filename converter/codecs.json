@@ -37,7 +37,17 @@
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         }
-      ]
+      ],
+      "rules": [
+        {
+          "setting_a": "metadata",
+          "value_a": "strip",
+          "setting_b": "exactness",
+          "value_b": "byte-identical",
+          "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
+        }
+      ],
+      "extension_owner": null
     },
     {
       "format": "bmp",
@@ -75,7 +85,17 @@
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         }
-      ]
+      ],
+      "rules": [
+        {
+          "setting_a": "metadata",
+          "value_a": "strip",
+          "setting_b": "exactness",
+          "value_b": "byte-identical",
+          "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
+        }
+      ],
+      "extension_owner": null
     },
     {
       "format": "png",
@@ -116,7 +136,17 @@
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         }
-      ]
+      ],
+      "rules": [
+        {
+          "setting_a": "metadata",
+          "value_a": "strip",
+          "setting_b": "exactness",
+          "value_b": "byte-identical",
+          "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
+        }
+      ],
+      "extension_owner": null
     },
     {
       "format": "apng",
@@ -167,7 +197,24 @@
           ],
           "refusal_reason": "frames=first-only discards frames and is refused for exact conversion"
         }
-      ]
+      ],
+      "rules": [
+        {
+          "setting_a": "metadata",
+          "value_a": "strip",
+          "setting_b": "exactness",
+          "value_b": "byte-identical",
+          "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
+        },
+        {
+          "setting_a": "frames",
+          "value_a": "first-only",
+          "setting_b": null,
+          "value_b": null,
+          "reason": "frames=first-only discards frames and is refused for exact conversion"
+        }
+      ],
+      "extension_owner": "D10 T02 §12"
     },
     {
       "format": "pnm",
@@ -206,7 +253,17 @@
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         }
-      ]
+      ],
+      "rules": [
+        {
+          "setting_a": "metadata",
+          "value_a": "strip",
+          "setting_b": "exactness",
+          "value_b": "byte-identical",
+          "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
+        }
+      ],
+      "extension_owner": null
     },
     {
       "format": "pam",
@@ -247,7 +304,17 @@
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         }
-      ]
+      ],
+      "rules": [
+        {
+          "setting_a": "metadata",
+          "value_a": "strip",
+          "setting_b": "exactness",
+          "value_b": "byte-identical",
+          "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
+        }
+      ],
+      "extension_owner": null
     },
     {
       "format": "webp",
@@ -284,7 +351,17 @@
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         }
-      ]
+      ],
+      "rules": [
+        {
+          "setting_a": "metadata",
+          "value_a": "strip",
+          "setting_b": "exactness",
+          "value_b": "byte-identical",
+          "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
+        }
+      ],
+      "extension_owner": null
     },
     {
       "format": "jpeg-xl",
@@ -335,7 +412,24 @@
           ],
           "refusal_reason": "frames=first-only discards frames and is refused for exact conversion"
         }
-      ]
+      ],
+      "rules": [
+        {
+          "setting_a": "metadata",
+          "value_a": "strip",
+          "setting_b": "exactness",
+          "value_b": "byte-identical",
+          "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
+        },
+        {
+          "setting_a": "frames",
+          "value_a": "first-only",
+          "setting_b": null,
+          "value_b": null,
+          "reason": "frames=first-only discards frames and is refused for exact conversion"
+        }
+      ],
+      "extension_owner": "D10 T02 §12"
     },
     {
       "format": "avif",
@@ -374,7 +468,17 @@
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         }
-      ]
+      ],
+      "rules": [
+        {
+          "setting_a": "metadata",
+          "value_a": "strip",
+          "setting_b": "exactness",
+          "value_b": "byte-identical",
+          "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
+        }
+      ],
+      "extension_owner": null
     },
     {
       "format": "jpeg",
@@ -411,7 +515,17 @@
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         }
-      ]
+      ],
+      "rules": [
+        {
+          "setting_a": "metadata",
+          "value_a": "strip",
+          "setting_b": "exactness",
+          "value_b": "byte-identical",
+          "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
+        }
+      ],
+      "extension_owner": null
     },
     {
       "format": "gif",
@@ -458,7 +572,24 @@
           ],
           "refusal_reason": "frames=first-only discards frames and is refused for exact conversion"
         }
-      ]
+      ],
+      "rules": [
+        {
+          "setting_a": "metadata",
+          "value_a": "strip",
+          "setting_b": "exactness",
+          "value_b": "byte-identical",
+          "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
+        },
+        {
+          "setting_a": "frames",
+          "value_a": "first-only",
+          "setting_b": null,
+          "value_b": null,
+          "reason": "frames=first-only discards frames and is refused for exact conversion"
+        }
+      ],
+      "extension_owner": "D10 T02 §12"
     },
     {
       "format": "tiff",
@@ -509,7 +640,24 @@
           ],
           "refusal_reason": "frames=first-only discards frames and is refused for exact conversion"
         }
-      ]
+      ],
+      "rules": [
+        {
+          "setting_a": "metadata",
+          "value_a": "strip",
+          "setting_b": "exactness",
+          "value_b": "byte-identical",
+          "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
+        },
+        {
+          "setting_a": "frames",
+          "value_a": "first-only",
+          "setting_b": null,
+          "value_b": null,
+          "reason": "frames=first-only discards frames and is refused for exact conversion"
+        }
+      ],
+      "extension_owner": "D10 T02 §12"
     },
     {
       "format": "heif",
@@ -548,7 +696,17 @@
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         }
-      ]
+      ],
+      "rules": [
+        {
+          "setting_a": "metadata",
+          "value_a": "strip",
+          "setting_b": "exactness",
+          "value_b": "byte-identical",
+          "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
+        }
+      ],
+      "extension_owner": null
     },
     {
       "format": "heic",
@@ -587,7 +745,17 @@
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         }
-      ]
+      ],
+      "rules": [
+        {
+          "setting_a": "metadata",
+          "value_a": "strip",
+          "setting_b": "exactness",
+          "value_b": "byte-identical",
+          "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
+        }
+      ],
+      "extension_owner": null
     },
     {
       "format": "jpeg-2000",
@@ -628,7 +796,17 @@
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         }
-      ]
+      ],
+      "rules": [
+        {
+          "setting_a": "metadata",
+          "value_a": "strip",
+          "setting_b": "exactness",
+          "value_b": "byte-identical",
+          "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
+        }
+      ],
+      "extension_owner": null
     },
     {
       "format": "qoi",
@@ -665,7 +843,17 @@
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         }
-      ]
+      ],
+      "rules": [
+        {
+          "setting_a": "metadata",
+          "value_a": "strip",
+          "setting_b": "exactness",
+          "value_b": "byte-identical",
+          "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
+        }
+      ],
+      "extension_owner": null
     },
     {
       "format": "openexr",
@@ -704,7 +892,17 @@
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         }
-      ]
+      ],
+      "rules": [
+        {
+          "setting_a": "metadata",
+          "value_a": "strip",
+          "setting_b": "exactness",
+          "value_b": "byte-identical",
+          "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
+        }
+      ],
+      "extension_owner": null
     },
     {
       "format": "camera-raw",
@@ -745,7 +943,17 @@
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         }
-      ]
+      ],
+      "rules": [
+        {
+          "setting_a": "metadata",
+          "value_a": "strip",
+          "setting_b": "exactness",
+          "value_b": "byte-identical",
+          "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
+        }
+      ],
+      "extension_owner": null
     },
     {
       "format": "dng",
@@ -786,7 +994,17 @@
           ],
           "refusal_reason": "exactness names the claim proved after conversion; see docs/converter-exactness.md"
         }
-      ]
+      ],
+      "rules": [
+        {
+          "setting_a": "metadata",
+          "value_a": "strip",
+          "setting_b": "exactness",
+          "value_b": "byte-identical",
+          "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
+        }
+      ],
+      "extension_owner": null
     }
   ]
 }

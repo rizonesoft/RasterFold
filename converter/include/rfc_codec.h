@@ -69,11 +69,23 @@ typedef struct rfc_setting_def {
     const char *refusal_reason;
 } rfc_setting_def;
 
+/* A discoverable combination constraint: when setting_a has value_a and
+ * (setting_b is NULL or setting_b has value_b), the combination is
+ * refused with reason. Rules are data, mirrored in converter/codecs.json. */
+typedef struct rfc_combination_rule {
+    const char *setting_a;
+    const char *value_a;
+    const char *setting_b; /* NULL means: value_a alone is refused */
+    const char *value_b;
+    const char *reason;
+} rfc_combination_rule;
+
 typedef struct rfc_capability {
     rfc_format_id id;
     const char *name;
     const char *provider;
-    const char *owner; /* owning section, e.g. "D10 T02 S1" spelled with section sign */
+    const char *owner; /* owning section, e.g. "D10 T02 \u00a71" */
+    const char *extension_owner; /* nullable: owner of animation/multi-page extensions */
     rfc_availability availability;
     const char *unavailable_reason; /* required when availability is planned */
     int can_read;
@@ -82,6 +94,8 @@ typedef struct rfc_capability {
     size_t sample_count;
     const rfc_setting_def *settings;
     size_t setting_count;
+    const rfc_combination_rule *rules;
+    size_t rule_count;
 } rfc_capability;
 
 typedef struct rfc_setting_value {
@@ -95,8 +109,15 @@ typedef struct rfc_adapter {
     uint32_t abi_version; /* must equal RFC_CODEC_ABI_VERSION */
     rfc_format_id format;
     rfc_status (*probe)(void *ctx, const uint8_t *data, size_t len);
-    rfc_status (*encode)(void *ctx, const rfc_frame *in, rfc_frame *out);
-    rfc_status (*decode)(void *ctx, const rfc_frame *in, rfc_frame *out);
+    /* Settings are the registry-validated rfc_setting_value list; adapters
+     * never receive unvalidated settings. encode allocates out through
+     * the supplied allocator; decode allocates the frame the same way. */
+    rfc_status (*encode)(void *ctx, const rfc_frame *in,
+                         const rfc_setting_value *settings, size_t setting_count,
+                         const rfc_allocator *allocator, rfc_encoded *out);
+    rfc_status (*decode)(void *ctx, const rfc_encoded *in,
+                         const rfc_setting_value *settings, size_t setting_count,
+                         const rfc_allocator *allocator, rfc_frame *out);
     rfc_status (*cancel)(void *ctx);
     void (*free_adapter)(void *ctx);
     void *ctx;
@@ -138,6 +159,7 @@ rfc_status rfc_registry_unregister(rfc_format_id id);
 const rfc_adapter *rfc_registry_adapter(rfc_format_id id);
 
 const char *rfc_status_name(rfc_status status);
+const char *rfc_sample_name(rfc_sample_format format);
 
 #ifdef __cplusplus
 }
