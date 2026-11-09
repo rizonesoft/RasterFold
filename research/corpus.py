@@ -533,10 +533,21 @@ def _download_validated(url: str, dest: Path) -> bytes:
                 # cleanup then finishes in the background without holding
                 # the caller past the deadline.
                 for c in conn_box:
-                    try:
-                        c.close()
-                    except Exception:
-                        pass
+                    # Act on the raw socket, never HTTPConnection.close():
+                    # closing the connection also closes the response's
+                    # buffered reader, which can wait on the worker's read
+                    # lock. shutdown() wakes a blocked receive at once and
+                    # takes no parser lock.
+                    s = getattr(c, "sock", None)
+                    if s is not None:
+                        try:
+                            s.shutdown(2)
+                        except Exception:
+                            pass
+                        try:
+                            s.close()
+                        except Exception:
+                            pass
                 raise SystemExit(f"heldout download exceeds 300s for {url}")
             if "error" in box:
                 raise box["error"]
