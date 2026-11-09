@@ -1,0 +1,75 @@
+{
+  "ref": "D01 T06 \u00a73",
+  "title": "Copy Runs for Palette Images",
+  "implementation_sha": "9644892a45c33501af8a9905e3e32ac8ad5fff2f",
+  "date": "2026-11-09",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/01-compression/D01-T06-s3.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "python3 scripts/todo-graph.py validate -> 0 fatal, 0 warnings, 3 adjacency advisories",
+    "python3 scripts/todo-claims.py -> 87/87 hold"
+  ],
+  "completion": {
+    "report": "docs/reviews/01-compression/D01-T06-s3.md",
+    "verdict": "reconciled",
+    "candidate": "9644892a45c33501af8a9905e3e32ac8ad5fff2f",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/01-compression/D01-T06-s3.md",
+    "candidate": "4192f87bc7caea5b2e85c7ad0d6b130b9fb1d7d2",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "4192f87bc7caea5b2e85c7ad0d6b130b9fb1d7d2",
+  "schedule": {
+    "policy": "three-pass",
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}

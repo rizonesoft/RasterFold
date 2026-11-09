@@ -2,7 +2,7 @@
 schema_version: 1
 id: beat-webp-generated
 domain: 01-compression
-status: draft
+status: done
 title: "TODO-06 -- Beat WebP on Generated Images"
 depends_on: []
 frozen: true
@@ -37,7 +37,7 @@ track: C6
 | :---: | :-----: | ----------- | ---------- | :----: |
 |   1   |   §1    | Where WebP still wins | -- |  [x]   |
 |   2   |   §2    | A colour-cache model in version 3 | §1, D01 T03 §1 |  [x]   |
-|   3   |   §3    | Copy runs for palette images | §1, D01 T01 §2 |  [ ]   |
+|   3   |   §3    | Copy runs for palette images | §1, D01 T01 §2 |  [x]   |
 
 ---
 
@@ -99,6 +99,8 @@ For method 3 (extended palette, the palette method the encoder actually selects;
 
 **Freeze check:** method 3 is part of the unreleased format version 3, so its files may change; `KAT_FOLD` (version 2, method 1) and the method 2 fixtures decode unchanged.
 
+> **Verified:** 2026-11-09 | §3 | 9644892a45c33501af8a9905e3e32ac8ad5fff2f
+> **Review:** `docs/reviews/d01-t06-s3.json`
 ## Verification
 
 - [ ] `pwsh scripts/check-all.ps1` exits 0
