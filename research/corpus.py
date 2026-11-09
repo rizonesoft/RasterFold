@@ -489,7 +489,11 @@ def _download_validated(url: str, dest: Path) -> bytes:
                     if _remaining <= 0:
                         raise SystemExit(f"heldout download exceeds 300s for {url}")
                     _sock.settimeout(min(30.0, _remaining))
-                    chunk = r.read(65536)
+                    # read1 performs at most one raw receive per call, so
+                    # the deadline check above runs between receives; a
+                    # buffered read(65536) could loop over many receives
+                    # (a one-byte-per-second trickle) inside one call.
+                    chunk = r.read1(65536) if hasattr(r, "read1") else r.read(65536)
                     if not chunk:
                         break
                     total += len(chunk)
