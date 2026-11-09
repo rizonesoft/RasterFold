@@ -20,7 +20,7 @@ track: C6
 ## Inputs
 
 - [`docs/research.md`](../../docs/research.md) -- section 8 (lossless WebP), section 7 item 4
-- -> XREF: D01 T01 §2 -- method 2, which §3 extends
+- -> XREF: D01 T01 §2 -- the palette methods, whose encoder-selected form (method 3) §3 extends (corrected 2026-11-09, see §3)
 - -> XREF: D01 T03 §1 -- format version 3, which §2 extends before the 1.0 release
 
 ## Outcome
@@ -80,12 +80,12 @@ For method 3 (extended palette, the palette method the encoder actually selects;
 **Corrected 2026-11-09:** the `heldout` set does not exist yet (authored by `D00 T03 §1`); its screenshots are owned by `D00 T03 §2`. This section measures the palette images of `synth`.
 
 - [ ] Prototype the run token in the method 3 encoder and decoder (`src/pal.c`) behind a research switch, and measure the palette images of `synth`. Done when: the sizes are quoted against the bar.
-- [ ] If accepted, make it part of method 3 with `tests/rfi_ref.py`, `spec/FOLD.md`, and `KAT_PAL`. Done when: codec and oracle agree.
+- [ ] If accepted, make it part of method 3 with `tests/rfi_ref.py`, `spec/FOLD.md`, and `KAT_PAL2_3` (the version 3, method 3 fixture in `tests/test_correctness.py`). Done when: codec and oracle agree.
 - [ ] Commit: `"codec: copy runs for palette images"`
 
 **Test checkpoint:** `python tests/test_correctness.py` passes; the palette images' sizes against WebP quoted before and after.
 
-**Freeze check:** method 2 is unreleased until 1.0, so its files may change; `KAT_FOLD` (version 2, method 1) decodes unchanged.
+**Freeze check:** method 3 is part of the unreleased format version 3, so its files may change; `KAT_FOLD` (version 2, method 1) and the method 2 fixtures decode unchanged.
 
 ## Verification
 
