@@ -36,7 +36,7 @@ track: C6
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
 |   1   |   §1    | Where WebP still wins | -- |  [x]   |
-|   2   |   §2    | A colour-cache model in version 3 | §1, D01 T03 §1 |  [ ]   |
+|   2   |   §2    | A colour-cache model in version 3 | §1, D01 T03 §1 |  [x]   |
 |   3   |   §3    | Copy runs for palette images | §1, D01 T01 §2 |  [ ]   |
 
 ---
@@ -77,6 +77,8 @@ A context model over recently seen colours: a small hash of the last colours per
 
 **Freeze check:** `KAT_FOLD` (version 2) decodes unchanged; the operator's standing approval (`D99 T01 §3`) covers extending the unreleased version 3.
 
+> **Verified:** 2026-11-09 | §2 | 1d765a439f387835444b230eac0e2a5fdd84f51c
+> **Review:** `docs/reviews/d01-t06-s2.json`
 ## 3. Copy Runs for Palette Images
 
 For method 3 (extended palette, the palette method the encoder actually selects; `RF_METHOD_PAL2` in `src/pal.c`), a run token that copies a span of indices from the row above (at offsets -2 to 2) or from the left, coded before the per-pixel decisions. Bar: palette images at least 20% smaller, no photo affected.

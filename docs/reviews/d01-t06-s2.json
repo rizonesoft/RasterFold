@@ -1,0 +1,76 @@
+{
+  "ref": "D01 T06 \u00a72",
+  "title": "A Colour-Cache Model in Version 3",
+  "implementation_sha": "1d765a439f387835444b230eac0e2a5fdd84f51c",
+  "date": "2026-11-09",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/01-compression/D01-T06-s2.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "python3 scripts/windows.py research/ab.py size build/research/try.c synth -v -t1 -> GM candidate/baseline 1.0000 (bar <= 0.90 missed, negative result)",
+    "python3 scripts/windows.py research/ab.py size build/research/try.c photo -v -t1 -> 30634088/30634873 = 0.99997",
+    "python3 scripts/todo-graph.py validate -> 0 fatal"
+  ],
+  "completion": {
+    "report": "docs/reviews/01-compression/D01-T06-s2.md",
+    "verdict": "complete",
+    "candidate": "1d765a439f387835444b230eac0e2a5fdd84f51c",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/01-compression/D01-T06-s2.md",
+    "candidate": "d61a566514001f0c5d47a5ca905241b237f9f6d4",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "d61a566514001f0c5d47a5ca905241b237f9f6d4",
+  "schedule": {
+    "policy": "three-pass",
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}
