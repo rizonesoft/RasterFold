@@ -285,6 +285,12 @@ class DocsMapTests(unittest.TestCase):
         refuses(lambda t: t.replace(header[options_doc_start:options_end], ''), 'undocumented type')
         # A comment inside a multi-line signature is refused, not rendered.
         refuses(lambda t: t.replace('RF_API int rf_encode_image(const rf_pixels *pixels, const rf_options *options,\n', 'RF_API int rf_encode_image(const rf_pixels *pixels, const rf_options *options,\n                           // output buffer\n'), 'unsupported comment inside a declaration')
+        # A constant under any other conditional is refused, as is a
+        # directive inside a struct body.
+        refuses(lambda t: t.replace('#define RF_LAYOUT_RGB8 1u', '#ifndef RF_DISABLE_EXTRA\n#define RF_EXTRA 1\n#endif\n#define RF_LAYOUT_RGB8 1u'), 'unsupported conditional')
+        refuses(lambda t: t.replace('    uint32_t size, threads;', '#if 0\n    uint32_t hidden;\n#endif\n    uint32_t size, threads;'), 'unsupported directive inside a declaration')
+        # Two declarations on one line cannot hide the second one.
+        refuses(lambda t: t.replace('RF_API uint32_t rf_version(void);', 'RF_API uint32_t rf_version(void); RF_API int rf_new(void);'), 'unsupported multiple declarations')
         # An ordinal-free export entry is refused, not silently skipped.
         refuses(lambda t: t, 'unsupported export entry', defs=definitions + 'rf_new\n')
 

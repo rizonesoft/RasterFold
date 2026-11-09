@@ -370,6 +370,8 @@ def parse_api_header(root: Path, header_rel: str, def_rel: str) -> dict:
             joined = ' '.join(parts)
             if '//' in joined or '/*' in joined:
                 raise ValueError(f'{header_rel}:{start + 1}: unsupported comment inside a declaration')
+            if any(part.startswith('#') for part in parts):
+                raise ValueError(f'{header_rel}:{start + 1}: unsupported directive inside a declaration')
             if re.search(r'\}\s*[a-z_][a-z0-9_]*\s*;', joined) if struct else ';' in lines[j]:
                 break
             j += 1
@@ -399,9 +401,11 @@ def parse_api_header(root: Path, header_rel: str, def_rel: str) -> dict:
         if not line or line.startswith('#include') or line in ('#endif', '}') or line.startswith('extern "C"'):
             i += 1
             continue
-        if line.startswith('#ifndef') or line.startswith('#define RASTERFOLD_H'):
+        if line == '#ifndef RASTERFOLD_H' or line.startswith('#define RASTERFOLD_H'):
             i += 1
             continue
+        if line.startswith('#ifndef'):
+            raise ValueError(f'{header_rel}:{i + 1}: unsupported conditional: {line}')
         if line == '#ifdef __cplusplus':
             i += 1
             continue
@@ -442,6 +446,8 @@ def parse_api_header(root: Path, header_rel: str, def_rel: str) -> dict:
             m = re.fullmatch(r'typedef struct \{(.*)\}\s*([a-z_][a-z0-9_]*);', stmt)
             if not m:
                 raise ValueError(f'{header_rel}:{i + 1}: unsupported typedef shape: {stmt}')
+            if stmt[m.end():].strip():
+                raise ValueError(f'{header_rel}:{i + 1}: unsupported text after typedef: {stmt}')
             fields = [f.strip() for f in m.group(1).split(';') if f.strip()]
             types.append({'name': m.group(2), 'fields': fields, 'doc': comment, 'decl': stmt})
             comment = None
@@ -452,6 +458,8 @@ def parse_api_header(root: Path, header_rel: str, def_rel: str) -> dict:
             if comment is None or comment_used:
                 raise ValueError(f'{header_rel}:{i + 1}: undocumented function: {line}')
             stmt, j = take_statement(i)
+            if stmt.split(';', 1)[1].strip():
+                raise ValueError(f'{header_rel}:{i + 1}: unsupported multiple declarations on one line: {stmt}')
             m = re.fullmatch(r'RF_API\s+(.+?)\s+(rf_\w+)\s*\((.*)\)\s*;', stmt)
             if not m:
                 raise ValueError(f'{header_rel}:{i + 1}: unsupported function declaration: {stmt}')
@@ -2185,6 +2193,7 @@ LIVE_SAMPLED_PAGES: tuple[str, ...] = (
     'index.html',
     'format.html',
     'c-api.html',
+    'api.html',
     'benchmarks.html',
     '404.html',
 )
