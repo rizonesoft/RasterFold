@@ -4,6 +4,21 @@
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
+# The writer and reviewer CLIs (muse, codex, agy) install into ~/.local/bin,
+# which only login (.profile) and interactive (.bashrc) shells put on PATH.
+# A shortcut or wsl.exe launch runs this script in neither, so build the
+# child environment here instead of inheriting whatever PATH arrived.
+PATH="${PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}"
+for dir in "$HOME/bin" "$HOME/.local/bin"; do
+  if [ -d "$dir" ]; then
+    case ":$PATH:" in
+      *":$dir:"*) ;;
+      *) PATH="$dir:$PATH" ;;
+    esac
+  fi
+done
+export PATH
+
 if ! python3 scripts/unattended-preflight.py; then
   echo
   echo "Preflight failed: the unattended run was not started. Fix the FAIL lines above."
