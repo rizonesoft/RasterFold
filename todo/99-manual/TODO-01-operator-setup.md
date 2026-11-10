@@ -163,6 +163,8 @@ Every milestone gate in `todo/05-milestones/` carries this policy: on a miss, up
 
 ## 8. The 13-Round Milestone Cap
 
+> **Started:** 2026-11-10T22:41:00Z
+
 The missed-milestone policy (§4) let a gate file up to three follow-up experiments and then stopped the campaign for an operator decision. In practice that parked gates (Milestone 8 has sat parked since 2026-11-09 with its three follow-ups shipped and its re-measurement outstanding) and, before the policy gained tolerances on 2026-10-30, twice escalated into operator target changes. The operator now caps the loop instead, so an unattended campaign always terminates a gate one way or the other.
 
 **Operator decision 2026-11-10:** "As for the milestones, let's set a cap for it. for example 'Milestone 8 gate: Beat WebP on generated images', let's give it a 13 round try (or your recommendation) and then accept the outcome, flip it and move on."
@@ -176,7 +178,7 @@ The implementing session's recommendation, recorded with the decision: 13 is kep
 - [x] Record the operator's 13-round cap and the accepted-missed closeout under this section, with Milestone 8's count stated (3 rounds used: `D01 T06 §4`, `§5`, `§6`). Done when: the decision line quotes the operator and the rule above names the round, the cap, and the closeout.
 - [x] Wire the cap into the generator that owns gate text: `POLICY` and the default checkpoint in `research/milestones.py`, plus Milestone 8's override note and missed-target item, then regenerate. Done when: `python3 research/milestones.py --check` exits 0 and every gate in `todo/05-milestones/` names the 13-round cap and `D99 T01 §8`.
 - [x] Carry the cap in the unattended launcher's seed prompt and `docs/unattended-run.md` so a campaign session applies it without rediscovering this section. Done when: both name the 13-round cap and the accepted-missed closeout.
-- [ ] Commit: `"todo: cap missed-milestone follow-ups at 13 rounds with an accepted-missed closeout (D99 T01 §8)"`
+- [x] Commit: `"todo: cap missed-milestone follow-ups at 13 rounds with an accepted-missed closeout (D99 T01 §8)"`
 
 **Test checkpoint:** `python3 research/milestones.py --check` exits 0, `grep -c "13 rounds" todo/05-milestones/TODO-01-beat-jxl-and-webp.md` counts the cap in the generated gates, and this section's decision line quotes the operator.
 
