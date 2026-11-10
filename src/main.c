@@ -22,8 +22,8 @@ static const char usage_text[] =
     "  rasterfold help [command]" RF_EOL
     "  rasterfold version" RF_EOL
     "commands:" RF_EOL
-    "  encode   encode a BMP or PNG image into a .fold file" RF_EOL
-    "  decode   decode a .fold file into a BMP or PNG image" RF_EOL
+    "  encode   encode a BMP, PNG, or PPM image into a .fold file" RF_EOL
+    "  decode   decode a .fold file into a BMP, PNG, or PPM image" RF_EOL
     "  inspect  print what a .fold file holds, as text or JSON" RF_EOL
     "  verify   decode a .fold file in memory and print its pixel hash; writes nothing" RF_EOL
     "  help     print this summary, or one command's usage with `help <command>`" RF_EOL
