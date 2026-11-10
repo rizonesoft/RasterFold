@@ -1828,7 +1828,10 @@ def overwrite_io() -> None:
 
     w, h = 13, 7
     rgb = bytes(((x * 3 + y * 19 + c * 37) & 255) for y in range(h) for x in range(w) for c in range(3))
-    src = work / "in.bmp"
+    # Not `in.bmp`: `tests/work/*/in.bmp` beside `out.fold` is the round-trip fixture pair tests/test_api.py
+    # replays, and this case deliberately replaces `out.fold` with a different image.
+    (work / "in.bmp").unlink(missing_ok=True)
+    src = work / "first.bmp"
     src.write_bytes(rf.write_bmp24(w, h, rgb))
     fold = fresh(work / "out.fold")
     expect_ok(["encode", str(src), str(fold)])
