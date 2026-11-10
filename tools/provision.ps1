@@ -106,17 +106,25 @@ function Test-FfmpegLeg {
   return @{ Name = 'ffmpeg'; Ok = $ok; Required = $false; Detail = $(if ($ok) { "$($cmd.Source) with libjxl" } else { "$($cmd.Source) has no libjxl encoder" }) }
 }
 
+function Test-BasedpyrightPin {
+  param([string]$VersionOutput, [string]$Pin)
+  $first = ($VersionOutput -split "`n")[0].Trim()
+  if ($first -notmatch '^basedpyright\s+(\S+)$') { return $false }
+  return ($Matches[1] -eq $Pin)
+}
+
 function Test-BasedpyrightLeg {
   $exe = Join-Path $Root '.venv\Scripts\basedpyright.exe'
   if (-not (Test-Path $exe)) {
     return @{ Name = 'basedpyright'; Ok = $false; Required = $true; Detail = 'missing .venv (repair: python -m venv .venv, then .venv\Scripts\python -m pip install -r requirements-dev.txt)' }
   }
   $ver = (& $exe --version 2>&1 | Out-String).Trim()
+  $code = $LASTEXITCODE
   $pin = $null
   foreach ($line in Get-Content (Join-Path $Root 'requirements-dev.txt')) {
     if ($line -match '^basedpyright==(.+)$') { $pin = $Matches[1].Trim() }
   }
-  $ok = ($LASTEXITCODE -eq 0 -and $pin -and $ver -match 'basedpyright' -and $ver -match [regex]::Escape($pin))
+  $ok = ($code -eq 0 -and $pin -and (Test-BasedpyrightPin $ver $pin))
   return @{ Name = 'basedpyright'; Ok = $ok; Required = $true; Detail = $(if ($ok) { $ver } else { "installed '$ver' does not match the requirements-dev.txt pin $pin (repair installs requirements-dev.txt into .venv)" }) }
 }
 
