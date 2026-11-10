@@ -270,7 +270,13 @@ static void flush_bits(bitwriter *bw) {
 /* Canonical code construction from frequencies, length-limited to
    max_bits (15 for literal/distance codes, 7 for the code-length code,
    whose lengths travel in 3-bit header fields). */
-static void build_lengths(const uint32_t *freq, uint32_t n, uint8_t *lengths, uint32_t max_bits) {
+/* Huffman working storage lives on the heap (one len_work per deflate
+   call), not the stack: the four arrays exceed the 4 KB Windows
+   stack-probe threshold, and the freestanding Windows build has no
+   ___chkstk_ms to probe with. */
+typedef struct { uint32_t weight[576]; int32_t parent[576]; uint32_t depth_of[288]; uint32_t order[288]; } len_work;
+
+static void build_lengths(const uint32_t *freq, uint32_t n, uint8_t *lengths, uint32_t max_bits, len_work *w) {
     uint32_t nonzero = 0, only = 0;
     for (uint32_t i = 0; i < n; i++) { lengths[i] = 0; if (freq[i]) { nonzero++; only = i; } }
     if (nonzero == 0) { lengths[0] = 1; if (n > 1) lengths[1] = 1; return; }
@@ -282,8 +288,8 @@ static void build_lengths(const uint32_t *freq, uint32_t n, uint8_t *lengths, ui
         return;
     }
     /* Huffman by repeated two-smallest merging over a working array. */
-    uint32_t weight[576];
-    int32_t parent[576];
+    uint32_t *weight = w->weight;
+    int32_t *parent = w->parent;
     for (uint32_t i = 0; i < n; i++) { weight[i] = freq[i] ? freq[i] : 0; parent[i] = -1; }
     uint32_t nodes = n;
     for (;;) {
@@ -300,7 +306,7 @@ static void build_lengths(const uint32_t *freq, uint32_t n, uint8_t *lengths, ui
         parent[m2] = (int32_t)nodes;
         nodes++;
     }
-    uint32_t depth_of[288];
+    uint32_t *depth_of = w->depth_of;
     uint32_t deepest_seen = 0;
     for (uint32_t i = 0; i < n; i++) {
         depth_of[i] = 0;
@@ -338,7 +344,7 @@ static void build_lengths(const uint32_t *freq, uint32_t n, uint8_t *lengths, ui
         counts[max_bits]--;
         excess--;
     }
-    uint32_t order[288];
+    uint32_t *order = w->order;
     uint32_t m = 0;
     for (uint32_t i = 0; i < n; i++) if (freq[i]) order[m++] = i;
     for (uint32_t i = 1; i < m; i++) {
@@ -400,8 +406,9 @@ int rf_zlib_deflate(const uint8_t *in, size_t size, uint8_t **out, size_t *out_s
     token *tokens = rf_alloc((block_span + 1) * sizeof(token));
     int32_t *head = rf_alloc(8192 * sizeof(int32_t));
     int32_t *prev = rf_alloc(block_span * sizeof(int32_t));
-    if (!tokens || !head || !prev) {
-        rf_free(tokens); rf_free(head); rf_free(prev); rf_free(buf);
+    len_work *lw = rf_alloc(sizeof *lw);
+    if (!tokens || !head || !prev || !lw) {
+        rf_free(tokens); rf_free(head); rf_free(prev); rf_free(lw); rf_free(buf);
         return rf_fail(err, RF_ERR_LIMIT, "out of memory");
     }
     buf[0] = 0x78;
@@ -454,8 +461,8 @@ int rf_zlib_deflate(const uint8_t *in, size_t size, uint8_t **out, size_t *out_s
         }
         lit_freq[256]++;
         uint8_t lit_lengths[288], dist_lengths[30];
-        build_lengths(lit_freq, 288, lit_lengths, 15);
-        build_lengths(dist_freq, 30, dist_lengths, 15);
+        build_lengths(lit_freq, 288, lit_lengths, 15, lw);
+        build_lengths(dist_freq, 30, dist_lengths, 15, lw);
         double fixed_cost = 0, dynamic_cost = 0;
         {
             uint8_t fl[288];
@@ -514,7 +521,7 @@ int rf_zlib_deflate(const uint8_t *in, size_t size, uint8_t **out, size_t *out_s
             for (uint32_t k = 0; k < hlit; k++) cl_freq[all[k]]++;
             for (uint32_t k = 0; k < hdist; k++) cl_freq[all[288 + k]]++;
             uint8_t cl_lengths[19];
-            build_lengths(cl_freq, 19, cl_lengths, 7);
+            build_lengths(cl_freq, 19, cl_lengths, 7, lw);
             uint16_t cl_codes[19];
             lengths_to_codes(cl_lengths, 19, cl_codes);
             uint32_t hclen = 19;
@@ -549,12 +556,12 @@ int rf_zlib_deflate(const uint8_t *in, size_t size, uint8_t **out, size_t *out_s
     }
     flush_bits(&bw);
     if (bw.bad) {
-        rf_free(tokens); rf_free(head); rf_free(prev); rf_free(buf);
+        rf_free(tokens); rf_free(head); rf_free(prev); rf_free(lw); rf_free(buf);
         return rf_fail(err, RF_ERR_LIMIT, "out of memory");
     }
     size_t end = bw.pos;
     if (end + 4 > cap) {
-        rf_free(tokens); rf_free(head); rf_free(prev); rf_free(buf);
+        rf_free(tokens); rf_free(head); rf_free(prev); rf_free(lw); rf_free(buf);
         return rf_fail(err, RF_ERR_LIMIT, "out of memory");
     }
     uint32_t adler = rf_adler32(in, size);
@@ -562,7 +569,7 @@ int rf_zlib_deflate(const uint8_t *in, size_t size, uint8_t **out, size_t *out_s
     buf[end++] = (uint8_t)(adler >> 16);
     buf[end++] = (uint8_t)(adler >> 8);
     buf[end++] = (uint8_t)adler;
-    rf_free(tokens); rf_free(head); rf_free(prev);
+    rf_free(tokens); rf_free(head); rf_free(prev); rf_free(lw);
     *out = buf;
     *out_size = end;
     return RF_OK;

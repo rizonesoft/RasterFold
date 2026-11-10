@@ -54,6 +54,7 @@ def main() -> int:
         ("drift-check", ["scripts/drift-check.py"]),
         ("campaign guard self-test", ["scripts/campaign_guard.py", "--self-test"]),
         ("reviewer pin", ["scripts/review-dispatch.py", "--check-pin"]),
+        ("review records parse", ["scripts/review-dispatch.py", "--list-rounds"]),
     ):
         proc = run([sys.executable, *args])
         check(name, proc.returncode == 0, last_line(proc))

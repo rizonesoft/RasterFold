@@ -46,6 +46,21 @@ class Artifacts(unittest.TestCase):
         missing=good.replace('  Name: rf_free\n','  Name: rf_free_renamed\n')
         self.assertNotEqual(coff_exports(missing),EXPORTS)
 
+    def test_windows_objects_need_no_stack_probe(self):
+        # The freestanding Windows build has no ___chkstk_ms: a stack frame
+        # over the 4 KB probe threshold in any translation unit (zlib.c
+        # build_lengths, fixed 2026-11-10 by moving its Huffman work arrays
+        # to one heap len_work) fails the DLL and EXE links on Windows only,
+        # after every hosted build has already passed. Name the object.
+        objects=sorted((ROOT/'build/windows-x64').glob('*.o'))
+        if not objects:
+            self.skipTest('windows-x64 objects not built (check-all --all-targets builds them)')
+        offenders=[]
+        for obj in objects:
+            if b'___chkstk_ms' in run([tool('llvm-nm'),obj]):
+                offenders.append(obj.name)
+        self.assertEqual(offenders,[])
+
     def test_public_exports(self):
         source=dict((name,int(ordinal)) for name,ordinal in re.findall(r'(rf_\w+)\s+@(\d+)',(ROOT/'src/rasterfold.def').read_text()))
         self.assertEqual(source,EXPORTS)
