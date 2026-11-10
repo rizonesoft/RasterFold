@@ -66,7 +66,7 @@ def session_running(session_id: str) -> bool | None:
                     if session_id in os.readlink(fd):
                         return True
                 except PermissionError:
-                    unknown = unknown or same_user
+                    continue
                 except OSError:
                     continue
         except PermissionError:
