@@ -155,7 +155,7 @@ The operator double-clicks; everything else is §4's job. The shortcut lives on 
 - [ ] Measure after: three alternating before/after validate runs on this tree quoted with wall times, plus `python3 scripts/todo-graph.py self-test` green. Done when: the median improvement clears the one-third bar or the change is reverted and the negative result recorded here.
 - [ ] Commit: `"workspace: batch git calls in receipt validation (D00 T05 §6)"`
 
-**Test checkpoint:** `python3 scripts/todo-graph.py self-test` exits 0, `python3 scripts/todo-graph.py validate` prints the identical verdict block as the pre-change run quoted beside it, and the before/after timings are recorded with their commands and date.
+**Test checkpoint:** `python3 scripts/todo-graph.py self-test` exits 0, `python3 -m unittest scripts.tests.test_review_dispatch` exits 0 (receipt refusal and reconciliation cases), `python3 scripts/todo-graph.py validate` prints the identical verdict block as the pre-change run quoted beside it, before/after verdict and exit status also match inside a staged index export (the `tools/githooks/pre-commit` context, including a staged TODO differing from the working copy), and the before/after timings are recorded with their commands and date.
 
 ## Verification
 
