@@ -1854,6 +1854,35 @@ def overwrite_io() -> None:
     expect_fail(["--overwrite", "--help"], 1, "usage")
     expect_fail(["help", "--overwrite"], 1, "usage")
     expect_fail(["version", "--overwrite"], 1, "usage")
+    # Decode replacement succeeds and reads back complete.
+    out_bmp = fresh(work / "out.bmp")
+    expect_ok(["decode", str(fold), str(out_bmp)])
+    out_bmp.write_bytes(b"OLD")
+    expect_ok(["decode", "--overwrite", str(fold), str(out_bmp)])
+    check(rf.read_bmp24(out_bmp.read_bytes()) == (w, h, rgb2), "overwritten decode reads back wrong pixels")
+    # A pre-existing .partial blocks the writer and is left untouched.
+    partial = Path(f"{fold}.partial")
+    partial.write_bytes(b"PARTIALKEEP")
+    expect_fail(["encode", "--overwrite", str(src), str(fold)], 2, "temporary output already exists")
+    check(partial.read_bytes() == b"PARTIALKEEP", "writer touched a pre-existing .partial")
+    check(rf.decode_image(fold.read_bytes()) == (w, h, rgb2), "blocked overwrite changed the destination")
+    partial.unlink()
+    # Publication cannot start in a read-only directory: destination survives.
+    ro_dir = work / "rodir"
+    ro_dir.mkdir(exist_ok=True)
+    ro_dest = ro_dir / "out.fold"
+    ro_dest.write_bytes(before)
+    ro_dir.chmod(0o500)
+    try:
+        expect_fail(["encode", "--overwrite", str(src), str(ro_dest)], 2, "cannot write output")
+        check(ro_dest.read_bytes() == before, "unwritable-directory overwrite changed the destination")
+    finally:
+        ro_dir.chmod(0o700)
+    # A directory destination is refused and remains a directory.
+    dir_dest = work / "destdir"
+    dir_dest.mkdir(exist_ok=True)
+    expect_fail(["encode", "--overwrite", str(src), str(dir_dest)], 2, "cannot write output")
+    check(dir_dest.is_dir(), "directory destination was replaced")
 
 
 def main() -> int:

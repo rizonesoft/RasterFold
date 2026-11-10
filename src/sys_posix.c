@@ -122,8 +122,10 @@ static int rf_write_impl(const rf_path_char *path, const uint8_t *data, size_t s
         /* Atomic replacement of an existing destination (rename(2) semantics). */
 #if defined(SYS_renameat2)
         published = renamed = syscall(SYS_renameat2, dir, tmp_leaf, dir, leaf, 0u) == 0;
+        if (!published && (errno == ENOSYS || errno == EINVAL || errno == EOPNOTSUPP))
+            published = renamed = syscall(SYS_renameat, dir, tmp_leaf, dir, leaf) == 0;
 #else
-        published = renamed = renameat(dir, tmp_leaf, dir, leaf) == 0;
+        published = renamed = syscall(SYS_renameat, dir, tmp_leaf, dir, leaf) == 0;
 #endif
     } else if (ok) {
 #if defined(SYS_renameat2)
@@ -141,11 +143,14 @@ static int rf_write_impl(const rf_path_char *path, const uint8_t *data, size_t s
     int durable = published && (fsync(dir) == 0 || errno == EINVAL);
     close(dir);
     if (!published) return rf_fail(err, RF_ERR_IO, "cannot write output");
-    /* Publication is the commit point: the destination now holds the complete
-       new file (contents fsynced before the rename). Cleanup and directory
-       flush afterwards are best effort and cannot unpublish it, so they do
-       not turn a completed write into a reported failure. */
-    (void)cleaned; (void)durable;
+    if (!replace) {
+        if (!cleaned) return rf_fail(err, RF_ERR_IO, "output published but temporary cleanup failed");
+        if (!durable) return rf_fail(err, RF_ERR_IO, "output published but directory flush failed");
+    }
+    /* For replacement, publication is the commit point: the destination now
+       holds the complete new file (contents fsynced before the rename), so
+       cleanup and directory flush afterwards are best effort and cannot
+       unpublish it or turn a completed replacement into a reported failure. */
     return RF_OK;
 }
 

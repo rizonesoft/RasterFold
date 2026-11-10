@@ -1742,7 +1742,7 @@
       "review": "Author-attested: 2026-10-25 re-read docs/examples.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/limitations.md": {
-      "evidence": "Re-read 2026-11-10 for D07 T01 s4: --overwrite flag and help text updated; no other claim in this document changed.",
+      "evidence": "Re-read 2026-11-10 for D07 T01 s4 completion fixes: overwrite publication semantics and syscall fallback; no claim in this document changed.",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "362589cf2d8cdf51ea77ef645fb115e9edcc7659825f86531df856ae76e9a0cb",
@@ -1750,13 +1750,13 @@
         "src/fold.c": "7cecdf9622aa6d98be195cf43b1e77de7f9676f2a7c1f1129cc08dbe7497e8aa",
         "src/bmp.c": "50278e51120542ec686aee00385eba666239070533035e5d04e7d659b118317c",
         "src/api.c": "774c4e0a2a22f5a01e174e541cd1e725da05019ece20927345938cbe10fe0f02",
-        "src/sys_posix.c": "f87989fae58bd1cbba304f824d521d8309eaa8e29248b0398c8a927614ba45a1",
+        "src/sys_posix.c": "c47bdca7baea7a44f0eab0db6fadb028ff5c478dcd366c2dd6686e627e78f959",
         "docs/limitations.md": "5959f71db8982389a13b43454c6dc9a9d803402d69a955b09c3ae7b60b77223c"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/limitations.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/troubleshooting.md": {
-      "evidence": "Re-read 2026-11-10 for D07 T01 s4: --overwrite flag and help text updated; no other claim in this document changed.",
+      "evidence": "Re-read 2026-11-10 for D07 T01 s4 completion fixes: overwrite publication semantics and syscall fallback; no claim in this document changed.",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "362589cf2d8cdf51ea77ef645fb115e9edcc7659825f86531df856ae76e9a0cb",
@@ -1764,7 +1764,7 @@
         "src/fold.c": "7cecdf9622aa6d98be195cf43b1e77de7f9676f2a7c1f1129cc08dbe7497e8aa",
         "src/bmp.c": "50278e51120542ec686aee00385eba666239070533035e5d04e7d659b118317c",
         "src/api.c": "774c4e0a2a22f5a01e174e541cd1e725da05019ece20927345938cbe10fe0f02",
-        "src/sys_posix.c": "f87989fae58bd1cbba304f824d521d8309eaa8e29248b0398c8a927614ba45a1",
+        "src/sys_posix.c": "c47bdca7baea7a44f0eab0db6fadb028ff5c478dcd366c2dd6686e627e78f959",
         "tools/provision.py": "dc5fb84c125ea3735ca425e91d084d04297d772cee4e3609417aa11c66ad0c3b",
         "tools/provision.ps1": "7b7ce12f1aede008be98478d7b95fbf6601737356baa62277c0d9217ff3e5e40",
         "docs/troubleshooting.md": "4af65035b3b7f1e914e7dee9b029871f5bf0ac11ef28b90fb94b9211ae536de5"
