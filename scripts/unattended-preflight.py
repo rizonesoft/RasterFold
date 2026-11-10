@@ -77,6 +77,12 @@ def session_running(session_id: str) -> bool | None:
                 try:
                     if session_id in os.readlink(fd):
                         return True
+                except PermissionError:
+                    try:
+                        if b"muse" in (entry / "cmdline").read_bytes().lower():
+                            unknown = True
+                    except OSError:
+                        unknown = True
                 except OSError:
                     continue
         except PermissionError:
