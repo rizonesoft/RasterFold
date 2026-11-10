@@ -289,6 +289,14 @@
       "code": 1
     },
     {
+      "text": "output published but directory flush failed",
+      "code": 2
+    },
+    {
+      "text": "output published but temporary cleanup failed",
+      "code": 2
+    },
+    {
       "text": "path too long",
       "code": 2
     },
