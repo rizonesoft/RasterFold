@@ -1481,7 +1481,10 @@ def png_io() -> None:
     fold = fresh(work / "in.fold")
     expect_ok(["encode", str(src), str(fold)])
     check(rf.decode_image(fold.read_bytes()) == (w, h, rgb), "PNG encode pixels differ from the oracle decode")
-    bmp = work / "in.bmp"
+    # Not in.bmp: tests/work/*/in.bmp is the API corpus-fixture shape
+    # (tests/test_api.py EXPECTED_FIXTURES), and this directory is the
+    # PNG workspace, not a BMP corpus fixture.
+    bmp = work / "from_bmp.bmp"
     bmp.write_bytes(rf.write_bmp24(w, h, rgb))
     fold_from_bmp = fresh(work / "in_bmp.fold")
     expect_ok(["encode", str(bmp), str(fold_from_bmp)])
