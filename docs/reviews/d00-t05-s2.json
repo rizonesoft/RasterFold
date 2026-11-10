@@ -1,0 +1,74 @@
+{
+  "ref": "D00 T05 \u00a72",
+  "title": "Spark and Ember Subagents Under Lead Verification",
+  "implementation_sha": "9abf9ff87d5d7ac648626051eec9de1f870c91df",
+  "date": "2026-11-10",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/00-workspace/D00-T05-s2.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "echo probe exit 0; scout/hands/wonder escalation probes pass verbatim in run file; Ember suspended 2/2; validate 0 fatal"
+  ],
+  "completion": {
+    "report": "docs/reviews/00-workspace/D00-T05-s2.md",
+    "verdict": "reconciled",
+    "candidate": "9abf9ff87d5d7ac648626051eec9de1f870c91df",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/00-workspace/D00-T05-s2.md",
+    "candidate": "7ed9b3855d4feed46ffc8b4085945b70eabcd8b4",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "7ed9b3855d4feed46ffc8b4085945b70eabcd8b4",
+  "schedule": {
+    "policy": "three-pass",
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}
