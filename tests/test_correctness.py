@@ -1872,12 +1872,13 @@ def overwrite_io() -> None:
     ro_dir.mkdir(exist_ok=True)
     ro_dest = ro_dir / "out.fold"
     ro_dest.write_bytes(before)
-    ro_dir.chmod(0o500)
-    try:
-        expect_fail(["encode", "--overwrite", str(src), str(ro_dest)], 2, "cannot write output")
-        check(ro_dest.read_bytes() == before, "unwritable-directory overwrite changed the destination")
-    finally:
-        ro_dir.chmod(0o700)
+    if os.name != "nt":  # Windows chmod does not deny directory writes
+        ro_dir.chmod(0o500)
+        try:
+            expect_fail(["encode", "--overwrite", str(src), str(ro_dest)], 2, "cannot write output")
+            check(ro_dest.read_bytes() == before, "unwritable-directory overwrite changed the destination")
+        finally:
+            ro_dir.chmod(0o700)
     # A write failure after the .partial is created (LD_PRELOAD shim failing
     # writes to *.partial) preserves the destination and cleans the temporary.
     cc = str(ROOT / "tools" / "llvm-mingw-linux" / "bin" / "clang")
