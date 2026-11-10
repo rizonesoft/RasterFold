@@ -1,0 +1,74 @@
+{
+  "ref": "D99 T01 \u00a78",
+  "title": "The 13-Round Milestone Cap",
+  "implementation_sha": "687e1754a2a9e5446a2fdb42907c4198d315b714",
+  "date": "2026-11-11",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/99-manual/D99-T01-s8.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "milestones.py --check current; 13-round cap in generated gates; stamp refusal on Milestone 8 quoted; dormant evaluation empty result"
+  ],
+  "completion": {
+    "report": "docs/reviews/99-manual/D99-T01-s8.md",
+    "verdict": "complete",
+    "candidate": "687e1754a2a9e5446a2fdb42907c4198d315b714",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/99-manual/D99-T01-s8.md",
+    "candidate": "f78b4a6ed42c2f2e45ebd0b2736f28bbacc7056f",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "f78b4a6ed42c2f2e45ebd0b2736f28bbacc7056f",
+  "schedule": {
+    "policy": "three-pass",
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}

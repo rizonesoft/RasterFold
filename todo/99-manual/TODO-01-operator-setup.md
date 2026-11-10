@@ -54,7 +54,7 @@ track: OP1
 |   5   |   §5    | Enable GitHub Pages                           | --         |  [x]   |
 | 6 | §6 | Android release signing identity | -- | [ ] |
 | 7 | §7 | HEVC distribution decision | -- | [ ] |
-| 8 | §8 | The 13-round milestone cap | §4 | [ ] |
+| 8 | §8 | The 13-round milestone cap | §4 | [x] |
 
 ---
 
@@ -180,10 +180,12 @@ The implementing session's recommendation, recorded with the decision: 13 is kep
 - [x] Carry the cap in the unattended launcher's seed prompt and `docs/unattended-run.md` so a campaign session applies it without rediscovering this section. Done when: both name the 13-round cap and the accepted-missed closeout.
 - [x] Evaluate dormant revisits at every phase boundary: evaluated 2026-11-10 at this section's closeout; no gate has closed accepted-missed yet, so no dormant entries exist (explicit empty result, recorded in docs/phase-runs/2026-11-10-phase-7-muse.md); the consumer is wired in process-phase closeout and groom-plan triage
 - [x] Prove the lifecycle with acceptance cases (plan review P3): stamp refusal before 13 completed distinct rounds is quoted from a real attempt on the live Milestone 8 gate (at 4 rounds, `TODO refused: unticked checklist items in D05 T01 §8`, 2026-11-10); accepted-missed closure only at 13 with the no-regression envelope still required, and the accepted figures plus dormant backlog entry read back after a closeout, are recorded where the first accepted-missed gate closes (its own record item owns those cases). Done when: the refusal is quoted here.
-- [x] Commit: `"todo: cap missed-milestone follow-ups at 13 rounds with an accepted-missed closeout (D99 T01 §8)"`
+- [x] Commit: `"todo: fold D99 T01 s8 plan gaps"`
 
 **Test checkpoint:** `python3 research/milestones.py --check` exits 0, `grep -c "13 rounds" todo/05-milestones/TODO-01-beat-jxl-and-webp.md` counts the cap in the generated gates, and this section's decision line quotes the operator.
 
+> **Verified:** 2026-11-11 | §8 | 687e1754a2a9e5446a2fdb42907c4198d315b714
+> **Review:** `docs/reviews/d99-t01-s8.json`
 ## Verification
 
 - [ ] `python scripts/todo-graph.py validate` clean
