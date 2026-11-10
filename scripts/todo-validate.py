@@ -139,6 +139,51 @@ def validate(graph, _args) -> int:
     history_cache: dict[str, list[tuple[str, str]] | None] = {}
     ancestry_cache: dict[tuple[str, str], bool] = {}
     touch_cache: dict[tuple[str, str, str], bool] = {}
+    # Bulk git maps for one validate run (D00 T05 s6): HEAD ancestors
+    # from one `git rev-list HEAD`, files per commit from one raw log.
+    head_ancestors_cache: dict[str, set[str]] = {}
+    commit_files_cache: dict[str, dict[str, set[str]]] = {}
+
+    def _head_ancestors() -> set[str]:
+        root = str(graph.TODO_DIR.parent)
+        if root not in head_ancestors_cache:
+            found: set[str] = set()
+            try:
+                proc = subprocess.run(
+                    ["git", "rev-list", "HEAD"], cwd=root,
+                    capture_output=True, text=True, encoding="utf-8", timeout=60,
+                )
+                if proc.returncode == 0:
+                    found = set(proc.stdout.split())
+            except (OSError, subprocess.SubprocessError):
+                found = set()
+            head_ancestors_cache[root] = found
+        return head_ancestors_cache[root]
+
+    def _commit_files() -> dict[str, set[str]]:
+        root = str(graph.TODO_DIR.parent)
+        if root not in commit_files_cache:
+            files: dict[str, set[str]] = {}
+            try:
+                proc = subprocess.run(
+                    ["git", "log", "--all", "-m", "--root", "--raw",
+                     "--format=%H"], cwd=root,
+                    capture_output=True, text=True, encoding="utf-8", timeout=60,
+                )
+                if proc.returncode == 0:
+                    cur: str | None = None
+                    for line in proc.stdout.splitlines():
+                        if re.fullmatch(r"[0-9a-f]{40}", line):
+                            cur = line
+                            files.setdefault(cur, set())
+                        elif line.startswith(":") and cur is not None:
+                            parts = line.split("\t")
+                            if len(parts) > 1:
+                                files[cur].add(parts[-1])
+            except (OSError, subprocess.SubprocessError):
+                files = {}
+            commit_files_cache[root] = files
+        return commit_files_cache[root]
 
     def _span_file(path: str) -> list[str] | None:
         if path not in span_cache:
@@ -255,14 +300,7 @@ def validate(graph, _args) -> int:
         root = str(graph.TODO_DIR.parent)
         key = (root, oid)
         if key not in ancestry_cache:
-            try:
-                proc = subprocess.run(
-                    ["git", "merge-base", "--is-ancestor", oid, "HEAD"],
-                    cwd=root, capture_output=True, timeout=60,
-                )
-                ancestry_cache[key] = proc.returncode == 0
-            except (OSError, subprocess.SubprocessError):
-                ancestry_cache[key] = False
+            ancestry_cache[key] = oid in _head_ancestors()
         return ancestry_cache[key]
 
     def _touches_file(oid: str, path: str) -> bool:
@@ -281,19 +319,7 @@ def validate(graph, _args) -> int:
             except ValueError:
                 return False  # Outside this tree: no commit in it touches it.
         if key not in touch_cache:
-            try:
-                proc = subprocess.run(
-                    ["git", "diff-tree", "--no-commit-id", "--name-only",
-                     "-r", "-m", "--root", oid],
-                    cwd=root, capture_output=True, text=True,
-                    encoding="utf-8", timeout=60,
-                )
-                touch_cache[key] = (
-                    proc.returncode == 0
-                    and want in proc.stdout.splitlines()
-                )
-            except (OSError, subprocess.SubprocessError):
-                touch_cache[key] = False
+            touch_cache[key] = want in _commit_files().get(oid, set())
         return touch_cache[key]
 
     def _contains_seq(hay: list[str], needle: list[str]) -> bool:

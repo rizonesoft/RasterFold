@@ -6469,7 +6469,190 @@ def review_dispatch():
     return _REVIEW_DISPATCH_MOD[0]
 
 
+class _GitSnapshot:
+    """One git enumeration per root, feeding in-memory receipt lookups.
+
+    Built from three bulk passes (commit/parent/subject log, raw file
+    log, HEAD) plus one long-lived `git cat-file --batch` process for
+    blob reads. Rebuilt when the HEAD oid read from `.git` changes, so
+    a repository that gains commits mid-process is never served stale.
+    """
+
+    def __init__(self, root: Path):
+        self.root = Path(root)
+        self.parents: dict[str, list[str]] = {}
+        self.files: dict[str, set[str]] = {}
+        self.head: str | None = None
+        self.ok = False
+        self.pin_cache: dict[str, dict] = {}
+        self._ancestors: dict[str, set[str]] = {}
+        self._batch = None
+        try:
+            log = subprocess.run(
+                ["git", "-C", str(self.root), "log", "--all", "--format=%H%x1f%P%x1f%s"],
+                capture_output=True, text=True, encoding="utf-8", timeout=60,
+            )
+            raw = subprocess.run(
+                ["git", "-C", str(self.root), "log", "--all", "-m", "--root",
+                 "--raw", "--format=%H"],
+                capture_output=True, text=True, encoding="utf-8", timeout=60,
+            )
+            head = subprocess.run(
+                ["git", "-C", str(self.root), "rev-parse", "HEAD"],
+                capture_output=True, text=True, encoding="utf-8", timeout=30,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return
+        if log.returncode != 0 or raw.returncode != 0:
+            return
+        for line in log.stdout.splitlines():
+            oid, _, rest = line.partition("\x1f")
+            parents, _, _subject = rest.partition("\x1f")
+            if oid:
+                self.parents[oid] = parents.split() if parents.strip() else []
+        cur: str | None = None
+        for line in raw.stdout.splitlines():
+            if re.fullmatch(r"[0-9a-f]{40}", line):
+                cur = line
+                self.files.setdefault(cur, set())
+            elif line.startswith(":") and cur is not None:
+                parts = line.split("\t")
+                if len(parts) > 1:
+                    self.files[cur].add(parts[-1])
+        self.head = head.stdout.strip() if head.returncode == 0 else None
+        self.ok = True
+
+    def resolve(self, sha: object) -> str | None:
+        if not isinstance(sha, str) or not sha:
+            return None
+        if sha in self.parents:
+            return sha
+        if re.fullmatch(r"[0-9a-f]{4,40}", sha):
+            hits = [oid for oid in self.parents if oid.startswith(sha)]
+            if len(hits) == 1:
+                return hits[0]
+        return None
+
+    def ancestors(self, tip: str) -> set[str]:
+        if tip not in self._ancestors:
+            seen: set[str] = set()
+            stack = [tip]
+            while stack:
+                oid = stack.pop()
+                if oid in seen:
+                    continue
+                seen.add(oid)
+                stack.extend(self.parents.get(oid, []))
+            self._ancestors[tip] = seen
+        return self._ancestors[tip]
+
+    def is_ancestor(self, older: object, newer: object) -> bool:
+        a, b = self.resolve(older), self.resolve(newer)  # type: ignore[arg-type]
+        return a is not None and b is not None and a in self.ancestors(b)
+
+    def blob(self, rev: str, path: str) -> bytes | None:
+        try:
+            if self._batch is None or self._batch.poll() is not None:
+                self._batch = subprocess.Popen(
+                    ["git", "-C", str(self.root), "cat-file", "--batch"],
+                    stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                )
+            assert self._batch.stdin is not None and self._batch.stdout is not None
+            self._batch.stdin.write(f"{rev}:{path}\n".encode("utf-8"))
+            self._batch.stdin.flush()
+            header = self._batch.stdout.readline().decode("utf-8", "replace").split()
+            if len(header) < 3 or header[1] not in ("blob", "commit", "tree", "tag"):
+                return None
+            data = self._batch.stdout.read(int(header[2]))
+            self._batch.stdout.read(1)
+            return data
+        except (OSError, ValueError):
+            self._batch = None
+            return None
+
+    def close(self) -> None:
+        if self._batch is not None:
+            try:
+                self._batch.kill()
+            except OSError:
+                pass
+            self._batch = None
+
+
+_GIT_SNAPSHOTS: dict[str, _GitSnapshot] = {}
+
+
+def _fs_head(root: Path) -> str | None:
+    """HEAD oid read from `.git` without a subprocess, or None."""
+    try:
+        gitdir = Path(root) / ".git"
+        if gitdir.is_file():
+            text = gitdir.read_text(encoding="utf-8").strip()
+            if not text.startswith("gitdir:"):
+                return None
+            gitdir = Path(text.split(":", 1)[1].strip())
+            if not gitdir.is_absolute():
+                gitdir = Path(root) / gitdir
+        head = (gitdir / "HEAD").read_text(encoding="utf-8").strip()
+        if not head.startswith("ref:"):
+            return head or None
+        ref = head[4:].strip()
+        loose = gitdir / ref
+        if loose.is_file():
+            return loose.read_text(encoding="utf-8").strip() or None
+        for line in (gitdir / "packed-refs").read_text(encoding="utf-8").splitlines():
+            oid, _, name = line.partition(" ")
+            if name.strip() == ref:
+                return oid.strip() or None
+    except OSError:
+        return None
+    return None
+
+
+def git_snapshot(root: Path) -> _GitSnapshot | None:
+    key = str(Path(root))
+    snap = _GIT_SNAPSHOTS.get(key)
+    fs_head = _fs_head(Path(root))
+    if snap is not None and snap.ok and (fs_head is None or snap.head == fs_head):
+        return snap
+    if snap is not None:
+        snap.close()
+    snap = _GitSnapshot(Path(root))
+    _GIT_SNAPSHOTS[key] = snap
+    return snap if snap.ok else None
+
+
+def _git_is_ancestor(root: Path, older: str, newer: str) -> bool:
+    snap = git_snapshot(root)
+    if snap is not None:
+        return snap.is_ancestor(older, newer)
+    proc = subprocess.run(
+        ["git", "-C", str(root), "merge-base", "--is-ancestor", older, newer],
+        capture_output=True, timeout=30,
+    )
+    return proc.returncode == 0
+
+
+def _git_blob(root: Path, rev: str, path: str) -> bytes | None:
+    snap = git_snapshot(root)
+    if snap is not None:
+        return snap.blob(rev, path)
+    shown = subprocess.run(
+        ["git", "-C", str(root), "show", f"{rev}:{path}"],
+        capture_output=True, timeout=30,
+    )
+    return shown.stdout if shown.returncode == 0 else None
+
+
 def commit_ok(root: Path, sha: str) -> None:
+    snap = git_snapshot(root)
+    if snap is not None:
+        require(snap.resolve(sha) is not None, "not a commit: " + sha)
+        require(
+            snap.head is not None and snap.is_ancestor(sha, snap.head),
+            "commit is not on this branch: " + sha,
+        )
+        return
     kind = subprocess.run(
         ["git", "-C", str(root), "cat-file", "-t", sha],
         capture_output=True, text=True, timeout=30,
@@ -6577,12 +6760,8 @@ def completion_record(root: Path, completion: dict, ref: str, stamp_sha: str, co
     if commits is None or candidate not in commits:
         commit_ok(root, candidate)
     if commits is None:
-        ancestor = subprocess.run(
-            ["git", "-C", str(root), "merge-base", "--is-ancestor", candidate, stamp_sha],
-            capture_output=True, timeout=30,
-        )
         require(
-            ancestor.returncode == 0,
+            _git_is_ancestor(root, candidate, stamp_sha),
             f"the completion review's candidate {candidate} is not the stamped commit or an ancestor of it: {ref}",
         )
     return {
@@ -6686,8 +6865,8 @@ def restart_ok(root: Path, ref: str, plan: dict, named: str, start: str, stamp_s
         f"'{RESTARTED_PREFIX}' names plan review {named}, but the recorded plan review's candidate is {candidate}: {ref}",
     )
     dispatch = review_dispatch()
-    shown = subprocess.run(["git", "-C", str(root), "show", f"{start}:{report}"], capture_output=True, timeout=30)
-    then = dispatch.read_findings(shown.stdout.decode("utf-8", "replace")) if shown.returncode == 0 else None
+    _blob = _git_blob(root, start, report)
+    then = dispatch.read_findings(_blob.decode("utf-8", "replace")) if _blob is not None else None
     require(
         then is not None and any(
             dispatch.returned_one_pass(e, "plan") and e["candidate"] == candidate for e in then["plans"]
@@ -6695,11 +6874,8 @@ def restart_ok(root: Path, ref: str, plan: dict, named: str, start: str, stamp_s
         f"the restart commit {start} does not yet hold the returned plan review of {candidate} in {report}: "
         f"commit '{RESTARTED_PREFIX}' only after the review it names is recorded: {ref}",
     )
-    ancestor = subprocess.run(
-        ["git", "-C", str(root), "merge-base", "--is-ancestor", start, stamp_sha], capture_output=True, timeout=30,
-    )
     require(
-        ancestor.returncode == 0,
+        _git_is_ancestor(root, start, stamp_sha),
         f"the restart commit {start} is not the stamped commit {stamp_sha} or an ancestor of it: {ref}",
     )
     # The round after the restart is bound by its recorded candidate (`review-dispatch.py --candidate`): a round of
@@ -6708,8 +6884,7 @@ def restart_ok(root: Path, ref: str, plan: dict, named: str, start: str, stamp_s
         if not isinstance(candidate, str):
             return False
         return all(
-            subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", older, newer],
-                           capture_output=True, timeout=30).returncode == 0
+            _git_is_ancestor(root, older, newer)
             for older, newer in ((start, candidate), (candidate, stamp_sha))
         )
 
@@ -6752,12 +6927,8 @@ def plan_record(root: Path, report: str, ref: str, commits: set[str] | None = No
     if commits is None or candidate not in commits:
         commit_ok(root, candidate)
     if start is not None:
-        ancestor = subprocess.run(
-            ["git", "-C", str(root), "merge-base", "--is-ancestor", candidate, start],
-            capture_output=True, timeout=30,
-        )
         require(
-            ancestor.returncode == 0,
+            _git_is_ancestor(root, candidate, start),
             f"the plan review's candidate {candidate} is not the commit the build began "
             f"at ({start}) or an ancestor of it: review the plan before the build: {ref}",
         )
@@ -6768,14 +6939,19 @@ def plan_record(root: Path, report: str, ref: str, commits: set[str] | None = No
 
 
 def committed_pin(root: Path, sha: str, ref: str) -> dict:
-    shown = subprocess.run(["git", "-C", str(root), "show", f"{sha}:{PIN_PATH}"], capture_output=True, timeout=30)
-    require(shown.returncode == 0, f"no reviewer pin {PIN_PATH} at {sha}: {ref}")
+    snap = git_snapshot(root)
+    if snap is not None and sha in snap.pin_cache:
+        return snap.pin_cache[sha]
+    data = _git_blob(root, sha, PIN_PATH)
+    require(data is not None, f"no reviewer pin {PIN_PATH} at {sha}: {ref}")
     dispatch = review_dispatch()
     try:
-        pin = dispatch.load_pin(PIN_PATH, data=shown.stdout)
+        pin = dispatch.load_pin(PIN_PATH, data=data)
     except dispatch.Refused as exc:
         raise Refused(f"the reviewer pin at {sha} does not load: {exc}: {ref}") from None
     require("schedule" in pin, f"the reviewer pin at {sha} has no [schedule] to check the reviews against: {ref}")
+    if snap is not None:
+        snap.pin_cache[sha] = pin
     return pin
 
 
@@ -6864,9 +7040,9 @@ def section_contract(root: Path, sha: str, ref: str) -> str:
     paths = sorted((Path(root) / "todo").glob(f"{m[1]}-*/TODO-{m[2]}-*.md"))
     require(len(paths) == 1, f"no single TODO file for: {ref}")
     rel = paths[0].relative_to(root).as_posix()
-    shown = subprocess.run(["git", "-C", str(root), "show", f"{sha}:{rel}"], capture_output=True, timeout=30)
-    require(shown.returncode == 0, f"{rel} is not in {sha}: {ref}")
-    body = _raw_section_text(shown.stdout.decode("utf-8").replace("\r\n", "\n"), int(m[3]))
+    _blob = _git_blob(root, sha, rel)
+    require(_blob is not None, f"{rel} is not in {sha}: {ref}")
+    body = _raw_section_text(_blob.decode("utf-8").replace("\r\n", "\n"), int(m[3]))
     require(body is not None, f"the section is not in {rel} at {sha}: {ref}")
     body = re.sub(r"^(\s*- )\[[xX ]\](?= )", r"\1[ ]", body, flags=re.M)
     body = re.sub(r"^> \*\*(?:Verified|Review):\*\*[^\n]*(?:\n|$)", "", body, flags=re.M)
@@ -6915,8 +7091,7 @@ def three_pass_ok(root: Path, data: dict, ref: str, found: dict) -> None:
     for (older_name, older), (newer_name, newer) in zip(chain, chain[1:]):
         require(
             older["run"] <= newer["run"]
-            and subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", older["candidate"], newer["candidate"]],
-                               capture_output=True, timeout=30).returncode == 0,
+            and _git_is_ancestor(root, older["candidate"], newer["candidate"]),
             f"the {newer_name} must run after the {older_name}, on a candidate at or after it: {ref}",
         )
     require(
