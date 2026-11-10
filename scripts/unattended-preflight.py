@@ -82,7 +82,7 @@ def main() -> int:
         names = sorted(json.loads(agents.read_text(encoding="utf-8")))
     except Exception:
         names = []
-    check("agent roster", names == ["rf-ember-literal", "rf-spark-hands", "rf-spark-scout"], ", ".join(names))
+    check("agent roster", names == ["rf-ember-literal", "rf-spark-hands", "rf-spark-scout", "rf-wonder-hands"], ", ".join(names))
 
     # Host headroom: an orphaned writer once filled the disk (2026-11-08).
     disk = shutil.disk_usage(ROOT)
