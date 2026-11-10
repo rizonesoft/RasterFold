@@ -264,7 +264,7 @@ Generated and screen content against WebP.
 | [x] | `D01 T06 §4` | Coding the palette itself for palette images             |   3   |
 | [x] | `D01 T06 §5` | Above-copy runs for palette images                       |   3   |
 | [x] | `D01 T06 §6` | A neighbour-candidate colour cache in version 3          |   3   |
-| [ ] | `D00 T05 §1` | LSP servers for C and Python, wired                      |   5   |
+| [ ] | `D00 T05 §1` | LSP servers for C and Python, wired                      |   8   |
 | [ ] | `D00 T05 §2` | Spark and Ember subagents under lead verification        |   4   |
 | [ ] | `D00 T05 §3` | The measured tool stack: what stays, what is not adopted |   4   |
 | [ ] | `D00 T05 §4` | Unattended run: preflight, launcher, and goal            |   4   |
