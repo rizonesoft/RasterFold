@@ -85,6 +85,7 @@ The binaries were never the gap: the pinned LLVM tree ships clangd and clang-tid
 ## 2. Spark and Ember Subagents Under Lead Verification
 
 > **Started:** 2026-11-10T20:10:19Z
+> **Restarted:** 2026-11-10T20:29:00Z | plan review 7ed9b3855d4feed46ffc8b4085945b70eabcd8b4 | checkpoint corrected after Started was committed, so the plan review read a descendant commit
 
 **Corrected 2026-11-10 (operator directive):** the unattended launcher now starts at `--reasoning-effort medium`, not `high` (was `high` in `scripts/unattended-run.sh`, `docs/unattended-run.md`, and this section). Reversal cost: one flag in the launcher plus the two synced prose copies.
 
