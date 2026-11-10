@@ -98,6 +98,8 @@ PNG needs zlib's inflate and deflate, written here in C without a runtime: infla
 > **Review:** `docs/reviews/d07-t01-s3.json`
 ## 4. Exit Codes, Messages, and Overwrite
 
+> **Started:** 2026-11-10T22:18:00Z
+
 **Job:** A user who is refused (an existing file, a bad input) can read the notification (a stable exit code and message) and rely on the overwrite policy: an existing file is replaced only with `--overwrite`.
 
 - [ ] Add `--overwrite`, which replaces an existing destination through the same `.partial`-then-rename path, and keep refusing without it. Done when: a test shows the destination replaced only with the flag, and never left half-written.
