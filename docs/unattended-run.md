@@ -7,7 +7,7 @@ One double-click finishes RasterFold to 100%: every open TODO section shipped, r
 The Windows Desktop shortcut `RasterFold Unattended Run.lnk` opens Windows Terminal into this WSL checkout and runs `scripts/unattended-run.sh`, which:
 
 1. Runs `python3 scripts/unattended-preflight.py`. Any FAIL stops the launch with the reason on screen (the terminal stays open). Nothing starts against a dirty tree, a stale plan, a missing reviewer, or a low disk.
-2. Starts Muse straight on `main` (never a branch, never a worktree) with `--yolo --disable-request-user-input --model muse-wonder-full-1.0 --reasoning-effort high` and the Spark/Ember agent definitions in `.agents/muse-agents.json`, seeded with the prompt below.
+2. Starts Muse straight on `main` (never a branch, never a worktree) with `--yolo --disable-request-user-input --model muse-wonder-1.0 --reasoning-effort high` and the Spark/Ember agent definitions in `.agents/muse-agents.json`, seeded with the prompt below. The unattended lead is Muse Wonder, not Wonder Full (operator directive 2026-11-10): the campaign is paving the way for Wonder and then Spark to run it, so every mechanic the run depends on (sections, specs, run files, gate commands) is written to be followed cold by the weakest tier that will ever read it, with exact commands and exact acceptance checks and no assumed context.
 
 ## The seed prompt (verbatim in unattended-run.sh)
 
@@ -30,7 +30,7 @@ Work goes to the cheapest tier that can do it without quality loss and escalates
 | 1 | `rf-ember-literal` (muse-ember-1.0) | Verbatim replacement, one exact command returned verbatim, list reshaping. Replies `ESCALATE-SPARK` on anything non-literal |
 | 2 | `rf-spark-scout` and `rf-spark-hands` (muse-spark-1.3) | Read-only searches, counts, inventories, claim re-measurement, one named gate quoted verbatim; an exact lead-written edit spec outside codec logic. Reply `ESCALATE-WONDER` on any decision or mismatch |
 | 3 | `rf-wonder-hands` (muse-wonder-1.0) | Most section implementation under a lead-written spec: multi-file edits, debugging from evidence, drafting sections and tests. Replies `ESCALATE-LEAD` on format decisions, gate verdicts, conflicting evidence, irreversibles, stamps, commits |
-| Lead | muse-wonder-full-1.0 (the writer) | Planning, hardest diagnosis, format decisions, gate verdicts, full-diff review of every delegated change, stamps, commits |
+| Lead | muse-wonder-1.0 (the writer; attended sessions may run muse-wonder-full-1.0) | Planning, hardest diagnosis, format decisions, gate verdicts, full-diff review of every delegated change, stamps, commits |
 
 Escalation is a reply token carrying the evidence and the specific question; the delegating session re-delegates one tier up, and no tier improvises past its boundary to avoid escalating. The quality rule is the lead's, not the subagent's: the lead reads every delegated diff in full and independently re-runs or spot-checks every fact a decision rests on, exactly as `.agents/skills` already require of cheaper implementers. Before a new class of work is delegated at a tier, the lead replays it once on a known-answer input; a mismatch keeps that class one tier up.
 

@@ -1551,39 +1551,39 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "Re-read 2026-11-10 after the straight-on-main rule in AGENTS.md gained its commit-and-push-all clause (operator rule: completed work is committed on main and pushed to origin in the same turn, CI read back): no writer, reviewer-route, or product claim in this document changed.",
+      "evidence": "Re-read 2026-11-10 for D00 T05 s1: AGENTS.md tier rule changed (unattended lead muse-wonder-1.0, dummy-proof mechanics, subagent removal rule) and build.py/check-all.py changed behavior-identically; no writer, reviewer-route, model, or product claim in this document changed.",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "0459a0748fd733a53d16badfb465cbcee3f75993c8a522c6d7e7932115b0bd3f",
         "src/main.c": "3061f3ece83ee1b766492f0f125146cd744adbcc143cd3bca836e733f5580598",
-        "scripts/build.py": "3c1f8b55149300325006e7607a3f0d46a54c393935761dbc01a10990a4cdc36b",
+        "scripts/build.py": "e990806d0adbc5613289b3c3248edbf3cc5db21fc5426aab6880c594f06d5bed",
         "scripts/package.py": "ef69de2da770ea647e2841f4c2ce16db8bae22544c086a389983bdbeb1e50b37",
-        "scripts/check-all.py": "0d7009f7af3dea1ffdfaf8893cb5c32f802075607a5b2d5500318ed8af70c777",
+        "scripts/check-all.py": "fb6c9b81108c65eadb781b8fed2bf623db5ad5e565396d2cb5bcc239342adb77",
         "README.md": "b6e1a597650088cbe20052bb142cc71b8a8ad4246a1b089f1e29bc11fbb0269c",
-        "AGENTS.md": "cbb04e9b712b37eb5a0e5a60775ff94dee8d7972bb3093ff9f721a964de5d2e7",
+        "AGENTS.md": "6654d16c2da76004600f48e91b54d3979101d5839e5ab30e1710784df18d5d75",
         ".conclave/reviewers.toml": "455ff6445e7812a8ee41a0f456710bf4210c59ebaed1703cd6abc1a4df7d2b5a",
         "scripts/review-dispatch.py": "5e6b214c36c1cdf30c1c75fcf343edc415e47a93c3437785f16c45d7f56f639f"
       },
       "review": "Author-attested: 2026-10-25 re-read README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "AGENTS.md": {
-      "evidence": "Re-read 2026-11-10 after the straight-on-main rule in AGENTS.md gained its commit-and-push-all clause (operator rule: completed work is committed on main and pushed to origin in the same turn, CI read back): no writer, reviewer-route, or product claim in this document changed.",
+      "evidence": "Re-read 2026-11-10 for D00 T05 operator directives: the tier rule now leads unattended campaigns on muse-wonder-1.0 with dummy-proof mechanics and a subagent removal rule; writer keys, reviewer routes, and product claims unchanged.",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "0459a0748fd733a53d16badfb465cbcee3f75993c8a522c6d7e7932115b0bd3f",
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
         ".conclave/reviewers.toml": "455ff6445e7812a8ee41a0f456710bf4210c59ebaed1703cd6abc1a4df7d2b5a",
         "scripts/review-dispatch.py": "5e6b214c36c1cdf30c1c75fcf343edc415e47a93c3437785f16c45d7f56f639f",
-        "AGENTS.md": "cbb04e9b712b37eb5a0e5a60775ff94dee8d7972bb3093ff9f721a964de5d2e7",
+        "AGENTS.md": "6654d16c2da76004600f48e91b54d3979101d5839e5ab30e1710784df18d5d75",
         ".codex/hooks.json": "c67e7762d0970280c653a74601012d01971d05f677182ae70e4eda0aa783c150",
         "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",
         "scripts/campaign_guard.py": "a4e15e753ac265152070e9d5ae93f36cba78e58e4feb4c11a6e0f2a58203c432"
       }
     },
     "GEMINI.md": {
-      "evidence": "Re-read 2026-11-10 after the straight-on-main rule in AGENTS.md gained its commit-and-push-all clause (operator rule: completed work is committed on main and pushed to origin in the same turn, CI read back): no writer, reviewer-route, or product claim in this document changed.",
+      "evidence": "Re-read 2026-11-10 for D00 T05 s1: AGENTS.md tier rule changed (unattended lead muse-wonder-1.0, dummy-proof mechanics, subagent removal rule) and build.py/check-all.py changed behavior-identically; no writer, reviewer-route, model, or product claim in this document changed.",
       "sources": {
-        "AGENTS.md": "cbb04e9b712b37eb5a0e5a60775ff94dee8d7972bb3093ff9f721a964de5d2e7",
+        "AGENTS.md": "6654d16c2da76004600f48e91b54d3979101d5839e5ab30e1710784df18d5d75",
         ".conclave/reviewers.toml": "455ff6445e7812a8ee41a0f456710bf4210c59ebaed1703cd6abc1a4df7d2b5a",
         "scripts/review-dispatch.py": "5e6b214c36c1cdf30c1c75fcf343edc415e47a93c3437785f16c45d7f56f639f",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
@@ -1591,24 +1591,24 @@
       }
     },
     "CONTRIBUTING.md": {
-      "evidence": "2026-11-09 Re-read for D07 T01 section 2 (PNG in and out): the CLI now also reads and writes 8-bit PNG alongside 24-bit BMP; statements naming the CLI image formats were updated where needed and the remaining claims were confirmed unchanged.",
+      "evidence": "Re-read 2026-11-10 for D00 T05 s1: build.py flag construction extracted into shared helpers with byte-identical build outputs (per-target compile_commands.json sha256 unchanged), check-all.py gained the compilation-database gate, provision gained a compile_commands.json step; no claim in this document changed.",
       "sources": {
-        "scripts/build.py": "3c1f8b55149300325006e7607a3f0d46a54c393935761dbc01a10990a4cdc36b",
+        "scripts/build.py": "e990806d0adbc5613289b3c3248edbf3cc5db21fc5426aab6880c594f06d5bed",
         "scripts/package.py": "ef69de2da770ea647e2841f4c2ce16db8bae22544c086a389983bdbeb1e50b37",
-        "scripts/check-all.py": "0d7009f7af3dea1ffdfaf8893cb5c32f802075607a5b2d5500318ed8af70c777",
+        "scripts/check-all.py": "fb6c9b81108c65eadb781b8fed2bf623db5ad5e565396d2cb5bcc239342adb77",
         "CONTRIBUTING.md": "01f5855ce18883d6930ce1ebb569ea9411ac21e3c4cf3faced1a56c155bf470f"
       },
       "review": "Author-attested: 2026-10-25 re-read CONTRIBUTING.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/building.md": {
-      "evidence": "2026-11-09 Re-read for D07 T01 section 2 (PNG in and out): the CLI now also reads and writes 8-bit PNG alongside 24-bit BMP; statements naming the CLI image formats were updated where needed and the remaining claims were confirmed unchanged.",
+      "evidence": "Re-read 2026-11-10 for D00 T05 s1: provisioning paragraph now names requirements-dev.txt (Pillow and Basedpyright) and the generated root compile_commands.json, and a new Editor setup section documents clangd, Basedpyright (not a gate, 2026-11-10 baseline), the refresh command, and both Windows VS Code overrides; remaining build claims confirmed unchanged.",
       "sources": {
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
-        "scripts/build.py": "3c1f8b55149300325006e7607a3f0d46a54c393935761dbc01a10990a4cdc36b",
+        "scripts/build.py": "e990806d0adbc5613289b3c3248edbf3cc5db21fc5426aab6880c594f06d5bed",
         "scripts/package.py": "ef69de2da770ea647e2841f4c2ce16db8bae22544c086a389983bdbeb1e50b37",
-        "scripts/check-all.py": "0d7009f7af3dea1ffdfaf8893cb5c32f802075607a5b2d5500318ed8af70c777",
+        "scripts/check-all.py": "fb6c9b81108c65eadb781b8fed2bf623db5ad5e565396d2cb5bcc239342adb77",
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
-        "docs/building.md": "481144590cfd899e520659aee9ad544f56b3c4403225060e285d1ea648d49c27"
+        "docs/building.md": "0e9ba3bb50943169c37e9b4cc333aeecaa8537c9e61dc9fa07ee7ab0b3ff9bdd"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/building.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
@@ -1633,13 +1633,13 @@
       "review": "Author-attested: 2026-10-25 re-read docs/index.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/getting-started.md": {
-      "evidence": "2026-11-09 Re-read for D07 T01 section 2 (PNG in and out): the CLI now also reads and writes 8-bit PNG alongside 24-bit BMP; statements naming the CLI image formats were updated where needed and the remaining claims were confirmed unchanged.",
+      "evidence": "Re-read 2026-11-10 for D00 T05 s1: build.py flag construction extracted into shared helpers with byte-identical build outputs (per-target compile_commands.json sha256 unchanged), check-all.py gained the compilation-database gate, provision gained a compile_commands.json step; no claim in this document changed.",
       "sources": {
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
-        "tools/provision.py": "b17ea42569b76d70edbcc235dbc86385c9c7ce50b1be7a3bb83383c30f848556",
-        "tools/provision.ps1": "836043df1f959726d5fa2b73d206fa896c9d3aacd12bf7e21b8193a4bb14ad96",
-        "scripts/build.py": "3c1f8b55149300325006e7607a3f0d46a54c393935761dbc01a10990a4cdc36b",
-        "scripts/check-all.py": "0d7009f7af3dea1ffdfaf8893cb5c32f802075607a5b2d5500318ed8af70c777",
+        "tools/provision.py": "dc5fb84c125ea3735ca425e91d084d04297d772cee4e3609417aa11c66ad0c3b",
+        "tools/provision.ps1": "b4d364e6fbbd72057298394c89599a4f19b5e84a90ac8678664d094d84420147",
+        "scripts/build.py": "e990806d0adbc5613289b3c3248edbf3cc5db21fc5426aab6880c594f06d5bed",
+        "scripts/check-all.py": "fb6c9b81108c65eadb781b8fed2bf623db5ad5e565396d2cb5bcc239342adb77",
         "scripts/check-all.ps1": "7006b1871b52689461497fa676b3cb6472f0e436c9c5e240deb9da069321a528",
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/main.c": "3061f3ece83ee1b766492f0f125146cd744adbcc143cd3bca836e733f5580598",
@@ -1678,9 +1678,9 @@
       }
     },
     "docs/agent-skills-and-rules-structure.md": {
-      "evidence": "Re-read 2026-11-10 after the straight-on-main rule in AGENTS.md gained its commit-and-push-all clause (operator rule: completed work is committed on main and pushed to origin in the same turn, CI read back): no writer, reviewer-route, or product claim in this document changed.",
+      "evidence": "Re-read 2026-11-10 for D00 T05 s1: AGENTS.md tier rule changed (unattended lead muse-wonder-1.0, dummy-proof mechanics, subagent removal rule) and build.py/check-all.py changed behavior-identically; no writer, reviewer-route, model, or product claim in this document changed.",
       "sources": {
-        "AGENTS.md": "cbb04e9b712b37eb5a0e5a60775ff94dee8d7972bb3093ff9f721a964de5d2e7",
+        "AGENTS.md": "6654d16c2da76004600f48e91b54d3979101d5839e5ab30e1710784df18d5d75",
         "GEMINI.md": "80dd5e3bf1639e1f542dc0e5b7760a3ce2d53f852790bc5d6d6ee39fdf79e0b9",
         ".conclave/kits.json": "56785267af421d6deac2d4e5cfdda58be63684fb6f3893cece8043a6f0578105",
         ".conclave/reviewers.toml": "455ff6445e7812a8ee41a0f456710bf4210c59ebaed1703cd6abc1a4df7d2b5a",
@@ -1756,7 +1756,7 @@
       "review": "Author-attested: 2026-10-25 re-read docs/limitations.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/troubleshooting.md": {
-      "evidence": "2026-11-09 Re-read for D07 T01 section 2 (PNG in and out): the CLI now also reads and writes 8-bit PNG alongside 24-bit BMP; statements naming the CLI image formats were updated where needed and the remaining claims were confirmed unchanged.",
+      "evidence": "Re-read 2026-11-10 for D00 T05 s1: build.py flag construction extracted into shared helpers with byte-identical build outputs (per-target compile_commands.json sha256 unchanged), check-all.py gained the compilation-database gate, provision gained a compile_commands.json step; no claim in this document changed.",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "0459a0748fd733a53d16badfb465cbcee3f75993c8a522c6d7e7932115b0bd3f",
@@ -1765,22 +1765,22 @@
         "src/bmp.c": "50278e51120542ec686aee00385eba666239070533035e5d04e7d659b118317c",
         "src/api.c": "774c4e0a2a22f5a01e174e541cd1e725da05019ece20927345938cbe10fe0f02",
         "src/sys_posix.c": "507270096bb20f63a07fd0176551a6fc7dd37ee7ce441b6a5a3e57f00bcb6792",
-        "tools/provision.py": "b17ea42569b76d70edbcc235dbc86385c9c7ce50b1be7a3bb83383c30f848556",
-        "tools/provision.ps1": "836043df1f959726d5fa2b73d206fa896c9d3aacd12bf7e21b8193a4bb14ad96",
+        "tools/provision.py": "dc5fb84c125ea3735ca425e91d084d04297d772cee4e3609417aa11c66ad0c3b",
+        "tools/provision.ps1": "b4d364e6fbbd72057298394c89599a4f19b5e84a90ac8678664d094d84420147",
         "docs/troubleshooting.md": "4af65035b3b7f1e914e7dee9b029871f5bf0ac11ef28b90fb94b9211ae536de5"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/troubleshooting.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/licenses.md": {
-      "evidence": "2026-10-27: Reviewed docs/licenses.md against its drift sources for D01 T03 section 1 (format version 3 port: encoder writes version 3, decoders accept versions 2 and 3, inspect prints the file version)",
+      "evidence": "Re-read 2026-11-10 for D00 T05 s1: build.py flag construction extracted into shared helpers with byte-identical build outputs (per-target compile_commands.json sha256 unchanged), check-all.py gained the compilation-database gate, provision gained a compile_commands.json step; no claim in this document changed.",
       "sources": {
         "CODE_OF_CONDUCT.md": "f945b73c121fdc7597bdfedabb63f1442ccbab3b2469cd1b7a59932e9eac7da0",
         "testdata/photos/README.md": "f8d6f0d749fc5e795731c322fe192350b247afe167cb817c50f6faedc444303e",
         "testdata/photos/manifest.json": "6c9cf4983d9527c981dde0bd906e9addccaab4f769b35b0c8c3a7470999f5c46",
         "testdata/photos/NOTICE-imagecompression-info.txt": "e455e6ea2a78ade37bf0d2bb0bf7f4d1f7c2bef2b81cd35a5628b0269d05e8cd",
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
-        "tools/provision.py": "b17ea42569b76d70edbcc235dbc86385c9c7ce50b1be7a3bb83383c30f848556",
-        "tools/provision.ps1": "836043df1f959726d5fa2b73d206fa896c9d3aacd12bf7e21b8193a4bb14ad96",
+        "tools/provision.py": "dc5fb84c125ea3735ca425e91d084d04297d772cee4e3609417aa11c66ad0c3b",
+        "tools/provision.ps1": "b4d364e6fbbd72057298394c89599a4f19b5e84a90ac8678664d094d84420147",
         "docs/licenses.md": "4b55927b255f177e7e6cd5cc034ed11a662b447d4c667852498f7fb5739f95b2"
       }
     },

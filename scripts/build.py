@@ -59,6 +59,37 @@ def base_x64_flags() -> list[str]:
     return ['-march=x86-64-v2', '-mtune=generic']
 
 
+def target_toolchain(target: str) -> tuple[Path, str]:
+    if target.startswith('android-'):
+        tools = ROOT / 'tools/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin'
+        arch = 'aarch64' if target == 'android-arm64' else 'x86_64'
+        api = json.loads((ROOT / 'toolchain.json').read_text())['android']['min_api']
+        triple = f'{arch}-linux-android{api}'
+    else:
+        tools = ROOT / ('tools/llvm-mingw/bin' if os.name == 'nt' else 'tools/llvm-mingw-linux/bin')
+        triple = 'x86_64-w64-mingw32' if target == 'windows-x64' else 'x86_64-linux-gnu'
+    return tools, triple
+
+
+def compile_flags(target: str, portable: bool = False) -> list[str]:
+    windows = target == 'windows-x64'
+    _tools, triple = target_toolchain(target)
+    flags = [f'--target={triple}', '-std=c11', '-O2', '-g', '-Wall', '-Wextra', '-Werror',
+             '-Wno-unused-parameter', '-fno-builtin', '-fno-ident', '-fvisibility=hidden']
+    if target != 'android-arm64':
+        flags += base_x64_flags()
+    if portable:
+        flags += ['-DRF_PORTABLE_SIMD']
+    if windows:
+        flags += ['-gcodeview']
+    flags += ['-ffreestanding', '-fno-stack-protector'] if windows else ['-fPIC', '-pthread']
+    return flags
+
+
+def lib_sources_for(target: str) -> tuple[str, ...]:
+    return COMMON + (('mem', 'sys') if target == 'windows-x64' else ('sys_posix',))
+
+
 PGO_TRACKED_SOURCES = (
     'include/rasterfold.h',
     'src/cm.c', 'src/pal.c', 'src/fold.c', 'src/bmp.c', 'src/png.c', 'src/zlib.c', 'src/crc32.c',
@@ -272,14 +303,7 @@ def build(target: str, jobs: int, portable: bool, pgo_profile: Path | None = Non
     suffix = '.exe' if os.name == 'nt' else ''
     if os.name == 'nt' and not windows:
         raise ValueError('Linux and Android builds run in Linux/WSL; Windows hosts build windows-x64')
-    if android:
-        tools = ROOT / 'tools/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin'
-        arch = 'aarch64' if target == 'android-arm64' else 'x86_64'
-        api = json.loads((ROOT / 'toolchain.json').read_text())['android']['min_api']
-        triple = f'{arch}-linux-android{api}'
-    else:
-        tools = ROOT / ('tools/llvm-mingw/bin' if os.name == 'nt' else 'tools/llvm-mingw-linux/bin')
-        triple = 'x86_64-w64-mingw32' if windows else 'x86_64-linux-gnu'
+    tools, triple = target_toolchain(target)
     cc, ar = tools / ('clang' + suffix), tools / ('llvm-ar' + suffix)
     ninja = ROOT / ('tools/ninja/ninja.exe' if os.name == 'nt' else 'tools/ninja-linux/ninja')
     for path in (cc, ar, ninja):
@@ -290,15 +314,7 @@ def build(target: str, jobs: int, portable: bool, pgo_profile: Path | None = Non
     runtime, libraries, headers, symbols = (out / part for part in ('bin', 'lib', 'include', 'symbols'))
     for directory in (work, *( [work / 'lto'] if lto else [] ), runtime, libraries, headers, *([symbols] if windows else [])):
         directory.mkdir(parents=True, exist_ok=True)
-    flags = [f'--target={triple}', '-std=c11', '-O2', '-g', '-Wall', '-Wextra', '-Werror',
-             '-Wno-unused-parameter', '-fno-builtin', '-fno-ident', '-fvisibility=hidden']
-    if target != 'android-arm64':
-        flags += base_x64_flags()
-    if portable:
-        flags += ['-DRF_PORTABLE_SIMD']
-    if windows:
-        flags += ['-gcodeview']
-    flags += ['-ffreestanding', '-fno-stack-protector'] if windows else ['-fPIC', '-pthread']
+    flags = compile_flags(target, portable)
     validated_profile: Path | None = None
     if pgo_profile is not None:
         pgo_tools = ROOT / ('tools/llvm-mingw/bin' if os.name == 'nt' else 'tools/llvm-mingw-linux/bin')
@@ -314,7 +330,7 @@ def build(target: str, jobs: int, portable: bool, pgo_profile: Path | None = Non
         link += ['-pthread', '-Wl,-z,relro,-z,now']
     if android:
         link += ['-Wl,-z,max-page-size=16384']
-    lib_sources = (*COMMON, *(['mem', 'sys'] if windows else ['sys_posix']))
+    lib_sources = lib_sources_for(target)
     objects = [work / (name + '.o') for name in lib_sources]
     # Hosted static-library callers supply their CRT memory functions. Keep the
     # freestanding definitions only in our executable and the export-limited DLL.
@@ -412,6 +428,10 @@ def build(target: str, jobs: int, portable: bool, pgo_profile: Path | None = Non
         'artifacts': {p.relative_to(out).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in artifacts},
     }, indent=2) + '\n')
     print(f'built {name}: CLI, shared and static libraries ({compiler})', flush=True)
+    import importlib.util as _ilu2
+    _spec2 = _ilu2.spec_from_file_location('rf_gen_compdb', Path(__file__).resolve().parent / 'gen-compdb.py')
+    _gc = _ilu2.module_from_spec(_spec2); _spec2.loader.exec_module(_gc)
+    _gc.write_root()
 
 
 def main() -> int:

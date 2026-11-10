@@ -34,6 +34,7 @@ def main():
         ('reviewer pin','scripts/review-dispatch.py',['--check-pin']),
         ('review rounds','scripts/review-dispatch.py',['--list-rounds']),
         ('campaign guard','scripts/campaign_guard.py',['--self-test']),
+        ('compilation database','scripts/gen-compdb.py',['--check']),
         ('intelligence','scripts/intelligence.py',['validate']),
     ):python(name,path,*args)
     gates.append(('review and automation tests',[py,'-m','unittest','discover','-s','scripts/tests','-v']))

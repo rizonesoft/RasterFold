@@ -22,7 +22,7 @@ source .venv/bin/activate
 python3 scripts/check-all.py --all-targets
 ```
 
-Provisioning installs checked archives under `tools/`, creates a local `.venv` for the pinned Pillow test dependency, and sets this clone's Git hook path when no custom path exists. It preserves a different existing hook path and reports it. `python3 tools/provision.py --verify` checks without installing or changing configuration.
+Provisioning installs checked archives under `tools/`, creates a local `.venv`, installs `requirements-dev.txt` (Pillow for image tests and Basedpyright for the Python language server), generates the root `compile_commands.json`, and sets this clone's Git hook path when no custom path exists. It preserves a different existing hook path and reports it. `python3 tools/provision.py --verify` checks without installing or changing configuration.
 
 For just one target, choose `linux-x64`, `windows-x64`, `android-arm64` or `android-x64`. With no target argument, the native host target is built. `--jobs N` sets build parallelism. `--portable` exercises the portable integer SIMD implementation on x64; it writes a separate `-portable` output directory and does not claim an ARM runtime test.
 
@@ -58,6 +58,14 @@ python3 scripts/windows.py tests/measure_final.py
 ```
 
 The last two commands write their recorded benchmark results; run them on a quiet machine under the research protocol. The migration audit only smoke-tests the measurement helpers and one research harness input, without replacing historical comparison results. Linux toolchain installer tests run only in the WSL/Linux full gate suite; the native Windows suite covers Windows tooling.
+
+## Editor setup
+
+C and C++ navigation uses clangd from the pinned LLVM with `.clangd` and the root compilation database. Refresh it with `python3 scripts/gen-compdb.py`; every build also refreshes it and `scripts/check-all.py` checks it.
+
+Python navigation uses Basedpyright from `.venv`, scoped by `pyrightconfig.json`. It is an editor aid and not a gate, with a 2026-11-10 basic-mode baseline of 684 findings on the untyped tooling.
+
+On Windows, set `clangd.path` to `tools/llvm-mingw/bin/clangd.exe` and `python.defaultInterpreterPath` to `.venv\Scripts\python.exe` in VS Code user settings.
 
 ## Outputs and Android
 

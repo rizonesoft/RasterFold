@@ -1,5 +1,5 @@
 {
-  "$comment": "LSP wiring for the WSL/Linux checkout (the agent-automation host). Windows VS Code: override clangd.path in user settings to tools/llvm-mingw/bin/clangd.exe. Memory tuning: this host class has ~13 GB RAM, so clangd indexes in the background with 4 workers and trims its heap; the codec is ~12 translation units, so the index stays small.",
+  "$comment": "LSP wiring for the WSL/Linux checkout (the agent-automation host). Windows VS Code: override clangd.path in user settings to tools/llvm-mingw/bin/clangd.exe and python.defaultInterpreterPath to .venv\\Scripts\\python.exe. Memory tuning: this host class has ~13 GB RAM, so clangd indexes in the background with 4 workers and trims its heap; the codec is ~12 translation units, so the index stays small.",
   "clangd.path": "${workspaceFolder}/tools/llvm-mingw-linux/bin/clangd",
   "clangd.arguments": [
     "--background-index",

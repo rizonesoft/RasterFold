@@ -29,8 +29,10 @@ def main():
             if not (ROOT / '.venv/bin/python').is_file():
                 subprocess.run([sys.executable, '-m', 'venv', str(ROOT / '.venv')], check=True)
             subprocess.run([str(ROOT / '.venv/bin/python'), '-m', 'pip', 'install', '-r', str(ROOT / 'requirements-dev.txt')], check=True)
+            subprocess.run([sys.executable, str(ROOT / 'scripts/gen-compdb.py')], check=True)
         else:
             subprocess.run([sys.executable, str(ROOT / 'tools/bootstrap.py'), '--verify'], check=True)
+            subprocess.run([sys.executable, str(ROOT / 'scripts/gen-compdb.py'), '--check'], check=True)
         hooks = subprocess.run(['git','config','--get','core.hooksPath'],cwd=ROOT,capture_output=True,text=True).stdout.strip()
         if not hooks and not args.verify:
             subprocess.run(['git','config','core.hooksPath','tools/githooks'],cwd=ROOT,check=True);hooks='tools/githooks'

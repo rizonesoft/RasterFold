@@ -15,6 +15,9 @@
     ffmpeg     ADVISORY: ffmpeg on PATH with the libjxl encoder, needed only by
                tests\measure_final.py, tests\benchmark.py, and research\corpus.py.
                Reported, never repaired, never failing the run.
+    compilation database
+               the root compile_commands.json is present and current under
+               scripts\gen-compdb.py --check. Repair runs scripts\gen-compdb.py.
   -Verify runs the checks only: exit 0 when every required leg is green, 1 otherwise.
   Without -Verify, failing legs are repaired, then verified again.
   Run: pwsh tools/provision.ps1 [-Verify]
@@ -99,11 +102,22 @@ function Test-FfmpegLeg {
   return @{ Name = 'ffmpeg'; Ok = $ok; Required = $false; Detail = $(if ($ok) { "$($cmd.Source) with libjxl" } else { "$($cmd.Source) has no libjxl encoder" }) }
 }
 
+function Test-CompilationDatabaseLeg {
+  $py = Get-Python
+  if (-not $py) {
+    return @{ Name = 'compilation database'; Ok = $false; Required = $true; Detail = 'needs Python 3.11+ first' }
+  }
+  $null = (& $py.Path (Join-Path $Root 'scripts/gen-compdb.py') --check 2>&1 | Out-String)
+  $ok = ($LASTEXITCODE -eq 0)
+  return @{ Name = 'compilation database'; Ok = $ok; Required = $true; Detail = $(if ($ok) { 'current' } else { 'missing or stale (repair: python scripts/gen-compdb.py)' }) }
+}
+
 function Test-All {
   $r = @()
   $r += Test-ToolchainLeg
   $r += Test-HooksLeg
   $r += Test-PythonLegs
+  $r += Test-CompilationDatabaseLeg
   $r += Test-FfmpegLeg
   return $r
 }
@@ -141,6 +155,10 @@ if (-not $Verify) {
   if ($faults -contains 'pillow' -and -not ($faults -contains 'python')) {
     $py = Get-Python
     & $py.Path -m pip install --quiet pillow
+  }
+  if ($faults -contains 'compilation database' -and -not ($faults -contains 'python')) {
+    $py = Get-Python
+    & $py.Path (Join-Path $Root 'scripts/gen-compdb.py')
   }
   if ($faults.Count -gt 0) { $results = @(Test-All) }
 }
