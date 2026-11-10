@@ -1,0 +1,74 @@
+{
+  "ref": "D00 T05 \u00a73",
+  "title": "The Measured Tool Stack: What Stays, What Is Not Adopted",
+  "implementation_sha": "d22228fee4daf59264833f3343e743160851d13d",
+  "date": "2026-11-10",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/00-workspace/D00-T05-s3.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "build linux-x64 exit 0 warning-free; cold 1.76s, -j4 2.09s, -j8 1.77s, cm.c maxrss 110324 KB, cProfile 1299 subprocess calls"
+  ],
+  "completion": {
+    "report": "docs/reviews/00-workspace/D00-T05-s3.md",
+    "verdict": "complete",
+    "candidate": "d22228fee4daf59264833f3343e743160851d13d",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/00-workspace/D00-T05-s3.md",
+    "candidate": "c1ce65150ab50241d9073567a6abd261c837b97d",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "c1ce65150ab50241d9073567a6abd261c837b97d",
+  "schedule": {
+    "policy": "three-pass",
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}

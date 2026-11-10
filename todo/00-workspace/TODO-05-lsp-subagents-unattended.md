@@ -52,7 +52,7 @@ track: W1
 | :---: | :-----: | ----------- | ---------- | :----: |
 |   1   |   §1    | LSP servers for C and Python, wired | -- |  [x]   |
 |   2   |   §2    | Spark and Ember subagents under lead verification | -- |  [x]   |
-|   3   |   §3    | The measured tool stack: what stays, what is not adopted | §1 |  [ ]   |
+|   3   |   §3    | The measured tool stack: what stays, what is not adopted | §1 |  [x]   |
 |   4   |   §4    | Unattended run: preflight, launcher, and goal | §2 |  [ ]   |
 |   5   |   §5    | The Windows Desktop shortcut | §4 |  [ ]   |
 |   6   |   §6    | Batch the git calls in receipt validation | -- |  [ ]   |
@@ -117,6 +117,8 @@ The operator asked whether tools like Ninja would be a good addition. The honest
 
 **Test checkpoint:** Corpus-style measurement quoted with its commands and date (the builds, the per-gate timings, the profile), each reproducible with the commands in this section; no toolchain pin moved and `python3 scripts/build.py --target linux-x64` still exits 0 warning-free.
 
+> **Verified:** 2026-11-10 | §3 | d22228fee4daf59264833f3343e743160851d13d
+> **Review:** `docs/reviews/d00-t05-s3.json`
 ## 4. Unattended Run: Preflight, Launcher, and Goal
 
 **Job:** A user can start one unattended campaign whose contract lives in documents (`docs/unattended-run.md`), reports every precondition as a pass or fail line before starting, runs with the permission posture the operator chose (yolo, no user-input tool), and can cancel the run through the campaign guard (which deletes the heartbeat job) and resume it later without deleting files by hand.
