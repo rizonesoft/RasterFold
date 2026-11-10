@@ -104,12 +104,14 @@ Near-mechanical and dummy work (searches, counts, claim re-measurement, verbatim
 > **Review:** `docs/reviews/d00-t05-s2.json`
 ## 3. The Measured Tool Stack: What Stays, What Is Not Adopted
 
+> **Started:** 2026-11-10T20:35:00Z
+
 The operator asked whether tools like Ninja would be a good addition. The honest answer is measured, per tool, on 2026-11-10, and mostly already settled by what is pinned: Ninja 1.13.2 drives every build through `scripts/build.py`, LLD links everything, and clang-tidy is gated. The candidates that remain (a compiler cache such as ccache or sccache, the mold linker, a different build generator) are decided against the numbers below, and this section is the record so the question does not reopen without new evidence. Stop condition: a candidate is adopted only if it cuts a measured dev-loop cost by at least a third on this host; otherwise the negative result ships, which is what happened for each candidate below.
 
 - [x] Measure the build as it stands: cold linux-x64 Ninja build 3.6 s at `-j4` and 4.1 s at `-j8`, no-op 0.00 s, `src/cm.c` peak 97 MB per clang process, so even `-j8` peaks under 1 GB and the default `min(cpu, 8)` in `scripts/build.py` stands. Done when: the numbers are recorded here and in the `AGENTS.md` LSP rule with their date.
 - [x] Reject ccache/sccache and mold with reasons a future reader can re-check: a cache cannot beat a 3.6 s cold build by a third after hashing and would sit in the PGO provenance path `scripts/build.py` validates by source hash; mold cannot beat LLD by a third on a 12-object link that is not separately measurable inside 3.6 s. Done when: both rejections are stated here as decisions, not preferences, with the adoption bar that would reopen them (a translation-unit count or link time that makes either win by a third).
 - [x] Measure where the dev loop actually spends: `todo-graph.py validate` 16.2 s and 55 MB, `drift-check.py` 10.6 s, `todo-claims.py` 0.47 s, `plan-audit.py` 0.43 s, and a cProfile of validate attributing about 10 s to 1261 `subprocess.run` calls. Done when: the profile lands the fix as §6 of this file instead of a vague "make validate faster" note.
-- [ ] Commit: `"workspace: record the measured tool-stack verdicts (D00 T05 §3)"`
+- [x] Commit: `"workspace: record the measured tool-stack verdicts (D00 T05 §3)"`
 
 **Test checkpoint:** Corpus-style measurement quoted with its commands and date (the builds, the per-gate timings, the profile), each reproducible with the commands in this section; no toolchain pin moved and `python3 scripts/build.py --target linux-x64` still exits 0 warning-free.
 
