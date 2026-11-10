@@ -54,6 +54,7 @@ track: OP1
 |   5   |   §5    | Enable GitHub Pages                           | --         |  [x]   |
 | 6 | §6 | Android release signing identity | -- | [ ] |
 | 7 | §7 | HEVC distribution decision | -- | [ ] |
+| 8 | §8 | The 13-round milestone cap | §4 | [ ] |
 
 ---
 
@@ -159,6 +160,23 @@ Every milestone gate in `todo/05-milestones/` carries this policy: on a miss, up
 - [ ] Commit: `"release: record HEVC provider distribution decision"`
 
 **Test checkpoint:** The actual decision names the proposed provider/version and intended channels in `docs/codec-distribution.md`; D10 T02 §7 must later prove its pins match that decision. No future artifact is required to stamp this decision.
+
+## 8. The 13-Round Milestone Cap
+
+The missed-milestone policy (§4) let a gate file up to three follow-up experiments and then stopped the campaign for an operator decision. In practice that parked gates (Milestone 8 has sat parked since 2026-11-09 with its three follow-ups shipped and its re-measurement outstanding) and, before the policy gained tolerances on 2026-10-30, twice escalated into operator target changes. The operator now caps the loop instead, so an unattended campaign always terminates a gate one way or the other.
+
+**Operator decision 2026-11-10:** "As for the milestones, let's set a cap for it. for example 'Milestone 8 gate: Beat WebP on generated images', let's give it a 13 round try (or your recommendation) and then accept the outcome, flip it and move on."
+
+The implementing session's recommendation, recorded with the decision: 13 is kept, because the worst gate so far needed 8 experiment sections before its decision (Milestone 5, `D01 T04 §2` to `§9`) and Milestone 4 burned 5 of 6 planned experiments as negative results, so 13 is the worst observed case with over half again headroom, while still bounding one gate's cost in a 60-milestone plan. The cap refines §4; §4 remains the historical record and is not rewritten.
+
+**The rule.** One round is one follow-up experiment section filed under the missed-milestone policy for that gate, built and measured against the gate's bar to a conclusion (shipped or negative result); gate re-measurements between rounds do not count separately, and a repeat of an Already-tried experiment unchanged is not a round. Each gate records its rounds used with refs. When round 13 still misses, the gate closes **accepted-missed**: the missed figures go into `docs/research.md` sections 1 and 9 beside the unmet target, the stamp's evidence states the target was missed and the cap reached (the completion review verifies the figures, the 13 rounds, and the no-regression envelope, not the target), the target text is never rewritten to fit the measurement, the accepted figures become the next milestone's no-regression baseline, and the campaign moves on without asking the operator. Fresh work toward the recorded gap may still be filed later by a planning section as ordinary work; it is not a gate round and does not reopen the gate. Later milestones are expected to keep improving the codec in general (every gate carries the no-regression envelope against the previous milestone's actual figures, accepted ones included, and milestones 11 and later author their work from the previous milestone's measured results), but no later milestone retroactively turns an accepted-missed gate into a reached one.
+
+- [x] Record the operator's 13-round cap and the accepted-missed closeout under this section, with Milestone 8's count stated (3 rounds used: `D01 T06 §4`, `§5`, `§6`). Done when: the decision line quotes the operator and the rule above names the round, the cap, and the closeout.
+- [x] Wire the cap into the generator that owns gate text: `POLICY` and the default checkpoint in `research/milestones.py`, plus Milestone 8's override note and missed-target item, then regenerate. Done when: `python3 research/milestones.py --check` exits 0 and every gate in `todo/05-milestones/` names the 13-round cap and `D99 T01 §8`.
+- [x] Carry the cap in the unattended launcher's seed prompt and `docs/unattended-run.md` so a campaign session applies it without rediscovering this section. Done when: both name the 13-round cap and the accepted-missed closeout.
+- [ ] Commit: `"todo: cap missed-milestone follow-ups at 13 rounds with an accepted-missed closeout (D99 T01 §8)"`
+
+**Test checkpoint:** `python3 research/milestones.py --check` exits 0, `grep -c "13 rounds" todo/05-milestones/TODO-01-beat-jxl-and-webp.md` counts the cap in the generated gates, and this section's decision line quotes the operator.
 
 ## Verification
 
