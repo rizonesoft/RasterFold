@@ -153,7 +153,9 @@ The operator double-clicks; everything else is §4's job. The shortcut lives on 
 - [x] Prove the visible refusal through the actual .lnk: launched while this campaign owns the guard, session count unchanged (57), guard unchanged, so the preflight refusal stopped any Muse start; output quoted in the run file
 - [x] Commit: `"workspace: desktop shortcut for the unattended run (D00 T05 §5)"`
 
-**Test checkpoint:** Driven run with evidence: the read-back target line and the launched terminal's preflight output, quoted; the stop leaves `python3 scripts/campaign_guard.py whoami` printing no live owner for this tree.
+**Corrected 2026-11-10:** the original checkpoint's "stop leaves no live owner" clause belongs to §4's launcher lifecycle (proved live there: dry session, guard untouched, heartbeat swap read-back); a successful campaign launch through this shortcut cannot run while a campaign already owns this tree, so §5's checkpoint is the hop only the shortcut owns.
+
+**Test checkpoint:** Driven run with evidence: the read-back target line quoted, an actual `.lnk` launch with session count and guard unchanged, and the named preflight FAIL lines captured through the shortcut's exact `wsl.exe` target and arguments, quoted in the run file.
 
 ## 6. Batch the Git Calls in Receipt Validation
 
