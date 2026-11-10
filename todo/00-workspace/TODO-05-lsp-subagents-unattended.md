@@ -50,7 +50,7 @@ track: W1
 
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
-|   1   |   §1    | LSP servers for C and Python, wired | -- |  [ ]   |
+|   1   |   §1    | LSP servers for C and Python, wired | -- |  [x]   |
 |   2   |   §2    | Spark and Ember subagents under lead verification | -- |  [ ]   |
 |   3   |   §3    | The measured tool stack: what stays, what is not adopted | §1 |  [ ]   |
 |   4   |   §4    | Unattended run: preflight, launcher, and goal | §2 |  [ ]   |
@@ -76,10 +76,12 @@ The binaries were never the gap: the pinned LLVM tree ships clangd and clang-tid
 - [x] Derive every editor flag from `scripts/build.py` (plan-review P1): extract the per-target compile-flag construction into pure helpers `build.py` and `scripts/gen-compdb.py` share, make `--check` recompute the expected entries from `build.py` so a changed build flag fails it even when all databases agree with each other, make the fresh-clone synthesis use the host target (windows-x64 on a Windows host) with the other platform's unique units added, refresh the root database at the end of every successful build, and gate it in `scripts/check-all.py`. Done when: the per-target and root databases are byte-identical to the pre-change ones on unchanged flags, and tampering a flag in a per-target database (or in `build.py`) makes `--check` exit 1.
 - [x] Generate the root database during provisioning (plan-review P1): `tools/provision.py` runs `scripts/gen-compdb.py` after the venv install and `--verify` runs `--check`; `tools/provision.ps1` mirrors it. Done when: a provision run on a tree with no root database leaves one covering every `src/*.c`, before any build.
 - [x] Document the editor setup for both hosts in `docs/building.md` (plan-review P1/P2): the refresh command, the Windows overrides for both `clangd.path` and `python.defaultInterpreterPath`, and the dated not-a-gate Basedpyright baseline where an editor user finds it; `.vscode/settings.json` names both overrides. Done when: the document's provisioning paragraph no longer mentions only Pillow and a Windows reader can wire both servers from it alone.
-- [x] Commit: `"workspace: wire clangd and Basedpyright LSP over the pinned toolchain (D00 T05 §1)"` (shipped in `a24edbf` under the whole-file message; the candidate range for this section starts there)
+- [x] Commit: `"workspace: LSP, Spark/Ember subagents, measured tool stack, unattended launcher (D00 T05)"` (shipped in `a24edbf` under the whole-file message; the candidate range for this section starts there)
 
 **Test checkpoint:** Driven run with evidence: `python3 scripts/gen-compdb.py && python3 scripts/gen-compdb.py --check` exit 0 with every `src/*.c` covered, `clangd --check` on `src/cm.c` finds definitions with zero code diagnostics, `.venv/bin/basedpyright --version` prints `basedpyright 1.40.2` and a scoped `.venv/bin/basedpyright` run completes over the `pyrightconfig.json` tree, deleting the root `compile_commands.json` makes `--check` exit 1 (then regenerate), and tampering one flag in `build/linux-x64/compile_commands.json` makes `--check` exit 1 (then rebuild).
 
+> **Verified:** 2026-11-10 | §1 | 494fed1969921270a4de654e28417329088129c5
+> **Review:** `docs/reviews/d00-t05-s1.json`
 ## 2. Spark and Ember Subagents Under Lead Verification
 
 Near-mechanical and dummy work (searches, counts, claim re-measurement, verbatim replacements, single gate runs) should not spend the lead model's effort, and must not spend the project's quality either. The split that keeps both: cheaper models produce, the lead verifies every line that lands, and the classes of work that carry judgment never delegate at all. This mirrors the existing rule for cheaper implementers in review (a passing test does not prove equal quality; read the full diff), applied to Muse Spark 1.3 and Muse Ember 1.0 from this machine's model catalog.

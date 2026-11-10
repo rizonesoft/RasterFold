@@ -1,0 +1,78 @@
+{
+  "ref": "D00 T05 \u00a71",
+  "title": "LSP Servers for C and Python, Wired",
+  "implementation_sha": "494fed1969921270a4de654e28417329088129c5",
+  "date": "2026-11-10",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/00-workspace/D00-T05-s1.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "python3 scripts/gen-compdb.py && python3 scripts/gen-compdb.py --check -> wrote compile_commands.json (13 entries); current (13 entries from linux-x64, windows-x64, android-arm64, android-x64, linux-x64-portable, windows-x64-portable)",
+    "clangd --check=src/cm.c -> definitions found, zero code diagnostics (8 SwapBinaryOperands tweak quirk lines only)",
+    ".venv/bin/basedpyright --version -> basedpyright 1.40.2; scoped run 684 errors = documented baseline, not a gate; flag tamper in build/linux-x64/compile_commands.json -> --check exit 1; single-target build -> 13 entries, 0 src files missing; --lto build -> --check exit 0",
+    "python3 scripts/check-all.py --all-targets -> 31/31 passed on 494fed1",
+    "python3 scripts/tidy.py -> 10/10 unique warnings across 6 target databases"
+  ],
+  "completion": {
+    "report": "docs/reviews/00-workspace/D00-T05-s1.md",
+    "verdict": "reconciled",
+    "candidate": "494fed1969921270a4de654e28417329088129c5",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/00-workspace/D00-T05-s1.md",
+    "candidate": "406382c4abeaac7b87879976d2562d101c9e83a9",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "406382c4abeaac7b87879976d2562d101c9e83a9",
+  "schedule": {
+    "policy": "three-pass",
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}
