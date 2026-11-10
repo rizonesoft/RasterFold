@@ -86,6 +86,8 @@ PNG needs zlib's inflate and deflate, written here in C without a runtime: infla
 > **Review:** `docs/reviews/d07-t01-s2.json`
 ## 3. PPM In and Out
 
+> **Started:** 2026-11-10T22:00:00Z
+
 - [ ] Write P6 PPM (maxval 255) reading and writing in `src/ppm.c`, refusing other maxvals and P3 with exit 3. Done when: PPM round trips match Pillow. Cheaper substitute: none needed; it is small.
 - [ ] Commit: `"cli: read and write PPM"`
 
