@@ -1918,8 +1918,9 @@ def overwrite_io() -> None:
             check(fold.read_bytes() == dest_before, f"{mode}-failed overwrite changed the destination")
             check(not Path(f"{fold}.partial").exists(), f"{mode}-failed overwrite left its .partial behind")
     # Writing the temporary in an unwritable location fails before publication.
+    dest_snapshot = fold.read_bytes()
     expect_fail(["encode", "--overwrite", str(src), "/dev/rf-nonexistent-dir/out.fold"], 2, "cannot write output")
-    check(rf.decode_image(fold.read_bytes()) == (w, h, rgb), "unwritable-location overwrite changed the destination")
+    check(fold.read_bytes() == dest_snapshot, "unwritable-location overwrite changed the destination")
     # A directory destination is refused and remains a directory.
     dir_dest = work / "destdir"
     dir_dest.mkdir(exist_ok=True)
