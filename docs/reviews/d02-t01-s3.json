@@ -1,0 +1,74 @@
+{
+  "ref": "D02 T01 \u00a73",
+  "title": "An AVX2 Build, Measured before Dispatching",
+  "implementation_sha": "a94d9e927790e2df199c4a03fc2d3d3e26863d20",
+  "date": "2026-11-10",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/02-speed/D02-T01-s3.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "vsjxl -n5 idle: decode minima 1.041/1.014 vs bar 0.950, negative result, no dispatch built"
+  ],
+  "completion": {
+    "report": "docs/reviews/02-speed/D02-T01-s3.md",
+    "verdict": "complete",
+    "candidate": "a94d9e927790e2df199c4a03fc2d3d3e26863d20",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/02-speed/D02-T01-s3.md",
+    "candidate": "6a680ec1edf5730bd6271e1b4991b8ea99a8fb4b",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "6a680ec1edf5730bd6271e1b4991b8ea99a8fb4b",
+  "schedule": {
+    "policy": "three-pass",
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}

@@ -2,7 +2,7 @@
 schema_version: 1
 id: compiler-options
 domain: 02-speed
-status: draft
+status: done
 title: "TODO-01 -- Compiler Options: PGO, LTO, AVX2"
 depends_on: []
 track: S1
@@ -42,7 +42,7 @@ track: S1
 | :---: | :-----: | ---------------------------------------------------------------- | -------------------------- | :----: |
 |   1   |   §1    | Profile-guided optimization                                      | --                         |  [x]   |
 |   2   |   §2    | Link-time optimization                                           | §1                         |  [x]   |
-|   3   |   §3    | An AVX2 build, measured before dispatching                       | §2                         |  [ ]   |
+|   3   |   §3    | An AVX2 build, measured before dispatching                       | §2                         |  [x]   |
 |   4   |   §4    | Hot-loop vectorization and row-context specialization in `cm.c`  | §2, D03 T01 §2, D04 T01 §1 |  [x]   |
 
 ---
@@ -95,6 +95,8 @@ Building for `x86-64-v3` might speed the LMS stage and the quantizers. Dispatch 
 
 **Test checkpoint:** the one-thread decode minimum ratio is `1.041` and `1.014` in two `research/vsjxl.py -n5 --threads 1` alternating passes (bar `<= 0.950`; medians `0.994` and `1.017`, encode minima `1.014` and `0.944`, encode medians `1.144` and `0.947`), and `1.053` minimum (`1.019` median, encode minimum `0.899`, encode median `0.872`) at `--threads 3`, on `measure/image.bmp` (2026-11-09, Linux binaries rebuilt from current source, release sha256 `c99784fc35bd...`, v3 sha256 `ba247b028226...`, identical `.fold` bytes, host load 0.71 to 1.87 on 10 cores); above the bar, so the negative result ships and no dispatch is built. The earlier loaded-host passes (`0.975` and `1.013` at load 5.2 to 6.7) are superseded by this idle-host repetition.
 
+> **Verified:** 2026-11-10 | §3 | a94d9e927790e2df199c4a03fc2d3d3e26863d20
+> **Review:** `docs/reviews/d02-t01-s3.json`
 ## 4. Hot-Loop Vectorization and Row-Context Specialization in `cm.c`
 
 **Origin:** discovered run=39ad50798e4b 2026-10-25 -- missed-milestone policy (`D99 T01 §4`) after `D02 T01 §1` and `D02 T01 §2` missed the 5% Milestone 2 one-thread decode bar (`D05 T01 §2`)
