@@ -593,9 +593,9 @@ def render_band(b: int) -> str:
                 else "Record the baseline figures (" + SIZE + ", " + BENCH + ") as the reference for milestone 2. Done when: they are quoted in this section's stamp."
             )
             checklist_block = (
-                f"- {item_box} Measure the target with {measure}. Done when: {target}, each figure quoted with its command.\n"
+                f"- {item_box} Measure the target with {measure}. Done when: {target}, each figure quoted with its command; or the gate closes accepted-missed at the 13-round cap (`D99 T01 §8`), in which case this item ticks with the missed figures quoted, the 13 rounds listed, and the target text unchanged (never a claim the target was reached), while the no-regression item below must still hold.\n"
                 f"- {item_box} {item2}\n"
-                f"- {item_box} Record the milestone in `docs/research.md` sections 1 and 9, append the gate's summary line to the Unreleased section of `CHANGELOG.md`, and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0.\n"
+                f"- {item_box} Record the milestone in `docs/research.md` sections 1 and 9, append the gate's summary line to the Unreleased section of `CHANGELOG.md`, and regenerate the benchmarks and the HTML docs (`python scripts/build-docs.py`). Done when: `python scripts/drift-check.py` exits 0; for an accepted-missed closeout this item also records the missed figures beside the unmet target, the 13 rounds, the accepted figures as the next milestone's baseline, and the one dormant backlog entry's read-back (`D99 T01 §8`).\n"
                 f"{release_items}"
             )
         checkpoint_text = str(

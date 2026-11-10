@@ -78,7 +78,7 @@ The backlog has no cap, so triage is never about room. On every groom, walk it: 
 
 ### 6. Report and commit
 
-Write the groom record: what was sequenced, what drifted and was corrected, what gaps were filed and where they landed (sections versus backlog), what the backlog triage promoted and merged (with each merge marker), which stale entries were put to the operator and what the operator said, the run id and the discovered sections it filed, and the size line the Progress block now shows. Commit as `todo: groom <scope> (<date>)` after a final `validate` plus `plan --sync` plus `plan --check`.
+Write the groom record: what was sequenced, what drifted and was corrected, what gaps were filed and where they landed (sections versus backlog), what the backlog triage promoted and merged (with each merge marker), which dormant accepted-missed entries (`D99 T01 §8`) were evaluated against their four promote-when triggers and with what outcome for each, which stale entries were put to the operator and what the operator said, the run id and the discovered sections it filed, and the size line the Progress block now shows. Commit as `todo: groom <scope> (<date>)` after a final `validate` plus `plan --sync` plus `plan --check`.
 
 ## Guardrails
 
