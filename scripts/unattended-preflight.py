@@ -10,6 +10,7 @@ It starts nothing and writes nothing outside build/.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -26,7 +27,44 @@ def check(name: str, ok: bool, detail: str = "") -> None:
 
 
 def run(args: list[str], timeout: int = 300) -> subprocess.CompletedProcess:
-    return subprocess.run(args, cwd=ROOT, capture_output=True, text=True, timeout=timeout)
+    """One subprocess check, never raising: a spawn error or a timeout
+    becomes a failed result the caller reports as its named FAIL line,
+    so one broken executable cannot traceback the whole preflight."""
+    try:
+        return subprocess.run(args, cwd=ROOT, capture_output=True, text=True, timeout=timeout)
+    except OSError as exc:
+        return subprocess.CompletedProcess(args, 127, "", f"{args[0]}: could not start: {exc}")
+    except subprocess.TimeoutExpired as exc:
+        out = exc.stdout.decode(errors="replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+        return subprocess.CompletedProcess(args, 124, out, f"{args[0]}: timed out after {timeout}s")
+
+
+def session_running(session_id: str) -> bool | None:
+    """Whether some live process still owns `session_id`, or None when
+    this host cannot tell. On Linux a session owns its id through its
+    command line or an open file under a path naming it (a Muse session
+    holds its session lock that way); anything else is not running."""
+    if not session_id:
+        return False
+    proc_dir = Path("/proc")
+    if not proc_dir.is_dir():
+        return None
+    needle = session_id.encode()
+    for entry in proc_dir.iterdir():
+        if not entry.name.isdigit() or int(entry.name) == os.getpid():
+            continue
+        try:
+            if needle in (entry / "cmdline").read_bytes():
+                return True
+            for fd in (entry / "fd").iterdir():
+                try:
+                    if session_id in os.readlink(fd):
+                        return True
+                except OSError:
+                    continue
+        except OSError:
+            continue
+    return False
 
 
 def last_line(proc: subprocess.CompletedProcess) -> str:
@@ -43,7 +81,25 @@ def main() -> int:
     hooks = run(["git", "config", "core.hooksPath"]).stdout.strip()
     check("commit hooks wired", hooks == "tools/githooks", f"core.hooksPath={hooks or '(unset)'}")
     guard = ROOT / "build/claude-campaign-guard.json"
-    check("no live campaign guard", not guard.is_file(), "another run may own the tree" if guard.is_file() else "")
+    if not guard.is_file():
+        check("no live campaign guard", True)
+    else:
+        try:
+            owner = str(json.loads(guard.read_text(encoding="utf-8")).get("session_id", ""))
+            unreadable = ""
+        except Exception as exc:  # a guard that cannot be read cannot be handed over
+            owner, unreadable = "", str(exc)
+        running = session_running(owner) if owner else None
+        if unreadable:
+            check("no live campaign guard", False, f"guard file unreadable: {unreadable}")
+        elif running:
+            check("no live campaign guard", False, f"session {owner} is running and may own the tree")
+        elif running is False:
+            # Not a failure: the new session takes this guard over through
+            # campaign_guard.py acquire --handover (docs/unattended-run.md).
+            print(f"STALE  stale campaign guard: {owner or '(no session)'} (handover on start)")
+        else:
+            check("no live campaign guard", False, f"cannot tell whether session {owner} is running")
 
     # Plan and graph gates (the same ones the pre-commit hook enforces).
     for name, args in (
