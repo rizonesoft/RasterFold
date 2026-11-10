@@ -104,7 +104,6 @@ int rf_png_load(const uint8_t *f, size_t size, rf_image *out, rf_error *err) {
             if (length != 0) { rc = rf_fail(err, RF_ERR_FORMAT, "invalid PNG: IEND"); goto done; }
             if ((uint64_t)pos + 12 + length != (uint64_t)size) { rc = rf_fail(err, RF_ERR_FORMAT, "invalid PNG: trailing data"); goto done; }
             have_iend = 1;
-            pos += 12 + length;
             break;
         } else if (type[0] == 'P' && type[1] == 'L' && type[2] == 'T' && type[3] == 'E') {
             /* A palette must precede IDAT, appear at most once, and

@@ -11,7 +11,15 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-COMMON = ('platform', 'api', 'crc32', 'bmp', 'fold', 'cm', 'pal')
+
+import importlib.util as _ilu
+
+_spec = _ilu.spec_from_file_location('rf_build', Path(__file__).resolve().parent / 'build.py')
+if _spec is None or _spec.loader is None:
+    raise ImportError('tidy: cannot load scripts/build.py')
+build = _ilu.module_from_spec(_spec)
+_spec.loader.exec_module(build)
+COMMON = build.COMMON
 BASELINE_RE = re.compile(r'^count:\s*(\d+)\s*$')
 WARNING_RE = re.compile(
     r'^(?P<file>.+?):(?P<line>\d+):(?P<col>\d+):\s+warning:\s+(?P<msg>.+?)\s+\[(?P<check>[^\]]+)\]\s*$'
@@ -218,41 +226,52 @@ def validate_compdb(compdb_path: Path, root: Path = ROOT) -> list[Path]:
 
 
 def write_compdb(spec: dict, root: Path = ROOT) -> tuple[Path, Path, list[Path]]:
-    tools = Path(spec['tools'])
+    base = spec['name'][: -len('-portable')] if spec['name'].endswith('-portable') else spec['name']
+    if base in build.TARGETS and root == ROOT:
+        # One derivation: flags and sources come from build.py, so the
+        # database tidy writes is the database the build writes.
+        tools, _triple = build.target_toolchain(base)
+        flags = build.compile_flags(base, portable=bool(spec['portable']))
+        source_names: tuple[str, ...] = build.lib_sources_for(base) + ('main',)
+    else:
+        # Tidy-only analysis configs with no build target (posix-* on a
+        # Windows host): keep the local flag construction for those alone.
+        tools = Path(spec['tools'])
+        triple = spec['triple']
+        flags = [
+            f'--target={triple}',
+            '-std=c11',
+            '-O2',
+            '-g',
+            '-Wall',
+            '-Wextra',
+            '-Werror',
+            '-Wno-unused-parameter',
+            '-fno-builtin',
+            '-fno-ident',
+            '-fvisibility=hidden',
+        ]
+        if not triple.startswith('aarch64-'):
+            flags += ['-march=x86-64-v2', '-mtune=generic']
+        if spec['portable']:
+            flags += ['-DRF_PORTABLE_SIMD']
+        if spec['windows']:
+            flags += ['-gcodeview']
+        if spec['freestanding']:
+            flags += ['-ffreestanding', '-fno-stack-protector']
+        else:
+            flags += ['-fPIC', '-pthread']
+        source_names = tuple(spec['sources'])
     suffix = spec['suffix']
     cc = tools / ('clang' + suffix)
     tidy = tools / ('clang-tidy' + suffix)
     for binary in (cc, tidy):
         if not binary.is_file():
             raise ValueError(f'missing {binary}; run tools/bootstrap.py (Windows: tools/bootstrap.ps1)')
-    triple = spec['triple']
-    flags = [
-        f'--target={triple}',
-        '-std=c11',
-        '-O2',
-        '-g',
-        '-Wall',
-        '-Wextra',
-        '-Werror',
-        '-Wno-unused-parameter',
-        '-fno-builtin',
-        '-fno-ident',
-        '-fvisibility=hidden',
-    ]
-    if not triple.startswith('aarch64-'):
-        flags += ['-march=x86-64-v2', '-mtune=generic']
-    if spec['portable']:
-        flags += ['-DRF_PORTABLE_SIMD']
-    if spec['windows']:
-        flags += ['-gcodeview']
-    if spec['freestanding']:
-        flags += ['-ffreestanding', '-fno-stack-protector']
-    else:
-        flags += ['-fPIC', '-pthread']
     work = root / 'build' / spec['name']
     work.mkdir(parents=True, exist_ok=True)
     compdb = []
-    for source_name in spec['sources']:
+    for source_name in source_names:
         source = root / 'src' / f'{source_name}.c'
         obj = work / f'{source_name}.o'
         compdb.append({
