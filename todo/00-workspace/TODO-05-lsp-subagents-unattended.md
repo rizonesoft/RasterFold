@@ -146,7 +146,7 @@ An unattended run fails in boring ways long before it fails in interesting ones:
 
 > **Started:** 2026-11-10T21:36:00Z
 
-The operator double-clicks; everything else is §4's job. The shortcut lives on the Windows desktop (this checkout is reached through WSL), opens Windows Terminal, and runs the launcher inside the `Ubuntu` distribution at this checkout, so the visible artifact is one `.lnk` whose target line a reader can audit.
+The operator double-clicks; everything else is §4's job. The shortcut lives on the Windows desktop (this checkout is reached through WSL), opens the Windows-configured terminal host for `wsl.exe`, and runs the launcher inside the `Ubuntu` distribution at this checkout, so the visible artifact is one `.lnk` whose target line a reader can audit.
 
 - [x] Create `RasterFold Unattended Run.lnk` on the Windows desktop (`/mnt/c/Users/DerickPayne/Desktop/`) through Windows PowerShell's `WScript.Shell`, targeting `C:\Windows\System32\wsl.exe` with arguments `-d Ubuntu --cd /home/derickpayne/projects/RasterFold -- bash scripts/unattended-run.sh` (wsl.exe directly, not `wt.exe`: one less alias that can move, and the launcher itself keeps the window open on a preflight failure). Done when: the `.lnk` exists and reading it back through the same COM object prints that exact target and arguments.
 - [x] Prove the double-click path once from Windows: .lnk read-back exact (wsl.exe, -d Ubuntu --cd /home/derickpayne/projects/RasterFold -- bash scripts/unattended-run.sh); actual Start-Process launch in the run file; successful Muse startup through the same launcher proved in D00 T05 s4
