@@ -61,6 +61,8 @@ track: W1
 
 ## 1. LSP Servers for C and Python, Wired
 
+> **Started:** 2026-11-10T16:00:21Z
+
 **Job:** A user can open this checkout in an editor and get clangd and Basedpyright language-server settings that resolve the pinned binaries, the exact build flags, and the project include paths with no hand configuration.
 
 The binaries were never the gap: the pinned LLVM tree ships clangd and clang-tidy, and `scripts/build.py` writes a compilation database per target. Editors look at the repository root, so this section publishes a merged root database and the configuration that points both language servers at the pinned tools with memory bounds for this host class (13 GB RAM, about 12 C translation units, 60 Python files). Basedpyright is a new Python dependency beyond stdlib and Pillow; the reason is recorded here as AGENTS.md requires: it is the editor language server for the Python tooling, pinned like Pillow, installed only into `.venv`, and not a gate (its 2026-11-10 basic-mode baseline on the untyped tooling is 684 findings, mostly Optional-member noise over JSON-shaped dicts; making it a gate is a separate decision nobody has taken).
@@ -69,7 +71,7 @@ The binaries were never the gap: the pinned LLVM tree ships clangd and clang-tid
 - [x] Add `.clangd` (root compilation database, `-Werror` removed for editing, clang-tidy bugprone/analyzer/performance mirroring `.clang-tidy`, strict unused/missing includes, background index) and `.vscode/settings.json` plus `.vscode/extensions.json` pointing at `tools/llvm-mingw-linux/bin/clangd` with `-j=4`, `--malloc-trim`, `--pch-storage=memory`, and `--header-insertion=never`, and recommending clangd and Basedpyright while disabling the C/C++ IntelliSense engine. Done when: `tools/llvm-mingw-linux/bin/clangd --check=src/cm.c --compile-commands-dir=.` resolves definitions from the index with no code diagnostics (the 8 `SwapBinaryOperands` tweak failures it prints are a clangd 23 `--check` quirk, not diagnostics).
 - [x] Pin `basedpyright==1.40.2` in `requirements-dev.txt`, install it into `.venv`, and add `pyrightconfig.json` scoped to `scripts`, `tests`, `research`, and the two `tools/*.py` provisioners, explicitly excluding the downloaded tool trees under `tools/` (an unscoped first run checked 2236 files in 480 s; scoped it checks 60 files). Done when: `.venv/bin/basedpyright` completes on the scoped tree and the editor resolves `basedpyright-langserver` from `.venv`.
 - [x] Document the editor setup and the Windows `clangd.path` override in `AGENTS.md` (the LSP working rule) so a cold session finds it without this section. Done when: the rule names `scripts/gen-compdb.py`, `.clangd`, `pyrightconfig.json`, and the not-a-gate baseline.
-- [ ] Commit: `"workspace: wire clangd and Basedpyright LSP over the pinned toolchain (D00 T05 §1)"`
+- [x] Commit: `"workspace: wire clangd and Basedpyright LSP over the pinned toolchain (D00 T05 §1)"` (shipped in `a24edbf` under the whole-file message; the candidate range for this section starts there)
 
 **Test checkpoint:** Driven run with evidence: `python3 scripts/gen-compdb.py && python3 scripts/gen-compdb.py --check` exit 0, `clangd --check` on `src/cm.c` finds definitions with zero code diagnostics, `.venv/bin/basedpyright --version` prints `basedpyright 1.40.2`, and deleting the root `compile_commands.json` makes `--check` exit 1 (then regenerate).
 
