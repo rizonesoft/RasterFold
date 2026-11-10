@@ -55,6 +55,10 @@ def session_running(session_id: str) -> bool | None:
         if not entry.name.isdigit() or int(entry.name) == os.getpid():
             continue
         try:
+            same_user = entry.stat().st_uid == os.getuid()
+        except OSError:
+            same_user = False
+        try:
             if needle in (entry / "cmdline").read_bytes():
                 return True
             for fd in (entry / "fd").iterdir():
@@ -62,11 +66,11 @@ def session_running(session_id: str) -> bool | None:
                     if session_id in os.readlink(fd):
                         return True
                 except PermissionError:
-                    unknown = True
+                    unknown = unknown or same_user
                 except OSError:
                     continue
         except PermissionError:
-            unknown = True
+            unknown = unknown or same_user
         except OSError:
             continue
     return None if unknown else False
