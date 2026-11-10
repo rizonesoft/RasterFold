@@ -1,0 +1,74 @@
+{
+  "ref": "D00 T05 \u00a76",
+  "title": "Batch the Git Calls in Receipt Validation",
+  "implementation_sha": "e8b3eb26dae87defcfe503686b880f509eca83d6",
+  "date": "2026-11-10",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/00-workspace/D00-T05-s6.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "self-test 784/784; test_review_dispatch OK; validate identical 0 fatal; hook before/after exit 0 identical; median 3.43s -> 1.00s"
+  ],
+  "completion": {
+    "report": "docs/reviews/00-workspace/D00-T05-s6.md",
+    "verdict": "reconciled",
+    "candidate": "e8b3eb26dae87defcfe503686b880f509eca83d6",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/00-workspace/D00-T05-s6.md",
+    "candidate": "4813efc586203f2318ef6e68b5b9b13f063abb20",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "4813efc586203f2318ef6e68b5b9b13f063abb20",
+  "schedule": {
+    "policy": "three-pass",
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}

@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **104 of 253 sections complete (41%).** 253 sections (22 discovered); backlog 5 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **105 of 253 sections complete (42%).** 253 sections (22 discovered); backlog 5 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -269,7 +269,7 @@ Generated and screen content against WebP.
 | [x] | `D00 T05 §3` | The measured tool stack: what stays, what is not adopted |   6   |
 | [ ] | `D00 T05 §4` | Unattended run: preflight, launcher, and goal            |   4   |
 | [ ] | `D00 T05 §5` | The Windows Desktop shortcut                             |   3   |
-| [ ] | `D00 T05 §6` | Batch the git calls in receipt validation                |   4   |
+| [x] | `D00 T05 §6` | Batch the git calls in receipt validation                |   4   |
 | [ ] | `D99 T01 §8` | The 13-round milestone cap                               |   4   |
 | [ ] | `D05 T01 §8` | Milestone 8 gate: Beat WebP on generated images          |   5   |
 

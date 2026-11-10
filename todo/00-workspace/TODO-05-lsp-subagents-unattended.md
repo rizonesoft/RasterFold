@@ -55,7 +55,7 @@ track: W1
 |   3   |   §3    | The measured tool stack: what stays, what is not adopted | §1 |  [x]   |
 |   4   |   §4    | Unattended run: preflight, launcher, and goal | §2 |  [ ]   |
 |   5   |   §5    | The Windows Desktop shortcut | §4 |  [ ]   |
-|   6   |   §6    | Batch the git calls in receipt validation | -- |  [ ]   |
+|   6   |   §6    | Batch the git calls in receipt validation | -- |  [x]   |
 
 ---
 
@@ -157,6 +157,8 @@ The operator double-clicks; everything else is §4's job. The shortcut lives on 
 
 **Test checkpoint:** `python3 scripts/todo-graph.py self-test` exits 0, `python3 -m unittest scripts.tests.test_review_dispatch` exits 0 (receipt refusal and reconciliation cases), `python3 scripts/todo-graph.py validate` prints the identical verdict block as the pre-change run quoted beside it, before/after verdict and exit status also match inside a staged index export (the `tools/githooks/pre-commit` context, including a staged TODO differing from the working copy), and the before/after timings are recorded with their commands and date.
 
+> **Verified:** 2026-11-10 | §6 | e8b3eb26dae87defcfe503686b880f509eca83d6
+> **Review:** `docs/reviews/d00-t05-s6.json`
 ## Verification
 
 - [ ] `python3 scripts/unattended-preflight.py` exits 0 with every line PASS on the committed tree
