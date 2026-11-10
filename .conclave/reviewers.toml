@@ -21,6 +21,9 @@
 # Owner decision 2026-11-09: a reconciliation that returns gaps is repaired and followed by another, up to 33 returned
 # review passes per section in all (REVIEW_PASS_CAP in scripts/review-dispatch.py), so an unattended run never parks
 # waiting for another review.
+# Owner decision 2026-11-11: Gemini 4 Carbon was released and replaces Gemini 4 Argon as the Codex writer's reviewer
+# (`reviewers.carbon`, `gemini-4-carbon-medium` through the Antigravity CLI). Sections whose plan review read an
+# earlier pin finish on Argon.
 # A section keeps the pin at its plan review's candidate, so sections already under review finish on their own rules.
 
 schema_version = 1
@@ -30,13 +33,13 @@ cli = "codex"
 model = "gpt-6-astra"
 effort = "medium"
 
-[reviewers.argon]
+[reviewers.carbon]
 cli = "agy"
-model = "gemini-4-argon-medium"
+model = "gemini-4-carbon-medium"
 
 [routes]
 claude = ["astra"]
-codex = ["argon"]
+codex = ["carbon"]
 gemini = ["astra"]
 muse = ["astra"]
 opencode = ["astra"]

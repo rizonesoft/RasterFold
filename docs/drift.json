@@ -1551,7 +1551,7 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "Re-read 2026-11-10 for D07 T01 s4: --overwrite flag and help text updated; no other claim in this document changed.",
+      "evidence": "Re-read 2026-11-11 for the Codex writer's reviewer moving from Gemini 4 Argon to Gemini 4 Carbon (operator decision 2026-11-11, reviewers.carbon in .conclave/reviewers.toml): the reviewer name and route text in this document were updated to match; no other claim changed.",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "362589cf2d8cdf51ea77ef645fb115e9edcc7659825f86531df856ae76e9a0cb",
@@ -1559,35 +1559,35 @@
         "scripts/build.py": "168db65ab1e94ae85a0265a5bd545de4b1adf5da7cc52e5f9ac2f38d5224a975",
         "scripts/package.py": "ef69de2da770ea647e2841f4c2ce16db8bae22544c086a389983bdbeb1e50b37",
         "scripts/check-all.py": "fb6c9b81108c65eadb781b8fed2bf623db5ad5e565396d2cb5bcc239342adb77",
-        "README.md": "b6e1a597650088cbe20052bb142cc71b8a8ad4246a1b089f1e29bc11fbb0269c",
-        "AGENTS.md": "86975c8d4ae2754fddd188210133f78fa0275b5c80953bbd5497296807b10018",
-        ".conclave/reviewers.toml": "455ff6445e7812a8ee41a0f456710bf4210c59ebaed1703cd6abc1a4df7d2b5a",
+        "README.md": "d5ddcf172e2a091ffdfeaf004accfdb148f6e1bb4cc6bfdad2bbf491e2b0dd5d",
+        "AGENTS.md": "ccb9dc64c6a93667d3728de80ec55317b2234881c9c5618c69c59c66f760ea5e",
+        ".conclave/reviewers.toml": "35b133dd7b93caa7f96669cd1fdd146076729cdae7bce412d7900294090342fe",
         "scripts/review-dispatch.py": "5e6b214c36c1cdf30c1c75fcf343edc415e47a93c3437785f16c45d7f56f639f"
       },
       "review": "Author-attested: 2026-10-25 re-read README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "AGENTS.md": {
-      "evidence": "Re-read 2026-11-10 for D07 T01 s4: --overwrite flag and help text updated; no other claim in this document changed.",
+      "evidence": "Re-read 2026-11-11 for the Codex writer's reviewer moving from Gemini 4 Argon to Gemini 4 Carbon (operator decision 2026-11-11, reviewers.carbon in .conclave/reviewers.toml): the reviewer name and route text in this document were updated to match; no other claim changed.",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "362589cf2d8cdf51ea77ef645fb115e9edcc7659825f86531df856ae76e9a0cb",
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
-        ".conclave/reviewers.toml": "455ff6445e7812a8ee41a0f456710bf4210c59ebaed1703cd6abc1a4df7d2b5a",
+        ".conclave/reviewers.toml": "35b133dd7b93caa7f96669cd1fdd146076729cdae7bce412d7900294090342fe",
         "scripts/review-dispatch.py": "5e6b214c36c1cdf30c1c75fcf343edc415e47a93c3437785f16c45d7f56f639f",
-        "AGENTS.md": "86975c8d4ae2754fddd188210133f78fa0275b5c80953bbd5497296807b10018",
+        "AGENTS.md": "ccb9dc64c6a93667d3728de80ec55317b2234881c9c5618c69c59c66f760ea5e",
         ".codex/hooks.json": "c67e7762d0970280c653a74601012d01971d05f677182ae70e4eda0aa783c150",
         "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",
         "scripts/campaign_guard.py": "a4e15e753ac265152070e9d5ae93f36cba78e58e4feb4c11a6e0f2a58203c432"
       }
     },
     "GEMINI.md": {
-      "evidence": "Re-read 2026-11-10 for worker removal (operator directive): AGENTS.md and the unattended-run contract are lead-only, roster deleted; no reviewer-route or product claim in this document changed.",
+      "evidence": "Re-read 2026-11-11 for the Codex writer's reviewer moving from Gemini 4 Argon to Gemini 4 Carbon (operator decision 2026-11-11, reviewers.carbon in .conclave/reviewers.toml): the reviewer name and route text in this document were updated to match; no other claim changed.",
       "sources": {
-        "AGENTS.md": "86975c8d4ae2754fddd188210133f78fa0275b5c80953bbd5497296807b10018",
-        ".conclave/reviewers.toml": "455ff6445e7812a8ee41a0f456710bf4210c59ebaed1703cd6abc1a4df7d2b5a",
+        "AGENTS.md": "ccb9dc64c6a93667d3728de80ec55317b2234881c9c5618c69c59c66f760ea5e",
+        ".conclave/reviewers.toml": "35b133dd7b93caa7f96669cd1fdd146076729cdae7bce412d7900294090342fe",
         "scripts/review-dispatch.py": "5e6b214c36c1cdf30c1c75fcf343edc415e47a93c3437785f16c45d7f56f639f",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
-        "GEMINI.md": "80dd5e3bf1639e1f542dc0e5b7760a3ce2d53f852790bc5d6d6ee39fdf79e0b9"
+        "GEMINI.md": "fe9b8093b117a3c65c02521c692d694c1ff6fa39f0b75da50e520da20a59a65b"
       }
     },
     "CONTRIBUTING.md": {
@@ -1678,15 +1678,15 @@
       }
     },
     "docs/agent-skills-and-rules-structure.md": {
-      "evidence": "Re-read 2026-11-10 for worker removal (operator directive): AGENTS.md and the unattended-run contract are lead-only, roster deleted; no reviewer-route or product claim in this document changed.",
+      "evidence": "Re-read 2026-11-11 for the Codex writer's reviewer moving from Gemini 4 Argon to Gemini 4 Carbon (operator decision 2026-11-11, reviewers.carbon in .conclave/reviewers.toml): the reviewer name and route text in this document were updated to match; no other claim changed.",
       "sources": {
-        "AGENTS.md": "86975c8d4ae2754fddd188210133f78fa0275b5c80953bbd5497296807b10018",
-        "GEMINI.md": "80dd5e3bf1639e1f542dc0e5b7760a3ce2d53f852790bc5d6d6ee39fdf79e0b9",
+        "AGENTS.md": "ccb9dc64c6a93667d3728de80ec55317b2234881c9c5618c69c59c66f760ea5e",
+        "GEMINI.md": "fe9b8093b117a3c65c02521c692d694c1ff6fa39f0b75da50e520da20a59a65b",
         ".conclave/kits.json": "56785267af421d6deac2d4e5cfdda58be63684fb6f3893cece8043a6f0578105",
-        ".conclave/reviewers.toml": "455ff6445e7812a8ee41a0f456710bf4210c59ebaed1703cd6abc1a4df7d2b5a",
+        ".conclave/reviewers.toml": "35b133dd7b93caa7f96669cd1fdd146076729cdae7bce412d7900294090342fe",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
         "scripts/review-dispatch.py": "5e6b214c36c1cdf30c1c75fcf343edc415e47a93c3437785f16c45d7f56f639f",
-        "docs/agent-skills-and-rules-structure.md": "a66cd2db7ad4ee6ed83bc4d1709346dbc6bfa7bffdff9606aab3b12258473e8b",
+        "docs/agent-skills-and-rules-structure.md": "3c5151d215e14e753fe107249e61f14297fc04397b03777ea943e5faa827419b",
         ".codex/hooks.json": "c67e7762d0970280c653a74601012d01971d05f677182ae70e4eda0aa783c150",
         "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",
         "scripts/campaign_guard.py": "a4e15e753ac265152070e9d5ae93f36cba78e58e4feb4c11a6e0f2a58203c432"

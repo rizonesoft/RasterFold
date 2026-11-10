@@ -5,14 +5,14 @@ description: Get an independent review of your work from the reviewer pinned for
 
 # Independent review
 
-Your own review is not enough for a nontrivial change: a different model reviews it. Codex-written work goes to Gemini 4 Argon via the Antigravity CLI; Claude Code, Antigravity (`gemini`), Muse Code and OpenCode work goes to GPT-6 Astra via the Codex CLI. `.conclave/reviewers.toml` pins one reviewer per writer with no fallback. The shared `[schedule]` sets each pass's effort and lenses, every pass at `medium`. A TODO section takes three passes in order (plan, one combined adversarial round, completion), which the dispatcher enforces; see `review-todo-section`. A standalone review of other work takes the round's lenses and has no order.
+Your own review is not enough for a nontrivial change: a different model reviews it. Codex-written work goes to Gemini 4 Carbon via the Antigravity CLI; Claude Code, Antigravity (`gemini`), Muse Code and OpenCode work goes to GPT-6 Astra via the Codex CLI. `.conclave/reviewers.toml` pins one reviewer per writer with no fallback. The shared `[schedule]` sets each pass's effort and lenses, every pass at `medium`. A TODO section takes three passes in order (plan, one combined adversarial round, completion), which the dispatcher enforces; see `review-todo-section`. A standalone review of other work takes the round's lenses and has no order.
 
 | Work written by | Reviewer | Fallback |
 | --- | --- | --- |
 | Claude Code (`claude`) | GPT-6 Astra (`codex`, scheduled effort) | none |
 | Muse Code (`muse`) | GPT-6 Astra (`codex`, scheduled effort) | none |
 | Antigravity (`gemini`) | GPT-6 Astra (`codex`, scheduled effort) | none |
-| Codex (`codex`) | Gemini 4 Argon (`agy`, effort in the model name) | none |
+| Codex (`codex`) | Gemini 4 Carbon (`agy`, effort in the model name) | none |
 | OpenCode (`opencode`, Anthropic model) | GPT-6 Astra (`codex`, scheduled effort) | none |
 
 The pin refuses any other writer, any other reviewer CLI, a second reviewer in a route, and a reviewer of the writer's own model family.

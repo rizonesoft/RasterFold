@@ -1,6 +1,6 @@
 # Agent Skills and Rules Structure
 
-This repository uses Claude Code (`claude`), OpenAI Codex (`codex`), Google Antigravity (`gemini`), Muse Code (`muse`) and OpenCode (`opencode`, running an Anthropic model) as writers. Independent reviews route Codex work to Gemini 4 Argon through the Antigravity CLI and other writers' work to GPT-6 Astra through the Codex CLI through `scripts/review-dispatch.py` and `.conclave/reviewers.toml`.
+This repository uses Claude Code (`claude`), OpenAI Codex (`codex`), Google Antigravity (`gemini`), Muse Code (`muse`) and OpenCode (`opencode`, running an Anthropic model) as writers. Independent reviews route Codex work to Gemini 4 Carbon through the Antigravity CLI and other writers' work to GPT-6 Astra through the Codex CLI through `scripts/review-dispatch.py` and `.conclave/reviewers.toml`.
 
 ## Skill Locations
 

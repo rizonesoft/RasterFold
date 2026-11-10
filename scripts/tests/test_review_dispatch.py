@@ -1297,8 +1297,8 @@ class RepositoryPin(unittest.TestCase):
         with open(REPO_PIN, "rb") as handle:
             pin = tomllib.load(handle)
         self.assertEqual(pin["reviewers"], {"astra": {"cli": "codex", "model": "gpt-6-astra", "effort": "medium"},
-                                           "argon": {"cli": "agy", "model": "gemini-4-argon-medium"}})
-        self.assertEqual(pin["routes"], {"claude": ["astra"], "codex": ["argon"], "gemini": ["astra"],
+                                           "carbon": {"cli": "agy", "model": "gemini-4-carbon-medium"}})
+        self.assertEqual(pin["routes"], {"claude": ["astra"], "codex": ["carbon"], "gemini": ["astra"],
                                          "muse": ["astra"], "opencode": ["astra"]})
         schedule = pin["schedule"]
         self.assertEqual(schedule["policy"], "three-pass")
@@ -2028,25 +2028,25 @@ class ThreePassDispatch(Harness):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual((summary["reviewer"], self.effort()), ("astra", "high"))
 
-    def test_codex_work_goes_to_argon_read_only_through_a_prompt_file(self):
+    def test_codex_work_goes_to_carbon_read_only_through_a_prompt_file(self):
         fake = Path(self._tmp.name) / "fake_cli.py"
         write_launcher(self.bin, "agy", fake)
         result, summary = self.dispatch("--writer", "codex", "--prompt", str(self.prompt), agy="say", say=self.ROUND)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual((summary["reviewer"], summary["model"], summary["cli"], summary["effort"]),
-                         ("argon", "gemini-4-argon-medium", "agy", "medium"))
+                         ("carbon", "gemini-4-carbon-medium", "agy", "medium"))
         (call,) = self.calls()
         self.assertEqual(call["cli"], "agy")
-        self.assertEqual(call["argv"][:5], ["--model", "gemini-4-argon-medium", "--mode", "plan", "--sandbox"])
+        self.assertEqual(call["argv"][:5], ["--model", "gemini-4-carbon-medium", "--mode", "plan", "--sandbox"])
         self.assertTrue(call["argv"][5].startswith("--print-timeout="))
         self.assertNotIn("Review calc.py", " ".join(call["argv"]), "review prose never reaches the command line")
         self.assertIn("Follow the review instructions in the file", call["argv"][6])
 
-    def test_an_argon_schedule_above_its_model_name_is_refused(self):
+    def test_a_carbon_schedule_above_its_model_name_is_refused(self):
         module = self.module()
         text = REPO_PIN.read_text(encoding="utf-8")
         loaded = module.load_pin(data=text.encode())
-        self.assertEqual(loaded["routes"]["codex"], ["argon"])
+        self.assertEqual(loaded["routes"]["codex"], ["carbon"])
         high = text.replace('[[schedule.rounds]]\neffort = "medium"', '[[schedule.rounds]]\neffort = "high"')
         self.assertNotEqual(high, text)
         with self.assertRaisesRegex(module.Refused, "effort in its model name"):
