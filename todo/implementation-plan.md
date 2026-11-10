@@ -271,7 +271,7 @@ Generated and screen content against WebP.
 | [x] | `D00 T05 §4` | Unattended run: preflight, launcher, and goal            |   6   |
 | [ ] | `D00 T05 §5` | The Windows Desktop shortcut                             |   4   |
 | [x] | `D00 T05 §6` | Batch the git calls in receipt validation                |   4   |
-| [ ] | `D99 T01 §8` | The 13-round milestone cap                               |   4   |
+| [ ] | `D99 T01 §8` | The 13-round milestone cap                               |   6   |
 | [ ] | `D05 T01 §8` | Milestone 8 gate: Beat WebP on generated images          |   5   |
 
 ### Phase 8 -- Milestone 9: Holds on images never tuned on
