@@ -1889,7 +1889,10 @@ def overwrite_io() -> None:
         "static ssize_t (*real_write)(int, const void*, size_t);\n"
         "static int (*real_fsync)(int);\n"
         "static int is_partial(int fd) { char fdpath[64]; snprintf(fdpath, sizeof fdpath, \"/proc/self/fd/%d\", fd); char target[512]; ssize_t m = readlink(fdpath, target, sizeof target - 1); if (m <= 0) return 0; target[m] = 0; return strstr(target, \".partial\") != 0; }\n"
-        "int fsync(int fd) { if (!real_fsync) real_fsync = dlsym(RTLD_NEXT, \"fsync\"); if (is_partial(fd)) { errno = EIO; return -1; } return real_fsync(fd); }\n"
+        "int fsync(int fd) { if (!real_fsync) real_fsync = dlsym(RTLD_NEXT, \"fsync\"); if (getenv(\"RF_FAIL_FSYNC\") && is_partial(fd)) { errno = EIO; return -1; } return real_fsync(fd); }\n"
+        "#include <stdarg.h>\n#include <sys/syscall.h>\n"
+        "static long (*real_syscall)(long, ...);\n"
+        "long syscall(long n, ...) { va_list ap; va_start(ap, n); long a1 = va_arg(ap, long), a2 = va_arg(ap, long), a3 = va_arg(ap, long), a4 = va_arg(ap, long), a5 = va_arg(ap, long), a6 = va_arg(ap, long); va_end(ap); if (!real_syscall) real_syscall = dlsym(RTLD_NEXT, \"syscall\"); if (getenv(\"RF_FAIL_RENAME\") && (n == SYS_renameat2 || n == SYS_renameat)) { errno = EIO; return -1; } return real_syscall(n, a1, a2, a3, a4, a5, a6); }\n"
         "ssize_t write(int fd, const void *buf, size_t n) {\n"
         "    if (!real_write) real_write = dlsym(RTLD_NEXT, \"write\");\n"
         "    char fdpath[64]; snprintf(fdpath, sizeof fdpath, \"/proc/self/fd/%d\", fd);\n"
@@ -1901,7 +1904,7 @@ def overwrite_io() -> None:
         built = subprocess.run([cc, "-shared", "-fPIC", "-o", str(shim), str(shim_src), "-ldl"], capture_output=True)
         check(built.returncode == 0, f"write-failure shim did not compile: {built.stderr!r}")
         dest_before = fold.read_bytes()
-        for mode, env_extra in (("write", {"RF_FAIL_WRITE": "1"}), ("fsync", {})):
+        for mode, env_extra in (("write", {"RF_FAIL_WRITE": "1"}), ("fsync", {"RF_FAIL_FSYNC": "1"}), ("rename", {"RF_FAIL_RENAME": "1"})):
             env = dict(os.environ, LD_PRELOAD=str(shim), **env_extra)
             result = subprocess.run([str(EXE), "encode", "--overwrite", str(src), str(fold)], capture_output=True, env=env)
             check(result.returncode == 2, f"{mode}-failed overwrite exited {result.returncode}, want 2: {result.stderr!r}")
