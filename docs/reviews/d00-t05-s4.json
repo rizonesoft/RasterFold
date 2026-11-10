@@ -1,0 +1,74 @@
+{
+  "ref": "D00 T05 \u00a74",
+  "title": "Unattended Run: Preflight, Launcher, and Goal",
+  "implementation_sha": "d12a5a60c99f8558c2f8ac02dea9ae11d0f0714c",
+  "date": "2026-11-10",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/00-workspace/D00-T05-s4.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "preflight all PASS on provisioned clone; stale STALE + handover OWNER; dry session goal created, no guard; dirty FAIL exit 1"
+  ],
+  "completion": {
+    "report": "docs/reviews/00-workspace/D00-T05-s4.md",
+    "verdict": "reconciled",
+    "candidate": "d12a5a60c99f8558c2f8ac02dea9ae11d0f0714c",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/00-workspace/D00-T05-s4.md",
+    "candidate": "f6ae25fdbb9836704a6fd68bba8bdb9e26a68792",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "f6ae25fdbb9836704a6fd68bba8bdb9e26a68792",
+  "schedule": {
+    "policy": "three-pass",
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}

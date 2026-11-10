@@ -53,7 +53,7 @@ track: W1
 |   1   |   §1    | LSP servers for C and Python, wired | -- |  [x]   |
 |   2   |   §2    | Spark and Ember subagents under lead verification | -- |  [x]   |
 |   3   |   §3    | The measured tool stack: what stays, what is not adopted | §1 |  [x]   |
-|   4   |   §4    | Unattended run: preflight, launcher, and goal | §2 |  [ ]   |
+|   4   |   §4    | Unattended run: preflight, launcher, and goal | §2 |  [x]   |
 |   5   |   §5    | The Windows Desktop shortcut | §4 |  [ ]   |
 |   6   |   §6    | Batch the git calls in receipt validation | -- |  [x]   |
 
@@ -138,6 +138,8 @@ An unattended run fails in boring ways long before it fails in interesting ones:
 
 **Test checkpoint:** Driven run with evidence: preflight all-PASS quoted, the dirty-tree probe FAIL quoted, and the dry launch's goal and agent roster quoted; `python3 scripts/campaign_guard.py --self-test` exits 0.
 
+> **Verified:** 2026-11-10 | §4 | d12a5a60c99f8558c2f8ac02dea9ae11d0f0714c
+> **Review:** `docs/reviews/d00-t05-s4.json`
 ## 5. The Windows Desktop Shortcut
 
 The operator double-clicks; everything else is §4's job. The shortcut lives on the Windows desktop (this checkout is reached through WSL), opens Windows Terminal, and runs the launcher inside the `Ubuntu` distribution at this checkout, so the visible artifact is one `.lnk` whose target line a reader can audit.
