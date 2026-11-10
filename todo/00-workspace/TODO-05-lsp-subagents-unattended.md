@@ -1,0 +1,138 @@
+---
+schema_version: 1
+id: lsp-subagents-unattended
+domain: 00-workspace
+status: draft
+title: "TODO-05 -- LSP Servers, Spark/Ember Subagents, Tool-Stack Tuning, and the Unattended Run"
+depends_on: []
+track: W1
+---
+
+# TODO-05 -- LSP Servers, Spark/Ember Subagents, Tool-Stack Tuning, and the Unattended Run
+
+> **Goal:** A developer or agent opening this checkout gets working language servers for the C11 codec and the Python tooling from the pinned toolchain, near-mechanical work runs on Muse Spark and Muse Ember subagents under lead verification, the build and dev-tool stack is measured and tuned for this host class with no cargo-cult additions, and one Windows Desktop shortcut starts an unattended Muse campaign (yolo, no user-input tool, straight on `main`) whose goal is RasterFold 100% complete, guarded by a fail-loud preflight so it either runs to closeout or does not start.
+
+> [!IMPORTANT]
+> **Current state (verified 2026-11-10):** The pinned LLVM tree already ships clangd 23.1.2 and clang-tidy (`tools/llvm-mingw-linux/bin/`), Ninja 1.13.2 is pinned in `toolchain.json` and `scripts/build.py` already generates a per-target Ninja graph plus `build/<target>/compile_commands.json` and links with LLD, so the build was never missing Ninja; what was missing is the editor-facing root database and LSP configuration, any Spark/Ember agent definitions, a preflight, and a launcher. Measured on this host (10 cores, 13 GB RAM) on 2026-11-10: a cold linux-x64 build takes 3.6 s at `-j4` (4.1 s at `-j8`), a no-op build 0.00 s, and the largest translation unit (`src/cm.c`) peaks at 97 MB per clang process, while `python3 scripts/todo-graph.py validate` takes 16.2 s (of which about 10 s is 1261 `subprocess.run` git calls, mostly stamped-section receipt checks in `scripts/todo-validate.py`) and `scripts/drift-check.py` 10.6 s, so the dev-loop cost is the plan tooling, not the compiler. The Muse model catalog on this machine offers `muse-spark-1.3` and `muse-ember-1.0`, and `muse --agents <JSON>` accepts `{description, prompt, model}` agent definitions (probed offline with `--provider echo`). Sections 1, 2, 4, and 5 were built in the attended operator session of 2026-11-10 and await their review stamps; section 3 records the measurements and the tools not adopted; section 6 is the one piece of new code the campaign itself still owes.
+<!-- claim: exists scripts/gen-compdb.py -->
+<!-- claim: exists .clangd -->
+<!-- claim: exists pyrightconfig.json -->
+<!-- claim: exists .agents/muse-agents.json -->
+<!-- claim: exists scripts/unattended-preflight.py -->
+<!-- claim: exists scripts/unattended-run.sh -->
+<!-- claim: exists docs/unattended-run.md -->
+<!-- claim: count "\"name\": \"ninja\"" toolchain.json = 1 -->
+<!-- claim: count "compile_commands.json" scripts/build.py = 1 -->
+
+## Inputs
+
+- [`scripts/build.py`](../../scripts/build.py) -- already emits each target's Ninja graph and compilation database; §1 merges them, §3 measures them
+- [`toolchain.json`](../../toolchain.json) -- the LLVM, Ninja, and NDK pins §1 and §3 consume; no pin moves in this file
+- [`.conclave/reviewers.toml`](../../.conclave/reviewers.toml) -- the reviewer pin (muse routes to Astra via the Codex CLI) the unattended run in §4 relies on never waiting for
+- [`scripts/campaign_guard.py`](../../scripts/campaign_guard.py) and the `process-plan` skill -- the guard file and in-session heartbeat §4 starts; Muse has no Stop hook, so those two carry the run
+- [`docs/building.md`](../../docs/building.md) -- the host SDK requirements §1 extends with the editor setup
+- -> XREF: D00 T01 §3 -- the static analysis gate owns the per-target compilation databases §1 publishes to editors, and the clang-tidy configuration `.clangd` mirrors
+- -> XREF: D00 T01 §10 -- the OpenCode campaign hook and heartbeat are the precedent for mapping a harness onto the run guard; §4 does the same for the Muse launcher
+
+## Outcome
+
+- Opening the checkout in an editor gives clangd navigation, diagnostics, and clang-tidy on the C11 sources with the exact build flags, and Basedpyright navigation and undefined-name checks on the Python tooling, both from pinned binaries with memory bounds for a 13 GB host.
+- `rf-spark-scout`, `rf-spark-hands`, and `rf-ember-literal` are defined once in `.agents/muse-agents.json`, loaded by the launcher, and bound by AGENTS.md rules that keep judgment, codec work, reviews, stamps, and commits on the lead model.
+- The tool stack has a measured verdict per candidate tool (Ninja and LLD already in; compiler caches and alternate linkers rejected with numbers), and the one measured bottleneck, receipt validation's per-section git calls, has an owner and a stop condition in §6.
+- `scripts/unattended-preflight.py` proves, before any unattended start, that the tree is clean on `main`, the graph and plan are current, the guard self-test and reviewer pin pass, the reviewer CLIs exist, the compilation database is current, the agent definitions load, and disk and RAM headroom suffice.
+- A Windows Desktop shortcut starts the whole thing in one double-click and either enters the campaign or shows the preflight failure.
+
+**Adjacency:** list=not-applicable (no record list is added); document=applicable @ D00 T05 §4; settings=applicable @ D00 T05 §1; reporting=applicable @ D00 T05 §4; notifications=not-applicable (the preflight and the campaign report in their own terminal and run file); permissions=applicable @ D00 T05 §4; audit=not-applicable (git history and the campaign run file already record the run); exchange=not-applicable (no artifact import or export is added); reverse=applicable @ D00 T05 §4
+
+**Adjacency rationale:** This file adds editor configuration (settings), one operator document and one preflight report (document, reporting), a deliberate permission posture for the unattended launcher (permissions), and the stop and resume path that reverses a start (reverse), all owned inside this file. It adds no codec surface: no list to browse, no notification channel, and no import or export path, and the audit trail stays where it already lives, in git and in `docs/phase-runs/`.
+
+## Implementation Order
+
+| Order | Section | Deliverable | Depends On | Status |
+| :---: | :-----: | ----------- | ---------- | :----: |
+|   1   |   §1    | LSP servers for C and Python, wired | -- |  [ ]   |
+|   2   |   §2    | Spark and Ember subagents under lead verification | -- |  [ ]   |
+|   3   |   §3    | The measured tool stack: what stays, what is not adopted | §1 |  [ ]   |
+|   4   |   §4    | Unattended run: preflight, launcher, and goal | §2 |  [ ]   |
+|   5   |   §5    | The Windows Desktop shortcut | §4 |  [ ]   |
+|   6   |   §6    | Batch the git calls in receipt validation | -- |  [ ]   |
+
+---
+
+## 1. LSP Servers for C and Python, Wired
+
+**Job:** A user can open this checkout in an editor and get clangd and Basedpyright language-server settings that resolve the pinned binaries, the exact build flags, and the project include paths with no hand configuration.
+
+The binaries were never the gap: the pinned LLVM tree ships clangd and clang-tidy, and `scripts/build.py` writes a compilation database per target. Editors look at the repository root, so this section publishes a merged root database and the configuration that points both language servers at the pinned tools with memory bounds for this host class (13 GB RAM, about 12 C translation units, 60 Python files). Basedpyright is a new Python dependency beyond stdlib and Pillow; the reason is recorded here as AGENTS.md requires: it is the editor language server for the Python tooling, pinned like Pillow, installed only into `.venv`, and not a gate (its 2026-11-10 basic-mode baseline on the untyped tooling is 684 findings, mostly Optional-member noise over JSON-shaped dicts; making it a gate is a separate decision nobody has taken).
+
+- [x] Write `scripts/gen-compdb.py`: merge `build/<target>/compile_commands.json` (linux-x64 wins per file, windows-x64 contributes the freestanding `mem.c`/`sys.c`, android fills gaps) into a gitignored root `compile_commands.json` written atomically, synthesizing linux-x64 entries mirroring `scripts/build.py` on a fresh clone, with `--check` failing when the root database is stale. Done when: it prints `wrote compile_commands.json (20 entries ...)` on this tree and `--check` exits 0.
+- [x] Add `.clangd` (root compilation database, `-Werror` removed for editing, clang-tidy bugprone/analyzer/performance mirroring `.clang-tidy`, strict unused/missing includes, background index) and `.vscode/settings.json` plus `.vscode/extensions.json` pointing at `tools/llvm-mingw-linux/bin/clangd` with `-j=4`, `--malloc-trim`, `--pch-storage=memory`, and `--header-insertion=never`, and recommending clangd and Basedpyright while disabling the C/C++ IntelliSense engine. Done when: `tools/llvm-mingw-linux/bin/clangd --check=src/cm.c --compile-commands-dir=.` resolves definitions from the index with no code diagnostics (the 8 `SwapBinaryOperands` tweak failures it prints are a clangd 23 `--check` quirk, not diagnostics).
+- [x] Pin `basedpyright==1.40.2` in `requirements-dev.txt`, install it into `.venv`, and add `pyrightconfig.json` scoped to `scripts`, `tests`, `research`, and the two `tools/*.py` provisioners, explicitly excluding the downloaded tool trees under `tools/` (an unscoped first run checked 2236 files in 480 s; scoped it checks 60 files). Done when: `.venv/bin/basedpyright` completes on the scoped tree and the editor resolves `basedpyright-langserver` from `.venv`.
+- [x] Document the editor setup and the Windows `clangd.path` override in `AGENTS.md` (the LSP working rule) so a cold session finds it without this section. Done when: the rule names `scripts/gen-compdb.py`, `.clangd`, `pyrightconfig.json`, and the not-a-gate baseline.
+- [ ] Commit: `"workspace: wire clangd and Basedpyright LSP over the pinned toolchain (D00 T05 §1)"`
+
+**Test checkpoint:** Driven run with evidence: `python3 scripts/gen-compdb.py && python3 scripts/gen-compdb.py --check` exit 0, `clangd --check` on `src/cm.c` finds definitions with zero code diagnostics, `.venv/bin/basedpyright --version` prints `basedpyright 1.40.2`, and deleting the root `compile_commands.json` makes `--check` exit 1 (then regenerate).
+
+## 2. Spark and Ember Subagents Under Lead Verification
+
+Near-mechanical and dummy work (searches, counts, claim re-measurement, verbatim replacements, single gate runs) should not spend the lead model's effort, and must not spend the project's quality either. The split that keeps both: cheaper models produce, the lead verifies every line that lands, and the classes of work that carry judgment never delegate at all. This mirrors the existing rule for cheaper implementers in review (a passing test does not prove equal quality; read the full diff), applied to Muse Spark 1.3 and Muse Ember 1.0 from this machine's model catalog.
+
+- [x] Define `rf-spark-scout` (muse-spark-1.3, read-only: lookups, counts, inventories, claim re-measurement, one named gate quoted verbatim, never edits), `rf-spark-hands` (muse-spark-1.3, an exact lead-written edit spec outside codec logic, stops on any mismatch), and `rf-ember-literal` (muse-ember-1.0, verbatim replacement, one exact command, list reshaping, no interpretation) in `.agents/muse-agents.json`, each with a `NEEDS-LEAD` escape instead of improvisation. Done when: `muse exec --provider echo --yolo --agents "$(cat .agents/muse-agents.json)" probe` exits 0.
+- [x] Bind the roster in `AGENTS.md`: the lead reads every Spark/Ember diff in full and re-runs or spot-checks every fact a decision rests on; judgment, codec work, reviews, stamps, and commits never delegate; a new class of mechanical work is replayed once on a known-answer input before it delegates. Done when: the working rule names all three agents, their models, and the verification duty.
+- [x] Prove the roster on known answers: one scout count the lead can check with one command, and one literal replacement in a scratch file, through a live `muse` run started with `--agents`. Done when: both results match the lead's independent check byte for byte and the run is quoted in this section's stamp. (Proved 2026-11-10 in the authoring session: Spark counted `^## ` lines in this file as 10, matching `grep -c` = 10; Ember, delegated as `rf-ember-literal`, replaced `REPLACE_ME` with `DONE_42` in a scratch file and nothing else, verified by reading the file back.)
+- [ ] Commit: `"workspace: wire Spark and Ember subagents for mechanical work (D00 T05 §2)"`
+
+**Test checkpoint:** Driven run with evidence: the echo-provider load probe exits 0, and the two known-answer delegations above match independent lead checks; a scout asked a judgment question replies `NEEDS-LEAD` (the failure mode this section exists to prove).
+
+## 3. The Measured Tool Stack: What Stays, What Is Not Adopted
+
+The operator asked whether tools like Ninja would be a good addition. The honest answer is measured, per tool, on 2026-11-10, and mostly already settled by what is pinned: Ninja 1.13.2 drives every build through `scripts/build.py`, LLD links everything, and clang-tidy is gated. The candidates that remain (a compiler cache such as ccache or sccache, the mold linker, a different build generator) are decided against the numbers below, and this section is the record so the question does not reopen without new evidence. Stop condition: a candidate is adopted only if it cuts a measured dev-loop cost by at least a third on this host; otherwise the negative result ships, which is what happened for each candidate below.
+
+- [x] Measure the build as it stands: cold linux-x64 Ninja build 3.6 s at `-j4` and 4.1 s at `-j8`, no-op 0.00 s, `src/cm.c` peak 97 MB per clang process, so even `-j8` peaks under 1 GB and the default `min(cpu, 8)` in `scripts/build.py` stands. Done when: the numbers are recorded here and in the `AGENTS.md` LSP rule with their date.
+- [x] Reject ccache/sccache and mold with reasons a future reader can re-check: a cache cannot beat a 3.6 s cold build by a third after hashing and would sit in the PGO provenance path `scripts/build.py` validates by source hash; mold cannot beat LLD by a third on a 12-object link that is not separately measurable inside 3.6 s. Done when: both rejections are stated here as decisions, not preferences, with the adoption bar that would reopen them (a translation-unit count or link time that makes either win by a third).
+- [x] Measure where the dev loop actually spends: `todo-graph.py validate` 16.2 s and 55 MB, `drift-check.py` 10.6 s, `todo-claims.py` 0.47 s, `plan-audit.py` 0.43 s, and a cProfile of validate attributing about 10 s to 1261 `subprocess.run` calls. Done when: the profile lands the fix as §6 of this file instead of a vague "make validate faster" note.
+- [ ] Commit: `"workspace: record the measured tool-stack verdicts (D00 T05 §3)"`
+
+**Test checkpoint:** Corpus-style measurement quoted with its commands and date (the builds, the per-gate timings, the profile), each reproducible with the commands in this section; no toolchain pin moved and `python3 scripts/build.py --target linux-x64` still exits 0 warning-free.
+
+## 4. Unattended Run: Preflight, Launcher, and Goal
+
+**Job:** A user can start one unattended campaign whose contract lives in documents (`docs/unattended-run.md`), reports every precondition as a pass or fail line before starting, runs with the permission posture the operator chose (yolo, no user-input tool), and can cancel the run through the campaign guard (which deletes the heartbeat job) and resume it later without deleting files by hand.
+
+An unattended run fails in boring ways long before it fails in interesting ones: a dirty tree, a stale plan, a reviewer CLI that moved, a disk an orphaned writer can fill. The preflight checks each precondition the `process-plan` run guard assumes and refuses the start out loud. The launcher then runs Muse interactively (the in-session heartbeat only exists inside a live session; a headless `muse exec` loop would need a new external supervisor and diverge from `process-plan`, which is why it was rejected), straight on `main`, with `--yolo --disable-request-user-input --model muse-wonder-full-1.0 --reasoning-effort high`, the §2 agents loaded, and a seed prompt whose first act sets the session goal to finishing the project 100%.
+
+- [x] Write `scripts/unattended-preflight.py`: one PASS/FAIL line each for branch `main`, clean tree, `core.hooksPath`, no live campaign guard, `validate`, `plan --check`, claims, plan audit, drift, campaign-guard self-test, reviewer pin, `muse`/`codex`/`agy` on PATH, pinned clang/clangd/clang-tidy/ninja, compilation database current, Basedpyright present, agent definitions load under the launcher flags with the exact three-agent roster, disk over 20 GB free, RAM over 2 GB available; exit 1 on any FAIL, starting and writing nothing. Done when: it exits 0 on this tree as committed and exits 1 naming the check when one precondition is broken in a scratch probe (a dirty file suffices).
+- [x] Write `scripts/unattended-run.sh` (preflight, then `exec muse` with the flags above and the seed prompt) and the operator documents for the run, `docs/unattended-run.md` (the contract: the verbatim seed prompt with the 100% goal, why interactive yolo is the shape that actually runs unattended, the Spark/Ember quality rule, stop and resume). Done when: both exist, the script is executable, and the prompt in the script matches the document byte for byte.
+- [ ] Dry-prove the launch without starting a campaign: run the preflight green, then start the launcher against a prompt that only creates the goal, lists the loaded agents, and ends the turn with no guard acquired. Done when: the session shows the goal set, the three agents available, `--disable-request-user-input` in effect, and no `build/claude-campaign-guard.json` left behind.
+- [ ] Commit: `"workspace: unattended campaign preflight and launcher (D00 T05 §4)"`
+
+**Test checkpoint:** Driven run with evidence: preflight all-PASS quoted, the dirty-tree probe FAIL quoted, and the dry launch's goal and agent roster quoted; `python3 scripts/campaign_guard.py --self-test` exits 0.
+
+## 5. The Windows Desktop Shortcut
+
+The operator double-clicks; everything else is §4's job. The shortcut lives on the Windows desktop (this checkout is reached through WSL), opens Windows Terminal, and runs the launcher inside the `Ubuntu` distribution at this checkout, so the visible artifact is one `.lnk` whose target line a reader can audit.
+
+- [x] Create `RasterFold Unattended Run.lnk` on the Windows desktop (`/mnt/c/Users/DerickPayne/Desktop/`) through Windows PowerShell's `WScript.Shell`, targeting `C:\Windows\System32\wsl.exe` with arguments `-d Ubuntu --cd /home/derickpayne/projects/RasterFold -- bash scripts/unattended-run.sh` (wsl.exe directly, not `wt.exe`: one less alias that can move, and the launcher itself keeps the window open on a preflight failure). Done when: the `.lnk` exists and reading it back through the same COM object prints that exact target and arguments.
+- [ ] Prove the double-click path once from Windows (or `cmd.exe /c start` on the `.lnk`): a terminal opens, the preflight prints, and Muse starts on `main` with the goal prompt; stop it through the operator-stop path and confirm no guard or heartbeat is left. Done when: the terminal output is quoted in this section's stamp.
+- [ ] Commit: `"workspace: desktop shortcut for the unattended run (D00 T05 §5)"`
+
+**Test checkpoint:** Driven run with evidence: the read-back target line and the launched terminal's preflight output, quoted; the stop leaves `python3 scripts/campaign_guard.py whoami` printing no live owner for this tree.
+
+## 6. Batch the Git Calls in Receipt Validation
+
+`python3 scripts/todo-graph.py validate` measured 16.2 s on 2026-11-10, and a cProfile run attributes about 10 s of it to 1261 `subprocess.run` invocations, the bulk from stamped-section receipt checks (`scripts/todo-validate.py` `partial_flip_scan` and `classify_unchecked`, `todo-graph.py` `validate_section_receipt`) that shell out to git per section or per file. Validate runs in the pre-commit hook on a staged export and at every section boundary of an unattended campaign, so this is the highest-leverage speed fix in the dev loop. Stop condition: keep the change only if validate's wall time on this tree drops by at least a third with byte-identical verdicts (same FATAL/WARN lines) on the current tree and on the self-test fixtures; otherwise ship the measurement and revert.
+
+- [ ] Profile first and name the exact call sites and their git argv shapes in this section before editing. Done when: the sites, counts, and the batched replacement for each (one `git log`/`git show`/`git cat-file --batch` pass feeding an in-memory map, or equivalent) are written here.
+- [ ] Batch the calls at the owning layer (the receipt/validation code, not a cache wrapper around it): one git enumeration per validate run, lookups served from memory, and identical verdict text. Done when: validate on this tree prints the same summary line as before (`0 fatal` with the same advisories) and the sabotage fixtures in the self-test still fail the same way.
+- [ ] Measure after: three alternating before/after validate runs on this tree quoted with wall times, plus `python3 scripts/todo-graph.py self-test` green. Done when: the median improvement clears the one-third bar or the change is reverted and the negative result recorded here.
+- [ ] Commit: `"workspace: batch git calls in receipt validation (D00 T05 §6)"`
+
+**Test checkpoint:** `python3 scripts/todo-graph.py self-test` exits 0, `python3 scripts/todo-graph.py validate` prints the identical verdict block as the pre-change run quoted beside it, and the before/after timings are recorded with their commands and date.
+
+## Verification
+
+- [ ] `python3 scripts/unattended-preflight.py` exits 0 with every line PASS on the committed tree
+- [ ] `python3 scripts/gen-compdb.py --check`, `python3 scripts/todo-graph.py validate`, `python3 scripts/todo-graph.py plan --check`, `python3 scripts/todo-claims.py`, and `python3 scripts/drift-check.py` all exit 0
+- [ ] `python3 scripts/build.py --target linux-x64` exits 0 with no warning, and `clangd --check` on `src/cm.c` reports no code diagnostics
+- [ ] The desktop shortcut read-back prints its target, and one launched dry run was stopped cleanly with no guard left
+

@@ -1,6 +1,6 @@
 # 00 Workspace
 
-> **Phases 0, 3 and 8**
+> **Phases 0, 3, 7 and 8**
 
 The toolchain, gates, hooks, CI, and the TODO system every later domain leans on. Nothing here changes a `.fold` file; everything later depends on it being boring and green.
 
@@ -9,6 +9,7 @@ The toolchain, gates, hooks, CI, and the TODO system every later domain leans on
 | TODO | Title | Status |
 | ---- | ----- | :----: |
 | [TODO-01](./TODO-01-dev-automation.md) | Dev-Automation Wiring | active |
+| [TODO-05](./TODO-05-lsp-subagents-unattended.md) | LSP Servers, Spark/Ember Subagents, Tool-Stack Tuning, and the Unattended Run | draft |
 | [TODO-03](./TODO-03-held-out-validation.md) | Held-Out Validation | draft |
 
 ## Completed

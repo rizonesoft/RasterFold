@@ -1,0 +1,9 @@
+{
+  "include": ["scripts", "tests", "research", "tools/bootstrap.py", "tools/provision.py"],
+  "exclude": ["**/__pycache__", "build", "bin", ".venv", "tools/llvm-mingw", "tools/llvm-mingw-linux", "tools/android-ndk", "tools/downloads", "tools/libjxl", "tools/ninja", "tools/ninja-linux"],
+  "typeCheckingMode": "basic",
+  "venvPath": ".",
+  "venv": ".venv",
+  "reportMissingImports": true,
+  "reportUndefinedVariable": true
+}

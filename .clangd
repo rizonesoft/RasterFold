@@ -1,0 +1,22 @@
+# clangd configuration. The compilation database is the root
+# compile_commands.json published by scripts/gen-compdb.py from the
+# per-target databases scripts/build.py generates.
+CompileFlags:
+  CompilationDatabase: .
+  Remove: [-Werror]
+Diagnostics:
+  ClangTidy:
+    Add: [bugprone-*, clang-analyzer-*, performance-*]
+    Remove: [bugprone-easily-swappable-parameters]
+  UnusedIncludes: Strict
+  MissingIncludes: Strict
+Index:
+  Background: Build
+  StandardLibrary: Yes
+Hover:
+  MacroContent: Expanded
+InlayHints:
+  Enabled: No
+Completion:
+  AllScopes: Yes
+Fragments: {}

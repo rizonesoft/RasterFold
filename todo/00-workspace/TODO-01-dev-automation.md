@@ -34,6 +34,8 @@ track: W1
 - [`.conclave/reviewers.toml`](../../.conclave/reviewers.toml) and [`scripts/review-dispatch.py`](../../scripts/review-dispatch.py) -- the reviewer pin, adaptive schedule, and dispatcher that §4 and §6 prove for Antigravity (`agy`) -> GPT-6 Astra (`astra`)
 - [`scripts/todo-claims.py`](../../scripts/todo-claims.py) -- `COVERAGE_FLOOR`, which §5 raises
 - -> XREF: D99 T01 §2 -- the GitHub CLI login §2 needs before `ci_status.py` can read CI back
+- -> XREF: D00 T05 §1 -- §3's per-target compilation databases are merged there into the root database the clangd language server reads
+- -> XREF: D00 T05 §4 -- §10's harness-to-run-guard mapping is the precedent for the Muse unattended launcher there
 - -> XREF: D00 T04 §1 -- the local toolchain candidate whose stamp uses §6's `review-dispatch.py` route
 
 ## Outcome
