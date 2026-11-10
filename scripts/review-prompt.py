@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -73,9 +74,18 @@ def resolve(root: Path, ref: str) -> tuple[str, str]:
     return fields["ref"].strip(), fields["path"].strip()
 
 
-def section_span(root: Path, todo: str, number: int) -> tuple[int, int, list[str]]:
-    """First and last line (1-based) of `## <number>. ...` in the TODO file, and the file's lines."""
-    lines = (root / todo).read_text(encoding="utf-8").split("\n")
+def show(root: Path, candidate: str, path: str) -> str:
+    """A file as the candidate commit holds it. Every field of the prompt describes the candidate, so the TODO file
+    and the template are read from its tree, never from a working tree that may be ahead of it or edited."""
+    proc = git(root, "show", f"{candidate}:{path}")
+    if proc.returncode != 0:
+        raise Refused(f"{path} does not exist at candidate {candidate}")
+    return proc.stdout
+
+
+def section_span(text: str, todo: str, number: int) -> tuple[int, int, list[str]]:
+    """First and last line (1-based) of `## <number>. ...` in the TODO file's text, and its lines."""
+    lines = text.split("\n")
     heads = [i for i, line in enumerate(lines) if line.startswith("## ")]
     for k, i in enumerate(heads):
         if lines[i].startswith(f"## {number}. "):
@@ -84,17 +94,16 @@ def section_span(root: Path, todo: str, number: int) -> tuple[int, int, list[str
     raise Refused(f"{todo} has no section {number}")
 
 
-def named_paths(root: Path, text: str) -> list[str]:
-    """Repository paths a block of TODO text names in backticks, in first-seen order: existing files, plus paths the
-    section says it will create (a directory part that exists, or a file extension)."""
+def named_paths(tree: frozenset[str], text: str) -> list[str]:
+    """Repository paths a block of TODO text names in backticks, in first-seen order: files in the candidate's tree,
+    plus paths the section says it will create (a file extension, under a top-level directory the tree has)."""
+    tops = {path.split("/", 1)[0] for path in tree if "/" in path}
     seen: list[str] = []
     for token in PATH_TOKEN_RE.findall(text):
         token = token.rstrip(".")
         if token in seen or token.startswith(("-", "/")) or ".." in token:
             continue
-        candidate = root / token
-        if candidate.is_file() or ("/" in token and re.search(r"\.[A-Za-z0-9]{1,6}$", token)
-                                   and (root / token.split("/", 1)[0]).is_dir()):
+        if token in tree or ("/" in token and re.search(r"\.[A-Za-z0-9]{1,6}$", token) and token.split("/", 1)[0] in tops):
             seen.append(token)
     return seen
 
@@ -154,14 +163,20 @@ def fill(kind: str, body: str, values: dict[str, str]) -> str:
         # The template's own instruction: delete the lines that do not apply. A section's round is not a standalone
         # review, and its earlier passes are already in the findings file the dispatcher records into.
         body = "\n".join(line for line in body.split("\n") if not line.startswith("- Findings file, for a standalone review"))
-    for needle, value in table:
+    # Placeholders are a property of the template, so they are counted before any value goes in: a summary or a
+    # quoted gate line may legitimately contain angle brackets.
+    residue = body
+    for needle, _ in table:
         if needle not in body:
             raise Refused(f"{TEMPLATES[kind]} no longer contains {needle!r}: update scripts/review-prompt.py with the template")
-        body = body.replace(needle, value)
-    left = PLACEHOLDER_RE.findall(body)
+        residue = residue.replace(needle, "")
+    left = PLACEHOLDER_RE.findall(residue)
     if left:
         raise Refused(f"unfilled placeholder(s) in {TEMPLATES[kind]}: {', '.join(sorted(set(left)))}")
-    return body
+    # One pass over the template, so text a value brings in is never itself substituted.
+    pattern = re.compile("|".join(re.escape(needle) for needle, _ in sorted(table, key=lambda pair: -len(pair[0]))))
+    lookup = dict(table)
+    return pattern.sub(lambda match: lookup[match.group(0)], body)
 
 
 def build(args: argparse.Namespace, root: Path = ROOT) -> tuple[Path, str]:
@@ -170,18 +185,19 @@ def build(args: argparse.Namespace, root: Path = ROOT) -> tuple[Path, str]:
         raise Refused(f"--ref must look like 'D00 T05 §8': {args.ref!r}")
     ref, todo = resolve(root, args.ref)
     domain, number = todo.split("/")[1], int(match.group(3))
-    start, end, lines = section_span(root, todo, number)
+    candidate = commit(root, "--candidate", args.candidate)
+    tree = frozenset(git(root, "ls-tree", "-r", "--name-only", candidate).stdout.split("\n"))
+    start, end, lines = section_span(show(root, candidate, todo), todo, number)
     slug = f"d{match.group(1)}-t{match.group(2)}-s{number}"
     findings = args.findings or f"docs/reviews/{domain}/D{match.group(1)}-T{match.group(2)}-s{number}.md"
-    candidate = commit(root, "--candidate", args.candidate)
     section_text = "\n".join(lines[start - 1:end])
-    governing_paths = [p for p in named_paths(root, inputs_block(lines)) if (root / p).is_file()]
+    governing_paths = [p for p in named_paths(tree, inputs_block(lines)) if p in tree]
     governing = ", ".join(f"`{p}`" for p in [todo, *[p for p in governing_paths if p != todo]])
     values = {"ref": ref, "todo": todo, "span": f"{start}-{end}", "candidate": candidate, "findings": findings,
               "governing": governing}
 
     if args.kind == "plan":
-        files = args.files.split() if args.files else named_paths(root, section_text)
+        files = args.files.split() if args.files else named_paths(tree, section_text)
         values["files"] = ", ".join(f"`{p}`" for p in files) if files else "none named in the section"
     elif args.kind in ("round", "completion"):
         base = commit(root, "--base", args.base)
@@ -207,7 +223,7 @@ def build(args: argparse.Namespace, root: Path = ROOT) -> tuple[Path, str]:
             raise Refused(f"--gates does not name a readable, non-empty file: {args.gates}")
         values["gates"] = "\n\n```text\n" + gate_text + "\n```\n"
 
-    template = (root / TEMPLATES[args.kind]).read_text(encoding="utf-8")
+    template = show(root, candidate, TEMPLATES[args.kind])
     if "\n---\n" not in template:
         raise Refused(f"{TEMPLATES[args.kind]} has no `---` line separating the instructions from the prompt body")
     text = fill(args.kind, template.split("\n---\n", 1)[1].lstrip("\n"), values)
@@ -217,7 +233,7 @@ def build(args: argparse.Namespace, root: Path = ROOT) -> tuple[Path, str]:
     shown = out.relative_to(root).as_posix() if out.is_relative_to(root) else str(out)
     kind_flag = "" if args.kind == "round" else f" --kind {args.kind}"
     command = (f"python3 scripts/review-dispatch.py{kind_flag} --candidate {candidate} --writer <claude|codex|gemini|muse|opencode>"
-               f" --prompt {shown} --record {findings}")
+               f" --prompt {shlex.quote(shown)} --record {shlex.quote(findings)}")
     return out, command
 
 

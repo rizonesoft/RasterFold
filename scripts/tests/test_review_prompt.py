@@ -89,6 +89,18 @@ class ReviewPromptTests(unittest.TestCase):
         git("commit", "-q", "-m", "three")
         cls.c3 = git("rev-parse", "HEAD")
         cls.governing = f"`{TODO}`, `spec/rules.md`"
+        cls.git = staticmethod(git)
+
+    def variant(self, rel, text):
+        """A commit on top of c3 holding `rel` with `text`; the working tree and HEAD go straight back to c3."""
+        path = self.root / rel
+        original = path.read_text(encoding="utf-8")
+        try:
+            path.write_text(text, encoding="utf-8")
+            self.git("commit", "-q", "-am", "variant")
+            return self.git("rev-parse", "HEAD"), original
+        finally:
+            self.git("reset", "-q", "--hard", self.c3)
 
     @classmethod
     def tearDownClass(cls):
@@ -126,13 +138,8 @@ class ReviewPromptTests(unittest.TestCase):
     def test_plan_files_override_and_the_none_case(self):
         got, _ = self.run_kind(kind="plan", candidate=self.c3, files="a/b.c c.py")
         self.assertIn("Files the section expects to touch: `a/b.c`, `c.py`.", got)
-        todo = self.root / TODO
-        original = todo.read_text(encoding="utf-8")
-        try:
-            todo.write_text(original.replace("Edit `src/thing.c` and create `scripts/new_tool.py`. Done when: `python3 scripts/new_tool.py` exits 0.", "Think."), encoding="utf-8")
-            got, _ = self.run_kind(kind="plan", candidate=self.c3)
-        finally:
-            todo.write_text(original, encoding="utf-8")
+        bare, _ = self.variant(TODO, TODO_TEXT.replace("Edit `src/thing.c` and create `scripts/new_tool.py`. Done when: `python3 scripts/new_tool.py` exits 0.", "Think."))
+        got, _ = self.run_kind(kind="plan", candidate=bare)
         self.assertIn("Files the section expects to touch: none named in the section.", got)
 
     def test_round_is_the_whole_template_minus_the_standalone_line(self):
@@ -233,17 +240,65 @@ class ReviewPromptTests(unittest.TestCase):
         self.refused("readable, non-empty", kind="reconciliation", failed=self.c1, candidate=self.c3, gates=str(binary))
 
     def test_refuses_a_template_that_drifted_from_the_table(self):
-        template = self.root / rp.TEMPLATES["plan"]
+        rel = rp.TEMPLATES["plan"]
+        original = (self.root / rel).read_text(encoding="utf-8")
+        renamed, _ = self.variant(rel, original.replace("<FULL_40_CHAR_HEAD_SHA>", "<HEAD_SHA>"))
+        self.refused("no longer contains", kind="plan", candidate=renamed)
+        added, _ = self.variant(rel, original.replace("## What to check", "- Extra: `<a new field>`.\n\n## What to check"))
+        self.refused("unfilled placeholder", kind="plan", candidate=added)
+        unsplit, _ = self.variant(rel, original.replace("\n---\n", "\n"))
+        self.refused("no `---` line", kind="plan", candidate=unsplit)
+
+    def test_angle_brackets_in_the_writers_own_words_are_not_placeholders(self):
+        gates = self.root / "build" / "angle.txt"
+        gates.parent.mkdir(exist_ok=True)
+        gates.write_text("PASS: rejects <invalid> input\n", encoding="utf-8")
+        got, _ = self.run_kind(kind="reconciliation", failed=self.c1, candidate=self.c3, gates=str(gates))
+        self.assertIn("PASS: rejects <invalid> input", got)
+        got, _ = self.run_kind(kind="round", base=self.c1, candidate=self.c3, summary="Handles `rf <file>` input")
+        self.assertIn("Handles `rf <file>` input.", got)
+
+    def test_the_printed_command_survives_paths_with_spaces(self):
+        import shlex
+        out = self.root / "build" / "review prompts" / "plan one.md"
+        findings = "docs/reviews/my notes/s2.md"
+        _, command = rp.build(args(kind="plan", candidate=self.c3, out=str(out), findings=findings), self.root)
+        words = shlex.split(command.replace("<claude|codex|gemini|muse|opencode>", "claude"))
+        self.assertEqual(words[words.index("--prompt") + 1], "build/review prompts/plan one.md")
+        self.assertEqual(words[words.index("--record") + 1], findings)
+
+    def test_every_field_describes_the_candidate_not_the_working_tree(self):
+        todo = self.root / TODO
+        shifted_text = TODO_TEXT.replace("## 2. Second", "Inserted line.\n\n## 2. Second")
+        try:
+            todo.write_text(shifted_text, encoding="utf-8")  # an uncommitted edit must not move the candidate's lines
+            got, _ = self.run_kind(kind="plan", candidate=self.c3)
+        finally:
+            todo.write_text(TODO_TEXT, encoding="utf-8")
+        self.assertIn("at lines `12-16`", got)
+        shifted, _ = self.variant(TODO, shifted_text)
+        got, _ = self.run_kind(kind="plan", candidate=shifted)
+        self.assertIn("at lines `14-18`", got)
+        got, _ = self.run_kind(kind="plan", candidate=self.c1)  # before scripts/new_tool.py existed: still named, as planned work
+        self.assertIn("`src/thing.c`, `scripts/new_tool.py`", got)
+        rel = rp.TEMPLATES["round"]
+        template = self.root / rel
         original = template.read_text(encoding="utf-8")
         try:
-            template.write_text(original.replace("<FULL_40_CHAR_HEAD_SHA>", "<HEAD_SHA>"), encoding="utf-8")
-            self.refused("no longer contains", kind="plan", candidate=self.c3)
-            template.write_text(original.replace("## What to check", "- Extra: `<a new field>`.\n\n## What to check"), encoding="utf-8")
-            self.refused("unfilled placeholder", kind="plan", candidate=self.c3)
-            template.write_text(original.replace("\n---\n", "\n"), encoding="utf-8")
-            self.refused("no `---` line", kind="plan", candidate=self.c3)
+            template.write_text(original + "\nReply in under 250 words.\n", encoding="utf-8")
+            got, _ = self.run_kind(kind="round", base=self.c1, candidate=self.c3, summary="s")
         finally:
             template.write_text(original, encoding="utf-8")
+        self.assertNotIn("250 words", got)
+        self.refused("does not exist at candidate", kind="plan", candidate=self.variant_without_todo())
+
+    def variant_without_todo(self):
+        try:
+            self.git("rm", "-q", TODO)
+            self.git("commit", "-q", "-m", "no todo")
+            return self.git("rev-parse", "HEAD")
+        finally:
+            self.git("reset", "-q", "--hard", self.c3)
 
     def test_command_line_on_the_real_tree(self):
         head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO, capture_output=True, text=True, check=True).stdout.strip()
