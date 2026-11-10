@@ -1880,7 +1880,7 @@ def overwrite_io() -> None:
         ro_dir.chmod(0o700)
     # A write failure after the .partial is created (LD_PRELOAD shim failing
     # writes to *.partial) preserves the destination and cleans the temporary.
-    cc = os.environ.get("CC", "cc")
+    cc = str(ROOT / "tools" / "llvm-mingw-linux" / "bin" / "clang")
     shim = work / "wfail.so"
     shim_src = work / "wfail.c"
     shim_src.write_text(
@@ -1894,7 +1894,8 @@ def overwrite_io() -> None:
         "    return real_write(fd, buf, n); }\n"
     )
     built = subprocess.run([cc, "-shared", "-fPIC", "-o", str(shim), str(shim_src), "-ldl"], capture_output=True)
-    if built.returncode == 0 and os.name != "nt":
+    check(os.name == "nt" or built.returncode == 0, f"write-failure shim did not compile: {built.stderr!r}")
+    if os.name != "nt":
         env = dict(os.environ, LD_PRELOAD=str(shim))
         dest_before = fold.read_bytes()
         result = subprocess.run([str(EXE), "encode", "--overwrite", str(src), str(fold)], capture_output=True, env=env)
