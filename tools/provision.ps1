@@ -12,6 +12,10 @@
     python     Python 3.11+ on PATH (tests, research tools, and the TODO gates).
     pillow     the Pillow package importable (tests and research tools read and
                write PNG and BMP through it). Repair: python -m pip install pillow.
+    basedpyright
+               the pinned Basedpyright from .venv (the Python language server).
+               Repair: python -m venv .venv, then install requirements-dev.txt
+               into it.
     ffmpeg     ADVISORY: ffmpeg on PATH with the libjxl encoder, needed only by
                tests\measure_final.py, tests\benchmark.py, and research\corpus.py.
                Reported, never repaired, never failing the run.
@@ -102,6 +106,15 @@ function Test-FfmpegLeg {
   return @{ Name = 'ffmpeg'; Ok = $ok; Required = $false; Detail = $(if ($ok) { "$($cmd.Source) with libjxl" } else { "$($cmd.Source) has no libjxl encoder" }) }
 }
 
+function Test-BasedpyrightLeg {
+  $exe = Join-Path $Root '.venv\Scripts\basedpyright.exe'
+  if (-not (Test-Path $exe)) {
+    return @{ Name = 'basedpyright'; Ok = $false; Required = $true; Detail = 'missing .venv (repair: python -m venv .venv, then .venv\Scripts\python -m pip install -r requirements-dev.txt)' }
+  }
+  $ver = (& $exe --version 2>&1 | Out-String).Trim()
+  return @{ Name = 'basedpyright'; Ok = ($LASTEXITCODE -eq 0 -and $ver -match 'basedpyright'); Required = $true; Detail = $(if ($LASTEXITCODE -eq 0) { $ver } else { 'basedpyright --version failed' }) }
+}
+
 function Test-CompilationDatabaseLeg {
   $py = Get-Python
   if (-not $py) {
@@ -117,6 +130,7 @@ function Test-All {
   $r += Test-ToolchainLeg
   $r += Test-HooksLeg
   $r += Test-PythonLegs
+  $r += Test-BasedpyrightLeg
   $r += Test-CompilationDatabaseLeg
   $r += Test-FfmpegLeg
   return $r
@@ -155,6 +169,13 @@ if (-not $Verify) {
   if ($faults -contains 'pillow' -and -not ($faults -contains 'python')) {
     $py = Get-Python
     & $py.Path -m pip install --quiet pillow
+  }
+  if ($faults -contains 'basedpyright' -and -not ($faults -contains 'python')) {
+    $py = Get-Python
+    if (-not (Test-Path (Join-Path $Root '.venv\Scripts\python.exe'))) {
+      & $py.Path -m venv (Join-Path $Root '.venv')
+    }
+    & (Join-Path $Root '.venv\Scripts\python.exe') -m pip install --quiet -r (Join-Path $Root 'requirements-dev.txt')
   }
   if ($faults -contains 'compilation database' -and -not ($faults -contains 'python')) {
     $py = Get-Python

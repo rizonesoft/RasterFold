@@ -1,6 +1,5 @@
 {
-  "$comment": "LSP wiring for the WSL/Linux checkout (the agent-automation host). Windows VS Code: override clangd.path in user settings to tools/llvm-mingw/bin/clangd.exe and python.defaultInterpreterPath to .venv\\Scripts\\python.exe. Memory tuning: this host class has ~13 GB RAM, so clangd indexes in the background with 4 workers and trims its heap; the codec is ~12 translation units, so the index stays small.",
-  "clangd.path": "${workspaceFolder}/tools/llvm-mingw-linux/bin/clangd",
+  "$comment": "LSP wiring for this checkout. clangd.path and python.defaultInterpreterPath are deliberately NOT set here: workspace scope would override the user's per-platform values. Set them in VS Code User settings exactly as docs/building.md (Editor setup) spells out for your platform. Memory tuning: this host class has ~13 GB RAM, so clangd indexes in the background with 4 workers and trims its heap; the codec is ~12 translation units, so the index stays small.",
   "clangd.arguments": [
     "--background-index",
     "--background-index-priority=background",
@@ -14,7 +13,6 @@
   ],
   "C_Cpp.intelliSenseEngine": "disabled",
   "editor.defaultFormatter": null,
-  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
   "basedpyright.importStrategy": "fromEnvironment",
   "python.languageServer": "None",
   "files.associations": {

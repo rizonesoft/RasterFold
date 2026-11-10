@@ -1551,12 +1551,12 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "Re-read 2026-11-10 for D00 T05 s1: AGENTS.md tier rule changed (unattended lead muse-wonder-1.0, dummy-proof mechanics, subagent removal rule) and build.py/check-all.py changed behavior-identically; no writer, reviewer-route, model, or product claim in this document changed.",
+      "evidence": "Re-read 2026-11-10 for the D00 T05 s1 review round fixes: build.py writes a canonical editor database independent of LTO/PGO, tidy derives from build.py, .vscode no longer pins per-platform server paths at workspace scope, provision.ps1 gained a .venv Basedpyright leg; no claim in this document changed.",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "0459a0748fd733a53d16badfb465cbcee3f75993c8a522c6d7e7932115b0bd3f",
         "src/main.c": "3061f3ece83ee1b766492f0f125146cd744adbcc143cd3bca836e733f5580598",
-        "scripts/build.py": "e990806d0adbc5613289b3c3248edbf3cc5db21fc5426aab6880c594f06d5bed",
+        "scripts/build.py": "9baa55abff28c2b4f9535b21059350bfbe646ecb039025f2592442c40516d193",
         "scripts/package.py": "ef69de2da770ea647e2841f4c2ce16db8bae22544c086a389983bdbeb1e50b37",
         "scripts/check-all.py": "fb6c9b81108c65eadb781b8fed2bf623db5ad5e565396d2cb5bcc239342adb77",
         "README.md": "b6e1a597650088cbe20052bb142cc71b8a8ad4246a1b089f1e29bc11fbb0269c",
@@ -1591,9 +1591,9 @@
       }
     },
     "CONTRIBUTING.md": {
-      "evidence": "Re-read 2026-11-10 for D00 T05 s1: build.py flag construction extracted into shared helpers with byte-identical build outputs (per-target compile_commands.json sha256 unchanged), check-all.py gained the compilation-database gate, provision gained a compile_commands.json step; no claim in this document changed.",
+      "evidence": "Re-read 2026-11-10 for the D00 T05 s1 review round fixes: build.py writes a canonical editor database independent of LTO/PGO, tidy derives from build.py, .vscode no longer pins per-platform server paths at workspace scope, provision.ps1 gained a .venv Basedpyright leg; no claim in this document changed.",
       "sources": {
-        "scripts/build.py": "e990806d0adbc5613289b3c3248edbf3cc5db21fc5426aab6880c594f06d5bed",
+        "scripts/build.py": "9baa55abff28c2b4f9535b21059350bfbe646ecb039025f2592442c40516d193",
         "scripts/package.py": "ef69de2da770ea647e2841f4c2ce16db8bae22544c086a389983bdbeb1e50b37",
         "scripts/check-all.py": "fb6c9b81108c65eadb781b8fed2bf623db5ad5e565396d2cb5bcc239342adb77",
         "CONTRIBUTING.md": "01f5855ce18883d6930ce1ebb569ea9411ac21e3c4cf3faced1a56c155bf470f"
@@ -1601,14 +1601,14 @@
       "review": "Author-attested: 2026-10-25 re-read CONTRIBUTING.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/building.md": {
-      "evidence": "Re-read 2026-11-10 for D00 T05 s1: provisioning paragraph now names requirements-dev.txt (Pillow and Basedpyright) and the generated root compile_commands.json, and a new Editor setup section documents clangd, Basedpyright (not a gate, 2026-11-10 baseline), the refresh command, and both Windows VS Code overrides; remaining build claims confirmed unchanged.",
+      "evidence": "Re-read 2026-11-10 for the D00 T05 s1 review round fixes: the Editor setup section now states the tracked .vscode settings set neither server path (workspace scope would override the user) and gives both platforms' User-settings values; remaining build claims confirmed unchanged.",
       "sources": {
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
-        "scripts/build.py": "e990806d0adbc5613289b3c3248edbf3cc5db21fc5426aab6880c594f06d5bed",
+        "scripts/build.py": "9baa55abff28c2b4f9535b21059350bfbe646ecb039025f2592442c40516d193",
         "scripts/package.py": "ef69de2da770ea647e2841f4c2ce16db8bae22544c086a389983bdbeb1e50b37",
         "scripts/check-all.py": "fb6c9b81108c65eadb781b8fed2bf623db5ad5e565396d2cb5bcc239342adb77",
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
-        "docs/building.md": "0e9ba3bb50943169c37e9b4cc333aeecaa8537c9e61dc9fa07ee7ab0b3ff9bdd"
+        "docs/building.md": "0e6b909c0bf60c750d82668d84253266b32df7133839b1368e35b95760e148e4"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/building.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
@@ -1633,12 +1633,12 @@
       "review": "Author-attested: 2026-10-25 re-read docs/index.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/getting-started.md": {
-      "evidence": "Re-read 2026-11-10 for D00 T05 s1: build.py flag construction extracted into shared helpers with byte-identical build outputs (per-target compile_commands.json sha256 unchanged), check-all.py gained the compilation-database gate, provision gained a compile_commands.json step; no claim in this document changed.",
+      "evidence": "Re-read 2026-11-10 for the D00 T05 s1 review round fixes: build.py writes a canonical editor database independent of LTO/PGO, tidy derives from build.py, .vscode no longer pins per-platform server paths at workspace scope, provision.ps1 gained a .venv Basedpyright leg; no claim in this document changed.",
       "sources": {
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
         "tools/provision.py": "dc5fb84c125ea3735ca425e91d084d04297d772cee4e3609417aa11c66ad0c3b",
-        "tools/provision.ps1": "b4d364e6fbbd72057298394c89599a4f19b5e84a90ac8678664d094d84420147",
-        "scripts/build.py": "e990806d0adbc5613289b3c3248edbf3cc5db21fc5426aab6880c594f06d5bed",
+        "tools/provision.ps1": "ff39bb136c4b3e43bc2bb0560641d8ec85cc71f808726810107b4071c77ea372",
+        "scripts/build.py": "9baa55abff28c2b4f9535b21059350bfbe646ecb039025f2592442c40516d193",
         "scripts/check-all.py": "fb6c9b81108c65eadb781b8fed2bf623db5ad5e565396d2cb5bcc239342adb77",
         "scripts/check-all.ps1": "7006b1871b52689461497fa676b3cb6472f0e436c9c5e240deb9da069321a528",
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
@@ -1756,7 +1756,7 @@
       "review": "Author-attested: 2026-10-25 re-read docs/limitations.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/troubleshooting.md": {
-      "evidence": "Re-read 2026-11-10 for D00 T05 s1: build.py flag construction extracted into shared helpers with byte-identical build outputs (per-target compile_commands.json sha256 unchanged), check-all.py gained the compilation-database gate, provision gained a compile_commands.json step; no claim in this document changed.",
+      "evidence": "Re-read 2026-11-10 for the D00 T05 s1 review round fixes: build.py writes a canonical editor database independent of LTO/PGO, tidy derives from build.py, .vscode no longer pins per-platform server paths at workspace scope, provision.ps1 gained a .venv Basedpyright leg; no claim in this document changed.",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "0459a0748fd733a53d16badfb465cbcee3f75993c8a522c6d7e7932115b0bd3f",
@@ -1766,13 +1766,13 @@
         "src/api.c": "774c4e0a2a22f5a01e174e541cd1e725da05019ece20927345938cbe10fe0f02",
         "src/sys_posix.c": "507270096bb20f63a07fd0176551a6fc7dd37ee7ce441b6a5a3e57f00bcb6792",
         "tools/provision.py": "dc5fb84c125ea3735ca425e91d084d04297d772cee4e3609417aa11c66ad0c3b",
-        "tools/provision.ps1": "b4d364e6fbbd72057298394c89599a4f19b5e84a90ac8678664d094d84420147",
+        "tools/provision.ps1": "ff39bb136c4b3e43bc2bb0560641d8ec85cc71f808726810107b4071c77ea372",
         "docs/troubleshooting.md": "4af65035b3b7f1e914e7dee9b029871f5bf0ac11ef28b90fb94b9211ae536de5"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/troubleshooting.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/licenses.md": {
-      "evidence": "Re-read 2026-11-10 for D00 T05 s1: build.py flag construction extracted into shared helpers with byte-identical build outputs (per-target compile_commands.json sha256 unchanged), check-all.py gained the compilation-database gate, provision gained a compile_commands.json step; no claim in this document changed.",
+      "evidence": "Re-read 2026-11-10 for the D00 T05 s1 review round fixes: added the missing basedpyright 1.40.2 row (pinned in requirements-dev.txt since the section shipped, provisioned into .venv on both hosts); remaining rows confirmed unchanged.",
       "sources": {
         "CODE_OF_CONDUCT.md": "f945b73c121fdc7597bdfedabb63f1442ccbab3b2469cd1b7a59932e9eac7da0",
         "testdata/photos/README.md": "f8d6f0d749fc5e795731c322fe192350b247afe167cb817c50f6faedc444303e",
@@ -1780,8 +1780,8 @@
         "testdata/photos/NOTICE-imagecompression-info.txt": "e455e6ea2a78ade37bf0d2bb0bf7f4d1f7c2bef2b81cd35a5628b0269d05e8cd",
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
         "tools/provision.py": "dc5fb84c125ea3735ca425e91d084d04297d772cee4e3609417aa11c66ad0c3b",
-        "tools/provision.ps1": "b4d364e6fbbd72057298394c89599a4f19b5e84a90ac8678664d094d84420147",
-        "docs/licenses.md": "4b55927b255f177e7e6cd5cc034ed11a662b447d4c667852498f7fb5739f95b2"
+        "tools/provision.ps1": "ff39bb136c4b3e43bc2bb0560641d8ec85cc71f808726810107b4071c77ea372",
+        "docs/licenses.md": "8d151b29c1a2a57071ea33b35828730b3514c2fcade71d2f03e9e87558989c1b"
       }
     },
     "docs/404.md": {

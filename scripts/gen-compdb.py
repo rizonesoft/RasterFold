@@ -3,9 +3,11 @@
 
 scripts/build.py already writes build/<target>/compile_commands.json on every
 build. Editors look at the repository root, so this merges the databases that
-exist (linux-x64 wins per file, windows-x64 contributes the freestanding
-Win32-only units, android-arm64 contributes anything still missing) and writes
-the result to compile_commands.json. On a fresh clone with no build yet it
+exist for build targets (linux-x64 wins per file, windows-x64 contributes the
+freestanding Win32-only units, android-arm64 contributes anything still
+missing), supplements any source no database covers from the synthesis, and
+writes the result to compile_commands.json. Tidy-only databases (posix-* on a
+Windows host) are never published, so --check covers everything published. On a fresh clone with no build yet it
 synthesizes entries with flags derived from build.py so navigation works before
 the first build; the next real build's databases then take over. --check is
 source-derived: it recomputes the expected per-target entries from build.py
@@ -70,6 +72,9 @@ def merged() -> tuple[list[dict], list[str]]:
     by_file: dict[str, dict] = {}
     used = []
     for target in PREFERENCE:
+        base = target[: -len("-portable")] if target.endswith("-portable") else target
+        if base not in build.TARGETS:
+            continue
         entries = load(target)
         if entries:
             used.append(target)
@@ -77,6 +82,13 @@ def merged() -> tuple[list[dict], list[str]]:
             by_file.setdefault(os.path.normpath(str(entry["file"])), entry)
     if not by_file:
         return synthesized(), ["synthesized (no build database yet; run scripts/build.py)"]
+    covered = {os.path.basename(k) for k in by_file}
+    missing = {f"{p.stem}.c" for p in (ROOT / "src").glob("*.c")} - covered
+    if missing:
+        for entry in synthesized():
+            if os.path.basename(str(entry["file"])) in missing:
+                by_file[os.path.normpath(str(entry["file"]))] = entry
+        used.append("synthesized (missing platform units)")
     return [by_file[k] for k in sorted(by_file)], used
 
 
