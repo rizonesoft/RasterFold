@@ -64,8 +64,8 @@ int rf_path_blocked(const rf_path_char *path, rf_error *err) {
 /* Write to path + ".partial" with CREATE_NEW, flush, then rename onto path.
    An existing path or temporary is never touched; a failure deletes only the
    temporary this call created. */
-int rf_write_atomic(const rf_path_char *path, const uint8_t *data, size_t size, rf_error *err) {
-    int rc = rf_path_blocked(path, err);
+static int rf_write_impl(const rf_path_char *path, const uint8_t *data, size_t size, rf_error *err, int replace) {
+    int rc = replace ? RF_OK : rf_path_blocked(path, err);
     if (rc) return rc;
     static const uint16_t suffix[] = {'.', 'p', 'a', 'r', 't', 'i', 'a', 'l', 0};
     uint16_t tmp[1024 + 9];
@@ -91,7 +91,8 @@ int rf_write_atomic(const rf_path_char *path, const uint8_t *data, size_t size, 
     }
     ok = ok && FlushFileBuffers(f);
     CloseHandle(f);
-    ok = ok && MoveFileW((LPCWSTR)tmp, (LPCWSTR)path);
+    ok = ok && (replace ? MoveFileExW((LPCWSTR)tmp, (LPCWSTR)path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)
+                        : MoveFileW((LPCWSTR)tmp, (LPCWSTR)path));
     if (!ok) {
         DeleteFileW((LPCWSTR)tmp);
         return rf_fail(err, RF_ERR_IO, "cannot write output");
@@ -159,4 +160,12 @@ void rf_print(int to_stderr, const char *s) {
     HANDLE h = GetStdHandle(to_stderr ? STD_ERROR_HANDLE : STD_OUTPUT_HANDLE);
     DWORD put;
     if (h && h != INVALID_HANDLE_VALUE && n) WriteFile(h, s, (DWORD)n, &put, 0);
+}
+
+int rf_write_atomic(const rf_path_char *path, const uint8_t *data, size_t size, rf_error *err) {
+    return rf_write_impl(path, data, size, err, 0);
+}
+
+int rf_write_atomic_replace(const rf_path_char *path, const uint8_t *data, size_t size, rf_error *err) {
+    return rf_write_impl(path, data, size, err, 1);
 }

@@ -45,6 +45,7 @@ void rf_account_remove(size_t size);
 int rf_read_file(const rf_path_char *path, uint8_t **data, size_t *size, rf_error *err);
 int rf_path_blocked(const rf_path_char *path, rf_error *err);
 int rf_write_atomic(const rf_path_char *path, const uint8_t *data, size_t size, rf_error *err);
+int rf_write_atomic_replace(const rf_path_char *path, const uint8_t *data, size_t size, rf_error *err);
 uint64_t rf_ticks(void);
 uint64_t rf_elapsed_us(uint64_t start, uint64_t end);
 uint64_t rf_peak_working_set(void);

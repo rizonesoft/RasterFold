@@ -1,0 +1,380 @@
+{
+  "messages": [
+    {
+      "text": "cannot access output path",
+      "code": 2
+    },
+    {
+      "text": "cannot read input",
+      "code": 2
+    },
+    {
+      "text": "cannot write output",
+      "code": 2
+    },
+    {
+      "text": "image exceeds size limit",
+      "code": 5
+    },
+    {
+      "text": "info is required",
+      "code": 1
+    },
+    {
+      "text": "input exceeds size limit",
+      "code": 5
+    },
+    {
+      "text": "input is required",
+      "code": 1
+    },
+    {
+      "text": "internal self-test failed",
+      "code": 5
+    },
+    {
+      "text": "invalid BMP: dimensions",
+      "code": 4
+    },
+    {
+      "text": "invalid BMP: file size",
+      "code": 4
+    },
+    {
+      "text": "invalid BMP: image size",
+      "code": 4
+    },
+    {
+      "text": "invalid BMP: signature",
+      "code": 4
+    },
+    {
+      "text": "invalid BMP: truncated",
+      "code": 4
+    },
+    {
+      "text": "invalid PNG: IDAT before IHDR",
+      "code": 4
+    },
+    {
+      "text": "invalid PNG: IDAT sequence",
+      "code": 4
+    },
+    {
+      "text": "invalid PNG: IEND",
+      "code": 4
+    },
+    {
+      "text": "invalid PNG: IHDR",
+      "code": 4
+    },
+    {
+      "text": "invalid PNG: IHDR methods",
+      "code": 4
+    },
+    {
+      "text": "invalid PNG: PLTE",
+      "code": 4
+    },
+    {
+      "text": "invalid PNG: bit depth",
+      "code": 4
+    },
+    {
+      "text": "invalid PNG: chunk CRC",
+      "code": 4
+    },
+    {
+      "text": "invalid PNG: colour type",
+      "code": 4
+    },
+    {
+      "text": "invalid PNG: depth and colour",
+      "code": 4
+    },
+    {
+      "text": "invalid PNG: dimensions",
+      "code": 4
+    },
+    {
+      "text": "invalid PNG: filter",
+      "code": 4
+    },
+    {
+      "text": "invalid PNG: interlace",
+      "code": 4
+    },
+    {
+      "text": "invalid PNG: no image data",
+      "code": 4
+    },
+    {
+      "text": "invalid PNG: signature",
+      "code": 4
+    },
+    {
+      "text": "invalid PNG: structure",
+      "code": 4
+    },
+    {
+      "text": "invalid PNG: trailing data",
+      "code": 4
+    },
+    {
+      "text": "invalid PNG: truncated",
+      "code": 4
+    },
+    {
+      "text": "invalid PNG: unknown critical chunk",
+      "code": 4
+    },
+    {
+      "text": "invalid PPM: dimensions",
+      "code": 4
+    },
+    {
+      "text": "invalid PPM: header",
+      "code": 4
+    },
+    {
+      "text": "invalid PPM: signature",
+      "code": 4
+    },
+    {
+      "text": "invalid PPM: trailing data",
+      "code": 4
+    },
+    {
+      "text": "invalid PPM: truncated",
+      "code": 4
+    },
+    {
+      "text": "invalid deflate: block type",
+      "code": 4
+    },
+    {
+      "text": "invalid deflate: data",
+      "code": 4
+    },
+    {
+      "text": "invalid deflate: size",
+      "code": 4
+    },
+    {
+      "text": "invalid deflate: stored block",
+      "code": 4
+    },
+    {
+      "text": "invalid deflate: stored length",
+      "code": 4
+    },
+    {
+      "text": "invalid deflate: tables",
+      "code": 4
+    },
+    {
+      "text": "invalid deflate: trailing data",
+      "code": 4
+    },
+    {
+      "text": "invalid deflate: truncated",
+      "code": 4
+    },
+    {
+      "text": "invalid fold: cm stream",
+      "code": 4
+    },
+    {
+      "text": "invalid fold: cm streams",
+      "code": 4
+    },
+    {
+      "text": "invalid fold: cm strips",
+      "code": 4
+    },
+    {
+      "text": "invalid fold: duplicate palette colour",
+      "code": 4
+    },
+    {
+      "text": "invalid fold: header checksum",
+      "code": 4
+    },
+    {
+      "text": "invalid fold: magic",
+      "code": 4
+    },
+    {
+      "text": "invalid fold: palette",
+      "code": 4
+    },
+    {
+      "text": "invalid fold: palette stream",
+      "code": 4
+    },
+    {
+      "text": "invalid fold: payload checksum",
+      "code": 4
+    },
+    {
+      "text": "invalid fold: payload length",
+      "code": 4
+    },
+    {
+      "text": "invalid fold: raw length",
+      "code": 4
+    },
+    {
+      "text": "invalid fold: reserved byte",
+      "code": 4
+    },
+    {
+      "text": "invalid fold: truncated",
+      "code": 4
+    },
+    {
+      "text": "invalid image: dimensions",
+      "code": 4
+    },
+    {
+      "text": "invalid input: empty file",
+      "code": 4
+    },
+    {
+      "text": "invalid pixel stride or buffer size",
+      "code": 1
+    },
+    {
+      "text": "invalid zlib: Adler-32",
+      "code": 4
+    },
+    {
+      "text": "invalid zlib: header",
+      "code": 4
+    },
+    {
+      "text": "invalid zlib: truncated",
+      "code": 4
+    },
+    {
+      "text": "options: invalid size alignment",
+      "code": 1
+    },
+    {
+      "text": "options: reserved field",
+      "code": 3
+    },
+    {
+      "text": "options: size not supported",
+      "code": 3
+    },
+    {
+      "text": "options: size too small",
+      "code": 1
+    },
+    {
+      "text": "options: threads must be 0..9",
+      "code": 1
+    },
+    {
+      "text": "out of memory",
+      "code": 5
+    },
+    {
+      "text": "output file already exists",
+      "code": 2
+    },
+    {
+      "text": "output is required",
+      "code": 1
+    },
+    {
+      "text": "path too long",
+      "code": 2
+    },
+    {
+      "text": "pixels are required",
+      "code": 1
+    },
+    {
+      "text": "temporary output already exists",
+      "code": 2
+    },
+    {
+      "text": "unsupported BMP: bit count",
+      "code": 3
+    },
+    {
+      "text": "unsupported BMP: compression",
+      "code": 3
+    },
+    {
+      "text": "unsupported BMP: header",
+      "code": 3
+    },
+    {
+      "text": "unsupported BMP: planes",
+      "code": 3
+    },
+    {
+      "text": "unsupported PNG: alpha",
+      "code": 3
+    },
+    {
+      "text": "unsupported PNG: bit depth",
+      "code": 3
+    },
+    {
+      "text": "unsupported PNG: colour type",
+      "code": 3
+    },
+    {
+      "text": "unsupported PNG: transparency",
+      "code": 3
+    },
+    {
+      "text": "unsupported PPM: P3",
+      "code": 3
+    },
+    {
+      "text": "unsupported PPM: maxval",
+      "code": 3
+    },
+    {
+      "text": "unsupported fold: header size",
+      "code": 3
+    },
+    {
+      "text": "unsupported fold: method",
+      "code": 3
+    },
+    {
+      "text": "unsupported fold: pixel format",
+      "code": 3
+    },
+    {
+      "text": "unsupported fold: version",
+      "code": 3
+    },
+    {
+      "text": "unsupported input format: encode reads .bmp, .png, or .ppm",
+      "code": 3
+    },
+    {
+      "text": "unsupported input format: this command reads .fold",
+      "code": 3
+    },
+    {
+      "text": "unsupported output format: decode writes .bmp, .png, or .ppm",
+      "code": 3
+    },
+    {
+      "text": "unsupported output format: encode writes .fold",
+      "code": 3
+    },
+    {
+      "text": "unsupported pixel layout",
+      "code": 3
+    }
+  ]
+}

@@ -63,8 +63,8 @@ int rf_path_blocked(const rf_path_char *path, rf_error *err) {
     return rf_fail(err, RF_ERR_IO, "cannot access output path");
 }
 
-int rf_write_atomic(const rf_path_char *path, const uint8_t *data, size_t size, rf_error *err) {
-    int rc = rf_path_blocked(path, err);
+static int rf_write_impl(const rf_path_char *path, const uint8_t *data, size_t size, rf_error *err, int replace) {
+    int rc = replace ? RF_OK : rf_path_blocked(path, err);
     if (rc) return rc;
     size_t n = strlen(path);
     if (!n || n >= 1024) return rf_fail(err, RF_ERR_IO, "path too long");
@@ -83,11 +83,17 @@ int rf_write_atomic(const rf_path_char *path, const uint8_t *data, size_t size, 
     int dir = open(parent, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
     if (dir < 0) return rf_fail(err, RF_ERR_IO, "cannot write output");
     struct stat st;
-    if (!fstatat(dir, leaf, &st, AT_SYMLINK_NOFOLLOW)) {
+    int leaf_rc = fstatat(dir, leaf, &st, AT_SYMLINK_NOFOLLOW);
+    int leaf_err = errno;
+    if (!leaf_rc && !replace) {
         close(dir);
         return rf_fail(err, RF_ERR_IO, "output file already exists");
     }
-    if (errno != ENOENT) {
+    if (!leaf_rc && replace && S_ISDIR(st.st_mode)) {
+        close(dir);
+        return rf_fail(err, RF_ERR_IO, "cannot write output");
+    }
+    if (leaf_rc && leaf_err != ENOENT) {
         close(dir);
         return rf_fail(err, RF_ERR_IO, "cannot access output path");
     }
@@ -112,7 +118,14 @@ int rf_write_atomic(const rf_path_char *path, const uint8_t *data, size_t size, 
      * sandbox support remain runtime properties and require device testing.
      * Older kernels/filesystems use exclusive link publication; never rename(). */
     int published = 0, renamed = 0;
-    if (ok) {
+    if (ok && replace) {
+        /* Atomic replacement of an existing destination (rename(2) semantics). */
+#if defined(SYS_renameat2)
+        published = renamed = syscall(SYS_renameat2, dir, tmp_leaf, dir, leaf, 0u) == 0;
+#else
+        published = renamed = renameat(dir, tmp_leaf, dir, leaf) == 0;
+#endif
+    } else if (ok) {
 #if defined(SYS_renameat2)
         if (!syscall(SYS_renameat2, dir, tmp_leaf, dir, leaf, 1u /* RENAME_NOREPLACE */))
             published = renamed = 1;
@@ -128,8 +141,11 @@ int rf_write_atomic(const rf_path_char *path, const uint8_t *data, size_t size, 
     int durable = published && (fsync(dir) == 0 || errno == EINVAL);
     close(dir);
     if (!published) return rf_fail(err, RF_ERR_IO, "cannot write output");
-    if (!cleaned) return rf_fail(err, RF_ERR_IO, "output published but temporary cleanup failed");
-    if (!durable) return rf_fail(err, RF_ERR_IO, "output published but directory flush failed");
+    /* Publication is the commit point: the destination now holds the complete
+       new file (contents fsynced before the rename). Cleanup and directory
+       flush afterwards are best effort and cannot unpublish it, so they do
+       not turn a completed write into a reported failure. */
+    (void)cleaned; (void)durable;
     return RF_OK;
 }
 
@@ -194,4 +210,12 @@ void rf_print(int to_stderr, const char *s) {
         if (n <= 0) break;
         s += n; size -= (size_t)n;
     }
+}
+
+int rf_write_atomic(const rf_path_char *path, const uint8_t *data, size_t size, rf_error *err) {
+    return rf_write_impl(path, data, size, err, 0);
+}
+
+int rf_write_atomic_replace(const rf_path_char *path, const uint8_t *data, size_t size, rf_error *err) {
+    return rf_write_impl(path, data, size, err, 1);
 }

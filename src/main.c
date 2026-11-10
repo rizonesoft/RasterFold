@@ -34,14 +34,14 @@ static const char usage_text[] =
 static const char help_encode[] =
     "usage: rasterfold encode [--time] [--threads N] input.bmp|input.png|input.ppm output.fold" RF_EOL
     "Encode a 24-bit BMP, 8-bit PNG, or P6 PPM (maxval 255) image into a .fold file. The output must not already exist." RF_EOL
-    "options: --time prints timing statistics; --threads N codes on N threads (1 to 9)." RF_EOL
+    "options: --time prints timing statistics; --threads N codes on N threads (1 to 9); --overwrite replaces an existing output file." RF_EOL
     "exit codes: 0 ok, 1 usage, 2 io, 3 unsupported, 4 malformed, 5 limit" RF_EOL
     "example: rasterfold encode photo.bmp photo.fold" RF_EOL;
 
 static const char help_decode[] =
     "usage: rasterfold decode [--time] [--threads N] input.fold output.bmp|output.png|output.ppm" RF_EOL
     "Decode a .fold file into a 24-bit BMP, 8-bit PNG, or P6 PPM (maxval 255) image. The output must not already exist." RF_EOL
-    "options: --time prints timing statistics; --threads N codes on N threads (1 to 9)." RF_EOL
+    "options: --time prints timing statistics; --threads N codes on N threads (1 to 9); --overwrite replaces an existing output file." RF_EOL
     "exit codes: 0 ok, 1 usage, 2 io, 3 unsupported, 4 malformed, 5 limit" RF_EOL
     "example: rasterfold decode photo.fold photo.bmp" RF_EOL;
 
@@ -151,11 +151,12 @@ static void info_hex(const char *key, uint32_t v) {
 
 static int run(int argc, rf_path_char **argv, rf_error *err) {
     rf_path_char *pos[3] = {0, 0, 0};
-    int npos = 0, timing = 0, json = 0, want_help = 0, want_version = 0;
+    int npos = 0, timing = 0, json = 0, want_help = 0, want_version = 0, overwrite = 0;
     int ncpu = rf_cpu_count();
     int threads = ncpu < 1 ? 1 : (ncpu > 9 ? 9 : ncpu);
     for (int i = 1; i < argc; i++) {
         if (wide_eq(argv[i], "--time")) { timing = 1; continue; }
+        if (wide_eq(argv[i], "--overwrite")) { overwrite = 1; continue; }
         if (wide_eq(argv[i], "--json")) { json = 1; continue; }
         if (wide_eq(argv[i], "--help")) { want_help = 1; continue; }
         if (wide_eq(argv[i], "--version")) { want_version = 1; continue; }
@@ -169,6 +170,7 @@ static int run(int argc, rf_path_char **argv, rf_error *err) {
         if (npos == 3) return -1;
         pos[npos++] = argv[i];
     }
+    if (overwrite && (want_help || want_version)) return -1;
     if (want_help || want_version) {
         if (npos != 0 || timing || json) return -1;
         if (want_help && want_version) return -1;
@@ -177,6 +179,7 @@ static int run(int argc, rf_path_char **argv, rf_error *err) {
         return RF_OK;
     }
     if (npos == 0) return -1;
+    if (overwrite && (wide_eq(pos[0], "help") || wide_eq(pos[0], "version"))) return -1;
     if (wide_eq(pos[0], "help")) {
         if (json || timing || npos > 2) return -1;
         if (npos == 1) { rf_print(0, usage_text); return RF_OK; }
@@ -199,6 +202,7 @@ static int run(int argc, rf_path_char **argv, rf_error *err) {
     if (json && !inspect) return -1;
     if (json && timing) return -1;
     if (verify && timing) return -1;
+    if (overwrite && !(encode || decode)) return -1;
 
     if (rf_crc32((const uint8_t *)"123456789", 9) != 0xCBF43926u)
         return rf_fail(err, RF_ERR_LIMIT, "internal self-test failed");
@@ -211,7 +215,7 @@ static int run(int argc, rf_path_char **argv, rf_error *err) {
         if (encode && in_ext == EXT_PPM) want_in = EXT_PPM;
         if (in_ext != EXT_NONE && in_ext != want_in)
             return rf_fail(err, RF_ERR_UNSUPPORTED, encode ? "unsupported input format: encode reads .bmp, .png, or .ppm" : "unsupported input format: this command reads .fold");
-        if ((encode || decode) && rf_path_blocked(pos[2], err)) return err->code;
+        if ((encode || decode) && !overwrite && rf_path_blocked(pos[2], err)) return err->code;
         if (encode || decode) {
             out_ext = ext_of(pos[2]);
             int want_out = encode ? EXT_FOLD : EXT_BMP;
@@ -248,7 +252,7 @@ static int run(int argc, rf_path_char **argv, rf_error *err) {
         if (rc) goto done;
         rf_free(img.rgb);
         img.rgb = 0;
-        rc = rf_write_atomic(pos[2], out, out_size, err);
+        rc = overwrite ? rf_write_atomic_replace(pos[2], out, out_size, err) : rf_write_atomic(pos[2], out, out_size, err);
         written = out_size;
     } else {
         uint32_t pal_colours = (file_size >= RF_HEADER_SIZE + 2)
@@ -286,7 +290,7 @@ static int run(int argc, rf_path_char **argv, rf_error *err) {
         t3 = rf_ticks();
         if (rc) goto done;
         if (decode) {
-            rc = rf_write_atomic(pos[2], out, out_size, err);
+            rc = overwrite ? rf_write_atomic_replace(pos[2], out, out_size, err) : rf_write_atomic(pos[2], out, out_size, err);
             written = out_size;
         } else if (json) {
             const char *method = info.method == RF_METHOD_CM ? "cm" :

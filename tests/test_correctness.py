@@ -1816,6 +1816,46 @@ def ppm_io() -> None:
     expect_fail(["encode", str(trunc), str(fresh(work / "trunc.fold"))], 4, "invalid PPM: truncated")
 
 
+
+def overwrite_io() -> None:
+    work = WORK / "overwrite"
+    work.mkdir(parents=True, exist_ok=True)
+
+    def fresh(path: Path) -> Path:
+        path.unlink(missing_ok=True)
+        Path(f"{path}.partial").unlink(missing_ok=True)
+        return path
+
+    w, h = 13, 7
+    rgb = bytes(((x * 3 + y * 19 + c * 37) & 255) for y in range(h) for x in range(w) for c in range(3))
+    src = work / "in.bmp"
+    src.write_bytes(rf.write_bmp24(w, h, rgb))
+    fold = fresh(work / "out.fold")
+    expect_ok(["encode", str(src), str(fold)])
+    before = fold.read_bytes()
+    # Default: an existing destination is refused and unchanged.
+    expect_fail(["encode", str(src), str(fold)], 2, "exists")
+    check(fold.read_bytes() == before, "refused encode changed the destination")
+    # With --overwrite the destination is replaced with complete new output.
+    rgb2 = bytes((255 - b) & 255 for b in rgb)
+    src2 = work / "in2.bmp"
+    src2.write_bytes(rf.write_bmp24(w, h, rgb2))
+    expect_ok(["encode", "--overwrite", str(src2), str(fold)])
+    check(fold.read_bytes() != before, "--overwrite did not replace the destination")
+    check(rf.decode_image(fold.read_bytes()) == (w, h, rgb2), "overwritten .fold decodes to wrong pixels")
+    check(not Path(f"{fold}.partial").exists(), "successful overwrite left a .partial file")
+    # A failed overwrite leaves the destination bytes intact.
+    bad = work / "bad.bmp"
+    bad.write_bytes(b"not a bmp at all")
+    expect_fail(["encode", "--overwrite", str(bad), str(fold)], 4, "invalid BMP")
+    check(rf.decode_image(fold.read_bytes()) == (w, h, rgb2), "failed overwrite changed the destination")
+    # --overwrite is refused on non-writing commands.
+    expect_fail(["inspect", "--overwrite", str(fold)], 1, "usage")
+    expect_fail(["--overwrite", "--help"], 1, "usage")
+    expect_fail(["help", "--overwrite"], 1, "usage")
+    expect_fail(["version", "--overwrite"], 1, "usage")
+
+
 def main() -> int:
     if not EXE.exists():
         print(f"missing {EXE}; run build.ps1 first")
@@ -1825,6 +1865,7 @@ def main() -> int:
     case("cli-commands", cli_commands)
     case("png-io", png_io)
     case("ppm-io", ppm_io)
+    case("overwrite-io", overwrite_io)
     case("known-answer", known_answer)
     images = [
         ("px1", 1, 1, bytes([0, 0, 0])),
