@@ -88,7 +88,8 @@ PNG needs zlib's inflate and deflate, written here in C without a runtime: infla
 
 > **Started:** 2026-11-10T22:00:00Z
 
-- [ ] Write P6 PPM (maxval 255) reading and writing in `src/ppm.c`, refusing other maxvals and P3 with exit 3. Done when: PPM round trips match Pillow. Cheaper substitute: none needed; it is small.
+- [ ] Write P6 PPM (maxval 255) reading and writing in `src/ppm.c`, refusing other maxvals and P3 with exit 3 (plan review P2: header tokens are decimal with checked parsing, whitespace and `#` comments allowed between tokens, exactly one whitespace byte after maxval before the binary raster, dimensions and raster size checked against the file size and the image limit before allocation; truncated header or raster and trailing data are refused, with exit 3 for P3/other maxvals, exit 4 for malformed input, exit 5 for limits, matching `src/bmp.c` and `src/png.c`; a first raster byte that is whitespace or `#` must survive, proving the parser stops at the single separator). Done when: PPM round trips match Pillow. Cheaper substitute: none needed; it is small.
+- [ ] Add PPM cases to `tests/test_correctness.py` (plan review P2): encode PPM -> .fold -> PPM with Pillow pixel read-back, BMP and PPM encodes of the same pixels producing byte-identical .fold, decode to PPM, P3 and maxval-65535 refusals at exit 3, truncated raster refusal at exit 4, and an existing destination refused with its bytes unchanged and no `.partial` left. Done when: the named cases pass.
 - [ ] Commit: `"cli: read and write PPM"`
 
 **Test checkpoint:** PPM cases in `tests/test_correctness.py` pass.

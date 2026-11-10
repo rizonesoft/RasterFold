@@ -299,7 +299,7 @@ The 1.0 product: library, command line, references, and the release that freezes
 | [x] | `D06 T01 §5`  | Example programs                                 |   2   |
 | [x] | `D07 T01 §1`  | Commands and options                             |   3   |
 | [x] | `D07 T01 §2`  | PNG in and out                                   |   3   |
-| [ ] | `D07 T01 §3`  | PPM in and out                                   |   2   |
+| [ ] | `D07 T01 §3`  | PPM in and out                                   |   3   |
 | [ ] | `D07 T01 §4`  | Exit codes, messages, and overwrite              |   3   |
 | [ ] | `D08 T03 §1`  | The command-line reference                       |   3   |
 | [x] | `D08 T03 §2`  | The API reference                                |   3   |
