@@ -146,6 +146,8 @@ The operator double-clicks; everything else is §4's job. The shortcut lives on 
 
 ## 6. Batch the Git Calls in Receipt Validation
 
+> **Started:** 2026-11-10T20:45:00Z
+
 `python3 scripts/todo-graph.py validate` measured 16.2 s on 2026-11-10, and a cProfile run attributes about 10 s of it to 1261 `subprocess.run` invocations, the bulk from stamped-section receipt checks (`scripts/todo-validate.py` `partial_flip_scan` and `classify_unchecked`, `todo-graph.py` `validate_section_receipt`) that shell out to git per section or per file. Validate runs in the pre-commit hook on a staged export and at every section boundary of an unattended campaign, so this is the highest-leverage speed fix in the dev loop. Stop condition: keep the change only if validate's wall time on this tree drops by at least a third with byte-identical verdicts (same FATAL/WARN lines) on the current tree and on the self-test fixtures; otherwise ship the measurement and revert.
 
 - [ ] Profile first and name the exact call sites and their git argv shapes in this section before editing. Done when: the sites, counts, and the batched replacement for each (one `git log`/`git show`/`git cat-file --batch` pass feeding an in-memory map, or equivalent) are written here.
