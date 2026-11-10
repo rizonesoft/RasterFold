@@ -153,8 +153,13 @@ POLICY = ("If the target is missed, the missed-milestone policy applies (`D99 T0
           "used and their refs recorded in this gate. At the cap the gate closes accepted-missed: the missed figures are "
           "recorded in `docs/research.md` sections 1 and 9, the stamp states the target was missed and the cap reached (the "
           "target text is never rewritten to fit the measurement, and no claim of reaching it is made), the accepted figures "
-          "become the next milestone's no-regression baseline, and the campaign moves on without asking the operator. A later "
-          "planning section may still file fresh work toward the recorded gap as ordinary sections; they are not gate rounds.")
+          "become the next milestone's no-regression baseline, and the campaign moves on without asking the operator. Accepted-missed "
+          "is dormant, not dead (`D99 T01 §8`): the closeout files one backlog entry for the gap with promote-when triggers (a stronger "
+          "writer or reviewer model is pinned, an incidental re-measurement crosses this gate's bar, a new format version or a new "
+          "technique in `docs/research.md` plausibly reaches it), each later gate's record step re-measures every accepted-missed bar "
+          "it can measure with the run it already makes, and a bar found crossed is filed as fresh ordinary work to claim it, never as "
+          "a retroactive rewrite of this gate. A later planning section may likewise file fresh work toward the recorded gap as "
+          "ordinary sections; they are not gate rounds.")
 
 PLAN_STATE: dict[int, dict[str, object]] = {}
 
