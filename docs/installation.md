@@ -63,7 +63,7 @@ The last two commands write their recorded benchmark results; run them on a quie
 
 C and C++ navigation uses clangd from the pinned LLVM with `.clangd` and the root compilation database. Refresh it with `python3 scripts/gen-compdb.py`; every build also refreshes it and `scripts/check-all.py` checks it.
 
-Python navigation uses Basedpyright from `.venv`, scoped by `pyrightconfig.json`. It is an editor aid and not a gate, with a 2026-11-10 basic-mode baseline of 684 findings on the untyped tooling.
+Python navigation uses Basedpyright from `.venv`, scoped by `pyrightconfig.json`. It is an editor aid and not a gate, with a 2026-11-10 basic-mode baseline of 684 findings on the untyped tooling. In VS Code the Basedpyright extension also needs the Microsoft Python extension installed (the recommended-extensions list names both): without it the extension does not activate, and `basedpyright.importStrategy: fromEnvironment` has no environment to resolve the `.venv` server from.
 
 The tracked `.vscode/settings.json` deliberately sets neither `clangd.path` nor `python.defaultInterpreterPath`, because workspace scope would override the per-platform values below. Set both in VS Code User settings: on Linux or WSL, `clangd.path` to `<checkout>/tools/llvm-mingw-linux/bin/clangd` and `python.defaultInterpreterPath` to `<checkout>/.venv/bin/python`; on Windows, `clangd.path` to `<checkout>/tools/llvm-mingw/bin/clangd.exe` and `python.defaultInterpreterPath` to `<checkout>/.venv/Scripts/python.exe`.
 

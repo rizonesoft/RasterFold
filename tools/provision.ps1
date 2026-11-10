@@ -112,7 +112,12 @@ function Test-BasedpyrightLeg {
     return @{ Name = 'basedpyright'; Ok = $false; Required = $true; Detail = 'missing .venv (repair: python -m venv .venv, then .venv\Scripts\python -m pip install -r requirements-dev.txt)' }
   }
   $ver = (& $exe --version 2>&1 | Out-String).Trim()
-  return @{ Name = 'basedpyright'; Ok = ($LASTEXITCODE -eq 0 -and $ver -match 'basedpyright'); Required = $true; Detail = $(if ($LASTEXITCODE -eq 0) { $ver } else { 'basedpyright --version failed' }) }
+  $pin = $null
+  foreach ($line in Get-Content (Join-Path $Root 'requirements-dev.txt')) {
+    if ($line -match '^basedpyright==(.+)$') { $pin = $Matches[1].Trim() }
+  }
+  $ok = ($LASTEXITCODE -eq 0 -and $pin -and $ver -match 'basedpyright' -and $ver -match [regex]::Escape($pin))
+  return @{ Name = 'basedpyright'; Ok = $ok; Required = $true; Detail = $(if ($ok) { $ver } else { "installed '$ver' does not match the requirements-dev.txt pin $pin (repair installs requirements-dev.txt into .venv)" }) }
 }
 
 function Test-CompilationDatabaseLeg {

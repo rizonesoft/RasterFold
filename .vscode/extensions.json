@@ -1,6 +1,7 @@
 {
   "recommendations": [
     "llvm-vs-code-extensions.vscode-clangd",
+    "ms-python.python",
     "detachhead.basedpyright"
   ],
   "unwantedRecommendations": [
