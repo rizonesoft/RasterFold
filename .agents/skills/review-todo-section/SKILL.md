@@ -49,7 +49,7 @@ Work the three questions across the diff and its blast radius. Fix what you find
 
 ### 3. The adversarial round (one pass)
 
-After the build and its gates, the pinned reviewer reviews the candidate once through every lens the schedule gives. Write the prompt to a scratch file under `build/` from `docs/review-round-prompt.md` (candidate SHA, section contract, governing documents), then run it with `--writer <this session's key>` (adding `--surface` when `resolve` printed `surface    yes`):
+After the build and its gates, the pinned reviewer reviews the candidate once through every lens the schedule gives. Produce the prompt with `python3 scripts/review-prompt.py --kind round --ref '<DNN TNN §N>' --base <the commit before the section's first commit> --candidate <full candidate SHA> --summary '<what the candidate is meant to do>'` (it fills the whole of `docs/review-round-prompt.md` and prints the dispatch command; never hand-write or shorten a review prompt. A review prompt never limits the reviewer's reply length or finding count.), then run it with `--writer <this session's key>` (adding `--surface` when `resolve` printed `surface    yes`):
 
 ```bash
 python3 scripts/review-dispatch.py --candidate <full candidate SHA> --writer <this session's key: claude|codex|gemini|muse|opencode> [--surface] --prompt <scratch-review-prompt.md> --record docs/reviews/<NN-domain>/D<NN>-T<NN>-s<N>.md
@@ -75,7 +75,7 @@ There is no second round: the dispatcher refuses one. Verify every finding again
 
 After the last fix, re-run the section's Test checkpoint and its owed gates (`python3 scripts/check-all.py`, `python3 tests/test_correctness.py`, `python3 scripts/todo-graph.py validate`, `python3 scripts/todo-claims.py`, and the Freeze check in frozen files). Quote the outputs. A red gate reopens the candidate: fix it and re-run to green before the completion review.
 
-Then the pinned reviewer reviews that exact final candidate against the contract, the fixes the round led to, and the strongest reference codecs and tools. Write the prompt to a scratch file under `build/` from `docs/completion-review-prompt.md` (the candidate SHA, the section contract, the TODO file's Goal and Outcome, the governing spec and design sections, the full diff, the round's findings and what was done with each), then run it:
+Then the pinned reviewer reviews that exact final candidate against the contract, the fixes the round led to, and the strongest reference codecs and tools. Produce the prompt with `python3 scripts/review-prompt.py --kind completion --ref '<DNN TNN §N>' --base <the commit before the section's first commit> --candidate <full candidate SHA> --summary '<what was built: the files, symbols, flags>'` (the whole of `docs/completion-review-prompt.md`, naming the range, the governing documents, and the findings file that holds the round and what was done with each finding), then run it:
 
 ```bash
 python3 scripts/review-dispatch.py --kind completion --candidate <full candidate SHA> --writer <this session's key: claude|codex|gemini|muse|opencode> --prompt <scratch-completion-prompt.md> --record docs/reviews/<NN-domain>/D<NN>-T<NN>-s<N>.md
@@ -83,7 +83,7 @@ python3 scripts/review-dispatch.py --kind completion --candidate <full candidate
 
 The review ends `COMPLETION: complete` or `COMPLETION: gaps`, and a findings file takes one returned completion review. The stamp must name this exact commit, so nothing lands on the candidate after it except on the reconciliation route. File each `out-of-scope` item through `add-todo`; those alone do not force gaps. When the dispatcher exits 1, run the pass again.
 
-**On `COMPLETION: gaps`, the stamp is blocked.** The failed review stays on record. Implement every in-scope gap in new commits, without changing what the section promises, add one line per gap under the completion review (`- Implemented: <gap> in <commit>`), re-run the gates, then run a reconciliation pass on the repaired candidate, from `docs/reconciliation-review-prompt.md`:
+**On `COMPLETION: gaps`, the stamp is blocked.** The failed review stays on record. Implement every in-scope gap in new commits, without changing what the section promises, add one line per gap under the completion review (`- Implemented: <gap> in <commit>`), re-run the gates, then run a reconciliation pass on the repaired candidate, its prompt produced by `python3 scripts/review-prompt.py --kind reconciliation --ref '<DNN TNN §N>' --failed <the failed completion's candidate> --last <the last reviewed candidate> --candidate <full repaired SHA> --gates <file holding the quoted gate output>` from `docs/reconciliation-review-prompt.md`:
 
 ```bash
 python3 scripts/review-dispatch.py --kind reconciliation --candidate <full repaired SHA> --writer <this session's key: claude|codex|gemini|muse|opencode> --prompt <scratch-reconciliation-prompt.md> --record docs/reviews/<NN-domain>/D<NN>-T<NN>-s<N>.md

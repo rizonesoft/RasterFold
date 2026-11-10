@@ -1,6 +1,6 @@
 # Plan review prompt
 
-Before writing code for a TODO section, copy this into a scratch file, fill in the placeholders, and run one pass through `scripts/review-dispatch.py --kind plan --candidate <HEAD_SHA> --writer <claude|codex|gemini|muse|opencode> --prompt <scratch> --record <findings.md>` (this session's writer key). The dispatcher sets medium effort and appends the `plan` lens from `.conclave/reviewers.toml`.
+Before writing code for a TODO section, fill this template with `python3 scripts/review-prompt.py --kind plan --ref '<DNN TNN §N>' --candidate <HEAD_SHA>` (it writes the prompt under `build/review-prompts/` and prints the command below; the text after the `---` line is sent whole. A review prompt never limits the reviewer's reply length or finding count.), and run one pass through `scripts/review-dispatch.py --kind plan --candidate <HEAD_SHA> --writer <claude|codex|gemini|muse|opencode> --prompt <scratch> --record <findings.md>` (this session's writer key). The dispatcher sets medium effort and appends the `plan` lens from `.conclave/reviewers.toml`.
 
 ---
 

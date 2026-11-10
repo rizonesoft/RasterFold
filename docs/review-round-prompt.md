@@ -1,6 +1,6 @@
 # Review round prompt
 
-Copy this into a scratch file, fill in the placeholders, delete the lines that do not apply, and pass it to `scripts/review-dispatch.py --prompt`. When `.conclave/reviewers.toml` has a `[schedule]` table, the dispatcher appends the `## Lenses for this pass` block for the round's position automatically, and the writer passes `--surface` when the section touches a user-facing surface (`Surface: yes`).
+For a TODO section's round, fill this template with `python3 scripts/review-prompt.py --kind round --ref '<DNN TNN §N>' --base <BASE_SHA> --candidate <TIP_SHA> --summary '<what it is meant to do>'` and pass the file it writes to `scripts/review-dispatch.py --prompt`; the text after the `---` line is sent whole. A review prompt never limits the reviewer's reply length or finding count. For a standalone review with no section, copy this into a scratch file, fill in the placeholders, and delete the lines that do not apply. When `.conclave/reviewers.toml` has a `[schedule]` table, the dispatcher appends the `## Lenses for this pass` block for the round's position automatically, and the writer passes `--surface` when the section touches a user-facing surface (`Surface: yes`).
 
 ---
 

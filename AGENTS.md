@@ -20,7 +20,7 @@ Agent instructions for this repository. Human orientation lives in `README.md`. 
 | `measure/` | The reference image and the comparison verdict |
 | `benchmarks/` | `results.md` and `results.csv` from `tests/benchmark.py` |
 | `docs/research.md` | The research record: where the codec stands, the measurement protocol, the "Already tried" table, the designs the plan's sections implement, and prior art |
-| `scripts/` | `check-all.ps1` (every local gate) and the stdlib Python TODO tooling (`todo-graph.py`, validator, claims, findings, runs, `review-dispatch.py`, `ci_status.py`, `campaign_guard.py`) |
+| `scripts/` | `check-all.ps1` (every local gate) and the stdlib Python TODO tooling (`todo-graph.py`, validator, claims, findings, runs, `review-dispatch.py`, `review-prompt.py` (fills each review pass's prompt from its template), `ci_status.py`, `campaign_guard.py`) |
 | `todo/` | The live execution plan; read `todo/README.md` before authoring or implementing |
 | `todo/implementation-plan.md` | Ordered phase plan; its boxes are synchronized through `scripts/todo-graph.py` |
 | `todo/budget.json`, `todo/backlog.md` | The budget decisions (no caps) and the list of deferred ideas that are not sections, which loses nothing without a trace |

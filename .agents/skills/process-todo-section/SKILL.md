@@ -92,7 +92,7 @@ Fix findings in the TODO file, before implementation, so the plan and the build 
 
 ### 3a. Plan review by the pinned reviewer (one pass, before any code)
 
-Once the section is corrected and `Started:` is written, commit the TODO file (with `plan --sync` if any heading or deliverable moved) so the reviewer reads the exact contract you will build, then have the reviewer pinned for this writer judge whether that contract produces a 100% complete feature or codec change. Write the prompt to a scratch file under `build/` from `docs/plan-review-prompt.md`, then run:
+Once the section is corrected and `Started:` is written, commit the TODO file (with `plan --sync` if any heading or deliverable moved) so the reviewer reads the exact contract you will build, then have the reviewer pinned for this writer judge whether that contract produces a 100% complete feature or codec change. Produce the prompt with `python3 scripts/review-prompt.py --kind plan --ref '<DNN TNN §N>' --candidate <full SHA of that commit>`: it fills the whole of `docs/plan-review-prompt.md` from the graph and git, writes it under `build/review-prompts/`, and prints the dispatch command. Never hand-write or shorten a review prompt. A review prompt never limits the reviewer's reply length or finding count. Then run:
 
 ```bash
 python3 scripts/review-dispatch.py --kind plan --candidate <full SHA of that commit> --writer <this session's key: claude|codex|gemini|muse|opencode> --prompt <scratch-plan-prompt.md> --record docs/reviews/<NN-domain>/D<NN>-T<NN>-s<N>.md

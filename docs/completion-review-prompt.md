@@ -1,6 +1,6 @@
 # Completion review prompt
 
-Copy this into a scratch file, fill in the placeholders, and pass it to `scripts/review-dispatch.py --kind completion --candidate <FULL_SHA> --writer <claude|codex|gemini|muse|opencode> --prompt <file> --record docs/reviews/<domain>/<slug>.md` (this session's writer key). It runs once per TODO section, last: after the adversarial round, its fixes and a green gate run, on the exact final candidate. The stamp must name that same commit.
+Fill this template with `python3 scripts/review-prompt.py --kind completion --ref '<DNN TNN §N>' --base <BASE_SHA> --candidate <TIP_SHA> --summary '<what was built>'` (the text after the `---` line is sent whole. A review prompt never limits the reviewer's reply length or finding count.), and pass the file it writes to `scripts/review-dispatch.py --kind completion --candidate <FULL_SHA> --writer <claude|codex|gemini|muse|opencode> --prompt <file> --record docs/reviews/<domain>/<slug>.md` (this session's writer key). It runs once per TODO section, last: after the adversarial round, its fixes and a green gate run, on the exact final candidate. The stamp must name that same commit.
 
 ---
 
