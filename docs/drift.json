@@ -1551,11 +1551,11 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "Re-read 2026-11-10 for D07 T01 s3 (PPM in and out): the CLI now also reads P6 PPM (maxval 255) and writes PPM alongside BMP and PNG; statements naming the CLI image formats were updated where needed and the remaining claims were confirmed unchanged.",
+      "evidence": "Re-read 2026-11-10 for D07 T01 s3 round fixes: help text now names P6 PPM (maxval 255); no other claim in this document changed.",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "70e690b0ce9cf304a11b39ec6d29a4b86a9898cb36872882a8564b1d8b387b02",
-        "src/main.c": "f50aec5dd50f1d27c7ef360da2555913241b39dd2370d24e3feebcf1f43f473f",
+        "src/main.c": "88f9fb556ee3be9f68c4c4bcb29a7d3d4a9b39a17498ed1f42974b123a021d9c",
         "scripts/build.py": "168db65ab1e94ae85a0265a5bd545de4b1adf5da7cc52e5f9ac2f38d5224a975",
         "scripts/package.py": "ef69de2da770ea647e2841f4c2ce16db8bae22544c086a389983bdbeb1e50b37",
         "scripts/check-all.py": "fb6c9b81108c65eadb781b8fed2bf623db5ad5e565396d2cb5bcc239342adb77",
@@ -1622,18 +1622,18 @@
       }
     },
     "docs/index.md": {
-      "evidence": "Re-read 2026-11-10 for D07 T01 s3 (PPM in and out): the CLI now also reads P6 PPM (maxval 255) and writes PPM alongside BMP and PNG; statements naming the CLI image formats were updated where needed and the remaining claims were confirmed unchanged.",
+      "evidence": "Re-read 2026-11-10 for D07 T01 s3 round fixes: help text now names P6 PPM (maxval 255); no other claim in this document changed.",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "70e690b0ce9cf304a11b39ec6d29a4b86a9898cb36872882a8564b1d8b387b02",
-        "src/main.c": "f50aec5dd50f1d27c7ef360da2555913241b39dd2370d24e3feebcf1f43f473f",
+        "src/main.c": "88f9fb556ee3be9f68c4c4bcb29a7d3d4a9b39a17498ed1f42974b123a021d9c",
         "docs/site-content.json": "b96463cde4f9b48008f95150e1e4e90695cd920d17a106a92bf513e71e008400",
         "docs/index.md": "b1aff9497fe67ea4c36a7af2548ad0b06060ea81c5bee50602e4b3639d883c86"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/index.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/getting-started.md": {
-      "evidence": "Re-read 2026-11-10 for D07 T01 s3 (PPM in and out): the CLI now also reads P6 PPM (maxval 255) and writes PPM alongside BMP and PNG; statements naming the CLI image formats were updated where needed and the remaining claims were confirmed unchanged.",
+      "evidence": "Re-read 2026-11-10 for D07 T01 s3 round fixes: help text now names P6 PPM (maxval 255); no other claim in this document changed.",
       "sources": {
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
         "tools/provision.py": "dc5fb84c125ea3735ca425e91d084d04297d772cee4e3609417aa11c66ad0c3b",
@@ -1642,7 +1642,7 @@
         "scripts/check-all.py": "fb6c9b81108c65eadb781b8fed2bf623db5ad5e565396d2cb5bcc239342adb77",
         "scripts/check-all.ps1": "7006b1871b52689461497fa676b3cb6472f0e436c9c5e240deb9da069321a528",
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
-        "src/main.c": "f50aec5dd50f1d27c7ef360da2555913241b39dd2370d24e3feebcf1f43f473f",
+        "src/main.c": "88f9fb556ee3be9f68c4c4bcb29a7d3d4a9b39a17498ed1f42974b123a021d9c",
         "docs/getting-started.md": "b5600b5480cbad54659f2f5c596586d19def8b29e9e8f14e486a28d6f0664e95"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/getting-started.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
@@ -1730,10 +1730,10 @@
       }
     },
     "docs/examples.md": {
-      "evidence": "Re-read 2026-11-10 for D07 T01 s3 (PPM in and out): the CLI now also reads P6 PPM (maxval 255) and writes PPM alongside BMP and PNG; statements naming the CLI image formats were updated where needed and the remaining claims were confirmed unchanged.",
+      "evidence": "Re-read 2026-11-10 for D07 T01 s3 round fixes: help text now names P6 PPM (maxval 255); no other claim in this document changed.",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
-        "src/main.c": "f50aec5dd50f1d27c7ef360da2555913241b39dd2370d24e3feebcf1f43f473f",
+        "src/main.c": "88f9fb556ee3be9f68c4c4bcb29a7d3d4a9b39a17498ed1f42974b123a021d9c",
         "examples/encode.c": "546d3a2b5932008bcf46dce5e1b0f5ef04b3b8d4405cbb5b66ad909a7a844e66",
         "examples/decode.c": "2983d63583c0424f558b67224a2438e8eea495505eef61f5477bf2ff81f246b8",
         "examples/ppm.h": "9683267ff2b024b14570548e94cfbc0acced5cd7ecd8eba2dab5c69b6677abf6",
@@ -1742,11 +1742,11 @@
       "review": "Author-attested: 2026-10-25 re-read docs/examples.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/limitations.md": {
-      "evidence": "Re-read 2026-11-10 for D07 T01 s3 (PPM in and out): the CLI now also reads P6 PPM (maxval 255) and writes PPM alongside BMP and PNG; statements naming the CLI image formats were updated where needed and the remaining claims were confirmed unchanged.",
+      "evidence": "Re-read 2026-11-10 for D07 T01 s3 round fixes: help text now names P6 PPM (maxval 255); no other claim in this document changed.",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "70e690b0ce9cf304a11b39ec6d29a4b86a9898cb36872882a8564b1d8b387b02",
-        "src/main.c": "f50aec5dd50f1d27c7ef360da2555913241b39dd2370d24e3feebcf1f43f473f",
+        "src/main.c": "88f9fb556ee3be9f68c4c4bcb29a7d3d4a9b39a17498ed1f42974b123a021d9c",
         "src/fold.c": "7cecdf9622aa6d98be195cf43b1e77de7f9676f2a7c1f1129cc08dbe7497e8aa",
         "src/bmp.c": "50278e51120542ec686aee00385eba666239070533035e5d04e7d659b118317c",
         "src/api.c": "774c4e0a2a22f5a01e174e541cd1e725da05019ece20927345938cbe10fe0f02",
@@ -1756,11 +1756,11 @@
       "review": "Author-attested: 2026-10-25 re-read docs/limitations.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/troubleshooting.md": {
-      "evidence": "Re-read 2026-11-10 for D07 T01 s3 (PPM in and out): the CLI now also reads P6 PPM (maxval 255) and writes PPM alongside BMP and PNG; statements naming the CLI image formats were updated where needed and the remaining claims were confirmed unchanged.",
+      "evidence": "Re-read 2026-11-10 for D07 T01 s3 round fixes: help text now names P6 PPM (maxval 255); no other claim in this document changed.",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "70e690b0ce9cf304a11b39ec6d29a4b86a9898cb36872882a8564b1d8b387b02",
-        "src/main.c": "f50aec5dd50f1d27c7ef360da2555913241b39dd2370d24e3feebcf1f43f473f",
+        "src/main.c": "88f9fb556ee3be9f68c4c4bcb29a7d3d4a9b39a17498ed1f42974b123a021d9c",
         "src/fold.c": "7cecdf9622aa6d98be195cf43b1e77de7f9676f2a7c1f1129cc08dbe7497e8aa",
         "src/bmp.c": "50278e51120542ec686aee00385eba666239070533035e5d04e7d659b118317c",
         "src/api.c": "774c4e0a2a22f5a01e174e541cd1e725da05019ece20927345938cbe10fe0f02",

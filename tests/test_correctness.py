@@ -1808,6 +1808,9 @@ def ppm_io() -> None:
     bad_max = work / "in_max.ppm"
     bad_max.write_bytes(b"P6\n2 1\n65535\n" + bytes(12))
     expect_fail(["encode", str(bad_max), str(fresh(work / "max.fold"))], 3, "unsupported PPM: maxval")
+    huge = work / "in_huge.ppm"
+    huge.write_bytes(b"P6\n4294967296 1\n255\n")
+    expect_fail(["encode", str(huge), str(fresh(work / "huge.fold"))], 5, "image exceeds size limit")
     trunc = work / "in_trunc.ppm"
     trunc.write_bytes(b"P6\n4 4\n255\n" + bytes(10))
     expect_fail(["encode", str(trunc), str(fresh(work / "trunc.fold"))], 4, "invalid PPM: truncated")

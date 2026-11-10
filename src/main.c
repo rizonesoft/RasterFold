@@ -33,14 +33,14 @@ static const char usage_text[] =
 
 static const char help_encode[] =
     "usage: rasterfold encode [--time] [--threads N] input.bmp|input.png|input.ppm output.fold" RF_EOL
-    "Encode a 24-bit BMP or 8-bit PNG image into a .fold file. The output must not already exist." RF_EOL
+    "Encode a 24-bit BMP, 8-bit PNG, or P6 PPM (maxval 255) image into a .fold file. The output must not already exist." RF_EOL
     "options: --time prints timing statistics; --threads N codes on N threads (1 to 9)." RF_EOL
     "exit codes: 0 ok, 1 usage, 2 io, 3 unsupported, 4 malformed, 5 limit" RF_EOL
     "example: rasterfold encode photo.bmp photo.fold" RF_EOL;
 
 static const char help_decode[] =
     "usage: rasterfold decode [--time] [--threads N] input.fold output.bmp|output.png|output.ppm" RF_EOL
-    "Decode a .fold file into a 24-bit BMP or 8-bit PNG image. The output must not already exist." RF_EOL
+    "Decode a .fold file into a 24-bit BMP, 8-bit PNG, or P6 PPM (maxval 255) image. The output must not already exist." RF_EOL
     "options: --time prints timing statistics; --threads N codes on N threads (1 to 9)." RF_EOL
     "exit codes: 0 ok, 1 usage, 2 io, 3 unsupported, 4 malformed, 5 limit" RF_EOL
     "example: rasterfold decode photo.fold photo.bmp" RF_EOL;

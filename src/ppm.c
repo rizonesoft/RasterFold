@@ -25,7 +25,7 @@ static int ppm_number(const uint8_t *f, size_t size, size_t *pos, uint32_t *out,
     uint64_t v = 0;
     while (p < size && f[p] >= '0' && f[p] <= '9') {
         v = v * 10u + (uint64_t)(f[p] - '0');
-        if (v > (1ull << 32)) return rf_fail(err, RF_ERR_LIMIT, "image exceeds size limit");
+        if (v > 4294967295ull) return rf_fail(err, RF_ERR_LIMIT, "image exceeds size limit");
         p++;
     }
     if (p < size && !ppm_ws(f[p]) && f[p] != '#')
