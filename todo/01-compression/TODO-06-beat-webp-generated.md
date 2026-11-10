@@ -41,6 +41,7 @@ track: C6
 |   4   |   §4    | Coding the palette itself for palette images | §3 |  [x]   |
 |   5   |   §5    | Above-copy runs for palette images | §3 |  [x]   |
 |   6   |   §6    | A neighbour-candidate colour cache in version 3 | §2 |  [x]   |
+|   7   |   §7    | A recent-colour cache for palette images | §6 |  [ ]   |
 
 ---
 
@@ -176,6 +177,20 @@ The palette field is the largest single component on the many-colour generated i
 
 > **Verified:** 2026-11-09 | §6 | e936cb9fbb4070b8d308d7dbafbeb49b82efb25d
 > **Review:** `docs/reviews/d01-t06-s6.json`
+## 7. A Recent-Colour Cache for Palette Images
+
+**Origin:** discovered run=2211e60a97aa 2026-11-10 -- Milestone 8 gate (D05 T01 §8) re-measured and still missed (synth total 201,640 vs WebP 201,248, geomean 1.0007; palette-coded syn_checker 138 vs 82, syn_text 1447 vs 1198, syn_diagram 1452 vs 1228); this is follow-up round 4 of at most 13 under the capped missed-milestone policy (D99 T01 §8).
+
+**Needs:** ffmpeg with libjxl (benchmarks)
+
+The palette-coded generated images are the gate's remaining miss, and §3 (copy runs), §4 (coding the palette), and §5 (above-copy runs) each made their prototypes worse. Lossless WebP's colour cache (a 32-entry recently-used colour table indexed by a hash of the colour) is the one WebP mechanism no section has tried inside the palette index stream. Hypothesis: on text, diagram, and checker images the current colour often recurs recently but not adjacently, so a cache-hit token (hit flag plus 5-bit index under adaptive counters) costs less than coding the palette index again. Prototype in `build/research/try_pal.c` (a copy of `src/pal.c`): maintain a 32-entry cache updated on every coded pixel (hash `(r*31+g)*31+b` mod 32, direct-mapped, encoder and decoder identical), offer the hit decision per pixel before the index coding in method 3 only, and measure the palette images of `synth` plus `photo` and `tp` for regressions.
+
+- [ ] Prototype the recent-colour cache as above in `build/research/try_pal.c` and measure `synth`, `photo`, and `tp`. Done when: the summary lines are quoted against the bar (`synth` total and geomean below WebP, every generated image within 1.1x WebP or +32 bytes, no `photo` or `tp` total worse by more than 0.1%).
+- [ ] If accepted, make it part of method 3 in version 3 with `tests/rfi_ref.py` (written from the spec text), `spec/FOLD.md`, and `KAT_PAL2_3`, including version-aware dispatch so version 2 method 3 files keep the old grammar, fixtures exercising cache hits and misses, targeted malformed-token rejection, and seeded fuzzing. If not accepted, strike this item with the measured figures and record the row in `docs/research.md` section 3. Done when: the four format places agree or the strike is recorded.
+- [ ] Commit: `"codec: a recent-colour cache for palette images"`
+
+**Test checkpoint:** `python3 scripts/windows.py research/ab.py size build/research/try_pal.c synth -v -t1` (harness permitting) or the palette prototype's own measurement quoted with its command, against the bar above; a miss ships as a negative result with no port.
+
 ## Verification
 
 - [ ] `pwsh scripts/check-all.ps1` exits 0

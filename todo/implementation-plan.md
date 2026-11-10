@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **108 of 253 sections complete (43%).** 253 sections (22 discovered); backlog 5 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **108 of 254 sections complete (43%).** 254 sections (23 discovered); backlog 5 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -264,6 +264,7 @@ Generated and screen content against WebP.
 | [x] | `D01 T06 §4` | Coding the palette itself for palette images             |   3   |
 | [x] | `D01 T06 §5` | Above-copy runs for palette images                       |   3   |
 | [x] | `D01 T06 §6` | A neighbour-candidate colour cache in version 3          |   3   |
+| [ ] | `D01 T06 §7` | A recent-colour cache for palette images                 |   3   |
 | [x] | `D00 T05 §1` | LSP servers for C and Python, wired                      |   8   |
 | [x] | `D00 T05 §2` | Spark and Ember subagents under lead verification        |   4   |
 | [x] | `D00 T05 §3` | The measured tool stack: what stays, what is not adopted |   6   |
