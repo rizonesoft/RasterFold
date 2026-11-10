@@ -2,7 +2,7 @@
 schema_version: 1
 id: parallel-and-simd
 domain: 02-speed
-status: draft
+status: done
 title: "TODO-02 -- Parallel Strips and the SIMD Mixer: Measurements"
 depends_on: []
 track: S2
@@ -40,7 +40,7 @@ track: S2
 | Order | Section | Deliverable                                   | Depends On | Status |
 | :---: | :-----: | --------------------------------------------- | ---------- | :----: |
 |   1   |   §1    | The size cost of horizontal strips            | --         |  [x]   |
-|   2   |   §2    | The speed of an int16 SIMD mixer              | --         |  [ ]   |
+|   2   |   §2    | The speed of an int16 SIMD mixer              | --         |  [x]   |
 |   3   |   §3    | Warm-started horizontal strips, measured      | §1         |  [x]   |
 
 ---
@@ -77,12 +77,14 @@ The mixer is about a third of each decision's time. With int16 weights, the dot 
 - [x] In `build/research/try.c`, convert the mixer to int16 weights exactly as the research harness measured (docs/research.md section 3, int16 mixer row): eight int16 lanes per weight set (seven model stretches plus the bias input 64 in the version 3 path, five plus bias and zero padding in the version 2 path), weight storage `int16_t` with allocation and warm-strip copy sizes halved, initial weight 1229 (0.3 * 4096, rounded) at scale 2^12, dot product `_mm_madd_epi16` plus a horizontal add then `>> 12` with the SQUASH clamp at 2047, and the weight update `(err * stretch + 32768) >> 16` added with signed saturation (`_mm_adds_epi16`); `code_bit7` and `code_bit5` both converted, encode and decode arithmetic identical (the decoder must reproduce the encoder's probabilities exactly). Done when: `python3 scripts/windows.py research/ab.py size build/research/try.c photo` and the same on `src/cm.c` both decode every image, and the fresh size cost `100 * (prototype_total / baseline_total - 1)` is quoted per set (the historical +0.09% is a reference, not the acceptance figure; an out-of-range cost completes as a recorded rejection, not a failed experiment).
 - [x] Measure with `python3 scripts/windows.py research/ab.py ab src/cm.c build/research/try.c -n5 -t1 measure kodim01` and `-t3`, on an observed idle host with the load recorded. Done when: both ratios are quoted; the controlling statistic is the one-thread decode minimum against `<= 0.950`, and size is also quoted on `tp` and `synth` (totals, geometric means, worst images, round trips verified by the harness).
 - [x] Record the result in `docs/research.md` section 3; if it clears the bar, save `research/variants/int16-mixer.patch` for a later format version and file its port through `add-todo`. Done when: the row exists, and the patch and the filed section exist exactly when the bar was cleared.
-- [x] Commit: `"research: measure an int16 SIMD mixer"`
+- [x] Commit: `"research: idle-host int16 mixer repetition (D02 T02 s2)"`
 
 **Test checkpoint:** one-thread decode B/A minima `1.006` and `1.029` (host load 1.15 to 5.63) and `0.944` and `1.010` (load 1.77 to 3.49) in four `python3 scripts/windows.py research/ab.py ab src/cm.c build/research/try.c -n5 -t1 measure kodim01` passes (bar `<= 0.950`; encode `0.924` to `0.963` at `-t1`), decode `0.953` and `0.981` at `-t3` (encode `0.884` and `1.049`, the latter a retained three-thread regression); fresh sizes `photo` 30,634,873 -> 30,634,064 (-0.003%), `tp` 6,598,954 -> 6,598,160 (-0.012%), `synth` 201,640 identical, all round-tripping in the harness (2026-11-09). No consistent one-thread decode gain under the reported conditions; the experiment closes as a rejection on the four recorded passes and the `docs/research.md` section 3 row. Idle-host repetition completed 2026-11-10 (host load 0.29 to 0.54): the int16 variant was reconstructed in `build/research/try-int16.c` from the specification in item 1 (its `photo` total reproduced the recorded 30,634,064 exactly, matching aggregate photo size), and `python3 scripts/windows.py research/ab.py ab src/cm.c build/research/try-int16.c -n5 -t1 measure kodim01` gave decode B/A minima 1.015 and 1.028 in two passes and 1.045 at `-t3` (encode 0.945, 0.947, 0.916), all above the `<= 0.950` bar, so the rejection stands on idle-host evidence.
 
 ---
 
+> **Verified:** 2026-11-10 | §2 | bbe8f0ddf0eba5fc7cbbe64c3778ba0d447922a0
+> **Review:** `docs/reviews/d02-t02-s2.json`
 ## 3. Warm-Started Horizontal Strips, Measured
 **Origin:** discovered run=a67bdea1ae48 2026-11-05 -- missed-milestone policy D99 T01 §4, follow-up 1 of 3 for D05 T01 §6
 

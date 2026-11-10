@@ -1,0 +1,74 @@
+{
+  "ref": "D02 T02 \u00a72",
+  "title": "The Speed of an Int16 SIMD Mixer",
+  "implementation_sha": "bbe8f0ddf0eba5fc7cbbe64c3778ba0d447922a0",
+  "date": "2026-11-10",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/02-speed/D02-T02-s2.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "ab idle -t1 dec 1.015/1.028, -t3 1.045 vs bar 0.950; sizes photo -0.003% tp -0.012% synth identical"
+  ],
+  "completion": {
+    "report": "docs/reviews/02-speed/D02-T02-s2.md",
+    "verdict": "reconciled",
+    "candidate": "bbe8f0ddf0eba5fc7cbbe64c3778ba0d447922a0",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/02-speed/D02-T02-s2.md",
+    "candidate": "864856040340995d657ee10e457808a7dc07513d",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "864856040340995d657ee10e457808a7dc07513d",
+  "schedule": {
+    "policy": "three-pass",
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}

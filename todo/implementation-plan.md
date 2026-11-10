@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **107 of 253 sections complete (42%).** 253 sections (22 discovered); backlog 5 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **108 of 253 sections complete (43%).** 253 sections (22 discovered); backlog 5 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -349,7 +349,7 @@ Milestone 11's work is authored one milestone ahead by its planning section, fro
 | :-: | ------------ | ------------------------------------------ | :---: |
 | [ ] | `D05 T02 §1` | Plan milestone 11: SIMD decisions          |   5   |
 | [x] | `D02 T01 §3` | An AVX2 build, measured before dispatching |   3   |
-| [ ] | `D02 T02 §2` | The speed of an int16 SIMD mixer           |   4   |
+| [x] | `D02 T02 §2` | The speed of an int16 SIMD mixer           |   4   |
 | [ ] | `D05 T02 §2` | Milestone 11 gate: SIMD decisions          |   4   |
 
 ### Phase 11 -- Milestone 12: Two-layer mixing
