@@ -121,6 +121,8 @@ The operator asked whether tools like Ninja would be a good addition. The honest
 > **Review:** `docs/reviews/d00-t05-s3.json`
 ## 4. Unattended Run: Preflight, Launcher, and Goal
 
+> **Started:** 2026-11-10T21:04:00Z
+
 **Job:** A user can start one unattended campaign whose contract lives in documents (`docs/unattended-run.md`), reports every precondition as a pass or fail line before starting, runs with the permission posture the operator chose (yolo, no user-input tool), and can cancel the run through the campaign guard (which deletes the heartbeat job) and resume it later without deleting files by hand.
 
 An unattended run fails in boring ways long before it fails in interesting ones: a dirty tree, a stale plan, a reviewer CLI that moved, a disk an orphaned writer can fill. The preflight checks each precondition the `process-plan` run guard assumes and refuses the start out loud. The launcher then runs Muse interactively (the in-session heartbeat only exists inside a live session; a headless `muse exec` loop would need a new external supervisor and diverge from `process-plan`, which is why it was rejected), straight on `main`, with `--yolo --disable-request-user-input --model muse-wonder-1.0 --reasoning-effort medium`, the §2 agents loaded, and a seed prompt whose first act sets the session goal to finishing the project 100%.
