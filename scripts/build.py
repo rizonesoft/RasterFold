@@ -14,7 +14,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGETS = ('linux-x64', 'windows-x64', 'android-arm64', 'android-x64')
-COMMON = ('platform', 'api', 'crc32', 'bmp', 'zlib', 'png', 'fold', 'cm', 'pal')
+COMMON = ('platform', 'api', 'crc32', 'bmp', 'ppm', 'zlib', 'png', 'fold', 'cm', 'pal')
 
 
 def target_artifacts(target: str) -> tuple[str, ...]:
@@ -92,7 +92,7 @@ def lib_sources_for(target: str) -> tuple[str, ...]:
 
 PGO_TRACKED_SOURCES = (
     'include/rasterfold.h',
-    'src/cm.c', 'src/pal.c', 'src/fold.c', 'src/bmp.c', 'src/png.c', 'src/zlib.c', 'src/crc32.c',
+    'src/cm.c', 'src/pal.c', 'src/fold.c', 'src/bmp.c', 'src/ppm.c', 'src/png.c', 'src/zlib.c', 'src/crc32.c',
     'src/api.c', 'src/main.c', 'src/mem.c', 'src/sys.c',
     'src/sys_posix.c', 'src/platform.c', 'src/rasterfold.def',
     'src/rf.h', 'src/rc.h', 'src/simd.h',

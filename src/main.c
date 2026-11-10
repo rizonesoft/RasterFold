@@ -15,8 +15,8 @@
 static const char usage_text[] =
     "RasterFold lossless image codec" RF_EOL
     "usage:" RF_EOL
-    "  rasterfold encode [--time] [--threads N] input.bmp|input.png output.fold" RF_EOL
-    "  rasterfold decode [--time] [--threads N] input.fold output.bmp|output.png" RF_EOL
+    "  rasterfold encode [--time] [--threads N] input.bmp|input.png|input.ppm output.fold" RF_EOL
+    "  rasterfold decode [--time] [--threads N] input.fold output.bmp|output.png|output.ppm" RF_EOL
     "  rasterfold inspect [--time] [--json] input.fold" RF_EOL
     "  rasterfold verify [--threads N] input.fold" RF_EOL
     "  rasterfold help [command]" RF_EOL
@@ -32,14 +32,14 @@ static const char usage_text[] =
     "exit codes: 0 ok, 1 usage, 2 io, 3 unsupported, 4 malformed, 5 limit" RF_EOL;
 
 static const char help_encode[] =
-    "usage: rasterfold encode [--time] [--threads N] input.bmp|input.png output.fold" RF_EOL
+    "usage: rasterfold encode [--time] [--threads N] input.bmp|input.png|input.ppm output.fold" RF_EOL
     "Encode a 24-bit BMP or 8-bit PNG image into a .fold file. The output must not already exist." RF_EOL
     "options: --time prints timing statistics; --threads N codes on N threads (1 to 9)." RF_EOL
     "exit codes: 0 ok, 1 usage, 2 io, 3 unsupported, 4 malformed, 5 limit" RF_EOL
     "example: rasterfold encode photo.bmp photo.fold" RF_EOL;
 
 static const char help_decode[] =
-    "usage: rasterfold decode [--time] [--threads N] input.fold output.bmp|output.png" RF_EOL
+    "usage: rasterfold decode [--time] [--threads N] input.fold output.bmp|output.png|output.ppm" RF_EOL
     "Decode a .fold file into a 24-bit BMP or 8-bit PNG image. The output must not already exist." RF_EOL
     "options: --time prints timing statistics; --threads N codes on N threads (1 to 9)." RF_EOL
     "exit codes: 0 ok, 1 usage, 2 io, 3 unsupported, 4 malformed, 5 limit" RF_EOL
@@ -208,16 +208,18 @@ static int run(int argc, rf_path_char **argv, rf_error *err) {
         int want_in = encode ? EXT_BMP : EXT_FOLD;
         if (in_ext == EXT_UNKNOWN) return -1;
         if (encode && in_ext == EXT_PNG) want_in = EXT_PNG;
+        if (encode && in_ext == EXT_PPM) want_in = EXT_PPM;
         if (in_ext != EXT_NONE && in_ext != want_in)
-            return rf_fail(err, RF_ERR_UNSUPPORTED, encode ? "unsupported input format: encode reads .bmp or .png" : "unsupported input format: this command reads .fold");
+            return rf_fail(err, RF_ERR_UNSUPPORTED, encode ? "unsupported input format: encode reads .bmp, .png, or .ppm" : "unsupported input format: this command reads .fold");
         if ((encode || decode) && rf_path_blocked(pos[2], err)) return err->code;
         if (encode || decode) {
             out_ext = ext_of(pos[2]);
             int want_out = encode ? EXT_FOLD : EXT_BMP;
             if (decode && out_ext == EXT_PNG) want_out = EXT_PNG;
+            if (decode && out_ext == EXT_PPM) want_out = EXT_PPM;
             if (out_ext == EXT_UNKNOWN) return -1;
             if (out_ext != EXT_NONE && out_ext != want_out)
-                return rf_fail(err, RF_ERR_UNSUPPORTED, encode ? "unsupported output format: encode writes .fold" : "unsupported output format: decode writes .bmp or .png");
+                return rf_fail(err, RF_ERR_UNSUPPORTED, encode ? "unsupported output format: encode writes .fold" : "unsupported output format: decode writes .bmp, .png, or .ppm");
         }
     }
 
@@ -232,6 +234,7 @@ static int run(int argc, rf_path_char **argv, rf_error *err) {
     rf_options options = {sizeof(rf_options), (uint32_t)threads, {0}};
     if (encode) {
         rc = in_ext == EXT_PNG ? rf_png_load(file, file_size, &img, err)
+             : in_ext == EXT_PPM ? rf_ppm_load(file, file_size, &img, err)
                                : rf_bmp_load(file, file_size, &img, err);
         rf_free(file);
         file = 0;
@@ -268,11 +271,12 @@ static int run(int argc, rf_path_char **argv, rf_error *err) {
             goto timing_out;
         }
         if (inspect) rc = rf_inspect(file, file_size, &info, err);
-        else if (decode && out_ext == EXT_PNG) {
+        else if (decode && (out_ext == EXT_PNG || out_ext == EXT_PPM)) {
             rf_image decoded = {0, 0, 0};
             rc = rf_decode(file, file_size, &decoded, &info, threads, err);
             if (!rc) {
-                rc = rf_png_store(&decoded, &out, &out_size, err);
+                rc = out_ext == EXT_PNG ? rf_png_store(&decoded, &out, &out_size, err)
+                                        : rf_ppm_store(&decoded, &out, &out_size, err);
                 rf_free(decoded.rgb);
             }
         }

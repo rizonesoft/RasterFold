@@ -1768,6 +1768,51 @@ def png_io() -> None:
     check(block_type(tdata[tidat_at + 4:tidat_at + 4 + tidat_len]) in (0, 1), "tiny export used a dynamic block")
     
 
+def ppm_io() -> None:
+    work = WORK / "ppm"
+    work.mkdir(parents=True, exist_ok=True)
+
+    def fresh(path: Path) -> Path:
+        path.unlink(missing_ok=True)
+        Path(f"{path}.partial").unlink(missing_ok=True)
+        return path
+
+    w, h = 19, 11
+    # First raster byte is whitespace (10): the parser must not eat it.
+    rgb = bytes([10]) + bytes(((x * 11 + y * 17 + c * 29) & 255) for y in range(h) for x in range(w) for c in range(3))[1:]
+    src = work / "in.ppm"
+    Image.frombytes("RGB", (w, h), rgb).save(src)
+    check(src.read_bytes().startswith(b"P6"), "Pillow did not write a P6 PPM")
+    fold = fresh(work / "in.fold")
+    expect_ok(["encode", str(src), str(fold)])
+    check(rf.decode_image(fold.read_bytes()) == (w, h, rgb), "PPM encode pixels differ from the oracle decode")
+    bmp = work / "from_bmp.bmp"
+    bmp.write_bytes(rf.write_bmp24(w, h, rgb))
+    fold_from_bmp = fresh(work / "in_bmp.fold")
+    expect_ok(["encode", str(bmp), str(fold_from_bmp)])
+    check(fold.read_bytes() == fold_from_bmp.read_bytes(), "PPM and BMP encode produced different .fold bytes")
+    out_ppm = fresh(work / "out.ppm")
+    expect_ok(["decode", str(fold), str(out_ppm)])
+    with Image.open(out_ppm) as im:
+        check(im.convert("RGB").tobytes() == rgb, "written PPM re-reads with different pixels in Pillow")
+    # Existing destination is refused, bytes unchanged, no .partial left.
+    keep = work / "keep.ppm"
+    keep.write_bytes(b"KEEP")
+    expect_fail(["decode", str(fold), str(keep)], 2, "exists")
+    check(keep.read_bytes() == b"KEEP", "refused decode changed the destination")
+    check(not Path(f"{keep}.partial").exists(), "refused decode left a .partial file")
+    # Unsupported variants and malformed inputs keep their exit codes.
+    p3 = work / "in_p3.ppm"
+    p3.write_bytes(b"P3\n2 1\n255\n255 0 0 0 255 0\n")
+    expect_fail(["encode", str(p3), str(fresh(work / "p3.fold"))], 3, "unsupported PPM: P3")
+    bad_max = work / "in_max.ppm"
+    bad_max.write_bytes(b"P6\n2 1\n65535\n" + bytes(12))
+    expect_fail(["encode", str(bad_max), str(fresh(work / "max.fold"))], 3, "unsupported PPM: maxval")
+    trunc = work / "in_trunc.ppm"
+    trunc.write_bytes(b"P6\n4 4\n255\n" + bytes(10))
+    expect_fail(["encode", str(trunc), str(fresh(work / "trunc.fold"))], 4, "invalid PPM: truncated")
+
+
 def main() -> int:
     if not EXE.exists():
         print(f"missing {EXE}; run build.ps1 first")
@@ -1776,6 +1821,7 @@ def main() -> int:
     case("oracle", oracle_self_check)
     case("cli-commands", cli_commands)
     case("png-io", png_io)
+    case("ppm-io", ppm_io)
     case("known-answer", known_answer)
     images = [
         ("px1", 1, 1, bytes([0, 0, 0])),
@@ -1824,6 +1870,7 @@ def main() -> int:
     case("tail-threshold", tail_threshold_roundtrip)
     case("warm-strips", warm_strips)
     case("palette-method", palette_method)
+
     case("fuzz-harness", fuzz_harness)
     # The checksum in a successful file matches zlib, not only our encoder.
     case(
