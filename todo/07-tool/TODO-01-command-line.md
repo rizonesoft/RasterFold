@@ -2,7 +2,7 @@
 schema_version: 1
 id: command-line
 domain: 07-tool
-status: draft
+status: done
 title: "TODO-01 -- The Version 1 Command Line"
 depends_on: []
 frozen: true
@@ -44,7 +44,7 @@ track: T1
 |   1   |   §1    | Commands and options | D06 T01 §3 |  [x]   |
 |   2   |   §2    | PNG in and out | §1 |  [x]   |
 |   3   |   §3    | PPM in and out | §1 |  [x]   |
-|   4   |   §4    | Exit codes, messages, and overwrite | §1 |  [ ]   |
+|   4   |   §4    | Exit codes, messages, and overwrite | §1 |  [x]   |
 
 ---
 
@@ -108,6 +108,8 @@ PNG needs zlib's inflate and deflate, written here in C without a runtime: infla
 
 **Test checkpoint:** the overwrite and refusal cases pass; the message catalogue check's failure on an unlisted message quoted, then removed.
 
+> **Verified:** 2026-11-11 | §4 | 56ab0bf09e0d680f1dff41e8354156dbba8f6a7d
+> **Review:** `docs/reviews/d07-t01-s4.json`
 ## Verification
 
 - [ ] `pwsh scripts/check-all.ps1` exits 0

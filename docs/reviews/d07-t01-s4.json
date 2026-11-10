@@ -1,0 +1,74 @@
+{
+  "ref": "D07 T01 \u00a74",
+  "title": "Exit Codes, Messages, and Overwrite",
+  "implementation_sha": "56ab0bf09e0d680f1dff41e8354156dbba8f6a7d",
+  "date": "2026-11-11",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/07-tool/D07-T01-s4.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "overwrite-io 1 passed (refusal, replacement, write/fsync/rename/dirfsync injections); message_catalog 96; correctness 45 passed"
+  ],
+  "completion": {
+    "report": "docs/reviews/07-tool/D07-T01-s4.md",
+    "verdict": "reconciled",
+    "candidate": "56ab0bf09e0d680f1dff41e8354156dbba8f6a7d",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/07-tool/D07-T01-s4.md",
+    "candidate": "be1db50db46def8cdf6e1d7437a2beb4034b53c6",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "be1db50db46def8cdf6e1d7437a2beb4034b53c6",
+  "schedule": {
+    "policy": "three-pass",
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}
