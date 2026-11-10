@@ -13,10 +13,7 @@ Diagnostics:
 Index:
   Background: Build
   StandardLibrary: Yes
-Hover:
-  MacroContent: Expanded
 InlayHints:
   Enabled: No
 Completion:
   AllScopes: Yes
-Fragments: {}

@@ -67,6 +67,8 @@ Python navigation uses Basedpyright from `.venv`, scoped by `pyrightconfig.json`
 
 The tracked `.vscode/settings.json` deliberately sets neither `clangd.path` nor `python.defaultInterpreterPath`, because workspace scope would override the per-platform values below. Set both in VS Code User settings: on Linux or WSL, `clangd.path` to `<checkout>/tools/llvm-mingw-linux/bin/clangd` and `python.defaultInterpreterPath` to `<checkout>/.venv/bin/python`; on Windows, `clangd.path` to `<checkout>/tools/llvm-mingw/bin/clangd.exe` and `python.defaultInterpreterPath` to `<checkout>/.venv/Scripts/python.exe`.
 
+Claude Code takes language servers only from a plugin, so the same two servers ship as one in `.claude/lsp/rasterfold-lsp/` (`.lsp.json`: the pinned `tools/llvm-mingw-linux/bin/clangd` for `.c` and `.h` with the memory arguments `.vscode/settings.json` gives the editor, and `.venv/bin/basedpyright-langserver --stdio` for `.py`, both resolved from `${CLAUDE_PROJECT_DIR}`). Start a session with `claude --plugin-dir .claude/lsp/rasterfold-lsp` to get definitions, references, hover, and diagnostics after each edit; `scripts/unattended-run.sh` passes the flag for the unattended run. The paths are the Linux and WSL ones, where agent sessions run.
+
 ## Outputs and Android
 
 Each `bin/<target>/` is a self-contained development package. The outer `bin/` is the repository's generated output root; the inner `bin/` is the package's runtime directory. Artifacts follow [CMake's conventional runtime, library and header destinations](https://cmake.org/cmake/help/latest/command/install.html). The compiler remains LLVM/Ninja; adopting this layout does not require CMake.

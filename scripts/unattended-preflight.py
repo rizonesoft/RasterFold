@@ -5,12 +5,23 @@ An unattended run that starts against a broken tree, a stale plan, a missing
 reviewer, or a nearly full disk does not fail politely: it stalls, parks, or
 fills the disk. This checks every load-bearing precondition the process-plan
 run guard assumes, prints one PASS/FAIL line each, and exits 1 on any FAIL.
-It starts nothing and writes nothing outside build/.
+It starts nothing and writes nothing outside build/. With --repair (the
+launcher passes it) a stale compilation database is rebuilt through
+gen-compdb.py --rebuild-stale, which writes only ignored build output
+(build/, bin/, the root compile_commands.json), and only after the branch,
+clean-tree and guard checks passed, so nothing is rebuilt under a live writer.
+
+The unattended writer is Claude Code (operator directive 2026-11-11), so the
+launch preconditions are Claude Code's: its CLI and the reviewer's, the
+campaign Stop hook, the two dialogs that would sit unanswered, the session
+cron tools, the read-only Sonnet scout roster, and the language-server plugin.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -18,6 +29,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FAILURES: list[str] = []
+CLAUDE_HOME = Path.home() / ".claude"
+CLAUDE_STATE = Path.home() / ".claude.json"
+SCOUTS = ("rf-fact-check", "rf-log-digest", "rf-scout")
+READ_ONLY_TOOLS = frozenset({"Read", "Grep", "Glob"})
+# Every other frontmatter key can widen what an agent reaches (mcpServers, skills, hooks, permissionMode, memory,
+# isolation, background, disallowedTools standing in for an allowlist), so the roster admits only these.
+SCOUT_KEYS = frozenset({"name", "description", "tools", "model", "effort", "color", "maxTurns"})
 
 
 def check(name: str, ok: bool, detail: str = "") -> None:
@@ -39,13 +57,53 @@ def run(args: list[str], timeout: int = 300) -> subprocess.CompletedProcess:
         return subprocess.CompletedProcess(args, 124, out, f"{args[0]}: timed out after {timeout}s")
 
 
+def pid_alive(pid: int) -> bool:
+    return Path(f"/proc/{pid}").is_dir()
+
+
+def claude_registry_running(session_id: str, sessions_dir: Path | None = None) -> bool | None:
+    """Whether Claude Code's own session registry (`~/.claude/sessions/<pid>.json`) shows `session_id` on a live
+    process. A launcher-started session carries its id on the command line, but an attended one that owns a guard
+    shows it nowhere else. This registry is then the only evidence, so failing to read it is unknown, never dead:
+    an entry that cannot be read or parsed while its pid is alive, or a directory that cannot be listed."""
+    sessions_dir = sessions_dir if sessions_dir is not None else CLAUDE_HOME / "sessions"
+    if not sessions_dir.exists():
+        return False
+    try:
+        entries = sorted(sessions_dir.glob("*.json"))
+    except OSError:
+        return None
+    unknown = False
+    for entry in entries:
+        if not entry.stem.isdigit() or not pid_alive(int(entry.stem)):
+            continue  # a dead process owns nothing, readable or not
+        try:
+            data = json.loads(entry.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            unknown = True
+            continue
+        if isinstance(data, dict) and data.get("sessionId") == session_id:
+            return True
+    return None if unknown else False
+
+
 def session_running(session_id: str) -> bool | None:
-    """Whether some live process still owns `session_id`, or None when
-    this host cannot tell. On Linux a session owns its id through its
-    command line or an open file under a path naming it (a Muse session
-    holds its session lock that way); anything else is not running."""
+    """Whether some live process still owns `session_id`, or None when this host cannot tell: the process table
+    first, then Claude Code's session registry. Running wins, then unknown, and only two clean misses are dead."""
     if not session_id:
         return False
+    seen = (process_table_running(session_id), claude_registry_running(session_id))
+    if True in seen:
+        return True
+    return None if None in seen else False
+
+
+def process_table_running(session_id: str) -> bool | None:
+    """Whether some live process still owns `session_id`, or None when
+    this host cannot tell. On Linux a session owns its id through its
+    command line (every launcher-started Claude Code session: `--session-id`)
+    or an open file under a path naming it (a Muse session holds its session
+    lock that way); anything else is not running."""
     proc_dir = Path("/proc")
     if not proc_dir.is_dir():
         return None
@@ -97,7 +155,88 @@ def last_line(proc: subprocess.CompletedProcess) -> str:
     return out[-1][:160] if out else f"exit {proc.returncode}"
 
 
-def main() -> int:
+def read_json(path: Path) -> dict:
+    """A settings file as a dict, or {} when it is absent, unreadable or not an object. Callers read single
+    booleans out of it and never print its contents: these files can hold credentials."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def stop_hook_wired(settings: dict) -> bool:
+    for group in (settings.get("hooks") or {}).get("Stop") or []:
+        for hook in (group or {}).get("hooks") or []:
+            command = str((hook or {}).get("command", ""))
+            if "campaign_guard.py" in command and "stop-hook" in command:
+                return True
+    return False
+
+
+def workspace_trusted(state: dict, root: Path) -> bool:
+    projects = state.get("projects") or {}
+    return any((projects.get(str(p)) or {}).get("hasTrustDialogAccepted") is True for p in (root, *root.parents))
+
+
+def cron_enabled(environ) -> bool:
+    return str(environ.get("CLAUDE_CODE_DISABLE_CRON", "")).strip().lower() in ("", "0", "false")
+
+
+def frontmatter(text: str) -> dict[str, str] | None:
+    lines = text.split("\n")
+    if not lines or lines[0].strip() != "---" or "---" not in [line.strip() for line in lines[1:]]:
+        return None
+    fields: dict[str, str] = {}
+    for line in lines[1:]:
+        if line.strip() == "---":
+            return fields
+        match = re.match(r"^([A-Za-z][A-Za-z0-9_-]*):\s*(.*)$", line)
+        if match is None:
+            return None  # a nested or multi-line value is not a roster this check can vouch for
+        fields[match.group(1)] = match.group(2).strip()
+    return None
+
+
+def roster_problems(agents_dir: Path) -> list[str]:
+    """Why the Claude Code agent roster is not exactly the read-only Sonnet scouts, or [] when it is. The rule is
+    mechanical so that "read-only" is a property of the tool list, not a sentence in a prompt: Sonnet only, tools
+    within Read/Grep/Glob, and no frontmatter key that could add a tool, a server, a hook or a permission mode."""
+    problems = []
+    found = sorted(p.stem for p in agents_dir.glob("*.md")) if agents_dir.is_dir() else []
+    if tuple(found) != SCOUTS:
+        problems.append(f"roster is {', '.join(found) or '(empty)'}; expected {', '.join(SCOUTS)}")
+    for name in found:
+        try:
+            fields = frontmatter((agents_dir / f"{name}.md").read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError):
+            fields = None
+        if fields is None:
+            problems.append(f"{name}: frontmatter is missing or not flat `key: value` lines")
+            continue
+        if fields.get("name") != name:
+            problems.append(f"{name}: name is {fields.get('name')!r}")
+        if fields.get("model") != "sonnet":
+            problems.append(f"{name}: model is {fields.get('model')!r}, not sonnet")
+        tools = {tool.strip() for tool in fields.get("tools", "").split(",") if tool.strip()}
+        if not tools:
+            problems.append(f"{name}: no tools line (an agent without one inherits every tool)")
+        elif not tools <= READ_ONLY_TOOLS:
+            problems.append(f"{name}: tools beyond Read, Grep, Glob: {', '.join(sorted(tools - READ_ONLY_TOOLS))}")
+        extra = sorted(set(fields) - SCOUT_KEYS)
+        if extra:
+            problems.append(f"{name}: frontmatter keys not allowed on a scout: {', '.join(extra)}")
+        if not fields.get("description"):
+            problems.append(f"{name}: no description")
+    return problems
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--repair", action="store_true",
+                        help="rebuild a stale compilation database (ignored build output) once the ownership checks pass")
+    options = parser.parse_args(argv)
+    FAILURES.clear()
     # Straight on main, one writer (operator rule; AGENTS.md trunk-based main).
     branch = run(["git", "branch", "--show-current"]).stdout.strip()
     check("on main", branch == "main", f"branch={branch or '(detached)'}")
@@ -141,9 +280,25 @@ def main() -> int:
         proc = run([sys.executable, *args])
         check(name, proc.returncode == 0, last_line(proc))
 
-    # Reviewer and writer CLIs the three-pass schedule needs (muse -> astra via codex).
-    for cli in ("muse", "codex", "agy"):
+    # Nothing below may write unless every ownership check above passed: branch, clean tree, and a guard that is
+    # absent or stale. A live or unknown owner is already a FAIL, so a repair never runs under a running writer.
+    owned = not FAILURES
+
+    # The writer and its one reviewer under the three-pass schedule (claude -> astra via codex).
+    for cli in ("claude", "codex"):
         check(f"{cli} on PATH", shutil.which(cli) is not None, shutil.which(cli) or "missing")
+
+    # What Claude Code needs to run with nobody at the keyboard. Only booleans are read from the user's files.
+    check("campaign Stop hook wired", stop_hook_wired(read_json(ROOT / ".claude/settings.json")),
+          ".claude/settings.json hooks.Stop runs campaign_guard.py stop-hook")
+    check("bypass-permissions prompt pre-accepted",
+          read_json(CLAUDE_HOME / "settings.json").get("skipDangerousModePermissionPrompt") is True,
+          "skipDangerousModePermissionPrompt in ~/.claude/settings.json (accept it once in an attended session)")
+    check("workspace trusted", workspace_trusted(read_json(CLAUDE_STATE), ROOT),
+          "hasTrustDialogAccepted for this checkout in ~/.claude.json (open it once in an attended session)")
+    check("session cron tools enabled", cron_enabled(os.environ), "CLAUDE_CODE_DISABLE_CRON must be unset: the heartbeat is CronCreate")
+    problems = roster_problems(ROOT / ".claude/agents")
+    check("read-only Sonnet scout roster", not problems, "; ".join(problems) if problems else ", ".join(SCOUTS))
 
     # Pinned toolchain and LSP stack.
     tools = ROOT / "tools/llvm-mingw-linux/bin"
@@ -151,10 +306,22 @@ def main() -> int:
                        ("clang-tidy", tools / "clang-tidy"), ("ninja", ROOT / "tools/ninja-linux/ninja")):
         check(f"pinned {name}", path.is_file(), str(path.relative_to(ROOT)) if path.is_file() else "run tools/bootstrap.py")
     proc = run([sys.executable, "scripts/gen-compdb.py", "--check"])
+    if proc.returncode != 0 and options.repair and owned:
+        stale = last_line(proc)
+        repair = run([sys.executable, "scripts/gen-compdb.py", "--rebuild-stale"], timeout=1800)
+        if repair.returncode == 0:
+            print(f"REPAIRED  compile_commands.json  -- was: {stale}")
+            proc = run([sys.executable, "scripts/gen-compdb.py", "--check"])
+        else:
+            proc = repair
     check("compile_commands.json current", proc.returncode == 0, last_line(proc))
     check("basedpyright in .venv", (ROOT / ".venv/bin/basedpyright").is_file(), "pip install -r requirements-dev.txt into .venv")
+    plugin = ROOT / ".claude/lsp/rasterfold-lsp"
+    servers = read_json(plugin / ".lsp.json")
+    check("Claude Code language-server plugin", (plugin / ".claude-plugin/plugin.json").is_file() and {"clangd", "basedpyright"} <= set(servers)
+          and (ROOT / ".venv/bin/basedpyright-langserver").is_file(),
+          ".claude/lsp/rasterfold-lsp with clangd and basedpyright, and .venv/bin/basedpyright-langserver")
 
-    # Spark/Ember agent definitions load under the exact launcher flags.
     # Host headroom: an orphaned writer once filled the disk (2026-11-08).
     disk = shutil.disk_usage(ROOT)
     check("disk headroom > 20 GB", disk.free > 20 * 2**30, f"{disk.free / 2**30:.0f} GB free")

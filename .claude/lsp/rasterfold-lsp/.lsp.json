@@ -1,0 +1,12 @@
+{
+  "clangd": {
+    "command": "${CLAUDE_PROJECT_DIR}/tools/llvm-mingw-linux/bin/clangd",
+    "args": ["--background-index", "--background-index-priority=background", "-j=4", "--malloc-trim", "--pch-storage=memory", "--header-insertion=never", "--limit-results=100"],
+    "extensionToLanguage": {".c": "c", ".h": "c"}
+  },
+  "basedpyright": {
+    "command": "${CLAUDE_PROJECT_DIR}/.venv/bin/basedpyright-langserver",
+    "args": ["--stdio"],
+    "extensionToLanguage": {".py": "python"}
+  }
+}

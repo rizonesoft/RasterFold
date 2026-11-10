@@ -21,6 +21,7 @@ import argparse
 import importlib.util as _ilu
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -119,23 +120,68 @@ def write_root() -> tuple[int, list[str]]:
     return len(entries), used
 
 
+def stale_targets() -> list[str]:
+    """Build directories whose stored compile_commands.json differs from what build.py would write now."""
+    stale = []
+    for target in PREFERENCE:
+        if (ROOT / "build" / target / "compile_commands.json").is_file():
+            want = expected_entries(target)
+            if want is None:
+                continue
+            stored = {(str(e.get("file")), tuple(e.get("arguments") or ())) for e in load(target)}
+            expected = {(str(e["file"]), tuple(e["arguments"])) for e in want}
+            if stored != expected:
+                stale.append(target)
+    return stale
+
+
+def build_argv(target: str) -> list[str]:
+    portable = target.endswith("-portable")
+    base = target[: -len("-portable")] if portable else target
+    return [sys.executable, str(Path(__file__).resolve().parent / "build.py"), "--target", base, *(["--portable"] if portable else [])]
+
+
+def fix_command(target: str) -> str:
+    return "python3 scripts/build.py " + " ".join(build_argv(target)[2:])
+
+
+def run_build(target: str) -> int:
+    return subprocess.run(build_argv(target), cwd=ROOT).returncode
+
+
+def rebuild_stale() -> int:
+    """Rebuild every target whose database went stale (ignored build output only), then publish the root database.
+    build.py writes a target's database before Ninja runs, so a matching database does not prove the build worked:
+    every build's own exit status counts."""
+    failed = []
+    for target in stale_targets():
+        print(f"gen-compdb: {target} is stale; running: {fix_command(target)}", flush=True)
+        code = run_build(target)
+        if code != 0:
+            failed.append(f"{target} (build exit {code})")
+    failed += [f"{target} (still stale after its build)" for target in stale_targets()
+               if not any(f.startswith(target + " ") for f in failed)]
+    if failed:
+        print("gen-compdb: could not bring current: " + ", ".join(failed), file=sys.stderr)
+        return 1
+    count, used = write_root()
+    print(f"gen-compdb: compile_commands.json current ({count} entries from {', '.join(used)})")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="fail if the root database is missing or stale")
+    parser.add_argument("--rebuild-stale", action="store_true",
+                        help="rebuild every target whose per-target database is stale, then write the root database")
     args = parser.parse_args()
+    if args.rebuild_stale:
+        return rebuild_stale()
     if args.check:
-        for target in PREFERENCE:
-            if (ROOT / "build" / target / "compile_commands.json").is_file():
-                want = expected_entries(target)
-                if want is None:
-                    continue
-                stored = {(str(e.get("file")), tuple(e.get("arguments") or ())) for e in load(target)}
-                expected = {(str(e["file"]), tuple(e["arguments"])) for e in want}
-                if stored != expected:
-                    base = target[: -len("-portable")] if target.endswith("-portable") else target
-                    fix = f"python3 scripts/build.py --target {base}" + (" --portable" if target.endswith("-portable") else "")
-                    print(f"gen-compdb: per-target compile_commands.json for {target} does not match build.py; run: {fix}", file=sys.stderr)
-                    return 1
+        stale = stale_targets()
+        if stale:
+            print(f"gen-compdb: per-target compile_commands.json for {stale[0]} does not match build.py; run: {fix_command(stale[0])}", file=sys.stderr)
+            return 1
         entries, used = merged()
         text = json.dumps(entries, indent=2) + "\n"
         if not OUT.is_file() or OUT.read_text(encoding="utf-8") != text:
