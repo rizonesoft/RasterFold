@@ -1885,11 +1885,11 @@ def overwrite_io() -> None:
     shim = work / "wfail.so"
     shim_src = work / "wfail.c"
     shim_src.write_text(
-        "#define _GNU_SOURCE\n#include <unistd.h>\n#include <string.h>\n#include <stdlib.h>\n#include <errno.h>\n#include <dlfcn.h>\n#include <stdio.h>\n"
+        "#define _GNU_SOURCE\n#include <unistd.h>\n#include <string.h>\n#include <stdlib.h>\n#include <errno.h>\n#include <dlfcn.h>\n#include <stdio.h>\n#include <sys/stat.h>\n"
         "static ssize_t (*real_write)(int, const void*, size_t);\n"
         "static int (*real_fsync)(int);\n"
         "static int is_partial(int fd) { char fdpath[64]; snprintf(fdpath, sizeof fdpath, \"/proc/self/fd/%d\", fd); char target[512]; ssize_t m = readlink(fdpath, target, sizeof target - 1); if (m <= 0) return 0; target[m] = 0; return strstr(target, \".partial\") != 0; }\n"
-        "int fsync(int fd) { if (!real_fsync) real_fsync = dlsym(RTLD_NEXT, \"fsync\"); if (getenv(\"RF_FAIL_FSYNC\") && is_partial(fd)) { errno = EIO; return -1; } return real_fsync(fd); }\n"
+        "int fsync(int fd) { if (!real_fsync) real_fsync = dlsym(RTLD_NEXT, \"fsync\"); if (getenv(\"RF_FAIL_FSYNC\") && is_partial(fd)) { errno = EIO; return -1; } if (getenv(\"RF_FAIL_DIRFSYNC\")) { struct stat st; if (fstat(fd, &st) == 0 && S_ISDIR(st.st_mode)) { errno = EIO; return -1; } } return real_fsync(fd); }\n"
         "#include <stdarg.h>\n#include <sys/syscall.h>\n"
         "static long (*real_syscall)(long, ...);\n"
         "long syscall(long n, ...) { va_list ap; va_start(ap, n); long a1 = va_arg(ap, long), a2 = va_arg(ap, long), a3 = va_arg(ap, long), a4 = va_arg(ap, long), a5 = va_arg(ap, long), a6 = va_arg(ap, long); va_end(ap); if (!real_syscall) real_syscall = dlsym(RTLD_NEXT, \"syscall\"); if (getenv(\"RF_FAIL_RENAME\") && (n == SYS_renameat2 || n == SYS_renameat)) { errno = EIO; return -1; } return real_syscall(n, a1, a2, a3, a4, a5, a6); }\n"
@@ -1904,15 +1904,22 @@ def overwrite_io() -> None:
         built = subprocess.run([cc, "-shared", "-fPIC", "-o", str(shim), str(shim_src), "-ldl"], capture_output=True)
         check(built.returncode == 0, f"write-failure shim did not compile: {built.stderr!r}")
         dest_before = fold.read_bytes()
-        for mode, env_extra in (("write", {"RF_FAIL_WRITE": "1"}), ("fsync", {"RF_FAIL_FSYNC": "1"}), ("rename", {"RF_FAIL_RENAME": "1"})):
+        for mode, env_extra in (("write", {"RF_FAIL_WRITE": "1"}), ("fsync", {"RF_FAIL_FSYNC": "1"}), ("rename", {"RF_FAIL_RENAME": "1"}), ("dirfsync", {"RF_FAIL_DIRFSYNC": "1"})):
             env = dict(os.environ, LD_PRELOAD=str(shim), **env_extra)
             result = subprocess.run([str(EXE), "encode", "--overwrite", str(src), str(fold)], capture_output=True, env=env)
+            if mode == "dirfsync":
+                # Directory flush fails only after publication: the completed
+                # replacement stands, with complete new bytes and no temporary.
+                check(result.returncode == 0, f"dirfsync overwrite exited {result.returncode}, want 0: {result.stderr!r}")
+                check(rf.decode_image(fold.read_bytes()) == (w, h, rgb), "dirfsync overwrite did not publish complete new bytes")
+                check(not Path(f"{fold}.partial").exists(), "dirfsync overwrite left its .partial behind")
+                continue
             check(result.returncode == 2, f"{mode}-failed overwrite exited {result.returncode}, want 2: {result.stderr!r}")
             check(fold.read_bytes() == dest_before, f"{mode}-failed overwrite changed the destination")
             check(not Path(f"{fold}.partial").exists(), f"{mode}-failed overwrite left its .partial behind")
     # Writing the temporary in an unwritable location fails before publication.
     expect_fail(["encode", "--overwrite", str(src), "/dev/rf-nonexistent-dir/out.fold"], 2, "cannot write output")
-    check(rf.decode_image(fold.read_bytes()) == (w, h, rgb2), "unwritable-location overwrite changed the destination")
+    check(rf.decode_image(fold.read_bytes()) == (w, h, rgb), "unwritable-location overwrite changed the destination")
     # A directory destination is refused and remains a directory.
     dir_dest = work / "destdir"
     dir_dest.mkdir(exist_ok=True)
