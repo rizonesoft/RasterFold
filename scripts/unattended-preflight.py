@@ -61,12 +61,14 @@ def session_running(session_id: str) -> bool | None:
         try:
             if needle in (entry / "cmdline").read_bytes():
                 return True
-            for fd in (entry / "fd").iterdir():
+            try:
+                fds = list((entry / "fd").iterdir())
+            except OSError:
+                fds = []  # non-dumpable daemon: cannot be the session owner
+            for fd in fds:
                 try:
                     if session_id in os.readlink(fd):
                         return True
-                except PermissionError:
-                    continue
                 except OSError:
                     continue
         except PermissionError:
