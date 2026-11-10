@@ -43,7 +43,7 @@ track: T1
 | :---: | :-----: | ----------- | ---------- | :----: |
 |   1   |   §1    | Commands and options | D06 T01 §3 |  [x]   |
 |   2   |   §2    | PNG in and out | §1 |  [x]   |
-|   3   |   §3    | PPM in and out | §1 |  [ ]   |
+|   3   |   §3    | PPM in and out | §1 |  [x]   |
 |   4   |   §4    | Exit codes, messages, and overwrite | §1 |  [ ]   |
 
 ---
@@ -94,6 +94,8 @@ PNG needs zlib's inflate and deflate, written here in C without a runtime: infla
 
 **Test checkpoint:** PPM cases in `tests/test_correctness.py` pass.
 
+> **Verified:** 2026-11-11 | §3 | 79d1c51ee053849e3bfb520a45a150e5c1095bc8
+> **Review:** `docs/reviews/d07-t01-s3.json`
 ## 4. Exit Codes, Messages, and Overwrite
 
 **Job:** A user who is refused (an existing file, a bad input) can read the notification (a stable exit code and message) and rely on the overwrite policy: an existing file is replaced only with `--overwrite`.

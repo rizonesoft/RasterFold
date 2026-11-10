@@ -1,0 +1,74 @@
+{
+  "ref": "D07 T01 \u00a73",
+  "title": "PPM In and Out",
+  "implementation_sha": "79d1c51ee053849e3bfb520a45a150e5c1095bc8",
+  "date": "2026-11-11",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/07-tool/D07-T01-s3.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "test_correctness 44 passed, ppm-io 1 passed (Pillow, byte identity, exits 3/4/5, destination preserved)"
+  ],
+  "completion": {
+    "report": "docs/reviews/07-tool/D07-T01-s3.md",
+    "verdict": "reconciled",
+    "candidate": "79d1c51ee053849e3bfb520a45a150e5c1095bc8",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/07-tool/D07-T01-s3.md",
+    "candidate": "34e51c723293ce5a3595ab72fb72342584c9f9c4",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "34e51c723293ce5a3595ab72fb72342584c9f9c4",
+  "schedule": {
+    "policy": "three-pass",
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}
