@@ -155,18 +155,6 @@ def main() -> int:
     check("basedpyright in .venv", (ROOT / ".venv/bin/basedpyright").is_file(), "pip install -r requirements-dev.txt into .venv")
 
     # Spark/Ember agent definitions load under the exact launcher flags.
-    agents = ROOT / ".agents/muse-agents.json"
-    ok, detail = False, "missing"
-    if agents.is_file() and shutil.which("muse"):
-        proc = run(["muse", "exec", "--provider", "echo", "--yolo", "--agents", agents.read_text(encoding="utf-8"), "probe"], timeout=60)
-        ok, detail = proc.returncode == 0 and "echo: probe" in proc.stdout, last_line(proc)
-    check("muse agents (Spark/Ember) load", ok, detail)
-    try:
-        names = sorted(json.loads(agents.read_text(encoding="utf-8")))
-    except Exception:
-        names = []
-    check("agent roster", names == ["rf-ember-literal", "rf-spark-hands", "rf-spark-scout", "rf-wonder-hands"], ", ".join(names))
-
     # Host headroom: an orphaned writer once filled the disk (2026-11-08).
     disk = shutil.disk_usage(ROOT)
     check("disk headroom > 20 GB", disk.free > 20 * 2**30, f"{disk.free / 2**30:.0f} GB free")

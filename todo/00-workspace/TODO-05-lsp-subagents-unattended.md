@@ -17,7 +17,9 @@ track: W1
 <!-- claim: exists scripts/gen-compdb.py -->
 <!-- claim: exists .clangd -->
 <!-- claim: exists pyrightconfig.json -->
-<!-- claim: exists .agents/muse-agents.json -->
+<!-- claim: absent .agents/muse-agents.json -->
+
+> **Corrected 2026-11-10 (operator directive, same day):** all worker agents are removed. The roster file is deleted, the launcher loads no agents, AGENTS.md is lead-only, and no session delegates to subagents; sections 2 and 4 keep their stamps as the historical record of what was built and measured (Ember 2 of 2 refusal failures, Wonder first-pass repairs), which is the evidence the removal rests on. Reversal cost: restore the roster file and the `--agents` flag and re-qualify each tier on its probes.
 <!-- claim: exists scripts/unattended-preflight.py -->
 <!-- claim: exists scripts/unattended-run.sh -->
 <!-- claim: exists docs/unattended-run.md -->
