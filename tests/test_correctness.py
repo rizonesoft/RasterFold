@@ -1878,6 +1878,29 @@ def overwrite_io() -> None:
         check(ro_dest.read_bytes() == before, "unwritable-directory overwrite changed the destination")
     finally:
         ro_dir.chmod(0o700)
+    # A write failure after the .partial is created (LD_PRELOAD shim failing
+    # writes to *.partial) preserves the destination and cleans the temporary.
+    cc = os.environ.get("CC", "cc")
+    shim = work / "wfail.so"
+    shim_src = work / "wfail.c"
+    shim_src.write_text(
+        "#define _GNU_SOURCE\n#include <unistd.h>\n#include <string.h>\n#include <errno.h>\n#include <dlfcn.h>\n#include <stdio.h>\n"
+        "static ssize_t (*real_write)(int, const void*, size_t);\n"
+        "ssize_t write(int fd, const void *buf, size_t n) {\n"
+        "    if (!real_write) real_write = dlsym(RTLD_NEXT, \"write\");\n"
+        "    char fdpath[64]; snprintf(fdpath, sizeof fdpath, \"/proc/self/fd/%d\", fd);\n"
+        "    char target[512]; ssize_t m = readlink(fdpath, target, sizeof target - 1);\n"
+        "    if (m > 0) { target[m] = 0; if (strstr(target, \".partial\")) { errno = EIO; return -1; } }\n"
+        "    return real_write(fd, buf, n); }\n"
+    )
+    built = subprocess.run([cc, "-shared", "-fPIC", "-o", str(shim), str(shim_src), "-ldl"], capture_output=True)
+    if built.returncode == 0 and os.name != "nt":
+        env = dict(os.environ, LD_PRELOAD=str(shim))
+        dest_before = fold.read_bytes()
+        result = subprocess.run([str(EXE), "encode", "--overwrite", str(src), str(fold)], capture_output=True, env=env)
+        check(result.returncode == 2, f"write-failed overwrite exited {result.returncode}, want 2: {result.stderr!r}")
+        check(fold.read_bytes() == dest_before, "write-failed overwrite changed the destination")
+        check(not Path(f"{fold}.partial").exists(), "write-failed overwrite left its .partial behind")
     # Writing the temporary in an unwritable location fails before publication.
     expect_fail(["encode", "--overwrite", str(src), "/dev/rf-nonexistent-dir/out.fold"], 2, "cannot write output")
     check(rf.decode_image(fold.read_bytes()) == (w, h, rgb2), "unwritable-location overwrite changed the destination")
