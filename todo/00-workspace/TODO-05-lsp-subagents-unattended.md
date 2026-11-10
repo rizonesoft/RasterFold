@@ -62,7 +62,7 @@ track: W1
 |   5   |   §5    | The Windows Desktop shortcut | §4, §7 |  [ ]   |
 |   6   |   §6    | Batch the git calls in receipt validation | -- |  [x]   |
 |   7   |   §7    | Claude Code as the unattended writer, with read-only Sonnet scouts and its own language servers | §4 |  [ ]   |
-|   8   |   §8    | Review prompts filled by script from the templates | -- |  [ ]   |
+|   8   |   §8    | Review prompts filled by script from the templates | -- |  [x]   |
 
 ---
 
@@ -220,6 +220,8 @@ Every section takes at least three review passes, and each needs a scratch promp
 
 **Test checkpoint:** Correctness test: `python3 -m unittest scripts.tests.test_review_prompt` exits 0 (template preservation for the four kinds, and every refusal); driven run with evidence: the script's output for this section's plan review quoted by path and byte count beside the template's, and `python3 scripts/review-dispatch.py --check-pin` exits 0. The cheaper substitute this rules out: a script that emits a short paraphrase of the template, which the preservation test fails.
 
+> **Verified:** 2026-11-11 | §8 | 170ee01ebfa674e413c8163c6fbfa8b0caf19888
+> **Review:** `docs/reviews/d00-t05-s8.json`
 ## Verification
 
 - [ ] `python3 scripts/unattended-preflight.py` exits 0 with every line PASS on the committed tree

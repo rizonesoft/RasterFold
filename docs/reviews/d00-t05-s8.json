@@ -1,0 +1,78 @@
+{
+  "ref": "D00 T05 \u00a78",
+  "title": "Review Prompts Filled by Script From the Templates",
+  "implementation_sha": "170ee01ebfa674e413c8163c6fbfa8b0caf19888",
+  "date": "2026-11-11",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/00-workspace/D00-T05-s8.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "python3 -m unittest scripts.tests.test_review_prompt -> Ran 15 tests, OK",
+    "bosun run -- python3 scripts/check-all.py -> 28/31 at 170ee01, the three failures (plan projection, document drift, documentation site tests) all the stale ignored build/todo-progress.json; after python3 scripts/todo-graph.py plan --sync with no tracked change: plan --check current, drift-check 0 errors, test_docs Ran 9 tests OK",
+    "python3 tests/test_correctness.py -> 45 passed, 0 failed",
+    "python3 scripts/todo-claims.py -> 97 hold, 0 stale",
+    "python3 scripts/review-prompt.py --kind round and --kind completion -> build/review-prompts/d00-t05-s8-round.md, build/review-prompts/d00-t05-s8-completion.md"
+  ],
+  "completion": {
+    "report": "docs/reviews/00-workspace/D00-T05-s8.md",
+    "verdict": "complete",
+    "candidate": "170ee01ebfa674e413c8163c6fbfa8b0caf19888",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/00-workspace/D00-T05-s8.md",
+    "candidate": "6b5aa11efc622c3d5a8fcbfb7c3da0a40bb82750",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "6b5aa11efc622c3d5a8fcbfb7c3da0a40bb82750",
+  "schedule": {
+    "policy": "three-pass",
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}
