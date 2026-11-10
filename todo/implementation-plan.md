@@ -268,7 +268,7 @@ Generated and screen content against WebP.
 | [x] | `D00 T05 §2` | Spark and Ember subagents under lead verification        |   4   |
 | [x] | `D00 T05 §3` | The measured tool stack: what stays, what is not adopted |   6   |
 | [x] | `D00 T05 §4` | Unattended run: preflight, launcher, and goal            |   6   |
-| [ ] | `D00 T05 §5` | The Windows Desktop shortcut                             |   3   |
+| [ ] | `D00 T05 §5` | The Windows Desktop shortcut                             |   4   |
 | [x] | `D00 T05 §6` | Batch the git calls in receipt validation                |   4   |
 | [ ] | `D99 T01 §8` | The 13-round milestone cap                               |   4   |
 | [ ] | `D05 T01 §8` | Milestone 8 gate: Beat WebP on generated images          |   5   |
