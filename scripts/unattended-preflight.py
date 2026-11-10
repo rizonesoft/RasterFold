@@ -64,7 +64,15 @@ def session_running(session_id: str) -> bool | None:
             try:
                 fds = list((entry / "fd").iterdir())
             except OSError:
-                fds = []  # non-dumpable daemon: cannot be the session owner
+                # A non-dumpable daemon cannot be the session owner, but a
+                # Muse-shaped process whose descriptors cannot be inspected
+                # might be: ownership is then unknown, never stale.
+                try:
+                    if b"muse" in (entry / "cmdline").read_bytes().lower():
+                        unknown = True
+                except OSError:
+                    unknown = True
+                fds = []
             for fd in fds:
                 try:
                     if session_id in os.readlink(fd):
