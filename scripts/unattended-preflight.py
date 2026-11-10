@@ -50,6 +50,7 @@ def session_running(session_id: str) -> bool | None:
     if not proc_dir.is_dir():
         return None
     needle = session_id.encode()
+    unknown = False
     for entry in proc_dir.iterdir():
         if not entry.name.isdigit() or int(entry.name) == os.getpid():
             continue
@@ -60,11 +61,15 @@ def session_running(session_id: str) -> bool | None:
                 try:
                     if session_id in os.readlink(fd):
                         return True
+                except PermissionError:
+                    unknown = True
                 except OSError:
                     continue
+        except PermissionError:
+            unknown = True
         except OSError:
             continue
-    return False
+    return None if unknown else False
 
 
 def last_line(proc: subprocess.CompletedProcess) -> str:
@@ -76,8 +81,9 @@ def main() -> int:
     # Straight on main, one writer (operator rule; AGENTS.md trunk-based main).
     branch = run(["git", "branch", "--show-current"]).stdout.strip()
     check("on main", branch == "main", f"branch={branch or '(detached)'}")
-    dirty = run(["git", "status", "--porcelain"]).stdout.strip().splitlines()
-    check("tree clean", not [d for d in dirty if d.strip()], f"{len([d for d in dirty if d.strip()])} dirty path(s)")
+    status = run(["git", "status", "--porcelain"])
+    dirty = status.stdout.strip().splitlines() if status.returncode == 0 else ["<git status failed>"]
+    check("tree clean", status.returncode == 0 and not [d for d in dirty if d.strip()], f"{len([d for d in dirty if d.strip()])} dirty path(s)" if status.returncode == 0 else f"git status exit {status.returncode}")
     hooks = run(["git", "config", "core.hooksPath"]).stdout.strip()
     check("commit hooks wired", hooks == "tools/githooks", f"core.hooksPath={hooks or '(unset)'}")
     guard = ROOT / "build/claude-campaign-guard.json"
