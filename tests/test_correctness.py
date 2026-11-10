@@ -1893,9 +1893,9 @@ def overwrite_io() -> None:
         "    if (m > 0) { target[m] = 0; if (strstr(target, \".partial\")) { errno = EIO; return -1; } }\n"
         "    return real_write(fd, buf, n); }\n"
     )
-    built = subprocess.run([cc, "-shared", "-fPIC", "-o", str(shim), str(shim_src), "-ldl"], capture_output=True)
-    check(os.name == "nt" or built.returncode == 0, f"write-failure shim did not compile: {built.stderr!r}")
     if os.name != "nt":
+        built = subprocess.run([cc, "-shared", "-fPIC", "-o", str(shim), str(shim_src), "-ldl"], capture_output=True)
+        check(built.returncode == 0, f"write-failure shim did not compile: {built.stderr!r}")
         env = dict(os.environ, LD_PRELOAD=str(shim))
         dest_before = fold.read_bytes()
         result = subprocess.run([str(EXE), "encode", "--overwrite", str(src), str(fold)], capture_output=True, env=env)
