@@ -19,6 +19,18 @@ _ROLE_PANEL_RE = re.compile(
 _ROLE_ROUND_SUFFIX_RE = re.compile(r"Round (\d+)\s*$", re.IGNORECASE)
 
 
+def _raw_diff_paths(line: str) -> list[str]:
+    """Paths a raw diff line touches: one, or both sides of a rename/copy.
+
+    A raw line is tab-separated (`:old new .. R098<TAB>old<TAB>new`); the
+    pre-batch `diff-tree --name-only` (no rename detection) listed a rename
+    as delete plus add, so both paths must stay or a TODO path renamed away
+    and later restored reads as `commit-foreign` (D00 T05 s6 round 1).
+    """
+    parts = line.split("\t")
+    return parts[1:] if len(parts) > 1 else []
+
+
 def parse_panel_rounds(stripped_text: str) -> list[int]:
     """Claimed round of each panel section in document order (D00 T04
     §24 item 18): a `Round N` suffix claims N, a bare panel claims
@@ -177,9 +189,7 @@ def validate(graph, _args) -> int:
                             cur = line
                             files.setdefault(cur, set())
                         elif line.startswith(":") and cur is not None:
-                            parts = line.split("\t")
-                            if len(parts) > 1:
-                                files[cur].add(parts[-1])
+                            files[cur].update(_raw_diff_paths(line))
             except (OSError, subprocess.SubprocessError):
                 files = {}
             commit_files_cache[root] = files

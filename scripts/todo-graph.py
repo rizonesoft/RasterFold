@@ -43,6 +43,7 @@ import re
 import subprocess
 import shutil
 import tempfile
+import threading
 import sys
 from dataclasses import dataclass, field, asdict
 from datetime import date, datetime, timedelta, timezone
@@ -6469,6 +6470,18 @@ def review_dispatch():
     return _REVIEW_DISPATCH_MOD[0]
 
 
+def _raw_diff_paths(line: str) -> list[str]:
+    """Paths a raw diff line touches: one, or both sides of a rename/copy.
+
+    A raw line is tab-separated (`:old new .. R098<TAB>old<TAB>new`); the
+    pre-batch `diff-tree --name-only` (no rename detection) listed a rename
+    as delete plus add, so both paths must stay or a TODO path renamed away
+    and later restored reads as `commit-foreign` (D00 T05 s6 round 1).
+    """
+    parts = line.split("\t")
+    return parts[1:] if len(parts) > 1 else []
+
+
 class _GitSnapshot:
     """One git enumeration per root, feeding in-memory receipt lookups.
 
@@ -6476,6 +6489,10 @@ class _GitSnapshot:
     log, HEAD) plus one long-lived `git cat-file --batch` process for
     blob reads. Rebuilt when the HEAD oid read from `.git` changes, so
     a repository that gains commits mid-process is never served stale.
+    The enumeration is bound to a HEAD captured before it (and re-read
+    after it): a HEAD that moved mid-build rebuilds once, and a HEAD
+    that will not sit still leaves the snapshot not-ok so callers fall
+    back to per-call git instead of serving an inconsistent snapshot.
     """
 
     def __init__(self, root: Path):
@@ -6487,40 +6504,57 @@ class _GitSnapshot:
         self.pin_cache: dict[str, dict] = {}
         self._ancestors: dict[str, set[str]] = {}
         self._batch = None
-        try:
-            log = subprocess.run(
-                ["git", "-C", str(self.root), "log", "--all", "--format=%H%x1f%P%x1f%s"],
-                capture_output=True, text=True, encoding="utf-8", timeout=60,
-            )
-            raw = subprocess.run(
-                ["git", "-C", str(self.root), "log", "--all", "-m", "--root",
-                 "--raw", "--format=%H"],
-                capture_output=True, text=True, encoding="utf-8", timeout=60,
-            )
-            head = subprocess.run(
-                ["git", "-C", str(self.root), "rev-parse", "HEAD"],
-                capture_output=True, text=True, encoding="utf-8", timeout=30,
-            )
-        except (OSError, subprocess.SubprocessError):
+        # One cat-file exchange gets this long before the batch child is
+        # terminated and reaped and the read falls back to `git show`:
+        # an unbounded pipe read hangs validate and the pre-commit hook
+        # forever (D00 T05 s6 round 1). Tests shrink it to probe that path.
+        self._batch_deadline = 10.0
+        for _attempt in range(2):
+            try:
+                before = subprocess.run(
+                    ["git", "-C", str(self.root), "rev-parse", "HEAD"],
+                    capture_output=True, text=True, encoding="utf-8", timeout=30,
+                )
+                log = subprocess.run(
+                    ["git", "-C", str(self.root), "log", "--all", "--format=%H%x1f%P%x1f%s"],
+                    capture_output=True, text=True, encoding="utf-8", timeout=60,
+                )
+                raw = subprocess.run(
+                    ["git", "-C", str(self.root), "log", "--all", "-m", "--root",
+                     "--raw", "--format=%H"],
+                    capture_output=True, text=True, encoding="utf-8", timeout=60,
+                )
+                after = subprocess.run(
+                    ["git", "-C", str(self.root), "rev-parse", "HEAD"],
+                    capture_output=True, text=True, encoding="utf-8", timeout=30,
+                )
+            except (OSError, subprocess.SubprocessError):
+                return
+            if log.returncode != 0 or raw.returncode != 0:
+                return
+            head_before = before.stdout.strip() if before.returncode == 0 else None
+            head_after = after.stdout.strip() if after.returncode == 0 else None
+            if head_before != head_after:
+                continue  # HEAD moved mid-enumeration: rebuild once, bound to the new HEAD.
+            parents: dict[str, list[str]] = {}
+            for line in log.stdout.splitlines():
+                oid, _, rest = line.partition("\x1f")
+                parents_part, _, _subject = rest.partition("\x1f")
+                if oid:
+                    parents[oid] = parents_part.split() if parents_part.strip() else []
+            files: dict[str, set[str]] = {}
+            cur: str | None = None
+            for line in raw.stdout.splitlines():
+                if re.fullmatch(r"[0-9a-f]{40}", line):
+                    cur = line
+                    files.setdefault(cur, set())
+                elif line.startswith(":") and cur is not None:
+                    files[cur].update(_raw_diff_paths(line))
+            self.parents, self.files = parents, files
+            self.head = head_after
+            self.ok = True
             return
-        if log.returncode != 0 or raw.returncode != 0:
-            return
-        for line in log.stdout.splitlines():
-            oid, _, rest = line.partition("\x1f")
-            parents, _, _subject = rest.partition("\x1f")
-            if oid:
-                self.parents[oid] = parents.split() if parents.strip() else []
-        cur: str | None = None
-        for line in raw.stdout.splitlines():
-            if re.fullmatch(r"[0-9a-f]{40}", line):
-                cur = line
-                self.files.setdefault(cur, set())
-            elif line.startswith(":") and cur is not None:
-                parts = line.split("\t")
-                if len(parts) > 1:
-                    self.files[cur].add(parts[-1])
-        self.head = head.stdout.strip() if head.returncode == 0 else None
-        self.ok = True
+        return
 
     def resolve(self, sha: object) -> str | None:
         if not isinstance(sha, str) or not sha:
@@ -6550,33 +6584,66 @@ class _GitSnapshot:
         a, b = self.resolve(older), self.resolve(newer)  # type: ignore[arg-type]
         return a is not None and b is not None and a in self.ancestors(b)
 
-    def blob(self, rev: str, path: str) -> bytes | None:
-        try:
-            if self._batch is None or self._batch.poll() is not None:
-                self._batch = subprocess.Popen(
-                    ["git", "-C", str(self.root), "cat-file", "--batch"],
-                    stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                )
-            assert self._batch.stdin is not None and self._batch.stdout is not None
-            self._batch.stdin.write(f"{rev}:{path}\n".encode("utf-8"))
-            self._batch.stdin.flush()
-            header = self._batch.stdout.readline().decode("utf-8", "replace").split()
-            if len(header) < 3 or header[1] not in ("blob", "commit", "tree", "tag"):
-                return None
-            data = self._batch.stdout.read(int(header[2]))
-            self._batch.stdout.read(1)
-            return data
-        except (OSError, ValueError):
-            self._batch = None
-            return None
-
-    def close(self) -> None:
-        if self._batch is not None:
+    def _kill_batch(self) -> None:
+        """Terminate and reap the batch child; its stream is never reused."""
+        batch, self._batch = self._batch, None
+        if batch is not None:
             try:
-                self._batch.kill()
+                batch.kill()
             except OSError:
                 pass
-            self._batch = None
+            try:
+                batch.wait(timeout=5)
+            except (OSError, subprocess.SubprocessError):
+                pass
+
+    def _show_blob(self, rev: str, path: str) -> bytes | None:
+        """The per-call fallback the pre-batch code used for every blob."""
+        try:
+            shown = subprocess.run(
+                ["git", "-C", str(self.root), "show", f"{rev}:{path}"],
+                capture_output=True, timeout=30,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return shown.stdout if shown.returncode == 0 else None
+
+    def blob(self, rev: str, path: str) -> bytes | None:
+        outcome: dict[str, object] = {}
+
+        def exchange() -> None:
+            try:
+                if self._batch is None or self._batch.poll() is not None:
+                    self._batch = subprocess.Popen(
+                        ["git", "-C", str(self.root), "cat-file", "--batch"],
+                        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                    )
+                batch = self._batch
+                assert batch.stdin is not None and batch.stdout is not None
+                batch.stdin.write(f"{rev}:{path}\n".encode("utf-8"))
+                batch.stdin.flush()
+                header = batch.stdout.readline().decode("utf-8", "replace").split()
+                if len(header) < 3 or header[1] not in ("blob", "commit", "tree", "tag"):
+                    outcome["data"] = None  # A genuine miss, not a failure.
+                    return
+                data = batch.stdout.read(int(header[2]))
+                batch.stdout.read(1)
+                outcome["data"] = data
+            except (OSError, ValueError):
+                outcome["error"] = True
+
+        worker = threading.Thread(target=exchange, daemon=True)
+        worker.start()
+        worker.join(self._batch_deadline)
+        if worker.is_alive() or "error" in outcome:
+            # A stalled or broken batch: kill and reap it (its stream can
+            # no longer be trusted), then answer through `git show`.
+            self._kill_batch()
+            return self._show_blob(rev, path)
+        return outcome.get("data")  # type: ignore[return-value]
+
+    def close(self) -> None:
+        self._kill_batch()
 
 
 _GIT_SNAPSHOTS: dict[str, _GitSnapshot] = {}
@@ -12514,6 +12581,94 @@ Opus outage: sign-off rung unreachable, failed over to Sol.
         check("contract: a changed Done-when threshold still changes the contract",
               section_contract(croot, "HEAD~1", "D05 T01 §1") == section_contract(croot, "HEAD", "D05 T01 §1"), False)
         __import__("shutil").rmtree(croot, ignore_errors=True)
+
+        # --- _GitSnapshot: renames, bounded batch reads, HEAD binding ---
+        # D00 T05 s6 round 1: the batched raw log must keep both rename
+        # paths (the line below is ff7f37b's spec/RFI-v1.md rename), the
+        # cat-file exchange must be deadline-bounded with a `git show`
+        # fallback, and a snapshot whose HEAD moves mid-build must rebuild.
+        import time as _stime
+
+        _rfold_line = ":100644 100644 a56a3b3 450ef47 R098\tspec/RFI-v1.md\tspec/FOLD-v1.md"
+        check("snapshot: a rename raw line keeps both paths (graph)",
+              _raw_diff_paths(_rfold_line), ["spec/RFI-v1.md", "spec/FOLD-v1.md"])
+        _vspec = importlib.util.spec_from_file_location(
+            "todo_validate_selftest", REPO / "scripts/todo-validate.py")
+        _vmod = importlib.util.module_from_spec(_vspec)
+        _vspec.loader.exec_module(_vmod)
+        check("snapshot: a rename raw line keeps both paths (validate)",
+              _vmod._raw_diff_paths(_rfold_line), ["spec/RFI-v1.md", "spec/FOLD-v1.md"])
+        check("snapshot: a plain raw line keeps its one path",
+              _raw_diff_paths(":100644 100644 a56a3b3 450ef47 M\tspec/FOLD-v1.md"),
+              ["spec/FOLD-v1.md"])
+
+        rroot = root / "rename-fixture"
+        (rroot / "spec").mkdir(parents=True)
+        _renv = ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"]
+        (rroot / "spec" / "old-name.md").write_text("fixture body\n", encoding="utf-8")
+        subprocess.run(["git", "init", "-q"], cwd=rroot, capture_output=True, text=True, timeout=60)
+        subprocess.run(["git", "add", "spec"], cwd=rroot, capture_output=True, text=True, timeout=60)
+        subprocess.run(["git", *_renv, "commit", "-q", "-m", "fixture add"],
+                       cwd=rroot, capture_output=True, text=True, timeout=60)
+        subprocess.run(["git", "mv", "spec/old-name.md", "spec/new-name.md"],
+                       cwd=rroot, capture_output=True, text=True, timeout=60)
+        subprocess.run(["git", *_renv, "commit", "-q", "-m", "fixture rename"],
+                       cwd=rroot, capture_output=True, text=True, timeout=60)
+        _roid = subprocess.run(["git", "rev-parse", "HEAD"], cwd=rroot,
+                               capture_output=True, text=True, timeout=60).stdout.strip()
+        rsnap = _GitSnapshot(rroot)
+        check("snapshot: a rename commit touches the old path",
+              "spec/old-name.md" in rsnap.files.get(_roid, set()), True)
+        check("snapshot: a rename commit touches the new path",
+              "spec/new-name.md" in rsnap.files.get(_roid, set()), True)
+        check("snapshot: blob reads through the batch",
+              rsnap.blob("HEAD", "spec/new-name.md"), b"fixture body\n")
+
+        # A batch child that never answers must be terminated and reaped
+        # at the deadline, with the read served by the per-call fallback.
+        rsnap._batch_deadline = 0.5
+        _hung = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        rsnap._batch = _hung
+        _t0 = _stime.monotonic()
+        try:
+            _hung_data = rsnap.blob("HEAD", "spec/new-name.md")
+        finally:
+            if _hung.poll() is None:
+                _hung.kill()
+        check("snapshot: a hung batch falls back to git show bytes", _hung_data, b"fixture body\n")
+        check("snapshot: a hung batch is bounded by the deadline",
+              _stime.monotonic() - _t0 < 10, True)
+        check("snapshot: a hung batch is terminated and reaped", rsnap._batch is None, True)
+        rsnap.close()
+
+        # A HEAD that advances mid-enumeration rebuilds the snapshot once
+        # instead of serving new HEAD with old parents.
+        _real_run = subprocess.run
+        _race = {"fired": False}
+
+        def _racing_run(cmd, *a, **kw):
+            if not _race["fired"] and isinstance(cmd, list) and "--raw" in cmd:
+                _race["fired"] = True
+                (rroot / "race.txt").write_text("race\n", encoding="utf-8")
+                _real_run(["git", "add", "race.txt"], cwd=rroot,
+                          capture_output=True, text=True, timeout=60)
+                _real_run(["git", *_renv, "commit", "-q", "-m", "race"],
+                          cwd=rroot, capture_output=True, text=True, timeout=60)
+            return _real_run(cmd, *a, **kw)
+
+        subprocess.run = _racing_run  # type: ignore[misc]
+        try:
+            raced = _GitSnapshot(rroot)
+        finally:
+            subprocess.run = _real_run  # type: ignore[misc]
+        _head_after = subprocess.run(["git", "rev-parse", "HEAD"], cwd=rroot,
+                                     capture_output=True, text=True, timeout=60).stdout.strip()
+        check("snapshot: a HEAD race rebuilds instead of serving stale parents",
+              (raced.ok, raced.head == _head_after), (True, True))
+        raced.close()
+        __import__("shutil").rmtree(rroot, ignore_errors=True)
 
     finally:
         TODO_DIR, PLAN, SKILLS_DIR = saved_todo_dir, saved_plan, saved_skills
