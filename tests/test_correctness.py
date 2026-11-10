@@ -1885,24 +1885,28 @@ def overwrite_io() -> None:
     shim = work / "wfail.so"
     shim_src = work / "wfail.c"
     shim_src.write_text(
-        "#define _GNU_SOURCE\n#include <unistd.h>\n#include <string.h>\n#include <errno.h>\n#include <dlfcn.h>\n#include <stdio.h>\n"
+        "#define _GNU_SOURCE\n#include <unistd.h>\n#include <string.h>\n#include <stdlib.h>\n#include <errno.h>\n#include <dlfcn.h>\n#include <stdio.h>\n"
         "static ssize_t (*real_write)(int, const void*, size_t);\n"
+        "static int (*real_fsync)(int);\n"
+        "static int is_partial(int fd) { char fdpath[64]; snprintf(fdpath, sizeof fdpath, \"/proc/self/fd/%d\", fd); char target[512]; ssize_t m = readlink(fdpath, target, sizeof target - 1); if (m <= 0) return 0; target[m] = 0; return strstr(target, \".partial\") != 0; }\n"
+        "int fsync(int fd) { if (!real_fsync) real_fsync = dlsym(RTLD_NEXT, \"fsync\"); if (is_partial(fd)) { errno = EIO; return -1; } return real_fsync(fd); }\n"
         "ssize_t write(int fd, const void *buf, size_t n) {\n"
         "    if (!real_write) real_write = dlsym(RTLD_NEXT, \"write\");\n"
         "    char fdpath[64]; snprintf(fdpath, sizeof fdpath, \"/proc/self/fd/%d\", fd);\n"
         "    char target[512]; ssize_t m = readlink(fdpath, target, sizeof target - 1);\n"
-        "    if (m > 0) { target[m] = 0; if (strstr(target, \".partial\")) { errno = EIO; return -1; } }\n"
+        "    if (m > 0) { target[m] = 0; if (getenv(\"RF_FAIL_WRITE\") && strstr(target, \".partial\")) { errno = EIO; return -1; } }\n"
         "    return real_write(fd, buf, n); }\n"
     )
     if os.name != "nt":
         built = subprocess.run([cc, "-shared", "-fPIC", "-o", str(shim), str(shim_src), "-ldl"], capture_output=True)
         check(built.returncode == 0, f"write-failure shim did not compile: {built.stderr!r}")
-        env = dict(os.environ, LD_PRELOAD=str(shim))
         dest_before = fold.read_bytes()
-        result = subprocess.run([str(EXE), "encode", "--overwrite", str(src), str(fold)], capture_output=True, env=env)
-        check(result.returncode == 2, f"write-failed overwrite exited {result.returncode}, want 2: {result.stderr!r}")
-        check(fold.read_bytes() == dest_before, "write-failed overwrite changed the destination")
-        check(not Path(f"{fold}.partial").exists(), "write-failed overwrite left its .partial behind")
+        for mode, env_extra in (("write", {"RF_FAIL_WRITE": "1"}), ("fsync", {})):
+            env = dict(os.environ, LD_PRELOAD=str(shim), **env_extra)
+            result = subprocess.run([str(EXE), "encode", "--overwrite", str(src), str(fold)], capture_output=True, env=env)
+            check(result.returncode == 2, f"{mode}-failed overwrite exited {result.returncode}, want 2: {result.stderr!r}")
+            check(fold.read_bytes() == dest_before, f"{mode}-failed overwrite changed the destination")
+            check(not Path(f"{fold}.partial").exists(), f"{mode}-failed overwrite left its .partial behind")
     # Writing the temporary in an unwritable location fails before publication.
     expect_fail(["encode", "--overwrite", str(src), "/dev/rf-nonexistent-dir/out.fold"], 2, "cannot write output")
     check(rf.decode_image(fold.read_bytes()) == (w, h, rgb2), "unwritable-location overwrite changed the destination")
