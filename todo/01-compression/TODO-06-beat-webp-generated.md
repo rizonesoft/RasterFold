@@ -2,7 +2,7 @@
 schema_version: 1
 id: beat-webp-generated
 domain: 01-compression
-status: done
+status: active
 title: "TODO-06 -- Beat WebP on Generated Images"
 depends_on: []
 frozen: true
@@ -42,6 +42,7 @@ track: C6
 |   5   |   §5    | Above-copy runs for palette images | §3 |  [x]   |
 |   6   |   §6    | A neighbour-candidate colour cache in version 3 | §2 |  [x]   |
 |   7   |   §7    | A recent-colour cache for palette images | §6 |  [x]   |
+|   8   |   §8    | A compact palette method (method 4) | §7 |  [ ]   |
 
 ---
 
@@ -212,6 +213,47 @@ Acceptance, all from `python3 scripts/windows.py research/ab.py size build/resea
 
 > **Verified:** 2026-11-11 | §7 | c5d828701b58a5e4d8d98633c7a456835db18d45
 > **Review:** `docs/reviews/d01-t06-s7.json`
+## 8. A Compact Palette Method (Method 4)
+
+> **Started:** 2026-11-11T21:38:02Z
+
+**Origin:** discovered run=842ea9127af1 2026-11-11 -- Milestone 8 gate (D05 T01 §8) still misses after round 4 (`§7`): synth total 201,640 vs WebP 201,248, geomean 1.0007, `syn_checker` 138 vs 82, `syn_text` 1447 vs 1198, `syn_diagram` 1452 vs 1228; this is follow-up round 5 of at most 13 under the capped missed-milestone policy (D99 T01 §8), required by that gate's acceptance bar.
+
+**Needs:** ffmpeg with libjxl (benchmarks)
+
+Rounds 1 to 4 each added a token to the method 3 index stream or re-coded the palette in first-seen order, and each made the files larger. This round attributes the bytes first and changes what the attribution names. Measured 2026-11-11 on the codec sources of `afcfefd` (unchanged through `ddb35ef`): (1) the palette field is raw, 753 bytes of `syn_text`'s 1447 and of `syn_diagram`'s 1452, and 720 of `syn_ui`'s 1410; the same colours sorted and Golomb-Rice coded cost about 460 bytes (a Python estimate over the three images' colour sets: R deltas at `k = 0`, zigzag `G - R` at `k = 4`, zigzag `B - G` at `k = 4` or `5`). (2) `syn_checker`'s 94-byte index stream is not overhead: a context simulation of method 3 on that image finds 14 D1 contexts, 13 of them deterministic, and one (`pattern = 127`, `hit = 1`) holding 188,580 hits and 62 misses, the misses being the 31 cell edges on row 0 and the 31 cell changes in column 0, where the border rules make every neighbour equal; those 62 surprises at a floor-priced context cost about 807 bits, the whole stream. (3) Every palette file carries a 4-byte stream size that `payload_size` already determines and a 2-byte count that fits one byte. (4) The 12-bit probability floor charges `log2(4096 / 4095)` bits for every certain decision, about 13 bytes on the 307,200 pixels of `syn_solid`.
+
+Hypothesis: a palette method that (a) stores the palette sorted and Rice-coded, (b) drops the two redundant fields, (c) codes decisions with exact 16-bit probabilities, and (d) gives row 0 and column 0 their own D1 counters removes those four costs without adding a token to any pixel. Non-goals: no new token in the index stream (rounds 1, 2, 4 and `§3`, `§5`, `§7`), no adaptive palette coding in first-seen order (`§4`), no change to the CM coder, the container header, or methods 2 and 3. This differs from `§4` in sorting the palette and using a static code with three transmitted parameters instead of adaptive counters that never train on 250 entries. Cost: one 64-bit multiply per decision in place of a shift and a 32-bit multiply, a 768-entry D1 table in place of 256, and an insertion sort of at most 256 colours in the encoder.
+
+Prior art: lossless WebP stores its colour-indexing palette delta-coded against the previous entry and libwebp sorts the palette to shrink those deltas; JPEG-LS (LOCO-I) codes residuals with Golomb-Rice codes whose parameter adapts; PNG stores `PLTE` raw; JPEG XL's modular palette transform entropy-codes the palette as a channel. Giving image borders their own contexts is standard in context-mixing image coders, because a border pixel's missing neighbours are substituted, not observed.
+
+**Decision recorded (2026-11-11): a new method number, not a changed method 3.** `AGENTS.md` gives a new coding method a new number and a changed method a new version. Method 3 exists in released version 2 files and in the version 3 fixture `KAT_PAL2_3`, so changing its grammar inside version 3 would need version-aware dispatch through `rf_pal_decode`, both `src/fold.c` callers and the oracle (the wiring `§3` to `§7` planned). Method 4 needs none of it: methods 2 and 3 decode exactly as today in both versions, method 4 is valid only in version 3, and every older decoder refuses it as `unsupported fold: method`. The encoder then writes method 4 wherever it wrote method 3, and method 3 joins method 2 as decode-only. Reversal cost: before 1.0 ships, delete method 4 and restore the encoder's method 3 selection; after it ships, method 4 files exist and the decoder path stays.
+
+**The grammar (exactly this is prototyped, measured and, if accepted, ported):**
+
+- Payload: byte 0 is `count - 1` (`count` in `1..256`). The palette field follows, a bit string read most significant bit first: `kR`, `kG`, `kB` as three 4-bit numbers, each in `0..8`; then for each entry in order `Rice(R - Rprev, kR)` (with `Rprev = 0` before entry 0), `Rice(zigzag(G - R), kG)`, `Rice(zigzag(B - G), kB)`, where `Rice(v, k)` is `v >> k` one bits, a zero bit, then the low `k` bits of `v`, and `zigzag(v)` is `2v` for `v >= 0` and `-2v - 1` otherwise; then zero bits to the next byte boundary. Entries are in strictly increasing order of `R << 16 | G << 8 | B`. The index stream is every remaining payload byte and is at least 5 bytes long.
+- The reference encoder chooses each `k` as the smallest value in `0..8` with the least total code length for its channel.
+- Index stream: method 3's neighbours, pattern, `hit`, candidates, tables `D2`, `D3`, `T`, counter update rule and rate table, unchanged, with two differences. A decision with counter value `c` is coded with probability `max(1, c) / 65536` of a 1, the range split being `bound = (range * max(1, c)) >> 16` computed in 64 bits (method 3 uses `max(1, c >> 4) / 4096`). `D1` has 768 counters and is indexed by `pattern * 2 + hit + 256 * class`, where `class` is 1 on row 0, 2 in column 0 of every later row, and 0 elsewhere.
+- Decoder refusals, each as an invalid palette: a `k` above 8; a palette field that runs past the payload; a Rice quotient above 511; a channel value outside `0..255`; an entry not strictly greater than the one before it; a non-zero padding bit; fewer than 5 bytes left for the index stream; and method 3's index-stream refusals (a literal index at or above `count` or equal to an excluded candidate, a stream that does not end exactly at the payload's end). Method 4 in a version 2 file is refused as an unsupported method.
+
+Guard against tuning: no parameter is fitted. The three `k` values are chosen per image by the encoder and transmitted, the sort order, the 16-bit probability and the two border classes are fixed above before the port, and the held-out set (`python3 scripts/windows.py research/ab.py size <source> heldout -v -t1`) is reported for both sources as evaluation only.
+
+Baseline, measured 2026-11-11 at `afcfefd` (`src/` unchanged through `ddb35ef`) with `python3 scripts/windows.py research/ab.py size src/cm.c <set> -v -t1`: `synth` `total=201640 webp=201248 webp_ratio=1.0019 webp_geomean=1.0007 webp_worst=1.6829 (syn_checker)`, the six palette-coded images `syn_solid` 61, `syn_checker` 138, `syn_pixel` 52, `syn_ui` 1410, `syn_text` 1447, `syn_diagram` 1452 (total 4560); `photo` `total=30634873`; `tp` `total=6598954`.
+
+Acceptance (the stop condition), from the same command on `build/research/try_pal.c`: the six palette-coded `synth` images total at most 4104 bytes (10% below 4560); `synth` total below 201248 and `webp_geomean` below 1.0000; every `synth` image at most 1.1 times its WebP size or at most 32 bytes larger (`syn_checker` at most 114, `syn_text` at most 1317, `syn_diagram` at most 1350); `photo` and `tp` candidate/baseline at most 1.0005 each, with full-set totals, geometric means and worst images quoted. For the port, alternating encode and decode timing of `src/pal.c` before and after on `syn_ui`, `syn_text`, `syn_diagram` and `syn_solid` at `-t1` and `-t3` (`python3 scripts/windows.py research/ab.py ab <before> <after> -n5 -t1 ...`), minimum-time ratio at most 1.20 (the Milestone 8 envelope for `synth`), with the machine load named. A miss of the size bar ships as the negative result: nothing ported, the figures in the stamp and in `docs/research.md` section 3.2, the port items struck.
+
+- [ ] Prototype the grammar above in `build/research/try_pal.c` (a copy of `src/pal.c`; the harness substitutes it for the palette coder, so the prototype writes it under method 3's number) and measure `synth`, `photo` and `tp`, plus `heldout` for the record. Done when: the summary lines and the six per-image sizes are quoted against the acceptance above, with the step-by-step contribution of each of the four parts on `synth` recorded.
+- [ ] If accepted, port it as method 4: `RF_METHOD_PAL3 4u` in `src/rf.h`; `rf_pal_encode` writes the method 4 payload and `rf_pal_decode` decodes methods 2, 3 and 4 in `src/pal.c`, sharing the neighbour, pattern and counter code; `src/fold.c` selects method 4 where it selected method 3, accepts method 4 only in version 3 files and refuses it in version 2 as an unsupported method on both the packed RGB and strided BMP paths; `inspect` names the method. Done when: `python3 scripts/build.py --target linux-x64` and `--target windows-x64` exit 0 with no warning on the touched files, and the `synth`, `photo` and `tp` sizes from `src/` equal the prototype's.
+- [ ] Write the method 4 section of `spec/FOLD.md` (payload, palette field, index stream differences, refusals, the reference encoder policy now naming method 4), then write the oracle's method 4 encoder and decoder in `tests/rfi_ref.py` from that spec text, never from the C. Done when: the oracle and the C produce identical files and identical pixels on the fixtures of the next item.
+- [ ] Add the fixtures and cases to `tests/test_correctness.py`: `KAT_PAL3` (the 16x8 4-colour image as a version 3, method 4 file) as the encoder's known answer, with `KAT_PAL`, `KAT_PAL2` and `KAT_PAL2_3` still decoding to the same pixels through the C on both output paths and through the oracle; C and oracle byte identity on a one-colour image, a two-colour image, a 256-colour image (palette index 255 in use), an image whose palette forces each `k` to 0 and to 8, an image one pixel wide and one pixel high, and an image exercising D2, D3 and the literal tree in each border class; one-thread and three-thread encodes identical; and the refusals listed in the grammar, each on a file with valid container checksums, plus method 4 in a version 2 header. Done when: the named cases pass and `python3 tests/test_correctness.py` is green with every case run.
+- [ ] Run `python3 tests/fuzz_decode.py 2000 <seed>` with method 4 files among its seeds, and the timing acceptance above. Done when: the fuzz run reports no crash, hang or mismatch with its seed quoted, and both thread counts' ratios are quoted against the 1.20 bar.
+- [ ] Record the result in `docs/research.md` (section 3.2 row on a miss; on acceptance a new subsection of section 4 describing method 4 and its measured parts, and section 1's standing) and the Unreleased section of `CHANGELOG.md`, and refresh whatever generated documents `python3 scripts/build-docs.py --check` and `python3 scripts/drift-check.py` name. Done when: both exit 0.
+- [ ] Commit: `"codec: a compact palette method (method 4)"`
+
+**Test checkpoint:** Corpus measurement and format fidelity proof: `python3 scripts/windows.py research/ab.py size src/cm.c synth -v -t1` (after the port; `build/research/try_pal.c` before it) quoted against the acceptance above with `photo` and `tp`; `python3 tests/test_correctness.py` green including the method 4 known answer, the oracle byte identity cases and the refusals; `python3 tests/fuzz_decode.py 2000 <seed>` clean. A miss of the size bar ships as a negative result with no port.
+
+**Freeze check:** `KAT_FOLD` (version 2, method 1), `KAT_PAL` (method 2), `KAT_PAL2` (version 2, method 3) and `KAT_PAL2_3` (version 3, method 3) decode to the same pixels as before; method 4 is a new method number in the unreleased format version 3 (the operator's standing approval, `D99 T01 §3`, covers extending it), and a decoder without this change refuses a method 4 file as `unsupported fold: method`, never misreads it.
+
 ## Verification
 
 - [ ] `pwsh scripts/check-all.ps1` exits 0
