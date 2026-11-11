@@ -61,10 +61,14 @@ if [ -n "${UNATTENDED_PROMPT_OVERRIDE:-}" ]; then
   PROMPT="$(cat "$UNATTENDED_PROMPT_OVERRIDE")"
 fi
 
-# --model opus is the alias for the latest Opus, never a dated model id.
+# --model fable is the alias for the latest Fable, never a dated model id
+# (operator instruction 2026-11-11: Fable draws less of the plan's limits than
+# Opus). --fallback-model covers a primary model that is overloaded or
+# unavailable; it does not fire on a usage limit, where the session waits for
+# the reset and then continues.
 # The three disallowed tools are the ones that wait on a human.
 exec claude --dangerously-skip-permissions \
-  --model opus --effort medium \
+  --model fable --fallback-model opus,sonnet --effort medium \
   --session-id "$SESSION_ID" \
   --disallowedTools "AskUserQuestion,EnterPlanMode,ExitPlanMode" \
   --plugin-dir .claude/lsp/rasterfold-lsp \

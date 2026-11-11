@@ -76,15 +76,17 @@ class LauncherClaudeTests(unittest.TestCase):
         self.assertEqual(launch.preflight, f"scripts/unattended-preflight.py --repair --claim {session} --claim-pid {launch.claude_pid}")
         self.assertTrue(launch.lock_free_at_start, "the launch lock must be released before Claude Code starts")
         self.assertEqual(str(uuid.UUID(session)), session)
-        self.assertEqual(argv, ["--dangerously-skip-permissions", "--model", "opus", "--effort", "medium",
+        self.assertEqual(argv, ["--dangerously-skip-permissions", "--model", "fable", "--fallback-model", "opus,sonnet",
+                                "--effort", "medium",
                                 "--session-id", session,
                                 "--disallowedTools", "AskUserQuestion,EnterPlanMode,ExitPlanMode",
                                 "--plugin-dir", ".claude/lsp/rasterfold-lsp", campaign_prompt_in_script()])
 
-    def test_the_model_is_the_opus_alias_never_a_dated_id(self):
+    def test_the_model_is_the_fable_alias_with_alias_fallbacks_never_a_dated_id(self):
         text = LAUNCHER.read_text(encoding="utf-8")
-        self.assertIn("--model opus --effort medium", text)
+        self.assertIn("--model fable --fallback-model opus,sonnet --effort medium", text)
         self.assertNotRegex(text, r"--model\s+claude-")
+        self.assertNotRegex(text, r"--fallback-model\s+\S*claude-")
         self.assertNotIn("muse", text.lower())
 
     def test_each_launch_gets_its_own_session_id(self):
@@ -121,7 +123,8 @@ class LauncherClaudeTests(unittest.TestCase):
             override.write_text("Report your session id, then end the turn.", encoding="utf-8")
             launch = Launch(tmp, env={"UNATTENDED_PROMPT_OVERRIDE": str(override)})
             self.assertEqual(launch.argv[-1], "Report your session id, then end the turn.")
-            self.assertEqual(launch.argv[:5], ["--dangerously-skip-permissions", "--model", "opus", "--effort", "medium"])
+            self.assertEqual(launch.argv[:7], ["--dangerously-skip-permissions", "--model", "fable", "--fallback-model", "opus,sonnet",
+                                           "--effort", "medium"])
             missing = Launch(tmp, env={"UNATTENDED_PROMPT_OVERRIDE": str(Path(tmp) / "absent.txt")})
             self.assertIsNone(missing.argv)
             self.assertIn("does not name a readable file", missing.out)
