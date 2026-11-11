@@ -89,7 +89,7 @@ The review ends `COMPLETION: complete` or `COMPLETION: gaps`, and a findings fil
 python3 scripts/review-dispatch.py --kind reconciliation --candidate <full repaired SHA> --writer <this session's key: claude|codex|gemini> --prompt <scratch-reconciliation-prompt.md> --record docs/reviews/<NN-domain>/D<NN>-T<NN>-s<N>.md
 ```
 
-It ends `RECONCILIATION: complete` or `RECONCILIATION: gaps`. On `RECONCILIATION: gaps`, repair those gaps the same way (new commits, `- Implemented:` lines, gates rerun) and run another reconciliation on the new candidate; do not stop to ask the operator. The dispatcher allows reconciliations until one returns complete or the section reaches 33 returned review passes in all (plan, round, completion and reconciliations; `REVIEW_PASS_CAP` in `scripts/review-dispatch.py`), and only a section at the cap stays blocked and is reported. The stamp refuses a reconciliation if the section's contract changed since the failed completion.
+It ends `RECONCILIATION: complete` or `RECONCILIATION: gaps`. On `RECONCILIATION: gaps`, repair those gaps the same way (new commits, `- Implemented:` lines, gates rerun) and run another reconciliation on the new candidate; do not stop to ask the operator. The dispatcher allows reconciliations until one returns complete or the section reaches its pin's cap of returned review passes in all (plan, round, completion and reconciliations; `[schedule] pass_cap` in `.conclave/reviewers.toml`, 33 today), and only a section at the cap stays blocked and is reported. The stamp refuses a reconciliation if the section's contract changed since the failed completion.
 
 ### 5. Measurement, bitstream, surface, and frozen checks
 

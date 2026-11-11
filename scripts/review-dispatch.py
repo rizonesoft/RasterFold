@@ -41,7 +41,7 @@ at medium. A findings file named for a section (`docs/reviews/<NN-domain>/D<NN>-
 before a review is spent. `--kind reconciliation` (`docs/reconciliation-review-prompt.md`) is the further pass after
 a completion that returned gaps, on a candidate descending from it; it ends `RECONCILIATION: complete` or `gaps`. A
 reconciliation that returned gaps may be followed by another on a candidate descending from it, until one returns
-complete or the section reaches `REVIEW_PASS_CAP` (33) returned passes in all.
+complete or the section reaches its pin's `[schedule] pass_cap` returned passes in all (33 in the current pin).
 
 A section stays on the policy of the pin at its plan review's candidate, so a section already in its rounds keeps the
 schedule and route it started under, and scripts/todo-graph.py `stamp` holds its receipt to that same pin.
@@ -190,10 +190,19 @@ LENSES = {
 }
 STEP_KEYS = {"effort", "lenses"}
 THREE_PASS = "three-pass"
-# Operator decision 2026-11-09: a three-pass section takes at most this many returned review passes (plan, round,
-# completion and every reconciliation together), so an unattended run repairs and re-reconciles instead of parking
-# after one failed reconciliation. scripts/todo-graph.py `stamp` holds receipts to the same number.
+# Operator decision 2026-11-09: a three-pass section takes at most a capped number of returned review passes (plan,
+# round, completion and every reconciliation together), so an unattended run repairs and re-reconciles instead of
+# parking after one failed reconciliation. Operator decision 2026-11-11: the number lives in the pin as
+# `[schedule] pass_cap`, read by `review_pass_cap`; this constant is only what a three-pass pin written before that key
+# existed means, so sections already under review keep their cap. scripts/todo-graph.py `stamp` reads the same number.
 REVIEW_PASS_CAP = 33
+# Plan, round and completion always run, so a cap below three could never stamp a section.
+MIN_PASS_CAP = 3
+
+
+def review_pass_cap(schedule):
+    """The most returned review passes a three-pass section may take: the pin's `[schedule] pass_cap`."""
+    return schedule.get("pass_cap", REVIEW_PASS_CAP)
 
 
 def check_step(where, step, efforts, lenses=True):
@@ -226,8 +235,12 @@ def check_schedule(schedule, clis):
     efforts = [e for e in EFFORTS["codex"] if all(e in EFFORTS[cli] for cli in clis)]
     if isinstance(schedule, dict) and schedule.get("policy") == THREE_PASS:
         keys = {"policy", "plan", "completion", "rounds", "reconciliation"}
-        if set(schedule) != keys:
-            raise Refused(f"[schedule] with policy = \"{THREE_PASS}\" needs exactly {', '.join(sorted(keys))}")
+        if set(schedule) - {"pass_cap"} != keys:
+            raise Refused(f"[schedule] with policy = \"{THREE_PASS}\" needs exactly {', '.join(sorted(keys))}, "
+                          "and may add pass_cap")
+        cap = review_pass_cap(schedule)
+        if type(cap) is not int or cap < MIN_PASS_CAP:
+            raise Refused(f"[schedule] pass_cap needs a whole number of review passes, at least {MIN_PASS_CAP}")
         check_step("plan", schedule["plan"], efforts)
         check_step("completion", schedule["completion"], efforts, lenses=False)
         check_step("reconciliation", schedule["reconciliation"], efforts)
@@ -926,9 +939,9 @@ def section_pin(current, record_path):
 SECTION_FINDINGS = re.compile(r"(?:^|/)docs/reviews/[0-9]{2}-[A-Za-z0-9_-]+/D[0-9]{2}-T[0-9]{2}-s[1-9][0-9]*\.md$")
 
 
-def check_three_pass_order(kind, record_path, candidate):
+def check_three_pass_order(kind, record_path, candidate, cap=REVIEW_PASS_CAP):
     """Plan, one round, completion, then reconciliations only after a completion with gaps, each after a reconciliation
-    with gaps, up to REVIEW_PASS_CAP returned passes in all. Refused here so a pass
+    with gaps, up to `cap` (the section pin's `review_pass_cap`) returned passes in all. Refused here so a pass
     out of order never spends a review; the stamp holds the receipt to the same order. A findings file not named for a
     section (a standalone independent review) has no order."""
     if not record_path or not SECTION_FINDINGS.search(Path(record_path).as_posix()):
@@ -963,8 +976,8 @@ def check_three_pass_order(kind, record_path, candidate):
             raise Refused("a reconciliation follows one round and a completion review that returned gaps")
         if reconciled and reconciled[-1]["review"].rstrip().endswith("RECONCILIATION: complete"):
             raise Refused("the section's reconciliation already returned complete; it needs no further pass")
-        if len(plans) + len(rounds) + len(completions) + len(reconciled) >= REVIEW_PASS_CAP:
-            raise Refused(f"the section has spent its {REVIEW_PASS_CAP} review passes; it stays blocked")
+        if len(plans) + len(rounds) + len(completions) + len(reconciled) >= cap:
+            raise Refused(f"the section has spent its {cap} review passes; it stays blocked")
         previous = (reconciled or completions)[-1]
         if not descends(previous["candidate"], candidate):
             raise Refused(f"the reconciliation's candidate does not descend from the last pass's "
@@ -1112,7 +1125,7 @@ def main(argv=None):
         pin = section_pin(load_pin(args.pin), args.record)
         three_pass = pin.get("schedule", {}).get("policy") == THREE_PASS
         if three_pass:
-            check_three_pass_order(args.kind, args.record, args.candidate)
+            check_three_pass_order(args.kind, args.record, args.candidate, review_pass_cap(pin["schedule"]))
         elif args.kind == "reconciliation":
             raise Refused("this section's pin has no reconciliation pass; only the three-pass policy takes one")
         plan = None

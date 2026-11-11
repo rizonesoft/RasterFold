@@ -19,8 +19,9 @@
 # A completion that returns gaps blocks the stamp until a reconciliation pass (--kind reconciliation) passes on the
 # repaired candidate.
 # Owner decision 2026-11-09: a reconciliation that returns gaps is repaired and followed by another, up to 33 returned
-# review passes per section in all (REVIEW_PASS_CAP in scripts/review-dispatch.py), so an unattended run never parks
-# waiting for another review.
+# review passes per section in all, so an unattended run never parks waiting for another review.
+# Owner decision 2026-11-11: that cap is stored here as `[schedule] pass_cap` and read from here by the dispatcher and
+# the stamp. It counts every returned pass of a section: plan, round, completion and each reconciliation.
 # Owner decision 2026-11-11: Gemini 4 Carbon was released and replaces Gemini 4 Argon as the Codex writer's reviewer
 # (`reviewers.carbon`, `gemini-4-carbon-medium` through the Antigravity CLI). Sections whose plan review read an
 # earlier pin finish on Argon.
@@ -47,6 +48,7 @@ gemini = ["astra"]
 
 [schedule]
 policy = "three-pass"
+pass_cap = 33
 
 [schedule.plan]
 effort = "medium"

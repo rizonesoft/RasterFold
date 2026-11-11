@@ -1302,12 +1302,31 @@ class RepositoryPin(unittest.TestCase):
         self.assertEqual(pin["routes"], {"claude": ["astra"], "codex": ["carbon"], "gemini": ["astra"]})
         schedule = pin["schedule"]
         self.assertEqual(schedule["policy"], "three-pass")
+        self.assertEqual(schedule["pass_cap"], 33)
         self.assertEqual(schedule["plan"], {"effort": "medium", "lenses": ["plan"]})
         self.assertEqual(schedule["completion"], {"effort": "medium"})
         self.assertEqual(schedule["rounds"], [{"effort": "medium", "lenses": [
             "adversarial", "integration", "source-defect", "plan-delivery", "consistency", "record", "quality",
             "optimization", "design"]}])
         self.assertEqual(schedule["reconciliation"]["effort"], "medium")
+
+    def test_the_review_pass_cap_is_read_from_the_pin(self):
+        # Operator decision 2026-11-11: the cap is the pin's `[schedule] pass_cap`, not a number in the scripts.
+        spec = importlib.util.spec_from_file_location("dispatch_pass_cap", SCRIPTS / "review-dispatch.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        text = REPO_PIN.read_text(encoding="utf-8")
+        self.assertEqual(module.review_pass_cap(module.load_pin(data=text.encode())["schedule"]), 33)
+        moved = text.replace("pass_cap = 33\n", "pass_cap = 7\n")
+        self.assertNotEqual(moved, text)
+        self.assertEqual(module.review_pass_cap(module.load_pin(data=moved.encode())["schedule"]), 7)
+        # A three-pass pin written before the key existed keeps the cap its sections started under.
+        older = text.replace("pass_cap = 33\n", "")
+        self.assertEqual(module.review_pass_cap(module.load_pin(data=older.encode())["schedule"]),
+                         module.REVIEW_PASS_CAP)
+        for bad in ("2", "0", "-1", "true", "33.0", '"33"'):
+            with self.subTest(bad), self.assertRaisesRegex(module.Refused, "pass_cap needs a whole number"):
+                module.load_pin(data=text.replace("pass_cap = 33\n", f"pass_cap = {bad}\n").encode())
 
     def test_the_pins_severity_stop_is_the_stamps_cutoff(self):
         # The dispatcher reports severity_stop from the pin and `stamp` re-checks it against SEVERITY_CUTOFF_ROUND: the
@@ -1839,11 +1858,11 @@ class ThreePassStamp(StampRepo):
         self.round_pass(built)
         self.completion_pass(built, "gaps")
         repaired = self.build("repair")
-        spare = self.dispatch.REVIEW_PASS_CAP - 3
-        for _ in range(spare):
+        cap = self.dispatch.review_pass_cap(self.schedule)
+        for _ in range(cap - 3):
             self.reconciliation_pass(repaired, "gaps")
         self.reconciliation_pass(repaired)
-        self.refused(f"allows {self.dispatch.REVIEW_PASS_CAP} review passes", repaired, verdict="reconciled")
+        self.refused(f"allows {cap} review passes", repaired, verdict="reconciled")
 
     def test_a_reconciliation_that_narrowed_the_section_is_refused(self):
         self.started()
@@ -1880,6 +1899,25 @@ class ThreePassStamp(StampRepo):
         self.assertEqual(data["schedule_sha"], start)
         self.assertEqual(data["schedule"]["rounds"][0]["effort"], "high")
         self.tg.receipt_data_ok(data, self.REF, tip, root=self.root, surface=False)
+
+
+class ThreePassStampAtAPinnedCap(ThreePassStamp):
+    """The stamp takes the cap from the section's pin: a pin that says five holds its receipts to five."""
+
+    PIN_TEXT = REPO_PIN.read_text(encoding="utf-8").replace("pass_cap = 33\n", "pass_cap = 5\n")
+
+    def test_the_pin_under_test_caps_at_five(self):
+        self.assertEqual(self.dispatch.review_pass_cap(self.schedule), 5)
+
+    def test_a_section_within_the_pinned_cap_stamps(self):
+        self.started()
+        built = self.build("a")
+        self.round_pass(built)
+        self.completion_pass(built, "gaps")
+        repaired = self.build("repair")
+        self.reconciliation_pass(repaired, "gaps")
+        self.reconciliation_pass(repaired)
+        self.stamp(repaired, verdict="reconciled")
 
 
 class ThreePassDispatch(Harness):
@@ -1996,6 +2034,21 @@ class ThreePassDispatch(Harness):
         result, _ = self.run_pass("reconciliation", "RECONCILIATION: complete")
         self.assertEqual(result.returncode, 2)
         self.assertIn(f"spent its {module.REVIEW_PASS_CAP} review passes", result.stderr)
+        self.assertEqual(self.calls(), [])
+
+    def test_reconciliations_stop_at_the_cap_the_pin_stores(self):
+        pin = self.repo / ".conclave/reviewers.toml"
+        text = pin.read_text(encoding="utf-8")
+        pin.write_text(text.replace("pass_cap = 33\n", "pass_cap = 4\n"), encoding="utf-8", newline="\n")
+        self.head = self.commit("the pin caps a section at four passes")
+        self.run_pass("plan", self.PLAN)
+        self.run_pass("round", self.ROUND)
+        self.run_pass("completion", "COMPLETION: gaps")
+        result, _ = self.run_pass("reconciliation", "RECONCILIATION: gaps")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        result, _ = self.run_pass("reconciliation", "RECONCILIATION: complete")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("spent its 4 review passes", result.stderr)
         self.assertEqual(self.calls(), [])
 
     def test_a_reconciliation_after_a_complete_completion_is_refused(self):

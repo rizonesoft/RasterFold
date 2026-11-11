@@ -1551,7 +1551,7 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "Re-read 2026-11-11 for the retirement of the muse and opencode writers: the writers are Claude Code, Codex and Antigravity, no route in .conclave/reviewers.toml names muse or opencode, the OpenCode campaign plugin, hook adapter and heartbeat script are removed, and the dispatcher keeps the retired keys only to read recorded reviews and older pins; the statements this document makes about the changed sources were checked against them",
+      "evidence": "Re-read 2026-11-11 for the review pass cap moving into the pin: .conclave/reviewers.toml stores it as [schedule] pass_cap = 33, scripts/review-dispatch.py and the stamp read it from the section's pin, and a pin without the key keeps 33; the statements this document makes about the changed sources were checked against them",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "362589cf2d8cdf51ea77ef645fb115e9edcc7659825f86531df856ae76e9a0cb",
@@ -1560,32 +1560,32 @@
         "scripts/package.py": "ef69de2da770ea647e2841f4c2ce16db8bae22544c086a389983bdbeb1e50b37",
         "scripts/check-all.py": "fb6c9b81108c65eadb781b8fed2bf623db5ad5e565396d2cb5bcc239342adb77",
         "README.md": "47fada14cb681d4e0fa555926274da723bbef81f207573325b438e987b4ba95a",
-        "AGENTS.md": "3c3f8ed71de72d956b276536d9539156ef57dbbb723c2989997acd0921439d84",
-        ".conclave/reviewers.toml": "193d29b88769afc360dc4e357dcc8ec1a1332b9bfcb3115132c4e0dfc4ff4d65",
-        "scripts/review-dispatch.py": "77c688b88f2a884077c34eeab49896d1548583e7acb80621708e1ef5af0a7a59"
+        "AGENTS.md": "5b6d21349b3304727a3b0c0b689fc6df50f8c6847e8c3a5bd2fe154257869687",
+        ".conclave/reviewers.toml": "a95be5634bda979837450696840208f1271598d50c9b116471cd9467720e8358",
+        "scripts/review-dispatch.py": "2654d267280865455202f58ff0309a6e01e6ab42b07734d8fa04943662f90632"
       },
       "review": "Author-attested: 2026-10-25 re-read README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "AGENTS.md": {
-      "evidence": "Re-read 2026-11-11 for the retirement of the muse and opencode writers: the writers are Claude Code, Codex and Antigravity, no route in .conclave/reviewers.toml names muse or opencode, the OpenCode campaign plugin, hook adapter and heartbeat script are removed, and the dispatcher keeps the retired keys only to read recorded reviews and older pins; the statements this document makes about the changed sources were checked against them",
+      "evidence": "Re-read 2026-11-11 for the review pass cap moving into the pin: .conclave/reviewers.toml stores it as [schedule] pass_cap = 33, scripts/review-dispatch.py and the stamp read it from the section's pin, and a pin without the key keeps 33; the statements this document makes about the changed sources were checked against them",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "362589cf2d8cdf51ea77ef645fb115e9edcc7659825f86531df856ae76e9a0cb",
         "toolchain.json": "010110775918aa331c1ba399f10f7d71a194d86d7b8b5416063db2b7da0aa143",
-        ".conclave/reviewers.toml": "193d29b88769afc360dc4e357dcc8ec1a1332b9bfcb3115132c4e0dfc4ff4d65",
-        "scripts/review-dispatch.py": "77c688b88f2a884077c34eeab49896d1548583e7acb80621708e1ef5af0a7a59",
-        "AGENTS.md": "3c3f8ed71de72d956b276536d9539156ef57dbbb723c2989997acd0921439d84",
+        ".conclave/reviewers.toml": "a95be5634bda979837450696840208f1271598d50c9b116471cd9467720e8358",
+        "scripts/review-dispatch.py": "2654d267280865455202f58ff0309a6e01e6ab42b07734d8fa04943662f90632",
+        "AGENTS.md": "5b6d21349b3304727a3b0c0b689fc6df50f8c6847e8c3a5bd2fe154257869687",
         ".codex/hooks.json": "c67e7762d0970280c653a74601012d01971d05f677182ae70e4eda0aa783c150",
         "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",
         "scripts/campaign_guard.py": "564720b1ae8c3999bca60b1a00814ef60ff4c51f636a42e4953f9cbbadfd54d3"
       }
     },
     "GEMINI.md": {
-      "evidence": "Re-read 2026-11-11 for the retirement of the muse and opencode writers: the writers are Claude Code, Codex and Antigravity, no route in .conclave/reviewers.toml names muse or opencode, the OpenCode campaign plugin, hook adapter and heartbeat script are removed, and the dispatcher keeps the retired keys only to read recorded reviews and older pins; the statements this document makes about the changed sources were checked against them",
+      "evidence": "Re-read 2026-11-11 for the review pass cap moving into the pin: .conclave/reviewers.toml stores it as [schedule] pass_cap = 33, scripts/review-dispatch.py and the stamp read it from the section's pin, and a pin without the key keeps 33; the statements this document makes about the changed sources were checked against them",
       "sources": {
-        "AGENTS.md": "3c3f8ed71de72d956b276536d9539156ef57dbbb723c2989997acd0921439d84",
-        ".conclave/reviewers.toml": "193d29b88769afc360dc4e357dcc8ec1a1332b9bfcb3115132c4e0dfc4ff4d65",
-        "scripts/review-dispatch.py": "77c688b88f2a884077c34eeab49896d1548583e7acb80621708e1ef5af0a7a59",
+        "AGENTS.md": "5b6d21349b3304727a3b0c0b689fc6df50f8c6847e8c3a5bd2fe154257869687",
+        ".conclave/reviewers.toml": "a95be5634bda979837450696840208f1271598d50c9b116471cd9467720e8358",
+        "scripts/review-dispatch.py": "2654d267280865455202f58ff0309a6e01e6ab42b07734d8fa04943662f90632",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
         "GEMINI.md": "928b6666dd34842df37b698df61792cf416e6885f11645f400d5c8562c537677"
       }
@@ -1678,14 +1678,14 @@
       }
     },
     "docs/agent-skills-and-rules-structure.md": {
-      "evidence": "Re-read 2026-11-11 for the retirement of the muse and opencode writers: the writers are Claude Code, Codex and Antigravity, no route in .conclave/reviewers.toml names muse or opencode, the OpenCode campaign plugin, hook adapter and heartbeat script are removed, and the dispatcher keeps the retired keys only to read recorded reviews and older pins; the statements this document makes about the changed sources were checked against them",
+      "evidence": "Re-read 2026-11-11 for the review pass cap moving into the pin: .conclave/reviewers.toml stores it as [schedule] pass_cap = 33, scripts/review-dispatch.py and the stamp read it from the section's pin, and a pin without the key keeps 33; the statements this document makes about the changed sources were checked against them",
       "sources": {
-        "AGENTS.md": "3c3f8ed71de72d956b276536d9539156ef57dbbb723c2989997acd0921439d84",
+        "AGENTS.md": "5b6d21349b3304727a3b0c0b689fc6df50f8c6847e8c3a5bd2fe154257869687",
         "GEMINI.md": "928b6666dd34842df37b698df61792cf416e6885f11645f400d5c8562c537677",
         ".conclave/kits.json": "56785267af421d6deac2d4e5cfdda58be63684fb6f3893cece8043a6f0578105",
-        ".conclave/reviewers.toml": "193d29b88769afc360dc4e357dcc8ec1a1332b9bfcb3115132c4e0dfc4ff4d65",
+        ".conclave/reviewers.toml": "a95be5634bda979837450696840208f1271598d50c9b116471cd9467720e8358",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
-        "scripts/review-dispatch.py": "77c688b88f2a884077c34eeab49896d1548583e7acb80621708e1ef5af0a7a59",
+        "scripts/review-dispatch.py": "2654d267280865455202f58ff0309a6e01e6ab42b07734d8fa04943662f90632",
         "docs/agent-skills-and-rules-structure.md": "9ba4b58696ddfde6869e95053d38ae9941b0183e6ff01cbe1c642fa80c202f81",
         ".codex/hooks.json": "c67e7762d0970280c653a74601012d01971d05f677182ae70e4eda0aa783c150",
         "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",

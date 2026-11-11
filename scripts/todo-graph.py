@@ -7086,7 +7086,7 @@ def schedule_ok(root: Path, data: dict, ref: str, surface: bool) -> None:
             if dispatch.returned_one_pass(entry, "reconciliation"):
                 _check(f"the reconciliation review in {completion}", entry,
                        dispatch.scheduled(schedule, "reconciliation", [], surface))
-        three_pass_ok(root, data, ref, found)
+        three_pass_ok(root, data, ref, found, dispatch.review_pass_cap(schedule))
     for entry in completions:
         if dispatch.returned_one_pass(entry, "completion"):
             _check(f"the completion review in {completion}", entry, dispatch.scheduled(schedule, "completion", [], surface))
@@ -7125,9 +7125,9 @@ def section_contract(root: Path, sha: str, ref: str) -> str:
     return body.rstrip()
 
 
-def three_pass_ok(root: Path, data: dict, ref: str, found: dict) -> None:
+def three_pass_ok(root: Path, data: dict, ref: str, found: dict, cap: int) -> None:
     """The three-pass chain: one plan review, one round, then the completion review (and its reconciliations, up to
-    the review-pass cap),
+    `cap`, the section pin's `[schedule] pass_cap`),
     each on a candidate at or after the one before, in the order they ran, and the last on the stamped commit."""
     dispatch = review_dispatch()
     sha = data["implementation_sha"]
@@ -7144,8 +7144,8 @@ def three_pass_ok(root: Path, data: dict, ref: str, found: dict) -> None:
     (completion,) = [e for e in found["completions"] if dispatch.returned_one_pass(e, "completion")]
     passed = [e for e in found["reconciliations"] if dispatch.returned_one_pass(e, "reconciliation")]
     require(
-        3 + len(passed) <= dispatch.REVIEW_PASS_CAP,
-        f"the three-pass policy allows {dispatch.REVIEW_PASS_CAP} review passes, not {3 + len(passed)}: {ref}",
+        3 + len(passed) <= cap,
+        f"the three-pass policy allows {cap} review passes, not {3 + len(passed)}: {ref}",
     )
     verdict = data["completion"]["verdict"]
     require(
