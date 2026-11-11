@@ -175,7 +175,7 @@ The implementing session's recommendation, recorded with the decision: 13 is kep
 > **Review:** `docs/reviews/d99-t01-s8.json`
 ## 9. The 2026-11-11 Scope and Autonomy Decisions
 
-The operator made six decisions in one attended session on 2026-11-11. They changed the product's scope and the way every session works, so they are recorded here in the operator's words, each with where it is implemented and what reversing it costs. The implementing session carried them out in the commits `92885be`, `5a93a14`, `43ee9c9` and their review-fix commits; this section is the decision record and the check that the tree still agrees with it.
+The operator made six decisions in one attended session on 2026-11-11, and a seventh to the campaign session that evening. They changed the product's scope and the way every session works, so they are recorded here in the operator's words, each with where it is implemented and what reversing it costs. The implementing session carried them out in the commits `92885be`, `5a93a14`, `43ee9c9` and their review-fix commits; this section is the decision record and the check that the tree still agrees with it.
 
 **1. Android is removed.** "we will not be doing any android dev in this repo anymore, so please clean the repo. Time is better spend on the algorythms", after "remove Android work. We can always create a fork for that when we are done". RasterFold targets Windows x64 and Linux x64. Reversal cost: restore the NDK pin in `toolchain.json`, the two targets in `scripts/build.py`, `scripts/tidy.py` and `scripts/package.py`, and the Android rows of the plan from the commit before `92885be`.
 
@@ -189,7 +189,10 @@ The operator made six decisions in one attended session on 2026-11-11. They chan
 
 **6. Autonomy is widened to attended sessions.** "You need to act autonomously, self-improve, self-heal, and make decisions to shape the and create the best repo, runners, toolset, dev methods, product, end-result, project, etc. you possibly can. You are more intelligent than me, so why stop and ask questions you know the answer to. We are not scared of the competition, no matter if its Adobe, Microsoft, Apple, or Google, we can and will be better. Nothing is impossible and nothing is stopping us from accomplishing the impossible(wire it in)." `AGENTS.md` (Autonomy is the default) carries it. Reversal cost: one paragraph in `AGENTS.md` and one sentence in the launcher prompt.
 
+**7. The desktop-shortcut section is dropped.** "D00 T05 §5 --> let's drop or remove it. Flipping it has become a real pain" (said to the campaign session on 2026-11-11, after its sixth reconciliation returned a new preflight finding). The section and its plan row are removed unstamped; the shortcut on the operator's desktop and `docs/unattended-run.md` stay. Reversal cost: restore the section and row in `todo/00-workspace/TODO-05-lsp-subagents-unattended.md` from the commit before the removal and run one more reconciliation.
+
 <!-- claim: count "android" scripts/build.py = 0 -->
+<!-- claim: count "^## 5\. " todo/00-workspace/TODO-05-lsp-subagents-unattended.md = 0 -->
 <!-- claim: count "android" toolchain.json = 0 -->
 <!-- claim: count "^### Phase 10 -- Native converter$" todo/implementation-plan.md = 1 -->
 <!-- claim: exists docs/codec-distribution.md -->

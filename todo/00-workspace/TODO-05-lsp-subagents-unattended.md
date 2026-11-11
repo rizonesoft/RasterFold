@@ -45,7 +45,7 @@ track: W1
 - The Muse subagent tiers §2 built (`rf-spark-scout`, `rf-spark-hands`, `rf-ember-literal`, defined in `.agents/muse-agents.json`) are removed with their roster file; AGENTS.md keeps judgment, codec work, reviews, stamps, and commits on the lead model, and §7's read-only Sonnet scouts are the only agents.
 - The tool stack has a verdict per candidate tool (Ninja and LLD already in; compiler caches and alternate linkers not adopted, explicitly untested, with a measured reopening bar), and the one measured bottleneck, receipt validation's per-section git calls, has an owner and a stop condition in §6.
 - `scripts/unattended-preflight.py` proves, before any unattended start, that the tree is clean on `main`, the graph and plan are current, the guard self-test and reviewer pin pass, the reviewer CLIs exist, the compilation database is current, the agent definitions load, and disk and RAM headroom suffice.
-- A Windows Desktop shortcut starts the whole thing in one double-click and either enters the campaign or shows the preflight failure.
+- A Windows Desktop shortcut starts the whole thing in one double-click and either enters the campaign or shows the preflight failure. It exists and is in use, as an operator convenience rather than a reviewed deliverable: its section (§5) was removed on 2026-11-11 by operator instruction.
 - The unattended writer is Claude Code at medium effort, on the latest Fable with Opus then Sonnet as fallback models since 2026-11-11 (shipped on the latest Opus by §7): the launcher pins a fresh session id a second launch can see, withholds the three tools that wait on a human, loads the pinned language servers as a Claude Code plugin, and three Sonnet scouts in `.claude/agents/` that have no write or command tool take near-mechanical reading off the lead.
 - `scripts/review-prompt.py` (§8) writes every review pass's prompt from its template, so no pass is ever sent a shortened template or a reply cap.
 
@@ -61,10 +61,11 @@ track: W1
 |   2   |   §2    | Spark and Ember subagents under lead verification | -- |  [x]   |
 |   3   |   §3    | The measured tool stack: what stays, what is not adopted | §1 |  [x]   |
 |   4   |   §4    | Unattended run: preflight, launcher, and goal | §2 |  [x]   |
-|   5   |   §5    | The Windows Desktop shortcut | §4, §7 |  [ ]   |
 |   6   |   §6    | Batch the git calls in receipt validation | -- |  [x]   |
 |   7   |   §7    | Claude Code as the unattended writer, with read-only Sonnet scouts and its own language servers | §4 |  [x]   |
 |   8   |   §8    | Review prompts filled by script from the templates | -- |  [x]   |
+
+**Removed 2026-11-11 (operator instruction, `D99 T01 §9` decision 7):** §5, The Windows Desktop Shortcut, is removed from this file and the plan unstamped: "D00 T05 §5 --> let's drop or remove it. Flipping it has become a real pain". Its four items were ticked, and it had taken a plan review, one round, a completion review and six reconciliations (`docs/reviews/00-workspace/D00-T05-s5.md`, kept as history), each of which closed the last findings and raised a new one in the preflight rather than in the shortcut. The number 5 is never reused. The shortcut itself (`RasterFold Unattended Run.lnk` on the operator's desktop, target `C:\Windows\System32\wsl.exe`, arguments `-d Ubuntu --cd /home/derickpayne/projects/RasterFold -- bash scripts/unattended-run.sh`) stays where it is as an operator convenience that no section owns, and `docs/unattended-run.md` still describes it. Reversal cost: restore the section and its row from the commit before this one and run one more reconciliation.
 
 ---
 
@@ -149,21 +150,6 @@ An unattended run fails in boring ways long before it fails in interesting ones:
 
 > **Verified:** 2026-11-10 | §4 | d12a5a60c99f8558c2f8ac02dea9ae11d0f0714c
 > **Review:** `docs/reviews/d00-t05-s4.json`
-## 5. The Windows Desktop Shortcut
-
-> **Started:** 2026-11-10T21:36:00Z
-
-The operator double-clicks; everything else is §4's job. The shortcut lives on the Windows desktop (this checkout is reached through WSL), opens Windows Terminal, and runs the launcher inside the `Ubuntu` distribution at this checkout, so the visible artifact is one `.lnk` whose target line a reader can audit.
-
-- [x] Create `RasterFold Unattended Run.lnk` on the Windows desktop (`/mnt/c/Users/DerickPayne/Desktop/`) through Windows PowerShell's `WScript.Shell`, targeting `C:\Windows\System32\wsl.exe` with arguments `-d Ubuntu --cd /home/derickpayne/projects/RasterFold -- bash scripts/unattended-run.sh` (wsl.exe directly, not `wt.exe`: one less alias that can move, and the launcher itself keeps the window open on a preflight failure). Done when: the `.lnk` exists and reading it back through the same COM object prints that exact target and arguments.
-- [x] Prove the double-click path once from Windows: .lnk read-back exact (wsl.exe, -d Ubuntu --cd /home/derickpayne/projects/RasterFold -- bash scripts/unattended-run.sh); actual Start-Process launch in the run file; successful Muse startup through the same launcher proved in D00 T05 s4
-- [x] Prove the visible refusal through the actual .lnk: launched while this campaign owns the guard, session count unchanged (57), guard unchanged, so the preflight refusal stopped any Muse start; output quoted in the run file
-- [x] Commit: `"workspace: desktop shortcut for the unattended run (D00 T05 §5)"`
-
-**Corrected 2026-11-10:** the original checkpoint's "stop leaves no live owner" clause belongs to §4's launcher lifecycle (proved live there: dry session, guard untouched, heartbeat swap read-back); a successful campaign launch through this shortcut cannot run while a campaign already owns this tree, so §5's checkpoint is the hop only the shortcut owns.
-
-**Test checkpoint:** Driven run with evidence, re-run 2026-11-11 against the Claude Code launcher (§7) and recorded in `docs/reviews/00-workspace/D00-T05-s5.md`: the `.lnk` read-back prints the exact target and arguments; the actual `.lnk`, launched against a planted dirty tree, left the launcher shell alive on `/dev/pts/2` after its preflight (pid 2659708, `bash scripts/unattended-run.sh` became `bash` at 40.4 s and was still there at 127 s), started no `claude` process and wrote no launch claim; and the operator pasted that window's own text, ending `FAIL  tree clean  -- 1 dirty path(s)`, `preflight: 1 FAIL -- do not start an unattended run`, `Preflight failed: the unattended run was not started.` and a shell prompt.
-
 ## 6. Batch the Git Calls in Receipt Validation
 
 > **Started:** 2026-11-10T20:45:00Z
@@ -229,6 +215,5 @@ Every section takes at least three review passes, and each needs a scratch promp
 - [ ] `python3 scripts/unattended-preflight.py` exits 0 with every line PASS on the committed tree
 - [ ] `python3 scripts/gen-compdb.py --check`, `python3 scripts/todo-graph.py validate`, `python3 scripts/todo-graph.py plan --check`, `python3 scripts/todo-claims.py`, and `python3 scripts/drift-check.py` all exit 0
 - [ ] `python3 scripts/build.py --target linux-x64` exits 0 with no warning, and `clangd --check` on `src/cm.c` reports no code diagnostics
-- [ ] The desktop shortcut read-back prints its target, and one launched dry run was stopped cleanly with no guard left
 - [ ] `python3 -m unittest discover -s scripts/tests` exits 0, and `python3 scripts/review-prompt.py --kind plan --ref 'D00 T05 §8' --candidate $(git rev-parse HEAD)` writes a prompt with no unfilled placeholder
 
