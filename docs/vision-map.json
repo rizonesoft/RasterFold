@@ -1,6 +1,9 @@
 {
   "schema": 1,
   "release_gate": "D09 T01 \u00a74",
+  "later_gates": [
+    "D10 T04 \u00a74"
+  ],
   "requirements": {
     "Native C engine, reproducible bundled sources and no extra installs": [
       "D10 T01 \u00a71",

@@ -45,6 +45,18 @@ class PlanAuditTests(unittest.TestCase):
         self.edges['B'].clear()
         self.assertTrue(any('does not block' in e for e in self.errors()))
 
+    def test_requirement_may_block_a_later_gate_instead_of_the_release(self):
+        self.edges.update({'D': set(), 'E': {'D'}})
+        self.order.update({'D': (2, 4), 'E': (2, 5)})
+        self.vision['requirements']['Converter'] = ['D', 'E']
+        self.assertTrue(any('Converter: D does not block C' in e for e in self.errors()))
+        self.vision['later_gates'] = ['E']
+        self.assertEqual([], self.errors())
+
+    def test_missing_later_gate_fails(self):
+        self.vision['later_gates'] = ['missing']
+        self.assertTrue(any('later gate does not exist' in e for e in self.errors()))
+
     def test_deleted_owner_and_empty_requirement_fail(self):
         self.vision['requirements'] = {'Preview': ['missing'], 'Save': []}
         self.assertEqual(2, len(self.errors()))

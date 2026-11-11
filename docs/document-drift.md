@@ -20,7 +20,7 @@ python3 scripts/drift-check.py --json
 python3 scripts/plan-audit.py
 ```
 
-The plan audit uses the canonical TODO parser. It checks prerequisite order within and between phases and requires every owner in `docs/vision-map.json` to block the release gate through the dependency graph. The graph validator separately enforces section/row parity, reciprocal references, cycles and review stamps.
+The plan audit uses the canonical TODO parser. It checks prerequisite order within and between phases and requires every owner in `docs/vision-map.json` to block the release gate, or one of the map's `later_gates` (the native converter's acceptance, which follows the release), through the dependency graph. The graph validator separately enforces section/row parity, reciprocal references, cycles and review stamps.
 
 ## Repair generated output
 

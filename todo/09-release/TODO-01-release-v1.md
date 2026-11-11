@@ -11,7 +11,7 @@ track: R1
 
 # TODO-01 -- Release 1.0
 
-> **Goal:** `rasterfold-v1.0.0` ships as a signed-off, reproducible package: Windows/Linux x64 CLI and native converter packages, shared/static libraries, headers, applicable symbols and import libraries, complete HTML docs, notices and checksums, built by CI from the tag, with the format frozen at version 3 and the backlog reviewed.
+> **Goal:** `rasterfold-v1.0.0` ships as a signed-off, reproducible package: Windows/Linux x64 CLI packages, shared/static libraries, headers, applicable symbols and import libraries, complete HTML docs, notices and checksums, built by CI from the tag, with the format frozen at version 3 and the backlog reviewed.
 
 > [!IMPORTANT]
 > **Current state (verified 2026-11-09):** API 1.0 and format 3 are independent contracts; product SemVer 1.0.0 lives only in `VERSION` and feeds the CLI report, build manifests, development package names, facts, and the site through `scripts/version.py`, and `CHANGELOG.md` records changes since the version 2 codec. There is no release workflow or release tag yet (§3, §4). Release automation must extend this packager and keep product, format and ABI versions independent.
@@ -30,7 +30,7 @@ track: R1
 ## Outcome
 
 - `rasterfold --version` reports product 1.0.0 and format versions; `rf_version()` keeps reporting the independent packed API version.
-- `dist/` contains versioned two-target CLI/SDK and separate converter packages with headers, symbols, notices, changelog and `SHA256SUMS`, produced deterministically from the tag.
+- `dist/` contains versioned two-target CLI/SDK packages with headers, symbols, notices, changelog and `SHA256SUMS`, produced deterministically from the tag.
 - The tag `rasterfold-v1.0.0` is pushed, the release published, and every backlog entry reviewed for it.
 
 **Adjacency:** list=not-applicable (no records to browse); document=applicable @ D09 T01 §2; settings=not-applicable (no option); reporting=applicable @ D09 T01 §1; notifications=not-applicable (a release note, no messages); permissions=not-applicable (no refusal path); audit=applicable @ D09 T01 §1; exchange=applicable @ D09 T01 §3; reverse=not-applicable (a published release is superseded, not undone)
@@ -42,9 +42,9 @@ track: R1
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
 |   1   |   §1    | One version source and the changelog | -- |  [x]   |
-| 2 | §2 | The two-target release package | §1, D06 T01 §2, D10 T04 §3 | [ ] |
+| 2 | §2 | The two-target release package | §1, D06 T01 §2 | [ ] |
 |   3   |   §3    | The release workflow | §2 |  [ ]   |
-| 4 | §4 | Release rasterfold-v1.0.0 | §3, D05 T01 §9, D10 T04 §4 | [ ] |
+| 4 | §4 | Release rasterfold-v1.0.0 | §3, D05 T01 §9 | [ ] |
 
 ---
 
@@ -79,7 +79,7 @@ track: R1
 
 **Job:** A user can download the package and checksums the release workflow exports for each tag.
 
-- [ ] Add `.github/workflows/release.yml`: on a `rasterfold-v*` tag, run every gate including the already implemented D10 T04 §1 to §3 gates, build all target packages, and create the GitHub release with the zip and its checksums attached, exporting the release notes from `CHANGELOG.md`. Done when: a workflow_dispatch dry run on an immutable candidate ref or a prerelease tag matching VERSION completes without requiring the later D10 T04 §4 whole-product signoff. Cheaper substitute: uploading the zip by hand.
+- [ ] Add `.github/workflows/release.yml`: on a `rasterfold-v*` tag, run every gate, build all target packages, and create the GitHub release with the zip and its checksums attached, exporting the release notes from `CHANGELOG.md`. Done when: a workflow_dispatch dry run on an immutable candidate ref or a prerelease tag matching VERSION completes. Cheaper substitute: uploading the zip by hand.
 - [ ] Commit: `"release: build and publish releases from tags"`
 
 **Test checkpoint:** the dry run's workflow URL and its attached assets quoted.

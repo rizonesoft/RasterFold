@@ -1661,11 +1661,11 @@
       "reviewed": "Author-attested: 2026-10-25 re-read docs/benchmarks.md against src/cm.c, src/fold.c, src/rf.h, research/bench.c, measure/verdict.json, and benchmarks/results.csv after D05 T01 section 2 (Milestone 2 gate: Same bytes, leaner and harder)"
     },
     "docs/document-drift.md": {
-      "evidence": "Re-read 2026-11-11 against scripts/drift-check.py after the harness runtime exemption (HARNESS_RUNTIME): the repair paragraph now states that the read-only comparison leaves out .claude/scheduled_tasks.lock, .claude/state and .codex/state; the rest of the document was checked against the script and still holds.",
+      "evidence": "Re-read 2026-11-11 for the plan audit's later gates: scripts/plan-audit.py accepts an owner that blocks the release gate or one of later_gates in docs/vision-map.json, which names D10 T04 section 4, and this document now states that rule; its other statements about the drift and plan gates were checked against scripts/drift-check.py and scripts/plan-audit.py",
       "sources": {
         "scripts/drift-check.py": "668cee9ed76c3f1d9d4c0e7f23572468f748bdbd2b9175c9270c5fb0a74ca542",
-        "scripts/plan-audit.py": "a75c0311c54108a195c8fbe9048df11458abfe946563bb7c248e798fcdb98d42",
-        "docs/document-drift.md": "3bd7008511695d121a260475a8ed625306efc6213923b5cf318de019356682bb"
+        "scripts/plan-audit.py": "facc9eb0a9096052269cd8bc6931e9ae76c6daa02fef2736f7df0ccf74c36b12",
+        "docs/document-drift.md": "0d1a997cab3e31503a272b1326eaa2c80f2c259ec3b9ed13e5e5c85f2fb9961d"
       }
     },
     "docs/README.md": {
@@ -1890,7 +1890,7 @@
         "docs/_includes/generated/tables/size-vs-decode.md"
       ],
       "planned_outputs": {
-        "docs/cli.md": "D08 T03 §1"
+        "docs/cli.md": "D08 T03 \u00a71"
       }
     },
     {

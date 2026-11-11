@@ -215,7 +215,7 @@ The workflow is GitHub's Jekyll starter adapted to this repository: it builds th
 
 - [ ] Generate `docs/downloads.md` from verified release metadata. Done when: each target links executable/GUI and library packages, symbols, checksums and license/source information.
 - [ ] Generate release/API/format labels in `scripts/build-docs.py`. Done when: independent compatibility versions cannot be confused with the product SemVer.
-- [ ] Wire current CLI/API, converter and release-history pages in `docs/site-content.json`. Done when: all public entry points show matching release or development labels; later main builds keep downloads linked to the actual released assets rather than nonexistent development packages.
+- [ ] Wire current CLI/API and release-history pages in `docs/site-content.json`. Done when: all public entry points show matching release or development labels; later main builds keep downloads linked to the actual released assets rather than nonexistent development packages.
 - [ ] Register generated downloads/version pages in `docs/drift.json`. Done when: release metadata changes invalidate the generated pages before publication.
 - [ ] Commit: `"docs: versioned downloads and complete references"`
 

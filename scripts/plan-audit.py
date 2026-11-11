@@ -84,7 +84,16 @@ def evaluate(edges, order, vision):
     gate = vision['release_gate']
     if gate not in edges:
         errors.append(f'{gate}: release gate does not exist')
-    reached = ancestors(edges, gate)
+    # A product delivered after the release (the native converter) has its own
+    # terminal gate: its requirements must block that gate, not the release.
+    later = list(vision.get('later_gates', []))
+    for ref in later:
+        if ref not in edges:
+            errors.append(f'{ref}: later gate does not exist')
+    gates = [gate] + later
+    reached = set(later)
+    for ref in gates:
+        reached |= set(ancestors(edges, ref))
     if not vision['requirements']:
         errors.append('vision has no requirement owners')
     for name, refs in vision['requirements'].items():
@@ -94,7 +103,7 @@ def evaluate(edges, order, vision):
             if ref not in edges:
                 errors.append(f'{name}: unknown owner {ref}')
             elif ref != gate and ref not in reached:
-                errors.append(f'{name}: {ref} does not block {gate}')
+                errors.append(f'{name}: {ref} does not block {" or ".join(gates)}')
     return errors
 
 

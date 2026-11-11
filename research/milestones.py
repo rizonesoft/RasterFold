@@ -72,7 +72,7 @@ M = [
      "`python research/ab.py size heldout` against JPEG XL e9 and WebP", [FF], None,
      "D00 T03 §1, D00 T03 §2"),
     (10, "RasterFold 1.0",
-     "`rasterfold-v1.0.0` released: format version 3 frozen; Windows/Linux x64 CLI, shared/static C libraries and the complete native converter; BMP, PNG, and PPM in the CLI; the full HTML docs published; 100,000 fuzz mutations clean; smaller than JPEG XL e9 and lossless WebP on every set total, and faster and leaner than JPEG XL e7 on the `tests/benchmark.py` set totals for encode, decode, and peak memory, each codec at its default thread count",
+     "`rasterfold-v1.0.0` released: format version 3 frozen; Windows/Linux x64 CLI and shared/static C libraries; BMP, PNG, and PPM in the CLI; the full HTML docs published; 100,000 fuzz mutations clean; smaller than JPEG XL e9 and lossless WebP on every set total, and faster and leaner than JPEG XL e7 on the `tests/benchmark.py` set totals for encode, decode, and peak memory, each codec at its default thread count",
      f"{SIZE}, {BENCH}, `python tests/fuzz_decode.py`", [FF, IDLE], None,
      "D06 T01 §1, D06 T01 §2, D06 T01 §3, D06 T01 §4, D06 T01 §5, D07 T01 §1, D07 T01 §2, D07 T01 §3, D07 T01 §4, D08 T03 §1, D08 T03 §2, D09 T01 §1, D09 T01 §2, D09 T01 §3, D09 T01 §4"),
     (11, "SIMD decisions", "one-thread decode at least 10% faster than 1.0, bytes within 0.1%", SPEED, [IDLE], None, "D02 T01 §3, D02 T02 §2"),
