@@ -44,7 +44,7 @@ Work the three questions across the diff and its blast radius. Fix what you find
 - A write that bypasses `rf_write_atomic`, overwrites an existing destination, or leaves a `.partial` file behind on failure.
 - A measurement that cannot be trusted: tuned on `measure/image.bmp` alone, one timing run on a busy machine, a size ratio quoted without the set, total, geometric mean, and worst image, or a thread count left unstated.
 - A rule, constant, or branch that looks at the dimensions, hash, file name, or colour statistics of a particular test image.
-- A dependency outside the platform contract in `AGENTS.md`: Windows CLI imports stay within kernel32/shell32 and its DLL within kernel32; Linux/Android use their declared libc/pthread runtime. Check all relevant targets with `python3 tests/test_artifacts.py`.
+- A dependency outside the platform contract in `AGENTS.md`: Windows CLI imports stay within kernel32/shell32 and its DLL within kernel32; Linux uses its declared libc/pthread runtime. Check all relevant targets with `python3 tests/test_artifacts.py`.
 - A frozen behavior that moved, or a test that passes without exercising the behavior.
 
 ### 3. The adversarial round (one pass)

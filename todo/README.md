@@ -134,7 +134,7 @@ Skills under `.agents/skills/` may cite only full `DNN TNN §N` refs, and only t
 
 ## Proof: what a Test checkpoint may cite
 
-RasterFold is C11 built by `scripts/build.py` and its host wrappers with pinned local toolchains; Windows codec artifacts are freestanding, Linux/Android use libc, and the separately packaged converter may bundle audited codec/support libraries, with a Python oracle (`tests/rfi_ref.py`) and Python test drivers. A checkpoint cites one or more of these six, and **it must be able to fail**:
+RasterFold is C11 built by `scripts/build.py` and its host wrappers with pinned local toolchains; Windows codec artifacts are freestanding, Linux uses libc, and the separately packaged converter may bundle audited codec/support libraries, with a Python oracle (`tests/rfi_ref.py`) and Python test drivers. A checkpoint cites one or more of these six, and **it must be able to fail**:
 
 | Proof | What it is | What it cannot prove |
 | ----- | ---------- | -------------------- |
@@ -280,8 +280,6 @@ Values are comma-separated closed vocabulary (`todo-graph.py` `REQUIRES_ALLOWED`
 | `windows-runtime` | Native Windows CLI/library execution | Explicit after a native execution probe; no GUI session required |
 | `linux-runtime` | Native Linux CLI/library execution | Explicit after a native execution probe; no GUI session required |
 | `linux-display` | Driven Linux display and accessibility evidence | Explicit after a real session probe; never inferred from DISPLAY or a build |
-| `android-arm64-runtime` | Driven Android ARM64 device evidence | Explicit after a device probe; SDK presence is insufficient |
-| `android-x64-runtime` | Driven Android x64 device/emulator evidence | Explicit after a runtime probe; cross-compilation is insufficient |
 | `operator` | A step only the operator can take: a login behind the owner's account, a deletion the agent's safety rules refuse, an approval of a frozen-behavior change. Every section in `todo/99-manual/` carries it | Never detected: no agent self-reports an operator's keyboard, so only a declared `query ready --context operator` lists these rows as runnable now |
 
 A section whose open work is worked OUTSIDE this tree carries a `Moved:` marker under its heading:
@@ -585,4 +583,4 @@ When something needs doing, start at `add-todo`: it decides whether the work bel
 
 ### Native converter execution contexts
 
-`windows-runtime`, `linux-runtime`, `linux-display`, `android-arm64-runtime` and `android-x64-runtime` are explicit `Requires` values. Declare them with `query ready --context` only after recording a working native display or device/emulator probe. Windows desktop proof uses `display-session`. An environment variable, installed SDK, cross build or explicit context flag is never runtime proof. The relevant sections retain their required driven tests, accessibility checks and evidence even when admitted.
+`windows-runtime`, `linux-runtime` and `linux-display` are explicit `Requires` values. Declare them with `query ready --context` only after recording a working native display probe. Windows desktop proof uses `display-session`. An environment variable, installed SDK, cross build or explicit context flag is never runtime proof. The relevant sections retain their required driven tests, accessibility checks and evidence even when admitted.

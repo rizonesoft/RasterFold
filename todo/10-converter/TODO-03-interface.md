@@ -36,7 +36,7 @@ track: GUI3
 ## Outcome
 
 - A modern, accessible C interface previews single images, compares real codec results and demonstrates RasterFold without extra installs.
-- Clean Windows/Linux x64 and Android ARM64/x64 installations run the shipped application without downloading a runtime or codec. System OS/display services remain prerequisites, documented per target.
+- Clean Windows/Linux x64 installations run the shipped application without downloading a runtime or codec. System OS/display services remain prerequisites, documented per target.
 
 **Adjacency:** list=applicable @ D10 T03 §5; document=applicable @ D10 T03 §5; settings=applicable @ D10 T03 §7; reporting=applicable @ D10 T03 §6; notifications=applicable @ D10 T03 §5; permissions=applicable @ D10 T01 §5; audit=applicable @ D10 T01 §6; exchange=applicable @ D10 T03 §5; reverse=applicable @ D10 T01 §4
 
@@ -49,8 +49,7 @@ track: GUI3
 | 1 | §1 | C interface components and SVG icons | D10 T01 §1 | [ ] |
 | 2 | §2 | Windows native integration | §1, D10 T01 §3, D10 T01 §5 | [ ] |
 | 3 | §3 | Linux native integration | §1, D10 T01 §3, D10 T01 §5 | [ ] |
-| 4 | §4 | Android native integration | §1, D10 T01 §3, D10 T01 §5 | [ ] |
-| 5 | §5 | Single-image conversion and preview | §2, §3, §4, D10 T02 §1, D10 T01 §6 | [ ] |
+| 5 | §5 | Single-image conversion and preview | §2, §3, D10 T02 §1, D10 T01 §6 | [ ] |
 | 6 | §6 | Synchronized comparisons | §5, D10 T01 §6, D10 T02 §2, D10 T02 §3, D10 T02 §4 | [ ] |
 | 7 | §7 | Preferences and accessible error recovery | §5, §6 | [ ] |
 | 8 | §8 | Guided RasterFold demonstration | §6, §7 | [ ] |
@@ -103,7 +102,7 @@ Build in the listed order. This section adds the named test driver before using 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
 - [ ] Implement `converter/platform/win32.c`. Done when: Win32 lifecycle, per-monitor DPI, native dialogs, clipboard and UI Automation are wired to the C UI and job contracts.
-- [ ] Document the platform boundary in `docs/converter-building.md`. Done when: only system facilities and shipped libraries are used; any Android-required generated interop is minimal and application behavior remains C.
+- [ ] Document the platform boundary in `docs/converter-building.md`. Done when: only system facilities and shipped libraries are used; application behavior remains C.
 - [ ] Expose names, roles, state, values and actions in `converter/platform/win32_accessibility.c`. Done when: keyboard, touch and screen-reader activation use the same application actions.
 - [ ] Add lifecycle/refusal tests in `tests/converter/test_win32.py`. Done when: closing, suspending, resizing, permission denial and display loss cannot leak workers or publish partial files.
 - [ ] Record native evidence in `docs/converter-validation.md`. Done when: screenshots and input/accessibility runs name OS, architecture, build revision and tested states.
@@ -130,7 +129,7 @@ Build in the listed order. This section adds the named test driver before using 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
 - [ ] Implement `converter/platform/linux.c`. Done when: Wayland and X11 backends with packaged non-system support libraries, display negotiation, native file selection and accessibility are wired to the C UI and job contracts.
-- [ ] Document the platform boundary in `docs/converter-building.md`. Done when: only system facilities and shipped libraries are used; any Android-required generated interop is minimal and application behavior remains C.
+- [ ] Document the platform boundary in `docs/converter-building.md`. Done when: only system facilities and shipped libraries are used; application behavior remains C.
 - [ ] Expose names, roles, state, values and actions in `converter/platform/linux_accessibility.c`. Done when: keyboard, touch and screen-reader activation use the same application actions.
 - [ ] Add lifecycle/refusal tests in `tests/converter/test_linux.py`. Done when: closing, suspending, resizing, permission denial and display loss cannot leak workers or publish partial files.
 - [ ] Record native evidence in `docs/converter-validation.md`. Done when: screenshots and input/accessibility runs name OS, architecture, build revision and tested states.
@@ -140,40 +139,9 @@ Build in the listed order. This section adds the named test driver before using 
 
 **Freeze check:** Existing `.fold` v2 files and the oracle remain unchanged. Each new output receives a fresh bundled decode and the format-specific verification contract before acceptance; independent fixture coverage is reported separately; input and existing destination bytes survive refusal, cancellation and failure.
 
-## 4. Android native integration
-
-**Requires:** android-arm64-runtime, android-x64-runtime -- SAF, lifecycle and accessibility need an ARM64 device and x64 Android runtime. Source checkpoint audit: docs/todo-vision-audit.md.
-
-**Job:** A user can operate the converter through the android platform facilities.
-
-**Fidelity:** Native converter -- implement the committed surface contract and all failure states.
-
-**Design:** docs/design/converter.md -- states: all in spec -- themes: all four -- density: both
-
-**Treatment:** Native, scalable image workspace with restrained color, labeled SVG actions and persistent progress.
-
-**Chrome:** OS window and accessibility integration; shared application bar, comparison panes and result footer.
-
-**Needs:** ARM64 device
-
-Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
-
-- [ ] Pin the Android SDK/JDK and APK build tools under the local `toolchain.json` bootstrap and add a development APK target to `scripts/build-converter.py`. Done when: a clean repo-local toolchain builds installable ARM64/x64 debug APKs before this section drives devices; production signing belongs to D99 T01 §6 and D10 T04 §3.
-- [ ] Implement `converter/platform/android.c`. Done when: NDK activity lifecycle, touch/IME, rotation, background cancellation, JNI/SDK document selection and Android accessibility are wired to the C UI and job contracts.
-- [ ] Document the platform boundary in `docs/converter-building.md`. Done when: only system facilities and shipped libraries are used; any Android-required generated interop is minimal and application behavior remains C.
-- [ ] Expose names, roles, state, values and actions in `converter/platform/android_accessibility.c`. Done when: keyboard, touch and screen-reader activation use the same application actions.
-- [ ] Add lifecycle/refusal tests in `tests/converter/test_android.py`. Done when: closing, suspending, resizing, permission denial and display loss cannot leak workers or publish partial files.
-- [ ] Record native evidence in `docs/converter-validation.md`. Done when: screenshots and input/accessibility runs name OS, architecture, build revision and tested states.
-- [ ] Implement `converter/platform/android_io.c` over the engine callback contract. Done when: ContentResolver/SAF capabilities, app-private staging, cancellation and a newly created document preserve originals; unsupported safe-publication semantics refuse export, proven on real providers and both ABIs.
-- [ ] Commit: `"converter: android native integration"`
-
-**Test checkpoint:** Build the native target and drive android interactions on a real desktop/device; quote observed behavior separately from fixture and cross-build results.
-
-**Freeze check:** Existing `.fold` v2 files and the oracle remain unchanged. Each new output receives a fresh bundled decode and the format-specific verification contract before acceptance; independent fixture coverage is reported separately; input and existing destination bytes survive refusal, cancellation and failure.
-
 ## 5. Single-image conversion and preview
 
-**Requires:** display-session, linux-display, android-arm64-runtime, android-x64-runtime -- Surface checkpoints require real input, preview and accessibility evidence across advertised targets. Source checkpoint audit: docs/todo-vision-audit.md.
+**Requires:** display-session, linux-display -- Surface checkpoints require real input, preview and accessibility evidence across advertised targets. Source checkpoint audit: docs/todo-vision-audit.md.
 
 **Job:** A user can browse a list of supported formats, preview one image, receive progress and error notifications, and save a verified result.
 
@@ -195,13 +163,13 @@ Build in the listed order. This section adds the named test driver before using 
 - [ ] Add `tests/converter/test_single_flow.py`. Done when: open-to-save, cancel-at-each-stage, mismatch, permission denial and growth paths have driven assertions.
 - [ ] Commit: `"converter: single-image conversion and preview"`
 
-**Test checkpoint:** Drive `tests/converter/test_single_flow.py` on Windows/Linux and both Android ABIs; capture each design state and verify a fresh decode under its format-specific contract.
+**Test checkpoint:** Drive `tests/converter/test_single_flow.py` on Windows and Linux; capture each design state and verify a fresh decode under its format-specific contract.
 
 **Freeze check:** Existing `.fold` v2 files and the oracle remain unchanged. Each new output receives a fresh bundled decode and the format-specific verification contract before acceptance; independent fixture coverage is reported separately; input and existing destination bytes survive refusal, cancellation and failure.
 
 ## 6. Synchronized comparisons
 
-**Requires:** display-session, linux-display, android-arm64-runtime, android-x64-runtime -- Surface checkpoints require real input, preview and accessibility evidence across advertised targets. Source checkpoint audit: docs/todo-vision-audit.md.
+**Requires:** display-session, linux-display -- Surface checkpoints require real input, preview and accessibility evidence across advertised targets. Source checkpoint audit: docs/todo-vision-audit.md.
 
 **Job:** A user can compare RasterFold and other codecs side by side using the same source and preservation policy.
 
@@ -228,7 +196,7 @@ Build in the listed order. This section adds the named test driver before using 
 
 ## 7. Preferences and accessible error recovery
 
-**Requires:** display-session, linux-display, android-arm64-runtime, android-x64-runtime -- Surface checkpoints require real input, preview and accessibility evidence across advertised targets. Source checkpoint audit: docs/todo-vision-audit.md.
+**Requires:** display-session, linux-display -- Surface checkpoints require real input, preview and accessibility evidence across advertised targets. Source checkpoint audit: docs/todo-vision-audit.md.
 
 **Job:** A user can keep useful settings, reset them, and recover accessibly from every failure.
 
@@ -255,7 +223,7 @@ Build in the listed order. This section adds the named test driver before using 
 
 ## 8. Guided RasterFold demonstration
 
-**Requires:** display-session, linux-display, android-arm64-runtime, android-x64-runtime -- Surface checkpoints require real input, preview and accessibility evidence across advertised targets. Source checkpoint audit: docs/todo-vision-audit.md.
+**Requires:** display-session, linux-display -- Surface checkpoints require real input, preview and accessibility evidence across advertised targets. Source checkpoint audit: docs/todo-vision-audit.md.
 
 **Job:** A new user can try RasterFold and compare codecs immediately using licensed bundled samples.
 

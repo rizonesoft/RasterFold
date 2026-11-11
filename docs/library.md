@@ -45,8 +45,6 @@ tools/llvm-mingw-linux/bin/clang --target=x86_64-linux-gnu \
 
 On Windows, define `RF_SHARED` when importing the DLL and link `librasterfold.dll.a` with MinGW/Clang or `rasterfold.lib` with an MSVC-compatible linker. Keep `rasterfold.dll` on the application's normal DLL search path. Hosted static consumers link `librasterfold.a`, their own C runtime and the required Kernel32 import library. The archive does not override the caller's C memory functions. The DLL exports exactly the five functions and ordinals in [`src/rasterfold.def`](../src/rasterfold.def).
 
-Android applications link the library for their ABI with the matching NDK. A JNI wrapper is application code; this repository supplies the C ABI and does not pretend to ship a Java or Kotlin package. Shared library loading and app lifecycle belong to the application.
-
 ## Errors and limits
 
 | Code | Meaning |

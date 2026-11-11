@@ -4,14 +4,14 @@ Agent instructions for this repository. Human orientation lives in `README.md`. 
 
 ## What this project is
 
-**RasterFold** is a lossless RGB image codec in C11 for Windows/Linux x64 and Android ARM64/x64. It supplies a CLI plus shared and static libraries through `include/rasterfold.h`. Windows codec artifacts remain freestanding; Linux and Android use libc and pthreads. The format is version 3 ([`spec/FOLD.md`](spec/FOLD.md)); its main method is a context-mixing coder (`src/cm.c`). The goal is general improvements in compression, speed and memory, measured on a corpus rather than tuned to one image.
+**RasterFold** is a lossless RGB image codec in C11 for Windows/Linux x64. It supplies a CLI plus shared and static libraries through `include/rasterfold.h`. Windows codec artifacts remain freestanding; Linux uses libc and pthreads. The format is version 3 ([`spec/FOLD.md`](spec/FOLD.md)); its main method is a context-mixing coder (`src/cm.c`). The goal is general improvements in compression, speed and memory, measured on a corpus rather than tuned to one image.
 
 | Path | Purpose |
 | ---- | ------- |
 | `src/` | The codec: `cm.c` (method 1, the CM coder and its threads), `pal.c` (methods 2 and 3, the palette coder), `rc.h` (the shared range coder), `fold.c` (the container), `bmp.c`, `crc32.c`, `sys.c` (Win32), `main.c`, `mem.c`, `rf.h` |
 | `spec/FOLD.md` | The normative format specification |
 | `build.sh`, `build.ps1`, `scripts/build.py` | Native and cross builds over pinned local LLVM/Ninja, output `bin/<target>/`; root `build.ninja` is a compatibility front door |
-| `tools/bootstrap.py`, `tools/bootstrap.ps1`, `toolchain.json` | Verified repository-local Linux/Windows LLVM, Ninja and Android NDK pins; downloaded tools and archives are ignored |
+| `tools/bootstrap.py`, `tools/bootstrap.ps1`, `toolchain.json` | Verified repository-local Linux/Windows LLVM and Ninja pins; downloaded tools and archives are ignored |
 | `tools/provision.py`, `tools/provision.ps1` | Clone setup and read-only verification; Linux test dependencies use `.venv/` |
 | `tools/githooks/` | `pre-commit` (TODO, vision and drift gates on the staged tree) and `commit-msg` (strips AI attribution and validates declared facts) |
 | `tests/` | `rfi_ref.py` (the independent Python oracle of the format), `test_correctness.py`, `fuzz_decode.py`, `measure_final.py` (the JPEG XL reference comparison), `benchmark.py` |
@@ -33,11 +33,11 @@ Agent instructions for this repository. Human orientation lives in `README.md`. 
 | `.conclave/automations/` | The automations kit: `tasks.json` (folder `\\RasterFold\\`, no tasks yet), the runner, the failure email, and the Task Scheduler and systemd installers; tests in `scripts/tests/` |
 | `bin/`, `build/` | Build output, scratch, caches, the research corpus, and campaign guard state; ignored, never authoritative |
 
-The build/tooling runs in WSL/Linux and Windows. Use `python3` in WSL/Linux and `python` on Windows. TODO tooling needs Python 3.11+ and no third-party package; image tests need pinned Pillow. Comparative measurements need ffmpeg with libjxl. Agent automation is operated in the shared WSL/Linux checkout; Android runtime validation is separate from cross-compilation. See `docs/building.md` for host SDK requirements.
+The build/tooling runs in WSL/Linux and Windows. Use `python3` in WSL/Linux and `python` on Windows. TODO tooling needs Python 3.11+ and no third-party package; image tests need pinned Pillow. Comparative measurements need ffmpeg with libjxl. Agent automation is operated in the shared WSL/Linux checkout. See `docs/building.md` for host SDK requirements.
 
 ## The decisions this project runs on
 
-- **C11 with a platform boundary.** Windows entry `rf_start`, Win32 through `kernel32` and `shell32`, and no C runtime in the shipped CLI/DLL. Hosted Windows static consumers supply their own CRT. Linux/Android use libc and pthreads. x64 targets use `x86-64-v2`; ARM64 uses the tested portable arithmetic path. New codec assembly or SIMD optimizations require measured A/B evidence. The Windows freestanding memory primitives are platform plumbing, not a performance claim.
+- **C11 with a platform boundary.** Windows entry `rf_start`, Win32 through `kernel32` and `shell32`, and no C runtime in the shipped CLI/DLL. Hosted Windows static consumers supply their own CRT. Linux uses libc and pthreads. Both targets use `x86-64-v2`; the portable arithmetic path (`--portable`, `-DRF_PORTABLE_SIMD`) is kept and tested on x64. Android was removed on 2026-11-11 (operator decision: "we will not be doing any android dev in this repo anymore, so please clean the repo. Time is better spend on the algorythms"); it returns only as a fork, and reversing it here means restoring the NDK pin in `toolchain.json`, the two targets in `scripts/build.py`, `scripts/tidy.py` and `scripts/package.py`, and the Android rows of the plan from the commit that removed them. New codec assembly or SIMD optimizations require measured A/B evidence. The Windows freestanding memory primitives are platform plumbing, not a performance claim.
 - **The format is frozen per version.** A change to what the encoder writes touches four places in one commit: the C code, the oracle `tests/rfi_ref.py` (written from the spec, never translated from the C), `spec/FOLD.md`, and the known-answer file in `tests/test_correctness.py`. A new coding method takes a new method number; a change to an existing method takes a new format version. Old files decode or are refused as unsupported, never misread.
 - **Files are never damaged.** Output goes to exclusive `destination.partial`, is flushed, and is published without replacement (Win32 rename; POSIX no-replace rename with an exclusive-link fallback); an existing destination is never overwritten. The decoder bounds every field before use and rejects malformed input.
 - **Same bytes for any thread count.** Multi-threaded channel and strip coding and the one-thread pipeline produce identical files.

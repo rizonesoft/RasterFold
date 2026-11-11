@@ -1,5 +1,5 @@
 title: RasterFold
-description: "Lossless RGB image codec in C11 for Windows, Linux, and Android"
+description: "Lossless RGB image codec in C11 for Windows and Linux"
 baseurl: "/RasterFold"
 url: "https://rizonesoft.github.io"
 remote_theme: just-the-docs/just-the-docs

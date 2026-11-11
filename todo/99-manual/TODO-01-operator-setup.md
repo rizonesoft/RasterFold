@@ -10,7 +10,7 @@ track: OP1
 
 # TODO-01 -- Operator Setup and Approvals (Manual)
 
-> **Goal:** Every step only the operator can take is written down with the exact command or decision, so no agent run stalls wondering whether it may act: the retired run-guard folders are gone, the GitHub CLI is logged in for the CI read-back, GitHub Pages is enabled for the docs, and the two standing decisions that let a campaign run through the roadmap (format-version approval and the missed-milestone policy) are recorded in the operator's words. Production Android signing identity and the concrete HEVC distribution decision are release-only prerequisites.
+> **Goal:** Every step only the operator can take is written down with the exact command or decision, so no agent run stalls wondering whether it may act: the retired run-guard folders are gone, the GitHub CLI is logged in for the CI read-back, GitHub Pages is enabled for the docs, and the two standing decisions that let a campaign run through the roadmap (format-version approval and the missed-milestone policy) are recorded in the operator's words. The concrete HEVC distribution decision is a release-only prerequisite.
 
 > [!IMPORTANT]
 > **Current state (verified 2026-11-07):** The operator deleted the folders `.grok/`, `guard/`, and `build/review-20260928/` from the previous developer's tooling on 2026-09-29 (the agent session's safety rules had refused the deletion), and `.gitignore` no longer lists `.grok/` or `guard/`. The WSL checkout now has an authenticated GitHub CLI, verified by successful CI readback and pushes on 2026-09-30; a new clone must verify its own identity. Format version 3 exists since `D01 T03 §1` (2026-10-27); on 2026-09-29 the operator gave the standing approval and the missed-milestone policy recorded in §3 and §4, and on 2026-10-29 under §4 (after the five remaining `docs/research.md` section 4 model experiments `D01 T02 §2` to `§6` missed their bars) the operator authorized updating Milestone 4 (`D05 T01 §4`) in `research/milestones.py` to match the shipped Format Version 3 results (`photo` `0.9813 <= 0.982` of JPEG XL e9 and `0.9695 <= 0.970` of e7, `tp` `0.9853 <= 0.986` of e9, `31 of 39` photos below e9 and `39 of 39 <= 1.0000` of e7, three-thread decode `<= 0.6` of JPEG XL's, and the 7-model `alloc_peak <= 10.0 MB` and `<= 1.27x` 5-model Milestone 3 timing envelope). On 2026-10-29 the completion review of `D05 T01 §4` found two of those figures unmet (`kodim17` is 12 bytes over JPEG XL e7, `384,835` vs `384,823`, so 38 of 39 photos are at or below e7, and the 4,095-pixel `syn_odd` encodes at `1.333x` at `-t1` from a fixed counter-table clearing cost), and the operator selected this option, quoted from the session: "Change the target to the measured results and stamp now: 38 of 39 photos at or below e7 (kodim17 +12 bytes, 1.00003); timing at most 1.27x on every set total and every photo, with images under 16K pixels allowed a fixed +1 ms instead of the 1.27x ratio. I'd also file a speed section for the small-image cost (only clear the tables the image uses, or clear them in place)." On 2026-10-30 under §4, after the match model and all three follow-ups for Milestone 5 (`D05 T01 §5`, `D01 T04 §2` to `§9`) missed, the operator chose, quoted from the session: "Relax the timing or memory rule for this milestone; v2 is the nearest candidate. And revise all other milestones to avoid more blockers like this." Milestone 5 now carries an envelope for `D01 T04 §8`'s v2 (time at most 1.15x Milestone 4 on every set total and 1.6x per image of at least 16,384 pixels, covering `syn_ui`'s `-t1` encode ratio where v2's better gradient prediction keeps its CM stream under `syn_ui`'s 1,378-byte Method 3 cap at `run_pipelined`'s `y = 64` 32-row check and aborts at `y = 96` (`97` vs `65` rows, `1.535..1.566x` on an idle machine vs `1.434x` under load in `D01 T04 §8`), with codec working memory unchanged and the input file's growth not counted) and v2 is ported by `D01 T04 §10`; from Milestone 6 the generic no-regression rule in `research/milestones.py` became a cost envelope (set totals within 0.1% and each photograph within 0.5% in size, time within 1.10x, 1.20x on `synth`, from pooled alternating runs, codec working memory within 5%), the all-or-nothing targets of Milestones 7 to 10 gained tolerances, the equal-cost wording of Milestones 14, 16, 22 and 25 became the envelope, and each planning section from Milestone 11 states its bars with tolerances. On 2026-11-07 under §4, during the completion review of `D01 T05 §4` for Milestone 7 (`D05 T01 §7`), the operator approved the Milestone 7 encode timing comparison as `python research/vsjxl.py -n5` at default threads (`<= 0.3x` JPEG XL e7, with `--threads 1` recorded alongside), quoted from the session: "(Recommended) Approve Milestone 7 encode timing as `python research/vsjxl.py -n5` at default threads (`0.147x` / `0.144x <= 0.3x` JPEG XL e7, with `--threads 1` recorded alongside at `0.422x` / `0.399x`), and record this decision under `D99 T01`". GitHub Pages is enabled (`build_type: workflow`, public project-site visibility at `/RasterFold/`), recorded in `docs/site-content.json`.
@@ -39,7 +39,6 @@ track: OP1
 
 **Adjacency rationale:** Each section is a step a person takes; none changes what the tool reads, writes, or reports.
 
-- -> XREF: D10 T04 §3 -- production Android signing identity.
 - -> XREF: D10 T02 §7 -- HEVC distribution decision.
 - -> XREF: D02 T01 §4 -- Milestone 2 follow-up hot-loop speed section filed under §4.
 
@@ -52,7 +51,6 @@ track: OP1
 |   3   |   §3    | Approve format version 3                      | --         |  [x]   |
 |   4   |   §4    | The missed-milestone policy                   | --         |  [x]   |
 |   5   |   §5    | Enable GitHub Pages                           | --         |  [x]   |
-| 6 | §6 | Android release signing identity | -- | [ ] |
 | 7 | §7 | HEVC distribution decision | -- | [ ] |
 | 8 | §8 | The 13-round milestone cap | §4 | [x] |
 
@@ -137,18 +135,6 @@ Every milestone gate in `todo/05-milestones/` carries this policy: on a miss, up
 
 > **Verified:** 2026-10-25 | §5 | d64b89ee273fc2f969bd767a38b908423abe0335
 > **Review:** `docs/reviews/d99-t01-s5.json`
-## 6. Android release signing identity
-
-**Origin:** discovered run=61f3a8f4474f 2026-09-30 -- groom-plan release prerequisites.
-
-**Requires:** operator -- production application identity and durable signing-key custody must be established before public Android packages.
-
-- [ ] Record the chosen application ID, release owner and signing-certificate fingerprint in `docs/release-signing.md`. Done when: the operator's decision is recorded; no private key or secret value enters Git or logs.
-- [ ] Locate the existing authorized signing material in the Conclave vault, or have the owner establish it there, and configure scoped CI secret access. Done when: a test-signed artifact verifies against the recorded public fingerprint and recovery ownership is documented without revealing secret values.
-- [ ] Commit: `"release: record Android signing identity and custody"`
-
-**Test checkpoint:** Quote the public certificate fingerprint and successful verification of the test APK; secret values remain concealed.
-
 ## 7. HEVC distribution decision
 
 **Origin:** discovered run=61f3a8f4474f 2026-09-30 -- groom-plan codec distribution prerequisite.

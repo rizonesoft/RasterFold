@@ -138,9 +138,7 @@ def host_targets(root: Path = ROOT, os_name: str = os.name) -> list[dict]:
             },
         ]
 
-    api = json.loads((root / 'toolchain.json').read_text(encoding='utf-8'))['android']['min_api']
     llvm_tools = root / 'tools/llvm-mingw-linux/bin'
-    ndk_tools = root / 'tools/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin'
     return [
         {
             'name': 'linux-x64',
@@ -181,26 +179,6 @@ def host_targets(root: Path = ROOT, os_name: str = os.name) -> list[dict]:
             'tools': llvm_tools,
             'suffix': '',
             'sources': [*COMMON, 'mem', 'sys', 'main'],
-        },
-        {
-            'name': 'android-arm64',
-            'triple': f'aarch64-linux-android{api}',
-            'portable': False,
-            'windows': False,
-            'freestanding': False,
-            'tools': ndk_tools,
-            'suffix': '',
-            'sources': [*COMMON, 'sys_posix', 'main'],
-        },
-        {
-            'name': 'android-x64',
-            'triple': f'x86_64-linux-android{api}',
-            'portable': False,
-            'windows': False,
-            'freestanding': False,
-            'tools': ndk_tools,
-            'suffix': '',
-            'sources': [*COMMON, 'sys_posix', 'main'],
         },
     ]
 
@@ -391,9 +369,9 @@ def run_tidy(root: Path = ROOT, ratchet: bool = False) -> int:
 
     verdict = evaluate_ratchet(len(all_findings), baseline_path, ratchet=ratchet, head_baseline=head_base)
     host_note = (
-        'full 6-target matrix'
+        'full 4-target matrix'
         if os.name != 'nt'
-        else '4-target Windows/POSIX/x64/ARM64 matrix (sys_posix.c requires Linux/Android sysroot)'
+        else '4-target Windows/POSIX/x64/ARM64 matrix (sys_posix.c requires a Linux sysroot)'
     )
     print(f'tidy: {verdict} across {len(target_names)} target databases ({", ".join(target_names)}; {host_note})')
     return 0

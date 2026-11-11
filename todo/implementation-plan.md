@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **113 of 256 sections complete (44%).** 256 sections (23 discovered); backlog 5 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **113 of 254 sections complete (44%).** 254 sections (22 discovered); backlog 5 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -42,7 +42,7 @@ RasterFold is finished milestone by milestone: **the 60 milestones of the roadma
 
 | Aim | Owned by |
 | --- | --- |
-| Native C converter with no additional user installs on Windows/Linux x64 and Android ARM64/x64 | `D10 T01 §2` · `D10 T04 §3` |
+| Native C converter with no additional user installs on Windows/Linux x64 | `D10 T01 §2` · `D10 T04 §3` |
 | Every required format has truthful lossless capabilities and independent round trips | `D10 T01 §1` · `D10 T01 §4` · `D10 T04 §1` |
 | Single-image preview, synchronized comparisons, modern accessible SVG interface and real RasterFold demo | `D10 T03 §5` · `D10 T03 §6` · `D10 T03 §7` · `D10 T03 §8` |
 | Complete, private-content-safe GitHub Pages documentation matches delivered artifacts | `D08 T01 §4` · `D08 T01 §8` · `D10 T04 §4` |
@@ -66,7 +66,7 @@ RasterFold is finished milestone by milestone: **the 60 milestones of the roadma
 | Milestone 7, Every photograph beats JPEG XL e9: 39 of 39 photos and 10 of 10 test-pack photos below JPEG XL e9; encode at most 0.3 of JPEG XL e7's time | `D05 T01 §7` |
 | Milestone 8, Beat WebP on generated images: the generated set's total and geometric mean below lossless WebP's, and every generated image within 1.1 times WebP's size | `D05 T01 §8` |
 | Milestone 9, Holds on images never tuned on: milestones 4, 7, and 8 hold on the held-out set (`python research/ab.py size heldout`) without any retuning | `D05 T01 §9` |
-| Milestone 10, RasterFold 1.0: `rasterfold-v1.0.0` released: format version 3 frozen; Windows/Linux x64 and Android ARM64/x64 CLI, shared/static C libraries and the complete native converter; BMP, PNG, and PPM in the CLI; the full HTML docs published; 100,000 fuzz mutations clean; smaller than JPEG XL e9 and lossless WebP on every set, and faster and leaner than JPEG XL on encode, decode, and memory | `D05 T01 §10` |
+| Milestone 10, RasterFold 1.0: `rasterfold-v1.0.0` released: format version 3 frozen; Windows/Linux x64 CLI, shared/static C libraries and the complete native converter; BMP, PNG, and PPM in the CLI; the full HTML docs published; 100,000 fuzz mutations clean; smaller than JPEG XL e9 and lossless WebP on every set, and faster and leaner than JPEG XL on encode, decode, and memory | `D05 T01 §10` |
 | Milestone 11, SIMD decisions: one-thread decode at least 10% faster than 1.0, bytes within 0.1% | `D05 T02 §2` |
 | Milestone 12, Two-layer mixing: photo total at least 0.4% smaller than milestone 11 | `D05 T02 §4` |
 | Milestone 13, Stronger prediction: photo total at least 0.5% smaller than milestone 12 | `D05 T02 §6` |
@@ -290,59 +290,57 @@ Everything so far confirmed on images nobody tuned on, before anything is frozen
 
 The 1.0 product: library, command line, references, and the release that freezes version 3.
 
-|  ✔  | Section       | Deliverable                                      | Needs                                                                      | Items |
-| :-: | ------------- | ------------------------------------------------ | -------------------------------------------------------------------------- | :---: |
-| [ ] | `D99 T01 §6`  | Android release signing identity                 | operator                                                                   |   3   |
-| [ ] | `D99 T01 §7`  | HEVC distribution decision                       | operator                                                                   |   3   |
-| [x] | `D06 T01 §1`  | The public header                                | none                                                                       |   3   |
-| [x] | `D06 T01 §2`  | The DLL and its import libraries                 | none                                                                       |   3   |
-| [x] | `D06 T01 §3`  | The command line on the library                  | none                                                                       |   2   |
-| [x] | `D06 T01 §4`  | API tests and the ABI list                       | none                                                                       |   4   |
-| [x] | `D06 T01 §5`  | Example programs                                 | none                                                                       |   2   |
-| [x] | `D07 T01 §1`  | Commands and options                             | none                                                                       |   3   |
-| [x] | `D07 T01 §2`  | PNG in and out                                   | none                                                                       |   3   |
-| [x] | `D07 T01 §3`  | PPM in and out                                   | none                                                                       |   3   |
-| [x] | `D07 T01 §4`  | Exit codes, messages, and overwrite              | none                                                                       |   3   |
-| [ ] | `D08 T03 §1`  | The command-line reference                       | none                                                                       |   3   |
-| [x] | `D08 T03 §2`  | The API reference                                | none                                                                       |   3   |
-| [x] | `D09 T01 §1`  | One version source and the changelog             | none                                                                       |   5   |
-| [x] | `D10 T01 §1`  | Pixel contract and capability registry           | none                                                                       |   8   |
-| [ ] | `D10 T01 §2`  | Pinned bundled codec builds                      | windows-runtime, linux-runtime, android-arm64-runtime, android-x64-runtime |   9   |
-| [ ] | `D10 T01 §3`  | Bounded asynchronous jobs                        | none                                                                       |   6   |
-| [ ] | `D10 T01 §4`  | Exactness verification and differential fixtures | none                                                                       |   7   |
-| [ ] | `D10 T01 §5`  | Safe import and export                           | windows-runtime, linux-runtime                                             |   6   |
-| [ ] | `D10 T01 §6`  | Comparable measurements and reports              | none                                                                       |   7   |
-| [ ] | `D10 T02 §1`  | RasterFold, BMP, PNG and PNM                     | windows-runtime, linux-runtime, android-arm64-runtime, android-x64-runtime |   6   |
-| [ ] | `D10 T02 §2`  | WebP                                             | windows-runtime, linux-runtime, android-arm64-runtime, android-x64-runtime |   6   |
-| [ ] | `D10 T02 §3`  | JPEG XL                                          | windows-runtime, linux-runtime, android-arm64-runtime, android-x64-runtime |   6   |
-| [ ] | `D10 T02 §4`  | AVIF                                             | windows-runtime, linux-runtime, android-arm64-runtime, android-x64-runtime |   6   |
-| [ ] | `D10 T02 §5`  | JPEG optimization and import                     | windows-runtime, linux-runtime, android-arm64-runtime, android-x64-runtime |   6   |
-| [ ] | `D10 T02 §6`  | TIFF and GIF                                     | windows-runtime, linux-runtime, android-arm64-runtime, android-x64-runtime |   6   |
-| [ ] | `D10 T02 §7`  | HEIF and HEIC                                    | windows-runtime, linux-runtime, android-arm64-runtime, android-x64-runtime |   6   |
-| [ ] | `D10 T02 §8`  | QOI                                              | windows-runtime, linux-runtime, android-arm64-runtime, android-x64-runtime |   6   |
-| [ ] | `D10 T02 §9`  | JPEG 2000                                        | windows-runtime, linux-runtime, android-arm64-runtime, android-x64-runtime |   6   |
-| [ ] | `D10 T02 §10` | OpenEXR                                          | windows-runtime, linux-runtime, android-arm64-runtime, android-x64-runtime |   6   |
-| [ ] | `D10 T02 §11` | Camera RAW and DNG import                        | windows-runtime, linux-runtime, android-arm64-runtime, android-x64-runtime |   6   |
-| [ ] | `D10 T02 §12` | Animation and multi-page preservation            | windows-runtime, linux-runtime, android-arm64-runtime, android-x64-runtime |   5   |
-| [ ] | `D10 T03 §1`  | C interface components and SVG icons             | none                                                                       |   8   |
-| [ ] | `D10 T03 §2`  | Windows native integration                       | windows-host, display-session                                              |   6   |
-| [ ] | `D10 T03 §3`  | Linux native integration                         | linux-display                                                              |   6   |
-| [ ] | `D10 T03 §4`  | Android native integration                       | arm64-device, android-arm64-runtime, android-x64-runtime                   |   8   |
-| [ ] | `D10 T03 §5`  | Single-image conversion and preview              | display-session, linux-display, android-arm64-runtime, android-x64-runtime |   7   |
-| [ ] | `D10 T03 §6`  | Synchronized comparisons                         | display-session, linux-display, android-arm64-runtime, android-x64-runtime |   6   |
-| [ ] | `D10 T03 §7`  | Preferences and accessible error recovery        | display-session, linux-display, android-arm64-runtime, android-x64-runtime |   6   |
-| [ ] | `D10 T03 §8`  | Guided RasterFold demonstration                  | display-session, linux-display, android-arm64-runtime, android-x64-runtime |   5   |
-| [ ] | `D10 T04 §1`  | Full capability and device matrix                | display-session, linux-display, android-arm64-runtime, android-x64-runtime |   5   |
-| [ ] | `D10 T04 §2`  | Hostile input and resource limits                | display-session, linux-display, android-arm64-runtime, android-x64-runtime |   5   |
-| [ ] | `D10 T04 §3`  | Self-contained native packages                   | display-session, linux-display, android-arm64-runtime, android-x64-runtime |   6   |
-| [ ] | `D09 T01 §2`  | The release package                              | none                                                                       |   2   |
-| [ ] | `D09 T01 §3`  | The release workflow                             | none                                                                       |   2   |
-| [ ] | `D08 T01 §6`  | Converter user guide and capability reference    | display-session, linux-display, android-arm64-runtime, android-x64-runtime |   6   |
-| [ ] | `D08 T01 §7`  | Versioned downloads and complete references      | none                                                                       |   5   |
-| [ ] | `D08 T01 §8`  | Published whole-product documentation acceptance | linux-display                                                              |   4   |
-| [ ] | `D10 T04 §4`  | Whole-product release acceptance                 | display-session, linux-display, android-arm64-runtime, android-x64-runtime |   5   |
-| [ ] | `D09 T01 §4`  | Release rasterfold-v1.0.0                        | none                                                                       |   6   |
-| [ ] | `D05 T01 §10` | Milestone 10 gate: RasterFold 1.0                | idle-machine                                                               |   4   |
+|  ✔  | Section       | Deliverable                                      | Needs                          | Items |
+| :-: | ------------- | ------------------------------------------------ | ------------------------------ | :---: |
+| [ ] | `D99 T01 §7`  | HEVC distribution decision                       | operator                       |   3   |
+| [x] | `D06 T01 §1`  | The public header                                | none                           |   3   |
+| [x] | `D06 T01 §2`  | The DLL and its import libraries                 | none                           |   3   |
+| [x] | `D06 T01 §3`  | The command line on the library                  | none                           |   2   |
+| [x] | `D06 T01 §4`  | API tests and the ABI list                       | none                           |   4   |
+| [x] | `D06 T01 §5`  | Example programs                                 | none                           |   2   |
+| [x] | `D07 T01 §1`  | Commands and options                             | none                           |   3   |
+| [x] | `D07 T01 §2`  | PNG in and out                                   | none                           |   3   |
+| [x] | `D07 T01 §3`  | PPM in and out                                   | none                           |   3   |
+| [x] | `D07 T01 §4`  | Exit codes, messages, and overwrite              | none                           |   3   |
+| [ ] | `D08 T03 §1`  | The command-line reference                       | none                           |   3   |
+| [x] | `D08 T03 §2`  | The API reference                                | none                           |   3   |
+| [x] | `D09 T01 §1`  | One version source and the changelog             | none                           |   5   |
+| [x] | `D10 T01 §1`  | Pixel contract and capability registry           | none                           |   8   |
+| [ ] | `D10 T01 §2`  | Pinned bundled codec builds                      | windows-runtime, linux-runtime |   9   |
+| [ ] | `D10 T01 §3`  | Bounded asynchronous jobs                        | none                           |   6   |
+| [ ] | `D10 T01 §4`  | Exactness verification and differential fixtures | none                           |   7   |
+| [ ] | `D10 T01 §5`  | Safe import and export                           | windows-runtime, linux-runtime |   6   |
+| [ ] | `D10 T01 §6`  | Comparable measurements and reports              | none                           |   7   |
+| [ ] | `D10 T02 §1`  | RasterFold, BMP, PNG and PNM                     | windows-runtime, linux-runtime |   6   |
+| [ ] | `D10 T02 §2`  | WebP                                             | windows-runtime, linux-runtime |   6   |
+| [ ] | `D10 T02 §3`  | JPEG XL                                          | windows-runtime, linux-runtime |   6   |
+| [ ] | `D10 T02 §4`  | AVIF                                             | windows-runtime, linux-runtime |   6   |
+| [ ] | `D10 T02 §5`  | JPEG optimization and import                     | windows-runtime, linux-runtime |   6   |
+| [ ] | `D10 T02 §6`  | TIFF and GIF                                     | windows-runtime, linux-runtime |   6   |
+| [ ] | `D10 T02 §7`  | HEIF and HEIC                                    | windows-runtime, linux-runtime |   6   |
+| [ ] | `D10 T02 §8`  | QOI                                              | windows-runtime, linux-runtime |   6   |
+| [ ] | `D10 T02 §9`  | JPEG 2000                                        | windows-runtime, linux-runtime |   6   |
+| [ ] | `D10 T02 §10` | OpenEXR                                          | windows-runtime, linux-runtime |   6   |
+| [ ] | `D10 T02 §11` | Camera RAW and DNG import                        | windows-runtime, linux-runtime |   6   |
+| [ ] | `D10 T02 §12` | Animation and multi-page preservation            | windows-runtime, linux-runtime |   5   |
+| [ ] | `D10 T03 §1`  | C interface components and SVG icons             | none                           |   8   |
+| [ ] | `D10 T03 §2`  | Windows native integration                       | windows-host, display-session  |   6   |
+| [ ] | `D10 T03 §3`  | Linux native integration                         | linux-display                  |   6   |
+| [ ] | `D10 T03 §5`  | Single-image conversion and preview              | display-session, linux-display |   7   |
+| [ ] | `D10 T03 §6`  | Synchronized comparisons                         | display-session, linux-display |   6   |
+| [ ] | `D10 T03 §7`  | Preferences and accessible error recovery        | display-session, linux-display |   6   |
+| [ ] | `D10 T03 §8`  | Guided RasterFold demonstration                  | display-session, linux-display |   5   |
+| [ ] | `D10 T04 §1`  | Full capability and device matrix                | display-session, linux-display |   5   |
+| [ ] | `D10 T04 §2`  | Hostile input and resource limits                | display-session, linux-display |   5   |
+| [ ] | `D10 T04 §3`  | Self-contained native packages                   | display-session, linux-display |   5   |
+| [ ] | `D09 T01 §2`  | The release package                              | none                           |   2   |
+| [ ] | `D09 T01 §3`  | The release workflow                             | none                           |   2   |
+| [ ] | `D08 T01 §6`  | Converter user guide and capability reference    | display-session, linux-display |   6   |
+| [ ] | `D08 T01 §7`  | Versioned downloads and complete references      | none                           |   5   |
+| [ ] | `D08 T01 §8`  | Published whole-product documentation acceptance | linux-display                  |   4   |
+| [ ] | `D10 T04 §4`  | Whole-product release acceptance                 | display-session, linux-display |   5   |
+| [ ] | `D09 T01 §4`  | Release rasterfold-v1.0.0                        | none                           |   6   |
+| [ ] | `D05 T01 §10` | Milestone 10 gate: RasterFold 1.0                | idle-machine                   |   4   |
 
 ### Phase 10 -- Milestone 11: SIMD decisions
 

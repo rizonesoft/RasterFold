@@ -21,7 +21,6 @@ Operator-only steps no agent session can perform or may decide: deletions the se
 - The GitHub CLI login the CI read-back needs
 - The standing approval of format versions and the missed-milestone policy, recorded in the operator's words
 - Enabling GitHub Pages for the documentation site
-- Production Android signing identity and custody
 - HEVC provider distribution decision
 
 ## Out of scope

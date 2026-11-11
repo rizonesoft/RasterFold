@@ -82,9 +82,9 @@ class PlanAuditTests(unittest.TestCase):
 
     def test_native_context_never_inferred_from_tools_or_environment(self):
         graph = audit.load_graph(ROOT)
-        native = {'windows-runtime', 'linux-runtime', 'linux-display', 'android-arm64-runtime', 'android-x64-runtime'}
+        native = {'windows-runtime', 'linux-runtime', 'linux-display'}
         self.assertTrue(native <= set(graph.REQUIRES_ALLOWED))
-        self.assertFalse(native & graph.detect_context('linux', {'DISPLAY': ':0', 'ANDROID_HOME': '/sdk', 'SESSIONNAME': 'Console'}))
+        self.assertFalse(native & graph.detect_context('linux', {'DISPLAY': ':0', 'SESSIONNAME': 'Console'}))
         self.assertEqual({'display-session'}, graph.detect_context('win32', {'SESSIONNAME': 'Console'}))
 
     def test_real_product_plan_has_complete_release_coverage(self):

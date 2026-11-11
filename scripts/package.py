@@ -12,7 +12,7 @@ if str(ROOT / 'scripts') not in sys.path:
     sys.path.insert(0, str(ROOT / 'scripts'))
 from build import target_artifacts  # noqa: E402
 
-TARGETS = ('windows-x64', 'linux-x64', 'android-arm64', 'android-x64')
+TARGETS = ('windows-x64', 'linux-x64')
 
 
 def read_snapshot(path: Path, label: str) -> bytes:

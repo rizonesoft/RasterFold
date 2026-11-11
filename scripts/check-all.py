@@ -13,7 +13,7 @@ ROOT=Path(__file__).resolve().parents[1]
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--skip-build',action='store_true');p.add_argument('--quick',action='store_true')
-    p.add_argument('--all-targets',action='store_true',help='also build Windows and both Android ABIs on Linux')
+    p.add_argument('--all-targets',action='store_true',help='also build the Windows target on Linux')
     p.add_argument('--gate',help='run only the named gate')
     a=p.parse_args();py=sys.executable
     gates=[]

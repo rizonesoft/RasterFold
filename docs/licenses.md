@@ -33,7 +33,6 @@ Downloaded compilers, build drivers, and benchmark reference binaries are pinned
 | Component | Pinned Version | Host | Role |
 | --- | --- | --- | --- |
 | `llvm-mingw` / `llvm-mingw-linux` | `20260922` (Clang `23.1.2`) | Windows x64, Linux x64 | C11 compiler, LLD linker, `llvm-ar`, and MinGW-w64 import libraries for `windows-x64` and `linux-x64`. |
-| `android-ndk` | `r30` (`30.0.16248370`, min API `21`) | Linux x64 | Clang/LLD cross-toolchain and sysroot for `android-arm64` (`arm64-v8a`) and `android-x64` (`x86_64`). |
 | `ninja` / `ninja-linux` | `1.13.2` | Windows x64, Linux x64 | Build driver used by `scripts/build.py`. |
 | `libjxl` | `0.12.0` | Windows x64 | Reference `cjxl` / `djxl` binaries for comparative benchmark scripts only; nothing in RasterFold links against `libjxl`. |
 | `Pillow` (`requirements-dev.txt`) | `12.2.0` | Linux `.venv`, Windows Python | Python image library used only by the test and benchmark scripts (`tests/`). |

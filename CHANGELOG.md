@@ -11,6 +11,7 @@ Work toward RasterFold 1.0.0 (format version 3, C API 1.0):
 - One product version source: `VERSION` feeds the CLI `--version` report, the build manifest, development package names, `docs/facts.json`, and the site, with stale builds and contradictory release tags refused.
 - The CLI gained `verify`, `inspect --json`, `help` (including per-command help), and extension-based format dispatch.
 - The site gained a generated API Reference page rendered from `include/rasterfold.h`.
+- Android was removed from this repository: the `android-arm64` and `android-x64` build targets, the NDK pin, and the planned Android converter work are gone. RasterFold targets Windows x64 and Linux x64; Android can return as a fork.
 - The C API surface is frozen at five exported functions with thread-local errors, and both a byte-identity check against the independent oracle and a multithreaded byte-identity check guard it.
 
 ## Pre-1.0 development (since the version 2 codec)

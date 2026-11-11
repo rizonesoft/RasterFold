@@ -10,7 +10,7 @@ Quote the exit code, the passed, failed, and skipped counts, and the last lines 
 python3 scripts/check-all.py
 ```
 
-It builds the native CLI and libraries through `scripts/build.py`, runs correctness, API, artifact/consumer tests and 300 seeded decoder mutations, then runs every applicable TODO, review, controller, intelligence and provisioning gate. On Linux, use `python3 scripts/check-all.py --all-targets` to build all four targets too. Logs stay under `build/logs/`; every gate runs even after a failure. Green means exit 0 with every gate PASS. Report platform-specific skips explicitly; they never prove another platform works. `--skip-build` and `--quick` are iteration shortcuts only. Native Windows codec tests use `python3 scripts/windows.py tests/test_correctness.py` from WSL. The research commands below use Windows interop because their process-memory and profiling APIs remain Win32.
+It builds the native CLI and libraries through `scripts/build.py`, runs correctness, API, artifact/consumer tests and 300 seeded decoder mutations, then runs every applicable TODO, review, controller, intelligence and provisioning gate. On Linux, use `python3 scripts/check-all.py --all-targets` to build the Windows target too. Logs stay under `build/logs/`; every gate runs even after a failure. Green means exit 0 with every gate PASS. Report platform-specific skips explicitly; they never prove another platform works. `--skip-build` and `--quick` are iteration shortcuts only. Native Windows codec tests use `python3 scripts/windows.py tests/test_correctness.py` from WSL. The research commands below use Windows interop because their process-memory and profiling APIs remain Win32.
 
 ## Every code section: the whole correctness suite
 

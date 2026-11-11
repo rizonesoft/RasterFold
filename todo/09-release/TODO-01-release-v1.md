@@ -11,7 +11,7 @@ track: R1
 
 # TODO-01 -- Release 1.0
 
-> **Goal:** `rasterfold-v1.0.0` ships as a signed-off, reproducible package: Windows/Linux x64 and Android ARM64/x64 CLI and native converter packages, shared/static libraries, headers, applicable symbols and import libraries, complete HTML docs, notices and checksums, built by CI from the tag, with the format frozen at version 3 and the backlog reviewed.
+> **Goal:** `rasterfold-v1.0.0` ships as a signed-off, reproducible package: Windows/Linux x64 CLI and native converter packages, shared/static libraries, headers, applicable symbols and import libraries, complete HTML docs, notices and checksums, built by CI from the tag, with the format frozen at version 3 and the backlog reviewed.
 
 > [!IMPORTANT]
 > **Current state (verified 2026-11-09):** API 1.0 and format 3 are independent contracts; product SemVer 1.0.0 lives only in `VERSION` and feeds the CLI report, build manifests, development package names, facts, and the site through `scripts/version.py`, and `CHANGELOG.md` records changes since the version 2 codec. There is no release workflow or release tag yet (§3, §4). Release automation must extend this packager and keep product, format and ABI versions independent.
@@ -79,7 +79,7 @@ track: R1
 
 **Job:** A user can download the package and checksums the release workflow exports for each tag.
 
-- [ ] Add `.github/workflows/release.yml`: on a `rasterfold-v*` tag, run every gate including recorded exact-candidate Android native-device evidence and the already implemented D10 T04 §1 to §3 gates, build all target packages, and create the GitHub release with the zip and its checksums attached, exporting the release notes from `CHANGELOG.md`. Done when: a workflow_dispatch dry run on an immutable candidate ref or a prerelease tag matching VERSION completes without requiring the later D10 T04 §4 whole-product signoff. Cheaper substitute: uploading the zip by hand.
+- [ ] Add `.github/workflows/release.yml`: on a `rasterfold-v*` tag, run every gate including the already implemented D10 T04 §1 to §3 gates, build all target packages, and create the GitHub release with the zip and its checksums attached, exporting the release notes from `CHANGELOG.md`. Done when: a workflow_dispatch dry run on an immutable candidate ref or a prerelease tag matching VERSION completes without requiring the later D10 T04 §4 whole-product signoff. Cheaper substitute: uploading the zip by hand.
 - [ ] Commit: `"release: build and publish releases from tags"`
 
 **Test checkpoint:** the dry run's workflow URL and its attached assets quoted.

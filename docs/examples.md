@@ -74,18 +74,6 @@ tools/llvm-mingw-linux/bin/clang --target=x86_64-linux-gnu -std=c11 \
   -Iinclude examples\decode.c bin\windows-x64\lib\librasterfold.a -lkernel32 -o build\decode-ppm.exe
 ```
 
-### Cross-Compile a Consumer for Android ARM64 or Android x64 (Linux or WSL Host)
-
-```bash
-# Android ARM64 (arm64-v8a, API 21 minimum)
-tools/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang -std=c11 \
-  -Iinclude examples/encode.c bin/android-arm64/lib/librasterfold.a -pthread -o build/encode-ppm-android-arm64
-
-# Android x64 (x86_64, API 21 minimum)
-tools/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android21-clang -std=c11 \
-  -Iinclude examples/encode.c bin/android-x64/lib/librasterfold.a -pthread -o build/encode-ppm-android-x64
-```
-
 ## Inspecting a `.fold` Buffer in Memory
 
 Call `rf_inspect` to validate both CRC-32 checksums and decode the full bitstream before reading image metadata:

@@ -64,7 +64,7 @@ class Artifacts(unittest.TestCase):
     def test_public_exports(self):
         source=dict((name,int(ordinal)) for name,ordinal in re.findall(r'(rf_\w+)\s+@(\d+)',(ROOT/'src/rasterfold.def').read_text()))
         self.assertEqual(source,EXPORTS)
-        for target in ('windows-x64','linux-x64','android-arm64','android-x64'):
+        for target in ('windows-x64','linux-x64'):
             if WIN and target != 'windows-x64':
                 continue  # WSL ELF symlinks are not normal Windows filesystem links.
             directory=ROOT/'bin'/target

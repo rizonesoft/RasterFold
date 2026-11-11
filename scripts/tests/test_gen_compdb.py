@@ -97,7 +97,7 @@ class RebuildStaleTests(unittest.TestCase):
 
     def test_build_argv_carries_portable_only_for_a_portable_directory(self):
         self.assertEqual(gc.build_argv("windows-x64-portable")[2:], ["--target", "windows-x64", "--portable"])
-        self.assertEqual(gc.build_argv("android-arm64")[2:], ["--target", "android-arm64"])
+        self.assertEqual(gc.build_argv("linux-x64")[2:], ["--target", "linux-x64"])
 
 
 if __name__ == "__main__":

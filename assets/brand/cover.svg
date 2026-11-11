@@ -14,7 +14,7 @@
  <text x="70" y="218" fill="#f3f8ff" font-size="96" font-weight="700" letter-spacing="-5">RasterFold</text>
  <text x="76" y="281" fill="#c4d1e6" font-size="31" font-weight="400">Every pixel, preserved.</text>
  <text x="76" y="352" fill="#8397b3" font-size="20">Lossless RGB. A small C core. An open format.</text>
- <text x="76" y="515" fill="#d5e2f6" font-size="15" letter-spacing="2">WINDOWS / LINUX / ANDROID</text>
+ <text x="76" y="515" fill="#d5e2f6" font-size="15" letter-spacing="2">WINDOWS / LINUX</text>
  <text x="751" y="515" fill="#8397b3" font-size="14" letter-spacing="2">RGB8</text>
  <text x="886" y="515" fill="#8397b3" font-size="14" letter-spacing="2">FORMAT 02</text>
  <text x="1060" y="515" fill="#8397b3" font-size="14" letter-spacing="2">CLI + C API</text>

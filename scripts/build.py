@@ -13,7 +13,7 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-TARGETS = ('linux-x64', 'windows-x64', 'android-arm64', 'android-x64')
+TARGETS = ('linux-x64', 'windows-x64')
 COMMON = ('platform', 'api', 'crc32', 'bmp', 'ppm', 'zlib', 'png', 'fold', 'cm', 'pal')
 
 
@@ -37,13 +37,6 @@ def target_artifacts(target: str) -> tuple[str, ...]:
             'lib/librasterfold.so',
             'include/rasterfold.h',
         )
-    if target in ('android-arm64', 'android-x64'):
-        return (
-            'bin/rasterfold',
-            'lib/librasterfold.so',
-            'lib/librasterfold.a',
-            'include/rasterfold.h',
-        )
     raise ValueError(f'unknown target: {target}')
 
 
@@ -60,14 +53,8 @@ def base_x64_flags() -> list[str]:
 
 
 def target_toolchain(target: str) -> tuple[Path, str]:
-    if target.startswith('android-'):
-        tools = ROOT / 'tools/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin'
-        arch = 'aarch64' if target == 'android-arm64' else 'x86_64'
-        api = json.loads((ROOT / 'toolchain.json').read_text())['android']['min_api']
-        triple = f'{arch}-linux-android{api}'
-    else:
-        tools = ROOT / ('tools/llvm-mingw/bin' if os.name == 'nt' else 'tools/llvm-mingw-linux/bin')
-        triple = 'x86_64-w64-mingw32' if target == 'windows-x64' else 'x86_64-linux-gnu'
+    tools = ROOT / ('tools/llvm-mingw/bin' if os.name == 'nt' else 'tools/llvm-mingw-linux/bin')
+    triple = 'x86_64-w64-mingw32' if target == 'windows-x64' else 'x86_64-linux-gnu'
     return tools, triple
 
 
@@ -76,8 +63,7 @@ def compile_flags(target: str, portable: bool = False) -> list[str]:
     _tools, triple = target_toolchain(target)
     flags = [f'--target={triple}', '-std=c11', '-O2', '-g', '-Wall', '-Wextra', '-Werror',
              '-Wno-unused-parameter', '-fno-builtin', '-fno-ident', '-fvisibility=hidden']
-    if target != 'android-arm64':
-        flags += base_x64_flags()
+    flags += base_x64_flags()
     if portable:
         flags += ['-DRF_PORTABLE_SIMD']
     if windows:
@@ -299,10 +285,9 @@ def check_product_header() -> None:
 def build(target: str, jobs: int, portable: bool, pgo_profile: Path | None = None, lto: bool = False) -> None:
     check_product_header()
     windows = target == 'windows-x64'
-    android = target.startswith('android-')
     suffix = '.exe' if os.name == 'nt' else ''
     if os.name == 'nt' and not windows:
-        raise ValueError('Linux and Android builds run in Linux/WSL; Windows hosts build windows-x64')
+        raise ValueError('Linux builds run in Linux/WSL; Windows hosts build windows-x64')
     tools, triple = target_toolchain(target)
     cc, ar = tools / ('clang' + suffix), tools / ('llvm-ar' + suffix)
     ninja = ROOT / ('tools/ninja/ninja.exe' if os.name == 'nt' else 'tools/ninja-linux/ninja')
@@ -328,8 +313,6 @@ def build(target: str, jobs: int, portable: bool, pgo_profile: Path | None = Non
         link += ['-nostdlib']
     else:
         link += ['-pthread', '-Wl,-z,relro,-z,now']
-    if android:
-        link += ['-Wl,-z,max-page-size=16384']
     lib_sources = lib_sources_for(target)
     objects = [work / (name + '.o') for name in lib_sources]
     # Hosted static-library callers supply their CRT memory functions. Keep the
@@ -338,7 +321,7 @@ def build(target: str, jobs: int, portable: bool, pgo_profile: Path | None = Non
     linked_objects = [work / 'lto' / (name + '.o') for name in lib_sources] if lto else objects
     main = (work / 'lto' / 'main.o') if lto else (work / 'main.o')
     exe = runtime / ('rasterfold.exe' if windows else 'rasterfold')
-    shared = (runtime if windows else libraries) / ('rasterfold.dll' if windows else 'librasterfold.so' if android else 'librasterfold.so.1')
+    shared = (runtime if windows else libraries) / ('rasterfold.dll' if windows else 'librasterfold.so.1')
     archive = libraries / 'librasterfold.a'
     imports = libraries / 'librasterfold.dll.a'
     exe_pdb, dll_pdb = symbols / 'rasterfold.pdb', symbols / 'rasterfold-dll.pdb'
@@ -400,7 +383,7 @@ def build(target: str, jobs: int, portable: bool, pgo_profile: Path | None = Non
         manifest.write_text(text)
     subprocess.run([str(ninja), '-f', str(manifest), '-j', str(jobs)], cwd=ROOT, check=True)
     artifacts = [exe, shared, archive]
-    if not windows and not android:
+    if not windows:
         alias = libraries / 'librasterfold.so'
         if alias.is_symlink() or alias.exists():
             alias.unlink()

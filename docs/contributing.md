@@ -22,7 +22,7 @@ source .venv/bin/activate
 python3 scripts/check-all.py --all-targets
 ```
 
-The Windows commands and Android evidence requirements are in the build guide. Never claim a cross-build as a device test or a local run as GitHub CI. Keep complete gate logs under ignored `build/`; put concise, reproducible evidence in the review record.
+The Windows commands are in the build guide. Never claim a cross-build as a runtime test or a local run as GitHub CI. Keep complete gate logs under ignored `build/`; put concise, reproducible evidence in the review record.
 
 ## Preserve the contracts
 

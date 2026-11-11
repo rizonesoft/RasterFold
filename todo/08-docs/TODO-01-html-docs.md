@@ -180,7 +180,7 @@ The workflow is GitHub's Jekyll starter adapted to this repository: it builds th
 > **Review:** `docs/reviews/d08-t01-s5.json`
 ## 6. Converter user guide and capability reference
 
-**Requires:** display-session, linux-display, android-arm64-runtime, android-x64-runtime -- The checkpoint requires observed browser/accessibility or native-guide evidence, not only a source build; source checkpoint audit: docs/todo-vision-audit.md.
+**Requires:** display-session, linux-display -- The checkpoint requires observed browser/accessibility or native-guide evidence, not only a source build; source checkpoint audit: docs/todo-vision-audit.md.
 
 **Job:** A user can install, use, compare and troubleshoot the native converter from complete documentation.
 
@@ -194,7 +194,7 @@ The workflow is GitHub's Jekyll starter adapted to this repository: it builds th
 
 - [ ] Generate `docs/converter-formats.md` from `converter/codecs.json`. Done when: read/write, depth, alpha, animation, metadata and exactness classes match actual enabled adapters.
 - [ ] Write `docs/converter.md`. Done when: single conversion, previews, side-by-side/wipe/difference, saving, cancel/retry and Try sample each have tested instructions.
-- [ ] Write target-specific help in `docs/converter-troubleshooting.md`. Done when: permissions, display drivers, Android providers, unsupported modes, memory limits and larger output have concrete recovery steps.
+- [ ] Write target-specific help in `docs/converter-troubleshooting.md`. Done when: permissions, display drivers, unsupported modes, memory limits and larger output have concrete recovery steps.
 - [ ] Capture UI examples from the candidate in `docs/assets/converter/`. Done when: every screenshot names its source revision, target and state and contains no private source paths.
 - [ ] Register the generated capability page in `docs/drift.json`. Done when: stale registry values fail its generator check; authored definitions live separately in `docs/converter-exactness.md` and are never overwritten.
 - [ ] Commit: `"docs: converter user guide and capability reference"`

@@ -4,7 +4,7 @@ This is the planned native surface, owned by `D10 T03`; it does not describe an 
 
 ## Layout
 
-At desktop widths, use a compact application bar, an input/preview workspace, a settings column and a persistent result footer. The main action says Convert until work starts, then Cancel. Keep original and decoded-result labels visible over synchronized panes. At narrow Android widths stack preview and controls with a persistent progress/cancel area; comparison switches between a split and a swipe view without losing the common zoom center. No action is represented by an unexplained icon alone.
+At desktop widths, use a compact application bar, an input/preview workspace, a settings column and a persistent result footer. The main action says Convert until work starts, then Cancel. Keep original and decoded-result labels visible over synchronized panes. At narrow window widths stack preview and controls with a persistent progress/cancel area; comparison switches between a split and a swipe view without losing the common zoom center. No action is represented by an unexplained icon alone.
 
 ## States
 
@@ -16,7 +16,7 @@ Side-by-side views share zoom and pan in image coordinates. Offer fit, actual pi
 
 ## Visual rules
 
-Use light, dark, high-contrast light and high-contrast dark themes; comfortable and compact density; OS text and display scaling from 100% to 300%; named color tokens; a visible focus indicator; logical tab order; reduced-motion behavior; and labels that survive localization expansion. Measure text and controls using native font facilities or bundled audited text libraries. Use neutral image backgrounds so application colors do not bias visual comparisons. Windows UI Automation, Linux accessibility and Android accessibility expose names, roles, values, focus and actions. A custom canvas with no accessibility tree fails acceptance.
+Use light, dark, high-contrast light and high-contrast dark themes; comfortable and compact density; OS text and display scaling from 100% to 300%; named color tokens; a visible focus indicator; logical tab order; reduced-motion behavior; and labels that survive localization expansion. Measure text and controls using native font facilities or bundled audited text libraries. Use neutral image backgrounds so application colors do not bias visual comparisons. Windows UI Automation and Linux accessibility expose names, roles, values, focus and actions. A custom canvas with no accessibility tree fails acceptance.
 
 ## SVG icon pipeline
 
@@ -24,4 +24,4 @@ Author a small family of viewBox-based SVG paths for open, save, compare, zoom, 
 
 ## Delivery evidence
 
-Drive each state on Windows x64, Linux x64, Android ARM64 and Android x64. Record keyboard-only and screen-reader runs, resize/scaling screenshots, cancellation and no-overwrite checks, decoded comparisons and dependency/import audits from clean target installations. No fixture or cross-build is described as a driven native UI test.
+Drive each state on Windows x64 and Linux x64. Record keyboard-only and screen-reader runs, resize/scaling screenshots, cancellation and no-overwrite checks, decoded comparisons and dependency/import audits from clean target installations. No fixture or cross-build is described as a driven native UI test.

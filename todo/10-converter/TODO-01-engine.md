@@ -36,7 +36,7 @@ track: GUI1
 ## Outcome
 
 - A bounded C conversion engine preserves source files and verifies exact output through a versioned adapter contract.
-- Clean Windows/Linux x64 and Android ARM64/x64 installations run the shipped application without downloading a runtime or codec. System OS/display services remain prerequisites, documented per target.
+- Clean Windows/Linux x64 installations run the shipped application without downloading a runtime or codec. System OS/display services remain prerequisites, documented per target.
 
 **Adjacency:** list=applicable @ D10 T01 §1; document=applicable @ D10 T03 §5; settings=applicable @ D10 T01 §3; reporting=applicable @ D10 T01 §6; notifications=applicable @ D10 T01 §3; permissions=applicable @ D10 T01 §5; audit=applicable @ D10 T01 §6; exchange=applicable @ D10 T01 §5; reverse=applicable @ D10 T01 §4
 
@@ -80,7 +80,7 @@ Build in the listed order. This section adds the named test driver before using 
 > **Review:** `docs/reviews/d10-t01-s1.json`
 ## 2. Pinned bundled codec builds
 
-**Requires:** windows-runtime, linux-runtime, android-arm64-runtime, android-x64-runtime -- Native loader smoke tests require each target runtime; source checkpoint audit in docs/todo-vision-audit.md.
+**Requires:** windows-runtime, linux-runtime -- Native loader smoke tests require each target runtime; source checkpoint audit in docs/todo-vision-audit.md.
 
 **Job:** A maintainer can build every bundled codec from verified source with no downloaded runtime on the target.
 
@@ -91,7 +91,7 @@ Build in the listed order. This section adds the named test driver before using 
 - [ ] Add `scripts/build-converter.py` over local LLVM/Ninja. Done when: all four target graphs compile application files as C11 and isolate vendored C++ behind C interfaces.
 - [ ] Generate `converter/THIRD-PARTY-NOTICES.txt` and an SBOM from the source manifest. Done when: each linked provider and transitive dependency appears with license text and source retrieval instructions.
 - [ ] Add import/dependency checks to `tests/converter/test_bundle.py`. Done when: clean target smoke tests load no unshipped non-system DLL or shared object; no external CLI is required.
-- [ ] Document Linux display/font and Android SDK/NDK packaging choices in `docs/converter-building.md`. Done when: OS prerequisites and bundled support libraries are distinguished from build-time tools.
+- [ ] Document Linux display/font packaging choices in `docs/converter-building.md`. Done when: OS prerequisites and bundled support libraries are distinguished from build-time tools.
 - [ ] Pin each vendor-required build tool in `toolchain.json` and its local bootstrap path. Done when: CMake, Meson, NASM or other required tooling is checksum-verified where used, and SIMD/assembly build features are recorded for fair comparisons.
 - [ ] Register generated notices/SBOM and their check commands in `docs/drift.json`. Done when: source-pin changes invalidate generated licensing output; ignored upstream source caches remain excluded, and any tracked upstream documentation receives a provenance-only policy before admission.
 - [ ] Commit: `"converter: pinned bundled codec builds"`
@@ -146,11 +146,11 @@ Build in the listed order. This section adds the named test driver before using 
 - [ ] Implement file sniffing and bounded reads in `converter/src/input.c`. Done when: content and extension disagreement is reported; a filename never selects an unsafe decoder blindly.
 - [ ] Implement exclusive staged publication in `converter/src/output.c`. Done when: an existing destination, input alias, symlink alias or hard-link alias is refused by default.
 - [ ] Implement disk-full and cancellation cleanup in `converter/src/output.c`. Done when: only the job-owned temporary file is removed and no partial output is called successful.
-- [ ] Define portable input/output callback ownership in `converter/include/rfc_io.h`. Done when: the engine accepts bounded read, seek and staged-publication callbacks without requiring an Android activity; the concrete SAF bridge belongs to D10 T03 §4.
+- [ ] Define portable input/output callback ownership in `converter/include/rfc_io.h`. Done when: the engine accepts bounded read, seek and staged-publication callbacks without depending on a platform window or activity.
 - [ ] Add `tests/converter/test_file_safety.py`. Done when: existing targets, same-file inputs, truncated streams, permission denial and disk exhaustion preserve before/after hashes.
 - [ ] Commit: `"converter: safe import and export"`
 
-**Test checkpoint:** Run the file-safety fixtures on POSIX and Windows and drive native Windows/POSIX destination refusals; Android SAF proof belongs to D10 T03 §4; capture before/after hashes.
+**Test checkpoint:** Run the file-safety fixtures on POSIX and Windows and drive native Windows/POSIX destination refusals; capture before/after hashes.
 
 **Freeze check:** Existing `.fold` v2 files and the oracle remain unchanged. Each new output receives a fresh bundled decode and the format-specific verification contract before acceptance; independent fixture coverage is reported separately; input and existing destination bytes survive refusal, cancellation and failure.
 

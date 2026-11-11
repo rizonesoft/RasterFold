@@ -110,7 +110,7 @@ Work the checklist top to bottom. Tick each item as its Done-when becomes true, 
 - Build the cheaper substitute's failure into the work: the checkpoint must be able to catch the wrong thing, so build the test that distinguishes them.
 - Keep the diff to the section. Adjacent wrongness gets filed with `add-todo`, not fixed in passing.
 - One copy of each mechanism: the range coder, the counters, and the quantizers live once and are shared between methods.
-- The stack is fixed (`AGENTS.md`): C11 with a freestanding Win32 CLI/DLL and hosted Linux/Android libc platform layer, built by pinned local LLVM, Ninja and Android NDK; Python standard library plus Pillow for tests and research.
+- The stack is fixed (`AGENTS.md`): C11 with a freestanding Win32 CLI/DLL and hosted Linux libc platform layer, built by pinned local LLVM and Ninja; Python standard library plus Pillow for tests and research.
 
 ### 4a. Measure before porting (compression and speed sections)
 

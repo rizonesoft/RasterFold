@@ -2,11 +2,11 @@
 
 Recorded 2026-09-30 from the operator's request and two clarifications. This is a product contract for planned work, not a claim that the converter or Pages site already ships.
 
-RasterFold supplies a lossless codec, CLI, and shared/static C libraries for Windows/Linux x64 and Android ARM64/x64. A native image converter demonstrates RasterFold alongside leading image formats. GitHub Pages provides complete public product documentation. The existing sixty codec research milestones remain experiments with measured acceptance bars; executing a plan cannot guarantee an unmeasured compression win.
+RasterFold supplies a lossless codec, CLI, and shared/static C libraries for Windows/Linux x64. A native image converter demonstrates RasterFold alongside leading image formats. GitHub Pages provides complete public product documentation. The existing sixty codec research milestones remain experiments with measured acceptance bars; executing a plan cannot guarantee an unmeasured compression win.
 
 ## Native converter
 
-The operator selected native Windows/Linux/Android, and defined no dependencies as no additional installs for users: audited, pinned codec source may be bundled. Application and UI logic use C11, original SVG icons and native platform integration. No Electron, browser shell, Qt, SDL or downloaded runtime is needed. Bundled implementations may contain C++ behind C interfaces, including libjxl. Minimal platform interop generated for Android SDK facilities is permitted as a documented implementation default; the application logic remains in C. Changing that default costs only the Android platform boundary, not the engine or codec adapters.
+The operator selected native Windows/Linux (Android was removed from this repository on 2026-11-11: "we will not be doing any android dev in this repo anymore"; a fork can add it later), and defined no dependencies as no additional installs for users: audited, pinned codec source may be bundled. Application and UI logic use C11, original SVG icons and native platform integration. No Electron, browser shell, Qt, SDL or downloaded runtime is needed. Bundled implementations may contain C++ behind C interfaces, including libjxl. Minimal platform interop generated for Android SDK facilities is permitted as a documented implementation default; the application logic remains in C. Changing that default costs only the Android platform boundary, not the engine or codec adapters.
 
 The initial feature set is single-image conversion with a decoded preview, synchronized side-by-side comparisons, an optional wipe and difference view, cancel/retry, a clear output destination, truthful size/time/memory reporting, keyboard and screen-reader access, scaling, themes, and visible failure states. Images stay on the device; demo samples are bundled and licensed. Presets select real adapter settings and never silently reduce precision, flatten alpha, discard metadata or extract the first animation frame.
 
@@ -20,9 +20,9 @@ RasterFold remains RGB8 until its own format/API milestones add further capabili
 
 ## Documentation and release
 
-Keep the recorded Jekyll/Just the Docs choice for GitHub Pages. Publish an explicit allowlist of product pages, original assets and generated references, never agent policy, TODOs, review records, intelligence, local paths or private working data. Test the `/RasterFold/` project base path, navigation, search, keyboard use, mobile layouts and broken links. Cover installation, all four targets, CLI, C API, native converter, capabilities, limitations, format specification, measured benchmarks, examples, troubleshooting, accessibility, licensing and release history.
+Keep the recorded Jekyll/Just the Docs choice for GitHub Pages. Publish an explicit allowlist of product pages, original assets and generated references, never agent policy, TODOs, review records, intelligence, local paths or private working data. Test the `/RasterFold/` project base path, navigation, search, keyboard use, mobile layouts and broken links. Cover installation, both targets, CLI, C API, native converter, capabilities, limitations, format specification, measured benchmarks, examples, troubleshooting, accessibility, licensing and release history.
 
-One release version source drives CLI/product metadata, package names and the site; format and ABI versions remain independent compatibility contracts. CI checks tag/version agreement and assembles executable, shared/static library, header, license and symbol packages for each target. Release publication is an explicit tag action, with Android device evidence as well as cross-build evidence.
+One release version source drives CLI/product metadata, package names and the site; format and ABI versions remain independent compatibility contracts. CI checks tag/version agreement and assembles executable, shared/static library, header, license and symbol packages for each target. Release publication is an explicit tag action.
 
 ## Drift and completion
 

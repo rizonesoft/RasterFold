@@ -1,4 +1,4 @@
-/* Linux and Android platform layer. Uses the platform C library and pthreads. */
+/* Linux platform layer. Uses the platform C library and pthreads. */
 #define _GNU_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #include <errno.h>
@@ -114,8 +114,8 @@ static int rf_write_impl(const rf_path_char *path, const uint8_t *data, size_t s
     if (ok && fsync(fd)) ok = 0;
     if (close(fd)) ok = 0;
     /* Linux's no-replace rename works on filesystems without hard links.
-     * The syscall avoids requiring a newer Android libc wrapper; device and
-     * sandbox support remain runtime properties and require device testing.
+     * The raw syscall avoids depending on a C library that wraps renameat2;
+     * kernel and filesystem support remain runtime properties.
      * Older kernels/filesystems use exclusive link publication; never rename(). */
     int published = 0, renamed = 0;
     if (ok && replace) {

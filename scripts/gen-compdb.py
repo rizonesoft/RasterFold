@@ -4,8 +4,7 @@
 scripts/build.py already writes build/<target>/compile_commands.json on every
 build. Editors look at the repository root, so this merges the databases that
 exist for build targets (linux-x64 wins per file, windows-x64 contributes the
-freestanding Win32-only units, android-arm64 contributes anything still
-missing), supplements any source no database covers from the synthesis, and
+freestanding Win32-only units), supplements any source no database covers from the synthesis, and
 writes the result to compile_commands.json. Tidy-only databases (posix-* on a
 Windows host) are never published, so --check covers everything published. On a fresh clone with no build yet it
 synthesizes entries with flags derived from build.py so navigation works before
@@ -27,7 +26,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "compile_commands.json"
-PREFERENCE = ("linux-x64", "windows-x64", "android-arm64", "android-x64",
+PREFERENCE = ("linux-x64", "windows-x64",
               "linux-x64-portable", "windows-x64-portable", "posix-x64", "posix-arm64")
 
 _spec = _ilu.spec_from_file_location("rf_build", Path(__file__).resolve().parent / "build.py")

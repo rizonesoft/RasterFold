@@ -19,8 +19,6 @@ body:
       options:
         - Windows x64
         - Linux x64
-        - Android ARM64
-        - Android x64
         - Repository tooling
     validations:
       required: true

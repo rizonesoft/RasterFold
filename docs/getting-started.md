@@ -7,7 +7,7 @@ source_path: docs/getting-started.md
 
 # Getting Started
 
-RasterFold builds from source with a repository-local pinned toolchain (Clang/LLVM, LLD, Ninja, and the Android NDK) defined in `toolchain.json`. No global compiler installation is required on Windows or Linux x64.
+RasterFold builds from source with a repository-local pinned toolchain (Clang/LLVM, LLD and Ninja) defined in `toolchain.json`. No global compiler installation is required on Windows or Linux x64.
 
 ## 1. Provision and Build
 

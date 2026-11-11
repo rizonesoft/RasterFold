@@ -268,8 +268,6 @@ REQUIRES_ALLOWED: tuple[str, ...] = (
     "linux-display",
     "windows-runtime",
     "linux-runtime",
-    "android-arm64-runtime",
-    "android-x64-runtime",
     # Operator-only rows (todo/99-manual): no agent runner takes them. Ported
     # from ScratchPad (its D00 T01 §42) to RasterFold on 2026-09-29. Never
     # detected: only a declared `--context operator` satisfies it.
@@ -290,7 +288,7 @@ def detect_context(platform: str | None = None, environ=None) -> set[str]:
     their windows, and never as session 0, which names itself
     "Services" and has no window station (headless services, CI runners).
 
-    Linux display and Android runtime capabilities are explicitly declared
+    Linux display and native runtime capabilities are explicitly declared
     after a real session/device probe; none is inferred from environment
     variables or installed tools. A declaration never replaces runtime proof.
 

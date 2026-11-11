@@ -16,15 +16,13 @@ RasterFold is a lossless RGB image codec written in C11. It turns 24-bit BMP ima
 - **One format, identical bytes.** Format v3 has an independent Python oracle and frozen known-answer files (version 2 files still decode). Thread count does not change encoded output.
 - **CLI and library.** Five C entry points provide encoding, decoding, validated inspection, version discovery and memory release. Shared and static libraries use the same core as the CLI.
 - **Careful file handling.** The CLI refuses existing destinations, writes an exclusive `.partial` file, flushes it, and publishes without replacing another file.
-- **A local, pinned toolchain.** LLVM, Ninja and the Android NDK live under ignored `tools/` directories, with checked download hashes. Windows builds retain their freestanding Win32 core.
+- **A local, pinned toolchain.** LLVM and Ninja live under ignored `tools/` directories, with checked download hashes. Windows builds retain their freestanding Win32 core.
 - **Measured research.** Compression ideas are tested on a corpus with separate tuning and confirmation sets. [Historical Windows results](measurements.md) remain available with their conditions and limitations.
 
 | Target | Executable | Shared library | Static library |
 | --- | --- | --- | --- |
 | Windows x64 | `rasterfold.exe` | `rasterfold.dll` + MinGW/MSVC import libraries | `librasterfold.a` |
 | Linux x64 | `rasterfold` | `librasterfold.so` | `librasterfold.a` |
-| Android ARM64 | `rasterfold` | `librasterfold.so` | `librasterfold.a` |
-| Android x64 | `rasterfold` | `librasterfold.so` | `librasterfold.a` |
 
 ## Build in WSL or Linux
 
