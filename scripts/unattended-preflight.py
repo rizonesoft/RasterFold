@@ -66,6 +66,22 @@ def run(args: list[str], timeout: int = 300) -> subprocess.CompletedProcess:
         kill_group(proc.pid)
         out, _ = proc.communicate()
         return subprocess.CompletedProcess(args, 124, out or "", f"{args[0]}: timed out after {timeout}s")
+    except BaseException:
+        # Cancelled (Ctrl+C, the window closed, a kill; see install_signal_handlers). The child runs in its own
+        # session, so the terminal's signal never reached it: stop its whole group here, before this frame unwinds
+        # and a caller releases the guard lock it held around the child.
+        kill_group(proc.pid)
+        proc.wait()
+        raise
+
+
+def install_signal_handlers() -> None:
+    """Turn SIGTERM and SIGHUP into the same KeyboardInterrupt Ctrl+C raises, so every way of stopping the preflight
+    unwinds through run() and takes the running check's process group with it."""
+    def cancel(signum, frame):
+        raise KeyboardInterrupt
+    for signum in (signal.SIGTERM, signal.SIGHUP):
+        signal.signal(signum, cancel)
 
 
 def kill_group(pgid: int) -> None:
@@ -341,6 +357,7 @@ def main(argv: list[str] | None = None) -> int:
     options = parser.parse_args(argv)
     if options.claim and not options.claim_pid:
         parser.error("--claim needs --claim-pid")
+    install_signal_handlers()
     FAILURES.clear()
     # Straight on main, one writer (operator rule; AGENTS.md trunk-based main).
     branch = run(["git", "branch", "--show-current"]).stdout.strip()
@@ -436,4 +453,8 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        print("\npreflight: cancelled -- the unattended run was not started")
+        sys.exit(130)

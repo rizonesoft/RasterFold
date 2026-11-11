@@ -11,6 +11,7 @@ import io
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import tempfile
@@ -129,6 +130,53 @@ class RunTests(unittest.TestCase):
             else:
                 os.kill(grandchild, 9)
                 self.fail("the grandchild outlived the timed-out check")
+
+    def interrupted(self, signum):
+        """Run a check that starts a long-lived grandchild, signal the preflight process, and return the grandchild's
+        pid and the preflight's exit code. The harness is the real module, loaded the way the launcher runs it."""
+        with tempfile.TemporaryDirectory() as tmp:
+            pid_file = Path(tmp) / "grandchild.pid"
+            spawner = Path(tmp) / "spawner.py"
+            spawner.write_text(
+                "import subprocess, sys, time\n"
+                "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+                f"open({str(pid_file)!r}, 'w').write(str(child.pid))\n"
+                "time.sleep(60)\n", encoding="utf-8")
+            harness = Path(tmp) / "harness.py"
+            harness.write_text(
+                "import importlib.util, sys\n"
+                f"spec = importlib.util.spec_from_file_location('pf', {str(SCRIPTS / 'unattended-preflight.py')!r})\n"
+                "pf = importlib.util.module_from_spec(spec); spec.loader.exec_module(pf)\n"
+                "pf.install_signal_handlers()\n"
+                f"pf.run([sys.executable, {str(spawner)!r}], timeout=60)\n", encoding="utf-8")
+            preflight = subprocess.Popen([sys.executable, str(harness)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                for _ in range(100):
+                    if pid_file.exists() and pid_file.read_text(encoding="utf-8").strip():
+                        break
+                    time.sleep(0.1)
+                grandchild = int(pid_file.read_text(encoding="utf-8"))
+                preflight.send_signal(signum)
+                code = preflight.wait(timeout=20)
+            finally:
+                if preflight.poll() is None:
+                    preflight.kill()
+            for _ in range(50):
+                try:
+                    state = Path(f"/proc/{grandchild}/stat").read_text().rsplit(")", 1)[1].split()[0]
+                except OSError:
+                    return code
+                if state == "Z":
+                    return code
+                time.sleep(0.1)
+            os.kill(grandchild, signal.SIGKILL)
+            self.fail(f"the grandchild outlived a preflight stopped by signal {signum}")
+
+    def test_cancelling_the_preflight_stops_what_it_started(self):
+        # Ctrl+C in the launch window, the window being closed, and a plain kill: each used to end the preflight
+        # (and release the guard lock around a repair) while the build it had started kept running.
+        for signum in (signal.SIGINT, signal.SIGHUP, signal.SIGTERM):
+            self.assertNotEqual(self.interrupted(signum), 0, signum)
 
     def test_a_missing_executable_is_a_result_not_a_traceback(self):
         result = pf.run(["/nonexistent/rf-no-such-tool"])
