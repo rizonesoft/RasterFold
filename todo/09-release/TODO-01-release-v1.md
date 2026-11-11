@@ -44,7 +44,7 @@ track: R1
 |   1   |   §1    | One version source and the changelog | -- |  [x]   |
 | 2 | §2 | The two-target release package | §1, D06 T01 §2 | [ ] |
 |   3   |   §3    | The release workflow | §2 |  [ ]   |
-| 4 | §4 | Release rasterfold-v1.0.0 | §3, D05 T01 §9 | [ ] |
+| 4 | §4 | Release rasterfold-v1.0.0 | §3, D05 T01 §9, D08 T01 §7 | [ ] |
 
 ---
 

@@ -213,7 +213,7 @@ The workflow is GitHub's Jekyll starter adapted to this repository: it builds th
 
 **Chrome:** Shared Jekyll navigation, search, page outline and edit-source link.
 
-- [ ] Generate `docs/downloads.md` from verified release metadata. Done when: each target links executable/GUI and library packages, symbols, checksums and license/source information.
+- [ ] Generate `docs/downloads.md` from verified release metadata. Done when: each target (Windows x64, Linux x64) links its command-line and library packages, symbols, checksums and license/source information. The Windows converter download is added to this page by D08 T01 §6 in Phase 60, not here.
 - [ ] Generate release/API/format labels in `scripts/build-docs.py`. Done when: independent compatibility versions cannot be confused with the product SemVer.
 - [ ] Wire current CLI/API and release-history pages in `docs/site-content.json`. Done when: all public entry points show matching release or development labels; later main builds keep downloads linked to the actual released assets rather than nonexistent development packages.
 - [ ] Register generated downloads/version pages in `docs/drift.json`. Done when: release metadata changes invalidate the generated pages before publication.

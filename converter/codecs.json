@@ -671,13 +671,13 @@
     },
     {
       "format": "heif",
-      "provider": "libheif (bundled, pinned by D10 T01 \u00a72)",
+      "provider": "Windows Imaging Component (system codec, not bundled)",
       "owner": "D10 T02 \u00a77",
       "availability": "planned",
-      "unavailable_reason": "converter adapter not yet shipped; distribution decision owned by D99 T01 \u00a77",
+      "unavailable_reason": "import-only system-codec adapter not yet shipped; decision recorded in docs/codec-distribution.md",
       "modes": {
         "read": true,
-        "write": true
+        "write": false
       },
       "native_samples": [
         "rgb8",
@@ -720,13 +720,13 @@
     },
     {
       "format": "heic",
-      "provider": "libheif (bundled, pinned by D10 T01 \u00a72)",
+      "provider": "Windows Imaging Component (system codec, not bundled)",
       "owner": "D10 T02 \u00a77",
       "availability": "planned",
-      "unavailable_reason": "converter adapter not yet shipped; distribution decision owned by D99 T01 \u00a77",
+      "unavailable_reason": "import-only system-codec adapter not yet shipped; decision recorded in docs/codec-distribution.md",
       "modes": {
         "read": true,
-        "write": true
+        "write": false
       },
       "native_samples": [
         "rgb8",

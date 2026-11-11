@@ -35,7 +35,7 @@ track: GUI3
 
 ## Outcome
 
-- A modern, accessible C interface previews single images, compares real codec results and demonstrates RasterFold without extra installs.
+- A modern, accessible Windows interface on `resolute-ui` previews single images, compares real codec results and demonstrates RasterFold without extra installs.
 - Clean Windows x64 installations run the shipped application without downloading a runtime or codec. System OS/display services remain prerequisites, documented per target.
 
 **Adjacency:** list=applicable @ D10 T03 §5; document=applicable @ D10 T03 §5; settings=applicable @ D10 T03 §7; reporting=applicable @ D10 T03 §6; notifications=applicable @ D10 T03 §5; permissions=applicable @ D10 T01 §5; audit=applicable @ D10 T01 §6; exchange=applicable @ D10 T03 §5; reverse=applicable @ D10 T01 §4
@@ -46,7 +46,7 @@ track: GUI3
 
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
-| 1 | §1 | Interface shell on resolute-ui | D10 T01 §1 | [ ] |
+| 1 | §1 | Interface shell on resolute-ui | D10 T01 §1, D10 T01 §2, D10 T01 §3 | [ ] |
 | 2 | §2 | Windows native integration | §1, D10 T01 §3, D10 T01 §5 | [ ] |
 | 5 | §5 | Single-image conversion and preview | §2, D10 T02 §1, D10 T01 §6 | [ ] |
 | 6 | §6 | Synchronized comparisons | §5, D10 T01 §6, D10 T02 §2, D10 T02 §3, D10 T02 §4 | [ ] |
@@ -70,7 +70,7 @@ track: GUI3
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
 - [ ] Vendor `resolute-ui` and its Lucide set from `rizonesoft/Resolute` at a pinned commit into `converter/vendor/resolute-ui/` and `converter/vendor/lucide/`, recorded in `converter/vendor.json` with the commit, the file list, SHA-256 hashes and licence. Done when: a changed or missing vendored file fails `scripts/check-converter.py`, and `AGENTS.md` records the dependency and its reason.
-- [ ] Pin CMake in `toolchain.json` beside the existing llvm-mingw and Ninja and add `converter/CMakeLists.txt` with `scripts/build-converter.py` as its driver. Done when: a clean checkout builds a `RasterFoldConverter` Windows x64 executable as C++23 that statically links `ResoluteUI_static` and `Lucide_static`, with the manifest declaring per-monitor DPI v2, and the codec targets in `scripts/build.py` are unchanged.
+- [ ] Add the `RasterFoldConverter` executable to `converter/CMakeLists.txt` (the CMake build and its driver `scripts/build-converter.py` come from D10 T01 §2). Done when: a clean checkout builds a `RasterFoldConverter` Windows x64 executable as C++23 that statically links `ResoluteUI_static` and `Lucide_static`, with the manifest declaring per-monitor DPI v2, and the codec targets in `scripts/build.py` are unchanged.
 - [ ] Implement the application shell in `converter/app/main.cpp` and `converter/app/shell.cpp` on `rui::` windows and controls. Done when: the application bar, workspace, settings column and result footer of `docs/design/converter.md` exist as `resolute-ui` controls, and no file under `converter/app/` draws a control the library provides or names a colour, font size or spacing literal.
 - [ ] Bind the shell to the C engine through `converter/app/engine_bridge.cpp`. Done when: interface code reaches jobs, capabilities and results only through the C headers under `converter/include/`, and rendering, input, accessibility and application state have separate ownership.
 - [ ] Add the converter's glyphs to the vendored Lucide set with their sources in `converter/vendor/lucide/icons/SOURCES.md`. Done when: each action has a Lucide glyph and a visible and accessible label.
@@ -127,11 +127,11 @@ Build in the listed order. This section adds the named test driver before using 
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
-- [ ] Implement the open/drop flow in `converter/ui/open.c`. Done when: cancelled dialogs leave state intact and corrupt/unsupported files produce recoverable errors.
-- [ ] Implement preview fit, zoom and pan in `converter/ui/preview.c`. Done when: large images use bounded preview memory and source orientation/color metadata are respected.
-- [ ] Bind capability-driven settings in `converter/ui/settings.c`. Done when: each visible setting has a real adapter consumer and incompatible output formats explain why.
-- [ ] Implement progress, cancel, retry and result views in `converter/ui/convert.c`. Done when: every state in the design spec is visible and a stale job cannot replace the current preview.
-- [ ] Implement save/reveal actions in `converter/ui/save.c`. Done when: export reports the actual destination, exactness and size growth/savings without replacing the input.
+- [ ] Implement the open/drop flow in `converter/app/open.cpp`. Done when: cancelled dialogs leave state intact and corrupt/unsupported files produce recoverable errors.
+- [ ] Implement preview fit, zoom and pan in `converter/app/preview.cpp`. Done when: large images use bounded preview memory and source orientation/color metadata are respected.
+- [ ] Bind capability-driven settings in `converter/app/settings.cpp`. Done when: each visible setting has a real adapter consumer and incompatible output formats explain why.
+- [ ] Implement progress, cancel, retry and result views in `converter/app/convert.cpp`. Done when: every state in the design spec is visible and a stale job cannot replace the current preview.
+- [ ] Implement save/reveal actions in `converter/app/save.cpp`. Done when: export reports the actual destination, exactness and size growth/savings without replacing the input.
 - [ ] Add `tests/converter/test_single_flow.py`. Done when: open-to-save, cancel-at-each-stage, mismatch, permission denial and growth paths have driven assertions.
 - [ ] Commit: `"converter: single-image conversion and preview"`
 
@@ -155,10 +155,10 @@ Build in the listed order. This section adds the named test driver before using 
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
-- [ ] Implement synchronized image-coordinate navigation in `converter/ui/compare.c`. Done when: zoom, pan, fit and actual-pixel views keep the same source point aligned.
-- [ ] Implement split, wipe and difference modes in `converter/ui/compare.c`. Done when: wipe has keyboard/numeric control and difference mode has a labeled scale and changed-sample count.
+- [ ] Implement synchronized image-coordinate navigation in `converter/app/compare.cpp`. Done when: zoom, pan, fit and actual-pixel views keep the same source point aligned.
+- [ ] Implement split, wipe and difference modes in `converter/app/compare.cpp`. Done when: wipe has keyboard/numeric control and difference mode has a labeled scale and changed-sample count.
 - [ ] Render comparison results from `converter/src/report.c`. Done when: sizes, effort, thread count, timing and verification status are visible; unverified results never rank as successful.
-- [ ] Add a source/result switch for alpha and color preview in `converter/ui/compare.c`. Done when: background and display transform changes cannot alter the encoded samples.
+- [ ] Add a source/result switch for alpha and color preview in `converter/app/compare.cpp`. Done when: background and display transform changes cannot alter the encoded samples.
 - [ ] Add `tests/converter/test_compare.py`. Done when: alignment, mismatch, unsupported codec, larger output and stale-result regressions fail.
 - [ ] Commit: `"converter: synchronized comparisons"`
 
@@ -183,8 +183,8 @@ Build in the listed order. This section adds the named test driver before using 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
 - [ ] Implement a versioned preferences file in `converter/src/preferences.c`. Done when: theme, density, last safe directory and memory budget survive restart with named consumers.
-- [ ] Implement reset and corrupt-settings recovery in `converter/ui/preferences.c`. Done when: invalid values fall back safely and reset requires no manual file deletion.
-- [ ] Complete localization-ready labels in `converter/ui/strings.c`. Done when: long labels, Unicode filenames and right-to-left layout fixtures do not clip essential actions.
+- [ ] Implement reset and corrupt-settings recovery in `converter/app/preferences.cpp`. Done when: invalid values fall back safely and reset requires no manual file deletion.
+- [ ] Complete localization-ready labels in `converter/app/strings.cpp`. Done when: long labels, Unicode filenames and right-to-left layout fixtures do not clip essential actions.
 - [ ] Add accessibility/contrast and reduced-motion checks in `tests/converter/test_accessibility.py`. Done when: keyboard-only and screen-reader users can complete conversion and comparison in every theme/density.
 - [ ] Verify privacy in `tests/converter/test_privacy.py`. Done when: opening/converting/demo operations perform no network requests and reports omit source paths unless explicitly requested.
 - [ ] Commit: `"converter: preferences and accessible error recovery"`
@@ -210,8 +210,8 @@ Build in the listed order. This section adds the named test driver before using 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
 - [ ] Add small diverse licensed images under `converter/assets/samples/`. Done when: each has provenance and covers photographs, text, graphics and transparent/high-depth capability refusals.
-- [ ] Implement Try sample in `converter/ui/demo.c`. Done when: it enters the real import/encode/verify/compare flow without fabricated statistics.
-- [ ] Add contextual explanations in `converter/ui/demo.c`. Done when: the user can distinguish losslessness from size savings and see current RasterFold RGB8 limitations.
+- [ ] Implement Try sample in `converter/app/demo.cpp`. Done when: it enters the real import/encode/verify/compare flow without fabricated statistics.
+- [ ] Add contextual explanations in `converter/app/demo.cpp`. Done when: the user can distinguish losslessness from size savings and see current RasterFold RGB8 limitations.
 - [ ] Add `tests/converter/test_demo.py`. Done when: offline first launch, sample conversion and fresh-decode output verification work on clean installs.
 - [ ] Commit: `"converter: guided rasterfold demonstration"`
 

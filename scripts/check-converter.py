@@ -26,7 +26,8 @@ EXPECTED_OWNER = {"rasterfold": 1, "bmp": 1, "png": 1, "apng": 1, "pnm": 1,
                   "pam": 1, "webp": 2, "jpeg-xl": 3, "avif": 4, "jpeg": 5,
                   "gif": 6, "tiff": 6, "heif": 7, "heic": 7, "jpeg-2000": 9,
                   "qoi": 8, "openexr": 10, "camera-raw": 11, "dng": 11}
-IMPORT_ONLY = {"camera-raw", "dng"}  # docs/vision.md: explicit import-only adapter
+IMPORT_ONLY = {"camera-raw", "dng",   # docs/vision.md: explicit import-only adapter
+               "heif", "heic"}        # docs/codec-distribution.md: system codec, read only
 ANIMATED = {"apng", "jpeg-xl", "gif", "tiff"}
 
 

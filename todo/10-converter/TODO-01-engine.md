@@ -88,7 +88,7 @@ Build in the listed order. This section adds the named test driver before using 
 
 - [ ] Add `converter/vendor.json` with exact upstream commits, archive hashes, licenses and enabled features. Done when: every transitive source has an origin and checksum; moving branch names are refused.
 - [ ] Extend `tools/bootstrap.py` with converter-only source staging. Done when: bad hashes and archive traversal are refused and codec dependencies never enter RasterFold-only targets.
-- [ ] Add `scripts/build-converter.py` over local LLVM/Ninja. Done when: the Windows x64 target graph compiles application files as C11 and isolate vendored C++ behind C interfaces.
+- [ ] Pin CMake in `toolchain.json` beside the existing llvm-mingw and Ninja, and add `converter/CMakeLists.txt` with `scripts/build-converter.py` as its driver. Done when: the Windows x64 target compiles the engine and codec adapter files as C11, isolates vendored C++ behind C interfaces, leaves room for the C++23 interface target of D10 T03 §1, and the codec targets in `scripts/build.py` are unchanged.
 - [ ] Generate `converter/THIRD-PARTY-NOTICES.txt` and an SBOM from the source manifest. Done when: each linked provider and transitive dependency appears with license text and source retrieval instructions.
 - [ ] Add import/dependency checks to `tests/converter/test_bundle.py`. Done when: clean target smoke tests load no unshipped non-system DLL or shared object; no external CLI is required.
 - [ ] Document the Windows packaging choices in `docs/converter-building.md`. Done when: OS prerequisites and bundled support libraries are distinguished from build-time tools.
