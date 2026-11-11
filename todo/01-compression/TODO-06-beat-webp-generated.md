@@ -2,7 +2,7 @@
 schema_version: 1
 id: beat-webp-generated
 domain: 01-compression
-status: done
+status: active
 title: "TODO-06 -- Beat WebP on Generated Images"
 depends_on: []
 frozen: true
@@ -179,17 +179,34 @@ The palette field is the largest single component on the many-colour generated i
 > **Review:** `docs/reviews/d01-t06-s6.json`
 ## 7. A Recent-Colour Cache for Palette Images
 
+> **Started:** 2026-11-11T20:31:00Z
+
 **Origin:** discovered run=2211e60a97aa 2026-11-10 -- Milestone 8 gate (D05 T01 §8) re-measured and still missed (synth total 201,640 vs WebP 201,248, geomean 1.0007; palette-coded syn_checker 138 vs 82, syn_text 1447 vs 1198, syn_diagram 1452 vs 1228); this is follow-up round 4 of at most 13 under the capped missed-milestone policy (D99 T01 §8).
 
 **Needs:** ffmpeg with libjxl (benchmarks)
 
 The palette-coded generated images are the gate's remaining miss, and §3 (copy runs), §4 (coding the palette), and §5 (above-copy runs) each made their prototypes worse. Lossless WebP's colour cache (a 32-entry recently-used colour table indexed by a hash of the colour) is the one WebP mechanism no section has tried inside the palette index stream. Hypothesis: on text, diagram, and checker images the current colour often recurs recently but not adjacently, so a cache-hit token (hit flag plus 5-bit index under adaptive counters) costs less than coding the palette index again. Prototype in `build/research/try_pal.c` (a copy of `src/pal.c`): maintain a 32-entry cache updated on every coded pixel (hash `(r*31+g)*31+b` mod 32, direct-mapped, encoder and decoder identical), offer the hit decision per pixel before the index coding in method 3 only, and measure the palette images of `synth` plus `photo` and `tp` for regressions.
 
+**Corrected 2026-11-11:** the frontmatter said `status: done` while this section was open (it was appended after the file closed on 2026-11-09); it is `active` again until this section stamps. The baseline was re-measured at `afcfefd` on 2026-11-11 with `python3 scripts/windows.py research/ab.py size src/cm.c synth -v -t1`: `total=201640 webp=201248 webp_ratio=1.0019 webp_geomean=1.0007 webp_worst=1.6829 (syn_checker)`, the six palette-coded images unchanged at `syn_solid` 61, `syn_checker` 138, `syn_pixel` 52, `syn_ui` 1410, `syn_text` 1447, `syn_diagram` 1452 (total 4560).
+
+**Prototype form (2026-11-11, fixing what the paragraph above leaves open):** "before the index coding" is read as before the 8-decision index tree, the only place method 3 codes a palette index outright; a decision ahead of D1 would add one decision to every pixel, including the large majority D1 already codes in a fraction of a bit. Exactly this grammar is tested, in method 3 with more than two colours only (the one-colour loop and the two-colour D1-miss shortcut are untouched):
+
+- State: a 32-slot direct-mapped table of palette indices, every slot empty at the start of the image. After every pixel, whichever decision coded it (including the pixels the encoder's run fast path skips), slot `((r * 31 + g) * 31 + b) mod 32` of that pixel's colour is set to its palette index. Encoder and decoder do this identically.
+- Token: where D1, D2 and D3 have all missed, one hit flag is coded under an adaptive counter chosen by the neighbour pattern `pat` (128 counters, initialised at 32768, the method 3 update rule and rate table). The flag is 1 exactly when the slot the current colour hashes to holds the current palette index. On a hit the slot number follows as five decisions, most significant first, through a 31-node binary tree of adaptive counters; on a miss the 8-decision index tree follows as today.
+- Decoder: a hit naming an empty slot, or a slot whose index equals `a`, `b` or `e` (the candidates D1 to D3 already excluded), is refused as an invalid palette stream; exact stream-consumption validation is kept.
+- A miss of the bar rejects this table size, hash, update rule, token position and counter scheme only, not colour caching in the palette coder in general.
+
+Decision recorded (2026-11-11): the token position is the industry reading (lossless WebP offers its cache code as an alternative to a literal, not ahead of its backward references). Reversal cost: one prototype edit and a re-measurement under a new section, since nothing is ported on a miss.
+
+Acceptance, all from `python3 scripts/windows.py research/ab.py size build/research/try_pal.c <set> -v -t1` against the same command on `src/cm.c`: `synth` total below 201248 and `webp_geomean` below 1.0000, every `synth` image at most 1.1 times its WebP size or at most 32 bytes larger (so `syn_checker` at most 114, `syn_text` at most 1317, `syn_diagram` at most 1350), and the `photo` and `tp` totals each at most 1.001 times baseline. Before a port is accepted the result is also quoted with full-set totals, geometric means and worst images on `tp`, with alternating baseline and candidate timing at `-t1` and `-t3`; an early size-bar miss ends as the negative result.
+
 - [ ] Prototype the recent-colour cache as above in `build/research/try_pal.c` and measure `synth`, `photo`, and `tp`. Done when: the summary lines are quoted against the bar (`synth` total and geomean below WebP, every generated image within 1.1x WebP or +32 bytes, no `photo` or `tp` total worse by more than 0.1%).
 - [ ] If accepted, make it part of method 3 in version 3 with `tests/rfi_ref.py` (written from the spec text), `spec/FOLD.md`, and `KAT_PAL2_3`, including version-aware dispatch so version 2 method 3 files keep the old grammar, fixtures exercising cache hits and misses, targeted malformed-token rejection, and seeded fuzzing. If not accepted, strike this item with the measured figures and record the row in `docs/research.md` section 3. Done when: the four format places agree or the strike is recorded.
 - [ ] Commit: `"codec: a recent-colour cache for palette images"`
 
 **Test checkpoint:** `python3 scripts/windows.py research/ab.py size build/research/try_pal.c synth -v -t1` (harness permitting) or the palette prototype's own measurement quoted with its command, against the bar above; a miss ships as a negative result with no port.
+
+**Freeze check:** method 3 is part of the unreleased format version 3, so its files may change; `KAT_FOLD` (version 2, method 1) and the method 2 fixtures decode unchanged.
 
 ## Verification
 
