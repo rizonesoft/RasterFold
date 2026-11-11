@@ -1567,7 +1567,7 @@
       "review": "Author-attested: 2026-10-25 re-read README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "AGENTS.md": {
-      "evidence": "Re-read 2026-11-11 for the desktop-shortcut decision: AGENTS.md gained one Working rules bullet recording that D00 T05 section 5 was removed unstamped and that the shortcut stays as an operator convenience; this document was searched for shortcut, .lnk and T05 and makes no statement about the shortcut or that section, so nothing in it contradicts the new bullet",
+      "evidence": "Re-read 2026-11-11 for the desktop-shortcut decision: this document's new Working rules bullet (the desktop shortcut is an operator convenience, not plan work) was checked against decision 7 in todo/99-manual/TODO-01-operator-setup.md section 9 and the removal note in todo/00-workspace/TODO-05-lsp-subagents-unattended.md: the operator's quoted words, the unstamped removal after six reconciliations, the files that stay and the reversal cost agree in all three, and commit 10e1e83 is the removal commit the bullet names",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "362589cf2d8cdf51ea77ef645fb115e9edcc7659825f86531df856ae76e9a0cb",
