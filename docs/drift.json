@@ -1661,11 +1661,11 @@
       "reviewed": "Author-attested: 2026-10-25 re-read docs/benchmarks.md against src/cm.c, src/fold.c, src/rf.h, research/bench.c, measure/verdict.json, and benchmarks/results.csv after D05 T01 section 2 (Milestone 2 gate: Same bytes, leaner and harder)"
     },
     "docs/document-drift.md": {
-      "evidence": "Author-attested: 2026-10-25 verified docs/document-drift.md against scripts/drift-check.py and .github/workflows/pages.yml for drift-build.json[\"commit\"] and --verify-live (D08 T01 section 3)",
+      "evidence": "Re-read 2026-11-11 against scripts/drift-check.py after the harness runtime exemption (HARNESS_RUNTIME): the repair paragraph now states that the read-only comparison leaves out .claude/scheduled_tasks.lock, .claude/state and .codex/state; the rest of the document was checked against the script and still holds.",
       "sources": {
-        "scripts/drift-check.py": "c7d614554852002beea11cb55fee8f119e5e1dfc93370e27a74a4755f553925c",
+        "scripts/drift-check.py": "668cee9ed76c3f1d9d4c0e7f23572468f748bdbd2b9175c9270c5fb0a74ca542",
         "scripts/plan-audit.py": "a75c0311c54108a195c8fbe9048df11458abfe946563bb7c248e798fcdb98d42",
-        "docs/document-drift.md": "d8c1e71d87da45c2ac562b37ad3c25157d1bcb2b93a091b3f8fe3126361347e2"
+        "docs/document-drift.md": "3bd7008511695d121a260475a8ed625306efc6213923b5cf318de019356682bb"
       }
     },
     "docs/README.md": {

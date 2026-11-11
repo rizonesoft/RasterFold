@@ -63,6 +63,46 @@ class DriftTests(unittest.TestCase):
     def kinds(self, c):
         return {e['kind'] for e in c.errors}
 
+    def test_harness_runtime_state_is_not_a_generator_write(self):
+        # Claude Code rewrites .claude/scheduled_tasks.lock whenever a session cron job is created, fires or is
+        # deleted, and a campaign session always has its heartbeat job. A change there during a generator's --check
+        # failed the read-only proof on 2026-11-11 although no generator wrote anything. The stub stands in for the
+        # harness changing its own ignored state while the check runs.
+        self.manifest['generators'] = [{'script': 'scripts/gen.py', 'check': ['--check'], 'fix': ['--write'], 'outputs': []}]
+        self.save()
+        self.write(
+            'scripts/gen.py',
+            'import pathlib, sys\n'
+            'if "--check" in sys.argv:\n'
+            '    for rel in (".claude/scheduled_tasks.lock", ".claude/state/session.json", ".codex/state/hook.json"):\n'
+            '        path = pathlib.Path(rel)\n'
+            '        path.parent.mkdir(parents=True, exist_ok=True)\n'
+            '        path.write_text("runtime\\n", encoding="utf-8")\n'
+            'sys.exit(0)\n',
+        )
+        self.write('.claude/settings.json', '{"hooks": {}}\n')
+        self.write('.codex/hooks.json', '{}\n')
+        self.git('add', '.')
+        self.git('commit', '-qm', 'generator fixture')
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = drift.main(['--root', str(self.root)])
+        self.assertNotIn('check mode must be read-only', buf.getvalue())
+        self.assertEqual(0, code, buf.getvalue())
+        self.assertTrue((self.root / '.claude/scheduled_tasks.lock').is_file(), 'the stub must really have written during --check')
+        # The exemption is those ignored runtime paths only: tracked harness configuration is still watched.
+        self.write(
+            'scripts/gen.py',
+            'import pathlib, sys\n'
+            'if "--check" in sys.argv:\n'
+            '    pathlib.Path(".claude/settings.json").write_text("{}\\n", encoding="utf-8")\n'
+            'sys.exit(0)\n',
+        )
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.assertEqual(1, drift.main(['--root', str(self.root)]))
+        self.assertIn('--check modified .claude/settings.json; check mode must be read-only', buf.getvalue())
+
     def test_clean_tree_and_facts(self):
         self.assertEqual([], self.check().errors)
 

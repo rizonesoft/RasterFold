@@ -1733,6 +1733,17 @@ class Checker:
             receipt['commit'] = head_sha
         return receipt
 
+    # State an agent harness rewrites in its own session, at times no generator controls: Claude Code's cron lock
+    # changes whenever a session job is created, fires or is deleted (a campaign session always has its heartbeat
+    # job), and both harnesses keep per-session state. .gitignore excludes exactly these paths. They are not part of
+    # the tree a generator's --check is proved read-only against; everything else under .claude/ and .codex/ is.
+    HARNESS_RUNTIME = ('.claude/scheduled_tasks.lock', '.claude/state', '.codex/state')
+    HARNESS_RUNTIME_PARENTS = frozenset(r.rsplit('/', 1)[0] for r in HARNESS_RUNTIME)
+
+    @classmethod
+    def _harness_runtime(cls, rel):
+        return any(rel == r or rel.startswith(r + '/') for r in cls.HARNESS_RUNTIME)
+
     def _entry_state(self, rel):
         try:
             p = self.root if rel == '.' else self.path(rel)
@@ -1751,8 +1762,13 @@ class Checker:
                     c.name
                     for c in p.iterdir()
                     if c.name not in ('__pycache__', '.git', 'build', 'bin', '.venv')
+                    and not self._harness_runtime(f'{rel}/{c.name}')
                 )
             )
+            if rel in self.HARNESS_RUNTIME_PARENTS:
+                # Creating or deleting a runtime entry moves this directory's own write time; its mode, owner and
+                # every other child are still compared.
+                meta = (st.st_mode, st.st_uid, st.st_gid, 0)
             return ('dir', *meta, children)
         return ('other', *meta, st.st_size)
 
@@ -1773,13 +1789,16 @@ class Checker:
                 if rel_dir == Path('tools'):
                     dirnames[:] = [d for d in dirnames if d == 'githooks']
                 else:
-                    dirnames[:] = [d for d in dirnames if d not in ignored_dirs]
+                    dirnames[:] = [d for d in dirnames if d not in ignored_dirs
+                                   and not self._harness_runtime((rel_dir / d).as_posix())]
                 if str(rel_dir) != '.':
                     paths.add(rel_dir.as_posix())
                 for d in dirnames:
                     paths.add((rel_dir / d).as_posix() if str(rel_dir) != '.' else d)
                 for name in filenames:
                     if rel_dir == Path('tools') and name not in ('bootstrap.py', 'bootstrap.ps1', 'provision.py', 'provision.ps1'):
+                        continue
+                    if self._harness_runtime((rel_dir / name).as_posix()):
                         continue
                     paths.add((rel_dir / name).as_posix() if str(rel_dir) != '.' else name)
         for rel in list(paths):
