@@ -13,11 +13,6 @@
       "D10 T01 \u00a75",
       "D10 T01 \u00a76"
     ],
-    "Native Windows Linux interface and C SVG icons": [
-      "D10 T03 \u00a71",
-      "D10 T03 \u00a72",
-      "D10 T03 \u00a73"
-    ],
     "Single image preview, side by side comparison, accessibility and RasterFold demo": [
       "D10 T03 \u00a75",
       "D10 T03 \u00a76",
@@ -79,6 +74,10 @@
     ],
     "HEVC distribution decision": [
       "D99 T01 \u00a77"
+    ],
+    "Native Windows interface on resolute-ui": [
+      "D10 T03 \u00a71",
+      "D10 T03 \u00a72"
     ]
   }
 }

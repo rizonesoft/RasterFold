@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **113 of 254 sections complete (44%).** 254 sections (22 discovered); backlog 5 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **113 of 253 sections complete (45%).** 253 sections (22 discovered); backlog 5 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -42,7 +42,7 @@ RasterFold is finished milestone by milestone: **the 60 milestones of the roadma
 
 | Aim | Owned by |
 | --- | --- |
-| Native C converter with no additional user installs on Windows/Linux x64 | `D10 T01 §2` · `D10 T04 §3` |
+| Native converter with no additional user installs on Windows x64 | `D10 T01 §2` · `D10 T04 §3` |
 | Every required format has truthful lossless capabilities and independent round trips | `D10 T01 §1` · `D10 T01 §4` · `D10 T04 §1` |
 | Single-image preview, synchronized comparisons, modern accessible SVG interface and real RasterFold demo | `D10 T03 §5` · `D10 T03 §6` · `D10 T03 §7` · `D10 T03 §8` |
 | Complete, private-content-safe GitHub Pages documentation matches delivered artifacts | `D08 T01 §4` · `D08 T01 §8` · `D10 T04 §4` |
@@ -765,40 +765,39 @@ Milestone 60's work is authored one milestone ahead by its planning section, fro
 
 ### Phase 60 -- Native converter
 
-The native converter, its user guide, the whole-product documentation acceptance and the HEVC distribution decision run after the codec roadmap and block none of it (operator decision 2026-11-11, "Decouple it": RasterFold 1.0 is the codec, command line, library and documentation). Its interface rows need a Windows desktop session and a Linux display, so an unattended run in WSL leaves them for an attended session.
+The native converter, its user guide, the whole-product documentation acceptance and the HEVC distribution decision run after the codec roadmap and block none of it (operator decision 2026-11-11, "Decouple it": RasterFold 1.0 is the codec, command line, library and documentation). It is a Windows desktop application on the Resolute launcher's stack; its interface rows need a Windows desktop session, so an unattended run in WSL leaves them for an attended session.
 
-|  ✔  | Section       | Deliverable                                      | Needs                          | Items |
-| :-: | ------------- | ------------------------------------------------ | ------------------------------ | :---: |
-| [ ] | `D99 T01 §7`  | HEVC distribution decision                       | operator                       |   3   |
-| [ ] | `D10 T01 §2`  | Pinned bundled codec builds                      | windows-runtime, linux-runtime |   9   |
-| [ ] | `D10 T01 §3`  | Bounded asynchronous jobs                        | none                           |   6   |
-| [ ] | `D10 T01 §4`  | Exactness verification and differential fixtures | none                           |   7   |
-| [ ] | `D10 T01 §5`  | Safe import and export                           | windows-runtime, linux-runtime |   6   |
-| [ ] | `D10 T01 §6`  | Comparable measurements and reports              | none                           |   7   |
-| [ ] | `D10 T02 §1`  | RasterFold, BMP, PNG and PNM                     | windows-runtime, linux-runtime |   6   |
-| [ ] | `D10 T02 §2`  | WebP                                             | windows-runtime, linux-runtime |   6   |
-| [ ] | `D10 T02 §3`  | JPEG XL                                          | windows-runtime, linux-runtime |   6   |
-| [ ] | `D10 T02 §4`  | AVIF                                             | windows-runtime, linux-runtime |   6   |
-| [ ] | `D10 T02 §5`  | JPEG optimization and import                     | windows-runtime, linux-runtime |   6   |
-| [ ] | `D10 T02 §6`  | TIFF and GIF                                     | windows-runtime, linux-runtime |   6   |
-| [ ] | `D10 T02 §7`  | HEIF and HEIC                                    | windows-runtime, linux-runtime |   6   |
-| [ ] | `D10 T02 §8`  | QOI                                              | windows-runtime, linux-runtime |   6   |
-| [ ] | `D10 T02 §9`  | JPEG 2000                                        | windows-runtime, linux-runtime |   6   |
-| [ ] | `D10 T02 §10` | OpenEXR                                          | windows-runtime, linux-runtime |   6   |
-| [ ] | `D10 T02 §11` | Camera RAW and DNG import                        | windows-runtime, linux-runtime |   6   |
-| [ ] | `D10 T02 §12` | Animation and multi-page preservation            | windows-runtime, linux-runtime |   5   |
-| [ ] | `D10 T03 §1`  | C interface components and SVG icons             | none                           |   8   |
-| [ ] | `D10 T03 §2`  | Windows native integration                       | windows-host, display-session  |   6   |
-| [ ] | `D10 T03 §3`  | Linux native integration                         | linux-display                  |   6   |
-| [ ] | `D10 T03 §5`  | Single-image conversion and preview              | display-session, linux-display |   7   |
-| [ ] | `D10 T03 §6`  | Synchronized comparisons                         | display-session, linux-display |   6   |
-| [ ] | `D10 T03 §7`  | Preferences and accessible error recovery        | display-session, linux-display |   6   |
-| [ ] | `D10 T03 §8`  | Guided RasterFold demonstration                  | display-session, linux-display |   5   |
-| [ ] | `D10 T04 §1`  | Full capability and device matrix                | display-session, linux-display |   5   |
-| [ ] | `D10 T04 §2`  | Hostile input and resource limits                | display-session, linux-display |   5   |
-| [ ] | `D10 T04 §3`  | Self-contained native packages                   | display-session, linux-display |   5   |
-| [ ] | `D08 T01 §6`  | Converter user guide and capability reference    | display-session, linux-display |   6   |
-| [ ] | `D08 T01 §8`  | Published whole-product documentation acceptance | linux-display                  |   4   |
-| [ ] | `D10 T04 §4`  | Whole-product release acceptance                 | display-session, linux-display |   5   |
+|  ✔  | Section       | Deliverable                                      | Needs                         | Items |
+| :-: | ------------- | ------------------------------------------------ | ----------------------------- | :---: |
+| [ ] | `D99 T01 §7`  | HEVC distribution decision                       | operator                      |   3   |
+| [ ] | `D10 T01 §2`  | Pinned bundled codec builds                      | windows-runtime               |   9   |
+| [ ] | `D10 T01 §3`  | Bounded asynchronous jobs                        | none                          |   6   |
+| [ ] | `D10 T01 §4`  | Exactness verification and differential fixtures | none                          |   7   |
+| [ ] | `D10 T01 §5`  | Safe import and export                           | windows-runtime               |   6   |
+| [ ] | `D10 T01 §6`  | Comparable measurements and reports              | none                          |   7   |
+| [ ] | `D10 T02 §1`  | RasterFold, BMP, PNG and PNM                     | windows-runtime               |   6   |
+| [ ] | `D10 T02 §2`  | WebP                                             | windows-runtime               |   6   |
+| [ ] | `D10 T02 §3`  | JPEG XL                                          | windows-runtime               |   6   |
+| [ ] | `D10 T02 §4`  | AVIF                                             | windows-runtime               |   6   |
+| [ ] | `D10 T02 §5`  | JPEG optimization and import                     | windows-runtime               |   6   |
+| [ ] | `D10 T02 §6`  | TIFF and GIF                                     | windows-runtime               |   6   |
+| [ ] | `D10 T02 §7`  | HEIF and HEIC                                    | windows-runtime               |   6   |
+| [ ] | `D10 T02 §8`  | QOI                                              | windows-runtime               |   6   |
+| [ ] | `D10 T02 §9`  | JPEG 2000                                        | windows-runtime               |   6   |
+| [ ] | `D10 T02 §10` | OpenEXR                                          | windows-runtime               |   6   |
+| [ ] | `D10 T02 §11` | Camera RAW and DNG import                        | windows-runtime               |   6   |
+| [ ] | `D10 T02 §12` | Animation and multi-page preservation            | windows-runtime               |   5   |
+| [ ] | `D10 T03 §1`  | Interface shell on resolute-ui                   | none                          |   8   |
+| [ ] | `D10 T03 §2`  | Windows native integration                       | windows-host, display-session |   6   |
+| [ ] | `D10 T03 §5`  | Single-image conversion and preview              | display-session               |   7   |
+| [ ] | `D10 T03 §6`  | Synchronized comparisons                         | display-session               |   6   |
+| [ ] | `D10 T03 §7`  | Preferences and accessible error recovery        | display-session               |   6   |
+| [ ] | `D10 T03 §8`  | Guided RasterFold demonstration                  | display-session               |   5   |
+| [ ] | `D10 T04 §1`  | Full capability and device matrix                | display-session               |   5   |
+| [ ] | `D10 T04 §2`  | Hostile input and resource limits                | display-session               |   5   |
+| [ ] | `D10 T04 §3`  | Self-contained native packages                   | display-session               |   5   |
+| [ ] | `D08 T01 §6`  | Converter user guide and capability reference    | display-session               |   6   |
+| [ ] | `D08 T01 §8`  | Published whole-product documentation acceptance | linux-display                 |   4   |
+| [ ] | `D10 T04 §4`  | Whole-product release acceptance                 | display-session               |   5   |
 
 **Groomed 2026-09-30:** Added the native converter and complete documentation requirements, repaired prerequisite order within existing phases, and checked release reachability with `python3 scripts/plan-audit.py`. No existing section changed phase and no completion box was ticked.

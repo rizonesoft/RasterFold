@@ -1,6 +1,6 @@
 # Native converter design contract
 
-This is the planned native surface, owned by `D10 T03`; it does not describe an implemented application. All assets are original SVG source compiled into C path data. The native C renderer accepts only this build-time icon vocabulary; user-supplied SVG is not an image decoder or executable input.
+This is the planned native surface, owned by `D10 T03`; it does not describe an implemented application. The converter is a Windows x64 desktop application built on the Resolute launcher's stack (operator decision 2026-11-11): C++23 on llvm-mingw with CMake and Ninja, Resolute's statically linked `resolute-ui` library (Direct2D and DirectWrite, namespace `rui::`) and its Lucide glyph set. Resolute's `DESIGN.md` is the governing design contract for rendering, colour tokens, typography, spacing, motion, iconography, window chrome, accessibility and tone; this document adds only what is specific to an image converter, and where the two disagree `DESIGN.md` wins. A converter surface never draws a control `resolute-ui` provides and never hardcodes a colour, font size or spacing value. User-supplied SVG is not an image decoder or executable input.
 
 ## Layout
 
@@ -16,12 +16,12 @@ Side-by-side views share zoom and pan in image coordinates. Offer fit, actual pi
 
 ## Visual rules
 
-Use light, dark, high-contrast light and high-contrast dark themes; comfortable and compact density; OS text and display scaling from 100% to 300%; named color tokens; a visible focus indicator; logical tab order; reduced-motion behavior; and labels that survive localization expansion. Measure text and controls using native font facilities or bundled audited text libraries. Use neutral image backgrounds so application colors do not bias visual comparisons. Windows UI Automation and Linux accessibility expose names, roles, values, focus and actions. A custom canvas with no accessibility tree fails acceptance.
+Follow Resolute's `DESIGN.md`: follow-system theme with explicit light and dark, Windows high contrast honoured (system colours win over the palette), the accent read from the system, token-only colour, per-monitor DPI v2 with layout in scalable units from 100% upward, a 2px accent focus ring, logical tab order, reduced-motion behaviour, and labels that survive localization expansion. Comfortable and compact density use the same tokens. Use neutral image backgrounds so application colours do not bias visual comparisons. Every custom-drawn control exposes UI Automation names, roles, values, focus and actions, and status changes are announced; a canvas with no accessibility tree fails acceptance.
 
-## SVG icon pipeline
+## Icons
 
-Author a small family of viewBox-based SVG paths for open, save, compare, zoom, fit, play, cancel, retry, settings and information. A stdlib build tool validates geometry and rejects scripts, external references, filters and unsupported paint operations before compiling deterministic C arrays. The C renderer draws paths at device scale with theme colors; no webview, icon font or runtime SVG library. Raster snapshots at every theme/scale are test evidence, not the authoritative assets.
+Interface glyphs are Lucide SVGs rendered through Direct2D by `resolute-ui`, coloured from theme tokens, for open, save, compare, zoom, fit, play, cancel, retry, settings and information. A glyph the vendored Lucide set lacks is added to that set with its source recorded, never drawn as a one-off. The application icon is RasterFold's own. No webview, icon font or bitmap icon set per size. Captures at every theme and scale are test evidence, not the authoritative assets.
 
 ## Delivery evidence
 
-Drive each state on Windows x64 and Linux x64. Record keyboard-only and screen-reader runs, resize/scaling screenshots, cancellation and no-overwrite checks, decoded comparisons and dependency/import audits from clean target installations. No fixture or cross-build is described as a driven native UI test.
+Drive each state on Windows x64. Record keyboard-only and screen-reader runs, resize/scaling screenshots, cancellation and no-overwrite checks, decoded comparisons and dependency/import audits from clean target installations. No fixture or cross-build is described as a driven native UI test.

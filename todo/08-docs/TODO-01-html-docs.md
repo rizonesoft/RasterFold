@@ -180,7 +180,7 @@ The workflow is GitHub's Jekyll starter adapted to this repository: it builds th
 > **Review:** `docs/reviews/d08-t01-s5.json`
 ## 6. Converter user guide and capability reference
 
-**Requires:** display-session, linux-display -- The checkpoint requires observed browser/accessibility or native-guide evidence, not only a source build; source checkpoint audit: docs/todo-vision-audit.md.
+**Requires:** display-session -- The checkpoint requires observed browser/accessibility or native-guide evidence, not only a source build; source checkpoint audit: docs/todo-vision-audit.md.
 
 **Job:** A user can install, use, compare and troubleshoot the native converter from complete documentation.
 
@@ -199,7 +199,7 @@ The workflow is GitHub's Jekyll starter adapted to this repository: it builds th
 - [ ] Register the generated capability page in `docs/drift.json`. Done when: stale registry values fail its generator check; authored definitions live separately in `docs/converter-exactness.md` and are never overwritten.
 - [ ] Commit: `"docs: converter user guide and capability reference"`
 
-**Test checkpoint:** Follow every guide on a clean target and check that the generated capability table exactly equals the registry; record native results for both targets.
+**Test checkpoint:** Follow every guide on a clean target and check that the generated capability table exactly equals the registry; record native results for the Windows target.
 
 ## 7. Versioned downloads and complete references
 

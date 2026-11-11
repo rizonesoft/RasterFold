@@ -14,7 +14,7 @@ track: GUI4
 > **Goal:** The complete native converter ships as tested, documented, self-contained packages with an exact capability and device matrix.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-09-30):** `include/rasterfold.h` and the Windows/Linux x64 build exist (the Android targets were removed on 2026-11-11). There is no native converter application, GUI or bundled third-party codec source yet; D10 T01 §1 (2026-11-09) added the pixel contract, the capability registry in `converter/`, and its validator, with every format still `planned`. These sections implement the operator-approved native C application with bundled codec source and no additional user installs.
+> **Current state (verified 2026-09-30):** `include/rasterfold.h` and the Windows/Linux x64 codec build exist. The converter itself targets Windows x64 only (operator decisions 2026-11-11: Android removed, Linux interface dropped; either can return as a fork). There is no native converter application, GUI or bundled third-party codec source yet; D10 T01 §1 (2026-11-09) added the pixel contract, the capability registry in `converter/`, and its validator, with every format still `planned`. These sections implement the operator-approved native C application with bundled codec source and no additional user installs.
 <!-- claim: exists include/rasterfold.h -->
 <!-- claim: exists converter/include/rfc_codec.h -->
 
@@ -39,7 +39,7 @@ track: GUI4
 ## Outcome
 
 - The complete native converter ships as tested, documented, self-contained packages with an exact capability and device matrix.
-- Clean Windows/Linux x64 installations run the shipped application without downloading a runtime or codec. System OS/display services remain prerequisites, documented per target.
+- Clean Windows x64 installations run the shipped application without downloading a runtime or codec. System OS/display services remain prerequisites, documented per target.
 
 **Adjacency:** list=applicable @ D10 T01 §1; document=applicable @ D10 T04 §3; settings=applicable @ D10 T03 §7; reporting=applicable @ D10 T04 §1; notifications=applicable @ D10 T03 §5; permissions=applicable @ D10 T01 §5; audit=applicable @ D10 T04 §4; exchange=applicable @ D10 T04 §3; reverse=applicable @ D10 T01 §4
 
@@ -58,25 +58,25 @@ track: GUI4
 
 ## 1. Full capability and device matrix
 
-**Requires:** display-session, linux-display -- The complete capability matrix needs driven evidence from both native targets. Source checkpoint audit: docs/todo-vision-audit.md.
+**Requires:** display-session -- The complete capability matrix needs driven evidence from the native Windows target. Source checkpoint audit: docs/todo-vision-audit.md.
 
 **Job:** A maintainer can read reports proving every promised format and interaction on each supported target.
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
 - [ ] Build a licensed conformance corpus manifest in `tests/converter/corpus.json`. Done when: each format includes ordinary, boundary, metadata, transparency, high-depth and malformed cases that apply to it.
-- [ ] Add the native device matrix to `.github/workflows/converter.yml`. Done when: Windows and Linux runtime tests produce separate named results.
+- [ ] Add the native device matrix to `.github/workflows/converter.yml`. Done when: the Windows runtime tests produce named results.
 - [ ] Add capability completeness checks to `scripts/check-converter.py`. Done when: a required provider missing from one target is a failure, never silently omitted.
 - [ ] Record exact OS/runtime evidence in `docs/converter-validation.md`. Done when: every supported platform has a clean-install, UI, file-safety and fresh decoding result and separately identified differential fixtures.
 - [ ] Commit: `"converter: full capability and device matrix"`
 
-**Test checkpoint:** Run `python3 scripts/check-converter.py --all-targets` and quote native results for both targets; an absent native runtime remains a release blocker.
+**Test checkpoint:** Run `python3 scripts/check-converter.py --all-targets` and quote native results for the Windows target; an absent native runtime remains a release blocker.
 
 **Freeze check:** Existing `.fold` v2 files and the oracle remain unchanged. Each new output receives a fresh bundled decode and the format-specific verification contract before acceptance; independent fixture coverage is reported separately; input and existing destination bytes survive refusal, cancellation and failure.
 
 ## 2. Hostile input and resource limits
 
-**Requires:** display-session, linux-display -- Native safety, installation and final product evidence are required on every advertised target. Source checkpoint audit: docs/todo-vision-audit.md.
+**Requires:** display-session -- Native safety, installation and final product evidence are required on every advertised target. Source checkpoint audit: docs/todo-vision-audit.md.
 
 **Job:** A user can open untrusted images without unbounded resource use or damaged files.
 
@@ -94,14 +94,14 @@ Build in the listed order. This section adds the named test driver before using 
 
 ## 3. Self-contained native packages
 
-**Requires:** display-session, linux-display -- Native safety, installation and final product evidence are required on every advertised target. Source checkpoint audit: docs/todo-vision-audit.md.
+**Requires:** display-session -- Native safety, installation and final product evidence are required on every advertised target. Source checkpoint audit: docs/todo-vision-audit.md.
 
 **Job:** A user can download and install a versioned application document package with all required runtime assets.
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
 - [ ] Extend `scripts/package.py` with separate converter packages. Done when: CLI/library SDK packages keep their established bin/lib/include/symbols layout and do not acquire GUI dependencies.
-- [ ] Package Windows and Linux application assets and non-system libraries. Done when: a clean offline target launches, opens samples, converts and exports without a missing import.
+- [ ] Package the Windows application assets and non-system libraries. Done when: a clean offline target launches, opens samples, converts and exports without a missing import.
 - [ ] Attach notices, SBOM, checksums and build-source metadata. Done when: users can identify the version and retrieve corresponding bundled sources.
 - [ ] Add `tests/converter/test_packages.py`. Done when: archive traversal, missing license/provider, mismatched version and missing runtime assets fail.
 - [ ] Commit: `"converter: self-contained native packages"`
@@ -112,7 +112,7 @@ Build in the listed order. This section adds the named test driver before using 
 
 ## 4. Whole-product release acceptance
 
-**Requires:** display-session, linux-display -- Native safety, installation and final product evidence are required on every advertised target. Source checkpoint audit: docs/todo-vision-audit.md.
+**Requires:** display-session -- Native safety, installation and final product evidence are required on every advertised target. Source checkpoint audit: docs/todo-vision-audit.md.
 
 **Job:** A user can audit release history and obtain documented, verified native apps and codec SDKs from one coherent release.
 

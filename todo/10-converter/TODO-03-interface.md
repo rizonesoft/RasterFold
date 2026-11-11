@@ -11,10 +11,10 @@ track: GUI3
 
 # TODO-03 -- Native Interface and Comparisons
 
-> **Goal:** A modern, accessible C interface previews single images, compares real codec results and demonstrates RasterFold without extra installs.
+> **Goal:** A modern, accessible Windows interface on the Resolute launcher's stack (C++23, CMake and Ninja on llvm-mingw, the `resolute-ui` Direct2D library, Lucide glyphs, Resolute's `DESIGN.md`) previews single images, compares real codec results and demonstrates RasterFold without extra installs.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-09-30):** `include/rasterfold.h` and the Windows/Linux x64 build exist (the Android targets were removed on 2026-11-11). There is no native converter application, GUI or bundled third-party codec source yet; D10 T01 §1 (2026-11-09) added the pixel contract, the capability registry in `converter/`, and its validator, with every format still `planned`. These sections implement the operator-approved native C application with bundled codec source and no additional user installs.
+> **Current state (verified 2026-09-30):** `include/rasterfold.h` and the Windows/Linux x64 codec build exist. The converter itself targets Windows x64 only (operator decisions 2026-11-11: Android removed, Linux interface dropped; either can return as a fork). There is no native converter application, GUI or bundled third-party codec source yet; D10 T01 §1 (2026-11-09) added the pixel contract, the capability registry in `converter/`, and its validator, with every format still `planned`. These sections implement the operator-approved native application with bundled codec source and no additional user installs; the interface is C++23 on `resolute-ui` (operator decision 2026-11-11) over the C11 engine of D10 T01.
 <!-- claim: exists include/rasterfold.h -->
 <!-- claim: exists converter/include/rfc_codec.h -->
 
@@ -36,7 +36,7 @@ track: GUI3
 ## Outcome
 
 - A modern, accessible C interface previews single images, compares real codec results and demonstrates RasterFold without extra installs.
-- Clean Windows/Linux x64 installations run the shipped application without downloading a runtime or codec. System OS/display services remain prerequisites, documented per target.
+- Clean Windows x64 installations run the shipped application without downloading a runtime or codec. System OS/display services remain prerequisites, documented per target.
 
 **Adjacency:** list=applicable @ D10 T03 §5; document=applicable @ D10 T03 §5; settings=applicable @ D10 T03 §7; reporting=applicable @ D10 T03 §6; notifications=applicable @ D10 T03 §5; permissions=applicable @ D10 T01 §5; audit=applicable @ D10 T01 §6; exchange=applicable @ D10 T03 §5; reverse=applicable @ D10 T01 §4
 
@@ -46,40 +46,39 @@ track: GUI3
 
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
-| 1 | §1 | C interface components and SVG icons | D10 T01 §1 | [ ] |
+| 1 | §1 | Interface shell on resolute-ui | D10 T01 §1 | [ ] |
 | 2 | §2 | Windows native integration | §1, D10 T01 §3, D10 T01 §5 | [ ] |
-| 3 | §3 | Linux native integration | §1, D10 T01 §3, D10 T01 §5 | [ ] |
-| 5 | §5 | Single-image conversion and preview | §2, §3, D10 T02 §1, D10 T01 §6 | [ ] |
+| 5 | §5 | Single-image conversion and preview | §2, D10 T02 §1, D10 T01 §6 | [ ] |
 | 6 | §6 | Synchronized comparisons | §5, D10 T01 §6, D10 T02 §2, D10 T02 §3, D10 T02 §4 | [ ] |
 | 7 | §7 | Preferences and accessible error recovery | §5, §6 | [ ] |
 | 8 | §8 | Guided RasterFold demonstration | §6, §7 | [ ] |
 
 ---
 
-## 1. C interface components and SVG icons
+## 1. Interface shell on resolute-ui
 
-**Job:** A user can recognize, focus and operate a consistent native interface with original scalable icons.
+**Job:** A user can recognize, focus and operate a consistent native interface that looks and behaves like the Resolute launcher.
 
 **Fidelity:** Native converter -- implement the committed surface contract and all failure states.
 
 **Design:** docs/design/converter.md -- states: all in spec -- themes: all four -- density: both
 
-**Treatment:** Native, scalable image workspace with restrained color, labeled SVG actions and persistent progress.
+**Treatment:** Resolute launcher treatment: Direct2D surfaces, theme tokens, Lucide glyphs with labels, and persistent progress.
 
-**Chrome:** OS window and accessibility integration; shared application bar, comparison panes and result footer.
+**Chrome:** Resolute's custom Direct2D caption and window chrome; shared application bar, comparison panes and result footer.
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
-- [ ] Implement C component, focus and action interfaces in `converter/ui/ui.h`. Done when: rendering, input, accessibility and application state have separate ownership.
-- [ ] Implement theme and density tokens in `converter/ui/theme.c`. Done when: all four themes and both densities use the same semantic roles.
-- [ ] Author original icons in `converter/assets/icons/`. Done when: each action has an SVG path and a visible/accessibility label.
-- [ ] Add `scripts/build-icons.py` to validate and compile SVG paths into C arrays. Done when: scripts, external resources and unsupported drawing operations fail the build.
-- [ ] Implement the bounded path renderer in `converter/ui/svg.c`. Done when: icons render at 100%, 150%, 200% and 300% with no runtime SVG library.
-- [ ] Add `tests/converter/test_ui.c` and icon fixtures. Done when: keyboard focus traversal and invalid SVG rejection fail on seeded regressions.
-- [ ] Register generated icon arrays and their generator check in `docs/drift.json`. Done when: changing an SVG without rebuilding its C data fails the drift gate.
-- [ ] Commit: `"converter: c interface components and svg icons"`
+- [ ] Vendor `resolute-ui` and its Lucide set from `rizonesoft/Resolute` at a pinned commit into `converter/vendor/resolute-ui/` and `converter/vendor/lucide/`, recorded in `converter/vendor.json` with the commit, the file list, SHA-256 hashes and licence. Done when: a changed or missing vendored file fails `scripts/check-converter.py`, and `AGENTS.md` records the dependency and its reason.
+- [ ] Pin CMake in `toolchain.json` beside the existing llvm-mingw and Ninja and add `converter/CMakeLists.txt` with `scripts/build-converter.py` as its driver. Done when: a clean checkout builds a `RasterFoldConverter` Windows x64 executable as C++23 that statically links `ResoluteUI_static` and `Lucide_static`, with the manifest declaring per-monitor DPI v2, and the codec targets in `scripts/build.py` are unchanged.
+- [ ] Implement the application shell in `converter/app/main.cpp` and `converter/app/shell.cpp` on `rui::` windows and controls. Done when: the application bar, workspace, settings column and result footer of `docs/design/converter.md` exist as `resolute-ui` controls, and no file under `converter/app/` draws a control the library provides or names a colour, font size or spacing literal.
+- [ ] Bind the shell to the C engine through `converter/app/engine_bridge.cpp`. Done when: interface code reaches jobs, capabilities and results only through the C headers under `converter/include/`, and rendering, input, accessibility and application state have separate ownership.
+- [ ] Add the converter's glyphs to the vendored Lucide set with their sources in `converter/vendor/lucide/icons/SOURCES.md`. Done when: each action has a Lucide glyph and a visible and accessible label.
+- [ ] Add `tests/converter/test_ui.cpp`. Done when: keyboard focus traversal, token-only colour and UI Automation names fail on seeded regressions.
+- [ ] Register the vendored trees and their hash check in `docs/drift.json`. Done when: editing a vendored file without updating `converter/vendor.json` fails the drift gate.
+- [ ] Commit: `"converter: interface shell on resolute-ui"`
 
-**Test checkpoint:** Run `python3 scripts/check-converter.py --case ui`; inspect rendered theme/scale grids and quote focus/action assertions.
+**Test checkpoint:** Run `python3 scripts/check-converter.py --case ui`; inspect captures in light, dark and high contrast at 100%, 150% and 200% and quote focus/action assertions.
 
 **Freeze check:** Existing `.fold` v2 files and the oracle remain unchanged. Each new output receives a fresh bundled decode and the format-specific verification contract before acceptance; independent fixture coverage is reported separately; input and existing destination bytes survive refusal, cancellation and failure.
 
@@ -87,23 +86,23 @@ Build in the listed order. This section adds the named test driver before using 
 
 **Requires:** display-session -- Win32 input, DPI and UI Automation need a driven Windows desktop session. Source checkpoint audit: docs/todo-vision-audit.md.
 
-**Job:** A user can operate the converter through the win32 platform facilities.
+**Job:** A user can operate the converter through the Windows platform facilities.
 
 **Fidelity:** Native converter -- implement the committed surface contract and all failure states.
 
 **Design:** docs/design/converter.md -- states: all in spec -- themes: all four -- density: both
 
-**Treatment:** Native, scalable image workspace with restrained color, labeled SVG actions and persistent progress.
+**Treatment:** Resolute launcher treatment: Direct2D surfaces, theme tokens, Lucide glyphs with labels, and persistent progress.
 
-**Chrome:** OS window and accessibility integration; shared application bar, comparison panes and result footer.
+**Chrome:** Resolute's custom Direct2D caption and window chrome; shared application bar, comparison panes and result footer.
 
 **Needs:** Windows host (build/test)
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
-- [ ] Implement `converter/platform/win32.c`. Done when: Win32 lifecycle, per-monitor DPI, native dialogs, clipboard and UI Automation are wired to the C UI and job contracts.
-- [ ] Document the platform boundary in `docs/converter-building.md`. Done when: only system facilities and shipped libraries are used; application behavior remains C.
-- [ ] Expose names, roles, state, values and actions in `converter/platform/win32_accessibility.c`. Done when: keyboard, touch and screen-reader activation use the same application actions.
+- [ ] Implement `converter/app/platform_win32.cpp`. Done when: window lifecycle, per-monitor DPI changes, native file dialogs, clipboard, drag and drop and taskbar progress are wired to the `resolute-ui` shell and the C job contracts.
+- [ ] Document the platform boundary in `docs/converter-building.md`. Done when: only system facilities and shipped libraries are used; conversion behaviour stays in the C engine and the interface owns no codec logic.
+- [ ] Expose names, roles, state, values and actions for the converter's own controls (preview panes, wipe, difference view) in `converter/app/accessibility.cpp` through UI Automation. Done when: keyboard and screen-reader activation use the same application actions, and status changes are announced.
 - [ ] Add lifecycle/refusal tests in `tests/converter/test_win32.py`. Done when: closing, suspending, resizing, permission denial and display loss cannot leak workers or publish partial files.
 - [ ] Record native evidence in `docs/converter-validation.md`. Done when: screenshots and input/accessibility runs name OS, architecture, build revision and tested states.
 - [ ] Commit: `"converter: windows native integration"`
@@ -112,36 +111,9 @@ Build in the listed order. This section adds the named test driver before using 
 
 **Freeze check:** Existing `.fold` v2 files and the oracle remain unchanged. Each new output receives a fresh bundled decode and the format-specific verification contract before acceptance; independent fixture coverage is reported separately; input and existing destination bytes survive refusal, cancellation and failure.
 
-## 3. Linux native integration
-
-**Requires:** linux-display -- Wayland, X11 and accessibility need driven Linux display sessions. Source checkpoint audit: docs/todo-vision-audit.md.
-
-**Job:** A user can operate the converter through the linux platform facilities.
-
-**Fidelity:** Native converter -- implement the committed surface contract and all failure states.
-
-**Design:** docs/design/converter.md -- states: all in spec -- themes: all four -- density: both
-
-**Treatment:** Native, scalable image workspace with restrained color, labeled SVG actions and persistent progress.
-
-**Chrome:** OS window and accessibility integration; shared application bar, comparison panes and result footer.
-
-Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
-
-- [ ] Implement `converter/platform/linux.c`. Done when: Wayland and X11 backends with packaged non-system support libraries, display negotiation, native file selection and accessibility are wired to the C UI and job contracts.
-- [ ] Document the platform boundary in `docs/converter-building.md`. Done when: only system facilities and shipped libraries are used; application behavior remains C.
-- [ ] Expose names, roles, state, values and actions in `converter/platform/linux_accessibility.c`. Done when: keyboard, touch and screen-reader activation use the same application actions.
-- [ ] Add lifecycle/refusal tests in `tests/converter/test_linux.py`. Done when: closing, suspending, resizing, permission denial and display loss cannot leak workers or publish partial files.
-- [ ] Record native evidence in `docs/converter-validation.md`. Done when: screenshots and input/accessibility runs name OS, architecture, build revision and tested states.
-- [ ] Commit: `"converter: linux native integration"`
-
-**Test checkpoint:** Build the native target and drive linux interactions on a real desktop/device; quote observed behavior separately from fixture and cross-build results.
-
-**Freeze check:** Existing `.fold` v2 files and the oracle remain unchanged. Each new output receives a fresh bundled decode and the format-specific verification contract before acceptance; independent fixture coverage is reported separately; input and existing destination bytes survive refusal, cancellation and failure.
-
 ## 5. Single-image conversion and preview
 
-**Requires:** display-session, linux-display -- Surface checkpoints require real input, preview and accessibility evidence across advertised targets. Source checkpoint audit: docs/todo-vision-audit.md.
+**Requires:** display-session -- Surface checkpoints require real input, preview and accessibility evidence across advertised targets. Source checkpoint audit: docs/todo-vision-audit.md.
 
 **Job:** A user can browse a list of supported formats, preview one image, receive progress and error notifications, and save a verified result.
 
@@ -149,9 +121,9 @@ Build in the listed order. This section adds the named test driver before using 
 
 **Design:** docs/design/converter.md -- states: all in spec -- themes: all four -- density: both
 
-**Treatment:** Native, scalable image workspace with restrained color, labeled SVG actions and persistent progress.
+**Treatment:** Resolute launcher treatment: Direct2D surfaces, theme tokens, Lucide glyphs with labels, and persistent progress.
 
-**Chrome:** OS window and accessibility integration; shared application bar, comparison panes and result footer.
+**Chrome:** Resolute's custom Direct2D caption and window chrome; shared application bar, comparison panes and result footer.
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
@@ -163,13 +135,13 @@ Build in the listed order. This section adds the named test driver before using 
 - [ ] Add `tests/converter/test_single_flow.py`. Done when: open-to-save, cancel-at-each-stage, mismatch, permission denial and growth paths have driven assertions.
 - [ ] Commit: `"converter: single-image conversion and preview"`
 
-**Test checkpoint:** Drive `tests/converter/test_single_flow.py` on Windows and Linux; capture each design state and verify a fresh decode under its format-specific contract.
+**Test checkpoint:** Drive `tests/converter/test_single_flow.py` on Windows; capture each design state and verify a fresh decode under its format-specific contract.
 
 **Freeze check:** Existing `.fold` v2 files and the oracle remain unchanged. Each new output receives a fresh bundled decode and the format-specific verification contract before acceptance; independent fixture coverage is reported separately; input and existing destination bytes survive refusal, cancellation and failure.
 
 ## 6. Synchronized comparisons
 
-**Requires:** display-session, linux-display -- Surface checkpoints require real input, preview and accessibility evidence across advertised targets. Source checkpoint audit: docs/todo-vision-audit.md.
+**Requires:** display-session -- Surface checkpoints require real input, preview and accessibility evidence across advertised targets. Source checkpoint audit: docs/todo-vision-audit.md.
 
 **Job:** A user can compare RasterFold and other codecs side by side using the same source and preservation policy.
 
@@ -177,9 +149,9 @@ Build in the listed order. This section adds the named test driver before using 
 
 **Design:** docs/design/converter.md -- states: all in spec -- themes: all four -- density: both
 
-**Treatment:** Native, scalable image workspace with restrained color, labeled SVG actions and persistent progress.
+**Treatment:** Resolute launcher treatment: Direct2D surfaces, theme tokens, Lucide glyphs with labels, and persistent progress.
 
-**Chrome:** OS window and accessibility integration; shared application bar, comparison panes and result footer.
+**Chrome:** Resolute's custom Direct2D caption and window chrome; shared application bar, comparison panes and result footer.
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
@@ -196,7 +168,7 @@ Build in the listed order. This section adds the named test driver before using 
 
 ## 7. Preferences and accessible error recovery
 
-**Requires:** display-session, linux-display -- Surface checkpoints require real input, preview and accessibility evidence across advertised targets. Source checkpoint audit: docs/todo-vision-audit.md.
+**Requires:** display-session -- Surface checkpoints require real input, preview and accessibility evidence across advertised targets. Source checkpoint audit: docs/todo-vision-audit.md.
 
 **Job:** A user can keep useful settings, reset them, and recover accessibly from every failure.
 
@@ -204,9 +176,9 @@ Build in the listed order. This section adds the named test driver before using 
 
 **Design:** docs/design/converter.md -- states: all in spec -- themes: all four -- density: both
 
-**Treatment:** Native, scalable image workspace with restrained color, labeled SVG actions and persistent progress.
+**Treatment:** Resolute launcher treatment: Direct2D surfaces, theme tokens, Lucide glyphs with labels, and persistent progress.
 
-**Chrome:** OS window and accessibility integration; shared application bar, comparison panes and result footer.
+**Chrome:** Resolute's custom Direct2D caption and window chrome; shared application bar, comparison panes and result footer.
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
@@ -223,7 +195,7 @@ Build in the listed order. This section adds the named test driver before using 
 
 ## 8. Guided RasterFold demonstration
 
-**Requires:** display-session, linux-display -- Surface checkpoints require real input, preview and accessibility evidence across advertised targets. Source checkpoint audit: docs/todo-vision-audit.md.
+**Requires:** display-session -- Surface checkpoints require real input, preview and accessibility evidence across advertised targets. Source checkpoint audit: docs/todo-vision-audit.md.
 
 **Job:** A new user can try RasterFold and compare codecs immediately using licensed bundled samples.
 
@@ -231,9 +203,9 @@ Build in the listed order. This section adds the named test driver before using 
 
 **Design:** docs/design/converter.md -- states: all in spec -- themes: all four -- density: both
 
-**Treatment:** Native, scalable image workspace with restrained color, labeled SVG actions and persistent progress.
+**Treatment:** Resolute launcher treatment: Direct2D surfaces, theme tokens, Lucide glyphs with labels, and persistent progress.
 
-**Chrome:** OS window and accessibility integration; shared application bar, comparison panes and result footer.
+**Chrome:** Resolute's custom Direct2D caption and window chrome; shared application bar, comparison panes and result footer.
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 

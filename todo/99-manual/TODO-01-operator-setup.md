@@ -141,6 +141,8 @@ Every milestone gate in `todo/05-milestones/` carries this policy: on a miss, up
 
 **Requires:** operator -- the application's intended distribution and any unresolved HEVC licensing obligations need a recorded release-owner decision, not an invented agent approval.
 
+**Corrected 2026-11-11 (operator decision):** the release owner decided "OS codec, read only": no bundled HEVC code, HEIC import only through the Windows system codec, no HEIC writing. `docs/codec-distribution.md` records the decision, its reason and its reversal cost. The items below still stand: the first confirms the exact Windows components from Microsoft's documentation, the second is satisfied by that file once the intended distribution channels are added to it.
+
 - [ ] Prepare the proposed HEVC provider, source license, distribution channels and unresolved obligations in `docs/codec-distribution.md` using current primary sources. Done when: the decision concerns a concrete provider/build rather than a generic codec warning.
 - [ ] Record the release owner's decision in `docs/codec-distribution.md`. Done when: the required enabled HEIC capability has an approved distribution path; an unresolved decision remains visibly blocking and does not silently remove the promised format.
 - [ ] Commit: `"release: record HEVC provider distribution decision"`
