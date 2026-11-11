@@ -70,8 +70,19 @@ class RegistryTests(unittest.TestCase):
         self.assertIs(pf.claude_registry_running(SESSION, self.sessions), False)
 
     def test_a_directory_that_cannot_be_listed_is_unknown(self):
-        with mock.patch.object(Path, "glob", side_effect=PermissionError("denied")):
+        self.entry(os.getpid(), json.dumps({"sessionId": SESSION}))
+        with mock.patch.object(os, "scandir", side_effect=PermissionError("denied")):
             self.assertIsNone(pf.claude_registry_running(SESSION, self.sessions))
+
+    @unittest.skipIf(os.geteuid() == 0, "root lists any directory")
+    def test_a_real_unlistable_directory_is_unknown(self):
+        # The real boundary, no mock: Path.glob would return nothing here and read as "no owner".
+        self.entry(os.getpid(), json.dumps({"sessionId": SESSION}))
+        self.sessions.chmod(0o000)
+        try:
+            self.assertIsNone(pf.claude_registry_running(SESSION, self.sessions))
+        finally:
+            self.sessions.chmod(0o755)
 
     def test_no_registry_and_key_files_are_not_owners(self):
         self.assertIs(pf.claude_registry_running(SESSION, self.sessions / "absent"), False)
@@ -94,6 +105,76 @@ class RegistryTests(unittest.TestCase):
         finally:
             sleeper.kill()
             sleeper.wait()
+
+
+class RunTests(unittest.TestCase):
+    def test_a_timeout_kills_the_whole_process_group(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pid_file = Path(tmp) / "grandchild.pid"
+            script = Path(tmp) / "spawner.py"
+            # A stand-in for a repair that started a build: a child that outlives a kill of its parent alone.
+            script.write_text(
+                "import subprocess, sys, time\n"
+                "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+                f"open({str(pid_file)!r}, 'w').write(str(child.pid))\n"
+                "time.sleep(60)\n", encoding="utf-8")
+            result = pf.run([sys.executable, str(script)], timeout=2)
+            self.assertEqual(result.returncode, 124)
+            self.assertIn("timed out after 2s", result.stderr)
+            grandchild = int(pid_file.read_text(encoding="utf-8"))
+            for _ in range(50):
+                if not pf.pid_alive(grandchild) or "Z" in Path(f"/proc/{grandchild}/stat").read_text().split(")")[-1].split()[:1]:
+                    break
+                time.sleep(0.1)
+            else:
+                os.kill(grandchild, 9)
+                self.fail("the grandchild outlived the timed-out check")
+
+    def test_a_missing_executable_is_a_result_not_a_traceback(self):
+        result = pf.run(["/nonexistent/rf-no-such-tool"])
+        self.assertEqual(result.returncode, 127)
+        self.assertIn("could not start", result.stderr)
+
+
+class LaunchClaimTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        (self.root / "build").mkdir()
+        self.patch = mock.patch.object(pf, "ROOT", self.root)
+        self.patch.start()
+
+    def tearDown(self):
+        self.patch.stop()
+        self.tmp.cleanup()
+
+    def test_no_claim_and_a_dead_claim_do_not_block(self):
+        self.assertEqual(pf.launch_claim()[0], "absent")
+        pf.write_claim(SESSION, dead_pid())
+        self.assertEqual(pf.launch_claim()[0], "stale")
+
+    def test_a_live_launch_carrying_the_session_id_blocks(self):
+        launched = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)", "--session-id", SESSION])
+        try:
+            time.sleep(0.2)
+            pf.write_claim(SESSION, launched.pid)
+            state, detail = pf.launch_claim()
+            self.assertEqual(state, "live")
+            self.assertIn(f"launch of session {SESSION} (pid {launched.pid}) is running", detail)
+            self.assertEqual(pf.launch_claim(self_pid=launched.pid)[0], "stale", "a launch never blocks itself")
+        finally:
+            launched.kill()
+            launched.wait()
+
+    def test_a_reused_pid_is_not_the_launch(self):
+        pf.write_claim(SESSION, os.getpid())  # this test process: alive, but not that launch
+        self.assertEqual(pf.launch_claim()[0], "stale")
+
+    def test_an_unreadable_claim_blocks(self):
+        (self.root / "build" / "unattended-launch.json").write_text("{ not json", encoding="utf-8")
+        state, detail = pf.launch_claim()
+        self.assertEqual(state, "unreadable")
+        self.assertIn("delete build/unattended-launch.json", detail)
 
 
 class PreconditionTests(unittest.TestCase):
@@ -226,10 +307,68 @@ class RepairFlowTests(unittest.TestCase):
         if guard:
             (self.root / "build" / "claude-campaign-guard.json").write_text(json.dumps({"session_id": SESSION}), encoding="utf-8")
         out = io.StringIO()
+        verdicts = {"side_effect": running} if isinstance(running, list) else {"return_value": running}
         with mock.patch.object(pf, "ROOT", self.root), mock.patch.object(pf, "run", self.fake_run), \
-                mock.patch.object(pf, "session_running", return_value=running), contextlib.redirect_stdout(out):
+                mock.patch.object(pf, "session_running", **verdicts), contextlib.redirect_stdout(out):
             code = pf.main(list(argv))
         return code, out.getvalue()
+
+    def test_an_owner_that_appears_during_the_preflight_stops_the_repair(self):
+        # Stale when first read, live when read again under the guard lock just before the repair.
+        code, text = self.preflight("--repair", running=[False, True], guard=True)
+        self.assertEqual(code, 1)
+        self.assertFalse(self.rebuilt(), "the repair must re-read ownership under the lock")
+        self.assertIn("nothing rebuilt: ownership changed during the preflight", text)
+
+    def test_a_busy_guard_lock_stops_the_repair(self):
+        with mock.patch.object(pf, "guard_lock", side_effect=RuntimeError("the guard is locked by another change")):
+            code, text = self.preflight("--repair")
+        self.assertEqual(code, 1)
+        self.assertFalse(self.rebuilt())
+        self.assertIn("nothing rebuilt: the campaign guard lock is busy", text)
+
+    def test_the_repair_runs_while_holding_the_guard_lock(self):
+        held = []
+        real = self.fake_run
+
+        def watching(args, timeout=300):
+            if "--rebuild-stale" in [str(a) for a in args]:
+                import fcntl
+                fd = os.open(self.root / "build" / "claude-campaign-guard.lock", os.O_RDWR)
+                try:
+                    probe = subprocess.run([sys.executable, "-c",
+                                            "import fcntl, os, sys\nfd = os.open(sys.argv[1], os.O_RDWR)\n"
+                                            "try:\n    fcntl.lockf(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)\n    print('free')\n"
+                                            "except OSError:\n    print('held')\n",
+                                            str(self.root / "build" / "claude-campaign-guard.lock")], capture_output=True, text=True)
+                    held.append(probe.stdout.strip())
+                finally:
+                    os.close(fd)
+            return real(args, timeout)
+        self.fake_run = watching
+        self.preflight("--repair")
+        self.assertEqual(held, ["held"])
+
+    def test_a_live_launch_claim_refuses_and_nothing_is_rebuilt(self):
+        launched = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)", "--session-id", SESSION])
+        try:
+            time.sleep(0.2)
+            (self.root / "build" / "unattended-launch.json").write_text(json.dumps({"session_id": SESSION, "pid": launched.pid}), encoding="utf-8")
+            code, text = self.preflight("--repair")
+        finally:
+            launched.kill()
+            launched.wait()
+        self.assertEqual(code, 1)
+        self.assertIn(f"FAIL  no other unattended launch  -- launch of session {SESSION}", text)
+        self.assertFalse(self.rebuilt())
+
+    def test_a_claim_is_written_only_when_every_check_passes(self):
+        claim = self.root / "build" / "unattended-launch.json"
+        self.preflight("--repair", "--claim", SESSION, "--claim-pid", "4242")
+        self.assertFalse(claim.exists(), "this throwaway root fails other checks, so no claim may be written")
+        with mock.patch.object(pf, "check", lambda *a, **k: None):
+            self.preflight("--repair", "--claim", SESSION, "--claim-pid", "4242")
+        self.assertEqual(json.loads(claim.read_text(encoding="utf-8")), {"session_id": SESSION, "pid": 4242})
 
     def rebuilt(self):
         return any("--rebuild-stale" in call for call in self.calls)

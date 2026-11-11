@@ -23,7 +23,7 @@ Skip anything that needs a command, a build, or a measurement to check (a size, 
 
 ## Reply format
 
-Three blocks. `MISMATCHES`: one entry per fact that does not hold, with the section's line quoted (`path:line`) and the tree's line quoted (`path:line`), or `NOT FOUND`. `NEEDS A COMMAND`: the facts you could not check without running something. `CHECKED AND HOLDING`: the count of facts that held, and nothing more. Whether a mismatch matters, and how the section should be corrected, is the lead's call: you never state either.
+Three blocks. `MISMATCHES`: one entry per fact that does not hold, with the section's line quoted (`path:line`) and the tree's line quoted (`path:line`), or `NOT FOUND`. `NEEDS A COMMAND`: the facts you could not check without running something. `CHECKED AND HOLDING`: one entry per fact that held, with the section's line quoted (`path:line`) and the tree's line or path that confirms it (`path:line`), so the lead can re-check any of them; end the block with `HELD: <n>`, counted from that list. Whether a mismatch matters, and how the section should be corrected, is the lead's call: you never state either.
 
 ## Rules that hold on every task
 

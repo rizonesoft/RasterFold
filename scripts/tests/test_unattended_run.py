@@ -26,7 +26,7 @@ def campaign_prompt_in_script() -> str:
 class Launch:
     """One launcher run in a throwaway HOME with stub `python3` (the preflight) and `claude` on PATH."""
 
-    def __init__(self, tmp: str, preflight_exit: int = 0, env: dict | None = None):
+    def __init__(self, tmp: str, preflight_exit: int = 0, env: dict | None = None, path_prefix: str = ""):
         home = Path(tmp) / "home"
         self.user_bin = home / ".local" / "bin"
         self.user_bin.mkdir(parents=True, exist_ok=True)
@@ -37,18 +37,23 @@ class Launch:
         for path in (self.argv_file, self.preflight_file):
             path.unlink(missing_ok=True)
         # The stub claude writes its arguments NUL-separated: the prompt holds spaces and punctuation.
-        (self.user_bin / "claude").write_text(f'#!/bin/sh\nprintf "%s\\0" "$@" > "{self.argv_file}"\nexit 0\n', encoding="utf-8")
+        (self.user_bin / "claude").write_text(
+            f'#!/bin/sh\nprintf "%s\\0" "$@" > "{self.argv_file}"\necho $$ > "{self.argv_file}.pid"\n'
+            f'flock -n build/unattended-launch.lock true && echo free > "{self.argv_file}.lock"\nexit 0\n', encoding="utf-8")
         (self.user_bin / "codex").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         (stub_bin / "python3").write_text(
             f'#!/bin/sh\nprintf "%s\\n" "$*" > "{self.preflight_file}"\nfor c in claude codex; do command -v $c; done\nexit {preflight_exit}\n',
             encoding="utf-8")
         for stub in (self.user_bin / "claude", self.user_bin / "codex", stub_bin / "python3"):
             stub.chmod(0o755)
-        run_env = {"HOME": str(home), "TERM": "xterm", "PATH": f"{stub_bin}:/usr/bin:/bin", **(env or {})}
-        proc = subprocess.run(["bash", str(LAUNCHER)], input="exit\n", capture_output=True, text=True, env=run_env, timeout=30)
+        run_env = {"HOME": str(home), "TERM": "xterm", "PATH": f"{path_prefix + ':' if path_prefix else ''}{stub_bin}:/usr/bin:/bin", **(env or {})}
+        proc = subprocess.run(["/bin/bash", str(LAUNCHER)], input="exit\n", capture_output=True, text=True, env=run_env, timeout=30)
         self.out = proc.stdout + proc.stderr
         self.argv = self.argv_file.read_bytes().decode("utf-8").split("\0")[:-1] if self.argv_file.exists() else None
         self.preflight = self.preflight_file.read_text(encoding="utf-8").strip() if self.preflight_file.exists() else None
+        pid_file, lock_file = Path(f"{self.argv_file}.pid"), Path(f"{self.argv_file}.lock")
+        self.claude_pid = pid_file.read_text(encoding="utf-8").strip() if pid_file.exists() else None
+        self.lock_free_at_start = lock_file.exists()
 
 
 class LauncherPathTests(unittest.TestCase):
@@ -64,10 +69,12 @@ class LauncherClaudeTests(unittest.TestCase):
     def test_starts_claude_code_with_the_exact_unattended_flags(self):
         with tempfile.TemporaryDirectory() as tmp:
             launch = Launch(tmp)
-        self.assertEqual(launch.preflight, "scripts/unattended-preflight.py --repair")
         argv = launch.argv
         self.assertIsNotNone(argv, launch.out)
         session = argv[argv.index("--session-id") + 1]
+        # The claim names the session id Claude Code is then started with, and the pid `exec claude` keeps.
+        self.assertEqual(launch.preflight, f"scripts/unattended-preflight.py --repair --claim {session} --claim-pid {launch.claude_pid}")
+        self.assertTrue(launch.lock_free_at_start, "the launch lock must be released before Claude Code starts")
         self.assertEqual(str(uuid.UUID(session)), session)
         self.assertEqual(argv, ["--dangerously-skip-permissions", "--model", "opus", "--effort", "medium",
                                 "--session-id", session,
@@ -93,6 +100,20 @@ class LauncherClaudeTests(unittest.TestCase):
             launch = Launch(tmp, preflight_exit=1)
         self.assertIsNone(launch.argv)
         self.assertIn("the unattended run was not started", launch.out)
+
+    def test_the_failure_shell_does_not_keep_the_launch_lock(self):
+        # `exec bash` keeps the window open after a failed preflight; if it kept descriptor 9 too, every later
+        # launch would wait on the lock forever. The stub shell below is that `exec bash`.
+        with tempfile.TemporaryDirectory() as tmp:
+            probe = Path(tmp) / "lock-probe"
+            shell_bin = Path(tmp) / "shell"
+            shell_bin.mkdir()
+            (shell_bin / "bash").write_text(
+                f'#!/bin/sh\nif [ "$#" -eq 0 ]; then flock -n build/unattended-launch.lock true && echo free > "{probe}"; exit 0; fi\nexec /bin/bash "$@"\n',
+                encoding="utf-8")
+            (shell_bin / "bash").chmod(0o755)
+            Launch(tmp, preflight_exit=1, path_prefix=str(shell_bin))
+            self.assertTrue(probe.exists(), "the failure shell still held build/unattended-launch.lock")
 
     def test_prompt_override_replaces_the_prompt_and_nothing_else(self):
         with tempfile.TemporaryDirectory() as tmp:

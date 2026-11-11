@@ -19,12 +19,15 @@ cron tools, the read-only Sonnet scout roster, and the language-server plugin.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,14 +50,32 @@ def check(name: str, ok: bool, detail: str = "") -> None:
 def run(args: list[str], timeout: int = 300) -> subprocess.CompletedProcess:
     """One subprocess check, never raising: a spawn error or a timeout
     becomes a failed result the caller reports as its named FAIL line,
-    so one broken executable cannot traceback the whole preflight."""
+    so one broken executable cannot traceback the whole preflight.
+    A timeout stops the whole process group, not only the direct child:
+    a check or a repair that started builds must not leave them running
+    after the preflight has reported failure."""
     try:
-        return subprocess.run(args, cwd=ROOT, capture_output=True, text=True, timeout=timeout)
+        proc = subprocess.Popen(args, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                start_new_session=True)
     except OSError as exc:
         return subprocess.CompletedProcess(args, 127, "", f"{args[0]}: could not start: {exc}")
-    except subprocess.TimeoutExpired as exc:
-        out = exc.stdout.decode(errors="replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
-        return subprocess.CompletedProcess(args, 124, out, f"{args[0]}: timed out after {timeout}s")
+    try:
+        out, err = proc.communicate(timeout=timeout)
+        return subprocess.CompletedProcess(args, proc.returncode, out, err)
+    except subprocess.TimeoutExpired:
+        kill_group(proc.pid)
+        out, _ = proc.communicate()
+        return subprocess.CompletedProcess(args, 124, out or "", f"{args[0]}: timed out after {timeout}s")
+
+
+def kill_group(pgid: int) -> None:
+    """Kill every process in the group `pgid` leads and wait until none is left (bounded)."""
+    for _ in range(50):
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            return
+        time.sleep(0.1)
 
 
 def pid_alive(pid: int) -> bool:
@@ -70,7 +91,10 @@ def claude_registry_running(session_id: str, sessions_dir: Path | None = None) -
     if not sessions_dir.exists():
         return False
     try:
-        entries = sorted(sessions_dir.glob("*.json"))
+        # os.scandir, not Path.glob: glob swallows a permission error and returns nothing, which would read as
+        # "no owner" exactly when the evidence could not be read.
+        with os.scandir(sessions_dir) as listing:
+            entries = sorted(Path(item.path) for item in listing if item.name.endswith(".json"))
     except OSError:
         return None
     unknown = False
@@ -155,6 +179,83 @@ def last_line(proc: subprocess.CompletedProcess) -> str:
     return out[-1][:160] if out else f"exit {proc.returncode}"
 
 
+def guard_verdict() -> tuple[str, str]:
+    """(`absent` | `stale` | `live` | `unknown` | `unreadable`, detail) for the campaign guard file, read now."""
+    guard = ROOT / "build/claude-campaign-guard.json"
+    if not guard.is_file():
+        return "absent", ""
+    try:
+        owner = str(json.loads(guard.read_text(encoding="utf-8")).get("session_id", ""))
+    except Exception as exc:  # a guard that cannot be read cannot be handed over
+        return "unreadable", f"guard file unreadable: {exc}"
+    running = session_running(owner) if owner else None
+    if running:
+        return "live", f"session {owner} is running and may own the tree"
+    if running is False:
+        return "stale", owner or "(no session)"
+    return "unknown", f"cannot tell whether session {owner} is running"
+
+
+def launch_claim(self_pid: int | None = None) -> tuple[str, str]:
+    """(`absent` | `stale` | `live` | `unreadable`, detail) for build/unattended-launch.json, the claim a launch
+    writes when its preflight passes. A launched session acquires its campaign guard only after it has started, so
+    between the launch and the guard this claim is the only thing a second launch can see. It names the launcher's
+    pid, which `exec claude` keeps, and the session id that pid then carries on its command line."""
+    path = ROOT / "build/unattended-launch.json"
+    if not path.exists():
+        return "absent", ""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        pid, session = int(data["pid"]), str(data["session_id"])
+    except Exception as exc:
+        return "unreadable", f"launch claim unreadable ({exc}); delete build/unattended-launch.json once no run is live"
+    if pid == self_pid or not pid_alive(pid):
+        return "stale", session
+    try:
+        command = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except OSError:
+        return "live", f"pid {pid} holds the launch claim and its command line cannot be read"
+    if session.encode() in command or b"unattended-run.sh" in command:
+        return "live", f"launch of session {session} (pid {pid}) is running"
+    return "stale", session  # the pid was reused by something that is not this launch
+
+
+def write_claim(session: str, pid: int) -> None:
+    path = ROOT / "build/unattended-launch.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    partial = path.with_suffix(".json.partial")
+    partial.write_text(json.dumps({"session_id": session, "pid": pid}) + "\n", encoding="utf-8")
+    os.replace(partial, path)
+
+
+def guard_lock():
+    """The campaign guard's own interprocess lock (scripts/campaign_guard.py `_Lock`): every guard change holds
+    it, so holding it across a repair means no session can acquire the guard while ignored output is rebuilt."""
+    spec = importlib.util.spec_from_file_location("rf_campaign_guard", Path(__file__).resolve().parent / "campaign_guard.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module._Lock(str(ROOT))
+
+
+def repair_database(self_pid: int | None) -> subprocess.CompletedProcess:
+    """Rebuild the stale compilation database, but only while holding the guard lock and only if, read again under
+    that lock, still nobody owns the tree. The first ownership checks are several subprocess checks old by now."""
+    argv = [sys.executable, "scripts/gen-compdb.py", "--rebuild-stale"]
+    try:
+        lock = guard_lock()
+        lock.__enter__()
+    except Exception as exc:
+        return subprocess.CompletedProcess(argv, 1, "", f"nothing rebuilt: the campaign guard lock is busy ({exc})")
+    try:
+        guard, guard_detail = guard_verdict()
+        claim, claim_detail = launch_claim(self_pid)
+        if guard not in ("absent", "stale") or claim not in ("absent", "stale"):
+            return subprocess.CompletedProcess(argv, 1, "", f"nothing rebuilt: ownership changed during the preflight ({guard_detail or claim_detail})")
+        return run(argv, timeout=1800)
+    finally:
+        lock.__exit__(None, None, None)
+
+
 def read_json(path: Path) -> dict:
     """A settings file as a dict, or {} when it is absent, unreadable or not an object. Callers read single
     booleans out of it and never print its contents: these files can hold credentials."""
@@ -235,7 +336,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--repair", action="store_true",
                         help="rebuild a stale compilation database (ignored build output) once the ownership checks pass")
+    parser.add_argument("--claim", metavar="SESSION", help="on success, record this launch (its session id) in build/unattended-launch.json")
+    parser.add_argument("--claim-pid", type=int, help="the launcher's pid, which `exec claude` keeps (required with --claim)")
     options = parser.parse_args(argv)
+    if options.claim and not options.claim_pid:
+        parser.error("--claim needs --claim-pid")
     FAILURES.clear()
     # Straight on main, one writer (operator rule; AGENTS.md trunk-based main).
     branch = run(["git", "branch", "--show-current"]).stdout.strip()
@@ -245,26 +350,15 @@ def main(argv: list[str] | None = None) -> int:
     check("tree clean", status.returncode == 0 and not [d for d in dirty if d.strip()], f"{len([d for d in dirty if d.strip()])} dirty path(s)" if status.returncode == 0 else f"git status exit {status.returncode}")
     hooks = run(["git", "config", "core.hooksPath"]).stdout.strip()
     check("commit hooks wired", hooks == "tools/githooks", f"core.hooksPath={hooks or '(unset)'}")
-    guard = ROOT / "build/claude-campaign-guard.json"
-    if not guard.is_file():
-        check("no live campaign guard", True)
+    verdict, detail = guard_verdict()
+    if verdict == "stale":
+        # Not a failure: the new session takes this guard over through
+        # campaign_guard.py acquire --handover (docs/unattended-run.md).
+        print(f"STALE  stale campaign guard: {detail} (handover on start)")
     else:
-        try:
-            owner = str(json.loads(guard.read_text(encoding="utf-8")).get("session_id", ""))
-            unreadable = ""
-        except Exception as exc:  # a guard that cannot be read cannot be handed over
-            owner, unreadable = "", str(exc)
-        running = session_running(owner) if owner else None
-        if unreadable:
-            check("no live campaign guard", False, f"guard file unreadable: {unreadable}")
-        elif running:
-            check("no live campaign guard", False, f"session {owner} is running and may own the tree")
-        elif running is False:
-            # Not a failure: the new session takes this guard over through
-            # campaign_guard.py acquire --handover (docs/unattended-run.md).
-            print(f"STALE  stale campaign guard: {owner or '(no session)'} (handover on start)")
-        else:
-            check("no live campaign guard", False, f"cannot tell whether session {owner} is running")
+        check("no live campaign guard", verdict == "absent", detail)
+    claim, claim_detail = launch_claim(options.claim_pid)
+    check("no other unattended launch", claim in ("absent", "stale"), claim_detail)
 
     # Plan and graph gates (the same ones the pre-commit hook enforces).
     for name, args in (
@@ -308,7 +402,7 @@ def main(argv: list[str] | None = None) -> int:
     proc = run([sys.executable, "scripts/gen-compdb.py", "--check"])
     if proc.returncode != 0 and options.repair and owned:
         stale = last_line(proc)
-        repair = run([sys.executable, "scripts/gen-compdb.py", "--rebuild-stale"], timeout=1800)
+        repair = repair_database(options.claim_pid)
         if repair.returncode == 0:
             print(f"REPAIRED  compile_commands.json  -- was: {stale}")
             proc = run([sys.executable, "scripts/gen-compdb.py", "--check"])
@@ -335,6 +429,8 @@ def main(argv: list[str] | None = None) -> int:
     if FAILURES:
         print(f"\npreflight: {len(FAILURES)} FAIL -- do not start an unattended run")
         return 1
+    if options.claim:
+        write_claim(options.claim, options.claim_pid)
     print("\npreflight: all checks pass -- the unattended run may start")
     return 0
 
