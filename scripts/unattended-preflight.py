@@ -27,14 +27,34 @@ import shutil
 import signal
 import subprocess
 import sys
-import threading
 import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FAILURES: list[str] = []
 CANCEL_SIGNALS = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
-CANCELLED = threading.Event()
+
+
+class CancelFlag:
+    """The cancellation flag a signal handler sets. One attribute store and nothing else: no lock, so a second
+    signal that arrives while the first handler is still running cannot block on anything the first one holds
+    (a threading.Event deadlocks exactly there)."""
+    __slots__ = ("value",)
+
+    def __init__(self) -> None:
+        self.value = False
+
+    def set(self) -> None:
+        self.value = True
+
+    def is_set(self) -> bool:
+        return self.value
+
+    def clear(self) -> None:
+        self.value = False
+
+
+CANCELLED = CancelFlag()
 CLAUDE_HOME = Path.home() / ".claude"
 CLAUDE_STATE = Path.home() / ".claude.json"
 SCOUTS = ("rf-fact-check", "rf-log-digest", "rf-scout")
@@ -93,10 +113,18 @@ def run(args: list[str], timeout: int = 300) -> subprocess.CompletedProcess:
         # interrupt it: a signal arriving now only sets the flag checked below.
         kill_group(proc)
         try:
-            late_out, late_err = proc.communicate()
+            # Bounded: a descendant that left the group could still hold the pipes open, and collecting output
+            # must never be what keeps the preflight from finishing.
+            late_out, late_err = proc.communicate(timeout=5)
             out, err = out or late_out, err or late_err
-        except (OSError, ValueError):
-            proc.wait()
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            for pipe in (proc.stdout, proc.stderr):
+                try:
+                    if pipe is not None:
+                        pipe.close()
+                except OSError:
+                    pass
+            proc.poll()
     if CANCELLED.is_set():
         raise KeyboardInterrupt
     if timed_out:

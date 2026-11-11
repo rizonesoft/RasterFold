@@ -223,6 +223,93 @@ class RunTests(unittest.TestCase):
             return pf, signal_then_kill
         self.cancelled_run("kill_group", wrapper_for)
 
+    def test_the_cancellation_flag_holds_no_lock(self):
+        # A handler interrupted by a second signal must not wait on anything the first invocation holds.
+        self.assertEqual(type(pf.CANCELLED).__slots__, ("value",))
+        self.assertFalse(any(hasattr(pf.CANCELLED, name) for name in ("_cond", "_lock", "acquire")))
+        previous = {s: signal.getsignal(s) for s in pf.CANCEL_SIGNALS}
+        pf.install_signal_handlers()
+        try:
+            handler = signal.getsignal(signal.SIGINT)
+            real_set = pf.CANCELLED.set
+            depth = []
+
+            class Reentered:
+                def set(self_inner):
+                    # A second signal lands while the first handler is inside set(): the handler runs again, nested.
+                    if not depth:
+                        depth.append(1)
+                        handler(signal.SIGTERM, None)
+                    real_set()
+
+                def is_set(self_inner):
+                    return pf_flag.is_set()
+            pf_flag = pf.CANCELLED
+            with mock.patch.object(pf, "CANCELLED", Reentered()):
+                handler(signal.SIGINT, None)
+            self.assertTrue(pf_flag.is_set())
+        finally:
+            for s, h in previous.items():
+                signal.signal(s, h)
+            pf.CANCELLED.clear()
+
+    def test_a_storm_of_cancellation_signals_never_hangs_the_preflight(self):
+        # Hundreds of alternating signals, so later ones land while an earlier handler is still running. The
+        # lock-taking flag this replaced hung here with the child still alive.
+        with tempfile.TemporaryDirectory() as tmp:
+            pid_file = Path(tmp) / "child.pid"
+            harness = Path(tmp) / "harness.py"
+            harness.write_text(
+                "import importlib.util, subprocess, sys\n"
+                f"spec = importlib.util.spec_from_file_location('pf', {str(SCRIPTS / 'unattended-preflight.py')!r})\n"
+                "pf = importlib.util.module_from_spec(spec); spec.loader.exec_module(pf)\n"
+                "pf.install_signal_handlers()\n"
+                "real = subprocess.Popen\n"
+                "def recording(*a, **k):\n"
+                "    proc = real(*a, **k)\n"
+                f"    open({str(pid_file)!r}, 'w').write(str(proc.pid))\n"
+                "    return proc\n"
+                "subprocess.Popen = recording\n"
+                "pf.run([sys.executable, '-c', 'import time; time.sleep(60)'], timeout=60)\n", encoding="utf-8")
+            preflight = subprocess.Popen([sys.executable, str(harness)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                for _ in range(100):
+                    if pid_file.exists() and pid_file.read_text(encoding="utf-8").strip():
+                        break
+                    time.sleep(0.1)
+                child = int(pid_file.read_text(encoding="utf-8"))
+                for i in range(600):
+                    if preflight.poll() is not None:
+                        break
+                    try:
+                        preflight.send_signal(pf.CANCEL_SIGNALS[i % 3])
+                    except ProcessLookupError:
+                        break
+                code = preflight.wait(timeout=20)
+            finally:
+                if preflight.poll() is None:
+                    preflight.kill()
+                    preflight.wait()
+            self.assertNotEqual(code, 0)
+            self.assertFalse(pf.pid_alive(child) and Path(f"/proc/{child}/stat").read_text().rsplit(")", 1)[1].split()[0] != "Z",
+                             "the child survived the cancelled preflight")
+
+    def test_a_descendant_that_left_the_group_cannot_hang_the_preflight(self):
+        # It escapes the kill by starting its own session and keeps the output pipes open.
+        escaped = ("import os, subprocess, sys, time\n"
+                   "p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(8)'], start_new_session=True)\n"
+                   "print(p.pid, flush=True)\ntime.sleep(60)\n")
+        began = time.monotonic()
+        result = pf.run([sys.executable, "-c", escaped], timeout=1)
+        self.assertEqual(result.returncode, 124)
+        self.assertLess(time.monotonic() - began, 12)
+        stray = result.stdout.strip().split()
+        if stray and stray[0].isdigit() and pf.pid_alive(int(stray[0])):
+            try:
+                os.kill(int(stray[0]), signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
     def test_a_cancelled_preflight_starts_no_further_check(self):
         pf.CANCELLED.set()
         try:
