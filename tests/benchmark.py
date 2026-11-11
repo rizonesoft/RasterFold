@@ -776,7 +776,9 @@ def report(
             cells = ["--" if (i, c) not in by else str(by[(i, c)]["decode_peak"]) for c in codecs]
             lines.append(f"| {i} | " + " | ".join(cells) + " |")
         lines.append("")
-    (out_dir / "results.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    # LF on every host: the file is tracked with eol=lf, and Windows Python would write CRLF.
+    with open(out_dir / "results.md", "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("\n".join(lines) + "\n")
 
 
 if __name__ == "__main__":
