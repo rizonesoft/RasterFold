@@ -11,7 +11,7 @@ track: GUI4
 
 # TODO-04 -- Converter Validation and Delivery
 
-> **Goal:** The complete native converter ships as tested, documented, self-contained packages with an exact capability and device matrix.
+> **Goal:** The complete native converter ships as tested, documented, self-contained packages with an exact capability matrix.
 
 > [!IMPORTANT]
 > **Current state (verified 2026-09-30):** `include/rasterfold.h` and the Windows/Linux x64 codec build exist. The converter itself targets Windows x64 only (operator decisions 2026-11-11: Android removed, Linux interface dropped; either can return as a fork). There is no native converter application, GUI or bundled third-party codec source yet; D10 T01 §1 (2026-11-09) added the pixel contract, the capability registry in `converter/`, and its validator, with every format still `planned`. These sections implement the operator-approved native C application with bundled codec source and no additional user installs.
@@ -38,7 +38,7 @@ track: GUI4
 
 ## Outcome
 
-- The complete native converter ships as tested, documented, self-contained packages with an exact capability and device matrix.
+- The complete native converter ships as tested, documented, self-contained packages with an exact capability matrix.
 - Clean Windows x64 installations run the shipped application without downloading a runtime or codec. System OS/display services remain prerequisites, documented per target.
 
 **Adjacency:** list=applicable @ D10 T01 §1; document=applicable @ D10 T04 §3; settings=applicable @ D10 T03 §7; reporting=applicable @ D10 T04 §1; notifications=applicable @ D10 T03 §5; permissions=applicable @ D10 T01 §5; audit=applicable @ D10 T04 §4; exchange=applicable @ D10 T04 §3; reverse=applicable @ D10 T01 §4
@@ -49,14 +49,14 @@ track: GUI4
 
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
-| 1 | §1 | Full capability and device matrix | D10 T02 §1, D10 T02 §2, D10 T02 §3, D10 T02 §4, D10 T02 §5, D10 T02 §6, D10 T02 §7, D10 T02 §8, D10 T02 §9, D10 T02 §10, D10 T02 §11, D10 T02 §12, D10 T03 §8 | [ ] |
+| 1 | §1 | Full capability matrix | D10 T02 §1, D10 T02 §2, D10 T02 §3, D10 T02 §4, D10 T02 §5, D10 T02 §6, D10 T02 §7, D10 T02 §8, D10 T02 §9, D10 T02 §10, D10 T02 §11, D10 T02 §12, D10 T03 §8 | [ ] |
 | 2 | §2 | Hostile input and resource limits | §1 | [ ] |
 | 3 | §3 | Self-contained native packages | §1, §2, D09 T01 §1 | [ ] |
 | 4 | §4 | Whole-product release acceptance | §3, D08 T01 §8, D09 T01 §3 | [ ] |
 
 ---
 
-## 1. Full capability and device matrix
+## 1. Full capability matrix
 
 **Requires:** display-session -- The complete capability matrix needs driven evidence from the native Windows target. Source checkpoint audit: docs/todo-vision-audit.md.
 
@@ -65,10 +65,10 @@ track: GUI4
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
 - [ ] Build a licensed conformance corpus manifest in `tests/converter/corpus.json`. Done when: each format includes ordinary, boundary, metadata, transparency, high-depth and malformed cases that apply to it.
-- [ ] Add the native device matrix to `.github/workflows/converter.yml`. Done when: the Windows runtime tests produce named results.
+- [ ] Add the Windows runtime jobs to `.github/workflows/converter.yml`. Done when: the Windows runtime tests produce named results.
 - [ ] Add capability completeness checks to `scripts/check-converter.py`. Done when: a required provider missing from one target is a failure, never silently omitted.
 - [ ] Record exact OS/runtime evidence in `docs/converter-validation.md`. Done when: every supported platform has a clean-install, UI, file-safety and fresh decoding result and separately identified differential fixtures.
-- [ ] Commit: `"converter: full capability and device matrix"`
+- [ ] Commit: `"converter: full capability matrix"`
 
 **Test checkpoint:** Run `python3 scripts/check-converter.py --all-targets` and quote native results for the Windows target; an absent native runtime remains a release blocker.
 
@@ -130,5 +130,5 @@ Build in the listed order. This section adds the named test driver before using 
 
 ## Verification
 
-- [ ] Run `python3 scripts/check-converter.py --all-targets` once this file adds its gates; report native device coverage separately from cross-builds.
+- [ ] Run `python3 scripts/check-converter.py --all-targets` once this file adds its gates; report driven Windows coverage separately from cross-builds.
 - [ ] Run `python3 scripts/todo-graph.py validate`, `plan --check` and `python3 scripts/drift-check.py`; each exits 0.

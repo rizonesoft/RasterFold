@@ -1,6 +1,6 @@
 # 99 Manual
 
-> **Phases 0 and 9** (its rows sit in the phase that waits on them)
+> **Phases 0, 7, 9 and 10** (its rows sit in the phase that waits on them)
 
 Operator-only steps no agent session can perform or may decide: deletions the session's safety rules refuse, logins behind the owner's account, and approvals that change a frozen behavior.
 
@@ -22,6 +22,7 @@ Operator-only steps no agent session can perform or may decide: deletions the se
 - The standing approval of format versions and the missed-milestone policy, recorded in the operator's words
 - Enabling GitHub Pages for the documentation site
 - HEVC provider distribution decision
+- The 2026-11-11 scope and autonomy decisions (Android removed, converter decoupled and Windows only on the Resolute stack, widened autonomy), recorded in the operator's words
 
 ## Out of scope
 

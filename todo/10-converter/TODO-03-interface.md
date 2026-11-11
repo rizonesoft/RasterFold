@@ -22,6 +22,9 @@ track: GUI3
 
 - [Product vision](../../docs/vision.md) and [native design](../../docs/design/converter.md): scope, exactness, platform and interaction contracts.
 - [C API](../../include/rasterfold.h): RasterFold ownership and error boundary.
+- Resolute's design contract (`DESIGN.md` in `rizonesoft/Resolute`) and its launcher (`src/main.cpp` there): the reference for how a `resolute-ui` application is assembled. Both are vendored for reading with the library by §1.
+
+**Stack facts (read 2026-11-11 from `rizonesoft/Resolute` at `513ab81c`; §1 re-reads them at the commit it pins).** `resolute-ui` is a static C++23 library, namespace `rui::`, include prefix `resolute/`. It provides `Toolbar`, `Sidebar`, `StatusBar`, `ContentView`, `ListView` and `PopupMenu`; `Theme` (dark, light and follow-system modes, the token set, `IsHighContrast`); `Typography`; `Dpi`; `AnimationManager`; `LucideIcons`; and `RenderContext` (the Direct2D and DirectWrite factories, `CreateHwndTarget`, `CreateBitmapFromRGBA`, `DrawSvgIcon`). It does not provide a button, drop-down, slider, check box, progress bar, an image pane, or UI Automation providers. The rule for the gap: a control the library provides is used as is; a generic control it lacks is written once under `converter/app/controls/` on `rui::RenderContext`, `rui::Theme` tokens and `rui::Typography`, with a UI Automation provider, and listed in `docs/converter-building.md` as a candidate to move upstream into Resolute; a later pin that ships the control replaces the local one. Converter-specific surfaces (the image pane, the wipe, the difference view) live under `converter/app/` and follow the same token and accessibility rules. Reversal cost of the rule: deleting `converter/app/controls/` once Resolute ships equivalents.
 
 - -> XREF: D10 T04 §1 -- shared implementation or verification boundary.
 
@@ -72,6 +75,7 @@ Build in the listed order. This section adds the named test driver before using 
 - [ ] Vendor `resolute-ui` and its Lucide set from `rizonesoft/Resolute` at a pinned commit into `converter/vendor/resolute-ui/` and `converter/vendor/lucide/`, recorded in `converter/vendor.json` with the commit, the file list, SHA-256 hashes and licence. Done when: a changed or missing vendored file fails `scripts/check-converter.py`, and `AGENTS.md` records the dependency and its reason.
 - [ ] Add the `RasterFoldConverter` executable to `converter/CMakeLists.txt` (the CMake build and its driver `scripts/build-converter.py` come from D10 T01 §2). Done when: a clean checkout builds a `RasterFoldConverter` Windows x64 executable as C++23 that statically links `ResoluteUI_static` and `Lucide_static`, with the manifest declaring per-monitor DPI v2, and the codec targets in `scripts/build.py` are unchanged.
 - [ ] Implement the application shell in `converter/app/main.cpp` and `converter/app/shell.cpp` on `rui::` windows and controls. Done when: the application bar, workspace, settings column and result footer of `docs/design/converter.md` exist as `resolute-ui` controls, and no file under `converter/app/` draws a control the library provides or names a colour, font size or spacing literal.
+- [ ] Implement the generic controls the pinned library lacks (button, drop-down, slider, check box, progress bar) and a shared UI Automation provider base under `converter/app/controls/`. Done when: each draws only through `rui::RenderContext` with `rui::Theme` tokens, shows the 2px accent focus ring, meets the 24x24 hit target at 100%, reports name, role, state and value to UI Automation, and is listed in `docs/converter-building.md` as an upstream candidate.
 - [ ] Bind the shell to the C engine through `converter/app/engine_bridge.cpp`. Done when: interface code reaches jobs, capabilities and results only through the C headers under `converter/include/`, and rendering, input, accessibility and application state have separate ownership.
 - [ ] Add the converter's glyphs to the vendored Lucide set with their sources in `converter/vendor/lucide/icons/SOURCES.md`. Done when: each action has a Lucide glyph and a visible and accessible label.
 - [ ] Add `tests/converter/test_ui.cpp`. Done when: keyboard focus traversal, token-only colour and UI Automation names fail on seeded regressions.
@@ -103,17 +107,18 @@ Build in the listed order. This section adds the named test driver before using 
 - [ ] Implement `converter/app/platform_win32.cpp`. Done when: window lifecycle, per-monitor DPI changes, native file dialogs, clipboard, drag and drop and taskbar progress are wired to the `resolute-ui` shell and the C job contracts.
 - [ ] Document the platform boundary in `docs/converter-building.md`. Done when: only system facilities and shipped libraries are used; conversion behaviour stays in the C engine and the interface owns no codec logic.
 - [ ] Expose names, roles, state, values and actions for the converter's own controls (preview panes, wipe, difference view) in `converter/app/accessibility.cpp` through UI Automation. Done when: keyboard and screen-reader activation use the same application actions, and status changes are announced.
+- [ ] Add `tests/converter/uia_driver.cpp`, built by `converter/CMakeLists.txt`: a UI Automation client that starts the converter, finds controls by AutomationId, invokes them, sets values, reads names, states and announcements, and saves a window capture as PNG. Done when: the Python drivers under `tests/converter/` use it for every driven check, it stops the converter's whole process tree on timeout and teardown, and no third-party Python package is added.
 - [ ] Add lifecycle/refusal tests in `tests/converter/test_win32.py`. Done when: closing, suspending, resizing, permission denial and display loss cannot leak workers or publish partial files.
 - [ ] Record native evidence in `docs/converter-validation.md`. Done when: screenshots and input/accessibility runs name OS, architecture, build revision and tested states.
 - [ ] Commit: `"converter: windows native integration"`
 
-**Test checkpoint:** Build the native target and drive win32 interactions on a real desktop/device; quote observed behavior separately from fixture and cross-build results.
+**Test checkpoint:** Build the Windows target and drive it through `tests/converter/uia_driver.cpp` in a Windows desktop session; quote observed behaviour separately from fixture and cross-build results.
 
 **Freeze check:** Existing `.fold` v2 files and the oracle remain unchanged. Each new output receives a fresh bundled decode and the format-specific verification contract before acceptance; independent fixture coverage is reported separately; input and existing destination bytes survive refusal, cancellation and failure.
 
 ## 5. Single-image conversion and preview
 
-**Requires:** display-session -- Surface checkpoints require real input, preview and accessibility evidence across advertised targets. Source checkpoint audit: docs/todo-vision-audit.md.
+**Requires:** display-session -- Surface checkpoints require real input, preview and accessibility evidence in a Windows desktop session. Source checkpoint audit: docs/todo-vision-audit.md.
 
 **Job:** A user can browse a list of supported formats, preview one image, receive progress and error notifications, and save a verified result.
 
@@ -125,23 +130,23 @@ Build in the listed order. This section adds the named test driver before using 
 
 **Chrome:** Resolute's custom Direct2D caption and window chrome; shared application bar, comparison panes and result footer.
 
-Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
+Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies. Interface code is C++23 under `converter/app/` on the `resolute-ui` shell of §1 and reaches the engine only through the C headers under `converter/include/`; see the stack facts under Inputs.
 
-- [ ] Implement the open/drop flow in `converter/app/open.cpp`. Done when: cancelled dialogs leave state intact and corrupt/unsupported files produce recoverable errors.
-- [ ] Implement preview fit, zoom and pan in `converter/app/preview.cpp`. Done when: large images use bounded preview memory and source orientation/color metadata are respected.
-- [ ] Bind capability-driven settings in `converter/app/settings.cpp`. Done when: each visible setting has a real adapter consumer and incompatible output formats explain why.
-- [ ] Implement progress, cancel, retry and result views in `converter/app/convert.cpp`. Done when: every state in the design spec is visible and a stale job cannot replace the current preview.
-- [ ] Implement save/reveal actions in `converter/app/save.cpp`. Done when: export reports the actual destination, exactness and size growth/savings without replacing the input.
-- [ ] Add `tests/converter/test_single_flow.py`. Done when: open-to-save, cancel-at-each-stage, mismatch, permission denial and growth paths have driven assertions.
+- [ ] Implement the open and drop flow in `converter/app/open.cpp` on the native file dialog and drag and drop of §2. Done when: a cancelled dialog leaves state intact, a corrupt or unsupported file produces a recoverable error state, and the format list is a `rui::ListView` filled from the capability registry.
+- [ ] Implement the image pane in `converter/app/image_pane.cpp`: fit, zoom and pan over a Direct2D bitmap made with `rui::RenderContext::CreateBitmapFromRGBA`. Done when: large images use bounded preview memory through tiled or downscaled bitmaps, source orientation and colour metadata are respected, per-monitor DPI changes re-lay out without rescaling, and the pane reports its zoom and position to UI Automation.
+- [ ] Bind capability-driven settings in `converter/app/settings.cpp` using the controls of §1. Done when: each visible setting has a real adapter consumer, an incompatible output format is disabled with the reason from the registry, and no setting names a colour, font size or spacing literal.
+- [ ] Implement progress, cancel, retry and result views in `converter/app/convert.cpp`, with taskbar progress and `rui::StatusBar` text. Done when: every state in the design spec is visible in light, dark and high contrast, each state change is announced through UI Automation, and a stale job cannot replace the current preview.
+- [ ] Implement save and reveal actions in `converter/app/save.cpp`. Done when: export reports the actual destination, exactness and size growth or savings without replacing the input.
+- [ ] Add `tests/converter/test_single_flow.py` over the driver of §2. Done when: open-to-save, cancel-at-each-stage, mismatch, permission denial and growth paths have driven assertions and a capture per design state.
 - [ ] Commit: `"converter: single-image conversion and preview"`
 
-**Test checkpoint:** Drive `tests/converter/test_single_flow.py` on Windows; capture each design state and verify a fresh decode under its format-specific contract.
+**Test checkpoint:** Drive `tests/converter/test_single_flow.py` in a Windows desktop session; capture each design state in light, dark and high contrast and verify a fresh decode under its format-specific contract.
 
 **Freeze check:** Existing `.fold` v2 files and the oracle remain unchanged. Each new output receives a fresh bundled decode and the format-specific verification contract before acceptance; independent fixture coverage is reported separately; input and existing destination bytes survive refusal, cancellation and failure.
 
 ## 6. Synchronized comparisons
 
-**Requires:** display-session -- Surface checkpoints require real input, preview and accessibility evidence across advertised targets. Source checkpoint audit: docs/todo-vision-audit.md.
+**Requires:** display-session -- Surface checkpoints require real input, preview and accessibility evidence in a Windows desktop session. Source checkpoint audit: docs/todo-vision-audit.md.
 
 **Job:** A user can compare RasterFold and other codecs side by side using the same source and preservation policy.
 
@@ -153,22 +158,22 @@ Build in the listed order. This section adds the named test driver before using 
 
 **Chrome:** Resolute's custom Direct2D caption and window chrome; shared application bar, comparison panes and result footer.
 
-Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
+Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies. Interface code is C++23 under `converter/app/` on the `resolute-ui` shell of §1 and reaches the engine only through the C headers under `converter/include/`; see the stack facts under Inputs.
 
-- [ ] Implement synchronized image-coordinate navigation in `converter/app/compare.cpp`. Done when: zoom, pan, fit and actual-pixel views keep the same source point aligned.
-- [ ] Implement split, wipe and difference modes in `converter/app/compare.cpp`. Done when: wipe has keyboard/numeric control and difference mode has a labeled scale and changed-sample count.
-- [ ] Render comparison results from `converter/src/report.c`. Done when: sizes, effort, thread count, timing and verification status are visible; unverified results never rank as successful.
-- [ ] Add a source/result switch for alpha and color preview in `converter/app/compare.cpp`. Done when: background and display transform changes cannot alter the encoded samples.
-- [ ] Add `tests/converter/test_compare.py`. Done when: alignment, mismatch, unsupported codec, larger output and stale-result regressions fail.
+- [ ] Implement synchronized image-coordinate navigation in `converter/app/compare.cpp` over two image panes of §5. Done when: zoom, pan, fit and actual-pixel views keep the same source point aligned at every DPI.
+- [ ] Implement split, wipe and difference modes in `converter/app/compare.cpp`. Done when: the wipe has keyboard and numeric control and a UI Automation range value, and difference mode has a labelled scale and a changed-sample count carried as text, not colour alone.
+- [ ] Render comparison results from the engine's report (`converter/src/report.c`) in a `rui::ListView` in `converter/app/results.cpp`. Done when: sizes, effort, thread count, timing and verification status are visible and sortable; unverified results never rank as successful.
+- [ ] Add a source and result switch for alpha and colour preview in `converter/app/compare.cpp`. Done when: background and display transform changes cannot alter the encoded samples.
+- [ ] Add `tests/converter/test_compare.py` over the driver of §2. Done when: alignment, mismatch, unsupported codec, larger output and stale-result regressions fail.
 - [ ] Commit: `"converter: synchronized comparisons"`
 
-**Test checkpoint:** Drive comparisons on the same sample and quote pixel verification plus keyboard/screen-reader navigation evidence.
+**Test checkpoint:** Drive comparisons on the same sample in a Windows desktop session and quote pixel verification plus keyboard and screen-reader navigation evidence from the driver.
 
 **Freeze check:** Existing `.fold` v2 files and the oracle remain unchanged. Each new output receives a fresh bundled decode and the format-specific verification contract before acceptance; independent fixture coverage is reported separately; input and existing destination bytes survive refusal, cancellation and failure.
 
 ## 7. Preferences and accessible error recovery
 
-**Requires:** display-session -- Surface checkpoints require real input, preview and accessibility evidence across advertised targets. Source checkpoint audit: docs/todo-vision-audit.md.
+**Requires:** display-session -- Surface checkpoints require real input, preview and accessibility evidence in a Windows desktop session. Source checkpoint audit: docs/todo-vision-audit.md.
 
 **Job:** A user can keep useful settings, reset them, and recover accessibly from every failure.
 
@@ -180,22 +185,22 @@ Build in the listed order. This section adds the named test driver before using 
 
 **Chrome:** Resolute's custom Direct2D caption and window chrome; shared application bar, comparison panes and result footer.
 
-Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
+Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies. Interface code is C++23 under `converter/app/` on the `resolute-ui` shell of §1 and reaches the engine only through the C headers under `converter/include/`; see the stack facts under Inputs.
 
-- [ ] Implement a versioned preferences file in `converter/src/preferences.c`. Done when: theme, density, last safe directory and memory budget survive restart with named consumers.
-- [ ] Implement reset and corrupt-settings recovery in `converter/app/preferences.cpp`. Done when: invalid values fall back safely and reset requires no manual file deletion.
+- [ ] Implement a versioned preferences file in `converter/src/preferences.c` (engine side, C11). Done when: theme mode (follow-system, light, dark), density, last safe directory and memory budget survive restart with named consumers.
+- [ ] Implement the preferences surface, reset and corrupt-settings recovery in `converter/app/preferences.cpp`. Done when: invalid values fall back safely, reset requires no manual file deletion, and a theme change crossfades through `rui::AnimationManager` unless reduced motion is set.
 - [ ] Complete localization-ready labels in `converter/app/strings.cpp`. Done when: long labels, Unicode filenames and right-to-left layout fixtures do not clip essential actions.
-- [ ] Add accessibility/contrast and reduced-motion checks in `tests/converter/test_accessibility.py`. Done when: keyboard-only and screen-reader users can complete conversion and comparison in every theme/density.
-- [ ] Verify privacy in `tests/converter/test_privacy.py`. Done when: opening/converting/demo operations perform no network requests and reports omit source paths unless explicitly requested.
+- [ ] Add accessibility, contrast and reduced-motion checks in `tests/converter/test_accessibility.py` over the driver of §2. Done when: a keyboard-only run and a UI Automation run complete conversion and comparison in light, dark and Windows high contrast at both densities, and every control reports a name and role.
+- [ ] Verify privacy in `tests/converter/test_privacy.py`. Done when: opening, converting and demo operations perform no network requests and reports omit source paths unless explicitly requested.
 - [ ] Commit: `"converter: preferences and accessible error recovery"`
 
-**Test checkpoint:** Quote keyboard-only and screen-reader runs on all native platforms, including reset, corrupt preferences and failed conversion recovery.
+**Test checkpoint:** Quote keyboard-only and UI Automation runs in a Windows desktop session, including reset, corrupt preferences and failed conversion recovery.
 
 **Freeze check:** Existing `.fold` v2 files and the oracle remain unchanged. Each new output receives a fresh bundled decode and the format-specific verification contract before acceptance; independent fixture coverage is reported separately; input and existing destination bytes survive refusal, cancellation and failure.
 
 ## 8. Guided RasterFold demonstration
 
-**Requires:** display-session -- Surface checkpoints require real input, preview and accessibility evidence across advertised targets. Source checkpoint audit: docs/todo-vision-audit.md.
+**Requires:** display-session -- Surface checkpoints require real input, preview and accessibility evidence in a Windows desktop session. Source checkpoint audit: docs/todo-vision-audit.md.
 
 **Job:** A new user can try RasterFold and compare codecs immediately using licensed bundled samples.
 
@@ -207,19 +212,19 @@ Build in the listed order. This section adds the named test driver before using 
 
 **Chrome:** Resolute's custom Direct2D caption and window chrome; shared application bar, comparison panes and result footer.
 
-Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
+Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies. Interface code is C++23 under `converter/app/` on the `resolute-ui` shell of §1 and reaches the engine only through the C headers under `converter/include/`; see the stack facts under Inputs.
 
 - [ ] Add small diverse licensed images under `converter/assets/samples/`. Done when: each has provenance and covers photographs, text, graphics and transparent/high-depth capability refusals.
-- [ ] Implement Try sample in `converter/app/demo.cpp`. Done when: it enters the real import/encode/verify/compare flow without fabricated statistics.
+- [ ] Implement Try sample in `converter/app/demo.cpp`. Done when: it enters the real import, encode, verify and compare flow of §5 and §6 without fabricated statistics.
 - [ ] Add contextual explanations in `converter/app/demo.cpp`. Done when: the user can distinguish losslessness from size savings and see current RasterFold RGB8 limitations.
-- [ ] Add `tests/converter/test_demo.py`. Done when: offline first launch, sample conversion and fresh-decode output verification work on clean installs.
+- [ ] Add `tests/converter/test_demo.py` over the driver of §2. Done when: offline first launch, sample conversion and fresh-decode output verification work on a clean Windows install.
 - [ ] Commit: `"converter: guided rasterfold demonstration"`
 
-**Test checkpoint:** Drive first-launch Try sample with networking disabled and compare saved output against its bundled source.
+**Test checkpoint:** Drive first-launch Try sample with networking disabled in a Windows desktop session and compare saved output against its bundled source.
 
 **Freeze check:** Existing `.fold` v2 files and the oracle remain unchanged. Each new output receives a fresh bundled decode and the format-specific verification contract before acceptance; independent fixture coverage is reported separately; input and existing destination bytes survive refusal, cancellation and failure.
 
 ## Verification
 
-- [ ] Run `python3 scripts/check-converter.py --all-targets` once this file adds its gates; report native device coverage separately from cross-builds.
+- [ ] Run `python3 scripts/check-converter.py --all-targets` once this file adds its gates; report driven Windows desktop coverage separately from cross-builds.
 - [ ] Run `python3 scripts/todo-graph.py validate`, `plan --check` and `python3 scripts/drift-check.py`; each exits 0.

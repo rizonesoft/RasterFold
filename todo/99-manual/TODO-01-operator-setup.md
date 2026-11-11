@@ -53,6 +53,7 @@ track: OP1
 |   5   |   §5    | Enable GitHub Pages                           | --         |  [x]   |
 | 7 | §7 | HEVC distribution decision | -- | [ ] |
 | 8 | §8 | The 13-round milestone cap | §4 | [x] |
+| 9 | §9 | The 2026-11-11 scope and autonomy decisions | -- | [ ] |
 
 ---
 
@@ -139,15 +140,13 @@ Every milestone gate in `todo/05-milestones/` carries this policy: on a miss, up
 
 **Origin:** discovered run=61f3a8f4474f 2026-09-30 -- groom-plan codec distribution prerequisite.
 
-**Requires:** operator -- the application's intended distribution and any unresolved HEVC licensing obligations need a recorded release-owner decision, not an invented agent approval.
+**Corrected 2026-11-11 (operator decision):** the release owner decided "OS codec, read only": no bundled HEVC code, HEIC import only through the Windows system codec, no HEIC writing. `docs/codec-distribution.md` records the decision, its reason and its reversal cost. With the decision made, this section no longer carries `Requires: operator` (the operator asked on 2026-11-11 that the rest be left for the runner): what remains is agent work. The distribution channel is the repository's own GitHub Releases page, the default this project already uses for every artifact; the operator's widened autonomy directive of 2026-11-11 (`AGENTS.md`, Autonomy is the default) covers taking that default, and changing it later costs one edit to `docs/codec-distribution.md` because no HEVC code ships on any channel.
 
-**Corrected 2026-11-11 (operator decision):** the release owner decided "OS codec, read only": no bundled HEVC code, HEIC import only through the Windows system codec, no HEIC writing. `docs/codec-distribution.md` records the decision, its reason and its reversal cost. The items below still stand: the first confirms the exact Windows components from Microsoft's documentation, the second is satisfied by that file once the intended distribution channels are added to it.
-
-- [ ] Prepare the proposed HEVC provider, source license, distribution channels and unresolved obligations in `docs/codec-distribution.md` using current primary sources. Done when: the decision concerns a concrete provider/build rather than a generic codec warning.
-- [ ] Record the release owner's decision in `docs/codec-distribution.md`. Done when: the required enabled HEIC capability has an approved distribution path; an unresolved decision remains visibly blocking and does not silently remove the promised format.
+- [ ] Name the concrete provider in `docs/codec-distribution.md` from Microsoft's documentation: the Windows Imaging Component HEIF decoder, the system components a user needs for HEVC-coded images, and the Windows versions that carry them, each with its source URL and the date read. Done when: the page names components and versions rather than "the system codec", and states that the application ships no HEVC code on any channel.
+- [ ] Add the distribution channel (GitHub Releases) to `docs/codec-distribution.md` beside the recorded decision. Done when: the page states the decision in the operator's words, the channel, and what a user without the system components sees; the `Still owed` paragraph is gone.
 - [ ] Commit: `"release: record HEVC provider distribution decision"`
 
-**Test checkpoint:** The actual decision names the proposed provider/version and intended channels in `docs/codec-distribution.md`; D10 T02 §7 must later prove its pins match that decision. No future artifact is required to stamp this decision.
+**Test checkpoint:** `docs/codec-distribution.md` names the Windows components and versions with their Microsoft sources and the channel, `python3 scripts/check-converter.py --case contract` passes with HEIF and HEIC import-only, and `python3 scripts/drift-check.py` exits 0; D10 T02 §7 must later prove its adapter matches. No future artifact is required to stamp this decision.
 
 ## 8. The 13-Round Milestone Cap
 
@@ -174,6 +173,35 @@ The implementing session's recommendation, recorded with the decision: 13 is kep
 
 > **Verified:** 2026-11-11 | §8 | 687e1754a2a9e5446a2fdb42907c4198d315b714
 > **Review:** `docs/reviews/d99-t01-s8.json`
+## 9. The 2026-11-11 Scope and Autonomy Decisions
+
+The operator made six decisions in one attended session on 2026-11-11. They changed the product's scope and the way every session works, so they are recorded here in the operator's words, each with where it is implemented and what reversing it costs. The implementing session carried them out in the commits `92885be`, `5a93a14`, `43ee9c9` and their review-fix commits; this section is the decision record and the check that the tree still agrees with it.
+
+**1. Android is removed.** "we will not be doing any android dev in this repo anymore, so please clean the repo. Time is better spend on the algorythms", after "remove Android work. We can always create a fork for that when we are done". RasterFold targets Windows x64 and Linux x64. Reversal cost: restore the NDK pin in `toolchain.json`, the two targets in `scripts/build.py`, `scripts/tidy.py` and `scripts/package.py`, and the Android rows of the plan from the commit before `92885be`.
+
+**2. The converter is decoupled from 1.0 and runs straight after it.** Asked how the plan should treat the converter that blocked every milestone from 11 to 60, the operator chose "Decouple it", then "move it" for running it right after 1.0. RasterFold 1.0 is the codec, command line, library and documentation; the converter is Phase 10 and blocks no codec milestone. Reversal cost: restore the two dependency edges on `D09 T01 §2` and `§4` and move the rows back.
+
+**3. The converter is Windows only.** "As for the linux display, we will never have one on this machine, so shoud lwe drop it like android and do that in a fork at a much later stage?", then the choice "Drop the Linux GUI". The Linux command line and library are unaffected. Reversal cost: re-author a Linux integration section in `todo/10-converter/TODO-03-interface.md`.
+
+**4. The converter uses the Resolute launcher's stack.** "The demo app and converter (GUI) should have the toolstack and interface design as Resolute(launcher)." C++23 with CMake and Ninja on the pinned llvm-mingw, the `resolute-ui` Direct2D library and Lucide glyphs vendored from `rizonesoft/Resolute`, Resolute's `DESIGN.md`; the engine and codec adapters stay C11. Reversal cost: re-author `D10 T03` for another toolkit; nothing shipped depends on it yet.
+
+**5. HEIC is read only through the system codec.** The choice "OS codec, read only"; `§7` and `docs/codec-distribution.md` own it.
+
+**6. Autonomy is widened to attended sessions.** "You need to act autonomously, self-improve, self-heal, and make decisions to shape the and create the best repo, runners, toolset, dev methods, product, end-result, project, etc. you possibly can. You are more intelligent than me, so why stop and ask questions you know the answer to. We are not scared of the competition, no matter if its Adobe, Microsoft, Apple, or Google, we can and will be better. Nothing is impossible and nothing is stopping us from accomplishing the impossible(wire it in)." `AGENTS.md` (Autonomy is the default) carries it. Reversal cost: one paragraph in `AGENTS.md` and one sentence in the launcher prompt.
+
+<!-- claim: count "android" scripts/build.py = 0 -->
+<!-- claim: count "android" toolchain.json = 0 -->
+<!-- claim: count "^### Phase 10 -- Native converter$" todo/implementation-plan.md = 1 -->
+<!-- claim: exists docs/codec-distribution.md -->
+<!-- claim: count "Restated and widened on 2026-11-11" AGENTS.md = 1 -->
+
+- [ ] Check decisions 1 to 5 against the tree and repair any gap at its owning layer. Done when: `python3 scripts/todo-claims.py` holds this section's claims, `git grep -il android -- scripts src tests toolchain.json .github` prints nothing, `python3 scripts/plan-audit.py` exits 0 with `D10 T04 §4` as the later gate, and `python3 scripts/check-converter.py --case contract` passes.
+- [ ] Carry decision 6 in the unattended launcher's seed prompt (`scripts/unattended-run.sh`) and `docs/unattended-run.md`, so a campaign session applies it without rediscovering this section. Done when: both state that the session improves the repository, runners, toolset, method and product on its own judgment, and that an unproven impossibility is filed as work with its first experiment named.
+- [ ] Record in `docs/vision.md` and `AGENTS.md` any of the six decisions either file does not yet state, in the operator's words. Done when: each decision is findable in one of the two by its quoted phrase.
+- [ ] Commit: `"todo: record the 2026-11-11 scope and autonomy decisions"`
+
+**Test checkpoint:** `python3 scripts/todo-claims.py` exits 0 with this section's five claims held, `python3 scripts/todo-graph.py validate` and `plan --check` exit 0, and the six decision lines above quote the operator.
+
 ## Verification
 
 - [ ] `python scripts/todo-graph.py validate` clean
