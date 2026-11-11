@@ -60,6 +60,8 @@ track: GUI3
 
 ## 1. Interface shell on resolute-ui
 
+**Requires:** display-session -- The checkpoint captures the shell in every theme and scale and asserts focus and UI Automation in a Windows desktop session; a headless WSL run cannot produce it.
+
 **Job:** A user can recognize, focus and operate a consistent native interface that looks and behaves like the Resolute launcher.
 
 **Fidelity:** Native converter -- implement the committed surface contract and all failure states.
@@ -76,6 +78,7 @@ Build in the listed order. This section adds the named test driver before using 
 - [ ] Add the `RasterFoldConverter` executable to `converter/CMakeLists.txt` (the CMake build and its driver `scripts/build-converter.py` come from D10 T01 §2). Done when: a clean checkout builds a `RasterFoldConverter` Windows x64 executable as C++23 that statically links `ResoluteUI_static` and `Lucide_static`, with the manifest declaring per-monitor DPI v2, and the codec targets in `scripts/build.py` are unchanged.
 - [ ] Implement the application shell in `converter/app/main.cpp` and `converter/app/shell.cpp` on `rui::` windows and controls. Done when: the application bar, workspace, settings column and result footer of `docs/design/converter.md` exist as `resolute-ui` controls, and no file under `converter/app/` draws a control the library provides or names a colour, font size or spacing literal.
 - [ ] Implement the generic controls the pinned library lacks (button, drop-down, slider, check box, progress bar) and a shared UI Automation provider base under `converter/app/controls/`. Done when: each draws only through `rui::RenderContext` with `rui::Theme` tokens, shows the 2px accent focus ring, meets the 24x24 hit target at 100%, reports name, role, state and value to UI Automation, and is listed in `docs/converter-building.md` as an upstream candidate.
+- [ ] Add UI Automation adapters for every `resolute-ui` control the converter uses (`ListView`, `Toolbar`, `Sidebar`, `StatusBar`, `PopupMenu`, `ContentView`) in `converter/app/controls/uia_adapters.cpp`, wrapping each control without changing how it renders. Done when: a UI Automation client enumerates every item, row, button and menu entry of those controls with a name, role and state, can invoke, select and sort through them, and `tests/converter/test_ui.cpp` fails when an adapter is removed.
 - [ ] Bind the shell to the C engine through `converter/app/engine_bridge.cpp`. Done when: interface code reaches jobs, capabilities and results only through the C headers under `converter/include/`, and rendering, input, accessibility and application state have separate ownership.
 - [ ] Add the converter's glyphs to the vendored Lucide set with their sources in `converter/vendor/lucide/icons/SOURCES.md`. Done when: each action has a Lucide glyph and a visible and accessible label.
 - [ ] Add `tests/converter/test_ui.cpp`. Done when: keyboard focus traversal, token-only colour and UI Automation names fail on seeded regressions.
@@ -167,7 +170,7 @@ Build in the listed order. This section adds the named test driver before using 
 - [ ] Add `tests/converter/test_compare.py` over the driver of §2. Done when: alignment, mismatch, unsupported codec, larger output and stale-result regressions fail.
 - [ ] Commit: `"converter: synchronized comparisons"`
 
-**Test checkpoint:** Drive comparisons on the same sample in a Windows desktop session and quote pixel verification plus keyboard and screen-reader navigation evidence from the driver.
+**Test checkpoint:** Drive comparisons on the same sample in a Windows desktop session and quote pixel verification plus keyboard and UI Automation navigation evidence from the driver; the Narrator run is owned by §7.
 
 **Freeze check:** Existing `.fold` v2 files and the oracle remain unchanged. Each new output receives a fresh bundled decode and the format-specific verification contract before acceptance; independent fixture coverage is reported separately; input and existing destination bytes survive refusal, cancellation and failure.
 
@@ -191,10 +194,11 @@ Build in the listed order. This section adds the named test driver before using 
 - [ ] Implement the preferences surface, reset and corrupt-settings recovery in `converter/app/preferences.cpp`. Done when: invalid values fall back safely, reset requires no manual file deletion, and a theme change crossfades through `rui::AnimationManager` unless reduced motion is set.
 - [ ] Complete localization-ready labels in `converter/app/strings.cpp`. Done when: long labels, Unicode filenames and right-to-left layout fixtures do not clip essential actions.
 - [ ] Add accessibility, contrast and reduced-motion checks in `tests/converter/test_accessibility.py` over the driver of §2. Done when: a keyboard-only run and a UI Automation run complete conversion and comparison in light, dark and Windows high contrast at both densities, and every control reports a name and role.
+- [ ] Run conversion, comparison and a failed-conversion recovery with Windows Narrator and record the run in `docs/converter-validation.md`. Done when: the record lists, step by step, what Narrator spoke for each control and each status announcement, names the Windows build and the converter revision, and any control or announcement Narrator did not speak is fixed and re-run; the UI Automation checks above do not stand in for this run.
 - [ ] Verify privacy in `tests/converter/test_privacy.py`. Done when: opening, converting and demo operations perform no network requests and reports omit source paths unless explicitly requested.
 - [ ] Commit: `"converter: preferences and accessible error recovery"`
 
-**Test checkpoint:** Quote keyboard-only and UI Automation runs in a Windows desktop session, including reset, corrupt preferences and failed conversion recovery.
+**Test checkpoint:** Quote the keyboard-only and UI Automation runs and the Narrator run in a Windows desktop session, including reset, corrupt preferences and failed conversion recovery with its spoken announcements.
 
 **Freeze check:** Existing `.fold` v2 files and the oracle remain unchanged. Each new output receives a fresh bundled decode and the format-specific verification contract before acceptance; independent fixture coverage is reported separately; input and existing destination bytes survive refusal, cancellation and failure.
 

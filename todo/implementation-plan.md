@@ -336,11 +336,11 @@ The native converter, its user guide, the whole-product documentation acceptance
 | [ ] | `D10 T02 §10` | OpenEXR                                          | windows-runtime               |   6   |
 | [ ] | `D10 T02 §11` | Camera RAW and DNG import                        | windows-runtime               |   6   |
 | [ ] | `D10 T02 §12` | Animation and multi-page preservation            | windows-runtime               |   5   |
-| [ ] | `D10 T03 §1`  | Interface shell on resolute-ui                   | none                          |   9   |
+| [ ] | `D10 T03 §1`  | Interface shell on resolute-ui                   | display-session               |  10   |
 | [ ] | `D10 T03 §2`  | Windows native integration                       | windows-host, display-session |   7   |
 | [ ] | `D10 T03 §5`  | Single-image conversion and preview              | display-session               |   7   |
 | [ ] | `D10 T03 §6`  | Synchronized comparisons                         | display-session               |   6   |
-| [ ] | `D10 T03 §7`  | Preferences and accessible error recovery        | display-session               |   6   |
+| [ ] | `D10 T03 §7`  | Preferences and accessible error recovery        | display-session               |   7   |
 | [ ] | `D10 T03 §8`  | Guided RasterFold demonstration                  | display-session               |   5   |
 | [ ] | `D10 T04 §1`  | Full capability matrix                           | display-session               |   5   |
 | [ ] | `D10 T04 §2`  | Hostile input and resource limits                | display-session               |   5   |
