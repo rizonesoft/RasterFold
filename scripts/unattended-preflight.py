@@ -32,6 +32,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FAILURES: list[str] = []
+CANCEL_SIGNALS = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
 CLAUDE_HOME = Path.home() / ".claude"
 CLAUDE_STATE = Path.home() / ".claude.json"
 SCOUTS = ("rf-fact-check", "rf-log-digest", "rf-scout")
@@ -54,12 +55,18 @@ def run(args: list[str], timeout: int = 300) -> subprocess.CompletedProcess:
     A timeout stops the whole process group, not only the direct child:
     a check or a repair that started builds must not leave them running
     after the preflight has reported failure."""
+    # Cancellation signals are held back from just before the child exists until this frame is inside the block
+    # that cleans it up, so there is no instant in which a child is running and nothing will stop it.
+    held = signal.pthread_sigmask(signal.SIG_BLOCK, CANCEL_SIGNALS)
+    proc = None
     try:
-        proc = subprocess.Popen(args, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                                start_new_session=True)
-    except OSError as exc:
-        return subprocess.CompletedProcess(args, 127, "", f"{args[0]}: could not start: {exc}")
-    try:
+        try:
+            proc = subprocess.Popen(args, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                    start_new_session=True,
+                                    preexec_fn=lambda: signal.pthread_sigmask(signal.SIG_SETMASK, held))
+        except OSError as exc:
+            return subprocess.CompletedProcess(args, 127, "", f"{args[0]}: could not start: {exc}")
+        signal.pthread_sigmask(signal.SIG_SETMASK, held)  # a signal held back is delivered here, inside the block
         out, err = proc.communicate(timeout=timeout)
         return subprocess.CompletedProcess(args, proc.returncode, out, err)
     except subprocess.TimeoutExpired:
@@ -70,9 +77,12 @@ def run(args: list[str], timeout: int = 300) -> subprocess.CompletedProcess:
         # Cancelled (Ctrl+C, the window closed, a kill; see install_signal_handlers). The child runs in its own
         # session, so the terminal's signal never reached it: stop its whole group here, before this frame unwinds
         # and a caller releases the guard lock it held around the child.
-        kill_group(proc.pid)
-        proc.wait()
+        if proc is not None:
+            kill_group(proc.pid)
+            proc.wait()
         raise
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, held)
 
 
 def install_signal_handlers() -> None:

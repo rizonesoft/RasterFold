@@ -178,6 +178,35 @@ class RunTests(unittest.TestCase):
         for signum in (signal.SIGINT, signal.SIGHUP, signal.SIGTERM):
             self.assertNotEqual(self.interrupted(signum), 0, signum)
 
+    def test_a_signal_at_the_spawn_boundary_still_stops_the_child(self):
+        # The instant between the child existing and run() protecting it: the signal is delivered from inside
+        # process creation itself, after the child has started and before Popen returns to run().
+        real_popen = subprocess.Popen
+        for signum in (signal.SIGINT, signal.SIGHUP, signal.SIGTERM):
+            started = []
+
+            def spawn_then_signal(*args, **kwargs):
+                proc = real_popen(*args, **kwargs)
+                started.append(proc)
+                os.kill(os.getpid(), signum)
+                return proc
+            previous = {s: signal.getsignal(s) for s in (signal.SIGTERM, signal.SIGHUP)}
+            pf.install_signal_handlers()
+            try:
+                with mock.patch.object(subprocess, "Popen", spawn_then_signal):
+                    with self.assertRaises(KeyboardInterrupt):
+                        pf.run([sys.executable, "-c", "import time; time.sleep(60)"], timeout=60)
+            finally:
+                for s, handler in previous.items():
+                    signal.signal(s, handler)
+            self.assertEqual(len(started), 1)
+            self.assertIsNotNone(started[0].poll(), f"the child survived signal {signum} at the spawn boundary")
+
+    def test_checks_do_not_inherit_blocked_signals(self):
+        result = pf.run([sys.executable, "-c",
+                         "import signal; print(sorted(int(s) for s in signal.pthread_sigmask(signal.SIG_BLOCK, [])))"])
+        self.assertEqual(result.stdout.strip(), "[]")
+
     def test_a_missing_executable_is_a_result_not_a_traceback(self):
         result = pf.run(["/nonexistent/rf-no-such-tool"])
         self.assertEqual(result.returncode, 127)
