@@ -2,7 +2,7 @@
 schema_version: 1
 id: beat-webp-generated
 domain: 01-compression
-status: active
+status: done
 title: "TODO-06 -- Beat WebP on Generated Images"
 depends_on: []
 frozen: true
@@ -42,7 +42,7 @@ track: C6
 |   5   |   §5    | Above-copy runs for palette images | §3 |  [x]   |
 |   6   |   §6    | A neighbour-candidate colour cache in version 3 | §2 |  [x]   |
 |   7   |   §7    | A recent-colour cache for palette images | §6 |  [x]   |
-|   8   |   §8    | A compact palette method (method 4) | §7 |  [ ]   |
+|   8   |   §8    | A compact palette method (method 4) | §7 |  [x]   |
 
 ---
 
@@ -256,6 +256,8 @@ Acceptance (the stop condition), from the same command on `build/research/try_pa
 
 **Freeze check:** `KAT_FOLD` (version 2, method 1), `KAT_PAL` (version 2, method 2), `KAT_PAL3` (version 3, method 2), `KAT_PAL2` (version 2, method 3) and `KAT_PAL2_3` (version 3, method 3) decode to the same pixels as before; method 4 is a new method number in the unreleased format version 3 (the operator's standing approval, `D99 T01 §3`, covers extending it), and a decoder without this change refuses a method 4 file as `unsupported fold: method`, never misreads it.
 
+> **Verified:** 2026-11-12 | §8 | 50fcfe53080977bc7e63de3bcc227a700882243b
+> **Review:** `docs/reviews/d01-t06-s8.json`
 ## Verification
 
 - [ ] `pwsh scripts/check-all.ps1` exits 0

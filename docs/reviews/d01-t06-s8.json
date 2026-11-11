@@ -1,0 +1,78 @@
+{
+  "ref": "D01 T06 \u00a78",
+  "title": "A Compact Palette Method (Method 4)",
+  "implementation_sha": "50fcfe53080977bc7e63de3bcc227a700882243b",
+  "date": "2026-11-12",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/01-compression/D01-T06-s8.md",
+      "verdict": "clean"
+    }
+  ],
+  "checks": [
+    "python3 scripts/windows.py research/ab.py size src/cm.c synth -v -t1 -> total=200774 webp=201248 webp_ratio=0.9976 webp_geomean=0.8771 webp_worst=1.2500 (syn_odd); photo total=30634873 and tp total=6598954 identical to baseline on every image",
+    "python3 tests/test_correctness.py -> 46 passed, 0 failed (Linux and Windows), including KAT_PAL4, palette-method4 and the Freeze check fixtures KAT_FOLD, KAT_PAL, KAT_PAL3, KAT_PAL2, KAT_PAL2_3 decoding to the same pixels",
+    "python3 tests/fuzz_decode.py 2000 20261111 -> 2000 mutated files (methods 0:118, 1:1174, 2:236, 3:236, 4:236): 1893 rejected, 107 still valid, no crash, hang or mismatch (Linux and Windows)",
+    "bosun run -- python3 scripts/check-all.py --all-targets -> check-all: 31/31 passed"
+  ],
+  "completion": {
+    "report": "docs/reviews/01-compression/D01-T06-s8.md",
+    "verdict": "complete",
+    "candidate": "50fcfe53080977bc7e63de3bcc227a700882243b",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/01-compression/D01-T06-s8.md",
+    "candidate": "7028672ef22553943df187e89ef60d0acb68e95a",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "7028672ef22553943df187e89ef60d0acb68e95a",
+  "schedule": {
+    "policy": "three-pass",
+    "pass_cap": 33,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}
