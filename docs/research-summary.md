@@ -26,9 +26,10 @@ seven context models mixed by a logistic mixer in version 3 and five in version 
 16-node context rows in version 3 and 32-node rows in version 2, and up to three
 warm-started horizontal strips per channel G, R-G, B-G in version 3 (`S = 1` for
 `h < 768` and `S = 3` for `h >= 768`, sections 4.13 and 5.8),
-running up to nine strip threads in parallel), and methods 2 and 3 ("palette" and
-"extended palette") are the palette index coders in `src/pal.c` for images with at
-most 256 distinct colours. The Python oracle `tests/rfi_ref.py` implements the same
+running up to nine strip threads in parallel), and methods 2, 3 and 4 ("palette",
+"extended palette" and "compact palette") are the palette index coders in `src/pal.c`
+for images with at most 256 distinct colours; the encoder writes method 4 (section
+4.14) and decodes all three. The Python oracle `tests/rfi_ref.py` implements the same
 format independently and stays byte-identical with the C encoder.
 
 `python tests/measure_final.py` (exit 0, PASS) on `measure/image.bmp`:
@@ -103,6 +104,14 @@ are filed: coding the palette itself, above-copy runs, and a neighbour-candidate
 gate stays unstamped until a follow-up reaches its bar and the gate is
 re-measured. All three missed on 2026-11-09, and round 4 under the capped
 policy, a recent-colour cache in the palette index stream, missed on 2026-11-11 (`synth` `201,640` -> `201,732`).
+Round 5, the compact palette method (method 4, section 4.14), was
+accepted and ported on 2026-11-12: `synth` total `200,774` against WebP's
+`201,248` (`0.9976`), geometric mean `0.8771`, worst image `syn_odd` at `1.2500`
+(`75` against `60`, inside the 32-byte allowance), `syn_checker` `94`, `syn_text`
+`1,187`, `syn_diagram` `1,189`, with `photo` (`30,634,873`) and `tp`
+(`6,598,954`) unchanged on every image, from
+`python3 scripts/windows.py research/ab.py size src/cm.c <set> -v -t1`. The gate
+itself re-measures and records the milestone.
 
 **Held-out validation** (`D00 T03 §2`, 2026-11-09, `python3 scripts/windows.py research/ab.py size src/cm.c heldout -v -t1`, per-image sizes grouped by the frozen manifest's kind in `research/heldout.json`): photographs (30) total `33,307,797` bytes, `0.9412` of JPEG XL e9 and `0.9345` of e7, geometric mean `0.9324` against e9, 30 of 30 below e9 and 30 of 30 at or below e7, worst `ho_p06` at `0.9822` of e9: Milestone 4's photograph targets (total ratios and win counts) and Milestone 7's photograph targets (win counts scaled proportionally to 30 images, the 1.0% worst cap applied directly) all hold on images the codec was never tuned on. Screenshots (10) total `3,326,125` bytes against lossless WebP's `711,772` (`4.6730`), geometric mean `4.6534` against WebP, and every screenshot is over Milestone 8's per-image allowance (worst `ho_s10`, `402,076` against `78,482`, `5.1232`): Milestone 8 does not generalise to browser screenshots of rendered documentation, many-colour text images that neither the palette methods nor the CM coder prices near WebP. Reported, not tuned against: the held-out set stays evaluation-only, and the screenshot miss joins the Milestone 8 gate's parked operator decision.
 

@@ -20,6 +20,7 @@ METHOD_RAW = 0
 METHOD_CM = 1
 METHOD_PAL = 2
 METHOD_PAL2 = 3
+METHOD_PAL3 = 4      # compact palette, version 3 only
 
 
 class FormatError(Exception):
@@ -156,6 +157,18 @@ class RangeEncoder:
             self.range = (self.range << 8) & 0xFFFFFFFF
             self._shift()
 
+    def bit16(self, bit: int, p1: int) -> None:
+        # Method 4: probability p1 / 65536 with an exact split.
+        bound = (self.range * p1) >> 16
+        if bit:
+            self.range = bound
+        else:
+            self.low += bound
+            self.range -= bound
+        while self.range < (1 << 24):
+            self.range = (self.range << 8) & 0xFFFFFFFF
+            self._shift()
+
     def finish(self) -> bytes:
         for _ in range(5):
             self._shift()
@@ -178,6 +191,21 @@ class RangeDecoder:
 
     def bit(self, p1: int) -> int:
         bound = (self.range >> 12) * p1
+        if self.code < bound:
+            self.range = bound
+            bit = 1
+        else:
+            self.code -= bound
+            self.range -= bound
+            bit = 0
+        while self.range < (1 << 24):
+            self.range = (self.range << 8) & 0xFFFFFFFF
+            self.code = ((self.code << 8) | self._byte()) & 0xFFFFFFFF
+        return bit
+
+    def bit16(self, p1: int) -> int:
+        # Method 4: probability p1 / 65536 with an exact split.
+        bound = (self.range * p1) >> 16
         if self.code < bound:
             self.range = bound
             bit = 1
@@ -649,7 +677,7 @@ def cm_decode(payload: bytes, width: int, height: int, version: int = VERSION) -
     return bytes(rgb)
 
 
-# ---------------------------------------------------------------- palette (methods 2 and 3)
+# ---------------------------------------------------------------- palette (methods 2 and 3, decode-only in the encoder policy)
 
 class _PalCounter:
     def __init__(self, m3: bool = True) -> None:
@@ -856,6 +884,219 @@ def pal_decode(payload: bytes, width: int, height: int, *, method: int = METHOD_
     return bytes(rgb)
 
 
+# ---------------------------------------------------------------- compact palette (method 4)
+
+class _Pal4Counter:
+    """A method 4 counter: method 3's update rule, coded on a 16-bit probability."""
+
+    def __init__(self) -> None:
+        self.c = 32768
+        self.n = 0
+
+    def code(self, enc: RangeEncoder | None, dec: RangeDecoder | None, bit: int = 0) -> int:
+        p = max(1, self.c)
+        rate = RATE[self.n]
+        if self.n < 60:
+            self.n += 1
+        if enc is not None:
+            enc.bit16(bit, p)
+        else:
+            assert dec is not None
+            bit = dec.bit16(p)
+        if bit == 1 and self.c < 65535:
+            self.c += max(1, ((65535 - self.c) * rate) >> 16)
+        elif bit == 0 and self.c > 0:
+            self.c -= max(1, (self.c * rate) >> 16)
+        return bit
+
+
+def _pal4_class(x: int, y: int) -> int:
+    if y == 0:
+        return 1
+    return 2 if x == 0 else 0
+
+
+def _zigzag(v: int) -> int:
+    return 2 * v if v >= 0 else -2 * v - 1
+
+
+def _unzigzag(u: int) -> int:
+    return u >> 1 if u % 2 == 0 else -((u + 1) >> 1)
+
+
+def _rice_bits(v: int, k: int) -> str:
+    low = format(v & ((1 << k) - 1), f"0{k}b") if k else ""
+    return "1" * (v >> k) + "0" + low
+
+
+def pal4_field(colours: list[tuple[int, int, int]], ks: tuple[int, int, int] | None = None) -> bytes:
+    """The method 4 palette field for `colours`, which must already be in
+    strictly increasing order. `ks` forces the three Rice parameters (any
+    legal values decode); None applies the reference encoder's choice."""
+    inputs: tuple[list[int], list[int], list[int]] = ([], [], [])
+    prev_r = 0
+    for r, g, b in colours:
+        inputs[0].append(r - prev_r)
+        inputs[1].append(_zigzag(g - r))
+        inputs[2].append(_zigzag(b - g))
+        prev_r = r
+    if ks is None:
+        chosen = []
+        for vals in inputs:
+            costs = [sum((v >> k) + 1 + k for v in vals) for k in range(9)]
+            chosen.append(costs.index(min(costs)))        # the smallest k among the cheapest
+        ks = (chosen[0], chosen[1], chosen[2])
+    bits = "".join(format(k, "04b") for k in ks)
+    for i in range(len(colours)):
+        for ch in range(3):
+            bits += _rice_bits(inputs[ch][i], ks[ch])
+    bits += "0" * (-len(bits) % 8)
+    return int(bits, 2).to_bytes(len(bits) // 8, "big")
+
+
+def _pal4_read_field(payload: bytes, count: int) -> tuple[list[bytes], int]:
+    """Parses the palette field that starts at payload[1]; returns the palette
+    and the field's size in bytes."""
+    total_bits = (len(payload) - 1) * 8
+    pos = 0
+
+    def take(n: int) -> int:
+        nonlocal pos
+        if pos + n > total_bits:
+            raise FormatError("palette")
+        v = 0
+        for _ in range(n):
+            v = (v << 1) | ((payload[1 + (pos >> 3)] >> (7 - (pos & 7))) & 1)
+            pos += 1
+        return v
+
+    def rice(k: int) -> int:
+        q = 0
+        while take(1) == 1:
+            q += 1
+            if q > 511:
+                raise FormatError("palette")
+        return (q << k) + take(k)
+
+    ks = [take(4) for _ in range(3)]
+    if any(k > 8 for k in ks):
+        raise FormatError("palette")
+    palette: list[bytes] = []
+    prev_r = 0
+    prev_key = -1
+    for _ in range(count):
+        r = prev_r + rice(ks[0])
+        g = r + _unzigzag(rice(ks[1]))
+        b = g + _unzigzag(rice(ks[2]))
+        if not (0 <= r <= 255 and 0 <= g <= 255 and 0 <= b <= 255):
+            raise FormatError("palette")
+        key = r * 65536 + g * 256 + b
+        if key <= prev_key:
+            raise FormatError("palette")
+        prev_key = key
+        prev_r = r
+        palette.append(bytes((r, g, b)))
+    while pos % 8:
+        if take(1) != 0:
+            raise FormatError("palette")
+    return palette, pos // 8
+
+
+def pal4_encode(width: int, height: int, rgb: bytes, *, ks: tuple[int, int, int] | None = None) -> bytes | None:
+    if len(rgb) != width * height * 3:
+        raise ValueError("rgb size")
+    distinct = {rgb[pos : pos + 3] for pos in range(0, len(rgb), 3)}
+    if len(distinct) > 256:
+        return None
+    palette = sorted(distinct)                         # bytes order is R, then G, then B
+    index_of = {col: i for i, col in enumerate(palette)}
+    count = len(palette)
+    field = pal4_field([(c[0], c[1], c[2]) for c in palette], ks)
+    d1 = [_Pal4Counter() for _ in range(768)]
+    d2 = [_Pal4Counter() for _ in range(128)]
+    d3 = [_Pal4Counter() for _ in range(128)]
+    tree = [_Pal4Counter() for _ in range(256)]
+    enc = RangeEncoder()
+    rows: list[list[int]] = []
+    hit = 0
+    for y in range(height):
+        rows.append([0] * width)
+        for x in range(width):
+            pos = (y * width + x) * 3
+            idx = index_of[rgb[pos : pos + 3]]
+            rows[y][x] = idx
+            a, b, e, pattern = _pal_neighbours_m3(rows, width, x, y)
+            if d1[pattern * 2 + hit + 256 * _pal4_class(x, y)].code(enc, None, 1 if idx == a else 0):
+                hit = 1
+                continue
+            hit = 0
+            if count == 2:
+                continue
+            if b != a and d2[pattern].code(enc, None, 1 if idx == b else 0):
+                continue
+            if e != a and e != b and d3[pattern].code(enc, None, 1 if idx == e else 0):
+                continue
+            node = 1
+            for bit_pos in range(7, -1, -1):
+                bit = (idx >> bit_pos) & 1
+                tree[node].code(enc, None, bit)
+                node = node * 2 + bit
+        if y >= 3:
+            rows[y - 3] = []
+    return bytes((count - 1,)) + field + enc.finish()
+
+
+def pal4_decode(payload: bytes, width: int, height: int) -> bytes:
+    if len(payload) < 8:
+        raise FormatError("palette")
+    count = payload[0] + 1
+    palette, field_size = _pal4_read_field(payload, count)
+    stream = payload[1 + field_size :]
+    if len(stream) < 5:
+        raise FormatError("palette")
+    dec = RangeDecoder(stream)
+    d1 = [_Pal4Counter() for _ in range(768)]
+    d2 = [_Pal4Counter() for _ in range(128)]
+    d3 = [_Pal4Counter() for _ in range(128)]
+    tree = [_Pal4Counter() for _ in range(256)]
+    rows: list[list[int]] = []
+    rgb = bytearray(width * height * 3)
+    hit = 0
+    for y in range(height):
+        rows.append([0] * width)
+        for x in range(width):
+            a, b, e, pattern = _pal_neighbours_m3(rows, width, x, y)
+            if d1[pattern * 2 + hit + 256 * _pal4_class(x, y)].code(None, dec) == 1:
+                idx = a
+                hit = 1
+            elif count == 2:
+                idx = 1 - a
+                hit = 0
+            else:
+                hit = 0
+                if b != a and d2[pattern].code(None, dec) == 1:
+                    idx = b
+                elif e != a and e != b and d3[pattern].code(None, dec) == 1:
+                    idx = e
+                else:
+                    node = 1
+                    for _ in range(8):
+                        node = node * 2 + tree[node].code(None, dec)
+                    idx = node - 256
+                    if idx >= count or idx in (a, b, e):
+                        raise FormatError("palette stream")
+            rows[y][x] = idx
+            pos = (y * width + x) * 3
+            rgb[pos : pos + 3] = palette[idx]
+        if dec.pos > len(dec.data) + 2:
+            raise FormatError("palette stream")
+        if y >= 3:
+            rows[y - 3] = []
+    if not dec.exhausted_exactly():
+        raise FormatError("palette stream")
+    return bytes(rgb)
+
+
 # ---------------------------------------------------------------- container
 
 def build_file(width: int, height: int, method: int, payload: bytes, reserved: int = 0) -> bytes:
@@ -889,9 +1130,9 @@ def encode_image(width: int, height: int, rgb: bytes) -> bytes:
     if strip_ok and len(cm_payload) < len(best_payload):
         best_method = METHOD_CM
         best_payload = cm_payload
-    pal_payload = pal_encode(width, height, rgb, method=METHOD_PAL2)
+    pal_payload = pal4_encode(width, height, rgb)
     if pal_payload is not None and len(pal_payload) < len(best_payload):
-        best_method = METHOD_PAL2
+        best_method = METHOD_PAL3
         best_payload = pal_payload
     return build_file(width, height, best_method, best_payload)
 
@@ -913,7 +1154,7 @@ def decode_image(blob: bytes) -> tuple[int, int, bytes]:
     if crc32(blob[:28]) != struct.unpack_from("<I", blob, 28)[0]:
         raise FormatError("header checksum")
     method, reserved = blob[16], blob[17]
-    if method > METHOD_PAL2:
+    if method > METHOD_PAL3 or (method == METHOD_PAL3 and version != 3):
         raise FormatError("method")
     if reserved != 0:
         raise FormatError("reserved byte")
@@ -932,6 +1173,8 @@ def decode_image(blob: bytes) -> tuple[int, int, bytes]:
         return width, height, bytes(payload)
     if method in (METHOD_PAL, METHOD_PAL2):
         return width, height, pal_decode(payload, width, height, method=method)
+    if method == METHOD_PAL3:
+        return width, height, pal4_decode(payload, width, height)
     return width, height, cm_decode(payload, width, height, version)
 
 

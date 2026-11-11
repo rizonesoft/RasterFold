@@ -65,3 +65,14 @@ $ python3 tests/fuzz_decode.py 5000 4
 ```
 
 Aggregate across `20,000` mutated files (`methods 0:1336, 1:13324, 2:2672, 3:2668`): `19,061` rejected with exit code `4`, `939` accepted with exit code `0` and identical pixels to `tests/rfi_ref.py`, `0` crashes, `0` hangs, and `0` oracle mismatches.
+
+## Method 4 addendum (`D01 T06 §8`, 2026-11-12)
+
+The encoder writes method 4 (compact palette) since `D01 T06 §8`, so the seed set grew from 15 to 17: `pal4_200col_64x48` (index 4) and `pal4_2col_64x48` (index 7) are the two palette images as `encode_image` writes them, and the two method 3 seeds are now built explicitly with `pal_encode(..., method=3)`, as the method 2 seeds always were. The table above records the 2026-10-26 campaign and is not rewritten.
+
+- **Method `4` (`PAL3`)**: palette-field and stream bit flips, index-stream truncation and extension (the stream has no size field, so both change `payload_size` only), corruption of the count byte or of one of the three 4-bit Rice parameters (to 0, 8, 9 or 15), one flipped bit inside the Rice-coded entries, the field's last bit (padding when the field is not byte-aligned), header `(width, height)` perturbation, and random index-stream byte replacements, with the checksums recomputed.
+
+```text
+$ python3 tests/fuzz_decode.py 2000 20261111
+2000 mutated files (methods 0:118, 1:1174, 2:236, 3:236, 4:236): 1893 rejected, 107 still valid, no crash, hang or mismatch
+```

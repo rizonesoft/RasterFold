@@ -51,9 +51,10 @@ seven context models mixed by a logistic mixer in version 3 and five in version 
 16-node context rows in version 3 and 32-node rows in version 2, and up to three
 warm-started horizontal strips per channel G, R-G, B-G in version 3 (`S = 1` for
 `h < 768` and `S = 3` for `h >= 768`, sections 4.13 and 5.8),
-running up to nine strip threads in parallel), and methods 2 and 3 ("palette" and
-"extended palette") are the palette index coders in `src/pal.c` for images with at
-most 256 distinct colours. The Python oracle `tests/rfi_ref.py` implements the same
+running up to nine strip threads in parallel), and methods 2, 3 and 4 ("palette",
+"extended palette" and "compact palette") are the palette index coders in `src/pal.c`
+for images with at most 256 distinct colours; the encoder writes method 4 (section
+4.14) and decodes all three. The Python oracle `tests/rfi_ref.py` implements the same
 format independently and stays byte-identical with the C encoder.
 
 `python tests/measure_final.py` (exit 0, PASS) on `measure/image.bmp`:
@@ -131,6 +132,14 @@ gate stays unstamped until a follow-up reaches its bar and the gate is
 re-measured. All three missed on 2026-11-09, and round 4 under the capped
 policy (`D99 T01 §8`), a recent-colour cache in the palette index stream
 (`D01 T06 §7`), missed on 2026-11-11 (`synth` `201,640` -> `201,732`).
+Round 5, the compact palette method (method 4, `D01 T06 §8`, section 4.14), was
+accepted and ported on 2026-11-12: `synth` total `200,774` against WebP's
+`201,248` (`0.9976`), geometric mean `0.8771`, worst image `syn_odd` at `1.2500`
+(`75` against `60`, inside the 32-byte allowance), `syn_checker` `94`, `syn_text`
+`1,187`, `syn_diagram` `1,189`, with `photo` (`30,634,873`) and `tp`
+(`6,598,954`) unchanged on every image, from
+`python3 scripts/windows.py research/ab.py size src/cm.c <set> -v -t1`. The gate
+itself (`D05 T01 §8`) re-measures and records the milestone.
 
 **Held-out validation** (`D00 T03 §2`, 2026-11-09, `python3 scripts/windows.py research/ab.py size src/cm.c heldout -v -t1`, per-image sizes grouped by the frozen manifest's kind in `research/heldout.json`): photographs (30) total `33,307,797` bytes, `0.9412` of JPEG XL e9 and `0.9345` of e7, geometric mean `0.9324` against e9, 30 of 30 below e9 and 30 of 30 at or below e7, worst `ho_p06` at `0.9822` of e9: Milestone 4's photograph targets (total ratios and win counts) and Milestone 7's photograph targets (win counts scaled proportionally to 30 images, the 1.0% worst cap applied directly) all hold on images the codec was never tuned on. Screenshots (10) total `3,326,125` bytes against lossless WebP's `711,772` (`4.6730`), geometric mean `4.6534` against WebP, and every screenshot is over Milestone 8's per-image allowance (worst `ho_s10`, `402,076` against `78,482`, `5.1232`): Milestone 8 does not generalise to browser screenshots of rendered documentation, many-colour text images that neither the palette methods nor the CM coder prices near WebP. Reported, not tuned against: the held-out set stays evaluation-only, and the screenshot miss joins the Milestone 8 gate's parked operator decision.
 
@@ -778,6 +787,31 @@ Measured with `python3 scripts/windows.py research/ab.py size src/cm.c synth -v`
 | `syn_odd` (65x63, 4095 colours) | 1 (CM) | 75 | 60 | 1.2500 | header 45 of 75 (60%), stream 30 (G 11, R-G 12, B-G 7; decision bytes 15.8: zero 8.2 (52.2%), sign 1.8 (11.5%), exp 3.8 (24.4%), mant 1.9 (11.9%), flush +14.2; per channel G dec 6.3, R-G dec 7.3, B-G dec 2.2; from `bench.exe -r1 -t1 --breakdown build/research/ppm/syn_odd.ppm`) | neither: fixed header overhead on a 4095-pixel image; the +15 bytes are inside the Milestone 8 gate's 32-byte allowance |
 
 Two findings route the next two sections. First, §3 (copy runs for palette images) targets the index streams of `syn_checker`, `syn_text`, and `syn_diagram`: with left/above repeats above 93%, a run or copy token is the leading hypothesis for those bytes (repeat counts are pixel counts, not decision costs, so the saving is unproven until §3's prototype measures it); `syn_checker`'s whole WebP file (82) is smaller than this index stream plus header (126), so no palette-only improvement can reach WebP there. Second, the raw palette is the single largest component on `syn_text` and `syn_diagram` (753 of 1447 and 1452 bytes), and the same pattern sits just under the bar on `syn_ui` (720 palette bytes of 1410, ratio 1.0475). Hypothesis: WebP's colour cache and colour-indexing coding avoid paying 3 raw bytes per colour. §2 (a colour-cache model in version 3) is the CM-side answer to that hypothesis and must be measured on these many-colour screen images, not only on the set average; if §2 and §3 both land and the palette bytes still dominate, coding the palette itself (delta or entropy coding of the triples) is the follow-up experiment, filed when those results are in. `syn_noise` (ratio 0.9998) and the remaining `synth` images are at or below the 1.1 bar and need no target; `syn_solid` (61 vs 56, 1.0893) still loses to WebP outright and passes only through the bar and the gate's 32-byte allowance.
+
+### 4.14 A compact palette method (method 4)
+
+**Owner:** `D01 T06 §8` (prototype, measurement and port, 2026-11-11 and 2026-11-12). Normative text: `spec/FOLD.md`, "Method 4, compact palette".
+
+Four rounds of the Milestone 8 follow-ups added a token to the palette index stream or re-coded the palette in first-seen order, and each made the files larger (section 3.2). This round attributed the bytes first. A context simulation of method 3 on `syn_checker` found 14 first-decision contexts, 13 of them deterministic and one (`pattern = 127`, `hit = 1`) holding 188,580 hits and 62 misses: the 31 cell edges on row 0 and the 31 cell changes in column 0, where the border rules substitute neighbours and every neighbour comes out equal. Those 62 surprises in a floor-priced context are the whole 94-byte stream. On the many-colour images the palette field was the cost: 753 raw bytes of `syn_text`'s 1,447.
+
+Method 4 changes four things and adds no token to any pixel:
+
+1. **The palette is stored sorted and Golomb-Rice coded.** Entries are in increasing order of `R << 16 | G << 8 | B`; each entry codes `R - Rprev`, `zigzag(G - R)` and `zigzag(B - G)` with three Rice parameters in `0..8` that the encoder chooses per image and transmits in 12 bits. Sorting costs nothing to signal (the encoder assigns the indices) and makes strict increase the distinctness check.
+2. **Two redundant fields are gone.** The stream size follows from `payload_size`, and `count - 1` fits one byte.
+3. **Decisions use a 16-bit probability with an exact split**, `bound = (range * p) >> 16` in 64 bits, so a certain decision costs `log2(65536 / 65535)` bits in place of `log2(4096 / 4095)`.
+4. **Row 0 and column 0 have their own first-decision counters** (`D1` grows from 256 to 768 counters, indexed by a border class), so the border's substituted neighbours no longer share counters with the interior.
+
+Measured with `python3 scripts/windows.py research/ab.py size <source> <set> -v -t1` on 2026-11-11, cumulative `synth` total and the six palette-coded images' total against the method 3 baseline of `201,640` and `4,560`:
+
+| Step | `synth` total | Six palette images | Notable |
+| ---- | ------------: | -----------------: | ------- |
+| sorted Rice palette alone | 200,912 | 3,832 | `syn_text` 1,447 to 1,203, `syn_diagram` 1,452 to 1,207, `syn_ui` 1,410 to 1,169 |
+| plus field removals and 16-bit probabilities (measured together) | 200,820 | 3,740 | `syn_solid` 61 to 42; `syn_checker` 139 to 140 |
+| plus border-class counters (the shipped grammar) | 200,774 | 3,694 | `syn_checker` 140 to 94 |
+
+Final per image: `syn_solid` 43, `syn_checker` 94, `syn_pixel` 47, `syn_ui` 1,134, `syn_text` 1,187, `syn_diagram` 1,189; WebP ratio `0.9976` total, `0.8771` geometric mean, worst `1.2500` (`syn_odd`, method 1, 15 bytes over). `photo` (`30,634,873`), `tp` (`6,598,954`) and `heldout` (`36,633,922`) are identical on every image: no image in those sets is palette-coded, so the held-out screenshots' gap to WebP (section 1) is untouched by this method. `syn_checker` rising by one byte at the second step shows finer probabilities alone do not help an image whose cost is surprises; the third step removes the surprises' shared context. Timing, alternating `-n5` on `syn_ui`, `syn_text`, `syn_diagram` and `syn_solid` with load average 1.4 to 2.2: decode `1.019` at `-t1` and `0.856` at `-t3`, encode `0.543` and `0.502` (the CM candidate is abandoned sooner against a smaller palette payload), against the gate's `1.20` envelope.
+
+It is a new method number, not a changed method 3: methods 2 and 3 decode exactly as before in both versions, method 4 is valid only in version 3, and a decoder without it refuses the file as an unsupported method. Prior art: lossless WebP delta-codes its colour-indexing palette and libwebp sorts it to shrink the deltas; JPEG-LS codes residuals with Golomb-Rice codes; border-specific contexts are standard in context-mixing image coders. Untested and left open: an adaptive Rice parameter per entry, dropping the index stream for a one-colour image (5 bytes), and the fixed 32-byte container header, which is 34% of `syn_checker`'s 94 bytes.
 
 ---
 

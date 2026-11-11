@@ -1551,39 +1551,39 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "Re-read 2026-11-11 for the desktop-shortcut decision: AGENTS.md gained one Working rules bullet recording that D00 T05 section 5 was removed unstamped and that the shortcut stays as an operator convenience; this document was searched for shortcut, .lnk and T05 and makes no statement about the shortcut or that section, so nothing in it contradicts the new bullet",
+      "evidence": "Re-read 2026-11-12 for method 4 (compact palette, D01 T06 section 8), which changed src/pal.c, src/rc.h, src/rf.h, src/fold.c, src/main.c, include/rasterfold.h and research/bench.c: this document's mentions of the codec surface are the five C entry points and the encode, decode and inspect usage example; it names no method number, palette layout or inspect field, the commands and their arguments are unchanged, and rf_info still reports the method as an integer, so no statement here changed",
       "sources": {
-        "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
-        "src/rf.h": "362589cf2d8cdf51ea77ef645fb115e9edcc7659825f86531df856ae76e9a0cb",
-        "src/main.c": "16af20b17c545f81df7e4a7dbaefb2fed23fa7271f862b15a9c3c000ddd26232",
+        "include/rasterfold.h": "228c6bf718c525b2311df99746d55e5861209f2ea0dec65e299b6ec0e6f126c7",
+        "src/rf.h": "429414fd9303e0bd47d0ee05fca037e043c68c7d79f0f9435174c4e723e03f83",
+        "src/main.c": "0efe61764e8650b32a59a181defce79a30921c8273da7251a434be123ca13040",
         "scripts/build.py": "488c7f8808e6bef7be095b5aa24fced856aab20ef6757548ac7f32e08021ad91",
         "scripts/package.py": "675a699eb05b8a26f0384dac80a2b03ad1f7ad8892dedd689ee363861efb5b83",
         "scripts/check-all.py": "b611b2629f3e0b6f605a4732b6a2798bb3f675c095d66dbe02bb6bcc093c4adc",
         "README.md": "060ed08e6a4ddc6fa13b2d965d5cc79facbbb0cb2557db552efef4c3334301fe",
-        "AGENTS.md": "407fb1eb1b79574a8b47ae992313c9de3cd5dc72fa56ac45c4c05a5da948ee02",
+        "AGENTS.md": "8a6e2a7cfcfb59130c1ab67ce1b621a8960b7dad415d91ff439d720f5dceba9c",
         ".conclave/reviewers.toml": "a95be5634bda979837450696840208f1271598d50c9b116471cd9467720e8358",
         "scripts/review-dispatch.py": "2654d267280865455202f58ff0309a6e01e6ab42b07734d8fa04943662f90632"
       },
       "review": "Author-attested: 2026-10-25 re-read README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "AGENTS.md": {
-      "evidence": "Re-read 2026-11-11 for the desktop-shortcut decision: this document's new Working rules bullet (the desktop shortcut is an operator convenience, not plan work) was checked against decision 7 in todo/99-manual/TODO-01-operator-setup.md section 9 and the removal note in todo/00-workspace/TODO-05-lsp-subagents-unattended.md: the operator's quoted words, the unstamped removal after six reconciliations, the files that stay and the reversal cost agree in all three, and commit 10e1e83 is the removal commit the bullet names",
+      "evidence": "Re-read 2026-11-12 for method 4 (compact palette, D01 T06 section 8), which changed src/pal.c, src/rc.h, src/rf.h, src/fold.c, src/main.c, include/rasterfold.h and research/bench.c: the repository table row for src/ now says pal.c holds methods 2, 3 and 4 and that the encoder writes method 4, matching src/pal.c and src/fold.c; the format-freeze decision (a new coding method takes a new method number) is what the change followed; no other statement in this document names a method or a palette field",
       "sources": {
-        "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
-        "src/rf.h": "362589cf2d8cdf51ea77ef645fb115e9edcc7659825f86531df856ae76e9a0cb",
+        "include/rasterfold.h": "228c6bf718c525b2311df99746d55e5861209f2ea0dec65e299b6ec0e6f126c7",
+        "src/rf.h": "429414fd9303e0bd47d0ee05fca037e043c68c7d79f0f9435174c4e723e03f83",
         "toolchain.json": "fd7b0b2424a2ffdb86095da76e4b975d604741fb271fd9b70e4c53efe9f5e3de",
         ".conclave/reviewers.toml": "a95be5634bda979837450696840208f1271598d50c9b116471cd9467720e8358",
         "scripts/review-dispatch.py": "2654d267280865455202f58ff0309a6e01e6ab42b07734d8fa04943662f90632",
-        "AGENTS.md": "407fb1eb1b79574a8b47ae992313c9de3cd5dc72fa56ac45c4c05a5da948ee02",
+        "AGENTS.md": "8a6e2a7cfcfb59130c1ab67ce1b621a8960b7dad415d91ff439d720f5dceba9c",
         ".codex/hooks.json": "c67e7762d0970280c653a74601012d01971d05f677182ae70e4eda0aa783c150",
         "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",
         "scripts/campaign_guard.py": "564720b1ae8c3999bca60b1a00814ef60ff4c51f636a42e4953f9cbbadfd54d3"
       }
     },
     "GEMINI.md": {
-      "evidence": "Re-read 2026-11-11 for the desktop-shortcut decision: AGENTS.md gained one Working rules bullet recording that D00 T05 section 5 was removed unstamped and that the shortcut stays as an operator convenience; this document was searched for shortcut, .lnk and T05 and makes no statement about the shortcut or that section, so nothing in it contradicts the new bullet",
+      "evidence": "Re-read 2026-11-12: AGENTS.md changed only in its src/ table row (pal.c now holds methods 2, 3 and 4); this document does not describe the codec sources or coding methods, so nothing in it contradicts the new row",
       "sources": {
-        "AGENTS.md": "407fb1eb1b79574a8b47ae992313c9de3cd5dc72fa56ac45c4c05a5da948ee02",
+        "AGENTS.md": "8a6e2a7cfcfb59130c1ab67ce1b621a8960b7dad415d91ff439d720f5dceba9c",
         ".conclave/reviewers.toml": "a95be5634bda979837450696840208f1271598d50c9b116471cd9467720e8358",
         "scripts/review-dispatch.py": "2654d267280865455202f58ff0309a6e01e6ab42b07734d8fa04943662f90632",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
@@ -1601,39 +1601,39 @@
       "review": "Author-attested: 2026-10-25 re-read CONTRIBUTING.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/building.md": {
-      "evidence": "Re-read 2026-11-11 for the removal of Android from the repository: scripts/build.py and scripts/package.py define only windows-x64 and linux-x64, toolchain.json has no NDK pin or android block, scripts/check-all.py --all-targets adds the Windows target only, and AGENTS.md, README.md and docs/_config.yml name Windows and Linux; this document's target lists, build commands, toolchain and platform statements were checked against those sources and it makes no Android statement",
+      "evidence": "Re-read 2026-11-12 for method 4 (compact palette, D01 T06 section 8), which changed src/pal.c, src/rc.h, src/rf.h, src/fold.c, src/main.c, include/rasterfold.h and research/bench.c: searched for method, palette and inspect: the only hit is the unrelated sentence on unsupported filesystems for output publication; build targets, flags and outputs are unchanged by the method 4 port",
       "sources": {
         "toolchain.json": "fd7b0b2424a2ffdb86095da76e4b975d604741fb271fd9b70e4c53efe9f5e3de",
         "scripts/build.py": "488c7f8808e6bef7be095b5aa24fced856aab20ef6757548ac7f32e08021ad91",
         "scripts/package.py": "675a699eb05b8a26f0384dac80a2b03ad1f7ad8892dedd689ee363861efb5b83",
         "scripts/check-all.py": "b611b2629f3e0b6f605a4732b6a2798bb3f675c095d66dbe02bb6bcc093c4adc",
-        "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
+        "include/rasterfold.h": "228c6bf718c525b2311df99746d55e5861209f2ea0dec65e299b6ec0e6f126c7",
         "docs/building.md": "25e08bde34dfc2c9b5258d8b478f5c80456a13f8c6bc30714f9d43d3797bc948"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/building.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/library.md": {
-      "evidence": "Re-read 2026-11-11 for the removal of Android from the repository: scripts/build.py and scripts/package.py define only windows-x64 and linux-x64, toolchain.json has no NDK pin or android block, scripts/check-all.py --all-targets adds the Windows target only, and AGENTS.md, README.md and docs/_config.yml name Windows and Linux; this document's target lists, build commands, toolchain and platform statements were checked against those sources and it makes no Android statement",
+      "evidence": "Re-read 2026-11-12 for method 4 (compact palette, D01 T06 section 8), which changed src/pal.c, src/rc.h, src/rf.h, src/fold.c, src/main.c, include/rasterfold.h and research/bench.c: the five-function table and rf_inspect's description (validated metadata after decoding the complete file) still hold: rf_inspect decodes a method 4 file through the same rf_decode path, tested by tests/test_api.py test_decode_and_inspect with KAT_PAL4",
       "sources": {
-        "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
+        "include/rasterfold.h": "228c6bf718c525b2311df99746d55e5861209f2ea0dec65e299b6ec0e6f126c7",
         "src/api.c": "774c4e0a2a22f5a01e174e541cd1e725da05019ece20927345938cbe10fe0f02",
         "src/rasterfold.def": "8beeb2fc7b0e5e95bbe68623dc90732ab5fe6c97abc21026406801773f2ea783",
         "docs/library.md": "2d8b00c24efc829e32adbb7e4b6a6ef4028f266a077cfe4fca85e5717352289c"
       }
     },
     "docs/index.md": {
-      "evidence": "Re-read 2026-11-11 after the independent review of the Android removal: the planned converter is described as a desktop application for Windows and Linux, the vision carries no Android interop default, and the plan-table rule states that a malformed phase row fails plan --check and plan --sync; this document's statements about targets, the converter and the plan table were checked against scripts/build.py, scripts/todo-graph.py and docs/vision.md",
+      "evidence": "Re-read 2026-11-12 for method 4 (compact palette, D01 T06 section 8), which changed src/pal.c, src/rc.h, src/rf.h, src/fold.c, src/main.c, include/rasterfold.h and research/bench.c: the page lists the CLI commands encode, decode and inspect and links the format page; it names no method number, and the generated format page (docs/format.md) carries the method 4 section",
       "sources": {
-        "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
-        "src/rf.h": "362589cf2d8cdf51ea77ef645fb115e9edcc7659825f86531df856ae76e9a0cb",
-        "src/main.c": "16af20b17c545f81df7e4a7dbaefb2fed23fa7271f862b15a9c3c000ddd26232",
+        "include/rasterfold.h": "228c6bf718c525b2311df99746d55e5861209f2ea0dec65e299b6ec0e6f126c7",
+        "src/rf.h": "429414fd9303e0bd47d0ee05fca037e043c68c7d79f0f9435174c4e723e03f83",
+        "src/main.c": "0efe61764e8650b32a59a181defce79a30921c8273da7251a434be123ca13040",
         "docs/site-content.json": "b96463cde4f9b48008f95150e1e4e90695cd920d17a106a92bf513e71e008400",
         "docs/index.md": "85bc66c07b98aed2d2ad09f98dee6d628b3d6c52cc1b87d55dd2970cb1df2852"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/index.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/getting-started.md": {
-      "evidence": "Re-read 2026-11-11 for the removal of Android from the repository: scripts/build.py and scripts/package.py define only windows-x64 and linux-x64, toolchain.json has no NDK pin or android block, scripts/check-all.py --all-targets adds the Windows target only, and AGENTS.md, README.md and docs/_config.yml name Windows and Linux; this document's target lists, build commands, toolchain and platform statements were checked against those sources and it makes no Android statement",
+      "evidence": "Re-read 2026-11-12 for method 4 (compact palette, D01 T06 section 8), which changed src/pal.c, src/rc.h, src/rf.h, src/fold.c, src/main.c, include/rasterfold.h and research/bench.c: the encode, inspect and decode walkthrough uses commands and arguments the port did not change and names no method number or palette field",
       "sources": {
         "toolchain.json": "fd7b0b2424a2ffdb86095da76e4b975d604741fb271fd9b70e4c53efe9f5e3de",
         "tools/provision.py": "dc5fb84c125ea3735ca425e91d084d04297d772cee4e3609417aa11c66ad0c3b",
@@ -1641,17 +1641,17 @@
         "scripts/build.py": "488c7f8808e6bef7be095b5aa24fced856aab20ef6757548ac7f32e08021ad91",
         "scripts/check-all.py": "b611b2629f3e0b6f605a4732b6a2798bb3f675c095d66dbe02bb6bcc093c4adc",
         "scripts/check-all.ps1": "7006b1871b52689461497fa676b3cb6472f0e436c9c5e240deb9da069321a528",
-        "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
-        "src/main.c": "16af20b17c545f81df7e4a7dbaefb2fed23fa7271f862b15a9c3c000ddd26232",
+        "include/rasterfold.h": "228c6bf718c525b2311df99746d55e5861209f2ea0dec65e299b6ec0e6f126c7",
+        "src/main.c": "0efe61764e8650b32a59a181defce79a30921c8273da7251a434be123ca13040",
         "docs/getting-started.md": "a61af035a1c9758b7feab276f8180b3cb670ebdd2c3b0dbaca05edaf09481c50"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/getting-started.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/benchmarks.md": {
-      "evidence": "Re-read 2026-11-10 for D07 T01 s4: --overwrite flag and help text updated; no other claim in this document changed.",
+      "evidence": "Re-read 2026-11-12 for method 4 (compact palette, D01 T06 section 8): this document quotes dated measurement files through drift facts and names no coding method; measure/verdict.json was regenerated by tests/measure_final.py on the ported codec (PASS, the reference image is CM-coded and its size is unchanged at 1400388 bytes) and now has LF line endings; the synthetic-set figures from benchmarks/results.csv of 2026-11-07 predate method 4 and are refreshed from the committed codec in this section's next commit, which re-renews this receipt",
       "sources": {
-        "src/rf.h": "362589cf2d8cdf51ea77ef645fb115e9edcc7659825f86531df856ae76e9a0cb",
-        "measure/verdict.json": "9e8869c965a6bee3420ae27e095c436f7017a2a5615d8d5f0f2e843ae23f79d5",
+        "src/rf.h": "429414fd9303e0bd47d0ee05fca037e043c68c7d79f0f9435174c4e723e03f83",
+        "measure/verdict.json": "629fc31c6c492b1ab024715ce5b338091b821bb8d56fad6be5291d33f001fbfc",
         "benchmarks/results.csv": "3e8c24e975a26dc122650bec99e4852003777e2053762cb6008f2f51e4a83182",
         "benchmarks/corpus.csv": "313210c9c98f2e63d115868b8d51ad5ce688bd88f900305ea850b7f28f5e4a02",
         "docs/benchmarks.md": "362fd979812a684977670c2356d86ac72da44b8814f36697aa8688b3e0bb9f3d"
@@ -1678,9 +1678,9 @@
       }
     },
     "docs/agent-skills-and-rules-structure.md": {
-      "evidence": "Re-read 2026-11-11 for the desktop-shortcut decision: AGENTS.md gained one Working rules bullet recording that D00 T05 section 5 was removed unstamped and that the shortcut stays as an operator convenience; this document was searched for shortcut, .lnk and T05 and makes no statement about the shortcut or that section, so nothing in it contradicts the new bullet",
+      "evidence": "Re-read 2026-11-12: AGENTS.md changed only in its src/ table row (pal.c now holds methods 2, 3 and 4); this document describes skills, rules and hooks layout and names no codec source or coding method, so it is unaffected",
       "sources": {
-        "AGENTS.md": "407fb1eb1b79574a8b47ae992313c9de3cd5dc72fa56ac45c4c05a5da948ee02",
+        "AGENTS.md": "8a6e2a7cfcfb59130c1ab67ce1b621a8960b7dad415d91ff439d720f5dceba9c",
         "GEMINI.md": "928b6666dd34842df37b698df61792cf416e6885f11645f400d5c8562c537677",
         ".conclave/reviewers.toml": "a95be5634bda979837450696840208f1271598d50c9b116471cd9467720e8358",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
@@ -1692,14 +1692,14 @@
       }
     },
     "spec/FOLD.md": {
-      "evidence": "Re-read 2026-11-10 for D07 T01 s4: --overwrite flag and help text updated; no other claim in this document changed.",
+      "evidence": "Re-read 2026-11-12 for method 4 (compact palette, D01 T06 section 8), which changed src/pal.c, src/rc.h, src/rf.h, src/fold.c, src/main.c, include/rasterfold.h and research/bench.c: this document gained the Method 4 section, the method 4 line in the file layout, its rejection rules and the encoder policy; each statement was checked against src/pal.c (pal_field_read, pal_class, the 16-bit split in src/rc.h), src/fold.c (method 4 refused outside version 3) and the independent oracle written from this text, which is byte-identical with the C on the palette-method4 fixtures",
       "sources": {
-        "src/rf.h": "362589cf2d8cdf51ea77ef645fb115e9edcc7659825f86531df856ae76e9a0cb",
-        "src/fold.c": "7cecdf9622aa6d98be195cf43b1e77de7f9676f2a7c1f1129cc08dbe7497e8aa",
+        "src/rf.h": "429414fd9303e0bd47d0ee05fca037e043c68c7d79f0f9435174c4e723e03f83",
+        "src/fold.c": "a078bb3e78d8837bbd079f9558face4df6e11ad8f3a7016653bc3a928e235e74",
         "src/cm.c": "54a7f232e08c392b99fb5b23f3584e1e1334abb81baa790d2ef3181622e5bdda",
         "src/crc32.c": "c6e682115185fcdcbfa0551823fc590f60c9c7b978a30009163288e664b3faec",
-        "tests/rfi_ref.py": "694d39a27a703c033ef057aee4a3bf3352df5cf019f29e67f37d725d44c9b5fa",
-        "spec/FOLD.md": "10351c4d32f71d8228a9313f04a3050cc789846d164548fcb3a940488c0e1e26"
+        "tests/rfi_ref.py": "ad6965ad0ce2cfa6415fc4275da1ca0cd463b1dd895b8e642f0af72a4e2d2f89",
+        "spec/FOLD.md": "ad53e380bb41237902021680a4c79d8fcd49308a060b28231b7025ddaef3c144"
       },
       "reviewed_at": "2026-10-25",
       "reviewer": "Author-attested: 2026-10-25 re-read spec/FOLD.md against src/cm.c after D04 T01 section 1 (early row-boundary abort on exhausted CM stream; bitstream and format semantics unchanged)",
@@ -1707,13 +1707,13 @@
       "reviewed": "Author-attested: 2026-10-25 re-read spec/FOLD.md against src/cm.c and src/simd.h after D02 T01 section 4 (byte-identical cm.c hot-loop vectorization and row-context specialization; format version 2 bitstream unchanged)"
     },
     "research/README.md": {
-      "evidence": "2026-11-09: Verified research/README.md against research/corpus.py for D00 T03 section 1 (download deadline enforced by terminating a subprocess transfer in held-out downloads; frozen screenshot assets in research/heldout-assets/ with pinned Chrome for Testing provisioning for authoring).",
+      "evidence": "Re-read 2026-11-12 for method 4 (compact palette, D01 T06 section 8), which changed src/pal.c, src/rc.h, src/rf.h, src/fold.c, src/main.c, include/rasterfold.h and research/bench.c: research/bench.c changed one expression (the PAL status label now covers every palette method number); this document describes bench as timing rf_encode and rf_decode of a cm.c or pal.c variant and does not describe the status labels, so its text still holds; ab.py's pal.c variant path was used for this section's measurements",
       "sources": {
         "research/corpus.py": "c8d419844a7410e7399a4f69cef013f876dfcd3272e7d996e1c2d3c9f3255619",
         "research/ab.py": "228a8a44610a803f9ba54ef1d3e5a91f5b46260bc878167a3e7fb32e1a7e7a90",
         "research/vsjxl.py": "bb0a1fbdcb0a84edcee8a988c1de100b168a7949a8c7b59378775af5d42a5563",
         "research/prof.py": "7fa28a84aab62f0eb79fd579bcc01b6e2e55cc200bdaa96c0218b2ad4aa05605",
-        "research/bench.c": "0054db75d713113580bba46629c0577895f0297c17afd3051004115d74a7a513",
+        "research/bench.c": "af60d785520bd818e4a1b97c97c85143813edfc546c69d7da20704e508ffa9a0",
         "research/README.md": "a0f39c4bebe3d4cd54bc0cce1eed2bb2df708ef413d91f20c1cd2a701df9b36f",
         "research/abpool.py": "05f5d4b3b31e1c5144eda013aceb661be9f591665ac1e046fc480bd595d5cb55"
       },
@@ -1729,10 +1729,10 @@
       }
     },
     "docs/examples.md": {
-      "evidence": "Re-read 2026-11-11 for the removal of Android from the repository: scripts/build.py and scripts/package.py define only windows-x64 and linux-x64, toolchain.json has no NDK pin or android block, scripts/check-all.py --all-targets adds the Windows target only, and AGENTS.md, README.md and docs/_config.yml name Windows and Linux; this document's target lists, build commands, toolchain and platform statements were checked against those sources and it makes no Android statement",
+      "evidence": "Re-read 2026-11-12 for method 4 (compact palette, D01 T06 section 8), which changed src/pal.c, src/rc.h, src/rf.h, src/fold.c, src/main.c, include/rasterfold.h and research/bench.c: the CLI examples (encode, inspect --time, decode) and the rf_inspect example that reads info.method are unchanged in syntax and meaning; info.method can now be 4, which the example does not enumerate, and include/rasterfold.h documents the new value",
       "sources": {
-        "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
-        "src/main.c": "16af20b17c545f81df7e4a7dbaefb2fed23fa7271f862b15a9c3c000ddd26232",
+        "include/rasterfold.h": "228c6bf718c525b2311df99746d55e5861209f2ea0dec65e299b6ec0e6f126c7",
+        "src/main.c": "0efe61764e8650b32a59a181defce79a30921c8273da7251a434be123ca13040",
         "examples/encode.c": "546d3a2b5932008bcf46dce5e1b0f5ef04b3b8d4405cbb5b66ad909a7a844e66",
         "examples/decode.c": "2983d63583c0424f558b67224a2438e8eea495505eef61f5477bf2ff81f246b8",
         "examples/ppm.h": "9683267ff2b024b14570548e94cfbc0acced5cd7ecd8eba2dab5c69b6677abf6",
@@ -1741,12 +1741,12 @@
       "review": "Author-attested: 2026-10-25 re-read docs/examples.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/limitations.md": {
-      "evidence": "Re-read 2026-11-11 after the independent review of the Android removal: the planned converter is described as a desktop application for Windows and Linux, the vision carries no Android interop default, and the plan-table rule states that a malformed phase row fails plan --check and plan --sync; this document's statements about targets, the converter and the plan table were checked against scripts/build.py, scripts/todo-graph.py and docs/vision.md",
+      "evidence": "Re-read 2026-11-12 for method 4 (compact palette, D01 T06 section 8), which changed src/pal.c, src/rc.h, src/rf.h, src/fold.c, src/main.c, include/rasterfold.h and research/bench.c: searched for method and palette: the only palette hit is the BMP-with-palette refusal, an input-format limit the port did not touch; header size 32, pixel format and size limits are unchanged, and method 4 adds no new limitation (still at most 256 colours)",
       "sources": {
-        "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
-        "src/rf.h": "362589cf2d8cdf51ea77ef645fb115e9edcc7659825f86531df856ae76e9a0cb",
-        "src/main.c": "16af20b17c545f81df7e4a7dbaefb2fed23fa7271f862b15a9c3c000ddd26232",
-        "src/fold.c": "7cecdf9622aa6d98be195cf43b1e77de7f9676f2a7c1f1129cc08dbe7497e8aa",
+        "include/rasterfold.h": "228c6bf718c525b2311df99746d55e5861209f2ea0dec65e299b6ec0e6f126c7",
+        "src/rf.h": "429414fd9303e0bd47d0ee05fca037e043c68c7d79f0f9435174c4e723e03f83",
+        "src/main.c": "0efe61764e8650b32a59a181defce79a30921c8273da7251a434be123ca13040",
+        "src/fold.c": "a078bb3e78d8837bbd079f9558face4df6e11ad8f3a7016653bc3a928e235e74",
         "src/bmp.c": "50278e51120542ec686aee00385eba666239070533035e5d04e7d659b118317c",
         "src/api.c": "774c4e0a2a22f5a01e174e541cd1e725da05019ece20927345938cbe10fe0f02",
         "src/sys_posix.c": "dd65833094db53eedc06d917f0d3b6fefcb402414e20878503cf36341601f9fd",
@@ -1755,18 +1755,18 @@
       "review": "Author-attested: 2026-10-25 re-read docs/limitations.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/troubleshooting.md": {
-      "evidence": "Re-read 2026-11-11 for the removal of Android from the repository: scripts/build.py and scripts/package.py define only windows-x64 and linux-x64, toolchain.json has no NDK pin or android block, scripts/check-all.py --all-targets adds the Windows target only, and AGENTS.md, README.md and docs/_config.yml name Windows and Linux; this document's target lists, build commands, toolchain and platform statements were checked against those sources and it makes no Android statement",
+      "evidence": "Re-read 2026-11-12 for method 4 (compact palette, D01 T06 section 8), which changed src/pal.c, src/rc.h, src/rf.h, src/fold.c, src/main.c, include/rasterfold.h and research/bench.c: the unsupported-method diagnostic now lists method 4 compact palette as accepted in version 3 files only, matching parse_fold in src/fold.c; the malformed list already names invalid fold: palette and invalid fold: palette stream, the two messages method 4's refusals use (asserted in tests/test_correctness.py palette-method4); duplicate palette colour remains for methods 2 and 3",
       "sources": {
-        "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
-        "src/rf.h": "362589cf2d8cdf51ea77ef645fb115e9edcc7659825f86531df856ae76e9a0cb",
-        "src/main.c": "16af20b17c545f81df7e4a7dbaefb2fed23fa7271f862b15a9c3c000ddd26232",
-        "src/fold.c": "7cecdf9622aa6d98be195cf43b1e77de7f9676f2a7c1f1129cc08dbe7497e8aa",
+        "include/rasterfold.h": "228c6bf718c525b2311df99746d55e5861209f2ea0dec65e299b6ec0e6f126c7",
+        "src/rf.h": "429414fd9303e0bd47d0ee05fca037e043c68c7d79f0f9435174c4e723e03f83",
+        "src/main.c": "0efe61764e8650b32a59a181defce79a30921c8273da7251a434be123ca13040",
+        "src/fold.c": "a078bb3e78d8837bbd079f9558face4df6e11ad8f3a7016653bc3a928e235e74",
         "src/bmp.c": "50278e51120542ec686aee00385eba666239070533035e5d04e7d659b118317c",
         "src/api.c": "774c4e0a2a22f5a01e174e541cd1e725da05019ece20927345938cbe10fe0f02",
         "src/sys_posix.c": "dd65833094db53eedc06d917f0d3b6fefcb402414e20878503cf36341601f9fd",
         "tools/provision.py": "dc5fb84c125ea3735ca425e91d084d04297d772cee4e3609417aa11c66ad0c3b",
         "tools/provision.ps1": "7b7ce12f1aede008be98478d7b95fbf6601737356baa62277c0d9217ff3e5e40",
-        "docs/troubleshooting.md": "4af65035b3b7f1e914e7dee9b029871f5bf0ac11ef28b90fb94b9211ae536de5"
+        "docs/troubleshooting.md": "2e7a17dc1826e9713ca79cd677e4f0c48e6d75a32b89068bc355b22582def314"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/troubleshooting.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },

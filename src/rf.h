@@ -24,6 +24,7 @@ typedef char rf_path_char;
 #define RF_METHOD_CM 1u
 #define RF_METHOD_PAL 2u
 #define RF_METHOD_PAL2 3u
+#define RF_METHOD_PAL3 4u      /* compact palette; version 3 files only */
 
 #define RF_INLINE static inline __attribute__((always_inline))
 #define RF_NOINLINE __attribute__((noinline))

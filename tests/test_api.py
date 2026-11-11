@@ -15,7 +15,7 @@ import unittest
 import zlib
 
 import rfi_ref
-from test_correctness import KAT_FOLD, KAT_FOLD3, KAT_RGB, KAT_W, KAT_H, KAT_PAL, KAT_PAL2, KAT_PAL2_3, KAT_PAL_RGB, KAT_PAL_W, KAT_PAL_H
+from test_correctness import KAT_FOLD, KAT_FOLD3, KAT_RGB, KAT_W, KAT_H, KAT_PAL, KAT_PAL2, KAT_PAL2_3, KAT_PAL4, KAT_PAL_RGB, KAT_PAL_W, KAT_PAL_H
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = 'windows-x64' if os.name == 'nt' else 'linux-x64'
@@ -83,7 +83,9 @@ EXPECTED_FIXTURES = frozenset({
     'odd1', 'odd2', 'odd3', 'odd7', 'padding', 'pal_256',
     'pal_257_fallback', 'pal_bound_w1_c2', 'pal_bound_w1_c4',
     'pal_bound_w2_c2', 'pal_bound_w2_c4', 'pal_clamp', 'pal_cm_ch_overflow',
-    'pal_d3_candidates', 'pal_ones_run', 'photo', 'px1', 'reserved', 'rgb',
+    'pal_d3_candidates', 'pal_ones_run', 'pal4_256', 'pal4_coverage',
+    'pal4_one_colour', 'pal4_one_high', 'pal4_one_wide', 'pal4_two_colours',
+    'photo', 'px1', 'reserved', 'rgb',
     'row64', 'sizeimage0', 'solid', 'stripes', 'text', 'topdown', 'ui',
     'white',
 })
@@ -176,8 +178,8 @@ class Api(unittest.TestCase):
                     self.assertEqual(C.string_at(out.data, out.size), mrgb)
                 finally:
                     LIBRARY.rf_free(out.data)
-        self.assertEqual(encode(KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), KAT_PAL2_3)
-        for m_val, pal_blob in ((2, KAT_PAL), (3, KAT_PAL2), (3, KAT_PAL2_3)):
+        self.assertEqual(encode(KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), KAT_PAL4)
+        for m_val, pal_blob in ((2, KAT_PAL), (3, KAT_PAL2), (3, KAT_PAL2_3), (4, KAT_PAL4)):
             self.assertEqual(LIBRARY.rf_decode_image(pal_blob, len(pal_blob), None, C.byref(out), C.byref(err)), 0)
             try:
                 self.assertEqual((out.width, out.height, out.stride, out.layout, out.size), (16, 8, 48, 1, 384))
@@ -354,7 +356,9 @@ class Api(unittest.TestCase):
         pal_cols = [bytes(((i * 29) & 255, (i * 61 + 11) & 255, (i * 103 + 7) & 255)) for i in range(16)]
         pal_long_rgb = b''.join(pal_cols[((x * 3 + y * 5 + ((x ^ y) & 3)) & 15)] for y in range(pal_long_h) for x in range(pal_long_w))
         pal_long_fold = encode(pal_long_w, pal_long_h, pal_long_rgb, threads=1)
-        self.assertEqual(pal_long_fold[16], 3)
+        self.assertEqual(pal_long_fold[16], 4)
+        pal_long_m3 = rfi_ref.build_file(pal_long_w, pal_long_h, rfi_ref.METHOD_PAL2,
+                                         rfi_ref.pal_encode(pal_long_w, pal_long_h, pal_long_rgb, method=rfi_ref.METHOD_PAL2))
 
         for label, blob, exp_w, exp_h, exp_rgb in [
             ('kat_short_tail', KAT_FOLD, KAT_W, KAT_H, KAT_RGB),
@@ -362,7 +366,9 @@ class Api(unittest.TestCase):
             ('raw_method0', raw_fold, raw_w, raw_h, raw_rgb),
             ('pal_m2_short_tail', KAT_PAL, KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB),
             ('pal_m3_short_tail', KAT_PAL2, KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB),
+            ('pal_m4_short_tail', KAT_PAL4, KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB),
             ('pal_long_tail', pal_long_fold, pal_long_w, pal_long_h, pal_long_rgb),
+            ('pal_m3_long_tail', pal_long_m3, pal_long_w, pal_long_h, pal_long_rgb),
         ]:
             for threads in (1, 3):
                 with self.subTest(case=label, threads=threads), guarded_slice(blob) as (ptr, size):

@@ -12,6 +12,7 @@ Work toward RasterFold 1.0.0 (format version 3, C API 1.0):
 - The CLI gained `verify`, `inspect --json`, `help` (including per-command help), and extension-based format dispatch.
 - The site gained a generated API Reference page rendered from `include/rasterfold.h`.
 - Android was removed from this repository: the `android-arm64` and `android-x64` build targets, the NDK pin, and the planned Android converter work are gone. RasterFold targets Windows x64 and Linux x64; Android can return as a fork.
+- Images with at most 256 colours are written with method 4, a compact palette method new in format version 3: the palette is stored sorted and Golomb-Rice coded, decisions use 16-bit probabilities, and the image's top row and left column have their own counters. On the generated set the files total 200,774 bytes against lossless WebP's 201,248 (201,640 before). Files written with methods 2 and 3 still decode.
 - The C API surface is frozen at five exported functions with thread-local errors, and both a byte-identity check against the independent oracle and a multithreaded byte-identity check guard it.
 
 ## Pre-1.0 development (since the version 2 codec)

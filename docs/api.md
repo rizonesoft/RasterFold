@@ -160,7 +160,7 @@ typedef struct { uint32_t width, height, method; uint32_t payload_size, payload_
 Validated format metadata filled by rf_inspect.
 width, height: image dimensions in pixels.
 method: the file's coding method (0 raw, 1 CM, 2 palette, 3 extended
-palette), as stored in the header.
+palette, 4 compact palette), as stored in the header.
 payload_size: bytes of payload after the 32-byte header.
 payload_crc, header_crc: the CRC-32 values stored in the file, verified
 against the bytes before this structure is filled.

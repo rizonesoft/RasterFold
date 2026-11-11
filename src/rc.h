@@ -1,4 +1,4 @@
-/* Binary range coder shared by method 1 ("CM") and method 2 ("palette").
+/* Binary range coder shared by method 1 ("CM") and the palette methods (2, 3, 4).
    spec/FOLD.md ("Range coder") is the normative description. */
 #ifndef RF_RC_H
 #define RF_RC_H
@@ -33,6 +33,15 @@ static RF_NOINLINE void renc_shift(renc *e) {
 }
 RF_INLINE void renc_bit(renc *e, int bit, uint32_t p1) {
     uint32_t bound = (e->range >> 12) * p1;
+    if (bit) e->range = bound;
+    else { e->low += bound; e->range -= bound; }
+    while (e->range < (1u << 24)) { e->range <<= 8; renc_shift(e); }
+}
+/* Method 4 codes with a 16-bit probability and an exact 64-bit split: with
+   range >= 2^24 and 1 <= p1 <= 65535 both parts stay >= 2^8, so at most two
+   bytes restore range >= 2^24, as for the 12-bit split above. */
+RF_INLINE void renc_bit16(renc *e, int bit, uint32_t p1) {
+    uint32_t bound = (uint32_t)(((uint64_t)e->range * p1) >> 16);
     if (bit) e->range = bound;
     else { e->low += bound; e->range -= bound; }
     while (e->range < (1u << 24)) { e->range <<= 8; renc_shift(e); }
@@ -74,6 +83,20 @@ static RF_NOINLINE void rdec_tail(rdec *d) {
 /* After any decision range >= 2^12, so at most two bytes restore range >= 2^24. */
 RF_INLINE int rdec_bit(rdec *d, uint32_t p1) {
     uint32_t bound = (d->range >> 12) * p1;
+    int bit = d->code < bound;
+    uint32_t r0 = d->range - bound, c0 = d->code - bound;
+    uint32_t range = bit ? bound : r0;
+    uint32_t code = bit ? d->code : c0;
+    uint32_t n = (range < (1u << 24)) + (range < (1u << 16));
+    uint32_t next = ((uint32_t)d->in[0] << 8) | d->in[1];
+    uint64_t c64 = ((uint64_t)code << 16 | next) >> (16 - 8 * n);
+    d->code = (uint32_t)c64;
+    d->range = range << (8 * n);
+    d->in += n;
+    return bit;
+}
+RF_INLINE int rdec_bit16(rdec *d, uint32_t p1) {
+    uint32_t bound = (uint32_t)(((uint64_t)d->range * p1) >> 16);
     int bit = d->code < bound;
     uint32_t r0 = d->range - bound, c0 = d->code - bound;
     uint32_t range = bit ? bound : r0;

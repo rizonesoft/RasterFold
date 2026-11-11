@@ -71,7 +71,7 @@ def seed_records() -> list[tuple[str, int, int, int, bytes]]:
         try:
             raw = json.loads(cache_path.read_text(encoding="utf-8"))
             records = [(r["name"], int(r["w"]), int(r["h"]), int(r["method"]), base64.b64decode(r["b64"])) for r in raw]
-            if len(records) == 15:
+            if len(records) == 17:
                 return records
         except (KeyError, ValueError, json.JSONDecodeError):
             pass
@@ -88,8 +88,13 @@ def seed_records() -> list[tuple[str, int, int, int, bytes]]:
         for y in range(pal_h)
         for x in range(pal_w)
     )
-    pal3_2col = rf.encode_image(pal_w, pal_h, chk_rgb)
-    assert pal3_2col[16] == rf.METHOD_PAL2
+    # The encoder writes method 4; method 3 (like method 2) is decode-only and built explicitly.
+    pal4_2col = rf.encode_image(pal_w, pal_h, chk_rgb)
+    assert pal4_2col[16] == rf.METHOD_PAL3
+    assert pal4_2col[32] + 1 == 2
+    pal3_2col_payload = rf.pal_encode(pal_w, pal_h, chk_rgb, method=rf.METHOD_PAL2)
+    assert pal3_2col_payload is not None
+    pal3_2col = rf.build_file(pal_w, pal_h, rf.METHOD_PAL2, pal3_2col_payload)
     assert struct.unpack_from("<H", pal3_2col, 32)[0] + 1 == 2
     pal2_2col_payload = rf.pal_encode(pal_w, pal_h, chk_rgb, method=rf.METHOD_PAL)
     assert pal2_2col_payload is not None
@@ -103,8 +108,12 @@ def seed_records() -> list[tuple[str, int, int, int, bytes]]:
         for y in range(pal_h)
         for x in range(pal_w)
     )
-    pal3_200col = rf.encode_image(pal_w, pal_h, pal200_rgb)
-    assert pal3_200col[16] == rf.METHOD_PAL2
+    pal4_200col = rf.encode_image(pal_w, pal_h, pal200_rgb)
+    assert pal4_200col[16] == rf.METHOD_PAL3
+    assert pal4_200col[32] + 1 == 200
+    pal3_200col_payload = rf.pal_encode(pal_w, pal_h, pal200_rgb, method=rf.METHOD_PAL2)
+    assert pal3_200col_payload is not None
+    pal3_200col = rf.build_file(pal_w, pal_h, rf.METHOD_PAL2, pal3_200col_payload)
     assert struct.unpack_from("<H", pal3_200col, 32)[0] + 1 == 200
     pal2_200col_payload = rf.pal_encode(pal_w, pal_h, pal200_rgb, method=rf.METHOD_PAL)
     assert pal2_200col_payload is not None
@@ -128,18 +137,20 @@ def seed_records() -> list[tuple[str, int, int, int, bytes]]:
         stem = name.removesuffix(".png")
         photo_folds.append((f"{stem}_{w}x{h}", w, h, rf.METHOD_CM, blob))
 
-    # Order the first 6 slots so small runs (e.g. 10 iterations) exercise methods 0, 1, 2, 3.
+    # Order the first 8 slots so small runs (e.g. 10 iterations) exercise methods 0, 1, 2, 3, 4.
     records = [
         ("noise_64x48", noise_w, noise_h, rf.METHOD_RAW, noise_fold),
         photo_folds[0],
         ("pal2_2col_64x48", pal_w, pal_h, rf.METHOD_PAL, pal2_2col),
         ("pal3_200col_64x48", pal_w, pal_h, rf.METHOD_PAL2, pal3_200col),
+        ("pal4_200col_64x48", pal_w, pal_h, rf.METHOD_PAL3, pal4_200col),
         ("pal2_200col_64x48", pal_w, pal_h, rf.METHOD_PAL, pal2_200col),
         ("pal3_2col_64x48", pal_w, pal_h, rf.METHOD_PAL2, pal3_2col),
+        ("pal4_2col_64x48", pal_w, pal_h, rf.METHOD_PAL3, pal4_2col),
         *photo_folds[1:],
     ]
-    assert len(records) == 15
-    assert {m for _, _, _, m, _ in records[:4]} == {rf.METHOD_RAW, rf.METHOD_CM, rf.METHOD_PAL, rf.METHOD_PAL2}
+    assert len(records) == 17
+    assert {m for _, _, _, m, _ in records[:5]} == {rf.METHOD_RAW, rf.METHOD_CM, rf.METHOD_PAL, rf.METHOD_PAL2, rf.METHOD_PAL3}
     for _, w, h, m, blob in records:
         assert w >= 36 and h >= 34 and w * h > 1200
         assert struct.unpack_from("<II", blob, 8) == (w, h)
@@ -215,6 +226,46 @@ def mutate(blob: bytes, rng: random.Random) -> bytes:
         elif kind == 4:                             # other dimensions for the same stream
             w, h = struct.unpack_from("<II", b, 8)
             struct.pack_into("<II", b, 8, max(1, w + rng.randrange(-3, 4)), max(1, h + rng.randrange(-3, 4)))
+        else:                                       # random stream bytes
+            for i in range(s_start, len(b)):
+                if rng.random() < 0.1:
+                    b[i] = rng.randrange(256)
+        return recrc(b)
+    if method == rf.METHOD_PAL3:
+        # Method 4: one count byte, a bit-packed palette field, then the index stream to the end.
+        count = b[32] + 1
+        _palette, field_len = rf._pal4_read_field(bytes(b[32:]), count)
+        f_start = 33
+        s_start = f_start + field_len
+        if kind == 0:                               # flip bits in the palette field or the stream
+            for _ in range(rng.randrange(1, 4)):
+                i = rng.randrange(32, len(b))
+                b[i] ^= 1 << rng.randrange(8)
+        elif kind == 1:                             # truncate the index stream
+            cut = rng.randrange(1, max(2, len(b) - s_start))
+            del b[len(b) - cut :]
+        elif kind == 2:                             # extend the index stream
+            b.extend(bytes(rng.randrange(256) for _ in range(rng.randrange(1, 9))))
+        elif kind == 3:                             # the count byte or one of the three k nibbles
+            which = rng.randrange(4)
+            if which == 0:
+                b[32] = (b[32] + rng.choice((-1, 1, 128))) & 0xFF
+            elif which == 1:
+                b[f_start] = (b[f_start] & 0x0F) | (rng.choice((0, 8, 9, 15)) << 4)
+            elif which == 2:
+                b[f_start] = (b[f_start] & 0xF0) | rng.choice((0, 8, 9, 15))
+            else:
+                b[f_start + 1] = (b[f_start + 1] & 0x0F) | (rng.choice((0, 8, 9, 15)) << 4)
+        elif kind == 4:                             # a Rice code, the padding, or other dimensions
+            which = rng.randrange(3)
+            if which == 0:                          # one bit inside the Rice-coded entries
+                bit = rng.randrange(12, field_len * 8)
+                b[f_start + (bit >> 3)] ^= 0x80 >> (bit & 7)
+            elif which == 1:                        # the field's last bit: padding when the field is not byte-aligned
+                b[s_start - 1] ^= 1
+            else:
+                w, h = struct.unpack_from("<II", b, 8)
+                struct.pack_into("<II", b, 8, max(1, w + rng.randrange(-3, 4)), max(1, h + rng.randrange(-3, 4)))
         else:                                       # random stream bytes
             for i in range(s_start, len(b)):
                 if rng.random() < 0.1:
@@ -731,7 +782,7 @@ def main() -> int:
     WORK.mkdir(parents=True, exist_ok=True)
     base = seeds()
     counts = {0: 0, 4: 0}
-    method_counts = {0: 0, 1: 0, 2: 0, 3: 0}
+    method_counts = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0}
     tasks: list[tuple[int, bytes, str, str, str]] = []
     for i in range(iterations):
         seed_blob = base[i % len(base)]
@@ -754,7 +805,7 @@ def main() -> int:
             print(err)
             return 1
 
-    m_summary = ", ".join(f"{m}:{method_counts[m]}" for m in (0, 1, 2, 3))
+    m_summary = ", ".join(f"{m}:{method_counts[m]}" for m in (0, 1, 2, 3, 4))
     print(f"{iterations} mutated files (methods {m_summary}): {counts[4]} rejected, {counts[0]} still valid, no crash, hang or mismatch")
     return 0
 

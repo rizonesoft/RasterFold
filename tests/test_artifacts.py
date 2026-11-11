@@ -303,7 +303,7 @@ class Artifacts(unittest.TestCase):
             '        uint8_t *fold = 0;\n'
             '        size_t fold_sz = 0;\n'
             '        if (rf_encode(&img, &fold, &fold_sz, threads, &err) != RF_OK) return 13;\n'
-            '        if (!fold || fold_sz >= RF_HEADER_SIZE + raw || fold[16] != RF_METHOD_PAL2) return 14;\n'
+            '        if (!fold || fold_sz >= RF_HEADER_SIZE + raw || fold[16] != RF_METHOD_PAL3) return 14;\n'
             '        rf_image round = {0, 0, 0};\n'
             '        if (rf_decode(fold, fold_sz, &round, 0, threads, &err) != RF_OK) return 15;\n'
             '        if (round.width != w || round.height != h || memcmp(round.rgb, rgb2, raw) != 0) return 16;\n'

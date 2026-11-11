@@ -249,7 +249,7 @@ int main(int argc, char **argv) {
 #endif
         if (last_fold) rf_free(last_fold);
         if (!ok) exit_code = 1;
-        const char *status = !ok ? "MISMATCH" : (method == RF_METHOD_RAW ? "RAW" : ((method == RF_METHOD_PAL || method == RF_METHOD_PAL2) ? "PAL" : "OK"));
+        const char *status = !ok ? "MISMATCH" : (method == RF_METHOD_RAW ? "RAW" : (method >= RF_METHOD_PAL ? "PAL" : "OK"));
         double px = (double)im.w * im.h;
         printf("%-24s %9zu  bpp=%.4f  enc=%7.1fms dec=%7.1fms  (%.0f/%.0f cyc/sample) %s\n", b, fold_sz, fold_sz * 8.0 / px, be, bd,
                be * 3.9e6 / (px * 3), bd * 3.9e6 / (px * 3), status);

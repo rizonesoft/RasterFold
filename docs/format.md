@@ -17,7 +17,8 @@ The reference encoder's choice between methods is not part of the contract.
 Version 3 differs from version 2 only in method 1: its context mixer has
 seven models instead of five (contexts `k5` and `k6` below), 16 nodes per
 context row instead of 32, a gated gradient selector, and warm-started
-horizontal strips. Methods 0, 2 and 3 are identical in versions 2 and 3. A
+horizontal strips. Methods 0, 2 and 3 are identical in versions 2 and 3, and
+version 3 adds method 4, which a version 2 file may not use. A
 decoder reads both versions; an encoder writes version 3. Version 2 replaced
 the experimental version 1 (64×64 blocks with PackBits, palette, Rice and
 binary rANS modes). Version 1 files are rejected as an unsupported version.
@@ -47,7 +48,8 @@ offset  size  field
 6       2     header_size = 32
 8       4     width
 12      4     height
-16      1     method: 0 = raw, 1 = CM, 2 = palette, 3 = extended palette
+16      1     method: 0 = raw, 1 = CM, 2 = palette, 3 = extended palette,
+              4 = compact palette (version 3 only)
 17      1     reserved = 0
 18      2     pixel_format = 1
 20      4     payload_size
@@ -705,6 +707,91 @@ by a `0` decision on `D1`, `D2`, or `D3`, or by equality with an excluded
 candidate); otherwise the file is rejected. The index stream must end at
 exactly `S` bytes after the last pixel.
 
+## Method 4, compact palette
+
+Method 4 is valid only in a version 3 file. It codes the same palette indices
+as method 3 with a smaller palette field, no stream size field, finer
+probabilities, and separate first-decision counters for the image's top row
+and left column.
+
+### Payload
+
+```
+offset    size   field
+0         1      count - 1     (count = number of colours, 1..256)
+1         P      palette field: a bit string, described below
+1 + P     S      index stream: every remaining byte of the payload
+```
+
+`S = payload_size - 1 - P` and `S >= 5`.
+
+The palette field is read as a sequence of bits, the most significant bit of
+each byte first. A number of `n` bits is read most significant bit first.
+
+```
+kR, kG, kB: three 4-bit numbers, each in 0..8
+for each entry i = 0 .. count - 1, with R(-1) = 0:
+    R(i) = R(i-1) + rice(kR)
+    G(i) = R(i)   + unzigzag(rice(kG))
+    B(i) = G(i)   + unzigzag(rice(kB))
+padding: zero bits up to the next byte boundary (none if already on one)
+
+rice(k):      q = the number of 1 bits before the next 0 bit (that 0 bit is consumed)
+              the value is (q << k) + the next k bits as a number (0 when k = 0)
+unzigzag(u):  u >> 1 if u is even, otherwise -((u + 1) >> 1)
+```
+
+`P` is the number of bytes the field occupies, padding included. Every `R(i)`,
+`G(i)` and `B(i)` is in `0..255`, and the entries are in strictly increasing
+order of `R * 65536 + G * 256 + B`, so the colours are distinct. Entry `i` is
+palette index `i`. A `rice` quotient `q` is at most 511.
+
+### Index stream
+
+The index stream is one binary range coder ("Range coder" under method 1),
+with this difference: a bit with probability `p` (of a 1), `1 <= p <= 65535`,
+is coded on a 16-bit scale with an exact split,
+
+```
+bound = (range * p) >> 16        (the product is computed without overflow; it needs 48 bits)
+```
+
+in place of `bound = (range >> 12) * p`, in both the encoder and the decoder.
+Everything else in the range coder is unchanged.
+
+Neighbours `a`, `b`, `c`, `d`, `ww`, `nn`, the third candidate `e`, `pattern`
+and `hit` are those of method 3. The border class of pixel `(x, y)` is
+
+```
+class = 1 if y == 0
+        2 if y > 0 and x == 0
+        0 otherwise
+```
+
+Method 4 keeps `D1[0..767]`, `D2[0..127]`, `D3[0..127]`, and `T[1..255]`, each
+counter starting at `c = 32768`, `n = 0`. Coding a bit with a counter `(c, n)`
+is method 3's rule with the 16-bit probability:
+
+```
+p    = max(1, c)
+rate = (65536 * 2) / (2n + 3)
+n    = n + 1 if n < 60 else n
+code the bit with probability p/65536 of a 1
+if bit == 1 and c < 65535:
+    c = c + max(1, ((65535 - c) * rate) >> 16)
+else if bit == 0 and c > 0:
+    c = c - max(1, (c * rate) >> 16)
+```
+
+At each pixel the decisions are those of method 3 ("Counters and decisions"),
+except that `D1` uses counter `D1[pattern * 2 + hit + 256 * class]`. `D2`,
+`D3` and `T` are indexed as in method 3, the `count == 2` shortcut applies,
+and a one-colour image codes one `D1` decision per pixel like any other.
+
+When the literal tree is reached, the decoded index `I` must satisfy
+`I < count` and `I not in {a, b, e}`; otherwise the file is rejected. The
+index stream must end at exactly `S` bytes after the last pixel.
+
 ## Rejection rules
 
 Reject, and do not produce a completed output file, when:
@@ -712,7 +799,8 @@ Reject, and do not produce a completed output file, when:
 - the file is shorter than 32 bytes or longer than 256 MiB;
 - the magic is not `RFI` (malformed), or the fourth magic byte and `version`
   do not agree or are not 2 or 3, `header_size` is not 32, `pixel_format` is
-  not 1, or `method` is not 0, 1, 2, or 3 (unsupported);
+  not 1, `method` is not 0, 1, 2, 3, or 4, or `method` is 4 in a version 2
+  file (unsupported);
 - `header_crc32` or `payload_crc32` does not match, `reserved` is not 0, or
   `payload_size` is not `file_size - 32`;
 - a dimension is 0 (malformed) or outside the limits (size limit);
@@ -727,7 +815,14 @@ Reject, and do not produce a completed output file, when:
   stream shorter than 5 bytes, `6 + 3 * count + stream_size != payload_size`, a
   decoded literal index `>= count` or equal to an excluded candidate (`a`, `b`,
   or `d` in method 2; `a`, `b`, or `e` in method 3), or a stream
-  that runs out or has bytes left.
+  that runs out or has bytes left;
+- method 4 has a payload shorter than 8 bytes, a `kR`, `kG` or `kB` above 8,
+  a palette field that needs a bit past the end of the payload, a `rice`
+  quotient above 511, an `R`, `G` or `B` outside `0..255`, an entry not
+  strictly greater than the entry before it, a non-zero padding bit, fewer
+  than 5 bytes after the palette field, a decoded literal index `>= count` or
+  equal to an excluded candidate (`a`, `b`, or `e`), or a stream that runs out
+  or has bytes left.
 
 The reference tool writes outputs to `destination.partial` with `CREATE_NEW`,
 flushes, and renames onto the destination only after success. An existing
@@ -739,9 +834,12 @@ The encoder codes the image with method 1 using `S = 3` strips when
 `height >= 768`, `S = 2` when `512 <= height < 768`, and `S = 1` when
 `height < 512` (kept when every strip stream `(s, c)` is at most
 `width * h_s + 64 / S` bytes) and, when the image has at most
-256 distinct colours, also with method 3. It writes whichever eligible candidate
-of method 0 (raw), method 1, and method 3 has the smallest payload, breaking
-ties in order method 0, then method 1, then method 3. The `3 * S` streams of
+256 distinct colours, also with method 4, choosing each of `kR`, `kG` and `kB`
+as the smallest value in `0..8` that gives its channel the fewest palette
+field bits. It writes whichever eligible candidate
+of method 0 (raw), method 1, and method 4 has the smallest payload, breaking
+ties in order method 0, then method 1, then method 4. It never writes method 2
+or method 3. The `3 * S` streams of
 method 1 depend only on the warm-start handoff rows and same-pixel channel
 values, so any thread count produces the same bytes.
 

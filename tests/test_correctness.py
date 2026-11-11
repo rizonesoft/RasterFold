@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import random
 import struct
 import os
@@ -59,6 +60,12 @@ KAT_PAL3 = bytes.fromhex(
 KAT_PAL2_3 = bytes.fromhex(
     "5246490303002000100000000800000003000100310000002401b19f141151890300102030e0402020c050f0f4f81f00"
     "0000007faf571d6a5deb2169648eec1824c0967cb266634581100506fe76b6c630"
+)
+
+# The same image as the encoder writes it today: version 3, method 4 (compact palette).
+KAT_PAL4 = bytes.fromhex(
+    "52464903030020001000000008000000040001002e0000007e45d96afaf682eb035764081021a073ff819fbf40204000"
+    "7f6fecc33292ded6fa71f8da8a03279ce7f774541e44a9ac2dcfed94097c"
 )
 
 
@@ -121,7 +128,11 @@ def oracle_self_check() -> None:
     check(rf.build_file(KAT_PAL_W, KAT_PAL_H, rf.METHOD_PAL, pal_m2) == KAT_PAL3, "known-answer method 2 palette file")
     check(rf.decode_image(KAT_PAL3) == (KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), "known-answer method 2 palette v3 decode")
     check(rf.decode_image(KAT_PAL) == (KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), "known-answer method 2 palette decode")
-    check(rf.encode_image(KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB) == KAT_PAL2_3, "known-answer method 3 palette file")
+    pal_m3 = rf.pal_encode(KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB, method=rf.METHOD_PAL2)
+    assert pal_m3 is not None
+    check(rf.build_file(KAT_PAL_W, KAT_PAL_H, rf.METHOD_PAL2, pal_m3) == KAT_PAL2_3, "known-answer method 3 palette file")
+    check(rf.encode_image(KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB) == KAT_PAL4, "known-answer method 4 palette file")
+    check(rf.decode_image(KAT_PAL4) == (KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), "known-answer method 4 palette decode")
     check(rf.decode_image(KAT_PAL2_3) == (KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), "known-answer method 3 palette v3 decode")
     check(rf.decode_image(KAT_PAL2) == (KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), "known-answer method 3 palette decode")
 
@@ -144,11 +155,30 @@ def known_answer() -> None:
         f.unlink(missing_ok=True)
     psrc.write_bytes(rf.write_bmp24(KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB))
     expect_ok(["encode", str(psrc), str(pout)])
-    check(pout.read_bytes() == KAT_PAL2_3, "codec bytes differ from the method 3 palette known-answer file")
+    check(pout.read_bytes() == KAT_PAL4, "codec bytes differ from the method 4 palette known-answer file")
     expect_ok(["decode", str(pout), str(pback)])
-    check(rf.read_bmp24(pback.read_bytes()) == (KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), "method 3 palette known-answer pixels")
+    check(rf.read_bmp24(pback.read_bytes()) == (KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), "method 4 palette known-answer pixels")
     insp = expect_ok(["inspect", str(pout)]).stdout.decode("utf-8", errors="replace")
     check("method: palette" in insp and "palette_colours: 4" in insp, f"inspect output missing palette fields: {insp}")
+    insp_json = json.loads(expect_ok(["inspect", "--json", str(pout)]).stdout.decode("utf-8", errors="replace"))
+    check(
+        insp_json.get("method") == "palette" and insp_json.get("palette_colours") == 4 and insp_json.get("version") == 3,
+        f"inspect --json output missing method 4 palette fields: {insp_json}",
+    )
+
+    # Every older palette file still decodes to the same pixels, through the strided BMP writer and
+    # through the packed RGB decoder (the PPM output path).
+    for tag, blob in (("kat_pal", KAT_PAL), ("kat_pal3", KAT_PAL3), ("kat_pal2", KAT_PAL2), ("kat_pal2_3", KAT_PAL2_3), ("kat_pal4", KAT_PAL4)):
+        legacy_fold, legacy_bmp, legacy_ppm = work / f"{tag}.fold", work / f"{tag}.bmp", work / f"{tag}.ppm"
+        for f in (legacy_bmp, legacy_ppm):
+            f.unlink(missing_ok=True)
+        legacy_fold.write_bytes(blob)
+        expect_ok(["decode", str(legacy_fold), str(legacy_bmp)])
+        check(rf.read_bmp24(legacy_bmp.read_bytes()) == (KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), f"{tag}: BMP decode pixels")
+        expect_ok(["decode", str(legacy_fold), str(legacy_ppm)])
+        with Image.open(legacy_ppm) as im:
+            check(im.size == (KAT_PAL_W, KAT_PAL_H) and im.convert("RGB").tobytes() == KAT_PAL_RGB, f"{tag}: packed RGB decode pixels")
+        check(rf.decode_image(blob) == (KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), f"{tag}: oracle decode pixels")
 
     pm2_fold.write_bytes(KAT_PAL)
     expect_ok(["decode", str(pm2_fold), str(pm2_back)])
@@ -1019,7 +1049,7 @@ def palette_method() -> None:
     rgb256 = b"".join(pal256[order256[(y * 8 + (x // 8)) & 255]] for y in range(h256) for x in range(w256))
     roundtrip("pal_256", w256, h256, rgb256)
     fold256 = WORK / "pal_256" / "out.fold"
-    check(fold256.read_bytes()[16] == rf.METHOD_PAL2, "256-colour run image did not select METHOD_PAL2")
+    check(fold256.read_bytes()[16] == rf.METHOD_PAL3, "256-colour run image did not select METHOD_PAL3")
     insp256 = expect_ok(["inspect", str(fold256)]).stdout.decode("utf-8", errors="replace")
     check("method: palette" in insp256 and "palette_colours: 256" in insp256, f"256-colour inspect output: {insp256}")
 
@@ -1041,7 +1071,7 @@ def palette_method() -> None:
     rgb_clamp = b"".join((c1 if (x & 1) else c0) if x < 450 else c1 for x in range(w_clamp))
     roundtrip("pal_clamp", w_clamp, h_clamp, rgb_clamp)
     fold_clamp = WORK / "pal_clamp" / "out.fold"
-    check(fold_clamp.read_bytes()[16] == rf.METHOD_PAL2, "pal_clamp did not select METHOD_PAL2")
+    check(fold_clamp.read_bytes()[16] == rf.METHOD_PAL3, "pal_clamp did not select METHOD_PAL3")
 
     w_ones, h_ones = 600, 1
     rgb_ones = b"".join(c0 if x < 520 else (c0 if (x & 1) else (c1 if (x & 2) else c2)) for x in range(w_ones))
@@ -1059,14 +1089,23 @@ def palette_method() -> None:
         m2_fold.write_bytes(blob_m2)
         expect_ok(["decode", str(m2_fold), str(m2_bmp)])
         check(rf.read_bmp24(m2_bmp.read_bytes()) == (lw, lh, lrgb), f"{tag}: CLI failed to decode legacy method 2 file")
+        # Method 3 is decode-only since method 4: its long-run counter arithmetic still decodes.
+        blob_m3 = rf.build_file(lw, lh, rf.METHOD_PAL2, pay_m3)
+        check(rf.decode_image(blob_m3) == (lw, lh, lrgb), f"{tag}: oracle failed to decode legacy method 3 file")
+        m3_fold = work / f"{tag}_m3.fold"
+        m3_bmp = work / f"{tag}_m3.bmp"
+        m3_bmp.unlink(missing_ok=True)
+        m3_fold.write_bytes(blob_m3)
+        expect_ok(["decode", str(m3_fold), str(m3_bmp)])
+        check(rf.read_bmp24(m3_bmp.read_bytes()) == (lw, lh, lrgb), f"{tag}: CLI failed to decode legacy method 3 file")
 
     # 5. Per-channel CM stream overflow (channel 1 is 2129 > w*h+64 = 2112 bytes while total CM payload < raw):
-    #    both C (1 and 3 threads) and oracle discard the overflowed CM candidate and select METHOD_PAL2 byte-identically.
+    #    both C (1 and 3 threads) and oracle discard the overflowed CM candidate and select METHOD_PAL3 byte-identically.
     rng_ovf = random.Random(1)
     rgb_ch_ovf = b"".join(bytes((rng_ovf.randrange(256), 0, 0)) for _ in range(64 * 32))
     roundtrip("pal_cm_ch_overflow", 64, 32, rgb_ch_ovf)
     fold_ovf = WORK / "pal_cm_ch_overflow" / "out.fold"
-    check(fold_ovf.read_bytes()[16] == rf.METHOD_PAL2, "pal_cm_ch_overflow did not select METHOD_PAL2")
+    check(fold_ovf.read_bytes()[16] == rf.METHOD_PAL3, "pal_cm_ch_overflow did not select METHOD_PAL3")
 
     # 6. Boundary fallbacks (ww=a for x<=1; nn=a at y=0, nn=b at y=1, nn=I(x,y-2) at y>=2) and 3-row nn wrap (h=6 >= 4)
     #    for widths 1 and 2 with 2 and 4 colours.
@@ -1094,7 +1133,7 @@ def palette_method() -> None:
     ]
     rgb_d3_all = b"".join(cols4[idx] for row in grid_rows for idx in (row * 4))
     roundtrip("pal_d3_candidates", 16, 8, rgb_d3_all)
-    check((WORK / "pal_d3_candidates" / "out.fold").read_bytes()[16] == rf.METHOD_PAL2, "pal_d3_candidates did not select METHOD_PAL2")
+    check((WORK / "pal_d3_candidates" / "out.fold").read_bytes()[16] == rf.METHOD_PAL3, "pal_d3_candidates did not select METHOD_PAL3")
 
     # 8. Historical decoder compatibility: both the pre-§2 decoder (4635a04f1042f3983d8f56222e1521745a191a6d)
     #    and the shipped §2 decoder (1cd84f3edd687e5fa622733ce9e68884d0cadab0) refuse KAT_PAL2 (method == 3)
@@ -1151,21 +1190,209 @@ def palette_method() -> None:
                 check(rf.read_bmp24(hist_bmp.read_bytes()) == (KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), f"{tag} ({ref}) decoded pixels mismatch on KAT_PAL")
 
 
+def _pal4_bits(bits: str) -> bytes:
+    """A bit string (spaces ignored), zero-padded to whole bytes."""
+    bits = bits.replace(" ", "")
+    bits += "0" * (-len(bits) % 8)
+    return int(bits, 2).to_bytes(len(bits) // 8, "big") if bits else b""
+
+
+def _pal4_coverage(width: int, height: int, rgb: bytes) -> set[tuple[str, int]]:
+    """Which method 4 decisions an image reaches in which border class, from the spec's decision order."""
+    palette = sorted({rgb[i : i + 3] for i in range(0, len(rgb), 3)})
+    index_of = {c: i for i, c in enumerate(palette)}
+    rows = [[index_of[rgb[(y * width + x) * 3 : (y * width + x) * 3 + 3]] for x in range(width)] for y in range(height)]
+    seen: set[tuple[str, int]] = set()
+    for y in range(height):
+        for x in range(width):
+            a, b, e, _pattern = rf._pal_neighbours_m3(rows, width, x, y)
+            cls = 1 if y == 0 else (2 if x == 0 else 0)
+            idx = rows[y][x]
+            seen.add(("d1", cls))
+            if idx == a or len(palette) == 2:
+                continue
+            if b != a:
+                seen.add(("d2", cls))
+                if idx == b:
+                    continue
+            if e != a and e != b:
+                seen.add(("d3", cls))
+                if idx == e:
+                    continue
+            seen.add(("lit", cls))
+    return seen
+
+
+def palette_method4() -> None:
+    """Method 4 (compact palette): selection, C and oracle byte identity on the border classes and
+    count extremes, decoder fixtures with forced Rice parameters, both decode paths, and every refusal."""
+    work = WORK / "palette_method4"
+    work.mkdir(parents=True, exist_ok=True)
+    n = 0
+
+    def put(blob: bytes) -> Path:
+        nonlocal n
+        n += 1
+        path = work / f"f{n}.fold"
+        path.write_bytes(blob)
+        return path
+
+    def decodes(blob: bytes, width: int, height: int, rgb: bytes, what: str) -> None:
+        path = put(blob)
+        bmp, ppm = work / f"f{n}.bmp", work / f"f{n}.ppm"
+        for f in (bmp, ppm):
+            f.unlink(missing_ok=True)
+        check(rf.decode_image(blob) == (width, height, rgb), f"{what}: oracle decode")
+        expect_ok(["decode", str(path), str(bmp)])
+        check(rf.read_bmp24(bmp.read_bytes()) == (width, height, rgb), f"{what}: strided BMP decode")
+        expect_ok(["decode", "--threads", "3", str(path), str(ppm)])
+        with Image.open(ppm) as im:
+            check(im.size == (width, height) and im.convert("RGB").tobytes() == rgb, f"{what}: packed RGB decode")
+
+    def reject(blob: bytes, code: int, text: str, what: str) -> None:
+        path = put(blob)
+        for ext in ("bmp", "ppm"):
+            dest = work / f"f{n}.{ext}"
+            dest.unlink(missing_ok=True)
+            expect_fail(["decode", str(path), str(dest)], code, text)
+            check(not dest.exists(), f"{what}: an output was left behind")
+        try:
+            rf.decode_image(blob)
+        except rf.FormatError:
+            pass
+        else:
+            check(False, f"{what}: oracle accepted the file")
+
+    def selected(name: str, width: int, height: int, rgb: bytes) -> bytes:
+        roundtrip(name, width, height, rgb)
+        blob = (WORK / name / "out.fold").read_bytes()
+        check(blob[16] == rf.METHOD_PAL3, f"{name} did not select METHOD_PAL3 (method {blob[16]})")
+        decodes(blob, width, height, rgb, name)
+        return blob
+
+    cols = [bytes(((i * 53 + 7) & 255, (i * 101 + 19) & 255, (i * 29 + 3) & 255)) for i in range(256)]
+    check(len(set(cols)) == 256, "fixture colours are not distinct")
+
+    # 1. One colour, two colours, one pixel wide, one pixel high.
+    one = selected("pal4_one_colour", 64, 48, solid(64, 48, (240, 240, 240)))
+    check(one[32] == 0, "one-colour file does not store count - 1 = 0")
+    selected("pal4_two_colours", 64, 48, checker(64, 48, 4))
+    selected("pal4_one_wide", 1, 200, b"".join(cols[(y // 3 + (y % 5 == 0)) & 3] for y in range(200)))
+    selected("pal4_one_high", 300, 1, b"".join(cols[(x // 4 + (x % 7 == 0)) & 3] for x in range(300)))
+
+    # 2. 256 colours with palette index 255 in use.
+    rng = random.Random(4)
+    order = list(range(256))
+    rng.shuffle(order)
+    rgb256 = b"".join(cols[order[(y * 8 + x // 8) & 255]] for y in range(32) for x in range(64))
+    blob256 = selected("pal4_256", 64, 32, rgb256)
+    check(blob256[32] == 255, "256-colour file does not store count - 1 = 255")
+    check(sorted(set(cols))[255] in {rgb256[i : i + 3] for i in range(0, len(rgb256), 3)}, "palette index 255 unused")
+
+    # 3. Every reachable decision in every border class: D1 everywhere, D3 and the literal tree on
+    #    row 0 and in column 0, D2 (unreachable on the borders, where a == b) in the interior.
+    rgb_cov = b"".join(cols[rng.randrange(6)] for _ in range(40 * 30))
+    want = {("d1", 0), ("d1", 1), ("d1", 2), ("d2", 0), ("d3", 0), ("d3", 1), ("d3", 2), ("lit", 0), ("lit", 1), ("lit", 2)}
+    got = _pal4_coverage(40, 30, rgb_cov)
+    check(want <= got, f"coverage image misses {sorted(want - got)}")
+    check(("d2", 1) not in got and ("d2", 2) not in got, "D2 reached on a border")
+    selected("pal4_coverage", 40, 30, rgb_cov)
+
+    # 4. Decoder fixtures with explicitly supplied legal Rice parameters, including each k at 0 and at 8
+    #    (the encoder never chooses kR = 8). Any legal parameters decode to the same pixels.
+    w4, h4 = 24, 10
+    rgb4 = b"".join(cols[(x // 3 + y // 2 + ((x + y) & 1)) % 5] for y in range(h4) for x in range(w4))
+    ref_payload = rf.pal4_encode(w4, h4, rgb4)
+    assert ref_payload is not None
+    for ks in ((0, 0, 0), (8, 8, 8), (0, 8, 3), (8, 0, 5), (3, 4, 0), (2, 6, 8)):
+        forced = rf.pal4_encode(w4, h4, rgb4, ks=ks)
+        assert forced is not None
+        check(forced[1] >> 4 == ks[0] and forced[1] & 15 == ks[1] and forced[2] >> 4 == ks[2], f"forced k {ks} not in the field")
+        decodes(rf.build_file(w4, h4, rf.METHOD_PAL3, forced), w4, h4, rgb4, f"forced k {ks}")
+    check(len(ref_payload) <= min(len(rf.pal4_encode(w4, h4, rgb4, ks=ks) or b"") for ks in ((0, 0, 0), (8, 8, 8))), "reference k is not the cheapest")
+
+    # 5. Refusals, each on a file with valid container checksums.
+    bad_field = "invalid fold: palette"
+    bad_stream = "invalid fold: palette stream"
+    stream5 = b"\x00" * 5
+    pal3 = [(16, 32, 48), (64, 80, 96), (112, 128, 144)]
+    field3 = rf.pal4_field(pal3)
+
+    def m4(payload: bytes, width: int = 3, height: int = 1) -> bytes:
+        return rf.build_file(width, height, rf.METHOD_PAL3, payload)
+
+    reject(m4(b"\x00" + _pal4_bits("0000 0000 0000 0 0 0") + b"\x00" * 4), 4, bad_field, "payload shorter than 8 bytes")
+    reject(m4(b"\x02" + _pal4_bits("1001 0000 0000") + b"\x00" * 8), 4, bad_field, "kR above 8")
+    reject(m4(b"\x02" + _pal4_bits("0000 1001 0000") + b"\x00" * 8), 4, bad_field, "kG above 8")
+    reject(m4(b"\x02" + _pal4_bits("0000 0000 1111") + b"\x00" * 8), 4, bad_field, "kB above 8")
+    reject(m4(b"\xff" + field3 + stream5), 4, bad_field, "palette field runs past the payload")
+    reject(m4(b"\x02" + _pal4_bits("0000 0000 0000" + "1" * 600) + stream5), 4, bad_field, "Rice quotient above 511")
+    reject(m4(b"\x00" + _pal4_bits("0000 0000 0000" + "1" * 256 + "0" + "0" + "0") + stream5, 1, 1), 4, bad_field, "R above 255")
+    # zigzag(-1) = 1 under k = 0 is "10": G = R - 1 = -1 at R = 0.
+    reject(m4(b"\x00" + _pal4_bits("0000 0000 0000 0 10 0") + stream5, 1, 1), 4, bad_field, "G below 0")
+    # zigzag(+1) = 2 under k = 0 is "110": B = G + 1 = 256 at R = G = 255.
+    reject(m4(b"\x00" + _pal4_bits("1000 0000 0000 0 11111111 0 110") + stream5, 1, 1), 4, bad_field, "B above 255")
+    reject(m4(b"\x01" + rf.pal4_field([(16, 32, 48), (16, 32, 48)]) + stream5, 2, 1), 4, bad_field, "duplicate palette entry")
+    reject(m4(b"\x01" + rf.pal4_field([(16, 32, 48), (16, 32, 40)]) + stream5, 2, 1), 4, bad_field, "palette entry below the one before it")
+    # One colour (0, 0, 0) with every k = 0 is 15 bits, so the 16th bit is padding.
+    decodes(m4(b"\x00" + _pal4_bits("0000 0000 0000 0 0 0 0") + rf.pal4_encode(1, 1, b"\x00\x00\x00")[3:], 1, 1), 1, 1, b"\x00\x00\x00", "zero padding bit")
+    reject(m4(b"\x00" + _pal4_bits("0000 0000 0000 0 0 0 1") + rf.pal4_encode(1, 1, b"\x00\x00\x00")[3:], 1, 1), 4, bad_field, "non-zero padding bit")
+    reject(m4(b"\x02" + field3 + b"\x00" * 4), 4, bad_field, "fewer than 5 stream bytes")
+
+    def bad_literal(literal: int) -> bytes:
+        # 3x1, 3 colours; at (0, 0) every neighbour is index 0, so pattern = 127, hit = 0, class = 1,
+        # D2 and D3 are skipped, and the literal tree follows a 0 on D1.
+        d1 = [rf._Pal4Counter() for _ in range(768)]
+        tree = [rf._Pal4Counter() for _ in range(256)]
+        enc = rf.RangeEncoder()
+        d1[127 * 2 + 0 + 256].code(enc, None, 0)
+        node = 1
+        for bit_pos in range(7, -1, -1):
+            bit = (literal >> bit_pos) & 1
+            tree[node].code(enc, None, bit)
+            node = node * 2 + bit
+        return m4(b"\x02" + field3 + enc.finish())
+
+    reject(bad_literal(3), 4, bad_stream, "literal index >= count")
+    reject(bad_literal(0), 4, bad_stream, "literal index equal to an excluded candidate")
+    good3 = rf.pal4_encode(3, 1, bytes(pal3[0]) + bytes(pal3[1]) + bytes(pal3[2]))
+    assert good3 is not None
+    decodes(m4(good3), 3, 1, bytes(pal3[0]) + bytes(pal3[1]) + bytes(pal3[2]), "3x1 reference file")
+    reject(m4(good3 + b"\x00"), 4, bad_stream, "one byte left after the index stream")
+    big = rf.pal4_encode(w4, h4, rgb4)
+    assert big is not None and len(big) > 1 + 12 + 8
+    reject(m4(big[:-3], w4, h4), 4, bad_stream, "truncated index stream")
+
+    # Method 4 is not a version 2 method: the same payload under a version 2 header is unsupported.
+    v2 = bytearray(m4(good3))
+    v2[3] = 2
+    struct.pack_into("<H", v2, 4, 2)
+    reject(recrc(v2), 3, "unsupported fold: method", "method 4 in a version 2 file")
+    reject(rf.build_file(3, 1, 5, good3), 3, "unsupported fold: method", "method 5")
+
+
 def fuzz_harness() -> None:
     import unittest.mock as mock
     import fuzz_decode
 
     records = fuzz_decode.seed_records()
-    check(len(records) == 15, f"expected 15 fuzz seeds, got {len(records)}")
-    check({m for _, _, _, m, _ in records[:4]} == {0, 1, 2, 3}, "first 4 fuzz seeds do not cover methods 0, 1, 2, 3")
+    check(len(records) == 17, f"expected 17 fuzz seeds, got {len(records)}")
+    check({m for _, _, _, m, _ in records[:5]} == {0, 1, 2, 3, 4}, "first 5 fuzz seeds do not cover methods 0, 1, 2, 3, 4")
     for name, w, h, m, blob in records:
         check(w >= 36 and h >= 34 and w * h > 1200, f"seed {name} dimensions {w}x{h} smaller than 36x34 (>1200 px)")
         check(blob[16] == m, f"seed {name} header method {blob[16]} != {m}")
         check(struct.unpack_from("<II", blob, 8) == (w, h), f"seed {name} header dimensions mismatch")
+        stored = blob[32] if m == 4 else struct.unpack_from("<H", blob, 32)[0]     # method 4 stores count - 1 in one byte
         if "2col" in name:
-            check(struct.unpack_from("<H", blob, 32)[0] + 1 == 2, f"seed {name} palette count != 2")
+            check(stored + 1 == 2, f"seed {name} palette count != 2")
         if "200col" in name:
-            check(struct.unpack_from("<H", blob, 32)[0] + 1 == 200, f"seed {name} palette count != 200")
+            check(stored + 1 == 200, f"seed {name} palette count != 200")
+    m4_seed = next(blob for _, _, _, m, blob in records if m == 4 and blob[32] == 199)
+    m4_rng = random.Random(11)
+    m4_muts = [fuzz_decode.mutate(m4_seed, m4_rng) for _ in range(300)]
+    check(any(len(mb) > 34 and mb[32] != m4_seed[32] for mb in m4_muts), "method 4 mutations never change the count byte")
+    check(any(len(mb) > 34 and mb[33:35] != m4_seed[33:35] for mb in m4_muts), "method 4 mutations never change a Rice parameter")
+    check(any(len(mb) != len(m4_seed) for mb in m4_muts), "method 4 mutations never change the stream length")
     cm_strips = {blob[32] for _, _, _, m, blob in records if m == 1}
     check(cm_strips == {1, 2, 3, 4}, f"expected CM fuzz seeds to cover S in {{1, 2, 3, 4}}, got {cm_strips}")
     mut_rng = random.Random(7)
@@ -1989,6 +2216,7 @@ def main() -> int:
     case("tail-threshold", tail_threshold_roundtrip)
     case("warm-strips", warm_strips)
     case("palette-method", palette_method)
+    case("palette-method4", palette_method4)
 
     case("fuzz-harness", fuzz_harness)
     # The checksum in a successful file matches zlib, not only our encoder.

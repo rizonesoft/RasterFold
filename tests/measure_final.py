@@ -194,7 +194,9 @@ def main() -> int:
     record["failures"] = failures
     record["summary"] = "passed" if not failures else "; ".join(failures)
     verdict = WORK / "verdict.json"
-    verdict.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    # LF on every host: the file is tracked with eol=lf, and Windows Python would write CRLF.
+    with open(verdict, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(json.dumps(record, indent=2) + "\n")
 
     print(f"final image {width}x{height} raw {len(rgb)} bytes")
     for name in ("rasterfold", "jxl", "webp", "avif"):
