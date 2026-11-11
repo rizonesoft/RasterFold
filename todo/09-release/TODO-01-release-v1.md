@@ -30,7 +30,7 @@ track: R1
 ## Outcome
 
 - `rasterfold --version` reports product 1.0.0 and format versions; `rf_version()` keeps reporting the independent packed API version.
-- `dist/` contains versioned four-target CLI/SDK and separate converter packages with headers, symbols, notices, changelog and `SHA256SUMS`, produced deterministically from the tag.
+- `dist/` contains versioned two-target CLI/SDK and separate converter packages with headers, symbols, notices, changelog and `SHA256SUMS`, produced deterministically from the tag.
 - The tag `rasterfold-v1.0.0` is pushed, the release published, and every backlog entry reviewed for it.
 
 **Adjacency:** list=not-applicable (no records to browse); document=applicable @ D09 T01 §2; settings=not-applicable (no option); reporting=applicable @ D09 T01 §1; notifications=not-applicable (a release note, no messages); permissions=not-applicable (no refusal path); audit=applicable @ D09 T01 §1; exchange=applicable @ D09 T01 §3; reverse=not-applicable (a published release is superseded, not undone)
@@ -42,7 +42,7 @@ track: R1
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
 |   1   |   §1    | One version source and the changelog | -- |  [x]   |
-| 2 | §2 | The four-target release package | §1, D06 T01 §2, D10 T04 §3 | [ ] |
+| 2 | §2 | The two-target release package | §1, D06 T01 §2, D10 T04 §3 | [ ] |
 |   3   |   §3    | The release workflow | §2 |  [ ]   |
 | 4 | §4 | Release rasterfold-v1.0.0 | §3, D05 T01 §9, D10 T04 §4 | [ ] |
 

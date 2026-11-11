@@ -199,7 +199,7 @@ The workflow is GitHub's Jekyll starter adapted to this repository: it builds th
 - [ ] Register the generated capability page in `docs/drift.json`. Done when: stale registry values fail its generator check; authored definitions live separately in `docs/converter-exactness.md` and are never overwritten.
 - [ ] Commit: `"docs: converter user guide and capability reference"`
 
-**Test checkpoint:** Follow every guide on a clean target and check that the generated capability table exactly equals the registry; record native results for all four targets.
+**Test checkpoint:** Follow every guide on a clean target and check that the generated capability table exactly equals the registry; record native results for both targets.
 
 ## 7. Versioned downloads and complete references
 

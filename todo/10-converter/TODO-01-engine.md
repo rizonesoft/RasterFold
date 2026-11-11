@@ -14,7 +14,7 @@ track: GUI1
 > **Goal:** A bounded C conversion engine preserves source files and verifies exact output through a versioned adapter contract.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-09-30):** `include/rasterfold.h` and the four-target build exist. There is no native converter application, GUI or bundled third-party codec source yet; D10 T01 §1 (2026-11-09) added the pixel contract, the capability registry in `converter/`, and its validator, with every format still `planned`. These sections implement the operator-approved native C application with bundled codec source and no additional user installs.
+> **Current state (verified 2026-09-30):** `include/rasterfold.h` and the Windows/Linux x64 build exist (the Android targets were removed on 2026-11-11). There is no native converter application, GUI or bundled third-party codec source yet; D10 T01 §1 (2026-11-09) added the pixel contract, the capability registry in `converter/`, and its validator, with every format still `planned`. These sections implement the operator-approved native C application with bundled codec source and no additional user installs.
 <!-- claim: exists include/rasterfold.h -->
 <!-- claim: exists converter/include/rfc_codec.h -->
 
@@ -88,7 +88,7 @@ Build in the listed order. This section adds the named test driver before using 
 
 - [ ] Add `converter/vendor.json` with exact upstream commits, archive hashes, licenses and enabled features. Done when: every transitive source has an origin and checksum; moving branch names are refused.
 - [ ] Extend `tools/bootstrap.py` with converter-only source staging. Done when: bad hashes and archive traversal are refused and codec dependencies never enter RasterFold-only targets.
-- [ ] Add `scripts/build-converter.py` over local LLVM/Ninja. Done when: all four target graphs compile application files as C11 and isolate vendored C++ behind C interfaces.
+- [ ] Add `scripts/build-converter.py` over local LLVM/Ninja. Done when: both target graphs (Windows x64, Linux x64) compile application files as C11 and isolate vendored C++ behind C interfaces.
 - [ ] Generate `converter/THIRD-PARTY-NOTICES.txt` and an SBOM from the source manifest. Done when: each linked provider and transitive dependency appears with license text and source retrieval instructions.
 - [ ] Add import/dependency checks to `tests/converter/test_bundle.py`. Done when: clean target smoke tests load no unshipped non-system DLL or shared object; no external CLI is required.
 - [ ] Document Linux display/font packaging choices in `docs/converter-building.md`. Done when: OS prerequisites and bundled support libraries are distinguished from build-time tools.

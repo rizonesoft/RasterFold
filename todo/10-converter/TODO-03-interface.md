@@ -14,7 +14,7 @@ track: GUI3
 > **Goal:** A modern, accessible C interface previews single images, compares real codec results and demonstrates RasterFold without extra installs.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-09-30):** `include/rasterfold.h` and the four-target build exist. There is no native converter application, GUI or bundled third-party codec source yet; D10 T01 §1 (2026-11-09) added the pixel contract, the capability registry in `converter/`, and its validator, with every format still `planned`. These sections implement the operator-approved native C application with bundled codec source and no additional user installs.
+> **Current state (verified 2026-09-30):** `include/rasterfold.h` and the Windows/Linux x64 build exist (the Android targets were removed on 2026-11-11). There is no native converter application, GUI or bundled third-party codec source yet; D10 T01 §1 (2026-11-09) added the pixel contract, the capability registry in `converter/`, and its validator, with every format still `planned`. These sections implement the operator-approved native C application with bundled codec source and no additional user installs.
 <!-- claim: exists include/rasterfold.h -->
 <!-- claim: exists converter/include/rfc_codec.h -->
 

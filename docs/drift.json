@@ -1622,13 +1622,13 @@
       }
     },
     "docs/index.md": {
-      "evidence": "Re-read 2026-11-11 for the removal of Android from the repository: scripts/build.py and scripts/package.py define only windows-x64 and linux-x64, toolchain.json has no NDK pin or android block, scripts/check-all.py --all-targets adds the Windows target only, and AGENTS.md, README.md and docs/_config.yml name Windows and Linux; this document's target lists, build commands, toolchain and platform statements were checked against those sources and it makes no Android statement",
+      "evidence": "Re-read 2026-11-11 after the independent review of the Android removal: the planned converter is described as a desktop application for Windows and Linux, the vision carries no Android interop default, and the plan-table rule states that a malformed phase row fails plan --check and plan --sync; this document's statements about targets, the converter and the plan table were checked against scripts/build.py, scripts/todo-graph.py and docs/vision.md",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "362589cf2d8cdf51ea77ef645fb115e9edcc7659825f86531df856ae76e9a0cb",
         "src/main.c": "16af20b17c545f81df7e4a7dbaefb2fed23fa7271f862b15a9c3c000ddd26232",
         "docs/site-content.json": "b96463cde4f9b48008f95150e1e4e90695cd920d17a106a92bf513e71e008400",
-        "docs/index.md": "ceb4aad77445c49806f9c68f7143d234f677b77d546b3a922dc2384d6533faea"
+        "docs/index.md": "85bc66c07b98aed2d2ad09f98dee6d628b3d6c52cc1b87d55dd2970cb1df2852"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/index.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
@@ -1741,7 +1741,7 @@
       "review": "Author-attested: 2026-10-25 re-read docs/examples.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/limitations.md": {
-      "evidence": "Re-read 2026-11-11 for the removal of Android from the repository: scripts/build.py and scripts/package.py define only windows-x64 and linux-x64, toolchain.json has no NDK pin or android block, scripts/check-all.py --all-targets adds the Windows target only, and AGENTS.md, README.md and docs/_config.yml name Windows and Linux; this document's target lists, build commands, toolchain and platform statements were checked against those sources and it makes no Android statement",
+      "evidence": "Re-read 2026-11-11 after the independent review of the Android removal: the planned converter is described as a desktop application for Windows and Linux, the vision carries no Android interop default, and the plan-table rule states that a malformed phase row fails plan --check and plan --sync; this document's statements about targets, the converter and the plan table were checked against scripts/build.py, scripts/todo-graph.py and docs/vision.md",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "362589cf2d8cdf51ea77ef645fb115e9edcc7659825f86531df856ae76e9a0cb",
@@ -1750,7 +1750,7 @@
         "src/bmp.c": "50278e51120542ec686aee00385eba666239070533035e5d04e7d659b118317c",
         "src/api.c": "774c4e0a2a22f5a01e174e541cd1e725da05019ece20927345938cbe10fe0f02",
         "src/sys_posix.c": "dd65833094db53eedc06d917f0d3b6fefcb402414e20878503cf36341601f9fd",
-        "docs/limitations.md": "e6f2103d7c2653e83507ef60df49fe0d8e21ec05951b86dd7e12414fd4df5e90"
+        "docs/limitations.md": "cb6fd4baac7eac3531e74deebe3dd2b0691a99d8723377257de4d68d06bfee03"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/limitations.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
@@ -1812,7 +1812,13 @@
     "docs/reviews/conclave-guard-port.md -> /home/derickpayne/projects/RasterFold/.claude/skills/process-plan/SKILL.md:69": "Captured reviewer output (review-dispatch.py round 1, 2026-10-21), byte-exact under its digest; the targets are absolute file:line citations, not repository links",
     "docs/reviews/conclave-guard-port.md -> /home/derickpayne/projects/RasterFold/scripts/campaign_guard.py:1827": "Captured reviewer output (review-dispatch.py round 1, 2026-10-21), byte-exact under its digest; the targets are absolute file:line citations, not repository links",
     "docs/reviews/01-compression/D01-T01-s4.md -> /home/derickpayne/projects/RasterFold/todo/01-compression/TODO-01-palette-method.md:142": "Captured reviewer output (review-dispatch.py completion, 2026-10-26), byte-exact under its digest; the targets are absolute file:line citations, not repository links",
-    "docs/reviews/01-compression/D01-T01-s4.md -> /home/derickpayne/projects/RasterFold/tests/test_correctness.py:923": "Captured reviewer output (review-dispatch.py completion, 2026-10-26), byte-exact under its digest; the targets are absolute file:line citations, not repository links"
+    "docs/reviews/01-compression/D01-T01-s4.md -> /home/derickpayne/projects/RasterFold/tests/test_correctness.py:923": "Captured reviewer output (review-dispatch.py completion, 2026-10-26), byte-exact under its digest; the targets are absolute file:line citations, not repository links",
+    "docs/reviews/android-removal-and-plan-needs.md -> /home/derickpayne/projects/RasterFold/scripts/todo-graph.py:7832": "Captured reviewer output (review-dispatch.py round 1, 2026-11-11), byte-exact under the record's Lines and Digest: the reviewer wrote absolute path:line links into its findings",
+    "docs/reviews/android-removal-and-plan-needs.md -> /home/derickpayne/projects/RasterFold/todo/10-converter/TODO-01-engine.md:91": "Captured reviewer output (review-dispatch.py round 1, 2026-11-11), byte-exact under the record's Lines and Digest: the reviewer wrote absolute path:line links into its findings",
+    "docs/reviews/android-removal-and-plan-needs.md -> /home/derickpayne/projects/RasterFold/todo/10-converter/TODO-02-codecs.md:74": "Captured reviewer output (review-dispatch.py round 1, 2026-11-11), byte-exact under the record's Lines and Digest: the reviewer wrote absolute path:line links into its findings",
+    "docs/reviews/android-removal-and-plan-needs.md -> /home/derickpayne/projects/RasterFold/docs/vision.md:9": "Captured reviewer output (review-dispatch.py round 1, 2026-11-11), byte-exact under the record's Lines and Digest: the reviewer wrote absolute path:line links into its findings",
+    "docs/reviews/android-removal-and-plan-needs.md -> /home/derickpayne/projects/RasterFold/docs/index.md:23": "Captured reviewer output (review-dispatch.py round 1, 2026-11-11), byte-exact under the record's Lines and Digest: the reviewer wrote absolute path:line links into its findings",
+    "docs/reviews/android-removal-and-plan-needs.md -> /home/derickpayne/projects/RasterFold/docs/limitations.md:43": "Captured reviewer output (review-dispatch.py round 1, 2026-11-11), byte-exact under the record's Lines and Digest: the reviewer wrote absolute path:line links into its findings"
   },
   "generators": [
     {
@@ -1884,7 +1890,7 @@
         "docs/_includes/generated/tables/size-vs-decode.md"
       ],
       "planned_outputs": {
-        "docs/cli.md": "D08 T03 \u00a71"
+        "docs/cli.md": "D08 T03 §1"
       }
     },
     {

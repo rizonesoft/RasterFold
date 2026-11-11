@@ -7752,6 +7752,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
     old_headers = 0                 # phase tables still on the header without Needs
     widen_separator = False
     needs_table = False
+    malformed: list[str] = []       # rows of a phase table that are not four or five cells
     unknown: list[str] = []
     seen: list[str] = []
 
@@ -7829,7 +7830,11 @@ def cmd_plan(args: argparse.Namespace) -> int:
         want_needs = needs_by_ref.get(ref)
         if want_needs is not None and needs_table:
             line, had_needs = _sync_needs_cell(line, want_needs)
-            if had_needs is not None and had_needs != want_needs:
+            if had_needs is None:
+                # Neither four nor five cells: sync cannot place the Needs cell,
+                # so the row is reported instead of silently passing --check.
+                malformed.append(ref)
+            elif had_needs != want_needs:
                 stale.append(
                     f"{ref}: plan Needs says {had_needs or 'nothing (no Needs cell)'}, graph says {want_needs}"
                 )
@@ -7904,6 +7909,11 @@ def cmd_plan(args: argparse.Namespace) -> int:
     # Implementation Order tables, and a section IS a unit of work in a domain.
     missing = [r for r in state if r not in seen]
 
+    for ref in malformed:
+        print(
+            f"::error::{_rel(PLAN)} row {ref} is not `| box | ref | deliverable | needs | items |`: "
+            "fix the row by hand, `plan --sync` cannot place its Needs cell"
+        )
     if old_headers:
         stale.append(
             f"{old_headers} phase table header(s) lack the Needs column "
@@ -7963,7 +7973,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
                 f"::error::{_rel(PLAN)}'s Progress line is stale (completion, section counts, or backlog use) -- "
                 "run `python scripts/todo-graph.py plan --sync`"
             )
-        if stale or unknown or missing or dupes or json_stale or operator_stale or moved_rows or stale_notes or progress_stale:
+        if stale or unknown or missing or dupes or json_stale or operator_stale or moved_rows or stale_notes or progress_stale or malformed:
             print(
                 f"\n{len(stale)} stale row(s), {len(unknown)} unknown ref(s), "
                 f"{len(missing)} unsequenced section(s), {len(dupes)} duplicated section(s)"
@@ -7971,7 +7981,8 @@ def cmd_plan(args: argparse.Namespace) -> int:
                 f"{f', {len(moved_rows)} moved row(s)' if moved_rows else ''}"
                 f"{f', {len(stale_notes)} stale Moved line(s)' if stale_notes else ''}"
                 f"{', progress JSON stale' if json_stale else ''}"
-                f"{', operator JSON stale' if operator_stale else ''}. "
+                f"{', operator JSON stale' if operator_stale else ''}"
+                f"{f', {len(malformed)} malformed row(s)' if malformed else ''}. "
                 "Run `python scripts/todo-graph.py plan --sync`.",
                 file=sys.stderr,
             )
@@ -7994,7 +8005,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
         print(f"  {s}")
     if missing:
         print(f"  NOTE: {len(missing)} open section(s) appear in no phase -- run with --check for the list")
-    return 0
+    return 1 if malformed else 0
 
 
 # ---------------------------------------------------------------------- main
@@ -11272,6 +11283,22 @@ An oversized section: the clean single-WARN shape (over-30-items).
             with _ctx.redirect_stdout(nbuf), _ctx.redirect_stderr(_io.StringIO()):
                 cmd_plan(argparse.Namespace(check=True))
             check("a synced plan no longer reports the Needs column", "Needs" in nbuf.getvalue(), False)
+            # A row of a phase table with three or six cells cannot carry a Needs
+            # cell: --check and --sync both refuse it instead of passing it by.
+            good = plan_n.read_text(encoding="utf-8")
+            for bad_row in ("| [ ] | `D93 T05 §2` | Depends on the moved thing |",
+                            "| [ ] | `D93 T05 §2` | Depends | on | gpu | 1 |"):
+                plan_n.write_text(
+                    "\n".join(bad_row if "`D93 T05 §2`" in l else l for l in good.splitlines()) + "\n", encoding="utf-8"
+                )
+                mbuf = _io.StringIO()
+                with _ctx.redirect_stdout(mbuf), _ctx.redirect_stderr(_io.StringIO()):
+                    rc_bad_check = cmd_plan(argparse.Namespace(check=True))
+                    rc_bad_sync = cmd_plan(argparse.Namespace(check=False))
+                check(f"plan --check names a malformed row ({len(_split_row(bad_row) or [])} cells)",
+                      "row D93 T05 §2 is not" in mbuf.getvalue(), True)
+                check("plan --check exits 1 on a malformed row", rc_bad_check, 1)
+                check("plan --sync exits 1 on a malformed row", rc_bad_sync, 1)
             PLAN = plan_m
         finally:
             PLAN = plan

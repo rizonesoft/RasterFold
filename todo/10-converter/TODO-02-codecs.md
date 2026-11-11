@@ -14,7 +14,7 @@ track: GUI2
 > **Goal:** Every format in the required capability matrix has an audited provider, truthful lossless modes and fresh bundled decode and format-specific round-trip/refusal coverage, with differential fixtures where available.
 
 > [!IMPORTANT]
-> **Current state (verified 2026-09-30):** `include/rasterfold.h` and the four-target build exist. There is no native converter application, GUI or bundled third-party codec source yet; D10 T01 §1 (2026-11-09) added the pixel contract, the capability registry in `converter/`, and its validator, with every format still `planned`. These sections implement the operator-approved native C application with bundled codec source and no additional user installs.
+> **Current state (verified 2026-09-30):** `include/rasterfold.h` and the Windows/Linux x64 build exist (the Android targets were removed on 2026-11-11). There is no native converter application, GUI or bundled third-party codec source yet; D10 T01 §1 (2026-11-09) added the pixel contract, the capability registry in `converter/`, and its validator, with every format still `planned`. These sections implement the operator-approved native C application with bundled codec source and no additional user installs.
 <!-- claim: exists include/rasterfold.h -->
 <!-- claim: exists converter/include/rfc_codec.h -->
 
@@ -71,7 +71,7 @@ track: GUI2
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
-- [ ] Pin the required RasterFold, the shared D07 image modules, libpng/zlib for high-depth/alpha PNG, and a pinned audited APNG-capable provider or maintained patch set with complete provenance and build options in `converter/vendor.json`. Done when: the provider builds for all four targets with source/license evidence.
+- [ ] Pin the required RasterFold, the shared D07 image modules, libpng/zlib for high-depth/alpha PNG, and a pinned audited APNG-capable provider or maintained patch set with complete provenance and build options in `converter/vendor.json`. Done when: the provider builds for both targets (Windows x64, Linux x64) with source/license evidence.
 - [ ] Implement `converter/codecs/basic.c`. Done when: the public RasterFold API is reused; RGB8-only restrictions are explicit; BMP/PNG/PPM readers are shared with the CLI rather than copied; PBM P1/P4, PGM P2/P5, PPM P3/P6 and PAM P7 are covered with depth/alpha restrictions explicit; higher-depth/alpha PNG uses a bundled audited provider without silently routing it through RGB8 RasterFold.
 - [ ] Register exact input/output capabilities in `converter/codecs.json`. Done when: unsupported sample depth, alpha, metadata and frame modes are refused before work, with a user-visible reason.
 - [ ] Add positive and malformed fixtures in `tests/converter/test_basic.py`. Done when: a fresh decoder proves the advertised representation and metadata contract, differential fixtures identify implementation independence or shared-provider limitations, and mutated input cannot crash or hang.
@@ -90,7 +90,7 @@ Build in the listed order. This section adds the named test driver before using 
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
-- [ ] Pin the required libwebp source and build options in `converter/vendor.json`. Done when: the provider builds for all four targets with source/license evidence.
+- [ ] Pin the required libwebp source and build options in `converter/vendor.json`. Done when: the provider builds for both targets (Windows x64, Linux x64) with source/license evidence.
 - [ ] Implement `converter/codecs/webp.c`. Done when: lossless encoding sets exact transparent RGB preservation; ICC/EXIF/XMP muxing and decoded RGBA equality are tested against the upstream cwebp/dwebp contract.
 - [ ] Register exact input/output capabilities in `converter/codecs.json`. Done when: unsupported sample depth, alpha, metadata and frame modes are refused before work, with a user-visible reason.
 - [ ] Add positive and malformed fixtures in `tests/converter/test_webp.py`. Done when: a fresh decoder proves the advertised representation and metadata contract, differential fixtures identify implementation independence or shared-provider limitations, and mutated input cannot crash or hang.
@@ -109,7 +109,7 @@ Build in the listed order. This section adds the named test driver before using 
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
-- [ ] Pin the required libjxl and its required transitive libraries source and build options in `converter/vendor.json`. Done when: the provider builds for all four targets with source/license evidence.
+- [ ] Pin the required libjxl and its required transitive libraries source and build options in `converter/vendor.json`. Done when: the provider builds for both targets (Windows x64, Linux x64) with source/license evidence.
 - [ ] Implement `converter/codecs/jxl.c`. Done when: the C interface selects documented lossless encoding, retained invisible samples and metadata boxes; JPEG reconstruction uses original JPEG bytes and proves byte-identical reconstruction separately from pixel round trips.
 - [ ] Register exact input/output capabilities in `converter/codecs.json`. Done when: unsupported sample depth, alpha, metadata and frame modes are refused before work, with a user-visible reason.
 - [ ] Add positive and malformed fixtures in `tests/converter/test_jxl.py`. Done when: a fresh decoder proves the advertised representation and metadata contract, differential fixtures identify implementation independence or shared-provider limitations, and mutated input cannot crash or hang.
@@ -128,7 +128,7 @@ Build in the listed order. This section adds the named test driver before using 
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
-- [ ] Pin the required libavif plus one audited AV1 encoder/decoder source and build options in `converter/vendor.json`. Done when: the provider builds for all four targets with source/license evidence.
+- [ ] Pin the required libavif plus one audited AV1 encoder/decoder source and build options in `converter/vendor.json`. Done when: the provider builds for both targets (Windows x64, Linux x64) with source/license evidence.
 - [ ] Implement `converter/codecs/avif.c`. Done when: lossless mode requires supported full-range 4:4:4 reversible color representation and zero quantization; decoded native RGB equality is verified rather than inferred from an encoder setting.
 - [ ] Register exact input/output capabilities in `converter/codecs.json`. Done when: unsupported sample depth, alpha, metadata and frame modes are refused before work, with a user-visible reason.
 - [ ] Add positive and malformed fixtures in `tests/converter/test_avif.py`. Done when: a fresh decoder proves the advertised representation and metadata contract, differential fixtures identify implementation independence or shared-provider limitations, and mutated input cannot crash or hang.
@@ -147,7 +147,7 @@ Build in the listed order. This section adds the named test driver before using 
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
-- [ ] Pin the required libjpeg-turbo source and build options in `converter/vendor.json`. Done when: the provider builds for all four targets with source/license evidence.
+- [ ] Pin the required libjpeg-turbo source and build options in `converter/vendor.json`. Done when: the provider builds for both targets (Windows x64, Linux x64) with source/license evidence.
 - [ ] Implement `converter/codecs/jpeg.c`. Done when: existing JPEGs can optimize entropy coding without re-quantizing coefficients; arbitrary RGB-to-baseline-JPEG is refused in lossless mode; original-byte reconstruction is delegated to the JPEG XL adapter.
 - [ ] Register exact input/output capabilities in `converter/codecs.json`. Done when: unsupported sample depth, alpha, metadata and frame modes are refused before work, with a user-visible reason.
 - [ ] Add positive and malformed fixtures in `tests/converter/test_jpeg.py`. Done when: coefficient arrays, quantization tables, dimensions and metadata are preserved across entropy optimization; pixel import is compared only under the pinned decoder settings, and original-byte reconstruction uses JPEG XL; mutated inputs must not crash or hang.
@@ -166,7 +166,7 @@ Build in the listed order. This section adds the named test driver before using 
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
-- [ ] Pin the required libtiff with its selected compression providers and giflib source and build options in `converter/vendor.json`. Done when: the provider builds for all four targets with source/license evidence.
+- [ ] Pin the required libtiff with its selected compression providers and giflib source and build options in `converter/vendor.json`. Done when: the provider builds for both targets (Windows x64, Linux x64) with source/license evidence.
 - [ ] Implement `converter/codecs/tiff_gif.c`. Done when: still TIFF sample depth and metadata remain intact; still GIF preserves indexed pixels and refuses palette reduction when exact representation exceeds its capacity; multi-page and animated composition are owned only by §12.
 - [ ] Register exact input/output capabilities in `converter/codecs.json`. Done when: unsupported sample depth, alpha, metadata and frame modes are refused before work, with a user-visible reason.
 - [ ] Add positive and malformed fixtures in `tests/converter/test_tiff_gif.py`. Done when: a fresh decoder proves the advertised representation and metadata contract, differential fixtures identify implementation independence or shared-provider limitations, and mutated input cannot crash or hang.
@@ -185,7 +185,7 @@ Build in the listed order. This section adds the named test driver before using 
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
-- [ ] Pin the required libheif with an explicitly selected HEVC provider source and build options in `converter/vendor.json`. Done when: the provider builds for all four targets with source/license evidence.
+- [ ] Pin the required libheif with an explicitly selected HEVC provider source and build options in `converter/vendor.json`. Done when: the provider builds for both targets (Windows x64, Linux x64) with source/license evidence.
 - [ ] Implement `converter/codecs/heif.c`. Done when: the license/distribution decision and target availability are recorded before enabling a provider; exactness is proven in the source representation and RGB conversion cannot be mislabeled lossless.
 - [ ] Register exact input/output capabilities in `converter/codecs.json`. Done when: unsupported sample depth, alpha, metadata and frame modes are refused before work, with a user-visible reason.
 - [ ] Add positive and malformed fixtures in `tests/converter/test_heif.py`. Done when: a fresh decoder proves the advertised representation and metadata contract, differential fixtures identify implementation independence or shared-provider limitations, and mutated input cannot crash or hang.
@@ -204,7 +204,7 @@ Build in the listed order. This section adds the named test driver before using 
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
-- [ ] Pin the required the audited QOI reference source and build options in `converter/vendor.json`. Done when: the provider builds for all four targets with source/license evidence.
+- [ ] Pin the required the audited QOI reference source and build options in `converter/vendor.json`. Done when: the provider builds for both targets (Windows x64, Linux x64) with source/license evidence.
 - [ ] Implement `converter/codecs/qoi.c`. Done when: RGB/RGBA8 preserves all channel bytes, including fully transparent RGB; larger depths and metadata that QOI cannot carry are rejected under preserve mode.
 - [ ] Register exact input/output capabilities in `converter/codecs.json`. Done when: unsupported sample depth, alpha, metadata and frame modes are refused before work, with a user-visible reason.
 - [ ] Add positive and malformed fixtures in `tests/converter/test_qoi.py`. Done when: a fresh decoder proves the advertised representation and metadata contract, differential fixtures identify implementation independence or shared-provider limitations, and mutated input cannot crash or hang.
@@ -223,7 +223,7 @@ Build in the listed order. This section adds the named test driver before using 
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
-- [ ] Pin the required OpenJPEG source and build options in `converter/vendor.json`. Done when: the provider builds for all four targets with source/license evidence.
+- [ ] Pin the required OpenJPEG source and build options in `converter/vendor.json`. Done when: the provider builds for both targets (Windows x64, Linux x64) with source/license evidence.
 - [ ] Implement `converter/codecs/jp2.c`. Done when: reversible transform mode and component precision preserve native samples; irreversible transform outputs are never offered as lossless.
 - [ ] Register exact input/output capabilities in `converter/codecs.json`. Done when: unsupported sample depth, alpha, metadata and frame modes are refused before work, with a user-visible reason.
 - [ ] Add positive and malformed fixtures in `tests/converter/test_jp2.py`. Done when: a fresh decoder proves the advertised representation and metadata contract, differential fixtures identify implementation independence or shared-provider limitations, and mutated input cannot crash or hang.
@@ -242,7 +242,7 @@ Build in the listed order. This section adds the named test driver before using 
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
-- [ ] Pin the required OpenEXR and its required support libraries source and build options in `converter/vendor.json`. Done when: the provider builds for all four targets with source/license evidence.
+- [ ] Pin the required OpenEXR and its required support libraries source and build options in `converter/vendor.json`. Done when: the provider builds for both targets (Windows x64, Linux x64) with source/license evidence.
 - [ ] Implement `converter/codecs/exr.c`. Done when: lossless compression preserves native half/float sample bits, channel names and windows; a tone-mapped preview does not replace the original samples.
 - [ ] Register exact input/output capabilities in `converter/codecs.json`. Done when: unsupported sample depth, alpha, metadata and frame modes are refused before work, with a user-visible reason.
 - [ ] Add positive and malformed fixtures in `tests/converter/test_exr.py`. Done when: native half/float bit patterns, channel names/windows and metadata survive a fresh pinned OpenEXR decode, labeled same-provider proof; differential checks name their actual compatible decoder or explicitly record its absence; mutated inputs must not crash or hang.
@@ -261,7 +261,7 @@ Build in the listed order. This section adds the named test driver before using 
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
-- [ ] Pin the required LibRaw source and build options in `converter/vendor.json`. Done when: the provider builds for all four targets with source/license evidence.
+- [ ] Pin the required LibRaw source and build options in `converter/vendor.json`. Done when: the provider builds for both targets (Windows x64, Linux x64) with source/license evidence.
 - [ ] Implement `converter/codecs/raw.c`. Done when: import exposes the chosen demosaic/color pipeline as a rendering operation; the original file is retained and no sensor-data or original-file reconstruction claim is made from a rendered preview.
 - [ ] Register exact input/output capabilities in `converter/codecs.json`. Done when: unsupported sample depth, alpha, metadata and frame modes are refused before work, with a user-visible reason.
 - [ ] Add positive and malformed fixtures in `tests/converter/test_raw.py`. Done when: the original RAW/DNG hash is unchanged, rendering matches the pinned LibRaw pipeline/settings and metadata policy, and no claim of original sensor reconstruction or independent rendering is made; mutated inputs must not crash or hang.
