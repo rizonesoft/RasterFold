@@ -39,10 +39,21 @@ class Unavailable(Exception):
     """gh is missing, unauthenticated or failed: the CI state is unknown (exit 3)."""
 
 
+def find_gh(which=shutil.which, path=None):
+    """The gh executable on PATH, or None. Under WSL the Windows GitHub CLI is on PATH as `gh.exe`, which a
+    lookup of `gh` alone does not find, so the campaign's CI read-back reported the state as unknown."""
+    path = os.environ.get("PATH", "") if path is None else path
+    for name in ("gh", "gh.exe"):
+        executable = which(name, path=path)
+        if executable is not None:
+            return executable
+    return None
+
+
 def run_gh(args):
     """Run gh with args; returns (exit code, stdout, stderr). Raises Unavailable when gh is not installed."""
     # An explicit path: on Windows a bare which() also searches the working directory, where a planted gh could sit.
-    executable = shutil.which("gh", path=os.environ.get("PATH", ""))
+    executable = find_gh()
     if executable is None:
         raise Unavailable("gh is not installed or not on PATH")
     try:
