@@ -27,12 +27,14 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FAILURES: list[str] = []
 CANCEL_SIGNALS = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+CANCELLED = threading.Event()
 CLAUDE_HOME = Path.home() / ".claude"
 CLAUDE_STATE = Path.home() / ".claude.json"
 SCOUTS = ("rf-fact-check", "rf-log-digest", "rf-scout")
@@ -43,65 +45,84 @@ SCOUT_KEYS = frozenset({"name", "description", "tools", "model", "effort", "colo
 
 
 def check(name: str, ok: bool, detail: str = "") -> None:
+    if CANCELLED.is_set():
+        raise KeyboardInterrupt
     print(f"{'PASS' if ok else 'FAIL'}  {name}" + (f"  -- {detail}" if detail else ""))
     if not ok:
         FAILURES.append(name)
 
 
 def run(args: list[str], timeout: int = 300) -> subprocess.CompletedProcess:
-    """One subprocess check, never raising: a spawn error or a timeout
-    becomes a failed result the caller reports as its named FAIL line,
-    so one broken executable cannot traceback the whole preflight.
-    A timeout stops the whole process group, not only the direct child:
-    a check or a repair that started builds must not leave them running
-    after the preflight has reported failure."""
-    # Cancellation signals are held back from just before the child exists until this frame is inside the block
-    # that cleans it up, so there is no instant in which a child is running and nothing will stop it.
-    held = signal.pthread_sigmask(signal.SIG_BLOCK, CANCEL_SIGNALS)
-    proc = None
+    """One subprocess check, never raising for a failed check: a spawn error
+    or a timeout becomes a failed result the caller reports as its named
+    FAIL line, so one broken executable cannot traceback the whole preflight.
+
+    The child runs in its own process group, and that whole group is killed
+    and reaped before this function returns or raises, whatever ended it: a
+    check or a repair that started builds must not leave them running after
+    the preflight has moved on or released the guard lock.
+
+    Cancellation is cooperative so that it has no unsafe instant. Once
+    install_signal_handlers() has run, SIGINT, SIGTERM and SIGHUP only set a
+    flag; this loop sees the flag, stops the child, and only then raises
+    KeyboardInterrupt. No exception can arrive between the child starting
+    and the cleanup that owns it, or in the middle of that cleanup."""
+    if CANCELLED.is_set():
+        raise KeyboardInterrupt
     try:
-        try:
-            proc = subprocess.Popen(args, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                                    start_new_session=True,
-                                    preexec_fn=lambda: signal.pthread_sigmask(signal.SIG_SETMASK, held))
-        except OSError as exc:
-            return subprocess.CompletedProcess(args, 127, "", f"{args[0]}: could not start: {exc}")
-        signal.pthread_sigmask(signal.SIG_SETMASK, held)  # a signal held back is delivered here, inside the block
-        out, err = proc.communicate(timeout=timeout)
-        return subprocess.CompletedProcess(args, proc.returncode, out, err)
-    except subprocess.TimeoutExpired:
-        kill_group(proc.pid)
-        out, _ = proc.communicate()
-        return subprocess.CompletedProcess(args, 124, out or "", f"{args[0]}: timed out after {timeout}s")
-    except BaseException:
-        # Cancelled (Ctrl+C, the window closed, a kill; see install_signal_handlers). The child runs in its own
-        # session, so the terminal's signal never reached it: stop its whole group here, before this frame unwinds
-        # and a caller releases the guard lock it held around the child.
-        if proc is not None:
-            kill_group(proc.pid)
-            proc.wait()
-        raise
+        proc = subprocess.Popen(args, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                start_new_session=True)
+    except OSError as exc:
+        return subprocess.CompletedProcess(args, 127, "", f"{args[0]}: could not start: {exc}")
+    deadline = time.monotonic() + timeout
+    out = err = ""
+    timed_out = False
+    try:
+        while True:
+            try:
+                out, err = proc.communicate(timeout=0.2)
+                break
+            except subprocess.TimeoutExpired:
+                if CANCELLED.is_set():
+                    break
+                if time.monotonic() >= deadline:
+                    timed_out = True
+                    break
     finally:
-        signal.pthread_sigmask(signal.SIG_SETMASK, held)
+        # Runs on every path, including an exception nobody planned for. With the handlers installed nothing can
+        # interrupt it: a signal arriving now only sets the flag checked below.
+        kill_group(proc)
+        try:
+            late_out, late_err = proc.communicate()
+            out, err = out or late_out, err or late_err
+        except (OSError, ValueError):
+            proc.wait()
+    if CANCELLED.is_set():
+        raise KeyboardInterrupt
+    if timed_out:
+        return subprocess.CompletedProcess(args, 124, out or "", f"{args[0]}: timed out after {timeout}s")
+    return subprocess.CompletedProcess(args, proc.returncode, out, err)
+
+
+def kill_group(proc: subprocess.Popen) -> None:
+    """Kill every process in the group `proc` leads and wait until none is left (bounded). The leader is reaped as
+    the loop goes, since a group whose only member is an unreaped leader still accepts the signal."""
+    for _ in range(100):
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            return
+        proc.poll()
+        time.sleep(0.05)
 
 
 def install_signal_handlers() -> None:
-    """Turn SIGTERM and SIGHUP into the same KeyboardInterrupt Ctrl+C raises, so every way of stopping the preflight
-    unwinds through run() and takes the running check's process group with it."""
+    """Make stopping the preflight cooperative: Ctrl+C, a closed window (SIGHUP) and a kill (SIGTERM) set CANCELLED
+    and nothing else. run() and check() turn the flag into KeyboardInterrupt at points where no child is running."""
     def cancel(signum, frame):
-        raise KeyboardInterrupt
-    for signum in (signal.SIGTERM, signal.SIGHUP):
+        CANCELLED.set()
+    for signum in CANCEL_SIGNALS:
         signal.signal(signum, cancel)
-
-
-def kill_group(pgid: int) -> None:
-    """Kill every process in the group `pgid` leads and wait until none is left (bounded)."""
-    for _ in range(50):
-        try:
-            os.killpg(pgid, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            return
-        time.sleep(0.1)
 
 
 def pid_alive(pid: int) -> bool:
