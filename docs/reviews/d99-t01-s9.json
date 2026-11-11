@@ -1,0 +1,77 @@
+{
+  "ref": "D99 T01 \u00a79",
+  "title": "The 2026-11-11 Scope and Autonomy Decisions",
+  "implementation_sha": "39f392f0a6d4a4748b607830391d7708ee49687f",
+  "date": "2026-11-11",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/99-manual/D99-T01-s9.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "python3 scripts/todo-claims.py -> todo-claims: 103 claim(s) -- 103 hold, 0 stale, 0 malformed",
+    "python3 scripts/todo-graph.py validate -> 34 todos, 253 sections -- 0 fatal; plan --check -> implementation plan is current",
+    "bosun run -- python3 scripts/check-all.py --all-targets -> check-all: 31/31 passed"
+  ],
+  "completion": {
+    "report": "docs/reviews/99-manual/D99-T01-s9.md",
+    "verdict": "complete",
+    "candidate": "39f392f0a6d4a4748b607830391d7708ee49687f",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/99-manual/D99-T01-s9.md",
+    "candidate": "2044dd51eb5cc08f197761d6f3bf7fb9e7311c20",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "2044dd51eb5cc08f197761d6f3bf7fb9e7311c20",
+  "schedule": {
+    "policy": "three-pass",
+    "pass_cap": 33,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}

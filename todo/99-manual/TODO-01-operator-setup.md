@@ -53,7 +53,7 @@ track: OP1
 |   5   |   §5    | Enable GitHub Pages                           | --         |  [x]   |
 | 7 | §7 | HEVC distribution decision | -- | [ ] |
 | 8 | §8 | The 13-round milestone cap | §4 | [x] |
-| 9 | §9 | The 2026-11-11 scope and autonomy decisions | -- | [ ] |
+| 9 | §9 | The 2026-11-11 scope and autonomy decisions | -- | [x] |
 
 ---
 
@@ -209,6 +209,8 @@ The operator made six decisions in one attended session on 2026-11-11, and a sev
 
 **Test checkpoint:** `python3 scripts/todo-claims.py` exits 0 with this section's six claims held, `python3 scripts/todo-graph.py validate` and `plan --check` exit 0, and the seven decision lines above quote the operator.
 
+> **Verified:** 2026-11-11 | §9 | 39f392f0a6d4a4748b607830391d7708ee49687f
+> **Review:** `docs/reviews/d99-t01-s9.json`
 ## Verification
 
 - [ ] `python scripts/todo-graph.py validate` clean

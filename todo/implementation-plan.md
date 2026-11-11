@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **114 of 253 sections complete (45%).** 253 sections (22 discovered); backlog 5 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **115 of 253 sections complete (45%).** 253 sections (22 discovered); backlog 5 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -273,7 +273,7 @@ Generated and screen content against WebP.
 | [x] | `D00 T05 §7` | Claude Code as the unattended writer, with read-only Sonnet scouts and its own language servers | none       |  10   |
 | [x] | `D00 T05 §8` | Review prompts filled by script from the templates                                              | none       |   5   |
 | [x] | `D99 T01 §8` | The 13-round milestone cap                                                                      | none       |   6   |
-| [ ] | `D99 T01 §9` | The 2026-11-11 scope and autonomy decisions                                                     | none       |   4   |
+| [x] | `D99 T01 §9` | The 2026-11-11 scope and autonomy decisions                                                     | none       |   4   |
 | [ ] | `D05 T01 §8` | Milestone 8 gate: Beat WebP on generated images                                                 | ffmpeg-jxl |   5   |
 
 ### Phase 8 -- Milestone 9: Holds on images never tuned on
