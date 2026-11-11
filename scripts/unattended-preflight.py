@@ -201,8 +201,8 @@ def process_table_running(session_id: str) -> bool | None:
     """Whether some live process still owns `session_id`, or None when
     this host cannot tell. On Linux a session owns its id through its
     command line (every launcher-started Claude Code session: `--session-id`)
-    or an open file under a path naming it (a Muse session holds its session
-    lock that way); anything else is not running."""
+    or an open file under a path naming it; anything else is not running.
+    A process whose descriptors cannot be inspected is not the owner."""
     proc_dir = Path("/proc")
     if not proc_dir.is_dir():
         return None
@@ -221,25 +221,12 @@ def process_table_running(session_id: str) -> bool | None:
             try:
                 fds = list((entry / "fd").iterdir())
             except OSError:
-                # A non-dumpable daemon cannot be the session owner, but a
-                # Muse-shaped process whose descriptors cannot be inspected
-                # might be: ownership is then unknown, never stale.
-                try:
-                    if b"muse" in (entry / "cmdline").read_bytes().lower():
-                        unknown = True
-                except OSError:
-                    unknown = True
+                # A non-dumpable daemon cannot be the session owner.
                 fds = []
             for fd in fds:
                 try:
                     if session_id in os.readlink(fd):
                         return True
-                except PermissionError:
-                    try:
-                        if b"muse" in (entry / "cmdline").read_bytes().lower():
-                            unknown = True
-                    except OSError:
-                        unknown = True
                 except OSError:
                     continue
         except PermissionError:

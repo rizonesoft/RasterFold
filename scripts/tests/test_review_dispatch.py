@@ -276,8 +276,9 @@ class Dispatch(Harness):
                 self.assertEqual((summary["writer"], summary["reviewer"]), (writer, "sol"))
         self.assertEqual(len(self.calls()), 3)
 
-    def test_an_opencode_writer_dispatches_through_its_own_route(self):
-        # Owner decision 2026-10-29: OpenCode (an Anthropic model) writes, and its route is the pin's, never claude's.
+    def test_a_historical_pin_naming_opencode_dispatches_through_its_own_route(self):
+        # OpenCode is retired (owner decision 2026-11-11), but an older section's pin naming it still reads back, and
+        # its route is that pin's, never claude's.
         (self.repo / ".conclave/reviewers.toml").write_text(FIXTURE_PIN + 'opencode = ["sol"]\n', encoding="utf-8")
         result, summary = self.dispatch("--writer", "opencode", "--prompt", str(self.prompt))
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -1298,8 +1299,7 @@ class RepositoryPin(unittest.TestCase):
             pin = tomllib.load(handle)
         self.assertEqual(pin["reviewers"], {"astra": {"cli": "codex", "model": "gpt-6-astra", "effort": "medium"},
                                            "carbon": {"cli": "agy", "model": "gemini-4-carbon-medium"}})
-        self.assertEqual(pin["routes"], {"claude": ["astra"], "codex": ["carbon"], "gemini": ["astra"],
-                                         "muse": ["astra"], "opencode": ["astra"]})
+        self.assertEqual(pin["routes"], {"claude": ["astra"], "codex": ["carbon"], "gemini": ["astra"]})
         schedule = pin["schedule"]
         self.assertEqual(schedule["policy"], "three-pass")
         self.assertEqual(schedule["plan"], {"effort": "medium", "lenses": ["plan"]})
@@ -2052,10 +2052,14 @@ class ThreePassDispatch(Harness):
         with self.assertRaisesRegex(module.Refused, "effort in its model name"):
             module.load_pin(data=high.encode())
 
-    def test_opencode_work_goes_to_astra(self):
-        result, summary = self.dispatch("--writer", "opencode", "--prompt", str(self.prompt), codex="say", say=self.ROUND)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(summary["reviewer"], "astra")
+    def test_the_retired_muse_and_opencode_writers_have_no_route(self):
+        # Owner decision 2026-11-11: Muse Code and OpenCode no longer write, so the pin spends no review on them.
+        for writer in ("muse", "opencode"):
+            with self.subTest(writer):
+                result, _ = self.dispatch("--writer", writer, "--prompt", str(self.prompt), codex="say", say=self.ROUND)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(f"no route for writer '{writer}'", result.stderr)
+        self.assertEqual(self.calls(), [])
 
     def test_a_standalone_review_has_no_order(self):
         result, summary = self.dispatch("--writer", "claude", "--prompt", str(self.prompt), codex="say", say=self.ROUND)

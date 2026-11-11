@@ -24,6 +24,9 @@
 # Owner decision 2026-11-11: Gemini 4 Carbon was released and replaces Gemini 4 Argon as the Codex writer's reviewer
 # (`reviewers.carbon`, `gemini-4-carbon-medium` through the Antigravity CLI). Sections whose plan review read an
 # earlier pin finish on Argon.
+# Owner decision 2026-11-11: Muse Code and OpenCode are retired as writers. The writers are Claude Code, Codex and
+# Gemini (through Antigravity); no route names `muse` or `opencode`, and OpenCode's campaign plugin, hook adapter and
+# heartbeat script are removed.
 # A section keeps the pin at its plan review's candidate, so sections already under review finish on their own rules.
 
 schema_version = 1
@@ -41,8 +44,6 @@ model = "gemini-4-carbon-medium"
 claude = ["astra"]
 codex = ["carbon"]
 gemini = ["astra"]
-muse = ["astra"]
-opencode = ["astra"]
 
 [schedule]
 policy = "three-pass"

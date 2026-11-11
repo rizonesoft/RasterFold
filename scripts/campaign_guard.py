@@ -769,9 +769,9 @@ def _guard_lock(root: str, wait_ms: int) -> _Lock:
 
 
 def heartbeat_still(root: str, session: str) -> str:
-    """One heartbeat's progress accounting, for runs on a harness with no
-    Stop hook (owner decision 2026-10-27: Muse runs rest on the guard file
-    plus the heartbeat, so no hook ever counts their still turns). It
+    """One heartbeat's progress accounting, for the turns no Stop hook
+    holds (owner decision 2026-10-27: a run must end on the guard file
+    plus the heartbeat alone, when no hook counts its still turns). It
     hashes the same progress fingerprint the hook does: a changed tree
     resets the still count and the stall trips, and
     MAX_HEARTBEAT_STILLS resumptions in a row with no change count one
@@ -2151,8 +2151,8 @@ def _self_test() -> int:
         check("a-bom-closeout-that-ends-the-hook-also-ends-the-run",
               out is None and ended.startswith("end:") and read_guard(sroot) is None, f"{out} {ended}")
 
-    # Owner decision 2026-10-27: a harness with no Stop hook (Muse) still
-    # terminates a stuck run: consecutive unchanged heartbeat resumptions
+    # Owner decision 2026-10-27: a run whose Stop hook never fires still
+    # terminates when stuck: consecutive unchanged heartbeat resumptions
     # count trips on the same counter the hook feeds.
     with tempfile.TemporaryDirectory(prefix="campaign-still-") as htmp:
         hroot = _workspace(htmp)

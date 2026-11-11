@@ -263,7 +263,7 @@ class ReviewPromptTests(unittest.TestCase):
         out = self.root / "build" / "review prompts" / "plan one.md"
         findings = "docs/reviews/my notes/s2.md"
         _, command = rp.build(args(kind="plan", candidate=self.c3, out=str(out), findings=findings), self.root)
-        words = shlex.split(command.replace("<claude|codex|gemini|muse|opencode>", "claude"))
+        words = shlex.split(command.replace("<claude|codex|gemini>", "claude"))
         self.assertEqual(words[words.index("--prompt") + 1], "build/review prompts/plan one.md")
         self.assertEqual(words[words.index("--record") + 1], findings)
 

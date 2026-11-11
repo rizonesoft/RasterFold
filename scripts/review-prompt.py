@@ -232,7 +232,7 @@ def build(args: argparse.Namespace, root: Path = ROOT) -> tuple[Path, str]:
     out.write_text(text, encoding="utf-8")
     shown = out.relative_to(root).as_posix() if out.is_relative_to(root) else str(out)
     kind_flag = "" if args.kind == "round" else f" --kind {args.kind}"
-    command = (f"python3 scripts/review-dispatch.py{kind_flag} --candidate {candidate} --writer <claude|codex|gemini|muse|opencode>"
+    command = (f"python3 scripts/review-dispatch.py{kind_flag} --candidate {candidate} --writer <claude|codex|gemini>"
                f" --prompt {shlex.quote(shown)} --record {shlex.quote(findings)}")
     return out, command
 

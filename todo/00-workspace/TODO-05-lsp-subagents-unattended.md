@@ -31,8 +31,8 @@ track: W1
 
 - [`scripts/build.py`](../../scripts/build.py) -- already emits each target's Ninja graph and compilation database; §1 merges them, §3 measures them
 - [`toolchain.json`](../../toolchain.json) -- the LLVM, Ninja, and NDK pins §1 and §3 consume; no pin moves in this file
-- [`.conclave/reviewers.toml`](../../.conclave/reviewers.toml) -- the reviewer pin (muse routes to Astra via the Codex CLI) the unattended run in §4 relies on never waiting for
-- [`scripts/campaign_guard.py`](../../scripts/campaign_guard.py) and the `process-plan` skill -- the guard file and in-session heartbeat §4 starts; Muse has no Stop hook, so those two carry the run
+- [`.conclave/reviewers.toml`](../../.conclave/reviewers.toml) -- the reviewer pin (the `claude` writer routes to Astra via the Codex CLI) the unattended run in §4 relies on never waiting for
+- [`scripts/campaign_guard.py`](../../scripts/campaign_guard.py) and the `process-plan` skill -- the guard file and in-session heartbeat §4 starts, alongside the campaign Stop hook
 - [`docs/building.md`](../../docs/building.md) -- the host SDK requirements §1 extends with the editor setup
 - -> XREF: D00 T01 §3 -- the static analysis gate owns the per-target compilation databases §1 publishes to editors, and the clang-tidy configuration `.clangd` mirrors
 - -> XREF: D00 T01 §10 -- the OpenCode campaign hook and heartbeat are the precedent for mapping a harness onto the run guard; §4 does the same for the Muse launcher

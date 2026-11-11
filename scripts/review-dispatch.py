@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Run one independent review round with the reviewer pinned in .conclave/reviewers.toml.
 
-    python3 scripts/review-dispatch.py --writer <claude|codex|gemini|muse|opencode> --prompt review-prompt.md --record docs/reviews/x.md
-    python3 scripts/review-dispatch.py --kind completion --candidate <40-char SHA> --writer <claude|codex|gemini|muse|opencode> \
+    python3 scripts/review-dispatch.py --writer <claude|codex|gemini> --prompt review-prompt.md --record docs/reviews/x.md
+    python3 scripts/review-dispatch.py --kind completion --candidate <40-char SHA> --writer <claude|codex|gemini> \
         --prompt completion-prompt.md --record docs/reviews/x.md     the one-pass completion and excellence review
     python3 scripts/review-dispatch.py --check-pin [--json] [--pin <path>]     the pin's verdict; runs no reviewer
     python3 scripts/review-dispatch.py --list-rounds [--json] [--records <dir>]  recorded rounds; runs no reviewer
 
-`--writer` is the agent whose work is under review: `claude`, `codex`, `gemini`, `muse` or `opencode`. Every writer's route in the
+`--writer` is the agent whose work is under review: `claude`, `codex` or `gemini`. Every writer's route in the
 pin names exactly one reviewer of a different model family, with no fallback.
 A reviewer that is not installed, exits non-zero, times out,
 returns nothing, or ends its reply `OVERALL: blocked` (it could not reach the candidate, for example a sandbox that
@@ -76,8 +76,8 @@ PIN = ROOT / ".conclave" / "reviewers.toml"
 CLIS = ("codex", "agy", "muse")
 # A reviewer is never of the writer's own model family: its CLI names the family, and so does the writer.
 FAMILY = {"codex": "openai", "agy": "google", "muse": "meta"}
-# `gemini` is Antigravity running a Gemini model; `opencode` is OpenCode running an Anthropic model. The pin's [routes]
-# names who may write today (owner decision 2026-11-06: claude, codex, gemini, muse, opencode). `agy` and `copilot` stay
+# `gemini` is Antigravity running a Gemini model. The pin's [routes] names who may write today (owner decision
+# 2026-11-11: claude, codex, gemini). The retired keys `muse`, `opencode`, `agy` and `copilot` stay
 # here only because recorded reviews and the pins of older sections name them, and those must keep reading back.
 WRITER_FAMILY = {"claude": "anthropic", "codex": "openai", "gemini": "google", "muse": "meta",
                  "opencode": "anthropic", "agy": "google", "copilot": "anthropic"}
