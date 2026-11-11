@@ -221,7 +221,10 @@ def process_table_running(session_id: str) -> bool | None:
             try:
                 fds = list((entry / "fd").iterdir())
             except OSError:
-                # A non-dumpable daemon cannot be the session owner.
+                # A process that hides its descriptors is not a writer session: every
+                # writer (Claude Code, Codex, Antigravity) runs dumpable as this user.
+                # Calling it unknown would refuse every stale-guard handover, since
+                # ordinary same-user daemons (sd-pam, a secrets agent) always hide them.
                 fds = []
             for fd in fds:
                 try:

@@ -40,7 +40,7 @@ track: W1
 ## Outcome
 
 - Opening the checkout in an editor gives clangd navigation, diagnostics, and clang-tidy on the C11 sources with the exact build flags, and Basedpyright navigation and undefined-name checks on the Python tooling, both from pinned binaries with memory bounds for a 13 GB host.
-- `rf-spark-scout`, `rf-spark-hands`, and `rf-ember-literal` are defined once in `.agents/muse-agents.json`, loaded by the launcher, and bound by AGENTS.md rules that keep judgment, codec work, reviews, stamps, and commits on the lead model.
+- The Muse subagent tiers §2 built (`rf-spark-scout`, `rf-spark-hands`, `rf-ember-literal`, defined in `.agents/muse-agents.json`) are removed with their roster file; AGENTS.md keeps judgment, codec work, reviews, stamps, and commits on the lead model, and §7's read-only Sonnet scouts are the only agents.
 - The tool stack has a verdict per candidate tool (Ninja and LLD already in; compiler caches and alternate linkers not adopted, explicitly untested, with a measured reopening bar), and the one measured bottleneck, receipt validation's per-section git calls, has an owner and a stop condition in §6.
 - `scripts/unattended-preflight.py` proves, before any unattended start, that the tree is clean on `main`, the graph and plan are current, the guard self-test and reviewer pin pass, the reviewer CLIs exist, the compilation database is current, the agent definitions load, and disk and RAM headroom suffice.
 - A Windows Desktop shortcut starts the whole thing in one double-click and either enters the campaign or shows the preflight failure.
