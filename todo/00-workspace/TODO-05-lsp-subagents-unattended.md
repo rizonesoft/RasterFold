@@ -61,7 +61,7 @@ track: W1
 |   4   |   §4    | Unattended run: preflight, launcher, and goal | §2 |  [x]   |
 |   5   |   §5    | The Windows Desktop shortcut | §4, §7 |  [ ]   |
 |   6   |   §6    | Batch the git calls in receipt validation | -- |  [x]   |
-|   7   |   §7    | Claude Code as the unattended writer, with read-only Sonnet scouts and its own language servers | §4 |  [ ]   |
+|   7   |   §7    | Claude Code as the unattended writer, with read-only Sonnet scouts and its own language servers | §4 |  [x]   |
 |   8   |   §8    | Review prompts filled by script from the templates | -- |  [x]   |
 
 ---
@@ -206,6 +206,8 @@ Decisions taken here, with their reversal cost. The session goal is carried by t
 
 **Test checkpoint:** Driven run with evidence: `python3 -m unittest discover -s scripts/tests` exits 0 with the new launcher, preflight, roster, and compilation-database cases; `python3 scripts/unattended-preflight.py` prints every line PASS on the committed tree; the three scout probes, the language-server probe, and the dry launch are quoted in this section from real runs; `python3 scripts/campaign_guard.py --self-test` exits 0. The cheaper substitute each probe rules out: a roster that only says read-only in prose (the write probe leaves no file because the tool does not exist), a launcher that parses but blocks on a dialog (the dry launch reaches a finished turn through the same script), and a plugin that validates but starts no server (the probe returns a definition).
 
+> **Verified:** 2026-11-11 | §7 | 578761ef82783db7d16be5232cab3c5edc3df09d
+> **Review:** `docs/reviews/d00-t05-s7.json`
 ## 8. Review Prompts Filled by Script From the Templates
 
 > **Started:** 2026-11-10T23:07:12Z

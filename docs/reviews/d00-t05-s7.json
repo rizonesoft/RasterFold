@@ -1,0 +1,78 @@
+{
+  "ref": "D00 T05 \u00a77",
+  "title": "Claude Code as the Unattended Writer, with Read-Only Sonnet Scouts and Its Own Language Servers",
+  "implementation_sha": "578761ef82783db7d16be5232cab3c5edc3df09d",
+  "date": "2026-11-11",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/00-workspace/D00-T05-s7.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "bosun run -- python3 scripts/check-all.py -> check-all: 31/31 passed at 578761e",
+    "python3 scripts/unattended-preflight.py -> preflight: all checks pass -- the unattended run may start",
+    "python3 scripts/campaign_guard.py --self-test -> 152 cases, 0 failed",
+    "live guard-lifecycle probe through scripts/unattended-run.sh at 1845f16 -> Stop hook block, second launch refused (FAIL no other unattended launch), heartbeat arrival, end and cancel-confirmed, no guard or job left (findings file writer note)",
+    "python3 scripts/review-prompt.py --kind round and --kind completion -> build/review-prompts/d00-t05-s7-round.md, build/review-prompts/d00-t05-s7-completion.md"
+  ],
+  "completion": {
+    "report": "docs/reviews/00-workspace/D00-T05-s7.md",
+    "verdict": "complete",
+    "candidate": "578761ef82783db7d16be5232cab3c5edc3df09d",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/00-workspace/D00-T05-s7.md",
+    "candidate": "6b5aa11efc622c3d5a8fcbfb7c3da0a40bb82750",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "6b5aa11efc622c3d5a8fcbfb7c3da0a40bb82750",
+  "schedule": {
+    "policy": "three-pass",
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}
