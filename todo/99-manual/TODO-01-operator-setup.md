@@ -175,6 +175,8 @@ The implementing session's recommendation, recorded with the decision: 13 is kep
 > **Review:** `docs/reviews/d99-t01-s8.json`
 ## 9. The 2026-11-11 Scope and Autonomy Decisions
 
+> **Started:** 2026-11-11T20:58:32Z
+
 The operator made six decisions in one attended session on 2026-11-11, and a seventh to the campaign session that evening. They changed the product's scope and the way every session works, so they are recorded here in the operator's words, each with where it is implemented and what reversing it costs. The implementing session carried them out in the commits `92885be`, `5a93a14`, `43ee9c9` and their review-fix commits; this section is the decision record and the check that the tree still agrees with it.
 
 **1. Android is removed.** "we will not be doing any android dev in this repo anymore, so please clean the repo. Time is better spend on the algorythms", after "remove Android work. We can always create a fork for that when we are done". RasterFold targets Windows x64 and Linux x64. Reversal cost: restore the NDK pin in `toolchain.json`, the two targets in `scripts/build.py`, `scripts/tidy.py` and `scripts/package.py`, and the Android rows of the plan from the commit before `92885be`.
@@ -200,10 +202,12 @@ The operator made six decisions in one attended session on 2026-11-11, and a sev
 
 - [ ] Check decisions 1 to 5 against the tree and repair any gap at its owning layer. Done when: `python3 scripts/todo-claims.py` holds this section's claims, `git grep -il android -- scripts src tests toolchain.json .github` prints nothing, `python3 scripts/plan-audit.py` exits 0 with `D10 T04 §4` as the later gate, and `python3 scripts/check-converter.py --case contract` passes.
 - [ ] Carry decision 6 in the unattended launcher's seed prompt (`scripts/unattended-run.sh`) and `docs/unattended-run.md`, so a campaign session applies it without rediscovering this section. Done when: both state that the session improves the repository, runners, toolset, method and product on its own judgment, and that an unproven impossibility is filed as work with its first experiment named.
-- [ ] Record in `docs/vision.md` and `AGENTS.md` any of the six decisions either file does not yet state, in the operator's words. Done when: each decision is findable in one of the two by its quoted phrase.
+- [ ] Record in `docs/vision.md` and `AGENTS.md` any of the seven decisions either file does not yet state, in the operator's words. Done when: each decision is findable in one of the two by its quoted phrase.
 - [ ] Commit: `"todo: record the 2026-11-11 scope and autonomy decisions"`
 
-**Test checkpoint:** `python3 scripts/todo-claims.py` exits 0 with this section's five claims held, `python3 scripts/todo-graph.py validate` and `plan --check` exit 0, and the six decision lines above quote the operator.
+**Corrected 2026-11-11:** decision 7 and its claim were added the evening this section started, so the checkpoint below reads six claims and seven decision lines where it said five and six, and the third item covers all seven decisions.
+
+**Test checkpoint:** `python3 scripts/todo-claims.py` exits 0 with this section's six claims held, `python3 scripts/todo-graph.py validate` and `plan --check` exit 0, and the seven decision lines above quote the operator.
 
 ## Verification
 
