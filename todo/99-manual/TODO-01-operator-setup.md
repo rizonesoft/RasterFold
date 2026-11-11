@@ -200,10 +200,10 @@ The operator made six decisions in one attended session on 2026-11-11, and a sev
 <!-- claim: exists docs/codec-distribution.md -->
 <!-- claim: count "Restated and widened on 2026-11-11" AGENTS.md = 1 -->
 
-- [ ] Check decisions 1 to 5 against the tree and repair any gap at its owning layer. Done when: `python3 scripts/todo-claims.py` holds this section's claims, `git grep -il android -- scripts src tests toolchain.json .github` prints nothing, `python3 scripts/plan-audit.py` exits 0 with `D10 T04 §4` as the later gate, and `python3 scripts/check-converter.py --case contract` passes.
-- [ ] Carry decision 6 in the unattended launcher's seed prompt (`scripts/unattended-run.sh`) and `docs/unattended-run.md`, so a campaign session applies it without rediscovering this section. Done when: both state that the session improves the repository, runners, toolset, method and product on its own judgment, and that an unproven impossibility is filed as work with its first experiment named.
-- [ ] Record in `docs/vision.md` and `AGENTS.md` any of the seven decisions either file does not yet state, in the operator's words. Done when: each decision is findable in one of the two by its quoted phrase.
-- [ ] Commit: `"todo: record the 2026-11-11 scope and autonomy decisions"`
+- [x] Check decisions 1 to 5 against the tree and repair any gap at its owning layer. Done when: `python3 scripts/todo-claims.py` holds this section's claims, `git grep -il android -- scripts src tests toolchain.json .github` prints nothing, `python3 scripts/plan-audit.py` exits 0 with `D10 T04 §4` as the later gate, and `python3 scripts/check-converter.py --case contract` passes. Checked 2026-11-11: no gap found; `todo-claims` 103 hold, the `git grep` printed nothing (exit 1), `plan-audit` reported `34 files, 253 sections, 10 requirements, 0 error(s)`, and the contract case printed `contract: PASS`.
+- [x] Carry decision 6 in the unattended launcher's seed prompt (`scripts/unattended-run.sh`) and `docs/unattended-run.md`, so a campaign session applies it without rediscovering this section. Done when: both state that the session improves the repository, runners, toolset, method and product on its own judgment, and that an unproven impossibility is filed as work with its first experiment named.
+- [x] Record in `docs/vision.md` and `AGENTS.md` any of the seven decisions either file does not yet state, in the operator's words. Done when: each decision is findable in one of the two by its quoted phrase. Added 2026-11-11: "move it" to `docs/vision.md` and decision 7's words to `AGENTS.md`; the other five were already there.
+- [x] Commit: `"todo: record the 2026-11-11 scope and autonomy decisions"`
 
 **Corrected 2026-11-11:** decision 7 and its claim were added the evening this section started, so the checkpoint below reads six claims and seven decision lines where it said five and six, and the third item covers all seven decisions.
 

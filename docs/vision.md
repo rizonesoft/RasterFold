@@ -2,7 +2,7 @@
 
 Recorded 2026-09-30 from the operator's request and two clarifications. This is a product contract for planned work, not a claim that the converter or Pages site already ships.
 
-RasterFold supplies a lossless codec, CLI, and shared/static C libraries for Windows/Linux x64. A native image converter demonstrates RasterFold alongside leading image formats; it is built straight after the 1.0 release (Phase 10 of the plan), is not part of that release, and blocks no codec milestone (operator decision 2026-11-11, "Decouple it"). GitHub Pages provides complete public product documentation. The existing sixty codec research milestones remain experiments with measured acceptance bars; executing a plan cannot guarantee an unmeasured compression win.
+RasterFold supplies a lossless codec, CLI, and shared/static C libraries for Windows/Linux x64. A native image converter demonstrates RasterFold alongside leading image formats; it is built straight after the 1.0 release (Phase 10 of the plan), is not part of that release, and blocks no codec milestone (operator decisions 2026-11-11: "Decouple it", then "move it" for running it straight after 1.0). GitHub Pages provides complete public product documentation. The existing sixty codec research milestones remain experiments with measured acceptance bars; executing a plan cannot guarantee an unmeasured compression win.
 
 ## Native converter
 

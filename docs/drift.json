@@ -1551,7 +1551,7 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "Re-read 2026-11-11 for the widened autonomy directive and the converter's move to Phase 10: AGENTS.md states that attended sessions decide and act like unattended ones and that the converter sits in Phase 10 straight after 1.0; docs/vision.md says the same about the converter; this document's statements about how sessions work, the plan's phases and the converter were checked against AGENTS.md, todo/implementation-plan.md and todo/README.md and none contradicts them",
+      "evidence": "Re-read 2026-11-11 for the desktop-shortcut decision: AGENTS.md gained one Working rules bullet recording that D00 T05 section 5 was removed unstamped and that the shortcut stays as an operator convenience; this document was searched for shortcut, .lnk and T05 and makes no statement about the shortcut or that section, so nothing in it contradicts the new bullet",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "362589cf2d8cdf51ea77ef645fb115e9edcc7659825f86531df856ae76e9a0cb",
@@ -1560,30 +1560,30 @@
         "scripts/package.py": "675a699eb05b8a26f0384dac80a2b03ad1f7ad8892dedd689ee363861efb5b83",
         "scripts/check-all.py": "b611b2629f3e0b6f605a4732b6a2798bb3f675c095d66dbe02bb6bcc093c4adc",
         "README.md": "060ed08e6a4ddc6fa13b2d965d5cc79facbbb0cb2557db552efef4c3334301fe",
-        "AGENTS.md": "2604aa4124b114a26f87be31f445a49f88a1aed6826763ce0ae57d77fbea6fa0",
+        "AGENTS.md": "407fb1eb1b79574a8b47ae992313c9de3cd5dc72fa56ac45c4c05a5da948ee02",
         ".conclave/reviewers.toml": "a95be5634bda979837450696840208f1271598d50c9b116471cd9467720e8358",
         "scripts/review-dispatch.py": "2654d267280865455202f58ff0309a6e01e6ab42b07734d8fa04943662f90632"
       },
       "review": "Author-attested: 2026-10-25 re-read README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "AGENTS.md": {
-      "evidence": "Re-read 2026-11-11 for the widened autonomy directive and the converter's move to Phase 10: AGENTS.md states that attended sessions decide and act like unattended ones and that the converter sits in Phase 10 straight after 1.0; docs/vision.md says the same about the converter; this document's statements about how sessions work, the plan's phases and the converter were checked against AGENTS.md, todo/implementation-plan.md and todo/README.md and none contradicts them",
+      "evidence": "Re-read 2026-11-11 for the desktop-shortcut decision: AGENTS.md gained one Working rules bullet recording that D00 T05 section 5 was removed unstamped and that the shortcut stays as an operator convenience; this document was searched for shortcut, .lnk and T05 and makes no statement about the shortcut or that section, so nothing in it contradicts the new bullet",
       "sources": {
         "include/rasterfold.h": "bd32f6563a38a9a023c4e1e44053fd9ce6c6623ac105c2dc8253a87065ae7014",
         "src/rf.h": "362589cf2d8cdf51ea77ef645fb115e9edcc7659825f86531df856ae76e9a0cb",
         "toolchain.json": "fd7b0b2424a2ffdb86095da76e4b975d604741fb271fd9b70e4c53efe9f5e3de",
         ".conclave/reviewers.toml": "a95be5634bda979837450696840208f1271598d50c9b116471cd9467720e8358",
         "scripts/review-dispatch.py": "2654d267280865455202f58ff0309a6e01e6ab42b07734d8fa04943662f90632",
-        "AGENTS.md": "2604aa4124b114a26f87be31f445a49f88a1aed6826763ce0ae57d77fbea6fa0",
+        "AGENTS.md": "407fb1eb1b79574a8b47ae992313c9de3cd5dc72fa56ac45c4c05a5da948ee02",
         ".codex/hooks.json": "c67e7762d0970280c653a74601012d01971d05f677182ae70e4eda0aa783c150",
         "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",
         "scripts/campaign_guard.py": "564720b1ae8c3999bca60b1a00814ef60ff4c51f636a42e4953f9cbbadfd54d3"
       }
     },
     "GEMINI.md": {
-      "evidence": "Re-read 2026-11-11 for the widened autonomy directive and the converter's move to Phase 10: AGENTS.md states that attended sessions decide and act like unattended ones and that the converter sits in Phase 10 straight after 1.0; docs/vision.md says the same about the converter; this document's statements about how sessions work, the plan's phases and the converter were checked against AGENTS.md, todo/implementation-plan.md and todo/README.md and none contradicts them",
+      "evidence": "Re-read 2026-11-11 for the desktop-shortcut decision: AGENTS.md gained one Working rules bullet recording that D00 T05 section 5 was removed unstamped and that the shortcut stays as an operator convenience; this document was searched for shortcut, .lnk and T05 and makes no statement about the shortcut or that section, so nothing in it contradicts the new bullet",
       "sources": {
-        "AGENTS.md": "2604aa4124b114a26f87be31f445a49f88a1aed6826763ce0ae57d77fbea6fa0",
+        "AGENTS.md": "407fb1eb1b79574a8b47ae992313c9de3cd5dc72fa56ac45c4c05a5da948ee02",
         ".conclave/reviewers.toml": "a95be5634bda979837450696840208f1271598d50c9b116471cd9467720e8358",
         "scripts/review-dispatch.py": "2654d267280865455202f58ff0309a6e01e6ab42b07734d8fa04943662f90632",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
@@ -1678,9 +1678,9 @@
       }
     },
     "docs/agent-skills-and-rules-structure.md": {
-      "evidence": "Re-read 2026-11-11 for the widened autonomy directive and the converter's move to Phase 10: AGENTS.md states that attended sessions decide and act like unattended ones and that the converter sits in Phase 10 straight after 1.0; docs/vision.md says the same about the converter; this document's statements about how sessions work, the plan's phases and the converter were checked against AGENTS.md, todo/implementation-plan.md and todo/README.md and none contradicts them",
+      "evidence": "Re-read 2026-11-11 for the desktop-shortcut decision: AGENTS.md gained one Working rules bullet recording that D00 T05 section 5 was removed unstamped and that the shortcut stays as an operator convenience; this document was searched for shortcut, .lnk and T05 and makes no statement about the shortcut or that section, so nothing in it contradicts the new bullet",
       "sources": {
-        "AGENTS.md": "2604aa4124b114a26f87be31f445a49f88a1aed6826763ce0ae57d77fbea6fa0",
+        "AGENTS.md": "407fb1eb1b79574a8b47ae992313c9de3cd5dc72fa56ac45c4c05a5da948ee02",
         "GEMINI.md": "928b6666dd34842df37b698df61792cf416e6885f11645f400d5c8562c537677",
         ".conclave/reviewers.toml": "a95be5634bda979837450696840208f1271598d50c9b116471cd9467720e8358",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
