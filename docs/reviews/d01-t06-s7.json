@@ -1,0 +1,77 @@
+{
+  "ref": "D01 T06 \u00a77",
+  "title": "A Recent-Colour Cache for Palette Images",
+  "implementation_sha": "c5d828701b58a5e4d8d98633c7a456835db18d45",
+  "date": "2026-11-11",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/01-compression/D01-T06-s7.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "python3 scripts/windows.py research/ab.py size build/research/try_pal.c synth -v -t1 -> total=201732 webp=201248 webp_ratio=1.0024 webp_geomean=1.0065 webp_worst=1.6829 (syn_checker); baseline src/cm.c total=201640 (negative result, no port)",
+    "python3 scripts/windows.py research/ab.py size build/research/try_pal.c photo -v -t1 and tp -v -t1 -> total=30634873 and total=6598954, per-image identical to baseline",
+    "bosun run -- python3 scripts/check-all.py --all-targets -> check-all: 31/31 passed (includes the correctness suite and KAT_FOLD and method 2 fixtures decoding unchanged: Freeze check)"
+  ],
+  "completion": {
+    "report": "docs/reviews/01-compression/D01-T06-s7.md",
+    "verdict": "complete",
+    "candidate": "c5d828701b58a5e4d8d98633c7a456835db18d45",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/01-compression/D01-T06-s7.md",
+    "candidate": "de6833ad1108298948489d47cb40ff1988f91119",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "de6833ad1108298948489d47cb40ff1988f91119",
+  "schedule": {
+    "policy": "three-pass",
+    "pass_cap": 33,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}

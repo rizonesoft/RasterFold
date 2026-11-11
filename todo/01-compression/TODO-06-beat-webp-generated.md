@@ -2,7 +2,7 @@
 schema_version: 1
 id: beat-webp-generated
 domain: 01-compression
-status: active
+status: done
 title: "TODO-06 -- Beat WebP on Generated Images"
 depends_on: []
 frozen: true
@@ -41,7 +41,7 @@ track: C6
 |   4   |   §4    | Coding the palette itself for palette images | §3 |  [x]   |
 |   5   |   §5    | Above-copy runs for palette images | §3 |  [x]   |
 |   6   |   §6    | A neighbour-candidate colour cache in version 3 | §2 |  [x]   |
-|   7   |   §7    | A recent-colour cache for palette images | §6 |  [ ]   |
+|   7   |   §7    | A recent-colour cache for palette images | §6 |  [x]   |
 
 ---
 
@@ -210,6 +210,8 @@ Acceptance, all from `python3 scripts/windows.py research/ab.py size build/resea
 
 **Freeze check:** method 3 is part of the unreleased format version 3, so its files may change; `KAT_FOLD` (version 2, method 1) and the method 2 fixtures decode unchanged.
 
+> **Verified:** 2026-11-11 | §7 | c5d828701b58a5e4d8d98633c7a456835db18d45
+> **Review:** `docs/reviews/d01-t06-s7.json`
 ## Verification
 
 - [ ] `pwsh scripts/check-all.ps1` exits 0
