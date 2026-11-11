@@ -4473,6 +4473,55 @@ def _sync_items_cell(line: str, want: int) -> tuple[str, int | None]:
     return line[: m.start("cell")] + cell + line[m.end("cell") :], had
 
 
+PLAN_NEEDS_NONE = "none"
+PLAN_HEADER_OLD = ["\u2714", "Section", "Deliverable", "Items"]
+PLAN_HEADER = ["\u2714", "Section", "Deliverable", "Needs", "Items"]
+
+
+def _plan_needs(todos: list[Todo]) -> dict[str, str]:
+    """Map 'D05 T02 §3' -> the plan row's Needs cell.
+
+    The cell is what a runner must have before it takes the row: the section's
+    `**Needs:**` host or tool (its closed-list key) and every `**Requires:**`
+    execution context, comma-separated, or `none`. A value outside the closed
+    lists shows as `unknown:<value>`, never as `none`: `validate` refuses it,
+    and the plan must not read as host-free meanwhile.
+    """
+    cells: dict[str, str] = {}
+    for t in todos:
+        dom = t.domain.split("-")[0]
+        for num, s in t.sections.items():
+            if s.moved:
+                continue
+            values = list(s.needs)
+            if s.needs_raw and not s.needs:
+                values.append(f"unknown:{s.needs_raw}")
+            values += s.requires
+            values += [f"unknown:{v}" for v in s.requires_unknown]
+            if s.requires_has_line and not s.requires and not s.requires_unknown:
+                values.append("unknown:no-values")
+            cells[f"D{dom} T{t.number} §{num}"] = ", ".join(values) or PLAN_NEEDS_NONE
+    return cells
+
+
+def _sync_needs_cell(line: str, want: str) -> tuple[str, str | None]:
+    """Write the Needs cell (the one before Items), adding it to a four-cell row.
+
+    Returns (line, previous): previous is "" when the row had no Needs cell and
+    None when the row is not a plan row of four or five cells, which is left
+    alone rather than mangled. A rewritten row loses its padding; `plan --sync`
+    re-aligns every table afterwards.
+    """
+    cells = _split_row(line)
+    if cells is None or len(cells) not in (4, 5):
+        return line, None
+    had = cells[3] if len(cells) == 5 else ""
+    if had == want:
+        return line, had
+    cells = cells[:3] + [want] + cells[-1:]
+    return "| " + " | ".join(cells) + " |", had
+
+
 def _in_progress_by_ref(todos: list[Todo]) -> dict[str, bool]:
     """Shipped-but-unstamped: Commit item ticked, no Verified stamp. D00 T06 §31."""
     flags: dict[str, bool] = {}
@@ -7697,10 +7746,14 @@ def cmd_plan(args: argparse.Namespace) -> int:
     todos = load_todos()
     state = _plan_state(todos)
     items_by_ref = _plan_items(todos)
+    needs_by_ref = _plan_needs(todos)
 
     lines = PLAN.read_text(encoding="utf-8").splitlines()
     out: list[str] = []
     stale: list[str] = []
+    old_headers = 0                 # phase tables still on the header without Needs
+    widen_separator = False
+    needs_table = False
     unknown: list[str] = []
     seen: list[str] = []
 
@@ -7734,6 +7787,21 @@ def cmd_plan(args: argparse.Namespace) -> int:
         if not m:
             if pending_notes and not line.startswith("|"):
                 flush_notes(line)
+            cells = _split_row(line) if line.startswith("|") else None
+            if cells is None:
+                needs_table = False
+            elif cells in (PLAN_HEADER_OLD, PLAN_HEADER):
+                needs_table = True  # a table under any other header keeps its own columns
+            if cells == PLAN_HEADER_OLD:
+                # A phase table from before the Needs column: the header and its
+                # separator gain the column here, the rows below gain the cell.
+                old_headers += 1
+                widen_separator = True
+                line = "| " + " | ".join(PLAN_HEADER) + " |"
+            elif widen_separator:
+                widen_separator = False
+                if cells and len(cells) == 4 and all(SEP_CELL_RE.match(c) for c in cells):
+                    line = "| " + " | ".join(cells[:3] + ["---"] + cells[3:]) + " |"
             out.append(line)
             continue
         ref = re.sub(r"\s+", " ", m.group("ref"))
@@ -7760,6 +7828,14 @@ def cmd_plan(args: argparse.Namespace) -> int:
                 stale.append(
                     f"{ref}: plan says {had_items} item(s), graph says {want_items}"
                 )
+        want_needs = needs_by_ref.get(ref)
+        if want_needs is not None and needs_table:
+            line, had_needs = _sync_needs_cell(line, want_needs)
+            if had_needs is not None and had_needs != want_needs:
+                stale.append(
+                    f"{ref}: plan Needs says {had_needs or 'nothing (no Needs cell)'}, graph says {want_needs}"
+                )
+            m = PLAN_ROW_RE.match(line)
         # Replace the box CHARACTER in place rather than rebuilding the row.
         # Rebuilding would collapse the column padding on every sync, so the
         # file would be aligned exactly until the next time anything shipped --
@@ -7829,6 +7905,12 @@ def cmd_plan(args: argparse.Namespace) -> int:
     # does not belong in a phase does not exist: `plan --sync` derives from the
     # Implementation Order tables, and a section IS a unit of work in a domain.
     missing = [r for r in state if r not in seen]
+
+    if old_headers:
+        stale.append(
+            f"{old_headers} phase table header(s) lack the Needs column "
+            f"(`| {' | '.join(PLAN_HEADER)} |`)"
+        )
 
     if args.check:
         for s in stale:
@@ -9456,6 +9538,21 @@ track: Z1
         _row = "| [ ] | `D90 T01 §1` | Deliverable                        |   6   |"
         _new, _had = _sync_items_cell(_row, 11)
         check("items sync reads the old count", _had, 6)
+
+        # --- Needs column: derived like Items, so a typed cell cannot go stale ---
+        _nrow = "| [ ] | `D90 T01 §1` | Deliverable | 6 |"
+        check("needs sync adds the cell before Items", _sync_needs_cell(_nrow, "none"),
+              ("| [ ] | `D90 T01 §1` | Deliverable | none | 6 |", ""))
+        check("needs sync rewrites a stale cell",
+              _sync_needs_cell("| [ ] | `D90 T01 §1` | Deliverable |  gpu  |   6   |", "idle-machine"),
+              ("| [ ] | `D90 T01 §1` | Deliverable | idle-machine | 6 |", "gpu"))
+        _cur = "| [ ] | `D90 T01 §1` | Deliverable |  none  |   6   |"
+        check("needs sync leaves a current row byte-exact", _sync_needs_cell(_cur, "none"), (_cur, "none"))
+        check("needs sync leaves a row of another shape alone",
+              _sync_needs_cell("| [ ] | `D90 T01 §1` | a | b | c | 6 |", "none")[1], None)
+        _pn = _plan_needs(todos)
+        check("plan Needs is the closed-list key", _pn["D90 T01 §2"], "windows-host")
+        check("plan Needs is none without a marker", _pn["D90 T01 §3"], "none")
 
         # --- calibration (D00 T04 §3) ----------------------------------------
         # The refusal below threshold is the point of the feature, not a
@@ -11151,6 +11248,33 @@ An oversized section: the clean single-WARN shape (over-30-items).
                 any(l.startswith("FATAL") and "TODO-05-moved.md" in l and "carries a Moved: marker" in l for l in vbuf.getvalue().splitlines()),
                 True,
             )
+            # A phase table from before the Needs column: --check names it, --sync
+            # adds the column to the header, the separator and every row.
+            plan_n = root / "todo" / "plan-needs.md"
+            plan_n.write_text(
+                "# Plan\n\n> **Progress:** x\n\n### Phase 0 -- Needs fixture\n\nWhy.\n\n"
+                "| \u2714 | Section | Deliverable | Items |\n| :-: | --- | --- | :-: |\n"
+                "| [ ] | `D93 T05 §2` | Depends on the moved thing | 1 |\n\n"
+                "| \u2714 | Section | Deliverable | Days |\n| :-: | --- | --- | :-: |\n"
+                "| [ ] | `D90 T01 §2` | Another table's row | 1 |\n",
+                encoding="utf-8",
+            )
+            PLAN = plan_n
+            nbuf = _io.StringIO()
+            with _ctx.redirect_stdout(nbuf), _ctx.redirect_stderr(_io.StringIO()):
+                cmd_plan(argparse.Namespace(check=True))
+                cmd_plan(argparse.Namespace(check=False))
+            check("plan --check names a header without Needs", "1 phase table header(s) lack the Needs column" in nbuf.getvalue(), True)
+            nsynced = plan_n.read_text(encoding="utf-8").splitlines()
+            check("sync widened the header", [_split_row(l) for l in nsynced if l.startswith("|")][0], PLAN_HEADER)
+            check("sync widened the separator", len(_split_row(nsynced[nsynced.index(next(l for l in nsynced if l.startswith("|"))) + 1]) or []), 5)
+            check("sync wrote the row's Needs cell", (_split_row(next(l for l in nsynced if "`D93 T05 §2`" in l)) or [])[3], "none")
+            check("a table under another header keeps its columns", len(_split_row(next(l for l in nsynced if "`D90 T01 §2`" in l)) or []), 4)
+            nbuf = _io.StringIO()
+            with _ctx.redirect_stdout(nbuf), _ctx.redirect_stderr(_io.StringIO()):
+                cmd_plan(argparse.Namespace(check=True))
+            check("a synced plan no longer reports the Needs column", "Needs" in nbuf.getvalue(), False)
+            PLAN = plan_m
         finally:
             PLAN = plan
             PROGRESS_JSON, OPERATOR_JSON = saved_json
@@ -11869,10 +11993,10 @@ Opus outage: sign-off rung unreachable, failed over to Sol.
         gplan = gtodo / "implementation-plan.md"
         gplan.write_text(
             "# Implementation plan\n\n> **Progress:** placeholder\n\n"
-            "### Phase 0 -- Budget fixture\n\nWhy.\n\n| ✔ | Section | Deliverable | Items |\n| :-: | --- | --- | :-: |\n"
-            "| [ ] | `D95 T01 §1` | Thing 1 | 2 |\n| [ ] | `D95 T01 §2` | Thing 2 | 2 |\n\n"
-            "### Phase 1 -- Second fixture\n\nWhy.\n\n| ✔ | Section | Deliverable | Items |\n| :-: | --- | --- | :-: |\n"
-            "| [ ] | `D95 T01 §3` | Thing 3 | 2 |\n",
+            "### Phase 0 -- Budget fixture\n\nWhy.\n\n| ✔ | Section | Deliverable | Needs | Items |\n| :-: | --- | --- | --- | :-: |\n"
+            "| [ ] | `D95 T01 §1` | Thing 1 | none | 2 |\n| [ ] | `D95 T01 §2` | Thing 2 | none | 2 |\n\n"
+            "### Phase 1 -- Second fixture\n\nWhy.\n\n| ✔ | Section | Deliverable | Needs | Items |\n| :-: | --- | --- | --- | :-: |\n"
+            "| [ ] | `D95 T01 §3` | Thing 3 | none | 2 |\n",
             encoding="utf-8",
         )
 

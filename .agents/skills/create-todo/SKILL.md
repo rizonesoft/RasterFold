@@ -36,7 +36,7 @@ Size sections by what holds together (max 30 items; a file caps at 55 sections).
 
 - List the file in the domain `INDEX.md` (filename must appear verbatim) and under Active TODOs in `todo/TODO-00-INDEX.md` when it is active work.
 - Reciprocate every `-> XREF:`: each target file must point back, or `validate` is FATAL.
-- Place every section in exactly one phase table of `todo/implementation-plan.md` (a `### Phase <N> -- <Title>` heading with a `| ✔ | Section | Deliverable | Items |` table), no earlier than the phase of anything it depends on, then:
+- Place every section in exactly one phase table of `todo/implementation-plan.md` (a `### Phase <N> -- <Title>` heading with a `| ✔ | Section | Deliverable | Needs | Items |` table, whose Needs and Items cells `plan --sync` derives), no earlier than the phase of anything it depends on, then:
 
 ```bash
 python3 scripts/todo-graph.py validate

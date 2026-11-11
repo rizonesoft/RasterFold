@@ -22,13 +22,13 @@ Agent instructions for this repository. Human orientation lives in `README.md`. 
 | `docs/research.md` | The research record: where the codec stands, the measurement protocol, the "Already tried" table, the designs the plan's sections implement, and prior art |
 | `scripts/` | `check-all.ps1` (every local gate) and the stdlib Python TODO tooling (`todo-graph.py`, validator, claims, findings, runs, `review-dispatch.py`, `review-prompt.py` (fills each review pass's prompt from its template), `ci_status.py`, `campaign_guard.py`) |
 | `todo/` | The live execution plan; read `todo/README.md` before authoring or implementing |
-| `todo/implementation-plan.md` | Ordered phase plan; its boxes are synchronized through `scripts/todo-graph.py` |
+| `todo/implementation-plan.md` | Ordered phase plan; its boxes and each row's Needs and Items cells are synchronized through `scripts/todo-graph.py` |
 | `todo/budget.json`, `todo/backlog.md` | The budget decisions (no caps) and the list of deferred ideas that are not sections, which loses nothing without a trace |
 | `docs/reviews/` | Per-section review findings, attestations, the derived findings ledger, run records |
 | `docs/phase-runs/` | One findings file per phase run, written as the run goes |
 | `.agents/` | Antigravity-owned skills (`.agents/skills/`), rules (`.agents/rules/`), and native `Stop` hook (`.agents/hooks.json`) |
 | `.intelligence/` | Retained runner intelligence registers and archives; disposition requires the campaign guard stopped |
-| `.conclave/kits.json`, `GEMINI.md`, `.agents/rules/` | The Conclave-SDK kits (`base`, `reviewer`, `automations`) this checkout took from `rizonetech/Conclave-SDK` through its `forge.py`, the Antigravity entry file, and the kits' output and safety rules; see Conclave-SDK kits below |
+| `GEMINI.md`, `.agents/rules/` | The Antigravity entry file and the output and safety rules that came with the Conclave-SDK kits (`base`, `reviewer`, `automations`) this checkout took from `rizonetech/Conclave-SDK`; see Conclave-SDK kits below |
 | `.conclave/reviewers.toml`, `scripts/review-dispatch.py`, `docs/review-round-prompt.md`, `docs/plan-review-prompt.md`, `docs/completion-review-prompt.md`, `docs/reconciliation-review-prompt.md` | The reviewer pin, the three-pass review schedule (`plan`, one adversarial round, `completion`, with one `reconciliation` after gaps), and the dispatcher |
 | `.conclave/automations/` | The automations kit: `tasks.json` (folder `\\RasterFold\\`, no tasks yet), the runner, the failure email, and the Task Scheduler and systemd installers; tests in `scripts/tests/` |
 | `bin/`, `build/` | Build output, scratch, caches, the research corpus, and campaign guard state; ignored, never authoritative |
@@ -93,9 +93,9 @@ A checkpoint citing a gate that does not exist yet is unfalsifiable and is not a
 
 ## Conclave-SDK kits
 
-The `base`, `reviewer` and `automations` kits came from `rizonetech/Conclave-SDK` at `b1ead32` (2026-10-21) through `python3 <sdk>/forge.py kit . <kit> --agent all`. `.conclave/kits.json` stamps `reviewer` and `automations`. The SDK's `todo` kit is not installed: RasterFold's TODO system, skills in `.agents/skills/`, `.agents/hooks.json`, and `scripts/campaign_guard.py` are its own.
+The `base`, `reviewer` and `automations` kits came from `rizonetech/Conclave-SDK` at `b1ead32` (2026-10-21) through `python3 <sdk>/forge.py kit . <kit> --agent all`. The SDK's `todo` kit is not installed: RasterFold's TODO system, skills in `.agents/skills/`, `.agents/hooks.json`, and `scripts/campaign_guard.py` are its own. The kit stamp file `.conclave/kits.json` was removed on 2026-11-11 (operator instruction): this repository owns its copies outright and no longer records a kit state for forge to compare. Upstream kit changes are ported by hand into the adapted files as ordinary reviewed work. Reversal cost: `forge.py kit . <kit>` writes a fresh stamp, and a preview at SDK `af7fd11` (2026-11-11) showed it would also add the kit's own dispatcher tests, 41 of which fail against this repository's dispatcher.
 
-These local adaptations differ from the kit files, and `forge.py sync` would undo them (it rewrites every kit's skills and rules, and with `--include-scripts` its scripts), so a sync always runs `--dry-run` first and keeps them:
+These local adaptations differ from the kit files. forge at SDK `af7fd11` has no `sync` command and only adds files that are absent, never overwriting one that exists, so a `forge.py kit` run keeps them; any forge run still starts with `--dry-run`:
 
 - Claude Code, Codex and Antigravity (`gemini`) write (`[routes]` in `.conclave/reviewers.toml`); `.claude/` holds the campaign `Stop` hook, the skill shims, the read-only Sonnet scouts (`.claude/agents/`) and the language-server plugin (`.claude/lsp/rasterfold-lsp/`), `.codex/` holds Codex's campaign `Stop` hook, and `.agents/skills/` holds the canonical skill files directly.
 - `.conclave/reviewers.toml` pins `codex -> carbon` and the other writers to `astra`, without fallback, and defines the shared `[schedule]` table: the three-pass policy, every pass at medium.

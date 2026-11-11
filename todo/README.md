@@ -401,7 +401,7 @@ The scripts are stdlib-only by design: no install step stands between a fresh cl
 `resolve` is the front door for the two section skills, and it takes whatever you already had in front of you: a `DNN TNN §N` reference, a `<path> §N` pair, or a row pasted straight out of `implementation-plan.md`, backticks, pipes and all. Its exit code carries the verdict: `3` means the section is already `[x]` (audit stance, not implementation), `4` means a dependency is unmet, `5` means the section moved out of the tree. So
 
 ```
-process todo section: | [ ] | `D01 T01 §1` | Shared range coder header | 3 |
+process todo section: | [ ] | `D01 T01 §1` | Shared range coder header | none | 3 |
 ```
 
 is a complete instruction: nobody has to translate domain `01` and TODO `01` into a filename, which is the step that gets done wrong at 3am.
@@ -413,7 +413,8 @@ is a complete instruction: nobody has to translate domain `01` and TODO `01` int
 [`implementation-plan.md`](./implementation-plan.md) is the second derived artefact, and the only one that is committed: it is prose a person reads, so it cannot live in `build/`. Its structure is authored; its boxes, item counts, and progress line are derived.
 
 - A phase is a level-3 heading of exactly the shape `### Phase <N> -- <Title>`, numbered from 0 in run order, followed by one paragraph saying why it runs where it does, then one table.
-- The table header is `| ✔ | Section | Deliverable | Items |`. Each row is `| [ ] | \`DNN TNN §N\` | <deliverable> | <items> |`: the box and the items cell are rewritten by `plan --sync`, the deliverable is prose you author (usually the Implementation Order row's deliverable).
+- The table header is `| ✔ | Section | Deliverable | Needs | Items |`. Each row is `| [ ] | \`DNN TNN §N\` | <deliverable> | <needs> | <items> |`: the box, the needs cell and the items cell are rewritten by `plan --sync`, the deliverable is prose you author (usually the Implementation Order row's deliverable). A new row may be typed without the two derived cells' values (`none` and `0` do); the next sync fills them.
+- The Needs cell is what a runner must have before it takes the row: the closed-list key of the section's `**Needs:**` line (`windows-host`, `ffmpeg-jxl`, `network`, `idle-machine`, `gpu`, `arm64-device`, `fpga-board`), then every `**Requires:**` value, comma-separated, or `none`. It is derived from the section, never typed: change the section's line and sync. `plan --check` fails on a stale or missing Needs cell and on a phase table whose header lacks the column.
 - **Every section in the tree appears in exactly one row of exactly one phase.** Phases have no size limit. Authoring a TODO file therefore includes placing each of its sections in a phase table; `plan --check` fails on a section with no row, a row naming no section, a duplicated row, or a stale box.
 - A section's phase is chosen so every `Depends On` edge points at a section in the same or an earlier phase, and within a phase rows run in table order; `groom-plan` checks both.
 - The `> **Progress:**` line under the title is rewritten by `plan --sync`, including the tree's size (sections, and how many of them a campaign discovered) and the backlog's entry count, in the form `<N> sections (<M> discovered); backlog <K> entries.`, and `plan --check` fails when the line is stale. Never type a total into prose.
