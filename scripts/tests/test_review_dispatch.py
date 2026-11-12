@@ -1852,6 +1852,36 @@ class ThreePassStamp(StampRepo):
         self.reconciliation_pass(repaired)
         self.refused("only the last reconciliation", repaired, verdict="reconciled")
 
+    def test_a_reconciliation_of_a_changed_section_is_void_and_the_restored_text_stamps(self):
+        self.started()
+        built = self.build("a")
+        self.round_pass(built)
+        self.completion_pass(built, "gaps")
+        self.write(prose="Fixture prose. Corrected: one more promise.")
+        extended = self.commit("repair, section extended")
+        self.reconciliation_pass(extended)
+        self.refused("contract changed between the failed completion and its reconciliation", extended,
+                     verdict="reconciled")
+        self.write()
+        restored = self.commit("section text restored")
+        self.reconciliation_pass(restored)
+        receipt = self.stamp(restored, verdict="reconciled")
+        data = json.loads((self.root / receipt).read_text(encoding="utf-8"))
+        self.tg.receipt_data_ok(data, self.REF, restored, root=self.root, surface=False)
+
+    def test_a_changed_section_on_the_stamped_candidate_is_refused_after_an_unchanged_reconciliation(self):
+        self.started()
+        built = self.build("a")
+        self.round_pass(built)
+        self.completion_pass(built, "gaps")
+        repaired = self.build("repair")
+        self.reconciliation_pass(repaired, "gaps")
+        self.write(prose="A narrower promise.")
+        narrowed = self.commit("section narrowed")
+        self.reconciliation_pass(narrowed)
+        self.refused("contract changed between the failed completion and its reconciliation", narrowed,
+                     verdict="reconciled")
+
     def test_reconciliations_past_the_review_pass_cap_are_refused(self):
         self.started()
         built = self.build("a")
@@ -2018,6 +2048,44 @@ class ThreePassDispatch(Harness):
         self.assertEqual(result.returncode, 2)
         self.assertIn("already returned complete", result.stderr)
         self.assertEqual(self.calls(), [])
+
+    def section(self, prose):
+        """Give the scratch repository the real todo-graph and one section, so the dispatcher can read its contract."""
+        shutil.copy(SCRIPTS / "todo-graph.py", self.repo / "scripts/todo-graph.py")
+        todo = self.repo / "todo/00-workspace/TODO-01-restart-fixture.md"
+        todo.parent.mkdir(parents=True, exist_ok=True)
+        todo.write_text(RESTART_TODO.format(prose=prose, restart=""), encoding="utf-8")
+        self.git("add", "todo")
+
+    def test_a_changed_section_is_refused_and_a_void_complete_does_not_end_the_reconciliations(self):
+        self.section("Fixture prose.")
+        self.head = self.commit("section")
+        self.run_pass("plan", self.PLAN)
+        self.run_pass("round", self.ROUND)
+        self.run_pass("completion", "COMPLETION: gaps")
+        self.section("Fixture prose. Corrected: one more promise.")
+        extended = self.commit("repair, section extended")
+        # The dispatcher refuses the changed section before a review is spent.
+        result, _ = self.run_pass("reconciliation", "RECONCILIATION: complete", candidate=extended)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("differs from the text the failed completion read", result.stderr)
+        self.assertEqual(self.calls(), [])
+        # A complete recorded on the changed section before that refusal existed is void.
+        self.module().record_completion(self.findings, {
+            "writer": "claude", "reviewer": "astra", "cli": "codex", "model": "gpt-6-astra", "skipped": [],
+            "effort": "medium", "lenses": ["adversarial", "integration", "plan-delivery", "record"],
+            "review": "RECONCILIATION: complete"}, "2026-11-12T00:00:00Z", extended, "reconciliation")
+        result, _ = self.run_pass("reconciliation", "RECONCILIATION: complete", candidate=extended)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("differs from the text the failed completion read", result.stderr)
+        self.section("Fixture prose.")
+        restored = self.commit("section text restored")
+        result, _ = self.run_pass("reconciliation", "RECONCILIATION: complete", candidate=restored)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        # A complete on the restored text ends the reconciliations as before.
+        result, _ = self.run_pass("reconciliation", "RECONCILIATION: complete", candidate=restored)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("already returned complete", result.stderr)
 
     def test_reconciliations_stop_at_the_review_pass_cap(self):
         self.run_pass("plan", self.PLAN)

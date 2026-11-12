@@ -6848,8 +6848,11 @@ def completion_record(root: Path, completion: dict, ref: str, stamp_sha: str, co
             f"completion verdict reconciled needs a returned ## Reconciliation review in {report}: {ref}",
         )
         for earlier in passed[:-1]:
+            # An earlier complete is allowed only when it is void: it read a section whose contract differs from the
+            # failed completion's, so it certifies nothing and the dispatcher let the restored text be reconciled again.
             require(
-                earlier["review"].rstrip().endswith("RECONCILIATION: gaps"),
+                earlier["review"].rstrip().endswith("RECONCILIATION: gaps")
+                or section_contract(root, earlier["candidate"], ref) != section_contract(root, entry["candidate"], ref),
                 f"only the last reconciliation in {report} may end RECONCILIATION: complete: {ref}",
             )
         final = passed[-1]
@@ -7178,7 +7181,8 @@ def reconciled_contract_refusal(root: Path, completion: dict, passed: list[dict]
     The reconciliation the stamp rests on is the last returned one (the chain check holds it to the stamped commit).
     It must have read the section's contract exactly as the failed completion read it, so a repair can never pass by
     narrowing what the section promises. An earlier reconciliation that ran on a changed contract certifies nothing:
-    it stays on the record and does not block a later reconciliation of the restored text. When this rule was written
+    it stays on the record and does not block a later reconciliation of the restored text (the dispatcher's
+    `void_reconciliation` allows that pass, and refuses any reconciliation of a candidate whose contract changed). When this rule was written
     (2026-11-06) a section took exactly one reconciliation, so "every" and "the last" were the same entry; the cap of
     2026-11-09 allows more, and comparing every entry made one mistaken edit unrecoverable."""
     if not passed:

@@ -58,6 +58,7 @@ import argparse
 import ctypes
 from datetime import datetime, timezone
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -939,9 +940,51 @@ def section_pin(current, record_path):
 SECTION_FINDINGS = re.compile(r"(?:^|/)docs/reviews/[0-9]{2}-[A-Za-z0-9_-]+/D[0-9]{2}-T[0-9]{2}-s[1-9][0-9]*\.md$")
 
 
+_TODO_GRAPH_MOD = []
+
+
+def section_contract_at(record_path, sha):
+    """The section's contract at a commit, as scripts/todo-graph.py `stamp` reads it (`section_contract`: the section's
+    text with ticks, stamp lines, `Completed <date>:` evidence and the Test checkpoint line neutral), for the section a
+    findings file is named for. None when it cannot be read (no such commit, file or section), so a caller only acts on
+    two contracts it really compared."""
+    m = re.search(r"D([0-9]{2})-T([0-9]{2})-s([1-9][0-9]*)\.md$", Path(record_path).as_posix())
+    if not m or not sha:
+        return None
+    try:
+        if not _TODO_GRAPH_MOD:
+            spec = importlib.util.spec_from_file_location("todo_graph_for_dispatch", ROOT / "scripts" / "todo-graph.py")
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[spec.name] = module          # its dataclasses resolve their module while it loads
+            try:
+                spec.loader.exec_module(module)
+            finally:
+                del sys.modules[spec.name]
+            _TODO_GRAPH_MOD.append(module)
+        return _TODO_GRAPH_MOD[0].section_contract(ROOT, sha, f"D{m[1]} T{m[2]} §{m[3]}")
+    except Exception:                                # unreadable is "not compared", never a verdict
+        return None
+
+
+def contract_changed(record_path, failed_candidate, candidate):
+    """True only when the section's contract was read at both commits and differs."""
+    failed = section_contract_at(record_path, failed_candidate)
+    got = section_contract_at(record_path, candidate)
+    return failed is not None and got is not None and failed != got
+
+
+def void_reconciliation(record_path, completion, entry):
+    """A reconciliation that returned complete on a section whose contract differs from the one the failed completion
+    read. It certifies nothing (the stamp refuses to rest on it), so it stays on the record, counts toward the cap, and
+    does not end the section's reconciliations: the text is restored and reconciled again."""
+    return (entry["review"].rstrip().endswith("RECONCILIATION: complete")
+            and contract_changed(record_path, completion["candidate"], entry["candidate"]))
+
+
 def check_three_pass_order(kind, record_path, candidate, cap=REVIEW_PASS_CAP):
     """Plan, one round, completion, then reconciliations only after a completion with gaps, each after a reconciliation
-    with gaps, up to `cap` (the section pin's `review_pass_cap`) returned passes in all. Refused here so a pass
+    with gaps (or after a void one, see `void_reconciliation`) and only on a candidate whose section text is the failed
+    completion's, up to `cap` (the section pin's `review_pass_cap`) returned passes in all. Refused here so a pass
     out of order never spends a review; the stamp holds the receipt to the same order. A findings file not named for a
     section (a standalone independent review) has no order."""
     if not record_path or not SECTION_FINDINGS.search(Path(record_path).as_posix()):
@@ -974,8 +1017,13 @@ def check_three_pass_order(kind, record_path, candidate, cap=REVIEW_PASS_CAP):
     elif kind == "reconciliation":
         if len(rounds) != 1 or len(completions) != 1 or not completions[0]["review"].rstrip().endswith("COMPLETION: gaps"):
             raise Refused("a reconciliation follows one round and a completion review that returned gaps")
-        if reconciled and reconciled[-1]["review"].rstrip().endswith("RECONCILIATION: complete"):
+        if (reconciled and reconciled[-1]["review"].rstrip().endswith("RECONCILIATION: complete")
+                and not void_reconciliation(record_path, completions[0], reconciled[-1])):
             raise Refused("the section's reconciliation already returned complete; it needs no further pass")
+        if contract_changed(record_path, completions[0]["candidate"], candidate):
+            raise Refused("the section's text at the candidate differs from the text the failed completion read (ticks, "
+                          "Completed evidence and the Test checkpoint line aside); the stamp could not rest on this "
+                          "reconciliation, so restore the section's text and record the change in the findings file")
         if len(plans) + len(rounds) + len(completions) + len(reconciled) >= cap:
             raise Refused(f"the section has spent its {cap} review passes; it stays blocked")
         previous = (reconciled or completions)[-1]
