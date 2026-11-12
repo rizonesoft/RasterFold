@@ -97,12 +97,33 @@ Decision recorded (2026-11-12): zip, not tar, on both platforms (one format, one
 > **Review:** `docs/reviews/d09-t01-s2.json`
 ## 3. The Release Workflow
 
+> **Started:** 2026-11-12T07:37:00Z
+
 **Job:** A user can download the package and checksums the release workflow exports for each tag.
 
+**Corrected 2026-11-12 (before the build):** the one item said what the workflow does and left how to the implementer. The decisions below are recorded so the section builds without a design session; the single item is split into the parts it always contained, none removed.
+
+**Decisions recorded (unattended, 2026-11-12), each the common practice for a tag-driven GitHub release:**
+
+- **Every gate means the gates every push runs, called, not copied.** `.github/workflows/build.yml` and `.github/workflows/plan.yml` gain `workflow_call` with one optional `ref` input, and `release.yml` runs both as jobs on the release commit. A second copy of the gate list would drift from CI. Their concurrency group is keyed on the calling workflow and the ref, so a release run never cancels or is cancelled by a push run. Reversal cost: inline the steps into `release.yml` and drop the two `workflow_call` blocks.
+- **Two triggers.** A pushed tag `rasterfold-v*` is a release. `workflow_dispatch` with a `source_ref` input (a 40-character commit on `main`, as `pages.yml` takes) is a dry run: it runs every job except publication and never creates a release or a tag. Reversal cost: none; the dry run publishes nothing.
+- **A tag is refused unless it is the version and is on `main`.** `python3 scripts/version.py --tag <tag>` already requires `rasterfold-v<VERSION>` exactly; the workflow also requires the tagged commit to be an ancestor of `origin/main`. A prerelease is a `VERSION` with a prerelease part and publishes as a GitHub prerelease.
+- **One package build, on Linux.** The package job bootstraps the pinned toolchain, builds both targets (`python3 scripts/build.py --target all`), runs `python3 scripts/package.py --release --target all` and `(cd dist && sha256sum -c SHA256SUMS)`, and uploads `dist/` as the run's artifact `release-packages`. The published files are that artifact, not a rebuild.
+- **The packages are run before they are published.** A job on `ubuntu-24.04` and one on `windows-2025` download the artifact and run `python3 scripts/verify_release.py`, a new stdlib tool: it checks `dist/SHA256SUMS`, extracts that platform's zip, checks the package's own `SHA256SUMS`, requires `rasterfold version` to report the product version in `VERSION`, and round-trips a generated image through `encode`, `verify` and `decode` with the packaged executable. A release whose executable does not start is never published. Its child processes are bounded by a timeout and it works in a temporary directory it removes.
+- **Release notes come from `CHANGELOG.md`.** `python3 scripts/version.py --release-notes` prints the section whose heading names `VERSION` and refuses when there is none; `--release-notes --unreleased` prints the Unreleased section and is used only by the dry run while `D09 T01 §4` has not yet moved that section under the version.
+- **Publication** needs every other job, runs only for a tag, is the only job with `contents: write`, and runs `gh release create <tag> --verify-tag` with the two zips, `SHA256SUMS` and the notes. An existing release for the tag is refused, never replaced.
+- **Dependency recorded:** `actions/download-artifact` at `9000827ccba6bdab643e8b6fd33ac0654aef8333` (v8.0.2), pinned by commit like the actions already in use, to hand the built packages to the verification and publication jobs. `gh` is preinstalled on the runners. Build provenance attestation is not added here; it is an idea, not a requirement of this section.
+
+- [ ] Add `scripts/version.py --release-notes [--unreleased]` with tests in `tests/test_version.py`. Done when: it prints the section for `VERSION` when one exists, refuses with a named reason when none does, prints the Unreleased section with `--unreleased`, and the tests cover all three plus a changelog with no Unreleased section.
+- [ ] Add `scripts/verify_release.py` with tests in `tests/test_package.py`. Done when: on the packages `python3 scripts/package.py --release --target all` wrote, it passes for `linux-x64` on this host and for `windows-x64` through `python3 scripts/windows.py`, and the tests show it refusing a zip whose checksum is wrong, a package file whose checksum is wrong, and an executable that reports another version.
+- [ ] Make `.github/workflows/build.yml` and `.github/workflows/plan.yml` callable with an optional `ref`, unchanged for pushes and pull requests. Done when: both still run green on the push that adds this, read back with `python3 scripts/ci_status.py`.
 - [ ] Add `.github/workflows/release.yml`: on a `rasterfold-v*` tag, run every gate, build all target packages, and create the GitHub release with the zip and its checksums attached, exporting the release notes from `CHANGELOG.md`. Done when: a workflow_dispatch dry run on an immutable candidate ref or a prerelease tag matching VERSION completes. Cheaper substitute: uploading the zip by hand.
+- [ ] Add a workflow contract test in `tests/test_package.py` and document the release procedure in `docs/building.md`. Done when: the test fails if an action is not pinned by a 40-character commit, if any job other than publication holds `contents: write`, if publication can run without the gates, the package and both verification jobs, or if publication can run on a dispatch; and `python3 scripts/drift-check.py` exits 0.
 - [ ] Commit: `"release: build and publish releases from tags"`
 
-**Test checkpoint:** the dry run's workflow URL and its attached assets quoted.
+**Test checkpoint:** Driven run with evidence: the dry run's workflow URL and its attached assets quoted (the `release-packages` artifact's file names from `gh run view`), with every job's conclusion and the publication job shown skipped; `python3 scripts/verify_release.py` output for both targets on the local packages; `python3 -m unittest discover -s tests -p test_package.py` and `-p test_version.py` green; `bosun run -- python3 scripts/check-all.py --all-targets` green. Publication itself first runs for the real tag in `D09 T01 §4`: this section proves everything before it and states that limit.
+
+**Freeze check:** no codec source, format or oracle changes: `python3 tests/test_correctness.py` still passes every case, so `KAT_FOLD`, `KAT_PAL`, `KAT_PAL2`, `KAT_PAL2_3` and `KAT_PAL4` decode and encode as before.
 
 ## 4. Release rasterfold-v1.0.0
 

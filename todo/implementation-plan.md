@@ -307,7 +307,7 @@ The 1.0 product: library, command line, references, and the release that freezes
 | [x] | `D09 T01 §1`  | One version source and the changelog        | none         |   5   |
 | [x] | `D10 T01 §1`  | Pixel contract and capability registry      | none         |   8   |
 | [x] | `D09 T01 §2`  | The release package                         | none         |   2   |
-| [ ] | `D09 T01 §3`  | The release workflow                        | none         |   2   |
+| [ ] | `D09 T01 §3`  | The release workflow                        | none         |   6   |
 | [ ] | `D08 T01 §7`  | Versioned downloads and complete references | none         |   5   |
 | [ ] | `D09 T01 §4`  | Release rasterfold-v1.0.0                   | none         |   6   |
 | [ ] | `D05 T01 §10` | Milestone 10 gate: RasterFold 1.0           | idle-machine |   4   |
