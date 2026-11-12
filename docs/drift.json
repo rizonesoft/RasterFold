@@ -1551,14 +1551,14 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "Re-read 2026-11-12 for method 4 (compact palette, D01 T06 section 8), which changed src/pal.c, src/rc.h, src/rf.h, src/fold.c, src/main.c, include/rasterfold.h and research/bench.c: this document's mentions of the codec surface are the five C entry points and the encode, decode and inspect usage example; it names no method number, palette layout or inspect field, the commands and their arguments are unchanged, and rf_info still reports the method as an integer, so no statement here changed",
+      "evidence": "Re-read 2026-11-12: scripts/check-all.py gained one gate (research tool tests, tests/test_research_refs.py); this document names the command python3 scripts/check-all.py --all-targets in its build-and-check example without listing or counting the gates, so its text still holds",
       "sources": {
         "include/rasterfold.h": "228c6bf718c525b2311df99746d55e5861209f2ea0dec65e299b6ec0e6f126c7",
         "src/rf.h": "429414fd9303e0bd47d0ee05fca037e043c68c7d79f0f9435174c4e723e03f83",
         "src/main.c": "0efe61764e8650b32a59a181defce79a30921c8273da7251a434be123ca13040",
         "scripts/build.py": "488c7f8808e6bef7be095b5aa24fced856aab20ef6757548ac7f32e08021ad91",
         "scripts/package.py": "675a699eb05b8a26f0384dac80a2b03ad1f7ad8892dedd689ee363861efb5b83",
-        "scripts/check-all.py": "b611b2629f3e0b6f605a4732b6a2798bb3f675c095d66dbe02bb6bcc093c4adc",
+        "scripts/check-all.py": "ec0f58046fb6beb5e9b522530aa51a4e3eff03bd546a17a09db53e53ca8a5e9a",
         "README.md": "060ed08e6a4ddc6fa13b2d965d5cc79facbbb0cb2557db552efef4c3334301fe",
         "AGENTS.md": "8a6e2a7cfcfb59130c1ab67ce1b621a8960b7dad415d91ff439d720f5dceba9c",
         ".conclave/reviewers.toml": "a95be5634bda979837450696840208f1271598d50c9b116471cd9467720e8358",
@@ -1591,22 +1591,22 @@
       }
     },
     "CONTRIBUTING.md": {
-      "evidence": "Re-read 2026-11-11 for the removal of Android from the repository: scripts/build.py and scripts/package.py define only windows-x64 and linux-x64, toolchain.json has no NDK pin or android block, scripts/check-all.py --all-targets adds the Windows target only, and AGENTS.md, README.md and docs/_config.yml name Windows and Linux; this document's target lists, build commands, toolchain and platform statements were checked against those sources and it makes no Android statement",
+      "evidence": "Re-read 2026-11-12: scripts/check-all.py gained one gate (research tool tests, tests/test_research_refs.py); this document names the command python3 scripts/check-all.py in its contribution checks without listing or counting the gates, so its text still holds",
       "sources": {
         "scripts/build.py": "488c7f8808e6bef7be095b5aa24fced856aab20ef6757548ac7f32e08021ad91",
         "scripts/package.py": "675a699eb05b8a26f0384dac80a2b03ad1f7ad8892dedd689ee363861efb5b83",
-        "scripts/check-all.py": "b611b2629f3e0b6f605a4732b6a2798bb3f675c095d66dbe02bb6bcc093c4adc",
+        "scripts/check-all.py": "ec0f58046fb6beb5e9b522530aa51a4e3eff03bd546a17a09db53e53ca8a5e9a",
         "CONTRIBUTING.md": "390a812d137445951411d1b21f7b3e57ff403104757cece32055f9107ab95ad8"
       },
       "review": "Author-attested: 2026-10-25 re-read CONTRIBUTING.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/building.md": {
-      "evidence": "Re-read 2026-11-12 for method 4 (compact palette, D01 T06 section 8), which changed src/pal.c, src/rc.h, src/rf.h, src/fold.c, src/main.c, include/rasterfold.h and research/bench.c: searched for method, palette and inspect: the only hit is the unrelated sentence on unsupported filesystems for output publication; build targets, flags and outputs are unchanged by the method 4 port",
+      "evidence": "Re-read 2026-11-12: scripts/check-all.py gained one gate (research tool tests, tests/test_research_refs.py); this document names the command python3 scripts/check-all.py (lines 13 and 36) as the one-command sweep without listing or counting the gates, so its text still holds",
       "sources": {
         "toolchain.json": "fd7b0b2424a2ffdb86095da76e4b975d604741fb271fd9b70e4c53efe9f5e3de",
         "scripts/build.py": "488c7f8808e6bef7be095b5aa24fced856aab20ef6757548ac7f32e08021ad91",
         "scripts/package.py": "675a699eb05b8a26f0384dac80a2b03ad1f7ad8892dedd689ee363861efb5b83",
-        "scripts/check-all.py": "b611b2629f3e0b6f605a4732b6a2798bb3f675c095d66dbe02bb6bcc093c4adc",
+        "scripts/check-all.py": "ec0f58046fb6beb5e9b522530aa51a4e3eff03bd546a17a09db53e53ca8a5e9a",
         "include/rasterfold.h": "228c6bf718c525b2311df99746d55e5861209f2ea0dec65e299b6ec0e6f126c7",
         "docs/building.md": "25e08bde34dfc2c9b5258d8b478f5c80456a13f8c6bc30714f9d43d3797bc948"
       },
@@ -1633,13 +1633,13 @@
       "review": "Author-attested: 2026-10-25 re-read docs/index.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/getting-started.md": {
-      "evidence": "Re-read 2026-11-12 for method 4 (compact palette, D01 T06 section 8), which changed src/pal.c, src/rc.h, src/rf.h, src/fold.c, src/main.c, include/rasterfold.h and research/bench.c: the encode, inspect and decode walkthrough uses commands and arguments the port did not change and names no method number or palette field",
+      "evidence": "Re-read 2026-11-12: scripts/check-all.py gained one gate (research tool tests, tests/test_research_refs.py); this document names the command python3 scripts/check-all.py --all-targets as a setup step without listing or counting the gates, so its text still holds",
       "sources": {
         "toolchain.json": "fd7b0b2424a2ffdb86095da76e4b975d604741fb271fd9b70e4c53efe9f5e3de",
         "tools/provision.py": "dc5fb84c125ea3735ca425e91d084d04297d772cee4e3609417aa11c66ad0c3b",
         "tools/provision.ps1": "7b7ce12f1aede008be98478d7b95fbf6601737356baa62277c0d9217ff3e5e40",
         "scripts/build.py": "488c7f8808e6bef7be095b5aa24fced856aab20ef6757548ac7f32e08021ad91",
-        "scripts/check-all.py": "b611b2629f3e0b6f605a4732b6a2798bb3f675c095d66dbe02bb6bcc093c4adc",
+        "scripts/check-all.py": "ec0f58046fb6beb5e9b522530aa51a4e3eff03bd546a17a09db53e53ca8a5e9a",
         "scripts/check-all.ps1": "7006b1871b52689461497fa676b3cb6472f0e436c9c5e240deb9da069321a528",
         "include/rasterfold.h": "228c6bf718c525b2311df99746d55e5861209f2ea0dec65e299b6ec0e6f126c7",
         "src/main.c": "0efe61764e8650b32a59a181defce79a30921c8273da7251a434be123ca13040",
@@ -1707,15 +1707,15 @@
       "reviewed": "Author-attested: 2026-10-25 re-read spec/FOLD.md against src/cm.c and src/simd.h after D02 T01 section 4 (byte-identical cm.c hot-loop vectorization and row-context specialization; format version 2 bitstream unchanged)"
     },
     "research/README.md": {
-      "evidence": "Re-read 2026-11-12 for method 4 (compact palette, D01 T06 section 8), which changed src/pal.c, src/rc.h, src/rf.h, src/fold.c, src/main.c, include/rasterfold.h and research/bench.c: research/bench.c changed one expression (the PAL status label now covers every palette method number); this document describes bench as timing rf_encode and rf_decode of a cm.c or pal.c variant and does not describe the status labels, so its text still holds; ab.py's pal.c variant path was used for this section's measurements",
+      "evidence": "Re-read 2026-11-12 for three measurement-tool changes: research/ab.py and research/abpool.py now build both sides of a timing comparison without breakdown instrumentation, and research/bench.c prints times to three decimals; the new paragraph after the alternating-runs advice states all three with the measured reason and the single-image confirmation rule, the command table rows for bench, ab and compat still describe their arguments and outputs correctly, and the bench row's --breakdown note still holds because only bench keeps the instrumentation",
       "sources": {
         "research/corpus.py": "c8d419844a7410e7399a4f69cef013f876dfcd3272e7d996e1c2d3c9f3255619",
-        "research/ab.py": "228a8a44610a803f9ba54ef1d3e5a91f5b46260bc878167a3e7fb32e1a7e7a90",
+        "research/ab.py": "9787b93333ce9ed8dfe8be5a773757d4d74a7768f2d6559922a197852ee1c473",
         "research/vsjxl.py": "bb0a1fbdcb0a84edcee8a988c1de100b168a7949a8c7b59378775af5d42a5563",
         "research/prof.py": "7fa28a84aab62f0eb79fd579bcc01b6e2e55cc200bdaa96c0218b2ad4aa05605",
-        "research/bench.c": "af60d785520bd818e4a1b97c97c85143813edfc546c69d7da20704e508ffa9a0",
-        "research/README.md": "a0f39c4bebe3d4cd54bc0cce1eed2bb2df708ef413d91f20c1cd2a701df9b36f",
-        "research/abpool.py": "05f5d4b3b31e1c5144eda013aceb661be9f591665ac1e046fc480bd595d5cb55"
+        "research/bench.c": "1849a57fd2b71e37282e66c1fbecd1528eba35f1d714eb51ad55ac2e367d28d3",
+        "research/README.md": "eff83ae79efe79842e67974fc2bb1b5cf27915d12b71fdd1964ac3dd0a5e4f55",
+        "research/abpool.py": "0a0e4d00eb3bc6b9426d9f38bc95c877387571e9b9b1843e2a5173bd7f30ee02"
       },
       "review": "Author-attested: 2026-10-25 re-read research/README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)",
       "reviewed": "Author-attested: 2026-10-25 re-read research/README.md against research/ab.py after D02 T01 section 4 (added ab -v reporting and tp-only set without size-mismatch abort)"

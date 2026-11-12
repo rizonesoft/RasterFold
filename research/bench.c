@@ -251,12 +251,12 @@ int main(int argc, char **argv) {
         if (!ok) exit_code = 1;
         const char *status = !ok ? "MISMATCH" : (method == RF_METHOD_RAW ? "RAW" : (method >= RF_METHOD_PAL ? "PAL" : "OK"));
         double px = (double)im.w * im.h;
-        printf("%-24s %9zu  bpp=%.4f  enc=%7.1fms dec=%7.1fms  (%.0f/%.0f cyc/sample) %s\n", b, fold_sz, fold_sz * 8.0 / px, be, bd,
+        printf("%-24s %9zu  bpp=%.4f  enc=%9.3fms dec=%9.3fms  (%.0f/%.0f cyc/sample) %s\n", b, fold_sz, fold_sz * 8.0 / px, be, bd,
                be * 3.9e6 / (px * 3), bd * 3.9e6 / (px * 3), status);
         te_all += be; td_all += bd; tot += fold_sz; px_all += px;
         free(im.rgb);
     }
-    printf("TOTAL %zu  enc=%.1fms dec=%.1fms  (%.0f/%.0f cyc/sample)\n", tot, te_all, td_all, te_all * 3.9e6 / (px_all * 3), td_all * 3.9e6 / (px_all * 3));
+    printf("TOTAL %zu  enc=%.3fms dec=%.3fms  (%.0f/%.0f cyc/sample)\n", tot, te_all, td_all, te_all * 3.9e6 / (px_all * 3), td_all * 3.9e6 / (px_all * 3));
     if (prof) {
         g_stop = 1; Sleep(20);
         DWORD64 base = (DWORD64)GetModuleHandleA(0);

@@ -63,6 +63,45 @@ class ResearchRefsTests(unittest.TestCase):
         out_rsize = ab.summarize_sizes(got, refs, verbose=False, prefix="r10.exe cfg1 ")
         self.assertEqual(out_rsize, "r10.exe cfg1 " + expected_summary)
 
+    def test_timing_comparisons_build_both_sides_without_breakdown(self) -> None:
+        """A timing comparison builds both variants lean; only the single-variant bench keeps the breakdown harness."""
+        cmds: list[list[str]] = []
+
+        def fake_compile(cmd, **kwargs):
+            cmds.append(list(cmd))
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(ab.subprocess, "run", side_effect=fake_compile):
+            ab.build(ROOT / "src" / "cm.c", Path(tmp) / "inst.exe")
+            ab.build(ROOT / "src" / "cm.c", Path(tmp) / "lean.exe", breakdown=False)
+            ab.build(ROOT / "src" / "pal.c", Path(tmp) / "lean_pal.exe", breakdown=False)
+        self.assertNotIn("-DRF_NO_BREAKDOWN=1", cmds[0])
+        self.assertIn("-DRF_NO_BREAKDOWN=1", cmds[1])
+        self.assertIn("-DRF_NO_BREAKDOWN=1", cmds[2])
+
+        built: list[tuple[str, bool]] = []
+
+        def fake_build(src, out, flags=(), breakdown=True):
+            built.append((Path(out).name, breakdown))
+
+        def fake_run(exe, imgs, reps=1):
+            rows = "".join(f"{n}.ppm  100  bpp=1.0000  enc=    1.0ms dec=    1.0ms  (1/1 cyc/sample) OK\n" for n in imgs)
+            return rows + f"TOTAL {100 * len(imgs)}  enc=1.0ms dec=1.0ms  (1/1 cyc/sample)\n"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            res_dir = Path(tmp)
+            (res_dir / "ppm").mkdir()
+            with (
+                mock.patch.object(ab, "RES", res_dir),
+                mock.patch.object(ab, "PPM", res_dir / "ppm"),
+                mock.patch.object(ab, "build", side_effect=fake_build),
+                mock.patch.object(ab, "run", side_effect=fake_run),
+                mock.patch.object(sys, "argv", ["ab.py", "ab", "src/cm.c", "build/research/try.c", "-n2", "alpha"]),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                ab.main()
+        self.assertEqual(built, [("benchA.exe", False), ("benchB.exe", False)])
+
     def test_size_and_rsize_modes_invoke_shared_aggregation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             res_dir = Path(tmp)
@@ -457,8 +496,8 @@ class ResearchRefsTests(unittest.TestCase):
         synth = ab.reconstruct_set_summary(csv_path, "synth")
         self.assertEqual(synth["images"], ab.SETS["synth"])
         self.assertEqual(synth["count"], 11)
-        self.assertEqual(f"{synth['e7_ratio']:.4f}", "0.8901")
-        self.assertEqual(f"{synth['e7_geomean']:.4f}", "0.3275")
+        self.assertEqual(f"{synth['e7_ratio']:.4f}", "0.8862")
+        self.assertEqual(f"{synth['e7_geomean']:.4f}", "0.2870")
         self.assertEqual(synth["worst_image"], "syn_noise")
         self.assertEqual(f"{synth['worst_e7_ratio']:.4f}", "0.9241")
 
@@ -979,7 +1018,7 @@ class ResearchRefsTests(unittest.TestCase):
                 rows = ab.parse_bench_rows(out, ["raw_1x1", "kat_cm", "kat_pal"])
                 self.assertEqual(rows["raw_1x1"][0], 35)
                 self.assertEqual(rows["kat_cm"][0], len(tc.KAT_FOLD3))
-                self.assertEqual(rows["kat_pal"][0], len(tc.KAT_PAL2_3))
+                self.assertEqual(rows["kat_pal"][0], len(tc.KAT_PAL4))
 
             # Inject a pixel mismatch in a palette variant decode and verify ab.run rejects it.
             bad_pal = res_dir / "pal_bad.c"
@@ -1212,7 +1251,7 @@ class ResearchRefsTests(unittest.TestCase):
                     "        if (pal_n > 0) {\n"
                     "            memcpy(f + RF_HEADER_SIZE, pal_buf, pal_n);\n"
                     "            n = pal_n;\n"
-                    "            method = RF_METHOD_PAL2;\n"
+                    "            method = RF_METHOD_PAL3;\n"
                     "        } else {\n"
                     "            memcpy(f + RF_HEADER_SIZE, img->rgb, raw);\n"
                     "            n = raw;\n"
@@ -1231,13 +1270,13 @@ class ResearchRefsTests(unittest.TestCase):
                     "    }\n",
                 )
                 .replace(
-                    "    else if (hdr.method == RF_METHOD_PAL || hdr.method == RF_METHOD_PAL2) {\n"
+                    "    else if (hdr.method >= RF_METHOD_PAL) {\n"
                     "        if ((rc = rf_pal_decode(payload, hdr.payload_size, rgb, 0, hdr.width, hdr.height, hdr.method, err)) != RF_OK) { rf_free(rgb); return rc; }\n"
                     "    }",
                     "",
                 )
                 .replace(
-                    "    else if (hdr.method == RF_METHOD_PAL || hdr.method == RF_METHOD_PAL2) {\n"
+                    "    else if (hdr.method >= RF_METHOD_PAL) {\n"
                     "        if ((rc = rf_pal_decode(payload, hdr.payload_size, *bmp, stride, hdr.width, hdr.height, hdr.method, err)) != RF_OK) {\n"
                     "            rf_free(*bmp);\n"
                     "            *bmp = 0;\n"
@@ -1275,7 +1314,7 @@ class ResearchRefsTests(unittest.TestCase):
                     self.assertIn(" PAL\n", out_cur)
                     rows_m1 = ab.parse_bench_rows(out_m1, ["kat_pal", "solid_16x16"])
                     rows_cur = ab.parse_bench_rows(out_cur, ["kat_pal", "solid_16x16"])
-                    self.assertEqual(rows_cur["kat_pal"][0], len(tc.KAT_PAL2_3))
+                    self.assertEqual(rows_cur["kat_pal"][0], len(tc.KAT_PAL4))
                     self.assertEqual(rows_m1["kat_pal"][0], 32 + tc.KAT_PAL_W * tc.KAT_PAL_H * 3)
                     self.assertLess(rows_cur["solid_16x16"][0], rows_m1["solid_16x16"][0])
 
@@ -1434,7 +1473,7 @@ class ResearchRefsTests(unittest.TestCase):
             self.assertEqual(bd_lines_r1_t1, bd_lines_r2_t1)
             self.assertEqual(bd_lines_r1_t1, bd_lines_r1_t3)
             self.assertEqual(len(bd_lines_r1_t1), 14)
-            self.assertIn("breakdown kat_pal.ppm          non-CM method=3 (PAL)", bd_lines_r1_t1[12])
+            self.assertIn("breakdown kat_pal.ppm          non-CM method=4 (PAL)", bd_lines_r1_t1[12])
             self.assertIn("breakdown raw_1x1.ppm          non-CM method=0 (RAW)", bd_lines_r1_t1[13])
 
             for idx, (stem, strips) in enumerate((("noisy_cm", 1), ("noisy_s2", 1), ("noisy_s3", 3))):

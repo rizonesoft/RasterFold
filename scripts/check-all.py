@@ -40,6 +40,9 @@ def main():
     gates.append(('review and automation tests',[py,'-m','unittest','discover','-s','scripts/tests','-v']))
     gates.append(('document drift tests',[py,'-m','unittest','discover','-s','tests','-p','test_drift.py','-v']))
     gates.append(('documentation site tests',[py,'-m','unittest','discover','-s','tests','-p','test_docs.py','-v']))
+    # The measurement tools' own tests read the committed corpus figures and the encoder's known answers, so a
+    # format change that forgets them fails here (it shipped unnoticed once, in D01 T06 s8, before this gate existed).
+    gates.append(('research tool tests',[py,'-m','unittest','discover','-s','tests','-p','test_research_refs.py','-v']))
     gates.append(('plan audit tests',[py,'-m','unittest','discover','-s','tests','-p','test_plan_audit.py','-v']))
     gates.append(('package tests',[py,'-m','unittest','discover','-s','tests','-p','test_package.py','-v']))
     gates.append(('version tests',[py,'-m','unittest','discover','-s','tests','-p','test_version.py','-v']))

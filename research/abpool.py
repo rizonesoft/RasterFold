@@ -208,8 +208,9 @@ def run_pool(argv: list[str], ab_mod=None, repo: Path = REPO) -> dict[str, objec
         verify_existing_log_provenance(log_path, a_sha, b_sha, t_flag, imgs, flags, set_name)
         bench_a = ab.RES / "benchA.exe"
         bench_b = ab.RES / "benchB.exe"
-        ab.build(base_cm, bench_a, flags)
-        ab.build(cand_cm, bench_b, flags)
+        # Both sides lean (no byte-breakdown instrumentation), so the comparison is like for like.
+        ab.build(base_cm, bench_a, flags, breakdown=False)
+        ab.build(cand_cm, bench_b, flags, breakdown=False)
         print(
             f"abpool build: A={a_label} (sha256={a_sha}) B={b_label} (sha256={b_sha}) "
             f"t={t_flag} rounds={rounds} set={set_name} images={len(imgs)} flags={list(flags)}"
@@ -435,9 +436,9 @@ def report_pool(argv: list[str], ab_mod=None) -> list[dict[str, object]]:
                 if big:
                     worst[j] = max(worst[j], (b / a, i))
                     if b / a > img_bar:
-                        fails.append(f"{i} {nm} {b:.1f}/{a:.1f}={b / a:.3f}")
+                        fails.append(f"{i} {nm} {b:.3f}/{a:.3f}={b / a:.3f}")
                 else:
-                    small_deltas.append(f"{i} {nm} {b:.1f}-{a:.1f}={b - a:+.2f}ms")
+                    small_deltas.append(f"{i} {nm} {b:.3f}-{a:.3f}={b - a:+.3f}ms")
                     if b - a > small_ms:
                         fails.append(f"{i}(small) {nm} +{b - a:.2f}ms")
         geomeans: dict[str, float] = {}
@@ -513,7 +514,7 @@ class _AbpoolSelfTests(unittest.TestCase):
                     return out_names
 
                 @staticmethod
-                def build(src: Path, exe: Path, flags: list[str]) -> None:
+                def build(src: Path, exe: Path, flags: list[str], breakdown: bool = True) -> None:
                     built_calls.append((src, exe, list(flags)))
 
                 @staticmethod

@@ -546,7 +546,14 @@ def is_m1_baseline_source(src_path: Path) -> bool:
     return src_path.name == "cm_m1.c"
 
 
-def build(src, out, flags=()):
+def build(src, out, flags=(), breakdown=True):
+    """Compile the benchmark harness around one codec variant.
+
+    `breakdown=False` builds without the byte-breakdown instrumentation (`-DRF_NO_BREAKDOWN=1`), the way a
+    historical baseline is always built. A timing comparison passes it for both sides: the instrumented harness
+    carries a second copy of the CM coder (a 1.09 MB executable against 0.65 MB), which costs a cold three-thread
+    encode of a small image about 0.8 ms, so comparing an instrumented candidate with a lean baseline charged the
+    candidate for the harness (measured 2026-11-12 on `syn_checker`: 2.7 ms instrumented, 1.8 ms lean, baseline 2.0 ms)."""
     src_path = Path(src)
     if is_m1_baseline_source(src_path):
         m1_dir = RES / "m1_src"
@@ -569,8 +576,9 @@ def build(src, out, flags=()):
         cm_src = REPO / "src" / "cm.c" if is_pal_variant else src_path
         pal_src = src_path if is_pal_variant else REPO / "src" / "pal.c"
         cm_def = f'-DRF_BENCH_CM_PATH="{cm_src.resolve().as_posix()}"'
+        lean = [] if breakdown else ["-DRF_NO_BREAKDOWN=1"]
         cmd = [
-            str(CLANG), "-O2", "-march=x86-64-v2", "-mtune=generic", "-g", cm_def, *flags,
+            str(CLANG), "-O2", "-march=x86-64-v2", "-mtune=generic", "-g", cm_def, *lean, *flags,
             f"-I{REPO / 'src'}", "-o", str(out),
             str(TOOLS / "bench.c"), str(TOOLS / "benchsys.c"),
             str(REPO / "src" / "fold.c"), str(cm_src), str(pal_src),
@@ -704,8 +712,8 @@ def main():
         a, b = rest[0], rest[1]
         n = next((int(x[2:]) for x in rest if x.startswith("-n")), 5)
         imgs = names([x for x in rest[2:] if not x.startswith("-n")])
-        build(a, RES / "benchA.exe", flags)
-        build(b, RES / "benchB.exe", flags)
+        build(a, RES / "benchA.exe", flags, breakdown=False)
+        build(b, RES / "benchB.exe", flags, breakdown=False)
         res = {"A": [], "B": []}
         row_runs = {"A": [], "B": []}
         for i in range(n):

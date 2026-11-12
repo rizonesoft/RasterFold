@@ -26,6 +26,8 @@ for three threads (`-t3`), so a busy machine distorts the numbers less. Still,
 compare variants with `ab`, which alternates them, rather than across separate
 runs.
 
+Three things keep a timing comparison honest (each found on `syn_checker` at the Milestone 8 gate, 2026-11-12). `ab` and `abpool.py` build both variants without the byte-breakdown instrumentation (`-DRF_NO_BREAKDOWN=1`), because a historical baseline is always built that way and the instrumented harness is a larger executable whose cold three-thread encode of a small image is about 0.8 ms slower; only `bench` keeps the instrumentation, for `--breakdown`. `bench.c` prints times to a microsecond, because at 0.1 ms a 0.14 ms and a 0.16 ms encode print as 0.1 and 0.2 and read as a ratio of 2. And one process times every image it is given in order, so a one-time cost (the CM coder builds its tables on first use) lands on whichever image first reaches it: when a change makes an earlier image skip the CM attempt, the next image's row grows by that cost while the set total does not. Confirm a single-image outlier by timing that image alone (`ab ... -n7 <image>`).
+
 To try a model change: copy `src/cm.c` to `build/research/x.c`, edit, run
 `python research/ab.py size build/research/x.c photo` and
 `python research/ab.py ab src/cm.c build/research/x.c -n5 measure kodim01`.
