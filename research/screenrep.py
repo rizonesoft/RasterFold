@@ -7,13 +7,14 @@ what a coder of that kind would spend. The parse and the costs are defined in `t
 screen-content.md` section 2 and follow RFC 9649 (WebP lossless) where it applies:
 
 * raster order over whole RGB pixels, greedy; candidates are distance 1, distance `width`, and the most recent
-  64 earlier positions whose next four pixels hash equal; the longest exact match of at least 4 pixels (at most
-  4096) wins, the shorter distance on a tie; a copy may overlap the pixels it produces;
-* otherwise a 256-entry colour cache, index `(0x1e35a7bd * argb) >> 24` on the 32-bit ARGB value with alpha 255,
-  every coded pixel inserted, including each pixel of a copy; a hit codes the index;
+  64 earlier positions whose next four pixels hash equal, every candidate within the window of `MAX_DISTANCE`
+  pixels; the longest exact match of at least 4 pixels (at most 4096) wins, the shorter distance on a tie; a copy
+  may overlap the pixels it produces;
+* otherwise a 256-entry colour cache (RFC 9649 section 3.6.2.3), index `(0x1e35a7bd * argb) >> 24` on the 32-bit
+  ARGB value with alpha 255, every coded pixel inserted, including each pixel of a copy; a hit codes the index;
 * otherwise a literal, its channels coded after subtracting green (`G`, `R - G`, `B - G` modulo 256);
 * costs: the empirical Shannon entropy of each stream counted separately (token kind, the three literal
-  channels, the cache index, the length and distance prefix symbols of RFC 9649 section 5.2.2) plus the exact
+  channels, the cache index, the length and distance prefix symbols of RFC 9649 section 3.6.2.2) plus the exact
   extra bits of each length and distance. Excluded: entropy-code tables, transforms other than subtract-green,
   the 2D distance mapping and container overhead, so the figure is a lower bound for a coder of this kind.
 
@@ -35,12 +36,15 @@ sys.path.insert(0, str(TOOLS))
 
 MIN_MATCH = 4
 MAX_MATCH = 4096
+# RFC 9649 section 3.6.2.2.1 adds 120 to a distance outside its 2D map, and the 40 distance prefix symbols reach
+# a value of 2^20, so a distance may be at most 2^20 - 120: the window every candidate is held to.
+MAX_DISTANCE = (1 << 20) - 120
 CHAIN = 64
 CACHE_BITS = 8
 
 
 def prefix_code(value: int) -> tuple[int, int]:
-    """RFC 9649 section 5.2.2: the prefix symbol and the number of extra bits for a length or distance >= 1."""
+    """RFC 9649 section 3.6.2.2: the prefix symbol and the number of extra bits for a length or distance >= 1."""
     if value < 1:
         raise ValueError(f"prefix-coded values start at 1, got {value}")
     d = value - 1
@@ -52,7 +56,7 @@ def prefix_code(value: int) -> tuple[int, int]:
 
 
 def cache_index(rgb: int) -> int:
-    """RFC 9649 section 5.2.3 with 8 cache bits; `rgb` is 0xRRGGBB and alpha is 255."""
+    """RFC 9649 section 3.6.2.3 with 8 cache bits; `rgb` is 0xRRGGBB and alpha is 255."""
     argb = 0xFF000000 | rgb
     return ((0x1E35A7BD * argb) & 0xFFFFFFFF) >> (32 - CACHE_BITS)
 
@@ -118,6 +122,8 @@ def parse(width: int, height: int, data: bytes) -> dict:
             if chain:
                 candidates.extend(reversed(chain))
             for c in candidates:
+                if p - c > MAX_DISTANCE:
+                    continue
                 length = match_length(data, p, c, limit)
                 dist = p - c
                 if length > best_len or (length == best_len and length and dist < best_dist):
@@ -176,6 +182,7 @@ def parse(width: int, height: int, data: bytes) -> dict:
         "tokens": dict(kinds),
         "copy_pixels": covered,
         "copy_pixels_at_least": {k: sum(x for x in copy_lengths if x >= k) for k in (4, 8, 32)},
+        "max_distance_symbol": max(dist_sym) if dist_sym else None,
         "distance_classes": dict(dist_class),
         "bits": bits,
         "bytes": sum(bits.values()) / 8,
@@ -214,20 +221,38 @@ def main(argv: list[str]) -> int:
         raise SystemExit(f"screenrep reads only the development screenshots (set screens); refused: {', '.join(unknown)}")
     corpus.verify_screens(corpus.PPM)
     total = Counter()
-    print(f"{'image':8} {'left':>6} {'above':>6} {'colours':>8} {'literal':>8} {'cache':>7} {'copy':>6} {'copied':>7} "
-          f"{'>=32':>6} {'est_bytes':>10}")
+    print(f"{'image':8} {'left':>6} {'above':>6} {'abv-lt':>6} {'colours':>8} {'literal':>8} {'cache':>7} {'copy':>6} "
+          f"{'copied':>7} {'>=8':>6} {'>=32':>6} {'est_bytes':>10}")
     for name in names:
         w, h, data = read_ppm(corpus.PPM / f"{name}.ppm")
         shares = neighbour_shares(w, h, data)
         result = parse(w, h, data)
         t = result["tokens"]
-        print(f"{name:8} {shares['left']:6.3f} {shares['above']:6.3f} {shares['colours']:8d} {t.get('literal', 0):8d} "
-              f"{t.get('cache', 0):7d} {t.get('copy', 0):6d} {result['copy_pixels'] / result['pixels']:7.3f} "
-              f"{result['copy_pixels_at_least'][32] / result['pixels']:6.3f} {result['bytes']:10.0f}", flush=True)
+        n = result["pixels"]
+        at = result["copy_pixels_at_least"]
+        print(f"{name:8} {shares['left']:6.3f} {shares['above']:6.3f} {shares['above_left']:6.3f} {shares['colours']:8d} "
+              f"{t.get('literal', 0):8d} {t.get('cache', 0):7d} {t.get('copy', 0):6d} {result['copy_pixels'] / n:7.3f} "
+              f"{at[8] / n:6.3f} {at[32] / n:6.3f} {result['bytes']:10.0f}", flush=True)
         print(f"         bits: " + ", ".join(f"{k} {v / 8:.0f} B" for k, v in result["bits"].items())
-              + " | copy distances: " + ", ".join(f"{k} {v}" for k, v in sorted(result["distance_classes"].items())), flush=True)
+              + " | copy distances: " + ", ".join(f"{k} {v}" for k, v in sorted(result["distance_classes"].items()))
+              + f" | largest distance symbol {result['max_distance_symbol']}", flush=True)
+        total["pixels"] += n
+        total["left"] += round(shares["left"] * n)
+        total["above"] += round(shares["above"] * n)
+        total["above_left"] += round(shares["above_left"] * n)
+        for kind in ("literal", "cache", "copy"):
+            total[kind] += t.get(kind, 0)
+        total["copied"] += result["copy_pixels"]
+        total["copied8"] += at[8]
+        total["copied32"] += at[32]
         total["est"] += result["bytes"]
-    print(f"total est_bytes={total['est']:.0f}")
+        for k, v in result["bits"].items():
+            total["bits " + k] += v
+    n = total["pixels"]
+    print(f"total pixels={n} left={total['left'] / n:.3f} above={total['above'] / n:.3f} above_left={total['above_left'] / n:.3f} "
+          f"literal={total['literal']} cache={total['cache']} copy={total['copy']} copied={total['copied'] / n:.3f} "
+          f"copied8={total['copied8'] / n:.3f} copied32={total['copied32'] / n:.3f} est_bytes={total['est']:.0f}")
+    print("total bits: " + ", ".join(f"{k[5:]} {v / 8:.0f} B" for k, v in total.items() if k.startswith("bits ")))
     return 0
 
 

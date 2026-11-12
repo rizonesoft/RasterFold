@@ -1826,6 +1826,19 @@ class ScreenRepetitionTests(unittest.TestCase):
         z = next(c for c in range(1, 1 << 16) if self.sr.cache_index(c) != self.sr.cache_index(x))
         self.assertEqual(self.sr.parse(3, 1, self.image([x, z, x]))["tokens"], {"literal": 2, "cache": 1})
 
+    def test_a_distance_beyond_the_window_is_never_used(self) -> None:
+        self.assertEqual(self.sr.MAX_DISTANCE, (1 << 20) - 120)
+        self.assertEqual(self.sr.prefix_code(self.sr.MAX_DISTANCE + 120), (39, 18))   # the last distance symbol
+        self.assertEqual(self.sr.prefix_code(self.sr.MAX_DISTANCE + 121)[0], 40)      # one more would need a 41st
+        a, b, c, d = 0x102030, 0x405060, 0x708090, 0xA0B0C0
+        with mock.patch.object(self.sr, "MAX_DISTANCE", 3):
+            got = self.sr.parse(8, 1, self.image([a, b, c, d, a, b, c, d]))
+        self.assertEqual(got["tokens"].get("copy", 0), 0)                             # distance 4 is outside
+        with mock.patch.object(self.sr, "MAX_DISTANCE", 4):
+            got = self.sr.parse(8, 1, self.image([a, b, c, d, a, b, c, d]))
+        self.assertEqual(got["tokens"], {"literal": 4, "copy": 1})
+        self.assertEqual(got["max_distance_symbol"], 3)
+
     def test_pixels_that_never_repeat_are_all_literals(self) -> None:
         seen, colours = set(), []
         for colour in range(1, 1 << 20, 7919):
