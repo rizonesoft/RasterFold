@@ -500,7 +500,7 @@ class ReleasePackages(Packages):
         tree = out / 'rasterfold-1.0.0-linux-x64'
         report = build_docs.check_offline_tree(tree)
         self.assertTrue((tree / 'README.md').is_file())
-        self.assertEqual(len(report['pages']), 16)
+        self.assertEqual(len(report['pages']), 18)
         self.assertGreater(report['links'], 30)
         self.assertEqual((report['unresolved'], report['unreachable'], report['leftovers']), ([], [], []))
         index = (tree / 'docs/index.md').read_text(encoding='utf-8')

@@ -8,6 +8,8 @@ This record documents the browser, responsive-layout, keyboard-navigation, state
 
 **Addendum 2026-11-12:** a 16th published page followed, the generated Command-Line Reference (`docs/cli.md`, D08 T03 §1), on the same terms: its delivery evidence is its section checkpoint and the Pages workflow.
 
+**Addendum 2026-11-12 (second):** a 17th and an 18th published page followed, the generated Downloads page (`docs/downloads.md`, from `docs/releases.json`) and Release History (`docs/release-history.md`, mirrored from `CHANGELOG.md`), with a generated version-label table on the overview, Getting Started, Downloads and both reference pages (D08 T01 §7), on the same terms: their delivery evidence is the section checkpoint and the Pages workflow.
+
 ## 1. Environment and Build Provenance
 
 - **Staged source tree:** `python3 scripts/build-docs.py --stage build/site-source` (`37` allowlisted files staged).

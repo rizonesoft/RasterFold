@@ -94,6 +94,10 @@
     {
       "source": "docs/_includes/generated/tables/size-vs-decode.md",
       "staged": "_includes/generated/tables/size-vs-decode.md"
+    },
+    {
+      "source": "docs/_includes/generated/version-labels.md",
+      "staged": "_includes/generated/version-labels.md"
     }
   ],
   "pages": [
@@ -233,6 +237,24 @@
       "title": "Command-Line Reference",
       "nav_order": 16,
       "kind": "generated"
+    },
+    {
+      "id": "downloads",
+      "source": "docs/releases.json",
+      "output": "docs/downloads.md",
+      "staged": "downloads.md",
+      "title": "Downloads",
+      "nav_order": 17,
+      "kind": "generated"
+    },
+    {
+      "id": "release-history",
+      "source": "CHANGELOG.md",
+      "output": "docs/release-history.md",
+      "staged": "release-history.md",
+      "title": "Release History",
+      "nav_order": 18,
+      "kind": "mirrored"
     }
   ],
   "assets": [

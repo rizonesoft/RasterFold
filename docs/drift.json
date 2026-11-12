@@ -1601,14 +1601,14 @@
       "review": "Author-attested: 2026-10-25 re-read CONTRIBUTING.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/building.md": {
-      "evidence": "Re-read 2026-11-12 after round 1 of D09 T01 section 3: step 1 of Publishing a release now says the Unreleased entries move under a new version heading placed below the Unreleased heading, which stays (research/milestones.py has every milestone gate append to that section, and tests/test_version.py test_release_notes_after_the_documented_release_preparation runs this preparation on the repository's changelog); the verification paragraph's statement that a command outliving the timeout is refused and its whole process tree ended still matches scripts/verify_release.py, which now also ends everything a command started when it returns in time (process group on Linux, job object on Windows)",
+      "evidence": "Re-read 2026-11-12 for D08 T01 section 7: Publishing a release gained step 3 (download the published files, run scripts/build-docs.py --record-release with --tag, --commit and --date, commit) and its explanation, checked against record_release in scripts/build-docs.py (sizes, digests and file lists read from the files, agreement with SHA256SUMS required, a recorded version refused, pages regenerated) and against the corrected read-back item of D09 T01 section 4 (the site is published from the main commit that carries the record); steps 1 and 2 and the workflow description are unchanged",
       "sources": {
         "toolchain.json": "fd7b0b2424a2ffdb86095da76e4b975d604741fb271fd9b70e4c53efe9f5e3de",
         "scripts/build.py": "488c7f8808e6bef7be095b5aa24fced856aab20ef6757548ac7f32e08021ad91",
         "scripts/package.py": "f030a89836d12e610d9ad4a762bf073c975e6fcaf6bdb83ef09bc174e3f37973",
         "scripts/check-all.py": "ec0f58046fb6beb5e9b522530aa51a4e3eff03bd546a17a09db53e53ca8a5e9a",
         "include/rasterfold.h": "228c6bf718c525b2311df99746d55e5861209f2ea0dec65e299b6ec0e6f126c7",
-        "docs/building.md": "2b520409963ab113a287bf721495fd06fd7762b376772a1c0c61d92b65423fdb",
+        "docs/building.md": "1f391be2a29f68c0c7cdab1e3036fa4377232085cba82b7aaaaa324405f24544",
         "scripts/verify_release.py": "34043e5c683f0edc85dd8e214413abe72bae512f30c3980991073c198195bf62",
         ".github/workflows/release.yml": "043ed3b9f4bcee1abf3316e05c156e9690a7964ff7ed0e405be82a9d546bdf38",
         "scripts/version.py": "159a7eecc030a0359f37bbd24d4ad22943c0a4761ad1f5592786adf5ddc630d2"
@@ -1625,18 +1625,18 @@
       }
     },
     "docs/index.md": {
-      "evidence": "Re-read 2026-11-12 for D08 T03 section 1 (the generated Command-Line Reference and the corrected help text: encode and decode usage now shows [--overwrite] and says an existing output is refused unless --overwrite is given): the page list gains the Command-Line Reference entry next to the API Reference, matching the new cli entry in docs/site-content.json; the CLI command facts on this page (encode, decode, inspect) still match src/main.c",
+      "evidence": "Re-read 2026-11-12 for D08 T01 section 7: Current Version and Limits now opens with the generated version-labels fragment (product, file format and C API, each named), the product bullet no longer cites an internal plan section and points to the product row for the release state, and the documentation map gained Downloads and Release History; the fact comments on the page are unchanged and still verified by the drift facts, and the map entries match the titles and outputs in docs/site-content.json",
       "sources": {
         "include/rasterfold.h": "228c6bf718c525b2311df99746d55e5861209f2ea0dec65e299b6ec0e6f126c7",
         "src/rf.h": "429414fd9303e0bd47d0ee05fca037e043c68c7d79f0f9435174c4e723e03f83",
         "src/main.c": "ec81bb32213bb7c8833860efb6ba7b8ab1512580fc1e380d6e564972324f7121",
-        "docs/site-content.json": "52117cfce3d60a63965f8588389ad27c5258e7b07e031e3f976008349a710c00",
-        "docs/index.md": "73aff59e901348f35796811ec5b134dac8b68cfc342dce68febee4ab43dd5e99"
+        "docs/site-content.json": "1ee306e2494a7be46fe253e7550a277af5cebf7f8c48afc524cfc15b8990626f",
+        "docs/index.md": "18a44942144ac2562ab21b50455489814194478f7d11d9e7242009c8a6d26b22"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/index.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/getting-started.md": {
-      "evidence": "Re-read 2026-11-12 for D08 T03 section 1 (the generated Command-Line Reference and the corrected help text: encode and decode usage now shows [--overwrite] and says an existing output is refused unless --overwrite is given): the walkthrough's sentence on destinations now states the default refusal, the .partial publication, and --overwrite, and links the Command-Line Reference (cli.md, which the site now publishes); commands and exit-code table are unchanged and match src/main.c",
+      "evidence": "Re-read 2026-11-12 for D08 T01 section 7: added one sentence and the generated version-labels fragment under the introduction, with a link to the Downloads page that exists in docs/site-content.json; the build and first-run commands are unchanged",
       "sources": {
         "toolchain.json": "fd7b0b2424a2ffdb86095da76e4b975d604741fb271fd9b70e4c53efe9f5e3de",
         "tools/provision.py": "dc5fb84c125ea3735ca425e91d084d04297d772cee4e3609417aa11c66ad0c3b",
@@ -1646,7 +1646,7 @@
         "scripts/check-all.ps1": "7006b1871b52689461497fa676b3cb6472f0e436c9c5e240deb9da069321a528",
         "include/rasterfold.h": "228c6bf718c525b2311df99746d55e5861209f2ea0dec65e299b6ec0e6f126c7",
         "src/main.c": "ec81bb32213bb7c8833860efb6ba7b8ab1512580fc1e380d6e564972324f7121",
-        "docs/getting-started.md": "3f0f0b393d9410092bbfabd7faf8ad2d8ab33811a8a12b6ccf9762c6600e4fcc"
+        "docs/getting-started.md": "d6a59d92dd2857414de55640878a0bb92688e695b6d92be76e6739fce9af004f"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/getting-started.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
@@ -1672,11 +1672,11 @@
       }
     },
     "docs/README.md": {
-      "evidence": "Re-read 2026-11-12 after the completion review of D09 T01 section 2: scripts/build-docs.py's offline renderer now maps a link to the repository's PACKAGE.md onto the package's README.md and treats README.md as a shipped file; this document's description of the staging allowlist, the generator and the Pages workflow is unaffected",
+      "evidence": "Re-read 2026-11-12 for D08 T01 section 7: docs/site-content.json gained the Downloads (generated from docs/releases.json) and Release History (mirrored from CHANGELOG.md) pages and the generated version-labels fragment, and scripts/build-docs.py gained their renderers and --record-release; this document's one paragraph on the site says sources are staged from the allowlist by build-docs.py and published by pages.yml with the live read-back, and that the converter is not published as a download, all of which still hold (the Downloads page lists codec releases only)",
       "sources": {
         "docs/_config.yml": "676777a86aadacf7e23cd133f97cd97b494a2f2d96fb2a92e875399fda852581",
-        "docs/site-content.json": "52117cfce3d60a63965f8588389ad27c5258e7b07e031e3f976008349a710c00",
-        "scripts/build-docs.py": "d672b36885675d074642b7671e3a47540af1cb55abf0e6c406edf704351fba5e",
+        "docs/site-content.json": "1ee306e2494a7be46fe253e7550a277af5cebf7f8c48afc524cfc15b8990626f",
+        "scripts/build-docs.py": "71fb7341f8abf95622935899ed61dc9ec74d85947047f9495884c8701eb7b1e3",
         "docs/README.md": "35dddde5d7cbf1f7353813bebd7272749de00d2f705fc277cd4b51cb7b8189a0"
       }
     },
@@ -1774,7 +1774,7 @@
       "review": "Author-attested: 2026-10-25 re-read docs/troubleshooting.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/licenses.md": {
-      "evidence": "Re-read 2026-11-11 for the removal of Android from the repository: scripts/build.py and scripts/package.py define only windows-x64 and linux-x64, toolchain.json has no NDK pin or android block, scripts/check-all.py --all-targets adds the Windows target only, and AGENTS.md, README.md and docs/_config.yml name Windows and Linux; this document's target lists, build commands, toolchain and platform statements were checked against those sources and it makes no Android statement",
+      "evidence": "Re-read 2026-11-12 for D08 T01 section 7: removed an internal plan reference (D00 T05 s1) from the basedpyright row of the pinned components table, which is published on the site; the row's facts (version 1.40.2 in requirements-dev.txt, an editor aid and not a gate) are unchanged",
       "sources": {
         "CODE_OF_CONDUCT.md": "f945b73c121fdc7597bdfedabb63f1442ccbab3b2469cd1b7a59932e9eac7da0",
         "testdata/photos/README.md": "f8d6f0d749fc5e795731c322fe192350b247afe167cb817c50f6faedc444303e",
@@ -1783,28 +1783,28 @@
         "toolchain.json": "fd7b0b2424a2ffdb86095da76e4b975d604741fb271fd9b70e4c53efe9f5e3de",
         "tools/provision.py": "dc5fb84c125ea3735ca425e91d084d04297d772cee4e3609417aa11c66ad0c3b",
         "tools/provision.ps1": "7b7ce12f1aede008be98478d7b95fbf6601737356baa62277c0d9217ff3e5e40",
-        "docs/licenses.md": "d1e11a863dae7021455750a52edea48d058777762e44f8bf07afbd2780bdc7bc"
+        "docs/licenses.md": "46c6ac72bfecb4d81a4a64fde161f85f7d7fce3f87705b1138eb2ddab754727e"
       }
     },
     "docs/404.md": {
-      "evidence": "Re-read 2026-11-12: docs/site-content.json gained the generated page cli (docs/cli.md, nav_order 16); this page's short list of starting points links pages that still exist at the same paths and does not claim to be complete, so nothing in it changed",
+      "evidence": "Re-read 2026-11-12 for D08 T01 section 7: added the line linking Downloads and Release History; every listed starting point links a page that exists in docs/site-content.json at that path (18 pages now)",
       "sources": {
-        "docs/site-content.json": "52117cfce3d60a63965f8588389ad27c5258e7b07e031e3f976008349a710c00",
+        "docs/site-content.json": "1ee306e2494a7be46fe253e7550a277af5cebf7f8c48afc524cfc15b8990626f",
         "docs/_config.yml": "676777a86aadacf7e23cd133f97cd97b494a2f2d96fb2a92e875399fda852581",
-        "docs/404.md": "3089c9fb995df813bcba190ebf5f203575a83bf729c3860e7f4da34ec6966417"
+        "docs/404.md": "6c9041541aecf2a3e78bd5cf8c2fa4f12a470221efbf5994dad332030fb356ff"
       }
     },
     "docs/site-validation.md": {
-      "evidence": "Re-read 2026-11-12: docs/site-content.json gained a 16th page (cli); this record of the 14-page site's browser validation gains a dated addendum saying so, on the same terms as the 2026-11-09 addendum for the API Reference, and its measured figures are left as recorded",
+      "evidence": "Re-read 2026-11-12 for D08 T01 section 7: added a second 2026-11-12 addendum recording the 17th and 18th published pages (Downloads, Release History) and the version-label table on five entry points, on the same terms as the earlier addenda: the record still describes the 14-page site it measured and does not claim browser validation of the new pages",
       "sources": {
         "docs/_config.yml": "676777a86aadacf7e23cd133f97cd97b494a2f2d96fb2a92e875399fda852581",
         "docs/_includes/head_custom.html": "a3db05eb828ddef58712fcd5fb5525ca905ee9e0e20c4707c8bf910dbc4b21dc",
         "docs/_includes/header_custom.html": "b985261215544f807451a279b6409a960f1ba9b69a3bb4ddb7868b2efc8b67a8",
         "docs/assets/css/site-states.css": "a5b9a1dd538e73cd748b675ec990dec52669f62d7ab414848f88dd9260e9c01e",
         "docs/assets/js/site-states.js": "eddfda79289ae90c93a7576539404fd202f6e49995f435c959fd74535885578d",
-        "docs/404.md": "3089c9fb995df813bcba190ebf5f203575a83bf729c3860e7f4da34ec6966417",
-        "docs/site-content.json": "52117cfce3d60a63965f8588389ad27c5258e7b07e031e3f976008349a710c00",
-        "docs/site-validation.md": "6e192347d101a58019a594d74c32e9eb4902df7d610f27d1b86bc21d95e511b4"
+        "docs/404.md": "6c9041541aecf2a3e78bd5cf8c2fa4f12a470221efbf5994dad332030fb356ff",
+        "docs/site-content.json": "1ee306e2494a7be46fe253e7550a277af5cebf7f8c48afc524cfc15b8990626f",
+        "docs/site-validation.md": "50ae996568e46479f508ad94fb57ee7b9a53b98357e6f9e03f63de53d80887b4"
       }
     },
     "PACKAGE.md": {
@@ -1902,7 +1902,10 @@
         "docs/_includes/generated/tables/decode-time.md",
         "docs/_includes/generated/tables/peak-memory.md",
         "docs/_includes/generated/tables/scatter-e9.md",
-        "docs/_includes/generated/tables/size-vs-decode.md"
+        "docs/_includes/generated/tables/size-vs-decode.md",
+        "docs/downloads.md",
+        "docs/release-history.md",
+        "docs/_includes/generated/version-labels.md"
       ],
       "planned_outputs": {}
     },
@@ -1948,7 +1951,10 @@
     "scripts/build-docs.py",
     "scripts/drift-check.py",
     "docs/drift.json",
-    "requirements-dev.txt"
+    "requirements-dev.txt",
+    "docs/releases.json",
+    "CHANGELOG.md",
+    "VERSION"
   ],
   "encodings": {
     "testdata/photos/NOTICE-imagecompression-info.txt": "cp1252"

@@ -9,6 +9,10 @@ source_path: docs/getting-started.md
 
 RasterFold builds from source with a repository-local pinned toolchain (Clang/LLVM, LLD and Ninja) defined in `toolchain.json`. No global compiler installation is required on Windows or Linux x64.
 
+This guide describes the following versions. Published releases, when there are any, are on the [Downloads](downloads.md) page.
+
+{% include generated/version-labels.md %}
+
 ## 1. Provision and Build
 
 ### Linux / WSL x64

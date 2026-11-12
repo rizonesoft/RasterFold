@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import html
 import importlib.util
 import io
@@ -12,6 +13,7 @@ import re
 import shutil
 import tempfile
 import unittest
+import zipfile
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -54,6 +56,12 @@ FIXTURE_FILES = (
     'docs/licenses.md',
     'docs/building.md',
     'PACKAGE.md',
+    'VERSION',
+    'CHANGELOG.md',
+    'docs/releases.json',
+    'docs/downloads.md',
+    'docs/release-history.md',
+    'docs/_includes/generated/version-labels.md',
     'docs/library.md',
     'docs/research.md',
     'docs/measurements.md',
@@ -246,6 +254,294 @@ class DocsMapTests(unittest.TestCase):
         path = self.root / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding='utf-8', newline='\n')
+
+    # --- release metadata, the Downloads page and the version labels (D08 T01 section 7) ---
+
+    INVENTORY = {
+        'windows-x64': ['bin/rasterfold.dll', 'bin/rasterfold.exe', 'include/rasterfold.h', 'lib/librasterfold.a',
+                        'lib/rasterfold.lib', 'symbols/rasterfold.pdb'],
+        'linux-x64': ['bin/rasterfold', 'include/rasterfold.h', 'lib/librasterfold.a', 'lib/librasterfold.so'],
+    }
+
+    def release_record(self, version: str, date: str = '2026-11-20', inventory: dict | None = None) -> dict:
+        inventory = inventory or self.INVENTORY
+        assets = [
+            {'name': f'rasterfold-{version}-{target}.zip', 'target': target, 'size': 1000 + index,
+             'sha256': f'{index + 1:x}' * 64, 'contents': sorted(inventory[target])}
+            for index, target in enumerate(('windows-x64', 'linux-x64'))
+        ]
+        assets.append({'name': 'SHA256SUMS', 'target': None, 'size': 196, 'sha256': 'c' * 64})
+        return {'version': version, 'tag': f'rasterfold-v{version}', 'date': date, 'commit': 'b' * 40, 'assets': assets}
+
+    def write_releases(self, *records: dict) -> None:
+        self.write('docs/releases.json', json.dumps(
+            {'schema': 1, 'repository': build_docs.REPOSITORY_URL, 'releases': list(records)}, indent=2) + '\n')
+
+    def check_errors(self) -> list[str]:
+        try:
+            return build_docs.check_generated_pages(self.root)
+        except ValueError as error:
+            return [str(error)]
+
+    def release_files(self, version: str, inventory: dict | None = None) -> Path:
+        """A directory as `gh release download` leaves it: the two packages and SHA256SUMS."""
+        inventory = inventory or self.INVENTORY
+        directory = self.root / 'build' / f'release-{version}'
+        directory.mkdir(parents=True)
+        lines = []
+        for target, paths in inventory.items():
+            name = f'rasterfold-{version}-{target}.zip'
+            with zipfile.ZipFile(directory / name, 'w') as archive:
+                top = f'rasterfold-{version}-{target}'
+                for path in [*paths, 'LICENSE', 'README.md', 'docs/index.md', 'SHA256SUMS']:
+                    archive.writestr(f'{top}/{path}', path.encode())
+            lines.append(f'{hashlib.sha256((directory / name).read_bytes()).hexdigest()}  {name}\n')
+        (directory / 'SHA256SUMS').write_text(''.join(sorted(lines, key=lambda line: line.split('  ')[1])), encoding='utf-8')
+        return directory
+
+    def test_no_release_state_links_nothing_that_does_not_exist(self) -> None:
+        build_docs.write_generated_pages(self.root)
+        self.assertEqual(self.check_errors(), [])
+        page = (self.root / 'docs/downloads.md').read_text(encoding='utf-8')
+        self.assertIn('No release of RasterFold has been published yet', page)
+        self.assertIn('[build RasterFold from source](installation.md)', page)
+        self.assertNotIn('/releases/download/', page)
+        self.assertNotIn('## RasterFold ', page)
+        labels = (self.root / 'docs/_includes/generated/version-labels.md').read_text(encoding='utf-8')
+        version = (self.root / 'VERSION').read_text(encoding='utf-8').strip()
+        self.assertIn(f'| Product | RasterFold {version}, in development and not released; no release has been published yet |', labels)
+
+    def test_version_labels_name_their_kind_in_every_release_state(self) -> None:
+        version = (self.root / 'VERSION').read_text(encoding='utf-8').strip()
+        states = {
+            'none': ((), 'in development and not released; no release has been published yet'),
+            'released': ((self.release_record(version, '2026-11-20'),), 'released 2026-11-20 and listed on the Downloads page'),
+            'ahead': ((self.release_record('0.9.0'),), 'in development and not released; the latest release is RasterFold 0.9.0'),
+        }
+        for name, (records, wording) in states.items():
+            with self.subTest(state=name):
+                self.write_releases(*records)
+                rows = build_docs.version_label_rows(self.root)
+                self.assertEqual([kind for kind, _, _ in rows], ['Product', 'File format', 'C API'])
+                product, file_format, c_api = (label for _, label, _ in rows)
+                self.assertEqual(product, f'RasterFold {version}, {wording}' + (', listed on the Downloads page' if name == 'ahead' else ''))
+                self.assertRegex(file_format, r'^`\.fold` format version \d+$')
+                self.assertRegex(c_api, r'^C API \d+\.\d+$')
+                table = build_docs.render_version_labels(self.root)
+                # A number never stands without the name of what it versions.
+                self.assertNotRegex(table, r'(?i)\bv\d')
+                for line in table.splitlines()[2:]:
+                    for number in re.findall(r'\d+(?:\.\d+)+|\bversion \d+', line.split('|')[2]):
+                        self.assertRegex(line.split('|')[2], r'RasterFold |format version |C API ', number)
+                self.assertEqual(table.count('independently'), 2)
+        # The entry points carry the table: authored pages include the fragment, generated pages hold it inline.
+        self.write_releases()
+        build_docs.write_generated_pages(self.root)
+        table = (self.root / 'docs/_includes/generated/version-labels.md').read_text(encoding='utf-8')
+        for rel in ('docs/index.md', 'docs/getting-started.md'):
+            self.assertEqual((self.root / rel).read_text(encoding='utf-8').count(build_docs.VERSION_LABELS_INCLUDE), 1, rel)
+        for rel in ('docs/downloads.md', 'docs/cli.md', 'docs/api.md'):
+            text = (self.root / rel).read_text(encoding='utf-8')
+            self.assertIn(f'{build_docs.VERSION_LABELS_BEGIN}\n{table}{build_docs.VERSION_LABELS_END}\n', text, rel)
+            self.assertNotIn('{%', text, rel)
+
+    def test_a_release_changes_every_labelled_page_and_the_gate_sees_the_stale_ones(self) -> None:
+        build_docs.write_generated_pages(self.root)
+        self.assertEqual(self.check_errors(), [])
+        version = (self.root / 'VERSION').read_text(encoding='utf-8').strip()
+        self.write_releases(self.release_record(version))
+        stale = self.check_errors()
+        for rel in ('docs/downloads.md', 'docs/cli.md', 'docs/api.md', 'docs/_includes/generated/version-labels.md'):
+            self.assertIn(f'{rel}: generated file differs from source (run python3 scripts/build-docs.py)', stale)
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(build_docs.main(['--root', str(self.root), '--check']), 1)
+        build_docs.write_generated_pages(self.root)
+        self.assertEqual(self.check_errors(), [])
+        page = (self.root / 'docs/downloads.md').read_text(encoding='utf-8')
+        tag = f'rasterfold-v{version}'
+        self.assertIn(f'## RasterFold {version} (latest release)', page)
+        for target, label in (('windows-x64', 'Windows x64'), ('linux-x64', 'Linux x64')):
+            name = f'rasterfold-{version}-{target}.zip'
+            self.assertIn(f'### {label}, RasterFold {version}', page)
+            self.assertIn(f'[{name}](https://github.com/rizonesoft/RasterFold/releases/download/{tag}/{name})', page)
+        self.assertIn('| Debug symbols | `symbols/rasterfold.pdb` |', page)
+        self.assertIn('| Debug symbols | none shipped as separate files for this platform |', page)
+        self.assertIn(f'[SHA256SUMS](https://github.com/rizonesoft/RasterFold/releases/download/{tag}/SHA256SUMS)', page)
+        self.assertIn(f'https://github.com/rizonesoft/RasterFold/tree/{tag}', page)
+        self.assertIn('GNU General Public License v3.0', page)
+        self.assertIn('## Verify a download', page)
+        self.assertIn(f'| `{"1" * 64}` |', page)
+        # Every link on the page is a derived release address, a page of this site, or the repository itself.
+        for url in re.findall(r'\]\(([^)]+)\)', page):
+            self.assertTrue(url.endswith('.md') or url.startswith('https://github.com/rizonesoft/RasterFold/'), url)
+
+    def test_seeded_metadata_mismatches_fail_the_docs_gate(self) -> None:
+        build_docs.write_generated_pages(self.root)
+        good = self.release_record('1.0.0')
+
+        def broken(change) -> dict:
+            record = json.loads(json.dumps(good))
+            change(record)
+            return record
+
+        cases = {
+            'does not match its version (expected rasterfold-v1.0.0)': lambda r: r.update(tag='rasterfold-v1.0.1'),
+            'missing target asset rasterfold-1.0.0-linux-x64.zip': lambda r: r['assets'].pop(1),
+            'missing target asset rasterfold-1.0.0-windows-x64.zip': lambda r: r['assets'][0].update(name='rasterfold-1.0.1-windows-x64.zip'),
+            'missing SHA256SUMS': lambda r: r['assets'].pop(2),
+            "unexpected asset 'rasterfold-1.0.0-macos.zip'": lambda r: r['assets'].append(
+                {'name': 'rasterfold-1.0.0-macos.zip', 'target': None, 'size': 1, 'sha256': 'd' * 64}),
+            'commit must be 40 lowercase hexadecimal characters': lambda r: r.update(commit='abc123'),
+            'is not a YYYY-MM-DD calendar date': lambda r: r.update(date='2026-02-30'),
+            'size must be a positive integer': lambda r: r['assets'][0].update(size=0),
+            'sha256 must be 64 lowercase hexadecimal characters': lambda r: r['assets'][0].update(sha256='ABC'),
+            'contents lack the command-line tool or the header': lambda r: r['assets'][1].update(contents=['lib/librasterfold.a']),
+            "contents path 'docs/index.md' is not under": lambda r: r['assets'][1].update(
+                contents=sorted([*r['assets'][1]['contents'], 'docs/index.md'])),
+            "target must be 'linux-x64'": lambda r: r['assets'][1].update(target='windows-x64'),
+            'expected exactly the keys version, tag, date, commit and assets': lambda r: r.update(url='https://example.invalid/'),
+        }
+        for reason, change in cases.items():
+            with self.subTest(reason=reason):
+                self.write_releases(broken(change))
+                errors = self.check_errors()
+                self.assertEqual(len(errors), 1, errors)
+                self.assertIn('docs/releases.json: ', errors[0])
+                self.assertIn(reason, errors[0])
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    self.assertEqual(build_docs.main(['--root', str(self.root), '--check']), 1)
+        for text, reason in (('{"schema": 2, "repository": "x", "releases": []}', 'unsupported schema'),
+                             ('{"schema": 1, "repository": "https://example.invalid", "releases": []}', 'repository must be'),
+                             ('not json', 'not JSON')):
+            self.write('docs/releases.json', text)
+            self.assertIn(reason, self.check_errors()[0])
+        self.write_releases(self.release_record('1.0.0'), self.release_record('1.1.0'))
+        self.assertIn('descending version order', self.check_errors()[0])
+        self.write_releases(self.release_record('1.0.0'), self.release_record('1.0.0'))
+        self.assertIn('recorded twice', self.check_errors()[0])
+        (self.root / 'docs/releases.json').unlink()
+        self.assertIn('docs/releases.json: cannot be read', self.check_errors()[0])
+
+    def test_semver_order_puts_a_release_above_its_prereleases(self) -> None:
+        ordered = ['1.0.0-alpha', '1.0.0-alpha.1', '1.0.0-alpha.beta', '1.0.0-beta', '1.0.0-beta.2', '1.0.0-beta.11',
+                   '1.0.0-rc.1', '1.0.0', '1.0.1', '1.1.0', '2.0.0']
+        self.assertEqual(sorted(reversed(ordered), key=build_docs.semver_key), ordered)
+        with self.assertRaises(ValueError):
+            build_docs.semver_key('1.0')
+
+    def test_record_release_reads_the_published_files_and_refuses_what_disagrees(self) -> None:
+        build_docs.write_generated_pages(self.root)
+        version = (self.root / 'VERSION').read_text(encoding='utf-8').strip()
+        tag = f'rasterfold-v{version}'
+        directory = self.release_files(version)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = build_docs.main(['--root', str(self.root), '--record-release', str(directory), '--tag', tag,
+                                    '--commit', 'e' * 40, '--date', '2026-11-21'])
+        self.assertEqual(code, 0, out.getvalue())
+        self.assertIn(f'recorded release {version} (3 asset(s)) in docs/releases.json', out.getvalue())
+        (record,) = build_docs.load_releases(self.root)
+        self.assertEqual((record['version'], record['tag'], record['commit'], record['date']), (version, tag, 'e' * 40, '2026-11-21'))
+        by_name = {asset['name']: asset for asset in record['assets']}
+        for target, paths in self.INVENTORY.items():
+            asset = by_name[f'rasterfold-{version}-{target}.zip']
+            file = directory / asset['name']
+            self.assertEqual((asset['size'], asset['sha256']), (file.stat().st_size, hashlib.sha256(file.read_bytes()).hexdigest()))
+            self.assertEqual(asset['contents'], sorted(paths))        # the package's own inventory, without docs or LICENSE
+        self.assertEqual(by_name['SHA256SUMS']['sha256'], hashlib.sha256((directory / 'SHA256SUMS').read_bytes()).hexdigest())
+        # Read back and generated: the gate is clean and the page shows the release.
+        self.assertEqual(self.check_errors(), [])
+        page = (self.root / 'docs/downloads.md').read_text(encoding='utf-8')
+        self.assertIn(f'## RasterFold {version} (latest release)', page)
+        self.assertIn('released 2026-11-21 and listed on the Downloads page', page)
+        # A duplicate is refused and the file is left byte-identical.
+        before = (self.root / 'docs/releases.json').read_bytes()
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            code = build_docs.main(['--root', str(self.root), '--record-release', str(directory), '--tag', tag,
+                                    '--commit', 'e' * 40, '--date', '2026-11-21'])
+        self.assertEqual(code, 1)
+        self.assertIn(f'release {version} is already recorded', err.getvalue())
+        self.assertEqual((self.root / 'docs/releases.json').read_bytes(), before)
+
+        def refused(needle: str, files: Path, release_tag: str = 'rasterfold-v2.0.0', commit: str = 'f' * 40, date: str = '2026-12-01') -> None:
+            err = io.StringIO()
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+                code = build_docs.main(['--root', str(self.root), '--record-release', str(files), '--tag', release_tag,
+                                        '--commit', commit, '--date', date])
+            self.assertEqual(code, 1, needle)
+            self.assertIn(needle, err.getvalue())
+            self.assertEqual((self.root / 'docs/releases.json').read_bytes(), before, needle)
+
+        tampered = self.release_files('2.0.0')
+        with open(tampered / 'rasterfold-2.0.0-linux-x64.zip', 'ab') as handle:
+            handle.write(b'x')
+        refused('disagrees with SHA256SUMS', tampered)
+        (tampered / 'rasterfold-2.0.0-linux-x64.zip').unlink()
+        refused('no rasterfold-2.0.0-linux-x64.zip', tampered)
+        refused('release tags are named rasterfold-v<SemVer>', directory, release_tag='v2.0.0')
+        good = self.release_files('2.1.0')
+        refused('commit must be 40 lowercase hexadecimal characters', good, release_tag='rasterfold-v2.1.0', commit='abc')
+        refused('is not a YYYY-MM-DD calendar date', good, release_tag='rasterfold-v2.1.0', date='yesterday')
+        (good / 'SHA256SUMS').unlink()
+        refused('no SHA256SUMS', good, release_tag='rasterfold-v2.1.0')
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(build_docs.main(['--root', str(self.root), '--record-release', str(directory), '--tag', tag]), 1)
+            self.assertEqual(build_docs.main(['--root', str(self.root), '--check', '--tag', tag]), 1)
+
+    def test_each_release_keeps_its_own_package_inventory(self) -> None:
+        build_docs.write_generated_pages(self.root)
+        later = {'windows-x64': ['bin/rasterfold.exe', 'bin/rf2.dll', 'include/rasterfold.h', 'lib/rf2.lib'],
+                 'linux-x64': ['bin/rasterfold', 'include/rasterfold.h', 'lib/librf2.so', 'symbols/rasterfold.debug']}
+        for version, inventory in (('1.0.0', None), ('1.1.0', later)):
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(build_docs.main(['--root', str(self.root), '--record-release',
+                                                  str(self.release_files(version, inventory)), '--tag', f'rasterfold-v{version}',
+                                                  '--commit', 'a' * 40, '--date', '2026-12-01' if version == '1.0.0' else '2027-01-15']), 0)
+        self.assertEqual([r['version'] for r in build_docs.load_releases(self.root)], ['1.1.0', '1.0.0'])
+        build_docs.write_generated_pages(self.root)
+        self.assertEqual(self.check_errors(), [])
+        page = (self.root / 'docs/downloads.md').read_text(encoding='utf-8')
+        newer, older = page.split('## RasterFold 1.0.0\n')
+        self.assertIn('## RasterFold 1.1.0 (latest release)', newer)
+        self.assertNotIn('(latest release)', older)
+        self.assertIn('`bin/rf2.dll`', newer)
+        self.assertIn('| Debug symbols | `symbols/rasterfold.debug` |', newer)
+        self.assertNotIn('rasterfold.dll', newer)
+        self.assertIn('`bin/rasterfold.dll`', older)
+        self.assertIn('`lib/librasterfold.so`', older)
+        self.assertNotIn('rf2', older)
+        self.assertIn('rasterfold-v1.0.0/rasterfold-1.0.0-linux-x64.zip', older)
+
+    def test_packaged_documentation_states_the_version_it_ships_with(self) -> None:
+        version = (self.root / 'VERSION').read_text(encoding='utf-8').strip()
+        build_docs.write_generated_pages(self.root)
+        site_table = (self.root / 'docs/_includes/generated/version-labels.md').read_text(encoding='utf-8')
+        docs = build_docs.render_offline_docs(self.root, 'a' * 40)
+        product = f'| Product | RasterFold {version}, the release this documentation ships with |'
+        for rel in ('docs/index.md', 'docs/getting-started.md', 'docs/downloads.md', 'docs/cli.md', 'docs/api.md'):
+            text = docs[rel].decode('utf-8')
+            self.assertEqual(text.count(product), 1, rel)
+            self.assertNotIn('in development', text.split('| File format |')[0].split('| Product |')[1], rel)
+            for row in site_table.splitlines()[3:]:                  # the two compatibility rows, unchanged
+                self.assertIn(row, text, rel)
+            self.assertNotIn('version-labels:', text, rel)
+            self.assertNotIn('{%', text, rel)
+        self.assertIn('docs/release-history.md', docs)
+
+    def test_release_history_mirrors_the_changelog_without_plan_references(self) -> None:
+        build_docs.write_generated_pages(self.root)
+        page = (self.root / 'docs/release-history.md').read_text(encoding='utf-8')
+        self.assertIn('\n# Release History\n', page)
+        self.assertIn('source_path: CHANGELOG.md', page)
+        self.assertNotRegex(page, r'D\d{2} T\d{2}')
+        changelog = (self.root / 'CHANGELOG.md').read_text(encoding='utf-8')
+        self.assertIn('## Unreleased', page)
+        self.write('CHANGELOG.md', changelog + '\n- A new entry.\n')
+        self.assertIn('docs/release-history.md: generated file differs from source (run python3 scripts/build-docs.py)',
+                      self.check_errors())
+        self.write('CHANGELOG.md', changelog + '\n- See D09 T01 for the plan.\n')
+        self.assertIn('internal plan reference', self.check_errors()[0])
 
     def test_offline_docs_render_links_includes_and_refusals(self) -> None:
         revision = 'a' * 40
@@ -461,6 +757,8 @@ class DocsMapTests(unittest.TestCase):
             'licenses': ('docs/licenses.md', None, 'authored'),
             'api': ('include/rasterfold.h', 'docs/api.md', 'generated'),
             'cli': ('src/main.c', 'docs/cli.md', 'generated'),
+            'downloads': ('docs/releases.json', 'docs/downloads.md', 'generated'),
+            'release-history': ('CHANGELOG.md', 'docs/release-history.md', 'mirrored'),
         }
         drift_manifest = json.loads((REPO / 'docs/drift.json').read_text(encoding='utf-8'))
         build_docs_gen = next(g for g in drift_manifest['generators'] if g['script'] == 'scripts/build-docs.py')

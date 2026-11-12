@@ -146,6 +146,14 @@ Releases are published by `.github/workflows/release.yml`, never by hand:
 
 1. Set `VERSION`, move the entries of the changelog's Unreleased section under a new `## <version>` heading placed directly below the `## Unreleased` heading (which stays, empty, for the next changes), and commit to `main`.
 2. Push the tag `rasterfold-v<version>` on that commit.
+3. When the workflow has published the release, record it so the site's [Downloads](downloads.md) page and version labels show it: download the published files, run the recorder, and commit.
+
+```bash
+gh release download rasterfold-v<version> --dir build/release-<version>
+python3 scripts/build-docs.py --record-release build/release-<version> --tag rasterfold-v<version> --commit <the tag's 40-character commit> --date <YYYY-MM-DD>
+```
+
+The recorder reads each package's size, SHA-256 and file list from the downloaded files, requires them to agree with the release's `SHA256SUMS`, adds the release to `docs/releases.json`, and regenerates the pages; it refuses a version that is already recorded. The site is then published from that `main` commit, since the tagged commit cannot contain its own release record.
 
 The tagged commit must be on `main`, the tag must be `rasterfold-v` followed by exactly the contents of `VERSION` (`python3 scripts/version.py --tag <tag>`), and the changelog must have that version's section (`python3 scripts/version.py --release-notes` prints it). The workflow then runs every gate a push runs (it calls `build.yml` and `plan.yml` on the tagged commit), builds both targets and writes the packages once, runs `scripts/verify_release.py` on the packages on Linux and on Windows, and only when all of that passed creates the GitHub release with the two zips, `SHA256SUMS` and the changelog section as its notes. A `VERSION` with a prerelease part (`1.1.0-rc.1`) publishes as a prerelease. A release that already exists for the tag is refused, never replaced.
 

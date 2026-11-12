@@ -13,8 +13,12 @@ RasterFold is a lossless RGB image codec written in C11 for Windows x64 and Linu
 
 ## Current Version and Limits
 
+Three versions describe RasterFold, and they change independently:
+
+{% include generated/version-labels.md %}
+
 - **Current encoded format:** `.fold` format version 3 <!-- drift:fact format_version = 3 --> (`32`-byte header <!-- drift:fact header_bytes = 32 -->, CRC-32 verified header and payload).
-- **Current product version:** 1.0.0 <!-- drift:fact product_version = 1.0.0 --> (pre-1.0 development; the release is D09 T01 §4).
+- **Current product version:** 1.0.0 <!-- drift:fact product_version = 1.0.0 --> (the product row above states whether it is released).
 - **Current public C API:** version 1.0 (`RF_API_VERSION_MAJOR = 1` <!-- drift:fact api_major = 1 -->, `RF_API_VERSION_MINOR = 0` <!-- drift:fact api_minor = 0 -->).
 - **Current image limits:** maximum dimension `32768` pixels <!-- drift:fact max_dimension = 32768 -->; maximum image `33554432` pixels <!-- drift:fact max_pixels = 33554432 -->; maximum file size `268435456` bytes <!-- drift:fact max_file_bytes = 268435456 -->.
 - **Current vs. historical vs. planned scope:**
@@ -39,3 +43,5 @@ RasterFold is a lossless RGB image codec written in C11 for Windows x64 and Linu
 - [Contributing](contributing.md): repository workflow, format/safety contracts, and verification gates mirrored from `CONTRIBUTING.md`.
 - [Security Policy](security.md): private vulnerability reporting and scope mirrored from `SECURITY.md`.
 - [Licenses and Provenance](licenses.md): GPL-3.0 license, code of conduct, Kodak and `imagecompression.info` test image provenance, and pinned toolchain components.
+- [Downloads](downloads.md): every published release with one package per platform, what each package holds, its checksums, licence and source, generated from the recorded release metadata.
+- [Release History](release-history.md): what changed in each release, mirrored from `CHANGELOG.md`.

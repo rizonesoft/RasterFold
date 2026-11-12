@@ -36,4 +36,4 @@ Downloaded compilers, build drivers, and benchmark reference binaries are pinned
 | `ninja` / `ninja-linux` | `1.13.2` | Windows x64, Linux x64 | Build driver used by `scripts/build.py`. |
 | `libjxl` | `0.12.0` | Windows x64 | Reference `cjxl` / `djxl` binaries for comparative benchmark scripts only; nothing in RasterFold links against `libjxl`. |
 | `Pillow` (`requirements-dev.txt`) | `12.2.0` | Linux `.venv`, Windows Python | Python image library used only by the test and benchmark scripts (`tests/`). |
-| `basedpyright` (`requirements-dev.txt`) | `1.40.2` | Linux `.venv`, Windows `.venv` | Python language server for editors over the tooling; an editor aid, not a gate (D00 T05 s1). |
+| `basedpyright` (`requirements-dev.txt`) | `1.40.2` | Linux `.venv`, Windows `.venv` | Python language server for editors over the tooling; an editor aid, not a gate. |

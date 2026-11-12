@@ -40,8 +40,11 @@ REQUIRED_PAGE_IDS = (
     'contributing',
     'security',
     'licenses',
+    'downloads',
+    'release-history',
 )
 DEFAULT_MIRRORED_MAP = {
+    'CHANGELOG.md': 'docs/release-history.md',
     'spec/FOLD.md': 'docs/format.md',
     'README.md': 'docs/usage.md',
     'docs/research.md': 'docs/research-summary.md',
@@ -377,6 +380,7 @@ def render_offline_docs(root: Path, revision: str) -> dict[str, bytes]:
     asset_files = [entry['source'] for entry in site_content.get('assets', [])]
     packaged = set(page_docs) | set(asset_files) | set(OFFLINE_SHIPPED_FILES)
     out: dict[str, bytes] = {}
+    packaged_labels = render_version_labels(root, packaged=True).strip('\n')
     for asset_rel in asset_files:
         out[asset_rel] = safe_repo_path(root, asset_rel).read_bytes()
     for doc_rel in page_docs:
@@ -396,6 +400,10 @@ def render_offline_docs(root: Path, revision: str) -> dict[str, bytes]:
             out[f'docs/charts/{name}.svg'] = source.read_bytes()
             return f'![{name} chart](charts/{name}.svg)'
 
+        # A package is built at its tag, before its release record exists: its pages state the version they ship
+        # with instead of the site's release state, and keep the two compatibility rows.
+        text = text.replace(VERSION_LABELS_INCLUDE, packaged_labels)
+        text = _VERSION_LABELS_BLOCK_RE.sub(lambda _: packaged_labels, text)
         text = _OFFLINE_INCLUDE_RE.sub(include, text)
         page_dir = Path(doc_rel).parent
 
@@ -691,7 +699,7 @@ def parse_api_header(root: Path, header_rel: str, def_rel: str) -> dict:
 def render_api_page(root: Path, page_meta: dict) -> str:
     header_rel = page_meta['source']
     api = parse_api_header(root, header_rel, 'src/rasterfold.def')
-    out = [f'# C API Reference\n\n{api["intro"]}\n']
+    out = [f'# C API Reference\n\n{api["intro"]}\n', version_labels_block(root)]
     out.append('## Functions\n')
     for fn in api['functions']:
         out.append(f'### `{fn["name"]}`\n\n```c\n{fn["decl"]}\n```\n\n{fn["doc"]}\n')
@@ -894,11 +902,354 @@ def render_cli_page(root: Path, page_meta: dict) -> str:
         'Every block on this page is text the program prints, taken from its source, so the page cannot describe '
         'a command or an option that `rasterfold` does not have. `rasterfold help` prints the summary and '
         '`rasterfold help <command>` prints one command.\n',
+        version_labels_block(root),
         '## Summary\n\n```text\n' + cli['summary'] + '```\n',
     ]
     for command, body in cli['commands']:
         out.append(f'## `rasterfold {command}`\n\n```text\n{body}```\n')
     return _mirrored_front_matter(page_meta) + '\n'.join(out)
+
+
+RELEASES_REL = 'docs/releases.json'
+VERSION_LABELS_REL = 'docs/_includes/generated/version-labels.md'
+VERSION_LABELS_INCLUDE = '{% include generated/version-labels.md %}'
+VERSION_LABELS_BEGIN = '<!-- version-labels:begin -->'
+VERSION_LABELS_END = '<!-- version-labels:end -->'
+RELEASE_TAG_PREFIX = 'rasterfold-v'
+RELEASE_SUMS = 'SHA256SUMS'
+RELEASE_TARGETS = (('windows-x64', 'Windows x64'), ('linux-x64', 'Linux x64'))
+RELEASE_CONTENT_DIRS = ('bin', 'lib', 'include', 'symbols')
+_SEMVER_RE = re.compile(
+    r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)'
+    r'(?:-((?:0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*))*))?'
+)
+_SHA256_RE = re.compile(r'[0-9a-f]{64}')
+
+
+def semver_key(version: str) -> tuple:
+    """SemVer precedence as a sortable key: a release sorts above its own prereleases, numeric prerelease
+    identifiers below alphanumeric ones, and a longer prerelease above its prefix."""
+    match = _SEMVER_RE.fullmatch(version)
+    if not match:
+        raise ValueError(f'not a SemVer version: {version!r}')
+    core = tuple(int(match.group(i)) for i in (1, 2, 3))
+    if match.group(4) is None:
+        return core + (1, ())
+    identifiers = tuple((0, int(part), '') if part.isdigit() else (1, 0, part) for part in match.group(4).split('.'))
+    return core + (0, identifiers)
+
+
+def _read_source(root: Path, rel: str) -> str:
+    try:
+        return safe_repo_path(root, rel).read_text(encoding='utf-8')
+    except OSError as exc:
+        raise ValueError(f'{rel}: cannot be read ({exc.__class__.__name__}); the version labels need it') from exc
+
+
+def read_product_version(root: Path) -> str:
+    text = _read_source(root, 'VERSION').strip()
+    if not _SEMVER_RE.fullmatch(text):
+        raise ValueError(f'VERSION: not a SemVer product version: {text!r}')
+    return text
+
+
+def read_compatibility_versions(root: Path) -> tuple[int, int, int]:
+    """(file format version, C API major, C API minor), each from the one source line that defines it."""
+    def one(rel: str, pattern: str) -> int:
+        found = re.findall(pattern, _read_source(root, rel), re.M)
+        if len(found) != 1:
+            raise ValueError(f'{rel}: expected exactly one line matching {pattern!r}, found {len(found)}')
+        return int(found[0])
+
+    return (one('src/rf.h', r'^#define RF_VERSION (\d+)[uUlL]*$'),
+            one('include/rasterfold.h', r'^#define RF_API_VERSION_MAJOR (\d+)[uUlL]*$'),
+            one('include/rasterfold.h', r'^#define RF_API_VERSION_MINOR (\d+)[uUlL]*$'))
+
+
+def _release_problem(where: str, message: str) -> ValueError:
+    return ValueError(f'{RELEASES_REL}: {where}: {message}')
+
+
+def validate_releases(data: object) -> list[dict]:
+    """The release records, validated. Every reader goes through this, so a page is never generated from a record
+    whose tag, assets or package inventory disagree with its version."""
+    if not isinstance(data, dict) or set(data) != {'schema', 'repository', 'releases'}:
+        raise ValueError(f'{RELEASES_REL}: expected exactly the keys schema, repository and releases')
+    if data['schema'] != 1:
+        raise ValueError(f'{RELEASES_REL}: unsupported schema {data["schema"]!r}')
+    if data['repository'] != REPOSITORY_URL:
+        raise ValueError(f'{RELEASES_REL}: repository must be {REPOSITORY_URL}')
+    if not isinstance(data['releases'], list):
+        raise ValueError(f'{RELEASES_REL}: releases must be a list')
+    releases: list[dict] = []
+    for index, release in enumerate(data['releases']):
+        where = f'release {index + 1}'
+        if not isinstance(release, dict) or set(release) != {'version', 'tag', 'date', 'commit', 'assets'}:
+            raise _release_problem(where, 'expected exactly the keys version, tag, date, commit and assets')
+        version = release['version']
+        if not isinstance(version, str) or not _SEMVER_RE.fullmatch(version):
+            raise _release_problem(where, f'version {version!r} is not SemVer')
+        where = f'release {version}'
+        if release['tag'] != RELEASE_TAG_PREFIX + version:
+            raise _release_problem(where, f'tag {release["tag"]!r} does not match its version (expected {RELEASE_TAG_PREFIX}{version})')
+        if not isinstance(release['commit'], str) or not re.fullmatch(r'[0-9a-f]{40}', release['commit']):
+            raise _release_problem(where, 'commit must be 40 lowercase hexadecimal characters')
+        try:
+            import datetime
+            if not isinstance(release['date'], str) or datetime.date.fromisoformat(release['date']).isoformat() != release['date']:
+                raise ValueError
+        except ValueError:
+            raise _release_problem(where, f'date {release["date"]!r} is not a YYYY-MM-DD calendar date') from None
+        assets = release['assets']
+        if not isinstance(assets, list) or not all(isinstance(a, dict) for a in assets):
+            raise _release_problem(where, 'assets must be a list of objects')
+        names = [a.get('name') for a in assets]
+        if len(set(map(str, names))) != len(names):
+            raise _release_problem(where, 'an asset name repeats')
+        expected = {f'rasterfold-{version}-{target}.zip': target for target, _ in RELEASE_TARGETS}
+        for name, target in expected.items():
+            if name not in names:
+                raise _release_problem(where, f'missing target asset {name}')
+        if RELEASE_SUMS not in names:
+            raise _release_problem(where, f'missing {RELEASE_SUMS}')
+        for asset in assets:
+            name = asset.get('name')
+            if name not in expected and name != RELEASE_SUMS:
+                raise _release_problem(where, f'unexpected asset {name!r} (asset names carry the release version)')
+            wanted_keys = {'name', 'target', 'size', 'sha256'} | ({'contents'} if name in expected else set())
+            if set(asset) != wanted_keys:
+                raise _release_problem(where, f'{name}: expected exactly the keys {", ".join(sorted(wanted_keys))}')
+            if asset['target'] != expected.get(name):
+                raise _release_problem(where, f'{name}: target must be {expected.get(name)!r}')
+            if not isinstance(asset['size'], int) or isinstance(asset['size'], bool) or asset['size'] <= 0:
+                raise _release_problem(where, f'{name}: size must be a positive integer')
+            if not isinstance(asset['sha256'], str) or not _SHA256_RE.fullmatch(asset['sha256']):
+                raise _release_problem(where, f'{name}: sha256 must be 64 lowercase hexadecimal characters')
+            if name in expected:
+                contents = asset['contents']
+                if (not isinstance(contents, list) or not contents or not all(isinstance(c, str) for c in contents)
+                        or contents != sorted(set(contents))):
+                    raise _release_problem(where, f'{name}: contents must be a sorted list of distinct paths')
+                for path in contents:
+                    parts = path.split('/')
+                    if len(parts) < 2 or parts[0] not in RELEASE_CONTENT_DIRS or '' in parts or '..' in parts or '\\' in path:
+                        raise _release_problem(where, f'{name}: contents path {path!r} is not under bin/, lib/, include/ or symbols/')
+                if not any(path.startswith('bin/rasterfold') for path in contents) or 'include/rasterfold.h' not in contents:
+                    raise _release_problem(where, f'{name}: contents lack the command-line tool or the header')
+        releases.append(release)
+    keys = [semver_key(release['version']) for release in releases]
+    if len(set(r['version'] for r in releases)) != len(releases):
+        raise ValueError(f'{RELEASES_REL}: a version is recorded twice')
+    if keys != sorted(keys, reverse=True):
+        raise ValueError(f'{RELEASES_REL}: releases must be in descending version order')
+    return releases
+
+
+def load_releases(root: Path) -> list[dict]:
+    path = safe_repo_path(root, RELEASES_REL)
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+    except OSError as exc:
+        raise ValueError(f'{RELEASES_REL}: cannot be read ({exc})') from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f'{RELEASES_REL}: not JSON ({exc})') from exc
+    return validate_releases(data)
+
+
+def release_asset_url(tag: str, name: str) -> str:
+    """Where a published asset lives. Derived, never stored: a record cannot point anywhere else."""
+    return f'{REPOSITORY_URL}/releases/download/{quote(tag, safe="")}/{quote(name, safe="")}'
+
+
+def version_label_rows(root: Path, packaged: bool = False) -> list[tuple[str, str, str]]:
+    """(kind, label, what it governs) for the product, the file format and the C API. Each label names its kind, so
+    a compatibility version is never read as the product version. `packaged` is the wording for the documentation
+    inside a release package, which is built before that release's record exists."""
+    version = read_product_version(root)
+    fmt, api_major, api_minor = read_compatibility_versions(root)
+    if packaged:
+        state = 'the release this documentation ships with'
+    else:
+        releases = load_releases(root)
+        recorded = next((r for r in releases if r['version'] == version), None)
+        if recorded is not None:
+            state = f'released {recorded["date"]} and listed on the Downloads page'
+        elif releases:
+            state = (f'in development and not released; the latest release is RasterFold {releases[0]["version"]}, '
+                     'listed on the Downloads page')
+        else:
+            state = 'in development and not released; no release has been published yet'
+    return [
+        ('Product', f'RasterFold {version}, {state}',
+         'The command-line tool, the libraries and this documentation, released together.'),
+        ('File format', f'`.fold` format version {fmt}',
+         'What a `.fold` file contains. It changes only when the file layout does, independently of the product '
+         'and of the C API.'),
+        ('C API', f'C API {api_major}.{api_minor}',
+         'The functions and types in `rasterfold.h`. It changes only when the library interface does, '
+         'independently of the product and of the file format.'),
+    ]
+
+
+def render_version_labels(root: Path, packaged: bool = False) -> str:
+    lines = ['| Kind | Current | What it governs |', '| ---- | ------- | --------------- |']
+    lines += [f'| {kind} | {label} | {governs} |' for kind, label, governs in version_label_rows(root, packaged)]
+    return '\n'.join(lines) + '\n'
+
+
+def version_labels_block(root: Path) -> str:
+    """The label table as generated pages carry it: inline (generated output holds no Liquid), between markers the
+    offline renderer finds."""
+    return f'{VERSION_LABELS_BEGIN}\n{render_version_labels(root)}{VERSION_LABELS_END}\n'
+
+
+def _release_block(release: dict, latest: bool) -> list[str]:
+    version, tag = release['version'], release['tag']
+    assets = {asset['name']: asset for asset in release['assets']}
+    out = [
+        f'## RasterFold {version}' + (' (latest release)' if latest else '') + '\n',
+        f'Released {release["date"]} from commit `{release["commit"]}`, tag `{tag}`. '
+        f'[Release notes](release-history.md) and the [release on GitHub]({REPOSITORY_URL}/releases/tag/{quote(tag, safe="")}).\n',
+    ]
+    for target, label in RELEASE_TARGETS:
+        asset = assets[f'rasterfold-{version}-{target}.zip']
+        groups = {name: [p for p in asset['contents'] if p.startswith(name + '/')] for name in RELEASE_CONTENT_DIRS}
+
+        def listed(paths: list[str], absent: str) -> str:
+            return ', '.join(f'`{p}`' for p in paths) if paths else absent
+
+        out.append(
+            f'### {label}, RasterFold {version}\n\n'
+            '| Item | In this package |\n'
+            '| ---- | --------------- |\n'
+            f'| Package | [{asset["name"]}]({release_asset_url(tag, asset["name"])}), {asset["size"]:,} bytes |\n'
+            f'| Command-line tool | {listed(groups["bin"], "none")} |\n'
+            f'| Libraries | {listed(groups["lib"], "none")} |\n'
+            f'| Header | {listed(groups["include"], "none")} |\n'
+            f'| Debug symbols | {listed(groups["symbols"], "none shipped as separate files for this platform")} |\n'
+            f'| SHA-256 | `{asset["sha256"]}` |\n'
+        )
+    out.append(
+        f'### Checksums, licence and source, RasterFold {version}\n\n'
+        f'- Checksums: [{RELEASE_SUMS}]({release_asset_url(tag, RELEASE_SUMS)}) lists the SHA-256 of both packages; '
+        'each package also carries its own `SHA256SUMS` over every file inside it.\n'
+        '- Licence: the GNU General Public License v3.0 (`GPL-3.0`). Each package carries `LICENSE`; see '
+        '[Licenses and Provenance](licenses.md).\n'
+        f'- Source: the [tree at `{tag}`]({REPOSITORY_URL}/tree/{quote(tag, safe="")}), also as a '
+        f'[zip archive]({REPOSITORY_URL}/archive/refs/tags/{quote(tag, safe="")}.zip) or a '
+        f'[tar.gz archive]({REPOSITORY_URL}/archive/refs/tags/{quote(tag, safe="")}.tar.gz).\n'
+    )
+    return out
+
+
+def render_downloads_page(root: Path, page_meta: dict) -> str:
+    releases = load_releases(root)
+    out = [
+        '# Downloads\n',
+        version_labels_block(root),
+    ]
+    if not releases:
+        out.append(
+            'No release of RasterFold has been published yet, so there is nothing to download here. When a release '
+            'is published, this page lists it with one package for each platform, their checksums and their '
+            'source. Until then, [build RasterFold from source](installation.md).\n'
+        )
+    else:
+        out.append(
+            'Each release has one package per platform. A package is self-contained: the command-line tool, the '
+            'shared and static libraries, the C header, this documentation for reading offline, the licence and '
+            'the changelog. Nothing needs to be installed.\n'
+        )
+    if releases:
+        out.append(
+            '## Verify a download\n\n'
+            'Check a package against the release\'s `SHA256SUMS` before using it.\n\n'
+            'Linux (in the directory holding the download and `SHA256SUMS`):\n\n'
+            '```bash\nsha256sum -c SHA256SUMS --ignore-missing\n```\n\n'
+            'Windows (PowerShell; compare the output with the SHA-256 shown for the package on this page):\n\n'
+            '```powershell\n(Get-FileHash .\\rasterfold-<version>-windows-x64.zip -Algorithm SHA256).Hash.ToLower()\n```\n\n'
+            'After extracting, the package\'s `README.md` explains how to check the files inside it and how to run '
+            'the tool and link the library.\n'
+        )
+    for index, release in enumerate(releases):
+        out.extend(_release_block(release, latest=index == 0))
+    return _mirrored_front_matter(page_meta) + '\n'.join(out)
+
+
+def render_release_history_page(root: Path, page_meta: dict, mirrored_map: dict[str, str] | None = None) -> str:
+    source_rel = page_meta['source']
+    output_rel = page_meta['output']
+    text = safe_repo_path(root, source_rel).read_text(encoding='utf-8')
+    heading, _, body = text.lstrip().partition('\n')
+    if not heading.startswith('# '):
+        raise ValueError(f'{source_rel}: expected a level-1 heading on its first line')
+    body = sanitize_public_research(body)
+    leftover = re.search(r'`?D\d{2}\s+T\d{2}(?:\s+§\d+)?`?', body)
+    if leftover:
+        raise ValueError(f'{source_rel}: internal plan reference {leftover.group(0)!r} would be published; reword it')
+    body = relocate_mirrored_links(body, source_rel, output_rel, mirrored_map)
+    return _mirrored_front_matter(page_meta) + f'# {page_meta["title"]}\n' + body
+
+
+def record_release(root: Path, directory: Path, tag: str, commit: str, date: str) -> dict:
+    """Add one published release to docs/releases.json from its published files. Sizes, digests and each package's
+    inventory are read from the files in `directory` (the release's zips and its SHA256SUMS); nothing is typed.
+    Refused, with the file untouched: files that disagree with SHA256SUMS, a package member outside its top
+    directory, and a version that is already recorded."""
+    import zipfile
+    if not tag.startswith(RELEASE_TAG_PREFIX) or not _SEMVER_RE.fullmatch(tag[len(RELEASE_TAG_PREFIX):]):
+        raise ValueError(f'{tag}: release tags are named {RELEASE_TAG_PREFIX}<SemVer>')
+    version = tag[len(RELEASE_TAG_PREFIX):]
+    path = safe_repo_path(root, RELEASES_REL)
+    data = json.loads(path.read_text(encoding='utf-8'))
+    existing = validate_releases(data)
+    if any(release['version'] == version for release in existing):
+        raise ValueError(f'{RELEASES_REL}: release {version} is already recorded')
+    sums_path = directory / RELEASE_SUMS
+    if not sums_path.is_file():
+        raise ValueError(f'{directory}: no {RELEASE_SUMS}')
+    listed: dict[str, str] = {}
+    for line in sums_path.read_text(encoding='utf-8').splitlines():
+        digest, separator, name = line.partition('  ')
+        if not separator or not _SHA256_RE.fullmatch(digest) or not name:
+            raise ValueError(f'{RELEASE_SUMS}: malformed line {line!r}')
+        listed[name.removeprefix('*')] = digest
+
+    def digest_of(file: Path) -> str:
+        return hashlib.sha256(file.read_bytes()).hexdigest()
+
+    assets = []
+    for target, _ in RELEASE_TARGETS:
+        name = f'rasterfold-{version}-{target}.zip'
+        file = directory / name
+        if not file.is_file():
+            raise ValueError(f'{directory}: no {name}')
+        digest = digest_of(file)
+        if listed.get(name) != digest:
+            raise ValueError(f'{name}: SHA-256 {digest} disagrees with {RELEASE_SUMS} ({listed.get(name, "not listed")})')
+        top = f'rasterfold-{version}-{target}/'
+        contents = []
+        with zipfile.ZipFile(file) as archive:
+            for member in archive.namelist():
+                if not member.startswith(top) or '..' in member.split('/'):
+                    raise ValueError(f'{name}: member {member!r} is outside {top}')
+                relative = member[len(top):]
+                if relative and not relative.endswith('/') and relative.split('/')[0] in RELEASE_CONTENT_DIRS:
+                    contents.append(relative)
+        assets.append({'name': name, 'target': target, 'size': file.stat().st_size, 'sha256': digest,
+                       'contents': sorted(set(contents))})
+    if set(listed) != {asset['name'] for asset in assets}:
+        raise ValueError(f'{RELEASE_SUMS}: lists {", ".join(sorted(listed))}, expected exactly the two packages')
+    assets.append({'name': RELEASE_SUMS, 'target': None, 'size': sums_path.stat().st_size, 'sha256': digest_of(sums_path)})
+    record = {'version': version, 'tag': tag, 'date': date, 'commit': commit, 'assets': assets}
+    updated = {'schema': 1, 'repository': REPOSITORY_URL,
+               'releases': sorted([*existing, record], key=lambda r: semver_key(r['version']), reverse=True)}
+    validate_releases(updated)
+    atomic_write_text(path, json.dumps(updated, indent=2) + '\n')
+    return record
+
+
+_VERSION_LABELS_BLOCK_RE = re.compile(re.escape(VERSION_LABELS_BEGIN) + r'\n.*?' + re.escape(VERSION_LABELS_END), re.S)
 
 
 def render_contributing_page(root: Path, page_meta: dict, mirrored_map: dict[str, str] | None = None) -> str:
@@ -2259,10 +2610,12 @@ def render_generated_pages(root: Path, site_content: dict | None = None) -> dict
         'research-summary': render_research_summary_page,
         'contributing': render_contributing_page,
         'security': render_security_page,
+        'release-history': render_release_history_page,
     }
     generated_renderers = {
         'api': render_api_page,
         'cli': render_cli_page,
+        'downloads': render_downloads_page,
     }
     mirrored_map = {
         **DEFAULT_MIRRORED_MAP,
@@ -2297,6 +2650,8 @@ def render_generated_pages(root: Path, site_content: dict | None = None) -> dict
     has_chart_config = any('generated/charts/' in entry.get('source', '') for entry in site_content.get('config', []))
     if has_chart_config or ((root / CORPUS_CSV).is_file() and (root / RESULTS_CSV).is_file()):
         outputs.update(render_generated_charts_and_tables(root))
+    if any(entry.get('source') == VERSION_LABELS_REL for entry in site_content.get('config', [])):
+        outputs[VERSION_LABELS_REL] = render_version_labels(root)
     return outputs
 
 
@@ -2730,6 +3085,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--check', action='store_true', help='Verify generated pages, charts, tables, and site allowlist without modifying files')
     parser.add_argument('--self-test', action='store_true', help='Independently parse generated SVG charts and Markdown tables and assert numerical agreement with CSVs')
     parser.add_argument('--stage', metavar='DIR', help='Stage the allowlisted Jekyll source tree into DIR (must be inside build/)')
+    parser.add_argument('--record-release', metavar='DIR', type=Path,
+                        help='Add a published release to docs/releases.json from the directory holding its zips and '
+                             'SHA256SUMS, then regenerate the pages (needs --tag, --commit and --date)')
+    parser.add_argument('--tag', help='With --record-release: the release tag, rasterfold-v<version>')
+    parser.add_argument('--commit', help='With --record-release: the 40-character commit the tag points to')
+    parser.add_argument('--date', help='With --record-release: the release date, YYYY-MM-DD')
     parser.add_argument('--check-offline', metavar='DIR', type=Path, help='Verify the offline documentation of an extracted release package (its top directory) without any network')
     parser.add_argument('--verify-live', metavar='URL', help='Verify live published site URL and drift-build.json against a build job receipt')
     parser.add_argument('--expected-receipt', type=Path, help='Path to expected drift-build.json from the build job (required with --verify-live)')
@@ -2741,6 +3102,18 @@ def main(argv: list[str] | None = None) -> int:
         root = args.root.resolve()
         has_verify_live = args.verify_live is not None
         has_stage = args.stage is not None
+        if args.record_release is not None:
+            if args.check or args.self_test or has_verify_live or args.write or has_stage or args.check_offline is not None:
+                raise ValueError('--record-release cannot be combined with another mode')
+            if not (args.tag and args.commit and args.date):
+                raise ValueError('--record-release requires --tag, --commit and --date')
+            record = record_release(root, args.record_release.resolve(), args.tag, args.commit, args.date)
+            written = write_generated_pages(root)
+            print(f'build-docs: recorded release {record["version"]} ({len(record["assets"])} asset(s)) in {RELEASES_REL}; '
+                  f'wrote {len(written)} generated file(s)')
+            return 0
+        if args.tag or args.commit or args.date:
+            raise ValueError('--tag, --commit and --date are only valid with --record-release')
         if args.check_offline is not None:
             if args.check or args.self_test or has_verify_live or args.write or has_stage:
                 raise ValueError('--check-offline cannot be combined with another mode')
