@@ -1672,11 +1672,11 @@
       }
     },
     "docs/README.md": {
-      "evidence": "Re-read 2026-11-12 for D08 T01 section 7: docs/site-content.json gained the Downloads (generated from docs/releases.json) and Release History (mirrored from CHANGELOG.md) pages and the generated version-labels fragment, and scripts/build-docs.py gained their renderers and --record-release; this document's one paragraph on the site says sources are staged from the allowlist by build-docs.py and published by pages.yml with the live read-back, and that the converter is not published as a download, all of which still hold (the Downloads page lists codec releases only)",
+      "evidence": "Re-read 2026-11-12 after the live read-back of D08 T01 section 7: scripts/build-docs.py now writes blank lines around the inline version-label table of generated pages so Jekyll renders it as a table; this document's one paragraph on the site (staged from the allowlist, published by pages.yml with the live read-back, no converter download) is unaffected",
       "sources": {
         "docs/_config.yml": "676777a86aadacf7e23cd133f97cd97b494a2f2d96fb2a92e875399fda852581",
         "docs/site-content.json": "1ee306e2494a7be46fe253e7550a277af5cebf7f8c48afc524cfc15b8990626f",
-        "scripts/build-docs.py": "71fb7341f8abf95622935899ed61dc9ec74d85947047f9495884c8701eb7b1e3",
+        "scripts/build-docs.py": "9e0203a990cdfac80881527020a015f665f86aa9683220551e3548b97f07b1b6",
         "docs/README.md": "35dddde5d7cbf1f7353813bebd7272749de00d2f705fc277cd4b51cb7b8189a0"
       }
     },

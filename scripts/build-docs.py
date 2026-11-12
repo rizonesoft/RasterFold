@@ -1099,8 +1099,9 @@ def render_version_labels(root: Path, packaged: bool = False) -> str:
 
 def version_labels_block(root: Path) -> str:
     """The label table as generated pages carry it: inline (generated output holds no Liquid), between markers the
-    offline renderer finds."""
-    return f'{VERSION_LABELS_BEGIN}\n{render_version_labels(root)}{VERSION_LABELS_END}\n'
+    offline renderer finds. The blank lines are required: a Markdown table that directly follows an HTML comment
+    is rendered as a paragraph of pipes, not as a table."""
+    return f'{VERSION_LABELS_BEGIN}\n\n{render_version_labels(root)}\n{VERSION_LABELS_END}\n'
 
 
 def _release_block(release: dict, latest: bool) -> list[str]:

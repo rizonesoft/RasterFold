@@ -151,6 +151,10 @@ jobs:
               assert f"data-chart=\"{chart_name}\"" in bench_html, f"benchmarks.html: missing rendered SVG chart {chart_name}"
           table_count = bench_html.count("<table")
           assert table_count >= 7, f"benchmarks.html: expected at least 7 rendered tables, got {table_count}"
+          for label_page in ("index.html", "getting-started.html", "downloads.html", "cli.html", "api.html"):
+              label_html = (site / label_page).read_text(encoding="utf-8")
+              for kind in ("Product", "File format", "C API"):
+                  assert f"<td>{kind}</td>" in label_html, f"{label_page}: version label row {kind!r} is not a rendered table row"
           page_count = len(pages)
           print(f"jekyll navigation, source links, and 7 benchmark charts/tables verified: {page_count} pages")
           '

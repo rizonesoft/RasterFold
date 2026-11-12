@@ -10,11 +10,13 @@ source_path: docs/releases.json
 # Downloads
 
 <!-- version-labels:begin -->
+
 | Kind | Current | What it governs |
 | ---- | ------- | --------------- |
 | Product | RasterFold 1.0.0, in development and not released; no release has been published yet | The command-line tool, the libraries and this documentation, released together. |
 | File format | `.fold` format version 3 | What a `.fold` file contains. It changes only when the file layout does, independently of the product and of the C API. |
 | C API | C API 1.0 | The functions and types in `rasterfold.h`. It changes only when the library interface does, independently of the product and of the file format. |
+
 <!-- version-labels:end -->
 
 No release of RasterFold has been published yet, so there is nothing to download here. When a release is published, this page lists it with one package for each platform, their checksums and their source. Until then, [build RasterFold from source](installation.md).

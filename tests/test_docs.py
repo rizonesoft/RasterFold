@@ -342,7 +342,8 @@ class DocsMapTests(unittest.TestCase):
             self.assertEqual((self.root / rel).read_text(encoding='utf-8').count(build_docs.VERSION_LABELS_INCLUDE), 1, rel)
         for rel in ('docs/downloads.md', 'docs/cli.md', 'docs/api.md'):
             text = (self.root / rel).read_text(encoding='utf-8')
-            self.assertIn(f'{build_docs.VERSION_LABELS_BEGIN}\n{table}{build_docs.VERSION_LABELS_END}\n', text, rel)
+            # Blank lines around the table: directly after an HTML comment it would render as a paragraph of pipes.
+            self.assertIn(f'\n\n{build_docs.VERSION_LABELS_BEGIN}\n\n{table}\n{build_docs.VERSION_LABELS_END}\n\n', text, rel)
             self.assertNotIn('{%', text, rel)
 
     def test_a_release_changes_every_labelled_page_and_the_gate_sees_the_stale_ones(self) -> None:
