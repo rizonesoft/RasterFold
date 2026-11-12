@@ -7172,6 +7172,22 @@ def section_contract(root: Path, sha: str, ref: str) -> str:
     return body.rstrip()
 
 
+def reconciled_contract_refusal(root: Path, completion: dict, passed: list[dict], ref: str) -> str | None:
+    """Why a stamp may not rest on the section's last reconciliation, or None when it may.
+
+    The reconciliation the stamp rests on is the last returned one (the chain check holds it to the stamped commit).
+    It must have read the section's contract exactly as the failed completion read it, so a repair can never pass by
+    narrowing what the section promises. An earlier reconciliation that ran on a changed contract certifies nothing:
+    it stays on the record and does not block a later reconciliation of the restored text. When this rule was written
+    (2026-11-06) a section took exactly one reconciliation, so "every" and "the last" were the same entry; the cap of
+    2026-11-09 allows more, and comparing every entry made one mistaken edit unrecoverable."""
+    if not passed:
+        return None
+    if section_contract(root, completion["candidate"], ref) != section_contract(root, passed[-1]["candidate"], ref):
+        return f"the section's contract changed between the failed completion and its reconciliation: {ref}"
+    return None
+
+
 def three_pass_ok(root: Path, data: dict, ref: str, found: dict, cap: int) -> None:
     """The three-pass chain: one plan review, one round, then the completion review (and its reconciliations, up to
     `cap`, the section pin's `[schedule] pass_cap`),
@@ -7212,11 +7228,8 @@ def three_pass_ok(root: Path, data: dict, ref: str, found: dict, cap: int) -> No
         chain[-1][1]["candidate"] == sha,
         f"the last review ({chain[-1][0]}) reviewed {chain[-1][1]['candidate']}, not the stamped commit {sha}: {ref}",
     )
-    for entry in passed:
-        require(
-            section_contract(root, completion["candidate"], ref) == section_contract(root, entry["candidate"], ref),
-            f"the section's contract changed between the failed completion and its reconciliation: {ref}",
-        )
+    refusal = reconciled_contract_refusal(root, completion, passed, ref)
+    require(refusal is None, refusal or "")
 
 
 def rounds_recorded(root: Path, reviews: list[dict]) -> int:
@@ -12729,6 +12742,32 @@ Opus outage: sign-off rung unreachable, failed over to Sol.
                        capture_output=True, text=True, timeout=60)
         check("contract: a changed Done-when threshold still changes the contract",
               section_contract(croot, "HEAD~1", "D05 T01 §1") == section_contract(croot, "HEAD", "D05 T01 §1"), False)
+        # The stamp rests on the last reconciliation: base (the failed completion), evidence (same contract),
+        # narrowed (changed contract), extended (a paragraph added), restored (the completion's text again).
+        cfile.write_text(_cevidence.replace("\n**Test checkpoint:**", "\n**Corrected:** also ship a guide.\n\n**Test checkpoint:**"),
+                         encoding="utf-8")
+        subprocess.run(["git", "add", "todo"], cwd=croot, capture_output=True, text=True, timeout=60)
+        subprocess.run(["git", *_cenv, "commit", "-q", "-m", "fixture extended"], cwd=croot,
+                       capture_output=True, text=True, timeout=60)
+        cfile.write_text(_cevidence, encoding="utf-8")
+        subprocess.run(["git", "add", "todo"], cwd=croot, capture_output=True, text=True, timeout=60)
+        subprocess.run(["git", *_cenv, "commit", "-q", "-m", "fixture restored"], cwd=croot,
+                       capture_output=True, text=True, timeout=60)
+        _cref = "D05 T01 §1"
+        _ccompletion = {"candidate": "HEAD~4"}
+        _cmessage = "the section's contract changed between the failed completion and its reconciliation: D05 T01 §1"
+        check("contract: no reconciliation, nothing to refuse",
+              reconciled_contract_refusal(croot, _ccompletion, [], _cref), None)
+        check("contract: a reconciliation of the unchanged contract may carry the stamp",
+              reconciled_contract_refusal(croot, _ccompletion, [{"candidate": "HEAD~3"}], _cref), None)
+        check("contract: a reconciliation of a narrowed contract may not",
+              reconciled_contract_refusal(croot, _ccompletion, [{"candidate": "HEAD~2"}], _cref), _cmessage)
+        check("contract: nor may one of an extended contract",
+              reconciled_contract_refusal(croot, _ccompletion, [{"candidate": "HEAD~1"}], _cref), _cmessage)
+        check("contract: a later reconciliation of the restored text may, the earlier one staying on record",
+              reconciled_contract_refusal(croot, _ccompletion, [{"candidate": "HEAD~1"}, {"candidate": "HEAD"}], _cref), None)
+        check("contract: an unchanged reconciliation followed by a changed one is refused on the last",
+              reconciled_contract_refusal(croot, _ccompletion, [{"candidate": "HEAD~3"}, {"candidate": "HEAD~2"}], _cref), _cmessage)
         __import__("shutil").rmtree(croot, ignore_errors=True)
 
         # --- _GitSnapshot: renames, bounded batch reads, HEAD binding ---
