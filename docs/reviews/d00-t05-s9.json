@@ -1,0 +1,78 @@
+{
+  "ref": "D00 T05 \u00a79",
+  "title": "Read-Only Gemini 4 Hydrogen Scouts for the Antigravity Runner",
+  "implementation_sha": "0c77a63ba88abdfbfceb7404365330e6c0a6d99e",
+  "date": "2026-11-12",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/00-workspace/D00-T05-s9.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "python3 -m unittest scripts.tests.test_gemini_scout scripts.tests.test_unattended_preflight scripts.tests.test_unattended_run -> Ran 82 tests, OK",
+    "agy plugin validate .agents/plugins/rf-scouts -> rf-scouts@0.1.0, Validation passed",
+    "python3 scripts/unattended-preflight.py && python3 scripts/unattended-preflight.py --runner gemini -> all checks pass",
+    "python3 scripts/campaign_guard.py --self-test -> 152 cases, 0 failed"
+  ],
+  "completion": {
+    "report": "docs/reviews/00-workspace/D00-T05-s9.md",
+    "verdict": "reconciled",
+    "candidate": "0c77a63ba88abdfbfceb7404365330e6c0a6d99e",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/00-workspace/D00-T05-s9.md",
+    "candidate": "557b6c553ceca62fa248426d23c045b78147c3f7",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "557b6c553ceca62fa248426d23c045b78147c3f7",
+  "schedule": {
+    "policy": "three-pass",
+    "pass_cap": 33,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}

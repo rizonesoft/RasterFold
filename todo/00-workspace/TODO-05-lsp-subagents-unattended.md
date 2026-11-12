@@ -2,7 +2,7 @@
 schema_version: 1
 id: lsp-subagents-unattended
 domain: 00-workspace
-status: draft
+status: done
 title: "TODO-05 -- LSP Servers, Spark/Ember Subagents, Tool-Stack Tuning, and the Unattended Run"
 depends_on: []
 track: W1
@@ -66,7 +66,7 @@ track: W1
 |   6   |   §6    | Batch the git calls in receipt validation | -- |  [x]   |
 |   7   |   §7    | Claude Code as the unattended writer, with read-only Sonnet scouts and its own language servers | §4 |  [x]   |
 |   8   |   §8    | Review prompts filled by script from the templates | -- |  [x]   |
-|   9   |   §9    | Read-only Gemini 4 Hydrogen scouts for the Antigravity runner | §7 |  [ ]   |
+|   9   |   §9    | Read-only Gemini 4 Hydrogen scouts for the Antigravity runner | §7 |  [x]   |
 
 **Removed 2026-11-11 (operator instruction, `D99 T01 §9` decision 7):** §5, The Windows Desktop Shortcut, is removed from this file and the plan unstamped: "D00 T05 §5 --> let's drop or remove it. Flipping it has become a real pain". Its four items were ticked, and it had taken a plan review, one round, a completion review and six reconciliations (`docs/reviews/00-workspace/D00-T05-s5.md`, kept as history), each of which closed the last findings and raised a new one in the preflight rather than in the shortcut. The number 5 is never reused. The shortcut itself (`RasterFold Unattended Run.lnk` on the operator's desktop, target `C:\Windows\System32\wsl.exe`, arguments `-d Ubuntu --cd /home/derickpayne/projects/RasterFold -- bash scripts/unattended-run.sh`) stays where it is as an operator convenience that no section owns, and `docs/unattended-run.md` still describes it. Reversal cost: restore the section and its row from the commit before this one and run one more reconciliation.
 
@@ -234,6 +234,8 @@ The Carbon launcher (`scripts/unattended-run.sh carbon`, added 2026-11-12) runs 
 
 **Test checkpoint:** Correctness test: `python3 -m unittest discover -s scripts/tests` exits 0 (including `test_gemini_scout`, `test_unattended_preflight`, and `test_unattended_run`); driven run with evidence: `python3 scripts/unattended-preflight.py` and `python3 scripts/unattended-preflight.py --runner gemini` print every line PASS on the committed tree, `agy plugin validate .agents/plugins/rf-scouts` exits 0, and the five live `gemini-4-hydrogen-medium` scout probes are quoted in this section; `python3 scripts/campaign_guard.py --self-test` exits 0. The cheaper substitute this rules out: a `swarm` worker or unvalidated agent file that claims read-only in prose while carrying `write_file` or `run_command` in its tool list, or a wrapper that passes an unquoted or hallucinated answer back to the lead.
 
+> **Verified:** 2026-11-12 | §9 | 0c77a63ba88abdfbfceb7404365330e6c0a6d99e
+> **Review:** `docs/reviews/d00-t05-s9.json`
 ## Verification
 
 - [ ] `python3 scripts/unattended-preflight.py` exits 0 with every line PASS on the committed tree
