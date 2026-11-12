@@ -5,7 +5,7 @@ Tools for changing the codec with numbers instead of guesses. Data goes to
 
 | command | what it does |
 |---|---|
-| `python research/corpus.py` | builds `build/research/ppm/` (95 images: measure, 24 Kodak, 14 imagecompression.info crops, 5 test-pack crops, 11 generated, and the 40-image held-out set of 30 Wikimedia Commons photographs and 10 locally rendered screenshots frozen in `research/heldout.json` (screenshot recovery restores the committed frozen PNGs in `research/heldout-assets/`; rendering for authoring downloads the pinned Chrome for Testing build recorded in the manifest and verifies its version); `--verify-heldout` checks membership, dimensions, and hashes without regenerating) and `jxl_refs.json` (JPEG XL e7 and e9 and lossless WebP sizes) |
+| `python research/corpus.py` | builds `build/research/ppm/` (105 images: measure, 24 Kodak, 14 imagecompression.info crops, 5 test-pack crops, 11 generated, the 10 development screenshots frozen in `research/screens.json` (recovered from the committed PNGs in `research/screens-assets/`, never rendered on a routine run; authored once in WSL with `python3 research/corpus.py --author-screens`, which renders pages that are not held out with the held-out set's browser version and refuses any overlap with it), and the 40-image held-out set of 30 Wikimedia Commons photographs and 10 locally rendered screenshots frozen in `research/heldout.json` (screenshot recovery restores the committed frozen PNGs in `research/heldout-assets/`; rendering for authoring downloads the pinned Chrome for Testing build recorded in the manifest and verifies its version); `--verify-heldout` checks membership, dimensions, and hashes without regenerating) and `jxl_refs.json` (JPEG XL e7 and e9 and lossless WebP sizes) |
 | `python research/ab.py size [file.c] SET [-v]` | exact `.fold` sizes of a `cm.c` or `pal.c` variant on a set, against JPEG XL and WebP: total, geometric mean, worst image |
 | `python research/ab.py bench [file.c] [-r3] [-t1\|-t3] IMAGES` | encode and decode time of a `cm.c` or `pal.c` variant through `rf_encode`/`rf_decode`, verified round trip (`bench.exe --breakdown` also attributes CM bytes per channel `G`, `R-G`, `B-G` and decision kind `zero`, `sign`, `exp`, `mant`) |
 | `python research/ab.py ab [-v] A.c B.c [-n5] [-t1] IMAGES` | alternates two variants and compares their minimum times (with `-v`, also reports set `min_tot`, per-image `geomean`, and `worst`) |
@@ -14,7 +14,7 @@ Tools for changing the codec with numbers instead of guesses. Data goes to
 | `python research/prof.py [N]` | line-level profile from `bench.exe -p` samples |
 | `python research/vsjxl.py [image.bmp] [-n5]` | process wall times of `bin/windows-x64/bin/rasterfold.exe` against ffmpeg libjxl (`--webp-photos` times `testdata/photos/` decode against lossless WebP; `--threads {1,3,6,9}` sets the thread count) |
 
-Sets for `ab.py`: `sub` (8 mixed photos), `kodak`, `ic`, `tp` (test pack), `heldout` (the 40 held-out images; never used to choose a parameter),
+Sets for `ab.py`: `sub` (8 mixed photos), `kodak`, `ic`, `tp` (test pack), `heldout` (the 40 held-out images; never used to choose a parameter), `screens` (the 10 development screenshots `dv_s01` to `dv_s10`, which screen-content rounds are designed and decided on; `size` refuses an image of either frozen set whose pixels differ from its manifest),
 `tp-only` (5 exclusive test-pack crops), `photo` (measure + kodak + ic), `synth`,
 `all`. A name without a set is one
 image from `build/research/ppm`.

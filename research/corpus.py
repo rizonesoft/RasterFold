@@ -341,6 +341,23 @@ HELDOUT_PHOTOS = [
 HELDOUT_PAGES = ["index", "getting-started", "installation", "usage", "examples",
                  "format", "c-api", "benchmarks", "limitations", "troubleshooting"]
 HELDOUT_MANIFEST = REPO / "research" / "heldout.json"
+# The development screenshots (D01 T07 section 1): the same renderer as the held-out screenshots, on pages that
+# are not held out. Published pages come from the staged site, the two unpublished documents from docs/.
+SCREENS_PAGES = [
+    ("api", "build/site-source/api.md"),
+    ("cli", "build/site-source/cli.md"),
+    ("contributing", "build/site-source/contributing.md"),
+    ("research-summary", "build/site-source/research-summary.md"),
+    ("security", "build/site-source/security.md"),
+    ("licenses", "build/site-source/licenses.md"),
+    ("release-history", "build/site-source/release-history.md"),
+    ("downloads", "build/site-source/downloads.md"),
+    ("vision", "docs/vision.md"),
+    ("codec-distribution", "docs/codec-distribution.md"),
+]
+SCREENS_MANIFEST = REPO / "research" / "screens.json"
+SCREENS_ASSETS = REPO / "research" / "screens-assets"
+SCREENS_SIZE = (1280, 960)
 
 REFS_SPEC = (
     ("e7", ".e7.jxl", ["-c:v", "libjxl", "-distance", "0", "-effort", "7", "-threads", "1", "-update", "1"]),
@@ -636,7 +653,9 @@ def _provision_browser(browser_version: str) -> Path:
     return shell
 
 
-def _screenshot_pages(browser_version: str | None = None) -> list[dict]:
+def _screenshot_pages(browser_version: str | None = None, pages: list[tuple[str, str]] | None = None) -> list[dict]:
+    """Render pages as 1280x960 screenshots. `pages` is a list of (page id, repository-relative Markdown path);
+    the default is the held-out pages from the staged site."""
     stage = REPO / "build" / "site-source"
     subprocess.run([sys.executable, str(REPO / "scripts" / "build-docs.py"), "--stage", "build/site-source"],
                    cwd=REPO, check=True, capture_output=True, text=True)
@@ -657,8 +676,10 @@ def _screenshot_pages(browser_version: str | None = None) -> list[dict]:
     entries = []
     html_dir = REPO / "build" / "heldout-html"
     html_dir.mkdir(parents=True, exist_ok=True)
-    for i, page in enumerate(HELDOUT_PAGES, 1):
-        md = stage / f"{page}.md"
+    if pages is None:
+        pages = [(page, f"build/site-source/{page}.md") for page in HELDOUT_PAGES]
+    for i, (page, md_rel) in enumerate(pages, 1):
+        md = REPO / md_rel
         if not md.is_file():
             raise SystemExit(f"heldout screenshot source missing: {md}")
         r = subprocess.run(["npx", "-y", "markdown-it@14.1.0", str(md)],
@@ -681,6 +702,122 @@ def _screenshot_pages(browser_version: str | None = None) -> list[dict]:
         entries.append({"page": page, "png": png, "browser": f"{shell} ({version})",
                         "source_sha256": _hl.sha256(md.read_bytes()).hexdigest()})
     return entries
+
+
+def _ppm_rgb_sha256(ppm_path: Path) -> tuple[int, int, str]:
+    import hashlib
+    w, h, pixels = _ppm_pixels(ppm_path)
+    return w, h, hashlib.sha256(pixels).hexdigest()
+
+
+def verify_screens(ppm_dir: Path = PPM) -> list[dict]:
+    """The development screenshots against their frozen manifest: membership, dimensions, RGB hashes, and no
+    overlap with the held-out set. No regeneration."""
+    if not SCREENS_MANIFEST.is_file():
+        raise SystemExit("screens manifest missing: research/screens.json (author it in WSL with python3 research/corpus.py --author-screens)")
+    manifest = json.loads(SCREENS_MANIFEST.read_text(encoding="utf-8"))
+    entries = manifest["images"]
+    sys.path.insert(0, str(REPO / "research"))
+    import ab
+    if [e["name"] for e in entries] != ab.SETS["screens"]:
+        raise SystemExit("screens membership: manifest names do not match SETS['screens'] in research/ab.py")
+    _refuse_heldout_overlap(entries)
+    for e in entries:
+        ppm_path = ppm_dir / f"{e['name']}.ppm"
+        if not ppm_path.is_file():
+            raise SystemExit(f"screens missing image: {e['name']}")
+        w, h, digest = _ppm_rgb_sha256(ppm_path)
+        if (w, h) != SCREENS_SIZE:
+            raise SystemExit(f"screens {e['name']}: {w}x{h}, expected 1280x960")
+        if digest != e["rgb_sha256"]:
+            raise SystemExit(f"screens {e['name']}: RGB SHA-256 mismatch against the frozen manifest")
+    print(f"screens verified: {len(entries)} screenshots, hashes match, no overlap with the held-out set")
+    return entries
+
+
+def _refuse_heldout_overlap(entries: list[dict]) -> None:
+    """A development screenshot may share neither a source page nor its pixels with a held-out image."""
+    held = json.loads(HELDOUT_MANIFEST.read_text(encoding="utf-8"))["images"]
+    held_pages = {page for page in HELDOUT_PAGES} | {
+        e["source_page"].removeprefix("build/site-source/").removesuffix(".md") for e in held if e.get("kind") == "screenshot"}
+    held_hashes = {e["rgb_sha256"] for e in held}
+    for e in entries:
+        if e["page"] in held_pages:
+            raise SystemExit(f"screens {e['name']}: page {e['page']!r} is a held-out page")
+        if e["rgb_sha256"] in held_hashes:
+            raise SystemExit(f"screens {e['name']}: its pixels equal a held-out image")
+
+
+def screens(ppm_dir: Path = PPM) -> None:
+    """Recover any missing development PPM from its committed PNG, then verify the set. Never renders."""
+    if not SCREENS_MANIFEST.is_file():
+        print("screens: research/screens.json not authored yet; skipped")
+        return
+    manifest = json.loads(SCREENS_MANIFEST.read_text(encoding="utf-8"))
+    for e in manifest["images"]:
+        ppm_path = ppm_dir / f"{e['name']}.ppm"
+        if ppm_path.is_file():
+            continue
+        asset = SCREENS_ASSETS / f"{e['name']}.png"
+        if not asset.is_file():
+            raise SystemExit(f"screens recovery: {e['name']}.ppm is missing and research/screens-assets/{e['name']}.png is not committed")
+        with Image.open(asset) as im:
+            im.convert("RGB").save(ppm_path)
+    verify_screens(ppm_dir)
+
+
+def author_screens(ppm_dir: Path = PPM) -> None:
+    """Author the development screenshots, once, in WSL/Linux: render SCREENS_PAGES with the held-out set's
+    recorded browser version, refuse any overlap with the held-out set, and write the PNG assets, the PPMs and the
+    frozen manifest. With a manifest already present nothing is rewritten: a changed source page is refused, and an
+    unchanged one is recovered and verified instead."""
+    import hashlib
+    for page, _ in SCREENS_PAGES:
+        if page in HELDOUT_PAGES:
+            raise SystemExit(f"screens: page {page!r} is a held-out page")
+    held = json.loads(HELDOUT_MANIFEST.read_text(encoding="utf-8"))["images"]
+    versions = {e["browser_version"] for e in held if e.get("kind") == "screenshot"}
+    if len(versions) != 1:
+        raise SystemExit(f"screens: the held-out screenshots record {len(versions)} browser versions, expected one")
+    (browser_version,) = versions
+    subprocess.run([sys.executable, str(REPO / "scripts" / "build-docs.py"), "--stage", "build/site-source"],
+                   cwd=REPO, check=True, capture_output=True, text=True)
+    if SCREENS_MANIFEST.is_file():
+        manifest = json.loads(SCREENS_MANIFEST.read_text(encoding="utf-8"))
+        for e in manifest["images"]:
+            md = REPO / e["source"]
+            if not md.is_file() or hashlib.sha256(md.read_bytes()).hexdigest() != e["source_sha256"]:
+                raise SystemExit(f"screens authoring: {e['source']} differs from the frozen source hash; the set is "
+                                 "frozen and is not re-rendered from a changed page")
+        screens(ppm_dir)
+        return
+    shots = _screenshot_pages(browser_version, SCREENS_PAGES)
+    if any(s["browser"].rsplit("(", 1)[-1].removesuffix(")") != browser_version for s in shots):
+        raise SystemExit(f"screens authoring: rendered with another browser than the held-out set's {browser_version!r}")
+    SCREENS_ASSETS.mkdir(parents=True, exist_ok=True)
+    revision = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO, capture_output=True, text=True).stdout.strip()
+    entries = []
+    for i, ((page, source), shot) in enumerate(zip(SCREENS_PAGES, shots), 1):
+        name = f"dv_s{i:02d}"
+        with Image.open(shot["png"]) as im:
+            rgb = im.convert("RGB")
+        if rgb.size != SCREENS_SIZE:
+            raise SystemExit(f"screens {name}: {rgb.size}, expected {SCREENS_SIZE}")
+        entries.append({
+            "name": name, "kind": "screenshot", "page": page, "source": source,
+            "source_sha256": shot["source_sha256"], "rendered_with": "markdown-it 14.1.0 via npx, minimal owned HTML template",
+            "browser_version": browser_version, "repository_revision": revision,
+            "rgb_sha256": _rgb_sha256(rgb), "width": SCREENS_SIZE[0], "height": SCREENS_SIZE[1],
+        })
+        rgb.save(SCREENS_ASSETS / f"{name}.png", optimize=True)
+        rgb.save(ppm_dir / f"{name}.ppm")
+    _refuse_heldout_overlap(entries)
+    SCREENS_MANIFEST.write_text(json.dumps(
+        {"set": "screens", "frozen": True,
+         "note": "Development screenshots for D01 T07: rounds are designed and decided on these, never on research/heldout.json. "
+                 "Later runs verify against these hashes and refuse mismatches without rewriting this file.",
+         "images": entries}, indent=2) + "\n", encoding="utf-8")
+    verify_screens(ppm_dir)
 
 
 def heldout(ppm_dir: Path = PPM) -> None:
@@ -807,6 +944,7 @@ def main() -> None:
         Image.frombytes("RGB", (w, h), rgb).save(PPM / f"syn_{name}.ppm")
 
     heldout(PPM)
+    screens(PPM)
 
     update_refs(PPM, DATA / "jxl", DATA / "jxl_refs.json")
     print(f"{len(list(PPM.glob('*.ppm')))} images in {PPM}")
@@ -815,5 +953,8 @@ def main() -> None:
 if __name__ == "__main__":
     if "--verify-heldout" in sys.argv:
         verify_heldout()
+    elif "--author-screens" in sys.argv:
+        PPM.mkdir(parents=True, exist_ok=True)
+        author_screens(PPM)
     else:
         main()

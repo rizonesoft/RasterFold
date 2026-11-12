@@ -44,6 +44,7 @@ SETS = {
               "syn_diagram", "syn_odd", "syn_wide"],
 }
 SETS["heldout"] = [f"ho_p{i:02d}" for i in range(1, 31)] + [f"ho_s{i:02d}" for i in range(1, 11)]
+SETS["screens"] = [f"dv_s{i:02d}" for i in range(1, 11)]   # development screenshots (D01 T07 section 1)
 SETS["photo"] = ["measure"] + SETS["kodak"] + SETS["ic"]
 SETS["tp-only"] = [n for n in SETS["tp"] if n not in SETS["photo"]]
 SETS["all"] = SETS["photo"] + SETS["tp-only"] + SETS["synth"]
@@ -170,6 +171,37 @@ def ppm_dimensions(ppm_path: Path) -> tuple[int, int]:
     return width, height
 
 
+FROZEN_MANIFESTS = (("heldout", "research/heldout.json"), ("screens", "research/screens.json"))
+
+
+def verify_frozen(imgs, ppm_dir=None) -> None:
+    """Every measured image of a frozen set (held-out, development screenshots) must be exactly the pixels its
+    manifest froze, or reference sizes recorded for those pixels would be reused for different ones."""
+    import hashlib
+    ppm_dir = Path(ppm_dir) if ppm_dir is not None else RES / "ppm"
+    for set_name, manifest_rel in FROZEN_MANIFESTS:
+        wanted = [n for n in imgs if n in SETS[set_name]]
+        if not wanted:
+            continue
+        path = REPO / manifest_rel
+        if not path.is_file():
+            raise SystemExit(f"{set_name}: {manifest_rel} is missing; refusing to measure an unfrozen set")
+        entries = {e["name"]: e for e in json.loads(path.read_text(encoding="utf-8"))["images"]}
+        for n in wanted:
+            e = entries.get(n)
+            if e is None:
+                raise SystemExit(f"{set_name} image {n} is not in {manifest_rel}")
+            data = (ppm_dir / f"{n}.ppm").read_bytes()
+            hdr = data.split(b"\n", 3)
+            if len(hdr) != 4 or hdr[0] != b"P6" or hdr[2] != b"255":
+                raise SystemExit(f"{set_name} {n}: invalid PPM header")
+            dims = hdr[1].split()
+            if (int(dims[0]), int(dims[1])) != (1280, 960) or len(hdr[3]) != 1280 * 960 * 3:
+                raise SystemExit(f"{set_name} {n}: dimensions or payload mismatch")
+            if hashlib.sha256(hdr[3]).hexdigest() != e["rgb_sha256"]:
+                raise SystemExit(f"{set_name} {n}: RGB SHA-256 mismatch against the frozen manifest; refusing to reuse references")
+
+
 def image_set_label(name: str) -> str:
     if name in SETS["photo"]:
         return "photo"
@@ -179,6 +211,8 @@ def image_set_label(name: str) -> str:
         return "synth"
     if name in SETS["heldout"]:
         return "heldout"
+    if name in SETS["screens"]:
+        return "screens"
     raise SystemExit(f"unknown corpus set for image: {name}")
 
 
@@ -790,24 +824,7 @@ def main():
             got = list(pool.map(one, imgs))
         print(summarize_sizes(got, refs, verbose="-v" in sys.argv, prefix=f"{rest[0]} {cfg} "))
     elif mode == "size":
-        _ho = [n for n in names(rest) if n in SETS["heldout"]]
-        if _ho:
-            import hashlib as _hl
-            _man = json.loads((REPO / "research" / "heldout.json").read_text(encoding="utf-8"))
-            _entries = {e["name"]: e for e in _man["images"]}
-            for _n in _ho:
-                _e = _entries.get(_n)
-                if _e is None:
-                    raise SystemExit(f"heldout image {_n} is not in research/heldout.json")
-                _data = (RES / "ppm" / f"{_n}.ppm").read_bytes()
-                _hdr = _data.split(b"\n", 3)
-                if len(_hdr) != 4 or _hdr[0] != b"P6" or _hdr[2] != b"255":
-                    raise SystemExit(f"heldout {_n}: invalid PPM header")
-                _dims = _hdr[1].split()
-                if (int(_dims[0]), int(_dims[1])) != (1280, 960) or len(_hdr[3]) != 1280 * 960 * 3:
-                    raise SystemExit(f"heldout {_n}: dimensions or payload mismatch")
-                if _hl.sha256(_hdr[3]).hexdigest() != _e["rgb_sha256"]:
-                    raise SystemExit(f"heldout {_n}: RGB SHA-256 mismatch against the frozen manifest; refusing to reuse references")
+        verify_frozen(names(rest))
         src = Path(rest.pop(0)) if rest and rest[0].endswith(".c") else REPO / "src" / "cm.c"
         pre_snapshot = provenance_snapshot(src, flags) if csv_path is not None else None
         imgs = names(rest)

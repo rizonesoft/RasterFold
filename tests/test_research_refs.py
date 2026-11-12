@@ -1627,5 +1627,111 @@ class ResearchRefsTests(unittest.TestCase):
                 self.assertEqual(vsjxl._ff_path("ffmpeg", td / "in.bmp"), str(td / "in.bmp"))
 
 
+class ScreensSetTests(unittest.TestCase):
+    """The development screenshots (D01 T07 section 1): disjoint from the held-out set, frozen, recoverable."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.ppm = self.root / "ppm"
+        self.ppm.mkdir()
+        self.assets = self.root / "screens-assets"
+        self.assets.mkdir()
+        self.manifest = self.root / "screens.json"
+        self.held = json.loads((ROOT / "research" / "heldout.json").read_text(encoding="utf-8"))
+        from PIL import Image
+        self.Image = Image
+        entries = []
+        for i, name in enumerate(ab.SETS["screens"], 1):
+            im = Image.new("RGB", (1280, 960), (i, 2 * i, 3 * i))
+            im.save(self.assets / f"{name}.png")
+            im.save(self.ppm / f"{name}.ppm")
+            entries.append({"name": name, "kind": "screenshot", "page": f"page-{i}", "source": f"docs/page-{i}.md",
+                            "source_sha256": "0" * 64, "browser_version": "test", "repository_revision": "0" * 40,
+                            "rgb_sha256": corpus._rgb_sha256(im), "width": 1280, "height": 960})
+        self.entries = entries
+        self.write_manifest(entries)
+        for name, value in (("SCREENS_MANIFEST", self.manifest), ("SCREENS_ASSETS", self.assets)):
+            patcher = mock.patch.object(corpus, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def write_manifest(self, entries) -> None:
+        self.manifest.write_text(json.dumps({"set": "screens", "frozen": True, "images": entries}, indent=2) + "\n",
+                                 encoding="utf-8")
+
+    def refused(self, needle: str, call) -> None:
+        before = self.manifest.read_bytes()
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit) as caught:
+            call()
+        self.assertIn(needle, str(caught.exception))
+        self.assertEqual(self.manifest.read_bytes(), before, "a refusal leaves the manifest byte-identical")
+
+    def test_the_committed_set_is_disjoint_from_the_held_out_set(self) -> None:
+        committed = json.loads((ROOT / "research" / "screens.json").read_text(encoding="utf-8"))["images"]
+        self.assertEqual([e["name"] for e in committed], ab.SETS["screens"])
+        held_pages = set(corpus.HELDOUT_PAGES)
+        held_hashes = {e["rgb_sha256"] for e in self.held["images"]}
+        for e in committed:
+            self.assertNotIn(e["page"], held_pages)
+            self.assertNotIn(e["rgb_sha256"], held_hashes)
+            self.assertTrue((ROOT / "research" / "screens-assets" / f"{e['name']}.png").is_file())
+        self.assertEqual({e["browser_version"] for e in committed},
+                         {e["browser_version"] for e in self.held["images"] if e["kind"] == "screenshot"})
+
+    def test_a_held_out_page_or_held_out_pixels_are_refused(self) -> None:
+        page = [dict(e) for e in self.entries]
+        page[3]["page"] = corpus.HELDOUT_PAGES[0]
+        self.refused(f"page {corpus.HELDOUT_PAGES[0]!r} is a held-out page", lambda: corpus._refuse_heldout_overlap(page))
+        pixels = [dict(e) for e in self.entries]
+        pixels[5]["rgb_sha256"] = self.held["images"][0]["rgb_sha256"]
+        self.refused("its pixels equal a held-out image", lambda: corpus._refuse_heldout_overlap(pixels))
+        with mock.patch.object(corpus, "SCREENS_PAGES", [(corpus.HELDOUT_PAGES[1], "x.md")]):
+            self.refused("is a held-out page", lambda: corpus.author_screens(self.ppm))
+
+    def test_a_missing_ppm_is_recovered_from_its_committed_png(self) -> None:
+        (self.ppm / "dv_s04.ppm").unlink()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            corpus.screens(self.ppm)
+        self.assertTrue((self.ppm / "dv_s04.ppm").is_file())
+        self.assertIn("screens verified: 10 screenshots", out.getvalue())
+        (self.ppm / "dv_s04.ppm").unlink()
+        (self.assets / "dv_s04.png").unlink()
+        self.refused("research/screens-assets/dv_s04.png is not committed", lambda: corpus.screens(self.ppm))
+
+    def test_a_changed_source_page_is_refused_at_authoring(self) -> None:
+        with mock.patch.object(corpus.subprocess, "run"):
+            self.refused("differs from the frozen source hash", lambda: corpus.author_screens(self.ppm))
+
+    def test_another_browser_version_is_refused_at_authoring(self) -> None:
+        self.manifest.unlink()
+        shots = [{"page": p, "png": self.assets / "dv_s01.png", "browser": "shell (Other Chrome 1.0)", "source_sha256": "0" * 64}
+                 for p, _ in corpus.SCREENS_PAGES]
+        with mock.patch.object(corpus.subprocess, "run"), mock.patch.object(corpus, "_screenshot_pages", return_value=shots), \
+                contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit) as caught:
+            corpus.author_screens(self.ppm)
+        self.assertIn("rendered with another browser than the held-out set's", str(caught.exception))
+        self.assertFalse(self.manifest.exists(), "a refused authoring writes no manifest")
+
+    def test_changed_pixels_are_refused_before_measuring(self) -> None:
+        target = self.ppm / "dv_s07.ppm"
+        data = bytearray(target.read_bytes())
+        data[-1] ^= 1
+        target.write_bytes(bytes(data))
+        with mock.patch.object(ab, "FROZEN_MANIFESTS", (("screens", str(self.manifest)),)), \
+                mock.patch.object(ab, "REPO", Path("/")), self.assertRaises(SystemExit) as caught:
+            ab.verify_frozen(["dv_s07"], ppm_dir=self.ppm)
+        self.assertIn("screens dv_s07: RGB SHA-256 mismatch against the frozen manifest", str(caught.exception))
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit) as caught:
+            corpus.verify_screens(self.ppm)
+        self.assertIn("screens dv_s07: RGB SHA-256 mismatch", str(caught.exception))
+        # An unfrozen set is never measured.
+        with mock.patch.object(ab, "FROZEN_MANIFESTS", (("screens", "no/such/screens.json"),)), self.assertRaises(SystemExit) as caught:
+            ab.verify_frozen(["dv_s01"], ppm_dir=self.ppm)
+        self.assertIn("refusing to measure an unfrozen set", str(caught.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

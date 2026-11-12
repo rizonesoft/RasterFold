@@ -1710,14 +1710,14 @@
       "reviewed": "Author-attested: 2026-10-25 re-read spec/FOLD.md against src/cm.c and src/simd.h after D02 T01 section 4 (byte-identical cm.c hot-loop vectorization and row-context specialization; format version 2 bitstream unchanged)"
     },
     "research/README.md": {
-      "evidence": "Re-read 2026-11-12 after the Milestone 8 gate's review round: research/ab.py gained harness_sources and build_inputs (the single list of what a harness build links and includes) and research/abpool.py records a harness identity in every pooled record and refuses to extend or report a log that mixes harness builds; this document's command table still describes the tools' arguments and outputs, and its paragraph on honest timing comparisons now ends with the sentence on the harness identity, read against harness_identity and verify_existing_log_provenance in research/abpool.py",
+      "evidence": "Re-read 2026-11-12 for D01 T07 section 1: the corpus line now counts 105 images including the 10 development screenshots frozen in research/screens.json with their committed PNGs, authored once in WSL by --author-screens with the held-out browser version and refused on any overlap (corpus.py SCREENS_PAGES, author_screens, screens, verify_screens), and the set list names screens and says size refuses changed pixels in either frozen set (ab.py SETS and verify_frozen); the rest of the page is unchanged",
       "sources": {
-        "research/corpus.py": "c8d419844a7410e7399a4f69cef013f876dfcd3272e7d996e1c2d3c9f3255619",
-        "research/ab.py": "39e8373859370b6de9ece0229d435c6f542f1be99f7228e75acac6f93353ee67",
+        "research/corpus.py": "ed0cbbc4500f9a92285974801258a492cd484f8b009dd8df3251409f22766c35",
+        "research/ab.py": "7bbb7207094bd1a2c852fa587a0ce89cc1501e08b2064775b2734102500d93c0",
         "research/vsjxl.py": "bb0a1fbdcb0a84edcee8a988c1de100b168a7949a8c7b59378775af5d42a5563",
         "research/prof.py": "7fa28a84aab62f0eb79fd579bcc01b6e2e55cc200bdaa96c0218b2ad4aa05605",
         "research/bench.c": "1849a57fd2b71e37282e66c1fbecd1528eba35f1d714eb51ad55ac2e367d28d3",
-        "research/README.md": "69f5fdd9ef5e9a74c1ba97a567930917d348fdff5a3bdf0ba797d4a7a4f86623",
+        "research/README.md": "5d4396c686ef43f96e041e44e41c7d1bb897afc4b3d6ed9163fd973151739094",
         "research/abpool.py": "63cafba2296629d64b9d7faacb08d1e666988ed4160cd3745a2d513538efccbe"
       },
       "review": "Author-attested: 2026-10-25 re-read research/README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)",
