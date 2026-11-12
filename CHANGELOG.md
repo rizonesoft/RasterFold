@@ -13,6 +13,7 @@ Work toward RasterFold 1.0.0 (format version 3, C API 1.0):
 - The site gained a generated API Reference page rendered from `include/rasterfold.h`.
 - Android was removed from this repository: the `android-arm64` and `android-x64` build targets, the NDK pin, and the planned Android converter work are gone. RasterFold targets Windows x64 and Linux x64; Android can return as a fork.
 - Images with at most 256 colours are written with method 4, a compact palette method new in format version 3: the palette is stored sorted and Golomb-Rice coded, decisions use 16-bit probabilities, and the image's top row and left column have their own counters. On the generated set the files total 200,774 bytes against lossless WebP's 201,248 (201,640 before). Files written with methods 2 and 3 still decode.
+- Milestone 8 reached (2026-11-12): on generated images RasterFold is smaller than lossless WebP in total (200,774 against 201,248 bytes) and in geometric mean (0.8771), with every image within 1.1 times WebP or 32 bytes of it; photographs are byte-identical to Milestone 7.
 - The C API surface is frozen at five exported functions with thread-local errors, and both a byte-identity check against the independent oracle and a multithreaded byte-identity check guard it.
 
 ## Pre-1.0 development (since the version 2 codec)
