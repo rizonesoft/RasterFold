@@ -1862,5 +1862,105 @@ class ScreenRepetitionTests(unittest.TestCase):
         read.assert_not_called()
 
 
+class ScreenCodeTests(unittest.TestCase):
+    """research/screencode.py, the round 1 prototype (D01 T07 section 3): known parses and exact round trips."""
+
+    def setUp(self) -> None:
+        import screencode
+        self.sc = screencode
+
+    @staticmethod
+    def image(pixels):
+        return b"".join(p.to_bytes(3, "big") for p in pixels)
+
+    def round_trip(self, width, height, data):
+        payload = self.sc.encode(width, height, data)
+        self.assertEqual(self.sc.decode(width, height, payload), data)
+        return payload
+
+    def toks(self, width, height, data):
+        return list(self.sc.tokens(width, height, data))
+
+    def test_a_one_colour_image_overlapping_copies_and_the_longest_length(self) -> None:
+        data = self.image([0x336699] * 5000)
+        L, C, P = self.sc.LITERAL, self.sc.CACHE, self.sc.COPY
+        self.assertEqual(self.toks(100, 50, data), [(L, 0x336699), (P, 4096, 1), (P, 903, 1)])   # overlap: distance 1
+        self.round_trip(100, 50, data)
+        self.assertEqual(self.sc.prefix_code(4096 - 3)[0], 23)
+
+    def test_a_cache_hit(self) -> None:
+        x = 0x102030
+        z = next(c for c in range(1, 1 << 16) if self.sc.cache_index(c) != self.sc.cache_index(x))
+        self.assertEqual(self.toks(3, 1, self.image([x, z, x])),
+                         [(self.sc.LITERAL, x), (self.sc.LITERAL, z), (self.sc.CACHE, self.sc.cache_index(x))])
+        self.round_trip(3, 1, self.image([x, z, x]))
+
+    def test_a_2d_mapped_distance_and_one_beyond_the_map(self) -> None:
+        width = 100
+        self.assertEqual(self.sc.distance_code(width, width), 1)               # the pixel above: (0, 1)
+        self.assertEqual(self.sc.distance_code(width + 1, width), 3)           # above-left: (1, 1)
+        self.assertEqual(self.sc.distance_code(width - 1, width), 4)           # above-right: (-1, 1)
+        self.assertEqual(self.sc.distance_code(20 * width, width), 20 * width + 120)
+        for v in range(1, 121):
+            self.assertEqual(self.sc.distance_code(self.sc.map_distance(v, width), width) <= v, True)
+        # A row repeated 20 rows later is copied from beyond the map, and round-trips.
+        row = [0x010000 * (i % 7) + 0x000100 * (i % 11) + i for i in range(width)]
+        noise = [((i * 2654435761) & 0xFFFFFF) for i in range(width * 19)]
+        data = self.image(row + noise + row)
+        toks = self.toks(width, 21, data)
+        self.assertIn((self.sc.COPY, width, 20 * width), toks)
+        self.round_trip(width, 21, data)
+
+    def test_the_window_and_the_largest_distance_symbol(self) -> None:
+        self.assertEqual(self.sc.WINDOW, (1 << 20) - 120)
+        self.assertEqual(self.sc.prefix_code(self.sc.WINDOW + 120)[0], 39)
+        self.assertEqual(self.sc.prefix_value(*self.sc.prefix_code(self.sc.WINDOW + 120)[::2]), self.sc.WINDOW + 120)
+        a, b, c, d = 0x102030, 0x405060, 0x708090, 0xA0B0C0
+        with mock.patch.object(self.sc, "WINDOW", 3):
+            self.assertNotIn(self.sc.COPY, [t[0] for t in self.toks(8, 1, self.image([a, b, c, d, a, b, c, d]))])
+
+    def test_prefix_codes_round_trip_every_value_up_to_the_window(self) -> None:
+        for value in list(range(1, 5000)) + [self.sc.WINDOW + 120, 524289, 786432, 786433]:
+            symbol, nbits, extra = self.sc.prefix_code(value)
+            self.assertEqual(nbits, 0 if symbol < 4 else (symbol - 2) >> 1)
+            self.assertEqual(self.sc.prefix_value(symbol, extra), value)
+
+    def test_a_bucket_collision_is_visited_and_does_not_hide_a_match(self) -> None:
+        # Two different 4-pixel keys in one bucket: the chain visits the colliding entry and still finds the match.
+        import itertools
+        seen = {}
+        pair = None
+        for k in itertools.count(1):
+            key = self.image([k, k + 1, k + 2, k + 3])
+            bucket = self.sc.fnv_bucket(key)
+            if bucket in seen:
+                pair = (seen[bucket], k)
+                break
+            seen[bucket] = k
+        k1, k2 = pair
+        a = [k1, k1 + 1, k1 + 2, k1 + 3]
+        b = [k2, k2 + 1, k2 + 2, k2 + 3]
+        data = self.image(a + b + a)
+        toks = self.toks(12, 1, data)
+        self.assertEqual(toks[-1], (self.sc.COPY, 4, 8))
+        self.round_trip(12, 1, data)
+
+    def test_refusals(self) -> None:
+        with self.assertRaises(self.sc.Refused) as caught:
+            self.sc.decode(4, 1, b"\x00\x00\x00\x00")
+        self.assertIn("shorter than 5 bytes", str(caught.exception))
+        payload = self.round_trip(4, 1, self.image([1, 2, 3, 4]))
+        with self.assertRaises(self.sc.Refused) as caught:
+            self.sc.decode(4, 1, payload + b"\x00")
+        self.assertIn("stream ends at byte", str(caught.exception))
+
+    def test_noise_and_small_images_round_trip(self) -> None:
+        import random
+        rng = random.Random(7)
+        for width, height in ((1, 1), (1, 9), (9, 1), (37, 11)):
+            self.round_trip(width, height, bytes(rng.randrange(256) for _ in range(3 * width * height)))
+            self.round_trip(width, height, self.image([rng.choice([0, 0xFFFFFF, 0x808080]) for _ in range(width * height)]))
+
+
 if __name__ == "__main__":
     unittest.main()
