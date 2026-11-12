@@ -140,6 +140,8 @@ Every milestone gate in `todo/05-milestones/` carries this policy: on a miss, up
 
 **Origin:** discovered run=61f3a8f4474f 2026-09-30 -- groom-plan codec distribution prerequisite.
 
+> **Started:** 2026-11-12T11:25:00Z
+
 **Corrected 2026-11-11 (operator decision):** the release owner decided "OS codec, read only": no bundled HEVC code, HEIC import only through the Windows system codec, no HEIC writing. `docs/codec-distribution.md` records the decision, its reason and its reversal cost. With the decision made, this section no longer carries `Requires: operator` (the operator asked on 2026-11-11 that the rest be left for the runner): what remains is agent work. The distribution channel is the repository's own GitHub Releases page, the default this project already uses for every artifact; the operator's widened autonomy directive of 2026-11-11 (`AGENTS.md`, Autonomy is the default) covers taking that default, and changing it later costs one edit to `docs/codec-distribution.md` because no HEVC code ships on any channel.
 
 - [ ] Name the concrete provider in `docs/codec-distribution.md` from Microsoft's documentation: the Windows Imaging Component HEIF decoder, the system components a user needs for HEVC-coded images, and the Windows versions that carry them, each with its source URL and the date read. Done when: the page names components and versions rather than "the system codec", and states that the application ships no HEVC code on any channel.
