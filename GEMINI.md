@@ -4,5 +4,5 @@ Follow [AGENTS.md](./AGENTS.md). This file holds only what is specific to Google
 
 - Claude Code (`claude`), Codex (`codex`) and Antigravity (`gemini`) can write in this repository.
 - Independent reviews use `python3 scripts/review-dispatch.py --writer <claude|codex|gemini> ...`; this harness's key is `gemini`: Codex work goes to Gemini 4 Carbon through the Antigravity CLI, and the other writers' work goes to GPT-6 Astra through the Codex CLI. Each route has one reviewer and no fallback.
-- Skills live in `.agents/skills/<name>/`, rules live in `.agents/rules/`, and the native campaign `Stop` hook lives in `.agents/hooks.json`.
+- Skills live in `.agents/skills/<name>/`, rules live in `.agents/rules/`, the native campaign `Stop` hook lives in `.agents/hooks.json`, and the read-only Gemini 4 Hydrogen scouts (`rf-scout`, `rf-log-digest`, `rf-fact-check`, invoked through `python3 scripts/gemini-scout.py`) live in `.agents/plugins/rf-scouts/`.
 - During `process-plan` and `process-phase`, the in-session heartbeat runs through the native `schedule` (`CronExpression: "3-59/5 * * * *"`) and `manage_task` tools alongside `scripts/campaign_guard.py`.

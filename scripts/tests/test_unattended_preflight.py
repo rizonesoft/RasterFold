@@ -477,6 +477,58 @@ class RosterTests(unittest.TestCase):
         self.assertIn("(empty)", "; ".join(pf.roster_problems(self.agents / "absent")))
 
 
+class GeminiRosterTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        import shutil
+        shutil.copytree(REPO / ".agents" / "plugins" / "rf-scouts", self.root / ".agents" / "plugins" / "rf-scouts")
+        self.plugin = self.root / ".agents" / "plugins" / "rf-scouts"
+        self.agents = self.plugin / "agents"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def problems(self) -> str:
+        return "; ".join(pf.gemini_roster_problems(self.root))
+
+    def edit_agent(self, old: str, new: str, name: str = "rf-scout") -> None:
+        path = self.agents / f"{name}.md"
+        text = path.read_text(encoding="utf-8")
+        self.assertIn(old, text)
+        path.write_text(text.replace(old, new), encoding="utf-8")
+
+    def test_the_repository_gemini_roster_is_the_three_read_only_hydrogen_scouts(self):
+        self.assertEqual(pf.gemini_roster_problems(REPO), [])
+        self.assertEqual(pf.gemini_roster_problems(self.root), [])
+
+    def test_a_write_or_command_tool_or_missing_tools_list_is_refused(self):
+        for bad_tools in ("  - view_file\n  - write_to_file", "  - run_command", "  - edit_file"):
+            self.edit_agent("  - view_file", bad_tools)
+            self.assertIn("tools is", self.problems(), bad_tools)
+            self.edit_agent(bad_tools, "  - view_file")
+        self.edit_agent("tools:\n  - view_file\n", "")
+        self.assertIn("tools is None", self.problems())
+
+    def test_inheriting_mcp_or_adding_another_mcp_server_is_refused(self):
+        self.edit_agent("inheritMcp: false", "inheritMcp: true")
+        self.assertIn("inheritMcp is 'true', not 'false'", self.problems())
+        self.edit_agent("inheritMcp: true", "inheritMcp: false")
+        self.edit_agent("  - name: rf-readonly", "  - name: rf-readonly\n  - name: other")
+        self.assertIn("mcpServers is", self.problems())
+        self.edit_agent("  - name: rf-readonly\n  - name: other", "  - name: rf-readonly")
+        (self.plugin / "mcp_config.json").write_text('{"mcpServers": {"other": {"command": "sh"}}}', encoding="utf-8")
+        self.assertIn("mcp_config.json must declare only rf-readonly", self.problems())
+
+    def test_stray_agents_or_plugins_or_extra_frontmatter_keys_are_refused(self):
+        self.edit_agent("mainAgent: true", "mainAgent: true\nskills:\n  - something")
+        self.assertIn("frontmatter keys not allowed on a scout: skills", self.problems())
+        self.edit_agent("mainAgent: true\nskills:\n  - something", "mainAgent: true")
+        (self.root / ".agents" / "agents").mkdir(parents=True)
+        (self.root / ".agents" / "agents" / "extra.md").write_text("---\nname: extra\n---\n", encoding="utf-8")
+        self.assertIn(".agents/agents must be empty or absent", self.problems())
+
+
 class RepairFlowTests(unittest.TestCase):
     """main() against a throwaway root, with every subprocess faked: what matters is the order of ownership and repair."""
 
@@ -635,14 +687,15 @@ class RepairFlowTests(unittest.TestCase):
         _, text = self.preflight()
         for line in ("claude on PATH", "codex on PATH", "campaign Stop hook wired", "bypass-permissions prompt pre-accepted",
                      "workspace trusted", "session cron tools enabled", "read-only Sonnet scout roster",
-                     "Claude Code language-server plugin"):
+                     "read-only Hydrogen scout roster", "Claude Code language-server plugin"):
             self.assertIn(line, text)
         self.assertNotIn("muse on PATH", text)
         self.assertNotIn("agy on PATH", text)
 
     def test_the_carbon_runner_checks_antigravity_and_skips_claude_code_dialogs(self):
         code, text = self.preflight("--runner", "gemini")
-        for line in ("agy on PATH", "codex on PATH", "campaign Stop hook wired", "read-only Sonnet scout roster"):
+        for line in ("agy on PATH", "codex on PATH", "campaign Stop hook wired", "Antigravity scout plugin validates",
+                     "read-only Sonnet scout roster", "read-only Hydrogen scout roster"):
             self.assertIn(line, text)
         self.assertIn(".agents/hooks.json hooks.Stop runs campaign_guard.py stop-hook", text)
         for claude_only in ("claude on PATH", "bypass-permissions prompt pre-accepted", "workspace trusted",

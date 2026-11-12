@@ -196,8 +196,9 @@ class LauncherCarbonTests(unittest.TestCase):
         prompt = campaign_prompt_in_script("CARBON_PROMPT")
         for phrase in ("Finish RasterFold 100% complete and excellent", "Act with full autonomy", "Never ask the operator a question",
                        "Antigravity on Gemini 4 Carbon", "the schedule tool, CronExpression 3-59/5 * * * *",
-                       "writer Antigravity", "Conversation ID", "writer key gemini", "start no subagent",
-                       "scripts/review-prompt.py", "pushed straight on main", "Milestone gates are capped"):
+                       "writer Antigravity", "Conversation ID", "writer key gemini",
+                       "Three read-only Gemini 4 Hydrogen scouts (rf-scout, rf-log-digest, rf-fact-check in .agents/plugins/rf-scouts/, run through python3 scripts/gemini-scout.py)",
+                       "never delegate", "scripts/review-prompt.py", "pushed straight on main", "Milestone gates are capped"):
             self.assertIn(phrase, prompt)
         for claude_only in ("$CLAUDE_CODE_SESSION_ID", "CronCreate", "writer key claude"):
             self.assertNotIn(claude_only, prompt)
