@@ -68,6 +68,8 @@ The pages, decided here: the published pages `api`, `cli`, `contributing`, `rese
 > **Review:** `docs/reviews/d01-t07-s1.json`
 ## 2. Where the Bytes Go on Screenshots, and Round 1 Planned
 
+> **Started:** 2026-11-12T13:59:09Z
+
 **Origin:** discovered run=32b2775e0d5a 2026-11-12 -- Milestone 9 gate (`D05 T01 §9`): the first round must be routed by a measurement, not guessed; a prerequisite of the gate's planned rounds. This section is not itself a round (`D99 T01 §8`: one round is one follow-up experiment section).
 
 WebP is about 4.7 times smaller on screenshots. Before anything is designed this section measures, on the development set only, where RasterFold's bytes go and which repetition WebP can exploit that method 1 does not. It changes no codec source.
