@@ -5,6 +5,7 @@ import importlib.util
 import io
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -205,6 +206,7 @@ class ReleasePackages(Packages):
     def setUp(self):
         super().setUp()
         (self.root / 'CHANGELOG.md').write_text('# Changelog\n', encoding='utf-8')
+        (self.root / 'PACKAGE.md').write_bytes((REPO / 'PACKAGE.md').read_bytes())
         self.docs = {'docs/index.md': b'# Index\n\n[Usage](usage.md)\n', 'docs/usage.md': b'# Usage\n\n[Licence](../LICENSE)\n'}
         self.state = patch.object(package, 'release_source_state', lambda: (REVISION, EPOCH))
         self.state.start()
@@ -215,7 +217,7 @@ class ReleasePackages(Packages):
 
         def fake_export(revision, dest):
             # The fixture root stands for the committed tree.
-            for name in ('VERSION', 'LICENSE', 'CHANGELOG.md'):
+            for name in ('VERSION', 'LICENSE', 'CHANGELOG.md', 'PACKAGE.md'):
                 (dest / name).write_bytes((self.root / name).read_bytes())
 
         self.export = patch.object(package, 'export_revision', fake_export)
@@ -246,7 +248,8 @@ class ReleasePackages(Packages):
                 infos = z.infolist()
                 names = [i.filename for i in infos]
                 expected = sorted(top + n for n in (*package.target_artifacts(target), 'build.json', 'LICENSE', 'CHANGELOG.md',
-                                                    'docs/index.md', 'docs/usage.md', 'SHA256SUMS'))
+                                                    'README.md', 'docs/index.md', 'docs/usage.md', 'SHA256SUMS'))
+                self.assertEqual(z.read(top + 'README.md'), (REPO / 'PACKAGE.md').read_bytes())
                 self.assertEqual(names, expected)
                 self.assertEqual(names, sorted(names))
                 for info in infos:
@@ -361,6 +364,35 @@ class ReleasePackages(Packages):
                 self.run_release(['linux-x64'])
         self.assertEqual(after, self.dist_snapshot())
 
+    def test_package_quickstart_names_only_what_each_package_holds(self):
+        """PACKAGE.md ships as the package's README.md: every path its commands use exists in the package of the
+        platform the command is written for, and it never points at a checkout-only path."""
+        text = (REPO / 'PACKAGE.md').read_text(encoding='utf-8')
+        for checkout_only in ('bin/linux-x64', 'bin/windows-x64', 'bin\\windows-x64', 'tools/', 'scripts/', 'build/'):
+            self.assertNotIn(checkout_only, text)
+        blocks = re.findall(r'^(?P<lead>[^\n]*)\n\n```(?P<lang>bash|powershell)\n(?P<body>.*?)```', text, re.S | re.M)
+        self.assertGreaterEqual(len(blocks), 8)
+        seen = {target: set() for target in package.TARGETS}
+        for lead, lang, body in blocks:
+            target = 'windows-x64' if lang == 'powershell' else 'linux-x64'
+            self.assertIn('Windows' if target == 'windows-x64' else 'Linux', lead, lead)
+            members = set(package.target_artifacts(target)) | {'SHA256SUMS', 'LICENSE', 'CHANGELOG.md', 'build.json'}
+            for token in re.findall(r'(?<![\w/\\.-])(?:\.[/\\])?((?:bin|lib|include|symbols)[/\\][A-Za-z0-9_.-]+)', body):
+                name = token.replace('\\', '/')
+                self.assertIn(name, members, f'{name} in a {target} command')
+                seen[target].add(name)
+            if 'SHA256SUMS' in body:
+                seen[target].add('SHA256SUMS')
+        self.assertLessEqual({'bin/rasterfold', 'lib/librasterfold.a', 'lib/librasterfold.so', 'SHA256SUMS'}, seen['linux-x64'])
+        self.assertLessEqual({'bin/rasterfold.exe', 'bin/rasterfold.dll', 'lib/librasterfold.dll.a', 'lib/rasterfold.lib', 'SHA256SUMS'}, seen['windows-x64'])
+        # Every command the quickstart shows exists, and every table path is a package path.
+        build_docs = package._load_tool('rf_build_docs_for_quickstart', 'build-docs.py')
+        cli = build_docs.parse_cli_help(REPO, 'src/main.c')
+        commands = {command for command, _ in cli['commands']}
+        used = set(re.findall(r'rasterfold(?:\.exe)? ([a-z]+)', text))
+        self.assertLessEqual(used, commands)
+        self.assertLessEqual({'version', 'encode', 'inspect', 'verify', 'decode', 'help'}, used)
+
     def test_release_runs_are_serialized_and_temporaries_are_exclusive(self):
         self.run_release()
         before = self.dist_snapshot()
@@ -462,6 +494,7 @@ class ReleasePackages(Packages):
             z.extractall(out)
         tree = out / 'rasterfold-1.0.0-linux-x64'
         report = build_docs.check_offline_tree(tree)
+        self.assertTrue((tree / 'README.md').is_file())
         self.assertEqual(len(report['pages']), 16)
         self.assertGreater(report['links'], 30)
         self.assertEqual((report['unresolved'], report['unreachable'], report['leftovers']), ([], [], []))
@@ -474,6 +507,13 @@ class ReleasePackages(Packages):
         self.assertTrue((tree / 'docs/charts/encode-time.svg').is_file())
         self.assertIn(f'https://github.com/rizonesoft/RasterFold/blob/{REVISION}/examples/encode.c', (tree / 'docs/examples.md').read_text(encoding='utf-8'))
         self.assertFalse((tree / 'docs/assets').exists(), 'site-only stylesheets and scripts are not shipped')
+        # The package's README is link-checked too and must lead to the documentation's entry page.
+        readme = (tree / 'README.md').read_text(encoding='utf-8')
+        (tree / 'README.md').write_text(readme.replace('(docs/index.md)', '(docs/start.md)'), encoding='utf-8')
+        no_entry = build_docs.check_offline_tree(tree)
+        self.assertIn('README.md: docs/start.md', no_entry['unresolved'])
+        self.assertIn('README.md: does not link docs/index.md', no_entry['leftovers'])
+        (tree / 'README.md').write_text(readme, encoding='utf-8')
         # The check fails on a tree whose links no longer close.
         (tree / 'docs/cli.md').unlink()
         broken = build_docs.check_offline_tree(tree)

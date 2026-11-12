@@ -3,8 +3,9 @@
 
 Without --release: one development zip per target under build/packages/ (used by CI builds).
 With --release: reproducible release packages under dist/ from a clean, committed source revision:
-dist/rasterfold-<version>-<target>.zip (binaries, libraries, header, symbols, build manifest, LICENSE,
-CHANGELOG.md, offline documentation, and a SHA256SUMS over every other file) and dist/SHA256SUMS over the zips.
+dist/rasterfold-<version>-<target>.zip (binaries, libraries, header, symbols, build manifest, README.md from
+PACKAGE.md, LICENSE, CHANGELOG.md, offline documentation, and a SHA256SUMS over every other file) and
+dist/SHA256SUMS over the zips.
 """
 import argparse
 import hashlib
@@ -143,6 +144,8 @@ def release_members(target: str, version: str, revision: str, docs: dict[str, by
     members['build.json'] = (manifest_bytes, 0o644)
     for doc_name in ('LICENSE', 'CHANGELOG.md'):
         members[doc_name] = (read_snapshot(source_root / doc_name, 'package document'), 0o644)
+    # The package's own first page: how to verify and use what was extracted, with package-relative paths.
+    members['README.md'] = (read_snapshot(source_root / 'PACKAGE.md', 'package quickstart'), 0o644)
     for name, data in docs.items():
         relative = PurePosixPath(name)
         if relative.is_absolute() or '..' in relative.parts or '\\' in name or relative.as_posix() != name:

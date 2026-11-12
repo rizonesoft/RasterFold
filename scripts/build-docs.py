@@ -286,6 +286,7 @@ def map_markdown_urls(text: str, rewrite_url, on_prose_line=None) -> str:
 
 REPOSITORY_URL = 'https://github.com/rizonesoft/RasterFold'
 OFFLINE_ENTRY = 'docs/index.md'
+OFFLINE_README = 'README.md'           # the package's first page (PACKAGE.md in the repository), when present
 # Repository files a release package ships outside docs/, at the same relative path.
 OFFLINE_SHIPPED_FILES = ('LICENSE', 'CHANGELOG.md', 'include/rasterfold.h')
 _OFFLINE_INCLUDE_RE = re.compile(r'\{%\s*include\s+generated/(?P<kind>charts|tables)/(?P<name>[a-z0-9-]+)\.(?P<ext>svg|md)\s*%\}')
@@ -302,12 +303,13 @@ def offline_link_report(files: dict[str, bytes], shipped: tuple[str, ...] = OFFL
     link of every `docs/*.md` page must name a file of the set or a shipped file, and every page must be
     reachable from `docs/index.md` by following links."""
     pages = sorted(name for name in files if name.startswith('docs/') and name.endswith('.md'))
+    checked = pages + ([OFFLINE_README] if OFFLINE_README in files else [])
     known = set(files) | set(shipped)
     counts = {'links': 0}
     unresolved: list[str] = []
-    edges: dict[str, set[str]] = {page: set() for page in pages}
+    edges: dict[str, set[str]] = {page: set() for page in checked}
     leftovers: list[str] = []
-    for page in pages:
+    for page in checked:
         text = files[page].decode('utf-8')
 
         def visit(raw_url: str, page: str = page) -> str:
@@ -332,6 +334,8 @@ def offline_link_report(files: dict[str, bytes], shipped: tuple[str, ...] = OFFL
         map_markdown_urls(text, visit, prose)
         if text.startswith('---\n'):
             leftovers.append(f'{page}: Jekyll front matter left in')
+    if OFFLINE_README in edges and OFFLINE_ENTRY in edges and OFFLINE_ENTRY not in edges[OFFLINE_README]:
+        leftovers.append(f'{OFFLINE_README}: does not link {OFFLINE_ENTRY}')
     reached: set[str] = set()
     todo = [OFFLINE_ENTRY] if OFFLINE_ENTRY in edges else []
     while todo:
