@@ -224,6 +224,15 @@
       "title": "API Reference",
       "nav_order": 15,
       "kind": "generated"
+    },
+    {
+      "id": "cli",
+      "source": "src/main.c",
+      "output": "docs/cli.md",
+      "staged": "cli.md",
+      "title": "Command-Line Reference",
+      "nav_order": 16,
+      "kind": "generated"
     }
   ],
   "assets": [

@@ -42,6 +42,7 @@ FIXTURE_FILES = (
     'docs/usage.md',
     'docs/c-api.md',
     'docs/api.md',
+    'docs/cli.md',
     'docs/format.md',
     'docs/examples.md',
     'docs/benchmarks.md',
@@ -74,6 +75,7 @@ FIXTURE_FILES = (
     'src/sys.c',
     'src/sys_posix.c',
     'src/rasterfold.def',
+    'src/main.c',
     'examples/encode.c',
     'examples/decode.c',
     'examples/ppm.h',
@@ -244,6 +246,67 @@ class DocsMapTests(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding='utf-8', newline='\n')
 
+    def test_cli_reference_content_and_parser_refusals(self) -> None:
+        meta = {'source': 'src/main.c', 'title': 'Command-Line Reference', 'nav_order': 16}
+        cli = build_docs.parse_cli_help(REPO, 'src/main.c')
+        page = build_docs.render_cli_page(REPO, meta)
+        self.assertEqual([c for c, _ in cli['commands']], ['encode', 'decode', 'inspect', 'verify', 'help', 'version'])
+        self.assertNotIn('\r', page)
+        self.assertIn('title: "Command-Line Reference"', page)
+        self.assertIn('## Summary\n\n```text\n' + cli['summary'] + '```\n', page)
+        for command, body in cli['commands']:
+            self.assertIn(f'## `rasterfold {command}`\n\n```text\n{body}```\n', page)
+            self.assertTrue(body.startswith(f'usage: rasterfold {command}'), command)
+            self.assertIn('exit codes:', body)
+            self.assertIn(f'example: rasterfold {command}', body)
+            self.assertTrue(body.endswith('\n') and '\n\n' not in body, command)
+        # The corrected overwrite wording: refusal is the default, the option the exception, and usage shows it.
+        for command in ('encode', 'decode'):
+            body = dict(cli['commands'])[command]
+            self.assertIn('[--overwrite]', body.splitlines()[0])
+            self.assertIn('An existing output file is refused unless --overwrite is given.', body)
+            self.assertNotIn('must not already exist', body)
+            self.assertIn(f'  rasterfold {command} [--time] [--threads N] [--overwrite] ', cli['summary'])
+        # The committed page is exactly what the generator renders from the registered entry.
+        entry = next(pg for pg in json.loads((REPO / 'docs/site-content.json').read_text(encoding='utf-8'))['pages'] if pg['id'] == 'cli')
+        self.assertEqual((entry['source'], entry['output'], entry['kind'], entry['staged']), ('src/main.c', 'docs/cli.md', 'generated', 'cli.md'))
+        self.assertEqual(build_docs.render_cli_page(REPO, entry), (REPO / 'docs/cli.md').read_text(encoding='utf-8'))
+
+        source = (self.root / 'src/main.c').read_text(encoding='utf-8')
+
+        def refuses(mutate, pattern):
+            mutated = mutate(source)
+            self.assertNotEqual(mutated, source, pattern)
+            self.write('src/main.c', mutated)
+            with self.assertRaisesRegex(ValueError, pattern):
+                build_docs.render_cli_page(self.root, meta)
+            self.write('src/main.c', source)
+
+        verify_line = '    "usage: rasterfold verify [--threads N] input.fold" RF_EOL\n'
+        self.assertIn(verify_line, source)
+        # Another macro, or an identifier concatenated into the text, is not something the parser understands.
+        refuses(lambda s: s.replace(verify_line, '    "usage: rasterfold verify [--threads N] input.fold" RF_CRLF\n'), 'unsupported initializer token')
+        refuses(lambda s: s.replace(verify_line, '    "usage: rasterfold verify " THREADS_HELP " input.fold" RF_EOL\n'), 'unsupported initializer token')
+        refuses(lambda s: s.replace('RF_EOL\n    "example: rasterfold verify', 'RF_EOLX\n    "example: rasterfold verify'), 'unsupported initializer token')
+        # Only the two escapes help text needs are accepted.
+        refuses(lambda s: s.replace(verify_line, '    "usage: rasterfold verify [--threads N] input.fold\\n"\n'), 'unsupported escape')
+        refuses(lambda s: s.replace(verify_line, '    "usage: rasterfold verify [--threads N] input.fold RF_EOL\n'), 'unterminated string literal')
+        # A help block that vanished, lost its terminator, or is never printed.
+        refuses(lambda s: s.replace('static const char help_verify[] =', 'static const char help_verify_old[] ='), 'expected exactly one|never printed')
+        refuses(lambda s: s.replace('static const char usage_text[] =', 'static const char usage_words[] ='), 'expected exactly one `static const char usage_text')
+        refuses(lambda s: s.replace('    "example: rasterfold version" RF_EOL;', '    "example: rasterfold version" RF_EOL') + '\n', 'unsupported initializer token|no terminating')
+        refuses(lambda s: s.replace('static const char help_version[] =', 'static const char help_unused[] =\n    "usage: rasterfold unused" RF_EOL;\n\nstatic const char help_version[] ='), 'never printed by `help <command>`: help_unused')
+        # The dispatcher and the text must agree.
+        refuses(lambda s: s.replace('rf_print(0, help_verify);', 'rf_print(0, help_inspect);'), 'prints help_inspect, expected help_verify')
+        refuses(lambda s: s.replace(verify_line, '    "Usage of verify" RF_EOL\n'), 'does not start with its usage line')
+        refuses(lambda s: s.replace('    "  rasterfold verify [--threads N] input.fold" RF_EOL\n', ''), 'usage_text has no usage line for verify')
+        refuses(lambda s: s.replace('    "example: rasterfold verify photo.fold" RF_EOL;', '    "example: rasterfold verify photo.fold";'), 'does not end with RF_EOL')
+        # The escapes it does accept decode to the character.
+        escaped = source.replace(verify_line, '    "usage: rasterfold verify [--threads N] \\"in\\\\put\\".fold" RF_EOL\n')
+        self.write('src/main.c', escaped)
+        self.assertIn('usage: rasterfold verify [--threads N] "in\\put".fold\n', build_docs.render_cli_page(self.root, meta))
+        self.write('src/main.c', source)
+
     def test_api_reference_content_and_parser_refusals(self) -> None:
         api = build_docs.parse_api_header(REPO, 'include/rasterfold.h', 'src/rasterfold.def')
         page = build_docs.render_api_page(REPO, {'source': 'include/rasterfold.h', 'title': 'API Reference', 'nav_order': 15})
@@ -323,6 +386,7 @@ class DocsMapTests(unittest.TestCase):
             'security': ('SECURITY.md', 'docs/security.md', 'mirrored'),
             'licenses': ('docs/licenses.md', None, 'authored'),
             'api': ('include/rasterfold.h', 'docs/api.md', 'generated'),
+            'cli': ('src/main.c', 'docs/cli.md', 'generated'),
         }
         drift_manifest = json.loads((REPO / 'docs/drift.json').read_text(encoding='utf-8'))
         build_docs_gen = next(g for g in drift_manifest['generators'] if g['script'] == 'scripts/build-docs.py')
@@ -650,6 +714,7 @@ class DocsMapTests(unittest.TestCase):
         }
         self.assertEqual(expected_urls, indexed_urls)
         self.assertIn('/RasterFold/api.html', indexed_urls)
+        self.assertIn('/RasterFold/cli.html', indexed_urls)
         self.assertNotIn('/RasterFold/404.html', indexed_urls)
         for url in indexed_urls:
             self.assertTrue(url.startswith('/RasterFold/'), url)

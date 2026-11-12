@@ -13,7 +13,7 @@ This guide provides working command-line and C library examples for the currentl
 
 ## Command-Line Examples
 
-All CLI commands refuse to overwrite an existing output path and produce identical `.fold` bytes across thread counts (`--threads 1` through `--threads 9`).
+`encode` and `decode` refuse an existing output path unless `--overwrite` is given, and produce identical `.fold` bytes across thread counts (`--threads 1` through `--threads 9`).
 
 ### Linux or WSL x64
 

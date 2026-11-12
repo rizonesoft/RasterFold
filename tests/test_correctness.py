@@ -187,6 +187,35 @@ def known_answer() -> None:
     check("method: palette" in insp_m2 and "palette_colours: 4" in insp_m2, f"method 2 inspect output missing palette fields: {insp_m2}")
 
 
+def cli_reference() -> None:
+    """The generated command-line reference (docs/cli.md) is what this binary prints: the generator reads the help
+    constants of src/main.c, and this case holds the built target's `help` and `help <command>` output to that
+    extraction, byte for byte once CRLF is read as LF (the Windows target prints CRLF)."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("build_docs", ROOT / "scripts" / "build-docs.py")
+    assert spec is not None and spec.loader is not None
+    build_docs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(build_docs)
+    cli = build_docs.parse_cli_help(ROOT, "src/main.c")
+
+    def printed(args: list[str]) -> str:
+        return expect_ok(args).stdout.decode("utf-8").replace("\r\n", "\n")
+
+    check(printed(["help"]) == cli["summary"], "`help` output differs from the generator's summary")
+    check(printed(["--help"]) == cli["summary"], "`--help` output differs from the generator's summary")
+    commands = [command for command, _ in cli["commands"]]
+    check(commands == ["encode", "decode", "inspect", "verify", "help", "version"], f"unexpected command list: {commands}")
+    for command, body in cli["commands"]:
+        check(printed(["help", command]) == body, f"`help {command}` output differs from the generator's extraction")
+        check(f"  rasterfold {command}" in cli["summary"], f"summary has no usage line for {command}")
+    page = (ROOT / "docs" / "cli.md").read_text(encoding="utf-8")
+    entry = next(pg for pg in json.loads((ROOT / "docs" / "site-content.json").read_text(encoding="utf-8"))["pages"] if pg["id"] == "cli")
+    check(build_docs.render_cli_page(ROOT, entry) == page, "docs/cli.md is not what the generator renders; run python3 scripts/build-docs.py --write")
+    for command, body in cli["commands"]:
+        check(body in page, f"docs/cli.md does not carry `help {command}` verbatim")
+
+
 def solid(w: int, h: int, color: tuple[int, int, int]) -> bytes:
     return bytes(color) * (w * h)
 
@@ -1641,7 +1670,11 @@ def cli_commands() -> None:
     for args, text in [
         (["help"], b"verify"),
         (["--help"], b"verify"),
-        (["help", "encode"], b"rasterfold encode"),
+        (["help", "encode"], b"usage: rasterfold encode [--time] [--threads N] [--overwrite] input.bmp|input.png|input.ppm output.fold"),
+        (["help", "encode"], b"An existing output file is refused unless --overwrite is given."),
+        (["help", "decode"], b"usage: rasterfold decode [--time] [--threads N] [--overwrite] input.fold output.bmp|output.png|output.ppm"),
+        (["help", "decode"], b"An existing output file is refused unless --overwrite is given."),
+        (["help"], b"  rasterfold encode [--time] [--threads N] [--overwrite] input.bmp|input.png|input.ppm output.fold"),
         (["help", "verify"], b"CRC32 of the decoded pixels"),
         (["version"], b"api version: 1.0"),
         (["--version"], b"format version written: 3"),
@@ -2165,6 +2198,7 @@ def main() -> int:
     WORK.mkdir(parents=True, exist_ok=True)
     case("oracle", oracle_self_check)
     case("cli-commands", cli_commands)
+    case("cli-reference", cli_reference)
     case("png-io", png_io)
     case("ppm-io", ppm_io)
     case("overwrite-io", overwrite_io)

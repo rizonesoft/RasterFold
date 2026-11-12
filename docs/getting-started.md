@@ -45,7 +45,7 @@ bin/linux-x64/bin/rasterfold inspect build/sample.fold
 bin/linux-x64/bin/rasterfold decode --time build/sample.fold build/restored.bmp
 ```
 
-On Windows x64, use `bin\windows-x64\bin\rasterfold.exe`. The CLI refuses to overwrite an existing destination file, writes to an exclusive `.partial` sibling first, flushes it, and publishes atomically without replacement.
+On Windows x64, use `bin\windows-x64\bin\rasterfold.exe`. By default the CLI refuses an existing destination file: it writes to an exclusive `.partial` sibling first, flushes it, and publishes atomically without replacement. `--overwrite` on `encode` or `decode` replaces an existing destination instead, through the same `.partial` file. The [Command-Line Reference](cli.md) lists every command and option.
 
 ## 3. Exit Codes
 

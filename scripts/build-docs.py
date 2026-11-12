@@ -30,6 +30,7 @@ REQUIRED_PAGE_IDS = (
     'usage',
     'c-api',
     'api',
+    'cli',
     'format',
     'examples',
     'benchmarks',
@@ -513,6 +514,100 @@ def render_api_page(root: Path, page_meta: dict) -> str:
     out.append('## Constants\n')
     for const in api['constants']:
         out.append(f'### `{const["name"]}`\n\n```c\n#define {const["name"]} {const["value"]}\n```\n\n{const["doc"]}\n')
+    return _mirrored_front_matter(page_meta) + '\n'.join(out)
+
+
+_C_HELP_DECL_RE = re.compile(r'^static const char (?P<name>[A-Za-z_][A-Za-z0-9_]*)\[\] =', re.M)
+_C_HELP_DISPATCH_RE = re.compile(r'wide_eq\(pos\[1\], "(?P<command>[a-z]+)"\)\) rf_print\(0, (?P<name>help_[a-z]+)\);')
+
+
+def extract_c_help_constant(text: str, name: str, source_rel: str) -> str:
+    """The value of `static const char <name>[] = ...;` in a C source, with `RF_EOL` read as one LF.
+
+    The initializer may hold only double-quoted string literals and the `RF_EOL` token; a literal may hold
+    only the escapes `\\"` and `\\\\`. Anything else is refused, so an initializer this parser does not
+    fully understand can never become part of the reference."""
+    decls = [m for m in _C_HELP_DECL_RE.finditer(text) if m.group('name') == name]
+    if len(decls) != 1:
+        raise ValueError(f'{source_rel}: expected exactly one `static const char {name}[] =`, found {len(decls)}')
+    pos = decls[0].end()
+    out: list[str] = []
+    while True:
+        while pos < len(text) and text[pos] in ' \t\r\n':
+            pos += 1
+        if pos >= len(text):
+            raise ValueError(f'{source_rel}: {name}: initializer has no terminating `;`')
+        ch = text[pos]
+        if ch == ';':
+            break
+        if ch == '"':
+            pos += 1
+            while True:
+                if pos >= len(text) or text[pos] == '\n':
+                    raise ValueError(f'{source_rel}: {name}: unterminated string literal')
+                c = text[pos]
+                if c == '"':
+                    pos += 1
+                    break
+                if c == '\\':
+                    nxt = text[pos + 1] if pos + 1 < len(text) else ''
+                    if nxt not in ('"', '\\'):
+                        raise ValueError(f'{source_rel}: {name}: unsupported escape \\{nxt} in a help string')
+                    out.append(nxt)
+                    pos += 2
+                    continue
+                out.append(c)
+                pos += 1
+            continue
+        if text.startswith('RF_EOL', pos) and not (text[pos + 6:pos + 7].isalnum() or text[pos + 6:pos + 7] == '_'):
+            out.append('\n')
+            pos += 6
+            continue
+        token = re.match(r'\S+', text[pos:])
+        raise ValueError(f'{source_rel}: {name}: unsupported initializer token {token.group(0) if token else text[pos]!r}')
+    value = ''.join(out)
+    if not value or not value.endswith('\n'):
+        raise ValueError(f'{source_rel}: {name}: help text is empty or does not end with RF_EOL')
+    return value
+
+
+def parse_cli_help(root: Path, source_rel: str) -> dict:
+    """The command summary and every command's help text, in the order the `help` dispatcher names them."""
+    text = safe_repo_path(root, source_rel).read_text(encoding='utf-8')
+    dispatched = [(m.group('command'), m.group('name')) for m in _C_HELP_DISPATCH_RE.finditer(text)]
+    if not dispatched:
+        raise ValueError(f'{source_rel}: no `help <command>` dispatch found')
+    for command, name in dispatched:
+        if name != f'help_{command}':
+            raise ValueError(f'{source_rel}: `help {command}` prints {name}, expected help_{command}')
+    commands = [command for command, _ in dispatched]
+    if len(set(commands)) != len(commands):
+        raise ValueError(f'{source_rel}: a command is dispatched twice by `help`')
+    declared = {m.group('name') for m in _C_HELP_DECL_RE.finditer(text) if m.group('name').startswith('help_')}
+    orphans = sorted(declared - {name for _, name in dispatched})
+    if orphans:
+        raise ValueError(f'{source_rel}: help text never printed by `help <command>`: {", ".join(orphans)}')
+    summary = extract_c_help_constant(text, 'usage_text', source_rel)
+    helps = [(command, extract_c_help_constant(text, name, source_rel)) for command, name in dispatched]
+    for command, body in helps:
+        if not body.startswith(f'usage: rasterfold {command}'):
+            raise ValueError(f'{source_rel}: help_{command} does not start with its usage line')
+        if f'  rasterfold {command}' not in summary:
+            raise ValueError(f'{source_rel}: usage_text has no usage line for {command}')
+    return {'summary': summary, 'commands': helps}
+
+
+def render_cli_page(root: Path, page_meta: dict) -> str:
+    cli = parse_cli_help(root, page_meta['source'])
+    out = [
+        '# Command-Line Reference\n\n'
+        'Every block on this page is text the program prints, taken from its source, so the page cannot describe '
+        'a command or an option that `rasterfold` does not have. `rasterfold help` prints the summary and '
+        '`rasterfold help <command>` prints one command.\n',
+        '## Summary\n\n```text\n' + cli['summary'] + '```\n',
+    ]
+    for command, body in cli['commands']:
+        out.append(f'## `rasterfold {command}`\n\n```text\n{body}```\n')
     return _mirrored_front_matter(page_meta) + '\n'.join(out)
 
 
@@ -1877,6 +1972,7 @@ def render_generated_pages(root: Path, site_content: dict | None = None) -> dict
     }
     generated_renderers = {
         'api': render_api_page,
+        'cli': render_cli_page,
     }
     mirrored_map = {
         **DEFAULT_MIRRORED_MAP,

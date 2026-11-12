@@ -331,7 +331,7 @@
     "cmd_encode": {
       "kind": "regex",
       "source": "src/main.c",
-      "pattern": "^    \"  rasterfold (encode) \\[--time\\] \\[--threads N\\] input\\.bmp\\|input\\.png\\|input\\.ppm output\\.fold\" RF_EOL$",
+      "pattern": "^    \"  rasterfold (encode) \\[--time\\] \\[--threads N\\] \\[--overwrite\\] input\\.bmp\\|input\\.png\\|input\\.ppm output\\.fold\" RF_EOL$",
       "also_match": [
         {
           "source": "src/main.c",
@@ -342,7 +342,7 @@
     "cmd_decode": {
       "kind": "regex",
       "source": "src/main.c",
-      "pattern": "^    \"  rasterfold (decode) \\[--time\\] \\[--threads N\\] input\\.fold output\\.bmp\\|output\\.png\\|output\\.ppm\" RF_EOL$",
+      "pattern": "^    \"  rasterfold (decode) \\[--time\\] \\[--threads N\\] \\[--overwrite\\] input\\.fold output\\.bmp\\|output\\.png\\|output\\.ppm\" RF_EOL$",
       "also_match": [
         {
           "source": "src/main.c",
@@ -364,22 +364,22 @@
     "input_image_ext": {
       "kind": "regex",
       "source": "src/main.c",
-      "pattern": "^    \"  rasterfold encode \\[--time\\] \\[--threads N\\] input(\\.bmp)\\|input\\.png\\|input\\.ppm output\\.fold\" RF_EOL$",
+      "pattern": "^    \"  rasterfold encode \\[--time\\] \\[--threads N\\] \\[--overwrite\\] input(\\.bmp)\\|input\\.png\\|input\\.ppm output\\.fold\" RF_EOL$",
       "also_match": [
         {
           "source": "src/main.c",
-          "pattern": "^    \"  rasterfold decode \\[--time\\] \\[--threads N\\] input\\.fold output(\\.bmp)\\|output\\.png\\|output\\.ppm\" RF_EOL$"
+          "pattern": "^    \"  rasterfold decode \\[--time\\] \\[--threads N\\] \\[--overwrite\\] input\\.fold output(\\.bmp)\\|output\\.png\\|output\\.ppm\" RF_EOL$"
         }
       ]
     },
     "encoded_ext": {
       "kind": "regex",
       "source": "src/main.c",
-      "pattern": "^    \"  rasterfold encode \\[--time\\] \\[--threads N\\] input\\.bmp\\|input\\.png\\|input\\.ppm output(\\.fold)\" RF_EOL$",
+      "pattern": "^    \"  rasterfold encode \\[--time\\] \\[--threads N\\] \\[--overwrite\\] input\\.bmp\\|input\\.png\\|input\\.ppm output(\\.fold)\" RF_EOL$",
       "also_match": [
         {
           "source": "src/main.c",
-          "pattern": "^    \"  rasterfold decode \\[--time\\] \\[--threads N\\] input(\\.fold) output\\.bmp\\|output\\.png\\|output\\.ppm\" RF_EOL$"
+          "pattern": "^    \"  rasterfold decode \\[--time\\] \\[--threads N\\] \\[--overwrite\\] input(\\.fold) output\\.bmp\\|output\\.png\\|output\\.ppm\" RF_EOL$"
         },
         {
           "source": "src/main.c",
@@ -1551,15 +1551,15 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "Re-read 2026-11-12: scripts/check-all.py gained one gate (research tool tests, tests/test_research_refs.py); this document names the command python3 scripts/check-all.py --all-targets in its build-and-check example without listing or counting the gates, so its text still holds",
+      "evidence": "Re-read 2026-11-12 for D08 T03 section 1 (the generated Command-Line Reference and the corrected help text: encode and decode usage now shows [--overwrite] and says an existing output is refused unless --overwrite is given): the Careful file handling bullet said the CLI refuses existing destinations without qualification; it now says by default and names --overwrite, matching help encode and help decode in src/main.c; the encode, decode and inspect example commands are unchanged",
       "sources": {
         "include/rasterfold.h": "228c6bf718c525b2311df99746d55e5861209f2ea0dec65e299b6ec0e6f126c7",
         "src/rf.h": "429414fd9303e0bd47d0ee05fca037e043c68c7d79f0f9435174c4e723e03f83",
-        "src/main.c": "0efe61764e8650b32a59a181defce79a30921c8273da7251a434be123ca13040",
+        "src/main.c": "ec81bb32213bb7c8833860efb6ba7b8ab1512580fc1e380d6e564972324f7121",
         "scripts/build.py": "488c7f8808e6bef7be095b5aa24fced856aab20ef6757548ac7f32e08021ad91",
         "scripts/package.py": "675a699eb05b8a26f0384dac80a2b03ad1f7ad8892dedd689ee363861efb5b83",
         "scripts/check-all.py": "ec0f58046fb6beb5e9b522530aa51a4e3eff03bd546a17a09db53e53ca8a5e9a",
-        "README.md": "060ed08e6a4ddc6fa13b2d965d5cc79facbbb0cb2557db552efef4c3334301fe",
+        "README.md": "3ed74df2f748338d59eaf36ca338206646ef4136f33e94d72b25f21d459bca45",
         "AGENTS.md": "8a6e2a7cfcfb59130c1ab67ce1b621a8960b7dad415d91ff439d720f5dceba9c",
         ".conclave/reviewers.toml": "a95be5634bda979837450696840208f1271598d50c9b116471cd9467720e8358",
         "scripts/review-dispatch.py": "2654d267280865455202f58ff0309a6e01e6ab42b07734d8fa04943662f90632"
@@ -1622,18 +1622,18 @@
       }
     },
     "docs/index.md": {
-      "evidence": "Re-read 2026-11-12 for method 4 (compact palette, D01 T06 section 8), which changed src/pal.c, src/rc.h, src/rf.h, src/fold.c, src/main.c, include/rasterfold.h and research/bench.c: the page lists the CLI commands encode, decode and inspect and links the format page; it names no method number, and the generated format page (docs/format.md) carries the method 4 section",
+      "evidence": "Re-read 2026-11-12 for D08 T03 section 1 (the generated Command-Line Reference and the corrected help text: encode and decode usage now shows [--overwrite] and says an existing output is refused unless --overwrite is given): the page list gains the Command-Line Reference entry next to the API Reference, matching the new cli entry in docs/site-content.json; the CLI command facts on this page (encode, decode, inspect) still match src/main.c",
       "sources": {
         "include/rasterfold.h": "228c6bf718c525b2311df99746d55e5861209f2ea0dec65e299b6ec0e6f126c7",
         "src/rf.h": "429414fd9303e0bd47d0ee05fca037e043c68c7d79f0f9435174c4e723e03f83",
-        "src/main.c": "0efe61764e8650b32a59a181defce79a30921c8273da7251a434be123ca13040",
-        "docs/site-content.json": "b96463cde4f9b48008f95150e1e4e90695cd920d17a106a92bf513e71e008400",
-        "docs/index.md": "85bc66c07b98aed2d2ad09f98dee6d628b3d6c52cc1b87d55dd2970cb1df2852"
+        "src/main.c": "ec81bb32213bb7c8833860efb6ba7b8ab1512580fc1e380d6e564972324f7121",
+        "docs/site-content.json": "52117cfce3d60a63965f8588389ad27c5258e7b07e031e3f976008349a710c00",
+        "docs/index.md": "73aff59e901348f35796811ec5b134dac8b68cfc342dce68febee4ab43dd5e99"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/index.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/getting-started.md": {
-      "evidence": "Re-read 2026-11-12: scripts/check-all.py gained one gate (research tool tests, tests/test_research_refs.py); this document names the command python3 scripts/check-all.py --all-targets as a setup step without listing or counting the gates, so its text still holds",
+      "evidence": "Re-read 2026-11-12 for D08 T03 section 1 (the generated Command-Line Reference and the corrected help text: encode and decode usage now shows [--overwrite] and says an existing output is refused unless --overwrite is given): the walkthrough's sentence on destinations now states the default refusal, the .partial publication, and --overwrite, and links the Command-Line Reference (cli.md, which the site now publishes); commands and exit-code table are unchanged and match src/main.c",
       "sources": {
         "toolchain.json": "fd7b0b2424a2ffdb86095da76e4b975d604741fb271fd9b70e4c53efe9f5e3de",
         "tools/provision.py": "dc5fb84c125ea3735ca425e91d084d04297d772cee4e3609417aa11c66ad0c3b",
@@ -1642,8 +1642,8 @@
         "scripts/check-all.py": "ec0f58046fb6beb5e9b522530aa51a4e3eff03bd546a17a09db53e53ca8a5e9a",
         "scripts/check-all.ps1": "7006b1871b52689461497fa676b3cb6472f0e436c9c5e240deb9da069321a528",
         "include/rasterfold.h": "228c6bf718c525b2311df99746d55e5861209f2ea0dec65e299b6ec0e6f126c7",
-        "src/main.c": "0efe61764e8650b32a59a181defce79a30921c8273da7251a434be123ca13040",
-        "docs/getting-started.md": "a61af035a1c9758b7feab276f8180b3cb670ebdd2c3b0dbaca05edaf09481c50"
+        "src/main.c": "ec81bb32213bb7c8833860efb6ba7b8ab1512580fc1e380d6e564972324f7121",
+        "docs/getting-started.md": "3f0f0b393d9410092bbfabd7faf8ad2d8ab33811a8a12b6ccf9762c6600e4fcc"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/getting-started.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
@@ -1669,11 +1669,11 @@
       }
     },
     "docs/README.md": {
-      "evidence": "Re-read 2026-11-11 for the removal of Android from the repository: scripts/build.py and scripts/package.py define only windows-x64 and linux-x64, toolchain.json has no NDK pin or android block, scripts/check-all.py --all-targets adds the Windows target only, and AGENTS.md, README.md and docs/_config.yml name Windows and Linux; this document's target lists, build commands, toolchain and platform statements were checked against those sources and it makes no Android statement",
+      "evidence": "Re-read 2026-11-12: docs/site-content.json gained the generated page cli and scripts/build-docs.py gained parse_cli_help and render_cli_page; this document describes the staging allowlist, the generator and the Pages workflow in general terms without listing pages or renderers, and each statement still holds for the 16-page site",
       "sources": {
         "docs/_config.yml": "676777a86aadacf7e23cd133f97cd97b494a2f2d96fb2a92e875399fda852581",
-        "docs/site-content.json": "b96463cde4f9b48008f95150e1e4e90695cd920d17a106a92bf513e71e008400",
-        "scripts/build-docs.py": "ae0c84b7bff2dfc8fc1b21afa9f051bd87a461649648ee0c5c904675bd88b518",
+        "docs/site-content.json": "52117cfce3d60a63965f8588389ad27c5258e7b07e031e3f976008349a710c00",
+        "scripts/build-docs.py": "af0657a04e5c279a256963ce1d0330219ec7e50868219aeab66d6679a03fb83c",
         "docs/README.md": "35dddde5d7cbf1f7353813bebd7272749de00d2f705fc277cd4b51cb7b8189a0"
       }
     },
@@ -1729,44 +1729,44 @@
       }
     },
     "docs/examples.md": {
-      "evidence": "Re-read 2026-11-12 for method 4 (compact palette, D01 T06 section 8), which changed src/pal.c, src/rc.h, src/rf.h, src/fold.c, src/main.c, include/rasterfold.h and research/bench.c: the CLI examples (encode, inspect --time, decode) and the rf_inspect example that reads info.method are unchanged in syntax and meaning; info.method can now be 4, which the example does not enumerate, and include/rasterfold.h documents the new value",
+      "evidence": "Re-read 2026-11-12 for D08 T03 section 1 (the generated Command-Line Reference and the corrected help text: encode and decode usage now shows [--overwrite] and says an existing output is refused unless --overwrite is given): the sentence that every CLI command refuses an existing output path now says encode and decode refuse one unless --overwrite is given; the example commands use fresh output paths and are unchanged",
       "sources": {
         "include/rasterfold.h": "228c6bf718c525b2311df99746d55e5861209f2ea0dec65e299b6ec0e6f126c7",
-        "src/main.c": "0efe61764e8650b32a59a181defce79a30921c8273da7251a434be123ca13040",
+        "src/main.c": "ec81bb32213bb7c8833860efb6ba7b8ab1512580fc1e380d6e564972324f7121",
         "examples/encode.c": "546d3a2b5932008bcf46dce5e1b0f5ef04b3b8d4405cbb5b66ad909a7a844e66",
         "examples/decode.c": "2983d63583c0424f558b67224a2438e8eea495505eef61f5477bf2ff81f246b8",
         "examples/ppm.h": "9683267ff2b024b14570548e94cfbc0acced5cd7ecd8eba2dab5c69b6677abf6",
-        "docs/examples.md": "fa27bd1ea6314bb29a0ab6035e732c68cb38e84887e8fecca1f9822832d2dbb5"
+        "docs/examples.md": "55badc4f32189611532afbca81cf84df87b3167825c79d67c58fb2ddd00602d4"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/examples.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/limitations.md": {
-      "evidence": "Re-read 2026-11-12 for method 4 (compact palette, D01 T06 section 8), which changed src/pal.c, src/rc.h, src/rf.h, src/fold.c, src/main.c, include/rasterfold.h and research/bench.c: searched for method and palette: the only palette hit is the BMP-with-palette refusal, an input-format limit the port did not touch; header size 32, pixel format and size limits are unchanged, and method 4 adds no new limitation (still at most 256 colours)",
+      "evidence": "Re-read 2026-11-12 for D08 T03 section 1 (the generated Command-Line Reference and the corrected help text: encode and decode usage now shows [--overwrite] and says an existing output is refused unless --overwrite is given): the Planned bullet no longer lists the script-generated CLI and API references as planned: both are published (docs/api.md, docs/cli.md) and the bullet says so; the converter remains planned; no limit stated on this page depends on the help text",
       "sources": {
         "include/rasterfold.h": "228c6bf718c525b2311df99746d55e5861209f2ea0dec65e299b6ec0e6f126c7",
         "src/rf.h": "429414fd9303e0bd47d0ee05fca037e043c68c7d79f0f9435174c4e723e03f83",
-        "src/main.c": "0efe61764e8650b32a59a181defce79a30921c8273da7251a434be123ca13040",
+        "src/main.c": "ec81bb32213bb7c8833860efb6ba7b8ab1512580fc1e380d6e564972324f7121",
         "src/fold.c": "a078bb3e78d8837bbd079f9558face4df6e11ad8f3a7016653bc3a928e235e74",
         "src/bmp.c": "50278e51120542ec686aee00385eba666239070533035e5d04e7d659b118317c",
         "src/api.c": "774c4e0a2a22f5a01e174e541cd1e725da05019ece20927345938cbe10fe0f02",
         "src/sys_posix.c": "dd65833094db53eedc06d917f0d3b6fefcb402414e20878503cf36341601f9fd",
-        "docs/limitations.md": "cb6fd4baac7eac3531e74deebe3dd2b0691a99d8723377257de4d68d06bfee03"
+        "docs/limitations.md": "53bf875b081471d6cea9f4569c41ac6a8b441f54f95c6fb22a91c30955fe8b16"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/limitations.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/troubleshooting.md": {
-      "evidence": "Re-read 2026-11-12 for method 4 (compact palette, D01 T06 section 8), which changed src/pal.c, src/rc.h, src/rf.h, src/fold.c, src/main.c, include/rasterfold.h and research/bench.c: the unsupported-method diagnostic now lists method 4 compact palette as accepted in version 3 files only, matching parse_fold in src/fold.c; the malformed list already names invalid fold: palette and invalid fold: palette stream, the two messages method 4's refusals use (asserted in tests/test_correctness.py palette-method4); duplicate palette colour remains for methods 2 and 3",
+      "evidence": "Re-read 2026-11-12 for D08 T03 section 1 (the generated Command-Line Reference and the corrected help text: encode and decode usage now shows [--overwrite] and says an existing output is refused unless --overwrite is given): the output file already exists diagnostic now says the refusal is the default and names --overwrite on encode or decode as the way to replace a file, matching src/main.c; exit codes and the other diagnostics are unchanged",
       "sources": {
         "include/rasterfold.h": "228c6bf718c525b2311df99746d55e5861209f2ea0dec65e299b6ec0e6f126c7",
         "src/rf.h": "429414fd9303e0bd47d0ee05fca037e043c68c7d79f0f9435174c4e723e03f83",
-        "src/main.c": "0efe61764e8650b32a59a181defce79a30921c8273da7251a434be123ca13040",
+        "src/main.c": "ec81bb32213bb7c8833860efb6ba7b8ab1512580fc1e380d6e564972324f7121",
         "src/fold.c": "a078bb3e78d8837bbd079f9558face4df6e11ad8f3a7016653bc3a928e235e74",
         "src/bmp.c": "50278e51120542ec686aee00385eba666239070533035e5d04e7d659b118317c",
         "src/api.c": "774c4e0a2a22f5a01e174e541cd1e725da05019ece20927345938cbe10fe0f02",
         "src/sys_posix.c": "dd65833094db53eedc06d917f0d3b6fefcb402414e20878503cf36341601f9fd",
         "tools/provision.py": "dc5fb84c125ea3735ca425e91d084d04297d772cee4e3609417aa11c66ad0c3b",
         "tools/provision.ps1": "7b7ce12f1aede008be98478d7b95fbf6601737356baa62277c0d9217ff3e5e40",
-        "docs/troubleshooting.md": "2e7a17dc1826e9713ca79cd677e4f0c48e6d75a32b89068bc355b22582def314"
+        "docs/troubleshooting.md": "4e6f16096e10378f482662cac172fe9fd507f4045cf7109ce6b1ee86d1229010"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/troubleshooting.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
@@ -1784,15 +1784,15 @@
       }
     },
     "docs/404.md": {
-      "evidence": "Re-read 2026-11-11 for the removal of Android from the repository: scripts/build.py and scripts/package.py define only windows-x64 and linux-x64, toolchain.json has no NDK pin or android block, scripts/check-all.py --all-targets adds the Windows target only, and AGENTS.md, README.md and docs/_config.yml name Windows and Linux; this document's target lists, build commands, toolchain and platform statements were checked against those sources and it makes no Android statement",
+      "evidence": "Re-read 2026-11-12: docs/site-content.json gained the generated page cli (docs/cli.md, nav_order 16); this page's short list of starting points links pages that still exist at the same paths and does not claim to be complete, so nothing in it changed",
       "sources": {
-        "docs/site-content.json": "b96463cde4f9b48008f95150e1e4e90695cd920d17a106a92bf513e71e008400",
+        "docs/site-content.json": "52117cfce3d60a63965f8588389ad27c5258e7b07e031e3f976008349a710c00",
         "docs/_config.yml": "676777a86aadacf7e23cd133f97cd97b494a2f2d96fb2a92e875399fda852581",
         "docs/404.md": "3089c9fb995df813bcba190ebf5f203575a83bf729c3860e7f4da34ec6966417"
       }
     },
     "docs/site-validation.md": {
-      "evidence": "Re-read 2026-11-11 for the removal of Android from the repository: scripts/build.py and scripts/package.py define only windows-x64 and linux-x64, toolchain.json has no NDK pin or android block, scripts/check-all.py --all-targets adds the Windows target only, and AGENTS.md, README.md and docs/_config.yml name Windows and Linux; this document's target lists, build commands, toolchain and platform statements were checked against those sources and it makes no Android statement",
+      "evidence": "Re-read 2026-11-12: docs/site-content.json gained a 16th page (cli); this record of the 14-page site's browser validation gains a dated addendum saying so, on the same terms as the 2026-11-09 addendum for the API Reference, and its measured figures are left as recorded",
       "sources": {
         "docs/_config.yml": "676777a86aadacf7e23cd133f97cd97b494a2f2d96fb2a92e875399fda852581",
         "docs/_includes/head_custom.html": "a3db05eb828ddef58712fcd5fb5525ca905ee9e0e20c4707c8bf910dbc4b21dc",
@@ -1800,8 +1800,8 @@
         "docs/assets/css/site-states.css": "a5b9a1dd538e73cd748b675ec990dec52669f62d7ab414848f88dd9260e9c01e",
         "docs/assets/js/site-states.js": "eddfda79289ae90c93a7576539404fd202f6e49995f435c959fd74535885578d",
         "docs/404.md": "3089c9fb995df813bcba190ebf5f203575a83bf729c3860e7f4da34ec6966417",
-        "docs/site-content.json": "b96463cde4f9b48008f95150e1e4e90695cd920d17a106a92bf513e71e008400",
-        "docs/site-validation.md": "0949ab1e65ad52c3db0068945ac86ac4c03879caa9f8dce4e9faf5a81b944541"
+        "docs/site-content.json": "52117cfce3d60a63965f8588389ad27c5258e7b07e031e3f976008349a710c00",
+        "docs/site-validation.md": "6e192347d101a58019a594d74c32e9eb4902df7d610f27d1b86bc21d95e511b4"
       }
     }
   },
@@ -1870,6 +1870,7 @@
         "docs/usage.md",
         "docs/c-api.md",
         "docs/api.md",
+        "docs/cli.md",
         "docs/format.md",
         "docs/research-summary.md",
         "docs/contributing.md",
@@ -1889,9 +1890,7 @@
         "docs/_includes/generated/tables/scatter-e9.md",
         "docs/_includes/generated/tables/size-vs-decode.md"
       ],
-      "planned_outputs": {
-        "docs/cli.md": "D08 T03 \u00a71"
-      }
+      "planned_outputs": {}
     },
     {
       "script": "scripts/version.py",

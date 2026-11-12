@@ -574,6 +574,7 @@ class DriftTests(unittest.TestCase):
             'docs/vision.md',
             'include/rasterfold.h',
             'src/rasterfold.def',
+            'src/main.c',
             'examples/encode.c',
             'examples/decode.c',
             'examples/ppm.h',
@@ -598,6 +599,7 @@ class DriftTests(unittest.TestCase):
         expected_written = sorted(
             [
                 'docs/api.md',
+                'docs/cli.md',
                 'docs/c-api.md',
                 'docs/contributing.md',
                 'docs/format.md',
@@ -692,6 +694,7 @@ class DriftTests(unittest.TestCase):
                     'assets/brand/cover.svg',
                     'assets/brand/icon.svg',
                     'api.md',
+                    'cli.md',
                     'assets/css/site-states.css',
                     'assets/js/site-states.js',
                     'benchmarks.md',
@@ -755,6 +758,7 @@ class DriftTests(unittest.TestCase):
             'requirements-dev.txt',
             'toolchain.json',
             'src/rasterfold.def',
+            'src/main.c',
             'examples/encode.c',
             'examples/decode.c',
             'examples/ppm.h',
@@ -828,15 +832,21 @@ class DriftTests(unittest.TestCase):
             with contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(0, drift.main(['--root', str(self.root)]))
 
-        # Planned outputs (docs/cli.md) are rejected if created before promotion to mandatory outputs.
-        self.write('docs/cli.md', '# Unregistered CLI reference\n')
+        # A planned output is rejected if created before promotion to mandatory outputs. The repository's
+        # manifest plans none since docs/cli.md was promoted (D08 T03 §1), so the fixture plans one of its own.
+        planned_manifest = json.loads((self.root / 'docs/drift.json').read_text(encoding='utf-8'))
+        planned_gen = next(g for g in planned_manifest['generators'] if g['script'] == 'scripts/build-docs.py')
+        self.assertEqual({}, planned_gen['planned_outputs'])
+        planned_gen['planned_outputs'] = {'docs/planned-page.md': 'D90 T01 §1'}
+        self.write('docs/drift.json', json.dumps(planned_manifest, indent=2) + '\n')
+        self.write('docs/planned-page.md', '# Unregistered planned page\n')
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             self.assertEqual(1, drift.main(['--root', str(self.root)]))
-        self.assertIn('planned output docs/cli.md (D08 T03 §1) exists before being promoted to outputs', buf.getvalue())
-        (self.root / 'docs/cli.md').unlink()
+        self.assertIn('planned output docs/planned-page.md (D90 T01 §1) exists before being promoted to outputs', buf.getvalue())
+        (self.root / 'docs/planned-page.md').unlink()
 
-        # Read-only guard catches a generator --check that creates a planned output (docs/cli.md) or mutates a prior generator's output (docs/research.md) while exiting 0.
+        # Read-only guard catches a generator --check that creates a planned output (docs/planned-page.md) or mutates a prior generator's output (docs/research.md) while exiting 0.
         orig_build_docs = (self.root / 'scripts/build-docs.py').read_text(encoding='utf-8')
         orig_research = (self.root / 'docs/research.md').read_text(encoding='utf-8')
         try:
@@ -844,31 +854,31 @@ class DriftTests(unittest.TestCase):
                 'scripts/build-docs.py',
                 'import pathlib, sys\n'
                 'if "--check" in sys.argv:\n'
-                '    pathlib.Path("docs/cli.md").write_text("# Sneaky CLI\\n", encoding="utf-8")\n'
+                '    pathlib.Path("docs/planned-page.md").write_text("# Sneaky page\\n", encoding="utf-8")\n'
                 'sys.exit(0)\n',
             )
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
                 self.assertEqual(1, drift.main(['--root', str(self.root)]))
-            self.assertIn('planned output docs/cli.md (D08 T03 §1) exists before being promoted to outputs', buf.getvalue())
-            self.assertIn('--check modified docs/cli.md; check mode must be read-only', buf.getvalue())
-            if (self.root / 'docs/cli.md').exists():
-                (self.root / 'docs/cli.md').unlink()
+            self.assertIn('planned output docs/planned-page.md (D90 T01 §1) exists before being promoted to outputs', buf.getvalue())
+            self.assertIn('--check modified docs/planned-page.md; check mode must be read-only', buf.getvalue())
+            if (self.root / 'docs/planned-page.md').exists():
+                (self.root / 'docs/planned-page.md').unlink()
 
             self.write(
                 'scripts/build-docs.py',
                 'import pathlib, sys\n'
                 'if "--check" in sys.argv:\n'
-                '    pathlib.Path("docs/cli.md").mkdir(parents=True, exist_ok=True)\n'
+                '    pathlib.Path("docs/planned-page.md").mkdir(parents=True, exist_ok=True)\n'
                 'sys.exit(0)\n',
             )
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
                 self.assertEqual(1, drift.main(['--root', str(self.root)]))
-            self.assertIn('planned output docs/cli.md (D08 T03 §1) exists before being promoted to outputs', buf.getvalue())
-            self.assertIn('--check modified docs/cli.md; check mode must be read-only', buf.getvalue())
-            if (self.root / 'docs/cli.md').is_dir():
-                shutil.rmtree(self.root / 'docs/cli.md')
+            self.assertIn('planned output docs/planned-page.md (D90 T01 §1) exists before being promoted to outputs', buf.getvalue())
+            self.assertIn('--check modified docs/planned-page.md; check mode must be read-only', buf.getvalue())
+            if (self.root / 'docs/planned-page.md').is_dir():
+                shutil.rmtree(self.root / 'docs/planned-page.md')
 
             self.write(
                 'scripts/build-docs.py',
@@ -952,6 +962,7 @@ class DriftTests(unittest.TestCase):
             'benchmarks/results.csv',
             'include/rasterfold.h',
             'src/rasterfold.def',
+            'src/main.c',
         ):
             self.write(rel, (REPO / rel).read_text(encoding='utf-8'))
 

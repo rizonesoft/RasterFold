@@ -29,6 +29,7 @@ RasterFold is a lossless RGB image codec written in C11 for Windows x64 and Linu
 - [CLI and Library Usage](usage.md): target artifacts, CLI commands and flags, exit codes, and C API embedding overview mirrored from `README.md`.
 - [C API Guide](c-api.md): buffer ownership, concurrency, options validation, static/shared linking on Linux and Windows, and return codes mirrored from `docs/library.md`.
 - [API Reference](api.md): every function, type, constant, and error code in `include/rasterfold.h` with its ownership rule, generated from the header.
+- [Command-Line Reference](cli.md): every command's usage, options, exit codes, and example, exactly as `rasterfold help` prints them, generated from the program's source.
 - [Format Specification](format.md): the normative `.fold` version 3 container and context-mixing (CM) bitstream specification mirrored from `spec/FOLD.md`.
 - [Examples](examples.md): CLI round-trip workflows and complete C11 PPM encode/decode consumer examples (`examples/encode.c`, `examples/decode.c`, `examples/ppm.h`).
 - [Benchmarks](benchmarks.md): corpus and reference-image measurements, static SVG comparison charts, and data tables comparing RasterFold with JPEG XL (`e7` and `e9`), lossless WebP, and PNG.
