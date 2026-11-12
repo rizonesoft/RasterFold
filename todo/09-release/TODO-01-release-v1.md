@@ -46,7 +46,7 @@ track: R1
 | :---: | :-----: | ----------- | ---------- | :----: |
 |   1   |   §1    | One version source and the changelog | -- |  [x]   |
 | 2 | §2 | The two-target release package | §1, D06 T01 §2 | [x] |
-|   3   |   §3    | The release workflow | §2 |  [ ]   |
+|   3   |   §3    | The release workflow | §2 |  [x]   |
 | 4 | §4 | Release rasterfold-v1.0.0 | §3, D05 T01 §9, D08 T01 §7 | [ ] |
 
 ---
@@ -130,6 +130,8 @@ Decision recorded (2026-11-12): zip, not tar, on both platforms (one format, one
 
 **Freeze check:** no codec source, format or oracle changes: `python3 tests/test_correctness.py` still passes every case, so `KAT_FOLD`, `KAT_PAL`, `KAT_PAL2`, `KAT_PAL2_3` and `KAT_PAL4` decode and encode as before.
 
+> **Verified:** 2026-11-12 | §3 | fb8600df53033c5909fda7096436080e05e35abe
+> **Review:** `docs/reviews/d09-t01-s3.json`
 ## 4. Release rasterfold-v1.0.0
 
 Everything milestone 9 confirmed, frozen and shipped: format version 3 is final from this tag (the pre-release rule in `todo/README.md` ends here).
