@@ -248,11 +248,14 @@ def main(argv: list[str]) -> int:
         total["est"] += result["bytes"]
         for k, v in result["bits"].items():
             total["bits " + k] += v
+        for k, v in result["distance_classes"].items():
+            total["dist " + k] += v
     n = total["pixels"]
     print(f"total pixels={n} left={total['left'] / n:.3f} above={total['above'] / n:.3f} above_left={total['above_left'] / n:.3f} "
           f"literal={total['literal']} cache={total['cache']} copy={total['copy']} copied={total['copied'] / n:.3f} "
           f"copied8={total['copied8'] / n:.3f} copied32={total['copied32'] / n:.3f} est_bytes={total['est']:.0f}")
     print("total bits: " + ", ".join(f"{k[5:]} {v / 8:.0f} B" for k, v in total.items() if k.startswith("bits ")))
+    print("total copy distances: " + ", ".join(f"{k[5:]} {v}" for k, v in sorted(total.items()) if k.startswith("dist ")))
     return 0
 
 
