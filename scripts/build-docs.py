@@ -288,7 +288,9 @@ REPOSITORY_URL = 'https://github.com/rizonesoft/RasterFold'
 OFFLINE_ENTRY = 'docs/index.md'
 OFFLINE_README = 'README.md'           # the package's first page (PACKAGE.md in the repository), when present
 # Repository files a release package ships outside docs/, at the same relative path.
-OFFLINE_SHIPPED_FILES = ('LICENSE', 'CHANGELOG.md', 'include/rasterfold.h')
+OFFLINE_SHIPPED_FILES = ('LICENSE', 'CHANGELOG.md', 'include/rasterfold.h', 'README.md')
+# Repository files a release package ships under another name.
+OFFLINE_RENAMED_FILES = {'PACKAGE.md': 'README.md'}
 _OFFLINE_INCLUDE_RE = re.compile(r'\{%\s*include\s+generated/(?P<kind>charts|tables)/(?P<name>[a-z0-9-]+)\.(?P<ext>svg|md)\s*%\}')
 _FRONT_MATTER_RE = re.compile(r'\A---\n.*?\n---\n', re.S)
 
@@ -410,6 +412,9 @@ def render_offline_docs(root: Path, revision: str) -> dict[str, bytes]:
             if target.startswith('../') or target == '..':
                 raise ValueError(f'{doc_rel}: link escapes repository: {clean}')
             suffix = (('?' + parts.query) if parts.query else '') + (('#' + parts.fragment) if parts.fragment else '')
+            if target in OFFLINE_RENAMED_FILES:
+                safe_repo_path(root, target).read_bytes()        # the repository file must exist
+                target = OFFLINE_RENAMED_FILES[target]
             if target in packaged or target in out:
                 rebased = quote(os.path.relpath(target, page_dir.as_posix()).replace('\\', '/'), safe='/') + suffix
             else:

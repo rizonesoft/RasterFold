@@ -507,6 +507,8 @@ class ReleasePackages(Packages):
         self.assertTrue((tree / 'docs/charts/encode-time.svg').is_file())
         self.assertIn(f'https://github.com/rizonesoft/RasterFold/blob/{REVISION}/examples/encode.c', (tree / 'docs/examples.md').read_text(encoding='utf-8'))
         self.assertFalse((tree / 'docs/assets').exists(), 'site-only stylesheets and scripts are not shipped')
+        # The build guide's link to the repository's PACKAGE.md points at the package's own README.
+        self.assertIn('(../README.md)', (tree / 'docs/installation.md').read_text(encoding='utf-8'))
         # The package's README is link-checked too and must lead to the documentation's entry page.
         readme = (tree / 'README.md').read_text(encoding='utf-8')
         (tree / 'README.md').write_text(readme.replace('(docs/index.md)', '(docs/start.md)'), encoding='utf-8')

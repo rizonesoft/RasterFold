@@ -53,6 +53,7 @@ FIXTURE_FILES = (
     'docs/security.md',
     'docs/licenses.md',
     'docs/building.md',
+    'PACKAGE.md',
     'docs/library.md',
     'docs/research.md',
     'docs/measurements.md',
