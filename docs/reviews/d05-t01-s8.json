@@ -1,0 +1,78 @@
+{
+  "ref": "D05 T01 \u00a78",
+  "title": "Milestone 8 Gate: Beat WebP on generated images",
+  "implementation_sha": "a32239610d158c30cdc5642914148f609df16110",
+  "date": "2026-11-12",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/05-milestones/D05-T01-s8.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "python3 scripts/windows.py research/ab.py size src/cm.c synth -v -t1 -> total=200774 webp=201248 webp_geomean=0.8771, worst syn_odd +15 bytes (target met)",
+    "python3 scripts/windows.py research/ab.py compat abd8039ef00c20da553950515edb94dcaa1239af --allow-diff synth -> photo, tp, tp-only identical=True",
+    "abpool tp-only on an idle host -> -t1 pools enc 1.013/1.016 dec 1.015/1.004; -t3 pools enc 0.993/1.003 dec 1.094/1.079; every set total <= 1.094 (1.10 allowed), synth <= 1.074 (1.20 allowed)",
+    "python3 research/milestones.py --check -> milestones: current",
+    "bosun run -- python3 scripts/check-all.py --all-targets on 5be532c -> check-all: 32/32 passed"
+  ],
+  "completion": {
+    "report": "docs/reviews/05-milestones/D05-T01-s8.md",
+    "verdict": "reconciled",
+    "candidate": "a32239610d158c30cdc5642914148f609df16110",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/05-milestones/D05-T01-s8.md",
+    "candidate": "0c4d7f6ad24345159e91eb1bdcf10c070209de89",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "0c4d7f6ad24345159e91eb1bdcf10c070209de89",
+  "schedule": {
+    "policy": "three-pass",
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}
