@@ -40,7 +40,7 @@ track: C7
 
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
-|   1   |   §1    | A development set of screenshots | -- |  [ ]   |
+|   1   |   §1    | A development set of screenshots | -- |  [x]   |
 |   2   |   §2    | Where the bytes go on screenshots, and round 1 planned | §1 |  [ ]   |
 
 ---
@@ -64,6 +64,8 @@ The pages, decided here: the published pages `api`, `cli`, `contributing`, `rese
 
 **Test checkpoint:** Driven run with evidence, 2026-11-12. Authoring in WSL with no cached development PPMs (`ls build/research/ppm/dv_*` counted 0 first): `.venv/bin/python research/corpus.py --author-screens` printed `screens verified: 10 screenshots, hashes match, no overlap with the held-out set` and wrote `research/screens.json` (`dv_s01` to `dv_s10`: `api`, `cli`, `contributing`, `research-summary`, `security`, `licenses`, `release-history`, `downloads`, `vision`, `codec-distribution`, browser version equal to the held-out set's). `python3 scripts/windows.py research/ab.py size src/cm.c screens -v -t1` printed `total=3383489 jxl=2758793 ratio=1.2264 geomean=1.2274 worst=1.3202 (dv_s02) e9=2419197 e9_ratio=1.3986 e9_geomean=1.3992 e9_worst=1.5385 (dv_s02) webp=670020 webp_ratio=5.0498 webp_geomean=4.8625`, with the ten per-image lines `dv_s01 316214 jxl= 263338 1.2008 e9= 233010 1.3571 webp= 64698 4.8875`; `dv_s02 262931 jxl= 199160 1.3202 e9= 170898 1.5385 webp= 54286 4.8434`; `dv_s03 335364 jxl= 276982 1.2108 e9= 243562 1.3769 webp= 66548 5.0394`; `dv_s04 431324 jxl= 358300 1.2038 e9= 317030 1.3605 webp= 88574 4.8696`; `dv_s05 130091 jxl= 101929 1.2763 e9= 89805 1.4486 webp= 30692 4.2386`; `dv_s06 354643 jxl= 304135 1.1661 e9= 269966 1.3137 webp= 80340 4.4143`; `dv_s07 420869 jxl= 351301 1.1980 e9= 305655 1.3769 webp= 77108 5.4582`; `dv_s08 118943 jxl= 99968 1.1898 e9= 87954 1.3523 webp= 31152 3.8181`; `dv_s09 553546 jxl= 429967 1.2874 e9= 370026 1.4960 webp= 88844 6.2305`; `dv_s10 459564 jxl= 373713 1.2297 e9= 331291 1.3872 webp= 87778 5.2355`: the same picture as the held-out screenshots (`4.6730`), so the set is a faithful stand-in. The second `python3 scripts/windows.py research/corpus.py` printed `screens verified: 10 screenshots, hashes match, no overlap with the held-out set`. `.venv/bin/python tests/test_research_refs.py` passed, including the six `ScreensSetTests`.
 
+> **Verified:** 2026-11-12 | §1 | 48f7deca715f6a25bb93828c9fe627b55a9e143a
+> **Review:** `docs/reviews/d01-t07-s1.json`
 ## 2. Where the Bytes Go on Screenshots, and Round 1 Planned
 
 **Origin:** discovered run=32b2775e0d5a 2026-11-12 -- Milestone 9 gate (`D05 T01 §9`): the first round must be routed by a measurement, not guessed; a prerequisite of the gate's planned rounds. This section is not itself a round (`D99 T01 §8`: one round is one follow-up experiment section).

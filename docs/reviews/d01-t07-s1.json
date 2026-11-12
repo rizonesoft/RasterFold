@@ -1,0 +1,79 @@
+{
+  "ref": "D01 T07 \u00a71",
+  "title": "A Development Set of Screenshots",
+  "implementation_sha": "48f7deca715f6a25bb93828c9fe627b55a9e143a",
+  "date": "2026-11-12",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/01-compression/D01-T07-s1.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    ".venv/bin/python research/corpus.py --author-screens (WSL, 0 cached dv PPMs) -> screens verified: 10 screenshots, hashes match, no overlap with the held-out set",
+    "python3 scripts/windows.py research/corpus.py, twice -> screens verified, 105 images",
+    "python3 scripts/windows.py research/ab.py size src/cm.c screens -v -t1 -> total=3383489 e9_ratio=1.3986 webp_ratio=5.0498 webp_geomean=4.8625",
+    ".venv/bin/python tests/test_research_refs.py -> OK (ScreensSetTests)",
+    "bosun run -- python3 scripts/check-all.py --all-targets -> check-all: 32/32 passed; CI green at 48f7deca715f"
+  ],
+  "completion": {
+    "report": "docs/reviews/01-compression/D01-T07-s1.md",
+    "verdict": "complete",
+    "candidate": "48f7deca715f6a25bb93828c9fe627b55a9e143a",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/01-compression/D01-T07-s1.md",
+    "candidate": "4bb515d509bf0dead800271e31da9654bf85b1a5",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "4bb515d509bf0dead800271e31da9654bf85b1a5",
+  "schedule": {
+    "policy": "three-pass",
+    "pass_cap": 33,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}
