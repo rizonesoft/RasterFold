@@ -31,7 +31,7 @@ LINE_CITE_RE = re.compile(
     r"^(?:[-*]\s+)?`?(?P<path>[A-Za-z0-9_./-]+):(?P<start>\d+)(?:-(?P<end>\d+))?`?(?:(?::\s*|\s+)(?P<rest>.*))?$"
 )
 FACT_PAIR_SPLIT_RE = re.compile(
-    r"\s+->\s+|;\s+(?=`?(?:[A-Za-z0-9_./-]+:\d+|NOT FOUND:))"
+    r"(?P<arrow>\s+->\s+)|(?P<semi>;\s+)(?=`?(?:[A-Za-z0-9_./-]+:\d+|NOT FOUND:))"
 )
 RHS_CITE_RE = re.compile(
     r"^`?(?P<path>[A-Za-z0-9_./-]+):(?P<start>\d+)(?:-(?P<end>\d+))?`?(?:(?::\s*|\s+)(?P<quote>.*))?$"
@@ -223,9 +223,9 @@ def check_tool_call(tool_name: str, params: dict) -> str | None:
 
 def extract_quote_segments(raw_quote: str, multi_line: bool = False) -> list[str]:
     q = raw_quote.strip()
-    if q.endswith(".") and len(q) >= 2 and q[-2] in ("`", '"'):
+    if q.endswith(".") and len(q) >= 2 and q[-2] in ("`", '"', "'"):
         q = q[:-1].strip()
-    if len(q) >= 2 and q[0] == '"' and q[-1] == '"':
+    if len(q) >= 2 and q[0] == q[-1] and q[0] in ('"', "'"):
         q = q[1:-1].strip()
     if "` / `" in q or (multi_line and " / " in q):
         sep = "` / `" if "` / `" in q else " / "
@@ -315,6 +315,70 @@ def is_none_line(line: str, prefix: str = "") -> bool:
     if prefix and s.upper() == f"{prefix.upper()}: NONE FOUND":
         return True
     return False
+
+
+def verify_fact_pair_line(
+    ln: str,
+    allow_not_found: bool,
+    root_resolved: Path,
+    file_cache: dict[Path, list[str]],
+) -> str | None:
+    matches = list(FACT_PAIR_SPLIT_RE.finditer(ln))
+    if not matches:
+        return f"rf-fact-check entry missing ' -> ' or '; ': {ln!r}"
+
+    def is_not_found_rhs(rhs_text: str) -> bool:
+        return rhs_text.strip().strip("`").startswith("NOT FOUND:")
+
+    # Try two-citation splits (' -> ' then '; ') before NOT FOUND splits (' -> ' then '; '),
+    # from right to left so separators inside the left-hand quotation are skipped cleanly.
+    ordered = (
+        [m for m in reversed(matches) if m.group("arrow") and not is_not_found_rhs(ln[m.end() :])]
+        + [m for m in reversed(matches) if not m.group("arrow") and not is_not_found_rhs(ln[m.end() :])]
+        + [m for m in reversed(matches) if m.group("arrow") and is_not_found_rhs(ln[m.end() :])]
+        + [m for m in reversed(matches) if not m.group("arrow") and is_not_found_rhs(ln[m.end() :])]
+    )
+    first_err: str | None = None
+    for m in ordered:
+        lhs = ln[: m.start()]
+        rhs = ln[m.end() :]
+        lm = LINE_CITE_RE.match(lhs)
+        if not lm:
+            err = f"unquoted lhs in rf-fact-check: {lhs!r}"
+            if first_err is None:
+                first_err = err
+            continue
+        start = int(lm.group("start"))
+        end = int(lm.group("end") or start)
+        err = check_citation_on_disk(lm.group("path"), start, end, lm.group("rest"), root_resolved, file_cache)
+        if err is not None:
+            if first_err is None:
+                first_err = err
+            continue
+        rhs_clean = rhs.strip().strip("`")
+        if allow_not_found and rhs_clean.startswith("NOT FOUND:"):
+            if not rhs_clean[len("NOT FOUND:") :].strip():
+                err = f"empty NOT FOUND in rf-fact-check: {ln!r}"
+                if first_err is None:
+                    first_err = err
+                continue
+            return None
+        rm = RHS_CITE_RE.match(rhs.strip())
+        if not rm:
+            err = f"unquoted rhs in rf-fact-check: {rhs!r}"
+            if first_err is None:
+                first_err = err
+            continue
+        r_start = int(rm.group("start"))
+        r_end = int(rm.group("end") or r_start)
+        err = check_citation_on_disk(
+            rm.group("path"), r_start, r_end, rm.group("quote"), root_resolved, file_cache
+        )
+        if err is None:
+            return None
+        if first_err is None:
+            first_err = err
+    return first_err or f"invalid rf-fact-check entry: {ln!r}"
 
 
 def verify_response_evidence(response: str, agent: str, root: Path = ROOT) -> str | None:
@@ -449,33 +513,11 @@ def verify_response_evidence(response: str, agent: str, root: Path = ROOT) -> st
             return "rf-fact-check MISMATCHES block is empty"
         if not (len(mm_lines) == 1 and is_none_line(mm_lines[0], "MISMATCHES")):
             for ln in mm_lines:
-                parts = FACT_PAIR_SPLIT_RE.split(ln, maxsplit=1)
-                if len(parts) != 2:
-                    return f"rf-fact-check MISMATCHES entry missing ' -> ' or '; ': {ln!r}"
-                lhs, rhs = parts
-                m = LINE_CITE_RE.match(lhs)
-                if not m:
-                    return f"unquoted lhs in rf-fact-check MISMATCHES: {lhs!r}"
-                start = int(m.group("start"))
-                end = int(m.group("end") or start)
-                err = check_citation_on_disk(m.group("path"), start, end, m.group("rest"), root_resolved, file_cache)
+                err = verify_fact_pair_line(
+                    ln, allow_not_found=True, root_resolved=root_resolved, file_cache=file_cache
+                )
                 if err is not None:
                     return err
-                rhs_clean = rhs.strip().strip("`")
-                if rhs_clean.startswith("NOT FOUND:"):
-                    if not rhs_clean[len("NOT FOUND:") :].strip():
-                        return f"empty NOT FOUND in rf-fact-check MISMATCHES: {ln!r}"
-                else:
-                    rm = RHS_CITE_RE.match(rhs.strip())
-                    if not rm:
-                        return f"unquoted rhs in rf-fact-check MISMATCHES: {rhs!r}"
-                    r_start = int(rm.group("start"))
-                    r_end = int(rm.group("end") or r_start)
-                    err = check_citation_on_disk(
-                        rm.group("path"), r_start, r_end, rm.group("quote"), root_resolved, file_cache
-                    )
-                    if err is not None:
-                        return err
 
         # NEEDS A COMMAND: either None or bullet lines, never a shipping verdict
         cmd_lines = blocks["NEEDS A COMMAND"]
@@ -501,25 +543,8 @@ def verify_response_evidence(response: str, agent: str, root: Path = ROOT) -> st
         if len(item_lines) != declared_held:
             return f"HELD: {declared_held} does not match {len(item_lines)} held item(s)"
         for ln in item_lines:
-            parts = FACT_PAIR_SPLIT_RE.split(ln, maxsplit=1)
-            if len(parts) != 2:
-                return f"rf-fact-check CHECKED AND HOLDING entry missing ' -> ' or '; ': {ln!r}"
-            lhs, rhs = parts
-            m = LINE_CITE_RE.match(lhs)
-            if not m:
-                return f"unquoted lhs in rf-fact-check CHECKED AND HOLDING: {lhs!r}"
-            start = int(m.group("start"))
-            end = int(m.group("end") or start)
-            err = check_citation_on_disk(m.group("path"), start, end, m.group("rest"), root_resolved, file_cache)
-            if err is not None:
-                return err
-            rm = RHS_CITE_RE.match(rhs.strip())
-            if not rm:
-                return f"unquoted rhs in rf-fact-check CHECKED AND HOLDING: {rhs!r}"
-            r_start = int(rm.group("start"))
-            r_end = int(rm.group("end") or r_start)
-            err = check_citation_on_disk(
-                rm.group("path"), r_start, r_end, rm.group("quote"), root_resolved, file_cache
+            err = verify_fact_pair_line(
+                ln, allow_not_found=False, root_resolved=root_resolved, file_cache=file_cache
             )
             if err is not None:
                 return err

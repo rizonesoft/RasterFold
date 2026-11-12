@@ -245,7 +245,8 @@ class GeminiScoutWrapperTests(unittest.TestCase):
         )
         (self.root / "todo").mkdir()
         (self.root / "todo" / "sample.md").write_text(
-            "# Sample\n\n## 1. Test\n\n- Version in `src/rf.h:19` is `#define RF_VERSION 3u`.\n- Missing `src/none.c`.\n",
+            "# Sample\n\n## 1. Test\n\n- Version in `src/rf.h:19` is `#define RF_VERSION 3u`.\n- Missing `src/none.c`.\n"
+            '- Quoted semicolon `- `todo/sample.md:6`: "- Missing `src/none.c`."; NOT FOUND: src/none.c`.\n',
             encoding="utf-8",
         )
         self.stub_bin = self.root / "stub_bin"
@@ -508,7 +509,8 @@ class GeminiScoutWrapperTests(unittest.TestCase):
             "NEEDS A COMMAND\n- None.\n\n"
             "CHECKED AND HOLDING\n"
             "- `todo/sample.md:5`: \"- Version in `src/rf.h:19` is `#define RF_VERSION 3u`.\"; `src/rf.h:19`: `#define RF_VERSION 3u`\n"
-            "HELD: 1\n"
+            "- `todo/sample.md:7`: '`- `todo/sample.md:6`: \"- Missing `src/none.c`.\"; NOT FOUND: src/none.c`.' -> `src/rf.h:19`: `#define RF_VERSION 3u`\n"
+            "HELD: 2\n"
         )
         self.write_stub_agy(make_stream("rf-fact-check", valid_fc_semicolon))
         code, _, err = self.run_scout("--agent", "rf-fact-check", "--prompt", "Fact check semicolon")
