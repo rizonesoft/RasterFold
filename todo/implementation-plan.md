@@ -285,7 +285,7 @@ Everything so far confirmed on images nobody tuned on, before anything is frozen
 | :-: | ------------ | ------------------------------------------------ | ---------- | :---: |
 | [x] | `D00 T03 §1` | The held-out set                                 | network    |   4   |
 | [x] | `D00 T03 §2` | Validate the milestones on it                    | ffmpeg-jxl |   3   |
-| [ ] | `D05 T01 §9` | Milestone 9 gate: Holds on images never tuned on | ffmpeg-jxl |   4   |
+| [ ] | `D05 T01 §9` | Milestone 9 gate: Holds on images never tuned on | ffmpeg-jxl |   6   |
 
 ### Phase 9 -- Milestone 10: RasterFold 1.0
 
