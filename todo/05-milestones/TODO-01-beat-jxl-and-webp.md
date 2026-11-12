@@ -39,7 +39,7 @@ track: G1
 |   6   |  §6   | Milestone 6 gate: Faster than WebP to decode | D02 T02 §1, D01 T03 §2, D02 T02 §3, D01 T03 §3, §5 |  [x]   |
 |   7   |  §7   | Milestone 7 gate: Photographs beat JPEG XL e9 | D01 T05 §1, D01 T05 §2, D01 T05 §3, D01 T05 §4, §6 |  [x]   |
 |   8   |  §8   | Milestone 8 gate: Beat WebP on generated images | D01 T06 §1, D01 T06 §2, D01 T06 §3, D01 T06 §4, D01 T06 §5, D01 T06 §6, D01 T06 §7, D01 T06 §8, §7 |  [x]   |
-|   9   |  §9   | Milestone 9 gate: Holds on images never tuned on | D00 T03 §1, D00 T03 §2, D01 T07 §1, D01 T07 §2, §8 |  [ ]   |
+|   9   |  §9   | Milestone 9 gate: Holds on images never tuned on | D00 T03 §1, D00 T03 §2, D01 T07 §1, D01 T07 §2, D01 T07 §3, §8 |  [ ]   |
 |  10   |  §10  | Milestone 10 gate: RasterFold 1.0 | D06 T01 §1, D06 T01 §2, D06 T01 §3, D06 T01 §4, D06 T01 §5, D07 T01 §1, D07 T01 §2, D07 T01 §3, D07 T01 §4, D08 T03 §1, D08 T03 §2, D09 T01 §1, D09 T01 §2, D09 T01 §3, D09 T01 §4, §9 |  [ ]   |
 
 ---

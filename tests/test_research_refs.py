@@ -1768,5 +1768,86 @@ class ScreensSetTests(unittest.TestCase):
         self.assertIn("refusing to measure an unfrozen set", str(caught.exception))
 
 
+class ScreenRepetitionTests(unittest.TestCase):
+    """research/screenrep.py on images whose parse is known by hand (D01 T07 section 2)."""
+
+    @staticmethod
+    def image(pixels):
+        return b"".join(p.to_bytes(3, "big") for p in pixels)
+
+    def setUp(self) -> None:
+        import screenrep
+        self.sr = screenrep
+
+    def test_prefix_codes_follow_rfc_9649(self) -> None:
+        # Value -> (symbol, extra bits): 1..4 have no extra bits, then two symbols per power of two.
+        expect = {1: (0, 0), 4: (3, 0), 5: (4, 1), 6: (4, 1), 7: (5, 1), 8: (5, 1), 9: (6, 2), 12: (6, 2), 13: (7, 2),
+                  4096: (23, 10)}
+        for value, code in expect.items():
+            self.assertEqual(self.sr.prefix_code(value), code, value)
+        with self.assertRaises(ValueError):
+            self.sr.prefix_code(0)
+
+    def test_a_repeated_run_in_one_row_is_one_copy(self) -> None:
+        a, b, c, d = 0x102030, 0x405060, 0x708090, 0xA0B0C0
+        got = self.sr.parse(8, 1, self.image([a, b, c, d, a, b, c, d]))
+        self.assertEqual(got["tokens"], {"literal": 4, "copy": 1})
+        self.assertEqual(got["copy_pixels"], 4)
+        self.assertEqual(got["distance_classes"], {"same row": 1})
+
+    def test_a_run_crossing_a_row_boundary_and_an_image_of_one_colour(self) -> None:
+        got = self.sr.parse(4, 2, self.image([0x123456] * 8))
+        self.assertEqual(got["tokens"], {"literal": 1, "copy": 1})
+        self.assertEqual(got["copy_pixels"], 7)                       # the copy runs on across the row end
+        self.assertEqual(got["distance_classes"], {"left": 1})
+        # One literal (three channels of one value each: 0 bits), one copy, two kinds: 2 bits; extra bits of length 7.
+        self.assertEqual(got["bits"]["literal G"], 0.0)
+        self.assertEqual(got["bits"]["extra bits"], 1.0)
+        self.assertAlmostEqual(got["bytes"], (2 + 1) / 8)
+
+    def test_an_above_copy(self) -> None:
+        a, b, c = 0x010203, 0x040506, 0x070809
+        got = self.sr.parse(3, 3, self.image([a, b, c] * 3))
+        self.assertEqual(got["tokens"], {"literal": 3, "copy": 1})
+        self.assertEqual(got["distance_classes"], {"above": 1})
+
+    def test_a_cache_collision_and_a_cache_hit(self) -> None:
+        by_index = {}
+        colliding = None
+        for colour in range(1, 1 << 16):
+            idx = self.sr.cache_index(colour * 251)
+            if idx in by_index:
+                colliding = (by_index[idx], colour * 251)
+                break
+            by_index[idx] = colour * 251
+        x, y = colliding
+        self.assertEqual(self.sr.cache_index(x), self.sr.cache_index(y))
+        self.assertEqual(self.sr.parse(3, 1, self.image([x, y, x]))["tokens"], {"literal": 3})   # y evicted x
+        z = next(c for c in range(1, 1 << 16) if self.sr.cache_index(c) != self.sr.cache_index(x))
+        self.assertEqual(self.sr.parse(3, 1, self.image([x, z, x]))["tokens"], {"literal": 2, "cache": 1})
+
+    def test_pixels_that_never_repeat_are_all_literals(self) -> None:
+        seen, colours = set(), []
+        for colour in range(1, 1 << 20, 7919):
+            if self.sr.cache_index(colour) not in seen:
+                seen.add(self.sr.cache_index(colour))
+                colours.append(colour)
+            if len(colours) == 8:
+                break
+        got = self.sr.parse(8, 1, self.image(colours))
+        self.assertEqual(got["tokens"], {"literal": 8})
+        self.assertEqual(got["copy_pixels"], 0)
+
+    def test_only_verified_development_screenshots_are_read(self) -> None:
+        with self.assertRaises(SystemExit) as caught:
+            self.sr.main(["ho_s01"])
+        self.assertIn("reads only the development screenshots", str(caught.exception))
+        with mock.patch.object(corpus, "verify_screens", side_effect=SystemExit("screens dv_s01: RGB SHA-256 mismatch")), \
+                mock.patch.object(self.sr, "read_ppm") as read, self.assertRaises(SystemExit) as caught:
+            self.sr.main(["dv_s01"])
+        self.assertIn("RGB SHA-256 mismatch", str(caught.exception))
+        read.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
