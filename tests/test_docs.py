@@ -246,6 +246,41 @@ class DocsMapTests(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding='utf-8', newline='\n')
 
+    def test_offline_docs_render_links_includes_and_refusals(self) -> None:
+        revision = 'a' * 40
+        build_docs.write_generated_pages(self.root)
+        index = (self.root / 'docs/index.md').read_text(encoding='utf-8')
+        # Percent-encoded links name the decoded file: a published page, and a repository file that is not shipped.
+        self.write('docs/index.md', index + '\n[encoded page](research%2Dsummary.md) and [encoded source](../examples/en%63ode.c).\n')
+        docs = build_docs.render_offline_docs(self.root, revision)
+        rendered = docs['docs/index.md'].decode('utf-8')
+        self.assertFalse(rendered.startswith('---'))
+        self.assertIn('[encoded page](research-summary.md)', rendered)
+        self.assertIn(f'[encoded source](https://github.com/rizonesoft/RasterFold/blob/{revision}/examples/encode.c)', rendered)
+        self.assertIn('../assets/brand/cover.svg', rendered)
+        self.assertIn('assets/brand/cover.svg', docs)
+        self.assertNotIn('docs/assets/css/site-states.css', docs)
+        benchmarks = docs['docs/benchmarks.md'].decode('utf-8')
+        self.assertNotIn('{%', benchmarks)
+        for name in build_docs.CHART_NAMES:
+            self.assertIn(f'![{name} chart](charts/{name}.svg)', benchmarks)
+            self.assertIn(f'docs/charts/{name}.svg', docs)
+        report = build_docs.offline_link_report(docs)
+        self.assertEqual((report['unresolved'], report['unreachable'], report['leftovers']), ([], [], []))
+        self.assertEqual(len(report['pages']), len(json.loads((self.root / 'docs/site-content.json').read_text(encoding='utf-8'))['pages']))
+        # A link to nothing, a site-absolute link, and a link out of the repository are refused, not shipped.
+        for bad, pattern in (
+            ('[gone](no-such-page.md)', 'link target does not exist'),
+            ('[abs](/RasterFold/usage.html)', 'site-absolute link cannot be packaged'),
+            ('[out](../../outside.md)', 'link escapes repository'),
+        ):
+            self.write('docs/index.md', index + f'\n{bad}\n')
+            with self.assertRaisesRegex(ValueError, pattern):
+                build_docs.render_offline_docs(self.root, revision)
+        self.write('docs/index.md', index)
+        with self.assertRaisesRegex(ValueError, 'full commit id'):
+            build_docs.render_offline_docs(self.root, 'main')
+
     def test_cli_reference_content_and_parser_refusals(self) -> None:
         meta = {'source': 'src/main.c', 'title': 'Command-Line Reference', 'nav_order': 16}
         cli = build_docs.parse_cli_help(REPO, 'src/main.c')

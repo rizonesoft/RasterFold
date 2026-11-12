@@ -126,7 +126,7 @@ Release packages are a separate mode, made from a clean committed tree:
 ```bash
 python3 scripts/build.py --target all
 python3 scripts/package.py --release --target all
-sha256sum -c dist/SHA256SUMS
+(cd dist && sha256sum -c SHA256SUMS)
 ```
 
 `--release` refuses a tree with uncommitted changes and a build that is not of the current commit. It writes `dist/rasterfold-<version>-<target>.zip`, one self-contained package per platform under the top directory `rasterfold-<version>-<target>/`: the same `bin/`, `lib/`, `include/` and `symbols/` files, `build.json`, `LICENSE`, `CHANGELOG.md`, the documentation under `docs/` rewritten to read and link correctly with no network (start at `docs/index.md`), and a `SHA256SUMS` over every other file in the package. `dist/SHA256SUMS` lists the packages. Entries are stored in name order with the commit's own timestamp, so two runs on one commit and one build give byte-identical packages. Verify an extracted package's documentation links with `python3 scripts/build-docs.py --check-offline <extracted top directory>`.

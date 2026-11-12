@@ -1551,13 +1551,13 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "Re-read 2026-11-12 for D09 T01 section 2 (scripts/package.py gained a release mode, --release, writing dist/ packages from a clean commit; its development mode is unchanged): this document does not mention packaging or scripts/package.py (searched for package); its build and check commands are unchanged",
+      "evidence": "Re-read 2026-11-12 after round 1 of D09 T01 section 2: scripts/package.py's release mode now holds a lock, uses exclusively created temporaries and reads LICENSE, CHANGELOG.md, VERSION and the documentation from the commit through git archive; this document does not mention packaging or scripts/package.py (searched for package), so nothing in it changed",
       "sources": {
         "include/rasterfold.h": "228c6bf718c525b2311df99746d55e5861209f2ea0dec65e299b6ec0e6f126c7",
         "src/rf.h": "429414fd9303e0bd47d0ee05fca037e043c68c7d79f0f9435174c4e723e03f83",
         "src/main.c": "ec81bb32213bb7c8833860efb6ba7b8ab1512580fc1e380d6e564972324f7121",
         "scripts/build.py": "488c7f8808e6bef7be095b5aa24fced856aab20ef6757548ac7f32e08021ad91",
-        "scripts/package.py": "9109651d77c5eadf387eca7a8d4ca570bdf9eb45246241b101d8c10a3cc1f76c",
+        "scripts/package.py": "f53f303bd7e958a4ee9f1d64d0df5df0147114623e5023c844d7a7583cb95292",
         "scripts/check-all.py": "ec0f58046fb6beb5e9b522530aa51a4e3eff03bd546a17a09db53e53ca8a5e9a",
         "README.md": "3ed74df2f748338d59eaf36ca338206646ef4136f33e94d72b25f21d459bca45",
         "AGENTS.md": "8a6e2a7cfcfb59130c1ab67ce1b621a8960b7dad415d91ff439d720f5dceba9c",
@@ -1591,24 +1591,24 @@
       }
     },
     "CONTRIBUTING.md": {
-      "evidence": "Re-read 2026-11-12 for D09 T01 section 2 (scripts/package.py gained a release mode, --release, writing dist/ packages from a clean commit; its development mode is unchanged): this document does not mention packaging or scripts/package.py (searched for package), so nothing in it changed",
+      "evidence": "Re-read 2026-11-12 after round 1 of D09 T01 section 2: scripts/package.py's release mode now holds a lock, uses exclusively created temporaries and reads LICENSE, CHANGELOG.md, VERSION and the documentation from the commit through git archive; this document does not mention packaging or scripts/package.py (searched for package), so nothing in it changed",
       "sources": {
         "scripts/build.py": "488c7f8808e6bef7be095b5aa24fced856aab20ef6757548ac7f32e08021ad91",
-        "scripts/package.py": "9109651d77c5eadf387eca7a8d4ca570bdf9eb45246241b101d8c10a3cc1f76c",
+        "scripts/package.py": "f53f303bd7e958a4ee9f1d64d0df5df0147114623e5023c844d7a7583cb95292",
         "scripts/check-all.py": "ec0f58046fb6beb5e9b522530aa51a4e3eff03bd546a17a09db53e53ca8a5e9a",
         "CONTRIBUTING.md": "390a812d137445951411d1b21f7b3e57ff403104757cece32055f9107ab95ad8"
       },
       "review": "Author-attested: 2026-10-25 re-read CONTRIBUTING.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/building.md": {
-      "evidence": "Re-read 2026-11-12 for D09 T01 section 2 (scripts/package.py gained a release mode, --release, writing dist/ packages from a clean commit; its development mode is unchanged): the Pinning and packaging section keeps its development-package paragraph and gains a paragraph on release packages, each statement of which was checked against scripts/package.py: the clean-tree and current-commit refusals (release_source_state, release_members), the dist/rasterfold-<version>-<target>.zip name and top directory, the contents list, both SHA256SUMS files, the sorted entries with the commit timestamp (write_release_zip), and the --check-offline command (scripts/build-docs.py)",
+      "evidence": "Re-read 2026-11-12 after round 1 of D09 T01 section 2: the release paragraph's checksum command is now (cd dist && sha256sum -c SHA256SUMS), because dist/SHA256SUMS lists package basenames; the rest of the paragraph was re-checked against scripts/package.py after its round fixes (packages are still written through a temporary file and a rename, now an exclusively created one under a lock, and source files now come from the commit itself), and no sentence needed to change",
       "sources": {
         "toolchain.json": "fd7b0b2424a2ffdb86095da76e4b975d604741fb271fd9b70e4c53efe9f5e3de",
         "scripts/build.py": "488c7f8808e6bef7be095b5aa24fced856aab20ef6757548ac7f32e08021ad91",
-        "scripts/package.py": "9109651d77c5eadf387eca7a8d4ca570bdf9eb45246241b101d8c10a3cc1f76c",
+        "scripts/package.py": "f53f303bd7e958a4ee9f1d64d0df5df0147114623e5023c844d7a7583cb95292",
         "scripts/check-all.py": "ec0f58046fb6beb5e9b522530aa51a4e3eff03bd546a17a09db53e53ca8a5e9a",
         "include/rasterfold.h": "228c6bf718c525b2311df99746d55e5861209f2ea0dec65e299b6ec0e6f126c7",
-        "docs/building.md": "443844f34cb16226d16393d54380dd090ace5b963d00e0824ca544a20261502d"
+        "docs/building.md": "37dd904415b836985d8b7f660a085bb576958dbf95370e4cc5b2dc991444ccff"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/building.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
@@ -1669,11 +1669,11 @@
       }
     },
     "docs/README.md": {
-      "evidence": "Re-read 2026-11-12 for D09 T01 section 2: scripts/build-docs.py gained render_offline_docs, offline_link_report, check_offline_tree and the --check-offline mode, and its two link-rewriting loops now share map_markdown_urls; this document's description of the staging allowlist, the generator and the Pages workflow is unaffected (staging output is byte-identical: build-docs --check and the staging tests pass), and it makes no statement about release packages",
+      "evidence": "Re-read 2026-11-12 after round 1 of D09 T01 section 2: scripts/build-docs.py now decodes percent-encoded link paths in the offline renderer and its checker; this document's description of the staging allowlist, the generator and the Pages workflow is unaffected",
       "sources": {
         "docs/_config.yml": "676777a86aadacf7e23cd133f97cd97b494a2f2d96fb2a92e875399fda852581",
         "docs/site-content.json": "52117cfce3d60a63965f8588389ad27c5258e7b07e031e3f976008349a710c00",
-        "scripts/build-docs.py": "329862975bfd620cf547e1237dd41c4c40a0c8f64e7df454963a269b60250cd2",
+        "scripts/build-docs.py": "7c9e9eb2d373ba8dc4633e0e44cb186d79c0851a0c31f7629da5d03f40477eaa",
         "docs/README.md": "35dddde5d7cbf1f7353813bebd7272749de00d2f705fc277cd4b51cb7b8189a0"
       }
     },

@@ -12,6 +12,8 @@ import importlib.util
 import json
 import os
 import subprocess
+import tarfile
+import tempfile
 import time
 from pathlib import Path, PurePosixPath
 import sys
@@ -66,12 +68,42 @@ def release_source_state() -> tuple[str, int]:
     return revision, epoch
 
 
-def offline_docs(revision: str) -> dict[str, bytes]:
-    """The offline documentation set (package-relative path -> bytes) from scripts/build-docs.py."""
-    return _load_tool('rf_build_docs_tool', 'build-docs.py').render_offline_docs(ROOT, revision)
+def export_revision(revision: str, dest: Path) -> None:
+    """Write the tracked files of `revision` into `dest`, from git's object store, never from the working tree.
+    Everything a release package takes from the source tree (documentation, LICENSE, CHANGELOG.md, VERSION) is
+    read from this export, so an edit made after the clean-tree check cannot reach a package."""
+    try:
+        done = subprocess.run(['git', '-C', str(ROOT), 'archive', '--format=tar', revision], capture_output=True, timeout=300)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ValueError(f'git archive failed ({exc})') from exc
+    if done.returncode != 0:
+        raise ValueError('git archive failed; a release package needs the committed tree')
+    import io
+    with tarfile.open(fileobj=io.BytesIO(done.stdout), mode='r:') as tar:
+        for member in tar.getmembers():
+            name = PurePosixPath(member.name)
+            if name.is_absolute() or '..' in name.parts:
+                raise ValueError(f'unsafe path in the committed tree: {member.name}')
+            if member.isdir():
+                (dest / member.name).mkdir(parents=True, exist_ok=True)
+            elif member.isfile():
+                target = dest / member.name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                source = tar.extractfile(member)
+                target.write_bytes(source.read() if source is not None else b'')
+            # Symbolic links and other special entries are not needed by a package and are not written.
 
 
-def release_members(target: str, version: str, revision: str, docs: dict[str, bytes]) -> list[tuple[str, bytes, int]]:
+def offline_docs(revision: str, source_root: Path) -> dict[str, bytes]:
+    """The offline documentation set (package-relative path -> bytes), rendered by the exported tree's own
+    scripts/build-docs.py from the exported tree's pages."""
+    spec = importlib.util.spec_from_file_location('rf_build_docs_release', source_root / 'scripts' / 'build-docs.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.render_offline_docs(source_root, revision)
+
+
+def release_members(target: str, version: str, revision: str, docs: dict[str, bytes], source_root: Path) -> list[tuple[str, bytes, int]]:
     """Every file of one release package as (name inside the top directory, bytes, mode), sorted by name."""
     directory = ROOT / 'bin' / target
     manifest_bytes = read_snapshot(directory / 'build.json', 'build manifest')
@@ -110,7 +142,7 @@ def release_members(target: str, version: str, revision: str, docs: dict[str, by
         members[name] = (data, 0o755 if name == 'bin/rasterfold' else 0o644)
     members['build.json'] = (manifest_bytes, 0o644)
     for doc_name in ('LICENSE', 'CHANGELOG.md'):
-        members[doc_name] = (read_snapshot(ROOT / doc_name, 'package document'), 0o644)
+        members[doc_name] = (read_snapshot(source_root / doc_name, 'package document'), 0o644)
     for name, data in docs.items():
         relative = PurePosixPath(name)
         if relative.is_absolute() or '..' in relative.parts or '\\' in name or relative.as_posix() != name:
@@ -125,10 +157,18 @@ def release_members(target: str, version: str, revision: str, docs: dict[str, by
     return [(name, data, mode) for name, (data, mode) in sorted(members.items())]
 
 
+def _exclusive_temporary(final: Path) -> Path:
+    """A new, exclusively created temporary file beside `final`; no other writer can hold the same name."""
+    handle, name = tempfile.mkstemp(dir=final.parent, prefix=final.name + '.', suffix='.tmp')
+    os.close(handle)
+    return Path(name)
+
+
 def write_release_zip(dest: Path, top: str, members: list[tuple[str, bytes, int]], epoch: int) -> None:
-    """Write the package to a temporary file beside `dest` and rename it into place only when complete."""
+    """Write the package to an exclusively created temporary file beside `dest` and rename it into place only
+    when complete."""
     stamp = time.gmtime(epoch)[:6]
-    temporary = dest.with_name(dest.name + '.tmp')
+    temporary = _exclusive_temporary(dest)
     try:
         with zipfile.ZipFile(temporary, 'w', compression=zipfile.ZIP_DEFLATED) as z:
             for name, data, mode in members:
@@ -137,44 +177,88 @@ def write_release_zip(dest: Path, top: str, members: list[tuple[str, bytes, int]
                 info.external_attr = (0o100000 | mode) << 16
                 info.compress_type = zipfile.ZIP_DEFLATED
                 z.writestr(info, data, compresslevel=9)
+        os.chmod(temporary, 0o644)
         os.replace(temporary, dest)
     finally:
         temporary.unlink(missing_ok=True)
 
 
+LOCK_NAME = '.release.lock'
+
+
+def _acquire_release_lock(dist: Path) -> Path:
+    """One release run at a time per dist/: the lock file is created exclusively and names its holder."""
+    lock = dist / LOCK_NAME
+    try:
+        handle = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+    except FileExistsError:
+        try:
+            holder = lock.read_text(encoding='utf-8').strip()
+        except OSError:
+            holder = 'unknown'
+        raise ValueError(
+            f'another release run holds dist/{LOCK_NAME} ({holder}); wait for it, or remove the file if that run is gone'
+        ) from None
+    with os.fdopen(handle, 'w', encoding='utf-8') as fh:
+        fh.write(f'pid {os.getpid()}\n')
+    return lock
+
+
+def _is_stale_temporary(name: str, finals: set[str]) -> bool:
+    return name.endswith('.tmp') and any(name.startswith(final + '.') for final in finals)
+
+
 def release(targets: list[str]) -> None:
-    version = _load_tool('rf_version_tool', 'version.py').read_version(ROOT)
     revision, epoch = release_source_state()
     dist = (ROOT / 'dist').resolve()
     if dist.parent != ROOT.resolve():
         raise ValueError('dist escapes the repository')
-    package_names = {f'rasterfold-{version}-{t}.zip' for t in TARGETS}
-    allowed = package_names | {name + '.tmp' for name in package_names} | {'SHA256SUMS', 'SHA256SUMS.tmp'}
-    if dist.exists():
-        if dist.is_symlink() or not dist.is_dir():
-            raise ValueError('dist is not a directory')
-        strangers = sorted(entry.name for entry in dist.iterdir() if entry.name not in allowed or not entry.is_file() or entry.is_symlink())
-        if strangers:
-            raise ValueError(f'dist holds something that is not a {version} package or its checksum file: {strangers[0]}')
-    docs = offline_docs(revision)
-    dist.mkdir(exist_ok=True)
-    try:
-        for target in targets:
-            members = release_members(target, version, revision, docs)
-            dest = dist / f'rasterfold-{version}-{target}.zip'
-            write_release_zip(dest, f'rasterfold-{version}-{target}', members, epoch)
-            print(f'{dest.relative_to(ROOT)}  {hashlib.sha256(dest.read_bytes()).hexdigest()}')
-    finally:
-        # The checksum file always describes exactly the packages on disk, also after a failed target.
-        present = sorted(name for name in package_names if (dist / name).is_file())
-        sums = ''.join(f'{hashlib.sha256((dist / name).read_bytes()).hexdigest()}  {name}\n' for name in present)
-        sums_path = dist / 'SHA256SUMS'
-        if present:
-            temporary = dist / 'SHA256SUMS.tmp'
-            temporary.write_text(sums, encoding='utf-8', newline='\n')
-            os.replace(temporary, sums_path)
-        else:
-            sums_path.unlink(missing_ok=True)
+    if dist.is_symlink() or (dist.exists() and not dist.is_dir()):
+        raise ValueError('dist is not a directory')
+    with tempfile.TemporaryDirectory(prefix='rasterfold-release-') as exported:
+        source_root = Path(exported)
+        export_revision(revision, source_root)
+        version = _load_tool('rf_version_tool', 'version.py').read_version(source_root)
+        package_names = {f'rasterfold-{version}-{t}.zip' for t in TARGETS}
+        finals = package_names | {'SHA256SUMS'}
+        docs = offline_docs(revision, source_root)
+        dist.mkdir(exist_ok=True)
+        lock = _acquire_release_lock(dist)
+        try:
+            strangers = sorted(
+                entry.name for entry in dist.iterdir()
+                if entry.name != LOCK_NAME and not _is_stale_temporary(entry.name, finals)
+                and (entry.name not in finals or not entry.is_file() or entry.is_symlink())
+            )
+            if strangers:
+                raise ValueError(f'dist holds something that is not a {version} package or its checksum file: {strangers[0]}')
+            # Holding the lock, any temporary still here was left by a run that died; it is ours to remove.
+            for entry in dist.iterdir():
+                if _is_stale_temporary(entry.name, finals) and entry.is_file() and not entry.is_symlink():
+                    entry.unlink()
+            try:
+                for target in targets:
+                    members = release_members(target, version, revision, docs, source_root)
+                    dest = dist / f'rasterfold-{version}-{target}.zip'
+                    write_release_zip(dest, f'rasterfold-{version}-{target}', members, epoch)
+                    print(f'{dest.relative_to(ROOT)}  {hashlib.sha256(dest.read_bytes()).hexdigest()}')
+            finally:
+                # The checksum file always describes exactly the packages on disk, also after a failed target.
+                present = sorted(name for name in package_names if (dist / name).is_file())
+                sums = ''.join(f'{hashlib.sha256((dist / name).read_bytes()).hexdigest()}  {name}\n' for name in present)
+                sums_path = dist / 'SHA256SUMS'
+                if present:
+                    temporary = _exclusive_temporary(sums_path)
+                    try:
+                        temporary.write_text(sums, encoding='utf-8', newline='\n')
+                        os.chmod(temporary, 0o644)
+                        os.replace(temporary, sums_path)
+                    finally:
+                        temporary.unlink(missing_ok=True)
+                else:
+                    sums_path.unlink(missing_ok=True)
+        finally:
+            lock.unlink(missing_ok=True)
 
 
 def package(target: str) -> None:

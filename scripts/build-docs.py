@@ -18,7 +18,7 @@ import re
 import shutil
 import sys
 import tempfile
-from urllib.parse import urlsplit
+from urllib.parse import quote, unquote, urlsplit
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -315,7 +315,7 @@ def offline_link_report(files: dict[str, bytes], shipped: tuple[str, ...] = OFFL
             if _is_external_url(clean):
                 return raw_url
             counts['links'] += 1
-            path = urlsplit(clean).path
+            path = unquote(urlsplit(clean).path)
             target = os.path.normpath((Path(page).parent / path).as_posix()).replace('\\', '/')
             if path.startswith('/') or target.startswith('../') or target not in known:
                 unresolved.append(f'{page}: {clean}')
@@ -401,18 +401,19 @@ def render_offline_docs(root: Path, revision: str) -> dict[str, bytes]:
             parts = urlsplit(clean)
             if parts.path.startswith('/'):
                 raise ValueError(f'{doc_rel}: site-absolute link cannot be packaged: {clean}')
-            target = os.path.normpath((page_dir / parts.path).as_posix()).replace('\\', '/')
+            # A URL path is percent-encoded; the file it names is not. Decode for the lookup, encode what is emitted.
+            target = os.path.normpath((page_dir / unquote(parts.path)).as_posix()).replace('\\', '/')
             if target.startswith('../') or target == '..':
                 raise ValueError(f'{doc_rel}: link escapes repository: {clean}')
             suffix = (('?' + parts.query) if parts.query else '') + (('#' + parts.fragment) if parts.fragment else '')
             if target in packaged or target in out:
-                rebased = os.path.relpath(target, page_dir.as_posix()).replace('\\', '/') + suffix
+                rebased = quote(os.path.relpath(target, page_dir.as_posix()).replace('\\', '/'), safe='/') + suffix
             else:
                 on_disk = safe_repo_path(root, target)
                 if on_disk.is_dir():
-                    rebased = f'{REPOSITORY_URL}/tree/{revision}/{target}'
+                    rebased = f'{REPOSITORY_URL}/tree/{revision}/{quote(target, safe="/")}'
                 elif on_disk.is_file():
-                    rebased = f'{REPOSITORY_URL}/blob/{revision}/{target}{suffix}'
+                    rebased = f'{REPOSITORY_URL}/blob/{revision}/{quote(target, safe="/")}{suffix}'
                 else:
                     raise ValueError(f'{doc_rel}: link target does not exist: {clean}')
             return f'<{rebased}>' if bracketed else rebased
@@ -425,7 +426,7 @@ def render_offline_docs(root: Path, revision: str) -> dict[str, bytes]:
         def note(raw_url: str, doc_rel: str = doc_rel) -> str:
             clean = raw_url[1:-1] if raw_url.startswith('<') and raw_url.endswith('>') else raw_url
             if not _is_external_url(clean):
-                referenced.add(os.path.normpath((Path(doc_rel).parent / urlsplit(clean).path).as_posix()).replace('\\', '/'))
+                referenced.add(os.path.normpath((Path(doc_rel).parent / unquote(urlsplit(clean).path)).as_posix()).replace('\\', '/'))
             return raw_url
 
         map_markdown_urls(out[doc_rel].decode('utf-8'), note)

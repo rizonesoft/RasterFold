@@ -209,9 +209,18 @@ class ReleasePackages(Packages):
         self.state = patch.object(package, 'release_source_state', lambda: (REVISION, EPOCH))
         self.state.start()
         self.addCleanup(self.state.stop)
-        self.offline = patch.object(package, 'offline_docs', lambda revision: dict(self.docs))
+        self.offline = patch.object(package, 'offline_docs', lambda revision, source_root: dict(self.docs))
         self.offline.start()
         self.addCleanup(self.offline.stop)
+
+        def fake_export(revision, dest):
+            # The fixture root stands for the committed tree.
+            for name in ('VERSION', 'LICENSE', 'CHANGELOG.md'):
+                (dest / name).write_bytes((self.root / name).read_bytes())
+
+        self.export = patch.object(package, 'export_revision', fake_export)
+        self.export.start()
+        self.addCleanup(self.export.stop)
         for target in package.TARGETS:
             self.fixture(target)
 
@@ -227,6 +236,7 @@ class ReleasePackages(Packages):
         self.run_release()
         snapshot = self.dist_snapshot()
         self.assertEqual(sorted(snapshot), ['SHA256SUMS', 'rasterfold-1.0.0-linux-x64.zip', 'rasterfold-1.0.0-windows-x64.zip'])
+        self.assertFalse((self.root / 'dist' / package.LOCK_NAME).exists(), 'the lock is released after a run')
         outer = dict(line.split('  ')[::-1] for line in snapshot['SHA256SUMS'].decode().splitlines())
         for target in package.TARGETS:
             name = f'rasterfold-1.0.0-{target}.zip'
@@ -351,6 +361,68 @@ class ReleasePackages(Packages):
                 self.run_release(['linux-x64'])
         self.assertEqual(after, self.dist_snapshot())
 
+    def test_release_runs_are_serialized_and_temporaries_are_exclusive(self):
+        self.run_release()
+        before = self.dist_snapshot()
+        dist = self.root / 'dist'
+        # A second run while one holds the lock is refused and touches nothing, the lock included.
+        lock = dist / package.LOCK_NAME
+        lock.write_text('pid 4242\n', encoding='utf-8')
+        with self.assertRaisesRegex(ValueError, r'another release run holds dist/\.release\.lock \(pid 4242\)'):
+            self.run_release()
+        self.assertEqual(lock.read_text(encoding='utf-8'), 'pid 4242\n')
+        lock.unlink()
+        self.assertEqual(before, self.dist_snapshot())
+        # Two writers of one package never share a temporary file.
+        first = package._exclusive_temporary(dist / 'rasterfold-1.0.0-linux-x64.zip')
+        second = package._exclusive_temporary(dist / 'rasterfold-1.0.0-linux-x64.zip')
+        self.assertNotEqual(first, second)
+        self.assertTrue(first.is_file() and second.is_file())
+        self.assertTrue(package._is_stale_temporary(first.name, {'rasterfold-1.0.0-linux-x64.zip'}))
+        self.assertFalse(package._is_stale_temporary('rasterfold-0.9.0-linux-x64.zip.x.tmp', {'rasterfold-1.0.0-linux-x64.zip'}))
+        # Temporaries a dead run left behind are removed by the next run, which holds the lock.
+        first.write_bytes(b'half a package')
+        self.run_release()
+        self.assertEqual(before, self.dist_snapshot())
+        self.assertFalse(first.exists() or second.exists())
+
+    def test_release_takes_source_files_from_the_commit_not_the_working_tree(self):
+        self.export.stop()
+        self.addCleanup(self.export.start)
+
+        def git(*argv):
+            return subprocess.run(['git', '-C', str(self.root), *argv], check=True, capture_output=True, text=True).stdout.strip()
+
+        (self.root / '.gitignore').write_text('bin/\ndist/\n', encoding='utf-8')
+        git('init', '-q')
+        git('config', 'user.email', 'release-test@example.invalid')
+        git('config', 'user.name', 'Release Test')
+        git('add', '-A')
+        git('commit', '-q', '-m', 'fixture')
+        revision = git('rev-parse', 'HEAD')
+        for target in package.TARGETS:
+            manifest = json.loads((self.root / 'bin' / target / 'build.json').read_text(encoding='utf-8'))
+            manifest['revision'] = revision[:12]
+            self.write_manifest(target, manifest)
+        committed_licence = (self.root / 'LICENSE').read_bytes()
+        # The tree is edited after the clean check passed (the check is patched to the committed state).
+        (self.root / 'LICENSE').write_text('edited after the check', encoding='utf-8')
+        (self.root / 'CHANGELOG.md').write_text('edited after the check', encoding='utf-8')
+        (self.root / 'VERSION').write_text('9.9.9\n', encoding='utf-8')
+        with patch.object(package, 'release_source_state', lambda: (revision, EPOCH)):
+            self.run_release(['linux-x64'])
+        with zipfile.ZipFile(self.root / 'dist' / 'rasterfold-1.0.0-linux-x64.zip') as z:
+            self.assertEqual(z.read('rasterfold-1.0.0-linux-x64/LICENSE'), committed_licence)
+            self.assertEqual(z.read('rasterfold-1.0.0-linux-x64/CHANGELOG.md'), b'# Changelog\n')
+        self.assertFalse((self.root / 'dist' / 'rasterfold-9.9.9-linux-x64.zip').exists())
+        # export_revision itself: tracked files only, from the object store.
+        out = self.root / 'exported'
+        out.mkdir()
+        package.export_revision(revision, out)
+        self.assertEqual((out / 'LICENSE').read_bytes(), committed_licence)
+        self.assertEqual((out / 'VERSION').read_text(encoding='utf-8'), '1.0.0\n')
+        self.assertFalse((out / 'bin').exists())
+
     def test_release_source_state_reads_a_real_git_tree(self):
         self.state.stop()
         self.addCleanup(self.state.start)
@@ -383,7 +455,7 @@ class ReleasePackages(Packages):
         self.addCleanup(self.offline.start)
         build_docs = package._load_tool('rf_build_docs_for_test', 'build-docs.py')
         real_docs = build_docs.render_offline_docs(REPO, REVISION)
-        with patch.object(package, 'offline_docs', lambda revision: dict(real_docs)):
+        with patch.object(package, 'offline_docs', lambda revision, source_root: dict(real_docs)):
             self.run_release(['linux-x64'])
         out = self.root / 'extracted'
         with zipfile.ZipFile(self.root / 'dist' / 'rasterfold-1.0.0-linux-x64.zip') as z:
@@ -412,6 +484,15 @@ class ReleasePackages(Packages):
         self.assertTrue(any('hosted path' in item for item in broken['leftovers']))
         with self.assertRaisesRegex(ValueError, 'full commit id'):
             build_docs.render_offline_docs(REPO, 'abc123')
+        # A percent-encoded link names the decoded file.
+        encoded = build_docs.offline_link_report({
+            'docs/index.md': b'[spaced](hello%20world.md) [plain](plain.md)\n',
+            'docs/hello world.md': b'# Hello\n\n[back](index.md) [licence](../LICENSE)\n',
+            'docs/plain.md': b'# Plain\n',
+        })
+        self.assertEqual((encoded['unresolved'], encoded['unreachable'], encoded['links']), ([], [], 4))
+        missing = build_docs.offline_link_report({'docs/index.md': b'[spaced](hello%20there.md)\n'})
+        self.assertEqual(missing['unresolved'], ['docs/index.md: hello%20there.md'])
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
