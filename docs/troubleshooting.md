@@ -26,7 +26,7 @@ Both the `rasterfold` CLI and the C API (`include/rasterfold.h`) use the same si
 
 ## File I/O and Output Publication Refusals (Exit Code `2`)
 
-RasterFold writes to an exclusive sibling `<destination>.partial` file, flushes file data, and publishes without replacing an existing file (`src/sys.c`, `src/sys_posix.c`):
+RasterFold writes to an exclusive sibling `<destination>.partial` file, flushes file data, and by default publishes without replacing an existing file; only `encode --overwrite` and `decode --overwrite` replace one (`src/sys.c`, `src/sys_posix.c`):
 
 - `rasterfold: output file already exists`: by default RasterFold does not replace an existing destination file. Choose a new output path, remove the old output file, or pass `--overwrite` to `encode` or `decode` to replace it.
 - `rasterfold: temporary output already exists`: another active conversion is writing `<destination>.partial`, or an earlier interrupted process left `<destination>.partial` behind (`src/sys.c`, `src/sys_posix.c`). **Recovery:** first confirm that no running `rasterfold` process or caller still owns `<destination>.partial` (removing an active writer's temporary file disrupts its final rename/link publication); if another writer is active, choose a different output path, otherwise remove the stale `<destination>.partial` file and retry.

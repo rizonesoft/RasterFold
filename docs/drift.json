@@ -1669,11 +1669,11 @@
       }
     },
     "docs/README.md": {
-      "evidence": "Re-read 2026-11-12: docs/site-content.json gained the generated page cli and scripts/build-docs.py gained parse_cli_help and render_cli_page; this document describes the staging allowlist, the generator and the Pages workflow in general terms without listing pages or renderers, and each statement still holds for the 16-page site",
+      "evidence": "Re-read 2026-11-12 after round 1 of D08 T03 section 1: scripts/build-docs.py gained c_inactive_offsets, so the command-line reference refuses help text or a dispatch line inside a comment or a preprocessor conditional; this document describes the staging allowlist, the generator and the Pages workflow in general terms without listing renderers or parser rules, and each statement still holds",
       "sources": {
         "docs/_config.yml": "676777a86aadacf7e23cd133f97cd97b494a2f2d96fb2a92e875399fda852581",
         "docs/site-content.json": "52117cfce3d60a63965f8588389ad27c5258e7b07e031e3f976008349a710c00",
-        "scripts/build-docs.py": "af0657a04e5c279a256963ce1d0330219ec7e50868219aeab66d6679a03fb83c",
+        "scripts/build-docs.py": "41fbbd2e74ac9b266a45fcef7c74fa89ae670317d73d02f3ea88819708d04fe5",
         "docs/README.md": "35dddde5d7cbf1f7353813bebd7272749de00d2f705fc277cd4b51cb7b8189a0"
       }
     },
@@ -1741,7 +1741,7 @@
       "review": "Author-attested: 2026-10-25 re-read docs/examples.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/limitations.md": {
-      "evidence": "Re-read 2026-11-12 for D08 T03 section 1 (the generated Command-Line Reference and the corrected help text: encode and decode usage now shows [--overwrite] and says an existing output is refused unless --overwrite is given): the Planned bullet no longer lists the script-generated CLI and API references as planned: both are published (docs/api.md, docs/cli.md) and the bullet says so; the converter remains planned; no limit stated on this page depends on the help text",
+      "evidence": "Re-read 2026-11-12 after round 1 of D08 T03 section 1: the Planned bullet now reads in the singular (the converter is planned and is not available as a download) and says the generated references planned beside it are published, linking api.md and cli.md, both of which the site publishes; the rest of the page is unchanged",
       "sources": {
         "include/rasterfold.h": "228c6bf718c525b2311df99746d55e5861209f2ea0dec65e299b6ec0e6f126c7",
         "src/rf.h": "429414fd9303e0bd47d0ee05fca037e043c68c7d79f0f9435174c4e723e03f83",
@@ -1750,12 +1750,12 @@
         "src/bmp.c": "50278e51120542ec686aee00385eba666239070533035e5d04e7d659b118317c",
         "src/api.c": "774c4e0a2a22f5a01e174e541cd1e725da05019ece20927345938cbe10fe0f02",
         "src/sys_posix.c": "dd65833094db53eedc06d917f0d3b6fefcb402414e20878503cf36341601f9fd",
-        "docs/limitations.md": "53bf875b081471d6cea9f4569c41ac6a8b441f54f95c6fb22a91c30955fe8b16"
+        "docs/limitations.md": "8c11dd7cabda71f911d1b49c63dc3580ea26c9cc8194e415038a52ef385c57dd"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/limitations.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/troubleshooting.md": {
-      "evidence": "Re-read 2026-11-12 for D08 T03 section 1 (the generated Command-Line Reference and the corrected help text: encode and decode usage now shows [--overwrite] and says an existing output is refused unless --overwrite is given): the output file already exists diagnostic now says the refusal is the default and names --overwrite on encode or decode as the way to replace a file, matching src/main.c; exit codes and the other diagnostics are unchanged",
+      "evidence": "Re-read 2026-11-12 after round 1 of D08 T03 section 1: the sentence introducing the file I/O refusals now says publication does not replace an existing file by default and that only encode --overwrite and decode --overwrite replace one, agreeing with the bullet below it and with the help text in src/main.c (rf_write_atomic_replace is reached only with the flag)",
       "sources": {
         "include/rasterfold.h": "228c6bf718c525b2311df99746d55e5861209f2ea0dec65e299b6ec0e6f126c7",
         "src/rf.h": "429414fd9303e0bd47d0ee05fca037e043c68c7d79f0f9435174c4e723e03f83",
@@ -1766,7 +1766,7 @@
         "src/sys_posix.c": "dd65833094db53eedc06d917f0d3b6fefcb402414e20878503cf36341601f9fd",
         "tools/provision.py": "dc5fb84c125ea3735ca425e91d084d04297d772cee4e3609417aa11c66ad0c3b",
         "tools/provision.ps1": "7b7ce12f1aede008be98478d7b95fbf6601737356baa62277c0d9217ff3e5e40",
-        "docs/troubleshooting.md": "4e6f16096e10378f482662cac172fe9fd507f4045cf7109ce6b1ee86d1229010"
+        "docs/troubleshooting.md": "d94ced5f2e531839230c3db3f0da7a06bf4fafd19103cd6618fe298d4f137521"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/troubleshooting.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },

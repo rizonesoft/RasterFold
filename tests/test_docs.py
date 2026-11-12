@@ -301,6 +301,36 @@ class DocsMapTests(unittest.TestCase):
         refuses(lambda s: s.replace(verify_line, '    "Usage of verify" RF_EOL\n'), 'does not start with its usage line')
         refuses(lambda s: s.replace('    "  rasterfold verify [--threads N] input.fold" RF_EOL\n', ''), 'usage_text has no usage line for verify')
         refuses(lambda s: s.replace('    "example: rasterfold verify photo.fold" RF_EOL;', '    "example: rasterfold verify photo.fold";'), 'does not end with RF_EOL')
+        # Text the compiler would not see is not read either: a dispatch or a help block that is commented out
+        # or under any preprocessor conditional, and a comment or directive inside the dispatch chain or a block.
+        dispatch_verify = '        else if (wide_eq(pos[1], "verify")) rf_print(0, help_verify);\n'
+        self.assertIn(dispatch_verify, source)
+        refuses(lambda s: s.replace(dispatch_verify, '#if 0\n' + dispatch_verify + '#endif\n'), 'inside a comment or a preprocessor conditional')
+        refuses(lambda s: s.replace(dispatch_verify, '#ifdef RF_VERIFY\n' + dispatch_verify + '#endif\n'), 'inside a comment or a preprocessor conditional')
+        refuses(lambda s: s.replace(dispatch_verify, '        /* ' + dispatch_verify.strip() + ' */\n'), 'inside a comment or a preprocessor conditional')
+        refuses(lambda s: s.replace(dispatch_verify, '        // ' + dispatch_verify.strip() + '\n'), 'inside a comment or a preprocessor conditional')
+        refuses(lambda s: s.replace(dispatch_verify, dispatch_verify + '        /* the next branch is experimental */\n'), 'comment or preprocessor line inside the `help <command>` dispatch chain')
+        refuses(lambda s: s.replace(dispatch_verify, dispatch_verify + '#ifdef RF_EXPERIMENT\n        else if (flag) rf_print(0, usage_text);\n#endif\n'), 'comment or preprocessor line inside the `help <command>` dispatch chain')
+        refuses(lambda s: s.replace('static const char help_verify[] =', '#if 0\nstatic const char help_verify[] ='
+                                    ).replace('    "example: rasterfold verify photo.fold" RF_EOL;', '    "example: rasterfold verify photo.fold" RF_EOL;\n#endif'),
+                'help_verify is declared inside a comment or a preprocessor conditional')
+        refuses(lambda s: s.replace('static const char help_verify[] =', '/*\nstatic const char help_verify[] ='
+                                    ).replace('    "example: rasterfold verify photo.fold" RF_EOL;', '    "example: rasterfold verify photo.fold" RF_EOL;\n*/'),
+                'help_verify is declared inside a comment or a preprocessor conditional')
+        refuses(lambda s: s.replace(verify_line, verify_line + '    /* "hidden line" RF_EOL */\n'), 'a comment or preprocessor line inside the initializer')
+        refuses(lambda s: s.replace(verify_line, verify_line + '#ifdef _WIN32\n    "windows only" RF_EOL\n#endif\n'), 'a comment or preprocessor line inside the initializer')
+        # The scanner itself: comments, conditionals, and literals that merely look like them.
+        probe = 'a /* b */ c // d\n#if X\ne "/* not a comment */" f\n#endif\ng \'"\' h\n'
+        flags = build_docs.c_inactive_offsets(probe)
+        active = ''.join(ch for ch, off in zip(probe, flags) if not off)
+        # What stays active: `a`, ` c ` up to the line comment, the newline that ends `#endif`, and the last line
+        # with its character literal; both comments, the whole conditional block and its directives are inactive.
+        self.assertEqual(active, 'a  c \ng \'"\' h\n')
+        with self.assertRaisesRegex(ValueError, 'unbalanced'):
+            build_docs.c_inactive_offsets('#if 1\nint x;\n')
+        with self.assertRaisesRegex(ValueError, 'unbalanced'):
+            build_docs.c_inactive_offsets('int x;\n#endif\n')
+
         # The escapes it does accept decode to the character.
         escaped = source.replace(verify_line, '    "usage: rasterfold verify [--threads N] \\"in\\\\put\\".fold" RF_EOL\n')
         self.write('src/main.c', escaped)

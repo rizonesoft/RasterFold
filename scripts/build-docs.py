@@ -521,6 +521,84 @@ _C_HELP_DECL_RE = re.compile(r'^static const char (?P<name>[A-Za-z_][A-Za-z0-9_]
 _C_HELP_DISPATCH_RE = re.compile(r'wide_eq\(pos\[1\], "(?P<command>[a-z]+)"\)\) rf_print\(0, (?P<name>help_[a-z]+)\);')
 
 
+_C_COND_RE = re.compile(r'[ \t]*#[ \t]*(if|ifdef|ifndef|elif|else|endif)\b')
+
+
+def c_inactive_offsets(text: str) -> list[bool]:
+    """For each character of a C source, whether it lies inside a comment or under any preprocessor conditional.
+
+    The help reference is read from source without compiling it, so it must not read text the compiler would
+    not: a declaration or a dispatch line inside `/* */`, after `//`, or between `#if`/`#ifdef`/`#ifndef` and
+    `#endif` (whatever the condition) is treated as inactive and refused by the caller."""
+    inactive = [False] * len(text)
+    depth = 0
+    pos = 0
+    state = 'code'          # code | block | line | string | char
+    line_start = True
+    while pos < len(text):
+        ch = text[pos]
+        nxt = text[pos + 1] if pos + 1 < len(text) else ''
+        if state == 'code':
+            if line_start:
+                m = _C_COND_RE.match(text, pos)
+                if m:
+                    if m.group(1) in ('if', 'ifdef', 'ifndef'):
+                        depth += 1
+                    end = text.find('\n', pos)
+                    end = len(text) if end < 0 else end
+                    for i in range(pos, end):
+                        inactive[i] = True
+                    if m.group(1) == 'endif':
+                        depth -= 1
+                        if depth < 0:
+                            raise ValueError('unbalanced #endif')
+                    pos = end
+                    continue
+            if ch == '/' and nxt == '*':
+                state = 'block'
+                inactive[pos] = inactive[pos + 1] = True
+                pos += 2
+                line_start = False
+                continue
+            if ch == '/' and nxt == '/':
+                state = 'line'
+                inactive[pos] = True
+                pos += 1
+                line_start = False
+                continue
+            if ch == '"':
+                state = 'string'
+            elif ch == "'":
+                state = 'char'
+            inactive[pos] = depth > 0
+        elif state == 'block':
+            inactive[pos] = True
+            if ch == '*' and nxt == '/':
+                inactive[pos + 1] = True
+                pos += 2
+                state = 'code'
+                continue
+        elif state == 'line':
+            inactive[pos] = True
+            if ch == '\n':
+                state = 'code'
+        else:                                   # string or char literal
+            inactive[pos] = depth > 0
+            if ch == '\\':
+                if pos + 1 < len(text):
+                    inactive[pos + 1] = depth > 0
+                pos += 2
+                line_start = False
+                continue
+            if (state == 'string' and ch == '"') or (state == 'char' and ch == "'") or ch == '\n':
+                state = 'code'
+        line_start = ch == '\n' or (line_start and ch in ' \t')
+        pos += 1
+    if depth != 0:
+        raise ValueError('unbalanced preprocessor conditional')
+    return inactive
+
+
 def extract_c_help_constant(text: str, name: str, source_rel: str) -> str:
     """The value of `static const char <name>[] = ...;` in a C source, with `RF_EOL` read as one LF.
 
@@ -530,6 +608,9 @@ def extract_c_help_constant(text: str, name: str, source_rel: str) -> str:
     decls = [m for m in _C_HELP_DECL_RE.finditer(text) if m.group('name') == name]
     if len(decls) != 1:
         raise ValueError(f'{source_rel}: expected exactly one `static const char {name}[] =`, found {len(decls)}')
+    inactive = c_inactive_offsets(text)
+    if inactive[decls[0].start()]:
+        raise ValueError(f'{source_rel}: {name} is declared inside a comment or a preprocessor conditional')
     pos = decls[0].end()
     out: list[str] = []
     while True:
@@ -537,6 +618,8 @@ def extract_c_help_constant(text: str, name: str, source_rel: str) -> str:
             pos += 1
         if pos >= len(text):
             raise ValueError(f'{source_rel}: {name}: initializer has no terminating `;`')
+        if inactive[pos]:
+            raise ValueError(f'{source_rel}: {name}: a comment or preprocessor line inside the initializer')
         ch = text[pos]
         if ch == ';':
             break
@@ -574,9 +657,21 @@ def extract_c_help_constant(text: str, name: str, source_rel: str) -> str:
 def parse_cli_help(root: Path, source_rel: str) -> dict:
     """The command summary and every command's help text, in the order the `help` dispatcher names them."""
     text = safe_repo_path(root, source_rel).read_text(encoding='utf-8')
-    dispatched = [(m.group('command'), m.group('name')) for m in _C_HELP_DISPATCH_RE.finditer(text)]
+    inactive = c_inactive_offsets(text)
+    dispatch_matches = list(_C_HELP_DISPATCH_RE.finditer(text))
+    for m in dispatch_matches:
+        if any(inactive[m.start():m.end()]):
+            raise ValueError(
+                f'{source_rel}: the `help {m.group("command")}` dispatch is inside a comment or a preprocessor conditional'
+            )
+    dispatched = [(m.group('command'), m.group('name')) for m in dispatch_matches]
     if not dispatched:
         raise ValueError(f'{source_rel}: no `help <command>` dispatch found')
+    # The dispatch lines must be one unbroken chain, so no other branch (compiled or not) sits between them.
+    chain_start = dispatch_matches[0].start()
+    chain_end = dispatch_matches[-1].end()
+    if any(inactive[chain_start:chain_end]):
+        raise ValueError(f'{source_rel}: a comment or preprocessor line inside the `help <command>` dispatch chain')
     for command, name in dispatched:
         if name != f'help_{command}':
             raise ValueError(f'{source_rel}: `help {command}` prints {name}, expected help_{command}')
