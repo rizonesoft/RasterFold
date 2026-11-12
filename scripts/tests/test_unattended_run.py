@@ -210,5 +210,15 @@ class LauncherCarbonTests(unittest.TestCase):
         self.assertEqual(quoted[0][2:], campaign_prompt_in_script("CARBON_PROMPT"))
 
 
+class InstallerTests(unittest.TestCase):
+    def test_shortcut_arguments_leave_distro_and_checkout_unquoted(self):
+        # 2026-11-12: quoting -d and --cd made both shortcuts start nothing (wsl.exe from a .lnk runs nothing then);
+        # two probe shortcuts that differed only in the quotes showed it. Paths with spaces are refused instead.
+        text = (SCRIPTS / "install-launchers.ps1").read_text(encoding="utf-8")
+        lines = [line.strip() for line in text.splitlines() if line.strip().startswith("$shortcut.Arguments")]
+        self.assertEqual(lines, ['$shortcut.Arguments = "-d $distro --cd $linuxRepo -- bash scripts/unattended-run.sh$($s.Runner)"'])
+        self.assertIn("contains whitespace", text)
+
+
 if __name__ == "__main__":
     unittest.main()

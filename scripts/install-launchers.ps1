@@ -25,6 +25,9 @@ if ($here -notmatch '^\\\\(?:wsl\.localhost|wsl\$)\\([^\\]+)\\(.+)\\scripts$') {
 $distro = $Matches[1]
 $linuxRepo = '/' + ($Matches[2] -replace '\\', '/')
 $repo = Split-Path -Parent $here
+if ("$distro$linuxRepo" -match '\s') {
+  throw "The distro or checkout path contains whitespace ($distro, $linuxRepo): wsl.exe cannot take it from a shortcut. Move the checkout to a path without spaces."
+}
 
 $render = @'
 import io, os, sys
@@ -79,8 +82,9 @@ foreach ($s in $shortcuts) {
   $link = Join-Path $desktop "$($s.Name).lnk"
   $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($link)
   $shortcut.TargetPath = $wsl
-  # Quoted, so a distro or checkout path with spaces reaches wsl.exe as one argument each.
-  $shortcut.Arguments = "-d `"$distro`" --cd `"$linuxRepo`" -- bash scripts/unattended-run.sh$($s.Runner)"
+  # Unquoted on purpose: wsl.exe started from a shortcut runs nothing when -d or --cd is quoted (measured
+  # 2026-11-12 with two probe shortcuts that differed only in the quotes), so a path with spaces is refused above.
+  $shortcut.Arguments = "-d $distro --cd $linuxRepo -- bash scripts/unattended-run.sh$($s.Runner)"
   $shortcut.WorkingDirectory = $env:USERPROFILE
   $shortcut.IconLocation = "$icon,0"
   $shortcut.Description = $s.Description
