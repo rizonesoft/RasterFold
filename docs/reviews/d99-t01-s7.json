@@ -1,0 +1,77 @@
+{
+  "ref": "D99 T01 \u00a77",
+  "title": "HEVC distribution decision",
+  "implementation_sha": "9a09513333a548cd442975ddfc9fc0c7ce955979",
+  "date": "2026-11-12",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/99-manual/D99-T01-s7.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "docs/codec-distribution.md -> names CLSID_WICHeifDecoder (HEIF Image Extensions, 9PMMSR1CGPWG) and the Media Foundation H.265 decoder (HEVC Video Extensions, 9N4WGH0Z6VHQ), Windows 10 1809 minimum for the WIC HEIF interfaces, 7 Microsoft Learn sources, the GitHub Releases channel, the missing-component refusal",
+    "python3 scripts/check-converter.py --case contract -> contract: PASS (heif, heic read-only through the system codec)",
+    "python3 scripts/drift-check.py -> 0 error(s)"
+  ],
+  "completion": {
+    "report": "docs/reviews/99-manual/D99-T01-s7.md",
+    "verdict": "complete",
+    "candidate": "9a09513333a548cd442975ddfc9fc0c7ce955979",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/99-manual/D99-T01-s7.md",
+    "candidate": "cf7bb647711a23abda48ac98bf190128d36db574",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "cf7bb647711a23abda48ac98bf190128d36db574",
+  "schedule": {
+    "policy": "three-pass",
+    "pass_cap": 33,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}

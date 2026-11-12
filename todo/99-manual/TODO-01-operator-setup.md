@@ -2,7 +2,7 @@
 schema_version: 1
 id: operator-setup
 domain: 99-manual
-status: draft
+status: done
 title: "TODO-01 -- Operator Setup and Approvals (Manual)"
 depends_on: []
 track: OP1
@@ -51,7 +51,7 @@ track: OP1
 |   3   |   §3    | Approve format version 3                      | --         |  [x]   |
 |   4   |   §4    | The missed-milestone policy                   | --         |  [x]   |
 |   5   |   §5    | Enable GitHub Pages                           | --         |  [x]   |
-| 7 | §7 | HEVC distribution decision | -- | [ ] |
+| 7 | §7 | HEVC distribution decision | -- | [x] |
 | 8 | §8 | The 13-round milestone cap | §4 | [x] |
 | 9 | §9 | The 2026-11-11 scope and autonomy decisions | -- | [x] |
 
@@ -150,6 +150,8 @@ Every milestone gate in `todo/05-milestones/` carries this policy: on a miss, up
 
 **Test checkpoint:** Run 2026-11-12. `docs/codec-distribution.md` names the WIC HEIF decoder and the Media Foundation H.265 decoder with their identifiers, Store packages and the Windows versions Microsoft documents for each, 7 Microsoft Learn sources each linked and dated 2026-11-12, and the GitHub Releases channel; `python3 scripts/check-converter.py --case contract` printed `contract: registry JSON and C registry agree on the complete public contract` and `contract: PASS`, with `converter/codecs.json` giving `heif` and `heic` the provider `Windows Imaging Component (system codec, not bundled)`, `read: true`, `write: false`; `python3 scripts/drift-check.py` printed `0 error(s)`. D10 T02 §7 must later prove its adapter matches. No future artifact is required to stamp this decision.
 
+> **Verified:** 2026-11-12 | §7 | 9a09513333a548cd442975ddfc9fc0c7ce955979
+> **Review:** `docs/reviews/d99-t01-s7.json`
 ## 8. The 13-Round Milestone Cap
 
 > **Started:** 2026-11-10T22:41:00Z
