@@ -95,3 +95,48 @@ OVERALL: needs-attention
 ## Writer note: round 2 fixes
 
 - Implemented: 1 (unreadable contracts failed open at dispatch). `section_contract_at` in `scripts/review-dispatch.py` now raises `Refused` with the underlying error's type and message when the contract cannot be read at either commit or todo-graph does not load, so `contract_changed` and `void_reconciliation` only ever act on two contracts that were read, and a reconciliation is refused before a review is spent. `test_an_unreadable_section_contract_refuses_the_reconciliation` covers a section removed from the tree and a missing `scripts/todo-graph.py`, asserting the refusal, the kept diagnostic and that no reviewer was called. The three-pass dispatcher fixture now carries the real todo-graph and a section, since every reconciliation reads its contract.
+
+## Round 3: astra (`gpt-6-astra` via `codex`)
+
+- Writer: claude
+- Run: 2026-11-12T06:55:06Z
+- Candidate: 8d805795162b3945d72c59785766bebb175bb34a
+- Effort: medium
+- Lenses: adversarial, integration, source-defect, plan-delivery, consistency, record, quality, optimization
+- Lines: 34
+- Digest: d5f118fa25a2252a
+
+### adversarial: approve
+
+No findings. In-memory probes confirmed either contract-read failure and module-load failure produce `Refused` with the underlying diagnostic.
+
+### integration: approve
+
+No findings. Unchanged contracts remain eligible for reconciliation; standalone findings bypass section-contract checks.
+
+### source-defect: approve
+
+No findings.
+
+### plan-delivery: approve
+
+No findings. The round 2 failure is fixed.
+
+### consistency: approve
+
+No findings. Dispatch and stamping compare the final reconciliation’s contract against the failed completion.
+
+### record: approve
+
+No findings. Verification used source inspection and read-only, in-memory probes. The fixture suite was not rerun because it creates files.
+
+### quality: approve
+
+No findings.
+
+### optimization: approve
+
+No findings.
+
+HIGHEST: none
+OVERALL: approve
