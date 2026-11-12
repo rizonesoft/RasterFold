@@ -1,0 +1,78 @@
+{
+  "ref": "D01 T07 \u00a72",
+  "title": "Where the Bytes Go on Screenshots, and Round 1 Planned",
+  "implementation_sha": "0b72770aee2146e6fcbfecb952f34441f6673351",
+  "date": "2026-11-12",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/01-compression/D01-T07-s2.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "bench.exe -r1 -t1 --breakdown on the ten development screenshots -> stream 3382799, zero 7.3%, sign 10.4%, exp 30.9%, mant 51.3%",
+    ".venv/bin/python research/screenrep.py -> total copied=0.988 copied8=0.967 copied32=0.853 est_bytes=772711; copy distances left 7753, above 20511, same row 33449, within 64 rows 54279, further 56673",
+    ".venv/bin/python tests/test_research_refs.py -> OK (8 ScreenRepetitionTests)",
+    "bosun run -- python3 scripts/check-all.py --all-targets on 0b72770 -> check-all: 32/32 passed"
+  ],
+  "completion": {
+    "report": "docs/reviews/01-compression/D01-T07-s2.md",
+    "verdict": "reconciled",
+    "candidate": "0b72770aee2146e6fcbfecb952f34441f6673351",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/01-compression/D01-T07-s2.md",
+    "candidate": "dfa36bf4eafd836ec1f5829e02b55358429873bb",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "dfa36bf4eafd836ec1f5829e02b55358429873bb",
+  "schedule": {
+    "policy": "three-pass",
+    "pass_cap": 33,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}

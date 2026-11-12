@@ -42,7 +42,7 @@ track: C7
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
 |   1   |   §1    | A development set of screenshots | -- |  [x]   |
-|   2   |   §2    | Where the bytes go on screenshots, and round 1 planned | §1 |  [ ]   |
+|   2   |   §2    | Where the bytes go on screenshots, and round 1 planned | §1 |  [x]   |
 |   3   |   §3    | Round 1: a backward-reference method for screen content | §2 |  [ ]   |
 
 ---
@@ -86,6 +86,8 @@ WebP is about 4.7 times smaller on screenshots. Before anything is designed this
 
 **Test checkpoint:** Corpus measurement, 2026-11-12, development screenshots only (both paths ran `verify_screens` first: `screens verified: 10 screenshots, hashes match, no overlap with the held-out set`). Method 1 attribution summed over the ten: `3,382,799` stream bytes, `92.7%` on non-zero residuals (sign `10.4%`, exponent `30.9%`, mantissa `51.3%`), zero decisions `7.3%`. `.venv/bin/python research/screenrep.py` (re-run after round 1): `total pixels=12288000 left=0.873 above=0.883 above_left=0.844 literal=93407 cache=58482 copy=172665 copied=0.988 copied8=0.967 copied32=0.853 est_bytes=772711` (method 1 `3,383,489`, WebP `670,020`); per image left-equal `0.785` to `0.954`, above-equal `0.821` to `0.956`, above-left `0.758` to `0.940`, `1,946` to `4,507` colours, copied `0.982` to `0.993`, at least 8 pixels `0.955` to `0.983`, at least 32 `0.754` to `0.947`; extra bits `292,726` bytes (`37.9%`) and distance symbols `98,044` (`12.7%`) of the estimate. The 172,665 copies by distance class (`total copy distances` line, added after the completion review): left `7,753`, above `20,511`, same row `33,449`, within 64 rows `54,279`, further `56,673`. `docs/research.md` gained section 4.15; `§3` exists with its stop condition and `python3 scripts/todo-graph.py validate` printed `0 fatal`. No held-out image was read: `research/screenrep.py` refuses any image outside the `screens` set.
 
+> **Verified:** 2026-11-12 | §2 | 0b72770aee2146e6fcbfecb952f34441f6673351
+> **Review:** `docs/reviews/d01-t07-s2.json`
 ## 3. Round 1: a Backward-Reference Method for Screen Content
 
 **Origin:** discovered run=32b2775e0d5a 2026-11-12 -- Milestone 9 gate (`D05 T01 §9`) misses on the held-out screenshots (`4.6730` of lossless WebP); this is follow-up round 1 of at most 13 under the capped missed-milestone policy (`D99 T01 §8`), required by that gate's acceptance bar, routed by `docs/research.md` section 4.15 (`§2`).
