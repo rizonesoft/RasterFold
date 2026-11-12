@@ -11,10 +11,14 @@ gen-compdb.py --rebuild-stale, which writes only ignored build output
 (build/, bin/, the root compile_commands.json), and only after the branch,
 clean-tree and guard checks passed, so nothing is rebuilt under a live writer.
 
-The unattended writer is Claude Code (operator directive 2026-11-11), so the
-launch preconditions are Claude Code's: its CLI and the reviewer's, the
-campaign Stop hook, the two dialogs that would sit unanswered, the session
-cron tools, the read-only Sonnet scout roster, and the language-server plugin.
+Two runners launch it (operator directive 2026-11-12): Claude Code
+(`--runner claude`, the default) and Antigravity on Gemini 4 Carbon
+(`--runner gemini`). For Claude Code the launch preconditions are its CLI and
+the reviewer's, the campaign Stop hook in .claude/settings.json, the two
+dialogs that would sit unanswered, the session cron tools, and the
+language-server plugin. For Antigravity they are the agy CLI and the
+reviewer's and the campaign Stop hook in .agents/hooks.json. The read-only
+Sonnet scout roster is a repository invariant and is checked for both.
 """
 from __future__ import annotations
 
@@ -32,6 +36,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FAILURES: list[str] = []
+# Each runner and the CLI its launch execs (docs/unattended-run.md).
+RUNNERS = {"claude": "claude", "gemini": "agy"}
 CANCEL_SIGNALS = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
 
 
@@ -402,7 +408,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repair", action="store_true",
                         help="rebuild a stale compilation database (ignored build output) once the ownership checks pass")
     parser.add_argument("--claim", metavar="SESSION", help="on success, record this launch (its session id) in build/unattended-launch.json")
-    parser.add_argument("--claim-pid", type=int, help="the launcher's pid, which `exec claude` keeps (required with --claim)")
+    parser.add_argument("--claim-pid", type=int, help="the launcher's pid, which `exec claude` or `exec agy` keeps (required with --claim)")
+    parser.add_argument("--runner", choices=RUNNERS, default="claude",
+                        help="the writer the launch starts: claude (Claude Code) or gemini (Antigravity on Gemini 4 Carbon)")
     options = parser.parse_args(argv)
     if options.claim and not options.claim_pid:
         parser.error("--claim needs --claim-pid")
@@ -444,19 +452,25 @@ def main(argv: list[str] | None = None) -> int:
     # absent or stale. A live or unknown owner is already a FAIL, so a repair never runs under a running writer.
     owned = not FAILURES
 
-    # The writer and its one reviewer under the three-pass schedule (claude -> astra via codex).
-    for cli in ("claude", "codex"):
+    # The writer and its one reviewer under the three-pass schedule (claude and gemini -> astra via codex).
+    claude = options.runner == "claude"
+    for cli in (RUNNERS[options.runner], "codex"):
         check(f"{cli} on PATH", shutil.which(cli) is not None, shutil.which(cli) or "missing")
 
-    # What Claude Code needs to run with nobody at the keyboard. Only booleans are read from the user's files.
-    check("campaign Stop hook wired", stop_hook_wired(read_json(ROOT / ".claude/settings.json")),
-          ".claude/settings.json hooks.Stop runs campaign_guard.py stop-hook")
-    check("bypass-permissions prompt pre-accepted",
-          read_json(CLAUDE_HOME / "settings.json").get("skipDangerousModePermissionPrompt") is True,
-          "skipDangerousModePermissionPrompt in ~/.claude/settings.json (accept it once in an attended session)")
-    check("workspace trusted", workspace_trusted(read_json(CLAUDE_STATE), ROOT),
-          "hasTrustDialogAccepted for this checkout in ~/.claude.json (open it once in an attended session)")
-    check("session cron tools enabled", cron_enabled(os.environ), "CLAUDE_CODE_DISABLE_CRON must be unset: the heartbeat is CronCreate")
+    if claude:
+        # What Claude Code needs to run with nobody at the keyboard. Only booleans are read from the user's files.
+        check("campaign Stop hook wired", stop_hook_wired(read_json(ROOT / ".claude/settings.json")),
+              ".claude/settings.json hooks.Stop runs campaign_guard.py stop-hook")
+        check("bypass-permissions prompt pre-accepted",
+              read_json(CLAUDE_HOME / "settings.json").get("skipDangerousModePermissionPrompt") is True,
+              "skipDangerousModePermissionPrompt in ~/.claude/settings.json (accept it once in an attended session)")
+        check("workspace trusted", workspace_trusted(read_json(CLAUDE_STATE), ROOT),
+              "hasTrustDialogAccepted for this checkout in ~/.claude.json (open it once in an attended session)")
+        check("session cron tools enabled", cron_enabled(os.environ), "CLAUDE_CODE_DISABLE_CRON must be unset: the heartbeat is CronCreate")
+    else:
+        # Antigravity reads its hooks from .agents/hooks.json; the heartbeat is its own schedule tool.
+        check("campaign Stop hook wired", stop_hook_wired(read_json(ROOT / ".agents/hooks.json")),
+              ".agents/hooks.json hooks.Stop runs campaign_guard.py stop-hook")
     problems = roster_problems(ROOT / ".claude/agents")
     check("read-only Sonnet scout roster", not problems, "; ".join(problems) if problems else ", ".join(SCOUTS))
 
@@ -476,11 +490,12 @@ def main(argv: list[str] | None = None) -> int:
             proc = repair
     check("compile_commands.json current", proc.returncode == 0, last_line(proc))
     check("basedpyright in .venv", (ROOT / ".venv/bin/basedpyright").is_file(), "pip install -r requirements-dev.txt into .venv")
-    plugin = ROOT / ".claude/lsp/rasterfold-lsp"
-    servers = read_json(plugin / ".lsp.json")
-    check("Claude Code language-server plugin", (plugin / ".claude-plugin/plugin.json").is_file() and {"clangd", "basedpyright"} <= set(servers)
-          and (ROOT / ".venv/bin/basedpyright-langserver").is_file(),
-          ".claude/lsp/rasterfold-lsp with clangd and basedpyright, and .venv/bin/basedpyright-langserver")
+    if claude:
+        plugin = ROOT / ".claude/lsp/rasterfold-lsp"
+        servers = read_json(plugin / ".lsp.json")
+        check("Claude Code language-server plugin", (plugin / ".claude-plugin/plugin.json").is_file() and {"clangd", "basedpyright"} <= set(servers)
+              and (ROOT / ".venv/bin/basedpyright-langserver").is_file(),
+              ".claude/lsp/rasterfold-lsp with clangd and basedpyright, and .venv/bin/basedpyright-langserver")
 
     # Host headroom: an orphaned writer once filled the disk (2026-11-08).
     disk = shutil.disk_usage(ROOT)

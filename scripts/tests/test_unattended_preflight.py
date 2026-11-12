@@ -361,6 +361,18 @@ class LaunchClaimTests(unittest.TestCase):
             launched.kill()
             launched.wait()
 
+    def test_a_live_carbon_launch_carrying_the_launch_id_in_its_prompt_blocks(self):
+        # `unattended-run.sh carbon` execs agy with the launch id at the end of the prompt argument.
+        prompt = f"Act with full autonomy ... Launch id: {SESSION}."
+        launched = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)", "-i", prompt])
+        try:
+            time.sleep(0.2)
+            pf.write_claim(SESSION, launched.pid)
+            self.assertEqual(pf.launch_claim()[0], "live")
+        finally:
+            launched.kill()
+            launched.wait()
+
     def test_a_reused_pid_is_not_the_launch(self):
         pf.write_claim(SESSION, os.getpid())  # this test process: alive, but not that launch
         self.assertEqual(pf.launch_claim()[0], "stale")
@@ -627,6 +639,18 @@ class RepairFlowTests(unittest.TestCase):
             self.assertIn(line, text)
         self.assertNotIn("muse on PATH", text)
         self.assertNotIn("agy on PATH", text)
+
+    def test_the_carbon_runner_checks_antigravity_and_skips_claude_code_dialogs(self):
+        code, text = self.preflight("--runner", "gemini")
+        for line in ("agy on PATH", "codex on PATH", "campaign Stop hook wired", "read-only Sonnet scout roster"):
+            self.assertIn(line, text)
+        self.assertIn(".agents/hooks.json hooks.Stop runs campaign_guard.py stop-hook", text)
+        for claude_only in ("claude on PATH", "bypass-permissions prompt pre-accepted", "workspace trusted",
+                            "session cron tools enabled", "Claude Code language-server plugin"):
+            self.assertNotIn(claude_only, text)
+
+    def test_the_repository_wires_the_antigravity_stop_hook(self):
+        self.assertTrue(pf.stop_hook_wired(pf.read_json(REPO / ".agents" / "hooks.json")))
 
 
 if __name__ == "__main__":
