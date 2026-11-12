@@ -27,7 +27,7 @@ class Packages(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()   # a runner's temp path can be a short alias of the real one
         self.patch = patch.object(package, 'ROOT', self.root)
         self.patch.start()
         self.addCleanup(self.patch.stop)
@@ -596,7 +596,7 @@ class ReleaseVerifier(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()   # a runner's temp path can be a short alias of the real one
         self.dist = self.root / 'dist'
         self.dist.mkdir()
         self.scratch = self.root / 'scratch'
