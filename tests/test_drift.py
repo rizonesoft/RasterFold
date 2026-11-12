@@ -369,6 +369,16 @@ class DriftTests(unittest.TestCase):
             self.assertEqual(1, drift.main(['--root', str(self.root), '--site-dir', '_site', '--write-site-receipt']))
         self.assertFalse((self.root / '_site/drift-build.json').exists())
 
+    def test_site_receipt_refusal_names_the_unclean_source_check(self):
+        self.site(); (self.root / '_site/drift-build.json').unlink()
+        self.write('note.txt', '<!-- drift:fact version = 99 -->\n')
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            self.assertEqual(2, drift.main(['--root', str(self.root), '--site-dir', '_site', '--write-site-receipt']))
+        self.assertIn('site receipt requires --site-dir and clean source checks: ', err.getvalue())
+        self.assertIn('note.txt', err.getvalue())
+        self.assertFalse((self.root / '_site/drift-build.json').exists())
+
     def test_clean_site_receipt_and_readonly_recheck(self):
         self.site(); (self.root / '_site/drift-build.json').unlink()
         with contextlib.redirect_stdout(io.StringIO()):

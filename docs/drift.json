@@ -1661,9 +1661,9 @@
       "reviewed": "Author-attested: 2026-10-25 re-read docs/benchmarks.md against src/cm.c, src/fold.c, src/rf.h, research/bench.c, measure/verdict.json, and benchmarks/results.csv after D05 T01 section 2 (Milestone 2 gate: Same bytes, leaner and harder)"
     },
     "docs/document-drift.md": {
-      "evidence": "Re-read 2026-11-11 for the plan audit's later gates: scripts/plan-audit.py accepts an owner that blocks the release gate or one of later_gates in docs/vision-map.json, which names D10 T04 section 4, and this document now states that rule; its other statements about the drift and plan gates were checked against scripts/drift-check.py and scripts/plan-audit.py",
+      "evidence": "Re-read 2026-11-12 after scripts/drift-check.py's site receipt refusal began naming the unclean source checks (up to five, kind, path and detail) instead of the bare sentence: the document's statements that the receipt is written only from clean source checks and with --site-dir still hold, and it quotes no refusal text",
       "sources": {
-        "scripts/drift-check.py": "668cee9ed76c3f1d9d4c0e7f23572468f748bdbd2b9175c9270c5fb0a74ca542",
+        "scripts/drift-check.py": "2c32b5f5c945969f74e98a0b4ceb8c6c3496ed824e3c65e93adb021cfe592e76",
         "scripts/plan-audit.py": "facc9eb0a9096052269cd8bc6931e9ae76c6daa02fef2736f7df0ccf74c36b12",
         "docs/document-drift.md": "0d1a997cab3e31503a272b1326eaa2c80f2c259ec3b9ed13e5e5c85f2fb9961d"
       }

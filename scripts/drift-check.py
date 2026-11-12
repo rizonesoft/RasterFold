@@ -2129,7 +2129,11 @@ def main(argv=None):
                     declarations(message, facts, check, oid)
         if args.write_site_receipt:
             if not args.site_dir or check.errors:
-                raise ValueError('site receipt requires --site-dir and clean source checks')
+                # Name what was unclean: the bare refusal made a transient failure of this step undiagnosable.
+                unclean = '; '.join(f"{e['kind']}: {e['path']}: {str(e['detail'])[:160]}" for e in check.errors[:5])
+                more = f' (and {len(check.errors) - 5} more)' if len(check.errors) > 5 else ''
+                raise ValueError('site receipt requires --site-dir and clean source checks'
+                                 + (f': {unclean}{more}' if unclean else ''))
             check.site(args.site_dir, args.site_prefix, require_receipt=False)
             if not check.errors:
                 check.generated(args.site_dir + '/drift-build.json', json.dumps(check.site_receipt(args.site_dir), indent=2) + '\n')

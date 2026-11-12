@@ -693,7 +693,7 @@ class DocsMapTests(unittest.TestCase):
             )
 
             out = io.StringIO()
-            with contextlib.redirect_stdout(out):
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):   # a refusal's reason is on stderr
                 self.assertEqual(
                     0,
                     drift.main(['--root', str(REPO), '--site-dir', rel_artifact, '--write-site-receipt']),
