@@ -28,11 +28,13 @@ ALLOWED_TOOLS = frozenset({
 ALLOWED_MCP_TOOLS = frozenset({"grep_repo", "glob_repo"})
 CANCEL_SIGNALS = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
 LINE_CITE_RE = re.compile(
-    r"^(?:[-*]\s+)?`?(?P<path>[A-Za-z0-9_./-]+):(?P<start>\d+)(?:-(?P<end>\d+))?`?(?::\s*|\s+)(?P<rest>.+)$"
+    r"^(?:[-*]\s+)?`?(?P<path>[A-Za-z0-9_./-]+):(?P<start>\d+)(?:-(?P<end>\d+))?`?(?:(?::\s*|\s+)(?P<rest>.*))?$"
 )
-ARROW_SPLIT_RE = re.compile(r"\s+->\s+")
+FACT_PAIR_SPLIT_RE = re.compile(
+    r"\s+->\s+|;\s+(?=`?(?:[A-Za-z0-9_./-]+:\d+|NOT FOUND:))"
+)
 RHS_CITE_RE = re.compile(
-    r"^`?(?P<path>[A-Za-z0-9_./-]+):(?P<start>\d+)(?:-(?P<end>\d+))?`?(?::\s*|\s+)(?P<quote>.+)$"
+    r"^`?(?P<path>[A-Za-z0-9_./-]+):(?P<start>\d+)(?:-(?P<end>\d+))?`?(?:(?::\s*|\s+)(?P<quote>.*))?$"
 )
 COUNT_RE = re.compile(r"^COUNT:\s*(\d+)\s*$")
 HELD_RE = re.compile(r"^HELD:\s*(\d+)\s*$")
@@ -40,6 +42,19 @@ VERDICT_WORDS_RE = re.compile(
     r"\b(?:OVERALL\s*:|VERDICT\s*:|COMPLETION\s*:|PLAN\s*:|ready to ship|looks good to me|ship it)\b",
     re.IGNORECASE,
 )
+BLANK_MARKERS = frozenset({
+    '""',
+    "''",
+    "``",
+    "<blank>",
+    "(blank)",
+    "`<blank>`",
+    "`(blank)`",
+    "<empty>",
+    "(empty)",
+    "`<empty>`",
+    "`(empty)`",
+})
 
 
 class CancelFlag:
@@ -229,11 +244,24 @@ def extract_quote_segments(raw_quote: str, multi_line: bool = False) -> list[str
     return [q] if q else []
 
 
+def is_explicit_blank_quote(raw_quote: str | None) -> bool:
+    q = (raw_quote or "").strip()
+    if not q:
+        return True
+    if q.endswith(".") and len(q) >= 2:
+        q = q[:-1].strip()
+    if q.lower() in BLANK_MARKERS:
+        return True
+    if len(q) >= 2 and q[0] == q[-1] and q[0] in ('"', "'", "`") and not q[1:-1].strip():
+        return True
+    return False
+
+
 def check_citation_on_disk(
     rel_path: str,
     start: int,
     end: int,
-    raw_quote: str,
+    raw_quote: str | None,
     root_resolved: Path,
     file_cache: dict[Path, list[str]],
 ) -> str | None:
@@ -254,10 +282,19 @@ def check_citation_on_disk(
     file_lines = file_cache[candidate]
     if end > len(file_lines):
         return f"hallucinated line number in citation: {rel_path}:{end} (file has {len(file_lines)} lines)"
-    segments = extract_quote_segments(raw_quote, multi_line=end > start)
+    window = "\n".join(file_lines[start - 1 : end])
+    quote_str = (raw_quote or "").strip()
+    if not window.strip():
+        if is_explicit_blank_quote(quote_str):
+            return None
+        return f"fabricated or mismatched quote at {rel_path}:{start}: source line is blank"
+    if not quote_str:
+        return f"empty quotation in citation: {rel_path}:{start}"
+    if is_explicit_blank_quote(quote_str):
+        return f"fabricated or mismatched quote at {rel_path}:{start}: source line is not blank"
+    segments = extract_quote_segments(quote_str, multi_line=end > start)
     if not segments:
         return f"empty quotation in citation: {rel_path}:{start}"
-    window = "\n".join(file_lines[start - 1 : end])
     for seg in segments:
         if seg not in window:
             return f"fabricated or mismatched quote at {rel_path}:{start}: {seg!r} not in source line(s)"
@@ -406,15 +443,15 @@ def verify_response_evidence(response: str, agent: str, root: Path = ROOT) -> st
         if order != ["MISMATCHES", "NEEDS A COMMAND", "CHECKED AND HOLDING"]:
             return f"rf-fact-check blocks out of order: {order}"
 
-        # MISMATCHES: either None or lhs citation -> (rhs citation | NOT FOUND: ...)
+        # MISMATCHES: either None or lhs citation ->/; (rhs citation | NOT FOUND: ...)
         mm_lines = blocks["MISMATCHES"]
         if not mm_lines:
             return "rf-fact-check MISMATCHES block is empty"
         if not (len(mm_lines) == 1 and is_none_line(mm_lines[0], "MISMATCHES")):
             for ln in mm_lines:
-                parts = ARROW_SPLIT_RE.split(ln, maxsplit=1)
+                parts = FACT_PAIR_SPLIT_RE.split(ln, maxsplit=1)
                 if len(parts) != 2:
-                    return f"rf-fact-check MISMATCHES entry missing ' -> ': {ln!r}"
+                    return f"rf-fact-check MISMATCHES entry missing ' -> ' or '; ': {ln!r}"
                 lhs, rhs = parts
                 m = LINE_CITE_RE.match(lhs)
                 if not m:
@@ -450,7 +487,7 @@ def verify_response_evidence(response: str, agent: str, root: Path = ROOT) -> st
             if not is_none_line(ln, "NEEDS A COMMAND") and not ln.startswith(("- ", "* ")):
                 return f"malformed line in rf-fact-check NEEDS A COMMAND: {ln!r}"
 
-        # CHECKED AND HOLDING: must end with HELD: <n>, and items before it must be verified lhs -> rhs citations
+        # CHECKED AND HOLDING: must end with HELD: <n>, and items before it must be verified lhs ->/; rhs citations
         ch_lines = blocks["CHECKED AND HOLDING"]
         if not ch_lines:
             return "rf-fact-check CHECKED AND HOLDING block is empty"
@@ -464,9 +501,9 @@ def verify_response_evidence(response: str, agent: str, root: Path = ROOT) -> st
         if len(item_lines) != declared_held:
             return f"HELD: {declared_held} does not match {len(item_lines)} held item(s)"
         for ln in item_lines:
-            parts = ARROW_SPLIT_RE.split(ln, maxsplit=1)
+            parts = FACT_PAIR_SPLIT_RE.split(ln, maxsplit=1)
             if len(parts) != 2:
-                return f"rf-fact-check CHECKED AND HOLDING entry missing ' -> ': {ln!r}"
+                return f"rf-fact-check CHECKED AND HOLDING entry missing ' -> ' or '; ': {ln!r}"
             lhs, rhs = parts
             m = LINE_CITE_RE.match(lhs)
             if not m:

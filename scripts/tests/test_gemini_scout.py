@@ -238,6 +238,11 @@ class GeminiScoutWrapperTests(unittest.TestCase):
         rf_h_lines = [f"/* line {i} */" for i in range(1, 21)]
         rf_h_lines[18] = "#define RF_VERSION 3u"
         (self.root / "src" / "rf.h").write_text("\n".join(rf_h_lines) + "\n", encoding="utf-8")
+        (self.root / "build" / "logs").mkdir(parents=True)
+        (self.root / "build" / "logs" / "blank_tail.log").write_text(
+            "Summary: 1 passed, 0 failed\nDone\n\n   \nExit: 0\n",
+            encoding="utf-8",
+        )
         (self.root / "todo").mkdir()
         (self.root / "todo" / "sample.md").write_text(
             "# Sample\n\n## 1. Test\n\n- Version in `src/rf.h:19` is `#define RF_VERSION 3u`.\n- Missing `src/none.c`.\n",
@@ -439,6 +444,24 @@ class GeminiScoutWrapperTests(unittest.TestCase):
                 "ESCALATE-LEAD: needs write\nextra commentary\n",
                 "ESCALATE-LEAD response must be a single line",
             ),
+            (
+                "empty quotation on non-blank line",
+                "rf-scout",
+                "src/rf.h:19:\nCOUNT: 1\n",
+                "empty quotation in citation: src/rf.h:19",
+            ),
+            (
+                "blank marker on non-blank line",
+                "rf-scout",
+                "src/rf.h:19: <blank>\nCOUNT: 1\n",
+                "fabricated or mismatched quote at src/rf.h:19: source line is not blank",
+            ),
+            (
+                "non-blank quote on blank line",
+                "rf-scout",
+                "build/logs/blank_tail.log:3:some text\nCOUNT: 1\n",
+                "fabricated or mismatched quote at build/logs/blank_tail.log:3: source line is blank",
+            ),
         ]
         for label, agent, resp, expected_err in bad_cases:
             self.write_stub_agy(make_stream(agent, resp))
@@ -446,7 +469,8 @@ class GeminiScoutWrapperTests(unittest.TestCase):
             self.assertEqual(code, 2, label)
             self.assertIn(expected_err, err, label)
 
-        # Valid single-line ESCALATE-LEAD, valid rf-log-digest, and valid rf-fact-check all pass
+        # Valid single-line ESCALATE-LEAD, valid rf-log-digest (including blank and whitespace-only trailing lines),
+        # and valid rf-fact-check (both ' -> ' and '; ' separators) all pass
         self.write_stub_agy(make_stream("rf-scout", "ESCALATE-LEAD: writing a file is not read-only"))
         code, out, err = self.run_scout("--agent", "rf-scout", "--prompt", "Create a file")
         self.assertEqual(code, 0, err)
@@ -454,8 +478,13 @@ class GeminiScoutWrapperTests(unittest.TestCase):
 
         valid_log = (
             "FAILURES: none found\n\n"
-            "COUNTS\n- `src/rf.h:19`: `#define RF_VERSION 3u`\n\n"
-            "LAST LINES\n- `src/rf.h:20`: `/* line 20 */`\n"
+            "COUNTS\n- `build/logs/blank_tail.log:1`: `Summary: 1 passed, 0 failed`\n\n"
+            "LAST LINES\n"
+            "- `build/logs/blank_tail.log:1`: `Summary: 1 passed, 0 failed`\n"
+            "- `build/logs/blank_tail.log:2`: `Done`\n"
+            "- `build/logs/blank_tail.log:3`: \"\"\n"
+            "- `build/logs/blank_tail.log:4`: `<blank>`\n"
+            "- `build/logs/blank_tail.log:5`: `Exit: 0`\n"
         )
         self.write_stub_agy(make_stream("rf-log-digest", valid_log))
         code, _, err = self.run_scout("--agent", "rf-log-digest", "--prompt", "Digest log")
@@ -471,6 +500,18 @@ class GeminiScoutWrapperTests(unittest.TestCase):
         )
         self.write_stub_agy(make_stream("rf-fact-check", valid_fc))
         code, _, err = self.run_scout("--agent", "rf-fact-check", "--prompt", "Fact check")
+        self.assertEqual(code, 0, err)
+
+        valid_fc_semicolon = (
+            "MISMATCHES\n"
+            "- `todo/sample.md:6`: \"- Missing `src/none.c`.\"; NOT FOUND: src/none.c\n\n"
+            "NEEDS A COMMAND\n- None.\n\n"
+            "CHECKED AND HOLDING\n"
+            "- `todo/sample.md:5`: \"- Version in `src/rf.h:19` is `#define RF_VERSION 3u`.\"; `src/rf.h:19`: `#define RF_VERSION 3u`\n"
+            "HELD: 1\n"
+        )
+        self.write_stub_agy(make_stream("rf-fact-check", valid_fc_semicolon))
+        code, _, err = self.run_scout("--agent", "rf-fact-check", "--prompt", "Fact check semicolon")
         self.assertEqual(code, 0, err)
 
     def test_timeout_and_signal_kill_entire_descendant_tree_including_escaped_session(self):
