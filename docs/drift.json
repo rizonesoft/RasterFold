@@ -1669,11 +1669,11 @@
       }
     },
     "docs/README.md": {
-      "evidence": "Re-read 2026-11-12 after round 1 of D08 T03 section 1: scripts/build-docs.py gained c_inactive_offsets, so the command-line reference refuses help text or a dispatch line inside a comment or a preprocessor conditional; this document describes the staging allowlist, the generator and the Pages workflow in general terms without listing renderers or parser rules, and each statement still holds",
+      "evidence": "Re-read 2026-11-12 after the completion review of D08 T03 section 1: scripts/build-docs.py's c_inactive_offsets now refuses a source containing a backslash-newline line splice or the trigraph ??/; this document describes the staging allowlist, the generator and the Pages workflow in general terms without listing renderers or parser rules, and each statement still holds",
       "sources": {
         "docs/_config.yml": "676777a86aadacf7e23cd133f97cd97b494a2f2d96fb2a92e875399fda852581",
         "docs/site-content.json": "52117cfce3d60a63965f8588389ad27c5258e7b07e031e3f976008349a710c00",
-        "scripts/build-docs.py": "41fbbd2e74ac9b266a45fcef7c74fa89ae670317d73d02f3ea88819708d04fe5",
+        "scripts/build-docs.py": "d548687970ac87f2c9a8da7618a175a024f1fcf6917509d556d351623c21fccc",
         "docs/README.md": "35dddde5d7cbf1f7353813bebd7272749de00d2f705fc277cd4b51cb7b8189a0"
       }
     },

@@ -530,6 +530,13 @@ def c_inactive_offsets(text: str) -> list[bool]:
     The help reference is read from source without compiling it, so it must not read text the compiler would
     not: a declaration or a dispatch line inside `/* */`, after `//`, or between `#if`/`#ifdef`/`#ifndef` and
     `#endif` (whatever the condition) is treated as inactive and refused by the caller."""
+    # Translation phases 1 and 2 run before comments are recognised: a backslash-newline splices two lines
+    # (so `/` and `*` on either side of one open a comment) and the trigraph `??/` spells that backslash.
+    # This scanner does not model either, so a source that uses them anywhere is refused outright.
+    spliced = re.search(r'\\[ \t]*\r?\n|\?\?/', text)
+    if spliced:
+        line = text.count('\n', 0, spliced.start()) + 1
+        raise ValueError(f'line {line}: a backslash-newline line splice or the trigraph ??/ is not supported')
     inactive = [False] * len(text)
     depth = 0
     pos = 0

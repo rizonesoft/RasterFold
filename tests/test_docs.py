@@ -319,6 +319,14 @@ class DocsMapTests(unittest.TestCase):
                 'help_verify is declared inside a comment or a preprocessor conditional')
         refuses(lambda s: s.replace(verify_line, verify_line + '    /* "hidden line" RF_EOL */\n'), 'a comment or preprocessor line inside the initializer')
         refuses(lambda s: s.replace(verify_line, verify_line + '#ifdef _WIN32\n    "windows only" RF_EOL\n#endif\n'), 'a comment or preprocessor line inside the initializer')
+        # Line splicing happens before comments are recognised, so a spliced comment opener hides code from the
+        # compiler; the scanner does not model splicing and refuses a source that uses it at all.
+        refuses(lambda s: s.replace(dispatch_verify, '        /\\\n* ' + dispatch_verify.strip() + ' */\n'), 'line splice or the trigraph')
+        refuses(lambda s: s.replace(dispatch_verify, '        /??/\n* ' + dispatch_verify.strip() + ' */\n'), 'line splice or the trigraph')
+        refuses(lambda s: s + '#define RF_UNRELATED_MACRO(x) \\\n    ((x) + 1)\n', 'line splice or the trigraph')
+        refuses(lambda s: s.replace(verify_line, '    "usage: rasterfold verify [--threads N] \\\ninput.fold" RF_EOL\n'), 'line splice or the trigraph')
+        with self.assertRaisesRegex(ValueError, 'line 2: a backslash-newline'):
+            build_docs.c_inactive_offsets('int a;\nint b = 1 + \\\n 2;\n')
         # The scanner itself: comments, conditionals, and literals that merely look like them.
         probe = 'a /* b */ c // d\n#if X\ne "/* not a comment */" f\n#endif\ng \'"\' h\n'
         flags = build_docs.c_inactive_offsets(probe)
