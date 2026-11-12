@@ -1551,7 +1551,7 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "Re-read 2026-11-12 after scripts/review-dispatch.py gained the changed-section refusal for reconciliations: searched this document for reconcil, review and dispatch; it does not describe the review schedule or the dispatcher's order rules, so nothing in it changed",
+      "evidence": "Re-read 2026-11-12 after scripts/review-dispatch.py began refusing a reconciliation whose section contract cannot be read: searched this document for reconcil, review and dispatch; it does not describe the review schedule or the dispatcher's order rules, so nothing in it changed",
       "sources": {
         "include/rasterfold.h": "228c6bf718c525b2311df99746d55e5861209f2ea0dec65e299b6ec0e6f126c7",
         "src/rf.h": "429414fd9303e0bd47d0ee05fca037e043c68c7d79f0f9435174c4e723e03f83",
@@ -1562,18 +1562,18 @@
         "README.md": "3ed74df2f748338d59eaf36ca338206646ef4136f33e94d72b25f21d459bca45",
         "AGENTS.md": "8a6e2a7cfcfb59130c1ab67ce1b621a8960b7dad415d91ff439d720f5dceba9c",
         ".conclave/reviewers.toml": "a95be5634bda979837450696840208f1271598d50c9b116471cd9467720e8358",
-        "scripts/review-dispatch.py": "a77a9829e70bca7508dfc5e416a05fe0d7683e3ecb35be7afed49b76071dba48"
+        "scripts/review-dispatch.py": "8669fe2758095f05749c7960b7bdce4180ec034292b32b628a95b8c86e3c6082"
       },
       "review": "Author-attested: 2026-10-25 re-read README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "AGENTS.md": {
-      "evidence": "Re-read 2026-11-12 after scripts/review-dispatch.py gained the changed-section refusal for reconciliations (a reconciliation is refused on a candidate whose section text differs from the failed completion's, and a complete recorded on such text is void): lines 32, 62 and 84 state that a completion with gaps blocks the stamp until a reconciliation passes, that a reconciliation with gaps is repaired and reconciled again, and the cap of 33; all three still hold and none describes the contract comparison, which the review-todo-section skill owns",
+      "evidence": "Re-read 2026-11-12 after scripts/review-dispatch.py began refusing a reconciliation whose section contract cannot be read (fail closed, the reason kept): lines 32, 62 and 84 on the reconciliation after a completion with gaps and the cap of 33 still hold, and none describes the contract comparison, which the review-todo-section skill owns",
       "sources": {
         "include/rasterfold.h": "228c6bf718c525b2311df99746d55e5861209f2ea0dec65e299b6ec0e6f126c7",
         "src/rf.h": "429414fd9303e0bd47d0ee05fca037e043c68c7d79f0f9435174c4e723e03f83",
         "toolchain.json": "fd7b0b2424a2ffdb86095da76e4b975d604741fb271fd9b70e4c53efe9f5e3de",
         ".conclave/reviewers.toml": "a95be5634bda979837450696840208f1271598d50c9b116471cd9467720e8358",
-        "scripts/review-dispatch.py": "a77a9829e70bca7508dfc5e416a05fe0d7683e3ecb35be7afed49b76071dba48",
+        "scripts/review-dispatch.py": "8669fe2758095f05749c7960b7bdce4180ec034292b32b628a95b8c86e3c6082",
         "AGENTS.md": "8a6e2a7cfcfb59130c1ab67ce1b621a8960b7dad415d91ff439d720f5dceba9c",
         ".codex/hooks.json": "c67e7762d0970280c653a74601012d01971d05f677182ae70e4eda0aa783c150",
         "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",
@@ -1581,11 +1581,11 @@
       }
     },
     "GEMINI.md": {
-      "evidence": "Re-read 2026-11-12 after scripts/review-dispatch.py gained the changed-section refusal for reconciliations: searched for reconcil; this entry file does not describe the review order, so nothing in it changed",
+      "evidence": "Re-read 2026-11-12 after scripts/review-dispatch.py began refusing a reconciliation whose section contract cannot be read: searched for reconcil; this entry file does not describe the review order, so nothing in it changed",
       "sources": {
         "AGENTS.md": "8a6e2a7cfcfb59130c1ab67ce1b621a8960b7dad415d91ff439d720f5dceba9c",
         ".conclave/reviewers.toml": "a95be5634bda979837450696840208f1271598d50c9b116471cd9467720e8358",
-        "scripts/review-dispatch.py": "a77a9829e70bca7508dfc5e416a05fe0d7683e3ecb35be7afed49b76071dba48",
+        "scripts/review-dispatch.py": "8669fe2758095f05749c7960b7bdce4180ec034292b32b628a95b8c86e3c6082",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
         "GEMINI.md": "928b6666dd34842df37b698df61792cf416e6885f11645f400d5c8562c537677"
       }
@@ -1678,13 +1678,13 @@
       }
     },
     "docs/agent-skills-and-rules-structure.md": {
-      "evidence": "Re-read 2026-11-12 after scripts/review-dispatch.py gained the changed-section refusal for reconciliations: searched for reconcil; this document describes the layout of skills, rules and hooks and no dispatcher rule, so nothing in it changed",
+      "evidence": "Re-read 2026-11-12 after scripts/review-dispatch.py began refusing a reconciliation whose section contract cannot be read: searched for reconcil; this document describes the layout of skills, rules and hooks and no dispatcher rule, so nothing in it changed",
       "sources": {
         "AGENTS.md": "8a6e2a7cfcfb59130c1ab67ce1b621a8960b7dad415d91ff439d720f5dceba9c",
         "GEMINI.md": "928b6666dd34842df37b698df61792cf416e6885f11645f400d5c8562c537677",
         ".conclave/reviewers.toml": "a95be5634bda979837450696840208f1271598d50c9b116471cd9467720e8358",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
-        "scripts/review-dispatch.py": "a77a9829e70bca7508dfc5e416a05fe0d7683e3ecb35be7afed49b76071dba48",
+        "scripts/review-dispatch.py": "8669fe2758095f05749c7960b7bdce4180ec034292b32b628a95b8c86e3c6082",
         "docs/agent-skills-and-rules-structure.md": "9ba4b58696ddfde6869e95053d38ae9941b0183e6ff01cbe1c642fa80c202f81",
         ".codex/hooks.json": "c67e7762d0970280c653a74601012d01971d05f677182ae70e4eda0aa783c150",
         "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",

@@ -1962,6 +1962,7 @@ class ThreePassDispatch(Harness):
         (self.repo / ".conclave/reviewers.toml").write_text(REPO_PIN.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
         self.findings = self.repo / self.FINDINGS
         self.git("init", "-q")
+        self.section("Fixture prose.")
         self.head = self.commit("start")
 
     def git(self, *args):
@@ -2058,8 +2059,6 @@ class ThreePassDispatch(Harness):
         self.git("add", "todo")
 
     def test_a_changed_section_is_refused_and_a_void_complete_does_not_end_the_reconciliations(self):
-        self.section("Fixture prose.")
-        self.head = self.commit("section")
         self.run_pass("plan", self.PLAN)
         self.run_pass("round", self.ROUND)
         self.run_pass("completion", "COMPLETION: gaps")
@@ -2086,6 +2085,27 @@ class ThreePassDispatch(Harness):
         result, _ = self.run_pass("reconciliation", "RECONCILIATION: complete", candidate=restored)
         self.assertEqual(result.returncode, 2)
         self.assertIn("already returned complete", result.stderr)
+
+    def test_an_unreadable_section_contract_refuses_the_reconciliation(self):
+        self.run_pass("plan", self.PLAN)
+        self.run_pass("round", self.ROUND)
+        self.run_pass("completion", "COMPLETION: gaps")
+        # The section leaves the tree: nothing can compare the candidate with the failed completion.
+        self.git("rm", "-q", "-r", "todo")
+        gone = self.commit("section removed")
+        result, _ = self.run_pass("reconciliation", "RECONCILIATION: complete", candidate=gone)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("contract cannot be read", result.stderr)
+        self.assertEqual(self.calls(), [])
+        # So does the tool that reads it.
+        self.section("Fixture prose.")
+        (self.repo / "scripts/todo-graph.py").unlink()
+        back = self.commit("section back, todo-graph gone")
+        result, _ = self.run_pass("reconciliation", "RECONCILIATION: complete", candidate=back)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("contract cannot be read", result.stderr)
+        self.assertIn("FileNotFoundError", result.stderr)
+        self.assertEqual(self.calls(), [])
 
     def test_reconciliations_stop_at_the_review_pass_cap(self):
         self.run_pass("plan", self.PLAN)

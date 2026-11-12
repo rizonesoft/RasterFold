@@ -946,11 +946,11 @@ _TODO_GRAPH_MOD = []
 def section_contract_at(record_path, sha):
     """The section's contract at a commit, as scripts/todo-graph.py `stamp` reads it (`section_contract`: the section's
     text with ticks, stamp lines, `Completed <date>:` evidence and the Test checkpoint line neutral), for the section a
-    findings file is named for. None when it cannot be read (no such commit, file or section), so a caller only acts on
-    two contracts it really compared."""
+    findings file is named for. A contract that cannot be read (no such commit, file or section, or todo-graph does not
+    load) is refused with the reason: a reconciliation is never spent on a section text nothing could compare."""
     m = re.search(r"D([0-9]{2})-T([0-9]{2})-s([1-9][0-9]*)\.md$", Path(record_path).as_posix())
     if not m or not sha:
-        return None
+        raise Refused(f"no section contract to read for {record_path} at {sha!r}")
     try:
         if not _TODO_GRAPH_MOD:
             spec = importlib.util.spec_from_file_location("todo_graph_for_dispatch", ROOT / "scripts" / "todo-graph.py")
@@ -962,15 +962,14 @@ def section_contract_at(record_path, sha):
                 del sys.modules[spec.name]
             _TODO_GRAPH_MOD.append(module)
         return _TODO_GRAPH_MOD[0].section_contract(ROOT, sha, f"D{m[1]} T{m[2]} §{m[3]}")
-    except Exception:                                # unreadable is "not compared", never a verdict
-        return None
+    except Exception as error:                       # unreadable fails closed, with the reason kept
+        raise Refused(f"the section's contract cannot be read at {sha} for {record_path}, so its reconciliation "
+                      f"cannot be checked against the failed completion: {type(error).__name__}: {error}") from error
 
 
 def contract_changed(record_path, failed_candidate, candidate):
-    """True only when the section's contract was read at both commits and differs."""
-    failed = section_contract_at(record_path, failed_candidate)
-    got = section_contract_at(record_path, candidate)
-    return failed is not None and got is not None and failed != got
+    """Whether the section's contract differs between two commits; refused when either cannot be read."""
+    return section_contract_at(record_path, failed_candidate) != section_contract_at(record_path, candidate)
 
 
 def void_reconciliation(record_path, completion, entry):
