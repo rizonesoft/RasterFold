@@ -1648,10 +1648,10 @@
       "review": "Author-attested: 2026-10-25 re-read docs/getting-started.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/benchmarks.md": {
-      "evidence": "Re-read 2026-11-12 after the Milestone 8 gate refreshed benchmarks/corpus.csv: the file was rewritten by research/ab.py size src/cm.c all --csv at codec revision 5b42f55 (research/bench.c is a provenance path and changed its time formatting), its 55 rows and every size are unchanged from the 3a68841 file, drift-check --fix repaired the revision fact on this page, and the surrounding sentences (the corpus date 2026-11-12, the synth line at 200,774 bytes against WebP 201,248, the all-corpus line at 35,282,923 bytes) still read correctly",
+      "evidence": "Re-read 2026-11-12 after measure/verdict.json's image field became the repository-relative path measure/image.bmp (it named a host path): no figure in the verdict changed, this page quotes its sizes and timings through drift facts that still match, and no sentence here refers to the image path",
       "sources": {
         "src/rf.h": "429414fd9303e0bd47d0ee05fca037e043c68c7d79f0f9435174c4e723e03f83",
-        "measure/verdict.json": "629fc31c6c492b1ab024715ce5b338091b821bb8d56fad6be5291d33f001fbfc",
+        "measure/verdict.json": "dd16843e8b4696f8d27904c0f1b473fcc89908f20d7191e1a6faa3bbdd0a5b92",
         "benchmarks/results.csv": "de7ebe8d55d4b77302dcd506afa5dcbb6d42227d77c466ee836dcf7cb33175c1",
         "benchmarks/corpus.csv": "bf3e6a193e0ee9db6e9d269f2fa56295eacd1a8e81fda50e6dca25338577ad17",
         "docs/benchmarks.md": "aabc66900a2a658a6cd6ebf0a39a9dc87e11312370854d134a6a7f04f8ab7a16"
@@ -1707,15 +1707,15 @@
       "reviewed": "Author-attested: 2026-10-25 re-read spec/FOLD.md against src/cm.c and src/simd.h after D02 T01 section 4 (byte-identical cm.c hot-loop vectorization and row-context specialization; format version 2 bitstream unchanged)"
     },
     "research/README.md": {
-      "evidence": "Re-read 2026-11-12 for three measurement-tool changes: research/ab.py and research/abpool.py now build both sides of a timing comparison without breakdown instrumentation, and research/bench.c prints times to three decimals; the new paragraph after the alternating-runs advice states all three with the measured reason and the single-image confirmation rule, the command table rows for bench, ab and compat still describe their arguments and outputs correctly, and the bench row's --breakdown note still holds because only bench keeps the instrumentation",
+      "evidence": "Re-read 2026-11-12 after the Milestone 8 gate's review round: research/ab.py gained harness_sources and build_inputs (the single list of what a harness build links and includes) and research/abpool.py records a harness identity in every pooled record and refuses to extend or report a log that mixes harness builds; this document's command table still describes the tools' arguments and outputs, and its paragraph on honest timing comparisons now ends with the sentence on the harness identity, read against harness_identity and verify_existing_log_provenance in research/abpool.py",
       "sources": {
         "research/corpus.py": "c8d419844a7410e7399a4f69cef013f876dfcd3272e7d996e1c2d3c9f3255619",
-        "research/ab.py": "9787b93333ce9ed8dfe8be5a773757d4d74a7768f2d6559922a197852ee1c473",
+        "research/ab.py": "39e8373859370b6de9ece0229d435c6f542f1be99f7228e75acac6f93353ee67",
         "research/vsjxl.py": "bb0a1fbdcb0a84edcee8a988c1de100b168a7949a8c7b59378775af5d42a5563",
         "research/prof.py": "7fa28a84aab62f0eb79fd579bcc01b6e2e55cc200bdaa96c0218b2ad4aa05605",
         "research/bench.c": "1849a57fd2b71e37282e66c1fbecd1528eba35f1d714eb51ad55ac2e367d28d3",
-        "research/README.md": "eff83ae79efe79842e67974fc2bb1b5cf27915d12b71fdd1964ac3dd0a5e4f55",
-        "research/abpool.py": "0a0e4d00eb3bc6b9426d9f38bc95c877387571e9b9b1843e2a5173bd7f30ee02"
+        "research/README.md": "69f5fdd9ef5e9a74c1ba97a567930917d348fdff5a3bdf0ba797d4a7a4f86623",
+        "research/abpool.py": "63cafba2296629d64b9d7faacb08d1e666988ed4160cd3745a2d513538efccbe"
       },
       "review": "Author-attested: 2026-10-25 re-read research/README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)",
       "reviewed": "Author-attested: 2026-10-25 re-read research/README.md against research/ab.py after D02 T01 section 4 (added ab -v reporting and tp-only set without size-mismatch abort)"

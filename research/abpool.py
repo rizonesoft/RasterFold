@@ -140,6 +140,21 @@ def infer_set_name(imgs: list[str], ab_mod) -> str:
     return "custom"
 
 
+def harness_identity(ab, base_cm: Path, cand_cm: Path, repo: Path = REPO) -> dict[str, object]:
+    """What the two executables of a pooled run are built from, beyond the two named sources: the harness build
+    (always without breakdown instrumentation) and a hash over every file each side compiles or can include.
+    Two runs with different identities were timed on different executables and must not share a pool."""
+
+    def digest(src: Path) -> str:
+        h = hashlib.sha256()
+        for path in ab.build_inputs(src):
+            h.update(_rel_or_str(Path(path), repo).encode("utf-8") + b"\0")
+            h.update(Path(path).read_bytes() + b"\0")
+        return h.hexdigest()
+
+    return {"breakdown": False, "a_inputs_sha256": digest(base_cm), "b_inputs_sha256": digest(cand_cm)}
+
+
 def verify_existing_log_provenance(
     log_path: Path,
     a_sha: str,
@@ -148,6 +163,7 @@ def verify_existing_log_provenance(
     imgs: list[str],
     flags: list[str],
     set_name: str,
+    harness: dict[str, object] | None = None,
 ) -> None:
     if not log_path.is_file():
         return
@@ -167,6 +183,12 @@ def verify_existing_log_provenance(
             raise SystemExit(
                 f"{log_path}:{lineno}: provenance mismatch in thread flag "
                 f"(existing t={rec_t!r}, new t={t_flag!r})"
+            )
+        if harness is not None and rec.get("harness") != harness:
+            raise SystemExit(
+                f"{log_path}:{lineno}: provenance mismatch in harness build "
+                f"(existing harness={rec.get('harness')!r}, new harness={harness!r}); "
+                "a log written by another harness build cannot be extended, start a new log"
             )
         rec_flags = list(rec.get("flags", []))
         if rec_flags != list(flags):
@@ -205,7 +227,8 @@ def run_pool(argv: list[str], ab_mod=None, repo: Path = REPO) -> dict[str, objec
         ab.THREADS = t_flag
         imgs = list(ab.names(raw_sets))
         set_name = infer_set_name(imgs, ab)
-        verify_existing_log_provenance(log_path, a_sha, b_sha, t_flag, imgs, flags, set_name)
+        harness = harness_identity(ab, base_cm, cand_cm, repo)
+        verify_existing_log_provenance(log_path, a_sha, b_sha, t_flag, imgs, flags, set_name, harness)
         bench_a = ab.RES / "benchA.exe"
         bench_b = ab.RES / "benchB.exe"
         # Both sides lean (no byte-breakdown instrumentation), so the comparison is like for like.
@@ -234,6 +257,7 @@ def run_pool(argv: list[str], ab_mod=None, repo: Path = REPO) -> dict[str, objec
                         "a_sha256": a_sha,
                         "b_path": b_label,
                         "b_sha256": b_sha,
+                        "harness": harness,
                         "rows": rows,
                     }
                     fh.write(json.dumps(rec, allow_nan=False) + "\n")
@@ -321,6 +345,11 @@ def report_pool(argv: list[str], ab_mod=None) -> list[dict[str, object]]:
         recs.append(rec)
     if not recs:
         raise SystemExit(f"empty pool log: {log_path}")
+    harnesses = {json.dumps(r.get("harness"), sort_keys=True) for r in recs}
+    if len(harnesses) != 1:
+        raise SystemExit(f"{log_path.name}: records from {len(harnesses)} different harness builds share this log")
+    if recs[0].get("harness") is None:
+        print(f"{log_path.name}: harness build unrecorded (log written before the harness identity was recorded)")
     summaries: list[dict[str, object]] = []
     for t in sorted({str(r["t"]) for r in recs}):
         t_recs = [r for r in recs if r.get("t") == t]
@@ -494,6 +523,9 @@ class _AbpoolSelfTests(unittest.TestCase):
             other_c.write_text("/* different */\n", encoding="utf-8")
 
             built_calls: list[tuple[Path, Path, list[str]]] = []
+            built_lean: list[bool] = []
+            harness_file = root / "harness.c"
+            harness_file.write_text("int harness;\n", encoding="utf-8")
             run_orders: list[str] = []
             run_threads: list[tuple[str, str]] = []
 
@@ -516,6 +548,11 @@ class _AbpoolSelfTests(unittest.TestCase):
                 @staticmethod
                 def build(src: Path, exe: Path, flags: list[str], breakdown: bool = True) -> None:
                     built_calls.append((src, exe, list(flags)))
+                    built_lean.append(breakdown)
+
+                @staticmethod
+                def build_inputs(src: Path) -> list[Path]:
+                    return [Path(src), harness_file]
 
                 @staticmethod
                 def run(exe: Path, imgs: list[str]) -> str:
@@ -561,6 +598,33 @@ class _AbpoolSelfTests(unittest.TestCase):
                     repo=root,
                 )
             self.assertIn("provenance mismatch", str(ctx.exception))
+
+            self.assertEqual(built_lean, [False, False])
+            first_rec = json.loads(log_file.read_text(encoding="utf-8").splitlines()[0])
+            self.assertEqual(first_rec["harness"]["breakdown"], False)
+            self.assertEqual(len(first_rec["harness"]["a_inputs_sha256"]), 64)
+
+            # A log from another harness build is never extended: neither one whose harness inputs changed ...
+            harness_file.write_text("int harness_changed;\n", encoding="utf-8")
+            with self.assertRaises(SystemExit) as ctx_harness:
+                run_pool([str(log_file), str(base_c), str(cand_c), "-t3", "1", "big_img", "tiny_img"], ab_mod=FakeAb, repo=root)
+            self.assertIn("provenance mismatch in harness build", str(ctx_harness.exception))
+            harness_file.write_text("int harness;\n", encoding="utf-8")
+            # ... nor a legacy log that recorded no harness identity at all.
+            legacy_log = root / "legacy_t3.jsonl"
+            legacy_log.write_text(
+                "".join(json.dumps({k: v for k, v in json.loads(line).items() if k != "harness"}) + "\n"
+                        for line in log_file.read_text(encoding="utf-8").splitlines()),
+                encoding="utf-8",
+            )
+            with self.assertRaises(SystemExit) as ctx_legacy:
+                run_pool([str(legacy_log), str(base_c), str(cand_c), "-t3", "1", "big_img", "tiny_img"], ab_mod=FakeAb, repo=root)
+            self.assertIn("provenance mismatch in harness build", str(ctx_legacy.exception))
+            mixed_log = root / "mixed_t3.jsonl"
+            mixed_log.write_text(log_file.read_text(encoding="utf-8") + legacy_log.read_text(encoding="utf-8"), encoding="utf-8")
+            with self.assertRaises(SystemExit) as ctx_mixed:
+                report_pool([str(mixed_log), "0:2"], ab_mod=FakeAb)
+            self.assertIn("different harness builds share this log", str(ctx_mixed.exception))
 
             # Appending with different build flags or image membership is refused.
             with self.assertRaises(SystemExit) as ctx_flags:

@@ -115,7 +115,7 @@ def main() -> int:
     width, height, rgb = rf.read_bmp24(BMP.read_bytes())
     failures: list[str] = []
     record: dict = {
-        "image": str(BMP),
+        "image": BMP.relative_to(ROOT).as_posix(),   # repository-relative: a host path would name the machine
         "width": width,
         "height": height,
         "raw_rgb_bytes": len(rgb),

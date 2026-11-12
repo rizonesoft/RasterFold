@@ -546,6 +546,28 @@ def is_m1_baseline_source(src_path: Path) -> bool:
     return src_path.name == "cm_m1.c"
 
 
+def harness_sources(src):
+    """(is a historical baseline, the codec sources a harness build of `src` links, its include directories)."""
+    src_path = Path(src)
+    if is_m1_baseline_source(src_path):
+        m1_dir = RES / "m1_src"
+        pal_srcs = [m1_dir / "pal.c"] if (m1_dir / "pal.c").is_file() else []
+        return True, [m1_dir / "fold.c", src_path, *pal_srcs, m1_dir / "bmp.c", m1_dir / "crc32.c"], [m1_dir, REPO / "src"]
+    is_pal_variant = is_palette_source(src_path)
+    cm_src = REPO / "src" / "cm.c" if is_pal_variant else src_path
+    pal_src = src_path if is_pal_variant else REPO / "src" / "pal.c"
+    return False, [REPO / "src" / "fold.c", cm_src, pal_src, REPO / "src" / "bmp.c", REPO / "src" / "crc32.c"], [REPO / "src"]
+
+
+def build_inputs(src):
+    """Every file a harness build of `src` compiles or can include: the harness, the linked codec sources, and
+    the headers of its include directories. A pooled timing log records a hash of these so runs from two
+    different harness builds can never share one pool."""
+    _baseline, sources, include_dirs = harness_sources(src)
+    headers = sorted({h for d in include_dirs for h in Path(d).glob("*.h")} | {REPO / "include" / "rasterfold.h"})
+    return [TOOLS / "bench.c", TOOLS / "benchsys.c", *sources, *headers]
+
+
 def build(src, out, flags=(), breakdown=True):
     """Compile the benchmark harness around one codec variant.
 
@@ -563,26 +585,23 @@ def build(src, out, flags=(), breakdown=True):
             extra_defs.append("-DRF_METHOD_PAL=2u")
         if "RF_METHOD_PAL2" not in rf_h_text:
             extra_defs.append("-DRF_METHOD_PAL2=3u")
-        pal_srcs = [str(m1_dir / "pal.c")] if (m1_dir / "pal.c").is_file() else []
+        _baseline, sources, include_dirs = harness_sources(src_path)
         cmd = [
             str(CLANG), "-O2", "-march=x86-64-v2", "-mtune=generic", "-g", *extra_defs, *flags,
-            f"-I{m1_dir}", f"-I{REPO / 'src'}", "-o", str(out),
+            *[f"-I{d}" for d in include_dirs], "-o", str(out),
             str(TOOLS / "bench.c"), str(TOOLS / "benchsys.c"),
-            str(m1_dir / "fold.c"), str(src_path), *pal_srcs,
-            str(m1_dir / "bmp.c"), str(m1_dir / "crc32.c"), "-lwinmm",
+            *[str(s) for s in sources], "-lwinmm",
         ]
     else:
-        is_pal_variant = is_palette_source(src_path)
-        cm_src = REPO / "src" / "cm.c" if is_pal_variant else src_path
-        pal_src = src_path if is_pal_variant else REPO / "src" / "pal.c"
+        _baseline, sources, include_dirs = harness_sources(src_path)
+        cm_src = sources[1]
         cm_def = f'-DRF_BENCH_CM_PATH="{cm_src.resolve().as_posix()}"'
         lean = [] if breakdown else ["-DRF_NO_BREAKDOWN=1"]
         cmd = [
             str(CLANG), "-O2", "-march=x86-64-v2", "-mtune=generic", "-g", cm_def, *lean, *flags,
-            f"-I{REPO / 'src'}", "-o", str(out),
+            *[f"-I{d}" for d in include_dirs], "-o", str(out),
             str(TOOLS / "bench.c"), str(TOOLS / "benchsys.c"),
-            str(REPO / "src" / "fold.c"), str(cm_src), str(pal_src),
-            str(REPO / "src" / "bmp.c"), str(REPO / "src" / "crc32.c"), "-lwinmm",
+            *[str(s) for s in sources], "-lwinmm",
         ]
     r = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True)
     if r.returncode:

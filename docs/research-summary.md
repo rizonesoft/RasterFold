@@ -32,13 +32,13 @@ for images with at most 256 distinct colours; the encoder writes method 4 (secti
 4.14) and decodes all three. The Python oracle `tests/rfi_ref.py` implements the same
 format independently and stays byte-identical with the C encoder.
 
-`python tests/measure_final.py` (exit 0, PASS) on `measure/image.bmp`:
+`python tests/measure_final.py` (exit 0, PASS) on `measure/image.bmp`, measured 2026-11-12 (`measure/verdict.json`):
 
 | | RasterFold | JPEG XL e7 |
 |---|---:|---:|
 | bytes | 1,400,388 | 1,470,703 |
-| decode wall | 229 ms (9 threads, codec 137 ms) | 467 ms (ffmpeg default threads) |
-| decode peak working set | 16.4 MB | 51.3 MB |
+| decode wall | 246 ms (9 threads, codec 139 ms) | 472 ms (ffmpeg default threads) |
+| decode peak working set | 16.4 MB | 51.8 MB |
 
 JPEG XL effort 9 gives 1,440,564 bytes on the same image (`0.9721` ratio), which
 is still larger. `benchmarks/results.md` (from `python tests/benchmark.py`) has
