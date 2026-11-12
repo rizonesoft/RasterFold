@@ -68,12 +68,26 @@ track: R1
 > **Review:** `docs/reviews/d09-t01-s1.json`
 ## 2. The Release Package
 
+> **Started:** 2026-11-12T05:32:00Z
+
 **Job:** A user can download one document package holding everything the release ships, with checksums to verify it.
+
+**Corrected 2026-11-12 (validation at Started):** the item leaves five things open; they are decided here so the build invents nothing. Today `scripts/package.py` (96 lines) writes one development zip per target to `build/packages/rasterfold-<target>-<version>-dev+<revision>.zip` from `bin/<target>/build.json`, with `LICENSE`, `docs/building.md` and `docs/library.md`, a fixed 2026-01-01 timestamp and a sidecar `.sha256`; `build.yml` uses it and keeps doing so unchanged.
+
+1. **Release mode.** `python3 scripts/package.py --release [--target <target>|all]` writes `dist/rasterfold-<version>-<target>.zip` (one self-contained zip per target, top directory `rasterfold-<version>-<target>/`) and `dist/SHA256SUMS` over the zips. `dist/` is added to `.gitignore`. The Job line's "one package" is read as one package per platform, as the Outcome states ("two-target CLI/SDK packages"): a Windows user does not download Linux binaries.
+2. **A clean source revision** means all of: `git status --porcelain` prints nothing, the manifest's `revision` equals `git rev-parse --short=12 HEAD`, the manifest says `dirty: false`, and its `product_version` equals `VERSION`. Any other state is refused with the reason, before anything is written.
+3. **Contents**, in sorted order: every artifact of `target_artifacts(<target>)` at its path (`bin/`, `lib/`, `include/`, and on Windows `symbols/` and the import libraries), `build.json`, `LICENSE`, `CHANGELOG.md`, `docs/` holding the public documentation set exactly as `scripts/build-docs.py --stage` selects it (the allowlisted pages, generated references, licence and provenance page, and assets), and `SHA256SUMS` at the top directory listing every other file in `sha256sum -c` form. No host has Jekyll outside CI, so the offline documentation is that staged set; when `--site-dir <directory>` names a built HTML site (the release workflow's Jekyll output, `§3`), it is added as `docs/html/`. Third-party notices: the package ships no third-party binary, and `docs/licenses.md` (in the staged set) is the provenance page; `testdata/` and its notice are not shipped.
+4. **Determinism.** Entries are written in sorted name order with one timestamp, the committer date of HEAD in UTC (`git show -s --format=%ct HEAD`), fixed modes (0755 for `bin/rasterfold`, 0644 otherwise), deflate level 9, and no extra fields, so two runs on the same commit and the same build output are byte-identical. Whether two fresh builds of one commit are byte-identical is measured and recorded here, not promised: reproducible builds are Milestone 45's contract.
+5. **Refusals** carried over from the development mode (tampered artifact, missing artifact, unsafe manifest path, stale version) apply unchanged, plus: a symbolic link or a path escaping its root under `--site-dir`, a `--site-dir` without `index.html`, and an existing `dist/` file that is not a package or checksum file of this version.
+
+Decision recorded (2026-11-12): zip, not tar, on both platforms (one format, one verification command, and the existing development packages are zips). Reversal cost: one writer function.
 
 - [ ] Extend `scripts/package.py` to package a clean source revision into versioned target directories with executables, libraries, headers, applicable symbols/import libraries, offline docs, licenses/notices, `CHANGELOG.md` and `SHA256SUMS`. Done when: two runs on the same commit produce byte-identical zips. Cheaper substitute: zipping `bin/` by hand.
 - [ ] Commit: `"release: a reproducible release package"`
 
-**Test checkpoint:** the two runs' zip hashes quoted equal; the package's checksum file verifies.
+**Test checkpoint:** Driven run with evidence: `python3 scripts/package.py --release --target all` run twice on one clean commit, the four zip SHA-256 values quoted equal pairwise; `sha256sum -c dist/SHA256SUMS` and `sha256sum -c SHA256SUMS` inside each unpacked package print `OK` for every line; a dirty tree and a stale manifest each quoted with their refusal; `python3 -m unittest discover -s tests -p test_package.py` green.
+
+**Freeze check:** packaging changes no codec byte: `python3 tests/test_correctness.py` stays green with every known-answer file unchanged.
 
 ## 3. The Release Workflow
 
