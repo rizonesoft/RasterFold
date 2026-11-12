@@ -46,6 +46,8 @@ track: C7
 
 ## 1. A Development Set of Screenshots
 
+> **Started:** 2026-11-12T13:23:56Z
+
 **Origin:** discovered run=32b2775e0d5a 2026-11-12 -- Milestone 9 gate (`D05 T01 §9`) misses on the held-out screenshots and its plan review requires every follow-up round to be designed on development inputs that share nothing with `research/heldout.json`; a prerequisite of the gate's planned rounds.
 
 Every round needs screenshots to measure while it is designed, and the held-out ones may not be those. This section renders ten more, from repository pages that are not held out, with exactly the held-out renderer, and freezes them by hash so a later run measures the same pixels. It changes no codec source and no held-out image.
