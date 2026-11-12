@@ -1,0 +1,79 @@
+{
+  "ref": "D08 T01 \u00a77",
+  "title": "Versioned downloads and complete references",
+  "implementation_sha": "b73ef6cf6428e395c8b141248a190f056671db0c",
+  "date": "2026-11-12",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/08-docs/D08-T01-s7.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "python3 -m unittest discover -s tests -p test_docs.py on ca9f471 -> Ran 21 tests, OK (seeded version mismatch and missing target asset fail the docs gate; record, read-back, duplicate refusal; per-release inventories; packaged labels)",
+    "python3 scripts/build-docs.py --check -> build-docs: current; python3 scripts/drift-check.py -> 0 error(s)",
+    "bosun run -- python3 scripts/check-all.py --all-targets on ca9f471 -> check-all: 32/32 passed",
+    "python3 scripts/ci_status.py -> build.yml and plan.yml green at ca9f471aabf8",
+    "live read-back at deployed receipt commit ca9f471aabf8 -> the five entry pages render the Product, File format and C API rows as table rows; Downloads in the no-release state with 0 download links"
+  ],
+  "completion": {
+    "report": "docs/reviews/08-docs/D08-T01-s7.md",
+    "verdict": "complete",
+    "candidate": "b73ef6cf6428e395c8b141248a190f056671db0c",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/08-docs/D08-T01-s7.md",
+    "candidate": "80a2252335008276fa920d07aa36f62b9652fb22",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "80a2252335008276fa920d07aa36f62b9652fb22",
+  "schedule": {
+    "policy": "three-pass",
+    "pass_cap": 33,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}
