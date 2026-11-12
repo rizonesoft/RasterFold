@@ -1710,9 +1710,9 @@
       "reviewed": "Author-attested: 2026-10-25 re-read spec/FOLD.md against src/cm.c and src/simd.h after D02 T01 section 4 (byte-identical cm.c hot-loop vectorization and row-context specialization; format version 2 bitstream unchanged)"
     },
     "research/README.md": {
-      "evidence": "Re-read 2026-11-12 for D01 T07 section 1: the corpus line now counts 105 images including the 10 development screenshots frozen in research/screens.json with their committed PNGs, authored once in WSL by --author-screens with the held-out browser version and refused on any overlap (corpus.py SCREENS_PAGES, author_screens, screens, verify_screens), and the set list names screens and says size refuses changed pixels in either frozen set (ab.py SETS and verify_frozen); the rest of the page is unchanged",
+      "evidence": "Re-read 2026-11-12 after round 1 of D01 T07 section 1: research/corpus.py now also refuses a development screenshot whose source path (staged page or the file it is staged from) is a held-out page's source; the README's statement that authoring refuses any overlap with the held-out set covers this, and nothing else on the page changed",
       "sources": {
-        "research/corpus.py": "ed0cbbc4500f9a92285974801258a492cd484f8b009dd8df3251409f22766c35",
+        "research/corpus.py": "ac81faf9ee03723ab3cd46c2918d32f83e741b7bffa9c699d2bdeaaaf2a6d60c",
         "research/ab.py": "7bbb7207094bd1a2c852fa587a0ce89cc1501e08b2064775b2734102500d93c0",
         "research/vsjxl.py": "bb0a1fbdcb0a84edcee8a988c1de100b168a7949a8c7b59378775af5d42a5563",
         "research/prof.py": "7fa28a84aab62f0eb79fd579bcc01b6e2e55cc200bdaa96c0218b2ad4aa05605",

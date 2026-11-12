@@ -1689,6 +1689,13 @@ class ScreensSetTests(unittest.TestCase):
         self.refused("its pixels equal a held-out image", lambda: corpus._refuse_heldout_overlap(pixels))
         with mock.patch.object(corpus, "SCREENS_PAGES", [(corpus.HELDOUT_PAGES[1], "x.md")]):
             self.refused("is a held-out page", lambda: corpus.author_screens(self.ppm))
+        # A held-out page under another label is caught by its source path, staged or original.
+        for source in ("build/site-source/index.md", "build/site-source/./index.md", "docs/index.md", "README.md"):
+            relabelled = [dict(e) for e in self.entries]
+            relabelled[2]["source"] = source
+            self.refused(f"source {source!r} is a held-out page's source", lambda: corpus._refuse_heldout_overlap(relabelled))
+            with mock.patch.object(corpus, "SCREENS_PAGES", [("api", source)]):
+                self.refused(f"source {source!r} is a held-out page's source", lambda: corpus.author_screens(self.ppm))
 
     def test_a_missing_ppm_is_recovered_from_its_committed_png(self) -> None:
         (self.ppm / "dv_s04.ppm").unlink()
@@ -1702,8 +1709,23 @@ class ScreensSetTests(unittest.TestCase):
         self.refused("research/screens-assets/dv_s04.png is not committed", lambda: corpus.screens(self.ppm))
 
     def test_a_changed_source_page_is_refused_at_authoring(self) -> None:
-        with mock.patch.object(corpus.subprocess, "run"):
-            self.refused("differs from the frozen source hash", lambda: corpus.author_screens(self.ppm))
+        import hashlib
+        repo = self.root / "repo"
+        (repo / "docs").mkdir(parents=True)
+        (repo / "docs" / "site-content.json").write_bytes((ROOT / "docs" / "site-content.json").read_bytes())
+        entries = [dict(e) for e in self.entries]
+        for e in entries:
+            source = repo / e["source"]
+            source.write_text(f"# {e['page']}\n", encoding="utf-8")
+            e["source_sha256"] = hashlib.sha256(source.read_bytes()).hexdigest()
+        self.write_manifest(entries)
+        with mock.patch.object(corpus, "REPO", repo), mock.patch.object(corpus.subprocess, "run"):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                corpus.author_screens(self.ppm)              # unchanged sources: recovered and verified, not re-rendered
+            self.assertIn("screens verified: 10 screenshots", out.getvalue())
+            (repo / "docs" / "page-4.md").write_text("# page-4, edited after the freeze\n", encoding="utf-8")
+            self.refused("docs/page-4.md differs from the frozen source hash", lambda: corpus.author_screens(self.ppm))
 
     def test_another_browser_version_is_refused_at_authoring(self) -> None:
         self.manifest.unlink()
@@ -1727,6 +1749,19 @@ class ScreensSetTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit) as caught:
             corpus.verify_screens(self.ppm)
         self.assertIn("screens dv_s07: RGB SHA-256 mismatch", str(caught.exception))
+        # The size command itself refuses before building anything.
+        repo = self.root / "repo"
+        (repo / "research").mkdir(parents=True)
+        (repo / "research" / "ab.py").write_bytes((ROOT / "research" / "ab.py").read_bytes())
+        (repo / "research" / "screens.json").write_bytes(self.manifest.read_bytes())
+        (repo / "research" / "heldout.json").write_bytes((ROOT / "research" / "heldout.json").read_bytes())
+        (repo / "build" / "research" / "ppm").mkdir(parents=True)
+        (repo / "build" / "research" / "ppm" / "dv_s07.ppm").write_bytes(target.read_bytes())
+        result = subprocess.run([sys.executable, str(repo / "research" / "ab.py"), "size", "dv_s07"],
+                                capture_output=True, text=True, timeout=120)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("screens dv_s07: RGB SHA-256 mismatch against the frozen manifest", result.stderr)
+        self.assertFalse((repo / "build" / "research" / "benchS.exe").exists(), "nothing was built")
         # An unfrozen set is never measured.
         with mock.patch.object(ab, "FROZEN_MANIFESTS", (("screens", "no/such/screens.json"),)), self.assertRaises(SystemExit) as caught:
             ab.verify_frozen(["dv_s01"], ppm_dir=self.ppm)

@@ -735,15 +735,36 @@ def verify_screens(ppm_dir: Path = PPM) -> list[dict]:
     return entries
 
 
+def _held_out_sources() -> set[str]:
+    """Every repository path a held-out screenshot was rendered from: its staged page and the source that page
+    is staged from (docs/site-content.json), normalized."""
+    import posixpath
+    held = json.loads(HELDOUT_MANIFEST.read_text(encoding="utf-8"))["images"]
+    staged = {f"build/site-source/{page}.md" for page in HELDOUT_PAGES}
+    staged |= {e["source_page"] for e in held if e.get("kind") == "screenshot"}
+    site = json.loads((REPO / "docs" / "site-content.json").read_text(encoding="utf-8"))
+    origin = {f"build/site-source/{p['staged']}": p.get("output") or p["source"] for p in site["pages"]}
+    origin_src = {f"build/site-source/{p['staged']}": p["source"] for p in site["pages"]}
+    sources = {posixpath.normpath(s) for s in staged}
+    sources |= {posixpath.normpath(origin[s]) for s in staged if s in origin}
+    sources |= {posixpath.normpath(origin_src[s]) for s in staged if s in origin_src}
+    return sources
+
+
 def _refuse_heldout_overlap(entries: list[dict]) -> None:
-    """A development screenshot may share neither a source page nor its pixels with a held-out image."""
+    """A development screenshot may share neither a source page nor its pixels with a held-out image. Pages are
+    compared by label and by normalized source path (a staged page and the file it is staged from both count)."""
+    import posixpath
     held = json.loads(HELDOUT_MANIFEST.read_text(encoding="utf-8"))["images"]
     held_pages = {page for page in HELDOUT_PAGES} | {
         e["source_page"].removeprefix("build/site-source/").removesuffix(".md") for e in held if e.get("kind") == "screenshot"}
+    held_sources = _held_out_sources()
     held_hashes = {e["rgb_sha256"] for e in held}
     for e in entries:
         if e["page"] in held_pages:
             raise SystemExit(f"screens {e['name']}: page {e['page']!r} is a held-out page")
+        if posixpath.normpath(e["source"]) in held_sources:
+            raise SystemExit(f"screens {e['name']}: source {e['source']!r} is a held-out page's source")
         if e["rgb_sha256"] in held_hashes:
             raise SystemExit(f"screens {e['name']}: its pixels equal a held-out image")
 
@@ -772,9 +793,13 @@ def author_screens(ppm_dir: Path = PPM) -> None:
     frozen manifest. With a manifest already present nothing is rewritten: a changed source page is refused, and an
     unchanged one is recovered and verified instead."""
     import hashlib
-    for page, _ in SCREENS_PAGES:
+    import posixpath
+    held_sources = _held_out_sources()
+    for page, source in SCREENS_PAGES:
         if page in HELDOUT_PAGES:
             raise SystemExit(f"screens: page {page!r} is a held-out page")
+        if posixpath.normpath(source) in held_sources:
+            raise SystemExit(f"screens: source {source!r} is a held-out page's source")
     held = json.loads(HELDOUT_MANIFEST.read_text(encoding="utf-8"))["images"]
     versions = {e["browser_version"] for e in held if e.get("kind") == "screenshot"}
     if len(versions) != 1:
