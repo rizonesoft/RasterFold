@@ -1,10 +1,11 @@
-"""Development packages must contain every required, hash-verified artifact."""
+"""Development and release packages must contain every required, hash-verified artifact."""
 import contextlib
 import hashlib
 import importlib.util
 import io
 import json
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -12,6 +13,7 @@ from unittest.mock import patch
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
+REPO = ROOT
 if str(ROOT / 'scripts') not in sys.path:
     sys.path.insert(0, str(ROOT / 'scripts'))
 import build as build_mod  # noqa: E402
@@ -191,6 +193,225 @@ class Packages(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'invalid artifact path'):
                     package.package('linux-x64')
 
+
+
+REVISION = 'abc123def456' + '0' * 28
+EPOCH = 1794441600          # 2026-11-12T00:00:00Z
+
+
+class ReleasePackages(Packages):
+    """Release mode: dist/rasterfold-<version>-<target>.zip from a clean committed tree."""
+
+    def setUp(self):
+        super().setUp()
+        (self.root / 'CHANGELOG.md').write_text('# Changelog\n', encoding='utf-8')
+        self.docs = {'docs/index.md': b'# Index\n\n[Usage](usage.md)\n', 'docs/usage.md': b'# Usage\n\n[Licence](../LICENSE)\n'}
+        self.state = patch.object(package, 'release_source_state', lambda: (REVISION, EPOCH))
+        self.state.start()
+        self.addCleanup(self.state.stop)
+        self.offline = patch.object(package, 'offline_docs', lambda revision: dict(self.docs))
+        self.offline.start()
+        self.addCleanup(self.offline.stop)
+        for target in package.TARGETS:
+            self.fixture(target)
+
+    def dist_snapshot(self):
+        dist = self.root / 'dist'
+        return {p.name: p.read_bytes() for p in sorted(dist.iterdir())} if dist.is_dir() else {}
+
+    def run_release(self, targets=None):
+        with contextlib.redirect_stdout(io.StringIO()):
+            package.release(list(targets or package.TARGETS))
+
+    def test_release_exact_contents_modes_checksums_and_timestamps(self):
+        self.run_release()
+        snapshot = self.dist_snapshot()
+        self.assertEqual(sorted(snapshot), ['SHA256SUMS', 'rasterfold-1.0.0-linux-x64.zip', 'rasterfold-1.0.0-windows-x64.zip'])
+        outer = dict(line.split('  ')[::-1] for line in snapshot['SHA256SUMS'].decode().splitlines())
+        for target in package.TARGETS:
+            name = f'rasterfold-1.0.0-{target}.zip'
+            self.assertEqual(outer[name], hashlib.sha256(snapshot[name]).hexdigest())
+            top = f'rasterfold-1.0.0-{target}/'
+            with zipfile.ZipFile(self.root / 'dist' / name) as z:
+                infos = z.infolist()
+                names = [i.filename for i in infos]
+                expected = sorted(top + n for n in (*package.target_artifacts(target), 'build.json', 'LICENSE', 'CHANGELOG.md',
+                                                    'docs/index.md', 'docs/usage.md', 'SHA256SUMS'))
+                self.assertEqual(names, expected)
+                self.assertEqual(names, sorted(names))
+                for info in infos:
+                    self.assertEqual(info.date_time, (2026, 11, 12, 0, 0, 0), info.filename)
+                    self.assertEqual(info.create_system, 3)
+                    mode = (info.external_attr >> 16) & 0o7777
+                    self.assertEqual(mode, 0o755 if info.filename == top + 'bin/rasterfold' else 0o644, info.filename)
+                sums = z.read(top + 'SHA256SUMS').decode()
+                listed = [line.split('  ', 1) for line in sums.splitlines()]
+                self.assertEqual(sorted(n for _d, n in listed), sorted(n[len(top):] for n in names if n != top + 'SHA256SUMS'))
+                self.assertEqual(len({n for _d, n in listed}), len(listed))
+                for digest, member in listed:
+                    self.assertEqual(digest, hashlib.sha256(z.read(top + member)).hexdigest(), member)
+                self.assertEqual(json.loads(z.read(top + 'build.json'))['revision'], REVISION[:12])
+
+    def test_release_two_runs_are_byte_identical(self):
+        self.run_release()
+        first = self.dist_snapshot()
+        self.run_release()
+        self.assertEqual(first, self.dist_snapshot())
+
+    def test_release_refusals_leave_dist_unchanged(self):
+        self.run_release()
+        before = self.dist_snapshot()
+
+        def refused(pattern, mutate, targets=('linux-x64',)):
+            manifest = json.loads((self.root / 'bin/linux-x64/build.json').read_text(encoding='utf-8'))
+            original = {p: p.read_bytes() for p in (self.root / 'bin/linux-x64').rglob('*') if p.is_file()}
+            mutate(manifest)
+            with self.assertRaisesRegex(ValueError, pattern):
+                self.run_release(targets)
+            self.assertEqual(before, self.dist_snapshot(), pattern)
+            for path, data in original.items():
+                path.write_bytes(data)
+
+        def write(manifest):
+            self.write_manifest('linux-x64', manifest)
+
+        refused('modified tree', lambda m: (m.__setitem__('dirty', True), write(m)))
+        refused('modified tree', lambda m: (m.pop('dirty'), write(m)))
+        refused("the build is of revision 'ffffffffffff'", lambda m: (m.__setitem__('revision', 'ffffffffffff'), write(m)))
+        refused('stale build', lambda m: (m.__setitem__('product_version', '0.9.0'), write(m)))
+        refused('incomplete build manifest', lambda m: (m['artifacts'].pop('bin/rasterfold'), write(m)))
+        refused('invalid artifact path', lambda m: (m['artifacts'].__setitem__('../escape', '0' * 64), write(m)))
+        refused('build digest mismatch', lambda m: (self.root / 'bin/linux-x64/bin/rasterfold').write_bytes(b'tampered'))
+        refused('missing build artifact', lambda m: (self.root / 'bin/linux-x64/lib/librasterfold.a').unlink())
+        refused('unsupported build manifest', lambda m: (self.root / 'bin/linux-x64/build.json').write_text('{', encoding='utf-8'))
+        # Documentation that collides with a package file or escapes the package.
+        self.docs['LICENSE'] = b'not the licence'
+        refused('collides with a package file', lambda m: None)
+        del self.docs['LICENSE']
+        self.docs['../outside.md'] = b'x'
+        refused('invalid documentation path', lambda m: None)
+        del self.docs['../outside.md']
+        # A dirty or uncommitted tree is refused before anything is read.
+        with patch.object(package, 'release_source_state', side_effect=ValueError('working tree is not clean (1 path(s), first: M x)')):
+            with self.assertRaisesRegex(ValueError, 'working tree is not clean'):
+                self.run_release()
+        self.assertEqual(before, self.dist_snapshot())
+        # Something in dist/ that is not a package of this version.
+        stranger = self.root / 'dist' / 'rasterfold-0.9.0-linux-x64.zip'
+        stranger.write_bytes(b'old')
+        with self.assertRaisesRegex(ValueError, 'dist holds something that is not a 1.0.0 package'):
+            self.run_release()
+        self.assertEqual({**before, stranger.name: b'old'}, self.dist_snapshot())
+        stranger.unlink()
+        (self.root / 'dist' / 'notes').mkdir()
+        with self.assertRaisesRegex(ValueError, 'dist holds something'):
+            self.run_release()
+        (self.root / 'dist' / 'notes').rmdir()
+        self.assertEqual(before, self.dist_snapshot())
+
+    def test_release_sequential_targets_accumulate_checksums(self):
+        self.run_release(['windows-x64'])
+        only_windows = self.dist_snapshot()
+        self.assertEqual(sorted(only_windows), ['SHA256SUMS', 'rasterfold-1.0.0-windows-x64.zip'])
+        self.assertEqual(only_windows['SHA256SUMS'].decode().count('\n'), 1)
+        self.run_release(['linux-x64'])
+        both = self.dist_snapshot()
+        self.assertEqual(both['rasterfold-1.0.0-windows-x64.zip'], only_windows['rasterfold-1.0.0-windows-x64.zip'])
+        lines = both['SHA256SUMS'].decode().splitlines()
+        self.assertEqual([line.split('  ')[1] for line in lines], ['rasterfold-1.0.0-linux-x64.zip', 'rasterfold-1.0.0-windows-x64.zip'])
+        for line in lines:
+            digest, name = line.split('  ')
+            self.assertEqual(digest, hashlib.sha256(both[name]).hexdigest())
+        # Running everything again is the same as having run it once.
+        self.run_release()
+        self.assertEqual(both, self.dist_snapshot())
+
+    def test_release_failure_keeps_earlier_packages_and_matching_checksums(self):
+        self.run_release()
+        good = self.dist_snapshot()
+        # A new commit: Windows rebuilds, Linux does not, so the second target of the run is refused.
+        newer = 'feedfacecafe' + '1' * 28
+        manifest = json.loads((self.root / 'bin/windows-x64/build.json').read_text(encoding='utf-8'))
+        manifest['revision'] = newer[:12]
+        self.write_manifest('windows-x64', manifest)
+        with patch.object(package, 'release_source_state', lambda: (newer, EPOCH + 60)):
+            with self.assertRaisesRegex(ValueError, "linux-x64: the build is of revision 'abc123def456'"):
+                self.run_release()
+        after = self.dist_snapshot()
+        self.assertEqual(sorted(after), sorted(good))
+        self.assertNotEqual(after['rasterfold-1.0.0-windows-x64.zip'], good['rasterfold-1.0.0-windows-x64.zip'])
+        self.assertEqual(after['rasterfold-1.0.0-linux-x64.zip'], good['rasterfold-1.0.0-linux-x64.zip'])
+        for line in after['SHA256SUMS'].decode().splitlines():
+            digest, name = line.split('  ')
+            self.assertEqual(digest, hashlib.sha256(after[name]).hexdigest(), name)
+        self.assertFalse(any(name.endswith('.tmp') for name in after))
+        # A failure while writing leaves no temporary and no half-written package.
+        with patch.object(zipfile.ZipFile, 'writestr', side_effect=OSError('disk full')):
+            with self.assertRaises(OSError):
+                self.run_release(['linux-x64'])
+        self.assertEqual(after, self.dist_snapshot())
+
+    def test_release_source_state_reads_a_real_git_tree(self):
+        self.state.stop()
+        self.addCleanup(self.state.start)
+
+        def git(*argv):
+            subprocess.run(['git', '-C', str(self.root), *argv], check=True, capture_output=True)
+
+        with self.assertRaisesRegex(ValueError, 'needs a git checkout'):
+            package.release_source_state()
+        git('init', '-q')
+        git('config', 'user.email', 'release-test@example.invalid')
+        git('config', 'user.name', 'Release Test')
+        git('add', '-A')
+        git('commit', '-q', '-m', 'fixture')
+        revision, epoch = package.release_source_state()
+        self.assertRegex(revision, r'^[0-9a-f]{40}$')
+        self.assertGreater(epoch, 1700000000)
+        (self.root / 'untracked.txt').write_text('x', encoding='utf-8')
+        with self.assertRaisesRegex(ValueError, r'working tree is not clean \(1 path\(s\), first: \?\? untracked.txt\)'):
+            package.release_source_state()
+        (self.root / 'untracked.txt').unlink()
+        (self.root / 'VERSION').write_text('1.0.1\n', encoding='utf-8')
+        with self.assertRaisesRegex(ValueError, 'working tree is not clean'):
+            package.release_source_state()
+
+    def test_release_package_offline_docs_resolve_without_network(self):
+        """The real offline documentation, packaged and extracted: every relative link resolves inside the
+        extracted tree and every page is reachable from docs/index.md."""
+        self.offline.stop()
+        self.addCleanup(self.offline.start)
+        build_docs = package._load_tool('rf_build_docs_for_test', 'build-docs.py')
+        real_docs = build_docs.render_offline_docs(REPO, REVISION)
+        with patch.object(package, 'offline_docs', lambda revision: dict(real_docs)):
+            self.run_release(['linux-x64'])
+        out = self.root / 'extracted'
+        with zipfile.ZipFile(self.root / 'dist' / 'rasterfold-1.0.0-linux-x64.zip') as z:
+            z.extractall(out)
+        tree = out / 'rasterfold-1.0.0-linux-x64'
+        report = build_docs.check_offline_tree(tree)
+        self.assertEqual(len(report['pages']), 16)
+        self.assertGreater(report['links'], 30)
+        self.assertEqual((report['unresolved'], report['unreachable'], report['leftovers']), ([], [], []))
+        index = (tree / 'docs/index.md').read_text(encoding='utf-8')
+        self.assertFalse(index.startswith('---'))
+        self.assertIn('(cli.md)', index)
+        benchmarks = (tree / 'docs/benchmarks.md').read_text(encoding='utf-8')
+        self.assertNotIn('{%', benchmarks)
+        self.assertIn('![encode-time chart](charts/encode-time.svg)', benchmarks)
+        self.assertTrue((tree / 'docs/charts/encode-time.svg').is_file())
+        self.assertIn(f'https://github.com/rizonesoft/RasterFold/blob/{REVISION}/examples/encode.c', (tree / 'docs/examples.md').read_text(encoding='utf-8'))
+        self.assertFalse((tree / 'docs/assets').exists(), 'site-only stylesheets and scripts are not shipped')
+        # The check fails on a tree whose links no longer close.
+        (tree / 'docs/cli.md').unlink()
+        broken = build_docs.check_offline_tree(tree)
+        self.assertTrue(any('cli.md' in item for item in broken['unresolved']))
+        (tree / 'docs/usage.md').write_text('# Usage\n\nSee [the site](/RasterFold/usage.html).\n', encoding='utf-8')
+        broken = build_docs.check_offline_tree(tree)
+        self.assertTrue(any('usage.md' in item for item in broken['unresolved']))
+        self.assertTrue(any('hosted path' in item for item in broken['leftovers']))
+        with self.assertRaisesRegex(ValueError, 'full commit id'):
+            build_docs.render_offline_docs(REPO, 'abc123')
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

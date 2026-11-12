@@ -243,6 +243,13 @@ def relocate_mirrored_links(
         rebased = f'{rel_from_out}{query}{fragment}'
         return f'<{rebased}>' if bracketed else rebased
 
+    return map_markdown_urls(text, rewrite_url)
+
+
+def map_markdown_urls(text: str, rewrite_url, on_prose_line=None) -> str:
+    """Apply `rewrite_url` to every Markdown link, reference definition and HTML `href`/`src` outside code fences.
+    `on_prose_line`, when given, sees each line outside a fence after its URLs were rewritten."""
+
     def rewrite_html_attr(match: re.Match[str]) -> str:
         prefix = match.group(1)
         qurl = match.group('qurl')
@@ -269,8 +276,179 @@ def relocate_mirrored_links(
         line = MD_LINK_RE.sub(lambda m: m.group(1) + rewrite_url(m.group('url')) + m.group('tail'), line)
         line = MD_REF_RE.sub(lambda m: m.group(1) + rewrite_url(m.group('url')) + m.group('tail'), line)
         line = HTML_ATTR_RE.sub(rewrite_html_attr, line)
+        if on_prose_line is not None:
+            on_prose_line(line)
         lines.append(line)
     return ''.join(lines)
+
+
+# ---------------------------------------------------------------- offline documentation (release packages)
+
+REPOSITORY_URL = 'https://github.com/rizonesoft/RasterFold'
+OFFLINE_ENTRY = 'docs/index.md'
+# Repository files a release package ships outside docs/, at the same relative path.
+OFFLINE_SHIPPED_FILES = ('LICENSE', 'CHANGELOG.md', 'include/rasterfold.h')
+_OFFLINE_INCLUDE_RE = re.compile(r'\{%\s*include\s+generated/(?P<kind>charts|tables)/(?P<name>[a-z0-9-]+)\.(?P<ext>svg|md)\s*%\}')
+_FRONT_MATTER_RE = re.compile(r'\A---\n.*?\n---\n', re.S)
+
+
+def _is_external_url(clean_url: str) -> bool:
+    parts = urlsplit(clean_url)
+    return bool(parts.scheme or parts.netloc) or clean_url.startswith('#') or not parts.path
+
+
+def offline_link_report(files: dict[str, bytes], shipped: tuple[str, ...] = OFFLINE_SHIPPED_FILES) -> dict:
+    """Check an offline documentation set (package-relative path -> bytes) without any network: every relative
+    link of every `docs/*.md` page must name a file of the set or a shipped file, and every page must be
+    reachable from `docs/index.md` by following links."""
+    pages = sorted(name for name in files if name.startswith('docs/') and name.endswith('.md'))
+    known = set(files) | set(shipped)
+    counts = {'links': 0}
+    unresolved: list[str] = []
+    edges: dict[str, set[str]] = {page: set() for page in pages}
+    leftovers: list[str] = []
+    for page in pages:
+        text = files[page].decode('utf-8')
+
+        def visit(raw_url: str, page: str = page) -> str:
+            clean = raw_url[1:-1] if raw_url.startswith('<') and raw_url.endswith('>') else raw_url
+            if _is_external_url(clean):
+                return raw_url
+            counts['links'] += 1
+            path = urlsplit(clean).path
+            target = os.path.normpath((Path(page).parent / path).as_posix()).replace('\\', '/')
+            if path.startswith('/') or target.startswith('../') or target not in known:
+                unresolved.append(f'{page}: {clean}')
+            elif target in edges:
+                edges[page].add(target)
+            return raw_url
+
+        def prose(line: str, page: str = page) -> None:
+            if '{%' in line or '{{' in line:
+                leftovers.append(f'{page}: template tag left in: {line.strip()[:80]}')
+            if '/RasterFold/' in line.replace(REPOSITORY_URL + '/', ''):
+                leftovers.append(f'{page}: hosted path left in: {line.strip()[:80]}')
+
+        map_markdown_urls(text, visit, prose)
+        if text.startswith('---\n'):
+            leftovers.append(f'{page}: Jekyll front matter left in')
+    reached: set[str] = set()
+    todo = [OFFLINE_ENTRY] if OFFLINE_ENTRY in edges else []
+    while todo:
+        page = todo.pop()
+        if page in reached:
+            continue
+        reached.add(page)
+        todo.extend(edges[page] - reached)
+    return {
+        'pages': pages,
+        'links': counts['links'],
+        'unresolved': sorted(unresolved),
+        'unreachable': sorted(set(pages) - reached),
+        'leftovers': sorted(leftovers),
+    }
+
+
+def render_offline_docs(root: Path, revision: str) -> dict[str, bytes]:
+    """The documentation a release package ships: every published page as Markdown that reads and links
+    correctly with no network and no Jekyll. Returns package-relative path -> bytes.
+
+    Front matter is removed, each generated table is inlined and each chart include becomes an image link to
+    the chart file beside the page, and every relative link is rewritten: to the packaged copy when its target
+    is a published page, an asset or a shipped file, otherwise to that path at `revision` on GitHub."""
+    if not re.fullmatch(r'[0-9a-f]{40}', revision):
+        raise ValueError(f'offline docs need the full commit id, got {revision!r}')
+    errors = check_generated_pages(root)
+    if errors:
+        raise ValueError('; '.join(errors))
+    site_content = load_site_content(root)
+    page_docs = [page.get('output') or page['source'] for page in site_content['pages']]
+    for doc_rel in page_docs:
+        if not (doc_rel.startswith('docs/') and doc_rel.endswith('.md') and doc_rel.count('/') == 1):
+            raise ValueError(f'{SITE_CONTENT}: page {doc_rel!r} is not a docs/*.md file')
+    if OFFLINE_ENTRY not in page_docs:
+        raise ValueError(f'{SITE_CONTENT}: no {OFFLINE_ENTRY} page')
+    asset_files = [entry['source'] for entry in site_content.get('assets', [])]
+    packaged = set(page_docs) | set(asset_files) | set(OFFLINE_SHIPPED_FILES)
+    out: dict[str, bytes] = {}
+    for asset_rel in asset_files:
+        out[asset_rel] = safe_repo_path(root, asset_rel).read_bytes()
+    for doc_rel in page_docs:
+        text = safe_repo_path(root, doc_rel).read_text(encoding='utf-8')
+        text, stripped = _FRONT_MATTER_RE.subn('', text, count=1)
+        if not stripped:
+            raise ValueError(f'{doc_rel}: no Jekyll front matter to remove')
+        text = text.lstrip('\n')
+
+        def include(match: re.Match[str], doc_rel: str = doc_rel) -> str:
+            kind, name, ext = match.group('kind'), match.group('name'), match.group('ext')
+            if (kind, ext) not in (('charts', 'svg'), ('tables', 'md')):
+                raise ValueError(f'{doc_rel}: unsupported include {match.group(0)}')
+            source = safe_repo_path(root, f'docs/_includes/generated/{kind}/{name}.{ext}')
+            if kind == 'tables':
+                return source.read_text(encoding='utf-8').strip('\n')
+            out[f'docs/charts/{name}.svg'] = source.read_bytes()
+            return f'![{name} chart](charts/{name}.svg)'
+
+        text = _OFFLINE_INCLUDE_RE.sub(include, text)
+        page_dir = Path(doc_rel).parent
+
+        def rewrite(raw_url: str, doc_rel: str = doc_rel, page_dir: Path = page_dir) -> str:
+            bracketed = raw_url.startswith('<') and raw_url.endswith('>')
+            clean = raw_url[1:-1] if bracketed else raw_url
+            if _is_external_url(clean):
+                return raw_url
+            parts = urlsplit(clean)
+            if parts.path.startswith('/'):
+                raise ValueError(f'{doc_rel}: site-absolute link cannot be packaged: {clean}')
+            target = os.path.normpath((page_dir / parts.path).as_posix()).replace('\\', '/')
+            if target.startswith('../') or target == '..':
+                raise ValueError(f'{doc_rel}: link escapes repository: {clean}')
+            suffix = (('?' + parts.query) if parts.query else '') + (('#' + parts.fragment) if parts.fragment else '')
+            if target in packaged or target in out:
+                rebased = os.path.relpath(target, page_dir.as_posix()).replace('\\', '/') + suffix
+            else:
+                on_disk = safe_repo_path(root, target)
+                if on_disk.is_dir():
+                    rebased = f'{REPOSITORY_URL}/tree/{revision}/{target}'
+                elif on_disk.is_file():
+                    rebased = f'{REPOSITORY_URL}/blob/{revision}/{target}{suffix}'
+                else:
+                    raise ValueError(f'{doc_rel}: link target does not exist: {clean}')
+            return f'<{rebased}>' if bracketed else rebased
+
+        out[doc_rel] = map_markdown_urls(text, rewrite).encode('utf-8')
+    # Site-only assets (stylesheets, scripts) that no offline page links to are not shipped.
+    referenced: set[str] = set()
+    for doc_rel in page_docs:
+
+        def note(raw_url: str, doc_rel: str = doc_rel) -> str:
+            clean = raw_url[1:-1] if raw_url.startswith('<') and raw_url.endswith('>') else raw_url
+            if not _is_external_url(clean):
+                referenced.add(os.path.normpath((Path(doc_rel).parent / urlsplit(clean).path).as_posix()).replace('\\', '/'))
+            return raw_url
+
+        map_markdown_urls(out[doc_rel].decode('utf-8'), note)
+    out = {name: data for name, data in out.items() if name in page_docs or name in referenced}
+    report = offline_link_report(out)
+    problems = report['unresolved'] + report['leftovers'] + [f'{page}: not reachable from {OFFLINE_ENTRY}' for page in report['unreachable']]
+    if problems:
+        raise ValueError('offline docs: ' + '; '.join(problems))
+    return out
+
+
+def check_offline_tree(directory: Path) -> dict:
+    """`offline_link_report` for an extracted release package directory (its top directory)."""
+    files: dict[str, bytes] = {}
+    for path in sorted(directory.rglob('*')):
+        if path.is_symlink():
+            raise ValueError(f'{path}: symbolic link in a package tree')
+        if path.is_file():
+            files[path.relative_to(directory).as_posix()] = path.read_bytes()
+    missing = [name for name in OFFLINE_SHIPPED_FILES if name not in files]
+    if missing:
+        raise ValueError(f'{directory}: package tree lacks {", ".join(missing)}')
+    return offline_link_report(files)
 
 
 def _mirrored_front_matter(page_meta: dict) -> str:
@@ -2268,34 +2446,7 @@ def rebase_staged_links(
             rebased = f'https://github.com/{repo_slug}/{kind}/main/{norm_rel}{suffix}'
         return f'<{rebased}>' if bracketed else rebased
 
-    def rewrite_html_attr(match: re.Match[str]) -> str:
-        prefix = match.group(1)
-        qurl = match.group('qurl')
-        if qurl is not None:
-            quote = match.group(2)
-            return f'{prefix}{quote}{rewrite_url(qurl)}{quote}'
-        return f'{prefix}{rewrite_url(match.group("uurl"))}'
-
-    lines: list[str] = []
-    fence: str | None = None
-    for line in text.splitlines(keepends=True):
-        fmatch = re.match(r'^\s{0,3}(`{3,}|~{3,})', line)
-        if fmatch and fence is None:
-            fence = fmatch.group(1)
-            lines.append(line)
-            continue
-        if fence and re.match(r'^\s{0,3}' + re.escape(fence[0]) + '{' + str(len(fence)) + r',}\s*$', line):
-            fence = None
-            lines.append(line)
-            continue
-        if fence is not None:
-            lines.append(line)
-            continue
-        line = MD_LINK_RE.sub(lambda m: m.group(1) + rewrite_url(m.group('url')) + m.group('tail'), line)
-        line = MD_REF_RE.sub(lambda m: m.group(1) + rewrite_url(m.group('url')) + m.group('tail'), line)
-        line = HTML_ATTR_RE.sub(rewrite_html_attr, line)
-        lines.append(line)
-    return ''.join(lines)
+    return map_markdown_urls(text, rewrite_url)
 
 
 def stage_site(root: Path, stage_arg: str | Path) -> list[str]:
@@ -2569,6 +2720,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--check', action='store_true', help='Verify generated pages, charts, tables, and site allowlist without modifying files')
     parser.add_argument('--self-test', action='store_true', help='Independently parse generated SVG charts and Markdown tables and assert numerical agreement with CSVs')
     parser.add_argument('--stage', metavar='DIR', help='Stage the allowlisted Jekyll source tree into DIR (must be inside build/)')
+    parser.add_argument('--check-offline', metavar='DIR', type=Path, help='Verify the offline documentation of an extracted release package (its top directory) without any network')
     parser.add_argument('--verify-live', metavar='URL', help='Verify live published site URL and drift-build.json against a build job receipt')
     parser.add_argument('--expected-receipt', type=Path, help='Path to expected drift-build.json from the build job (required with --verify-live)')
     parser.add_argument('--expected-commit', help='Expected 40-char commit SHA for --verify-live')
@@ -2579,6 +2731,20 @@ def main(argv: list[str] | None = None) -> int:
         root = args.root.resolve()
         has_verify_live = args.verify_live is not None
         has_stage = args.stage is not None
+        if args.check_offline is not None:
+            if args.check or args.self_test or has_verify_live or args.write or has_stage:
+                raise ValueError('--check-offline cannot be combined with another mode')
+            report = check_offline_tree(args.check_offline.resolve())
+            problems = report['unresolved'] + report['leftovers'] + [
+                f'{page}: not reachable from {OFFLINE_ENTRY}' for page in report['unreachable']
+            ]
+            for problem in problems:
+                print(f'build-docs: offline: {problem}', file=sys.stderr)
+            print(
+                f'build-docs: offline: {len(report["pages"])} page(s), {report["links"]} relative link(s), '
+                f'{len(report["unresolved"])} unresolved, {len(report["unreachable"])} unreachable from {OFFLINE_ENTRY}'
+            )
+            return 1 if problems or not report['pages'] else 0
         if (args.check or args.self_test or has_verify_live) and (args.write or has_stage):
             raise ValueError('--check, --self-test, and --verify-live cannot be combined with --write or --stage')
         if has_verify_live:

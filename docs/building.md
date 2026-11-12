@@ -112,6 +112,16 @@ python3 scripts/package.py --target all
 
 Packages and SHA-256 sidecars land in `build/packages/`. They preserve the target's `bin/`, `lib/`, `include/` and optional `symbols/` directory paths beneath `rasterfold-<target>/` as dereferenced regular files (so `lib/librasterfold.so` on Linux is stored as a full regular file matching `lib/librasterfold.so.1` for portable extraction), alongside `build.json`, `LICENSE` and `docs/` notes. The packager requires every target artifact from `scripts/build.py`'s `target_artifacts` table to appear in the build manifest, reads `build.json` and each listed artifact once into memory, and verifies every listed artifact, including the copied header and PDBs, against its recorded hash before writing those exact verified bytes into the ZIP. They are development packages, not published releases. Publishing remains a separate release action.
 
+Release packages are a separate mode, made from a clean committed tree:
+
+```bash
+python3 scripts/build.py --target all
+python3 scripts/package.py --release --target all
+sha256sum -c dist/SHA256SUMS
+```
+
+`--release` refuses a tree with uncommitted changes and a build that is not of the current commit. It writes `dist/rasterfold-<version>-<target>.zip`, one self-contained package per platform under the top directory `rasterfold-<version>-<target>/`: the same `bin/`, `lib/`, `include/` and `symbols/` files, `build.json`, `LICENSE`, `CHANGELOG.md`, the documentation under `docs/` rewritten to read and link correctly with no network (start at `docs/index.md`), and a `SHA256SUMS` over every other file in the package. `dist/SHA256SUMS` lists the packages. Entries are stored in name order with the commit's own timestamp, so two runs on one commit and one build give byte-identical packages. Verify an extracted package's documentation links with `python3 scripts/build-docs.py --check-offline <extracted top directory>`.
+
 The full gate runner retains logs under `build/logs/` and reports every failed command. `--quick` and `--skip-build` are iteration shortcuts, not full verification. Comparative benchmarks additionally require ffmpeg with libjxl and follow the quiet-machine protocol in [research.md](research.md).
 
 <!-- drift:begin build-capabilities -->
