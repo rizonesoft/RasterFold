@@ -288,6 +288,9 @@ def map_markdown_urls(text: str, rewrite_url, on_prose_line=None) -> str:
 # ---------------------------------------------------------------- offline documentation (release packages)
 
 REPOSITORY_URL = 'https://github.com/rizonesoft/RasterFold'
+# The published site. docs/site-content.json records the same address (`site_url`), and a page that links the site
+# takes it from there; this copy lets the offline check tell a full site address from a leaked site-relative path.
+PAGES_URL = 'https://rizonesoft.github.io/RasterFold'
 OFFLINE_ENTRY = 'docs/index.md'
 OFFLINE_README = 'README.md'           # the package's first page (PACKAGE.md in the repository), when present
 # Repository files a release package ships outside docs/, at the same relative path.
@@ -333,7 +336,7 @@ def offline_link_report(files: dict[str, bytes], shipped: tuple[str, ...] = OFFL
         def prose(line: str, page: str = page) -> None:
             if '{%' in line or '{{' in line:
                 leftovers.append(f'{page}: template tag left in: {line.strip()[:80]}')
-            if '/RasterFold/' in line.replace(REPOSITORY_URL + '/', ''):
+            if '/RasterFold/' in line.replace(REPOSITORY_URL + '/', '').replace(PAGES_URL + '/', ''):
                 leftovers.append(f'{page}: hosted path left in: {line.strip()[:80]}')
 
         map_markdown_urls(text, visit, prose)
@@ -381,6 +384,7 @@ def render_offline_docs(root: Path, revision: str) -> dict[str, bytes]:
     packaged = set(page_docs) | set(asset_files) | set(OFFLINE_SHIPPED_FILES)
     out: dict[str, bytes] = {}
     packaged_labels = render_version_labels(root, packaged=True).strip('\n')
+    packaged_downloads_rel = next((page['output'] for page in site_content['pages'] if page.get('id') == 'downloads'), None)
     for asset_rel in asset_files:
         out[asset_rel] = safe_repo_path(root, asset_rel).read_bytes()
     for doc_rel in page_docs:
@@ -389,6 +393,8 @@ def render_offline_docs(root: Path, revision: str) -> dict[str, bytes]:
         if not stripped:
             raise ValueError(f'{doc_rel}: no Jekyll front matter to remove')
         text = text.lstrip('\n')
+        if doc_rel == packaged_downloads_rel:
+            text = render_packaged_downloads(root)
 
         def include(match: re.Match[str], doc_rel: str = doc_rel) -> str:
             kind, name, ext = match.group('kind'), match.group('name'), match.group('ext')
@@ -924,6 +930,7 @@ _SEMVER_RE = re.compile(
     r'(?:-((?:0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*))*))?'
 )
 _SHA256_RE = re.compile(r'[0-9a-f]{64}')
+_SHARED_LIBRARY_RE = re.compile(r'\.(?:dll|dylib|so(?:\.\d+)*)$')
 
 
 def semver_key(version: str) -> tuple:
@@ -1004,7 +1011,9 @@ def validate_releases(data: object) -> list[dict]:
         if not isinstance(assets, list) or not all(isinstance(a, dict) for a in assets):
             raise _release_problem(where, 'assets must be a list of objects')
         names = [a.get('name') for a in assets]
-        if len(set(map(str, names))) != len(names):
+        if not all(isinstance(name, str) and name for name in names):
+            raise _release_problem(where, 'every asset needs a name, as a non-empty string')
+        if len(set(names)) != len(names):
             raise _release_problem(where, 'an asset name repeats')
         expected = {f'rasterfold-{version}-{target}.zip': target for target, _ in RELEASE_TARGETS}
         for name, target in expected.items():
@@ -1072,11 +1081,14 @@ def version_label_rows(root: Path, packaged: bool = False) -> list[tuple[str, st
     else:
         releases = load_releases(root)
         recorded = next((r for r in releases if r['version'] == version), None)
+        # The table is shared by included and inline copies, and Jekyll does not rewrite a relative .md link that
+        # arrives through an include, so the link is the page's published address, from the site's own record.
+        downloads = f'[Downloads]({load_site_content(root)["site_url"].rstrip("/")}/downloads.html)'
         if recorded is not None:
-            state = f'released {recorded["date"]} and listed on the Downloads page'
+            state = f'released {recorded["date"]}; see {downloads}'
         elif releases:
             state = (f'in development and not released; the latest release is RasterFold {releases[0]["version"]}, '
-                     'listed on the Downloads page')
+                     f'see {downloads}')
         else:
             state = 'in development and not released; no release has been published yet'
     return [
@@ -1115,6 +1127,10 @@ def _release_block(release: dict, latest: bool) -> list[str]:
     for target, label in RELEASE_TARGETS:
         asset = assets[f'rasterfold-{version}-{target}.zip']
         groups = {name: [p for p in asset['contents'] if p.startswith(name + '/')] for name in RELEASE_CONTENT_DIRS}
+        # Windows keeps its shared library beside the executable, in bin/: it is a library, not part of the tool.
+        shared = [p for p in groups['bin'] if _SHARED_LIBRARY_RE.search(p)]
+        groups['bin'] = [p for p in groups['bin'] if p not in shared]
+        groups['lib'] = sorted(groups['lib'] + shared)
 
         def listed(paths: list[str], absent: str) -> str:
             return ', '.join(f'`{p}`' for p in paths) if paths else absent
@@ -1175,6 +1191,25 @@ def render_downloads_page(root: Path, page_meta: dict) -> str:
     for index, release in enumerate(releases):
         out.extend(_release_block(release, latest=index == 0))
     return _mirrored_front_matter(page_meta) + '\n'.join(out)
+
+
+def render_packaged_downloads(root: Path) -> str:
+    """The Downloads page as a release package carries it. The package is built at its tag, before its own
+    release record exists, so the site's page would tell the person who just downloaded a release that none has
+    been published. The packaged page says what they hold and where every release is listed."""
+    version = read_product_version(root)
+    site = load_site_content(root)['site_url'].rstrip('/')
+    return (
+        '# Downloads\n\n'
+        + render_version_labels(root, packaged=True)
+        + f'\nThis documentation is part of a RasterFold {version} release package, so you already have this release: '
+        'the command-line tool, the shared and static libraries, the C header, the licence and the changelog are in '
+        'the directory above `docs/`, and its `README.md` explains how to verify and use them.\n\n'
+        f'Every published release, with its packages, checksums and source, is listed on the '
+        f'[Downloads page of the RasterFold site]({site}/downloads.html) and on the '
+        f'[releases page on GitHub]({REPOSITORY_URL}/releases). What changed in each release is in '
+        '[Release History](release-history.md).\n'
+    )
 
 
 def render_release_history_page(root: Path, page_meta: dict, mirrored_map: dict[str, str] | None = None) -> str:

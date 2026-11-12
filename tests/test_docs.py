@@ -263,6 +263,8 @@ class DocsMapTests(unittest.TestCase):
         'linux-x64': ['bin/rasterfold', 'include/rasterfold.h', 'lib/librasterfold.a', 'lib/librasterfold.so'],
     }
 
+    DOWNLOADS_LINK = '[Downloads](https://rizonesoft.github.io/RasterFold/downloads.html)'
+
     def release_record(self, version: str, date: str = '2026-11-20', inventory: dict | None = None) -> dict:
         inventory = inventory or self.INVENTORY
         assets = [
@@ -315,8 +317,9 @@ class DocsMapTests(unittest.TestCase):
         version = (self.root / 'VERSION').read_text(encoding='utf-8').strip()
         states = {
             'none': ((), 'in development and not released; no release has been published yet'),
-            'released': ((self.release_record(version, '2026-11-20'),), 'released 2026-11-20 and listed on the Downloads page'),
-            'ahead': ((self.release_record('0.9.0'),), 'in development and not released; the latest release is RasterFold 0.9.0'),
+            'released': ((self.release_record(version, '2026-11-20'),), f'released 2026-11-20; see {self.DOWNLOADS_LINK}'),
+            'ahead': ((self.release_record('0.9.0'),),
+                      f'in development and not released; the latest release is RasterFold 0.9.0, see {self.DOWNLOADS_LINK}'),
         }
         for name, (records, wording) in states.items():
             with self.subTest(state=name):
@@ -324,7 +327,8 @@ class DocsMapTests(unittest.TestCase):
                 rows = build_docs.version_label_rows(self.root)
                 self.assertEqual([kind for kind, _, _ in rows], ['Product', 'File format', 'C API'])
                 product, file_format, c_api = (label for _, label, _ in rows)
-                self.assertEqual(product, f'RasterFold {version}, {wording}' + (', listed on the Downloads page' if name == 'ahead' else ''))
+                self.assertEqual(product, f'RasterFold {version}, {wording}')
+                self.assertEqual('](' in product, name != 'none')       # a link exactly when there is a release to see
                 self.assertRegex(file_format, r'^`\.fold` format version \d+$')
                 self.assertRegex(c_api, r'^C API \d+\.\d+$')
                 table = build_docs.render_version_labels(self.root)
@@ -365,6 +369,11 @@ class DocsMapTests(unittest.TestCase):
             name = f'rasterfold-{version}-{target}.zip'
             self.assertIn(f'### {label}, RasterFold {version}', page)
             self.assertIn(f'[{name}](https://github.com/rizonesoft/RasterFold/releases/download/{tag}/{name})', page)
+        # The Windows shared library sits in bin/ and is a library; the tool row holds only the executable.
+        self.assertIn('| Command-line tool | `bin/rasterfold.exe` |', page)
+        self.assertIn('| Libraries | `bin/rasterfold.dll`, `lib/librasterfold.a`, `lib/rasterfold.lib` |', page)
+        self.assertIn('| Command-line tool | `bin/rasterfold` |', page)
+        self.assertIn('| Libraries | `lib/librasterfold.a`, `lib/librasterfold.so` |', page)
         self.assertIn('| Debug symbols | `symbols/rasterfold.pdb` |', page)
         self.assertIn('| Debug symbols | none shipped as separate files for this platform |', page)
         self.assertIn(f'[SHA256SUMS](https://github.com/rizonesoft/RasterFold/releases/download/{tag}/SHA256SUMS)', page)
@@ -374,7 +383,8 @@ class DocsMapTests(unittest.TestCase):
         self.assertIn(f'| `{"1" * 64}` |', page)
         # Every link on the page is a derived release address, a page of this site, or the repository itself.
         for url in re.findall(r'\]\(([^)]+)\)', page):
-            self.assertTrue(url.endswith('.md') or url.startswith('https://github.com/rizonesoft/RasterFold/'), url)
+            self.assertTrue(url.endswith('.md') or url.startswith('https://github.com/rizonesoft/RasterFold/')
+                            or url == 'https://rizonesoft.github.io/RasterFold/downloads.html', url)
 
     def test_seeded_metadata_mismatches_fail_the_docs_gate(self) -> None:
         build_docs.write_generated_pages(self.root)
@@ -392,6 +402,8 @@ class DocsMapTests(unittest.TestCase):
             'missing SHA256SUMS': lambda r: r['assets'].pop(2),
             "unexpected asset 'rasterfold-1.0.0-macos.zip'": lambda r: r['assets'].append(
                 {'name': 'rasterfold-1.0.0-macos.zip', 'target': None, 'size': 1, 'sha256': 'd' * 64}),
+            'every asset needs a name, as a non-empty string': lambda r: r['assets'].append(
+                {'name': [], 'target': None, 'size': 1, 'sha256': 'd' * 64}),
             'commit must be 40 lowercase hexadecimal characters': lambda r: r.update(commit='abc123'),
             'is not a YYYY-MM-DD calendar date': lambda r: r.update(date='2026-02-30'),
             'size must be a positive integer': lambda r: r['assets'][0].update(size=0),
@@ -422,6 +434,14 @@ class DocsMapTests(unittest.TestCase):
         self.assertIn('recorded twice', self.check_errors()[0])
         (self.root / 'docs/releases.json').unlink()
         self.assertIn('docs/releases.json: cannot be read', self.check_errors()[0])
+
+    def test_the_site_address_is_one_fact(self) -> None:
+        self.assertEqual(build_docs.load_site_content(self.root)['site_url'].rstrip('/'), build_docs.PAGES_URL)
+        # A full site address is not a leaked site-relative path; a bare one still is.
+        clean = build_docs.offline_link_report({'docs/index.md': f'See [the site]({build_docs.PAGES_URL}/downloads.html).\n'.encode()})
+        self.assertEqual(clean['leftovers'], [])
+        leaked = build_docs.offline_link_report({'docs/index.md': b'See [the site](/RasterFold/downloads.html).\n'})
+        self.assertTrue(any('hosted path left in' in item for item in leaked['leftovers']))
 
     def test_semver_order_puts_a_release_above_its_prereleases(self) -> None:
         ordered = ['1.0.0-alpha', '1.0.0-alpha.1', '1.0.0-alpha.beta', '1.0.0-beta', '1.0.0-beta.2', '1.0.0-beta.11',
@@ -454,7 +474,7 @@ class DocsMapTests(unittest.TestCase):
         self.assertEqual(self.check_errors(), [])
         page = (self.root / 'docs/downloads.md').read_text(encoding='utf-8')
         self.assertIn(f'## RasterFold {version} (latest release)', page)
-        self.assertIn('released 2026-11-21 and listed on the Downloads page', page)
+        self.assertIn(f'released 2026-11-21; see {self.DOWNLOADS_LINK}', page)
         # A duplicate is refused and the file is left byte-identical.
         before = (self.root / 'docs/releases.json').read_bytes()
         err = io.StringIO()
@@ -529,6 +549,18 @@ class DocsMapTests(unittest.TestCase):
             self.assertNotIn('version-labels:', text, rel)
             self.assertNotIn('{%', text, rel)
         self.assertIn('docs/release-history.md', docs)
+        # The packaged Downloads page never says that nothing is published: its reader holds a release.
+        for records in ((), (self.release_record(version),), (self.release_record('0.9.0'),)):
+            self.write_releases(*records)
+            build_docs.write_generated_pages(self.root)
+            packaged = build_docs.render_offline_docs(self.root, 'a' * 40)['docs/downloads.md'].decode('utf-8')
+            self.assertNotIn('No release of RasterFold has been published', packaged)
+            self.assertNotIn('build RasterFold from source', packaged)
+            self.assertNotIn('in development', packaged)
+            self.assertIn(f'part of a RasterFold {version} release package, so you already have this release', packaged)
+            self.assertIn('(https://rizonesoft.github.io/RasterFold/downloads.html)', packaged)
+            self.assertIn('[Release History](release-history.md)', packaged)
+            self.assertEqual(packaged.count(product), 1)
 
     def test_release_history_mirrors_the_changelog_without_plan_references(self) -> None:
         build_docs.write_generated_pages(self.root)

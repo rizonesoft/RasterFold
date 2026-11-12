@@ -1672,11 +1672,11 @@
       }
     },
     "docs/README.md": {
-      "evidence": "Re-read 2026-11-12 after the live read-back of D08 T01 section 7: scripts/build-docs.py now writes blank lines around the inline version-label table of generated pages so Jekyll renders it as a table; this document's one paragraph on the site (staged from the allowlist, published by pages.yml with the live read-back, no converter download) is unaffected",
+      "evidence": "Re-read 2026-11-12 after round 1 of D08 T01 section 7: scripts/build-docs.py now links the Downloads page from the product label when a release exists, lists a shared library under Libraries, validates asset names before use, and gives a release package its own Downloads page; this document's one paragraph on the site (staged from the allowlist, published by pages.yml with the live read-back, no converter download) is unaffected",
       "sources": {
         "docs/_config.yml": "676777a86aadacf7e23cd133f97cd97b494a2f2d96fb2a92e875399fda852581",
         "docs/site-content.json": "1ee306e2494a7be46fe253e7550a277af5cebf7f8c48afc524cfc15b8990626f",
-        "scripts/build-docs.py": "9e0203a990cdfac80881527020a015f665f86aa9683220551e3548b97f07b1b6",
+        "scripts/build-docs.py": "f9800cea7edd088f6fb52f5415d9814f831cb921bbaaa98f188e8e43e715f4a2",
         "docs/README.md": "35dddde5d7cbf1f7353813bebd7272749de00d2f705fc277cd4b51cb7b8189a0"
       }
     },
