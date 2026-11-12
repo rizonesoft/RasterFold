@@ -1,0 +1,79 @@
+{
+  "ref": "D08 T03 \u00a71",
+  "title": "The Command-Line Reference",
+  "implementation_sha": "a7efc4a6be946084210b6c5f5837e6916ccc3656",
+  "date": "2026-11-12",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/08-docs/D08-T03-s1.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "python3 scripts/drift-check.py with [--quiet] seeded into help verify -> exit 1, generator: scripts/build-docs.py: build-docs: docs/cli.md: generated file differs from source; restored -> drift: 473 supported documents; 0 error(s)",
+    "python3 tests/test_correctness.py -k cli -> OK cli-commands, OK cli-reference, 2 passed, 0 failed (Linux and Windows)",
+    "python3 -m unittest discover -s tests -p test_docs.py -> Ran 10 tests, OK",
+    "python3 scripts/ci_status.py --workflow pages.yml -> pages.yml: green at 0ade8a506e3a (run 43157537902); https://rizonesoft.github.io/RasterFold/cli.html answered 200",
+    "bosun run -- python3 scripts/check-all.py --all-targets -> check-all: 32/32 passed"
+  ],
+  "completion": {
+    "report": "docs/reviews/08-docs/D08-T03-s1.md",
+    "verdict": "reconciled",
+    "candidate": "a7efc4a6be946084210b6c5f5837e6916ccc3656",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/08-docs/D08-T03-s1.md",
+    "candidate": "089ed6b688e84e8583b41deaad516a5c5194d7a6",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "089ed6b688e84e8583b41deaad516a5c5194d7a6",
+  "schedule": {
+    "policy": "three-pass",
+    "pass_cap": 33,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}

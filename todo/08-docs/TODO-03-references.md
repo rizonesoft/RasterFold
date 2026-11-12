@@ -2,7 +2,7 @@
 schema_version: 1
 id: generated-references
 domain: 08-docs
-status: draft
+status: done
 title: "TODO-03 -- Generated Command-Line and API References"
 depends_on: []
 track: D3
@@ -36,7 +36,7 @@ track: D3
 
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
-|   1   |   §1    | The command-line reference | D07 T01 §1, D08 T01 §1 |  [ ]   |
+|   1   |   §1    | The command-line reference | D07 T01 §1, D08 T01 §1 |  [x]   |
 |   2   |   §2    | The API reference | D06 T01 §1, D08 T01 §1 |  [x]   |
 
 ---
@@ -57,6 +57,8 @@ track: D3
 
 **Test checkpoint:** run 2026-11-12: the seeded stale reference (`[--quiet]` added to `help verify`'s usage line) made `python3 scripts/drift-check.py` exit 1 with `generator: scripts/build-docs.py: build-docs: docs/cli.md: generated file differs from source (run python3 scripts/build-docs.py)`, and it printed `drift: 473 supported documents; 0 error(s)` with the line restored; `python3 tests/test_correctness.py -k cli` printed `OK   cli-commands`, `OK   cli-reference`, `2 passed, 0 failed` on Linux and the same through `python3 scripts/windows.py` on Windows (the built target's `help`, `--help` and `help <command>` output equal to the generator's extraction, CRLF read as LF); `python3 -m unittest discover -s tests -p test_docs.py` ran 10 tests `OK`, including `test_cli_reference_content_and_parser_refusals` (thirteen refusals) and the staged site's search index holding `/RasterFold/cli.html`; `python3 -m unittest discover -s tests -p test_drift.py` ran 55 tests `OK`; `python3 scripts/build-docs.py --stage build/site-source` printed `staged 39 file(s) into build/site-source` with `cli.md` present; the full suite `python3 tests/test_correctness.py` and `python3 scripts/check-all.py --all-targets` are quoted in the commit; and the built site is proven by the workflow and the published page: `python3 scripts/ci_status.py --workflow pages.yml` printed `pages.yml: green at 0ade8a506e3a (https://github.com/rizonesoft/RasterFold/actions/runs/43157537902)` for the commit that added the page (that workflow builds the native CLI, runs `build-docs.py --check`, stages the site, runs the Jekyll build and `drift-check.py --site-dir` on the artifact, and deploys), and `https://rizonesoft.github.io/RasterFold/cli.html` then answered `200` with `<title>Command-Line Reference | RasterFold</title>` and the corrected `encode` usage line, the home page linking `cli.html` and `assets/js/search-data.json` holding its entries. The read-back for the later commits of this section's range is in the findings file.
 
+> **Verified:** 2026-11-12 | §1 | a7efc4a6be946084210b6c5f5837e6916ccc3656
+> **Review:** `docs/reviews/d08-t03-s1.json`
 ## 2. The API Reference
 
 > **Started:** 2026-11-09T04:35:48Z
