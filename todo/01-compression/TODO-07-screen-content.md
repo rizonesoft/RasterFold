@@ -90,6 +90,8 @@ WebP is about 4.7 times smaller on screenshots. Before anything is designed this
 > **Review:** `docs/reviews/d01-t07-s2.json`
 ## 3. Round 1: a Backward-Reference Method for Screen Content
 
+> **Started:** 2026-11-12T15:14:01Z
+
 **Origin:** discovered run=32b2775e0d5a 2026-11-12 -- Milestone 9 gate (`D05 T01 §9`) misses on the held-out screenshots (`4.6730` of lossless WebP); this is follow-up round 1 of at most 13 under the capped missed-milestone policy (`D99 T01 §8`), required by that gate's acceptance bar, routed by `docs/research.md` section 4.15 (`§2`).
 
 **Needs:** ffmpeg with libjxl (benchmarks)
