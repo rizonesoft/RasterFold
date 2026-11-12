@@ -1,0 +1,79 @@
+{
+  "ref": "D09 T01 \u00a72",
+  "title": "The Release Package",
+  "implementation_sha": "f5e3b14cc20a11ad9eedbe33bcb81cd9c7d943f4",
+  "date": "2026-11-12",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/09-release/D09-T01-s2.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "python3 scripts/package.py --release --target all, twice on clean commit 19b55d4 -> windows bae4c8129fc6...10a6a707 and linux 53aa62577549...32fd4eca, byte-identical across runs; (cd dist && sha256sum -c SHA256SUMS) -> both OK",
+    "README commands from extracted packages outside the checkout -> Linux 33 of 33 checksums OK, round trip pixel-identical, both link lines print RasterFold API 0x10000; Windows 36 of 36, round trip pixel-identical, Clang DLL-import build prints 0x10000; MSVC cl line not run",
+    "python3 scripts/build-docs.py --check-offline <extracted package> -> 16 page(s), 55 relative link(s), 0 unresolved, 0 unreachable from docs/index.md (both)",
+    "python3 -m unittest discover -s tests -p test_package.py -> Ran 32 tests, OK",
+    "bosun run -- python3 scripts/check-all.py --all-targets on f5e3b14 -> check-all: 32/32 passed (correctness 47 passed, 0 failed: Freeze check)"
+  ],
+  "completion": {
+    "report": "docs/reviews/09-release/D09-T01-s2.md",
+    "verdict": "reconciled",
+    "candidate": "f5e3b14cc20a11ad9eedbe33bcb81cd9c7d943f4",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/09-release/D09-T01-s2.md",
+    "candidate": "ca33fb06c457b05ba6a8c414c531ed647f9d25df",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "ca33fb06c457b05ba6a8c414c531ed647f9d25df",
+  "schedule": {
+    "policy": "three-pass",
+    "pass_cap": 33,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}
