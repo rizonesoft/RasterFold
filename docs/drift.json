@@ -1551,13 +1551,13 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "Re-read 2026-11-12 after scripts/review-dispatch.py began refusing a reconciliation whose section contract cannot be read: searched this document for reconcil, review and dispatch; it does not describe the review schedule or the dispatcher's order rules, so nothing in it changed",
+      "evidence": "Re-read 2026-11-12 for D09 T01 section 3: scripts/package.py's commit export now pins core.autocrlf and core.eol off for git archive, so a package holds the committed bytes on every host; searched this document for package, archive and line ending: it does not describe the packager, so nothing in it changed",
       "sources": {
         "include/rasterfold.h": "228c6bf718c525b2311df99746d55e5861209f2ea0dec65e299b6ec0e6f126c7",
         "src/rf.h": "429414fd9303e0bd47d0ee05fca037e043c68c7d79f0f9435174c4e723e03f83",
         "src/main.c": "ec81bb32213bb7c8833860efb6ba7b8ab1512580fc1e380d6e564972324f7121",
         "scripts/build.py": "488c7f8808e6bef7be095b5aa24fced856aab20ef6757548ac7f32e08021ad91",
-        "scripts/package.py": "68273ea244f77a6cb6f0b9648dc570ecd3d022996ca861c133210e590013a35c",
+        "scripts/package.py": "f030a89836d12e610d9ad4a762bf073c975e6fcaf6bdb83ef09bc174e3f37973",
         "scripts/check-all.py": "ec0f58046fb6beb5e9b522530aa51a4e3eff03bd546a17a09db53e53ca8a5e9a",
         "README.md": "3ed74df2f748338d59eaf36ca338206646ef4136f33e94d72b25f21d459bca45",
         "AGENTS.md": "8a6e2a7cfcfb59130c1ab67ce1b621a8960b7dad415d91ff439d720f5dceba9c",
@@ -1591,24 +1591,27 @@
       }
     },
     "CONTRIBUTING.md": {
-      "evidence": "Re-read 2026-11-12 after the completion review of D09 T01 section 2: scripts/package.py now also ships PACKAGE.md as each package's README.md; this document does not mention packaging or scripts/package.py (searched for package), so nothing in it changed",
+      "evidence": "Re-read 2026-11-12 for D09 T01 section 3: scripts/package.py's commit export now pins core.autocrlf and core.eol off for git archive, so a package holds the committed bytes on every host; searched this document for package, archive and line ending: it does not describe the packager, so nothing in it changed",
       "sources": {
         "scripts/build.py": "488c7f8808e6bef7be095b5aa24fced856aab20ef6757548ac7f32e08021ad91",
-        "scripts/package.py": "68273ea244f77a6cb6f0b9648dc570ecd3d022996ca861c133210e590013a35c",
+        "scripts/package.py": "f030a89836d12e610d9ad4a762bf073c975e6fcaf6bdb83ef09bc174e3f37973",
         "scripts/check-all.py": "ec0f58046fb6beb5e9b522530aa51a4e3eff03bd546a17a09db53e53ca8a5e9a",
         "CONTRIBUTING.md": "390a812d137445951411d1b21f7b3e57ff403104757cece32055f9107ab95ad8"
       },
       "review": "Author-attested: 2026-10-25 re-read CONTRIBUTING.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/building.md": {
-      "evidence": "Re-read 2026-11-12 after the completion review of D09 T01 section 2: the release paragraph's contents list now names the package's README.md and links the repository's PACKAGE.md it is made from (release_members in scripts/package.py reads PACKAGE.md from the exported commit); the other statements of the paragraph still match the script",
+      "evidence": "Re-read 2026-11-12 for D09 T01 section 3: added the verification paragraph and the Publishing a release section and checked each statement against its source: scripts/verify_release.py (the four checks, the OK and REFUSED lines, exit 1, --timeout default 120 and the process-tree end), scripts/version.py (--tag requires rasterfold-v plus exactly VERSION; --release-notes prints the section whose heading names VERSION), and .github/workflows/release.yml (tag trigger, the commit must be on main, build.yml and plan.yml called on the tagged commit, one package build, verification on ubuntu and windows, publication needing all of them and creating the release with two zips, SHA256SUMS and the notes, prerelease when VERSION has a prerelease part, an existing release refused, workflow_dispatch source_ref as a dry run with the release-packages artifact and Unreleased notes as fallback); the release packages paragraph is unchanged by the export's line-ending pin",
       "sources": {
         "toolchain.json": "fd7b0b2424a2ffdb86095da76e4b975d604741fb271fd9b70e4c53efe9f5e3de",
         "scripts/build.py": "488c7f8808e6bef7be095b5aa24fced856aab20ef6757548ac7f32e08021ad91",
-        "scripts/package.py": "68273ea244f77a6cb6f0b9648dc570ecd3d022996ca861c133210e590013a35c",
+        "scripts/package.py": "f030a89836d12e610d9ad4a762bf073c975e6fcaf6bdb83ef09bc174e3f37973",
         "scripts/check-all.py": "ec0f58046fb6beb5e9b522530aa51a4e3eff03bd546a17a09db53e53ca8a5e9a",
         "include/rasterfold.h": "228c6bf718c525b2311df99746d55e5861209f2ea0dec65e299b6ec0e6f126c7",
-        "docs/building.md": "16f8e8ad9682a7bc8d87a92aa2c54a4feb94b74ccd37caeaeb77ee8ffc7aba97"
+        "docs/building.md": "daaeea391633810f16ba1039a72bd7e536589bc2e66727fc80c7437bf0425670",
+        "scripts/verify_release.py": "e924ac6e70b08206537fde9751a63fdd81dc97276c7be8def42ea134168eba4f",
+        ".github/workflows/release.yml": "043ed3b9f4bcee1abf3316e05c156e9690a7964ff7ed0e405be82a9d546bdf38",
+        "scripts/version.py": "159a7eecc030a0359f37bbd24d4ad22943c0a4761ad1f5592786adf5ddc630d2"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/building.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
@@ -1805,12 +1808,12 @@
       }
     },
     "PACKAGE.md": {
-      "evidence": "Written and read 2026-11-12 for D09 T01 section 2 (completion review: the package needs a consumer quickstart): every path in its table and commands was checked against target_artifacts in scripts/build.py for the platform the command is written for (tests/test_package.py test_package_quickstart_names_only_what_each_package_holds), the commands against the help text in src/main.c, rf_version and RF_SHARED against include/rasterfold.h, the linking lines against the Linking section of docs/library.md, and the contents list against release_members in scripts/package.py; the Linux and Windows commands were run from extracted packages outside the checkout, recorded in the section checkpoint",
+      "evidence": "Re-read 2026-11-12 for D09 T01 section 3: scripts/package.py's commit export now pins core.autocrlf and core.eol off for git archive, so a package holds the committed bytes on every host; searched this document for package, archive and line ending: the quickstart describes the extracted package's contents and commands, none of which the export's line-ending pin changes on the Linux host that builds releases; its paths, commands and linking lines still match target_artifacts, src/main.c and docs/library.md",
       "sources": {
         "PACKAGE.md": "b47e92b85f3f733ae6ee5e1c76f5e6451bf965033eaba0a2d818458a0c2e97d1",
         "src/main.c": "ec81bb32213bb7c8833860efb6ba7b8ab1512580fc1e380d6e564972324f7121",
         "include/rasterfold.h": "228c6bf718c525b2311df99746d55e5861209f2ea0dec65e299b6ec0e6f126c7",
-        "scripts/package.py": "68273ea244f77a6cb6f0b9648dc570ecd3d022996ca861c133210e590013a35c",
+        "scripts/package.py": "f030a89836d12e610d9ad4a762bf073c975e6fcaf6bdb83ef09bc174e3f37973",
         "scripts/build.py": "488c7f8808e6bef7be095b5aa24fced856aab20ef6757548ac7f32e08021ad91",
         "docs/library.md": "2d8b00c24efc829e32adbb7e4b6a6ef4028f266a077cfe4fca85e5717352289c"
       }

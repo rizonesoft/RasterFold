@@ -74,7 +74,10 @@ def export_revision(revision: str, dest: Path) -> None:
     Everything a release package takes from the source tree (documentation, LICENSE, CHANGELOG.md, VERSION) is
     read from this export, so an edit made after the clean-tree check cannot reach a package."""
     try:
-        done = subprocess.run(['git', '-C', str(ROOT), 'archive', '--format=tar', revision], capture_output=True, timeout=300)
+        # git archive applies the host's checkout line-ending conversion (core.autocrlf, core.eol) to what it
+        # exports; a package must hold the committed bytes on every host, so both are pinned off for this call.
+        done = subprocess.run(['git', '-C', str(ROOT), '-c', 'core.autocrlf=false', '-c', 'core.eol=lf', 'archive',
+                               '--format=tar', revision], capture_output=True, timeout=300)
     except (OSError, subprocess.SubprocessError) as exc:
         raise ValueError(f'git archive failed ({exc})') from exc
     if done.returncode != 0:

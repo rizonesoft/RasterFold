@@ -5,7 +5,8 @@ Product SemVer lives only in the repository-root VERSION file. This script
 regenerates the committed codec-version header (`--write`), verifies that
 the header agrees with VERSION (`--check`, read-only,
 used by the drift generated-files check), prints the development identity
-of a checkout (`--dev`), and validates release tags (`--tag`). The product
+of a checkout (`--dev`), validates release tags (`--tag`), and prints a
+release's notes from CHANGELOG.md (`--release-notes`). The product
 version is independent of the C API version (`rf_version()`) and of the
 .fold format version; neither is read or changed here.
 """
@@ -104,6 +105,57 @@ def check_tag(tag: str, version: str) -> None:
         )
 
 
+CHANGELOG_REL = 'CHANGELOG.md'
+_CHANGELOG_HEADING = re.compile(r'^## (.+?)\s*$')
+
+
+def changelog_sections(root: Path) -> dict[str, str]:
+    """CHANGELOG.md's second-level sections: heading text -> body, stripped. A repeated heading is refused."""
+    path = root / CHANGELOG_REL
+    try:
+        text = path.read_text(encoding='utf-8')
+    except OSError as exc:
+        raise ValueError(f'{path}: unreadable changelog ({exc})') from exc
+    sections: dict[str, list[str]] = {}
+    current = None
+    for line in text.replace('\r\n', '\n').split('\n'):
+        heading = _CHANGELOG_HEADING.match(line)
+        if heading:
+            current = heading.group(1)
+            if current in sections:
+                raise ValueError(f'{CHANGELOG_REL}: the heading "## {current}" appears twice')
+            sections[current] = []
+        elif current is not None:
+            sections[current].append(line)
+    return {name: '\n'.join(body).strip() for name, body in sections.items()}
+
+
+def release_notes(root: Path, unreleased: bool = False) -> str:
+    """The changelog section a release publishes as its notes.
+
+    A release prints the section whose heading names VERSION: `## 1.0.0`, `## [1.0.0]`, either optionally followed
+    by ` - <date>` (Keep a Changelog). With `unreleased` (a dry run before the release moved the section) it prints
+    the Unreleased section instead. A missing, ambiguous or empty section is refused: a release never publishes
+    without notes, and never with another version's."""
+    sections = changelog_sections(root)
+    if unreleased:
+        wanted = [name for name in sections if name.strip('[]').lower() == 'unreleased']
+        label = 'an Unreleased section'
+    else:
+        version = read_version(root)
+        named = re.compile(r'^\[?' + re.escape(version) + r'\]?(?: - .+)?$')
+        wanted = [name for name in sections if named.fullmatch(name)]
+        label = f'a section for version {version} ("## {version}" or "## [{version}] - <date>")'
+    if not wanted:
+        raise ValueError(f'{CHANGELOG_REL}: lacks {label}')
+    if len(wanted) > 1:
+        raise ValueError(f'{CHANGELOG_REL}: has more than one candidate for {label}: {", ".join(wanted)}')
+    body = sections[wanted[0]]
+    if not body:
+        raise ValueError(f'{CHANGELOG_REL}: the section "## {wanted[0]}" is empty')
+    return body + '\n'
+
+
 def check(root: Path) -> list[str]:
     # The header is the only derived file this tool owns. Agreement of
     # docs/facts.json and the site citation with VERSION is enforced by
@@ -126,10 +178,18 @@ def main(argv=None) -> int:
     mode.add_argument('--check', action='store_true', help='verify derived version identities agree (read-only)')
     mode.add_argument('--dev', action='store_true', help='print the development identity of the checkout')
     mode.add_argument('--tag', metavar='TAG', help='validate a release tag against VERSION')
+    mode.add_argument('--release-notes', action='store_true',
+                      help="print CHANGELOG.md's section for VERSION, the notes a release publishes")
+    parser.add_argument('--unreleased', action='store_true',
+                        help='with --release-notes: print the Unreleased section instead (dry runs only)')
     args = parser.parse_args(argv)
     root = root_of(args)
+    if args.unreleased and not args.release_notes:
+        parser.error('--unreleased is only valid with --release-notes')
     try:
-        if args.write:
+        if args.release_notes:
+            sys.stdout.write(release_notes(root, args.unreleased))
+        elif args.write:
             version = read_version(root)
             target = root / HEADER_REL
             target.write_text(header_text(version), encoding='utf-8', newline='\n')

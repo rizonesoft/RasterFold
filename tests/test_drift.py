@@ -2653,7 +2653,10 @@ class DriftTests(unittest.TestCase):
 
         # 5. Verify exact-candidate CI workflow configuration in .github/workflows/plan.yml.
         plan_yml = (REPO / '.github/workflows/plan.yml').read_text(encoding='utf-8')
-        self.assertGreaterEqual(plan_yml.count('ref: ${{ github.event.pull_request.head.sha || github.sha }}'), 2)
+        # The candidate is the ref a calling workflow (the release) names, else the pull request's head, else the push.
+        self.assertGreaterEqual(
+            plan_yml.count('ref: ${{ inputs.ref || github.event.pull_request.head.sha || github.sha }}'), 2)
+        self.assertNotIn('ref: ${{ github.event.pull_request.head.sha || github.sha }}', plan_yml)
         self.assertIn('test "$ACTUAL_SHA" = "$HEAD_SHA"', plan_yml)
         self.assertIn('python3 scripts/drift-check.py --commit-range "$BASE_SHA..$HEAD_SHA"', plan_yml)
         self.assertIn('python3 scripts/drift-check.py --commit-range "$(git rev-parse "$HEAD_SHA^")..$HEAD_SHA"', plan_yml)

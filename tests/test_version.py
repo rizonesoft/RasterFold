@@ -79,6 +79,56 @@ class VersionSource(unittest.TestCase):
     def git(self, *args: str) -> None:
         subprocess.run(['git', '-C', str(self.root), *args], check=True, capture_output=True, text=True)
 
+    def test_release_notes_matrix(self):
+        head = '# Changelog\n\nIntro.\n\n'
+        unreleased = '## Unreleased\n\n- Pending change.\n\n'
+        older = '## 0.9.0\n\n- Older change.\n'
+        version = (self.root / 'VERSION').read_text(encoding='utf-8').strip()
+        for heading in (f'## {version}', f'## [{version}]', f'## [{version}] - 2026-11-12', f'## {version} - 2026-11-12'):
+            with self.subTest(heading=heading):
+                self.write('CHANGELOG.md', head + unreleased + f'{heading}\n\n- First change.\n- Second change.\n\n' + older)
+                result = run_version(self.root, '--release-notes')
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(result.stdout, '- First change.\n- Second change.\n')
+                result = run_version(self.root, '--release-notes', '--unreleased')
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(result.stdout, '- Pending change.\n')
+        # No section for the version: a release is refused, the dry run still has its notes.
+        self.write('CHANGELOG.md', head + unreleased + older)
+        result = run_version(self.root, '--release-notes')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(f'CHANGELOG.md: lacks a section for version {version}', result.stdout)
+        self.assertEqual(run_version(self.root, '--release-notes', '--unreleased').returncode, 0)
+        # Another version's section never stands in, however close its name.
+        self.write('CHANGELOG.md', head + f'## {version}0\n\n- Wrong.\n\n## {version}-rc.1\n\n- Wrong.\n')
+        self.assertEqual(run_version(self.root, '--release-notes').returncode, 1)
+        # No Unreleased section, an empty section, a repeated heading, a missing file.
+        self.write('CHANGELOG.md', head + f'## {version}\n\n- Only.\n')
+        result = run_version(self.root, '--release-notes', '--unreleased')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('CHANGELOG.md: lacks an Unreleased section', result.stdout)
+        self.write('CHANGELOG.md', head + f'## {version}\n\n' + older)
+        result = run_version(self.root, '--release-notes')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('is empty', result.stdout)
+        self.write('CHANGELOG.md', head + f'## {version}\n\n- A.\n\n## {version}\n\n- B.\n')
+        result = run_version(self.root, '--release-notes')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('appears twice', result.stdout)
+        (self.root / 'CHANGELOG.md').unlink()
+        result = run_version(self.root, '--release-notes')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('unreadable changelog', result.stdout)
+        # --unreleased alone is a usage error.
+        self.assertEqual(run_version(self.root, '--unreleased').returncode, 2)
+
+    def test_release_notes_of_this_repository(self):
+        result = subprocess.run([sys.executable, str(VERSION_PY), '--release-notes', '--unreleased'],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('RasterFold', result.stdout)
+        self.assertNotIn('\n## ', result.stdout)
+
     def test_dev_labels(self):
         self.git('init', '-q')
         self.git('config', 'user.email', 'fixture@example.invalid')

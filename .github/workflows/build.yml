@@ -6,12 +6,21 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+  # The release workflow runs these same jobs on the commit it is about to publish.
+  workflow_call:
+    inputs:
+      ref:
+        description: "Commit to build and test (default: the triggering commit)"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
 
+# Keyed on the workflow that started the run: a release calling these jobs never cancels, or is cancelled by, a push run.
 concurrency:
-  group: build-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ inputs.ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -21,6 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.ref || github.sha }}
           fetch-depth: 0
       - name: Cache checked compiler archives
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -40,6 +50,10 @@ jobs:
           .venv/bin/python tests/test_api.py
           .venv/bin/python tests/test_artifacts.py
           .venv/bin/python tests/fuzz_decode.py 300 1
+      - name: Package, release verifier and version tests
+        run: |
+          python3 -m unittest discover -s tests -p test_package.py -v
+          python3 -m unittest discover -s tests -p test_version.py -v
       - name: Portable arithmetic fidelity
         run: |
           python3 scripts/build.py --portable
@@ -61,6 +75,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.ref || github.sha }}
           fetch-depth: 0
       - name: Cache checked compiler archives
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -81,6 +96,8 @@ jobs:
           python tests/test_api.py
           python tests/test_artifacts.py
           python tests/fuzz_decode.py 300 1
+      - name: Package and release verifier tests
+        run: python -m unittest discover -s tests -p test_package.py -v
       - name: Package Windows artifacts
         run: python scripts/package.py --target windows-x64
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

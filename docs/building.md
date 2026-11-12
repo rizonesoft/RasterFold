@@ -122,6 +122,32 @@ python3 scripts/package.py --release --target all
 
 `--release` refuses a tree with uncommitted changes and a build that is not of the current commit. It writes `dist/rasterfold-<version>-<target>.zip`, one self-contained package per platform under the top directory `rasterfold-<version>-<target>/`: the same `bin/`, `lib/`, `include/` and `symbols/` files, `build.json`, a `README.md` that tells the person who extracted it how to verify and use it (the repository's [`PACKAGE.md`](../PACKAGE.md)), `LICENSE`, `CHANGELOG.md`, the documentation under `docs/` rewritten to read and link correctly with no network (start at `docs/index.md`), and a `SHA256SUMS` over every other file in the package. `dist/SHA256SUMS` lists the packages. Entries are stored in name order with the commit's own timestamp, so two runs on one commit and one build give byte-identical packages. Verify an extracted package's documentation links with `python3 scripts/build-docs.py --check-offline <extracted top directory>`.
 
+Run a package before trusting it:
+
+```bash
+python3 scripts/verify_release.py                       # dist/ of this checkout, this host's platform
+python3 scripts/verify_release.py --target windows-x64  # on Windows
+```
+
+It checks `dist/SHA256SUMS`, extracts the platform's zip into a temporary directory, checks the package's own `SHA256SUMS`, requires the packaged `rasterfold version` to report the product version in `VERSION`, and round-trips a generated image through the packaged `encode`, `verify` and `decode`. It prints `verify-release: OK <zip>` or one `verify-release: REFUSED <reason>` line and exits 1. Each packaged command is bounded by `--timeout` seconds (120 by default); a command that outlives it is refused and its whole process tree is ended.
+
+## Publishing a release
+
+Releases are published by `.github/workflows/release.yml`, never by hand:
+
+1. Set `VERSION`, move the changelog's Unreleased section under a `## <version>` heading, and commit to `main`.
+2. Push the tag `rasterfold-v<version>` on that commit.
+
+The tagged commit must be on `main`, the tag must be `rasterfold-v` followed by exactly the contents of `VERSION` (`python3 scripts/version.py --tag <tag>`), and the changelog must have that version's section (`python3 scripts/version.py --release-notes` prints it). The workflow then runs every gate a push runs (it calls `build.yml` and `plan.yml` on the tagged commit), builds both targets and writes the packages once, runs `scripts/verify_release.py` on the packages on Linux and on Windows, and only when all of that passed creates the GitHub release with the two zips, `SHA256SUMS` and the changelog section as its notes. A `VERSION` with a prerelease part (`1.1.0-rc.1`) publishes as a prerelease. A release that already exists for the tag is refused, never replaced.
+
+To rehearse without publishing, start the workflow by hand with a commit on `main`:
+
+```bash
+gh workflow run release.yml -f source_ref=<40-character commit SHA on main>
+```
+
+A manual run does everything except publication, creates no release and no tag, and leaves the packages as the run's `release-packages` artifact. Before the changelog section for the version exists, its notes are the Unreleased section.
+
 The full gate runner retains logs under `build/logs/` and reports every failed command. `--quick` and `--skip-build` are iteration shortcuts, not full verification. Comparative benchmarks additionally require ffmpeg with libjxl and follow the quiet-machine protocol in [research.md](research.md).
 
 <!-- drift:begin build-capabilities -->

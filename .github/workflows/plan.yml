@@ -12,6 +12,14 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+  # The release workflow runs these same gates on the commit it is about to publish.
+  workflow_call:
+    inputs:
+      ref:
+        description: "Commit to check (default: the triggering commit)"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -23,13 +31,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ inputs.ref || github.event.pull_request.head.sha || github.sha }}
           # Full history: the validator's git legs (provenance candidates,
           # fix-commit proofs, ancestry) cannot resolve on a shallow checkout.
           fetch-depth: 0
       - name: Verify checked-out candidate commit
         env:
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          HEAD_SHA: ${{ inputs.ref || github.event.pull_request.head.sha || github.sha }}
         run: |
           ACTUAL_SHA="$(git rev-parse HEAD)"
           test "$ACTUAL_SHA" = "$HEAD_SHA" || { echo "checkout mismatch: HEAD=$ACTUAL_SHA expected=$HEAD_SHA" >&2; exit 1; }
@@ -152,7 +160,7 @@ jobs:
       - name: Check commit fact declarations against each commit's own source
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          HEAD_SHA: ${{ inputs.ref || github.event.pull_request.head.sha || github.sha }}
         run: |
           if [ -n "$BASE_SHA" ] && [ "$BASE_SHA" != "0000000000000000000000000000000000000000" ] && git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
             python3 scripts/drift-check.py --commit-range "$BASE_SHA..$HEAD_SHA"
@@ -195,7 +203,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ inputs.ref || github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
       - name: Self-test the campaign guard
         shell: pwsh

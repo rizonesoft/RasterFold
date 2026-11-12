@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -19,6 +20,7 @@ if str(ROOT / 'scripts') not in sys.path:
     sys.path.insert(0, str(ROOT / 'scripts'))
 import build as build_mod  # noqa: E402
 import package  # noqa: E402
+import verify_release  # noqa: E402
 
 
 class Packages(unittest.TestCase):
@@ -205,7 +207,7 @@ class ReleasePackages(Packages):
 
     def setUp(self):
         super().setUp()
-        (self.root / 'CHANGELOG.md').write_text('# Changelog\n', encoding='utf-8')
+        (self.root / 'CHANGELOG.md').write_bytes(b'# Changelog\n')
         (self.root / 'PACKAGE.md').write_bytes((REPO / 'PACKAGE.md').read_bytes())
         self.docs = {'docs/index.md': b'# Index\n\n[Usage](usage.md)\n', 'docs/usage.md': b'# Usage\n\n[Licence](../LICENSE)\n'}
         self.state = patch.object(package, 'release_source_state', lambda: (REVISION, EPOCH))
@@ -429,8 +431,11 @@ class ReleasePackages(Packages):
         git('init', '-q')
         git('config', 'user.email', 'release-test@example.invalid')
         git('config', 'user.name', 'Release Test')
+        git('config', 'core.autocrlf', 'false')          # commit the fixture's bytes as written, on every host
         git('add', '-A')
         git('commit', '-q', '-m', 'fixture')
+        # A host that converts line endings on checkout must not change what a package holds.
+        git('config', 'core.autocrlf', 'true')
         revision = git('rev-parse', 'HEAD')
         for target in package.TARGETS:
             manifest = json.loads((self.root / 'bin' / target / 'build.json').read_text(encoding='utf-8'))
@@ -535,6 +540,336 @@ class ReleasePackages(Packages):
         self.assertEqual((encoded['unresolved'], encoded['unreachable'], encoded['links']), ([], [], 4))
         missing = build_docs.offline_link_report({'docs/index.md': b'[spaced](hello%20there.md)\n'})
         self.assertEqual(missing['unresolved'], ['docs/index.md: hello%20there.md'])
+
+
+FAKE_TOOL = """import os, shutil, subprocess, sys, time
+mode, version, pidfile = {mode!r}, {version!r}, {pidfile!r}
+command = sys.argv[1]
+if command == 'version':
+    print('RasterFold codec')
+    print('product version: ' + version)
+elif command == 'encode':
+    if mode == 'hang':
+        # Bounded on its own: both processes end within a minute if nothing stops them, and neither writes in a loop.
+        child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+        with open(pidfile, 'w') as handle:
+            handle.write(str(os.getpid()) + ' ' + str(child.pid))
+        time.sleep(60)
+    if mode == 'fail':
+        print('rasterfold: cannot encode', file=sys.stderr)
+        sys.exit(3)
+    shutil.copyfile(sys.argv[2], sys.argv[3])
+elif command == 'decode':
+    data = open(sys.argv[2], 'rb').read()
+    if mode == 'lossy':
+        data = data[:-1] + bytes([data[-1] ^ 1])
+    open(sys.argv[3], 'wb').write(data)
+"""
+
+
+def process_alive(pid: int) -> bool:
+    if os.name == 'nt':
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(0x1000, False, pid)       # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return False
+        code = ctypes.c_ulong()
+        kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+        kernel32.CloseHandle(handle)
+        return code.value == 259                                 # STILL_ACTIVE
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    try:
+        return Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()[0] != 'Z'
+    except OSError:
+        return False
+
+
+class ReleaseVerifier(unittest.TestCase):
+    """scripts/verify_release.py on fabricated packages whose `rasterfold` is a script run through the interpreter."""
+
+    VERSION = '1.0.0'
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.dist = self.root / 'dist'
+        self.dist.mkdir()
+        self.scratch = self.root / 'scratch'
+        self.scratch.mkdir()
+        self.pidfile = self.root / 'pids.txt'
+        self.target = verify_release.host_target()
+        self.top = f'rasterfold-{self.VERSION}-{self.target}'
+        self.exe = 'bin/rasterfold.exe' if self.target == 'windows-x64' else 'bin/rasterfold'
+        patcher = patch.object(verify_release.tempfile, 'tempdir', str(self.scratch))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def build(self, mode='good', version=None, tamper=None, extra_member=None, unlisted=None):
+        tool = FAKE_TOOL.format(mode=mode, version=version or self.VERSION, pidfile=str(self.pidfile)).encode()
+        files = {self.exe: tool, 'LICENSE': b'licence\n', 'docs/index.md': b'# Docs\n'}
+        sums = ''.join(f'{hashlib.sha256(data).hexdigest()}  {name}\n' for name, data in sorted(files.items()))
+        if tamper:
+            files[tamper] += b'changed after the checksums were written'
+        if unlisted:
+            files[unlisted] = b'not in the checksum file'
+        zip_path = self.dist / f'{self.top}.zip'
+        with zipfile.ZipFile(zip_path, 'w') as archive:
+            for name, data in files.items():
+                info = zipfile.ZipInfo(f'{self.top}/{name}')
+                info.external_attr = (0o755 if name == self.exe else 0o644) << 16
+                archive.writestr(info, data)
+            archive.writestr(f'{self.top}/SHA256SUMS', sums)
+            if extra_member:
+                archive.writestr(extra_member, b'outside')
+        (self.dist / 'SHA256SUMS').write_text(
+            f'{hashlib.sha256(zip_path.read_bytes()).hexdigest()}  {zip_path.name}\n', encoding='utf-8')
+        return zip_path
+
+    def verify(self, timeout=30.0):
+        lines = []
+        verify_release.verify(self.dist, self.target, self.VERSION, timeout, launcher=(sys.executable,),
+                              report=lines.append)
+        return lines
+
+    def refused(self, needle, timeout=30.0):
+        with self.assertRaises(verify_release.Refused) as caught:
+            self.verify(timeout)
+        self.assertIn(needle, str(caught.exception))
+        self.assertEqual(list(self.scratch.iterdir()), [], 'the temporary directory is removed after a refusal')
+
+    def test_a_working_package_passes_and_leaves_nothing_behind(self):
+        self.build()
+        lines = self.verify()
+        self.assertEqual(lines[-1], f'verify-release: OK {self.top}.zip')
+        self.assertIn('3 file(s) match', lines[1])
+        self.assertIn(f'product version: {self.VERSION}', lines[2])
+        self.assertIn('round-trip a 61x37 image exactly', lines[3])
+        self.assertEqual(list(self.scratch.iterdir()), [])
+
+    def test_a_zip_that_differs_from_its_checksum_is_refused(self):
+        zip_path = self.build()
+        with open(zip_path, 'ab') as handle:
+            handle.write(b'x')
+        self.refused(f'dist: {self.top}.zip has SHA-256')
+
+    def test_a_missing_or_unlisted_zip_is_refused(self):
+        zip_path = self.build()
+        zip_path.unlink()
+        self.refused('is listed in SHA256SUMS and missing')
+        self.build()
+        (self.dist / 'SHA256SUMS').write_text(f'{"0" * 64}  other.zip\n', encoding='utf-8')
+        self.refused(f'SHA256SUMS does not list {self.top}.zip')
+        (self.dist / 'SHA256SUMS').write_text('not a checksum line\n', encoding='utf-8')
+        self.refused('line 1 is not')
+        (self.dist / 'SHA256SUMS').unlink()
+        self.refused('holds no SHA256SUMS')
+
+    def test_a_package_file_that_differs_from_the_package_checksums_is_refused(self):
+        self.build(tamper='LICENSE')
+        self.refused(f'{self.top}: LICENSE has SHA-256')
+
+    def test_a_package_file_missing_from_the_package_checksums_is_refused(self):
+        self.build(unlisted='bin/extra.bin')
+        self.refused('1 file(s) are not in its SHA256SUMS, first bin/extra.bin')
+
+    def test_a_member_outside_the_package_directory_is_refused_before_anything_is_written(self):
+        for member in ('../escape.txt', 'other-top/file.txt', f'{self.top}/../../escape.txt'):
+            with self.subTest(member=member):
+                self.build(extra_member=member)
+                self.refused(f'is not under {self.top}/')
+                self.assertFalse((self.root / 'escape.txt').exists())
+                self.assertFalse((self.scratch.parent / 'escape.txt').exists())
+
+    def test_an_executable_that_reports_another_version_is_refused(self):
+        self.build(version='1.0.1')
+        self.refused('version reports "product version: 1.0.1", not "product version: 1.0.0"')
+
+    def test_a_failing_command_and_a_lossy_round_trip_are_refused(self):
+        self.build(mode='fail')
+        self.refused('encode exited 3: rasterfold: cannot encode')
+        self.build(mode='lossy')
+        self.refused('differs from the image it encoded')
+
+    def test_a_command_past_its_timeout_is_refused_with_its_whole_process_tree_ended(self):
+        import time
+        self.build(mode='hang')
+        started = time.monotonic()
+        self.refused(f'{Path(self.exe).name} encode in.ppm did not finish within 3 s; its process tree was ended',
+                     timeout=3.0)
+        self.assertLess(time.monotonic() - started, 45, 'the refusal does not wait for the command to end by itself')
+        parent, child = (int(pid) for pid in self.pidfile.read_text().split())
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and (process_alive(parent) or process_alive(child)):
+            time.sleep(0.1)
+        self.assertFalse(process_alive(parent), 'the packaged command was ended')
+        self.assertFalse(process_alive(child), 'the process it started was ended with it')
+
+    def test_the_command_line_exits_zero_or_one_with_the_reason(self):
+        self.build()
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = verify_release.main(['--dist', str(self.dist), '--version', '9.9.9'])
+        self.assertEqual(code, 1)
+        self.assertIn('verify-release: REFUSED SHA256SUMS does not list rasterfold-9.9.9-', err.getvalue())
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            self.assertEqual(verify_release.main(['--dist', str(self.dist), '--timeout', '0']), 1)
+        self.assertIn('--timeout must be positive', err.getvalue())
+
+    def test_the_test_image_is_what_read_p6_reads_back(self):
+        image, pixels = verify_release.test_image()
+        self.assertEqual(verify_release.read_p6(image), (61, 37, pixels))
+        self.assertEqual(verify_release.read_p6(b'P6 # note\n2 1\n255\n' + bytes(6)), (2, 1, bytes(6)))
+        for bad in (b'P5\n1 1\n255\n\0', b'P6\n1 1\n65535\n' + bytes(6), b'P6\n2 2\n255\n' + bytes(3), b'P6\n1'):
+            with self.assertRaises(verify_release.Refused):
+                verify_release.read_p6(bad)
+
+
+WORKFLOWS = REPO / '.github' / 'workflows'
+PUBLISH_NEEDS = {'resolve', 'build-gates', 'plan-gates', 'package', 'verify'}
+
+
+def workflow_jobs(text: str) -> dict[str, str]:
+    """A workflow's jobs as {name: block text}, read by indentation (the repository has no YAML dependency)."""
+    _, _, body = text.partition('\njobs:\n')
+    jobs: dict[str, list[str]] = {}
+    current = None
+    for line in body.split('\n'):
+        named = re.fullmatch(r'  ([A-Za-z0-9_-]+):', line)
+        if named:
+            current = named.group(1)
+            jobs[current] = []
+        elif current is not None:
+            jobs[current].append(line)
+    return {name: '\n'.join(lines) for name, lines in jobs.items()}
+
+
+def release_workflow_problems(release: str, build: str, plan: str) -> list[str]:
+    """What is wrong with the release workflow's contract; empty when it holds."""
+    problems = []
+    for name, text in (('release.yml', release), ('build.yml', build), ('plan.yml', plan)):
+        for line in text.split('\n'):
+            used = re.match(r'\s*(?:- )?uses:\s*(\S+)', line)
+            if used and not used.group(1).startswith('./') and not re.fullmatch(r'[\w.-]+/[\w./-]+@[0-9a-f]{40}', used.group(1)):
+                problems.append(f'{name}: action not pinned by a 40-character commit: {used.group(1)}')
+    head, _, _ = release.partition('\njobs:\n')
+    if not re.search(r'^on:\n  push:\n    tags:\n      - "rasterfold-v\*"\n  workflow_dispatch:\n', head, re.M):
+        problems.append('release.yml: triggers are not exactly a rasterfold-v* tag push and workflow_dispatch')
+    if 'branches' in head or 'pull_request' in head or 'schedule' in head:
+        problems.append('release.yml: has a trigger other than the tag push and the manual dry run')
+    if not re.search(r'^permissions:\n  contents: read\n', head, re.M):
+        problems.append('release.yml: the workflow default is not contents: read')
+    jobs = workflow_jobs(release)
+    for name, block in jobs.items():
+        if name != 'publish' and re.search(r':\s*write\b', block):
+            problems.append(f'release.yml: job {name} holds a write permission')
+        if name != 'publish' and 'gh release' in block:
+            problems.append(f'release.yml: job {name} touches releases')
+    publish = jobs.get('publish', '')
+    needs = re.search(r'^    needs: \[([^\]]*)\]$', publish, re.M)
+    listed = {n.strip() for n in needs.group(1).split(',')} if needs else set()
+    for missing in sorted(PUBLISH_NEEDS - listed):
+        problems.append(f'release.yml: publication does not need {missing}')
+    condition = re.search(r'^    if: (.*)$', publish, re.M)
+    if not condition or "github.event_name == 'push'" not in condition.group(1) or '||' in condition.group(1) \
+            or 'always()' in condition.group(1) or "needs.resolve.outputs.publish == 'true'" not in condition.group(1):
+        problems.append('release.yml: publication can run for something other than a pushed release tag')
+    if not re.search(r'^    permissions:\n      contents: write\n', publish, re.M) or len(re.findall(r':\s*write\b', publish)) != 1:
+        problems.append('release.yml: publication does not hold exactly contents: write')
+    if 'gh release create "$TAG"' not in publish or '--verify-tag' not in publish:
+        problems.append('release.yml: publication does not create the release for the verified tag')
+    for gate, file in (('build-gates', 'build.yml'), ('plan-gates', 'plan.yml')):
+        block = jobs.get(gate, '')
+        if f'uses: ./.github/workflows/{file}' not in block or 'ref: ${{ needs.resolve.outputs.sha }}' not in block:
+            problems.append(f'release.yml: {gate} does not call {file} on the release commit')
+    if 'python3 scripts/package.py --release --target all' not in jobs.get('package', ''):
+        problems.append('release.yml: the package job does not write the release packages')
+    verify = jobs.get('verify', '')
+    if 'scripts/verify_release.py' not in verify or not {'linux-x64', 'windows-x64'} <= set(re.findall(r'target: (\S+)', verify)):
+        problems.append('release.yml: the packages are not run on both platforms')
+    resolve = jobs.get('resolve', '')
+    if 'merge-base --is-ancestor "$TARGET_SHA" origin/main' not in resolve or 'scripts/version.py --tag "$TAG"' not in resolve:
+        problems.append('release.yml: the tag is not held to VERSION and to main')
+    for name, text in (('build.yml', build), ('plan.yml', plan)):
+        if not re.search(r'^  workflow_call:\n    inputs:\n      ref:\n', text, re.M):
+            problems.append(f'{name}: is not callable with a ref')
+    for suite in ('test_package.py', 'test_version.py'):
+        if f'-p {suite}' not in workflow_jobs(build).get('linux', ''):
+            problems.append(f'build.yml: the Linux job does not run tests/{suite}')
+    return problems
+
+
+class ReleaseWorkflow(unittest.TestCase):
+    """The release workflow's contract, read from the workflow files as text."""
+
+    def setUp(self):
+        self.release = (WORKFLOWS / 'release.yml').read_text(encoding='utf-8')
+        self.build = (WORKFLOWS / 'build.yml').read_text(encoding='utf-8')
+        self.plan = (WORKFLOWS / 'plan.yml').read_text(encoding='utf-8')
+
+    def problems(self, release=None, build=None, plan=None):
+        return release_workflow_problems(release or self.release, build or self.build, plan or self.plan)
+
+    def changed(self, old, new, text=None):
+        text = self.release if text is None else text
+        self.assertEqual(text.count(old), 1, old)
+        return text.replace(old, new)
+
+    def test_the_committed_workflows_hold_the_contract(self):
+        self.assertEqual(self.problems(), [])
+        self.assertEqual(sorted(workflow_jobs(self.release)),
+                         ['build-gates', 'package', 'plan-gates', 'publish', 'resolve', 'verify'])
+
+    def test_an_unpinned_action_is_refused(self):
+        unpinned = self.changed('actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0', 'actions/cache@v6')
+        self.assertIn('release.yml: action not pinned by a 40-character commit: actions/cache@v6', self.problems(unpinned))
+        build = self.build.replace('actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a', 'actions/upload-artifact@main')
+        self.assertTrue(any(p.startswith('build.yml: action not pinned') for p in self.problems(build=build)))
+
+    def test_a_write_permission_outside_publication_is_refused(self):
+        widened = self.changed('permissions:\n  contents: read\n\nconcurrency:', 'permissions:\n  contents: write\n\nconcurrency:')
+        self.assertIn('release.yml: the workflow default is not contents: read', self.problems(widened))
+        job = self.changed('  package:\n    needs: resolve\n', '  package:\n    needs: resolve\n    permissions:\n      contents: write\n')
+        self.assertIn('release.yml: job package holds a write permission', self.problems(job))
+        more = self.changed('    permissions:\n      contents: write\n', '    permissions:\n      contents: write\n      packages: write\n')
+        self.assertIn('release.yml: publication does not hold exactly contents: write', self.problems(more))
+
+    def test_publication_without_a_gate_the_package_or_a_verification_is_refused(self):
+        for dropped in sorted(PUBLISH_NEEDS):
+            with self.subTest(dropped=dropped):
+                kept = ', '.join(n for n in ('resolve', 'build-gates', 'plan-gates', 'package', 'verify') if n != dropped)
+                text = self.changed('    needs: [resolve, build-gates, plan-gates, package, verify]', f'    needs: [{kept}]')
+                self.assertIn(f'release.yml: publication does not need {dropped}', self.problems(text))
+        one_platform = self.changed('          - os: windows-2025\n            target: windows-x64\n            python: python\n', '')
+        self.assertIn('release.yml: the packages are not run on both platforms', self.problems(one_platform))
+        copied = self.changed('    uses: ./.github/workflows/plan.yml\n', '    runs-on: ubuntu-24.04\n')
+        self.assertIn('release.yml: plan-gates does not call plan.yml on the release commit', self.problems(copied))
+
+    def test_publication_on_a_dispatch_is_refused(self):
+        wanted = 'release.yml: publication can run for something other than a pushed release tag'
+        condition = "    if: github.event_name == 'push' && needs.resolve.outputs.publish == 'true'"
+        for replacement in ("    if: needs.resolve.outputs.publish == 'true'",
+                            "    if: github.event_name == 'push' || needs.resolve.outputs.publish == 'true'",
+                            "    if: always() && github.event_name == 'push' && needs.resolve.outputs.publish == 'true'",
+                            ''):
+            with self.subTest(replacement=replacement):
+                self.assertIn(wanted, self.problems(self.changed(condition, replacement)))
+        branch = self.changed('  push:\n    tags:\n      - "rasterfold-v*"\n', '  push:\n    branches: [main]\n    tags:\n      - "rasterfold-v*"\n')
+        self.assertTrue(self.problems(branch))
+        untied = self.changed('          if ! git merge-base --is-ancestor "$TARGET_SHA" origin/main; then', '          if false; then')
+        self.assertIn('release.yml: the tag is not held to VERSION and to main', self.problems(untied))
+
+    def test_the_gate_workflows_stay_callable_and_run_the_new_suites(self):
+        self.assertIn('build.yml: is not callable with a ref', self.problems(build=self.build.replace('  workflow_call:\n', '  workflow_run:\n')))
+        self.assertIn('plan.yml: is not callable with a ref', self.problems(plan=self.plan.replace('  workflow_call:\n', '  workflow_run:\n')))
+        for suite in ('test_package.py', 'test_version.py'):
+            build = self.build.replace(f'          python3 -m unittest discover -s tests -p {suite} -v\n', '')
+            self.assertIn(f'build.yml: the Linux job does not run tests/{suite}', self.problems(build=build))
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
