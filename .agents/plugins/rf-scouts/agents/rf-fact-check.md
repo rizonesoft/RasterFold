@@ -34,7 +34,7 @@ Three blocks. `MISMATCHES`: one entry per fact that does not hold, with the sect
 
 ## Rules that hold on every task
 
-- You have only read-only file and search tools (`read_file` and the `rf-readonly` MCP server's `grep_repo` and `glob_repo` tools). You cannot edit, write, run a command, or start another agent, and you never ask for a way to.
+- You have only read-only file and search tools (`read_file` and the `rf-readonly` MCP server's `grep_repo` and `glob_repo` tools). You cannot edit, write, run a command, or start another agent, and you never ask for a way to. If `grep_repo` or `glob_repo` output ends with `TRUNCATED:`, call it again with the reported `offset` until you have retrieved every match before counting or reporting.
 - Return evidence, never a verdict. Quote every line you rely on verbatim, each beside its `path:line`. The lead decides what the evidence means.
 - Never guess and never fill a gap from memory. What you did not find is reported as `NOT FOUND: <what you looked for and where>`.
 - Never paraphrase a number, a path, a symbol, or an error. Copy it.

@@ -28,12 +28,18 @@ ALLOWED_TOOLS = frozenset({
 ALLOWED_MCP_TOOLS = frozenset({"grep_repo", "glob_repo"})
 CANCEL_SIGNALS = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
 LINE_CITE_RE = re.compile(
-    r"^(?:[-*]\s+)?`?(?P<path>[A-Za-z0-9_./-]+):(?P<start>\d+)(?:-(?P<end>\d+))?`?(?=[:\s]|$)"
+    r"^(?:[-*]\s+)?`?(?P<path>[A-Za-z0-9_./-]+):(?P<start>\d+)(?:-(?P<end>\d+))?`?(?::\s*|\s+)(?P<rest>.+)$"
 )
-ARROW_CITE_RE = re.compile(
-    r"->\s*`?(?P<path>[A-Za-z0-9_./-]+):(?P<start>\d+)(?:-(?P<end>\d+))?`?(?=[:\s]|$)"
+ARROW_SPLIT_RE = re.compile(r"\s+->\s+")
+RHS_CITE_RE = re.compile(
+    r"^`?(?P<path>[A-Za-z0-9_./-]+):(?P<start>\d+)(?:-(?P<end>\d+))?`?(?::\s*|\s+)(?P<quote>.+)$"
 )
 COUNT_RE = re.compile(r"^COUNT:\s*(\d+)\s*$")
+HELD_RE = re.compile(r"^HELD:\s*(\d+)\s*$")
+VERDICT_WORDS_RE = re.compile(
+    r"\b(?:OVERALL\s*:|VERDICT\s*:|COMPLETION\s*:|PLAN\s*:|ready to ship|looks good to me|ship it)\b",
+    re.IGNORECASE,
+)
 
 
 class CancelFlag:
@@ -200,12 +206,89 @@ def check_tool_call(tool_name: str, params: dict) -> str | None:
     return None
 
 
+def extract_quote_segments(raw_quote: str, multi_line: bool = False) -> list[str]:
+    q = raw_quote.strip()
+    if q.endswith(".") and len(q) >= 2 and q[-2] in ("`", '"'):
+        q = q[:-1].strip()
+    if len(q) >= 2 and q[0] == '"' and q[-1] == '"':
+        q = q[1:-1].strip()
+    if "` / `" in q or (multi_line and " / " in q):
+        sep = "` / `" if "` / `" in q else " / "
+        parts = [p.strip() for p in q.split(sep)]
+        cleaned = []
+        for p in parts:
+            if p.startswith("`"):
+                p = p[1:]
+            if p.endswith("`"):
+                p = p[:-1]
+            if p.strip():
+                cleaned.append(p.strip())
+        return cleaned
+    if len(q) >= 2 and q[0] == "`" and q[-1] == "`":
+        q = q[1:-1]
+    return [q] if q else []
+
+
+def check_citation_on_disk(
+    rel_path: str,
+    start: int,
+    end: int,
+    raw_quote: str,
+    root_resolved: Path,
+    file_cache: dict[Path, list[str]],
+) -> str | None:
+    if start < 1 or end < start:
+        return f"invalid line range in citation {rel_path}:{start}-{end}"
+    candidate = (root_resolved / rel_path).resolve()
+    try:
+        candidate.relative_to(root_resolved)
+    except ValueError:
+        return f"citation path escapes repository root: {rel_path}"
+    if not candidate.is_file():
+        return f"hallucinated file path in citation: {rel_path}:{start}"
+    if candidate not in file_cache:
+        try:
+            file_cache[candidate] = candidate.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError as exc:
+            return f"unreadable file in citation {rel_path}:{start}: {exc}"
+    file_lines = file_cache[candidate]
+    if end > len(file_lines):
+        return f"hallucinated line number in citation: {rel_path}:{end} (file has {len(file_lines)} lines)"
+    segments = extract_quote_segments(raw_quote, multi_line=end > start)
+    if not segments:
+        return f"empty quotation in citation: {rel_path}:{start}"
+    window = "\n".join(file_lines[start - 1 : end])
+    for seg in segments:
+        if seg not in window:
+            return f"fabricated or mismatched quote at {rel_path}:{start}: {seg!r} not in source line(s)"
+    return None
+
+
+def norm_heading(line: str) -> str:
+    s = line.strip().strip("`").strip("*").strip("#").strip()
+    if s.endswith(":"):
+        s = s[:-1].strip()
+    return s
+
+
+def is_none_line(line: str, prefix: str = "") -> bool:
+    s = line.strip().strip("`")
+    if s in ("- None.", "- None", "None.", "None", "- none found", "none found"):
+        return True
+    if prefix and s.upper() == f"{prefix.upper()}: NONE FOUND":
+        return True
+    return False
+
+
 def verify_response_evidence(response: str, agent: str, root: Path = ROOT) -> str | None:
-    """Mechanically check that the scout response is either a single-line ESCALATE-LEAD refusal or carries
-    verifiable path:line citations / NOT FOUND markers whose cited files and line numbers exist under `root`."""
+    """Mechanically check that the scout response is either a single-line ESCALATE-LEAD / NOT FOUND response or
+    conforms to the scout's block structure with every path:line citation and quotation verified on disk."""
     text = response.strip()
     if not text:
         return "empty scout response"
+    if "TRUNCATED:" in text:
+        return "response contains TRUNCATED marker; scout must retrieve all pages before reporting"
+
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     if lines[0].startswith("ESCALATE-LEAD:"):
         reason = lines[0][len("ESCALATE-LEAD:") :].strip()
@@ -215,63 +298,197 @@ def verify_response_evidence(response: str, agent: str, root: Path = ROOT) -> st
             return "ESCALATE-LEAD response must be a single line"
         return None
 
-    citations: list[tuple[str, int, int]] = []
-    for ln in lines:
-        m = LINE_CITE_RE.match(ln)
-        if m:
-            s = int(m.group("start"))
-            e = int(m.group("end") or s)
-            citations.append((m.group("path"), s, e))
-        for am in ARROW_CITE_RE.finditer(ln):
-            s = int(am.group("start"))
-            e = int(am.group("end") or s)
-            citations.append((am.group("path"), s, e))
-
-    has_not_found = "NOT FOUND:" in text or "FAILURES: none found" in text
-    if not citations and not has_not_found:
-        return "unquoted response: missing path:line citations, NOT FOUND:, or ESCALATE-LEAD:"
+    stripped_first = lines[0].strip("`")
+    if stripped_first.startswith("NOT FOUND:"):
+        what = stripped_first[len("NOT FOUND:") :].strip()
+        if not what:
+            return "NOT FOUND response missing target description"
+        if len(lines) > 1:
+            return "top-level NOT FOUND response must be a single line"
+        return None
 
     root_resolved = root.resolve()
-    file_line_counts: dict[Path, int] = {}
-    for rel_path, start, end in citations:
-        if start < 1 or end < start:
-            return f"invalid line range in citation {rel_path}:{start}-{end}"
-        candidate = (root_resolved / rel_path).resolve()
-        try:
-            candidate.relative_to(root_resolved)
-        except ValueError:
-            return f"citation path escapes repository root: {rel_path}"
-        if not candidate.is_file():
-            return f"hallucinated file path in citation: {rel_path}:{start}"
-        if candidate not in file_line_counts:
-            try:
-                file_line_counts[candidate] = len(
-                    candidate.read_text(encoding="utf-8", errors="replace").splitlines()
-                )
-            except OSError as exc:
-                return f"unreadable file in citation {rel_path}:{start}: {exc}"
-        total_lines = file_line_counts[candidate]
-        if end > total_lines:
-            return f"hallucinated line number in citation: {rel_path}:{end} (file has {total_lines} lines)"
+    file_cache: dict[Path, list[str]] = {}
 
     if agent == "rf-scout":
-        for ln in lines:
+        cited_count = 0
+        declared_count: int | None = None
+        for idx, ln in enumerate(lines):
             cm = COUNT_RE.match(ln)
             if cm:
-                declared = int(cm.group(1))
-                line_cites = sum(1 for l in lines if LINE_CITE_RE.match(l))
-                if declared != line_cites:
-                    return f"COUNT: {declared} does not match {line_cites} cited line(s)"
-    elif agent == "rf-log-digest" and not has_not_found:
-        for heading in ("FAILURES", "COUNTS", "LAST LINES"):
-            if heading not in text:
-                return f"rf-log-digest response missing {heading} block"
-    elif agent == "rf-fact-check" and not has_not_found:
-        for heading in ("MISMATCHES", "CHECKED AND HOLDING"):
-            if heading not in text:
-                return f"rf-fact-check response missing {heading} block"
+                if idx != len(lines) - 1:
+                    return "COUNT line must be the last line of rf-scout output"
+                declared_count = int(cm.group(1))
+                continue
+            m = LINE_CITE_RE.match(ln)
+            if not m:
+                return f"unquoted or malformed line in rf-scout response: {ln!r}"
+            start = int(m.group("start"))
+            end = int(m.group("end") or start)
+            err = check_citation_on_disk(m.group("path"), start, end, m.group("rest"), root_resolved, file_cache)
+            if err is not None:
+                return err
+            cited_count += 1
+        if cited_count == 0:
+            return "unquoted response: rf-scout reported zero path:line citations"
+        if declared_count is not None and declared_count != cited_count:
+            return f"COUNT: {declared_count} does not match {cited_count} cited line(s)"
+        return None
 
-    return None
+    if agent == "rf-log-digest":
+        blocks: dict[str, list[str]] = {}
+        order: list[str] = []
+        current: str | None = None
+        for ln in lines:
+            clean = ln.strip("`").strip("*").strip()
+            if clean.upper() == "FAILURES: NONE FOUND":
+                if current is not None:
+                    return "unexpected second FAILURES block in rf-log-digest response"
+                current = "FAILURES"
+                order.append(current)
+                blocks[current] = ["FAILURES: none found"]
+                continue
+            h = norm_heading(ln).upper()
+            if h in ("FAILURES", "COUNTS", "LAST LINES"):
+                if h in blocks:
+                    return f"duplicate {h} block in rf-log-digest response"
+                current = h
+                order.append(h)
+                blocks[h] = []
+                continue
+            if current is None:
+                return f"rf-log-digest line before FAILURES heading: {ln!r}"
+            blocks[current].append(ln)
+
+        for req in ("FAILURES", "COUNTS", "LAST LINES"):
+            if req not in blocks:
+                return f"rf-log-digest response missing {req} block"
+        if order != ["FAILURES", "COUNTS", "LAST LINES"]:
+            return f"rf-log-digest blocks out of order: {order}"
+
+        for blk_name in ("FAILURES", "COUNTS", "LAST LINES"):
+            blk_lines = blocks[blk_name]
+            if not blk_lines:
+                return f"rf-log-digest {blk_name} block is empty"
+            if blk_name in ("FAILURES", "COUNTS") and len(blk_lines) == 1 and is_none_line(blk_lines[0], blk_name):
+                continue
+            for ln in blk_lines:
+                m = LINE_CITE_RE.match(ln)
+                if not m:
+                    return f"unquoted or malformed line in rf-log-digest {blk_name}: {ln!r}"
+                start = int(m.group("start"))
+                end = int(m.group("end") or start)
+                err = check_citation_on_disk(m.group("path"), start, end, m.group("rest"), root_resolved, file_cache)
+                if err is not None:
+                    return err
+        return None
+
+    if agent == "rf-fact-check":
+        blocks = {}
+        order = []
+        current = None
+        for ln in lines:
+            h = norm_heading(ln).upper()
+            if h in ("MISMATCHES", "NEEDS A COMMAND", "CHECKED AND HOLDING"):
+                if h in blocks:
+                    return f"duplicate {h} block in rf-fact-check response"
+                current = h
+                order.append(h)
+                blocks[h] = []
+                continue
+            if current is None:
+                return f"rf-fact-check line before MISMATCHES heading: {ln!r}"
+            blocks[current].append(ln)
+
+        for req in ("MISMATCHES", "NEEDS A COMMAND", "CHECKED AND HOLDING"):
+            if req not in blocks:
+                return f"rf-fact-check response missing {req} block"
+        if order != ["MISMATCHES", "NEEDS A COMMAND", "CHECKED AND HOLDING"]:
+            return f"rf-fact-check blocks out of order: {order}"
+
+        # MISMATCHES: either None or lhs citation -> (rhs citation | NOT FOUND: ...)
+        mm_lines = blocks["MISMATCHES"]
+        if not mm_lines:
+            return "rf-fact-check MISMATCHES block is empty"
+        if not (len(mm_lines) == 1 and is_none_line(mm_lines[0], "MISMATCHES")):
+            for ln in mm_lines:
+                parts = ARROW_SPLIT_RE.split(ln, maxsplit=1)
+                if len(parts) != 2:
+                    return f"rf-fact-check MISMATCHES entry missing ' -> ': {ln!r}"
+                lhs, rhs = parts
+                m = LINE_CITE_RE.match(lhs)
+                if not m:
+                    return f"unquoted lhs in rf-fact-check MISMATCHES: {lhs!r}"
+                start = int(m.group("start"))
+                end = int(m.group("end") or start)
+                err = check_citation_on_disk(m.group("path"), start, end, m.group("rest"), root_resolved, file_cache)
+                if err is not None:
+                    return err
+                rhs_clean = rhs.strip().strip("`")
+                if rhs_clean.startswith("NOT FOUND:"):
+                    if not rhs_clean[len("NOT FOUND:") :].strip():
+                        return f"empty NOT FOUND in rf-fact-check MISMATCHES: {ln!r}"
+                else:
+                    rm = RHS_CITE_RE.match(rhs.strip())
+                    if not rm:
+                        return f"unquoted rhs in rf-fact-check MISMATCHES: {rhs!r}"
+                    r_start = int(rm.group("start"))
+                    r_end = int(rm.group("end") or r_start)
+                    err = check_citation_on_disk(
+                        rm.group("path"), r_start, r_end, rm.group("quote"), root_resolved, file_cache
+                    )
+                    if err is not None:
+                        return err
+
+        # NEEDS A COMMAND: either None or bullet lines, never a shipping verdict
+        cmd_lines = blocks["NEEDS A COMMAND"]
+        if not cmd_lines:
+            return "rf-fact-check NEEDS A COMMAND block is empty"
+        for ln in cmd_lines:
+            if VERDICT_WORDS_RE.search(ln):
+                return f"disallowed verdict in rf-fact-check NEEDS A COMMAND: {ln!r}"
+            if not is_none_line(ln, "NEEDS A COMMAND") and not ln.startswith(("- ", "* ")):
+                return f"malformed line in rf-fact-check NEEDS A COMMAND: {ln!r}"
+
+        # CHECKED AND HOLDING: must end with HELD: <n>, and items before it must be verified lhs -> rhs citations
+        ch_lines = blocks["CHECKED AND HOLDING"]
+        if not ch_lines:
+            return "rf-fact-check CHECKED AND HOLDING block is empty"
+        hm = HELD_RE.match(ch_lines[-1])
+        if not hm:
+            return "rf-fact-check CHECKED AND HOLDING block must end with HELD: <n>"
+        declared_held = int(hm.group(1))
+        item_lines = ch_lines[:-1]
+        if declared_held == 0 and len(item_lines) == 1 and is_none_line(item_lines[0]):
+            item_lines = []
+        if len(item_lines) != declared_held:
+            return f"HELD: {declared_held} does not match {len(item_lines)} held item(s)"
+        for ln in item_lines:
+            parts = ARROW_SPLIT_RE.split(ln, maxsplit=1)
+            if len(parts) != 2:
+                return f"rf-fact-check CHECKED AND HOLDING entry missing ' -> ': {ln!r}"
+            lhs, rhs = parts
+            m = LINE_CITE_RE.match(lhs)
+            if not m:
+                return f"unquoted lhs in rf-fact-check CHECKED AND HOLDING: {lhs!r}"
+            start = int(m.group("start"))
+            end = int(m.group("end") or start)
+            err = check_citation_on_disk(m.group("path"), start, end, m.group("rest"), root_resolved, file_cache)
+            if err is not None:
+                return err
+            rm = RHS_CITE_RE.match(rhs.strip())
+            if not rm:
+                return f"unquoted rhs in rf-fact-check CHECKED AND HOLDING: {rhs!r}"
+            r_start = int(rm.group("start"))
+            r_end = int(rm.group("end") or r_start)
+            err = check_citation_on_disk(
+                rm.group("path"), r_start, r_end, rm.group("quote"), root_resolved, file_cache
+            )
+            if err is not None:
+                return err
+        return None
+
+    return f"unknown scout agent: {agent!r}"
 
 
 def validate_stream(
@@ -298,8 +515,13 @@ def validate_stream(
         if not isinstance(event, dict):
             return False, f"non-object JSON on stream line {idx}"
 
+        if result_count > 0:
+            return False, f"stream event on line {idx} after terminal result"
+
         kind = event.get("event") or event.get("type") or ""
         if kind == "init":
+            if saw_init:
+                return False, f"duplicate init event on stream line {idx}"
             init_obj = event.get("init") if isinstance(event.get("init"), dict) else event
             model = init_obj.get("model")
             agent = init_obj.get("agent")
@@ -308,7 +530,12 @@ def validate_stream(
             if agent != expected_agent:
                 return False, f"init agent is {agent!r}, expected {expected_agent!r}"
             saw_init = True
-        elif kind == "step_update":
+            continue
+
+        if not saw_init:
+            return False, "stream missing init event before activity"
+
+        if kind == "step_update":
             step = event.get("step_update")
             if not isinstance(step, dict):
                 return False, f"malformed step_update on stream line {idx}"

@@ -34,7 +34,10 @@ class ReadonlyMcpTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name).resolve()
         (self.root / "src").mkdir()
-        (self.root / "src" / "rf.h").write_text("#define RF_VERSION 3u\n#define RF_METHOD_PAL3 4u\n", encoding="utf-8")
+        (self.root / "src" / "rf.h").write_text(
+            "#define RF_VERSION 3u\n#define RF_METHOD_PAL3 4u\n#define RF_METHOD_CM 1u\n",
+            encoding="utf-8",
+        )
         (self.root / ".git").mkdir()
         (self.root / ".git" / "config").write_text("secret_git_config\n", encoding="utf-8")
         (self.root / "build" / "logs").mkdir(parents=True)
@@ -51,6 +54,7 @@ class ReadonlyMcpTests(unittest.TestCase):
         self.assertEqual([t["name"] for t in tools], ["grep_repo", "glob_repo"])
         for tool in tools:
             self.assertEqual(tool.get("_meta"), {"antigravity/alwaysLoad": True})
+            self.assertIn("offset", tool["inputSchema"]["properties"])
 
     def test_grep_repo_searches_source_and_skips_git_and_default_build(self):
         resp = mcp.handle_request(
@@ -127,6 +131,103 @@ class ReadonlyMcpTests(unittest.TestCase):
             )
             self.assertTrue(err_glob["result"]["isError"], bad_glob)
 
+    def test_malformed_params_and_arguments_return_errors_without_crashing(self):
+        # Round 1 P2: non-object params or arguments must not raise AttributeError.
+        for bad_params in (["malformed"], "bad", 42, True):
+            resp = mcp.handle_request({"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": bad_params}, root=self.root)
+            self.assertEqual(resp["error"]["code"], -32602)
+
+        for bad_args in (["bad"], "bad", 123):
+            resp = mcp.handle_request(
+                {"jsonrpc": "2.0", "id": 10, "method": "tools/call", "params": {"name": "grep_repo", "arguments": bad_args}},
+                root=self.root,
+            )
+            self.assertTrue(resp["result"]["isError"])
+
+        for bad_page in ({"max_results": "many"}, {"max_results": True}, {"max_results": 0}, {"offset": -1}, {"offset": True}):
+            args = {"pattern": "RF_", **bad_page}
+            resp = mcp.handle_request(
+                {"jsonrpc": "2.0", "id": 11, "method": "tools/call", "params": {"name": "grep_repo", "arguments": args}},
+                root=self.root,
+            )
+            self.assertTrue(resp["result"]["isError"], bad_page)
+
+    def test_truncation_marker_and_offset_pagination_in_grep_and_glob(self):
+        # Round 1 P2: searches hitting max_results must emit TRUNCATED and support offset pagination.
+        (self.root / "src" / "a.c").write_text("int a;\n", encoding="utf-8")
+        (self.root / "src" / "b.c").write_text("int b;\n", encoding="utf-8")
+
+        page1 = mcp.handle_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 12,
+                "method": "tools/call",
+                "params": {"name": "grep_repo", "arguments": {"pattern": "^#define", "path": "src/rf.h", "max_results": 2}},
+            },
+            root=self.root,
+        )["result"]["content"][0]["text"]
+        self.assertIn("src/rf.h:1:#define RF_VERSION 3u", page1)
+        self.assertIn("src/rf.h:2:#define RF_METHOD_PAL3 4u", page1)
+        self.assertIn("TRUNCATED: showing 2 match(es) at offset=0 (more matches exist; call grep_repo with offset=2", page1)
+
+        page2 = mcp.handle_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 13,
+                "method": "tools/call",
+                "params": {"name": "grep_repo", "arguments": {"pattern": "^#define", "path": "src/rf.h", "max_results": 2, "offset": 2}},
+            },
+            root=self.root,
+        )["result"]["content"][0]["text"]
+        self.assertEqual(page2, "src/rf.h:3:#define RF_METHOD_CM 1u")
+
+        glob1 = mcp.handle_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 14,
+                "method": "tools/call",
+                "params": {"name": "glob_repo", "arguments": {"pattern": "*", "path": "src", "max_results": 2}},
+            },
+            root=self.root,
+        )["result"]["content"][0]["text"]
+        self.assertIn("TRUNCATED: showing 2 match(es) at offset=0 (more matches exist; call glob_repo with offset=2", glob1)
+
+        glob2 = mcp.handle_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 15,
+                "method": "tools/call",
+                "params": {"name": "glob_repo", "arguments": {"pattern": "*", "path": "src", "max_results": 2, "offset": 2}},
+            },
+            root=self.root,
+        )["result"]["content"][0]["text"]
+        self.assertEqual(glob2, "src/rf.h")
+
+    def test_grep_repo_checks_bounded_binary_prefix_without_reading_entire_file(self):
+        # Round 1 P2: binary files must be rejected after reading at most BINARY_CHECK_BYTES.
+        big_bin = self.root / "src" / "blob.bin"
+        big_bin.write_bytes(b"\x00" + b"A" * (mcp.BINARY_CHECK_BYTES * 8))
+        read_sizes: list[int] = []
+        real_open = Path.open
+
+        def tracking_open(path_self, *args, **kwargs):
+            fh = real_open(path_self, *args, **kwargs)
+            if path_self == big_bin:
+                orig_read = fh.read
+
+                def wrapped_read(size=-1):
+                    read_sizes.append(size)
+                    return orig_read(size)
+
+                fh.read = wrapped_read
+            return fh
+
+        with mock.patch.object(Path, "open", tracking_open):
+            text, is_err = mcp.run_grep_repo({"pattern": "A", "path": "src/blob.bin"}, root=self.root)
+        self.assertFalse(is_err)
+        self.assertIn("NOT FOUND", text)
+        self.assertEqual(read_sizes, [mcp.BINARY_CHECK_BYTES])
+
 
 class GeminiScoutWrapperTests(unittest.TestCase):
     def setUp(self):
@@ -137,6 +238,11 @@ class GeminiScoutWrapperTests(unittest.TestCase):
         rf_h_lines = [f"/* line {i} */" for i in range(1, 21)]
         rf_h_lines[18] = "#define RF_VERSION 3u"
         (self.root / "src" / "rf.h").write_text("\n".join(rf_h_lines) + "\n", encoding="utf-8")
+        (self.root / "todo").mkdir()
+        (self.root / "todo" / "sample.md").write_text(
+            "# Sample\n\n## 1. Test\n\n- Version in `src/rf.h:19` is `#define RF_VERSION 3u`.\n- Missing `src/none.c`.\n",
+            encoding="utf-8",
+        )
         self.stub_bin = self.root / "stub_bin"
         self.stub_bin.mkdir()
         self.called_marker = self.root / "agy_called"
@@ -190,15 +296,66 @@ class GeminiScoutWrapperTests(unittest.TestCase):
             self.assertFalse(self.called_marker.exists(), "agy must not start when the roster is invalid")
 
     def test_incomplete_or_contradictory_streams_fail(self):
-        # Plan review P2: missing init, wrong model/agent, disallowed tool, missing result, error event, or nonzero exit despite SUCCESS.
+        # Plan review P2 + Round 1 P2: missing init, event before init, event after terminal result, duplicate init,
+        # wrong model/agent, disallowed tool, missing result, error event, or nonzero exit despite SUCCESS.
+        good_resp = "src/rf.h:19:#define RF_VERSION 3u\nCOUNT: 1\n"
         cases = [
-            ("missing init", "import json\nprint(json.dumps({'event': 'result', 'result': {'status': 'SUCCESS', 'response': 'ok'}}))\n", "stream missing init event"),
-            ("wrong model", "import json\nprint(json.dumps({'event': 'init', 'init': {'model': 'gemini-3.8-flash-tiered', 'agent': 'rf-scout'}}))\nprint(json.dumps({'event': 'result', 'result': {'status': 'SUCCESS', 'response': 'ok'}}))\n", "init model is 'gemini-3.8-flash-tiered'"),
-            ("wrong agent", "import json\nprint(json.dumps({'event': 'init', 'init': {'model': 'gemini-4-hydrogen-medium', 'agent': 'other'}}))\nprint(json.dumps({'event': 'result', 'result': {'status': 'SUCCESS', 'response': 'ok'}}))\n", "init agent is 'other'"),
-            ("disallowed tool", "import json\nprint(json.dumps({'event': 'init', 'init': {'model': 'gemini-4-hydrogen-medium', 'agent': 'rf-scout'}}))\nprint(json.dumps({'event': 'step_update', 'step_update': {'step_type': 'tool', 'tool_name': 'write_file'}}))\nprint(json.dumps({'event': 'result', 'result': {'status': 'SUCCESS', 'response': 'ok'}}))\n", "disallowed tool call 'write_file'"),
-            ("truncated stream", "import json\nprint(json.dumps({'event': 'init', 'init': {'model': 'gemini-4-hydrogen-medium', 'agent': 'rf-scout'}}))\n", "stream had 0 result event(s)"),
+            (
+                "missing init",
+                f"import json\nprint(json.dumps({{'event': 'result', 'result': {{'status': 'SUCCESS', 'response': {good_resp!r}}}}}))\n",
+                "stream missing init event before activity",
+            ),
+            (
+                "result before init",
+                f"import json\nprint(json.dumps({{'event': 'result', 'result': {{'status': 'SUCCESS', 'response': {good_resp!r}}}}}))\n"
+                "print(json.dumps({'event': 'init', 'init': {'model': 'gemini-4-hydrogen-medium', 'agent': 'rf-scout'}}))\n",
+                "stream missing init event before activity",
+            ),
+            (
+                "event after terminal result",
+                "import json\nprint(json.dumps({'event': 'init', 'init': {'model': 'gemini-4-hydrogen-medium', 'agent': 'rf-scout'}}))\n"
+                f"print(json.dumps({{'event': 'result', 'result': {{'status': 'SUCCESS', 'response': {good_resp!r}}}}}))\n"
+                "print(json.dumps({'event': 'step_update', 'step_update': {'step_type': 'thinking'}}))\n",
+                "stream event on line 3 after terminal result",
+            ),
+            (
+                "duplicate init",
+                "import json\nprint(json.dumps({'event': 'init', 'init': {'model': 'gemini-4-hydrogen-medium', 'agent': 'rf-scout'}}))\n"
+                "print(json.dumps({'event': 'init', 'init': {'model': 'gemini-4-hydrogen-medium', 'agent': 'rf-scout'}}))\n"
+                f"print(json.dumps({{'event': 'result', 'result': {{'status': 'SUCCESS', 'response': {good_resp!r}}}}}))\n",
+                "duplicate init event on stream line 2",
+            ),
+            (
+                "wrong model",
+                "import json\nprint(json.dumps({'event': 'init', 'init': {'model': 'gemini-3.8-flash-tiered', 'agent': 'rf-scout'}}))\n"
+                f"print(json.dumps({{'event': 'result', 'result': {{'status': 'SUCCESS', 'response': {good_resp!r}}}}}))\n",
+                "init model is 'gemini-3.8-flash-tiered'",
+            ),
+            (
+                "wrong agent",
+                "import json\nprint(json.dumps({'event': 'init', 'init': {'model': 'gemini-4-hydrogen-medium', 'agent': 'other'}}))\n"
+                f"print(json.dumps({{'event': 'result', 'result': {{'status': 'SUCCESS', 'response': {good_resp!r}}}}}))\n",
+                "init agent is 'other'",
+            ),
+            (
+                "disallowed tool",
+                "import json\nprint(json.dumps({'event': 'init', 'init': {'model': 'gemini-4-hydrogen-medium', 'agent': 'rf-scout'}}))\n"
+                "print(json.dumps({'event': 'step_update', 'step_update': {'step_type': 'tool', 'tool_name': 'write_file'}}))\n"
+                f"print(json.dumps({{'event': 'result', 'result': {{'status': 'SUCCESS', 'response': {good_resp!r}}}}}))\n",
+                "disallowed tool call 'write_file'",
+            ),
+            (
+                "truncated stream",
+                "import json\nprint(json.dumps({'event': 'init', 'init': {'model': 'gemini-4-hydrogen-medium', 'agent': 'rf-scout'}}))\n",
+                "stream had 0 result event(s)",
+            ),
             ("malformed json", "print('{bad json')\n", "malformed JSON on stream line 1"),
-            ("nonzero exit with SUCCESS", "import json, sys\nprint(json.dumps({'event': 'init', 'init': {'model': 'gemini-4-hydrogen-medium', 'agent': 'rf-scout'}}))\nprint(json.dumps({'event': 'result', 'result': {'status': 'SUCCESS', 'response': 'ok'}}))\nsys.exit(1)\n", "process exited 1 despite SUCCESS result event"),
+            (
+                "nonzero exit with SUCCESS",
+                "import json, sys\nprint(json.dumps({'event': 'init', 'init': {'model': 'gemini-4-hydrogen-medium', 'agent': 'rf-scout'}}))\n"
+                f"print(json.dumps({{'event': 'result', 'result': {{'status': 'SUCCESS', 'response': {good_resp!r}}}}}))\nsys.exit(1)\n",
+                "process exited 1 despite SUCCESS result event",
+            ),
         ]
         for label, script_body, expected_err in cases:
             self.write_stub_agy(script_body)
@@ -206,7 +363,8 @@ class GeminiScoutWrapperTests(unittest.TestCase):
             self.assertEqual(code, 2, label)
             self.assertIn(expected_err, err, label)
 
-    def test_unquoted_or_hallucinated_response_evidence_fails(self):
+    def test_unquoted_fabricated_or_structurally_incomplete_responses_fail(self):
+        # Round 1 P1: fabricated quotes and partial block structures with NOT FOUND / FAILURES: none found must fail.
         def make_stream(agent: str, response: str) -> str:
             return (
                 "import json\n"
@@ -215,13 +373,72 @@ class GeminiScoutWrapperTests(unittest.TestCase):
             )
 
         bad_cases = [
-            ("unquoted prose opinion", "rf-scout", "Yes, the section looks ready to ship.", "unquoted response"),
-            ("hallucinated file path", "rf-scout", "src/does_not_exist.c:10:int x;\nCOUNT: 1\n", "hallucinated file path in citation: src/does_not_exist.c:10"),
-            ("hallucinated line number", "rf-scout", "src/rf.h:999:#define RF_VERSION 3u\nCOUNT: 1\n", "hallucinated line number in citation: src/rf.h:999"),
-            ("miscounted COUNT", "rf-scout", "src/rf.h:19:#define RF_VERSION 3u\nCOUNT: 5\n", "COUNT: 5 does not match 1 cited line(s)"),
-            ("missing log-digest blocks", "rf-log-digest", "src/rf.h:19:FAIL\n", "rf-log-digest response missing FAILURES block"),
-            ("missing fact-check blocks", "rf-fact-check", "src/rf.h:19:ok\n", "rf-fact-check response missing MISMATCHES block"),
-            ("multiline ESCALATE-LEAD", "rf-scout", "ESCALATE-LEAD: needs write\nextra commentary\n", "ESCALATE-LEAD response must be a single line"),
+            (
+                "unquoted prose opinion",
+                "rf-scout",
+                "Yes, the section looks ready to ship.",
+                "unquoted or malformed line in rf-scout response",
+            ),
+            (
+                "fabricated quotation on real line",
+                "rf-scout",
+                "src/rf.h:1:THIS QUOTE IS FABRICATED\nCOUNT: 1\n",
+                "fabricated or mismatched quote at src/rf.h:1",
+            ),
+            (
+                "hallucinated file path",
+                "rf-scout",
+                "src/does_not_exist.c:10:int x;\nCOUNT: 1\n",
+                "hallucinated file path in citation: src/does_not_exist.c:10",
+            ),
+            (
+                "hallucinated line number",
+                "rf-scout",
+                "src/rf.h:999:#define RF_VERSION 3u\nCOUNT: 1\n",
+                "hallucinated line number in citation: src/rf.h:999",
+            ),
+            (
+                "miscounted COUNT",
+                "rf-scout",
+                "src/rf.h:19:#define RF_VERSION 3u\nCOUNT: 5\n",
+                "COUNT: 5 does not match 1 cited line(s)",
+            ),
+            (
+                "unretrieved TRUNCATED marker",
+                "rf-scout",
+                "src/rf.h:19:#define RF_VERSION 3u\nTRUNCATED: showing 1 match(es)\n",
+                "response contains TRUNCATED marker",
+            ),
+            (
+                "log-digest with only FAILURES: none found",
+                "rf-log-digest",
+                "FAILURES: none found\n",
+                "rf-log-digest response missing COUNTS block",
+            ),
+            (
+                "log-digest with fabricated quote in LAST LINES",
+                "rf-log-digest",
+                "FAILURES: none found\n\nCOUNTS\n- None.\n\nLAST LINES\n- src/rf.h:19:WRONG TEXT\n",
+                "fabricated or mismatched quote at src/rf.h:19",
+            ),
+            (
+                "fact-check with NOT FOUND followed by shipping verdict",
+                "rf-fact-check",
+                "NOT FOUND: example\nOVERALL: approve, ready to ship\n",
+                "top-level NOT FOUND response must be a single line",
+            ),
+            (
+                "fact-check missing CHECKED AND HOLDING block despite NOT FOUND in MISMATCHES",
+                "rf-fact-check",
+                "MISMATCHES\n- `todo/sample.md:6`: `- Missing `src/none.c`.` -> NOT FOUND: src/none.c\n\nNEEDS A COMMAND\n- None.\n",
+                "rf-fact-check response missing CHECKED AND HOLDING block",
+            ),
+            (
+                "multiline ESCALATE-LEAD",
+                "rf-scout",
+                "ESCALATE-LEAD: needs write\nextra commentary\n",
+                "ESCALATE-LEAD response must be a single line",
+            ),
         ]
         for label, agent, resp, expected_err in bad_cases:
             self.write_stub_agy(make_stream(agent, resp))
@@ -229,30 +446,75 @@ class GeminiScoutWrapperTests(unittest.TestCase):
             self.assertEqual(code, 2, label)
             self.assertIn(expected_err, err, label)
 
-        # Single-line ESCALATE-LEAD refusal is valid
+        # Valid single-line ESCALATE-LEAD, valid rf-log-digest, and valid rf-fact-check all pass
         self.write_stub_agy(make_stream("rf-scout", "ESCALATE-LEAD: writing a file is not read-only"))
         code, out, err = self.run_scout("--agent", "rf-scout", "--prompt", "Create a file")
         self.assertEqual(code, 0, err)
         self.assertEqual(out.strip(), "ESCALATE-LEAD: writing a file is not read-only")
 
+        valid_log = (
+            "FAILURES: none found\n\n"
+            "COUNTS\n- `src/rf.h:19`: `#define RF_VERSION 3u`\n\n"
+            "LAST LINES\n- `src/rf.h:20`: `/* line 20 */`\n"
+        )
+        self.write_stub_agy(make_stream("rf-log-digest", valid_log))
+        code, _, err = self.run_scout("--agent", "rf-log-digest", "--prompt", "Digest log")
+        self.assertEqual(code, 0, err)
+
+        valid_fc = (
+            "MISMATCHES\n"
+            "- `todo/sample.md:6`: \"- Missing `src/none.c`.\" -> NOT FOUND: src/none.c\n\n"
+            "NEEDS A COMMAND\n- None.\n\n"
+            "CHECKED AND HOLDING\n"
+            "- `todo/sample.md:5`: \"- Version in `src/rf.h:19` is `#define RF_VERSION 3u`.\" -> `src/rf.h:19`: `#define RF_VERSION 3u`\n"
+            "HELD: 1\n"
+        )
+        self.write_stub_agy(make_stream("rf-fact-check", valid_fc))
+        code, _, err = self.run_scout("--agent", "rf-fact-check", "--prompt", "Fact check")
+        self.assertEqual(code, 0, err)
+
     def test_timeout_and_signal_kill_entire_descendant_tree_including_escaped_session(self):
-        # Plan review P1: even a grandchild (like an MCP server) that starts its own session is killed and reaped.
+        # Plan review P1 + Round 1 P2: even a grandchild that starts its own session is killed and reaped, and the test
+        # harness itself tears down the entire descendant tree in finally if the implementation under test ever fails.
         pid_file = self.root / "escaped.pid"
+        agy_pid_file = self.root / "agy.pid"
+
+        def cleanup_test_pids() -> None:
+            for pf_path in (pid_file, agy_pid_file):
+                if pf_path.exists():
+                    try:
+                        pid = int(pf_path.read_text(encoding="utf-8").strip())
+                    except (OSError, ValueError):
+                        continue
+                    for killer in (
+                        lambda p: os.killpg(p, signal.SIGKILL),
+                        lambda p: os.kill(p, signal.SIGKILL),
+                    ):
+                        try:
+                            killer(pid)
+                        except OSError:
+                            pass
+
         self.write_stub_agy(
-            f"import subprocess, sys, time\n"
+            f"import os, subprocess, sys, time\n"
+            f"open({str(agy_pid_file)!r}, 'w').write(str(os.getpid()))\n"
             f"child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'], start_new_session=True)\n"
             f"open({str(pid_file)!r}, 'w').write(str(child.pid))\n"
             f"sys.stdout.flush()\n"
             f"time.sleep(60)\n"
         )
-        code, _, err = self.run_scout("--agent", "rf-scout", "--prompt", "Timeout probe", "--timeout", "1")
-        self.assertEqual(code, 2)
-        self.assertIn("timed out after 1s", err)
-        escaped_pid = int(pid_file.read_text(encoding="utf-8"))
-        self.assertFalse(gs.pid_alive(escaped_pid), "escaped grandchild survived timeout cleanup")
+        try:
+            code, _, err = self.run_scout("--agent", "rf-scout", "--prompt", "Timeout probe", "--timeout", "1")
+            self.assertEqual(code, 2)
+            self.assertIn("timed out after 1s", err)
+            escaped_pid = int(pid_file.read_text(encoding="utf-8"))
+            self.assertFalse(gs.pid_alive(escaped_pid), "escaped grandchild survived timeout cleanup")
+        finally:
+            cleanup_test_pids()
 
         # Also test signal cancellation while running
-        pid_file.unlink()
+        pid_file.unlink(missing_ok=True)
+        agy_pid_file.unlink(missing_ok=True)
         env = dict(os.environ, PATH=f"{self.stub_bin}:{os.environ.get('PATH', '')}")
         proc = subprocess.Popen(
             [sys.executable, str(SCOUT_PATH), "--agent", "rf-scout", "--prompt", "Signal probe", "--timeout", "60"],
@@ -261,6 +523,7 @@ class GeminiScoutWrapperTests(unittest.TestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            start_new_session=True,
         )
         try:
             for _ in range(100):
@@ -270,15 +533,19 @@ class GeminiScoutWrapperTests(unittest.TestCase):
             escaped_pid = int(pid_file.read_text(encoding="utf-8"))
             proc.send_signal(signal.SIGTERM)
             exit_code = proc.wait(timeout=15)
+            self.assertEqual(exit_code, 130)
+            self.assertFalse(gs.pid_alive(escaped_pid), "escaped grandchild survived SIGTERM cancellation")
         finally:
+            cleanup_test_pids()
             if proc.poll() is None:
-                proc.kill()
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except OSError:
+                    proc.kill()
                 proc.wait()
             for pipe in (proc.stdout, proc.stderr):
                 if pipe is not None:
                     pipe.close()
-        self.assertEqual(exit_code, 130)
-        self.assertFalse(gs.pid_alive(escaped_pid), "escaped grandchild survived SIGTERM cancellation")
 
 
 if __name__ == "__main__":
