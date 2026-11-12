@@ -18,10 +18,11 @@ on:
 permissions:
   contents: read
 
-# Keyed on the workflow that started the run: a release calling these jobs never cancels, or is cancelled by, a push
-# run. The `gates-` prefix keeps the group apart from the calling workflow's own group, which would cancel the call.
+# A push or pull request run cancels an older run of the same ref. A run called by another workflow (the release,
+# which passes `ref`) gets a group of its own run: a rehearsal and a tagged release of one commit never cancel each
+# other's gates, and the `gates-` prefix keeps the group apart from the calling workflow's own group.
 concurrency:
-  group: gates-${{ github.workflow }}-${{ inputs.ref || github.ref }}
+  group: gates-${{ github.workflow }}-${{ inputs.ref && github.run_id || github.ref }}
   cancel-in-progress: true
 
 jobs:

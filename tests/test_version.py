@@ -123,11 +123,38 @@ class VersionSource(unittest.TestCase):
         self.assertEqual(run_version(self.root, '--unreleased').returncode, 2)
 
     def test_release_notes_of_this_repository(self):
-        result = subprocess.run([sys.executable, str(VERSION_PY), '--release-notes', '--unreleased'],
-                                capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn('RasterFold', result.stdout)
-        self.assertNotIn('\n## ', result.stdout)
+        """Holds before a release (notes are the Unreleased section) and after one (the version's section, with the
+        Unreleased heading possibly empty): at least one of the two prints notes, and neither prints a heading."""
+        printed = []
+        for extra in ((), ('--unreleased',)):
+            result = subprocess.run([sys.executable, str(VERSION_PY), '--release-notes', *extra],
+                                    capture_output=True, text=True)
+            if result.returncode == 0:
+                self.assertTrue(result.stdout.strip())
+                self.assertNotIn('\n## ', '\n' + result.stdout)
+                printed.append(result.stdout)
+            else:
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn('CHANGELOG.md: ', result.stdout)
+        self.assertTrue(printed, 'the changelog has notes neither for VERSION nor under Unreleased')
+
+    def test_release_notes_after_the_documented_release_preparation(self):
+        """docs/building.md: the Unreleased entries move under a `## <version>` heading and the Unreleased heading
+        stays. This repository's own changelog, prepared that way, yields the same notes for the version."""
+        version = (self.root / 'VERSION').read_text(encoding='utf-8').strip()
+        changelog = (ROOT / 'CHANGELOG.md').read_text(encoding='utf-8')
+        pending = subprocess.run([sys.executable, str(VERSION_PY), '--release-notes', '--unreleased'],
+                                 capture_output=True, text=True)
+        if pending.returncode != 0:
+            self.skipTest('this changelog has no pending Unreleased entries to move')
+        self.assertEqual(changelog.count('\n## Unreleased\n'), 1)
+        self.write('CHANGELOG.md', changelog.replace('\n## Unreleased\n', f'\n## Unreleased\n\n## {version}\n'))
+        released = run_version(self.root, '--release-notes')
+        self.assertEqual(released.returncode, 0, released.stdout)
+        self.assertEqual(released.stdout, pending.stdout)
+        emptied = run_version(self.root, '--release-notes', '--unreleased')
+        self.assertEqual(emptied.returncode, 1)
+        self.assertIn('the section "## Unreleased" is empty', emptied.stdout)
 
     def test_dev_labels(self):
         self.git('init', '-q')

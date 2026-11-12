@@ -10,7 +10,8 @@ that directory and one target and proves the package a user would download works
 4. a generated image round-trips through the packaged `encode`, `verify` and `decode` to identical pixels.
 
 It refuses (exit 1, one `verify-release: REFUSED` line naming the reason) on the first failure. Each packaged
-command is bounded by a timeout that ends its whole process tree, and everything is extracted into a temporary
+command is bounded by a timeout, everything it started is ended when it returns (a process group on Linux, a job
+object on Windows), and everything is extracted into a temporary
 directory that is removed on success, refusal and timeout alike. Standard library only; runs on Linux and Windows.
 
     python3 scripts/verify_release.py                      # dist/ of this checkout, this host's target
@@ -41,51 +42,105 @@ def host_target() -> str:
     return 'windows-x64' if os.name == 'nt' else 'linux-x64'
 
 
-def end_tree(process: subprocess.Popen) -> None:
-    """End a command and everything it started. On POSIX the command leads its own process group and the group is
-    killed; on Windows `taskkill /T /F` ends the tree while its root is still known."""
-    if os.name == 'nt':
-        subprocess.run(['taskkill', '/T', '/F', '/PID', str(process.pid)],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30, check=False)
-    else:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+class _WindowsJob:
+    """A Windows job object that owns one command and everything it starts. The command is created suspended, put
+    in the job, and only then resumed, so no process it starts can be outside the job; ending the job ends them all,
+    whether or not the command itself is still running. `taskkill /T` cannot do that once the root has exited."""
+
+    def __init__(self):
+        import ctypes
+        from ctypes import wintypes
+        self.ctypes = ctypes
+        kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel32.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
+        kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+        kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+        kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
+        kernel32.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
+        kernel32.TerminateJobObject.restype = wintypes.BOOL
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+        ntdll = ctypes.WinDLL('ntdll')
+        ntdll.NtResumeProcess.argtypes = [wintypes.HANDLE]
+        ntdll.NtResumeProcess.restype = ctypes.c_long
+        self.kernel32, self.ntdll = kernel32, ntdll
+        self.handle = kernel32.CreateJobObjectW(None, None)
+        if not self.handle:
+            raise OSError(ctypes.get_last_error(), 'CreateJobObjectW failed')
+
+    def adopt_and_resume(self, process: subprocess.Popen) -> None:
+        handle = int(process._handle)                # the process handle Popen holds on Windows
+        if not self.kernel32.AssignProcessToJobObject(self.handle, handle):
+            raise OSError(self.ctypes.get_last_error(), 'AssignProcessToJobObject failed')
+        status = self.ntdll.NtResumeProcess(handle)
+        if status < 0:
+            raise OSError(status, 'NtResumeProcess failed')
+
+    def end(self) -> None:
+        if self.handle:
+            self.kernel32.TerminateJobObject(self.handle, 1)
+            self.kernel32.CloseHandle(self.handle)
+            self.handle = None
+
+
+def end_group(process: subprocess.Popen) -> None:
+    """POSIX: the command leads its own process group; kill the group, which outlives the command itself."""
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass                                         # nothing of the group is left: the intended state
 
 
 def run_bounded(argv: list[str], timeout: float, cwd: Path | None = None,
                 label: str | None = None) -> subprocess.CompletedProcess:
-    """Run one command to completion within `timeout` seconds, capturing its output. A command that outlives the
-    bound is refused and its whole process tree is ended first, never only the direct child."""
+    """Run one command to completion within `timeout` seconds, capturing its output. Everything the command
+    started is ended when it returns, in time or not, never only the direct child: on POSIX through its process
+    group, on Windows through a job object. A command that outlives the bound is refused."""
     command = [str(a) for a in argv]
     label = label or ' '.join([Path(command[0]).name, *command[1:3]])
     pipes = subprocess.PIPE
+    job = None
     try:
         if os.name == 'nt':
+            job = _WindowsJob()
             process = subprocess.Popen(command, cwd=cwd, stdin=subprocess.DEVNULL, stdout=pipes, stderr=pipes,
-                                       creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
+                                       creationflags=0x00000004)          # CREATE_SUSPENDED
         else:
             process = subprocess.Popen(command, cwd=cwd, stdin=subprocess.DEVNULL, stdout=pipes, stderr=pipes,
                                        start_new_session=True)
     except OSError as error:
+        if job is not None:
+            job.end()
         raise Refused(f'cannot start {label}: {error}') from error
+
+    def end_everything() -> None:
+        if job is not None:
+            job.end()
+        else:
+            end_group(process)
+
     try:
-        out, err = process.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        end_tree(process)
+        if job is not None:
+            try:
+                job.adopt_and_resume(process)
+            except OSError as error:
+                process.kill()                       # still suspended or alone: it has started nothing
+                raise Refused(f'cannot bound {label} in a job object: {error}') from error
         try:
-            process.communicate(timeout=30)
+            out, err = process.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
+            end_everything()
+            try:
+                process.communicate(timeout=30)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+            raise Refused(f'{label} did not finish within {timeout:g} s; its process tree was ended') from None
+    finally:
+        end_everything()                             # nothing the command started outlives this call
+        if process.poll() is None:
             process.kill()
             process.wait()
-        raise Refused(f'{label} did not finish within {timeout:g} s; its process tree was ended') from None
-    except BaseException:
-        end_tree(process)
-        process.wait()
-        raise
-    if os.name != 'nt':
-        end_tree(process)            # nothing the command started outlives it, even when it exited in time
     return subprocess.CompletedProcess(argv, process.returncode, out.decode('utf-8', 'replace'),
                                        err.decode('utf-8', 'replace'))
 

@@ -559,6 +559,13 @@ elif command == 'encode':
         print('rasterfold: cannot encode', file=sys.stderr)
         sys.exit(3)
     shutil.copyfile(sys.argv[2], sys.argv[3])
+elif command == 'verify':
+    if mode == 'orphan':
+        # Starts a process that holds none of this command's pipes, then exits successfully straight away.
+        child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'], stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        with open(pidfile, 'w') as handle:
+            handle.write(str(os.getpid()) + ' ' + str(child.pid))
 elif command == 'decode':
     data = open(sys.argv[2], 'rb').read()
     if mode == 'lossy':
@@ -709,6 +716,19 @@ class ReleaseVerifier(unittest.TestCase):
         self.assertFalse(process_alive(parent), 'the packaged command was ended')
         self.assertFalse(process_alive(child), 'the process it started was ended with it')
 
+    def test_a_process_left_behind_by_a_command_that_exited_in_time_is_ended(self):
+        import time
+        self.build(mode='orphan')
+        lines = self.verify()
+        self.assertEqual(lines[-1], f'verify-release: OK {self.top}.zip')
+        parent, child = (int(pid) for pid in self.pidfile.read_text().split())
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and process_alive(child):
+            time.sleep(0.1)
+        self.assertFalse(process_alive(parent))
+        self.assertFalse(process_alive(child), 'a process the command started does not outlive the verification')
+        self.assertEqual(list(self.scratch.iterdir()), [])
+
     def test_the_command_line_exits_zero_or_one_with_the_reason(self):
         self.build()
         out, err = io.StringIO(), io.StringIO()
@@ -797,6 +817,8 @@ def release_workflow_problems(release: str, build: str, plan: str) -> list[str]:
     for name, text in (('build.yml', build), ('plan.yml', plan)):
         if not re.search(r'^  workflow_call:\n    inputs:\n      ref:\n', text, re.M):
             problems.append(f'{name}: is not callable with a ref')
+    if "group: gates-${{ github.workflow }}-${{ inputs.ref && github.run_id || github.ref }}" not in build:
+        problems.append('build.yml: called gates do not get a concurrency group of their own run')
     for suite in ('test_package.py', 'test_version.py'):
         if f'-p {suite}' not in workflow_jobs(build).get('linux', ''):
             problems.append(f'build.yml: the Linux job does not run tests/{suite}')
@@ -866,6 +888,8 @@ class ReleaseWorkflow(unittest.TestCase):
     def test_the_gate_workflows_stay_callable_and_run_the_new_suites(self):
         self.assertIn('build.yml: is not callable with a ref', self.problems(build=self.build.replace('  workflow_call:\n', '  workflow_run:\n')))
         self.assertIn('plan.yml: is not callable with a ref', self.problems(plan=self.plan.replace('  workflow_call:\n', '  workflow_run:\n')))
+        shared = self.build.replace('inputs.ref && github.run_id || github.ref', 'inputs.ref || github.ref')
+        self.assertIn('build.yml: called gates do not get a concurrency group of their own run', self.problems(build=shared))
         for suite in ('test_package.py', 'test_version.py'):
             build = self.build.replace(f'          python3 -m unittest discover -s tests -p {suite} -v\n', '')
             self.assertIn(f'build.yml: the Linux job does not run tests/{suite}', self.problems(build=build))

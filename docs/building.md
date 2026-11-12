@@ -135,7 +135,7 @@ It checks `dist/SHA256SUMS`, extracts the platform's zip into a temporary direct
 
 Releases are published by `.github/workflows/release.yml`, never by hand:
 
-1. Set `VERSION`, move the changelog's Unreleased section under a `## <version>` heading, and commit to `main`.
+1. Set `VERSION`, move the entries of the changelog's Unreleased section under a new `## <version>` heading placed directly below the `## Unreleased` heading (which stays, empty, for the next changes), and commit to `main`.
 2. Push the tag `rasterfold-v<version>` on that commit.
 
 The tagged commit must be on `main`, the tag must be `rasterfold-v` followed by exactly the contents of `VERSION` (`python3 scripts/version.py --tag <tag>`), and the changelog must have that version's section (`python3 scripts/version.py --release-notes` prints it). The workflow then runs every gate a push runs (it calls `build.yml` and `plan.yml` on the tagged commit), builds both targets and writes the packages once, runs `scripts/verify_release.py` on the packages on Linux and on Windows, and only when all of that passed creates the GitHub release with the two zips, `SHA256SUMS` and the changelog section as its notes. A `VERSION` with a prerelease part (`1.1.0-rc.1`) publishes as a prerelease. A release that already exists for the tag is refused, never replaced.
