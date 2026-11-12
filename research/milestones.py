@@ -70,7 +70,7 @@ M = [
     (9, "Holds on images never tuned on",
      "the set-total and geometric-mean ratios that milestones 4, 7, and 8 reached against JPEG XL e9 and lossless WebP hold on the held-out set (`python research/ab.py size heldout`) within 1% of each tuned figure, without any retuning; the per-image counts are reported beside them, not gated",
      "`python research/ab.py size heldout` against JPEG XL e9 and WebP", [FF], None,
-     "D00 T03 §1, D00 T03 §2"),
+     "D00 T03 §1, D00 T03 §2, D01 T07 §1, D01 T07 §2"),
     (10, "RasterFold 1.0",
      "`rasterfold-v1.0.0` released: format version 3 frozen; Windows/Linux x64 CLI and shared/static C libraries; BMP, PNG, and PPM in the CLI; the full HTML docs published; 100,000 fuzz mutations clean; smaller than JPEG XL e9 and lossless WebP on every set total, and faster and leaner than JPEG XL e7 on the `tests/benchmark.py` set totals for encode, decode, and peak memory, each codec at its default thread count",
      f"{SIZE}, {BENCH}, `python tests/fuzz_decode.py`", [FF, IDLE], None,

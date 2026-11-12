@@ -1,6 +1,6 @@
 # 01 Compression
 
-> **Phases 2 to 7**
+> **Phases 2 to 8**
 
 The models, predictors, and coding methods that make `.fold` files smaller. Every change here is measured on the research corpus before it is ported, and every ported change touches the four places a format change owes (the C code, the oracle, the spec, the known-answer file).
 
@@ -11,6 +11,7 @@ The models, predictors, and coding methods that make `.fold` files smaller. Ever
 | [TODO-02](./TODO-02-model-experiments.md) | Model Experiments for Method 1 | draft |
 | [TODO-05](./TODO-05-every-photo-beats-e9.md) | Every Photograph Beats JPEG XL e9 | active |
 | [TODO-06](./TODO-06-beat-webp-generated.md) | Beat WebP on Generated Images | draft |
+| [TODO-07](./TODO-07-screen-content.md) | Screen Content | draft |
 
 ## Completed
 
