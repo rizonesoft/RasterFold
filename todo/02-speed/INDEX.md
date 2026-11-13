@@ -10,6 +10,7 @@ Encode and decode speed. A change here leaves every `.fold` byte unchanged (the 
 | ---- | ----- | :----: |
 | [TODO-01](./TODO-01-compiler-options.md) | Compiler Options: PGO, LTO, AVX2 | draft |
 | [TODO-02](./TODO-02-parallel-and-simd.md) | Parallel Strips and the SIMD Mixer: Measurements | draft |
+| [TODO-04](./TODO-04-cm-cap-abort.md) | Finer-Grained CM Cap-Abort Check for Small Palette Caps | draft |
 
 ## Completed
 

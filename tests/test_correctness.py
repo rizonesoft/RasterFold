@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import random
 import struct
@@ -2529,6 +2530,110 @@ def fuzz_harness() -> None:
                 alive = False
             check(not alive, f"sleeping child process {child_pid} survived run_tasks_parallel shutdown")
 
+        # Bidirectional input-oracle checks across BMP, PNG and PPM: every seed
+        # succeeds, every oracle self-check holds, and false refusals or swapped
+        # refusal classes (3 vs 4 vs 5) are caught immediately.
+        bmp_s = fuzz_decode.bmp_seeds()
+        png_s = fuzz_decode.png_seeds()
+        ppm_s = fuzz_decode.ppm_seeds()
+        check(fuzz_decode._check_bmp_seeds_and_oracle(bmp_s) is None, "BMP seed/oracle self-check failed")
+        check(fuzz_decode._check_png_seeds_and_oracle(png_s) is None, "PNG seed/oracle self-check failed")
+        check(fuzz_decode._check_ppm_seeds_and_oracle(ppm_s) is None, "PPM seed/oracle self-check failed")
+        fake_in_reject = subprocess.CompletedProcess(args=[], returncode=4, stdout=b"", stderr=b"invalid input\n")
+        with mock.patch.object(fuzz_decode.subprocess, "run", return_value=fake_in_reject):
+            rc_b, err_b = fuzz_decode.verify_bmp_mutation(901, bmp_s[0], EXE, td)
+            rc_p, err_p = fuzz_decode.verify_png_mutation(902, png_s[0], EXE, td)
+            rc_m, err_m = fuzz_decode.verify_ppm_mutation(903, ppm_s[0], EXE, td)
+        check(rc_b == -1 and err_b is not None and "BMP MISMATCH" in err_b, f"BMP false refusal not caught: {(rc_b, err_b)}")
+        check(rc_p == -1 and err_p is not None and "PNG MISMATCH" in err_p, f"PNG false refusal not caught: {(rc_p, err_p)}")
+        check(rc_m == -1 and err_m is not None and "PPM MISMATCH" in err_m, f"PPM false refusal not caught: {(rc_m, err_m)}")
+        unsup_bmp = bytearray(bmp_s[0])
+        struct.pack_into("<H", unsup_bmp, 28, 32)
+        unsup_ppm = b"P3\n1 1\n255\n0 0 0\n"
+        with mock.patch.object(fuzz_decode.subprocess, "run", return_value=fake_in_reject):
+            rc_b3, err_b3 = fuzz_decode.verify_bmp_mutation(904, bytes(unsup_bmp), EXE, td)
+            rc_m3, err_m3 = fuzz_decode.verify_ppm_mutation(905, unsup_ppm, EXE, td)
+        check(rc_b3 == -1 and err_b3 is not None and "exit 4 != oracle 3" in err_b3, f"BMP 3-vs-4 swap not caught: {(rc_b3, err_b3)}")
+        check(rc_m3 == -1 and err_m3 is not None and "exit 4 != oracle 3" in err_m3, f"PPM 3-vs-4 swap not caught: {(rc_m3, err_m3)}")
+
+
+def compat_corpus() -> None:
+    """Twenty-year compatibility corpus guard (testdata/compat/): every archived
+    v2 and v1.0.0 vector matches its recorded SHA-256 and known-answer constant,
+    and decodes to its exact pixel CRC-32 through both the independent oracle and
+    the native decoder across thread counts."""
+    compat_dir = ROOT / "testdata" / "compat"
+    manifest_path = compat_dir / "manifest.json"
+    check(manifest_path.is_file(), f"missing compatibility manifest: {manifest_path}")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    check(manifest.get("schema") == 1 and manifest.get("frozen_at_tag") == "rasterfold-v1.0.0", f"unexpected manifest header: {manifest}")
+    vectors = manifest.get("vectors") or []
+    check(len(vectors) >= 12, f"expected >= 12 compatibility vectors, got {len(vectors)}")
+
+    kat_map = {
+        "KAT_FOLD": KAT_FOLD,
+        "KAT_PAL": KAT_PAL,
+        "KAT_PAL2": KAT_PAL2,
+        "KAT_FOLD3": KAT_FOLD3,
+        "KAT_PAL3": KAT_PAL3,
+        "KAT_PAL2_3": KAT_PAL2_3,
+        "KAT_PAL4": KAT_PAL4,
+        "KAT_SC5": KAT_SC5,
+        "KAT_SC6": KAT_SC6,
+    }
+    listed_paths = set()
+    seen_pairs: set[tuple[int, int]] = set()
+    work = WORK / "compat"
+    work.mkdir(parents=True, exist_ok=True)
+
+    for idx, vec in enumerate(vectors):
+        rel = vec["path"]
+        listed_paths.add(rel)
+        fpath = compat_dir / rel
+        check(fpath.is_file(), f"missing compatibility vector: {fpath}")
+        blob = fpath.read_bytes()
+        check(len(blob) == vec["size"], f"{rel}: size {len(blob)} != {vec['size']}")
+        check(hashlib.sha256(blob).hexdigest() == vec["sha256"], f"{rel}: sha256 mismatch")
+        check(blob[4] == vec["format_version"] and blob[16] == vec["method"], f"{rel}: header version/method mismatch")
+        if vec["strips"] is not None:
+            got_strips = 1 if blob[4] == 2 else blob[32]
+            check(got_strips == vec["strips"], f"{rel}: strip count {got_strips} != {vec['strips']}")
+        if vec["kat_constant"] is not None:
+            check(blob == kat_map[vec["kat_constant"]], f"{rel}: bytes differ from {vec['kat_constant']}")
+        seen_pairs.add((vec["format_version"], vec["method"]))
+
+        ow, oh, orgb = rf.decode_image(blob)
+        check((ow, oh) == (vec["width"], vec["height"]), f"{rel}: oracle dims {(ow, oh)} != {(vec['width'], vec['height'])}")
+        got_crc = f"0x{zlib.crc32(orgb) & 0xFFFFFFFF:08x}"
+        check(got_crc == vec["pixel_crc32"], f"{rel}: oracle pixel_crc32 {got_crc} != {vec['pixel_crc32']}")
+
+        v_res = expect_ok(["verify", str(fpath)])
+        check(f"pixel_crc32: {vec['pixel_crc32']}".encode("ascii") in v_res.stdout, f"{rel}: verify pixel_crc32 mismatch: {v_res.stdout!r}")
+        for th in ("1", "3", "6", "9"):
+            out_bmp = work / f"out_{idx}_t{th}.bmp"
+            out_bmp.unlink(missing_ok=True)
+            expect_ok(["decode", "--threads", th, str(fpath), str(out_bmp)])
+            check(rf.read_bmp24(out_bmp.read_bytes()) == (ow, oh, orgb), f"{rel}: native decode pixels differ at --threads {th}")
+            out_bmp.unlink(missing_ok=True)
+
+        # While the live encoder targets format version 3, every vector marked
+        # encoder_writes_in_v1_0_0 must still be produced byte-identically.
+        if rf.VERSION == 3 and vec["encoder_writes_in_v1_0_0"]:
+            check(rf.encode_image(ow, oh, orgb) == blob, f"{rel}: v3 oracle encode drifted from frozen v1.0.0 vector")
+            src_ppm = work / f"src_{idx}.ppm"
+            re_fold = work / f"re_{idx}.fold"
+            src_ppm.write_bytes(f"P6\n{ow} {oh}\n255\n".encode("ascii") + orgb)
+            re_fold.unlink(missing_ok=True)
+            expect_ok(["encode", "--threads", "3", str(src_ppm), str(re_fold)])
+            check(re_fold.read_bytes() == blob, f"{rel}: native v3 encode drifted from frozen v1.0.0 vector")
+            src_ppm.unlink(missing_ok=True)
+            re_fold.unlink(missing_ok=True)
+
+    disk_paths = {p.relative_to(compat_dir).as_posix() for p in compat_dir.rglob("*.fold")}
+    check(disk_paths == listed_paths, f"unlisted or missing .fold files in testdata/compat: disk={disk_paths ^ listed_paths}")
+    want_pairs = {(2, 0), (2, 1), (2, 2), (2, 3), (3, 0), (3, 1), (3, 2), (3, 3), (3, 4), (3, 5), (3, 6)}
+    check(want_pairs.issubset(seen_pairs), f"compatibility corpus missing version/method pairs: {want_pairs - seen_pairs}")
+
 
 def gated_fixtures() -> dict[str, tuple[int, int, bytes]]:
     """D01 T04 §10's boundary fixtures for the version 3 gated gradient: narrow and short images whose planes
@@ -2591,8 +2696,6 @@ def gated_gradient() -> None:
 
 
 def cli_commands() -> None:
-    import json
-
     work = WORK / "cli"
     work.mkdir(parents=True, exist_ok=True)
     v3 = work / "kat3.fold"
@@ -3232,6 +3335,7 @@ def main() -> int:
     case("palette-method4", palette_method4)
     case("screen-content-method5", screen_content_method5)
     case("screen-content-method6", screen_content_method6)
+    case("compat-corpus", compat_corpus)
 
     case("fuzz-harness", fuzz_harness)
     # The checksum in a successful file matches zlib, not only our encoder.

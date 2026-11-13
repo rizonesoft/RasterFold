@@ -11,6 +11,7 @@ The models, predictors, and coding methods that make `.fold` files smaller. Ever
 | [TODO-02](./TODO-02-model-experiments.md) | Model Experiments for Method 1 | draft |
 | [TODO-05](./TODO-05-every-photo-beats-e9.md) | Every Photograph Beats JPEG XL e9 | active |
 | [TODO-06](./TODO-06-beat-webp-generated.md) | Beat WebP on Generated Images | draft |
+| [TODO-08](./TODO-08-eighth-model-isolation.md) | Isolate the Eighth-Model Match Context Gain | draft |
 
 ## Completed
 

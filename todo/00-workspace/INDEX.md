@@ -9,6 +9,7 @@ The toolchain, gates, hooks, CI, and the TODO system every later domain leans on
 | TODO | Title | Status |
 | ---- | ----- | :----: |
 | [TODO-01](./TODO-01-dev-automation.md) | Dev-Automation Wiring | active |
+| [TODO-06](./TODO-06-guard-stderr-encoding.md) | Campaign Guard Legacy-Encoding Stderr Self-Test | draft |
 
 ## Completed
 

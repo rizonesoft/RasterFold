@@ -10,7 +10,10 @@ seven models instead of five (contexts `k5` and `k6` below), 16 nodes per
 context row instead of 32, a gated gradient selector, and warm-started
 horizontal strips. Methods 0, 2 and 3 are identical in versions 2 and 3, and
 version 3 adds methods 4, 5 and 6, which a version 2 file may not use. A
-decoder reads both versions; an encoder writes version 3. Version 2 replaced
+decoder reads both versions; an encoder writes version 3. Format version 3 is
+final and frozen from release `rasterfold-v1.0.0`: every version 3 file written
+at 1.0.0 continues to decode identically, and any later change to what version 3
+writes requires a new format version. Version 2 replaced
 the experimental version 1 (64×64 blocks with PackBits, palette, Rice and
 binary rANS modes). Version 1 files are rejected as an unsupported version.
 

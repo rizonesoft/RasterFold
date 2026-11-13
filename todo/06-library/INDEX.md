@@ -9,6 +9,7 @@
 | TODO | Title | Status |
 | ---- | ----- | :----: |
 | [TODO-01](./TODO-01-dll-and-api.md) | rasterfold.dll and the C API | draft |
+| [TODO-02](./TODO-02-example-io-diagnostics.md) | Example Host-I/O Failure Diagnostics | draft |
 
 ## Completed
 

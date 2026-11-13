@@ -9,6 +9,7 @@ The `rasterfold.exe` command line: commands, options, input and output formats, 
 | TODO | Title | Status |
 | ---- | ----- | :----: |
 | [TODO-01](./TODO-01-command-line.md) | The Version 1 Command Line | draft |
+| [TODO-02](./TODO-02-cli-dev-identity.md) | Standalone CLI Development Build Identity | draft |
 
 ## Completed
 

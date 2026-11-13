@@ -13,15 +13,18 @@ from __future__ import annotations
 
 import base64
 from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
+import contextlib
 import hashlib
 import io
 import json
 import os
 from pathlib import Path
 import random
+import shutil
 import struct
 import subprocess
 import sys
+import tempfile
 import time
 
 from PIL import Image
@@ -34,6 +37,28 @@ import rfi_ref as rf  # noqa: E402
 
 EXE = Path(os.environ.get("RF_TEST_EXE", ROOT / "bin" / ("windows-x64/bin/rasterfold.exe" if os.name == "nt" else "linux-x64/bin/rasterfold")))
 WORK = ROOT / "tests" / "work" / "fuzz"
+
+
+@contextlib.contextmanager
+def _staged_fuzz_env():
+    """Stage the executable and scratch directory in local tmpfs (/dev/shm on
+    Linux) or native %TEMP% (on Windows, avoiding \\\\wsl.localhost 9P latency),
+    preserving any hang/bad/mismatch reproducer files back into WORK."""
+    WORK.mkdir(parents=True, exist_ok=True)
+    shm = Path("/dev/shm")
+    base_tmp = str(shm) if os.name != "nt" and shm.is_dir() and os.access(shm, os.W_OK | os.X_OK) else None
+    with tempfile.TemporaryDirectory(prefix="rf_fuzz_", dir=base_tmp) as td:
+        stage = Path(td)
+        staged_exe = stage / EXE.name
+        shutil.copy2(EXE, staged_exe)
+        work_dir = stage / "work"
+        work_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            yield staged_exe, work_dir
+        finally:
+            for item in work_dir.iterdir():
+                if any(tag in item.name for tag in ("hang", "bad", "mismatch")):
+                    shutil.copy2(item, WORK / item.name)
 
 PHOTO_CROPS: tuple[tuple[str, int, int, int, int], ...] = (
     ("kodim01.png", 120, 80, 48, 36),
@@ -516,20 +541,24 @@ def _stop_and_drain_pool(
 
 
 def run_tasks_parallel(
-    tasks: list[tuple[int, bytes, str, str, str]],
+    tasks,
     workers: int,
     worker_fn=_worker_verify,
+    valid_rcs: tuple[int, ...] = (0, 4),
 ) -> tuple[dict[int, int], str | None]:
-    counts = {0: 0, 4: 0}
-    stop_file = Path(tasks[0][4]) / ".fuzz_stop" if tasks else None
-    if stop_file is not None:
-        stop_file.unlink(missing_ok=True)
+    counts = {rc: 0 for rc in valid_rcs}
     it = iter(tasks)
+    first_item = next(it, None)
+    if first_item is None:
+        return counts, None
+    stop_file = Path(first_item[-1]) / ".fuzz_stop"
+    stop_file.unlink(missing_ok=True)
     max_inflight = max(1, workers * 2)
     pool = ProcessPoolExecutor(max_workers=workers)
-    pending: set[Future[tuple[int, int, str | None]]] = set()
+    pending: set[Future] = set()
     try:
-        for _ in range(max_inflight):
+        pending.add(pool.submit(worker_fn, first_item))
+        for _ in range(max_inflight - 1):
             try:
                 pending.add(pool.submit(worker_fn, next(it)))
             except StopIteration:
@@ -537,7 +566,8 @@ def run_tasks_parallel(
         while pending:
             done, pending = wait(pending, return_when=FIRST_COMPLETED)
             for fut in done:
-                _, rc, err = fut.result()
+                res = fut.result()
+                rc, err = res[1], res[2]
                 if err is not None:
                     _stop_and_drain_pool(pool, pending, stop_file)
                     return counts, err
@@ -551,14 +581,13 @@ def run_tasks_parallel(
         _stop_and_drain_pool(pool, pending, stop_file)
         raise
     finally:
-        if stop_file is not None:
-            stop_file.unlink(missing_ok=True)
+        stop_file.unlink(missing_ok=True)
     pool.shutdown(wait=True)
     return counts, None
 
 
 def png_seeds() -> list[bytes]:
-    w, h = 48, 36
+    w, h = 17, 13
     gradient = bytes(((x * 5 + y * 9 + c * 31) & 255) for y in range(h) for x in range(w) for c in range(3))
     rng = random.Random(77)
     noise = bytes(rng.randrange(256) for _ in range(w * h * 3))
@@ -636,9 +665,14 @@ def zlib_crc(data: bytes) -> int:
     return _zlib.crc32(data) & 0xFFFFFFFF
 
 
+RF_MAX_DIM = 32768
+RF_MAX_PIXELS = 33554432
+_PPM_WS = frozenset(b" \t\r\n\x0b\x0c")
+
+
 def mutate_png(blob: bytes, rng: random.Random) -> bytes:
     chunks = _png_chunks(blob)
-    kind = rng.randrange(5)
+    kind = rng.randrange(6)
     if chunks is None or kind == 1:
         cut = rng.randrange(1, len(blob))
         return blob[:cut]
@@ -660,6 +694,21 @@ def mutate_png(blob: bytes, rng: random.Random) -> bytes:
                 at = rng.randrange(len(data) + 1)
                 data[at:at] = bytes(rng.randrange(256) for _ in range(rng.randrange(1, 9)))
                 break
+    elif kind == 5 and mutated[0][0] == b"IHDR" and len(mutated[0][1]) == 13:
+        # Perturb IHDR dimensions (0, over-limit, or +/- delta).
+        data = mutated[0][1]
+        w, h = struct.unpack_from(">II", data, 0)
+        sub = rng.randrange(3)
+        if sub == 0:
+            w, h = rng.choice([(0, h), (w, 0), (RF_MAX_DIM + 1, h), (w, RF_MAX_DIM + 1), (8192, 4097)])
+        elif sub == 1:
+            w = max(1, w + rng.choice((-1, 1, 2)))
+        else:
+            # Inject an ancillary or tRNS chunk before IDAT while keeping IHDR valid.
+            anc_type = rng.choice((b"tEXt", b"tRNS", b"zTXt", b"ABCD"))
+            anc_payload = b"key\x00val" if anc_type == b"tEXt" else b"\x00\x00\x00\x00\x00\x00"
+            mutated.insert(1, (anc_type, bytearray(anc_payload)))
+        struct.pack_into(">II", data, 0, w & 0xFFFFFFFF, h & 0xFFFFFFFF)
     else:  # delete bytes from a chunk's data; CRC recomputed on rebuild
         idx = rng.randrange(len(mutated))
         data = mutated[idx][1]
@@ -670,6 +719,21 @@ def mutate_png(blob: bytes, rng: random.Random) -> bytes:
 
 
 _PNG_KNOWN_CHUNKS = {b"IHDR", b"PLTE", b"IDAT", b"IEND", b"tRNS", b"gAMA", b"cHRM", b"sRGB", b"iCCP", b"tEXt", b"zTXt", b"iTXt", b"bKGD", b"hIST", b"pHYs", b"sBIT", b"sPLT", b"tIME"}
+
+
+def _png_ihdr_over_limit(blob: bytes) -> bool:
+    """True iff the first chunk is a CRC-valid 13-byte IHDR with non-zero
+    dimensions exceeding RF_MAX_DIM or RF_MAX_PIXELS (native exit code 5)."""
+    if len(blob) < 33 or blob[:8] != b"\x89PNG\r\n\x1a\n":
+        return False
+    length = struct.unpack_from(">I", blob, 8)[0]
+    if length != 13 or blob[12:16] != b"IHDR":
+        return False
+    stored_crc = struct.unpack_from(">I", blob, 29)[0]
+    if zlib_crc(blob[12:29]) != stored_crc:
+        return False
+    w, h = struct.unpack_from(">II", blob, 16)
+    return w > 0 and h > 0 and (w > RF_MAX_DIM or h > RF_MAX_DIM or w * h > RF_MAX_PIXELS)
 
 
 def _png_is_supported_valid(blob: bytes) -> bool:
@@ -709,6 +773,8 @@ def _png_is_supported_valid(blob: bytes) -> bool:
     import zlib as _zlib
 
     w, h = struct.unpack_from(">II", ihdr, 0)
+    if w == 0 or h == 0 or w > RF_MAX_DIM or h > RF_MAX_DIM or w * h > RF_MAX_PIXELS:
+        return False
     channels = 3 if ihdr[9] == 2 else 4
     if ihdr[12]:
         x0 = (0, 4, 0, 2, 0, 1, 0)
@@ -746,26 +812,43 @@ def _png_is_supported_valid(blob: bytes) -> bool:
     return True
 
 
-def verify_png_mutation(i: int, blob: bytes) -> tuple[int, str | None]:
+def verify_png_mutation(
+    i: int,
+    blob: bytes,
+    exe: Path = EXE,
+    work_dir: Path = WORK,
+    stop_file: Path | None = None,
+) -> tuple[int, str | None]:
     pid = os.getpid()
-    src = WORK / f"p_{pid}_{i}.png"
-    dest = WORK / f"p_{pid}_{i}.fold"
+    src = work_dir / f"p_{pid}_{i}.png"
+    dest = work_dir / f"p_{pid}_{i}.fold"
     partial = Path(f"{dest}.partial")
+    if stop_file is not None and stop_file.exists():
+        return -2, None
     src.write_bytes(blob)
     dest.unlink(missing_ok=True)
     partial.unlink(missing_ok=True)
     try:
         try:
-            r = _run_decoder_cmd([str(EXE), "encode", str(src), str(dest)], timeout=60.0, stop_file=None)
+            r = _run_decoder_cmd([str(exe), "encode", str(src), str(dest)], timeout=60.0, stop_file=stop_file)
+        except _AbortedByPeer:
+            return -2, None
         except subprocess.TimeoutExpired:
-            (WORK / f"pnghang{i}.png").write_bytes(blob)
+            (work_dir / f"pnghang{i}.png").write_bytes(blob)
             return -1, f"PNG HANG at iteration {i}"
-        if r.returncode not in (0, 3, 4) or partial.exists() or (r.returncode != 0 and dest.exists()) or (r.returncode == 0 and not dest.exists()):
-            (WORK / f"pngbad{i}.png").write_bytes(blob)
+        over_limit = _png_ihdr_over_limit(blob)
+        allowed_rcs = (5,) if over_limit else (0, 3, 4)
+        if r.returncode not in allowed_rcs or partial.exists() or (r.returncode != 0 and dest.exists()) or (r.returncode == 0 and not dest.exists()):
+            (work_dir / f"pngbad{i}.png").write_bytes(blob)
             return -1, f"PNG BAD exit {r.returncode:#x} at iteration {i}: {r.stderr.decode(errors='replace').strip()}"
-        if r.returncode != 0 and _png_is_supported_valid(blob):
+        valid_sup = _png_is_supported_valid(blob)
+        if r.returncode != 0 and valid_sup:
+            (work_dir / f"pngmismatch{i}.png").write_bytes(blob)
             return -1, f"PNG MISMATCH valid supported PNG refused with exit {r.returncode} at iteration {i}"
         if r.returncode == 0:
+            if not valid_sup:
+                (work_dir / f"pngmismatch{i}.png").write_bytes(blob)
+                return -1, f"PNG MISMATCH encoder accepted oracle-invalid PNG at iteration {i}"
             try:
                 with Image.open(src) as im:
                     rgba = im.convert("RGBA")
@@ -787,23 +870,411 @@ def verify_png_mutation(i: int, blob: bytes) -> tuple[int, str | None]:
         partial.unlink(missing_ok=True)
 
 
-def run_png_fuzz(iterations: int, rng: random.Random) -> int:
-    WORK.mkdir(parents=True, exist_ok=True)
-    base = png_seeds()
-    # Every unmutated seed is a supported, valid PNG: it must be
-    # accepted with exact pixels, so a reader that refused everything
-    # could not pass this fuzz run.
+def bmp_seeds() -> list[bytes]:
+    """Supported valid 24-bit uncompressed BMP seeds (bottom-up, top-down,
+    odd widths with row padding, pixel-offset gap, and zero bfSize/biSizeImage)."""
+    blobs: list[bytes] = []
+    for w, h, topdown, gap, zero_bf, zero_bi in (
+        (16, 12, False, 0, False, False),
+        (15, 13, False, 0, False, False),   # 1-byte row padding
+        (14, 12, True, 0, False, False),    # top-down + 2-byte row padding
+        (13, 12, False, 16, False, True),   # 3-byte row padding + header gap + biSizeImage == 0
+        (17, 12, True, 8, True, False),     # top-down + bfSize == 0
+    ):
+        rgb = bytes(((x * 7 + y * 13 + c * 43) & 255) for y in range(h) for x in range(w) for c in range(3))
+        stride = (w * 3 + 3) & ~3
+        off = 54 + gap
+        total = off + stride * h
+        hdr = bytearray(off)
+        struct.pack_into("<H", hdr, 0, 0x4D42)
+        struct.pack_into("<I", hdr, 2, 0 if zero_bf else total)
+        struct.pack_into("<I", hdr, 10, off)
+        struct.pack_into("<I", hdr, 14, 40)
+        struct.pack_into("<i", hdr, 18, w)
+        struct.pack_into("<i", hdr, 22, -h if topdown else h)
+        struct.pack_into("<H", hdr, 26, 1)
+        struct.pack_into("<H", hdr, 28, 24)
+        struct.pack_into("<I", hdr, 30, 0)
+        struct.pack_into("<I", hdr, 34, 0 if zero_bi else stride * h)
+        rows = bytearray(stride * h)
+        for y in range(h):
+            file_row = y if topdown else (h - 1 - y)
+            base = file_row * stride
+            src_row = y * w * 3
+            for x in range(w):
+                r_ch, g_ch, b_ch = rgb[src_row + 3 * x : src_row + 3 * x + 3]
+                rows[base + 3 * x : base + 3 * x + 3] = bytes((b_ch, g_ch, r_ch))
+        blobs.append(bytes(hdr + rows))
+    return blobs
+
+
+def bmp_ref_load(blob: bytes) -> tuple[int, tuple[int, int, bytes] | None]:
+    """Independent Python specification of the BMP subset in spec/FOLD.md:
+    returns (0, (w, h, rgb)), (3, None) for unsupported BMP features,
+    (4, None) for malformed BMP data, or (5, None) when dimensions exceed limits."""
+    size = len(blob)
+    if size < 54:
+        return 4, None
+    if struct.unpack_from("<H", blob, 0)[0] != 0x4D42:
+        return 4, None
+    if struct.unpack_from("<I", blob, 14)[0] != 40:
+        return 3, None
+    sw = struct.unpack_from("<i", blob, 18)[0]
+    if sw < 1:
+        return 4, None
+    if sw > RF_MAX_DIM:
+        return 5, None
+    sh = struct.unpack_from("<i", blob, 22)[0]
+    if sh == 0 or sh == -2147483648:
+        return 4, None
+    topdown = sh < 0
+    w, h = sw, (-sh if topdown else sh)
+    if h > RF_MAX_DIM:
+        return 5, None
+    if struct.unpack_from("<H", blob, 26)[0] != 1:
+        return 3, None
+    if struct.unpack_from("<H", blob, 28)[0] != 24:
+        return 3, None
+    if struct.unpack_from("<I", blob, 30)[0] != 0:
+        return 3, None
+    if w * h > RF_MAX_PIXELS:
+        return 5, None
+    off = struct.unpack_from("<I", blob, 10)[0]
+    if off < 54:
+        return 4, None
+    stride = (w * 3 + 3) & ~3
+    pixel_end = off + stride * h
+    if pixel_end > size:
+        return 4, None
+    bf_size = struct.unpack_from("<I", blob, 2)[0]
+    if bf_size != 0 and (bf_size > size or bf_size < pixel_end):
+        return 4, None
+    image_size = struct.unpack_from("<I", blob, 34)[0]
+    if image_size != 0 and image_size < stride * h:
+        return 4, None
+    out = bytearray(w * h * 3)
+    for y in range(h):
+        file_row = y if topdown else (h - 1 - y)
+        row_off = off + stride * file_row
+        dst_off = y * w * 3
+        for x in range(w):
+            b_ch, g_ch, r_ch = blob[row_off + 3 * x : row_off + 3 * x + 3]
+            out[dst_off + 3 * x : dst_off + 3 * x + 3] = bytes((r_ch, g_ch, b_ch))
+    return 0, (w, h, bytes(out))
+
+
+def mutate_bmp(blob: bytes, rng: random.Random) -> bytes:
+    b = bytearray(blob)
+    kind = rng.randrange(7)
+    if kind == 0:  # flip bits in pixel or padding bytes (often stays valid)
+        start = min(len(b) - 1, max(54, struct.unpack_from("<I", b, 10)[0] if len(b) >= 14 else 54))
+        for _ in range(rng.randrange(1, 5)):
+            b[rng.randrange(start, len(b))] ^= 1 << rng.randrange(8)
+    elif kind == 1:  # truncate anywhere
+        return bytes(b[: rng.randrange(0, len(b))])
+    elif kind == 2:  # mutate DIB header size, planes, bpp, or compression (probes exit 3)
+        field = rng.randrange(4)
+        if field == 0 and len(b) >= 18:
+            struct.pack_into("<I", b, 14, rng.choice((12, 40, 108, 124, 999)))
+        elif field == 1 and len(b) >= 28:
+            struct.pack_into("<H", b, 26, rng.choice((0, 2, 255)))
+        elif field == 2 and len(b) >= 30:
+            struct.pack_into("<H", b, 28, rng.choice((1, 4, 8, 16, 32)))
+        elif len(b) >= 34:
+            struct.pack_into("<I", b, 30, rng.choice((1, 2, 3, 6)))
+    elif kind == 3 and len(b) >= 26:  # mutate width/height (0, negative, INT_MIN, >RF_MAX_DIM, >RF_MAX_PIXELS, +/- delta)
+        sw, sh = struct.unpack_from("<ii", b, 18)
+        sub = rng.randrange(3)
+        if sub == 0:
+            sw, sh = rng.choice([
+                (0, sh), (-5, sh), (sw, 0), (sw, -2147483648),
+                (RF_MAX_DIM + 1, 1), (1, RF_MAX_DIM + 1), (1, -(RF_MAX_DIM + 1)),
+                (8192, 4097), (8192, -4097),
+            ])
+        elif sub == 1:
+            sh = -sh
+        else:
+            sw = max(1, sw + rng.randrange(-3, 4))
+        struct.pack_into("<ii", b, 18, sw, sh)
+    elif kind == 4 and len(b) >= 38:  # mutate bfSize, bfOffBits, or biSizeImage
+        field = rng.randrange(3)
+        if field == 0:
+            struct.pack_into("<I", b, 2, rng.choice((0, 1, 53, len(b) - 1, len(b), len(b) + 16)))
+        elif field == 1:
+            struct.pack_into("<I", b, 10, rng.choice((0, 14, 53, 54, len(b) + 4)))
+        else:
+            struct.pack_into("<I", b, 34, rng.choice((0, 1, 12, len(b))))
+    elif kind == 5:  # append trailing bytes (valid when bfSize == 0 or bfSize <= new size, invalid if bfSize > size)
+        b.extend(bytes(rng.randrange(256) for _ in range(rng.randrange(1, 17))))
+    else:  # corrupt signature or random header byte
+        b[rng.randrange(min(len(b), 54))] ^= 1 << rng.randrange(8)
+    return bytes(b)
+
+
+def verify_bmp_mutation(
+    i: int,
+    blob: bytes,
+    exe: Path = EXE,
+    work_dir: Path = WORK,
+    stop_file: Path | None = None,
+) -> tuple[int, str | None]:
+    pid = os.getpid()
+    src = work_dir / f"b_{pid}_{i}.bmp"
+    dest = work_dir / f"b_{pid}_{i}.fold"
+    partial = Path(f"{dest}.partial")
+    if stop_file is not None and stop_file.exists():
+        return -2, None
+    src.write_bytes(blob)
+    dest.unlink(missing_ok=True)
+    partial.unlink(missing_ok=True)
+    try:
+        try:
+            r = _run_decoder_cmd([str(exe), "encode", str(src), str(dest)], timeout=60.0, stop_file=stop_file)
+        except _AbortedByPeer:
+            return -2, None
+        except subprocess.TimeoutExpired:
+            (work_dir / f"bmphang{i}.bmp").write_bytes(blob)
+            return -1, f"BMP HANG at iteration {i}"
+        if r.returncode not in (0, 3, 4, 5) or partial.exists() or (r.returncode != 0 and dest.exists()) or (r.returncode == 0 and not dest.exists()):
+            (work_dir / f"bmpbad{i}.bmp").write_bytes(blob)
+            return -1, f"BMP BAD exit {r.returncode:#x} at iteration {i}: {r.stderr.decode(errors='replace').strip()}"
+        ref_rc, ref_img = bmp_ref_load(blob)
+        if r.returncode != ref_rc:
+            (work_dir / f"bmpmismatch{i}.bmp").write_bytes(blob)
+            return -1, f"BMP MISMATCH exit {r.returncode} != oracle {ref_rc} at iteration {i}"
+        if r.returncode == 0:
+            try:
+                got = rf.decode_image(dest.read_bytes())
+            except rf.FormatError as exc:
+                (work_dir / f"bmpmismatch{i}.bmp").write_bytes(blob)
+                return -1, f"BMP MISMATCH oracle rejected encoded output at iteration {i}: {exc}"
+            if got != ref_img:
+                (work_dir / f"bmpmismatch{i}.bmp").write_bytes(blob)
+                return -1, f"BMP MISMATCH pixels differ at iteration {i}"
+        return r.returncode, None
+    finally:
+        src.unlink(missing_ok=True)
+        dest.unlink(missing_ok=True)
+        partial.unlink(missing_ok=True)
+
+
+def ppm_seeds() -> list[bytes]:
+    """Supported valid binary P6 maxval-255 PPM seeds, including comments,
+    varied ASCII whitespace, and first raster bytes starting with '#' or whitespace."""
+    w, h = 17, 13
+    gradient = bytes(((x * 5 + y * 9 + c * 31) & 255) for y in range(h) for x in range(w) for c in range(3))
+    rng = random.Random(91)
+    noise = bytes(rng.randrange(256) for _ in range(w * h * 3))
+    # Raster whose very first byte is '#' and second is ' ' so separator rules are exercised.
+    tricky = bytearray(gradient)
+    tricky[0:3] = b"# \n"
+    return [
+        f"P6\n{w} {h}\n255\n".encode("ascii") + gradient,
+        f"P6\t# header comment\n{w}\r\n# mid comment\n{h}\t255 ".encode("ascii") + noise,
+        f"P6\n# c1\n# c2\n{w} {h}\n255\n".encode("ascii") + bytes(tricky),
+        b"P6\x0b13\x0c11\r255\t" + bytes(((i * 17) & 255) for i in range(13 * 11 * 3)),
+    ]
+
+
+def _ppm_skip(blob: bytes, pos: int) -> int:
+    n = len(blob)
+    while True:
+        while pos < n and blob[pos] in _PPM_WS:
+            pos += 1
+        if pos < n and blob[pos] == ord("#"):
+            while pos < n and blob[pos] != ord("\n"):
+                pos += 1
+            continue
+        return pos
+
+
+def _ppm_token(blob: bytes, pos: int) -> tuple[int, int, int]:
+    """Returns (rc, value, next_pos) matching ppm_number in src/ppm.c."""
+    n = len(blob)
+    p = _ppm_skip(blob, pos)
+    if p >= n or not (0x30 <= blob[p] <= 0x39):
+        return 4, 0, p
+    v = 0
+    while p < n and 0x30 <= blob[p] <= 0x39:
+        v = v * 10 + (blob[p] - 0x30)
+        if v > 4294967295:
+            return 5, 0, p
+        p += 1
+    if p < n and blob[p] not in _PPM_WS and blob[p] != ord("#"):
+        return 4, 0, p
+    return 0, v, p
+
+
+def ppm_ref_load(blob: bytes) -> tuple[int, tuple[int, int, bytes] | None]:
+    """Independent Python specification of binary P6 PPM (maxval 255):
+    returns (0, (w, h, rgb)), (3, None) for P3 or maxval != 255,
+    (4, None) for malformed framing, or (5, None) for token/dimension limits."""
+    size = len(blob)
+    if size < 2:
+        return 4, None
+    if blob[0] != ord("P") or blob[1] not in (ord("6"), ord("3")):
+        return 4, None
+    if blob[1] == ord("3"):
+        return 3, None
+    if size < 3 or blob[2] not in _PPM_WS:
+        return 4, None
+    rc, w, pos = _ppm_token(blob, 2)
+    if rc != 0:
+        return rc, None
+    rc, h, pos = _ppm_token(blob, pos)
+    if rc != 0:
+        return rc, None
+    rc, maxval, pos = _ppm_token(blob, pos)
+    if rc != 0:
+        return rc, None
+    if w == 0 or h == 0:
+        return 4, None
+    if w > RF_MAX_DIM or h > RF_MAX_DIM or w * h > RF_MAX_PIXELS:
+        return 5, None
+    if maxval != 255:
+        return 3, None
+    if pos >= size or blob[pos] not in _PPM_WS:
+        return 4, None
+    pos += 1
+    need = w * h * 3
+    if size - pos != need:
+        return 4, None
+    return 0, (w, h, blob[pos : pos + need])
+
+
+def mutate_ppm(blob: bytes, rng: random.Random) -> bytes:
+    kind = rng.randrange(7)
+    if kind == 0:  # flip raster bytes while keeping header intact (stays valid)
+        b = bytearray(blob)
+        start = min(len(b) - 1, 24)
+        for _ in range(rng.randrange(1, 5)):
+            b[rng.randrange(start, len(b))] ^= 1 << rng.randrange(8)
+        return bytes(b)
+    if kind == 1:  # truncate
+        return blob[: rng.randrange(0, len(blob))]
+    if kind == 2:  # append trailing byte(s) (must be rejected with 4)
+        return blob + bytes(rng.randrange(256) for _ in range(rng.randrange(1, 9)))
+    if kind == 3:  # probe P3, bad magic, or maxval != 255 (exit 3 or 4)
+        sub = rng.randrange(3)
+        if sub == 0:
+            return b"P3\n2 2\n255\n0 0 0  255 255 255  1 2 3  4 5 6\n"
+        if sub == 1:
+            mv = rng.choice((0, 1, 15, 254, 256, 65535))
+            return f"P6\n4 3\n{mv}\n".encode("ascii") + bytes(36 if mv <= 255 else 72)
+        b = bytearray(blob)
+        b[1] = rng.choice((ord("1"), ord("2"), ord("4"), ord("5"), ord("7"), 0))
+        return bytes(b)
+    if kind == 4:  # probe dimension / token overflow limits (exit 4 or 5)
+        hdr = rng.choice((
+            b"P6\n0 4\n255\n",
+            b"P6\n4 0\n255\n",
+            b"P6\n32769 1\n255\n",
+            b"P6\n1 32769\n255\n",
+            b"P6\n8192 4097\n255\n",
+            b"P6\n4294967296 1\n255\n",
+            b"P6\n1 99999999999999999999\n255\n",
+            b"P6\n4 4\n4294967296\n",
+        ))
+        return hdr + bytes(rng.randrange(256) for _ in range(12))
+    if kind == 5:  # probe comments, double whitespace after maxval, or comment after maxval
+        w, h = rng.choice(((4, 3), (7, 5), (16, 8)))
+        sep = rng.choice((b"\n", b" ", b"\t", b"\n# comment after maxval\n", b"  ", b""))
+        c_ins = rng.choice((b"#ok\n", b"", b" #c\r\n"))
+        raster = bytes(rng.randrange(256) for _ in range(w * h * 3))
+        return b"P6\n" + c_ins + f"{w} {h}\n".encode("ascii") + c_ins + b"255" + sep + raster
+    b = bytearray(blob)
+    b[rng.randrange(len(b))] = rng.randrange(256)
+    return bytes(b)
+
+
+def verify_ppm_mutation(
+    i: int,
+    blob: bytes,
+    exe: Path = EXE,
+    work_dir: Path = WORK,
+    stop_file: Path | None = None,
+) -> tuple[int, str | None]:
+    pid = os.getpid()
+    src = work_dir / f"m_{pid}_{i}.ppm"
+    dest = work_dir / f"m_{pid}_{i}.fold"
+    partial = Path(f"{dest}.partial")
+    if stop_file is not None and stop_file.exists():
+        return -2, None
+    src.write_bytes(blob)
+    dest.unlink(missing_ok=True)
+    partial.unlink(missing_ok=True)
+    try:
+        try:
+            r = _run_decoder_cmd([str(exe), "encode", str(src), str(dest)], timeout=60.0, stop_file=stop_file)
+        except _AbortedByPeer:
+            return -2, None
+        except subprocess.TimeoutExpired:
+            (work_dir / f"ppmhang{i}.ppm").write_bytes(blob)
+            return -1, f"PPM HANG at iteration {i}"
+        if r.returncode not in (0, 3, 4, 5) or partial.exists() or (r.returncode != 0 and dest.exists()) or (r.returncode == 0 and not dest.exists()):
+            (work_dir / f"ppmbad{i}.ppm").write_bytes(blob)
+            return -1, f"PPM BAD exit {r.returncode:#x} at iteration {i}: {r.stderr.decode(errors='replace').strip()}"
+        ref_rc, ref_img = ppm_ref_load(blob)
+        if r.returncode != ref_rc:
+            (work_dir / f"ppmmismatch{i}.ppm").write_bytes(blob)
+            return -1, f"PPM MISMATCH exit {r.returncode} != oracle {ref_rc} at iteration {i}"
+        if r.returncode == 0:
+            try:
+                got = rf.decode_image(dest.read_bytes())
+            except rf.FormatError as exc:
+                (work_dir / f"ppmmismatch{i}.ppm").write_bytes(blob)
+                return -1, f"PPM MISMATCH oracle rejected encoded output at iteration {i}: {exc}"
+            if got != ref_img:
+                (work_dir / f"ppmmismatch{i}.ppm").write_bytes(blob)
+                return -1, f"PPM MISMATCH pixels differ at iteration {i}"
+        return r.returncode, None
+    finally:
+        src.unlink(missing_ok=True)
+        dest.unlink(missing_ok=True)
+        partial.unlink(missing_ok=True)
+
+
+def _worker_verify_input(args: tuple[str, int, bytes, str, str]) -> tuple[int, int, str | None, str]:
+    fmt, i, blob, exe_str, work_str = args
+    work_dir = Path(work_str)
+    stop_file = work_dir / ".fuzz_stop"
+    exe_path = Path(exe_str)
+    if fmt == "png":
+        rc, err = verify_png_mutation(i, blob, exe_path, work_dir, stop_file)
+    elif fmt == "bmp":
+        rc, err = verify_bmp_mutation(i, blob, exe_path, work_dir, stop_file)
+    elif fmt == "ppm":
+        rc, err = verify_ppm_mutation(i, blob, exe_path, work_dir, stop_file)
+    else:
+        raise ValueError(f"unknown input format {fmt!r}")
+    return i, rc, err, fmt
+
+
+def _worker_verify_any(args: tuple[str, int, bytes, str, str, str]) -> tuple[int, int, str | None, str]:
+    fmt, i, blob, threads, exe_str, work_str = args
+    work_dir = Path(work_str)
+    stop_file = work_dir / ".fuzz_stop"
+    exe_path = Path(exe_str)
+    if fmt == "fold":
+        rc, err = verify_mutation(i, blob, threads, exe_path, work_dir, stop_file)
+    elif fmt == "png":
+        rc, err = verify_png_mutation(i, blob, exe_path, work_dir, stop_file)
+    elif fmt == "bmp":
+        rc, err = verify_bmp_mutation(i, blob, exe_path, work_dir, stop_file)
+    elif fmt == "ppm":
+        rc, err = verify_ppm_mutation(i, blob, exe_path, work_dir, stop_file)
+    else:
+        raise ValueError(f"unknown format {fmt!r}")
+    return i, rc, err, fmt
+
+
+def _check_png_seeds_and_oracle(base: list[bytes]) -> str | None:
     for s, seed in enumerate(base):
         rc, err = verify_png_mutation(-(s + 1), seed)
         if err is not None:
-            print(err)
-            return 1
+            return err
         if rc != 0:
-            print(f"PNG seed {s} refused with exit {rc}, want 0")
-            return 1
-    # The valid-supported oracle itself must refuse the malformed
-    # framings the native reader refuses: trailing bytes after IEND,
-    # a palette after IDAT, and a duplicate palette.
+            return f"PNG seed {s} refused with exit {rc}, want 0"
     seed_chunks = _png_chunks(base[0]) or []
     trailing = base[0] + b"x"
     plte_late = _png_build(seed_chunks[:-1] + [(b"PLTE", b"\x01\x02\x03"), seed_chunks[-1]])
@@ -811,55 +1282,302 @@ def run_png_fuzz(iterations: int, rng: random.Random) -> int:
     ihdr_dup = _png_build(seed_chunks[:1] + seed_chunks[:1] + seed_chunks[1:])
     bad_crc = bytearray(base[0])
     bad_crc[29] ^= 0xFF  # inside IHDR data; its CRC no longer matches
+    over_ihdr = bytearray(seed_chunks[0][1])
+    struct.pack_into(">II", over_ihdr, 0, RF_MAX_DIM + 1, 1)
+    over_png = _png_build([(b"IHDR", bytes(over_ihdr)), *seed_chunks[1:]])
     for name, variant in (("trailing", trailing), ("plte_late", plte_late), ("plte_dup", plte_dup),
-                          ("ihdr_dup", ihdr_dup), ("bad_crc", bytes(bad_crc))):
+                          ("ihdr_dup", ihdr_dup), ("bad_crc", bytes(bad_crc)), ("over_png", over_png)):
         if _png_is_supported_valid(variant):
-            print(f"PNG oracle self-check failed: {name} judged valid")
-            return 1
-    counts = {0: 0, 3: 0, 4: 0}
-    for i in range(iterations):
-        blob = mutate_png(base[i % len(base)], rng)
-        rc, err = verify_png_mutation(i, blob)
+            return f"PNG oracle self-check failed: {name} judged valid"
+    if not _png_ihdr_over_limit(over_png):
+        return "PNG oracle self-check failed: over_png not classified as over-limit"
+    return None
+
+
+def _check_bmp_seeds_and_oracle(base: list[bytes]) -> str | None:
+    for s, seed in enumerate(base):
+        rc, err = verify_bmp_mutation(-(s + 1), seed)
+        if err is not None:
+            return err
+        if rc != 0:
+            return f"BMP seed {s} refused with exit {rc}, want 0"
+    trunc = base[0][:40]
+    unsup_bpp = bytearray(base[0])
+    struct.pack_into("<H", unsup_bpp, 28, 32)
+    over_dim = bytearray(base[0])
+    struct.pack_into("<i", over_dim, 18, RF_MAX_DIM + 1)
+    int_min_h = bytearray(base[0])
+    struct.pack_into("<i", int_min_h, 22, -2147483648)
+    for name, blob, want_rc in (
+        ("trunc", trunc, 4),
+        ("unsup_bpp", bytes(unsup_bpp), 3),
+        ("over_dim", bytes(over_dim), 5),
+        ("int_min_h", bytes(int_min_h), 4),
+    ):
+        got_rc, _ = bmp_ref_load(blob)
+        if got_rc != want_rc:
+            return f"BMP oracle self-check failed on {name}: got {got_rc}, want {want_rc}"
+    return None
+
+
+def _check_ppm_seeds_and_oracle(base: list[bytes]) -> str | None:
+    for s, seed in enumerate(base):
+        rc, err = verify_ppm_mutation(-(s + 1), seed)
+        if err is not None:
+            return err
+        if rc != 0:
+            return f"PPM seed {s} refused with exit {rc}, want 0"
+    for name, blob, want_rc in (
+        ("trailing", base[0] + b"x", 4),
+        ("p3", b"P3\n1 1\n255\n0 0 0\n", 3),
+        ("maxval16", b"P6\n1 1\n65535\n\x00\x00\x00\x00\x00\x00", 3),
+        ("over_tok", b"P6\n4294967296 1\n255\n\x00\x00\x00", 5),
+        ("over_dim", b"P6\n32769 1\n255\n\x00\x00\x00", 5),
+        ("comment_after_maxval", b"P6\n1 1\n255#c\n\x00\x00\x00", 4),
+    ):
+        got_rc, _ = ppm_ref_load(blob)
+        if got_rc != want_rc:
+            return f"PPM oracle self-check failed on {name}: got {got_rc}, want {want_rc}"
+    return None
+
+
+def _run_input_fuzz(fmt: str, iterations: int, rng: random.Random) -> int:
+    with _staged_fuzz_env() as (staged_exe, work_dir):
+        if fmt == "png":
+            base = png_seeds()
+            err = _check_png_seeds_and_oracle(base)
+            mutate_fn = mutate_png
+            verify_fn = verify_png_mutation
+            label = "PNG"
+        elif fmt == "bmp":
+            base = bmp_seeds()
+            err = _check_bmp_seeds_and_oracle(base)
+            mutate_fn = mutate_bmp
+            verify_fn = verify_bmp_mutation
+            label = "BMP"
+        else:
+            base = ppm_seeds()
+            err = _check_ppm_seeds_and_oracle(base)
+            mutate_fn = mutate_ppm
+            verify_fn = verify_ppm_mutation
+            label = "PPM"
         if err is not None:
             print(err)
             return 1
-        counts[rc] += 1
-    print(f"{iterations} mutated PNG files: {counts[0]} accepted, {counts[3]} unsupported, {counts[4]} malformed, no crash or hang")
+        if iterations <= 20:
+            counts = {0: 0, 3: 0, 4: 0, 5: 0}
+            for i in range(iterations):
+                blob = mutate_fn(base[i % len(base)], rng)
+                rc, err = verify_fn(i, blob, staged_exe, work_dir)
+                if err is not None:
+                    print(err)
+                    return 1
+                counts[rc] += 1
+        else:
+            exe_s, work_s = str(staged_exe), str(work_dir)
+            tasks = ((fmt, i, mutate_fn(base[i % len(base)], rng), exe_s, work_s) for i in range(iterations))
+            workers = min(os.cpu_count() or 4, 12)
+            counts, err = run_tasks_parallel(
+                tasks, workers, worker_fn=_worker_verify_input, valid_rcs=(0, 3, 4, 5)
+            )
+            if err is not None:
+                print(err)
+                return 1
+    limit_note = f", {counts[5]} over-limit" if counts[5] else ""
+    print(f"{iterations} mutated {label} files: {counts[0]} accepted, {counts[3]} unsupported, {counts[4]} malformed{limit_note}, no crash, hang or mismatch")
+    return 0
+
+
+def run_png_fuzz(iterations: int, rng: random.Random) -> int:
+    return _run_input_fuzz("png", iterations, rng)
+
+
+def run_bmp_fuzz(iterations: int, rng: random.Random) -> int:
+    return _run_input_fuzz("bmp", iterations, rng)
+
+
+def run_ppm_fuzz(iterations: int, rng: random.Random) -> int:
+    return _run_input_fuzz("ppm", iterations, rng)
+
+
+_ALL_FOLD_RING: tuple[int, ...] = (0, 1, 2, 3, 4, 5, 6, 0, 2, 3, 4, 5, 6, 0, 2, 3, 4, 5, 6, 0, 2, 3, 4, 5, 6)
+
+
+def run_all_formats_fuzz(iterations: int, rng: random.Random) -> int:
+    """Unified campaign across .fold methods 0..6 and input formats BMP, PNG, PPM."""
+    fold_records = seed_records()
+    fold_base = [blob for _, _, _, _, blob in fold_records]
+    by_method: dict[int, list[bytes]] = {m: [] for m in range(7)}
+    cm_compact: list[bytes] = []
+    cm_tall: list[bytes] = []
+    for _, w, h, m, blob in fold_records:
+        by_method[m].append(blob)
+        if m == 1:
+            (cm_compact if w * h <= 4096 else cm_tall).append(blob)
+    bmp_base = bmp_seeds()
+    png_base = png_seeds()
+    ppm_base = ppm_seeds()
+
+    method_counts = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0}
+    fmt_counts: dict[str, dict[int, int]] = {
+        "fold": {0: 0, 4: 0},
+        "bmp": {0: 0, 3: 0, 4: 0, 5: 0},
+        "png": {0: 0, 3: 0, 4: 0, 5: 0},
+        "ppm": {0: 0, 3: 0, 4: 0, 5: 0},
+    }
+
+    with _staged_fuzz_env() as (staged_exe, work_dir):
+        for s, seed_blob in enumerate(fold_base):
+            rc, err = verify_mutation(-(s + 1), seed_blob, ("1", "3", "6", "9")[s % 4], staged_exe, work_dir)
+            if err is not None or rc != 0:
+                print(err or f"FOLD seed {s} refused with exit {rc}, want 0")
+                return 1
+        for check_err in (
+            _check_bmp_seeds_and_oracle(bmp_base),
+            _check_png_seeds_and_oracle(png_base),
+            _check_ppm_seeds_and_oracle(ppm_base),
+        ):
+            if check_err is not None:
+                print(check_err)
+                return 1
+
+        exe_s, work_s = str(staged_exe), str(work_dir)
+        fold_idx = 0
+        cm_idx = 0
+        in_idx = 0
+        per_m_idx = {m: 0 for m in range(7)}
+
+        def task_iter():
+            nonlocal fold_idx, cm_idx, in_idx
+            for i in range(iterations):
+                if i % 6 != 5:
+                    m = _ALL_FOLD_RING[fold_idx % len(_ALL_FOLD_RING)]
+                    fold_idx += 1
+                    if m == 1:
+                        if cm_tall and cm_idx % 16 == 15:
+                            seed_blob = cm_tall[(cm_idx // 16) % len(cm_tall)]
+                        else:
+                            seed_blob = cm_compact[cm_idx % len(cm_compact)]
+                        cm_idx += 1
+                    else:
+                        pool_m = by_method[m]
+                        seed_blob = pool_m[per_m_idx[m] % len(pool_m)]
+                        per_m_idx[m] += 1
+                    method_counts[seed_blob[16]] += 1
+                    blob = mutate(seed_blob, rng)
+                    threads = ("1", "3", "6", "9")[fold_idx % 4]
+                    yield ("fold", i, blob, threads, exe_s, work_s)
+                else:
+                    fmt = ("bmp", "png", "ppm")[in_idx % 3]
+                    k = in_idx // 3
+                    in_idx += 1
+                    if fmt == "bmp":
+                        blob = mutate_bmp(bmp_base[k % len(bmp_base)], rng)
+                    elif fmt == "png":
+                        blob = mutate_png(png_base[k % len(png_base)], rng)
+                    else:
+                        blob = mutate_ppm(ppm_base[k % len(ppm_base)], rng)
+                    yield (fmt, i, blob, "1", exe_s, work_s)
+
+        if iterations <= 20:
+            for fmt, i, blob, threads, _, _ in task_iter():
+                _, rc, err, _ = _worker_verify_any((fmt, i, blob, threads, exe_s, work_s))
+                if err is not None:
+                    print(err)
+                    return 1
+                fmt_counts[fmt][rc] += 1
+        else:
+            workers = min(os.cpu_count() or 4, 16)
+            stop_file = work_dir / ".fuzz_stop"
+            stop_file.unlink(missing_ok=True)
+            it = task_iter()
+            max_inflight = max(1, workers * 2)
+            pool = ProcessPoolExecutor(max_workers=workers)
+            pending: set[Future] = set()
+            try:
+                for _ in range(max_inflight):
+                    try:
+                        pending.add(pool.submit(_worker_verify_any, next(it)))
+                    except StopIteration:
+                        break
+                while pending:
+                    done, pending = wait(pending, return_when=FIRST_COMPLETED)
+                    for fut in done:
+                        _, rc, err, fmt = fut.result()
+                        if err is not None:
+                            _stop_and_drain_pool(pool, pending, stop_file)
+                            print(err)
+                            return 1
+                        if rc in fmt_counts[fmt]:
+                            fmt_counts[fmt][rc] += 1
+                        try:
+                            pending.add(pool.submit(_worker_verify_any, next(it)))
+                        except StopIteration:
+                            pass
+            except BaseException:
+                _stop_and_drain_pool(pool, pending, stop_file)
+                raise
+            finally:
+                stop_file.unlink(missing_ok=True)
+            pool.shutdown(wait=True)
+
+    m_summary = ", ".join(f"{m}:{method_counts[m]}" for m in (0, 1, 2, 3, 4, 5, 6))
+    fold_tot = sum(fmt_counts["fold"].values())
+    bmp_c, png_c, ppm_c = fmt_counts["bmp"], fmt_counts["png"], fmt_counts["ppm"]
+    print(
+        f"{iterations} mutated files across all methods and input formats "
+        f"(fold={fold_tot} [methods {m_summary}; {fmt_counts['fold'][4]} rejected, {fmt_counts['fold'][0]} valid]; "
+        f"BMP={sum(bmp_c.values())} [{bmp_c[0]} ok, {bmp_c[3]} unsup, {bmp_c[4]} bad, {bmp_c[5]} limit]; "
+        f"PNG={sum(png_c.values())} [{png_c[0]} ok, {png_c[3]} unsup, {png_c[4]} bad, {png_c[5]} limit]; "
+        f"PPM={sum(ppm_c.values())} [{ppm_c[0]} ok, {ppm_c[3]} unsup, {ppm_c[4]} bad, {ppm_c[5]} limit]): "
+        f"no crash, hang or mismatch"
+    )
     return 0
 
 
 def main() -> int:
-    png_mode = "--png" in sys.argv
-    argv = [a for a in sys.argv[1:] if a != "--png"]
+    flags = {a for a in sys.argv[1:] if a in ("--png", "--bmp", "--ppm", "--all-formats")}
+    if len(flags) > 1:
+        print("choose at most one mode flag (--png, --bmp, --ppm, --all-formats)")
+        return 2
+    argv = [a for a in sys.argv[1:] if a not in flags]
     iterations = int(argv[0]) if len(argv) > 0 else 300
     rng = random.Random(int(argv[1]) if len(argv) > 1 else 1)
-    if png_mode:
+    if "--png" in flags:
         return run_png_fuzz(iterations, rng)
-    WORK.mkdir(parents=True, exist_ok=True)
+    if "--bmp" in flags:
+        return run_bmp_fuzz(iterations, rng)
+    if "--ppm" in flags:
+        return run_ppm_fuzz(iterations, rng)
+    if "--all-formats" in flags:
+        return run_all_formats_fuzz(iterations, rng)
     base = seeds()
     counts = {0: 0, 4: 0}
     method_counts = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0}
-    tasks: list[tuple[int, bytes, str, str, str]] = []
-    for i in range(iterations):
-        seed_blob = base[i % len(base)]
-        method_counts[seed_blob[16]] += 1
-        blob = mutate(seed_blob, rng)
-        threads = ("1", "3", "6", "9")[i % 4]
-        tasks.append((i, blob, threads, str(EXE), str(WORK)))
+    with _staged_fuzz_env() as (staged_exe, work_dir):
+        exe_s, work_s = str(staged_exe), str(work_dir)
 
-    if iterations <= 20:
-        for i, blob, threads, _, _ in tasks:
-            rc, err = verify_mutation(i, blob, threads, EXE, WORK)
+        def fold_tasks():
+            for i in range(iterations):
+                seed_blob = base[i % len(base)]
+                method_counts[seed_blob[16]] += 1
+                blob = mutate(seed_blob, rng)
+                threads = ("1", "3", "6", "9")[i % 4]
+                yield (i, blob, threads, exe_s, work_s)
+
+        if iterations <= 20:
+            for i, blob, threads, _, _ in fold_tasks():
+                rc, err = verify_mutation(i, blob, threads, staged_exe, work_dir)
+                if err is not None:
+                    print(err)
+                    return 1
+                counts[rc] += 1
+        else:
+            workers = min(os.cpu_count() or 4, 12)
+            counts, err = run_tasks_parallel(fold_tasks(), workers)
             if err is not None:
                 print(err)
                 return 1
-            counts[rc] += 1
-    else:
-        workers = min(os.cpu_count() or 4, 12)
-        counts, err = run_tasks_parallel(tasks, workers)
-        if err is not None:
-            print(err)
-            return 1
 
     m_summary = ", ".join(f"{m}:{method_counts[m]}" for m in (0, 1, 2, 3, 4, 5, 6))
     print(f"{iterations} mutated files (methods {m_summary}): {counts[4]} rejected, {counts[0]} still valid, no crash, hang or mismatch")

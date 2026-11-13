@@ -76,3 +76,47 @@ The encoder writes method 4 (compact palette) since `D01 T06 §8`, so the seed s
 $ python3 tests/fuzz_decode.py 2000 20261111
 2000 mutated files (methods 0:118, 1:1174, 2:236, 3:236, 4:236): 1893 rejected, 107 still valid, no crash, hang or mismatch
 ```
+
+## Release 1.0.0 Campaign (`D09 T01 §4`, 2026-11-13)
+
+`D09 T01 §4` extended `tests/fuzz_decode.py` to cover all seven `.fold` methods (`0` `RAW`, `1` `CM` across `S in {1, 2, 3, 4}` and `--threads 1, 3, 6, 9`, `2` `PAL`, `3` `PAL2`, `4` `PAL3`, `5` `SC5`, `6` `SC6` -- 21 `.fold` seeds total) plus all three supported CLI input formats (`BMP`, `PNG`, `PPM`) through `--bmp`, `--ppm`, and unified parallel `--all-formats`, checking bidirectional exit-code and pixel agreement against independent Python reference loaders (`bmp_ref_load`, Pillow + `_png_is_supported_valid` / `_png_ihdr_over_limit`, `ppm_ref_load`) and `tests/rfi_ref.py`.
+
+Linux (`bin/linux-x64/bin/rasterfold`, `4 x 30,000 = 120,000` mutations across seeds `20261113..20261116`):
+
+```text
+$ python3 tests/fuzz_decode.py --all-formats 30000 20261113
+30000 mutated files across all methods and input formats (fold=25000 [methods 0:4000, 1:1000, 2:4000, 3:4000, 4:4000, 5:4000, 6:4000; 22673 rejected, 2327 valid]; BMP=1667 [835 ok, 257 unsup, 507 bad, 68 limit]; PNG=1667 [244 ok, 23 unsup, 1359 bad, 41 limit]; PPM=1666 [593 ok, 148 unsup, 718 bad, 207 limit]): no crash, hang or mismatch
+
+$ python3 tests/fuzz_decode.py --all-formats 30000 20261114
+30000 mutated files across all methods and input formats (fold=25000 [methods 0:4000, 1:1000, 2:4000, 3:4000, 4:4000, 5:4000, 6:4000; 22768 rejected, 2232 valid]; BMP=1667 [816 ok, 281 unsup, 511 bad, 59 limit]; PNG=1667 [215 ok, 20 unsup, 1373 bad, 59 limit]; PPM=1666 [558 ok, 158 unsup, 763 bad, 187 limit]): no crash, hang or mismatch
+
+$ python3 tests/fuzz_decode.py --all-formats 30000 20261115
+30000 mutated files across all methods and input formats (fold=25000 [methods 0:4000, 1:1000, 2:4000, 3:4000, 4:4000, 5:4000, 6:4000; 22756 rejected, 2244 valid]; BMP=1667 [848 ok, 289 unsup, 478 bad, 52 limit]; PNG=1667 [217 ok, 30 unsup, 1369 bad, 51 limit]; PPM=1666 [585 ok, 176 unsup, 746 bad, 159 limit]): no crash, hang or mismatch
+
+$ python3 tests/fuzz_decode.py --all-formats 30000 20261116
+30000 mutated files across all methods and input formats (fold=25000 [methods 0:4000, 1:1000, 2:4000, 3:4000, 4:4000, 5:4000, 6:4000; 22847 rejected, 2153 valid]; BMP=1667 [810 ok, 276 unsup, 521 bad, 60 limit]; PNG=1667 [245 ok, 27 unsup, 1344 bad, 51 limit]; PPM=1666 [629 ok, 160 unsup, 720 bad, 157 limit]): no crash, hang or mismatch
+```
+
+Linux aggregate across `120,000` mutated files:
+- `.fold` (`100,000` mutations; `methods 0:16000, 1:4000, 2:16000, 3:16000, 4:16000, 5:16000, 6:16000`): `91,044` rejected with exit code `4`, `8,956` accepted with exit code `0` and identical pixels to `tests/rfi_ref.py`.
+- Input formats (`20,000` mutations across `BMP`, `PNG`, `PPM`): `BMP=6,668` (`3,309` accepted, `1,103` unsupported, `2,017` malformed, `239` over-limit), `PNG=6,668` (`921` accepted, `100` unsupported, `5,445` malformed, `202` over-limit), `PPM=6,664` (`2,365` accepted, `642` unsupported, `2,947` malformed, `710` over-limit); `0` crashes, `0` hangs, and `0` oracle mismatches.
+
+Windows (`bin/windows-x64/bin/rasterfold.exe` via `scripts/windows.py`, `4 x 30,000 = 120,000` mutations across seeds `20261113..20261116`):
+
+```text
+$ python3 scripts/windows.py tests/fuzz_decode.py --all-formats 30000 20261113
+30000 mutated files across all methods and input formats (fold=25000 [methods 0:4000, 1:1000, 2:4000, 3:4000, 4:4000, 5:4000, 6:4000; 22715 rejected, 2285 valid]; BMP=1667 [813 ok, 246 unsup, 542 bad, 66 limit]; PNG=1667 [242 ok, 21 unsup, 1351 bad, 53 limit]; PPM=1666 [582 ok, 158 unsup, 738 bad, 188 limit]): no crash, hang or mismatch
+
+$ python3 scripts/windows.py tests/fuzz_decode.py --all-formats 30000 20261114
+30000 mutated files across all methods and input formats (fold=25000 [methods 0:4000, 1:1000, 2:4000, 3:4000, 4:4000, 5:4000, 6:4000; 22750 rejected, 2250 valid]; BMP=1667 [813 ok, 284 unsup, 510 bad, 60 limit]; PNG=1667 [235 ok, 21 unsup, 1353 bad, 58 limit]; PPM=1666 [578 ok, 180 unsup, 716 bad, 192 limit]): no crash, hang or mismatch
+
+$ python3 scripts/windows.py tests/fuzz_decode.py --all-formats 30000 20261115
+30000 mutated files across all methods and input formats (fold=25000 [methods 0:4000, 1:1000, 2:4000, 3:4000, 4:4000, 5:4000, 6:4000; 22765 rejected, 2235 valid]; BMP=1667 [808 ok, 284 unsup, 512 bad, 63 limit]; PNG=1667 [222 ok, 30 unsup, 1359 bad, 56 limit]; PPM=1666 [599 ok, 168 unsup, 724 bad, 175 limit]): no crash, hang or mismatch
+
+$ python3 scripts/windows.py tests/fuzz_decode.py --all-formats 30000 20261116
+30000 mutated files across all methods and input formats (fold=25000 [methods 0:4000, 1:1000, 2:4000, 3:4000, 4:4000, 5:4000, 6:4000; 22751 rejected, 2249 valid]; BMP=1667 [819 ok, 289 unsup, 488 bad, 71 limit]; PNG=1667 [227 ok, 23 unsup, 1358 bad, 59 limit]; PPM=1666 [562 ok, 168 unsup, 756 bad, 180 limit]): no crash, hang or mismatch
+```
+
+Windows aggregate across `120,000` mutated files:
+- `.fold` (`100,000` mutations; `methods 0:16000, 1:4000, 2:16000, 3:16000, 4:16000, 5:16000, 6:16000`): `90,981` rejected with exit code `4`, `9,019` accepted with exit code `0` and identical pixels to `tests/rfi_ref.py`.
+- Input formats (`20,000` mutations across `BMP`, `PNG`, `PPM`): `BMP=6,668` (`3,253` accepted, `1,103` unsupported, `2,052` malformed, `260` over-limit), `PNG=6,668` (`926` accepted, `95` unsupported, `5,421` malformed, `226` over-limit), `PPM=6,664` (`2,321` accepted, `674` unsupported, `2,934` malformed, `735` over-limit); `0` crashes, `0` hangs, and `0` oracle mismatches.

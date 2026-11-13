@@ -1695,14 +1695,14 @@
       }
     },
     "spec/FOLD.md": {
-      "evidence": "Re-read 2026-11-13 for D01 T07 section 4: authored Method 6, screen content v2 in spec/FOLD.md, kept Method 5 intact as decode-only, updated reference encoder policy and version 2/3 acceptance table, and verified agreement with src/rf.h, src/fold.c, src/sc.c and tests/rfi_ref.py.",
+      "evidence": "Re-read 2026-11-13 for D09 T01 section 4: marked format version 3 final and frozen from release rasterfold-v1.0.0 in spec/FOLD.md and verified agreement with src/rf.h, src/fold.c, src/cm.c, src/crc32.c and tests/rfi_ref.py.",
       "sources": {
         "src/rf.h": "7f58b508d0e3bb10cc2e1c57cda78e3552a2976a99928e0dfa1df16b91e0117d",
         "src/fold.c": "0c3d0d36ead43cec6ca5d0c4ec47dfaf0321ac9777127b7aabf4fa65e011936e",
         "src/cm.c": "54a7f232e08c392b99fb5b23f3584e1e1334abb81baa790d2ef3181622e5bdda",
         "src/crc32.c": "c6e682115185fcdcbfa0551823fc590f60c9c7b978a30009163288e664b3faec",
         "tests/rfi_ref.py": "fe4d92ff92458ecdf2235fd9b54e9d154c411e81f7284a80e7d36edcf93ee2c9",
-        "spec/FOLD.md": "606f59171a6a3e3825fda854679be4e95e9429ee6d68ea1dc98c2ddcf0f3d51a"
+        "spec/FOLD.md": "53f42bf180da23ad5515bc7cf9fbf1bd1ce2aa567e5b0aad8cc9b15b553636dc"
       },
       "reviewed_at": "2026-10-25",
       "reviewer": "Author-attested: 2026-10-25 re-read spec/FOLD.md against src/cm.c after D04 T01 section 1 (early row-boundary abort on exhausted CM stream; bitstream and format semantics unchanged)",
