@@ -302,6 +302,7 @@ class DocsMapTests(unittest.TestCase):
         return directory
 
     def test_no_release_state_links_nothing_that_does_not_exist(self) -> None:
+        self.write_releases()
         build_docs.write_generated_pages(self.root)
         self.assertEqual(self.check_errors(), [])
         page = (self.root / 'docs/downloads.md').read_text(encoding='utf-8')
@@ -351,6 +352,7 @@ class DocsMapTests(unittest.TestCase):
             self.assertNotIn('{%', text, rel)
 
     def test_a_release_changes_every_labelled_page_and_the_gate_sees_the_stale_ones(self) -> None:
+        self.write_releases()
         build_docs.write_generated_pages(self.root)
         self.assertEqual(self.check_errors(), [])
         version = (self.root / 'VERSION').read_text(encoding='utf-8').strip()
@@ -451,6 +453,7 @@ class DocsMapTests(unittest.TestCase):
             build_docs.semver_key('1.0')
 
     def test_record_release_reads_the_published_files_and_refuses_what_disagrees(self) -> None:
+        self.write_releases()
         build_docs.write_generated_pages(self.root)
         version = (self.root / 'VERSION').read_text(encoding='utf-8').strip()
         tag = f'rasterfold-v{version}'
@@ -511,6 +514,7 @@ class DocsMapTests(unittest.TestCase):
             self.assertEqual(build_docs.main(['--root', str(self.root), '--check', '--tag', tag]), 1)
 
     def test_each_release_keeps_its_own_package_inventory(self) -> None:
+        self.write_releases()
         build_docs.write_generated_pages(self.root)
         later = {'windows-x64': ['bin/rasterfold.exe', 'bin/rf2.dll', 'include/rasterfold.h', 'lib/rf2.lib'],
                  'linux-x64': ['bin/rasterfold', 'include/rasterfold.h', 'lib/librf2.so', 'symbols/rasterfold.debug']}
