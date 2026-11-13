@@ -1,0 +1,81 @@
+{
+  "ref": "D09 T01 \u00a74",
+  "title": "Release rasterfold-v1.0.0",
+  "implementation_sha": "8b6225fa0fd85ee94a72f70372cb618567919a99",
+  "date": "2026-11-13",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/09-release/D09-T01-s4.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "python3 scripts/check-all.py --all-targets -> check-all: 32/32 passed",
+    "python3 tests/fuzz_decode.py --all-formats 30000 20261113..20261117 (Linux + Windows) -> 300,000 mutations (250,000 .fold + 50,000 BMP/PNG/PPM), 0 crashes, 0 hangs, 0 mismatches",
+    "gh release view rasterfold-v1.0.0 -> https://github.com/rizonesoft/RasterFold/actions/runs/43487132955 success; published rasterfold-1.0.0-linux-x64.zip (1,514,238 B, sha256 cf873857c1f9...), rasterfold-1.0.0-windows-x64.zip (842,817 B, sha256 20709a84ec0f...), SHA256SUMS",
+    "python3 scripts/verify_release.py --dist build/release-1.0.0 --version 1.0.0 (linux-x64 + windows-x64) -> verify-release: OK on both targets",
+    "python3 scripts/build-docs.py --verify-live https://rizonesoft.github.io/RasterFold/ --expected-commit db755b9675513bba38d7805cecca23a5b0acca0e -> verified 6 page(s) and drift-build.json (attempt 1)",
+    "python3 tests/test_correctness.py -k compat-corpus -> OK compat-corpus (12/12 vectors exact)",
+    "python3 scripts/todo-graph.py validate && python3 scripts/todo-claims.py -> 0 fatal, 0 warning(s); 122/122 claims hold"
+  ],
+  "completion": {
+    "report": "docs/reviews/09-release/D09-T01-s4.md",
+    "verdict": "reconciled",
+    "candidate": "8b6225fa0fd85ee94a72f70372cb618567919a99",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/09-release/D09-T01-s4.md",
+    "candidate": "554b949d40177cd8351768f729e614ce7866b1ab",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "554b949d40177cd8351768f729e614ce7866b1ab",
+  "schedule": {
+    "policy": "three-pass",
+    "pass_cap": 33,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}

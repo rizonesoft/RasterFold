@@ -2,7 +2,7 @@
 schema_version: 1
 id: release-v1
 domain: 09-release
-status: draft
+status: done
 title: "TODO-01 -- Release 1.0"
 depends_on: []
 frozen: true
@@ -47,7 +47,7 @@ track: R1
 |   1   |   §1    | One version source and the changelog | -- |  [x]   |
 | 2 | §2 | The two-target release package | §1, D06 T01 §2 | [x] |
 |   3   |   §3    | The release workflow | §2 |  [x]   |
-| 4 | §4 | Release rasterfold-v1.0.0 | §3, D05 T01 §9, D08 T01 §7 | [ ] |
+| 4 | §4 | Release rasterfold-v1.0.0 | §3, D05 T01 §9, D08 T01 §7 | [x] |
 
 ---
 
@@ -159,6 +159,8 @@ Everything milestone 9 confirmed, frozen and shipped: format version 3 is final 
 
 **Freeze check:** from tag `rasterfold-v1.0.0` (`a0fa1c7c20d3048eff85cfb4f90dfc9596b33aef`), format version 3 is frozen: `testdata/compat/` (`manifest.json` + 12 binary `.fold` vectors across version 2 methods `0`..`3` and version 3 `v1.0.0` methods `0`..`6`, including `v1.0.0/kat_fold3_m1.fold` == `KAT_FOLD3`, `v1.0.0/kat_pal4_m4.fold` == `KAT_PAL4`, and `v1.0.0/kat_sc6_m6.fold` == `KAT_SC6`) is guarded by `compat-corpus` in `tests/test_correctness.py`, and any later change to what version 3 writes requires a new format version.
 
+> **Verified:** 2026-11-13 | §4 | 8b6225fa0fd85ee94a72f70372cb618567919a99
+> **Review:** `docs/reviews/d09-t01-s4.json`
 ## Verification
 
 - [ ] The release page lists the package and `SHA256SUMS`, and the checksums verify

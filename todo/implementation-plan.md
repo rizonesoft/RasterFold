@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **128 of 264 sections complete (48%).** 264 sections (32 discovered); backlog 0 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **129 of 264 sections complete (49%).** 264 sections (32 discovered); backlog 0 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -314,7 +314,7 @@ The 1.0 product: library, command line, references, and the release that freezes
 | [x] | `D09 T01 §2`  | The release package                         | none         |   2   |
 | [x] | `D09 T01 §3`  | The release workflow                        | none         |   6   |
 | [x] | `D08 T01 §7`  | Versioned downloads and complete references | none         |   5   |
-| [ ] | `D09 T01 §4`  | Release rasterfold-v1.0.0                   | none         |   6   |
+| [x] | `D09 T01 §4`  | Release rasterfold-v1.0.0                   | none         |   6   |
 | [ ] | `D05 T01 §10` | Milestone 10 gate: RasterFold 1.0           | idle-machine |   4   |
 
 ### Phase 10 -- Native converter
