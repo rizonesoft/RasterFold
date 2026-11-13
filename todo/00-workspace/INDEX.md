@@ -9,8 +9,6 @@ The toolchain, gates, hooks, CI, and the TODO system every later domain leans on
 | TODO | Title | Status |
 | ---- | ----- | :----: |
 | [TODO-01](./TODO-01-dev-automation.md) | Dev-Automation Wiring | active |
-| [TODO-05](./TODO-05-lsp-subagents-unattended.md) | LSP Servers, Spark/Ember Subagents, Tool-Stack Tuning, and the Unattended Run | draft |
-| [TODO-03](./TODO-03-held-out-validation.md) | Held-Out Validation | draft |
 
 ## Completed
 
@@ -18,6 +16,8 @@ The toolchain, gates, hooks, CI, and the TODO system every later domain leans on
 | ---- | ----- | :-------: |
 | [TODO-02](./TODO-02-measurement-references.md) | Measurement References: JPEG XL e9 and WebP | 2026-10-25 |
 | [TODO-04](./TODO-04-wsl-and-runners.md) | WSL, Local Toolchains, and Isolated Runners | 2026-10-25 |
+| [TODO-03](./TODO-03-held-out-validation.md) | Held-Out Validation | 2026-11-09 |
+| [TODO-05](./TODO-05-lsp-subagents-unattended.md) | LSP Servers, Spark/Ember Subagents, Tool-Stack Tuning, and the Unattended Run | 2026-11-12 |
 
 ## In scope
 

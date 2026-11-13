@@ -75,4 +75,4 @@ Photographs come from a second openly licensed source (Wikimedia Commons feature
 > **Review:** `docs/reviews/d00-t03-s2.json`
 ## Verification
 
-- [ ] `python scripts/todo-graph.py validate` clean
+- [x] `python scripts/todo-graph.py validate` clean (`0 fatal, 0 warning(s)` across 35 todos, 259 sections, verified 2026-11-13)
