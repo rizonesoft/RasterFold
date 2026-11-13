@@ -1554,16 +1554,31 @@ def screen_content_method5() -> None:
     selected_sc("sc5_narrow", 6, 60, rgb_nar)
 
     # Exact distance-window boundary D = 2^20 - 120 = 1048456 (prefix symbol 39, matched) vs D = 1048457 (outside window)
-    # on 1024x1024 (>256 colours in tail so palette is skipped; compared across C, rfi_ref.sc_encode, and screencode.encode).
-    win_w, win_h = 1024, 1024
+    # on 1024x1026 (>256 colours in tail after target_p + 17 so palette is skipped without overwriting key_win; verified
+    # at the token level and compared byte-for-byte across C, rfi_ref.sc_encode, and screencode.encode).
+    win_w, win_h = 1024, 1026
     max_d = (1 << 20) - 120
-    key_win = b"\xca\xfe\x12\x34\x56\x78\x9a\xbc\xde\xf0\x13\x57"
+    key_win = bytes(((i * 53 + 17) & 255 for i in range(48)))
+    win_payloads: dict[str, bytes] = {}
     for tag_w, target_p in (("win_in", max_d), ("win_out", max_d + 1)):
+        check(target_p + 17 <= win_w * win_h - 260, f"{tag_w}: tail overwrites target_p")
         buf_w = bytearray(win_w * win_h * 3)
-        buf_w[0:12] = key_win
-        buf_w[target_p * 3 : target_p * 3 + 12] = key_win
+        buf_w[0:48] = key_win
+        buf_w[48:51] = b"\x01\x02\x03"
+        buf_w[target_p * 3 : target_p * 3 + 48] = key_win
+        buf_w[target_p * 3 + 48 : target_p * 3 + 51] = b"\x04\x05\x06"
         buf_w[-260 * 3 :] = hdr260
         rgb_w = bytes(buf_w)
+        check(rgb_w[0:48] == key_win and rgb_w[target_p * 3 : target_p * 3 + 48] == key_win, f"{tag_w}: key lost")
+        win_toks = list(screencode.tokens(win_w, win_h, rgb_w))
+        if tag_w == "win_in":
+            check((screencode.COPY, 16, max_d) in win_toks, "win_in did not emit (COPY, 16, 2^20 - 120)")
+        else:
+            check(
+                all(t[0] != screencode.COPY or t[2] < max_d for t in win_toks)
+                and (screencode.COPY, 16, max_d) not in win_toks,
+                "win_out emitted a copy across the window boundary",
+            )
         w_bmp = work / f"{tag_w}.bmp"
         w_fold = work / f"{tag_w}.fold"
         w_fold.unlink(missing_ok=True)
@@ -1575,6 +1590,12 @@ def screen_content_method5() -> None:
         check(exp_sc == screencode.encode(win_w, win_h, rgb_w), f"{tag_w}: oracle != prototype at window boundary")
         check(w_blob[32:] == exp_sc, f"{tag_w}: C != oracle at window boundary")
         decodes(w_blob, win_w, win_h, rgb_w, tag_w)
+        win_payloads[tag_w] = exp_sc
+    check(
+        win_payloads["win_in"] != win_payloads["win_out"]
+        and len(win_payloads["win_in"]) < len(win_payloads["win_out"]),
+        "window boundary payloads did not reflect inside vs outside match decision",
+    )
 
     # 4. FNV-1a 16-bit bucket collision fixture (66 distinct 4-pixel keys all hashing to top-16-bit bucket 10870):
     #    k0 is matched within 64 bucket probes first, then pushed past depth 64 by two more colliding keys so
