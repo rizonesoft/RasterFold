@@ -2,7 +2,7 @@
 schema_version: 1
 id: screen-content
 domain: 01-compression
-status: draft
+status: done
 title: "TODO-07 -- Screen Content"
 depends_on: []
 frozen: true
@@ -44,7 +44,7 @@ track: C7
 |   1   |   §1    | A development set of screenshots | -- |  [x]   |
 |   2   |   §2    | Where the bytes go on screenshots, and round 1 planned | §1 |  [x]   |
 |   3   |   §3    | Round 1: a backward-reference method for screen content | §2 |  [x]   |
-|   4   |   §4    | Round 2: spatial copy-distance inheritance, 2D offsets, and recency colour coding | §3 |  [ ]   |
+|   4   |   §4    | Round 2: spatial copy-distance inheritance, 2D offsets, and recency colour coding | §3 |  [x]   |
 
 ---
 
@@ -203,6 +203,8 @@ Acceptance (the stop condition, decided on `screens` before any `heldout` run): 
 
 **Freeze check:** Verified 2026-11-13: `KAT_FOLD`, `KAT_PAL`, `KAT_PAL2`, `KAT_PAL3`, `KAT_PAL2_3`, `KAT_PAL4` and `KAT_SC5` decode to identical pixels on both output paths (`known-answer`, `screen-content-method5` and `screen-content-method6` in `tests/test_correctness.py`); method 6 (`RF_METHOD_SC2 = 6u`) is valid only in unreleased format version 3 (`D99 T01 §3`), refused in version 2 (`unsupported fold: method`, exit 3), and refused by `38c0e37` `rasterfold-m1.exe` with exit 3 (`unsupported fold: method`), never misread.
 
+> **Verified:** 2026-11-13 | §4 | 321d5ea7d837f69980ae86ff9f6e04cfbf118b31
+> **Review:** `docs/reviews/d01-t07-s4.json`
 ## Verification
 
 - [ ] `python3 scripts/todo-graph.py validate` clean
