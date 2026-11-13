@@ -7,6 +7,7 @@ import contextlib
 import io
 import json
 import math
+import os
 import subprocess
 import sys
 import tempfile
@@ -2319,14 +2320,291 @@ class ScreenCode2Tests(unittest.TestCase):
 
     def test_bench_warms_harness_before_timing_and_profiling(self) -> None:
         bench_src = (ROOT / "research" / "bench.c").read_text(encoding="utf-8")
-        defn = bench_src.find("static void warm_harness(int threads)")
-        call = bench_src.find("warm_harness(threads > 0 ? threads : 1);")
-        prof_start = bench_src.find("if (prof) {", call if call >= 0 else 0)
-        timed_loop = bench_src.find("double t0 = cyc_ms();", call if call >= 0 else 0)
-        self.assertGreaterEqual(defn, 0)
-        self.assertGreater(call, defn)
-        self.assertGreater(prof_start, call)
-        self.assertGreater(timed_loop, prof_start)
+        marker = "static void warm_harness(int threads) {"
+        start_idx = bench_src.find(marker)
+        self.assertGreaterEqual(start_idx, 0)
+        brace_depth = 0
+        end_idx = -1
+        for idx in range(start_idx + len(marker) - 1, len(bench_src)):
+            ch = bench_src[idx]
+            if ch == "{":
+                brace_depth += 1
+            elif ch == "}":
+                brace_depth -= 1
+                if brace_depth == 0:
+                    end_idx = idx
+                    break
+        self.assertGreater(end_idx, start_idx)
+        empty_bench_src = (
+            bench_src[:start_idx]
+            + "static void warm_harness(int threads) { (void)threads; }"
+            + bench_src[end_idx + 1 :]
+        )
+
+        win_stub_h = """\
+#ifndef PROBE_WINDOWS_STUB_H
+#define PROBE_WINDOWS_STUB_H
+#include <stdint.h>
+typedef void *HANDLE;
+typedef long LONG;
+typedef unsigned long DWORD;
+typedef uint64_t DWORD64;
+typedef uint64_t ULONG64;
+typedef int BOOL;
+#define FALSE 0
+#define WINAPI
+#define HIGH_PRIORITY_CLASS 0
+#define THREAD_PRIORITY_HIGHEST 0
+#define THREAD_PRIORITY_TIME_CRITICAL 0
+#define DUPLICATE_SAME_ACCESS 0
+#define CONTEXT_CONTROL 1
+typedef union { int64_t QuadPart; } LARGE_INTEGER;
+typedef struct { DWORD ContextFlags; DWORD64 Rip; } CONTEXT;
+static inline HANDLE GetCurrentProcess(void) { return (HANDLE)(uintptr_t)1; }
+static inline HANDLE GetCurrentThread(void) { return (HANDLE)(uintptr_t)2; }
+static inline BOOL SetPriorityClass(HANDLE p, DWORD c) { (void)p; (void)c; return 1; }
+static inline BOOL SetThreadPriority(HANDLE t, int p) { (void)t; (void)p; return 1; }
+static inline BOOL QueryPerformanceFrequency(LARGE_INTEGER *f) { f->QuadPart = 1000000; return 1; }
+static inline BOOL QueryPerformanceCounter(LARGE_INTEGER *c) { c->QuadPart = 1000; return 1; }
+static inline BOOL QueryThreadCycleTime(HANDLE t, ULONG64 *c) { (void)t; *c = 3900000ULL; return 1; }
+static inline DWORD timeBeginPeriod(unsigned int u) { (void)u; return 0; }
+static inline void Sleep(DWORD ms) { (void)ms; }
+static inline DWORD SuspendThread(HANDLE t) { (void)t; return (DWORD)-1; }
+static inline BOOL GetThreadContext(HANDLE t, CONTEXT *ctx) { (void)t; ctx->Rip = 0; return 0; }
+static inline DWORD ResumeThread(HANDLE t) { (void)t; return 0; }
+static inline BOOL DuplicateHandle(HANDLE a, HANDLE b, HANDLE c, HANDLE *out, DWORD d, BOOL e, DWORD f) {
+    (void)a; (void)b; (void)c; (void)d; (void)e; (void)f;
+    *out = (HANDLE)(uintptr_t)2;
+    return 1;
+}
+typedef DWORD (WINAPI *LPTHREAD_START_ROUTINE)(void *);
+static inline HANDLE CreateThread(void *sa, size_t st, LPTHREAD_START_ROUTINE fn, void *arg, DWORD fl, DWORD *id) {
+    (void)sa; (void)st; (void)fn; (void)arg; (void)fl; (void)id;
+    return (HANDLE)(uintptr_t)3;
+}
+static inline void *GetModuleHandleA(const char *name) { (void)name; return (void *)(uintptr_t)0x140000000ULL; }
+#endif
+"""
+
+        probe_c = """\
+#include <math.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <windows.h>
+#include "rf.h"
+
+static int g_timer_calls;
+static int g_sampler_calls;
+static int g_pre_enc_at_sampler = -1;
+static int g_pre_dec_at_sampler = -1;
+static int g_sampler_at_first_timer = -1;
+static uint32_t g_pre_enc_methods[16];
+static int g_pre_enc_threads[16];
+static int g_pre_enc_n;
+static uint32_t g_pre_dec_methods[16];
+static int g_pre_dec_threads[16];
+static int g_pre_dec_n;
+static int g_pre_roundtrip_ok = 1;
+static uint32_t g_last_warm_w;
+static uint32_t g_last_warm_h;
+static uint8_t g_last_warm_rgb[32 * 16 * 3];
+static size_t g_last_warm_bytes;
+static int g_timed_enc_n;
+static int g_timed_dec_n;
+static int64_t g_fake_ticks = 1000;
+
+static BOOL probe_qpc(LARGE_INTEGER *c) {
+    if (g_timer_calls == 0) g_sampler_at_first_timer = g_sampler_calls;
+    g_timer_calls++;
+    g_fake_ticks += 1000;
+    c->QuadPart = g_fake_ticks;
+    return 1;
+}
+
+static BOOL probe_qtct(HANDLE t, ULONG64 *c) {
+    (void)t;
+    if (g_timer_calls == 0) g_sampler_at_first_timer = g_sampler_calls;
+    g_timer_calls++;
+    g_fake_ticks += 3900000;
+    *c = (ULONG64)g_fake_ticks;
+    return 1;
+}
+
+static HANDLE probe_create_thread(void *sa, size_t st, LPTHREAD_START_ROUTINE fn, void *arg, DWORD fl, DWORD *id) {
+    (void)sa; (void)st; (void)fn; (void)arg; (void)fl; (void)id;
+    if (g_sampler_calls == 0) {
+        g_pre_enc_at_sampler = g_pre_enc_n;
+        g_pre_dec_at_sampler = g_pre_dec_n;
+    }
+    g_sampler_calls++;
+    return (HANDLE)(uintptr_t)3;
+}
+
+static int probe_rf_encode(const rf_image *img, uint8_t **out_data, size_t *out_size, int threads, rf_error *err) {
+    int rc = rf_encode(img, out_data, out_size, threads, err);
+    if (g_timer_calls == 0 && g_sampler_calls == 0) {
+        if (rc != 0 || !*out_data || *out_size < RF_HEADER_SIZE) {
+            g_pre_roundtrip_ok = 0;
+        } else if (g_pre_enc_n < 16) {
+            g_pre_enc_methods[g_pre_enc_n] = (*out_data)[16];
+            g_pre_enc_threads[g_pre_enc_n] = threads;
+            g_pre_enc_n++;
+        }
+        size_t raw = (size_t)img->width * (size_t)img->height * 3u;
+        if (raw <= sizeof(g_last_warm_rgb)) {
+            g_last_warm_w = img->width;
+            g_last_warm_h = img->height;
+            g_last_warm_bytes = raw;
+            memcpy(g_last_warm_rgb, img->rgb, raw);
+        } else {
+            g_pre_roundtrip_ok = 0;
+        }
+    } else {
+        g_timed_enc_n++;
+    }
+    return rc;
+}
+
+static int probe_rf_decode(const uint8_t *data, size_t size, rf_image *out_img, rf_info *out_info, int threads, rf_error *err) {
+    int rc = rf_decode(data, size, out_img, out_info, threads, err);
+    if (g_timer_calls == 0 && g_sampler_calls == 0) {
+        size_t raw = (size_t)out_img->width * (size_t)out_img->height * 3u;
+        if (rc != 0 || !out_img->rgb || !out_info || out_img->width != g_last_warm_w || out_img->height != g_last_warm_h ||
+            raw != g_last_warm_bytes || memcmp(out_img->rgb, g_last_warm_rgb, raw) != 0) {
+            g_pre_roundtrip_ok = 0;
+        } else if (g_pre_dec_n < 16) {
+            g_pre_dec_methods[g_pre_dec_n] = out_info->method;
+            g_pre_dec_threads[g_pre_dec_n] = threads;
+            g_pre_dec_n++;
+        }
+    } else {
+        g_timed_dec_n++;
+    }
+    return rc;
+}
+
+#define QueryPerformanceCounter probe_qpc
+#define QueryThreadCycleTime probe_qtct
+#define CreateThread probe_create_thread
+#define Sleep(ms) ((void)0)
+#define rf_encode probe_rf_encode
+#define rf_decode probe_rf_decode
+#define main bench_real_main
+#include "bench_under_test.c"
+#undef main
+
+int main(int argc, char **argv) {
+    int rc = bench_real_main(argc, argv);
+    printf("PROBE rc=%d pre_ok=%d timer=%d sampler=%d sampler_at_t0=%d pre_at_sampler=%d/%d timed=%d/%d pre_enc=",
+           rc, g_pre_roundtrip_ok, g_timer_calls, g_sampler_calls, g_sampler_at_first_timer,
+           g_pre_enc_at_sampler, g_pre_dec_at_sampler, g_timed_enc_n, g_timed_dec_n);
+    for (int i = 0; i < g_pre_enc_n; i++) printf("%s%u@%d", i ? "," : "", g_pre_enc_methods[i], g_pre_enc_threads[i]);
+    printf(" pre_dec=");
+    for (int i = 0; i < g_pre_dec_n; i++) printf("%s%u@%d", i ? "," : "", g_pre_dec_methods[i], g_pre_dec_threads[i]);
+    printf("\\n");
+    return rc;
+}
+"""
+
+        def parse_probe(stdout: str) -> dict[str, str]:
+            for line in stdout.splitlines():
+                if line.startswith("PROBE "):
+                    out: dict[str, str] = {}
+                    for tok in line[len("PROBE ") :].split():
+                        k, v = tok.split("=", 1)
+                        out[k] = v
+                    return out
+            self.fail(f"missing PROBE line in output:\n{stdout}")
+
+        with tempfile.TemporaryDirectory() as tmp_str:
+            tmp = Path(tmp_str)
+            ppm_path = tmp / "sample.ppm"
+            ppm_path.write_bytes(b"P6 4 4 255\n" + bytes((i * 19) & 255 for i in range(4 * 4 * 3)))
+            (tmp / "probe.c").write_text(probe_c, encoding="utf-8")
+
+            is_win = os.name == "nt"
+            clang = ROOT / ("tools/llvm-mingw/bin/clang.exe" if is_win else "tools/llvm-mingw-linux/bin/clang")
+            triple = "x86_64-w64-mingw32" if is_win else "x86_64-linux-gnu"
+            codec_srcs = [
+                ROOT / "src" / "fold.c",
+                ROOT / "src" / "cm.c",
+                ROOT / "src" / "pal.c",
+                ROOT / "src" / "sc.c",
+                ROOT / "src" / "bmp.c",
+                ROOT / "src" / "crc32.c",
+            ]
+            if is_win:
+                codec_srcs.append(ROOT / "research" / "benchsys.c")
+            else:
+                codec_srcs.extend([ROOT / "src" / "platform.c", ROOT / "src" / "sys_posix.c"])
+                stub_dir = tmp / "win_stub"
+                stub_dir.mkdir()
+                (stub_dir / "windows.h").write_text(win_stub_h, encoding="utf-8")
+
+            common_cflags = [
+                str(clang),
+                f"--target={triple}",
+                "-std=c11",
+                "-O1",
+                "-march=x86-64-v2",
+                f"-I{ROOT / 'src'}",
+                f"-I{ROOT / 'include'}",
+            ]
+            if not is_win:
+                common_cflags.append("-pthread")
+
+            obj_files: list[str] = []
+            for idx, src in enumerate(codec_srcs):
+                obj = tmp / f"codec_{idx}.o"
+                res = subprocess.run([*common_cflags, "-c", str(src), "-o", str(obj)], capture_output=True, text=True)
+                self.assertEqual(res.returncode, 0, res.stderr)
+                obj_files.append(str(obj))
+
+            def build_probe(bench_text: str, exe_stem: str) -> Path:
+                (tmp / "bench_under_test.c").write_text(bench_text, encoding="utf-8")
+                exe = tmp / (f"{exe_stem}.exe" if is_win else exe_stem)
+                cmd = [*common_cflags, f"-I{tmp}", "-DRF_NO_BREAKDOWN=1", str(tmp / "probe.c"), *obj_files, "-o", str(exe)]
+                if is_win:
+                    cmd.append("-lwinmm")
+                else:
+                    cmd.extend([f"-I{tmp / 'win_stub'}", "-lm"])
+                res = subprocess.run(cmd, capture_output=True, text=True)
+                self.assertEqual(res.returncode, 0, res.stderr)
+                return exe
+
+            real_exe = build_probe(bench_src, "probe_real")
+            run_mt = subprocess.run([str(real_exe), "-r1", "-t2", str(ppm_path)], cwd=tmp, capture_output=True, text=True)
+            self.assertEqual(run_mt.returncode, 0, run_mt.stderr + run_mt.stdout)
+            mt = parse_probe(run_mt.stdout)
+            self.assertEqual(mt["pre_ok"], "1")
+            self.assertEqual(mt["pre_enc"], "4@2,1@2,6@2")
+            self.assertEqual(mt["pre_dec"], "4@2,1@2,6@2")
+            self.assertEqual(mt["sampler"], "0")
+            self.assertEqual(mt["sampler_at_t0"], "0")
+            self.assertEqual(mt["timed"], "1/1")
+            self.assertEqual(mt["timer"], "4")
+
+            run_prof = subprocess.run([str(real_exe), "-p", "-r1", "-t0", str(ppm_path)], cwd=tmp, capture_output=True, text=True)
+            self.assertEqual(run_prof.returncode, 0, run_prof.stderr + run_prof.stdout)
+            prof = parse_probe(run_prof.stdout)
+            self.assertEqual(prof["pre_ok"], "1")
+            self.assertEqual(prof["pre_enc"], "4@1,1@1,6@1")
+            self.assertEqual(prof["pre_dec"], "4@1,1@1,6@1")
+            self.assertEqual(prof["pre_at_sampler"], "3/3")
+            self.assertEqual(prof["sampler"], "1")
+            self.assertEqual(prof["sampler_at_t0"], "1")
+            self.assertEqual(prof["timed"], "1/1")
+            self.assertEqual(prof["timer"], "4")
+
+            empty_exe = build_probe(empty_bench_src, "probe_empty")
+            run_empty = subprocess.run([str(empty_exe), "-p", "-r1", "-t2", str(ppm_path)], cwd=tmp, capture_output=True, text=True)
+            self.assertEqual(run_empty.returncode, 0, run_empty.stderr + run_empty.stdout)
+            empty = parse_probe(run_empty.stdout)
+            self.assertEqual(empty["pre_enc"], "")
+            self.assertEqual(empty["pre_dec"], "")
+            self.assertEqual(empty["pre_at_sampler"], "0/0")
 
 
 if __name__ == "__main__":

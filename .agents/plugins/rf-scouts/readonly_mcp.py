@@ -11,7 +11,18 @@ import re
 import sys
 
 DEFAULT_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_SKIP_DIRS = {".git", "build", "bin", "tools", ".venv", "__pycache__"}
+DEFAULT_SKIP_DIRS = {".git", "build", "bin", "dist", ".venv", ".runner", ".cache", ".remember"}
+DEFAULT_SKIP_REL_DIRS = {
+    "tools/downloads",
+    "tools/libjxl",
+    "tools/llvm-mingw",
+    "tools/llvm-mingw-linux",
+    "tools/ninja",
+    "tools/ninja-linux",
+    "tests/work",
+    ".codex/state",
+    ".claude/state",
+}
 BINARY_CHECK_BYTES = 8192
 
 TOOLS = [
@@ -111,41 +122,79 @@ def resolve_confined(root: Path, rel: str) -> Path:
     return candidate
 
 
+def _explicit_allows_dir(explicit_rel: Path, rel_d: Path) -> bool:
+    return explicit_rel == rel_d or rel_d in explicit_rel.parents
+
+
 def iter_confined_files(root: Path, start: Path):
-    explicit_top = start.relative_to(root).parts[0] if start != root else None
+    explicit_rel = start.relative_to(root) if start != root else Path(".")
     if start.is_file():
         if not start.is_symlink():
             yield start
         return
     if not start.is_dir():
         return
-    for dirpath, dirnames, filenames in os.walk(start, followlinks=False):
-        cur = Path(dirpath)
+    try:
+        resolved_start = start.resolve()
+        rel_start = resolved_start.relative_to(root)
+    except ValueError:
+        return
+    if ".git" in rel_start.parts:
+        return
+
+    def walk_dir(cur: Path, rel_cur: Path):
         try:
-            rel_cur = cur.resolve().relative_to(root)
-        except ValueError:
-            dirnames[:] = []
-            continue
-        kept_dirs: list[str] = []
-        for d in sorted(dirnames):
-            if d == ".git" or (cur / d).is_symlink():
-                continue
-            if rel_cur == Path(".") and d in DEFAULT_SKIP_DIRS and d != explicit_top:
-                continue
-            kept_dirs.append(d)
-        dirnames[:] = kept_dirs
-        for fname in sorted(filenames):
-            fpath = cur / fname
-            if fpath.is_symlink():
-                continue
+            with os.scandir(cur) as it:
+                entries = list(it)
+        except OSError:
+            return
+        items: list[tuple[str, bool, Path, str]] = []
+        for entry in entries:
             try:
-                resolved = fpath.resolve()
-                rel_file = resolved.relative_to(root)
-            except ValueError:
+                if entry.is_symlink():
+                    continue
+                is_dir = entry.is_dir(follow_symlinks=False)
+                is_file = entry.is_file(follow_symlinks=False)
+            except OSError:
                 continue
-            if ".git" in rel_file.parts:
+            name = entry.name
+            if name == ".git":
                 continue
-            yield resolved
+            if is_dir:
+                rel_d_str = name if rel_cur == Path(".") else f"{rel_cur.as_posix()}/{name}"
+                rel_d_path = Path(rel_d_str)
+                if not _explicit_allows_dir(explicit_rel, rel_d_path):
+                    if name == "__pycache__":
+                        continue
+                    if rel_cur == Path(".") and name in DEFAULT_SKIP_DIRS:
+                        continue
+                    if rel_d_str in DEFAULT_SKIP_REL_DIRS:
+                        continue
+                items.append((name + "/", True, cur / name, rel_d_str))
+            elif is_file:
+                items.append((name, False, cur / name, ""))
+        items.sort(key=lambda item: item[0])
+        for _, is_dir, child_path, rel_d_str in items:
+            if is_dir:
+                try:
+                    resolved_dir = child_path.resolve()
+                    rel_child = resolved_dir.relative_to(root)
+                except ValueError:
+                    continue
+                if ".git" in rel_child.parts:
+                    continue
+                yield from walk_dir(resolved_dir, Path(rel_d_str))
+            else:
+                try:
+                    resolved = child_path.resolve()
+                    rel_file = resolved.relative_to(root)
+                except ValueError:
+                    continue
+                if ".git" in rel_file.parts:
+                    continue
+                yield resolved
+
+    yield from walk_dir(resolved_start, rel_start)
 
 
 def parse_pagination(args: dict) -> tuple[int, int, str | None]:

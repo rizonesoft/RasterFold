@@ -228,6 +228,43 @@ class ReadonlyMcpTests(unittest.TestCase):
         self.assertIn("NOT FOUND", text)
         self.assertEqual(read_sizes, [mcp.BINARY_CHECK_BYTES])
 
+    def test_root_level_glob_and_grep_include_tracked_tools_and_skip_downloaded_toolchains(self):
+        # D05 T01 §9 Round 1 P2: default root-level searches must include tracked files under tools/
+        # (such as tools/provision.py and tools/githooks/*) while still skipping ignored toolchain dirs.
+        (self.root / "tools" / "githooks").mkdir(parents=True)
+        (self.root / "tools" / "provision.py").write_text("def check_python_version() -> bool:\n    return True\n", encoding="utf-8")
+        (self.root / "tools" / "githooks" / "pre-commit").write_text("#!/bin/sh\n# pre_commit_sentinel\n", encoding="utf-8")
+        (self.root / "tools" / "llvm-mingw" / "bin").mkdir(parents=True)
+        (self.root / "tools" / "llvm-mingw" / "bin" / "ignored.txt").write_text("check_python_version in toolchain\n", encoding="utf-8")
+        (self.root / "src" / "__pycache__").mkdir(parents=True)
+        (self.root / "src" / "__pycache__" / "stale.txt").write_text("check_python_version in pycache\n", encoding="utf-8")
+
+        glob_text, glob_err = mcp.run_glob_repo({"pattern": "tools/provision.py"}, root=self.root)
+        self.assertFalse(glob_err)
+        self.assertEqual(glob_text, "tools/provision.py")
+
+        hook_glob, hook_err = mcp.run_glob_repo({"pattern": "tools/**"}, root=self.root)
+        self.assertFalse(hook_err)
+        self.assertEqual(hook_glob.splitlines(), ["tools/githooks/pre-commit", "tools/provision.py"])
+
+        grep_text, grep_err = mcp.run_grep_repo({"pattern": "check_python_version|pre_commit_sentinel"}, root=self.root)
+        self.assertFalse(grep_err)
+        self.assertEqual(
+            grep_text.splitlines(),
+            [
+                "tools/githooks/pre-commit:2:# pre_commit_sentinel",
+                "tools/provision.py:1:def check_python_version() -> bool:",
+            ],
+        )
+
+        # Also verify against the live repository root directly.
+        repo_glob, repo_glob_err = mcp.run_glob_repo({"pattern": "tools/provision.py"}, root=REPO)
+        self.assertFalse(repo_glob_err)
+        self.assertEqual(repo_glob, "tools/provision.py")
+        repo_grep, repo_grep_err = mcp.run_grep_repo({"pattern": r"^def check_python_version\b"}, root=REPO)
+        self.assertFalse(repo_grep_err)
+        self.assertIn("tools/provision.py:13:def check_python_version(", repo_grep)
+
 
 class GeminiScoutWrapperTests(unittest.TestCase):
     def setUp(self):
