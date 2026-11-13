@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "rf-readonly": {
-      "command": "python3",
-      "args": ["${PLUGIN_ROOT}/readonly_mcp.py"]
-    }
-  }
-}

@@ -1551,7 +1551,7 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "Re-read 2026-11-13 for D05 T01 section 9 round 1 fixes: README.md links to docs/research.md for the measurement protocol without referencing idle-host timing waits; all prose and capability claims remain accurate.",
+      "evidence": "Re-read 2026-11-14 README.md lines 1-66 (including Development and automation on line 58) after removing custom Antigravity subagents (.agents/plugins/rf-scouts/, scripts/gemini-scout.py) and switching Carbon launcher to Orchestrator (Carbon) (--model gemini-pro-orchestrator): README.md lists writers, .agents/skills/, Stop hooks, campaign_guard.py, and review-dispatch.py without mentioning custom Antigravity scout plugins, so all prose and claims match the repository.",
       "sources": {
         "include/rasterfold.h": "e5e9eecb93e59b3cfb6b00674006e03ba887c671516e6682292ef5753b015379",
         "src/rf.h": "7f58b508d0e3bb10cc2e1c57cda78e3552a2976a99928e0dfa1df16b91e0117d",
@@ -1560,34 +1560,34 @@
         "scripts/package.py": "f030a89836d12e610d9ad4a762bf073c975e6fcaf6bdb83ef09bc174e3f37973",
         "scripts/check-all.py": "ec0f58046fb6beb5e9b522530aa51a4e3eff03bd546a17a09db53e53ca8a5e9a",
         "README.md": "3ed74df2f748338d59eaf36ca338206646ef4136f33e94d72b25f21d459bca45",
-        "AGENTS.md": "6a88fd283afd176f6ffdea445dc6284457f32c5425d146c6975558c967d859ad",
+        "AGENTS.md": "ead6400b570e5781e2b4cec04cd75493b51dc44ed0b1781e93f1d305a5978e81",
         ".conclave/reviewers.toml": "a95be5634bda979837450696840208f1271598d50c9b116471cd9467720e8358",
         "scripts/review-dispatch.py": "8669fe2758095f05749c7960b7bdce4180ec034292b32b628a95b8c86e3c6082"
       },
       "review": "Author-attested: 2026-10-25 re-read README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "AGENTS.md": {
-      "evidence": "Re-read 2026-11-13 for D05 T01 section 9 round 1 fixes: updated Measured, general claims only (line 44) with the operator's 2026-11-13 shared-host contiguous tail-pool rule for research/abpool.py and its reversal cost; all other facts in AGENTS.md match the repository.",
+      "evidence": "Re-read 2026-11-14 AGENTS.md lines 1-168 after removing .agents/plugins/rf-scouts/ and scripts/gemini-scout.py and switching the Antigravity Carbon campaign launcher to Orchestrator (Carbon) (--model gemini-pro-orchestrator): lines 87, 93, and 102 accurately describe Claude Code's .claude/agents/ scouts, Antigravity's native Orchestrator (Carbon), antigravity_custom_agent_problems() in unattended-preflight.py, and .conclave/reviewers.toml.",
       "sources": {
         "include/rasterfold.h": "e5e9eecb93e59b3cfb6b00674006e03ba887c671516e6682292ef5753b015379",
         "src/rf.h": "7f58b508d0e3bb10cc2e1c57cda78e3552a2976a99928e0dfa1df16b91e0117d",
         "toolchain.json": "fd7b0b2424a2ffdb86095da76e4b975d604741fb271fd9b70e4c53efe9f5e3de",
         ".conclave/reviewers.toml": "a95be5634bda979837450696840208f1271598d50c9b116471cd9467720e8358",
         "scripts/review-dispatch.py": "8669fe2758095f05749c7960b7bdce4180ec034292b32b628a95b8c86e3c6082",
-        "AGENTS.md": "6a88fd283afd176f6ffdea445dc6284457f32c5425d146c6975558c967d859ad",
+        "AGENTS.md": "ead6400b570e5781e2b4cec04cd75493b51dc44ed0b1781e93f1d305a5978e81",
         ".codex/hooks.json": "c67e7762d0970280c653a74601012d01971d05f677182ae70e4eda0aa783c150",
         "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",
         "scripts/campaign_guard.py": "564720b1ae8c3999bca60b1a00814ef60ff4c51f636a42e4953f9cbbadfd54d3"
       }
     },
     "GEMINI.md": {
-      "evidence": "Re-read 2026-11-13 for D05 T01 section 9 round 1 fixes: GEMINI.md covers Antigravity writer key, review dispatch, skills, hooks, scouts, and heartbeat cron only; unaffected by the shared-host timing rule in AGENTS.md.",
+      "evidence": "Re-read 2026-11-14 GEMINI.md lines 1-8 against AGENTS.md, .conclave/reviewers.toml, .agents/hooks.json, and scripts/unattended-run.sh: updated line 7 to remove .agents/plugins/rf-scouts/ and scripts/gemini-scout.py and state that Antigravity campaigns run on Orchestrator (Carbon) (--model gemini-pro-orchestrator) with no custom workspace subagents.",
       "sources": {
-        "AGENTS.md": "6a88fd283afd176f6ffdea445dc6284457f32c5425d146c6975558c967d859ad",
+        "AGENTS.md": "ead6400b570e5781e2b4cec04cd75493b51dc44ed0b1781e93f1d305a5978e81",
         ".conclave/reviewers.toml": "a95be5634bda979837450696840208f1271598d50c9b116471cd9467720e8358",
         "scripts/review-dispatch.py": "8669fe2758095f05749c7960b7bdce4180ec034292b32b628a95b8c86e3c6082",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
-        "GEMINI.md": "9a3ff8a7a479cd83ad00e705f520dee0c478aa8d491e9f689f4ba9bf624306f7"
+        "GEMINI.md": "616117773c7a0811c848f135f6dd73643692b2619ed941af124e2c4e185f3487"
       }
     },
     "CONTRIBUTING.md": {
@@ -1681,14 +1681,14 @@
       }
     },
     "docs/agent-skills-and-rules-structure.md": {
-      "evidence": "Re-read 2026-11-13 for D05 T01 section 9 round 1 fixes: docs/agent-skills-and-rules-structure.md covers writer keys, skill folders, rules, hooks, and scouts only; unaffected by the shared-host timing rule in AGENTS.md.",
+      "evidence": "Re-read 2026-11-14 docs/agent-skills-and-rules-structure.md lines 1-56 against AGENTS.md, GEMINI.md, .agents/hooks.json, and .agents/skills/: updated line 32 to remove .agents/plugins/rf-scouts/ and scripts/gemini-scout.py and note Orchestrator (Carbon)'s native delegation.",
       "sources": {
-        "AGENTS.md": "6a88fd283afd176f6ffdea445dc6284457f32c5425d146c6975558c967d859ad",
-        "GEMINI.md": "9a3ff8a7a479cd83ad00e705f520dee0c478aa8d491e9f689f4ba9bf624306f7",
+        "AGENTS.md": "ead6400b570e5781e2b4cec04cd75493b51dc44ed0b1781e93f1d305a5978e81",
+        "GEMINI.md": "616117773c7a0811c848f135f6dd73643692b2619ed941af124e2c4e185f3487",
         ".conclave/reviewers.toml": "a95be5634bda979837450696840208f1271598d50c9b116471cd9467720e8358",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
         "scripts/review-dispatch.py": "8669fe2758095f05749c7960b7bdce4180ec034292b32b628a95b8c86e3c6082",
-        "docs/agent-skills-and-rules-structure.md": "7c85a4ebe4fa671150fff41bf328e25d952e5032451f5daf6c10732ba560dff0",
+        "docs/agent-skills-and-rules-structure.md": "5ec02ca6bf7c3e8639ac81b19b480f7205cc515048ff5e33cdf34b3bd37e1cbd",
         ".codex/hooks.json": "c67e7762d0970280c653a74601012d01971d05f677182ae70e4eda0aa783c150",
         "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",
         "scripts/campaign_guard.py": "564720b1ae8c3999bca60b1a00814ef60ff4c51f636a42e4953f9cbbadfd54d3"

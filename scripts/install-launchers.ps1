@@ -1,7 +1,7 @@
 # Writes the two RasterFold campaign shortcuts on this Windows user's Desktop (docs/unattended-run.md, The Desktop
 # shortcuts) and removes the old "RasterFold Unattended Run" one:
 #   "RasterFold Claude campaign"  wsl.exe ... bash scripts/unattended-run.sh         (Claude Code, latest Opus, medium)
-#   "RasterFold Carbon campaign"  wsl.exe ... bash scripts/unattended-run.sh carbon  (Antigravity, Gemini 4 Carbon)
+#   "RasterFold Carbon campaign"  wsl.exe ... bash scripts/unattended-run.sh carbon  (Antigravity, Orchestrator (Carbon))
 # Run it on Windows from the WSL checkout, for example:
 #   pwsh -File \\wsl.localhost\Ubuntu\home\<user>\projects\RasterFold\scripts\install-launchers.ps1
 # The distro and the Linux path of the checkout are read from where this file is, so the shortcuts follow the clone;
@@ -73,7 +73,7 @@ $shortcuts = @(
   @{ Name = 'RasterFold Claude campaign'; Runner = ''; Icon = 'rasterfold-campaign-claude.ico'; Fill = '#D97757'; Mark = 'claude'
      Description = 'Start or resume the unattended RasterFold campaign in Claude Code (latest Opus, medium) on main' },
   @{ Name = 'RasterFold Carbon campaign'; Runner = ' carbon'; Icon = 'rasterfold-campaign-carbon.ico'; Fill = '#4C8DF6'; Mark = 'gemini'
-     Description = 'Start or resume the unattended RasterFold campaign in Google Antigravity on Gemini 4 Carbon on main' }
+     Description = 'Start or resume the unattended RasterFold campaign in Google Antigravity on Orchestrator (Carbon) on main' }
 )
 foreach ($s in $shortcuts) {
   $icon = Join-Path $icons $s.Icon

@@ -29,7 +29,7 @@ All project skills live directly under `.agents/skills/`:
 Use the word "rules" carefully:
 
 - Durable project behavior belongs in [`AGENTS.md`](../AGENTS.md).
-- Antigravity-specific entry instructions live in [`GEMINI.md`](../GEMINI.md), rules in `.agents/rules/`, and the read-only Gemini 4 Hydrogen scouts in `.agents/plugins/rf-scouts/` (invoked through `scripts/gemini-scout.py`).
+- Antigravity-specific entry instructions live in [`GEMINI.md`](../GEMINI.md) and rules in `.agents/rules/` (no custom Antigravity subagents or plugins are defined under `.agents/`, since `Orchestrator (Carbon)` handles Carbon/Hydrogen orchestration and built-in read-only `research` subagent delegation natively).
 - The campaign `Stop` hook is wired in `.agents/hooks.json`, `.claude/settings.json` and `.codex/hooks.json`; each uses `scripts/campaign_guard.py`.
 - Markdown checklists or rule references belong in a skill `references/` folder or in `docs/`.
 

@@ -154,14 +154,14 @@ class LauncherClaudeTests(unittest.TestCase):
 
 
 class LauncherCarbonTests(unittest.TestCase):
-    """`unattended-run.sh carbon` starts Antigravity on Gemini 4 Carbon (operator directive 2026-11-12)."""
+    """`unattended-run.sh carbon` starts Antigravity on Orchestrator (Carbon) (operator directives 2026-11-12 and 2026-11-14)."""
 
-    def test_starts_antigravity_on_carbon_with_the_launch_id_in_the_prompt(self):
+    def test_starts_antigravity_on_carbon_orchestrator_with_the_launch_id_in_the_prompt(self):
         with tempfile.TemporaryDirectory() as tmp:
             launch = Launch(tmp, args=("carbon",))
         self.assertEqual(launch.cli, "agy", launch.out)
         argv = launch.argv
-        self.assertEqual(argv[:5], ["--dangerously-skip-permissions", "--model", "gemini-4-carbon-medium", "-i", argv[4]])
+        self.assertEqual(argv[:5], ["--dangerously-skip-permissions", "--model", "gemini-pro-orchestrator", "-i", argv[4]])
         self.assertEqual(len(argv), 5)
         prompt = argv[4]
         session = prompt.rsplit("Launch id: ", 1)[1].rstrip(".")
@@ -195,13 +195,15 @@ class LauncherCarbonTests(unittest.TestCase):
     def test_the_carbon_prompt_is_the_campaign_prompt_for_antigravity(self):
         prompt = campaign_prompt_in_script("CARBON_PROMPT")
         for phrase in ("Finish RasterFold 100% complete and excellent", "Act with full autonomy", "Never ask the operator a question",
-                       "Antigravity on Gemini 4 Carbon", "the schedule tool, CronExpression 3-59/5 * * * *",
+                       "Antigravity on Orchestrator (Carbon)", "gemini-pro-orchestrator",
+                       "the schedule tool, CronExpression 3-59/5 * * * *",
                        "writer Antigravity", "Conversation ID", "writer key gemini",
-                       "Three read-only Gemini 4 Hydrogen scouts (rf-scout, rf-log-digest, rf-fact-check in .agents/plugins/rf-scouts/, run through python3 scripts/gemini-scout.py)",
+                       "no custom workspace subagents exist",
                        "never delegate", "scripts/review-prompt.py", "pushed straight on main", "Milestone gates are capped"):
             self.assertIn(phrase, prompt)
-        for claude_only in ("$CLAUDE_CODE_SESSION_ID", "CronCreate", "writer key claude"):
-            self.assertNotIn(claude_only, prompt)
+        for retired_or_claude_only in ("$CLAUDE_CODE_SESSION_ID", "CronCreate", "writer key claude",
+                                       "gemini-scout.py", "rf-scouts"):
+            self.assertNotIn(retired_or_claude_only, prompt)
 
     def test_the_document_carries_the_carbon_prompt_byte_for_byte(self):
         doc = (REPO / "docs" / "unattended-run.md").read_text(encoding="utf-8").split("\n")

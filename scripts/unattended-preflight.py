@@ -11,14 +11,16 @@ gen-compdb.py --rebuild-stale, which writes only ignored build output
 (build/, bin/, the root compile_commands.json), and only after the branch,
 clean-tree and guard checks passed, so nothing is rebuilt under a live writer.
 
-Two runners launch it (operator directive 2026-11-12): Claude Code
-(`--runner claude`, the default) and Antigravity on Gemini 4 Carbon
-(`--runner gemini`). For Claude Code the launch preconditions are its CLI and
-the reviewer's, the campaign Stop hook in .claude/settings.json, the two
-dialogs that would sit unanswered, the session cron tools, and the
-language-server plugin. For Antigravity they are the agy CLI and the
-reviewer's and the campaign Stop hook in .agents/hooks.json. The read-only
-Sonnet scout roster is a repository invariant and is checked for both.
+Two runners launch it (operator directives 2026-11-12 and 2026-11-14): Claude
+Code (`--runner claude`, the default) and Antigravity on Orchestrator (Carbon)
+(`--runner gemini`, `--model gemini-pro-orchestrator`). For Claude Code the
+launch preconditions are its CLI and the reviewer's, the campaign Stop hook in
+.claude/settings.json, the two dialogs that would sit unanswered, the session
+cron tools, and the language-server plugin. For Antigravity they are the agy
+CLI and the reviewer's and the campaign Stop hook in .agents/hooks.json. Both
+runners check the read-only Sonnet scout roster in .claude/agents/ and verify
+that no custom Antigravity subagents or plugins exist under .agents/ (since
+Orchestrator (Carbon) handles delegation natively).
 """
 from __future__ import annotations
 
@@ -68,12 +70,8 @@ READ_ONLY_TOOLS = frozenset({"Read", "Grep", "Glob"})
 # Every other frontmatter key can widen what an agent reaches (mcpServers, skills, hooks, permissionMode, memory,
 # isolation, background, disallowedTools standing in for an allowlist), so the roster admits only these.
 SCOUT_KEYS = frozenset({"name", "description", "tools", "model", "effort", "color", "maxTurns"})
-GEMINI_SCOUT_KEYS = frozenset({
-    "name", "description", "model", "subagent", "mainAgent", "inheritMcp", "mcpServers", "tools",
-})
-GEMINI_READ_ONLY_TOOLS = ("view_file",)
-GEMINI_MCP_SERVERS = ("rf-readonly",)
-GEMINI_MCP_TOOLS = ("grep_repo", "glob_repo")
+AGY_ALT_ROOTS = (".agent", "_agents", "_agent")
+AGY_FORBIDDEN_ENTRIES = ("agents", "agents.json", "plugins", "plugins.json", "mcp_config.json")
 
 
 def check(name: str, ok: bool, detail: str = "") -> None:
@@ -409,171 +407,20 @@ def roster_problems(agents_dir: Path) -> list[str]:
     return problems
 
 
-def gemini_frontmatter(text: str) -> tuple[dict[str, object], str] | None:
-    """Parse the restricted YAML frontmatter of an Antigravity scout agent file (`.agents/plugins/rf-scouts/agents/*.md`).
-    Accepts only scalar `key: value` lines and `key:` followed by `- item` or `- name: value` list items, returning
-    `(fields, body)` or `None` if malformed."""
-    lines = text.split("\n")
-    if not lines or lines[0].strip() != "---":
-        return None
-    end_idx = None
-    for idx, line in enumerate(lines[1:], 1):
-        if line.strip() == "---":
-            end_idx = idx
-            break
-    if end_idx is None:
-        return None
-    fields: dict[str, object] = {}
-    current_list_key: str | None = None
-    for line in lines[1:end_idx]:
-        if not line.strip():
-            return None
-        list_match = re.match(r"^  -\s+(.*)$", line)
-        if list_match is not None:
-            if current_list_key is None or not isinstance(fields.get(current_list_key), list):
-                return None
-            item = list_match.group(1).strip()
-            if not item or ":" in item and not re.match(r"^name:\s*[A-Za-z0-9_-]+$", item):
-                return None
-            cast_list = fields[current_list_key]
-            assert isinstance(cast_list, list)
-            if item.startswith("name:"):
-                cast_list.append({"name": item.split(":", 1)[1].strip()})
-            else:
-                cast_list.append(item)
-            continue
-        key_match = re.match(r"^([A-Za-z][A-Za-z0-9_-]*):\s*(.*)$", line)
-        if key_match is None or key_match.group(1) in fields:
-            return None
-        key, val = key_match.group(1), key_match.group(2).strip()
-        if val == "":
-            fields[key] = []
-            current_list_key = key
-        else:
-            fields[key] = val
-            current_list_key = None
-    body = "\n".join(lines[end_idx + 1 :])
-    return fields, body
-
-
-def gemini_roster_problems(root: Path = ROOT) -> list[str]:
-    """Why the Antigravity scout plugin (`.agents/plugins/rf-scouts`) is not the exact three read-only scouts, or []
-    when it is. Enforces both the plugin/MCP server definition and each agent's frontmatter so no write, edit, command,
-    or inherited MCP tool can exist."""
+def antigravity_custom_agent_problems(root: Path = ROOT) -> list[str]:
+    """Why the checkout still carries custom Antigravity subagents, plugins, or MCP configs, or [] when clean.
+    Orchestrator (Carbon) (`gemini-pro-orchestrator`) handles Carbon/Hydrogen execution handoffs and built-in read-only
+    `research` subagent delegation natively (operator directive 2026-11-14), so custom Antigravity subagent definitions
+    and workspace plugins must stay absent across all Antigravity discovery roots."""
     problems: list[str] = []
+    for alt in AGY_ALT_ROOTS:
+        if (root / alt).exists() or (root / alt).is_symlink():
+            problems.append(f"{alt} is not allowed (Antigravity customizations live only in .agents/)")
     agents_root = root / ".agents"
-    stray_agents_dir = agents_root / "agents"
-    if stray_agents_dir.exists():
-        try:
-            stray = sorted(p.name for p in stray_agents_dir.iterdir())
-        except OSError as exc:
-            problems.append(f".agents/agents: cannot list ({exc})")
-            stray = []
-        if stray:
-            problems.append(f".agents/agents must be empty or absent, found: {', '.join(stray)}")
-    for forbidden_cfg in ("agents.json", "plugins.json", "mcp_config.json"):
-        if (agents_root / forbidden_cfg).exists():
-            problems.append(f".agents/{forbidden_cfg} is not allowed")
-
-    plugins_dir = agents_root / "plugins"
-    if not plugins_dir.is_dir():
-        return [*problems, ".agents/plugins/rf-scouts is missing"]
-    try:
-        plugin_entries = sorted(p.name for p in plugins_dir.iterdir())
-    except OSError as exc:
-        return [*problems, f".agents/plugins: cannot list ({exc})"]
-    if plugin_entries != ["rf-scouts"]:
-        problems.append(f".agents/plugins has {', '.join(plugin_entries) or '(empty)'}; expected rf-scouts only")
-
-    plugin_dir = plugins_dir / "rf-scouts"
-    if not plugin_dir.is_dir():
-        return [*problems, ".agents/plugins/rf-scouts is missing"]
-
-    manifest = read_json(plugin_dir / "plugin.json")
-    if manifest.get("name") != "rf-scouts" or not manifest.get("version") or not manifest.get("description"):
-        problems.append("plugin.json must declare name='rf-scouts', version, and description")
-    extra_manifest = sorted(set(manifest) - {"name", "version", "description", "logo"})
-    if extra_manifest:
-        problems.append(f"plugin.json has disallowed keys: {', '.join(extra_manifest)}")
-    for forbidden_plugin_file in ("hooks.json", "agents.json", "skills"):
-        if (plugin_dir / forbidden_plugin_file).exists():
-            problems.append(f"rf-scouts/{forbidden_plugin_file} is not allowed")
-
-    mcp_cfg = read_json(plugin_dir / "mcp_config.json")
-    expected_mcp = {
-        "mcpServers": {
-            "rf-readonly": {
-                "command": "python3",
-                "args": ["${PLUGIN_ROOT}/readonly_mcp.py"],
-            }
-        }
-    }
-    if mcp_cfg != expected_mcp:
-        problems.append("mcp_config.json must declare only rf-readonly running python3 ${PLUGIN_ROOT}/readonly_mcp.py")
-
-    mcp_script = plugin_dir / "readonly_mcp.py"
-    if not mcp_script.is_file() or mcp_script.is_symlink():
-        problems.append("readonly_mcp.py is missing or a symlink")
-    else:
-        try:
-            spec = importlib.util.spec_from_file_location("rf_readonly_mcp_check", mcp_script)
-            if spec is None or spec.loader is None:
-                raise RuntimeError("could not load spec")
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
-            tools_list = getattr(mod, "TOOLS", None)
-            names = tuple(t.get("name") for t in tools_list) if isinstance(tools_list, list) else ()
-            if names != GEMINI_MCP_TOOLS:
-                problems.append(f"readonly_mcp.py TOOLS are {names!r}; expected {GEMINI_MCP_TOOLS!r}")
-        except Exception as exc:
-            problems.append(f"readonly_mcp.py failed validation: {exc}")
-
-    agents_dir = plugin_dir / "agents"
-    if not agents_dir.is_dir():
-        problems.append("rf-scouts/agents directory is missing")
-        return problems
-    try:
-        all_entries = sorted(p.name for p in agents_dir.iterdir())
-    except OSError as exc:
-        problems.append(f"rf-scouts/agents: cannot list ({exc})")
-        return problems
-    non_md = [name for name in all_entries if not name.endswith(".md") or (agents_dir / name).is_symlink()]
-    if non_md:
-        problems.append(f"rf-scouts/agents contains non-markdown or symlink entries: {', '.join(non_md)}")
-    found = sorted(p.stem for p in agents_dir.glob("*.md") if not p.is_symlink())
-    if tuple(found) != SCOUTS:
-        problems.append(f"gemini roster is {', '.join(found) or '(empty)'}; expected {', '.join(SCOUTS)}")
-
-    for name in found:
-        try:
-            parsed = gemini_frontmatter((agents_dir / f"{name}.md").read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError):
-            parsed = None
-        if parsed is None:
-            problems.append(f"gemini {name}: frontmatter is missing or malformed")
-            continue
-        fields, body = parsed
-        extra = sorted(set(fields) - GEMINI_SCOUT_KEYS)
-        if extra:
-            problems.append(f"gemini {name}: frontmatter keys not allowed on a scout: {', '.join(extra)}")
-        if fields.get("name") != name:
-            problems.append(f"gemini {name}: name is {fields.get('name')!r}")
-        if not isinstance(fields.get("description"), str) or not str(fields.get("description")).strip():
-            problems.append(f"gemini {name}: no description")
-        if fields.get("model") != "flash":
-            problems.append(f"gemini {name}: model is {fields.get('model')!r}, not 'flash'")
-        if fields.get("subagent") != "true":
-            problems.append(f"gemini {name}: subagent is {fields.get('subagent')!r}, not 'true'")
-        if fields.get("mainAgent") != "true":
-            problems.append(f"gemini {name}: mainAgent is {fields.get('mainAgent')!r}, not 'true'")
-        if fields.get("inheritMcp") != "false":
-            problems.append(f"gemini {name}: inheritMcp is {fields.get('inheritMcp')!r}, not 'false'")
-        if fields.get("mcpServers") != [{"name": s} for s in GEMINI_MCP_SERVERS]:
-            problems.append(f"gemini {name}: mcpServers is {fields.get('mcpServers')!r}, expected rf-readonly only")
-        if fields.get("tools") != list(GEMINI_READ_ONLY_TOOLS):
-            problems.append(f"gemini {name}: tools is {fields.get('tools')!r}, expected ['view_file'] only")
-        if "# Agent System Instructions" not in body:
-            problems.append(f"gemini {name}: missing '# Agent System Instructions' heading")
+    for entry in AGY_FORBIDDEN_ENTRIES:
+        target = agents_root / entry
+        if target.exists() or target.is_symlink():
+            problems.append(f".agents/{entry} is not allowed (Orchestrator (Carbon) handles subagents natively)")
     return problems
 
 
@@ -584,7 +431,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--claim", metavar="SESSION", help="on success, record this launch (its session id) in build/unattended-launch.json")
     parser.add_argument("--claim-pid", type=int, help="the launcher's pid, which `exec claude` or `exec agy` keeps (required with --claim)")
     parser.add_argument("--runner", choices=RUNNERS, default="claude",
-                        help="the writer the launch starts: claude (Claude Code) or gemini (Antigravity on Gemini 4 Carbon)")
+                        help="the writer the launch starts: claude (Claude Code) or gemini (Antigravity on Orchestrator (Carbon))")
     options = parser.parse_args(argv)
     if options.claim and not options.claim_pid:
         parser.error("--claim needs --claim-pid")
@@ -645,12 +492,11 @@ def main(argv: list[str] | None = None) -> int:
         # Antigravity reads its hooks from .agents/hooks.json; the heartbeat is its own schedule tool.
         check("campaign Stop hook wired", stop_hook_wired(read_json(ROOT / ".agents/hooks.json")),
               ".agents/hooks.json hooks.Stop runs campaign_guard.py stop-hook")
-        vproc = run(["agy", "plugin", "validate", ".agents/plugins/rf-scouts"])
-        check("Antigravity scout plugin validates", vproc.returncode == 0, last_line(vproc))
     problems = roster_problems(ROOT / ".claude/agents")
     check("read-only Sonnet scout roster", not problems, "; ".join(problems) if problems else ", ".join(SCOUTS))
-    g_problems = gemini_roster_problems(ROOT)
-    check("read-only Hydrogen scout roster", not g_problems, "; ".join(g_problems) if g_problems else ", ".join(SCOUTS))
+    g_problems = antigravity_custom_agent_problems(ROOT)
+    check("no custom Antigravity subagents", not g_problems,
+          "; ".join(g_problems) if g_problems else "Orchestrator (Carbon) native")
 
     # Pinned toolchain and LSP stack.
     tools = ROOT / "tools/llvm-mingw-linux/bin"
