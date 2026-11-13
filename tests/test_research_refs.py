@@ -75,9 +75,11 @@ class ResearchRefsTests(unittest.TestCase):
             ab.build(ROOT / "src" / "cm.c", Path(tmp) / "inst.exe")
             ab.build(ROOT / "src" / "cm.c", Path(tmp) / "lean.exe", breakdown=False)
             ab.build(ROOT / "src" / "pal.c", Path(tmp) / "lean_pal.exe", breakdown=False)
+            ab.build(ROOT / "src" / "sc.c", Path(tmp) / "lean_sc.exe", breakdown=False)
         self.assertNotIn("-DRF_NO_BREAKDOWN=1", cmds[0])
         self.assertIn("-DRF_NO_BREAKDOWN=1", cmds[1])
         self.assertIn("-DRF_NO_BREAKDOWN=1", cmds[2])
+        self.assertIn("-DRF_NO_BREAKDOWN=1", cmds[3])
 
         built: list[tuple[str, bool]] = []
 
@@ -1258,7 +1260,16 @@ class ResearchRefsTests(unittest.TestCase):
                     "            method = RF_METHOD_RAW;\n"
                     "        }\n"
                     "    }\n"
-                    "    if (pal_buf != pal_small) rf_free(pal_buf);\n",
+                    "    if (pal_buf != pal_small) rf_free(pal_buf);\n"
+                    "    if (n > 1) {\n"
+                    "        size_t sc_n = 0;\n"
+                    "        rc = rf_sc_encode(img->rgb, img->width, img->height, f + RF_HEADER_SIZE, n, &sc_n, err);\n"
+                    "        if (rc) { rf_free(f); return rc; }\n"
+                    "        if (sc_n > 0) {\n"
+                    "            n = sc_n;\n"
+                    "            method = RF_METHOD_SC;\n"
+                    "        }\n"
+                    "    }\n",
                     "    size_t n = 0;\n"
                     "    rc = rf_cm_encode(img->rgb, img->width, img->height, f + RF_HEADER_SIZE, raw - 1, &n, threads, err);\n"
                     "    if (rc) { rf_free(f); return rc; }\n"
@@ -1270,13 +1281,22 @@ class ResearchRefsTests(unittest.TestCase):
                     "    }\n",
                 )
                 .replace(
-                    "    else if (hdr.method >= RF_METHOD_PAL) {\n"
+                    "    else if (hdr.method == RF_METHOD_SC) {\n"
+                    "        if ((rc = rf_sc_decode(payload, hdr.payload_size, rgb, 0, hdr.width, hdr.height, err)) != RF_OK) { rf_free(rgb); return rc; }\n"
+                    "    } else if (hdr.method >= RF_METHOD_PAL) {\n"
                     "        if ((rc = rf_pal_decode(payload, hdr.payload_size, rgb, 0, hdr.width, hdr.height, hdr.method, err)) != RF_OK) { rf_free(rgb); return rc; }\n"
                     "    }",
                     "",
                 )
                 .replace(
-                    "    else if (hdr.method >= RF_METHOD_PAL) {\n"
+                    "    else if (hdr.method == RF_METHOD_SC) {\n"
+                    "        if ((rc = rf_sc_decode(payload, hdr.payload_size, *bmp, stride, hdr.width, hdr.height, err)) != RF_OK) {\n"
+                    "            rf_free(*bmp);\n"
+                    "            *bmp = 0;\n"
+                    "            *bmp_size = 0;\n"
+                    "            return rc;\n"
+                    "        }\n"
+                    "    } else if (hdr.method >= RF_METHOD_PAL) {\n"
                     "        if ((rc = rf_pal_decode(payload, hdr.payload_size, *bmp, stride, hdr.width, hdr.height, hdr.method, err)) != RF_OK) {\n"
                     "            rf_free(*bmp);\n"
                     "            *bmp = 0;\n"
@@ -1289,6 +1309,8 @@ class ResearchRefsTests(unittest.TestCase):
             )
             self.assertNotIn("rf_pal_encode", fold_no_pal)
             self.assertNotIn("rf_pal_decode", fold_no_pal)
+            self.assertNotIn("rf_sc_encode", fold_no_pal)
+            self.assertNotIn("rf_sc_decode", fold_no_pal)
             (m1_dir / "fold.c").write_text(fold_no_pal, encoding="utf-8")
             cm_m1_path = res_dir / "cm_m1.c"
             cm_m1_path.write_bytes((ROOT / "src" / "cm.c").read_bytes())

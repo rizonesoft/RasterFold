@@ -27,6 +27,7 @@ Work toward RasterFold 1.0.0 (format version 3, C API 1.0):
 - Releases are published by a workflow from a pushed `rasterfold-v<VERSION>` tag: it runs every push gate on the tagged commit, builds the packages once, runs them on Linux and Windows with `scripts/verify_release.py` (checksums, reported version, a lossless round trip), and only then creates the GitHub release with the packages, their checksums and this changelog's section as notes. A manual run rehearses all of it without publishing.
 - The command-line help states that `encode` and `decode` refuse an existing output unless `--overwrite` is given, and the site gained a Command-Line Reference generated from that help text.
 - The C API surface is frozen at five exported functions with thread-local errors, and both a byte-identity check against the independent oracle and a multithreaded byte-identity check guard it.
+- Screen-content images whose backward-reference copies cover at least half of the pixels are also tried with method 5 (`sc`), new in format version 3, coding subtract-green literals, a 256-entry colour cache, and overlapping LZ77 copies with RFC 9649 prefix codes and 2D-mapped distances under 16-bit adaptive binary range coding, and kept whenever smaller than the raw, context-mixing, or palette choice (708,217 bytes across the ten development screenshots against method 1's 3,383,489, with photographs, the test pack, and the generated set unchanged).
 
 ## Pre-1.0 development (since the version 2 codec)
 

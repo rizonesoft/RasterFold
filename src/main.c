@@ -256,7 +256,8 @@ static int run(int argc, rf_path_char **argv, rf_error *err) {
         written = out_size;
     } else {
         /* Methods 2 and 3 store count - 1 in 16 bits, method 4 in one byte. */
-        uint32_t pal_colours = (file_size >= RF_HEADER_SIZE + 2)
+        uint32_t pal_colours = (file_size >= RF_HEADER_SIZE + 2
+                                && file[16] >= RF_METHOD_PAL && file[16] <= RF_METHOD_PAL3)
             ? (uint32_t)file[RF_HEADER_SIZE] + 1u
               + (file[16] == RF_METHOD_PAL3 ? 0u : ((uint32_t)file[RF_HEADER_SIZE + 1] << 8))
             : 0u;
@@ -296,6 +297,7 @@ static int run(int argc, rf_path_char **argv, rf_error *err) {
             written = out_size;
         } else if (json) {
             const char *method = info.method == RF_METHOD_CM ? "cm" :
+                info.method == RF_METHOD_SC ? "sc" :
                 (info.method >= RF_METHOD_PAL) ? "palette" : "raw";
             rf_print(0, "{\"version\": ");
             rf_print_u64(0, fold_version);
@@ -323,7 +325,7 @@ static int run(int argc, rf_path_char **argv, rf_error *err) {
                 rf_print_u64(0, info.stream_size[1]);
                 rf_print(0, ", \"stream_b\": ");
                 rf_print_u64(0, info.stream_size[2]);
-            } else if (info.method >= RF_METHOD_PAL) {
+            } else if (info.method >= RF_METHOD_PAL && info.method <= RF_METHOD_PAL3) {
                 rf_print(0, ", \"palette_colours\": ");
                 rf_print_u64(0, pal_colours);
             }
@@ -333,6 +335,7 @@ static int run(int argc, rf_path_char **argv, rf_error *err) {
             info_line("width", info.width);
             info_line("height", info.height);
             rf_print(0, info.method == RF_METHOD_CM ? "method: cm" RF_EOL :
+                        info.method == RF_METHOD_SC ? "method: sc" RF_EOL :
                         (info.method >= RF_METHOD_PAL) ? "method: palette" RF_EOL : "method: raw" RF_EOL);
             info_line("uncompressed_rgb_bytes", (uint64_t)info.width * info.height * 3);
             info_line("payload_size", info.payload_size);
@@ -343,7 +346,7 @@ static int run(int argc, rf_path_char **argv, rf_error *err) {
                 info_line("stream_g", info.stream_size[0]);
                 info_line("stream_r", info.stream_size[1]);
                 info_line("stream_b", info.stream_size[2]);
-            } else if (info.method >= RF_METHOD_PAL) {
+            } else if (info.method >= RF_METHOD_PAL && info.method <= RF_METHOD_PAL3) {
                 info_line("palette_colours", pal_colours);
             }
             rf_print(0, "status: ok" RF_EOL);

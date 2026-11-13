@@ -21,6 +21,7 @@ METHOD_CM = 1
 METHOD_PAL = 2
 METHOD_PAL2 = 3
 METHOD_PAL3 = 4      # compact palette, version 3 only
+METHOD_SC = 5        # screen content, version 3 only
 
 
 class FormatError(Exception):
@@ -1097,6 +1098,280 @@ def pal4_decode(payload: bytes, width: int, height: int) -> bytes:
     return bytes(rgb)
 
 
+# ---------------------------------------------------------------- method 5 (screen content, version 3)
+
+_SC_MAP: tuple[tuple[int, int], ...] = (
+    (0, 1), (1, 0), (1, 1), (-1, 1), (0, 2), (2, 0), (1, 2), (-1, 2), (2, 1), (-2, 1), (2, 2), (-2, 2),
+    (0, 3), (3, 0), (1, 3), (-1, 3), (3, 1), (-3, 1), (2, 3), (-2, 3), (3, 2), (-3, 2), (0, 4), (4, 0),
+    (1, 4), (-1, 4), (4, 1), (-4, 1), (3, 3), (-3, 3), (2, 4), (-2, 4), (4, 2), (-4, 2), (0, 5), (3, 4),
+    (-3, 4), (4, 3), (-4, 3), (5, 0), (1, 5), (-1, 5), (5, 1), (-5, 1), (2, 5), (-2, 5), (5, 2), (-5, 2),
+    (4, 4), (-4, 4), (3, 5), (-3, 5), (5, 3), (-5, 3), (0, 6), (6, 0), (1, 6), (-1, 6), (6, 1), (-6, 1),
+    (2, 6), (-2, 6), (6, 2), (-6, 2), (4, 5), (-4, 5), (5, 4), (-5, 4), (3, 6), (-3, 6), (6, 3), (-6, 3),
+    (0, 7), (7, 0), (1, 7), (-1, 7), (5, 5), (-5, 5), (7, 1), (-7, 1), (4, 6), (-4, 6), (6, 4), (-6, 4),
+    (2, 7), (-2, 7), (7, 2), (-7, 2), (3, 7), (-3, 7), (7, 3), (-7, 3), (5, 6), (-5, 6), (6, 5), (-6, 5),
+    (8, 0), (4, 7), (-4, 7), (7, 4), (-7, 4), (8, 1), (8, 2), (6, 6), (-6, 6), (8, 3), (5, 7), (-5, 7),
+    (7, 5), (-7, 5), (8, 4), (6, 7), (-6, 7), (7, 6), (-7, 6), (8, 5), (7, 7), (-7, 7), (8, 6), (8, 7),
+)
+_SC_WINDOW = (1 << 20) - 120
+
+
+def _sc_slot(r: int, g: int, b: int) -> int:
+    rgb24 = (r << 16) | (g << 8) | b
+    return ((0x1E35A7BD * (0xFF000000 | rgb24)) & 0xFFFFFFFF) >> 24
+
+
+def _sc_tree_put(enc: RangeEncoder, tree: list[_Pal4Counter], levels: int, value: int) -> None:
+    node = 1
+    for bit_pos in range(levels - 1, -1, -1):
+        bit = (value >> bit_pos) & 1
+        tree[node].code(enc, None, bit)
+        node = node * 2 + bit
+
+
+def _sc_tree_get(dec: RangeDecoder, tree: list[_Pal4Counter], levels: int) -> int:
+    node = 1
+    for _ in range(levels):
+        node = node * 2 + tree[node].code(None, dec)
+    return node - (1 << levels)
+
+
+def _sc_prefix_encode(value: int) -> tuple[int, int, int]:
+    d = value - 1
+    if d < 4:
+        return d, 0, 0
+    h = d.bit_length() - 1
+    nbits = h - 1
+    symbol = 2 * h + ((d >> (h - 1)) & 1)
+    extra = d & ((1 << nbits) - 1)
+    return symbol, nbits, extra
+
+
+def _sc_prefix_decode(symbol: int, extra: int) -> int:
+    if symbol < 4:
+        return symbol + 1
+    nbits = (symbol - 2) >> 1
+    return ((2 + (symbol & 1)) << nbits) + extra + 1
+
+
+def _sc_extra_put(enc: RangeEncoder, first: _Pal4Counter, nbits: int, extra: int) -> None:
+    for bit_pos in range(nbits - 1, -1, -1):
+        bit = (extra >> bit_pos) & 1
+        if bit_pos == nbits - 1:
+            first.code(enc, None, bit)
+        else:
+            enc.bit16(bit, 32768)
+
+
+def _sc_extra_get(dec: RangeDecoder, first: _Pal4Counter, nbits: int) -> int:
+    val = 0
+    for i in range(nbits):
+        bit = first.code(None, dec) if i == 0 else dec.bit16(32768)
+        val = (val << 1) | bit
+    return val
+
+
+def _sc_map_dist(v: int, width: int) -> int:
+    xi, yi = _SC_MAP[v - 1]
+    return max(1, xi + yi * width)
+
+
+def _sc_dist_code(dist: int, width: int) -> int:
+    for v in range(1, 121):
+        if _sc_map_dist(v, width) == dist:
+            return v
+    return dist + 120
+
+
+def _sc_fnv1a_4px(rgb: bytes, byte_off: int) -> int:
+    h = 2166136261
+    for b in rgb[byte_off : byte_off + 12]:
+        h = ((h ^ b) * 16777619) & 0xFFFFFFFF
+    return h >> 16
+
+
+def sc_encode(width: int, height: int, rgb: bytes, *, force: bool = False) -> bytes | None:
+    if len(rgb) != width * height * 3:
+        raise ValueError("rgb size")
+    total = width * height
+    head = [-1] * 65536
+    prev = [-1] * total
+
+    def insert(q: int) -> None:
+        if q + 4 <= total:
+            b = _sc_fnv1a_4px(rgb, 3 * q)
+            prev[q] = head[b]
+            head[b] = q
+
+    tokens: list[tuple[int, int] | None] = []
+    covered = 0
+    p = 0
+    while p < total:
+        if not force and (p - covered) * 2 > total:
+            return None
+        limit = min(4096, total - p)
+        best_len = 0
+        best_dist = 0
+        if limit >= 4:
+            cands: list[int] = []
+            if p >= 1:
+                cands.append(p - 1)
+            if p >= width:
+                cands.append(p - width)
+            q = head[_sc_fnv1a_4px(rgb, 3 * p)]
+            visited = 0
+            while q >= 0 and visited < 64 and p - q <= _SC_WINDOW:
+                cands.append(q)
+                q = prev[q]
+                visited += 1
+            cur_off = 3 * p
+            for c in cands:
+                d = p - c
+                if d > _SC_WINDOW:
+                    continue
+                cand_off = 3 * c
+                m = 0
+                while m < limit and rgb[cur_off + 3 * m : cur_off + 3 * m + 3] == rgb[cand_off + 3 * m : cand_off + 3 * m + 3]:
+                    m += 1
+                if m > best_len or (m == best_len and m > 0 and d < best_dist):
+                    best_len = m
+                    best_dist = d
+        if best_len >= 4:
+            tokens.append((best_len, best_dist))
+            for q in range(p, p + best_len):
+                insert(q)
+            covered += best_len
+            p += best_len
+        else:
+            tokens.append(None)
+            insert(p)
+            p += 1
+    if not force and covered * 2 < total:
+        return None
+
+    is_copy = [_Pal4Counter() for _ in range(3)]
+    is_cache = [_Pal4Counter() for _ in range(3)]
+    lit_g = [_Pal4Counter() for _ in range(256)]
+    lit_rg = [[_Pal4Counter() for _ in range(256)] for _ in range(4)]
+    lit_bg = [[_Pal4Counter() for _ in range(256)] for _ in range(4)]
+    cache_tree = [_Pal4Counter() for _ in range(256)]
+    len_tree = [_Pal4Counter() for _ in range(32)]
+    len_extra = [_Pal4Counter() for _ in range(32)]
+    dist_tree = [[_Pal4Counter() for _ in range(64)] for _ in range(2)]
+    dist_extra = [_Pal4Counter() for _ in range(64)]
+    cache: list[tuple[int, int, int] | None] = [None] * 256
+    enc = RangeEncoder()
+    prev_kind = 0
+    prev_short = 0
+    p = 0
+    for tok in tokens:
+        if tok is not None:
+            length, dist = tok
+            is_copy[prev_kind].code(enc, None, 1)
+            lsym, lnb, lex = _sc_prefix_encode(length - 3)
+            _sc_tree_put(enc, len_tree, 5, lsym)
+            _sc_extra_put(enc, len_extra[lsym], lnb, lex)
+            v = _sc_dist_code(dist, width)
+            dsym, dnb, dex = _sc_prefix_encode(v)
+            _sc_tree_put(enc, dist_tree[prev_short], 6, dsym)
+            _sc_extra_put(enc, dist_extra[dsym], dnb, dex)
+            for q in range(p, p + length):
+                px = (rgb[3 * q], rgb[3 * q + 1], rgb[3 * q + 2])
+                cache[_sc_slot(*px)] = px
+            p += length
+            prev_kind = 2
+            prev_short = 1 if v <= 120 else 0
+        else:
+            px = (rgb[3 * p], rgb[3 * p + 1], rgb[3 * p + 2])
+            idx = _sc_slot(*px)
+            hit = 1 if cache[idx] == px else 0
+            is_copy[prev_kind].code(enc, None, 0)
+            is_cache[prev_kind].code(enc, None, hit)
+            if hit:
+                _sc_tree_put(enc, cache_tree, 8, idx)
+                prev_kind = 1
+            else:
+                r, g, b = px
+                _sc_tree_put(enc, lit_g, 8, g)
+                _sc_tree_put(enc, lit_rg[g >> 6], 8, (r - g) & 255)
+                _sc_tree_put(enc, lit_bg[g >> 6], 8, (b - g) & 255)
+                prev_kind = 0
+            cache[idx] = px
+            p += 1
+    return enc.finish()
+
+
+def sc_decode(payload: bytes, width: int, height: int) -> bytes:
+    if len(payload) < 5:
+        raise FormatError("screen content")
+    dec = RangeDecoder(payload)
+    is_copy = [_Pal4Counter() for _ in range(3)]
+    is_cache = [_Pal4Counter() for _ in range(3)]
+    lit_g = [_Pal4Counter() for _ in range(256)]
+    lit_rg = [[_Pal4Counter() for _ in range(256)] for _ in range(4)]
+    lit_bg = [[_Pal4Counter() for _ in range(256)] for _ in range(4)]
+    cache_tree = [_Pal4Counter() for _ in range(256)]
+    len_tree = [_Pal4Counter() for _ in range(32)]
+    len_extra = [_Pal4Counter() for _ in range(32)]
+    dist_tree = [[_Pal4Counter() for _ in range(64)] for _ in range(2)]
+    dist_extra = [_Pal4Counter() for _ in range(64)]
+    cache: list[tuple[int, int, int] | None] = [None] * 256
+    total = width * height
+    rgb = bytearray(total * 3)
+    prev_kind = 0
+    prev_short = 0
+    p = 0
+    while p < total:
+        if is_copy[prev_kind].code(None, dec) == 1:
+            lsym = _sc_tree_get(dec, len_tree, 5)
+            if lsym > 23:
+                raise FormatError("screen content stream")
+            lnb = 0 if lsym < 4 else (lsym - 2) >> 1
+            length = _sc_prefix_decode(lsym, _sc_extra_get(dec, len_extra[lsym], lnb)) + 3
+            if length > 4096 or p + length > total:
+                raise FormatError("screen content stream")
+            dsym = _sc_tree_get(dec, dist_tree[prev_short], 6)
+            if dsym > 39:
+                raise FormatError("screen content stream")
+            dnb = 0 if dsym < 4 else (dsym - 2) >> 1
+            v = _sc_prefix_decode(dsym, _sc_extra_get(dec, dist_extra[dsym], dnb))
+            dist = _sc_map_dist(v, width) if v <= 120 else v - 120
+            if dist > p:
+                raise FormatError("screen content stream")
+            for q in range(p, p + length):
+                src = 3 * (q - dist)
+                dst = 3 * q
+                r, g, b = rgb[src], rgb[src + 1], rgb[src + 2]
+                rgb[dst], rgb[dst + 1], rgb[dst + 2] = r, g, b
+                cache[_sc_slot(r, g, b)] = (r, g, b)
+            p += length
+            prev_kind = 2
+            prev_short = 1 if v <= 120 else 0
+        else:
+            if is_cache[prev_kind].code(None, dec) == 1:
+                idx = _sc_tree_get(dec, cache_tree, 8)
+                cached = cache[idx]
+                if cached is None:
+                    raise FormatError("screen content stream")
+                r, g, b = cached
+                prev_kind = 1
+            else:
+                g = _sc_tree_get(dec, lit_g, 8)
+                rg = _sc_tree_get(dec, lit_rg[g >> 6], 8)
+                bg = _sc_tree_get(dec, lit_bg[g >> 6], 8)
+                r = (rg + g) & 255
+                b = (bg + g) & 255
+                prev_kind = 0
+            dst = 3 * p
+            rgb[dst], rgb[dst + 1], rgb[dst + 2] = r, g, b
+            cache[_sc_slot(r, g, b)] = (r, g, b)
+            p += 1
+        if dec.pos > len(dec.data) + 2:
+            raise FormatError("screen content stream")
+    if not dec.exhausted_exactly():
+        raise FormatError("screen content stream")
+    return bytes(rgb)
+
+
 # ---------------------------------------------------------------- container
 
 def build_file(width: int, height: int, method: int, payload: bytes, reserved: int = 0) -> bytes:
@@ -1134,6 +1409,10 @@ def encode_image(width: int, height: int, rgb: bytes) -> bytes:
     if pal_payload is not None and len(pal_payload) < len(best_payload):
         best_method = METHOD_PAL3
         best_payload = pal_payload
+    sc_payload = sc_encode(width, height, rgb)
+    if sc_payload is not None and len(sc_payload) < len(best_payload):
+        best_method = METHOD_SC
+        best_payload = sc_payload
     return build_file(width, height, best_method, best_payload)
 
 
@@ -1154,7 +1433,7 @@ def decode_image(blob: bytes) -> tuple[int, int, bytes]:
     if crc32(blob[:28]) != struct.unpack_from("<I", blob, 28)[0]:
         raise FormatError("header checksum")
     method, reserved = blob[16], blob[17]
-    if method > METHOD_PAL3 or (method == METHOD_PAL3 and version != 3):
+    if method > METHOD_SC or (method in (METHOD_PAL3, METHOD_SC) and version != 3):
         raise FormatError("method")
     if reserved != 0:
         raise FormatError("reserved byte")
@@ -1175,6 +1454,8 @@ def decode_image(blob: bytes) -> tuple[int, int, bytes]:
         return width, height, pal_decode(payload, width, height, method=method)
     if method == METHOD_PAL3:
         return width, height, pal4_decode(payload, width, height)
+    if method == METHOD_SC:
+        return width, height, sc_decode(payload, width, height)
     return width, height, cm_decode(payload, width, height, version)
 
 

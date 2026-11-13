@@ -18,7 +18,7 @@ Version 3 differs from version 2 only in method 1: its context mixer has
 seven models instead of five (contexts `k5` and `k6` below), 16 nodes per
 context row instead of 32, a gated gradient selector, and warm-started
 horizontal strips. Methods 0, 2 and 3 are identical in versions 2 and 3, and
-version 3 adds method 4, which a version 2 file may not use. A
+version 3 adds methods 4 and 5, which a version 2 file may not use. A
 decoder reads both versions; an encoder writes version 3. Version 2 replaced
 the experimental version 1 (64×64 blocks with PackBits, palette, Rice and
 binary rANS modes). Version 1 files are rejected as an unsupported version.
@@ -49,7 +49,8 @@ offset  size  field
 8       4     width
 12      4     height
 16      1     method: 0 = raw, 1 = CM, 2 = palette, 3 = extended palette,
-              4 = compact palette (version 3 only)
+              4 = compact palette (version 3 only),
+              5 = screen content (version 3 only)
 17      1     reserved = 0
 18      2     pixel_format = 1
 20      4     payload_size
@@ -792,6 +793,155 @@ When the literal tree is reached, the decoded index `I` must satisfy
 `I < count` and `I not in {a, b, e}`; otherwise the file is rejected. The
 index stream must end at exactly `S` bytes after the last pixel.
 
+## Method 5, screen content
+
+Method 5 is valid only in a version 3 file. It codes the `width * height`
+pixels in raster order `p = 0 .. width * height - 1` (`p = y * width + x`) as
+a sequence of tokens: literals, colour-cache hits, and backward-reference
+copies.
+
+### Payload and stream
+
+The payload is one binary range-coded stream of `payload_size` bytes, with
+`payload_size >= 5`. Every decision uses the 16-bit probability split of
+method 4 ("Index stream" under method 4: `bound = (range * p) >> 16` for
+probability `p/65536` of a 1 bit, `1 <= p <= 65535`) with the state, shifting,
+flushing, and decoding rules of method 1 ("Range coder"). The decoder must
+consume all `payload_size` bytes when `p` reaches `width * height`: a stream
+that needs a byte past `payload_size` or leaves bytes unconsumed is rejected.
+
+### Counters, binary trees, and prefix codes
+
+Every adaptive counter `(c, n)` starts at `c = 32768`, `n = 0`, and codes a
+bit using the 16-bit counter rule of method 4 (`p = max(1, c)`,
+`rate = (65536 * 2) / (2n + 3)`, `n = n + 1` if `n < 60` else `n`, and `c`
+moved toward `65535` on `bit = 1` or `0` on `bit = 0` by at least `1` before
+reaching that bound).
+
+A `K`-level binary tree `tree(T, K)` codes an unsigned `K`-bit integer `u` in
+`0 .. 2^K - 1` with counters `T[1 .. 2^K - 1]`:
+
+```
+node = 1
+for bit_pos in K - 1 down to 0:
+    code bit ((u >> bit_pos) & 1) with counter T[node]
+    node = node * 2 + bit
+decoded value: u = node - 2^K
+```
+
+Copy length offsets and distance codes use the prefix code of RFC 9649 section
+3.6.2.2 for positive integers `value >= 1`. Let `d = value - 1`:
+
+```
+if d < 4:
+    symbol = d,  nbits = 0,  extra = 0
+else:
+    h      = ilog2(d)                           (h >= 2)
+    nbits  = h - 1
+    symbol = 2 * h + ((d >> (h - 1)) & 1)
+    extra  = d & (2^nbits - 1)
+
+decoder:
+if symbol < 4:
+    nbits = 0,  value = symbol + 1
+else:
+    nbits = (symbol - 2) >> 1
+    value = ((2 + (symbol & 1)) << nbits) + extra + 1
+```
+
+When `nbits >= 1`, the `nbits` bits of `extra` (`0 .. 2^nbits - 1`) are coded
+most significant bit first (`bit_pos` from `nbits - 1` down to `0`): the
+highest extra bit (`bit_pos = nbits - 1`) is coded with an adaptive counter
+`E[symbol]`, and each remaining bit (`bit_pos < nbits - 1`) is coded at fixed
+probability `p = 32768` (`32768/65536`) with no counter and no update.
+
+### Colour cache
+
+Method 5 keeps a 256-entry direct-mapped colour cache `C[0..255]`, all entries
+starting empty. The slot index of pixel `(R, G, B)` with
+`RGB = (R << 16) | (G << 8) | B` is:
+
+```
+slot(R, G, B) = ((0x1E35A7BD * (0xFF000000 | RGB)) mod 2^32) >> 24
+```
+
+Inserting `(R, G, B)` sets `C[slot(R, G, B)] = (R, G, B)` (occupied). Every
+decoded pixel is inserted into `C` as soon as it is produced, in raster order,
+including every pixel of a backward-reference copy.
+
+### State, 2D distance map, and tokens
+
+Method 5 keeps these counter tables:
+
+- `is_copy[0..2]` and `is_cache[0..2]`, indexed by `prev_kind` (`0` = literal,
+  `1` = colour-cache hit, `2` = copy; initially `0`),
+- `lit_g[1..255]`, `lit_rg[0..3][1..255]`, and `lit_bg[0..3][1..255]`,
+- `cache_tree[1..255]`,
+- `len_tree[1..31]` and `len_extra[0..31]`,
+- `dist_tree[0..1][1..63]` (indexed by `prev_short` in `{0, 1}`, initially
+  `0`) and `dist_extra[0..63]`.
+
+Distance codes `v` in `1..120` map through the 120-entry 2D neighbourhood
+table `M[0..119]` of `(xi, yi)` pairs (RFC 9649 section 3.6.2.2.1, Figure 20):
+
+```
+(0,1), (1,0), (1,1), (-1,1), (0,2), (2,0), (1,2), (-1,2), (2,1), (-2,1), (2,2), (-2,2),
+(0,3), (3,0), (1,3), (-1,3), (3,1), (-3,1), (2,3), (-2,3), (3,2), (-3,2), (0,4), (4,0),
+(1,4), (-1,4), (4,1), (-4,1), (3,3), (-3,3), (2,4), (-2,4), (4,2), (-4,2), (0,5), (3,4),
+(-3,4), (4,3), (-4,3), (5,0), (1,5), (-1,5), (5,1), (-5,1), (2,5), (-2,5), (5,2), (-5,2),
+(4,4), (-4,4), (3,5), (-3,5), (5,3), (-5,3), (0,6), (6,0), (1,6), (-1,6), (6,1), (-6,1),
+(2,6), (-2,6), (6,2), (-6,2), (4,5), (-4,5), (5,4), (-5,4), (3,6), (-3,6), (6,3), (-6,3),
+(0,7), (7,0), (1,7), (-1,7), (5,5), (-5,5), (7,1), (-7,1), (4,6), (-4,6), (6,4), (-6,4),
+(2,7), (-2,7), (7,2), (-7,2), (3,7), (-3,7), (7,3), (-7,3), (5,6), (-5,6), (6,5), (-6,5),
+(8,0), (4,7), (-4,7), (7,4), (-7,4), (8,1), (8,2), (6,6), (-6,6), (8,3), (5,7), (-5,7),
+(7,5), (-7,5), (8,4), (6,7), (-6,7), (7,6), (-7,6), (8,5), (7,7), (-7,7), (8,6), (8,7)
+```
+
+For `v` in `1..120`, `(xi, yi) = M[v - 1]` and `D = max(1, xi + yi * width)`.
+For `v > 120`, `D = v - 120`.
+
+Starting at `p = 0`, `prev_kind = 0`, `prev_short = 0`, while
+`p < width * height`:
+
+```
+code bit b_copy with is_copy[prev_kind]
+if b_copy == 1:
+    len_sym = tree(len_tree, 5)                     (must satisfy len_sym <= 23)
+    code extra bits of len_sym with E = len_extra -> u = prefix_value(len_sym, extra)
+    L = u + 3                                       (must satisfy 4 <= L <= 4096 and p + L <= width * height)
+    dist_sym = tree(dist_tree[prev_short], 6)       (must satisfy dist_sym <= 39)
+    code extra bits of dist_sym with E = dist_extra -> v = prefix_value(dist_sym, extra)
+    D = max(1, M[v - 1].x + M[v - 1].y * width) if v <= 120 else v - 120
+                                                    (must satisfy 1 <= D <= p)
+    for q = p .. p + L - 1:
+        pixel[q] = pixel[q - D]
+        insert pixel[q] into C
+    p = p + L
+    prev_kind = 2
+    prev_short = 1 if v <= 120 else 0
+else:
+    code bit b_cache with is_cache[prev_kind]
+    if b_cache == 1:
+        idx = tree(cache_tree, 8)                   (C[idx] must be occupied)
+        pixel[p] = C[idx]
+        insert pixel[p] into C
+        p = p + 1
+        prev_kind = 1
+    else:
+        G  = tree(lit_g, 8)
+        rg = tree(lit_rg[G >> 6], 8)
+        bg = tree(lit_bg[G >> 6], 8)
+        R  = (rg + G) mod 256
+        B  = (bg + G) mod 256
+        pixel[p] = (R, G, B)
+        insert pixel[p] into C
+        p = p + 1
+        prev_kind = 0
+```
+
+When `D < L`, each copied pixel `pixel[q]` reads `pixel[q - D]` after earlier
+pixels of the same copy have been written.
+
 ## Rejection rules
 
 Reject, and do not produce a completed output file, when:
@@ -799,8 +949,8 @@ Reject, and do not produce a completed output file, when:
 - the file is shorter than 32 bytes or longer than 256 MiB;
 - the magic is not `RFI` (malformed), or the fourth magic byte and `version`
   do not agree or are not 2 or 3, `header_size` is not 32, `pixel_format` is
-  not 1, `method` is not 0, 1, 2, 3, or 4, or `method` is 4 in a version 2
-  file (unsupported);
+  not 1, `method` is not 0, 1, 2, 3, 4, or 5, or `method` is 4 or 5 in a
+  version 2 file (unsupported);
 - `header_crc32` or `payload_crc32` does not match, `reserved` is not 0, or
   `payload_size` is not `file_size - 32`;
 - a dimension is 0 (malformed) or outside the limits (size limit);
@@ -822,7 +972,11 @@ Reject, and do not produce a completed output file, when:
   strictly greater than the entry before it, a non-zero padding bit, fewer
   than 5 bytes after the palette field, a decoded literal index `>= count` or
   equal to an excluded candidate (`a`, `b`, or `e`), or a stream that runs out
-  or has bytes left.
+  or has bytes left;
+- method 5 has a payload shorter than 5 bytes, a length symbol above 23, a
+  decoded copy length above 4096 or extending past `width * height`, a
+  distance symbol above 39, a copy distance above `p`, a colour-cache index
+  naming an empty slot, or a stream that runs out or has bytes left.
 
 The reference tool writes outputs to `destination.partial` with `CREATE_NEW`,
 flushes, and renames onto the destination only after success. An existing
@@ -838,10 +992,24 @@ The encoder codes the image with method 1 using `S = 3` strips when
 as the smallest value in `0..8` that gives its channel the fewest palette
 field bits. It writes whichever eligible candidate
 of method 0 (raw), method 1, and method 4 has the smallest payload, breaking
-ties in order method 0, then method 1, then method 4. It never writes method 2
+ties in order method 0, then method 1, then method 4. Next, it runs the
+method 5 greedy backward-reference parse across the image: at each pixel `p`
+it checks distances `1` (when `p >= 1`), `width` (when `p >= width`), and up
+to 64 positions from the `2^16`-bucket FNV-1a hash chain of the 12-byte
+4-pixel key within distance `2^20 - 120`, choosing the longest exact match in
+`4..4096` pixels (breaking ties toward the smaller distance) and inserting
+every pixel `q` with `q + 4 <= width * height` into its bucket chain; a pixel
+distance `D` is coded as the smallest `v` in `1..120` with
+`max(1, M[v - 1].x + M[v - 1].y * width) == D`, or `D + 120` when none
+matches, and a non-copied pixel is coded as a colour-cache hit when
+`C[slot(R, G, B)] == (R, G, B)` and as a literal otherwise. When copies cover
+at least half the pixels (`covered * 2 >= width * height`) and the resulting
+method 5 payload is strictly smaller than the chosen method 0/1/4 payload, the
+encoder writes method 5 instead. It never writes method 2
 or method 3. The `3 * S` streams of
 method 1 depend only on the warm-start handoff rows and same-pixel channel
-values, so any thread count produces the same bytes.
+values, and methods 0, 4, and 5 are single-stream and deterministic, so any
+thread count produces the same bytes.
 
 ## BMP subset accepted by the reference tool
 

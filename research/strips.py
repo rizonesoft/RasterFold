@@ -128,7 +128,7 @@ def parse_bench_rows_with_status(
         m = BENCH_LINE_RE.match(line)
         if m:
             name, sz_s, enc_s, dec_s, status = m.groups()
-            if status not in ("OK", "RAW", "PAL"):
+            if status not in ("OK", "RAW", "PAL", "SC"):
                 raise ValueError(f"bench round-trip failure on {name}: {status}")
             val = (int(sz_s), max(float(enc_s), 0.05), max(float(dec_s), 0.05), status)
             rows[name] = val
@@ -265,7 +265,7 @@ def is_valid_cache_entry(entry: object, expected_ppm_sha: str) -> bool:
         and _is_valid_timing(entry[1])
         and _is_valid_timing(entry[2])
         and isinstance(entry[3], str)
-        and entry[3] in ("OK", "RAW", "PAL")
+        and entry[3] in ("OK", "RAW", "PAL", "SC")
         and isinstance(entry[4], str)
         and entry[4] == expected_ppm_sha
     )
@@ -376,6 +376,10 @@ def build_strips_bench(cm_path: Path, exe: Path, baseline_key: str, force_cm: bo
             "rc = RF_OK; pal_n = 0;",
         )
         .replace(
+            "rc = rf_sc_encode(img->rgb, img->width, img->height, f + RF_HEADER_SIZE, n, &sc_n, err);",
+            "rc = RF_OK; sc_n = 0;",
+        )
+        .replace(
             "size_t cm_cap = raw - 1;",
             "size_t cm_cap = max_cm;",
         )
@@ -420,6 +424,7 @@ def build_strips_bench(cm_path: Path, exe: Path, baseline_key: str, force_cm: bo
         str(fold_cm_path),
         str(cm_force_path),
         str(src_dir / "pal.c"),
+        *([str(src_dir / "sc.c")] if (src_dir / "sc.c").is_file() else []),
         str(src_dir / "bmp.c"),
         str(src_dir / "crc32.c"),
         "-lwinmm",

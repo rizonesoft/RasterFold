@@ -67,7 +67,7 @@ def parse_bench_rows(stdout: str, expected_imgs: tuple[str, ...]) -> dict[str, t
         )
         if m:
             status = m.group(5)
-            if status not in ("OK", "RAW", "PAL"):
+            if status not in ("OK", "RAW", "PAL", "SC"):
                 raise RuntimeError(f"bench round-trip failure on {m.group(1)}: {status}")
             rows[m.group(1)] = (int(m.group(2)), max(float(m.group(3)), 0.05), max(float(m.group(4)), 0.05))
     missing = [img for img in expected_imgs if img not in rows]
@@ -93,6 +93,7 @@ def build_bench_multi_tu(clang: Path, obj_dir: Path, out: Path, lto: bool, extra
         ("benchsys", REPO / "research" / "benchsys.c"),
         ("cm", REPO / "src" / "cm.c"),
         ("pal", REPO / "src" / "pal.c"),
+        ("sc", REPO / "src" / "sc.c"),
         ("fold", REPO / "src" / "fold.c"),
         ("bmp", REPO / "src" / "bmp.c"),
         ("crc32", REPO / "src" / "crc32.c"),

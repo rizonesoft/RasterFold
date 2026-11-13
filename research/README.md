@@ -6,8 +6,8 @@ Tools for changing the codec with numbers instead of guesses. Data goes to
 | command | what it does |
 |---|---|
 | `python research/corpus.py` | builds `build/research/ppm/` (105 images: measure, 24 Kodak, 14 imagecompression.info crops, 5 test-pack crops, 11 generated, the 10 development screenshots frozen in `research/screens.json` (recovered from the committed PNGs in `research/screens-assets/`, never rendered on a routine run; authored once in WSL with `python3 research/corpus.py --author-screens`, which renders pages that are not held out with the held-out set's browser version and refuses any overlap with it), and the 40-image held-out set of 30 Wikimedia Commons photographs and 10 locally rendered screenshots frozen in `research/heldout.json` (screenshot recovery restores the committed frozen PNGs in `research/heldout-assets/`; rendering for authoring downloads the pinned Chrome for Testing build recorded in the manifest and verifies its version); `--verify-heldout` checks membership, dimensions, and hashes without regenerating) and `jxl_refs.json` (JPEG XL e7 and e9 and lossless WebP sizes) |
-| `python research/ab.py size [file.c] SET [-v]` | exact `.fold` sizes of a `cm.c` or `pal.c` variant on a set, against JPEG XL and WebP: total, geometric mean, worst image |
-| `python research/ab.py bench [file.c] [-r3] [-t1\|-t3] IMAGES` | encode and decode time of a `cm.c` or `pal.c` variant through `rf_encode`/`rf_decode`, verified round trip (`bench.exe --breakdown` also attributes CM bytes per channel `G`, `R-G`, `B-G` and decision kind `zero`, `sign`, `exp`, `mant`) |
+| `python research/ab.py size [file.c] SET [-v]` | exact `.fold` sizes of a `cm.c`, `pal.c`, or `sc.c` variant on a set, against JPEG XL and WebP: total, geometric mean, worst image |
+| `python research/ab.py bench [file.c] [-r3] [-t1\|-t3] IMAGES` | encode and decode time of a `cm.c`, `pal.c`, or `sc.c` variant through `rf_encode`/`rf_decode`, verified round trip (`bench.exe --breakdown` also attributes CM bytes per channel `G`, `R-G`, `B-G` and decision kind `zero`, `sign`, `exp`, `mant`) |
 | `python research/ab.py ab [-v] A.c B.c [-n5] [-t1] IMAGES` | alternates two variants and compares their minimum times (with `-v`, also reports set `min_tot`, per-image `geomean`, and `worst`) |
 | `python research/abpool.py run <jsonl> <base_cm> <cand_cm> -t<N> <rounds> SET` | appends SHA-256-tagged alternating A/B runs to `<jsonl>`, and `abpool.py report <jsonl> [lo:hi]` evaluates pooled per-image minima against the set-total and per-image bars |
 | `python research/ab.py compat [REF] [--allow-diff SET]` | builds baseline `REF` (`build/research/vs/rasterfold-m1.exe`, `build/research/cm_m1.c`, and `build/research/bench_m1.exe`) and verifies 55-image `.fold` byte identity (except any permitted `--allow-diff SET`), `bench_m1` size identity, and baseline/candidate decode at `-t1` and `-t3` |
@@ -19,8 +19,8 @@ Sets for `ab.py`: `sub` (8 mixed photos), `kodak`, `ic`, `tp` (test pack), `held
 `all`. A name without a set is one
 image from `build/research/ppm`.
 
-`ab.py` compiles `bench.c` + `benchsys.c` + `src/fold.c` + `src/cm.c` + `src/pal.c` + `src/bmp.c` + `src/crc32.c` (replacing `src/cm.c` or `src/pal.c` when a variant `.c` file is given, or linking against `build/research/m1_src/` when compiling `build/research/cm_m1.c`) with the local
-Clang. Without a file argument it uses `src/cm.c` and `src/pal.c`. `bench.c` times `rf_encode` and `rf_decode` with thread
+`ab.py` compiles `bench.c` + `benchsys.c` + `src/fold.c` + `src/cm.c` + `src/pal.c` + `src/sc.c` + `src/bmp.c` + `src/crc32.c` (replacing `src/cm.c`, `src/pal.c`, or `src/sc.c` when a variant `.c` file is given, or linking against `build/research/m1_src/` when compiling `build/research/cm_m1.c`) with the local
+Clang. Without a file argument it uses `src/cm.c`, `src/pal.c`, and `src/sc.c`. `bench.c` times `rf_encode` and `rf_decode` with thread
 cycle counters at high priority for one thread (`-t1`), and with the wall clock
 for three threads (`-t3`), so a busy machine distorts the numbers less. Still,
 compare variants with `ab`, which alternates them, rather than across separate

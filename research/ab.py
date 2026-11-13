@@ -565,6 +565,17 @@ def is_palette_source(src_path: Path) -> bool:
     return "pal" in name and "cm" not in name
 
 
+def is_sc_source(src_path: Path) -> bool:
+    if src_path.is_file():
+        src_text = src_path.read_text(encoding="utf-8", errors="ignore")
+        has_sc = bool(re.search(r"\brf_sc_encode\b", src_text))
+        has_cm = bool(re.search(r"\brf_cm_encode\b", src_text))
+        if has_sc != has_cm:
+            return has_sc
+    name = src_path.name.lower()
+    return (name == "sc.c" or name.startswith("sc_")) and "cm" not in name
+
+
 def is_m1_baseline_source(src_path: Path) -> bool:
     m1_dir = RES / "m1_src"
     if not (m1_dir / "fold.c").is_file():
@@ -586,11 +597,15 @@ def harness_sources(src):
     if is_m1_baseline_source(src_path):
         m1_dir = RES / "m1_src"
         pal_srcs = [m1_dir / "pal.c"] if (m1_dir / "pal.c").is_file() else []
-        return True, [m1_dir / "fold.c", src_path, *pal_srcs, m1_dir / "bmp.c", m1_dir / "crc32.c"], [m1_dir, REPO / "src"]
+        sc_srcs = [m1_dir / "sc.c"] if (m1_dir / "sc.c").is_file() else []
+        return True, [m1_dir / "fold.c", src_path, *pal_srcs, *sc_srcs, m1_dir / "bmp.c", m1_dir / "crc32.c"], [m1_dir, REPO / "src"]
     is_pal_variant = is_palette_source(src_path)
-    cm_src = REPO / "src" / "cm.c" if is_pal_variant else src_path
+    is_sc_variant = is_sc_source(src_path)
+    cm_src = REPO / "src" / "cm.c" if (is_pal_variant or is_sc_variant) else src_path
     pal_src = src_path if is_pal_variant else REPO / "src" / "pal.c"
-    return False, [REPO / "src" / "fold.c", cm_src, pal_src, REPO / "src" / "bmp.c", REPO / "src" / "crc32.c"], [REPO / "src"]
+    sc_src = src_path if is_sc_variant else REPO / "src" / "sc.c"
+    return False, [REPO / "src" / "fold.c", cm_src, pal_src, sc_src, REPO / "src" / "bmp.c",
+                   REPO / "src" / "crc32.c"], [REPO / "src"]
 
 
 def build_inputs(src):
@@ -671,7 +686,7 @@ def parse_bench_rows(stdout: str, expected_imgs: list[str] | tuple[str, ...]) ->
         )
         if m:
             status = m.group(5)
-            if status not in ("OK", "RAW", "PAL"):
+            if status not in ("OK", "RAW", "PAL", "SC"):
                 raise SystemExit(f"bench round-trip failure on {m.group(1)}: {status}")
             rows[m.group(1)] = (int(m.group(2)), max(float(m.group(3)), 0.05), max(float(m.group(4)), 0.05))
     missing = [img for img in expected_imgs if img not in rows]
@@ -872,7 +887,7 @@ def main():
         )
         c_stems = [
             s
-            for s in ("platform", "api", "crc32", "bmp", "fold", "cm", "pal", "mem", "sys", "main")
+            for s in ("platform", "api", "crc32", "bmp", "ppm", "png", "zlib", "fold", "cm", "pal", "sc", "mem", "sys", "main")
             if f"{s}.c" in src_entries
         ]
         h_files = sorted(f for f in src_entries if f.endswith(".h"))

@@ -15,7 +15,11 @@ import unittest
 import zlib
 
 import rfi_ref
-from test_correctness import KAT_FOLD, KAT_FOLD3, KAT_RGB, KAT_W, KAT_H, KAT_PAL, KAT_PAL2, KAT_PAL2_3, KAT_PAL4, KAT_PAL_RGB, KAT_PAL_W, KAT_PAL_H
+from test_correctness import (
+    KAT_FOLD, KAT_FOLD3, KAT_RGB, KAT_W, KAT_H,
+    KAT_PAL, KAT_PAL2, KAT_PAL2_3, KAT_PAL4, KAT_PAL_RGB, KAT_PAL_W, KAT_PAL_H,
+    KAT_SC5, KAT_SC_RGB, KAT_SC_W, KAT_SC_H,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = 'windows-x64' if os.name == 'nt' else 'linux-x64'
@@ -86,7 +90,9 @@ EXPECTED_FIXTURES = frozenset({
     'pal_d3_candidates', 'pal_ones_run', 'pal4_256', 'pal4_coverage',
     'pal4_one_colour', 'pal4_one_high', 'pal4_one_wide', 'pal4_two_colours',
     'photo', 'px1', 'reserved', 'rgb',
-    'row64', 'sizeimage0', 'solid', 'stripes', 'text', 'topdown', 'ui',
+    'row64', 'sc5_bucket_collision', 'sc5_narrow', 'sc5_one_colour',
+    'sc5_overlap', 'sc5_screen_crop', 'sc5_solid_body', 'sizeimage0',
+    'solid', 'stripes', 'text', 'topdown', 'ui',
     'white',
 })
 
@@ -188,6 +194,15 @@ class Api(unittest.TestCase):
                 LIBRARY.rf_free(out.data)
             self.assertEqual(LIBRARY.rf_inspect(pal_blob, len(pal_blob), C.byref(info), None), 0)
             self.assertEqual((info.width, info.height, info.method, tuple(info.stream_size)), (16, 8, m_val, (0, 0, 0)))
+        self.assertEqual(encode(KAT_SC_W, KAT_SC_H, KAT_SC_RGB), KAT_SC5)
+        self.assertEqual(LIBRARY.rf_decode_image(KAT_SC5, len(KAT_SC5), None, C.byref(out), C.byref(err)), 0)
+        try:
+            self.assertEqual((out.width, out.height, out.stride, out.layout, out.size), (KAT_SC_W, KAT_SC_H, KAT_SC_W * 3, 1, len(KAT_SC_RGB)))
+            self.assertEqual(C.string_at(out.data, out.size), KAT_SC_RGB)
+        finally:
+            LIBRARY.rf_free(out.data)
+        self.assertEqual(LIBRARY.rf_inspect(KAT_SC5, len(KAT_SC5), C.byref(info), None), 0)
+        self.assertEqual((info.width, info.height, info.method, tuple(info.stream_size)), (KAT_SC_W, KAT_SC_H, 5, (0, 0, 0)))
         # Verify legacy method 2 long zero-run and long one-run fixtures through the RGB (stride == 0) library decoder.
         c0, c1, c2 = b"\x12\x34\x56", b"\xFE\xDC\xBA", b"\x44\x88\xCC"
         rgb_m2_zero = b"".join((c1 if (x & 1) else c0) if x < 450 else c1 for x in range(512))
@@ -353,12 +368,25 @@ class Api(unittest.TestCase):
         raw_rgb = bytes(((i * 197 + 53) & 255) for i in range(raw_w * raw_h * 3))
         raw_fold = encode(raw_w, raw_h, raw_rgb, threads=1)
         pal_long_w, pal_long_h = 32, 32
-        pal_cols = [bytes(((i * 29) & 255, (i * 61 + 11) & 255, (i * 103 + 7) & 255)) for i in range(16)]
-        pal_long_rgb = b''.join(pal_cols[((x * 3 + y * 5 + ((x ^ y) & 3)) & 15)] for y in range(pal_long_h) for x in range(pal_long_w))
+        pal_cols = [bytes(((i * 29) & 255, (i * 61 + 11) & 255, (i * 103 + 7) & 255)) for i in range(64)]
+        def _pal_idx(i: int) -> int:
+            v = ((i + 1) * 0x9E3779B1) & 0xFFFFFFFF
+            v = ((v ^ (v >> 15)) * 0x85EBCA77) & 0xFFFFFFFF
+            return ((v ^ (v >> 13)) * 0xC2B2AE3D >> 26) & 63
+        pal_long_rgb = b''.join(pal_cols[_pal_idx(i)] for i in range(pal_long_w * pal_long_h))
         pal_long_fold = encode(pal_long_w, pal_long_h, pal_long_rgb, threads=1)
         self.assertEqual(pal_long_fold[16], 4)
         pal_long_m3 = rfi_ref.build_file(pal_long_w, pal_long_h, rfi_ref.METHOD_PAL2,
                                          rfi_ref.pal_encode(pal_long_w, pal_long_h, pal_long_rgb, method=rfi_ref.METHOD_PAL2))
+        sc_long_w, sc_long_h = 64, 32
+        sc_seed = [
+            bytes((((((i + 1) * 0x9E3779B1) >> 24) & 255), ((((i + 1) * 0x85EBCA77) >> 24) & 255), ((((i + 1) * 0xC2B2AE3D) >> 24) & 255)))
+            for i in range(300)
+        ]
+        sc_long_rgb = b''.join(sc_seed[i % 300] for i in range(sc_long_w * sc_long_h))
+        sc_long_fold = encode(sc_long_w, sc_long_h, sc_long_rgb, threads=1)
+        self.assertEqual(sc_long_fold[16], 5)
+        self.assertGreater(len(sc_long_fold) - 32, 53)
 
         for label, blob, exp_w, exp_h, exp_rgb in [
             ('kat_short_tail', KAT_FOLD, KAT_W, KAT_H, KAT_RGB),
@@ -369,6 +397,8 @@ class Api(unittest.TestCase):
             ('pal_m4_short_tail', KAT_PAL4, KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB),
             ('pal_long_tail', pal_long_fold, pal_long_w, pal_long_h, pal_long_rgb),
             ('pal_m3_long_tail', pal_long_m3, pal_long_w, pal_long_h, pal_long_rgb),
+            ('sc_m5_short_tail', KAT_SC5, KAT_SC_W, KAT_SC_H, KAT_SC_RGB),
+            ('sc_m5_long_tail', sc_long_fold, sc_long_w, sc_long_h, sc_long_rgb),
         ]:
             for threads in (1, 3):
                 with self.subTest(case=label, threads=threads), guarded_slice(blob) as (ptr, size):
@@ -403,6 +433,13 @@ class Api(unittest.TestCase):
                     self.assertEqual(LIBRARY.rf_decode_image(ptr, size, C.byref(opt), C.byref(out), C.byref(err)), 4)
                     self.assertFalse(out.data)
                     self.assertEqual(LIBRARY.rf_inspect(ptr, size, C.byref(info), C.byref(err)), 4)
+
+        bad_sc5 = rebuild_fold(KAT_SC5[:32], b'\x00' * 5)
+        with self.subTest(case='exhaust_sc5'), guarded_slice(bad_sc5) as (ptr, size):
+            out, err, info = Pixels(), Error(), Info()
+            self.assertEqual(LIBRARY.rf_decode_image(ptr, size, None, C.byref(out), C.byref(err)), 4)
+            self.assertFalse(out.data)
+            self.assertEqual(LIBRARY.rf_inspect(ptr, size, C.byref(info), C.byref(err)), 4)
 
 
 if __name__ == '__main__':

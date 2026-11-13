@@ -1,4 +1,4 @@
-/* Binary range coder shared by method 1 ("CM") and the palette methods (2, 3, 4).
+/* Binary range coder shared by method 1 ("CM"), the palette methods (2, 3, 4), and method 5 ("SC").
    spec/FOLD.md ("Range coder") is the normative description. */
 #ifndef RF_RC_H
 #define RF_RC_H

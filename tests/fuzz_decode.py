@@ -64,14 +64,14 @@ def recrc(b: bytearray, update_payload_size: bool = True) -> bytes:
 
 def seed_records() -> list[tuple[str, int, int, int, bytes]]:
     WORK.mkdir(parents=True, exist_ok=True)
-    seed_src = (ROOT / "tests" / "rfi_ref.py").read_bytes() + repr((PHOTO_CROPS, FORCE_STRIPS)).encode("utf-8")
+    seed_src = (ROOT / "tests" / "rfi_ref.py").read_bytes() + repr((PHOTO_CROPS, FORCE_STRIPS, "sc5_v5")).encode("utf-8")
     cache_key = hashlib.sha256(seed_src).hexdigest()[:16]
     cache_path = WORK / f"seeds_v3_{cache_key}.json"
     if cache_path.is_file():
         try:
             raw = json.loads(cache_path.read_text(encoding="utf-8"))
             records = [(r["name"], int(r["w"]), int(r["h"]), int(r["method"]), base64.b64decode(r["b64"])) for r in raw]
-            if len(records) == 17:
+            if len(records) == 19:
                 return records
         except (KeyError, ValueError, json.JSONDecodeError):
             pass
@@ -103,11 +103,9 @@ def seed_records() -> list[tuple[str, int, int, int, bytes]]:
 
     pal200 = [bytes(((i * 53 + 17) & 0xFF, (i * 97 + 43) & 0xFF, (i * 151 + 89) & 0xFF)) for i in range(200)]
     assert len(set(pal200)) == 200
-    pal200_rgb = b"".join(
-        pal200[(y * pal_w + x) if (y * pal_w + x) < 200 else ((x * 7 + y * 13 + ((x ^ y) & 3)) % 200)]
-        for y in range(pal_h)
-        for x in range(pal_w)
-    )
+    rng200 = random.Random(200)
+    blocks200 = [b if b < 200 else rng200.randrange(200) for b in range((pal_w * pal_h) // 3)]
+    pal200_rgb = b"".join(pal200[blocks200[p // 3]] for p in range(pal_w * pal_h))
     pal4_200col = rf.encode_image(pal_w, pal_h, pal200_rgb)
     assert pal4_200col[16] == rf.METHOD_PAL3
     assert pal4_200col[32] + 1 == 200
@@ -119,6 +117,18 @@ def seed_records() -> list[tuple[str, int, int, int, bytes]]:
     assert pal2_200col_payload is not None
     pal2_200col = rf.build_file(pal_w, pal_h, rf.METHOD_PAL, pal2_200col_payload)
     assert struct.unpack_from("<H", pal2_200col, 32)[0] + 1 == 200
+
+    with Image.open(ROOT / "research" / "screens-assets" / "dv_s01.png") as sc_im:
+        sc_screen_rgb = sc_im.convert("RGB").crop((40, 160, 40 + pal_w, 160 + pal_h)).tobytes()
+    sc5_screen = rf.encode_image(pal_w, pal_h, sc_screen_rgb)
+    assert sc5_screen[16] == rf.METHOD_SC
+
+    sc_tile = [bytes(((i * 73 + 11) & 0xFF, ((i * 139 + 29) + (i >> 8)) & 0xFF, (i * 197 + 53) & 0xFF)) for i in range(320)]
+    assert len(set(sc_tile)) == 320
+    random.Random(320).shuffle(sc_tile)
+    sc_runs_rgb = b"".join(sc_tile[((y % 10) * 32) + (x & 31)] for y in range(pal_h) for x in range(pal_w))
+    sc5_runs = rf.encode_image(pal_w, pal_h, sc_runs_rgb)
+    assert sc5_runs[16] == rf.METHOD_SC
 
     photo_folds: list[tuple[str, int, int, int, bytes]] = []
     photos_dir = ROOT / "testdata" / "photos"
@@ -137,20 +147,29 @@ def seed_records() -> list[tuple[str, int, int, int, bytes]]:
         stem = name.removesuffix(".png")
         photo_folds.append((f"{stem}_{w}x{h}", w, h, rf.METHOD_CM, blob))
 
-    # Order the first 8 slots so small runs (e.g. 10 iterations) exercise methods 0, 1, 2, 3, 4.
+    # Order the first 6 slots so small runs (e.g. 10 iterations) exercise methods 0, 1, 2, 3, 4, 5.
     records = [
         ("noise_64x48", noise_w, noise_h, rf.METHOD_RAW, noise_fold),
         photo_folds[0],
         ("pal2_2col_64x48", pal_w, pal_h, rf.METHOD_PAL, pal2_2col),
         ("pal3_200col_64x48", pal_w, pal_h, rf.METHOD_PAL2, pal3_200col),
         ("pal4_200col_64x48", pal_w, pal_h, rf.METHOD_PAL3, pal4_200col),
+        ("sc5_screen_64x48", pal_w, pal_h, rf.METHOD_SC, sc5_screen),
         ("pal2_200col_64x48", pal_w, pal_h, rf.METHOD_PAL, pal2_200col),
         ("pal3_2col_64x48", pal_w, pal_h, rf.METHOD_PAL2, pal3_2col),
         ("pal4_2col_64x48", pal_w, pal_h, rf.METHOD_PAL3, pal4_2col),
+        ("sc5_runs_64x48", pal_w, pal_h, rf.METHOD_SC, sc5_runs),
         *photo_folds[1:],
     ]
-    assert len(records) == 17
-    assert {m for _, _, _, m, _ in records[:5]} == {rf.METHOD_RAW, rf.METHOD_CM, rf.METHOD_PAL, rf.METHOD_PAL2, rf.METHOD_PAL3}
+    assert len(records) == 19
+    assert {m for _, _, _, m, _ in records[:6]} == {
+        rf.METHOD_RAW,
+        rf.METHOD_CM,
+        rf.METHOD_PAL,
+        rf.METHOD_PAL2,
+        rf.METHOD_PAL3,
+        rf.METHOD_SC,
+    }
     for _, w, h, m, blob in records:
         assert w >= 36 and h >= 34 and w * h > 1200
         assert struct.unpack_from("<II", blob, 8) == (w, h)
@@ -268,6 +287,33 @@ def mutate(blob: bytes, rng: random.Random) -> bytes:
                 struct.pack_into("<II", b, 8, max(1, w + rng.randrange(-3, 4)), max(1, h + rng.randrange(-3, 4)))
         else:                                       # random stream bytes
             for i in range(s_start, len(b)):
+                if rng.random() < 0.1:
+                    b[i] = rng.randrange(256)
+        return recrc(b)
+    if method == rf.METHOD_SC:
+        # Method 5: payload is the range-coded token stream alone (no header field).
+        payload_len = len(b) - 32
+        if kind == 0:                               # flip bits in the token stream
+            for _ in range(rng.randrange(1, 4)):
+                i = rng.randrange(32, len(b))
+                b[i] ^= 1 << rng.randrange(8)
+        elif kind == 1:                             # truncate the token stream (including < 5 bytes)
+            cut = rng.randrange(1, max(2, payload_len + 1))
+            del b[max(32, len(b) - cut) :]
+        elif kind == 2:                             # extend the token stream with trailing bytes
+            b.extend(bytes(rng.randrange(256) for _ in range(rng.randrange(1, 9))))
+        elif kind == 3:                             # corrupt initial range-coder bytes (32..36)
+            limit = min(len(b), 37)
+            if limit > 32:
+                b[rng.randrange(32, limit)] = rng.randrange(256)
+        elif kind == 4:                             # other dimensions for the same token stream
+            w, h = struct.unpack_from("<II", b, 8)
+            dw, dh = rng.randrange(-3, 4), rng.randrange(-3, 4)
+            if dw == 0 and dh == 0:
+                dw = 1
+            struct.pack_into("<II", b, 8, max(1, w + dw), max(1, h + dh))
+        else:                                       # random byte replacements in the token stream
+            for i in range(32, len(b)):
                 if rng.random() < 0.1:
                     b[i] = rng.randrange(256)
         return recrc(b)
@@ -782,7 +828,7 @@ def main() -> int:
     WORK.mkdir(parents=True, exist_ok=True)
     base = seeds()
     counts = {0: 0, 4: 0}
-    method_counts = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0}
+    method_counts = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
     tasks: list[tuple[int, bytes, str, str, str]] = []
     for i in range(iterations):
         seed_blob = base[i % len(base)]
@@ -805,7 +851,7 @@ def main() -> int:
             print(err)
             return 1
 
-    m_summary = ", ".join(f"{m}:{method_counts[m]}" for m in (0, 1, 2, 3, 4))
+    m_summary = ", ".join(f"{m}:{method_counts[m]}" for m in (0, 1, 2, 3, 4, 5))
     print(f"{iterations} mutated files (methods {m_summary}): {counts[4]} rejected, {counts[0]} still valid, no crash, hang or mismatch")
     return 0
 

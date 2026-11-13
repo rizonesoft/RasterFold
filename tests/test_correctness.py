@@ -68,6 +68,19 @@ KAT_PAL4 = bytes.fromhex(
     "7f6fecc33292ded6fa71f8da8a03279ce7f774541e44a9ac2dcfed94097c"
 )
 
+# A 32x16 64-colour repeating-tile image and its complete .fold file: version 3, method 5 (screen content).
+KAT_SC_W, KAT_SC_H = 32, 16
+_SC_TILE = tuple(bytes(((i * 73 + 11) & 255, (i * 139 + 29) & 255, (i * 197 + 53) & 255)) for i in range(64))
+KAT_SC_RGB = b"".join(_SC_TILE[((y & 3) * 16) + (x & 15)] for y in range(KAT_SC_H) for x in range(KAT_SC_W))
+KAT_SC5 = bytes.fromhex(
+    "5246490303002000200000001000000005000100ee000000a5fc30f706fb575f00f88479d79c1dbc9d69efeb614ef62b58ec"
+    "a1a0fc230d13a6851d0955a852db2b3ff75b37f83e18f1ed26133a096b7aaa3c6857a19c5bdb37600e9dc8b87b2b58127e61"
+    "fd485cdafe5160ae07943583779d89159dd539251c880e38e7e22f94733cd4f6fec3a487ae49a53624a58b2988efcc1f1ca4"
+    "50fd8829260835522b8e9079a8bc1457044e2d706108c570054f17b62cbd1b5d033f5ae6ce0cacfa14ad1193c1e1614ce09"
+    "6e9c5424a5de5cf3b2f001b821941b17dc01bd482898d1161841a24a459b56d8b2c5bb1f3af368eaa62f2830e7fa6ad76d2"
+    "17b07752a20f17b276eada8fb9fd26a56a8eb7bff8"
+)
+
 
 class Fail(Exception):
     pass
@@ -135,6 +148,8 @@ def oracle_self_check() -> None:
     check(rf.decode_image(KAT_PAL4) == (KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), "known-answer method 4 palette decode")
     check(rf.decode_image(KAT_PAL2_3) == (KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), "known-answer method 3 palette v3 decode")
     check(rf.decode_image(KAT_PAL2) == (KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), "known-answer method 3 palette decode")
+    check(rf.encode_image(KAT_SC_W, KAT_SC_H, KAT_SC_RGB) == KAT_SC5, "known-answer method 5 sc file")
+    check(rf.decode_image(KAT_SC5) == (KAT_SC_W, KAT_SC_H, KAT_SC_RGB), "known-answer method 5 sc decode")
 
 
 def known_answer() -> None:
@@ -185,6 +200,28 @@ def known_answer() -> None:
     check(rf.read_bmp24(pm2_back.read_bytes()) == (KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), "method 2 palette known-answer pixels")
     insp_m2 = expect_ok(["inspect", str(pm2_fold)]).stdout.decode("utf-8", errors="replace")
     check("method: palette" in insp_m2 and "palette_colours: 4" in insp_m2, f"method 2 inspect output missing palette fields: {insp_m2}")
+
+    sc_src, sc_out, sc_bmp, sc_ppm = work / "sc_in.bmp", work / "sc_out.fold", work / "sc_out.bmp", work / "sc_out.ppm"
+    for f in (sc_out, sc_bmp, sc_ppm):
+        f.unlink(missing_ok=True)
+    sc_src.write_bytes(rf.write_bmp24(KAT_SC_W, KAT_SC_H, KAT_SC_RGB))
+    expect_ok(["encode", str(sc_src), str(sc_out)])
+    check(sc_out.read_bytes() == KAT_SC5, "codec bytes differ from the method 5 sc known-answer file")
+    expect_ok(["decode", str(sc_out), str(sc_bmp)])
+    check(rf.read_bmp24(sc_bmp.read_bytes()) == (KAT_SC_W, KAT_SC_H, KAT_SC_RGB), "method 5 sc known-answer BMP pixels")
+    expect_ok(["decode", str(sc_out), str(sc_ppm)])
+    with Image.open(sc_ppm) as im:
+        check(im.size == (KAT_SC_W, KAT_SC_H) and im.convert("RGB").tobytes() == KAT_SC_RGB, "method 5 sc known-answer packed RGB pixels")
+    insp_sc = expect_ok(["inspect", str(sc_out)]).stdout.decode("utf-8", errors="replace")
+    check("method: sc" in insp_sc and "palette_colours" not in insp_sc and "stream_" not in insp_sc, f"method 5 inspect output: {insp_sc}")
+    insp_sc_json = json.loads(expect_ok(["inspect", "--json", str(sc_out)]).stdout.decode("utf-8", errors="replace"))
+    check(
+        insp_sc_json.get("method") == "sc"
+        and insp_sc_json.get("version") == 3
+        and "palette_colours" not in insp_sc_json
+        and "streams" not in insp_sc_json,
+        f"inspect --json output invalid for method 5: {insp_sc_json}",
+    )
 
 
 def cli_reference() -> None:
@@ -1067,15 +1104,16 @@ def palette_method() -> None:
     check(KAT_PAL[16] == rf.METHOD_PAL, "KAT_PAL is not METHOD_PAL")
     check(KAT_PAL2[16] == rf.METHOD_PAL2, "KAT_PAL2 did not select METHOD_PAL2")
 
-    # 2. Exactly 256 colours where each colour is an 8-pixel horizontal run (64x32 = 2048 pixels):
-    #    selects method 3 and inspect reports palette_colours: 256. The colours are placed in a shuffled order:
-    #    in palette order their channel values step by a constant across rows, which version 3's gated gradient
-    #    predicts exactly, and method 1 would win.
-    w256, h256 = 64, 32
+    # 2. Exactly 256 colours in 3-pixel horizontal runs (96x24 = 2304 pixels, 768 blocks):
+    #    3-pixel runs defeat CM and stay below method 5's 4-pixel copy threshold, so method 4 wins
+    #    and inspect reports palette_colours: 256.
+    w256, h256 = 96, 24
     pal256 = [bytes(((i * 17) & 255, (i * 43 + 9) & 255, (i * 97 + 3) & 255)) for i in range(256)]
+    rng256 = random.Random(256)
     order256 = list(range(256))
-    random.Random(256).shuffle(order256)
-    rgb256 = b"".join(pal256[order256[(y * 8 + (x // 8)) & 255]] for y in range(h256) for x in range(w256))
+    rng256.shuffle(order256)
+    blocks256 = [order256[b] if b < 256 else rng256.randrange(256) for b in range((w256 // 3) * h256)]
+    rgb256 = b"".join(pal256[blocks256[y * (w256 // 3) + (x // 3)]] for y in range(h256) for x in range(w256))
     roundtrip("pal_256", w256, h256, rgb256)
     fold256 = WORK / "pal_256" / "out.fold"
     check(fold256.read_bytes()[16] == rf.METHOD_PAL3, "256-colour run image did not select METHOD_PAL3")
@@ -1097,7 +1135,14 @@ def palette_method() -> None:
     #    legacy method 2 decode through CLI (BMP) and oracle (RGB).
     w_clamp, h_clamp = 512, 1
     c0, c1, c2 = b"\x12\x34\x56", b"\xFE\xDC\xBA", b"\x44\x88\xCC"
-    rgb_clamp = b"".join((c1 if (x & 1) else c0) if x < 450 else c1 for x in range(w_clamp))
+    c4_clamp = (c0, c1, c2, b"\x99\x11\x77")
+    rng_clamp = random.Random(1098)
+    seq_clamp = [0, 1]
+    for _ in range(2, 450):
+        choices = [i for i in range(4) if i != seq_clamp[-1] and i != seq_clamp[-2]]
+        seq_clamp.append(choices[rng_clamp.randrange(len(choices))])
+    seq_clamp.extend([1] * (w_clamp - 450))
+    rgb_clamp = b"".join(c4_clamp[i] for i in seq_clamp)
     roundtrip("pal_clamp", w_clamp, h_clamp, rgb_clamp)
     fold_clamp = WORK / "pal_clamp" / "out.fold"
     check(fold_clamp.read_bytes()[16] == rf.METHOD_PAL3, "pal_clamp did not select METHOD_PAL3")
@@ -1160,7 +1205,12 @@ def palette_method() -> None:
         [0, 0, 0, 0],
         [2, 0, 2, 3],   # (2,7): a=0,b=0,c=0,d=0,ww=2 -> d,c in {a,b}, ww!=a,b so e=ww=2, I==e (D3=1 via e=ww); (3,7): a=2,b=0,c=0,d=0,ww=0 -> e=a=2, I=3 (literal fallback)
     ]
-    rgb_d3_all = b"".join(cols4[idx] for row in grid_rows for idx in (row * 4))
+    rng_d3 = random.Random(1163)
+    rgb_d3_all = b"".join(
+        cols4[idx]
+        for row in grid_rows
+        for idx in (row + [rng_d3.randrange(4) for _ in range(12)])
+    )
     roundtrip("pal_d3_candidates", 16, 8, rgb_d3_all)
     check((WORK / "pal_d3_candidates" / "out.fold").read_bytes()[16] == rf.METHOD_PAL3, "pal_d3_candidates did not select METHOD_PAL3")
 
@@ -1306,21 +1356,27 @@ def palette_method4() -> None:
     one = selected("pal4_one_colour", 64, 48, solid(64, 48, (240, 240, 240)))
     check(one[32] == 0, "one-colour file does not store count - 1 = 0")
     selected("pal4_two_colours", 64, 48, checker(64, 48, 4))
-    selected("pal4_one_wide", 1, 200, b"".join(cols[(y // 3 + (y % 5 == 0)) & 3] for y in range(200)))
-    selected("pal4_one_high", 300, 1, b"".join(cols[(x // 4 + (x % 7 == 0)) & 3] for x in range(300)))
+    rng1w = random.Random(41)
+    blocks1w = [rng1w.randrange(16) for _ in range(67)]
+    selected("pal4_one_wide", 1, 200, b"".join(cols[blocks1w[y // 3]] for y in range(200)))
+    rng1h = random.Random(42)
+    blocks1h = [rng1h.randrange(16) for _ in range(100)]
+    selected("pal4_one_high", 300, 1, b"".join(cols[blocks1h[x // 3]] for x in range(300)))
 
-    # 2. 256 colours with palette index 255 in use.
+    # 2. 256 colours with palette index 255 in use (3-pixel runs stay below method 5's 4-pixel copy threshold).
     rng = random.Random(4)
     order = list(range(256))
     rng.shuffle(order)
-    rgb256 = b"".join(cols[order[(y * 8 + x // 8) & 255]] for y in range(32) for x in range(64))
-    blob256 = selected("pal4_256", 64, 32, rgb256)
+    rng4_blocks = random.Random(44)
+    blocks4 = [order[b] if b < 256 else rng4_blocks.randrange(256) for b in range((96 // 3) * 24)]
+    rgb256 = b"".join(cols[blocks4[y * 32 + x // 3]] for y in range(24) for x in range(96))
+    blob256 = selected("pal4_256", 96, 24, rgb256)
     check(blob256[32] == 255, "256-colour file does not store count - 1 = 255")
     check(sorted(set(cols))[255] in {rgb256[i : i + 3] for i in range(0, len(rgb256), 3)}, "palette index 255 unused")
 
     # 3. Every reachable decision in every border class: D1 everywhere, D3 and the literal tree on
     #    row 0 and in column 0, D2 (unreachable on the borders, where a == b) in the interior.
-    rgb_cov = b"".join(cols[rng.randrange(6)] for _ in range(40 * 30))
+    rgb_cov = b"".join(cols[rng.randrange(9)] for _ in range(40 * 30))
     want = {("d1", 0), ("d1", 1), ("d1", 2), ("d2", 0), ("d3", 0), ("d3", 1), ("d3", 2), ("lit", 0), ("lit", 1), ("lit", 2)}
     got = _pal4_coverage(40, 30, rgb_cov)
     check(want <= got, f"coverage image misses {sorted(want - got)}")
@@ -1397,7 +1453,349 @@ def palette_method4() -> None:
     v2[3] = 2
     struct.pack_into("<H", v2, 4, 2)
     reject(recrc(v2), 3, "unsupported fold: method", "method 4 in a version 2 file")
-    reject(rf.build_file(3, 1, 5, good3), 3, "unsupported fold: method", "method 5")
+    reject(rf.build_file(3, 1, 6, good3), 3, "unsupported fold: method", "method 6")
+
+
+def screen_content_method5() -> None:
+    """Method 5 (screen content): selection, prototype/oracle/C byte identity on one-colour, screenshot
+    crop, overlapping cross-row copies (L = 4096), narrow-width duplicate 2D-map distances, window boundary,
+    FNV-1a bucket collisions at <= 64 and > 64 chain depths, inspect output, historical refusal, and every
+    grammar and framing refusal across strided BMP, packed RGB, and the oracle."""
+    if str(ROOT / "research") not in sys.path:
+        sys.path.insert(0, str(ROOT / "research"))
+    import screencode
+
+    work = WORK / "screen_content_method5"
+    work.mkdir(parents=True, exist_ok=True)
+    n = 0
+
+    def put(blob: bytes) -> Path:
+        nonlocal n
+        n += 1
+        path = work / f"f{n}.fold"
+        path.write_bytes(blob)
+        return path
+
+    def decodes(blob: bytes, width: int, height: int, rgb: bytes, what: str) -> None:
+        path = put(blob)
+        bmp, ppm = work / f"f{n}.bmp", work / f"f{n}.ppm"
+        for f in (bmp, ppm):
+            f.unlink(missing_ok=True)
+        check(rf.decode_image(blob) == (width, height, rgb), f"{what}: oracle decode")
+        expect_ok(["decode", str(path), str(bmp)])
+        check(rf.read_bmp24(bmp.read_bytes()) == (width, height, rgb), f"{what}: strided BMP decode")
+        expect_ok(["decode", "--threads", "3", str(path), str(ppm)])
+        with Image.open(ppm) as im:
+            check(im.size == (width, height) and im.convert("RGB").tobytes() == rgb, f"{what}: packed RGB decode")
+
+    def reject(blob: bytes, code: int, text: str, what: str) -> None:
+        path = put(blob)
+        for ext in ("bmp", "ppm"):
+            dest = work / f"f{n}.{ext}"
+            dest.unlink(missing_ok=True)
+            expect_fail(["decode", str(path), str(dest)], code, text)
+            check(not dest.exists(), f"{what} ({ext}): an output was left behind")
+        try:
+            rf.decode_image(blob)
+        except rf.FormatError:
+            pass
+        else:
+            check(False, f"{what}: oracle accepted the file")
+
+    def selected_sc(name: str, width: int, height: int, rgb: bytes) -> bytes:
+        roundtrip(name, width, height, rgb)
+        blob = (WORK / name / "out.fold").read_bytes()
+        check(blob[16] == rf.METHOD_SC, f"{name} did not select METHOD_SC (method {blob[16]})")
+        check(blob[32:] == screencode.encode(width, height, rgb), f"{name}: C/oracle payload differs from screencode.py")
+        t3_fold = work / f"{name}_t3.fold"
+        t3_fold.unlink(missing_ok=True)
+        expect_ok(["encode", "--threads", "3", str(WORK / name / "in.bmp"), str(t3_fold)])
+        check(t3_fold.read_bytes() == blob, f"{name}: 3-thread encode differs from 1-thread")
+        decodes(blob, width, height, rgb, name)
+        return blob
+
+    # 1. One-colour image (natural roundtrip + forced method 5 byte identity with prototype)
+    #    and a >256-colour solid-body image that selects method 5 naturally.
+    rgb_one = solid(64, 48, (32, 96, 192))
+    roundtrip("sc5_one_colour", 64, 48, rgb_one)
+    pay_one = rf.sc_encode(64, 48, rgb_one, force=True)
+    assert pay_one is not None
+    check(pay_one == screencode.encode(64, 48, rgb_one), "one-colour forced method 5 differs from prototype")
+    decodes(rf.build_file(64, 48, rf.METHOD_SC, pay_one), 64, 48, rgb_one, "forced method 5 one-colour")
+
+    rng_sb = random.Random(505)
+    sb_cols: list[bytes] = []
+    sb_seen: set[bytes] = set()
+    while len(sb_cols) < 260:
+        col_sb = bytes((rng_sb.randrange(256), rng_sb.randrange(256), rng_sb.randrange(256)))
+        if col_sb not in sb_seen:
+            sb_seen.add(col_sb)
+            sb_cols.append(col_sb)
+    hdr260 = b"".join(sb_cols)
+    rgb_solid_body = hdr260 + bytes([40, 120, 200]) * (64 * 48 - 260)
+    selected_sc("sc5_solid_body", 64, 48, rgb_solid_body)
+
+    # 2. Screenshot crop from development set dv_s01.png (>256 colours, glyph edges, cache hits, 2D and raw copies).
+    with Image.open(ROOT / "research" / "screens-assets" / "dv_s01.png") as im:
+        crop_im = im.convert("RGB").crop((80, 40, 336, 200))
+        crop_w, crop_h = crop_im.size
+        crop_rgb = crop_im.tobytes()
+    check(len({crop_rgb[i : i + 3] for i in range(0, len(crop_rgb), 3)}) > 256, "dv_s01 crop has <= 256 colours")
+    crop_blob = selected_sc("sc5_screen_crop", crop_w, crop_h, crop_rgb)
+
+    # 3. Cross-row overlapping copy reaching L = 4096, plus narrow width w = 6 (< 9) duplicate 2D-map distances.
+    motif5 = b"\x11\x22\x33\x44\x55\x66\x77\x88\x99\xaa\xbb\xcc\xdd\xee\xff"
+    need_px = 64 * 80 - 260
+    rgb_ov = hdr260 + (motif5 * ((need_px // 5) + 1))[: need_px * 3]
+    selected_sc("sc5_overlap", 64, 80, rgb_ov)
+
+    nar_tile = [bytes(((i * 61 + 9) & 255, (i * 113 + 21) & 255, (i * 179 + 43) & 255)) for i in range(18)]
+    rgb_nar = b"".join(nar_tile[(y % 3) * 6 + x] for y in range(60) for x in range(6))
+    selected_sc("sc5_narrow", 6, 60, rgb_nar)
+
+    # Exact distance-window boundary D = 2^20 - 120 = 1048456 (prefix symbol 39, matched) vs D = 1048457 (outside window)
+    # on 1024x1024 (>256 colours in tail so palette is skipped; compared across C, rfi_ref.sc_encode, and screencode.encode).
+    win_w, win_h = 1024, 1024
+    max_d = (1 << 20) - 120
+    key_win = b"\xca\xfe\x12\x34\x56\x78\x9a\xbc\xde\xf0\x13\x57"
+    for tag_w, target_p in (("win_in", max_d), ("win_out", max_d + 1)):
+        buf_w = bytearray(win_w * win_h * 3)
+        buf_w[0:12] = key_win
+        buf_w[target_p * 3 : target_p * 3 + 12] = key_win
+        buf_w[-260 * 3 :] = hdr260
+        rgb_w = bytes(buf_w)
+        w_bmp = work / f"{tag_w}.bmp"
+        w_fold = work / f"{tag_w}.fold"
+        w_fold.unlink(missing_ok=True)
+        w_bmp.write_bytes(rf.write_bmp24(win_w, win_h, rgb_w))
+        expect_ok(["encode", str(w_bmp), str(w_fold)])
+        w_blob = w_fold.read_bytes()
+        check(w_blob[16] == rf.METHOD_SC, f"{tag_w} did not select METHOD_SC")
+        exp_sc = rf.sc_encode(win_w, win_h, rgb_w, force=True)
+        check(exp_sc == screencode.encode(win_w, win_h, rgb_w), f"{tag_w}: oracle != prototype at window boundary")
+        check(w_blob[32:] == exp_sc, f"{tag_w}: C != oracle at window boundary")
+        decodes(w_blob, win_w, win_h, rgb_w, tag_w)
+
+    # 4. FNV-1a 16-bit bucket collision fixture (66 distinct 4-pixel keys all hashing to top-16-bit bucket 10870):
+    #    k0 is matched within 64 bucket probes first, then pushed past depth 64 by two more colliding keys so
+    #    its next appearance misses the chain cap, with prototype, oracle, and C agreeing byte-for-byte.
+    coll_ids = (
+        30690, 116199, 151429, 294000, 312115, 320667, 335786, 450346, 458701, 486739, 505041,
+        539753, 614524, 681221, 683534, 697086, 770369, 799259, 825594, 881833, 890101, 914855,
+        942492, 999009, 1058686, 1082868, 1111621, 1128294, 1248069, 1288994, 1291159, 1294749,
+        1308670, 1352422, 1443426, 1498285, 1517471, 1538638, 1542801, 1572573, 1627532, 1664189,
+        1695529, 1754739, 1786036, 1808502, 1846772, 1850455, 1857946, 1899386, 1908082, 1992533,
+        2021952, 2131509, 2328364, 2338916, 2346937, 2358858, 2359529, 2365992, 2421597, 2471403,
+        2544142, 2573268, 2601473, 2611358,
+    )
+
+    def coll_key12(i: int) -> bytes:
+        return bytes((
+            i & 255, (i >> 8) & 255, (i >> 16) & 255, (i * 3 + 1) & 255,
+            (i * 7 + 5) & 255, 89, (i * 11 + 3) & 255, (i * 13 + 9) & 255,
+            163, (i * 17 + 7) & 255, (i * 19 + 11) & 255, 231,
+        ))
+
+    keys12 = [coll_key12(i) for i in coll_ids]
+    check(len(set(keys12)) == 66, "bucket-collision keys are not distinct")
+    check({rf._sc_fnv1a_4px(k, 0) for k in keys12} == {10870}, "bucket-collision keys do not share bucket 10870")
+    # Build prefix sequentially until bucket 10870 holds >= 63 entries after k0, test k0 (hit within 64),
+    # then add more colliding keys so bucket 10870 has > 64 entries after k0's second copy, and test k0 again (miss).
+    seq_keys = [keys12[0]] + keys12[1:58] + [keys12[0]] + keys12[1:66] + [keys12[0]] + [keys12[65]] * 180
+    # Pad to 64x20 = 1280 pixels (320 4-pixel blocks).
+    while len(seq_keys) < 320:
+        seq_keys.append(keys12[65])
+    rgb_coll = b"".join(seq_keys[:320])
+    selected_sc("sc5_bucket_collision", 64, 20, rgb_coll)
+
+    # 5. inspect text and --json on sc5_screen_crop: method is sc, no palette_colours and no stream sizes.
+    crop_path = WORK / "sc5_screen_crop" / "out.fold"
+    insp_txt = expect_ok(["inspect", str(crop_path)]).stdout.decode("utf-8", errors="replace")
+    check("method: sc" in insp_txt and "palette_colours" not in insp_txt and "stream_" not in insp_txt, f"inspect text: {insp_txt}")
+    insp_js = json.loads(expect_ok(["inspect", "--json", str(crop_path)]).stdout.decode("utf-8", errors="replace"))
+    check(
+        insp_js.get("method") == "sc" and "palette_colours" not in insp_js and "streams" not in insp_js,
+        f"inspect --json: {insp_js}",
+    )
+
+    # 6. Refusals on valid-checksum .fold files across strided BMP, packed RGB, and the oracle.
+    bad_sc = "invalid fold: screen content stream"
+
+    def m5(payload: bytes, width: int = 8, height: int = 1) -> bytes:
+        return rf.build_file(width, height, rf.METHOD_SC, payload)
+
+    class _ScBitCraft:
+        def __init__(self) -> None:
+            self.enc = rf.RangeEncoder()
+            self.c_copy = [rf._Pal4Counter() for _ in range(3)]
+            self.c_cache = [rf._Pal4Counter() for _ in range(3)]
+            self.t_g = [rf._Pal4Counter() for _ in range(256)]
+            self.t_rg = [[rf._Pal4Counter() for _ in range(256)] for _ in range(4)]
+            self.t_bg = [[rf._Pal4Counter() for _ in range(256)] for _ in range(4)]
+            self.t_idx = [rf._Pal4Counter() for _ in range(256)]
+            self.t_len = [rf._Pal4Counter() for _ in range(32)]
+            self.c_len_ex = [rf._Pal4Counter() for _ in range(24)]
+            self.t_dist = [[rf._Pal4Counter() for _ in range(64)] for _ in range(2)]
+            self.c_dist_ex = [rf._Pal4Counter() for _ in range(40)]
+            self.prev_kind = 0
+            self.prev_short = 0
+
+        def _tree(self, tree: list, val: int, bits: int) -> None:
+            node = 1
+            for bp in range(bits - 1, -1, -1):
+                bit = (val >> bp) & 1
+                tree[node].code(self.enc, None, bit)
+                node = (node << 1) | bit
+
+        def literal(self, r: int, g: int, b: int) -> None:
+            self.c_copy[self.prev_kind].code(self.enc, None, 0)
+            self.c_cache[self.prev_kind].code(self.enc, None, 0)
+            self._tree(self.t_g, g, 8)
+            gctx = g >> 6
+            self._tree(self.t_rg[gctx], (r - g) & 255, 8)
+            self._tree(self.t_bg[gctx], (b - g) & 255, 8)
+            self.prev_kind = 0
+
+        def cache(self, idx: int) -> None:
+            self.c_copy[self.prev_kind].code(self.enc, None, 0)
+            self.c_cache[self.prev_kind].code(self.enc, None, 1)
+            self._tree(self.t_idx, idx, 8)
+            self.prev_kind = 1
+
+        def copy_raw(self, len_sym: int, len_extra: int, len_nbits: int, dist_sym: int | None = None, dist_extra: int = 0, dist_nbits: int = 0) -> None:
+            self.c_copy[self.prev_kind].code(self.enc, None, 1)
+            self._tree(self.t_len, len_sym, 5)
+            if len_nbits > 0 and len_sym <= 23:
+                self.c_len_ex[len_sym].code(self.enc, None, (len_extra >> (len_nbits - 1)) & 1)
+                for bp in range(len_nbits - 2, -1, -1):
+                    self.enc.bit16((len_extra >> bp) & 1, 32768)
+            if dist_sym is not None:
+                self._tree(self.t_dist[self.prev_short], dist_sym, 6)
+                if dist_nbits > 0 and dist_sym <= 39:
+                    self.c_dist_ex[dist_sym].code(self.enc, None, (dist_extra >> (dist_nbits - 1)) & 1)
+                    for bp in range(dist_nbits - 2, -1, -1):
+                        self.enc.bit16((dist_extra >> bp) & 1, 32768)
+            self.prev_kind = 2
+
+        def finish(self) -> bytes:
+            return self.enc.finish()
+
+    # Framing: payload shorter than 5 bytes (0 and 4 bytes).
+    reject(m5(b""), 4, bad_sc, "empty method 5 payload")
+    reject(m5(b"\x00" * 4), 4, bad_sc, "4-byte method 5 payload")
+
+    # len_sym > 23 (24 and 31).
+    for bad_lsym in (24, 31):
+        sc_b = _ScBitCraft()
+        sc_b.literal(10, 20, 30)
+        sc_b.copy_raw(bad_lsym, 0, 0)
+        reject(m5(sc_b.finish(), 8, 1), 4, bad_sc, f"len_sym {bad_lsym} > 23")
+
+    # L == 4096 (len_sym = 23, extra = 1020 -> L - 3 = 4093) decodes cleanly on 4097x1, whereas L == 4097
+    # (extra = 1021 -> L - 3 = 4094) is refused even when p + L <= total (5000x1, p = 1, p + L = 4098 <= 5000).
+    sc_ok4096 = _ScBitCraft()
+    sc_ok4096.literal(10, 20, 30)
+    sc_ok4096.copy_raw(23, 1020, 10, dist_sym=1, dist_extra=0, dist_nbits=0)  # v = 2 -> (1, 0) gives D = 1
+    decodes(m5(sc_ok4096.finish(), 4097, 1), 4097, 1, bytes([10, 20, 30]) * 4097, "exact L = 4096 boundary")
+
+    sc_bad4097 = _ScBitCraft()
+    sc_bad4097.literal(10, 20, 30)
+    sc_bad4097.copy_raw(23, 1021, 10, dist_sym=1, dist_extra=0, dist_nbits=0)
+    reject(m5(sc_bad4097.finish(), 5000, 1), 4, bad_sc, "L = 4097 > 4096 with pixels remaining")
+
+    # Copy length past image end (p = 1, L = 4 -> p + L = 5 > 4 on 4x1).
+    sc_past = _ScBitCraft()
+    sc_past.literal(10, 20, 30)
+    sc_past.copy_raw(0, 0, 0, dist_sym=1, dist_extra=0, dist_nbits=0)
+    reject(m5(sc_past.finish(), 4, 1), 4, bad_sc, "copy runs past last pixel")
+
+    # dist_sym > 39 (40 and 63).
+    for bad_dsym in (40, 63):
+        sc_d = _ScBitCraft()
+        sc_d.literal(10, 20, 30)
+        sc_d.copy_raw(0, 0, 0, dist_sym=bad_dsym)
+        reject(m5(sc_d.finish(), 8, 1), 4, bad_sc, f"dist_sym {bad_dsym} > 39")
+
+    # Distance before first pixel via 2D map (v = 1 -> entry (0, 1) gives D = 8 > p = 1 on 8x2).
+    sc_dmap = _ScBitCraft()
+    sc_dmap.literal(10, 20, 30)
+    sc_dmap.copy_raw(0, 0, 0, dist_sym=0, dist_extra=0, dist_nbits=0)
+    reject(m5(sc_dmap.finish(), 8, 2), 4, bad_sc, "2D-mapped distance before first pixel")
+
+    # Distance before first pixel via raw distance (v = 122 -> D = 2 > p = 1 on 8x1).
+    dsym122, dnb122, dex122 = rf._sc_prefix_encode(122)
+    sc_draw = _ScBitCraft()
+    sc_draw.literal(10, 20, 30)
+    sc_draw.copy_raw(0, 0, 0, dist_sym=dsym122, dist_extra=dex122, dist_nbits=dnb122)
+    reject(m5(sc_draw.finish(), 8, 1), 4, bad_sc, "raw distance before first pixel")
+
+    # Cache hit on an entry never set: at p = 0 (all 256 empty) and at p = 1 (slot (slot0 + 1) & 255 empty).
+    sc_c0 = _ScBitCraft()
+    sc_c0.cache(0)
+    reject(m5(sc_c0.finish(), 4, 1), 4, bad_sc, "cache hit at p = 0 on empty cache")
+
+    slot0 = rf._sc_slot(10, 20, 30)
+    sc_c1 = _ScBitCraft()
+    sc_c1.literal(10, 20, 30)
+    sc_c1.cache((slot0 + 1) & 255)
+    reject(m5(sc_c1.finish(), 4, 1), 4, bad_sc, "cache hit at p = 1 on unset slot")
+
+    # Truncated stream and trailing byte on KAT_SC5.
+    reject(rf.build_file(KAT_SC_W, KAT_SC_H, rf.METHOD_SC, KAT_SC5[32:-3]), 4, bad_sc, "truncated method 5 stream")
+    reject(rf.build_file(KAT_SC_W, KAT_SC_H, rf.METHOD_SC, KAT_SC5[32:] + b"\x00"), 4, bad_sc, "trailing byte after method 5 stream")
+
+    # Method 5 in a version 2 header is refused as unsupported method (exit 3), and method 6 in version 3 is refused.
+    v2_sc = bytearray(KAT_SC5)
+    v2_sc[3] = 2
+    struct.pack_into("<H", v2_sc, 4, 2)
+    reject(recrc(v2_sc), 3, "unsupported fold: method", "method 5 in a version 2 file")
+    reject(rf.build_file(KAT_SC_W, KAT_SC_H, 6, KAT_SC5[32:]), 3, "unsupported fold: method", "method 6 in a version 3 file")
+
+    # 7. Historical decoder compatibility: the pre-port decoder (c974364) refuses KAT_SC5 at the header
+    #    with exit 3 (unsupported fold: method) and leaves no output file, while still decoding KAT_PAL4.
+    clang = ROOT / ("tools/llvm-mingw/bin/clang.exe" if os.name == "nt" else "tools/llvm-mingw-linux/bin/clang")
+    check(clang.is_file(), f"pinned clang compiler missing: {clang}")
+    pre_ref = "c974364"
+    r_cat = subprocess.run(["git", "cat-file", "-e", f"{pre_ref}^{{commit}}"], cwd=ROOT, stdin=subprocess.DEVNULL, capture_output=True)
+    check(r_cat.returncode == 0, f"historical commit {pre_ref} missing from checkout")
+    with tempfile.TemporaryDirectory(prefix="rf_hist_sc5_") as htmp:
+        ht = Path(htmp)
+        kat_sc5_path = ht / "kat_sc5.fold"
+        kat_pal4_path = ht / "kat_pal4.fold"
+        kat_sc5_path.write_bytes(KAT_SC5)
+        kat_pal4_path.write_bytes(KAT_PAL4)
+        (ht / "src").mkdir(parents=True)
+        (ht / "include").mkdir(parents=True)
+        (ht / "include" / "rasterfold.h").write_bytes(subprocess.check_output(["git", "show", f"{pre_ref}:include/rasterfold.h"], cwd=ROOT, stdin=subprocess.DEVNULL))
+        c_files = []
+        for s in subprocess.check_output(["git", "ls-tree", "--name-only", f"{pre_ref}:src"], cwd=ROOT, stdin=subprocess.DEVNULL, text=True).splitlines():
+            if os.name == "nt" and s == "sys_posix.c":
+                continue
+            if os.name != "nt" and s in ("sys.c", "mem.c"):
+                continue
+            p = ht / "src" / s
+            p.write_bytes(subprocess.check_output(["git", "show", f"{pre_ref}:src/{s}"], cwd=ROOT, stdin=subprocess.DEVNULL))
+            if s.endswith(".c"):
+                c_files.append(str(p))
+        hist_exe = ht / ("rasterfold.exe" if os.name == "nt" else "rasterfold")
+        if os.name == "nt":
+            cmd = [
+                str(clang), "-std=c11", "-O1", "-march=x86-64-v2",
+                "-ffreestanding", "-fno-builtin", "-nostdlib",
+                "-I", str(ht / "include"), *c_files,
+                "-Wl,-e,rf_start", "-Wl,--subsystem,console",
+                "-lkernel32", "-lshell32", "-o", str(hist_exe),
+            ]
+        else:
+            cmd = [str(clang), "-std=c11", "-O1", "-march=x86-64-v2", "-I", str(ht / "include"), *c_files, "-lpthread", "-o", str(hist_exe)]
+        subprocess.check_call(cmd, stdin=subprocess.DEVNULL)
+        hist_bmp = ht / "out.bmp"
+        r_ref = subprocess.run([str(hist_exe), "decode", str(kat_sc5_path), str(hist_bmp)], stdin=subprocess.DEVNULL, capture_output=True, text=True)
+        check(r_ref.returncode == 3, f"pre-port ({pre_ref}) on KAT_SC5 exit {r_ref.returncode}, want 3: {r_ref.stderr}")
+        check("unsupported fold: method" in r_ref.stderr, f"pre-port stderr missing 'unsupported fold: method': {r_ref.stderr}")
+        check(not hist_bmp.exists(), "pre-port decoder left output BMP on refused KAT_SC5")
+        r_pal4 = subprocess.run([str(hist_exe), "decode", str(kat_pal4_path), str(hist_bmp)], stdin=subprocess.DEVNULL, capture_output=True, text=True)
+        check(r_pal4.returncode == 0 and rf.read_bmp24(hist_bmp.read_bytes()) == (KAT_PAL_W, KAT_PAL_H, KAT_PAL_RGB), "pre-port failed on KAT_PAL4")
 
 
 def fuzz_harness() -> None:
@@ -1405,23 +1803,30 @@ def fuzz_harness() -> None:
     import fuzz_decode
 
     records = fuzz_decode.seed_records()
-    check(len(records) == 17, f"expected 17 fuzz seeds, got {len(records)}")
-    check({m for _, _, _, m, _ in records[:5]} == {0, 1, 2, 3, 4}, "first 5 fuzz seeds do not cover methods 0, 1, 2, 3, 4")
+    check(len(records) == 19, f"expected 19 fuzz seeds, got {len(records)}")
+    check({m for _, _, _, m, _ in records[:6]} == {0, 1, 2, 3, 4, 5}, "first 6 fuzz seeds do not cover methods 0..5")
     for name, w, h, m, blob in records:
         check(w >= 36 and h >= 34 and w * h > 1200, f"seed {name} dimensions {w}x{h} smaller than 36x34 (>1200 px)")
         check(blob[16] == m, f"seed {name} header method {blob[16]} != {m}")
         check(struct.unpack_from("<II", blob, 8) == (w, h), f"seed {name} header dimensions mismatch")
-        stored = blob[32] if m == 4 else struct.unpack_from("<H", blob, 32)[0]     # method 4 stores count - 1 in one byte
-        if "2col" in name:
-            check(stored + 1 == 2, f"seed {name} palette count != 2")
-        if "200col" in name:
-            check(stored + 1 == 200, f"seed {name} palette count != 200")
+        if m in (2, 3, 4):
+            stored = blob[32] if m == 4 else struct.unpack_from("<H", blob, 32)[0]     # method 4 stores count - 1 in one byte
+            if "2col" in name:
+                check(stored + 1 == 2, f"seed {name} palette count != 2")
+            if "200col" in name:
+                check(stored + 1 == 200, f"seed {name} palette count != 200")
     m4_seed = next(blob for _, _, _, m, blob in records if m == 4 and blob[32] == 199)
     m4_rng = random.Random(11)
     m4_muts = [fuzz_decode.mutate(m4_seed, m4_rng) for _ in range(300)]
     check(any(len(mb) > 34 and mb[32] != m4_seed[32] for mb in m4_muts), "method 4 mutations never change the count byte")
     check(any(len(mb) > 34 and mb[33:35] != m4_seed[33:35] for mb in m4_muts), "method 4 mutations never change a Rice parameter")
     check(any(len(mb) != len(m4_seed) for mb in m4_muts), "method 4 mutations never change the stream length")
+    m5_seed = next(blob for _, _, _, m, blob in records if m == 5)
+    m5_rng = random.Random(15)
+    m5_muts = [fuzz_decode.mutate(m5_seed, m5_rng) for _ in range(300)]
+    check(any(mb[16] == 5 and len(mb) <= 36 for mb in m5_muts), "method 5 mutations never probe <5-byte short payloads")
+    check(any(mb[16] == 5 and len(mb) > len(m5_seed) for mb in m5_muts), "method 5 mutations never probe trailing bytes")
+    check(any(mb[16] == 5 and len(mb) == len(m5_seed) and mb[32:] != m5_seed[32:] for mb in m5_muts), "method 5 mutations never mutate stream bytes")
     cm_strips = {blob[32] for _, _, _, m, blob in records if m == 1}
     check(cm_strips == {1, 2, 3, 4}, f"expected CM fuzz seeds to cover S in {{1, 2, 3, 4}}, got {cm_strips}")
     mut_rng = random.Random(7)
@@ -2251,6 +2656,7 @@ def main() -> int:
     case("warm-strips", warm_strips)
     case("palette-method", palette_method)
     case("palette-method4", palette_method4)
+    case("screen-content-method5", screen_content_method5)
 
     case("fuzz-harness", fuzz_harness)
     # The checksum in a successful file matches zlib, not only our encoder.
