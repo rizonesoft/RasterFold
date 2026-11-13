@@ -2036,15 +2036,51 @@ class ScreenCode2Tests(unittest.TestCase):
 
     def test_implicit_same_row_at_borders_and_signed_dx(self) -> None:
         # py == 0 forces same_row = 1; px_col == 0 (py >= 1) forces same_row = 0 with negative dx (qx > 0).
-        w, h = 12, 3
+        from unittest import mock
+
+        w, h = 16, 3
         px = [((i + 1) * 7919) & 0xFFFFFF for i in range(w * h)]
         m_top = [0x101010, 0x202020, 0x303030, 0x404040]
         px[1:5] = m_top
-        px[6:10] = m_top  # py == 0 non-inherited same_row copy (dx = 5)
+        px[6:10] = m_top  # p = 6 (py == 0): non-inherited same_row copy (L = 4, dx = 5, implicit same_row = 1)
         m_col0 = [0x505050, 0x606060, 0x707070, 0x808080]
-        px[7:11] = m_col0
-        px[2 * w : 2 * w + 4] = m_col0  # px_col == 0, py == 2, qy == 0, qx == 7 -> dy = 2, dx = -7 < 0
-        self.round_trip(w, h, self.image(px))
+        px[11:15] = m_col0
+        px[2 * w : 2 * w + 4] = m_col0  # p = 32 (px_col == 0, py == 2): qy == 0, qx == 11 -> dy = 2, dx = -11 < 0
+
+        models = []
+        real_model = self.sc2.Model6
+        with mock.patch.object(self.sc2, "Model6", side_effect=lambda: (models.append(real_model()) or models[-1])):
+            _, cov4, split = self.round_trip(w, h, self.image(px))
+        self.assertEqual(cov4, 8)
+        self.assertEqual(split.get("inh_copy", 0), 0)
+        self.assertGreater(split.get("new_copy", 0), 0)
+        self.assertEqual(len(models), 2)
+        for m in models:
+            # Both copies sit on implicit borders (py == 0 and px_col == 0), so is_same_row is never coded.
+            self.assertEqual([c.n for c in m.is_same_row], [0, 0])
+            # Row 0 copy coded dx = 5 in dx0_tree; col 0 copy coded dy = 2 in rep_dy and negative dx in dx_sign/dx_tree.
+            self.assertTrue(any(c.n > 0 for c in m.dx0_tree))
+            self.assertEqual(m.is_rep_dy.n, 1)
+            self.assertGreater(m.is_rep_dy.c, 32768)
+            self.assertEqual(m.dx_zero[1].n, 1)
+            self.assertLess(m.dx_zero[1].c, 32768)
+            self.assertEqual(m.dx_sign.n, 1)
+            self.assertGreater(m.dx_sign.c, 32768)
+            self.assertTrue(any(c.n > 0 for c in m.dx_tree))
+
+        # Non-border positive dx (px_col > qx) exercises explicit is_same_row and dx_sign bit 0.
+        px2 = [((i + 1) * 7919) & 0xFFFFFF for i in range(w * h)]
+        px2[2:6] = m_top
+        px2[2 * w + 9 : 2 * w + 13] = m_top  # py == 2, px_col == 9, qy == 0, qx == 2 -> dy = 2, dx = +7 > 0
+        models2 = []
+        with mock.patch.object(self.sc2, "Model6", side_effect=lambda: (models2.append(real_model()) or models2[-1])):
+            _, cov4_pos, _ = self.round_trip(w, h, self.image(px2))
+        self.assertEqual(cov4_pos, 4)
+        for m in models2:
+            self.assertEqual(m.is_same_row[0].n, 1)
+            self.assertLess(m.is_same_row[0].c, 32768)
+            self.assertEqual(m.dx_sign.n, 1)
+            self.assertLess(m.dx_sign.c, 32768)
 
     def test_eq_w_eq_n_mtf_and_11bit_cache(self) -> None:
         # Build 20 distinct colours so early colours fall out of the 16-entry MTF list into the 2048-entry cache,
