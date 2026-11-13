@@ -40,19 +40,36 @@ WORK = ROOT / "tests" / "work" / "fuzz"
 
 
 @contextlib.contextmanager
-def _staged_fuzz_env():
-    """Stage the executable and scratch directory in local tmpfs (/dev/shm on
-    Linux) or native %TEMP% (on Windows, avoiding \\\\wsl.localhost 9P latency),
-    preserving any hang/bad/mismatch reproducer files back into WORK."""
+def _staged_fuzz_env(exe: Path | None = None):
+    """Stage scratch files in local tmpfs (/dev/shm on Linux) or native %TEMP%
+    (on Windows). Keep the executable at its native path on POSIX so a noexec
+    tmpfs mount never prevents execution; on Windows, stage a local copy in
+    %TEMP% to avoid \\\\wsl.localhost 9P image-load latency, falling back to the
+    source path if %TEMP% disallows execution."""
+    target_exe = EXE if exe is None else exe
     WORK.mkdir(parents=True, exist_ok=True)
     shm = Path("/dev/shm")
     base_tmp = str(shm) if os.name != "nt" and shm.is_dir() and os.access(shm, os.W_OK | os.X_OK) else None
     with tempfile.TemporaryDirectory(prefix="rf_fuzz_", dir=base_tmp) as td:
         stage = Path(td)
-        staged_exe = stage / EXE.name
-        shutil.copy2(EXE, staged_exe)
         work_dir = stage / "work"
         work_dir.mkdir(parents=True, exist_ok=True)
+        staged_exe = target_exe
+        if os.name == "nt" and target_exe.is_file():
+            cand_exe = stage / target_exe.name
+            try:
+                shutil.copy2(target_exe, cand_exe)
+                _ORIG_SUBPROCESS_RUN(
+                    [str(cand_exe), "--version"],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=10,
+                    check=False,
+                )
+                staged_exe = cand_exe
+            except OSError:
+                staged_exe = target_exe
         try:
             yield staged_exe, work_dir
         finally:
@@ -1401,19 +1418,60 @@ def run_ppm_fuzz(iterations: int, rng: random.Random) -> int:
 
 
 _ALL_FOLD_RING: tuple[int, ...] = (0, 1, 2, 3, 4, 5, 6, 0, 2, 3, 4, 5, 6, 0, 2, 3, 4, 5, 6, 0, 2, 3, 4, 5, 6)
+_ALL_FOLD_THREADS: tuple[str, ...] = ("1", "3", "6", "9")
+
+
+def _iter_all_formats_schedule(
+    iterations: int,
+    fold_records: list[tuple[str, int, int, int, bytes]],
+    n_bmp: int,
+    n_png: int,
+    n_ppm: int,
+):
+    """Yield (fmt, iteration, seed_idx, threads) for --all-formats, rotating
+    --threads 1/3/6/9 independently per .fold seed so every multi-strip fixture
+    exercises serial and multi-threaded decoding."""
+    by_method: dict[int, list[int]] = {m: [] for m in range(7)}
+    cm_compact: list[int] = []
+    cm_tall: list[int] = []
+    for idx, (_, w, h, m, _) in enumerate(fold_records):
+        by_method[m].append(idx)
+        if m == 1:
+            (cm_compact if w * h <= 4096 else cm_tall).append(idx)
+    fold_idx = 0
+    cm_idx = 0
+    in_idx = 0
+    per_m_idx = {m: 0 for m in range(7)}
+    seed_thr_idx = [0] * len(fold_records)
+    for i in range(iterations):
+        if i % 6 != 5:
+            m = _ALL_FOLD_RING[fold_idx % len(_ALL_FOLD_RING)]
+            fold_idx += 1
+            if m == 1:
+                if cm_tall and cm_idx % 16 == 15:
+                    seed_idx = cm_tall[(cm_idx // 16) % len(cm_tall)]
+                else:
+                    seed_idx = cm_compact[cm_idx % len(cm_compact)]
+                cm_idx += 1
+            else:
+                pool_m = by_method[m]
+                seed_idx = pool_m[per_m_idx[m] % len(pool_m)]
+                per_m_idx[m] += 1
+            threads = _ALL_FOLD_THREADS[seed_thr_idx[seed_idx] % len(_ALL_FOLD_THREADS)]
+            seed_thr_idx[seed_idx] += 1
+            yield ("fold", i, seed_idx, threads)
+        else:
+            fmt = ("bmp", "png", "ppm")[in_idx % 3]
+            k = in_idx // 3
+            in_idx += 1
+            n_pool = n_bmp if fmt == "bmp" else (n_png if fmt == "png" else n_ppm)
+            yield (fmt, i, k % n_pool, "1")
 
 
 def run_all_formats_fuzz(iterations: int, rng: random.Random) -> int:
     """Unified campaign across .fold methods 0..6 and input formats BMP, PNG, PPM."""
     fold_records = seed_records()
     fold_base = [blob for _, _, _, _, blob in fold_records]
-    by_method: dict[int, list[bytes]] = {m: [] for m in range(7)}
-    cm_compact: list[bytes] = []
-    cm_tall: list[bytes] = []
-    for _, w, h, m, blob in fold_records:
-        by_method[m].append(blob)
-        if m == 1:
-            (cm_compact if w * h <= 4096 else cm_tall).append(blob)
     bmp_base = bmp_seeds()
     png_base = png_seeds()
     ppm_base = ppm_seeds()
@@ -1428,7 +1486,7 @@ def run_all_formats_fuzz(iterations: int, rng: random.Random) -> int:
 
     with _staged_fuzz_env() as (staged_exe, work_dir):
         for s, seed_blob in enumerate(fold_base):
-            rc, err = verify_mutation(-(s + 1), seed_blob, ("1", "3", "6", "9")[s % 4], staged_exe, work_dir)
+            rc, err = verify_mutation(-(s + 1), seed_blob, _ALL_FOLD_THREADS[s % len(_ALL_FOLD_THREADS)], staged_exe, work_dir)
             if err is not None or rc != 0:
                 print(err or f"FOLD seed {s} refused with exit {rc}, want 0")
                 return 1
@@ -1442,42 +1500,24 @@ def run_all_formats_fuzz(iterations: int, rng: random.Random) -> int:
                 return 1
 
         exe_s, work_s = str(staged_exe), str(work_dir)
-        fold_idx = 0
-        cm_idx = 0
-        in_idx = 0
-        per_m_idx = {m: 0 for m in range(7)}
 
         def task_iter():
-            nonlocal fold_idx, cm_idx, in_idx
-            for i in range(iterations):
-                if i % 6 != 5:
-                    m = _ALL_FOLD_RING[fold_idx % len(_ALL_FOLD_RING)]
-                    fold_idx += 1
-                    if m == 1:
-                        if cm_tall and cm_idx % 16 == 15:
-                            seed_blob = cm_tall[(cm_idx // 16) % len(cm_tall)]
-                        else:
-                            seed_blob = cm_compact[cm_idx % len(cm_compact)]
-                        cm_idx += 1
-                    else:
-                        pool_m = by_method[m]
-                        seed_blob = pool_m[per_m_idx[m] % len(pool_m)]
-                        per_m_idx[m] += 1
+            for fmt, i, seed_idx, threads in _iter_all_formats_schedule(
+                iterations, fold_records, len(bmp_base), len(png_base), len(ppm_base)
+            ):
+                if fmt == "fold":
+                    seed_blob = fold_base[seed_idx]
                     method_counts[seed_blob[16]] += 1
                     blob = mutate(seed_blob, rng)
-                    threads = ("1", "3", "6", "9")[fold_idx % 4]
                     yield ("fold", i, blob, threads, exe_s, work_s)
                 else:
-                    fmt = ("bmp", "png", "ppm")[in_idx % 3]
-                    k = in_idx // 3
-                    in_idx += 1
                     if fmt == "bmp":
-                        blob = mutate_bmp(bmp_base[k % len(bmp_base)], rng)
+                        blob = mutate_bmp(bmp_base[seed_idx], rng)
                     elif fmt == "png":
-                        blob = mutate_png(png_base[k % len(png_base)], rng)
+                        blob = mutate_png(png_base[seed_idx], rng)
                     else:
-                        blob = mutate_ppm(ppm_base[k % len(ppm_base)], rng)
-                    yield (fmt, i, blob, "1", exe_s, work_s)
+                        blob = mutate_ppm(ppm_base[seed_idx], rng)
+                    yield (fmt, i, blob, threads, exe_s, work_s)
 
         if iterations <= 20:
             for fmt, i, blob, threads, _, _ in task_iter():
@@ -1558,11 +1598,14 @@ def main() -> int:
         exe_s, work_s = str(staged_exe), str(work_dir)
 
         def fold_tasks():
+            seed_thr_idx = [0] * len(base)
             for i in range(iterations):
-                seed_blob = base[i % len(base)]
+                seed_idx = i % len(base)
+                seed_blob = base[seed_idx]
                 method_counts[seed_blob[16]] += 1
                 blob = mutate(seed_blob, rng)
-                threads = ("1", "3", "6", "9")[i % 4]
+                threads = _ALL_FOLD_THREADS[seed_thr_idx[seed_idx] % len(_ALL_FOLD_THREADS)]
+                seed_thr_idx[seed_idx] += 1
                 yield (i, blob, threads, exe_s, work_s)
 
         if iterations <= 20:

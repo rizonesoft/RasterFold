@@ -2556,6 +2556,36 @@ def fuzz_harness() -> None:
         check(rc_b3 == -1 and err_b3 is not None and "exit 4 != oracle 3" in err_b3, f"BMP 3-vs-4 swap not caught: {(rc_b3, err_b3)}")
         check(rc_m3 == -1 and err_m3 is not None and "exit 4 != oracle 3" in err_m3, f"PPM 3-vs-4 swap not caught: {(rc_m3, err_m3)}")
 
+        # Staging environment: POSIX never executes from tmpfs (/dev/shm may be
+        # noexec), and Windows falls back to EXE if %TEMP% blocks execution.
+        with fuzz_decode._staged_fuzz_env(EXE) as (st_exe, st_work):
+            check(st_work.is_dir(), "expected staged scratch directory")
+            if os.name != "nt":
+                check(st_exe == EXE, f"POSIX must not execute from tmpfs stage (got {st_exe} != {EXE})")
+            (st_work / "mismatch_probe.fold").write_bytes(b"PROBE")
+        probe_saved = fuzz_decode.WORK / "mismatch_probe.fold"
+        check(probe_saved.read_bytes() == b"PROBE", "reproducer artifact was not preserved from staged work_dir")
+        probe_saved.unlink(missing_ok=True)
+        with mock.patch.object(fuzz_decode, "_ORIG_SUBPROCESS_RUN", side_effect=PermissionError("noexec")):
+            with fuzz_decode._staged_fuzz_env(EXE) as (fb_exe, _):
+                check(fb_exe == EXE, f"noexec stage must fall back to EXE, got {fb_exe}")
+
+        # Per-seed thread rotation: across one 30,000-iteration --all-formats
+        # schedule, every .fold seed (including tall S=2 and S=3 CM fixtures)
+        # exercises all four thread counts {"1", "3", "6", "9"}.
+        per_seed_threads: dict[int, set[str]] = {idx: set() for idx in range(len(records))}
+        for fmt, _, s_idx, th in fuzz_decode._iter_all_formats_schedule(
+            30000, records, len(bmp_s), len(png_s), len(ppm_s)
+        ):
+            if fmt == "fold":
+                per_seed_threads[s_idx].add(th)
+        for idx, (sname, _, _, sm, sblob) in enumerate(records):
+            s_note = f" (CM S={sblob[32]})" if sm == 1 else ""
+            check(
+                per_seed_threads[idx] == {"1", "3", "6", "9"},
+                f"seed {idx} {sname}{s_note} missed thread counts: {per_seed_threads[idx]}",
+            )
+
 
 def compat_corpus() -> None:
     """Twenty-year compatibility corpus guard (testdata/compat/): every archived
