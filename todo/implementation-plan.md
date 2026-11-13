@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **127 of 259 sections complete (49%).** 259 sections (27 discovered); backlog 5 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **128 of 259 sections complete (49%).** 259 sections (27 discovered); backlog 5 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -290,7 +290,7 @@ Everything so far confirmed on images nobody tuned on, before anything is frozen
 | [x] | `D00 T05 §9` | Read-only Gemini 4 Hydrogen scouts for the Antigravity runner                     | none       |   6   |
 | [x] | `D01 T07 §3` | Round 1: a backward-reference method for screen content                           | ffmpeg-jxl |   8   |
 | [x] | `D01 T07 §4` | Round 2: spatial copy-distance inheritance, 2D offsets, and recency colour coding | ffmpeg-jxl |   8   |
-| [ ] | `D05 T01 §9` | Milestone 9 gate: Holds on images never tuned on                                  | ffmpeg-jxl |   6   |
+| [x] | `D05 T01 §9` | Milestone 9 gate: Holds on images never tuned on                                  | ffmpeg-jxl |   6   |
 
 ### Phase 9 -- Milestone 10: RasterFold 1.0
 
