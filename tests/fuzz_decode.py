@@ -64,14 +64,14 @@ def recrc(b: bytearray, update_payload_size: bool = True) -> bytes:
 
 def seed_records() -> list[tuple[str, int, int, int, bytes]]:
     WORK.mkdir(parents=True, exist_ok=True)
-    seed_src = (ROOT / "tests" / "rfi_ref.py").read_bytes() + repr((PHOTO_CROPS, FORCE_STRIPS, "sc5_v5")).encode("utf-8")
+    seed_src = (ROOT / "tests" / "rfi_ref.py").read_bytes() + repr((PHOTO_CROPS, FORCE_STRIPS, "sc6_v6")).encode("utf-8")
     cache_key = hashlib.sha256(seed_src).hexdigest()[:16]
     cache_path = WORK / f"seeds_v3_{cache_key}.json"
     if cache_path.is_file():
         try:
             raw = json.loads(cache_path.read_text(encoding="utf-8"))
             records = [(r["name"], int(r["w"]), int(r["h"]), int(r["method"]), base64.b64decode(r["b64"])) for r in raw]
-            if len(records) == 19:
+            if len(records) == 21:
                 return records
         except (KeyError, ValueError, json.JSONDecodeError):
             pass
@@ -120,15 +120,22 @@ def seed_records() -> list[tuple[str, int, int, int, bytes]]:
 
     with Image.open(ROOT / "research" / "screens-assets" / "dv_s01.png") as sc_im:
         sc_screen_rgb = sc_im.convert("RGB").crop((40, 160, 40 + pal_w, 160 + pal_h)).tobytes()
-    sc5_screen = rf.encode_image(pal_w, pal_h, sc_screen_rgb)
-    assert sc5_screen[16] == rf.METHOD_SC
+    # The encoder writes method 6; method 5 is decode-only and built explicitly.
+    sc6_screen = rf.encode_image(pal_w, pal_h, sc_screen_rgb)
+    assert sc6_screen[16] == rf.METHOD_SC2
+    sc5_screen_payload = rf.sc_encode(pal_w, pal_h, sc_screen_rgb)
+    assert sc5_screen_payload is not None
+    sc5_screen = rf.build_file(pal_w, pal_h, rf.METHOD_SC, sc5_screen_payload)
 
     sc_tile = [bytes(((i * 73 + 11) & 0xFF, ((i * 139 + 29) + (i >> 8)) & 0xFF, (i * 197 + 53) & 0xFF)) for i in range(320)]
     assert len(set(sc_tile)) == 320
     random.Random(320).shuffle(sc_tile)
     sc_runs_rgb = b"".join(sc_tile[((y % 10) * 32) + (x & 31)] for y in range(pal_h) for x in range(pal_w))
-    sc5_runs = rf.encode_image(pal_w, pal_h, sc_runs_rgb)
-    assert sc5_runs[16] == rf.METHOD_SC
+    sc6_runs = rf.encode_image(pal_w, pal_h, sc_runs_rgb)
+    assert sc6_runs[16] == rf.METHOD_SC2
+    sc5_runs_payload = rf.sc_encode(pal_w, pal_h, sc_runs_rgb)
+    assert sc5_runs_payload is not None
+    sc5_runs = rf.build_file(pal_w, pal_h, rf.METHOD_SC, sc5_runs_payload)
 
     photo_folds: list[tuple[str, int, int, int, bytes]] = []
     photos_dir = ROOT / "testdata" / "photos"
@@ -147,7 +154,7 @@ def seed_records() -> list[tuple[str, int, int, int, bytes]]:
         stem = name.removesuffix(".png")
         photo_folds.append((f"{stem}_{w}x{h}", w, h, rf.METHOD_CM, blob))
 
-    # Order the first 6 slots so small runs (e.g. 10 iterations) exercise methods 0, 1, 2, 3, 4, 5.
+    # Order the first 7 slots so small runs (e.g. 10 iterations) exercise methods 0, 1, 2, 3, 4, 5, 6.
     records = [
         ("noise_64x48", noise_w, noise_h, rf.METHOD_RAW, noise_fold),
         photo_folds[0],
@@ -155,20 +162,23 @@ def seed_records() -> list[tuple[str, int, int, int, bytes]]:
         ("pal3_200col_64x48", pal_w, pal_h, rf.METHOD_PAL2, pal3_200col),
         ("pal4_200col_64x48", pal_w, pal_h, rf.METHOD_PAL3, pal4_200col),
         ("sc5_screen_64x48", pal_w, pal_h, rf.METHOD_SC, sc5_screen),
+        ("sc6_screen_64x48", pal_w, pal_h, rf.METHOD_SC2, sc6_screen),
         ("pal2_200col_64x48", pal_w, pal_h, rf.METHOD_PAL, pal2_200col),
         ("pal3_2col_64x48", pal_w, pal_h, rf.METHOD_PAL2, pal3_2col),
         ("pal4_2col_64x48", pal_w, pal_h, rf.METHOD_PAL3, pal4_2col),
         ("sc5_runs_64x48", pal_w, pal_h, rf.METHOD_SC, sc5_runs),
+        ("sc6_runs_64x48", pal_w, pal_h, rf.METHOD_SC2, sc6_runs),
         *photo_folds[1:],
     ]
-    assert len(records) == 19
-    assert {m for _, _, _, m, _ in records[:6]} == {
+    assert len(records) == 21
+    assert {m for _, _, _, m, _ in records[:7]} == {
         rf.METHOD_RAW,
         rf.METHOD_CM,
         rf.METHOD_PAL,
         rf.METHOD_PAL2,
         rf.METHOD_PAL3,
         rf.METHOD_SC,
+        rf.METHOD_SC2,
     }
     for _, w, h, m, blob in records:
         assert w >= 36 and h >= 34 and w * h > 1200
@@ -290,8 +300,8 @@ def mutate(blob: bytes, rng: random.Random) -> bytes:
                 if rng.random() < 0.1:
                     b[i] = rng.randrange(256)
         return recrc(b)
-    if method == rf.METHOD_SC:
-        # Method 5: payload is the range-coded token stream alone (no header field).
+    if method in (rf.METHOD_SC, rf.METHOD_SC2):
+        # Methods 5 and 6: payload is the range-coded token stream alone (no header field).
         payload_len = len(b) - 32
         if kind == 0:                               # flip bits in the token stream
             for _ in range(rng.randrange(1, 4)):
@@ -828,7 +838,7 @@ def main() -> int:
     WORK.mkdir(parents=True, exist_ok=True)
     base = seeds()
     counts = {0: 0, 4: 0}
-    method_counts = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+    method_counts = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0}
     tasks: list[tuple[int, bytes, str, str, str]] = []
     for i in range(iterations):
         seed_blob = base[i % len(base)]
@@ -851,7 +861,7 @@ def main() -> int:
             print(err)
             return 1
 
-    m_summary = ", ".join(f"{m}:{method_counts[m]}" for m in (0, 1, 2, 3, 4, 5))
+    m_summary = ", ".join(f"{m}:{method_counts[m]}" for m in (0, 1, 2, 3, 4, 5, 6))
     print(f"{iterations} mutated files (methods {m_summary}): {counts[4]} rejected, {counts[0]} still valid, no crash, hang or mismatch")
     return 0
 

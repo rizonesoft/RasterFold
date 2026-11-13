@@ -80,7 +80,8 @@ typedef struct { int code; const char *message; } rf_error;
 /* Validated format metadata filled by rf_inspect.
  *   width, height: image dimensions in pixels.
  *   method: the file's coding method (0 raw, 1 CM, 2 palette, 3 extended
- *     palette, 4 compact palette, 5 screen content), as stored in the header.
+ *     palette, 4 compact palette, 5 screen content, 6 screen content v2),
+ *     as stored in the header.
  *   payload_size: bytes of payload after the 32-byte header.
  *   payload_crc, header_crc: the CRC-32 values stored in the file, verified
  *     against the bytes before this structure is filled.

@@ -297,7 +297,7 @@ static int run(int argc, rf_path_char **argv, rf_error *err) {
             written = out_size;
         } else if (json) {
             const char *method = info.method == RF_METHOD_CM ? "cm" :
-                info.method == RF_METHOD_SC ? "sc" :
+                (info.method == RF_METHOD_SC || info.method == RF_METHOD_SC2) ? "sc" :
                 (info.method >= RF_METHOD_PAL) ? "palette" : "raw";
             rf_print(0, "{\"version\": ");
             rf_print_u64(0, fold_version);
@@ -335,7 +335,7 @@ static int run(int argc, rf_path_char **argv, rf_error *err) {
             info_line("width", info.width);
             info_line("height", info.height);
             rf_print(0, info.method == RF_METHOD_CM ? "method: cm" RF_EOL :
-                        info.method == RF_METHOD_SC ? "method: sc" RF_EOL :
+                        (info.method == RF_METHOD_SC || info.method == RF_METHOD_SC2) ? "method: sc" RF_EOL :
                         (info.method >= RF_METHOD_PAL) ? "method: palette" RF_EOL : "method: raw" RF_EOL);
             info_line("uncompressed_rgb_bytes", (uint64_t)info.width * info.height * 3);
             info_line("payload_size", info.payload_size);

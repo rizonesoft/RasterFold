@@ -22,6 +22,7 @@ METHOD_PAL = 2
 METHOD_PAL2 = 3
 METHOD_PAL3 = 4      # compact palette, version 3 only
 METHOD_SC = 5        # screen content, version 3 only
+METHOD_SC2 = 6       # screen content v2, version 3 only
 
 
 class FormatError(Exception):
@@ -1372,6 +1373,494 @@ def sc_decode(payload: bytes, width: int, height: int) -> bytes:
     return bytes(rgb)
 
 
+# ---------------------------------------------------------------- method 6 (screen content v2, version 3)
+
+_SC2_WINDOW = (1 << 20) - 1
+
+
+def _sc2_slot11(r: int, g: int, b: int) -> int:
+    rgb24 = (r << 16) | (g << 8) | b
+    return ((0x1E35A7BD * (0xFF000000 | rgb24)) & 0xFFFFFFFF) >> 21
+
+
+def _sc2_mtf_shift4(q: list[int], v: int) -> None:
+    pos = 3
+    for i in range(4):
+        if q[i] == v:
+            pos = i
+            break
+    for i in range(pos, 0, -1):
+        q[i] = q[i - 1]
+    q[0] = v
+
+
+def _sc2_cands(p: int, width: int, orig_ring: list[int], rep: list[int]) -> list[int]:
+    ring_cap = width + 3
+    maxd = min(p, _SC2_WINDOW)
+    y, x = divmod(p, width)
+    out: list[int] = []
+
+    def add(d: int) -> None:
+        if 1 <= d <= maxd and d not in out and len(out) < 4:
+            out.append(d)
+
+    if y >= 1:
+        add(orig_ring[(p - width) % ring_cap])
+        if x + 1 < width:
+            add(orig_ring[(p - width + 1) % ring_cap])
+        if x >= 1:
+            add(orig_ring[(p - width - 1) % ring_cap])
+        if x + 2 < width:
+            add(orig_ring[(p - width + 2) % ring_cap])
+        if x >= 2:
+            add(orig_ring[(p - width - 2) % ring_cap])
+    if x >= 1:
+        add(orig_ring[(p - 1) % ring_cap])
+    for d in rep:
+        add(d)
+    for d in (1, width, width + 1, width - 1):
+        add(d)
+    return out
+
+
+class _SC2Model:
+    def __init__(self) -> None:
+        self.is_copy = [_Pal4Counter() for _ in range(6)]
+        self.is_inherit = [_Pal4Counter() for _ in range(6)]
+        self.inh_b0 = [_Pal4Counter() for _ in range(6)]
+        self.inh_b1 = _Pal4Counter()
+        self.inh_b2 = _Pal4Counter()
+        self.len_tree = [[_Pal4Counter() for _ in range(32)] for _ in range(2)]
+        self.len_extra = [[_Pal4Counter() for _ in range(24)] for _ in range(2)]
+        self.is_same_row = [_Pal4Counter() for _ in range(2)]
+        self.is_rep_dy = _Pal4Counter()
+        self.rep_dy_b0 = _Pal4Counter()
+        self.rep_dy_b1 = [_Pal4Counter() for _ in range(2)]
+        self.dy_tree = [_Pal4Counter() for _ in range(64)]
+        self.dy_extra = [_Pal4Counter() for _ in range(40)]
+        self.dx0_tree = [_Pal4Counter() for _ in range(64)]
+        self.dx0_extra = [_Pal4Counter() for _ in range(40)]
+        self.dx_zero = [_Pal4Counter() for _ in range(2)]
+        self.dx_sign = _Pal4Counter()
+        self.dx_tree = [_Pal4Counter() for _ in range(64)]
+        self.dx_extra = [_Pal4Counter() for _ in range(50)]
+        self.is_eq_w = [_Pal4Counter() for _ in range(12)]
+        self.is_eq_n = [_Pal4Counter() for _ in range(6)]
+        self.is_mtf = [_Pal4Counter() for _ in range(6)]
+        self.mtf_tree = [_Pal4Counter() for _ in range(16)]
+        self.is_cache = [_Pal4Counter() for _ in range(6)]
+        self.cache_tree = [_Pal4Counter() for _ in range(2048)]
+        self.lit_g = [[_Pal4Counter() for _ in range(256)] for _ in range(8)]
+        self.lit_rg = [[_Pal4Counter() for _ in range(256)] for _ in range(4)]
+        self.lit_bg = [[_Pal4Counter() for _ in range(256)] for _ in range(4)]
+
+
+def sc2_encode(width: int, height: int, rgb: bytes, *, force: bool = False) -> bytes | None:
+    if len(rgb) != width * height * 3:
+        raise ValueError("rgb size")
+    total = width * height
+    if not force and total < 4:
+        return None
+    ring_cap = width + 3
+    orig_ring = [0] * ring_cap
+    rep = [1, width, width + 1, width - 1]
+    rep_dy = [1, 2, 4, 8]
+    mtf: list[tuple[int, int, int]] = []
+    cache: list[tuple[int, int, int] | None] = [None] * 2048
+    head = [-1] * 65536
+    prev = [-1] * total
+
+    def insert(q: int) -> None:
+        if q + 4 <= total:
+            b = _sc_fnv1a_4px(rgb, 3 * q)
+            prev[q] = head[b]
+            head[b] = q
+
+    def update_color(px: tuple[int, int, int]) -> None:
+        if px in mtf:
+            mtf.remove(px)
+        mtf.insert(0, px)
+        if len(mtf) > 16:
+            mtf.pop()
+        cache[_sc2_slot11(*px)] = px
+
+    def match_len(a: int, b: int, limit: int) -> int:
+        ao, bo = 3 * a, 3 * b
+        if rgb[ao : ao + 3] != rgb[bo : bo + 3]:
+            return 0
+        lo, hi = 1, limit
+        while lo < hi:
+            mid = (lo + hi + 1) >> 1
+            if rgb[ao : ao + 3 * mid] == rgb[bo : bo + 3 * mid]:
+                lo = mid
+            else:
+                hi = mid - 1
+        return lo
+
+    m = _SC2Model()
+    enc = RangeEncoder()
+    px0 = (rgb[0], rgb[1], rgb[2])
+    r0, g0, b0 = px0
+    _sc_tree_put(enc, m.lit_g[4], 8, g0)
+    _sc_tree_put(enc, m.lit_rg[g0 >> 6], 8, (r0 - g0) & 255)
+    _sc_tree_put(enc, m.lit_bg[g0 >> 6], 8, (b0 - g0) & 255)
+    orig_ring[0] = 0
+    insert(0)
+    update_color(px0)
+
+    prev_kind = 5
+    prev_same_row = 0
+    covered4 = 0
+    p = 1
+    while p < total:
+        if not force and (p - covered4) * 2 > total:
+            return None
+        limit = min(4096, total - p)
+        cands = _sc2_cands(p, width, orig_ring, rep)
+
+        best_inh_len, best_inh_idx, best_inh_dist = 0, -1, 0
+        if limit >= 2:
+            for idx, d in enumerate(cands):
+                ml = match_len(p, p - d, limit)
+                if ml >= 2 and ml > best_inh_len:
+                    best_inh_len, best_inh_idx, best_inh_dist = ml, idx, d
+
+        best_gen_len, best_gen_dist = 0, 0
+        if limit >= 4:
+            hcands = [p - 1]
+            if p >= width and width <= _SC2_WINDOW:
+                hcands.append(p - width)
+            q = head[_sc_fnv1a_4px(rgb, 3 * p)]
+            visited = 0
+            while q >= 0 and visited < 64 and p - q <= _SC2_WINDOW:
+                hcands.append(q)
+                q = prev[q]
+                visited += 1
+            for c in hcands:
+                d = p - c
+                if d > _SC2_WINDOW:
+                    continue
+                ml = match_len(p, c, limit)
+                if ml >= 4 and (ml > best_gen_len or (ml == best_gen_len and d < best_gen_dist)):
+                    best_gen_len, best_gen_dist = ml, d
+
+        use_copy = False
+        use_inh = False
+        chosen_len, chosen_dist, chosen_idx = 0, 0, -1
+        if best_inh_len >= 2 and (best_gen_len < 4 or best_inh_len + 1 >= best_gen_len):
+            use_copy, use_inh = True, True
+            chosen_len, chosen_dist, chosen_idx = best_inh_len, best_inh_dist, best_inh_idx
+        elif best_gen_len >= 4:
+            use_copy = True
+            chosen_len, chosen_dist = best_gen_len, best_gen_dist
+            if best_gen_dist in cands:
+                use_inh = True
+                chosen_idx = cands.index(best_gen_dist)
+
+        if use_copy:
+            m.is_copy[prev_kind].code(enc, None, 1)
+            m.is_inherit[prev_kind].code(enc, None, 1 if use_inh else 0)
+            if use_inh:
+                k = len(cands)
+                if k > 1:
+                    m.inh_b0[prev_kind].code(enc, None, 1 if chosen_idx == 0 else 0)
+                    if chosen_idx > 0 and k > 2:
+                        m.inh_b1.code(enc, None, 1 if chosen_idx == 1 else 0)
+                        if chosen_idx > 1 and k > 3:
+                            m.inh_b2.code(enc, None, 1 if chosen_idx == 2 else 0)
+                lsym, lnb, lex = _sc_prefix_encode(chosen_len - 1)
+                _sc_tree_put(enc, m.len_tree[1], 5, lsym)
+                _sc_extra_put(enc, m.len_extra[1][lsym], lnb, lex)
+            else:
+                lsym, lnb, lex = _sc_prefix_encode(chosen_len - 3)
+                _sc_tree_put(enc, m.len_tree[0], 5, lsym)
+                _sc_extra_put(enc, m.len_extra[0][lsym], lnb, lex)
+                y, x = divmod(p, width)
+                qy, qx = divmod(p - chosen_dist, width)
+                dy = y - qy
+                if y == 0:
+                    same_row = 1
+                elif x == 0:
+                    same_row = 0
+                else:
+                    same_row = 1 if dy == 0 else 0
+                    m.is_same_row[prev_same_row].code(enc, None, same_row)
+                if same_row == 1:
+                    dx = x - qx
+                    dsym, dnb, dex = _sc_prefix_encode(dx)
+                    _sc_tree_put(enc, m.dx0_tree, 6, dsym)
+                    _sc_extra_put(enc, m.dx0_extra[dsym], dnb, dex)
+                    prev_same_row = 1
+                else:
+                    in_rdy = 1 if dy in rep_dy else 0
+                    m.is_rep_dy.code(enc, None, in_rdy)
+                    if in_rdy == 1:
+                        ridx = rep_dy.index(dy)
+                        m.rep_dy_b0.code(enc, None, 1 if ridx == 0 else 0)
+                        if ridx > 0:
+                            m.rep_dy_b1[0].code(enc, None, 1 if ridx == 1 else 0)
+                            if ridx > 1:
+                                m.rep_dy_b1[1].code(enc, None, 1 if ridx == 2 else 0)
+                    else:
+                        dysym, dynb, dyex = _sc_prefix_encode(dy)
+                        _sc_tree_put(enc, m.dy_tree, 6, dysym)
+                        _sc_extra_put(enc, m.dy_extra[dysym], dynb, dyex)
+                    _sc2_mtf_shift4(rep_dy, dy)
+                    dx = x - qx
+                    m.dx_zero[in_rdy].code(enc, None, 1 if dx == 0 else 0)
+                    if dx != 0:
+                        m.dx_sign.code(enc, None, 1 if dx < 0 else 0)
+                        dxsym, dxnb, dxex = _sc_prefix_encode(abs(dx))
+                        _sc_tree_put(enc, m.dx_tree, 6, dxsym)
+                        _sc_extra_put(enc, m.dx_extra[dxsym], dxnb, dxex)
+                    prev_same_row = 0
+
+            for q in range(p, p + chosen_len):
+                orig_ring[q % ring_cap] = chosen_dist
+                insert(q)
+                update_color((rgb[3 * q], rgb[3 * q + 1], rgb[3 * q + 2]))
+            _sc2_mtf_shift4(rep, chosen_dist)
+            if chosen_len >= 4:
+                covered4 += chosen_len
+            p += chosen_len
+            prev_kind = 0
+            continue
+
+        m.is_copy[prev_kind].code(enc, None, 0)
+        y, x = divmod(p, width)
+        has_w, has_n = x >= 1, y >= 1
+        px = (rgb[3 * p], rgb[3 * p + 1], rgb[3 * p + 2])
+        w_px = (rgb[3 * (p - 1)], rgb[3 * (p - 1) + 1], rgb[3 * (p - 1) + 2]) if has_w else None
+        n_px = (rgb[3 * (p - width)], rgb[3 * (p - width) + 1], rgb[3 * (p - width) + 2]) if has_n else None
+        done = False
+        tk = 5
+        if has_w:
+            wn_eq = 1 if (has_n and w_px == n_px) else 0
+            bw = 1 if px == w_px else 0
+            m.is_eq_w[prev_kind * 2 + wn_eq].code(enc, None, bw)
+            if bw == 1:
+                tk, done = 1, True
+        if not done and has_n and (not has_w or n_px != w_px):
+            bn = 1 if px == n_px else 0
+            m.is_eq_n[prev_kind].code(enc, None, bn)
+            if bn == 1:
+                tk, done = 2, True
+        if not done:
+            if px in mtf:
+                m.is_mtf[prev_kind].code(enc, None, 1)
+                _sc_tree_put(enc, m.mtf_tree, 4, mtf.index(px))
+                tk = 3
+            else:
+                m.is_mtf[prev_kind].code(enc, None, 0)
+                cidx = _sc2_slot11(*px)
+                if cache[cidx] == px:
+                    m.is_cache[prev_kind].code(enc, None, 1)
+                    _sc_tree_put(enc, m.cache_tree, 11, cidx)
+                    tk = 4
+                else:
+                    m.is_cache[prev_kind].code(enc, None, 0)
+                    r, g, b = px
+                    wg_ctx = (w_px[1] >> 5) if has_w and w_px is not None else 4
+                    _sc_tree_put(enc, m.lit_g[wg_ctx], 8, g)
+                    _sc_tree_put(enc, m.lit_rg[g >> 6], 8, (r - g) & 255)
+                    _sc_tree_put(enc, m.lit_bg[g >> 6], 8, (b - g) & 255)
+                    tk = 5
+        orig_ring[p % ring_cap] = 0
+        insert(p)
+        update_color(px)
+        p += 1
+        prev_kind = tk
+
+    if not force and covered4 * 2 < total:
+        return None
+    return enc.finish()
+
+
+def sc2_decode(payload: bytes, width: int, height: int) -> bytes:
+    if len(payload) < 5:
+        raise FormatError("screen content")
+    dec = RangeDecoder(payload)
+    m = _SC2Model()
+    total = width * height
+    ring_cap = width + 3
+    orig_ring = [0] * ring_cap
+    rep = [1, width, width + 1, width - 1]
+    rep_dy = [1, 2, 4, 8]
+    mtf: list[tuple[int, int, int]] = []
+    cache: list[tuple[int, int, int] | None] = [None] * 2048
+    rgb = bytearray(total * 3)
+
+    def update_color(px: tuple[int, int, int]) -> None:
+        if px in mtf:
+            mtf.remove(px)
+        mtf.insert(0, px)
+        if len(mtf) > 16:
+            mtf.pop()
+        cache[_sc2_slot11(*px)] = px
+
+    g0 = _sc_tree_get(dec, m.lit_g[4], 8)
+    r0 = (_sc_tree_get(dec, m.lit_rg[g0 >> 6], 8) + g0) & 255
+    b0 = (_sc_tree_get(dec, m.lit_bg[g0 >> 6], 8) + g0) & 255
+    rgb[0], rgb[1], rgb[2] = r0, g0, b0
+    orig_ring[0] = 0
+    update_color((r0, g0, b0))
+    if dec.pos > len(dec.data) + 2:
+        raise FormatError("screen content stream")
+
+    prev_kind = 5
+    prev_same_row = 0
+    p = 1
+    while p < total:
+        cands = _sc2_cands(p, width, orig_ring, rep)
+        if m.is_copy[prev_kind].code(None, dec) == 1:
+            use_inh = m.is_inherit[prev_kind].code(None, dec)
+            if use_inh == 1:
+                k = len(cands)
+                if k == 1:
+                    idx = 0
+                elif m.inh_b0[prev_kind].code(None, dec) == 1:
+                    idx = 0
+                elif k == 2 or m.inh_b1.code(None, dec) == 1:
+                    idx = 1
+                elif k == 3 or m.inh_b2.code(None, dec) == 1:
+                    idx = 2
+                else:
+                    idx = 3
+                dist = cands[idx]
+                lsym = _sc_tree_get(dec, m.len_tree[1], 5)
+                if lsym > 23:
+                    raise FormatError("screen content stream")
+                lnb = 0 if lsym < 4 else (lsym - 2) >> 1
+                length = _sc_prefix_decode(lsym, _sc_extra_get(dec, m.len_extra[1][lsym], lnb)) + 1
+                if length > 4096 or p + length > total:
+                    raise FormatError("screen content stream")
+            else:
+                lsym = _sc_tree_get(dec, m.len_tree[0], 5)
+                if lsym > 23:
+                    raise FormatError("screen content stream")
+                lnb = 0 if lsym < 4 else (lsym - 2) >> 1
+                length = _sc_prefix_decode(lsym, _sc_extra_get(dec, m.len_extra[0][lsym], lnb)) + 3
+                if length > 4096 or p + length > total:
+                    raise FormatError("screen content stream")
+                y, x = divmod(p, width)
+                if y == 0:
+                    same_row = 1
+                elif x == 0:
+                    same_row = 0
+                else:
+                    same_row = m.is_same_row[prev_same_row].code(None, dec)
+                if same_row == 1:
+                    dsym = _sc_tree_get(dec, m.dx0_tree, 6)
+                    if dsym > 39:
+                        raise FormatError("screen content stream")
+                    dnb = 0 if dsym < 4 else (dsym - 2) >> 1
+                    dx = _sc_prefix_decode(dsym, _sc_extra_get(dec, m.dx0_extra[dsym], dnb))
+                    if dx > x or dx > _SC2_WINDOW:
+                        raise FormatError("screen content stream")
+                    dist = dx
+                    prev_same_row = 1
+                else:
+                    in_rdy = m.is_rep_dy.code(None, dec)
+                    if in_rdy == 1:
+                        if m.rep_dy_b0.code(None, dec) == 1:
+                            ridx = 0
+                        elif m.rep_dy_b1[0].code(None, dec) == 1:
+                            ridx = 1
+                        elif m.rep_dy_b1[1].code(None, dec) == 1:
+                            ridx = 2
+                        else:
+                            ridx = 3
+                        dy = rep_dy[ridx]
+                    else:
+                        dysym = _sc_tree_get(dec, m.dy_tree, 6)
+                        if dysym > 39:
+                            raise FormatError("screen content stream")
+                        dynb = 0 if dysym < 4 else (dysym - 2) >> 1
+                        dy = _sc_prefix_decode(dysym, _sc_extra_get(dec, m.dy_extra[dysym], dynb))
+                    if dy > y or dy > _SC2_WINDOW:
+                        raise FormatError("screen content stream")
+                    _sc2_mtf_shift4(rep_dy, dy)
+                    if m.dx_zero[in_rdy].code(None, dec) == 1:
+                        dx = 0
+                    else:
+                        neg = m.dx_sign.code(None, dec)
+                        dxsym = _sc_tree_get(dec, m.dx_tree, 6)
+                        if dxsym > 49:
+                            raise FormatError("screen content stream")
+                        dxnb = 0 if dxsym < 4 else (dxsym - 2) >> 1
+                        adx = _sc_prefix_decode(dxsym, _sc_extra_get(dec, m.dx_extra[dxsym], dxnb))
+                        dx = -adx if neg == 1 else adx
+                    qx = x - dx
+                    if qx < 0 or qx >= width:
+                        raise FormatError("screen content stream")
+                    dist = dy * width + dx
+                    if dist > _SC2_WINDOW:
+                        raise FormatError("screen content stream")
+                    prev_same_row = 0
+
+            for q in range(p, p + length):
+                src = 3 * (q - dist)
+                dst = 3 * q
+                r, g, b = rgb[src], rgb[src + 1], rgb[src + 2]
+                rgb[dst], rgb[dst + 1], rgb[dst + 2] = r, g, b
+                orig_ring[q % ring_cap] = dist
+                update_color((r, g, b))
+            _sc2_mtf_shift4(rep, dist)
+            p += length
+            prev_kind = 0
+        else:
+            y, x = divmod(p, width)
+            has_w, has_n = x >= 1, y >= 1
+            w_px = (rgb[3 * (p - 1)], rgb[3 * (p - 1) + 1], rgb[3 * (p - 1) + 2]) if has_w else None
+            n_px = (rgb[3 * (p - width)], rgb[3 * (p - width) + 1], rgb[3 * (p - width) + 2]) if has_n else None
+            done = False
+            tk = 5
+            r = g = b = 0
+            if has_w and w_px is not None:
+                wn_eq = 1 if (has_n and w_px == n_px) else 0
+                if m.is_eq_w[prev_kind * 2 + wn_eq].code(None, dec) == 1:
+                    r, g, b = w_px
+                    tk, done = 1, True
+            if not done and has_n and n_px is not None and (not has_w or n_px != w_px):
+                if m.is_eq_n[prev_kind].code(None, dec) == 1:
+                    r, g, b = n_px
+                    tk, done = 2, True
+            if not done:
+                if m.is_mtf[prev_kind].code(None, dec) == 1:
+                    midx = _sc_tree_get(dec, m.mtf_tree, 4)
+                    if midx >= len(mtf):
+                        raise FormatError("screen content stream")
+                    r, g, b = mtf[midx]
+                    tk = 3
+                elif m.is_cache[prev_kind].code(None, dec) == 1:
+                    cidx = _sc_tree_get(dec, m.cache_tree, 11)
+                    cached = cache[cidx]
+                    if cached is None:
+                        raise FormatError("screen content stream")
+                    r, g, b = cached
+                    tk = 4
+                else:
+                    wg_ctx = (w_px[1] >> 5) if has_w and w_px is not None else 4
+                    g = _sc_tree_get(dec, m.lit_g[wg_ctx], 8)
+                    rg = _sc_tree_get(dec, m.lit_rg[g >> 6], 8)
+                    bg = _sc_tree_get(dec, m.lit_bg[g >> 6], 8)
+                    r = (rg + g) & 255
+                    b = (bg + g) & 255
+                    tk = 5
+            dst = 3 * p
+            rgb[dst], rgb[dst + 1], rgb[dst + 2] = r, g, b
+            orig_ring[p % ring_cap] = 0
+            update_color((r, g, b))
+            p += 1
+            prev_kind = tk
+        if dec.pos > len(dec.data) + 2:
+            raise FormatError("screen content stream")
+
+    if not dec.exhausted_exactly():
+        raise FormatError("screen content stream")
+    return bytes(rgb)
+
+
 # ---------------------------------------------------------------- container
 
 def build_file(width: int, height: int, method: int, payload: bytes, reserved: int = 0) -> bytes:
@@ -1409,10 +1898,11 @@ def encode_image(width: int, height: int, rgb: bytes) -> bytes:
     if pal_payload is not None and len(pal_payload) < len(best_payload):
         best_method = METHOD_PAL3
         best_payload = pal_payload
-    sc_payload = sc_encode(width, height, rgb)
-    if sc_payload is not None and len(sc_payload) < len(best_payload):
-        best_method = METHOD_SC
-        best_payload = sc_payload
+    if pal_payload is None or pal_payload[0] >= 16:
+        sc_payload = sc2_encode(width, height, rgb)
+        if sc_payload is not None and len(sc_payload) < len(best_payload):
+            best_method = METHOD_SC2
+            best_payload = sc_payload
     return build_file(width, height, best_method, best_payload)
 
 
@@ -1433,7 +1923,7 @@ def decode_image(blob: bytes) -> tuple[int, int, bytes]:
     if crc32(blob[:28]) != struct.unpack_from("<I", blob, 28)[0]:
         raise FormatError("header checksum")
     method, reserved = blob[16], blob[17]
-    if method > METHOD_SC or (method in (METHOD_PAL3, METHOD_SC) and version != 3):
+    if method > METHOD_SC2 or (method in (METHOD_PAL3, METHOD_SC, METHOD_SC2) and version != 3):
         raise FormatError("method")
     if reserved != 0:
         raise FormatError("reserved byte")
@@ -1456,6 +1946,8 @@ def decode_image(blob: bytes) -> tuple[int, int, bytes]:
         return width, height, pal4_decode(payload, width, height)
     if method == METHOD_SC:
         return width, height, sc_decode(payload, width, height)
+    if method == METHOD_SC2:
+        return width, height, sc2_decode(payload, width, height)
     return width, height, cm_decode(payload, width, height, version)
 
 

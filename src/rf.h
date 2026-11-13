@@ -26,6 +26,7 @@ typedef char rf_path_char;
 #define RF_METHOD_PAL2 3u
 #define RF_METHOD_PAL3 4u      /* compact palette; version 3 files only */
 #define RF_METHOD_SC 5u        /* screen content: literals, colour cache, copies; version 3 files only */
+#define RF_METHOD_SC2 6u       /* screen content v2: spatial copy inheritance, 2D offsets, recency colours; version 3 files only */
 
 #define RF_INLINE static inline __attribute__((always_inline))
 #define RF_NOINLINE __attribute__((noinline))
@@ -104,9 +105,9 @@ int rf_cm_decode(const uint8_t *in, size_t n, uint8_t *out, size_t stride, uint3
 uint32_t rf_pal_build(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *pal);
 int rf_pal_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size_t cap, size_t *written, rf_error *err);
 int rf_pal_decode(const uint8_t *in, size_t n, uint8_t *out, size_t stride, uint32_t w, uint32_t h, uint32_t method, rf_error *err);
-/* sc.c (method 5) */
-int rf_sc_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size_t cap, size_t *written, rf_error *err);
-int rf_sc_decode(const uint8_t *in, size_t n, uint8_t *out, size_t stride, uint32_t w, uint32_t h, rf_error *err);
+/* sc.c: methods 5 and 6, screen content (the encoder writes method 6; method 5 is decode-only). */
+int rf_sc2_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size_t cap, size_t *written, rf_error *err);
+int rf_sc_decode(const uint8_t *in, size_t n, uint8_t *out, size_t stride, uint32_t w, uint32_t h, uint32_t method, rf_error *err);
 
 /* mem.c */
 void *memcpy(void *dst, const void *src, size_t n);

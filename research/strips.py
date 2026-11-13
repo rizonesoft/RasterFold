@@ -380,6 +380,10 @@ def build_strips_bench(cm_path: Path, exe: Path, baseline_key: str, force_cm: bo
             "rc = RF_OK; sc_n = 0;",
         )
         .replace(
+            "rc = rf_sc2_encode(img->rgb, img->width, img->height, f + RF_HEADER_SIZE, n, &sc_n, err);",
+            "rc = RF_OK; sc_n = 0;",
+        )
+        .replace(
             "size_t cm_cap = raw - 1;",
             "size_t cm_cap = max_cm;",
         )

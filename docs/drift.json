@@ -1551,39 +1551,39 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "Re-read 2026-11-13 for D01 T07 section 3: README.md describes format v3, C API 1.0, CLI commands and flags, targets and development workflow without enumerating individual coding method numbers or src/ files; all facts remain accurate after adding method 5 (src/sc.c).",
+      "evidence": "Re-read 2026-11-13 for D01 T07 section 4: README.md describes format v3, C API 1.0, CLI commands and flags, targets and development workflow without enumerating individual coding method numbers or src/ files; all facts remain accurate after adding method 6 (src/sc.c).",
       "sources": {
-        "include/rasterfold.h": "3d16fa954d6b942df9bf42153aa6c689952725ba5edc55eb9c90d7f450e44acf",
-        "src/rf.h": "50f7b03c05bef8e2aacd7e0a9c5030c8f4e2ef9726b0be2009cfc768b91f3462",
-        "src/main.c": "814d2011708e6febc8f4e10b6cf97d4d3f70ef9e451d28c1baec933a234213d9",
+        "include/rasterfold.h": "e5e9eecb93e59b3cfb6b00674006e03ba887c671516e6682292ef5753b015379",
+        "src/rf.h": "7f58b508d0e3bb10cc2e1c57cda78e3552a2976a99928e0dfa1df16b91e0117d",
+        "src/main.c": "32a7aa4fd53309ec5fe418776da300d552582adb318c26f1e4b3700192147778",
         "scripts/build.py": "236a43c711a4b9e667c47b9e06ab04d62c8721db8d126740441de7762276eacc",
         "scripts/package.py": "f030a89836d12e610d9ad4a762bf073c975e6fcaf6bdb83ef09bc174e3f37973",
         "scripts/check-all.py": "ec0f58046fb6beb5e9b522530aa51a4e3eff03bd546a17a09db53e53ca8a5e9a",
         "README.md": "3ed74df2f748338d59eaf36ca338206646ef4136f33e94d72b25f21d459bca45",
-        "AGENTS.md": "038f910d63a9b65d37fe3271e1b0626c7fd8953661c58a199ba780e973fc6251",
+        "AGENTS.md": "75a14c60ad90fcbd88749a8dd158d2eb303483b85fe11287572610203c0a0ecc",
         ".conclave/reviewers.toml": "a95be5634bda979837450696840208f1271598d50c9b116471cd9467720e8358",
         "scripts/review-dispatch.py": "8669fe2758095f05749c7960b7bdce4180ec034292b32b628a95b8c86e3c6082"
       },
       "review": "Author-attested: 2026-10-25 re-read README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "AGENTS.md": {
-      "evidence": "Re-read 2026-11-13 for D01 T07 section 3: updated src/ row on line 9 to list sc.c (method 5, the screen-content coder) alongside cm.c and pal.c; verified include/rasterfold.h and src/rf.h method 5 constants match.",
+      "evidence": "Re-read 2026-11-13 for D01 T07 section 4: updated src/ row on line 11 to list sc.c (methods 5 and 6, the screen-content coders; the encoder writes method 6); verified include/rasterfold.h and src/rf.h method 5 and 6 constants match.",
       "sources": {
-        "include/rasterfold.h": "3d16fa954d6b942df9bf42153aa6c689952725ba5edc55eb9c90d7f450e44acf",
-        "src/rf.h": "50f7b03c05bef8e2aacd7e0a9c5030c8f4e2ef9726b0be2009cfc768b91f3462",
+        "include/rasterfold.h": "e5e9eecb93e59b3cfb6b00674006e03ba887c671516e6682292ef5753b015379",
+        "src/rf.h": "7f58b508d0e3bb10cc2e1c57cda78e3552a2976a99928e0dfa1df16b91e0117d",
         "toolchain.json": "fd7b0b2424a2ffdb86095da76e4b975d604741fb271fd9b70e4c53efe9f5e3de",
         ".conclave/reviewers.toml": "a95be5634bda979837450696840208f1271598d50c9b116471cd9467720e8358",
         "scripts/review-dispatch.py": "8669fe2758095f05749c7960b7bdce4180ec034292b32b628a95b8c86e3c6082",
-        "AGENTS.md": "038f910d63a9b65d37fe3271e1b0626c7fd8953661c58a199ba780e973fc6251",
+        "AGENTS.md": "75a14c60ad90fcbd88749a8dd158d2eb303483b85fe11287572610203c0a0ecc",
         ".codex/hooks.json": "c67e7762d0970280c653a74601012d01971d05f677182ae70e4eda0aa783c150",
         "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",
         "scripts/campaign_guard.py": "564720b1ae8c3999bca60b1a00814ef60ff4c51f636a42e4953f9cbbadfd54d3"
       }
     },
     "GEMINI.md": {
-      "evidence": "Re-read 2026-11-13 for D01 T07 section 3: GEMINI.md covers Antigravity writer key, review dispatch, skills, hooks and scouts only and makes no codec method claims; remains accurate after AGENTS.md listed src/sc.c.",
+      "evidence": "Re-read 2026-11-13 for D01 T07 section 4: GEMINI.md covers Antigravity writer key, review dispatch, skills, hooks and scouts only and makes no codec method claims; remains accurate after AGENTS.md updated src/sc.c to methods 5 and 6.",
       "sources": {
-        "AGENTS.md": "038f910d63a9b65d37fe3271e1b0626c7fd8953661c58a199ba780e973fc6251",
+        "AGENTS.md": "75a14c60ad90fcbd88749a8dd158d2eb303483b85fe11287572610203c0a0ecc",
         ".conclave/reviewers.toml": "a95be5634bda979837450696840208f1271598d50c9b116471cd9467720e8358",
         "scripts/review-dispatch.py": "8669fe2758095f05749c7960b7bdce4180ec034292b32b628a95b8c86e3c6082",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
@@ -1601,13 +1601,13 @@
       "review": "Author-attested: 2026-10-25 re-read CONTRIBUTING.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/building.md": {
-      "evidence": "Re-read 2026-11-13 for D01 T07 section 3: docs/building.md covers host prerequisites, build/package/release workflows and target artifact layout, which are unchanged by adding src/sc.c and method 5.",
+      "evidence": "Re-read 2026-11-13 for D01 T07 section 4: docs/building.md covers host prerequisites, build/package/release workflows and target artifact layout, which are unchanged by adding method 6 in src/sc.c.",
       "sources": {
         "toolchain.json": "fd7b0b2424a2ffdb86095da76e4b975d604741fb271fd9b70e4c53efe9f5e3de",
         "scripts/build.py": "236a43c711a4b9e667c47b9e06ab04d62c8721db8d126740441de7762276eacc",
         "scripts/package.py": "f030a89836d12e610d9ad4a762bf073c975e6fcaf6bdb83ef09bc174e3f37973",
         "scripts/check-all.py": "ec0f58046fb6beb5e9b522530aa51a4e3eff03bd546a17a09db53e53ca8a5e9a",
-        "include/rasterfold.h": "3d16fa954d6b942df9bf42153aa6c689952725ba5edc55eb9c90d7f450e44acf",
+        "include/rasterfold.h": "e5e9eecb93e59b3cfb6b00674006e03ba887c671516e6682292ef5753b015379",
         "docs/building.md": "1f391be2a29f68c0c7cdab1e3036fa4377232085cba82b7aaaaa324405f24544",
         "scripts/verify_release.py": "34043e5c683f0edc85dd8e214413abe72bae512f30c3980991073c198195bf62",
         ".github/workflows/release.yml": "043ed3b9f4bcee1abf3316e05c156e9690a7964ff7ed0e405be82a9d546bdf38",
@@ -1616,27 +1616,27 @@
       "review": "Author-attested: 2026-10-25 re-read docs/building.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/library.md": {
-      "evidence": "Re-read 2026-11-13 for D01 T07 section 3: docs/library.md documents the five C API entry points, buffer ownership, threading, linking and error codes; include/rasterfold.h comment on rf_info.method gained method 5 and the API surface and behaviour described here remain accurate.",
+      "evidence": "Re-read 2026-11-13 for D01 T07 section 4: docs/library.md documents the five C API entry points, buffer ownership, threading, linking and error codes; include/rasterfold.h comment on rf_info.method gained method 6 and the API surface and behaviour described here remain accurate.",
       "sources": {
-        "include/rasterfold.h": "3d16fa954d6b942df9bf42153aa6c689952725ba5edc55eb9c90d7f450e44acf",
+        "include/rasterfold.h": "e5e9eecb93e59b3cfb6b00674006e03ba887c671516e6682292ef5753b015379",
         "src/api.c": "774c4e0a2a22f5a01e174e541cd1e725da05019ece20927345938cbe10fe0f02",
         "src/rasterfold.def": "8beeb2fc7b0e5e95bbe68623dc90732ab5fe6c97abc21026406801773f2ea783",
         "docs/library.md": "2d8b00c24efc829e32adbb7e4b6a6ef4028f266a077cfe4fca85e5717352289c"
       }
     },
     "docs/index.md": {
-      "evidence": "Re-read 2026-11-13 for D01 T07 section 3: docs/index.md lists format v3, product 1.0.0, C API 1.0, image limits, CLI commands and page map; remains accurate after adding method 5.",
+      "evidence": "Re-read 2026-11-13 for D01 T07 section 4: docs/index.md lists format v3, product 1.0.0, C API 1.0, image limits, CLI commands and page map; remains accurate after adding method 6.",
       "sources": {
-        "include/rasterfold.h": "3d16fa954d6b942df9bf42153aa6c689952725ba5edc55eb9c90d7f450e44acf",
-        "src/rf.h": "50f7b03c05bef8e2aacd7e0a9c5030c8f4e2ef9726b0be2009cfc768b91f3462",
-        "src/main.c": "814d2011708e6febc8f4e10b6cf97d4d3f70ef9e451d28c1baec933a234213d9",
+        "include/rasterfold.h": "e5e9eecb93e59b3cfb6b00674006e03ba887c671516e6682292ef5753b015379",
+        "src/rf.h": "7f58b508d0e3bb10cc2e1c57cda78e3552a2976a99928e0dfa1df16b91e0117d",
+        "src/main.c": "32a7aa4fd53309ec5fe418776da300d552582adb318c26f1e4b3700192147778",
         "docs/site-content.json": "1ee306e2494a7be46fe253e7550a277af5cebf7f8c48afc524cfc15b8990626f",
         "docs/index.md": "18a44942144ac2562ab21b50455489814194478f7d11d9e7242009c8a6d26b22"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/index.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/getting-started.md": {
-      "evidence": "Re-read 2026-11-13 for D01 T07 section 3: docs/getting-started.md covers provisioning, building, CLI encode/inspect/decode and exit codes 0..5, all unchanged by method 5.",
+      "evidence": "Re-read 2026-11-13 for D01 T07 section 4: docs/getting-started.md covers provisioning, building, CLI encode/inspect/decode and exit codes 0..5, all unchanged by method 6.",
       "sources": {
         "toolchain.json": "fd7b0b2424a2ffdb86095da76e4b975d604741fb271fd9b70e4c53efe9f5e3de",
         "tools/provision.py": "dc5fb84c125ea3735ca425e91d084d04297d772cee4e3609417aa11c66ad0c3b",
@@ -1644,16 +1644,16 @@
         "scripts/build.py": "236a43c711a4b9e667c47b9e06ab04d62c8721db8d126740441de7762276eacc",
         "scripts/check-all.py": "ec0f58046fb6beb5e9b522530aa51a4e3eff03bd546a17a09db53e53ca8a5e9a",
         "scripts/check-all.ps1": "7006b1871b52689461497fa676b3cb6472f0e436c9c5e240deb9da069321a528",
-        "include/rasterfold.h": "3d16fa954d6b942df9bf42153aa6c689952725ba5edc55eb9c90d7f450e44acf",
-        "src/main.c": "814d2011708e6febc8f4e10b6cf97d4d3f70ef9e451d28c1baec933a234213d9",
+        "include/rasterfold.h": "e5e9eecb93e59b3cfb6b00674006e03ba887c671516e6682292ef5753b015379",
+        "src/main.c": "32a7aa4fd53309ec5fe418776da300d552582adb318c26f1e4b3700192147778",
         "docs/getting-started.md": "d6a59d92dd2857414de55640878a0bb92688e695b6d92be76e6739fce9af004f"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/getting-started.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/benchmarks.md": {
-      "evidence": "Re-read 2026-11-13 for D01 T07 section 3: docs/benchmarks.md reports the measure, photos, synthetic and 55-image research corpus tables, whose .fold outputs are byte-identical after adding method 5.",
+      "evidence": "Re-read 2026-11-13 for D01 T07 section 4: docs/benchmarks.md reports the measure, photos, synthetic and 55-image research corpus tables, whose .fold outputs are byte-identical after adding method 6.",
       "sources": {
-        "src/rf.h": "50f7b03c05bef8e2aacd7e0a9c5030c8f4e2ef9726b0be2009cfc768b91f3462",
+        "src/rf.h": "7f58b508d0e3bb10cc2e1c57cda78e3552a2976a99928e0dfa1df16b91e0117d",
         "measure/verdict.json": "dd16843e8b4696f8d27904c0f1b473fcc89908f20d7191e1a6faa3bbdd0a5b92",
         "benchmarks/results.csv": "de7ebe8d55d4b77302dcd506afa5dcbb6d42227d77c466ee836dcf7cb33175c1",
         "benchmarks/corpus.csv": "bf3e6a193e0ee9db6e9d269f2fa56295eacd1a8e81fda50e6dca25338577ad17",
@@ -1681,9 +1681,9 @@
       }
     },
     "docs/agent-skills-and-rules-structure.md": {
-      "evidence": "Re-read 2026-11-13 for D01 T07 section 3: docs/agent-skills-and-rules-structure.md covers writer keys, skill folders, rules, hooks and scouts, unaffected by adding src/sc.c to AGENTS.md.",
+      "evidence": "Re-read 2026-11-13 for D01 T07 section 4: docs/agent-skills-and-rules-structure.md covers writer keys, skill folders, rules, hooks and scouts, unaffected by updating src/sc.c to methods 5 and 6 in AGENTS.md.",
       "sources": {
-        "AGENTS.md": "038f910d63a9b65d37fe3271e1b0626c7fd8953661c58a199ba780e973fc6251",
+        "AGENTS.md": "75a14c60ad90fcbd88749a8dd158d2eb303483b85fe11287572610203c0a0ecc",
         "GEMINI.md": "9a3ff8a7a479cd83ad00e705f520dee0c478aa8d491e9f689f4ba9bf624306f7",
         ".conclave/reviewers.toml": "a95be5634bda979837450696840208f1271598d50c9b116471cd9467720e8358",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
@@ -1695,14 +1695,14 @@
       }
     },
     "spec/FOLD.md": {
-      "evidence": "Re-read 2026-11-13 for D01 T07 section 3: authored Method 5, screen content in spec/FOLD.md, updated methods list and version 2/3 acceptance table, and verified agreement with src/rf.h, src/fold.c, src/sc.c and tests/rfi_ref.py.",
+      "evidence": "Re-read 2026-11-13 for D01 T07 section 4: authored Method 6, screen content v2 in spec/FOLD.md, kept Method 5 intact as decode-only, updated reference encoder policy and version 2/3 acceptance table, and verified agreement with src/rf.h, src/fold.c, src/sc.c and tests/rfi_ref.py.",
       "sources": {
-        "src/rf.h": "50f7b03c05bef8e2aacd7e0a9c5030c8f4e2ef9726b0be2009cfc768b91f3462",
-        "src/fold.c": "3151d51682445ba003cbd486e2a7c11aae026f87c040b906717aa7d751ff2eaa",
+        "src/rf.h": "7f58b508d0e3bb10cc2e1c57cda78e3552a2976a99928e0dfa1df16b91e0117d",
+        "src/fold.c": "0c3d0d36ead43cec6ca5d0c4ec47dfaf0321ac9777127b7aabf4fa65e011936e",
         "src/cm.c": "54a7f232e08c392b99fb5b23f3584e1e1334abb81baa790d2ef3181622e5bdda",
         "src/crc32.c": "c6e682115185fcdcbfa0551823fc590f60c9c7b978a30009163288e664b3faec",
-        "tests/rfi_ref.py": "b816d71ad21f0692ee8f2e42372f1830490512dd2acef8761fc1d55e3679183d",
-        "spec/FOLD.md": "7bfe6e9ed97d3a2ba08b4cfdb7002968b27b986a7e9e7e0c73a5c9986b46fd09"
+        "tests/rfi_ref.py": "fe4d92ff92458ecdf2235fd9b54e9d154c411e81f7284a80e7d36edcf93ee2c9",
+        "spec/FOLD.md": "606f59171a6a3e3825fda854679be4e95e9429ee6d68ea1dc98c2ddcf0f3d51a"
       },
       "reviewed_at": "2026-10-25",
       "reviewer": "Author-attested: 2026-10-25 re-read spec/FOLD.md against src/cm.c after D04 T01 section 1 (early row-boundary abort on exhausted CM stream; bitstream and format semantics unchanged)",
@@ -1710,13 +1710,13 @@
       "reviewed": "Author-attested: 2026-10-25 re-read spec/FOLD.md against src/cm.c and src/simd.h after D02 T01 section 4 (byte-identical cm.c hot-loop vectorization and row-context specialization; format version 2 bitstream unchanged)"
     },
     "research/README.md": {
-      "evidence": "Re-read 2026-11-13 for D01 T07 section 3: updated lines 9, 10, 22 and 23 to include sc.c variants and src/sc.c in ab.py's harness_sources alongside cm.c and pal.c; verified bench.c and vsjxl.py descriptions.",
+      "evidence": "Re-read 2026-11-13 for D01 T07 section 4: verified research/README.md descriptions of ab.py, abpool.py and bench.c after adding RF_METHOD_SC2 support to research/ab.py and research/bench.c.",
       "sources": {
         "research/corpus.py": "ac81faf9ee03723ab3cd46c2918d32f83e741b7bffa9c699d2bdeaaaf2a6d60c",
-        "research/ab.py": "df49968eb3ec3f832878e9c48fc65c7ee579450c8808851233b48ecdca55bf81",
+        "research/ab.py": "75d8a9a13b3b721bd745188e46293a5b8b159e289d675c306226d5ab4fc85d36",
         "research/vsjxl.py": "ab1761b1282708543e799da95890bd22d15b1b09010673f7cc009f8f0a7c71a5",
         "research/prof.py": "7fa28a84aab62f0eb79fd579bcc01b6e2e55cc200bdaa96c0218b2ad4aa05605",
-        "research/bench.c": "3ce811aff2187c5696ae4970c8ab31ffc3a22191478b88ac2b7aa39077453ce1",
+        "research/bench.c": "3c9536a0ef96204e8bf1d7093113397c7bb357fc2f72499e18802971f8edcc88",
         "research/README.md": "67af66f6a2607fb9943acd86992a970bc987ec5fbe92cc52c81eafbbbdd4341f",
         "research/abpool.py": "63cafba2296629d64b9d7faacb08d1e666988ed4160cd3745a2d513538efccbe"
       },
@@ -1732,10 +1732,10 @@
       }
     },
     "docs/examples.md": {
-      "evidence": "Re-read 2026-11-13 for D01 T07 section 3: docs/examples.md shows CLI encode/inspect/decode, C PPM examples and rf_inspect usage, all accurate with method 5 added in include/rasterfold.h and src/main.c.",
+      "evidence": "Re-read 2026-11-13 for D01 T07 section 4: docs/examples.md shows CLI encode/inspect/decode, C PPM examples and rf_inspect usage, all accurate with method 6 added in include/rasterfold.h and src/main.c.",
       "sources": {
-        "include/rasterfold.h": "3d16fa954d6b942df9bf42153aa6c689952725ba5edc55eb9c90d7f450e44acf",
-        "src/main.c": "814d2011708e6febc8f4e10b6cf97d4d3f70ef9e451d28c1baec933a234213d9",
+        "include/rasterfold.h": "e5e9eecb93e59b3cfb6b00674006e03ba887c671516e6682292ef5753b015379",
+        "src/main.c": "32a7aa4fd53309ec5fe418776da300d552582adb318c26f1e4b3700192147778",
         "examples/encode.c": "546d3a2b5932008bcf46dce5e1b0f5ef04b3b8d4405cbb5b66ad909a7a844e66",
         "examples/decode.c": "2983d63583c0424f558b67224a2438e8eea495505eef61f5477bf2ff81f246b8",
         "examples/ppm.h": "9683267ff2b024b14570548e94cfbc0acced5cd7ecd8eba2dab5c69b6677abf6",
@@ -1744,12 +1744,12 @@
       "review": "Author-attested: 2026-10-25 re-read docs/examples.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/limitations.md": {
-      "evidence": "Re-read 2026-11-13 for D01 T07 section 3: docs/limitations.md documents input/pixel format boundaries, dimension/file caps, whole-image buffer model, CM strip parallelism and platform scope; all remain accurate.",
+      "evidence": "Re-read 2026-11-13 for D01 T07 section 4: docs/limitations.md documents input/pixel format boundaries, dimension/file caps, whole-image buffer model, CM strip parallelism and platform scope; all remain accurate.",
       "sources": {
-        "include/rasterfold.h": "3d16fa954d6b942df9bf42153aa6c689952725ba5edc55eb9c90d7f450e44acf",
-        "src/rf.h": "50f7b03c05bef8e2aacd7e0a9c5030c8f4e2ef9726b0be2009cfc768b91f3462",
-        "src/main.c": "814d2011708e6febc8f4e10b6cf97d4d3f70ef9e451d28c1baec933a234213d9",
-        "src/fold.c": "3151d51682445ba003cbd486e2a7c11aae026f87c040b906717aa7d751ff2eaa",
+        "include/rasterfold.h": "e5e9eecb93e59b3cfb6b00674006e03ba887c671516e6682292ef5753b015379",
+        "src/rf.h": "7f58b508d0e3bb10cc2e1c57cda78e3552a2976a99928e0dfa1df16b91e0117d",
+        "src/main.c": "32a7aa4fd53309ec5fe418776da300d552582adb318c26f1e4b3700192147778",
+        "src/fold.c": "0c3d0d36ead43cec6ca5d0c4ec47dfaf0321ac9777127b7aabf4fa65e011936e",
         "src/bmp.c": "50278e51120542ec686aee00385eba666239070533035e5d04e7d659b118317c",
         "src/api.c": "774c4e0a2a22f5a01e174e541cd1e725da05019ece20927345938cbe10fe0f02",
         "src/sys_posix.c": "dd65833094db53eedc06d917f0d3b6fefcb402414e20878503cf36341601f9fd",
@@ -1758,18 +1758,18 @@
       "review": "Author-attested: 2026-10-25 re-read docs/limitations.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/troubleshooting.md": {
-      "evidence": "Re-read 2026-11-13 for D01 T07 section 3: updated lines 12, 24, 43, 45 and 46 to list src/sc.c, method 5 screen content in version 3 only, and invalid fold: screen content stream; verified against src/fold.c and src/sc.c.",
+      "evidence": "Re-read 2026-11-13 for D01 T07 section 4: updated line 45 to list method 6 screen content v2 alongside method 5 screen content in version 3 only; verified diagnostic strings against src/fold.c, src/sc.c and src/main.c.",
       "sources": {
-        "include/rasterfold.h": "3d16fa954d6b942df9bf42153aa6c689952725ba5edc55eb9c90d7f450e44acf",
-        "src/rf.h": "50f7b03c05bef8e2aacd7e0a9c5030c8f4e2ef9726b0be2009cfc768b91f3462",
-        "src/main.c": "814d2011708e6febc8f4e10b6cf97d4d3f70ef9e451d28c1baec933a234213d9",
-        "src/fold.c": "3151d51682445ba003cbd486e2a7c11aae026f87c040b906717aa7d751ff2eaa",
+        "include/rasterfold.h": "e5e9eecb93e59b3cfb6b00674006e03ba887c671516e6682292ef5753b015379",
+        "src/rf.h": "7f58b508d0e3bb10cc2e1c57cda78e3552a2976a99928e0dfa1df16b91e0117d",
+        "src/main.c": "32a7aa4fd53309ec5fe418776da300d552582adb318c26f1e4b3700192147778",
+        "src/fold.c": "0c3d0d36ead43cec6ca5d0c4ec47dfaf0321ac9777127b7aabf4fa65e011936e",
         "src/bmp.c": "50278e51120542ec686aee00385eba666239070533035e5d04e7d659b118317c",
         "src/api.c": "774c4e0a2a22f5a01e174e541cd1e725da05019ece20927345938cbe10fe0f02",
         "src/sys_posix.c": "dd65833094db53eedc06d917f0d3b6fefcb402414e20878503cf36341601f9fd",
         "tools/provision.py": "dc5fb84c125ea3735ca425e91d084d04297d772cee4e3609417aa11c66ad0c3b",
         "tools/provision.ps1": "7b7ce12f1aede008be98478d7b95fbf6601737356baa62277c0d9217ff3e5e40",
-        "docs/troubleshooting.md": "0fd242992e73b552a17de0094316b44f66d60c5bb3341563acb53980caeeb110"
+        "docs/troubleshooting.md": "971751f58cc9568692e1ea200172120a0be084dc724fab3a93db5eddf4bf325a"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/troubleshooting.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
@@ -1808,11 +1808,11 @@
       }
     },
     "PACKAGE.md": {
-      "evidence": "Re-read 2026-11-13 for D01 T07 section 3: PACKAGE.md documents extracted release package layout, checksum verification, CLI first use and C API linking, all unchanged by adding src/sc.c and method 5.",
+      "evidence": "Re-read 2026-11-13 for D01 T07 section 4: PACKAGE.md documents extracted release package layout, checksum verification, CLI first use and C API linking, all unchanged by adding method 6 in src/sc.c.",
       "sources": {
         "PACKAGE.md": "b47e92b85f3f733ae6ee5e1c76f5e6451bf965033eaba0a2d818458a0c2e97d1",
-        "src/main.c": "814d2011708e6febc8f4e10b6cf97d4d3f70ef9e451d28c1baec933a234213d9",
-        "include/rasterfold.h": "3d16fa954d6b942df9bf42153aa6c689952725ba5edc55eb9c90d7f450e44acf",
+        "src/main.c": "32a7aa4fd53309ec5fe418776da300d552582adb318c26f1e4b3700192147778",
+        "include/rasterfold.h": "e5e9eecb93e59b3cfb6b00674006e03ba887c671516e6682292ef5753b015379",
         "scripts/package.py": "f030a89836d12e610d9ad4a762bf073c975e6fcaf6bdb83ef09bc174e3f37973",
         "scripts/build.py": "236a43c711a4b9e667c47b9e06ab04d62c8721db8d126740441de7762276eacc",
         "docs/library.md": "2d8b00c24efc829e32adbb7e4b6a6ef4028f266a077cfe4fca85e5717352289c"

@@ -568,7 +568,7 @@ def is_palette_source(src_path: Path) -> bool:
 def is_sc_source(src_path: Path) -> bool:
     if src_path.is_file():
         src_text = src_path.read_text(encoding="utf-8", errors="ignore")
-        has_sc = bool(re.search(r"\brf_sc_encode\b", src_text))
+        has_sc = bool(re.search(r"\brf_sc2?_encode\b", src_text))
         has_cm = bool(re.search(r"\brf_cm_encode\b", src_text))
         if has_sc != has_cm:
             return has_sc

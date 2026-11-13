@@ -66,7 +66,7 @@ static inline void bd_renc_bit_hook(renc *rc, int bit, uint32_t p1, int nd) {
 
 static int run_breakdown(const char *b, int w, int h, const uint8_t *rgb, const uint8_t *fold, size_t fold_sz, uint32_t method) {
     if (method != RF_METHOD_CM) {
-        const char *mname = (method == RF_METHOD_RAW) ? "RAW" : (method == 5u ? "SC" : "PAL");
+        const char *mname = (method == RF_METHOD_RAW) ? "RAW" : (method >= 5u ? "SC" : "PAL");
         printf("  breakdown %-20s non-CM method=%u (%s) fold=%zu\n", b, (unsigned)method, mname, fold_sz);
         return 1;
     }
@@ -249,7 +249,7 @@ int main(int argc, char **argv) {
 #endif
         if (last_fold) rf_free(last_fold);
         if (!ok) exit_code = 1;
-        const char *status = !ok ? "MISMATCH" : (method == RF_METHOD_RAW ? "RAW" : (method == 5u ? "SC" : (method >= RF_METHOD_PAL ? "PAL" : "OK")));
+        const char *status = !ok ? "MISMATCH" : (method == RF_METHOD_RAW ? "RAW" : (method >= 5u ? "SC" : (method >= RF_METHOD_PAL ? "PAL" : "OK")));
         double px = (double)im.w * im.h;
         printf("%-24s %9zu  bpp=%.4f  enc=%9.3fms dec=%9.3fms  (%.0f/%.0f cyc/sample) %s\n", b, fold_sz, fold_sz * 8.0 / px, be, bd,
                be * 3.9e6 / (px * 3), bd * 3.9e6 / (px * 3), status);

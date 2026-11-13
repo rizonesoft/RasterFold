@@ -9,7 +9,7 @@ Version 3 differs from version 2 only in method 1: its context mixer has
 seven models instead of five (contexts `k5` and `k6` below), 16 nodes per
 context row instead of 32, a gated gradient selector, and warm-started
 horizontal strips. Methods 0, 2 and 3 are identical in versions 2 and 3, and
-version 3 adds methods 4 and 5, which a version 2 file may not use. A
+version 3 adds methods 4, 5 and 6, which a version 2 file may not use. A
 decoder reads both versions; an encoder writes version 3. Version 2 replaced
 the experimental version 1 (64×64 blocks with PackBits, palette, Rice and
 binary rANS modes). Version 1 files are rejected as an unsupported version.
@@ -41,7 +41,8 @@ offset  size  field
 12      4     height
 16      1     method: 0 = raw, 1 = CM, 2 = palette, 3 = extended palette,
               4 = compact palette (version 3 only),
-              5 = screen content (version 3 only)
+              5 = screen content (version 3 only),
+              6 = screen content v2 (version 3 only)
 17      1     reserved = 0
 18      2     pixel_format = 1
 20      4     payload_size
@@ -933,6 +934,245 @@ else:
 When `D < L`, each copied pixel `pixel[q]` reads `pixel[q - D]` after earlier
 pixels of the same copy have been written.
 
+## Method 6, screen content v2
+
+Method 6 is valid only in a version 3 file. It codes the `width * height`
+pixels in raster order `p = 0 .. width * height - 1` (`p = y * width + x`,
+`y = p / width`, `x = p mod width`) as backward-reference copies with causal
+spatial/recent distance inheritance (`L >= 2`) or decomposed 2D `(dy, dx)`
+offsets (`L >= 4`), single-pixel `W` and `N` neighbour runs, 16-entry
+move-to-front (`MTF`) colour hits, 2048-entry direct colour-cache hits, and
+`W_G`-conditioned subtract-green literals.
+
+### Payload, coder, trees, and prefix codes
+
+The payload framing (`payload_size >= 5`), 16-bit binary range coder
+(`bound = (range * p) >> 16`), exact end-of-stream consumption at
+`p == width * height`, adaptive counter update rule (`c = 32768`, `n = 0`
+initially), `K`-level binary tree `tree(T, K)`, and prefix code
+(`symbol`, `nbits`, `extra`, `prefix_value(symbol, extra)`, highest extra bit
+coded with `E[symbol]`, lower extra bits at fixed `p = 32768`) are identical to
+method 5 ("Payload and stream" and "Counters, binary trees, and prefix codes"
+above), with `prefix_value` used for positive integers up to `2^25` (`symbol`
+in `0..49`, `nbits` in `0..23`). The maximum copy distance is
+`WINDOW = 2^20 - 1 = 1048575`.
+
+### Recency colour state (`mtf` and 2048-entry cache)
+
+Method 6 maintains:
+
+- an ordered list `mtf[0 .. mtf_count - 1]` of `0 <= mtf_count <= 16` distinct
+  `(R, G, B)` triples, initially empty (`mtf_count = 0`), and
+- a 2048-entry direct-mapped colour cache `C2[0..2047]`, all entries starting
+  empty, indexed by the top 11 bits of the 32-bit multiplicative hash of
+  `RGB = (R << 16) | (G << 8) | B`:
+
+```
+slot11(R, G, B) = ((0x1E35A7BD * (0xFF000000 | RGB)) mod 2^32) >> 21
+```
+
+Updating the recency colour state with pixel `P = (R, G, B)` (`update_color(P)`):
+
+1. If `P` is already in `mtf`, remove it from its current index; insert `P` at
+   `mtf[0]`, shifting earlier entries up by 1; if `mtf` then has 17 entries,
+   discard `mtf[16]` so `mtf_count <= 16`.
+2. Set `C2[slot11(R, G, B)] = P` (occupied).
+
+Every decoded pixel updates this state in raster order as soon as it is
+produced, including pixel `0` and every pixel of a copy.
+
+### Causal distance ring, repeat queues, and inherited candidates
+
+Let `ring_cap = width + 3`. Method 6 maintains:
+
+- `orig_ring[0 .. ring_cap - 1]`, all entries initially `0`. Whenever pixel `q`
+  is produced by a copy of distance `D >= 1`, `orig_ring[q mod ring_cap]` is
+  set to `D`; whenever pixel `q` is produced by any non-copy token (including
+  pixel `0`), `orig_ring[q mod ring_cap]` is set to `0`. Because `ring_cap = width + 3`,
+  at pixel `p >= 1` the entries written at `N = p - width`, `NE = p - width + 1`,
+  `NW = p - width - 1`, `NNE = p - width + 2`, `NNW = p - width - 2`, and
+  `W = p - 1` have not been overwritten since those causal neighbours were
+  decoded.
+- `rep[0..3]`, initially `[1, width, width + 1, width - 1]`.
+- `rep_dy[0..3]`, initially `[1, 2, 4, 8]`.
+
+`mtf_shift4(Q, v)` updates a 4-entry queue `Q[0..3]` with value `v`: let `pos`
+be the smallest `i` in `0..3` with `Q[i] == v`, or `3` if none matches; for
+`i` from `pos` down to `1` set `Q[i] = Q[i - 1]`, then set `Q[0] = v`.
+
+At pixel `p >= 1` (`y = p / width`, `x = p mod width`, `maxd = min(p, WINDOW)`),
+the inherited candidate list `cands(p)` (`1 <= |cands(p)| <= 4`) starts empty
+and visits the following candidate distances `d` in exact order, appending `d`
+whenever `1 <= d <= maxd`, `d` is not already in `cands(p)`, and
+`|cands(p)| < 4`:
+
+1. When `y >= 1`:
+   - `orig_ring[(p - width) mod ring_cap]`,
+   - `orig_ring[(p - width + 1) mod ring_cap]` when `x + 1 < width`,
+   - `orig_ring[(p - width - 1) mod ring_cap]` when `x >= 1`,
+   - `orig_ring[(p - width + 2) mod ring_cap]` when `x + 2 < width`,
+   - `orig_ring[(p - width - 2) mod ring_cap]` when `x >= 2`.
+2. When `x >= 1`: `orig_ring[(p - 1) mod ring_cap]`.
+3. `rep[0]`, `rep[1]`, `rep[2]`, `rep[3]`.
+4. `1`, `width`, `width + 1`, `width - 1`.
+
+Because `p >= 1` implies `maxd >= 1`, candidate `1` is always eligible, so
+`cands(p)` always has `1` to `4` distinct distances in `1..maxd`.
+
+### Counter tables and token grammar
+
+Token classes are `0` = copy, `1` = `EQ_W`, `2` = `EQ_N`, `3` = `MTF`,
+`4` = `CACHE`, and `5` = literal. Method 6 keeps these adaptive counter tables:
+
+- `is_copy[0..5]`, `is_inherit[0..5]`, `inh_b0[0..5]`, `inh_b1`, `inh_b2`,
+- `len_tree[0..1][1..31]` and `len_extra[0..1][0..23]`,
+- `is_same_row[0..1]` (indexed by `prev_same_row` in `{0, 1}`), `is_rep_dy`,
+  `rep_dy_b0`, `rep_dy_b1[0..1]`,
+- `dy_tree[1..63]` and `dy_extra[0..39]`,
+- `dx0_tree[1..63]` and `dx0_extra[0..39]`,
+- `dx_zero[0..1]` (indexed by `in_rdy` in `{0, 1}`), `dx_sign`,
+  `dx_tree[1..63]`, and `dx_extra[0..49]`,
+- `is_eq_w[0..11]`, `is_eq_n[0..5]`, `is_mtf[0..5]`, `mtf_tree[1..15]`,
+- `is_cache[0..5]` and `cache_tree[1..2047]`,
+- `lit_g[0..7][1..255]`, `lit_rg[0..3][1..255]`, and `lit_bg[0..3][1..255]`.
+
+Pixel `p = 0` is coded unconditionally as a literal with `wg_ctx = 4` (no
+`is_copy`, neighbour, `MTF`, or cache flag is coded at `p = 0`):
+
+```
+G  = tree(lit_g[4], 8)
+rg = tree(lit_rg[G >> 6], 8)
+bg = tree(lit_bg[G >> 6], 8)
+pixel[0] = ((rg + G) mod 256, G, (bg + G) mod 256)
+orig_ring[0] = 0
+update_color(pixel[0])
+prev_kind = 5,  prev_same_row = 0,  p = 1
+```
+
+While `p < width * height`, let `y = p / width`, `x = p mod width`, and
+`C = cands(p)` (`k = |C|` in `1..4`):
+
+```
+code bit b_copy with is_copy[prev_kind]
+if b_copy == 1:
+    code bit use_inh with is_inherit[prev_kind]
+    if use_inh == 1:
+        if k == 1:
+            idx = 0
+        else:
+            code bit b0 with inh_b0[prev_kind]
+            if b0 == 1:
+                idx = 0
+            else if k == 2:
+                idx = 1
+            else:
+                code bit b1 with inh_b1
+                if b1 == 1:
+                    idx = 1
+                else if k == 3:
+                    idx = 2
+                else:
+                    code bit b2 with inh_b2
+                    idx = 2 if b2 == 1 else 3
+        D = C[idx]
+        len_sym = tree(len_tree[1], 5)                  (must satisfy len_sym <= 23)
+        code extra bits of len_sym with E = len_extra[1] -> u = prefix_value(len_sym, extra)
+        L = u + 1                                       (must satisfy 2 <= L <= 4096 and p + L <= width * height)
+    else:
+        len_sym = tree(len_tree[0], 5)                  (must satisfy len_sym <= 23)
+        code extra bits of len_sym with E = len_extra[0] -> u = prefix_value(len_sym, extra)
+        L = u + 3                                       (must satisfy 4 <= L <= 4096 and p + L <= width * height)
+        if y == 0:
+            same_row = 1
+        else if x == 0:
+            same_row = 0
+        else:
+            code bit same_row with is_same_row[prev_same_row]
+        if same_row == 1:
+            dx_sym = tree(dx0_tree, 6)                  (must satisfy dx_sym <= 39)
+            code extra bits of dx_sym with E = dx0_extra -> dx = prefix_value(dx_sym, extra)
+                                                        (must satisfy 1 <= dx <= x and dx <= WINDOW)
+            D = dx
+            prev_same_row = 1
+        else:
+            code bit in_rdy with is_rep_dy
+            if in_rdy == 1:
+                code bit r0 with rep_dy_b0
+                if r0 == 1:
+                    ridx = 0
+                else:
+                    code bit r1 with rep_dy_b1[0]
+                    if r1 == 1:
+                        ridx = 1
+                    else:
+                        code bit r2 with rep_dy_b1[1]
+                        ridx = 2 if r2 == 1 else 3
+                dy = rep_dy[ridx]
+            else:
+                dy_sym = tree(dy_tree, 6)               (must satisfy dy_sym <= 39)
+                code extra bits of dy_sym with E = dy_extra -> dy = prefix_value(dy_sym, extra)
+                                                        (for either branch, must satisfy 1 <= dy <= y and dy <= WINDOW)
+            mtf_shift4(rep_dy, dy)
+            code bit dz with dx_zero[in_rdy]
+            if dz == 1:
+                dx = 0
+            else:
+                code bit neg with dx_sign
+                dx_sym = tree(dx_tree, 6)               (must satisfy dx_sym <= 49)
+                code extra bits of dx_sym with E = dx_extra -> adx = prefix_value(dx_sym, extra)
+                dx = -adx if neg == 1 else adx
+            qx = x - dx                                 (must satisfy 0 <= qx < width)
+            D  = dy * width + dx                        (must satisfy 1 <= D <= WINDOW)
+            prev_same_row = 0
+    for q = p .. p + L - 1:
+        pixel[q] = pixel[q - D]
+        orig_ring[q mod ring_cap] = D
+        update_color(pixel[q])
+    mtf_shift4(rep, D)
+    p = p + L
+    prev_kind = 0
+else:
+    has_w = (x >= 1),  has_n = (y >= 1)
+    done = 0
+    if has_w:
+        wn_eq = 1 if (has_n and pixel[p - 1] == pixel[p - width]) else 0
+        code bit bw with is_eq_w[prev_kind * 2 + wn_eq]
+        if bw == 1:
+            pixel[p] = pixel[p - 1]
+            tk = 1,  done = 1
+    if done == 0 and has_n and (not has_w or pixel[p - width] != pixel[p - 1]):
+        code bit bn with is_eq_n[prev_kind]
+        if bn == 1:
+            pixel[p] = pixel[p - width]
+            tk = 2,  done = 1
+    if done == 0:
+        code bit bm with is_mtf[prev_kind]
+        if bm == 1:
+            midx = tree(mtf_tree, 4)                    (must satisfy midx < mtf_count)
+            pixel[p] = mtf[midx]
+            tk = 3
+        else:
+            code bit bc with is_cache[prev_kind]
+            if bc == 1:
+                cidx = tree(cache_tree, 11)             (C2[cidx] must be occupied)
+                pixel[p] = C2[cidx]
+                tk = 4
+            else:
+                wg_ctx = (pixel[p - 1].G >> 5) if has_w else 4
+                G  = tree(lit_g[wg_ctx], 8)
+                rg = tree(lit_rg[G >> 6], 8)
+                bg = tree(lit_bg[G >> 6], 8)
+                pixel[p] = ((rg + G) mod 256, G, (bg + G) mod 256)
+                tk = 5
+    orig_ring[p mod ring_cap] = 0
+    update_color(pixel[p])
+    p = p + 1
+    prev_kind = tk
+```
+
+When `D < L`, each copied pixel `pixel[q]` reads `pixel[q - D]` after earlier
+pixels of the same copy have been written.
+
 ## Rejection rules
 
 Reject, and do not produce a completed output file, when:
@@ -940,8 +1180,8 @@ Reject, and do not produce a completed output file, when:
 - the file is shorter than 32 bytes or longer than 256 MiB;
 - the magic is not `RFI` (malformed), or the fourth magic byte and `version`
   do not agree or are not 2 or 3, `header_size` is not 32, `pixel_format` is
-  not 1, `method` is not 0, 1, 2, 3, 4, or 5, or `method` is 4 or 5 in a
-  version 2 file (unsupported);
+  not 1, `method` is not 0, 1, 2, 3, 4, 5, or 6, or `method` is 4, 5, or 6 in
+  a version 2 file (unsupported);
 - `header_crc32` or `payload_crc32` does not match, `reserved` is not 0, or
   `payload_size` is not `file_size - 32`;
 - a dimension is 0 (malformed) or outside the limits (size limit);
@@ -967,7 +1207,16 @@ Reject, and do not produce a completed output file, when:
 - method 5 has a payload shorter than 5 bytes, a length symbol above 23, a
   decoded copy length above 4096 or extending past `width * height`, a
   distance symbol above 39, a copy distance above `p`, a colour-cache index
-  naming an empty slot, or a stream that runs out or has bytes left.
+  naming an empty slot, or a stream that runs out or has bytes left;
+- method 6 has a payload shorter than 5 bytes, a length symbol above 23 on
+  `len_tree[0]` or `len_tree[1]`, a decoded copy length above 4096 or
+  extending past `width * height`, a same-row distance symbol above 39 or
+  `dx > x` or `dx > 2^20 - 1`, a vertical offset symbol above 39 or `dy > y`
+  or `dy > 2^20 - 1` (including via `rep_dy`), a horizontal offset symbol
+  above 49, a source column `x - dx` outside `0 .. width - 1`, a 2D copy
+  distance `dy * width + dx` above `2^20 - 1`, an `mtf_tree` index
+  `>= mtf_count`, a `cache_tree` index naming an empty `C2` slot, or a stream
+  that runs out or has bytes left.
 
 The reference tool writes outputs to `destination.partial` with `CREATE_NEW`,
 flushes, and renames onto the destination only after success. An existing
@@ -983,24 +1232,32 @@ The encoder codes the image with method 1 using `S = 3` strips when
 as the smallest value in `0..8` that gives its channel the fewest palette
 field bits. It writes whichever eligible candidate
 of method 0 (raw), method 1, and method 4 has the smallest payload, breaking
-ties in order method 0, then method 1, then method 4. Next, it runs the
-method 5 greedy backward-reference parse across the image: at each pixel `p`
-it checks distances `1` (when `p >= 1`), `width` (when `p >= width`), and up
-to 64 positions from the `2^16`-bucket FNV-1a hash chain of the 12-byte
-4-pixel key within distance `2^20 - 120`, choosing the longest exact match in
-`4..4096` pixels (breaking ties toward the smaller distance) and inserting
-every pixel `q` with `q + 4 <= width * height` into its bucket chain; a pixel
-distance `D` is coded as the smallest `v` in `1..120` with
-`max(1, M[v - 1].x + M[v - 1].y * width) == D`, or `D + 120` when none
-matches, and a non-copied pixel is coded as a colour-cache hit when
-`C[slot(R, G, B)] == (R, G, B)` and as a literal otherwise. When copies cover
-at least half the pixels (`covered * 2 >= width * height`) and the resulting
-method 5 payload is strictly smaller than the chosen method 0/1/4 payload, the
-encoder writes method 5 instead. It never writes method 2
-or method 3. The `3 * S` streams of
-method 1 depend only on the warm-start handoff rows and same-pixel channel
-values, and methods 0, 4, and 5 are single-stream and deterministic, so any
-thread count produces the same bytes.
+ties in order method 0, then method 1, then method 4. Next, unless method 4
+produced an eligible candidate with `count <= 16` (`count - 1 < 16`, so the
+entire colour alphabet already fits within `mtf`'s 16-entry capacity), it runs
+the method 6 backward-reference parse across the image: pixel `0` is coded as a
+literal (`wg_ctx = 4`), and at each pixel `p >= 1` (`limit = min(4096, width * height - p)`)
+it evaluates the inherited candidate list `cands(p)` (`L >= 2`, picking the
+first candidate on length ties -> `(best_inh_len, best_inh_idx, best_inh_dist)`)
+and the 4-pixel general search (`1`, `width` when `p >= width` and
+`width <= 2^20 - 1`, and up to 64 positions from the `2^16`-bucket FNV-1a hash
+chain of the 12-byte 4-pixel key within distance `2^20 - 1`, `L >= 4`, picking
+the smaller distance on length ties -> `(best_gen_len, best_gen_dist)`),
+inserting every pixel `q` with `q + 4 <= width * height` into its bucket chain.
+When `best_inh_len >= 2` and (`best_gen_len < 4` or
+`best_inh_len + 1 >= best_gen_len`), it codes an inherited copy
+`(best_inh_len, best_inh_dist)`; else when `best_gen_len >= 4`, it codes
+`(best_gen_len, best_gen_dist)` as an inherited copy if
+`best_gen_dist in cands(p)` and as a non-inherited 2D `(dy, dx)` copy
+otherwise; else it codes `EQ_W`, else `EQ_N`, else an `mtf` hit, else a `C2`
+cache hit, else a literal. When copies of length at least 4 (`L >= 4`,
+inherited or non-inherited) cover at least half the pixels
+(`covered4 * 2 >= width * height`) and the resulting method 6 payload is
+strictly smaller than the chosen method 0/1/4 payload, the encoder writes
+method 6 instead. It never writes method 2, method 3, or method 5. The `3 * S`
+streams of method 1 depend only on the warm-start handoff rows and same-pixel
+channel values, and methods 0, 4, and 6 are single-stream and deterministic, so
+any thread count produces the same bytes.
 
 ## BMP subset accepted by the reference tool
 

@@ -1234,8 +1234,10 @@ class ResearchRefsTests(unittest.TestCase):
                     "    if (rc) { rf_free(f); return rc; }\n"
                     "    uint8_t pal_small[2048];\n"
                     "    uint8_t *pal_buf = 0;\n"
+                    "    uint32_t pal_count = 0;\n"
                     "    size_t cm_cap = raw - 1;\n"
                     "    if (pal_n > 0) {\n"
+                    "        pal_count = (uint32_t)f[RF_HEADER_SIZE] + 1u;\n"
                     "        if (pal_n <= sizeof(pal_small)) {\n"
                     "            pal_buf = pal_small;\n"
                     "        } else {\n"
@@ -1261,13 +1263,13 @@ class ResearchRefsTests(unittest.TestCase):
                     "        }\n"
                     "    }\n"
                     "    if (pal_buf != pal_small) rf_free(pal_buf);\n"
-                    "    if (n > 1) {\n"
+                    "    if (n > 1 && (pal_n == 0 || pal_count > 16u)) {\n"
                     "        size_t sc_n = 0;\n"
-                    "        rc = rf_sc_encode(img->rgb, img->width, img->height, f + RF_HEADER_SIZE, n, &sc_n, err);\n"
+                    "        rc = rf_sc2_encode(img->rgb, img->width, img->height, f + RF_HEADER_SIZE, n, &sc_n, err);\n"
                     "        if (rc) { rf_free(f); return rc; }\n"
                     "        if (sc_n > 0) {\n"
                     "            n = sc_n;\n"
-                    "            method = RF_METHOD_SC;\n"
+                    "            method = RF_METHOD_SC2;\n"
                     "        }\n"
                     "    }\n",
                     "    size_t n = 0;\n"
@@ -1281,16 +1283,16 @@ class ResearchRefsTests(unittest.TestCase):
                     "    }\n",
                 )
                 .replace(
-                    "    else if (hdr.method == RF_METHOD_SC) {\n"
-                    "        if ((rc = rf_sc_decode(payload, hdr.payload_size, rgb, 0, hdr.width, hdr.height, err)) != RF_OK) { rf_free(rgb); return rc; }\n"
+                    "    else if (hdr.method == RF_METHOD_SC || hdr.method == RF_METHOD_SC2) {\n"
+                    "        if ((rc = rf_sc_decode(payload, hdr.payload_size, rgb, 0, hdr.width, hdr.height, hdr.method, err)) != RF_OK) { rf_free(rgb); return rc; }\n"
                     "    } else if (hdr.method >= RF_METHOD_PAL) {\n"
                     "        if ((rc = rf_pal_decode(payload, hdr.payload_size, rgb, 0, hdr.width, hdr.height, hdr.method, err)) != RF_OK) { rf_free(rgb); return rc; }\n"
                     "    }",
                     "",
                 )
                 .replace(
-                    "    else if (hdr.method == RF_METHOD_SC) {\n"
-                    "        if ((rc = rf_sc_decode(payload, hdr.payload_size, *bmp, stride, hdr.width, hdr.height, err)) != RF_OK) {\n"
+                    "    else if (hdr.method == RF_METHOD_SC || hdr.method == RF_METHOD_SC2) {\n"
+                    "        if ((rc = rf_sc_decode(payload, hdr.payload_size, *bmp, stride, hdr.width, hdr.height, hdr.method, err)) != RF_OK) {\n"
                     "            rf_free(*bmp);\n"
                     "            *bmp = 0;\n"
                     "            *bmp_size = 0;\n"
@@ -1309,7 +1311,7 @@ class ResearchRefsTests(unittest.TestCase):
             )
             self.assertNotIn("rf_pal_encode", fold_no_pal)
             self.assertNotIn("rf_pal_decode", fold_no_pal)
-            self.assertNotIn("rf_sc_encode", fold_no_pal)
+            self.assertNotIn("rf_sc2_encode", fold_no_pal)
             self.assertNotIn("rf_sc_decode", fold_no_pal)
             (m1_dir / "fold.c").write_text(fold_no_pal, encoding="utf-8")
             cm_m1_path = res_dir / "cm_m1.c"
@@ -1982,6 +1984,302 @@ class ScreenCodeTests(unittest.TestCase):
         for width, height in ((1, 1), (1, 9), (9, 1), (37, 11)):
             self.round_trip(width, height, bytes(rng.randrange(256) for _ in range(3 * width * height)))
             self.round_trip(width, height, self.image([rng.choice([0, 0xFFFFFF, 0x808080]) for _ in range(width * height)]))
+
+
+class ScreenCode2Tests(unittest.TestCase):
+    """research/screencode2.py, the round 2 prototype (D01 T07 section 4): method 6 parse, grammar, and refusals."""
+
+    def setUp(self) -> None:
+        import screencode2
+        self.sc2 = screencode2
+
+    @staticmethod
+    def image(pixels):
+        return b"".join(p.to_bytes(3, "big") for p in pixels)
+
+    def round_trip(self, width: int, height: int, data: bytes) -> tuple[bytes, int, dict[str, int]]:
+        split: dict[str, int] = {}
+        payload, cov4 = self.sc2.encode_info(width, height, data, split=split)
+        self.assertEqual(self.sc2.decode(width, height, payload), data)
+        return payload, cov4, split
+
+    def test_1x1_and_p0_literal_and_l4096_inherited_copy(self) -> None:
+        pay1, cov1, sp1 = self.round_trip(1, 1, self.image([0x112233]))
+        self.assertEqual(cov1, 0)
+        self.assertGreaterEqual(len(pay1), 5)
+        self.assertEqual(sum(sp1.values()), len(pay1))
+        data = self.image([0x336699] * 5000)
+        _, cov5000, _ = self.round_trip(100, 50, data)
+        self.assertEqual(cov5000, 4999)
+        self.assertEqual(self.sc2.prefix_code(4096 - 1)[0], 23)
+        self.assertEqual(self.sc2.prefix_code(1 << 25)[0], 49)
+
+    def test_inherited_l2_stem_orig_ring_wrap_and_rep_queues(self) -> None:
+        # Row 0 establishes a non-inherited copy at distance D = 6 (L = 4); row 1 at the same column
+        # inherits D = 6 from orig[p - width] to copy a 2-pixel stem (L = 2, so cov4 counts only row 0's 4).
+        w, h = 16, 4
+        px = [(i * 2654435761) & 0xFFFFFF for i in range(w * h)]
+        motif4 = [0xAA1122, 0xBB3344, 0xCC5566, 0xDD7788]
+        px[2:6] = motif4
+        px[8:12] = motif4  # p = 8 copies from q = 2 -> D = 6, L = 4
+        stem2 = [0xEE9900, 0xFFAA11]
+        px[w + 2 : w + 4] = stem2
+        px[w + 8 : w + 10] = stem2  # p = w + 8 inherits D = 6 from orig[8] across orig_ring wrap-around
+        # Row 3 exercises non-inherited multi-row copy with dy in rep_dy (dy = 2) and dx == 0 vs signed dx.
+        motif5 = [0x123456, 0x234567, 0x345678, 0x456789]
+        px[w + 11 : w + 15] = motif5
+        px[3 * w + 11 : 3 * w + 15] = motif5  # dy = 2 (in initial rep_dy), dx = 0
+        _, cov4, split = self.round_trip(w, h, self.image(px))
+        self.assertGreaterEqual(cov4, 8)
+        self.assertGreater(split.get("inh_copy", 0), 0)
+        self.assertGreater(split.get("new_copy", 0), 0)
+
+    def test_implicit_same_row_at_borders_and_signed_dx(self) -> None:
+        # py == 0 forces same_row = 1; px_col == 0 (py >= 1) forces same_row = 0 with negative dx (qx > 0).
+        w, h = 12, 3
+        px = [((i + 1) * 7919) & 0xFFFFFF for i in range(w * h)]
+        m_top = [0x101010, 0x202020, 0x303030, 0x404040]
+        px[1:5] = m_top
+        px[6:10] = m_top  # py == 0 non-inherited same_row copy (dx = 5)
+        m_col0 = [0x505050, 0x606060, 0x707070, 0x808080]
+        px[7:11] = m_col0
+        px[2 * w : 2 * w + 4] = m_col0  # px_col == 0, py == 2, qy == 0, qx == 7 -> dy = 2, dx = -7 < 0
+        self.round_trip(w, h, self.image(px))
+
+    def test_eq_w_eq_n_mtf_and_11bit_cache(self) -> None:
+        # Build 20 distinct colours so early colours fall out of the 16-entry MTF list into the 2048-entry cache,
+        # while adjacent pairs exercise EQ_W (both wn_eq == 0 and wn_eq == 1) and EQ_N.
+        cols = [((i + 1) * 104729) & 0xFFFFFF for i in range(20)]
+        seen_slots: set[int] = set()
+        uniq_cols: list[int] = []
+        c = 1
+        while len(uniq_cols) < 20:
+            col = (c * 104729) & 0xFFFFFF
+            s = self.sc2.cache_index(col)
+            if s not in seen_slots and col not in uniq_cols:
+                seen_slots.add(s)
+                uniq_cols.append(col)
+            c += 1
+        cols = uniq_cols
+        extra17 = []
+        while len(extra17) < 17:
+            col = (c * 104729) & 0xFFFFFF
+            s = self.sc2.cache_index(col)
+            if s not in seen_slots and col not in cols and col not in extra17:
+                seen_slots.add(s)
+                extra17.append(col)
+            c += 1
+        row0 = cols + [cols[19], cols[18]] + cols[:16]
+        # Evict cols[1] from MTF using extra17, then emit cols[1] (11-bit CACHE hit), plus 8 isolated EQ_N hits!
+        eq_n_tail = [cols[i] if (i % 2 == 0) else extra17[i] for i in range(16)]
+        row1 = [cols[0], cols[0], cols[2]] + extra17 + [cols[1], cols[1]] + eq_n_tail
+        # Row 2 starts with [cols[0], cols[0], ...]: at x=1, W=cols[0] and N=row1[1]=cols[0] (wn_eq == 1),
+        # followed by isolated EQ_W pairs so eq_w also flushes bytes.
+        row2 = [cols[0], cols[0], cols[3], cols[3], cols[4], cols[4], cols[5], cols[5]] + extra17 + cols[:13]
+        self.assertEqual(len(row0), 38)
+        self.assertEqual(len(row1), 38)
+        self.assertEqual(len(row2), 38)
+        _, _, split = self.round_trip(38, 3, self.image(row0 + row1 + row2))
+        for k in ("eq_w", "eq_n", "mtf", "cache", "literal"):
+            self.assertGreater(split.get(k, 0), 0, k)
+
+    def test_fnv_bucket_collision_matches_past_colliding_key(self) -> None:
+        import itertools
+        seen = {}
+        pair = None
+        for k in itertools.count(1):
+            key = self.image([k, k + 1, k + 2, k + 3])
+            bucket = self.sc2.fnv_bucket(key)
+            if bucket in seen:
+                pair = (seen[bucket], k)
+                break
+            seen[bucket] = k
+        k1, k2 = pair
+        a = [k1, k1 + 1, k1 + 2, k1 + 3]
+        b = [k2, k2 + 1, k2 + 2, k2 + 3]
+        _, cov4, _ = self.round_trip(12, 1, self.image(a + b + a))
+        self.assertEqual(cov4, 4)
+
+    def test_only_verified_development_screenshots_are_measured(self) -> None:
+        with self.assertRaises(SystemExit) as caught:
+            self.sc2.main(["ho_s01"])
+        self.assertIn("measures only the development screenshots", str(caught.exception))
+        with mock.patch.object(corpus, "verify_screens", side_effect=SystemExit("screens dv_s01: RGB SHA-256 mismatch")), \
+                self.assertRaises(SystemExit) as caught:
+            self.sc2.main(["dv_s01"])
+        self.assertIn("RGB SHA-256 mismatch", str(caught.exception))
+
+    def test_all_14_stream_refusals_and_trailing_bytes(self) -> None:
+        # 1. Payload shorter than 5 bytes.
+        with self.assertRaises(self.sc2.Refused):
+            self.sc2.decode(4, 1, b"\x00\x00\x00\x00")
+        # Trailing byte after valid stream.
+        valid, _, _ = self.round_trip(4, 1, self.image([1, 2, 3, 4]))
+        with self.assertRaises(self.sc2.Refused):
+            self.sc2.decode(4, 1, valid + b"\x00")
+
+        def build_p0(m: object) -> tuple[object, object]:
+            enc = self.sc2.Encoder()
+            self.sc2.put_tree(enc, m.lit_g[4], 10, 8)
+            self.sc2.put_tree(enc, m.lit_rg[0], 20, 8)
+            self.sc2.put_tree(enc, m.lit_bg[0], 30, 8)
+            return enc, m
+
+        # 2. Inherited length symbol > 23.
+        m = self.sc2.Model6()
+        enc, _ = build_p0(m)
+        enc.coded(m.is_copy[self.sc2.TK_LIT], 1)
+        enc.coded(m.is_inherit[self.sc2.TK_LIT], 1)
+        self.sc2.put_tree(enc, m.len_tree[1], 24, 5)
+        with self.assertRaises(self.sc2.Refused):
+            self.sc2.decode(4, 1, enc.finish())
+
+        # 3. Inherited length past end of image (p = 1, L = 4 on 4x1 -> p + L = 5 > 4).
+        m = self.sc2.Model6()
+        enc, _ = build_p0(m)
+        enc.coded(m.is_copy[self.sc2.TK_LIT], 1)
+        enc.coded(m.is_inherit[self.sc2.TK_LIT], 1)
+        sym, nb, ex = self.sc2.prefix_code(4 - 1)
+        self.sc2.put_tree(enc, m.len_tree[1], sym, 5)
+        self.sc2.put_extra(enc, m.len_extra[1][sym], nb, ex)
+        with self.assertRaises(self.sc2.Refused):
+            self.sc2.decode(4, 1, enc.finish())
+
+        # 4. Non-inherited length symbol > 23.
+        m = self.sc2.Model6()
+        enc, _ = build_p0(m)
+        enc.coded(m.is_copy[self.sc2.TK_LIT], 1)
+        enc.coded(m.is_inherit[self.sc2.TK_LIT], 0)
+        self.sc2.put_tree(enc, m.len_tree[0], 25, 5)
+        with self.assertRaises(self.sc2.Refused):
+            self.sc2.decode(8, 1, enc.finish())
+
+        # 5. Non-inherited length > 4096 (symbol 23 with extra = 1023 -> prefix_value = 4096 -> L = 4099 > 4096).
+        m = self.sc2.Model6()
+        enc, _ = build_p0(m)
+        enc.coded(m.is_copy[self.sc2.TK_LIT], 1)
+        enc.coded(m.is_inherit[self.sc2.TK_LIT], 0)
+        self.sc2.put_tree(enc, m.len_tree[0], 23, 5)
+        self.sc2.put_extra(enc, m.len_extra[0][23], 10, 1023)
+        with self.assertRaises(self.sc2.Refused):
+            self.sc2.decode(5000, 1, enc.finish())
+
+        # 6. same_row dx0_tree symbol > 39 (py = 0 forces same_row = 1).
+        m = self.sc2.Model6()
+        enc, _ = build_p0(m)
+        enc.coded(m.is_copy[self.sc2.TK_LIT], 1)
+        enc.coded(m.is_inherit[self.sc2.TK_LIT], 0)
+        self.sc2.put_tree(enc, m.len_tree[0], 0, 5)
+        self.sc2.put_tree(enc, m.dx0_tree, 40, 6)
+        with self.assertRaises(self.sc2.Refused):
+            self.sc2.decode(8, 1, enc.finish())
+
+        # 7. same_row dx > px_col (at p = 1 on 8x1, px_col = 1, dx = 2).
+        m = self.sc2.Model6()
+        enc, _ = build_p0(m)
+        enc.coded(m.is_copy[self.sc2.TK_LIT], 1)
+        enc.coded(m.is_inherit[self.sc2.TK_LIT], 0)
+        self.sc2.put_tree(enc, m.len_tree[0], 0, 5)
+        self.sc2.put_tree(enc, m.dx0_tree, 1, 6)  # dx = 2 > px_col = 1
+        with self.assertRaises(self.sc2.Refused):
+            self.sc2.decode(8, 1, enc.finish())
+
+        # Helper to reach p = 1 on 1x8 (where px_col = 0, py = 1 -> implicit same_row = 0!).
+        # 8. dy_tree symbol > 39.
+        m = self.sc2.Model6()
+        enc, _ = build_p0(m)
+        enc.coded(m.is_copy[self.sc2.TK_LIT], 1)
+        enc.coded(m.is_inherit[self.sc2.TK_LIT], 0)
+        self.sc2.put_tree(enc, m.len_tree[0], 0, 5)  # L = 4 on 1x8
+        enc.coded(m.is_rep_dy, 0)
+        self.sc2.put_tree(enc, m.dy_tree, 40, 6)
+        with self.assertRaises(self.sc2.Refused):
+            self.sc2.decode(1, 8, enc.finish())
+
+        # 9. dy > py (at p = 1 on 1x8, py = 1, choose rep_dy[1] = 2 > 1).
+        m = self.sc2.Model6()
+        enc, _ = build_p0(m)
+        enc.coded(m.is_copy[self.sc2.TK_LIT], 1)
+        enc.coded(m.is_inherit[self.sc2.TK_LIT], 0)
+        self.sc2.put_tree(enc, m.len_tree[0], 0, 5)
+        enc.coded(m.is_rep_dy, 1)
+        enc.coded(m.rep_dy_b0, 0)
+        enc.coded(m.rep_dy_b1[0], 1)  # ridx = 1 -> dy = 2 > py = 1
+        with self.assertRaises(self.sc2.Refused):
+            self.sc2.decode(1, 8, enc.finish())
+
+        # 10. dx_tree symbol > 49 (at p = 1 on 1x8, py = 1, dy = 1, dx != 0, sym = 50).
+        m = self.sc2.Model6()
+        enc, _ = build_p0(m)
+        enc.coded(m.is_copy[self.sc2.TK_LIT], 1)
+        enc.coded(m.is_inherit[self.sc2.TK_LIT], 0)
+        self.sc2.put_tree(enc, m.len_tree[0], 0, 5)
+        enc.coded(m.is_rep_dy, 1)
+        enc.coded(m.rep_dy_b0, 1)  # dy = 1
+        enc.coded(m.dx_zero[1], 0)
+        enc.coded(m.dx_sign, 0)
+        self.sc2.put_tree(enc, m.dx_tree, 50, 6)
+        with self.assertRaises(self.sc2.Refused):
+            self.sc2.decode(1, 8, enc.finish())
+
+        # 11. qx = px_col - dx out of 0..width - 1 (at p = 1 on 1x8, px_col = 0, dx = +1 -> qx = -1).
+        m = self.sc2.Model6()
+        enc, _ = build_p0(m)
+        enc.coded(m.is_copy[self.sc2.TK_LIT], 1)
+        enc.coded(m.is_inherit[self.sc2.TK_LIT], 0)
+        self.sc2.put_tree(enc, m.len_tree[0], 0, 5)
+        enc.coded(m.is_rep_dy, 1)
+        enc.coded(m.rep_dy_b0, 1)  # dy = 1
+        enc.coded(m.dx_zero[1], 0)
+        enc.coded(m.dx_sign, 0)  # dx = +1
+        self.sc2.put_tree(enc, m.dx_tree, 0, 6)  # adx = 1
+        with self.assertRaises(self.sc2.Refused):
+            self.sc2.decode(1, 8, enc.finish())
+
+        # 12. D = dy * width + dx > WINDOW (width = 2048, height = 520, copy row 0..511 first via L=4096*256? Faster:
+        #     mock WINDOW = 5 on 4x4: copy p=1..4 with D=1, then at p=8 (py=2, px_col=0) dy=2, dx=0 -> D=8 > 5).
+        with mock.patch.object(self.sc2, "WINDOW", 5):
+            m = self.sc2.Model6()
+            enc, _ = build_p0(m)
+            # p = 1: inherited copy of L = 7 at D = 1 -> reaches p = 8 (py = 2, px_col = 0 on 4x4)
+            enc.coded(m.is_copy[self.sc2.TK_LIT], 1)
+            enc.coded(m.is_inherit[self.sc2.TK_LIT], 1)  # cands = [1] since maxd = 1
+            sym, nb, ex = self.sc2.prefix_code(7 - 1)
+            self.sc2.put_tree(enc, m.len_tree[1], sym, 5)
+            self.sc2.put_extra(enc, m.len_extra[1][sym], nb, ex)
+            # p = 8 (py = 2, px_col = 0 -> implicit same_row = 0): dy = 2 <= py, dx = 0 -> D = 8 > WINDOW = 5!
+            enc.coded(m.is_copy[self.sc2.TK_COPY], 1)
+            enc.coded(m.is_inherit[self.sc2.TK_COPY], 0)
+            self.sc2.put_tree(enc, m.len_tree[0], 0, 5)  # L = 4
+            enc.coded(m.is_rep_dy, 1)
+            enc.coded(m.rep_dy_b0, 0)
+            enc.coded(m.rep_dy_b1[0], 1)  # dy = 2
+            enc.coded(m.dx_zero[1], 1)  # dx = 0
+            with self.assertRaises(self.sc2.Refused):
+                self.sc2.decode(4, 4, enc.finish())
+
+        # 13. midx >= mtf_count (at p = 1 on 4x1, mtf_count == 1, midx = 1).
+        m = self.sc2.Model6()
+        enc, _ = build_p0(m)
+        enc.coded(m.is_copy[self.sc2.TK_LIT], 0)
+        enc.coded(m.is_eq_w[self.sc2.TK_LIT * 2 + 0], 0)
+        enc.coded(m.is_mtf[self.sc2.TK_LIT], 1)
+        self.sc2.put_tree(enc, m.mtf_tree, 1, 4)
+        with self.assertRaises(self.sc2.Refused):
+            self.sc2.decode(4, 1, enc.finish())
+
+        # 14. Unset 11-bit cache slot (at p = 1 on 4x1, only slot(rgb0) is set).
+        rgb0 = (30 << 16) | (10 << 8) | 40
+        bad_slot = (self.sc2.cache_index(rgb0) + 1) & 2047
+        m = self.sc2.Model6()
+        enc, _ = build_p0(m)
+        enc.coded(m.is_copy[self.sc2.TK_LIT], 0)
+        enc.coded(m.is_eq_w[self.sc2.TK_LIT * 2 + 0], 0)
+        enc.coded(m.is_mtf[self.sc2.TK_LIT], 0)
+        enc.coded(m.is_cache[self.sc2.TK_LIT], 1)
+        self.sc2.put_tree(enc, m.cache_tree, bad_slot, 11)
+        with self.assertRaises(self.sc2.Refused):
+            self.sc2.decode(4, 1, enc.finish())
 
 
 if __name__ == "__main__":
