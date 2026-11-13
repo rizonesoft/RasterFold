@@ -1,5 +1,49 @@
 {
   "schema": 1,
   "repository": "https://github.com/rizonesoft/RasterFold",
-  "releases": []
+  "releases": [
+    {
+      "version": "1.0.0",
+      "tag": "rasterfold-v1.0.0",
+      "date": "2026-11-13",
+      "commit": "a0fa1c7c20d3048eff85cfb4f90dfc9596b33aef",
+      "assets": [
+        {
+          "name": "rasterfold-1.0.0-windows-x64.zip",
+          "target": "windows-x64",
+          "size": 842817,
+          "sha256": "20709a84ec0f28832224f9736d461b1cba49f0b0e10bc223ca063e35e4627569",
+          "contents": [
+            "bin/rasterfold.dll",
+            "bin/rasterfold.exe",
+            "include/rasterfold.h",
+            "lib/librasterfold.a",
+            "lib/librasterfold.dll.a",
+            "lib/rasterfold.lib",
+            "symbols/rasterfold-dll.pdb",
+            "symbols/rasterfold.pdb"
+          ]
+        },
+        {
+          "name": "rasterfold-1.0.0-linux-x64.zip",
+          "target": "linux-x64",
+          "size": 1514238,
+          "sha256": "cf873857c1f9389d3500d40966407d6818b25adfe151c75358dcecdbe8bb2e60",
+          "contents": [
+            "bin/rasterfold",
+            "include/rasterfold.h",
+            "lib/librasterfold.a",
+            "lib/librasterfold.so",
+            "lib/librasterfold.so.1"
+          ]
+        },
+        {
+          "name": "SHA256SUMS",
+          "target": null,
+          "size": 196,
+          "sha256": "c31c4a4a6d77252dff923fb51cf20cfcfcf5116f82b91f8883fa8968d42c72c7"
+        }
+      ]
+    }
+  ]
 }

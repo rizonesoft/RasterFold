@@ -13,10 +13,60 @@ source_path: docs/releases.json
 
 | Kind | Current | What it governs |
 | ---- | ------- | --------------- |
-| Product | RasterFold 1.0.0, in development and not released; no release has been published yet | The command-line tool, the libraries and this documentation, released together. |
+| Product | RasterFold 1.0.0, released 2026-11-13; see [Downloads](https://rizonesoft.github.io/RasterFold/downloads.html) | The command-line tool, the libraries and this documentation, released together. |
 | File format | `.fold` format version 3 | What a `.fold` file contains. It changes only when the file layout does, independently of the product and of the C API. |
 | C API | C API 1.0 | The functions and types in `rasterfold.h`. It changes only when the library interface does, independently of the product and of the file format. |
 
 <!-- version-labels:end -->
 
-No release of RasterFold has been published yet, so there is nothing to download here. When a release is published, this page lists it with one package for each platform, their checksums and their source. Until then, [build RasterFold from source](installation.md).
+Each release has one package per platform. A package is self-contained: the command-line tool, the shared and static libraries, the C header, this documentation for reading offline, the licence and the changelog. Nothing needs to be installed.
+
+## Verify a download
+
+Check a package against the release's `SHA256SUMS` before using it.
+
+Linux (in the directory holding the download and `SHA256SUMS`):
+
+```bash
+sha256sum -c SHA256SUMS --ignore-missing
+```
+
+Windows (PowerShell; compare the output with the SHA-256 shown for the package on this page):
+
+```powershell
+(Get-FileHash .\rasterfold-<version>-windows-x64.zip -Algorithm SHA256).Hash.ToLower()
+```
+
+After extracting, the package's `README.md` explains how to check the files inside it and how to run the tool and link the library.
+
+## RasterFold 1.0.0 (latest release)
+
+Released 2026-11-13 from commit `a0fa1c7c20d3048eff85cfb4f90dfc9596b33aef`, tag `rasterfold-v1.0.0`. [Release notes](release-history.md) and the [release on GitHub](https://github.com/rizonesoft/RasterFold/releases/tag/rasterfold-v1.0.0).
+
+### Windows x64, RasterFold 1.0.0
+
+| Item | In this package |
+| ---- | --------------- |
+| Package | [rasterfold-1.0.0-windows-x64.zip](https://github.com/rizonesoft/RasterFold/releases/download/rasterfold-v1.0.0/rasterfold-1.0.0-windows-x64.zip), 842,817 bytes |
+| Command-line tool | `bin/rasterfold.exe` |
+| Libraries | `bin/rasterfold.dll`, `lib/librasterfold.a`, `lib/librasterfold.dll.a`, `lib/rasterfold.lib` |
+| Header | `include/rasterfold.h` |
+| Debug symbols | `symbols/rasterfold-dll.pdb`, `symbols/rasterfold.pdb` |
+| SHA-256 | `20709a84ec0f28832224f9736d461b1cba49f0b0e10bc223ca063e35e4627569` |
+
+### Linux x64, RasterFold 1.0.0
+
+| Item | In this package |
+| ---- | --------------- |
+| Package | [rasterfold-1.0.0-linux-x64.zip](https://github.com/rizonesoft/RasterFold/releases/download/rasterfold-v1.0.0/rasterfold-1.0.0-linux-x64.zip), 1,514,238 bytes |
+| Command-line tool | `bin/rasterfold` |
+| Libraries | `lib/librasterfold.a`, `lib/librasterfold.so`, `lib/librasterfold.so.1` |
+| Header | `include/rasterfold.h` |
+| Debug symbols | none shipped as separate files for this platform |
+| SHA-256 | `cf873857c1f9389d3500d40966407d6818b25adfe151c75358dcecdbe8bb2e60` |
+
+### Checksums, licence and source, RasterFold 1.0.0
+
+- Checksums: [SHA256SUMS](https://github.com/rizonesoft/RasterFold/releases/download/rasterfold-v1.0.0/SHA256SUMS) lists the SHA-256 of both packages; each package also carries its own `SHA256SUMS` over every file inside it.
+- Licence: the GNU General Public License v3.0 (`GPL-3.0`). Each package carries `LICENSE`; see [Licenses and Provenance](licenses.md).
+- Source: the [tree at `rasterfold-v1.0.0`](https://github.com/rizonesoft/RasterFold/tree/rasterfold-v1.0.0), also as a [zip archive](https://github.com/rizonesoft/RasterFold/archive/refs/tags/rasterfold-v1.0.0.zip) or a [tar.gz archive](https://github.com/rizonesoft/RasterFold/archive/refs/tags/rasterfold-v1.0.0.tar.gz).
