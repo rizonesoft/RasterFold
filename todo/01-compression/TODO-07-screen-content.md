@@ -2,7 +2,7 @@
 schema_version: 1
 id: screen-content
 domain: 01-compression
-status: draft
+status: done
 title: "TODO-07 -- Screen Content"
 depends_on: []
 frozen: true
@@ -43,7 +43,7 @@ track: C7
 | :---: | :-----: | ----------- | ---------- | :----: |
 |   1   |   §1    | A development set of screenshots | -- |  [x]   |
 |   2   |   §2    | Where the bytes go on screenshots, and round 1 planned | §1 |  [x]   |
-|   3   |   §3    | Round 1: a backward-reference method for screen content | §2 |  [ ]   |
+|   3   |   §3    | Round 1: a backward-reference method for screen content | §2 |  [x]   |
 
 ---
 
@@ -138,6 +138,8 @@ Acceptance (the stop condition), from the prototype's exact coded sizes (a real 
 
 **Freeze check:** Verified 2026-11-13: `KAT_FOLD`, `KAT_PAL`, `KAT_PAL2`, `KAT_PAL2_3` and `KAT_PAL4` decode to identical pixels (`known-answer` in `tests/test_correctness.py`); method 5 is valid only in format version 3 (`D99 T01 §3`), refused in version 2 (`unsupported fold: method`, exit 3), and refused by pre-port `c974364` `rasterfold-m1.exe` with exit 3 (`unsupported fold: method`).
 
+> **Verified:** 2026-11-13 | §3 | b8c7f2b5cb403b1bbe372f92aa85eeb8c1c1ee68
+> **Review:** `docs/reviews/d01-t07-s3.json`
 ## Verification
 
 - [ ] `python3 scripts/todo-graph.py validate` clean
