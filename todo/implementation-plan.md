@@ -364,7 +364,7 @@ Milestone 11's work is authored one milestone ahead by its planning section, fro
 | [ ] | `D00 T06 §1` | Separate stderr assertion for legacy-encoding stream setup    | none         |   2   |
 | [ ] | `D06 T02 §1` | Stderr diagnostics and fixtures for example host-I/O failures | none         |   3   |
 | [ ] | `D07 T02 §1` | Report development revision in standalone CLI version output  | none         |   2   |
-| [ ] | `D02 T04 §1` | Finer-grained CM cap-abort check for small caps               | idle-machine |   3   |
+| [ ] | `D02 T04 §1` | Finer-grained CM cap-abort check for small caps               | none         |   3   |
 | [x] | `D02 T01 §3` | An AVX2 build, measured before dispatching                    | idle-machine |   3   |
 | [x] | `D02 T02 §2` | The speed of an int16 SIMD mixer                              | idle-machine |   4   |
 | [ ] | `D05 T02 §2` | Milestone 11 gate: SIMD decisions                             | idle-machine |   4   |
@@ -373,11 +373,11 @@ Milestone 11's work is authored one milestone ahead by its planning section, fro
 
 Milestone 12's work is authored one milestone ahead by its planning section, from milestone 11's measured results; the gate measures the target and the no-regression rule.
 
-|  ✔  | Section      | Deliverable                                                       | Needs        | Items |
-| :-: | ------------ | ----------------------------------------------------------------- | ------------ | :---: |
-| [ ] | `D05 T02 §3` | Plan milestone 12: Two-layer mixing                               | none         |   4   |
-| [ ] | `D01 T08 §1` | Isolate mixer width vs match context and measure 9-slot SIMD cost | idle-machine |   3   |
-| [ ] | `D05 T02 §4` | Milestone 12 gate: Two-layer mixing                               | ffmpeg-jxl   |   4   |
+|  ✔  | Section      | Deliverable                                                       | Needs      | Items |
+| :-: | ------------ | ----------------------------------------------------------------- | ---------- | :---: |
+| [ ] | `D05 T02 §3` | Plan milestone 12: Two-layer mixing                               | none       |   4   |
+| [ ] | `D01 T08 §1` | Isolate mixer width vs match context and measure 9-slot SIMD cost | none       |   3   |
+| [ ] | `D05 T02 §4` | Milestone 12 gate: Two-layer mixing                               | ffmpeg-jxl |   4   |
 
 ### Phase 13 -- Milestone 13: Stronger prediction
 

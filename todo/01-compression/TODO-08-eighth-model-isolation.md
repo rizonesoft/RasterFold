@@ -47,8 +47,6 @@ track: C8
 
 -> SOURCE: D01-T04-S2-photo-gain
 
-**Needs:** Idle machine (timing)
-
 `D01 T04 §2`'s rejected 8-model match experiment combined two changes at once: a new match context and widening the mixer from 8 active inputs (`7` models + `1` predictor, `WSTRIDE = 8`) to 9 (`WSTRIDE = 16`). Isolate the two effects in `research/variants/` without touching shipped `src/cm.c` (format version 3 is frozen from `rasterfold-v1.0.0`): baseline is shipped `src/cm.c` (`NMODEL = 7`). Stop condition: record a positive candidate for a post-v3 format version only if a variant improves `photo` total by at least `0.10%` (`ratio <= 0.9990` of baseline), improves or holds `tp` (`<= 1.0000`), regresses no `photo` image by more than `0.15%`, and holds 3-thread decode time within `1.08x` of `src/cm.c` under `research/abpool.py` contiguous tail pools (`RULE_2026_11_13`); otherwise keep `src/cm.c` untouched and ship the measured isolation table and variant patches in `research/variants/` and `docs/research.md`.
 
 - [ ] Build three standalone variants under `research/variants/` and measure `python3 research/ab.py size <variant> all` against `src/cm.c`: (a) `eighth-const.c` (`NMODEL = 8` with a constant zero-hash eighth model, isolating mixer-slot capacity), (b) `match-replace7.c` (`NMODEL = 7` replacing the weakest of `k0..k6` with the `D01 T04 §2` match context at `WSTRIDE = 8`), and (c) `eighth-match-simd9.c` (`NMODEL = 8` with an `8 + 1` SIMD dot/update specializations avoiding generic 16-lane scalar/padded waste). Done when: `ab.py size` totals, geometric means, and worst images on `photo`, `tp`, and `synth` are captured for all three variants. Cheaper substitute: measuring only `photo` or skipping the `NMODEL = 7` replacement control.
