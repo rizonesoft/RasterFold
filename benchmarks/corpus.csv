@@ -1,4 +1,4 @@
-# codec_revision=5b42f55c0cbf415ab87cb27347ce4a1f300ea586 kat_fold_sha256=b3012508fdcadc58e768baaba1c9fc3cf5cc2dd837643888b1ca2314fe79bb32 date=2026-11-12
+# codec_revision=8bf84b7058c0797b5c3a289d122313be0352a07c kat_fold_sha256=b3012508fdcadc58e768baaba1c9fc3cf5cc2dd837643888b1ca2314fe79bb32 date=2026-11-13
 set,image,width,height,rasterfold,jxl_e7,jxl_e9,webp
 photo,measure,1672,941,1400388,1470703,1440564,1588708
 photo,kodim01,768,512,450829,460550,454757,499410

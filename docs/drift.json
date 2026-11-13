@@ -1651,13 +1651,13 @@
       "review": "Author-attested: 2026-10-25 re-read docs/getting-started.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/benchmarks.md": {
-      "evidence": "Re-read 2026-11-13 for D01 T07 section 4: docs/benchmarks.md reports the measure, photos, synthetic and 55-image research corpus tables, whose .fold outputs are byte-identical after adding method 6.",
+      "evidence": "Re-read 2026-11-13 for D05 T01 section 9 (Milestone 9 gate): docs/benchmarks.md scope labels, reference-image figures, benchmark sets (results.csv), and 55-image research corpus summary (corpus.csv) match the committed 2026-11-13 measurements at codec_revision=8bf84b7058c0797b5c3a289d122313be0352a07c.",
       "sources": {
         "src/rf.h": "7f58b508d0e3bb10cc2e1c57cda78e3552a2976a99928e0dfa1df16b91e0117d",
-        "measure/verdict.json": "dd16843e8b4696f8d27904c0f1b473fcc89908f20d7191e1a6faa3bbdd0a5b92",
-        "benchmarks/results.csv": "de7ebe8d55d4b77302dcd506afa5dcbb6d42227d77c466ee836dcf7cb33175c1",
-        "benchmarks/corpus.csv": "bf3e6a193e0ee9db6e9d269f2fa56295eacd1a8e81fda50e6dca25338577ad17",
-        "docs/benchmarks.md": "aabc66900a2a658a6cd6ebf0a39a9dc87e11312370854d134a6a7f04f8ab7a16"
+        "measure/verdict.json": "3cba410885fe39415f5f69f60d60882c350bba82bd1d9f663f95da0d6aa33f12",
+        "benchmarks/results.csv": "2ab6eee5428a1411ddc842bf1815936646a329dcbf80c7cb6c8b6f3cf14f502d",
+        "benchmarks/corpus.csv": "a87fa30dc5520febbacb1828bf34d53da984b19bef0618d29730d7d6660219a3",
+        "docs/benchmarks.md": "3ff305d11bc599646968f24f3ae3d5e7cd15acabb0a1dc571d26e11a659cb4ef"
       },
       "reviewed_at": "2026-10-25",
       "doc_sha256": "cb432a027a1da6cf87a7b6ea38912c56736b0eb0c4802bd4ac2e31a17ce4358d",
