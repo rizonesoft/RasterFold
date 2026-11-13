@@ -1048,8 +1048,8 @@ class ResearchRefsTests(unittest.TestCase):
                 )
                 + "\nstatic int g_raw_enc_calls = 0;\n"
                 "int rf_cm_encode(const uint8_t *rgb, uint32_t w, uint32_t h, uint8_t *out, size_t cap, size_t *written, int threads, rf_error *err) {\n"
-                "    g_raw_enc_calls++;\n"
                 "    if (w == 1 && h == 1) {\n"
+                "        g_raw_enc_calls++;\n"
                 "        for (volatile int spin = 0; spin < 15000000; spin++) {}\n"
                 "        printf(\"RAW_ENC_CALL=%d\\n\", g_raw_enc_calls);\n"
                 "    }\n"
@@ -2316,6 +2316,17 @@ class ScreenCode2Tests(unittest.TestCase):
         self.sc2.put_tree(enc, m.cache_tree, bad_slot, 11)
         with self.assertRaises(self.sc2.Refused):
             self.sc2.decode(4, 1, enc.finish())
+
+    def test_bench_warms_harness_before_timing_and_profiling(self) -> None:
+        bench_src = (ROOT / "research" / "bench.c").read_text(encoding="utf-8")
+        defn = bench_src.find("static void warm_harness(int threads)")
+        call = bench_src.find("warm_harness(threads > 0 ? threads : 1);")
+        prof_start = bench_src.find("if (prof) {", call if call >= 0 else 0)
+        timed_loop = bench_src.find("double t0 = cyc_ms();", call if call >= 0 else 0)
+        self.assertGreaterEqual(defn, 0)
+        self.assertGreater(call, defn)
+        self.assertGreater(prof_start, call)
+        self.assertGreater(timed_loop, prof_start)
 
 
 if __name__ == "__main__":

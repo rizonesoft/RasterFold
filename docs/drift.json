@@ -1710,14 +1710,14 @@
       "reviewed": "Author-attested: 2026-10-25 re-read spec/FOLD.md against src/cm.c and src/simd.h after D02 T01 section 4 (byte-identical cm.c hot-loop vectorization and row-context specialization; format version 2 bitstream unchanged)"
     },
     "research/README.md": {
-      "evidence": "Re-read 2026-11-13 for D01 T07 section 4: verified research/README.md descriptions of ab.py, abpool.py and bench.c after adding RF_METHOD_SC2 support to research/ab.py and research/bench.c.",
+      "evidence": "Re-read 2026-11-13 for D05 T01 section 9: verified research/README.md description of bench.c untimed warm_harness warm-up before timed and profiled runs.",
       "sources": {
         "research/corpus.py": "ac81faf9ee03723ab3cd46c2918d32f83e741b7bffa9c699d2bdeaaaf2a6d60c",
         "research/ab.py": "75d8a9a13b3b721bd745188e46293a5b8b159e289d675c306226d5ab4fc85d36",
         "research/vsjxl.py": "ab1761b1282708543e799da95890bd22d15b1b09010673f7cc009f8f0a7c71a5",
         "research/prof.py": "7fa28a84aab62f0eb79fd579bcc01b6e2e55cc200bdaa96c0218b2ad4aa05605",
-        "research/bench.c": "3c9536a0ef96204e8bf1d7093113397c7bb357fc2f72499e18802971f8edcc88",
-        "research/README.md": "67af66f6a2607fb9943acd86992a970bc987ec5fbe92cc52c81eafbbbdd4341f",
+        "research/bench.c": "8e147fcdd2fddbe9be0f3b742d5639e90923aea1cdf28ca79ec8681f0c5cfbc7",
+        "research/README.md": "45f045fbdbb504416a4c8634a366e11dd02d34e5c65c2b13068cd7a457b51baf",
         "research/abpool.py": "63cafba2296629d64b9d7faacb08d1e666988ed4160cd3745a2d513538efccbe"
       },
       "review": "Author-attested: 2026-10-25 re-read research/README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)",

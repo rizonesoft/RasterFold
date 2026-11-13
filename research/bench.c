@@ -183,6 +183,48 @@ static DWORD WINAPI sampler(void *arg) {
     return 0;
 }
 
+static void warm_one(uint32_t w, uint32_t h, uint8_t *rgb, int threads) {
+    rf_image rfi = { w, h, rgb };
+    uint8_t *fold = 0;
+    size_t sz = 0;
+    if (rf_encode(&rfi, &fold, &sz, threads, 0) == 0 && fold) {
+        rf_image dec = {0};
+        rf_info info = {0};
+        if (rf_decode(fold, sz, &dec, &info, threads, 0) == 0 && dec.rgb) rf_free(dec.rgb);
+        rf_free(fold);
+    }
+}
+
+/* Fault in PE code/data pages (including over WSL 9P UNC paths) and one-time codec tables
+   before timing or sampling begins, so the first image in a batch is not charged cold start. */
+static void warm_harness(int threads) {
+    uint8_t buf[32 * 16 * 3];
+    for (size_t i = 0; i < 16 * 16; i++) {
+        uint8_t v = (uint8_t)(((i & 1u) ^ ((i >> 4) & 1u)) ? 220u : 30u);
+        buf[3 * i + 0] = v; buf[3 * i + 1] = v; buf[3 * i + 2] = v;
+    }
+    warm_one(16, 16, buf, threads);
+    for (uint32_t y = 0; y < 16; y++) {
+        for (uint32_t x = 0; x < 32; x++) {
+            size_t i = (size_t)y * 32u + x;
+            buf[3 * i + 0] = (uint8_t)(x * 7u + y * 9u);
+            buf[3 * i + 1] = (uint8_t)(x * 5u + y * 11u + 17u);
+            buf[3 * i + 2] = (uint8_t)(x * 3u + y * 13u + 41u);
+        }
+    }
+    warm_one(32, 16, buf, threads);
+    for (uint32_t y = 0; y < 16; y++) {
+        for (uint32_t x = 0; x < 32; x++) {
+            size_t i = (size_t)y * 32u + x;
+            uint32_t k = (x * 29u) & 31u;
+            buf[3 * i + 0] = (uint8_t)(k * 7u);
+            buf[3 * i + 1] = (uint8_t)(k * 13u + 5u);
+            buf[3 * i + 2] = (uint8_t)(k * 19u + 11u);
+        }
+    }
+    warm_one(32, 16, buf, threads);
+}
+
 int main(int argc, char **argv) {
     int reps = 3, prof = 0, threads = 1, breakdown = 0;
     SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
@@ -190,7 +232,10 @@ int main(int argc, char **argv) {
     for (int a = 1; a < argc; a++) {
         if (!strcmp(argv[a], "-p")) prof = 1;
         if (!strcmp(argv[a], "--breakdown")) breakdown = 1;
-        if (!strncmp(argv[a], "-t", 2) && atoi(argv[a] + 2) > 1) g_wall = 1;
+        if (!strncmp(argv[a], "-t", 2)) {
+            threads = atoi(argv[a] + 2);
+            if (threads > 1) g_wall = 1;
+        }
     }
 #if defined(RF_NO_BREAKDOWN)
     if (breakdown) {
@@ -202,6 +247,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "-p and --breakdown cannot be combined\n");
         return 2;
     }
+    warm_harness(threads > 0 ? threads : 1);
     if (prof) {
         g_rip = malloc(sizeof(DWORD64) * MAXRIP);
         DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &g_main, 0, FALSE, DUPLICATE_SAME_ACCESS);
