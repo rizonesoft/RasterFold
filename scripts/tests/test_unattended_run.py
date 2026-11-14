@@ -38,12 +38,11 @@ class Launch:
             path.unlink(missing_ok=True)
         # The stub writers record their arguments NUL-separated (the prompt holds spaces and punctuation) and which
         # CLI was started.
-        for writer in ("claude", "agy"):
+        for writer in ("claude", "agy", "codex"):
             (self.user_bin / writer).write_text(
                 f'#!/bin/sh\nprintf "%s\\0" "$@" > "{self.argv_file}"\necho $$ > "{self.argv_file}.pid"\n'
                 f'echo {writer} > "{self.argv_file}.cli"\n'
                 f'flock -n build/unattended-launch.lock true && echo free > "{self.argv_file}.lock"\nexit 0\n', encoding="utf-8")
-        (self.user_bin / "codex").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         (stub_bin / "python3").write_text(
             f'#!/bin/sh\nprintf "%s\\n" "$*" > "{self.preflight_file}"\nfor c in claude codex; do command -v $c; done\nexit {preflight_exit}\n',
             encoding="utf-8")
@@ -59,6 +58,18 @@ class Launch:
         self.lock_free_at_start = lock_file.exists()
         cli_file = Path(f"{self.argv_file}.cli")
         self.cli = cli_file.read_text(encoding="utf-8").strip() if cli_file.exists() else None
+
+
+class LauncherCodexTests(unittest.TestCase):
+    def test_codex_native_flags_and_launch_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            launch = Launch(tmp, args=("codex",))
+            self.assertEqual(launch.cli, "codex")
+            self.assertEqual(launch.argv[:3], ["--dangerously-bypass-approvals-and-sandbox", "-c", "model_reasoning_effort=medium"])
+            self.assertIn("writer key codex", launch.argv[-1])
+            self.assertIn("Launch id:", launch.argv[-1])
+            self.assertNotIn("--session-id", launch.argv)
+            self.assertIn("--runner codex", launch.preflight)
 
 
 class LauncherPathTests(unittest.TestCase):
@@ -183,7 +194,7 @@ class LauncherCarbonTests(unittest.TestCase):
             launch = Launch(tmp, args=("muse",))
         self.assertIsNone(launch.argv)
         self.assertIsNone(launch.preflight)
-        self.assertIn("usage: scripts/unattended-run.sh [carbon]", launch.out)
+        self.assertIn("usage: scripts/unattended-run.sh [carbon|codex]", launch.out)
 
     def test_the_override_also_replaces_the_carbon_prompt(self):
         with tempfile.TemporaryDirectory() as tmp:

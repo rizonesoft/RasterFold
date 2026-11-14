@@ -12,8 +12,9 @@ cd "$(dirname "$0")/.." || exit 1
 case "${1:-claude}" in
   claude) RUNNER=claude ;;
   carbon) RUNNER=gemini ;;
+  codex) RUNNER=codex ;;
   *)
-    echo "usage: scripts/unattended-run.sh [carbon]  (no argument: Claude Code)"
+    echo "usage: scripts/unattended-run.sh [carbon|codex]  (no argument: Claude Code)"
     exec bash
     ;;
 esac
@@ -66,6 +67,7 @@ CARBON_PROMPT='Act with full autonomy (operator directives 2026-11-10 and 2026-1
 
 # Dry-launch entry point (docs/unattended-run.md): when
 # UNATTENDED_PROMPT_OVERRIDE names a readable file, that file's text is the
+CODEX_PROMPT='Set your session goal: finish RasterFold 100% complete and excellent, every open TODO section built, gated, independently reviewed, stamped, committed and pushed straight on main, then terminal release acceptance and plan closeout. Read AGENTS.md and .codex/skills/process-plan/SKILL.md. Follow process-plan, process-todo-section and review-todo-section with writer key codex and the pinned Carbon reviewer. Use CODEX_THREAD_ID for campaign guard ownership and cron-id none. No heartbeat timer tools are available; keep working and wait inside this session when needed. Self-heal at the owning layer and follow the existing milestone round caps. Respect operator stop, record a handoff and never resume automatically. Stop at plan closeout, a recorded park with every remaining row blocked, or an escalation the tree cannot fix.'
 # seed prompt instead of the campaign prompt above. Unset, the prompt is
 # byte-identical to the campaign prompt.
 if [ -n "${UNATTENDED_PROMPT_OVERRIDE:-}" ]; then
@@ -78,6 +80,8 @@ if [ -n "${UNATTENDED_PROMPT_OVERRIDE:-}" ]; then
   PROMPT="$(cat "$UNATTENDED_PROMPT_OVERRIDE")"
 elif [ "$RUNNER" = gemini ]; then
   PROMPT="$CARBON_PROMPT"
+elif [ "$RUNNER" = codex ]; then
+  PROMPT="$CODEX_PROMPT"
 fi
 
 # --model opus is the alias for the latest Opus, never a dated model id
@@ -86,6 +90,10 @@ fi
 # that is overloaded or unavailable; it does not fire on a usage limit, where
 # the session waits for the reset and then continues.
 # The three disallowed tools are the ones that wait on a human.
+if [ "$RUNNER" = codex ]; then
+  unset CLAUDE_CODE_OAUTH_TOKEN
+  exec codex --dangerously-bypass-approvals-and-sandbox -c model_reasoning_effort=medium "$PROMPT Launch id: $SESSION_ID."
+fi
 if [ "$RUNNER" = claude ]; then
   exec claude --dangerously-skip-permissions \
     --model opus --fallback-model sonnet --effort medium \

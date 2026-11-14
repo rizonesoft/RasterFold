@@ -66,3 +66,7 @@ Honest limit: a scout can still miss something that is there. That is why its ou
 ## The Desktop shortcuts
 
 `scripts/install-launchers.ps1`, run once on Windows from this checkout (`pwsh -File \\wsl.localhost\Ubuntu\home\<user>\projects\RasterFold\scripts\install-launchers.ps1`), writes both shortcuts and their icons and removes the old `RasterFold Unattended Run.lnk`. Each icon is the RasterFold mark (`assets/brand/icon.svg`) with its runner's badge in the corner, as the Isotone campaign shortcuts carry theirs: a terracotta circle with the Claude symbol for Claude, a blue circle with the Gemini sparkle for Carbon, both with a white outline and a white mark from 32 pixels up. The icons are rendered per machine to `%LOCALAPPDATA%\RasterFold\` with `resvg-py` and Pillow in the Windows Python (the pair Isotone's `scripts/requirements-icons.txt` pins); they are local launcher icons only and ship in nothing, so neither package becomes a dependency of the codec, its tests or its tooling. The marks are trademarks of Anthropic and Google, used only on this machine's launchers.
+
+## Codex writer
+
+`./scripts/unattended-run.sh codex` starts the Codex writer using its configured model at medium effort, its own sign-in and the existing Carbon reviewer route. `scripts/install-launchers.ps1` also installs the matching Windows desktop shortcut. The native Stop hook is `.codex/hooks.json`; review and trust it in Codex `/hooks`. Codex uses its thread ID and no heartbeat timer, as described by `.codex/skills/process-plan/SKILL.md`.
