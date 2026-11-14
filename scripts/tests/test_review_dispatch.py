@@ -1294,21 +1294,21 @@ class RepositoryPin(unittest.TestCase):
         pin = module.load_pin(REPO_PIN)
         self.assertTrue(pin["routes"], "the repository pin routes no writer")
 
-    def test_the_repository_pin_is_the_three_pass_policy_at_medium(self):
+    def test_the_repository_pin_preserves_routes_and_lenses_without_effort_overrides(self):
         with open(REPO_PIN, "rb") as handle:
             pin = tomllib.load(handle)
         self.assertEqual(pin["reviewers"], {"astra": {"cli": "codex", "model": "gpt-6-astra", "effort": "medium"},
-                                           "carbon": {"cli": "agy", "model": "gemini-4-carbon-medium"}})
+                                           "carbon": {"cli": "agy", "model": "gemini-pro-orchestrator"}})
         self.assertEqual(pin["routes"], {"claude": ["astra"], "codex": ["carbon"], "gemini": ["astra"]})
         schedule = pin["schedule"]
         self.assertEqual(schedule["policy"], "three-pass")
         self.assertEqual(schedule["pass_cap"], 33)
-        self.assertEqual(schedule["plan"], {"effort": "medium", "lenses": ["plan"]})
-        self.assertEqual(schedule["completion"], {"effort": "medium"})
-        self.assertEqual(schedule["rounds"], [{"effort": "medium", "lenses": [
+        self.assertEqual(schedule["plan"], {"lenses": ["plan"]})
+        self.assertEqual(schedule["completion"], {})
+        self.assertEqual(schedule["rounds"], [{"lenses": [
             "adversarial", "integration", "source-defect", "plan-delivery", "consistency", "record", "quality",
             "optimization", "design"]}])
-        self.assertEqual(schedule["reconciliation"]["effort"], "medium")
+        self.assertEqual(schedule["reconciliation"], {"lenses": ["adversarial", "integration", "plan-delivery", "record"]})
 
     def test_the_review_pass_cap_is_read_from_the_pin(self):
         # Operator decision 2026-11-11: the cap is the pin's `[schedule] pass_cap`, not a number in the scripts.
@@ -2175,20 +2175,20 @@ class ThreePassDispatch(Harness):
         result, summary = self.dispatch("--writer", "codex", "--prompt", str(self.prompt), agy="say", say=self.ROUND)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual((summary["reviewer"], summary["model"], summary["cli"], summary["effort"]),
-                         ("carbon", "gemini-4-carbon-medium", "agy", "medium"))
+                         ("carbon", "gemini-pro-orchestrator", "agy", None))
         (call,) = self.calls()
         self.assertEqual(call["cli"], "agy")
-        self.assertEqual(call["argv"][:5], ["--model", "gemini-4-carbon-medium", "--mode", "plan", "--sandbox"])
+        self.assertEqual(call["argv"][:5], ["--model", "gemini-pro-orchestrator", "--mode", "plan", "--sandbox"])
         self.assertTrue(call["argv"][5].startswith("--print-timeout="))
         self.assertNotIn("Review calc.py", " ".join(call["argv"]), "review prose never reaches the command line")
         self.assertIn("Follow the review instructions in the file", call["argv"][6])
 
-    def test_a_carbon_schedule_above_its_model_name_is_refused(self):
+    def test_orchestrator_rejects_scheduled_effort_overrides(self):
         module = self.module()
         text = REPO_PIN.read_text(encoding="utf-8")
         loaded = module.load_pin(data=text.encode())
         self.assertEqual(loaded["routes"]["codex"], ["carbon"])
-        high = text.replace('[[schedule.rounds]]\neffort = "medium"', '[[schedule.rounds]]\neffort = "high"')
+        high = text.replace('[[schedule.rounds]]\n', '[[schedule.rounds]]\neffort = "high"\n')
         self.assertNotEqual(high, text)
         with self.assertRaisesRegex(module.Refused, "effort in its model name"):
             module.load_pin(data=high.encode())

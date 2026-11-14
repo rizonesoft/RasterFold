@@ -1,6 +1,6 @@
 # Agent Skills and Rules Structure
 
-This repository uses Claude Code (`claude`), OpenAI Codex (`codex`) and Google Antigravity (`gemini`) as writers. Independent reviews route Codex work to Gemini 4 Carbon through the Antigravity CLI and other writers' work to GPT-6 Astra through the Codex CLI through `scripts/review-dispatch.py` and `.conclave/reviewers.toml`.
+This repository uses Claude Code (`claude`), OpenAI Codex (`codex`) and Google Antigravity (`gemini`) as writers. Independent reviews route Codex work to Orchestrator (Carbon) through the Antigravity CLI and other writers' work to GPT-6 Astra through the Codex CLI through `scripts/review-dispatch.py` and `.conclave/reviewers.toml`.
 
 ## Skill Locations
 

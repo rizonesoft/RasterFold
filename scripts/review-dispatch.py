@@ -36,8 +36,8 @@ it asks whether building the section exactly as planned produces a 100% complete
 `## Plan review` section with the same one-pass rule, and it is not counted as a round.
 
 The current pin's `policy = "three-pass"` (owner decision 2026-11-06) runs one plan review before the build, one
-combined adversarial round after the build and its gates, then one completion review of the final candidate, every pass
-at medium. A findings file named for a section (`docs/reviews/<NN-domain>/D<NN>-T<NN>-s<N>.md`) has that order enforced
+combined adversarial round after the build and its gates, then one completion review of the final candidate. Effort overrides are optional; without one,
+the reviewer pin supplies effort (Astra: medium; Orchestrator: model-managed). A findings file named for a section (`docs/reviews/<NN-domain>/D<NN>-T<NN>-s<N>.md`) has that order enforced
 before a review is spent. `--kind reconciliation` (`docs/reconciliation-review-prompt.md`) is the further pass after
 a completion that returned gaps, on a candidate descending from it; it ends `RECONCILIATION: complete` or `gaps`. A
 reconciliation that returned gaps may be followed by another on a candidate descending from it, until one returns
@@ -83,7 +83,7 @@ FAMILY = {"codex": "openai", "agy": "google", "muse": "meta"}
 WRITER_FAMILY = {"claude": "anthropic", "codex": "openai", "gemini": "google", "muse": "meta",
                  "opencode": "anthropic", "agy": "google", "copilot": "anthropic"}
 WRITERS = tuple(WRITER_FAMILY)
-# Antigravity carries the effort in its model name, so it takes none; load_pin holds that name to the schedule.
+# Antigravity takes no effort flag. Effort-suffixed models must match scheduled overrides; Orchestrator has none.
 EFFORTS = {"codex": ("low", "medium", "high", "xhigh"),
            "muse": ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")}
 MODEL = re.compile(r"^[a-z0-9][a-z0-9.-]*$")
@@ -207,11 +207,11 @@ def review_pass_cap(schedule):
 
 
 def check_step(where, step, efforts, lenses=True):
-    if not isinstance(step, dict) or set(step) - STEP_KEYS or "effort" not in step \
+    if not isinstance(step, dict) or set(step) - STEP_KEYS \
             or (lenses and "lenses" not in step) or (not lenses and "lenses" in step):
-        need = "effort and lenses" if lenses else "only effort"
+        need = "lenses and optional effort" if lenses else "only optional effort"
         raise Refused(f"[schedule] {where} needs {need}")
-    if step["effort"] not in efforts:
+    if "effort" in step and step["effort"] not in efforts:
         raise Refused(f"[schedule] {where} needs effort = one of {', '.join(efforts)}")
     if lenses:
         names = step["lenses"]
@@ -225,7 +225,7 @@ def check_agy_effort(name, model, schedule):
     """An Antigravity reviewer runs at its model name's effort whatever the schedule says, so the two must agree, or a
     pass would be recorded at an effort it did not run at."""
     steps = [schedule[k] for k in ("plan", "completion", "reconciliation", "rotation", "escalation") if k in schedule]
-    for effort in {step["effort"] for step in [*steps, *schedule["rounds"]]}:
+    for effort in {step["effort"] for step in [*steps, *schedule["rounds"]] if "effort" in step}:
         if not model.endswith(f"-{effort}"):
             raise Refused(f"reviewer {name!r} runs at the effort in its model name {model}, but the schedule has a "
                           f"pass at {effort}")
@@ -320,13 +320,13 @@ def scheduled(schedule, kind, rounds, surface):
     only to a section with a surface; `check_three_pass_order` and the stamp refuse a second round."""
     if kind in ("plan", "completion", "reconciliation"):
         step = schedule[kind]
-        return {"position": None, "effort": step["effort"], "lenses": list(step.get("lenses", [])),
+        return {"position": None, "effort": step.get("effort"), "lenses": list(step.get("lenses", [])),
                 "escalated": False}
     returned = [r for r in rounds if returned_review(r)]
     position = len(returned) + 1
     if schedule.get("policy") == THREE_PASS:
         step = schedule["rounds"][0]
-        return {"position": position, "effort": step["effort"],
+        return {"position": position, "effort": step.get("effort"),
                 "lenses": [n for n in step["lenses"] if surface or n != "design"], "escalated": False}
     last = returned[-1] if returned else None
     if last is not None and last.get("effort") == "low" and highest(last.get("review")) == "P1":
@@ -336,17 +336,18 @@ def scheduled(schedule, kind, rounds, surface):
     else:
         rotation = [n for n in schedule["rotation"]["lenses"] if surface or n != "design"] \
             or schedule["rotation"]["lenses"]
-        step = {"effort": schedule["rotation"]["effort"],
+        step = {"effort": schedule["rotation"].get("effort"),
                 "lenses": [rotation[(position - len(schedule["rounds"]) - 1) % len(rotation)]]}
         escalated = False
-    return {"position": position, "effort": step["effort"], "lenses": list(step["lenses"]), "escalated": escalated}
+    return {"position": position, "effort": step.get("effort"), "lenses": list(step["lenses"]), "escalated": escalated}
 
 
 def lens_block(plan):
     """The prompt section naming this pass's scheduled lenses and effort, appended after the writer's prompt."""
     where = f"Round {plan['position']}" if plan["position"] else "This pass"
     lines = ["", "", "## Lenses for this pass (scheduled by scripts/review-dispatch.py)", "",
-             f"{where} runs at {plan['effort']} reasoning effort"
+             (f"{where} runs at {plan['effort']} reasoning effort" if plan["effort"]
+              else f"{where} uses the reviewer model's own effort policy")
              + (", escalated after a low-effort round found a P1" if plan["escalated"] else "")
              + ". Review through these lenses only, each as its own verdict, and ignore any other lens list above:",
              ""]
@@ -606,7 +607,7 @@ def muse_response(path, model):
 def review(pin, writer, prompt_path, timeout, plan=None, kind="round"):
     """Run the writer's one reviewer. Returns the summary dict: `reviewer` is None when no review came back, and
     `skipped` then names the reviewer and why (there is no fallback). `plan` is the scheduled step (see `scheduled`):
-    its effort replaces the reviewer's, and its lenses are appended to the prompt and recorded."""
+    its optional effort overrides the reviewer's default, and its lenses are appended to the prompt and recorded."""
     if writer not in pin["routes"]:
         raise Refused(f"the reviewer pin has no route for writer {writer!r}")
     prompt = Path(prompt_path).read_text(encoding="utf-8")
@@ -616,10 +617,10 @@ def review(pin, writer, prompt_path, timeout, plan=None, kind="round"):
         raise Refused("the review prompt contains a NUL byte; no reviewer can be given it")
     (name,) = pin["routes"][writer]
     reviewer = pin["reviewers"][name]
-    effort = plan["effort"] if plan else reviewer.get("effort")
+    effort = (plan.get("effort") if plan else None) or reviewer.get("effort")
     lenses = plan["lenses"] if plan else []
     if lenses:
-        prompt = prompt.rstrip("\n") + lens_block(plan)
+        prompt = prompt.rstrip("\n") + lens_block({**plan, "effort": effort})
     scheduled_fields = {"effort": effort, "lenses": lenses} if plan else {}
 
     def none(reason):

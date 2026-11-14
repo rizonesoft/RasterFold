@@ -7102,7 +7102,8 @@ def schedule_ok(root: Path, data: dict, ref: str, surface: bool) -> None:
     def _check(where: str, recorded: dict, expected: dict) -> None:
         _check_route(where, recorded)
         got = (recorded["effort"], list(recorded["lenses"] or []))
-        want = (expected["effort"], expected["lenses"])
+        reviewer = pin["reviewers"][pin["routes"][recorded["writer"]][0]]
+        want = (expected["effort"] or reviewer.get("effort"), expected["lenses"])
         position = (
             f" (position {expected['position']}{', escalated' if expected['escalated'] else ''})"
             if expected["position"]

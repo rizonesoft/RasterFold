@@ -30,6 +30,11 @@
 # heartbeat script are removed.
 # A section keeps the pin at its plan review's candidate, so sections already under review finish on their own rules.
 
+# Owner decision 2026-11-14: Codex keeps the carbon route, now Orchestrator (Carbon), gemini-pro-orchestrator
+# through agy. No scheduled effort overrides: Orchestrator chooses its own effort; Astra retains its reviewer-level
+# medium effort. Lenses, pass cap and other routes are unchanged. Restore the prior model and scheduled medium
+# fields to reverse this decision. Historical sections retain their plan candidate pin.
+
 schema_version = 1
 
 [reviewers.astra]
@@ -39,7 +44,7 @@ effort = "medium"
 
 [reviewers.carbon]
 cli = "agy"
-model = "gemini-4-carbon-medium"
+model = "gemini-pro-orchestrator"
 
 [routes]
 claude = ["astra"]
@@ -51,16 +56,12 @@ policy = "three-pass"
 pass_cap = 33
 
 [schedule.plan]
-effort = "medium"
 lenses = ["plan"]
 
 [[schedule.rounds]]
-effort = "medium"
 lenses = ["adversarial", "integration", "source-defect", "plan-delivery", "consistency", "record", "quality", "optimization", "design"]
 
 [schedule.completion]
-effort = "medium"
 
 [schedule.reconciliation]
-effort = "medium"
 lenses = ["adversarial", "integration", "plan-delivery", "record"]
