@@ -18,13 +18,13 @@ spec.loader.exec_module(guard)
 
 class CodexCampaignHook(unittest.TestCase):
     def test_configured_hook_blocks_only_the_owner_from_a_subdirectory(self):
-        config = json.loads((ROOT / ".codex/hooks.json").read_text(encoding="utf-8"))
+        config = json.loads((ROOT / "scripts/tests/fixtures/codex-campaign-hooks.json").read_text(encoding="utf-8"))
         hook = config["hooks"]["Stop"][0]["hooks"][0]
         command = hook["commandWindows"] if os.name == "nt" else hook["command"]
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(guard._workspace(tmp))
             (root / ".codex").mkdir()
-            shutil.copyfile(ROOT / ".codex/hooks.json", root / ".codex/hooks.json")
+            shutil.copyfile(ROOT / "scripts/tests/fixtures/codex-campaign-hooks.json", root / ".codex/hooks.json")
             shutil.copyfile(ROOT / "scripts/codex-campaign-hook.py", root / "scripts/codex-campaign-hook.py")
             guard._guard(str(root), "owner-session")
             cwd = root / "docs"
@@ -41,13 +41,13 @@ class CodexCampaignHook(unittest.TestCase):
                 self.assertEqual(json.loads(result.stdout).get("decision"), expected)
 
     def test_hook_fails_open_when_git_is_broken(self):
-        config = json.loads((ROOT / ".codex/hooks.json").read_text(encoding="utf-8"))
+        config = json.loads((ROOT / "scripts/tests/fixtures/codex-campaign-hooks.json").read_text(encoding="utf-8"))
         hook = config["hooks"]["Stop"][0]["hooks"][0]
         command = hook["commandWindows"] if os.name == "nt" else hook["command"]
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(guard._workspace(tmp))
             (root / ".codex").mkdir()
-            shutil.copyfile(ROOT / ".codex/hooks.json", root / ".codex/hooks.json")
+            shutil.copyfile(ROOT / "scripts/tests/fixtures/codex-campaign-hooks.json", root / ".codex/hooks.json")
             shutil.copyfile(ROOT / "scripts/codex-campaign-hook.py", root / "scripts/codex-campaign-hook.py")
             bindir = root / "fake-bin"
             bindir.mkdir()
@@ -62,13 +62,13 @@ class CodexCampaignHook(unittest.TestCase):
             self.assertEqual(json.loads(result.stdout), {})
 
     def test_nested_git_repository_fails_open_without_executing_a_parent_guard(self):
-        config = json.loads((ROOT / ".codex/hooks.json").read_text(encoding="utf-8"))
+        config = json.loads((ROOT / "scripts/tests/fixtures/codex-campaign-hooks.json").read_text(encoding="utf-8"))
         hook = config["hooks"]["Stop"][0]["hooks"][0]
         command = hook["commandWindows"] if os.name == "nt" else hook["command"]
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(guard._workspace(tmp))
             (root / ".codex").mkdir()
-            shutil.copyfile(ROOT / ".codex/hooks.json", root / ".codex/hooks.json")
+            shutil.copyfile(ROOT / "scripts/tests/fixtures/codex-campaign-hooks.json", root / ".codex/hooks.json")
             shutil.copyfile(ROOT / "scripts/codex-campaign-hook.py", root / "scripts/codex-campaign-hook.py")
             guard._guard(str(root), "owner-session")
             nested = root / "docs/nested"
@@ -81,13 +81,13 @@ class CodexCampaignHook(unittest.TestCase):
             self.assertEqual(json.loads(result.stdout), {})
 
     def test_parent_markers_cannot_replace_the_project_guard(self):
-        config = json.loads((ROOT / ".codex/hooks.json").read_text(encoding="utf-8"))
+        config = json.loads((ROOT / "scripts/tests/fixtures/codex-campaign-hooks.json").read_text(encoding="utf-8"))
         hook = config["hooks"]["Stop"][0]["hooks"][0]
         command = hook["commandWindows"] if os.name == "nt" else hook["command"]
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(guard._workspace(tmp))
             (root / ".codex").mkdir()
-            shutil.copyfile(ROOT / ".codex/hooks.json", root / ".codex/hooks.json")
+            shutil.copyfile(ROOT / "scripts/tests/fixtures/codex-campaign-hooks.json", root / ".codex/hooks.json")
             shutil.copyfile(ROOT / "scripts/codex-campaign-hook.py", root / "scripts/codex-campaign-hook.py")
             guard._guard(str(root), "owner-session")
             parent = root.parent
@@ -102,13 +102,13 @@ class CodexCampaignHook(unittest.TestCase):
             self.assertEqual(json.loads(result.stdout).get("decision"), "block")
 
     def test_nested_markers_cannot_replace_the_project_guard(self):
-        config = json.loads((ROOT / ".codex/hooks.json").read_text(encoding="utf-8"))
+        config = json.loads((ROOT / "scripts/tests/fixtures/codex-campaign-hooks.json").read_text(encoding="utf-8"))
         hook = config["hooks"]["Stop"][0]["hooks"][0]
         command = hook["commandWindows"] if os.name == "nt" else hook["command"]
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(guard._workspace(tmp))
             (root / ".codex").mkdir()
-            shutil.copyfile(ROOT / ".codex/hooks.json", root / ".codex/hooks.json")
+            shutil.copyfile(ROOT / "scripts/tests/fixtures/codex-campaign-hooks.json", root / ".codex/hooks.json")
             shutil.copyfile(ROOT / "scripts/codex-campaign-hook.py", root / "scripts/codex-campaign-hook.py")
             guard._guard(str(root), "owner-session")
             nested = root / "docs/nested"

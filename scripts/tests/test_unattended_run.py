@@ -61,15 +61,13 @@ class Launch:
 
 
 class LauncherCodexTests(unittest.TestCase):
-    def test_codex_native_flags_and_launch_identity(self):
+    def test_codex_writer_is_retired(self):
         with tempfile.TemporaryDirectory() as tmp:
             launch = Launch(tmp, args=("codex",))
-            self.assertEqual(launch.cli, "codex")
-            self.assertEqual(launch.argv[:3], ["--dangerously-bypass-approvals-and-sandbox", "-c", "model_reasoning_effort=medium"])
-            self.assertIn("writer key codex", launch.argv[-1])
-            self.assertIn("Launch id:", launch.argv[-1])
-            self.assertNotIn("--session-id", launch.argv)
-            self.assertIn("--runner codex", launch.preflight)
+            self.assertIsNone(launch.cli)
+            self.assertIsNone(launch.preflight)
+            self.assertIn("Codex is reviewer-only", launch.out)
+        self.assertEqual(__import__("json").loads((REPO / ".codex/hooks.json").read_text()), {"hooks": {}})
 
 
 class LauncherPathTests(unittest.TestCase):
@@ -194,7 +192,7 @@ class LauncherCarbonTests(unittest.TestCase):
             launch = Launch(tmp, args=("muse",))
         self.assertIsNone(launch.argv)
         self.assertIsNone(launch.preflight)
-        self.assertIn("usage: scripts/unattended-run.sh [carbon|codex]", launch.out)
+        self.assertIn("usage: scripts/unattended-run.sh [carbon]", launch.out)
 
     def test_the_override_also_replaces_the_carbon_prompt(self):
         with tempfile.TemporaryDirectory() as tmp:

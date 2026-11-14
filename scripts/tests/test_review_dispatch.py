@@ -1,5 +1,6 @@
 """scripts/review-dispatch.py: the pinned routes, read-only invocation, refusals and records, with a fake Codex CLI."""
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -16,6 +17,7 @@ import unittest.mock
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 REPO_PIN = SCRIPTS.parent / ".conclave" / "reviewers.toml"
+ORCHESTRATOR_PIN = SCRIPTS / "tests/fixtures/reviewers-orchestrator.toml"
 # The repository pin as it stood before the three-pass policy (2026-11-06): older sections stay on it to their stamp.
 LEGACY_PIN = """schema_version = 1
 
@@ -1297,9 +1299,8 @@ class RepositoryPin(unittest.TestCase):
     def test_the_repository_pin_preserves_routes_and_lenses_without_effort_overrides(self):
         with open(REPO_PIN, "rb") as handle:
             pin = tomllib.load(handle)
-        self.assertEqual(pin["reviewers"], {"astra": {"cli": "codex", "model": "gpt-6-astra", "effort": "medium"},
-                                           "carbon": {"cli": "agy", "model": "gemini-pro-orchestrator"}})
-        self.assertEqual(pin["routes"], {"claude": ["astra"], "codex": ["carbon"], "gemini": ["astra"]})
+        self.assertEqual(pin["reviewers"], {"astra": {"cli": "codex", "model": "gpt-6-astra", "effort": "medium", "followup_effort": "low"}})
+        self.assertEqual(pin["routes"], {"claude": ["astra"], "gemini": ["astra"]})
         schedule = pin["schedule"]
         self.assertEqual(schedule["policy"], "three-pass")
         self.assertEqual(schedule["pass_cap"], 33)
@@ -1691,7 +1692,7 @@ class RestartedMarkerTests(StampRepo):
             ("\n" + good.replace("2026-10-30T02:30:00Z", "2026-10-30 02:30"), "malformed"),
             ("\n" + good.replace("2026-10-30T02:30:00Z", "2026-02-30T25:61:61Z"), "malformed"),
             ("\n" + good.replace(fixed[:12], fixed[:6]), "malformed"),
-            ("\n" + good.replace(fixed[:12], fixed[:12].upper()), "malformed"),
+            ("\n" + good.replace(fixed[:12], "ABCDEF123456"), "malformed"),
             ("\n" + self.line(fixed[:12], reason=""), "malformed"),
             ("\n" + good + "\n" + good, "at most one"),
             ("\n\n" + good, "directly under"),
@@ -1718,7 +1719,7 @@ class ThreePassStamp(StampRepo):
         report = self.root / self.REPORT
         report.parent.mkdir(parents=True, exist_ok=True)
         self.clock = getattr(self, "clock", 0) + 1
-        self.dispatch.record_completion(report, {**self.BASE, "effort": "medium", "lenses": list(lenses),
+        self.dispatch.record_completion(report, {**self.BASE, "effort": "low" if kind == "reconciliation" else "medium", "lenses": list(lenses),
                                                  "review": footer}, f"2026-11-06T00:{self.clock:02d}:00Z", candidate, kind)
 
     def plan_pass(self, candidate):
@@ -1758,6 +1759,51 @@ class ThreePassStamp(StampRepo):
             self.stamp(sha, **stamp)
         self.assertIn(needle, str(caught.exception))
         self.assertFalse((self.root / "docs/reviews/d00-t01-s1.json").exists(), "a refusal writes no receipt")
+
+    def test_unrouted_outage_is_refused_without_keyerror(self):
+        self.started()
+        built = self.build("a")
+        self.dispatch.record(self.root / self.REPORT,
+                             {"writer": "muse", "reviewer": None, "skipped": [], "review": None,
+                              "effort": None, "lenses": self.ROUND_LENSES}, "2026-11-06T00:01:00Z", built)
+        self.clock = 1
+        self.round_pass(built)
+        self.completion_pass(built)
+        self.refused("unrouted writer", built, number=2)
+
+    def test_orchestrator_dispatch_record_stamp_and_receipt_replay(self):
+        (self.root / ".conclave/reviewers.toml").write_text(ORCHESTRATOR_PIN.read_text(), encoding="utf-8")
+        self.write()
+        start = self.commit("start")
+        prompt = self.root / "prompt.md"
+        prompt.write_text("Review this fixture read-only.", encoding="utf-8")
+        report = self.root / self.REPORT
+
+        def run_pass(kind, candidate, footer):
+            def fake_run(argv, stdin_text, timeout, watched):
+                self.assertEqual(argv[1:3], ["--model", "gemini-pro-orchestrator"])
+                watched[0].write_text(footer, encoding="utf-8")
+                return 0, None
+            with unittest.mock.patch.object(self.dispatch, "ROOT", self.root), \
+                    unittest.mock.patch.object(self.dispatch, "_TODO_GRAPH_MOD", [self.tg]), \
+                    unittest.mock.patch.object(self.dispatch, "find_cli", return_value="agy"), \
+                    unittest.mock.patch.object(self.dispatch, "run", side_effect=fake_run), \
+                    unittest.mock.patch("sys.stdout", new_callable=io.StringIO) as output:
+                code = self.dispatch.main(["--writer", "codex", "--kind", kind, "--candidate", candidate,
+                                           "--pin", str(self.root / ".conclave/reviewers.toml"),
+                                           "--prompt", str(prompt), "--record", str(report)])
+                self.assertEqual(code, 0, output.getvalue())
+                self.assertIsNone(json.loads(output.getvalue())["effort"])
+        run_pass("plan", start, "HIGHEST: none\nPLAN: complete\nOVERALL: approve")
+        built = self.build("a")
+        run_pass("round", built, "HIGHEST: P2\nOVERALL: needs-attention")
+        run_pass("completion", built, "COMPLETION: gaps")
+        fixed = self.build("fix")
+        run_pass("reconciliation", fixed, "RECONCILIATION: complete")
+        self.assertNotIn("- Effort:", report.read_text(encoding="utf-8"))
+        receipt = self.stamp(fixed, verdict="reconciled")
+        data = json.loads((self.root / receipt).read_text(encoding="utf-8"))
+        self.tg.receipt_data_ok(data, self.REF, fixed, root=self.root, surface=False)
 
     def test_plan_round_fix_completion_stamps_and_replays(self):
         start = self.started()
@@ -1951,7 +1997,7 @@ class ThreePassStampAtAPinnedCap(ThreePassStamp):
 
 
 class ThreePassDispatch(Harness):
-    """The dispatcher under the three-pass policy: every pass at medium, in order, refused before a review is spent."""
+    """The dispatcher under the three-pass policy: reviewer-specific effort, ordered passes, refusal before spend."""
 
     FINDINGS = "docs/reviews/00-workspace/D00-T01-s1.md"
     PLAN = "HIGHEST: none\nPLAN: complete\nOVERALL: approve"
@@ -1959,7 +2005,7 @@ class ThreePassDispatch(Harness):
 
     def setUp(self):
         super().setUp()
-        (self.repo / ".conclave/reviewers.toml").write_text(REPO_PIN.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
+        (self.repo / ".conclave/reviewers.toml").write_text(ORCHESTRATOR_PIN.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
         self.findings = self.repo / self.FINDINGS
         self.git("init", "-q")
         self.section("Fixture prose.")
@@ -1984,7 +2030,14 @@ class ThreePassDispatch(Harness):
         (call,) = self.calls()
         return next(a.split("=", 1)[1] for a in call["argv"] if a.startswith("model_reasoning_effort="))
 
-    def test_plan_then_round_then_completion_all_at_medium(self):
+    def test_current_pin_retires_codex_writer(self):
+        (self.repo / ".conclave/reviewers.toml").write_text(REPO_PIN.read_text(), encoding="utf-8")
+        result, _ = self.dispatch("--writer", "codex", "--prompt", str(self.prompt))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("no route for writer 'codex'", result.stderr)
+        self.assertEqual(self.calls(), [])
+
+    def test_plan_round_completion_medium_and_reconciliation_low(self):
         seen = []
         for kind, say in (("plan", self.PLAN), ("round", self.ROUND), ("completion", "COMPLETION: complete")):
             result, summary = self.run_pass(kind, say)
@@ -2035,7 +2088,7 @@ class ThreePassDispatch(Harness):
         first = self.commit("repair")
         result, _ = self.run_pass("reconciliation", "RECONCILIATION: gaps", candidate=first)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.effort(), "medium")
+        self.assertEqual(self.effort(), "low")
         result, _ = self.run_pass("reconciliation", "RECONCILIATION: complete", candidate=self.head)
         self.assertEqual(result.returncode, 2)
         self.assertIn("does not descend from the last pass", result.stderr)
@@ -2072,7 +2125,7 @@ class ThreePassDispatch(Harness):
         # A complete recorded on the changed section before that refusal existed is void.
         self.module().record_completion(self.findings, {
             "writer": "claude", "reviewer": "astra", "cli": "codex", "model": "gpt-6-astra", "skipped": [],
-            "effort": "medium", "lenses": ["adversarial", "integration", "plan-delivery", "record"],
+            "effort": "low", "lenses": ["adversarial", "integration", "plan-delivery", "record"],
             "review": "RECONCILIATION: complete"}, "2026-11-12T00:00:00Z", extended, "reconciliation")
         result, _ = self.run_pass("reconciliation", "RECONCILIATION: complete", candidate=extended)
         self.assertEqual(result.returncode, 2)
@@ -2114,7 +2167,7 @@ class ThreePassDispatch(Harness):
         module = self.module()
         for i in range(module.REVIEW_PASS_CAP - 4):
             module.record_completion(self.findings, {"writer": "claude", "reviewer": "astra", "cli": "codex",
-                                                     "model": "gpt-6-astra", "effort": "medium", "skipped": [],
+                                                     "model": "gpt-6-astra", "effort": "low", "skipped": [],
                                                      "lenses": [], "review": "RECONCILIATION: gaps"},
                                      f"2026-11-09T01:{i:02d}:00Z", self.head, "reconciliation")
         result, _ = self.run_pass("reconciliation", "RECONCILIATION: gaps")
@@ -2169,6 +2222,46 @@ class ThreePassDispatch(Harness):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual((summary["reviewer"], self.effort()), ("astra", "high"))
 
+    def test_schedule_free_followups_and_outage_retry(self):
+        pin = self.repo / ".conclave/reviewers.toml"
+        pin.write_text(ORCHESTRATOR_PIN.read_text(encoding="utf-8").split("\n[schedule]", 1)[0], encoding="utf-8")
+        record = self.repo / "standalone.md"
+        for verdict, expected_code, expected_effort in (("OVERALL: blocked", 1, "medium"),
+                                                        (self.ROUND, 0, "medium"),
+                                                        (self.ROUND, 0, "low")):
+            self.log.unlink(missing_ok=True)
+            result, summary = self.dispatch("--writer", "claude", "--prompt", str(self.prompt),
+                                            "--record", str(record), codex="say", say=verdict)
+            self.assertEqual(result.returncode, expected_code, result.stderr)
+            self.assertEqual(self.effort(), expected_effort)
+            if expected_code == 0:
+                self.assertEqual(summary["effort"], expected_effort)
+
+    def test_effort_suffixed_agy_requires_every_scheduled_effort(self):
+        module = self.module()
+        text = ORCHESTRATOR_PIN.read_text(encoding="utf-8").replace("gemini-pro-orchestrator", "gemini-4-carbon-medium")
+        for candidate in (text, text.replace('[schedule.plan]\n', '[schedule.plan]\neffort = "medium"\n')):
+            with self.assertRaisesRegex(module.Refused, "every scheduled pass"):
+                module.load_pin(data=candidate.encode())
+
+    def test_reviewer_effort_is_scoped_and_historical_overrides_win(self):
+        module = self.module()
+        pin = module.load_pin(ORCHESTRATOR_PIN)
+        astra, carbon = pin["reviewers"]["astra"], pin["reviewers"]["carbon"]
+        for kind in ("plan", "round", "completion", "reconciliation"):
+            step = module.scheduled(pin["schedule"], kind, [], False)
+            self.assertEqual(module.review_effort(astra, step, kind),
+                             "low" if kind == "reconciliation" else "medium")
+            self.assertIsNone(module.review_effort(carbon, step, kind))
+            self.assertEqual(module.review_effort(astra, {**step, "effort": "high"}, kind), "high")
+        text = ORCHESTRATOR_PIN.read_text(encoding="utf-8")
+        for value in ('"invalid"', 'true', '7'):
+            with self.subTest(value=value), self.assertRaises(module.Refused):
+                module.load_pin(data=text.replace('followup_effort = "low"', f'followup_effort = {value}').encode())
+        with self.assertRaises(module.Refused):
+            module.load_pin(data=text.replace('model = "gemini-pro-orchestrator"',
+                                             'model = "gemini-pro-orchestrator"\nfollowup_effort = "low"').encode())
+
     def test_codex_work_goes_to_carbon_read_only_through_a_prompt_file(self):
         fake = Path(self._tmp.name) / "fake_cli.py"
         write_launcher(self.bin, "agy", fake)
@@ -2185,7 +2278,7 @@ class ThreePassDispatch(Harness):
 
     def test_orchestrator_rejects_scheduled_effort_overrides(self):
         module = self.module()
-        text = REPO_PIN.read_text(encoding="utf-8")
+        text = ORCHESTRATOR_PIN.read_text(encoding="utf-8")
         loaded = module.load_pin(data=text.encode())
         self.assertEqual(loaded["routes"]["codex"], ["carbon"])
         high = text.replace('[[schedule.rounds]]\n', '[[schedule.rounds]]\neffort = "high"\n')
@@ -2208,11 +2301,17 @@ class ThreePassDispatch(Harness):
         self.assertEqual(self.effort(), "medium")
         other = self.repo / "docs/reviews/standalone-note.md"
         other.parent.mkdir(parents=True, exist_ok=True)
-        for _ in range(2):
+        self.log.unlink(missing_ok=True)
+        result, _ = self.dispatch("--writer", "claude", "--prompt", str(self.prompt), "--record", str(other),
+                                  codex="say", say="OVERALL: blocked")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(self.effort(), "medium")
+        for expected_effort in ("medium", "low"):
             self.log.unlink(missing_ok=True)
             result, _ = self.dispatch("--writer", "claude", "--prompt", str(self.prompt), "--record", str(other),
                                       codex="say", say=self.ROUND)
             self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(self.effort(), expected_effort)
 
 
 if __name__ == "__main__":

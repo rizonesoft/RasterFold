@@ -39,7 +39,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 FAILURES: list[str] = []
 # Each runner and the CLI its launch execs (docs/unattended-run.md).
-RUNNERS = {"claude": "claude", "gemini": "agy", "codex": "codex"}
+RUNNERS = {"claude": "claude", "gemini": "agy"}
 CANCEL_SIGNALS = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
 
 
@@ -475,7 +475,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # The writer and its one reviewer under the three-pass schedule (claude and gemini -> astra via codex).
     claude = options.runner == "claude"
-    for cli in (RUNNERS[options.runner], "agy" if options.runner == "codex" else "codex"):
+    for cli in (RUNNERS[options.runner], "codex"):
         check(f"{cli} on PATH", shutil.which(cli) is not None, shutil.which(cli) or "missing")
 
     if claude:
@@ -488,11 +488,6 @@ def main(argv: list[str] | None = None) -> int:
         check("workspace trusted", workspace_trusted(read_json(CLAUDE_STATE), ROOT),
               "hasTrustDialogAccepted for this checkout in ~/.claude.json (open it once in an attended session)")
         check("session cron tools enabled", cron_enabled(os.environ), "CLAUDE_CODE_DISABLE_CRON must be unset: the heartbeat is CronCreate")
-    elif options.runner == "codex":
-        hooks = read_json(ROOT / ".codex/hooks.json")
-        commands = [h.get("command", "") for group in hooks.get("hooks", {}).get("Stop", []) for h in group.get("hooks", [])]
-        check("campaign Stop hook wired", any("codex-campaign-hook.py" in c for c in commands),
-              ".codex/hooks.json hooks.Stop runs codex-campaign-hook.py")
     else:
         # Antigravity reads its hooks from .agents/hooks.json; the heartbeat is its own schedule tool.
         check("campaign Stop hook wired", stop_hook_wired(read_json(ROOT / ".agents/hooks.json")),

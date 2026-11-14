@@ -1,6 +1,6 @@
 # Agent Skills and Rules Structure
 
-This repository uses Claude Code (`claude`), OpenAI Codex (`codex`) and Google Antigravity (`gemini`) as writers. Independent reviews route Codex work to Orchestrator (Carbon) through the Antigravity CLI and other writers' work to GPT-6 Astra through the Codex CLI through `scripts/review-dispatch.py` and `.conclave/reviewers.toml`.
+This repository uses Claude Code (`claude`) and Google Antigravity (`gemini`) as writers, with OpenAI Codex as reviewer only. Independent reviews route both writers' work to GPT-6 Astra through the Codex CLI using `scripts/review-dispatch.py` and `.conclave/reviewers.toml`.
 
 ## Skill Locations
 
@@ -30,7 +30,7 @@ Use the word "rules" carefully:
 
 - Durable project behavior belongs in [`AGENTS.md`](../AGENTS.md).
 - Antigravity-specific entry instructions live in [`GEMINI.md`](../GEMINI.md) and rules in `.agents/rules/` (no custom Antigravity subagents or plugins are defined under `.agents/`, since `Orchestrator (Carbon)` handles Carbon/Hydrogen orchestration and built-in read-only `research` subagent delegation natively).
-- The campaign `Stop` hook is wired in `.agents/hooks.json`, `.claude/settings.json` and `.codex/hooks.json`; each uses `scripts/campaign_guard.py`.
+- The campaign `Stop` hook is wired in `.agents/hooks.json` and `.claude/settings.json`; each uses `scripts/campaign_guard.py`.
 - Markdown checklists or rule references belong in a skill `references/` folder or in `docs/`.
 
 ## Adding a New Skill

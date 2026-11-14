@@ -5,13 +5,12 @@ description: Get an independent review of your work from the reviewer pinned for
 
 # Independent review
 
-Your own review is not enough for a nontrivial change: a different model reviews it. Codex-written work goes to Orchestrator (Carbon) via the Antigravity CLI; Claude Code and Antigravity (`gemini`) work goes to GPT-6 Astra via the Codex CLI. `.conclave/reviewers.toml` pins one reviewer per writer with no fallback. The shared `[schedule]` sets each pass's lenses with no effort override: Astra retains reviewer-level `medium`, while Orchestrator manages its own effort. A TODO section takes three passes in order (plan, one combined adversarial round, completion), which the dispatcher enforces; see `review-todo-section`. A standalone review of other work takes the round's lenses and has no order.
+Your own review is not enough for a nontrivial change: a different model reviews it. Claude Code and Antigravity (`gemini`) work goes to GPT-6 Astra via the Codex CLI. Codex is reviewer-only; Antigravity is not a reviewer. `.conclave/reviewers.toml` pins one reviewer per writer with no fallback. The shared `[schedule]` sets each pass's lenses with no effort override. A TODO section takes three passes in order (plan, one combined adversarial round, completion), which the dispatcher enforces; see `review-todo-section`. A standalone review of other work takes the round's lenses and has no order. For Astra, a section's plan, adversarial and completion passes run at `medium`, and its reconciliation passes run at `low`; standalone reviews use `medium` until one returns a review, then `low`. Outages do not advance effort. Use the dispatcher default timeout of 1800 seconds for full candidate reviews.
 
 | Work written by | Reviewer | Fallback |
 | --- | --- | --- |
-| Claude Code (`claude`) | GPT-6 Astra (`codex`, reviewer-level `medium` effort) | none |
-| Antigravity (`gemini`) | GPT-6 Astra (`codex`, reviewer-level `medium` effort) | none |
-| Codex (`codex`) | Orchestrator (Carbon) (`agy`, `gemini-pro-orchestrator`, model-managed effort) | none |
+| Claude Code (`claude`) | GPT-6 Astra (`codex`, plan/first adversarial/completion `medium`, reconciliation/later rounds `low`) | none |
+| Antigravity (`gemini`) | GPT-6 Astra (`codex`, plan/first adversarial/completion `medium`, reconciliation/later rounds `low`) | none |
 
 The pin refuses any other writer, any other reviewer CLI, a second reviewer in a route, and a reviewer of the writer's own model family.
 
@@ -22,7 +21,7 @@ The pin refuses any other writer, any other reviewer CLI, a second reviewer in a
 3. Run the round:
 
    ```bash
-   python3 scripts/review-dispatch.py --writer <this session's key: claude|codex|gemini> --prompt <scratch>/review-prompt.md --record docs/reviews/<topic>.md
+   python3 scripts/review-dispatch.py --writer <this session's key: claude|gemini> --prompt <scratch>/review-prompt.md --record docs/reviews/<topic>.md
    ```
 
    On Windows use `python` instead of `python3`; the command is otherwise the same.

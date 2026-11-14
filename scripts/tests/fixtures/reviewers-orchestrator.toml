@@ -1,0 +1,31 @@
+schema_version = 1
+
+[reviewers.astra]
+cli = "codex"
+model = "gpt-6-astra"
+effort = "medium"
+followup_effort = "low"
+
+[reviewers.carbon]
+cli = "agy"
+model = "gemini-pro-orchestrator"
+
+[routes]
+claude = ["astra"]
+codex = ["carbon"]
+gemini = ["astra"]
+
+[schedule]
+policy = "three-pass"
+pass_cap = 33
+
+[schedule.plan]
+lenses = ["plan"]
+
+[[schedule.rounds]]
+lenses = ["adversarial", "integration", "source-defect", "plan-delivery", "consistency", "record", "quality", "optimization", "design"]
+
+[schedule.completion]
+
+[schedule.reconciliation]
+lenses = ["adversarial", "integration", "plan-delivery", "record"]

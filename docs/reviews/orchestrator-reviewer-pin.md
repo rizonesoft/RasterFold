@@ -1,5 +1,7 @@
 # Orchestrator reviewer pin
 
+Historical record for commit `50555bd`. The test counts and Astra effort policy below describe that candidate, not subsequent changes. See `docs/reviews/orchestrator-reviewer-followup.md` for the later policy and live review.
+
 The operator requested one bounded live dispatcher review and a local main commit without pushing. The invocation used `--writer codex --timeout 180`, routing to `carbon` (`gemini-pro-orchestrator` through `agy`) without an effort override. It exited 1 after the timeout. No independent approval was obtained, and no section was stamped.
 
 The supplied working-tree patch had SHA256 `d87992a536fd98adb3812d5d26627bb42ec8dd3e424b967d04e93d70645dd09e`. README.md and GEMINI.md reviewer wording and documentation receipts were updated afterwards; no approval is claimed for either candidate.

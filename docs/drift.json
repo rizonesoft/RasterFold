@@ -1551,7 +1551,7 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "Re-read README.md, especially Development and automation, against AGENTS.md, .conclave/reviewers.toml and scripts/review-dispatch.py on 2026-11-14: Codex now uses Orchestrator (Carbon) gemini-pro-orchestrator via agy; other writer routes and codec claims are unchanged.",
+      "evidence": "2026-11-14 operator retirement: re-read README.md against .conclave/reviewers.toml, scripts/review-dispatch.py, scripts/unattended-run.sh, scripts/unattended-preflight.py, scripts/install-launchers.ps1 and .codex/hooks.json. Only Claude Code and Antigravity write; Astra through Codex is the only reviewer; Codex writer launcher is refused, native hook disabled and desktop shortcut removed. Review lenses and pass cap remain unchanged.",
       "sources": {
         "include/rasterfold.h": "e5e9eecb93e59b3cfb6b00674006e03ba887c671516e6682292ef5753b015379",
         "src/rf.h": "7f58b508d0e3bb10cc2e1c57cda78e3552a2976a99928e0dfa1df16b91e0117d",
@@ -1559,35 +1559,35 @@
         "scripts/build.py": "236a43c711a4b9e667c47b9e06ab04d62c8721db8d126740441de7762276eacc",
         "scripts/package.py": "f030a89836d12e610d9ad4a762bf073c975e6fcaf6bdb83ef09bc174e3f37973",
         "scripts/check-all.py": "ec0f58046fb6beb5e9b522530aa51a4e3eff03bd546a17a09db53e53ca8a5e9a",
-        "README.md": "4b1c73d53b49eb836dc59ef47c1358155e14acbdae4b798ce3ca9c79572dc62d",
-        "AGENTS.md": "c94f5ce63ee330e2c23a3137a0ef35bcae0d1a21f798138802d1f994993e6ccd",
-        ".conclave/reviewers.toml": "6baf91e027c3478f68eec9cbeba4b8a918332186b0d5e76a45ccd07a108d2661",
-        "scripts/review-dispatch.py": "b8686adb389f57756e5696da8a2d3a27dc31692c7c5b85d2cff4d58e2ee0de95"
+        "README.md": "cef54240f945c0fa7cf92b8cc7f1082d1d4157b230c4a343a7ac57c2f419d7d5",
+        "AGENTS.md": "f776d22098b6728ea7cdb37dc5f0c858b6f096a01274bf87250ed8f81fe3cdd4",
+        ".conclave/reviewers.toml": "39a3e6eb7681f2dc9e154e8c883d8021fd49919fb01ae7cb0590becd3fd385a3",
+        "scripts/review-dispatch.py": "949f1f36cfca7d37fa36fea0f78b0357cbb66dfd53c4521b9fc6523a2e33486c"
       },
       "review": "Author-attested: 2026-10-25 re-read README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "AGENTS.md": {
-      "evidence": "Re-read AGENTS.md reviewer policy and kit adaptations against .conclave/reviewers.toml and scripts/review-dispatch.py on 2026-11-14: carbon now pins gemini-pro-orchestrator via agy, scheduled effort overrides are absent, Astra retains medium, historical pins, lenses and cap 33 are preserved.",
+      "evidence": "2026-11-14 operator retirement: re-read AGENTS.md against .conclave/reviewers.toml, scripts/review-dispatch.py, scripts/unattended-run.sh, scripts/unattended-preflight.py, scripts/install-launchers.ps1 and .codex/hooks.json. Only Claude Code and Antigravity write; Astra through Codex is the only reviewer; Codex writer launcher is refused, native hook disabled and desktop shortcut removed. Review lenses and pass cap remain unchanged.",
       "sources": {
         "include/rasterfold.h": "e5e9eecb93e59b3cfb6b00674006e03ba887c671516e6682292ef5753b015379",
         "src/rf.h": "7f58b508d0e3bb10cc2e1c57cda78e3552a2976a99928e0dfa1df16b91e0117d",
         "toolchain.json": "fd7b0b2424a2ffdb86095da76e4b975d604741fb271fd9b70e4c53efe9f5e3de",
-        ".conclave/reviewers.toml": "6baf91e027c3478f68eec9cbeba4b8a918332186b0d5e76a45ccd07a108d2661",
-        "scripts/review-dispatch.py": "b8686adb389f57756e5696da8a2d3a27dc31692c7c5b85d2cff4d58e2ee0de95",
-        "AGENTS.md": "c94f5ce63ee330e2c23a3137a0ef35bcae0d1a21f798138802d1f994993e6ccd",
-        ".codex/hooks.json": "c67e7762d0970280c653a74601012d01971d05f677182ae70e4eda0aa783c150",
+        ".conclave/reviewers.toml": "39a3e6eb7681f2dc9e154e8c883d8021fd49919fb01ae7cb0590becd3fd385a3",
+        "scripts/review-dispatch.py": "949f1f36cfca7d37fa36fea0f78b0357cbb66dfd53c4521b9fc6523a2e33486c",
+        "AGENTS.md": "f776d22098b6728ea7cdb37dc5f0c858b6f096a01274bf87250ed8f81fe3cdd4",
+        ".codex/hooks.json": "2caa02c09946ea197fb9d159f013de70c358ed321143388f8a02524c09de7b45",
         "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",
         "scripts/campaign_guard.py": "564720b1ae8c3999bca60b1a00814ef60ff4c51f636a42e4953f9cbbadfd54d3"
       }
     },
     "GEMINI.md": {
-      "evidence": "Re-read GEMINI.md against AGENTS.md, .conclave/reviewers.toml and scripts/review-dispatch.py on 2026-11-14: Codex reviewer is Orchestrator (Carbon) gemini-pro-orchestrator via agy; gemini writer continues to Astra, native campaign orchestration is unchanged.",
+      "evidence": "2026-11-14 operator retirement: re-read GEMINI.md against .conclave/reviewers.toml, scripts/review-dispatch.py, scripts/unattended-run.sh, scripts/unattended-preflight.py, scripts/install-launchers.ps1 and .codex/hooks.json. Only Claude Code and Antigravity write; Astra through Codex is the only reviewer; Codex writer launcher is refused, native hook disabled and desktop shortcut removed. Review lenses and pass cap remain unchanged.",
       "sources": {
-        "AGENTS.md": "c94f5ce63ee330e2c23a3137a0ef35bcae0d1a21f798138802d1f994993e6ccd",
-        ".conclave/reviewers.toml": "6baf91e027c3478f68eec9cbeba4b8a918332186b0d5e76a45ccd07a108d2661",
-        "scripts/review-dispatch.py": "b8686adb389f57756e5696da8a2d3a27dc31692c7c5b85d2cff4d58e2ee0de95",
+        "AGENTS.md": "f776d22098b6728ea7cdb37dc5f0c858b6f096a01274bf87250ed8f81fe3cdd4",
+        ".conclave/reviewers.toml": "39a3e6eb7681f2dc9e154e8c883d8021fd49919fb01ae7cb0590becd3fd385a3",
+        "scripts/review-dispatch.py": "949f1f36cfca7d37fa36fea0f78b0357cbb66dfd53c4521b9fc6523a2e33486c",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
-        "GEMINI.md": "5e00576b9f9928e192cde5f35b76755a759a48e4399fc3f905558f00ee29db57"
+        "GEMINI.md": "0be703808d81e3b8b5498dbe59f85d9ba521b3ce57fde01d4593ac48a058d648"
       }
     },
     "CONTRIBUTING.md": {
@@ -1681,15 +1681,15 @@
       }
     },
     "docs/agent-skills-and-rules-structure.md": {
-      "evidence": "Re-read all 56 lines against AGENTS.md, GEMINI.md, .agents/skills/, .conclave/reviewers.toml and scripts/review-dispatch.py on 2026-11-14: reviewer description now names Orchestrator (Carbon), other writer routes and skill locations remain accurate.",
+      "evidence": "2026-11-14 operator retirement: re-read docs/agent-skills-and-rules-structure.md against .conclave/reviewers.toml, scripts/review-dispatch.py, scripts/unattended-run.sh, scripts/unattended-preflight.py, scripts/install-launchers.ps1 and .codex/hooks.json. Only Claude Code and Antigravity write; Astra through Codex is the only reviewer; Codex writer launcher is refused, native hook disabled and desktop shortcut removed. Review lenses and pass cap remain unchanged.",
       "sources": {
-        "AGENTS.md": "c94f5ce63ee330e2c23a3137a0ef35bcae0d1a21f798138802d1f994993e6ccd",
-        "GEMINI.md": "5e00576b9f9928e192cde5f35b76755a759a48e4399fc3f905558f00ee29db57",
-        ".conclave/reviewers.toml": "6baf91e027c3478f68eec9cbeba4b8a918332186b0d5e76a45ccd07a108d2661",
+        "AGENTS.md": "f776d22098b6728ea7cdb37dc5f0c858b6f096a01274bf87250ed8f81fe3cdd4",
+        "GEMINI.md": "0be703808d81e3b8b5498dbe59f85d9ba521b3ce57fde01d4593ac48a058d648",
+        ".conclave/reviewers.toml": "39a3e6eb7681f2dc9e154e8c883d8021fd49919fb01ae7cb0590becd3fd385a3",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
-        "scripts/review-dispatch.py": "b8686adb389f57756e5696da8a2d3a27dc31692c7c5b85d2cff4d58e2ee0de95",
-        "docs/agent-skills-and-rules-structure.md": "903dadd194c3406b0221673aab67a78980a525ed4710c74a7447127502a10041",
-        ".codex/hooks.json": "c67e7762d0970280c653a74601012d01971d05f677182ae70e4eda0aa783c150",
+        "scripts/review-dispatch.py": "949f1f36cfca7d37fa36fea0f78b0357cbb66dfd53c4521b9fc6523a2e33486c",
+        "docs/agent-skills-and-rules-structure.md": "f6aea1ffd5c6191d24f3f02537ac3562c425846daf4544989bee806419c10a0d",
+        ".codex/hooks.json": "2caa02c09946ea197fb9d159f013de70c358ed321143388f8a02524c09de7b45",
         "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",
         "scripts/campaign_guard.py": "564720b1ae8c3999bca60b1a00814ef60ff4c51f636a42e4953f9cbbadfd54d3"
       }

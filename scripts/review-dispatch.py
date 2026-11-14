@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Run one independent review round with the reviewer pinned in .conclave/reviewers.toml.
 
-    python3 scripts/review-dispatch.py --writer <claude|codex|gemini> --prompt review-prompt.md --record docs/reviews/x.md
-    python3 scripts/review-dispatch.py --kind completion --candidate <40-char SHA> --writer <claude|codex|gemini> \
+    python3 scripts/review-dispatch.py --writer <claude|gemini> --prompt review-prompt.md --record docs/reviews/x.md
+    python3 scripts/review-dispatch.py --kind completion --candidate <40-char SHA> --writer <claude|gemini> \
         --prompt completion-prompt.md --record docs/reviews/x.md     the one-pass completion and excellence review
     python3 scripts/review-dispatch.py --check-pin [--json] [--pin <path>]     the pin's verdict; runs no reviewer
     python3 scripts/review-dispatch.py --list-rounds [--json] [--records <dir>]  recorded rounds; runs no reviewer
 
-`--writer` is the agent whose work is under review: `claude`, `codex` or `gemini`. Every writer's route in the
+`--writer` is the agent whose work is under review: `claude` or `gemini`. Codex is reviewer-only; retired writer keys remain readable for historical pins. Every writer's route in the
 pin names exactly one reviewer of a different model family, with no fallback.
 A reviewer that is not installed, exits non-zero, times out,
 returns nothing, or ends its reply `OVERALL: blocked` (it could not reach the candidate, for example a sandbox that
@@ -37,7 +37,7 @@ it asks whether building the section exactly as planned produces a 100% complete
 
 The current pin's `policy = "three-pass"` (owner decision 2026-11-06) runs one plan review before the build, one
 combined adversarial round after the build and its gates, then one completion review of the final candidate. Effort overrides are optional; without one,
-the reviewer pin supplies effort (Astra: medium; Orchestrator: model-managed). A findings file named for a section (`docs/reviews/<NN-domain>/D<NN>-T<NN>-s<N>.md`) has that order enforced
+the reviewer pin supplies effort (Astra: plan, first adversarial and completion medium; reconciliation and subsequent standalone rounds low). A findings file named for a section (`docs/reviews/<NN-domain>/D<NN>-T<NN>-s<N>.md`) has that order enforced
 before a review is spent. `--kind reconciliation` (`docs/reconciliation-review-prompt.md`) is the further pass after
 a completion that returned gaps, on a candidate descending from it; it ends `RECONCILIATION: complete` or `gaps`. A
 reconciliation that returned gaps may be followed by another on a candidate descending from it, until one returns
@@ -47,7 +47,7 @@ A section stays on the policy of the pin at its plan review's candidate, so a se
 schedule and route it started under, and scripts/todo-graph.py `stamp` holds its receipt to that same pin.
 
 When the pin has a `[schedule]`, the dispatcher owns each pass's effort and lenses (owner decision 2026-10-24): the
-plan and completion passes take their scheduled effort, and a round's place in `[[schedule.rounds]]` comes from the
+plan and completion passes take a scheduled override when present, otherwise reviewer-level effort, and a round's place in `[[schedule.rounds]]` comes from the
 rounds that returned a review already recorded in the `--record` file. Rounds past that list rotate one lens per round
 through `[schedule.rotation]` (the design lens only with `--surface`), and a low-effort round whose review reads
 `HIGHEST: P1` is followed by the `[schedule.escalation]` step. The scheduled lenses are appended to the prompt and
@@ -136,7 +136,7 @@ def load_pin(path=PIN, data=None):
         # fullmatch: `$` alone also matches before a trailing newline, which would then break the round heading.
         if not NAME.fullmatch(name) or not isinstance(entry, dict):
             raise Refused(f"invalid reviewer {name!r}")
-        unknown = set(entry) - {"cli", "model", "effort"}
+        unknown = set(entry) - {"cli", "model", "effort", "followup_effort"}
         if unknown:
             raise Refused(f"reviewer {name!r} has unknown keys: {', '.join(sorted(unknown))}")
         cli, model, effort = entry.get("cli"), entry.get("model"), entry.get("effort")
@@ -149,6 +149,8 @@ def load_pin(path=PIN, data=None):
                 raise Refused(f"reviewer {name!r}: Antigravity carries the effort in the model name, so set no effort")
         elif effort not in EFFORTS[cli]:
             raise Refused(f"reviewer {name!r} needs effort = one of {', '.join(EFFORTS[cli])}")
+        if "followup_effort" in entry and (cli != "codex" or entry["followup_effort"] not in EFFORTS["codex"]):
+            raise Refused(f"reviewer {name!r}: followup_effort needs a valid Codex effort")
     routes = pin["routes"]
     if not isinstance(routes, dict) or set(routes) - set(WRITER_FAMILY):
         raise Refused(f"[routes] may only name the writers {', '.join(WRITER_FAMILY)}")
@@ -225,7 +227,10 @@ def check_agy_effort(name, model, schedule):
     """An Antigravity reviewer runs at its model name's effort whatever the schedule says, so the two must agree, or a
     pass would be recorded at an effort it did not run at."""
     steps = [schedule[k] for k in ("plan", "completion", "reconciliation", "rotation", "escalation") if k in schedule]
-    for effort in {step["effort"] for step in [*steps, *schedule["rounds"]] if "effort" in step}:
+    steps += schedule["rounds"]
+    if any(model.endswith(f"-{effort}") for effort in EFFORTS["codex"]) and any("effort" not in step for step in steps):
+        raise Refused(f"reviewer {name!r}: effort-suffixed Antigravity models need effort on every scheduled pass")
+    for effort in {step["effort"] for step in steps if "effort" in step}:
         if not model.endswith(f"-{effort}"):
             raise Refused(f"reviewer {name!r} runs at the effort in its model name {model}, but the schedule has a "
                           f"pass at {effort}")
@@ -604,7 +609,18 @@ def muse_response(path, model):
         return None, "returned malformed Muse events"
 
 
-def review(pin, writer, prompt_path, timeout, plan=None, kind="round"):
+def review_effort(reviewer, plan, kind, position=1):
+    """Resolve the actual effort once for dispatch and stamp verification; historical scheduled overrides win."""
+    if plan and plan.get("effort") is not None:
+        return plan["effort"]
+    followup = kind == "reconciliation" or (
+        kind == "round" and (plan or {}).get("position", position) > 1)
+    if followup and "followup_effort" in reviewer:
+        return reviewer["followup_effort"]
+    return reviewer.get("effort")
+
+
+def review(pin, writer, prompt_path, timeout, plan=None, kind="round", position=1):
     """Run the writer's one reviewer. Returns the summary dict: `reviewer` is None when no review came back, and
     `skipped` then names the reviewer and why (there is no fallback). `plan` is the scheduled step (see `scheduled`):
     its optional effort overrides the reviewer's default, and its lenses are appended to the prompt and recorded."""
@@ -617,7 +633,7 @@ def review(pin, writer, prompt_path, timeout, plan=None, kind="round"):
         raise Refused("the review prompt contains a NUL byte; no reviewer can be given it")
     (name,) = pin["routes"][writer]
     reviewer = pin["reviewers"][name]
-    effort = (plan.get("effort") if plan else None) or reviewer.get("effort")
+    effort = review_effort(reviewer, plan, kind, position)
     lenses = plan["lenses"] if plan else []
     if lenses:
         prompt = prompt.rstrip("\n") + lens_block({**plan, "effort": effort})
@@ -1177,19 +1193,21 @@ def main(argv=None):
         elif args.kind == "reconciliation":
             raise Refused("this section's pin has no reconciliation pass; only the three-pass policy takes one")
         plan = None
+        rounds = []
+        needs_position = "schedule" in pin or any(
+            "followup_effort" in pin["reviewers"][name] for name in pin["routes"].get(args.writer, []))
+        if args.record and args.kind == "round" and needs_position:
+            # Read prior returned rounds even without a shared schedule: reviewer-level follow-up effort uses them.
+            existing = existing_findings(Path(args.record), "round")
+            rounds = read_rounds(existing)
+            if rounds is None:
+                raise Unrecorded(f"{args.record} cannot be read back (a round heading or line is not in the "
+                                 f"format --record writes{unreadable_heading(existing)}; {RESERVED_NAMES}), so "
+                                 f"no round was run")
         if "schedule" in pin:
-            rounds = []
-            if args.record and args.kind == "round":
-                # The position in the schedule comes from the rounds already recorded; a file that cannot be read
-                # back is refused here, before a review is spent that could not be recorded.
-                existing = existing_findings(Path(args.record), "round")
-                rounds = read_rounds(existing)
-                if rounds is None:
-                    raise Unrecorded(f"{args.record} cannot be read back (a round heading or line is not in the "
-                                     f"format --record writes{unreadable_heading(existing)}; {RESERVED_NAMES}), so "
-                                     f"no round was run")
             plan = scheduled(pin["schedule"], args.kind, rounds, args.surface)
-        result = review(pin, args.writer, args.prompt, args.timeout, plan, args.kind)
+        position = 1 + sum(returned_review(entry) for entry in rounds)
+        result = review(pin, args.writer, args.prompt, args.timeout, plan, args.kind, position)
     except (Refused, Unrecorded, OSError) as exc:
         print("review-dispatch refused: " + str(exc), file=sys.stderr)
         return 2

@@ -7099,11 +7099,12 @@ def schedule_ok(root: Path, data: dict, ref: str, surface: bool) -> None:
             f"({want[2]} via {want[1]}) pinned for writer {writer!r} in {PIN_PATH}: {ref}",
         )
 
-    def _check(where: str, recorded: dict, expected: dict) -> None:
+    def _check(where: str, recorded: dict, expected: dict, kind: str) -> None:
         _check_route(where, recorded)
+        require(recorded.get("writer") in pin["routes"], f"{where} has unrouted writer {recorded.get('writer')!r}: {ref}")
         got = (recorded["effort"], list(recorded["lenses"] or []))
         reviewer = pin["reviewers"][pin["routes"][recorded["writer"]][0]]
-        want = (expected["effort"] or reviewer.get("effort"), expected["lenses"])
+        want = (dispatch.review_effort(reviewer, expected, kind), expected["lenses"])
         position = (
             f" (position {expected['position']}{', escalated' if expected['escalated'] else ''})"
             if expected["position"]
@@ -7117,7 +7118,7 @@ def schedule_ok(root: Path, data: dict, ref: str, surface: bool) -> None:
     plan_report = data["plan"]["report"]
     for entry in dispatch.read_plans((Path(root) / plan_report).read_bytes().decode("utf-8")):
         if dispatch.returned_one_pass(entry, "plan"):
-            _check(f"the plan review in {plan_report}", entry, dispatch.scheduled(schedule, "plan", [], surface))
+            _check(f"the plan review in {plan_report}", entry, dispatch.scheduled(schedule, "plan", [], surface), "plan")
     completion = data["completion"]["report"]
     found = dispatch.read_findings((Path(root) / completion).read_bytes().decode("utf-8"))
     completions = found["completions"]
@@ -7136,16 +7137,16 @@ def schedule_ok(root: Path, data: dict, ref: str, surface: bool) -> None:
         for entry in found["reconciliations"]:
             if dispatch.returned_one_pass(entry, "reconciliation"):
                 _check(f"the reconciliation review in {completion}", entry,
-                       dispatch.scheduled(schedule, "reconciliation", [], surface))
+                       dispatch.scheduled(schedule, "reconciliation", [], surface), "reconciliation")
         three_pass_ok(root, data, ref, found, dispatch.review_pass_cap(schedule))
     for entry in completions:
         if dispatch.returned_one_pass(entry, "completion"):
-            _check(f"the completion review in {completion}", entry, dispatch.scheduled(schedule, "completion", [], surface))
+            _check(f"the completion review in {completion}", entry, dispatch.scheduled(schedule, "completion", [], surface), "completion")
     for report in dict.fromkeys(r["report"] for r in data["reviews"]):
         recorded = dispatch.read_rounds((Path(root) / report).read_bytes().decode("utf-8"))
         for i, entry in enumerate(recorded):
             if dispatch.returned_review(entry) or entry.get("reviewer") is None:
-                _check(f"{report} round {entry['number']}", entry, dispatch.scheduled(schedule, "round", recorded[:i], surface))
+                _check(f"{report} round {entry['number']}", entry, dispatch.scheduled(schedule, "round", recorded[:i], surface), "round")
             else:
                 _check_route(f"{report} round {entry['number']}", entry)
 

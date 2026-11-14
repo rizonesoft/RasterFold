@@ -30,10 +30,11 @@
 # heartbeat script are removed.
 # A section keeps the pin at its plan review's candidate, so sections already under review finish on their own rules.
 
-# Owner decision 2026-11-14: Codex keeps the carbon route, now Orchestrator (Carbon), gemini-pro-orchestrator
-# through agy. No scheduled effort overrides: Orchestrator chooses its own effort; Astra retains its reviewer-level
-# medium effort. Lenses, pass cap and other routes are unchanged. Restore the prior model and scheduled medium
-# fields to reverse this decision. Historical sections retain their plan candidate pin.
+# Owner decision 2026-11-14: only Claude Code and Antigravity write; Codex is reviewer-only.
+# Both writers route to Astra through codex, with no fallback. Plan, first adversarial and completion use medium;
+# reconciliation and later standalone rounds use low. Lenses and the 33-pass cap are unchanged.
+# Historical pins remain readable. Restoring Codex writing requires restoring its independent reviewer route,
+# launcher, desktop shortcut and native hook; no Antigravity reviewer is active now.
 
 schema_version = 1
 
@@ -41,14 +42,10 @@ schema_version = 1
 cli = "codex"
 model = "gpt-6-astra"
 effort = "medium"
-
-[reviewers.carbon]
-cli = "agy"
-model = "gemini-pro-orchestrator"
+followup_effort = "low"
 
 [routes]
 claude = ["astra"]
-codex = ["carbon"]
 gemini = ["astra"]
 
 [schedule]
