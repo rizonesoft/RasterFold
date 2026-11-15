@@ -762,5 +762,60 @@
         "-DBUILD_SHARED_LIBS=OFF"
       ]
     }
+  ],
+  "runtime_libraries": [
+    {
+      "id": "llvm-runtime",
+      "name": "LLVM C++ and Compiler Runtime (libc++, libc++abi, libunwind, compiler-rt)",
+      "version": "23.1.2",
+      "toolchain_component": "llvm-mingw",
+      "toolchain_host_component": "llvm-mingw-linux",
+      "repo": "https://github.com/mstorsjo/llvm-mingw",
+      "upstream_repo": "https://github.com/llvm/llvm-project",
+      "tag": "20260922",
+      "license": "Apache-2.0 WITH LLVM-exception AND NCSA",
+      "license_file": "converter/licenses/llvm-runtime.txt",
+      "libraries": [
+        "libc++.a",
+        "libc++abi.a",
+        "libunwind.a",
+        "libclang_rt.builtins-x86_64.a"
+      ],
+      "notes": "Statically linked C++ runtime, ABI, unwinder, and compiler builtins from pinned llvm-mingw 20260922 (-static-libstdc++ -static)."
+    },
+    {
+      "id": "mingw-w64-runtime",
+      "name": "MinGW-w64 CRT Static Runtime (crt2, mingw32, mingwex)",
+      "version": "20260922",
+      "toolchain_component": "llvm-mingw",
+      "toolchain_host_component": "llvm-mingw-linux",
+      "repo": "https://github.com/mstorsjo/llvm-mingw",
+      "upstream_repo": "https://github.com/mingw-w64/mingw-w64",
+      "tag": "20260922",
+      "license": "ZPL-2.1 AND BSD-3-Clause AND MIT AND ISC",
+      "license_file": "converter/licenses/mingw-w64-runtime.txt",
+      "libraries": [
+        "libmingw32.a",
+        "libmingwex.a",
+        "crt2.o"
+      ],
+      "notes": "Statically linked MinGW-w64 CRT startup, math, gdtoa, getopt, and UCRT import-glue objects from pinned llvm-mingw 20260922."
+    },
+    {
+      "id": "winpthreads",
+      "name": "MinGW-w64 winpthreads",
+      "version": "20260922",
+      "toolchain_component": "llvm-mingw",
+      "toolchain_host_component": "llvm-mingw-linux",
+      "repo": "https://github.com/mstorsjo/llvm-mingw",
+      "upstream_repo": "https://github.com/mingw-w64/mingw-w64",
+      "tag": "20260922",
+      "license": "MIT AND BSD-3-Clause",
+      "license_file": "converter/licenses/winpthreads.txt",
+      "libraries": [
+        "libwinpthread.a"
+      ],
+      "notes": "Statically linked Windows POSIX threads runtime from pinned llvm-mingw 20260922 (-static)."
+    }
   ]
 }

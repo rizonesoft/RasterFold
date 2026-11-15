@@ -492,6 +492,78 @@
         }
       ],
       "comment": "role=transitive; owner=D10 T01 \u00a72; license_file=converter/licenses/zlib.txt; license_excerpt=--- zlib-1.4/LICENSE ---"
+    },
+    {
+      "SPDXID": "SPDXRef-runtime-llvm-runtime",
+      "name": "llvm-runtime",
+      "versionInfo": "23.1.2",
+      "downloadLocation": "https://github.com/mstorsjo/llvm-mingw/releases/download/20260922/llvm-mingw-20260922-ucrt-x86_64.zip",
+      "filesAnalyzed": false,
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "e3ad77d117a4bea19a7a3b333341824d79a5a371004a10e25b8504e7b3047666"
+        }
+      ],
+      "licenseConcluded": "Apache-2.0 WITH LLVM-exception AND NCSA",
+      "licenseDeclared": "Apache-2.0 WITH LLVM-exception AND NCSA",
+      "externalRefs": [
+        {
+          "referenceCategory": "OTHER",
+          "referenceType": "vcs",
+          "referenceLocator": "https://github.com/llvm/llvm-project"
+        }
+      ],
+      "comment": "runtime_archives=libc++.a,libc++abi.a,libunwind.a,libclang_rt.builtins-x86_64.a; toolchain=llvm-mingw; license_file=converter/licenses/llvm-runtime.txt; license_excerpt=--- llvm-mingw-20260922/LICENSE.TXT ---",
+      "sourceInfo": "Linux cross-toolchain archive: https://github.com/mstorsjo/llvm-mingw/releases/download/20260922/llvm-mingw-20260922-ucrt-ubuntu-22.04-x86_64.tar.xz (sha256:bb7bb7654b33d5aa8712acb837c963b2e0c56352560c76105270a3268c665c21)"
+    },
+    {
+      "SPDXID": "SPDXRef-runtime-mingw-w64-runtime",
+      "name": "mingw-w64-runtime",
+      "versionInfo": "20260922",
+      "downloadLocation": "https://github.com/mstorsjo/llvm-mingw/releases/download/20260922/llvm-mingw-20260922-ucrt-x86_64.zip",
+      "filesAnalyzed": false,
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "e3ad77d117a4bea19a7a3b333341824d79a5a371004a10e25b8504e7b3047666"
+        }
+      ],
+      "licenseConcluded": "ZPL-2.1 AND BSD-3-Clause AND MIT AND ISC",
+      "licenseDeclared": "ZPL-2.1 AND BSD-3-Clause AND MIT AND ISC",
+      "externalRefs": [
+        {
+          "referenceCategory": "OTHER",
+          "referenceType": "vcs",
+          "referenceLocator": "https://github.com/mingw-w64/mingw-w64"
+        }
+      ],
+      "comment": "runtime_archives=libmingw32.a,libmingwex.a,crt2.o; toolchain=llvm-mingw; license_file=converter/licenses/mingw-w64-runtime.txt; license_excerpt=--- llvm-mingw-20260922/x86_64-w64-mingw32/share/mingw32/COPYING.MinGW-w64-runtime.txt ---",
+      "sourceInfo": "Linux cross-toolchain archive: https://github.com/mstorsjo/llvm-mingw/releases/download/20260922/llvm-mingw-20260922-ucrt-ubuntu-22.04-x86_64.tar.xz (sha256:bb7bb7654b33d5aa8712acb837c963b2e0c56352560c76105270a3268c665c21)"
+    },
+    {
+      "SPDXID": "SPDXRef-runtime-winpthreads",
+      "name": "winpthreads",
+      "versionInfo": "20260922",
+      "downloadLocation": "https://github.com/mstorsjo/llvm-mingw/releases/download/20260922/llvm-mingw-20260922-ucrt-x86_64.zip",
+      "filesAnalyzed": false,
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "e3ad77d117a4bea19a7a3b333341824d79a5a371004a10e25b8504e7b3047666"
+        }
+      ],
+      "licenseConcluded": "MIT AND BSD-3-Clause",
+      "licenseDeclared": "MIT AND BSD-3-Clause",
+      "externalRefs": [
+        {
+          "referenceCategory": "OTHER",
+          "referenceType": "vcs",
+          "referenceLocator": "https://github.com/mingw-w64/mingw-w64"
+        }
+      ],
+      "comment": "runtime_archives=libwinpthread.a; toolchain=llvm-mingw; license_file=converter/licenses/winpthreads.txt; license_excerpt=--- llvm-mingw-20260922/x86_64-w64-mingw32/share/mingw32/COPYING.winpthreads.txt ---",
+      "sourceInfo": "Linux cross-toolchain archive: https://github.com/mstorsjo/llvm-mingw/releases/download/20260922/llvm-mingw-20260922-ucrt-ubuntu-22.04-x86_64.tar.xz (sha256:bb7bb7654b33d5aa8712acb837c963b2e0c56352560c76105270a3268c665c21)"
     }
   ],
   "relationships": [
@@ -689,6 +761,21 @@
       "spdxElementId": "SPDXRef-Package-rasterfold-converter",
       "relationshipType": "STATIC_LINK",
       "relatedSpdxElement": "SPDXRef-pkg-zlib"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-rasterfold-converter",
+      "relationshipType": "STATIC_LINK",
+      "relatedSpdxElement": "SPDXRef-runtime-llvm-runtime"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-rasterfold-converter",
+      "relationshipType": "STATIC_LINK",
+      "relatedSpdxElement": "SPDXRef-runtime-mingw-w64-runtime"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-rasterfold-converter",
+      "relationshipType": "STATIC_LINK",
+      "relatedSpdxElement": "SPDXRef-runtime-winpthreads"
     }
   ]
 }

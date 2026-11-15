@@ -18,6 +18,15 @@
       "bytes": 190725905,
       "dir": "llvm-mingw",
       "probe": "bin/clang.exe",
+      "probes": [
+        "bin/clang.exe",
+        "bin/clang-23.exe",
+        "bin/ld.lld.exe",
+        "bin/llvm-ar.exe",
+        "bin/llvm-ranlib.exe",
+        "bin/x86_64-w64-mingw32-clang.exe",
+        "bin/x86_64-w64-mingw32-clang++.exe"
+      ],
       "versionArgs": [
         "--version"
       ],
@@ -33,6 +42,9 @@
       "bytes": 291570,
       "dir": "ninja",
       "probe": "ninja.exe",
+      "probes": [
+        "ninja.exe"
+      ],
       "versionArgs": [
         "--version"
       ],
@@ -48,6 +60,9 @@
       "bytes": 8059493,
       "dir": "libjxl",
       "probe": "bin/cjxl.exe",
+      "probes": [
+        "bin/cjxl.exe"
+      ],
       "versionArgs": [
         "--version"
       ],
@@ -65,6 +80,9 @@
       "bytes": 56341654,
       "dir": "cmake",
       "probe": "bin/cmake.exe",
+      "probes": [
+        "bin/cmake.exe"
+      ],
       "versionArgs": [
         "--version"
       ],
@@ -82,6 +100,9 @@
       "bytes": 641314,
       "dir": "nasm",
       "probe": "nasm.exe",
+      "probes": [
+        "nasm.exe"
+      ],
       "versionArgs": [
         "-v"
       ],
@@ -106,8 +127,12 @@
           "expectVersion": "23.1.2",
           "probes": [
             "bin/clang",
+            "bin/clang-23",
             "bin/ld.lld",
-            "bin/llvm-ar"
+            "bin/llvm-ar",
+            "bin/llvm-ranlib",
+            "bin/x86_64-w64-mingw32-clang",
+            "bin/x86_64-w64-mingw32-clang++"
           ]
         },
         {

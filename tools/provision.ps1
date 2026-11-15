@@ -40,6 +40,8 @@ if ($env:OS -ne 'Windows_NT') {
   & python3 (Join-Path $Root 'tools/provision.py') @forward
   exit $LASTEXITCODE
 }
+$script:ConverterMode = [bool]$Converter
+. (Join-Path $PSScriptRoot 'bootstrap.ps1') -HelpersOnly
 
 function Get-Python {
   foreach ($name in @('python3', 'python', 'py')) {
@@ -60,17 +62,11 @@ function Get-Python {
 function Test-ToolchainLeg {
   $res = @()
   $manifest = Get-Content (Join-Path $Root 'toolchain.json') -Raw | ConvertFrom-Json
+  $toolsDir = Join-Path $Root 'tools'
   foreach ($c in $manifest.components) {
-    if (-not $Converter -and $c.PSObject.Properties['scope'] -and $c.scope -eq 'converter') { continue }
-    $probe = Join-Path (Join-Path $Root 'tools') (Join-Path $c.dir ($c.probe -replace '/', '\'))
-    if (-not (Test-Path $probe)) {
-      $res += @{ Name = "toolchain $($c.name)"; Ok = $false; Required = $true; Detail = "missing $probe" }
-      continue
-    }
-    $have = $null
-    try { $out = (& $probe @($c.versionArgs) 2>&1 | Out-String); if ($out -match $c.versionMatch) { $have = $Matches[1] } } catch { }
-    $ok = ($have -eq $c.expectVersion)
-    $res += @{ Name = "toolchain $($c.name)"; Ok = $ok; Required = $true; Detail = $(if ($ok) { "$have" } else { "found '$have', pinned $($c.expectVersion)" }) }
+    if (-not $script:ConverterMode -and $c.PSObject.Properties['scope'] -and $c.scope -eq 'converter') { continue }
+    $chk = Test-PinnedComponent $c $toolsDir
+    $res += @{ Name = "toolchain $($c.name)"; Ok = $chk.Ok; Required = $true; Detail = $(if ($chk.Ok) { "$($chk.Version)" } else { $chk.Reason }) }
   }
   return $res
 }
@@ -147,40 +143,6 @@ function Test-CompilationDatabaseLeg {
   return @{ Name = 'compilation database'; Ok = $ok; Required = $true; Detail = $(if ($ok) { 'current' } else { 'missing or stale (repair: python scripts/gen-compdb.py)' }) }
 }
 
-function Get-ConverterTreeSha256($TreeRoot) {
-  $rootRes = [IO.Path]::GetFullPath($TreeRoot).TrimEnd('\', '/')
-  $records = [System.Collections.Generic.List[object]]::new()
-  foreach ($fullPath in [System.IO.Directory]::EnumerateFiles($rootRes, '*', [System.IO.SearchOption]::AllDirectories)) {
-    $name = [IO.Path]::GetFileName($fullPath)
-    if ($name -eq 'PINNED.json') { continue }
-    $attrs = [System.IO.File]::GetAttributes($fullPath)
-    if (($attrs -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
-    $rel = $fullPath.Substring($rootRes.Length + 1).Replace('\', '/')
-    $records.Add([pscustomobject]@{ Rel = $rel; FullPath = $fullPath })
-  }
-  $records.Sort([System.Comparison[object]]{ param($a, $b) [string]::CompareOrdinal($a.Rel, $b.Rel) })
-  $shaAll = [System.Security.Cryptography.SHA256]::Create()
-  $shaFile = [System.Security.Cryptography.SHA256]::Create()
-  try {
-    $ms = [System.IO.MemoryStream]::new()
-    $utf8 = [System.Text.UTF8Encoding]::new($false)
-    foreach ($r in $records) {
-      $fi = [System.IO.FileInfo]::new($r.FullPath)
-      $fs = [System.IO.File]::OpenRead($r.FullPath)
-      try {
-        $fhash = ([BitConverter]::ToString($shaFile.ComputeHash($fs)) -replace '-', '').ToLowerInvariant()
-      } finally { $fs.Dispose() }
-      $lineBytes = $utf8.GetBytes("$($r.Rel)`0$($fi.Length)`0$fhash`n")
-      $ms.Write($lineBytes, 0, $lineBytes.Length)
-    }
-    $ms.Position = 0
-    return ([BitConverter]::ToString($shaAll.ComputeHash($ms)) -replace '-', '').ToLowerInvariant()
-  } finally {
-    $shaFile.Dispose()
-    $shaAll.Dispose()
-  }
-}
-
 function Test-ConverterSourcesLeg {
   $vendorPath = Join-Path $Root 'converter\vendor.json'
   if (-not (Test-Path $vendorPath)) {
@@ -193,22 +155,20 @@ function Test-ConverterSourcesLeg {
   foreach ($pkg in $vendor.packages) {
     $pkgDir = Join-Path $srcRoot $pkg.id
     $rcptPath = Join-Path $pkgDir 'PINNED.json'
-    if (-not (Test-Path $rcptPath)) {
+    if (-not (Test-Path -LiteralPath $rcptPath)) {
       $missing += $pkg.id
       continue
     }
     try {
-      $rcpt = Get-Content $rcptPath -Raw | ConvertFrom-Json
-      $metaOk = ($rcpt.id -eq $pkg.id -and $rcpt.version -eq $pkg.version -and $rcpt.commit -eq $pkg.commit -and $rcpt.sha256 -eq $pkg.sha256 -and ($rcpt.tree_sha256 -match '^[0-9a-f]{64}$'))
-      if (-not $metaOk -or (Get-ConverterTreeSha256 $pkgDir) -ne $rcpt.tree_sha256) { $drifted += $pkg.id }
+      if (-not (Test-VendorReceipt $pkg $pkgDir)) { $drifted += $pkg.id }
     } catch {
-      $drifted += $pkg.id
+      $drifted += "$($pkg.id) ($($_.Exception.Message))"
     }
   }
   if ($missing.Count -gt 0 -or $drifted.Count -gt 0) {
     $parts = @()
     if ($missing.Count -gt 0) { $parts += "missing: $($missing -join ', ')" }
-    if ($drifted.Count -gt 0) { $parts += "mismatch: $($drifted -join ', ')" }
+    if ($drifted.Count -gt 0) { $parts += "mismatch: $($drifted -join '; ')" }
     return @(@{ Name = 'converter sources'; Ok = $false; Required = $true; Detail = ($parts -join '; ') })
   }
   return @(@{ Name = 'converter sources'; Ok = $true; Required = $true; Detail = "$($vendor.packages.Count) pinned source trees" })
@@ -217,7 +177,7 @@ function Test-ConverterSourcesLeg {
 function Test-All {
   $r = @()
   $r += Test-ToolchainLeg
-  if ($Converter) { $r += Test-ConverterSourcesLeg }
+  if ($script:ConverterMode) { $r += Test-ConverterSourcesLeg }
   $r += Test-HooksLeg
   $r += Test-PythonLegs
   $r += Test-BasedpyrightLeg
@@ -253,7 +213,7 @@ if (-not $Verify) {
   $faults = @($results | Where-Object { -not $_.Ok -and $_.Required } | ForEach-Object { $_.Name })
   if ((@($faults | Where-Object { $_ -like 'toolchain *' }).Count -gt 0) -or ($faults -contains 'converter sources')) {
     $bsArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $PSScriptRoot 'bootstrap.ps1'))
-    if ($Converter) { $bsArgs += '-Converter' }
+    if ($script:ConverterMode) { $bsArgs += '-Converter' }
     & powershell @bsArgs
     if ($LASTEXITCODE -ne 0) { Write-Warning 'provision: tools\bootstrap.ps1 failed' }
   }

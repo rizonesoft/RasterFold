@@ -7,7 +7,7 @@ The native image converter targets Windows x64 (`windows-x64`) only and keeps th
 | Category | Components | Shipped in Converter | Notes |
 | --- | --- | --- | --- |
 | Windows OS prerequisites | System DLLs (`kernel32.dll`, `user32.dll`, `advapi32.dll`, `shell32.dll`, `ole32.dll`, `oleaut32.dll`, `bcrypt.dll`, UCRT), Windows Imaging Component (`WindowsCodecs`) | System-provided | HEIF and HEIC import uses the Windows OS WIC codec (`docs/codec-distribution.md`); zero HEVC code or binaries are bundled. |
-| Bundled static libraries | All 19 pinned libraries in `converter/vendor.json` (`zlib`, `libdeflate`, `libpng` + `libpng-apng`, `libwebp`, `highway`, `brotli`, `lcms2`, `libjxl`, `libaom`, `libjpeg-turbo`, `libavif`, `libtiff`, `giflib`, `qoi`, `openjpeg`, `imath`, `openjph`, `openexr`, `libraw`) + `librasterfold.a` | Yes (statically linked) | Compiled as static archives against MinGW-w64 UCRT with `-static` C++ and pthread runtimes so deployed binaries require zero unshipped DLLs. |
+| Bundled static libraries | All 19 pinned libraries in `converter/vendor.json` (`zlib`, `libdeflate`, `libpng` + `libpng-apng`, `libwebp`, `highway`, `brotli`, `lcms2`, `libjxl`, `libaom`, `libjpeg-turbo`, `libavif`, `libtiff`, `giflib`, `qoi`, `openjpeg`, `imath`, `openjph`, `openexr`, `libraw`) + `librasterfold.a` + static `llvm-mingw` runtimes (`libc++`, `libc++abi`, `libunwind`, `compiler-rt`, `mingw-w64` CRT, `winpthreads`) | Yes (statically linked) | Compiled as static archives against MinGW-w64 UCRT with `-static` C++ and pthread runtimes so deployed binaries require zero unshipped DLLs; all 19 library licenses (including `README.ijg` inside `libjpeg-turbo.txt`) and the 3 toolchain runtime license files (`llvm-runtime.txt`, `mingw-w64-runtime.txt`, `winpthreads.txt`) are tracked in `converter/vendor.json`. |
 | Converter build-time tools | `cmake` (`4.5.0`), `nasm` (`3.02`), plus core `llvm-mingw` (`23.1.2`) and `ninja` (`1.13.2`) | Never shipped | `cmake` and `nasm` carry `"scope": "converter"` in `toolchain.json` so core-only `tools/bootstrap.*` and `tools/provision.*` runs stay fast and isolated. |
 
 ## Why Meson Is Omitted
@@ -42,6 +42,6 @@ For fair performance comparisons, every dependency keeps its full standard x86-6
 
 ## Notices and SBOM Regeneration
 
-`converter/THIRD-PARTY-NOTICES.txt` and `converter/sbom.spdx.json` are generated deterministically offline from `converter/vendor.json`, `toolchain.json`, and `converter/licenses/*.txt`:
+`converter/THIRD-PARTY-NOTICES.txt` and `converter/sbom.spdx.json` are generated deterministically offline from `converter/vendor.json`, `toolchain.json`, and `converter/licenses/*.txt` (covering all 19 codec libraries including `README.ijg` in `libjpeg-turbo.txt`, plus the 3 static `llvm-mingw` runtime entries `llvm-runtime.txt`, `mingw-w64-runtime.txt`, and `winpthreads.txt`):
 - Regenerate: `python3 scripts/build-converter.py --write-notices`
 - Verify currency: `python3 scripts/build-converter.py --check-notices`

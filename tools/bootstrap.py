@@ -9,6 +9,7 @@ import json
 import os
 import platform
 from pathlib import Path, PurePosixPath
+import posixpath
 import re
 import shutil
 import stat
@@ -33,24 +34,58 @@ def digest(path: Path) -> str:
     return h.hexdigest()
 
 
+def _validate_symlink_in_tree(root_res: Path, link_path: Path, rel_posix: str, target: str) -> str:
+    if not target or '\\' in target:
+        raise ValueError(f'vendor source symlink escapes root: {rel_posix} -> {target!r}')
+    target_norm = target.replace('\\', '/')
+    parts = PurePosixPath(target_norm).parts
+    if target_norm.startswith('/') or (parts and ':' in parts[0]):
+        raise ValueError(f'vendor source symlink escapes root: {rel_posix} -> {target!r}')
+    parent_rel = PurePosixPath(rel_posix).parent
+    joined = (parent_rel / target_norm).as_posix() if parent_rel != PurePosixPath('.') else target_norm
+    norm = posixpath.normpath(joined)
+    if norm == '..' or norm.startswith('../'):
+        raise ValueError(f'vendor source symlink escapes root: {rel_posix} -> {target!r}')
+    if not (link_path.parent / target).resolve(strict=False).is_relative_to(root_res):
+        raise ValueError(f'vendor source symlink escapes root: {rel_posix} -> {target!r}')
+    return target_norm
+
+
 def tree_digest(root: Path) -> str:
+    if root.is_symlink():
+        raise ValueError(f'vendor source symlink escapes root: {root}')
     h = hashlib.sha256()
     root_res = root.resolve()
-    files = sorted(
-        (
-            (p.resolve().relative_to(root_res).as_posix(), p)
-            for p in root.rglob('*')
-            if p.name != 'PINNED.json' and not p.is_symlink() and p.is_file()
-        ),
-        key=lambda item: item[0],
-    )
-    for rel, path in files:
-        h.update(rel.encode('utf-8'))
-        h.update(b'\0')
-        h.update(str(path.stat().st_size).encode('ascii'))
-        h.update(b'\0')
-        h.update(digest(path).encode('ascii'))
-        h.update(b'\n')
+    entries: list[tuple[str, bytes]] = []
+    for dirpath, dirnames, filenames in os.walk(root_res, topdown=True, followlinks=False):
+        cur = Path(dirpath)
+        kept_dirs: list[str] = []
+        for d in dirnames:
+            p = cur / d
+            rel = p.relative_to(root_res).as_posix()
+            if p.is_symlink():
+                if rel == 'PINNED.json':
+                    raise ValueError('vendor source PINNED.json must not be a symlink')
+                t_norm = _validate_symlink_in_tree(root_res, p, rel, os.readlink(p))
+                entries.append((rel, f'L\0{rel}\0{t_norm}\n'.encode('utf-8')))
+            else:
+                kept_dirs.append(d)
+        dirnames[:] = kept_dirs
+        for fname in filenames:
+            p = cur / fname
+            rel = p.relative_to(root_res).as_posix()
+            if rel == 'PINNED.json':
+                if p.is_symlink():
+                    raise ValueError('vendor source PINNED.json must not be a symlink')
+                continue
+            if p.is_symlink():
+                t_norm = _validate_symlink_in_tree(root_res, p, rel, os.readlink(p))
+                entries.append((rel, f'L\0{rel}\0{t_norm}\n'.encode('utf-8')))
+            elif p.is_file():
+                entries.append((rel, f'F\0{rel}\0{p.stat().st_size}\0{digest(p)}\n'.encode('utf-8')))
+    entries.sort(key=lambda item: item[0])
+    for _rel, rec in entries:
+        h.update(rec)
     return h.hexdigest()
 
 
@@ -273,6 +308,24 @@ def validate_vendor_manifest(manifest: dict) -> None:
     for sys_entry in manifest.get('system_codecs', []):
         if sys_entry.get('bundled') or sys_entry.get('hevc_bundled') or sys_entry.get('hevc_source_or_binary_present'):
             raise ValueError('system codecs must not bundle HEVC source or binaries')
+    runtimes = manifest.get('runtime_libraries')
+    if not isinstance(runtimes, list) or not runtimes:
+        raise ValueError('converter/vendor.json runtime_libraries must list statically linked toolchain runtimes')
+    rt_ids: set[str] = set()
+    for rt in runtimes:
+        for key in ('id', 'name', 'version', 'toolchain_component', 'repo', 'upstream_repo', 'tag', 'license', 'license_file', 'notes'):
+            if not isinstance(rt.get(key), str) or not rt[key].strip():
+                raise ValueError(f'runtime library entry missing {key}: {rt.get("id")!r}')
+        if _is_moving_ref(rt['tag']) or _is_moving_ref(rt['repo']) or _is_moving_ref(rt['upstream_repo']):
+            raise ValueError(f'runtime library {rt["id"]} forbids moving branch ref')
+        if not isinstance(rt.get('libraries'), list) or not rt['libraries']:
+            raise ValueError(f'runtime library {rt["id"]} must name statically linked archives')
+        if rt['id'] in rt_ids:
+            raise ValueError(f'duplicate runtime library id: {rt["id"]}')
+        rt_ids.add(rt['id'])
+    missing_rt = {'llvm-runtime', 'mingw-w64-runtime', 'winpthreads'} - rt_ids
+    if missing_rt:
+        raise ValueError(f'converter/vendor.json runtime_libraries missing required entries: {sorted(missing_rt)}')
 
 
 def verify(component: dict, tools: Path) -> None:
@@ -287,7 +340,11 @@ def verify(component: dict, tools: Path) -> None:
             raise ValueError(f'installed probe changed: {name}')
     out = subprocess.check_output([str(dest / component['probe']), *component['versionArgs']],
                                   stderr=subprocess.STDOUT, text=True, timeout=30)
-    if component['expectVersion'] not in out:
+    if component.get('versionMatch'):
+        m = re.search(component['versionMatch'], out, re.MULTILINE)
+        if not m or m.group(1) != component['expectVersion']:
+            raise ValueError('installed compiler/tool reports the wrong version')
+    elif component['expectVersion'] not in out:
         raise ValueError('installed compiler/tool reports the wrong version')
     if component.get('versionFile') and component['versionText'] not in (dest / component['versionFile']).read_text():
         raise ValueError('SDK revision disagrees with manifest')

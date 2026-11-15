@@ -7,22 +7,20 @@
 # staged only when -Converter is supplied.
 param(
     [switch]$Force,
-    [switch]$Converter
+    [switch]$Converter,
+    [switch]$HelpersOnly
 )
 $ErrorActionPreference = "Stop"
 $tools = Split-Path -Parent $MyInvocation.MyCommand.Path
 $root = Split-Path -Parent $tools
-if ($env:OS -ne 'Windows_NT') {
+if (-not $HelpersOnly -and $MyInvocation.InvocationName -ne '.' -and $env:OS -ne 'Windows_NT') {
     $forward = @()
     if ($Converter) { $forward += '--converter' }
     & python3 (Join-Path $root 'tools/bootstrap.py') @forward
     exit $LASTEXITCODE
 }
 $manifestPath = Join-Path $root "toolchain.json"
-if (-not (Test-Path $manifestPath)) { throw "bootstrap: toolchain.json not found at $manifestPath" }
-$manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
 $cache = Join-Path $tools "downloads"
-New-Item -ItemType Directory -Force -Path $cache | Out-Null
 # Windows ships libarchive's bsdtar, which reads .zip, .tar.*, and .7z.
 $bsdtar = Join-Path $env:SystemRoot "System32\tar.exe"
 
@@ -47,11 +45,99 @@ function Test-MovingRef($value) {
     return $false
 }
 
+function Get-InstalledVersion($c, $probe) {
+    try {
+        $out = (& $probe @($c.versionArgs) 2>&1 | Out-String)
+        if ($c.PSObject.Properties['versionMatch'] -and $c.versionMatch) {
+            if ($out -match $c.versionMatch) { return $Matches[1] }
+        } elseif ($out.Contains([string]$c.expectVersion)) {
+            return [string]$c.expectVersion
+        }
+        return $null
+    } catch {
+        return "<exec error: $($_.Exception.Message)>"
+    }
+}
+
+function Get-ComponentProbes($c) {
+    if ($c.PSObject.Properties['probes'] -and $c.probes) {
+        return @($c.probes | ForEach-Object { [string]$_ })
+    }
+    return @([string]$c.probe)
+}
+
+function Test-PinnedComponent($c, $toolsDir) {
+    if ($c.dir -notmatch '^[A-Za-z0-9._-]+$') {
+        return @{ Ok = $false; Version = $null; Reason = "invalid dir '$($c.dir)'" }
+    }
+    $dest = Join-Path $toolsDir $c.dir
+    $probe = Join-Path $dest ($c.probe -replace '/', '\')
+    if (-not (Test-Path -LiteralPath $probe)) {
+        return @{ Ok = $false; Version = $null; Reason = "missing $probe" }
+    }
+    $rcptPath = Join-Path $dest 'PINNED.json'
+    if (-not (Test-Path -LiteralPath $rcptPath)) {
+        return @{ Ok = $false; Version = $null; Reason = "missing PINNED.json in $dest" }
+    }
+    try {
+        $rcpt = Get-Content -LiteralPath $rcptPath -Raw | ConvertFrom-Json
+    } catch {
+        return @{ Ok = $false; Version = $null; Reason = "unreadable PINNED.json in $dest" }
+    }
+    if ($rcpt.url -ne $c.url -or $rcpt.sha256 -ne $c.sha256) {
+        return @{ Ok = $false; Version = $null; Reason = 'installation receipt disagrees with manifest' }
+    }
+    if (-not ($rcpt.PSObject.Properties['probes']) -or $null -eq $rcpt.probes) {
+        return @{ Ok = $false; Version = $null; Reason = 'installation receipt omits verification probes' }
+    }
+    $wantProbes = @(Get-ComponentProbes $c)
+    $haveProps = @($rcpt.probes.PSObject.Properties)
+    if ($haveProps.Count -ne $wantProbes.Count) {
+        return @{ Ok = $false; Version = $null; Reason = 'installation receipt omits or adds verification probes' }
+    }
+    foreach ($pName in $wantProbes) {
+        $prop = $rcpt.probes.PSObject.Properties[$pName]
+        if (-not $prop) {
+            return @{ Ok = $false; Version = $null; Reason = "installation receipt omits probe: $pName" }
+        }
+        $pPath = Join-Path $dest ($pName -replace '/', '\')
+        if (-not (Test-Path -LiteralPath $pPath)) {
+            return @{ Ok = $false; Version = $null; Reason = "missing probe binary: $pName" }
+        }
+        if ((Get-Sha256 $pPath) -ne [string]$prop.Value) {
+            return @{ Ok = $false; Version = $null; Reason = "installed probe changed: $pName" }
+        }
+    }
+    $have = Get-InstalledVersion $c $probe
+    if ($have -ne $c.expectVersion) {
+        return @{ Ok = $false; Version = $have; Reason = "found '$have', pinned $($c.expectVersion)" }
+    }
+    return @{ Ok = $true; Version = $have; Reason = '' }
+}
+
+function Invoke-WithLocalArchive($archive, [scriptblock]$action) {
+    $resolved = (Resolve-Path -LiteralPath $archive).ProviderPath
+    if (-not $resolved.StartsWith('\\')) {
+        return (& $action $resolved)
+    }
+    $tmpArc = Join-Path ([IO.Path]::GetTempPath()) ("rf_arc_" + [guid]::NewGuid().ToString("N") + "_" + [IO.Path]::GetFileName($resolved))
+    [IO.File]::Copy($resolved, $tmpArc, $true)
+    try {
+        return (& $action $tmpArc)
+    } finally {
+        if (Test-Path -LiteralPath $tmpArc) { Remove-Item -Force -LiteralPath $tmpArc }
+    }
+}
+
 function Assert-SafeArchive($archive) {
-    $entries = @(& $bsdtar -tvf $archive 2>$null)
-    if ($LASTEXITCODE -ne 0) {
-        $entries = @(& $bsdtar -tf $archive 2>$null)
-        if ($LASTEXITCODE -ne 0) { throw "bootstrap: unable to inspect archive $archive" }
+    $entries = Invoke-WithLocalArchive $archive {
+        param($localArc)
+        $out = @(& $bsdtar -tvf $localArc 2>$null)
+        if ($LASTEXITCODE -ne 0) {
+            $out = @(& $bsdtar -tf $localArc 2>$null)
+            if ($LASTEXITCODE -ne 0) { throw "bootstrap: unable to inspect archive $archive" }
+        }
+        return ,$out
     }
     foreach ($line in $entries) {
         $trimmed = ([string]$line).Trim()
@@ -117,24 +203,176 @@ function Fetch-VerifiedFile($entry, $cacheDir) {
     return $file
 }
 
+function Resolve-LexicalRelPath($baseRelPosix, $rawTarget) {
+    $tnorm = $rawTarget.Replace('\', '/')
+    if ([string]::IsNullOrEmpty($tnorm) -or $tnorm.StartsWith('/') -or ($tnorm -match '^[A-Za-z]:')) {
+        return $null
+    }
+    $segs = [System.Collections.Generic.List[string]]::new()
+    if ($baseRelPosix) {
+        foreach ($part in ($baseRelPosix -split '/')) {
+            if ($part -and $part -ne '.') { $segs.Add($part) }
+        }
+    }
+    foreach ($part in ($tnorm -split '/')) {
+        if (-not $part -or $part -eq '.') { continue }
+        if ($part -eq '..') {
+            if ($segs.Count -eq 0) { return $null }
+            $segs.RemoveAt($segs.Count - 1)
+        } else {
+            $segs.Add($part)
+        }
+    }
+    return ($segs -join '/')
+}
+
+function Assert-SafeSymlinkMap($rootRes, $linkRecords, [bool]$isWslShare) {
+    $linkMap = @{}
+    foreach ($rec in $linkRecords) {
+        $linkMap[$rec.Rel] = $rec.RawTarget.Replace('\', '/')
+    }
+    foreach ($rec in $linkRecords) {
+        $rel = $rec.Rel
+        $rawTarget = $rec.RawTarget
+        $tnorm = $linkMap[$rel]
+        $lastSlash = $rel.LastIndexOf('/')
+        $curParent = if ($lastSlash -gt 0) { $rel.Substring(0, $lastSlash) } else { '' }
+        $resolved = Resolve-LexicalRelPath $curParent $tnorm
+        if ($null -eq $resolved) {
+            throw "bootstrap: vendor source symlink escapes root: $rel -> $rawTarget"
+        }
+        if (-not $isWslShare) {
+            $fullResolved = [IO.Path]::GetFullPath((Join-Path (Split-Path -Parent $rec.FullPath) ($tnorm -replace '/', '\')))
+            if (-not $fullResolved.Equals($rootRes, [System.StringComparison]::OrdinalIgnoreCase) -and
+                -not $fullResolved.StartsWith("$rootRes\", [System.StringComparison]::OrdinalIgnoreCase)) {
+                throw "bootstrap: vendor source symlink escapes root: $rel -> $rawTarget"
+            }
+        }
+        $hops = 0
+        $probeRel = $resolved
+        while ($true) {
+            $hops += 1
+            if ($hops -gt 32) {
+                throw "bootstrap: vendor source symlink loop or depth limit in tree: $rel"
+            }
+            if (-not $probeRel) { break }
+            $parts = @($probeRel -split '/')
+            $replaced = $false
+            $prefix = ''
+            for ($pi = 0; $pi -lt $parts.Count; $pi++) {
+                $prefix = if ($prefix) { "$prefix/$($parts[$pi])" } else { $parts[$pi] }
+                if ($linkMap.ContainsKey($prefix)) {
+                    $pSlash = $prefix.LastIndexOf('/')
+                    $pParent = if ($pSlash -gt 0) { $prefix.Substring(0, $pSlash) } else { '' }
+                    $baseStep = Resolve-LexicalRelPath $pParent $linkMap[$prefix]
+                    if ($null -eq $baseStep) {
+                        throw "bootstrap: vendor source symlink escapes root: $rel -> $rawTarget"
+                    }
+                    $tail = if ($pi + 1 -lt $parts.Count) { ($parts[($pi + 1)..($parts.Count - 1)] -join '/') } else { '' }
+                    if ($tail) {
+                        $probeRel = Resolve-LexicalRelPath $baseStep $tail
+                        if ($null -eq $probeRel) {
+                            throw "bootstrap: vendor source symlink escapes root: $rel -> $rawTarget"
+                        }
+                    } else {
+                        $probeRel = $baseStep
+                    }
+                    $replaced = $true
+                    break
+                }
+            }
+            if (-not $replaced) { break }
+        }
+    }
+    return $linkMap
+}
+
 function Get-TreeSha256($treeRoot) {
-    $rootRes = [IO.Path]::GetFullPath($treeRoot).TrimEnd('\', '/')
-    $files = Get-ChildItem -Path $treeRoot -Recurse -File -Force | Where-Object {
-        $_.Name -ne 'PINNED.json' -and -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint)
+    $resolvedRoot = (Resolve-Path -LiteralPath $treeRoot).ProviderPath
+    $rootRes = $resolvedRoot.TrimEnd('\', '/')
+    if (([IO.File]::GetAttributes($rootRes) -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "bootstrap: vendor source root must not be a symlink: $treeRoot"
     }
+    $isWslShare = ($rootRes -match '^\\\\wsl(?:\.localhost|\$)\\([^\\]+)\\(.+)$')
+    $wslDistro = if ($isWslShare) { $Matches[1] } else { $null }
+    $wslLinuxRoot = if ($isWslShare) { '/' + ($Matches[2].Replace('\', '/')) } else { $null }
+
     $records = [System.Collections.Generic.List[object]]::new()
-    foreach ($f in $files) {
-        $full = [IO.Path]::GetFullPath($f.FullName)
-        $rel = $full.Substring($rootRes.Length + 1).Replace('\', '/')
-        $records.Add([pscustomobject]@{ Rel = $rel; File = $f })
+    $linkRecords = [System.Collections.Generic.List[object]]::new()
+    $needWslReadlink = [System.Collections.Generic.List[object]]::new()
+    $stack = [System.Collections.Generic.Stack[System.IO.DirectoryInfo]]::new()
+    $stack.Push([System.IO.DirectoryInfo]::new($rootRes))
+
+    while ($stack.Count -gt 0) {
+        $dir = $stack.Pop()
+        foreach ($sub in $dir.GetDirectories()) {
+            $rel = $sub.FullName.Substring($rootRes.Length + 1).Replace('\', '/')
+            if (($sub.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                $it = Get-Item -LiteralPath $sub.FullName -Force
+                $rawTarget = if ($it.LinkType -eq 'SymbolicLink' -and $it.Target) { [string](@($it.Target)[0]) } else { $null }
+                $rec = [pscustomobject]@{ Rel = $rel; Kind = 'L'; FullPath = $sub.FullName; File = $null; RawTarget = $rawTarget }
+                if ($null -eq $rawTarget) {
+                    if (-not $isWslShare) { throw "bootstrap: unsupported or unreadable reparse point in vendor tree: $rel" }
+                    $needWslReadlink.Add($rec)
+                }
+                $linkRecords.Add($rec)
+                $records.Add($rec)
+            } else {
+                $stack.Push($sub)
+            }
+        }
+        foreach ($f in $dir.GetFiles()) {
+            $rel = $f.FullName.Substring($rootRes.Length + 1).Replace('\', '/')
+            $isRp = (($f.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)
+            if ($rel -eq 'PINNED.json') {
+                if ($isRp) { throw 'bootstrap: PINNED.json must not be a symlink' }
+                continue
+            }
+            if ($isRp) {
+                $it = Get-Item -LiteralPath $f.FullName -Force
+                $rawTarget = if ($it.LinkType -eq 'SymbolicLink' -and $it.Target) { [string](@($it.Target)[0]) } else { $null }
+                $rec = [pscustomobject]@{ Rel = $rel; Kind = 'L'; FullPath = $f.FullName; File = $null; RawTarget = $rawTarget }
+                if ($null -eq $rawTarget) {
+                    if (-not $isWslShare) { throw "bootstrap: unsupported or unreadable reparse point in vendor tree: $rel" }
+                    $needWslReadlink.Add($rec)
+                }
+                $linkRecords.Add($rec)
+                $records.Add($rec)
+            } else {
+                $records.Add([pscustomobject]@{ Rel = $rel; Kind = 'F'; FullPath = $f.FullName; File = $f; RawTarget = $null })
+            }
+        }
     }
+
+    if ($needWslReadlink.Count -gt 0) {
+        $relArgs = @($needWslReadlink | ForEach-Object { $_.Rel })
+        $pyCmd = 'import json,os,sys; root=sys.argv[1]; print(json.dumps({r:os.readlink(os.path.join(root,r)) for r in sys.argv[2:]}))'
+        $rawJson = (& wsl.exe -d $wslDistro -- python3 -c $pyCmd $wslLinuxRoot @relArgs | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0 -or -not $rawJson) {
+            throw "bootstrap: unable to read WSL symlink targets under $wslLinuxRoot"
+        }
+        $targetMap = $rawJson | ConvertFrom-Json
+        foreach ($rec in $needWslReadlink) {
+            $prop = $targetMap.PSObject.Properties[$rec.Rel]
+            if (-not $prop -or [string]::IsNullOrEmpty([string]$prop.Value)) {
+                throw "bootstrap: missing WSL symlink target for $($rec.Rel)"
+            }
+            $rec.RawTarget = [string]$prop.Value
+        }
+    }
+
+    $linkMap = Assert-SafeSymlinkMap $rootRes $linkRecords ([bool]$isWslShare)
     $records.Sort([System.Comparison[object]]{ param($a, $b) [string]::CompareOrdinal($a.Rel, $b.Rel) })
     $shaAll = [System.Security.Cryptography.SHA256]::Create()
     try {
         $ms = [System.IO.MemoryStream]::new()
         $utf8 = [System.Text.UTF8Encoding]::new($false)
         foreach ($r in $records) {
-            $lineBytes = $utf8.GetBytes("$($r.Rel)`0$($r.File.Length)`0$(Get-Sha256 $r.File.FullName)`n")
+            if ($r.Kind -eq 'L') {
+                $lineBytes = $utf8.GetBytes("L`0$($r.Rel)`0$($linkMap[$r.Rel])`n")
+            } else {
+                $lineBytes = $utf8.GetBytes("F`0$($r.Rel)`0$($r.File.Length)`0$(Get-Sha256 $r.FullPath)`n")
+            }
             $ms.Write($lineBytes, 0, $lineBytes.Length)
         }
         $ms.Position = 0
@@ -142,6 +380,31 @@ function Get-TreeSha256($treeRoot) {
     } finally {
         $shaAll.Dispose()
     }
+}
+
+function Test-VendorReceipt($pkg, $dest) {
+    $receiptPath = Join-Path $dest "PINNED.json"
+    if (-not (Test-Path -LiteralPath $receiptPath)) { return $false }
+    $rcpt = Get-Content -LiteralPath $receiptPath -Raw | ConvertFrom-Json
+    if ($rcpt.id -ne $pkg.id -or
+        $rcpt.version -ne $pkg.version -or
+        $rcpt.commit -ne $pkg.commit -or
+        $rcpt.url -ne $pkg.url -or
+        $rcpt.sha256 -ne $pkg.sha256 -or
+        [int64]$rcpt.bytes -ne [int64]$pkg.bytes) {
+        return $false
+    }
+    $wantPatches = @()
+    if ($pkg.PSObject.Properties['patches'] -and $null -ne $pkg.patches) { $wantPatches = @($pkg.patches) }
+    $havePatches = @()
+    if ($rcpt.PSObject.Properties['patches'] -and $null -ne $rcpt.patches) { $havePatches = @($rcpt.patches) }
+    if ($wantPatches.Count -ne $havePatches.Count) { return $false }
+    for ($pi = 0; $pi -lt $wantPatches.Count; $pi++) {
+        if ($havePatches[$pi].name -ne $wantPatches[$pi].name -or $havePatches[$pi].sha256 -ne $wantPatches[$pi].sha256) {
+            return $false
+        }
+    }
+    return ((Get-TreeSha256 $dest) -eq $rcpt.tree_sha256)
 }
 
 function Read-GzipUtf8($gzPath) {
@@ -247,12 +510,24 @@ function Apply-UnifiedPatch($srcRoot, $patchText, [int]$strip = 1) {
     if ($applied -eq 0) { throw "bootstrap: patch contained zero file hunks" }
 }
 
-function Get-InstalledVersion($c, $probe) {
-    try {
-        $out = (& $probe @($c.versionArgs) 2>&1 | Out-String)
-        if ($out -match $c.versionMatch) { return $Matches[1] }
-    } catch { }
-    return $null
+if ($HelpersOnly -or $MyInvocation.InvocationName -eq '.') { return }
+
+if (-not (Test-Path $manifestPath)) { throw "bootstrap: toolchain.json not found at $manifestPath" }
+$manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
+New-Item -ItemType Directory -Force -Path $cache | Out-Null
+
+function Move-StageToDest($srcDir, $destDir, $stageDir) {
+    if (Test-Path -LiteralPath $destDir) { Remove-Item -Recurse -Force -LiteralPath $destDir }
+    $resolvedDestParent = (Resolve-Path -LiteralPath (Split-Path -Parent $destDir)).ProviderPath
+    $resolvedSrc = (Resolve-Path -LiteralPath $srcDir).ProviderPath
+    if ($resolvedDestParent.StartsWith('\\') -or $resolvedSrc.StartsWith('\\')) {
+        & robocopy.exe $resolvedSrc $destDir /E /NFL /NDL /NJH /NJS /NC /NS /NP /MT:8 | Out-Null
+        if ($LASTEXITCODE -ge 8) { throw "bootstrap: robocopy failed ($LASTEXITCODE) copying to $destDir" }
+        $global:LASTEXITCODE = 0
+    } else {
+        Move-Item -LiteralPath $resolvedSrc -Destination $destDir
+    }
+    if (Test-Path -LiteralPath $stageDir) { Remove-Item -Recurse -Force -LiteralPath $stageDir }
 }
 
 foreach ($c in $manifest.components) {
@@ -261,29 +536,51 @@ foreach ($c in $manifest.components) {
     if ($c.dir -notmatch '^[A-Za-z0-9._-]+$') { throw "bootstrap: $($c.name): dir '$($c.dir)' is not a plain folder name under tools\" }
     $dest = Join-Path $tools $c.dir
     $probe = Join-Path $dest ($c.probe -replace '/', '\')
-    if ((Test-Path $probe) -and -not $Force) {
-        $have = Get-InstalledVersion $c $probe
-        if ($have -eq $c.expectVersion) { Write-Host "ok $($c.name) $have"; continue }
-        Write-Host "$($c.name): found version '$have', pinned $($c.expectVersion); reinstalling"
+    if ((Test-Path -LiteralPath $dest) -and -not $Force) {
+        $chk = Test-PinnedComponent $c $tools
+        if ($chk.Ok) { Write-Host "ok $($c.name) $($chk.Version)"; continue }
+        Write-Host "$($c.name): $($chk.Reason); reinstalling"
     }
     $file = Fetch-VerifiedFile $c $cache
     Assert-SafeArchive $file
 
-    $stage = Join-Path $cache "stage-$($c.dir)"
-    if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
+    $resolvedCache = (Resolve-Path -LiteralPath $cache).ProviderPath
+    $stage = if ($resolvedCache.StartsWith('\\')) {
+        Join-Path ([IO.Path]::GetTempPath()) ("rf-stage-$($c.dir)-" + [guid]::NewGuid().ToString("N"))
+    } else {
+        Join-Path $cache "stage-$($c.dir)"
+    }
+    if (Test-Path -LiteralPath $stage) { Remove-Item -Recurse -Force -LiteralPath $stage }
     New-Item -ItemType Directory -Force -Path $stage | Out-Null
-    & $bsdtar -xf $file -C $stage
-    if ($LASTEXITCODE -ne 0) { throw "bootstrap: extract failed: $file" }
+    Invoke-WithLocalArchive $file {
+        param($localArc)
+        & $bsdtar -xf $localArc -C $stage
+        if ($LASTEXITCODE -ne 0) { throw "bootstrap: extract failed: $file" }
+    }
     $top = @(Get-ChildItem $stage)
     $src = if ($top.Count -eq 1 -and $top[0].PSIsContainer) { $top[0].FullName } else { $stage }
-    if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
-    Move-Item $src $dest
-    if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
-    if (-not (Test-Path $probe)) { throw "bootstrap: $($c.name): $($c.probe) missing after extract" }
-    $have = Get-InstalledVersion $c $probe
-    if ($have -ne $c.expectVersion) { throw "bootstrap: $($c.name): installed version '$have', pinned $($c.expectVersion)" }
-    Set-Content -Encoding Ascii (Join-Path $dest "PINNED.txt") "$($c.url)`nsha256 $($c.sha256)"
-    Write-Host "installed $($c.name) $have"
+    if (-not (Test-Path -LiteralPath (Join-Path $src ($c.probe -replace '/', '\')))) {
+        throw "bootstrap: $($c.name): $($c.probe) missing after extract"
+    }
+    $probeMap = [ordered]@{}
+    foreach ($pName in (Get-ComponentProbes $c)) {
+        $pPath = Join-Path $src ($pName -replace '/', '\')
+        if (-not (Test-Path -LiteralPath $pPath)) {
+            throw "bootstrap: $($c.name): required probe '$pName' missing after extract"
+        }
+        $probeMap[$pName] = Get-Sha256 $pPath
+    }
+    $receiptJson = @{
+        url = $c.url
+        sha256 = $c.sha256
+        probes = $probeMap
+    } | ConvertTo-Json -Depth 4
+    Write-Utf8NoBom (Join-Path $src "PINNED.json") ($receiptJson + "`n")
+    Set-Content -Encoding Ascii (Join-Path $src "PINNED.txt") "$($c.url)`nsha256 $($c.sha256)"
+    Move-StageToDest $src $dest $stage
+    $post = Test-PinnedComponent $c $tools
+    if (-not $post.Ok) { throw "bootstrap: $($c.name): verification failed after extract ($($post.Reason))" }
+    Write-Host "installed $($c.name) $($post.Version)"
 }
 
 if ($Converter) {
@@ -306,16 +603,17 @@ if ($Converter) {
         if ($null -ne $pkg.tag -and (Test-MovingRef $pkg.tag)) { throw "bootstrap: vendor $($pkg.id) refuses moving tag: $($pkg.tag)" }
         if ((Test-MovingRef $pkg.url) -or (Test-MovingRef $pkg.repo)) { throw "bootstrap: vendor $($pkg.id) URL uses moving ref" }
         if ($pkg.sha256 -notmatch '^[0-9a-f]{64}$') { throw "bootstrap: vendor $($pkg.id) invalid sha256" }
-        foreach ($d in @($pkg.deps)) {
+        $pkgDeps = @()
+        if ($pkg.PSObject.Properties['deps'] -and $null -ne $pkg.deps) { $pkgDeps = @($pkg.deps) }
+        foreach ($d in $pkgDeps) {
             if (-not $seenIds.ContainsKey($d)) { throw "bootstrap: vendor $($pkg.id) dep '$d' out of topological order" }
         }
         $seenIds[$pkg.id] = $true
 
         $dest = Join-Path $converterSrc $pkg.id
         $receiptPath = Join-Path $dest "PINNED.json"
-        if ((Test-Path $receiptPath) -and -not $Force) {
-            $rcpt = Get-Content $receiptPath -Raw | ConvertFrom-Json
-            if ($rcpt.id -eq $pkg.id -and $rcpt.version -eq $pkg.version -and $rcpt.commit -eq $pkg.commit -and $rcpt.sha256 -eq $pkg.sha256 -and (Get-TreeSha256 $dest) -eq $rcpt.tree_sha256) {
+        if ((Test-Path -LiteralPath $receiptPath) -and -not $Force) {
+            if (Test-VendorReceipt $pkg $dest) {
                 Write-Host "ok vendor:$($pkg.id) $($pkg.version)"
                 continue
             }
@@ -326,7 +624,9 @@ if ($Converter) {
         Assert-SafeArchive $file
         $patchRecords = @()
         $patchFiles = @()
-        foreach ($p in @($pkg.patches)) {
+        $pkgPatches = @()
+        if ($pkg.PSObject.Properties['patches'] -and $null -ne $pkg.patches) { $pkgPatches = @($pkg.patches) }
+        foreach ($p in $pkgPatches) {
             if ($p.sha256 -notmatch '^[0-9a-f]{64}$' -or (Test-MovingRef $p.url)) {
                 throw "bootstrap: invalid patch metadata in $($pkg.id)"
             }
@@ -335,11 +635,19 @@ if ($Converter) {
             $patchRecords += @{ name = $p.name; sha256 = $p.sha256 }
         }
 
-        $stage = Join-Path $cache "stage-vendor-$($pkg.id)"
-        if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
+        $resolvedCache = (Resolve-Path -LiteralPath $cache).ProviderPath
+        $stage = if ($resolvedCache.StartsWith('\\')) {
+            Join-Path ([IO.Path]::GetTempPath()) ("rf-vendor-$($pkg.id)-" + [guid]::NewGuid().ToString("N"))
+        } else {
+            Join-Path $cache "stage-vendor-$($pkg.id)"
+        }
+        if (Test-Path -LiteralPath $stage) { Remove-Item -Recurse -Force -LiteralPath $stage }
         New-Item -ItemType Directory -Force -Path $stage | Out-Null
-        & $bsdtar -xf $file -C $stage
-        if ($LASTEXITCODE -ne 0) { throw "bootstrap: extract failed: $file" }
+        Invoke-WithLocalArchive $file {
+            param($localArc)
+            & $bsdtar -xf $localArc -C $stage
+            if ($LASTEXITCODE -ne 0) { throw "bootstrap: extract failed: $file" }
+        }
         $top = @(Get-ChildItem $stage)
         $src = if ($top.Count -eq 1 -and $top[0].PSIsContainer) { $top[0].FullName } else { $stage }
         foreach ($pf in $patchFiles) {
@@ -359,9 +667,10 @@ if ($Converter) {
             tree_sha256 = $treeHash
         } | ConvertTo-Json -Depth 4
         Write-Utf8NoBom (Join-Path $src "PINNED.json") ($receiptJson + "`n")
-        if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
-        Move-Item $src $dest
-        if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
+        Move-StageToDest $src $dest $stage
+        if (-not (Test-VendorReceipt $pkg $dest)) {
+            throw "bootstrap: vendor $($pkg.id) receipt verification failed after staging"
+        }
         Write-Host "staged vendor:$($pkg.id) $($pkg.version)"
     }
 }
