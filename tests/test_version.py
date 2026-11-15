@@ -115,6 +115,10 @@ class VersionSource(unittest.TestCase):
         result = run_version(self.root, '--release-notes')
         self.assertEqual(result.returncode, 1)
         self.assertIn('appears twice', result.stdout)
+        self.write('CHANGELOG.md', head + f'## {version}\n\n- A.\n\n## [{version}] - 2026-11-12\n\n- B.\n')
+        result = run_version(self.root, '--release-notes')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('has more than one candidate', result.stdout)
         (self.root / 'CHANGELOG.md').unlink()
         result = run_version(self.root, '--release-notes')
         self.assertEqual(result.returncode, 1)
@@ -156,7 +160,7 @@ class VersionSource(unittest.TestCase):
             self.write('CHANGELOG.md', changelog.replace('\n## Unreleased\n', f'\n## Unreleased\n\n## {version}\n'))
             duplicate = run_version(self.root, '--release-notes')
             self.assertEqual(duplicate.returncode, 1)
-            self.assertIn('has more than one candidate', duplicate.stdout)
+            self.assertRegex(duplicate.stdout, r'(appears twice|has more than one candidate)')
             major, minor, patch = version.split('-', 1)[0].split('.')
             patch_num = int(patch) + 1
             while True:
@@ -175,6 +179,23 @@ class VersionSource(unittest.TestCase):
         emptied = run_version(self.root, '--release-notes', '--unreleased')
         self.assertEqual(emptied.returncode, 1)
         self.assertIn('the section "## Unreleased" is empty', emptied.stdout)
+        # Also cover a plain `## <version>` existing release heading directly.
+        self.write('VERSION', '1.0.0\n')
+        self.assertEqual(run_version(self.root, '--write').returncode, 0)
+        plain_changelog = '# Changelog\n\n## Unreleased\n\n- Next.\n\n## 1.0.0\n\n- First.\n'
+        self.write('CHANGELOG.md', plain_changelog.replace('\n## Unreleased\n', '\n## Unreleased\n\n## 1.0.0\n'))
+        plain_dup = run_version(self.root, '--release-notes')
+        self.assertEqual(plain_dup.returncode, 1)
+        self.assertIn('appears twice', plain_dup.stdout)
+        self.write('VERSION', '1.0.1\n')
+        self.assertEqual(run_version(self.root, '--write').returncode, 0)
+        self.write('CHANGELOG.md', plain_changelog.replace('\n## Unreleased\n', '\n## Unreleased\n\n## 1.0.1\n'))
+        plain_ok = run_version(self.root, '--release-notes')
+        self.assertEqual(plain_ok.returncode, 0, plain_ok.stdout)
+        self.assertEqual(plain_ok.stdout, '- Next.\n')
+        plain_empty = run_version(self.root, '--release-notes', '--unreleased')
+        self.assertEqual(plain_empty.returncode, 1)
+        self.assertIn('the section "## Unreleased" is empty', plain_empty.stdout)
 
     def test_dev_labels(self):
         self.git('init', '-q')

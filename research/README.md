@@ -13,6 +13,7 @@ Tools for changing the codec with numbers instead of guesses. Data goes to
 | `python research/ab.py compat [REF] [--allow-diff SET]` | builds baseline `REF` (`build/research/vs/rasterfold-m1.exe`, `build/research/cm_m1.c`, and `build/research/bench_m1.exe`) and verifies 55-image `.fold` byte identity (except any permitted `--allow-diff SET`), `bench_m1` size identity, and baseline/candidate decode at `-t1` and `-t3` |
 | `python research/prof.py [N]` | line-level profile from `bench.exe -p` samples |
 | `python research/vsjxl.py [image.bmp] [-n5]` | process wall times of `bin/windows-x64/bin/rasterfold.exe` against ffmpeg libjxl (`--webp-photos` times `testdata/photos/` decode against lossless WebP; `--threads {1,3,6,9}` sets the thread count) |
+| `python research/jxl_alt.py [measure photos synthetic]` | paired alternating default-thread `bin/windows-x64/bin/rasterfold.exe` against unconstrained `ffmpeg -c:v libjxl -distance 0 -effort 7` encode/decode wall-time and `PeakWorkingSetSize` contiguous 5-round tail pools (`--out-dir`, `--rounds`, `--max-rounds`) |
 
 Sets for `ab.py`: `sub` (8 mixed photos), `kodak`, `ic`, `tp` (test pack), `heldout` (the 40 held-out images; never used to choose a parameter), `screens` (the 10 development screenshots `dv_s01` to `dv_s10`, which screen-content rounds are designed and decided on; `size` refuses an image of either frozen set whose pixels differ from its manifest),
 `tp-only` (5 exclusive test-pack crops), `photo` (measure + kodak + ic), `synth`,

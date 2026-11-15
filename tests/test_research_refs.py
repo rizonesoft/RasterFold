@@ -22,6 +22,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 import ab  # noqa: E402
 import benchmark  # noqa: E402
 import corpus  # noqa: E402
+import jxl_alt  # noqa: E402
 import vsjxl  # noqa: E402
 
 
@@ -2605,6 +2606,98 @@ int main(int argc, char **argv) {
             self.assertEqual(empty["pre_enc"], "")
             self.assertEqual(empty["pre_dec"], "")
             self.assertEqual(empty["pre_at_sampler"], "0/0")
+
+    def test_jxl_alt_pool_predicates_extension_and_failure_exit(self) -> None:
+        self.assertAlmostEqual(jxl_alt.rel_diff(0.50, 0.55), 0.10, places=9)
+        with contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as bad_set:
+                jxl_alt.parse_args(["unknown"])
+            self.assertEqual(bad_set.exception.code, 2)
+            with self.assertRaises(SystemExit) as bad_rounds:
+                jxl_alt.parse_args(["--rounds", "7", "measure"])
+            self.assertEqual(bad_rounds.exception.code, 2)
+            with self.assertRaises(SystemExit) as bad_max:
+                jxl_alt.parse_args(["--rounds", "10", "--max-rounds", "5", "measure"])
+            self.assertEqual(bad_max.exception.code, 2)
+
+        def mk_round(rnd: int, rf_enc: int, rf_dec: int, rf_ws: int = 100) -> dict:
+            return {
+                "set": "measure",
+                "round": rnd,
+                "order": ["jxl", "rf"] if rnd % 2 == 0 else ["rf", "jxl"],
+                "win_cpu_pct": 25.0,
+                "wsl_load": 1.25,
+                "images": {
+                    "img": {
+                        "rf": {"bytes": 90, "enc_us": rf_enc, "dec_us": rf_dec, "enc_ws": rf_ws, "dec_ws": rf_ws},
+                        "jxl": {"bytes": 100, "enc_us": 400, "dec_us": 200, "enc_ws": 200, "dec_ws": 200},
+                    }
+                },
+            }
+
+        p_low = jxl_alt.summarize_pool([mk_round(i, 100, 100) for i in range(5)], ["img"])
+        p_ok = jxl_alt.summarize_pool([mk_round(i, 200, 100) for i in range(5, 10)], ["img"])
+        p_fail_speed = jxl_alt.summarize_pool([mk_round(i, 200, 200) for i in range(5, 10)], ["img"])
+        self.assertFalse(jxl_alt.pool_predicates_hold(p_low, p_ok))
+        self.assertTrue(jxl_alt.pool_predicates_hold(p_ok, p_ok))
+        self.assertFalse(jxl_alt.pool_predicates_hold(p_ok, p_fail_speed))
+
+        with tempfile.TemporaryDirectory() as tmp_str:
+            tmp = Path(tmp_str)
+            src = tmp / "sample.bmp"
+            src.write_bytes(b"stub")
+
+            ext_dir = tmp / "ext"
+            ext_calls = {"rf": 0, "jxl": 0}
+
+            def fake_ext(codec: str, *_args, **_kwargs) -> dict[str, int]:
+                r = ext_calls[codec]
+                ext_calls[codec] += 1
+                if codec == "rf":
+                    return {"bytes": 90, "enc_us": 100 if r < 5 else 200, "dec_us": 100, "enc_ws": 100, "dec_ws": 100}
+                return {"bytes": 100, "enc_us": 400, "dec_us": 200, "enc_ws": 200, "dec_ws": 200}
+
+            out = io.StringIO()
+            with (
+                mock.patch.object(jxl_alt, "warm_binaries"),
+                mock.patch.object(jxl_alt.bm, "sources", return_value=[("sample", src)]),
+                mock.patch.object(jxl_alt.bm, "pixels_of", return_value=b"rgb"),
+                mock.patch.object(jxl_alt, "sample_win_cpu_pct", return_value=22.5),
+                mock.patch.object(jxl_alt, "sample_wsl_load", return_value=1.5),
+                mock.patch.object(jxl_alt, "run_one_codec", side_effect=fake_ext),
+                contextlib.redirect_stdout(out),
+            ):
+                rc = jxl_alt.main(["--out-dir", str(ext_dir), "--rounds", "10", "--max-rounds", "15", "measure"])
+            self.assertEqual(rc, 0, out.getvalue())
+            self.assertIn("extending 10 -> 15", out.getvalue())
+            summary = json.loads((ext_dir / "jxl_alt_summary.json").read_text(encoding="utf-8"))
+            self.assertTrue(summary["measure"]["passed"])
+            self.assertEqual(summary["measure"]["rounds"], 15)
+            self.assertEqual(summary["measure"]["tail_slices"], ["[5:10]", "[10:15]"])
+            self.assertEqual(len((ext_dir / "jxl_alt_pools.jsonl").read_text(encoding="utf-8").splitlines()), 15)
+
+            fail_dir = tmp / "fail"
+
+            def fake_fail(codec: str, *_args, **_kwargs) -> dict[str, int]:
+                if codec == "rf":
+                    return {"bytes": 90, "enc_us": 200, "dec_us": 250, "enc_ws": 100, "dec_ws": 100}
+                return {"bytes": 100, "enc_us": 400, "dec_us": 200, "enc_ws": 200, "dec_ws": 200}
+
+            out_fail = io.StringIO()
+            with (
+                mock.patch.object(jxl_alt, "warm_binaries"),
+                mock.patch.object(jxl_alt.bm, "sources", return_value=[("sample", src)]),
+                mock.patch.object(jxl_alt.bm, "pixels_of", return_value=b"rgb"),
+                mock.patch.object(jxl_alt, "sample_win_cpu_pct", return_value=22.5),
+                mock.patch.object(jxl_alt, "sample_wsl_load", return_value=1.5),
+                mock.patch.object(jxl_alt, "run_one_codec", side_effect=fake_fail),
+                contextlib.redirect_stdout(out_fail),
+            ):
+                rc_fail = jxl_alt.main(["--out-dir", str(fail_dir), "--rounds", "10", "--max-rounds", "10", "measure"])
+            self.assertEqual(rc_fail, 1)
+            self.assertIn("measure FAIL", out_fail.getvalue())
+            fail_summary = json.loads((fail_dir / "jxl_alt_summary.json").read_text(encoding="utf-8"))
+            self.assertFalse(fail_summary["measure"]["passed"])
 
 
 if __name__ == "__main__":
