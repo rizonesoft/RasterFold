@@ -19,19 +19,21 @@ def check_python_version(version_info=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--verify', action='store_true')
+    parser.add_argument('--converter', action='store_true', help='include converter-scoped tools and pinned codec sources')
     args = parser.parse_args()
     if sys.platform != 'linux':
         parser.error('Windows hosts use tools/provision.ps1')
+    bs_args = ['--converter'] if args.converter else []
     try:
         check_python_version()
         if not args.verify:
-            subprocess.run([sys.executable, str(ROOT / 'tools/bootstrap.py')], check=True)
+            subprocess.run([sys.executable, str(ROOT / 'tools/bootstrap.py'), *bs_args], check=True)
             if not (ROOT / '.venv/bin/python').is_file():
                 subprocess.run([sys.executable, '-m', 'venv', str(ROOT / '.venv')], check=True)
             subprocess.run([str(ROOT / '.venv/bin/python'), '-m', 'pip', 'install', '-r', str(ROOT / 'requirements-dev.txt')], check=True)
             subprocess.run([sys.executable, str(ROOT / 'scripts/gen-compdb.py')], check=True)
         else:
-            subprocess.run([sys.executable, str(ROOT / 'tools/bootstrap.py'), '--verify'], check=True)
+            subprocess.run([sys.executable, str(ROOT / 'tools/bootstrap.py'), '--verify', *bs_args], check=True)
             subprocess.run([sys.executable, str(ROOT / 'scripts/gen-compdb.py'), '--check'], check=True)
         hooks = subprocess.run(['git','config','--get','core.hooksPath'],cwd=ROOT,capture_output=True,text=True).stdout.strip()
         if not hooks and not args.verify:

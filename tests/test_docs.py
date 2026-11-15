@@ -96,6 +96,9 @@ FIXTURE_FILES = (
     'assets/brand/cover.svg',
     'benchmarks/corpus.csv',
     'benchmarks/results.csv',
+    'converter/vendor.json',
+    'converter/THIRD-PARTY-NOTICES.txt',
+    'converter/sbom.spdx.json',
 )
 
 
@@ -237,6 +240,7 @@ class DocsMapTests(unittest.TestCase):
             dst = self.root / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(src, dst)
+        shutil.copytree(REPO / 'converter/licenses', self.root / 'converter/licenses', dirs_exist_ok=True)
         for name in build_docs.CHART_NAMES:
             for rel in (
                 f'docs/_includes/generated/charts/{name}.svg',

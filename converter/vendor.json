@@ -1,0 +1,766 @@
+{
+  "schema": 1,
+  "target": "windows-x64",
+  "build_tools": {
+    "manifest": "toolchain.json",
+    "required_converter_tools": [
+      "cmake",
+      "nasm"
+    ],
+    "omitted_tools": {
+      "meson": "Not required: all 19 pinned direct and transitive converter dependencies compile cleanly with pinned CMake 4.5.0 and Ninja 1.13.2 (with thin CMakeLists wrappers for lcms2, giflib, qoi, and libraw under converter/cmake/)."
+    }
+  },
+  "system_codecs": [
+    {
+      "formats": [
+        "heif",
+        "heic"
+      ],
+      "bundled": false,
+      "provider": "Windows Imaging Component",
+      "hevc_bundled": false,
+      "hevc_source_or_binary_present": false,
+      "modes": {
+        "read": true,
+        "write": false
+      },
+      "owner": "D10 T02 \u00a77",
+      "decision_doc": "docs/codec-distribution.md"
+    }
+  ],
+  "packages": [
+    {
+      "id": "zlib",
+      "name": "zlib",
+      "version": "1.4",
+      "role": "transitive",
+      "formats": [],
+      "owner": "D10 T01 \u00a72",
+      "bundled": true,
+      "repo": "https://github.com/madler/zlib",
+      "tag": "v1.4",
+      "commit": "99623ef7097352da7993ba614161fd6a311e046e",
+      "url": "https://github.com/madler/zlib/releases/download/v1.4/zlib-1.4.tar.gz",
+      "archive": "zlib-1.4.tar.gz",
+      "bytes": 1507140,
+      "sha256": "02dd159783677a749c04adbdd02b55b8a2bcc7e054f51b76b549199a916ad584",
+      "license": "Zlib",
+      "license_file": "converter/licenses/zlib.txt",
+      "patches": [],
+      "deps": [],
+      "language": "c",
+      "features": {
+        "simd": "x86-64-v2 baseline compiler flags",
+        "nasm": false,
+        "threads": false,
+        "notes": "Static Deflate stream support for libpng, libtiff, and libraw"
+      },
+      "cmake_options": [
+        "-DZLIB_BUILD_SHARED=OFF",
+        "-DZLIB_BUILD_STATIC=ON",
+        "-DZLIB_BUILD_TESTING=OFF",
+        "-DZLIB_INSTALL=ON"
+      ]
+    },
+    {
+      "id": "libdeflate",
+      "name": "libdeflate",
+      "version": "1.26",
+      "role": "transitive",
+      "formats": [],
+      "owner": "D10 T01 \u00a72",
+      "bundled": true,
+      "repo": "https://github.com/ebiggers/libdeflate",
+      "tag": "v1.26",
+      "commit": "92e6a0db9fa848d742f9eb286c92afc60f2c3dda",
+      "url": "https://github.com/ebiggers/libdeflate/releases/download/v1.26/libdeflate-1.26.tar.gz",
+      "archive": "libdeflate-1.26.tar.gz",
+      "bytes": 187565,
+      "sha256": "125856d4656e0feab660f94842f835923410c9281fedbcee64598c918da42b5a",
+      "license": "MIT",
+      "license_file": "converter/licenses/libdeflate.txt",
+      "patches": [],
+      "deps": [],
+      "language": "c",
+      "features": {
+        "simd": "Runtime CPUID dispatch (SSE2/PCLMULQDQ/AVX2/BMI2/AVX-512 when supported by host)",
+        "nasm": false,
+        "threads": false,
+        "notes": "Fast static DEFLATE engine for OpenEXRCore and libtiff"
+      },
+      "cmake_options": [
+        "-DLIBDEFLATE_BUILD_STATIC_LIB=ON",
+        "-DLIBDEFLATE_BUILD_SHARED_LIB=OFF",
+        "-DLIBDEFLATE_BUILD_GZIP=OFF",
+        "-DLIBDEFLATE_BUILD_TESTS=OFF",
+        "-DLIBDEFLATE_INSTALL=ON"
+      ]
+    },
+    {
+      "id": "libpng",
+      "name": "libpng + libpng-apng",
+      "version": "1.6.59",
+      "role": "direct",
+      "formats": [
+        "png",
+        "apng"
+      ],
+      "owner": "D10 T02 \u00a71",
+      "bundled": true,
+      "repo": "https://github.com/pnggroup/libpng",
+      "tag": "v1.6.59",
+      "commit": "cd952f49f95bb27154ae77dbb103032d95f6e580",
+      "url": "https://sourceforge.net/projects/libpng/files/libpng16/1.6.59/libpng-1.6.59.tar.gz/download",
+      "archive": "libpng-1.6.59.tar.gz",
+      "bytes": 1589315,
+      "sha256": "86a3e4b501f7f50e392c4e456ea158893e9a595b1c63eb88c7bb9f6cf8772dad",
+      "license": "libpng-2.0",
+      "license_file": "converter/licenses/libpng.txt",
+      "patches": [
+        {
+          "name": "libpng-1.6.59-apng.patch.gz",
+          "url": "https://sourceforge.net/projects/libpng-apng/files/libpng16/1.6.59/libpng-1.6.59-apng.patch.gz/download",
+          "archive": "libpng-1.6.59-apng.patch.gz",
+          "bytes": 10680,
+          "sha256": "29693a9c9953ca1e88e25401ee500ed959e73f93dc98163fa967df71d3e7a990",
+          "strip": 1
+        }
+      ],
+      "deps": [
+        "zlib"
+      ],
+      "language": "c",
+      "features": {
+        "simd": "x86 SSE2 hardware filter optimizations (PNG_HARDWARE_OPTIMIZATIONS=ON)",
+        "nasm": false,
+        "threads": false,
+        "notes": "Static libpng 1.6.59 patched with libpng-apng 1.6.59 (PNG_APNG_SUPPORTED)"
+      },
+      "cmake_options": [
+        "-DPNG_SHARED=OFF",
+        "-DPNG_STATIC=ON",
+        "-DPNG_TESTS=OFF",
+        "-DPNG_TOOLS=OFF",
+        "-DPNG_HARDWARE_OPTIMIZATIONS=ON"
+      ]
+    },
+    {
+      "id": "libwebp",
+      "name": "libwebp",
+      "version": "1.6.0",
+      "role": "direct",
+      "formats": [
+        "webp"
+      ],
+      "owner": "D10 T02 \u00a72",
+      "bundled": true,
+      "repo": "https://chromium.googlesource.com/webm/libwebp",
+      "tag": "v1.6.0",
+      "commit": "4fa21912338357f89e4fd51cf2368325b59e9bd9",
+      "url": "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.6.0.tar.gz",
+      "archive": "libwebp-1.6.0.tar.gz",
+      "bytes": 4296070,
+      "sha256": "e4ab7009bf0629fd11982d4c2aa83964cf244cffba7347ecd39019a9e38c4564",
+      "license": "BSD-3-Clause",
+      "license_file": "converter/licenses/libwebp.txt",
+      "patches": [],
+      "deps": [],
+      "language": "c",
+      "features": {
+        "simd": "x86 SSE2/SSE4.1/AVX2 intrinsics runtime dispatch (WEBP_ENABLE_SIMD=ON)",
+        "nasm": false,
+        "threads": true,
+        "notes": "Static webp, webpdecoder, webpdemux, webpmux, and sharpyuv"
+      },
+      "cmake_options": [
+        "-DBUILD_SHARED_LIBS=OFF",
+        "-DWEBP_LINK_STATIC=ON",
+        "-DWEBP_ENABLE_SIMD=ON",
+        "-DWEBP_USE_THREAD=ON",
+        "-DWEBP_BUILD_ANIM_UTILS=OFF",
+        "-DWEBP_BUILD_CWEBP=OFF",
+        "-DWEBP_BUILD_DWEBP=OFF",
+        "-DWEBP_BUILD_GIF2WEBP=OFF",
+        "-DWEBP_BUILD_IMG2WEBP=OFF",
+        "-DWEBP_BUILD_VWEBP=OFF",
+        "-DWEBP_BUILD_WEBPINFO=OFF",
+        "-DWEBP_BUILD_WEBPMUX=OFF",
+        "-DWEBP_BUILD_EXTRAS=OFF",
+        "-DWEBP_BUILD_LIBWEBPMUX=ON"
+      ]
+    },
+    {
+      "id": "highway",
+      "name": "Google Highway",
+      "version": "1.4.0",
+      "role": "transitive",
+      "formats": [],
+      "owner": "D10 T01 \u00a72",
+      "bundled": true,
+      "repo": "https://github.com/google/highway",
+      "tag": "1.4.0",
+      "commit": "2607d3b5b0113992fe84d3848859eae13b3b52c1",
+      "url": "https://github.com/google/highway/releases/download/1.4.0/highway-1.4.0.tar.gz",
+      "archive": "highway-1.4.0.tar.gz",
+      "bytes": 3691557,
+      "sha256": "36f672ab48ddb3c8555e9e89e16fe400cd7d16c6eb455a1a3d0c146a63ababdc",
+      "license": "Apache-2.0",
+      "license_file": "converter/licenses/highway.txt",
+      "patches": [],
+      "deps": [],
+      "language": "cxx-behind-c-abi",
+      "features": {
+        "simd": "Dynamic multi-target x86 SIMD dispatch (SSE2/SSE4/AVX2/AVX-512) compiled inside static archive",
+        "nasm": false,
+        "threads": false,
+        "notes": "Required static dependency of libjxl"
+      },
+      "cmake_options": [
+        "-DBUILD_SHARED_LIBS=OFF",
+        "-DHWY_FORCE_STATIC_LIBS=ON",
+        "-DHWY_ENABLE_TESTS=OFF",
+        "-DHWY_ENABLE_EXAMPLES=OFF",
+        "-DHWY_ENABLE_CONTRIB=OFF",
+        "-DHWY_ENABLE_INSTALL=ON"
+      ]
+    },
+    {
+      "id": "brotli",
+      "name": "Brotli",
+      "version": "1.2.1",
+      "role": "transitive",
+      "formats": [],
+      "owner": "D10 T01 \u00a72",
+      "bundled": true,
+      "repo": "https://github.com/google/brotli",
+      "tag": "v1.2.1",
+      "commit": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+      "url": "https://github.com/google/brotli/archive/refs/tags/v1.2.1.tar.gz",
+      "archive": "brotli-v1.2.1.tar.gz",
+      "bytes": 646598,
+      "sha256": "98d35d11a78dc453aebb7d10c3748f3f73ff78c8267c0dc697b8631f67bf7e8f",
+      "license": "MIT",
+      "license_file": "converter/licenses/brotli.txt",
+      "patches": [],
+      "deps": [],
+      "language": "c",
+      "features": {
+        "simd": "x86-64-v2 baseline compiler flags",
+        "nasm": false,
+        "threads": false,
+        "notes": "Static brotlicommon/brotlienc/brotlidec for libjxl container and metadata boxes"
+      },
+      "cmake_options": [
+        "-DBUILD_SHARED_LIBS=OFF",
+        "-DBROTLI_BUILD_TOOLS=OFF",
+        "-DBROTLI_DISABLE_TESTS=ON"
+      ]
+    },
+    {
+      "id": "lcms2",
+      "name": "Little CMS 2",
+      "version": "2.20",
+      "role": "transitive",
+      "formats": [],
+      "owner": "D10 T01 \u00a72",
+      "bundled": true,
+      "repo": "https://github.com/mm2/Little-CMS",
+      "tag": "lcms2.20",
+      "commit": "7717fce0d85447ef3b2df0cca2e99207c15eeecd",
+      "url": "https://github.com/mm2/Little-CMS/releases/download/lcms2.20/lcms2-2.20.tar.gz",
+      "archive": "lcms2-2.20.tar.gz",
+      "bytes": 5477898,
+      "sha256": "18ff5504fa9cc8a2b1f3591180d90ead16c8a2ea78e530523b46eab70e1ca6b9",
+      "license": "MIT",
+      "license_file": "converter/licenses/lcms2.txt",
+      "patches": [],
+      "deps": [],
+      "language": "c",
+      "features": {
+        "simd": "x86-64-v2 baseline compiler flags",
+        "nasm": false,
+        "threads": true,
+        "notes": "Built via converter/cmake/lcms2 wrapper for libjxl, libraw, and color-managed preview"
+      },
+      "cmake_options": [
+        "-DBUILD_SHARED_LIBS=OFF"
+      ]
+    },
+    {
+      "id": "libjxl",
+      "name": "libjxl",
+      "version": "0.13.0",
+      "role": "direct",
+      "formats": [
+        "jpeg-xl"
+      ],
+      "owner": "D10 T02 \u00a73",
+      "bundled": true,
+      "repo": "https://github.com/libjxl/libjxl",
+      "tag": "v0.13.0",
+      "commit": "5a7da83447212fe4900fc29ce97430b881caa67e",
+      "url": "https://github.com/libjxl/libjxl/archive/refs/tags/v0.13.0.tar.gz",
+      "archive": "libjxl-v0.13.0.tar.gz",
+      "bytes": 1734982,
+      "sha256": "24d18c9af2d1f5a17730b3f8d3f70a5c16e5ac303f5d9d5fe9dc00cf7ca82af2",
+      "license": "BSD-3-Clause",
+      "license_file": "converter/licenses/libjxl.txt",
+      "patches": [],
+      "deps": [
+        "highway",
+        "brotli",
+        "lcms2"
+      ],
+      "language": "cxx-behind-c-abi",
+      "features": {
+        "simd": "Google Highway runtime SIMD dispatch across x86-64 instruction sets",
+        "nasm": false,
+        "threads": true,
+        "notes": "Static jxl, jxl_cms, and jxl_threads behind C ABI jxl/*.h"
+      },
+      "cmake_options": [
+        "-DBUILD_SHARED_LIBS=OFF",
+        "-DBUILD_TESTING=OFF",
+        "-DJPEGXL_STATIC=ON",
+        "-DJPEGXL_ENABLE_TOOLS=OFF",
+        "-DJPEGXL_ENABLE_DOXYGEN=OFF",
+        "-DJPEGXL_ENABLE_MANPAGES=OFF",
+        "-DJPEGXL_ENABLE_BENCHMARK=OFF",
+        "-DJPEGXL_ENABLE_EXAMPLES=OFF",
+        "-DJPEGXL_ENABLE_JNI=OFF",
+        "-DJPEGXL_ENABLE_SJPEG=OFF",
+        "-DJPEGXL_ENABLE_OPENEXR=OFF",
+        "-DJPEGXL_ENABLE_TCMALLOC=OFF",
+        "-DJPEGXL_ENABLE_PLUGINS=OFF",
+        "-DJPEGXL_ENABLE_SKCMS=OFF",
+        "-DJPEGXL_BUNDLE_LIBPNG=OFF",
+        "-DJPEGXL_FORCE_SYSTEM_BROTLI=ON",
+        "-DJPEGXL_FORCE_SYSTEM_HWY=ON",
+        "-DJPEGXL_FORCE_SYSTEM_LCMS2=ON",
+        "-DCMAKE_DISABLE_FIND_PACKAGE_PNG=ON"
+      ]
+    },
+    {
+      "id": "libaom",
+      "name": "libaom",
+      "version": "3.15.3",
+      "role": "transitive",
+      "formats": [],
+      "owner": "D10 T01 \u00a72",
+      "bundled": true,
+      "repo": "https://aomedia.googlesource.com/aom",
+      "tag": "v3.15.3",
+      "commit": "b141d9c45db236335351c8a4b2a14b3ade27c937",
+      "url": "https://storage.googleapis.com/aom-releases/libaom-3.15.3.tar.gz",
+      "archive": "libaom-3.15.3.tar.gz",
+      "bytes": 6632070,
+      "sha256": "12c01dc731ed7b5a999e28120b45bf58a002ba3435a4ba2cfbc1e084a27c9c04",
+      "license": "BSD-2-Clause",
+      "license_file": "converter/licenses/libaom.txt",
+      "patches": [],
+      "deps": [],
+      "language": "cxx-behind-c-abi",
+      "features": {
+        "simd": "x86-64 SSE2/SSSE3/SSE4.1/AVX2/AVX-512 runtime CPU detection with pinned NASM 3.02 kernels",
+        "nasm": true,
+        "threads": true,
+        "notes": "Royalty-free AV1 encode and decode static backend for libavif"
+      },
+      "cmake_options": [
+        "-DBUILD_SHARED_LIBS=OFF",
+        "-DENABLE_DOCS=OFF",
+        "-DENABLE_EXAMPLES=OFF",
+        "-DENABLE_TESTDATA=OFF",
+        "-DENABLE_TESTS=OFF",
+        "-DENABLE_TOOLS=OFF",
+        "-DAOM_TARGET_CPU=x86_64",
+        "-DCONFIG_AV1_ENCODER=1",
+        "-DCONFIG_AV1_DECODER=1"
+      ]
+    },
+    {
+      "id": "libjpeg-turbo",
+      "name": "libjpeg-turbo",
+      "version": "3.2.1",
+      "role": "direct",
+      "formats": [
+        "jpeg"
+      ],
+      "owner": "D10 T02 \u00a75",
+      "bundled": true,
+      "repo": "https://github.com/libjpeg-turbo/libjpeg-turbo",
+      "tag": "3.2.1",
+      "commit": "7b4993786d856cbccabfc0ed2f923ba000e326cc",
+      "url": "https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.2.1/libjpeg-turbo-3.2.1.tar.gz",
+      "archive": "libjpeg-turbo-3.2.1.tar.gz",
+      "bytes": 2549854,
+      "sha256": "c27ad72a68da151177929aa969ae773a2da5ac2af9ce946079314fdac8cece7f",
+      "license": "IJG AND BSD-3-Clause AND Zlib",
+      "license_file": "converter/licenses/libjpeg-turbo.txt",
+      "patches": [],
+      "deps": [
+        "zlib"
+      ],
+      "language": "c",
+      "features": {
+        "simd": "x86-64 SSE2/AVX2 hand-written NASM assembly (WITH_SIMD=ON, REQUIRE_SIMD=ON)",
+        "nasm": true,
+        "threads": false,
+        "notes": "Static jpeg and turbojpeg libraries using pinned NASM 3.02 and pinned zlib"
+      },
+      "cmake_options": [
+        "-DENABLE_SHARED=OFF",
+        "-DENABLE_STATIC=ON",
+        "-DWITH_TURBOJPEG=ON",
+        "-DWITH_SIMD=ON",
+        "-DREQUIRE_SIMD=ON",
+        "-DWITH_TOOLS=OFF",
+        "-DWITH_TESTS=OFF",
+        "-DWITH_SYSTEM_ZLIB=ON"
+      ]
+    },
+    {
+      "id": "libavif",
+      "name": "libavif",
+      "version": "1.4.2",
+      "role": "direct",
+      "formats": [
+        "avif"
+      ],
+      "owner": "D10 T02 \u00a74",
+      "bundled": true,
+      "repo": "https://github.com/AOMediaCodec/libavif",
+      "tag": "v1.4.2",
+      "commit": "c5240fc79fe5c2407e10afd35f5505ef6333ea49",
+      "url": "https://github.com/AOMediaCodec/libavif/archive/refs/tags/v1.4.2.tar.gz",
+      "archive": "libavif-v1.4.2.tar.gz",
+      "bytes": 14665927,
+      "sha256": "2b645287340ba5a631d268b551dc2d72bd73ac33335962dd36dcdb6d8366921d",
+      "license": "BSD-2-Clause",
+      "license_file": "converter/licenses/libavif.txt",
+      "patches": [],
+      "deps": [
+        "libaom",
+        "libwebp"
+      ],
+      "language": "c",
+      "features": {
+        "simd": "Inherits libaom NASM/SIMD and libwebp sharpyuv SIMD",
+        "nasm": false,
+        "threads": true,
+        "notes": "Static AVIF mux/demux configured solely with royalty-free AV1 (libaom)"
+      },
+      "cmake_options": [
+        "-DBUILD_SHARED_LIBS=OFF",
+        "-DAVIF_CODEC_AOM=SYSTEM",
+        "-DAVIF_LIBYUV=OFF",
+        "-DAVIF_LIBSHARPYUV=SYSTEM",
+        "-DAVIF_BUILD_APPS=OFF",
+        "-DAVIF_BUILD_EXAMPLES=OFF",
+        "-DAVIF_BUILD_TESTS=OFF"
+      ]
+    },
+    {
+      "id": "libtiff",
+      "name": "LibTIFF",
+      "version": "4.7.2",
+      "role": "direct",
+      "formats": [
+        "tiff"
+      ],
+      "owner": "D10 T02 \u00a76",
+      "bundled": true,
+      "repo": "https://gitlab.com/libtiff/libtiff",
+      "tag": "v4.7.2",
+      "commit": "d01a94be176f5f6a87f7ee1c0b32e65416aa2b4d",
+      "url": "https://download.osgeo.org/libtiff/tiff-4.7.2.tar.gz",
+      "archive": "tiff-4.7.2.tar.gz",
+      "bytes": 4083368,
+      "sha256": "672bd7d10aee4606171afb864f3570b83340f6a33e2c186dc0512f7145ffdf6a",
+      "license": "libtiff",
+      "license_file": "converter/licenses/libtiff.txt",
+      "patches": [],
+      "deps": [
+        "zlib",
+        "libdeflate",
+        "libjpeg-turbo",
+        "libwebp"
+      ],
+      "language": "c",
+      "features": {
+        "simd": "Inherits SIMD from zlib/libdeflate/libwebp/libjpeg-turbo",
+        "nasm": false,
+        "threads": false,
+        "notes": "Static TIFF/BigTIFF library with Deflate, LZW, PackBits, JPEG, and WebP codecs"
+      },
+      "cmake_options": [
+        "-DBUILD_SHARED_LIBS=OFF",
+        "-Dtiff-static=ON",
+        "-Dtiff-tools=OFF",
+        "-Dtiff-tests=OFF",
+        "-Dtiff-contrib=OFF",
+        "-Dtiff-docs=OFF",
+        "-Dzlib=ON",
+        "-Dlibdeflate=ON",
+        "-Djpeg=ON",
+        "-Dwebp=ON",
+        "-Dzstd=OFF",
+        "-Dlzma=OFF",
+        "-Djbig=OFF",
+        "-Dlerc=OFF"
+      ]
+    },
+    {
+      "id": "giflib",
+      "name": "giflib",
+      "version": "6.1.3",
+      "role": "direct",
+      "formats": [
+        "gif"
+      ],
+      "owner": "D10 T02 \u00a76",
+      "bundled": true,
+      "repo": "https://git.code.sf.net/p/giflib/code",
+      "tag": "6.1.3",
+      "commit": "edff4aed17f857442ab0cac31566572ba08f93d3",
+      "url": "https://sourceforge.net/projects/giflib/files/giflib-6.x/giflib-6.1.3.tar.gz/download",
+      "archive": "giflib-6.1.3.tar.gz",
+      "bytes": 470579,
+      "sha256": "b65b66b99f0424b93525f987386f22fc5efb9da2bfc92ad4a532249aaffbab0e",
+      "license": "MIT",
+      "license_file": "converter/licenses/giflib.txt",
+      "patches": [],
+      "deps": [],
+      "language": "c",
+      "features": {
+        "simd": "Scalar LZW codec compiled at x86-64-v2 baseline",
+        "nasm": false,
+        "threads": false,
+        "notes": "Built via converter/cmake/giflib wrapper (gif_lib.h + static libgif.a)"
+      },
+      "cmake_options": [
+        "-DBUILD_SHARED_LIBS=OFF"
+      ]
+    },
+    {
+      "id": "qoi",
+      "name": "QOI",
+      "version": "0.0.0-ffb2d2cb",
+      "role": "direct",
+      "formats": [
+        "qoi"
+      ],
+      "owner": "D10 T02 \u00a78",
+      "bundled": true,
+      "repo": "https://github.com/phoboslab/qoi",
+      "tag": null,
+      "commit": "ffb2d2cb74a1de60819b21b939f7209aa53e91c1",
+      "url": "https://github.com/phoboslab/qoi/archive/ffb2d2cb74a1de60819b21b939f7209aa53e91c1.tar.gz",
+      "archive": "qoi-ffb2d2cb74a1de60819b21b939f7209aa53e91c1.tar.gz",
+      "bytes": 16774,
+      "sha256": "3f1b2df41d4fecdc25a18c2f6a2add3182601a2182245d67da6aeb575e3a7724",
+      "license": "MIT",
+      "license_file": "converter/licenses/qoi.txt",
+      "patches": [],
+      "deps": [],
+      "language": "c",
+      "features": {
+        "simd": "Single-header C implementation compiled with x86-64-v2 baseline",
+        "nasm": false,
+        "threads": false,
+        "notes": "Upstream has no tagged release; pinned to immutable commit ffb2d2cb74a1de60819b21b939f7209aa53e91c1"
+      },
+      "cmake_options": []
+    },
+    {
+      "id": "openjpeg",
+      "name": "OpenJPEG",
+      "version": "2.5.4",
+      "role": "direct",
+      "formats": [
+        "jpeg-2000"
+      ],
+      "owner": "D10 T02 \u00a79",
+      "bundled": true,
+      "repo": "https://github.com/uclouvain/openjpeg",
+      "tag": "v2.5.4",
+      "commit": "6c4a29b00211eb0430fa0e5e890f1ce5c80f409f",
+      "url": "https://github.com/uclouvain/openjpeg/archive/refs/tags/v2.5.4.tar.gz",
+      "archive": "openjpeg-v2.5.4.tar.gz",
+      "bytes": 2157028,
+      "sha256": "a695fbe19c0165f295a8531b1e4e855cd94d0875d2f88ec4b61080677e27188a",
+      "license": "BSD-2-Clause",
+      "license_file": "converter/licenses/openjpeg.txt",
+      "patches": [],
+      "deps": [],
+      "language": "c",
+      "features": {
+        "simd": "x86-64-v2 auto-vectorized MCT and reversible/irreversible DWT",
+        "nasm": false,
+        "threads": true,
+        "notes": "Static openjp2 library (-DOPJ_STATIC) with codecs/tests disabled"
+      },
+      "cmake_options": [
+        "-DBUILD_SHARED_LIBS=OFF",
+        "-DBUILD_STATIC_LIBS=ON",
+        "-DBUILD_CODEC=OFF",
+        "-DBUILD_TESTING=OFF",
+        "-DBUILD_THIRDPARTY=OFF",
+        "-DBUILD_DOC=OFF"
+      ]
+    },
+    {
+      "id": "imath",
+      "name": "Imath",
+      "version": "3.2.3",
+      "role": "transitive",
+      "formats": [],
+      "owner": "D10 T01 \u00a72",
+      "bundled": true,
+      "repo": "https://github.com/AcademySoftwareFoundation/Imath",
+      "tag": "v3.2.3",
+      "commit": "5f27ba266d3ea1565e912570c30b5eafc89959f1",
+      "url": "https://github.com/AcademySoftwareFoundation/Imath/releases/download/v3.2.3/Imath-3.2.3.tar.gz",
+      "archive": "Imath-3.2.3.tar.gz",
+      "bytes": 684604,
+      "sha256": "72f498e7073890a2a1b870e453908a07c9725f9d1384527043a38578bfb4ef31",
+      "license": "BSD-3-Clause",
+      "license_file": "converter/licenses/imath.txt",
+      "patches": [],
+      "deps": [],
+      "language": "cxx-behind-c-abi",
+      "features": {
+        "simd": "IEEE 754 binary16 conversion with F16C/x86-64-v2 compiler paths",
+        "nasm": false,
+        "threads": false,
+        "notes": "Required transitive dependency for OpenEXR half-float and math types"
+      },
+      "cmake_options": [
+        "-DBUILD_SHARED_LIBS=OFF",
+        "-DBUILD_TESTING=OFF",
+        "-DIMATH_INSTALL=ON"
+      ]
+    },
+    {
+      "id": "openjph",
+      "name": "OpenJPH",
+      "version": "0.33.0",
+      "role": "transitive",
+      "formats": [],
+      "owner": "D10 T01 \u00a72",
+      "bundled": true,
+      "repo": "https://github.com/aous72/OpenJPH",
+      "tag": "0.33.0",
+      "commit": "345a8bcd1c7a3908e3870797057277660a412073",
+      "url": "https://github.com/aous72/OpenJPH/archive/refs/tags/0.33.0.tar.gz",
+      "archive": "OpenJPH-0.33.0.tar.gz",
+      "bytes": 584955,
+      "sha256": "3437f296ff8531b35558650b0ed7fde45cad39394329eef4064a3d4900cf101f",
+      "license": "BSD-2-Clause",
+      "license_file": "converter/licenses/openjph.txt",
+      "patches": [],
+      "deps": [],
+      "language": "cxx-behind-c-abi",
+      "features": {
+        "simd": "Runtime-dispatched SSE/SSE2/SSSE3/SSE4/AVX/AVX2/AVX-512 HTJ2K wavelet and block coding",
+        "nasm": false,
+        "threads": false,
+        "notes": "Required static dependency for OpenEXR 3.5.4 HTJ2K support"
+      },
+      "cmake_options": [
+        "-DBUILD_SHARED_LIBS=OFF",
+        "-DOJPH_BUILD_EXECUTABLES=OFF",
+        "-DOJPH_BUILD_TESTS=OFF",
+        "-DOJPH_ENABLE_TIFF_SUPPORT=OFF"
+      ]
+    },
+    {
+      "id": "openexr",
+      "name": "OpenEXR",
+      "version": "3.5.4",
+      "role": "direct",
+      "formats": [
+        "openexr"
+      ],
+      "owner": "D10 T02 \u00a710",
+      "bundled": true,
+      "repo": "https://github.com/AcademySoftwareFoundation/openexr",
+      "tag": "v3.5.4",
+      "commit": "86687e5f34e3a164820c5e280259550e3ca87c92",
+      "url": "https://github.com/AcademySoftwareFoundation/openexr/releases/download/v3.5.4/openexr-3.5.4.tar.gz",
+      "archive": "openexr-3.5.4.tar.gz",
+      "bytes": 26483741,
+      "sha256": "a09706c88ab83a90c26e7ee06cb7e6fa03a57726931eaec557c2e7eaf35c1b13",
+      "license": "BSD-3-Clause",
+      "license_file": "converter/licenses/openexr.txt",
+      "patches": [],
+      "deps": [
+        "imath",
+        "libdeflate",
+        "openjph"
+      ],
+      "language": "cxx-behind-c-abi",
+      "features": {
+        "simd": "x86-64 SSE2/F16C predictor/unroll plus OpenJPH SIMD HTJ2K and libdeflate SIMD ZIP",
+        "nasm": false,
+        "threads": true,
+        "notes": "Exposes pure C11 OpenEXRCore static archive alongside C++ OpenEXR libraries"
+      },
+      "cmake_options": [
+        "-DBUILD_SHARED_LIBS=OFF",
+        "-DBUILD_TESTING=OFF",
+        "-DOPENEXR_BUILD_TOOLS=OFF",
+        "-DOPENEXR_INSTALL_TOOLS=OFF",
+        "-DOPENEXR_BUILD_EXAMPLES=OFF",
+        "-DOPENEXR_TEST_LIBRARIES=OFF",
+        "-DOPENEXR_TEST_TOOLS=OFF",
+        "-DOPENEXR_TEST_PYTHON=OFF",
+        "-DOPENEXR_FORCE_INTERNAL_DEFLATE=OFF",
+        "-DOPENEXR_FORCE_INTERNAL_IMATH=OFF",
+        "-DOPENEXR_FORCE_INTERNAL_OPENJPH=OFF",
+        "-DOPENEXR_FORCE_INTERNAL_ZSTD=OFF",
+        "-DCMAKE_DISABLE_FIND_PACKAGE_TBB=ON",
+        "-DCMAKE_DISABLE_FIND_PACKAGE_zstd=ON"
+      ]
+    },
+    {
+      "id": "libraw",
+      "name": "LibRaw",
+      "version": "0.22.3",
+      "role": "direct",
+      "formats": [
+        "camera-raw",
+        "dng"
+      ],
+      "owner": "D10 T02 \u00a711",
+      "bundled": true,
+      "repo": "https://github.com/LibRaw/LibRaw",
+      "tag": "0.22.3",
+      "commit": "cf02d66eb5c19d4e46df7aee0582e47a4918509a",
+      "url": "https://github.com/LibRaw/LibRaw/archive/refs/tags/0.22.3.tar.gz",
+      "archive": "LibRaw-0.22.3.tar.gz",
+      "bytes": 612705,
+      "sha256": "7edf96c5b70cff88980a02ab0fc8af125cb6a4a377985573c654439d9d02355c",
+      "license": "CDDL-1.0",
+      "license_expression_upstream": "CDDL-1.0 OR LGPL-2.1-only",
+      "license_file": "converter/licenses/libraw.txt",
+      "patches": [],
+      "deps": [
+        "zlib",
+        "lcms2",
+        "libjpeg-turbo"
+      ],
+      "language": "cxx-behind-c-abi",
+      "features": {
+        "simd": "x86-64-v2 baseline compiler flags with OpenMP disabled for deterministic worker budgets",
+        "nasm": false,
+        "threads": true,
+        "notes": "Selected CDDL-1.0 under dual license; built via converter/cmake/libraw wrapper exposing C API libraw/libraw.h"
+      },
+      "cmake_options": [
+        "-DBUILD_SHARED_LIBS=OFF"
+      ]
+    }
+  ]
+}

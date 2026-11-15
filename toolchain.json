@@ -54,6 +54,40 @@
       "versionMatch": "v([0-9.]+)",
       "expectVersion": "0.12.0",
       "note": "The official cjxl and djxl binaries: a reference codec for the benchmark scripts only; nothing links against it. The .7z asset, because the .zip uses Deflate64, which the bsdtar in Windows cannot read."
+    },
+    {
+      "name": "cmake",
+      "version": "4.5.0",
+      "scope": "converter",
+      "url": "https://github.com/Kitware/CMake/releases/download/v4.5.0/cmake-4.5.0-windows-x86_64.zip",
+      "archive": "cmake-4.5.0-windows-x86_64.zip",
+      "sha256": "301b1728317ccd84e984b02e366a8293735bc5ac618757d3d8f58b578f062411",
+      "bytes": 56341654,
+      "dir": "cmake",
+      "probe": "bin/cmake.exe",
+      "versionArgs": [
+        "--version"
+      ],
+      "versionMatch": "cmake version ([0-9.]+)",
+      "expectVersion": "4.5.0",
+      "note": "Build system generator for bundled static converter codec dependencies (converter scope only)."
+    },
+    {
+      "name": "nasm",
+      "version": "3.02",
+      "scope": "converter",
+      "url": "https://www.nasm.us/pub/nasm/releasebuilds/3.02/win64/nasm-3.02-win64.zip",
+      "archive": "nasm-3.02-win64.zip",
+      "sha256": "161d0bfaff53c2f9e9f3e69fd0672323ebabafd1268976a5cec11be92a19aee7",
+      "bytes": 641314,
+      "dir": "nasm",
+      "probe": "nasm.exe",
+      "versionArgs": [
+        "-v"
+      ],
+      "versionMatch": "NASM version ([0-9.]+)",
+      "expectVersion": "3.02",
+      "note": "x86-64 assembler for libjpeg-turbo and libaom SIMD kernels (converter scope only)."
     }
   ],
   "hosts": {
@@ -87,6 +121,41 @@
             "--version"
           ],
           "expectVersion": "1.13.2"
+        },
+        {
+          "name": "cmake-linux",
+          "dir": "cmake-linux",
+          "scope": "converter",
+          "url": "https://github.com/Kitware/CMake/releases/download/v4.5.0/cmake-4.5.0-linux-x86_64.tar.gz",
+          "archive": "cmake-4.5.0-linux-x86_64.tar.gz",
+          "sha256": "81f0d5b0960fb6adc8197030ffc827fba937640d51e73e39e0e9e40d88c66f6f",
+          "bytes": 67002501,
+          "probe": "bin/cmake",
+          "versionArgs": [
+            "--version"
+          ],
+          "expectVersion": "4.5.0",
+          "probes": [
+            "bin/cmake"
+          ]
+        },
+        {
+          "name": "nasm-linux",
+          "dir": "nasm-linux",
+          "scope": "converter",
+          "build": "autotools",
+          "url": "https://www.nasm.us/pub/nasm/releasebuilds/3.02/nasm-3.02.tar.xz",
+          "archive": "nasm-3.02.tar.xz",
+          "sha256": "87336eba53b4acfe917424ab5d500d2b0054d9f5148d35c2273ccf2cfb712f0d",
+          "bytes": 1531636,
+          "probe": "bin/nasm",
+          "versionArgs": [
+            "-v"
+          ],
+          "expectVersion": "3.02",
+          "probes": [
+            "bin/nasm"
+          ]
         }
       ]
     }

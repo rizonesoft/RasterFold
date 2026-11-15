@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Report each toolchain pin against the latest upstream release.
 
@@ -50,9 +50,11 @@ $ManifestPath = Join-Path $RepoRoot 'toolchain.json'
 # Kept here rather than in toolchain.json because that file is the PIN, and a
 # pin should not carry instructions for how to stop being one.
 $Upstream = @{
-    'llvm-mingw' = @{ Repo = 'mstorsjo/llvm-mingw'; Strip = $false }
-    'ninja'      = @{ Repo = 'ninja-build/ninja';   Strip = $true  }
-    'libjxl'     = @{ Repo = 'libjxl/libjxl';       Strip = $true  }
+    'llvm-mingw' = @{ Type = 'github'; Repo = 'mstorsjo/llvm-mingw'; Strip = $false }
+    'ninja'      = @{ Type = 'github'; Repo = 'ninja-build/ninja';   Strip = $true  }
+    'libjxl'     = @{ Type = 'github'; Repo = 'libjxl/libjxl';       Strip = $true  }
+    'cmake'      = @{ Type = 'github'; Repo = 'Kitware/CMake';       Strip = $true  }
+    'nasm'       = @{ Type = 'nasm';   Url  = 'https://www.nasm.us/pub/nasm/releasebuilds/' }
 }
 
 if (-not (Test-Path $ManifestPath)) {
@@ -99,12 +101,27 @@ foreach ($component in $manifest.components) {
         continue
     }
 
-    $repo = $Upstream[$name].Repo
-    $api = "https://api.github.com/repos/$repo/releases/latest"
+    $spec = $Upstream[$name]
     try {
-        $release = Invoke-RestMethod -Uri $api -TimeoutSec $TimeoutSec -Headers @{
-            'Accept'     = 'application/vnd.github+json'
-            'User-Agent' = 'rasterfold-toolchain-latest'
+        if ($spec.Type -eq 'github') {
+            $api = "https://api.github.com/repos/$($spec.Repo)/releases/latest"
+            $release = Invoke-RestMethod -Uri $api -TimeoutSec $TimeoutSec -Headers @{
+                'Accept'     = 'application/vnd.github+json'
+                'User-Agent' = 'rasterfold-toolchain-latest'
+            }
+            $tag = [string]$release.tag_name
+            $latest = if ($spec.Strip) { $tag -replace '^v', '' } else { $tag }
+        }
+        elseif ($spec.Type -eq 'nasm') {
+            $resp = Invoke-WebRequest -Uri $spec.Url -TimeoutSec $TimeoutSec -UseBasicParsing -Headers @{
+                'User-Agent' = 'rasterfold-toolchain-latest'
+            }
+            $versions = @([regex]::Matches([string]$resp.Content, 'href="([0-9]+\.[0-9]+(?:\.[0-9]+)?)/"') | ForEach-Object { $_.Groups[1].Value })
+            if ($versions.Count -eq 0) { throw 'no NASM release links found' }
+            $latest = ($versions | Sort-Object { [version]$_ } | Select-Object -Last 1)
+        }
+        else {
+            throw "unknown upstream type $($spec.Type)"
         }
     }
     catch {
@@ -113,9 +130,6 @@ foreach ($component in $manifest.components) {
             Name = $name; Pinned = $pinned; Latest = '(unreachable)'; State = 'unreachable' })
         continue
     }
-
-    $tag = [string]$release.tag_name
-    $latest = if ($Upstream[$name].Strip) { $tag -replace '^v', '' } else { $tag }
 
     if (Test-Behind -Pinned $pinned -Latest $latest) {
         [void]$behind.Add([pscustomobject]@{ Name = $name; Pinned = $pinned; Latest = $latest })

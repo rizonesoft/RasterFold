@@ -601,8 +601,12 @@ class DriftTests(unittest.TestCase):
             'testdata/photos/manifest.json',
             'benchmarks/corpus.csv',
             'benchmarks/results.csv',
+            'converter/vendor.json',
+            'converter/THIRD-PARTY-NOTICES.txt',
+            'converter/sbom.spdx.json',
         ):
             self.write(rel, (REPO / rel).read_text(encoding='utf-8'))
+        shutil.copytree(REPO / 'converter/licenses', self.root / 'converter/licenses', dirs_exist_ok=True)
         notice_dst = self.root / 'testdata/photos/NOTICE-imagecompression-info.txt'
         notice_dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(REPO / 'testdata/photos/NOTICE-imagecompression-info.txt', notice_dst)
@@ -757,7 +761,7 @@ class DriftTests(unittest.TestCase):
     def test_all_three_generators_reject_stale_outputs_and_leave_files_unchanged(self):
         for d in ('todo', 'research', 'spec', 'assets', 'benchmarks'):
             shutil.copytree(REPO / d, self.root / d, dirs_exist_ok=True)
-        for s in ('todo-graph.py', 'build-docs.py', 'todo-claims.py', 'version.py'):
+        for s in ('todo-graph.py', 'build-docs.py', 'todo-claims.py', 'version.py', 'build-converter.py'):
             self.write(f'scripts/{s}', (REPO / 'scripts' / s).read_text(encoding='utf-8'))
         for rel in ('VERSION', 'src/product_version.h'):
             self.write(rel, (REPO / rel).read_text(encoding='utf-8'))
@@ -785,8 +789,13 @@ class DriftTests(unittest.TestCase):
             'examples/encode.c',
             'examples/decode.c',
             'examples/ppm.h',
+            'tools/bootstrap.py',
+            'converter/vendor.json',
+            'converter/THIRD-PARTY-NOTICES.txt',
+            'converter/sbom.spdx.json',
         ):
             self.write(rel, (REPO / rel).read_text(encoding='utf-8'))
+        shutil.copytree(REPO / 'converter/licenses', self.root / 'converter/licenses', dirs_exist_ok=True)
         self.write('tests/test_correctness.py', (REPO / 'tests/test_correctness.py').read_text(encoding='utf-8'))
         (self.root / 'examples').mkdir(parents=True, exist_ok=True)
         self.write('examples/encode_ppm.c', '/* fixture */\n')
@@ -807,6 +816,7 @@ class DriftTests(unittest.TestCase):
             {'pattern': 'spec/*', 'role': 'template', 'reason': 'fixture'},
             {'pattern': 'research/*', 'role': 'template', 'reason': 'fixture'},
             {'pattern': 'benchmarks/*', 'role': 'data', 'reason': 'fixture'},
+            {'pattern': 'converter/*', 'role': 'data', 'reason': 'fixture'},
             {'pattern': '*', 'role': 'current', 'reason': 'fixture'},
         ]
         self.manifest['blocks'] = {}
@@ -835,6 +845,12 @@ class DriftTests(unittest.TestCase):
                 'todo/implementation-plan.md',
                 'todo/implementation-plan.md is stale',
                 lambda t: t.replace('| [x] | `D08 T01 §1` |', '| [ ] | `D08 T01 §1` |', 1),
+            ),
+            (
+                'scripts/build-converter.py',
+                'converter/THIRD-PARTY-NOTICES.txt',
+                'converter/THIRD-PARTY-NOTICES.txt is out of date',
+                lambda t: t + '\n# seeded stale output\n',
             ),
         ):
             target_path = self.root / target_rel

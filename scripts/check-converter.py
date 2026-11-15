@@ -195,11 +195,29 @@ def case_contract():
     return 0
 
 
+def case_bundle():
+    cmd = [sys.executable, "-m", "unittest", "discover", "-s",
+           os.path.join(ROOT, "tests", "converter"), "-p", "test_bundle.py", "-v"]
+    if run(cmd):
+        return fail("converter bundle check failed")
+    print("bundle: PASS")
+    return 0
+
+
 def main():
     args = sys.argv[1:]
+    if "--all-targets" in args:
+        args = [a for a in args if a != "--all-targets"]
     if args == ["--case", "contract"]:
         return case_contract()
-    print("usage: check-converter.py --case contract  (other cases land with their sections)")
+    if args == ["--case", "bundle"]:
+        return case_bundle()
+    if args == ["--case", "all"]:
+        rc = case_contract()
+        if rc:
+            return rc
+        return case_bundle()
+    print("usage: check-converter.py --case <contract|bundle|all> [--all-targets]")
     return 1
 
 

@@ -127,6 +127,21 @@
       "reason": "Git ignore rules and declared bindings."
     },
     {
+      "pattern": "converter/licenses/*",
+      "role": "data",
+      "reason": "Verbatim upstream third-party license texts verified by scripts/build-converter.py --check-notices."
+    },
+    {
+      "pattern": "converter/THIRD-PARTY-NOTICES.txt",
+      "role": "generated",
+      "reason": "Deterministic third-party notices and source retrieval manifest generated from converter/vendor.json, toolchain.json, and converter/licenses/*.txt by scripts/build-converter.py --write-notices."
+    },
+    {
+      "pattern": "converter/sbom.spdx.json",
+      "role": "generated",
+      "reason": "Deterministic SPDX 2.3 SBOM generated from converter/vendor.json, toolchain.json, and converter/licenses/*.txt by scripts/build-converter.py --write-notices."
+    },
+    {
       "pattern": "*.json",
       "role": "configuration",
       "reason": "Structured JSON validated; facts.json is also reproduced from sources."
@@ -1567,11 +1582,11 @@
       "review": "Author-attested: 2026-10-25 re-read README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "AGENTS.md": {
-      "evidence": "2026-11-14 operator retirement: re-read AGENTS.md against .conclave/reviewers.toml, scripts/review-dispatch.py, scripts/unattended-run.sh, scripts/unattended-preflight.py, scripts/install-launchers.ps1 and .codex/hooks.json. Only Claude Code and Antigravity write; Astra through Codex is the only reviewer; Codex writer launcher is refused, native hook disabled and desktop shortcut removed. Review lenses and pass cap remain unchanged.",
+      "evidence": "Re-read 2026-11-15 for D10 T01 s2: core toolchain, provisioning and standalone codec rules are unchanged; converter-scoped cmake/nasm and converter/vendor.json remain isolated behind --converter/-Converter.",
       "sources": {
         "include/rasterfold.h": "e5e9eecb93e59b3cfb6b00674006e03ba887c671516e6682292ef5753b015379",
         "src/rf.h": "7f58b508d0e3bb10cc2e1c57cda78e3552a2976a99928e0dfa1df16b91e0117d",
-        "toolchain.json": "fd7b0b2424a2ffdb86095da76e4b975d604741fb271fd9b70e4c53efe9f5e3de",
+        "toolchain.json": "7d6d5215249ff5d16da976929c4bf0e7083b00f6887be85f0f7d7af301048abf",
         ".conclave/reviewers.toml": "39a3e6eb7681f2dc9e154e8c883d8021fd49919fb01ae7cb0590becd3fd385a3",
         "scripts/review-dispatch.py": "949f1f36cfca7d37fa36fea0f78b0357cbb66dfd53c4521b9fc6523a2e33486c",
         "AGENTS.md": "f776d22098b6728ea7cdb37dc5f0c858b6f096a01274bf87250ed8f81fe3cdd4",
@@ -1601,9 +1616,9 @@
       "review": "Author-attested: 2026-10-25 re-read CONTRIBUTING.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/building.md": {
-      "evidence": "Re-read 2026-11-13 for D01 T07 section 4: docs/building.md covers host prerequisites, build/package/release workflows and target artifact layout, which are unchanged by adding method 6 in src/sc.c.",
+      "evidence": "2026-11-15 verified docs/building.md accurate for core codec and tools/bootstrap + provision converter flags",
       "sources": {
-        "toolchain.json": "fd7b0b2424a2ffdb86095da76e4b975d604741fb271fd9b70e4c53efe9f5e3de",
+        "toolchain.json": "7d6d5215249ff5d16da976929c4bf0e7083b00f6887be85f0f7d7af301048abf",
         "scripts/build.py": "236a43c711a4b9e667c47b9e06ab04d62c8721db8d126740441de7762276eacc",
         "scripts/package.py": "f030a89836d12e610d9ad4a762bf073c975e6fcaf6bdb83ef09bc174e3f37973",
         "scripts/check-all.py": "ec0f58046fb6beb5e9b522530aa51a4e3eff03bd546a17a09db53e53ca8a5e9a",
@@ -1636,11 +1651,11 @@
       "review": "Author-attested: 2026-10-25 re-read docs/index.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/getting-started.md": {
-      "evidence": "Re-read 2026-11-13 for D01 T07 section 4: docs/getting-started.md covers provisioning, building, CLI encode/inspect/decode and exit codes 0..5, all unchanged by method 6.",
+      "evidence": "2026-11-15 verified docs/getting-started.md accurate for core build and converter prerequisites",
       "sources": {
-        "toolchain.json": "fd7b0b2424a2ffdb86095da76e4b975d604741fb271fd9b70e4c53efe9f5e3de",
-        "tools/provision.py": "dc5fb84c125ea3735ca425e91d084d04297d772cee4e3609417aa11c66ad0c3b",
-        "tools/provision.ps1": "7b7ce12f1aede008be98478d7b95fbf6601737356baa62277c0d9217ff3e5e40",
+        "toolchain.json": "7d6d5215249ff5d16da976929c4bf0e7083b00f6887be85f0f7d7af301048abf",
+        "tools/provision.py": "66f602f6963767cd939e9fc4de56d3bf632997514d3ddc0c8ab552351ecfbe2e",
+        "tools/provision.ps1": "f5e6b9f41834d48fbaa6f02f5f7697d99984c8ce348f741cb3d7c23dfbfec37e",
         "scripts/build.py": "236a43c711a4b9e667c47b9e06ab04d62c8721db8d126740441de7762276eacc",
         "scripts/check-all.py": "ec0f58046fb6beb5e9b522530aa51a4e3eff03bd546a17a09db53e53ca8a5e9a",
         "scripts/check-all.ps1": "7006b1871b52689461497fa676b3cb6472f0e436c9c5e240deb9da069321a528",
@@ -1759,7 +1774,7 @@
       "review": "Author-attested: 2026-10-25 re-read docs/limitations.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/troubleshooting.md": {
-      "evidence": "Re-read 2026-11-13 for D01 T07 section 4: updated line 45 to list method 6 screen content v2 alongside method 5 screen content in version 3 only; verified diagnostic strings against src/fold.c, src/sc.c and src/main.c.",
+      "evidence": "2026-11-15 verified docs/troubleshooting.md accurate for bootstrap and provision diagnostics",
       "sources": {
         "include/rasterfold.h": "e5e9eecb93e59b3cfb6b00674006e03ba887c671516e6682292ef5753b015379",
         "src/rf.h": "7f58b508d0e3bb10cc2e1c57cda78e3552a2976a99928e0dfa1df16b91e0117d",
@@ -1768,23 +1783,37 @@
         "src/bmp.c": "50278e51120542ec686aee00385eba666239070533035e5d04e7d659b118317c",
         "src/api.c": "774c4e0a2a22f5a01e174e541cd1e725da05019ece20927345938cbe10fe0f02",
         "src/sys_posix.c": "dd65833094db53eedc06d917f0d3b6fefcb402414e20878503cf36341601f9fd",
-        "tools/provision.py": "dc5fb84c125ea3735ca425e91d084d04297d772cee4e3609417aa11c66ad0c3b",
-        "tools/provision.ps1": "7b7ce12f1aede008be98478d7b95fbf6601737356baa62277c0d9217ff3e5e40",
+        "tools/provision.py": "66f602f6963767cd939e9fc4de56d3bf632997514d3ddc0c8ab552351ecfbe2e",
+        "tools/provision.ps1": "f5e6b9f41834d48fbaa6f02f5f7697d99984c8ce348f741cb3d7c23dfbfec37e",
         "docs/troubleshooting.md": "971751f58cc9568692e1ea200172120a0be084dc724fab3a93db5eddf4bf325a"
       },
       "review": "Author-attested: 2026-10-25 re-read docs/troubleshooting.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/licenses.md": {
-      "evidence": "Re-read 2026-11-12 for D08 T01 section 7: removed an internal plan reference (D00 T05 s1) from the basedpyright row of the pinned components table, which is published on the site; the row's facts (version 1.40.2 in requirements-dev.txt, an editor aid and not a gate) are unchanged",
+      "evidence": "2026-11-15 verified docs/licenses.md synced with final converter/vendor.json (DWITH_SYSTEM_ZLIB=ON) and converter/licenses/",
       "sources": {
         "CODE_OF_CONDUCT.md": "f945b73c121fdc7597bdfedabb63f1442ccbab3b2469cd1b7a59932e9eac7da0",
         "testdata/photos/README.md": "f8d6f0d749fc5e795731c322fe192350b247afe167cb817c50f6faedc444303e",
         "testdata/photos/manifest.json": "6c9cf4983d9527c981dde0bd906e9addccaab4f769b35b0c8c3a7470999f5c46",
         "testdata/photos/NOTICE-imagecompression-info.txt": "e455e6ea2a78ade37bf0d2bb0bf7f4d1f7c2bef2b81cd35a5628b0269d05e8cd",
-        "toolchain.json": "fd7b0b2424a2ffdb86095da76e4b975d604741fb271fd9b70e4c53efe9f5e3de",
-        "tools/provision.py": "dc5fb84c125ea3735ca425e91d084d04297d772cee4e3609417aa11c66ad0c3b",
-        "tools/provision.ps1": "7b7ce12f1aede008be98478d7b95fbf6601737356baa62277c0d9217ff3e5e40",
-        "docs/licenses.md": "46c6ac72bfecb4d81a4a64fde161f85f7d7fce3f87705b1138eb2ddab754727e"
+        "toolchain.json": "7d6d5215249ff5d16da976929c4bf0e7083b00f6887be85f0f7d7af301048abf",
+        "tools/provision.py": "66f602f6963767cd939e9fc4de56d3bf632997514d3ddc0c8ab552351ecfbe2e",
+        "tools/provision.ps1": "f5e6b9f41834d48fbaa6f02f5f7697d99984c8ce348f741cb3d7c23dfbfec37e",
+        "docs/licenses.md": "dbbf9b0790db30b865bb0e3018bef8861de014e8adb659f2ef4eb2746b6fd7c4",
+        "converter/vendor.json": "5e62cea89bf7ba5c2073b6965fbcd38e36d88991278ecae73f238b74002bbeb4"
+      }
+    },
+    "docs/converter-building.md": {
+      "evidence": "2026-11-15 verified docs/converter-building.md against final converter/vendor.json toolchain.json and scripts/build-converter.py",
+      "sources": {
+        "docs/converter-building.md": "1028d95a10af970f0d4e46ea2df6622420304c5c55d2153b0804fdd3eeffe5c0",
+        "converter/vendor.json": "5e62cea89bf7ba5c2073b6965fbcd38e36d88991278ecae73f238b74002bbeb4",
+        "toolchain.json": "7d6d5215249ff5d16da976929c4bf0e7083b00f6887be85f0f7d7af301048abf",
+        "scripts/build-converter.py": "bb1e300b40b65ab6f8777db7586b582715d8efcd7ece3a6cf6241264ce6c427d",
+        "tools/bootstrap.py": "d984c0722527fc46a20cc355d542851f9121b88a9eb2f03d1751b150753bb174",
+        "tools/bootstrap.ps1": "6827c5639e2d026200385d0361376ca188f923bc3f893fd6b47c19f0b4037880",
+        "tools/provision.py": "66f602f6963767cd939e9fc4de56d3bf632997514d3ddc0c8ab552351ecfbe2e",
+        "tools/provision.ps1": "f5e6b9f41834d48fbaa6f02f5f7697d99984c8ce348f741cb3d7c23dfbfec37e"
       }
     },
     "docs/404.md": {
@@ -1920,6 +1949,19 @@
       ],
       "outputs": [
         "src/product_version.h"
+      ]
+    },
+    {
+      "script": "scripts/build-converter.py",
+      "check": [
+        "--check-notices"
+      ],
+      "fix": [
+        "--write-notices"
+      ],
+      "outputs": [
+        "converter/THIRD-PARTY-NOTICES.txt",
+        "converter/sbom.spdx.json"
       ]
     }
   ],

@@ -33,7 +33,13 @@ Downloaded compilers, build drivers, and benchmark reference binaries are pinned
 | Component | Pinned Version | Host | Role |
 | --- | --- | --- | --- |
 | `llvm-mingw` / `llvm-mingw-linux` | `20260922` (Clang `23.1.2`) | Windows x64, Linux x64 | C11 compiler, LLD linker, `llvm-ar`, and MinGW-w64 import libraries for `windows-x64` and `linux-x64`. |
-| `ninja` / `ninja-linux` | `1.13.2` | Windows x64, Linux x64 | Build driver used by `scripts/build.py`. |
-| `libjxl` | `0.12.0` | Windows x64 | Reference `cjxl` / `djxl` binaries for comparative benchmark scripts only; nothing in RasterFold links against `libjxl`. |
+| `ninja` / `ninja-linux` | `1.13.2` | Windows x64, Linux x64 | Build driver used by `scripts/build.py` and the converter build. |
+| `cmake` / `cmake-linux` | `4.5.0` | Windows x64, Linux x64 | Converter-scoped CMake build generator (`--converter` / `-Converter`). |
+| `nasm` / `nasm-linux` | `3.02` | Windows x64, Linux x64 | Converter-scoped x86-64 assembler for bundled `libjpeg-turbo` and `libaom` (`--converter` / `-Converter`). |
+| `libjxl` | `0.12.0` | Windows x64 | Reference `cjxl` / `djxl` binaries for comparative benchmark scripts only; nothing in the core `rasterfold` codec links against `libjxl`. |
 | `Pillow` (`requirements-dev.txt`) | `12.2.0` | Linux `.venv`, Windows Python | Python image library used only by the test and benchmark scripts (`tests/`). |
 | `basedpyright` (`requirements-dev.txt`) | `1.40.2` | Linux `.venv`, Windows `.venv` | Python language server for editors over the tooling; an editor aid, not a gate. |
+
+## Bundled Converter Libraries (`converter/vendor.json`)
+
+The Windows x64 converter statically links the 19 direct and transitive support libraries pinned by upstream repository, commit SHA, archive byte size, and SHA-256 checksum in [`converter/vendor.json`](../converter/vendor.json). Full third-party license texts live under [`converter/licenses/`](../converter/licenses/) and compile deterministically into [`converter/THIRD-PARTY-NOTICES.txt`](../converter/THIRD-PARTY-NOTICES.txt) and [`converter/sbom.spdx.json`](../converter/sbom.spdx.json) via `python3 scripts/build-converter.py --write-notices`. HEIF and HEIC decoding remains OS-provided via Windows Imaging Component without bundled HEVC code.
