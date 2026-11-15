@@ -306,15 +306,43 @@ rfc_status rfc_limits_check_probe(const rfc_limits *limits,
                  (uint64_t)probe->first_frame.height, &first_pixels)) {
         return RFC_ERR_LIMIT_EXCEEDED;
     }
-    uint64_t total_pixels =
-        probe->total_pixels > 0 ? probe->total_pixels : first_pixels;
-    if (total_pixels < first_pixels ||
-        total_pixels > limits->max_total_pixels) {
-        return RFC_ERR_LIMIT_EXCEEDED;
+    uint64_t total_pixels = first_pixels;
+    uint64_t total_bytes = first_bytes;
+    if (probe->frame_count == 1u) {
+        if ((probe->total_pixels > 0 && probe->total_pixels != first_pixels) ||
+            (probe->total_decoded_bytes > 0 &&
+             probe->total_decoded_bytes != first_bytes)) {
+            return RFC_ERR_INVALID_ARGUMENT;
+        }
+    } else if (probe->frame_count > 1u) {
+        uint64_t extra_frames = (uint64_t)(probe->frame_count - 1u);
+        if (extra_frames > UINT64_MAX - first_pixels ||
+            extra_frames > UINT64_MAX - first_bytes) {
+            return RFC_ERR_LIMIT_EXCEEDED;
+        }
+        uint64_t min_pixels = first_pixels + extra_frames;
+        uint64_t min_bytes = first_bytes + extra_frames;
+        if ((probe->total_pixels > 0 && probe->total_pixels < min_pixels) ||
+            (probe->total_decoded_bytes > 0 &&
+             probe->total_decoded_bytes < min_bytes)) {
+            return RFC_ERR_INVALID_ARGUMENT;
+        }
+        total_pixels =
+            probe->total_pixels > 0 ? probe->total_pixels : min_pixels;
+        total_bytes =
+            probe->total_decoded_bytes > 0 ? probe->total_decoded_bytes : min_bytes;
+    } else {
+        if ((probe->total_pixels > 0 && probe->total_pixels < first_pixels) ||
+            (probe->total_decoded_bytes > 0 &&
+             probe->total_decoded_bytes < first_bytes)) {
+            return RFC_ERR_INVALID_ARGUMENT;
+        }
+        total_pixels =
+            probe->total_pixels > 0 ? probe->total_pixels : first_pixels;
+        total_bytes =
+            probe->total_decoded_bytes > 0 ? probe->total_decoded_bytes : first_bytes;
     }
-    uint64_t total_bytes =
-        probe->total_decoded_bytes > 0 ? probe->total_decoded_bytes : first_bytes;
-    if (total_bytes < first_bytes ||
+    if (total_pixels > limits->max_total_pixels ||
         total_bytes > limits->max_decoded_bytes) {
         return RFC_ERR_LIMIT_EXCEEDED;
     }

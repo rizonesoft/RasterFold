@@ -1,7 +1,15 @@
 #include "rfc_codec.h"
+#include "codec_internal.h"
 
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
+
+static _Atomic(rfc_frame_alloc_guard_fn) g_frame_alloc_guard = NULL;
+
+void rfc_internal_set_frame_alloc_guard(rfc_frame_alloc_guard_fn fn) {
+    atomic_store_explicit(&g_frame_alloc_guard, fn, memory_order_release);
+}
 
 size_t rfc_sample_bytes(rfc_sample_format format) {
     switch (format) {
@@ -76,6 +84,12 @@ rfc_status rfc_frame_alloc(rfc_frame *frame, const rfc_layout *layout,
         return RFC_ERR_INVALID_ARGUMENT;
     if (metadata && metadata->orientation > RFC_ORIENTATION_ROTATE_270)
         return RFC_ERR_INVALID_ARGUMENT;
+    rfc_frame_alloc_guard_fn guard =
+        atomic_load_explicit(&g_frame_alloc_guard, memory_order_acquire);
+    if (guard) {
+        st = guard(allocator, layout, metadata);
+        if (st != RFC_OK) return st;
+    }
     uint8_t *data = (uint8_t *)allocator->alloc(allocator->ctx, total);
     if (!data) return RFC_ERR_OUT_OF_MEMORY;
     uint8_t *icc = NULL;

@@ -387,6 +387,7 @@ struct rfc_job {
 
     rfc_budget *budget;
     rfc_allocator allocator;
+    rfc_allocator frame_allocator;
 
     rfc_partial_entry *partials;
     uint64_t live_partial_bytes;
@@ -411,6 +412,19 @@ struct rfc_job {
     void *active_session;
 
     /* Streaming per-frame pre-allocation counters guarded by job->lock. */
+    int in_decode_session;
+    int decode_probe_exact;
+    uint32_t decode_probe_frames;
+    uint64_t decode_probe_pixels;
+    uint64_t decode_probe_bytes;
+    uint64_t decode_probe_meta_icc_bytes;
+    uint32_t decode_credit_frames;
+    uint64_t decode_credit_bytes;
+    uint64_t decode_last_checked_fbytes;
+    size_t decode_last_checked_icc_len;
+    uint64_t decode_uncredited_bytes;
+    int decode_unvalidated_alloc;
+    rfc_status decode_guard_failure;
     uint32_t stream_frame_count;
     uint64_t stream_total_pixels;
     uint64_t stream_total_bytes;
@@ -497,6 +511,7 @@ typedef struct rfc_job_exec_result {
 } rfc_job_exec_result;
 
 rfc_job *rfc_job_internal_create(void);
+void rfc_job_internal_bind_budget(rfc_job *job, rfc_budget *budget);
 void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res);
 void rfc_job_internal_set_detail(char dst[RFC_JOB_DETAIL_MAX], const char *src);
 void rfc_job_internal_release_stage_outputs(rfc_job *job);

@@ -1185,7 +1185,7 @@ static rfc_status admit_prepared_job(rfc_scheduler *sched,
         rfc_job_release(job);
         return RFC_ERR_OUT_OF_MEMORY;
     }
-    rfc_budget_allocator(job->budget, &job->allocator);
+    rfc_job_internal_bind_budget(job, job->budget);
 
     job->source_format = source_format;
     job->target_format = target_format;

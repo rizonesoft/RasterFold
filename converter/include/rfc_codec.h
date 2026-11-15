@@ -161,10 +161,15 @@ rfc_status rfc_registry_select(rfc_format_id id, rfc_mode mode);
 /* Opaque execution context passed to session adapters by the job scheduler. */
 typedef struct rfc_exec_context rfc_exec_context;
 
-/* Container header summary produced by rfc_session_adapter.probe_session. */
+/* Container header summary produced by rfc_session_adapter.probe_session.
+ * Aggregate bounds are exact when frame_count == 1 (total_pixels == 0 or
+ * first_frame pixels, and total_decoded_bytes == 0 or first_frame bytes) or
+ * when frame_count > 1 with both total_pixels > 0 and total_decoded_bytes > 0.
+ * When frame_count == 0 or multi-frame totals are omitted (0), decode_session
+ * must validate each frame incrementally before allocating its pixel buffer. */
 typedef struct rfc_image_probe {
     rfc_layout first_frame;
-    uint32_t frame_count;        /* 0 or 1 for single-frame images */
+    uint32_t frame_count;        /* 1 for still images; 0 if unknown */
     uint64_t total_pixels;       /* 0 if container header omits an exact total */
     uint64_t total_decoded_bytes;/* 0 if container header omits an exact total */
     rfc_metadata container_meta;
@@ -175,14 +180,16 @@ typedef struct rfc_image_probe {
  * open_session, close_session, probe_session, encode_session, and
  * decode_session are required; probe_session runs before decode_session so
  * hostile single-frame or multi-frame container headers fail prior to pixel
- * allocation. Multi-frame decoders should also call rfc_exec_check_next_frame
- * or rfc_exec_alloc_frame before allocating each frame buffer so stream totals
- * fail prior to per-frame pixel allocation. Any container_meta.icc or
- * out_meta->icc returned by probe_session or decode_session (when not aliasing
- * frame 0 metadata.icc) must be allocated via exec's allocator so the engine
- * can free it cleanly. cancel_session, if provided, must be thread-safe and
- * non-blocking (signal an atomic cancellation flag without waiting on
- * blocking codec locks or I/O). */
+ * allocation. Whenever probe_session omits exact aggregate bounds
+ * (frame_count == 0, or frame_count > 1 with total_pixels == 0 or
+ * total_decoded_bytes == 0), decode_session must call rfc_exec_alloc_frame or
+ * rfc_exec_check_next_frame immediately before allocating each frame buffer;
+ * unvalidated frame allocations while probe bounds are incomplete are refused
+ * before allocation. Any container_meta.icc or out_meta->icc returned by
+ * probe_session or decode_session (when not aliasing frame 0 metadata.icc)
+ * must be allocated via exec's allocator so the engine can free it cleanly.
+ * cancel_session, if provided, must be thread-safe and non-blocking (signal an
+ * atomic cancellation flag without waiting on blocking codec locks or I/O). */
 typedef struct rfc_session_adapter {
     uint32_t abi_version;
     rfc_format_id format;
