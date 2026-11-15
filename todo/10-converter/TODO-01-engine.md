@@ -47,7 +47,7 @@ track: GUI1
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
 | 1 | §1 | Pixel contract and capability registry | D06 T01 §1 | [x] |
-| 2 | §2 | Pinned bundled codec builds | §1, D00 T04 §1 | [ ] |
+| 2 | §2 | Pinned bundled codec builds | §1, D00 T04 §1 | [x] |
 | 3 | §3 | Bounded asynchronous jobs | §1, §2 | [ ] |
 | 4 | §4 | Exactness verification and differential fixtures | §1, §3 | [ ] |
 | 5 | §5 | Safe import and export | §3, §4 | [ ] |
@@ -104,6 +104,8 @@ Build in the listed order. This section adds the named test driver before using 
 
 **Freeze check:** Existing `.fold` v2 and v3 files, `KAT_FOLD` known-answer bytes, and the oracle (`tests/rfi_ref.py`) remain unchanged (`**Corrected 2026-11-15 (plan review):**` extended explicit `.fold` v2 mention to v2 and v3 per `spec/FOLD.md`). Each new output receives a fresh bundled decode and the format-specific verification contract before acceptance; independent fixture coverage is reported separately; input and existing destination bytes survive refusal, cancellation and failure.
 
+> **Verified:** 2026-11-15 | §2 | 2ab7f9349af6678d595ba00b3d228737e4b1c9d2
+> **Review:** `docs/reviews/d10-t01-s2.json`
 ## 3. Bounded asynchronous jobs
 
 **Job:** A user can configure resource settings, receive progress notifications, cancel and retry asynchronous conversion without freezing the interface.

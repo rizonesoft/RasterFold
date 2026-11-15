@@ -1,0 +1,71 @@
+{
+  "ref": "D10 T01 \u00a72",
+  "title": "Pinned bundled codec builds",
+  "implementation_sha": "2ab7f9349af6678d595ba00b3d228737e4b1c9d2",
+  "date": "2026-11-15",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/10-converter/D10-T01-s2.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "python3 scripts/build-converter.py --target all -> exit 0",
+    "python3 scripts/check-converter.py --case all --all-targets -> PASS"
+  ],
+  "completion": {
+    "report": "docs/reviews/10-converter/D10-T01-s2.md",
+    "verdict": "reconciled",
+    "candidate": "2ab7f9349af6678d595ba00b3d228737e4b1c9d2",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/10-converter/D10-T01-s2.md",
+    "candidate": "f48cbae597fdc4a217d4db53f4a732f79cf11c99",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "f48cbae597fdc4a217d4db53f4a732f79cf11c99",
+  "schedule": {
+    "policy": "three-pass",
+    "pass_cap": 33,
+    "plan": {
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {},
+    "reconciliation": {
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}

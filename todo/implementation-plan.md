@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **130 of 264 sections complete (49%).** 264 sections (32 discovered); backlog 0 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **131 of 264 sections complete (50%).** 264 sections (32 discovered); backlog 0 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -324,7 +324,7 @@ The native converter, its user guide, the whole-product documentation acceptance
 |  ✔  | Section       | Deliverable                                      | Needs                         | Items |
 | :-: | ------------- | ------------------------------------------------ | ----------------------------- | :---: |
 | [x] | `D99 T01 §7`  | HEVC distribution decision                       | none                          |   3   |
-| [ ] | `D10 T01 §2`  | Pinned bundled codec builds                      | windows-runtime               |   9   |
+| [x] | `D10 T01 §2`  | Pinned bundled codec builds                      | windows-runtime               |   9   |
 | [ ] | `D10 T01 §3`  | Bounded asynchronous jobs                        | none                          |   6   |
 | [ ] | `D10 T01 §4`  | Exactness verification and differential fixtures | none                          |   7   |
 | [ ] | `D10 T01 §5`  | Safe import and export                           | windows-runtime               |   6   |
