@@ -325,7 +325,7 @@ The native converter, its user guide, the whole-product documentation acceptance
 | :-: | ------------- | ------------------------------------------------ | ----------------------------- | :---: |
 | [x] | `D99 T01 §7`  | HEVC distribution decision                       | none                          |   3   |
 | [x] | `D10 T01 §2`  | Pinned bundled codec builds                      | windows-runtime               |   9   |
-| [ ] | `D10 T01 §3`  | Bounded asynchronous jobs                        | none                          |   6   |
+| [ ] | `D10 T01 §3`  | Bounded asynchronous jobs                        | none                          |   7   |
 | [ ] | `D10 T01 §4`  | Exactness verification and differential fixtures | none                          |   7   |
 | [ ] | `D10 T01 §5`  | Safe import and export                           | windows-runtime               |   6   |
 | [ ] | `D10 T01 §6`  | Comparable measurements and reports              | none                          |   7   |
