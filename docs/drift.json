@@ -1790,7 +1790,7 @@
       "review": "Author-attested: 2026-10-25 re-read docs/troubleshooting.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/licenses.md": {
-      "evidence": "Re-read and updated 2026-11-15 lines 1-45 for D10 T01 s2 completion repair: documented embedded_components licenses and provenance",
+      "evidence": "Re-read 2026-11-15 lines 1-45 after fixing embedded_components host version notes in converter/vendor.json",
       "sources": {
         "CODE_OF_CONDUCT.md": "f945b73c121fdc7597bdfedabb63f1442ccbab3b2469cd1b7a59932e9eac7da0",
         "testdata/photos/README.md": "f8d6f0d749fc5e795731c322fe192350b247afe167cb817c50f6faedc444303e",
@@ -1800,14 +1800,14 @@
         "tools/provision.py": "66f602f6963767cd939e9fc4de56d3bf632997514d3ddc0c8ab552351ecfbe2e",
         "tools/provision.ps1": "e46759d8e1f63a95a877555489094c923cebb833ec447e398f4e7c0395b6115b",
         "docs/licenses.md": "b3273fa6710f1defb5e581d3e1fcc39d0fa899f3543ceb278efa884d71f7eab0",
-        "converter/vendor.json": "35a52ef2aa0ebed34b98810c2ad21b5b72fe1d20f4af19adcc3551cc10191e5b"
+        "converter/vendor.json": "6fcb20746cf1bace959beddaaaabef438b173ca950db8d8c70527164e797fed6"
       }
     },
     "docs/converter-building.md": {
-      "evidence": "Re-read and updated 2026-11-15 lines 1-47 for D10 T01 s2 completion repair: documented embedded_components notices/SBOM and CRLF-normalized license hashing",
+      "evidence": "Re-read 2026-11-15 lines 1-47 after fixing embedded_components host version notes in converter/vendor.json",
       "sources": {
         "docs/converter-building.md": "562ed4860d60e5715f2b5c9f2787003a186ea8668be0891bcafd165494a7786a",
-        "converter/vendor.json": "35a52ef2aa0ebed34b98810c2ad21b5b72fe1d20f4af19adcc3551cc10191e5b",
+        "converter/vendor.json": "6fcb20746cf1bace959beddaaaabef438b173ca950db8d8c70527164e797fed6",
         "toolchain.json": "eb53e29ed47b6ae570e705e7c48dca3e5fc922f6213d892c084e00489785d75d",
         "scripts/build-converter.py": "37329cdee8711337e87841f55fdbfcbf4a43a64b2e82c5e05799d93476c3ed0e",
         "tools/bootstrap.py": "640e322f62d2b5d8dd67352b47fa24d282fe406aa03d46834bb2eb3d5d1b7344",

@@ -3270,7 +3270,7 @@ Host Archive Subpath: third_party/fastfeat
 Compiled Into Archives: libaom.a
 SPDX License: BSD-3-Clause
 Upstream Repo: https://github.com/edrosten/fast-C-src (revision 391d5e939eb1545d24c10533d7de424db8d9c191)
-Notes: Bundled inside pinned libaom v4.0.0 source archive and compiled directly into libaom.a (fast.c, fast_9.c, nonmax.c).
+Notes: Bundled inside pinned libaom 3.15.3 source archive and compiled directly into libaom.a (fast.c, fast_9.c, nonmax.c).
 License Text File: converter/licenses/libaom-fastfeat.txt (sha256:499041ddee5227b6f29ca06c17803e5fe24d60f243c69635cd76b7ba08d0ddd5)
 ----------------------------------------------------------------------------
 Copyright (c) 2006, 2008 Edward Rosten
@@ -3312,7 +3312,7 @@ Host Archive Subpath: third_party/vector
 Compiled Into Archives: libaom.a
 SPDX License: MIT
 Upstream Repo: https://github.com/goldsborough/vector (revision 40efe82)
-Notes: Bundled inside pinned libaom v4.0.0 source archive and compiled directly into libaom.a (vector.c).
+Notes: Bundled inside pinned libaom 3.15.3 source archive and compiled directly into libaom.a (vector.c).
 License Text File: converter/licenses/libaom-vector.txt (sha256:ff6c857ce2708e87701323078aef115c1872a1f80a9649f86dc899b48083bc60)
 ----------------------------------------------------------------------------
 The MIT License (MIT)
@@ -3343,7 +3343,7 @@ Host Archive Subpath: third_party/x86inc
 Compiled Into Archives: libaom.a
 SPDX License: ISC
 Upstream Repo: https://git.videolan.org/git/x264.git (revision 3e5aed95cc470f37e2db3e6506a8deb89b527720)
-Notes: Bundled inside pinned libaom v4.0.0 source archive and assembled via %include into libaom.a x86-64 NASM objects.
+Notes: Bundled inside pinned libaom 3.15.3 source archive and assembled via %include into libaom.a x86-64 NASM objects.
 License Text File: converter/licenses/libaom-x86inc.txt (sha256:719d8fa235f2068e0ae6d6a7dceb0a7720d7840f0f0ebed29957989e6ded3cd8)
 ----------------------------------------------------------------------------
 Copyright (C) 2005-2012 x264 project
@@ -3373,7 +3373,7 @@ Host Archive Subpath: third_party/libyuv
 Compiled Into Archives: libavif.a
 SPDX License: BSD-3-Clause
 Upstream Repo: https://chromium.googlesource.com/libyuv/libyuv (revision 1880)
-Notes: Embedded libyuv source subset shipped inside pinned libavif v1.4.1 and compiled into libavif.a (planar_functions.c, row_common.c, scale.c, scale_any.c, scale_common.c).
+Notes: Embedded libyuv source subset shipped inside pinned libavif 1.4.2 and compiled into libavif.a (planar_functions.c, row_common.c, scale.c, scale_any.c, scale_common.c).
 License Text File: converter/licenses/libavif-libyuv.txt (sha256:e72b31563aee811cf8cf0e7325c68b5c5c2b91106f13d5e5dee2b667af67f4b2)
 ----------------------------------------------------------------------------
 Files: third_party/libyuv/*
@@ -3416,7 +3416,7 @@ Host Archive Subpath: src/spng
 Compiled Into Archives: libturbojpeg.a
 SPDX License: BSD-2-Clause AND Libpng-2.0
 Upstream Repo: https://github.com/randy408/libspng (revision 0.7.4)
-Notes: Embedded libspng 0.7.4 shipped inside pinned libjpeg-turbo 3.1.4.1 and compiled into libturbojpeg.a (spng.c, linking pinned system zlib via WITH_SYSTEM_ZLIB=ON).
+Notes: Embedded libspng 0.7.4 shipped inside pinned libjpeg-turbo 3.2.1 and compiled into libturbojpeg.a (spng.c, linking pinned system zlib via WITH_SYSTEM_ZLIB=ON).
 License Text File: converter/licenses/libjpeg-turbo-spng.txt (sha256:55ccafecb376ec0a6967ac94a5f43708ff12cab0921f8da78374b836cc76feaf)
 ----------------------------------------------------------------------------
 BSD 2-Clause License
@@ -3490,7 +3490,7 @@ Host Archive Subpath: external/zstd/lib/common/xxhash.c
 Compiled Into Archives: libOpenEXRCore-3_5.a
 SPDX License: BSD-3-Clause (upstream dual: BSD-3-Clause OR GPL-2.0-only)
 Upstream Repo: https://github.com/Cyan4973/xxHash (revision 0.8.2)
-Notes: Bundled inside OpenEXR v3.5.0-dev external/zstd 1.5.7 tree and compiled directly into libOpenEXRCore-3_5.a (xxhash.c with XXH_NAMESPACE=ZSTD_).
+Notes: Bundled inside pinned OpenEXR 3.5.4 external/zstd 1.5.7 tree and compiled directly into libOpenEXRCore-3_5.a (xxhash.c with XXH_NAMESPACE=ZSTD_).
 License Text File: converter/licenses/openexr-xxhash.txt (sha256:3659167a56597b0196ad1ce427f6f96465503c4b60746c07b5f867bfb268b725)
 ----------------------------------------------------------------------------
 /*
@@ -3544,7 +3544,7 @@ Host Archive Subpath: external/zstd
 Compiled Into Archives: libOpenEXRCore-3_5.a
 SPDX License: BSD-3-Clause (upstream dual: BSD-3-Clause OR GPL-2.0-only)
 Upstream Repo: https://github.com/facebook/zstd (revision 1.5.7)
-Notes: Bundled inside OpenEXR v3.5.0-dev and selected by OpenEXRSetup.cmake when CMAKE_DISABLE_FIND_PACKAGE_zstd=ON disables external zstd lookup; compiled directly into libOpenEXRCore-3_5.a.
+Notes: Bundled inside pinned OpenEXR 3.5.4 and selected by OpenEXRSetup.cmake when CMAKE_DISABLE_FIND_PACKAGE_zstd=ON disables external zstd lookup; compiled directly into libOpenEXRCore-3_5.a.
 License Text File: converter/licenses/openexr-zstd.txt (sha256:7055266497633c9025b777c78eb7235af13922117480ed5c674677adc381c9d8)
 ----------------------------------------------------------------------------
 BSD License

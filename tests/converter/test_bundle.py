@@ -441,6 +441,7 @@ class BundleTests(unittest.TestCase):
             self.assertGreater(len(text.strip()), 80, f'too short embedded license file: {emb["license_file"]}')
             self.assertNotIn('\r\n', text, f'CRLF in {emb["license_file"]}')
             host_pkg = pkg_by_id[emb['host_package']]
+            self.assertIn(host_pkg['version'], emb['notes'])
             self.assertIn(emb['id'], notices)
             self.assertIn(emb['version'], notices)
             self.assertIn(emb['revision'], notices)

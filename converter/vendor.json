@@ -832,7 +832,7 @@
       "upstream_repo": "https://github.com/edrosten/fast-C-src",
       "license": "BSD-3-Clause",
       "license_file": "converter/licenses/libaom-fastfeat.txt",
-      "notes": "Bundled inside pinned libaom v4.0.0 source archive and compiled directly into libaom.a (fast.c, fast_9.c, nonmax.c)."
+      "notes": "Bundled inside pinned libaom 3.15.3 source archive and compiled directly into libaom.a (fast.c, fast_9.c, nonmax.c)."
     },
     {
       "id": "libaom-vector",
@@ -847,7 +847,7 @@
       "upstream_repo": "https://github.com/goldsborough/vector",
       "license": "MIT",
       "license_file": "converter/licenses/libaom-vector.txt",
-      "notes": "Bundled inside pinned libaom v4.0.0 source archive and compiled directly into libaom.a (vector.c)."
+      "notes": "Bundled inside pinned libaom 3.15.3 source archive and compiled directly into libaom.a (vector.c)."
     },
     {
       "id": "libaom-x86inc",
@@ -862,7 +862,7 @@
       "upstream_repo": "https://git.videolan.org/git/x264.git",
       "license": "ISC",
       "license_file": "converter/licenses/libaom-x86inc.txt",
-      "notes": "Bundled inside pinned libaom v4.0.0 source archive and assembled via %include into libaom.a x86-64 NASM objects."
+      "notes": "Bundled inside pinned libaom 3.15.3 source archive and assembled via %include into libaom.a x86-64 NASM objects."
     },
     {
       "id": "libavif-libyuv",
@@ -877,7 +877,7 @@
       "upstream_repo": "https://chromium.googlesource.com/libyuv/libyuv",
       "license": "BSD-3-Clause",
       "license_file": "converter/licenses/libavif-libyuv.txt",
-      "notes": "Embedded libyuv source subset shipped inside pinned libavif v1.4.1 and compiled into libavif.a (planar_functions.c, row_common.c, scale.c, scale_any.c, scale_common.c)."
+      "notes": "Embedded libyuv source subset shipped inside pinned libavif 1.4.2 and compiled into libavif.a (planar_functions.c, row_common.c, scale.c, scale_any.c, scale_common.c)."
     },
     {
       "id": "libjpeg-turbo-spng",
@@ -892,7 +892,7 @@
       "upstream_repo": "https://github.com/randy408/libspng",
       "license": "BSD-2-Clause AND Libpng-2.0",
       "license_file": "converter/licenses/libjpeg-turbo-spng.txt",
-      "notes": "Embedded libspng 0.7.4 shipped inside pinned libjpeg-turbo 3.1.4.1 and compiled into libturbojpeg.a (spng.c, linking pinned system zlib via WITH_SYSTEM_ZLIB=ON)."
+      "notes": "Embedded libspng 0.7.4 shipped inside pinned libjpeg-turbo 3.2.1 and compiled into libturbojpeg.a (spng.c, linking pinned system zlib via WITH_SYSTEM_ZLIB=ON)."
     },
     {
       "id": "openexr-xxhash",
@@ -908,7 +908,7 @@
       "license": "BSD-3-Clause",
       "license_expression_upstream": "BSD-3-Clause OR GPL-2.0-only",
       "license_file": "converter/licenses/openexr-xxhash.txt",
-      "notes": "Bundled inside OpenEXR v3.5.0-dev external/zstd 1.5.7 tree and compiled directly into libOpenEXRCore-3_5.a (xxhash.c with XXH_NAMESPACE=ZSTD_)."
+      "notes": "Bundled inside pinned OpenEXR 3.5.4 external/zstd 1.5.7 tree and compiled directly into libOpenEXRCore-3_5.a (xxhash.c with XXH_NAMESPACE=ZSTD_)."
     },
     {
       "id": "openexr-zstd",
@@ -924,7 +924,7 @@
       "license": "BSD-3-Clause",
       "license_expression_upstream": "BSD-3-Clause OR GPL-2.0-only",
       "license_file": "converter/licenses/openexr-zstd.txt",
-      "notes": "Bundled inside OpenEXR v3.5.0-dev and selected by OpenEXRSetup.cmake when CMAKE_DISABLE_FIND_PACKAGE_zstd=ON disables external zstd lookup; compiled directly into libOpenEXRCore-3_5.a."
+      "notes": "Bundled inside pinned OpenEXR 3.5.4 and selected by OpenEXRSetup.cmake when CMAKE_DISABLE_FIND_PACKAGE_zstd=ON disables external zstd lookup; compiled directly into libOpenEXRCore-3_5.a."
     }
   ]
 }
