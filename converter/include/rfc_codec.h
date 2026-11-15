@@ -26,7 +26,11 @@ typedef enum rfc_status {
     RFC_ERR_NO_ADAPTER = 10,   /* usable format with no registered adapter */
     RFC_ERR_DUPLICATE = 11,
     RFC_ERR_ABI_VERSION = 12,
-    RFC_ERR_OUT_OF_MEMORY = 13
+    RFC_ERR_OUT_OF_MEMORY = 13,
+    RFC_ERR_CANCELLED = 14,
+    RFC_ERR_LIMIT_EXCEEDED = 15,
+    RFC_ERR_STALE_JOB = 16,
+    RFC_ERR_BUSY = 17
 } rfc_status;
 
 typedef enum rfc_format_id {
@@ -152,11 +156,47 @@ rfc_status rfc_registry_validate_settings(rfc_format_id id,
  * RFC_ERR_NO_ADAPTER. */
 rfc_status rfc_registry_select(rfc_format_id id, rfc_mode mode);
 
+/* Opaque execution context passed to session adapters by the job scheduler. */
+typedef struct rfc_exec_context rfc_exec_context;
+
+/* Session-scoped codec adapter receiving per-job admitted threads, limits, and
+ * allocator/hook context while allowing concurrent same-format jobs. */
+typedef struct rfc_session_adapter {
+    uint32_t abi_version;
+    rfc_format_id format;
+    rfc_status (*open_session)(const rfc_exec_context *exec, void **out_session);
+    void (*close_session)(void *session);
+    rfc_status (*probe_session)(void *session, const rfc_exec_context *exec,
+                                const uint8_t *bytes, size_t size,
+                                rfc_layout *out_layout, rfc_metadata *out_meta);
+    rfc_status (*encode_session)(void *session, const rfc_exec_context *exec,
+                                 const rfc_frame *frames, size_t frame_count,
+                                 const rfc_metadata *meta,
+                                 const rfc_setting_value *settings, size_t setting_count,
+                                 rfc_encoded *out_encoded);
+    rfc_status (*decode_session)(void *session, const rfc_exec_context *exec,
+                                 const uint8_t *bytes, size_t size,
+                                 const rfc_setting_value *settings, size_t setting_count,
+                                 rfc_frame **out_frames, size_t *out_frame_count,
+                                 rfc_metadata *out_meta);
+    void (*cancel_session)(void *session);
+    void (*free_encoded)(void *session, rfc_encoded *encoded);
+} rfc_session_adapter;
+
 /* Register an adapter (one per format). The registry borrows the struct;
  * the caller keeps it alive until rfc_registry_unregister. */
 rfc_status rfc_registry_register(const rfc_adapter *adapter);
 rfc_status rfc_registry_unregister(rfc_format_id id);
 const rfc_adapter *rfc_registry_adapter(rfc_format_id id);
+const rfc_adapter *rfc_registry_acquire_adapter(rfc_format_id id);
+void rfc_registry_release_adapter(rfc_format_id id);
+
+/* Register/acquire/unregister session-scoped adapters (one per format). */
+rfc_status rfc_registry_register_session(const rfc_session_adapter *adapter);
+rfc_status rfc_registry_unregister_session(rfc_format_id id);
+const rfc_session_adapter *rfc_registry_session_adapter(rfc_format_id id);
+const rfc_session_adapter *rfc_registry_acquire_session(rfc_format_id id);
+void rfc_registry_release_session(rfc_format_id id);
 
 const char *rfc_status_name(rfc_status status);
 const char *rfc_sample_name(rfc_sample_format format);

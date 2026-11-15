@@ -148,6 +148,17 @@ int main(int argc, char **argv) {
     CHECK(rfc_registry_unregister(RFC_FORMAT_QOI) == RFC_OK);
     CHECK(rfc_registry_adapter(RFC_FORMAT_QOI) == NULL);
 
+    /* Status strings for job/budget/session errors and busy unregister protection. */
+    CHECK(strcmp(rfc_status_name(RFC_ERR_CANCELLED), "cancelled") == 0);
+    CHECK(strcmp(rfc_status_name(RFC_ERR_LIMIT_EXCEEDED), "limit-exceeded") == 0);
+    CHECK(strcmp(rfc_status_name(RFC_ERR_STALE_JOB), "stale-job") == 0);
+    CHECK(strcmp(rfc_status_name(RFC_ERR_BUSY), "busy") == 0);
+    CHECK(rfc_registry_register(&fake) == RFC_OK);
+    CHECK(rfc_registry_acquire_adapter(RFC_FORMAT_QOI) == &fake);
+    CHECK(rfc_registry_unregister(RFC_FORMAT_QOI) == RFC_ERR_BUSY);
+    rfc_registry_release_adapter(RFC_FORMAT_QOI);
+    CHECK(rfc_registry_unregister(RFC_FORMAT_QOI) == RFC_OK);
+
     if (failures) { fprintf(stderr, "%d contract check(s) failed\n", failures); return 1; }
     printf("contract: all checks passed\n");
     return 0;

@@ -60,6 +60,9 @@ rf_find_static_lib(RF_LIB_RAW libraw.a raw)
 
 add_library(rfc_engine STATIC
   "${CMAKE_SOURCE_DIR}/src/registry.c"
+  "${CMAKE_SOURCE_DIR}/src/limits.c"
+  "${CMAKE_SOURCE_DIR}/src/job.c"
+  "${CMAKE_SOURCE_DIR}/src/scheduler.c"
 )
 set_target_properties(rfc_engine PROPERTIES
   C_STANDARD 11
@@ -71,6 +74,25 @@ target_include_directories(rfc_engine PUBLIC
   "${CMAKE_SOURCE_DIR}/../include"
 )
 target_compile_options(rfc_engine PRIVATE -Wall -Wextra -Werror)
+if(NOT WIN32)
+  find_package(Threads REQUIRED)
+  target_link_libraries(rfc_engine PUBLIC Threads::Threads)
+endif()
+
+add_executable(rfc_test_jobs
+  "${CMAKE_SOURCE_DIR}/../tests/converter/test_jobs.c"
+)
+set_target_properties(rfc_test_jobs PROPERTIES
+  C_STANDARD 11
+  C_STANDARD_REQUIRED ON
+  C_EXTENSIONS OFF
+  RUNTIME_OUTPUT_DIRECTORY "${RF_CONVERTER_BIN_DIR}"
+)
+target_compile_options(rfc_test_jobs PRIVATE -Wall -Wextra -Werror)
+target_link_libraries(rfc_test_jobs PRIVATE rfc_engine)
+if(WIN32)
+  target_link_options(rfc_test_jobs PRIVATE -static -Wl,--gc-sections)
+endif()
 
 add_executable(rfc_bundle_smoke
   "${CMAKE_SOURCE_DIR}/src/bundle_smoke.c"

@@ -278,14 +278,36 @@ rfc_status rfc_registry_validate_settings(rfc_format_id id, const rfc_setting_va
     return RFC_OK;
 }
 
+#include <stdatomic.h>
+
+static atomic_int k_reg_lock = 0;
 static const rfc_adapter *k_adapters[REGISTRY_COUNT];
+static size_t k_adapter_active[REGISTRY_COUNT];
+static const rfc_session_adapter *k_session_adapters[REGISTRY_COUNT];
+static size_t k_session_active[REGISTRY_COUNT];
+
+static void reg_lock(void) {
+    while (atomic_exchange_explicit(&k_reg_lock, 1, memory_order_acquire) != 0) {
+    }
+}
+
+static void reg_unlock(void) {
+    atomic_store_explicit(&k_reg_lock, 0, memory_order_release);
+}
+
+static int reg_find_index(rfc_format_id id) {
+    for (size_t i = 0; i < REGISTRY_COUNT; i++) {
+        if (k_registry[i].id == id) return (int)i;
+    }
+    return -1;
+}
 rfc_status rfc_registry_select(rfc_format_id id, rfc_mode mode) {
     const rfc_capability *cap = rfc_registry_find(id);
     if (!cap) return RFC_ERR_UNKNOWN_FORMAT;
     if (mode == RFC_MODE_READ && !cap->can_read) return RFC_ERR_UNSUPPORTED_COMBINATION;
     if (mode == RFC_MODE_WRITE && !cap->can_write) return RFC_ERR_UNSUPPORTED_COMBINATION;
     if (cap->availability == RFC_AVAILABILITY_PLANNED) return RFC_ERR_PLANNED;
-    if (!rfc_registry_adapter(id)) return RFC_ERR_NO_ADAPTER;
+    if (!rfc_registry_adapter(id) && !rfc_registry_session_adapter(id)) return RFC_ERR_NO_ADAPTER;
     return RFC_OK;
 }
 rfc_status rfc_registry_register(const rfc_adapter *adapter) {
@@ -293,21 +315,123 @@ rfc_status rfc_registry_register(const rfc_adapter *adapter) {
     if (adapter->abi_version != RFC_CODEC_ABI_VERSION) return RFC_ERR_ABI_VERSION;
     if (!adapter->probe || !adapter->encode || !adapter->decode || !adapter->cancel || !adapter->free_adapter)
         return RFC_ERR_INVALID_ARGUMENT;
-    const rfc_capability *cap = rfc_registry_find(adapter->format);
-    if (!cap) return RFC_ERR_UNKNOWN_FORMAT;
-    for (size_t i = 0; i < REGISTRY_COUNT; i++) if (k_registry[i].id == adapter->format) {
-        if (k_adapters[i]) return RFC_ERR_DUPLICATE;
-        k_adapters[i] = adapter; return RFC_OK;
+    reg_lock();
+    int idx = reg_find_index(adapter->format);
+    if (idx < 0) {
+        reg_unlock();
+        return RFC_ERR_UNKNOWN_FORMAT;
     }
-    return RFC_ERR_UNKNOWN_FORMAT;
+    if (k_adapters[idx]) {
+        reg_unlock();
+        return RFC_ERR_DUPLICATE;
+    }
+    k_adapters[idx] = adapter;
+    reg_unlock();
+    return RFC_OK;
 }
 rfc_status rfc_registry_unregister(rfc_format_id id) {
-    for (size_t i = 0; i < REGISTRY_COUNT; i++) if (k_registry[i].id == id) { k_adapters[i] = NULL; return RFC_OK; }
-    return RFC_ERR_UNKNOWN_FORMAT;
+    reg_lock();
+    int idx = reg_find_index(id);
+    if (idx < 0) {
+        reg_unlock();
+        return RFC_ERR_UNKNOWN_FORMAT;
+    }
+    if (k_adapter_active[idx] > 0) {
+        reg_unlock();
+        return RFC_ERR_BUSY;
+    }
+    k_adapters[idx] = NULL;
+    reg_unlock();
+    return RFC_OK;
 }
 const rfc_adapter *rfc_registry_adapter(rfc_format_id id) {
-    for (size_t i = 0; i < REGISTRY_COUNT; i++) if (k_registry[i].id == id) return k_adapters[i];
-    return NULL;
+    reg_lock();
+    int idx = reg_find_index(id);
+    const rfc_adapter *out = (idx >= 0) ? k_adapters[idx] : NULL;
+    reg_unlock();
+    return out;
+}
+const rfc_adapter *rfc_registry_acquire_adapter(rfc_format_id id) {
+    reg_lock();
+    int idx = reg_find_index(id);
+    const rfc_adapter *out = NULL;
+    if (idx >= 0 && k_adapters[idx] != NULL) {
+        k_adapter_active[idx]++;
+        out = k_adapters[idx];
+    }
+    reg_unlock();
+    return out;
+}
+void rfc_registry_release_adapter(rfc_format_id id) {
+    reg_lock();
+    int idx = reg_find_index(id);
+    if (idx >= 0 && k_adapter_active[idx] > 0) {
+        k_adapter_active[idx]--;
+    }
+    reg_unlock();
+}
+rfc_status rfc_registry_register_session(const rfc_session_adapter *adapter) {
+    if (!adapter || !adapter->open_session || !adapter->close_session ||
+        !adapter->encode_session || !adapter->decode_session) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    if (adapter->abi_version != RFC_CODEC_ABI_VERSION) {
+        return RFC_ERR_ABI_VERSION;
+    }
+    reg_lock();
+    int idx = reg_find_index(adapter->format);
+    if (idx < 0) {
+        reg_unlock();
+        return RFC_ERR_UNKNOWN_FORMAT;
+    }
+    if (k_session_adapters[idx] != NULL) {
+        reg_unlock();
+        return RFC_ERR_DUPLICATE;
+    }
+    k_session_adapters[idx] = adapter;
+    reg_unlock();
+    return RFC_OK;
+}
+rfc_status rfc_registry_unregister_session(rfc_format_id id) {
+    reg_lock();
+    int idx = reg_find_index(id);
+    if (idx < 0) {
+        reg_unlock();
+        return RFC_ERR_UNKNOWN_FORMAT;
+    }
+    if (k_session_active[idx] > 0) {
+        reg_unlock();
+        return RFC_ERR_BUSY;
+    }
+    k_session_adapters[idx] = NULL;
+    reg_unlock();
+    return RFC_OK;
+}
+const rfc_session_adapter *rfc_registry_session_adapter(rfc_format_id id) {
+    reg_lock();
+    int idx = reg_find_index(id);
+    const rfc_session_adapter *out = (idx >= 0) ? k_session_adapters[idx] : NULL;
+    reg_unlock();
+    return out;
+}
+const rfc_session_adapter *rfc_registry_acquire_session(rfc_format_id id) {
+    reg_lock();
+    int idx = reg_find_index(id);
+    const rfc_session_adapter *out = NULL;
+    if (idx >= 0 && k_session_adapters[idx] != NULL) {
+        k_session_active[idx]++;
+        out = k_session_adapters[idx];
+    }
+    reg_unlock();
+    return out;
+}
+void rfc_registry_release_session(rfc_format_id id) {
+    reg_lock();
+    int idx = reg_find_index(id);
+    if (idx >= 0 && k_session_active[idx] > 0) {
+        k_session_active[idx]--;
+    }
+    reg_unlock();
 }
 const char *rfc_status_name(rfc_status s) {
     switch (s) {
@@ -325,6 +449,10 @@ const char *rfc_status_name(rfc_status s) {
         case RFC_ERR_DUPLICATE: return "duplicate";
         case RFC_ERR_ABI_VERSION: return "abi-version";
         case RFC_ERR_OUT_OF_MEMORY: return "out-of-memory";
+        case RFC_ERR_CANCELLED: return "cancelled";
+        case RFC_ERR_LIMIT_EXCEEDED: return "limit-exceeded";
+        case RFC_ERR_STALE_JOB: return "stale-job";
+        case RFC_ERR_BUSY: return "busy";
         default: return "unknown-status";
     }
 }

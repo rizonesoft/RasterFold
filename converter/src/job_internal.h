@@ -1,0 +1,427 @@
+#ifndef RFC_JOB_INTERNAL_H
+#define RFC_JOB_INTERNAL_H
+
+#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 200809L
+#endif
+
+#include "rfc_job.h"
+
+#include <stdalign.h>
+#include <stdatomic.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <process.h>
+#else
+#include <errno.h>
+#include <pthread.h>
+#include <time.h>
+#endif
+
+typedef struct rfc_mutex {
+#ifdef _WIN32
+    SRWLOCK lock;
+#else
+    pthread_mutex_t lock;
+#endif
+} rfc_mutex;
+
+typedef struct rfc_cond {
+#ifdef _WIN32
+    CONDITION_VARIABLE cv;
+#else
+    pthread_cond_t cv;
+#endif
+} rfc_cond;
+
+typedef struct rfc_thread_start {
+    void (*fn)(void *);
+    void *arg;
+} rfc_thread_start;
+
+typedef struct rfc_thread {
+#ifdef _WIN32
+    HANDLE handle;
+#else
+    pthread_t thread;
+#endif
+    int started;
+} rfc_thread;
+
+static inline int rfc_mutex_init(rfc_mutex *m) {
+#ifdef _WIN32
+    InitializeSRWLock(&m->lock);
+    return 1;
+#else
+    return pthread_mutex_init(&m->lock, NULL) == 0;
+#endif
+}
+
+static inline void rfc_mutex_destroy(rfc_mutex *m) {
+#ifdef _WIN32
+    (void)m;
+#else
+    pthread_mutex_destroy(&m->lock);
+#endif
+}
+
+static inline void rfc_mutex_lock(rfc_mutex *m) {
+#ifdef _WIN32
+    AcquireSRWLockExclusive(&m->lock);
+#else
+    pthread_mutex_lock(&m->lock);
+#endif
+}
+
+static inline void rfc_mutex_unlock(rfc_mutex *m) {
+#ifdef _WIN32
+    ReleaseSRWLockExclusive(&m->lock);
+#else
+    pthread_mutex_unlock(&m->lock);
+#endif
+}
+
+static inline int rfc_cond_init(rfc_cond *c) {
+#ifdef _WIN32
+    InitializeConditionVariable(&c->cv);
+    return 1;
+#else
+    pthread_condattr_t attr;
+    if (pthread_condattr_init(&attr) != 0) {
+        return 0;
+    }
+    int rc = pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
+    if (rc == 0) {
+        rc = pthread_cond_init(&c->cv, &attr);
+    }
+    pthread_condattr_destroy(&attr);
+    return rc == 0;
+#endif
+}
+
+static inline void rfc_cond_destroy(rfc_cond *c) {
+#ifdef _WIN32
+    (void)c;
+#else
+    pthread_cond_destroy(&c->cv);
+#endif
+}
+
+static inline void rfc_cond_signal(rfc_cond *c) {
+#ifdef _WIN32
+    WakeConditionVariable(&c->cv);
+#else
+    pthread_cond_signal(&c->cv);
+#endif
+}
+
+static inline void rfc_cond_broadcast(rfc_cond *c) {
+#ifdef _WIN32
+    WakeAllConditionVariable(&c->cv);
+#else
+    pthread_cond_broadcast(&c->cv);
+#endif
+}
+
+static inline void rfc_cond_wait(rfc_cond *c, rfc_mutex *m) {
+#ifdef _WIN32
+    SleepConditionVariableSRW(&c->cv, &m->lock, INFINITE, 0);
+#else
+    pthread_cond_wait(&c->cv, &m->lock);
+#endif
+}
+
+static inline int rfc_cond_timedwait(rfc_cond *c, rfc_mutex *m, uint32_t timeout_ms) {
+#ifdef _WIN32
+    if (timeout_ms == UINT32_MAX) {
+        SleepConditionVariableSRW(&c->cv, &m->lock, INFINITE, 0);
+        return 1;
+    }
+    DWORD wait_ms = (DWORD)timeout_ms;
+    if (timeout_ms == INFINITE) {
+        wait_ms = INFINITE - 1u;
+    }
+    if (!SleepConditionVariableSRW(&c->cv, &m->lock, wait_ms, 0)) {
+        if (GetLastError() == ERROR_TIMEOUT) {
+            return 0;
+        }
+        return 0;
+    }
+    return 1;
+#else
+    if (timeout_ms == UINT32_MAX) {
+        pthread_cond_wait(&c->cv, &m->lock);
+        return 1;
+    }
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
+        return 0;
+    }
+    uint64_t add_ns = (uint64_t)timeout_ms * 1000000ull;
+    uint64_t sec = (uint64_t)ts.tv_sec + add_ns / 1000000000ull;
+    uint64_t nsec = (uint64_t)ts.tv_nsec + add_ns % 1000000000ull;
+    if (nsec >= 1000000000ull) {
+        sec += 1ull;
+        nsec -= 1000000000ull;
+    }
+    ts.tv_sec = (time_t)sec;
+    ts.tv_nsec = (long)nsec;
+    int rc = pthread_cond_timedwait(&c->cv, &m->lock, &ts);
+    return rc == 0;
+#endif
+}
+
+#ifdef _WIN32
+static inline unsigned __stdcall rfc_win_thread_trampoline(void *param) {
+    rfc_thread_start *st = (rfc_thread_start *)param;
+    void (*fn)(void *) = st->fn;
+    void *arg = st->arg;
+    free(st);
+    fn(arg);
+    return 0;
+}
+#else
+static inline void *rfc_posix_thread_trampoline(void *param) {
+    rfc_thread_start *st = (rfc_thread_start *)param;
+    void (*fn)(void *) = st->fn;
+    void *arg = st->arg;
+    free(st);
+    fn(arg);
+    return NULL;
+}
+#endif
+
+static inline int rfc_thread_start_fn(rfc_thread *t, void (*fn)(void *), void *arg) {
+    memset(t, 0, sizeof(*t));
+    rfc_thread_start *st = (rfc_thread_start *)malloc(sizeof(*st));
+    if (!st) {
+        return 0;
+    }
+    st->fn = fn;
+    st->arg = arg;
+#ifdef _WIN32
+    uintptr_t h = _beginthreadex(NULL, 0, rfc_win_thread_trampoline, st, 0, NULL);
+    if (h == 0) {
+        free(st);
+        return 0;
+    }
+    t->handle = (HANDLE)h;
+    t->started = 1;
+    return 1;
+#else
+    if (pthread_create(&t->thread, NULL, rfc_posix_thread_trampoline, st) != 0) {
+        free(st);
+        return 0;
+    }
+    t->started = 1;
+    return 1;
+#endif
+}
+
+static inline void rfc_thread_join(rfc_thread *t) {
+    if (!t || !t->started) {
+        return;
+    }
+#ifdef _WIN32
+    WaitForSingleObject(t->handle, INFINITE);
+    CloseHandle(t->handle);
+    t->handle = NULL;
+#else
+    pthread_join(t->thread, NULL);
+#endif
+    t->started = 0;
+}
+
+typedef struct rfc_user_ctx_box {
+    atomic_size_t refs;
+    void *user_ctx;
+    void (*destroy_fn)(void *);
+} rfc_user_ctx_box;
+
+static inline rfc_user_ctx_box *rfc_user_ctx_box_create(void *user_ctx,
+                                                        void (*destroy_fn)(void *)) {
+    rfc_user_ctx_box *box = (rfc_user_ctx_box *)malloc(sizeof(*box));
+    if (!box) {
+        return NULL;
+    }
+    atomic_init(&box->refs, 1u);
+    box->user_ctx = user_ctx;
+    box->destroy_fn = destroy_fn;
+    return box;
+}
+
+static inline void rfc_user_ctx_box_retain(rfc_user_ctx_box *box) {
+    if (box) {
+        atomic_fetch_add_explicit(&box->refs, 1u, memory_order_relaxed);
+    }
+}
+
+static inline void rfc_user_ctx_box_release(rfc_user_ctx_box *box) {
+    if (!box) {
+        return;
+    }
+    if (atomic_fetch_sub_explicit(&box->refs, 1u, memory_order_acq_rel) == 1u) {
+        if (box->destroy_fn && box->user_ctx) {
+            box->destroy_fn(box->user_ctx);
+        }
+        free(box);
+    }
+}
+
+typedef struct rfc_partial_entry {
+    void *ptr;
+    size_t byte_size;
+    void (*free_fn)(void *ctx, void *ptr);
+    void *free_ctx;
+    struct rfc_partial_entry *next;
+} rfc_partial_entry;
+
+struct rfc_job {
+    rfc_mutex cb_lock;
+    rfc_mutex lock;
+    rfc_cond done_cond;
+
+    atomic_size_t refs;
+    rfc_scheduler *sched;
+    rfc_job_slot *slot;
+
+    rfc_job_id job_id;
+    rfc_job_id superseded_by_id;
+    uint64_t attempt_number;
+
+    rfc_job_state state;
+    rfc_status status;
+    rfc_job_stage stage;
+    rfc_job_stage failing_stage;
+    char detail[RFC_JOB_DETAIL_MAX];
+
+    int cancel_requested;
+    int superseded;
+    int suppress_callbacks;
+    int published;
+    uint32_t last_percent;
+
+    rfc_format_id source_format;
+    rfc_format_id target_format;
+    uint8_t *source_bytes;
+    size_t source_size;
+    rfc_layout source_layout;
+    int has_layout;
+    rfc_metadata source_meta;
+    int has_meta;
+    uint8_t *owned_icc;
+    rfc_setting_value *settings;
+    size_t setting_count;
+    rfc_limits limits;
+
+    uint32_t requested_threads;
+    uint32_t admitted_threads;
+    uint64_t reserved_memory_bytes;
+    uint64_t budget_limit_bytes;
+
+    int has_stage_ops;
+    rfc_pipeline_stage_ops stage_ops;
+    rfc_user_ctx_box *user_ctx_box;
+
+    rfc_progress_fn progress_fn;
+    void *progress_user;
+
+    rfc_budget *budget;
+    rfc_allocator allocator;
+
+    rfc_partial_entry *partials;
+    uint64_t live_partial_bytes;
+
+    /* Guarded by job->lock while active session executes so cancel can notify it. */
+    uint32_t active_cancel_calls;
+    const rfc_session_adapter *active_sess_adapter;
+    void *active_session;
+    const rfc_adapter *active_legacy_adapter;
+};
+
+typedef struct rfc_cancel_snapshot {
+    rfc_job *job;
+    const rfc_session_adapter *sess_adapter;
+    void *session;
+    const rfc_adapter *legacy_adapter;
+} rfc_cancel_snapshot;
+
+struct rfc_job_slot {
+    rfc_mutex lock;
+    rfc_job_id current_job_id;
+    uint64_t attempt_count;
+    rfc_job *current_job;
+
+    int has_last_spec;
+    rfc_format_id source_format;
+    rfc_format_id target_format;
+    uint8_t *owned_source_bytes;
+    size_t owned_source_size;
+    rfc_layout owned_layout;
+    int has_layout;
+    rfc_metadata owned_meta;
+    int has_meta;
+    uint8_t *owned_icc;
+    rfc_setting_value *owned_settings;
+    size_t owned_setting_count;
+    uint32_t requested_codec_threads;
+    uint64_t expected_working_set_bytes;
+    uint64_t job_memory_limit_bytes;
+    rfc_limits owned_limits;
+    int has_limits;
+    int has_stage_ops;
+    rfc_pipeline_stage_ops stage_ops;
+    rfc_user_ctx_box *user_ctx_box;
+    rfc_progress_fn progress_fn;
+    void *progress_user;
+};
+
+/* Internal helpers shared cleanly between job.c and scheduler.c */
+void rfc_scheduler_internal_retain(rfc_scheduler *sched);
+void rfc_scheduler_internal_release(rfc_scheduler *sched);
+int rfc_scheduler_internal_is_destroying(rfc_scheduler *sched);
+void rfc_scheduler_internal_callback_enter(rfc_scheduler *sched, int *allowed_out);
+void rfc_scheduler_internal_callback_leave(rfc_scheduler *sched);
+void rfc_scheduler_internal_on_cancel_count(rfc_scheduler *sched);
+void rfc_scheduler_internal_on_publish_cancelled(rfc_scheduler *sched);
+void rfc_scheduler_internal_adjust_live_partials(rfc_scheduler *sched,
+                                                 int64_t delta_bytes);
+
+typedef struct rfc_job_exec_result {
+    rfc_status st;
+    rfc_job_stage stage_at;
+    const char *err_detail;
+} rfc_job_exec_result;
+
+rfc_job *rfc_job_internal_create(void);
+void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res);
+void rfc_job_internal_set_detail(char dst[RFC_JOB_DETAIL_MAX], const char *src);
+void rfc_job_internal_copy_spec_data_free(uint8_t *src_bytes,
+                                          uint8_t *icc,
+                                          rfc_setting_value *settings,
+                                          size_t setting_count);
+int rfc_job_internal_clone_inputs(const uint8_t *src_bytes,
+                                  size_t src_size,
+                                  const rfc_layout *src_layout,
+                                  const rfc_metadata *src_meta,
+                                  const rfc_setting_value *settings,
+                                  size_t setting_count,
+                                  uint8_t **out_bytes,
+                                  rfc_layout *out_layout,
+                                  int *out_has_layout,
+                                  rfc_metadata *out_meta,
+                                  int *out_has_meta,
+                                  uint8_t **out_icc,
+                                  rfc_setting_value **out_settings);
+
+#endif /* RFC_JOB_INTERNAL_H */

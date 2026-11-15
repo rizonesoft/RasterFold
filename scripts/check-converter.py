@@ -147,11 +147,11 @@ def case_contract():
     inc = os.path.join(ROOT, "converter", "include")
     with tempfile.TemporaryDirectory() as tmp:
         tu = os.path.join(tmp, "tu.c")
-        open(tu, "w").write('#include "rfc_codec.h"\nint main(void){return 0;}\n')
+        open(tu, "w").write('#include "rfc_codec.h"\n#include "rfc_job.h"\nint main(void){return 0;}\n')
         if run([cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", inc, "-c", tu, "-o", os.path.join(tmp, "tu.o")]):
             return fail("headers do not compile as C11")
         tux = os.path.join(tmp, "tu.cpp")
-        open(tux, "w").write('#include "rfc_codec.h"\nint main(){return 0;}\n')
+        open(tux, "w").write('#include "rfc_codec.h"\n#include "rfc_job.h"\nint main(){return 0;}\n')
         if run([cxx, "-std=c++17", "-Wall", "-Wextra", "-Werror", "-I", inc, "-c", tux, "-o", os.path.join(tmp, "tu_cpp.o")]):
             return fail("headers do not compile as C++")
         exe = os.path.join(tmp, "test_contract")
@@ -204,20 +204,107 @@ def case_bundle():
     return 0
 
 
+def _assert_jobs_output(label, stdout):
+    required = [
+        "jobs: config read-back",
+        "jobs: hostile/unknown preflight refused",
+        "jobs: concurrency",
+        "jobs: oom_cap",
+        "jobs: retry",
+        "jobs: cancel_all_stages live_partial_bytes=0 published_cancelled=0 shutdown_late_callbacks=0 64x_restart=ok",
+        "jobs: all checks passed",
+    ]
+    for marker in required:
+        if marker not in stdout:
+            return fail(f"{label} output missing checkpoint marker: {marker}")
+    for line in stdout.strip().splitlines():
+        print(f"  [{label}] {line}")
+    return 0
+
+
+def case_jobs(all_targets):
+    cc = os.environ.get("CC", "cc")
+    inc = os.path.join(ROOT, "converter", "include")
+    src_dir = os.path.join(ROOT, "converter", "src")
+    sources = [
+        os.path.join(src_dir, "registry.c"),
+        os.path.join(src_dir, "limits.c"),
+        os.path.join(src_dir, "job.c"),
+        os.path.join(src_dir, "scheduler.c"),
+        os.path.join(ROOT, "tests", "converter", "test_jobs.c"),
+    ]
+    with tempfile.TemporaryDirectory() as tmp:
+        exe = os.path.join(tmp, "test_jobs" + (".exe" if os.name == "nt" else ""))
+        cmd = [cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", inc, *sources]
+        if os.name != "nt":
+            cmd.append("-pthread")
+        cmd.extend(["-o", exe])
+        if run(cmd):
+            return fail("jobs host test does not build")
+        res = subprocess.run([exe], cwd=ROOT, capture_output=True, text=True, timeout=60)
+        if res.returncode:
+            print(res.stdout)
+            print(res.stderr, file=sys.stderr)
+            return fail(f"jobs host test exited {res.returncode}")
+        if _assert_jobs_output("host", res.stdout):
+            return 1
+    print("jobs (host): PASS")
+
+    if all_targets or os.name == "nt":
+        if run([sys.executable, os.path.join(ROOT, "scripts", "build-converter.py"),
+                "--target", "windows-x64"]):
+            return fail("windows-x64 converter build failed for rfc_test_jobs")
+        from pathlib import Path
+        test_conv_dir = os.path.join(ROOT, "tests", "converter")
+        if test_conv_dir not in sys.path:
+            sys.path.insert(0, test_conv_dir)
+        import test_bundle
+
+        win_exe = Path(ROOT) / "bin" / "converter" / "windows-x64" / "rfc_test_jobs.exe"
+        if not win_exe.is_file():
+            return fail(f"missing built Windows binary: {win_exe}")
+        pe_dlls = test_bundle.parse_pe64_imports(win_exe)
+        ro_dlls = test_bundle.readobj_imports(win_exe)
+        if set(pe_dlls) != set(ro_dlls):
+            return fail(f"PE vs llvm-readobj import mismatch on {win_exe}: {pe_dlls} vs {ro_dlls}")
+        try:
+            test_bundle.validate_pe_imports(pe_dlls)
+        except ValueError as exc:
+            return fail(f"{win_exe} PE import check failed: {exc}")
+        print(f"  [windows-x64] PE imports OK: {', '.join(pe_dlls)}")
+
+        win_res = test_bundle.run_windows_binary_isolated(win_exe, timeout_sec=60.0)
+        if win_res.returncode:
+            print(win_res.stdout)
+            print(win_res.stderr, file=sys.stderr)
+            return fail(f"rfc_test_jobs.exe isolated run exited {win_res.returncode}")
+        if _assert_jobs_output("windows-x64", win_res.stdout):
+            return 1
+        print("jobs (windows-x64 isolated): PASS")
+
+    print("jobs: PASS")
+    return 0
+
+
 def main():
-    args = sys.argv[1:]
-    if "--all-targets" in args:
-        args = [a for a in args if a != "--all-targets"]
+    raw_args = sys.argv[1:]
+    all_targets = "--all-targets" in raw_args
+    args = [a for a in raw_args if a != "--all-targets"]
     if args == ["--case", "contract"]:
         return case_contract()
     if args == ["--case", "bundle"]:
         return case_bundle()
+    if args == ["--case", "jobs"]:
+        return case_jobs(all_targets)
     if args == ["--case", "all"]:
         rc = case_contract()
         if rc:
             return rc
+        rc = case_jobs(all_targets)
+        if rc:
+            return rc
         return case_bundle()
-    print("usage: check-converter.py --case <contract|bundle|all> [--all-targets]")
+    print("usage: check-converter.py --case <contract|jobs|bundle|all> [--all-targets]")
     return 1
 
 
