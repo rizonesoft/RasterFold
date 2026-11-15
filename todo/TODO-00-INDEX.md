@@ -46,6 +46,5 @@ Native converter files are listed in [domain 10](./10-converter/INDEX.md); the c
 | TODO | Domain | Title |
 | ---- | ------ | ----- |
 | [TODO-01](./08-docs/TODO-01-html-docs.md) | 08-docs | HTML Documentation with Comparison Charts |
-| [TODO-01](./05-milestones/TODO-01-beat-jxl-and-webp.md) | 05-milestones | Milestones 1 to 10 |
 
 Every other TODO is listed in its domain's `INDEX.md`; the files above hold the rows of Phases 0 and 1 (milestones 1 and 2).

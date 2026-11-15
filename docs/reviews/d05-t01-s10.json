@@ -1,0 +1,80 @@
+{
+  "ref": "D05 T01 \u00a710",
+  "title": "Milestone 10 Gate: RasterFold 1.0",
+  "implementation_sha": "e3f7b22687b8877e72fb9b69f2b22e96558e98b7",
+  "date": "2026-11-15",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/05-milestones/D05-T01-s10.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "verify_release.py + test_api.py + test_artifacts.py + test_correctness.py + fuzz_decode.py --all-formats 120000 on Linux/Windows -> rasterfold-v1.0.0 verified, v3 frozen, 240000 mutations clean",
+    "python3 scripts/windows.py research/ab.py size src/cm.c <set> -v -t1 across all 10 sets and both heldout classes -> all e9_ratio < 1.0000 and webp_ratio < 1.0000",
+    "python3 scripts/windows.py research/jxl_alt.py + tests/benchmark.py -n 3 + research/vsjxl.py -n5 + tests/measure_final.py -> all speed and memory ratios < 1.0000 across measure, photos, synthetic",
+    "ab.py compat e8e3443 + 12 abpool.py shared-host runs + decode --time memory + v2/m5/compat decodes -> identical=True, 24 tail pools pass and agree <= 9.677%, memory +0.00%, all older files exact",
+    "ci_status.py + pages.yml + build-docs.py --verify-live https://rizonesoft.github.io/RasterFold/ on e3f7b22687b8877e72fb9b69f2b22e96558e98b7 -> green and live receipt verified",
+    "bosun run -- python3 scripts/check-all.py --all-targets on e3f7b22687b8877e72fb9b69f2b22e96558e98b7 -> check-all: 32/32 passed"
+  ],
+  "completion": {
+    "report": "docs/reviews/05-milestones/D05-T01-s10.md",
+    "verdict": "complete",
+    "candidate": "e3f7b22687b8877e72fb9b69f2b22e96558e98b7",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/05-milestones/D05-T01-s10.md",
+    "candidate": "6ee61d520974ce4acc6f20364035cb8ba22ee1d9",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "6ee61d520974ce4acc6f20364035cb8ba22ee1d9",
+  "schedule": {
+    "policy": "three-pass",
+    "pass_cap": 33,
+    "plan": {
+      "effort": "medium",
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "effort": "medium",
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {
+      "effort": "medium"
+    },
+    "reconciliation": {
+      "effort": "medium",
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}

@@ -753,8 +753,8 @@ track: G{t}
 
 {"".join(body)}## Verification
 
-- [ ] `python research/milestones.py --check` exits 0
-- [ ] `python scripts/todo-graph.py validate` clean
+- {'[x]' if all_done else '[ ]'} `python research/milestones.py --check` exits 0
+- {'[x]' if all_done else '[ ]'} `python scripts/todo-graph.py validate` clean
 """
 
 

@@ -8,7 +8,6 @@ The 60 milestone gates of the roadmap (`docs/research.md` section 9) and, from m
 
 | TODO | Title | Status |
 | ---- | ----- | :----: |
-| [TODO-01](./TODO-01-beat-jxl-and-webp.md) | Milestones 1 to 10: Beat JPEG XL e9 and WebP, then Release 1.0 | draft |
 | [TODO-02](./TODO-02-beat-itself.md) | Milestones 11 to 20: RasterFold Beats RasterFold (2.0) | draft |
 | [TODO-03](./TODO-03-reach.md) | Milestones 21 to 30: Reach (3.0) | draft |
 | [TODO-04](./TODO-04-beyond-still-files.md) | Milestones 31 to 40: Beyond Single Still Files (4.0) | draft |
@@ -19,6 +18,7 @@ The 60 milestone gates of the roadmap (`docs/research.md` section 9) and, from m
 
 | TODO | Title | Completed |
 | ---- | ----- | :-------: |
+| [TODO-01](./TODO-01-beat-jxl-and-webp.md) | Milestones 1 to 10: Beat JPEG XL e9 and WebP, then Release 1.0 | 2026-11-15 |
 
 ## In scope
 
