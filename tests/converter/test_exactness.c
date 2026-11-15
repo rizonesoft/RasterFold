@@ -418,6 +418,8 @@ typedef struct mock_codec_ctrl {
     int verify_decode_entered;
     int release_verify_decode;
     int force_tiny_ratio_bomb;
+    uint32_t stream_unknown_frames;
+    uint32_t stream_alloc_successes;
     rfc_sample_format sample_fmt;
     rfc_alpha_mode alpha_mode;
     uint32_t width;
@@ -429,6 +431,7 @@ typedef struct mock_codec_ctrl {
     size_t icc_len;
     rfc_jpeg_coeff_image *src_coeffs;
     rfc_jpeg_coeff_image *dst_coeffs;
+    const rfc_metadata *coeff_meta;
     const uint8_t *recon_bytes;
     size_t recon_len;
     const rfc_metadata *recon_meta;
@@ -497,6 +500,7 @@ static rfc_status mock_probe(void *raw,
     rfc_status fst = g_ctrl.fail_next_probe_status;
     int only_ver = g_ctrl.fail_on_verify_decode_only;
     int ratio_bomb = g_ctrl.force_tiny_ratio_bomb && (call_idx >= 1u);
+    int unknown_stream = (g_ctrl.stream_unknown_frames > 0u);
     ex_mutex_unlock(&g_ctrl.lock);
     (void)s;
 
@@ -553,8 +557,8 @@ static rfc_status mock_probe(void *raw,
     out_probe->frame_count = 1u;
     out_probe->total_pixels = (uint64_t)w * (uint64_t)h;
     out_probe->total_decoded_bytes = (uint64_t)row_bytes * (uint64_t)h;
-    if (ratio_bomb) {
-        /* Omit exact aggregate totals so streaming check_next_frame hits ratio cap. */
+    if (ratio_bomb || unknown_stream) {
+        /* Omit exact aggregate totals so streaming check_next_frame enforces limits. */
         out_probe->frame_count = 0u;
         out_probe->total_pixels = 0u;
         out_probe->total_decoded_bytes = 0u;
@@ -712,6 +716,7 @@ static rfc_status mock_decode(void *raw,
     int only_ver = g_ctrl.fail_on_verify_decode_only;
     int block_ver = g_ctrl.block_on_verify_decode;
     int tiny_bomb = g_ctrl.force_tiny_ratio_bomb && is_verify_call;
+    uint32_t unknown_frames = g_ctrl.stream_unknown_frames;
     if (is_verify_call && block_ver) {
         g_ctrl.verify_decode_entered = 1;
         ex_cond_broadcast(&g_ctrl.cond);
@@ -735,6 +740,40 @@ static rfc_status mock_decode(void *raw,
                           default_bps_of(g_ctrl.sample_fmt)};
         rfc_status cs = rfc_exec_check_next_frame(exec, &big, NULL);
         return cs == RFC_OK ? RFC_ERR_LIMIT_EXCEEDED : cs;
+    }
+
+    if (unknown_frames > 0u) {
+        rfc_frame *uarr = (rfc_frame *)exec->allocator->alloc(
+            exec->allocator->ctx, (size_t)unknown_frames * sizeof(rfc_frame));
+        if (!uarr) {
+            return RFC_ERR_OUT_OF_MEMORY;
+        }
+        memset(uarr, 0, (size_t)unknown_frames * sizeof(rfc_frame));
+        rfc_layout ulay = {
+            g_ctrl.sample_fmt, g_ctrl.alpha_mode, g_ctrl.width, g_ctrl.height,
+            (size_t)g_ctrl.width * rfc_sample_bytes(g_ctrl.sample_fmt),
+            default_bps_of(g_ctrl.sample_fmt)};
+        rfc_metadata umeta = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u};
+        for (uint32_t fi = 0u; fi < unknown_frames; fi++) {
+            rfc_status ast =
+                rfc_exec_alloc_frame(exec, &uarr[fi], &ulay, &umeta);
+            if (ast != RFC_OK) {
+                for (uint32_t k = 0u; k < fi; k++) {
+                    rfc_frame_free(&uarr[k]);
+                }
+                exec->allocator->free(exec->allocator->ctx, uarr);
+                return ast;
+            }
+            fill_deterministic_pixels(&uarr[fi]);
+            ex_mutex_lock(&g_ctrl.lock);
+            g_ctrl.stream_alloc_successes++;
+            ex_mutex_unlock(&g_ctrl.lock);
+        }
+        *out_frames = uarr;
+        *out_frame_count = (size_t)unknown_frames;
+        memset(out_meta, 0, sizeof(*out_meta));
+        out_meta->orientation = RFC_ORIENTATION_NORMAL;
+        return RFC_OK;
     }
 
     rfc_frame *arr = (rfc_frame *)exec->allocator->alloc(exec->allocator->ctx,
@@ -874,8 +913,8 @@ static rfc_status stage_encode_with_verify_artifacts(
         return st;
     }
     if (g_ctrl.supply_coeffs && g_ctrl.src_coeffs && g_ctrl.dst_coeffs) {
-        st = rfc_job_set_verified_jpeg_coeffs(job, g_ctrl.src_coeffs,
-                                              g_ctrl.dst_coeffs);
+        st = rfc_job_set_verified_jpeg_coeffs(
+            job, g_ctrl.src_coeffs, g_ctrl.dst_coeffs, g_ctrl.coeff_meta);
         if (st != RFC_OK) {
             return st;
         }
@@ -1471,6 +1510,7 @@ static void test_stage_verify_modes(void) {
 
         rfc_job *job = NULL;
         g_ctrl.supply_coeffs = 0;
+        g_ctrl.coeff_meta = NULL;
         CHECK(rfc_scheduler_submit(sched, NULL, &spec, &job) == RFC_OK);
         CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
         rfc_job_snapshot snap;
@@ -1480,12 +1520,68 @@ static void test_stage_verify_modes(void) {
         CHECK(g_ctrl.export_calls == 0u);
         rfc_job_release(job);
 
+        /* Coeffs supplied without verified output metadata -> RFC_ERR_NO_ADAPTER. */
         g_ctrl.supply_coeffs = 1;
+        g_ctrl.coeff_meta = NULL;
+        CHECK(rfc_scheduler_submit(sched, NULL, &spec, &job) == RFC_OK);
+        CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
+        CHECK(rfc_job_snapshot_get(job, &snap) == RFC_OK);
+        CHECK(snap.status == RFC_ERR_NO_ADAPTER &&
+              snap.failing_stage == RFC_STAGE_VERIFY);
+        CHECK(g_ctrl.export_calls == 0u);
+        rfc_job_release(job);
+
+        g_ctrl.coeff_meta = &sm;
         CHECK(rfc_scheduler_submit(sched, NULL, &spec, &job) == RFC_OK);
         CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
         CHECK(rfc_job_snapshot_get(job, &snap) == RFC_OK);
         CHECK(snap.state == RFC_JOB_SUCCEEDED && g_ctrl.export_calls == 1u);
         rfc_job_release(job);
+
+        /* Dropped output ICC under preserve must fail; stripped output under strip must succeed. */
+        {
+            static const uint8_t c_icc[4] = {0xa1, 0xb2, 0xc3, 0xd4};
+            rfc_metadata sm_icc = {c_icc, sizeof(c_icc),
+                                   RFC_ORIENTATION_ROTATE_90, 0u};
+            rfc_metadata sm_drop = {NULL, 0u, RFC_ORIENTATION_ROTATE_90, 0u};
+            rfc_metadata sm_stripped = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u};
+            g_ctrl.icc = c_icc;
+            g_ctrl.icc_len = sizeof(c_icc);
+            g_ctrl.orientation = RFC_ORIENTATION_ROTATE_90;
+
+            rfc_job_spec mspec = spec;
+            mspec.source_meta = &sm_icc;
+            g_ctrl.export_calls = 0u;
+            g_ctrl.coeff_meta = &sm_drop;
+            CHECK(rfc_scheduler_submit(sched, NULL, &mspec, &job) == RFC_OK);
+            CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
+            CHECK(rfc_job_snapshot_get(job, &snap) == RFC_OK);
+            CHECK(snap.status == RFC_ERR_VERIFY_MISMATCH &&
+                  snap.failing_stage == RFC_STAGE_VERIFY &&
+                  g_ctrl.export_calls == 0u);
+            rfc_verify_report mrep;
+            CHECK(rfc_job_verify_report_get(job, &mrep) == RFC_OK);
+            CHECK(mrep.mismatch.kind == RFC_MISMATCH_METADATA_LOST);
+            rfc_job_release(job);
+
+            rfc_setting_value s_coeff_strip[2] = {
+                {"exactness", "coefficient-exact"}, {"metadata", "strip"}};
+            mspec.settings = s_coeff_strip;
+            mspec.setting_count = 2u;
+            g_ctrl.coeff_meta = &sm_stripped;
+            CHECK(rfc_scheduler_submit(sched, NULL, &mspec, &job) == RFC_OK);
+            CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
+            CHECK(rfc_job_snapshot_get(job, &snap) == RFC_OK);
+            CHECK(snap.state == RFC_JOB_SUCCEEDED && g_ctrl.export_calls == 1u);
+            CHECK(rfc_job_verify_report_get(job, &mrep) == RFC_OK);
+            CHECK(mrep.meta_outcome == RFC_VERIFY_META_STRIPPED_EXPLICITLY);
+            rfc_job_release(job);
+
+            g_ctrl.icc = NULL;
+            g_ctrl.icc_len = 0u;
+            g_ctrl.orientation = RFC_ORIENTATION_NORMAL;
+            g_ctrl.coeff_meta = &sm;
+        }
 
         g_ctrl.export_calls = 0u;
         cb.quant_tables[0].values[3] += 2u;
@@ -1549,10 +1645,23 @@ static void test_stage_verify_modes(void) {
               snap.failing_stage == RFC_STAGE_VERIFY);
         rfc_job_release(job);
 
-        /* Passing .jxl output bytes instead of reconstructed JPEG must fail. */
+        /* Reconstruction bytes supplied without output metadata -> RFC_ERR_NO_ADAPTER. */
         g_ctrl.supply_recon = 1;
+        g_ctrl.recon_bytes = good_recon;
+        g_ctrl.recon_len = sizeof(good_recon);
+        g_ctrl.recon_meta = NULL;
+        CHECK(rfc_scheduler_submit(sched, NULL, &spec, &job) == RFC_OK);
+        CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
+        CHECK(rfc_job_snapshot_get(job, &snap) == RFC_OK);
+        CHECK(snap.status == RFC_ERR_NO_ADAPTER &&
+              snap.failing_stage == RFC_STAGE_VERIFY &&
+              g_ctrl.export_calls == 0u);
+        rfc_job_release(job);
+
+        /* Passing .jxl output bytes instead of reconstructed JPEG must fail. */
         g_ctrl.recon_bytes = wrong_jxl;
         g_ctrl.recon_len = sizeof(wrong_jxl);
+        g_ctrl.recon_meta = &sm;
         CHECK(rfc_scheduler_submit(sched, NULL, &spec, &job) == RFC_OK);
         CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
         CHECK(rfc_job_snapshot_get(job, &snap) == RFC_OK);
@@ -1646,8 +1755,40 @@ static void test_stage_verify_modes(void) {
                   RFC_META_POLICY_PRESERVE, 0u, NULL, 0u, &lim, &al, &frep) ==
               RFC_ERR_VERIFY_MISMATCH);
         CHECK(frep.mismatch.kind == RFC_MISMATCH_SAMPLE_VALUE);
-
         cleanup_ctrl();
+
+        /* Unknown-length multi-frame stream in standalone rfc_verify_encoded_fresh stops before over-limit frame allocation. */
+        {
+            uint8_t anim[16] = {'A', 'N', 'I', 'M'};
+            rfc_encoded anim_enc = {anim, sizeof(anim), NULL};
+            rfc_limits sl;
+            rfc_limits_default(&sl);
+            sl.max_frames = 2u;
+
+            reset_ctrl(RFC_SAMPLE_RGB8, 4u, 4u);
+            g_ctrl.stream_unknown_frames = 4u;
+            CHECK(rfc_verify_encoded_fresh(
+                      RFC_FORMAT_PNG, &anim_enc, &exp_f, 1u, NULL,
+                      RFC_META_POLICY_PRESERVE, 0u, NULL, 0u, &sl, &al,
+                      &frep) == RFC_ERR_LIMIT_EXCEEDED);
+            CHECK(g_ctrl.stream_alloc_successes == 2u);
+            CHECK(tr.live == 1u);
+            cleanup_ctrl();
+
+            rfc_limits_default(&sl);
+            sl.max_frames = 16u;
+            sl.max_decoded_bytes = 2u * 48u;
+            reset_ctrl(RFC_SAMPLE_RGB8, 4u, 4u);
+            g_ctrl.stream_unknown_frames = 4u;
+            CHECK(rfc_verify_encoded_fresh(
+                      RFC_FORMAT_PNG, &anim_enc, &exp_f, 1u, NULL,
+                      RFC_META_POLICY_PRESERVE, 0u, NULL, 0u, &sl, &al,
+                      &frep) == RFC_ERR_LIMIT_EXCEEDED);
+            CHECK(g_ctrl.stream_alloc_successes == 2u);
+            CHECK(tr.live == 1u);
+            cleanup_ctrl();
+        }
+
         rfc_frame_free(&exp_f);
         CHECK(tr.live == 0u);
     }
@@ -1859,6 +2000,100 @@ static void test_metadata_policies(void) {
         cleanup_ctrl();
     }
 
+    /* D. Per-frame multi-page metadata (later frame drop/orientation) & default-to-nondefault mutation. */
+    {
+        alloc_tracker tr;
+        rfc_allocator al;
+        init_tracked_alloc(&tr, &al);
+
+        rfc_frame sf[2], df[2];
+        fill_deterministic_frame(&sf[0], 4u, 4u, RFC_SAMPLE_RGB8,
+                                 RFC_ALPHA_NONE, 8u, 0u, 0u, &al);
+        fill_deterministic_frame(&sf[1], 4u, 4u, RFC_SAMPLE_RGB8,
+                                 RFC_ALPHA_NONE, 8u, 0u, 0u, &al);
+        fill_deterministic_frame(&df[0], 4u, 4u, RFC_SAMPLE_RGB8,
+                                 RFC_ALPHA_NONE, 8u, 0u, 0u, &al);
+        fill_deterministic_frame(&df[1], 4u, 4u, RFC_SAMPLE_RGB8,
+                                 RFC_ALPHA_NONE, 8u, 0u, 0u, &al);
+
+        sf[0].metadata.icc = icc_bytes;
+        sf[0].metadata.icc_len = sizeof(icc_bytes);
+        sf[0].metadata.orientation = RFC_ORIENTATION_ROTATE_90;
+        sf[1].metadata.icc = icc_bytes;
+        sf[1].metadata.icc_len = sizeof(icc_bytes);
+        sf[1].metadata.orientation = RFC_ORIENTATION_ROTATE_180;
+
+        df[0].metadata.icc = icc_bytes;
+        df[0].metadata.icc_len = sizeof(icc_bytes);
+        df[0].metadata.orientation = RFC_ORIENTATION_ROTATE_90;
+        df[1].metadata.icc = icc_bytes;
+        df[1].metadata.icc_len = sizeof(icc_bytes);
+        df[1].metadata.orientation = RFC_ORIENTATION_ROTATE_180;
+
+        rfc_metadata cont = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u};
+        rfc_metadata_report mrep;
+        rfc_sample_mismatch mmm;
+        CHECK(rfc_metadata_verify(RFC_FORMAT_JPEG_XL, RFC_META_POLICY_PRESERVE,
+                                  RFC_EXACT_PIXEL_EXACT, &cont, sf, 2u, &cont,
+                                  df, 2u, 0u, &mrep, &mmm) == RFC_OK);
+
+        /* Frame 0 identical, frame 1 loses ICC -> rejected. */
+        df[1].metadata.icc = NULL;
+        df[1].metadata.icc_len = 0u;
+        CHECK(rfc_metadata_verify(RFC_FORMAT_JPEG_XL, RFC_META_POLICY_PRESERVE,
+                                  RFC_EXACT_PIXEL_EXACT, &cont, sf, 2u, &cont,
+                                  df, 2u, 0u, &mrep, &mmm) ==
+              RFC_ERR_VERIFY_MISMATCH);
+        CHECK(mmm.kind == RFC_MISMATCH_METADATA_LOST &&
+              (mrep.lost_supported_items & RFC_META_ITEM_ICC) != 0u);
+
+        /* Frame 1 restores ICC, alters orientation -> rejected. */
+        df[1].metadata.icc = icc_bytes;
+        df[1].metadata.icc_len = sizeof(icc_bytes);
+        df[1].metadata.orientation = RFC_ORIENTATION_NORMAL;
+        CHECK(rfc_metadata_verify(RFC_FORMAT_JPEG_XL, RFC_META_POLICY_PRESERVE,
+                                  RFC_EXACT_PIXEL_EXACT, &cont, sf, 2u, &cont,
+                                  df, 2u, 0u, &mrep, &mmm) ==
+              RFC_ERR_VERIFY_MISMATCH);
+        CHECK(mmm.kind == RFC_MISMATCH_METADATA_LOST &&
+              (mrep.lost_supported_items & RFC_META_ITEM_ORIENTATION) != 0u);
+
+        /* Single-frame NORMAL source mutated to rotated destination (and spurious ICC) -> rejected. */
+        sf[0].metadata.icc = NULL;
+        sf[0].metadata.icc_len = 0u;
+        sf[0].metadata.orientation = RFC_ORIENTATION_NORMAL;
+        df[0].metadata.icc = NULL;
+        df[0].metadata.icc_len = 0u;
+        df[0].metadata.orientation = RFC_ORIENTATION_ROTATE_90;
+        CHECK(rfc_metadata_verify(RFC_FORMAT_TIFF, RFC_META_POLICY_PRESERVE,
+                                  RFC_EXACT_PIXEL_EXACT, &cont, &sf[0], 1u,
+                                  &cont, &df[0], 1u, 0u, &mrep, &mmm) ==
+              RFC_ERR_VERIFY_MISMATCH);
+        CHECK(mmm.kind == RFC_MISMATCH_METADATA_LOST &&
+              (mrep.lost_supported_items & RFC_META_ITEM_ORIENTATION) != 0u);
+
+        df[0].metadata.orientation = RFC_ORIENTATION_NORMAL;
+        df[0].metadata.icc = icc_bytes;
+        df[0].metadata.icc_len = sizeof(icc_bytes);
+        CHECK(rfc_metadata_verify(RFC_FORMAT_TIFF, RFC_META_POLICY_PRESERVE,
+                                  RFC_EXACT_PIXEL_EXACT, &cont, &sf[0], 1u,
+                                  &cont, &df[0], 1u, 0u, &mrep, &mmm) ==
+              RFC_ERR_VERIFY_MISMATCH);
+        CHECK(mmm.kind == RFC_MISMATCH_METADATA_LOST &&
+              (mrep.lost_supported_items & RFC_META_ITEM_ICC) != 0u);
+
+        /* Clear borrowed stack pointers before rfc_frame_free. */
+        for (int i = 0; i < 2; i++) {
+            sf[i].metadata.icc = NULL;
+            sf[i].metadata.icc_len = 0u;
+            df[i].metadata.icc = NULL;
+            df[i].metadata.icc_len = 0u;
+            rfc_frame_free(&sf[i]);
+            rfc_frame_free(&df[i]);
+        }
+        CHECK(tr.live == 0u);
+    }
+
     printf("exactness: metadata_policies ok\n");
 }
 
@@ -1930,6 +2165,91 @@ static void test_preview_isolation(void) {
         rfc_preview_free(&pb);
         rfc_frame_free(&a);
         rfc_frame_free(&b);
+    }
+
+    /* Case 3: Linear float & half straight vs premultiplied equivalence in preview (and verifier rejection). */
+    {
+        rfc_frame fs, fp;
+        rfc_layout ls = {RFC_SAMPLE_RGBA_FLOAT, RFC_ALPHA_STRAIGHT, 1u, 1u,
+                         16u, 32u};
+        rfc_layout lp = {RFC_SAMPLE_RGBA_FLOAT, RFC_ALPHA_PREMULTIPLIED, 1u, 1u,
+                         16u, 32u};
+        rfc_metadata fm = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u};
+        CHECK(rfc_frame_alloc(&fs, &ls, &fm, &al) == RFC_OK);
+        CHECK(rfc_frame_alloc(&fp, &lp, &fm, &al) == RFC_OK);
+
+        /* Straight (1.0, 1.0, 1.0, 0.5) vs premult (0.5, 0.5, 0.5, 0.5) over black -> ~188 in both. */
+        write_u32(fs.data + 0u, 0x3f800000u);
+        write_u32(fs.data + 4u, 0x3f800000u);
+        write_u32(fs.data + 8u, 0x3f800000u);
+        write_u32(fs.data + 12u, 0x3f000000u);
+
+        write_u32(fp.data + 0u, 0x3f000000u);
+        write_u32(fp.data + 4u, 0x3f000000u);
+        write_u32(fp.data + 8u, 0x3f000000u);
+        write_u32(fp.data + 12u, 0x3f000000u);
+
+        rfc_preview_frame pa, pb;
+        CHECK(rfc_preview_render_srgb8(&fs, 0u, 0u, 0u, 0, &al, &pa) == RFC_OK);
+        CHECK(rfc_preview_render_srgb8(&fp, 0u, 0u, 0u, 0, &al, &pb) == RFC_OK);
+        CHECK(pa.rgba8_srgb[0] >= 187u && pa.rgba8_srgb[0] <= 189u);
+        CHECK(pa.data_len == pb.data_len &&
+              memcmp(pa.rgba8_srgb, pb.rgba8_srgb, pa.data_len) == 0);
+        rfc_preview_free(&pa);
+        rfc_preview_free(&pb);
+
+        /* Straight vs premult float over colored matte (40, 120, 200) match byte-for-byte. */
+        write_u32(fs.data + 4u, 0x3e800000u); /* 0.25 */
+        write_u32(fs.data + 8u, 0x00000000u); /* 0.0 */
+        write_u32(fp.data + 4u, 0x3e000000u); /* 0.125 */
+        write_u32(fp.data + 8u, 0x00000000u); /* 0.0 */
+        CHECK(rfc_preview_render_srgb8(&fs, 40u, 120u, 200u, 0, &al, &pa) ==
+              RFC_OK);
+        CHECK(rfc_preview_render_srgb8(&fp, 40u, 120u, 200u, 0, &al, &pb) ==
+              RFC_OK);
+        CHECK(pa.data_len == pb.data_len &&
+              memcmp(pa.rgba8_srgb, pb.rgba8_srgb, pa.data_len) == 0);
+
+        rfc_sample_mismatch mm;
+        CHECK(rfc_verify_frames_equal(&fs, 1u, &fp, 1u, &mm) ==
+              RFC_ERR_VERIFY_MISMATCH);
+        CHECK(mm.kind == RFC_MISMATCH_ALPHA_MODE);
+        rfc_preview_free(&pa);
+        rfc_preview_free(&pb);
+
+        /* Fully transparent straight float renders exact sRGB matte color. */
+        write_u32(fs.data + 12u, 0x00000000u);
+        CHECK(rfc_preview_render_srgb8(&fs, 40u, 120u, 200u, 0, &al, &pa) ==
+              RFC_OK);
+        CHECK(pa.rgba8_srgb[0] == 40u && pa.rgba8_srgb[1] == 120u &&
+              pa.rgba8_srgb[2] == 200u);
+        rfc_preview_free(&pa);
+        rfc_frame_free(&fs);
+        rfc_frame_free(&fp);
+
+        /* Half straight (1.0, 0.25, 0.0, 0.5) vs premult (0.5, 0.125, 0.0, 0.5). */
+        rfc_layout lhs = {RFC_SAMPLE_RGBA_HALF, RFC_ALPHA_STRAIGHT, 1u, 1u, 8u,
+                          16u};
+        rfc_layout lhp = {RFC_SAMPLE_RGBA_HALF, RFC_ALPHA_PREMULTIPLIED, 1u,
+                          1u, 8u, 16u};
+        CHECK(rfc_frame_alloc(&fs, &lhs, &fm, &al) == RFC_OK);
+        CHECK(rfc_frame_alloc(&fp, &lhp, &fm, &al) == RFC_OK);
+        write_u16(fs.data + 0u, 0x3c00u); /* 1.0 */
+        write_u16(fs.data + 2u, 0x3400u); /* 0.25 */
+        write_u16(fs.data + 4u, 0x0000u); /* 0.0 */
+        write_u16(fs.data + 6u, 0x3800u); /* 0.5 */
+        write_u16(fp.data + 0u, 0x3800u); /* 0.5 */
+        write_u16(fp.data + 2u, 0x3000u); /* 0.125 */
+        write_u16(fp.data + 4u, 0x0000u); /* 0.0 */
+        write_u16(fp.data + 6u, 0x3800u); /* 0.5 */
+        CHECK(rfc_preview_render_srgb8(&fs, 0u, 0u, 0u, 0, &al, &pa) == RFC_OK);
+        CHECK(rfc_preview_render_srgb8(&fp, 0u, 0u, 0u, 0, &al, &pb) == RFC_OK);
+        CHECK(pa.rgba8_srgb[0] >= 187u && pa.rgba8_srgb[0] <= 189u);
+        CHECK(memcmp(pa.rgba8_srgb, pb.rgba8_srgb, pa.data_len) == 0);
+        rfc_preview_free(&pa);
+        rfc_preview_free(&pb);
+        rfc_frame_free(&fs);
+        rfc_frame_free(&fp);
     }
 
     CHECK(tr.live == 0u);

@@ -532,5 +532,17 @@ void rfc_job_internal_release_stage_outputs(rfc_job *job);
 void rfc_job_internal_set_progress_hook(
     void (*fn)(rfc_job_id job_id, int phase, void *user),
     void *user);
+rfc_status rfc_job_internal_run_standalone_decode(
+    rfc_format_id fmt,
+    const rfc_session_adapter *sadp,
+    const rfc_limits *limits,
+    const rfc_allocator *alloc,
+    const uint8_t *in_bytes,
+    size_t in_size,
+    const rfc_setting_value *dec_settings,
+    size_t dec_setting_count,
+    rfc_frame **out_frames,
+    size_t *out_count,
+    rfc_metadata *out_meta);
 
 #endif /* RFC_JOB_INTERNAL_H */

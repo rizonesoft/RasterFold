@@ -209,7 +209,8 @@ rfc_status rfc_job_verify_report_get(const rfc_job *job, rfc_verify_report *out)
 rfc_status rfc_job_set_verified_jpeg_coeffs(
     rfc_job *job,
     const rfc_jpeg_coeff_image *source_coeffs,
-    const rfc_jpeg_coeff_image *verified_coeffs);
+    const rfc_jpeg_coeff_image *verified_coeffs,
+    const rfc_metadata *verified_meta);
 rfc_status rfc_job_set_verified_reconstructed_bytes(
     rfc_job *job,
     const uint8_t *reconstructed_jpeg,

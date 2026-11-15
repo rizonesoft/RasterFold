@@ -1,3 +1,4 @@
+#include "job_internal.h"
 #include "rfc_verify.h"
 
 #include <limits.h>
@@ -921,58 +922,18 @@ rfc_status rfc_verify_encoded_fresh(rfc_format_id target_format,
         return RFC_ERR_NO_ADAPTER;
     }
 
-    rfc_exec_context exec;
-    memset(&exec, 0, sizeof(exec));
-    exec.codec_threads = 1u;
-    exec.limits = eff_limits;
-    exec.allocator = &eff_alloc;
-
-    void *sess = NULL;
-    st = sadp->open_session(&exec, &sess);
-    if (st != RFC_OK) {
-        rfc_registry_release_session(target_format);
-        out_report->status = st;
-        return st;
-    }
-
-    rfc_image_probe probe;
-    memset(&probe, 0, sizeof(probe));
     rfc_frame *decoded_frames = NULL;
     size_t decoded_count = 0u;
     rfc_metadata decoded_meta;
     memset(&decoded_meta, 0, sizeof(decoded_meta));
 
-    st = rfc_limits_check_compressed(&eff_limits, (uint64_t)encoded->len);
-    if (st == RFC_OK) {
-        st = sadp->probe_session(sess, &exec, encoded->data, encoded->len,
-                                 &probe);
-        if (st == RFC_OK) {
-            st = rfc_limits_check_probe(&eff_limits, &probe,
-                                        (uint64_t)encoded->len, 1);
-        }
-        if (probe.container_meta.icc) {
-            eff_alloc.free(eff_alloc.ctx, (void *)probe.container_meta.icc);
-            probe.container_meta.icc = NULL;
-        }
-    }
-    if (st == RFC_OK) {
-        st = sadp->decode_session(sess, &exec, encoded->data, encoded->len,
-                                  decode_settings, decode_setting_count,
-                                  &decoded_frames, &decoded_count,
-                                  &decoded_meta);
-    }
+    st = rfc_job_internal_run_standalone_decode(
+        target_format, sadp, &eff_limits, &eff_alloc, encoded->data,
+        encoded->len, decode_settings, decode_setting_count, &decoded_frames,
+        &decoded_count, &decoded_meta);
 
-    sadp->close_session(sess);
-    rfc_registry_release_session(target_format);
-
-    if (st == RFC_OK) {
-        if (!decoded_frames || decoded_count == 0u) {
-            st = RFC_ERR_INVALID_ARGUMENT;
-        } else {
-            st = rfc_limits_check_frames(&eff_limits, decoded_frames,
-                                         decoded_count, &decoded_meta,
-                                         (uint64_t)encoded->len, 1);
-        }
+    if (st == RFC_OK && (!decoded_frames || decoded_count == 0u)) {
+        st = RFC_ERR_INVALID_ARGUMENT;
     }
     if (st == RFC_OK) {
         st = rfc_frames_hash_sha256(decoded_frames, decoded_count,

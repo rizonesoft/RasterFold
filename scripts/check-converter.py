@@ -7,14 +7,27 @@ public headers as C11 and C++, and builds and runs
 tests/converter/test_contract.c against converter/src/registry.c.
 Later sections add their cases here; an unknown case is a failure.
 """
+import importlib.util
 import json
 import os
 import re
-import subprocess
 import sys
 import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _load_reference():
+    path = os.path.join(ROOT, "tests", "converter", "reference.py")
+    spec = importlib.util.spec_from_file_location("rf_conv_ref", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load {path}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_ref = _load_reference()
 
 REQUIRED = ["rasterfold", "bmp", "png", "apng", "pnm", "pam", "webp",
             "jpeg-xl", "avif", "jpeg", "gif", "tiff", "heif", "heic",
@@ -144,9 +157,13 @@ def validate_registry():
     return 0
 
 
-def run(cmd):
+def run(cmd, *, timeout=60.0, env=None):
     print("+", " ".join(cmd))
-    return subprocess.run(cmd, cwd=ROOT).returncode
+    return _ref.run_process_tree(cmd, cwd=ROOT, env=env, timeout=timeout).returncode
+
+
+def run_capture(cmd, *, timeout=60.0, env=None):
+    return _ref.run_process_tree(cmd, cwd=ROOT, env=env, timeout=timeout, capture_output=True)
 
 
 def _check_headers(tmp):
@@ -180,7 +197,7 @@ def case_contract():
             return fail("contract test does not build")
         if run([exe]):
             return fail("contract test failed")
-        dump = subprocess.run([exe, "dump"], cwd=ROOT, capture_output=True, text=True)
+        dump = run_capture([exe, "dump"])
         if dump.returncode:
             return fail("registry dump failed")
         doc = json.load(open(os.path.join(ROOT, "converter", "codecs.json"), encoding="utf-8"))
@@ -267,7 +284,7 @@ def case_jobs(all_targets):
         cmd.extend(["-o", exe])
         if run(cmd):
             return fail("jobs host test does not build")
-        res = subprocess.run([exe], cwd=ROOT, capture_output=True, text=True, timeout=60)
+        res = run_capture([exe], timeout=60.0)
         if res.returncode:
             print(res.stdout)
             print(res.stderr, file=sys.stderr)
@@ -341,7 +358,7 @@ def case_exactness(all_targets):
         if _check_headers(tmp):
             return 1
 
-        # Prove verify.c + metadata.c compile, link, and execute without preview.c or job.c.
+        # Prove verify.c + metadata.c (+ job.c/scheduler.c) compile, link, and execute without preview.c.
         noprev_c = os.path.join(tmp, "verify_no_preview.c")
         noprev_exe = os.path.join(tmp, "verify_no_preview" + (".exe" if os.name == "nt" else ""))
         with open(noprev_c, "w", encoding="utf-8") as f:
@@ -368,13 +385,18 @@ def case_exactness(all_targets):
             os.path.join(src_dir, "limits.c"),
             os.path.join(src_dir, "verify.c"),
             os.path.join(src_dir, "metadata.c"),
-            noprev_c, "-o", noprev_exe,
+            os.path.join(src_dir, "job.c"),
+            os.path.join(src_dir, "scheduler.c"),
+            noprev_c,
         ]
+        if os.name != "nt":
+            noprev_cmd.append("-pthread")
+        noprev_cmd.extend(["-o", noprev_exe])
         if run(noprev_cmd):
-            return fail("verify.c + metadata.c failed to link without preview.c")
+            return fail("verify.c + metadata.c + job.c failed to link without preview.c")
         if run([noprev_exe]):
-            return fail("verify.c + metadata.c standalone link smoke failed")
-        print("  [host] verify.c + metadata.c link cleanly without preview.c: PASS")
+            return fail("verify.c + metadata.c + job.c standalone link smoke failed")
+        print("  [host] verify.c + metadata.c + job.c link cleanly without preview.c: PASS")
 
         if os.name == "nt":
             if run([sys.executable, os.path.join(ROOT, "scripts", "build-converter.py"),
@@ -405,7 +427,7 @@ def case_exactness(all_targets):
             if run(cmd):
                 return fail("exactness host test does not build")
 
-        res = subprocess.run([host_exe], cwd=ROOT, capture_output=True, text=True, timeout=60)
+        res = run_capture([host_exe], timeout=60.0)
         if res.returncode:
             print(res.stdout)
             print(res.stderr, file=sys.stderr)
@@ -423,10 +445,8 @@ def case_exactness(all_targets):
             py_bin, "-m", "unittest", "discover", "-s",
             os.path.join(ROOT, "tests", "converter"), "-p", "test_exactness.py", "-v",
         ]
-        print("+", *py_cmd)
-        py_res = subprocess.run(py_cmd, cwd=ROOT, env=py_env, timeout=60)
-        if py_res.returncode:
-            return fail(f"exactness python reference suite exited {py_res.returncode}")
+        if run(py_cmd, timeout=60.0, env=py_env):
+            return fail("exactness python reference suite failed")
         print("exactness (python reference & oracle): PASS")
 
     if all_targets or os.name == "nt":

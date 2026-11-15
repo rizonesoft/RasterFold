@@ -19,8 +19,11 @@ import hashlib
 import importlib
 import importlib.util
 import json
+import os
 from pathlib import Path
+import signal
 import struct
+import subprocess
 import zlib
 from typing import Any
 
@@ -419,7 +422,7 @@ def inspect_pillow_codec_provenance() -> dict[str, Any]:
     )
     try:
         features = importlib.import_module("PIL.features")
-    except Exception:
+    except ImportError:
         return {
             "pillow_installed": False,
             "codecs": {
@@ -943,50 +946,86 @@ def encode_openexr_uncompressed(
 
 def decode_openexr_uncompressed(blob: bytes) -> tuple[int, int, tuple[str, ...], int, bytes]:
     """Clean-room single-part uncompressed scanline OpenEXR decoder preserving exact float bits."""
+    if len(blob) < 8:
+        raise ValueError("truncated OpenEXR header")
     magic, version = struct.unpack_from("<II", blob, 0)
     if magic != 20000630 or (version & 0xFF) != 2:
         raise ValueError("invalid OpenEXR header")
     pos = 8
     attrs: dict[str, tuple[str, bytes]] = {}
-    while blob[pos] != 0:
-        n_end = blob.index(0, pos)
+    while True:
+        if pos >= len(blob):
+            raise ValueError("truncated OpenEXR attribute header")
+        if blob[pos] == 0:
+            break
+        n_end = blob.find(0, pos)
+        if n_end < 0:
+            raise ValueError("unterminated OpenEXR attribute name")
         name = blob[pos:n_end].decode("ascii")
         t_start = n_end + 1
-        t_end = blob.index(0, t_start)
+        t_end = blob.find(0, t_start)
+        if t_end < 0:
+            raise ValueError("unterminated OpenEXR attribute type")
         atype = blob[t_start:t_end].decode("ascii")
+        if t_end + 5 > len(blob):
+            raise ValueError("truncated OpenEXR attribute length")
         alen = struct.unpack_from("<I", blob, t_end + 1)[0]
         v_start = t_end + 5
+        if v_start + alen > len(blob):
+            raise ValueError("truncated OpenEXR attribute value")
         attrs[name] = (atype, blob[v_start : v_start + alen])
         pos = v_start + alen
     pos += 1  # end-of-header null byte
 
+    for req in ("compression", "dataWindow", "channels"):
+        if req not in attrs:
+            raise ValueError(f"missing required OpenEXR header attribute {req!r}")
     if attrs["compression"][1] != b"\x00":
         raise ValueError("pure-Python EXR oracle only decodes NO_COMPRESSION=0")
+    if len(attrs["dataWindow"][1]) != 16:
+        raise ValueError("invalid OpenEXR dataWindow")
     x0, y0, x1, y1 = struct.unpack("<iiii", attrs["dataWindow"][1])
     width = x1 - x0 + 1
     height = y1 - y0 + 1
+    if width <= 0 or height <= 0:
+        raise ValueError("invalid OpenEXR dimensions")
 
     cb = attrs["channels"][1]
     cp = 0
     exr_channels: list[tuple[str, int]] = []
-    while cb[cp] != 0:
-        ce = cb.index(0, cp)
+    while cp < len(cb) and cb[cp] != 0:
+        ce = cb.find(0, cp)
+        if ce < 0 or ce + 17 > len(cb):
+            raise ValueError("truncated OpenEXR channel definition")
         cname = cb[cp:ce].decode("ascii")
         ptype = struct.unpack_from("<I", cb, ce + 1)[0]
         exr_channels.append((cname, ptype))
         cp = ce + 17
+    if cp >= len(cb) or cb[cp] != 0 or not exr_channels:
+        raise ValueError("invalid OpenEXR channel list")
     pixel_type = exr_channels[0][1]
+    if pixel_type not in (1, 2) or any(pt != pixel_type for _, pt in exr_channels):
+        raise ValueError("unsupported OpenEXR pixel type")
     word_bytes = 2 if pixel_type == 1 else 4
+
+    table_bytes = height * 8
+    if pos + table_bytes > len(blob):
+        raise ValueError("truncated OpenEXR scanline offset table")
     offsets = struct.unpack_from(f"<{height}Q", blob, pos)
+    table_end = pos + table_bytes
 
     num_ch = len(exr_channels)
+    expected = width * num_ch * word_bytes
     out = bytearray(width * height * num_ch * word_bytes)
     for y_idx, off in enumerate(offsets):
+        if off < table_end or off + 8 > len(blob):
+            raise ValueError("truncated OpenEXR scanline header")
         y_coord, dsize = struct.unpack_from("<iI", blob, off)
-        expected = width * num_ch * word_bytes
         if y_coord - y0 != y_idx or dsize != expected:
             raise ValueError("EXR scanline mismatch")
         s_off = off + 8
+        if s_off + expected > len(blob):
+            raise ValueError("truncated OpenEXR scanline payload")
         for cidx in range(num_ch):
             for x in range(width):
                 w = blob[s_off : s_off + word_bytes]
@@ -1055,3 +1094,184 @@ def evaluate_raw_conversion_contract(
     if frames_hash_sha256(rendered_source_frames) != frames_hash_sha256(target_decoded_frames):
         return False, "sample-value"
     return True, "ok"
+
+
+class _WindowsProcessJob:
+    """Win32 Job Object with KILL_ON_JOB_CLOSE so child trees die together."""
+
+    def __init__(self) -> None:
+        import ctypes
+        from ctypes import wintypes
+
+        class _BasicLimitInfo(ctypes.Structure):
+            _fields_ = [
+                ("PerProcessUserTimeLimit", ctypes.c_int64),
+                ("PerJobUserTimeLimit", ctypes.c_int64),
+                ("LimitFlags", wintypes.DWORD),
+                ("MinimumWorkingSetSize", ctypes.c_size_t),
+                ("MaximumWorkingSetSize", ctypes.c_size_t),
+                ("ActiveProcessLimit", wintypes.DWORD),
+                ("Affinity", ctypes.c_size_t),
+                ("PriorityClass", wintypes.DWORD),
+                ("SchedulingClass", wintypes.DWORD),
+            ]
+
+        class _IoCounters(ctypes.Structure):
+            _fields_ = [("ReadOperationCount", ctypes.c_uint64),
+                        ("WriteOperationCount", ctypes.c_uint64),
+                        ("OtherOperationCount", ctypes.c_uint64),
+                        ("ReadTransferCount", ctypes.c_uint64),
+                        ("WriteTransferCount", ctypes.c_uint64),
+                        ("OtherTransferCount", ctypes.c_uint64)]
+
+        class _ExtendedLimitInfo(ctypes.Structure):
+            _fields_ = [
+                ("BasicLimitInformation", _BasicLimitInfo),
+                ("IoInfo", _IoCounters),
+                ("ProcessMemoryLimit", ctypes.c_size_t),
+                ("JobMemoryLimit", ctypes.c_size_t),
+                ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                ("PeakJobMemoryUsed", ctypes.c_size_t),
+            ]
+
+        self.ctypes = ctypes
+        self.kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        self.kernel32.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
+        self.kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+        self.kernel32.SetInformationJobObject.argtypes = [
+            wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD
+        ]
+        self.kernel32.SetInformationJobObject.restype = wintypes.BOOL
+        self.kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+        self.kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
+        self.kernel32.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
+        self.kernel32.TerminateJobObject.restype = wintypes.BOOL
+        self.kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        self.kernel32.CloseHandle.restype = wintypes.BOOL
+        self.ntdll = ctypes.WinDLL("ntdll")
+        self.ntdll.NtResumeProcess.argtypes = [wintypes.HANDLE]
+        self.ntdll.NtResumeProcess.restype = ctypes.c_long
+        self.handle = self.kernel32.CreateJobObjectW(None, None)
+        if not self.handle:
+            raise OSError(ctypes.get_last_error(), "CreateJobObjectW failed")
+        info = _ExtendedLimitInfo()
+        info.BasicLimitInformation.LimitFlags = 0x00002000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        if not self.kernel32.SetInformationJobObject(
+            self.handle, 9, ctypes.byref(info), ctypes.sizeof(info)
+        ):
+            err = ctypes.get_last_error()
+            self.kernel32.CloseHandle(self.handle)
+            self.handle = None
+            raise OSError(err, "SetInformationJobObject failed")
+
+    def adopt_and_resume(self, proc: subprocess.Popen[Any]) -> None:
+        handle = int(getattr(proc, "_handle"))
+        if not self.kernel32.AssignProcessToJobObject(self.handle, handle):
+            raise OSError(self.ctypes.get_last_error(), "AssignProcessToJobObject failed")
+        status = self.ntdll.NtResumeProcess(handle)
+        if status < 0:
+            raise OSError(status, "NtResumeProcess failed")
+
+    def end(self) -> None:
+        if self.handle:
+            self.kernel32.TerminateJobObject(self.handle, 1)
+            self.kernel32.CloseHandle(self.handle)
+            self.handle = None
+
+
+def _kill_process_tree(proc: subprocess.Popen[Any], job: _WindowsProcessJob | None = None) -> None:
+    if job is not None:
+        job.end()
+        return
+    if os.name == "nt":
+        if proc.poll() is None:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                timeout=15,
+                check=False,
+            )
+    else:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            # Group has already terminated cleanly; nothing left to kill.
+            return
+
+
+def run_process_tree(
+    cmd: list[str] | tuple[str, ...],
+    *,
+    cwd: str | Path | None = None,
+    env: dict[str, str] | None = None,
+    timeout: float = 60.0,
+    capture_output: bool = False,
+    text: bool = True,
+) -> subprocess.CompletedProcess[Any]:
+    """Run a child command and terminate its entire descendant tree on completion or timeout."""
+    argv = [str(part) for part in cmd]
+    pipes = subprocess.PIPE if capture_output else None
+    job: _WindowsProcessJob | None = None
+    proc: subprocess.Popen[Any] | None = None
+    try:
+        if os.name == "nt":
+            job = _WindowsProcessJob()
+            flags = 0x00000004 | getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+            proc = subprocess.Popen(
+                argv,
+                cwd=cwd,
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=pipes,
+                stderr=pipes,
+                text=text,
+                creationflags=flags,
+            )
+            try:
+                job.adopt_and_resume(proc)
+            except OSError:
+                proc.kill()
+                proc.wait()
+                job.end()
+                job = None
+                fb_flags = (
+                    getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
+                    | getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+                )
+                proc = subprocess.Popen(
+                    argv,
+                    cwd=cwd,
+                    env=env,
+                    stdin=subprocess.DEVNULL,
+                    stdout=pipes,
+                    stderr=pipes,
+                    text=text,
+                    creationflags=fb_flags,
+                )
+        else:
+            proc = subprocess.Popen(
+                argv,
+                cwd=cwd,
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=pipes,
+                stderr=pipes,
+                text=text,
+                start_new_session=True,
+            )
+        try:
+            out, err = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            _kill_process_tree(proc, job)
+            out_tail, err_tail = proc.communicate()
+            raise subprocess.TimeoutExpired(argv, timeout, output=out_tail, stderr=err_tail) from exc
+        return subprocess.CompletedProcess(argv, proc.returncode, out, err)
+    finally:
+        if proc is not None:
+            _kill_process_tree(proc, job)
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
+        elif job is not None:
+            job.end()

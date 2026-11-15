@@ -104,107 +104,164 @@ static uint8_t pv_linear_to_srgb8(float lin) {
     return (uint8_t)v;
 }
 
+static float pv_srgb8_to_linear(uint8_t u) {
+    float s = (float)u / 255.0f;
+    if (s <= 0.04045f) {
+        return s / 12.92f;
+    }
+    /* Compute lin = ((s + 0.055) / 1.055)^2.4 = x^(12/5) without libm via
+     * bisection on y^5 <= x^12 over y in [0, 1]. */
+    float x = (s + 0.055f) / 1.055f;
+    float x2 = x * x;
+    float x4 = x2 * x2;
+    float x12 = x4 * x4 * x4;
+    float lo = 0.0f;
+    float hi = 1.0f;
+    for (int i = 0; i < 20; i++) {
+        float mid = 0.5f * (lo + hi);
+        float m2 = mid * mid;
+        float m5 = m2 * m2 * mid;
+        if (m5 <= x12) {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    return 0.5f * (lo + hi);
+}
+
+static float pv_sanitize_linear(float v) {
+    return (v == v && v > 0.0f) ? v : 0.0f;
+}
+
+static float pv_clamp_unit(float v) {
+    if (!(v > 0.0f)) {
+        return 0.0f;
+    }
+    if (v >= 1.0f) {
+        return 1.0f;
+    }
+    return v;
+}
+
 static uint8_t pv_quantize_u16_to_u8(uint16_t v) {
     return (uint8_t)((v >> 8) & 0xffu);
 }
 
-static uint8_t pv_clamp_u8_float(float v) {
-    if (!(v > 0.0f)) {
-        return 0u;
+static uint8_t pv_composite_channel(uint8_t fg,
+                                    uint8_t alpha,
+                                    uint8_t matte,
+                                    int premult) {
+    if (alpha == 255u) {
+        return fg;
     }
-    if (v >= 1.0f) {
-        return 255u;
+    uint32_t inv_a = 255u - (uint32_t)alpha;
+    uint32_t bg = (uint32_t)matte * inv_a;
+    uint32_t fgp = premult ? ((uint32_t)fg * 255u) : ((uint32_t)fg * alpha);
+    uint32_t sum = (fgp + bg + 127u) / 255u;
+    if (sum > 255u) {
+        sum = 255u;
     }
-    int q = (int)(v * 255.0f + 0.5f);
-    if (q < 0) q = 0;
-    if (q > 255) q = 255;
-    return (uint8_t)q;
+    return (uint8_t)sum;
 }
 
-static void pv_extract_pixel(const rfc_frame *frame,
-                             uint32_t x,
-                             uint32_t y,
-                             uint8_t *out_r,
-                             uint8_t *out_g,
-                             uint8_t *out_b,
-                             uint8_t *out_a,
-                             int *out_is_premult) {
+static uint8_t pv_composite_linear_channel(float fg_lin,
+                                           float alpha_lin,
+                                           float matte_lin,
+                                           int premult) {
+    float fg_pre = premult ? fg_lin : ((alpha_lin > 0.0f) ? (fg_lin * alpha_lin) : 0.0f);
+    float bg = (alpha_lin < 1.0f) ? (matte_lin * (1.0f - alpha_lin)) : 0.0f;
+    return pv_linear_to_srgb8(fg_pre + bg);
+}
+
+static void pv_render_pixel(const rfc_frame *frame,
+                            uint32_t x,
+                            uint32_t y,
+                            uint8_t matte_r,
+                            uint8_t matte_g,
+                            uint8_t matte_b,
+                            float matte_r_lin,
+                            float matte_g_lin,
+                            float matte_b_lin,
+                            uint8_t *out_rgba) {
     const rfc_layout *lay = &frame->layout;
     size_t bpp = rfc_sample_bytes(lay->format);
     const uint8_t *p =
         frame->data + (size_t)y * lay->stride_bytes + (size_t)x * bpp;
-    *out_is_premult = (lay->alpha == RFC_ALPHA_PREMULTIPLIED) ? 1 : 0;
+    int premult = (lay->alpha == RFC_ALPHA_PREMULTIPLIED) ? 1 : 0;
 
     switch (lay->format) {
         case RFC_SAMPLE_GRAY8:
-            *out_r = *out_g = *out_b = p[0];
-            *out_a = 255u;
-            return;
-        case RFC_SAMPLE_GRAY16: {
-            uint8_t g = pv_quantize_u16_to_u8(pv_read_u16_le(p));
-            *out_r = *out_g = *out_b = g;
-            *out_a = 255u;
+        case RFC_SAMPLE_GRAY16:
+        case RFC_SAMPLE_RGB8:
+        case RFC_SAMPLE_RGBA8:
+        case RFC_SAMPLE_RGB16:
+        case RFC_SAMPLE_RGBA16: {
+            uint8_t r = 0u, g = 0u, b = 0u, a = 255u;
+            if (lay->format == RFC_SAMPLE_GRAY8) {
+                r = g = b = p[0];
+            } else if (lay->format == RFC_SAMPLE_GRAY16) {
+                r = g = b = pv_quantize_u16_to_u8(pv_read_u16_le(p));
+            } else if (lay->format == RFC_SAMPLE_RGB8) {
+                r = p[0];
+                g = p[1];
+                b = p[2];
+            } else if (lay->format == RFC_SAMPLE_RGBA8) {
+                r = p[0];
+                g = p[1];
+                b = p[2];
+                a = (lay->alpha == RFC_ALPHA_NONE) ? 255u : p[3];
+            } else if (lay->format == RFC_SAMPLE_RGB16) {
+                r = pv_quantize_u16_to_u8(pv_read_u16_le(p));
+                g = pv_quantize_u16_to_u8(pv_read_u16_le(p + 2));
+                b = pv_quantize_u16_to_u8(pv_read_u16_le(p + 4));
+            } else {
+                r = pv_quantize_u16_to_u8(pv_read_u16_le(p));
+                g = pv_quantize_u16_to_u8(pv_read_u16_le(p + 2));
+                b = pv_quantize_u16_to_u8(pv_read_u16_le(p + 4));
+                a = (lay->alpha == RFC_ALPHA_NONE)
+                        ? 255u
+                        : pv_quantize_u16_to_u8(pv_read_u16_le(p + 6));
+            }
+            out_rgba[0] = pv_composite_channel(r, a, matte_r, premult);
+            out_rgba[1] = pv_composite_channel(g, a, matte_g, premult);
+            out_rgba[2] = pv_composite_channel(b, a, matte_b, premult);
+            out_rgba[3] = 255u;
             return;
         }
-        case RFC_SAMPLE_RGB8:
-            *out_r = p[0];
-            *out_g = p[1];
-            *out_b = p[2];
-            *out_a = 255u;
-            return;
-        case RFC_SAMPLE_RGBA8:
-            *out_r = p[0];
-            *out_g = p[1];
-            *out_b = p[2];
-            *out_a = (lay->alpha == RFC_ALPHA_NONE) ? 255u : p[3];
-            return;
-        case RFC_SAMPLE_RGB16:
-            *out_r = pv_quantize_u16_to_u8(pv_read_u16_le(p));
-            *out_g = pv_quantize_u16_to_u8(pv_read_u16_le(p + 2));
-            *out_b = pv_quantize_u16_to_u8(pv_read_u16_le(p + 4));
-            *out_a = 255u;
-            return;
-        case RFC_SAMPLE_RGBA16:
-            *out_r = pv_quantize_u16_to_u8(pv_read_u16_le(p));
-            *out_g = pv_quantize_u16_to_u8(pv_read_u16_le(p + 2));
-            *out_b = pv_quantize_u16_to_u8(pv_read_u16_le(p + 4));
-            *out_a = (lay->alpha == RFC_ALPHA_NONE)
-                         ? 255u
-                         : pv_quantize_u16_to_u8(pv_read_u16_le(p + 6));
-            return;
         case RFC_SAMPLE_RGB_HALF:
-            *out_r = pv_linear_to_srgb8(pv_half_bits_to_float(pv_read_u16_le(p)));
-            *out_g = pv_linear_to_srgb8(pv_half_bits_to_float(pv_read_u16_le(p + 2)));
-            *out_b = pv_linear_to_srgb8(pv_half_bits_to_float(pv_read_u16_le(p + 4)));
-            *out_a = 255u;
+        case RFC_SAMPLE_RGBA_HALF: {
+            float lr = pv_sanitize_linear(pv_half_bits_to_float(pv_read_u16_le(p)));
+            float lg = pv_sanitize_linear(pv_half_bits_to_float(pv_read_u16_le(p + 2)));
+            float lb = pv_sanitize_linear(pv_half_bits_to_float(pv_read_u16_le(p + 4)));
+            float la = (lay->format == RFC_SAMPLE_RGBA_HALF &&
+                        lay->alpha != RFC_ALPHA_NONE)
+                           ? pv_clamp_unit(pv_half_bits_to_float(pv_read_u16_le(p + 6)))
+                           : 1.0f;
+            out_rgba[0] = pv_composite_linear_channel(lr, la, matte_r_lin, premult);
+            out_rgba[1] = pv_composite_linear_channel(lg, la, matte_g_lin, premult);
+            out_rgba[2] = pv_composite_linear_channel(lb, la, matte_b_lin, premult);
+            out_rgba[3] = 255u;
             return;
-        case RFC_SAMPLE_RGBA_HALF:
-            *out_r = pv_linear_to_srgb8(pv_half_bits_to_float(pv_read_u16_le(p)));
-            *out_g = pv_linear_to_srgb8(pv_half_bits_to_float(pv_read_u16_le(p + 2)));
-            *out_b = pv_linear_to_srgb8(pv_half_bits_to_float(pv_read_u16_le(p + 4)));
-            *out_a = (lay->alpha == RFC_ALPHA_NONE)
-                         ? 255u
-                         : pv_clamp_u8_float(
-                               pv_half_bits_to_float(pv_read_u16_le(p + 6)));
-            return;
+        }
         case RFC_SAMPLE_RGB_FLOAT:
-            *out_r = pv_linear_to_srgb8(pv_bits_to_float(pv_read_u32_le(p)));
-            *out_g = pv_linear_to_srgb8(pv_bits_to_float(pv_read_u32_le(p + 4)));
-            *out_b = pv_linear_to_srgb8(pv_bits_to_float(pv_read_u32_le(p + 8)));
-            *out_a = 255u;
+        case RFC_SAMPLE_RGBA_FLOAT: {
+            float lr = pv_sanitize_linear(pv_bits_to_float(pv_read_u32_le(p)));
+            float lg = pv_sanitize_linear(pv_bits_to_float(pv_read_u32_le(p + 4)));
+            float lb = pv_sanitize_linear(pv_bits_to_float(pv_read_u32_le(p + 8)));
+            float la = (lay->format == RFC_SAMPLE_RGBA_FLOAT &&
+                        lay->alpha != RFC_ALPHA_NONE)
+                           ? pv_clamp_unit(pv_bits_to_float(pv_read_u32_le(p + 12)))
+                           : 1.0f;
+            out_rgba[0] = pv_composite_linear_channel(lr, la, matte_r_lin, premult);
+            out_rgba[1] = pv_composite_linear_channel(lg, la, matte_g_lin, premult);
+            out_rgba[2] = pv_composite_linear_channel(lb, la, matte_b_lin, premult);
+            out_rgba[3] = 255u;
             return;
-        case RFC_SAMPLE_RGBA_FLOAT:
-            *out_r = pv_linear_to_srgb8(pv_bits_to_float(pv_read_u32_le(p)));
-            *out_g = pv_linear_to_srgb8(pv_bits_to_float(pv_read_u32_le(p + 4)));
-            *out_b = pv_linear_to_srgb8(pv_bits_to_float(pv_read_u32_le(p + 8)));
-            *out_a = (lay->alpha == RFC_ALPHA_NONE)
-                         ? 255u
-                         : pv_clamp_u8_float(
-                               pv_bits_to_float(pv_read_u32_le(p + 12)));
-            return;
+        }
         default:
-            *out_r = *out_g = *out_b = 0u;
-            *out_a = 255u;
+            out_rgba[0] = out_rgba[1] = out_rgba[2] = 0u;
+            out_rgba[3] = 255u;
             return;
     }
 }
@@ -250,23 +307,6 @@ static void pv_map_coords(rfc_orientation ori,
             *sy = dy;
             return;
     }
-}
-
-static uint8_t pv_composite_channel(uint8_t fg,
-                                    uint8_t alpha,
-                                    uint8_t matte,
-                                    int premult) {
-    if (alpha == 255u) {
-        return fg;
-    }
-    uint32_t inv_a = 255u - (uint32_t)alpha;
-    uint32_t bg = (uint32_t)matte * inv_a;
-    uint32_t fgp = premult ? ((uint32_t)fg * 255u) : ((uint32_t)fg * alpha);
-    uint32_t sum = (fgp + bg + 127u) / 255u;
-    if (sum > 255u) {
-        sum = 255u;
-    }
-    return (uint8_t)sum;
 }
 
 rfc_status rfc_preview_render_srgb8(const rfc_frame *frame,
@@ -319,22 +359,19 @@ rfc_status rfc_preview_render_srgb8(const rfc_frame *frame,
         return RFC_ERR_OUT_OF_MEMORY;
     }
 
+    float matte_r_lin = pv_srgb8_to_linear(matte_r);
+    float matte_g_lin = pv_srgb8_to_linear(matte_g);
+    float matte_b_lin = pv_srgb8_to_linear(matte_b);
+
     for (uint32_t dy = 0u; dy < dst_h; dy++) {
         uint8_t *dst_row = buf + (size_t)dy * stride;
         for (uint32_t dx = 0u; dx < dst_w; dx++) {
             uint32_t sx = 0u, sy = 0u;
             pv_map_coords(ori, frame->layout.width, frame->layout.height, dx,
                           dy, &sx, &sy);
-            uint8_t r = 0u, g = 0u, b = 0u, a = 255u;
-            int premult = 0;
-            pv_extract_pixel(frame, sx, sy, &r, &g, &b, &a, &premult);
-            dst_row[(size_t)dx * 4u + 0u] =
-                pv_composite_channel(r, a, matte_r, premult);
-            dst_row[(size_t)dx * 4u + 1u] =
-                pv_composite_channel(g, a, matte_g, premult);
-            dst_row[(size_t)dx * 4u + 2u] =
-                pv_composite_channel(b, a, matte_b, premult);
-            dst_row[(size_t)dx * 4u + 3u] = 255u;
+            pv_render_pixel(frame, sx, sy, matte_r, matte_g, matte_b,
+                            matte_r_lin, matte_g_lin, matte_b_lin,
+                            dst_row + (size_t)dx * 4u);
         }
     }
 

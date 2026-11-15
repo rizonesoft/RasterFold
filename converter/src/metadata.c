@@ -141,42 +141,39 @@ static rfc_orientation normalize_orientation(rfc_orientation ori) {
     return ori;
 }
 
-static const uint8_t *effective_icc(const rfc_metadata *container_meta,
-                                    const rfc_frame *frames,
-                                    size_t frame_count,
-                                    size_t *out_len) {
+static const uint8_t *effective_icc_at(const rfc_metadata *container_meta,
+                                       const rfc_frame *frames,
+                                       size_t frame_count,
+                                       size_t idx,
+                                       size_t *out_len) {
+    if (frames && idx < frame_count && frames[idx].metadata.icc_len > 0u &&
+        frames[idx].metadata.icc != NULL) {
+        *out_len = frames[idx].metadata.icc_len;
+        return frames[idx].metadata.icc;
+    }
     if (container_meta && container_meta->icc_len > 0u &&
         container_meta->icc != NULL) {
         *out_len = container_meta->icc_len;
         return container_meta->icc;
     }
-    if (frames && frame_count > 0u && frames[0].metadata.icc_len > 0u &&
-        frames[0].metadata.icc != NULL) {
-        *out_len = frames[0].metadata.icc_len;
-        return frames[0].metadata.icc;
-    }
     *out_len = 0u;
     return NULL;
 }
 
-static rfc_orientation effective_orientation(const rfc_metadata *container_meta,
-                                             const rfc_frame *frames,
-                                             size_t frame_count) {
+static rfc_orientation effective_orientation_at(
+    const rfc_metadata *container_meta,
+    const rfc_frame *frames,
+    size_t frame_count,
+    size_t idx) {
+    if (frames && idx < frame_count &&
+        frames[idx].metadata.orientation != RFC_ORIENTATION_UNSPECIFIED) {
+        return normalize_orientation(frames[idx].metadata.orientation);
+    }
     if (container_meta &&
         container_meta->orientation != RFC_ORIENTATION_UNSPECIFIED) {
-        return container_meta->orientation;
+        return normalize_orientation(container_meta->orientation);
     }
-    if (frames && frame_count > 0u &&
-        frames[0].metadata.orientation != RFC_ORIENTATION_UNSPECIFIED) {
-        return frames[0].metadata.orientation;
-    }
-    if (container_meta) {
-        return container_meta->orientation;
-    }
-    if (frames && frame_count > 0u) {
-        return frames[0].metadata.orientation;
-    }
-    return RFC_ORIENTATION_UNSPECIFIED;
+    return RFC_ORIENTATION_NORMAL;
 }
 
 static int has_any_icc(const rfc_metadata *container_meta,
@@ -373,34 +370,55 @@ rfc_status rfc_metadata_verify(rfc_format_id target_format,
         return RFC_OK;
     }
 
-    uint32_t supported = present & rep->target_supported_items;
+    uint32_t caps = rep->target_supported_items;
+    uint32_t supported = present & caps;
     uint32_t lost = RFC_META_ITEM_NONE;
+    size_t check_count =
+        (src_frame_count > dst_frame_count) ? src_frame_count : dst_frame_count;
+    if (check_count == 0u) {
+        check_count = 1u;
+    }
 
-    if (supported & RFC_META_ITEM_ICC) {
-        size_t slen = 0u, dlen = 0u;
-        const uint8_t *s_icc =
-            effective_icc(src_meta, src_frames, src_frame_count, &slen);
-        const uint8_t *d_icc =
-            effective_icc(dst_meta, dst_frames, dst_frame_count, &dlen);
-        if (slen == 0u || dlen != slen || !s_icc || !d_icc ||
-            memcmp(s_icc, d_icc, slen) != 0) {
+    if (caps & RFC_META_ITEM_ICC) {
+        if (src_frame_count > 0u && dst_frame_count > 0u &&
+            src_frame_count != dst_frame_count) {
             lost |= RFC_META_ITEM_ICC;
+        } else {
+            for (size_t i = 0u; i < check_count; i++) {
+                size_t slen = 0u, dlen = 0u;
+                const uint8_t *s_icc = effective_icc_at(
+                    src_meta, src_frames, src_frame_count, i, &slen);
+                const uint8_t *d_icc = effective_icc_at(
+                    dst_meta, dst_frames, dst_frame_count, i, &dlen);
+                if (slen != dlen ||
+                    (slen > 0u &&
+                     (!s_icc || !d_icc || memcmp(s_icc, d_icc, slen) != 0))) {
+                    lost |= RFC_META_ITEM_ICC;
+                    break;
+                }
+            }
         }
     }
 
-    if (supported & RFC_META_ITEM_ORIENTATION) {
-        rfc_orientation s_ori =
-            normalize_orientation(effective_orientation(src_meta, src_frames,
-                                                        src_frame_count));
-        rfc_orientation d_ori =
-            normalize_orientation(effective_orientation(dst_meta, dst_frames,
-                                                        dst_frame_count));
-        if (s_ori != d_ori) {
+    if (caps & RFC_META_ITEM_ORIENTATION) {
+        if (src_frame_count > 0u && dst_frame_count > 0u &&
+            src_frame_count != dst_frame_count) {
             lost |= RFC_META_ITEM_ORIENTATION;
+        } else {
+            for (size_t i = 0u; i < check_count; i++) {
+                rfc_orientation s_ori = effective_orientation_at(
+                    src_meta, src_frames, src_frame_count, i);
+                rfc_orientation d_ori = effective_orientation_at(
+                    dst_meta, dst_frames, dst_frame_count, i);
+                if (s_ori != d_ori) {
+                    lost |= RFC_META_ITEM_ORIENTATION;
+                    break;
+                }
+            }
         }
     }
 
-    if (supported & RFC_META_ITEM_FRAME_TIMING) {
+    if (caps & RFC_META_ITEM_FRAME_TIMING) {
         uint32_t sdur = src_meta ? src_meta->duration_ms : 0u;
         uint32_t ddur = dst_meta ? dst_meta->duration_ms : 0u;
         if (src_frame_count != dst_frame_count || sdur != ddur) {

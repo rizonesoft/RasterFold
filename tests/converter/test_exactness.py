@@ -5,7 +5,9 @@ import os
 from pathlib import Path
 import struct
 import subprocess
+import sys
 import tempfile
+import time
 import unittest
 
 import reference as ref
@@ -135,6 +137,12 @@ class ExactnessReferenceTests(unittest.TestCase):
         self.assertEqual((dw, dh, dch, dpt), (w, h, ("B", "G", "R"), 2))
         self.assertEqual(dec_f, f_raw)
 
+        # Truncated 1x1 HALF RGB EXR payloads (1 missing byte, all 6 payload bytes missing, header/table truncations) must fail.
+        exr_1x1 = ref.encode_openexr_uncompressed(1, 1, ("B", "G", "R"), 1, b"\x00\x3c" * 3)
+        for bad_exr in (exr_1x1[:-1], exr_1x1[:-6], exr_1x1[:-10], exr_1x1[:20], exr_1x1[:4]):
+            with self.assertRaises(ValueError):
+                ref.decode_openexr_uncompressed(bad_exr)
+
     def test_jpeg_and_libraw_contracts(self) -> None:
         comp = {
             "component_id": 1,
@@ -207,11 +215,10 @@ class ExactnessReferenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             fold_path = Path(tmp) / "out.fold"
             hash_path = Path(tmp) / "out.sha256"
-            res = subprocess.run(
+            res = ref.run_process_tree(
                 [exe, "--fold-roundtrip", str(fold_path), str(hash_path)],
                 capture_output=True,
-                text=True,
-                timeout=30,
+                timeout=30.0,
             )
             self.assertEqual(res.returncode, 0, msg=res.stderr)
             blob = fold_path.read_bytes()
@@ -239,6 +246,36 @@ class ExactnessReferenceTests(unittest.TestCase):
             tampered[-1] ^= 0x01
             with self.assertRaises(ref.rfi_ref.FormatError):
                 ref.rfi_ref.decode_image(bytes(tampered))
+
+    def test_run_process_tree_kills_descendants_on_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            pid_file = Path(tmp) / "grandchild.pid"
+            child_code = (
+                "import pathlib, subprocess, sys, time\n"
+                f"p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])\n"
+                f"pathlib.Path({str(pid_file)!r}).write_text(str(p.pid), encoding='ascii')\n"
+                "p.wait()\n"
+            )
+            with self.assertRaises(subprocess.TimeoutExpired):
+                ref.run_process_tree(
+                    [sys.executable, "-c", child_code],
+                    timeout=1.5,
+                    capture_output=True,
+                )
+            self.assertTrue(pid_file.is_file(), "child did not spawn grandchild before timeout")
+            gpid = int(pid_file.read_text(encoding="ascii").strip())
+            deadline = time.monotonic() + 2.0
+            alive = True
+            while time.monotonic() < deadline:
+                try:
+                    os.kill(gpid, 0)
+                except ProcessLookupError:
+                    alive = False
+                    break
+                except PermissionError:
+                    alive = True
+                time.sleep(0.05)
+            self.assertFalse(alive, f"grandchild PID {gpid} survived run_process_tree timeout")
 
 
 if __name__ == "__main__":
