@@ -1489,6 +1489,43 @@ rfc_budget *rfc_exec_budget(const rfc_exec_context *exec) {
     return exec ? exec->budget : NULL;
 }
 
+static int layouts_equal_exact(const rfc_layout *a, const rfc_layout *b) {
+    if (!a || !b) {
+        return 0;
+    }
+    return a->format == b->format && a->alpha == b->alpha &&
+           a->width == b->width && a->height == b->height &&
+           a->stride_bytes == b->stride_bytes &&
+           a->bits_per_sample == b->bits_per_sample;
+}
+
+static rfc_status consume_decode_credit_locked(rfc_job *job,
+                                               const rfc_limits *limits,
+                                               const rfc_layout *norm,
+                                               uint64_t fbytes,
+                                               size_t icc_len) {
+    if (job->decode_last_checked_fbytes != fbytes ||
+        job->decode_last_checked_icc_len != icc_len ||
+        !layouts_equal_exact(&job->decode_last_checked_layout, norm)) {
+        rfc_status lim_st = rfc_limits_check_image(limits, norm, 1u);
+        if (lim_st != RFC_OK) {
+            if (job->decode_guard_failure == RFC_OK) {
+                job->decode_guard_failure = lim_st;
+            }
+            return lim_st;
+        }
+        job->decode_unvalidated_alloc = 1;
+        if (job->decode_guard_failure == RFC_OK) {
+            job->decode_guard_failure = RFC_ERR_INVALID_ARGUMENT;
+        }
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    job->decode_credit_frames = 0u;
+    memset(&job->decode_last_checked_layout, 0,
+           sizeof(job->decode_last_checked_layout));
+    return RFC_OK;
+}
+
 static rfc_status internal_exec_check_next_frame(rfc_job *job,
                                                  const rfc_limits *limits,
                                                  const rfc_layout *layout,
@@ -1596,6 +1633,7 @@ static rfc_status internal_exec_check_next_frame(rfc_job *job,
         job->decode_credit_frames = 1u;
         job->decode_last_checked_fbytes = fbytes;
         job->decode_last_checked_icc_len = meta ? meta->icc_len : 0u;
+        job->decode_last_checked_layout = norm;
     }
     rfc_mutex_unlock(&job->lock);
     return RFC_OK;
@@ -1633,49 +1671,31 @@ static rfc_status job_frame_alloc_guard(const rfc_allocator *allocator,
     if (st != RFC_OK) {
         return st;
     }
+    rfc_layout norm;
+    st = rfc_layout_normalize_stride(layout, &norm);
+    if (st != RFC_OK) {
+        return st;
+    }
     uint64_t fbytes = (uint64_t)row_total;
     size_t icc_len = metadata ? metadata->icc_len : 0u;
 
     rfc_mutex_lock(&job->lock);
-    if (!probe_exact) {
-        if (job->decode_credit_frames == 0u ||
-            job->decode_last_checked_fbytes != fbytes ||
-            job->decode_last_checked_icc_len != icc_len) {
-            job->decode_unvalidated_alloc = 1;
-            if (job->decode_guard_failure == RFC_OK) {
-                job->decode_guard_failure = RFC_ERR_INVALID_ARGUMENT;
-            }
-            rfc_mutex_unlock(&job->lock);
-            return RFC_ERR_INVALID_ARGUMENT;
+    if (!probe_exact && job->decode_credit_frames == 0u) {
+        job->decode_unvalidated_alloc = 1;
+        if (job->decode_guard_failure == RFC_OK) {
+            job->decode_guard_failure = RFC_ERR_INVALID_ARGUMENT;
         }
-        job->decode_credit_frames = 0u;
         rfc_mutex_unlock(&job->lock);
-        return RFC_OK;
+        return RFC_ERR_INVALID_ARGUMENT;
     }
     if (job->decode_credit_frames > 0u) {
-        if (job->decode_last_checked_fbytes != fbytes ||
-            job->decode_last_checked_icc_len != icc_len) {
-            job->decode_unvalidated_alloc = 1;
-            if (job->decode_guard_failure == RFC_OK) {
-                job->decode_guard_failure = RFC_ERR_INVALID_ARGUMENT;
-            }
-            rfc_mutex_unlock(&job->lock);
-            return RFC_ERR_INVALID_ARGUMENT;
-        }
-        job->decode_credit_frames = 0u;
+        st = consume_decode_credit_locked(job, &lim, &norm, fbytes, icc_len);
         rfc_mutex_unlock(&job->lock);
-        return RFC_OK;
+        return st;
     }
     rfc_mutex_unlock(&job->lock);
 
-    st = internal_exec_check_next_frame(job, &lim, layout, metadata, 1);
-    if (st != RFC_OK) {
-        return st;
-    }
-    rfc_mutex_lock(&job->lock);
-    job->decode_credit_frames = 0u;
-    rfc_mutex_unlock(&job->lock);
-    return RFC_OK;
+    return internal_exec_check_next_frame(job, &lim, &norm, metadata, 0);
 }
 
 rfc_status rfc_exec_check_next_frame(const rfc_exec_context *exec,
@@ -1718,19 +1738,16 @@ rfc_status rfc_exec_alloc_frame(const rfc_exec_context *exec,
         size_t icc_len = metadata ? metadata->icc_len : 0u;
         rfc_mutex_lock(&exec->job->lock);
         if (exec->job->decode_credit_frames > 0u) {
-            if (exec->job->decode_last_checked_fbytes != fbytes ||
-                exec->job->decode_last_checked_icc_len != icc_len) {
-                exec->job->decode_unvalidated_alloc = 1;
-                if (exec->job->decode_guard_failure == RFC_OK) {
-                    exec->job->decode_guard_failure = RFC_ERR_INVALID_ARGUMENT;
-                }
-                rfc_mutex_unlock(&exec->job->lock);
-                return RFC_ERR_INVALID_ARGUMENT;
+            st = consume_decode_credit_locked(exec->job, &exec->limits, &norm,
+                                              fbytes, icc_len);
+            rfc_mutex_unlock(&exec->job->lock);
+            if (st != RFC_OK) {
+                return st;
             }
-            exec->job->decode_credit_frames = 0u;
             have_credit = 1;
+        } else {
+            rfc_mutex_unlock(&exec->job->lock);
         }
-        rfc_mutex_unlock(&exec->job->lock);
     }
     if (!have_credit) {
         st = internal_exec_check_next_frame(exec->job, &exec->limits, &norm,
@@ -1934,6 +1951,8 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
                         job->decode_credit_frames = 0u;
                         job->decode_last_checked_fbytes = 0u;
                         job->decode_last_checked_icc_len = 0u;
+                        memset(&job->decode_last_checked_layout, 0,
+                               sizeof(job->decode_last_checked_layout));
                         job->decode_unvalidated_alloc = 0;
                         job->decode_guard_failure = RFC_OK;
                         job->in_decode_session = 1;

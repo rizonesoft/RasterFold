@@ -1694,7 +1694,9 @@ static rfc_status r1_p_probe(void *session,
         out_probe->frame_count = 2u;
         out_probe->total_pixels = 0u;
         out_probe->total_decoded_bytes = 0u;
-    } else if (g_r1_probe.mode == 5 || g_r1_probe.mode == 7) {
+    } else if (g_r1_probe.mode == 5 || g_r1_probe.mode == 7 ||
+               g_r1_probe.mode == 8 || g_r1_probe.mode == 9 ||
+               g_r1_probe.mode == 10) {
         out_probe->first_frame.width = 16u;
         out_probe->first_frame.height = 16u;
         out_probe->first_frame.stride_bytes = 64u;
@@ -1875,6 +1877,36 @@ static rfc_status r1_p_decode(void *session,
             return RFC_OK;
         }
         return RFC_ERR_OUT_OF_MEMORY;
+    }
+    if (g_r1_probe.mode >= 8 && g_r1_probe.mode <= 10) {
+        /* Validate a 1024-byte 16x16 layout, then attempt a 1024-byte layout swap. */
+        rfc_frame *frames = (rfc_frame *)exec->allocator->alloc(
+            exec->allocator->ctx, sizeof(*frames));
+        if (!frames) {
+            return RFC_ERR_OUT_OF_MEMORY;
+        }
+        memset(frames, 0, sizeof(*frames));
+        rfc_layout checked = {RFC_SAMPLE_RGBA8, RFC_ALPHA_STRAIGHT, 16u, 16u, 64u, 8u};
+        rfc_layout wide = {RFC_SAMPLE_RGBA8, RFC_ALPHA_STRAIGHT, 256u, 1u, 1024u, 8u};
+        rfc_layout swapped = {RFC_SAMPLE_RGBA8, RFC_ALPHA_STRAIGHT, 32u, 8u, 128u, 8u};
+        rfc_status st = rfc_exec_check_next_frame(exec, &checked, NULL);
+        if (st == RFC_OK) {
+            if (g_r1_probe.mode == 8) {
+                st = rfc_exec_alloc_frame(exec, &frames[0], &wide, NULL);
+            } else if (g_r1_probe.mode == 9) {
+                st = rfc_frame_alloc(&frames[0], &wide, NULL, exec->allocator);
+            } else {
+                st = rfc_frame_alloc(&frames[0], &swapped, NULL, exec->allocator);
+            }
+        }
+        if (st != RFC_OK) {
+            rfc_frame_free(&frames[0]);
+            exec->allocator->free(exec->allocator->ctx, frames);
+            return st;
+        }
+        *out_frames = frames;
+        *out_frame_count = 1u;
+        return RFC_OK;
     }
     return RFC_ERR_INVALID_ARGUMENT;
 }
@@ -3056,6 +3088,49 @@ static void test_completion_gap_regressions(void) {
         CHECK(sn.budget.peak_allocated_bytes <= 16384u);
         rfc_job_release(jcap);
 
+        /* Subcase F/G/H: credit binds to full validated layout, not just byte count. */
+        rfc_limits tight_lim = lim;
+        tight_lim.max_width = 128u;
+        rfc_job_spec swap_spec = spec;
+        swap_spec.limits_override = &tight_lim;
+
+        g_r1_probe.mode = 8;
+        enc_before = g_r1_probe.encode_calls;
+        rfc_job *j8 = NULL;
+        CHECK(rfc_scheduler_submit(sched, NULL, &swap_spec, &j8) == RFC_OK);
+        CHECK(rfc_job_wait(j8, UINT32_MAX) == RFC_OK);
+        CHECK(rfc_job_snapshot_get(j8, &sn) == RFC_OK);
+        CHECK(sn.state == RFC_JOB_FAILED);
+        CHECK(sn.status == RFC_ERR_LIMIT_EXCEEDED);
+        CHECK(sn.failing_stage == RFC_STAGE_IMPORT);
+        CHECK(g_r1_probe.encode_calls == enc_before);
+        CHECK(sn.budget.peak_allocated_bytes < 512u);
+        rfc_job_release(j8);
+
+        g_r1_probe.mode = 9;
+        rfc_job *j9 = NULL;
+        CHECK(rfc_scheduler_submit(sched, NULL, &swap_spec, &j9) == RFC_OK);
+        CHECK(rfc_job_wait(j9, UINT32_MAX) == RFC_OK);
+        CHECK(rfc_job_snapshot_get(j9, &sn) == RFC_OK);
+        CHECK(sn.state == RFC_JOB_FAILED);
+        CHECK(sn.status == RFC_ERR_LIMIT_EXCEEDED);
+        CHECK(sn.failing_stage == RFC_STAGE_IMPORT);
+        CHECK(g_r1_probe.encode_calls == enc_before);
+        CHECK(sn.budget.peak_allocated_bytes < 512u);
+        rfc_job_release(j9);
+
+        g_r1_probe.mode = 10;
+        rfc_job *j10 = NULL;
+        CHECK(rfc_scheduler_submit(sched, NULL, &swap_spec, &j10) == RFC_OK);
+        CHECK(rfc_job_wait(j10, UINT32_MAX) == RFC_OK);
+        CHECK(rfc_job_snapshot_get(j10, &sn) == RFC_OK);
+        CHECK(sn.state == RFC_JOB_FAILED);
+        CHECK(sn.status == RFC_ERR_INVALID_ARGUMENT);
+        CHECK(sn.failing_stage == RFC_STAGE_IMPORT);
+        CHECK(g_r1_probe.encode_calls == enc_before);
+        CHECK(sn.budget.peak_allocated_bytes < 512u);
+        rfc_job_release(j10);
+
         rfc_scheduler_destroy(sched);
         CHECK(rfc_registry_unregister_session(RFC_FORMAT_QOI) == RFC_OK);
         test_cond_destroy(&g_r1_probe.cond);
@@ -3063,7 +3138,8 @@ static void test_completion_gap_regressions(void) {
     }
 
     printf("jobs: completion gap regressions ok (settings_gate=1 "
-           "slot_retained=ok sat_allocs=0 multiframe_probe=ok)\n");
+           "slot_retained=ok sat_allocs=0 multiframe_probe=ok "
+           "credit_layout=bound)\n");
 }
 
 int main(void) {

@@ -420,6 +420,7 @@ struct rfc_job {
     uint32_t decode_credit_frames;
     uint64_t decode_last_checked_fbytes;
     size_t decode_last_checked_icc_len;
+    rfc_layout decode_last_checked_layout;
     int decode_unvalidated_alloc;
     rfc_status decode_guard_failure;
     uint32_t stream_frame_count;
