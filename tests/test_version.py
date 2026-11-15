@@ -139,8 +139,8 @@ class VersionSource(unittest.TestCase):
         self.assertTrue(printed, 'the changelog has notes neither for VERSION nor under Unreleased')
 
     def test_release_notes_after_the_documented_release_preparation(self):
-        """docs/building.md: the Unreleased entries move under a `## <version>` heading and the Unreleased heading
-        stays. This repository's own changelog, prepared that way, yields the same notes for the version."""
+        """docs/building.md: set VERSION, move the Unreleased entries under a `## <version>` heading, and keep the
+        Unreleased heading. This repository's own changelog, prepared that way, yields the same notes for the version."""
         version = (self.root / 'VERSION').read_text(encoding='utf-8').strip()
         changelog = (ROOT / 'CHANGELOG.md').read_text(encoding='utf-8')
         pending = subprocess.run([sys.executable, str(VERSION_PY), '--release-notes', '--unreleased'],
@@ -148,6 +148,26 @@ class VersionSource(unittest.TestCase):
         if pending.returncode != 0:
             self.skipTest('this changelog has no pending Unreleased entries to move')
         self.assertEqual(changelog.count('\n## Unreleased\n'), 1)
+        already_released = subprocess.run(
+            [sys.executable, str(VERSION_PY), '--release-notes'],
+            capture_output=True, text=True,
+        ).returncode == 0
+        if already_released:
+            self.write('CHANGELOG.md', changelog.replace('\n## Unreleased\n', f'\n## Unreleased\n\n## {version}\n'))
+            duplicate = run_version(self.root, '--release-notes')
+            self.assertEqual(duplicate.returncode, 1)
+            self.assertIn('has more than one candidate', duplicate.stdout)
+            major, minor, patch = version.split('-', 1)[0].split('.')
+            patch_num = int(patch) + 1
+            while True:
+                candidate_version = f'{major}.{minor}.{patch_num}'
+                self.write('VERSION', f'{candidate_version}\n')
+                self.write('CHANGELOG.md', changelog)
+                if run_version(self.root, '--release-notes').returncode != 0:
+                    version = candidate_version
+                    break
+                patch_num += 1
+            self.assertEqual(run_version(self.root, '--write').returncode, 0)
         self.write('CHANGELOG.md', changelog.replace('\n## Unreleased\n', f'\n## Unreleased\n\n## {version}\n'))
         released = run_version(self.root, '--release-notes')
         self.assertEqual(released.returncode, 0, released.stdout)

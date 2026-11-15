@@ -15,6 +15,8 @@ Every milestone gate commit appends its summary line to the Unreleased section; 
 
 ## Unreleased
 
+- Milestone 10 reached (2026-11-15, RasterFold 1.0): `rasterfold-v1.0.0` (`a0fa1c7c20d3048eff85cfb4f90dfc9596b33aef`) verified across Linux and Windows release archives, frozen format version 3 (`KAT_FOLD`, 12 compat vectors, `50/50` correctness tests per OS), `240,000` fresh fuzz mutations clean (`120,000` Linux + `120,000` Windows), every `ab.py size` set and `heldout` class below JPEG XL e9 and lossless WebP, paired alternating default-thread `RasterFold`/`libjxl` tail pools and `tests/benchmark.py -n 3` faster and leaner than JPEG XL e7 across `measure`, `photos`, and `synthetic`, and all Milestone 9 no-regression rules held.
+
 ## 1.0.0 - 2026-11-13
 
 First stable release of RasterFold (format version 3 final and frozen from `rasterfold-v1.0.0`, C API 1.0):
