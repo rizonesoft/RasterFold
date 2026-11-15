@@ -1035,14 +1035,53 @@ def decode_openexr_uncompressed(blob: bytes) -> tuple[int, int, tuple[str, ...],
     return width, height, tuple(c for c, _ in exr_channels), pixel_type, bytes(out)
 
 
+def _is_strict_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 def verify_jpeg_coefficients_py(expected: dict[str, Any], actual: dict[str, Any]) -> tuple[bool, str]:
-    """Verify exact JPEG DCT-domain equivalence."""
-    if (expected["width"], expected["height"]) != (actual["width"], actual["height"]):
+    """Verify exact JPEG DCT-domain equivalence with strict evidence completeness checks."""
+    ew = expected.get("width")
+    eh = expected.get("height")
+    aw = actual.get("width")
+    ah = actual.get("height")
+    if not _is_strict_int(ew) or not _is_strict_int(eh) or ew <= 0 or eh <= 0:
+        return False, "jpeg-invalid-evidence"
+    if not _is_strict_int(aw) or not _is_strict_int(ah) or aw <= 0 or ah <= 0:
+        return False, "jpeg-invalid-evidence"
+    if (ew, eh) != (aw, ah):
         return False, "jpeg-dimensions"
+
     for k in ("progressive", "arithmetic_coding", "baseline", "component_count"):
+        if k not in expected or k not in actual:
+            return False, "jpeg-missing-evidence"
         if expected[k] != actual[k]:
             return False, "jpeg-coding-params"
-    for sc, dc in zip(expected["components"], actual["components"]):
+
+    comp_count = expected["component_count"]
+    if not _is_strict_int(comp_count) or comp_count <= 0 or comp_count > 4:
+        return False, "jpeg-invalid-evidence"
+
+    exp_comps = expected.get("components")
+    act_comps = actual.get("components")
+    if (
+        not isinstance(exp_comps, (list, tuple))
+        or not isinstance(act_comps, (list, tuple))
+        or len(exp_comps) != comp_count
+        or len(act_comps) != comp_count
+    ):
+        return False, "jpeg-missing-evidence"
+
+    exp_qts = expected.get("quant_tables")
+    act_qts = actual.get("quant_tables")
+    if not isinstance(exp_qts, (list, tuple)) or not isinstance(act_qts, (list, tuple)):
+        return False, "jpeg-missing-evidence"
+
+    for idx in range(comp_count):
+        sc = exp_comps[idx]
+        dc = act_comps[idx]
+        if not isinstance(sc, dict) or not isinstance(dc, dict):
+            return False, "jpeg-invalid-evidence"
         for ck in (
             "component_id",
             "h_samp_factor",
@@ -1053,12 +1092,50 @@ def verify_jpeg_coefficients_py(expected: dict[str, Any], actual: dict[str, Any]
             "blocks_wide",
             "blocks_high",
         ):
+            if ck not in sc or ck not in dc:
+                return False, "jpeg-missing-evidence"
             if sc[ck] != dc[ck]:
                 return False, "jpeg-component-spec"
+
+        bw = sc["blocks_wide"]
+        bh = sc["blocks_high"]
+        hs = sc["h_samp_factor"]
+        vs = sc["v_samp_factor"]
         qt = sc["quant_table_idx"]
-        if expected["quant_tables"][qt] != actual["quant_tables"][qt]:
+        if (
+            not _is_strict_int(bw) or bw <= 0
+            or not _is_strict_int(bh) or bh <= 0
+            or not _is_strict_int(hs) or hs <= 0
+            or not _is_strict_int(vs) or vs <= 0
+        ):
+            return False, "jpeg-invalid-evidence"
+        if not _is_strict_int(qt) or qt < 0 or qt >= 4:
+            return False, "jpeg-invalid-quant-table"
+        if qt >= len(exp_qts) or qt >= len(act_qts):
+            return False, "jpeg-missing-evidence"
+        eqt = exp_qts[qt]
+        aqt = act_qts[qt]
+        if (
+            not isinstance(eqt, (list, tuple))
+            or not isinstance(aqt, (list, tuple))
+            or len(eqt) != 64
+            or len(aqt) != 64
+        ):
+            return False, "jpeg-invalid-quant-table"
+        if list(eqt) != list(aqt):
             return False, "jpeg-quant-table"
-        if sc["dct_blocks"] != dc["dct_blocks"]:
+
+        expected_coeffs = bw * bh * 64
+        sdct = sc.get("dct_blocks")
+        ddct = dc.get("dct_blocks")
+        if (
+            not isinstance(sdct, (list, tuple))
+            or not isinstance(ddct, (list, tuple))
+            or len(sdct) != expected_coeffs
+            or len(ddct) != expected_coeffs
+        ):
+            return False, "jpeg-missing-evidence"
+        if list(sdct) != list(ddct):
             return False, "jpeg-dct-coeff"
     return True, "none"
 
@@ -1179,7 +1256,159 @@ class _WindowsProcessJob:
             self.handle = None
 
 
-def _kill_process_tree(proc: subprocess.Popen[Any], job: _WindowsProcessJob | None = None) -> None:
+def _posix_ancestors(start_pid: int) -> set[int]:
+    ancestors: set[int] = set()
+    cur = start_pid
+    while cur > 1 and cur not in ancestors:
+        ancestors.add(cur)
+        try:
+            stat_txt = Path(f"/proc/{cur}/stat").read_text(encoding="ascii", errors="replace")
+        except OSError:
+            # Ancestor exited or denied /proc access mid-walk; stop climbing.
+            break
+        rp = stat_txt.rfind(")")
+        if rp < 0:
+            break
+        fields = stat_txt[rp + 2 :].split()
+        if len(fields) < 2:
+            break
+        try:
+            cur = int(fields[1])
+        except ValueError:
+            break
+    return ancestors
+
+
+def _collect_posix_subtree(root_pid: int, tree_token: str | None) -> tuple[set[int], set[int]]:
+    """Collect UID-owned PIDs and PGIDs descending from root_pid or carrying tree_token."""
+    my_pid = os.getpid()
+    my_uid = os.getuid()
+    my_pgid = os.getpgrp()
+    ancestors = _posix_ancestors(my_pid)
+    token_bytes = tree_token.encode("ascii") if tree_token else None
+
+    proc_dir = Path("/proc")
+    if not proc_dir.is_dir():
+        pgids = {root_pid} if root_pid > 1 and root_pid != my_pgid else set()
+        pids = {root_pid} if root_pid > 1 and root_pid != my_pid else set()
+        return pids, pgids
+
+    children_by_ppid: dict[int, list[int]] = {}
+    pgid_by_pid: dict[int, int] = {}
+    tagged_pids: set[int] = set()
+
+    for entry in proc_dir.iterdir():
+        name = entry.name
+        if not name.isdigit():
+            continue
+        pid = int(name)
+        if pid <= 1 or pid == my_pid or pid in ancestors:
+            continue
+        try:
+            st = entry.stat()
+            if st.st_uid != my_uid:
+                continue
+            stat_txt = (entry / "stat").read_text(encoding="ascii", errors="replace")
+        except OSError:
+            # Process exited mid-/proc scan or belongs to another UID/unreadable entry.
+            continue
+        rp = stat_txt.rfind(")")
+        if rp < 0:
+            continue
+        fields = stat_txt[rp + 2 :].split()
+        if len(fields) < 3:
+            continue
+        try:
+            ppid = int(fields[1])
+            pgid = int(fields[2])
+        except ValueError:
+            continue
+        children_by_ppid.setdefault(ppid, []).append(pid)
+        pgid_by_pid[pid] = pgid
+        if token_bytes is not None:
+            try:
+                raw_env = (entry / "environ").read_bytes()
+            except OSError:
+                # Process may exit or restrict environ reads (e.g. non-dumpable); PPID link is recorded above.
+                continue
+            for item in raw_env.split(b"\x00"):
+                if item.startswith(b"RFC_PROCESS_TREE_TAGS="):
+                    vals = item[len(b"RFC_PROCESS_TREE_TAGS="):].split(b",")
+                    if token_bytes in vals:
+                        tagged_pids.add(pid)
+                    break
+
+    seeds: list[int] = []
+    if root_pid > 1 and root_pid != my_pid and root_pid not in ancestors:
+        seeds.append(root_pid)
+    for pid in sorted(tagged_pids):
+        if pid not in seeds:
+            seeds.append(pid)
+
+    found_pids: set[int] = set()
+    queue = list(seeds)
+    while queue:
+        cur = queue.pop()
+        if cur in found_pids or cur <= 1 or cur == my_pid or cur in ancestors:
+            continue
+        found_pids.add(cur)
+        for ch in children_by_ppid.get(cur, ()):
+            if ch not in found_pids:
+                queue.append(ch)
+
+    found_pgids: set[int] = set()
+    for pid in found_pids:
+        pgid = pgid_by_pid.get(pid, pid)
+        if pgid > 1 and pgid != my_pgid and pgid != my_pid:
+            found_pgids.add(pgid)
+    if root_pid > 1 and root_pid != my_pgid and root_pid != my_pid:
+        found_pgids.add(root_pid)
+    return found_pids, found_pgids
+
+
+def _kill_posix_tree(root_pid: int, tree_token: str | None) -> None:
+    stopped: set[int] = set()
+    all_pids: set[int] = set()
+    all_pgids: set[int] = set()
+    # Freeze newly discovered members first so a dying parent cannot outrun teardown via fork.
+    for _ in range(5):
+        pids, pgids = _collect_posix_subtree(root_pid, tree_token)
+        all_pids.update(pids)
+        all_pgids.update(pgids)
+        new_pids = pids - stopped
+        if not new_pids:
+            break
+        for pid in sorted(new_pids):
+            try:
+                os.kill(pid, signal.SIGSTOP)
+            except OSError:
+                # Target may have exited between /proc discovery and signaling.
+                pass
+            stopped.add(pid)
+
+    pids, pgids = _collect_posix_subtree(root_pid, tree_token)
+    all_pids.update(pids)
+    all_pgids.update(pgids)
+
+    for pgid in sorted(all_pgids, reverse=True):
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except OSError:
+            # Group may already be empty or owned outside UID after exec/exit.
+            pass
+    for pid in sorted(all_pids, reverse=True):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            # PID may already have terminated when its PGID was killed above.
+            pass
+
+
+def _kill_process_tree(
+    proc: subprocess.Popen[Any],
+    job: _WindowsProcessJob | None = None,
+    tree_token: str | None = None,
+) -> None:
     if job is not None:
         job.end()
         return
@@ -1193,11 +1422,7 @@ def _kill_process_tree(proc: subprocess.Popen[Any], job: _WindowsProcessJob | No
                 check=False,
             )
     else:
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            # Group has already terminated cleanly; nothing left to kill.
-            return
+        _kill_posix_tree(proc.pid, tree_token)
 
 
 def run_process_tree(
@@ -1212,6 +1437,10 @@ def run_process_tree(
     """Run a child command and terminate its entire descendant tree on completion or timeout."""
     argv = [str(part) for part in cmd]
     pipes = subprocess.PIPE if capture_output else None
+    tree_token = f"{os.getpid()}-{os.urandom(8).hex()}"
+    child_env = dict(os.environ if env is None else env)
+    prev_tags = child_env.get("RFC_PROCESS_TREE_TAGS", "")
+    child_env["RFC_PROCESS_TREE_TAGS"] = f"{prev_tags},{tree_token}" if prev_tags else tree_token
     job: _WindowsProcessJob | None = None
     proc: subprocess.Popen[Any] | None = None
     try:
@@ -1221,7 +1450,7 @@ def run_process_tree(
             proc = subprocess.Popen(
                 argv,
                 cwd=cwd,
-                env=env,
+                env=child_env,
                 stdin=subprocess.DEVNULL,
                 stdout=pipes,
                 stderr=pipes,
@@ -1242,7 +1471,7 @@ def run_process_tree(
                 proc = subprocess.Popen(
                     argv,
                     cwd=cwd,
-                    env=env,
+                    env=child_env,
                     stdin=subprocess.DEVNULL,
                     stdout=pipes,
                     stderr=pipes,
@@ -1253,7 +1482,7 @@ def run_process_tree(
             proc = subprocess.Popen(
                 argv,
                 cwd=cwd,
-                env=env,
+                env=child_env,
                 stdin=subprocess.DEVNULL,
                 stdout=pipes,
                 stderr=pipes,
@@ -1263,13 +1492,13 @@ def run_process_tree(
         try:
             out, err = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired as exc:
-            _kill_process_tree(proc, job)
+            _kill_process_tree(proc, job, tree_token)
             out_tail, err_tail = proc.communicate()
             raise subprocess.TimeoutExpired(argv, timeout, output=out_tail, stderr=err_tail) from exc
         return subprocess.CompletedProcess(argv, proc.returncode, out, err)
     finally:
         if proc is not None:
-            _kill_process_tree(proc, job)
+            _kill_process_tree(proc, job, tree_token)
             if proc.poll() is None:
                 proc.kill()
                 proc.wait()

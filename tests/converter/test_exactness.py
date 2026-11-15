@@ -13,6 +13,43 @@ import unittest
 import reference as ref
 
 
+def _is_pid_alive(pid: int) -> bool:
+    if os.name == "nt":
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return False
+        code = ctypes.c_ulong()
+        ok = kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+        kernel32.CloseHandle(handle)
+        return bool(ok and code.value == 259)  # STILL_ACTIVE
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    if Path("/proc").is_dir():
+        try:
+            # Treat zombie state ('Z') as terminated until reaped.
+            stat_txt = Path(f"/proc/{pid}/stat").read_text(encoding="ascii", errors="replace")
+            return stat_txt.rsplit(")", 1)[1].split()[0] != "Z"
+        except OSError:
+            return False
+    return True
+
+
+def _wait_pid_dead(pid: int, wait_s: float = 2.0) -> bool:
+    deadline = time.monotonic() + wait_s
+    while time.monotonic() < deadline:
+        if not _is_pid_alive(pid):
+            return True
+        time.sleep(0.05)
+    return not _is_pid_alive(pid)
+
+
 class ExactnessReferenceTests(unittest.TestCase):
     def test_provenance_table_complete_and_honest(self) -> None:
         by_name = ref.validate_provenance_table()
@@ -179,6 +216,41 @@ class ExactnessReferenceTests(unittest.TestCase):
         dst_c["quant_tables"][0][0] = 17
         self.assertEqual(ref.verify_jpeg_coefficients_py(src_c, dst_c), (False, "jpeg-quant-table"))
 
+        # Completeness & schema validation negative fixtures for verify_jpeg_coefficients_py
+        bad_empty_comps = dict(dst_c, components=[], quant_tables=[[16] * 64])
+        self.assertEqual(ref.verify_jpeg_coefficients_py(src_c, bad_empty_comps), (False, "jpeg-missing-evidence"))
+
+        bad_dct = dict(comp, dct_blocks=[])
+        bad_empty_dct = dict(dst_c, components=[bad_dct], quant_tables=[[16] * 64])
+        self.assertEqual(ref.verify_jpeg_coefficients_py(src_c, bad_empty_dct), (False, "jpeg-missing-evidence"))
+
+        bad_short_dct = dict(comp, dct_blocks=[0] * 63)
+        self.assertEqual(
+            ref.verify_jpeg_coefficients_py(src_c, dict(dst_c, components=[bad_short_dct], quant_tables=[[16] * 64])),
+            (False, "jpeg-missing-evidence"),
+        )
+
+        bad_trunc_qt = dict(dst_c, components=[dict(comp)], quant_tables=[[16] * 63])
+        self.assertEqual(ref.verify_jpeg_coefficients_py(src_c, bad_trunc_qt), (False, "jpeg-invalid-quant-table"))
+
+        bad_empty_qt = dict(dst_c, components=[dict(comp)], quant_tables=[])
+        self.assertEqual(ref.verify_jpeg_coefficients_py(src_c, bad_empty_qt), (False, "jpeg-missing-evidence"))
+
+        bad_missing_qt = dict(dst_c, components=[dict(comp)])
+        bad_missing_qt.pop("quant_tables")
+        self.assertEqual(ref.verify_jpeg_coefficients_py(src_c, bad_missing_qt), (False, "jpeg-missing-evidence"))
+
+        bad_missing_prog = dict(dst_c, components=[dict(comp)], quant_tables=[[16] * 64])
+        bad_missing_prog.pop("progressive")
+        self.assertEqual(ref.verify_jpeg_coefficients_py(src_c, bad_missing_prog), (False, "jpeg-missing-evidence"))
+
+        src_2 = dict(src_c, component_count=2)
+        dst_2 = dict(dst_c, component_count=2, components=[dict(comp)], quant_tables=[[16] * 64])
+        self.assertEqual(ref.verify_jpeg_coefficients_py(src_2, dst_2), (False, "jpeg-missing-evidence"))
+
+        bad_bool_dim = dict(dst_c, width=True, components=[dict(comp)], quant_tables=[[16] * 64])
+        self.assertEqual(ref.verify_jpeg_coefficients_py(dict(src_c, width=True), bad_bool_dim), (False, "jpeg-invalid-evidence"))
+
         # LibRaw import-only fixed-parameter & target pixel-exact contract
         pix = bytes(range(12))
         frame = {
@@ -264,18 +336,41 @@ class ExactnessReferenceTests(unittest.TestCase):
                 )
             self.assertTrue(pid_file.is_file(), "child did not spawn grandchild before timeout")
             gpid = int(pid_file.read_text(encoding="ascii").strip())
-            deadline = time.monotonic() + 2.0
-            alive = True
-            while time.monotonic() < deadline:
-                try:
-                    os.kill(gpid, 0)
-                except ProcessLookupError:
-                    alive = False
-                    break
-                except PermissionError:
-                    alive = True
-                time.sleep(0.05)
-            self.assertFalse(alive, f"grandchild PID {gpid} survived run_process_tree timeout")
+            self.assertTrue(_wait_pid_dead(gpid, 2.0), f"grandchild PID {gpid} survived run_process_tree timeout")
+
+    def test_run_process_tree_kills_nested_session_descendants_on_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            pid_file = Path(tmp) / "nested_grandchild.pid"
+            tmp_file = Path(tmp) / "nested_grandchild.pid.tmp"
+            ref_dir = str(Path(__file__).resolve().parent)
+            grandchild_code = (
+                "import os, pathlib, time\n"
+                f"tmp = pathlib.Path({str(tmp_file)!r})\n"
+                "tmp.write_text(str(os.getpid()), encoding='ascii')\n"
+                f"os.replace(tmp, pathlib.Path({str(pid_file)!r}))\n"
+                "time.sleep(30)\n"
+            )
+            outer_code = (
+                "import sys\n"
+                f"sys.path.insert(0, {ref_dir!r})\n"
+                "import reference as ref\n"
+                f"ref.run_process_tree([sys.executable, '-c', {grandchild_code!r}], timeout=30.0, capture_output=True)\n"
+            )
+            t0 = time.monotonic()
+            with self.assertRaises(subprocess.TimeoutExpired):
+                ref.run_process_tree(
+                    [sys.executable, "-c", outer_code],
+                    timeout=1.5,
+                    capture_output=True,
+                )
+            elapsed = time.monotonic() - t0
+            self.assertLess(elapsed, 6.0, f"outer timeout waited {elapsed:.2f}s for nested child")
+            self.assertTrue(pid_file.is_file(), "nested run_process_tree child did not spawn grandchild before timeout")
+            gpid = int(pid_file.read_text(encoding="ascii").strip())
+            self.assertTrue(
+                _wait_pid_dead(gpid, 2.0),
+                f"nested session grandchild PID {gpid} survived outer run_process_tree timeout",
+            )
 
 
 if __name__ == "__main__":
