@@ -242,6 +242,32 @@ static inline void rfc_thread_join(rfc_thread *t) {
     t->started = 0;
 }
 
+typedef struct rfc_thread_id_t {
+#ifdef _WIN32
+    DWORD id;
+#else
+    pthread_t id;
+#endif
+} rfc_thread_id_t;
+
+static inline rfc_thread_id_t rfc_thread_id_current(void) {
+    rfc_thread_id_t t;
+#ifdef _WIN32
+    t.id = GetCurrentThreadId();
+#else
+    t.id = pthread_self();
+#endif
+    return t;
+}
+
+static inline int rfc_thread_id_equal(rfc_thread_id_t a, rfc_thread_id_t b) {
+#ifdef _WIN32
+    return a.id == b.id;
+#else
+    return pthread_equal(a.id, b.id) != 0;
+#endif
+}
+
 typedef struct rfc_user_ctx_box {
     atomic_size_t refs;
     void *user_ctx;
@@ -278,6 +304,26 @@ static inline void rfc_user_ctx_box_release(rfc_user_ctx_box *box) {
     }
 }
 
+typedef struct rfc_slot_state {
+    atomic_size_t refs;
+    rfc_mutex lock;
+    rfc_job_id current_job_id;
+} rfc_slot_state;
+
+typedef struct rfc_job_inputs {
+    atomic_size_t refs;
+    uint8_t *source_bytes;
+    size_t source_size;
+    rfc_layout source_layout;
+    int has_layout;
+    rfc_metadata source_meta;
+    int has_meta;
+    uint8_t *owned_icc;
+    rfc_setting_value *settings;
+    size_t setting_count;
+    uint64_t retained_bytes;
+} rfc_job_inputs;
+
 typedef struct rfc_partial_entry {
     void *ptr;
     size_t byte_size;
@@ -286,6 +332,11 @@ typedef struct rfc_partial_entry {
     struct rfc_partial_entry *next;
 } rfc_partial_entry;
 
+typedef struct rfc_cancel_snapshot {
+    const rfc_session_adapter *sess_adapter;
+    void *session;
+} rfc_cancel_snapshot;
+
 struct rfc_job {
     rfc_mutex cb_lock;
     rfc_mutex lock;
@@ -293,7 +344,8 @@ struct rfc_job {
 
     atomic_size_t refs;
     rfc_scheduler *sched;
-    rfc_job_slot *slot;
+    rfc_slot_state *slot_state;
+    rfc_job_inputs *inputs;
 
     rfc_job_id job_id;
     rfc_job_id superseded_by_id;
@@ -310,24 +362,19 @@ struct rfc_job {
     int suppress_callbacks;
     int published;
     uint32_t last_percent;
+    int cb_owner_valid;
+    rfc_thread_id_t cb_owner;
 
     rfc_format_id source_format;
     rfc_format_id target_format;
-    uint8_t *source_bytes;
-    size_t source_size;
-    rfc_layout source_layout;
-    int has_layout;
-    rfc_metadata source_meta;
-    int has_meta;
-    uint8_t *owned_icc;
-    rfc_setting_value *settings;
-    size_t setting_count;
     rfc_limits limits;
+    int has_limits_override;
 
     uint32_t requested_threads;
     uint32_t admitted_threads;
     uint64_t reserved_memory_bytes;
     uint64_t budget_limit_bytes;
+    int counted_in_queue_retained;
 
     int has_stage_ops;
     rfc_pipeline_stage_ops stage_ops;
@@ -342,38 +389,41 @@ struct rfc_job {
     rfc_partial_entry *partials;
     uint64_t live_partial_bytes;
 
+    /* Owned decoded frames and encoded output passed between pipeline stages. */
+    rfc_frame *decoded_frames;
+    size_t decoded_frame_count;
+    rfc_metadata decoded_meta;
+    uint8_t *decoded_meta_icc;
+    int has_decoded_meta;
+    const rfc_allocator *decoded_frames_alloc;
+
+    rfc_encoded encoded_output;
+    int has_encoded_output;
+    const rfc_session_adapter *encoded_owner_sess;
+    void *encoded_owner_handle;
+    rfc_format_id encoded_owner_fmt;
+
     /* Guarded by job->lock while active session executes so cancel can notify it. */
     uint32_t active_cancel_calls;
     const rfc_session_adapter *active_sess_adapter;
     void *active_session;
-    const rfc_adapter *active_legacy_adapter;
-};
 
-typedef struct rfc_cancel_snapshot {
-    rfc_job *job;
-    const rfc_session_adapter *sess_adapter;
-    void *session;
-    const rfc_adapter *legacy_adapter;
-} rfc_cancel_snapshot;
+    /* Intrusive cancel dispatcher queue fields guarded by sched->lock. */
+    rfc_cancel_snapshot pending_cancel;
+    int cancel_queued;
+    struct rfc_job *cancel_next;
+};
 
 struct rfc_job_slot {
     rfc_mutex lock;
-    rfc_job_id current_job_id;
+    rfc_slot_state *state;
     uint64_t attempt_count;
     rfc_job *current_job;
 
     int has_last_spec;
     rfc_format_id source_format;
     rfc_format_id target_format;
-    uint8_t *owned_source_bytes;
-    size_t owned_source_size;
-    rfc_layout owned_layout;
-    int has_layout;
-    rfc_metadata owned_meta;
-    int has_meta;
-    uint8_t *owned_icc;
-    rfc_setting_value *owned_settings;
-    size_t owned_setting_count;
+    rfc_job_inputs *inputs;
     uint32_t requested_codec_threads;
     uint64_t expected_working_set_bytes;
     uint64_t job_memory_limit_bytes;
@@ -389,13 +439,39 @@ struct rfc_job_slot {
 /* Internal helpers shared cleanly between job.c and scheduler.c */
 void rfc_scheduler_internal_retain(rfc_scheduler *sched);
 void rfc_scheduler_internal_release(rfc_scheduler *sched);
-int rfc_scheduler_internal_is_destroying(rfc_scheduler *sched);
-void rfc_scheduler_internal_callback_enter(rfc_scheduler *sched, int *allowed_out);
-void rfc_scheduler_internal_callback_leave(rfc_scheduler *sched);
+void rfc_scheduler_internal_note_submit_alloc(rfc_scheduler *sched);
 void rfc_scheduler_internal_on_cancel_count(rfc_scheduler *sched);
 void rfc_scheduler_internal_on_publish_cancelled(rfc_scheduler *sched);
 void rfc_scheduler_internal_adjust_live_partials(rfc_scheduler *sched,
                                                  int64_t delta_bytes);
+void rfc_scheduler_internal_lock(rfc_scheduler *sched);
+void rfc_scheduler_internal_unlock(rfc_scheduler *sched);
+int rfc_scheduler_internal_is_destroying_locked(rfc_scheduler *sched);
+void rfc_scheduler_internal_callback_enter_locked(rfc_scheduler *sched);
+void rfc_scheduler_internal_callback_leave(rfc_scheduler *sched);
+
+rfc_slot_state *rfc_slot_state_create(void);
+void rfc_slot_state_retain(rfc_slot_state *state);
+void rfc_slot_state_release(rfc_slot_state *state);
+rfc_job_id rfc_slot_state_get_id(rfc_slot_state *state);
+void rfc_slot_state_set_id(rfc_slot_state *state, rfc_job_id id);
+
+rfc_status rfc_job_internal_compute_retained_bytes(
+    const uint8_t *src_bytes,
+    size_t src_size,
+    const rfc_metadata *src_meta,
+    const rfc_setting_value *settings,
+    size_t setting_count,
+    uint64_t *out_bytes);
+rfc_job_inputs *rfc_job_inputs_create(rfc_scheduler *alloc_counter,
+                                      const uint8_t *src_bytes,
+                                      size_t src_size,
+                                      const rfc_layout *src_layout,
+                                      const rfc_metadata *src_meta,
+                                      const rfc_setting_value *settings,
+                                      size_t setting_count);
+void rfc_job_inputs_retain(rfc_job_inputs *inputs);
+void rfc_job_inputs_release(rfc_job_inputs *inputs);
 
 typedef struct rfc_job_exec_result {
     rfc_status st;
@@ -406,22 +482,9 @@ typedef struct rfc_job_exec_result {
 rfc_job *rfc_job_internal_create(void);
 void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res);
 void rfc_job_internal_set_detail(char dst[RFC_JOB_DETAIL_MAX], const char *src);
-void rfc_job_internal_copy_spec_data_free(uint8_t *src_bytes,
-                                          uint8_t *icc,
-                                          rfc_setting_value *settings,
-                                          size_t setting_count);
-int rfc_job_internal_clone_inputs(const uint8_t *src_bytes,
-                                  size_t src_size,
-                                  const rfc_layout *src_layout,
-                                  const rfc_metadata *src_meta,
-                                  const rfc_setting_value *settings,
-                                  size_t setting_count,
-                                  uint8_t **out_bytes,
-                                  rfc_layout *out_layout,
-                                  int *out_has_layout,
-                                  rfc_metadata *out_meta,
-                                  int *out_has_meta,
-                                  uint8_t **out_icc,
-                                  rfc_setting_value **out_settings);
+void rfc_job_internal_release_stage_outputs(rfc_job *job);
+void rfc_job_internal_set_progress_hook(
+    void (*fn)(rfc_job_id job_id, int phase, void *user),
+    void *user);
 
 #endif /* RFC_JOB_INTERNAL_H */

@@ -125,6 +125,9 @@ typedef struct rfc_job_progress {
     char detail[RFC_JOB_DETAIL_MAX];
 } rfc_job_progress;
 
+/* Serialized per job outside scheduler/job locks; must not block or call back
+ * into rfc_job_cancel / rfc_scheduler_submit / rfc_scheduler_retry while
+ * holding a lock acquired on a thread calling those APIs. */
 typedef void (*rfc_progress_fn)(const rfc_job_progress *progress, void *user);
 
 typedef struct rfc_job_snapshot {
@@ -157,6 +160,7 @@ typedef struct rfc_scheduler_stats {
     uint64_t total_failed;
     uint64_t total_cancelled;
     uint64_t total_superseded;
+    uint64_t submission_alloc_count;
 } rfc_scheduler_stats;
 
 typedef struct rfc_job_spec {
@@ -180,9 +184,13 @@ typedef struct rfc_job_spec {
 
 void rfc_limits_default(rfc_limits *out);
 rfc_status rfc_limits_validate(const rfc_limits *limits);
+rfc_status rfc_layout_normalize_stride(const rfc_layout *layout,
+                                       rfc_layout *out_normalized);
 rfc_status rfc_limits_compute_frame_bytes(const rfc_layout *layout,
                                           size_t frame_count,
                                           uint64_t *out_bytes);
+rfc_status rfc_limits_check_compressed(const rfc_limits *limits,
+                                       uint64_t compressed_bytes);
 rfc_status rfc_limits_check_image(const rfc_limits *limits,
                                   const rfc_layout *layout,
                                   size_t frame_count);
@@ -191,6 +199,12 @@ rfc_status rfc_limits_check_metadata(const rfc_limits *limits,
 rfc_status rfc_limits_check_decompression(const rfc_limits *limits,
                                           uint64_t compressed_bytes,
                                           uint64_t decoded_bytes);
+rfc_status rfc_limits_check_frames(const rfc_limits *limits,
+                                   const rfc_frame *frames,
+                                   size_t frame_count,
+                                   const rfc_metadata *container_meta,
+                                   uint64_t compressed_bytes,
+                                   int has_compressed);
 rfc_status rfc_query_provider_memory_contract(rfc_format_id id,
                                               rfc_provider_memory_info *out);
 
@@ -219,6 +233,16 @@ const uint8_t *rfc_job_source_bytes(const rfc_job *job, size_t *out_size);
 const rfc_layout *rfc_job_source_layout(const rfc_job *job);
 const rfc_metadata *rfc_job_source_metadata(const rfc_job *job);
 const rfc_setting_value *rfc_job_settings(const rfc_job *job, size_t *out_count);
+const rfc_frame *rfc_job_decoded_frames(const rfc_job *job,
+                                        size_t *out_count,
+                                        const rfc_metadata **out_meta);
+const rfc_encoded *rfc_job_encoded_output(const rfc_job *job);
+rfc_status rfc_job_set_decoded_frames(rfc_job *job,
+                                      rfc_frame *frames,
+                                      size_t frame_count,
+                                      const rfc_metadata *meta);
+rfc_status rfc_job_set_encoded_output(rfc_job *job,
+                                      const rfc_encoded *encoded);
 int rfc_job_is_cancelled(const rfc_job *job);
 rfc_status rfc_job_cancel(rfc_job *job);
 rfc_status rfc_job_wait(rfc_job *job, uint32_t timeout_ms);

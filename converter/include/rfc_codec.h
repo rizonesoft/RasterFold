@@ -122,6 +122,8 @@ typedef struct rfc_adapter {
     rfc_status (*decode)(void *ctx, const rfc_encoded *in,
                          const rfc_setting_value *settings, size_t setting_count,
                          const rfc_allocator *allocator, rfc_frame *out);
+    /* Request cancellation. Must be thread-safe and non-blocking (atomic state
+     * signal only; never acquire blocking codec locks or perform I/O). */
     rfc_status (*cancel)(void *ctx);
     void (*free_adapter)(void *ctx);
     void *ctx;
@@ -160,7 +162,14 @@ rfc_status rfc_registry_select(rfc_format_id id, rfc_mode mode);
 typedef struct rfc_exec_context rfc_exec_context;
 
 /* Session-scoped codec adapter receiving per-job admitted threads, limits, and
- * allocator/hook context while allowing concurrent same-format jobs. */
+ * allocator/hook context while allowing concurrent same-format jobs.
+ * open_session, close_session, probe_session, encode_session, and
+ * decode_session are required; probe_session runs before decode_session so
+ * hostile headers fail prior to pixel allocation. Any out_meta->icc returned
+ * by probe_session or decode_session (when not aliasing frame 0 metadata.icc)
+ * must be allocated via exec's allocator so the engine can free it cleanly.
+ * cancel_session, if provided, must be thread-safe and non-blocking (signal an
+ * atomic cancellation flag without waiting on blocking codec locks or I/O). */
 typedef struct rfc_session_adapter {
     uint32_t abi_version;
     rfc_format_id format;

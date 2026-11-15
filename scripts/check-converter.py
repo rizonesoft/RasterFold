@@ -139,21 +139,29 @@ def run(cmd):
     return subprocess.run(cmd, cwd=ROOT).returncode
 
 
+def _check_headers(tmp):
+    cc = os.environ.get("CC", "cc")
+    cxx = os.environ.get("CXX", "c++")
+    inc = os.path.join(ROOT, "converter", "include")
+    tu = os.path.join(tmp, "tu.c")
+    open(tu, "w").write('#include "rfc_codec.h"\n#include "rfc_job.h"\nint main(void){return 0;}\n')
+    if run([cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", inc, "-c", tu, "-o", os.path.join(tmp, "tu.o")]):
+        return fail("headers do not compile as C11")
+    tux = os.path.join(tmp, "tu.cpp")
+    open(tux, "w").write('#include "rfc_codec.h"\n#include "rfc_job.h"\nint main(){return 0;}\n')
+    if run([cxx, "-std=c++17", "-Wall", "-Wextra", "-Werror", "-I", inc, "-c", tux, "-o", os.path.join(tmp, "tu_cpp.o")]):
+        return fail("headers do not compile as C++")
+    return 0
+
+
 def case_contract():
     if validate_registry():
         return 1
     cc = os.environ.get("CC", "cc")
-    cxx = os.environ.get("CXX", "c++")
     inc = os.path.join(ROOT, "converter", "include")
     with tempfile.TemporaryDirectory() as tmp:
-        tu = os.path.join(tmp, "tu.c")
-        open(tu, "w").write('#include "rfc_codec.h"\n#include "rfc_job.h"\nint main(void){return 0;}\n')
-        if run([cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", inc, "-c", tu, "-o", os.path.join(tmp, "tu.o")]):
-            return fail("headers do not compile as C11")
-        tux = os.path.join(tmp, "tu.cpp")
-        open(tux, "w").write('#include "rfc_codec.h"\n#include "rfc_job.h"\nint main(){return 0;}\n')
-        if run([cxx, "-std=c++17", "-Wall", "-Wextra", "-Werror", "-I", inc, "-c", tux, "-o", os.path.join(tmp, "tu_cpp.o")]):
-            return fail("headers do not compile as C++")
+        if _check_headers(tmp):
+            return 1
         exe = os.path.join(tmp, "test_contract")
         if run([cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", inc,
                 os.path.join(ROOT, "converter", "src", "registry.c"),
@@ -207,11 +215,13 @@ def case_bundle():
 def _assert_jobs_output(label, stdout):
     required = [
         "jobs: config read-back",
+        "submit_allocs=0",
         "jobs: hostile/unknown preflight refused",
         "jobs: concurrency",
         "jobs: oom_cap",
         "jobs: retry",
         "jobs: cancel_all_stages live_partial_bytes=0 published_cancelled=0 shutdown_late_callbacks=0 64x_restart=ok",
+        "jobs: round 1 regressions ok",
         "jobs: all checks passed",
     ]
     for marker in required:
@@ -234,6 +244,8 @@ def case_jobs(all_targets):
         os.path.join(ROOT, "tests", "converter", "test_jobs.c"),
     ]
     with tempfile.TemporaryDirectory() as tmp:
+        if _check_headers(tmp):
+            return 1
         exe = os.path.join(tmp, "test_jobs" + (".exe" if os.name == "nt" else ""))
         cmd = [cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", inc, *sources]
         if os.name != "nt":

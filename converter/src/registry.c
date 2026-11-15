@@ -372,7 +372,8 @@ void rfc_registry_release_adapter(rfc_format_id id) {
 }
 rfc_status rfc_registry_register_session(const rfc_session_adapter *adapter) {
     if (!adapter || !adapter->open_session || !adapter->close_session ||
-        !adapter->encode_session || !adapter->decode_session) {
+        !adapter->probe_session || !adapter->encode_session ||
+        !adapter->decode_session) {
         return RFC_ERR_INVALID_ARGUMENT;
     }
     if (adapter->abi_version != RFC_CODEC_ABI_VERSION) {

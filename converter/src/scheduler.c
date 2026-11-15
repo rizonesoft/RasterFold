@@ -11,8 +11,10 @@ struct rfc_scheduler {
     rfc_mutex lock;
     rfc_cond work_cond;
     rfc_cond drain_cond;
+    rfc_cond cancel_cond;
 
     atomic_size_t internal_refs;
+    atomic_uint_fast64_t submit_alloc_count;
 
     rfc_scheduler_config cfg;
     rfc_scheduler_stats stats;
@@ -20,10 +22,17 @@ struct rfc_scheduler {
     rfc_job_id next_job_id;
     int destroying;
     uint32_t active_callbacks;
+    uint64_t queued_retained_bytes;
 
     rfc_job **queue;
     size_t queue_cap;
     size_t queue_len;
+
+    rfc_job *cancel_head;
+    rfc_job *cancel_tail;
+    uint32_t active_cancel_dispatches;
+    rfc_thread cancel_thread;
+    int cancel_thread_spawned;
 
     rfc_job *active_jobs[RFC_SCHED_MAX_WORKERS];
     rfc_worker_slot workers[RFC_SCHED_MAX_WORKERS];
@@ -35,6 +44,20 @@ static int mul_u64_sched(uint64_t a, uint64_t b, uint64_t *out) {
     }
     *out = a * b;
     return 1;
+}
+
+static int add_u64_sched(uint64_t a, uint64_t b, uint64_t *out) {
+    if (a > UINT64_MAX - b) {
+        return 0;
+    }
+    *out = a + b;
+    return 1;
+}
+
+static int scheduler_is_drained_locked(const rfc_scheduler *sched) {
+    return sched->active_callbacks == 0 && sched->stats.active_workers == 0 &&
+           sched->queue_len == 0 && sched->cancel_head == NULL &&
+           sched->active_cancel_dispatches == 0;
 }
 
 void rfc_scheduler_internal_retain(rfc_scheduler *sched) {
@@ -51,6 +74,7 @@ void rfc_scheduler_internal_release(rfc_scheduler *sched) {
     if (atomic_fetch_sub_explicit(&sched->internal_refs, 1u,
                                   memory_order_acq_rel) == 1u) {
         free(sched->queue);
+        rfc_cond_destroy(&sched->cancel_cond);
         rfc_cond_destroy(&sched->drain_cond);
         rfc_cond_destroy(&sched->work_cond);
         rfc_mutex_destroy(&sched->lock);
@@ -58,29 +82,33 @@ void rfc_scheduler_internal_release(rfc_scheduler *sched) {
     }
 }
 
-int rfc_scheduler_internal_is_destroying(rfc_scheduler *sched) {
-    if (!sched) {
-        return 1;
+void rfc_scheduler_internal_note_submit_alloc(rfc_scheduler *sched) {
+    if (sched) {
+        atomic_fetch_add_explicit(&sched->submit_alloc_count, 1u,
+                                  memory_order_relaxed);
     }
-    rfc_mutex_lock(&sched->lock);
-    int d = sched->destroying;
-    rfc_mutex_unlock(&sched->lock);
-    return d;
 }
 
-void rfc_scheduler_internal_callback_enter(rfc_scheduler *sched,
-                                           int *allowed_out) {
-    if (!sched || !allowed_out) {
-        return;
+void rfc_scheduler_internal_lock(rfc_scheduler *sched) {
+    if (sched) {
+        rfc_mutex_lock(&sched->lock);
     }
-    rfc_mutex_lock(&sched->lock);
-    if (sched->destroying) {
-        *allowed_out = 0;
-    } else {
-        *allowed_out = 1;
+}
+
+void rfc_scheduler_internal_unlock(rfc_scheduler *sched) {
+    if (sched) {
+        rfc_mutex_unlock(&sched->lock);
+    }
+}
+
+int rfc_scheduler_internal_is_destroying_locked(rfc_scheduler *sched) {
+    return sched ? sched->destroying : 1;
+}
+
+void rfc_scheduler_internal_callback_enter_locked(rfc_scheduler *sched) {
+    if (sched) {
         sched->active_callbacks++;
     }
-    rfc_mutex_unlock(&sched->lock);
 }
 
 void rfc_scheduler_internal_callback_leave(rfc_scheduler *sched) {
@@ -91,8 +119,7 @@ void rfc_scheduler_internal_callback_leave(rfc_scheduler *sched) {
     if (sched->active_callbacks > 0) {
         sched->active_callbacks--;
     }
-    if (sched->active_callbacks == 0 && sched->stats.active_workers == 0 &&
-        sched->queue_len == 0) {
+    if (scheduler_is_drained_locked(sched)) {
         rfc_cond_broadcast(&sched->drain_cond);
     }
     rfc_mutex_unlock(&sched->lock);
@@ -130,55 +157,218 @@ void rfc_scheduler_internal_adjust_live_partials(rfc_scheduler *sched,
     rfc_mutex_unlock(&sched->lock);
 }
 
-static int collect_active_cancel_locked(rfc_job *job,
-                                        rfc_cancel_snapshot *out) {
-    memset(out, 0, sizeof(*out));
-    int has_sess = (job->active_sess_adapter &&
-                    job->active_sess_adapter->cancel_session &&
-                    job->active_session);
-    int has_leg = (job->active_legacy_adapter &&
-                   job->active_legacy_adapter->cancel);
-    if (!has_sess && !has_leg) {
+static void wait_job_callbacks_drained(rfc_job *job, int same_cb_thread) {
+    if (!job || same_cb_thread) {
+        return;
+    }
+    rfc_mutex_lock(&job->cb_lock);
+    rfc_mutex_unlock(&job->cb_lock);
+}
+
+static int enqueue_active_cancel_locked(rfc_scheduler *sched, rfc_job *job) {
+    if (!sched || !job || !job->active_sess_adapter ||
+        !job->active_sess_adapter->cancel_session || !job->active_session) {
         return 0;
     }
-    out->job = job;
-    out->sess_adapter = has_sess ? job->active_sess_adapter : NULL;
-    out->session = has_sess ? job->active_session : NULL;
-    out->legacy_adapter = has_leg ? job->active_legacy_adapter : NULL;
+    if (job->cancel_queued &&
+        job->pending_cancel.session == job->active_session) {
+        return 0;
+    }
+    if (job->cancel_queued) {
+        return 0;
+    }
+    job->pending_cancel.sess_adapter = job->active_sess_adapter;
+    job->pending_cancel.session = job->active_session;
+    job->cancel_queued = 1;
+    job->cancel_next = NULL;
     job->active_cancel_calls++;
     rfc_job_retain(job);
+
+    if (sched->cancel_tail) {
+        sched->cancel_tail->cancel_next = job;
+    } else {
+        sched->cancel_head = job;
+    }
+    sched->cancel_tail = job;
+    rfc_cond_signal(&sched->cancel_cond);
     return 1;
 }
 
-static void finish_active_cancel_unlocked(rfc_cancel_snapshot *snap) {
-    if (!snap || !snap->job) {
-        return;
+static void cancel_worker_main(void *arg) {
+    rfc_scheduler *sched = (rfc_scheduler *)arg;
+    rfc_mutex_lock(&sched->lock);
+    for (;;) {
+        while (!sched->cancel_head && !sched->destroying) {
+            rfc_cond_wait(&sched->cancel_cond, &sched->lock);
+        }
+        if (!sched->cancel_head && sched->destroying) {
+            break;
+        }
+        rfc_job *j = sched->cancel_head;
+        sched->cancel_head = j->cancel_next;
+        if (!sched->cancel_head) {
+            sched->cancel_tail = NULL;
+        }
+        j->cancel_next = NULL;
+        j->cancel_queued = 0;
+        rfc_cancel_snapshot snap = j->pending_cancel;
+        memset(&j->pending_cancel, 0, sizeof(j->pending_cancel));
+        sched->active_cancel_dispatches++;
+        rfc_mutex_unlock(&sched->lock);
+
+        if (snap.sess_adapter && snap.sess_adapter->cancel_session &&
+            snap.session) {
+            snap.sess_adapter->cancel_session(snap.session);
+        }
+
+        rfc_mutex_lock(&sched->lock);
+        rfc_mutex_lock(&j->lock);
+        if (j->active_cancel_calls > 0) {
+            j->active_cancel_calls--;
+        }
+        rfc_cond_broadcast(&j->done_cond);
+        rfc_mutex_unlock(&j->lock);
+
+        if (sched->active_cancel_dispatches > 0) {
+            sched->active_cancel_dispatches--;
+        }
+        if (scheduler_is_drained_locked(sched)) {
+            rfc_cond_broadcast(&sched->drain_cond);
+        }
+        rfc_mutex_unlock(&sched->lock);
+
+        rfc_job_release(j);
+        rfc_mutex_lock(&sched->lock);
     }
-    if (snap->sess_adapter && snap->sess_adapter->cancel_session &&
-        snap->session) {
-        snap->sess_adapter->cancel_session(snap->session);
+    rfc_mutex_unlock(&sched->lock);
+}
+
+static uint64_t project_queued_retained_locked(
+    const rfc_scheduler *sched,
+    const rfc_job *ignore_queued,
+    const rfc_job_inputs *extra_active_inputs,
+    const rfc_job_inputs *extra_queued_inputs) {
+    uint64_t total = 0;
+    for (size_t i = 0; i < sched->queue_len; i++) {
+        const rfc_job *qj = sched->queue[i];
+        if (!qj || qj == ignore_queued || !qj->inputs ||
+            qj->inputs->retained_bytes == 0) {
+            continue;
+        }
+        const rfc_job_inputs *inp = qj->inputs;
+        if (inp == extra_active_inputs) {
+            continue;
+        }
+        int seen = 0;
+        for (uint32_t w = 0; w < RFC_SCHED_MAX_WORKERS; w++) {
+            const rfc_job *aj = sched->active_jobs[w];
+            if (aj && aj->inputs == inp) {
+                seen = 1;
+                break;
+            }
+        }
+        if (seen) {
+            continue;
+        }
+        for (size_t k = 0; k < i; k++) {
+            const rfc_job *pk = sched->queue[k];
+            if (pk && pk != ignore_queued && pk->inputs == inp) {
+                seen = 1;
+                break;
+            }
+        }
+        if (!seen) {
+            total += inp->retained_bytes;
+        }
     }
-    if (snap->legacy_adapter && snap->legacy_adapter->cancel) {
-        snap->legacy_adapter->cancel(snap->legacy_adapter->ctx);
+    if (extra_queued_inputs && extra_queued_inputs->retained_bytes > 0 &&
+        extra_queued_inputs != extra_active_inputs) {
+        int seen = 0;
+        for (uint32_t w = 0; w < RFC_SCHED_MAX_WORKERS; w++) {
+            const rfc_job *aj = sched->active_jobs[w];
+            if (aj && aj->inputs == extra_queued_inputs) {
+                seen = 1;
+                break;
+            }
+        }
+        if (!seen) {
+            for (size_t i = 0; i < sched->queue_len; i++) {
+                const rfc_job *qj = sched->queue[i];
+                if (qj && qj != ignore_queued &&
+                    qj->inputs == extra_queued_inputs) {
+                    seen = 1;
+                    break;
+                }
+            }
+        }
+        if (!seen) {
+            total += extra_queued_inputs->retained_bytes;
+        }
     }
-    rfc_mutex_lock(&snap->job->lock);
-    if (snap->job->active_cancel_calls > 0) {
-        snap->job->active_cancel_calls--;
+    return total;
+}
+
+static uint64_t suffix_retained_after_idx_locked(
+    const rfc_scheduler *sched,
+    size_t after_idx,
+    const rfc_job *ignore_queued,
+    const rfc_job_inputs *extra_queued_inputs) {
+    uint64_t total = 0;
+    const rfc_job *self_job = sched->queue[after_idx];
+    const rfc_job_inputs *self_inp = self_job ? self_job->inputs : NULL;
+    for (size_t i = after_idx + 1u; i < sched->queue_len; i++) {
+        const rfc_job *qj = sched->queue[i];
+        if (!qj || qj == ignore_queued || !qj->inputs ||
+            qj->inputs->retained_bytes == 0) {
+            continue;
+        }
+        const rfc_job_inputs *inp = qj->inputs;
+        if (inp == self_inp) {
+            continue;
+        }
+        int seen = 0;
+        for (size_t k = after_idx + 1u; k < i; k++) {
+            const rfc_job *pk = sched->queue[k];
+            if (pk && pk != ignore_queued && pk->inputs == inp) {
+                seen = 1;
+                break;
+            }
+        }
+        if (!seen) {
+            total += inp->retained_bytes;
+        }
     }
-    rfc_cond_broadcast(&snap->job->done_cond);
-    rfc_mutex_unlock(&snap->job->lock);
-    rfc_job_release(snap->job);
-    memset(snap, 0, sizeof(*snap));
+    if (extra_queued_inputs && extra_queued_inputs->retained_bytes > 0 &&
+        extra_queued_inputs != self_inp) {
+        int seen = 0;
+        for (size_t i = after_idx + 1u; i < sched->queue_len; i++) {
+            const rfc_job *qj = sched->queue[i];
+            if (qj && qj != ignore_queued &&
+                qj->inputs == extra_queued_inputs) {
+                seen = 1;
+                break;
+            }
+        }
+        if (!seen) {
+            total += extra_queued_inputs->retained_bytes;
+        }
+    }
+    return total;
 }
 
 static rfc_job *pop_queue_at(rfc_scheduler *sched, size_t idx) {
     rfc_job *j = sched->queue[idx];
+    if (j) {
+        j->counted_in_queue_retained = 0;
+    }
     if (idx + 1u < sched->queue_len) {
         memmove(&sched->queue[idx], &sched->queue[idx + 1u],
                 (sched->queue_len - idx - 1u) * sizeof(sched->queue[0]));
     }
     sched->queue_len--;
     sched->stats.queued_jobs = (uint32_t)sched->queue_len;
+    sched->queued_retained_bytes =
+        project_queued_retained_locked(sched, NULL, NULL, NULL);
     return j;
 }
 
@@ -186,9 +376,8 @@ rfc_status rfc_scheduler_internal_cancel_job(rfc_scheduler *sched, rfc_job *job)
     if (!sched || !job) {
         return RFC_ERR_INVALID_ARGUMENT;
     }
-    rfc_cancel_snapshot csnap;
-    memset(&csnap, 0, sizeof(csnap));
     rfc_job *drop_job = NULL;
+    int same_cb_thread = 0;
 
     rfc_mutex_lock(&sched->lock);
     rfc_mutex_lock(&job->lock);
@@ -203,6 +392,9 @@ rfc_status rfc_scheduler_internal_cancel_job(rfc_scheduler *sched, rfc_job *job)
 
     job->cancel_requested = 1;
     job->suppress_callbacks = 1;
+    same_cb_thread =
+        job->cb_owner_valid &&
+        rfc_thread_id_equal(job->cb_owner, rfc_thread_id_current());
 
     if (job->state == RFC_JOB_QUEUED) {
         job->state = RFC_JOB_CANCELLED;
@@ -218,12 +410,13 @@ rfc_status rfc_scheduler_internal_cancel_job(rfc_scheduler *sched, rfc_job *job)
             }
         }
         sched->stats.total_cancelled++;
-        if (sched->stats.active_workers == 0 && sched->queue_len == 0 &&
-            sched->active_callbacks == 0) {
+        if (scheduler_is_drained_locked(sched)) {
             rfc_cond_broadcast(&sched->drain_cond);
         }
         rfc_mutex_unlock(&job->lock);
         rfc_mutex_unlock(&sched->lock);
+
+        wait_job_callbacks_drained(job, same_cb_thread);
         rfc_job_release_partials(job);
         if (drop_job) {
             rfc_job_release(drop_job);
@@ -231,11 +424,11 @@ rfc_status rfc_scheduler_internal_cancel_job(rfc_scheduler *sched, rfc_job *job)
         return RFC_OK;
     }
 
-    collect_active_cancel_locked(job, &csnap);
+    enqueue_active_cancel_locked(sched, job);
     rfc_mutex_unlock(&job->lock);
     rfc_mutex_unlock(&sched->lock);
 
-    finish_active_cancel_unlocked(&csnap);
+    wait_job_callbacks_drained(job, same_cb_thread);
     return RFC_OK;
 }
 
@@ -257,6 +450,7 @@ static void worker_main(void *arg) {
                        head->state == RFC_JOB_CANCELLED ||
                        head->state == RFC_JOB_SUPERSEDED;
             if (dead && head->state == RFC_JOB_QUEUED) {
+                head->suppress_callbacks = 1;
                 head->state = head->superseded ? RFC_JOB_SUPERSEDED
                                                : RFC_JOB_CANCELLED;
                 head->status = head->superseded ? RFC_ERR_STALE_JOB
@@ -299,27 +493,31 @@ static void worker_main(void *arg) {
 
             int cpu_ok = (sched->stats.active_cpu_threads + needed_threads <=
                           sched->cfg.total_cpu_threads);
+            uint64_t post_queued = project_queued_retained_locked(
+                sched, head, head->inputs, NULL);
+            uint64_t next_active = 0;
+            uint64_t total_mem = 0;
             int mem_ok =
-                (sched->stats.active_reserved_bytes + needed_mem <=
-                 sched->cfg.memory_budget_bytes) ||
-                (needed_mem > sched->cfg.memory_budget_bytes &&
-                 sched->stats.active_reserved_bytes == 0);
+                add_u64_sched(sched->stats.active_reserved_bytes, needed_mem,
+                              &next_active) &&
+                add_u64_sched(next_active, post_queued, &total_mem) &&
+                total_mem <= sched->cfg.memory_budget_bytes;
             if (cpu_ok && mem_ok) {
                 can_run = 1;
             }
         }
 
         if (!can_run) {
-            if (sched->stats.active_workers == 0 && sched->queue_len == 0 &&
-                sched->active_callbacks == 0) {
+            if (scheduler_is_drained_locked(sched)) {
                 rfc_cond_broadcast(&sched->drain_cond);
             }
             rfc_cond_wait(&sched->work_cond, &sched->lock);
             continue;
         }
 
-        rfc_job *job = pop_queue_at(sched, 0);
+        rfc_job *job = sched->queue[0];
         sched->active_jobs[w->index] = job;
+        pop_queue_at(sched, 0);
         sched->stats.active_workers++;
         if (sched->stats.active_workers > sched->stats.peak_workers) {
             sched->stats.peak_workers = sched->stats.active_workers;
@@ -398,6 +596,8 @@ static void worker_main(void *arg) {
         sched->stats.active_workers--;
         sched->stats.active_cpu_threads -= needed_threads;
         sched->stats.active_reserved_bytes -= needed_mem;
+        sched->queued_retained_bytes =
+            project_queued_retained_locked(sched, NULL, NULL, NULL);
         if (term_state == RFC_JOB_SUCCEEDED) {
             sched->stats.total_completed++;
         } else if (term_state == RFC_JOB_CANCELLED) {
@@ -410,8 +610,7 @@ static void worker_main(void *arg) {
 
         rfc_cond_broadcast(&job->done_cond);
         rfc_cond_broadcast(&sched->work_cond);
-        if (sched->stats.active_workers == 0 && sched->queue_len == 0 &&
-            sched->active_callbacks == 0) {
+        if (scheduler_is_drained_locked(sched)) {
             rfc_cond_broadcast(&sched->drain_cond);
         }
         rfc_mutex_unlock(&job->lock);
@@ -497,9 +696,17 @@ rfc_scheduler *rfc_scheduler_create(const rfc_scheduler_config *cfg) {
         free(sched);
         return NULL;
     }
+    if (!rfc_cond_init(&sched->cancel_cond)) {
+        rfc_cond_destroy(&sched->drain_cond);
+        rfc_cond_destroy(&sched->work_cond);
+        rfc_mutex_destroy(&sched->lock);
+        free(sched);
+        return NULL;
+    }
 
     sched->queue = (rfc_job **)calloc(eff.max_queue_depth, sizeof(sched->queue[0]));
     if (!sched->queue) {
+        rfc_cond_destroy(&sched->cancel_cond);
         rfc_cond_destroy(&sched->drain_cond);
         rfc_cond_destroy(&sched->work_cond);
         rfc_mutex_destroy(&sched->lock);
@@ -510,11 +717,22 @@ rfc_scheduler *rfc_scheduler_create(const rfc_scheduler_config *cfg) {
     sched->cfg = eff;
     sched->next_job_id = 1u;
     atomic_init(&sched->internal_refs, 1u);
+    atomic_init(&sched->submit_alloc_count, 0u);
 
     rfc_mutex_lock(&sched->lock);
+    if (!rfc_thread_start_fn(&sched->cancel_thread, cancel_worker_main,
+                             sched)) {
+        sched->destroying = 1;
+        rfc_mutex_unlock(&sched->lock);
+        rfc_scheduler_internal_release(sched);
+        return NULL;
+    }
+    sched->cancel_thread_spawned = 1;
+
     if (!ensure_workers_started_locked(sched, eff.max_workers)) {
         sched->destroying = 1;
         rfc_cond_broadcast(&sched->work_cond);
+        rfc_cond_broadcast(&sched->cancel_cond);
         rfc_mutex_unlock(&sched->lock);
         for (uint32_t i = 0; i < RFC_SCHED_MAX_WORKERS; i++) {
             if (sched->workers[i].spawned) {
@@ -522,11 +740,27 @@ rfc_scheduler *rfc_scheduler_create(const rfc_scheduler_config *cfg) {
                 sched->workers[i].spawned = 0;
             }
         }
+        if (sched->cancel_thread_spawned) {
+            rfc_thread_join(&sched->cancel_thread);
+            sched->cancel_thread_spawned = 0;
+        }
         rfc_scheduler_internal_release(sched);
         return NULL;
     }
     rfc_mutex_unlock(&sched->lock);
     return sched;
+}
+
+static int limits_tighter(const rfc_limits *next, const rfc_limits *prev) {
+    return next->max_width < prev->max_width ||
+           next->max_height < prev->max_height ||
+           next->max_pixels < prev->max_pixels ||
+           next->max_frames < prev->max_frames ||
+           next->max_total_pixels < prev->max_total_pixels ||
+           next->max_decoded_bytes < prev->max_decoded_bytes ||
+           next->max_metadata_bytes < prev->max_metadata_bytes ||
+           next->max_compressed_bytes < prev->max_compressed_bytes ||
+           next->max_expansion_ratio < prev->max_expansion_ratio;
 }
 
 rfc_status rfc_scheduler_reconfigure(rfc_scheduler *sched,
@@ -543,6 +777,46 @@ rfc_status rfc_scheduler_reconfigure(rfc_scheduler *sched,
     if (sched->destroying) {
         rfc_mutex_unlock(&sched->lock);
         return RFC_ERR_CANCELLED;
+    }
+    if (sched->stats.active_workers > cfg->max_workers ||
+        sched->stats.active_cpu_threads > cfg->total_cpu_threads ||
+        sched->queue_len > cfg->max_queue_depth) {
+        rfc_mutex_unlock(&sched->lock);
+        return RFC_ERR_BUSY;
+    }
+    uint64_t live_mem = 0;
+    if (!add_u64_sched(sched->stats.active_reserved_bytes,
+                       sched->queued_retained_bytes, &live_mem) ||
+        live_mem > cfg->memory_budget_bytes) {
+        rfc_mutex_unlock(&sched->lock);
+        return RFC_ERR_BUSY;
+    }
+    for (size_t i = 0; i < sched->queue_len; i++) {
+        const rfc_job *qj = sched->queue[i];
+        uint64_t suffix = suffix_retained_after_idx_locked(sched, i, NULL, NULL);
+        uint64_t peak_q = 0;
+        if (qj->budget_limit_bytes > cfg->memory_budget_bytes ||
+            !add_u64_sched(qj->reserved_memory_bytes, suffix, &peak_q) ||
+            peak_q > cfg->memory_budget_bytes) {
+            rfc_mutex_unlock(&sched->lock);
+            return RFC_ERR_BUSY;
+        }
+    }
+    if (limits_tighter(&cfg->default_limits, &sched->cfg.default_limits)) {
+        for (uint32_t i = 0; i < RFC_SCHED_MAX_WORKERS; i++) {
+            const rfc_job *aj = sched->active_jobs[i];
+            if (aj && !aj->has_limits_override) {
+                rfc_mutex_unlock(&sched->lock);
+                return RFC_ERR_BUSY;
+            }
+        }
+        for (size_t i = 0; i < sched->queue_len; i++) {
+            const rfc_job *qj = sched->queue[i];
+            if (qj && !qj->has_limits_override) {
+                rfc_mutex_unlock(&sched->lock);
+                return RFC_ERR_BUSY;
+            }
+        }
     }
     if (cfg->max_queue_depth > sched->queue_cap) {
         rfc_job **grown = (rfc_job **)realloc(
@@ -588,6 +862,8 @@ void rfc_scheduler_stats_get(const rfc_scheduler *sched,
     rfc_scheduler *m = (rfc_scheduler *)sched;
     rfc_mutex_lock(&m->lock);
     *out = m->stats;
+    out->submission_alloc_count =
+        atomic_load_explicit(&m->submit_alloc_count, memory_order_relaxed);
     rfc_mutex_unlock(&m->lock);
 }
 
@@ -597,8 +873,6 @@ void rfc_scheduler_destroy(rfc_scheduler *sched) {
     }
     rfc_job *to_release[RFC_SCHED_MAX_QUEUE_DEPTH];
     size_t release_count = 0;
-    rfc_cancel_snapshot cancels[RFC_SCHED_MAX_WORKERS];
-    size_t cancel_count = 0;
 
     rfc_mutex_lock(&sched->lock);
     sched->destroying = 1;
@@ -621,6 +895,7 @@ void rfc_scheduler_destroy(rfc_scheduler *sched) {
             to_release[release_count++] = j;
         }
     }
+    sched->queued_retained_bytes = 0;
 
     for (uint32_t i = 0; i < RFC_SCHED_MAX_WORKERS; i++) {
         rfc_job *aj = sched->active_jobs[i];
@@ -629,31 +904,27 @@ void rfc_scheduler_destroy(rfc_scheduler *sched) {
             if (!aj->published) {
                 aj->cancel_requested = 1;
                 aj->suppress_callbacks = 1;
-                if (cancel_count < RFC_SCHED_MAX_WORKERS &&
-                    collect_active_cancel_locked(aj, &cancels[cancel_count])) {
-                    cancel_count++;
-                }
+                enqueue_active_cancel_locked(sched, aj);
             }
             rfc_mutex_unlock(&aj->lock);
         }
     }
 
     rfc_cond_broadcast(&sched->work_cond);
+    rfc_cond_broadcast(&sched->cancel_cond);
     rfc_mutex_unlock(&sched->lock);
 
-    for (size_t i = 0; i < cancel_count; i++) {
-        finish_active_cancel_unlocked(&cancels[i]);
-    }
     for (size_t i = 0; i < release_count; i++) {
         rfc_job_release_partials(to_release[i]);
         rfc_job_release(to_release[i]);
     }
 
     rfc_mutex_lock(&sched->lock);
-    while (sched->stats.active_workers > 0 || sched->active_callbacks > 0) {
+    while (!scheduler_is_drained_locked(sched)) {
         rfc_cond_wait(&sched->drain_cond, &sched->lock);
     }
     rfc_cond_broadcast(&sched->work_cond);
+    rfc_cond_broadcast(&sched->cancel_cond);
     rfc_mutex_unlock(&sched->lock);
 
     for (uint32_t i = 0; i < RFC_SCHED_MAX_WORKERS; i++) {
@@ -662,36 +933,35 @@ void rfc_scheduler_destroy(rfc_scheduler *sched) {
             sched->workers[i].spawned = 0;
         }
     }
+    if (sched->cancel_thread_spawned) {
+        rfc_thread_join(&sched->cancel_thread);
+        sched->cancel_thread_spawned = 0;
+    }
 
     rfc_scheduler_internal_release(sched);
 }
 
-static rfc_status compute_preflight(const rfc_scheduler_config *cfg,
-                                    rfc_format_id source_format,
-                                    rfc_format_id target_format,
-                                    size_t source_size,
-                                    const rfc_layout *source_layout,
-                                    const rfc_metadata *source_meta,
-                                    uint64_t expected_working_set_bytes,
-                                    uint64_t job_memory_limit_bytes,
-                                    const rfc_limits *limits_override,
-                                    rfc_limits *out_limits,
-                                    uint64_t *out_reservation,
-                                    uint64_t *out_budget_limit) {
-    rfc_provider_memory_info src_mem;
-    rfc_provider_memory_info dst_mem;
-    rfc_status st =
-        rfc_query_provider_memory_contract(source_format, &src_mem);
-    if (st != RFC_OK) {
-        return st;
-    }
-    st = rfc_query_provider_memory_contract(target_format, &dst_mem);
+static rfc_status compute_preflight_with_contracts(
+    const rfc_scheduler_config *cfg,
+    const rfc_provider_memory_info *src_mem,
+    const rfc_provider_memory_info *dst_mem,
+    size_t source_size,
+    const rfc_layout *source_layout,
+    const rfc_metadata *source_meta,
+    uint64_t retained_bytes,
+    uint64_t expected_working_set_bytes,
+    uint64_t job_memory_limit_bytes,
+    const rfc_limits *limits_override,
+    rfc_limits *out_limits,
+    uint64_t *out_reservation,
+    uint64_t *out_budget_limit) {
+    rfc_limits eff = limits_override ? *limits_override : cfg->default_limits;
+    rfc_status st = rfc_limits_validate(&eff);
     if (st != RFC_OK) {
         return st;
     }
 
-    rfc_limits eff = limits_override ? *limits_override : cfg->default_limits;
-    st = rfc_limits_validate(&eff);
+    st = rfc_limits_check_compressed(&eff, (uint64_t)source_size);
     if (st != RFC_OK) {
         return st;
     }
@@ -721,75 +991,118 @@ static rfc_status compute_preflight(const rfc_scheduler_config *cfg,
         }
     }
 
-    uint64_t reservation = 0;
+    uint64_t base_reservation = 0;
     if (expected_working_set_bytes > 0) {
-        reservation = expected_working_set_bytes;
+        base_reservation = expected_working_set_bytes;
     } else if (source_layout) {
-        uint32_t mult = src_mem.working_set_multiplier > dst_mem.working_set_multiplier
-                            ? src_mem.working_set_multiplier
-                            : dst_mem.working_set_multiplier;
-        uint64_t overhead = src_mem.fixed_overhead_bytes > dst_mem.fixed_overhead_bytes
-                                ? src_mem.fixed_overhead_bytes
-                                : dst_mem.fixed_overhead_bytes;
+        uint32_t mult = src_mem->working_set_multiplier >
+                                dst_mem->working_set_multiplier
+                            ? src_mem->working_set_multiplier
+                            : dst_mem->working_set_multiplier;
+        uint64_t overhead = src_mem->fixed_overhead_bytes >
+                                    dst_mem->fixed_overhead_bytes
+                                ? src_mem->fixed_overhead_bytes
+                                : dst_mem->fixed_overhead_bytes;
         uint64_t work = 0;
         if (!mul_u64_sched(decoded_bytes, (uint64_t)mult, &work) ||
             work > UINT64_MAX - overhead) {
             return RFC_ERR_LIMIT_EXCEEDED;
         }
-        reservation = overhead + work;
+        base_reservation = overhead + work;
     } else {
         return RFC_ERR_LIMIT_EXCEEDED;
     }
 
-    if (reservation > cfg->memory_budget_bytes) {
+    uint64_t budget_limit = job_memory_limit_bytes > 0
+                                ? job_memory_limit_bytes
+                                : base_reservation;
+    uint64_t limit_plus_retained = 0;
+    if (!add_u64_sched(budget_limit, retained_bytes, &limit_plus_retained)) {
         return RFC_ERR_LIMIT_EXCEEDED;
     }
-    if (job_memory_limit_bytes > cfg->memory_budget_bytes) {
+    uint64_t reservation = base_reservation > limit_plus_retained
+                               ? base_reservation
+                               : limit_plus_retained;
+
+    if (reservation > cfg->memory_budget_bytes ||
+        budget_limit > cfg->memory_budget_bytes) {
         return RFC_ERR_LIMIT_EXCEEDED;
     }
 
     *out_limits = eff;
     *out_reservation = reservation;
-    *out_budget_limit =
-        job_memory_limit_bytes > 0 ? job_memory_limit_bytes : reservation;
+    *out_budget_limit = budget_limit;
     return RFC_OK;
 }
 
-static rfc_status enqueue_new_job(rfc_scheduler *sched,
-                                  rfc_job_slot *slot,
-                                  rfc_format_id source_format,
-                                  rfc_format_id target_format,
-                                  const uint8_t *source_bytes,
-                                  size_t source_size,
-                                  const rfc_layout *source_layout,
-                                  const rfc_metadata *source_meta,
-                                  const rfc_setting_value *settings,
-                                  size_t setting_count,
-                                  uint32_t requested_codec_threads,
-                                  uint64_t reservation_bytes,
-                                  uint64_t budget_limit_bytes,
-                                  const rfc_limits *eff_limits,
-                                  int has_stage_ops,
-                                  const rfc_pipeline_stage_ops *stage_ops,
-                                  rfc_user_ctx_box *ctx_box,
-                                  rfc_progress_fn progress_fn,
-                                  void *progress_user,
-                                  rfc_job **out_job) {
+static rfc_status compute_preflight(const rfc_scheduler_config *cfg,
+                                    rfc_format_id source_format,
+                                    rfc_format_id target_format,
+                                    size_t source_size,
+                                    const rfc_layout *source_layout,
+                                    const rfc_metadata *source_meta,
+                                    uint64_t retained_bytes,
+                                    uint64_t expected_working_set_bytes,
+                                    uint64_t job_memory_limit_bytes,
+                                    const rfc_limits *limits_override,
+                                    rfc_provider_memory_info *out_src_mem,
+                                    rfc_provider_memory_info *out_dst_mem,
+                                    rfc_limits *out_limits,
+                                    uint64_t *out_reservation,
+                                    uint64_t *out_budget_limit) {
+    rfc_provider_memory_info src_mem;
+    rfc_provider_memory_info dst_mem;
+    rfc_status st =
+        rfc_query_provider_memory_contract(source_format, &src_mem);
+    if (st != RFC_OK) {
+        return st;
+    }
+    st = rfc_query_provider_memory_contract(target_format, &dst_mem);
+    if (st != RFC_OK) {
+        return st;
+    }
+    st = compute_preflight_with_contracts(
+        cfg, &src_mem, &dst_mem, source_size, source_layout, source_meta,
+        retained_bytes, expected_working_set_bytes, job_memory_limit_bytes,
+        limits_override, out_limits, out_reservation, out_budget_limit);
+    if (st == RFC_OK) {
+        if (out_src_mem) {
+            *out_src_mem = src_mem;
+        }
+        if (out_dst_mem) {
+            *out_dst_mem = dst_mem;
+        }
+    }
+    return st;
+}
+
+static rfc_status admit_prepared_job(rfc_scheduler *sched,
+                                     rfc_job_slot *slot,
+                                     int update_slot_spec,
+                                     const rfc_provider_memory_info *src_mem,
+                                     const rfc_provider_memory_info *dst_mem,
+                                     rfc_format_id source_format,
+                                     rfc_format_id target_format,
+                                     rfc_job_inputs *inputs,
+                                     uint32_t requested_codec_threads,
+                                     uint64_t expected_working_set_bytes,
+                                     uint64_t job_memory_limit_bytes,
+                                     const rfc_limits *limits_override,
+                                     int has_stage_ops,
+                                     const rfc_pipeline_stage_ops *stage_ops,
+                                     rfc_user_ctx_box *ctx_box,
+                                     rfc_progress_fn progress_fn,
+                                     void *progress_user,
+                                     const rfc_limits *eff_limits,
+                                     uint64_t reservation_bytes,
+                                     uint64_t budget_limit_bytes,
+                                     rfc_job **out_job) {
+    rfc_scheduler_internal_note_submit_alloc(sched);
     rfc_job *job = rfc_job_internal_create();
     if (!job) {
         return RFC_ERR_OUT_OF_MEMORY;
     }
-
-    if (!rfc_job_internal_clone_inputs(source_bytes, source_size, source_layout,
-                                       source_meta, settings, setting_count,
-                                       &job->source_bytes, &job->source_layout,
-                                       &job->has_layout, &job->source_meta,
-                                       &job->has_meta, &job->owned_icc,
-                                       &job->settings)) {
-        rfc_job_release(job);
-        return RFC_ERR_OUT_OF_MEMORY;
-    }
-
+    rfc_scheduler_internal_note_submit_alloc(sched);
     job->budget = rfc_budget_create(budget_limit_bytes);
     if (!job->budget) {
         rfc_job_release(job);
@@ -799,10 +1112,12 @@ static rfc_status enqueue_new_job(rfc_scheduler *sched,
 
     job->source_format = source_format;
     job->target_format = target_format;
-    job->source_size = source_size;
-    job->setting_count = setting_count;
+    rfc_job_inputs_retain(inputs);
+    job->inputs = inputs;
     job->limits = *eff_limits;
-    job->requested_threads = requested_codec_threads ? requested_codec_threads : 1u;
+    job->has_limits_override = (limits_override != NULL);
+    job->requested_threads =
+        requested_codec_threads ? requested_codec_threads : 1u;
     job->reserved_memory_bytes = reservation_bytes;
     job->budget_limit_bytes = budget_limit_bytes;
     job->has_stage_ops = has_stage_ops;
@@ -815,19 +1130,120 @@ static rfc_status enqueue_new_job(rfc_scheduler *sched,
     }
     job->progress_fn = progress_fn;
     job->progress_user = progress_user;
-    job->slot = slot;
+
+    if (slot) {
+        rfc_mutex_lock(&slot->lock);
+        if (!update_slot_spec && !slot->has_last_spec) {
+            rfc_mutex_unlock(&slot->lock);
+            rfc_job_release(job);
+            return RFC_ERR_INVALID_ARGUMENT;
+        }
+        job->slot_state = slot->state;
+        rfc_slot_state_retain(job->slot_state);
+    }
 
     rfc_mutex_lock(&sched->lock);
     if (sched->destroying) {
         rfc_mutex_unlock(&sched->lock);
+        if (slot) {
+            rfc_mutex_unlock(&slot->lock);
+        }
         rfc_job_release(job);
         return RFC_ERR_CANCELLED;
     }
-    if (sched->queue_len >= sched->cfg.max_queue_depth ||
-        sched->queue_len >= sched->queue_cap) {
+
+    rfc_limits live_limits;
+    uint64_t live_reservation = 0;
+    uint64_t live_budget = 0;
+    rfc_status st = compute_preflight_with_contracts(
+        &sched->cfg, src_mem, dst_mem, inputs->source_size,
+        inputs->has_layout ? &inputs->source_layout : NULL,
+        inputs->has_meta ? &inputs->source_meta : NULL, inputs->retained_bytes,
+        expected_working_set_bytes, job_memory_limit_bytes, limits_override,
+        &live_limits, &live_reservation, &live_budget);
+    if (st != RFC_OK) {
         rfc_mutex_unlock(&sched->lock);
+        if (slot) {
+            rfc_mutex_unlock(&slot->lock);
+        }
+        rfc_job_release(job);
+        return st;
+    }
+    job->limits = live_limits;
+    job->reserved_memory_bytes = live_reservation;
+    job->budget_limit_bytes = live_budget;
+    if (live_budget != budget_limit_bytes) {
+        /* Concurrent reconfigure changed limit; rebuild job budget outside lock or fail conservatively. */
+        rfc_mutex_unlock(&sched->lock);
+        if (slot) {
+            rfc_mutex_unlock(&slot->lock);
+        }
         rfc_job_release(job);
         return RFC_ERR_BUSY;
+    }
+
+    rfc_job *prev = slot ? slot->current_job : NULL;
+    size_t prev_q_idx = SIZE_MAX;
+    if (prev) {
+        rfc_mutex_lock(&prev->lock);
+        for (size_t i = 0; i < sched->queue_len; i++) {
+            if (sched->queue[i] == prev) {
+                prev_q_idx = i;
+                break;
+            }
+        }
+    }
+
+    size_t eff_qlen =
+        sched->queue_len - (prev_q_idx < sched->queue_len ? 1u : 0u);
+    if (eff_qlen >= sched->cfg.max_queue_depth ||
+        eff_qlen >= sched->queue_cap) {
+        if (prev) {
+            rfc_mutex_unlock(&prev->lock);
+        }
+        rfc_mutex_unlock(&sched->lock);
+        if (slot) {
+            rfc_mutex_unlock(&slot->lock);
+        }
+        rfc_job_release(job);
+        return RFC_ERR_BUSY;
+    }
+
+    uint64_t next_queued_retained =
+        project_queued_retained_locked(sched, prev, NULL, inputs);
+    uint64_t total_live = 0;
+    if (!add_u64_sched(sched->stats.active_reserved_bytes, next_queued_retained,
+                       &total_live) ||
+        total_live > sched->cfg.memory_budget_bytes) {
+        if (prev) {
+            rfc_mutex_unlock(&prev->lock);
+        }
+        rfc_mutex_unlock(&sched->lock);
+        if (slot) {
+            rfc_mutex_unlock(&slot->lock);
+        }
+        rfc_job_release(job);
+        return RFC_ERR_BUSY;
+    }
+    for (size_t i = 0; i < sched->queue_len; i++) {
+        const rfc_job *qj = sched->queue[i];
+        if (!qj || qj == prev) {
+            continue;
+        }
+        uint64_t suffix = suffix_retained_after_idx_locked(sched, i, prev, inputs);
+        uint64_t peak_q = 0;
+        if (!add_u64_sched(qj->reserved_memory_bytes, suffix, &peak_q) ||
+            peak_q > sched->cfg.memory_budget_bytes) {
+            if (prev) {
+                rfc_mutex_unlock(&prev->lock);
+            }
+            rfc_mutex_unlock(&sched->lock);
+            if (slot) {
+                rfc_mutex_unlock(&slot->lock);
+            }
+            rfc_job_release(job);
+            return RFC_ERR_BUSY;
+        }
     }
 
     rfc_job_id new_id = sched->next_job_id++;
@@ -837,36 +1253,70 @@ static rfc_status enqueue_new_job(rfc_scheduler *sched,
 
     rfc_job *drop_queue_prev = NULL;
     rfc_job *drop_slot_prev = NULL;
-    rfc_cancel_snapshot csnap;
-    memset(&csnap, 0, sizeof(csnap));
+    rfc_job_inputs *old_slot_inputs = NULL;
+    rfc_user_ctx_box *old_slot_box = NULL;
+    int same_cb_thread = 0;
 
     if (slot) {
+        if (update_slot_spec) {
+            old_slot_inputs = slot->inputs;
+            old_slot_box = slot->user_ctx_box;
+
+            rfc_job_inputs_retain(inputs);
+            slot->inputs = inputs;
+            if (ctx_box) {
+                rfc_user_ctx_box_retain(ctx_box);
+            }
+            slot->user_ctx_box = ctx_box;
+            slot->has_last_spec = 1;
+            slot->source_format = source_format;
+            slot->target_format = target_format;
+            slot->requested_codec_threads = requested_codec_threads;
+            slot->expected_working_set_bytes = expected_working_set_bytes;
+            slot->job_memory_limit_bytes = job_memory_limit_bytes;
+            if (limits_override) {
+                slot->owned_limits = *limits_override;
+                slot->has_limits = 1;
+            } else {
+                slot->has_limits = 0;
+            }
+            slot->has_stage_ops = has_stage_ops;
+            if (stage_ops) {
+                slot->stage_ops = *stage_ops;
+            } else {
+                memset(&slot->stage_ops, 0, sizeof(slot->stage_ops));
+            }
+            slot->progress_fn = progress_fn;
+            slot->progress_user = progress_user;
+        }
+
         slot->attempt_count++;
         job->attempt_number = slot->attempt_count;
-        rfc_job *prev = slot->current_job;
+        rfc_slot_state_set_id(slot->state, new_id);
+
         if (prev) {
-            rfc_mutex_lock(&prev->lock);
             prev->superseded_by_id = new_id;
             prev->suppress_callbacks = 1;
-            if (prev->state == RFC_JOB_QUEUED) {
+            same_cb_thread =
+                prev->cb_owner_valid &&
+                rfc_thread_id_equal(prev->cb_owner, rfc_thread_id_current());
+            if (prev_q_idx < sched->queue_len) {
                 prev->superseded = 1;
                 prev->cancel_requested = 1;
-                prev->state = RFC_JOB_SUPERSEDED;
-                prev->status = RFC_ERR_STALE_JOB;
-                prev->failing_stage = prev->stage;
-                rfc_job_internal_set_detail(prev->detail, "superseded by retry");
-                rfc_cond_broadcast(&prev->done_cond);
-                sched->stats.total_superseded++;
-                for (size_t i = 0; i < sched->queue_len; i++) {
-                    if (sched->queue[i] == prev) {
-                        drop_queue_prev = pop_queue_at(sched, i);
-                        break;
-                    }
+                if (prev->state == RFC_JOB_QUEUED) {
+                    prev->state = RFC_JOB_SUPERSEDED;
+                    prev->status = RFC_ERR_STALE_JOB;
+                    prev->failing_stage = prev->stage;
+                    rfc_job_internal_set_detail(prev->detail,
+                                                "superseded by retry");
+                    rfc_cond_broadcast(&prev->done_cond);
+                    sched->stats.total_superseded++;
                 }
+                drop_queue_prev = pop_queue_at(sched, prev_q_idx);
             } else if (prev->state == RFC_JOB_RUNNING && !prev->published) {
                 prev->superseded = 1;
                 prev->cancel_requested = 1;
-                collect_active_cancel_locked(prev, &csnap);
+                enqueue_active_cancel_locked(sched, prev);
             }
             rfc_mutex_unlock(&prev->lock);
             drop_slot_prev = prev;
@@ -874,7 +1324,6 @@ static rfc_status enqueue_new_job(rfc_scheduler *sched,
         }
         rfc_job_retain(job);
         slot->current_job = job;
-        slot->current_job_id = new_id;
     } else {
         job->attempt_number = 1u;
     }
@@ -884,14 +1333,20 @@ static rfc_status enqueue_new_job(rfc_scheduler *sched,
         *out_job = job;
     }
 
-    /* Queue holds initial reference on job (1). */
     sched->queue[sched->queue_len++] = job;
+    sched->queued_retained_bytes =
+        project_queued_retained_locked(sched, NULL, NULL, NULL);
     sched->stats.queued_jobs = (uint32_t)sched->queue_len;
     sched->stats.total_submitted++;
     rfc_cond_broadcast(&sched->work_cond);
     rfc_mutex_unlock(&sched->lock);
+    if (slot) {
+        rfc_mutex_unlock(&slot->lock);
+    }
 
-    finish_active_cancel_unlocked(&csnap);
+    if (drop_slot_prev) {
+        wait_job_callbacks_drained(drop_slot_prev, same_cb_thread);
+    }
     if (drop_queue_prev) {
         rfc_job_release_partials(drop_queue_prev);
         rfc_job_release(drop_queue_prev);
@@ -899,6 +1354,8 @@ static rfc_status enqueue_new_job(rfc_scheduler *sched,
     if (drop_slot_prev) {
         rfc_job_release(drop_slot_prev);
     }
+    rfc_job_inputs_release(old_slot_inputs);
+    rfc_user_ctx_box_release(old_slot_box);
     return RFC_OK;
 }
 
@@ -917,120 +1374,63 @@ rfc_status rfc_scheduler_submit(rfc_scheduler *sched,
         return RFC_ERR_INVALID_ARGUMENT;
     }
 
-    rfc_scheduler_config cur_cfg;
-    rfc_status st = rfc_scheduler_get_config(sched, &cur_cfg);
+    uint64_t retained_bytes = 0;
+    rfc_status st = rfc_job_internal_compute_retained_bytes(
+        spec->source_bytes, spec->source_size, spec->source_meta,
+        spec->settings, spec->setting_count, &retained_bytes);
     if (st != RFC_OK) {
         return st;
     }
 
+    rfc_scheduler_config cur_cfg;
+    st = rfc_scheduler_get_config(sched, &cur_cfg);
+    if (st != RFC_OK) {
+        return st;
+    }
+
+    rfc_provider_memory_info src_mem;
+    rfc_provider_memory_info dst_mem;
     rfc_limits eff_limits;
     uint64_t reservation_bytes = 0;
     uint64_t budget_limit_bytes = 0;
-    st = compute_preflight(&cur_cfg, spec->source_format, spec->target_format,
-                           spec->source_size, spec->source_layout,
-                           spec->source_meta, spec->expected_working_set_bytes,
-                           spec->job_memory_limit_bytes, spec->limits_override,
-                           &eff_limits, &reservation_bytes, &budget_limit_bytes);
+    st = compute_preflight(
+        &cur_cfg, spec->source_format, spec->target_format, spec->source_size,
+        spec->source_layout, spec->source_meta, retained_bytes,
+        spec->expected_working_set_bytes, spec->job_memory_limit_bytes,
+        spec->limits_override, &src_mem, &dst_mem, &eff_limits,
+        &reservation_bytes, &budget_limit_bytes);
     if (st != RFC_OK) {
         return st;
     }
 
-    if (slot) {
-        uint8_t *slot_bytes = NULL;
-        rfc_layout slot_layout;
-        int slot_has_layout = 0;
-        rfc_metadata slot_meta;
-        int slot_has_meta = 0;
-        uint8_t *slot_icc = NULL;
-        rfc_setting_value *slot_settings = NULL;
-
-        if (!rfc_job_internal_clone_inputs(
-                spec->source_bytes, spec->source_size, spec->source_layout,
-                spec->source_meta, spec->settings, spec->setting_count,
-                &slot_bytes, &slot_layout, &slot_has_layout, &slot_meta,
-                &slot_has_meta, &slot_icc, &slot_settings)) {
-            return RFC_ERR_OUT_OF_MEMORY;
-        }
-
-        rfc_user_ctx_box *new_box = NULL;
-        if (spec->stage_ops.user_ctx || spec->stage_ops.destroy_user_ctx) {
-            new_box = rfc_user_ctx_box_create(spec->stage_ops.user_ctx,
-                                              spec->stage_ops.destroy_user_ctx);
-            if (!new_box) {
-                rfc_job_internal_copy_spec_data_free(slot_bytes, slot_icc,
-                                                     slot_settings,
-                                                     spec->setting_count);
-                return RFC_ERR_OUT_OF_MEMORY;
-            }
-        }
-
-        rfc_mutex_lock(&slot->lock);
-        uint8_t *old_bytes = slot->owned_source_bytes;
-        uint8_t *old_icc = slot->owned_icc;
-        rfc_setting_value *old_settings = slot->owned_settings;
-        size_t old_scount = slot->owned_setting_count;
-        rfc_user_ctx_box *old_box = slot->user_ctx_box;
-
-        slot->has_last_spec = 1;
-        slot->source_format = spec->source_format;
-        slot->target_format = spec->target_format;
-        slot->owned_source_bytes = slot_bytes;
-        slot->owned_source_size = spec->source_size;
-        slot->owned_layout = slot_layout;
-        slot->has_layout = slot_has_layout;
-        slot->owned_meta = slot_meta;
-        slot->has_meta = slot_has_meta;
-        slot->owned_icc = slot_icc;
-        slot->owned_settings = slot_settings;
-        slot->owned_setting_count = spec->setting_count;
-        slot->requested_codec_threads = spec->requested_codec_threads;
-        slot->expected_working_set_bytes = spec->expected_working_set_bytes;
-        slot->job_memory_limit_bytes = spec->job_memory_limit_bytes;
-        if (spec->limits_override) {
-            slot->owned_limits = *spec->limits_override;
-            slot->has_limits = 1;
-        } else {
-            slot->has_limits = 0;
-        }
-        slot->has_stage_ops = spec->has_stage_ops;
-        slot->stage_ops = spec->stage_ops;
-        slot->user_ctx_box = new_box;
-        slot->progress_fn = spec->progress_fn;
-        slot->progress_user = spec->progress_user;
-
-        st = enqueue_new_job(
-            sched, slot, spec->source_format, spec->target_format,
-            slot->owned_source_bytes, slot->owned_source_size,
-            slot->has_layout ? &slot->owned_layout : NULL,
-            slot->has_meta ? &slot->owned_meta : NULL, slot->owned_settings,
-            slot->owned_setting_count, slot->requested_codec_threads,
-            reservation_bytes, budget_limit_bytes, &eff_limits,
-            slot->has_stage_ops, &slot->stage_ops, slot->user_ctx_box,
-            slot->progress_fn, slot->progress_user, out_job);
-        rfc_mutex_unlock(&slot->lock);
-
-        rfc_job_internal_copy_spec_data_free(old_bytes, old_icc, old_settings,
-                                             old_scount);
-        rfc_user_ctx_box_release(old_box);
-        return st;
+    rfc_job_inputs *inputs = rfc_job_inputs_create(
+        sched, spec->source_bytes, spec->source_size, spec->source_layout,
+        spec->source_meta, spec->settings, spec->setting_count);
+    if (!inputs) {
+        return RFC_ERR_OUT_OF_MEMORY;
     }
 
-    rfc_user_ctx_box *tmp_box = NULL;
+    rfc_user_ctx_box *ctx_box = NULL;
     if (spec->stage_ops.user_ctx || spec->stage_ops.destroy_user_ctx) {
-        tmp_box = rfc_user_ctx_box_create(spec->stage_ops.user_ctx,
+        rfc_scheduler_internal_note_submit_alloc(sched);
+        ctx_box = rfc_user_ctx_box_create(spec->stage_ops.user_ctx,
                                           spec->stage_ops.destroy_user_ctx);
-        if (!tmp_box) {
+        if (!ctx_box) {
+            rfc_job_inputs_release(inputs);
             return RFC_ERR_OUT_OF_MEMORY;
         }
     }
-    st = enqueue_new_job(
-        sched, NULL, spec->source_format, spec->target_format,
-        spec->source_bytes, spec->source_size, spec->source_layout,
-        spec->source_meta, spec->settings, spec->setting_count,
-        spec->requested_codec_threads, reservation_bytes, budget_limit_bytes,
-        &eff_limits, spec->has_stage_ops, &spec->stage_ops, tmp_box,
-        spec->progress_fn, spec->progress_user, out_job);
-    rfc_user_ctx_box_release(tmp_box);
+
+    st = admit_prepared_job(
+        sched, slot, 1, &src_mem, &dst_mem, spec->source_format,
+        spec->target_format, inputs, spec->requested_codec_threads,
+        spec->expected_working_set_bytes, spec->job_memory_limit_bytes,
+        spec->limits_override, spec->has_stage_ops, &spec->stage_ops, ctx_box,
+        spec->progress_fn, spec->progress_user, &eff_limits, reservation_bytes,
+        budget_limit_bytes, out_job);
+
+    rfc_job_inputs_release(inputs);
+    rfc_user_ctx_box_release(ctx_box);
     return st;
 }
 
@@ -1044,43 +1444,62 @@ rfc_status rfc_scheduler_retry(rfc_scheduler *sched,
         return RFC_ERR_INVALID_ARGUMENT;
     }
 
-    rfc_scheduler_config cur_cfg;
-    rfc_status st = rfc_scheduler_get_config(sched, &cur_cfg);
-    if (st != RFC_OK) {
-        return st;
-    }
-
     rfc_mutex_lock(&slot->lock);
-    if (!slot->has_last_spec) {
+    if (!slot->has_last_spec || !slot->inputs) {
         rfc_mutex_unlock(&slot->lock);
         return RFC_ERR_INVALID_ARGUMENT;
     }
+    rfc_format_id source_format = slot->source_format;
+    rfc_format_id target_format = slot->target_format;
+    rfc_job_inputs *inputs = slot->inputs;
+    rfc_job_inputs_retain(inputs);
+    rfc_user_ctx_box *ctx_box = slot->user_ctx_box;
+    rfc_user_ctx_box_retain(ctx_box);
+    uint32_t requested_threads = slot->requested_codec_threads;
+    uint64_t expected_working_set = slot->expected_working_set_bytes;
+    uint64_t job_memory_limit = slot->job_memory_limit_bytes;
+    rfc_limits owned_limits = slot->owned_limits;
+    int has_limits = slot->has_limits;
+    int has_stage_ops = slot->has_stage_ops;
+    rfc_pipeline_stage_ops stage_ops = slot->stage_ops;
+    rfc_progress_fn progress_fn = slot->progress_fn;
+    void *progress_user = slot->progress_user;
+    rfc_mutex_unlock(&slot->lock);
 
+    rfc_scheduler_config cur_cfg;
+    rfc_status st = rfc_scheduler_get_config(sched, &cur_cfg);
+    if (st != RFC_OK) {
+        rfc_job_inputs_release(inputs);
+        rfc_user_ctx_box_release(ctx_box);
+        return st;
+    }
+
+    rfc_provider_memory_info src_mem;
+    rfc_provider_memory_info dst_mem;
     rfc_limits eff_limits;
     uint64_t reservation_bytes = 0;
     uint64_t budget_limit_bytes = 0;
     st = compute_preflight(
-        &cur_cfg, slot->source_format, slot->target_format,
-        slot->owned_source_size,
-        slot->has_layout ? &slot->owned_layout : NULL,
-        slot->has_meta ? &slot->owned_meta : NULL,
-        slot->expected_working_set_bytes, slot->job_memory_limit_bytes,
-        slot->has_limits ? &slot->owned_limits : NULL, &eff_limits,
+        &cur_cfg, source_format, target_format, inputs->source_size,
+        inputs->has_layout ? &inputs->source_layout : NULL,
+        inputs->has_meta ? &inputs->source_meta : NULL, inputs->retained_bytes,
+        expected_working_set, job_memory_limit,
+        has_limits ? &owned_limits : NULL, &src_mem, &dst_mem, &eff_limits,
         &reservation_bytes, &budget_limit_bytes);
     if (st != RFC_OK) {
-        rfc_mutex_unlock(&slot->lock);
+        rfc_job_inputs_release(inputs);
+        rfc_user_ctx_box_release(ctx_box);
         return st;
     }
 
-    st = enqueue_new_job(
-        sched, slot, slot->source_format, slot->target_format,
-        slot->owned_source_bytes, slot->owned_source_size,
-        slot->has_layout ? &slot->owned_layout : NULL,
-        slot->has_meta ? &slot->owned_meta : NULL, slot->owned_settings,
-        slot->owned_setting_count, slot->requested_codec_threads,
-        reservation_bytes, budget_limit_bytes, &eff_limits, slot->has_stage_ops,
-        &slot->stage_ops, slot->user_ctx_box, slot->progress_fn,
-        slot->progress_user, out_job);
-    rfc_mutex_unlock(&slot->lock);
+    st = admit_prepared_job(
+        sched, slot, 0, &src_mem, &dst_mem, source_format, target_format,
+        inputs, requested_threads, expected_working_set, job_memory_limit,
+        has_limits ? &owned_limits : NULL, has_stage_ops, &stage_ops, ctx_box,
+        progress_fn, progress_user, &eff_limits, reservation_bytes,
+        budget_limit_bytes, out_job);
+
+    rfc_job_inputs_release(inputs);
+    rfc_user_ctx_box_release(ctx_box);
     return st;
 }

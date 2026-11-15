@@ -11,28 +11,12 @@ static int mul_u64(uint64_t a, uint64_t b, uint64_t *out) {
     return 1;
 }
 
-static size_t sample_storage_bits(rfc_sample_format fmt) {
-    size_t bytes = rfc_sample_bytes(fmt);
-    if (bytes == 0) {
+static int add_u64(uint64_t a, uint64_t b, uint64_t *out) {
+    if (a > UINT64_MAX - b) {
         return 0;
     }
-    switch (fmt) {
-        case RFC_SAMPLE_GRAY8:
-        case RFC_SAMPLE_RGB8:
-        case RFC_SAMPLE_RGBA8:
-            return 8u;
-        case RFC_SAMPLE_GRAY16:
-        case RFC_SAMPLE_RGB16:
-        case RFC_SAMPLE_RGBA16:
-        case RFC_SAMPLE_RGB_HALF:
-        case RFC_SAMPLE_RGBA_HALF:
-            return 16u;
-        case RFC_SAMPLE_RGB_FLOAT:
-        case RFC_SAMPLE_RGBA_FLOAT:
-            return 32u;
-        default:
-            return 0u;
-    }
+    *out = a + b;
+    return 1;
 }
 
 void rfc_limits_default(rfc_limits *out) {
@@ -60,6 +44,7 @@ rfc_status rfc_limits_validate(const rfc_limits *limits) {
         limits->max_frames == 0 || limits->max_frames > RFC_MAX_FRAMES ||
         limits->max_total_pixels == 0 ||
         limits->max_decoded_bytes == 0 ||
+        limits->max_compressed_bytes == 0 ||
         limits->max_metadata_bytes > RFC_MAX_ICC_BYTES ||
         limits->max_expansion_ratio == 0) {
         return RFC_ERR_SETTING_VALUE;
@@ -67,45 +52,77 @@ rfc_status rfc_limits_validate(const rfc_limits *limits) {
     return RFC_OK;
 }
 
-rfc_status rfc_limits_compute_frame_bytes(const rfc_layout *layout,
-                                          size_t frame_count,
-                                          uint64_t *out_bytes) {
-    if (!layout || !out_bytes || layout->width == 0 || layout->height == 0 ||
-        frame_count == 0) {
+rfc_status rfc_layout_normalize_stride(const rfc_layout *layout,
+                                       rfc_layout *out_normalized) {
+    if (!layout || !out_normalized || layout->width == 0 ||
+        layout->height == 0) {
         return RFC_ERR_INVALID_ARGUMENT;
     }
     size_t bpp = rfc_sample_bytes(layout->format);
-    size_t sbits = sample_storage_bits(layout->format);
-    if (bpp == 0 || sbits == 0) {
+    if (bpp == 0) {
         return RFC_ERR_UNSUPPORTED_SAMPLE;
     }
-    if (layout->alpha != RFC_ALPHA_NONE &&
-        layout->alpha != RFC_ALPHA_OPAQUE &&
-        layout->alpha != RFC_ALPHA_STRAIGHT &&
-        layout->alpha != RFC_ALPHA_PREMULTIPLIED) {
-        return RFC_ERR_UNSUPPORTED_ALPHA;
-    }
-    if (layout->bits_per_sample == 0 || layout->bits_per_sample > sbits) {
-        return RFC_ERR_INVALID_ARGUMENT;
-    }
-    uint64_t min_row = 0;
-    if (!mul_u64((uint64_t)layout->width, (uint64_t)bpp, &min_row)) {
+    if (layout->width > RFC_MAX_DIMENSION ||
+        layout->height > RFC_MAX_DIMENSION) {
         return RFC_ERR_LIMIT_EXCEEDED;
     }
-    uint64_t row_bytes = min_row;
-    if (layout->stride_bytes != 0) {
-        if ((uint64_t)layout->stride_bytes < min_row) {
-            return RFC_ERR_INVALID_ARGUMENT;
+    rfc_layout norm = *layout;
+    if (norm.stride_bytes == 0) {
+        uint64_t min_row = 0;
+        if (!mul_u64((uint64_t)norm.width, (uint64_t)bpp, &min_row) ||
+            min_row > (uint64_t)SIZE_MAX) {
+            return RFC_ERR_LIMIT_EXCEEDED;
         }
-        row_bytes = (uint64_t)layout->stride_bytes;
+        norm.stride_bytes = (size_t)min_row;
     }
-    uint64_t frame_bytes = 0;
+    size_t frame_sz = 0;
+    rfc_status st = rfc_layout_validate(&norm, &frame_sz);
+    if (st == RFC_ERR_OVERFLOW) {
+        return RFC_ERR_LIMIT_EXCEEDED;
+    }
+    if (st != RFC_OK) {
+        return st;
+    }
+    *out_normalized = norm;
+    return RFC_OK;
+}
+
+rfc_status rfc_limits_compute_frame_bytes(const rfc_layout *layout,
+                                          size_t frame_count,
+                                          uint64_t *out_bytes) {
+    if (!layout || !out_bytes || frame_count == 0) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    rfc_layout norm;
+    rfc_status st = rfc_layout_normalize_stride(layout, &norm);
+    if (st != RFC_OK) {
+        return st;
+    }
+    size_t frame_sz = 0;
+    st = rfc_layout_validate(&norm, &frame_sz);
+    if (st == RFC_ERR_OVERFLOW) {
+        return RFC_ERR_LIMIT_EXCEEDED;
+    }
+    if (st != RFC_OK) {
+        return st;
+    }
     uint64_t total_bytes = 0;
-    if (!mul_u64(row_bytes, (uint64_t)layout->height, &frame_bytes) ||
-        !mul_u64(frame_bytes, (uint64_t)frame_count, &total_bytes)) {
+    if (!mul_u64((uint64_t)frame_sz, (uint64_t)frame_count, &total_bytes)) {
         return RFC_ERR_LIMIT_EXCEEDED;
     }
     *out_bytes = total_bytes;
+    return RFC_OK;
+}
+
+rfc_status rfc_limits_check_compressed(const rfc_limits *limits,
+                                       uint64_t compressed_bytes) {
+    rfc_status st = rfc_limits_validate(limits);
+    if (st != RFC_OK) {
+        return st;
+    }
+    if (compressed_bytes > limits->max_compressed_bytes) {
+        return RFC_ERR_LIMIT_EXCEEDED;
+    }
     return RFC_OK;
 }
 
@@ -167,8 +184,7 @@ rfc_status rfc_limits_check_decompression(const rfc_limits *limits,
     if (st != RFC_OK) {
         return st;
     }
-    if (limits->max_compressed_bytes > 0 &&
-        compressed_bytes > limits->max_compressed_bytes) {
+    if (compressed_bytes > limits->max_compressed_bytes) {
         return RFC_ERR_LIMIT_EXCEEDED;
     }
     if (decoded_bytes > limits->max_decoded_bytes) {
@@ -182,6 +198,74 @@ rfc_status rfc_limits_check_decompression(const rfc_limits *limits,
                 &max_allowed)) {
         if (decoded_bytes > max_allowed) {
             return RFC_ERR_LIMIT_EXCEEDED;
+        }
+    }
+    return RFC_OK;
+}
+
+rfc_status rfc_limits_check_frames(const rfc_limits *limits,
+                                   const rfc_frame *frames,
+                                   size_t frame_count,
+                                   const rfc_metadata *container_meta,
+                                   uint64_t compressed_bytes,
+                                   int has_compressed) {
+    rfc_status st = rfc_limits_validate(limits);
+    if (st != RFC_OK) {
+        return st;
+    }
+    if (!frames || frame_count == 0) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    if (frame_count > RFC_MAX_FRAMES || frame_count > limits->max_frames) {
+        return RFC_ERR_LIMIT_EXCEEDED;
+    }
+    if (has_compressed) {
+        st = rfc_limits_check_compressed(limits, compressed_bytes);
+        if (st != RFC_OK) {
+            return st;
+        }
+    }
+
+    uint64_t total_pixels = 0;
+    uint64_t total_bytes = 0;
+    for (size_t i = 0; i < frame_count; i++) {
+        st = rfc_limits_check_image(limits, &frames[i].layout, 1u);
+        if (st != RFC_OK) {
+            return st;
+        }
+        uint64_t fbytes = 0;
+        st = rfc_limits_compute_frame_bytes(&frames[i].layout, 1u, &fbytes);
+        if (st != RFC_OK) {
+            return st;
+        }
+        if ((uint64_t)frames[i].data_len > fbytes) {
+            fbytes = (uint64_t)frames[i].data_len;
+        }
+        uint64_t fpixels = 0;
+        if (!mul_u64((uint64_t)frames[i].layout.width,
+                     (uint64_t)frames[i].layout.height, &fpixels) ||
+            !add_u64(total_pixels, fpixels, &total_pixels) ||
+            total_pixels > limits->max_total_pixels ||
+            !add_u64(total_bytes, fbytes, &total_bytes) ||
+            total_bytes > limits->max_decoded_bytes) {
+            return RFC_ERR_LIMIT_EXCEEDED;
+        }
+        st = rfc_limits_check_metadata(limits, &frames[i].metadata);
+        if (st != RFC_OK) {
+            return st;
+        }
+    }
+    if (container_meta) {
+        st = rfc_limits_check_metadata(limits, container_meta);
+        if (st != RFC_OK) {
+            return st;
+        }
+    }
+    if (has_compressed) {
+        st = rfc_limits_check_decompression(limits, compressed_bytes,
+                                            total_bytes);
+        if (st != RFC_OK) {
+            return st;
         }
     }
     return RFC_OK;
