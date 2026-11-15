@@ -2,7 +2,7 @@
 schema_version: 1
 id: converter-engine
 domain: 10-converter
-status: draft
+status: active
 title: "TODO-01 -- Native Converter Engine"
 depends_on: []
 frozen: true
@@ -80,9 +80,13 @@ Build in the listed order. This section adds the named test driver before using 
 > **Review:** `docs/reviews/d10-t01-s1.json`
 ## 2. Pinned bundled codec builds
 
+> **Started:** 2026-11-15T01:32:14Z
+
 **Requires:** windows-runtime -- Native loader smoke tests require each target runtime; source checkpoint audit in docs/todo-vision-audit.md.
 
 **Job:** A maintainer can build every bundled codec from verified source with no downloaded runtime on the target.
+
+**Clarified 2026-11-15:** Target scope follows the 2026-11-11 operator decisions (`AGENTS.md`, `docs/vision.md`, `docs/codec-distribution.md`) where the converter ships only for `windows-x64`, so `python3 scripts/build-converter.py --target all` builds every advertised converter target (`windows-x64`) while leaving `scripts/build.py` and RasterFold-only artifacts untouched. Build tools in `toolchain.json` add `cmake` (`4.5.0`) beside `llvm-mingw` and `ninja` plus converter-scoped `nasm` (`3.02`, `"scope": "converter"`, `nasm-3.02-win64.zip` on Windows and `nasm-3.02.tar.xz` built locally into `tools/nasm-linux` on Linux x64) for `libjpeg-turbo` and `libaom` SIMD assembly, while Meson is unused and omitted because every bundled library builds with CMake and Ninja. Source staging in `tools/bootstrap.py --converter` and `tools/bootstrap.ps1 -Converter` populates gitignored `tools/converter-src/` only on converter requests, verifies byte counts, SHA-256 digests, archive traversal, and symlink safety, refuses moving branch refs, and configures CMake with `-DFETCHCONTENT_FULLY_DISCONNECTED=ON`. `converter/vendor.json` pins every direct and transitive library across D10 T02 (`zlib` `1.4`, `libpng` `1.6.59` with `libpng-apng` patch `1.6.59`, `libwebp` `1.6.0`, `highway` `1.4.0`, `brotli` `1.2.1`, `lcms2` `2.20`, `libjxl` `0.13.0`, `libaom` `3.15.3` AV1 encode/decode, `libavif` `1.4.2`, `libjpeg-turbo` `3.2.1`, `libdeflate` `1.26`, `libtiff` `4.7.2`, `giflib` `6.1.3`, `qoi` immutable commit `ffb2d2cb74a1de60819b21b939f7209aa53e91c1`, `openjpeg` `2.5.4`, `imath` `3.2.3`, `openjph` `0.33.0`, `openexr` `3.5.4`, and `libraw` `0.22.3`) plus `heif`/`heic` as system-only Windows Imaging Component codecs with zero HEVC source or binary bundled. Engine and adapter sources compile as C11 (`-std=c11`); C++ libraries compile into static archives isolated behind C headers (`jxl/*.h`, `OpenEXRCore/*.h`, `libraw/libraw.h`) and link statically (`-static-libstdc++ -static-libgcc -Wl,-Bstatic -lwinpthread`) with headroom for the C++23 interface target of D10 T03 §1, while verbatim licenses live under `converter/licenses/` so `converter/THIRD-PARTY-NOTICES.txt` and `converter/sbom.spdx.json` verify offline under `scripts/drift-check.py`.
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
