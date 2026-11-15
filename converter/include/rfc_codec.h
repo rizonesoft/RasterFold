@@ -161,15 +161,28 @@ rfc_status rfc_registry_select(rfc_format_id id, rfc_mode mode);
 /* Opaque execution context passed to session adapters by the job scheduler. */
 typedef struct rfc_exec_context rfc_exec_context;
 
+/* Container header summary produced by rfc_session_adapter.probe_session. */
+typedef struct rfc_image_probe {
+    rfc_layout first_frame;
+    uint32_t frame_count;        /* 0 or 1 for single-frame images */
+    uint64_t total_pixels;       /* 0 if container header omits an exact total */
+    uint64_t total_decoded_bytes;/* 0 if container header omits an exact total */
+    rfc_metadata container_meta;
+} rfc_image_probe;
+
 /* Session-scoped codec adapter receiving per-job admitted threads, limits, and
  * allocator/hook context while allowing concurrent same-format jobs.
  * open_session, close_session, probe_session, encode_session, and
  * decode_session are required; probe_session runs before decode_session so
- * hostile headers fail prior to pixel allocation. Any out_meta->icc returned
- * by probe_session or decode_session (when not aliasing frame 0 metadata.icc)
- * must be allocated via exec's allocator so the engine can free it cleanly.
- * cancel_session, if provided, must be thread-safe and non-blocking (signal an
- * atomic cancellation flag without waiting on blocking codec locks or I/O). */
+ * hostile single-frame or multi-frame container headers fail prior to pixel
+ * allocation. Multi-frame decoders should also call rfc_exec_check_next_frame
+ * or rfc_exec_alloc_frame before allocating each frame buffer so stream totals
+ * fail prior to per-frame pixel allocation. Any container_meta.icc or
+ * out_meta->icc returned by probe_session or decode_session (when not aliasing
+ * frame 0 metadata.icc) must be allocated via exec's allocator so the engine
+ * can free it cleanly. cancel_session, if provided, must be thread-safe and
+ * non-blocking (signal an atomic cancellation flag without waiting on
+ * blocking codec locks or I/O). */
 typedef struct rfc_session_adapter {
     uint32_t abi_version;
     rfc_format_id format;
@@ -177,7 +190,7 @@ typedef struct rfc_session_adapter {
     void (*close_session)(void *session);
     rfc_status (*probe_session)(void *session, const rfc_exec_context *exec,
                                 const uint8_t *bytes, size_t size,
-                                rfc_layout *out_layout, rfc_metadata *out_meta);
+                                rfc_image_probe *out_probe);
     rfc_status (*encode_session)(void *session, const rfc_exec_context *exec,
                                  const rfc_frame *frames, size_t frame_count,
                                  const rfc_metadata *meta,

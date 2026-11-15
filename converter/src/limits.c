@@ -271,6 +271,63 @@ rfc_status rfc_limits_check_frames(const rfc_limits *limits,
     return RFC_OK;
 }
 
+rfc_status rfc_limits_check_probe(const rfc_limits *limits,
+                                  const rfc_image_probe *probe,
+                                  uint64_t compressed_bytes,
+                                  int has_compressed) {
+    rfc_status st = rfc_limits_validate(limits);
+    if (st != RFC_OK) {
+        return st;
+    }
+    if (!probe) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    uint32_t frame_count = probe->frame_count ? probe->frame_count : 1u;
+    if (frame_count > RFC_MAX_FRAMES || frame_count > limits->max_frames) {
+        return RFC_ERR_LIMIT_EXCEEDED;
+    }
+    if (has_compressed) {
+        st = rfc_limits_check_compressed(limits, compressed_bytes);
+        if (st != RFC_OK) {
+            return st;
+        }
+    }
+    st = rfc_limits_check_image(limits, &probe->first_frame, 1u);
+    if (st != RFC_OK) {
+        return st;
+    }
+    uint64_t first_bytes = 0;
+    st = rfc_limits_compute_frame_bytes(&probe->first_frame, 1u, &first_bytes);
+    if (st != RFC_OK) {
+        return st;
+    }
+    uint64_t first_pixels = 0;
+    if (!mul_u64((uint64_t)probe->first_frame.width,
+                 (uint64_t)probe->first_frame.height, &first_pixels)) {
+        return RFC_ERR_LIMIT_EXCEEDED;
+    }
+    uint64_t total_pixels =
+        probe->total_pixels > 0 ? probe->total_pixels : first_pixels;
+    if (total_pixels < first_pixels ||
+        total_pixels > limits->max_total_pixels) {
+        return RFC_ERR_LIMIT_EXCEEDED;
+    }
+    uint64_t total_bytes =
+        probe->total_decoded_bytes > 0 ? probe->total_decoded_bytes : first_bytes;
+    if (total_bytes < first_bytes ||
+        total_bytes > limits->max_decoded_bytes) {
+        return RFC_ERR_LIMIT_EXCEEDED;
+    }
+    if (has_compressed) {
+        st = rfc_limits_check_decompression(limits, compressed_bytes,
+                                            total_bytes);
+        if (st != RFC_OK) {
+            return st;
+        }
+    }
+    return rfc_limits_check_metadata(limits, &probe->container_meta);
+}
+
 rfc_status rfc_query_provider_memory_contract(rfc_format_id id,
                                               rfc_provider_memory_info *out) {
     if (!out) {

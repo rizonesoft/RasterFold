@@ -312,6 +312,8 @@ typedef struct rfc_slot_state {
 
 typedef struct rfc_job_inputs {
     atomic_size_t refs;
+    rfc_scheduler *sched;
+    uint64_t charged_bytes;
     uint8_t *source_bytes;
     size_t source_size;
     rfc_layout source_layout;
@@ -373,8 +375,8 @@ struct rfc_job {
     uint32_t requested_threads;
     uint32_t admitted_threads;
     uint64_t reserved_memory_bytes;
+    uint64_t exec_working_bytes;
     uint64_t budget_limit_bytes;
-    int counted_in_queue_retained;
 
     int has_stage_ops;
     rfc_pipeline_stage_ops stage_ops;
@@ -408,6 +410,11 @@ struct rfc_job {
     const rfc_session_adapter *active_sess_adapter;
     void *active_session;
 
+    /* Streaming per-frame pre-allocation counters guarded by job->lock. */
+    uint32_t stream_frame_count;
+    uint64_t stream_total_pixels;
+    uint64_t stream_total_bytes;
+
     /* Intrusive cancel dispatcher queue fields guarded by sched->lock. */
     rfc_cancel_snapshot pending_cancel;
     int cancel_queued;
@@ -440,6 +447,8 @@ struct rfc_job_slot {
 void rfc_scheduler_internal_retain(rfc_scheduler *sched);
 void rfc_scheduler_internal_release(rfc_scheduler *sched);
 void rfc_scheduler_internal_note_submit_alloc(rfc_scheduler *sched);
+void rfc_scheduler_internal_unreserve_retained(rfc_scheduler *sched,
+                                               uint64_t bytes);
 void rfc_scheduler_internal_on_cancel_count(rfc_scheduler *sched);
 void rfc_scheduler_internal_on_publish_cancelled(rfc_scheduler *sched);
 void rfc_scheduler_internal_adjust_live_partials(rfc_scheduler *sched,
@@ -456,6 +465,13 @@ void rfc_slot_state_release(rfc_slot_state *state);
 rfc_job_id rfc_slot_state_get_id(rfc_slot_state *state);
 void rfc_slot_state_set_id(rfc_slot_state *state, rfc_job_id id);
 
+rfc_status rfc_job_internal_validate_settings(
+    rfc_format_id source_format,
+    rfc_format_id target_format,
+    const rfc_setting_value *settings,
+    size_t setting_count,
+    const rfc_pipeline_stage_ops *stage_ops,
+    const char **out_detail);
 rfc_status rfc_job_internal_compute_retained_bytes(
     const uint8_t *src_bytes,
     size_t src_size,
@@ -463,7 +479,8 @@ rfc_status rfc_job_internal_compute_retained_bytes(
     const rfc_setting_value *settings,
     size_t setting_count,
     uint64_t *out_bytes);
-rfc_job_inputs *rfc_job_inputs_create(rfc_scheduler *alloc_counter,
+rfc_job_inputs *rfc_job_inputs_create(rfc_scheduler *sched,
+                                      uint64_t *reserved_bytes_inout,
                                       const uint8_t *src_bytes,
                                       size_t src_size,
                                       const rfc_layout *src_layout,

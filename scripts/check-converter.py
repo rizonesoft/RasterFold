@@ -222,6 +222,7 @@ def _assert_jobs_output(label, stdout):
         "jobs: retry",
         "jobs: cancel_all_stages live_partial_bytes=0 published_cancelled=0 shutdown_late_callbacks=0 64x_restart=ok",
         "jobs: round 1 regressions ok",
+        "jobs: completion gap regressions ok",
         "jobs: all checks passed",
     ]
     for marker in required:

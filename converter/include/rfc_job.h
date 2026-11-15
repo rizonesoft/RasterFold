@@ -170,6 +170,10 @@ typedef struct rfc_job_spec {
     size_t source_size;
     const rfc_layout *source_layout;
     const rfc_metadata *source_meta;
+    /* Validated in preflight across source and target format capabilities before
+     * input retention or queueing; unknown settings, invalid enum values, or
+     * disallowed combinations fail with RFC_ERR_UNKNOWN_SETTING,
+     * RFC_ERR_SETTING_VALUE, or RFC_ERR_UNSUPPORTED_COMBINATION. */
     const rfc_setting_value *settings;
     size_t setting_count;
     uint32_t requested_codec_threads;
@@ -205,6 +209,10 @@ rfc_status rfc_limits_check_frames(const rfc_limits *limits,
                                    const rfc_metadata *container_meta,
                                    uint64_t compressed_bytes,
                                    int has_compressed);
+rfc_status rfc_limits_check_probe(const rfc_limits *limits,
+                                  const rfc_image_probe *probe,
+                                  uint64_t compressed_bytes,
+                                  int has_compressed);
 rfc_status rfc_query_provider_memory_contract(rfc_format_id id,
                                               rfc_provider_memory_info *out);
 
@@ -276,6 +284,13 @@ uint32_t rfc_exec_threads(const rfc_exec_context *exec);
 const rfc_limits *rfc_exec_limits(const rfc_exec_context *exec);
 const rfc_allocator *rfc_exec_allocator(const rfc_exec_context *exec);
 rfc_budget *rfc_exec_budget(const rfc_exec_context *exec);
+rfc_status rfc_exec_check_next_frame(const rfc_exec_context *exec,
+                                     const rfc_layout *layout,
+                                     const rfc_metadata *meta);
+rfc_status rfc_exec_alloc_frame(const rfc_exec_context *exec,
+                                rfc_frame *frame,
+                                const rfc_layout *layout,
+                                const rfc_metadata *metadata);
 
 void rfc_scheduler_config_default(rfc_scheduler_config *out);
 rfc_status rfc_scheduler_config_validate(const rfc_scheduler_config *cfg);
