@@ -182,10 +182,12 @@ typedef struct rfc_image_probe {
  * hostile single-frame or multi-frame container headers fail prior to pixel
  * allocation. Whenever probe_session omits exact aggregate bounds
  * (frame_count == 0, or frame_count > 1 with total_pixels == 0 or
- * total_decoded_bytes == 0), decode_session must call rfc_exec_alloc_frame or
- * rfc_exec_check_next_frame immediately before allocating each frame buffer;
- * unvalidated frame allocations while probe bounds are incomplete are refused
- * before allocation. Any container_meta.icc or out_meta->icc returned by
+ * total_decoded_bytes == 0), decode_session must allocate decoded frames via
+ * rfc_exec_alloc_frame or call rfc_exec_check_next_frame immediately before
+ * calling rfc_frame_alloc for each frame buffer; unvalidated frame
+ * allocations are refused before allocation, while general codec scratch
+ * allocations through rfc_exec_allocator(exec) and rfc_exec_budget(exec)
+ * remain governed by the job memory budget. Any container_meta.icc or out_meta->icc returned by
  * probe_session or decode_session (when not aliasing frame 0 metadata.icc)
  * must be allocated via exec's allocator so the engine can free it cleanly.
  * cancel_session, if provided, must be thread-safe and non-blocking (signal an

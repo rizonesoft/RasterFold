@@ -282,11 +282,12 @@ rfc_status rfc_job_mark_published(rfc_job *job, rfc_job_id expected_id);
 int rfc_exec_is_cancelled(const rfc_exec_context *exec);
 uint32_t rfc_exec_threads(const rfc_exec_context *exec);
 const rfc_limits *rfc_exec_limits(const rfc_exec_context *exec);
-/* When probe_session omits exact aggregate bounds (frame_count == 0, or
- * frame_count > 1 with total_pixels == 0 or total_decoded_bytes == 0), every
- * decoded frame buffer allocation in decode_session requires prior validation
- * via rfc_exec_alloc_frame or rfc_exec_check_next_frame; unvalidated frame
- * allocations on rfc_exec_allocator(exec) are refused prior to allocation. */
+/* Job-budget allocator for codec scratch buffers, session state, frame
+ * descriptor arrays, and metadata copies (governed strictly by rfc_budget).
+ * Decoded rfc_frame pixel allocations must go through rfc_exec_alloc_frame or
+ * rfc_frame_alloc (preceded by rfc_exec_check_next_frame when probe_session
+ * omits exact aggregate bounds), where per-frame and cumulative limits are
+ * enforced prior to pixel allocation. */
 const rfc_allocator *rfc_exec_allocator(const rfc_exec_context *exec);
 rfc_budget *rfc_exec_budget(const rfc_exec_context *exec);
 rfc_status rfc_exec_check_next_frame(const rfc_exec_context *exec,

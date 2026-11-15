@@ -417,12 +417,9 @@ struct rfc_job {
     uint32_t decode_probe_frames;
     uint64_t decode_probe_pixels;
     uint64_t decode_probe_bytes;
-    uint64_t decode_probe_meta_icc_bytes;
     uint32_t decode_credit_frames;
-    uint64_t decode_credit_bytes;
     uint64_t decode_last_checked_fbytes;
     size_t decode_last_checked_icc_len;
-    uint64_t decode_uncredited_bytes;
     int decode_unvalidated_alloc;
     rfc_status decode_guard_failure;
     uint32_t stream_frame_count;

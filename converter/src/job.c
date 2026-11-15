@@ -28,14 +28,7 @@ static void budget_free_cb(void *ctx, void *ptr) {
     rfc_budget_free((rfc_budget *)ctx, ptr);
 }
 
-static void budget_note_rejected(rfc_budget *budget) {
-    if (!budget) {
-        return;
-    }
-    rfc_mutex_lock(&budget->lock);
-    budget->rejected_count++;
-    rfc_mutex_unlock(&budget->lock);
-}
+static _Thread_local rfc_job *g_tl_decode_job = NULL;
 
 static void *job_alloc_cb(void *ctx, size_t size);
 static void job_free_cb(void *ctx, void *ptr);
@@ -738,61 +731,6 @@ static void *job_alloc_cb(void *ctx, size_t size) {
     if (!job || !job->budget) {
         return NULL;
     }
-    rfc_mutex_lock(&job->lock);
-    int in_dec = job->in_decode_session;
-    int probe_exact = job->decode_probe_exact;
-    if (in_dec) {
-        if (job->decode_credit_bytes >= (uint64_t)size) {
-            job->decode_credit_bytes -= (uint64_t)size;
-            rfc_mutex_unlock(&job->lock);
-            void *p = rfc_budget_alloc(job->budget, size);
-            if (!p) {
-                rfc_mutex_lock(&job->lock);
-                job->decode_credit_bytes += (uint64_t)size;
-                rfc_mutex_unlock(&job->lock);
-            }
-            return p;
-        }
-        if (!probe_exact) {
-            uint64_t max_frames_u64 = job->limits.max_frames < RFC_MAX_FRAMES
-                                          ? (uint64_t)job->limits.max_frames
-                                          : (uint64_t)RFC_MAX_FRAMES;
-            uint64_t allowed_desc =
-                job->decode_probe_frames > 0
-                    ? (uint64_t)job->decode_probe_frames
-                    : ((uint64_t)job->stream_frame_count + 8u);
-            if (allowed_desc > max_frames_u64) {
-                allowed_desc = max_frames_u64;
-            }
-            if (allowed_desc == 0u) {
-                allowed_desc = 1u;
-            }
-            uint64_t cap = allowed_desc * (uint64_t)sizeof(rfc_frame) +
-                           job->decode_probe_meta_icc_bytes + 256u;
-            if ((uint64_t)size > cap ||
-                job->decode_uncredited_bytes > cap - (uint64_t)size) {
-                job->decode_unvalidated_alloc = 1;
-                if (job->decode_guard_failure == RFC_OK) {
-                    job->decode_guard_failure = RFC_ERR_INVALID_ARGUMENT;
-                }
-                rfc_mutex_unlock(&job->lock);
-                budget_note_rejected(job->budget);
-                return NULL;
-            }
-            job->decode_uncredited_bytes += (uint64_t)size;
-            rfc_mutex_unlock(&job->lock);
-            void *p = rfc_budget_alloc(job->budget, size);
-            if (!p) {
-                rfc_mutex_lock(&job->lock);
-                if (job->decode_uncredited_bytes >= (uint64_t)size) {
-                    job->decode_uncredited_bytes -= (uint64_t)size;
-                }
-                rfc_mutex_unlock(&job->lock);
-            }
-            return p;
-        }
-    }
-    rfc_mutex_unlock(&job->lock);
     return rfc_budget_alloc(job->budget, size);
 }
 
@@ -1592,6 +1530,15 @@ static rfc_status internal_exec_check_next_frame(rfc_job *job,
     }
 
     rfc_mutex_lock(&job->lock);
+    if (grant_credit && job->in_decode_session &&
+        job->decode_credit_frames != 0u) {
+        job->decode_unvalidated_alloc = 1;
+        if (job->decode_guard_failure == RFC_OK) {
+            job->decode_guard_failure = RFC_ERR_INVALID_ARGUMENT;
+        }
+        rfc_mutex_unlock(&job->lock);
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
     if (job->stream_frame_count >= RFC_MAX_FRAMES ||
         job->stream_frame_count >= limits->max_frames) {
         if (job->in_decode_session && job->decode_guard_failure == RFC_OK) {
@@ -1646,14 +1593,7 @@ static rfc_status internal_exec_check_next_frame(rfc_job *job,
     job->stream_total_pixels = next_pixels;
     job->stream_total_bytes = next_bytes;
     if (grant_credit) {
-        uint64_t icc_sz = meta ? (uint64_t)meta->icc_len : 0u;
-        uint64_t credit = 0;
-        if (!add_u64_job(fbytes, icc_sz, &credit)) {
-            rfc_mutex_unlock(&job->lock);
-            return RFC_ERR_LIMIT_EXCEEDED;
-        }
         job->decode_credit_frames = 1u;
-        job->decode_credit_bytes = credit;
         job->decode_last_checked_fbytes = fbytes;
         job->decode_last_checked_icc_len = meta ? meta->icc_len : 0u;
     }
@@ -1664,11 +1604,19 @@ static rfc_status internal_exec_check_next_frame(rfc_job *job,
 static rfc_status job_frame_alloc_guard(const rfc_allocator *allocator,
                                         const rfc_layout *layout,
                                         const rfc_metadata *metadata) {
-    if (!allocator || allocator->alloc != job_alloc_cb || !allocator->ctx ||
-        !layout) {
+    if (!allocator || !layout) {
         return RFC_OK;
     }
-    rfc_job *job = (rfc_job *)allocator->ctx;
+    rfc_job *job = NULL;
+    if (allocator->alloc == job_alloc_cb && allocator->ctx) {
+        job = (rfc_job *)allocator->ctx;
+    } else if (g_tl_decode_job &&
+               allocator != &g_tl_decode_job->frame_allocator) {
+        job = g_tl_decode_job;
+    }
+    if (!job) {
+        return RFC_OK;
+    }
 
     rfc_mutex_lock(&job->lock);
     int in_dec = job->in_decode_session;
@@ -1747,15 +1695,49 @@ rfc_status rfc_exec_alloc_frame(const rfc_exec_context *exec,
     if (!exec || !frame || !layout) {
         return RFC_ERR_INVALID_ARGUMENT;
     }
+    if (exec->job && rfc_job_is_cancelled(exec->job)) {
+        return RFC_ERR_CANCELLED;
+    }
     rfc_layout norm;
     rfc_status st = rfc_layout_normalize_stride(layout, &norm);
     if (st != RFC_OK) {
         return st;
     }
-    st = internal_exec_check_next_frame(exec->job, &exec->limits, &norm,
-                                        metadata, 0);
-    if (st != RFC_OK) {
-        return st;
+    uint64_t fbytes = 0;
+    uint64_t fpixels = 0;
+    int have_credit = 0;
+    if (exec->job) {
+        st = rfc_limits_compute_frame_bytes(&norm, 1u, &fbytes);
+        if (st != RFC_OK) {
+            return st;
+        }
+        if (!mul_u64_job((uint64_t)norm.width, (uint64_t)norm.height,
+                         &fpixels)) {
+            return RFC_ERR_LIMIT_EXCEEDED;
+        }
+        size_t icc_len = metadata ? metadata->icc_len : 0u;
+        rfc_mutex_lock(&exec->job->lock);
+        if (exec->job->decode_credit_frames > 0u) {
+            if (exec->job->decode_last_checked_fbytes != fbytes ||
+                exec->job->decode_last_checked_icc_len != icc_len) {
+                exec->job->decode_unvalidated_alloc = 1;
+                if (exec->job->decode_guard_failure == RFC_OK) {
+                    exec->job->decode_guard_failure = RFC_ERR_INVALID_ARGUMENT;
+                }
+                rfc_mutex_unlock(&exec->job->lock);
+                return RFC_ERR_INVALID_ARGUMENT;
+            }
+            exec->job->decode_credit_frames = 0u;
+            have_credit = 1;
+        }
+        rfc_mutex_unlock(&exec->job->lock);
+    }
+    if (!have_credit) {
+        st = internal_exec_check_next_frame(exec->job, &exec->limits, &norm,
+                                            metadata, 0);
+        if (st != RFC_OK) {
+            return st;
+        }
     }
     const rfc_allocator *alloc =
         (exec->job && exec->job->frame_allocator.alloc)
@@ -1763,23 +1745,17 @@ rfc_status rfc_exec_alloc_frame(const rfc_exec_context *exec,
             : exec->allocator;
     st = rfc_frame_alloc(frame, &norm, metadata, alloc);
     if (st != RFC_OK && exec->job) {
-        uint64_t fbytes = 0;
-        uint64_t fpixels = 0;
-        if (rfc_limits_compute_frame_bytes(&norm, 1u, &fbytes) == RFC_OK &&
-            mul_u64_job((uint64_t)norm.width, (uint64_t)norm.height,
-                        &fpixels)) {
-            rfc_mutex_lock(&exec->job->lock);
-            if (exec->job->stream_frame_count > 0u) {
-                exec->job->stream_frame_count--;
-            }
-            if (exec->job->stream_total_pixels >= fpixels) {
-                exec->job->stream_total_pixels -= fpixels;
-            }
-            if (exec->job->stream_total_bytes >= fbytes) {
-                exec->job->stream_total_bytes -= fbytes;
-            }
-            rfc_mutex_unlock(&exec->job->lock);
+        rfc_mutex_lock(&exec->job->lock);
+        if (exec->job->stream_frame_count > 0u) {
+            exec->job->stream_frame_count--;
         }
+        if (exec->job->stream_total_pixels >= fpixels) {
+            exec->job->stream_total_pixels -= fpixels;
+        }
+        if (exec->job->stream_total_bytes >= fbytes) {
+            exec->job->stream_total_bytes -= fbytes;
+        }
+        rfc_mutex_unlock(&exec->job->lock);
     }
     return st;
 }
@@ -1876,7 +1852,6 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
                     uint32_t exp_frames = 0;
                     uint64_t exp_pixels = 0;
                     uint64_t exp_bytes = 0;
-                    uint64_t probe_meta_icc_bytes = 0;
 
                     st = check_stage_abort(job);
                     if (st == RFC_OK) {
@@ -1891,8 +1866,6 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
                                                         (uint64_t)src_size,
                                                         src_size > 0);
                         }
-                        probe_meta_icc_bytes =
-                            (uint64_t)probe.container_meta.icc_len;
                         if (st == RFC_OK) {
                             if (probe.frame_count == 1u) {
                                 uint64_t fb = 0;
@@ -1958,23 +1931,22 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
                         job->decode_probe_frames = exp_frames;
                         job->decode_probe_pixels = exp_pixels;
                         job->decode_probe_bytes = exp_bytes;
-                        job->decode_probe_meta_icc_bytes =
-                            probe_meta_icc_bytes;
                         job->decode_credit_frames = 0u;
-                        job->decode_credit_bytes = 0u;
                         job->decode_last_checked_fbytes = 0u;
                         job->decode_last_checked_icc_len = 0u;
-                        job->decode_uncredited_bytes = 0u;
                         job->decode_unvalidated_alloc = 0;
                         job->decode_guard_failure = RFC_OK;
                         job->in_decode_session = 1;
                         rfc_mutex_unlock(&job->lock);
 
+                        rfc_job *prev_tl_decode_job = g_tl_decode_job;
+                        g_tl_decode_job = job;
                         st = sadp->decode_session(
                             sess, &exec, src_bytes, src_size,
                             src_setting_count > 0 ? src_settings : NULL,
                             src_setting_count, &decoded_frames, &decoded_count,
                             &decoded_meta);
+                        g_tl_decode_job = prev_tl_decode_job;
                     }
 
                     rfc_mutex_lock(&job->lock);
