@@ -108,7 +108,11 @@ Build in the listed order. This section adds the named test driver before using 
 > **Review:** `docs/reviews/d10-t01-s2.json`
 ## 3. Bounded asynchronous jobs
 
+> **Started:** 2026-11-15T05:40:55Z
+
 **Job:** A user can configure resource settings, receive progress notifications, cancel and retry asynchronous conversion without freezing the interface.
+
+**Clarified 2026-11-15:** Public job, scheduler, resource-budget, and decompression-limit declarations live in `converter/include/rfc_job.h` using C11- and C++17-compatible opaque handles (`rfc_budget`, `rfc_job_slot`, `rfc_job`, `rfc_scheduler`), monotonically unique `rfc_job_id` values (`uint64_t`), and existing `rfc_allocator` from `converter/include/rfc_image.h` without redefinition; private `<stdatomic.h>` and platform synchronization primitives (`SRWLOCK`/`CONDITION_VARIABLE`/`_beginthreadex` on `_WIN32` and `pthread` on POSIX) stay confined to `converter/src/`. `converter/include/rfc_codec.h` (`rfc_status`) and `converter/src/registry.c` (`rfc_status_name`) add `RFC_ERR_CANCELLED` (`14`), `RFC_ERR_LIMIT_EXCEEDED` (`15`), `RFC_ERR_STALE_JOB` (`16`), and `RFC_ERR_BUSY` (`17`). `rfc_query_provider_memory_contract(rfc_format_id, rfc_provider_memory_info *)` distinguishes hook-enforced providers (`libpng`, `libjxl` via `JxlMemoryManager`/zlib adapters) from internal-allocator providers where `rfc_limits` preflight caps and conservative scheduler reservations apply. `converter/CMakeLists.txt` compiles `src/limits.c`, `src/job.c`, and `src/scheduler.c` into `rfc_engine` and builds `bin/converter/windows-x64/rfc_test_jobs.exe` from `tests/converter/test_jobs.c`; `scripts/check-converter.py` adds `--case jobs` (included in `--case all`), verifying C11/C++17 header compilation, native host execution, and isolated restricted-`PATH` Windows execution with PE import validation under `--all-targets` or Windows hosts.
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
@@ -121,7 +125,7 @@ Build in the listed order. This section adds the named test driver before using 
 
 **Test checkpoint:** Run `python3 scripts/check-converter.py --case jobs`; quote peak allocation and verify no callback publishes a cancelled job.
 
-**Freeze check:** Existing `.fold` v2 files and the oracle remain unchanged. Each new output receives a fresh bundled decode and the format-specific verification contract before acceptance; independent fixture coverage is reported separately; input and existing destination bytes survive refusal, cancellation and failure.
+**Freeze check:** Existing `.fold` v2 and v3 files, `KAT_FOLD` known-answer bytes, and the oracle (`tests/rfi_ref.py`) remain unchanged (`**Corrected 2026-11-15:**` extended explicit `.fold` v2 mention to `.fold` v2 and v3 per `spec/FOLD.md`). Each new output receives a fresh bundled decode and the format-specific verification contract before acceptance; independent fixture coverage is reported separately; input and existing destination bytes survive refusal, cancellation and failure.
 
 ## 4. Exactness verification and differential fixtures
 
