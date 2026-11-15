@@ -56,6 +56,10 @@ static void dump_registry(void) {
                    r->setting_b ? r->setting_b : "-", r->value_b ? r->value_b : "-",
                    r->reason);
         }
+        printf("|");
+        if (c->metadata_items & RFC_META_ITEM_ICC) printf("icc,");
+        if (c->metadata_items & RFC_META_ITEM_ORIENTATION) printf("orientation,");
+        if (c->metadata_items & RFC_META_ITEM_FRAME_TIMING) printf("frame-timing,");
         printf("\n");
     }
 }
@@ -153,6 +157,11 @@ int main(int argc, char **argv) {
     CHECK(strcmp(rfc_status_name(RFC_ERR_LIMIT_EXCEEDED), "limit-exceeded") == 0);
     CHECK(strcmp(rfc_status_name(RFC_ERR_STALE_JOB), "stale-job") == 0);
     CHECK(strcmp(rfc_status_name(RFC_ERR_BUSY), "busy") == 0);
+    CHECK(strcmp(rfc_status_name(RFC_ERR_VERIFY_MISMATCH), "verify-mismatch") == 0);
+    CHECK(strcmp(rfc_status_name(RFC_ERR_METADATA_POLICY), "metadata-policy") == 0);
+    CHECK(rfc_registry_find(RFC_FORMAT_RASTERFOLD)->metadata_items == RFC_META_ITEM_NONE);
+    CHECK(rfc_registry_find(RFC_FORMAT_PNG)->metadata_items == RFC_META_ITEM_ICC);
+    CHECK(rfc_registry_find(RFC_FORMAT_JPEG_XL)->metadata_items == RFC_META_ITEM_ALL);
     CHECK(rfc_registry_register(&fake) == RFC_OK);
     CHECK(rfc_registry_acquire_adapter(RFC_FORMAT_QOI) == &fake);
     CHECK(rfc_registry_unregister(RFC_FORMAT_QOI) == RFC_ERR_BUSY);

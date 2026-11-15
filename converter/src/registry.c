@@ -215,26 +215,31 @@ static const rfc_sample_format k_exr[] = {RFC_SAMPLE_RGB_HALF, RFC_SAMPLE_RGBA_H
                                           RFC_SAMPLE_RGB_FLOAT, RFC_SAMPLE_RGBA_FLOAT};
 #define PLANNED RFC_AVAILABILITY_PLANNED
 
+#define META_NONE RFC_META_ITEM_NONE
+#define META_ICC RFC_META_ITEM_ICC
+#define META_ORI RFC_META_ITEM_ORIENTATION
+#define META_TIM RFC_META_ITEM_FRAME_TIMING
+
 static const rfc_capability k_registry[] = {
-    {RFC_FORMAT_RASTERFOLD, "rasterfold", "RasterFold (this repository)", "D10 T02 \xc2\xa7" "1", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_rgb8, 1, COMMON, COMMON_RULES},
-    {RFC_FORMAT_BMP, "bmp", "in-tree converter code", "D10 T02 \xc2\xa7" "1", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_bmp, 3, COMMON, COMMON_RULES},
-    {RFC_FORMAT_PNG, "png", "libpng (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "1", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_png, 6, COMMON, COMMON_RULES},
-    {RFC_FORMAT_APNG, "apng", "libpng (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "1", "D10 T02 \xc2\xa7" "12", PLANNED, "converter adapter not yet shipped; animation extensions owned by D10 T02 \xc2\xa7" "12", 1, 1, k_png, 6, ANIM, ANIM_RULES},
-    {RFC_FORMAT_PNM, "pnm", "in-tree converter code", "D10 T02 \xc2\xa7" "1", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_pnm, 4, COMMON, COMMON_RULES},
-    {RFC_FORMAT_PAM, "pam", "in-tree converter code", "D10 T02 \xc2\xa7" "1", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_pam, 6, COMMON, COMMON_RULES},
-    {RFC_FORMAT_WEBP, "webp", "libwebp (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "2", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_rgba8, 2, COMMON, COMMON_RULES},
-    {RFC_FORMAT_JPEG_XL, "jpeg-xl", "libjxl (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "3", "D10 T02 \xc2\xa7" "12", PLANNED, "converter adapter not yet shipped", 1, 1, k_png, 6, JXLSET, JXL_RULES},
-    {RFC_FORMAT_AVIF, "avif", "libavif (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "4", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_10bit, 4, COMMON, COMMON_RULES},
-    {RFC_FORMAT_JPEG, "jpeg", "libjpeg-turbo (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "5", NULL, PLANNED, "converter adapter not yet shipped", 1, 0, k_jpeg, 2, JPEGSET, COMMON_RULES},
-    {RFC_FORMAT_GIF, "gif", "in-tree converter code", "D10 T02 \xc2\xa7" "6", "D10 T02 \xc2\xa7" "12", PLANNED, "converter adapter not yet shipped", 1, 1, k_rgba8, 2, ANIM, ANIM_RULES},
-    {RFC_FORMAT_TIFF, "tiff", "libtiff (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "6", "D10 T02 \xc2\xa7" "12", PLANNED, "converter adapter not yet shipped", 1, 1, k_png, 6, ANIM, ANIM_RULES},
-    {RFC_FORMAT_HEIF, "heif", "Windows Imaging Component (system codec, not bundled)", "D10 T02 \xc2\xa7" "7", NULL, PLANNED, "import-only system-codec adapter not yet shipped; decision recorded in docs/codec-distribution.md", 1, 0, k_10bit, 4, COMMON, COMMON_RULES},
-    {RFC_FORMAT_HEIC, "heic", "Windows Imaging Component (system codec, not bundled)", "D10 T02 \xc2\xa7" "7", NULL, PLANNED, "import-only system-codec adapter not yet shipped; decision recorded in docs/codec-distribution.md", 1, 0, k_10bit, 4, COMMON, COMMON_RULES},
-    {RFC_FORMAT_JPEG2000, "jpeg-2000", "OpenJPEG (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "9", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_png, 6, COMMON, COMMON_RULES},
-    {RFC_FORMAT_QOI, "qoi", "in-tree converter code", "D10 T02 \xc2\xa7" "8", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_rgba8, 2, COMMON, COMMON_RULES},
-    {RFC_FORMAT_OPENEXR, "openexr", "OpenEXR (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "10", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_exr, 4, COMMON, COMMON_RULES},
-    {RFC_FORMAT_CAMERA_RAW, "camera-raw", "LibRaw (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "11", NULL, PLANNED, "import-only adapter not yet shipped", 1, 0, k_png, 6, COMMON, COMMON_RULES},
-    {RFC_FORMAT_DNG, "dng", "LibRaw (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "11", NULL, PLANNED, "import-only adapter not yet shipped", 1, 0, k_png, 6, COMMON, COMMON_RULES},
+    {RFC_FORMAT_RASTERFOLD, "rasterfold", "RasterFold (this repository)", "D10 T02 \xc2\xa7" "1", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_rgb8, 1, COMMON, COMMON_RULES, META_NONE},
+    {RFC_FORMAT_BMP, "bmp", "in-tree converter code", "D10 T02 \xc2\xa7" "1", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_bmp, 3, COMMON, COMMON_RULES, META_NONE},
+    {RFC_FORMAT_PNG, "png", "libpng (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "1", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_png, 6, COMMON, COMMON_RULES, META_ICC},
+    {RFC_FORMAT_APNG, "apng", "libpng (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "1", "D10 T02 \xc2\xa7" "12", PLANNED, "converter adapter not yet shipped; animation extensions owned by D10 T02 \xc2\xa7" "12", 1, 1, k_png, 6, ANIM, ANIM_RULES, META_ICC | META_TIM},
+    {RFC_FORMAT_PNM, "pnm", "in-tree converter code", "D10 T02 \xc2\xa7" "1", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_pnm, 4, COMMON, COMMON_RULES, META_NONE},
+    {RFC_FORMAT_PAM, "pam", "in-tree converter code", "D10 T02 \xc2\xa7" "1", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_pam, 6, COMMON, COMMON_RULES, META_NONE},
+    {RFC_FORMAT_WEBP, "webp", "libwebp (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "2", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_rgba8, 2, COMMON, COMMON_RULES, META_ICC | META_ORI},
+    {RFC_FORMAT_JPEG_XL, "jpeg-xl", "libjxl (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "3", "D10 T02 \xc2\xa7" "12", PLANNED, "converter adapter not yet shipped", 1, 1, k_png, 6, JXLSET, JXL_RULES, META_ICC | META_ORI | META_TIM},
+    {RFC_FORMAT_AVIF, "avif", "libavif (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "4", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_10bit, 4, COMMON, COMMON_RULES, META_ICC | META_ORI},
+    {RFC_FORMAT_JPEG, "jpeg", "libjpeg-turbo (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "5", NULL, PLANNED, "converter adapter not yet shipped", 1, 0, k_jpeg, 2, JPEGSET, COMMON_RULES, META_ICC | META_ORI},
+    {RFC_FORMAT_GIF, "gif", "in-tree converter code", "D10 T02 \xc2\xa7" "6", "D10 T02 \xc2\xa7" "12", PLANNED, "converter adapter not yet shipped", 1, 1, k_rgba8, 2, ANIM, ANIM_RULES, META_TIM},
+    {RFC_FORMAT_TIFF, "tiff", "libtiff (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "6", "D10 T02 \xc2\xa7" "12", PLANNED, "converter adapter not yet shipped", 1, 1, k_png, 6, ANIM, ANIM_RULES, META_ICC | META_ORI},
+    {RFC_FORMAT_HEIF, "heif", "Windows Imaging Component (system codec, not bundled)", "D10 T02 \xc2\xa7" "7", NULL, PLANNED, "import-only system-codec adapter not yet shipped; decision recorded in docs/codec-distribution.md", 1, 0, k_10bit, 4, COMMON, COMMON_RULES, META_ICC | META_ORI},
+    {RFC_FORMAT_HEIC, "heic", "Windows Imaging Component (system codec, not bundled)", "D10 T02 \xc2\xa7" "7", NULL, PLANNED, "import-only system-codec adapter not yet shipped; decision recorded in docs/codec-distribution.md", 1, 0, k_10bit, 4, COMMON, COMMON_RULES, META_ICC | META_ORI},
+    {RFC_FORMAT_JPEG2000, "jpeg-2000", "OpenJPEG (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "9", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_png, 6, COMMON, COMMON_RULES, META_ICC},
+    {RFC_FORMAT_QOI, "qoi", "in-tree converter code", "D10 T02 \xc2\xa7" "8", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_rgba8, 2, COMMON, COMMON_RULES, META_NONE},
+    {RFC_FORMAT_OPENEXR, "openexr", "OpenEXR (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "10", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_exr, 4, COMMON, COMMON_RULES, META_ICC},
+    {RFC_FORMAT_CAMERA_RAW, "camera-raw", "LibRaw (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "11", NULL, PLANNED, "import-only adapter not yet shipped", 1, 0, k_png, 6, COMMON, COMMON_RULES, META_ICC | META_ORI},
+    {RFC_FORMAT_DNG, "dng", "LibRaw (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "11", NULL, PLANNED, "import-only adapter not yet shipped", 1, 0, k_png, 6, COMMON, COMMON_RULES, META_ICC | META_ORI},
 };
 #define REGISTRY_COUNT (sizeof(k_registry) / sizeof(k_registry[0]))
 
@@ -468,6 +473,8 @@ const char *rfc_status_name(rfc_status s) {
         case RFC_ERR_LIMIT_EXCEEDED: return "limit-exceeded";
         case RFC_ERR_STALE_JOB: return "stale-job";
         case RFC_ERR_BUSY: return "busy";
+        case RFC_ERR_VERIFY_MISMATCH: return "verify-mismatch";
+        case RFC_ERR_METADATA_POLICY: return "metadata-policy";
         default: return "unknown-status";
     }
 }

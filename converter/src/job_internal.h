@@ -6,6 +6,7 @@
 #endif
 
 #include "rfc_job.h"
+#include "rfc_verify.h"
 
 #include <stdalign.h>
 #include <stdatomic.h>
@@ -323,6 +324,7 @@ typedef struct rfc_job_inputs {
     uint8_t *owned_icc;
     rfc_setting_value *settings;
     size_t setting_count;
+    uint32_t acknowledged_unsupported_metadata;
     uint64_t retained_bytes;
 } rfc_job_inputs;
 
@@ -426,6 +428,19 @@ struct rfc_job {
     uint32_t stream_frame_count;
     uint64_t stream_total_pixels;
     uint64_t stream_total_bytes;
+    uint64_t decode_compressed_bytes;
+    int has_decode_compressed_bytes;
+
+    /* Verification evidence supplied by ENCODE stages and published report. */
+    rfc_verify_report verify_report;
+    rfc_jpeg_coeff_image *verify_src_coeffs;
+    rfc_jpeg_coeff_image *verify_dst_coeffs;
+    uint8_t *verify_reconstructed_bytes;
+    size_t verify_reconstructed_len;
+    rfc_metadata verify_reconstructed_meta;
+    uint8_t *verify_reconstructed_icc;
+    int has_verify_reconstructed;
+    int has_verify_reconstructed_meta;
 
     /* Intrusive cancel dispatcher queue fields guarded by sched->lock. */
     rfc_cancel_snapshot pending_cancel;
@@ -498,7 +513,8 @@ rfc_job_inputs *rfc_job_inputs_create(rfc_scheduler *sched,
                                       const rfc_layout *src_layout,
                                       const rfc_metadata *src_meta,
                                       const rfc_setting_value *settings,
-                                      size_t setting_count);
+                                      size_t setting_count,
+                                      uint32_t acknowledged_unsupported_metadata);
 void rfc_job_inputs_retain(rfc_job_inputs *inputs);
 void rfc_job_inputs_release(rfc_job_inputs *inputs);
 

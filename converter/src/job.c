@@ -301,13 +301,15 @@ static size_t filter_format_settings(const rfc_capability *cap,
                                      const rfc_setting_value *settings,
                                      size_t setting_count,
                                      rfc_setting_value *out_vals,
-                                     size_t max_out) {
+                                     size_t max_out,
+                                     int include_exactness) {
     size_t n = 0;
     if (!cap || !settings || !out_vals || max_out == 0) {
         return 0u;
     }
     for (size_t i = 0; i < setting_count && n < max_out; i++) {
-        if (format_defines_setting(cap, settings[i].id)) {
+        if ((include_exactness || strcmp(settings[i].id, "exactness") != 0) &&
+            format_defines_setting(cap, settings[i].id)) {
             out_vals[n++] = settings[i];
         }
     }
@@ -384,7 +386,7 @@ rfc_status rfc_job_internal_validate_settings(
 
     rfc_setting_value src_vals[RFC_MAX_FORMAT_SETTINGS];
     size_t src_n = filter_format_settings(src_cap, settings, setting_count,
-                                          src_vals, RFC_MAX_FORMAT_SETTINGS);
+                                          src_vals, RFC_MAX_FORMAT_SETTINGS, 0);
     rfc_status st = rfc_registry_validate_settings(
         source_format, src_n > 0 ? src_vals : NULL, src_n, out_detail);
     if (st != RFC_OK) {
@@ -393,9 +395,34 @@ rfc_status rfc_job_internal_validate_settings(
 
     rfc_setting_value dst_vals[RFC_MAX_FORMAT_SETTINGS];
     size_t dst_n = filter_format_settings(dst_cap, settings, setting_count,
-                                          dst_vals, RFC_MAX_FORMAT_SETTINGS);
-    return rfc_registry_validate_settings(
+                                          dst_vals, RFC_MAX_FORMAT_SETTINGS, 1);
+    st = rfc_registry_validate_settings(
         target_format, dst_n > 0 ? dst_vals : NULL, dst_n, out_detail);
+    if (st != RFC_OK) {
+        return st;
+    }
+
+    for (size_t i = 0; i < setting_count; i++) {
+        if (strcmp(settings[i].id, "exactness") == 0) {
+            if (strcmp(settings[i].value, "coefficient-exact") == 0 &&
+                source_format != RFC_FORMAT_JPEG &&
+                target_format != RFC_FORMAT_JPEG) {
+                if (out_detail) {
+                    *out_detail = "coefficient-exact requires a JPEG source or target";
+                }
+                return RFC_ERR_UNSUPPORTED_COMBINATION;
+            }
+            if (strcmp(settings[i].value, "original-byte-reconstruction") == 0 &&
+                (source_format != RFC_FORMAT_JPEG ||
+                 target_format != RFC_FORMAT_JPEG_XL)) {
+                if (out_detail) {
+                    *out_detail = "original-byte-reconstruction requires JPEG source and JPEG XL target";
+                }
+                return RFC_ERR_UNSUPPORTED_COMBINATION;
+            }
+        }
+    }
+    return RFC_OK;
 }
 
 static char *dup_cstr_counted(const char *s, rfc_scheduler *alloc_counter) {
@@ -489,7 +516,8 @@ rfc_job_inputs *rfc_job_inputs_create(rfc_scheduler *sched,
                                       const rfc_layout *src_layout,
                                       const rfc_metadata *src_meta,
                                       const rfc_setting_value *settings,
-                                      size_t setting_count) {
+                                      size_t setting_count,
+                                      uint32_t acknowledged_unsupported_metadata) {
     uint64_t retained = 0;
     if (rfc_job_internal_compute_retained_bytes(src_bytes, src_size, src_meta,
                                                 settings, setting_count,
@@ -513,6 +541,7 @@ rfc_job_inputs *rfc_job_inputs_create(rfc_scheduler *sched,
     }
     in->source_size = src_size;
     in->setting_count = setting_count;
+    in->acknowledged_unsupported_metadata = acknowledged_unsupported_metadata;
     in->retained_bytes = retained;
 
     if (src_size > 0 && src_bytes != NULL) {
@@ -800,6 +829,11 @@ const rfc_metadata *rfc_job_source_metadata(const rfc_job *job) {
                : NULL;
 }
 
+uint32_t rfc_job_acknowledged_metadata(const rfc_job *job) {
+    return (job && job->inputs) ? job->inputs->acknowledged_unsupported_metadata
+                                : 0u;
+}
+
 const rfc_setting_value *rfc_job_settings(const rfc_job *job, size_t *out_count) {
     if (out_count) {
         *out_count = (job && job->inputs) ? job->inputs->setting_count : 0u;
@@ -832,6 +866,74 @@ static void free_decoded_frames_array(rfc_frame **frames_ptr,
     }
 }
 
+static void free_verify_coeff_image(const rfc_allocator *alloc,
+                                    rfc_jpeg_coeff_image **img_ptr) {
+    if (!img_ptr || !*img_ptr) {
+        return;
+    }
+    rfc_jpeg_coeff_image *img = *img_ptr;
+    for (uint32_t c = 0u; c < 4u; c++) {
+        if (img->components[c].dct_blocks) {
+            void *p = (void *)img->components[c].dct_blocks;
+            if (alloc && alloc->free) {
+                alloc->free(alloc->ctx, p);
+            } else {
+                free(p);
+            }
+            img->components[c].dct_blocks = NULL;
+        }
+    }
+    if (alloc && alloc->free) {
+        alloc->free(alloc->ctx, img);
+    } else {
+        free(img);
+    }
+    *img_ptr = NULL;
+}
+
+static rfc_status clone_verify_coeff_image(const rfc_allocator *alloc,
+                                           const rfc_jpeg_coeff_image *src,
+                                           rfc_jpeg_coeff_image **out_img) {
+    *out_img = NULL;
+    if (!src || src->component_count == 0u || src->component_count > 4u ||
+        !alloc || !alloc->alloc || !alloc->free) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    rfc_jpeg_coeff_image *dst =
+        (rfc_jpeg_coeff_image *)alloc->alloc(alloc->ctx, sizeof(*dst));
+    if (!dst) {
+        return RFC_ERR_OUT_OF_MEMORY;
+    }
+    *dst = *src;
+    for (uint32_t c = 0u; c < 4u; c++) {
+        dst->components[c].dct_blocks = NULL;
+    }
+    for (uint32_t c = 0u; c < src->component_count; c++) {
+        const rfc_jpeg_component_spec *sc = &src->components[c];
+        if (sc->blocks_wide == 0u || sc->blocks_high == 0u || !sc->dct_blocks) {
+            free_verify_coeff_image(alloc, &dst);
+            return RFC_ERR_INVALID_ARGUMENT;
+        }
+        if (sc->blocks_wide > SIZE_MAX / sc->blocks_high ||
+            (size_t)sc->blocks_wide * (size_t)sc->blocks_high >
+                SIZE_MAX / (64u * sizeof(int16_t))) {
+            free_verify_coeff_image(alloc, &dst);
+            return RFC_ERR_OVERFLOW;
+        }
+        size_t bytes = (size_t)sc->blocks_wide * (size_t)sc->blocks_high *
+                       64u * sizeof(int16_t);
+        int16_t *blk = (int16_t *)alloc->alloc(alloc->ctx, bytes);
+        if (!blk) {
+            free_verify_coeff_image(alloc, &dst);
+            return RFC_ERR_OUT_OF_MEMORY;
+        }
+        memcpy(blk, sc->dct_blocks, bytes);
+        dst->components[c].dct_blocks = blk;
+    }
+    *out_img = dst;
+    return RFC_OK;
+}
+
 void rfc_job_internal_release_stage_outputs(rfc_job *job) {
     if (!job) {
         return;
@@ -847,6 +949,10 @@ void rfc_job_internal_release_stage_outputs(rfc_job *job) {
     const rfc_session_adapter *enc_sess = job->encoded_owner_sess;
     void *enc_handle = job->encoded_owner_handle;
     rfc_format_id enc_fmt = job->encoded_owner_fmt;
+    rfc_jpeg_coeff_image *v_src_c = job->verify_src_coeffs;
+    rfc_jpeg_coeff_image *v_dst_c = job->verify_dst_coeffs;
+    uint8_t *v_rec = job->verify_reconstructed_bytes;
+    uint8_t *v_rec_icc = job->verify_reconstructed_icc;
 
     job->decoded_frames = NULL;
     job->decoded_frame_count = 0;
@@ -859,6 +965,15 @@ void rfc_job_internal_release_stage_outputs(rfc_job *job) {
     job->encoded_owner_sess = NULL;
     job->encoded_owner_handle = NULL;
     job->encoded_owner_fmt = 0;
+    job->verify_src_coeffs = NULL;
+    job->verify_dst_coeffs = NULL;
+    job->verify_reconstructed_bytes = NULL;
+    job->verify_reconstructed_len = 0u;
+    job->verify_reconstructed_icc = NULL;
+    job->has_verify_reconstructed = 0;
+    job->has_verify_reconstructed_meta = 0;
+    memset(&job->verify_reconstructed_meta, 0,
+           sizeof(job->verify_reconstructed_meta));
     rfc_mutex_unlock(&job->lock);
 
     if (has_enc) {
@@ -879,6 +994,22 @@ void rfc_job_internal_release_stage_outputs(rfc_job *job) {
             job->allocator.free(job->allocator.ctx, d_icc);
         } else {
             free(d_icc);
+        }
+    }
+    free_verify_coeff_image(&job->allocator, &v_src_c);
+    free_verify_coeff_image(&job->allocator, &v_dst_c);
+    if (v_rec) {
+        if (job->allocator.free) {
+            job->allocator.free(job->allocator.ctx, v_rec);
+        } else {
+            free(v_rec);
+        }
+    }
+    if (v_rec_icc) {
+        if (job->allocator.free) {
+            job->allocator.free(job->allocator.ctx, v_rec_icc);
+        } else {
+            free(v_rec_icc);
         }
     }
     free_decoded_frames_array(&df, &df_cnt, df_alloc);
@@ -1055,6 +1186,119 @@ rfc_status rfc_job_set_encoded_output(rfc_job *job, const rfc_encoded *encoded) 
             old_sess->close_session(old_handle);
         }
         rfc_registry_release_session(old_fmt);
+    }
+    return RFC_OK;
+}
+
+rfc_status rfc_job_verify_report_get(const rfc_job *job,
+                                     rfc_verify_report *out) {
+    if (out) {
+        memset(out, 0, sizeof(*out));
+    }
+    if (!job || !out) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    rfc_job *m = (rfc_job *)job;
+    rfc_mutex_lock(&m->lock);
+    if (!m->verify_report.valid) {
+        rfc_mutex_unlock(&m->lock);
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    *out = m->verify_report;
+    rfc_mutex_unlock(&m->lock);
+    return RFC_OK;
+}
+
+rfc_status rfc_job_set_verified_jpeg_coeffs(
+    rfc_job *job,
+    const rfc_jpeg_coeff_image *source_coeffs,
+    const rfc_jpeg_coeff_image *verified_coeffs) {
+    if (!job || !source_coeffs || !verified_coeffs) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    rfc_jpeg_coeff_image *src_copy = NULL;
+    rfc_jpeg_coeff_image *dst_copy = NULL;
+    rfc_status st =
+        clone_verify_coeff_image(&job->allocator, source_coeffs, &src_copy);
+    if (st != RFC_OK) {
+        return st;
+    }
+    st = clone_verify_coeff_image(&job->allocator, verified_coeffs, &dst_copy);
+    if (st != RFC_OK) {
+        free_verify_coeff_image(&job->allocator, &src_copy);
+        return st;
+    }
+    rfc_mutex_lock(&job->lock);
+    rfc_jpeg_coeff_image *old_src = job->verify_src_coeffs;
+    rfc_jpeg_coeff_image *old_dst = job->verify_dst_coeffs;
+    job->verify_src_coeffs = src_copy;
+    job->verify_dst_coeffs = dst_copy;
+    rfc_mutex_unlock(&job->lock);
+    free_verify_coeff_image(&job->allocator, &old_src);
+    free_verify_coeff_image(&job->allocator, &old_dst);
+    return RFC_OK;
+}
+
+rfc_status rfc_job_set_verified_reconstructed_bytes(
+    rfc_job *job,
+    const uint8_t *reconstructed_jpeg,
+    size_t reconstructed_len,
+    const rfc_metadata *reconstructed_meta) {
+    if (!job || (reconstructed_len > 0u && !reconstructed_jpeg)) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    if (reconstructed_meta && reconstructed_meta->icc_len > 0u &&
+        !reconstructed_meta->icc) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    uint8_t *bytes_copy = NULL;
+    if (reconstructed_len > 0u) {
+        bytes_copy = (uint8_t *)job->allocator.alloc(job->allocator.ctx,
+                                                     reconstructed_len);
+        if (!bytes_copy) {
+            return RFC_ERR_OUT_OF_MEMORY;
+        }
+        memcpy(bytes_copy, reconstructed_jpeg, reconstructed_len);
+    }
+    uint8_t *icc_copy = NULL;
+    rfc_metadata meta_copy;
+    memset(&meta_copy, 0, sizeof(meta_copy));
+    int has_rmeta = 0;
+    if (reconstructed_meta) {
+        meta_copy = *reconstructed_meta;
+        meta_copy.icc = NULL;
+        has_rmeta = 1;
+        if (reconstructed_meta->icc_len > 0u) {
+            icc_copy = (uint8_t *)job->allocator.alloc(
+                job->allocator.ctx, reconstructed_meta->icc_len);
+            if (!icc_copy) {
+                if (bytes_copy) {
+                    job->allocator.free(job->allocator.ctx, bytes_copy);
+                }
+                return RFC_ERR_OUT_OF_MEMORY;
+            }
+            memcpy(icc_copy, reconstructed_meta->icc,
+                   reconstructed_meta->icc_len);
+            meta_copy.icc = icc_copy;
+        }
+    }
+
+    rfc_mutex_lock(&job->lock);
+    uint8_t *old_bytes = job->verify_reconstructed_bytes;
+    uint8_t *old_icc = job->verify_reconstructed_icc;
+    job->verify_reconstructed_bytes = bytes_copy;
+    job->verify_reconstructed_len = reconstructed_len;
+    job->verify_reconstructed_meta = meta_copy;
+    job->verify_reconstructed_icc = icc_copy;
+    job->has_verify_reconstructed = 1;
+    job->has_verify_reconstructed_meta = has_rmeta;
+    rfc_mutex_unlock(&job->lock);
+
+    if (old_bytes) {
+        job->allocator.free(job->allocator.ctx, old_bytes);
+    }
+    if (old_icc) {
+        job->allocator.free(job->allocator.ctx, old_icc);
     }
     return RFC_OK;
 }
@@ -1467,8 +1711,11 @@ rfc_status rfc_job_mark_published(rfc_job *job, rfc_job_id expected_id) {
 }
 
 int rfc_exec_is_cancelled(const rfc_exec_context *exec) {
-    if (!exec || !exec->job) {
+    if (!exec) {
         return 1;
+    }
+    if (!exec->job) {
+        return 0;
     }
     return rfc_job_is_cancelled(exec->job);
 }
@@ -1614,10 +1861,15 @@ static rfc_status internal_exec_check_next_frame(rfc_job *job,
         rfc_mutex_unlock(&job->lock);
         return RFC_ERR_LIMIT_EXCEEDED;
     }
-    size_t src_size = job->inputs ? job->inputs->source_size : 0u;
-    if (src_size > 0) {
-        st = rfc_limits_check_decompression(limits, (uint64_t)src_size,
-                                            next_bytes);
+    uint64_t comp_bytes = job->has_decode_compressed_bytes
+                              ? job->decode_compressed_bytes
+                              : (job->inputs ? (uint64_t)job->inputs->source_size
+                                             : 0ull);
+    int has_comp = job->has_decode_compressed_bytes
+                       ? (comp_bytes > 0ull)
+                       : (job->inputs && job->inputs->source_size > 0u);
+    if (has_comp) {
+        st = rfc_limits_check_decompression(limits, comp_bytes, next_bytes);
         if (st != RFC_OK) {
             if (job->in_decode_session && job->decode_guard_failure == RFC_OK) {
                 job->decode_guard_failure = st;
@@ -1792,6 +2044,243 @@ static rfc_status check_stage_abort(rfc_job *job) {
     return RFC_OK;
 }
 
+static rfc_status parse_job_verify_settings(const rfc_setting_value *settings,
+                                          size_t setting_count,
+                                          rfc_exactness_class *out_exact,
+                                          rfc_metadata_policy *out_meta) {
+    *out_exact = RFC_EXACT_PIXEL_EXACT;
+    *out_meta = RFC_META_POLICY_PRESERVE;
+    if (!settings) {
+        return RFC_OK;
+    }
+    for (size_t i = 0u; i < setting_count; i++) {
+        if (!settings[i].id || !settings[i].value) {
+            return RFC_ERR_INVALID_ARGUMENT;
+        }
+        if (strcmp(settings[i].id, "exactness") == 0) {
+            rfc_status st =
+                rfc_exactness_class_parse(settings[i].value, out_exact);
+            if (st != RFC_OK) {
+                return st;
+            }
+        } else if (strcmp(settings[i].id, "metadata") == 0) {
+            rfc_status st =
+                rfc_metadata_policy_parse(settings[i].value, out_meta);
+            if (st != RFC_OK) {
+                return st;
+            }
+        }
+    }
+    return RFC_OK;
+}
+
+static void store_job_verify_report(rfc_job *job,
+                                    const rfc_verify_report *rep) {
+    if (!job || !rep) {
+        return;
+    }
+    rfc_mutex_lock(&job->lock);
+    job->verify_report = *rep;
+    rfc_mutex_unlock(&job->lock);
+}
+
+static void copy_verify_detail(char *dst, size_t dst_cap, const char *src) {
+    if (!dst || dst_cap == 0u) {
+        return;
+    }
+    if (!src) {
+        dst[0] = '\0';
+        return;
+    }
+    size_t len = strlen(src);
+    if (len >= dst_cap) {
+        len = dst_cap - 1u;
+    }
+    memcpy(dst, src, len);
+    dst[len] = '\0';
+}
+
+static rfc_status run_bounded_session_decode(
+    rfc_job *job,
+    const rfc_exec_context *exec,
+    rfc_format_id fmt,
+    const rfc_session_adapter *sadp,
+    const uint8_t *in_bytes,
+    size_t in_size,
+    const rfc_setting_value *dec_settings,
+    size_t dec_setting_count,
+    int validate_dec_settings,
+    rfc_frame **out_frames,
+    size_t *out_count,
+    rfc_metadata *out_meta,
+    const char **out_err_detail) {
+    *out_frames = NULL;
+    *out_count = 0u;
+    memset(out_meta, 0, sizeof(*out_meta));
+
+    void *sess = NULL;
+    rfc_status st = sadp->open_session(exec, &sess);
+    if (st != RFC_OK) {
+        rfc_registry_release_session(fmt);
+        return st;
+    }
+
+    rfc_mutex_lock(&job->lock);
+    job->active_sess_adapter = sadp;
+    job->active_session = sess;
+    job->decode_compressed_bytes = (uint64_t)in_size;
+    job->has_decode_compressed_bytes = (in_size > 0u) ? 1 : 0;
+    rfc_mutex_unlock(&job->lock);
+
+    rfc_image_probe probe;
+    memset(&probe, 0, sizeof(probe));
+    int probe_exact = 0;
+    uint32_t exp_frames = 0u;
+    uint64_t exp_pixels = 0u;
+    uint64_t exp_bytes = 0u;
+
+    st = check_stage_abort(job);
+    if (st == RFC_OK) {
+        st = rfc_limits_check_compressed(&job->limits, (uint64_t)in_size);
+    }
+    if (st == RFC_OK) {
+        st = sadp->probe_session(sess, exec, in_bytes, in_size, &probe);
+        if (st == RFC_OK) {
+            st = rfc_limits_check_probe(&job->limits, &probe, (uint64_t)in_size,
+                                        in_size > 0u);
+        }
+        if (st == RFC_OK) {
+            if (probe.frame_count == 1u) {
+                uint64_t fb = 0u;
+                uint64_t fp = 0u;
+                st = rfc_limits_compute_frame_bytes(&probe.first_frame, 1u, &fb);
+                if (st == RFC_OK &&
+                    !mul_u64_job((uint64_t)probe.first_frame.width,
+                                 (uint64_t)probe.first_frame.height, &fp)) {
+                    st = RFC_ERR_LIMIT_EXCEEDED;
+                }
+                if (st == RFC_OK) {
+                    probe_exact = 1;
+                    exp_frames = 1u;
+                    exp_pixels = fp;
+                    exp_bytes = fb;
+                }
+            } else if (probe.frame_count > 1u && probe.total_pixels > 0u &&
+                       probe.total_decoded_bytes > 0u) {
+                probe_exact = 1;
+                exp_frames = probe.frame_count;
+                exp_pixels = probe.total_pixels;
+                exp_bytes = probe.total_decoded_bytes;
+            } else {
+                probe_exact = 0;
+                exp_frames = probe.frame_count;
+                exp_pixels = probe.total_pixels;
+                exp_bytes = probe.total_decoded_bytes;
+            }
+        }
+        if (probe.container_meta.icc) {
+            exec->allocator->free(exec->allocator->ctx,
+                                  (void *)probe.container_meta.icc);
+            probe.container_meta.icc = NULL;
+        }
+    }
+
+    rfc_frame *decoded_frames = NULL;
+    size_t decoded_count = 0u;
+    rfc_metadata decoded_meta;
+    memset(&decoded_meta, 0, sizeof(decoded_meta));
+
+    if (st == RFC_OK) {
+        st = check_stage_abort(job);
+    }
+    if (st == RFC_OK && validate_dec_settings) {
+        st = rfc_registry_validate_settings(
+            fmt, dec_setting_count > 0u ? dec_settings : NULL,
+            dec_setting_count, out_err_detail);
+    }
+
+    rfc_status guard_fail = RFC_OK;
+    int unval = 0;
+    uint32_t stream_frames = 0u;
+    if (st == RFC_OK) {
+        rfc_mutex_lock(&job->lock);
+        job->stream_frame_count = 0u;
+        job->stream_total_pixels = 0u;
+        job->stream_total_bytes = 0u;
+        job->decode_probe_exact = probe_exact;
+        job->decode_probe_frames = exp_frames;
+        job->decode_probe_pixels = exp_pixels;
+        job->decode_probe_bytes = exp_bytes;
+        job->decode_credit_frames = 0u;
+        job->decode_last_checked_fbytes = 0u;
+        job->decode_last_checked_icc_len = 0u;
+        memset(&job->decode_last_checked_layout, 0,
+               sizeof(job->decode_last_checked_layout));
+        job->decode_unvalidated_alloc = 0;
+        job->decode_guard_failure = RFC_OK;
+        job->in_decode_session = 1;
+        rfc_mutex_unlock(&job->lock);
+
+        rfc_job *prev_tl_decode_job = g_tl_decode_job;
+        g_tl_decode_job = job;
+        st = sadp->decode_session(
+            sess, exec, in_bytes, in_size,
+            dec_setting_count > 0u ? dec_settings : NULL, dec_setting_count,
+            &decoded_frames, &decoded_count, &decoded_meta);
+        g_tl_decode_job = prev_tl_decode_job;
+    }
+
+    rfc_mutex_lock(&job->lock);
+    job->in_decode_session = 0;
+    job->decode_compressed_bytes = 0ull;
+    job->has_decode_compressed_bytes = 0;
+    guard_fail = job->decode_guard_failure;
+    unval = job->decode_unvalidated_alloc;
+    stream_frames = job->stream_frame_count;
+    job->active_sess_adapter = NULL;
+    job->active_session = NULL;
+    while (job->active_cancel_calls > 0u) {
+        rfc_cond_wait(&job->done_cond, &job->lock);
+    }
+    rfc_mutex_unlock(&job->lock);
+
+    sadp->close_session(sess);
+    rfc_registry_release_session(fmt);
+
+    if (guard_fail != RFC_OK &&
+        (st == RFC_OK || st == RFC_ERR_OUT_OF_MEMORY)) {
+        st = guard_fail;
+    }
+    if (st == RFC_OK &&
+        (unval || (!probe_exact && (size_t)stream_frames != decoded_count) ||
+         (probe.frame_count > 0u &&
+          decoded_count != (size_t)probe.frame_count) ||
+         !decoded_frames || decoded_count == 0u)) {
+        st = RFC_ERR_INVALID_ARGUMENT;
+    }
+    if (st == RFC_OK) {
+        st = rfc_limits_check_frames(&job->limits, decoded_frames,
+                                     decoded_count, &decoded_meta,
+                                     (uint64_t)in_size, in_size > 0u);
+    }
+
+    if (st == RFC_OK) {
+        *out_frames = decoded_frames;
+        *out_count = decoded_count;
+        *out_meta = decoded_meta;
+    } else {
+        if (decoded_meta.icc &&
+            (!decoded_frames || decoded_count == 0u ||
+             decoded_frames[0].metadata.icc != decoded_meta.icc)) {
+            exec->allocator->free(exec->allocator->ctx,
+                                  (void *)decoded_meta.icc);
+        }
+        free_decoded_frames_array(&decoded_frames, &decoded_count,
+                                  exec->allocator);
+    }
+    return st;
+}
+
 void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
     if (!job) {
         return;
@@ -1850,195 +2339,34 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
             const rfc_session_adapter *sadp =
                 rfc_registry_acquire_session(job->source_format);
             if (sadp) {
-                void *sess = NULL;
-                st = sadp->open_session(&exec, &sess);
+                rfc_setting_value src_settings[RFC_MAX_FORMAT_SETTINGS];
+                size_t src_setting_count = filter_format_settings(
+                    src_cap, settings, setting_count, src_settings,
+                    RFC_MAX_FORMAT_SETTINGS, 0);
+                rfc_frame *decoded_frames = NULL;
+                size_t decoded_count = 0u;
+                rfc_metadata decoded_meta;
+                st = run_bounded_session_decode(
+                    job, &exec, job->source_format, sadp, src_bytes, src_size,
+                    src_setting_count > 0u ? src_settings : NULL,
+                    src_setting_count, 1, &decoded_frames, &decoded_count,
+                    &decoded_meta, &err_detail);
                 if (st == RFC_OK) {
-                    rfc_mutex_lock(&job->lock);
-                    job->active_sess_adapter = sadp;
-                    job->active_session = sess;
-                    rfc_mutex_unlock(&job->lock);
-
-                    rfc_setting_value src_settings[RFC_MAX_FORMAT_SETTINGS];
-                    size_t src_setting_count = filter_format_settings(
-                        src_cap, settings, setting_count, src_settings,
-                        RFC_MAX_FORMAT_SETTINGS);
-
-                    rfc_image_probe probe;
-                    memset(&probe, 0, sizeof(probe));
-                    int probe_exact = 0;
-                    uint32_t exp_frames = 0;
-                    uint64_t exp_pixels = 0;
-                    uint64_t exp_bytes = 0;
-
-                    st = check_stage_abort(job);
-                    if (st == RFC_OK) {
-                        st = rfc_limits_check_compressed(&job->limits,
-                                                         (uint64_t)src_size);
-                    }
-                    if (st == RFC_OK) {
-                        st = sadp->probe_session(sess, &exec, src_bytes,
-                                                 src_size, &probe);
-                        if (st == RFC_OK) {
-                            st = rfc_limits_check_probe(&job->limits, &probe,
-                                                        (uint64_t)src_size,
-                                                        src_size > 0);
-                        }
-                        if (st == RFC_OK) {
-                            if (probe.frame_count == 1u) {
-                                uint64_t fb = 0;
-                                uint64_t fp = 0;
-                                st = rfc_limits_compute_frame_bytes(
-                                    &probe.first_frame, 1u, &fb);
-                                if (st == RFC_OK &&
-                                    !mul_u64_job(
-                                        (uint64_t)probe.first_frame.width,
-                                        (uint64_t)probe.first_frame.height,
-                                        &fp)) {
-                                    st = RFC_ERR_LIMIT_EXCEEDED;
-                                }
-                                if (st == RFC_OK) {
-                                    probe_exact = 1;
-                                    exp_frames = 1u;
-                                    exp_pixels = fp;
-                                    exp_bytes = fb;
-                                }
-                            } else if (probe.frame_count > 1u &&
-                                       probe.total_pixels > 0u &&
-                                       probe.total_decoded_bytes > 0u) {
-                                probe_exact = 1;
-                                exp_frames = probe.frame_count;
-                                exp_pixels = probe.total_pixels;
-                                exp_bytes = probe.total_decoded_bytes;
-                            } else {
-                                probe_exact = 0;
-                                exp_frames = probe.frame_count;
-                                exp_pixels = probe.total_pixels;
-                                exp_bytes = probe.total_decoded_bytes;
-                            }
-                        }
-                        if (probe.container_meta.icc) {
-                            exec.allocator->free(exec.allocator->ctx,
-                                                 (void *)probe.container_meta.icc);
-                        }
-                    }
-
-                    rfc_frame *decoded_frames = NULL;
-                    size_t decoded_count = 0;
-                    rfc_metadata decoded_meta;
-                    memset(&decoded_meta, 0, sizeof(decoded_meta));
-
-                    if (st == RFC_OK) {
-                        st = check_stage_abort(job);
-                    }
-                    if (st == RFC_OK) {
-                        st = rfc_registry_validate_settings(
-                            job->source_format,
-                            src_setting_count > 0 ? src_settings : NULL,
-                            src_setting_count, &err_detail);
-                    }
-                    rfc_status guard_fail = RFC_OK;
-                    int unval = 0;
-                    uint32_t stream_frames = 0u;
-                    if (st == RFC_OK) {
-                        rfc_mutex_lock(&job->lock);
-                        job->stream_frame_count = 0u;
-                        job->stream_total_pixels = 0u;
-                        job->stream_total_bytes = 0u;
-                        job->decode_probe_exact = probe_exact;
-                        job->decode_probe_frames = exp_frames;
-                        job->decode_probe_pixels = exp_pixels;
-                        job->decode_probe_bytes = exp_bytes;
-                        job->decode_credit_frames = 0u;
-                        job->decode_last_checked_fbytes = 0u;
-                        job->decode_last_checked_icc_len = 0u;
-                        memset(&job->decode_last_checked_layout, 0,
-                               sizeof(job->decode_last_checked_layout));
-                        job->decode_unvalidated_alloc = 0;
-                        job->decode_guard_failure = RFC_OK;
-                        job->in_decode_session = 1;
-                        rfc_mutex_unlock(&job->lock);
-
-                        rfc_job *prev_tl_decode_job = g_tl_decode_job;
-                        g_tl_decode_job = job;
-                        st = sadp->decode_session(
-                            sess, &exec, src_bytes, src_size,
-                            src_setting_count > 0 ? src_settings : NULL,
-                            src_setting_count, &decoded_frames, &decoded_count,
-                            &decoded_meta);
-                        g_tl_decode_job = prev_tl_decode_job;
-                    }
-
-                    rfc_mutex_lock(&job->lock);
-                    job->in_decode_session = 0;
-                    guard_fail = job->decode_guard_failure;
-                    unval = job->decode_unvalidated_alloc;
-                    stream_frames = job->stream_frame_count;
-                    job->active_sess_adapter = NULL;
-                    job->active_session = NULL;
-                    while (job->active_cancel_calls > 0) {
-                        rfc_cond_wait(&job->done_cond, &job->lock);
-                    }
-                    rfc_mutex_unlock(&job->lock);
-
-                    sadp->close_session(sess);
-
-                    if (guard_fail != RFC_OK &&
-                        (st == RFC_OK || st == RFC_ERR_OUT_OF_MEMORY)) {
-                        st = guard_fail;
-                    }
-                    if (st == RFC_OK &&
-                        (unval ||
-                         (!probe_exact &&
-                          (size_t)stream_frames != decoded_count) ||
-                         (probe.frame_count > 0u &&
-                          decoded_count != (size_t)probe.frame_count))) {
-                        st = RFC_ERR_INVALID_ARGUMENT;
-                    }
-
-                    if (st == RFC_OK) {
-                        if (!decoded_frames || decoded_count == 0) {
-                            st = RFC_ERR_INVALID_ARGUMENT;
-                            if (decoded_meta.icc &&
-                                (!decoded_frames ||
-                                 decoded_frames[0].metadata.icc !=
-                                     decoded_meta.icc)) {
-                                exec.allocator->free(exec.allocator->ctx,
-                                                     (void *)decoded_meta.icc);
-                            }
-                            free_decoded_frames_array(&decoded_frames,
-                                                      &decoded_count,
-                                                      exec.allocator);
-                        } else {
-                            st = store_decoded_frames_on_job(
-                                job, decoded_frames, decoded_count,
-                                &decoded_meta, 1);
-                            if (st != RFC_OK) {
-                                if (decoded_meta.icc &&
-                                    decoded_frames[0].metadata.icc !=
-                                        decoded_meta.icc) {
-                                    exec.allocator->free(
-                                        exec.allocator->ctx,
-                                        (void *)decoded_meta.icc);
-                                }
-                                free_decoded_frames_array(&decoded_frames,
-                                                          &decoded_count,
-                                                          exec.allocator);
-                            }
-                        }
-                    } else {
+                    st = store_decoded_frames_on_job(job, decoded_frames,
+                                                     decoded_count,
+                                                     &decoded_meta, 1);
+                    if (st != RFC_OK) {
                         if (decoded_meta.icc &&
-                            (!decoded_frames || decoded_count == 0 ||
-                             decoded_frames[0].metadata.icc !=
-                                 decoded_meta.icc)) {
+                            decoded_frames[0].metadata.icc !=
+                                decoded_meta.icc) {
                             exec.allocator->free(exec.allocator->ctx,
-                                                 (void *)decoded_meta.icc);
+                                                  (void *)decoded_meta.icc);
                         }
                         free_decoded_frames_array(&decoded_frames,
                                                   &decoded_count,
                                                   exec.allocator);
                     }
                 }
-                rfc_registry_release_session(job->source_format);
             } else if (rfc_registry_adapter(job->source_format) != NULL) {
                 st = RFC_ERR_UNSUPPORTED_COMBINATION;
                 err_detail =
@@ -2109,7 +2437,7 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
                         rfc_setting_value dst_settings[RFC_MAX_FORMAT_SETTINGS];
                         size_t dst_setting_count = filter_format_settings(
                             dst_cap, settings, setting_count, dst_settings,
-                            RFC_MAX_FORMAT_SETTINGS);
+                            RFC_MAX_FORMAT_SETTINGS, 1);
 
                         st = check_stage_abort(job);
                         if (st == RFC_OK) {
@@ -2199,8 +2527,230 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
     if (job->stage_ops.on_verify != NULL) {
         st = job->stage_ops.on_verify(job, &exec, user_ctx);
     } else {
-        st = RFC_ERR_NO_ADAPTER;
-        err_detail = "verify stage requires an exactness verifier";
+        rfc_exactness_class exactness = RFC_EXACT_PIXEL_EXACT;
+        rfc_metadata_policy meta_policy = RFC_META_POLICY_PRESERVE;
+        st = parse_job_verify_settings(settings, setting_count, &exactness,
+                                       &meta_policy);
+        uint32_t ack_meta = rfc_job_acknowledged_metadata(job);
+        const rfc_metadata *src_meta_eff =
+            job->has_decoded_meta
+                ? &job->decoded_meta
+                : (job->inputs && job->inputs->has_meta
+                       ? &job->inputs->source_meta
+                       : NULL);
+        rfc_verify_report rep;
+        memset(&rep, 0, sizeof(rep));
+        rep.exactness = exactness;
+        rep.independent_decoder = 0;
+        copy_verify_detail(rep.decoder_provenance,
+                           sizeof(rep.decoder_provenance),
+                           "same-provider-fresh-session");
+
+        if (st == RFC_OK && exactness == RFC_EXACT_PIXEL_EXACT) {
+            const rfc_session_adapter *sadp =
+                rfc_registry_acquire_session(job->target_format);
+            if (!sadp) {
+                st = RFC_ERR_NO_ADAPTER;
+                err_detail = "verify stage requires an exactness verifier";
+            } else if (!job->decoded_frames || job->decoded_frame_count == 0u ||
+                       !job->has_encoded_output || !job->encoded_output.data ||
+                       job->encoded_output.len == 0u) {
+                rfc_registry_release_session(job->target_format);
+                st = RFC_ERR_INVALID_ARGUMENT;
+                err_detail =
+                    "verify stage requires decoded source and encoded output";
+            } else {
+                st = rfc_frames_hash_sha256(job->decoded_frames,
+                                            job->decoded_frame_count,
+                                            rep.source_hash);
+                if (st == RFC_OK) {
+                    uint32_t present_meta = rfc_metadata_source_items(
+                        src_meta_eff, job->decoded_frames,
+                        job->decoded_frame_count);
+                    st = rfc_metadata_check_preflight(
+                        job->target_format, meta_policy, RFC_EXACT_PIXEL_EXACT,
+                        present_meta, ack_meta, &rep.metadata);
+                }
+                if (st != RFC_OK) {
+                    rfc_registry_release_session(job->target_format);
+                    if (st == RFC_ERR_METADATA_POLICY) {
+                        rep.mismatch.kind = RFC_MISMATCH_METADATA_UNSUPPORTED;
+                        copy_verify_detail(rep.mismatch.detail,
+                                           sizeof(rep.mismatch.detail),
+                                           rep.metadata.detail);
+                        err_detail = "unacknowledged unsupported metadata";
+                    }
+                    rep.status = st;
+                    rep.valid = 1;
+                    store_job_verify_report(job, &rep);
+                } else {
+                    rfc_frame *ver_frames = NULL;
+                    size_t ver_count = 0u;
+                    rfc_metadata ver_meta;
+                    memset(&ver_meta, 0, sizeof(ver_meta));
+                    st = run_bounded_session_decode(
+                        job, &exec, job->target_format, sadp,
+                        job->encoded_output.data, job->encoded_output.len, NULL,
+                        0u, 0, &ver_frames, &ver_count, &ver_meta,
+                        &err_detail);
+                    if (st == RFC_OK) {
+                        st = rfc_frames_hash_sha256(ver_frames, ver_count,
+                                                    rep.verified_hash);
+                    }
+                    if (st == RFC_OK) {
+                        st = rfc_verify_frames_equal(
+                            job->decoded_frames, job->decoded_frame_count,
+                            ver_frames, ver_count, &rep.mismatch);
+                        if (st == RFC_ERR_VERIFY_MISMATCH) {
+                            err_detail = "fresh decode sample or frame "
+                                         "mismatch";
+                        }
+                    }
+                    if (st == RFC_OK) {
+                        st = rfc_metadata_verify(
+                            job->target_format, meta_policy,
+                            RFC_EXACT_PIXEL_EXACT, src_meta_eff,
+                            job->decoded_frames, job->decoded_frame_count,
+                            &ver_meta, ver_frames, ver_count, ack_meta,
+                            &rep.metadata, &rep.mismatch);
+                        rep.meta_outcome = rep.metadata.outcome;
+                        if (st == RFC_ERR_VERIFY_MISMATCH) {
+                            err_detail = "metadata policy verification failed";
+                        }
+                    }
+                    if (ver_meta.icc &&
+                        (!ver_frames || ver_count == 0u ||
+                         ver_frames[0].metadata.icc != ver_meta.icc)) {
+                        exec.allocator->free(exec.allocator->ctx,
+                                              (void *)ver_meta.icc);
+                    }
+                    free_decoded_frames_array(&ver_frames, &ver_count,
+                                              exec.allocator);
+                    if (st != RFC_ERR_CANCELLED && st != RFC_ERR_STALE_JOB) {
+                        rep.status = st;
+                        rep.valid = 1;
+                        store_job_verify_report(job, &rep);
+                    }
+                }
+            }
+        } else if (st == RFC_OK && exactness == RFC_EXACT_BYTE_IDENTICAL) {
+            if (meta_policy == RFC_META_POLICY_STRIP) {
+                st = RFC_ERR_UNSUPPORTED_COMBINATION;
+                err_detail = "metadata=strip cannot claim byte-identical";
+            } else if (!src_bytes || src_size == 0u ||
+                       !job->has_encoded_output) {
+                st = RFC_ERR_INVALID_ARGUMENT;
+                err_detail =
+                    "byte-identical verify requires source and encoded bytes";
+            } else {
+                st = rfc_verify_bytes_exact(
+                    src_bytes, src_size, job->encoded_output.data,
+                    job->encoded_output.len, RFC_EXACT_BYTE_IDENTICAL,
+                    "same-provider-fresh-session", 0, &rep);
+                if (st == RFC_OK) {
+                    st = rfc_metadata_verify(
+                        job->target_format, meta_policy,
+                        RFC_EXACT_BYTE_IDENTICAL, src_meta_eff,
+                        job->decoded_frames, job->decoded_frame_count,
+                        src_meta_eff, job->decoded_frames,
+                        job->decoded_frame_count, ack_meta, &rep.metadata,
+                        &rep.mismatch);
+                    rep.meta_outcome = rep.metadata.outcome;
+                } else {
+                    err_detail = "output bytes differ from source bytes";
+                }
+                rep.status = st;
+                rep.valid = 1;
+                store_job_verify_report(job, &rep);
+            }
+        } else if (st == RFC_OK && exactness == RFC_EXACT_COEFFICIENT_EXACT) {
+            if (job->source_format != RFC_FORMAT_JPEG &&
+                job->target_format != RFC_FORMAT_JPEG) {
+                st = RFC_ERR_UNSUPPORTED_COMBINATION;
+                err_detail = "coefficient-exact requires a JPEG source or "
+                             "target";
+            } else if (!job->verify_src_coeffs || !job->verify_dst_coeffs) {
+                st = RFC_ERR_NO_ADAPTER;
+                err_detail =
+                    "coefficient-exact verify requires JPEG coefficient "
+                    "evidence";
+            } else {
+                if (src_bytes && src_size > 0u) {
+                    rfc_bytes_hash_sha256(src_bytes, src_size, rep.source_hash);
+                }
+                if (job->has_encoded_output && job->encoded_output.data) {
+                    rfc_bytes_hash_sha256(job->encoded_output.data,
+                                          job->encoded_output.len,
+                                          rep.verified_hash);
+                }
+                st = rfc_verify_jpeg_coefficients(job->verify_src_coeffs,
+                                                  job->verify_dst_coeffs,
+                                                  &rep.mismatch);
+                if (st == RFC_OK) {
+                    const rfc_metadata *dst_m =
+                        job->has_verify_reconstructed_meta
+                            ? &job->verify_reconstructed_meta
+                            : src_meta_eff;
+                    st = rfc_metadata_verify(
+                        job->target_format, meta_policy,
+                        RFC_EXACT_COEFFICIENT_EXACT, src_meta_eff,
+                        job->decoded_frames, job->decoded_frame_count, dst_m,
+                        job->decoded_frames, job->decoded_frame_count, ack_meta,
+                        &rep.metadata, &rep.mismatch);
+                    rep.meta_outcome = rep.metadata.outcome;
+                } else {
+                    err_detail = "JPEG coefficient-domain mismatch";
+                }
+                rep.status = st;
+                rep.valid = 1;
+                store_job_verify_report(job, &rep);
+            }
+        } else if (st == RFC_OK &&
+                   exactness == RFC_EXACT_ORIGINAL_BYTE_RECONSTRUCTION) {
+            if (meta_policy == RFC_META_POLICY_STRIP ||
+                job->source_format != RFC_FORMAT_JPEG ||
+                job->target_format != RFC_FORMAT_JPEG_XL) {
+                st = RFC_ERR_UNSUPPORTED_COMBINATION;
+                err_detail =
+                    "original-byte-reconstruction requires JPEG XL with "
+                    "preserved metadata";
+            } else if (!job->has_verify_reconstructed) {
+                st = RFC_ERR_NO_ADAPTER;
+                err_detail =
+                    "original-byte-reconstruction requires reconstructed "
+                    "original JPEG bytes";
+            } else if (!src_bytes || src_size == 0u ||
+                       !job->verify_reconstructed_bytes ||
+                       job->verify_reconstructed_len == 0u) {
+                st = RFC_ERR_INVALID_ARGUMENT;
+                err_detail =
+                    "original-byte-reconstruction requires non-empty JPEG "
+                    "bytes";
+            } else {
+                st = rfc_verify_original_byte_reconstruction(
+                    src_bytes, src_size, job->verify_reconstructed_bytes,
+                    job->verify_reconstructed_len, &rep);
+                if (st == RFC_OK) {
+                    const rfc_metadata *dst_m =
+                        job->has_verify_reconstructed_meta
+                            ? &job->verify_reconstructed_meta
+                            : src_meta_eff;
+                    st = rfc_metadata_verify(
+                        job->target_format, meta_policy,
+                        RFC_EXACT_ORIGINAL_BYTE_RECONSTRUCTION, src_meta_eff,
+                        job->decoded_frames, job->decoded_frame_count, dst_m,
+                        job->decoded_frames, job->decoded_frame_count, ack_meta,
+                        &rep.metadata, &rep.mismatch);
+                    rep.meta_outcome = rep.metadata.outcome;
+                } else {
+                    err_detail =
+                        "reconstructed original JPEG bytes SHA-256 differs";
+                }
+                rep.status = st;
+                rep.valid = 1;
+                store_job_verify_report(job, &rep);
+            }
+        }
     }
 
     if (st != RFC_OK) {

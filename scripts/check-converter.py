@@ -29,6 +29,7 @@ EXPECTED_OWNER = {"rasterfold": 1, "bmp": 1, "png": 1, "apng": 1, "pnm": 1,
 IMPORT_ONLY = {"camera-raw", "dng",   # docs/vision.md: explicit import-only adapter
                "heif", "heic"}        # docs/codec-distribution.md: system codec, read only
 ANIMATED = {"apng", "jpeg-xl", "gif", "tiff"}
+META_ITEMS = ("icc", "orientation", "frame-timing")
 
 
 def fail(msg):
@@ -127,6 +128,15 @@ def validate_registry():
                 return fail(f"{where}: enum setting {setting.get('id')!r} lists no allowed values")
             if setting.get("default") is None:
                 return fail(f"{where}: setting {setting.get('id')!r} has no default")
+        meta_items = row.get("metadata_items")
+        if not isinstance(meta_items, list):
+            return fail(f"{where}: missing metadata_items list")
+        if any(item not in META_ITEMS for item in meta_items) or len(set(meta_items)) != len(meta_items):
+            return fail(f"{where}: invalid metadata_items: {meta_items!r}")
+        if [i for i in META_ITEMS if i in meta_items] != meta_items:
+            return fail(f"{where}: metadata_items not in canonical order {META_ITEMS!r}: {meta_items!r}")
+        if "frame-timing" in meta_items and name not in ANIMATED:
+            return fail(f"{where}: frame-timing metadata only valid for animated/multi-frame formats")
     missing = [f for f in REQUIRED if f not in seen]
     if missing:
         return fail(f"converter/codecs.json: missing required formats: {missing}")
@@ -144,11 +154,11 @@ def _check_headers(tmp):
     cxx = os.environ.get("CXX", "c++")
     inc = os.path.join(ROOT, "converter", "include")
     tu = os.path.join(tmp, "tu.c")
-    open(tu, "w").write('#include "rfc_codec.h"\n#include "rfc_job.h"\nint main(void){return 0;}\n')
+    open(tu, "w").write('#include "rfc_codec.h"\n#include "rfc_job.h"\n#include "rfc_verify.h"\nint main(void){return 0;}\n')
     if run([cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", inc, "-c", tu, "-o", os.path.join(tmp, "tu.o")]):
         return fail("headers do not compile as C11")
     tux = os.path.join(tmp, "tu.cpp")
-    open(tux, "w").write('#include "rfc_codec.h"\n#include "rfc_job.h"\nint main(){return 0;}\n')
+    open(tux, "w").write('#include "rfc_codec.h"\n#include "rfc_job.h"\n#include "rfc_verify.h"\nint main(){return 0;}\n')
     if run([cxx, "-std=c++17", "-Wall", "-Wextra", "-Werror", "-I", inc, "-c", tux, "-o", os.path.join(tmp, "tu_cpp.o")]):
         return fail("headers do not compile as C++")
     return 0
@@ -186,12 +196,13 @@ def case_contract():
             for r in row.get("rules", []):
                 rules += (f"{r['setting_a']}={r['value_a']}&{r.get('setting_b') or '-'}"
                           f"={r.get('value_b') or '-'}:{r.get('reason')};")
+            meta = ",".join(row["metadata_items"]) + ("," if row["metadata_items"] else "")
             expected.append(
                 f"{row['format']}|{row['provider']}|{row['owner']}|"
                 f"{row.get('extension_owner') or '-'}|{row['availability']}|"
                 f"{row.get('unavailable_reason') or '-'}|"
                 f"{1 if row['modes']['read'] else 0}|{1 if row['modes']['write'] else 0}|"
-                f"{','.join(row['native_samples'])},|{settings}|{rules}")
+                f"{','.join(row['native_samples'])},|{settings}|{rules}|{meta}")
         actual = dump.stdout.strip().splitlines()
         if actual != expected:
             for a, e in zip(actual, expected):
@@ -240,6 +251,8 @@ def case_jobs(all_targets):
     sources = [
         os.path.join(src_dir, "registry.c"),
         os.path.join(src_dir, "limits.c"),
+        os.path.join(src_dir, "verify.c"),
+        os.path.join(src_dir, "metadata.c"),
         os.path.join(src_dir, "job.c"),
         os.path.join(src_dir, "scheduler.c"),
         os.path.join(ROOT, "tests", "converter", "test_jobs.c"),
@@ -299,6 +312,159 @@ def case_jobs(all_targets):
     return 0
 
 
+def _assert_exactness_output(label, stdout):
+    required = [
+        "exactness: sha256_and_digest ok",
+        "exactness: sample_formats_and_mutations ok",
+        "exactness: jpeg_coefficients ok",
+        "exactness: stage_verify_modes ok",
+        "exactness: metadata_policies ok",
+        "exactness: preview_isolation ok",
+        "exactness: cancel_and_faults ok",
+        "exactness: all checks passed",
+    ]
+    for marker in required:
+        if marker not in stdout:
+            return fail(f"{label} output missing checkpoint marker: {marker}")
+    for line in stdout.strip().splitlines():
+        print(f"  [{label}] {line}")
+    return 0
+
+
+def case_exactness(all_targets):
+    cc = os.environ.get("CC", "cc")
+    inc = os.path.join(ROOT, "converter", "include")
+    root_inc = os.path.join(ROOT, "include")
+    src_dir = os.path.join(ROOT, "converter", "src")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        if _check_headers(tmp):
+            return 1
+
+        # Prove verify.c + metadata.c compile, link, and execute without preview.c or job.c.
+        noprev_c = os.path.join(tmp, "verify_no_preview.c")
+        noprev_exe = os.path.join(tmp, "verify_no_preview" + (".exe" if os.name == "nt" else ""))
+        with open(noprev_c, "w", encoding="utf-8") as f:
+            f.write(
+                '#include "rfc_verify.h"\n'
+                '#include <string.h>\n'
+                'int main(void) {\n'
+                '    uint8_t px[12] = {1,2,3,4,5,6,7,8,9,10,11,12};\n'
+                '    rfc_frame fr = {{RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 2u, 2u, 6u, 8u},\n'
+                '                    {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u}, px, 12u, NULL};\n'
+                '    rfc_sample_mismatch mm;\n'
+                '    if (rfc_verify_frames_equal(&fr, 1u, &fr, 1u, &mm) != RFC_OK) return 1;\n'
+                '    rfc_metadata m = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u};\n'
+                '    rfc_metadata_report mr;\n'
+                '    if (rfc_metadata_verify(RFC_FORMAT_PNG, RFC_META_POLICY_PRESERVE,\n'
+                '                            RFC_EXACT_PIXEL_EXACT, &m, &fr, 1u,\n'
+                '                            &m, &fr, 1u, 0u, &mr, &mm) != RFC_OK) return 2;\n'
+                '    return 0;\n'
+                '}\n'
+            )
+        noprev_cmd = [
+            cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", inc,
+            os.path.join(src_dir, "registry.c"),
+            os.path.join(src_dir, "limits.c"),
+            os.path.join(src_dir, "verify.c"),
+            os.path.join(src_dir, "metadata.c"),
+            noprev_c, "-o", noprev_exe,
+        ]
+        if run(noprev_cmd):
+            return fail("verify.c + metadata.c failed to link without preview.c")
+        if run([noprev_exe]):
+            return fail("verify.c + metadata.c standalone link smoke failed")
+        print("  [host] verify.c + metadata.c link cleanly without preview.c: PASS")
+
+        if os.name == "nt":
+            if run([sys.executable, os.path.join(ROOT, "scripts", "build-converter.py"),
+                    "--target", "windows-x64"]):
+                return fail("windows-x64 converter build failed for rfc_test_exactness")
+            host_exe = os.path.join(ROOT, "bin", "converter", "windows-x64", "rfc_test_exactness.exe")
+        else:
+            librf = os.path.join(ROOT, "bin", "linux-x64", "lib", "librasterfold.a")
+            if not os.path.isfile(librf):
+                if run([sys.executable, os.path.join(ROOT, "scripts", "build.py"),
+                        "--target", "linux-x64"]):
+                    return fail("failed to build linux-x64 librasterfold.a for exactness tests")
+            sources = [
+                os.path.join(src_dir, "registry.c"),
+                os.path.join(src_dir, "limits.c"),
+                os.path.join(src_dir, "verify.c"),
+                os.path.join(src_dir, "metadata.c"),
+                os.path.join(src_dir, "preview.c"),
+                os.path.join(src_dir, "job.c"),
+                os.path.join(src_dir, "scheduler.c"),
+                os.path.join(ROOT, "tests", "converter", "test_exactness.c"),
+            ]
+            host_exe = os.path.join(tmp, "test_exactness")
+            cmd = [
+                cc, "-std=c11", "-Wall", "-Wextra", "-Werror",
+                "-I", inc, "-I", root_inc, *sources, librf, "-pthread", "-o", host_exe,
+            ]
+            if run(cmd):
+                return fail("exactness host test does not build")
+
+        res = subprocess.run([host_exe], cwd=ROOT, capture_output=True, text=True, timeout=60)
+        if res.returncode:
+            print(res.stdout)
+            print(res.stderr, file=sys.stderr)
+            return fail(f"exactness host test exited {res.returncode}")
+        if _assert_exactness_output("host", res.stdout):
+            return 1
+        print("exactness (host): PASS")
+
+        venv_py = os.path.join(ROOT, ".venv", "bin", "python")
+        py_bin = venv_py if (os.name != "nt" and os.path.isfile(venv_py)) else sys.executable
+        py_env = dict(os.environ)
+        py_env["RFC_TEST_EXACTNESS_EXE"] = host_exe
+        py_env["RFC_REQUIRE_EXACTNESS_EXE"] = "1"
+        py_cmd = [
+            py_bin, "-m", "unittest", "discover", "-s",
+            os.path.join(ROOT, "tests", "converter"), "-p", "test_exactness.py", "-v",
+        ]
+        print("+", *py_cmd)
+        py_res = subprocess.run(py_cmd, cwd=ROOT, env=py_env, timeout=60)
+        if py_res.returncode:
+            return fail(f"exactness python reference suite exited {py_res.returncode}")
+        print("exactness (python reference & oracle): PASS")
+
+    if all_targets or os.name == "nt":
+        if run([sys.executable, os.path.join(ROOT, "scripts", "build-converter.py"),
+                "--target", "windows-x64"]):
+            return fail("windows-x64 converter build failed for rfc_test_exactness")
+        from pathlib import Path
+        test_conv_dir = os.path.join(ROOT, "tests", "converter")
+        if test_conv_dir not in sys.path:
+            sys.path.insert(0, test_conv_dir)
+        import test_bundle
+
+        win_exe = Path(ROOT) / "bin" / "converter" / "windows-x64" / "rfc_test_exactness.exe"
+        if not win_exe.is_file():
+            return fail(f"missing built Windows binary: {win_exe}")
+        pe_dlls = test_bundle.parse_pe64_imports(win_exe)
+        ro_dlls = test_bundle.readobj_imports(win_exe)
+        if set(pe_dlls) != set(ro_dlls):
+            return fail(f"PE vs llvm-readobj import mismatch on {win_exe}: {pe_dlls} vs {ro_dlls}")
+        try:
+            test_bundle.validate_pe_imports(pe_dlls)
+        except ValueError as exc:
+            return fail(f"{win_exe} PE import check failed: {exc}")
+        print(f"  [windows-x64] PE imports OK: {', '.join(pe_dlls)}")
+
+        win_res = test_bundle.run_windows_binary_isolated(win_exe, timeout_sec=60.0)
+        if win_res.returncode:
+            print(win_res.stdout)
+            print(win_res.stderr, file=sys.stderr)
+            return fail(f"rfc_test_exactness.exe isolated run exited {win_res.returncode}")
+        if _assert_exactness_output("windows-x64", win_res.stdout):
+            return 1
+        print("exactness (windows-x64 isolated): PASS")
+
+    print("exactness: PASS")
+    return 0
+
+
 def main():
     raw_args = sys.argv[1:]
     all_targets = "--all-targets" in raw_args
@@ -309,6 +475,8 @@ def main():
         return case_bundle()
     if args == ["--case", "jobs"]:
         return case_jobs(all_targets)
+    if args == ["--case", "exactness"]:
+        return case_exactness(all_targets)
     if args == ["--case", "all"]:
         rc = case_contract()
         if rc:
@@ -316,8 +484,11 @@ def main():
         rc = case_jobs(all_targets)
         if rc:
             return rc
+        rc = case_exactness(all_targets)
+        if rc:
+            return rc
         return case_bundle()
-    print("usage: check-converter.py --case <contract|jobs|bundle|all> [--all-targets]")
+    print("usage: check-converter.py --case <contract|jobs|exactness|bundle|all> [--all-targets]")
     return 1
 
 

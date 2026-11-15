@@ -30,7 +30,9 @@ typedef enum rfc_status {
     RFC_ERR_CANCELLED = 14,
     RFC_ERR_LIMIT_EXCEEDED = 15,
     RFC_ERR_STALE_JOB = 16,
-    RFC_ERR_BUSY = 17
+    RFC_ERR_BUSY = 17,
+    RFC_ERR_VERIFY_MISMATCH = 18,
+    RFC_ERR_METADATA_POLICY = 19
 } rfc_status;
 
 typedef enum rfc_format_id {
@@ -84,6 +86,17 @@ typedef struct rfc_combination_rule {
     const char *reason;
 } rfc_combination_rule;
 
+enum {
+    RFC_META_ITEM_NONE = 0u,
+    RFC_META_ITEM_ICC = 1u << 0,
+    RFC_META_ITEM_ORIENTATION = 1u << 1,
+    RFC_META_ITEM_FRAME_TIMING = 1u << 2,
+    RFC_META_ITEM_ALL = (1u << 0) | (1u << 1) | (1u << 2),
+    RFC_META_CAP_ICC = RFC_META_ITEM_ICC,
+    RFC_META_CAP_ORIENTATION = RFC_META_ITEM_ORIENTATION,
+    RFC_META_CAP_FRAME_TIMING = RFC_META_ITEM_FRAME_TIMING
+};
+
 typedef struct rfc_capability {
     rfc_format_id id;
     const char *name;
@@ -100,6 +113,7 @@ typedef struct rfc_capability {
     size_t setting_count;
     const rfc_combination_rule *rules;
     size_t rule_count;
+    uint32_t metadata_items;
 } rfc_capability;
 
 typedef struct rfc_setting_value {

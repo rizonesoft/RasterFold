@@ -61,6 +61,9 @@ rf_find_static_lib(RF_LIB_RAW libraw.a raw)
 add_library(rfc_engine STATIC
   "${CMAKE_SOURCE_DIR}/src/registry.c"
   "${CMAKE_SOURCE_DIR}/src/limits.c"
+  "${CMAKE_SOURCE_DIR}/src/verify.c"
+  "${CMAKE_SOURCE_DIR}/src/metadata.c"
+  "${CMAKE_SOURCE_DIR}/src/preview.c"
   "${CMAKE_SOURCE_DIR}/src/job.c"
   "${CMAKE_SOURCE_DIR}/src/scheduler.c"
 )
@@ -92,6 +95,24 @@ target_compile_options(rfc_test_jobs PRIVATE -Wall -Wextra -Werror)
 target_link_libraries(rfc_test_jobs PRIVATE rfc_engine)
 if(WIN32)
   target_link_options(rfc_test_jobs PRIVATE -static -Wl,--gc-sections)
+endif()
+
+add_executable(rfc_test_exactness
+  "${CMAKE_SOURCE_DIR}/../tests/converter/test_exactness.c"
+)
+set_target_properties(rfc_test_exactness PROPERTIES
+  C_STANDARD 11
+  C_STANDARD_REQUIRED ON
+  C_EXTENSIONS OFF
+  RUNTIME_OUTPUT_DIRECTORY "${RF_CONVERTER_BIN_DIR}"
+)
+target_compile_options(rfc_test_exactness PRIVATE -Wall -Wextra -Werror)
+target_link_libraries(rfc_test_exactness PRIVATE
+  rfc_engine
+  "${RF_LIBRASTERFOLD}"
+)
+if(WIN32)
+  target_link_options(rfc_test_exactness PRIVATE -static -Wl,--gc-sections)
 endif()
 
 add_executable(rfc_bundle_smoke

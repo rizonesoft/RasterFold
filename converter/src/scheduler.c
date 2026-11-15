@@ -943,6 +943,34 @@ static rfc_status compute_preflight_with_contracts(
     return RFC_OK;
 }
 
+static rfc_status parse_verify_settings_sched(const rfc_setting_value *settings,
+                                              size_t setting_count,
+                                              rfc_exactness_class *out_exact,
+                                              rfc_metadata_policy *out_meta) {
+    *out_exact = RFC_EXACT_PIXEL_EXACT;
+    *out_meta = RFC_META_POLICY_PRESERVE;
+    if (!settings) {
+        return RFC_OK;
+    }
+    for (size_t i = 0u; i < setting_count; i++) {
+        if (!settings[i].id || !settings[i].value) {
+            return RFC_ERR_INVALID_ARGUMENT;
+        }
+        if (strcmp(settings[i].id, "exactness") == 0) {
+            rfc_status st = rfc_exactness_class_parse(settings[i].value, out_exact);
+            if (st != RFC_OK) {
+                return st;
+            }
+        } else if (strcmp(settings[i].id, "metadata") == 0) {
+            rfc_status st = rfc_metadata_policy_parse(settings[i].value, out_meta);
+            if (st != RFC_OK) {
+                return st;
+            }
+        }
+    }
+    return RFC_OK;
+}
+
 static rfc_status compute_preflight(const rfc_scheduler_config *cfg,
                                     rfc_format_id source_format,
                                     rfc_format_id target_format,
@@ -951,6 +979,7 @@ static rfc_status compute_preflight(const rfc_scheduler_config *cfg,
                                     const rfc_metadata *source_meta,
                                     const rfc_setting_value *settings,
                                     size_t setting_count,
+                                    uint32_t acknowledged_unsupported_metadata,
                                     const rfc_pipeline_stage_ops *stage_ops,
                                     uint64_t retained_bytes,
                                     uint64_t expected_working_set_bytes,
@@ -962,10 +991,28 @@ static rfc_status compute_preflight(const rfc_scheduler_config *cfg,
                                     uint64_t *out_reservation,
                                     uint64_t *out_exec_working,
                                     uint64_t *out_budget_limit) {
+    if ((acknowledged_unsupported_metadata & ~RFC_META_ITEM_ALL) != 0u) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
     rfc_status st = rfc_job_internal_validate_settings(
         source_format, target_format, settings, setting_count, stage_ops, NULL);
     if (st != RFC_OK) {
         return st;
+    }
+    if ((!stage_ops || !stage_ops->on_verify) && source_meta != NULL) {
+        rfc_exactness_class ex = RFC_EXACT_PIXEL_EXACT;
+        rfc_metadata_policy pol = RFC_META_POLICY_PRESERVE;
+        st = parse_verify_settings_sched(settings, setting_count, &ex, &pol);
+        if (st != RFC_OK) {
+            return st;
+        }
+        uint32_t present = rfc_metadata_source_items(source_meta, NULL, 0u);
+        st = rfc_metadata_check_preflight(target_format, pol, ex, present,
+                                          acknowledged_unsupported_metadata,
+                                          NULL);
+        if (st != RFC_OK) {
+            return st;
+        }
     }
     rfc_provider_memory_info src_mem;
     rfc_provider_memory_info dst_mem;
@@ -1452,10 +1499,11 @@ rfc_status rfc_scheduler_submit(rfc_scheduler *sched,
     st = compute_preflight(
         &cur_cfg, spec->source_format, spec->target_format, spec->source_size,
         spec->source_layout, spec->source_meta, spec->settings,
-        spec->setting_count, stage_ops, retained_bytes,
-        spec->expected_working_set_bytes, spec->job_memory_limit_bytes,
-        spec->limits_override, &src_mem, &dst_mem, &eff_limits,
-        &reservation_bytes, &exec_working_bytes, &budget_limit_bytes);
+        spec->setting_count, spec->acknowledged_unsupported_metadata, stage_ops,
+        retained_bytes, spec->expected_working_set_bytes,
+        spec->job_memory_limit_bytes, spec->limits_override, &src_mem,
+        &dst_mem, &eff_limits, &reservation_bytes, &exec_working_bytes,
+        &budget_limit_bytes);
     if (st != RFC_OK) {
         return st;
     }
@@ -1472,7 +1520,7 @@ rfc_status rfc_scheduler_submit(rfc_scheduler *sched,
     rfc_job_inputs *inputs = rfc_job_inputs_create(
         sched, &reserved_remaining, spec->source_bytes, spec->source_size,
         spec->source_layout, spec->source_meta, spec->settings,
-        spec->setting_count);
+        spec->setting_count, spec->acknowledged_unsupported_metadata);
     if (!inputs) {
         release_pending_submit(sched, pending_admit, reserved_remaining);
         return RFC_ERR_OUT_OF_MEMORY;
@@ -1558,10 +1606,11 @@ rfc_status rfc_scheduler_retry(rfc_scheduler *sched,
         &cur_cfg, source_format, target_format, inputs->source_size,
         inputs->has_layout ? &inputs->source_layout : NULL,
         inputs->has_meta ? &inputs->source_meta : NULL, inputs->settings,
-        inputs->setting_count, has_stage_ops ? &stage_ops : NULL,
-        inputs->retained_bytes, expected_working_set, job_memory_limit,
-        has_limits ? &owned_limits : NULL, &src_mem, &dst_mem, &eff_limits,
-        &reservation_bytes, &exec_working_bytes, &budget_limit_bytes);
+        inputs->setting_count, inputs->acknowledged_unsupported_metadata,
+        has_stage_ops ? &stage_ops : NULL, inputs->retained_bytes,
+        expected_working_set, job_memory_limit, has_limits ? &owned_limits : NULL,
+        &src_mem, &dst_mem, &eff_limits, &reservation_bytes, &exec_working_bytes,
+        &budget_limit_bytes);
     if (st != RFC_OK) {
         rfc_job_inputs_release(inputs);
         rfc_user_ctx_box_release(ctx_box);

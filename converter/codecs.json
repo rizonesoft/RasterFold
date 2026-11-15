@@ -47,7 +47,8 @@
           "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
         }
       ],
-      "extension_owner": null
+      "extension_owner": null,
+      "metadata_items": []
     },
     {
       "format": "bmp",
@@ -95,7 +96,8 @@
           "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
         }
       ],
-      "extension_owner": null
+      "extension_owner": null,
+      "metadata_items": []
     },
     {
       "format": "png",
@@ -146,7 +148,10 @@
           "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
         }
       ],
-      "extension_owner": null
+      "extension_owner": null,
+      "metadata_items": [
+        "icc"
+      ]
     },
     {
       "format": "apng",
@@ -214,7 +219,11 @@
           "reason": "frames=first-only discards frames and is refused for exact conversion"
         }
       ],
-      "extension_owner": "D10 T02 \u00a712"
+      "extension_owner": "D10 T02 \u00a712",
+      "metadata_items": [
+        "icc",
+        "frame-timing"
+      ]
     },
     {
       "format": "pnm",
@@ -263,7 +272,8 @@
           "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
         }
       ],
-      "extension_owner": null
+      "extension_owner": null,
+      "metadata_items": []
     },
     {
       "format": "pam",
@@ -314,7 +324,8 @@
           "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
         }
       ],
-      "extension_owner": null
+      "extension_owner": null,
+      "metadata_items": []
     },
     {
       "format": "webp",
@@ -361,7 +372,11 @@
           "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
         }
       ],
-      "extension_owner": null
+      "extension_owner": null,
+      "metadata_items": [
+        "icc",
+        "orientation"
+      ]
     },
     {
       "format": "jpeg-xl",
@@ -438,7 +453,12 @@
           "reason": "frames=first-only discards frames and is refused for exact conversion"
         }
       ],
-      "extension_owner": "D10 T02 \u00a712"
+      "extension_owner": "D10 T02 \u00a712",
+      "metadata_items": [
+        "icc",
+        "orientation",
+        "frame-timing"
+      ]
     },
     {
       "format": "avif",
@@ -487,7 +507,11 @@
           "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
         }
       ],
-      "extension_owner": null
+      "extension_owner": null,
+      "metadata_items": [
+        "icc",
+        "orientation"
+      ]
     },
     {
       "format": "jpeg",
@@ -535,7 +559,11 @@
           "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
         }
       ],
-      "extension_owner": null
+      "extension_owner": null,
+      "metadata_items": [
+        "icc",
+        "orientation"
+      ]
     },
     {
       "format": "gif",
@@ -599,7 +627,10 @@
           "reason": "frames=first-only discards frames and is refused for exact conversion"
         }
       ],
-      "extension_owner": "D10 T02 \u00a712"
+      "extension_owner": "D10 T02 \u00a712",
+      "metadata_items": [
+        "frame-timing"
+      ]
     },
     {
       "format": "tiff",
@@ -667,7 +698,11 @@
           "reason": "frames=first-only discards frames and is refused for exact conversion"
         }
       ],
-      "extension_owner": "D10 T02 \u00a712"
+      "extension_owner": "D10 T02 \u00a712",
+      "metadata_items": [
+        "icc",
+        "orientation"
+      ]
     },
     {
       "format": "heif",
@@ -716,7 +751,11 @@
           "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
         }
       ],
-      "extension_owner": null
+      "extension_owner": null,
+      "metadata_items": [
+        "icc",
+        "orientation"
+      ]
     },
     {
       "format": "heic",
@@ -765,7 +804,11 @@
           "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
         }
       ],
-      "extension_owner": null
+      "extension_owner": null,
+      "metadata_items": [
+        "icc",
+        "orientation"
+      ]
     },
     {
       "format": "jpeg-2000",
@@ -816,7 +859,10 @@
           "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
         }
       ],
-      "extension_owner": null
+      "extension_owner": null,
+      "metadata_items": [
+        "icc"
+      ]
     },
     {
       "format": "qoi",
@@ -863,7 +909,8 @@
           "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
         }
       ],
-      "extension_owner": null
+      "extension_owner": null,
+      "metadata_items": []
     },
     {
       "format": "openexr",
@@ -912,7 +959,10 @@
           "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
         }
       ],
-      "extension_owner": null
+      "extension_owner": null,
+      "metadata_items": [
+        "icc"
+      ]
     },
     {
       "format": "camera-raw",
@@ -963,7 +1013,11 @@
           "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
         }
       ],
-      "extension_owner": null
+      "extension_owner": null,
+      "metadata_items": [
+        "icc",
+        "orientation"
+      ]
     },
     {
       "format": "dng",
@@ -1014,7 +1068,11 @@
           "reason": "stripping metadata changes the bytes, so it cannot claim byte-identical exactness"
         }
       ],
-      "extension_owner": null
+      "extension_owner": null,
+      "metadata_items": [
+        "icc",
+        "orientation"
+      ]
     }
   ]
 }

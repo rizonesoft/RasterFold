@@ -184,6 +184,7 @@ typedef struct rfc_job_spec {
     rfc_pipeline_stage_ops stage_ops;
     rfc_progress_fn progress_fn;
     void *progress_user;
+    uint32_t acknowledged_unsupported_metadata;
 } rfc_job_spec;
 
 void rfc_limits_default(rfc_limits *out);
@@ -240,6 +241,7 @@ rfc_format_id rfc_job_target_format(const rfc_job *job);
 const uint8_t *rfc_job_source_bytes(const rfc_job *job, size_t *out_size);
 const rfc_layout *rfc_job_source_layout(const rfc_job *job);
 const rfc_metadata *rfc_job_source_metadata(const rfc_job *job);
+uint32_t rfc_job_acknowledged_metadata(const rfc_job *job);
 const rfc_setting_value *rfc_job_settings(const rfc_job *job, size_t *out_count);
 const rfc_frame *rfc_job_decoded_frames(const rfc_job *job,
                                         size_t *out_count,
