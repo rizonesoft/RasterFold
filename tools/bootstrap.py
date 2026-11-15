@@ -326,6 +326,31 @@ def validate_vendor_manifest(manifest: dict) -> None:
     missing_rt = {'llvm-runtime', 'mingw-w64-runtime', 'winpthreads'} - rt_ids
     if missing_rt:
         raise ValueError(f'converter/vendor.json runtime_libraries missing required entries: {sorted(missing_rt)}')
+    embedded = manifest.get('embedded_components')
+    if embedded is not None:
+        if not isinstance(embedded, list):
+            raise ValueError('converter/vendor.json embedded_components must be a list')
+        emb_ids: set[str] = set()
+        for emb in embedded:
+            if not isinstance(emb, dict):
+                raise ValueError('embedded component entry must be an object')
+            for key in ('id', 'name', 'version', 'revision', 'host_package', 'subpath',
+                        'upstream_repo', 'license', 'license_file', 'notes'):
+                if not isinstance(emb.get(key), str) or not emb[key].strip():
+                    raise ValueError(f'embedded component missing {key}: {emb.get("id")!r}')
+            if emb['host_package'] not in seen_ids:
+                raise ValueError(f'embedded component {emb["id"]} references unknown host_package: {emb["host_package"]!r}')
+            if _is_moving_ref(emb['revision']) or _is_moving_ref(emb['upstream_repo']):
+                raise ValueError(f'embedded component {emb["id"]} forbids moving branch ref')
+            if 'hevc' in emb['id'].lower() or 'hevc' in emb['subpath'].lower():
+                raise ValueError(f'embedded component {emb["id"]} forbids HEVC sources')
+            if not isinstance(emb.get('compiled_into'), list) or not emb['compiled_into']:
+                raise ValueError(f'embedded component {emb["id"]} must name compiled archive targets')
+            if not emb['license_file'].startswith('converter/licenses/') or not emb['license_file'].endswith('.txt'):
+                raise ValueError(f'embedded component {emb["id"]} invalid license_file path: {emb["license_file"]!r}')
+            if emb['id'] in emb_ids or emb['id'] in seen_ids:
+                raise ValueError(f'duplicate embedded component id: {emb["id"]}')
+            emb_ids.add(emb['id'])
 
 
 def verify(component: dict, tools: Path) -> None:

@@ -29,6 +29,8 @@ todo/.tidy-baseline text eol=lf
 todo/.warning-baseline text eol=lf
 todo/.design-baseline text eol=lf
 docs/reviews/** text eol=lf
+converter/licenses/*.txt text eol=lf
+converter/THIRD-PARTY-NOTICES.txt text eol=lf
 
 # Binary: images, codec files, archives, executables.
 *.bmp binary

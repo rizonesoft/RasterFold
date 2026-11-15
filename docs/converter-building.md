@@ -42,6 +42,6 @@ For fair performance comparisons, every dependency keeps its full standard x86-6
 
 ## Notices and SBOM Regeneration
 
-`converter/THIRD-PARTY-NOTICES.txt` and `converter/sbom.spdx.json` are generated deterministically offline from `converter/vendor.json`, `toolchain.json`, and `converter/licenses/*.txt` (covering all 19 codec libraries including `README.ijg` in `libjpeg-turbo.txt`, plus the 3 static `llvm-mingw` runtime entries `llvm-runtime.txt`, `mingw-w64-runtime.txt`, and `winpthreads.txt`):
+`converter/THIRD-PARTY-NOTICES.txt` and `converter/sbom.spdx.json` are generated deterministically offline from `converter/vendor.json`, `toolchain.json`, and `converter/licenses/*.txt` (covering all 19 codec libraries including `README.ijg` in `libjpeg-turbo.txt`, the 7 compiled embedded subcomponents such as OpenEXR's internal Zstandard `1.5.7` and xxHash `0.8.2`, `libaom`'s `fastfeat`/`vector`/`x86inc`, `libavif`'s `libyuv` subset, and `libjpeg-turbo`'s `libspng`, plus the 3 static `llvm-mingw` runtime entries `llvm-runtime.txt`, `mingw-w64-runtime.txt`, and `winpthreads.txt`):
 - Regenerate: `python3 scripts/build-converter.py --write-notices`
 - Verify currency: `python3 scripts/build-converter.py --check-notices`

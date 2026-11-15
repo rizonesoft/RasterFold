@@ -159,6 +159,8 @@ class Toolchain(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'PINNED.json'):bootstrap.verify_vendor_package(pkg,csrc)
 
     def test_scope_converter_filtering_and_tampering_behavior(self):
+        if sys.platform!='linux':
+            self.skipTest('Linux bootstrap/provision boundary test')
         repo_root=Path(__file__).resolve().parents[1]
         real_manifest=json.loads((repo_root/'toolchain.json').read_text(encoding='utf-8'))
         for group in (real_manifest['components'],real_manifest['hosts']['linux-x86_64']['components']):
@@ -174,6 +176,7 @@ class Toolchain(unittest.TestCase):
             (root/'tools/githooks').mkdir(parents=True)
             (root/'scripts').mkdir()
             (root/'converter/licenses').mkdir(parents=True)
+            (root/'.venv/bin').mkdir(parents=True)
             shutil.copy2(repo_root/'tools/bootstrap.py',root/'tools/bootstrap.py')
             shutil.copy2(repo_root/'tools/provision.py',root/'tools/provision.py')
             for hook in ('pre-commit','commit-msg'):
@@ -181,6 +184,19 @@ class Toolchain(unittest.TestCase):
                 hp.write_text('#!/bin/sh\nexit 0\n',encoding='utf-8')
                 hp.chmod(0o755)
             (root/'scripts/gen-compdb.py').write_text('import sys; sys.exit(0)\n',encoding='utf-8')
+            venv_py=root/'.venv/bin/python'
+            venv_py.write_text(
+                f'#!/bin/sh\nexec "{sys.executable}" -c "import sys; assert sys.version_info >= (3, 11); print(\'Pillow stub\')"\n',
+                encoding='utf-8',
+            )
+            venv_py.chmod(0o755)
+            prov_env=dict(os.environ)
+            if not shutil.which('pwsh'):
+                stub_bin=root/'stub-bin';stub_bin.mkdir()
+                pwsh_stub=stub_bin/'pwsh'
+                pwsh_stub.write_text('#!/bin/sh\nexit 0\n',encoding='utf-8')
+                pwsh_stub.chmod(0o755)
+                prov_env['PATH']=f'{stub_bin}{os.pathsep}{prov_env.get("PATH","")}'
             subprocess.run(['git','init','-q'],cwd=root,check=True)
             subprocess.run(['git','config','core.hooksPath','tools/githooks'],cwd=root,check=True)
 
@@ -245,34 +261,34 @@ class Toolchain(unittest.TestCase):
             # Core scope installs/verifies without converter tools or sources.
             subprocess.run([sys.executable,str(root/'tools/bootstrap.py')],cwd=root,check=True,capture_output=True)
             self.assertFalse((root/'tools/cmake-linux').exists())
-            subprocess.run([sys.executable,str(root/'tools/provision.py'),'--verify'],cwd=root,check=True,capture_output=True)
+            subprocess.run([sys.executable,str(root/'tools/provision.py'),'--verify'],cwd=root,env=prov_env,check=True,capture_output=True)
 
             bs_conv_fail=subprocess.run([sys.executable,str(root/'tools/bootstrap.py'),'--converter','--verify'],
                                         cwd=root,capture_output=True,text=True)
             self.assertNotEqual(bs_conv_fail.returncode,0)
             pr_conv_fail=subprocess.run([sys.executable,str(root/'tools/provision.py'),'--converter','--verify'],
-                                        cwd=root,capture_output=True,text=True)
+                                        cwd=root,env=prov_env,capture_output=True,text=True)
             self.assertNotEqual(pr_conv_fail.returncode,0)
 
             # Full --converter installs cmake-linux, nasm-linux, and patched tiny source.
             subprocess.run([sys.executable,str(root/'tools/bootstrap.py'),'--converter'],cwd=root,check=True,capture_output=True)
-            subprocess.run([sys.executable,str(root/'tools/provision.py'),'--converter','--verify'],cwd=root,check=True,capture_output=True)
+            subprocess.run([sys.executable,str(root/'tools/provision.py'),'--converter','--verify'],cwd=root,env=prov_env,check=True,capture_output=True)
 
             # Tamper secondary probe in coretool (version probe stays valid) -> fails default verify.
             (root/'tools/coretool/bin/helper').write_text('helper-tampered\n',encoding='utf-8')
             core_fail=subprocess.run([sys.executable,str(root/'tools/provision.py'),'--verify'],
-                                     cwd=root,capture_output=True,text=True)
+                                     cwd=root,env=prov_env,capture_output=True,text=True)
             self.assertNotEqual(core_fail.returncode,0)
             (root/'tools/coretool/bin/helper').write_text('helper-v1\n',encoding='utf-8')
-            subprocess.run([sys.executable,str(root/'tools/provision.py'),'--verify'],cwd=root,check=True,capture_output=True)
+            subprocess.run([sys.executable,str(root/'tools/provision.py'),'--verify'],cwd=root,env=prov_env,check=True,capture_output=True)
 
             # Tamper cmake probe preserving --version output -> default still passes, --converter fails.
             cmake_bin=root/'tools/cmake-linux/bin/cmake'
             cmake_bin.write_text('#!/bin/sh\necho "cmake version 4.5.0"\n# tampered\n',encoding='utf-8')
             cmake_bin.chmod(0o755)
-            subprocess.run([sys.executable,str(root/'tools/provision.py'),'--verify'],cwd=root,check=True,capture_output=True)
+            subprocess.run([sys.executable,str(root/'tools/provision.py'),'--verify'],cwd=root,env=prov_env,check=True,capture_output=True)
             conv_tamper=subprocess.run([sys.executable,str(root/'tools/provision.py'),'--converter','--verify'],
-                                       cwd=root,capture_output=True,text=True)
+                                       cwd=root,env=prov_env,capture_output=True,text=True)
             self.assertNotEqual(conv_tamper.returncode,0)
             self.assertIn('probe changed',conv_tamper.stdout+conv_tamper.stderr)
 

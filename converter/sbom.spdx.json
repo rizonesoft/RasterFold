@@ -494,6 +494,174 @@
       "comment": "role=transitive; owner=D10 T01 \u00a72; license_file=converter/licenses/zlib.txt; license_excerpt=--- zlib-1.4/LICENSE ---"
     },
     {
+      "SPDXID": "SPDXRef-embedded-libaom-fastfeat",
+      "name": "libaom-fastfeat",
+      "versionInfo": "2.0",
+      "downloadLocation": "https://storage.googleapis.com/aom-releases/libaom-3.15.3.tar.gz",
+      "filesAnalyzed": false,
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "12c01dc731ed7b5a999e28120b45bf58a002ba3435a4ba2cfbc1e084a27c9c04"
+        }
+      ],
+      "licenseConcluded": "BSD-3-Clause",
+      "licenseDeclared": "BSD-3-Clause",
+      "sourceInfo": "Bundled inside host package libaom (libaom-3.15.3.tar.gz, commit b141d9c45db236335351c8a4b2a14b3ade27c937) at third_party/fastfeat; license_sha256=499041ddee5227b6f29ca06c17803e5fe24d60f243c69635cd76b7ba08d0ddd5",
+      "externalRefs": [
+        {
+          "referenceCategory": "OTHER",
+          "referenceType": "vcs",
+          "referenceLocator": "https://github.com/edrosten/fast-C-src@391d5e939eb1545d24c10533d7de424db8d9c191"
+        }
+      ],
+      "comment": "host_package=libaom; subpath=third_party/fastfeat; compiled_into=libaom.a; license_file=converter/licenses/libaom-fastfeat.txt; license_excerpt=Copyright (c) 2006, 2008 Edward Rosten"
+    },
+    {
+      "SPDXID": "SPDXRef-embedded-libaom-vector",
+      "name": "libaom-vector",
+      "versionInfo": "0.0.0-40efe82",
+      "downloadLocation": "https://storage.googleapis.com/aom-releases/libaom-3.15.3.tar.gz",
+      "filesAnalyzed": false,
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "12c01dc731ed7b5a999e28120b45bf58a002ba3435a4ba2cfbc1e084a27c9c04"
+        }
+      ],
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
+      "sourceInfo": "Bundled inside host package libaom (libaom-3.15.3.tar.gz, commit b141d9c45db236335351c8a4b2a14b3ade27c937) at third_party/vector; license_sha256=ff6c857ce2708e87701323078aef115c1872a1f80a9649f86dc899b48083bc60",
+      "externalRefs": [
+        {
+          "referenceCategory": "OTHER",
+          "referenceType": "vcs",
+          "referenceLocator": "https://github.com/goldsborough/vector@40efe82"
+        }
+      ],
+      "comment": "host_package=libaom; subpath=third_party/vector; compiled_into=libaom.a; license_file=converter/licenses/libaom-vector.txt; license_excerpt=The MIT License (MIT)"
+    },
+    {
+      "SPDXID": "SPDXRef-embedded-libaom-x86inc",
+      "name": "libaom-x86inc",
+      "versionInfo": "0.0.0-3e5aed95",
+      "downloadLocation": "https://storage.googleapis.com/aom-releases/libaom-3.15.3.tar.gz",
+      "filesAnalyzed": false,
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "12c01dc731ed7b5a999e28120b45bf58a002ba3435a4ba2cfbc1e084a27c9c04"
+        }
+      ],
+      "licenseConcluded": "ISC",
+      "licenseDeclared": "ISC",
+      "sourceInfo": "Bundled inside host package libaom (libaom-3.15.3.tar.gz, commit b141d9c45db236335351c8a4b2a14b3ade27c937) at third_party/x86inc; license_sha256=719d8fa235f2068e0ae6d6a7dceb0a7720d7840f0f0ebed29957989e6ded3cd8",
+      "externalRefs": [
+        {
+          "referenceCategory": "OTHER",
+          "referenceType": "vcs",
+          "referenceLocator": "https://git.videolan.org/git/x264.git@3e5aed95cc470f37e2db3e6506a8deb89b527720"
+        }
+      ],
+      "comment": "host_package=libaom; subpath=third_party/x86inc; compiled_into=libaom.a; license_file=converter/licenses/libaom-x86inc.txt; license_excerpt=Copyright (C) 2005-2012 x264 project"
+    },
+    {
+      "SPDXID": "SPDXRef-embedded-libavif-libyuv",
+      "name": "libavif-libyuv",
+      "versionInfo": "1880",
+      "downloadLocation": "https://github.com/AOMediaCodec/libavif/archive/refs/tags/v1.4.2.tar.gz",
+      "filesAnalyzed": false,
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "2b645287340ba5a631d268b551dc2d72bd73ac33335962dd36dcdb6d8366921d"
+        }
+      ],
+      "licenseConcluded": "BSD-3-Clause",
+      "licenseDeclared": "BSD-3-Clause",
+      "sourceInfo": "Bundled inside host package libavif (libavif-v1.4.2.tar.gz, commit c5240fc79fe5c2407e10afd35f5505ef6333ea49) at third_party/libyuv; license_sha256=e72b31563aee811cf8cf0e7325c68b5c5c2b91106f13d5e5dee2b667af67f4b2",
+      "externalRefs": [
+        {
+          "referenceCategory": "OTHER",
+          "referenceType": "vcs",
+          "referenceLocator": "https://chromium.googlesource.com/libyuv/libyuv@1880"
+        }
+      ],
+      "comment": "host_package=libavif; subpath=third_party/libyuv; compiled_into=libavif.a; license_file=converter/licenses/libavif-libyuv.txt; license_excerpt=Files: third_party/libyuv/*"
+    },
+    {
+      "SPDXID": "SPDXRef-embedded-libjpeg-turbo-spng",
+      "name": "libjpeg-turbo-spng",
+      "versionInfo": "0.7.4",
+      "downloadLocation": "https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.2.1/libjpeg-turbo-3.2.1.tar.gz",
+      "filesAnalyzed": false,
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "c27ad72a68da151177929aa969ae773a2da5ac2af9ce946079314fdac8cece7f"
+        }
+      ],
+      "licenseConcluded": "BSD-2-Clause AND Libpng-2.0",
+      "licenseDeclared": "BSD-2-Clause AND Libpng-2.0",
+      "sourceInfo": "Bundled inside host package libjpeg-turbo (libjpeg-turbo-3.2.1.tar.gz, commit 7b4993786d856cbccabfc0ed2f923ba000e326cc) at src/spng; license_sha256=55ccafecb376ec0a6967ac94a5f43708ff12cab0921f8da78374b836cc76feaf",
+      "externalRefs": [
+        {
+          "referenceCategory": "OTHER",
+          "referenceType": "vcs",
+          "referenceLocator": "https://github.com/randy408/libspng@0.7.4"
+        }
+      ],
+      "comment": "host_package=libjpeg-turbo; subpath=src/spng; compiled_into=libturbojpeg.a; license_file=converter/licenses/libjpeg-turbo-spng.txt; license_excerpt=BSD 2-Clause License"
+    },
+    {
+      "SPDXID": "SPDXRef-embedded-openexr-xxhash",
+      "name": "openexr-xxhash",
+      "versionInfo": "0.8.2",
+      "downloadLocation": "https://github.com/AcademySoftwareFoundation/openexr/releases/download/v3.5.4/openexr-3.5.4.tar.gz",
+      "filesAnalyzed": false,
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "a09706c88ab83a90c26e7ee06cb7e6fa03a57726931eaec557c2e7eaf35c1b13"
+        }
+      ],
+      "licenseConcluded": "BSD-3-Clause",
+      "licenseDeclared": "BSD-3-Clause",
+      "sourceInfo": "Bundled inside host package openexr (openexr-3.5.4.tar.gz, commit 86687e5f34e3a164820c5e280259550e3ca87c92) at external/zstd/lib/common/xxhash.c; license_sha256=3659167a56597b0196ad1ce427f6f96465503c4b60746c07b5f867bfb268b725",
+      "externalRefs": [
+        {
+          "referenceCategory": "OTHER",
+          "referenceType": "vcs",
+          "referenceLocator": "https://github.com/Cyan4973/xxHash@0.8.2"
+        }
+      ],
+      "comment": "host_package=openexr; subpath=external/zstd/lib/common/xxhash.c; compiled_into=libOpenEXRCore-3_5.a; license_file=converter/licenses/openexr-xxhash.txt; license_excerpt=/*"
+    },
+    {
+      "SPDXID": "SPDXRef-embedded-openexr-zstd",
+      "name": "openexr-zstd",
+      "versionInfo": "1.5.7",
+      "downloadLocation": "https://github.com/AcademySoftwareFoundation/openexr/releases/download/v3.5.4/openexr-3.5.4.tar.gz",
+      "filesAnalyzed": false,
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "a09706c88ab83a90c26e7ee06cb7e6fa03a57726931eaec557c2e7eaf35c1b13"
+        }
+      ],
+      "licenseConcluded": "BSD-3-Clause",
+      "licenseDeclared": "BSD-3-Clause",
+      "sourceInfo": "Bundled inside host package openexr (openexr-3.5.4.tar.gz, commit 86687e5f34e3a164820c5e280259550e3ca87c92) at external/zstd; license_sha256=7055266497633c9025b777c78eb7235af13922117480ed5c674677adc381c9d8",
+      "externalRefs": [
+        {
+          "referenceCategory": "OTHER",
+          "referenceType": "vcs",
+          "referenceLocator": "https://github.com/facebook/zstd@1.5.7"
+        }
+      ],
+      "comment": "host_package=openexr; subpath=external/zstd; compiled_into=libOpenEXRCore-3_5.a; license_file=converter/licenses/openexr-zstd.txt; license_excerpt=BSD License"
+    },
+    {
       "SPDXID": "SPDXRef-runtime-llvm-runtime",
       "name": "llvm-runtime",
       "versionInfo": "23.1.2",
@@ -761,6 +929,76 @@
       "spdxElementId": "SPDXRef-Package-rasterfold-converter",
       "relationshipType": "STATIC_LINK",
       "relatedSpdxElement": "SPDXRef-pkg-zlib"
+    },
+    {
+      "spdxElementId": "SPDXRef-pkg-libaom",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-embedded-libaom-fastfeat"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-rasterfold-converter",
+      "relationshipType": "STATIC_LINK",
+      "relatedSpdxElement": "SPDXRef-embedded-libaom-fastfeat"
+    },
+    {
+      "spdxElementId": "SPDXRef-pkg-libaom",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-embedded-libaom-vector"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-rasterfold-converter",
+      "relationshipType": "STATIC_LINK",
+      "relatedSpdxElement": "SPDXRef-embedded-libaom-vector"
+    },
+    {
+      "spdxElementId": "SPDXRef-pkg-libaom",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-embedded-libaom-x86inc"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-rasterfold-converter",
+      "relationshipType": "STATIC_LINK",
+      "relatedSpdxElement": "SPDXRef-embedded-libaom-x86inc"
+    },
+    {
+      "spdxElementId": "SPDXRef-pkg-libavif",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-embedded-libavif-libyuv"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-rasterfold-converter",
+      "relationshipType": "STATIC_LINK",
+      "relatedSpdxElement": "SPDXRef-embedded-libavif-libyuv"
+    },
+    {
+      "spdxElementId": "SPDXRef-pkg-libjpeg-turbo",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-embedded-libjpeg-turbo-spng"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-rasterfold-converter",
+      "relationshipType": "STATIC_LINK",
+      "relatedSpdxElement": "SPDXRef-embedded-libjpeg-turbo-spng"
+    },
+    {
+      "spdxElementId": "SPDXRef-pkg-openexr",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-embedded-openexr-xxhash"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-rasterfold-converter",
+      "relationshipType": "STATIC_LINK",
+      "relatedSpdxElement": "SPDXRef-embedded-openexr-xxhash"
+    },
+    {
+      "spdxElementId": "SPDXRef-pkg-openexr",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-embedded-openexr-zstd"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-rasterfold-converter",
+      "relationshipType": "STATIC_LINK",
+      "relatedSpdxElement": "SPDXRef-embedded-openexr-zstd"
     },
     {
       "spdxElementId": "SPDXRef-Package-rasterfold-converter",

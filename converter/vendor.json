@@ -705,7 +705,7 @@
         "simd": "x86-64 SSE2/F16C predictor/unroll plus OpenJPH SIMD HTJ2K and libdeflate SIMD ZIP",
         "nasm": false,
         "threads": true,
-        "notes": "Exposes pure C11 OpenEXRCore static archive alongside C++ OpenEXR libraries"
+        "notes": "Exposes pure C11 OpenEXRCore static archive (compiling bundled external/zstd 1.5.7 and xxHash 0.8.2 with CMAKE_DISABLE_FIND_PACKAGE_zstd=ON) alongside C++ OpenEXR libraries"
       },
       "cmake_options": [
         "-DBUILD_SHARED_LIBS=OFF",
@@ -816,6 +816,115 @@
         "libwinpthread.a"
       ],
       "notes": "Statically linked Windows POSIX threads runtime from pinned llvm-mingw 20260922 (-static)."
+    }
+  ],
+  "embedded_components": [
+    {
+      "id": "libaom-fastfeat",
+      "name": "FAST feature detectors in C",
+      "version": "2.0",
+      "revision": "391d5e939eb1545d24c10533d7de424db8d9c191",
+      "host_package": "libaom",
+      "subpath": "third_party/fastfeat",
+      "compiled_into": [
+        "libaom.a"
+      ],
+      "upstream_repo": "https://github.com/edrosten/fast-C-src",
+      "license": "BSD-3-Clause",
+      "license_file": "converter/licenses/libaom-fastfeat.txt",
+      "notes": "Bundled inside pinned libaom v4.0.0 source archive and compiled directly into libaom.a (fast.c, fast_9.c, nonmax.c)."
+    },
+    {
+      "id": "libaom-vector",
+      "name": "vector",
+      "version": "0.0.0-40efe82",
+      "revision": "40efe82",
+      "host_package": "libaom",
+      "subpath": "third_party/vector",
+      "compiled_into": [
+        "libaom.a"
+      ],
+      "upstream_repo": "https://github.com/goldsborough/vector",
+      "license": "MIT",
+      "license_file": "converter/licenses/libaom-vector.txt",
+      "notes": "Bundled inside pinned libaom v4.0.0 source archive and compiled directly into libaom.a (vector.c)."
+    },
+    {
+      "id": "libaom-x86inc",
+      "name": "x86inc.asm",
+      "version": "0.0.0-3e5aed95",
+      "revision": "3e5aed95cc470f37e2db3e6506a8deb89b527720",
+      "host_package": "libaom",
+      "subpath": "third_party/x86inc",
+      "compiled_into": [
+        "libaom.a"
+      ],
+      "upstream_repo": "https://git.videolan.org/git/x264.git",
+      "license": "ISC",
+      "license_file": "converter/licenses/libaom-x86inc.txt",
+      "notes": "Bundled inside pinned libaom v4.0.0 source archive and assembled via %include into libaom.a x86-64 NASM objects."
+    },
+    {
+      "id": "libavif-libyuv",
+      "name": "libyuv",
+      "version": "1880",
+      "revision": "1880",
+      "host_package": "libavif",
+      "subpath": "third_party/libyuv",
+      "compiled_into": [
+        "libavif.a"
+      ],
+      "upstream_repo": "https://chromium.googlesource.com/libyuv/libyuv",
+      "license": "BSD-3-Clause",
+      "license_file": "converter/licenses/libavif-libyuv.txt",
+      "notes": "Embedded libyuv source subset shipped inside pinned libavif v1.4.1 and compiled into libavif.a (planar_functions.c, row_common.c, scale.c, scale_any.c, scale_common.c)."
+    },
+    {
+      "id": "libjpeg-turbo-spng",
+      "name": "libspng",
+      "version": "0.7.4",
+      "revision": "0.7.4",
+      "host_package": "libjpeg-turbo",
+      "subpath": "src/spng",
+      "compiled_into": [
+        "libturbojpeg.a"
+      ],
+      "upstream_repo": "https://github.com/randy408/libspng",
+      "license": "BSD-2-Clause AND Libpng-2.0",
+      "license_file": "converter/licenses/libjpeg-turbo-spng.txt",
+      "notes": "Embedded libspng 0.7.4 shipped inside pinned libjpeg-turbo 3.1.4.1 and compiled into libturbojpeg.a (spng.c, linking pinned system zlib via WITH_SYSTEM_ZLIB=ON)."
+    },
+    {
+      "id": "openexr-xxhash",
+      "name": "xxHash",
+      "version": "0.8.2",
+      "revision": "0.8.2",
+      "host_package": "openexr",
+      "subpath": "external/zstd/lib/common/xxhash.c",
+      "compiled_into": [
+        "libOpenEXRCore-3_5.a"
+      ],
+      "upstream_repo": "https://github.com/Cyan4973/xxHash",
+      "license": "BSD-3-Clause",
+      "license_expression_upstream": "BSD-3-Clause OR GPL-2.0-only",
+      "license_file": "converter/licenses/openexr-xxhash.txt",
+      "notes": "Bundled inside OpenEXR v3.5.0-dev external/zstd 1.5.7 tree and compiled directly into libOpenEXRCore-3_5.a (xxhash.c with XXH_NAMESPACE=ZSTD_)."
+    },
+    {
+      "id": "openexr-zstd",
+      "name": "Zstandard",
+      "version": "1.5.7",
+      "revision": "1.5.7",
+      "host_package": "openexr",
+      "subpath": "external/zstd",
+      "compiled_into": [
+        "libOpenEXRCore-3_5.a"
+      ],
+      "upstream_repo": "https://github.com/facebook/zstd",
+      "license": "BSD-3-Clause",
+      "license_expression_upstream": "BSD-3-Clause OR GPL-2.0-only",
+      "license_file": "converter/licenses/openexr-zstd.txt",
+      "notes": "Bundled inside OpenEXR v3.5.0-dev and selected by OpenEXRSetup.cmake when CMAKE_DISABLE_FIND_PACKAGE_zstd=ON disables external zstd lookup; compiled directly into libOpenEXRCore-3_5.a."
     }
   ]
 }

@@ -332,6 +332,17 @@ class BundleTests(unittest.TestCase):
         self.assertEqual(len(vendor['packages']), 19)
         ids = {p['id'] for p in vendor['packages']}
         self.assertFalse(ids & FORBIDDEN_HEVC_IDS)
+        expected_emb = {
+            'libaom-fastfeat',
+            'libaom-vector',
+            'libaom-x86inc',
+            'libavif-libyuv',
+            'libjpeg-turbo-spng',
+            'openexr-xxhash',
+            'openexr-zstd',
+        }
+        embedded = vendor.get('embedded_components', [])
+        self.assertEqual({e['id'] for e in embedded}, expected_emb)
 
         sys_codecs = vendor['system_codecs']
         self.assertTrue(sys_codecs)
@@ -400,9 +411,84 @@ class BundleTests(unittest.TestCase):
             for rel in sbom['relationships']
             if rel['relationshipType'] == 'STATIC_LINK'
         }
+        contains_rels = {
+            (rel['spdxElementId'], rel['relatedSpdxElement'])
+            for rel in sbom['relationships']
+            if rel['relationshipType'] == 'CONTAINS'
+        }
         for rt in runtimes:
             spdx_id = f'SPDXRef-runtime-{rt["id"]}'
             self.assertIn(('SPDXRef-Package-rasterfold-converter', spdx_id), static_links)
+
+        pkg_by_id = {p['id']: p for p in vendor['packages']}
+        embedded = vendor.get('embedded_components', [])
+        self.assertEqual(
+            {e['id'] for e in embedded},
+            {
+                'libaom-fastfeat',
+                'libaom-vector',
+                'libaom-x86inc',
+                'libavif-libyuv',
+                'libjpeg-turbo-spng',
+                'openexr-xxhash',
+                'openexr-zstd',
+            },
+        )
+        for emb in embedded:
+            lic_path = ROOT / emb['license_file']
+            self.assertTrue(lic_path.is_file(), f'missing embedded license file {emb["license_file"]}')
+            text = lic_path.read_text(encoding='utf-8')
+            self.assertGreater(len(text.strip()), 80, f'too short embedded license file: {emb["license_file"]}')
+            self.assertNotIn('\r\n', text, f'CRLF in {emb["license_file"]}')
+            host_pkg = pkg_by_id[emb['host_package']]
+            self.assertIn(emb['id'], notices)
+            self.assertIn(emb['version'], notices)
+            self.assertIn(emb['revision'], notices)
+            self.assertIn(emb['subpath'], notices)
+            self.assertIn(host_pkg['commit'], notices)
+            self.assertIn(host_pkg['sha256'], notices)
+            first_line = next(line.strip() for line in text.splitlines() if line.strip())
+            self.assertIn(first_line, notices)
+            emb_spdx = f'SPDXRef-embedded-{emb["id"]}'
+            self.assertIn((f'SPDXRef-pkg-{emb["host_package"]}', emb_spdx), contains_rels)
+            self.assertIn(('SPDXRef-Package-rasterfold-converter', emb_spdx), static_links)
+
+        deps_build = ROOT / 'build/converter/windows-x64/deps-build'
+        deps_lib = ROOT / 'build/converter/windows-x64/deps-prefix/lib'
+        if deps_build.is_dir() and deps_lib.is_dir():
+            declared_subpaths = {
+                (e['host_package'], '/'.join(Path(e['subpath']).parts[:2]))
+                for e in embedded
+            }
+            compiled_subpaths: set[tuple[str, str]] = set()
+            for bn in sorted(deps_build.glob('*/build.ninja')):
+                pkg_id = bn.parent.name
+                src_marker = f'/{pkg_id}/'
+                for line in bn.read_text(encoding='utf-8', errors='replace').splitlines():
+                    if not line.startswith('build '):
+                        continue
+                    target_part, _, rest = line.partition(':')
+                    if not target_part.strip().endswith('.obj'):
+                        continue
+                    if pkg_id == 'libaom' and ('CMakeFiles/webm.dir/' in target_part or 'CMakeFiles/yuv.dir/' in target_part):
+                        continue
+                    if pkg_id == 'libaom' and '.asm.obj' in target_part:
+                        compiled_subpaths.add(('libaom', 'third_party/x86inc'))
+                    for seg in ('third_party/', 'thirdparty/', 'external/', 'src/spng'):
+                        idx = rest.find(seg)
+                        if idx != -1 and src_marker in rest[:idx]:
+                            sub_parts = Path(rest[idx:].split()[0]).parts[:2]
+                            compiled_subpaths.add((pkg_id, '/'.join(sub_parts)))
+            self.assertTrue(compiled_subpaths, 'expected compiled embedded third-party rules in deps-build')
+            missing_cov = compiled_subpaths - declared_subpaths
+            self.assertFalse(missing_cov, f'compiled embedded third-party subpaths missing from vendor.json: {sorted(missing_cov)}')
+
+            ar_bin = ROOT / ('tools/llvm-mingw/bin/llvm-ar.exe' if os.name == 'nt' else 'tools/llvm-mingw-linux/bin/llvm-ar')
+            exr_core = deps_lib / 'libOpenEXRCore-3_5.a'
+            if ar_bin.is_file() and exr_core.is_file():
+                ar_out = subprocess.check_output([str(ar_bin), 't', str(exr_core)], text=True)
+                self.assertIn('zstd_compress.c.obj', ar_out)
+                self.assertIn('xxhash.c.obj', ar_out)
 
     def test_core_codec_build_and_oracle_isolated(self):
         build_py = (ROOT / 'scripts/build.py').read_text(encoding='utf-8')
@@ -699,6 +785,26 @@ class BundleTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'branch'):
             bootstrap.validate_vendor_manifest(bad_branch)
 
+        bad_emb_host = json.loads(json.dumps(vendor))
+        bad_emb_host['embedded_components'][0]['host_package'] = 'missing-pkg'
+        with self.assertRaisesRegex(ValueError, 'unknown host_package'):
+            bootstrap.validate_vendor_manifest(bad_emb_host)
+
+        bad_emb_rev = json.loads(json.dumps(vendor))
+        bad_emb_rev['embedded_components'][0]['revision'] = 'main'
+        with self.assertRaisesRegex(ValueError, 'moving branch ref'):
+            bootstrap.validate_vendor_manifest(bad_emb_rev)
+
+        bad_emb_lic = json.loads(json.dumps(vendor))
+        bad_emb_lic['embedded_components'][0]['license_file'] = '../LICENSE'
+        with self.assertRaisesRegex(ValueError, 'invalid license_file'):
+            bootstrap.validate_vendor_manifest(bad_emb_lic)
+
+        bad_emb_hevc = json.loads(json.dumps(vendor))
+        bad_emb_hevc['embedded_components'][0]['subpath'] = 'third_party/hevc'
+        with self.assertRaisesRegex(ValueError, 'HEVC'):
+            bootstrap.validate_vendor_manifest(bad_emb_hevc)
+
         build_converter = _load_build_converter()
         with tempfile.TemporaryDirectory() as td:
             td_path = Path(td)
@@ -706,18 +812,31 @@ class BundleTests(unittest.TestCase):
             (td_path / 'converter').mkdir()
             shutil.copy2(ROOT / 'toolchain.json', td_path / 'toolchain.json')
             shutil.copy2(ROOT / 'tools/bootstrap.py', td_path / 'tools/bootstrap.py')
+            shutil.copy2(ROOT / 'converter/vendor.json', td_path / 'converter/vendor.json')
             shutil.copytree(ROOT / 'converter/licenses', td_path / 'converter/licenses')
             shutil.copy2(
                 ROOT / 'converter/THIRD-PARTY-NOTICES.txt',
                 td_path / 'converter/THIRD-PARTY-NOTICES.txt',
             )
             shutil.copy2(ROOT / 'converter/sbom.spdx.json', td_path / 'converter/sbom.spdx.json')
-            mutated = json.loads(json.dumps(vendor))
-            mutated['packages'][0]['version'] = '999.0.0'
-            (td_path / 'converter/vendor.json').write_text(json.dumps(mutated), encoding='utf-8')
             old_root = build_converter.ROOT
             try:
                 build_converter.ROOT = td_path
+                # Windows CRLF checkout of license/notice files must still pass --check-notices.
+                zstd_lic = td_path / 'converter/licenses/openexr-zstd.txt'
+                zstd_lic.write_bytes(zstd_lic.read_bytes().replace(b'\n', b'\r\n'))
+                notices_td = td_path / 'converter/THIRD-PARTY-NOTICES.txt'
+                notices_td.write_bytes(notices_td.read_bytes().replace(b'\n', b'\r\n'))
+                self.assertEqual(build_converter.check_notices(), 0)
+
+                mutated_emb = json.loads(json.dumps(vendor))
+                mutated_emb['embedded_components'][0]['version'] = '999.0.0'
+                (td_path / 'converter/vendor.json').write_text(json.dumps(mutated_emb), encoding='utf-8')
+                self.assertEqual(build_converter.check_notices(), 1)
+
+                mutated = json.loads(json.dumps(vendor))
+                mutated['packages'][0]['version'] = '999.0.0'
+                (td_path / 'converter/vendor.json').write_text(json.dumps(mutated), encoding='utf-8')
                 self.assertEqual(build_converter.check_notices(), 1)
             finally:
                 build_converter.ROOT = old_root

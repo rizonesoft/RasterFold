@@ -44,6 +44,16 @@ Bundled Static Libraries (Alphabetical Index)
 - qoi 0.0.0-ffb2d2cb (MIT) [direct: qoi]
 - zlib 1.4 (Zlib) [transitive: transitive dependency]
 
+Embedded Third-Party Components in Vendored Archives
+----------------------------------------------------
+- libaom-fastfeat 2.0 (BSD-3-Clause) [host: libaom:third_party/fastfeat]
+- libaom-vector 0.0.0-40efe82 (MIT) [host: libaom:third_party/vector]
+- libaom-x86inc 0.0.0-3e5aed95 (ISC) [host: libaom:third_party/x86inc]
+- libavif-libyuv 1880 (BSD-3-Clause) [host: libavif:third_party/libyuv]
+- libjpeg-turbo-spng 0.7.4 (BSD-2-Clause AND Libpng-2.0) [host: libjpeg-turbo:src/spng]
+- openexr-xxhash 0.8.2 (BSD-3-Clause) [host: openexr:external/zstd/lib/common/xxhash.c]
+- openexr-zstd 1.5.7 (BSD-3-Clause) [host: openexr:external/zstd]
+
 Statically Linked Toolchain Runtime Libraries (llvm-mingw)
 ----------------------------------------------------------
 - llvm-runtime 23.1.2 (Apache-2.0 WITH LLVM-exception AND NCSA) [runtime: libc++.a, libc++abi.a, libunwind.a, libclang_rt.builtins-x86_64.a]
@@ -3251,6 +3261,322 @@ Copyright notice:
 
   Jean-loup Gailly        Mark Adler
   jloup@gzip.org          madler@alumni.caltech.edu
+
+============================================================================
+Embedded Component: FAST feature detectors in C (libaom-fastfeat) 2.0
+Host Package: libaom (libaom) 3.15.3 (commit b141d9c45db236335351c8a4b2a14b3ade27c937)
+Host Archive: libaom-3.15.3.tar.gz (sha256:12c01dc731ed7b5a999e28120b45bf58a002ba3435a4ba2cfbc1e084a27c9c04)
+Host Archive Subpath: third_party/fastfeat
+Compiled Into Archives: libaom.a
+SPDX License: BSD-3-Clause
+Upstream Repo: https://github.com/edrosten/fast-C-src (revision 391d5e939eb1545d24c10533d7de424db8d9c191)
+Notes: Bundled inside pinned libaom v4.0.0 source archive and compiled directly into libaom.a (fast.c, fast_9.c, nonmax.c).
+License Text File: converter/licenses/libaom-fastfeat.txt (sha256:499041ddee5227b6f29ca06c17803e5fe24d60f243c69635cd76b7ba08d0ddd5)
+----------------------------------------------------------------------------
+Copyright (c) 2006, 2008 Edward Rosten
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+
+
+	*Redistributions of source code must retain the above copyright
+	 notice, this list of conditions and the following disclaimer.
+
+	*Redistributions in binary form must reproduce the above copyright
+	 notice, this list of conditions and the following disclaimer in the
+	 documentation and/or other materials provided with the distribution.
+
+	*Neither the name of the University of Cambridge nor the names of
+	 its contributors may be used to endorse or promote products derived
+	 from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+============================================================================
+Embedded Component: vector (libaom-vector) 0.0.0-40efe82
+Host Package: libaom (libaom) 3.15.3 (commit b141d9c45db236335351c8a4b2a14b3ade27c937)
+Host Archive: libaom-3.15.3.tar.gz (sha256:12c01dc731ed7b5a999e28120b45bf58a002ba3435a4ba2cfbc1e084a27c9c04)
+Host Archive Subpath: third_party/vector
+Compiled Into Archives: libaom.a
+SPDX License: MIT
+Upstream Repo: https://github.com/goldsborough/vector (revision 40efe82)
+Notes: Bundled inside pinned libaom v4.0.0 source archive and compiled directly into libaom.a (vector.c).
+License Text File: converter/licenses/libaom-vector.txt (sha256:ff6c857ce2708e87701323078aef115c1872a1f80a9649f86dc899b48083bc60)
+----------------------------------------------------------------------------
+The MIT License (MIT)
+Copyright (c) 2016 Peter Goldsborough
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+============================================================================
+Embedded Component: x86inc.asm (libaom-x86inc) 0.0.0-3e5aed95
+Host Package: libaom (libaom) 3.15.3 (commit b141d9c45db236335351c8a4b2a14b3ade27c937)
+Host Archive: libaom-3.15.3.tar.gz (sha256:12c01dc731ed7b5a999e28120b45bf58a002ba3435a4ba2cfbc1e084a27c9c04)
+Host Archive Subpath: third_party/x86inc
+Compiled Into Archives: libaom.a
+SPDX License: ISC
+Upstream Repo: https://git.videolan.org/git/x264.git (revision 3e5aed95cc470f37e2db3e6506a8deb89b527720)
+Notes: Bundled inside pinned libaom v4.0.0 source archive and assembled via %include into libaom.a x86-64 NASM objects.
+License Text File: converter/licenses/libaom-x86inc.txt (sha256:719d8fa235f2068e0ae6d6a7dceb0a7720d7840f0f0ebed29957989e6ded3cd8)
+----------------------------------------------------------------------------
+Copyright (C) 2005-2012 x264 project
+
+Authors: Loren Merritt <lorenm@u.washington.edu>
+         Anton Mitrofanov <BugMaster@narod.ru>
+         Jason Garrett-Glaser <darkshikari@gmail.com>
+         Henrik Gramner <hengar-6@student.ltu.se>
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+============================================================================
+Embedded Component: libyuv (libavif-libyuv) 1880
+Host Package: libavif (libavif) 1.4.2 (commit c5240fc79fe5c2407e10afd35f5505ef6333ea49)
+Host Archive: libavif-v1.4.2.tar.gz (sha256:2b645287340ba5a631d268b551dc2d72bd73ac33335962dd36dcdb6d8366921d)
+Host Archive Subpath: third_party/libyuv
+Compiled Into Archives: libavif.a
+SPDX License: BSD-3-Clause
+Upstream Repo: https://chromium.googlesource.com/libyuv/libyuv (revision 1880)
+Notes: Embedded libyuv source subset shipped inside pinned libavif v1.4.1 and compiled into libavif.a (planar_functions.c, row_common.c, scale.c, scale_any.c, scale_common.c).
+License Text File: converter/licenses/libavif-libyuv.txt (sha256:e72b31563aee811cf8cf0e7325c68b5c5c2b91106f13d5e5dee2b667af67f4b2)
+----------------------------------------------------------------------------
+Files: third_party/libyuv/*
+
+Copyright 2011 The LibYuv Project Authors. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+  * Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+
+  * Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in
+    the documentation and/or other materials provided with the
+    distribution.
+
+  * Neither the name of Google nor the names of its contributors may
+    be used to endorse or promote products derived from this software
+    without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+============================================================================
+Embedded Component: libspng (libjpeg-turbo-spng) 0.7.4
+Host Package: libjpeg-turbo (libjpeg-turbo) 3.2.1 (commit 7b4993786d856cbccabfc0ed2f923ba000e326cc)
+Host Archive: libjpeg-turbo-3.2.1.tar.gz (sha256:c27ad72a68da151177929aa969ae773a2da5ac2af9ce946079314fdac8cece7f)
+Host Archive Subpath: src/spng
+Compiled Into Archives: libturbojpeg.a
+SPDX License: BSD-2-Clause AND Libpng-2.0
+Upstream Repo: https://github.com/randy408/libspng (revision 0.7.4)
+Notes: Embedded libspng 0.7.4 shipped inside pinned libjpeg-turbo 3.1.4.1 and compiled into libturbojpeg.a (spng.c, linking pinned system zlib via WITH_SYSTEM_ZLIB=ON).
+License Text File: converter/licenses/libjpeg-turbo-spng.txt (sha256:55ccafecb376ec0a6967ac94a5f43708ff12cab0921f8da78374b836cc76feaf)
+----------------------------------------------------------------------------
+BSD 2-Clause License
+
+Copyright (c) 2018-2023, Randy <randy408@protonmail.com>
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+COPYRIGHT NOTICE, DISCLAIMER, and LICENSE
+=========================================
+
+PNG Reference Library License version 2
+---------------------------------------
+
+ * Copyright (c) 1995-2026 The PNG Reference Library Authors.
+ * Copyright (c) 2018-2026 Cosmin Truta.
+ * Copyright (c) 2000-2002, 2004, 2006-2018 Glenn Randers-Pehrson.
+ * Copyright (c) 1996-1997 Andreas Dilger.
+ * Copyright (c) 1995-1996 Guy Eric Schalnat, Group 42, Inc.
+
+The software is supplied "as is", without warranty of any kind,
+express or implied, including, without limitation, the warranties
+of merchantability, fitness for a particular purpose, title, and
+non-infringement.  In no event shall the Copyright owners, or
+anyone distributing the software, be liable for any damages or
+other liability, whether in contract, tort or otherwise, arising
+from, out of, or in connection with the software, or the use or
+other dealings in the software, even if advised of the possibility
+of such damage.
+
+Permission is hereby granted to use, copy, modify, and distribute
+this software, or portions hereof, for any purpose, without fee,
+subject to the following restrictions:
+
+ 1. The origin of this software must not be misrepresented; you
+    must not claim that you wrote the original software.  If you
+    use this software in a product, an acknowledgment in the product
+    documentation would be appreciated, but is not required.
+
+ 2. Altered source versions must be plainly marked as such, and must
+    not be misrepresented as being the original software.
+
+ 3. This Copyright notice may not be removed or altered from any
+    source or altered source distribution.
+
+============================================================================
+Embedded Component: xxHash (openexr-xxhash) 0.8.2
+Host Package: OpenEXR (openexr) 3.5.4 (commit 86687e5f34e3a164820c5e280259550e3ca87c92)
+Host Archive: openexr-3.5.4.tar.gz (sha256:a09706c88ab83a90c26e7ee06cb7e6fa03a57726931eaec557c2e7eaf35c1b13)
+Host Archive Subpath: external/zstd/lib/common/xxhash.c
+Compiled Into Archives: libOpenEXRCore-3_5.a
+SPDX License: BSD-3-Clause (upstream dual: BSD-3-Clause OR GPL-2.0-only)
+Upstream Repo: https://github.com/Cyan4973/xxHash (revision 0.8.2)
+Notes: Bundled inside OpenEXR v3.5.0-dev external/zstd 1.5.7 tree and compiled directly into libOpenEXRCore-3_5.a (xxhash.c with XXH_NAMESPACE=ZSTD_).
+License Text File: converter/licenses/openexr-xxhash.txt (sha256:3659167a56597b0196ad1ce427f6f96465503c4b60746c07b5f867bfb268b725)
+----------------------------------------------------------------------------
+/*
+ * xxHash - Extremely Fast Hash algorithm
+ * Header File
+ * Copyright (c) Yann Collet - Meta Platforms, Inc
+ *
+ * This source code is licensed under both the BSD-style license (found in the
+ * LICENSE file in the root directory of this source tree) and the GPLv2 (found
+ * in the COPYING file in the root directory of this source tree).
+ * You may select, at your option, one of the above-listed licenses.
+ */
+
+
+BSD License
+
+For Zstandard software
+
+Copyright (c) Meta Platforms, Inc. and affiliates. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+ * Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+ * Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+ * Neither the name Facebook, nor Meta, nor the names of its contributors may
+   be used to endorse or promote products derived from this software without
+   specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+============================================================================
+Embedded Component: Zstandard (openexr-zstd) 1.5.7
+Host Package: OpenEXR (openexr) 3.5.4 (commit 86687e5f34e3a164820c5e280259550e3ca87c92)
+Host Archive: openexr-3.5.4.tar.gz (sha256:a09706c88ab83a90c26e7ee06cb7e6fa03a57726931eaec557c2e7eaf35c1b13)
+Host Archive Subpath: external/zstd
+Compiled Into Archives: libOpenEXRCore-3_5.a
+SPDX License: BSD-3-Clause (upstream dual: BSD-3-Clause OR GPL-2.0-only)
+Upstream Repo: https://github.com/facebook/zstd (revision 1.5.7)
+Notes: Bundled inside OpenEXR v3.5.0-dev and selected by OpenEXRSetup.cmake when CMAKE_DISABLE_FIND_PACKAGE_zstd=ON disables external zstd lookup; compiled directly into libOpenEXRCore-3_5.a.
+License Text File: converter/licenses/openexr-zstd.txt (sha256:7055266497633c9025b777c78eb7235af13922117480ed5c674677adc381c9d8)
+----------------------------------------------------------------------------
+BSD License
+
+For Zstandard software
+
+Copyright (c) Meta Platforms, Inc. and affiliates. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+ * Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+ * Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+ * Neither the name Facebook, nor Meta, nor the names of its contributors may
+   be used to endorse or promote products derived from this software without
+   specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ============================================================================
 Runtime: LLVM C++ and Compiler Runtime (libc++, libc++abi, libunwind, compiler-rt) (llvm-runtime) 23.1.2

@@ -1790,7 +1790,7 @@
       "review": "Author-attested: 2026-10-25 re-read docs/troubleshooting.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "docs/licenses.md": {
-      "evidence": "Re-read and updated 2026-11-15 lines 1-45 for D10 T01 s2 round 1: added static llvm-mingw runtime licenses and README.ijg notice coverage",
+      "evidence": "Re-read and updated 2026-11-15 lines 1-45 for D10 T01 s2 completion repair: documented embedded_components licenses and provenance",
       "sources": {
         "CODE_OF_CONDUCT.md": "f945b73c121fdc7597bdfedabb63f1442ccbab3b2469cd1b7a59932e9eac7da0",
         "testdata/photos/README.md": "f8d6f0d749fc5e795731c322fe192350b247afe167cb817c50f6faedc444303e",
@@ -1799,18 +1799,18 @@
         "toolchain.json": "eb53e29ed47b6ae570e705e7c48dca3e5fc922f6213d892c084e00489785d75d",
         "tools/provision.py": "66f602f6963767cd939e9fc4de56d3bf632997514d3ddc0c8ab552351ecfbe2e",
         "tools/provision.ps1": "e46759d8e1f63a95a877555489094c923cebb833ec447e398f4e7c0395b6115b",
-        "docs/licenses.md": "3e58371d6fa5d3fdf1586b2e33b1b7e130325b0a31862be7dddc3363e25fae35",
-        "converter/vendor.json": "573f29cc0bb83a7bfaa3ddee499999670e1307bf8f9a5db96d989dc3186eff20"
+        "docs/licenses.md": "b3273fa6710f1defb5e581d3e1fcc39d0fa899f3543ceb278efa884d71f7eab0",
+        "converter/vendor.json": "35a52ef2aa0ebed34b98810c2ad21b5b72fe1d20f4af19adcc3551cc10191e5b"
       }
     },
     "docs/converter-building.md": {
-      "evidence": "Re-read and updated 2026-11-15 lines 1-47 for D10 T01 s2 round 1: added static llvm-mingw runtime notices, README.ijg, and verified bootstrap/build-converter behavior",
+      "evidence": "Re-read and updated 2026-11-15 lines 1-47 for D10 T01 s2 completion repair: documented embedded_components notices/SBOM and CRLF-normalized license hashing",
       "sources": {
-        "docs/converter-building.md": "0779cd02ae2f8c13ad03792a1b89bc9a41892ebc1477a9bcd20cbc8341aed898",
-        "converter/vendor.json": "573f29cc0bb83a7bfaa3ddee499999670e1307bf8f9a5db96d989dc3186eff20",
+        "docs/converter-building.md": "562ed4860d60e5715f2b5c9f2787003a186ea8668be0891bcafd165494a7786a",
+        "converter/vendor.json": "35a52ef2aa0ebed34b98810c2ad21b5b72fe1d20f4af19adcc3551cc10191e5b",
         "toolchain.json": "eb53e29ed47b6ae570e705e7c48dca3e5fc922f6213d892c084e00489785d75d",
-        "scripts/build-converter.py": "38e27448cd7d3409a6505afcd7951971e3b71b9d15368cfe96b10b3e003cee87",
-        "tools/bootstrap.py": "b6a42c9e4d0efdd67ca8c40b957c2842e59170492e9fbbcf6fdd040a195faf7a",
+        "scripts/build-converter.py": "37329cdee8711337e87841f55fdbfcbf4a43a64b2e82c5e05799d93476c3ed0e",
+        "tools/bootstrap.py": "640e322f62d2b5d8dd67352b47fa24d282fe406aa03d46834bb2eb3d5d1b7344",
         "tools/bootstrap.ps1": "3e4f1857bef09097d43062f5822c55fc3657f1d1cd991ebde9faf04e245fb17c",
         "tools/provision.py": "66f602f6963767cd939e9fc4de56d3bf632997514d3ddc0c8ab552351ecfbe2e",
         "tools/provision.ps1": "e46759d8e1f63a95a877555489094c923cebb833ec447e398f4e7c0395b6115b"

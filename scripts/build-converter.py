@@ -348,6 +348,16 @@ def _spdx_id(name: str) -> str:
     return 'SPDXRef-' + re.sub(r'[^A-Za-z0-9.-]+', '-', name)
 
 
+def _read_normalized_license(rel_path: str, owner_id: str) -> tuple[str, str]:
+    lic_path = ROOT / rel_path
+    if not lic_path.is_file():
+        raise FileNotFoundError(f'missing license file {rel_path} for {owner_id}')
+    raw_bytes = lic_path.read_bytes().replace(b'\r\n', b'\n')
+    lic_text = raw_bytes.decode('utf-8').rstrip() + '\n'
+    lic_sha = hashlib.sha256(raw_bytes).hexdigest()
+    return lic_text, lic_sha
+
+
 def render_notices_and_sbom() -> tuple[str, str]:
     vendor = load_json(ROOT / 'converter/vendor.json')
     toolchain = load_json(ROOT / 'toolchain.json')
@@ -398,11 +408,25 @@ def render_notices_and_sbom() -> tuple[str, str]:
         '---------------------------------------------',
     ])
     pkgs_sorted = sorted(vendor['packages'], key=lambda p: p['id'])
+    pkg_by_id = {p['id']: p for p in vendor['packages']}
     for pkg in pkgs_sorted:
         fmts = ', '.join(pkg['formats']) if pkg['formats'] else 'transitive dependency'
         lines.append(
             f'- {pkg["id"]} {pkg["version"]} ({pkg["license"]}) [{pkg["role"]}: {fmts}]'
         )
+
+    embedded_sorted = sorted(vendor.get('embedded_components', []), key=lambda e: e['id'])
+    if embedded_sorted:
+        lines.extend([
+            '',
+            'Embedded Third-Party Components in Vendored Archives',
+            '----------------------------------------------------',
+        ])
+        for emb in embedded_sorted:
+            lines.append(
+                f'- {emb["id"]} {emb["version"]} ({emb["license"]}) '
+                f'[host: {emb["host_package"]}:{emb["subpath"]}]'
+            )
 
     runtimes_sorted = sorted(vendor.get('runtime_libraries', []), key=lambda r: r['id'])
     lines.extend([
@@ -417,11 +441,7 @@ def render_notices_and_sbom() -> tuple[str, str]:
 
     lines.append('')
     for pkg in pkgs_sorted:
-        lic_path = ROOT / pkg['license_file']
-        if not lic_path.is_file():
-            raise FileNotFoundError(f'missing license file {pkg["license_file"]} for {pkg["id"]}')
-        lic_text = lic_path.read_text(encoding='utf-8').replace('\r\n', '\n').rstrip() + '\n'
-        lic_sha = hashlib.sha256(lic_path.read_bytes()).hexdigest()
+        lic_text, lic_sha = _read_normalized_license(pkg['license_file'], pkg['id'])
         lines.extend([
             '=' * 76,
             f'Package: {pkg["name"]} ({pkg["id"]}) {pkg["version"]}',
@@ -457,12 +477,27 @@ def render_notices_and_sbom() -> tuple[str, str]:
         lines.append(lic_text.rstrip())
         lines.append('')
 
+    for emb in embedded_sorted:
+        host_pkg = pkg_by_id[emb['host_package']]
+        lic_text, lic_sha = _read_normalized_license(emb['license_file'], emb['id'])
+        lines.extend([
+            '=' * 76,
+            f'Embedded Component: {emb["name"]} ({emb["id"]}) {emb["version"]}',
+            f'Host Package: {host_pkg["name"]} ({host_pkg["id"]}) {host_pkg["version"]} (commit {host_pkg["commit"]})',
+            f'Host Archive: {host_pkg["archive"]} (sha256:{host_pkg["sha256"]})',
+            f'Host Archive Subpath: {emb["subpath"]}',
+            f'Compiled Into Archives: {", ".join(emb["compiled_into"])}',
+            f'SPDX License: {emb["license"]}' + (f' (upstream dual: {emb["license_expression_upstream"]})' if emb.get('license_expression_upstream') else ''),
+            f'Upstream Repo: {emb["upstream_repo"]} (revision {emb["revision"]})',
+            f'Notes: {emb["notes"]}',
+            f'License Text File: {emb["license_file"]} (sha256:{lic_sha})',
+            '-' * 76,
+            lic_text.rstrip(),
+            '',
+        ])
+
     for rt in runtimes_sorted:
-        lic_path = ROOT / rt['license_file']
-        if not lic_path.is_file():
-            raise FileNotFoundError(f'missing license file {rt["license_file"]} for {rt["id"]}')
-        lic_text = lic_path.read_text(encoding='utf-8').replace('\r\n', '\n').rstrip() + '\n'
-        lic_sha = hashlib.sha256(lic_path.read_bytes()).hexdigest()
+        lic_text, lic_sha = _read_normalized_license(rt['license_file'], rt['id'])
         wc = win_tools[rt['toolchain_component']]
         lc = lin_tools.get(rt.get('toolchain_host_component', ''))
         lines.extend([
@@ -572,12 +607,57 @@ def render_notices_and_sbom() -> tuple[str, str]:
                 'relatedSpdxElement': _spdx_id(f'pkg-{dep}'),
             })
 
+    for emb in embedded_sorted:
+        host_pkg = pkg_by_id[emb['host_package']]
+        eid = _spdx_id(f'embedded-{emb["id"]}')
+        hid = _spdx_id(f'pkg-{host_pkg["id"]}')
+        lic_text, lic_sha = _read_normalized_license(emb['license_file'], emb['id'])
+        spdx_packages.append({
+            'SPDXID': eid,
+            'name': emb['id'],
+            'versionInfo': emb['version'],
+            'downloadLocation': host_pkg['url'],
+            'filesAnalyzed': False,
+            'checksums': [{'algorithm': 'SHA256', 'checksumValue': host_pkg['sha256']}],
+            'licenseConcluded': emb['license'],
+            'licenseDeclared': emb['license'],
+            'sourceInfo': (
+                f'Bundled inside host package {host_pkg["id"]} ({host_pkg["archive"]}, '
+                f'commit {host_pkg["commit"]}) at {emb["subpath"]}; '
+                f'license_sha256={lic_sha}'
+            ),
+            'externalRefs': [
+                {
+                    'referenceCategory': 'OTHER',
+                    'referenceType': 'vcs',
+                    'referenceLocator': f'{emb["upstream_repo"]}@{emb["revision"]}',
+                }
+            ],
+            'comment': (
+                f'host_package={host_pkg["id"]}; '
+                f'subpath={emb["subpath"]}; '
+                f'compiled_into={",".join(emb["compiled_into"])}; '
+                f'license_file={emb["license_file"]}; '
+                f'license_excerpt={lic_text.splitlines()[0] if lic_text.splitlines() else ""}'
+            ),
+        })
+        relationships.append({
+            'spdxElementId': hid,
+            'relationshipType': 'CONTAINS',
+            'relatedSpdxElement': eid,
+        })
+        relationships.append({
+            'spdxElementId': 'SPDXRef-Package-rasterfold-converter',
+            'relationshipType': 'STATIC_LINK',
+            'relatedSpdxElement': eid,
+        })
+
     for rt in runtimes_sorted:
         rid = _spdx_id(f'runtime-{rt["id"]}')
         wc = win_tools[rt['toolchain_component']]
         lc = lin_tools.get(rt.get('toolchain_host_component', ''))
-        lic_file = ROOT / rt['license_file']
-        lic_text = lic_file.read_text(encoding='utf-8').replace('\r\n', '\n').rstrip()
+        lic_text, _ = _read_normalized_license(rt['license_file'], rt['id'])
+        lic_text = lic_text.rstrip()
         rt_obj: dict = {
             'SPDXID': rid,
             'name': rt['id'],
@@ -645,10 +725,10 @@ def check_notices() -> int:
     if not sbom_path.is_file():
         print('FAIL missing converter/sbom.spdx.json (run --write-notices)', file=sys.stderr)
         return 1
-    if notices_path.read_text(encoding='utf-8') != want_notices:
+    if notices_path.read_text(encoding='utf-8').replace('\r\n', '\n') != want_notices:
         print('FAIL converter/THIRD-PARTY-NOTICES.txt is out of date (run --write-notices)', file=sys.stderr)
         return 1
-    if sbom_path.read_text(encoding='utf-8') != want_sbom:
+    if sbom_path.read_text(encoding='utf-8').replace('\r\n', '\n') != want_sbom:
         print('FAIL converter/sbom.spdx.json is out of date (run --write-notices)', file=sys.stderr)
         return 1
     print('notices-sbom: current', flush=True)
