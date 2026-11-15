@@ -48,7 +48,7 @@ track: GUI1
 | :---: | :-----: | ----------- | ---------- | :----: |
 | 1 | §1 | Pixel contract and capability registry | D06 T01 §1 | [x] |
 | 2 | §2 | Pinned bundled codec builds | §1, D00 T04 §1 | [x] |
-| 3 | §3 | Bounded asynchronous jobs | §1, §2 | [ ] |
+| 3 | §3 | Bounded asynchronous jobs | §1, §2 | [x] |
 | 4 | §4 | Exactness verification and differential fixtures | §1, §3 | [ ] |
 | 5 | §5 | Safe import and export | §3, §4 | [ ] |
 | 6 | §6 | Comparable measurements and reports | §3, §4 | [ ] |
@@ -130,6 +130,8 @@ Build in the listed order. This section adds the named test driver before using 
 
 **Freeze check:** Existing `.fold` v2 and v3 files, `KAT_FOLD` known-answer bytes, and the oracle (`tests/rfi_ref.py`) remain unchanged (`**Corrected 2026-11-15:**` extended explicit `.fold` v2 mention to `.fold` v2 and v3 per `spec/FOLD.md`). Each new output receives a fresh bundled decode and the format-specific verification contract before acceptance; independent fixture coverage is reported separately; input and existing destination bytes survive refusal, cancellation and failure.
 
+> **Verified:** 2026-11-15 | §3 | 2a52d2e950cb99a015b0643419d4c6c3f964cb98
+> **Review:** `docs/reviews/d10-t01-s3.json`
 ## 4. Exactness verification and differential fixtures
 
 **Job:** A user can prove that decoding reverses an encode exactly, independently of a color-managed preview.

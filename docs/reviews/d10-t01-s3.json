@@ -1,0 +1,71 @@
+{
+  "ref": "D10 T01 \u00a73",
+  "title": "Bounded asynchronous jobs",
+  "implementation_sha": "2a52d2e950cb99a015b0643419d4c6c3f964cb98",
+  "date": "2026-11-15",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/10-converter/D10-T01-s3.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "check-converter.py --case jobs --all-targets: jobs (host): PASS; jobs (windows-x64 isolated): PASS (peak_workers=2/4 peak_cpu=4/4 peak_mem=81920/102400B oom_cap=12288/16384B live_partial_bytes=0 published_cancelled=0 credit_layout=bound)",
+    "check-all.py --all-targets: 32/32 passed"
+  ],
+  "completion": {
+    "report": "docs/reviews/10-converter/D10-T01-s3.md",
+    "verdict": "reconciled",
+    "candidate": "2a52d2e950cb99a015b0643419d4c6c3f964cb98",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/10-converter/D10-T01-s3.md",
+    "candidate": "958632fd20cc73891cc770de5c178aded4507835",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "958632fd20cc73891cc770de5c178aded4507835",
+  "schedule": {
+    "policy": "three-pass",
+    "pass_cap": 33,
+    "plan": {
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {},
+    "reconciliation": {
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}
