@@ -49,7 +49,7 @@ track: GUI1
 | 1 | §1 | Pixel contract and capability registry | D06 T01 §1 | [x] |
 | 2 | §2 | Pinned bundled codec builds | §1, D00 T04 §1 | [x] |
 | 3 | §3 | Bounded asynchronous jobs | §1, §2 | [x] |
-| 4 | §4 | Exactness verification and differential fixtures | §1, §3 | [ ] |
+| 4 | §4 | Exactness verification and differential fixtures | §1, §3 | [x] |
 | 5 | §5 | Safe import and export | §3, §4 | [ ] |
 | 6 | §6 | Comparable measurements and reports | §3, §4 | [ ] |
 
@@ -156,6 +156,8 @@ Build in the listed order. This section adds the named test driver before using 
 
 **Freeze check:** Existing `.fold` v2 and v3 files, `KAT_FOLD` known-answer bytes, and the oracle (`tests/rfi_ref.py`) remain unchanged. Each new output receives a fresh bundled decode and the format-specific verification contract before acceptance; independent fixture coverage is reported separately; input and existing destination bytes survive refusal, cancellation and failure.
 
+> **Verified:** 2026-11-15 | §4 | abe93f6db681b993d5d427c3193c98f325197c54
+> **Review:** `docs/reviews/d10-t01-s4.json`
 ## 5. Safe import and export
 
 **Requires:** windows-runtime -- The file checkpoint drives Windows file-provider refusal cases. Source checkpoint audit: docs/todo-vision-audit.md.

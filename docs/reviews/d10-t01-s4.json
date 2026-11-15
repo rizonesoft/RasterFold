@@ -1,0 +1,72 @@
+{
+  "ref": "D10 T01 \u00a74",
+  "title": "Exactness verification and differential fixtures",
+  "implementation_sha": "abe93f6db681b993d5d427c3193c98f325197c54",
+  "date": "2026-11-15",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/10-converter/D10-T01-s4.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "check-converter.py --case contract --all-targets: contract: PASS",
+    "check-converter.py --case exactness --all-targets: exactness (host): PASS; verify.c+metadata.c+job.c link without preview.c: PASS; exactness (python reference & oracle): PASS (8/8 OK); exactness (windows-x64 isolated): PASS",
+    "check-all.py --all-targets: 32/32 passed"
+  ],
+  "completion": {
+    "report": "docs/reviews/10-converter/D10-T01-s4.md",
+    "verdict": "reconciled",
+    "candidate": "abe93f6db681b993d5d427c3193c98f325197c54",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/10-converter/D10-T01-s4.md",
+    "candidate": "aea8d56d56e07025b9bf60361f42fa1a0d076b42",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "aea8d56d56e07025b9bf60361f42fa1a0d076b42",
+  "schedule": {
+    "policy": "three-pass",
+    "pass_cap": 33,
+    "plan": {
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {},
+    "reconciliation": {
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}
