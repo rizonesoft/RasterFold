@@ -7,8 +7,8 @@
       "format": "rasterfold",
       "provider": "RasterFold (this repository)",
       "owner": "D10 T02 \u00a71",
-      "availability": "planned",
-      "unavailable_reason": "converter adapter not yet shipped",
+      "availability": "usable",
+      "unavailable_reason": null,
       "modes": {
         "read": true,
         "write": true
@@ -54,8 +54,8 @@
       "format": "bmp",
       "provider": "in-tree converter code",
       "owner": "D10 T02 \u00a71",
-      "availability": "planned",
-      "unavailable_reason": "converter adapter not yet shipped",
+      "availability": "usable",
+      "unavailable_reason": null,
       "modes": {
         "read": true,
         "write": true
@@ -103,8 +103,8 @@
       "format": "png",
       "provider": "libpng (bundled, pinned by D10 T01 \u00a72)",
       "owner": "D10 T02 \u00a71",
-      "availability": "planned",
-      "unavailable_reason": "converter adapter not yet shipped",
+      "availability": "usable",
+      "unavailable_reason": null,
       "modes": {
         "read": true,
         "write": true
@@ -158,7 +158,7 @@
       "provider": "libpng (bundled, pinned by D10 T01 \u00a72)",
       "owner": "D10 T02 \u00a71",
       "availability": "planned",
-      "unavailable_reason": "converter adapter not yet shipped; animation extensions owned by D10 T02 \u00a712",
+      "unavailable_reason": "APNG multi-frame sequence composition and export owned by D10 T02 \u00a712",
       "modes": {
         "read": true,
         "write": true
@@ -229,8 +229,8 @@
       "format": "pnm",
       "provider": "in-tree converter code",
       "owner": "D10 T02 \u00a71",
-      "availability": "planned",
-      "unavailable_reason": "converter adapter not yet shipped",
+      "availability": "usable",
+      "unavailable_reason": null,
       "modes": {
         "read": true,
         "write": true
@@ -279,8 +279,8 @@
       "format": "pam",
       "provider": "in-tree converter code",
       "owner": "D10 T02 \u00a71",
-      "availability": "planned",
-      "unavailable_reason": "converter adapter not yet shipped",
+      "availability": "usable",
+      "unavailable_reason": null,
       "modes": {
         "read": true,
         "write": true

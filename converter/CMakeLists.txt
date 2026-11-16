@@ -179,6 +179,52 @@ if(WIN32)
   target_link_options(rfc_test_reports PRIVATE -static -Wl,--gc-sections)
 endif()
 
+add_library(rfc_codecs STATIC
+  "${CMAKE_SOURCE_DIR}/codecs/basic.c"
+)
+set_target_properties(rfc_codecs PROPERTIES
+  C_STANDARD 11
+  C_STANDARD_REQUIRED ON
+  C_EXTENSIONS OFF
+)
+target_compile_options(rfc_codecs PRIVATE -Wall -Wextra -Werror)
+target_include_directories(rfc_codecs PRIVATE
+  "${CMAKE_SOURCE_DIR}/include"
+  "${CMAKE_SOURCE_DIR}/../include"
+  "${CMAKE_SOURCE_DIR}/codecs"
+  "${RF_DEPS_PREFIX}/include"
+)
+target_link_libraries(rfc_codecs PRIVATE
+  rfc_engine
+  "${RF_LIBRASTERFOLD}"
+  "${RF_LIB_PNG}"
+  "${RF_LIB_Z}"
+)
+
+add_executable(rfc_test_basic
+  "${CMAKE_SOURCE_DIR}/../tests/converter/test_basic.c"
+)
+set_target_properties(rfc_test_basic PROPERTIES
+  C_STANDARD 11
+  C_STANDARD_REQUIRED ON
+  C_EXTENSIONS OFF
+  RUNTIME_OUTPUT_DIRECTORY "${RF_CONVERTER_BIN_DIR}"
+)
+target_compile_options(rfc_test_basic PRIVATE -Wall -Wextra -Werror)
+target_include_directories(rfc_test_basic PRIVATE
+  "${CMAKE_SOURCE_DIR}/codecs"
+)
+target_link_libraries(rfc_test_basic PRIVATE
+  rfc_codecs
+  rfc_engine
+  "${RF_LIBRASTERFOLD}"
+  "${RF_LIB_PNG}"
+  "${RF_LIB_Z}"
+)
+if(WIN32)
+  target_link_options(rfc_test_basic PRIVATE -static -Wl,--gc-sections)
+endif()
+
 add_executable(rfc_bundle_smoke
   "${CMAKE_SOURCE_DIR}/src/bundle_smoke.c"
 )

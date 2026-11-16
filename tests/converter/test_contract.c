@@ -110,8 +110,10 @@ int main(int argc, char **argv) {
     CHECK(rfc_registry_find(RFC_FORMAT_QOI) != NULL);
     CHECK(rfc_registry_find_name("no-such-format") == NULL);
 
-    /* Planned formats are visible but cannot be selected for execution. */
-    CHECK(rfc_registry_select(RFC_FORMAT_PNG, RFC_MODE_READ) == RFC_ERR_PLANNED);
+    /* Planned formats fail with RFC_ERR_PLANNED; usable formats without an
+     * adapter registered fail with RFC_ERR_NO_ADAPTER. */
+    CHECK(rfc_registry_select(RFC_FORMAT_WEBP, RFC_MODE_READ) == RFC_ERR_PLANNED);
+    CHECK(rfc_registry_select(RFC_FORMAT_PNG, RFC_MODE_READ) == RFC_ERR_NO_ADAPTER);
     const char *reason = NULL;
     rfc_setting_value ok_vals[] = {{"metadata", "preserve"}, {"exactness", "pixel-exact"}};
     CHECK(rfc_registry_validate_settings(RFC_FORMAT_PNG, ok_vals, 2, &reason) == RFC_OK);

@@ -908,6 +908,7 @@ rfc_status rfc_verify_encoded_fresh(rfc_format_id target_format,
                          out_report->metadata.unsupported_items,
                          out_report->metadata.detail);
         }
+        out_report->meta_outcome = out_report->metadata.outcome;
         out_report->status = st;
         out_report->valid = 1;
         return st;

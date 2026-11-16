@@ -3162,6 +3162,7 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
                                            rep.metadata.detail);
                         err_detail = "unacknowledged unsupported metadata";
                     }
+                    rep.meta_outcome = rep.metadata.outcome;
                     rep.status = st;
                     rep.valid = 1;
                     store_job_verify_report(job, &rep);

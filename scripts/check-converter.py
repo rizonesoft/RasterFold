@@ -66,6 +66,25 @@ def validate_registry():
         m = re.match(r"\|\s*\d+\s*\|\s*§(\d+)\s*\|.*\|\s*\[x\]\s*\|", line)
         if m:
             shipped.add(int(m.group(1)))
+    adapter_by_sec = {
+        1: os.path.join("converter", "codecs", "basic.c"),
+        2: os.path.join("converter", "codecs", "webp.c"),
+        3: os.path.join("converter", "codecs", "jxl.c"),
+        4: os.path.join("converter", "codecs", "avif.c"),
+        5: os.path.join("converter", "codecs", "jpeg.c"),
+        6: os.path.join("converter", "codecs", "tiff_gif.c"),
+        7: os.path.join("converter", "codecs", "wic.c"),
+        8: os.path.join("converter", "codecs", "qoi.c"),
+        9: os.path.join("converter", "codecs", "jp2.c"),
+        10: os.path.join("converter", "codecs", "openexr.c"),
+        11: os.path.join("converter", "codecs", "raw_dng.c"),
+        12: os.path.join("converter", "src", "frames.c"),
+    }
+    started_ready = set()
+    for sec_num, rel_path in adapter_by_sec.items():
+        blk = re.search(rf"^## {sec_num}\..*?(?=^## \d+\.|\Z)", codecs_md, re.M | re.S)
+        if blk and "**Started:**" in blk.group(0) and os.path.isfile(os.path.join(ROOT, rel_path)):
+            started_ready.add(sec_num)
     seen = set()
     for row in doc.get("formats", []):
         name = row.get("format")
@@ -132,7 +151,7 @@ def validate_registry():
             return fail(f"{where}: availability must be planned or usable")
         if row.get("availability") == "planned" and not row.get("unavailable_reason"):
             return fail(f"{where}: planned format needs an unavailable_reason")
-        if row.get("availability") == "usable" and m and int(m.group(1)) not in shipped:
+        if row.get("availability") == "usable" and m and int(m.group(1)) not in shipped and int(m.group(1)) not in started_ready:
             return fail(f"{where}: marked usable but owning section §{m.group(1)} has not shipped")
         for setting in row.get("settings", []):
             if setting.get("type") not in SETTING_TYPES:
@@ -171,11 +190,11 @@ def _check_headers(tmp):
     cxx = os.environ.get("CXX", "c++")
     inc = os.path.join(ROOT, "converter", "include")
     tu = os.path.join(tmp, "tu.c")
-    open(tu, "w").write('#include "rfc_codec.h"\n#include "rfc_io.h"\n#include "rfc_job.h"\n#include "rfc_verify.h"\n#include "rfc_report.h"\nint main(void){return 0;}\n')
+    open(tu, "w").write('#include "rfc_codec.h"\n#include "rfc_codecs.h"\n#include "rfc_io.h"\n#include "rfc_job.h"\n#include "rfc_verify.h"\n#include "rfc_report.h"\nint main(void){return 0;}\n')
     if run([cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", inc, "-c", tu, "-o", os.path.join(tmp, "tu.o")]):
         return fail("headers do not compile as C11")
     tux = os.path.join(tmp, "tu.cpp")
-    open(tux, "w").write('#include "rfc_codec.h"\n#include "rfc_io.h"\n#include "rfc_job.h"\n#include "rfc_verify.h"\n#include "rfc_report.h"\nint main(){return 0;}\n')
+    open(tux, "w").write('#include "rfc_codec.h"\n#include "rfc_codecs.h"\n#include "rfc_io.h"\n#include "rfc_job.h"\n#include "rfc_verify.h"\n#include "rfc_report.h"\nint main(){return 0;}\n')
     if run([cxx, "-std=c++17", "-Wall", "-Wextra", "-Werror", "-I", inc, "-c", tux, "-o", os.path.join(tmp, "tu_cpp.o")]):
         return fail("headers do not compile as C++")
     return 0
@@ -755,6 +774,144 @@ def case_reports(all_targets=False):
     return 0
 
 
+def _assert_basic_output(out_text, label):
+    required = [
+        "basic: registration_and_fold_v2_v3 ok",
+        "basic: bmp_depths_alpha_and_icc ok",
+        "basic: png_depths_routes_budget_and_exif ok",
+        "basic: pnm_and_pam_matrix ok",
+        "basic: jobs_file_safety_and_cancel ok",
+        "basic: all checks passed",
+    ]
+    for marker in required:
+        if marker not in out_text:
+            return fail(f"{label} missing marker: {marker}\n{out_text}")
+    for line in out_text.strip().splitlines():
+        print(f"  [{label}] {line}")
+    return 0
+
+
+def _host_libpng_flags():
+    import shlex
+    res = run_capture(["pkg-config", "--cflags", "--libs", "libpng", "zlib"])
+    if res.returncode == 0 and res.stdout.strip():
+        cflags = []
+        libs = []
+        for tok in shlex.split(res.stdout.strip()):
+            if tok.startswith(("-l", "-L", "-Wl")):
+                libs.append(tok)
+            else:
+                cflags.append(tok)
+        return cflags, libs
+    return ["-I/usr/include/libpng16"], ["-lpng16", "-lz"]
+
+
+def case_basic(all_targets=False):
+    from pathlib import Path
+
+    if validate_registry():
+        return 1
+
+    _ref = _load_conv_module("_rfc_ref", "reference.py")
+    _tb = _load_conv_module("_rfc_bundle", "test_bundle.py")
+
+    inc = os.path.join(ROOT, "converter", "include")
+    rf_inc = os.path.join(ROOT, "include")
+    codecs_dir = os.path.join(ROOT, "converter", "codecs")
+    src_dir = os.path.join(ROOT, "converter", "src")
+    win_exe = Path(ROOT) / "bin" / "converter" / "windows-x64" / "rfc_test_basic.exe"
+
+    with tempfile.TemporaryDirectory(prefix="rfc_basic_gate_") as tmp:
+        if _check_headers(tmp):
+            return 1
+
+        host_exe = ""
+        if os.name != "nt":
+            if run([sys.executable, os.path.join(ROOT, "scripts", "build.py"), "--target", "linux-x64"]):
+                return fail("linux-x64 librasterfold.a build failed for basic")
+            rf_lib = os.path.join(ROOT, "bin", "linux-x64", "lib", "librasterfold.a")
+            if not os.path.isfile(rf_lib):
+                return fail(f"missing {rf_lib}")
+            cc = os.environ.get("CC", "cc")
+            png_cflags, png_libs = _host_libpng_flags()
+            host_exe = os.path.join(tmp, "test_basic")
+            sources = [
+                os.path.join(src_dir, "registry.c"),
+                os.path.join(src_dir, "limits.c"),
+                os.path.join(src_dir, "verify.c"),
+                os.path.join(src_dir, "metadata.c"),
+                os.path.join(src_dir, "input.c"),
+                os.path.join(src_dir, "output.c"),
+                os.path.join(src_dir, "metrics.c"),
+                os.path.join(src_dir, "job.c"),
+                os.path.join(src_dir, "scheduler.c"),
+                os.path.join(codecs_dir, "basic.c"),
+                os.path.join(ROOT, "tests", "converter", "test_basic.c"),
+            ]
+            cmd = [
+                cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-pthread",
+                "-I", inc, "-I", rf_inc, "-I", codecs_dir, *png_cflags,
+                *sources, rf_lib, *png_libs, "-o", host_exe,
+            ]
+            if run(cmd):
+                return fail("basic host test does not build")
+            res = run_capture([host_exe], timeout=60.0)
+            if res.returncode:
+                print(res.stdout)
+                print(res.stderr, file=sys.stderr)
+                return fail(f"basic host test exited {res.returncode}")
+            if _assert_basic_output(res.stdout, "host"):
+                return 1
+            print("basic (host): PASS")
+
+        if all_targets or os.name == "nt":
+            if run([sys.executable, os.path.join(ROOT, "scripts", "build-converter.py"),
+                    "--target", "windows-x64"]):
+                return fail("windows-x64 converter build failed for rfc_test_basic")
+            if not win_exe.is_file():
+                return fail(f"missing built Windows binary: {win_exe}")
+            pe_dlls = _tb.parse_pe64_imports(win_exe)
+            ro_dlls = _tb.readobj_imports(win_exe)
+            if set(pe_dlls) != set(ro_dlls):
+                return fail(f"PE vs llvm-readobj import mismatch on {win_exe}: {pe_dlls} vs {ro_dlls}")
+            try:
+                _tb.validate_pe_imports(pe_dlls)
+            except ValueError as exc:
+                return fail(f"{win_exe} PE import check failed: {exc}")
+            print(f"  [windows-x64] PE imports OK: {', '.join(pe_dlls)}")
+
+            win_res = _tb.run_windows_binary_isolated(win_exe, timeout_sec=60.0)
+            if win_res.returncode:
+                print(win_res.stdout)
+                print(win_res.stderr, file=sys.stderr)
+                return fail(f"rfc_test_basic.exe isolated run exited {win_res.returncode}")
+            if _assert_basic_output(win_res.stdout, "windows-x64"):
+                return 1
+            print("basic (windows-x64 isolated): PASS")
+
+        venv_py = os.path.join(ROOT, ".venv", "bin", "python")
+        py_bin = venv_py if (os.name != "nt" and os.path.isfile(venv_py)) else sys.executable
+        env = dict(os.environ)
+        if host_exe:
+            env["RFC_HOST_BASIC_EXE"] = host_exe
+        if (all_targets or os.name == "nt") and win_exe.is_file():
+            env["RFC_WIN_BASIC_EXE"] = str(win_exe)
+            env["RFC_REQUIRE_WIN_BASIC"] = "1"
+        py_res = _ref.run_process_tree(
+            [py_bin, os.path.join(ROOT, "tests", "converter", "test_basic.py"), "-v"],
+            cwd=ROOT, env=env, capture_output=True, text=True, timeout=240.0
+        )
+        if py_res.stdout:
+            print(py_res.stdout.rstrip(), flush=True)
+        if py_res.stderr:
+            print(py_res.stderr.rstrip(), file=sys.stderr, flush=True)
+        if py_res.returncode != 0:
+            return fail(f"test_basic.py failed with rc={py_res.returncode}")
+
+    print("basic: PASS")
+    return 0
+
+
 def main():
     raw_args = sys.argv[1:]
     all_targets = "--all-targets" in raw_args
@@ -773,6 +930,8 @@ def main():
         return case_file_safety(all_targets)
     if args == ["--case", "reports"]:
         return case_reports(all_targets)
+    if args == ["--case", "basic"]:
+        return case_basic(all_targets)
     if args == ["--case", "all"]:
         rc = case_contract()
         if rc:
@@ -789,8 +948,11 @@ def main():
         rc = case_reports(all_targets)
         if rc:
             return rc
+        rc = case_basic(all_targets)
+        if rc:
+            return rc
         return case_bundle()
-    print("usage: check-converter.py --case <contract|jobs|exactness|file-safety|reports|bundle|all> [--all-targets]")
+    print("usage: check-converter.py --case <contract|jobs|exactness|file-safety|reports|basic|bundle|all> [--all-targets]")
     return 1
 
 

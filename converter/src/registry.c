@@ -214,6 +214,7 @@ static const rfc_sample_format k_10bit[] = {RFC_SAMPLE_RGB8, RFC_SAMPLE_RGBA8,
 static const rfc_sample_format k_exr[] = {RFC_SAMPLE_RGB_HALF, RFC_SAMPLE_RGBA_HALF,
                                           RFC_SAMPLE_RGB_FLOAT, RFC_SAMPLE_RGBA_FLOAT};
 #define PLANNED RFC_AVAILABILITY_PLANNED
+#define USABLE RFC_AVAILABILITY_USABLE
 
 #define META_NONE RFC_META_ITEM_NONE
 #define META_ICC RFC_META_ITEM_ICC
@@ -221,12 +222,12 @@ static const rfc_sample_format k_exr[] = {RFC_SAMPLE_RGB_HALF, RFC_SAMPLE_RGBA_H
 #define META_TIM RFC_META_ITEM_FRAME_TIMING
 
 static const rfc_capability k_registry[] = {
-    {RFC_FORMAT_RASTERFOLD, "rasterfold", "RasterFold (this repository)", "D10 T02 \xc2\xa7" "1", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_rgb8, 1, COMMON, COMMON_RULES, META_NONE},
-    {RFC_FORMAT_BMP, "bmp", "in-tree converter code", "D10 T02 \xc2\xa7" "1", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_bmp, 3, COMMON, COMMON_RULES, META_NONE},
-    {RFC_FORMAT_PNG, "png", "libpng (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "1", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_png, 6, COMMON, COMMON_RULES, META_ICC},
-    {RFC_FORMAT_APNG, "apng", "libpng (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "1", "D10 T02 \xc2\xa7" "12", PLANNED, "converter adapter not yet shipped; animation extensions owned by D10 T02 \xc2\xa7" "12", 1, 1, k_png, 6, ANIM, ANIM_RULES, META_ICC | META_TIM},
-    {RFC_FORMAT_PNM, "pnm", "in-tree converter code", "D10 T02 \xc2\xa7" "1", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_pnm, 4, COMMON, COMMON_RULES, META_NONE},
-    {RFC_FORMAT_PAM, "pam", "in-tree converter code", "D10 T02 \xc2\xa7" "1", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_pam, 6, COMMON, COMMON_RULES, META_NONE},
+    {RFC_FORMAT_RASTERFOLD, "rasterfold", "RasterFold (this repository)", "D10 T02 \xc2\xa7" "1", NULL, USABLE, NULL, 1, 1, k_rgb8, 1, COMMON, COMMON_RULES, META_NONE},
+    {RFC_FORMAT_BMP, "bmp", "in-tree converter code", "D10 T02 \xc2\xa7" "1", NULL, USABLE, NULL, 1, 1, k_bmp, 3, COMMON, COMMON_RULES, META_NONE},
+    {RFC_FORMAT_PNG, "png", "libpng (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "1", NULL, USABLE, NULL, 1, 1, k_png, 6, COMMON, COMMON_RULES, META_ICC},
+    {RFC_FORMAT_APNG, "apng", "libpng (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "1", "D10 T02 \xc2\xa7" "12", PLANNED, "APNG multi-frame sequence composition and export owned by D10 T02 \xc2\xa7" "12", 1, 1, k_png, 6, ANIM, ANIM_RULES, META_ICC | META_TIM},
+    {RFC_FORMAT_PNM, "pnm", "in-tree converter code", "D10 T02 \xc2\xa7" "1", NULL, USABLE, NULL, 1, 1, k_pnm, 4, COMMON, COMMON_RULES, META_NONE},
+    {RFC_FORMAT_PAM, "pam", "in-tree converter code", "D10 T02 \xc2\xa7" "1", NULL, USABLE, NULL, 1, 1, k_pam, 6, COMMON, COMMON_RULES, META_NONE},
     {RFC_FORMAT_WEBP, "webp", "libwebp (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "2", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_rgba8, 2, COMMON, COMMON_RULES, META_ICC | META_ORI},
     {RFC_FORMAT_JPEG_XL, "jpeg-xl", "libjxl (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "3", "D10 T02 \xc2\xa7" "12", PLANNED, "converter adapter not yet shipped", 1, 1, k_png, 6, JXLSET, JXL_RULES, META_ICC | META_ORI | META_TIM},
     {RFC_FORMAT_AVIF, "avif", "libavif (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "4", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_10bit, 4, COMMON, COMMON_RULES, META_ICC | META_ORI},

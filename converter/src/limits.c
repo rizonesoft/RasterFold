@@ -368,6 +368,14 @@ rfc_status rfc_query_provider_memory_contract(rfc_format_id id,
     out->format = cap->id;
     switch (cap->id) {
         case RFC_FORMAT_PNG:
+            out->mode = RFC_MEM_HOOK_ENFORCED;
+            out->working_set_multiplier = 3u;
+            out->fixed_overhead_bytes = 512ull * 1024ull;
+            out->limitation_reason =
+                "libpng and zlib allocations route through rfc_budget hooks; "
+                "baseline RGB8 shared rf_png_load pre-reserves its working set "
+                "in rfc_budget";
+            break;
         case RFC_FORMAT_APNG:
             out->mode = RFC_MEM_HOOK_ENFORCED;
             out->working_set_multiplier = 3u;
