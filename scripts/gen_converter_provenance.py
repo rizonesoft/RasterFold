@@ -385,6 +385,36 @@ def _sanitize_forced_include_token(
     return f"{opt}{sep}{name}#p={arg_sha}#c={content_sha}"
 
 
+def _expand_response_tokens(
+    tokens: list[str],
+    compile_dir: Path | None,
+    _seen: frozenset[Path] = frozenset(),
+    _depth: int = 0,
+) -> list[str]:
+    if _depth >= 16:
+        return list(tokens)
+    out: list[str] = []
+    search = (compile_dir,) if compile_dir is not None else ()
+    for tok in tokens:
+        if tok.startswith("@") and len(tok) > 1:
+            rsp_path = _resolve_input_path(tok[1:], search)
+            try:
+                canon = rsp_path.resolve()
+            except OSError:
+                canon = rsp_path
+            if rsp_path.is_file() and canon not in _seen:
+                try:
+                    raw_text = rsp_path.read_text(encoding="utf-8", errors="replace")
+                    inner = shlex.split(raw_text, posix=True)
+                except (OSError, ValueError):
+                    out.append(tok)
+                    continue
+                out.extend(_expand_response_tokens(inner, compile_dir, _seen | {canon}, _depth + 1))
+                continue
+        out.append(tok)
+    return out
+
+
 def _semantic_ninja_tokens(
     flags_tokens: list[str],
     define_tokens: list[str],
@@ -394,6 +424,8 @@ def _semantic_ninja_tokens(
 ) -> list[str]:
     out: list[str] = []
     compile_dir = search_dirs[0] if search_dirs else None
+    flags_tokens = _expand_response_tokens(flags_tokens, compile_dir)
+    define_tokens = _expand_response_tokens(define_tokens, compile_dir)
     inc_dirs = _extract_token_search_dirs(flags_tokens, compile_dir)
     all_search: list[Path] = []
     for d in list(search_dirs) + list(inc_dirs):

@@ -1113,6 +1113,51 @@ class TestHostReports(unittest.TestCase):
             cwd_prec.write_text("#define SRC_cwd 2\n", encoding="utf-8")
             self.assertNotEqual(bf_p7, run_prov(deps_prec, base / "prov_p9.h")["RFC_FORMAT_JPEG_XL"]["build_flags"])
 
+            # Real @response files: expand -include/-imacros/-I/defines and nested @file in compile_dir
+            deps_rsp = base / "deps_rsp_real"
+            write_pkg(
+                deps_rsp,
+                "libjxl",
+                True,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="-march=x86-64-v2",
+                cxx_rel="-O3 -DNDEBUG",
+                toggles={},
+                ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG -std=c++17 @opts.rsp",
+                ninja_defs="@defs.rsp",
+            )
+            pkg_rsp = deps_rsp / "libjxl"
+            (pkg_rsp / "rsp_inc").mkdir(parents=True, exist_ok=True)
+            rsp_hdr = pkg_rsp / "rsp_inc" / "config.h"
+            rsp_hdr.write_text("#define FEATURE 1\n", encoding="utf-8")
+            (pkg_rsp / "rsp_dir").mkdir(parents=True, exist_ok=True)
+            decoy_inner_hdr = pkg_rsp / "rsp_dir" / "nested_only.h"
+            decoy_inner_hdr.write_text("#define NESTED 1\n", encoding="utf-8")
+            (pkg_rsp / "rsp_dir" / "inner.rsp").write_text("-include rsp_dir/nested_only.h\n", encoding="utf-8")
+            real_inner_hdr = pkg_rsp / "nested_real.h"
+            real_inner_hdr.write_text("#define REAL_NEST 1\n", encoding="utf-8")
+            (pkg_rsp / "inner.rsp").write_text("-include nested_real.h\n", encoding="utf-8")
+            (pkg_rsp / "rsp_dir" / "outer.rsp").write_text("-I rsp_inc\n@inner.rsp\n", encoding="utf-8")
+            (pkg_rsp / "opts.rsp").write_text("@rsp_dir/outer.rsp -include config.h\n", encoding="utf-8")
+            (pkg_rsp / "defs.rsp").write_text("-DRSP_DEF=1\n", encoding="utf-8")
+            bf_r1 = run_prov(deps_rsp, base / "prov_r1.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertIn("-include:config.h", bf_r1)
+            self.assertIn("-DRSP_DEF=1", bf_r1)
+            rsp_hdr.write_text("#define FEATURE 2\n", encoding="utf-8")
+            bf_r2 = run_prov(deps_rsp, base / "prov_r2.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertNotEqual(bf_r1, bf_r2)
+            real_inner_hdr.write_text("#define REAL_NEST 2\n", encoding="utf-8")
+            bf_r3 = run_prov(deps_rsp, base / "prov_r3.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertNotEqual(bf_r2, bf_r3)
+            decoy_inner_hdr.write_text("#define NESTED 2\n", encoding="utf-8")
+            self.assertEqual(bf_r3, run_prov(deps_rsp, base / "prov_r4.h")["RFC_FORMAT_JPEG_XL"]["build_flags"])
+            # Self-referential response-file cycle terminates safely
+            (pkg_rsp / "cyc.rsp").write_text("@cyc.rsp -DACYC=1\n", encoding="utf-8")
+            (pkg_rsp / "opts.rsp").write_text("@cyc.rsp\n", encoding="utf-8")
+            bf_r5 = run_prov(deps_rsp, base / "prov_r5.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertIn("-DACYC=1", bf_r5)
+
     def test_kodim23_compare_threads_oracle_and_history(self) -> None:
         self.assertEqual(sha256_file(KODIM_PATH), KODIM_EXPECTED_SHA256)
         with Image.open(KODIM_PATH) as im:
