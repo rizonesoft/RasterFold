@@ -2602,22 +2602,96 @@ static void win32_make_junction(const char *junc_utf8, const char *target_utf8) 
     CHECK(utf8_to_wide(target_utf8, wtarget, 1200u));
     _snwprintf(cmd_line, 3000u, L"\"%ls\" /d /c mklink /J \"%ls\" \"%ls\"",
                cmd_exe, wjunc, wtarget);
+
+    HANDLE job = CreateJobObjectW(NULL, NULL);
+    CHECK(job != NULL);
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION jeli;
+    memset(&jeli, 0, sizeof(jeli));
+    jeli.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    CHECK(SetInformationJobObject(job, JobObjectExtendedLimitInformation, &jeli,
+                                  sizeof(jeli)) != FALSE);
+
     STARTUPINFOW si;
     PROCESS_INFORMATION pi;
     memset(&si, 0, sizeof(si));
     memset(&pi, 0, sizeof(pi));
     si.cb = sizeof(si);
     BOOL ok = CreateProcessW(cmd_exe, cmd_line, NULL, NULL, FALSE,
-                             CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
-    CHECK(ok != FALSE);
+                             CREATE_NO_WINDOW | CREATE_SUSPENDED, NULL, NULL,
+                             &si, &pi);
+    if (!ok) {
+        CloseHandle(job);
+        CHECK(ok != FALSE);
+        return;
+    }
+    if (!AssignProcessToJobObject(job, pi.hProcess)) {
+        TerminateProcess(pi.hProcess, 1u);
+        (void)WaitForSingleObject(pi.hProcess, 5000u);
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        CloseHandle(job);
+        CHECK(0);
+        return;
+    }
+    CHECK(ResumeThread(pi.hThread) != (DWORD)-1);
+
     DWORD wr = WaitForSingleObject(pi.hProcess, 30000u);
     DWORD ec = 1u;
-    CHECK(wr == WAIT_OBJECT_0);
-    CHECK(GetExitCodeProcess(pi.hProcess, &ec) != FALSE && ec == 0u);
+    BOOL ec_ok = FALSE;
+    if (wr != WAIT_OBJECT_0) {
+        (void)TerminateJobObject(job, 1u);
+        (void)TerminateProcess(pi.hProcess, 1u);
+        (void)WaitForSingleObject(pi.hProcess, 5000u);
+    } else {
+        ec_ok = GetExitCodeProcess(pi.hProcess, &ec);
+    }
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
+    CloseHandle(job);
+    CHECK(wr == WAIT_OBJECT_0);
+    CHECK(ec_ok != FALSE && ec == 0u);
 }
 #else
+typedef struct posix_post_link_ctx {
+    char src_path[1200];
+    char moved_path[1200];
+    fs_mutex_t lock;
+    fs_cond_t cond;
+    int sync_enabled;
+    int entered;
+    int cancel_dispatched;
+    int allow_finish;
+    int fired;
+    rfc_job *job;
+    rfc_status cancel_status;
+} posix_post_link_ctx;
+
+static void posix_post_link_cb(rfc_job_id job_id, void *user) {
+    (void)job_id;
+    posix_post_link_ctx *pl = (posix_post_link_ctx *)user;
+    pl->fired++;
+    CHECK(rename(pl->src_path, pl->moved_path) == 0);
+    if (pl->sync_enabled) {
+        fs_mutex_lock(&pl->lock);
+        pl->entered = 1;
+        fs_cond_broadcast(&pl->cond);
+        while (!pl->allow_finish) {
+            fs_cond_wait(&pl->cond, &pl->lock);
+        }
+        fs_mutex_unlock(&pl->lock);
+    }
+}
+
+static void *post_link_cancel_worker(void *arg) {
+    posix_post_link_ctx *pl = (posix_post_link_ctx *)arg;
+    fs_mutex_lock(&pl->lock);
+    pl->cancel_dispatched = 1;
+    fs_cond_broadcast(&pl->cond);
+    fs_mutex_unlock(&pl->lock);
+    pl->cancel_status = rfc_job_cancel(pl->job);
+    return NULL;
+}
+
 typedef struct posix_post_check_ctx {
     char subst_path[1200];
     char sym_path[1200];
@@ -3439,6 +3513,139 @@ static void test_audit_regressions(void) {
 
             remove_file_os(dst1); /* symlink */
             remove_file_os(vic);
+
+            /* 9b-4: Post-link destination rename treats linkat as publication
+             * boundary so reporting and cancellation stay consistent. */
+            {
+                char dst4[900], moved4[900];
+                join_path(dst4, sizeof(dst4), d1, "postlink_direct.fold");
+                join_path(moved4, sizeof(moved4), d1, "moved_direct.fold");
+
+                posix_post_link_ctx pl;
+                memset(&pl, 0, sizeof(pl));
+                snprintf(pl.src_path, sizeof(pl.src_path), "%s", dst4);
+                snprintf(pl.moved_path, sizeof(pl.moved_path), "%s", moved4);
+                rfc_output_set_posix_post_link_for_testing(posix_post_link_cb,
+                                                           &pl);
+
+                rfc_export_report er4;
+                CHECK(rfc_output_write_path(dst4, NULL, NULL,
+                                            RFC_EXPORT_REFUSE_EXISTING, NULL,
+                                            940u, bmp, blen, NULL,
+                                            &er4) == RFC_OK);
+                rfc_output_set_posix_post_link_for_testing(NULL, NULL);
+                CHECK(pl.fired == 1);
+                CHECK(er4.published == 1 && er4.status == RFC_OK &&
+                      er4.temp_cleaned_up == 1);
+                CHECK(!file_exists_os(dst4));
+                uint8_t *mbuf = NULL;
+                size_t mlen = 0u;
+                read_file_exact(moved4, &mbuf, &mlen);
+                CHECK(mlen == blen && memcmp(mbuf, bmp, blen) == 0);
+                free(mbuf);
+                remove_file_os(moved4);
+
+                char dstj[900], movedj[900];
+                join_path(dstj, sizeof(dstj), d1, "postlink_job.fold");
+                join_path(movedj, sizeof(movedj), d1, "moved_job.fold");
+
+                mem_reader_ctx mrc;
+                mem_reader_init(&mrc, bmp, blen);
+                rfc_io_reader rdr = make_mem_reader(&mrc);
+                rfc_io_source src_io;
+                rfc_io_sink dst_io;
+                rfc_io_source_init_callbacks(&src_io, &rdr, "postlink.bmp",
+                                             RFC_IMPORT_DEFAULT);
+                rfc_io_sink_init_path(&dst_io, dstj, RFC_EXPORT_REFUSE_EXISTING);
+
+                rfc_scheduler_config cfg;
+                rfc_scheduler_config_default(&cfg);
+                cfg.max_workers = 1u;
+                rfc_scheduler *sched = rfc_scheduler_create(&cfg);
+                CHECK(sched != NULL);
+
+                posix_post_link_ctx plj;
+                memset(&plj, 0, sizeof(plj));
+                fs_mutex_init(&plj.lock);
+                fs_cond_init(&plj.cond);
+                plj.sync_enabled = 1;
+                snprintf(plj.src_path, sizeof(plj.src_path), "%s", dstj);
+                snprintf(plj.moved_path, sizeof(plj.moved_path), "%s", movedj);
+
+                rfc_job_spec spec;
+                memset(&spec, 0, sizeof(spec));
+                spec.source_format = RFC_FORMAT_BMP;
+                spec.target_format = RFC_FORMAT_RASTERFOLD;
+                spec.expected_working_set_bytes = 64u * 1024u;
+                spec.io_source = &src_io;
+                spec.io_sink = &dst_io;
+
+                rfc_output_set_posix_post_link_for_testing(posix_post_link_cb,
+                                                           &plj);
+                rfc_job *job = NULL;
+                CHECK(rfc_scheduler_submit(sched, NULL, &spec, &job) == RFC_OK);
+
+                fs_mutex_lock(&plj.lock);
+                plj.job = job;
+                while (!plj.entered) {
+                    fs_cond_wait(&plj.cond, &plj.lock);
+                }
+                fs_mutex_unlock(&plj.lock);
+
+                fs_thread_t cth;
+                CHECK(fs_thread_start(&cth, post_link_cancel_worker, &plj));
+                fs_mutex_lock(&plj.lock);
+                while (!plj.cancel_dispatched) {
+                    fs_cond_wait(&plj.cond, &plj.lock);
+                }
+                plj.allow_finish = 1;
+                fs_cond_broadcast(&plj.cond);
+                fs_mutex_unlock(&plj.lock);
+
+                fs_thread_join(cth);
+                CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
+                rfc_output_set_posix_post_link_for_testing(NULL, NULL);
+
+                rfc_job_snapshot snap;
+                CHECK(rfc_job_snapshot_get(job, &snap) == RFC_OK);
+                CHECK(snap.state == RFC_JOB_SUCCEEDED);
+                CHECK(snap.status == RFC_OK);
+
+                rfc_export_report erj;
+                CHECK(rfc_job_export_report_get(job, &erj) == RFC_OK);
+                CHECK(erj.valid == 1 && erj.published == 1 &&
+                      erj.status == RFC_OK && erj.temp_cleaned_up == 1);
+
+                rfc_scheduler_stats stats;
+                rfc_scheduler_stats_get(sched, &stats);
+                CHECK(stats.published_cancelled_count == 0u);
+                CHECK(stats.total_completed == 1u);
+                CHECK(stats.total_cancelled == 0u);
+                CHECK(plj.fired == 1);
+                CHECK(!file_exists_os(dstj));
+
+                uint8_t *jbuf = NULL;
+                size_t jlen = 0u;
+                read_file_exact(movedj, &jbuf, &jlen);
+                CHECK(jlen == (size_t)erj.bytes_written && jlen > 32u);
+                uint8_t jsha[32];
+                rfc_bytes_hash_sha256(jbuf, jlen, jsha);
+                CHECK(memcmp(jsha, erj.output_sha256, 32u) == 0);
+                rf_pixels jpx = {0};
+                rf_error jerr = {0, NULL};
+                CHECK(rf_decode_image(jbuf, jlen, NULL, &jpx, &jerr) == RF_OK);
+                CHECK(jpx.width == 4u && jpx.height == 4u);
+                rf_free(jpx.data);
+                free(jbuf);
+                remove_file_os(movedj);
+
+                rfc_job_release(job);
+                rfc_scheduler_destroy(sched);
+                fs_cond_destroy(&plj.cond);
+                fs_mutex_destroy(&plj.lock);
+                mem_reader_destroy(&mrc);
+            }
+
             remove_dir_os(d1);
         }
 

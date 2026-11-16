@@ -241,6 +241,10 @@ void rfc_output_set_posix_post_check_for_testing(
     void (*after_abort_check)(rfc_job_id job_id, void *user),
     void *user);
 
+void rfc_output_set_posix_post_link_for_testing(
+    void (*after_link)(rfc_job_id job_id, void *user),
+    void *user);
+
 void rfc_output_set_win32_unc_root_for_testing(const char *unc_share_utf8,
                                                const char *backing_dir_utf8);
 

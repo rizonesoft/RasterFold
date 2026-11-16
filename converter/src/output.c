@@ -57,6 +57,8 @@ static void *g_publish_barrier_user = NULL;
 static void (*g_after_commit_check_cb)(rfc_job_id job_id, void *user) = NULL;
 static void (*g_after_abort_check_cb)(rfc_job_id job_id, void *user) = NULL;
 static void *g_posix_post_check_user = NULL;
+static void (*g_after_link_cb)(rfc_job_id job_id, void *user) = NULL;
+static void *g_posix_post_link_user = NULL;
 #endif
 
 void rfc_output_set_write_fault_for_testing(rfc_io_fault_stage fault_stage,
@@ -88,6 +90,18 @@ void rfc_output_set_posix_post_check_for_testing(
     g_after_commit_check_cb = after_commit_check;
     g_after_abort_check_cb = after_abort_check;
     g_posix_post_check_user = user;
+#endif
+}
+
+void rfc_output_set_posix_post_link_for_testing(
+    void (*after_link)(rfc_job_id job_id, void *user),
+    void *user) {
+#ifdef _WIN32
+    (void)after_link;
+    (void)user;
+#else
+    g_after_link_cb = after_link;
+    g_posix_post_link_user = user;
 #endif
 }
 
@@ -1567,12 +1581,8 @@ static rfc_status path_pub_commit(void *raw_ctx,
         }
     }
 
-    struct stat pub_st;
-    if (fstatat(sh->dir_fd, sh->dest_base, &pub_st, AT_SYMLINK_NOFOLLOW) !=
-            0 ||
-        S_ISLNK(pub_st.st_mode) || pub_st.st_dev != sh->staged_dev ||
-        pub_st.st_ino != sh->staged_ino) {
-        return RFC_ERR_IO;
+    if (g_after_link_cb) {
+        g_after_link_cb(sh->job_id, g_posix_post_link_user);
     }
 
     (void)fsync(sh->dir_fd);
