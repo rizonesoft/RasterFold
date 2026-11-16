@@ -208,12 +208,28 @@ PACKAGE_SUBDEPS: dict[str, tuple[str, ...]] = {
 }
 
 
-def _extract_semantic_cache_options(path: Path) -> dict[str, str]:
+def _normalize_search_path(raw: str, deps_root: Path | None) -> str:
+    p = Path(raw)
+    if not p.is_absolute():
+        return raw.replace("\\", "/")
+    if p.is_relative_to(ROOT):
+        return "<repo>/" + p.relative_to(ROOT).as_posix()
+    if deps_root is not None and p.is_relative_to(deps_root):
+        return "<deps>/" + p.relative_to(deps_root).as_posix()
+    digest = hashlib.sha256(raw.encode("utf-8", errors="replace")).hexdigest()[:16]
+    return f"{p.name or 'path'}#p={digest}"
+
+
+def _extract_semantic_cache_options(
+    path: Path,
+    is_cxx: bool,
+    has_c_blk: bool,
+    has_cxx_blk: bool,
+) -> dict[str, str]:
     out: dict[str, str] = {}
     if not path.is_file():
         return out
     skip_prefixes = (
-        "CMAKE_",
         "CPACK_",
         "CTEST_",
         "FETCHCONTENT_",
@@ -234,6 +250,8 @@ def _extract_semantic_cache_options(path: Path) -> dict[str, str]:
         "_EXECUTABLE",
         "_COMMAND",
     )
+    want_cxx_std = is_cxx or has_cxx_blk
+    want_c_std = (not is_cxx) or has_c_blk
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         if not line or line.startswith("#") or line.startswith("//") or ":" not in line or "=" not in line:
             continue
@@ -244,10 +262,20 @@ def _extract_semantic_cache_options(path: Path) -> dict[str, str]:
         val = val.strip()
         if ktype not in ("BOOL", "STRING", "UNINITIALIZED"):
             continue
+        if key.startswith("CMAKE_"):
+            allowed_cmake = (
+                key.startswith("CMAKE_INTERPROCEDURAL_OPTIMIZATION")
+                or key in ("CMAKE_POSITION_INDEPENDENT_CODE", "CMAKE_MSVC_RUNTIME_LIBRARY")
+                or (want_cxx_std and (key.startswith("CMAKE_CXX_STANDARD") or key == "CMAKE_CXX_EXTENSIONS"))
+                or (want_c_std and (key.startswith("CMAKE_C_STANDARD") or key == "CMAKE_C_EXTENSIONS"))
+            )
+            if not allowed_cmake:
+                continue
         if key.startswith(skip_prefixes) or key.endswith(skip_suffixes):
             continue
         if "/" in val or "\\" in val:
-            continue
+            digest = hashlib.sha256(val.encode("utf-8", errors="replace")).hexdigest()[:16]
+            val = f"{Path(val).name or 'path'}#p={digest}"
         out[key] = val
     return out
 
@@ -264,6 +292,14 @@ def _is_falsy(val: str | None) -> bool:
     return val.strip().upper() in ("0", "OFF", "FALSE", "NO")
 
 
+def _is_timestamp_define(tok: str) -> bool:
+    return (
+        tok.startswith("-D__DATE__")
+        or tok.startswith("-D__TIME__")
+        or tok.startswith("-D__TIMESTAMP__")
+    )
+
+
 def _is_noise_define(tok: str) -> bool:
     return (
         tok in (
@@ -277,41 +313,101 @@ def _is_noise_define(tok: str) -> bool:
             "-DNOMINMAX",
         )
         or tok.startswith("-D_CRT_")
-        or tok.startswith("-D__DATE__")
-        or tok.startswith("-D__TIME__")
-        or tok.startswith("-D__TIMESTAMP__")
         or tok.startswith("-D__STDC_")
+        or _is_timestamp_define(tok)
     )
 
 
-def _semantic_ninja_tokens(flags_tokens: list[str], define_tokens: list[str]) -> list[str]:
+def _sanitize_forced_include_token(
+    opt: str, arg: str, include_fingerprint: bool
+) -> str:
+    p = Path(arg)
+    name = p.name or arg
+    sep = "" if opt == "@" else ":"
+    if not include_fingerprint:
+        return f"{opt}{sep}{name}"
+    arg_sha = hashlib.sha256(arg.encode("utf-8", errors="replace")).hexdigest()[:16]
+    try:
+        content_sha = (
+            hashlib.sha256(p.read_bytes()).hexdigest()[:16]
+            if p.is_file()
+            else "absent"
+        )
+    except OSError:
+        content_sha = "absent"
+    return f"{opt}{sep}{name}#p={arg_sha}#c={content_sha}"
+
+
+def _semantic_ninja_tokens(
+    flags_tokens: list[str],
+    define_tokens: list[str],
+    include_fingerprint: bool = False,
+    deps_root: Path | None = None,
+) -> list[str]:
     out: list[str] = []
     i = 0
+    two_tok_search = (
+        "-isystem",
+        "-I",
+        "-iquote",
+        "-idirafter",
+        "-isysroot",
+        "--sysroot",
+        "-sysroot",
+        "-L",
+        "-B",
+        "--gcc-toolchain",
+    )
+    glued_search = (
+        "--sysroot=",
+        "-isysroot",
+        "-isystem",
+        "-iquote",
+        "-idirafter",
+        "-I",
+        "-L",
+        "-B",
+    )
+    two_tok_io = ("-o", "-MF", "-MT", "-MQ")
     while i < len(flags_tokens):
         tok = flags_tokens[i]
-        if tok in (
-            "-isystem",
-            "-I",
-            "-o",
-            "-MF",
-            "-MT",
-            "-x",
-            "-imacros",
-            "-include",
-            "--sysroot",
-            "-sysroot",
-            "-L",
-            "-B",
-            "--gcc-toolchain",
-        ):
+        if tok in two_tok_io:
             i += 2
             continue
-        if tok in ("-Xclang", "-mllvm", "-D", "-U") and i + 1 < len(flags_tokens):
+        if tok in two_tok_search and i + 1 < len(flags_tokens):
+            if include_fingerprint:
+                out.append(f"{tok}:{_normalize_search_path(flags_tokens[i + 1], deps_root)}")
+            i += 2
+            continue
+        if tok in ("-include", "--include", "-imacros", "-include-pch") and i + 1 < len(flags_tokens):
+            opt_norm = "-include" if tok == "--include" else tok
+            out.append(_sanitize_forced_include_token(opt_norm, flags_tokens[i + 1], include_fingerprint))
+            i += 2
+            continue
+        if tok in ("-Xclang", "-mllvm") and i + 1 < len(flags_tokens):
+            nxt = flags_tokens[i + 1]
+            if (
+                tok == "-Xclang"
+                and nxt in ("-include", "-imacros", "-include-pch")
+                and i + 3 < len(flags_tokens)
+                and flags_tokens[i + 2] == "-Xclang"
+            ):
+                out.append(f"-Xclang {_sanitize_forced_include_token(nxt, flags_tokens[i + 3], include_fingerprint)}")
+                i += 4
+                continue
+            if "/" in nxt or "\\" in nxt:
+                out.append(_sanitize_forced_include_token(tok, nxt, include_fingerprint))
+            else:
+                out.append(f"{tok} {nxt}")
+            i += 2
+            continue
+        if tok in ("-x", "--param", "-target", "-D", "-U") and i + 1 < len(flags_tokens):
             nxt = flags_tokens[i + 1]
             if tok in ("-D", "-U"):
                 if not nxt.startswith("-"):
                     paired = f"{tok}{nxt}"
-                    if not _is_noise_define(paired):
+                    skip_def = _is_timestamp_define(paired) if include_fingerprint else _is_noise_define(paired)
+                    if not skip_def:
                         out.append(paired)
                     i += 2
                     continue
@@ -320,56 +416,96 @@ def _semantic_ninja_tokens(flags_tokens: list[str], define_tokens: list[str]) ->
                 i += 2
                 continue
         i += 1
+        if not tok or tok in ("-c", "-pipe", "-MD", "-MMD", "-MP", "-MG", "-MV", "-w") or tok.startswith("-W"):
+            continue
+        if tok.startswith("@") and len(tok) > 1:
+            out.append(_sanitize_forced_include_token("@", tok[1:], include_fingerprint))
+            continue
         if (
-            not tok
-            or tok in ("-c", "-pipe", "-MD", "-MMD", "-w", "-fPIC", "-fpic", "-fPIE", "-fpie")
-            or tok.startswith("-I")
-            or tok.startswith("-isystem")
-            or tok.startswith("-L")
-            or tok.startswith("-B")
-            or tok.startswith("--sysroot=")
-            or tok.startswith("-W")
-            or tok.startswith("-fmacro-prefix-map=")
+            tok.startswith("-fmacro-prefix-map=")
             or tok.startswith("-ffile-prefix-map=")
             or tok.startswith("-fdebug-prefix-map=")
             or tok.startswith("-fcoverage-prefix-map=")
             or tok.startswith("-fdiagnostics")
             or tok.startswith("-fcolor-diagnostics")
-            or tok.startswith("-fvisibility")
-            or _is_noise_define(tok)
         ):
+            continue
+        if not include_fingerprint and (
+            tok in ("-fPIC", "-fpic", "-fPIE", "-fpie") or tok.startswith("-fvisibility")
+        ):
+            continue
+        if _is_timestamp_define(tok) or (not include_fingerprint and _is_noise_define(tok)):
+            continue
+        matched_glued_search = False
+        for gp in glued_search:
+            if tok.startswith(gp) and len(tok) > len(gp):
+                if include_fingerprint:
+                    out.append(f"{gp}:{_normalize_search_path(tok[len(gp):], deps_root)}")
+                matched_glued_search = True
+                break
+        if matched_glued_search:
+            continue
+        if tok.startswith("--include="):
+            out.append(_sanitize_forced_include_token("-include", tok[len("--include="):], include_fingerprint))
+            continue
+        if tok.startswith("-include-pch") and len(tok) > len("-include-pch"):
+            out.append(_sanitize_forced_include_token("-include-pch", tok[len("-include-pch"):], include_fingerprint))
+            continue
+        if tok.startswith("-include") and len(tok) > len("-include"):
+            out.append(_sanitize_forced_include_token("-include", tok[len("-include"):], include_fingerprint))
+            continue
+        if tok.startswith("-imacros") and len(tok) > len("-imacros"):
+            out.append(_sanitize_forced_include_token("-imacros", tok[len("-imacros"):], include_fingerprint))
             continue
         if tok.startswith("-"):
             out.append(tok)
 
     for tok in define_tokens:
-        if _is_noise_define(tok):
+        if _is_timestamp_define(tok) or (not include_fingerprint and _is_noise_define(tok)):
             continue
         if tok.startswith("-D") or tok.startswith("-U"):
             out.append(tok)
     return out
 
 
-def _parse_ninja_compile_blocks(ninja_path: Path, is_cxx: bool) -> dict[str, object]:
+def _parse_ninja_compile_blocks(
+    ninja_path: Path, is_cxx: bool, deps_root: Path | None = None
+) -> dict[str, object]:
     if not ninja_path.is_file():
-        return {"blocks": [], "has_cxx": False, "has_c": False}
-    blocks: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = []
+        return {"blocks": [], "has_cxx": False, "has_c": False, "has_asm": False}
+    blocks: list[tuple[str, tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]]] = []
     seen_blocks: set[tuple[str, tuple[str, ...], tuple[str, ...]]] = set()
     has_cxx = False
     has_c = False
+    has_asm = False
     cur_lang = ""
     cur_flags: list[str] = []
     cur_defs: list[str] = []
+    cur_includes: list[str] = []
 
     def flush_block() -> None:
         if not cur_lang:
             return
-        sem_f = tuple(_semantic_ninja_tokens(cur_flags, []))
-        sem_d = tuple(_semantic_ninja_tokens([], cur_defs))
-        key = (cur_lang, sem_f, sem_d)
-        if key not in seen_blocks:
-            seen_blocks.add(key)
-            blocks.append(key)
+        fp_f = tuple(
+            _semantic_ninja_tokens(
+                cur_flags + cur_includes, [], include_fingerprint=True, deps_root=deps_root
+            )
+        )
+        fp_d = tuple(
+            _semantic_ninja_tokens([], cur_defs, include_fingerprint=True, deps_root=deps_root)
+        )
+        uniq_key = (cur_lang, fp_f, fp_d)
+        if uniq_key not in seen_blocks:
+            seen_blocks.add(uniq_key)
+            disp_f = tuple(
+                _semantic_ninja_tokens(
+                    cur_flags + cur_includes, [], include_fingerprint=False, deps_root=deps_root
+                )
+            )
+            disp_d = tuple(
+                _semantic_ninja_tokens([], cur_defs, include_fingerprint=False, deps_root=deps_root)
+            )
+            blocks.append((cur_lang, disp_f, disp_d, fp_f, fp_d))
 
     for raw_line in ninja_path.read_text(encoding="utf-8", errors="replace").splitlines():
         if not raw_line.startswith(" ") and not raw_line.startswith("\t"):
@@ -377,6 +513,7 @@ def _parse_ninja_compile_blocks(ninja_path: Path, is_cxx: bool) -> dict[str, obj
             cur_lang = ""
             cur_flags = []
             cur_defs = []
+            cur_includes = []
             if raw_line.startswith("build ") and ":" in raw_line:
                 after_colon = raw_line.split(":", 1)[1].lstrip()
                 rule = after_colon.split(None, 1)[0] if after_colon else ""
@@ -386,6 +523,13 @@ def _parse_ninja_compile_blocks(ninja_path: Path, is_cxx: bool) -> dict[str, obj
                 elif rule.startswith("C_COMPILER__"):
                     cur_lang = "c"
                     has_c = True
+                elif (
+                    rule.startswith("ASM_NASM_COMPILER__")
+                    or rule.startswith("ASM_COMPILER__")
+                    or rule.startswith("ASM_MASM_COMPILER__")
+                ):
+                    cur_lang = "asm"
+                    has_asm = True
             continue
         if not cur_lang:
             continue
@@ -394,6 +538,8 @@ def _parse_ninja_compile_blocks(ninja_path: Path, is_cxx: bool) -> dict[str, obj
             cur_flags = shlex.split(stripped[len("FLAGS ="):].strip(), posix=True)
         elif stripped.startswith("DEFINES ="):
             cur_defs = shlex.split(stripped[len("DEFINES ="):].strip(), posix=True)
+        elif stripped.startswith("INCLUDES ="):
+            cur_includes = shlex.split(stripped[len("INCLUDES ="):].strip(), posix=True)
     flush_block()
 
     want_langs: set[str] = set()
@@ -407,8 +553,10 @@ def _parse_ninja_compile_blocks(ninja_path: Path, is_cxx: bool) -> dict[str, obj
             want_langs.add("c")
         if has_cxx:
             want_langs.add("cxx")
+    if has_asm:
+        want_langs.add("asm")
     selected = [b for b in blocks if b[0] in want_langs] if want_langs else []
-    return {"blocks": selected, "has_cxx": has_cxx, "has_c": has_c}
+    return {"blocks": selected, "has_cxx": has_cxx, "has_c": has_c, "has_asm": has_asm}
 
 
 def _format_bounded_build_flags(
@@ -650,11 +798,24 @@ def _collect_pkg_fingerprint_state(
 
     cache: dict[str, str] = {}
     sem_cache: dict[str, str] = {}
-    ninja_info: dict[str, object] = {"blocks": [], "has_cxx": False, "has_c": False}
+    ninja_info: dict[str, object] = {"blocks": [], "has_cxx": False, "has_c": False, "has_asm": False}
+    deps_root = (
+        deps_build_dir.parent
+        if (deps_build_dir is not None and deps_build_dir.name == "deps-build")
+        else deps_build_dir
+    )
     if deps_build_dir is not None:
-        cache = _parse_cmake_cache(deps_build_dir / pid / "CMakeCache.txt")
-        sem_cache = _extract_semantic_cache_options(deps_build_dir / pid / "CMakeCache.txt")
-        ninja_info = _parse_ninja_compile_blocks(deps_build_dir / pid / "build.ninja", is_cxx)
+        cache_file = deps_build_dir / pid / "CMakeCache.txt"
+        cache = _parse_cmake_cache(cache_file)
+        ninja_info = _parse_ninja_compile_blocks(
+            deps_build_dir / pid / "build.ninja", is_cxx, deps_root=deps_root
+        )
+        sem_cache = _extract_semantic_cache_options(
+            cache_file,
+            is_cxx,
+            bool(ninja_info["has_c"]),
+            bool(ninja_info["has_cxx"]),
+        )
 
     btype = (cache.get("CMAKE_BUILD_TYPE") or "Release").strip()
     cc_path = (
@@ -680,12 +841,18 @@ def _collect_pkg_fingerprint_state(
         if has_cxx_blk and ("CMAKE_CXX_FLAGS" in cache or f"CMAKE_CXX_FLAGS_{btype.upper()}" in cache):
             raw_cache_str = f"{raw_cache_str} {cxx_init} {cxx_cfg}"
 
-    cache_cmd = _semantic_ninja_tokens(shlex.split(raw_cache_str, posix=True), [])
+    raw_cache_toks = shlex.split(raw_cache_str, posix=True)
+    cache_cmd = _semantic_ninja_tokens(
+        raw_cache_toks, [], include_fingerprint=False, deps_root=deps_root
+    )
+    cache_cmd_fp = _semantic_ninja_tokens(
+        raw_cache_toks, [], include_fingerprint=True, deps_root=deps_root
+    )
 
     blocks = list(ninja_info["blocks"])
     ninja_blocks_json = [
-        {"lang": bl, "flags": list(bf), "defs": list(bd)}
-        for bl, bf, bd in blocks
+        {"lang": bl, "flags": list(fp_f), "defs": list(fp_d)}
+        for bl, _df, _dd, fp_f, fp_d in blocks
     ]
 
     visited = set(seen_ids or ())
@@ -698,13 +865,13 @@ def _collect_pkg_fingerprint_state(
             if (deps_build_dir / sub_id).is_dir():
                 subdeps_json[sub_id] = _collect_pkg_fingerprint_state(
                     pkg_by_id[sub_id], pkg_by_id, deps_build_dir, cc_cache, visited
-                )
+                )["payload"]
 
     payload = {
         "id": pid,
         "btype": btype,
         "compiler_id": compiler_id,
-        "cache_cmd": cache_cmd,
+        "cache_cmd": cache_cmd_fp,
         "ninja_blocks": ninja_blocks_json,
         "cache_options": sem_cache,
         "cmake_options": list(pkg.get("cmake_options", [])),
@@ -753,16 +920,17 @@ def _extract_package_build_info(
     block_defs: list[str] = []
     disp_ninja_flags: list[str] = []
     first_bf: list[str] | None = None
-    for _bl, bf, bd in blocks:
-        bf_non_def = [t for t in bf if (not t.startswith("-D") and not t.startswith("-U")) or t == "-DNDEBUG"]
-        if first_bf is None:
-            first_bf = bf_non_def
-            disp_ninja_flags.extend(bf_non_def)
-        else:
-            k = 0
-            while k < len(first_bf) and k < len(bf_non_def) and first_bf[k] == bf_non_def[k]:
-                k += 1
-            disp_ninja_flags.extend(bf_non_def[k:])
+    for bl, bf, bd, _fpf, _fpd in blocks:
+        if bl != "asm":
+            bf_non_def = [t for t in bf if (not t.startswith("-D") and not t.startswith("-U")) or t == "-DNDEBUG"]
+            if first_bf is None:
+                first_bf = bf_non_def
+                disp_ninja_flags.extend(bf_non_def)
+            else:
+                k = 0
+                while k < len(first_bf) and k < len(bf_non_def) and first_bf[k] == bf_non_def[k]:
+                    k += 1
+                disp_ninja_flags.extend(bf_non_def[k:])
         block_flags.extend(bf)
         block_defs.extend(bd)
 
@@ -822,7 +990,7 @@ def _extract_package_build_info(
     if pid == "libavif" and deps_build_dir is not None:
         aom_cache = _parse_cmake_cache(deps_build_dir / "libaom" / "CMakeCache.txt")
         aom_blk_info = _parse_ninja_compile_blocks(deps_build_dir / "libaom" / "build.ninja", True)
-        for _bl, bf, bd in aom_blk_info["blocks"]:
+        for _bl, bf, bd, _fpf, _fpd in aom_blk_info["blocks"]:
             aom_tokens.extend(bf)
             aom_tokens.extend(bd)
 

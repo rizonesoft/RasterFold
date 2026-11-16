@@ -860,6 +860,152 @@ class TestHostReports(unittest.TestCase):
                 p_ord2["RFC_FORMAT_AVIF"]["build_flags"],
             )
 
+            # Forced includes (-include / -imacros) must change provenance without leaking local paths
+            deps_inc_a = base / "deps_inc_a"
+            deps_inc_b = base / "deps_inc_b"
+            deps_inc_same_dir1 = base / "deps_inc_same1"
+            deps_inc_same_dir2 = base / "deps_inc_same2"
+            real_hdr = base / "forced_cfg.h"
+            real_hdr.write_text("#define JXL_CUSTOM_KNOB 1\n", encoding="utf-8")
+
+            write_pkg(
+                deps_inc_a,
+                "libjxl",
+                True,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="-march=x86-64-v2 -include /virtual/a.h",
+                cxx_rel="-O3 -DNDEBUG",
+                toggles={"JPEGXL_ENABLE_THREADS": ("BOOL", "ON")},
+                ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG -std=c++17 -include /virtual/a.h",
+            )
+            write_pkg(
+                deps_inc_b,
+                "libjxl",
+                True,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="-march=x86-64-v2 -include /virtual/b.h",
+                cxx_rel="-O3 -DNDEBUG",
+                toggles={"JPEGXL_ENABLE_THREADS": ("BOOL", "ON")},
+                ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG -std=c++17 -include /virtual/b.h",
+            )
+            write_pkg(
+                deps_inc_same_dir1,
+                "libjxl",
+                True,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="-march=x86-64-v2 -imacros /virtual/dir1/opts.h",
+                cxx_rel="-O3 -DNDEBUG",
+                toggles={"JPEGXL_ENABLE_THREADS": ("BOOL", "ON")},
+                ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG -std=c++17 -imacros /virtual/dir1/opts.h",
+            )
+            write_pkg(
+                deps_inc_same_dir2,
+                "libjxl",
+                True,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="-march=x86-64-v2 -imacros /virtual/dir2/opts.h",
+                cxx_rel="-O3 -DNDEBUG",
+                toggles={"JPEGXL_ENABLE_THREADS": ("BOOL", "ON")},
+                ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG -std=c++17 -imacros /virtual/dir2/opts.h",
+            )
+            p_inc_a = run_prov(deps_inc_a, base / "prov_inc_a.h")["RFC_FORMAT_JPEG_XL"]
+            p_inc_b = run_prov(deps_inc_b, base / "prov_inc_b.h")["RFC_FORMAT_JPEG_XL"]
+            p_same1 = run_prov(deps_inc_same_dir1, base / "prov_same1.h")["RFC_FORMAT_JPEG_XL"]
+            p_same2 = run_prov(deps_inc_same_dir2, base / "prov_same2.h")["RFC_FORMAT_JPEG_XL"]
+
+            self.assertNotIn("/virtual/", p_inc_a["build_flags"])
+            self.assertNotIn("/virtual/", p_inc_b["build_flags"])
+            self.assertIn("-include:a.h", p_inc_a["build_flags"])
+            self.assertIn("-include:b.h", p_inc_b["build_flags"])
+            self.assertNotEqual(p_inc_a["build_flags"], p_inc_b["build_flags"])
+            self.assertNotIn("/virtual/", p_same1["build_flags"])
+            self.assertIn("-imacros:opts.h", p_same1["build_flags"])
+            self.assertNotEqual(p_same1["build_flags"], p_same2["build_flags"])
+
+            deps_real = base / "deps_real_hdr"
+            write_pkg(
+                deps_real,
+                "libjxl",
+                True,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags=f"-march=x86-64-v2 -include {real_hdr}",
+                cxx_rel="-O3 -DNDEBUG",
+                toggles={"JPEGXL_ENABLE_THREADS": ("BOOL", "ON")},
+                ninja_flags=f"-march=x86-64-v2 -O3 -DNDEBUG -std=c++17 -include {real_hdr}",
+            )
+            bf_hdr1 = run_prov(deps_real, base / "prov_hdr1.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertNotIn(str(base), bf_hdr1)
+            self.assertIn("-include:forced_cfg.h", bf_hdr1)
+            real_hdr.write_text("#define JXL_CUSTOM_KNOB 2\n", encoding="utf-8")
+            bf_hdr2 = run_prov(deps_real, base / "prov_hdr2.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertNotEqual(bf_hdr1, bf_hdr2)
+
+            # Response files (@file), normalized search paths (-I), visibility, and CMake C++ standard
+            for name, fl_a, fl_b, tg_a, tg_b in (
+                (
+                    "rsp",
+                    "-march=x86-64-v2 -O3 -DNDEBUG -std=c++17 @/virtual/a.rsp",
+                    "-march=x86-64-v2 -O3 -DNDEBUG -std=c++17 @/virtual/b.rsp",
+                    {},
+                    {},
+                ),
+                (
+                    "incdir",
+                    "-march=x86-64-v2 -O3 -DNDEBUG -std=c++17 -I /virtual/inc1",
+                    "-march=x86-64-v2 -O3 -DNDEBUG -std=c++17 -I /virtual/inc2",
+                    {},
+                    {},
+                ),
+                (
+                    "vis",
+                    "-march=x86-64-v2 -O3 -DNDEBUG -std=c++17 -fvisibility=default",
+                    "-march=x86-64-v2 -O3 -DNDEBUG -std=c++17 -fvisibility=hidden",
+                    {},
+                    {},
+                ),
+                (
+                    "cxxstd",
+                    "-march=x86-64-v2 -O3 -DNDEBUG -std=c++17",
+                    "-march=x86-64-v2 -O3 -DNDEBUG -std=c++17",
+                    {"CMAKE_CXX_STANDARD": ("STRING", "17")},
+                    {"CMAKE_CXX_STANDARD": ("STRING", "20")},
+                ),
+            ):
+                d_x = base / f"deps_{name}_x"
+                d_y = base / f"deps_{name}_y"
+                write_pkg(
+                    d_x,
+                    "libjxl",
+                    True,
+                    c_flags="-march=x86-64-v2",
+                    c_rel="-O3 -DNDEBUG",
+                    cxx_flags=fl_a,
+                    cxx_rel="-O3 -DNDEBUG",
+                    toggles=tg_a,
+                    ninja_flags=fl_a,
+                )
+                write_pkg(
+                    d_y,
+                    "libjxl",
+                    True,
+                    c_flags="-march=x86-64-v2",
+                    c_rel="-O3 -DNDEBUG",
+                    cxx_flags=fl_b,
+                    cxx_rel="-O3 -DNDEBUG",
+                    toggles=tg_b,
+                    ninja_flags=fl_b,
+                )
+                rx = run_prov(d_x, base / f"prov_{name}_x.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+                ry = run_prov(d_y, base / f"prov_{name}_y.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+                self.assertNotIn("/virtual/", rx)
+                self.assertNotIn("/virtual/", ry)
+                self.assertNotEqual(rx, ry, f"failed differentiation for {name}")
+
     def test_kodim23_compare_threads_oracle_and_history(self) -> None:
         self.assertEqual(sha256_file(KODIM_PATH), KODIM_EXPECTED_SHA256)
         with Image.open(KODIM_PATH) as im:
