@@ -88,8 +88,11 @@ typedef struct rfc_io_reader {
  * begin_stage, write_stage, flush_stage, commit_stage, and abort_stage are
  * required; release_ctx is optional. Each job attempt allocates a fresh
  * stage_handle via begin_stage; any failure or cancellation before commit
- * calls abort_stage to clean up only the attempt's temporary staging artifact.
- * commit_stage must publish atomically without replacing any existing target.
+ * calls abort_stage to clean up only the attempt's temporary staging artifact
+ * and return RFC_OK only when the temporary artifact was actually removed.
+ * commit_stage must publish atomically without replacing any existing target
+ * and report through out_temp_cleaned_up (1 when no temporary artifact remains,
+ * 0 if a link-fallback temporary link could not be unlinked).
  * Ownership of ctx transfers only on rfc_scheduler_submit == RFC_OK, and
  * release_ctx runs exactly once when the final reference drops. */
 typedef struct rfc_io_publisher {
@@ -101,8 +104,9 @@ typedef struct rfc_io_publisher {
     rfc_status (*write_stage)(void *ctx, void *stage_handle,
                               const uint8_t *data, size_t len);
     rfc_status (*flush_stage)(void *ctx, void *stage_handle);
-    rfc_status (*commit_stage)(void *ctx, void *stage_handle);
-    void (*abort_stage)(void *ctx, void *stage_handle);
+    rfc_status (*commit_stage)(void *ctx, void *stage_handle,
+                               int *out_temp_cleaned_up);
+    rfc_status (*abort_stage)(void *ctx, void *stage_handle);
     void (*release_ctx)(void *ctx);
 } rfc_io_publisher;
 

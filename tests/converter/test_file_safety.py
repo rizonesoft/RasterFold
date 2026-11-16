@@ -449,6 +449,11 @@ class TestHostFileSafety(unittest.TestCase):
             self.assertEqual(rgb2, orig_rgb)
             partials = [p.name for p in d.iterdir() if ".rfc-partial." in p.name]
             self.assertEqual(partials, [])
+            print(
+                f" [sha256-posix src={real_hash} trick={trick_hash} fold={sha256_file(final_fold)}]",
+                end="",
+                flush=True,
+            )
 
 
 class TestWindowsNtfsFileSafety(unittest.TestCase):
@@ -614,6 +619,11 @@ Invoke-Fs 'roundtrip' @('pipeline-fold', $src, (Join-Path $root 'out.fold'), '0'
 
             partials = [p.name for p in py_temp_dir.iterdir() if ".rfc-partial." in p.name]
             self.assertEqual(partials, [])
+            print(
+                f" [sha256-ntfs src={src_hash} exist={exist_hash} foreign={fp_hash} fold={sha256_file(out_fold)}]",
+                end="",
+                flush=True,
+            )
         finally:
             junc_win_dir = f"{win_temp_dir}\\junc_sub"
             self._run_ps(

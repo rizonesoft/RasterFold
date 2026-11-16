@@ -879,6 +879,8 @@ typedef struct mem_pub_ctx {
     rfc_status fail_flush_status;
     rfc_status fail_commit_once_status;
     rfc_status fail_commit_always_status;
+    rfc_status fail_abort_status;
+    rfc_job *cancel_job_on_flush;
     uint64_t last_attempt;
     uint8_t *published_bytes;
     size_t published_len;
@@ -960,7 +962,11 @@ static rfc_status mem_pub_flush(void *raw, void *handle) {
     fs_mutex_lock(&p->lock);
     p->flush_calls++;
     rfc_status fst = p->fail_flush_status;
+    rfc_job *cj = p->cancel_job_on_flush;
     fs_mutex_unlock(&p->lock);
+    if (cj) {
+        (void)rfc_job_cancel(cj);
+    }
     if (fst != RFC_OK) {
         return fst;
     }
@@ -968,9 +974,13 @@ static rfc_status mem_pub_flush(void *raw, void *handle) {
     return RFC_OK;
 }
 
-static rfc_status mem_pub_commit(void *raw, void *handle) {
+static rfc_status mem_pub_commit(void *raw, void *handle,
+                                 int *out_temp_cleaned_up) {
     mem_pub_ctx *p = (mem_pub_ctx *)raw;
     mem_pub_stage *st = (mem_pub_stage *)handle;
+    if (out_temp_cleaned_up) {
+        *out_temp_cleaned_up = 1;
+    }
     fs_mutex_lock(&p->lock);
     p->commit_calls++;
     if (p->fail_commit_always_status != RFC_OK) {
@@ -1005,11 +1015,12 @@ static rfc_status mem_pub_commit(void *raw, void *handle) {
     return RFC_OK;
 }
 
-static void mem_pub_abort(void *raw, void *handle) {
+static rfc_status mem_pub_abort(void *raw, void *handle) {
     mem_pub_ctx *p = (mem_pub_ctx *)raw;
     mem_pub_stage *st = (mem_pub_stage *)handle;
     fs_mutex_lock(&p->lock);
     p->abort_calls++;
+    rfc_status ast = p->fail_abort_status;
     if (p->live_handles > 0u) {
         p->live_handles--;
     }
@@ -1019,6 +1030,7 @@ static void mem_pub_abort(void *raw, void *handle) {
         free(st->buf);
         free(st);
     }
+    return ast;
 }
 
 static void mem_pub_release(void *raw) {
@@ -2467,6 +2479,185 @@ static void audit_partial_free(void *ctx, void *ptr) {
     free(ptr);
 }
 
+typedef struct toctou_swap_ctx {
+    const uint8_t *first_buf;
+    size_t first_len;
+    const uint8_t *second_buf;
+    size_t second_len;
+    size_t pos;
+    int seek_count;
+} toctou_swap_ctx;
+
+static rfc_status toctou_swap_read(void *raw, uint8_t *out, size_t cap,
+                                   size_t *out_got) {
+    toctou_swap_ctx *c = (toctou_swap_ctx *)raw;
+    const uint8_t *src = (c->seek_count >= 3) ? c->second_buf : c->first_buf;
+    size_t slen = (c->seek_count >= 3) ? c->second_len : c->first_len;
+    size_t rem = (c->pos < slen) ? (slen - c->pos) : 0u;
+    size_t take = (rem < cap) ? rem : cap;
+    if (take > 0u) {
+        memcpy(out, src + c->pos, take);
+    }
+    c->pos += take;
+    *out_got = take;
+    return RFC_OK;
+}
+
+static rfc_status toctou_swap_seek(void *raw, uint64_t off) {
+    toctou_swap_ctx *c = (toctou_swap_ctx *)raw;
+    if (off != 0u) {
+        return RFC_ERR_IO;
+    }
+    c->pos = 0u;
+    c->seek_count++;
+    return RFC_OK;
+}
+
+typedef struct tail_io_err_ctx {
+    const uint8_t *buf;
+    size_t len;
+    size_t pos;
+    size_t fail_from_off;
+} tail_io_err_ctx;
+
+static rfc_status tail_io_err_read(void *raw, uint8_t *out, size_t cap,
+                                   size_t *out_got) {
+    tail_io_err_ctx *c = (tail_io_err_ctx *)raw;
+    if (c->pos >= c->fail_from_off) {
+        return RFC_ERR_IO;
+    }
+    size_t limit = (c->len < c->fail_from_off) ? c->len : c->fail_from_off;
+    size_t rem = (c->pos < limit) ? (limit - c->pos) : 0u;
+    size_t take = (rem < cap) ? rem : cap;
+    if (take > 0u) {
+        memcpy(out, c->buf + c->pos, take);
+    }
+    c->pos += take;
+    *out_got = take;
+    return RFC_OK;
+}
+
+static rfc_status tail_io_err_seek(void *raw, uint64_t off) {
+    tail_io_err_ctx *c = (tail_io_err_ctx *)raw;
+    if (off >= (uint64_t)c->fail_from_off) {
+        return RFC_ERR_IO;
+    }
+    if (off > (uint64_t)c->len) {
+        return RFC_ERR_IO;
+    }
+    c->pos = (size_t)off;
+    return RFC_OK;
+}
+
+typedef struct blocker_ctx {
+    fs_mutex_t lock;
+    fs_cond_t cond;
+    int entered;
+    int release;
+} blocker_ctx;
+
+static rfc_status blocker_export_cb(rfc_job *job, const rfc_exec_context *exec,
+                                    void *user) {
+    (void)job;
+    (void)exec;
+    blocker_ctx *bc = (blocker_ctx *)user;
+    fs_mutex_lock(&bc->lock);
+    bc->entered = 1;
+    fs_cond_broadcast(&bc->cond);
+    while (!bc->release) {
+        fs_cond_wait(&bc->cond, &bc->lock);
+    }
+    fs_mutex_unlock(&bc->lock);
+    return RFC_OK;
+}
+
+static rfc_status fs_noop_stage_cb(rfc_job *job, const rfc_exec_context *exec,
+                                   void *user) {
+    (void)job;
+    (void)exec;
+    (void)user;
+    return RFC_OK;
+}
+
+typedef struct race_hook_ctx {
+    char dir[1024];
+    char partial_path[1200];
+    char target_or_moved[1200];
+    char attacker_dir[1200];
+    int mode; /* 0: replace w/ file, 1: replace w/ symlink, 2: swap dir, 3: chmod 0555, 4: win32 lock check */
+    int triggered;
+    int verified;
+} race_hook_ctx;
+
+static void race_before_publish_cb(rfc_job_id job_id, void *user) {
+    (void)job_id;
+    race_hook_ctx *rc = (race_hook_ctx *)user;
+    rc->triggered = 1;
+#ifdef _WIN32
+    if (rc->mode == 4) {
+        char pat[1200];
+        join_path(pat, sizeof(pat), rc->dir, "out.fold.rfc-partial.*");
+        wchar_t wpat[1200];
+        CHECK(utf8_to_wide(pat, wpat, 1200u));
+        WIN32_FIND_DATAW fd;
+        HANDLE hf = FindFirstFileW(wpat, &fd);
+        CHECK(hf != INVALID_HANDLE_VALUE);
+        char pname[512];
+        int pn = WideCharToMultiByte(CP_UTF8, 0, fd.cFileName, -1, pname,
+                                     sizeof(pname), NULL, NULL);
+        FindClose(hf);
+        CHECK(pn > 0);
+        join_path(rc->partial_path, sizeof(rc->partial_path), rc->dir, pname);
+        wchar_t wp[1200], wd[1200], wm[1200];
+        CHECK(utf8_to_wide(rc->partial_path, wp, 1200u));
+        CHECK(utf8_to_wide(rc->dir, wd, 1200u));
+        CHECK(utf8_to_wide(rc->target_or_moved, wm, 1200u));
+        BOOL del_ok = DeleteFileW(wp);
+        DWORD del_err = GetLastError();
+        BOOL mov_ok = MoveFileW(wd, wm);
+        DWORD mov_err = GetLastError();
+        if (!del_ok && del_err == ERROR_SHARING_VIOLATION &&
+            !mov_ok &&
+            (mov_err == ERROR_SHARING_VIOLATION ||
+             mov_err == ERROR_ACCESS_DENIED)) {
+            rc->verified = 1;
+        }
+    }
+#else
+    if (rc->mode == 0 || rc->mode == 1) {
+        DIR *d = opendir(rc->dir);
+        CHECK(d != NULL);
+        struct dirent *ent;
+        int found = 0;
+        while ((ent = readdir(d)) != NULL) {
+            if (strncmp(ent->d_name, "out.fold.rfc-partial.", 21u) == 0) {
+                join_path(rc->partial_path, sizeof(rc->partial_path), rc->dir,
+                          ent->d_name);
+                found = 1;
+                break;
+            }
+        }
+        closedir(d);
+        CHECK(found == 1);
+        CHECK(unlink(rc->partial_path) == 0);
+        if (rc->mode == 0) {
+            const uint8_t att[] = "ATTACKER";
+            write_file_exact(rc->partial_path, att, sizeof(att) - 1u);
+        } else {
+            CHECK(symlink(rc->target_or_moved, rc->partial_path) == 0);
+        }
+        rc->verified = 1;
+    } else if (rc->mode == 2) {
+        CHECK(rename(rc->dir, rc->target_or_moved) == 0);
+        CHECK(symlink(rc->attacker_dir, rc->dir) == 0);
+        rc->verified = 1;
+    } else if (rc->mode == 3) {
+        CHECK(chmod(rc->dir, 0555) == 0);
+        rc->verified = 1;
+    }
+#endif
+}
+
 static void test_audit_regressions(void) {
     uint8_t bmp[256];
     size_t blen = 0u;
@@ -2701,6 +2892,445 @@ static void test_audit_regressions(void) {
         mem_reader_destroy(&rc);
         fs_cond_destroy(&b.cond);
         fs_mutex_destroy(&b.lock);
+    }
+
+    /* 5. Finding 3: TOCTOU content swap between sniff and bounded read fails cleanly. */
+    {
+        const uint8_t qoi[14 + 8] = {'q', 'o', 'i', 'f', 0, 0, 0, 1,
+                                     0, 0, 0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+        for (int allow = 0; allow <= 1; allow++) {
+            toctou_swap_ctx tc = {bmp, blen, qoi, sizeof(qoi), 0u, 0};
+            rfc_io_reader tr;
+            memset(&tr, 0, sizeof(tr));
+            tr.ctx = &tc;
+            tr.read_fn = toctou_swap_read;
+            tr.seek_fn = toctou_swap_seek;
+
+            rfc_imported_input imp;
+            memset(&imp, 0, sizeof(imp));
+            uint32_t fl = allow ? RFC_IMPORT_ALLOW_DISAGREEMENT
+                                : RFC_IMPORT_DEFAULT;
+            CHECK(rfc_input_read_bounded(&tr, "a.bmp", fl, NULL, NULL, NULL,
+                                         &imp) == RFC_ERR_FORMAT_DISAGREEMENT);
+            CHECK(imp.bytes == NULL);
+        }
+
+        toctou_swap_ctx jtc = {bmp, blen, qoi, sizeof(qoi), 0u, 0};
+        rfc_io_reader jtr;
+        memset(&jtr, 0, sizeof(jtr));
+        jtr.ctx = &jtc;
+        jtr.read_fn = toctou_swap_read;
+        jtr.seek_fn = toctou_swap_seek;
+
+        mem_pub_ctx pc;
+        mem_pub_init(&pc);
+        rfc_io_publisher pub = make_mem_publisher(&pc);
+        rfc_io_source src_io;
+        rfc_io_sink dst_io;
+        rfc_io_source_init_callbacks(&src_io, &jtr, "t.bmp",
+                                     RFC_IMPORT_DEFAULT);
+        rfc_io_sink_init_callbacks(&dst_io, &pub, RFC_EXPORT_REFUSE_EXISTING);
+
+        rfc_scheduler_config cfg;
+        rfc_scheduler_config_default(&cfg);
+        cfg.max_workers = 1u;
+        rfc_scheduler *sched = rfc_scheduler_create(&cfg);
+        CHECK(sched != NULL);
+
+        rfc_job_spec spec;
+        memset(&spec, 0, sizeof(spec));
+        spec.source_format = RFC_FORMAT_BMP;
+        spec.target_format = RFC_FORMAT_RASTERFOLD;
+        spec.expected_working_set_bytes = 64u * 1024u;
+        spec.io_source = &src_io;
+        spec.io_sink = &dst_io;
+
+        rfc_job *job = NULL;
+        CHECK(rfc_scheduler_submit(sched, NULL, &spec, &job) == RFC_OK);
+        CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
+        rfc_job_snapshot snap;
+        CHECK(rfc_job_snapshot_get(job, &snap) == RFC_OK);
+        CHECK(snap.state == RFC_JOB_FAILED);
+        CHECK(snap.status == RFC_ERR_FORMAT_DISAGREEMENT);
+        CHECK(snap.failing_stage == RFC_STAGE_IMPORT);
+        CHECK(pc.begin_calls == 0u);
+
+        rfc_job_release(job);
+        rfc_scheduler_destroy(sched);
+        mem_pub_destroy(&pc);
+    }
+
+    /* 6. Finding 7: Container-walker callback I/O error after 16 KiB header propagates. */
+    {
+        size_t large_txt = 18000u;
+        size_t png_sz = 8u + 12u + 13u + 12u + large_txt + 12u + 8u;
+        uint8_t *png = (uint8_t *)calloc(1u, png_sz);
+        CHECK(png != NULL);
+        memcpy(png, "\x89PNG\r\n\x1a\n", 8u);
+        size_t p = 8u;
+        wr32be(png + p, 13u);
+        memcpy(png + p + 4u, "IHDR", 4u);
+        p += 12u + 13u;
+        wr32be(png + p, (uint32_t)large_txt);
+        memcpy(png + p + 4u, "iTXt", 4u);
+        p += 12u + large_txt;
+        wr32be(png + p, 8u);
+        memcpy(png + p + 4u, "acTL", 4u);
+
+        tail_io_err_ctx pc = {png, png_sz, 0u, 16384u};
+        rfc_io_reader pr;
+        memset(&pr, 0, sizeof(pr));
+        pr.ctx = &pc;
+        pr.read_fn = tail_io_err_read;
+        pr.seek_fn = tail_io_err_seek;
+        rfc_sniff_result psr;
+        CHECK(rfc_input_sniff_reader(&pr, "a.png", &psr, NULL, NULL) ==
+              RFC_ERR_IO);
+        free(png);
+
+        uint8_t *tif = (uint8_t *)calloc(1u, 20000u);
+        CHECK(tif != NULL);
+        tif[0] = 'I';
+        tif[1] = 'I';
+        wr16le(tif + 2u, 42u);
+        wr32le(tif + 4u, 19000u);
+        wr16le(tif + 19000u, 1u);
+        wr16le(tif + 19002u, 0xC612u);
+
+        tail_io_err_ctx tc = {tif, 20000u, 0u, 16384u};
+        rfc_io_reader tr;
+        memset(&tr, 0, sizeof(tr));
+        tr.ctx = &tc;
+        tr.read_fn = tail_io_err_read;
+        tr.seek_fn = tail_io_err_seek;
+        rfc_sniff_result tsr;
+        CHECK(rfc_input_sniff_reader(&tr, "a.tif", &tsr, NULL, NULL) ==
+              RFC_ERR_IO);
+        free(tif);
+    }
+
+    /* 7. Finding 4: Standalone publish_staged checks exec cancellation after flush_stage. */
+    {
+        blocker_ctx bc;
+        memset(&bc, 0, sizeof(bc));
+        fs_mutex_init(&bc.lock);
+        fs_cond_init(&bc.cond);
+
+        rfc_scheduler_config cfg;
+        rfc_scheduler_config_default(&cfg);
+        cfg.max_workers = 1u;
+        rfc_scheduler *sched = rfc_scheduler_create(&cfg);
+        CHECK(sched != NULL);
+
+        rfc_layout lay = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 4u, 4u, 12u, 8u};
+        rfc_job_spec bspec;
+        memset(&bspec, 0, sizeof(bspec));
+        bspec.source_format = RFC_FORMAT_RASTERFOLD;
+        bspec.target_format = RFC_FORMAT_RASTERFOLD;
+        bspec.source_layout = &lay;
+        bspec.expected_working_set_bytes = 64u * 1024u;
+        bspec.has_stage_ops = 1;
+        bspec.stage_ops.on_import = blocker_export_cb;
+        bspec.stage_ops.on_encode = fs_noop_stage_cb;
+        bspec.stage_ops.on_verify = fs_noop_stage_cb;
+        bspec.stage_ops.on_export = fs_noop_stage_cb;
+        bspec.stage_ops.user_ctx = &bc;
+
+        rfc_job *j_blk = NULL;
+        CHECK(rfc_scheduler_submit(sched, NULL, &bspec, &j_blk) == RFC_OK);
+
+        fs_mutex_lock(&bc.lock);
+        while (!bc.entered) {
+            fs_cond_wait(&bc.cond, &bc.lock);
+        }
+        fs_mutex_unlock(&bc.lock);
+
+        rfc_job_spec qspec;
+        memset(&qspec, 0, sizeof(qspec));
+        qspec.source_format = RFC_FORMAT_RASTERFOLD;
+        qspec.target_format = RFC_FORMAT_RASTERFOLD;
+        qspec.source_layout = &lay;
+        qspec.expected_working_set_bytes = 64u * 1024u;
+        qspec.has_stage_ops = 1;
+        qspec.stage_ops.on_import = fs_noop_stage_cb;
+        qspec.stage_ops.on_encode = fs_noop_stage_cb;
+        qspec.stage_ops.on_verify = fs_noop_stage_cb;
+        qspec.stage_ops.on_export = fs_noop_stage_cb;
+        rfc_job *j_exec = NULL;
+        CHECK(rfc_scheduler_submit(sched, NULL, &qspec, &j_exec) == RFC_OK);
+
+        mem_pub_ctx spc;
+        mem_pub_init(&spc);
+        spc.cancel_job_on_flush = j_exec;
+        rfc_io_publisher spub = make_mem_publisher(&spc);
+
+        struct rfc_exec_context exec_stand;
+        memset(&exec_stand, 0, sizeof(exec_stand));
+        exec_stand.job = j_exec;
+
+        rfc_export_report srep;
+        memset(&srep, 0, sizeof(srep));
+        CHECK(rfc_output_publish_staged(&spub, NULL, 0u, 1u, NULL, bmp, blen,
+                                        &exec_stand, &srep) ==
+              RFC_ERR_CANCELLED);
+        CHECK(spc.flush_calls == 1u);
+        CHECK(spc.commit_calls == 0u);
+        CHECK(spc.abort_calls == 1u);
+        CHECK(srep.published == 0 && srep.temp_cleaned_up == 1);
+
+        fs_mutex_lock(&bc.lock);
+        bc.release = 1;
+        fs_cond_broadcast(&bc.cond);
+        fs_mutex_unlock(&bc.lock);
+
+        CHECK(rfc_job_wait(j_blk, UINT32_MAX) == RFC_OK);
+        CHECK(rfc_job_wait(j_exec, UINT32_MAX) == RFC_OK);
+        rfc_job_release(j_blk);
+        rfc_job_release(j_exec);
+        rfc_scheduler_destroy(sched);
+        mem_pub_destroy(&spc);
+        fs_cond_destroy(&bc.cond);
+        fs_mutex_destroy(&bc.lock);
+    }
+
+    /* 8. Finding 5: Cleanup failure sets temp_cleaned_up=0 and retains partial bytes. */
+    {
+        mem_reader_ctx rc;
+        mem_pub_ctx pc;
+        mem_reader_init(&rc, bmp, blen);
+        mem_pub_init(&pc);
+        pc.fail_commit_always_status = RFC_ERR_IO;
+        pc.fail_abort_status = RFC_ERR_PERMISSION_DENIED;
+        rfc_io_reader rdr = make_mem_reader(&rc);
+        rfc_io_publisher pub = make_mem_publisher(&pc);
+
+        rfc_io_source src_io;
+        rfc_io_sink dst_io;
+        rfc_io_source_init_callbacks(&src_io, &rdr, "cf.bmp",
+                                     RFC_IMPORT_DEFAULT);
+        rfc_io_sink_init_callbacks(&dst_io, &pub, RFC_EXPORT_REFUSE_EXISTING);
+
+        rfc_scheduler_config cfg;
+        rfc_scheduler_config_default(&cfg);
+        cfg.max_workers = 1u;
+        rfc_scheduler *sched = rfc_scheduler_create(&cfg);
+        CHECK(sched != NULL);
+
+        rfc_job_spec spec;
+        memset(&spec, 0, sizeof(spec));
+        spec.source_format = RFC_FORMAT_BMP;
+        spec.target_format = RFC_FORMAT_RASTERFOLD;
+        spec.expected_working_set_bytes = 64u * 1024u;
+        spec.io_source = &src_io;
+        spec.io_sink = &dst_io;
+
+        rfc_job *job = NULL;
+        CHECK(rfc_scheduler_submit(sched, NULL, &spec, &job) == RFC_OK);
+        CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
+
+        rfc_export_report er;
+        CHECK(rfc_job_export_report_get(job, &er) == RFC_OK);
+        CHECK(er.valid == 1 && er.published == 0 && er.temp_cleaned_up == 0);
+
+        rfc_job_snapshot snap;
+        CHECK(rfc_job_snapshot_get(job, &snap) == RFC_OK);
+        CHECK(snap.state == RFC_JOB_FAILED);
+        CHECK(snap.live_partial_bytes > 0u);
+
+        rfc_scheduler_stats stats;
+        rfc_scheduler_stats_get(sched, &stats);
+        CHECK(stats.live_partial_bytes == snap.live_partial_bytes);
+
+        rfc_job_release(job);
+        rfc_scheduler_destroy(sched);
+        mem_pub_destroy(&pc);
+        mem_reader_destroy(&rc);
+    }
+
+    /* 9. Findings 1, 2 & 5 OS-level staged replacement, dir swap, & abort check. */
+    {
+        char root[512];
+        CHECK(make_temp_dir(root, sizeof(root), "race"));
+#ifndef _WIN32
+        /* 9a. Replace staged temp file with attacker regular file before commit */
+        {
+            char d0[700], dst0[900];
+            join_path(d0, sizeof(d0), root, "case_file");
+            CHECK(mkdir(d0, 0755) == 0);
+            join_path(dst0, sizeof(dst0), d0, "out.fold");
+
+            race_hook_ctx rc;
+            memset(&rc, 0, sizeof(rc));
+            snprintf(rc.dir, sizeof(rc.dir), "%s", d0);
+            rc.mode = 0;
+            rfc_output_set_commit_barrier_for_testing(race_before_publish_cb,
+                                                      NULL, &rc);
+
+            rfc_export_report er;
+            CHECK(rfc_output_write_path(dst0, NULL, NULL,
+                                        RFC_EXPORT_REFUSE_EXISTING, NULL, 91u,
+                                        bmp, blen, NULL, &er) == RFC_ERR_IO);
+            rfc_output_set_commit_barrier_for_testing(NULL, NULL, NULL);
+            CHECK(rc.verified == 1);
+            CHECK(er.published == 0);
+            CHECK(!file_exists_os(dst0));
+            /* Attacker file at partial path must NOT have been deleted by abort! */
+            uint8_t *abuf = NULL;
+            size_t alen = 0u;
+            read_file_exact(rc.partial_path, &abuf, &alen);
+            CHECK(alen == 8u && memcmp(abuf, "ATTACKER", 8u) == 0);
+            free(abuf);
+            remove_file_os(rc.partial_path);
+            remove_dir_os(d0);
+        }
+
+        /* 9b. Replace staged temp file with symlink before commit */
+        {
+            char d1[700], dst1[900], vic[900];
+            join_path(d1, sizeof(d1), root, "case_sym");
+            CHECK(mkdir(d1, 0755) == 0);
+            join_path(dst1, sizeof(dst1), d1, "out.fold");
+            join_path(vic, sizeof(vic), d1, "victim.txt");
+            const uint8_t vdata[] = "VICTIM";
+            write_file_exact(vic, vdata, sizeof(vdata) - 1u);
+
+            race_hook_ctx rc;
+            memset(&rc, 0, sizeof(rc));
+            snprintf(rc.dir, sizeof(rc.dir), "%s", d1);
+            snprintf(rc.target_or_moved, sizeof(rc.target_or_moved), "%s", vic);
+            rc.mode = 1;
+            rfc_output_set_commit_barrier_for_testing(race_before_publish_cb,
+                                                      NULL, &rc);
+
+            rfc_export_report er;
+            CHECK(rfc_output_write_path(dst1, NULL, NULL,
+                                        RFC_EXPORT_REFUSE_EXISTING, NULL, 92u,
+                                        bmp, blen, NULL, &er) ==
+                  RFC_ERR_PATH_ALIAS);
+            rfc_output_set_commit_barrier_for_testing(NULL, NULL, NULL);
+            CHECK(rc.verified == 1 && er.published == 0);
+            CHECK(!file_exists_os(dst1));
+            CHECK(file_exists_os(vic));
+            remove_file_os(rc.partial_path);
+            remove_file_os(vic);
+            remove_dir_os(d1);
+        }
+
+        /* 9c. Parent directory substitution -> symlink to attacker_dir */
+        {
+            char d2[700], sub[900], mov[900], att[900], dst2[1100], at_dst[1100],
+                mv_dst[1100];
+            join_path(d2, sizeof(d2), root, "case_dirswap");
+            CHECK(mkdir(d2, 0755) == 0);
+            join_path(sub, sizeof(sub), d2, "sub");
+            join_path(mov, sizeof(mov), d2, "moved");
+            join_path(att, sizeof(att), d2, "attacker");
+            CHECK(mkdir(sub, 0755) == 0);
+            CHECK(mkdir(att, 0755) == 0);
+            join_path(dst2, sizeof(dst2), sub, "out.fold");
+            join_path(at_dst, sizeof(at_dst), att, "out.fold");
+            join_path(mv_dst, sizeof(mv_dst), mov, "out.fold");
+
+            race_hook_ctx rc;
+            memset(&rc, 0, sizeof(rc));
+            snprintf(rc.dir, sizeof(rc.dir), "%s", sub);
+            snprintf(rc.target_or_moved, sizeof(rc.target_or_moved), "%s", mov);
+            snprintf(rc.attacker_dir, sizeof(rc.attacker_dir), "%s", att);
+            rc.mode = 2;
+            rfc_output_set_commit_barrier_for_testing(race_before_publish_cb,
+                                                      NULL, &rc);
+
+            rfc_export_report er;
+            (void)rfc_output_write_path(dst2, NULL, NULL,
+                                        RFC_EXPORT_REFUSE_EXISTING, NULL, 93u,
+                                        bmp, blen, NULL, &er);
+            rfc_output_set_commit_barrier_for_testing(NULL, NULL, NULL);
+            CHECK(rc.verified == 1);
+            CHECK(!file_exists_os(at_dst));
+            remove_file_os(mv_dst);
+            remove_file_os(sub); /* symlink */
+            remove_dir_os(att);
+            remove_dir_os(mov);
+            remove_dir_os(d2);
+        }
+
+        /* 9d. POSIX real chmod 0555 failing abort_stage sets temp_cleaned_up=0 */
+        if (geteuid() != 0) {
+            char d3[700], dst3[900];
+            join_path(d3, sizeof(d3), root, "case_ro");
+            CHECK(mkdir(d3, 0755) == 0);
+            join_path(dst3, sizeof(dst3), d3, "out.fold");
+
+            race_hook_ctx rc;
+            memset(&rc, 0, sizeof(rc));
+            snprintf(rc.dir, sizeof(rc.dir), "%s", d3);
+            rc.mode = 3;
+            rfc_output_set_commit_barrier_for_testing(race_before_publish_cb,
+                                                      NULL, &rc);
+            rfc_output_set_write_fault_for_testing(RFC_IO_FAULT_COMMIT_IO, 0u,
+                                                   RFC_ERR_IO);
+
+            rfc_export_report er;
+            CHECK(rfc_output_write_path(dst3, NULL, NULL,
+                                        RFC_EXPORT_REFUSE_EXISTING, NULL, 94u,
+                                        bmp, blen, NULL, &er) == RFC_ERR_IO);
+            rfc_output_set_write_fault_for_testing(RFC_IO_FAULT_NONE, 0u,
+                                                   RFC_OK);
+            rfc_output_set_commit_barrier_for_testing(NULL, NULL, NULL);
+            CHECK(rc.verified == 1 && er.published == 0 &&
+                  er.temp_cleaned_up == 0);
+            CHECK(dir_has_prefix(d3, "out.fold.rfc-partial.") == 1);
+            CHECK(chmod(d3, 0755) == 0);
+            DIR *dr = opendir(d3);
+            if (dr) {
+                struct dirent *e;
+                while ((e = readdir(dr)) != NULL) {
+                    if (strncmp(e->d_name, "out.fold.rfc-partial.", 21u) == 0) {
+                        char p[900];
+                        join_path(p, sizeof(p), d3, e->d_name);
+                        unlink(p);
+                    }
+                }
+                closedir(dr);
+            }
+            remove_dir_os(d3);
+        }
+#else
+        /* 9e. Win32 share-mode pinning locks both partial file and parent dir while staged */
+        {
+            char d4[700], sub4[900], mov4[900], dst4[1100];
+            wchar_t wd4[700], ws4[900];
+            join_path(d4, sizeof(d4), root, "case_winpin");
+            CHECK(utf8_to_wide(d4, wd4, 700u));
+            CHECK(CreateDirectoryW(wd4, NULL));
+            join_path(sub4, sizeof(sub4), d4, "sub");
+            join_path(mov4, sizeof(mov4), d4, "moved");
+            CHECK(utf8_to_wide(sub4, ws4, 900u));
+            CHECK(CreateDirectoryW(ws4, NULL));
+            join_path(dst4, sizeof(dst4), sub4, "out.fold");
+
+            race_hook_ctx rc;
+            memset(&rc, 0, sizeof(rc));
+            snprintf(rc.dir, sizeof(rc.dir), "%s", sub4);
+            snprintf(rc.target_or_moved, sizeof(rc.target_or_moved), "%s", mov4);
+            rc.mode = 4;
+            rfc_output_set_commit_barrier_for_testing(race_before_publish_cb,
+                                                      NULL, &rc);
+
+            rfc_export_report er;
+            CHECK(rfc_output_write_path(dst4, NULL, NULL,
+                                        RFC_EXPORT_REFUSE_EXISTING, NULL, 95u,
+                                        bmp, blen, NULL, &er) == RFC_OK);
+            rfc_output_set_commit_barrier_for_testing(NULL, NULL, NULL);
+            CHECK(rc.verified == 1 && er.published == 1 &&
+                  er.temp_cleaned_up == 1);
+            CHECK(file_exists_os(dst4));
+            remove_file_os(dst4);
+            remove_dir_os(sub4);
+            remove_dir_os(d4);
+        }
+#endif
+        remove_dir_os(root);
     }
 
     printf("file-safety: audit_regressions ok\n");

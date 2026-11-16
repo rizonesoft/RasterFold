@@ -409,9 +409,14 @@ static rfc_status reader_stream_read_at(void *ctx,
 static int read_exact_at(const seek_stream *ss,
                          uint64_t offset,
                          uint8_t *buf,
-                         size_t want) {
+                         size_t want,
+                         rfc_status *inout_io_status) {
     size_t got = 0u;
-    if (ss->read_at(ss->ctx, offset, buf, want, &got) != RFC_OK) {
+    rfc_status st = ss->read_at(ss->ctx, offset, buf, want, &got);
+    if (st != RFC_OK) {
+        if (inout_io_status && *inout_io_status == RFC_OK) {
+            *inout_io_status = st;
+        }
         return 0;
     }
     return got == want;
@@ -446,13 +451,17 @@ static int looks_like_markup_or_script(const uint8_t *buf,
 
 static rfc_format_id sniff_png_chunks(const seek_stream *ss,
                                       const uint8_t *hdr,
-                                      size_t hdr_len) {
+                                      size_t hdr_len,
+                                      rfc_status *out_io_status) {
     (void)hdr;
     (void)hdr_len;
     uint64_t pos = 8u;
     for (uint32_t step = 0u; step < 64u; step++) {
         uint8_t ch[8];
-        if (!read_exact_at(ss, pos, ch, 8u)) {
+        if (!read_exact_at(ss, pos, ch, 8u, out_io_status)) {
+            if (out_io_status && *out_io_status != RFC_OK) {
+                return (rfc_format_id)0;
+            }
             break;
         }
         uint32_t clen = rd32be(ch);
@@ -526,7 +535,8 @@ static rfc_format_id sniff_isobmff(const uint8_t *b, size_t len) {
 
 static rfc_format_id sniff_tiff_family(const seek_stream *ss,
                                        const uint8_t *b,
-                                       size_t len) {
+                                       size_t len,
+                                       rfc_status *out_io_status) {
     if (len < 8u) {
         return (rfc_format_id)0;
     }
@@ -566,7 +576,11 @@ static rfc_format_id sniff_tiff_family(const seek_stream *ss,
     if (bigtiff) {
         ifd_off = le ? rd64le(b + 8) : rd64be(b + 8);
         uint8_t cnt_buf[8];
-        if (ifd_off > UINT64_MAX - 8u || !read_exact_at(ss, ifd_off, cnt_buf, 8u)) {
+        if (ifd_off > UINT64_MAX - 8u ||
+            !read_exact_at(ss, ifd_off, cnt_buf, 8u, out_io_status)) {
+            if (out_io_status && *out_io_status != RFC_OK) {
+                return (rfc_format_id)0;
+            }
             return RFC_FORMAT_TIFF;
         }
         uint64_t count = le ? rd64le(cnt_buf) : rd64be(cnt_buf);
@@ -579,7 +593,10 @@ static rfc_format_id sniff_tiff_family(const seek_stream *ss,
             }
             uint8_t ent[20];
             uint64_t eoff = ifd_off + 8u + i * 20u;
-            if (!read_exact_at(ss, eoff, ent, 20u)) {
+            if (!read_exact_at(ss, eoff, ent, 20u, out_io_status)) {
+                if (out_io_status && *out_io_status != RFC_OK) {
+                    return (rfc_format_id)0;
+                }
                 break;
             }
             uint16_t tag = le ? rd16le(ent) : rd16be(ent);
@@ -592,7 +609,11 @@ static rfc_format_id sniff_tiff_family(const seek_stream *ss,
 
     ifd_off = (uint64_t)(le ? rd32le(b + 4) : rd32be(b + 4));
     uint8_t cnt2[2];
-    if (ifd_off > UINT64_MAX - 2u || !read_exact_at(ss, ifd_off, cnt2, 2u)) {
+    if (ifd_off > UINT64_MAX - 2u ||
+        !read_exact_at(ss, ifd_off, cnt2, 2u, out_io_status)) {
+        if (out_io_status && *out_io_status != RFC_OK) {
+            return (rfc_format_id)0;
+        }
         return RFC_FORMAT_TIFF;
     }
     uint16_t count = le ? rd16le(cnt2) : rd16be(cnt2);
@@ -602,7 +623,10 @@ static rfc_format_id sniff_tiff_family(const seek_stream *ss,
     for (uint16_t i = 0u; i < count; i++) {
         uint8_t ent[12];
         uint64_t eoff = ifd_off + 2u + (uint64_t)i * 12u;
-        if (!read_exact_at(ss, eoff, ent, 12u)) {
+        if (!read_exact_at(ss, eoff, ent, 12u, out_io_status)) {
+            if (out_io_status && *out_io_status != RFC_OK) {
+                return (rfc_format_id)0;
+            }
             break;
         }
         uint16_t tag = le ? rd16le(ent) : rd16be(ent);
@@ -658,7 +682,7 @@ static rfc_format_id sniff_stream_core(const seek_stream *ss,
     /* 2. PNG vs APNG */
     else if (len >= 8u &&
              memcmp(b, "\x89PNG\r\n\x1a\n", 8) == 0) {
-        detected = sniff_png_chunks(ss, b, len);
+        detected = sniff_png_chunks(ss, b, len, out_io_status);
     }
     /* 3. BMP */
     else if (len >= 2u && b[0] == 'B' && b[1] == 'M') {
@@ -729,7 +753,14 @@ static rfc_format_id sniff_stream_core(const seek_stream *ss,
     }
     /* 14. TIFF / DNG / CR2 / ORF / RW2 */
     else {
-        detected = sniff_tiff_family(ss, b, len);
+        detected = sniff_tiff_family(ss, b, len, out_io_status);
+    }
+
+    if (out_io_status && *out_io_status != RFC_OK) {
+        out_result->content_format = (rfc_format_id)0;
+        copy_sniff_detail(out_result->detail, sizeof(out_result->detail),
+                          "I/O failure while inspecting container structure");
+        return (rfc_format_id)0;
     }
 
     out_result->content_format = detected;
@@ -1710,6 +1741,38 @@ rfc_status rfc_input_read_bounded(const rfc_io_reader *reader,
         return RFC_ERR_TRUNCATED_INPUT;
     }
 
+    rfc_sniff_result buf_sniff;
+    rfc_status bst = rfc_input_sniff_bytes(buf, used, name_utf8, &buf_sniff);
+    if (bst != RFC_OK || buf_sniff.content_format == (rfc_format_id)0) {
+        input_free(alloc, buf);
+        copy_sniff_detail(
+            out_input->sniff.detail, sizeof(out_input->sniff.detail),
+            buf_sniff.detail[0] ? buf_sniff.detail : "unknown input format");
+        if (bst == RFC_ERR_FORMAT_DISAGREEMENT &&
+            (import_flags & RFC_IMPORT_ALLOW_DISAGREEMENT) == 0u) {
+            return RFC_ERR_FORMAT_DISAGREEMENT;
+        }
+        return (bst != RFC_OK && bst != RFC_ERR_FORMAT_DISAGREEMENT)
+                   ? bst
+                   : RFC_ERR_UNKNOWN_FORMAT;
+    }
+    if (buf_sniff.content_format != out_input->sniff.content_format) {
+        input_free(alloc, buf);
+        copy_sniff_detail(out_input->sniff.detail,
+                          sizeof(out_input->sniff.detail),
+                          "input stream content changed between sniff and read");
+        return RFC_ERR_FORMAT_DISAGREEMENT;
+    }
+    if (buf_sniff.disagreement &&
+        (import_flags & RFC_IMPORT_ALLOW_DISAGREEMENT) == 0u) {
+        input_free(alloc, buf);
+        copy_sniff_detail(out_input->sniff.detail,
+                          sizeof(out_input->sniff.detail),
+                          "extension disagrees with sniffed content format");
+        return RFC_ERR_FORMAT_DISAGREEMENT;
+    }
+    out_input->sniff = buf_sniff;
+
     st = check_container_completeness(
         out_input->sniff.content_format, buf, used,
         out_input->sniff.detail, sizeof(out_input->sniff.detail));
@@ -1904,6 +1967,10 @@ rfc_status rfc_input_read_job_source(
         if (out_err_detail) {
             *out_err_detail = "imported content disagrees with expected format";
         }
+        rfc_mutex_lock(&job->lock);
+        rfc_job_internal_set_detail(
+            job->detail, "imported content disagrees with expected format");
+        rfc_mutex_unlock(&job->lock);
         return RFC_ERR_FORMAT_DISAGREEMENT;
     }
 
