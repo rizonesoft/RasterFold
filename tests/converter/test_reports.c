@@ -872,7 +872,7 @@ static rfc_status png_sess_decode(void *raw,
     }
 
     rfc_layout lay = {fmt, alpha, w, h, row_bytes, 8u};
-    rfc_metadata meta = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u};
+    rfc_metadata meta = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0}};
     rfc_frame *fr = (rfc_frame *)alloc->alloc(alloc->ctx, sizeof(*fr));
     if (!fr) {
         alloc->free(alloc->ctx, raw_rows);
@@ -1106,7 +1106,7 @@ static rfc_status rf_sess_decode(void *raw,
 
     rfc_layout lay = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, px.width, px.height,
                       px.stride, 8u};
-    rfc_metadata meta = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u};
+    rfc_metadata meta = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0}};
     rfc_frame *fr = (rfc_frame *)alloc->alloc(alloc->ctx, sizeof(*fr));
     if (!fr) {
         rf_free(px.data);
@@ -1245,7 +1245,7 @@ static rfc_status bmp_sess_decode(void *raw,
     }
 
     rfc_layout lay = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, w, h, (size_t)w * 3u, 8u};
-    rfc_metadata meta = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u};
+    rfc_metadata meta = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0}};
     rfc_frame *fr = (rfc_frame *)alloc->alloc(alloc->ctx, sizeof(*fr));
     if (!fr) {
         return RFC_ERR_OUT_OF_MEMORY;

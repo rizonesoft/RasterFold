@@ -70,6 +70,50 @@ rfc_status rfc_layout_validate(const rfc_layout *layout, size_t *total_out) {
     return RFC_OK;
 }
 
+int rfc_colorimetry_has_any(const rfc_colorimetry *c) {
+    if (!c) {
+        return 0;
+    }
+    return c->has_srgb || c->has_gama || c->has_chrm || c->has_cicp ||
+           c->has_mdcv || c->has_clli;
+}
+
+int rfc_colorimetry_is_valid(const rfc_colorimetry *c) {
+    if (!c) {
+        return 1;
+    }
+    if (c->has_srgb > 1u || c->has_gama > 1u || c->has_chrm > 1u ||
+        c->has_cicp > 1u || c->has_mdcv > 1u || c->has_clli > 1u) {
+        return 0;
+    }
+    if (c->has_srgb && c->srgb_intent > 3u) {
+        return 0;
+    }
+    if (c->has_gama &&
+        (c->gama_scaled == 0u || c->gama_scaled > 0x7FFFFFFFu)) {
+        return 0;
+    }
+    if (c->has_chrm) {
+        for (size_t i = 0u; i < 8u; i++) {
+            if (c->chrm_xy[i] > 0x7FFFFFFFu) {
+                return 0;
+            }
+        }
+    }
+    if (c->has_cicp && (c->cicp[2] != 0u || c->cicp[3] > 1u)) {
+        return 0;
+    }
+    if (c->has_mdcv &&
+        (c->mdcv_max_dl > 0x7FFFFFFFu || c->mdcv_min_dl > 0x7FFFFFFFu)) {
+        return 0;
+    }
+    if (c->has_clli &&
+        (c->clli_max_cll > 0x7FFFFFFFu || c->clli_max_fall > 0x7FFFFFFFu)) {
+        return 0;
+    }
+    return 1;
+}
+
 rfc_status rfc_frame_alloc(rfc_frame *frame, const rfc_layout *layout,
                            const rfc_metadata *metadata,
                            const rfc_allocator *allocator) {
@@ -83,6 +127,8 @@ rfc_status rfc_frame_alloc(rfc_frame *frame, const rfc_layout *layout,
     if (metadata && metadata->icc_len && !metadata->icc)
         return RFC_ERR_INVALID_ARGUMENT;
     if (metadata && metadata->orientation > RFC_ORIENTATION_ROTATE_270)
+        return RFC_ERR_INVALID_ARGUMENT;
+    if (metadata && !rfc_colorimetry_is_valid(&metadata->color))
         return RFC_ERR_INVALID_ARGUMENT;
     rfc_frame_alloc_guard_fn guard =
         atomic_load_explicit(&g_frame_alloc_guard, memory_order_acquire);

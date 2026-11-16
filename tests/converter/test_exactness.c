@@ -205,7 +205,7 @@ static void fill_deterministic_frame(rfc_frame *f,
     size_t bpp = rfc_sample_bytes(fmt);
     CHECK(bpp > 0u);
     rfc_layout lay = {fmt, alpha, w, h, (size_t)w * bpp + extra_stride, bps};
-    rfc_metadata meta = {NULL, 0u, RFC_ORIENTATION_NORMAL, duration_ms};
+    rfc_metadata meta = {NULL, 0u, RFC_ORIENTATION_NORMAL, duration_ms, {0}};
     CHECK(rfc_frame_alloc(f, &lay, &meta, alloc) == RFC_OK);
     fill_deterministic_pixels(f);
 }
@@ -378,7 +378,7 @@ static rfc_status rf_sess_decode(void *raw,
     memset(arr, 0, sizeof(*arr));
     rfc_layout lay = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, px.width, px.height,
                       px.stride, 8u};
-    rfc_metadata meta = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u};
+    rfc_metadata meta = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0}};
     rfc_status st = rfc_exec_alloc_frame(exec, &arr[0], &lay, &meta);
     if (st != RFC_OK) {
         rf_free(px.data);
@@ -753,7 +753,7 @@ static rfc_status mock_decode(void *raw,
             g_ctrl.sample_fmt, g_ctrl.alpha_mode, g_ctrl.width, g_ctrl.height,
             (size_t)g_ctrl.width * rfc_sample_bytes(g_ctrl.sample_fmt),
             default_bps_of(g_ctrl.sample_fmt)};
-        rfc_metadata umeta = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u};
+        rfc_metadata umeta = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0}};
         for (uint32_t fi = 0u; fi < unknown_frames; fi++) {
             rfc_status ast =
                 rfc_exec_alloc_frame(exec, &uarr[fi], &ulay, &umeta);
@@ -796,7 +796,7 @@ static rfc_status mock_decode(void *raw,
                                  ? (bytes + 32u)
                                  : NULL;
         rfc_layout lay = {sf, am, w, h, (size_t)w * rfc_sample_bytes(sf), bps};
-        rfc_metadata meta = {icc, icc_len, ori, dur};
+        rfc_metadata meta = {icc, icc_len, ori, dur, {0}};
         rfc_status st = rfc_exec_alloc_frame(exec, &arr[0], &lay, &meta);
         if (st != RFC_OK) {
             exec->allocator->free(exec->allocator->ctx, arr);
@@ -823,7 +823,7 @@ static rfc_status mock_decode(void *raw,
             g_ctrl.extra_stride,
         default_bps_of(g_ctrl.sample_fmt)};
     rfc_metadata meta = {g_ctrl.icc, g_ctrl.icc_len, g_ctrl.orientation,
-                         g_ctrl.duration_ms};
+                         g_ctrl.duration_ms, {0}};
     rfc_status st = rfc_exec_alloc_frame(exec, &arr[0], &lay, &meta);
     if (st != RFC_OK) {
         exec->allocator->free(exec->allocator->ctx, arr);
@@ -1005,7 +1005,7 @@ static void run_fold_roundtrip_export(const char *out_fold_path,
     uint8_t src_stub[16] = {1, 2, 3, 4};
     rfc_layout lay = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 17u, 13u,
                       17u * 3u + 13u, 8u};
-    rfc_metadata smeta = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u};
+    rfc_metadata smeta = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0}};
     fold_capture cap = {NULL, 0u};
 
     rfc_job_spec spec;
@@ -1367,7 +1367,7 @@ static void test_stage_verify_modes(void) {
 
         uint8_t src[16] = {9, 8, 7, 6};
         rfc_layout lay = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 8u, 8u, 24u, 8u};
-        rfc_metadata sm = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u};
+        rfc_metadata sm = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0}};
         rfc_job_spec spec;
         memset(&spec, 0, sizeof(spec));
         spec.source_format = RFC_FORMAT_PNG;
@@ -1425,7 +1425,7 @@ static void test_stage_verify_modes(void) {
         CHECK(sched != NULL);
 
         rfc_layout lay = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 4u, 4u, 12u, 8u};
-        rfc_metadata sm = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u};
+        rfc_metadata sm = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0}};
         rfc_setting_value s_byte[1] = {{"exactness", "byte-identical"}};
         rfc_job_spec spec;
         memset(&spec, 0, sizeof(spec));
@@ -1491,7 +1491,7 @@ static void test_stage_verify_modes(void) {
 
         uint8_t jpg_src[24] = {0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4};
         rfc_layout lay = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 16u, 16u, 48u, 8u};
-        rfc_metadata sm = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u};
+        rfc_metadata sm = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0}};
         rfc_setting_value s_coeff[1] = {{"exactness", "coefficient-exact"}};
         rfc_job_spec spec;
         memset(&spec, 0, sizeof(spec));
@@ -1542,9 +1542,9 @@ static void test_stage_verify_modes(void) {
         {
             static const uint8_t c_icc[4] = {0xa1, 0xb2, 0xc3, 0xd4};
             rfc_metadata sm_icc = {c_icc, sizeof(c_icc),
-                                   RFC_ORIENTATION_ROTATE_90, 0u};
-            rfc_metadata sm_drop = {NULL, 0u, RFC_ORIENTATION_ROTATE_90, 0u};
-            rfc_metadata sm_stripped = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u};
+                                   RFC_ORIENTATION_ROTATE_90, 0u, {0}};
+            rfc_metadata sm_drop = {NULL, 0u, RFC_ORIENTATION_ROTATE_90, 0u, {0}};
+            rfc_metadata sm_stripped = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0}};
             g_ctrl.icc = c_icc;
             g_ctrl.icc_len = sizeof(c_icc);
             g_ctrl.orientation = RFC_ORIENTATION_ROTATE_90;
@@ -1617,7 +1617,7 @@ static void test_stage_verify_modes(void) {
         CHECK(sched != NULL);
 
         rfc_layout lay = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 16u, 16u, 48u, 8u};
-        rfc_metadata sm = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u};
+        rfc_metadata sm = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0}};
         rfc_setting_value s_rec[1] = {
             {"exactness", "original-byte-reconstruction"}};
         rfc_job_spec spec;
@@ -1817,7 +1817,7 @@ static void test_metadata_policies(void) {
         uint8_t src[16] = {1, 2, 3, 4};
         rfc_layout lay = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 4u, 4u, 12u, 8u};
         rfc_metadata sm = {icc_bytes, sizeof(icc_bytes),
-                           RFC_ORIENTATION_ROTATE_90, 0u};
+                           RFC_ORIENTATION_ROTATE_90, 0u, {0}};
         rfc_setting_value s_pres[1] = {{"metadata", "preserve"}};
         rfc_job_spec spec;
         memset(&spec, 0, sizeof(spec));
@@ -1898,7 +1898,7 @@ static void test_metadata_policies(void) {
         uint8_t src[16] = {1, 2, 3, 4};
         rfc_layout lay = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 4u, 4u, 12u, 8u};
         rfc_metadata sm = {icc_bytes, sizeof(icc_bytes),
-                           RFC_ORIENTATION_ROTATE_90, 0u};
+                           RFC_ORIENTATION_ROTATE_90, 0u, {0}};
         rfc_setting_value s_pres[1] = {{"metadata", "preserve"}};
         rfc_job_spec spec;
         memset(&spec, 0, sizeof(spec));
@@ -1927,7 +1927,7 @@ static void test_metadata_policies(void) {
         /* Direct rfc_metadata_verify check also names unsupported items. */
         rfc_metadata_report mrep;
         rfc_sample_mismatch mmm;
-        rfc_metadata dm = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u};
+        rfc_metadata dm = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0}};
         CHECK(rfc_metadata_verify(RFC_FORMAT_RASTERFOLD,
                                   RFC_META_POLICY_PRESERVE,
                                   RFC_EXACT_PIXEL_EXACT, &sm, NULL, 0u, &dm,
@@ -2030,7 +2030,7 @@ static void test_metadata_policies(void) {
         df[1].metadata.icc_len = sizeof(icc_bytes);
         df[1].metadata.orientation = RFC_ORIENTATION_ROTATE_180;
 
-        rfc_metadata cont = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u};
+        rfc_metadata cont = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0}};
         rfc_metadata_report mrep;
         rfc_sample_mismatch mmm;
         CHECK(rfc_metadata_verify(RFC_FORMAT_JPEG_XL, RFC_META_POLICY_PRESERVE,
@@ -2091,6 +2091,78 @@ static void test_metadata_policies(void) {
             rfc_frame_free(&sf[i]);
             rfc_frame_free(&df[i]);
         }
+        CHECK(tr.live == 0u);
+    }
+
+    /* E. Non-ICC colourimetry (sRGB/gAMA/cHRM/cICP/mDCV/cLLI) detection, validation, and policy enforcement. */
+    {
+        alloc_tracker tr;
+        rfc_allocator al;
+        init_tracked_alloc(&tr, &al);
+
+        rfc_layout bad_lay = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 2u, 2u, 6u, 8u};
+        rfc_frame bad_f = {0};
+        rfc_metadata bad_gama = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0}};
+        bad_gama.color.has_gama = 1u;
+        bad_gama.color.gama_scaled = 0u;
+        CHECK(rfc_frame_alloc(&bad_f, &bad_lay, &bad_gama, &al) ==
+              RFC_ERR_INVALID_ARGUMENT);
+
+        rfc_metadata bad_srgb = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0}};
+        bad_srgb.color.has_srgb = 1u;
+        bad_srgb.color.srgb_intent = 4u;
+        CHECK(rfc_frame_alloc(&bad_f, &bad_lay, &bad_srgb, &al) ==
+              RFC_ERR_INVALID_ARGUMENT);
+
+        rfc_metadata bad_cicp = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0}};
+        bad_cicp.color.has_cicp = 1u;
+        bad_cicp.color.cicp[0] = 9u;
+        bad_cicp.color.cicp[1] = 16u;
+        bad_cicp.color.cicp[2] = 1u;
+        bad_cicp.color.cicp[3] = 1u;
+        CHECK(rfc_frame_alloc(&bad_f, &bad_lay, &bad_cicp, &al) ==
+              RFC_ERR_INVALID_ARGUMENT);
+
+        rfc_metadata src_m = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0}};
+        src_m.color.has_gama = 1u;
+        src_m.color.gama_scaled = 45455u;
+        CHECK((rfc_metadata_source_items(&src_m, NULL, 0u) & RFC_META_ITEM_ICC) !=
+              0u);
+
+        rfc_metadata dst_empty = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0}};
+        rfc_metadata_report mrep;
+        rfc_sample_mismatch mmm;
+        CHECK(rfc_metadata_verify(RFC_FORMAT_PNG, RFC_META_POLICY_PRESERVE,
+                                  RFC_EXACT_PIXEL_EXACT, &src_m, NULL, 0u,
+                                  &dst_empty, NULL, 0u, 0u, &mrep, &mmm) ==
+              RFC_ERR_VERIFY_MISMATCH);
+        CHECK(mmm.kind == RFC_MISMATCH_METADATA_LOST &&
+              (mrep.lost_supported_items & RFC_META_ITEM_ICC) != 0u);
+
+        rfc_metadata src_pair = src_m;
+        src_pair.color.has_chrm = 1u;
+        src_pair.color.chrm_xy[0] = 31270u;
+        src_pair.color.chrm_xy[1] = 32900u;
+        rfc_metadata dst_pair = src_pair;
+        CHECK(rfc_metadata_verify(RFC_FORMAT_PNG, RFC_META_POLICY_PRESERVE,
+                                  RFC_EXACT_PIXEL_EXACT, &src_pair, NULL, 0u,
+                                  &dst_pair, NULL, 0u, 0u, &mrep, &mmm) ==
+              RFC_OK);
+        CHECK(mrep.outcome == RFC_VERIFY_META_PRESERVED);
+
+        CHECK(rfc_metadata_verify(RFC_FORMAT_PNG, RFC_META_POLICY_STRIP,
+                                  RFC_EXACT_PIXEL_EXACT, &src_m, NULL, 0u,
+                                  &src_m, NULL, 0u, 0u, &mrep, &mmm) ==
+              RFC_ERR_VERIFY_MISMATCH);
+        CHECK(mmm.kind == RFC_MISMATCH_METADATA_RETAINED &&
+              (mrep.retained_removable_items & RFC_META_ITEM_ICC) != 0u);
+
+        CHECK(rfc_metadata_verify(RFC_FORMAT_BMP, RFC_META_POLICY_PRESERVE,
+                                  RFC_EXACT_PIXEL_EXACT, &src_m, NULL, 0u,
+                                  &dst_empty, NULL, 0u, 0u, &mrep, &mmm) ==
+              RFC_ERR_METADATA_POLICY);
+        CHECK(mrep.outcome == RFC_VERIFY_META_UNSUPPORTED_ITEMS_NAMED &&
+              (mrep.unsupported_items & RFC_META_ITEM_ICC) != 0u);
         CHECK(tr.live == 0u);
     }
 
@@ -2174,7 +2246,7 @@ static void test_preview_isolation(void) {
                          16u, 32u};
         rfc_layout lp = {RFC_SAMPLE_RGBA_FLOAT, RFC_ALPHA_PREMULTIPLIED, 1u, 1u,
                          16u, 32u};
-        rfc_metadata fm = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u};
+        rfc_metadata fm = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0}};
         CHECK(rfc_frame_alloc(&fs, &ls, &fm, &al) == RFC_OK);
         CHECK(rfc_frame_alloc(&fp, &lp, &fm, &al) == RFC_OK);
 
@@ -2270,7 +2342,7 @@ static void test_cancel_and_faults(void) {
         CHECK(sched != NULL);
         uint8_t src[16] = {1, 2, 3, 4};
         rfc_layout lay = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 8u, 8u, 24u, 8u};
-        rfc_metadata sm = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u};
+        rfc_metadata sm = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0}};
         rfc_job_spec spec;
         memset(&spec, 0, sizeof(spec));
         spec.source_format = RFC_FORMAT_PNG;
@@ -2337,7 +2409,7 @@ static void test_cancel_and_faults(void) {
             uint32_t dim = (tc == 3) ? 16u : 8u;
             rfc_layout lay = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, dim, dim,
                               (size_t)dim * 3u, 8u};
-            rfc_metadata sm = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u};
+            rfc_metadata sm = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0}};
             rfc_job_spec spec;
             memset(&spec, 0, sizeof(spec));
             spec.source_format = RFC_FORMAT_PNG;

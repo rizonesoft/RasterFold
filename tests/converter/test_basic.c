@@ -883,6 +883,43 @@ static void test_bmp_depths_alpha_and_icc(void) {
                                   &pm_enc) == RFC_ERR_UNSUPPORTED_ALPHA);
     rfc_frame_free(&pm_fr);
 
+    {
+        /* BMP V4 calibrated endpoints/gamma refusal vs zero/Win cs_type acceptance. */
+        uint8_t bmp_v4[14u + 108u + 4u * 12u];
+        memset(bmp_v4, 0, sizeof(bmp_v4));
+        bmp_v4[0] = 'B';
+        bmp_v4[1] = 'M';
+        wr32le(bmp_v4 + 2u, (uint32_t)sizeof(bmp_v4));
+        wr32le(bmp_v4 + 10u, 14u + 108u);
+        wr32le(bmp_v4 + 14u, 108u);
+        wr32le(bmp_v4 + 18u, 4u);
+        wr32le(bmp_v4 + 22u, 4u);
+        wr16le(bmp_v4 + 26u, 1u);
+        wr16le(bmp_v4 + 28u, 24u);
+        wr32le(bmp_v4 + 14u + 56u, 0u); /* LCS_CALIBRATED_RGB */
+        wr32le(bmp_v4 + 14u + 60u, 0x00010000u); /* non-zero CIE red X */
+        memset(&pr, 0xAA, sizeof(pr));
+        CHECK(bmp_adp->probe_session(bs, &exec, bmp_v4, sizeof(bmp_v4), &pr) ==
+              RFC_ERR_UNSUPPORTED_COMBINATION);
+        CHECK(pr.frame_count == 0u);
+        rfc_frame *cal_f = NULL;
+        size_t cal_c = 0u;
+        CHECK(bmp_adp->decode_session(bs, &exec, bmp_v4, sizeof(bmp_v4), NULL,
+                                      0u, &cal_f, &cal_c, NULL) ==
+              RFC_ERR_UNSUPPORTED_COMBINATION);
+        CHECK(cal_f == NULL && cal_c == 0u);
+
+        memset(bmp_v4 + 14u + 60u, 0, 48u);
+        CHECK(bmp_adp->probe_session(bs, &exec, bmp_v4, sizeof(bmp_v4), &pr) ==
+              RFC_OK);
+        CHECK(pr.first_frame.width == 4u && pr.first_frame.height == 4u);
+
+        wr32le(bmp_v4 + 14u + 56u, 0x57696E20u); /* LCS_WINDOWS_COLOR_SPACE */
+        CHECK(bmp_adp->probe_session(bs, &exec, bmp_v4, sizeof(bmp_v4), &pr) ==
+              RFC_OK);
+        CHECK(pr.first_frame.width == 4u && pr.first_frame.height == 4u);
+    }
+
     bmp_adp->close_session(bs);
     rfc_registry_release_session(RFC_FORMAT_BMP);
     rfc_scheduler_destroy(sched);
@@ -1188,7 +1225,7 @@ static void test_png_depths_routes_budget_and_exif(void) {
     CHECK(test_alloc_frame(&f8_icc, &l8, NULL, &alloc) == RFC_OK);
     fill_test_pattern(&f8_icc, 89u);
     rfc_metadata meta_icc = {valid_icc, sizeof(valid_icc),
-                             RFC_ORIENTATION_NORMAL, 0u};
+                             RFC_ORIENTATION_NORMAL, 0u, {0}};
     rfc_encoded icc_png = {0};
     CHECK(png_adp->encode_session(ps, &exec, &f8_icc, 1u, &meta_icc, NULL, 0u,
                                   &icc_png) == RFC_OK);
@@ -1323,6 +1360,273 @@ static void test_png_depths_routes_budget_and_exif(void) {
     rfc_budget_destroy(b_longjmp);
     free(bad_idat);
     rfc_encoded_free(&noisy_png);
+
+    {
+        /* Non-ICC colourimetry chunks (gAMA/sRGB/cHRM/cICP/mDCV/cLLI): preserve, strip, policy refusal, malformed checks. */
+        char col_tmp[512];
+        make_temp_dir(col_tmp, sizeof(col_tmp), "pngcol");
+
+        uint8_t gama_ok[4];
+        wr32be(gama_ok, 45455u);
+        size_t gama_n = 0u;
+        uint8_t *png_gama = insert_png_chunk_before_idat(
+            base_png.data, base_png.len, "gAMA", gama_ok, 4u, &gama_n);
+
+        uint8_t srgb_b = 1u;
+        uint8_t chrm_ok[32];
+        static const uint32_t k_chrm[8] = {
+            31270u, 32900u, 64000u, 33000u, 30000u, 60000u, 15000u, 6000u};
+        for (size_t ci = 0u; ci < 8u; ci++) {
+            wr32be(chrm_ok + ci * 4u, k_chrm[ci]);
+        }
+        size_t s1_n = 0u, s2_n = 0u, s3_n = 0u;
+        uint8_t *s1 = insert_png_chunk_before_idat(
+            base_png.data, base_png.len, "sRGB", &srgb_b, 1u, &s1_n);
+        uint8_t *s2 = insert_png_chunk_before_idat(
+            s1, s1_n, "gAMA", gama_ok, 4u, &s2_n);
+        uint8_t *png_srgb = insert_png_chunk_before_idat(
+            s2, s2_n, "cHRM", chrm_ok, 32u, &s3_n);
+        free(s1);
+        free(s2);
+
+        static const uint8_t cicp_ok[4] = {9u, 16u, 0u, 1u};
+        uint8_t mdcv_ok[24];
+        static const uint16_t k_mdcv_xy[8] = {
+            35400u, 14600u, 8500u, 39850u, 6550u, 2300u, 15635u, 16450u};
+        for (size_t mi = 0u; mi < 8u; mi++) {
+            wr16le(mdcv_ok + mi * 2u,
+                   (uint16_t)((k_mdcv_xy[mi] >> 8) | (k_mdcv_xy[mi] << 8)));
+        }
+        wr32be(mdcv_ok + 16u, 10000000u);
+        wr32be(mdcv_ok + 20u, 50u);
+        uint8_t clli_ok[8];
+        wr32be(clli_ok + 0u, 10000000u);
+        wr32be(clli_ok + 4u, 4000000u);
+        size_t h1_n = 0u, h2_n = 0u, h3_n = 0u;
+        uint8_t *h1 = insert_png_chunk_before_idat(
+            base_png.data, base_png.len, "cICP", cicp_ok, 4u, &h1_n);
+        uint8_t *h2 = insert_png_chunk_before_idat(
+            h1, h1_n, "mDCV", mdcv_ok, 24u, &h2_n);
+        uint8_t *png_hdr = insert_png_chunk_before_idat(
+            h2, h2_n, "cLLI", clli_ok, 8u, &h3_n);
+        free(h1);
+        free(h2);
+
+        memset(&pr, 0, sizeof(pr));
+        CHECK(png_adp->probe_session(ps, &exec, png_gama, gama_n, &pr) ==
+              RFC_OK);
+        CHECK(pr.container_meta.icc_len == 0u &&
+              pr.container_meta.color.has_gama == 1u &&
+              pr.container_meta.color.gama_scaled == 45455u);
+
+        const uint8_t *pres_bufs[3] = {png_gama, png_srgb, png_hdr};
+        const size_t pres_lens[3] = {gama_n, s3_n, h3_n};
+        const char *pres_names[3] = {"gama_pres.png", "srgb_pres.png",
+                                     "hdr_pres.png"};
+        rfc_setting_value sv_pres[1] = {{"metadata", "preserve"}};
+        rfc_setting_value sv_strip[1] = {{"metadata", "strip"}};
+
+        for (int ci = 0; ci < 3; ci++) {
+            char opath[600];
+            join_path(opath, sizeof(opath), col_tmp, pres_names[ci]);
+            rfc_io_sink osink;
+            rfc_io_sink_init_path(&osink, opath, RFC_EXPORT_REFUSE_EXISTING);
+            rfc_job_spec sp;
+            memset(&sp, 0, sizeof(sp));
+            sp.source_format = RFC_FORMAT_PNG;
+            sp.target_format = RFC_FORMAT_PNG;
+            sp.source_bytes = pres_bufs[ci];
+            sp.source_size = pres_lens[ci];
+            sp.io_sink = &osink;
+            sp.settings = sv_pres;
+            sp.setting_count = 1u;
+            sp.expected_working_set_bytes = 256u * 1024u;
+            rfc_job *j = NULL;
+            CHECK(rfc_scheduler_submit(sched, NULL, &sp, &j) == RFC_OK);
+            CHECK(rfc_job_wait(j, UINT32_MAX) == RFC_OK);
+            rfc_job_snapshot js;
+            CHECK(rfc_job_snapshot_get(j, &js) == RFC_OK);
+            CHECK(js.state == RFC_JOB_SUCCEEDED);
+            rfc_verify_report vr;
+            CHECK(rfc_job_verify_report_get(j, &vr) == RFC_OK);
+            CHECK(vr.meta_outcome == RFC_VERIFY_META_PRESERVED);
+            rfc_job_release(j);
+
+            size_t got_n = 0u;
+            uint8_t *got = read_file_all(opath, &got_n);
+            CHECK(got != NULL && got_n > 0u);
+            rfc_image_probe pr_out;
+            memset(&pr_out, 0, sizeof(pr_out));
+            CHECK(png_adp->probe_session(ps, &exec, got, got_n, &pr_out) ==
+                  RFC_OK);
+            CHECK(pr_out.container_meta.icc_len == 0u);
+            if (ci == 0) {
+                CHECK(pr_out.container_meta.color.has_gama == 1u &&
+                      pr_out.container_meta.color.gama_scaled == 45455u);
+            } else if (ci == 1) {
+                CHECK(pr_out.container_meta.color.has_srgb == 1u &&
+                      pr_out.container_meta.color.srgb_intent == 1u &&
+                      pr_out.container_meta.color.has_gama == 1u &&
+                      pr_out.container_meta.color.has_chrm == 1u &&
+                      pr_out.container_meta.color.chrm_xy[0] == 31270u);
+            } else {
+                CHECK(pr_out.container_meta.color.has_cicp == 1u &&
+                      memcmp(pr_out.container_meta.color.cicp, cicp_ok, 4u) ==
+                          0 &&
+                      pr_out.container_meta.color.has_mdcv == 1u &&
+                      pr_out.container_meta.color.mdcv_max_dl == 10000000u &&
+                      pr_out.container_meta.color.has_clli == 1u &&
+                      pr_out.container_meta.color.clli_max_cll == 10000000u &&
+                      pr_out.container_meta.color.clli_max_fall == 4000000u);
+            }
+            free(got);
+        }
+
+        /* PNG(gAMA) -> PNG with metadata=strip drops gAMA cleanly. */
+        {
+            char spath[600];
+            join_path(spath, sizeof(spath), col_tmp, "gama_strip.png");
+            rfc_io_sink ssink;
+            rfc_io_sink_init_path(&ssink, spath, RFC_EXPORT_REFUSE_EXISTING);
+            rfc_job_spec sp;
+            memset(&sp, 0, sizeof(sp));
+            sp.source_format = RFC_FORMAT_PNG;
+            sp.target_format = RFC_FORMAT_PNG;
+            sp.source_bytes = png_gama;
+            sp.source_size = gama_n;
+            sp.io_sink = &ssink;
+            sp.settings = sv_strip;
+            sp.setting_count = 1u;
+            sp.expected_working_set_bytes = 256u * 1024u;
+            rfc_job *j = NULL;
+            CHECK(rfc_scheduler_submit(sched, NULL, &sp, &j) == RFC_OK);
+            CHECK(rfc_job_wait(j, UINT32_MAX) == RFC_OK);
+            rfc_job_snapshot js;
+            CHECK(rfc_job_snapshot_get(j, &js) == RFC_OK);
+            CHECK(js.state == RFC_JOB_SUCCEEDED);
+            rfc_verify_report vr;
+            CHECK(rfc_job_verify_report_get(j, &vr) == RFC_OK);
+            CHECK(vr.meta_outcome == RFC_VERIFY_META_STRIPPED_EXPLICITLY);
+            rfc_job_release(j);
+
+            size_t got_n = 0u;
+            uint8_t *got = read_file_all(spath, &got_n);
+            CHECK(got != NULL);
+            rfc_image_probe pr_out;
+            CHECK(png_adp->probe_session(ps, &exec, got, got_n, &pr_out) ==
+                  RFC_OK);
+            CHECK(!rfc_colorimetry_has_any(&pr_out.container_meta.color));
+            free(got);
+        }
+
+        /* PNG(gAMA, no iCCP) -> BMP/RASTERFOLD with preserve (ack=0) must fail before export. */
+        const rfc_format_id non_icc_targets[2] = {RFC_FORMAT_BMP,
+                                                  RFC_FORMAT_RASTERFOLD};
+        const char *refuse_names[2] = {"gama_refused.bmp", "gama_refused.fold"};
+        for (int ti = 0; ti < 2; ti++) {
+            char rpath[600];
+            join_path(rpath, sizeof(rpath), col_tmp, refuse_names[ti]);
+            rfc_io_sink rsink;
+            rfc_io_sink_init_path(&rsink, rpath, RFC_EXPORT_REFUSE_EXISTING);
+            rfc_job_spec sp;
+            memset(&sp, 0, sizeof(sp));
+            sp.source_format = RFC_FORMAT_PNG;
+            sp.target_format = non_icc_targets[ti];
+            sp.source_bytes = png_gama;
+            sp.source_size = gama_n;
+            sp.io_sink = &rsink;
+            sp.settings = sv_pres;
+            sp.setting_count = 1u;
+            sp.expected_working_set_bytes = 256u * 1024u;
+            rfc_job *j = NULL;
+            CHECK(rfc_scheduler_submit(sched, NULL, &sp, &j) == RFC_OK);
+            CHECK(rfc_job_wait(j, UINT32_MAX) == RFC_OK);
+            rfc_job_snapshot js;
+            CHECK(rfc_job_snapshot_get(j, &js) == RFC_OK);
+            CHECK(js.state == RFC_JOB_FAILED &&
+                  js.status == RFC_ERR_METADATA_POLICY);
+            rfc_verify_report vr;
+            CHECK(rfc_job_verify_report_get(j, &vr) == RFC_OK);
+            CHECK(vr.meta_outcome == RFC_VERIFY_META_UNSUPPORTED_ITEMS_NAMED &&
+                  (vr.metadata.unsupported_items & RFC_META_ITEM_ICC) != 0u);
+            rfc_job_release(j);
+            CHECK(fopen(rpath, "rb") == NULL);
+        }
+
+        /* PNG(gAMA, no iCCP) -> BMP with ack=RFC_META_ITEM_ICC succeeds with unsupported-items-named. */
+        {
+            char apath[600];
+            join_path(apath, sizeof(apath), col_tmp, "gama_ack.bmp");
+            rfc_io_sink asink;
+            rfc_io_sink_init_path(&asink, apath, RFC_EXPORT_REFUSE_EXISTING);
+            rfc_job_spec sp;
+            memset(&sp, 0, sizeof(sp));
+            sp.source_format = RFC_FORMAT_PNG;
+            sp.target_format = RFC_FORMAT_BMP;
+            sp.source_bytes = png_gama;
+            sp.source_size = gama_n;
+            sp.io_sink = &asink;
+            sp.settings = sv_pres;
+            sp.setting_count = 1u;
+            sp.acknowledged_unsupported_metadata = RFC_META_ITEM_ICC;
+            sp.expected_working_set_bytes = 256u * 1024u;
+            rfc_job *j = NULL;
+            CHECK(rfc_scheduler_submit(sched, NULL, &sp, &j) == RFC_OK);
+            CHECK(rfc_job_wait(j, UINT32_MAX) == RFC_OK);
+            rfc_job_snapshot js;
+            CHECK(rfc_job_snapshot_get(j, &js) == RFC_OK);
+            CHECK(js.state == RFC_JOB_SUCCEEDED);
+            rfc_verify_report vr;
+            CHECK(rfc_job_verify_report_get(j, &vr) == RFC_OK);
+            CHECK(vr.meta_outcome == RFC_VERIFY_META_UNSUPPORTED_ITEMS_NAMED);
+            rfc_job_release(j);
+            size_t got_n = 0u;
+            uint8_t *got = read_file_all(apath, &got_n);
+            CHECK(got != NULL && got_n > 54u);
+            free(got);
+        }
+
+        /* Malformed PNG colour chunks (gAMA=0, sRGB=4, cICP matrix=1, dup gAMA) refused. */
+        {
+            uint8_t gama_zero[4] = {0u, 0u, 0u, 0u};
+            uint8_t srgb_bad = 4u;
+            uint8_t cicp_bad[4] = {9u, 16u, 1u, 1u};
+            size_t b0_n = 0u, b1_n = 0u, b2_n = 0u, b3_n = 0u;
+            uint8_t *b0 = insert_png_chunk_before_idat(
+                base_png.data, base_png.len, "gAMA", gama_zero, 4u, &b0_n);
+            uint8_t *b1 = insert_png_chunk_before_idat(
+                base_png.data, base_png.len, "sRGB", &srgb_bad, 1u, &b1_n);
+            uint8_t *b2 = insert_png_chunk_before_idat(
+                base_png.data, base_png.len, "cICP", cicp_bad, 4u, &b2_n);
+            uint8_t *b3 = insert_png_chunk_before_idat(
+                png_gama, gama_n, "gAMA", gama_ok, 4u, &b3_n);
+            const uint8_t *bad_bufs[4] = {b0, b1, b2, b3};
+            const size_t bad_lens[4] = {b0_n, b1_n, b2_n, b3_n};
+            for (int bi = 0; bi < 4; bi++) {
+                memset(&pr, 0xAA, sizeof(pr));
+                CHECK(png_adp->probe_session(ps, &exec, bad_bufs[bi],
+                                             bad_lens[bi], &pr) ==
+                      RFC_ERR_INVALID_ARGUMENT);
+                CHECK(pr.frame_count == 0u);
+                rfc_frame *bf = NULL;
+                size_t bc = 0u;
+                CHECK(png_adp->decode_session(ps, &exec, bad_bufs[bi],
+                                              bad_lens[bi], NULL, 0u, &bf, &bc,
+                                              NULL) ==
+                      RFC_ERR_INVALID_ARGUMENT);
+                CHECK(bf == NULL && bc == 0u);
+            }
+            free(b0);
+            free(b1);
+            free(b2);
+            free(b3);
+        }
+
+        free(png_gama);
+        free(png_srgb);
+        free(png_hdr);
+        rm_tree(col_tmp);
+    }
 
     png_adp->close_session(ps);
     rfc_scheduler_destroy(sched);
@@ -1774,7 +2078,7 @@ static int cli_main(int argc, char **argv) {
         rfc_layout lay = {(rfc_sample_format)sf, (rfc_alpha_mode)am, w, h, 0u,
                           (uint8_t)bps};
         rfc_metadata meta = {icc_len ? (raw + 40u) : NULL, icc_len,
-                             (rfc_orientation)ori, 0u};
+                             (rfc_orientation)ori, 0u, {0}};
         rfc_frame fr = {0};
         CHECK(test_alloc_frame(&fr, &lay, &meta, &alloc) == RFC_OK);
         memcpy(fr.data, raw + 40u + icc_len, pay_len);
@@ -1852,9 +2156,10 @@ static int cli_main(int argc, char **argv) {
         CHECK(rfc_job_snapshot_get(j, &snap) == RFC_OK);
         rfc_verify_report rep;
         int has_rep = (rfc_job_verify_report_get(j, &rep) == RFC_OK);
-        printf("STATUS=%s META_OUTCOME=%s PEAK_ALLOC=%llu\n",
+        printf("STATUS=%s META_OUTCOME=%s UNSUPPORTED_ITEMS=%u PEAK_ALLOC=%llu\n",
                rfc_status_name(snap.status),
                has_rep ? rfc_verify_meta_outcome_name(rep.meta_outcome) : "none",
+               has_rep ? rep.metadata.unsupported_items : 0u,
                (unsigned long long)rf_internal_alloc_peak);
         rfc_job_release(j);
         rfc_scheduler_destroy(sched);

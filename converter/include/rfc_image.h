@@ -71,6 +71,28 @@ typedef struct rfc_layout {
     uint32_t bits_per_sample;
 } rfc_layout;
 
+/* Non-ICC colourimetry chunks carried by containers such as PNG (W3C PNG
+ * colour-space chunks: sRGB, gAMA, cHRM, cICP, mDCV, cLLI) so lossless
+ * decode/encode preserves and verifies transfer/primaries metadata even when
+ * no ICC profile is attached. Values store exact wire integers. */
+typedef struct rfc_colorimetry {
+    uint8_t has_srgb;
+    uint8_t srgb_intent;
+    uint8_t has_gama;
+    uint8_t has_chrm;
+    uint8_t has_cicp;
+    uint8_t has_mdcv;
+    uint8_t has_clli;
+    uint8_t cicp[4];
+    uint32_t gama_scaled;
+    uint32_t chrm_xy[8];
+    uint16_t mdcv_xy[8];
+    uint32_t mdcv_max_dl;
+    uint32_t mdcv_min_dl;
+    uint32_t clli_max_cll;
+    uint32_t clli_max_fall;
+} rfc_colorimetry;
+
 /* Per-frame metadata. icc borrows caller memory unless the frame owns it
  * (rfc_frame owns a copy). duration_ms is 0 for still images. */
 typedef struct rfc_metadata {
@@ -78,6 +100,7 @@ typedef struct rfc_metadata {
     size_t icc_len;
     rfc_orientation orientation;
     uint32_t duration_ms;
+    rfc_colorimetry color;
 } rfc_metadata;
 
 typedef struct rfc_allocator {
@@ -110,6 +133,12 @@ void rfc_encoded_free(rfc_encoded *encoded);
 
 /* Bytes per pixel for a sample format, or 0 for an unknown format. */
 size_t rfc_sample_bytes(rfc_sample_format format);
+
+/* Return 1 if any colourimetry flag is set, else 0. */
+int rfc_colorimetry_has_any(const rfc_colorimetry *color);
+
+/* Validate flag ranges and PNG-bounded integer fields of colorimetry (1=ok). */
+int rfc_colorimetry_is_valid(const rfc_colorimetry *color);
 
 #ifdef __cplusplus
 }

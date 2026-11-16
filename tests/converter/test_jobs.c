@@ -1107,7 +1107,7 @@ static void test_progress_retry_and_stale_rejection(void) {
     char k1[] = "metadata";
     char v1[] = "preserve";
     rfc_setting_value sets[1] = {{k1, v1}};
-    rfc_metadata meta = {icc_buf, sizeof(icc_buf), RFC_ORIENTATION_NORMAL, 0u};
+    rfc_metadata meta = {icc_buf, sizeof(icc_buf), RFC_ORIENTATION_NORMAL, 0u, {0}};
     rfc_layout lay = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 8u, 8u, 24u, 8u};
 
     rfc_job_spec spec;
@@ -2529,7 +2529,7 @@ typedef struct gap_sat_arg {
 static void gap_sat_worker(void *raw) {
     gap_sat_arg *a = (gap_sat_arg *)raw;
     rfc_layout lay = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 4u, 4u, 12u, 8u};
-    rfc_metadata meta = {a->icc, a->icc_len, RFC_ORIENTATION_NORMAL, 0u};
+    rfc_metadata meta = {a->icc, a->icc_len, RFC_ORIENTATION_NORMAL, 0u, {0}};
     rfc_setting_value s = {"metadata", "preserve"};
 
     rfc_job_spec spec;

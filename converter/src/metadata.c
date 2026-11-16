@@ -104,7 +104,8 @@ uint32_t rfc_metadata_source_items(const rfc_metadata *container_meta,
                                    size_t frame_count) {
     uint32_t items = RFC_META_ITEM_NONE;
     if (container_meta) {
-        if (container_meta->icc_len > 0u && container_meta->icc != NULL) {
+        if ((container_meta->icc_len > 0u && container_meta->icc != NULL) ||
+            rfc_colorimetry_has_any(&container_meta->color)) {
             items |= RFC_META_ITEM_ICC;
         }
         if (container_meta->orientation > RFC_ORIENTATION_NORMAL) {
@@ -119,8 +120,9 @@ uint32_t rfc_metadata_source_items(const rfc_metadata *container_meta,
             items |= RFC_META_ITEM_FRAME_TIMING;
         }
         for (size_t i = 0u; i < frame_count; i++) {
-            if (frames[i].metadata.icc_len > 0u &&
-                frames[i].metadata.icc != NULL) {
+            if ((frames[i].metadata.icc_len > 0u &&
+                 frames[i].metadata.icc != NULL) ||
+                rfc_colorimetry_has_any(&frames[i].metadata.color)) {
                 items |= RFC_META_ITEM_ICC;
             }
             if (frames[i].metadata.orientation > RFC_ORIENTATION_NORMAL) {
@@ -132,6 +134,63 @@ uint32_t rfc_metadata_source_items(const rfc_metadata *container_meta,
         }
     }
     return items;
+}
+
+static int colorimetry_equal(const rfc_colorimetry *a,
+                             const rfc_colorimetry *b) {
+    int a_any = rfc_colorimetry_has_any(a);
+    int b_any = rfc_colorimetry_has_any(b);
+    if (!a_any && !b_any) {
+        return 1;
+    }
+    if (!a_any || !b_any) {
+        return 0;
+    }
+    if ((a->has_srgb != 0u) != (b->has_srgb != 0u) ||
+        (a->has_srgb && a->srgb_intent != b->srgb_intent)) {
+        return 0;
+    }
+    if ((a->has_gama != 0u) != (b->has_gama != 0u) ||
+        (a->has_gama && a->gama_scaled != b->gama_scaled)) {
+        return 0;
+    }
+    if ((a->has_chrm != 0u) != (b->has_chrm != 0u) ||
+        (a->has_chrm && memcmp(a->chrm_xy, b->chrm_xy, sizeof(a->chrm_xy)) != 0)) {
+        return 0;
+    }
+    if ((a->has_cicp != 0u) != (b->has_cicp != 0u) ||
+        (a->has_cicp && memcmp(a->cicp, b->cicp, sizeof(a->cicp)) != 0)) {
+        return 0;
+    }
+    if ((a->has_mdcv != 0u) != (b->has_mdcv != 0u) ||
+        (a->has_mdcv &&
+         (memcmp(a->mdcv_xy, b->mdcv_xy, sizeof(a->mdcv_xy)) != 0 ||
+          a->mdcv_max_dl != b->mdcv_max_dl ||
+          a->mdcv_min_dl != b->mdcv_min_dl))) {
+        return 0;
+    }
+    if ((a->has_clli != 0u) != (b->has_clli != 0u) ||
+        (a->has_clli &&
+         (a->clli_max_cll != b->clli_max_cll ||
+          a->clli_max_fall != b->clli_max_fall))) {
+        return 0;
+    }
+    return 1;
+}
+
+static const rfc_colorimetry *effective_colorimetry_at(
+    const rfc_metadata *container_meta,
+    const rfc_frame *frames,
+    size_t frame_count,
+    size_t idx) {
+    if (frames && idx < frame_count &&
+        rfc_colorimetry_has_any(&frames[idx].metadata.color)) {
+        return &frames[idx].metadata.color;
+    }
+    if (container_meta && rfc_colorimetry_has_any(&container_meta->color)) {
+        return &container_meta->color;
+    }
+    return NULL;
 }
 
 static rfc_orientation normalize_orientation(rfc_orientation ori) {
@@ -176,17 +235,19 @@ static rfc_orientation effective_orientation_at(
     return RFC_ORIENTATION_NORMAL;
 }
 
-static int has_any_icc(const rfc_metadata *container_meta,
-                       const rfc_frame *frames,
-                       size_t frame_count) {
-    if (container_meta && container_meta->icc_len > 0u &&
-        container_meta->icc != NULL) {
+static int has_any_color_metadata(const rfc_metadata *container_meta,
+                                  const rfc_frame *frames,
+                                  size_t frame_count) {
+    if (container_meta &&
+        ((container_meta->icc_len > 0u && container_meta->icc != NULL) ||
+         rfc_colorimetry_has_any(&container_meta->color))) {
         return 1;
     }
     if (frames) {
         for (size_t i = 0u; i < frame_count; i++) {
-            if (frames[i].metadata.icc_len > 0u &&
-                frames[i].metadata.icc != NULL) {
+            if ((frames[i].metadata.icc_len > 0u &&
+                 frames[i].metadata.icc != NULL) ||
+                rfc_colorimetry_has_any(&frames[i].metadata.color)) {
                 return 1;
             }
         }
@@ -342,7 +403,7 @@ rfc_status rfc_metadata_verify(rfc_format_id target_format,
 
     if (policy == RFC_META_POLICY_STRIP) {
         uint32_t retained = RFC_META_ITEM_NONE;
-        if (has_any_icc(dst_meta, dst_frames, dst_frame_count)) {
+        if (has_any_color_metadata(dst_meta, dst_frames, dst_frame_count)) {
             retained |= RFC_META_ITEM_ICC;
         }
         if (has_non_normal_orientation(dst_meta, dst_frames, dst_frame_count)) {
@@ -390,9 +451,14 @@ rfc_status rfc_metadata_verify(rfc_format_id target_format,
                     src_meta, src_frames, src_frame_count, i, &slen);
                 const uint8_t *d_icc = effective_icc_at(
                     dst_meta, dst_frames, dst_frame_count, i, &dlen);
+                const rfc_colorimetry *s_col = effective_colorimetry_at(
+                    src_meta, src_frames, src_frame_count, i);
+                const rfc_colorimetry *d_col = effective_colorimetry_at(
+                    dst_meta, dst_frames, dst_frame_count, i);
                 if (slen != dlen ||
                     (slen > 0u &&
-                     (!s_icc || !d_icc || memcmp(s_icc, d_icc, slen) != 0))) {
+                     (!s_icc || !d_icc || memcmp(s_icc, d_icc, slen) != 0)) ||
+                    !colorimetry_equal(s_col, d_col)) {
                     lost |= RFC_META_ITEM_ICC;
                     break;
                 }

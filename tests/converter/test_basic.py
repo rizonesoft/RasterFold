@@ -53,7 +53,22 @@ SAMPLE_RGBA16 = _ref.SAMPLE_RGBA16
 ALPHA_NONE = _ref.ALPHA_NONE
 ALPHA_STRAIGHT = _ref.ALPHA_STRAIGHT
 
+META_ITEM_ICC = 1
 META_ITEM_ORIENTATION = 2
+
+
+def parse_png_chunks(png_bytes: bytes) -> dict[bytes, list[bytes]]:
+    chunks: dict[bytes, list[bytes]] = {}
+    pos = 8
+    while pos + 12 <= len(png_bytes):
+        clen = struct.unpack_from(">I", png_bytes, pos)[0]
+        tag = png_bytes[pos + 4 : pos + 8]
+        cdata = png_bytes[pos + 8 : pos + 8 + clen]
+        chunks.setdefault(tag, []).append(cdata)
+        pos += 12 + clen
+        if tag == b"IEND":
+            break
+    return chunks
 
 
 def ps_quote(val: str) -> str:
@@ -424,6 +439,84 @@ class BasicAdapterVerificationMixin:
         )
         self.assertEqual(rc, 0, out + err)
         self.assertEqual(parse_kv(out).get("META_OUTCOME"), "stripped-explicitly")
+
+        # Non-ICC colourimetry chunks (gAMA+cHRM & cICP+mDCV+cLLI) preserve/refuse/ack/strip
+        gama_pay = struct.pack(">I", 45455)
+        chrm_pay = struct.pack(
+            ">8I", 31270, 32900, 64000, 33000, 30000, 60000, 15000, 6000
+        )
+        gama_chrm_png = wd / "col_gama_chrm.png"
+        gama_chrm_png.write_bytes(
+            png_insert_chunk_before_idat(
+                png_insert_chunk_before_idat(base_png, b"gAMA", gama_pay),
+                b"cHRM",
+                chrm_pay,
+            )
+        )
+        col_pres_out = wd / "col_gama_chrm_pres.png"
+        rc, out, err = self.run_cli(
+            ["cli", "convert", "png", "png", self.to_exe_path(gama_chrm_png),
+             self.to_exe_path(col_pres_out), "preserve", "0", "0", "0"]
+        )
+        self.assertEqual(rc, 0, out + err)
+        self.assertEqual(parse_kv(out).get("META_OUTCOME"), "preserved")
+        pres_chunks = parse_png_chunks(col_pres_out.read_bytes())
+        self.assertEqual(pres_chunks.get(b"gAMA"), [gama_pay])
+        self.assertEqual(pres_chunks.get(b"cHRM"), [chrm_pay])
+
+        cicp_pay = bytes([9, 16, 0, 1])
+        mdcv_pay = struct.pack(
+            ">8H2I", 35400, 14600, 8500, 39850, 6550, 2300, 15635, 16450, 10000000, 50
+        )
+        clli_pay = struct.pack(">2I", 10000000, 4000000)
+        hdr_png = wd / "col_hdr.png"
+        hdr_bytes = png_insert_chunk_before_idat(base_png, b"cICP", cicp_pay)
+        hdr_bytes = png_insert_chunk_before_idat(hdr_bytes, b"mDCV", mdcv_pay)
+        hdr_bytes = png_insert_chunk_before_idat(hdr_bytes, b"cLLI", clli_pay)
+        hdr_png.write_bytes(hdr_bytes)
+        hdr_pres_out = wd / "col_hdr_pres.png"
+        rc, out, err = self.run_cli(
+            ["cli", "convert", "png", "png", self.to_exe_path(hdr_png),
+             self.to_exe_path(hdr_pres_out), "preserve", "0", "0", "0"]
+        )
+        self.assertEqual(rc, 0, out + err)
+        self.assertEqual(parse_kv(out).get("META_OUTCOME"), "preserved")
+        hdr_chunks = parse_png_chunks(hdr_pres_out.read_bytes())
+        self.assertEqual(hdr_chunks.get(b"cICP"), [cicp_pay])
+        self.assertEqual(hdr_chunks.get(b"mDCV"), [mdcv_pay])
+        self.assertEqual(hdr_chunks.get(b"cLLI"), [clli_pay])
+
+        for tgt, ext in (("bmp", "bmp"), ("rasterfold", "fold")):
+            col_refuse = wd / f"col_refuse.{ext}"
+            rc, out, err = self.run_cli(
+                ["cli", "convert", "png", tgt, self.to_exe_path(gama_chrm_png),
+                 self.to_exe_path(col_refuse), "preserve", "0", "0", "0"]
+            )
+            self.assertNotEqual(rc, 0, out + err)
+            kv = parse_kv(out)
+            self.assertEqual(kv.get("STATUS"), "metadata-policy", out)
+            self.assertEqual(kv.get("META_OUTCOME"), "unsupported-items-named", out)
+            self.assertEqual(int(kv.get("UNSUPPORTED_ITEMS", "0")) & META_ITEM_ICC, META_ITEM_ICC, out)
+            self.assertFalse(col_refuse.exists())
+
+        col_ack_bmp = wd / "col_ack.bmp"
+        rc, out, err = self.run_cli(
+            ["cli", "convert", "png", "bmp", self.to_exe_path(gama_chrm_png),
+             self.to_exe_path(col_ack_bmp), "preserve", str(META_ITEM_ICC), "0", "0"]
+        )
+        self.assertEqual(rc, 0, out + err)
+        self.assertEqual(parse_kv(out).get("META_OUTCOME"), "unsupported-items-named")
+
+        col_strip_out = wd / "col_strip.png"
+        rc, out, err = self.run_cli(
+            ["cli", "convert", "png", "png", self.to_exe_path(hdr_png),
+             self.to_exe_path(col_strip_out), "strip", "0", "0", "0"]
+        )
+        self.assertEqual(rc, 0, out + err)
+        self.assertEqual(parse_kv(out).get("META_OUTCOME"), "stripped-explicitly")
+        strip_chunks = parse_png_chunks(col_strip_out.read_bytes())
+        for ctag in (b"cICP", b"sRGB", b"gAMA", b"cHRM", b"mDCV", b"cLLI", b"iCCP"):
+            self.assertNotIn(ctag, strip_chunks)
 
         # Dual PNG low-budget RFC_ERR_OUT_OF_MEMORY routes
         rgb64 = bytes(((i * 37 + 11) & 0xFF) for i in range(64 * 64 * 3))

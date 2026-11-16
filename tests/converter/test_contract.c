@@ -96,7 +96,7 @@ int main(int argc, char **argv) {
 
     /* A valid frame allocates, owns a copy of the ICC bytes, and frees. */
     uint8_t icc[4] = {1, 2, 3, 4};
-    rfc_metadata meta = {icc, 4, RFC_ORIENTATION_NORMAL, 0};
+    rfc_metadata meta = {icc, 4, RFC_ORIENTATION_NORMAL, 0, {0}};
     CHECK(rfc_frame_alloc(&frame, &good, &meta, &alloc) == RFC_OK);
     CHECK(frame.data_len == 36 && frame.metadata.icc && frame.metadata.icc != icc);
     CHECK(alloc_calls >= 1);

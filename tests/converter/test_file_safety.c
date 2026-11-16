@@ -457,7 +457,7 @@ static rfc_status rf_sess_decode(void *raw,
     memset(arr, 0, sizeof(*arr));
     rfc_layout lay = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, px.width, px.height,
                       (size_t)px.width * 3u, 8u};
-    rfc_metadata meta = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u};
+    rfc_metadata meta = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0}};
     rfc_status st = rfc_exec_alloc_frame(exec, &arr[0], &lay, &meta);
     if (st != RFC_OK) {
         rf_free(px.data);
@@ -617,7 +617,7 @@ static rfc_status bmp_sess_decode(void *raw,
     }
     memset(arr, 0, sizeof(*arr));
     rfc_layout lay = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, w, h, (size_t)w * 3u, 8u};
-    rfc_metadata meta = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u};
+    rfc_metadata meta = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0}};
     st = rfc_exec_alloc_frame(exec, &arr[0], &lay, &meta);
     if (st != RFC_OK) {
         exec->allocator->free(exec->allocator->ctx, arr);

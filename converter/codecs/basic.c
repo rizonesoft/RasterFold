@@ -162,6 +162,13 @@ static void wr16be(uint8_t *p, uint16_t v) {
     p[1] = (uint8_t)(v & 0xffu);
 }
 
+static void wr32be(uint8_t *p, uint32_t v) {
+    p[0] = (uint8_t)((v >> 24) & 0xffu);
+    p[1] = (uint8_t)((v >> 16) & 0xffu);
+    p[2] = (uint8_t)((v >> 8) & 0xffu);
+    p[3] = (uint8_t)(v & 0xffu);
+}
+
 static rfc_status alloc_single_frame(const rfc_exec_context *exec,
                                      const rfc_layout *layout,
                                      const rfc_metadata *meta,
@@ -259,6 +266,7 @@ typedef struct encode_common_check {
     const uint8_t *eff_icc;
     size_t eff_icc_len;
     rfc_orientation eff_ori;
+    rfc_colorimetry eff_color;
 } encode_common_check;
 
 static uint32_t sample_channels(rfc_sample_format fmt) {
@@ -413,11 +421,20 @@ static rfc_status prepare_encode_common(rfc_format_id fmt,
     } else if (meta && meta->orientation != RFC_ORIENTATION_UNSPECIFIED) {
         out->eff_ori = meta->orientation;
     }
+    if (rfc_colorimetry_has_any(&fr->metadata.color)) {
+        out->eff_color = fr->metadata.color;
+    } else if (meta && rfc_colorimetry_has_any(&meta->color)) {
+        out->eff_color = meta->color;
+    }
+    if (!rfc_colorimetry_is_valid(&out->eff_color)) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
 
     rfc_limits lim_def;
     const rfc_limits *lim = basic_limits_of(exec, &lim_def);
     if (out->eff_icc_len > 0u) {
-        rfc_metadata check_m = {out->eff_icc, out->eff_icc_len, out->eff_ori, 0u};
+        rfc_metadata check_m = {out->eff_icc, out->eff_icc_len, out->eff_ori, 0u,
+                                out->eff_color};
         st = rfc_limits_check_metadata(lim, &check_m);
         if (st != RFC_OK) {
             return st;
@@ -796,6 +813,8 @@ static const rfc_session_adapter k_fold_adapter = {
 
 #define BMP_BI_RGB 0u
 #define BMP_BI_BITFIELDS 3u
+#define BMP_LCS_CALIBRATED_RGB 0u
+#define BMP_LCS_WINDOWS_COLOR_SPACE 0x57696E20u
 #define BMP_LCS_SRGB 0x73524742u
 #define BMP_PROFILE_LINKED 0x4C494E4Bu
 #define BMP_PROFILE_EMBEDDED 0x4D424544u
@@ -937,17 +956,19 @@ static rfc_status bmp_parse_header(const uint8_t *bytes,
         }
     }
 
-    /* Check V5 embedded/linked ICC profiles */
+    /* Validate V4/V5 colour space and embedded/linked ICC profiles */
     size_t icc_off = 0u;
     size_t icc_len = 0u;
-    if (dib_size >= 124u) {
+    if (dib_size >= 108u) {
         uint32_t cs_type = rd32le(bytes + 14u + 56u);
-        uint32_t p_off = rd32le(bytes + 14u + 112u);
-        uint32_t p_sz = rd32le(bytes + 14u + 116u);
         if (cs_type == BMP_PROFILE_LINKED) {
             return RFC_ERR_UNSUPPORTED_COMBINATION;
-        }
-        if (cs_type == BMP_PROFILE_EMBEDDED) {
+        } else if (cs_type == BMP_PROFILE_EMBEDDED) {
+            if (dib_size < 124u) {
+                return RFC_ERR_UNSUPPORTED_COMBINATION;
+            }
+            uint32_t p_off = rd32le(bytes + 14u + 112u);
+            uint32_t p_sz = rd32le(bytes + 14u + 116u);
             if (p_sz == 0u) {
                 return RFC_ERR_INVALID_ARGUMENT;
             }
@@ -961,6 +982,17 @@ static rfc_status bmp_parse_header(const uint8_t *bytes,
             }
             icc_off = (size_t)14u + (size_t)p_off;
             icc_len = (size_t)p_sz;
+        } else if (cs_type == BMP_LCS_CALIBRATED_RGB) {
+            /* Refuse non-zero CIEXYZ endpoints or RGB gamma values (bytes
+             * 14+60..14+107) rather than silently losing colour calibration. */
+            for (size_t k = 0u; k < 48u; k++) {
+                if (bytes[14u + 60u + k] != 0u) {
+                    return RFC_ERR_UNSUPPORTED_COMBINATION;
+                }
+            }
+        } else if (cs_type != BMP_LCS_SRGB &&
+                   cs_type != BMP_LCS_WINDOWS_COLOR_SPACE) {
+            return RFC_ERR_UNSUPPORTED_COMBINATION;
         }
     }
 
@@ -1746,6 +1778,7 @@ typedef struct png_prescan_info {
     uint8_t *icc;
     size_t icc_len;
     rfc_orientation orientation;
+    rfc_colorimetry color;
     rfc_sample_format sample;
     rfc_alpha_mode alpha;
 } png_prescan_info;
@@ -1757,6 +1790,87 @@ static void png_prescan_free_icc(const rfc_allocator *alloc,
         p->icc = NULL;
         p->icc_len = 0u;
     }
+}
+
+static rfc_status png_parse_color_chunk(const uint8_t *ctype,
+                                        const uint8_t *cdata,
+                                        uint32_t clen,
+                                        int saw_plte,
+                                        int seen_idat,
+                                        rfc_colorimetry *col,
+                                        int *out_handled) {
+    *out_handled = 0;
+    if (memcmp(ctype, "sRGB", 4) == 0) {
+        *out_handled = 1;
+        if (saw_plte || seen_idat || col->has_srgb || clen != 1u ||
+            cdata[0] > 3u) {
+            return RFC_ERR_INVALID_ARGUMENT;
+        }
+        col->has_srgb = 1u;
+        col->srgb_intent = cdata[0];
+    } else if (memcmp(ctype, "gAMA", 4) == 0) {
+        *out_handled = 1;
+        if (saw_plte || seen_idat || col->has_gama || clen != 4u) {
+            return RFC_ERR_INVALID_ARGUMENT;
+        }
+        uint32_t g = rd32be(cdata);
+        if (g == 0u || g > 0x7FFFFFFFu) {
+            return RFC_ERR_INVALID_ARGUMENT;
+        }
+        col->has_gama = 1u;
+        col->gama_scaled = g;
+    } else if (memcmp(ctype, "cHRM", 4) == 0) {
+        *out_handled = 1;
+        if (saw_plte || seen_idat || col->has_chrm || clen != 32u) {
+            return RFC_ERR_INVALID_ARGUMENT;
+        }
+        for (size_t i = 0u; i < 8u; i++) {
+            uint32_t v = rd32be(cdata + i * 4u);
+            if (v > 0x7FFFFFFFu) {
+                return RFC_ERR_INVALID_ARGUMENT;
+            }
+            col->chrm_xy[i] = v;
+        }
+        col->has_chrm = 1u;
+    } else if (memcmp(ctype, "cICP", 4) == 0) {
+        *out_handled = 1;
+        if (saw_plte || seen_idat || col->has_cicp || clen != 4u ||
+            cdata[2] != 0u || cdata[3] > 1u) {
+            return RFC_ERR_INVALID_ARGUMENT;
+        }
+        memcpy(col->cicp, cdata, 4u);
+        col->has_cicp = 1u;
+    } else if (memcmp(ctype, "mDCV", 4) == 0) {
+        *out_handled = 1;
+        if (saw_plte || seen_idat || col->has_mdcv || clen != 24u) {
+            return RFC_ERR_INVALID_ARGUMENT;
+        }
+        uint32_t max_dl = rd32be(cdata + 16u);
+        uint32_t min_dl = rd32be(cdata + 20u);
+        if (max_dl > 0x7FFFFFFFu || min_dl > 0x7FFFFFFFu) {
+            return RFC_ERR_INVALID_ARGUMENT;
+        }
+        for (size_t i = 0u; i < 8u; i++) {
+            col->mdcv_xy[i] = rd16be(cdata + i * 2u);
+        }
+        col->mdcv_max_dl = max_dl;
+        col->mdcv_min_dl = min_dl;
+        col->has_mdcv = 1u;
+    } else if (memcmp(ctype, "cLLI", 4) == 0) {
+        *out_handled = 1;
+        if (seen_idat || col->has_clli || clen != 8u) {
+            return RFC_ERR_INVALID_ARGUMENT;
+        }
+        uint32_t max_cll = rd32be(cdata);
+        uint32_t max_fall = rd32be(cdata + 4u);
+        if (max_cll > 0x7FFFFFFFu || max_fall > 0x7FFFFFFFu) {
+            return RFC_ERR_INVALID_ARGUMENT;
+        }
+        col->clli_max_cll = max_cll;
+        col->clli_max_fall = max_fall;
+        col->has_clli = 1u;
+    }
+    return RFC_OK;
 }
 
 static rfc_status png_prescan(const rfc_exec_context *exec,
@@ -1929,8 +2043,17 @@ static rfc_status png_prescan(const rfc_exec_context *exec,
                 saw_iend = 1;
                 pos += 12u;
                 break;
-            } else if ((ctype[0] & 0x20u) == 0u) {
-                return RFC_ERR_INVALID_ARGUMENT;
+            } else {
+                int c_handled = 0;
+                rfc_status cst = png_parse_color_chunk(
+                    ctype, cdata, clen, saw_plte, seen_idat, &out->color,
+                    &c_handled);
+                if (cst != RFC_OK) {
+                    return cst;
+                }
+                if (!c_handled && (ctype[0] & 0x20u) == 0u) {
+                    return RFC_ERR_INVALID_ARGUMENT;
+                }
             }
         }
         pos += 12u + (size_t)clen;
@@ -2015,6 +2138,7 @@ static rfc_status png_prescan(const rfc_exec_context *exec,
      * pointer; png_probe transfers pinfo.icc ownership only on RFC_OK. */
     out_probe->container_meta.icc = NULL;
     out_probe->container_meta.icc_len = out->icc_len;
+    out_probe->container_meta.color = out->color;
 
     rfc_status st =
         rfc_limits_check_probe(limits, out_probe, (uint64_t)size, 1);
@@ -2244,6 +2368,7 @@ static rfc_status png_decode(void *session,
     meta.icc = pinfo.icc;
     meta.icc_len = pinfo.icc_len;
     meta.orientation = pinfo.orientation;
+    meta.color = pinfo.color;
 
     rfc_frame *frames = NULL;
     size_t fcnt = 0u;
@@ -2257,9 +2382,10 @@ static rfc_status png_decode(void *session,
     int can_share_cli =
         (pinfo.color_type == 2u && pinfo.bit_depth == 8u &&
          pinfo.interlace == 0u && !pinfo.has_iccp && !pinfo.has_exif &&
-         !pinfo.has_trns && !pinfo.has_sbit && !pinfo.has_actl &&
-         pinfo.width <= RF_MAX_DIM && pinfo.height <= RF_MAX_DIM &&
-         probe.total_pixels <= RF_MAX_PIXELS && (uint64_t)size <= RF_MAX_FILE);
+         !rfc_colorimetry_has_any(&pinfo.color) && !pinfo.has_trns &&
+         !pinfo.has_sbit && !pinfo.has_actl && pinfo.width <= RF_MAX_DIM &&
+         pinfo.height <= RF_MAX_DIM && probe.total_pixels <= RF_MAX_PIXELS &&
+         (uint64_t)size <= RF_MAX_FILE);
 
     if (can_share_cli) {
         size_t ws_bytes = 0u;
@@ -2324,6 +2450,46 @@ typedef struct png_encode_ctx {
     png_infop info_ptr;
 } png_encode_ctx;
 
+static void png_write_colorimetry_chunks(png_structp png_ptr,
+                                         const rfc_colorimetry *c) {
+    if (!c || !rfc_colorimetry_has_any(c)) {
+        return;
+    }
+    if (c->has_cicp) {
+        png_write_chunk(png_ptr, (png_const_bytep)"cICP", c->cicp, 4u);
+    }
+    if (c->has_srgb) {
+        png_write_chunk(png_ptr, (png_const_bytep)"sRGB", &c->srgb_intent, 1u);
+    }
+    if (c->has_gama) {
+        uint8_t buf[4];
+        wr32be(buf, c->gama_scaled);
+        png_write_chunk(png_ptr, (png_const_bytep)"gAMA", buf, 4u);
+    }
+    if (c->has_chrm) {
+        uint8_t buf[32];
+        for (size_t i = 0u; i < 8u; i++) {
+            wr32be(buf + i * 4u, c->chrm_xy[i]);
+        }
+        png_write_chunk(png_ptr, (png_const_bytep)"cHRM", buf, 32u);
+    }
+    if (c->has_mdcv) {
+        uint8_t buf[24];
+        for (size_t i = 0u; i < 8u; i++) {
+            wr16be(buf + i * 2u, c->mdcv_xy[i]);
+        }
+        wr32be(buf + 16u, c->mdcv_max_dl);
+        wr32be(buf + 20u, c->mdcv_min_dl);
+        png_write_chunk(png_ptr, (png_const_bytep)"mDCV", buf, 24u);
+    }
+    if (c->has_clli) {
+        uint8_t buf[8];
+        wr32be(buf, c->clli_max_cll);
+        wr32be(buf + 4u, c->clli_max_fall);
+        png_write_chunk(png_ptr, (png_const_bytep)"cLLI", buf, 8u);
+    }
+}
+
 BASIC_NOINLINE static rfc_status png_encode_run(png_encode_ctx *ctx) {
     ctx->png_ptr = png_create_write_struct_2(
         PNG_LIBPNG_VER_STRING, &ctx->mem, basic_png_error, basic_png_warn,
@@ -2372,6 +2538,9 @@ BASIC_NOINLINE static rfc_status png_encode_run(png_encode_ctx *ctx) {
     }
 
     png_write_info(ctx->png_ptr, ctx->info_ptr);
+    if (ctx->chk->meta_policy == RFC_META_POLICY_PRESERVE) {
+        png_write_colorimetry_chunks(ctx->png_ptr, &ctx->chk->eff_color);
+    }
     if (ctx->sbits == 16u) {
         png_set_swap(ctx->png_ptr);
     }
@@ -2875,7 +3044,7 @@ static rfc_status pnm_decode(void *session,
         }
     }
 
-    rfc_metadata meta = {NULL, 0u, RFC_ORIENTATION_UNSPECIFIED, 0u};
+    rfc_metadata meta = {NULL, 0u, RFC_ORIENTATION_UNSPECIFIED, 0u, {0}};
     rfc_frame *frames = NULL;
     size_t fcnt = 0u;
     st = alloc_single_frame(exec, &probe.first_frame, &meta, &frames, &fcnt,
@@ -3526,7 +3695,7 @@ static rfc_status pam_decode(void *session,
         }
     }
 
-    rfc_metadata meta = {NULL, 0u, RFC_ORIENTATION_UNSPECIFIED, 0u};
+    rfc_metadata meta = {NULL, 0u, RFC_ORIENTATION_UNSPECIFIED, 0u, {0}};
     rfc_frame *frames = NULL;
     size_t fcnt = 0u;
     st = alloc_single_frame(exec, &probe.first_frame, &meta, &frames, &fcnt,
