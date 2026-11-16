@@ -1393,10 +1393,18 @@ class TestHostReports(unittest.TestCase):
                 c_rel="-O3 -DNDEBUG",
                 cxx_flags="",
                 cxx_rel="",
-                toggles={},
+                toggles={"CMAKE_ASM_FLAGS": ("STRING", "-include cache_asm.h")},
                 ninja_flags="-O3",
             )
             pkg_asm = deps_asm / "libjxl"
+            cache_asm_sub = pkg_asm / "cache_asm_sub.h"
+            cache_asm_sub.write_text("#define CACHE_ASM_SUB 1\n", encoding="utf-8")
+            (pkg_asm / "cache_asm.h").write_text(
+                "#define WRAP(x) #x\n"
+                "#define EXP(x) WRAP(x)\n"
+                "#include EXP(cache_asm_sub.h)\n",
+                encoding="utf-8",
+            )
             asm_feat = pkg_asm / "features.h"
             asm_feat.write_text("#define FEATURE 1\n", encoding="utf-8")
             (pkg_asm / "config.h").write_text(
@@ -1408,15 +1416,24 @@ class TestHostReports(unittest.TestCase):
             nasm_inc = pkg_asm / "nasm_feat.inc"
             nasm_inc.write_text("%define NFEAT 1\n", encoding="utf-8")
             (pkg_asm / "nasm_cfg.asm").write_text('%include "nasm_feat.inc"\n', encoding="utf-8")
-            (pkg_asm / "build.ninja").write_text(
+            nasm_inc2 = pkg_asm / "nasm_feat2.inc"
+            nasm_inc2.write_text("%define NFEAT2 1\n", encoding="utf-8")
+            (pkg_asm / "nasm_cfg2.asm").write_text('%include "nasm_feat2.inc"\n', encoding="utf-8")
+            nasm_before = pkg_asm / "nasm_before.inc"
+            nasm_before.write_text("%define NBEF 1\n", encoding="utf-8")
+            ninja_asm_path = pkg_asm / "build.ninja"
+            ninja_asm_tmpl = (
                 "build CMakeFiles/libjxl.dir/kern.S.obj: ASM_COMPILER__libjxl_Release kern.S\n"
                 "  FLAGS = -O3 -include config.h\n"
                 "  DEFINES = -DASM_MODE=1\n"
                 "build CMakeFiles/libjxl.dir/fast.asm.obj: ASM_NASM_COMPILER__libjxl_Release fast.asm\n"
                 "  FLAGS = -f win64 -P nasm_cfg.asm\n"
-                "  DEFINES = \n",
-                encoding="utf-8",
+                "  DEFINES = \n"
+                "build CMakeFiles/libjxl.dir/fast2.asm.obj: ASM_NASM_COMPILER__libjxl_Release fast2.asm\n"
+                '  FLAGS = -f win64 -P nasm_cfg2.asm -d NMODE={nmode} --before \'%include "nasm_before.inc"\'\n'
+                "  DEFINES = \n"
             )
+            ninja_asm_path.write_text(ninja_asm_tmpl.format(nmode=1), encoding="utf-8")
             bf_a1 = run_prov(deps_asm, base / "prov_a1.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
             asm_feat.write_text("#define FEATURE 2\n", encoding="utf-8")
             bf_a2 = run_prov(deps_asm, base / "prov_a2.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
@@ -1424,6 +1441,18 @@ class TestHostReports(unittest.TestCase):
             nasm_inc.write_text("%define NFEAT 2\n", encoding="utf-8")
             bf_a3 = run_prov(deps_asm, base / "prov_a3.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
             self.assertNotEqual(bf_a2, bf_a3)
+            nasm_inc2.write_text("%define NFEAT2 2\n", encoding="utf-8")
+            bf_a4 = run_prov(deps_asm, base / "prov_a4.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertNotEqual(bf_a3, bf_a4)
+            nasm_before.write_text("%define NBEF 2\n", encoding="utf-8")
+            bf_a5 = run_prov(deps_asm, base / "prov_a5.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertNotEqual(bf_a4, bf_a5)
+            ninja_asm_path.write_text(ninja_asm_tmpl.format(nmode=2), encoding="utf-8")
+            bf_a6 = run_prov(deps_asm, base / "prov_a6.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertNotEqual(bf_a5, bf_a6)
+            cache_asm_sub.write_text("#define CACHE_ASM_SUB 2\n", encoding="utf-8")
+            bf_a7 = run_prov(deps_asm, base / "prov_a7.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertNotEqual(bf_a6, bf_a7)
 
     def test_kodim23_compare_threads_oracle_and_history(self) -> None:
         self.assertEqual(sha256_file(KODIM_PATH), KODIM_EXPECTED_SHA256)

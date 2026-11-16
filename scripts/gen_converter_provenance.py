@@ -326,6 +326,7 @@ _DIRECTIVE_LINE_RE = re.compile(
 _DEFINE_OBJ_RE = re.compile(r'^[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]+(.+?)[ \t]*$')
 _UNDEF_RE = re.compile(r'^[ \t]*([A-Za-z_][A-Za-z0-9_]*)\b')
 _INCLUDE_ARG_RE = re.compile(r'^[ \t]*([<"])([^>"]+)[>"]')
+_NASM_INCLUDE_RE = re.compile(r'^[ \t]*%[ \t]*include[ \t]+(["\'])([^"\']+)\1', re.IGNORECASE)
 
 
 def _strip_c_comments(text: str) -> str:
@@ -481,7 +482,7 @@ def _parse_makefile_deps(dep_text: str) -> list[str]:
 
 def _clean_probe_args(tokens: list[str], compile_dir: Path | None) -> list[str]:
     out: list[str] = []
-    skip_next = ("-o", "-MF", "-MT", "-MQ", "-include-pch")
+    skip_next = ("-o", "-MF", "-MT", "-MQ", "-include-pch", "-Xassembler")
     keep_next = (
         "-include", "--include", "-imacros", "-isystem", "-I", "-iquote", "-idirafter",
         "-isysroot", "--sysroot", "-sysroot", "-L", "-B", "--gcc-toolchain",
@@ -518,26 +519,55 @@ def _tokens_have_forced_include(tokens: list[str], lang: str = "") -> bool:
             ("--include=", "-include", "-imacros")
         ):
             return True
-        if lang == "nasm" and (tok in ("-P", "-p") or tok.startswith(("-P", "-p"))):
+        if lang == "nasm" and (
+            tok in ("-P", "-p", "--before")
+            or tok.startswith(("-P", "-p", "--include=", "--before="))
+        ):
             return True
     return False
 
 
 def _clean_nasm_probe_args(tokens: list[str], compile_dir: Path | None) -> list[str]:
     out: list[str] = []
-    skip_next = ("-o", "-MF", "-MT", "-MQ")
-    keep_next = ("-f", "-P", "-p", "--include", "-include", "-I", "-i", "-D", "-U", "-d", "-u")
+    skip_next = ("-o", "-MF", "-MT", "-MQ", "-l", "-Z")
+    keep_next = (
+        "-f",
+        "-F",
+        "-P",
+        "-p",
+        "--include",
+        "-include",
+        "-I",
+        "-i",
+        "-D",
+        "-U",
+        "-d",
+        "-u",
+        "--before",
+        "--pragma",
+        "--bits",
+        "--prefix",
+        "--gprefix",
+        "--postfix",
+        "--gpostfix",
+        "--lprefix",
+        "--lpostfix",
+    )
     i = 0
     while i < len(tokens):
         tok = tokens[i]
         if tok in skip_next:
             i += 2 if i + 1 < len(tokens) else 1
             continue
+        if tok == "-@" and i + 1 < len(tokens):
+            rsp_p, _ = _resolve_input_path(tokens[i + 1], (compile_dir,) if compile_dir is not None else ())
+            if rsp_p.is_file():
+                out.extend((tok, tokens[i + 1]))
+            i += 2
+            continue
         if tok in keep_next and i + 1 < len(tokens):
             nxt = tokens[i + 1]
-            if tok == "--include":
-                out.extend(("-P", nxt))
-            elif tok == "-include":
+            if tok in ("--include", "-include"):
                 out.extend(("-P", nxt))
             else:
                 out.extend((tok, nxt))
@@ -546,8 +576,18 @@ def _clean_nasm_probe_args(tokens: list[str], compile_dir: Path | None) -> list[
         i += 1
         if not tok or tok in ("-M", "-MD", "-MMD", "-MP", "-MG", "-MV"):
             continue
+        if tok.startswith("--include="):
+            out.extend(("-P", tok[len("--include="):]))
+            continue
+        if tok.startswith("--before="):
+            out.extend(("--before", tok[len("--before="):]))
+            continue
         if tok.startswith("@") and len(tok) > 1:
             rsp_p, _ = _resolve_input_path(tok[1:], (compile_dir,) if compile_dir is not None else ())
+            if not rsp_p.is_file():
+                continue
+        elif tok.startswith("-@") and len(tok) > 2:
+            rsp_p, _ = _resolve_input_path(tok[2:], (compile_dir,) if compile_dir is not None else ())
             if not rsp_p.is_file():
                 continue
         if tok.startswith("-"):
@@ -730,6 +770,89 @@ def _hash_header_tree(
     return h.hexdigest()[:16]
 
 
+def _extract_nasm_search_dirs(tokens: list[str], compile_dir: Path | None) -> tuple[Path, ...]:
+    dirs: list[Path] = []
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        raw_dir = ""
+        if tok in ("-I", "-i") and i + 1 < len(tokens):
+            raw_dir = tokens[i + 1]
+            i += 2
+        elif (tok.startswith("-I") or tok.startswith("-i")) and len(tok) > 2:
+            if tok.startswith(("-include", "-imacros", "-isystem", "-iquote", "-idirafter", "-isysroot")):
+                i += 1
+                continue
+            raw_dir = tok[2:]
+            i += 1
+        else:
+            i += 1
+            continue
+        if raw_dir:
+            dp = Path(raw_dir)
+            if not dp.is_absolute() and compile_dir is not None:
+                dp = compile_dir / dp
+            if dp not in dirs:
+                dirs.append(dp)
+    return tuple(dirs)
+
+
+def _hash_nasm_include_tree(path: Path, search_dirs: tuple[Path, ...]) -> str:
+    h = hashlib.sha256()
+    seen: set[Path] = set()
+
+    def walk(cur: Path) -> None:
+        try:
+            canon = cur.resolve()
+        except OSError:
+            canon = cur
+        if canon in seen or len(seen) >= 256:
+            return
+        seen.add(canon)
+        try:
+            raw = cur.read_bytes()
+        except OSError:
+            return
+        h.update(len(raw).to_bytes(8, "little"))
+        h.update(raw)
+        text = raw.decode("utf-8", errors="replace").replace("\\\r\n", "").replace("\\\n", "")
+        for line in text.splitlines():
+            m = _NASM_INCLUDE_RE.match(line)
+            if m is None:
+                continue
+            inc_arg = m.group(2)
+            h.update(f"%include:{inc_arg}\0".encode("utf-8", errors="replace"))
+            rel = Path(inc_arg)
+            if rel.is_absolute():
+                if rel.is_file():
+                    walk(rel)
+                continue
+            cand_dirs = (search_dirs + (cur.parent,)) if cur.parent not in search_dirs else search_dirs
+            child, _ = _resolve_input_path(inc_arg, cand_dirs)
+            if child.is_file():
+                walk(child)
+
+    walk(path)
+    return h.hexdigest()[:16]
+
+
+def _format_sanitized_input_token(
+    opt: str,
+    arg: str,
+    include_fingerprint: bool,
+    resolved: Path,
+    hash_fn,
+) -> str:
+    p = Path(arg)
+    name = p.name or arg
+    sep = "" if opt in ("@", "-@") else ":"
+    if not include_fingerprint:
+        return f"{opt}{sep}{name}"
+    arg_sha = hashlib.sha256(arg.encode("utf-8", errors="replace")).hexdigest()[:16]
+    content_sha = hash_fn(resolved) if resolved.is_file() else "absent"
+    return f"{opt}{sep}{name}#p={arg_sha}#c={content_sha}"
+
+
 def _sanitize_forced_include_token(
     opt: str,
     arg: str,
@@ -739,21 +862,29 @@ def _sanitize_forced_include_token(
     prefix_dirs_count: int = 0,
     init_macros: dict[str, str] | None = None,
 ) -> str:
-    p = Path(arg)
-    name = p.name or arg
-    sep = "" if opt == "@" else ":"
-    if not include_fingerprint:
-        return f"{opt}{sep}{name}"
-    arg_sha = hashlib.sha256(arg.encode("utf-8", errors="replace")).hexdigest()[:16]
     resolved, hit_idx = _resolve_input_path(arg, search_dirs)
-    if not resolved.is_file():
-        content_sha = "absent"
-    elif inc_cats is not None:
+    if inc_cats is not None:
         chain_idx = (hit_idx - prefix_dirs_count) if (hit_idx is not None and hit_idx >= prefix_dirs_count) else None
-        content_sha = _hash_header_tree(resolved, chain_idx, inc_cats, init_macros)
+        hash_fn = lambda r: _hash_header_tree(r, chain_idx, inc_cats, init_macros)
     else:
-        content_sha = hashlib.sha256(resolved.read_bytes()).hexdigest()[:16]
-    return f"{opt}{sep}{name}#p={arg_sha}#c={content_sha}"
+        hash_fn = lambda r: hashlib.sha256(r.read_bytes()).hexdigest()[:16]
+    return _format_sanitized_input_token(opt, arg, include_fingerprint, resolved, hash_fn)
+
+
+def _sanitize_nasm_forced_include_token(
+    opt: str,
+    raw_arg: str,
+    include_fingerprint: bool,
+    search_dirs: tuple[Path, ...],
+) -> str:
+    resolved, _ = _resolve_input_path(raw_arg, search_dirs)
+    return _format_sanitized_input_token(
+        opt,
+        raw_arg,
+        include_fingerprint,
+        resolved,
+        lambda p: _hash_nasm_include_tree(p, search_dirs),
+    )
 
 
 def _expand_response_tokens(
@@ -766,9 +897,20 @@ def _expand_response_tokens(
         return list(tokens)
     out: list[str] = []
     search = (compile_dir,) if compile_dir is not None else ()
-    for tok in tokens:
-        if tok.startswith("@") and len(tok) > 1:
-            rsp_path, _ = _resolve_input_path(tok[1:], search)
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        rsp_arg: str | None = None
+        step = 1
+        if tok == "-@" and i + 1 < len(tokens):
+            rsp_arg = tokens[i + 1]
+            step = 2
+        elif tok.startswith("-@") and len(tok) > 2:
+            rsp_arg = tok[2:]
+        elif tok.startswith("@") and len(tok) > 1:
+            rsp_arg = tok[1:]
+        if rsp_arg is not None:
+            rsp_path, _ = _resolve_input_path(rsp_arg, search)
             try:
                 canon = rsp_path.resolve()
             except OSError:
@@ -778,11 +920,14 @@ def _expand_response_tokens(
                     raw_text = rsp_path.read_text(encoding="utf-8", errors="replace")
                     inner = shlex.split(raw_text, posix=True)
                 except (OSError, ValueError):
-                    out.append(tok)
+                    out.extend(tokens[i : i + step])
+                    i += step
                     continue
                 out.extend(_expand_response_tokens(inner, compile_dir, _seen | {canon}, _depth + 1))
+                i += step
                 continue
-        out.append(tok)
+        out.extend(tokens[i : i + step])
+        i += step
     return out
 
 
@@ -821,6 +966,78 @@ def _normalize_preprocessor_forwarding(tokens: list[str]) -> list[str]:
     return out
 
 
+def _consume_nasm_semantic_token(
+    flags_tokens: list[str],
+    idx: int,
+    out: list[str],
+    include_fingerprint: bool,
+    deps_root: Path | None,
+    compile_dir: Path | None,
+    nasm_search: tuple[Path, ...],
+) -> int | None:
+    tok = flags_tokens[idx]
+    nxt = flags_tokens[idx + 1] if idx + 1 < len(flags_tokens) else None
+    if tok in ("-l", "-Z") and nxt is not None:
+        if include_fingerprint:
+            out.append(f"{tok}:{_normalize_search_path(nxt, deps_root)}")
+        return idx + 2
+    if tok in ("-I", "-i") and nxt is not None:
+        if include_fingerprint:
+            out.append(f"{tok}:{_normalize_search_path(nxt, deps_root)}")
+        return idx + 2
+    if (tok.startswith("-I") or tok.startswith("-i")) and len(tok) > 2:
+        if not tok.startswith(("-include", "-imacros", "-isystem", "-iquote", "-idirafter", "-isysroot")):
+            if include_fingerprint:
+                out.append(f"{tok[:2]}:{_normalize_search_path(tok[2:], deps_root)}")
+            return idx + 1
+    if tok in ("-P", "-p", "--include") and nxt is not None:
+        out.append(_sanitize_nasm_forced_include_token("-P", nxt, include_fingerprint, nasm_search))
+        return idx + 2
+    if tok.startswith("--include="):
+        out.append(_sanitize_nasm_forced_include_token("-P", tok[len("--include="):], include_fingerprint, nasm_search))
+        return idx + 1
+    if (tok.startswith("-P") or tok.startswith("-p")) and len(tok) > 2:
+        out.append(_sanitize_nasm_forced_include_token("-P", tok[2:], include_fingerprint, nasm_search))
+        return idx + 1
+    if tok in ("-d", "-u") and nxt is not None:
+        norm_tok = "-D" if tok == "-d" else "-U"
+        parsed, next_i = _consume_define_token([norm_tok, nxt], 0, include_fingerprint)
+        if next_i > 1:
+            if parsed is not None:
+                out.append(parsed)
+            return idx + 2
+    if (tok.startswith("-d") or tok.startswith("-u")) and len(tok) > 2:
+        norm_tok = ("-D" if tok.startswith("-d") else "-U") + tok[2:]
+        parsed, _ = _consume_define_token([norm_tok], 0, include_fingerprint)
+        if parsed is not None:
+            out.append(parsed)
+        return idx + 1
+    if tok in (
+        "-f",
+        "-F",
+        "--before",
+        "--pragma",
+        "--bits",
+        "--prefix",
+        "--gprefix",
+        "--postfix",
+        "--gpostfix",
+        "--lprefix",
+        "--lpostfix",
+    ) and nxt is not None:
+        out.append(f"{tok} {nxt}")
+        return idx + 2
+    if tok == "-@" and nxt is not None:
+        rsp_search = (compile_dir,) if compile_dir is not None else ()
+        out.append(_sanitize_forced_include_token("-@", nxt, include_fingerprint, rsp_search))
+        return idx + 2
+    if tok.startswith("-@") and len(tok) > 2:
+        rsp_search = (compile_dir,) if compile_dir is not None else ()
+        out.append(_sanitize_forced_include_token("-@", tok[2:], include_fingerprint, rsp_search))
+        return idx + 1
+    return None
+
+
 def _semantic_ninja_tokens(
     flags_tokens: list[str],
     define_tokens: list[str],
@@ -828,6 +1045,7 @@ def _semantic_ninja_tokens(
     deps_root: Path | None = None,
     search_dirs: tuple[Path, ...] = (),
     search_context_tokens: tuple[str, ...] | list[str] = (),
+    lang: str = "",
 ) -> list[str]:
     out: list[str] = []
     compile_dir = search_dirs[0] if search_dirs else None
@@ -846,6 +1064,7 @@ def _semantic_ninja_tokens(
     prefix_dirs = tuple(search_dirs)
     eff_search = prefix_dirs + quote_chain
     prefix_count = len(prefix_dirs)
+    nasm_search = (prefix_dirs + _extract_nasm_search_dirs(ctx_tokens, compile_dir)) if lang == "nasm" else prefix_dirs
     i = 0
     two_tok_search = (
         "-isystem",
@@ -873,6 +1092,17 @@ def _semantic_ninja_tokens(
     while i < len(flags_tokens):
         tok = flags_tokens[i]
         if tok in two_tok_io:
+            i += 2
+            continue
+        if lang == "nasm":
+            nasm_next = _consume_nasm_semantic_token(
+                flags_tokens, i, out, include_fingerprint, deps_root, compile_dir, nasm_search
+            )
+            if nasm_next is not None:
+                i = nasm_next
+                continue
+        if tok == "-Xassembler" and i + 1 < len(flags_tokens):
+            out.append(f"-Xassembler {flags_tokens[i + 1]}")
             i += 2
             continue
         if tok in two_tok_search and i + 1 < len(flags_tokens):
@@ -1003,7 +1233,7 @@ def _parse_ninja_compile_blocks(
     if not ninja_path.is_file():
         return {"blocks": [], "contexts": [], "has_cxx": False, "has_c": False, "has_asm": False}
     blocks: list[tuple[str, tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]]] = []
-    block_ctxs: list[list[str]] = []
+    block_ctxs: list[tuple[str, list[str]]] = []
     seen_blocks: set[tuple[str, tuple[str, ...], tuple[str, ...]]] = set()
     has_cxx = False
     has_c = False
@@ -1031,6 +1261,7 @@ def _parse_ninja_compile_blocks(
                 deps_root=deps_root,
                 search_dirs=base_search_dirs,
                 search_context_tokens=ctx_toks,
+                lang=cur_probe_lang,
             )
         )
         fp_d = tuple(
@@ -1041,9 +1272,10 @@ def _parse_ninja_compile_blocks(
                 deps_root=deps_root,
                 search_dirs=base_search_dirs,
                 search_context_tokens=ctx_toks,
+                lang=cur_probe_lang,
             )
         )
-        uniq_key = (cur_lang, fp_f, fp_d)
+        uniq_key = (cur_probe_lang, fp_f, fp_d)
         if uniq_key not in seen_blocks:
             seen_blocks.add(uniq_key)
             disp_f = tuple(
@@ -1054,6 +1286,7 @@ def _parse_ninja_compile_blocks(
                     deps_root=deps_root,
                     search_dirs=base_search_dirs,
                     search_context_tokens=ctx_toks,
+                    lang=cur_probe_lang,
                 )
             )
             disp_d = tuple(
@@ -1064,6 +1297,7 @@ def _parse_ninja_compile_blocks(
                     deps_root=deps_root,
                     search_dirs=base_search_dirs,
                     search_context_tokens=ctx_toks,
+                    lang=cur_probe_lang,
                 )
             )
             blocks.append((cur_lang, disp_f, disp_d, fp_f, fp_d))
@@ -1092,9 +1326,13 @@ def _parse_ninja_compile_blocks(
                     cur_lang = "asm"
                     cur_probe_lang = "nasm"
                     has_asm = True
-                elif rule.startswith("ASM_COMPILER__") or rule.startswith("ASM_MASM_COMPILER__"):
+                elif rule.startswith(("ASM_COMPILER__", "ASM-ATT_COMPILER__")):
                     cur_lang = "asm"
                     cur_probe_lang = "asm"
+                    has_asm = True
+                elif rule.startswith("ASM_MASM_COMPILER__"):
+                    cur_lang = "asm"
+                    cur_probe_lang = "masm"
                     has_asm = True
             continue
         if not cur_lang:
@@ -1440,6 +1678,41 @@ def _collect_pkg_fingerprint_state(
         cc_path, default_cxx if is_cxx else default_cc, "cxx" if is_cxx else "c", raw_cache_toks, compile_dir
     )
     default_nasm = str(ROOT / ("tools/nasm/nasm.exe" if os.name == "nt" else "tools/nasm-linux/bin/nasm"))
+    extra_cache_payload: dict[str, object] = {}
+    for cmake_pfx, p_lang, p_cc, p_fb, key_pfx in (
+        (
+            "CMAKE_ASM_FLAGS",
+            "asm",
+            cache.get("CMAKE_ASM_COMPILER") or cache.get("CMAKE_C_COMPILER") or default_cc,
+            default_cc,
+            "asm_cache",
+        ),
+        (
+            "CMAKE_ASM_NASM_FLAGS",
+            "nasm",
+            cache.get("CMAKE_ASM_NASM_COMPILER") or default_nasm,
+            default_nasm,
+            "nasm_cache",
+        ),
+    ):
+        cfg_flag = f"{cmake_pfx}_{btype.upper()}"
+        if cmake_pfx not in cache and cfg_flag not in cache:
+            continue
+        raw_extra = shlex.split(f"{cache.get(cmake_pfx, '')} {cache.get(cfg_flag, '')}", posix=True)
+        extra_fp = _semantic_ninja_tokens(
+            raw_extra,
+            [],
+            include_fingerprint=True,
+            deps_root=deps_root,
+            search_dirs=base_search_dirs,
+            lang=p_lang,
+        )
+        extra_fdeps = _probe_compiler_forced_include_deps(p_cc, p_fb, p_lang, raw_extra, compile_dir)
+        if extra_fp:
+            extra_cache_payload[f"{key_pfx}_cmd"] = extra_fp
+        if extra_fdeps:
+            extra_cache_payload[f"{key_pfx}_forced_deps"] = extra_fdeps
+
     blocks = list(ninja_info["blocks"])
     block_ctxs = list(ninja_info.get("contexts", []))
     ninja_blocks_json = []
@@ -1486,6 +1759,7 @@ def _collect_pkg_fingerprint_state(
         "cache_options": sem_cache,
         "cmake_options": list(pkg.get("cmake_options", [])),
         "subdeps": subdeps_json,
+        **extra_cache_payload,
     }
     return {
         "cache": cache,
