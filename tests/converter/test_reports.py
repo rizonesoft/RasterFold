@@ -1191,6 +1191,90 @@ class TestHostReports(unittest.TestCase):
             bf_ds4 = run_prov(deps_def_spc, base / "prov_ds4.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
             self.assertNotEqual(bf_ds3, bf_ds4)
 
+            # DEFINES = @defs.rsp with semantic flags/includes and cross-variable INCLUDES/DEFINES search context
+            deps_def_full = base / "deps_def_full"
+            write_pkg(
+                deps_def_full,
+                "libjxl",
+                True,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="-march=x86-64-v2",
+                cxx_rel="-O3 -DNDEBUG",
+                toggles={},
+                ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG -std=c++17 -include flag_cfg.h",
+                ninja_includes="-I cross_inc",
+                ninja_defs="@defs.rsp",
+            )
+            pkg_def_full = deps_def_full / "libjxl"
+            (pkg_def_full / "cross_inc").mkdir(parents=True, exist_ok=True)
+            (pkg_def_full / "def_inc").mkdir(parents=True, exist_ok=True)
+            cross_hdr = pkg_def_full / "cross_inc" / "config.h"
+            cross_hdr.write_text("#define FEATURE 1\n", encoding="utf-8")
+            flag_hdr = pkg_def_full / "def_inc" / "flag_cfg.h"
+            flag_hdr.write_text("#define FLAG_KNOB 1\n", encoding="utf-8")
+            (pkg_def_full / "defs.rsp").write_text("-I def_inc -include config.h -ffast-math\n", encoding="utf-8")
+            bf_df1 = run_prov(deps_def_full, base / "prov_df1.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertIn("-include:config.h", bf_df1)
+            self.assertIn("-ffast-math", bf_df1)
+            cross_hdr.write_text("#define FEATURE 2\n", encoding="utf-8")
+            bf_df2 = run_prov(deps_def_full, base / "prov_df2.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertNotEqual(bf_df1, bf_df2)
+            flag_hdr.write_text("#define FLAG_KNOB 2\n", encoding="utf-8")
+            bf_df3 = run_prov(deps_def_full, base / "prov_df3.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertNotEqual(bf_df2, bf_df3)
+
+            # Forwarded preprocessor (-Wp,..., -Xpreprocessor) and assembler (-Wa,...) flags
+            deps_fwd = base / "deps_fwd"
+            write_pkg(
+                deps_fwd,
+                "libjxl",
+                True,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="-march=x86-64-v2",
+                cxx_rel="-O3 -DNDEBUG",
+                toggles={},
+                ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG -std=c++17 -Wp,-I,wp_inc,-include,wp.h -Xpreprocessor -DFWD_KNOB=1 -Wa,--defsym,ASM_SYM=1",
+            )
+            pkg_fwd = deps_fwd / "libjxl"
+            (pkg_fwd / "wp_inc").mkdir(parents=True, exist_ok=True)
+            wp_hdr = pkg_fwd / "wp_inc" / "wp.h"
+            wp_hdr.write_text("#define WP_VAL 1\n", encoding="utf-8")
+            bf_fw1 = run_prov(deps_fwd, base / "prov_fw1.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertIn("-include:wp.h", bf_fw1)
+            self.assertIn("-DFWD_KNOB=1", bf_fw1)
+            self.assertIn("-Wa,--defsym,ASM_SYM=1", bf_fw1)
+            wp_hdr.write_text("#define WP_VAL 2\n", encoding="utf-8")
+            bf_fw2 = run_prov(deps_fwd, base / "prov_fw2.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertNotEqual(bf_fw1, bf_fw2)
+            write_pkg(
+                deps_fwd,
+                "libjxl",
+                True,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="-march=x86-64-v2",
+                cxx_rel="-O3 -DNDEBUG",
+                toggles={},
+                ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG -std=c++17 -Wp,-I,wp_inc,-include,wp.h -Xpreprocessor -DFWD_KNOB=2 -Wa,--defsym,ASM_SYM=1",
+            )
+            bf_fw3 = run_prov(deps_fwd, base / "prov_fw3.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertNotEqual(bf_fw2, bf_fw3)
+            write_pkg(
+                deps_fwd,
+                "libjxl",
+                True,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="-march=x86-64-v2",
+                cxx_rel="-O3 -DNDEBUG",
+                toggles={},
+                ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG -std=c++17 -Wp,-I,wp_inc,-include,wp.h -Xpreprocessor -DFWD_KNOB=2 -Wa,--defsym,ASM_SYM=2",
+            )
+            bf_fw4 = run_prov(deps_fwd, base / "prov_fw4.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertNotEqual(bf_fw3, bf_fw4)
+
     def test_kodim23_compare_threads_oracle_and_history(self) -> None:
         self.assertEqual(sha256_file(KODIM_PATH), KODIM_EXPECTED_SHA256)
         with Image.open(KODIM_PATH) as im:

@@ -432,18 +432,44 @@ def _consume_define_token(
     return None, idx + 1
 
 
+def _normalize_preprocessor_forwarding(tokens: list[str]) -> list[str]:
+    out: list[str] = []
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        if tok.startswith("-Wp,") and len(tok) > 4:
+            out.extend(part for part in tok[4:].split(",") if part)
+            i += 1
+            continue
+        if tok == "-Xpreprocessor" and i + 1 < len(tokens):
+            out.append(tokens[i + 1])
+            i += 2
+            continue
+        out.append(tok)
+        i += 1
+    return out
+
+
 def _semantic_ninja_tokens(
     flags_tokens: list[str],
     define_tokens: list[str],
     include_fingerprint: bool = False,
     deps_root: Path | None = None,
     search_dirs: tuple[Path, ...] = (),
+    search_context_tokens: tuple[str, ...] | list[str] = (),
 ) -> list[str]:
     out: list[str] = []
     compile_dir = search_dirs[0] if search_dirs else None
-    flags_tokens = _expand_response_tokens(flags_tokens, compile_dir)
-    define_tokens = _expand_response_tokens(define_tokens, compile_dir)
-    inc_dirs = _extract_token_search_dirs(flags_tokens, compile_dir)
+    flags_tokens = _normalize_preprocessor_forwarding(
+        _expand_response_tokens(flags_tokens, compile_dir)
+        + _expand_response_tokens(define_tokens, compile_dir)
+    )
+    ctx_tokens = (
+        _normalize_preprocessor_forwarding(_expand_response_tokens(list(search_context_tokens), compile_dir))
+        if search_context_tokens
+        else flags_tokens
+    )
+    inc_dirs = _extract_token_search_dirs(ctx_tokens, compile_dir)
     all_search: list[Path] = []
     for d in list(search_dirs) + list(inc_dirs):
         if d not in all_search:
@@ -523,7 +549,9 @@ def _semantic_ninja_tokens(
             i += 2
             continue
         i += 1
-        if not tok or tok in ("-c", "-pipe", "-MD", "-MMD", "-MP", "-MG", "-MV", "-w") or tok.startswith("-W"):
+        if not tok or tok in ("-c", "-pipe", "-MD", "-MMD", "-MP", "-MG", "-MV", "-w") or (
+            tok.startswith("-W") and not tok.startswith(("-Wa,", "-Wl,"))
+        ):
             continue
         if tok.startswith("@") and len(tok) > 1:
             rsp_search = (compile_dir,) if compile_dir is not None else ()
@@ -569,17 +597,6 @@ def _semantic_ninja_tokens(
         if tok.startswith("-"):
             out.append(tok)
 
-    j = 0
-    while j < len(define_tokens):
-        dtok = define_tokens[j]
-        if dtok.startswith("@") and len(dtok) > 1:
-            rsp_search = (compile_dir,) if compile_dir is not None else ()
-            out.append(_sanitize_forced_include_token("@", dtok[1:], include_fingerprint, rsp_search))
-            j += 1
-            continue
-        parsed, j = _consume_define_token(define_tokens, j, include_fingerprint)
-        if parsed is not None:
-            out.append(parsed)
     return out
 
 
@@ -609,6 +626,7 @@ def _parse_ninja_compile_blocks(
     def flush_block() -> None:
         if not cur_lang:
             return
+        ctx_toks = cur_defs + cur_includes + cur_flags
         fp_f = tuple(
             _semantic_ninja_tokens(
                 cur_includes + cur_flags,
@@ -616,11 +634,17 @@ def _parse_ninja_compile_blocks(
                 include_fingerprint=True,
                 deps_root=deps_root,
                 search_dirs=base_search_dirs,
+                search_context_tokens=ctx_toks,
             )
         )
         fp_d = tuple(
             _semantic_ninja_tokens(
-                [], cur_defs, include_fingerprint=True, deps_root=deps_root, search_dirs=base_search_dirs
+                [],
+                cur_defs,
+                include_fingerprint=True,
+                deps_root=deps_root,
+                search_dirs=base_search_dirs,
+                search_context_tokens=ctx_toks,
             )
         )
         uniq_key = (cur_lang, fp_f, fp_d)
@@ -633,11 +657,17 @@ def _parse_ninja_compile_blocks(
                     include_fingerprint=False,
                     deps_root=deps_root,
                     search_dirs=base_search_dirs,
+                    search_context_tokens=ctx_toks,
                 )
             )
             disp_d = tuple(
                 _semantic_ninja_tokens(
-                    [], cur_defs, include_fingerprint=False, deps_root=deps_root, search_dirs=base_search_dirs
+                    [],
+                    cur_defs,
+                    include_fingerprint=False,
+                    deps_root=deps_root,
+                    search_dirs=base_search_dirs,
+                    search_context_tokens=ctx_toks,
                 )
             )
             blocks.append((cur_lang, disp_f, disp_d, fp_f, fp_d))
@@ -1071,7 +1101,7 @@ def _extract_package_build_info(
     first_bf: list[str] | None = None
     for bl, bf, bd, _fpf, _fpd in blocks:
         if bl != "asm":
-            bf_non_def = [t for t in bf if (not t.startswith("-D") and not t.startswith("-U")) or t == "-DNDEBUG"]
+            bf_non_def = [t for t in (bf + bd) if (not t.startswith("-D") and not t.startswith("-U")) or t == "-DNDEBUG"]
             if first_bf is None:
                 first_bf = bf_non_def
                 disp_ninja_flags.extend(bf_non_def)
