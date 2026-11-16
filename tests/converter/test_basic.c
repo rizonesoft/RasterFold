@@ -83,6 +83,52 @@ static void t_free(void *ctx, void *ptr) {
     }
 }
 
+static void fill_minimal_srgb_icc(uint8_t valid_icc[132]) {
+    memset(valid_icc, 0, 132u);
+    wr32be(valid_icc + 0u, 132u);
+    wr32be(valid_icc + 8u, 0x02100000u);
+    memcpy(valid_icc + 12u, "mntrRGB XYZ ", 12u);
+    valid_icc[24u] = 0x07u;
+    valid_icc[25u] = 0xEAu; /* year 2026 */
+    valid_icc[27u] = 11u;
+    valid_icc[29u] = 16u; /* month 11, day 16 */
+    memcpy(valid_icc + 36u, "acsp", 4u);
+    wr32be(valid_icc + 68u, 0x0000F6D6u); /* D50 X */
+    wr32be(valid_icc + 72u, 0x00010000u); /* D50 Y */
+    wr32be(valid_icc + 76u, 0x0000D32Du); /* D50 Z */
+}
+
+typedef struct grow_fault_alloc_state {
+    tracked_alloc_state track;
+    size_t fail_above;
+    size_t max_size_seen;
+    size_t cancel_threshold;
+    const rfc_session_adapter *cancel_adp;
+    void *cancel_sess;
+    int cancel_triggered;
+} grow_fault_alloc_state;
+
+static void *gf_alloc(void *ctx, size_t sz) {
+    grow_fault_alloc_state *g = (grow_fault_alloc_state *)ctx;
+    if (sz > g->max_size_seen) {
+        g->max_size_seen = sz;
+    }
+    if (g->fail_above > 0u && sz > g->fail_above) {
+        return NULL;
+    }
+    if (g->cancel_threshold > 0u && !g->cancel_triggered &&
+        sz >= g->cancel_threshold && g->cancel_adp && g->cancel_sess) {
+        g->cancel_triggered = 1;
+        g->cancel_adp->cancel_session(g->cancel_sess);
+    }
+    return t_alloc(&g->track, sz);
+}
+
+static void gf_free(void *ctx, void *ptr) {
+    grow_fault_alloc_state *g = (grow_fault_alloc_state *)ctx;
+    t_free(&g->track, ptr);
+}
+
 static void init_exec(rfc_exec_context *exec,
                       tracked_alloc_state *st,
                       rfc_allocator *alloc,
@@ -702,16 +748,7 @@ static void test_bmp_depths_alpha_and_icc(void) {
     /* V5 embedded ICC in BMP triggers RFC_ERR_METADATA_POLICY on BMP->BMP preserve,
      * succeeds on BMP->PNG preserve and BMP->BMP with ack or strip. */
     uint8_t valid_icc[132];
-    memset(valid_icc, 0, sizeof(valid_icc));
-    wr32be(valid_icc + 0u, (uint32_t)sizeof(valid_icc));
-    wr32be(valid_icc + 8u, 0x02100000u);
-    memcpy(valid_icc + 12u, "mntrRGB XYZ ", 12u);
-    valid_icc[24u] = 0x07u; valid_icc[25u] = 0xEAu; /* year 2026 */
-    valid_icc[27u] = 11u;   valid_icc[29u] = 16u;   /* month 11, day 16 */
-    memcpy(valid_icc + 36u, "acsp", 4u);
-    wr32be(valid_icc + 68u, 0x0000F6D6u); /* D50 X */
-    wr32be(valid_icc + 72u, 0x00010000u); /* D50 Y */
-    wr32be(valid_icc + 76u, 0x0000D32Du); /* D50 Z */
+    fill_minimal_srgb_icc(valid_icc);
 
     uint32_t w = 4u, h = 4u;
     size_t row = 12u;
@@ -935,6 +972,26 @@ static void test_png_depths_routes_budget_and_exif(void) {
     CHECK(bs_shared.rejected_count > 0ull);
     CHECK(bs_shared.current_allocated_bytes == 0ull);
     rfc_budget_destroy(b_shared);
+    /* Check shared baseline PNG decode peak accounting without dummy malloc. */
+    rfc_budget *b_shared_ok = rfc_budget_create(1024ull * 1024ull);
+    CHECK(b_shared_ok != NULL);
+    rfc_allocator ba_shared_ok;
+    rfc_budget_allocator(b_shared_ok, &ba_shared_ok);
+    ex_shared.allocator = &ba_shared_ok;
+    ex_shared.budget = b_shared_ok;
+    CHECK(png_adp->open_session(&ex_shared, &ds1) == RFC_OK);
+    CHECK(png_adp->decode_session(ds1, &ex_shared, png_rgb8.data, png_rgb8.len,
+                                  NULL, 0u, &df1, &dc1, NULL) == RFC_OK);
+    CHECK(df1 != NULL && dc1 == 1u);
+    png_adp->close_session(ds1);
+    rfc_budget_stats_get(b_shared_ok, &bs_shared);
+    CHECK(bs_shared.peak_allocated_bytes >= 28736ull);
+    CHECK(bs_shared.current_allocated_bytes < 28736ull);
+    rfc_frame_free(&df1[0]);
+    ba_shared_ok.free(ba_shared_ok.ctx, df1);
+    rfc_budget_stats_get(b_shared_ok, &bs_shared);
+    CHECK(bs_shared.current_allocated_bytes == 0ull);
+    rfc_budget_destroy(b_shared_ok);
     rfc_encoded_free(&png_rgb8);
 
     /* Route B (libpng 1.6.59): RGB16 64x64 decode (24576B frame + libpng
@@ -1124,6 +1181,149 @@ static void test_png_depths_routes_budget_and_exif(void) {
                                   &sub4_enc) == RFC_ERR_UNSUPPORTED_SAMPLE);
     rfc_frame_free(&sub4_fr);
 
+    /* ICC-bearing PNG exceeding limits_override.max_width: zero dangling ICC ptr */
+    uint8_t valid_icc[132];
+    fill_minimal_srgb_icc(valid_icc);
+    rfc_frame f8_icc = {0};
+    CHECK(test_alloc_frame(&f8_icc, &l8, NULL, &alloc) == RFC_OK);
+    fill_test_pattern(&f8_icc, 89u);
+    rfc_metadata meta_icc = {valid_icc, sizeof(valid_icc),
+                             RFC_ORIENTATION_NORMAL, 0u};
+    rfc_encoded icc_png = {0};
+    CHECK(png_adp->encode_session(ps, &exec, &f8_icc, 1u, &meta_icc, NULL, 0u,
+                                  &icc_png) == RFC_OK);
+    rfc_frame_free(&f8_icc);
+
+    rfc_exec_context exec_mw = exec;
+    exec_mw.limits.max_width = 4u;
+    memset(&pr, 0, sizeof(pr));
+    CHECK(png_adp->probe_session(ps, &exec_mw, icc_png.data, icc_png.len, &pr) ==
+          RFC_ERR_LIMIT_EXCEEDED);
+    CHECK(pr.container_meta.icc == NULL && pr.container_meta.icc_len == 0u);
+
+    rfc_limits lim_mw;
+    rfc_limits_default(&lim_mw);
+    lim_mw.max_width = 4u;
+    rfc_job_spec icc_lim_sp;
+    memset(&icc_lim_sp, 0, sizeof(icc_lim_sp));
+    icc_lim_sp.source_format = RFC_FORMAT_PNG;
+    icc_lim_sp.target_format = RFC_FORMAT_PNG;
+    icc_lim_sp.source_bytes = icc_png.data;
+    icc_lim_sp.source_size = icc_png.len;
+    icc_lim_sp.limits_override = &lim_mw;
+    icc_lim_sp.expected_working_set_bytes = 256u * 1024u;
+    icc_lim_sp.has_stage_ops = 1;
+    icc_lim_sp.stage_ops.on_export = stage_export_noop;
+    CHECK(rfc_scheduler_submit(sched, NULL, &icc_lim_sp, &job) == RFC_OK);
+    CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
+    CHECK(rfc_job_snapshot_get(job, &snap) == RFC_OK);
+    CHECK(snap.state == RFC_JOB_FAILED &&
+          snap.status == RFC_ERR_LIMIT_EXCEEDED);
+    CHECK(snap.budget.current_allocated_bytes == 0ull);
+    rfc_job_release(job);
+    rfc_encoded_free(&icc_png);
+
+    /* Post-longjmp cleanup under optimization (-O3): noisy 128x512 RGBA16 PNG
+     * forcing png_write_buf growth > 4096 before OOM & cancellation, plus
+     * post-header corrupt-stream IDAT libpng decode error cleanup. */
+    rfc_layout noisy_lay = {RFC_SAMPLE_RGBA16, RFC_ALPHA_STRAIGHT, 128u, 512u,
+                            0u, 16u};
+    rfc_frame noisy_fr = {0};
+    CHECK(test_alloc_frame(&noisy_fr, &noisy_lay, NULL, &alloc) == RFC_OK);
+    uint32_t rng = 0x13579BDFu;
+    for (size_t i = 0u; i + 1u < noisy_fr.data_len; i += 2u) {
+        rng ^= rng << 13;
+        rng ^= rng >> 17;
+        rng ^= rng << 5;
+        uint16_t v = (uint16_t)(rng & 0xFFFFu);
+        memcpy(noisy_fr.data + i, &v, 2u);
+    }
+
+    grow_fault_alloc_state oom_gf;
+    memset(&oom_gf, 0, sizeof(oom_gf));
+    oom_gf.fail_above = 16384u;
+    rfc_allocator gf_a = {gf_alloc, gf_free, &oom_gf};
+    rfc_exec_context ex_gf = exec;
+    ex_gf.allocator = &gf_a;
+    void *es_gf = NULL;
+    CHECK(png_adp->open_session(&ex_gf, &es_gf) == RFC_OK);
+    rfc_encoded gf_enc = {0};
+    CHECK(png_adp->encode_session(es_gf, &ex_gf, &noisy_fr, 1u, NULL, NULL, 0u,
+                                  &gf_enc) == RFC_ERR_OUT_OF_MEMORY);
+    CHECK(gf_enc.data == NULL && oom_gf.max_size_seen > 16384u &&
+          oom_gf.track.live == 0u);
+    png_adp->close_session(es_gf);
+
+    grow_fault_alloc_state can_gf;
+    memset(&can_gf, 0, sizeof(can_gf));
+    can_gf.fail_above = SIZE_MAX;
+    can_gf.cancel_threshold = 8192u;
+    can_gf.cancel_adp = png_adp;
+    rfc_allocator can_a = {gf_alloc, gf_free, &can_gf};
+    rfc_exec_context ex_can = exec;
+    ex_can.allocator = &can_a;
+    void *es_can = NULL;
+    CHECK(png_adp->open_session(&ex_can, &es_can) == RFC_OK);
+    can_gf.cancel_sess = es_can;
+    rfc_encoded can_enc = {0};
+    CHECK(png_adp->encode_session(es_can, &ex_can, &noisy_fr, 1u, NULL, NULL,
+                                  0u, &can_enc) == RFC_ERR_CANCELLED);
+    CHECK(can_enc.data == NULL && can_gf.cancel_triggered == 1 &&
+          can_gf.max_size_seen >= 8192u && can_gf.track.live == 0u);
+    png_adp->close_session(es_can);
+
+    /* Encode full noisy PNG, then trigger libpng decode longjmp after IDAT rows */
+    rfc_encoded noisy_png = {0};
+    void *es_full = NULL;
+    CHECK(png_adp->open_session(&exec, &es_full) == RFC_OK);
+    CHECK(png_adp->encode_session(es_full, &exec, &noisy_fr, 1u, NULL, NULL, 0u,
+                                  &noisy_png) == RFC_OK);
+    png_adp->close_session(es_full);
+    rfc_frame_free(&noisy_fr);
+
+    uint8_t *bad_idat = (uint8_t *)malloc(noisy_png.len);
+    CHECK(bad_idat != NULL);
+    memcpy(bad_idat, noisy_png.data, noisy_png.len);
+    size_t cpos = 8u;
+    int patched_idat = 0;
+    while (cpos + 12u <= noisy_png.len) {
+        uint32_t clen = ((uint32_t)bad_idat[cpos] << 24) |
+                        ((uint32_t)bad_idat[cpos + 1] << 16) |
+                        ((uint32_t)bad_idat[cpos + 2] << 8) |
+                        (uint32_t)bad_idat[cpos + 3];
+        if (memcmp(bad_idat + cpos + 4u, "IDAT", 4) == 0 && clen > 32u) {
+            bad_idat[cpos + 8u + (size_t)clen / 2u] ^= 0xFFu;
+            uint32_t ncrc = rf_crc32(bad_idat + cpos + 4u, 4u + (size_t)clen);
+            wr32be(bad_idat + cpos + 8u + (size_t)clen, ncrc);
+            patched_idat = 1;
+            break;
+        }
+        cpos += 12u + (size_t)clen;
+    }
+    CHECK(patched_idat == 1);
+    rfc_budget *b_longjmp = rfc_budget_create(2ull * 1024ull * 1024ull);
+    CHECK(b_longjmp != NULL);
+    rfc_allocator ba_longjmp;
+    rfc_budget_allocator(b_longjmp, &ba_longjmp);
+    rfc_exec_context ex_lj = exec;
+    ex_lj.allocator = &ba_longjmp;
+    ex_lj.budget = b_longjmp;
+    void *ds_lj = NULL;
+    CHECK(png_adp->open_session(&ex_lj, &ds_lj) == RFC_OK);
+    rfc_frame *df_lj = NULL;
+    size_t dc_lj = 0u;
+    CHECK(png_adp->decode_session(ds_lj, &ex_lj, bad_idat, noisy_png.len, NULL,
+                                  0u, &df_lj, &dc_lj, NULL) ==
+          RFC_ERR_INVALID_ARGUMENT);
+    CHECK(df_lj == NULL && dc_lj == 0u);
+    png_adp->close_session(ds_lj);
+    rfc_budget_stats bs_lj;
+    rfc_budget_stats_get(b_longjmp, &bs_lj);
+    CHECK(bs_lj.current_allocated_bytes == 0ull);
+    rfc_budget_destroy(b_longjmp);
+    free(bad_idat);
+    rfc_encoded_free(&noisy_png);
+
     png_adp->close_session(ps);
     rfc_scheduler_destroy(sched);
     free(png_o1);
@@ -1179,6 +1379,47 @@ static void test_pnm_and_pam_matrix(void) {
     CHECK(pnm_adp != NULL);
     void *ps = NULL;
     CHECK(pnm_adp->open_session(&exec, &ps) == RFC_OK);
+
+    /* Reject 16-bit storage with bits_per_sample 1..8 cleanly (no overflow/bad MAXVAL). */
+    const rfc_sample_format u16_fmts[3] = {
+        RFC_SAMPLE_GRAY16, RFC_SAMPLE_RGB16, RFC_SAMPLE_RGBA16
+    };
+    const rfc_session_adapter *pam_adp =
+        rfc_registry_acquire_session(RFC_FORMAT_PAM);
+    CHECK(pam_adp != NULL);
+    void *pam_s = NULL;
+    CHECK(pam_adp->open_session(&exec, &pam_s) == RFC_OK);
+    for (size_t fi = 0u; fi < 3u; fi++) {
+        rfc_alpha_mode am = (u16_fmts[fi] == RFC_SAMPLE_RGBA16)
+                                ? RFC_ALPHA_STRAIGHT
+                                : RFC_ALPHA_NONE;
+        uint32_t nch =
+            (u16_fmts[fi] == RFC_SAMPLE_GRAY16)
+                ? 1u
+                : (u16_fmts[fi] == RFC_SAMPLE_RGB16 ? 3u : 4u);
+        for (uint32_t bps = 1u; bps <= 8u; bps++) {
+            rfc_layout l16_low = {u16_fmts[fi], am, 1u, 1u, 0u, bps};
+            rfc_frame f16_low = {0};
+            CHECK(test_alloc_frame(&f16_low, &l16_low, NULL, &alloc) == RFC_OK);
+            uint16_t maxv_sh =
+                (uint16_t)(((1u << bps) - 1u) << (16u - bps)); /* 0xFF00 at bps=8 */
+            for (uint32_t c = 0u; c < nch; c++) {
+                memcpy(f16_low.data + (size_t)c * 2u, &maxv_sh, 2u);
+            }
+            rfc_encoded re_pnm = {0}, re_pam = {0};
+            CHECK(pnm_adp->encode_session(ps, &exec, &f16_low, 1u, NULL, NULL,
+                                          0u, &re_pnm) ==
+                  RFC_ERR_UNSUPPORTED_SAMPLE);
+            CHECK(re_pnm.data == NULL);
+            CHECK(pam_adp->encode_session(pam_s, &exec, &f16_low, 1u, NULL, NULL,
+                                          0u, &re_pam) ==
+                  RFC_ERR_UNSUPPORTED_SAMPLE);
+            CHECK(re_pam.data == NULL);
+            rfc_frame_free(&f16_low);
+        }
+    }
+    pam_adp->close_session(pam_s);
+    rfc_registry_release_session(RFC_FORMAT_PAM);
     rfc_layout pad_lay = {RFC_SAMPLE_GRAY8, RFC_ALPHA_NONE, 4u, 4u, 0u, 4u};
     rfc_frame pad_fr = {0};
     CHECK(test_alloc_frame(&pad_fr, &pad_lay, NULL, &alloc) == RFC_OK);
@@ -1229,8 +1470,7 @@ static void test_pnm_and_pam_matrix(void) {
     }
 
     /* PAM rejects GRAYSCALE_ALPHA (DEPTH 2) and P6 mismatch */
-    const rfc_session_adapter *pam_adp =
-        rfc_registry_acquire_session(RFC_FORMAT_PAM);
+    pam_adp = rfc_registry_acquire_session(RFC_FORMAT_PAM);
     CHECK(pam_adp != NULL);
     CHECK(pam_adp->open_session(&exec, &ps) == RFC_OK);
     const char *ga_pam =

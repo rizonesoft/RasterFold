@@ -217,6 +217,39 @@ void rfc_budget_free(rfc_budget *budget, void *ptr) {
     free(hdr);
 }
 
+rfc_status rfc_budget_reserve(rfc_budget *budget, size_t size) {
+    if (!budget) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    rfc_mutex_lock(&budget->lock);
+    if (budget->current_allocated_bytes > budget->limit_bytes ||
+        (uint64_t)size > budget->limit_bytes - budget->current_allocated_bytes) {
+        budget->rejected_count++;
+        rfc_mutex_unlock(&budget->lock);
+        return RFC_ERR_OUT_OF_MEMORY;
+    }
+    budget->current_allocated_bytes += (uint64_t)size;
+    if (budget->current_allocated_bytes > budget->peak_allocated_bytes) {
+        budget->peak_allocated_bytes = budget->current_allocated_bytes;
+    }
+    budget->allocation_count++;
+    rfc_mutex_unlock(&budget->lock);
+    return RFC_OK;
+}
+
+void rfc_budget_release(rfc_budget *budget, size_t size) {
+    if (!budget) {
+        return;
+    }
+    rfc_mutex_lock(&budget->lock);
+    if (budget->current_allocated_bytes >= (uint64_t)size) {
+        budget->current_allocated_bytes -= (uint64_t)size;
+    } else {
+        budget->current_allocated_bytes = 0;
+    }
+    rfc_mutex_unlock(&budget->lock);
+}
+
 void *rfc_budget_jxl_alloc(void *opaque, size_t size) {
     return rfc_budget_alloc((rfc_budget *)opaque, size);
 }

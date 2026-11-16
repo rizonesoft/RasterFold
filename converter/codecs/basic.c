@@ -219,25 +219,35 @@ static void free_single_frame(const rfc_exec_context *exec,
     }
 }
 
+typedef struct basic_budget_guard {
+    rfc_budget *budget;
+    size_t bytes;
+    int active;
+} basic_budget_guard;
+
 static rfc_status reserve_budget(const rfc_exec_context *exec,
                                  size_t bytes,
-                                 void **out_guard) {
-    *out_guard = NULL;
+                                 basic_budget_guard *out_guard) {
+    memset(out_guard, 0, sizeof(*out_guard));
     if (!exec || !exec->budget) {
         return RFC_OK;
     }
-    void *g = rfc_budget_alloc(exec->budget, bytes ? bytes : 1u);
-    if (!g) {
-        return RFC_ERR_OUT_OF_MEMORY;
+    rfc_status st = rfc_budget_reserve(exec->budget, bytes);
+    if (st != RFC_OK) {
+        return st;
     }
-    *out_guard = g;
+    out_guard->budget = exec->budget;
+    out_guard->bytes = bytes;
+    out_guard->active = 1;
     return RFC_OK;
 }
 
-static void release_budget(const rfc_exec_context *exec, void **guard) {
-    if (exec && exec->budget && guard && *guard) {
-        rfc_budget_free(exec->budget, *guard);
-        *guard = NULL;
+static void release_budget(basic_budget_guard *guard) {
+    if (guard && guard->active && guard->budget) {
+        rfc_budget_release(guard->budget, guard->bytes);
+        guard->budget = NULL;
+        guard->bytes = 0u;
+        guard->active = 0;
     }
 }
 
@@ -456,6 +466,7 @@ static rfc_status fold_preflight_header(const uint8_t *bytes,
                                         size_t size,
                                         const rfc_limits *limits,
                                         rfc_image_probe *out_probe) {
+    memset(out_probe, 0, sizeof(*out_probe));
     if (!bytes && size > 0u) {
         return RFC_ERR_INVALID_ARGUMENT;
     }
@@ -533,17 +544,21 @@ static rfc_status fold_preflight_header(const uint8_t *bytes,
     rfc_status st =
         rfc_limits_check_probe(limits, out_probe, (uint64_t)size, 1);
     if (st != RFC_OK) {
+        memset(out_probe, 0, sizeof(*out_probe));
         return st;
     }
     if (w > RF_MAX_DIM || h > RF_MAX_DIM || pixels > RF_MAX_PIXELS ||
         (uint64_t)size > RF_MAX_FILE) {
+        memset(out_probe, 0, sizeof(*out_probe));
         return RFC_ERR_LIMIT_EXCEEDED;
     }
     if (method == RF_METHOD_RAW) {
         if ((uint64_t)plen < dec_bytes) {
+            memset(out_probe, 0, sizeof(*out_probe));
             return RFC_ERR_TRUNCATED_INPUT;
         }
         if ((uint64_t)plen != dec_bytes) {
+            memset(out_probe, 0, sizeof(*out_probe));
             return RFC_ERR_INVALID_ARGUMENT;
         }
     }
@@ -642,7 +657,7 @@ static rfc_status fold_decode(void *session,
         return RFC_ERR_CANCELLED;
     }
 
-    void *ws_guard = NULL;
+    basic_budget_guard ws_guard;
     st = reserve_budget(exec, (size_t)probe.total_decoded_bytes, &ws_guard);
     if (st != RFC_OK) {
         free_single_frame(exec, &frames, &fcnt, out_meta);
@@ -661,7 +676,7 @@ static rfc_status fold_decode(void *session,
     int rc = rf_decode_image(bytes, size, &opts, &px, &err);
     if (rc != RF_OK) {
         rf_free(px.data);
-        release_budget(exec, &ws_guard);
+        release_budget(&ws_guard);
         free_single_frame(exec, &frames, &fcnt, out_meta);
         return map_rf_err(rc);
     }
@@ -672,7 +687,7 @@ static rfc_status fold_decode(void *session,
                px.data + (size_t)y * px.stride, row_bytes);
     }
     rf_free(px.data);
-    release_budget(exec, &ws_guard);
+    release_budget(&ws_guard);
 
     if (is_cancelled_generic(session, exec)) {
         free_single_frame(exec, &frames, &fcnt, out_meta);
@@ -724,7 +739,7 @@ static rfc_status fold_encode(void *session,
         return RFC_ERR_LIMIT_EXCEEDED;
     }
 
-    void *ws_guard = NULL;
+    basic_budget_guard ws_guard;
     st = reserve_budget(exec, (size_t)raw_bytes, &ws_guard);
     if (st != RFC_OK) {
         return st;
@@ -747,19 +762,19 @@ static rfc_status fold_encode(void *session,
     int rc = rf_encode_image(&px, &opts, &enc, &err);
     if (rc != RF_OK) {
         rf_free(enc.data);
-        release_budget(exec, &ws_guard);
+        release_budget(&ws_guard);
         return map_rf_err(rc);
     }
 
     if (is_cancelled_generic(session, exec)) {
         rf_free(enc.data);
-        release_budget(exec, &ws_guard);
+        release_budget(&ws_guard);
         return RFC_ERR_CANCELLED;
     }
 
     st = copy_bytes_to_encoded(exec, enc.data, enc.size, out_encoded);
     rf_free(enc.data);
-    release_budget(exec, &ws_guard);
+    release_budget(&ws_guard);
     return st;
 }
 
@@ -809,6 +824,7 @@ static rfc_status bmp_parse_header(const uint8_t *bytes,
                                    bmp_parsed *out,
                                    rfc_image_probe *out_probe) {
     memset(out, 0, sizeof(*out));
+    memset(out_probe, 0, sizeof(*out_probe));
     if (!bytes && size > 0u) {
         return RFC_ERR_INVALID_ARGUMENT;
     }
@@ -993,6 +1009,7 @@ static rfc_status bmp_parse_header(const uint8_t *bytes,
     rfc_status st =
         rfc_limits_check_probe(limits, out_probe, (uint64_t)size, 1);
     if (st != RFC_OK) {
+        memset(out_probe, 0, sizeof(*out_probe));
         return st;
     }
 
@@ -1040,6 +1057,7 @@ static rfc_status bmp_probe(void *session,
         const rfc_allocator *alloc = basic_alloc_of(exec);
         uint8_t *icc = (uint8_t *)alloc->alloc(alloc->ctx, info.icc_len);
         if (!icc) {
+            memset(out_probe, 0, sizeof(*out_probe));
             return RFC_ERR_OUT_OF_MEMORY;
         }
         memcpy(icc, bytes + info.icc_off, info.icc_len);
@@ -1121,7 +1139,7 @@ static rfc_status bmp_decode(void *session,
         info.height <= RF_MAX_DIM && probe.total_pixels <= RF_MAX_PIXELS &&
         (uint64_t)size <= RF_MAX_FILE && info.off_bits >= 54u) {
         uint64_t ws_u64 = (uint64_t)info.width * (uint64_t)info.height * 3ull;
-        void *ws_guard = NULL;
+        basic_budget_guard ws_guard;
         st = reserve_budget(exec, (size_t)ws_u64, &ws_guard);
         if (st != RFC_OK) {
             free_single_frame(exec, &frames, &fcnt, out_meta);
@@ -1136,7 +1154,7 @@ static rfc_status bmp_decode(void *session,
                        img.rgb + (size_t)y * row_bytes, row_bytes);
             }
             rf_free(img.rgb);
-            release_budget(exec, &ws_guard);
+            release_budget(&ws_guard);
             if (is_cancelled_generic(session, exec)) {
                 free_single_frame(exec, &frames, &fcnt, out_meta);
                 return RFC_ERR_CANCELLED;
@@ -1146,7 +1164,7 @@ static rfc_status bmp_decode(void *session,
             return RFC_OK;
         }
         rf_free(img.rgb);
-        release_budget(exec, &ws_guard);
+        release_budget(&ws_guard);
         /* Fall through only if rf_bmp_load failed due to harmless non-standard file size check */
     }
 
@@ -1262,7 +1280,7 @@ static rfc_status bmp_encode(void *session,
             }
             return RFC_ERR_LIMIT_EXCEEDED;
         }
-        void *ws_guard = NULL;
+        basic_budget_guard ws_guard;
         st = reserve_budget(exec, (size_t)ws_u64, &ws_guard);
         if (st != RFC_OK) {
             if (packed) {
@@ -1280,17 +1298,17 @@ static rfc_status bmp_encode(void *session,
         }
         if (rc != RF_OK) {
             rf_free(bmp);
-            release_budget(exec, &ws_guard);
+            release_budget(&ws_guard);
             return map_rf_err(rc);
         }
         if (is_cancelled_generic(session, exec)) {
             rf_free(bmp);
-            release_budget(exec, &ws_guard);
+            release_budget(&ws_guard);
             return RFC_ERR_CANCELLED;
         }
         st = copy_bytes_to_encoded(exec, bmp, bmp_sz, out_encoded);
         rf_free(bmp);
-        release_budget(exec, &ws_guard);
+        release_budget(&ws_guard);
         return st;
     }
 
@@ -1746,12 +1764,12 @@ static rfc_status png_prescan(const rfc_exec_context *exec,
                               const rfc_limits *limits,
                               const uint8_t *bytes,
                               size_t size,
-                              int want_icc_bytes,
                               png_prescan_info *out,
                               rfc_image_probe *out_probe) {
     static const uint8_t k_sig[8] = {0x89u, 'P', 'N', 'G',
                                      0x0Du, 0x0Au, 0x1Au, 0x0Au};
     memset(out, 0, sizeof(*out));
+    memset(out_probe, 0, sizeof(*out_probe));
     out->orientation = RFC_ORIENTATION_UNSPECIFIED;
     if (!bytes && size > 0u) {
         return RFC_ERR_INVALID_ARGUMENT;
@@ -1983,6 +2001,7 @@ static rfc_status png_prescan(const rfc_exec_context *exec,
         !mul_u64((uint64_t)out->width, (uint64_t)out->height, &pixels) ||
         !mul_u64(pixels, (uint64_t)ch * bpc, &dec_bytes)) {
         png_prescan_free_icc(alloc, out);
+        memset(out_probe, 0, sizeof(*out_probe));
         return RFC_ERR_LIMIT_EXCEEDED;
     }
     if (row_bytes <= SIZE_MAX) {
@@ -1992,16 +2011,16 @@ static rfc_status png_prescan(const rfc_exec_context *exec,
     out_probe->total_pixels = pixels;
     out_probe->total_decoded_bytes = dec_bytes;
     out_probe->container_meta.orientation = out->orientation;
-    out_probe->container_meta.icc = want_icc_bytes ? out->icc : NULL;
+    /* Keep container_meta.icc NULL here so failure never leaves a dangling
+     * pointer; png_probe transfers pinfo.icc ownership only on RFC_OK. */
+    out_probe->container_meta.icc = NULL;
     out_probe->container_meta.icc_len = out->icc_len;
 
     rfc_status st =
         rfc_limits_check_probe(limits, out_probe, (uint64_t)size, 1);
-    if (st != RFC_OK || !want_icc_bytes) {
-        if (!want_icc_bytes) {
-            out_probe->container_meta.icc = NULL;
-        }
+    if (st != RFC_OK) {
         png_prescan_free_icc(alloc, out);
+        memset(out_probe, 0, sizeof(*out_probe));
         return st;
     }
     return RFC_OK;
@@ -2037,6 +2056,14 @@ static rfc_status png_open(const rfc_exec_context *exec, void **out_sess) {
     return open_session_generic(RFC_FORMAT_PNG, exec, out_sess);
 }
 
+#if defined(__GNUC__) || defined(__clang__)
+#define BASIC_NOINLINE __attribute__((noinline))
+#elif defined(_MSC_VER)
+#define BASIC_NOINLINE __declspec(noinline)
+#else
+#define BASIC_NOINLINE
+#endif
+
 static rfc_status png_probe(void *session,
                             const rfc_exec_context *exec,
                             const uint8_t *bytes,
@@ -2045,51 +2072,66 @@ static rfc_status png_probe(void *session,
     if (!out_probe) {
         return RFC_ERR_INVALID_ARGUMENT;
     }
+    memset(out_probe, 0, sizeof(*out_probe));
     if (is_cancelled_generic(session, exec)) {
         return RFC_ERR_CANCELLED;
     }
     rfc_limits lim_def;
     const rfc_allocator *alloc = basic_alloc_of(exec);
     png_prescan_info pinfo;
-    return png_prescan(exec, alloc, basic_limits_of(exec, &lim_def), bytes,
-                       size, 1, &pinfo, out_probe);
+    rfc_status st = png_prescan(exec, alloc, basic_limits_of(exec, &lim_def),
+                                bytes, size, &pinfo, out_probe);
+    if (st != RFC_OK) {
+        png_prescan_free_icc(alloc, &pinfo);
+        memset(out_probe, 0, sizeof(*out_probe));
+        return st;
+    }
+    if (pinfo.icc) {
+        out_probe->container_meta.icc = pinfo.icc;
+        out_probe->container_meta.icc_len = pinfo.icc_len;
+        pinfo.icc = NULL;
+        pinfo.icc_len = 0u;
+    }
+    return RFC_OK;
 }
 
-static rfc_status png_decode_libpng(void *session,
-                                    const rfc_exec_context *exec,
-                                    const uint8_t *bytes,
-                                    size_t size,
-                                    const png_prescan_info *pinfo,
-                                    rfc_frame *frame) {
-    basic_png_mem mem = {exec ? exec->budget : NULL, 0, 0};
-    png_structp png_ptr = png_create_read_struct_2(
-        PNG_LIBPNG_VER_STRING, &mem, basic_png_error, basic_png_warn, &mem,
-        basic_png_malloc, basic_png_free);
-    if (!png_ptr) {
+typedef struct png_decode_ctx {
+    void *session;
+    const rfc_exec_context *exec;
+    const png_prescan_info *pinfo;
+    rfc_frame *frame;
+    basic_png_mem mem;
+    png_read_cursor cur;
+    png_structp png_ptr;
+    png_infop info_ptr;
+} png_decode_ctx;
+
+BASIC_NOINLINE static rfc_status png_decode_libpng_run(png_decode_ctx *ctx) {
+    ctx->png_ptr = png_create_read_struct_2(
+        PNG_LIBPNG_VER_STRING, &ctx->mem, basic_png_error, basic_png_warn,
+        &ctx->mem, basic_png_malloc, basic_png_free);
+    if (!ctx->png_ptr) {
         return RFC_ERR_OUT_OF_MEMORY;
     }
-    png_infop info_ptr = png_create_info_struct(png_ptr);
-    if (!info_ptr) {
-        png_destroy_read_struct(&png_ptr, NULL, NULL);
+    ctx->info_ptr = png_create_info_struct(ctx->png_ptr);
+    if (!ctx->info_ptr) {
         return RFC_ERR_OUT_OF_MEMORY;
     }
-    if (setjmp(png_jmpbuf(png_ptr))) {
-        png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
-        if (mem.cancelled) {
+    if (setjmp(png_jmpbuf(ctx->png_ptr))) {
+        if (ctx->mem.cancelled) {
             return RFC_ERR_CANCELLED;
         }
-        return mem.oom ? RFC_ERR_OUT_OF_MEMORY : RFC_ERR_INVALID_ARGUMENT;
+        return ctx->mem.oom ? RFC_ERR_OUT_OF_MEMORY
+                            : RFC_ERR_INVALID_ARGUMENT;
     }
 
-    png_read_cursor cur = {bytes, size, 0u, &mem};
-    png_set_read_fn(png_ptr, &cur, basic_png_read_fn);
-    png_read_info(png_ptr, info_ptr);
+    png_set_read_fn(ctx->png_ptr, &ctx->cur, basic_png_read_fn);
+    png_read_info(ctx->png_ptr, ctx->info_ptr);
 
 #ifdef PNG_APNG_SUPPORTED
     {
         png_uint_32 nf = 0u, np = 0u;
-        if (png_get_acTL(png_ptr, info_ptr, &nf, &np) != 0u) {
-            png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
+        if (png_get_acTL(ctx->png_ptr, ctx->info_ptr, &nf, &np) != 0u) {
             return RFC_ERR_UNSUPPORTED_COMBINATION;
         }
     }
@@ -2099,37 +2141,63 @@ static rfc_status png_decode_libpng(void *session,
     {
         png_bytep exif_p = NULL;
         png_uint_32 exif_n = 0u;
-        if (png_get_eXIf_1(png_ptr, info_ptr, &exif_n, &exif_p) != 0u &&
+        if (png_get_eXIf_1(ctx->png_ptr, ctx->info_ptr, &exif_n, &exif_p) != 0u &&
             exif_p && exif_n > 0u) {
             rfc_orientation ori2 = RFC_ORIENTATION_UNSPECIFIED;
             if (parse_exif_orientation(exif_p, exif_n, &ori2) == RFC_OK &&
                 ori2 > RFC_ORIENTATION_NORMAL) {
-                frame->metadata.orientation = ori2;
+                ctx->frame->metadata.orientation = ori2;
             }
         }
     }
 #endif
 
-    if (pinfo->bit_depth == 16u) {
-        png_set_swap(png_ptr);
+    if (ctx->pinfo->bit_depth == 16u) {
+        png_set_swap(ctx->png_ptr);
     }
-    int passes = png_set_interlace_handling(png_ptr);
-    png_read_update_info(png_ptr, info_ptr);
+    int passes = png_set_interlace_handling(ctx->png_ptr);
+    png_read_update_info(ctx->png_ptr, ctx->info_ptr);
 
     for (int pass = 0; pass < passes; pass++) {
-        for (uint32_t y = 0u; y < pinfo->height; y++) {
-            if ((y & 63u) == 0u && is_cancelled_generic(session, exec)) {
-                mem.cancelled = 1;
-                png_error(png_ptr, "cancelled");
+        for (uint32_t y = 0u; y < ctx->pinfo->height; y++) {
+            if ((y & 63u) == 0u &&
+                is_cancelled_generic(ctx->session, ctx->exec)) {
+                ctx->mem.cancelled = 1;
+                png_error(ctx->png_ptr, "cancelled");
             }
-            png_bytep row =
-                frame->data + (size_t)y * frame->layout.stride_bytes;
-            png_read_row(png_ptr, row, NULL);
+            png_bytep row = ctx->frame->data +
+                            (size_t)y * ctx->frame->layout.stride_bytes;
+            png_read_row(ctx->png_ptr, row, NULL);
         }
     }
-    png_read_end(png_ptr, info_ptr);
-    png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
+    png_read_end(ctx->png_ptr, ctx->info_ptr);
     return RFC_OK;
+}
+
+static rfc_status png_decode_libpng(void *session,
+                                    const rfc_exec_context *exec,
+                                    const uint8_t *bytes,
+                                    size_t size,
+                                    const png_prescan_info *pinfo,
+                                    rfc_frame *frame) {
+    png_decode_ctx ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.session = session;
+    ctx.exec = exec;
+    ctx.pinfo = pinfo;
+    ctx.frame = frame;
+    ctx.mem.budget = exec ? exec->budget : NULL;
+    ctx.cur.bytes = bytes;
+    ctx.cur.size = size;
+    ctx.cur.pos = 0u;
+    ctx.cur.mem = &ctx.mem;
+
+    rfc_status st = png_decode_libpng_run(&ctx);
+    if (ctx.png_ptr) {
+        png_destroy_read_struct(&ctx.png_ptr,
+                                ctx.info_ptr ? &ctx.info_ptr : NULL, NULL);
+    }
+    return st;
 }
 
 static rfc_status png_decode(void *session,
@@ -2165,7 +2233,7 @@ static rfc_status png_decode(void *session,
     png_prescan_info pinfo;
     rfc_image_probe probe;
     rfc_status st = png_prescan(
-        exec, alloc, basic_limits_of(exec, &lim_def), bytes, size, 1, &pinfo,
+        exec, alloc, basic_limits_of(exec, &lim_def), bytes, size, &pinfo,
         &probe);
     if (st != RFC_OK) {
         return st;
@@ -2200,7 +2268,7 @@ static rfc_status png_decode(void *session,
             free_single_frame(exec, &frames, &fcnt, out_meta);
             return st;
         }
-        void *ws_guard = NULL;
+        basic_budget_guard ws_guard;
         st = reserve_budget(exec, ws_bytes, &ws_guard);
         if (st != RFC_OK) {
             free_single_frame(exec, &frames, &fcnt, out_meta);
@@ -2211,7 +2279,7 @@ static rfc_status png_decode(void *session,
         int rc = rf_png_load(bytes, size, &img, &err);
         if (rc != RF_OK) {
             rf_free(img.rgb);
-            release_budget(exec, &ws_guard);
+            release_budget(&ws_guard);
             free_single_frame(exec, &frames, &fcnt, out_meta);
             return map_rf_err(rc);
         }
@@ -2221,7 +2289,7 @@ static rfc_status png_decode(void *session,
                    img.rgb + (size_t)y * row_bytes, row_bytes);
         }
         rf_free(img.rgb);
-        release_budget(exec, &ws_guard);
+        release_budget(&ws_guard);
     } else {
         st = png_decode_libpng(session, exec, bytes, size, &pinfo, &frames[0]);
         if (st != RFC_OK) {
@@ -2240,6 +2308,87 @@ static rfc_status png_decode(void *session,
 
     *out_frames = frames;
     *out_frame_count = fcnt;
+    return RFC_OK;
+}
+
+typedef struct png_encode_ctx {
+    void *session;
+    const rfc_exec_context *exec;
+    const rfc_frame *fr;
+    const encode_common_check *chk;
+    uint32_t sbits;
+    int color_type;
+    basic_png_mem mem;
+    png_write_buf out_buf;
+    png_structp png_ptr;
+    png_infop info_ptr;
+} png_encode_ctx;
+
+BASIC_NOINLINE static rfc_status png_encode_run(png_encode_ctx *ctx) {
+    ctx->png_ptr = png_create_write_struct_2(
+        PNG_LIBPNG_VER_STRING, &ctx->mem, basic_png_error, basic_png_warn,
+        &ctx->mem, basic_png_malloc, basic_png_free);
+    if (!ctx->png_ptr) {
+        return RFC_ERR_OUT_OF_MEMORY;
+    }
+    ctx->info_ptr = png_create_info_struct(ctx->png_ptr);
+    if (!ctx->info_ptr) {
+        return RFC_ERR_OUT_OF_MEMORY;
+    }
+    if (setjmp(png_jmpbuf(ctx->png_ptr))) {
+        if (ctx->mem.cancelled) {
+            return RFC_ERR_CANCELLED;
+        }
+        return ctx->mem.oom ? RFC_ERR_OUT_OF_MEMORY
+                            : RFC_ERR_INVALID_ARGUMENT;
+    }
+
+    png_set_write_fn(ctx->png_ptr, &ctx->out_buf, basic_png_write_fn,
+                     basic_png_flush_fn);
+    png_set_IHDR(ctx->png_ptr, ctx->info_ptr, ctx->fr->layout.width,
+                 ctx->fr->layout.height, (int)ctx->sbits, ctx->color_type,
+                 PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT,
+                 PNG_FILTER_TYPE_DEFAULT);
+
+    if (ctx->chk->meta_policy == RFC_META_POLICY_PRESERVE &&
+        ctx->chk->eff_icc && ctx->chk->eff_icc_len > 0u) {
+        if (ctx->chk->eff_icc_len > UINT32_MAX) {
+            return RFC_ERR_LIMIT_EXCEEDED;
+        }
+        png_set_iCCP(ctx->png_ptr, ctx->info_ptr, "ICC Profile", 0,
+                     (png_const_bytep)ctx->chk->eff_icc,
+                     (png_uint_32)ctx->chk->eff_icc_len);
+        {
+            png_charp got_name = NULL;
+            int got_comp = 0;
+            png_bytep got_prof = NULL;
+            png_uint_32 got_len = 0u;
+            if (png_get_iCCP(ctx->png_ptr, ctx->info_ptr, &got_name, &got_comp,
+                             &got_prof, &got_len) != PNG_INFO_iCCP ||
+                got_len != (png_uint_32)ctx->chk->eff_icc_len) {
+                return RFC_ERR_INVALID_ARGUMENT;
+            }
+        }
+    }
+
+    png_write_info(ctx->png_ptr, ctx->info_ptr);
+    if (ctx->sbits == 16u) {
+        png_set_swap(ctx->png_ptr);
+    }
+
+    size_t stride = ctx->fr->layout.stride_bytes
+                        ? ctx->fr->layout.stride_bytes
+                        : ctx->chk->norm_layout.stride_bytes;
+    for (uint32_t y = 0u; y < ctx->fr->layout.height; y++) {
+        if ((y & 63u) == 0u &&
+            is_cancelled_generic(ctx->session, ctx->exec)) {
+            ctx->mem.cancelled = 1;
+            png_error(ctx->png_ptr, "cancelled");
+        }
+        png_write_row(ctx->png_ptr,
+                      (png_const_bytep)(ctx->fr->data + (size_t)y * stride));
+    }
+    png_write_end(ctx->png_ptr, ctx->info_ptr);
     return RFC_OK;
 }
 
@@ -2294,80 +2443,31 @@ static rfc_status png_encode(void *session,
             return RFC_ERR_UNSUPPORTED_SAMPLE;
     }
 
-    basic_png_mem mem = {exec ? exec->budget : NULL, 0, 0};
-    png_structp png_ptr = png_create_write_struct_2(
-        PNG_LIBPNG_VER_STRING, &mem, basic_png_error, basic_png_warn, &mem,
-        basic_png_malloc, basic_png_free);
-    if (!png_ptr) {
-        return RFC_ERR_OUT_OF_MEMORY;
-    }
-    png_infop info_ptr = png_create_info_struct(png_ptr);
-    if (!info_ptr) {
-        png_destroy_write_struct(&png_ptr, NULL);
-        return RFC_ERR_OUT_OF_MEMORY;
-    }
-
     const rfc_allocator *alloc = basic_alloc_of(exec);
-    png_write_buf out_buf = {alloc, NULL, 0u, 0u, &mem};
-    if (setjmp(png_jmpbuf(png_ptr))) {
-        png_destroy_write_struct(&png_ptr, &info_ptr);
-        alloc->free(alloc->ctx, out_buf.data);
-        if (mem.cancelled) {
-            return RFC_ERR_CANCELLED;
-        }
-        return mem.oom ? RFC_ERR_OUT_OF_MEMORY : RFC_ERR_INVALID_ARGUMENT;
+    png_encode_ctx ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.session = session;
+    ctx.exec = exec;
+    ctx.fr = fr;
+    ctx.chk = &chk;
+    ctx.sbits = sbits;
+    ctx.color_type = color_type;
+    ctx.mem.budget = exec ? exec->budget : NULL;
+    ctx.out_buf.alloc = alloc;
+    ctx.out_buf.mem = &ctx.mem;
+
+    st = png_encode_run(&ctx);
+    if (ctx.png_ptr) {
+        png_destroy_write_struct(&ctx.png_ptr,
+                                 ctx.info_ptr ? &ctx.info_ptr : NULL);
+    }
+    if (st != RFC_OK) {
+        alloc->free(alloc->ctx, ctx.out_buf.data);
+        return st;
     }
 
-    png_set_write_fn(png_ptr, &out_buf, basic_png_write_fn,
-                     basic_png_flush_fn);
-    png_set_IHDR(png_ptr, info_ptr, fr->layout.width, fr->layout.height,
-                 (int)sbits, color_type, PNG_INTERLACE_NONE,
-                 PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
-
-    if (chk.meta_policy == RFC_META_POLICY_PRESERVE && chk.eff_icc &&
-        chk.eff_icc_len > 0u) {
-        if (chk.eff_icc_len > UINT32_MAX) {
-            png_destroy_write_struct(&png_ptr, &info_ptr);
-            alloc->free(alloc->ctx, out_buf.data);
-            return RFC_ERR_LIMIT_EXCEEDED;
-        }
-        png_set_iCCP(png_ptr, info_ptr, "ICC Profile", 0,
-                     (png_const_bytep)chk.eff_icc,
-                     (png_uint_32)chk.eff_icc_len);
-        {
-            png_charp got_name = NULL;
-            int got_comp = 0;
-            png_bytep got_prof = NULL;
-            png_uint_32 got_len = 0u;
-            if (png_get_iCCP(png_ptr, info_ptr, &got_name, &got_comp,
-                             &got_prof, &got_len) != PNG_INFO_iCCP ||
-                got_len != (png_uint_32)chk.eff_icc_len) {
-                png_destroy_write_struct(&png_ptr, &info_ptr);
-                alloc->free(alloc->ctx, out_buf.data);
-                return RFC_ERR_INVALID_ARGUMENT;
-            }
-        }
-    }
-
-    png_write_info(png_ptr, info_ptr);
-    if (sbits == 16u) {
-        png_set_swap(png_ptr);
-    }
-
-    size_t stride = fr->layout.stride_bytes ? fr->layout.stride_bytes
-                                            : chk.norm_layout.stride_bytes;
-    for (uint32_t y = 0u; y < fr->layout.height; y++) {
-        if ((y & 63u) == 0u && is_cancelled_generic(session, exec)) {
-            mem.cancelled = 1;
-            png_error(png_ptr, "cancelled");
-        }
-        png_write_row(png_ptr, (png_const_bytep)(fr->data + (size_t)y * stride));
-    }
-    png_write_end(png_ptr, info_ptr);
-    png_destroy_write_struct(&png_ptr, &info_ptr);
-
-    out_encoded->data = out_buf.data;
-    out_encoded->len = out_buf.len;
+    out_encoded->data = ctx.out_buf.data;
+    out_encoded->len = ctx.out_buf.len;
     out_encoded->allocator = alloc;
     return RFC_OK;
 }
@@ -2483,6 +2583,7 @@ static rfc_status pnm_parse_header(const uint8_t *bytes,
                                    pnm_parsed *out,
                                    rfc_image_probe *out_probe) {
     memset(out, 0, sizeof(*out));
+    memset(out_probe, 0, sizeof(*out_probe));
     if (!bytes && size > 0u) {
         return RFC_ERR_INVALID_ARGUMENT;
     }
@@ -2599,6 +2700,7 @@ static rfc_status pnm_parse_header(const uint8_t *bytes,
 
     st = rfc_limits_check_probe(limits, out_probe, (uint64_t)size, 1);
     if (st != RFC_OK) {
+        memset(out_probe, 0, sizeof(*out_probe));
         return st;
     }
 
@@ -2607,6 +2709,7 @@ static rfc_status pnm_parse_header(const uint8_t *bytes,
         if (out->magic == 4) {
             uint64_t pbm_row = ((uint64_t)out->width + 7ull) / 8ull;
             if (!mul_u64(pbm_row, (uint64_t)out->height, &need)) {
+                memset(out_probe, 0, sizeof(*out_probe));
                 return RFC_ERR_LIMIT_EXCEEDED;
             }
         } else {
@@ -2614,9 +2717,11 @@ static rfc_status pnm_parse_header(const uint8_t *bytes,
         }
         uint64_t avail = (uint64_t)(size - out->raster_off);
         if (avail < need) {
+            memset(out_probe, 0, sizeof(*out_probe));
             return RFC_ERR_TRUNCATED_INPUT;
         }
         if (avail > need) {
+            memset(out_probe, 0, sizeof(*out_probe));
             return RFC_ERR_INVALID_ARGUMENT;
         }
     }
@@ -2784,7 +2889,7 @@ static rfc_status pnm_decode(void *session,
         info.width <= RF_MAX_DIM && info.height <= RF_MAX_DIM &&
         probe.total_pixels <= RF_MAX_PIXELS &&
         (uint64_t)size <= RF_MAX_FILE) {
-        void *ws_guard = NULL;
+        basic_budget_guard ws_guard;
         st = reserve_budget(exec, (size_t)probe.total_decoded_bytes, &ws_guard);
         if (st != RFC_OK) {
             free_single_frame(exec, &frames, &fcnt, out_meta);
@@ -2795,7 +2900,7 @@ static rfc_status pnm_decode(void *session,
         int rc = rf_ppm_load(bytes, size, &img, &err);
         if (rc != RF_OK) {
             rf_free(img.rgb);
-            release_budget(exec, &ws_guard);
+            release_budget(&ws_guard);
             free_single_frame(exec, &frames, &fcnt, out_meta);
             return map_rf_err(rc);
         }
@@ -2805,7 +2910,7 @@ static rfc_status pnm_decode(void *session,
                    img.rgb + (size_t)y * row_bytes, row_bytes);
         }
         rf_free(img.rgb);
-        release_budget(exec, &ws_guard);
+        release_budget(&ws_guard);
         if (is_cancelled_generic(session, exec)) {
             free_single_frame(exec, &frames, &fcnt, out_meta);
             return RFC_ERR_CANCELLED;
@@ -2967,6 +3072,9 @@ static rfc_status pnm_encode(void *session,
     uint32_t bps = chk.eff_bps;
     uint32_t sbits = sample_storage_bits(fr->layout.format);
     uint32_t ch = sample_channels(fr->layout.format);
+    if (sbits == 0u || ch == 0u || (sbits == 16u && bps <= 8u)) {
+        return RFC_ERR_UNSUPPORTED_SAMPLE;
+    }
     size_t src_stride = fr->layout.stride_bytes
                             ? fr->layout.stride_bytes
                             : chk.norm_layout.stride_bytes;
@@ -2992,7 +3100,7 @@ static rfc_status pnm_encode(void *session,
             }
         }
         uint64_t ws_u64 = 64ull + (uint64_t)packed_row * (uint64_t)h;
-        void *ws_guard = NULL;
+        basic_budget_guard ws_guard;
         st = reserve_budget(exec, ws_u64 <= SIZE_MAX ? (size_t)ws_u64 : SIZE_MAX,
                             &ws_guard);
         if (st != RFC_OK) {
@@ -3011,17 +3119,17 @@ static rfc_status pnm_encode(void *session,
         }
         if (rc != RF_OK) {
             rf_free(ppm);
-            release_budget(exec, &ws_guard);
+            release_budget(&ws_guard);
             return map_rf_err(rc);
         }
         if (is_cancelled_generic(session, exec)) {
             rf_free(ppm);
-            release_budget(exec, &ws_guard);
+            release_budget(&ws_guard);
             return RFC_ERR_CANCELLED;
         }
         st = copy_bytes_to_encoded(exec, ppm, ppm_sz, out_encoded);
         rf_free(ppm);
-        release_budget(exec, &ws_guard);
+        release_budget(&ws_guard);
         return st;
     }
 
@@ -3040,7 +3148,7 @@ static rfc_status pnm_encode(void *session,
         int magic = (ch == 1u) ? 5 : 6;
         hlen = snprintf(hdr, sizeof(hdr), "P%d\n%u %u\n%u\n", magic, w, h,
                         maxval);
-        uint64_t bpc = (bps <= 8u) ? 1ull : 2ull;
+        uint64_t bpc = (sbits == 8u) ? 1ull : 2ull;
         uint64_t row_b = 0u;
         if (!mul_u64((uint64_t)w, (uint64_t)ch * bpc, &row_b) ||
             !mul_u64(row_b, (uint64_t)h, &payload_bytes)) {
@@ -3142,6 +3250,7 @@ static rfc_status pam_parse_header(const uint8_t *bytes,
                                    pam_parsed *out,
                                    rfc_image_probe *out_probe) {
     memset(out, 0, sizeof(*out));
+    memset(out_probe, 0, sizeof(*out_probe));
     if (!bytes && size > 0u) {
         return RFC_ERR_INVALID_ARGUMENT;
     }
@@ -3326,14 +3435,17 @@ static rfc_status pam_parse_header(const uint8_t *bytes,
     rfc_status st =
         rfc_limits_check_probe(limits, out_probe, (uint64_t)size, 1);
     if (st != RFC_OK) {
+        memset(out_probe, 0, sizeof(*out_probe));
         return st;
     }
 
     uint64_t avail = (uint64_t)(size - out->raster_off);
     if (avail < dec_bytes) {
+        memset(out_probe, 0, sizeof(*out_probe));
         return RFC_ERR_TRUNCATED_INPUT;
     }
     if (avail > dec_bytes) {
+        memset(out_probe, 0, sizeof(*out_probe));
         return RFC_ERR_INVALID_ARGUMENT;
     }
     return RFC_OK;
@@ -3489,7 +3601,7 @@ static rfc_status pam_encode(void *session,
     uint32_t bps = chk.eff_bps;
     uint32_t sbits = sample_storage_bits(fr->layout.format);
     uint32_t ch = sample_channels(fr->layout.format);
-    if (sbits == 0u || ch == 0u) {
+    if (sbits == 0u || ch == 0u || (sbits == 16u && bps <= 8u)) {
         return RFC_ERR_UNSUPPORTED_SAMPLE;
     }
     const char *tupl = NULL;

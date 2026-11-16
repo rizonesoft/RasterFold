@@ -228,6 +228,8 @@ void rfc_budget_allocator(rfc_budget *budget, rfc_allocator *out_alloc);
 void *rfc_budget_alloc(rfc_budget *budget, size_t size);
 void *rfc_budget_realloc(rfc_budget *budget, void *ptr, size_t new_size);
 void rfc_budget_free(rfc_budget *budget, void *ptr);
+rfc_status rfc_budget_reserve(rfc_budget *budget, size_t size);
+void rfc_budget_release(rfc_budget *budget, size_t size);
 void *rfc_budget_jxl_alloc(void *opaque, size_t size);
 void rfc_budget_jxl_free(void *opaque, void *address);
 void *rfc_budget_zlib_alloc(void *opaque, unsigned int items, unsigned int size);

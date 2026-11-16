@@ -422,6 +422,21 @@ static void test_hostile_limits_and_unknown_reservation(void) {
     rfc_budget_stats bstats;
     rfc_budget_stats_get(b, &bstats);
     CHECK(bstats.rejected_count == 1u && bstats.current_allocated_bytes == 0u);
+    CHECK(rfc_budget_reserve(NULL, 64u) == RFC_ERR_INVALID_ARGUMENT);
+    CHECK(rfc_budget_reserve(b, 600u) == RFC_OK);
+    CHECK(rfc_budget_reserve(b, 500u) == RFC_ERR_OUT_OF_MEMORY);
+    CHECK(rfc_budget_reserve(b, SIZE_MAX) == RFC_ERR_OUT_OF_MEMORY);
+    rfc_budget_stats_get(b, &bstats);
+    CHECK(bstats.current_allocated_bytes == 600u);
+    CHECK(bstats.peak_allocated_bytes == 600u);
+    CHECK(bstats.allocation_count == 1u);
+    CHECK(bstats.rejected_count == 3u);
+    rfc_budget_release(b, 600u);
+    rfc_budget_release(b, 0u);
+    rfc_budget_release(NULL, 64u);
+    rfc_budget_stats_get(b, &bstats);
+    CHECK(bstats.current_allocated_bytes == 0u);
+    CHECK(bstats.peak_allocated_bytes == 600u);
     rfc_budget_destroy(b);
 
     printf("jobs: hostile/unknown preflight refused total_submitted=%llu "

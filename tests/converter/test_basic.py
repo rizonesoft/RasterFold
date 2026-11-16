@@ -500,6 +500,31 @@ class BasicAdapterVerificationMixin:
             (rgba16_w, rgba16_h, 4, 65535, "RGB_ALPHA", rgba16_bytes),
         )
 
+        # Regression: 16-bit storage with bits_per_sample <= 8 refused in PNM and PAM
+        g16_low_rfbe = wd / "g16_low.rfbe"
+        g16_low_out = wd / "g16_low_unused.out"
+        g16_low_rfbe.write_bytes(
+            pack_rfbe(1, 1, SAMPLE_GRAY16, ALPHA_NONE, 8, struct.pack("<H", 0xFF00))
+        )
+        for fmt_name in ("pnm", "pam"):
+            rc, out, err = self.run_cli(
+                ["cli", "encode", fmt_name, self.to_exe_path(g16_low_rfbe),
+                 self.to_exe_path(g16_low_out), "preserve"]
+            )
+            self.assertNotEqual(rc, 0, out + err)
+            self.assertEqual(parse_kv(out).get("STATUS"), "unsupported-sample", out)
+            self.assertFalse(g16_low_out.exists())
+
+        # Regression: ICC-bearing PNG exceeding limits_override.max_width refuses cleanly
+        icc_lim_out = wd / "icc_lim_unused.png"
+        rc, out, err = self.run_cli(
+            ["cli", "convert", "png", "png", self.to_exe_path(rgba16_png),
+             self.to_exe_path(icc_lim_out), "preserve", "0", "4", "0"]
+        )
+        self.assertNotEqual(rc, 0, out + err)
+        self.assertEqual(parse_kv(out).get("STATUS"), "limit-exceeded", out)
+        self.assertFalse(icc_lim_out.exists())
+
     def test_seeded_mutations_and_malformed_refusals(self) -> None:
         wd = self.work_dir()
         rng = random.Random(20261116)
