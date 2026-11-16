@@ -221,7 +221,10 @@ typedef enum rfc_io_fault_stage {
     RFC_IO_FAULT_WRITE_IO = 2,
     RFC_IO_FAULT_FLUSH_IO = 3,
     RFC_IO_FAULT_COMMIT_EXISTS = 4,
-    RFC_IO_FAULT_COMMIT_IO = 5
+    RFC_IO_FAULT_COMMIT_IO = 5,
+    RFC_IO_FAULT_POSIX_NO_TMPFILE = 6,
+    RFC_IO_FAULT_POSIX_PROC_LINK = 7,
+    RFC_IO_FAULT_POSIX_HANDLE_LINK = 8
 } rfc_io_fault_stage;
 
 void rfc_output_set_write_fault_for_testing(rfc_io_fault_stage fault_stage,
@@ -232,6 +235,14 @@ void rfc_output_set_commit_barrier_for_testing(
     void (*before_begin_publish)(rfc_job_id job_id, void *user),
     void (*after_begin_publish)(rfc_job_id job_id, void *user),
     void *user);
+
+void rfc_output_set_posix_post_check_for_testing(
+    void (*after_commit_check)(rfc_job_id job_id, void *user),
+    void (*after_abort_check)(rfc_job_id job_id, void *user),
+    void *user);
+
+void rfc_output_set_win32_unc_root_for_testing(const char *unc_share_utf8,
+                                               const char *backing_dir_utf8);
 
 #ifdef __cplusplus
 }

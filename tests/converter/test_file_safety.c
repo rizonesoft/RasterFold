@@ -880,6 +880,7 @@ typedef struct mem_pub_ctx {
     rfc_status fail_commit_once_status;
     rfc_status fail_commit_always_status;
     rfc_status fail_abort_status;
+    int commit_not_cleaned;
     rfc_job *cancel_job_on_flush;
     uint64_t last_attempt;
     uint8_t *published_bytes;
@@ -978,10 +979,10 @@ static rfc_status mem_pub_commit(void *raw, void *handle,
                                  int *out_temp_cleaned_up) {
     mem_pub_ctx *p = (mem_pub_ctx *)raw;
     mem_pub_stage *st = (mem_pub_stage *)handle;
-    if (out_temp_cleaned_up) {
-        *out_temp_cleaned_up = 1;
-    }
     fs_mutex_lock(&p->lock);
+    if (out_temp_cleaned_up) {
+        *out_temp_cleaned_up = p->commit_not_cleaned ? 0 : 1;
+    }
     p->commit_calls++;
     if (p->fail_commit_always_status != RFC_OK) {
         rfc_status fst = p->fail_commit_always_status;
@@ -2584,10 +2585,76 @@ typedef struct race_hook_ctx {
     char partial_path[1200];
     char target_or_moved[1200];
     char attacker_dir[1200];
-    int mode; /* 0: replace w/ file, 1: replace w/ symlink, 2: swap dir, 3: chmod 0555, 4: win32 lock check */
+    int mode; /* 0: assert no visible partial, 2: swap dir, 3: chmod 0555, 4: win32 lock check */
     int triggered;
     int verified;
 } race_hook_ctx;
+
+#ifdef _WIN32
+static void win32_make_junction(const char *junc_utf8, const char *target_utf8) {
+    wchar_t sys_dir[MAX_PATH];
+    UINT sn = GetSystemDirectoryW(sys_dir, MAX_PATH);
+    CHECK(sn > 0u && sn < MAX_PATH - 16u);
+    wchar_t cmd_exe[MAX_PATH];
+    _snwprintf(cmd_exe, MAX_PATH, L"%ls\\cmd.exe", sys_dir);
+    wchar_t wjunc[1200], wtarget[1200], cmd_line[3000];
+    CHECK(utf8_to_wide(junc_utf8, wjunc, 1200u));
+    CHECK(utf8_to_wide(target_utf8, wtarget, 1200u));
+    _snwprintf(cmd_line, 3000u, L"\"%ls\" /d /c mklink /J \"%ls\" \"%ls\"",
+               cmd_exe, wjunc, wtarget);
+    STARTUPINFOW si;
+    PROCESS_INFORMATION pi;
+    memset(&si, 0, sizeof(si));
+    memset(&pi, 0, sizeof(pi));
+    si.cb = sizeof(si);
+    BOOL ok = CreateProcessW(cmd_exe, cmd_line, NULL, NULL, FALSE,
+                             CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
+    CHECK(ok != FALSE);
+    DWORD wr = WaitForSingleObject(pi.hProcess, 30000u);
+    DWORD ec = 1u;
+    CHECK(wr == WAIT_OBJECT_0);
+    CHECK(GetExitCodeProcess(pi.hProcess, &ec) != FALSE && ec == 0u);
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+}
+#else
+typedef struct posix_post_check_ctx {
+    char subst_path[1200];
+    char sym_path[1200];
+    char sym_target[1200];
+    char abort_path[1200];
+    char dest_sym_path[1200];
+    char dest_sym_target[1200];
+    int commit_fired;
+    int abort_fired;
+} posix_post_check_ctx;
+
+static void posix_post_commit_cb(rfc_job_id job_id, void *user) {
+    (void)job_id;
+    posix_post_check_ctx *pc = (posix_post_check_ctx *)user;
+    pc->commit_fired++;
+    if (pc->subst_path[0] != '\0') {
+        const uint8_t att[] = "ATTACKER";
+        write_file_exact(pc->subst_path, att, sizeof(att) - 1u);
+    }
+    if (pc->sym_path[0] != '\0' && pc->sym_target[0] != '\0') {
+        CHECK(symlink(pc->sym_target, pc->sym_path) == 0);
+    }
+    if (pc->dest_sym_path[0] != '\0' && pc->dest_sym_target[0] != '\0') {
+        CHECK(symlink(pc->dest_sym_target, pc->dest_sym_path) == 0);
+    }
+}
+
+static void posix_post_abort_cb(rfc_job_id job_id, void *user) {
+    (void)job_id;
+    posix_post_check_ctx *pc = (posix_post_check_ctx *)user;
+    pc->abort_fired++;
+    if (pc->abort_path[0] != '\0') {
+        const uint8_t ab[] = "FOREIGN_ABORT";
+        write_file_exact(pc->abort_path, ab, sizeof(ab) - 1u);
+    }
+}
+#endif
 
 static void race_before_publish_cb(rfc_job_id job_id, void *user) {
     (void)job_id;
@@ -2624,28 +2691,8 @@ static void race_before_publish_cb(rfc_job_id job_id, void *user) {
         }
     }
 #else
-    if (rc->mode == 0 || rc->mode == 1) {
-        DIR *d = opendir(rc->dir);
-        CHECK(d != NULL);
-        struct dirent *ent;
-        int found = 0;
-        while ((ent = readdir(d)) != NULL) {
-            if (strncmp(ent->d_name, "out.fold.rfc-partial.", 21u) == 0) {
-                join_path(rc->partial_path, sizeof(rc->partial_path), rc->dir,
-                          ent->d_name);
-                found = 1;
-                break;
-            }
-        }
-        closedir(d);
-        CHECK(found == 1);
-        CHECK(unlink(rc->partial_path) == 0);
-        if (rc->mode == 0) {
-            const uint8_t att[] = "ATTACKER";
-            write_file_exact(rc->partial_path, att, sizeof(att) - 1u);
-        } else {
-            CHECK(symlink(rc->target_or_moved, rc->partial_path) == 0);
-        }
+    if (rc->mode == 0) {
+        CHECK(dir_has_prefix(rc->dir, "out.fold.rfc-partial.") == 0);
         rc->verified = 1;
     } else if (rc->mode == 2) {
         CHECK(rename(rc->dir, rc->target_or_moved) == 0);
@@ -3147,71 +3194,250 @@ static void test_audit_regressions(void) {
         mem_reader_destroy(&rc);
     }
 
-    /* 9. Findings 1, 2 & 5 OS-level staged replacement, dir swap, & abort check. */
+    /* 8b. Commit temp_cleaned_up=0 retains staged partial bytes on success. */
+    {
+        mem_reader_ctx rc;
+        mem_pub_ctx pc;
+        mem_reader_init(&rc, bmp, blen);
+        mem_pub_init(&pc);
+        pc.commit_not_cleaned = 1;
+        rfc_io_reader rdr = make_mem_reader(&rc);
+        rfc_io_publisher pub = make_mem_publisher(&pc);
+
+        rfc_io_source src_io;
+        rfc_io_sink dst_io;
+        rfc_io_source_init_callbacks(&src_io, &rdr, "c8b.bmp",
+                                     RFC_IMPORT_DEFAULT);
+        rfc_io_sink_init_callbacks(&dst_io, &pub, RFC_EXPORT_REFUSE_EXISTING);
+
+        rfc_scheduler_config cfg;
+        rfc_scheduler_config_default(&cfg);
+        cfg.max_workers = 1u;
+        rfc_scheduler *sched = rfc_scheduler_create(&cfg);
+        CHECK(sched != NULL);
+
+        rfc_job_spec spec;
+        memset(&spec, 0, sizeof(spec));
+        spec.source_format = RFC_FORMAT_BMP;
+        spec.target_format = RFC_FORMAT_RASTERFOLD;
+        spec.expected_working_set_bytes = 64u * 1024u;
+        spec.io_source = &src_io;
+        spec.io_sink = &dst_io;
+
+        rfc_job *job = NULL;
+        CHECK(rfc_scheduler_submit(sched, NULL, &spec, &job) == RFC_OK);
+        CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
+
+        rfc_export_report er;
+        CHECK(rfc_job_export_report_get(job, &er) == RFC_OK);
+        CHECK(er.valid == 1 && er.published == 1 && er.temp_cleaned_up == 0);
+
+        rfc_job_snapshot snap;
+        CHECK(rfc_job_snapshot_get(job, &snap) == RFC_OK);
+        CHECK(snap.state == RFC_JOB_SUCCEEDED);
+        CHECK(snap.live_partial_bytes > 0u);
+
+        rfc_scheduler_stats stats;
+        rfc_scheduler_stats_get(sched, &stats);
+        CHECK(stats.live_partial_bytes == snap.live_partial_bytes);
+
+        rfc_job_release(job);
+        rfc_scheduler_destroy(sched);
+        mem_pub_destroy(&pc);
+        mem_reader_destroy(&rc);
+    }
+
+    /* 9. POSIX O_TMPFILE/handle-only publish & cleanup races; Win32 share/UNC pinning. */
     {
         char root[512];
         CHECK(make_temp_dir(root, sizeof(root), "race"));
 #ifndef _WIN32
-        /* 9a. Replace staged temp file with attacker regular file before commit */
+        /* 9a. Gap 2: O_TMPFILE leaves zero visible .rfc-partial. entries and
+         * planting foreign replacement between commit validation & publish/cleanup
+         * succeeds cleanly without touching the foreign file. */
         {
-            char d0[700], dst0[900];
-            join_path(d0, sizeof(d0), root, "case_file");
+            char d0[700], dst0[900], subst0[900];
+            join_path(d0, sizeof(d0), root, "case_otmp");
             CHECK(mkdir(d0, 0755) == 0);
             join_path(dst0, sizeof(dst0), d0, "out.fold");
+            join_path(subst0, sizeof(subst0), d0, "out.fold.rfc-partial.subst");
 
             race_hook_ctx rc;
             memset(&rc, 0, sizeof(rc));
             snprintf(rc.dir, sizeof(rc.dir), "%s", d0);
             rc.mode = 0;
+
+            posix_post_check_ctx pc;
+            memset(&pc, 0, sizeof(pc));
+            snprintf(pc.subst_path, sizeof(pc.subst_path), "%s", subst0);
+
             rfc_output_set_commit_barrier_for_testing(race_before_publish_cb,
                                                       NULL, &rc);
+            rfc_output_set_posix_post_check_for_testing(posix_post_commit_cb,
+                                                        NULL, &pc);
 
             rfc_export_report er;
             CHECK(rfc_output_write_path(dst0, NULL, NULL,
                                         RFC_EXPORT_REFUSE_EXISTING, NULL, 91u,
-                                        bmp, blen, NULL, &er) == RFC_ERR_IO);
+                                        bmp, blen, NULL, &er) == RFC_OK);
+            rfc_output_set_posix_post_check_for_testing(NULL, NULL, NULL);
             rfc_output_set_commit_barrier_for_testing(NULL, NULL, NULL);
-            CHECK(rc.verified == 1);
-            CHECK(er.published == 0);
-            CHECK(!file_exists_os(dst0));
-            /* Attacker file at partial path must NOT have been deleted by abort! */
-            uint8_t *abuf = NULL;
-            size_t alen = 0u;
-            read_file_exact(rc.partial_path, &abuf, &alen);
-            CHECK(alen == 8u && memcmp(abuf, "ATTACKER", 8u) == 0);
-            free(abuf);
-            remove_file_os(rc.partial_path);
+
+            CHECK(rc.verified == 1 && pc.commit_fired == 1);
+            CHECK(er.published == 1 && er.temp_cleaned_up == 1);
+
+            uint8_t *dbuf = NULL;
+            size_t dlen = 0u;
+            read_file_exact(dst0, &dbuf, &dlen);
+            CHECK(dlen == blen && memcmp(dbuf, bmp, blen) == 0);
+            free(dbuf);
+
+            uint8_t *sbuf = NULL;
+            size_t slen = 0u;
+            read_file_exact(subst0, &sbuf, &slen);
+            CHECK(slen == 8u && memcmp(sbuf, "ATTACKER", 8u) == 0);
+            free(sbuf);
+
+            remove_file_os(subst0);
+            remove_file_os(dst0);
             remove_dir_os(d0);
         }
 
-        /* 9b. Replace staged temp file with symlink before commit */
+        /* 9b. Gap 1 & Gap 2: Forced fallback + post-check substitution (both
+         * handle-link and proc-link faults), abort post-check foreign cleanup,
+         * and post-check destination symlink race. */
         {
-            char d1[700], dst1[900], vic[900];
-            join_path(d1, sizeof(d1), root, "case_sym");
+            char d1[700], dst1[900], vic[900], sub1[900], sym1[900], ab1[900];
+            join_path(d1, sizeof(d1), root, "case_fallback");
             CHECK(mkdir(d1, 0755) == 0);
             join_path(dst1, sizeof(dst1), d1, "out.fold");
             join_path(vic, sizeof(vic), d1, "victim.txt");
+            join_path(sub1, sizeof(sub1), d1, "out.fold.rfc-partial.subst");
+            join_path(sym1, sizeof(sym1), d1, "out.fold.rfc-partial.sym");
+            join_path(ab1, sizeof(ab1), d1, "out.fold.rfc-partial.abort");
             const uint8_t vdata[] = "VICTIM";
             write_file_exact(vic, vdata, sizeof(vdata) - 1u);
 
-            race_hook_ctx rc;
-            memset(&rc, 0, sizeof(rc));
-            snprintf(rc.dir, sizeof(rc.dir), "%s", d1);
-            snprintf(rc.target_or_moved, sizeof(rc.target_or_moved), "%s", vic);
-            rc.mode = 1;
-            rfc_output_set_commit_barrier_for_testing(race_before_publish_cb,
-                                                      NULL, &rc);
+            /* 9b-1: Force handle-link refusal with post-commit & post-abort planting. */
+            posix_post_check_ctx pc1;
+            memset(&pc1, 0, sizeof(pc1));
+            snprintf(pc1.subst_path, sizeof(pc1.subst_path), "%s", sub1);
+            snprintf(pc1.sym_path, sizeof(pc1.sym_path), "%s", sym1);
+            snprintf(pc1.sym_target, sizeof(pc1.sym_target), "%s", vic);
+            snprintf(pc1.abort_path, sizeof(pc1.abort_path), "%s", ab1);
 
-            rfc_export_report er;
+            rfc_output_set_posix_post_check_for_testing(posix_post_commit_cb,
+                                                        posix_post_abort_cb,
+                                                        &pc1);
+            rfc_output_set_write_fault_for_testing(RFC_IO_FAULT_POSIX_HANDLE_LINK,
+                                                   0u, RFC_ERR_IO);
+
+            rfc_export_report er1;
             CHECK(rfc_output_write_path(dst1, NULL, NULL,
                                         RFC_EXPORT_REFUSE_EXISTING, NULL, 92u,
-                                        bmp, blen, NULL, &er) ==
-                  RFC_ERR_PATH_ALIAS);
-            rfc_output_set_commit_barrier_for_testing(NULL, NULL, NULL);
-            CHECK(rc.verified == 1 && er.published == 0);
+                                        bmp, blen, NULL, &er1) == RFC_ERR_IO);
+            rfc_output_set_write_fault_for_testing(RFC_IO_FAULT_NONE, 0u,
+                                                   RFC_OK);
+            rfc_output_set_posix_post_check_for_testing(NULL, NULL, NULL);
+
+            CHECK(pc1.commit_fired == 1 && pc1.abort_fired == 1);
+            CHECK(er1.published == 0 && er1.temp_cleaned_up == 1);
             CHECK(!file_exists_os(dst1));
-            CHECK(file_exists_os(vic));
-            remove_file_os(rc.partial_path);
+
+            uint8_t *sbuf = NULL;
+            size_t slen = 0u;
+            read_file_exact(sub1, &sbuf, &slen);
+            CHECK(slen == 8u && memcmp(sbuf, "ATTACKER", 8u) == 0);
+            free(sbuf);
+
+            struct stat lst;
+            CHECK(lstat(sym1, &lst) == 0 && S_ISLNK(lst.st_mode));
+
+            uint8_t *abuf = NULL;
+            size_t alen = 0u;
+            read_file_exact(ab1, &abuf, &alen);
+            CHECK(alen == 13u && memcmp(abuf, "FOREIGN_ABORT", 13u) == 0);
+            free(abuf);
+
+            uint8_t *vbuf = NULL;
+            size_t vlen = 0u;
+            read_file_exact(vic, &vbuf, &vlen);
+            CHECK(vlen == 6u && memcmp(vbuf, "VICTIM", 6u) == 0);
+            free(vbuf);
+
+            remove_file_os(sub1);
+            remove_file_os(sym1);
+            remove_file_os(ab1);
+
+            /* 9b-2: Force /proc/self/fd link fallback (AT_EMPTY_PATH or safe refusal). */
+            posix_post_check_ctx pc2;
+            memset(&pc2, 0, sizeof(pc2));
+            snprintf(pc2.subst_path, sizeof(pc2.subst_path), "%s", sub1);
+            snprintf(pc2.abort_path, sizeof(pc2.abort_path), "%s", ab1);
+
+            rfc_output_set_posix_post_check_for_testing(posix_post_commit_cb,
+                                                        posix_post_abort_cb,
+                                                        &pc2);
+            rfc_output_set_write_fault_for_testing(RFC_IO_FAULT_POSIX_PROC_LINK,
+                                                   0u, RFC_ERR_IO);
+
+            rfc_export_report er2;
+            rfc_status st2 = rfc_output_write_path(
+                dst1, NULL, NULL, RFC_EXPORT_REFUSE_EXISTING, NULL, 93u, bmp,
+                blen, NULL, &er2);
+            rfc_output_set_write_fault_for_testing(RFC_IO_FAULT_NONE, 0u,
+                                                   RFC_OK);
+            rfc_output_set_posix_post_check_for_testing(NULL, NULL, NULL);
+
+            CHECK(pc2.commit_fired == 1);
+            if (st2 == RFC_OK) {
+                CHECK(er2.published == 1 && er2.temp_cleaned_up == 1);
+                uint8_t *pbuf = NULL;
+                size_t plen = 0u;
+                read_file_exact(dst1, &pbuf, &plen);
+                CHECK(plen == blen && memcmp(pbuf, bmp, blen) == 0);
+                free(pbuf);
+                remove_file_os(dst1);
+            } else {
+                CHECK(st2 == RFC_ERR_IO);
+                CHECK(er2.published == 0 && er2.temp_cleaned_up == 1);
+                CHECK(pc2.abort_fired == 1);
+                CHECK(!file_exists_os(dst1));
+                uint8_t *ab2 = NULL;
+                size_t ab2l = 0u;
+                read_file_exact(ab1, &ab2, &ab2l);
+                CHECK(ab2l == 13u && memcmp(ab2, "FOREIGN_ABORT", 13u) == 0);
+                free(ab2);
+                remove_file_os(ab1);
+            }
+            read_file_exact(sub1, &sbuf, &slen);
+            CHECK(slen == 8u && memcmp(sbuf, "ATTACKER", 8u) == 0);
+            free(sbuf);
+            remove_file_os(sub1);
+
+            /* 9b-3: Post-check symlink created at destination before linkat. */
+            posix_post_check_ctx pc3;
+            memset(&pc3, 0, sizeof(pc3));
+            snprintf(pc3.dest_sym_path, sizeof(pc3.dest_sym_path), "%s", dst1);
+            snprintf(pc3.dest_sym_target, sizeof(pc3.dest_sym_target), "%s",
+                     vic);
+            rfc_output_set_posix_post_check_for_testing(posix_post_commit_cb,
+                                                        posix_post_abort_cb,
+                                                        &pc3);
+
+            rfc_export_report er3;
+            CHECK(rfc_output_write_path(dst1, NULL, NULL,
+                                        RFC_EXPORT_REFUSE_EXISTING, NULL, 94u,
+                                        bmp, blen, NULL, &er3) ==
+                  RFC_ERR_PATH_ALIAS);
+            rfc_output_set_posix_post_check_for_testing(NULL, NULL, NULL);
+            CHECK(pc3.commit_fired == 1 && pc3.abort_fired == 1);
+            CHECK(er3.published == 0 && er3.temp_cleaned_up == 1);
+            read_file_exact(vic, &vbuf, &vlen);
+            CHECK(vlen == 6u && memcmp(vbuf, "VICTIM", 6u) == 0);
+            free(vbuf);
+
+            remove_file_os(dst1); /* symlink */
             remove_file_os(vic);
             remove_dir_os(d1);
         }
@@ -3242,7 +3468,7 @@ static void test_audit_regressions(void) {
 
             rfc_export_report er;
             (void)rfc_output_write_path(dst2, NULL, NULL,
-                                        RFC_EXPORT_REFUSE_EXISTING, NULL, 93u,
+                                        RFC_EXPORT_REFUSE_EXISTING, NULL, 95u,
                                         bmp, blen, NULL, &er);
             rfc_output_set_commit_barrier_for_testing(NULL, NULL, NULL);
             CHECK(rc.verified == 1);
@@ -3254,45 +3480,46 @@ static void test_audit_regressions(void) {
             remove_dir_os(d2);
         }
 
-        /* 9d. POSIX real chmod 0555 failing abort_stage sets temp_cleaned_up=0 */
-        if (geteuid() != 0) {
+        /* 9d. chmod 0555 refuses publish cleanly with anonymous temp cleanup,
+         * and RFC_IO_FAULT_POSIX_NO_TMPFILE refuses cleanly without partial. */
+        {
             char d3[700], dst3[900];
             join_path(d3, sizeof(d3), root, "case_ro");
             CHECK(mkdir(d3, 0755) == 0);
             join_path(dst3, sizeof(dst3), d3, "out.fold");
 
-            race_hook_ctx rc;
-            memset(&rc, 0, sizeof(rc));
-            snprintf(rc.dir, sizeof(rc.dir), "%s", d3);
-            rc.mode = 3;
-            rfc_output_set_commit_barrier_for_testing(race_before_publish_cb,
-                                                      NULL, &rc);
-            rfc_output_set_write_fault_for_testing(RFC_IO_FAULT_COMMIT_IO, 0u,
-                                                   RFC_ERR_IO);
+            if (geteuid() != 0) {
+                race_hook_ctx rc;
+                memset(&rc, 0, sizeof(rc));
+                snprintf(rc.dir, sizeof(rc.dir), "%s", d3);
+                rc.mode = 3;
+                rfc_output_set_commit_barrier_for_testing(
+                    race_before_publish_cb, NULL, &rc);
 
-            rfc_export_report er;
+                rfc_export_report er;
+                CHECK(rfc_output_write_path(dst3, NULL, NULL,
+                                            RFC_EXPORT_REFUSE_EXISTING, NULL,
+                                            96u, bmp, blen, NULL, &er) ==
+                      RFC_ERR_PERMISSION_DENIED);
+                rfc_output_set_commit_barrier_for_testing(NULL, NULL, NULL);
+                CHECK(rc.verified == 1 && er.published == 0 &&
+                      er.temp_cleaned_up == 1);
+                CHECK(chmod(d3, 0755) == 0);
+                CHECK(!file_exists_os(dst3));
+                CHECK(dir_has_prefix(d3, "out.fold.rfc-partial.") == 0);
+            }
+
+            rfc_output_set_write_fault_for_testing(
+                RFC_IO_FAULT_POSIX_NO_TMPFILE, 0u, RFC_ERR_IO);
+            rfc_export_report er_nt;
             CHECK(rfc_output_write_path(dst3, NULL, NULL,
-                                        RFC_EXPORT_REFUSE_EXISTING, NULL, 94u,
-                                        bmp, blen, NULL, &er) == RFC_ERR_IO);
+                                        RFC_EXPORT_REFUSE_EXISTING, NULL, 97u,
+                                        bmp, blen, NULL, &er_nt) ==
+                  RFC_ERR_IO);
             rfc_output_set_write_fault_for_testing(RFC_IO_FAULT_NONE, 0u,
                                                    RFC_OK);
-            rfc_output_set_commit_barrier_for_testing(NULL, NULL, NULL);
-            CHECK(rc.verified == 1 && er.published == 0 &&
-                  er.temp_cleaned_up == 0);
-            CHECK(dir_has_prefix(d3, "out.fold.rfc-partial.") == 1);
-            CHECK(chmod(d3, 0755) == 0);
-            DIR *dr = opendir(d3);
-            if (dr) {
-                struct dirent *e;
-                while ((e = readdir(dr)) != NULL) {
-                    if (strncmp(e->d_name, "out.fold.rfc-partial.", 21u) == 0) {
-                        char p[900];
-                        join_path(p, sizeof(p), d3, e->d_name);
-                        unlink(p);
-                    }
-                }
-                closedir(dr);
-            }
+            CHECK(er_nt.published == 0 && !file_exists_os(dst3));
+            CHECK(dir_has_prefix(d3, "out.fold.rfc-partial.") == 0);
             remove_dir_os(d3);
         }
 #else
@@ -3328,6 +3555,101 @@ static void test_audit_regressions(void) {
             remove_file_os(dst4);
             remove_dir_os(sub4);
             remove_dir_os(d4);
+        }
+
+        /* 9f. Gap 3: Win32 UNC share-root anchoring, publish, existing-target refusal,
+         * nested subdir, malformed UNC, and junction share-root refusal. */
+        {
+            char uroot[700], usub[900], ujunc[900], uout_back[1100],
+                usub_back[1100];
+            wchar_t wuroot[700], wusub[900], wujunc[900];
+            join_path(uroot, sizeof(uroot), root, "unc_backing");
+            join_path(usub, sizeof(usub), uroot, "sub");
+            join_path(ujunc, sizeof(ujunc), root, "unc_junc");
+            join_path(uout_back, sizeof(uout_back), uroot, "output.fold");
+            join_path(usub_back, sizeof(usub_back), usub, "nested.fold");
+            CHECK(utf8_to_wide(uroot, wuroot, 700u));
+            CHECK(CreateDirectoryW(wuroot, NULL));
+            CHECK(utf8_to_wide(usub, wusub, 900u));
+            CHECK(CreateDirectoryW(wusub, NULL));
+            win32_make_junction(ujunc, uroot);
+            CHECK(utf8_to_wide(ujunc, wujunc, 900u));
+
+            rfc_output_set_win32_unc_root_for_testing("\\\\rf-unc-srv\\share",
+                                                      uroot);
+
+            CHECK(rfc_output_check_destination_path(
+                      "\\\\rf-unc-srv\\share\\output.fold", NULL, NULL,
+                      RFC_EXPORT_REFUSE_EXISTING) == RFC_OK);
+
+            rfc_export_report er;
+            CHECK(rfc_output_write_path("\\\\rf-unc-srv\\share\\output.fold",
+                                        NULL, NULL, RFC_EXPORT_REFUSE_EXISTING,
+                                        NULL, 98u, bmp, blen, NULL,
+                                        &er) == RFC_OK);
+            CHECK(er.published == 1 && er.temp_cleaned_up == 1);
+
+            uint8_t *obuf = NULL;
+            size_t olen = 0u;
+            read_file_exact(uout_back, &obuf, &olen);
+            CHECK(olen == blen && memcmp(obuf, bmp, blen) == 0);
+            free(obuf);
+
+            CHECK(rfc_output_check_destination_path(
+                      "\\\\rf-unc-srv\\share\\output.fold", NULL, NULL,
+                      RFC_EXPORT_REFUSE_EXISTING) ==
+                  RFC_ERR_DESTINATION_EXISTS);
+
+            uint8_t other[64];
+            memset(other, 0x5Au, sizeof(other));
+            rfc_export_report er_ex;
+            CHECK(rfc_output_write_path("\\\\rf-unc-srv\\share\\output.fold",
+                                        NULL, NULL, RFC_EXPORT_REFUSE_EXISTING,
+                                        NULL, 99u, other, sizeof(other), NULL,
+                                        &er_ex) == RFC_ERR_DESTINATION_EXISTS);
+            CHECK(er_ex.published == 0);
+            read_file_exact(uout_back, &obuf, &olen);
+            CHECK(olen == blen && memcmp(obuf, bmp, blen) == 0);
+            free(obuf);
+
+            rfc_export_report er_sub;
+            CHECK(rfc_output_write_path(
+                      "\\\\rf-unc-srv\\share\\sub\\nested.fold", NULL, NULL,
+                      RFC_EXPORT_REFUSE_EXISTING, NULL, 100u, bmp, blen, NULL,
+                      &er_sub) == RFC_OK);
+            CHECK(er_sub.published == 1 && er_sub.temp_cleaned_up == 1);
+            read_file_exact(usub_back, &obuf, &olen);
+            CHECK(olen == blen && memcmp(obuf, bmp, blen) == 0);
+            free(obuf);
+
+            CHECK(rfc_output_check_destination_path(
+                      "\\\\rf-unc-srv\\", NULL, NULL,
+                      RFC_EXPORT_REFUSE_EXISTING) == RFC_ERR_INVALID_ARGUMENT);
+            CHECK(rfc_output_check_destination_path(
+                      "\\\\rf-unc-srv", NULL, NULL,
+                      RFC_EXPORT_REFUSE_EXISTING) == RFC_ERR_INVALID_ARGUMENT);
+            CHECK(rfc_output_check_destination_path(
+                      "\\\\rf-unc-srv\\output.fold", NULL, NULL,
+                      RFC_EXPORT_REFUSE_EXISTING) == RFC_ERR_INVALID_ARGUMENT);
+
+            rfc_output_set_win32_unc_root_for_testing("\\\\rf-unc-srv\\jshare",
+                                                      ujunc);
+            CHECK(rfc_output_check_destination_path(
+                      "\\\\rf-unc-srv\\jshare\\x.fold", NULL, NULL,
+                      RFC_EXPORT_REFUSE_EXISTING) == RFC_ERR_PATH_ALIAS);
+            rfc_export_report er_j;
+            CHECK(rfc_output_write_path("\\\\rf-unc-srv\\jshare\\x.fold", NULL,
+                                        NULL, RFC_EXPORT_REFUSE_EXISTING, NULL,
+                                        101u, bmp, blen, NULL,
+                                        &er_j) == RFC_ERR_PATH_ALIAS);
+            CHECK(er_j.published == 0);
+
+            rfc_output_set_win32_unc_root_for_testing(NULL, NULL);
+            CHECK(RemoveDirectoryW(wujunc) != FALSE);
+            remove_file_os(usub_back);
+            remove_file_os(uout_back);
+            remove_dir_os(usub);
+            remove_dir_os(uroot);
         }
 #endif
         remove_dir_os(root);

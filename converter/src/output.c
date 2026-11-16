@@ -42,13 +42,22 @@
 
 #define RFC_OUTPUT_CHUNK_BYTES (64u * 1024u)
 
+#ifdef _WIN32
 static atomic_uint_fast64_t g_partial_seq = 1u;
+static wchar_t g_test_unc_prefix_w[1024];
+static wchar_t g_test_unc_backing_w[1024];
+#endif
 static rfc_io_fault_stage g_test_fault_stage = RFC_IO_FAULT_NONE;
 static uint64_t g_test_fault_after_bytes = 0u;
 static rfc_status g_test_fault_status = RFC_OK;
 static void (*g_before_begin_publish_cb)(rfc_job_id job_id, void *user) = NULL;
 static void (*g_after_begin_publish_cb)(rfc_job_id job_id, void *user) = NULL;
 static void *g_publish_barrier_user = NULL;
+#ifndef _WIN32
+static void (*g_after_commit_check_cb)(rfc_job_id job_id, void *user) = NULL;
+static void (*g_after_abort_check_cb)(rfc_job_id job_id, void *user) = NULL;
+static void *g_posix_post_check_user = NULL;
+#endif
 
 void rfc_output_set_write_fault_for_testing(rfc_io_fault_stage fault_stage,
                                             uint64_t fail_after_bytes,
@@ -65,6 +74,21 @@ void rfc_output_set_commit_barrier_for_testing(
     g_before_begin_publish_cb = before_begin_publish;
     g_after_begin_publish_cb = after_begin_publish;
     g_publish_barrier_user = user;
+}
+
+void rfc_output_set_posix_post_check_for_testing(
+    void (*after_commit_check)(rfc_job_id job_id, void *user),
+    void (*after_abort_check)(rfc_job_id job_id, void *user),
+    void *user) {
+#ifdef _WIN32
+    (void)after_commit_check;
+    (void)after_abort_check;
+    (void)user;
+#else
+    g_after_commit_check_cb = after_commit_check;
+    g_after_abort_check_cb = after_abort_check;
+    g_posix_post_check_user = user;
+#endif
 }
 
 static void copy_export_detail(char *dst, size_t cap, const char *src) {
@@ -535,6 +559,79 @@ static rfc_status win_verify_dir_handles(const HANDLE *handles, size_t count) {
     return RFC_OK;
 }
 
+static wchar_t win_ascii_lower_w(wchar_t c) {
+    return (c >= L'A' && c <= L'Z') ? (wchar_t)(c - L'A' + L'a') : c;
+}
+
+static int win_is_sep_w(wchar_t c) {
+    return c == L'\\' || c == L'/';
+}
+
+static void win_trim_trailing_seps_w(wchar_t *s) {
+    size_t len = wcslen(s);
+    while (len > 0u && win_is_sep_w(s[len - 1u])) {
+        s[--len] = L'\0';
+    }
+}
+
+void rfc_output_set_win32_unc_root_for_testing(const char *unc_share_utf8,
+                                               const char *backing_dir_utf8) {
+    g_test_unc_prefix_w[0] = L'\0';
+    g_test_unc_backing_w[0] = L'\0';
+    if (!unc_share_utf8 || !backing_dir_utf8 || unc_share_utf8[0] == '\0' ||
+        backing_dir_utf8[0] == '\0') {
+        return;
+    }
+    if (utf8_to_wide_out(unc_share_utf8, g_test_unc_prefix_w, 1024u) != RFC_OK ||
+        utf8_to_wide_out(backing_dir_utf8, g_test_unc_backing_w, 1024u) !=
+            RFC_OK) {
+        g_test_unc_prefix_w[0] = L'\0';
+        g_test_unc_backing_w[0] = L'\0';
+        return;
+    }
+    win_trim_trailing_seps_w(g_test_unc_prefix_w);
+    win_trim_trailing_seps_w(g_test_unc_backing_w);
+}
+
+static HANDLE win_open_dir_handle_path(const wchar_t *wpath, DWORD share_mode) {
+    const wchar_t *open_path = wpath;
+    wchar_t mapped[4096];
+    if (g_test_unc_prefix_w[0] != L'\0') {
+        size_t plen = wcslen(g_test_unc_prefix_w);
+        int match = (plen > 0u);
+        for (size_t i = 0u; i < plen && match; i++) {
+            wchar_t a = wpath[i];
+            wchar_t b = g_test_unc_prefix_w[i];
+            if (win_is_sep_w(a) && win_is_sep_w(b)) {
+                continue;
+            }
+            if (win_ascii_lower_w(a) != win_ascii_lower_w(b)) {
+                match = 0;
+            }
+        }
+        if (match &&
+            (wpath[plen] == L'\0' || win_is_sep_w(wpath[plen]))) {
+            size_t blen = wcslen(g_test_unc_backing_w);
+            const wchar_t *rest = wpath + plen;
+            size_t rlen = wcslen(rest);
+            int add_drive_slash =
+                (blen == 2u && g_test_unc_backing_w[1] == L':' && rlen == 0u);
+            if (blen + (add_drive_slash ? 1u : 0u) + rlen + 1u <= 4096u) {
+                memcpy(mapped, g_test_unc_backing_w, blen * sizeof(wchar_t));
+                size_t mp = blen;
+                if (add_drive_slash) {
+                    mapped[mp++] = L'\\';
+                }
+                memcpy(mapped + mp, rest, (rlen + 1u) * sizeof(wchar_t));
+                open_path = mapped;
+            }
+        }
+    }
+    return CreateFileW(
+        open_path, FILE_READ_ATTRIBUTES, share_mode, NULL, OPEN_EXISTING,
+        FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+}
+
 static rfc_status win_open_anchored_ancestors(const wchar_t *wdest,
                                               HANDLE *out_handles,
                                               size_t max_handles,
@@ -577,11 +674,8 @@ static rfc_status win_open_anchored_ancestors(const wchar_t *wdest,
         wabs[1] == L':' && (wabs[2] == L'\\' || wabs[2] == L'/')) {
         wchar_t saved = wabs[3];
         wabs[3] = L'\0';
-        HANDLE rh = CreateFileW(
-            wabs, FILE_READ_ATTRIBUTES,
-            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-            OPEN_EXISTING,
-            FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+        HANDLE rh = win_open_dir_handle_path(
+            wabs, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE);
         wabs[3] = saved;
         if (rh == INVALID_HANDLE_VALUE) {
             return map_win32_write_error(GetLastError());
@@ -602,17 +696,49 @@ static rfc_status win_open_anchored_ancestors(const wchar_t *wdest,
                (wabs[1] == L'\\' || wabs[1] == L'/')) {
         /* UNC share prefix \\server\share */
         size_t s = 2u;
-        int parts = 0;
-        while (s < parent_end && parts < 2) {
-            while (s < parent_end && wabs[s] != L'\\' && wabs[s] != L'/') {
-                s++;
-            }
-            parts++;
-            if (s < parent_end && (wabs[s] == L'\\' || wabs[s] == L'/')) {
-                s++;
-            }
+        size_t srv_start = s;
+        while (s < parent_end && wabs[s] != L'\\' && wabs[s] != L'/') {
+            s++;
         }
-        pos = s;
+        if (s == srv_start || s >= parent_end) {
+            return RFC_ERR_INVALID_ARGUMENT;
+        }
+        while (s < parent_end && (wabs[s] == L'\\' || wabs[s] == L'/')) {
+            s++;
+        }
+        if (s >= parent_end) {
+            return RFC_ERR_INVALID_ARGUMENT;
+        }
+        size_t shr_start = s;
+        while (s < parent_end && wabs[s] != L'\\' && wabs[s] != L'/') {
+            s++;
+        }
+        if (s == shr_start) {
+            return RFC_ERR_INVALID_ARGUMENT;
+        }
+        size_t root_end =
+            (s < parent_end && (wabs[s] == L'\\' || wabs[s] == L'/')) ? (s + 1u)
+                                                                      : s;
+        wchar_t saved = wabs[root_end];
+        wabs[root_end] = L'\0';
+        HANDLE rh = win_open_dir_handle_path(
+            wabs, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE);
+        wabs[root_end] = saved;
+        if (rh == INVALID_HANDLE_VALUE) {
+            return map_win32_write_error(GetLastError());
+        }
+        if (count >= max_handles) {
+            CloseHandle(rh);
+            return RFC_ERR_INVALID_ARGUMENT;
+        }
+        out_handles[count++] = rh;
+        rfc_status vst = win_verify_dir_handles(out_handles + (count - 1u), 1u);
+        if (vst != RFC_OK) {
+            win_close_dir_handles(out_handles, count);
+            *out_count = 0u;
+            return vst;
+        }
+        pos = root_end;
     }
 
     while (pos < parent_end) {
@@ -636,16 +762,10 @@ static rfc_status win_open_anchored_ancestors(const wchar_t *wdest,
             }
         }
         DWORD share = FILE_SHARE_READ | FILE_SHARE_WRITE;
-        HANDLE dh = CreateFileW(
-            wabs, FILE_READ_ATTRIBUTES, share, NULL, OPEN_EXISTING,
-            FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+        HANDLE dh = win_open_dir_handle_path(wabs, share);
         if (dh == INVALID_HANDLE_VALUE &&
             GetLastError() == ERROR_SHARING_VIOLATION && !is_leaf_parent) {
-            dh = CreateFileW(
-                wabs, FILE_READ_ATTRIBUTES, share | FILE_SHARE_DELETE, NULL,
-                OPEN_EXISTING,
-                FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
-                NULL);
+            dh = win_open_dir_handle_path(wabs, share | FILE_SHARE_DELETE);
         }
         if (dh == INVALID_HANDLE_VALUE) {
             DWORD err = GetLastError();
@@ -723,6 +843,12 @@ static rfc_status win_join_dir_and_name(const wchar_t *dir_path,
     return RFC_OK;
 }
 #else
+void rfc_output_set_win32_unc_root_for_testing(const char *unc_share_utf8,
+                                               const char *backing_dir_utf8) {
+    (void)unc_share_utf8;
+    (void)backing_dir_utf8;
+}
+
 static rfc_status posix_open_anchored_parent(const char *dest_path_utf8,
                                              int *out_dir_fd,
                                              char *out_base,
@@ -1103,6 +1229,7 @@ typedef struct path_pub_ctx {
 } path_pub_ctx;
 
 typedef struct path_stage_handle {
+    rfc_job_id job_id;
 #ifdef _WIN32
     HANDLE handle;
     HANDLE dir_handles[64];
@@ -1118,7 +1245,6 @@ typedef struct path_stage_handle {
     dev_t staged_dev;
     ino_t staged_ino;
     char dest_base[512];
-    char tmp_base[600];
 #endif
     int flushed;
 } path_stage_handle;
@@ -1144,9 +1270,10 @@ static rfc_status path_pub_begin(void *raw_ctx,
     if (!sh) {
         return RFC_ERR_OUT_OF_MEMORY;
     }
+    sh->job_id = job_id;
+#ifdef _WIN32
     uint64_t seq = atomic_fetch_add_explicit(&g_partial_seq, 1u,
                                              memory_order_relaxed);
-#ifdef _WIN32
     sh->handle = INVALID_HANDLE_VALUE;
     for (size_t i = 0u; i < 64u; i++) {
         sh->dir_handles[i] = INVALID_HANDLE_VALUE;
@@ -1212,6 +1339,7 @@ static rfc_status path_pub_begin(void *raw_ctx,
     fill_win_identity_from_handle(sh->handle, FILE_ATTRIBUTE_NORMAL,
                                   &sh->staged_id);
 #else
+    (void)attempt_number;
     sh->dir_fd = -1;
     sh->fd = -1;
     rfc_status st = posix_open_anchored_parent(
@@ -1227,24 +1355,20 @@ static rfc_status path_pub_begin(void *raw_ctx,
         free(sh);
         return st;
     }
-    int n = snprintf(sh->tmp_base, sizeof(sh->tmp_base),
-                     "%s.rfc-partial.%lu.%llu.%llu.%llu", sh->dest_base,
-                     (unsigned long)getpid(), (unsigned long long)job_id,
-                     (unsigned long long)attempt_number,
-                     (unsigned long long)seq);
-    if (n <= 0 || (size_t)n >= sizeof(sh->tmp_base)) {
-        close(sh->dir_fd);
-        free(sh);
-        return RFC_ERR_INVALID_ARGUMENT;
-    }
-    int flags = O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC
-#ifdef O_NOFOLLOW
-                | O_NOFOLLOW
+    if (g_test_fault_stage == RFC_IO_FAULT_POSIX_NO_TMPFILE) {
+        sh->fd = -1;
+        errno = EOPNOTSUPP;
+    } else {
+#ifdef O_TMPFILE
+        do {
+            sh->fd = openat(sh->dir_fd, ".", O_TMPFILE | O_WRONLY | O_CLOEXEC,
+                            0644);
+        } while (sh->fd < 0 && errno == EINTR);
+#else
+        sh->fd = -1;
+        errno = EOPNOTSUPP;
 #endif
-        ;
-    do {
-        sh->fd = openat(sh->dir_fd, sh->tmp_base, flags, 0644);
-    } while (sh->fd < 0 && errno == EINTR);
+    }
     if (sh->fd < 0) {
         int err = errno;
         close(sh->dir_fd);
@@ -1255,7 +1379,6 @@ static rfc_status path_pub_begin(void *raw_ctx,
     if (fstat(sh->fd, &sst) != 0) {
         int err = errno;
         close(sh->fd);
-        (void)unlinkat(sh->dir_fd, sh->tmp_base, 0);
         close(sh->dir_fd);
         free(sh);
         return map_posix_write_error(err);
@@ -1394,71 +1517,62 @@ static rfc_status path_pub_commit(void *raw_ctx,
         return st;
     }
 
-    struct stat cur_tmp;
-    if (fstatat(sh->dir_fd, sh->tmp_base, &cur_tmp, AT_SYMLINK_NOFOLLOW) != 0) {
+    struct stat cur_fd;
+    if (fstat(sh->fd, &cur_fd) != 0 || !S_ISREG(cur_fd.st_mode) ||
+        cur_fd.st_dev != sh->staged_dev || cur_fd.st_ino != sh->staged_ino) {
         return RFC_ERR_IO;
     }
-    if (S_ISLNK(cur_tmp.st_mode)) {
-        return RFC_ERR_PATH_ALIAS;
-    }
-    if (cur_tmp.st_dev != sh->staged_dev || cur_tmp.st_ino != sh->staged_ino) {
-        return RFC_ERR_IO;
+
+    if (g_after_commit_check_cb) {
+        g_after_commit_check_cb(sh->job_id, g_posix_post_check_user);
     }
 
     char proc_fd[64];
     snprintf(proc_fd, sizeof(proc_fd), "/proc/self/fd/%d", sh->fd);
-    int lrc = linkat(AT_FDCWD, proc_fd, sh->dir_fd, sh->dest_base,
-                     AT_SYMLINK_FOLLOW);
-    if (lrc == 0) {
-        struct stat after_tmp;
-        if (fstatat(sh->dir_fd, sh->tmp_base, &after_tmp, AT_SYMLINK_NOFOLLOW) ==
-            0) {
-            if (!S_ISLNK(after_tmp.st_mode) &&
-                after_tmp.st_dev == sh->staged_dev &&
-                after_tmp.st_ino == sh->staged_ino) {
-                if (unlinkat(sh->dir_fd, sh->tmp_base, 0) != 0 &&
-                    errno != ENOENT) {
-                    if (out_temp_cleaned_up) {
-                        *out_temp_cleaned_up = 0;
-                    }
-                }
-            } else if (out_temp_cleaned_up) {
-                *out_temp_cleaned_up = 0;
-            }
-        } else if (errno != ENOENT && out_temp_cleaned_up) {
-            *out_temp_cleaned_up = 0;
-        }
-    } else if (errno == EEXIST) {
-        return map_posix_write_error(EEXIST);
-    } else if (errno == ENOENT || errno == ENOSYS || errno == EOPNOTSUPP ||
-               errno == EPERM || errno == EACCES || errno == EXDEV) {
-        int rc = renameat2(sh->dir_fd, sh->tmp_base, sh->dir_fd, sh->dest_base,
-                           RENAME_NOREPLACE);
-        if (rc != 0) {
-            if (errno == ENOSYS || errno == EINVAL || errno == ENOTSUP) {
-                if (linkat(sh->dir_fd, sh->tmp_base, sh->dir_fd,
-                           sh->dest_base, 0) != 0) {
-                    return map_posix_write_error(errno);
-                }
-                if (unlinkat(sh->dir_fd, sh->tmp_base, 0) != 0 &&
-                    errno != ENOENT) {
-                    if (out_temp_cleaned_up) {
-                        *out_temp_cleaned_up = 0;
-                    }
-                }
-            } else {
-                return map_posix_write_error(errno);
-            }
-        }
-        struct stat pub_st;
-        if (fstatat(sh->dir_fd, sh->dest_base, &pub_st, AT_SYMLINK_NOFOLLOW) !=
-                0 ||
-            S_ISLNK(pub_st.st_mode) || pub_st.st_dev != sh->staged_dev ||
-            pub_st.st_ino != sh->staged_ino) {
-            return RFC_ERR_IO;
-        }
+    int lrc = -1;
+    if (g_test_fault_stage == RFC_IO_FAULT_POSIX_PROC_LINK ||
+        g_test_fault_stage == RFC_IO_FAULT_POSIX_HANDLE_LINK) {
+        errno = EOPNOTSUPP;
     } else {
-        return map_posix_write_error(errno);
+        lrc = linkat(AT_FDCWD, proc_fd, sh->dir_fd, sh->dest_base,
+                     AT_SYMLINK_FOLLOW);
+    }
+    if (lrc != 0) {
+        int first_err = errno;
+        if (first_err == EEXIST) {
+            rfc_status dst_st = posix_check_dest_in_dir(
+                sh->dir_fd, sh->dest_base, ctx->source_utf8, ctx->source_id, 0);
+            return (dst_st != RFC_OK) ? dst_st : RFC_ERR_DESTINATION_EXISTS;
+        }
+        if ((first_err == ENOENT || first_err == ENOSYS ||
+             first_err == EOPNOTSUPP || first_err == EACCES ||
+             first_err == EPERM) &&
+            g_test_fault_stage != RFC_IO_FAULT_POSIX_HANDLE_LINK) {
+#ifdef AT_EMPTY_PATH
+            lrc = linkat(sh->fd, "", sh->dir_fd, sh->dest_base, AT_EMPTY_PATH);
+            if (lrc != 0 && errno == EEXIST) {
+                rfc_status dst_st = posix_check_dest_in_dir(
+                    sh->dir_fd, sh->dest_base, ctx->source_utf8, ctx->source_id,
+                    0);
+                return (dst_st != RFC_OK) ? dst_st : RFC_ERR_DESTINATION_EXISTS;
+            }
+#endif
+        }
+        if (lrc != 0) {
+            if ((first_err == EACCES || first_err == EPERM) &&
+                faccessat(sh->dir_fd, ".", W_OK | X_OK, 0) == 0) {
+                return RFC_ERR_IO;
+            }
+            return map_posix_write_error(first_err);
+        }
+    }
+
+    struct stat pub_st;
+    if (fstatat(sh->dir_fd, sh->dest_base, &pub_st, AT_SYMLINK_NOFOLLOW) !=
+            0 ||
+        S_ISLNK(pub_st.st_mode) || pub_st.st_dev != sh->staged_dev ||
+        pub_st.st_ino != sh->staged_ino) {
+        return RFC_ERR_IO;
     }
 
     (void)fsync(sh->dir_fd);
@@ -1495,23 +1609,14 @@ static rfc_status path_pub_abort(void *raw_ctx, void *raw_handle) {
     }
     win_close_dir_handles(sh->dir_handles, sh->dir_handle_count);
 #else
-    if (sh->dir_fd >= 0) {
-        struct stat cur_tmp;
-        if (fstatat(sh->dir_fd, sh->tmp_base, &cur_tmp, AT_SYMLINK_NOFOLLOW) ==
-            0) {
-            if (!S_ISLNK(cur_tmp.st_mode) &&
-                cur_tmp.st_dev == sh->staged_dev &&
-                cur_tmp.st_ino == sh->staged_ino) {
-                if (unlinkat(sh->dir_fd, sh->tmp_base, 0) != 0 &&
-                    errno != ENOENT) {
-                    clean_st = map_posix_write_error(errno);
-                }
-            }
-        } else if (errno != ENOENT) {
-            clean_st = map_posix_write_error(errno);
-        }
-    }
     if (sh->fd >= 0) {
+        struct stat cur_fd;
+        if (fstat(sh->fd, &cur_fd) != 0 || !S_ISREG(cur_fd.st_mode)) {
+            clean_st = RFC_ERR_IO;
+        }
+        if (g_after_abort_check_cb) {
+            g_after_abort_check_cb(sh->job_id, g_posix_post_check_user);
+        }
         close(sh->fd);
         sh->fd = -1;
     }
