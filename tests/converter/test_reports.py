@@ -716,6 +716,150 @@ class TestHostReports(unittest.TestCase):
             self.assertIn("#[", bf2)
             self.assertNotEqual(bf1, bf2)
 
+            # Ordered / repeated flags (-O3 -O0 vs -O3 -O0 -O3, last-flag-wins, and subdep changes)
+            def run_prov(deps_dir: Path, out_hdr: Path) -> dict[str, dict[str, str]]:
+                res_p = _ref.run_process_tree(
+                    [
+                        sys.executable,
+                        str(ROOT / "scripts" / "gen_converter_provenance.py"),
+                        "--target",
+                        "windows-x64",
+                        "--deps-build",
+                        str(deps_dir),
+                        "--out",
+                        str(out_hdr),
+                    ],
+                    cwd=ROOT,
+                    capture_output=True,
+                    timeout=60.0,
+                )
+                self.assertEqual(res_p.returncode, 0, res_p.stdout + "\n" + res_p.stderr)
+                return parse_header(out_hdr.read_text(encoding="utf-8"))
+
+            deps_ord1 = base / "deps_ord1"
+            deps_ord2 = base / "deps_ord2"
+            write_pkg(
+                deps_ord1,
+                "libjxl",
+                True,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="-march=x86-64-v2",
+                cxx_rel="-O3 -O0 -DNDEBUG",
+                toggles={
+                    "JPEGXL_ENABLE_THREADS": ("BOOL", "ON"),
+                    "JPEGXL_ENABLE_HWY_SSE2": ("BOOL", "true"),
+                    "JPEGXL_ENABLE_HWY_SSE4": ("BOOL", "true"),
+                    "JPEGXL_ENABLE_HWY_AVX2": ("BOOL", "true"),
+                },
+                ninja_flags="-march=x86-64-v2 -fno-vectorize -fvectorize -O3 -O0 -DNDEBUG -std=c++17",
+            )
+            write_pkg(
+                deps_ord2,
+                "libjxl",
+                True,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="-march=x86-64-v2",
+                cxx_rel="-O3 -O0 -O3 -DNDEBUG",
+                toggles={
+                    "JPEGXL_ENABLE_THREADS": ("BOOL", "ON"),
+                    "JPEGXL_ENABLE_HWY_SSE2": ("BOOL", "true"),
+                    "JPEGXL_ENABLE_HWY_SSE4": ("BOOL", "true"),
+                    "JPEGXL_ENABLE_HWY_AVX2": ("BOOL", "true"),
+                },
+                ninja_flags="-march=x86-64-v2 -fvectorize -fno-vectorize -O3 -O0 -O3 -DNDEBUG -std=c++17",
+            )
+            write_pkg(
+                deps_ord1,
+                "libraw",
+                True,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="-march=x86-64-v2",
+                cxx_rel="-O3 -DNDEBUG",
+                toggles={},
+                ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG -fopenmp -fno-openmp",
+            )
+            write_pkg(
+                deps_ord2,
+                "libraw",
+                True,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="-march=x86-64-v2",
+                cxx_rel="-O3 -DNDEBUG",
+                toggles={},
+                ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG -fno-openmp -fopenmp",
+            )
+            write_pkg(
+                deps_ord1,
+                "libavif",
+                False,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="",
+                cxx_rel="",
+                toggles={"ENABLE_MULTITHREAD": ("BOOL", "ON")},
+                ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG -pthread",
+            )
+            write_pkg(
+                deps_ord2,
+                "libavif",
+                False,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="",
+                cxx_rel="",
+                toggles={"ENABLE_MULTITHREAD": ("BOOL", "ON")},
+                ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG -pthread",
+            )
+            write_pkg(
+                deps_ord1,
+                "libaom",
+                True,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="-march=x86-64-v2",
+                cxx_rel="-O3 -DNDEBUG",
+                toggles={"CONFIG_MULTITHREAD": ("STRING", "1")},
+                ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG",
+            )
+            write_pkg(
+                deps_ord2,
+                "libaom",
+                True,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="-march=x86-64-v2 -fno-strict-aliasing",
+                cxx_rel="-O3 -DNDEBUG",
+                toggles={"CONFIG_MULTITHREAD": ("STRING", "1")},
+                ninja_flags="-march=x86-64-v2 -fno-strict-aliasing -O3 -DNDEBUG",
+            )
+
+            p_ord1 = run_prov(deps_ord1, base / "prov_ord1.h")
+            p_ord2 = run_prov(deps_ord2, base / "prov_ord2.h")
+
+            j1 = p_ord1["RFC_FORMAT_JPEG_XL"]
+            j2 = p_ord2["RFC_FORMAT_JPEG_XL"]
+            self.assertNotEqual(j1["build_flags"], j2["build_flags"])
+            self.assertIn("-O3 -O0 -DNDEBUG", j1["build_flags"])
+            self.assertIn("-O3 -O0 -O3 -DNDEBUG", j2["build_flags"])
+            self.assertIn("SSE2,SSE4,AVX2", j1["simd_features"])
+            self.assertIn("vectorize-disabled", j2["simd_features"])
+
+            self.assertNotEqual(
+                p_ord1["RFC_FORMAT_CAMERA_RAW"]["build_flags"],
+                p_ord2["RFC_FORMAT_CAMERA_RAW"]["build_flags"],
+            )
+            self.assertIn("OpenMP disabled", p_ord1["RFC_FORMAT_CAMERA_RAW"]["threading_features"])
+            self.assertIn("OpenMP enabled", p_ord2["RFC_FORMAT_CAMERA_RAW"]["threading_features"])
+
+            self.assertNotEqual(
+                p_ord1["RFC_FORMAT_AVIF"]["build_flags"],
+                p_ord2["RFC_FORMAT_AVIF"]["build_flags"],
+            )
+
     def test_kodim23_compare_threads_oracle_and_history(self) -> None:
         self.assertEqual(sha256_file(KODIM_PATH), KODIM_EXPECTED_SHA256)
         with Image.open(KODIM_PATH) as im:

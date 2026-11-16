@@ -198,6 +198,60 @@ def _find_pkg_by_format(vendor: dict) -> tuple[dict[str, dict], dict[str, dict]]
     return by_id, by_fmt
 
 
+PACKAGE_SUBDEPS: dict[str, tuple[str, ...]] = {
+    "libpng": ("zlib",),
+    "libjxl": ("highway", "brotli", "lcms2"),
+    "libavif": ("libaom",),
+    "libtiff": ("zlib", "libdeflate", "libwebp", "libjpeg-turbo"),
+    "openexr": ("imath", "openjph", "libdeflate"),
+    "libraw": ("zlib", "lcms2", "libjpeg-turbo"),
+}
+
+
+def _extract_semantic_cache_options(path: Path) -> dict[str, str]:
+    out: dict[str, str] = {}
+    if not path.is_file():
+        return out
+    skip_prefixes = (
+        "CMAKE_",
+        "CPACK_",
+        "CTEST_",
+        "FETCHCONTENT_",
+        "FIND_PACKAGE_",
+        "pkgcfg_",
+    )
+    skip_suffixes = (
+        "_DIR",
+        "_DIRS",
+        "_LIBRARY",
+        "_LIBRARIES",
+        "_INCLUDE_DIR",
+        "_INCLUDE_DIRS",
+        "_BINARY_DIR",
+        "_SOURCE_DIR",
+        "_FILEPATH",
+        "_PATH",
+        "_EXECUTABLE",
+        "_COMMAND",
+    )
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if not line or line.startswith("#") or line.startswith("//") or ":" not in line or "=" not in line:
+            continue
+        left, val = line.split("=", 1)
+        key, _, ktype = left.partition(":")
+        key = key.strip()
+        ktype = ktype.strip().upper()
+        val = val.strip()
+        if ktype not in ("BOOL", "STRING", "UNINITIALIZED"):
+            continue
+        if key.startswith(skip_prefixes) or key.endswith(skip_suffixes):
+            continue
+        if "/" in val or "\\" in val:
+            continue
+        out[key] = val
+    return out
+
+
 def _is_truthy(val: str | None) -> bool:
     if val is None:
         return False
@@ -208,42 +262,6 @@ def _is_falsy(val: str | None) -> bool:
     if val is None:
         return False
     return val.strip().upper() in ("0", "OFF", "FALSE", "NO")
-
-
-def _parse_ninja_compile_info(ninja_path: Path, is_cxx: bool) -> tuple[list[str], list[str]]:
-    if not ninja_path.is_file():
-        return ([], [])
-    preferred_prefix = "CXX_COMPILER__" if is_cxx else "C_COMPILER__"
-    any_prefix = ("CXX_COMPILER__", "C_COMPILER__")
-
-    def _collect(prefix_tuple: tuple[str, ...]) -> tuple[list[str], list[str]]:
-        flags_tokens: list[str] = []
-        define_tokens: list[str] = []
-        in_block = False
-        for raw_line in ninja_path.read_text(encoding="utf-8", errors="replace").splitlines():
-            if not raw_line.startswith(" ") and not raw_line.startswith("\t"):
-                in_block = False
-                if raw_line.startswith("build ") and ":" in raw_line:
-                    after_colon = raw_line.split(":", 1)[1].lstrip()
-                    rule = after_colon.split(None, 1)[0] if after_colon else ""
-                    if any(rule.startswith(p) for p in prefix_tuple):
-                        in_block = True
-                continue
-            if not in_block:
-                continue
-            stripped = raw_line.strip()
-            if stripped.startswith("FLAGS ="):
-                raw_flags = stripped[len("FLAGS ="):].strip()
-                flags_tokens.extend(shlex.split(raw_flags, posix=True))
-            elif stripped.startswith("DEFINES ="):
-                raw_defs = stripped[len("DEFINES ="):].strip()
-                define_tokens.extend(shlex.split(raw_defs, posix=True))
-        return (flags_tokens, define_tokens)
-
-    ft, dt = _collect((preferred_prefix,))
-    if not ft and not dt:
-        ft, dt = _collect(any_prefix)
-    return (ft, dt)
 
 
 def _is_noise_define(tok: str) -> bool:
@@ -268,7 +286,6 @@ def _is_noise_define(tok: str) -> bool:
 
 def _semantic_ninja_tokens(flags_tokens: list[str], define_tokens: list[str]) -> list[str]:
     out: list[str] = []
-    seen: set[str] = set()
     i = 0
     while i < len(flags_tokens):
         tok = flags_tokens[i]
@@ -289,13 +306,19 @@ def _semantic_ninja_tokens(flags_tokens: list[str], define_tokens: list[str]) ->
         ):
             i += 2
             continue
-        if tok in ("-Xclang", "-mllvm") and i + 1 < len(flags_tokens):
-            paired = f"{tok} {flags_tokens[i + 1]}"
-            if paired not in seen:
-                seen.add(paired)
-                out.append(paired)
-            i += 2
-            continue
+        if tok in ("-Xclang", "-mllvm", "-D", "-U") and i + 1 < len(flags_tokens):
+            nxt = flags_tokens[i + 1]
+            if tok in ("-D", "-U"):
+                if not nxt.startswith("-"):
+                    paired = f"{tok}{nxt}"
+                    if not _is_noise_define(paired):
+                        out.append(paired)
+                    i += 2
+                    continue
+            else:
+                out.append(f"{tok} {nxt}")
+                i += 2
+                continue
         i += 1
         if (
             not tok
@@ -316,29 +339,101 @@ def _semantic_ninja_tokens(flags_tokens: list[str], define_tokens: list[str]) ->
             or _is_noise_define(tok)
         ):
             continue
-        if tok.startswith("-") and tok not in seen:
-            seen.add(tok)
+        if tok.startswith("-"):
             out.append(tok)
 
     for tok in define_tokens:
         if _is_noise_define(tok):
             continue
-        if tok.startswith("-D") and tok not in seen:
-            seen.add(tok)
+        if tok.startswith("-D") or tok.startswith("-U"):
             out.append(tok)
     return out
 
 
+def _parse_ninja_compile_blocks(ninja_path: Path, is_cxx: bool) -> dict[str, object]:
+    if not ninja_path.is_file():
+        return {"blocks": [], "has_cxx": False, "has_c": False}
+    blocks: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = []
+    seen_blocks: set[tuple[str, tuple[str, ...], tuple[str, ...]]] = set()
+    has_cxx = False
+    has_c = False
+    cur_lang = ""
+    cur_flags: list[str] = []
+    cur_defs: list[str] = []
+
+    def flush_block() -> None:
+        if not cur_lang:
+            return
+        sem_f = tuple(_semantic_ninja_tokens(cur_flags, []))
+        sem_d = tuple(_semantic_ninja_tokens([], cur_defs))
+        key = (cur_lang, sem_f, sem_d)
+        if key not in seen_blocks:
+            seen_blocks.add(key)
+            blocks.append(key)
+
+    for raw_line in ninja_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if not raw_line.startswith(" ") and not raw_line.startswith("\t"):
+            flush_block()
+            cur_lang = ""
+            cur_flags = []
+            cur_defs = []
+            if raw_line.startswith("build ") and ":" in raw_line:
+                after_colon = raw_line.split(":", 1)[1].lstrip()
+                rule = after_colon.split(None, 1)[0] if after_colon else ""
+                if rule.startswith("CXX_COMPILER__"):
+                    cur_lang = "cxx"
+                    has_cxx = True
+                elif rule.startswith("C_COMPILER__"):
+                    cur_lang = "c"
+                    has_c = True
+            continue
+        if not cur_lang:
+            continue
+        stripped = raw_line.strip()
+        if stripped.startswith("FLAGS ="):
+            cur_flags = shlex.split(stripped[len("FLAGS ="):].strip(), posix=True)
+        elif stripped.startswith("DEFINES ="):
+            cur_defs = shlex.split(stripped[len("DEFINES ="):].strip(), posix=True)
+    flush_block()
+
+    want_langs: set[str] = set()
+    if is_cxx:
+        if has_cxx:
+            want_langs.add("cxx")
+        if has_c:
+            want_langs.add("c")
+    else:
+        if has_c:
+            want_langs.add("c")
+        if has_cxx:
+            want_langs.add("cxx")
+    selected = [b for b in blocks if b[0] in want_langs] if want_langs else []
+    return {"blocks": selected, "has_cxx": has_cxx, "has_c": has_c}
+
+
 def _format_bounded_build_flags(
-    tokens: list[str], fallback: str, max_bytes: int = 255
+    tokens: list[str],
+    fallback: str,
+    max_bytes: int = 255,
+    fingerprint_payload: object | None = None,
 ) -> str:
     clean = [t for t in tokens if t]
-    if not clean:
-        return fallback
-    full = " ".join(clean)
-    if len(full.encode("utf-8")) <= max_bytes:
-        return full
-    digest = hashlib.sha256(full.encode("utf-8")).hexdigest()[:12]
+    if fingerprint_payload is None:
+        if not clean:
+            return fallback
+        full = " ".join(clean)
+        if len(full.encode("utf-8")) <= max_bytes:
+            return full
+        digest = hashlib.sha256(full.encode("utf-8")).hexdigest()[:12]
+    else:
+        canon = json.dumps(fingerprint_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+        digest = hashlib.sha256(canon.encode("utf-8")).hexdigest()[:12]
+        if not clean:
+            return f"#[{digest}]"[:max_bytes]
+        full_with_fp = f"{' '.join(clean)} #[{digest}]"
+        if len(full_with_fp.encode("utf-8")) <= max_bytes:
+            return full_with_fp
+
     count_guess = len(clean)
     for _ in range(3):
         suffix = f"+{count_guess}#[{digest}]"
@@ -392,7 +487,12 @@ def _derive_simd_summary(
     aom_tokens: list[str],
 ) -> str:
     march = _effective_march(all_flag_tokens)
-    no_vec = any(t in ("-fno-vectorize", "-fno-slp-vectorize", "-mno-sse2") for t in all_flag_tokens)
+    no_vec = False
+    for t in all_flag_tokens:
+        if t in ("-fno-vectorize", "-fno-slp-vectorize", "-mno-sse2"):
+            no_vec = True
+        elif t in ("-fvectorize", "-fslp-vectorize", "-msse2", "-msse4", "-mavx", "-mavx2"):
+            no_vec = False
     nasm_note = f"NASM {nasm_ver}" if nasm_ver else "NASM"
     has_nasm_compiler = bool(cache.get("CMAKE_ASM_NASM_COMPILER")) or bool(feats.get("nasm"))
 
@@ -477,9 +577,17 @@ def _derive_threading_summary(
     all_flag_tokens: list[str],
     define_tokens: list[str],
 ) -> str:
-    has_openmp = (
-        any(t.startswith("-fopenmp") for t in all_flag_tokens)
-        or _is_truthy(cache.get("LIBRAW_USE_OPENMP"))
+    flag_openmp = False
+    saw_openmp_flag = False
+    for t in all_flag_tokens:
+        if t == "-fno-openmp":
+            flag_openmp = False
+            saw_openmp_flag = True
+        elif t.startswith("-fopenmp"):
+            flag_openmp = True
+            saw_openmp_flag = True
+    has_openmp = flag_openmp if saw_openmp_flag else (
+        _is_truthy(cache.get("LIBRAW_USE_OPENMP"))
         or _is_truthy(cache.get("ENABLE_OPENMP"))
     )
     if pid == "libraw":
@@ -525,6 +633,94 @@ def _derive_threading_summary(
     return "single-threaded"
 
 
+def _collect_pkg_fingerprint_state(
+    pkg: dict,
+    pkg_by_id: dict[str, dict],
+    deps_build_dir: Path | None,
+    cc_cache: dict[str, str],
+    seen_ids: set[str] | None = None,
+) -> dict[str, object]:
+    pid = pkg["id"]
+    llvm_dir = ROOT / ("tools/llvm-mingw/bin" if os.name == "nt" else "tools/llvm-mingw-linux/bin")
+    default_cc = str(llvm_dir / ("x86_64-w64-mingw32-clang" + (".exe" if os.name == "nt" else "")))
+    default_cxx = str(llvm_dir / ("x86_64-w64-mingw32-clang++" + (".exe" if os.name == "nt" else "")))
+
+    lang = str(pkg.get("language", "c")).lower()
+    is_cxx = ("cxx" in lang or "c++" in lang)
+
+    cache: dict[str, str] = {}
+    sem_cache: dict[str, str] = {}
+    ninja_info: dict[str, object] = {"blocks": [], "has_cxx": False, "has_c": False}
+    if deps_build_dir is not None:
+        cache = _parse_cmake_cache(deps_build_dir / pid / "CMakeCache.txt")
+        sem_cache = _extract_semantic_cache_options(deps_build_dir / pid / "CMakeCache.txt")
+        ninja_info = _parse_ninja_compile_blocks(deps_build_dir / pid / "build.ninja", is_cxx)
+
+    btype = (cache.get("CMAKE_BUILD_TYPE") or "Release").strip()
+    cc_path = (
+        (cache.get("CMAKE_CXX_COMPILER") or default_cxx)
+        if is_cxx
+        else (cache.get("CMAKE_C_COMPILER") or default_cc)
+    )
+    compiler_id = _probe_compiler_version(cc_path, cc_cache)
+
+    cxx_init = cache["CMAKE_CXX_FLAGS"] if "CMAKE_CXX_FLAGS" in cache else "-march=x86-64-v2"
+    cxx_cfg = cache[f"CMAKE_CXX_FLAGS_{btype.upper()}"] if f"CMAKE_CXX_FLAGS_{btype.upper()}" in cache else "-O3 -DNDEBUG"
+    c_init = cache["CMAKE_C_FLAGS"] if "CMAKE_C_FLAGS" in cache else "-march=x86-64-v2"
+    c_cfg = cache[f"CMAKE_C_FLAGS_{btype.upper()}"] if f"CMAKE_C_FLAGS_{btype.upper()}" in cache else "-O3 -DNDEBUG"
+
+    has_cxx_blk = bool(ninja_info["has_cxx"])
+    has_c_blk = bool(ninja_info["has_c"])
+    if is_cxx:
+        raw_cache_str = f"{cxx_init} {cxx_cfg}"
+        if has_c_blk and ("CMAKE_C_FLAGS" in cache or f"CMAKE_C_FLAGS_{btype.upper()}" in cache):
+            raw_cache_str = f"{raw_cache_str} {c_init} {c_cfg}"
+    else:
+        raw_cache_str = f"{c_init} {c_cfg}"
+        if has_cxx_blk and ("CMAKE_CXX_FLAGS" in cache or f"CMAKE_CXX_FLAGS_{btype.upper()}" in cache):
+            raw_cache_str = f"{raw_cache_str} {cxx_init} {cxx_cfg}"
+
+    cache_cmd = _semantic_ninja_tokens(shlex.split(raw_cache_str, posix=True), [])
+
+    blocks = list(ninja_info["blocks"])
+    ninja_blocks_json = [
+        {"lang": bl, "flags": list(bf), "defs": list(bd)}
+        for bl, bf, bd in blocks
+    ]
+
+    visited = set(seen_ids or ())
+    visited.add(pid)
+    subdeps_json: dict[str, object] = {}
+    if deps_build_dir is not None:
+        for sub_id in PACKAGE_SUBDEPS.get(pid, ()):
+            if sub_id in visited or sub_id not in pkg_by_id:
+                continue
+            if (deps_build_dir / sub_id).is_dir():
+                subdeps_json[sub_id] = _collect_pkg_fingerprint_state(
+                    pkg_by_id[sub_id], pkg_by_id, deps_build_dir, cc_cache, visited
+                )
+
+    payload = {
+        "id": pid,
+        "btype": btype,
+        "compiler_id": compiler_id,
+        "cache_cmd": cache_cmd,
+        "ninja_blocks": ninja_blocks_json,
+        "cache_options": sem_cache,
+        "cmake_options": list(pkg.get("cmake_options", [])),
+        "subdeps": subdeps_json,
+    }
+    return {
+        "cache": cache,
+        "btype": btype,
+        "compiler_id": compiler_id,
+        "cache_cmd": cache_cmd,
+        "blocks": blocks,
+        "sem_cache": sem_cache,
+        "payload": payload,
+    }
+
+
 def _extract_package_build_info(
     pkg: dict,
     pkg_by_id: dict[str, dict],
@@ -543,49 +739,42 @@ def _extract_package_build_info(
             nasm_ver = str(comp.get("version", ""))
             break
 
-    llvm_dir = ROOT / ("tools/llvm-mingw/bin" if os.name == "nt" else "tools/llvm-mingw-linux/bin")
-    default_cc = str(llvm_dir / ("x86_64-w64-mingw32-clang" + (".exe" if os.name == "nt" else "")))
-    default_cxx = str(llvm_dir / ("x86_64-w64-mingw32-clang++" + (".exe" if os.name == "nt" else "")))
+    state = _collect_pkg_fingerprint_state(pkg, pkg_by_id, deps_build_dir, cc_cache)
+    cache = state["cache"]
+    btype = str(state["btype"])
+    compiler_id = str(state["compiler_id"])
+    cache_cmd = list(state["cache_cmd"])
+    blocks = list(state["blocks"])
 
-    cache: dict[str, str] = {}
-    ninja_flags: list[str] = []
-    ninja_defs: list[str] = []
-    aom_cache: dict[str, str] = {}
-    aom_flags: list[str] = []
+    cache_non_def = [t for t in cache_cmd if (not t.startswith("-D") and not t.startswith("-U")) or t == "-DNDEBUG"]
+    cache_def = [t for t in cache_cmd if (t.startswith("-D") or t.startswith("-U")) and t != "-DNDEBUG"]
 
-    lang = str(pkg.get("language", "c")).lower()
-    is_cxx = ("cxx" in lang or "c++" in lang)
+    block_flags: list[str] = []
+    block_defs: list[str] = []
+    disp_ninja_flags: list[str] = []
+    first_bf: list[str] | None = None
+    for _bl, bf, bd in blocks:
+        bf_non_def = [t for t in bf if (not t.startswith("-D") and not t.startswith("-U")) or t == "-DNDEBUG"]
+        if first_bf is None:
+            first_bf = bf_non_def
+            disp_ninja_flags.extend(bf_non_def)
+        else:
+            k = 0
+            while k < len(first_bf) and k < len(bf_non_def) and first_bf[k] == bf_non_def[k]:
+                k += 1
+            disp_ninja_flags.extend(bf_non_def[k:])
+        block_flags.extend(bf)
+        block_defs.extend(bd)
 
-    if deps_build_dir is not None:
-        cache = _parse_cmake_cache(deps_build_dir / pid / "CMakeCache.txt")
-        ninja_flags, ninja_defs = _parse_ninja_compile_info(deps_build_dir / pid / "build.ninja", is_cxx)
-        if pid == "libavif":
-            aom_cache = _parse_cmake_cache(deps_build_dir / "libaom" / "CMakeCache.txt")
-            aom_flags, _ = _parse_ninja_compile_info(deps_build_dir / "libaom" / "build.ninja", False)
-
-    if is_cxx:
-        cc_path = cache.get("CMAKE_CXX_COMPILER") or default_cxx
-        btype = (cache.get("CMAKE_BUILD_TYPE") or "Release").strip()
-        init_flags = cache["CMAKE_CXX_FLAGS"] if "CMAKE_CXX_FLAGS" in cache else "-march=x86-64-v2"
-        cfg_key = f"CMAKE_CXX_FLAGS_{btype.upper()}"
-        c_flags = cache[cfg_key] if cfg_key in cache else "-O3 -DNDEBUG"
+    ninja_def_only = [
+        t for t in (block_flags + block_defs) if (t.startswith("-D") or t.startswith("-U")) and t != "-DNDEBUG"
+    ]
+    if cache_non_def and disp_ninja_flags[: len(cache_non_def)] == cache_non_def:
+        combined_non_def = disp_ninja_flags
     else:
-        cc_path = cache.get("CMAKE_C_COMPILER") or default_cc
-        btype = (cache.get("CMAKE_BUILD_TYPE") or "Release").strip()
-        init_flags = cache["CMAKE_C_FLAGS"] if "CMAKE_C_FLAGS" in cache else "-march=x86-64-v2"
-        cfg_key = f"CMAKE_C_FLAGS_{btype.upper()}"
-        c_flags = cache[cfg_key] if cfg_key in cache else "-O3 -DNDEBUG"
-    compiler_id = _probe_compiler_version(cc_path, cc_cache)
+        combined_non_def = cache_non_def + disp_ninja_flags
 
-    raw_cache_tokens = shlex.split(f"{init_flags} {c_flags}", posix=True)
-    cache_flag_tokens = _semantic_ninja_tokens(raw_cache_tokens, [])
-    cache_non_def = [t for t in cache_flag_tokens if not t.startswith("-D") or t == "-DNDEBUG"]
-    cache_def = [t for t in cache_flag_tokens if t.startswith("-D") and t != "-DNDEBUG"]
-
-    ninja_all = _semantic_ninja_tokens(ninja_flags, ninja_defs)
-    ninja_flag_only = [t for t in ninja_all if not t.startswith("-D") or t == "-DNDEBUG"]
-    ninja_def_only = [t for t in ninja_all if t.startswith("-D") and t != "-DNDEBUG"]
-    combined_flag_tokens = cache_flag_tokens + ninja_all
+    combined_flag_tokens = cache_cmd + block_flags + block_defs
 
     cache_toggle_keys = (
         "WEBP_ENABLE_SIMD",
@@ -613,28 +802,33 @@ def _extract_package_build_info(
         and not any(opt.startswith(f"-D{k}=") for k in cache_toggle_keys)
     ]
 
-    ordered_tokens: list[str] = []
-    seen_tokens: set[str] = set()
-    for tok in (
+    ordered_tokens = (
         [f"-DCMAKE_BUILD_TYPE={btype}"]
-        + cache_non_def
-        + ninja_flag_only
+        + combined_non_def
         + toggles
         + cache_def
         + ninja_def_only
         + opts
-    ):
-        if tok and tok not in seen_tokens:
-            seen_tokens.add(tok)
-            ordered_tokens.append(tok)
-
+    )
     build_flags = _format_bounded_build_flags(
-        ordered_tokens, f"-DCMAKE_BUILD_TYPE={btype}", 255
+        ordered_tokens,
+        f"-DCMAKE_BUILD_TYPE={btype}",
+        255,
+        fingerprint_payload=state["payload"],
     )
 
+    aom_cache: dict[str, str] = {}
+    aom_tokens: list[str] = []
+    if pid == "libavif" and deps_build_dir is not None:
+        aom_cache = _parse_cmake_cache(deps_build_dir / "libaom" / "CMakeCache.txt")
+        aom_blk_info = _parse_ninja_compile_blocks(deps_build_dir / "libaom" / "build.ninja", True)
+        for _bl, bf, bd in aom_blk_info["blocks"]:
+            aom_tokens.extend(bf)
+            aom_tokens.extend(bd)
+
     feats = pkg.get("features", {})
-    simd = _derive_simd_summary(pid, feats, nasm_ver, cache, combined_flag_tokens, ninja_defs, aom_cache, aom_flags)
-    thr = _derive_threading_summary(pid, feats, cache, combined_flag_tokens, ninja_defs)
+    simd = _derive_simd_summary(pid, feats, nasm_ver, cache, combined_flag_tokens, block_defs, aom_cache, aom_tokens)
+    thr = _derive_threading_summary(pid, feats, cache, combined_flag_tokens, block_defs)
     return (ver, compiler_id, build_flags, simd, thr)
 
 
