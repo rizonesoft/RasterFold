@@ -191,6 +191,267 @@ def _find_pkg_by_format(vendor: dict) -> tuple[dict[str, dict], dict[str, dict]]
     return by_id, by_fmt
 
 
+def _is_truthy(val: str | None) -> bool:
+    if val is None:
+        return False
+    return val.strip().upper() in ("1", "ON", "TRUE", "YES")
+
+
+def _is_falsy(val: str | None) -> bool:
+    if val is None:
+        return False
+    return val.strip().upper() in ("0", "OFF", "FALSE", "NO")
+
+
+def _parse_ninja_compile_info(ninja_path: Path, is_cxx: bool) -> tuple[list[str], list[str]]:
+    if not ninja_path.is_file():
+        return ([], [])
+    preferred_prefix = "CXX_COMPILER__" if is_cxx else "C_COMPILER__"
+    any_prefix = ("CXX_COMPILER__", "C_COMPILER__")
+
+    def _collect(prefix_tuple: tuple[str, ...]) -> tuple[list[str], list[str]]:
+        flags_tokens: list[str] = []
+        define_tokens: list[str] = []
+        in_block = False
+        for raw_line in ninja_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if not raw_line.startswith(" ") and not raw_line.startswith("\t"):
+                in_block = False
+                if raw_line.startswith("build ") and ":" in raw_line:
+                    after_colon = raw_line.split(":", 1)[1].lstrip()
+                    rule = after_colon.split(None, 1)[0] if after_colon else ""
+                    if any(rule.startswith(p) for p in prefix_tuple):
+                        in_block = True
+                continue
+            if not in_block:
+                continue
+            stripped = raw_line.strip()
+            if stripped.startswith("FLAGS ="):
+                raw_flags = stripped[len("FLAGS ="):].strip()
+                flags_tokens.extend(shlex.split(raw_flags, posix=True))
+            elif stripped.startswith("DEFINES ="):
+                raw_defs = stripped[len("DEFINES ="):].strip()
+                define_tokens.extend(shlex.split(raw_defs, posix=True))
+        return (flags_tokens, define_tokens)
+
+    ft, dt = _collect((preferred_prefix,))
+    if not ft and not dt:
+        ft, dt = _collect(any_prefix)
+    return (ft, dt)
+
+
+def _semantic_ninja_tokens(flags_tokens: list[str], define_tokens: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    skip_next = False
+    for tok in flags_tokens:
+        if skip_next:
+            skip_next = False
+            continue
+        if tok in ("-isystem", "-I", "-o", "-MF", "-MT", "-x"):
+            skip_next = True
+            continue
+        if (
+            tok.startswith("-I")
+            or tok.startswith("-W")
+            or tok.startswith("-fmacro-prefix-map=")
+            or tok.startswith("-ffile-prefix-map=")
+            or tok.startswith("-fdiagnostics")
+            or tok.startswith("-fcolor-diagnostics")
+            or tok.startswith("-fvisibility")
+            or tok.startswith("-D__DATE__")
+            or tok.startswith("-D__TIME__")
+            or tok.startswith("-D__TIMESTAMP__")
+        ):
+            continue
+        if (
+            tok.startswith("-march=")
+            or tok.startswith("-mtune=")
+            or tok.startswith("-m")
+            or tok.startswith("-O")
+            or tok.startswith("-g")
+            or tok.startswith("-std=")
+            or tok.startswith("-fno-")
+            or tok.startswith("-flto")
+            or tok.startswith("-fopenmp")
+            or tok in ("-pthread", "-fexceptions", "-frtti", "-fstrict-aliasing")
+            or (
+                tok.startswith("-D")
+                and not tok.startswith("-D_CRT_")
+                and tok not in ("-DUNICODE", "-D_UNICODE", "-DWIN32_LEAN_AND_MEAN", "-DNOMINMAX")
+            )
+        ):
+            if tok not in seen:
+                seen.add(tok)
+                out.append(tok)
+
+    for tok in define_tokens:
+        if (
+            tok in ("-DUNICODE", "-D_UNICODE", "-DHAVE_CONFIG_H", "-D_FILE_OFFSET_BITS=64", "-D_LARGEFILE_SOURCE", "-D_LARGEFILE64_SOURCE=1")
+            or tok.startswith("-D_CRT_")
+            or tok.startswith("-D__DATE__")
+            or tok.startswith("-D__TIME__")
+            or tok.startswith("-D__TIMESTAMP__")
+            or tok.startswith("-D__STDC_")
+        ):
+            continue
+        if tok.startswith("-D") and tok not in seen:
+            seen.add(tok)
+            out.append(tok)
+    return out
+
+
+def _effective_march(tokens: list[str]) -> str:
+    march = "x86-64-v2"
+    for tok in tokens:
+        if tok.startswith("-march="):
+            march = tok.split("=", 1)[1]
+    return march
+
+
+def _derive_simd_summary(
+    pid: str,
+    feats: dict,
+    nasm_ver: str,
+    cache: dict[str, str],
+    all_flag_tokens: list[str],
+    define_tokens: list[str],
+    aom_cache: dict[str, str],
+    aom_tokens: list[str],
+) -> str:
+    march = _effective_march(all_flag_tokens)
+    no_vec = any(t in ("-fno-vectorize", "-fno-slp-vectorize", "-mno-sse2") for t in all_flag_tokens)
+    nasm_note = f"NASM {nasm_ver}" if nasm_ver else "NASM"
+    has_nasm_compiler = bool(cache.get("CMAKE_ASM_NASM_COMPILER")) or bool(feats.get("nasm"))
+
+    if no_vec:
+        return f"vectorize-disabled ({march})"
+
+    if pid == "libjxl":
+        disabled_def = next((d for d in define_tokens + all_flag_tokens if "HWY_DISABLED_TARGETS=" in d), "")
+        hwy_avx2 = cache.get("JPEGXL_ENABLE_HWY_AVX2")
+        hwy_sse4 = cache.get("JPEGXL_ENABLE_HWY_SSE4")
+        hwy_avx3 = cache.get("JPEGXL_ENABLE_HWY_AVX3")
+        hwy_avx3_dl = cache.get("JPEGXL_ENABLE_HWY_AVX3_DL")
+        if _is_truthy(cache.get("HWY_COMPILE_ONLY_SCALAR")) or "HWY_SCALAR" in disabled_def and _is_falsy(hwy_avx2):
+            return f"scalar-only ({march})"
+        targets: list[str] = []
+        if not _is_falsy(cache.get("JPEGXL_ENABLE_HWY_SSE2")):
+            targets.append("SSE2")
+        if not _is_falsy(hwy_sse4):
+            targets.append("SSE4")
+        if _is_truthy(hwy_avx2) and "HWY_AVX2" not in disabled_def:
+            targets.append("AVX2")
+        disabled_set = set(disabled_def.replace("=", "|").replace("(", "|").replace(")", "|").split("|"))
+        if _is_truthy(hwy_avx3) and "HWY_AVX3" not in disabled_set:
+            targets.append("AVX3")
+        elif _is_truthy(hwy_avx3_dl) and "HWY_AVX3_DL" not in disabled_set:
+            targets.append("AVX3_DL")
+        if targets:
+            return f"Highway dynamic ({march}; {','.join(targets)})"
+        return f"Highway ({march}; scalar-fallback)"
+
+    if pid == "highway":
+        if _is_truthy(cache.get("HWY_COMPILE_ONLY_SCALAR")):
+            return f"scalar-only (HWY_COMPILE_ONLY_SCALAR=ON; {march})"
+        return f"Highway dynamic dispatch ({march})"
+
+    if pid == "libjpeg-turbo":
+        if _is_falsy(cache.get("WITH_SIMD")):
+            return f"disabled (WITH_SIMD=OFF; {march})"
+        req = "REQUIRE_SIMD=ON" if _is_truthy(cache.get("REQUIRE_SIMD")) or "WITH_SIMD" not in cache else "WITH_SIMD=ON"
+        return f"{nasm_note} x86-64 SIMD ({req}; {march})" if has_nasm_compiler else f"SIMD ({req}; {march})"
+
+    if pid in ("libaom", "libavif"):
+        c_src = aom_cache if (pid == "libavif" and aom_cache) else cache
+        t_src = aom_tokens if (pid == "libavif" and aom_tokens) else all_flag_tokens
+        aom_cpu = c_src.get("AOM_TARGET_CPU", "").strip()
+        if aom_cpu == "generic":
+            return f"scalar generic (AOM_TARGET_CPU=generic; {march})"
+        aom_march = _effective_march(t_src) if t_src else march
+        return f"{nasm_note} x86_64 SIMD ({aom_cpu or 'x86_64'}; {aom_march})"
+
+    if pid == "libpng":
+        if _is_falsy(cache.get("PNG_HARDWARE_OPTIMIZATIONS")):
+            return f"disabled (PNG_HARDWARE_OPTIMIZATIONS=OFF; {march})"
+        if any("PNG_INTEL_SSE_OPT=0" in d for d in define_tokens):
+            return f"disabled (PNG_INTEL_SSE_OPT=0; {march})"
+        return f"SSE2 hardware opts (PNG_HARDWARE_OPTIMIZATIONS=ON; {march})"
+
+    if pid == "libwebp":
+        if _is_falsy(cache.get("WEBP_ENABLE_SIMD")):
+            return f"disabled (WEBP_ENABLE_SIMD=OFF; {march})"
+        avx2 = "+AVX2" if cache.get("WEBP_HAVE_FLAG_AVX2") == "1" else ""
+        return f"SSE2{avx2} runtime (WEBP_ENABLE_SIMD=ON; {march})"
+
+    if pid == "openjph":
+        if _is_truthy(cache.get("OJPH_DISABLE_SIMD")):
+            return f"disabled (OJPH_DISABLE_SIMD=ON; {march})"
+        dis_avx2 = _is_truthy(cache.get("OJPH_DISABLE_AVX2"))
+        return f"OpenJPH runtime ({'SSE' if dis_avx2 else 'SSE/AVX2'}; {march})"
+
+    if feats.get("simd"):
+        base = str(feats["simd"])
+        if march != "x86-64-v2" and march not in base:
+            return f"{base} ({march})"
+        return base if not (feats.get("nasm") and nasm_ver and nasm_ver not in base) else f"{base} ({nasm_note})"
+    return march
+
+
+def _derive_threading_summary(
+    pid: str,
+    feats: dict,
+    cache: dict[str, str],
+    all_flag_tokens: list[str],
+    define_tokens: list[str],
+) -> str:
+    has_openmp = (
+        any(t.startswith("-fopenmp") for t in all_flag_tokens)
+        or _is_truthy(cache.get("LIBRAW_USE_OPENMP"))
+        or _is_truthy(cache.get("ENABLE_OPENMP"))
+    )
+    if pid == "libraw":
+        if has_openmp:
+            return "OpenMP enabled (libraw)"
+        return "serial-deterministic (OpenMP disabled)"
+
+    if pid == "libwebp":
+        if _is_falsy(cache.get("WEBP_USE_THREAD")):
+            return "single-threaded (WEBP_USE_THREAD=OFF)"
+        return "libwebp threads (WEBP_USE_THREAD=ON)"
+
+    if pid == "openjpeg":
+        if _is_falsy(cache.get("OPJ_USE_THREAD")):
+            return "single-threaded (OPJ_USE_THREAD=OFF)"
+        return "openjpeg threads (OPJ_USE_THREAD=ON)"
+
+    if pid == "libjxl":
+        if _is_falsy(cache.get("JPEGXL_ENABLE_THREADS")):
+            return "single-threaded (JPEGXL_ENABLE_THREADS=OFF)"
+        return "libjxl worker threads (budgeted)"
+
+    if pid == "openexr":
+        if _is_falsy(cache.get("OPENEXR_ENABLE_THREADING")):
+            return "single-threaded (OPENEXR_ENABLE_THREADING=OFF)"
+        return "IlmThread pool (budgeted)"
+
+    if pid == "libavif":
+        if _is_falsy(cache.get("ENABLE_MULTITHREAD")) or ("THREADS_HAVE_PTHREAD_ARG" not in cache and "-pthread" not in all_flag_tokens and cache):
+            if "-pthread" not in all_flag_tokens and not cache.get("CMAKE_HAVE_PTHREAD_CREATE"):
+                return "single-threaded (pthreads unavailable)"
+        return "libavif/aom threads (budgeted)"
+
+    if pid == "libaom":
+        if cache.get("CONFIG_MULTITHREAD") == "0":
+            return "single-threaded (CONFIG_MULTITHREAD=0)"
+        return "libaom row-mt threads (budgeted)"
+
+    if feats.get("threads"):
+        return f"{pid} threads (budgeted)"
+    if any("MUTEX_" in d for d in define_tokens) or has_openmp:
+        return f"{pid} threads (enabled)"
+    return "single-threaded"
+
+
 def _extract_package_build_info(
     pkg: dict,
     pkg_by_id: dict[str, dict],
@@ -214,34 +475,98 @@ def _extract_package_build_info(
     default_cxx = str(llvm_dir / ("x86_64-w64-mingw32-clang++" + (".exe" if os.name == "nt" else "")))
 
     cache: dict[str, str] = {}
-    if deps_build_dir is not None:
-        cache = _parse_cmake_cache(deps_build_dir / pid / "CMakeCache.txt")
+    ninja_flags: list[str] = []
+    ninja_defs: list[str] = []
+    aom_cache: dict[str, str] = {}
+    aom_flags: list[str] = []
 
     lang = str(pkg.get("language", "c")).lower()
-    if "cxx" in lang or "c++" in lang:
+    is_cxx = ("cxx" in lang or "c++" in lang)
+
+    if deps_build_dir is not None:
+        cache = _parse_cmake_cache(deps_build_dir / pid / "CMakeCache.txt")
+        ninja_flags, ninja_defs = _parse_ninja_compile_info(deps_build_dir / pid / "build.ninja", is_cxx)
+        if pid == "libavif":
+            aom_cache = _parse_cmake_cache(deps_build_dir / "libaom" / "CMakeCache.txt")
+            aom_flags, _ = _parse_ninja_compile_info(deps_build_dir / "libaom" / "build.ninja", False)
+
+    if is_cxx:
         cc_path = cache.get("CMAKE_CXX_COMPILER") or default_cxx
+        btype = (cache.get("CMAKE_BUILD_TYPE") or "Release").strip()
+        init_flags = cache["CMAKE_CXX_FLAGS"] if "CMAKE_CXX_FLAGS" in cache else "-march=x86-64-v2"
+        cfg_key = f"CMAKE_CXX_FLAGS_{btype.upper()}"
+        c_flags = cache[cfg_key] if cfg_key in cache else "-O3 -DNDEBUG"
     else:
         cc_path = cache.get("CMAKE_C_COMPILER") or default_cc
+        btype = (cache.get("CMAKE_BUILD_TYPE") or "Release").strip()
+        init_flags = cache["CMAKE_C_FLAGS"] if "CMAKE_C_FLAGS" in cache else "-march=x86-64-v2"
+        cfg_key = f"CMAKE_C_FLAGS_{btype.upper()}"
+        c_flags = cache[cfg_key] if cfg_key in cache else "-O3 -DNDEBUG"
     compiler_id = _probe_compiler_version(cc_path, cc_cache)
 
-    c_flags = cache.get("CMAKE_C_FLAGS_RELEASE") or cache.get("CMAKE_CXX_FLAGS_RELEASE") or "-O3 -DNDEBUG"
-    init_flags = cache.get("CMAKE_C_FLAGS") or "-march=x86-64-v2"
-    opts = [opt for opt in pkg.get("cmake_options", []) if not opt.endswith("OFF") and not opt.endswith("INSTALL=ON")]
-    if pid == "libjpeg-turbo" and "-isystem" not in init_flags:
-        init_flags = f"{init_flags} -DREQUIRE_SIMD=ON".strip()
-    flags_parts = [f"-DCMAKE_BUILD_TYPE={cache.get('CMAKE_BUILD_TYPE', 'Release')}", init_flags, c_flags, *opts[:4]]
-    build_flags = " ".join(p for p in flags_parts if p).strip()
+    raw_cache_tokens = shlex.split(f"{init_flags} {c_flags}", posix=True)
+    cache_flag_tokens = _semantic_ninja_tokens(raw_cache_tokens, [])
+    cache_non_def = [t for t in cache_flag_tokens if not t.startswith("-D") or t == "-DNDEBUG"]
+    cache_def = [t for t in cache_flag_tokens if t.startswith("-D") and t != "-DNDEBUG"]
+
+    ninja_all = _semantic_ninja_tokens(ninja_flags, ninja_defs)
+    ninja_flag_only = [t for t in ninja_all if not t.startswith("-D") or t == "-DNDEBUG"]
+    ninja_def_only = [t for t in ninja_all if t.startswith("-D") and t != "-DNDEBUG"]
+    combined_flag_tokens = cache_flag_tokens + ninja_all
+
+    cache_toggle_keys = (
+        "WEBP_ENABLE_SIMD",
+        "WEBP_USE_THREAD",
+        "WITH_SIMD",
+        "REQUIRE_SIMD",
+        "PNG_HARDWARE_OPTIMIZATIONS",
+        "OJPH_DISABLE_SIMD",
+        "OJPH_DISABLE_AVX2",
+        "OPJ_USE_THREAD",
+        "AOM_TARGET_CPU",
+        "OPENEXR_ENABLE_THREADING",
+        "JPEGXL_ENABLE_THREADS",
+        "JPEGXL_ENABLE_HWY_AVX2",
+        "JPEGXL_ENABLE_HWY_AVX3",
+        "JPEGXL_ENABLE_HWY_AVX3_DL",
+        "HWY_COMPILE_ONLY_SCALAR",
+        "LIBRAW_USE_OPENMP",
+    )
+    toggles = [f"-D{k}={cache[k]}" for k in cache_toggle_keys if k in cache]
+    opts = [
+        opt
+        for opt in pkg.get("cmake_options", [])
+        if not opt.endswith("INSTALL=ON")
+        and not any(opt.startswith(f"-D{k}=") for k in cache_toggle_keys)
+    ]
+
+    ordered_tokens: list[str] = []
+    seen_tokens: set[str] = set()
+    for tok in (
+        [f"-DCMAKE_BUILD_TYPE={btype}"]
+        + cache_non_def
+        + ninja_flag_only
+        + toggles
+        + cache_def
+        + ninja_def_only
+        + opts[:3]
+    ):
+        if tok and tok not in seen_tokens:
+            seen_tokens.add(tok)
+            ordered_tokens.append(tok)
+
+    bounded_parts: list[str] = []
+    used_bytes = 0
+    for tok in ordered_tokens:
+        need = len(tok.encode("utf-8")) + (1 if bounded_parts else 0)
+        if used_bytes + need <= 255:
+            bounded_parts.append(tok)
+            used_bytes += need
+    build_flags = " ".join(bounded_parts) if bounded_parts else f"-DCMAKE_BUILD_TYPE={btype}"
 
     feats = pkg.get("features", {})
-    simd = str(feats.get("simd") or "x86-64-v2")
-    if feats.get("nasm") and nasm_ver and nasm_ver not in simd:
-        simd = f"{simd} (NASM {nasm_ver})"
-    if pid == "libraw":
-        thr = "thread-safe instances (OpenMP disabled)"
-    elif feats.get("threads"):
-        thr = f"{pid} threads (budgeted)" if pid != "libwebp" else "libwebp threads (WEBP_USE_THREAD=ON)"
-    else:
-        thr = "single-threaded"
+    simd = _derive_simd_summary(pid, feats, nasm_ver, cache, combined_flag_tokens, ninja_defs, aom_cache, aom_flags)
+    thr = _derive_threading_summary(pid, feats, cache, combined_flag_tokens, ninja_defs)
     return (ver, compiler_id, build_flags, simd, thr)
 
 

@@ -1220,6 +1220,8 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
             }
         }
 
+        int artifact_published = 0;
+
         if (!cand_cancelled && iter_fail_st == RFC_OK) {
             if (use_path_sink) {
                 uint64_t pub_t0 = rfc_monotonic_now_ns();
@@ -1239,6 +1241,7 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
                                                   sizeof(iter_detail),
                                                   rfc_status_name(pst));
                 } else {
+                    artifact_published = 1;
                     final_temp_path[0] = '\0';
                     if (has_stage_dir) {
                         (void)rfc_output_internal_remove_staging_subdir(
@@ -1293,6 +1296,9 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
                 final_pub_bytes = NULL;
                 final_pub_len = 0u;
 
+                if (pub_erep.published) {
+                    artifact_published = 1;
+                }
                 if (pst != RFC_OK) {
                     if (pst == RFC_ERR_CANCELLED && !pub_erep.published) {
                         cand_cancelled = 1;
@@ -1306,6 +1312,7 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
                                                : rfc_status_name(pst));
                     }
                 } else {
+                    artifact_published = 1;
                     rfc_size_metrics post_sm;
                     rfc_status vmst = rfc_metrics_verify_produced_callback(
                         &wrap_pub, final_job_id, 1u,
@@ -1362,7 +1369,7 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
             }
             cr->status = iter_fail_st;
             cr->failing_stage = iter_fail_stage;
-            cr->has_produced_output = 0;
+            cr->has_produced_output = artifact_published ? 1 : 0;
             cr->measurement_only = 0;
             cr->rank = 0u;
             cr->size.outcome = RFC_SIZE_NOT_APPLICABLE;

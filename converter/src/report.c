@@ -747,7 +747,12 @@ rfc_status rfc_report_validate(const rfc_comparison_report *report) {
                 return RFC_ERR_INVALID_ARGUMENT;
             }
         } else {
-            if (c->rank != 0u || c->has_produced_output != 0 ||
+            int allow_retained_failed =
+                (c->outcome == RFC_CANDIDATE_FAILED &&
+                 c->failing_stage == RFC_STAGE_VERIFY);
+            if (c->rank != 0u ||
+                (c->has_produced_output != 0 &&
+                 !(allow_retained_failed && c->has_produced_output == 1)) ||
                 c->measurement_only != 0 ||
                 c->size.outcome != RFC_SIZE_NOT_APPLICABLE) {
                 return RFC_ERR_INVALID_ARGUMENT;
@@ -950,6 +955,69 @@ static void jb_timings_obj(json_buf *b, const rfc_stage_timings *t) {
     jb_cstr(b, "}");
 }
 
+static void jb_settings_arr(json_buf *b,
+                            const rfc_report_setting_kv *settings,
+                            size_t setting_count) {
+    jb_cstr(b, "[");
+    for (size_t s = 0u; s < setting_count; s++) {
+        if (s > 0u) {
+            jb_raw(b, ",", 1u);
+        }
+        jb_cstr(b, "{\"id\":");
+        jb_json_str(b, settings[s].id);
+        jb_cstr(b, ",\"value\":");
+        jb_json_str(b, settings[s].value);
+        jb_cstr(b, "}");
+    }
+    jb_cstr(b, "]");
+}
+
+static void jb_provider_config_obj(json_buf *b,
+                                   const rfc_provider_build_config *cfg) {
+    jb_cstr(b, "{\"provider_name\":");
+    jb_json_str(b, cfg->provider_name);
+    jb_cstr(b, ",\"codec_version\":");
+    jb_json_str(b, cfg->codec_version);
+    jb_cstr(b, ",\"compiler_id\":");
+    jb_json_str(b, cfg->compiler_id);
+    jb_cstr(b, ",\"target_abi\":");
+    jb_json_str(b, cfg->target_abi);
+    jb_cstr(b, ",\"build_flags\":");
+    jb_json_str(b, cfg->build_flags);
+    jb_cstr(b, ",\"simd_features\":");
+    jb_json_str(b, cfg->simd_features);
+    jb_cstr(b, ",\"threading_features\":");
+    jb_json_str(b, cfg->threading_features);
+    jb_cstr(b, "}");
+}
+
+static void jb_verification_obj(json_buf *b, const rfc_verify_report *vr) {
+    char vsrc[65];
+    char vdst[65];
+    hex_encode_lower(vr->source_hash, vsrc);
+    hex_encode_lower(vr->verified_hash, vdst);
+    jb_cstr(b, "{\"valid\":");
+    jb_bool(b, vr->valid);
+    jb_cstr(b, ",\"status\":");
+    jb_json_str(b, rfc_status_name(vr->status));
+    jb_cstr(b, ",\"exactness\":");
+    jb_json_str(b, vr->exactness ? rfc_exactness_class_name(vr->exactness)
+                                 : "none");
+    jb_cstr(b, ",\"meta_outcome\":");
+    jb_json_str(b, vr->meta_outcome
+                       ? rfc_verify_meta_outcome_name(vr->meta_outcome)
+                       : "none");
+    jb_cstr(b, ",\"independent_decoder\":");
+    jb_bool(b, vr->independent_decoder);
+    jb_cstr(b, ",\"decoder_provenance\":");
+    jb_json_str(b, vr->decoder_provenance);
+    jb_cstr(b, ",\"source_hash\":");
+    jb_json_str(b, vsrc);
+    jb_cstr(b, ",\"verified_hash\":");
+    jb_json_str(b, vdst);
+    jb_cstr(b, "}");
+}
+
 rfc_status rfc_report_format_json(const rfc_comparison_report *report,
                                   char **out_json_utf8,
                                   size_t *out_len) {
@@ -1061,63 +1129,14 @@ rfc_status rfc_report_format_json(const rfc_comparison_report *report,
         jb_cstr(&b, ",\"effective_threads\":");
         jb_u64(&b, c->effective_threads);
 
-        jb_cstr(&b, ",\"settings\":[");
-        for (size_t s = 0u; s < c->setting_count; s++) {
-            if (s > 0u) {
-                jb_raw(&b, ",", 1u);
-            }
-            jb_cstr(&b, "{\"id\":");
-            jb_json_str(&b, c->settings[s].id);
-            jb_cstr(&b, ",\"value\":");
-            jb_json_str(&b, c->settings[s].value);
-            jb_cstr(&b, "}");
-        }
-        jb_cstr(&b, "]");
+        jb_cstr(&b, ",\"settings\":");
+        jb_settings_arr(&b, c->settings, c->setting_count);
 
-        jb_cstr(&b, ",\"provider_config\":{\"provider_name\":");
-        jb_json_str(&b, c->build_config.provider_name);
-        jb_cstr(&b, ",\"codec_version\":");
-        jb_json_str(&b, c->build_config.codec_version);
-        jb_cstr(&b, ",\"compiler_id\":");
-        jb_json_str(&b, c->build_config.compiler_id);
-        jb_cstr(&b, ",\"target_abi\":");
-        jb_json_str(&b, c->build_config.target_abi);
-        jb_cstr(&b, ",\"build_flags\":");
-        jb_json_str(&b, c->build_config.build_flags);
-        jb_cstr(&b, ",\"simd_features\":");
-        jb_json_str(&b, c->build_config.simd_features);
-        jb_cstr(&b, ",\"threading_features\":");
-        jb_json_str(&b, c->build_config.threading_features);
-        jb_cstr(&b, "}");
+        jb_cstr(&b, ",\"provider_config\":");
+        jb_provider_config_obj(&b, &c->build_config);
 
-        char vsrc[65];
-        char vdst[65];
-        hex_encode_lower(c->verify_report.source_hash, vsrc);
-        hex_encode_lower(c->verify_report.verified_hash, vdst);
-        jb_cstr(&b, ",\"verification\":{\"valid\":");
-        jb_bool(&b, c->verify_report.valid);
-        jb_cstr(&b, ",\"status\":");
-        jb_json_str(&b, rfc_status_name(c->verify_report.status));
-        jb_cstr(&b, ",\"exactness\":");
-        jb_json_str(&b,
-                    c->verify_report.exactness
-                        ? rfc_exactness_class_name(c->verify_report.exactness)
-                        : "none");
-        jb_cstr(&b, ",\"meta_outcome\":");
-        jb_json_str(
-            &b,
-            c->verify_report.meta_outcome
-                ? rfc_verify_meta_outcome_name(c->verify_report.meta_outcome)
-                : "none");
-        jb_cstr(&b, ",\"independent_decoder\":");
-        jb_bool(&b, c->verify_report.independent_decoder);
-        jb_cstr(&b, ",\"decoder_provenance\":");
-        jb_json_str(&b, c->verify_report.decoder_provenance);
-        jb_cstr(&b, ",\"source_hash\":");
-        jb_json_str(&b, vsrc);
-        jb_cstr(&b, ",\"verified_hash\":");
-        jb_json_str(&b, vdst);
-        jb_cstr(&b, "}");
+        jb_cstr(&b, ",\"verification\":");
+        jb_verification_obj(&b, &c->verify_report);
 
         char pdst[65];
         hex_encode_lower(c->size.produced_sha256, pdst);
@@ -1266,6 +1285,25 @@ static int parse_size_outcome_name(const char *s, rfc_size_outcome *out) {
         }
     }
     return 0;
+}
+
+static int parse_job_stage_name(const char *s, rfc_job_stage *out) {
+    for (int v = 0; v <= 6; v++) {
+        rfc_job_stage stg = (rfc_job_stage)v;
+        if (strcmp(s, rfc_job_stage_name(stg)) == 0) {
+            *out = stg;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int parse_exactness_name(const char *s, rfc_exactness_class *out) {
+    if (strcmp(s, "none") == 0) {
+        *out = (rfc_exactness_class)0;
+        return 1;
+    }
+    return rfc_exactness_class_parse(s, out) == RFC_OK;
 }
 
 static int parse_meta_outcome_name(const char *s, rfc_verify_meta_outcome *out) {
@@ -1562,6 +1600,134 @@ static int js_read_limits_obj(jscan *js, rfc_limits *out_lim) {
     return rfc_limits_validate(out_lim) == RFC_OK;
 }
 
+static int js_read_hex_digest(jscan *js,
+                              int allow_empty,
+                              uint8_t out_bytes[32],
+                              int *out_present) {
+    char hex_buf[128];
+    if (!js_read_str(js, hex_buf, sizeof(hex_buf))) {
+        return 0;
+    }
+    if (hex_buf[0] == '\0') {
+        if (!allow_empty) {
+            return 0;
+        }
+        memset(out_bytes, 0, 32u);
+        if (out_present) {
+            *out_present = 0;
+        }
+        return 1;
+    }
+    if (!hex_decode_lower64(hex_buf, strlen(hex_buf), out_bytes)) {
+        return 0;
+    }
+    if (out_present) {
+        *out_present = 1;
+    }
+    return 1;
+}
+
+static int js_read_settings_arr(
+    jscan *js,
+    rfc_report_setting_kv out_settings[RFC_REPORT_MAX_SETTINGS],
+    size_t *out_count) {
+    *out_count = 0u;
+    if (!js_expect(js, '[')) {
+        return 0;
+    }
+    js_skip_ws(js);
+    if (js->p < js->end && *js->p == ']') {
+        js->p++;
+        return 1;
+    }
+    for (;;) {
+        if (*out_count >= RFC_REPORT_MAX_SETTINGS) {
+            return 0;
+        }
+        rfc_report_setting_kv *kv = &out_settings[(*out_count)++];
+        if (!js_expect(js, '{') || !js_expect_key(js, "id", 0) ||
+            !js_read_str(js, kv->id, sizeof(kv->id)) || kv->id[0] == '\0' ||
+            !js_expect_key(js, "value", 1) ||
+            !js_read_str(js, kv->value, sizeof(kv->value)) ||
+            kv->value[0] == '\0' || !js_expect(js, '}')) {
+            return 0;
+        }
+        js_skip_ws(js);
+        if (js->p >= js->end) {
+            js->truncated = 1;
+            return 0;
+        }
+        if (*js->p == ',') {
+            js->p++;
+            continue;
+        }
+        if (*js->p == ']') {
+            js->p++;
+            return 1;
+        }
+        return 0;
+    }
+}
+
+static int js_read_provider_config_obj(jscan *js,
+                                       rfc_provider_build_config *cfg) {
+    memset(cfg, 0, sizeof(*cfg));
+    if (!js_expect(js, '{')) {
+        return 0;
+    }
+    if (!js_expect_key(js, "provider_name", 0) ||
+        !js_read_str(js, cfg->provider_name, sizeof(cfg->provider_name)) ||
+        !js_expect_key(js, "codec_version", 1) ||
+        !js_read_str(js, cfg->codec_version, sizeof(cfg->codec_version)) ||
+        !js_expect_key(js, "compiler_id", 1) ||
+        !js_read_str(js, cfg->compiler_id, sizeof(cfg->compiler_id)) ||
+        !js_expect_key(js, "target_abi", 1) ||
+        !js_read_str(js, cfg->target_abi, sizeof(cfg->target_abi)) ||
+        !js_expect_key(js, "build_flags", 1) ||
+        !js_read_str(js, cfg->build_flags, sizeof(cfg->build_flags)) ||
+        !js_expect_key(js, "simd_features", 1) ||
+        !js_read_str(js, cfg->simd_features, sizeof(cfg->simd_features)) ||
+        !js_expect_key(js, "threading_features", 1) ||
+        !js_read_str(js, cfg->threading_features,
+                     sizeof(cfg->threading_features)) ||
+        !js_expect(js, '}')) {
+        return 0;
+    }
+    return 1;
+}
+
+static int js_read_verification_obj(jscan *js,
+                                    rfc_history_candidate_summary *hc) {
+    char sbuf[128];
+    if (!js_expect(js, '{')) {
+        return 0;
+    }
+    if (!js_expect_key(js, "valid", 0) ||
+        !js_read_bool(js, &hc->verify_valid) ||
+        !js_expect_key(js, "status", 1) ||
+        !js_read_str(js, sbuf, sizeof(sbuf)) ||
+        !parse_status_by_name(sbuf, &hc->verify_status) ||
+        !js_expect_key(js, "exactness", 1) ||
+        !js_read_str(js, sbuf, sizeof(sbuf)) ||
+        !parse_exactness_name(sbuf, &hc->exactness) ||
+        !js_expect_key(js, "meta_outcome", 1) ||
+        !js_read_str(js, sbuf, sizeof(sbuf)) ||
+        !parse_meta_outcome_name(sbuf, &hc->meta_outcome) ||
+        !js_expect_key(js, "independent_decoder", 1) ||
+        !js_read_bool(js, &hc->independent_decoder) ||
+        !js_expect_key(js, "decoder_provenance", 1) ||
+        !js_read_str(js, hc->decoder_provenance,
+                     sizeof(hc->decoder_provenance)) ||
+        !js_expect_key(js, "source_hash", 1) ||
+        !js_read_hex_digest(js, 0, hc->source_hash, NULL) ||
+        !js_expect_key(js, "verified_hash", 1) ||
+        !js_read_hex_digest(js, 0, hc->verified_hash, NULL) ||
+        !js_expect(js, '}')) {
+        return 0;
+    }
+    return 1;
+}
+
 static rfc_status format_history_line(const rfc_comparison_report *report,
                                       uint64_t sequence,
                                       const uint8_t prev_sha256[32],
@@ -1607,10 +1773,14 @@ static rfc_status format_history_line(const rfc_comparison_report *report,
     jb_u64(&b, report->measured_iterations);
     jb_cstr(&b, ",\"metadata_policy\":");
     jb_json_str(&b, rfc_metadata_policy_name(report->metadata_policy));
+    jb_cstr(&b, ",\"acknowledged_unsupported_metadata\":");
+    jb_u64(&b, report->acknowledged_unsupported_metadata);
     jb_cstr(&b, ",\"limits\":");
     jb_limits_obj(&b, &report->limits);
     jb_cstr(&b, ",\"mixed_provider_configurations\":");
     jb_bool(&b, report->mixed_provider_configurations);
+    jb_cstr(&b, ",\"configuration_notes\":");
+    jb_json_str(&b, report->configuration_notes);
 
     jb_cstr(&b, ",\"counts\":{\"completed\":");
     jb_u64(&b, report->completed_count);
@@ -1634,20 +1804,36 @@ static rfc_status format_history_line(const rfc_comparison_report *report,
         jb_json_str(&b, rfc_candidate_outcome_name(c->outcome));
         jb_cstr(&b, ",\"status\":");
         jb_json_str(&b, rfc_status_name(c->status));
+        jb_cstr(&b, ",\"failing_stage\":");
+        jb_json_str(&b, rfc_job_stage_name(c->failing_stage));
         jb_cstr(&b, ",\"rank\":");
         jb_u64(&b, c->rank);
         jb_cstr(&b, ",\"has_produced_output\":");
         jb_bool(&b, c->has_produced_output);
         jb_cstr(&b, ",\"measurement_only\":");
         jb_bool(&b, c->measurement_only);
+        jb_cstr(&b, ",\"effective_threads\":");
+        jb_u64(&b, c->effective_threads);
+        jb_cstr(&b, ",\"settings\":");
+        jb_settings_arr(&b, c->settings, c->setting_count);
+        jb_cstr(&b, ",\"provider_config\":");
+        jb_provider_config_obj(&b, &c->build_config);
+        jb_cstr(&b, ",\"verification\":");
+        jb_verification_obj(&b, &c->verify_report);
         jb_cstr(&b, ",\"size_outcome\":");
         jb_json_str(&b, rfc_size_outcome_name(c->size.outcome));
         jb_cstr(&b, ",\"produced_file_bytes\":");
         jb_u64(&b, c->size.produced_file_bytes);
         jb_cstr(&b, ",\"signed_delta_bytes\":");
         jb_i64(&b, c->size.signed_delta_bytes);
+        char prod_hex[65];
+        hex_encode_lower(c->size.produced_sha256, prod_hex);
+        jb_cstr(&b, ",\"produced_sha256\":");
+        jb_json_str(&b, c->size.has_produced_sha256 ? prod_hex : "");
         jb_cstr(&b, ",\"median_wall_ns\":");
         jb_u64(&b, c->median_timings.wall_ns);
+        jb_cstr(&b, ",\"final_publish_ns\":");
+        jb_u64(&b, c->final_publish_ns);
         jb_cstr(&b, ",\"codec_version\":");
         jb_json_str(&b, c->build_config.codec_version);
         jb_cstr(&b, ",\"meta_outcome\":");
@@ -1786,12 +1972,22 @@ static rfc_status parse_and_verify_history_line(
             RFC_OK) {
         return js.truncated ? RFC_ERR_TRUNCATED_INPUT : RFC_ERR_VERIFY_MISMATCH;
     }
+    if (!js_expect_key(&js, "acknowledged_unsupported_metadata", 1) ||
+        !js_read_u64(&js, &uval) || uval > UINT32_MAX) {
+        return js.truncated ? RFC_ERR_TRUNCATED_INPUT : RFC_ERR_VERIFY_MISMATCH;
+    }
+    out_entry->acknowledged_unsupported_metadata = (uint32_t)uval;
     if (!js_expect_key(&js, "limits", 1) ||
         !js_read_limits_obj(&js, &out_entry->limits)) {
         return js.truncated ? RFC_ERR_TRUNCATED_INPUT : RFC_ERR_VERIFY_MISMATCH;
     }
     if (!js_expect_key(&js, "mixed_provider_configurations", 1) ||
         !js_read_bool(&js, &out_entry->mixed_provider_configurations)) {
+        return js.truncated ? RFC_ERR_TRUNCATED_INPUT : RFC_ERR_VERIFY_MISMATCH;
+    }
+    if (!js_expect_key(&js, "configuration_notes", 1) ||
+        !js_read_str(&js, out_entry->configuration_notes,
+                     sizeof(out_entry->configuration_notes))) {
         return js.truncated ? RFC_ERR_TRUNCATED_INPUT : RFC_ERR_VERIFY_MISMATCH;
     }
 
@@ -1854,6 +2050,12 @@ static rfc_status parse_and_verify_history_line(
                 return js.truncated ? RFC_ERR_TRUNCATED_INPUT
                                     : RFC_ERR_VERIFY_MISMATCH;
             }
+            if (!js_expect_key(&js, "failing_stage", 1) ||
+                !js_read_str(&js, str_buf, sizeof(str_buf)) ||
+                !parse_job_stage_name(str_buf, &hc->failing_stage)) {
+                return js.truncated ? RFC_ERR_TRUNCATED_INPUT
+                                    : RFC_ERR_VERIFY_MISMATCH;
+            }
             if (!js_expect_key(&js, "rank", 1) || !js_read_u64(&js, &uval) ||
                 uval > UINT32_MAX) {
                 return js.truncated ? RFC_ERR_TRUNCATED_INPUT
@@ -1872,6 +2074,27 @@ static rfc_status parse_and_verify_history_line(
                                     : RFC_ERR_VERIFY_MISMATCH;
             }
             hc->measurement_only = bval;
+            if (!js_expect_key(&js, "effective_threads", 1) ||
+                !js_read_u64(&js, &uval) || uval > UINT32_MAX) {
+                return js.truncated ? RFC_ERR_TRUNCATED_INPUT
+                                    : RFC_ERR_VERIFY_MISMATCH;
+            }
+            hc->effective_threads = (uint32_t)uval;
+            if (!js_expect_key(&js, "settings", 1) ||
+                !js_read_settings_arr(&js, hc->settings, &hc->setting_count)) {
+                return js.truncated ? RFC_ERR_TRUNCATED_INPUT
+                                    : RFC_ERR_VERIFY_MISMATCH;
+            }
+            if (!js_expect_key(&js, "provider_config", 1) ||
+                !js_read_provider_config_obj(&js, &hc->build_config)) {
+                return js.truncated ? RFC_ERR_TRUNCATED_INPUT
+                                    : RFC_ERR_VERIFY_MISMATCH;
+            }
+            if (!js_expect_key(&js, "verification", 1) ||
+                !js_read_verification_obj(&js, hc)) {
+                return js.truncated ? RFC_ERR_TRUNCATED_INPUT
+                                    : RFC_ERR_VERIFY_MISMATCH;
+            }
             if (!js_expect_key(&js, "size_outcome", 1) ||
                 !js_read_str(&js, str_buf, sizeof(str_buf)) ||
                 !parse_size_outcome_name(str_buf, &hc->size_outcome)) {
@@ -1888,8 +2111,19 @@ static rfc_status parse_and_verify_history_line(
                 return js.truncated ? RFC_ERR_TRUNCATED_INPUT
                                     : RFC_ERR_VERIFY_MISMATCH;
             }
+            if (!js_expect_key(&js, "produced_sha256", 1) ||
+                !js_read_hex_digest(&js, 1, hc->produced_sha256,
+                                    &hc->has_produced_sha256)) {
+                return js.truncated ? RFC_ERR_TRUNCATED_INPUT
+                                    : RFC_ERR_VERIFY_MISMATCH;
+            }
             if (!js_expect_key(&js, "median_wall_ns", 1) ||
                 !js_read_u64(&js, &hc->median_wall_ns)) {
+                return js.truncated ? RFC_ERR_TRUNCATED_INPUT
+                                    : RFC_ERR_VERIFY_MISMATCH;
+            }
+            if (!js_expect_key(&js, "final_publish_ns", 1) ||
+                !js_read_u64(&js, &hc->final_publish_ns)) {
                 return js.truncated ? RFC_ERR_TRUNCATED_INPUT
                                     : RFC_ERR_VERIFY_MISMATCH;
             }
@@ -1899,12 +2133,40 @@ static rfc_status parse_and_verify_history_line(
                 return js.truncated ? RFC_ERR_TRUNCATED_INPUT
                                     : RFC_ERR_VERIFY_MISMATCH;
             }
+            rfc_verify_meta_outcome top_meta = (rfc_verify_meta_outcome)0;
             if (!js_expect_key(&js, "meta_outcome", 1) ||
                 !js_read_str(&js, str_buf, sizeof(str_buf)) ||
-                !parse_meta_outcome_name(str_buf, &hc->meta_outcome) ||
+                !parse_meta_outcome_name(str_buf, &top_meta) ||
+                top_meta != hc->meta_outcome ||
                 !js_expect(&js, '}')) {
                 return js.truncated ? RFC_ERR_TRUNCATED_INPUT
                                     : RFC_ERR_VERIFY_MISMATCH;
+            }
+            if (strcmp(hc->codec_version, hc->build_config.codec_version) !=
+                0) {
+                return RFC_ERR_VERIFY_MISMATCH;
+            }
+            if (hc->outcome == RFC_CANDIDATE_COMPLETED) {
+                if (rfc_provider_build_config_validate(&hc->build_config) !=
+                        RFC_OK ||
+                    hc->failing_stage != RFC_STAGE_NONE ||
+                    hc->has_produced_output != (hc->measurement_only ? 0 : 1) ||
+                    (out_entry->ranking_complete ? (hc->rank == 0u)
+                                                 : (hc->rank != 0u)) ||
+                    !hc->verify_valid || hc->verify_status != RFC_OK) {
+                    return RFC_ERR_VERIFY_MISMATCH;
+                }
+            } else {
+                int allow_retained_failed =
+                    (hc->outcome == RFC_CANDIDATE_FAILED &&
+                     hc->failing_stage == RFC_STAGE_VERIFY);
+                if (hc->rank != 0u || hc->measurement_only != 0 ||
+                    hc->size_outcome != RFC_SIZE_NOT_APPLICABLE ||
+                    (hc->has_produced_output != 0 &&
+                     !(allow_retained_failed &&
+                       hc->has_produced_output == 1))) {
+                    return RFC_ERR_VERIFY_MISMATCH;
+                }
             }
             js_skip_ws(&js);
             if (js.p >= js.end) {
@@ -1999,6 +2261,13 @@ rfc_status rfc_history_verify_bytes(const uint8_t *bytes,
         }
     }
 
+    rfc_history_entry_summary *parsed =
+        (rfc_history_entry_summary *)calloc(1u, sizeof(*parsed));
+    if (!parsed) {
+        free(entries);
+        return RFC_ERR_OUT_OF_MEMORY;
+    }
+
     uint8_t expected_prev[32];
     memset(expected_prev, 0, sizeof(expected_prev));
     size_t pos = 0u;
@@ -2007,22 +2276,24 @@ rfc_status rfc_history_verify_bytes(const uint8_t *bytes,
     while (pos < len) {
         const uint8_t *nl = (const uint8_t *)memchr(bytes + pos, '\n', len - pos);
         if (!nl) {
+            free(parsed);
             free(entries);
             return RFC_ERR_TRUNCATED_INPUT;
         }
         size_t line_len = (size_t)(nl - (bytes + pos));
         if (line_len == 0u) {
+            free(parsed);
             free(entries);
             return RFC_ERR_VERIFY_MISMATCH;
         }
-        rfc_history_entry_summary parsed;
         rfc_status st = parse_and_verify_history_line(
-            (const char *)(bytes + pos), line_len, seq, expected_prev, &parsed);
+            (const char *)(bytes + pos), line_len, seq, expected_prev, parsed);
         if (st != RFC_OK) {
+            free(parsed);
             free(entries);
             return st;
         }
-        memcpy(expected_prev, parsed.entry_sha256, 32u);
+        memcpy(expected_prev, parsed->entry_sha256, 32u);
         if (out_log) {
             if (count == cap) {
                 size_t ncap = cap * 2u;
@@ -2030,17 +2301,19 @@ rfc_status rfc_history_verify_bytes(const uint8_t *bytes,
                     (rfc_history_entry_summary *)realloc(
                         entries, ncap * sizeof(*ne));
                 if (!ne) {
+                    free(parsed);
                     free(entries);
                     return RFC_ERR_OUT_OF_MEMORY;
                 }
                 entries = ne;
                 cap = ncap;
             }
-            entries[count++] = parsed;
+            entries[count++] = *parsed;
         }
         pos = (size_t)(nl - bytes) + 1u;
         seq++;
     }
+    free(parsed);
 
     if (out_log) {
         out_log->entries = entries;

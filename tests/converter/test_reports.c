@@ -1943,21 +1943,46 @@ static void test_size_outcomes_and_callback_readback(void) {
     CHECK(rfc_compare_run(&sp, &rep) == RFC_OK);
     CHECK(rep.failed_count == 3u && rep.completed_count == 1u);
     CHECK(rep.candidates[0].outcome == RFC_CANDIDATE_FAILED &&
+          rep.candidates[0].failing_stage == RFC_STAGE_PREFLIGHT &&
           rep.candidates[0].status == RFC_ERR_NO_ADAPTER &&
           rep.candidates[0].rank == 0u && !rep.candidates[0].has_produced_output);
     CHECK(rep.candidates[1].outcome == RFC_CANDIDATE_FAILED &&
+          rep.candidates[1].failing_stage == RFC_STAGE_VERIFY &&
           rep.candidates[1].status == RFC_ERR_VERIFY_MISMATCH &&
-          rep.candidates[1].rank == 0u && !rep.candidates[1].has_produced_output);
+          rep.candidates[1].rank == 0u &&
+          rep.candidates[1].has_produced_output == 1 &&
+          pc_trunc.stored != NULL);
     CHECK(rep.candidates[2].outcome == RFC_CANDIDATE_FAILED &&
+          rep.candidates[2].failing_stage == RFC_STAGE_VERIFY &&
           rep.candidates[2].status == RFC_ERR_VERIFY_MISMATCH &&
-          rep.candidates[2].rank == 0u && !rep.candidates[2].has_produced_output);
+          rep.candidates[2].rank == 0u &&
+          rep.candidates[2].has_produced_output == 1 &&
+          pc_flip.stored != NULL);
     CHECK(rep.candidates[3].outcome == RFC_CANDIDATE_COMPLETED &&
           rep.candidates[3].status == RFC_OK &&
           rep.candidates[3].rank == 1u &&
           rep.candidates[3].has_produced_output == 1 &&
           rep.candidates[3].size.outcome == RFC_SIZE_IDENTICAL_BYTES);
+    CHECK(rfc_report_validate(&rep) == RFC_OK);
     CHECK(pc_ident.reader_closed_count == 1 &&
           pc_ident.release_called_count == 1 && pc_ident.closed_before_release);
+
+    char cb_hist[1024];
+    join_path(cb_hist, sizeof(cb_hist), tmp, "cb_readback.jsonl");
+    CHECK(rfc_history_append_path(cb_hist, &rep) == RFC_OK);
+    rfc_history_log cb_hlog;
+    CHECK(rfc_history_read_path(cb_hist, &cb_hlog) == RFC_OK);
+    CHECK(cb_hlog.entry_count == 1u && cb_hlog.entries[0].candidate_count == 4u);
+    CHECK(cb_hlog.entries[0].candidates[0].outcome == RFC_CANDIDATE_FAILED &&
+          cb_hlog.entries[0].candidates[0].failing_stage == RFC_STAGE_PREFLIGHT &&
+          cb_hlog.entries[0].candidates[0].has_produced_output == 0);
+    CHECK(cb_hlog.entries[0].candidates[1].outcome == RFC_CANDIDATE_FAILED &&
+          cb_hlog.entries[0].candidates[1].failing_stage == RFC_STAGE_VERIFY &&
+          cb_hlog.entries[0].candidates[1].has_produced_output == 1);
+    CHECK(cb_hlog.entries[0].candidates[2].outcome == RFC_CANDIDATE_FAILED &&
+          cb_hlog.entries[0].candidates[2].failing_stage == RFC_STAGE_VERIFY &&
+          cb_hlog.entries[0].candidates[2].has_produced_output == 1);
+    rfc_history_log_free(&cb_hlog);
 
     /* Separate test proving equal-length different-digest completes as EQUAL_SIZE (not IDENTICAL_BYTES) */
     cb_pub_ctx pc_eq;
@@ -2399,10 +2424,13 @@ static void test_json_and_history_chain(void) {
     join_path(fold3, sizeof(fold3), tmp, "r3.fold");
     join_path(bad_copy, sizeof(bad_copy), tmp, "tampered.jsonl");
 
+    rfc_setting_value c0_meta = {"metadata", "preserve"};
     rfc_compare_candidate_spec cands[3];
     memset(cands, 0, sizeof(cands));
     cands[0].target_format = RFC_FORMAT_RASTERFOLD;
     cands[0].dest_path_utf8 = fold1;
+    cands[0].settings = &c0_meta;
+    cands[0].setting_count = 1u;
     cands[1].target_format = RFC_FORMAT_WEBP;
     cands[2].target_format = RFC_FORMAT_HEIC;
 
@@ -2414,6 +2442,7 @@ static void test_json_and_history_chain(void) {
     sp.staging_dir_utf8 = tmp;
     sp.requested_threads = 1u;
     sp.metadata_policy = RFC_META_POLICY_PRESERVE;
+    sp.acknowledged_unsupported_metadata = 1;
     sp.warmup_iterations = 0u;
     sp.measured_iterations = 1u;
     sp.candidates = cands;
@@ -2422,7 +2451,14 @@ static void test_json_and_history_chain(void) {
     sp.run_id = "run-001";
     sp.recorded_utc = "2026-11-16T05:10:00Z";
 
-    rfc_comparison_report r1;
+    rfc_comparison_report *reps =
+        (rfc_comparison_report *)calloc(4u, sizeof(*reps));
+    CHECK(reps != NULL);
+    #define r1 (reps[0])
+    #define r2 (reps[1])
+    #define r3 (reps[2])
+    #define r4 (reps[3])
+
     CHECK(rfc_compare_run(&sp, &r1) == RFC_OK);
     CHECK(r1.history_status == RFC_OK && r1.history_recorded == 1);
     CHECK(rfc_report_write_json_path(json_path, &r1) == RFC_OK);
@@ -2434,7 +2470,6 @@ static void test_json_and_history_chain(void) {
     sp.requested_threads = 0u;
     sp.run_id = "run-002";
     sp.recorded_utc = "2026-11-16T05:11:00Z";
-    rfc_comparison_report r2;
     CHECK(rfc_compare_run(&sp, &r2) == RFC_OK);
     CHECK(r2.history_recorded == 1 && r2.effective_threads > 1u);
 
@@ -2446,7 +2481,6 @@ static void test_json_and_history_chain(void) {
     sp.cancel_token = tok;
     sp.run_id = "run-003";
     sp.recorded_utc = "2026-11-16T05:12:00Z";
-    rfc_comparison_report r3;
     CHECK(rfc_compare_run(&sp, &r3) == RFC_ERR_CANCELLED);
     rfc_compare_set_hook_for_testing(NULL, NULL);
     rfc_compare_token_destroy(tok);
@@ -2468,6 +2502,49 @@ static void test_json_and_history_chain(void) {
                  hlog.entries[0].entry_sha256, 32u) == 0);
     CHECK(memcmp(hlog.entries[2].prev_entry_sha256,
                  hlog.entries[1].entry_sha256, 32u) == 0);
+    CHECK(hlog.entries[0].acknowledged_unsupported_metadata == 1);
+    CHECK(hlog.entries[0].effective_threads == 1u);
+    CHECK(hlog.entries[1].effective_threads > 1u);
+    CHECK(strcmp(hlog.entries[0].configuration_notes, r1.configuration_notes) ==
+          0);
+    CHECK(hlog.entries[0].configuration_notes[0] != '\0');
+    CHECK(hlog.entries[0].candidates[0].outcome == RFC_CANDIDATE_COMPLETED &&
+          hlog.entries[0].candidates[0].failing_stage == RFC_STAGE_NONE &&
+          hlog.entries[0].candidates[0].effective_threads ==
+              r1.candidates[0].effective_threads);
+    CHECK(hlog.entries[0].candidates[0].setting_count == 1u &&
+          strcmp(hlog.entries[0].candidates[0].settings[0].id, "metadata") ==
+              0 &&
+          strcmp(hlog.entries[0].candidates[0].settings[0].value, "preserve") ==
+              0);
+    CHECK(strcmp(hlog.entries[0].candidates[0].build_config.provider_name,
+                 r1.candidates[0].build_config.provider_name) == 0 &&
+          strcmp(hlog.entries[0].candidates[0].build_config.compiler_id,
+                 r1.candidates[0].build_config.compiler_id) == 0 &&
+          strcmp(hlog.entries[0].candidates[0].build_config.build_flags,
+                 r1.candidates[0].build_config.build_flags) == 0 &&
+          strcmp(hlog.entries[0].candidates[0].build_config.simd_features,
+                 r1.candidates[0].build_config.simd_features) == 0 &&
+          strcmp(hlog.entries[0].candidates[0].build_config.threading_features,
+                 r1.candidates[0].build_config.threading_features) == 0);
+    CHECK(hlog.entries[0].candidates[0].verify_valid == 1 &&
+          hlog.entries[0].candidates[0].verify_status == RFC_OK &&
+          hlog.entries[0].candidates[0].exactness == RFC_EXACT_PIXEL_EXACT &&
+          hlog.entries[0].candidates[0].independent_decoder ==
+              r1.candidates[0].verify_report.independent_decoder &&
+          strcmp(hlog.entries[0].candidates[0].decoder_provenance,
+                 r1.candidates[0].verify_report.decoder_provenance) == 0);
+    CHECK(memcmp(hlog.entries[0].candidates[0].source_hash,
+                 r1.candidates[0].verify_report.source_hash,
+                 32u) == 0);
+    CHECK(memcmp(hlog.entries[0].candidates[0].verified_hash,
+                 r1.candidates[0].verify_report.verified_hash,
+                 32u) == 0);
+    CHECK(hlog.entries[0].candidates[0].has_produced_sha256 == 1 &&
+          memcmp(hlog.entries[0].candidates[0].produced_sha256,
+                 r1.candidates[0].size.produced_sha256, 32u) == 0);
+    CHECK(hlog.entries[0].candidates[0].final_publish_ns ==
+          r1.candidates[0].final_publish_ns);
     rfc_history_log_free(&hlog);
 
     /* Snapshot exact good history bytes + SHA-256 */
@@ -2509,7 +2586,6 @@ static void test_json_and_history_chain(void) {
     sp.recorded_utc = "2026-11-16T05:13:00Z";
     rfc_history_set_fault_for_testing(RFC_HIST_FAULT_WRITE_DISK_FULL,
                                       RFC_ERR_DISK_FULL);
-    rfc_comparison_report r4;
     CHECK(rfc_compare_run(&sp, &r4) == RFC_ERR_DISK_FULL);
     rfc_history_set_fault_for_testing(RFC_HIST_FAULT_NONE, RFC_OK);
     CHECK(r4.run_status == RFC_OK && r4.history_status == RFC_ERR_DISK_FULL &&
@@ -2537,6 +2613,47 @@ static void test_json_and_history_chain(void) {
           r4.history_recorded == 0 && file_exists_utf8(fold5));
     CHECK(!dir_has_prefix(tmp, ".rfc-hist-tmp."));
 
+    /* Forged entry with valid SHA-256 violating unsupported/has_produced_output invariant is rejected */
+    const char *nl1 = (const char *)memchr(good_bytes, '\n', good_len);
+    CHECK(nl1 != NULL);
+    size_t l1_len = (size_t)(nl1 - (const char *)good_bytes) + 1u;
+    char *forged = (char *)malloc(l1_len + 16u);
+    CHECK(forged != NULL);
+    memcpy(forged, good_bytes, l1_len);
+    forged[l1_len] = '\0';
+    char *webp_tok = strstr(forged, "\"target_format\":\"webp\"");
+    CHECK(webp_tok != NULL);
+    char *hpo = strstr(webp_tok, "\"has_produced_output\":false");
+    CHECK(hpo != NULL);
+    /* Replace "false" (5 chars) with "true" (4 chars) by shifting tail left by 1 byte */
+    char *false_pos = hpo + strlen("\"has_produced_output\":");
+    memcpy(false_pos, "true", 4u);
+    memmove(false_pos + 4u, false_pos + 5u, strlen(false_pos + 5u) + 1u);
+    char *esha_key = strstr(forged, ",\"entry_sha256\":\"");
+    CHECK(esha_key != NULL);
+    size_t prefix_pos = (size_t)(esha_key - forged);
+    uint8_t *canon = (uint8_t *)malloc(prefix_pos + 1u);
+    CHECK(canon != NULL);
+    memcpy(canon, forged, prefix_pos);
+    canon[prefix_pos] = '}';
+    uint8_t forged_sha[32];
+    rfc_bytes_hash_sha256(canon, prefix_pos + 1u, forged_sha);
+    free(canon);
+    static const char k_hex[] = "0123456789abcdef";
+    char *hex_dst = esha_key + strlen(",\"entry_sha256\":\"");
+    for (size_t hi = 0u; hi < 32u; hi++) {
+        hex_dst[hi * 2u] = k_hex[(forged_sha[hi] >> 4) & 0xFu];
+        hex_dst[hi * 2u + 1u] = k_hex[forged_sha[hi] & 0xFu];
+    }
+    CHECK(rfc_history_verify_bytes((const uint8_t *)forged, strlen(forged),
+                                   &hlog) == RFC_ERR_VERIFY_MISMATCH);
+    free(forged);
+
+    #undef r1
+    #undef r2
+    #undef r3
+    #undef r4
+    free(reps);
     free(good_bytes);
     rm_tree(tmp);
     free(png);
@@ -3014,6 +3131,23 @@ static void test_round1_audit_regressions(void) {
     size_t json10b_len = 0u;
     CHECK(rfc_report_format_json(rep10b, &json10b, &json10b_len) == RFC_OK);
     rfc_report_free(json10b);
+
+    /* Completion gap #1 validation boundary: only FAILED+STAGE_VERIFY may retain has_produced_output=1 */
+    rfc_comparison_report *rep_val =
+        (rfc_comparison_report *)calloc(1u, sizeof(*rep_val));
+    CHECK(rep_val != NULL);
+    *rep_val = *rep10b;
+    CHECK(rep_val->candidates[1].outcome == RFC_CANDIDATE_CANCELLED);
+    rep_val->candidates[1].has_produced_output = 1;
+    CHECK(rfc_report_validate(rep_val) == RFC_ERR_INVALID_ARGUMENT);
+    rep_val->candidates[1].outcome = RFC_CANDIDATE_FAILED;
+    rep_val->candidates[1].failing_stage = RFC_STAGE_PREFLIGHT;
+    rep_val->failed_count = 1u;
+    rep_val->cancelled_count = 0u;
+    CHECK(rfc_report_validate(rep_val) == RFC_ERR_INVALID_ARGUMENT);
+    rep_val->candidates[1].failing_stage = RFC_STAGE_VERIFY;
+    CHECK(rfc_report_validate(rep_val) == RFC_OK);
+    free(rep_val);
 
     #undef rep1
     #undef rep_bad

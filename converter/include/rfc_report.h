@@ -180,15 +180,30 @@ typedef struct rfc_history_candidate_summary {
     rfc_format_id target_format;
     rfc_candidate_outcome outcome;
     rfc_status status;
+    rfc_job_stage failing_stage;
     uint32_t rank;
     int has_produced_output;
     int measurement_only;
+    uint32_t effective_threads;
     rfc_size_outcome size_outcome;
     uint64_t produced_file_bytes;
     int64_t signed_delta_bytes;
+    uint8_t produced_sha256[32];
+    int has_produced_sha256;
     uint64_t median_wall_ns;
+    uint64_t final_publish_ns;
     char codec_version[RFC_REPORT_STR_MAX];
     rfc_verify_meta_outcome meta_outcome;
+    rfc_report_setting_kv settings[RFC_REPORT_MAX_SETTINGS];
+    size_t setting_count;
+    rfc_provider_build_config build_config;
+    int verify_valid;
+    rfc_status verify_status;
+    rfc_exactness_class exactness;
+    int independent_decoder;
+    char decoder_provenance[RFC_VERIFY_PROVENANCE_MAX];
+    uint8_t source_hash[32];
+    uint8_t verified_hash[32];
 } rfc_history_candidate_summary;
 
 typedef struct rfc_history_entry_summary {
@@ -206,8 +221,10 @@ typedef struct rfc_history_entry_summary {
     uint32_t warmup_iterations;
     uint32_t measured_iterations;
     rfc_metadata_policy metadata_policy;
+    uint32_t acknowledged_unsupported_metadata;
     rfc_limits limits;
     int mixed_provider_configurations;
+    char configuration_notes[RFC_REPORT_NOTES_MAX];
     uint32_t completed_count;
     uint32_t unsupported_count;
     uint32_t failed_count;

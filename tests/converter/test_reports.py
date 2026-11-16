@@ -8,6 +8,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import sys
 import tempfile
@@ -177,10 +178,40 @@ def verify_history_jsonl_independently(raw: bytes, expected_count: int) -> list[
         assert obj["schema_version"] == 1
         assert obj["sequence"] == idx
         assert obj["prev_entry_sha256"] == prev_hex
+        assert isinstance(obj["acknowledged_unsupported_metadata"], int) and not isinstance(
+            obj["acknowledged_unsupported_metadata"], bool
+        )
+        assert isinstance(obj["configuration_notes"], str) and obj["configuration_notes"]
         assert "limits" in obj and isinstance(obj["limits"], dict)
         assert obj["limits"]["max_width"] > 0
         for hc in obj["candidates"]:
             assert isinstance(hc["measurement_only"], bool)
+            assert isinstance(hc["failing_stage"], str)
+            assert isinstance(hc["effective_threads"], int)
+            assert isinstance(hc["settings"], list)
+            pc = hc["provider_config"]
+            assert isinstance(pc, dict)
+            for pk in (
+                "provider_name",
+                "codec_version",
+                "compiler_id",
+                "target_abi",
+                "build_flags",
+                "simd_features",
+                "threading_features",
+            ):
+                assert isinstance(pc[pk], str) and pc[pk], f"missing provider_config.{pk}"
+            vf = hc["verification"]
+            assert isinstance(vf, dict)
+            assert isinstance(vf["valid"], bool)
+            assert isinstance(vf["independent_decoder"], bool)
+            for vk in ("status", "exactness", "meta_outcome", "decoder_provenance"):
+                assert isinstance(vf[vk], str)
+            for hk in ("source_hash", "verified_hash"):
+                assert isinstance(vf[hk], str) and len(vf[hk]) == 64
+            assert isinstance(hc["produced_sha256"], str)
+            assert len(hc["produced_sha256"]) in (0, 64)
+            assert isinstance(hc["final_publish_ns"], int)
         pos = line.rfind(marker)
         assert pos > 0 and line.endswith('"}')
         canonical = (line[:pos] + "}").encode("utf-8")
@@ -330,6 +361,266 @@ class TestHostReports(unittest.TestCase):
             self.assertEqual(rows["rasterfold"][0][:20], bjson["compiler"][:20])
             self.assertEqual(rows["rasterfold"][1], "linux-x64")
 
+    def test_provenance_generator_tracks_cxx_flags_and_feature_toggles(self) -> None:
+        def write_pkg(
+            root: Path,
+            pid: str,
+            is_cxx: bool,
+            c_flags: str,
+            c_rel: str,
+            cxx_flags: str,
+            cxx_rel: str,
+            toggles: dict[str, tuple[str, str]],
+            ninja_flags: str,
+            ninja_defs: str = "",
+        ) -> None:
+            d = root / pid
+            d.mkdir(parents=True, exist_ok=True)
+            lines = [
+                "CMAKE_BUILD_TYPE:STRING=Release",
+                f"CMAKE_C_FLAGS:STRING={c_flags}",
+                f"CMAKE_C_FLAGS_RELEASE:STRING={c_rel}",
+                f"CMAKE_CXX_FLAGS:STRING={cxx_flags}",
+                f"CMAKE_CXX_FLAGS_RELEASE:STRING={cxx_rel}",
+            ]
+            for k, (tp, v) in toggles.items():
+                lines.append(f"{k}:{tp}={v}")
+            (d / "CMakeCache.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+            rule = f"CXX_COMPILER__{pid}_Release" if is_cxx else f"C_COMPILER__{pid}_Release"
+            (d / "build.ninja").write_text(
+                f"build CMakeFiles/{pid}.dir/src.obj: {rule} src.c\n"
+                f"  FLAGS = {ninja_flags}\n"
+                f"  DEFINES = {ninja_defs}\n",
+                encoding="utf-8",
+            )
+
+        def parse_header(hdr_text: str) -> dict[str, dict[str, str]]:
+            row_re = re.compile(
+                r'^\s*\{(RFC_FORMAT_[A-Z0-9_]+),\s*"((?:[^"\\]|\\.)*)",\s*'
+                r'"((?:[^"\\]|\\.)*)",\s*"((?:[^"\\]|\\.)*)",\s*'
+                r'"((?:[^"\\]|\\.)*)",\s*"((?:[^"\\]|\\.)*)",\s*'
+                r'"((?:[^"\\]|\\.)*)",\s*"((?:[^"\\]|\\.)*)"\s*\}',
+                re.MULTILINE,
+            )
+            parsed: dict[str, dict[str, str]] = {}
+            for m in row_re.finditer(hdr_text):
+                parsed[m.group(1)] = {
+                    "provider_name": m.group(2),
+                    "codec_version": m.group(3),
+                    "compiler_id": m.group(4),
+                    "target_abi": m.group(5),
+                    "build_flags": m.group(6),
+                    "simd_features": m.group(7),
+                    "threading_features": m.group(8),
+                }
+            return parsed
+
+        with tempfile.TemporaryDirectory(prefix="rfc_prov_syn_") as td:
+            base = Path(td)
+            deps_a = base / "deps_a"
+            deps_b = base / "deps_b"
+
+            # Keep C flags completely unchanged across A and B on C++ packages to prove C++ flags drive C++ provenance.
+            write_pkg(
+                deps_a,
+                "libjxl",
+                True,
+                c_flags="-march=x86-64-v2 -DC_SENTINEL_ONLY",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="-march=x86-64-v2",
+                cxx_rel="-O3 -DNDEBUG",
+                toggles={
+                    "JPEGXL_ENABLE_THREADS": ("BOOL", "ON"),
+                    "JPEGXL_ENABLE_HWY_SSE2": ("BOOL", "true"),
+                    "JPEGXL_ENABLE_HWY_SSE4": ("BOOL", "true"),
+                    "JPEGXL_ENABLE_HWY_AVX2": ("BOOL", "true"),
+                    "JPEGXL_ENABLE_HWY_AVX3": ("BOOL", "false"),
+                    "JPEGXL_ENABLE_HWY_AVX3_DL": ("BOOL", "false"),
+                },
+                ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG -std=c++17",
+            )
+            write_pkg(
+                deps_b,
+                "libjxl",
+                True,
+                c_flags="-march=x86-64-v2 -DC_SENTINEL_ONLY",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="-march=x86-64-v2 -fno-vectorize",
+                cxx_rel="-O2 -DNDEBUG",
+                toggles={
+                    "JPEGXL_ENABLE_THREADS": ("BOOL", "OFF"),
+                    "JPEGXL_ENABLE_HWY_SSE2": ("BOOL", "true"),
+                    "JPEGXL_ENABLE_HWY_SSE4": ("BOOL", "true"),
+                    "JPEGXL_ENABLE_HWY_AVX2": ("BOOL", "false"),
+                    "JPEGXL_ENABLE_HWY_AVX3": ("BOOL", "false"),
+                    "JPEGXL_ENABLE_HWY_AVX3_DL": ("BOOL", "false"),
+                },
+                ninja_flags="-march=x86-64-v2 -fno-vectorize -O2 -DNDEBUG -std=c++20",
+            )
+            write_pkg(
+                deps_a,
+                "libraw",
+                True,
+                c_flags="-march=x86-64-v2 -DC_SENTINEL_ONLY",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="-march=x86-64-v2",
+                cxx_rel="-O3 -DNDEBUG",
+                toggles={"LIBRAW_USE_OPENMP": ("BOOL", "OFF")},
+                ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG -std=gnu++17",
+            )
+            write_pkg(
+                deps_b,
+                "libraw",
+                True,
+                c_flags="-march=x86-64-v2 -DC_SENTINEL_ONLY",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="-march=x86-64-v2 -fopenmp",
+                cxx_rel="-O2 -DNDEBUG",
+                toggles={"LIBRAW_USE_OPENMP": ("BOOL", "ON")},
+                ninja_flags="-march=x86-64-v2 -fopenmp -O2 -DNDEBUG -std=gnu++17",
+            )
+            write_pkg(
+                deps_a,
+                "openexr",
+                True,
+                c_flags="-march=x86-64-v2 -DC_SENTINEL_ONLY",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="-march=x86-64-v2",
+                cxx_rel="-O3 -DNDEBUG",
+                toggles={"OPENEXR_ENABLE_THREADING": ("BOOL", "ON")},
+                ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG -pthread",
+            )
+            write_pkg(
+                deps_b,
+                "openexr",
+                True,
+                c_flags="-march=x86-64-v2 -DC_SENTINEL_ONLY",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="-march=x86-64-v2",
+                cxx_rel="-O3 -DNDEBUG",
+                toggles={"OPENEXR_ENABLE_THREADING": ("BOOL", "OFF")},
+                ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG",
+            )
+            write_pkg(
+                deps_a,
+                "libwebp",
+                False,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="",
+                cxx_rel="",
+                toggles={"WEBP_ENABLE_SIMD": ("BOOL", "ON"), "WEBP_USE_THREAD": ("BOOL", "ON")},
+                ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG -pthread",
+            )
+            write_pkg(
+                deps_b,
+                "libwebp",
+                False,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="",
+                cxx_rel="",
+                toggles={"WEBP_ENABLE_SIMD": ("BOOL", "OFF"), "WEBP_USE_THREAD": ("BOOL", "OFF")},
+                ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG",
+            )
+            write_pkg(
+                deps_a,
+                "libpng",
+                False,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="",
+                cxx_rel="",
+                toggles={"PNG_HARDWARE_OPTIMIZATIONS": ("BOOL", "ON")},
+                ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG",
+            )
+            write_pkg(
+                deps_b,
+                "libpng",
+                False,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="",
+                cxx_rel="",
+                toggles={"PNG_HARDWARE_OPTIMIZATIONS": ("BOOL", "OFF")},
+                ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG",
+            )
+            write_pkg(
+                deps_a,
+                "libjpeg-turbo",
+                False,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="",
+                cxx_rel="",
+                toggles={"WITH_SIMD": ("BOOL", "ON"), "REQUIRE_SIMD": ("BOOL", "ON")},
+                ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG",
+            )
+            write_pkg(
+                deps_b,
+                "libjpeg-turbo",
+                False,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="",
+                cxx_rel="",
+                toggles={"WITH_SIMD": ("BOOL", "OFF")},
+                ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG",
+            )
+
+            hdr_a = base / "prov_a.h"
+            hdr_b = base / "prov_b.h"
+            for dpath, out_h in ((deps_a, hdr_a), (deps_b, hdr_b)):
+                res = _ref.run_process_tree(
+                    [
+                        sys.executable,
+                        str(ROOT / "scripts" / "gen_converter_provenance.py"),
+                        "--target",
+                        "windows-x64",
+                        "--deps-build",
+                        str(dpath),
+                        "--out",
+                        str(out_h),
+                    ],
+                    cwd=ROOT,
+                    capture_output=True,
+                    timeout=60.0,
+                )
+                self.assertEqual(res.returncode, 0, res.stdout + "\n" + res.stderr)
+
+            pa = parse_header(hdr_a.read_text(encoding="utf-8"))
+            pb = parse_header(hdr_b.read_text(encoding="utf-8"))
+            self.assertEqual(len(pa), 19)
+            self.assertEqual(len(pb), 19)
+
+            self.assertNotIn("-DC_SENTINEL_ONLY", pa["RFC_FORMAT_JPEG_XL"]["build_flags"])
+            self.assertNotIn("-fno-vectorize", pa["RFC_FORMAT_JPEG_XL"]["build_flags"])
+            self.assertIn("-std=c++20", pb["RFC_FORMAT_JPEG_XL"]["build_flags"])
+            self.assertIn("-fno-vectorize", pb["RFC_FORMAT_JPEG_XL"]["build_flags"])
+            self.assertIn("-O2", pb["RFC_FORMAT_JPEG_XL"]["build_flags"])
+            self.assertIn("SSE2,SSE4,AVX2", pa["RFC_FORMAT_JPEG_XL"]["simd_features"])
+            self.assertIn("vectorize-disabled", pb["RFC_FORMAT_JPEG_XL"]["simd_features"])
+            self.assertIn("worker threads", pa["RFC_FORMAT_JPEG_XL"]["threading_features"])
+            self.assertIn("JPEGXL_ENABLE_THREADS=OFF", pb["RFC_FORMAT_JPEG_XL"]["threading_features"])
+
+            self.assertNotIn("-fopenmp", pa["RFC_FORMAT_CAMERA_RAW"]["build_flags"])
+            self.assertIn("-fopenmp", pb["RFC_FORMAT_CAMERA_RAW"]["build_flags"])
+            self.assertIn("OpenMP disabled", pa["RFC_FORMAT_CAMERA_RAW"]["threading_features"])
+            self.assertIn("OpenMP enabled", pb["RFC_FORMAT_CAMERA_RAW"]["threading_features"])
+
+            self.assertIn("IlmThread", pa["RFC_FORMAT_OPENEXR"]["threading_features"])
+            self.assertIn("OPENEXR_ENABLE_THREADING=OFF", pb["RFC_FORMAT_OPENEXR"]["threading_features"])
+
+            self.assertIn("WEBP_ENABLE_SIMD=ON", pa["RFC_FORMAT_WEBP"]["simd_features"])
+            self.assertIn("disabled (WEBP_ENABLE_SIMD=OFF", pb["RFC_FORMAT_WEBP"]["simd_features"])
+            self.assertIn("WEBP_USE_THREAD=ON", pa["RFC_FORMAT_WEBP"]["threading_features"])
+            self.assertIn("WEBP_USE_THREAD=OFF", pb["RFC_FORMAT_WEBP"]["threading_features"])
+
+            self.assertIn("PNG_HARDWARE_OPTIMIZATIONS=ON", pa["RFC_FORMAT_PNG"]["simd_features"])
+            self.assertIn("PNG_HARDWARE_OPTIMIZATIONS=OFF", pb["RFC_FORMAT_PNG"]["simd_features"])
+            self.assertIn("REQUIRE_SIMD=ON", pa["RFC_FORMAT_JPEG"]["simd_features"])
+            self.assertIn("WITH_SIMD=OFF", pb["RFC_FORMAT_JPEG"]["simd_features"])
+
     def test_kodim23_compare_threads_oracle_and_history(self) -> None:
         self.assertEqual(sha256_file(KODIM_PATH), KODIM_EXPECTED_SHA256)
         with Image.open(KODIM_PATH) as im:
@@ -391,6 +682,14 @@ class TestHostReports(unittest.TestCase):
             self.assertEqual(entries[0]["run_id"], "kodim-host-t1")
             self.assertEqual(entries[1]["run_id"], "kodim-host-tdef")
             self.assertEqual(entries[0]["source_sha256"], KODIM_EXPECTED_SHA256)
+            hc0 = entries[0]["candidates"][0]
+            self.assertEqual(hc0["provider_config"], r1["candidates"][0]["provider_config"])
+            self.assertEqual(hc0["verification"]["exactness"], "pixel-exact")
+            self.assertEqual(hc0["verification"]["decoder_provenance"], "same-provider-fresh-session")
+            self.assertEqual(hc0["produced_sha256"], r1["candidates"][0]["size"]["produced_sha256"])
+            self.assertEqual(hc0["final_publish_ns"], r1["candidates"][0]["timings_ns"]["final_publish_ns"])
+            self.assertEqual(hc0["effective_threads"], 1)
+            self.assertGreaterEqual(entries[1]["candidates"][0]["effective_threads"], 2)
 
             vres = _ref.run_process_tree(
                 [str(self.host_exe), "verify-history", str(hist)],
@@ -527,6 +826,9 @@ if ($LASTEXITCODE -ne 0) {{ throw "dump-provider-configs failed ($LASTEXITCODE)"
                 parts = line.split("|")
                 self.assertEqual(len(parts), 7, line)
                 self.assertEqual(parts[4], "windows-x64", line)
+                if parts[0] == "jpeg-xl":
+                    self.assertIn("AVX3_DL", parts[5], line)
+                    self.assertNotIn(",AVX3)", parts[5], line)
                 seen[parts[0]] = parts[2]
             self.assertEqual(seen, expected)
         finally:
