@@ -1158,6 +1158,39 @@ class TestHostReports(unittest.TestCase):
             bf_r5 = run_prov(deps_rsp, base / "prov_r5.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
             self.assertIn("-DACYC=1", bf_r5)
 
+            # Separate two-token -D / -U inside @defs.rsp and @opts.rsp
+            deps_def_spc = base / "deps_def_spc"
+            write_pkg(
+                deps_def_spc,
+                "libjxl",
+                True,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="-march=x86-64-v2",
+                cxx_rel="-O3 -DNDEBUG",
+                toggles={},
+                ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG -std=c++17 @opts_spc.rsp",
+                ninja_defs="@defs.rsp",
+            )
+            pkg_def_spc = deps_def_spc / "libjxl"
+            (pkg_def_spc / "opts_spc.rsp").write_text("-D FLAG_SPC=1 -U DROP_ME\n", encoding="utf-8")
+            (pkg_def_spc / "defs.rsp").write_text("-D FEATURE=1\n", encoding="utf-8")
+            bf_ds1 = run_prov(deps_def_spc, base / "prov_ds1.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertIn("-DFLAG_SPC=1", bf_ds1)
+            self.assertIn("-UDROP_ME", bf_ds1)
+            self.assertIn("-DFEATURE=1", bf_ds1)
+            (pkg_def_spc / "defs.rsp").write_text("-D FEATURE=2\n", encoding="utf-8")
+            bf_ds2 = run_prov(deps_def_spc, base / "prov_ds2.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertIn("-DFEATURE=2", bf_ds2)
+            self.assertNotEqual(bf_ds1, bf_ds2)
+            (pkg_def_spc / "defs.rsp").write_text("-U FEATURE\n", encoding="utf-8")
+            bf_ds3 = run_prov(deps_def_spc, base / "prov_ds3.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertIn("-UFEATURE", bf_ds3)
+            self.assertNotEqual(bf_ds2, bf_ds3)
+            (pkg_def_spc / "opts_spc.rsp").write_text("-D FLAG_SPC=2 -U DROP_ME\n", encoding="utf-8")
+            bf_ds4 = run_prov(deps_def_spc, base / "prov_ds4.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertNotEqual(bf_ds3, bf_ds4)
+
     def test_kodim23_compare_threads_oracle_and_history(self) -> None:
         self.assertEqual(sha256_file(KODIM_PATH), KODIM_EXPECTED_SHA256)
         with Image.open(KODIM_PATH) as im:

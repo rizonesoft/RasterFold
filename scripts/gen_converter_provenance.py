@@ -415,6 +415,23 @@ def _expand_response_tokens(
     return out
 
 
+def _consume_define_token(
+    tokens: list[str], idx: int, include_fingerprint: bool
+) -> tuple[str | None, int]:
+    tok = tokens[idx]
+    if tok in ("-D", "-U") and idx + 1 < len(tokens):
+        nxt = tokens[idx + 1]
+        if not nxt.startswith("-"):
+            paired = f"{tok}{nxt}"
+            skip = _is_timestamp_define(paired) if include_fingerprint else _is_noise_define(paired)
+            return (None if skip else paired), idx + 2
+        return None, idx + 1
+    if tok.startswith("-D") or tok.startswith("-U"):
+        skip = _is_timestamp_define(tok) if include_fingerprint else _is_noise_define(tok)
+        return (None if skip else tok), idx + 1
+    return None, idx + 1
+
+
 def _semantic_ninja_tokens(
     flags_tokens: list[str],
     define_tokens: list[str],
@@ -494,20 +511,17 @@ def _semantic_ninja_tokens(
                 out.append(f"{tok} {nxt}")
             i += 2
             continue
-        if tok in ("-x", "--param", "-target", "-D", "-U") and i + 1 < len(flags_tokens):
-            nxt = flags_tokens[i + 1]
-            if tok in ("-D", "-U"):
-                if not nxt.startswith("-"):
-                    paired = f"{tok}{nxt}"
-                    skip_def = _is_timestamp_define(paired) if include_fingerprint else _is_noise_define(paired)
-                    if not skip_def:
-                        out.append(paired)
-                    i += 2
-                    continue
-            else:
-                out.append(f"{tok} {nxt}")
-                i += 2
+        if tok in ("-D", "-U") and i + 1 < len(flags_tokens):
+            parsed, next_i = _consume_define_token(flags_tokens, i, include_fingerprint)
+            if next_i > i + 1:
+                if parsed is not None:
+                    out.append(parsed)
+                i = next_i
                 continue
+        if tok in ("-x", "--param", "-target", "--target") and i + 1 < len(flags_tokens):
+            out.append(f"{tok} {flags_tokens[i + 1]}")
+            i += 2
+            continue
         i += 1
         if not tok or tok in ("-c", "-pipe", "-MD", "-MMD", "-MP", "-MG", "-MV", "-w") or tok.startswith("-W"):
             continue
@@ -555,11 +569,17 @@ def _semantic_ninja_tokens(
         if tok.startswith("-"):
             out.append(tok)
 
-    for tok in define_tokens:
-        if _is_timestamp_define(tok) or (not include_fingerprint and _is_noise_define(tok)):
+    j = 0
+    while j < len(define_tokens):
+        dtok = define_tokens[j]
+        if dtok.startswith("@") and len(dtok) > 1:
+            rsp_search = (compile_dir,) if compile_dir is not None else ()
+            out.append(_sanitize_forced_include_token("@", dtok[1:], include_fingerprint, rsp_search))
+            j += 1
             continue
-        if tok.startswith("-D") or tok.startswith("-U"):
-            out.append(tok)
+        parsed, j = _consume_define_token(define_tokens, j, include_fingerprint)
+        if parsed is not None:
+            out.append(parsed)
     return out
 
 
