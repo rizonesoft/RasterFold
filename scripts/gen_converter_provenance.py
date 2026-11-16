@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 
@@ -318,10 +319,12 @@ def _is_noise_define(tok: str) -> bool:
     )
 
 
-_INCLUDE_DIRECTIVE_RE = re.compile(
-    r'^[ \t]*#[ \t]*(include|include_next)[ \t]*([<"])([^>"]+)[>"]',
-    re.MULTILINE,
+_DIRECTIVE_LINE_RE = re.compile(
+    r'^[ \t]*#[ \t]*(define|undef|include|include_next)\b(.*)$'
 )
+_DEFINE_OBJ_RE = re.compile(r'^[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]+(.+?)[ \t]*$')
+_UNDEF_RE = re.compile(r'^[ \t]*([A-Za-z_][A-Za-z0-9_]*)\b')
+_INCLUDE_ARG_RE = re.compile(r'^[ \t]*([<"])([^>"]+)[>"]')
 
 
 def _strip_c_comments(text: str) -> str:
@@ -406,16 +409,197 @@ def _extract_token_search_categories(
     return tuple(tuple(buckets[cat]) for cat in categories)
 
 
+def _extract_cli_macros(tokens: list[str]) -> dict[str, str]:
+    macros: dict[str, str] = {}
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        spec = ""
+        if tok in ("-D", "-U") and i + 1 < len(tokens):
+            spec = f"{tok}{tokens[i + 1]}"
+            i += 2
+        elif tok.startswith("-D") or tok.startswith("-U"):
+            spec = tok
+            i += 1
+        else:
+            i += 1
+            continue
+        if spec.startswith("-D"):
+            body = spec[2:]
+            if "=" in body:
+                k, v = body.split("=", 1)
+                macros[k] = v.strip()
+            elif body:
+                macros[body] = "1"
+        elif spec.startswith("-U"):
+            macros.pop(spec[2:], None)
+    return macros
+
+
+def _parse_makefile_deps(dep_text: str) -> list[str]:
+    unfolded = dep_text.replace("\\\r\n", " ").replace("\\\n", " ")
+    idx = 0
+    colon_pos = -1
+    while idx < len(unfolded):
+        ch = unfolded[idx]
+        if ch == "\\" and idx + 1 < len(unfolded):
+            idx += 2
+            continue
+        if ch == ":" and (idx + 1 == len(unfolded) or unfolded[idx + 1].isspace()):
+            colon_pos = idx
+            break
+        idx += 1
+    if colon_pos < 0:
+        return []
+    rhs = unfolded[colon_pos + 1 :]
+    deps: list[str] = []
+    cur: list[str] = []
+    i = 0
+    while i < len(rhs):
+        c = rhs[i]
+        if c == "\\" and i + 1 < len(rhs) and rhs[i + 1] in (" ", "\\", "#", "$", ":"):
+            cur.append(rhs[i + 1])
+            i += 2
+            continue
+        if c == "$" and i + 1 < len(rhs) and rhs[i + 1] == "$":
+            cur.append("$")
+            i += 2
+            continue
+        if c.isspace():
+            if cur:
+                deps.append("".join(cur))
+                cur = []
+            i += 1
+            continue
+        cur.append(c)
+        i += 1
+    if cur:
+        deps.append("".join(cur))
+    return deps
+
+
+def _clean_probe_args(tokens: list[str], compile_dir: Path | None) -> list[str]:
+    out: list[str] = []
+    skip_next = ("-o", "-MF", "-MT", "-MQ", "-include-pch")
+    keep_next = (
+        "-include", "--include", "-imacros", "-isystem", "-I", "-iquote", "-idirafter",
+        "-isysroot", "--sysroot", "-sysroot", "-L", "-B", "--gcc-toolchain",
+        "-Xclang", "-mllvm", "-Xpreprocessor", "-x", "--param", "-target", "--target", "-D", "-U",
+    )
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        if tok in skip_next:
+            i += 2 if i + 1 < len(tokens) else 1
+            continue
+        if tok in keep_next and i + 1 < len(tokens):
+            out.extend((tok, tokens[i + 1]))
+            i += 2
+            continue
+        i += 1
+        if (
+            not tok
+            or tok in ("-c", "-MD", "-MMD", "-MP", "-MG", "-MV", "-Werror")
+            or tok.startswith(("-Werror=", "-include-pch", "-Wa,", "-Wl,"))
+        ):
+            continue
+        if tok.startswith("@") and len(tok) > 1:
+            rsp_p, _ = _resolve_input_path(tok[1:], (compile_dir,) if compile_dir is not None else ())
+            if not rsp_p.is_file():
+                continue
+        out.append(tok)
+    return out
+
+
+def _tokens_have_forced_include(tokens: list[str]) -> bool:
+    for tok in tokens:
+        if tok in ("-include", "--include", "-imacros") or tok.startswith(
+            ("--include=", "-include", "-imacros")
+        ):
+            return True
+    return False
+
+
+def _resolve_probe_compiler(cc_path: str, fallback_cc: str) -> str:
+    for cand in (cc_path, fallback_cc):
+        if not cand:
+            continue
+        if Path(cand).is_file():
+            return cand
+        resolved = shutil.which(cand)
+        if resolved:
+            return resolved
+    return ""
+
+
+def _probe_compiler_forced_include_deps(
+    cc_path: str,
+    fallback_cc: str,
+    lang: str,
+    raw_tokens: list[str],
+    compile_dir: Path | None,
+) -> str:
+    if lang not in ("c", "cxx") or compile_dir is None or not compile_dir.is_dir():
+        return ""
+    exp = _normalize_preprocessor_forwarding(_expand_response_tokens(raw_tokens, compile_dir))
+    if not _tokens_have_forced_include(exp):
+        return ""
+    probe_cc = _resolve_probe_compiler(cc_path, fallback_cc)
+    if not probe_cc:
+        return ""
+    probe_args = _clean_probe_args(exp, compile_dir)
+    x_lang = "c++" if lang == "cxx" else "c"
+    try:
+        res = subprocess.run(
+            [probe_cc, *probe_args, "-M", "-w", "-x", x_lang, "-"],
+            input="",
+            cwd=str(compile_dir),
+            capture_output=True,
+            text=True,
+            timeout=15.0,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    if res.returncode != 0:
+        return ""
+    dep_items: dict[Path, bytes] = {}
+    for dep in _parse_makefile_deps(res.stdout):
+        dp = Path(dep)
+        if not dp.is_absolute():
+            dp = compile_dir / dp
+        try:
+            canon = dp.resolve()
+        except OSError:
+            canon = dp
+        if canon not in dep_items and canon.is_file():
+            dep_items[canon] = canon.read_bytes()
+    if not dep_items:
+        return ""
+    h = hashlib.sha256()
+    for canon in sorted(dep_items):
+        raw = dep_items[canon]
+        try:
+            key = canon.relative_to(compile_dir.resolve()).as_posix()
+        except ValueError:
+            key = canon.as_posix()
+        h.update(f"{key}\0".encode("utf-8", errors="replace"))
+        h.update(len(raw).to_bytes(8, "little"))
+        h.update(raw)
+    return h.hexdigest()[:16]
+
+
 def _hash_header_tree(
     root: Path,
     root_inc_idx: int | None,
     inc_cats: tuple[tuple[Path, ...], tuple[Path, ...], tuple[Path, ...], tuple[Path, ...]],
+    init_macros: dict[str, str] | None = None,
 ) -> str:
     iquote, i_dirs, isystem, idirafter = inc_cats
     quote_chain = iquote + i_dirs + isystem + idirafter
     n_iquote = len(iquote)
     h = hashlib.sha256()
     seen: set[Path] = set()
+    macros: dict[str, str] = dict(init_macros or {})
 
     def walk(path: Path, chain_idx: int | None) -> None:
         try:
@@ -432,8 +616,32 @@ def _hash_header_tree(
         h.update(len(raw).to_bytes(8, "little"))
         h.update(raw)
         stripped = _strip_c_comments(raw.decode("utf-8", errors="replace"))
-        for kind, delim, inc_arg in _INCLUDE_DIRECTIVE_RE.findall(stripped):
-            h.update(f"{kind}:{delim}{inc_arg}\0".encode("utf-8", errors="replace"))
+        for line in stripped.splitlines():
+            dm = _DIRECTIVE_LINE_RE.match(line)
+            if dm is None:
+                continue
+            directive, tail = dm.group(1), dm.group(2)
+            if directive == "define":
+                om = _DEFINE_OBJ_RE.match(tail)
+                if om is not None:
+                    macros[om.group(1)] = om.group(2)
+                continue
+            if directive == "undef":
+                um = _UNDEF_RE.match(tail)
+                if um is not None:
+                    macros.pop(um.group(1), None)
+                continue
+            rhs = tail.strip()
+            for _ in range(16):
+                if rhs in macros:
+                    rhs = macros[rhs]
+                else:
+                    break
+            im = _INCLUDE_ARG_RE.match(rhs)
+            if im is None:
+                continue
+            delim, inc_arg = im.group(1), im.group(2)
+            h.update(f"{directive}:{delim}{inc_arg}\0".encode("utf-8", errors="replace"))
             rel = Path(inc_arg)
             if rel.is_absolute():
                 if rel.is_file():
@@ -441,7 +649,7 @@ def _hash_header_tree(
                 continue
             child: Path | None = None
             child_idx: int | None = None
-            if kind == "include_next":
+            if directive == "include_next":
                 if chain_idx is not None:
                     start = chain_idx + 1 if delim == '"' else max(n_iquote, chain_idx + 1)
                 else:
@@ -477,6 +685,7 @@ def _sanitize_forced_include_token(
     search_dirs: tuple[Path, ...] = (),
     inc_cats: tuple[tuple[Path, ...], tuple[Path, ...], tuple[Path, ...], tuple[Path, ...]] | None = None,
     prefix_dirs_count: int = 0,
+    init_macros: dict[str, str] | None = None,
 ) -> str:
     p = Path(arg)
     name = p.name or arg
@@ -489,7 +698,7 @@ def _sanitize_forced_include_token(
         content_sha = "absent"
     elif inc_cats is not None:
         chain_idx = (hit_idx - prefix_dirs_count) if (hit_idx is not None and hit_idx >= prefix_dirs_count) else None
-        content_sha = _hash_header_tree(resolved, chain_idx, inc_cats)
+        content_sha = _hash_header_tree(resolved, chain_idx, inc_cats, init_macros)
     else:
         content_sha = hashlib.sha256(resolved.read_bytes()).hexdigest()[:16]
     return f"{opt}{sep}{name}#p={arg_sha}#c={content_sha}"
@@ -580,6 +789,7 @@ def _semantic_ninja_tokens(
         else flags_tokens
     )
     inc_cats = _extract_token_search_categories(ctx_tokens, compile_dir)
+    init_macros = _extract_cli_macros(ctx_tokens)
     quote_chain = inc_cats[0] + inc_cats[1] + inc_cats[2] + inc_cats[3]
     prefix_dirs = tuple(search_dirs)
     eff_search = prefix_dirs + quote_chain
@@ -622,7 +832,7 @@ def _semantic_ninja_tokens(
             opt_norm = "-include" if tok == "--include" else tok
             out.append(
                 _sanitize_forced_include_token(
-                    opt_norm, flags_tokens[i + 1], include_fingerprint, eff_search, inc_cats, prefix_count
+                    opt_norm, flags_tokens[i + 1], include_fingerprint, eff_search, inc_cats, prefix_count, init_macros
                 )
             )
             i += 2
@@ -646,7 +856,7 @@ def _semantic_ninja_tokens(
                     )
                 else:
                     xc_tok = _sanitize_forced_include_token(
-                        nxt, flags_tokens[i + 3], include_fingerprint, eff_search, inc_cats, prefix_count
+                        nxt, flags_tokens[i + 3], include_fingerprint, eff_search, inc_cats, prefix_count, init_macros
                     )
                 out.append(f"-Xclang {xc_tok}")
                 i += 4
@@ -704,7 +914,7 @@ def _semantic_ninja_tokens(
         if tok.startswith("--include="):
             out.append(
                 _sanitize_forced_include_token(
-                    "-include", tok[len("--include="):], include_fingerprint, eff_search, inc_cats, prefix_count
+                    "-include", tok[len("--include="):], include_fingerprint, eff_search, inc_cats, prefix_count, init_macros
                 )
             )
             continue
@@ -715,14 +925,14 @@ def _semantic_ninja_tokens(
         if tok.startswith("-include") and len(tok) > len("-include"):
             out.append(
                 _sanitize_forced_include_token(
-                    "-include", tok[len("-include"):], include_fingerprint, eff_search, inc_cats, prefix_count
+                    "-include", tok[len("-include"):], include_fingerprint, eff_search, inc_cats, prefix_count, init_macros
                 )
             )
             continue
         if tok.startswith("-imacros") and len(tok) > len("-imacros"):
             out.append(
                 _sanitize_forced_include_token(
-                    "-imacros", tok[len("-imacros"):], include_fingerprint, eff_search, inc_cats, prefix_count
+                    "-imacros", tok[len("-imacros"):], include_fingerprint, eff_search, inc_cats, prefix_count, init_macros
                 )
             )
             continue
@@ -739,8 +949,9 @@ def _parse_ninja_compile_blocks(
     extra_search_dirs: tuple[Path, ...] = (),
 ) -> dict[str, object]:
     if not ninja_path.is_file():
-        return {"blocks": [], "has_cxx": False, "has_c": False, "has_asm": False}
+        return {"blocks": [], "contexts": [], "has_cxx": False, "has_c": False, "has_asm": False}
     blocks: list[tuple[str, tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]]] = []
+    block_ctxs: list[list[str]] = []
     seen_blocks: set[tuple[str, tuple[str, ...], tuple[str, ...]]] = set()
     has_cxx = False
     has_c = False
@@ -803,6 +1014,7 @@ def _parse_ninja_compile_blocks(
                 )
             )
             blocks.append((cur_lang, disp_f, disp_d, fp_f, fp_d))
+            block_ctxs.append(ctx_toks)
 
     for raw_line in ninja_path.read_text(encoding="utf-8", errors="replace").splitlines():
         if not raw_line.startswith(" ") and not raw_line.startswith("\t"):
@@ -852,8 +1064,14 @@ def _parse_ninja_compile_blocks(
             want_langs.add("cxx")
     if has_asm:
         want_langs.add("asm")
-    selected = [b for b in blocks if b[0] in want_langs] if want_langs else []
-    return {"blocks": selected, "has_cxx": has_cxx, "has_c": has_c, "has_asm": has_asm}
+    selected: list[tuple[str, tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]]] = []
+    sel_ctxs: list[list[str]] = []
+    if want_langs:
+        for b, ctx in zip(blocks, block_ctxs):
+            if b[0] in want_langs:
+                selected.append(b)
+                sel_ctxs.append(ctx)
+    return {"blocks": selected, "contexts": sel_ctxs, "has_cxx": has_cxx, "has_c": has_c, "has_asm": has_asm}
 
 
 def _format_bounded_build_flags(
@@ -1095,7 +1313,7 @@ def _collect_pkg_fingerprint_state(
 
     cache: dict[str, str] = {}
     sem_cache: dict[str, str] = {}
-    ninja_info: dict[str, object] = {"blocks": [], "has_cxx": False, "has_c": False, "has_asm": False}
+    ninja_info: dict[str, object] = {"blocks": [], "contexts": [], "has_cxx": False, "has_c": False, "has_asm": False}
     deps_root = (
         deps_build_dir.parent
         if (deps_build_dir is not None and deps_build_dir.name == "deps-build")
@@ -1160,11 +1378,26 @@ def _collect_pkg_fingerprint_state(
         search_dirs=base_search_dirs,
     )
 
+    compile_dir = base_search_dirs[0] if base_search_dirs else None
+    cache_forced_deps = _probe_compiler_forced_include_deps(
+        cc_path, default_cxx if is_cxx else default_cc, "cxx" if is_cxx else "c", raw_cache_toks, compile_dir
+    )
     blocks = list(ninja_info["blocks"])
-    ninja_blocks_json = [
-        {"lang": bl, "flags": list(fp_f), "defs": list(fp_d)}
-        for bl, _df, _dd, fp_f, fp_d in blocks
-    ]
+    block_ctxs = list(ninja_info.get("contexts", []))
+    ninja_blocks_json = []
+    for idx, (bl, _df, _dd, fp_f, fp_d) in enumerate(blocks):
+        entry: dict[str, object] = {"lang": bl, "flags": list(fp_f), "defs": list(fp_d)}
+        if idx < len(block_ctxs):
+            blk_fallback = default_cxx if bl == "cxx" else default_cc
+            blk_cc = (
+                (cache.get("CMAKE_CXX_COMPILER") or blk_fallback)
+                if bl == "cxx"
+                else (cache.get("CMAKE_C_COMPILER") or blk_fallback)
+            )
+            fdeps = _probe_compiler_forced_include_deps(blk_cc, blk_fallback, bl, block_ctxs[idx], compile_dir)
+            if fdeps:
+                entry["forced_deps"] = fdeps
+        ninja_blocks_json.append(entry)
 
     visited = set(seen_ids or ())
     visited.add(pid)
@@ -1183,6 +1416,7 @@ def _collect_pkg_fingerprint_state(
         "btype": btype,
         "compiler_id": compiler_id,
         "cache_cmd": cache_cmd_fp,
+        "cache_forced_deps": cache_forced_deps,
         "ninja_blocks": ninja_blocks_json,
         "cache_options": sem_cache,
         "cmake_options": list(pkg.get("cmake_options", [])),

@@ -1331,6 +1331,58 @@ class TestHostReports(unittest.TestCase):
             (pkg_tr / "qdir" / "local_leaf.h").write_text("#define WRONG_Q_LEAF 2\n", encoding="utf-8")
             self.assertEqual(bf_t4, run_prov(deps_trans, base / "prov_t5.h")["RFC_FORMAT_JPEG_XL"]["build_flags"])
 
+            # Macro-expanded transitive forced includes (#include CONFIG_HEADER, CLI -D macro, function-like macro, #if branch)
+            deps_mac = base / "deps_macro_inc"
+            write_pkg(
+                deps_mac,
+                "libjxl",
+                True,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="-march=x86-64-v2 -include config.h",
+                cxx_rel="-O3 -DNDEBUG",
+                toggles={},
+                ninja_flags='-march=x86-64-v2 -O3 -DNDEBUG -std=c++17 -DCLI_HDR=\\"cli_feat.h\\" -DUSE_V2=1 -include config.h',
+            )
+            pkg_mac = deps_mac / "libjxl"
+            mac_feat = pkg_mac / "features.h"
+            mac_feat.write_text("#define FEATURE 1\n", encoding="utf-8")
+            mac_cli = pkg_mac / "cli_feat.h"
+            mac_cli.write_text("#define CLI_FEAT 1\n", encoding="utf-8")
+            mac_fn = pkg_mac / "fn_hdr.h"
+            mac_fn.write_text("#define FN_VAL 1\n", encoding="utf-8")
+            mac_v2 = pkg_mac / "v2.h"
+            mac_v2.write_text("#define V_SEL 2\n", encoding="utf-8")
+            mac_v1 = pkg_mac / "v1.h"
+            mac_v1.write_text("#define V_SEL 1\n", encoding="utf-8")
+            (pkg_mac / "config.h").write_text(
+                '#define CONFIG_HEADER "features.h"\n'
+                "#include CONFIG_HEADER\n"
+                "#include CLI_HDR\n"
+                "#define WRAP_STR(x) #x\n"
+                "#define EXPAND_STR(x) WRAP_STR(x)\n"
+                "#include EXPAND_STR(fn_hdr.h)\n"
+                "#if USE_V2\n"
+                '#include "v2.h"\n'
+                "#else\n"
+                '#include "v1.h"\n'
+                "#endif\n",
+                encoding="utf-8",
+            )
+            bf_m1 = run_prov(deps_mac, base / "prov_m1.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            mac_feat.write_text("#define FEATURE 2\n", encoding="utf-8")
+            bf_m2 = run_prov(deps_mac, base / "prov_m2.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertNotEqual(bf_m1, bf_m2)
+            mac_cli.write_text("#define CLI_FEAT 2\n", encoding="utf-8")
+            bf_m3 = run_prov(deps_mac, base / "prov_m3.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertNotEqual(bf_m2, bf_m3)
+            mac_fn.write_text("#define FN_VAL 2\n", encoding="utf-8")
+            bf_m4 = run_prov(deps_mac, base / "prov_m4.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertNotEqual(bf_m3, bf_m4)
+            mac_v2.write_text("#define V_SEL 22\n", encoding="utf-8")
+            bf_m5 = run_prov(deps_mac, base / "prov_m5.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertNotEqual(bf_m4, bf_m5)
+
     def test_kodim23_compare_threads_oracle_and_history(self) -> None:
         self.assertEqual(sha256_file(KODIM_PATH), KODIM_EXPECTED_SHA256)
         with Image.open(KODIM_PATH) as im:
