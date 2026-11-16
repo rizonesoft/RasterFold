@@ -1,0 +1,71 @@
+{
+  "ref": "D10 T01 \u00a75",
+  "title": "Safe import and export",
+  "implementation_sha": "4870533bd95a65f3297183b577d60115fe5a761a",
+  "date": "2026-11-16",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/10-converter/D10-T01-s5.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "python3 scripts/check-converter.py --case all --all-targets -> contract/jobs/exactness/file-safety/bundle PASS",
+    "python3 scripts/check-all.py --all-targets -> 32/32 passed"
+  ],
+  "completion": {
+    "report": "docs/reviews/10-converter/D10-T01-s5.md",
+    "verdict": "reconciled",
+    "candidate": "4870533bd95a65f3297183b577d60115fe5a761a",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/10-converter/D10-T01-s5.md",
+    "candidate": "8b06f965e1552ea698d2144191790ddc6ff4f058",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "8b06f965e1552ea698d2144191790ddc6ff4f058",
+  "schedule": {
+    "policy": "three-pass",
+    "pass_cap": 33,
+    "plan": {
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {},
+    "reconciliation": {
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}
