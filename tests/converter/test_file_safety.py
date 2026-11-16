@@ -141,6 +141,7 @@ def resolve_host_exe() -> Path:
         src_dir / "preview.c",
         src_dir / "input.c",
         src_dir / "output.c",
+        src_dir / "metrics.c",
         src_dir / "job.c",
         src_dir / "scheduler.c",
         ROOT / "tests" / "converter" / "test_file_safety.c",

@@ -171,11 +171,11 @@ def _check_headers(tmp):
     cxx = os.environ.get("CXX", "c++")
     inc = os.path.join(ROOT, "converter", "include")
     tu = os.path.join(tmp, "tu.c")
-    open(tu, "w").write('#include "rfc_codec.h"\n#include "rfc_io.h"\n#include "rfc_job.h"\n#include "rfc_verify.h"\nint main(void){return 0;}\n')
+    open(tu, "w").write('#include "rfc_codec.h"\n#include "rfc_io.h"\n#include "rfc_job.h"\n#include "rfc_verify.h"\n#include "rfc_report.h"\nint main(void){return 0;}\n')
     if run([cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", inc, "-c", tu, "-o", os.path.join(tmp, "tu.o")]):
         return fail("headers do not compile as C11")
     tux = os.path.join(tmp, "tu.cpp")
-    open(tux, "w").write('#include "rfc_codec.h"\n#include "rfc_io.h"\n#include "rfc_job.h"\n#include "rfc_verify.h"\nint main(){return 0;}\n')
+    open(tux, "w").write('#include "rfc_codec.h"\n#include "rfc_io.h"\n#include "rfc_job.h"\n#include "rfc_verify.h"\n#include "rfc_report.h"\nint main(){return 0;}\n')
     if run([cxx, "-std=c++17", "-Wall", "-Wextra", "-Werror", "-I", inc, "-c", tux, "-o", os.path.join(tmp, "tu_cpp.o")]):
         return fail("headers do not compile as C++")
     return 0
@@ -272,6 +272,7 @@ def case_jobs(all_targets):
         os.path.join(src_dir, "metadata.c"),
         os.path.join(src_dir, "input.c"),
         os.path.join(src_dir, "output.c"),
+        os.path.join(src_dir, "metrics.c"),
         os.path.join(src_dir, "job.c"),
         os.path.join(src_dir, "scheduler.c"),
         os.path.join(ROOT, "tests", "converter", "test_jobs.c"),
@@ -389,6 +390,7 @@ def case_exactness(all_targets):
             os.path.join(src_dir, "metadata.c"),
             os.path.join(src_dir, "input.c"),
             os.path.join(src_dir, "output.c"),
+            os.path.join(src_dir, "metrics.c"),
             os.path.join(src_dir, "job.c"),
             os.path.join(src_dir, "scheduler.c"),
             noprev_c,
@@ -421,6 +423,7 @@ def case_exactness(all_targets):
                 os.path.join(src_dir, "preview.c"),
                 os.path.join(src_dir, "input.c"),
                 os.path.join(src_dir, "output.c"),
+                os.path.join(src_dir, "metrics.c"),
                 os.path.join(src_dir, "job.c"),
                 os.path.join(src_dir, "scheduler.c"),
                 os.path.join(ROOT, "tests", "converter", "test_exactness.c"),
@@ -549,6 +552,7 @@ def case_file_safety(all_targets=False):
                 os.path.join(src_dir, "preview.c"),
                 os.path.join(src_dir, "input.c"),
                 os.path.join(src_dir, "output.c"),
+                os.path.join(src_dir, "metrics.c"),
                 os.path.join(src_dir, "job.c"),
                 os.path.join(src_dir, "scheduler.c"),
                 os.path.join(ROOT, "tests", "converter", "test_file_safety.c"),
@@ -618,6 +622,125 @@ def case_file_safety(all_targets=False):
     return 0
 
 
+def _assert_reports_output(out_text, label):
+    required = [
+        "reports: stage_timings_and_retry ok",
+        "reports: size_outcomes_and_callback_readback ok",
+        "reports: sequential_compare_and_ranking ok",
+        "reports: cancel_and_partial_iterations ok",
+        "reports: provenance_and_mixed_configs ok",
+        "reports: json_and_history_chain ok",
+        "reports: all checks passed",
+    ]
+    for marker in required:
+        if marker not in out_text:
+            return fail(f"{label} missing marker: {marker}\n{out_text}")
+    return 0
+
+
+def case_reports(all_targets=False):
+    from pathlib import Path
+
+    _ref = _load_conv_module("_rfc_ref", "reference.py")
+    _tb = _load_conv_module("_rfc_bundle", "test_bundle.py")
+
+    inc = os.path.join(ROOT, "converter", "include")
+    rf_inc = os.path.join(ROOT, "include")
+    src_dir = os.path.join(ROOT, "converter", "src")
+    win_exe = Path(ROOT) / "bin" / "converter" / "windows-x64" / "rfc_test_reports.exe"
+
+    with tempfile.TemporaryDirectory(prefix="rfc_rep_gate_") as tmp:
+        if _check_headers(tmp):
+            return 1
+
+        # Prove metrics.c links cleanly without preview.c alongside core verify/job modules.
+        if os.name != "nt":
+            if run([sys.executable, os.path.join(ROOT, "scripts", "build.py"), "--target", "linux-x64"]):
+                return fail("linux-x64 static library build failed for reports")
+            rf_lib = os.path.join(ROOT, "bin", "linux-x64", "lib", "librasterfold.a")
+            if not os.path.isfile(rf_lib):
+                return fail(f"missing {rf_lib}")
+            cc = os.environ.get("CC", "cc")
+            host_exe = os.path.join(tmp, "test_reports")
+            sources = [
+                os.path.join(src_dir, "registry.c"),
+                os.path.join(src_dir, "limits.c"),
+                os.path.join(src_dir, "verify.c"),
+                os.path.join(src_dir, "metadata.c"),
+                os.path.join(src_dir, "preview.c"),
+                os.path.join(src_dir, "input.c"),
+                os.path.join(src_dir, "output.c"),
+                os.path.join(src_dir, "metrics.c"),
+                os.path.join(src_dir, "compare.c"),
+                os.path.join(src_dir, "report.c"),
+                os.path.join(src_dir, "job.c"),
+                os.path.join(src_dir, "scheduler.c"),
+                os.path.join(ROOT, "tests", "converter", "test_reports.c"),
+            ]
+            cmd = [
+                cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-pthread",
+                "-I", inc, "-I", rf_inc,
+                *sources, rf_lib, "-lm", "-pthread", "-o", host_exe,
+            ]
+            if run(cmd):
+                return fail("test_reports failed to build cleanly on host")
+            res = _ref.run_process_tree(
+                [host_exe], cwd=ROOT, capture_output=True, text=True, timeout=120.0
+            )
+            if res.stdout:
+                print(res.stdout.rstrip(), flush=True)
+            if res.stderr:
+                print(res.stderr.rstrip(), file=sys.stderr, flush=True)
+            if res.returncode != 0:
+                return fail(f"host test_reports failed with rc={res.returncode}")
+            if _assert_reports_output(res.stdout or "", "host test_reports"):
+                return 1
+        else:
+            host_exe = ""
+
+        if all_targets or os.name == "nt":
+            if run([sys.executable, os.path.join(ROOT, "scripts", "build-converter.py"), "--target", "windows-x64"]):
+                return fail("windows-x64 converter build failed for reports")
+            if not win_exe.is_file():
+                return fail(f"missing Windows test binary {win_exe}")
+            dlls = _tb.parse_pe64_imports(win_exe)
+            _tb.validate_pe_imports(dlls)
+            ro_dlls = _tb.readobj_imports(win_exe)
+            _tb.validate_pe_imports(ro_dlls)
+            wres = _tb.run_windows_binary_isolated(win_exe, timeout_sec=120.0)
+            w_rc = wres.returncode if hasattr(wres, "stdout") else 0
+            w_out = (wres.stdout or "") if hasattr(wres, "stdout") else str(wres)
+            w_err = (wres.stderr or "") if hasattr(wres, "stdout") else ""
+            if w_out:
+                print(w_out.rstrip(), flush=True)
+            if w_err:
+                print(w_err.rstrip(), file=sys.stderr, flush=True)
+            if w_rc != 0:
+                return fail(f"windows-x64 rfc_test_reports.exe failed with rc={w_rc}")
+            if _assert_reports_output(w_out, "windows-x64 rfc_test_reports.exe"):
+                return 1
+
+        venv_py = os.path.join(ROOT, ".venv", "bin", "python")
+        py_bin = venv_py if (os.name != "nt" and os.path.isfile(venv_py)) else sys.executable
+        env = dict(os.environ)
+        env["RFC_HOST_REPORTS_EXE"] = host_exe if host_exe else str(win_exe)
+        if (all_targets or os.name == "nt") and win_exe.is_file():
+            env["RFC_WIN_REPORTS_EXE"] = str(win_exe)
+        py_res = _ref.run_process_tree(
+            [py_bin, os.path.join(ROOT, "tests", "converter", "test_reports.py"), "-v"],
+            cwd=ROOT, env=env, capture_output=True, text=True, timeout=240.0
+        )
+        if py_res.stdout:
+            print(py_res.stdout.rstrip(), flush=True)
+        if py_res.stderr:
+            print(py_res.stderr.rstrip(), file=sys.stderr, flush=True)
+        if py_res.returncode != 0:
+            return fail(f"test_reports.py failed with rc={py_res.returncode}")
+
+    print("reports: PASS")
+    return 0
+
+
 def main():
     raw_args = sys.argv[1:]
     all_targets = "--all-targets" in raw_args
@@ -632,6 +755,8 @@ def main():
         return case_exactness(all_targets)
     if args == ["--case", "file-safety"]:
         return case_file_safety(all_targets)
+    if args == ["--case", "reports"]:
+        return case_reports(all_targets)
     if args == ["--case", "all"]:
         rc = case_contract()
         if rc:
@@ -645,8 +770,11 @@ def main():
         rc = case_file_safety(all_targets)
         if rc:
             return rc
+        rc = case_reports(all_targets)
+        if rc:
+            return rc
         return case_bundle()
-    print("usage: check-converter.py --case <contract|jobs|exactness|file-safety|bundle|all> [--all-targets]")
+    print("usage: check-converter.py --case <contract|jobs|exactness|file-safety|reports|bundle|all> [--all-targets]")
     return 1
 
 

@@ -93,6 +93,10 @@ typedef struct rfc_io_reader {
  * commit_stage must publish atomically without replacing any existing target
  * and report through out_temp_cleaned_up (1 when no temporary artifact remains,
  * 0 if a link-fallback temporary link could not be unlinked).
+ * open_published_reader is optional for raw §5 staged callers (NULL permitted),
+ * but required when verifying/measuring callback outputs for comparison reports
+ * (RFC_ERR_NO_ADAPTER when NULL); it runs only after commit_stage succeeds and
+ * before release_ctx, and out_reader->close_fn is always invoked if non-NULL.
  * Ownership of ctx transfers only on rfc_scheduler_submit == RFC_OK, and
  * release_ctx runs exactly once when the final reference drops. */
 typedef struct rfc_io_publisher {
@@ -108,6 +112,9 @@ typedef struct rfc_io_publisher {
                                int *out_temp_cleaned_up);
     rfc_status (*abort_stage)(void *ctx, void *stage_handle);
     void (*release_ctx)(void *ctx);
+    rfc_status (*open_published_reader)(void *ctx, rfc_job_id job_id,
+                                        uint64_t attempt_number,
+                                        rfc_io_reader *out_reader);
 } rfc_io_publisher;
 
 typedef struct rfc_io_source {
@@ -212,6 +219,9 @@ rfc_status rfc_job_sniff_result_get(const rfc_job *job,
 
 rfc_status rfc_job_export_report_get(const rfc_job *job,
                                      rfc_export_report *out_report);
+
+rfc_status rfc_job_open_published_reader(const rfc_job *job,
+                                         rfc_io_reader *out_reader);
 
 /* Deterministic test hooks for fault injection and commit/cancel barriers.
  * Production code keeps both unset (0 / NULL). */

@@ -8,6 +8,7 @@
 #include "rfc_job.h"
 #include "rfc_verify.h"
 #include "rfc_io.h"
+#include "rfc_report.h"
 
 #include <stdalign.h>
 #include <stdatomic.h>
@@ -478,6 +479,8 @@ struct rfc_job {
     int has_sniff_result;
     rfc_file_identity source_identity;
     rfc_export_report export_report;
+    rfc_stage_timings stage_timings;
+    uint64_t raw_frame_bytes;
     int publishing;
     int publish_decided;
 
@@ -594,6 +597,36 @@ rfc_status rfc_output_publish_job(
     rfc_job *job,
     const rfc_exec_context *exec,
     const char **out_err_detail);
+
+typedef struct rfc_sha256_ctx {
+    uint32_t state[8];
+    uint64_t bitlen;
+    uint8_t buf[64];
+    size_t buf_len;
+} rfc_sha256_ctx;
+
+void rfc_sha256_init(rfc_sha256_ctx *ctx);
+void rfc_sha256_update(rfc_sha256_ctx *ctx, const void *data, size_t len);
+void rfc_sha256_final(rfc_sha256_ctx *ctx, uint8_t out_hash[32]);
+
+rfc_status rfc_output_internal_hash_regular_path(const char *path_utf8,
+                                                 uint64_t *out_bytes,
+                                                 uint8_t out_sha256[32]);
+rfc_status rfc_output_internal_read_regular_path(const char *path_utf8,
+                                                 uint8_t **out_bytes,
+                                                 size_t *out_size,
+                                                 int *out_exists);
+rfc_status rfc_output_internal_replace_regular_path(const char *path_utf8,
+                                                    const uint8_t *existing_bytes,
+                                                    size_t existing_len,
+                                                    const uint8_t *append_bytes,
+                                                    size_t append_len,
+                                                    int fault_stage,
+                                                    rfc_status fault_status);
+rfc_status rfc_output_internal_unlink_path(const char *path_utf8);
+uint64_t rfc_output_internal_next_seq(void);
+void rfc_report_internal_finalize_configs(rfc_comparison_report *report);
+uint64_t rfc_job_internal_raw_frame_bytes(const rfc_job *job);
 
 typedef struct rfc_job_exec_result {
     rfc_status st;

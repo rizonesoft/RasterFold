@@ -2082,6 +2082,87 @@ rfc_status rfc_job_export_report_get(const rfc_job *job,
     return RFC_OK;
 }
 
+rfc_status rfc_job_stage_timings_get(const rfc_job *job,
+                                     rfc_stage_timings *out_timings) {
+    if (out_timings) {
+        memset(out_timings, 0, sizeof(*out_timings));
+    }
+    if (!job || !out_timings) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    rfc_job *m = (rfc_job *)job;
+    rfc_mutex_lock(&m->lock);
+    if (!m->stage_timings.valid) {
+        rfc_mutex_unlock(&m->lock);
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    *out_timings = m->stage_timings;
+    rfc_mutex_unlock(&m->lock);
+    return RFC_OK;
+}
+
+uint64_t rfc_job_internal_raw_frame_bytes(const rfc_job *job) {
+    if (!job) {
+        return 0u;
+    }
+    rfc_job *m = (rfc_job *)job;
+    rfc_mutex_lock(&m->lock);
+    uint64_t v = m->raw_frame_bytes;
+    rfc_mutex_unlock(&m->lock);
+    return v;
+}
+
+rfc_status rfc_job_open_published_reader(const rfc_job *job,
+                                         rfc_io_reader *out_reader) {
+    if (out_reader) {
+        memset(out_reader, 0, sizeof(*out_reader));
+    }
+    if (!job || !out_reader) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    rfc_job *m = (rfc_job *)job;
+    rfc_mutex_lock(&m->lock);
+    int pub_ok = (m->export_report.valid && m->export_report.published);
+    rfc_io_publisher_box *pbox =
+        (m->inputs && m->inputs->io_publisher_box) ? m->inputs->io_publisher_box
+                                                   : NULL;
+    rfc_job_id jid = m->job_id;
+    uint64_t attempt = m->attempt_number;
+    rfc_mutex_unlock(&m->lock);
+
+    if (!pub_ok) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    if (!pbox) {
+        return RFC_ERR_NO_ADAPTER;
+    }
+
+    rfc_mutex_lock(&pbox->lock);
+    if (!pbox->publisher.open_published_reader) {
+        rfc_mutex_unlock(&pbox->lock);
+        return RFC_ERR_NO_ADAPTER;
+    }
+    rfc_io_reader rdr;
+    memset(&rdr, 0, sizeof(rdr));
+    rfc_status st = pbox->publisher.open_published_reader(
+        pbox->publisher.ctx, jid, attempt, &rdr);
+    rfc_mutex_unlock(&pbox->lock);
+    if (st != RFC_OK) {
+        if (rdr.close_fn) {
+            rdr.close_fn(rdr.ctx);
+        }
+        return st;
+    }
+    if (!rdr.read_fn || !rdr.seek_fn) {
+        if (rdr.close_fn) {
+            rdr.close_fn(rdr.ctx);
+        }
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    *out_reader = rdr;
+    return RFC_OK;
+}
+
 int rfc_exec_is_cancelled(const rfc_exec_context *exec) {
     if (!exec) {
         return 1;
@@ -2748,6 +2829,9 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
     rfc_job_stage stage_at = RFC_STAGE_IMPORT;
     rfc_status st = check_stage_abort(job);
     const char *err_detail = NULL;
+    uint64_t wall_t0 = rfc_monotonic_now_ns();
+    rfc_stage_timings timings;
+    memset(&timings, 0, sizeof(timings));
 
     rfc_mutex_lock(&job->lock);
     job->stream_frame_count = 0u;
@@ -2767,6 +2851,8 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
     if (st != RFC_OK) {
         goto finish;
     }
+    uint64_t imp_t0 = rfc_monotonic_now_ns();
+    timings.import_ran = 1;
 
     if (job->stage_ops.on_import != NULL) {
         st = job->stage_ops.on_import(job, &exec, user_ctx);
@@ -2867,7 +2953,18 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
             &job->limits, job->decoded_frames, job->decoded_frame_count,
             job->has_decoded_meta ? &job->decoded_meta : NULL,
             (uint64_t)src_size, src_size > 0);
+        if (st == RFC_OK) {
+            uint64_t raw_b = 0u;
+            if (rfc_metrics_compute_raw_frame_bytes(
+                    job->decoded_frames, job->decoded_frame_count, &raw_b) ==
+                RFC_OK) {
+                rfc_mutex_lock(&job->lock);
+                job->raw_frame_bytes = raw_b;
+                rfc_mutex_unlock(&job->lock);
+            }
+        }
     }
+    timings.import_ns = rfc_monotonic_now_ns() - imp_t0;
 
     if (st != RFC_OK) {
         goto finish;
@@ -2884,6 +2981,8 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
     if (st != RFC_OK) {
         goto finish;
     }
+    uint64_t enc_t0 = rfc_monotonic_now_ns();
+    timings.encode_ran = 1;
 
     if (job->stage_ops.on_encode != NULL) {
         st = job->stage_ops.on_encode(job, &exec, user_ctx);
@@ -2988,6 +3087,7 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
         }
     }
 
+    timings.encode_ns = rfc_monotonic_now_ns() - enc_t0;
     if (st != RFC_OK) {
         goto finish;
     }
@@ -3003,6 +3103,8 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
     if (st != RFC_OK) {
         goto finish;
     }
+    uint64_t ver_t0 = rfc_monotonic_now_ns();
+    timings.verify_ran = 1;
 
     if (job->stage_ops.on_verify != NULL) {
         st = job->stage_ops.on_verify(job, &exec, user_ctx);
@@ -3220,6 +3322,7 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
         }
     }
 
+    timings.verify_ns = rfc_monotonic_now_ns() - ver_t0;
     if (st != RFC_OK) {
         goto finish;
     }
@@ -3239,6 +3342,8 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
     if (st != RFC_OK) {
         goto finish;
     }
+    uint64_t exp_t0 = rfc_monotonic_now_ns();
+    timings.export_ran = 1;
 
     if (job->stage_ops.on_export != NULL) {
         st = job->stage_ops.on_export(job, &exec, user_ctx);
@@ -3248,14 +3353,20 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
         st = RFC_ERR_NO_ADAPTER;
         err_detail = "export stage requires an output publisher";
     }
+    timings.export_ns = rfc_monotonic_now_ns() - exp_t0;
 
 finish:
+    timings.wall_ns = rfc_monotonic_now_ns() - wall_t0;
+    timings.valid = 1;
     rfc_job_internal_release_stage_outputs(job);
 
     /* Free all attached partials before transitioning to terminal state. */
     rfc_job_release_partials(job);
 
     if (out_res) {
+        rfc_mutex_lock(&job->lock);
+        job->stage_timings = timings;
+        rfc_mutex_unlock(&job->lock);
         out_res->st = st;
         out_res->stage_at = stage_at;
         out_res->err_detail = err_detail;
@@ -3263,6 +3374,7 @@ finish:
     }
 
     rfc_mutex_lock(&job->lock);
+    job->stage_timings = timings;
     int abort_sup = job->superseded || job->superseded_by_id != RFC_JOB_ID_NONE;
     int abort_can = job->cancel_requested || job->state == RFC_JOB_CANCELLED;
     if (job->publish_decided) {

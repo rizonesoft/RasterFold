@@ -1,0 +1,497 @@
+#!/usr/bin/env python3
+"""End-to-end host and Windows comparison/measurement/report/history suite for D10 T01 s6."""
+from __future__ import annotations
+
+import atexit
+import hashlib
+import importlib.util
+import json
+import os
+from pathlib import Path
+import shutil
+import sys
+import tempfile
+import unittest
+
+from PIL import Image
+
+ROOT = Path(__file__).resolve().parents[2]
+KODIM_PATH = ROOT / "testdata" / "photos" / "kodim23.png"
+KODIM_EXPECTED_SHA256 = "97adc1006e4c306d6639b5a2d60fe4ea7ca79eed666897945fd69e6ef924bcd6"
+
+
+def _load_mod(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"failed to load module from {path}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_ref = _load_mod("_rfc_ref_rep", ROOT / "tests" / "converter" / "reference.py")
+_rfi_ref = _load_mod("_rf_oracle_rep", ROOT / "tests" / "rfi_ref.py")
+
+_TEMP_COMPILE_DIRS: list[tempfile.TemporaryDirectory[str]] = []
+
+
+def _cleanup_compile_dirs() -> None:
+    while _TEMP_COMPILE_DIRS:
+        d = _TEMP_COMPILE_DIRS.pop()
+        d.cleanup()
+
+
+atexit.register(_cleanup_compile_dirs)
+
+
+def sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def sha256_file(path: Path) -> str:
+    return sha256_bytes(path.read_bytes())
+
+
+def resolve_host_exe() -> Path:
+    env_exe = os.environ.get("RFC_HOST_REPORTS_EXE", "")
+    if env_exe and Path(env_exe).is_file():
+        return Path(env_exe)
+
+    if os.name == "nt":
+        win_exe = ROOT / "bin" / "converter" / "windows-x64" / "rfc_test_reports.exe"
+        if not win_exe.is_file():
+            res = _ref.run_process_tree(
+                [sys.executable, str(ROOT / "scripts" / "build-converter.py"), "--target", "windows-x64"],
+                cwd=ROOT,
+                capture_output=True,
+                timeout=300.0,
+            )
+            if res.returncode != 0:
+                raise RuntimeError(f"build-converter failed:\n{res.stdout}\n{res.stderr}")
+        return win_exe
+
+    rf_lib = ROOT / "bin" / "linux-x64" / "lib" / "librasterfold.a"
+    if not rf_lib.is_file():
+        res = _ref.run_process_tree(
+            [sys.executable, str(ROOT / "scripts" / "build.py"), "--target", "linux-x64"],
+            cwd=ROOT,
+            capture_output=True,
+            timeout=180.0,
+        )
+        if res.returncode != 0:
+            raise RuntimeError(f"build.py linux-x64 failed:\n{res.stdout}\n{res.stderr}")
+
+    tmp = tempfile.TemporaryDirectory(prefix="rfc_rep_host_bin_")
+    _TEMP_COMPILE_DIRS.append(tmp)
+    exe = Path(tmp.name) / "test_reports"
+    cc = os.environ.get("CC", "cc")
+    src_dir = ROOT / "converter" / "src"
+    sources = [
+        src_dir / "registry.c",
+        src_dir / "limits.c",
+        src_dir / "verify.c",
+        src_dir / "metadata.c",
+        src_dir / "preview.c",
+        src_dir / "input.c",
+        src_dir / "output.c",
+        src_dir / "metrics.c",
+        src_dir / "compare.c",
+        src_dir / "report.c",
+        src_dir / "job.c",
+        src_dir / "scheduler.c",
+        ROOT / "tests" / "converter" / "test_reports.c",
+    ]
+    cmd = [
+        cc,
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-pthread",
+        "-I",
+        str(ROOT / "converter" / "include"),
+        "-I",
+        str(ROOT / "include"),
+        *(str(s) for s in sources),
+        str(rf_lib),
+        "-lm",
+        "-pthread",
+        "-o",
+        str(exe),
+    ]
+    res = _ref.run_process_tree(cmd, cwd=ROOT, capture_output=True, timeout=120.0)
+    if res.returncode != 0:
+        raise RuntimeError(f"host compile failed:\n{res.stdout}\n{res.stderr}")
+    return exe
+
+
+def resolve_win_exe() -> Path | None:
+    env_exe = os.environ.get("RFC_WIN_REPORTS_EXE", "")
+    if env_exe and Path(env_exe).is_file():
+        return Path(env_exe)
+    candidate = ROOT / "bin" / "converter" / "windows-x64" / "rfc_test_reports.exe"
+    if candidate.is_file():
+        return candidate
+    return None
+
+
+def ps_quote(s: str) -> str:
+    return "'" + s.replace("'", "''") + "'"
+
+
+def verify_history_jsonl_independently(raw: bytes, expected_count: int) -> list[dict]:
+    assert raw.endswith(b"\n"), "history log missing trailing newline"
+    lines = raw.decode("utf-8").splitlines()
+    assert len(lines) == expected_count, f"expected {expected_count} entries, got {len(lines)}"
+    prev_hex = "0" * 64
+    parsed = []
+    marker = ',"entry_sha256":"'
+    for idx, line in enumerate(lines, 1):
+        obj = json.loads(line)
+        assert obj["schema"] == "rasterfold.converter.history.entry"
+        assert obj["schema_version"] == 1
+        assert obj["sequence"] == idx
+        assert obj["prev_entry_sha256"] == prev_hex
+        pos = line.rfind(marker)
+        assert pos > 0 and line.endswith('"}')
+        canonical = (line[:pos] + "}").encode("utf-8")
+        calc_hex = sha256_bytes(canonical)
+        assert obj["entry_sha256"] == calc_hex, (
+            f"entry {idx} hash mismatch: expected {calc_hex}, got {obj['entry_sha256']}"
+        )
+        prev_hex = calc_hex
+        parsed.append(obj)
+    return parsed
+
+
+def assert_kodim_report(rep: dict, expected_req_threads: int) -> None:
+    assert rep["schema"] == "rasterfold.converter.report"
+    assert rep["schema_version"] == 1
+    assert rep["run_status"] == "ok"
+    assert rep["history_status"] == "ok"
+    assert rep["history_recorded"] is True
+    assert rep["ranking_complete"] is True
+    assert rep["cancelled"] is False
+
+    src = rep["source"]
+    assert src["format"] == "png"
+    assert src["file_bytes"] == 556888
+    assert src["raw_frame_bytes"] == 768 * 512 * 3
+    assert src["sha256"] == KODIM_EXPECTED_SHA256
+
+    mc = rep["measurement_conditions"]
+    assert mc["requested_threads"] == expected_req_threads
+    if expected_req_threads == 1:
+        assert mc["effective_threads"] == 1
+    else:
+        assert mc["effective_threads"] >= 2
+    assert mc["warmup_iterations"] == 1
+    assert mc["measured_iterations"] == 2
+    assert mc["sequential_execution"] is True
+    assert rep["mixed_provider_configurations"] is True
+    assert "simd_features" in rep["configuration_notes"]
+
+    by_fmt = {c["target_format"]: c for c in rep["candidates"]}
+    fold_c = by_fmt["rasterfold"]
+    bmp_c = by_fmt["bmp"]
+    webp_c = by_fmt["webp"]
+    heic_c = by_fmt["heic"]
+
+    assert fold_c["outcome"] == "completed"
+    assert fold_c["rank"] == 1
+    assert fold_c["has_produced_output"] is True
+    assert fold_c["size"]["outcome"] == "smaller"
+    assert fold_c["size"]["produced_file_bytes"] < 556888
+    assert fold_c["verification"]["status"] == "ok"
+    assert fold_c["verification"]["exactness"] == "pixel-exact"
+    assert fold_c["verification"]["decoder_provenance"] == "same-provider-fresh-session"
+    assert fold_c["timings_ns"]["median"]["valid"] is True
+    assert fold_c["timings_ns"]["median"]["wall_ns"] >= (
+        fold_c["timings_ns"]["median"]["import_ns"]
+        + fold_c["timings_ns"]["median"]["encode_ns"]
+        + fold_c["timings_ns"]["median"]["verify_ns"]
+        + fold_c["timings_ns"]["median"]["export_ns"]
+    )
+
+    assert bmp_c["outcome"] == "completed"
+    assert bmp_c["rank"] == 2
+    assert bmp_c["has_produced_output"] is True
+    assert bmp_c["size"]["outcome"] == "growth"
+    assert bmp_c["size"]["produced_file_bytes"] == 1179702
+    assert bmp_c["size"]["growth_bytes"] == 1179702 - 556888
+
+    for unsup in (webp_c, heic_c):
+        assert unsup["outcome"] == "unsupported"
+        assert unsup["rank"] == 0
+        assert unsup["has_produced_output"] is False
+        assert unsup["size"]["outcome"] == "not-applicable"
+        assert unsup["size"]["produced_file_bytes"] == 0
+
+
+def expected_vendor_versions() -> dict[str, str]:
+    vdoc = json.loads((ROOT / "converter" / "vendor.json").read_text(encoding="utf-8"))
+    out = {
+        "rasterfold": "1.0",
+        "bmp": "builtin-c11",
+        "pnm": "builtin-c11",
+        "pam": "builtin-c11",
+        "heif": "system-wic",
+        "heic": "system-wic",
+    }
+    pkg_map = {p["id"]: p for p in vdoc["packages"]}
+    for p in vdoc["packages"]:
+        ver = p["version"]
+        if p["id"] == "libavif":
+            ver = f"{p['version']}+aom-{pkg_map['libaom']['version']}"
+        for fmt in p["formats"]:
+            out[fmt] = ver
+    return out
+
+
+class TestHostReports(unittest.TestCase):
+    host_exe: Path
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.host_exe = resolve_host_exe()
+
+    def test_host_c_suite_markers(self) -> None:
+        res = _ref.run_process_tree([str(self.host_exe)], cwd=ROOT, capture_output=True, timeout=120.0)
+        self.assertEqual(res.returncode, 0, res.stdout + "\n" + res.stderr)
+        for marker in (
+            "reports: stage_timings_and_retry ok",
+            "reports: size_outcomes_and_callback_readback ok",
+            "reports: sequential_compare_and_ranking ok",
+            "reports: cancel_and_partial_iterations ok",
+            "reports: provenance_and_mixed_configs ok",
+            "reports: json_and_history_chain ok",
+            "reports: all checks passed",
+        ):
+            self.assertIn(marker, res.stdout)
+
+    def test_provider_configs_match_vendor_json(self) -> None:
+        res = _ref.run_process_tree(
+            [str(self.host_exe), "dump-provider-configs"],
+            cwd=ROOT,
+            capture_output=True,
+            timeout=60.0,
+        )
+        self.assertEqual(res.returncode, 0, res.stderr)
+        expected = expected_vendor_versions()
+        seen = {}
+        for line in res.stdout.strip().splitlines():
+            parts = line.split("|")
+            self.assertEqual(len(parts), 7, line)
+            fmt, _prov, ver, comp, abi, simd, thr = parts
+            self.assertTrue(all([ver, comp, abi, simd, thr]), line)
+            seen[fmt] = ver
+        self.assertEqual(seen, expected)
+
+    def test_kodim23_compare_threads_oracle_and_history(self) -> None:
+        self.assertEqual(sha256_file(KODIM_PATH), KODIM_EXPECTED_SHA256)
+        with Image.open(KODIM_PATH) as im:
+            src_rgb = im.convert("RGB").tobytes()
+            src_w, src_h = im.size
+
+        with tempfile.TemporaryDirectory(prefix="rfc_kodim_host_") as td:
+            d = Path(td)
+            src_copy = d / "kodim23.png"
+            shutil.copy2(KODIM_PATH, src_copy)
+            d1 = d / "t1"
+            ddef = d / "tdef"
+            d1.mkdir()
+            ddef.mkdir()
+            j1 = d / "r1.json"
+            jdef = d / "rdef.json"
+            hist = d / "runs.jsonl"
+
+            for th, out_d, jp, rid in (
+                ("1", d1, j1, "kodim-host-t1"),
+                ("0", ddef, jdef, "kodim-host-tdef"),
+            ):
+                res = _ref.run_process_tree(
+                    [
+                        str(self.host_exe),
+                        "compare-kodim",
+                        str(src_copy),
+                        str(out_d),
+                        th,
+                        str(jp),
+                        str(hist),
+                        rid,
+                    ],
+                    cwd=ROOT,
+                    capture_output=True,
+                    timeout=120.0,
+                )
+                self.assertEqual(res.returncode, 0, res.stdout + "\n" + res.stderr)
+
+            r1 = json.loads(j1.read_text(encoding="utf-8"))
+            rdef = json.loads(jdef.read_text(encoding="utf-8"))
+            assert_kodim_report(r1, 1)
+            assert_kodim_report(rdef, 0)
+
+            fold1 = (d1 / "kodim23.fold").read_bytes()
+            folddef = (ddef / "kodim23.fold").read_bytes()
+            self.assertEqual(sha256_bytes(fold1), sha256_bytes(folddef))
+            self.assertEqual(
+                sha256_bytes(fold1),
+                r1["candidates"][0]["size"]["produced_sha256"],
+            )
+
+            ow, oh, orgb = _rfi_ref.decode_image(fold1)
+            self.assertEqual((ow, oh), (src_w, src_h))
+            self.assertEqual(orgb, src_rgb)
+
+            hist_raw = hist.read_bytes()
+            entries = verify_history_jsonl_independently(hist_raw, 2)
+            self.assertEqual(entries[0]["run_id"], "kodim-host-t1")
+            self.assertEqual(entries[1]["run_id"], "kodim-host-tdef")
+            self.assertEqual(entries[0]["source_sha256"], KODIM_EXPECTED_SHA256)
+
+            vres = _ref.run_process_tree(
+                [str(self.host_exe), "verify-history", str(hist)],
+                cwd=ROOT,
+                capture_output=True,
+                timeout=30.0,
+            )
+            self.assertEqual(vres.returncode, 0, vres.stdout + vres.stderr)
+            self.assertIn("ok entries=2", vres.stdout)
+
+            # Mutated entry 1 -> verify-history fails and file untouched
+            tampered = d / "tampered.jsonl"
+            tampered.write_bytes(hist_raw.replace(b"kodim-host-t1", b"kodim-host-X1"))
+            t_before = tampered.read_bytes()
+            tres = _ref.run_process_tree(
+                [str(self.host_exe), "verify-history", str(tampered)],
+                cwd=ROOT,
+                capture_output=True,
+                timeout=30.0,
+            )
+            self.assertNotEqual(tres.returncode, 0)
+            self.assertIn("verify-mismatch", tres.stdout)
+            self.assertEqual(tampered.read_bytes(), t_before)
+
+            # Truncated trailing newline -> verify-history returns truncated-input
+            trunc = d / "trunc.jsonl"
+            trunc.write_bytes(hist_raw[:-1])
+            trres = _ref.run_process_tree(
+                [str(self.host_exe), "verify-history", str(trunc)],
+                cwd=ROOT,
+                capture_output=True,
+                timeout=30.0,
+            )
+            self.assertNotEqual(trres.returncode, 0)
+            self.assertIn("truncated-input", trres.stdout)
+
+            print(
+                f" [kodim23-host src={src_w}x{src_h} {KODIM_EXPECTED_SHA256[:12]}"
+                f" fold={len(fold1)}B({sha256_bytes(fold1)[:12]}) bmp={(d1 / 'kodim23.bmp').stat().st_size}B]",
+                end="",
+                flush=True,
+            )
+
+        self.assertEqual(sha256_file(KODIM_PATH), KODIM_EXPECTED_SHA256)
+
+
+class TestWindowsReports(unittest.TestCase):
+    win_exe: Path | None = None
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.win_exe = resolve_win_exe()
+        if cls.win_exe is None:
+            raise unittest.SkipTest("windows-x64 rfc_test_reports.exe not built")
+        if os.name != "nt":
+            res = _ref.run_process_tree(
+                ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "[IO.Path]::GetTempPath()"],
+                capture_output=True,
+                timeout=30.0,
+            )
+            if res.returncode != 0 or not (res.stdout or "").strip():
+                raise unittest.SkipTest("powershell.exe unavailable for Windows NTFS tests")
+
+    def _run_ps(self, script: str, timeout: float = 120.0) -> str:
+        res = _ref.run_process_tree(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+            cwd=ROOT,
+            capture_output=True,
+            timeout=timeout,
+        )
+        if res.returncode != 0:
+            raise AssertionError(
+                f"PowerShell failed (rc={res.returncode}):\nSTDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}"
+            )
+        return res.stdout or ""
+
+    def _win_to_py_path(self, win_path: str) -> Path:
+        if os.name == "nt":
+            return Path(win_path)
+        res = _ref.run_process_tree(["wslpath", "-u", win_path], capture_output=True, timeout=15.0)
+        if res.returncode != 0:
+            raise RuntimeError(f"wslpath -u failed for {win_path}: {res.stderr}")
+        return Path((res.stdout or "").strip())
+
+    def test_windows_kodim23_and_history(self) -> None:
+        assert self.win_exe is not None
+        win_temp_dir = self._run_ps(
+            "$d = Join-Path ([IO.Path]::GetTempPath()) ('rfc_rep_ntfs_' + [Guid]::NewGuid().ToString('N').Substring(0,8)); "
+            "New-Item -ItemType Directory -Path $d | Out-Null; Write-Output $d"
+        ).strip().splitlines()[-1].strip()
+        py_temp = self._win_to_py_path(win_temp_dir)
+
+        try:
+            exe_dst = py_temp / "rfc_test_reports.exe"
+            shutil.copy2(self.win_exe, exe_dst)
+            src_copy = py_temp / "kodim23.png"
+            shutil.copy2(KODIM_PATH, src_copy)
+            (py_temp / "t1").mkdir()
+            (py_temp / "tdef").mkdir()
+
+            ps = f"""
+$ErrorActionPreference = 'Stop'
+$root = {ps_quote(win_temp_dir)}
+$exe = Join-Path $root 'rfc_test_reports.exe'
+$src = Join-Path $root 'kodim23.png'
+$hist = Join-Path $root 'runs.jsonl'
+$env:PATH = "$env:SystemRoot\\System32;$env:SystemRoot"
+
+& $exe compare-kodim $src (Join-Path $root 't1') '1' (Join-Path $root 'r1.json') $hist 'kodim-win-t1'
+if ($LASTEXITCODE -ne 0) {{ throw "compare-kodim t1 failed ($LASTEXITCODE)" }}
+& $exe compare-kodim $src (Join-Path $root 'tdef') '0' (Join-Path $root 'rdef.json') $hist 'kodim-win-tdef'
+if ($LASTEXITCODE -ne 0) {{ throw "compare-kodim tdef failed ($LASTEXITCODE)" }}
+& $exe verify-history $hist
+if ($LASTEXITCODE -ne 0) {{ throw "verify-history failed ($LASTEXITCODE)" }}
+& $exe dump-provider-configs | Out-File -FilePath (Join-Path $root 'cfg.txt') -Encoding utf8
+if ($LASTEXITCODE -ne 0) {{ throw "dump-provider-configs failed ($LASTEXITCODE)" }}
+"""
+            self._run_ps(ps, timeout=180.0)
+
+            r1 = json.loads((py_temp / "r1.json").read_text(encoding="utf-8"))
+            rdef = json.loads((py_temp / "rdef.json").read_text(encoding="utf-8"))
+            assert_kodim_report(r1, 1)
+            assert_kodim_report(rdef, 0)
+
+            fold1 = (py_temp / "t1" / "kodim23.fold").read_bytes()
+            folddef = (py_temp / "tdef" / "kodim23.fold").read_bytes()
+            self.assertEqual(sha256_bytes(fold1), sha256_bytes(folddef))
+            verify_history_jsonl_independently((py_temp / "runs.jsonl").read_bytes(), 2)
+
+            expected = expected_vendor_versions()
+            cfg_lines = (py_temp / "cfg.txt").read_text(encoding="utf-8-sig").strip().splitlines()
+            seen = {}
+            for line in cfg_lines:
+                parts = line.split("|")
+                self.assertEqual(len(parts), 7, line)
+                self.assertEqual(parts[4], "windows-x64", line)
+                seen[parts[0]] = parts[2]
+            self.assertEqual(seen, expected)
+        finally:
+            self._run_ps(
+                f"if (Test-Path {ps_quote(win_temp_dir)}) {{ "
+                f"Remove-Item -LiteralPath {ps_quote(win_temp_dir)} -Recurse -Force }}"
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()

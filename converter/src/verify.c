@@ -92,18 +92,11 @@ const char *rfc_mismatch_kind_name(rfc_mismatch_kind kind) {
 }
 
 /* FIPS 180-4 SHA-256 implementation without external dependencies. */
-typedef struct sha256_ctx {
-    uint32_t state[8];
-    uint64_t bitlen;
-    uint8_t buf[64];
-    size_t buf_len;
-} sha256_ctx;
-
 static uint32_t rotr32(uint32_t x, uint32_t n) {
     return (x >> n) | (x << (32u - n));
 }
 
-static void sha256_transform(sha256_ctx *ctx, const uint8_t block[64]) {
+static void sha256_transform(rfc_sha256_ctx *ctx, const uint8_t block[64]) {
     static const uint32_t k[64] = {
         0x428a2f98u, 0x71374491u, 0xb5c0fbcfu, 0xe9b5dba5u,
         0x3956c25bu, 0x59f111f1u, 0x923f82a4u, 0xab1c5ed5u,
@@ -174,7 +167,7 @@ static void sha256_transform(sha256_ctx *ctx, const uint8_t block[64]) {
     ctx->state[7] += h;
 }
 
-static void sha256_init(sha256_ctx *ctx) {
+void rfc_sha256_init(rfc_sha256_ctx *ctx) {
     ctx->state[0] = 0x6a09e667u;
     ctx->state[1] = 0xbb67ae85u;
     ctx->state[2] = 0x3c6ef372u;
@@ -187,7 +180,7 @@ static void sha256_init(sha256_ctx *ctx) {
     ctx->buf_len = 0u;
 }
 
-static void sha256_update(sha256_ctx *ctx, const void *data, size_t len) {
+void rfc_sha256_update(rfc_sha256_ctx *ctx, const void *data, size_t len) {
     const uint8_t *p = (const uint8_t *)data;
     if (!p || len == 0u) {
         return;
@@ -209,7 +202,7 @@ static void sha256_update(sha256_ctx *ctx, const void *data, size_t len) {
     }
 }
 
-static void sha256_final(sha256_ctx *ctx, uint8_t out_hash[32]) {
+void rfc_sha256_final(rfc_sha256_ctx *ctx, uint8_t out_hash[32]) {
     size_t i = ctx->buf_len;
     ctx->buf[i++] = 0x80u;
     if (i > 56u) {
@@ -233,6 +226,11 @@ static void sha256_final(sha256_ctx *ctx, uint8_t out_hash[32]) {
         out_hash[s * 4u + 3u] = (uint8_t)(ctx->state[s] & 0xffu);
     }
 }
+
+typedef rfc_sha256_ctx sha256_ctx;
+#define sha256_init rfc_sha256_init
+#define sha256_update rfc_sha256_update
+#define sha256_final rfc_sha256_final
 
 static void sha256_update_u32_le(sha256_ctx *ctx, uint32_t v) {
     uint8_t b[4] = {

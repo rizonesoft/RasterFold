@@ -42,8 +42,8 @@
 
 #define RFC_OUTPUT_CHUNK_BYTES (64u * 1024u)
 
-#ifdef _WIN32
 static atomic_uint_fast64_t g_partial_seq = 1u;
+#ifdef _WIN32
 static wchar_t g_test_unc_prefix_w[1024];
 static wchar_t g_test_unc_backing_w[1024];
 #endif
@@ -1745,4 +1745,657 @@ rfc_status rfc_output_publish_job(rfc_job *job,
         *out_err_detail = rfc_status_name(st);
     }
     return st;
+}
+
+uint64_t rfc_output_internal_next_seq(void) {
+    return (uint64_t)atomic_fetch_add_explicit(&g_partial_seq, 1u,
+                                              memory_order_relaxed);
+}
+
+rfc_status rfc_output_internal_hash_regular_path(const char *path_utf8,
+                                                 uint64_t *out_bytes,
+                                                 uint8_t out_sha256[32]) {
+    if (out_bytes) {
+        *out_bytes = 0u;
+    }
+    if (out_sha256) {
+        memset(out_sha256, 0, 32u);
+    }
+    if (!validate_utf8_path(path_utf8, 3800u) || !out_bytes || !out_sha256) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+
+    rfc_sha256_ctx ctx;
+    rfc_sha256_init(&ctx);
+    uint64_t total = 0u;
+    uint8_t buf[RFC_OUTPUT_CHUNK_BYTES];
+
+#ifdef _WIN32
+    if (is_win32_unsafe_path(path_utf8)) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    wchar_t wraw[4096];
+    rfc_status st = utf8_to_wide_out(path_utf8, wraw, 4096u);
+    if (st != RFC_OK) {
+        return st;
+    }
+    HANDLE handles[64];
+    size_t handle_count = 0u;
+    wchar_t wdir[4096];
+    wchar_t wbase[512];
+    st = win_open_anchored_ancestors(wraw, handles, 64u, &handle_count, wdir,
+                                     4096u, wbase, 512u);
+    if (st != RFC_OK) {
+        return st;
+    }
+    wchar_t wnorm[4096];
+    st = win_join_dir_and_name(wdir, wbase, wnorm, 4096u);
+    win_close_dir_handles(handles, handle_count);
+    if (st != RFC_OK) {
+        return st;
+    }
+    HANDLE h = CreateFileW(
+        wnorm, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
+        FILE_FLAG_OPEN_REPARSE_POINT | FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE) {
+        DWORD err = GetLastError();
+        if (err == ERROR_FILE_NOT_FOUND || err == ERROR_PATH_NOT_FOUND) {
+            return RFC_ERR_IO;
+        }
+        return map_win32_write_error(err);
+    }
+    BY_HANDLE_FILE_INFORMATION bhfi;
+    if (!GetFileInformationByHandle(h, &bhfi) ||
+        GetFileType(h) != FILE_TYPE_DISK) {
+        CloseHandle(h);
+        return RFC_ERR_IO;
+    }
+    if ((bhfi.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0u) {
+        CloseHandle(h);
+        return RFC_ERR_PATH_ALIAS;
+    }
+    if ((bhfi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0u) {
+        CloseHandle(h);
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    for (;;) {
+        DWORD got = 0u;
+        if (!ReadFile(h, buf, (DWORD)sizeof(buf), &got, NULL)) {
+            DWORD err = GetLastError();
+            CloseHandle(h);
+            return map_win32_write_error(err);
+        }
+        if (got == 0u) {
+            break;
+        }
+        rfc_sha256_update(&ctx, buf, (size_t)got);
+        total += (uint64_t)got;
+    }
+    CloseHandle(h);
+#else
+    int dir_fd = -1;
+    char base[512];
+    rfc_status st = posix_open_anchored_parent(path_utf8, &dir_fd, base,
+                                               sizeof(base));
+    if (st != RFC_OK) {
+        return st;
+    }
+    int fd = -1;
+    do {
+        fd = openat(dir_fd, base, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+    } while (fd < 0 && errno == EINTR);
+    close(dir_fd);
+    if (fd < 0) {
+        return map_posix_write_error(errno);
+    }
+    struct stat fst;
+    if (fstat(fd, &fst) != 0) {
+        int err = errno;
+        close(fd);
+        return map_posix_write_error(err);
+    }
+    if (!S_ISREG(fst.st_mode)) {
+        close(fd);
+        return RFC_ERR_PATH_ALIAS;
+    }
+    for (;;) {
+        ssize_t got = read(fd, buf, sizeof(buf));
+        if (got < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            int err = errno;
+            close(fd);
+            return map_posix_write_error(err);
+        }
+        if (got == 0) {
+            break;
+        }
+        rfc_sha256_update(&ctx, buf, (size_t)got);
+        total += (uint64_t)got;
+    }
+    close(fd);
+#endif
+
+    rfc_sha256_final(&ctx, out_sha256);
+    *out_bytes = total;
+    return RFC_OK;
+}
+
+rfc_status rfc_output_internal_read_regular_path(const char *path_utf8,
+                                                 uint8_t **out_bytes,
+                                                 size_t *out_size,
+                                                 int *out_exists) {
+    if (out_bytes) {
+        *out_bytes = NULL;
+    }
+    if (out_size) {
+        *out_size = 0u;
+    }
+    if (out_exists) {
+        *out_exists = 0;
+    }
+    if (!validate_utf8_path(path_utf8, 3800u) || !out_bytes || !out_size ||
+        !out_exists) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+
+    const size_t max_hist_bytes = 64u * 1024u * 1024u;
+    uint8_t *buf = NULL;
+    size_t cap = 0u;
+    size_t used = 0u;
+    uint8_t chunk[RFC_OUTPUT_CHUNK_BYTES];
+
+#ifdef _WIN32
+    if (is_win32_unsafe_path(path_utf8)) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    wchar_t wraw[4096];
+    rfc_status st = utf8_to_wide_out(path_utf8, wraw, 4096u);
+    if (st != RFC_OK) {
+        return st;
+    }
+    HANDLE handles[64];
+    size_t handle_count = 0u;
+    wchar_t wdir[4096];
+    wchar_t wbase[512];
+    st = win_open_anchored_ancestors(wraw, handles, 64u, &handle_count, wdir,
+                                     4096u, wbase, 512u);
+    if (st != RFC_OK) {
+        return st;
+    }
+    wchar_t wnorm[4096];
+    st = win_join_dir_and_name(wdir, wbase, wnorm, 4096u);
+    win_close_dir_handles(handles, handle_count);
+    if (st != RFC_OK) {
+        return st;
+    }
+    HANDLE h = CreateFileW(
+        wnorm, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
+        FILE_FLAG_OPEN_REPARSE_POINT | FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE) {
+        DWORD err = GetLastError();
+        if (err == ERROR_FILE_NOT_FOUND || err == ERROR_PATH_NOT_FOUND) {
+            *out_exists = 0;
+            return RFC_OK;
+        }
+        return map_win32_write_error(err);
+    }
+    *out_exists = 1;
+    BY_HANDLE_FILE_INFORMATION bhfi;
+    if (!GetFileInformationByHandle(h, &bhfi) ||
+        GetFileType(h) != FILE_TYPE_DISK) {
+        CloseHandle(h);
+        return RFC_ERR_IO;
+    }
+    if ((bhfi.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0u) {
+        CloseHandle(h);
+        return RFC_ERR_PATH_ALIAS;
+    }
+    if ((bhfi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0u) {
+        CloseHandle(h);
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    for (;;) {
+        DWORD got = 0u;
+        if (!ReadFile(h, chunk, (DWORD)sizeof(chunk), &got, NULL)) {
+            DWORD err = GetLastError();
+            CloseHandle(h);
+            free(buf);
+            return map_win32_write_error(err);
+        }
+        if (got == 0u) {
+            break;
+        }
+        if ((size_t)got > max_hist_bytes - used) {
+            CloseHandle(h);
+            free(buf);
+            return RFC_ERR_LIMIT_EXCEEDED;
+        }
+        size_t need = used + (size_t)got;
+        if (need > cap) {
+            size_t new_cap = cap ? cap * 2u : 4096u;
+            while (new_cap < need) {
+                new_cap *= 2u;
+            }
+            uint8_t *nb = (uint8_t *)realloc(buf, new_cap);
+            if (!nb) {
+                CloseHandle(h);
+                free(buf);
+                return RFC_ERR_OUT_OF_MEMORY;
+            }
+            buf = nb;
+            cap = new_cap;
+        }
+        memcpy(buf + used, chunk, (size_t)got);
+        used += (size_t)got;
+    }
+    CloseHandle(h);
+#else
+    int dir_fd = -1;
+    char base[512];
+    rfc_status st = posix_open_anchored_parent(path_utf8, &dir_fd, base,
+                                               sizeof(base));
+    if (st != RFC_OK) {
+        return st;
+    }
+    int fd = -1;
+    do {
+        fd = openat(dir_fd, base, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+    } while (fd < 0 && errno == EINTR);
+    close(dir_fd);
+    if (fd < 0) {
+        if (errno == ENOENT) {
+            *out_exists = 0;
+            return RFC_OK;
+        }
+        return map_posix_write_error(errno);
+    }
+    *out_exists = 1;
+    struct stat fst;
+    if (fstat(fd, &fst) != 0) {
+        int err = errno;
+        close(fd);
+        return map_posix_write_error(err);
+    }
+    if (!S_ISREG(fst.st_mode)) {
+        close(fd);
+        return RFC_ERR_PATH_ALIAS;
+    }
+    for (;;) {
+        ssize_t got = read(fd, chunk, sizeof(chunk));
+        if (got < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            int err = errno;
+            close(fd);
+            free(buf);
+            return map_posix_write_error(err);
+        }
+        if (got == 0) {
+            break;
+        }
+        if ((size_t)got > max_hist_bytes - used) {
+            close(fd);
+            free(buf);
+            return RFC_ERR_LIMIT_EXCEEDED;
+        }
+        size_t need = used + (size_t)got;
+        if (need > cap) {
+            size_t new_cap = cap ? cap * 2u : 4096u;
+            while (new_cap < need) {
+                new_cap *= 2u;
+            }
+            uint8_t *nb = (uint8_t *)realloc(buf, new_cap);
+            if (!nb) {
+                close(fd);
+                free(buf);
+                return RFC_ERR_OUT_OF_MEMORY;
+            }
+            buf = nb;
+            cap = new_cap;
+        }
+        memcpy(buf + used, chunk, (size_t)got);
+        used += (size_t)got;
+    }
+    close(fd);
+#endif
+
+    *out_bytes = buf;
+    *out_size = used;
+    return RFC_OK;
+}
+
+rfc_status rfc_output_internal_replace_regular_path(const char *path_utf8,
+                                                    const uint8_t *existing_bytes,
+                                                    size_t existing_len,
+                                                    const uint8_t *append_bytes,
+                                                    size_t append_len,
+                                                    int fault_stage,
+                                                    rfc_status fault_status) {
+    if (!validate_utf8_path(path_utf8, 3800u) ||
+        (existing_len > 0u && !existing_bytes) ||
+        (append_len > 0u && !append_bytes)) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+
+    uint64_t seq = rfc_output_internal_next_seq();
+    rfc_status st = RFC_OK;
+
+#ifdef _WIN32
+    if (is_win32_unsafe_path(path_utf8)) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    wchar_t wraw[4096];
+    st = utf8_to_wide_out(path_utf8, wraw, 4096u);
+    if (st != RFC_OK) {
+        return st;
+    }
+    HANDLE handles[64];
+    size_t handle_count = 0u;
+    wchar_t wdir[4096];
+    wchar_t wbase[512];
+    st = win_open_anchored_ancestors(wraw, handles, 64u, &handle_count, wdir,
+                                     4096u, wbase, 512u);
+    if (st != RFC_OK) {
+        return st;
+    }
+    wchar_t wdest[4096];
+    st = win_join_dir_and_name(wdir, wbase, wdest, 4096u);
+    if (st != RFC_OK) {
+        win_close_dir_handles(handles, handle_count);
+        return st;
+    }
+    rfc_file_identity cur_id;
+    int cur_exists = 0;
+    st = win_query_identity_wide(wdest, &cur_id, &cur_exists);
+    if (st != RFC_OK) {
+        win_close_dir_handles(handles, handle_count);
+        return st;
+    }
+    if (cur_exists && cur_id.is_symlink_or_reparse) {
+        win_close_dir_handles(handles, handle_count);
+        return RFC_ERR_PATH_ALIAS;
+    }
+    if (!cur_exists && existing_len > 0u) {
+        win_close_dir_handles(handles, handle_count);
+        return RFC_ERR_VERIFY_MISMATCH;
+    }
+    if (cur_exists) {
+        WIN32_FILE_ATTRIBUTE_DATA fad;
+        if (!GetFileAttributesExW(wdest, GetFileExInfoStandard, &fad)) {
+            DWORD err = GetLastError();
+            win_close_dir_handles(handles, handle_count);
+            return map_win32_write_error(err);
+        }
+        if ((fad.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0u) {
+            win_close_dir_handles(handles, handle_count);
+            return RFC_ERR_INVALID_ARGUMENT;
+        }
+        uint64_t fsz = (((uint64_t)fad.nFileSizeHigh) << 32) |
+                       (uint64_t)fad.nFileSizeLow;
+        if (fsz != (uint64_t)existing_len) {
+            win_close_dir_handles(handles, handle_count);
+            return RFC_ERR_VERIFY_MISMATCH;
+        }
+    }
+
+    wchar_t wtmp[4096];
+    int tn = _snwprintf(wtmp, 4096u, L"%ls.rfc-hist-tmp.%lu.%llu", wdest,
+                        (unsigned long)GetCurrentProcessId(),
+                        (unsigned long long)seq);
+    if (tn <= 0 || tn >= 4096) {
+        win_close_dir_handles(handles, handle_count);
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    HANDLE th = CreateFileW(wtmp, GENERIC_WRITE | DELETE, 0u, NULL, CREATE_NEW,
+                            FILE_ATTRIBUTE_NORMAL, NULL);
+    if (th == INVALID_HANDLE_VALUE) {
+        DWORD err = GetLastError();
+        win_close_dir_handles(handles, handle_count);
+        return map_win32_write_error(err);
+    }
+
+    const uint8_t *parts[2] = {existing_bytes, append_bytes};
+    size_t plens[2] = {existing_len, append_len};
+    for (int pi = 0; pi < 2 && st == RFC_OK; pi++) {
+        size_t off = 0u;
+        while (off < plens[pi]) {
+            if (pi == 1 && (fault_stage == RFC_HIST_FAULT_WRITE_DISK_FULL ||
+                            fault_stage == RFC_HIST_FAULT_WRITE_IO)) {
+                st = (fault_status != RFC_OK)
+                         ? fault_status
+                         : ((fault_stage == RFC_HIST_FAULT_WRITE_DISK_FULL)
+                                ? RFC_ERR_DISK_FULL
+                                : RFC_ERR_IO);
+                break;
+            }
+            DWORD want = (DWORD)((plens[pi] - off) > RFC_OUTPUT_CHUNK_BYTES
+                                     ? RFC_OUTPUT_CHUNK_BYTES
+                                     : (plens[pi] - off));
+            DWORD put = 0u;
+            if (!WriteFile(th, parts[pi] + off, want, &put, NULL) || put == 0u) {
+                st = map_win32_write_error(GetLastError());
+                break;
+            }
+            off += (size_t)put;
+        }
+    }
+    if (st == RFC_OK) {
+        if (fault_stage == RFC_HIST_FAULT_FLUSH_IO) {
+            st = (fault_status != RFC_OK) ? fault_status : RFC_ERR_IO;
+        } else if (!FlushFileBuffers(th)) {
+            st = map_win32_write_error(GetLastError());
+        }
+    }
+    if (st == RFC_OK) {
+        st = win_verify_dir_handles(handles, handle_count);
+    }
+    if (st == RFC_OK) {
+        size_t dbytes = wcslen(wdest) * sizeof(wchar_t);
+        size_t fri_sz = sizeof(FILE_RENAME_INFO) + dbytes + sizeof(wchar_t);
+        FILE_RENAME_INFO *fri = (FILE_RENAME_INFO *)calloc(1u, fri_sz);
+        if (!fri) {
+            st = RFC_ERR_OUT_OF_MEMORY;
+        } else {
+            fri->ReplaceIfExists = TRUE;
+            fri->RootDirectory = NULL;
+            fri->FileNameLength = (DWORD)dbytes;
+            memcpy(fri->FileName, wdest, dbytes + sizeof(wchar_t));
+            if (!SetFileInformationByHandle(th, FileRenameInfo, fri,
+                                            (DWORD)fri_sz)) {
+                st = map_win32_write_error(GetLastError());
+            }
+            free(fri);
+        }
+    }
+    CloseHandle(th);
+    if (st != RFC_OK) {
+        DeleteFileW(wtmp);
+    }
+    win_close_dir_handles(handles, handle_count);
+    return st;
+#else
+    int dir_fd = -1;
+    char base[512];
+    st = posix_open_anchored_parent(path_utf8, &dir_fd, base, sizeof(base));
+    if (st != RFC_OK) {
+        return st;
+    }
+    struct stat cur_st;
+    if (fstatat(dir_fd, base, &cur_st, AT_SYMLINK_NOFOLLOW) == 0) {
+        if (S_ISLNK(cur_st.st_mode)) {
+            close(dir_fd);
+            return RFC_ERR_PATH_ALIAS;
+        }
+        if (!S_ISREG(cur_st.st_mode)) {
+            close(dir_fd);
+            return RFC_ERR_INVALID_ARGUMENT;
+        }
+        if ((uint64_t)cur_st.st_size != (uint64_t)existing_len) {
+            close(dir_fd);
+            return RFC_ERR_VERIFY_MISMATCH;
+        }
+    } else if (errno == ENOENT) {
+        if (existing_len > 0u) {
+            close(dir_fd);
+            return RFC_ERR_VERIFY_MISMATCH;
+        }
+    } else {
+        int err = errno;
+        close(dir_fd);
+        return map_posix_write_error(err);
+    }
+
+    char tmp_name[600];
+    int tn = snprintf(tmp_name, sizeof(tmp_name), "%s.rfc-hist-tmp.%lu.%llu",
+                      base, (unsigned long)getpid(), (unsigned long long)seq);
+    if (tn <= 0 || (size_t)tn >= sizeof(tmp_name)) {
+        close(dir_fd);
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    int tfd = openat(dir_fd, tmp_name,
+                     O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0644);
+    if (tfd < 0) {
+        int err = errno;
+        close(dir_fd);
+        return map_posix_write_error(err);
+    }
+
+    const uint8_t *parts[2] = {existing_bytes, append_bytes};
+    size_t plens[2] = {existing_len, append_len};
+    for (int pi = 0; pi < 2 && st == RFC_OK; pi++) {
+        size_t off = 0u;
+        while (off < plens[pi]) {
+            if (pi == 1 && (fault_stage == RFC_HIST_FAULT_WRITE_DISK_FULL ||
+                            fault_stage == RFC_HIST_FAULT_WRITE_IO)) {
+                st = (fault_status != RFC_OK)
+                         ? fault_status
+                         : ((fault_stage == RFC_HIST_FAULT_WRITE_DISK_FULL)
+                                ? RFC_ERR_DISK_FULL
+                                : RFC_ERR_IO);
+                break;
+            }
+            size_t want = (plens[pi] - off) > RFC_OUTPUT_CHUNK_BYTES
+                              ? RFC_OUTPUT_CHUNK_BYTES
+                              : (plens[pi] - off);
+            ssize_t put = write(tfd, parts[pi] + off, want);
+            if (put < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                st = map_posix_write_error(errno);
+                break;
+            }
+            if (put == 0) {
+                st = RFC_ERR_IO;
+                break;
+            }
+            off += (size_t)put;
+        }
+    }
+    if (st == RFC_OK) {
+        if (fault_stage == RFC_HIST_FAULT_FLUSH_IO) {
+            st = (fault_status != RFC_OK) ? fault_status : RFC_ERR_IO;
+        } else if (fsync(tfd) != 0 && errno != EINVAL) {
+            st = map_posix_write_error(errno);
+        }
+    }
+    if (close(tfd) != 0 && st == RFC_OK) {
+        st = map_posix_write_error(errno);
+    }
+    if (st == RFC_OK) {
+        if (renameat(dir_fd, tmp_name, dir_fd, base) != 0) {
+            st = map_posix_write_error(errno);
+        } else {
+            (void)fsync(dir_fd);
+        }
+    }
+    if (st != RFC_OK) {
+        (void)unlinkat(dir_fd, tmp_name, 0);
+    }
+    close(dir_fd);
+    return st;
+#endif
+}
+
+rfc_status rfc_output_internal_unlink_path(const char *path_utf8) {
+    if (!validate_utf8_path(path_utf8, 3800u)) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+#ifdef _WIN32
+    if (is_win32_unsafe_path(path_utf8)) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    wchar_t wraw[4096];
+    rfc_status st = utf8_to_wide_out(path_utf8, wraw, 4096u);
+    if (st != RFC_OK) {
+        return st;
+    }
+    HANDLE handles[64];
+    size_t handle_count = 0u;
+    wchar_t wdir[4096];
+    wchar_t wbase[512];
+    st = win_open_anchored_ancestors(wraw, handles, 64u, &handle_count, wdir,
+                                     4096u, wbase, 512u);
+    if (st != RFC_OK) {
+        return st;
+    }
+    wchar_t wnorm[4096];
+    st = win_join_dir_and_name(wdir, wbase, wnorm, 4096u);
+    win_close_dir_handles(handles, handle_count);
+    if (st != RFC_OK) {
+        return st;
+    }
+    rfc_file_identity fid;
+    int exists = 0;
+    st = win_query_identity_wide(wnorm, &fid, &exists);
+    if (st != RFC_OK) {
+        return st;
+    }
+    if (!exists) {
+        return RFC_OK;
+    }
+    if (fid.is_symlink_or_reparse) {
+        return RFC_ERR_PATH_ALIAS;
+    }
+    if (!DeleteFileW(wnorm)) {
+        DWORD err = GetLastError();
+        if (err == ERROR_FILE_NOT_FOUND) {
+            return RFC_OK;
+        }
+        return map_win32_write_error(err);
+    }
+    return RFC_OK;
+#else
+    int dir_fd = -1;
+    char base[512];
+    rfc_status st = posix_open_anchored_parent(path_utf8, &dir_fd, base,
+                                               sizeof(base));
+    if (st != RFC_OK) {
+        return st;
+    }
+    struct stat fst;
+    if (fstatat(dir_fd, base, &fst, AT_SYMLINK_NOFOLLOW) != 0) {
+        int err = errno;
+        close(dir_fd);
+        return (err == ENOENT) ? RFC_OK : map_posix_write_error(err);
+    }
+    if (S_ISLNK(fst.st_mode)) {
+        close(dir_fd);
+        return RFC_ERR_PATH_ALIAS;
+    }
+    if (!S_ISREG(fst.st_mode)) {
+        close(dir_fd);
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    if (unlinkat(dir_fd, base, 0) != 0 && errno != ENOENT) {
+        int err = errno;
+        close(dir_fd);
+        return map_posix_write_error(err);
+    }
+    close(dir_fd);
+    return RFC_OK;
+#endif
 }

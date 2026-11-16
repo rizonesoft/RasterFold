@@ -66,6 +66,9 @@ add_library(rfc_engine STATIC
   "${CMAKE_SOURCE_DIR}/src/preview.c"
   "${CMAKE_SOURCE_DIR}/src/input.c"
   "${CMAKE_SOURCE_DIR}/src/output.c"
+  "${CMAKE_SOURCE_DIR}/src/metrics.c"
+  "${CMAKE_SOURCE_DIR}/src/compare.c"
+  "${CMAKE_SOURCE_DIR}/src/report.c"
   "${CMAKE_SOURCE_DIR}/src/job.c"
   "${CMAKE_SOURCE_DIR}/src/scheduler.c"
 )
@@ -133,6 +136,24 @@ target_link_libraries(rfc_test_file_safety PRIVATE
 )
 if(WIN32)
   target_link_options(rfc_test_file_safety PRIVATE -static -Wl,--gc-sections)
+endif()
+
+add_executable(rfc_test_reports
+  "${CMAKE_SOURCE_DIR}/../tests/converter/test_reports.c"
+)
+set_target_properties(rfc_test_reports PROPERTIES
+  C_STANDARD 11
+  C_STANDARD_REQUIRED ON
+  C_EXTENSIONS OFF
+  RUNTIME_OUTPUT_DIRECTORY "${RF_CONVERTER_BIN_DIR}"
+)
+target_compile_options(rfc_test_reports PRIVATE -Wall -Wextra -Werror)
+target_link_libraries(rfc_test_reports PRIVATE
+  rfc_engine
+  "${RF_LIBRASTERFOLD}"
+)
+if(WIN32)
+  target_link_options(rfc_test_reports PRIVATE -static -Wl,--gc-sections)
 endif()
 
 add_executable(rfc_bundle_smoke
