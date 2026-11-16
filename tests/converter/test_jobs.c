@@ -310,8 +310,8 @@ static void test_hostile_limits_and_unknown_reservation(void) {
     rfc_provider_memory_info webp_mem;
     CHECK(rfc_query_provider_memory_contract(RFC_FORMAT_WEBP, &webp_mem) ==
           RFC_OK);
-    CHECK(webp_mem.working_set_multiplier >= 4u &&
-          webp_mem.fixed_overhead_bytes >= 256ull * 1024ull);
+    CHECK(webp_mem.working_set_multiplier == 27u &&
+          webp_mem.fixed_overhead_bytes == 56ull * 1024ull * 1024ull);
 
     /* Layout validator parity: invalid sample depth, invalid alpha, normalized zero stride */
     rfc_layout bad_float = {RFC_SAMPLE_RGBA_FLOAT, RFC_ALPHA_STRAIGHT, 4u, 4u, 0u, 16u};
@@ -423,6 +423,66 @@ static void test_hostile_limits_and_unknown_reservation(void) {
     rfc_scheduler_stats stats;
     rfc_scheduler_stats_get(sched, &stats);
     CHECK(stats.total_submitted == 0u);
+
+    /* Thread-aware WebP admission reservation and WebP decode-only path */
+    {
+        rfc_scheduler_config wcfg;
+        rfc_scheduler_config_default(&wcfg);
+        rfc_scheduler *wsched = rfc_scheduler_create(&wcfg);
+        CHECK(wsched != NULL);
+
+        rfc_layout lay2k = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 2048u, 2048u, 0u,
+                            8u};
+        uint64_t dec2k = 2048ull * 2048ull * 3ull;
+        rfc_job_spec wsp;
+        init_basic_spec(&wsp, NULL, 0u, &lay2k);
+        wsp.source_format = RFC_FORMAT_PNM;
+        wsp.target_format = RFC_FORMAT_WEBP;
+        wsp.expected_working_set_bytes = 0u;
+        wsp.requested_codec_threads = 1u;
+
+        rfc_job *wj1 = NULL;
+        CHECK(rfc_scheduler_submit(wsched, NULL, &wsp, &wj1) == RFC_OK);
+        rfc_job_snapshot ws1;
+        CHECK(rfc_job_wait(wj1, UINT32_MAX) == RFC_OK);
+        CHECK(rfc_job_snapshot_get(wj1, &ws1) == RFC_OK);
+        CHECK(ws1.state == RFC_JOB_SUCCEEDED && ws1.admitted_threads == 1u);
+        CHECK(ws1.reserved_memory_bytes >=
+              (28ull * 1024ull * 1024ull) + 16ull * dec2k);
+        CHECK(ws1.reserved_memory_bytes <
+              (56ull * 1024ull * 1024ull) + 27ull * dec2k);
+        rfc_job_release(wj1);
+
+        wsp.requested_codec_threads = 3u;
+        rfc_job *wj3 = NULL;
+        CHECK(rfc_scheduler_submit(wsched, NULL, &wsp, &wj3) == RFC_OK);
+        rfc_job_snapshot ws3;
+        CHECK(rfc_job_wait(wj3, UINT32_MAX) == RFC_OK);
+        CHECK(rfc_job_snapshot_get(wj3, &ws3) == RFC_OK);
+        CHECK(ws3.state == RFC_JOB_SUCCEEDED && ws3.admitted_threads == 3u);
+        CHECK(ws3.reserved_memory_bytes >=
+              (56ull * 1024ull * 1024ull) + 27ull * dec2k);
+        rfc_job_release(wj3);
+
+        rfc_job_spec dsp;
+        init_basic_spec(&dsp, NULL, 0u, &lay2k);
+        dsp.source_format = RFC_FORMAT_WEBP;
+        dsp.target_format = RFC_FORMAT_PNG;
+        dsp.expected_working_set_bytes = 0u;
+        dsp.requested_codec_threads = 3u;
+        rfc_job *dj = NULL;
+        CHECK(rfc_scheduler_submit(wsched, NULL, &dsp, &dj) == RFC_OK);
+        rfc_job_snapshot ds;
+        CHECK(rfc_job_wait(dj, UINT32_MAX) == RFC_OK);
+        CHECK(rfc_job_snapshot_get(dj, &ds) == RFC_OK);
+        CHECK(ds.state == RFC_JOB_SUCCEEDED);
+        CHECK(ds.reserved_memory_bytes >=
+              (2ull * 1024ull * 1024ull) + 5ull * dec2k);
+        CHECK(ds.reserved_memory_bytes <
+              (28ull * 1024ull * 1024ull) + 16ull * dec2k);
+        rfc_job_release(dj);
+        rfc_scheduler_destroy(wsched);
+    }
     CHECK(stats.active_reserved_bytes == 0u);
     CHECK(stats.submission_alloc_count == 0u);
 

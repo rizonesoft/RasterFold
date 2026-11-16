@@ -1476,6 +1476,131 @@ static void test_refusals_limits_and_budget(void) {
     free(creport);
     rfc_encoded_free(&small_enc);
 
+    /* Completion gap #1: default-budget scheduler + rfc_compare_run at 512x512
+     * and 2048x2048 RGB8 with 1 and 3 admitted threads. */
+    {
+        static const uint32_t dims[2] = {512u, 2048u};
+        static const uint32_t thr[2] = {1u, 3u};
+        rfc_scheduler_config wcfg;
+        rfc_scheduler_config_default(&wcfg);
+        rfc_scheduler *wsched = rfc_scheduler_create(&wcfg);
+        CHECK(wsched != NULL);
+
+        for (size_t di = 0u; di < 2u; di++) {
+            uint32_t dim = dims[di];
+            char hdr_buf[64];
+            int hlen = snprintf(hdr_buf, sizeof(hdr_buf), "P6\n%u %u\n255\n",
+                                dim, dim);
+            CHECK(hlen > 0 && (size_t)hlen < sizeof(hdr_buf));
+            size_t pix_bytes = (size_t)dim * (size_t)dim * 3u;
+            size_t ppm_len = (size_t)hlen + pix_bytes;
+            uint8_t *ppm = (uint8_t *)malloc(ppm_len);
+            CHECK(ppm != NULL);
+            memcpy(ppm, hdr_buf, (size_t)hlen);
+            uint8_t *ppix = ppm + (size_t)hlen;
+            for (uint32_t y = 0u; y < dim; y++) {
+                uint8_t *row = ppix + (size_t)y * (size_t)dim * 3u;
+                uint32_t pr = 0x9E3779B9u ^ (y * 2654435761u);
+                for (uint32_t x = 0u; x < dim; x++) {
+                    if ((x & 3u) == 0u) {
+                        pr ^= pr << 13;
+                        pr ^= pr >> 17;
+                        pr ^= pr << 5;
+                    }
+                    uint32_t v = (pr >> ((x & 3u) * 8u)) & 0x3Fu;
+                    row[(size_t)x * 3u + 0u] = (uint8_t)(((x >> 1) + y + v) & 0xFFu);
+                    row[(size_t)x * 3u + 1u] = (uint8_t)(((x * 3u + (y >> 1)) ^ v) & 0xFFu);
+                    row[(size_t)x * 3u + 2u] = (uint8_t)((y * 5u + (x >> 2) + (v << 1)) & 0xFFu);
+                }
+            }
+
+            rfc_layout wlay = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, dim, dim, 0u,
+                               8u};
+            for (size_t ti = 0u; ti < 2u; ti++) {
+                uint32_t req_t = thr[ti];
+                rfc_job_spec wsp;
+                memset(&wsp, 0, sizeof(wsp));
+                wsp.source_format = RFC_FORMAT_PNM;
+                wsp.target_format = RFC_FORMAT_WEBP;
+                wsp.source_bytes = ppm;
+                wsp.source_size = ppm_len;
+                wsp.source_layout = &wlay;
+                wsp.requested_codec_threads = req_t;
+                wsp.expected_working_set_bytes = 0u;
+                wsp.has_stage_ops = 1;
+                wsp.stage_ops.on_export = stage_export_noop;
+
+                rfc_job_snapshot wsnap;
+                rfc_verify_report wrep;
+                submit_and_wait_job(wsched, &wsp, &wsnap, &wrep);
+                if (wsnap.state != RFC_JOB_SUCCEEDED ||
+                    wsnap.status != RFC_OK ||
+                    wsnap.admitted_threads != req_t ||
+                    wsnap.budget.rejected_count != 0u || wrep.valid != 1) {
+                    fprintf(stderr,
+                            "sched fail dim=%u req_t=%u state=%d status=%s "
+                            "admitted=%u rej=%llu peak=%llu lim=%llu valid=%d "
+                            "detail=%s\n",
+                            dim, req_t, (int)wsnap.state,
+                            rfc_status_name(wsnap.status),
+                            wsnap.admitted_threads,
+                            (unsigned long long)wsnap.budget.rejected_count,
+                            (unsigned long long)wsnap.budget.peak_allocated_bytes,
+                            (unsigned long long)wsnap.budget.limit_bytes,
+                            wrep.valid, wsnap.detail);
+                }
+                CHECK(wsnap.state == RFC_JOB_SUCCEEDED);
+                CHECK(wsnap.status == RFC_OK);
+                CHECK(wsnap.admitted_threads == req_t);
+                CHECK(wsnap.budget.rejected_count == 0u);
+                CHECK(wrep.valid == 1);
+                if (dim == 512u && req_t == 3u) {
+                    CHECK(wsnap.budget.peak_allocated_bytes >= 39993344ull);
+                } else if (dim == 2048u && req_t == 1u) {
+                    CHECK(wsnap.budget.peak_allocated_bytes >= 145850368ull);
+                } else if (dim == 2048u && req_t == 3u) {
+                    CHECK(wsnap.budget.peak_allocated_bytes >= 291700736ull);
+                }
+
+                char cpath[1024];
+                char fname[64];
+                snprintf(fname, sizeof(fname), "cmp_%u_t%u.webp", dim, req_t);
+                join_path(cpath, sizeof(cpath), tmp, fname);
+                rfc_compare_candidate_spec wcand[1] = {{0}};
+                wcand[0].target_format = RFC_FORMAT_WEBP;
+                wcand[0].dest_path_utf8 = cpath;
+
+                rfc_compare_spec wcsp;
+                memset(&wcsp, 0, sizeof(wcsp));
+                wcsp.source_bytes = ppm;
+                wcsp.source_size = ppm_len;
+                wcsp.source_format = RFC_FORMAT_PNM;
+                wcsp.staging_dir_utf8 = tmp;
+                wcsp.requested_threads = req_t;
+                wcsp.metadata_policy = RFC_META_POLICY_PRESERVE;
+                wcsp.warmup_iterations = 0u;
+                wcsp.measured_iterations = 1u;
+                wcsp.candidates = wcand;
+                wcsp.candidate_count = 1u;
+
+                rfc_comparison_report *wcreport =
+                    (rfc_comparison_report *)calloc(1u, sizeof(*wcreport));
+                CHECK(wcreport != NULL);
+                CHECK(rfc_compare_run(&wcsp, wcreport) == RFC_OK);
+                CHECK(wcreport->completed_count == 1u &&
+                      wcreport->effective_threads == req_t &&
+                      wcreport->candidates[0].outcome ==
+                          RFC_CANDIDATE_COMPLETED &&
+                      wcreport->candidates[0].effective_threads == req_t &&
+                      wcreport->candidates[0].verify_report.valid == 1 &&
+                      wcreport->candidates[0].size.produced_file_bytes > 0u);
+                free(wcreport);
+            }
+            free(ppm);
+        }
+        rfc_scheduler_destroy(wsched);
+    }
+
     rm_tree(tmp);
     CHECK(st.live == 0u);
     printf("webp: refusals_limits_and_budget ok\n");

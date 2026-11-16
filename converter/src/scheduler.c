@@ -880,6 +880,7 @@ static rfc_status compute_preflight_with_contracts(
     const rfc_scheduler_config *cfg,
     const rfc_provider_memory_info *src_mem,
     const rfc_provider_memory_info *dst_mem,
+    uint32_t requested_codec_threads,
     uint64_t source_size,
     const rfc_layout *source_layout,
     const rfc_metadata *source_meta,
@@ -931,14 +932,34 @@ static rfc_status compute_preflight_with_contracts(
     if (expected_working_set_bytes > 0) {
         base_reservation = expected_working_set_bytes;
     } else if (source_layout) {
-        uint32_t mult = src_mem->working_set_multiplier >
-                                dst_mem->working_set_multiplier
-                            ? src_mem->working_set_multiplier
-                            : dst_mem->working_set_multiplier;
-        uint64_t overhead = src_mem->fixed_overhead_bytes >
-                                    dst_mem->fixed_overhead_bytes
-                                ? src_mem->fixed_overhead_bytes
-                                : dst_mem->fixed_overhead_bytes;
+        uint32_t eff_req_threads =
+            requested_codec_threads ? requested_codec_threads : 1u;
+        uint32_t src_mult = src_mem->working_set_multiplier;
+        uint64_t src_overhead = src_mem->fixed_overhead_bytes;
+        if (src_mem->format == RFC_FORMAT_WEBP) {
+            src_mult = 5u;
+            src_overhead = 2ull * 1024ull * 1024ull;
+        }
+        uint32_t dst_mult = dst_mem->working_set_multiplier;
+        uint64_t dst_overhead = dst_mem->fixed_overhead_bytes;
+        if (dst_mem->format == RFC_FORMAT_WEBP && eff_req_threads <= 1u) {
+            dst_mult = 16u;
+            dst_overhead = 28ull * 1024ull * 1024ull;
+        }
+        uint32_t mult = src_mult > dst_mult ? src_mult : dst_mult;
+        uint64_t overhead =
+            src_overhead > dst_overhead ? src_overhead : dst_overhead;
+        if (source_meta) {
+            uint64_t m_sum = 0;
+            uint64_t m_scaled = 0;
+            if (!add_u64_sched((uint64_t)source_meta->icc_len,
+                               (uint64_t)source_meta->exif_len, &m_sum) ||
+                !add_u64_sched(m_sum, (uint64_t)source_meta->xmp_len, &m_sum) ||
+                !mul_u64_sched(m_sum, 3ull, &m_scaled) ||
+                !add_u64_sched(overhead, m_scaled, &overhead)) {
+                return RFC_ERR_LIMIT_EXCEEDED;
+            }
+        }
         uint64_t work = 0;
         if (!mul_u64_sched(decoded_bytes, (uint64_t)mult, &work) ||
             work > UINT64_MAX - overhead) {
@@ -1005,6 +1026,7 @@ static rfc_status parse_verify_settings_sched(const rfc_setting_value *settings,
 static rfc_status compute_preflight(const rfc_scheduler_config *cfg,
                                     rfc_format_id source_format,
                                     rfc_format_id target_format,
+                                    uint32_t requested_codec_threads,
                                     uint64_t source_size,
                                     const rfc_layout *source_layout,
                                     const rfc_metadata *source_meta,
@@ -1055,10 +1077,10 @@ static rfc_status compute_preflight(const rfc_scheduler_config *cfg,
         return st;
     }
     st = compute_preflight_with_contracts(
-        cfg, &src_mem, &dst_mem, source_size, source_layout, source_meta,
-        retained_bytes, expected_working_set_bytes, job_memory_limit_bytes,
-        limits_override, out_limits, out_reservation, out_exec_working,
-        out_budget_limit);
+        cfg, &src_mem, &dst_mem, requested_codec_threads, source_size,
+        source_layout, source_meta, retained_bytes, expected_working_set_bytes,
+        job_memory_limit_bytes, limits_override, out_limits, out_reservation,
+        out_exec_working, out_budget_limit);
     if (st == RFC_OK) {
         if (out_src_mem) {
             *out_src_mem = src_mem;
@@ -1153,11 +1175,11 @@ static rfc_status pre_reserve_submit_inputs(
     uint64_t live_exec_working = 0;
     uint64_t live_budget = 0;
     rfc_status st = compute_preflight_with_contracts(
-        &sched->cfg, src_mem, dst_mem, effective_source_size,
-        spec->source_layout, spec->source_meta, retained_bytes,
-        spec->expected_working_set_bytes, spec->job_memory_limit_bytes,
-        spec->limits_override, &live_limits, &live_reservation,
-        &live_exec_working, &live_budget);
+        &sched->cfg, src_mem, dst_mem, spec->requested_codec_threads,
+        effective_source_size, spec->source_layout, spec->source_meta,
+        retained_bytes, spec->expected_working_set_bytes,
+        spec->job_memory_limit_bytes, spec->limits_override, &live_limits,
+        &live_reservation, &live_exec_working, &live_budget);
     if (st != RFC_OK) {
         rfc_mutex_unlock(&sched->lock);
         if (slot) {
@@ -1314,7 +1336,8 @@ static rfc_status admit_prepared_job(rfc_scheduler *sched,
     uint64_t live_exec_working = 0;
     uint64_t live_budget = 0;
     rfc_status st = compute_preflight_with_contracts(
-        &sched->cfg, src_mem, dst_mem, inputs->effective_source_size,
+        &sched->cfg, src_mem, dst_mem, requested_codec_threads,
+        inputs->effective_source_size,
         inputs->has_layout ? &inputs->source_layout : NULL,
         inputs->has_meta ? &inputs->source_meta : NULL, inputs->retained_bytes,
         expected_working_set_bytes, job_memory_limit_bytes, limits_override,
@@ -1579,13 +1602,13 @@ rfc_status rfc_scheduler_submit(rfc_scheduler *sched,
     const rfc_pipeline_stage_ops *stage_ops =
         spec->has_stage_ops ? &spec->stage_ops : NULL;
     st = compute_preflight(
-        &cur_cfg, eff_source_format, spec->target_format, eff_source_size,
-        spec->source_layout, spec->source_meta, spec->settings,
-        spec->setting_count, spec->acknowledged_unsupported_metadata, stage_ops,
-        retained_bytes, spec->expected_working_set_bytes,
-        spec->job_memory_limit_bytes, spec->limits_override, &src_mem,
-        &dst_mem, &eff_limits, &reservation_bytes, &exec_working_bytes,
-        &budget_limit_bytes);
+        &cur_cfg, eff_source_format, spec->target_format,
+        spec->requested_codec_threads, eff_source_size, spec->source_layout,
+        spec->source_meta, spec->settings, spec->setting_count,
+        spec->acknowledged_unsupported_metadata, stage_ops, retained_bytes,
+        spec->expected_working_set_bytes, spec->job_memory_limit_bytes,
+        spec->limits_override, &src_mem, &dst_mem, &eff_limits,
+        &reservation_bytes, &exec_working_bytes, &budget_limit_bytes);
     if (st != RFC_OK) {
         return st;
     }
@@ -1686,7 +1709,8 @@ rfc_status rfc_scheduler_retry(rfc_scheduler *sched,
     uint64_t exec_working_bytes = 0;
     uint64_t budget_limit_bytes = 0;
     st = compute_preflight(
-        &cur_cfg, source_format, target_format, inputs->effective_source_size,
+        &cur_cfg, source_format, target_format, requested_threads,
+        inputs->effective_source_size,
         inputs->has_layout ? &inputs->source_layout : NULL,
         inputs->has_meta ? &inputs->source_meta : NULL, inputs->settings,
         inputs->setting_count, inputs->acknowledged_unsupported_metadata,

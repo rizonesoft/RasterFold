@@ -405,10 +405,15 @@ rfc_status rfc_query_provider_memory_contract(rfc_format_id id,
             break;
         case RFC_FORMAT_WEBP:
             out->mode = RFC_MEM_RESERVATION_AND_LIMITS;
-            out->working_set_multiplier = 9u;
-            out->fixed_overhead_bytes = 26ull * 1024ull * 1024ull;
+            out->working_set_multiplier = 27u;
+            out->fixed_overhead_bytes = 56ull * 1024ull * 1024ull;
             out->limitation_reason =
-                "libwebp uses internal heap allocations; enforced by rfc_limits preflight, source-derived rfc_budget_reserve, and scheduler reservation";
+                "libwebp uses internal heap allocations (1-thread encode 16x + "
+                "28 MiB, multi-thread encode 27x + 56 MiB covering retained "
+                "decoded frame, RGBA conversion, 1/2x VP8L worker scratch, and "
+                "writer buffer); enforced by rfc_limits preflight, "
+                "source-derived rfc_budget_reserve, and thread-aware scheduler "
+                "reservation";
             break;
         case RFC_FORMAT_CAMERA_RAW:
         case RFC_FORMAT_DNG:
