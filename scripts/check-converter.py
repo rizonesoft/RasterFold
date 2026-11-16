@@ -759,6 +759,8 @@ def main():
     raw_args = sys.argv[1:]
     all_targets = "--all-targets" in raw_args
     args = [a for a in raw_args if a != "--all-targets"]
+    if not args:
+        args = ["--case", "all"]
     if args == ["--case", "contract"]:
         return case_contract()
     if args == ["--case", "bundle"]:
