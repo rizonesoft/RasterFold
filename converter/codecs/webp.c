@@ -3,7 +3,6 @@
  *     lossless + lossy single-frame decode, ICCP/EXIF/XMP mux/demux,
  *     zero-allocation RIFF/VP8X preflight, and rfc_budget tracking). */
 
-#include "exif_util.h"
 #include "rfc_codecs.h"
 #include "rfc_job.h"
 #include "rfc_verify.h"
@@ -116,6 +115,59 @@ static uint32_t webp_rd24le(const uint8_t *p) {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16);
 }
 
+static uint32_t webp_rd32le(const uint8_t *p) {
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) |
+           ((uint32_t)p[3] << 24);
+}
+
+static int webp_decode_scratch_bytes(uint32_t width,
+                                     uint64_t pixels,
+                                     size_t *out_bytes) {
+    uint64_t pix_part = 0u, row_part = 0u, total = 0u;
+    if (!webp_mul_u64(pixels, 7ull, &pix_part) ||
+        !webp_mul_u64((uint64_t)width, 96ull, &row_part) ||
+        !webp_add_u64(pix_part, row_part, &total) ||
+        !webp_add_u64(total, 256ull * 1024ull, &total) ||
+        total > (uint64_t)SIZE_MAX) {
+        return 0;
+    }
+    *out_bytes = (size_t)total;
+    return 1;
+}
+
+static int webp_encode_scratch_bytes(uint32_t width,
+                                     uint32_t height,
+                                     uint64_t pixels,
+                                     uint32_t threads,
+                                     size_t *out_bytes) {
+    int histo_bits = 3;
+    uint64_t histo_tiles =
+        (((uint64_t)width + 7ull) >> 3) * (((uint64_t)height + 7ull) >> 3);
+    while (histo_bits < 9 && histo_tiles > 2600ull) {
+        histo_bits++;
+        uint64_t step = 1ull << histo_bits;
+        histo_tiles = (((uint64_t)width + step - 1ull) / step) *
+                      (((uint64_t)height + step - 1ull) / step);
+    }
+    if (histo_tiles > 2600ull) {
+        histo_tiles = 2600ull;
+    }
+    uint64_t pix_part = 0u, row_part = 0u, histo_part = 0u;
+    uint64_t per_worker = 0u, total = 0u;
+    if (!webp_mul_u64(pixels, 32ull, &pix_part) ||
+        !webp_mul_u64((uint64_t)width, 16ull, &row_part) ||
+        !webp_mul_u64(histo_tiles, 10240ull, &histo_part) ||
+        !webp_add_u64(pix_part, row_part, &per_worker) ||
+        !webp_add_u64(per_worker, 1048576ull + 65536ull, &per_worker) ||
+        !webp_add_u64(per_worker, histo_part, &per_worker) ||
+        !webp_mul_u64(per_worker, (threads > 1u) ? 2ull : 1ull, &total) ||
+        total > (uint64_t)SIZE_MAX) {
+        return 0;
+    }
+    *out_bytes = (size_t)total;
+    return 1;
+}
+
 /* ------------------------------------------------------------------------ */
 /* Zero-allocation RIFF/VP8X preflight                                      */
 /* ------------------------------------------------------------------------ */
@@ -163,7 +215,7 @@ static rfc_status webp_preflight_riff(const uint8_t *bytes,
         return RFC_ERR_INVALID_ARGUMENT;
     }
 
-    uint32_t riff_sz = rfc_exif_rd32le(bytes + 4);
+    uint32_t riff_sz = webp_rd32le(bytes + 4);
     if (riff_sz < 12u || riff_sz > 0xFFFFFFF7u) {
         return RFC_ERR_INVALID_ARGUMENT;
     }
@@ -196,7 +248,7 @@ static rfc_status webp_preflight_riff(const uint8_t *bytes,
                                        : RFC_ERR_INVALID_ARGUMENT;
         }
         const uint8_t *tag = bytes + pos;
-        uint32_t clen = rfc_exif_rd32le(bytes + pos + 4u);
+        uint32_t clen = webp_rd32le(bytes + pos + 4u);
         if (clen > 0xFFFFFFE0u) {
             return RFC_ERR_INVALID_ARGUMENT;
         }
@@ -585,15 +637,14 @@ static rfc_status webp_decode(void *session,
         meta.xmp_len = info.xmp_len;
     }
 
-    /* Conservative libwebp internal decode scratch: RGBA scratch + 64 KiB. */
-    uint64_t dec_ws64 = 0u;
-    if (!webp_mul_u64(probe.total_pixels, 4ull, &dec_ws64) ||
-        !webp_add_u64(dec_ws64, 64ull * 1024ull, &dec_ws64) ||
-        dec_ws64 > (uint64_t)SIZE_MAX) {
+    /* Reserve libwebp internal decode scratch derived from VP8L / VP8+ALPH
+     * internal allocation paths (frames[0].data charges budget directly). */
+    size_t dec_ws = 0u;
+    if (!webp_decode_scratch_bytes(info.width, probe.total_pixels, &dec_ws)) {
         return RFC_ERR_LIMIT_EXCEEDED;
     }
     webp_budget_guard dec_guard;
-    st = webp_reserve_budget(exec, (size_t)dec_ws64, &dec_guard);
+    st = webp_reserve_budget(exec, dec_ws, &dec_guard);
     if (st != RFC_OK) {
         return st;
     }
@@ -898,6 +949,14 @@ static rfc_status webp_encode(void *session,
             mux_exif = synth_exif;
             mux_exif_len = sizeof(synth_exif);
         }
+        rfc_metadata mux_check_m = {
+            eff_icc, eff_icc_len, eff_ori, 0u, eff_color,
+            mux_exif, mux_exif_len, eff_xmp, eff_xmp_len
+        };
+        st = rfc_limits_check_metadata(limits, &mux_check_m);
+        if (st != RFC_OK) {
+            return st;
+        }
     }
 
     if (!exec || !exec->job) {
@@ -913,21 +972,21 @@ static rfc_status webp_encode(void *session,
         return RFC_ERR_CANCELLED;
     }
 
+    uint32_t threads = rfc_exec_threads(exec);
     uint64_t pixels = 0u;
     uint64_t argb_bytes = 0u;
-    uint64_t enc_ws64 = 0u;
+    size_t enc_ws = 0u;
     if (!webp_mul_u64((uint64_t)eff_lay.width, (uint64_t)eff_lay.height,
                       &pixels) ||
         !webp_mul_u64(pixels, 4ull, &argb_bytes) ||
         argb_bytes > (uint64_t)SIZE_MAX ||
-        !webp_mul_u64(pixels, 6ull, &enc_ws64) ||
-        !webp_add_u64(enc_ws64, 128ull * 1024ull, &enc_ws64) ||
-        enc_ws64 > (uint64_t)SIZE_MAX) {
+        !webp_encode_scratch_bytes(eff_lay.width, eff_lay.height, pixels,
+                                   threads, &enc_ws)) {
         return RFC_ERR_LIMIT_EXCEEDED;
     }
 
     webp_budget_guard enc_guard;
-    st = webp_reserve_budget(exec, (size_t)enc_ws64, &enc_guard);
+    st = webp_reserve_budget(exec, enc_ws, &enc_guard);
     if (st != RFC_OK) {
         return st;
     }
@@ -966,7 +1025,6 @@ static rfc_status webp_encode(void *session,
         webp_release_budget(&enc_guard);
         return RFC_ERR_INVALID_ARGUMENT;
     }
-    uint32_t threads = rfc_exec_threads(exec);
     cfg.lossless = 1;
     cfg.exact = 1;
     cfg.thread_level = (threads > 1u) ? 1 : 0;

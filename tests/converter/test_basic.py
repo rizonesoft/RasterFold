@@ -742,6 +742,10 @@ class WindowsBasicTests(BasicAdapterVerificationMixin, unittest.TestCase):
                 timeout=30.0,
             )
             if res.returncode != 0 or not (res.stdout or "").strip():
+                if os.environ.get("RFC_REQUIRE_WIN_BASIC") == "1":
+                    raise AssertionError(
+                        "powershell.exe unavailable while RFC_REQUIRE_WIN_BASIC=1"
+                    )
                 raise unittest.SkipTest("powershell.exe unavailable for Windows NTFS tests")
             cls._win_temp = res.stdout.strip().splitlines()[-1].strip()
             wp = _ref.run_process_tree(
@@ -750,7 +754,12 @@ class WindowsBasicTests(BasicAdapterVerificationMixin, unittest.TestCase):
                 text=True,
                 timeout=15.0,
             )
-            assert wp.returncode == 0
+            if wp.returncode != 0 or not (wp.stdout or "").strip():
+                if os.environ.get("RFC_REQUIRE_WIN_BASIC") == "1":
+                    raise AssertionError(
+                        "wslpath failed while RFC_REQUIRE_WIN_BASIC=1"
+                    )
+                raise unittest.SkipTest("wslpath unavailable for Windows NTFS tests")
             cls._py_temp = Path(wp.stdout.strip())
             shutil.copy2(cls.win_exe, cls._py_temp / "rfc_test_basic.exe")
 

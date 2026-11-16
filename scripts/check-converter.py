@@ -936,6 +936,10 @@ def _run_codec_case(
             print(py_res.stderr.rstrip(), file=sys.stderr, flush=True)
         if py_res.returncode != 0:
             return fail(f"{py_test_file} failed with rc={py_res.returncode}")
+        if (all_targets or os.name == "nt") and (
+            "skipped=" in (py_res.stderr or "") or "skipped=" in (py_res.stdout or "")
+        ):
+            return fail(f"{py_test_file} skipped tests under strict target mode")
 
     print(f"{case_name}: PASS")
     return 0

@@ -234,6 +234,12 @@ rfc_status rfc_preview_render_srgb8(const rfc_frame *frame,
                                     rfc_preview_frame *out_preview);
 void rfc_preview_free(rfc_preview_frame *preview);
 
+rfc_status rfc_exif_parse_orientation(const uint8_t *data,
+                                      size_t len,
+                                      rfc_orientation *out_ori);
+rfc_status rfc_exif_build_orientation_tiff26(rfc_orientation ori,
+                                             uint8_t out_tiff[26]);
+
 #ifdef __cplusplus
 }
 #endif

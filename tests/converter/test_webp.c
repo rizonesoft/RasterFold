@@ -11,7 +11,6 @@
 #include <unistd.h>
 #endif
 
-#include "exif_util.h"
 #include "rasterfold.h"
 #include "rfc_codec.h"
 #include "rfc_codecs.h"
@@ -827,6 +826,30 @@ static void test_mux_icc_exif_xmp_and_cross_format(void) {
     rfc_frame_free(&dec);
     rfc_frame_free(&fr_syn);
 
+    /* Finding #2: EXIF orientation=6 with UNSPECIFIED struct field roundtrips
+     * to ROTATE_90 and preserves end-to-end across WebP -> WebP scheduler. */
+    rfc_encoded unspec_wp = {0};
+    {
+        rfc_metadata m_unspec = {0};
+        m_unspec.orientation = RFC_ORIENTATION_UNSPECIFIED;
+        m_unspec.exif = expected_tiff26;
+        m_unspec.exif_len = sizeof(expected_tiff26);
+        rfc_frame fr_unspec = {0};
+        CHECK(test_alloc_frame(&fr_unspec, &lay, &m_unspec, &alloc) == RFC_OK);
+        fill_webp_pattern(&fr_unspec, 15u, 0);
+        roundtrip_webp_session(&fr_unspec, NULL, NULL, 0u, &dec, &pr, &exec,
+                               NULL);
+        CHECK(pr.container_meta.orientation == RFC_ORIENTATION_ROTATE_90 &&
+              pr.container_meta.exif_len == 26u &&
+              memcmp(pr.container_meta.exif, expected_tiff26, 26u) == 0 &&
+              dec.metadata.orientation == RFC_ORIENTATION_ROTATE_90);
+        rfc_metadata_free(&pr.container_meta, &alloc);
+        rfc_frame_free(&dec);
+        CHECK(adp->encode_session(es, &exec, &fr_unspec, 1u, &m_unspec, NULL,
+                                  0u, &unspec_wp) == RFC_OK);
+        rfc_frame_free(&fr_unspec);
+    }
+
     adp->close_session(es);
     rfc_registry_release_session(RFC_FORMAT_WEBP);
 
@@ -887,13 +910,23 @@ static void test_mux_icc_exif_xmp_and_cross_format(void) {
     sp.source_size = png_icc_ori_len;
     sp.settings = sv_pres;
     sp.setting_count = 1u;
-    sp.expected_working_set_bytes = 256u * 1024u;
+    sp.expected_working_set_bytes = 8u * 1024u * 1024u;
     sp.has_stage_ops = 1;
     sp.stage_ops.on_export = stage_export_noop;
     submit_and_wait_job(sched, &sp, &snap, &rep);
     CHECK(snap.state == RFC_JOB_SUCCEEDED &&
           rep.meta_outcome == RFC_VERIFY_META_PRESERVED);
     free(png_icc_ori);
+
+    /* Finding #2: WebP (EXIF ori=6 only) -> WebP preserve via scheduler */
+    sp.source_format = RFC_FORMAT_WEBP;
+    sp.source_bytes = unspec_wp.data;
+    sp.source_size = unspec_wp.len;
+    submit_and_wait_job(sched, &sp, &snap, &rep);
+    CHECK(snap.state == RFC_JOB_SUCCEEDED &&
+          rep.meta_outcome == RFC_VERIFY_META_PRESERVED);
+    rfc_encoded_free(&unspec_wp);
+    sp.source_format = RFC_FORMAT_PNG;
 
     /* PNG(gAMA) -> WebP preserve ack=0 -> RFC_ERR_METADATA_POLICY */
     sp.source_bytes = png_gama;
@@ -938,7 +971,7 @@ static void test_mux_icc_exif_xmp_and_cross_format(void) {
     sp.source_size = webp_full.len;
     sp.settings = sv_pres;
     sp.setting_count = 1u;
-    sp.expected_working_set_bytes = 256u * 1024u;
+    sp.expected_working_set_bytes = 8u * 1024u * 1024u;
     sp.has_stage_ops = 1;
     sp.stage_ops.on_export = stage_export_noop;
 
@@ -1166,6 +1199,54 @@ static void test_refusals_limits_and_budget(void) {
     CHECK(st.count == 0u && st.live == live_base);
     rfc_encoded_free(&comb_enc);
 
+    /* Finding #3: synthesized EXIF for non-Normal orientation counts toward
+     * max_metadata_bytes under preserve policy at zero allocations. */
+    {
+        rfc_metadata m_syn_lim = {0};
+        m_syn_lim.orientation = RFC_ORIENTATION_ROTATE_90;
+        rfc_frame fr_syn_lim = {0};
+        CHECK(test_alloc_frame(&fr_syn_lim, &ok_lay, &m_syn_lim, &alloc) ==
+              RFC_OK);
+        fill_webp_pattern(&fr_syn_lim, 33u, 0);
+        lim_ex = exec;
+        lim_ex.limits.max_metadata_bytes = 25u;
+        live_base = st.live;
+        st.count = 0u;
+        CHECK(adp->encode_session(es, &lim_ex, &fr_syn_lim, 1u, &m_syn_lim,
+                                  NULL, 0u, &out) == RFC_ERR_LIMIT_EXCEEDED);
+        CHECK(st.count == 0u && st.live == live_base);
+
+        lim_ex.limits.max_metadata_bytes = 26u;
+        rfc_encoded syn_ok = {0};
+        CHECK(adp->encode_session(es, &lim_ex, &fr_syn_lim, 1u, &m_syn_lim,
+                                  NULL, 0u, &syn_ok) == RFC_OK);
+        CHECK(adp->probe_session(es, &lim_ex, syn_ok.data, syn_ok.len, &apr) ==
+              RFC_OK);
+        rfc_metadata_free(&apr.container_meta, &alloc);
+        lim_ex.limits.max_metadata_bytes = 25u;
+        live_base = st.live;
+        st.count = 0u;
+        CHECK(adp->probe_session(es, &lim_ex, syn_ok.data, syn_ok.len, &apr) ==
+              RFC_ERR_LIMIT_EXCEEDED);
+        CHECK(st.count == 0u && st.live == live_base);
+        rfc_encoded_free(&syn_ok);
+
+        /* ICC(132) + XMP(40) + Rotate90 synth EXIF(26) = 198 > 180 */
+        rfc_metadata comb_syn_m = {0};
+        comb_syn_m.icc = valid_icc;
+        comb_syn_m.icc_len = sizeof(valid_icc);
+        comb_syn_m.orientation = RFC_ORIENTATION_ROTATE_90;
+        comb_syn_m.xmp = chunk60;
+        comb_syn_m.xmp_len = 40u;
+        lim_ex.limits.max_metadata_bytes = 180u;
+        live_base = st.live;
+        st.count = 0u;
+        CHECK(adp->encode_session(es, &lim_ex, &fr_syn_lim, 1u, &comb_syn_m,
+                                  NULL, 0u, &out) == RFC_ERR_LIMIT_EXCEEDED);
+        CHECK(st.count == 0u && st.live == live_base);
+        rfc_frame_free(&fr_syn_lim);
+    }
+
     /* 3b. rfc_budget enforcement on decode, encode enc_guard, encode mux_guard */
     rfc_budget *dec_b = rfc_budget_create(32u * 1024u);
     CHECK(dec_b != NULL);
@@ -1185,7 +1266,37 @@ static void test_refusals_limits_and_budget(void) {
     CHECK(bs.rejected_count > 0u && bs.current_allocated_bytes == 0u);
     rfc_budget_destroy(dec_b);
 
-    /* Encode enc_guard budget fail */
+    /* Finding #1: decode scratch boundary (~263 KiB fails at 260000, passes 320 KiB) */
+    dec_b = rfc_budget_create(260000u);
+    CHECK(dec_b != NULL);
+    rfc_budget_allocator(dec_b, &dba);
+    b_exec.allocator = &dba;
+    b_exec.budget = dec_b;
+    CHECK(adp->decode_session(es, &b_exec, small_enc.data, small_enc.len, NULL,
+                              0u, &dec_f, &dec_c, NULL) ==
+          RFC_ERR_OUT_OF_MEMORY);
+    rfc_budget_stats_get(dec_b, &bs);
+    CHECK(bs.rejected_count > 0u && bs.current_allocated_bytes == 0u);
+    rfc_budget_destroy(dec_b);
+
+    dec_b = rfc_budget_create(320u * 1024u);
+    CHECK(dec_b != NULL);
+    rfc_budget_allocator(dec_b, &dba);
+    b_exec.allocator = &dba;
+    b_exec.budget = dec_b;
+    CHECK(adp->decode_session(es, &b_exec, small_enc.data, small_enc.len, NULL,
+                              0u, &dec_f, &dec_c, NULL) == RFC_OK);
+    rfc_budget_stats_get(dec_b, &bs);
+    CHECK(bs.peak_allocated_bytes >= 262144u && dec_c == 1u && dec_f != NULL);
+    rfc_frame_free(&dec_f[0]);
+    dba.free(dba.ctx, dec_f);
+    dec_f = NULL;
+    dec_c = 0u;
+    rfc_budget_stats_get(dec_b, &bs);
+    CHECK(bs.current_allocated_bytes == 0u);
+    rfc_budget_destroy(dec_b);
+
+    /* Encode enc_guard budget fail (tiny and tight 1-thread HASH_SIZE boundary) */
     rfc_budget *enc_b = rfc_budget_create(64u * 1024u);
     CHECK(enc_b != NULL);
     rfc_allocator eba;
@@ -1198,16 +1309,72 @@ static void test_refusals_limits_and_budget(void) {
     CHECK(bs.rejected_count > 0u && bs.current_allocated_bytes == 0u);
     rfc_budget_destroy(enc_b);
 
-    /* Encode mux_guard budget fail: allow enc_ws (8*8*6 + 128KiB ~ 132KiB)
-     * plus argb (256B) + wbuf (~1KiB) <= 145KiB, then fail mux_guard on 160KiB ICC */
-    size_t big_icc_len = 163840u;
+    enc_b = rfc_budget_create(1126223u);
+    CHECK(enc_b != NULL);
+    rfc_budget_allocator(enc_b, &eba);
+    b_exec.allocator = &eba;
+    b_exec.budget = enc_b;
+    b_exec.codec_threads = 1u;
+    CHECK(adp->encode_session(es, &b_exec, &comb_fr, 1u, NULL, NULL, 0u,
+                              &out) == RFC_ERR_OUT_OF_MEMORY);
+    rfc_budget_stats_get(enc_b, &bs);
+    CHECK(bs.rejected_count > 0u && bs.current_allocated_bytes == 0u);
+    rfc_budget_destroy(enc_b);
+
+    enc_b = rfc_budget_create(1200u * 1024u);
+    CHECK(enc_b != NULL);
+    rfc_budget_allocator(enc_b, &eba);
+    b_exec.allocator = &eba;
+    b_exec.budget = enc_b;
+    b_exec.codec_threads = 1u;
+    CHECK(adp->encode_session(es, &b_exec, &comb_fr, 1u, NULL, NULL, 0u,
+                              &out) == RFC_OK);
+    rfc_budget_stats_get(enc_b, &bs);
+    CHECK(bs.peak_allocated_bytes >= 1126224u);
+    rfc_encoded_free(&out);
+    rfc_budget_stats_get(enc_b, &bs);
+    CHECK(bs.current_allocated_bytes == 0u);
+    rfc_budget_destroy(enc_b);
+
+    /* Finding #1: codec_threads = 4 doubles worker reservation (2x 1126224) */
+    enc_b = rfc_budget_create(1280u * 1024u);
+    CHECK(enc_b != NULL);
+    rfc_budget_allocator(enc_b, &eba);
+    b_exec.allocator = &eba;
+    b_exec.budget = enc_b;
+    b_exec.codec_threads = 4u;
+    CHECK(adp->encode_session(es, &b_exec, &comb_fr, 1u, NULL, NULL, 0u,
+                              &out) == RFC_ERR_OUT_OF_MEMORY);
+    rfc_budget_stats_get(enc_b, &bs);
+    CHECK(bs.rejected_count > 0u && bs.current_allocated_bytes == 0u);
+    rfc_budget_destroy(enc_b);
+
+    enc_b = rfc_budget_create(2560u * 1024u);
+    CHECK(enc_b != NULL);
+    rfc_budget_allocator(enc_b, &eba);
+    b_exec.allocator = &eba;
+    b_exec.budget = enc_b;
+    b_exec.codec_threads = 4u;
+    CHECK(adp->encode_session(es, &b_exec, &comb_fr, 1u, NULL, NULL, 0u,
+                              &out) == RFC_OK);
+    rfc_budget_stats_get(enc_b, &bs);
+    CHECK(bs.peak_allocated_bytes >= 2u * 1126224u);
+    rfc_encoded_free(&out);
+    rfc_budget_stats_get(enc_b, &bs);
+    CHECK(bs.current_allocated_bytes == 0u);
+    rfc_budget_destroy(enc_b);
+    b_exec.codec_threads = 1u;
+
+    /* Encode mux_guard budget fail: allow enc_guard (~1126224 B for 8x8)
+     * plus argb (256 B) + wbuf (~1 KiB) <= 1200 KiB, then fail mux_guard on 1400 KiB ICC */
+    size_t big_icc_len = 1400u * 1024u;
     uint8_t *big_icc = (uint8_t *)calloc(1u, big_icc_len);
     CHECK(big_icc != NULL);
     memset(big_icc, 0x5Au, big_icc_len);
     wr32be(big_icc, (uint32_t)big_icc_len);
     rfc_metadata mux_m = {big_icc, big_icc_len, RFC_ORIENTATION_NORMAL, 0u,
                           {0}, NULL, 0u, NULL, 0u};
-    rfc_budget *mux_b = rfc_budget_create(145u * 1024u);
+    rfc_budget *mux_b = rfc_budget_create(1200u * 1024u);
     CHECK(mux_b != NULL);
     rfc_allocator mba;
     rfc_budget_allocator(mux_b, &mba);
@@ -1248,7 +1415,6 @@ static void test_refusals_limits_and_budget(void) {
     rfc_compare_candidate_spec cand_pw[1] = {{0}};
     cand_pw[0].target_format = RFC_FORMAT_WEBP;
     cand_pw[0].dest_path_utf8 = c_webp;
-    cand_pw[0].expected_working_set_bytes = 256u * 1024u;
 
     rfc_compare_spec csp;
     memset(&csp, 0, sizeof(csp));
@@ -1281,13 +1447,10 @@ static void test_refusals_limits_and_budget(void) {
     memset(cand_wp, 0, sizeof(cand_wp));
     cand_wp[0].target_format = RFC_FORMAT_PNG;
     cand_wp[0].dest_path_utf8 = c_png;
-    cand_wp[0].expected_working_set_bytes = 256u * 1024u;
     cand_wp[1].target_format = RFC_FORMAT_RASTERFOLD;
     cand_wp[1].dest_path_utf8 = c_fold;
-    cand_wp[1].expected_working_set_bytes = 256u * 1024u;
     cand_wp[2].target_format = RFC_FORMAT_WEBP;
     cand_wp[2].dest_path_utf8 = c_webp2;
-    cand_wp[2].expected_working_set_bytes = 256u * 1024u;
 
     memset(&csp, 0, sizeof(csp));
     csp.source_bytes = small_enc.data;
@@ -1559,7 +1722,7 @@ static void test_malformed_riff_and_cancellation(void) {
     jsp.target_format = RFC_FORMAT_PNG;
     jsp.io_source = &src_io;
     jsp.io_sink = &dst_io;
-    jsp.expected_working_set_bytes = 256u * 1024u;
+    jsp.expected_working_set_bytes = 8u * 1024u * 1024u;
     rfc_job *job = NULL;
     CHECK(rfc_scheduler_submit(sched, NULL, &jsp, &job) ==
           RFC_ERR_DESTINATION_EXISTS &&
@@ -1870,7 +2033,7 @@ static int cli_main(int argc, char **argv) {
         sp.setting_count = 1u;
         sp.acknowledged_unsupported_metadata = ack;
         sp.limits_override = (max_w > 0u || max_dec > 0ull) ? &lim : NULL;
-        sp.expected_working_set_bytes = 256u * 1024u;
+        sp.expected_working_set_bytes = 32u * 1024u * 1024u;
         rfc_job *j = NULL;
         rfc_status sub_r = rfc_scheduler_submit(sched, NULL, &sp, &j);
         if (sub_r != RFC_OK) {
@@ -1931,6 +2094,91 @@ static int cli_main(int argc, char **argv) {
         rfc_budget_destroy(b);
         free(wb);
         return r == RFC_OK ? 0 : 2;
+    }
+
+    if (strcmp(sub, "budget-peak") == 0 && argc == 7) {
+        uint32_t threads = (uint32_t)strtoul(argv[6], NULL, 10);
+        if (threads == 0u) threads = 1u;
+        rfc_budget *b = rfc_budget_create(256ull * 1024ull * 1024ull);
+        CHECK(b != NULL);
+        rfc_allocator ba;
+        rfc_budget_allocator(b, &ba);
+        rfc_exec_context b_exec;
+        memset(&b_exec, 0, sizeof(b_exec));
+        rfc_limits_default(&b_exec.limits);
+        b_exec.codec_threads = threads;
+        b_exec.allocator = &ba;
+        b_exec.budget = b;
+        const rfc_session_adapter *adp =
+            rfc_registry_acquire_session(RFC_FORMAT_WEBP);
+        CHECK(adp != NULL);
+        void *sess = NULL;
+        CHECK(adp->open_session(&b_exec, &sess) == RFC_OK);
+
+        if (strcmp(argv[3], "encode") == 0) {
+            rfc_layout lay;
+            rfc_metadata meta;
+            uint8_t *raw = NULL, *pix = NULL;
+            size_t pay_len = 0u;
+            CHECK(read_rfwe(argv[4], &lay, &meta, &raw, &pix, &pay_len));
+            rfc_exec_context fr_ex;
+            tracked_alloc_state fr_st;
+            rfc_allocator fr_alloc;
+            init_exec(&fr_ex, &fr_st, &fr_alloc, NULL, 1u);
+            rfc_frame fr = {0};
+            CHECK(test_alloc_frame(&fr, &lay, &meta, &fr_alloc) == RFC_OK);
+            memcpy(fr.data, pix, pay_len);
+            free(raw);
+
+            rfc_encoded enc = {0};
+            rfc_status r = adp->encode_session(sess, &b_exec, &fr, 1u, &meta,
+                                               NULL, 0u, &enc);
+            if (r == RFC_OK && strcmp(argv[5], "-") != 0) {
+                CHECK(write_file_all(argv[5], enc.data, enc.len));
+            }
+            size_t elen = enc.len;
+            rfc_encoded_free(&enc);
+            rfc_frame_free(&fr);
+            CHECK(fr_st.live == 0u);
+            adp->close_session(sess);
+            rfc_registry_release_session(RFC_FORMAT_WEBP);
+            rfc_budget_stats bs;
+            rfc_budget_stats_get(b, &bs);
+            printf("STATUS=%s PEAK_BUDGET=%llu CURR_ALLOC=%llu OUT_BYTES=%zu\n",
+                   rfc_status_name(r),
+                   (unsigned long long)bs.peak_allocated_bytes,
+                   (unsigned long long)bs.current_allocated_bytes, elen);
+            rfc_budget_destroy(b);
+            return r == RFC_OK ? 0 : 2;
+        }
+        if (strcmp(argv[3], "decode") == 0) {
+            size_t wlen = 0u;
+            uint8_t *wb = read_file_all(argv[4], &wlen);
+            CHECK(wb != NULL);
+            rfc_frame *df = NULL;
+            size_t dc = 0u;
+            rfc_status r = adp->decode_session(sess, &b_exec, wb, wlen, NULL,
+                                               0u, &df, &dc, NULL);
+            if (df) {
+                rfc_frame_free(&df[0]);
+                ba.free(ba.ctx, df);
+            }
+            free(wb);
+            adp->close_session(sess);
+            rfc_registry_release_session(RFC_FORMAT_WEBP);
+            rfc_budget_stats bs;
+            rfc_budget_stats_get(b, &bs);
+            printf("STATUS=%s PEAK_BUDGET=%llu CURR_ALLOC=%llu OUT_BYTES=%zu\n",
+                   rfc_status_name(r),
+                   (unsigned long long)bs.peak_allocated_bytes,
+                   (unsigned long long)bs.current_allocated_bytes, dc);
+            rfc_budget_destroy(b);
+            return r == RFC_OK ? 0 : 2;
+        }
+        adp->close_session(sess);
+        rfc_registry_release_session(RFC_FORMAT_WEBP);
+        rfc_budget_destroy(b);
+        return 2;
     }
 
     return 2;

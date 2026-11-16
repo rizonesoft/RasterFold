@@ -10,7 +10,6 @@
 #include "rfc_job.h"
 #include "rfc_verify.h"
 #include "rf_shared_io.h"
-#include "exif_util.h"
 
 #include <limits.h>
 #include <png.h>

@@ -2318,6 +2318,66 @@ static void test_metadata_policies(void) {
                (RFC_META_ITEM_EXIF | RFC_META_ITEM_XMP)) ==
                   (RFC_META_ITEM_EXIF | RFC_META_ITEM_XMP));
 
+        {
+            /* Finding #2: EXIF orientation with UNSPECIFIED field resolves
+             * both RFC_META_ITEM_ORIENTATION and RFC_META_ITEM_EXIF. */
+            const uint8_t exif_rot90[26] = {
+                'I', 'I', 0x2Au, 0u, 8u, 0u, 0u, 0u,
+                1u, 0u,
+                0x12u, 0x01u, 3u, 0u, 1u, 0u, 0u, 0u, 6u, 0u, 0u, 0u,
+                0u, 0u, 0u, 0u
+            };
+            rfc_metadata src_exif_unspec = {
+                NULL, 0u, RFC_ORIENTATION_UNSPECIFIED, 0u, {0},
+                exif_rot90, sizeof(exif_rot90), NULL, 0u
+            };
+            rfc_metadata dst_exif_rot90 = {
+                NULL, 0u, RFC_ORIENTATION_ROTATE_90, 0u, {0},
+                exif_rot90, sizeof(exif_rot90), NULL, 0u
+            };
+            uint32_t src_items =
+                rfc_metadata_source_items(&src_exif_unspec, NULL, 0u);
+            CHECK((src_items & (RFC_META_ITEM_ORIENTATION | RFC_META_ITEM_EXIF)) ==
+                  (RFC_META_ITEM_ORIENTATION | RFC_META_ITEM_EXIF));
+            CHECK(rfc_metadata_verify(RFC_FORMAT_WEBP, RFC_META_POLICY_PRESERVE,
+                                      RFC_EXACT_PIXEL_EXACT, &src_exif_unspec,
+                                      NULL, 0u, &dst_exif_rot90, NULL, 0u, 0u,
+                                      &mrep, &mmm) == RFC_OK);
+            CHECK(mrep.outcome == RFC_VERIFY_META_PRESERVED);
+            CHECK(rfc_metadata_verify(RFC_FORMAT_PNG, RFC_META_POLICY_PRESERVE,
+                                      RFC_EXACT_PIXEL_EXACT, &src_exif_unspec,
+                                      NULL, 0u, &dst_exif_rot90, NULL, 0u, 0u,
+                                      &mrep, &mmm) == RFC_ERR_METADATA_POLICY);
+            CHECK(mrep.outcome == RFC_VERIFY_META_UNSUPPORTED_ITEMS_NAMED &&
+                  (mrep.unsupported_items &
+                   (RFC_META_ITEM_ORIENTATION | RFC_META_ITEM_EXIF)) ==
+                      (RFC_META_ITEM_ORIENTATION | RFC_META_ITEM_EXIF));
+
+            /* Finding #5: orientation-only source synthesized into EXIF
+             * requires the exact 26-byte canonical TIFF blob. */
+            const uint8_t noncanon_exif[38] = {
+                'I', 'I', 0x2Au, 0u, 8u, 0u, 0u, 0u,
+                2u, 0u,
+                0x0Eu, 0x01u, 2u, 0u, 3u, 0u, 0u, 0u, 'E', 'X', 0u, 0u,
+                0x12u, 0x01u, 3u, 0u, 1u, 0u, 0u, 0u, 6u, 0u, 0u, 0u,
+                0u, 0u, 0u, 0u
+            };
+            rfc_metadata src_ori_only = {
+                NULL, 0u, RFC_ORIENTATION_ROTATE_90, 0u, {0},
+                NULL, 0u, NULL, 0u
+            };
+            rfc_metadata dst_noncanon = {
+                NULL, 0u, RFC_ORIENTATION_ROTATE_90, 0u, {0},
+                noncanon_exif, sizeof(noncanon_exif), NULL, 0u
+            };
+            CHECK(rfc_metadata_verify(RFC_FORMAT_WEBP, RFC_META_POLICY_PRESERVE,
+                                      RFC_EXACT_PIXEL_EXACT, &src_ori_only,
+                                      NULL, 0u, &dst_noncanon, NULL, 0u, 0u,
+                                      &mrep, &mmm) == RFC_ERR_VERIFY_MISMATCH);
+            CHECK(mmm.kind == RFC_MISMATCH_METADATA_LOST &&
+                  (mrep.lost_supported_items & RFC_META_ITEM_EXIF) != 0u);
+        }
+
         rfc_frame_free(&rf);
         CHECK(tr.live == 0u);
     }

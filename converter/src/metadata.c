@@ -2,6 +2,112 @@
 
 #include <string.h>
 
+static uint16_t meta_rd16le(const uint8_t *p) {
+    return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
+}
+
+static uint32_t meta_rd32le(const uint8_t *p) {
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) |
+           ((uint32_t)p[3] << 24);
+}
+
+static uint16_t meta_rd16be(const uint8_t *p) {
+    return ((uint16_t)p[0] << 8) | (uint16_t)p[1];
+}
+
+static uint32_t meta_rd32be(const uint8_t *p) {
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
+           ((uint32_t)p[2] << 8) | (uint32_t)p[3];
+}
+
+rfc_status rfc_exif_parse_orientation(const uint8_t *data,
+                                      size_t len,
+                                      rfc_orientation *out_ori) {
+    if (!out_ori) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    *out_ori = RFC_ORIENTATION_UNSPECIFIED;
+    if (!data || len < 8u) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    size_t tiff_off = 0u;
+    if (len >= 14u && memcmp(data, "Exif\x00\x00", 6) == 0) {
+        tiff_off = 6u;
+    }
+    const uint8_t *t = data + tiff_off;
+    size_t tlen = len - tiff_off;
+    if (tlen < 8u) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    int little = 0;
+    if (t[0] == 'I' && t[1] == 'I' && t[2] == 0x2Au && t[3] == 0x00u) {
+        little = 1;
+    } else if (t[0] == 'M' && t[1] == 'M' && t[2] == 0x00u && t[3] == 0x2Au) {
+        little = 0;
+    } else {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    uint32_t ifd_off = little ? meta_rd32le(t + 4) : meta_rd32be(t + 4);
+    if ((uint64_t)ifd_off + 2ull > (uint64_t)tlen) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    uint16_t count =
+        little ? meta_rd16le(t + ifd_off) : meta_rd16be(t + ifd_off);
+    uint64_t entries_end =
+        (uint64_t)ifd_off + 2ull + (uint64_t)count * 12ull;
+    if (entries_end > (uint64_t)tlen) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    for (uint16_t i = 0u; i < count; i++) {
+        const uint8_t *e = t + ifd_off + 2u + (size_t)i * 12u;
+        uint16_t tag = little ? meta_rd16le(e) : meta_rd16be(e);
+        if (tag == 0x0112u) {
+            uint16_t ty = little ? meta_rd16le(e + 2) : meta_rd16be(e + 2);
+            uint32_t cnt =
+                little ? meta_rd32le(e + 4) : meta_rd32be(e + 4);
+            if (ty != 3u || cnt != 1u) {
+                return RFC_ERR_INVALID_ARGUMENT;
+            }
+            uint16_t val =
+                little ? meta_rd16le(e + 8) : meta_rd16be(e + 8);
+            if (val < 1u || val > 8u) {
+                return RFC_ERR_INVALID_ARGUMENT;
+            }
+            *out_ori = (rfc_orientation)val;
+            return RFC_OK;
+        }
+    }
+    return RFC_OK;
+}
+
+rfc_status rfc_exif_build_orientation_tiff26(rfc_orientation ori,
+                                             uint8_t out_tiff[26]) {
+    if (!out_tiff || ori < RFC_ORIENTATION_NORMAL ||
+        ori > RFC_ORIENTATION_ROTATE_270) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    static const uint8_t k_tmpl[26] = {
+        'I',  'I',  0x2Au, 0x00u, 0x08u, 0x00u, 0x00u, 0x00u,
+        0x01u, 0x00u,
+        0x12u, 0x01u, 0x03u, 0x00u, 0x01u, 0x00u, 0x00u, 0x00u,
+        0x01u, 0x00u, 0x00u, 0x00u,
+        0x00u, 0x00u, 0x00u, 0x00u
+    };
+    memcpy(out_tiff, k_tmpl, 26u);
+    out_tiff[18] = (uint8_t)(unsigned)ori;
+    return RFC_OK;
+}
+
+static rfc_orientation exif_orientation_or_unspec(const uint8_t *exif,
+                                                  size_t exif_len) {
+    rfc_orientation ori = RFC_ORIENTATION_UNSPECIFIED;
+    if (exif && exif_len > 0u &&
+        rfc_exif_parse_orientation(exif, exif_len, &ori) == RFC_OK) {
+        return ori;
+    }
+    return RFC_ORIENTATION_UNSPECIFIED;
+}
+
 static void meta_copy_cstr(char *dst, size_t dst_cap, const char *src) {
     if (!dst || dst_cap == 0u) {
         return;
@@ -113,6 +219,16 @@ void rfc_metadata_items_format(uint32_t items, char *out_buf, size_t out_cap) {
     }
 }
 
+static rfc_orientation effective_meta_orientation(const rfc_metadata *m) {
+    if (!m) {
+        return RFC_ORIENTATION_UNSPECIFIED;
+    }
+    if (m->orientation != RFC_ORIENTATION_UNSPECIFIED) {
+        return m->orientation;
+    }
+    return exif_orientation_or_unspec(m->exif, m->exif_len);
+}
+
 uint32_t rfc_metadata_source_items(const rfc_metadata *container_meta,
                                    const rfc_frame *frames,
                                    size_t frame_count) {
@@ -122,7 +238,8 @@ uint32_t rfc_metadata_source_items(const rfc_metadata *container_meta,
             rfc_colorimetry_has_any(&container_meta->color)) {
             items |= RFC_META_ITEM_ICC;
         }
-        if (container_meta->orientation > RFC_ORIENTATION_NORMAL) {
+        if (effective_meta_orientation(container_meta) >
+            RFC_ORIENTATION_NORMAL) {
             items |= RFC_META_ITEM_ORIENTATION;
         }
         if (container_meta->duration_ms > 0u) {
@@ -145,7 +262,8 @@ uint32_t rfc_metadata_source_items(const rfc_metadata *container_meta,
                 rfc_colorimetry_has_any(&frames[i].metadata.color)) {
                 items |= RFC_META_ITEM_ICC;
             }
-            if (frames[i].metadata.orientation > RFC_ORIENTATION_NORMAL) {
+            if (effective_meta_orientation(&frames[i].metadata) >
+                RFC_ORIENTATION_NORMAL) {
                 items |= RFC_META_ITEM_ORIENTATION;
             }
             if (frames[i].metadata.duration_ms > 0u) {
@@ -247,22 +365,6 @@ static const uint8_t *effective_icc_at(const rfc_metadata *container_meta,
     return NULL;
 }
 
-static rfc_orientation effective_orientation_at(
-    const rfc_metadata *container_meta,
-    const rfc_frame *frames,
-    size_t frame_count,
-    size_t idx) {
-    if (frames && idx < frame_count &&
-        frames[idx].metadata.orientation != RFC_ORIENTATION_UNSPECIFIED) {
-        return normalize_orientation(frames[idx].metadata.orientation);
-    }
-    if (container_meta &&
-        container_meta->orientation != RFC_ORIENTATION_UNSPECIFIED) {
-        return normalize_orientation(container_meta->orientation);
-    }
-    return RFC_ORIENTATION_NORMAL;
-}
-
 static const uint8_t *effective_exif_at(const rfc_metadata *container_meta,
                                         const rfc_frame *frames,
                                         size_t frame_count,
@@ -280,6 +382,29 @@ static const uint8_t *effective_exif_at(const rfc_metadata *container_meta,
     }
     *out_len = 0u;
     return NULL;
+}
+
+static rfc_orientation effective_orientation_at(
+    const rfc_metadata *container_meta,
+    const rfc_frame *frames,
+    size_t frame_count,
+    size_t idx) {
+    if (frames && idx < frame_count &&
+        frames[idx].metadata.orientation != RFC_ORIENTATION_UNSPECIFIED) {
+        return normalize_orientation(frames[idx].metadata.orientation);
+    }
+    if (container_meta &&
+        container_meta->orientation != RFC_ORIENTATION_UNSPECIFIED) {
+        return normalize_orientation(container_meta->orientation);
+    }
+    size_t ex_len = 0u;
+    const uint8_t *ex =
+        effective_exif_at(container_meta, frames, frame_count, idx, &ex_len);
+    rfc_orientation ex_ori = exif_orientation_or_unspec(ex, ex_len);
+    if (ex_ori != RFC_ORIENTATION_UNSPECIFIED) {
+        return normalize_orientation(ex_ori);
+    }
+    return RFC_ORIENTATION_NORMAL;
 }
 
 static const uint8_t *effective_xmp_at(const rfc_metadata *container_meta,
@@ -398,13 +523,13 @@ static int has_any_color_metadata(const rfc_metadata *container_meta,
 static int has_non_normal_orientation(const rfc_metadata *container_meta,
                                       const rfc_frame *frames,
                                       size_t frame_count) {
-    if (container_meta &&
-        container_meta->orientation > RFC_ORIENTATION_NORMAL) {
+    if (effective_meta_orientation(container_meta) > RFC_ORIENTATION_NORMAL) {
         return 1;
     }
     if (frames) {
         for (size_t i = 0u; i < frame_count; i++) {
-            if (frames[i].metadata.orientation > RFC_ORIENTATION_NORMAL) {
+            if (effective_meta_orientation(&frames[i].metadata) >
+                RFC_ORIENTATION_NORMAL) {
                 return 1;
             }
         }
@@ -728,6 +853,15 @@ rfc_status rfc_metadata_verify(rfc_format_id target_format,
                     }
                 } else if (s_ori <= RFC_ORIENTATION_NORMAL) {
                     if (dlen != 0u) {
+                        lost |= RFC_META_ITEM_EXIF;
+                        break;
+                    }
+                } else {
+                    uint8_t canon_tiff[26];
+                    if (rfc_exif_build_orientation_tiff26(s_ori, canon_tiff) !=
+                            RFC_OK ||
+                        dlen != sizeof(canon_tiff) || !d_ex ||
+                        memcmp(d_ex, canon_tiff, sizeof(canon_tiff)) != 0) {
                         lost |= RFC_META_ITEM_EXIF;
                         break;
                     }

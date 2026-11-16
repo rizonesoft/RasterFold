@@ -592,6 +592,264 @@ class HostWebPTests(WebPAdapterVerificationMixin, unittest.TestCase):
         )
         return res.returncode, res.stdout or "", res.stderr or ""
 
+    def test_actual_libwebp_peak_within_budget(self) -> None:
+        assert self.host_exe is not None
+        wd = self.work_dir()
+        env = dict(os.environ)
+        use_interposer = False
+        if sys.platform.startswith("linux"):
+            cc = shutil.which("clang") or shutil.which("cc") or shutil.which("gcc")
+            if not cc:
+                raise AssertionError("Linux C compiler unavailable for LD_PRELOAD HWM interposer")
+            so_c = wd / "webp_hwm_interpose.c"
+            so_path = wd / "libwebp_hwm_interpose.so"
+            so_c.write_text(
+                """#define _GNU_SOURCE
+#include <dlfcn.h>
+#include <fcntl.h>
+#include <malloc.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+static void *(*real_malloc)(size_t) = NULL;
+static void *(*real_calloc)(size_t, size_t) = NULL;
+static void *(*real_realloc)(void *, size_t) = NULL;
+static void (*real_free)(void *) = NULL;
+static int (*real_posix_memalign)(void **, size_t, size_t) = NULL;
+
+static char boot_buf[32768];
+static size_t boot_used = 0;
+static volatile int resolving = 0;
+static __thread int in_dlsym = 0;
+static uint64_t live_bytes = 0;
+static uint64_t hwm_bytes = 0;
+
+static int is_boot_ptr(const void *p) {
+    uintptr_t a = (uintptr_t)p;
+    uintptr_t lo = (uintptr_t)boot_buf;
+    return a >= lo && a < lo + sizeof(boot_buf);
+}
+
+static void update_hwm(uint64_t cur) {
+    uint64_t prev = __atomic_load_n(&hwm_bytes, __ATOMIC_RELAXED);
+    while (cur > prev &&
+           !__atomic_compare_exchange_n(&hwm_bytes, &prev, cur, 1,
+                                        __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
+    }
+}
+
+static void add_live(size_t sz) {
+    uint64_t cur = __atomic_add_fetch(&live_bytes, (uint64_t)sz, __ATOMIC_RELAXED);
+    update_hwm(cur);
+}
+
+static void sub_live(size_t sz) {
+    uint64_t prev = __atomic_load_n(&live_bytes, __ATOMIC_RELAXED);
+    for (;;) {
+        uint64_t next = (prev >= (uint64_t)sz) ? (prev - (uint64_t)sz) : 0u;
+        if (__atomic_compare_exchange_n(&live_bytes, &prev, next, 1,
+                                        __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
+            break;
+        }
+    }
+}
+
+static void ensure_init(void) {
+    if (__atomic_load_n(&real_free, __ATOMIC_ACQUIRE) != NULL) return;
+    if (in_dlsym) return;
+    while (__atomic_exchange_n(&resolving, 1, __ATOMIC_ACQUIRE)) {
+        if (__atomic_load_n(&real_free, __ATOMIC_ACQUIRE) != NULL) return;
+    }
+    if (__atomic_load_n(&real_free, __ATOMIC_RELAXED) == NULL) {
+        in_dlsym = 1;
+        void *(*m)(size_t) = (void *(*)(size_t))dlsym(RTLD_NEXT, "malloc");
+        void *(*c)(size_t, size_t) = (void *(*)(size_t, size_t))dlsym(RTLD_NEXT, "calloc");
+        void *(*r)(void *, size_t) = (void *(*)(void *, size_t))dlsym(RTLD_NEXT, "realloc");
+        int (*pm)(void **, size_t, size_t) =
+            (int (*)(void **, size_t, size_t))dlsym(RTLD_NEXT, "posix_memalign");
+        void (*f)(void *) = (void (*)(void *))dlsym(RTLD_NEXT, "free");
+        in_dlsym = 0;
+        real_malloc = m;
+        real_calloc = c;
+        real_realloc = r;
+        real_posix_memalign = pm;
+        __atomic_store_n(&real_free, f, __ATOMIC_RELEASE);
+    }
+    __atomic_store_n(&resolving, 0, __ATOMIC_RELEASE);
+}
+
+void *malloc(size_t sz) {
+    ensure_init();
+    if (!real_malloc || in_dlsym) {
+        size_t a = (sz + 15u) & ~(size_t)15u;
+        size_t off = __atomic_fetch_add(&boot_used, a ? a : 16u, __ATOMIC_RELAXED);
+        return (off + a <= sizeof(boot_buf)) ? (boot_buf + off) : NULL;
+    }
+    void *p = real_malloc(sz);
+    if (p) add_live(malloc_usable_size(p));
+    return p;
+}
+
+void *calloc(size_t n, size_t sz) {
+    ensure_init();
+    if (!real_calloc || in_dlsym) {
+        size_t tot = n * sz;
+        size_t a = (tot + 15u) & ~(size_t)15u;
+        size_t off = __atomic_fetch_add(&boot_used, a ? a : 16u, __ATOMIC_RELAXED);
+        if (off + a <= sizeof(boot_buf)) {
+            memset(boot_buf + off, 0, tot);
+            return boot_buf + off;
+        }
+        return NULL;
+    }
+    void *p = real_calloc(n, sz);
+    if (p) add_live(malloc_usable_size(p));
+    return p;
+}
+
+void *realloc(void *p, size_t sz) {
+    ensure_init();
+    if (!real_realloc || is_boot_ptr(p)) {
+        void *np = malloc(sz);
+        if (np && p && is_boot_ptr(p)) memcpy(np, p, sz < 1024u ? sz : 1024u);
+        return np;
+    }
+    size_t old_sz = p ? malloc_usable_size(p) : 0u;
+    void *np = real_realloc(p, sz);
+    if (np) {
+        if (old_sz) sub_live(old_sz);
+        add_live(malloc_usable_size(np));
+    } else if (sz == 0u && old_sz) {
+        sub_live(old_sz);
+    }
+    return np;
+}
+
+int posix_memalign(void **memptr, size_t align, size_t sz) {
+    ensure_init();
+    if (!real_posix_memalign) return 12;
+    int rc = real_posix_memalign(memptr, align, sz);
+    if (rc == 0 && *memptr) add_live(malloc_usable_size(*memptr));
+    return rc;
+}
+
+void free(void *p) {
+    if (!p || is_boot_ptr(p)) return;
+    ensure_init();
+    if (!real_free) return;
+    size_t old_sz = malloc_usable_size(p);
+    real_free(p);
+    if (old_sz) sub_live(old_sz);
+}
+
+__attribute__((destructor)) static void dump_hwm(void) {
+    const char *path = getenv("RFC_HWM_OUT");
+    if (!path || !*path) return;
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) return;
+    char buf[64];
+    int n = snprintf(buf, sizeof(buf), "%llu\\n",
+                     (unsigned long long)__atomic_load_n(&hwm_bytes, __ATOMIC_RELAXED));
+    if (n > 0) (void)write(fd, buf, (size_t)n);
+    close(fd);
+}
+""",
+                encoding="utf-8",
+            )
+            cres = _ref.run_process_tree(
+                [cc, "-shared", "-fPIC", "-O2", str(so_c), "-o", str(so_path), "-ldl", "-pthread"],
+                cwd=wd,
+                capture_output=True,
+                text=True,
+                timeout=30.0,
+            )
+            self.assertEqual(cres.returncode, 0, f"compile interposer failed:\n{cres.stderr}")
+            env["LD_PRELOAD"] = str(so_path)
+            use_interposer = True
+
+        def run_budget_peak(op: str, in_p: Path, out_p: str, threads: int, tag: str) -> tuple[int, int]:
+            run_env = dict(env)
+            hwm_file = wd / f"hwm_{tag}.txt"
+            if use_interposer:
+                if hwm_file.exists():
+                    hwm_file.unlink()
+                run_env["RFC_HWM_OUT"] = str(hwm_file)
+            res = _ref.run_process_tree(
+                [str(self.host_exe), "cli", "budget-peak", op, str(in_p), out_p, str(threads)],
+                cwd=ROOT,
+                env=run_env,
+                capture_output=True,
+                text=True,
+                timeout=60.0,
+            )
+            self.assertEqual(res.returncode, 0, f"{tag} failed:\n{res.stdout}\n{res.stderr}")
+            kv = parse_kv(res.stdout or "")
+            self.assertEqual(kv.get("STATUS"), "ok", res.stdout)
+            self.assertEqual(kv.get("CURR_ALLOC"), "0", res.stdout)
+            budget_peak = int(kv["PEAK_BUDGET"])
+            actual_peak = 0
+            if use_interposer:
+                actual_peak = int(hwm_file.read_text(encoding="utf-8").strip())
+                self.assertGreater(actual_peak, 0, tag)
+                self.assertLessEqual(
+                    actual_peak,
+                    budget_peak,
+                    f"{tag}: actual OS heap peak {actual_peak} > PEAK_BUDGET {budget_peak}",
+                )
+            return actual_peak, budget_peak
+
+        vp8l_paths: dict[int, Path] = {}
+        vp8a_paths: dict[int, Path] = {}
+        for dim in (256, 512):
+            rng = random.Random(101 + dim)
+            raw_rgb = bytearray()
+            for y in range(dim):
+                for x in range(dim):
+                    raw_rgb.append(((x * 13 + y * 29) ^ (rng.randrange(256) if ((x ^ y) & 1) else 0)) & 0xFF)
+                    raw_rgb.append(((x * 41 ^ y * 17) + (rng.randrange(128) if (x & 2) else 0)) & 0xFF)
+                    raw_rgb.append(((x * 7 + y * 53) ^ (rng.randrange(64))) & 0xFF)
+            rfwe_p = wd / f"peak_{dim}.rfwe"
+            rfwe_p.write_bytes(
+                pack_rfwe(dim, dim, SAMPLE_RGB8, ALPHA_NONE, 8, bytes(raw_rgb))
+            )
+            wp_out = wd / f"peak_vp8l_{dim}.webp"
+            vp8l_paths[dim] = wp_out
+            _, b1 = run_budget_peak("encode", rfwe_p, str(wp_out), 1, f"enc_{dim}_t1")
+            if dim == 512:
+                _, b4 = run_budget_peak("encode", rfwe_p, "-", 4, f"enc_{dim}_t4")
+                self.assertGreater(b4, b1)
+            run_budget_peak("decode", wp_out, "-", 1, f"dec_vp8l_{dim}")
+
+            # Lossy VP8 + ALPH decode peak measurement via Pillow or ffmpeg libwebp
+            rgba_bytes = make_rgba_exact_pixels(dim, dim, seed=dim // 16)
+            vp8a_out = wd / f"peak_vp8a_{dim}.webp"
+            try:
+                bio = io.BytesIO()
+                Image.frombytes("RGBA", (dim, dim), rgba_bytes).save(
+                    bio, format="WEBP", lossless=False, quality=75
+                )
+                vp8a_out.write_bytes(bio.getvalue())
+            except Exception:
+                ffmpeg = _ref.find_ffmpeg()
+                png_in = wd / f"peak_rgba_{dim}.png"
+                Image.frombytes("RGBA", (dim, dim), rgba_bytes).save(png_in, format="PNG")
+                fres = _ref.run_process_tree(
+                    [ffmpeg, "-y", "-i", str(png_in), "-c:v", "libwebp", "-lossless", "0", "-q:v", "75", str(vp8a_out)],
+                    cwd=wd,
+                    capture_output=True,
+                    text=True,
+                    timeout=30.0,
+                )
+                self.assertEqual(fres.returncode, 0, fres.stderr)
+            self.assertIn(b"ALPH", vp8a_out.read_bytes())
+            self.assertIn(b"VP8 ", vp8a_out.read_bytes())
+            vp8a_paths[dim] = vp8a_out
+            run_budget_peak("decode", vp8a_out, "-", 1, f"dec_vp8a_{dim}")
+
 
 class WindowsWebPTests(WebPAdapterVerificationMixin, unittest.TestCase):
     win_exe: Path | None = None
@@ -627,6 +885,10 @@ class WindowsWebPTests(WebPAdapterVerificationMixin, unittest.TestCase):
                 timeout=30.0,
             )
             if res.returncode != 0 or not (res.stdout or "").strip():
+                if os.environ.get("RFC_REQUIRE_WIN_WEBP") == "1":
+                    raise AssertionError(
+                        "powershell.exe unavailable while RFC_REQUIRE_WIN_WEBP=1"
+                    )
                 raise unittest.SkipTest("powershell.exe unavailable for Windows NTFS tests")
             cls._win_temp = res.stdout.strip().splitlines()[-1].strip()
             wp = _ref.run_process_tree(
@@ -635,7 +897,12 @@ class WindowsWebPTests(WebPAdapterVerificationMixin, unittest.TestCase):
                 text=True,
                 timeout=15.0,
             )
-            assert wp.returncode == 0
+            if wp.returncode != 0 or not (wp.stdout or "").strip():
+                if os.environ.get("RFC_REQUIRE_WIN_WEBP") == "1":
+                    raise AssertionError(
+                        "wslpath failed while RFC_REQUIRE_WIN_WEBP=1"
+                    )
+                raise unittest.SkipTest("wslpath unavailable for Windows NTFS tests")
             cls._py_temp = Path(wp.stdout.strip())
             shutil.copy2(cls.win_exe, cls._py_temp / "rfc_test_webp.exe")
 
@@ -689,6 +956,54 @@ class WindowsWebPTests(WebPAdapterVerificationMixin, unittest.TestCase):
             timeout=timeout,
         )
         return res.returncode, res.stdout or "", res.stderr or ""
+
+
+class WindowsRequirementGuardTests(unittest.TestCase):
+    def test_require_win_webp_turns_bridge_failure_into_failure(self) -> None:
+        from types import SimpleNamespace
+        from unittest import mock
+
+        class _Probe(WindowsWebPTests):
+            pass
+
+        with tempfile.TemporaryDirectory(prefix="rfc_req_guard_") as td:
+            fake_exe = Path(td) / "rfc_test_webp.exe"
+            fake_exe.write_bytes(b"MZ")
+            env_patch = {
+                "RFC_WIN_WEBP_EXE": str(fake_exe),
+                "RFC_REQUIRE_WIN_WEBP": "1",
+            }
+            if os.name == "nt":
+                with mock.patch.dict(
+                    os.environ,
+                    {
+                        "RFC_WIN_WEBP_EXE": str(Path(td) / "missing.exe"),
+                        "RFC_REQUIRE_WIN_WEBP": "1",
+                    },
+                ):
+                    with self.assertRaises(AssertionError):
+                        _Probe.setUpClass()
+                return
+
+            with mock.patch.dict(os.environ, env_patch):
+                with mock.patch.object(
+                    _ref,
+                    "run_process_tree",
+                    return_value=SimpleNamespace(returncode=1, stdout="", stderr="ps failed"),
+                ):
+                    with self.assertRaises(AssertionError):
+                        _Probe.setUpClass()
+
+                with mock.patch.object(
+                    _ref,
+                    "run_process_tree",
+                    side_effect=[
+                        SimpleNamespace(returncode=0, stdout="C:\\Temp\\probe\r\n", stderr=""),
+                        SimpleNamespace(returncode=1, stdout="", stderr="wslpath failed"),
+                    ],
+                ):
+                    with self.assertRaises(AssertionError):
+                        _Probe.setUpClass()
 
 
 if __name__ == "__main__":
