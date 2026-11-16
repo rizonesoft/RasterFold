@@ -2,7 +2,7 @@
 schema_version: 1
 id: converter-engine
 domain: 10-converter
-status: active
+status: done
 title: "TODO-01 -- Native Converter Engine"
 depends_on: []
 frozen: true
@@ -51,7 +51,7 @@ track: GUI1
 | 3 | §3 | Bounded asynchronous jobs | §1, §2 | [x] |
 | 4 | §4 | Exactness verification and differential fixtures | §1, §3 | [x] |
 | 5 | §5 | Safe import and export | §3, §4 | [x] |
-| 6 | §6 | Comparable measurements and reports | §3, §4 | [ ] |
+| 6 | §6 | Comparable measurements and reports | §3, §4 | [x] |
 
 ---
 
@@ -209,6 +209,8 @@ Build in the listed order. This section adds the named test driver before using 
 
 **Freeze check:** Existing `.fold` v2 and v3 files, `KAT_FOLD` known-answer bytes, and the oracle (`tests/rfi_ref.py`) remain unchanged (**Corrected 2026-11-16:** extended explicit `.fold` v2 mention to `.fold` v2 and v3 per `spec/FOLD.md`). Each new output receives a fresh bundled decode and the format-specific verification contract before acceptance; independent fixture coverage is reported separately; input and existing destination bytes survive refusal, cancellation and failure. **Completed 2026-11-16:** `git diff --exit-code -- src/ include/rasterfold.h spec/FOLD.md tests/rfi_ref.py` exited `0`; `test_reports.{c,py}` independently verified `tests/rfi_ref.py::decode_image` pixel identity, equal-length/digest splits, callback read-back refusals (`>64 KiB` chunk guard), exclusive staged-subdir promotion (`measurement_only` vs `has_produced_output`), single-ownership `user_ctx`/`release_ctx`, homogeneous callback timings + `final_publish_ns`, `rfc_limits` + build-captured provenance (`scripts/gen_converter_provenance.py`), and locked bounded JSONL history tamper/fault preservation.
 
+> **Verified:** 2026-11-16 | §6 | 19543c8c886e3a7545e3bc252ff0d1022305cd3b
+> **Review:** `docs/reviews/d10-t01-s6.json`
 ## Verification
 
 - [ ] Run `python3 scripts/check-converter.py --all-targets` once this file adds its gates; report driven Windows coverage separately from cross-builds.

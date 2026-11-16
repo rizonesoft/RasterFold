@@ -1,0 +1,71 @@
+{
+  "ref": "D10 T01 \u00a76",
+  "title": "Comparable measurements and reports",
+  "implementation_sha": "19543c8c886e3a7545e3bc252ff0d1022305cd3b",
+  "date": "2026-11-16",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/10-converter/D10-T01-s6.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "bosun run -- python3 scripts/check-converter.py --case all --all-targets -> contract, jobs, exactness, file-safety, reports (5/5 OK), and bundle (8/8 OK) PASS across host and isolated windows-x64",
+    "bosun run -- python3 scripts/check-all.py --all-targets -> check-all: 32/32 passed"
+  ],
+  "completion": {
+    "report": "docs/reviews/10-converter/D10-T01-s6.md",
+    "verdict": "reconciled",
+    "candidate": "19543c8c886e3a7545e3bc252ff0d1022305cd3b",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/10-converter/D10-T01-s6.md",
+    "candidate": "7ca47e22a7f03969d4c5b7d90a8b334d4e0790fa",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "7ca47e22a7f03969d4c5b7d90a8b334d4e0790fa",
+  "schedule": {
+    "policy": "three-pass",
+    "pass_cap": 33,
+    "plan": {
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {},
+    "reconciliation": {
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}
