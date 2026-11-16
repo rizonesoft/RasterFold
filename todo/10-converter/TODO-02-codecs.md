@@ -48,7 +48,7 @@ track: GUI2
 
 | Order | Section | Deliverable | Depends On | Status |
 | :---: | :-----: | ----------- | ---------- | :----: |
-| 1 | §1 | RasterFold, BMP, PNG and PNM | D10 T01 §2, D10 T01 §4, D10 T01 §5, D07 T01 §2, D07 T01 §3 | [ ] |
+| 1 | §1 | RasterFold, BMP, PNG and PNM | D10 T01 §2, D10 T01 §4, D10 T01 §5, D07 T01 §2, D07 T01 §3 | [x] |
 | 2 | §2 | WebP | D10 T01 §2, D10 T01 §4, D10 T01 §5 | [ ] |
 | 3 | §3 | JPEG XL | D10 T01 §2, D10 T01 §4, D10 T01 §5 | [ ] |
 | 4 | §4 | AVIF | D10 T01 §2, D10 T01 §4, D10 T01 §5 | [ ] |
@@ -89,6 +89,8 @@ Build in the listed order. This section adds the named test driver before using 
 
 **Freeze check:** `git diff --exit-code -- src/ include/rasterfold.h spec/FOLD.md tests/rfi_ref.py converter/vendor.json` exited `0`, leaving `.fold` v2 and v3 codecs, `KAT_FOLD`, `tests/rfi_ref.py`, and pinned codec dependencies unchanged; every encoded output received a fresh bundled decode and `rfc_verify` / independent oracle check (`rfi_ref.py`, `reference.py`, Pillow) reported per target; source inputs and pre-existing destinations remained byte-identical under refusal, cancellation, and limit failure.
 
+> **Verified:** 2026-11-16 | §1 | 4b296f4529b041ab0b528f77196f653e467ad56d
+> **Review:** `docs/reviews/d10-t02-s1.json`
 ## 2. WebP
 
 **Requires:** windows-runtime -- The checkpoint requires driven results from the advertised Windows native target. Source checkpoint audit: docs/todo-vision-audit.md.

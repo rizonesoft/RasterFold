@@ -1,0 +1,71 @@
+{
+  "ref": "D10 T02 \u00a71",
+  "title": "RasterFold, BMP, PNG and PNM",
+  "implementation_sha": "4b296f4529b041ab0b528f77196f653e467ad56d",
+  "date": "2026-11-16",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/10-converter/D10-T02-s1.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "check-converter.py --case all --all-targets -> contract/jobs/exactness 8/8/file-safety 6/6/reports 5/5/basic host 739+windows-x64 741+py 4/4/bundle 8/8 PASS",
+    "check-all.py --all-targets -> 32/32 passed"
+  ],
+  "completion": {
+    "report": "docs/reviews/10-converter/D10-T02-s1.md",
+    "verdict": "reconciled",
+    "candidate": "4b296f4529b041ab0b528f77196f653e467ad56d",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/10-converter/D10-T02-s1.md",
+    "candidate": "ae16596727d71784c0db5d2c18d7fc3e7307aada",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "ae16596727d71784c0db5d2c18d7fc3e7307aada",
+  "schedule": {
+    "policy": "three-pass",
+    "pass_cap": 33,
+    "plan": {
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {},
+    "reconciliation": {
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}
