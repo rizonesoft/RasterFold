@@ -373,6 +373,7 @@ class TestHostReports(unittest.TestCase):
             toggles: dict[str, tuple[str, str]],
             ninja_flags: str,
             ninja_defs: str = "",
+            ninja_includes: str = "",
         ) -> None:
             d = root / pid
             d.mkdir(parents=True, exist_ok=True)
@@ -387,9 +388,11 @@ class TestHostReports(unittest.TestCase):
                 lines.append(f"{k}:{tp}={v}")
             (d / "CMakeCache.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
             rule = f"CXX_COMPILER__{pid}_Release" if is_cxx else f"C_COMPILER__{pid}_Release"
+            inc_line = f"  INCLUDES = {ninja_includes}\n" if ninja_includes else ""
             (d / "build.ninja").write_text(
                 f"build CMakeFiles/{pid}.dir/src.obj: {rule} src.c\n"
                 f"  FLAGS = {ninja_flags}\n"
+                f"{inc_line}"
                 f"  DEFINES = {ninja_defs}\n",
                 encoding="utf-8",
             )
@@ -1032,6 +1035,83 @@ class TestHostReports(unittest.TestCase):
             rel_sub.write_text("#define SUB_MODE 2\n", encoding="utf-8")
             bf_rel3 = run_prov(deps_rel, base / "prov_rel3.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
             self.assertNotEqual(bf_rel2, bf_rel3)
+
+            # Shadowing regression: un-included source root config.h must not shadow -I inc/config.h
+            src_shadow = base / "src_libjxl_shadow"
+            src_shadow.mkdir(parents=True, exist_ok=True)
+            decoy_cfg = src_shadow / "config.h"
+            decoy_cfg.write_text("#define FEATURE decoy_1\n", encoding="utf-8")
+            deps_shadow = base / "deps_shadow"
+            write_pkg(
+                deps_shadow,
+                "libjxl",
+                True,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="-march=x86-64-v2 -include config.h",
+                cxx_rel="-O3 -DNDEBUG",
+                toggles={
+                    "CMAKE_HOME_DIRECTORY": ("INTERNAL", str(src_shadow)),
+                    "libjxl_SOURCE_DIR": ("STATIC", str(src_shadow)),
+                },
+                ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG -std=c++17 -include config.h",
+                ninja_includes="-I inc",
+            )
+            eff_inc_cfg = deps_shadow / "libjxl" / "inc" / "config.h"
+            eff_inc_cfg.parent.mkdir(parents=True, exist_ok=True)
+            eff_inc_cfg.write_text("#define FEATURE real_1\n", encoding="utf-8")
+            bf_sh1 = run_prov(deps_shadow, base / "prov_sh1.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            decoy_cfg.write_text("#define FEATURE decoy_2\n", encoding="utf-8")
+            bf_sh2 = run_prov(deps_shadow, base / "prov_sh2.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertEqual(bf_sh1, bf_sh2)
+            eff_inc_cfg.write_text("#define FEATURE real_2\n", encoding="utf-8")
+            bf_sh3 = run_prov(deps_shadow, base / "prov_sh3.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertNotEqual(bf_sh2, bf_sh3)
+
+            # Compiler search precedence for -include/-imacros: compile_dir -> -iquote -> -I -> -isystem -> -idirafter
+            deps_prec = base / "deps_prec"
+            write_pkg(
+                deps_prec,
+                "libjxl",
+                True,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="-march=x86-64-v2",
+                cxx_rel="-O3 -DNDEBUG",
+                toggles={},
+                ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG -std=c++17 -idirafter dir_after -isystem dir_sys -I dir_inc -iquote dir_quote -include prec.h",
+            )
+            pkg_prec = deps_prec / "libjxl"
+            prec_files: dict[str, Path] = {}
+            for dname in ("dir_after", "dir_sys", "dir_inc", "dir_quote"):
+                dp = pkg_prec / dname
+                dp.mkdir(parents=True, exist_ok=True)
+                f = dp / "prec.h"
+                f.write_text(f"#define SRC_{dname} 1\n", encoding="utf-8")
+                prec_files[dname] = f
+            bf_p1 = run_prov(deps_prec, base / "prov_p1.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            for shadow_d in ("dir_after", "dir_sys", "dir_inc"):
+                prec_files[shadow_d].write_text(f"#define SRC_{shadow_d} 2\n", encoding="utf-8")
+            self.assertEqual(bf_p1, run_prov(deps_prec, base / "prov_p2.h")["RFC_FORMAT_JPEG_XL"]["build_flags"])
+            prec_files["dir_quote"].write_text("#define SRC_dir_quote 2\n", encoding="utf-8")
+            bf_p3 = run_prov(deps_prec, base / "prov_p3.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertNotEqual(bf_p1, bf_p3)
+            prec_files["dir_quote"].unlink()
+            bf_p4 = run_prov(deps_prec, base / "prov_p4.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertNotEqual(bf_p3, bf_p4)
+            prec_files["dir_sys"].write_text("#define SRC_dir_sys 3\n", encoding="utf-8")
+            self.assertEqual(bf_p4, run_prov(deps_prec, base / "prov_p5.h")["RFC_FORMAT_JPEG_XL"]["build_flags"])
+            prec_files["dir_inc"].write_text("#define SRC_dir_inc 3\n", encoding="utf-8")
+            bf_p6 = run_prov(deps_prec, base / "prov_p6.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertNotEqual(bf_p4, bf_p6)
+            cwd_prec = pkg_prec / "prec.h"
+            cwd_prec.write_text("#define SRC_cwd 1\n", encoding="utf-8")
+            bf_p7 = run_prov(deps_prec, base / "prov_p7.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertNotEqual(bf_p6, bf_p7)
+            prec_files["dir_inc"].write_text("#define SRC_dir_inc 4\n", encoding="utf-8")
+            self.assertEqual(bf_p7, run_prov(deps_prec, base / "prov_p8.h")["RFC_FORMAT_JPEG_XL"]["build_flags"])
+            cwd_prec.write_text("#define SRC_cwd 2\n", encoding="utf-8")
+            self.assertNotEqual(bf_p7, run_prov(deps_prec, base / "prov_p9.h")["RFC_FORMAT_JPEG_XL"]["build_flags"])
 
     def test_kodim23_compare_threads_oracle_and_history(self) -> None:
         self.assertEqual(sha256_file(KODIM_PATH), KODIM_EXPECTED_SHA256)
