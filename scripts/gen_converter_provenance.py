@@ -318,20 +318,67 @@ def _is_noise_define(tok: str) -> bool:
     )
 
 
-def _resolve_input_path(arg: str, search_dirs: tuple[Path, ...]) -> Path:
+_INCLUDE_DIRECTIVE_RE = re.compile(
+    r'^[ \t]*#[ \t]*(include|include_next)[ \t]*([<"])([^>"]+)[>"]',
+    re.MULTILINE,
+)
+
+
+def _strip_c_comments(text: str) -> str:
+    text = text.replace("\\\r\n", "").replace("\\\n", "")
+    out: list[str] = []
+    i = 0
+    n = len(text)
+    while i < n:
+        c = text[i]
+        nxt = text[i + 1] if i + 1 < n else ""
+        if c == "/" and nxt == "/":
+            i += 2
+            while i < n and text[i] != "\n":
+                i += 1
+            continue
+        if c == "/" and nxt == "*":
+            i += 2
+            while i + 1 < n and not (text[i] == "*" and text[i + 1] == "/"):
+                if text[i] == "\n":
+                    out.append("\n")
+                i += 1
+            i += 2
+            continue
+        if c in ('"', "'"):
+            q = c
+            out.append(c)
+            i += 1
+            while i < n:
+                ch = text[i]
+                out.append(ch)
+                i += 1
+                if ch == "\\" and i < n:
+                    out.append(text[i])
+                    i += 1
+                    continue
+                if ch == q or ch == "\n":
+                    break
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def _resolve_input_path(arg: str, search_dirs: tuple[Path, ...]) -> tuple[Path, int | None]:
     p = Path(arg)
     if p.is_absolute():
-        return p
-    for base in search_dirs:
+        return p, None
+    for idx, base in enumerate(search_dirs):
         cand = base / p
         if cand.is_file():
-            return cand
-    return p
+            return cand, idx
+    return p, None
 
 
-def _extract_token_search_dirs(
+def _extract_token_search_categories(
     flags_tokens: list[str], compile_dir: Path | None
-) -> tuple[Path, ...]:
+) -> tuple[tuple[Path, ...], tuple[Path, ...], tuple[Path, ...], tuple[Path, ...]]:
     categories = ("-iquote", "-I", "-isystem", "-idirafter")
     buckets: dict[str, list[Path]] = {cat: [] for cat in categories}
     i = 0
@@ -356,12 +403,71 @@ def _extract_token_search_dirs(
                 dp = compile_dir / dp
             if dp not in buckets[matched_cat]:
                 buckets[matched_cat].append(dp)
-    dirs: list[Path] = []
-    for cat in categories:
-        for dp in buckets[cat]:
-            if dp not in dirs:
-                dirs.append(dp)
-    return tuple(dirs)
+    return tuple(tuple(buckets[cat]) for cat in categories)
+
+
+def _hash_header_tree(
+    root: Path,
+    root_inc_idx: int | None,
+    inc_cats: tuple[tuple[Path, ...], tuple[Path, ...], tuple[Path, ...], tuple[Path, ...]],
+) -> str:
+    iquote, i_dirs, isystem, idirafter = inc_cats
+    quote_chain = iquote + i_dirs + isystem + idirafter
+    n_iquote = len(iquote)
+    h = hashlib.sha256()
+    seen: set[Path] = set()
+
+    def walk(path: Path, chain_idx: int | None) -> None:
+        try:
+            canon = path.resolve()
+        except OSError:
+            canon = path
+        if canon in seen or len(seen) >= 256:
+            return
+        seen.add(canon)
+        try:
+            raw = path.read_bytes()
+        except OSError:
+            return
+        h.update(len(raw).to_bytes(8, "little"))
+        h.update(raw)
+        stripped = _strip_c_comments(raw.decode("utf-8", errors="replace"))
+        for kind, delim, inc_arg in _INCLUDE_DIRECTIVE_RE.findall(stripped):
+            h.update(f"{kind}:{delim}{inc_arg}\0".encode("utf-8", errors="replace"))
+            rel = Path(inc_arg)
+            if rel.is_absolute():
+                if rel.is_file():
+                    walk(rel, None)
+                continue
+            child: Path | None = None
+            child_idx: int | None = None
+            if kind == "include_next":
+                if chain_idx is not None:
+                    start = chain_idx + 1 if delim == '"' else max(n_iquote, chain_idx + 1)
+                else:
+                    start = 0 if delim == '"' else n_iquote
+                for idx in range(start, len(quote_chain)):
+                    cand = quote_chain[idx] / rel
+                    if cand.is_file():
+                        child, child_idx = cand, idx
+                        break
+            else:
+                if delim == '"':
+                    cur_cand = path.parent / rel
+                    if cur_cand.is_file():
+                        child, child_idx = cur_cand, chain_idx
+                if child is None:
+                    start = 0 if delim == '"' else n_iquote
+                    for idx in range(start, len(quote_chain)):
+                        cand = quote_chain[idx] / rel
+                        if cand.is_file():
+                            child, child_idx = cand, idx
+                            break
+            if child is not None:
+                walk(child, child_idx)
+
+    walk(root, root_inc_idx)
+    return h.hexdigest()[:16]
 
 
 def _sanitize_forced_include_token(
@@ -369,6 +475,8 @@ def _sanitize_forced_include_token(
     arg: str,
     include_fingerprint: bool,
     search_dirs: tuple[Path, ...] = (),
+    inc_cats: tuple[tuple[Path, ...], tuple[Path, ...], tuple[Path, ...], tuple[Path, ...]] | None = None,
+    prefix_dirs_count: int = 0,
 ) -> str:
     p = Path(arg)
     name = p.name or arg
@@ -376,12 +484,14 @@ def _sanitize_forced_include_token(
     if not include_fingerprint:
         return f"{opt}{sep}{name}"
     arg_sha = hashlib.sha256(arg.encode("utf-8", errors="replace")).hexdigest()[:16]
-    resolved = _resolve_input_path(arg, search_dirs)
-    content_sha = (
-        hashlib.sha256(resolved.read_bytes()).hexdigest()[:16]
-        if resolved.is_file()
-        else "absent"
-    )
+    resolved, hit_idx = _resolve_input_path(arg, search_dirs)
+    if not resolved.is_file():
+        content_sha = "absent"
+    elif inc_cats is not None:
+        chain_idx = (hit_idx - prefix_dirs_count) if (hit_idx is not None and hit_idx >= prefix_dirs_count) else None
+        content_sha = _hash_header_tree(resolved, chain_idx, inc_cats)
+    else:
+        content_sha = hashlib.sha256(resolved.read_bytes()).hexdigest()[:16]
     return f"{opt}{sep}{name}#p={arg_sha}#c={content_sha}"
 
 
@@ -397,7 +507,7 @@ def _expand_response_tokens(
     search = (compile_dir,) if compile_dir is not None else ()
     for tok in tokens:
         if tok.startswith("@") and len(tok) > 1:
-            rsp_path = _resolve_input_path(tok[1:], search)
+            rsp_path, _ = _resolve_input_path(tok[1:], search)
             try:
                 canon = rsp_path.resolve()
             except OSError:
@@ -469,12 +579,11 @@ def _semantic_ninja_tokens(
         if search_context_tokens
         else flags_tokens
     )
-    inc_dirs = _extract_token_search_dirs(ctx_tokens, compile_dir)
-    all_search: list[Path] = []
-    for d in list(search_dirs) + list(inc_dirs):
-        if d not in all_search:
-            all_search.append(d)
-    eff_search = tuple(all_search)
+    inc_cats = _extract_token_search_categories(ctx_tokens, compile_dir)
+    quote_chain = inc_cats[0] + inc_cats[1] + inc_cats[2] + inc_cats[3]
+    prefix_dirs = tuple(search_dirs)
+    eff_search = prefix_dirs + quote_chain
+    prefix_count = len(prefix_dirs)
     i = 0
     two_tok_search = (
         "-isystem",
@@ -511,7 +620,11 @@ def _semantic_ninja_tokens(
             continue
         if tok in ("-include", "--include", "-imacros") and i + 1 < len(flags_tokens):
             opt_norm = "-include" if tok == "--include" else tok
-            out.append(_sanitize_forced_include_token(opt_norm, flags_tokens[i + 1], include_fingerprint, eff_search))
+            out.append(
+                _sanitize_forced_include_token(
+                    opt_norm, flags_tokens[i + 1], include_fingerprint, eff_search, inc_cats, prefix_count
+                )
+            )
             i += 2
             continue
         if tok == "-include-pch" and i + 1 < len(flags_tokens):
@@ -527,8 +640,15 @@ def _semantic_ninja_tokens(
                 and i + 3 < len(flags_tokens)
                 and flags_tokens[i + 2] == "-Xclang"
             ):
-                xc_search = ((compile_dir,) if compile_dir is not None else ()) if nxt == "-include-pch" else eff_search
-                out.append(f"-Xclang {_sanitize_forced_include_token(nxt, flags_tokens[i + 3], include_fingerprint, xc_search)}")
+                if nxt == "-include-pch":
+                    xc_tok = _sanitize_forced_include_token(
+                        nxt, flags_tokens[i + 3], include_fingerprint, (compile_dir,) if compile_dir is not None else ()
+                    )
+                else:
+                    xc_tok = _sanitize_forced_include_token(
+                        nxt, flags_tokens[i + 3], include_fingerprint, eff_search, inc_cats, prefix_count
+                    )
+                out.append(f"-Xclang {xc_tok}")
                 i += 4
                 continue
             if "/" in nxt or "\\" in nxt:
@@ -582,17 +702,29 @@ def _semantic_ninja_tokens(
         if matched_glued_search:
             continue
         if tok.startswith("--include="):
-            out.append(_sanitize_forced_include_token("-include", tok[len("--include="):], include_fingerprint, eff_search))
+            out.append(
+                _sanitize_forced_include_token(
+                    "-include", tok[len("--include="):], include_fingerprint, eff_search, inc_cats, prefix_count
+                )
+            )
             continue
         if tok.startswith("-include-pch") and len(tok) > len("-include-pch"):
             pch_search = (compile_dir,) if compile_dir is not None else ()
             out.append(_sanitize_forced_include_token("-include-pch", tok[len("-include-pch"):], include_fingerprint, pch_search))
             continue
         if tok.startswith("-include") and len(tok) > len("-include"):
-            out.append(_sanitize_forced_include_token("-include", tok[len("-include"):], include_fingerprint, eff_search))
+            out.append(
+                _sanitize_forced_include_token(
+                    "-include", tok[len("-include"):], include_fingerprint, eff_search, inc_cats, prefix_count
+                )
+            )
             continue
         if tok.startswith("-imacros") and len(tok) > len("-imacros"):
-            out.append(_sanitize_forced_include_token("-imacros", tok[len("-imacros"):], include_fingerprint, eff_search))
+            out.append(
+                _sanitize_forced_include_token(
+                    "-imacros", tok[len("-imacros"):], include_fingerprint, eff_search, inc_cats, prefix_count
+                )
+            )
             continue
         if tok.startswith("-"):
             out.append(tok)

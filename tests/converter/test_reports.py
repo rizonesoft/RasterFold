@@ -1275,6 +1275,62 @@ class TestHostReports(unittest.TestCase):
             bf_fw4 = run_prov(deps_fwd, base / "prov_fw4.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
             self.assertNotEqual(bf_fw3, bf_fw4)
 
+            # Transitive forced-include headers (#include "...", #include <...>, #include_next, comments, cycles)
+            deps_trans = base / "deps_trans"
+            write_pkg(
+                deps_trans,
+                "libjxl",
+                True,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="-march=x86-64-v2 -include config.h",
+                cxx_rel="-O3 -DNDEBUG",
+                toggles={},
+                ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG -std=c++17 -iquote qdir -I inc1 -I inc2 -include config.h",
+            )
+            pkg_tr = deps_trans / "libjxl"
+            for sub in ("qdir/sub", "inc1/sub", "inc2"):
+                (pkg_tr / sub).mkdir(parents=True, exist_ok=True)
+            (pkg_tr / "sub").mkdir(parents=True, exist_ok=True)
+            (pkg_tr / "decoy_comment.h").write_text("#define DECOY_C 1\n", encoding="utf-8")
+            (pkg_tr / "sub" / "angle.h").write_text("#define WRONG_CURDIR 1\n", encoding="utf-8")
+            (pkg_tr / "qdir" / "sub" / "angle.h").write_text("#define WRONG_IQUOTE 1\n", encoding="utf-8")
+            (pkg_tr / "qdir" / "local_leaf.h").write_text("#define WRONG_Q_LEAF 1\n", encoding="utf-8")
+            feat_hdr = pkg_tr / "features.h"
+            feat_hdr.write_text("#define FEATURE 1\n", encoding="utf-8")
+            leaf_hdr = pkg_tr / "inc1" / "sub" / "local_leaf.h"
+            leaf_hdr.write_text("#define LEAF_VAL 1\n", encoding="utf-8")
+            (pkg_tr / "inc1" / "sub" / "angle.h").write_text('#include "local_leaf.h"\n', encoding="utf-8")
+            (pkg_tr / "inc1" / "chain.h").write_text('#include_next "chain.h"\n', encoding="utf-8")
+            next_hdr = pkg_tr / "inc2" / "chain.h"
+            next_hdr.write_text("#define CHAIN_NEXT 1\n", encoding="utf-8")
+            (pkg_tr / "cyc_b.h").write_text('#include "cyc_a.h"\n#define CYC 1\n', encoding="utf-8")
+            (pkg_tr / "cyc_a.h").write_text('#include "cyc_b.h"\n', encoding="utf-8")
+            (pkg_tr / "config.h").write_text(
+                '#include "features.h"\n'
+                '#include <sub/angle.h>\n'
+                '#include "chain.h"\n'
+                '#include "cyc_a.h"\n'
+                '/* #include "decoy_comment.h" */\n'
+                '// #include "decoy_comment.h"\n',
+                encoding="utf-8",
+            )
+            bf_t1 = run_prov(deps_trans, base / "prov_t1.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            feat_hdr.write_text("#define FEATURE 2\n", encoding="utf-8")
+            bf_t2 = run_prov(deps_trans, base / "prov_t2.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertNotEqual(bf_t1, bf_t2)
+            leaf_hdr.write_text("#define LEAF_VAL 2\n", encoding="utf-8")
+            bf_t3 = run_prov(deps_trans, base / "prov_t3.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertNotEqual(bf_t2, bf_t3)
+            next_hdr.write_text("#define CHAIN_NEXT 2\n", encoding="utf-8")
+            bf_t4 = run_prov(deps_trans, base / "prov_t4.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertNotEqual(bf_t3, bf_t4)
+            # Commented-out or shadowed headers must not spuriously alter provenance
+            (pkg_tr / "decoy_comment.h").write_text("#define DECOY_C 2\n", encoding="utf-8")
+            (pkg_tr / "sub" / "angle.h").write_text("#define WRONG_CURDIR 2\n", encoding="utf-8")
+            (pkg_tr / "qdir" / "local_leaf.h").write_text("#define WRONG_Q_LEAF 2\n", encoding="utf-8")
+            self.assertEqual(bf_t4, run_prov(deps_trans, base / "prov_t5.h")["RFC_FORMAT_JPEG_XL"]["build_flags"])
+
     def test_kodim23_compare_threads_oracle_and_history(self) -> None:
         self.assertEqual(sha256_file(KODIM_PATH), KODIM_EXPECTED_SHA256)
         with Image.open(KODIM_PATH) as im:
