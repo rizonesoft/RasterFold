@@ -1,0 +1,72 @@
+{
+  "ref": "D10 T02 \u00a72",
+  "title": "WebP",
+  "implementation_sha": "9e0ae3c26cd1e2ab73a1adacda109f87d4431483",
+  "date": "2026-11-16",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/10-converter/D10-T02-s2.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "python3 scripts/check-converter.py --case webp --all-targets -> host 447 checks, windows-x64 449 checks, 9/9 OK 36.982s, webp: PASS",
+    "python3 scripts/check-converter.py --case all --all-targets -> all 8 suites PASS, bundle: PASS",
+    "python3 scripts/check-all.py --all-targets -> check-all: 32/32 passed"
+  ],
+  "completion": {
+    "report": "docs/reviews/10-converter/D10-T02-s2.md",
+    "verdict": "reconciled",
+    "candidate": "9e0ae3c26cd1e2ab73a1adacda109f87d4431483",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/10-converter/D10-T02-s2.md",
+    "candidate": "4bbe761c84de479e65a1d29ba7806f227a5cd54a",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "4bbe761c84de479e65a1d29ba7806f227a5cd54a",
+  "schedule": {
+    "policy": "three-pass",
+    "pass_cap": 33,
+    "plan": {
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {},
+    "reconciliation": {
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}
