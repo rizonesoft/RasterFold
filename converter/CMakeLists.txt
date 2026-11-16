@@ -182,6 +182,7 @@ endif()
 add_library(rfc_codecs STATIC
   "${CMAKE_SOURCE_DIR}/codecs/basic.c"
   "${CMAKE_SOURCE_DIR}/codecs/webp.c"
+  "${CMAKE_SOURCE_DIR}/codecs/jxl.c"
 )
 set_target_properties(rfc_codecs PROPERTIES
   C_STANDARD 11
@@ -189,6 +190,11 @@ set_target_properties(rfc_codecs PROPERTIES
   C_EXTENSIONS OFF
 )
 target_compile_options(rfc_codecs PRIVATE -Wall -Wextra -Werror)
+target_compile_definitions(rfc_codecs PRIVATE
+  JXL_STATIC_DEFINE
+  JXL_THREADS_STATIC_DEFINE
+  JXL_CMS_STATIC_DEFINE
+)
 target_include_directories(rfc_codecs PRIVATE
   "${CMAKE_SOURCE_DIR}/include"
   "${CMAKE_SOURCE_DIR}/../include"
@@ -204,6 +210,14 @@ target_link_libraries(rfc_codecs PRIVATE
   "${RF_LIB_WEBPDEMUX}"
   "${RF_LIB_WEBP}"
   "${RF_LIB_SHARPYUV}"
+  "${RF_LIB_JXL}"
+  "${RF_LIB_JXL_THREADS}"
+  "${RF_LIB_JXL_CMS}"
+  "${RF_LIB_HWY}"
+  "${RF_LIB_BROTLIENC}"
+  "${RF_LIB_BROTLIDEC}"
+  "${RF_LIB_BROTLICOMMON}"
+  "${RF_LIB_LCMS2}"
 )
 
 add_executable(rfc_test_basic
@@ -213,6 +227,7 @@ set_target_properties(rfc_test_basic PROPERTIES
   C_STANDARD 11
   C_STANDARD_REQUIRED ON
   C_EXTENSIONS OFF
+  LINKER_LANGUAGE CXX
   RUNTIME_OUTPUT_DIRECTORY "${RF_CONVERTER_BIN_DIR}"
 )
 target_compile_options(rfc_test_basic PRIVATE -Wall -Wextra -Werror)
@@ -237,6 +252,7 @@ set_target_properties(rfc_test_webp PROPERTIES
   C_STANDARD 11
   C_STANDARD_REQUIRED ON
   C_EXTENSIONS OFF
+  LINKER_LANGUAGE CXX
   RUNTIME_OUTPUT_DIRECTORY "${RF_CONVERTER_BIN_DIR}"
 )
 target_compile_options(rfc_test_webp PRIVATE -Wall -Wextra -Werror)
@@ -255,6 +271,49 @@ target_link_libraries(rfc_test_webp PRIVATE
 )
 if(WIN32)
   target_link_options(rfc_test_webp PRIVATE -static -Wl,--gc-sections)
+endif()
+
+add_executable(rfc_test_jxl
+  "${CMAKE_SOURCE_DIR}/../tests/converter/test_jxl.c"
+)
+set_target_properties(rfc_test_jxl PROPERTIES
+  C_STANDARD 11
+  C_STANDARD_REQUIRED ON
+  C_EXTENSIONS OFF
+  LINKER_LANGUAGE CXX
+  RUNTIME_OUTPUT_DIRECTORY "${RF_CONVERTER_BIN_DIR}"
+)
+target_compile_options(rfc_test_jxl PRIVATE -Wall -Wextra -Werror)
+target_compile_definitions(rfc_test_jxl PRIVATE
+  JXL_STATIC_DEFINE
+  JXL_THREADS_STATIC_DEFINE
+  JXL_CMS_STATIC_DEFINE
+)
+target_include_directories(rfc_test_jxl PRIVATE
+  "${CMAKE_SOURCE_DIR}/codecs"
+  "${RF_DEPS_PREFIX}/include"
+)
+target_link_libraries(rfc_test_jxl PRIVATE
+  rfc_codecs
+  rfc_engine
+  "${RF_LIBRASTERFOLD}"
+  "${RF_LIB_JXL}"
+  "${RF_LIB_JXL_THREADS}"
+  "${RF_LIB_JXL_CMS}"
+  "${RF_LIB_HWY}"
+  "${RF_LIB_BROTLIENC}"
+  "${RF_LIB_BROTLIDEC}"
+  "${RF_LIB_BROTLICOMMON}"
+  "${RF_LIB_LCMS2}"
+  "${RF_LIB_WEBPMUX}"
+  "${RF_LIB_WEBPDEMUX}"
+  "${RF_LIB_WEBP}"
+  "${RF_LIB_SHARPYUV}"
+  "${RF_LIB_PNG}"
+  "${RF_LIB_Z}"
+)
+if(WIN32)
+  target_link_options(rfc_test_jxl PRIVATE -static -Wl,--gc-sections)
 endif()
 
 add_executable(rfc_bundle_smoke

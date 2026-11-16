@@ -776,6 +776,45 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
             }
             free(probe_frames);
         }
+    } else if (out_report->source_format == RFC_FORMAT_JPEG) {
+        const rfc_jpeg_reconstruct_adapter *jrec =
+            rfc_registry_acquire_jpeg_reconstruct();
+        if (jrec) {
+            rfc_exec_context pexec;
+            memset(&pexec, 0, sizeof(pexec));
+            pexec.codec_threads = 1u;
+            pexec.limits = eff_limits;
+            pexec.allocator = &def_alloc;
+            void *jsess = NULL;
+            if (jrec->open_session(&pexec, &jsess) == RFC_OK) {
+                rfc_image_probe jp;
+                memset(&jp, 0, sizeof(jp));
+                if (jrec->probe_jpeg(jsess, &pexec, src_bytes, src_size, &jp) ==
+                        RFC_OK &&
+                    rfc_limits_check_probe(&eff_limits, &jp,
+                                           (uint64_t)src_size,
+                                           src_size > 0u) == RFC_OK) {
+                    has_src_layout = 1;
+                    src_layout = jp.first_frame;
+                    src_meta = jp.container_meta;
+                    has_src_meta = 1;
+                    uint64_t raw_b = 0u;
+                    if (rfc_limits_compute_frame_bytes(&jp.first_frame, 1u,
+                                                       &raw_b) == RFC_OK) {
+                        out_report->raw_frame_bytes = raw_b;
+                    }
+                    src_meta.icc = NULL;
+                    src_meta.icc_len = 0u;
+                    src_meta.exif = NULL;
+                    src_meta.exif_len = 0u;
+                    src_meta.xmp = NULL;
+                    src_meta.xmp_len = 0u;
+                }
+                rfc_metadata_free(&jp.container_meta, &def_alloc);
+                jrec->close_session(jsess);
+            }
+            rfc_registry_release_jpeg_reconstruct();
+        }
     }
 
     rfc_scheduler *sched = rfc_scheduler_create(&scfg);

@@ -2062,6 +2062,52 @@ static void test_metadata_policies(void) {
                                   RFC_EXACT_PIXEL_EXACT, &cont, sf, 2u, &cont,
                                   df, 2u, 0u, &mrep, &mmm) == RFC_OK);
 
+        /* Paired native-orientation vs EXIF-carrier regression (D10 T02 s3):
+         * orientation-only single-frame JXL (exif == NULL, ori = ROTATE_90)
+         * passes with dlen == 0 when destination orientation matches, while
+         * equivalent WebP (exif == NULL, ori = ROTATE_90) still fails dlen == 0
+         * and requires its 26-byte canonical TIFF EXIF carrier; mismatched JXL
+         * orientation still fails. */
+        {
+            sf[0].metadata.icc = NULL;
+            sf[0].metadata.icc_len = 0u;
+            sf[0].metadata.exif = NULL;
+            sf[0].metadata.exif_len = 0u;
+            sf[0].metadata.orientation = RFC_ORIENTATION_ROTATE_90;
+            df[0].metadata.icc = NULL;
+            df[0].metadata.icc_len = 0u;
+            df[0].metadata.exif = NULL;
+            df[0].metadata.exif_len = 0u;
+            df[0].metadata.orientation = RFC_ORIENTATION_ROTATE_90;
+
+            CHECK(rfc_metadata_verify(
+                      RFC_FORMAT_JPEG_XL, RFC_META_POLICY_PRESERVE,
+                      RFC_EXACT_PIXEL_EXACT, &cont, &sf[0], 1u, &cont, &df[0],
+                      1u, 0u, &mrep, &mmm) == RFC_OK);
+            CHECK(rfc_metadata_verify(
+                      RFC_FORMAT_WEBP, RFC_META_POLICY_PRESERVE,
+                      RFC_EXACT_PIXEL_EXACT, &cont, &sf[0], 1u, &cont, &df[0],
+                      1u, 0u, &mrep, &mmm) == RFC_ERR_VERIFY_MISMATCH);
+            CHECK(mmm.kind == RFC_MISMATCH_METADATA_LOST &&
+                  (mrep.lost_supported_items & RFC_META_ITEM_EXIF) != 0u);
+
+            df[0].metadata.orientation = RFC_ORIENTATION_NORMAL;
+            CHECK(rfc_metadata_verify(
+                      RFC_FORMAT_JPEG_XL, RFC_META_POLICY_PRESERVE,
+                      RFC_EXACT_PIXEL_EXACT, &cont, &sf[0], 1u, &cont, &df[0],
+                      1u, 0u, &mrep, &mmm) == RFC_ERR_VERIFY_MISMATCH);
+            CHECK(mmm.kind == RFC_MISMATCH_METADATA_LOST &&
+                  (mrep.lost_supported_items & RFC_META_ITEM_ORIENTATION) !=
+                      0u);
+
+            sf[0].metadata.icc = icc_bytes;
+            sf[0].metadata.icc_len = sizeof(icc_bytes);
+            sf[0].metadata.orientation = RFC_ORIENTATION_ROTATE_90;
+            df[0].metadata.icc = icc_bytes;
+            df[0].metadata.icc_len = sizeof(icc_bytes);
+            df[0].metadata.orientation = RFC_ORIENTATION_ROTATE_90;
+        }
+
         /* Frame 0 identical, frame 1 loses ICC -> rejected. */
         df[1].metadata.icc = NULL;
         df[1].metadata.icc_len = 0u;

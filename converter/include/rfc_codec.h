@@ -257,6 +257,40 @@ const rfc_session_adapter *rfc_registry_session_adapter(rfc_format_id id);
 const rfc_session_adapter *rfc_registry_acquire_session(rfc_format_id id);
 void rfc_registry_release_session(rfc_format_id id);
 
+/* Dedicated JPEG -> JPEG XL lossless byte-reconstruction adapter (D10 T02 s3 /
+ * s5). Keeps arbitrary JPEG pixel decode/encode separate until D10 T02 s5.
+ * cancel_session, if provided, must be thread-safe and non-blocking. */
+typedef struct rfc_jpeg_reconstruct_adapter {
+    uint32_t abi_version;
+    rfc_status (*open_session)(const rfc_exec_context *exec, void **out_session);
+    void (*close_session)(void *session);
+    void (*cancel_session)(void *session);
+    rfc_status (*probe_jpeg)(void *session, const rfc_exec_context *exec,
+                             const uint8_t *jpeg_bytes, size_t jpeg_size,
+                             rfc_image_probe *out_probe);
+    rfc_status (*transcode_jpeg_to_jxl)(void *session,
+                                        const rfc_exec_context *exec,
+                                        const uint8_t *jpeg_bytes,
+                                        size_t jpeg_size,
+                                        const rfc_setting_value *settings,
+                                        size_t setting_count,
+                                        rfc_encoded *out_jxl,
+                                        rfc_metadata *out_src_meta);
+    rfc_status (*reconstruct_jpeg_from_jxl)(void *session,
+                                            const rfc_exec_context *exec,
+                                            const uint8_t *jxl_bytes,
+                                            size_t jxl_size,
+                                            rfc_encoded *out_jpeg,
+                                            rfc_metadata *out_dst_meta);
+} rfc_jpeg_reconstruct_adapter;
+
+rfc_status rfc_registry_register_jpeg_reconstruct(
+    const rfc_jpeg_reconstruct_adapter *adapter);
+rfc_status rfc_registry_unregister_jpeg_reconstruct(void);
+const rfc_jpeg_reconstruct_adapter *rfc_registry_jpeg_reconstruct_adapter(void);
+const rfc_jpeg_reconstruct_adapter *rfc_registry_acquire_jpeg_reconstruct(void);
+void rfc_registry_release_jpeg_reconstruct(void);
+
 const char *rfc_status_name(rfc_status status);
 const char *rfc_sample_name(rfc_sample_format format);
 

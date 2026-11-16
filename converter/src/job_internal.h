@@ -368,6 +368,7 @@ typedef struct rfc_partial_entry {
 
 typedef struct rfc_cancel_snapshot {
     const rfc_session_adapter *sess_adapter;
+    const rfc_jpeg_reconstruct_adapter *jrec_adapter;
     void *session;
 } rfc_cancel_snapshot;
 
@@ -445,6 +446,7 @@ struct rfc_job {
     /* Guarded by job->lock while active session executes so cancel can notify it. */
     uint32_t active_cancel_calls;
     const rfc_session_adapter *active_sess_adapter;
+    const rfc_jpeg_reconstruct_adapter *active_jrec_adapter;
     void *active_session;
 
     /* Streaming per-frame pre-allocation counters guarded by job->lock. */

@@ -340,6 +340,8 @@ static void test_hostile_limits_and_unknown_reservation(void) {
     CHECK(rfc_query_provider_memory_contract(RFC_FORMAT_JPEG_XL, &minfo) ==
           RFC_OK);
     CHECK(minfo.mode == RFC_MEM_HOOK_ENFORCED);
+    CHECK(minfo.working_set_multiplier == 16u);
+    CHECK(minfo.fixed_overhead_bytes == 16ull * 1024ull * 1024ull);
     CHECK(rfc_query_provider_memory_contract(RFC_FORMAT_CAMERA_RAW, &minfo) ==
           RFC_OK);
     CHECK(minfo.mode == RFC_MEM_RESERVATION_AND_LIMITS);
@@ -3430,6 +3432,97 @@ static void test_exif_xmp_aliasing_and_cleanup(void) {
     printf("jobs: exif_xmp_aliasing_and_cleanup ok\n");
 }
 
+static void test_jxl_scheduler_admission_and_contract(void) {
+    rfc_scheduler_config cfg;
+    rfc_scheduler_config_default(&cfg);
+    cfg.max_workers = 1u;
+    cfg.memory_budget_bytes = 128ull * 1024ull * 1024ull;
+    rfc_scheduler *sched = rfc_scheduler_create(&cfg);
+    CHECK(sched != NULL);
+
+    uint8_t dummy[1024] = {0xff, 0xd8, 0xff, 0xe0, 0, 16, 'J', 'F',
+                           'I', 'F', 0, 1, 1, 0, 0, 1};
+    rfc_layout lay = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 512u, 512u, 512u * 3u,
+                      8u};
+
+    rfc_job_spec enc1;
+    memset(&enc1, 0, sizeof(enc1));
+    enc1.source_format = RFC_FORMAT_PNG;
+    enc1.target_format = RFC_FORMAT_JPEG_XL;
+    enc1.source_bytes = dummy;
+    enc1.source_size = sizeof(dummy);
+    enc1.source_layout = &lay;
+    enc1.requested_codec_threads = 1u;
+    enc1.has_stage_ops = 1;
+    enc1.stage_ops.on_import = ok_noop_stage;
+    enc1.stage_ops.on_encode = ok_noop_stage;
+    enc1.stage_ops.on_verify = ok_noop_stage;
+    enc1.stage_ops.on_export = export_mark_ok;
+
+    rfc_job *j1 = NULL;
+    CHECK(rfc_scheduler_submit(sched, NULL, &enc1, &j1) == RFC_OK);
+    rfc_job_snapshot s1;
+    CHECK(rfc_job_snapshot_get(j1, &s1) == RFC_OK);
+    CHECK(rfc_job_wait(j1, UINT32_MAX) == RFC_OK);
+    rfc_job_release(j1);
+
+    rfc_job_spec enc3 = enc1;
+    enc3.requested_codec_threads = 3u;
+    rfc_job *j3 = NULL;
+    CHECK(rfc_scheduler_submit(sched, NULL, &enc3, &j3) == RFC_OK);
+    rfc_job_snapshot s3;
+    CHECK(rfc_job_snapshot_get(j3, &s3) == RFC_OK);
+    CHECK(s3.budget.limit_bytes > s1.budget.limit_bytes);
+    CHECK(rfc_job_wait(j3, UINT32_MAX) == RFC_OK);
+    rfc_job_release(j3);
+
+    rfc_job_spec dec1 = enc1;
+    dec1.source_format = RFC_FORMAT_JPEG_XL;
+    dec1.target_format = RFC_FORMAT_PNG;
+    rfc_job *jd = NULL;
+    CHECK(rfc_scheduler_submit(sched, NULL, &dec1, &jd) == RFC_OK);
+    rfc_job_snapshot sd;
+    CHECK(rfc_job_snapshot_get(jd, &sd) == RFC_OK);
+    CHECK(sd.budget.limit_bytes < s1.budget.limit_bytes);
+    CHECK(rfc_job_wait(jd, UINT32_MAX) == RFC_OK);
+    rfc_job_release(jd);
+
+    /* Layoutless JPEG -> JXL original-byte-reconstruction admits with bounded
+     * estimate; layoutless PNG -> JXL pixel-exact still rejects. */
+    rfc_setting_value s_rec[1] = {{"exactness", "original-byte-reconstruction"}};
+    rfc_job_spec jrec_spec;
+    memset(&jrec_spec, 0, sizeof(jrec_spec));
+    jrec_spec.source_format = RFC_FORMAT_JPEG;
+    jrec_spec.target_format = RFC_FORMAT_JPEG_XL;
+    jrec_spec.source_bytes = dummy;
+    jrec_spec.source_size = sizeof(dummy);
+    jrec_spec.settings = s_rec;
+    jrec_spec.setting_count = 1u;
+    jrec_spec.requested_codec_threads = 1u;
+    jrec_spec.has_stage_ops = 1;
+    jrec_spec.stage_ops.on_import = ok_noop_stage;
+    jrec_spec.stage_ops.on_encode = ok_noop_stage;
+    jrec_spec.stage_ops.on_verify = ok_noop_stage;
+    jrec_spec.stage_ops.on_export = export_mark_ok;
+
+    rfc_job *jr = NULL;
+    CHECK(rfc_scheduler_submit(sched, NULL, &jrec_spec, &jr) == RFC_OK);
+    CHECK(rfc_job_wait(jr, UINT32_MAX) == RFC_OK);
+    rfc_job_release(jr);
+
+    rfc_job_spec bad_ll = jrec_spec;
+    bad_ll.source_format = RFC_FORMAT_PNG;
+    bad_ll.settings = NULL;
+    bad_ll.setting_count = 0u;
+    rfc_job *jb = NULL;
+    CHECK(rfc_scheduler_submit(sched, NULL, &bad_ll, &jb) ==
+          RFC_ERR_LIMIT_EXCEEDED);
+    CHECK(jb == NULL);
+
+    rfc_scheduler_destroy(sched);
+    printf("jobs: jxl_scheduler_admission ok\n");
+}
+
 int main(void) {
     test_config_defaults_and_reconfigure();
     test_hostile_limits_and_unknown_reservation();
@@ -3441,6 +3534,7 @@ int main(void) {
     test_round1_regressions();
     test_completion_gap_regressions();
     test_exif_xmp_aliasing_and_cleanup();
+    test_jxl_scheduler_admission_and_contract();
 
     if (g_failures > 0) {
         fprintf(stderr, "jobs: %d check(s) failed\n", g_failures);

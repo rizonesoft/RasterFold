@@ -391,10 +391,11 @@ rfc_status rfc_query_provider_memory_contract(rfc_format_id id,
             break;
         case RFC_FORMAT_JPEG_XL:
             out->mode = RFC_MEM_HOOK_ENFORCED;
-            out->working_set_multiplier = 4u;
-            out->fixed_overhead_bytes = 2ull * 1024ull * 1024ull;
+            out->working_set_multiplier = 16u;
+            out->fixed_overhead_bytes = 16ull * 1024ull * 1024ull;
             out->limitation_reason =
-                "libjxl allocations route through JxlMemoryManager rfc_budget hooks";
+                "libjxl allocations route through JxlMemoryManager rfc_budget hooks "
+                "plus pixel-plane and thread-runner reservation";
             break;
         case RFC_FORMAT_RASTERFOLD:
             out->mode = RFC_MEM_RESERVATION_AND_LIMITS;

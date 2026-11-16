@@ -348,7 +348,7 @@ static const rfc_capability k_registry[] = {
     {RFC_FORMAT_PNM, "pnm", "in-tree converter code", "D10 T02 \xc2\xa7" "1", NULL, USABLE, NULL, 1, 1, k_pnm, 4, COMMON, COMMON_RULES, META_NONE},
     {RFC_FORMAT_PAM, "pam", "in-tree converter code", "D10 T02 \xc2\xa7" "1", NULL, USABLE, NULL, 1, 1, k_pam, 6, COMMON, COMMON_RULES, META_NONE},
     {RFC_FORMAT_WEBP, "webp", "libwebp (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "2", NULL, USABLE, NULL, 1, 1, k_rgba8, 2, COMMON, COMMON_RULES, META_ICC | META_ORI | META_EXIF | META_XMP},
-    {RFC_FORMAT_JPEG_XL, "jpeg-xl", "libjxl (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "3", "D10 T02 \xc2\xa7" "12", PLANNED, "converter adapter not yet shipped", 1, 1, k_png, 6, JXLSET, JXL_RULES, META_ICC | META_ORI | META_TIM},
+    {RFC_FORMAT_JPEG_XL, "jpeg-xl", "libjxl (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "3", "D10 T02 \xc2\xa7" "12", USABLE, NULL, 1, 1, k_png, 6, JXLSET, JXL_RULES, META_ICC | META_ORI | META_TIM | META_EXIF | META_XMP},
     {RFC_FORMAT_AVIF, "avif", "libavif (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "4", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_10bit, 4, COMMON, COMMON_RULES, META_ICC | META_ORI},
     {RFC_FORMAT_JPEG, "jpeg", "libjpeg-turbo (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "5", NULL, PLANNED, "converter adapter not yet shipped", 1, 0, k_jpeg, 2, JPEGSET, COMMON_RULES, META_ICC | META_ORI},
     {RFC_FORMAT_GIF, "gif", "in-tree converter code", "D10 T02 \xc2\xa7" "6", "D10 T02 \xc2\xa7" "12", PLANNED, "converter adapter not yet shipped", 1, 1, k_rgba8, 2, ANIM, ANIM_RULES, META_TIM},
@@ -424,6 +424,8 @@ static const rfc_adapter *k_adapters[REGISTRY_COUNT];
 static size_t k_adapter_active[REGISTRY_COUNT];
 static const rfc_session_adapter *k_session_adapters[REGISTRY_COUNT];
 static size_t k_session_active[REGISTRY_COUNT];
+static const rfc_jpeg_reconstruct_adapter *k_jrec_adapter = NULL;
+static size_t k_jrec_active = 0;
 
 static void reg_lock(void) {
     while (atomic_exchange_explicit(&k_reg_lock, 1, memory_order_acquire) != 0) {
@@ -570,6 +572,58 @@ void rfc_registry_release_session(rfc_format_id id) {
     int idx = reg_find_index(id);
     if (idx >= 0 && k_session_active[idx] > 0) {
         k_session_active[idx]--;
+    }
+    reg_unlock();
+}
+rfc_status rfc_registry_register_jpeg_reconstruct(
+    const rfc_jpeg_reconstruct_adapter *adapter) {
+    if (!adapter || !adapter->open_session || !adapter->close_session ||
+        !adapter->probe_jpeg || !adapter->transcode_jpeg_to_jxl ||
+        !adapter->reconstruct_jpeg_from_jxl) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    if (adapter->abi_version != RFC_CODEC_ABI_VERSION) {
+        return RFC_ERR_ABI_VERSION;
+    }
+    reg_lock();
+    if (k_jrec_adapter != NULL) {
+        reg_unlock();
+        return RFC_ERR_DUPLICATE;
+    }
+    k_jrec_adapter = adapter;
+    reg_unlock();
+    return RFC_OK;
+}
+rfc_status rfc_registry_unregister_jpeg_reconstruct(void) {
+    reg_lock();
+    if (k_jrec_active > 0) {
+        reg_unlock();
+        return RFC_ERR_BUSY;
+    }
+    k_jrec_adapter = NULL;
+    reg_unlock();
+    return RFC_OK;
+}
+const rfc_jpeg_reconstruct_adapter *rfc_registry_jpeg_reconstruct_adapter(void) {
+    reg_lock();
+    const rfc_jpeg_reconstruct_adapter *out = k_jrec_adapter;
+    reg_unlock();
+    return out;
+}
+const rfc_jpeg_reconstruct_adapter *rfc_registry_acquire_jpeg_reconstruct(void) {
+    reg_lock();
+    const rfc_jpeg_reconstruct_adapter *out = NULL;
+    if (k_jrec_adapter != NULL) {
+        k_jrec_active++;
+        out = k_jrec_adapter;
+    }
+    reg_unlock();
+    return out;
+}
+void rfc_registry_release_jpeg_reconstruct(void) {
+    reg_lock();
+    if (k_jrec_active > 0) {
+        k_jrec_active--;
     }
     reg_unlock();
 }

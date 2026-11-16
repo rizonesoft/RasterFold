@@ -817,6 +817,111 @@ def _host_libwebp_flags():
     return cflags, libs
 
 
+def _ensure_host_jxl_flags():
+    import hashlib
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    root_p = Path(ROOT)
+    deps_prefix = root_p / "build" / "converter" / "linux-x64" / "deps-prefix"
+    deps_build = root_p / "build" / "converter" / "linux-x64" / "deps-build"
+    stamps_dir = root_p / "build" / "converter" / "linux-x64" / "deps-stamps"
+    deps_prefix.mkdir(parents=True, exist_ok=True)
+    stamps_dir.mkdir(parents=True, exist_ok=True)
+
+    cmake_pin = root_p / "tools" / "cmake-linux" / "bin" / "cmake"
+    ninja_pin = root_p / "tools" / "ninja-linux" / "ninja"
+    cmake_exe = str(cmake_pin) if cmake_pin.is_file() else (shutil.which("cmake") or "cmake")
+    ninja_exe = str(ninja_pin) if ninja_pin.is_file() else shutil.which("ninja")
+
+    cc_env = os.environ.get("CC") or shutil.which("cc") or shutil.which("clang") or "cc"
+    cxx_env = os.environ.get("CXX") or shutil.which("c++") or shutil.which("clang++") or "c++"
+    vendor = json.loads((root_p / "converter" / "vendor.json").read_text(encoding="utf-8"))
+    by_id = {p["id"]: p for p in vendor["packages"]}
+    pfx = deps_prefix.as_posix()
+
+    pkg_order = ["highway", "brotli", "lcms2", "libjxl"]
+    resolved_stamps = {}
+    for pid in pkg_order:
+        pkg = by_id[pid]
+        src_dir = root_p / "tools" / "converter-src" / pid
+        if not src_dir.is_dir():
+            raise RuntimeError(f"missing converter source tree for host JXL build: {src_dir}")
+        cmake_src = (root_p / "converter" / "cmake" / pid) if pid == "lcms2" else src_dir
+        extra = []
+        if pid == "lcms2":
+            extra.append(f"-DVENDOR_SOURCE_DIR={src_dir.as_posix()}")
+        if pid == "libjxl":
+            extra.extend([
+                f"-DLCMS2_INCLUDE_DIR={pfx}/include",
+                f"-DLCMS2_LIBRARIES={(deps_prefix / 'lib' / 'liblcms2.a').as_posix()}",
+                f"-DBROTLI_INCLUDE_DIR={pfx}/include",
+                f"-DBROTLICOMMON_LIBRARY={(deps_prefix / 'lib' / 'libbrotlicommon.a').as_posix()}",
+                f"-DBROTLIDEC_LIBRARY={(deps_prefix / 'lib' / 'libbrotlidec.a').as_posix()}",
+                f"-DBROTLIENC_LIBRARY={(deps_prefix / 'lib' / 'libbrotlienc.a').as_posix()}",
+            ])
+        cfg_flags = [
+            f"-DCMAKE_C_COMPILER={cc_env}",
+            f"-DCMAKE_CXX_COMPILER={cxx_env}",
+            f"-DCMAKE_INSTALL_PREFIX={pfx}",
+            "-DCMAKE_INSTALL_LIBDIR=lib",
+            f"-DCMAKE_PREFIX_PATH={pfx}",
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
+            "-DFETCHCONTENT_FULLY_DISCONNECTED=ON",
+            *pkg.get("cmake_options", []),
+            *extra,
+        ]
+        if ninja_exe:
+            cfg_flags = ["-G", "Ninja", f"-DCMAKE_MAKE_PROGRAM={ninja_exe}", *cfg_flags]
+        stamp_payload = json.dumps(
+            {
+                "id": pid,
+                "version": pkg["version"],
+                "sha256": pkg["sha256"],
+                "cfg": cfg_flags,
+                "deps": {d: resolved_stamps[d] for d in pkg.get("deps", []) if d in resolved_stamps},
+            },
+            sort_keys=True,
+        ).encode("utf-8")
+        want_stamp = hashlib.sha256(stamp_payload).hexdigest()
+        stamp_file = stamps_dir / f"{pid}.stamp"
+        if stamp_file.is_file() and stamp_file.read_text(encoding="utf-8").strip() == want_stamp:
+            resolved_stamps[pid] = want_stamp
+            continue
+        bdir = deps_build / pid
+        if bdir.exists():
+            shutil.rmtree(bdir)
+        subprocess.run([cmake_exe, "-S", cmake_src.as_posix(), "-B", bdir.as_posix(), *cfg_flags], cwd=ROOT, check=True)
+        subprocess.run([cmake_exe, "--build", bdir.as_posix(), "--parallel"], cwd=ROOT, check=True)
+        subprocess.run([cmake_exe, "--install", bdir.as_posix()], cwd=ROOT, check=True)
+        stamp_file.write_text(want_stamp + "\n", encoding="utf-8")
+        resolved_stamps[pid] = want_stamp
+
+    cflags = [
+        f"-I{(deps_prefix / 'include').as_posix()}",
+        "-DJXL_STATIC_DEFINE",
+        "-DJXL_THREADS_STATIC_DEFINE",
+        "-DJXL_CMS_STATIC_DEFINE",
+    ]
+    lib_dir = deps_prefix / "lib"
+    libs = [
+        str(lib_dir / "libjxl.a"),
+        str(lib_dir / "libjxl_threads.a"),
+        str(lib_dir / "libjxl_cms.a"),
+        str(lib_dir / "libhwy.a"),
+        str(lib_dir / "libbrotlienc.a"),
+        str(lib_dir / "libbrotlidec.a"),
+        str(lib_dir / "libbrotlicommon.a"),
+        str(lib_dir / "liblcms2.a"),
+        "-lstdc++",
+        "-lm",
+        "-pthread",
+    ]
+    return cflags, libs
+
+
 def _run_codec_case(
     *,
     case_name,
@@ -830,6 +935,7 @@ def _run_codec_case(
     markers,
     host_flags_fn,
     all_targets=False,
+    host_link_cxx=False,
 ):
     from pathlib import Path
 
@@ -877,13 +983,30 @@ def _run_codec_case(
                 *(os.path.join(codecs_dir, s) for s in codec_sources),
                 os.path.join(ROOT, "tests", "converter", c_test_file),
             ]
-            cmd = [
-                cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-pthread",
-                "-I", inc, "-I", rf_inc, "-I", codecs_dir, *extra_cflags,
-                *sources, rf_lib, *extra_libs, "-o", host_exe,
-            ]
-            if run(cmd):
-                return fail(f"{case_name} host test does not build")
+            if host_link_cxx:
+                objs = []
+                for idx, src in enumerate(sources):
+                    obj = os.path.join(tmp, f"u_{idx}.o")
+                    c_cmd = [
+                        cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-pthread",
+                        "-I", inc, "-I", rf_inc, "-I", codecs_dir, *extra_cflags,
+                        "-c", src, "-o", obj,
+                    ]
+                    if run(c_cmd):
+                        return fail(f"{case_name} host compile failed on {src}")
+                    objs.append(obj)
+                cxx = os.environ.get("CXX", "c++")
+                l_cmd = [cxx, "-pthread", *objs, rf_lib, *extra_libs, "-o", host_exe]
+                if run(l_cmd):
+                    return fail(f"{case_name} host link failed")
+            else:
+                cmd = [
+                    cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-pthread",
+                    "-I", inc, "-I", rf_inc, "-I", codecs_dir, *extra_cflags,
+                    *sources, rf_lib, *extra_libs, "-o", host_exe,
+                ]
+                if run(cmd):
+                    return fail(f"{case_name} host test does not build")
             res = run_capture([host_exe], timeout=60.0)
             if res.returncode:
                 print(res.stdout)
@@ -997,6 +1120,38 @@ def case_webp(all_targets=False):
     )
 
 
+def case_jxl(all_targets=False):
+    def _flags():
+        j_cf, j_lb = _ensure_host_jxl_flags()
+        w_cf, w_lb = _host_libwebp_flags()
+        p_cf, p_lb = _host_libpng_flags()
+        cflags = list(dict.fromkeys([*j_cf, *w_cf, *p_cf]))
+        libs = [*j_lb, *w_lb, *p_lb]
+        return cflags, libs
+
+    return _run_codec_case(
+        case_name="jxl",
+        win_target="rfc_test_jxl",
+        codec_sources=["basic.c", "webp.c", "jxl.c"],
+        c_test_file="test_jxl.c",
+        py_test_file="test_jxl.py",
+        host_env_var="RFC_HOST_JXL_EXE",
+        win_env_var="RFC_WIN_JXL_EXE",
+        require_win_env_var="RFC_REQUIRE_WIN_JXL",
+        markers=[
+            "jxl: registration_and_upstream_contract ok",
+            "jxl: depths_padding_alpha_and_xyb ok",
+            "jxl: metadata_boxes_orientation_and_cross_format ok",
+            "jxl: jpeg_reconstruction_and_exactness ok",
+            "jxl: cancellation_limits_budget_and_file_safety ok",
+            "jxl: all checks passed",
+        ],
+        host_flags_fn=_flags,
+        all_targets=all_targets,
+        host_link_cxx=True,
+    )
+
+
 def main():
     raw_args = sys.argv[1:]
     all_targets = "--all-targets" in raw_args
@@ -1019,6 +1174,8 @@ def main():
         return case_basic(all_targets)
     if args == ["--case", "webp"]:
         return case_webp(all_targets)
+    if args == ["--case", "jxl"]:
+        return case_jxl(all_targets)
     if args == ["--case", "all"]:
         rc = case_contract()
         if rc:
@@ -1041,8 +1198,11 @@ def main():
         rc = case_webp(all_targets)
         if rc:
             return rc
+        rc = case_jxl(all_targets)
+        if rc:
+            return rc
         return case_bundle()
-    print("usage: check-converter.py --case <contract|jobs|exactness|file-safety|reports|basic|webp|bundle|all> [--all-targets]")
+    print("usage: check-converter.py --case <contract|jobs|exactness|file-safety|reports|basic|webp|jxl|bundle|all> [--all-targets]")
     return 1
 
 

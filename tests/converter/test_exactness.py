@@ -56,7 +56,6 @@ class ExactnessReferenceTests(unittest.TestCase):
         self.assertEqual(len(by_name), 19)
         for pending in (
             "apng",
-            "jpeg-xl",
             "avif",
             "gif",
             "tiff",
@@ -66,6 +65,7 @@ class ExactnessReferenceTests(unittest.TestCase):
         ):
             self.assertEqual(by_name[pending]["coverage_state"], "provenance-only-pending-adapter")
         self.assertEqual(by_name["webp"]["coverage_state"], "executable-in-d10-t02-s2")
+        self.assertEqual(by_name["jpeg-xl"]["coverage_state"], "executable-in-d10-t02-s3")
         for executable in (
             "rasterfold",
             "bmp",

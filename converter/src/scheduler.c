@@ -191,8 +191,14 @@ static void wait_job_callbacks_drained(rfc_job *job, int same_cb_thread) {
 }
 
 static int enqueue_active_cancel_locked(rfc_scheduler *sched, rfc_job *job) {
-    if (!sched || !job || !job->active_sess_adapter ||
-        !job->active_sess_adapter->cancel_session || !job->active_session) {
+    if (!sched || !job || !job->active_session) {
+        return 0;
+    }
+    int has_sess = (job->active_sess_adapter &&
+                    job->active_sess_adapter->cancel_session);
+    int has_jrec = (job->active_jrec_adapter &&
+                    job->active_jrec_adapter->cancel_session);
+    if (!has_sess && !has_jrec) {
         return 0;
     }
     if (job->cancel_queued &&
@@ -203,6 +209,7 @@ static int enqueue_active_cancel_locked(rfc_scheduler *sched, rfc_job *job) {
         return 0;
     }
     job->pending_cancel.sess_adapter = job->active_sess_adapter;
+    job->pending_cancel.jrec_adapter = job->active_jrec_adapter;
     job->pending_cancel.session = job->active_session;
     job->cancel_queued = 1;
     job->cancel_next = NULL;
@@ -244,6 +251,9 @@ static void cancel_worker_main(void *arg) {
         if (snap.sess_adapter && snap.sess_adapter->cancel_session &&
             snap.session) {
             snap.sess_adapter->cancel_session(snap.session);
+        } else if (snap.jrec_adapter && snap.jrec_adapter->cancel_session &&
+                   snap.session) {
+            snap.jrec_adapter->cancel_session(snap.session);
         }
 
         rfc_mutex_lock(&sched->lock);
@@ -876,10 +886,39 @@ void rfc_scheduler_destroy(rfc_scheduler *sched) {
     rfc_scheduler_internal_release(sched);
 }
 
+static rfc_status parse_verify_settings_sched(const rfc_setting_value *settings,
+                                              size_t setting_count,
+                                              rfc_exactness_class *out_exact,
+                                              rfc_metadata_policy *out_meta);
+
+static rfc_status compute_jxl_stage_work_sched(uint64_t decoded_bytes,
+                                               uint64_t pixels,
+                                               uint32_t eff_req_threads,
+                                               int is_encode,
+                                               uint64_t *out_work) {
+    uint64_t dec_scaled = 0u;
+    uint64_t pix_scaled = 0u;
+    uint64_t thr_bytes = 0u;
+    uint64_t base_fixed =
+        is_encode ? (16ull * 1024ull * 1024ull) : (8ull * 1024ull * 1024ull);
+    uint64_t sum = 0u;
+    if (!mul_u64_sched(decoded_bytes, is_encode ? 4ull : 3ull, &dec_scaled) ||
+        !mul_u64_sched(pixels, is_encode ? 36ull : 16ull, &pix_scaled) ||
+        !mul_u64_sched((uint64_t)eff_req_threads, 4ull * 1024ull * 1024ull,
+                       &thr_bytes) ||
+        !add_u64_sched(dec_scaled, pix_scaled, &sum) ||
+        !add_u64_sched(sum, thr_bytes, &sum) ||
+        !add_u64_sched(sum, base_fixed, out_work)) {
+        return RFC_ERR_LIMIT_EXCEEDED;
+    }
+    return RFC_OK;
+}
+
 static rfc_status compute_preflight_with_contracts(
     const rfc_scheduler_config *cfg,
     const rfc_provider_memory_info *src_mem,
     const rfc_provider_memory_info *dst_mem,
+    rfc_exactness_class exactness,
     uint32_t requested_codec_threads,
     uint64_t source_size,
     const rfc_layout *source_layout,
@@ -928,6 +967,17 @@ static rfc_status compute_preflight_with_contracts(
         }
     }
 
+    uint64_t meta_allowance = 0u;
+    if (source_meta) {
+        uint64_t m_sum = 0u;
+        if (!add_u64_sched((uint64_t)source_meta->icc_len,
+                           (uint64_t)source_meta->exif_len, &m_sum) ||
+            !add_u64_sched(m_sum, (uint64_t)source_meta->xmp_len, &m_sum) ||
+            !mul_u64_sched(m_sum, 3ull, &meta_allowance)) {
+            return RFC_ERR_LIMIT_EXCEEDED;
+        }
+    }
+
     uint64_t base_reservation = 0;
     if (expected_working_set_bytes > 0) {
         base_reservation = expected_working_set_bytes;
@@ -946,26 +996,82 @@ static rfc_status compute_preflight_with_contracts(
             dst_mult = 16u;
             dst_overhead = 28ull * 1024ull * 1024ull;
         }
-        uint32_t mult = src_mult > dst_mult ? src_mult : dst_mult;
-        uint64_t overhead =
-            src_overhead > dst_overhead ? src_overhead : dst_overhead;
-        if (source_meta) {
-            uint64_t m_sum = 0;
-            uint64_t m_scaled = 0;
-            if (!add_u64_sched((uint64_t)source_meta->icc_len,
-                               (uint64_t)source_meta->exif_len, &m_sum) ||
-                !add_u64_sched(m_sum, (uint64_t)source_meta->xmp_len, &m_sum) ||
-                !mul_u64_sched(m_sum, 3ull, &m_scaled) ||
-                !add_u64_sched(overhead, m_scaled, &overhead)) {
+        if (src_mem->format == RFC_FORMAT_JPEG_XL ||
+            dst_mem->format == RFC_FORMAT_JPEG_XL) {
+            uint64_t pixels = 0u;
+            uint64_t src_work = 0u;
+            uint64_t dst_work = 0u;
+            if (!mul_u64_sched((uint64_t)source_layout->width,
+                               (uint64_t)source_layout->height, &pixels)) {
                 return RFC_ERR_LIMIT_EXCEEDED;
             }
+            if (src_mem->format == RFC_FORMAT_JPEG_XL) {
+                st = compute_jxl_stage_work_sched(decoded_bytes, pixels,
+                                                  eff_req_threads, 0, &src_work);
+                if (st != RFC_OK) {
+                    return st;
+                }
+            } else {
+                uint64_t sw = 0u;
+                if (!mul_u64_sched(decoded_bytes, (uint64_t)src_mult, &sw) ||
+                    !add_u64_sched(src_overhead, sw, &src_work)) {
+                    return RFC_ERR_LIMIT_EXCEEDED;
+                }
+            }
+            if (dst_mem->format == RFC_FORMAT_JPEG_XL) {
+                st = compute_jxl_stage_work_sched(decoded_bytes, pixels,
+                                                  eff_req_threads, 1, &dst_work);
+                if (st != RFC_OK) {
+                    return st;
+                }
+            } else {
+                uint64_t dw = 0u;
+                if (!mul_u64_sched(decoded_bytes, (uint64_t)dst_mult, &dw) ||
+                    !add_u64_sched(dst_overhead, dw, &dst_work)) {
+                    return RFC_ERR_LIMIT_EXCEEDED;
+                }
+            }
+            uint64_t peak_work = (src_work > dst_work) ? src_work : dst_work;
+            if (!add_u64_sched(peak_work, meta_allowance, &base_reservation)) {
+                return RFC_ERR_LIMIT_EXCEEDED;
+            }
+        } else {
+            uint32_t mult = src_mult > dst_mult ? src_mult : dst_mult;
+            uint64_t overhead =
+                src_overhead > dst_overhead ? src_overhead : dst_overhead;
+            if (!add_u64_sched(overhead, meta_allowance, &overhead)) {
+                return RFC_ERR_LIMIT_EXCEEDED;
+            }
+            uint64_t work = 0;
+            if (!mul_u64_sched(decoded_bytes, (uint64_t)mult, &work) ||
+                work > UINT64_MAX - overhead) {
+                return RFC_ERR_LIMIT_EXCEEDED;
+            }
+            base_reservation = overhead + work;
         }
-        uint64_t work = 0;
-        if (!mul_u64_sched(decoded_bytes, (uint64_t)mult, &work) ||
-            work > UINT64_MAX - overhead) {
+    } else if (src_mem->format == RFC_FORMAT_JPEG &&
+               dst_mem->format == RFC_FORMAT_JPEG_XL &&
+               exactness == RFC_EXACT_ORIGINAL_BYTE_RECONSTRUCTION &&
+               source_size > 0u) {
+        uint32_t eff_req_threads =
+            requested_codec_threads ? requested_codec_threads : 1u;
+        uint64_t scaled_src = 0u;
+        uint64_t thr_bytes = 0u;
+        uint64_t sum = 0u;
+        if (!mul_u64_sched(source_size, 16ull, &scaled_src) ||
+            !mul_u64_sched((uint64_t)eff_req_threads, 4ull * 1024ull * 1024ull,
+                           &thr_bytes)) {
             return RFC_ERR_LIMIT_EXCEEDED;
         }
-        base_reservation = overhead + work;
+        uint64_t core_est =
+            (scaled_src > 32ull * 1024ull * 1024ull)
+                ? scaled_src
+                : (32ull * 1024ull * 1024ull);
+        if (!add_u64_sched(core_est, thr_bytes, &sum) ||
+            !add_u64_sched(sum, 16ull * 1024ull * 1024ull, &sum) ||
+            !add_u64_sched(sum, meta_allowance, &base_reservation)) {
+            return RFC_ERR_LIMIT_EXCEEDED;
+        }
     } else {
         return RFC_ERR_LIMIT_EXCEEDED;
     }
@@ -1052,13 +1158,15 @@ static rfc_status compute_preflight(const rfc_scheduler_config *cfg,
     if (st != RFC_OK) {
         return st;
     }
-    if ((!stage_ops || !stage_ops->on_verify) && source_meta != NULL) {
-        rfc_exactness_class ex = RFC_EXACT_PIXEL_EXACT;
-        rfc_metadata_policy pol = RFC_META_POLICY_PRESERVE;
+    rfc_exactness_class ex = RFC_EXACT_PIXEL_EXACT;
+    rfc_metadata_policy pol = RFC_META_POLICY_PRESERVE;
+    if (settings && setting_count > 0u) {
         st = parse_verify_settings_sched(settings, setting_count, &ex, &pol);
         if (st != RFC_OK) {
             return st;
         }
+    }
+    if ((!stage_ops || !stage_ops->on_verify) && source_meta != NULL) {
         st = rfc_metadata_check_source_preflight(
             target_format, pol, ex, source_meta, NULL, 0u,
             acknowledged_unsupported_metadata, NULL);
@@ -1077,7 +1185,7 @@ static rfc_status compute_preflight(const rfc_scheduler_config *cfg,
         return st;
     }
     st = compute_preflight_with_contracts(
-        cfg, &src_mem, &dst_mem, requested_codec_threads, source_size,
+        cfg, &src_mem, &dst_mem, ex, requested_codec_threads, source_size,
         source_layout, source_meta, retained_bytes, expected_working_set_bytes,
         job_memory_limit_bytes, limits_override, out_limits, out_reservation,
         out_exec_working, out_budget_limit);
@@ -1170,12 +1278,18 @@ static rfc_status pre_reserve_submit_inputs(
         return RFC_ERR_CANCELLED;
     }
 
+    rfc_exactness_class ex = RFC_EXACT_PIXEL_EXACT;
+    rfc_metadata_policy pol = RFC_META_POLICY_PRESERVE;
+    if (spec->settings && spec->setting_count > 0u) {
+        (void)parse_verify_settings_sched(spec->settings, spec->setting_count,
+                                          &ex, &pol);
+    }
     rfc_limits live_limits;
     uint64_t live_reservation = 0;
     uint64_t live_exec_working = 0;
     uint64_t live_budget = 0;
     rfc_status st = compute_preflight_with_contracts(
-        &sched->cfg, src_mem, dst_mem, spec->requested_codec_threads,
+        &sched->cfg, src_mem, dst_mem, ex, spec->requested_codec_threads,
         effective_source_size, spec->source_layout, spec->source_meta,
         retained_bytes, spec->expected_working_set_bytes,
         spec->job_memory_limit_bytes, spec->limits_override, &live_limits,
@@ -1331,12 +1445,18 @@ static rfc_status admit_prepared_job(rfc_scheduler *sched,
         return RFC_ERR_CANCELLED;
     }
 
+    rfc_exactness_class ex = RFC_EXACT_PIXEL_EXACT;
+    rfc_metadata_policy pol = RFC_META_POLICY_PRESERVE;
+    if (inputs->settings && inputs->setting_count > 0u) {
+        (void)parse_verify_settings_sched(inputs->settings, inputs->setting_count,
+                                          &ex, &pol);
+    }
     rfc_limits live_limits;
     uint64_t live_reservation = 0;
     uint64_t live_exec_working = 0;
     uint64_t live_budget = 0;
     rfc_status st = compute_preflight_with_contracts(
-        &sched->cfg, src_mem, dst_mem, requested_codec_threads,
+        &sched->cfg, src_mem, dst_mem, ex, requested_codec_threads,
         inputs->effective_source_size,
         inputs->has_layout ? &inputs->source_layout : NULL,
         inputs->has_meta ? &inputs->source_meta : NULL, inputs->retained_bytes,

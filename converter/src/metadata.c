@@ -500,6 +500,10 @@ static int format_supports_raw_colorimetry(rfc_format_id id) {
     return id == RFC_FORMAT_PNG || id == RFC_FORMAT_APNG;
 }
 
+static int format_carries_native_orientation(rfc_format_id id) {
+    return id == RFC_FORMAT_JPEG_XL;
+}
+
 static int has_any_color_metadata(const rfc_metadata *container_meta,
                                   const rfc_frame *frames,
                                   size_t frame_count) {
@@ -857,13 +861,24 @@ rfc_status rfc_metadata_verify(rfc_format_id target_format,
                         break;
                     }
                 } else {
-                    uint8_t canon_tiff[26];
-                    if (rfc_exif_build_orientation_tiff26(s_ori, canon_tiff) !=
-                            RFC_OK ||
-                        dlen != sizeof(canon_tiff) || !d_ex ||
-                        memcmp(d_ex, canon_tiff, sizeof(canon_tiff)) != 0) {
-                        lost |= RFC_META_ITEM_EXIF;
-                        break;
+                    if (format_carries_native_orientation(target_format) &&
+                        dlen == 0u) {
+                        rfc_orientation d_ori = effective_orientation_at(
+                            dst_meta, dst_frames, dst_frame_count, i);
+                        if (d_ori != s_ori) {
+                            lost |= RFC_META_ITEM_EXIF;
+                            break;
+                        }
+                    } else {
+                        uint8_t canon_tiff[26];
+                        if (rfc_exif_build_orientation_tiff26(s_ori,
+                                                              canon_tiff) !=
+                                RFC_OK ||
+                            dlen != sizeof(canon_tiff) || !d_ex ||
+                            memcmp(d_ex, canon_tiff, sizeof(canon_tiff)) != 0) {
+                            lost |= RFC_META_ITEM_EXIF;
+                            break;
+                        }
                     }
                 }
             }

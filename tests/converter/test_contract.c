@@ -141,6 +141,7 @@ int main(int argc, char **argv) {
     /* Planned formats fail with RFC_ERR_PLANNED; usable formats without an
      * adapter registered fail with RFC_ERR_NO_ADAPTER. */
     CHECK(rfc_registry_select(RFC_FORMAT_AVIF, RFC_MODE_READ) == RFC_ERR_PLANNED);
+    CHECK(rfc_registry_select(RFC_FORMAT_JPEG_XL, RFC_MODE_READ) == RFC_ERR_NO_ADAPTER);
     CHECK(rfc_registry_select(RFC_FORMAT_WEBP, RFC_MODE_READ) == RFC_ERR_NO_ADAPTER);
     CHECK(rfc_registry_select(RFC_FORMAT_PNG, RFC_MODE_READ) == RFC_ERR_NO_ADAPTER);
     const char *reason = NULL;
@@ -204,7 +205,8 @@ int main(int argc, char **argv) {
            RFC_META_ITEM_EXIF | RFC_META_ITEM_XMP));
     CHECK(rfc_registry_find(RFC_FORMAT_JPEG_XL)->metadata_items ==
           (RFC_META_ITEM_ICC | RFC_META_ITEM_ORIENTATION |
-           RFC_META_ITEM_FRAME_TIMING));
+           RFC_META_ITEM_FRAME_TIMING | RFC_META_ITEM_EXIF |
+           RFC_META_ITEM_XMP));
     CHECK(rfc_registry_register(&fake) == RFC_OK);
     CHECK(rfc_registry_acquire_adapter(RFC_FORMAT_QOI) == &fake);
     CHECK(rfc_registry_unregister(RFC_FORMAT_QOI) == RFC_ERR_BUSY);

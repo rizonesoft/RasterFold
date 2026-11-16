@@ -23,6 +23,26 @@ rfc_status rfc_codecs_unregister_basic(void);
 rfc_status rfc_codecs_register_webp(void);
 rfc_status rfc_codecs_unregister_webp(void);
 
+/* Register and unregister the shipped JPEG XL session adapter and the
+ * JPEG -> JPEG XL lossless byte-reconstruction adapter (D10 T02 s3). */
+rfc_status rfc_codecs_register_jxl(void);
+rfc_status rfc_codecs_unregister_jxl(void);
+
+/* Direct JPEG <-> JPEG XL lossless byte-reconstruction entry points used by
+ * the JXL reconstruction adapter and D10 T02 s5 delegation. */
+rfc_status rfc_jxl_transcode_jpeg(const rfc_exec_context *exec,
+                                  const uint8_t *jpeg_bytes,
+                                  size_t jpeg_size,
+                                  const rfc_setting_value *settings,
+                                  size_t setting_count,
+                                  rfc_encoded *out_jxl,
+                                  rfc_metadata *out_src_meta);
+rfc_status rfc_jxl_reconstruct_jpeg(const rfc_exec_context *exec,
+                                    const uint8_t *jxl_bytes,
+                                    size_t jxl_size,
+                                    rfc_encoded *out_jpeg,
+                                    rfc_metadata *out_dst_meta);
+
 #ifdef __cplusplus
 }
 #endif
