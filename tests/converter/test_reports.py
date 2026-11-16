@@ -621,6 +621,101 @@ class TestHostReports(unittest.TestCase):
             self.assertIn("REQUIRE_SIMD=ON", pa["RFC_FORMAT_JPEG"]["simd_features"])
             self.assertIn("WITH_SIMD=OFF", pb["RFC_FORMAT_JPEG"]["simd_features"])
 
+            # Mutating ONLY -ffast-math in C++ flags must change libjxl build_flags
+            deps_ff = base / "deps_ff"
+            write_pkg(
+                deps_ff,
+                "libjxl",
+                True,
+                c_flags="-march=x86-64-v2 -DC_SENTINEL_ONLY",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="-march=x86-64-v2 -ffast-math",
+                cxx_rel="-O3 -DNDEBUG",
+                toggles={
+                    "JPEGXL_ENABLE_THREADS": ("BOOL", "ON"),
+                    "JPEGXL_ENABLE_HWY_SSE2": ("BOOL", "true"),
+                    "JPEGXL_ENABLE_HWY_SSE4": ("BOOL", "true"),
+                    "JPEGXL_ENABLE_HWY_AVX2": ("BOOL", "true"),
+                    "JPEGXL_ENABLE_HWY_AVX3": ("BOOL", "false"),
+                    "JPEGXL_ENABLE_HWY_AVX3_DL": ("BOOL", "false"),
+                },
+                ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG -std=c++17",
+            )
+            hdr_ff = base / "prov_ff.h"
+            res_ff = _ref.run_process_tree(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts" / "gen_converter_provenance.py"),
+                    "--target",
+                    "windows-x64",
+                    "--deps-build",
+                    str(deps_ff),
+                    "--out",
+                    str(hdr_ff),
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                timeout=60.0,
+            )
+            self.assertEqual(res_ff.returncode, 0, res_ff.stdout + "\n" + res_ff.stderr)
+            p_ff = parse_header(hdr_ff.read_text(encoding="utf-8"))
+            self.assertIn("-ffast-math", p_ff["RFC_FORMAT_JPEG_XL"]["build_flags"])
+            self.assertNotEqual(
+                p_ff["RFC_FORMAT_JPEG_XL"]["build_flags"],
+                pa["RFC_FORMAT_JPEG_XL"]["build_flags"],
+            )
+
+            # Overflow (>255 bytes) differing only in a trailing define must carry distinct digests
+            long_prefix_defs = " ".join(
+                f"-DJPEGXL_LONG_BUILD_DEFINE_{idx:02d}=VALUE_{idx:02d}" for idx in range(16)
+            )
+            deps_ov1 = base / "deps_ov1"
+            deps_ov2 = base / "deps_ov2"
+            for root_ov, tail_def in (
+                (deps_ov1, "-DTAIL_VARIANT=alpha"),
+                (deps_ov2, "-DTAIL_VARIANT=beta"),
+            ):
+                write_pkg(
+                    root_ov,
+                    "libjxl",
+                    True,
+                    c_flags="-march=x86-64-v2",
+                    c_rel="-O3 -DNDEBUG",
+                    cxx_flags="-march=x86-64-v2",
+                    cxx_rel="-O3 -DNDEBUG",
+                    toggles={"JPEGXL_ENABLE_THREADS": ("BOOL", "ON")},
+                    ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG -std=c++17",
+                    ninja_defs=f"{long_prefix_defs} {tail_def}",
+                )
+            hdr_ov1 = base / "prov_ov1.h"
+            hdr_ov2 = base / "prov_ov2.h"
+            for d_ov, h_ov in ((deps_ov1, hdr_ov1), (deps_ov2, hdr_ov2)):
+                res_ov = _ref.run_process_tree(
+                    [
+                        sys.executable,
+                        str(ROOT / "scripts" / "gen_converter_provenance.py"),
+                        "--target",
+                        "windows-x64",
+                        "--deps-build",
+                        str(d_ov),
+                        "--out",
+                        str(h_ov),
+                    ],
+                    cwd=ROOT,
+                    capture_output=True,
+                    timeout=60.0,
+                )
+                self.assertEqual(res_ov.returncode, 0, res_ov.stdout + "\n" + res_ov.stderr)
+            p_ov1 = parse_header(hdr_ov1.read_text(encoding="utf-8"))
+            p_ov2 = parse_header(hdr_ov2.read_text(encoding="utf-8"))
+            bf1 = p_ov1["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            bf2 = p_ov2["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertLessEqual(len(bf1.encode("utf-8")), 255)
+            self.assertLessEqual(len(bf2.encode("utf-8")), 255)
+            self.assertIn("#[", bf1)
+            self.assertIn("#[", bf2)
+            self.assertNotEqual(bf1, bf2)
+
     def test_kodim23_compare_threads_oracle_and_history(self) -> None:
         self.assertEqual(sha256_file(KODIM_PATH), KODIM_EXPECTED_SHA256)
         with Image.open(KODIM_PATH) as im:

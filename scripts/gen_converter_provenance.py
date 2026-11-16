@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -161,7 +162,7 @@ def _rasterfold_provenance(
                     if a == "-DRF_PORTABLE_SIMD":
                         portable = True
                     kept.append(a)
-                flags = " ".join(kept)
+                flags = _format_bounded_build_flags(kept, "", 255)
 
     if not compiler_id:
         llvm_dir = ROOT / ("tools/llvm-mingw/bin" if os.name == "nt" else "tools/llvm-mingw-linux/bin")
@@ -171,7 +172,13 @@ def _rasterfold_provenance(
         triple = "x86_64-w64-mingw32" if target == "windows-x64" else "x86_64-linux-gnu"
         extra = "-ffreestanding -fno-stack-protector" if target == "windows-x64" else "-fPIC -pthread"
         pflag = " -DRF_PORTABLE_SIMD" if portable else ""
-        flags = f"--target={triple} -std=c11 -O2 -g -Wall -Wextra -Werror -march=x86-64-v2 -mtune=generic{pflag} {extra}"
+        flags = _format_bounded_build_flags(
+            shlex.split(
+                f"--target={triple} -std=c11 -O2 -g -Wall -Wextra -Werror -march=x86-64-v2 -mtune=generic{pflag} {extra}"
+            ),
+            "",
+            255,
+        )
 
     simd = "portable-c11 (RF_PORTABLE_SIMD)" if portable else "x86-64-v2 + SSE2/SIMD paths"
     threads = (
@@ -239,65 +246,131 @@ def _parse_ninja_compile_info(ninja_path: Path, is_cxx: bool) -> tuple[list[str]
     return (ft, dt)
 
 
+def _is_noise_define(tok: str) -> bool:
+    return (
+        tok in (
+            "-DUNICODE",
+            "-D_UNICODE",
+            "-DHAVE_CONFIG_H",
+            "-D_FILE_OFFSET_BITS=64",
+            "-D_LARGEFILE_SOURCE",
+            "-D_LARGEFILE64_SOURCE=1",
+            "-DWIN32_LEAN_AND_MEAN",
+            "-DNOMINMAX",
+        )
+        or tok.startswith("-D_CRT_")
+        or tok.startswith("-D__DATE__")
+        or tok.startswith("-D__TIME__")
+        or tok.startswith("-D__TIMESTAMP__")
+        or tok.startswith("-D__STDC_")
+    )
+
+
 def _semantic_ninja_tokens(flags_tokens: list[str], define_tokens: list[str]) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
-    skip_next = False
-    for tok in flags_tokens:
-        if skip_next:
-            skip_next = False
+    i = 0
+    while i < len(flags_tokens):
+        tok = flags_tokens[i]
+        if tok in (
+            "-isystem",
+            "-I",
+            "-o",
+            "-MF",
+            "-MT",
+            "-x",
+            "-imacros",
+            "-include",
+            "--sysroot",
+            "-sysroot",
+            "-L",
+            "-B",
+            "--gcc-toolchain",
+        ):
+            i += 2
             continue
-        if tok in ("-isystem", "-I", "-o", "-MF", "-MT", "-x"):
-            skip_next = True
+        if tok in ("-Xclang", "-mllvm") and i + 1 < len(flags_tokens):
+            paired = f"{tok} {flags_tokens[i + 1]}"
+            if paired not in seen:
+                seen.add(paired)
+                out.append(paired)
+            i += 2
             continue
+        i += 1
         if (
-            tok.startswith("-I")
+            not tok
+            or tok in ("-c", "-pipe", "-MD", "-MMD", "-w", "-fPIC", "-fpic", "-fPIE", "-fpie")
+            or tok.startswith("-I")
+            or tok.startswith("-isystem")
+            or tok.startswith("-L")
+            or tok.startswith("-B")
+            or tok.startswith("--sysroot=")
             or tok.startswith("-W")
             or tok.startswith("-fmacro-prefix-map=")
             or tok.startswith("-ffile-prefix-map=")
+            or tok.startswith("-fdebug-prefix-map=")
+            or tok.startswith("-fcoverage-prefix-map=")
             or tok.startswith("-fdiagnostics")
             or tok.startswith("-fcolor-diagnostics")
             or tok.startswith("-fvisibility")
-            or tok.startswith("-D__DATE__")
-            or tok.startswith("-D__TIME__")
-            or tok.startswith("-D__TIMESTAMP__")
+            or _is_noise_define(tok)
         ):
             continue
-        if (
-            tok.startswith("-march=")
-            or tok.startswith("-mtune=")
-            or tok.startswith("-m")
-            or tok.startswith("-O")
-            or tok.startswith("-g")
-            or tok.startswith("-std=")
-            or tok.startswith("-fno-")
-            or tok.startswith("-flto")
-            or tok.startswith("-fopenmp")
-            or tok in ("-pthread", "-fexceptions", "-frtti", "-fstrict-aliasing")
-            or (
-                tok.startswith("-D")
-                and not tok.startswith("-D_CRT_")
-                and tok not in ("-DUNICODE", "-D_UNICODE", "-DWIN32_LEAN_AND_MEAN", "-DNOMINMAX")
-            )
-        ):
-            if tok not in seen:
-                seen.add(tok)
-                out.append(tok)
+        if tok.startswith("-") and tok not in seen:
+            seen.add(tok)
+            out.append(tok)
 
     for tok in define_tokens:
-        if (
-            tok in ("-DUNICODE", "-D_UNICODE", "-DHAVE_CONFIG_H", "-D_FILE_OFFSET_BITS=64", "-D_LARGEFILE_SOURCE", "-D_LARGEFILE64_SOURCE=1")
-            or tok.startswith("-D_CRT_")
-            or tok.startswith("-D__DATE__")
-            or tok.startswith("-D__TIME__")
-            or tok.startswith("-D__TIMESTAMP__")
-            or tok.startswith("-D__STDC_")
-        ):
+        if _is_noise_define(tok):
             continue
         if tok.startswith("-D") and tok not in seen:
             seen.add(tok)
             out.append(tok)
     return out
+
+
+def _format_bounded_build_flags(
+    tokens: list[str], fallback: str, max_bytes: int = 255
+) -> str:
+    clean = [t for t in tokens if t]
+    if not clean:
+        return fallback
+    full = " ".join(clean)
+    if len(full.encode("utf-8")) <= max_bytes:
+        return full
+    digest = hashlib.sha256(full.encode("utf-8")).hexdigest()[:12]
+    count_guess = len(clean)
+    for _ in range(3):
+        suffix = f"+{count_guess}#[{digest}]"
+        suffix_bytes = len(suffix.encode("utf-8"))
+        budget = max_bytes - suffix_bytes - 1
+        kept: list[str] = []
+        used = 0
+        if budget > 0:
+            for tok in clean:
+                need = len(tok.encode("utf-8")) + (1 if kept else 0)
+                if used + need <= budget:
+                    kept.append(tok)
+                    used += need
+                else:
+                    break
+        new_omitted = len(clean) - len(kept)
+        if new_omitted == count_guess:
+            return f"{' '.join(kept)} {suffix}" if kept else suffix[:max_bytes]
+        count_guess = new_omitted
+    suffix = f"+{count_guess}#[{digest}]"
+    budget = max_bytes - len(suffix.encode("utf-8")) - 1
+    kept_final: list[str] = []
+    used_final = 0
+    if budget > 0:
+        for tok in clean:
+            need = len(tok.encode("utf-8")) + (1 if kept_final else 0)
+            if used_final + need <= budget:
+                kept_final.append(tok)
+                used_final += need
+            else:
+                break
+    return f"{' '.join(kept_final)} {suffix}" if kept_final else suffix[:max_bytes]
 
 
 def _effective_march(tokens: list[str]) -> str:
@@ -549,20 +622,15 @@ def _extract_package_build_info(
         + toggles
         + cache_def
         + ninja_def_only
-        + opts[:3]
+        + opts
     ):
         if tok and tok not in seen_tokens:
             seen_tokens.add(tok)
             ordered_tokens.append(tok)
 
-    bounded_parts: list[str] = []
-    used_bytes = 0
-    for tok in ordered_tokens:
-        need = len(tok.encode("utf-8")) + (1 if bounded_parts else 0)
-        if used_bytes + need <= 255:
-            bounded_parts.append(tok)
-            used_bytes += need
-    build_flags = " ".join(bounded_parts) if bounded_parts else f"-DCMAKE_BUILD_TYPE={btype}"
+    build_flags = _format_bounded_build_flags(
+        ordered_tokens, f"-DCMAKE_BUILD_TYPE={btype}", 255
+    )
 
     feats = pkg.get("features", {})
     simd = _derive_simd_summary(pid, feats, nasm_ver, cache, combined_flag_tokens, ninja_defs, aom_cache, aom_flags)
@@ -594,11 +662,12 @@ def generate(
     if not eng_cc_resolved:
         eng_cc_resolved = os.environ.get("CC", "cc")
     eng_cc_id = _probe_compiler_version(eng_cc_resolved, cc_cache)
-    eng_flags = engine_flags.strip() if engine_flags else (
+    raw_eng_flags = engine_flags.strip() if engine_flags else (
         "-std=c11 -O3 -DNDEBUG -march=x86-64-v2 -Wall -Wextra -Werror"
         if target == "windows-x64"
         else "-std=c11 -Wall -Wextra -Werror -pthread"
     )
+    eng_flags = _format_bounded_build_flags(shlex.split(raw_eng_flags), raw_eng_flags, 255)
 
     pkg_by_id, pkg_by_fmt = _find_pkg_by_format(vendor)
     sys_by_fmt = {}
