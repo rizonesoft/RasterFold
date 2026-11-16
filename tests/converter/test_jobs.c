@@ -302,6 +302,16 @@ static void test_hostile_limits_and_unknown_reservation(void) {
     hostile_meta.icc_len = lim.max_metadata_bytes + 1u;
     CHECK(rfc_limits_check_metadata(&lim, &hostile_meta) ==
           RFC_ERR_LIMIT_EXCEEDED);
+    memset(&hostile_meta, 0, sizeof(hostile_meta));
+    hostile_meta.exif_len = lim.max_metadata_bytes / 2u + 1u;
+    hostile_meta.xmp_len = lim.max_metadata_bytes / 2u + 1u;
+    CHECK(rfc_limits_check_metadata(&lim, &hostile_meta) ==
+          RFC_ERR_LIMIT_EXCEEDED);
+    rfc_provider_memory_info webp_mem;
+    CHECK(rfc_query_provider_memory_contract(RFC_FORMAT_WEBP, &webp_mem) ==
+          RFC_OK);
+    CHECK(webp_mem.working_set_multiplier >= 4u &&
+          webp_mem.fixed_overhead_bytes >= 256ull * 1024ull);
 
     /* Layout validator parity: invalid sample depth, invalid alpha, normalized zero stride */
     rfc_layout bad_float = {RFC_SAMPLE_RGBA_FLOAT, RFC_ALPHA_STRAIGHT, 4u, 4u, 0u, 16u};
@@ -1037,8 +1047,14 @@ static rfc_status retry_import_stage(rfc_job *job,
     }
     const rfc_metadata *smeta = rfc_job_source_metadata(job);
     const uint8_t expected_icc[4] = {0xAA, 0xBB, 0xCC, 0xDD};
+    const uint8_t expected_exif[6] = {'I', 'I', 0x2A, 0x00, 0x08, 0x00};
+    const uint8_t expected_xmp[6] = {'<', 'x', ':', 'x', 'm', 'p'};
     if (!smeta || !smeta->icc || smeta->icc_len != 8u ||
-        memcmp(smeta->icc, expected_icc, 4u) != 0) {
+        memcmp(smeta->icc, expected_icc, 4u) != 0 ||
+        !smeta->exif || smeta->exif_len != 12u ||
+        memcmp(smeta->exif, expected_exif, 6u) != 0 ||
+        !smeta->xmp || smeta->xmp_len != 10u ||
+        memcmp(smeta->xmp, expected_xmp, 6u) != 0) {
         rc->deep_copy_ok = 0;
         return RFC_ERR_INVALID_ARGUMENT;
     }
@@ -1104,10 +1120,14 @@ static void test_progress_retry_and_stale_rejection(void) {
 
     uint8_t src_buf[16] = {9, 8, 7, 6, 5, 4, 3, 2};
     uint8_t icc_buf[8] = {0xAA, 0xBB, 0xCC, 0xDD};
+    uint8_t exif_buf[12] = {'I', 'I', 0x2A, 0x00, 0x08, 0x00, 0, 0, 0, 0, 0, 0};
+    uint8_t xmp_buf[10] = "<x:xmp/>";
     char k1[] = "metadata";
     char v1[] = "preserve";
     rfc_setting_value sets[1] = {{k1, v1}};
-    rfc_metadata meta = {icc_buf, sizeof(icc_buf), RFC_ORIENTATION_NORMAL, 0u, {0}};
+    rfc_metadata meta = {icc_buf, sizeof(icc_buf), RFC_ORIENTATION_NORMAL, 0u,
+                         {0}, exif_buf, sizeof(exif_buf),
+                         xmp_buf, sizeof(xmp_buf)};
     rfc_layout lay = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 8u, 8u, 24u, 8u};
 
     rfc_job_spec spec;
@@ -1129,6 +1149,8 @@ static void test_progress_retry_and_stale_rejection(void) {
     /* Immediately wipe caller input buffers BEFORE unblocking import stage. */
     memset(src_buf, 0x00, sizeof(src_buf));
     memset(icc_buf, 0x00, sizeof(icc_buf));
+    memset(exif_buf, 0x00, sizeof(exif_buf));
+    memset(xmp_buf, 0x00, sizeof(xmp_buf));
     memset(k1, 'X', sizeof(k1) - 1u);
     memset(v1, 'X', sizeof(v1) - 1u);
     test_mutex_lock(&rctx.lock);
@@ -2529,7 +2551,8 @@ typedef struct gap_sat_arg {
 static void gap_sat_worker(void *raw) {
     gap_sat_arg *a = (gap_sat_arg *)raw;
     rfc_layout lay = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 4u, 4u, 12u, 8u};
-    rfc_metadata meta = {a->icc, a->icc_len, RFC_ORIENTATION_NORMAL, 0u, {0}};
+    rfc_metadata meta = {a->icc, a->icc_len, RFC_ORIENTATION_NORMAL, 0u, {0},
+                         NULL, 0u, NULL, 0u};
     rfc_setting_value s = {"metadata", "preserve"};
 
     rfc_job_spec spec;
@@ -3157,6 +3180,196 @@ static void test_completion_gap_regressions(void) {
            "credit_layout=bound)\n");
 }
 
+typedef struct alias_meta_ctrl {
+    int mode; /* 0 = alias frame0, 1 = non-aliasing out_meta, 2 = fail encode */
+} alias_meta_ctrl;
+
+static alias_meta_ctrl g_alias_ctrl = {0};
+
+static rfc_status alias_open(const rfc_exec_context *exec, void **out_sess) {
+    (void)exec;
+    *out_sess = &g_alias_ctrl;
+    return RFC_OK;
+}
+
+static void alias_close(void *sess) { (void)sess; }
+
+static rfc_status alias_probe(void *sess,
+                              const rfc_exec_context *exec,
+                              const uint8_t *bytes,
+                              size_t size,
+                              rfc_image_probe *out_probe) {
+    (void)sess;
+    (void)bytes;
+    (void)size;
+    memset(out_probe, 0, sizeof(*out_probe));
+    out_probe->first_frame.format = RFC_SAMPLE_RGB8;
+    out_probe->first_frame.alpha = RFC_ALPHA_NONE;
+    out_probe->first_frame.width = 4u;
+    out_probe->first_frame.height = 4u;
+    out_probe->first_frame.stride_bytes = 12u;
+    out_probe->first_frame.bits_per_sample = 8u;
+    out_probe->frame_count = 1u;
+    out_probe->total_pixels = 16u;
+    out_probe->total_decoded_bytes = 48u;
+    const rfc_allocator *al = rfc_exec_allocator(exec);
+    uint8_t *ex = (uint8_t *)al->alloc(al->ctx, 10u);
+    uint8_t *xm = (uint8_t *)al->alloc(al->ctx, 8u);
+    if (!ex || !xm) {
+        if (ex) al->free(al->ctx, ex);
+        if (xm) al->free(al->ctx, xm);
+        return RFC_ERR_OUT_OF_MEMORY;
+    }
+    memcpy(ex, "II*\x00\x08\x00\x00\x00\x00\x00", 10u);
+    memcpy(xm, "<x:xmp/>", 8u);
+    out_probe->container_meta.exif = ex;
+    out_probe->container_meta.exif_len = 10u;
+    out_probe->container_meta.xmp = xm;
+    out_probe->container_meta.xmp_len = 8u;
+    out_probe->container_meta.orientation = RFC_ORIENTATION_ROTATE_90;
+    return RFC_OK;
+}
+
+static rfc_status alias_decode(void *sess,
+                               const rfc_exec_context *exec,
+                               const uint8_t *bytes,
+                               size_t size,
+                               const rfc_setting_value *settings,
+                               size_t setting_count,
+                               rfc_frame **out_frames,
+                               size_t *out_count,
+                               rfc_metadata *out_meta) {
+    (void)sess;
+    (void)bytes;
+    (void)size;
+    (void)settings;
+    (void)setting_count;
+    const rfc_allocator *al = rfc_exec_allocator(exec);
+    rfc_frame *arr = (rfc_frame *)al->alloc(al->ctx, sizeof(*arr));
+    if (!arr) return RFC_ERR_OUT_OF_MEMORY;
+    memset(arr, 0, sizeof(*arr));
+    uint8_t ic[4] = {1, 2, 3, 4};
+    uint8_t ex[10] = {'I', 'I', 0x2A, 0, 8, 0, 0, 0, 0, 0};
+    uint8_t xm[8] = {'<', 'x', ':', 'x', 'm', 'p', '/', '>'};
+    rfc_layout lay = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 4u, 4u, 12u, 8u};
+    rfc_metadata fm = {ic, 4u, RFC_ORIENTATION_ROTATE_90, 0u, {0},
+                       ex, 10u, xm, 8u};
+    rfc_status st = rfc_exec_alloc_frame(exec, &arr[0], &lay, &fm);
+    if (st != RFC_OK) {
+        al->free(al->ctx, arr);
+        return st;
+    }
+    memset(arr[0].data, 0x33, arr[0].data_len);
+    *out_frames = arr;
+    *out_count = 1u;
+    if (g_alias_ctrl.mode == 1) {
+        memset(out_meta, 0, sizeof(*out_meta));
+        uint8_t *ic2 = (uint8_t *)al->alloc(al->ctx, 4u);
+        uint8_t *ex2 = (uint8_t *)al->alloc(al->ctx, 10u);
+        uint8_t *xm2 = (uint8_t *)al->alloc(al->ctx, 8u);
+        if (!ic2 || !ex2 || !xm2) {
+            if (ic2) al->free(al->ctx, ic2);
+            if (ex2) al->free(al->ctx, ex2);
+            if (xm2) al->free(al->ctx, xm2);
+            rfc_frame_free(&arr[0]);
+            al->free(al->ctx, arr);
+            *out_frames = NULL;
+            *out_count = 0u;
+            return RFC_ERR_OUT_OF_MEMORY;
+        }
+        memcpy(ic2, ic, 4u);
+        memcpy(ex2, ex, 10u);
+        memcpy(xm2, xm, 8u);
+        out_meta->icc = ic2;
+        out_meta->icc_len = 4u;
+        out_meta->exif = ex2;
+        out_meta->exif_len = 10u;
+        out_meta->xmp = xm2;
+        out_meta->xmp_len = 8u;
+        out_meta->orientation = RFC_ORIENTATION_ROTATE_90;
+    } else {
+        *out_meta = arr[0].metadata;
+    }
+    return RFC_OK;
+}
+
+static rfc_status alias_encode(void *sess,
+                               const rfc_exec_context *exec,
+                               const rfc_frame *frames,
+                               size_t frame_count,
+                               const rfc_metadata *meta,
+                               const rfc_setting_value *settings,
+                               size_t setting_count,
+                               rfc_encoded *out_enc) {
+    (void)sess;
+    (void)frames;
+    (void)frame_count;
+    (void)meta;
+    (void)settings;
+    (void)setting_count;
+    if (g_alias_ctrl.mode == 2) {
+        return RFC_ERR_CANCELLED;
+    }
+    const rfc_allocator *al = rfc_exec_allocator(exec);
+    uint8_t *buf = (uint8_t *)al->alloc(al->ctx, 16u);
+    if (!buf) return RFC_ERR_OUT_OF_MEMORY;
+    memset(buf, 0x55, 16u);
+    out_enc->data = buf;
+    out_enc->len = 16u;
+    out_enc->allocator = al;
+    return RFC_OK;
+}
+
+static void test_exif_xmp_aliasing_and_cleanup(void) {
+    rfc_session_adapter sadp;
+    memset(&sadp, 0, sizeof(sadp));
+    sadp.abi_version = RFC_CODEC_ABI_VERSION;
+    sadp.format = RFC_FORMAT_QOI;
+    sadp.open_session = alias_open;
+    sadp.close_session = alias_close;
+    sadp.probe_session = alias_probe;
+    sadp.decode_session = alias_decode;
+    sadp.encode_session = alias_encode;
+    CHECK(rfc_registry_register_session(&sadp) == RFC_OK);
+
+    rfc_scheduler_config cfg;
+    rfc_scheduler_config_default(&cfg);
+    cfg.max_workers = 1u;
+    cfg.memory_budget_bytes = 512u * 1024u;
+    rfc_scheduler *sched = rfc_scheduler_create(&cfg);
+    CHECK(sched != NULL);
+
+    uint8_t src[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+    rfc_layout lay = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 4u, 4u, 12u, 8u};
+    rfc_job_spec spec;
+    memset(&spec, 0, sizeof(spec));
+    spec.source_format = RFC_FORMAT_QOI;
+    spec.target_format = RFC_FORMAT_QOI;
+    spec.source_bytes = src;
+    spec.source_size = sizeof(src);
+    spec.source_layout = &lay;
+    spec.expected_working_set_bytes = 32u * 1024u;
+    spec.has_stage_ops = 1;
+    spec.stage_ops.on_verify = ok_noop_stage;
+    spec.stage_ops.on_export = export_mark_ok;
+
+    for (int m = 0; m < 3; m++) {
+        g_alias_ctrl.mode = m;
+        rfc_job *j = NULL;
+        CHECK(rfc_scheduler_submit(sched, NULL, &spec, &j) == RFC_OK);
+        CHECK(rfc_job_wait(j, UINT32_MAX) == RFC_OK);
+        rfc_job_snapshot sn;
+        CHECK(rfc_job_snapshot_get(j, &sn) == RFC_OK);
+        CHECK(sn.state == (m == 2 ? RFC_JOB_CANCELLED : RFC_JOB_SUCCEEDED));
+        CHECK(sn.budget.current_allocated_bytes == 0u);
+        rfc_job_release(j);
+    }
+
+    rfc_scheduler_destroy(sched);
+    CHECK(rfc_registry_unregister_session(RFC_FORMAT_QOI) == RFC_OK);
+    printf("jobs: exif_xmp_aliasing_and_cleanup ok\n");
+}
+
 int main(void) {
     test_config_defaults_and_reconfigure();
     test_hostile_limits_and_unknown_reservation();
@@ -3167,6 +3380,7 @@ int main(void) {
     test_cancellation_64x_and_shutdown();
     test_round1_regressions();
     test_completion_gap_regressions();
+    test_exif_xmp_aliasing_and_cleanup();
 
     if (g_failures > 0) {
         fprintf(stderr, "jobs: %d check(s) failed\n", g_failures);

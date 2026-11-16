@@ -94,6 +94,20 @@ void rfc_metadata_items_format(uint32_t items, char *out_buf, size_t out_cap) {
         meta_append_cstr(out_buf, out_cap, "frame-timing");
         any = 1;
     }
+    if (items & RFC_META_ITEM_EXIF) {
+        if (any) {
+            meta_append_cstr(out_buf, out_cap, ", ");
+        }
+        meta_append_cstr(out_buf, out_cap, "exif");
+        any = 1;
+    }
+    if (items & RFC_META_ITEM_XMP) {
+        if (any) {
+            meta_append_cstr(out_buf, out_cap, ", ");
+        }
+        meta_append_cstr(out_buf, out_cap, "xmp");
+        any = 1;
+    }
     if (!any) {
         meta_copy_cstr(out_buf, out_cap, "none");
     }
@@ -114,6 +128,12 @@ uint32_t rfc_metadata_source_items(const rfc_metadata *container_meta,
         if (container_meta->duration_ms > 0u) {
             items |= RFC_META_ITEM_FRAME_TIMING;
         }
+        if (container_meta->exif_len > 0u && container_meta->exif != NULL) {
+            items |= RFC_META_ITEM_EXIF;
+        }
+        if (container_meta->xmp_len > 0u && container_meta->xmp != NULL) {
+            items |= RFC_META_ITEM_XMP;
+        }
     }
     if (frames && frame_count > 0u) {
         if (frame_count > 1u) {
@@ -130,6 +150,14 @@ uint32_t rfc_metadata_source_items(const rfc_metadata *container_meta,
             }
             if (frames[i].metadata.duration_ms > 0u) {
                 items |= RFC_META_ITEM_FRAME_TIMING;
+            }
+            if (frames[i].metadata.exif_len > 0u &&
+                frames[i].metadata.exif != NULL) {
+                items |= RFC_META_ITEM_EXIF;
+            }
+            if (frames[i].metadata.xmp_len > 0u &&
+                frames[i].metadata.xmp != NULL) {
+                items |= RFC_META_ITEM_XMP;
             }
         }
     }
@@ -235,6 +263,118 @@ static rfc_orientation effective_orientation_at(
     return RFC_ORIENTATION_NORMAL;
 }
 
+static const uint8_t *effective_exif_at(const rfc_metadata *container_meta,
+                                        const rfc_frame *frames,
+                                        size_t frame_count,
+                                        size_t idx,
+                                        size_t *out_len) {
+    if (frames && idx < frame_count && frames[idx].metadata.exif_len > 0u &&
+        frames[idx].metadata.exif != NULL) {
+        *out_len = frames[idx].metadata.exif_len;
+        return frames[idx].metadata.exif;
+    }
+    if (container_meta && container_meta->exif_len > 0u &&
+        container_meta->exif != NULL) {
+        *out_len = container_meta->exif_len;
+        return container_meta->exif;
+    }
+    *out_len = 0u;
+    return NULL;
+}
+
+static const uint8_t *effective_xmp_at(const rfc_metadata *container_meta,
+                                       const rfc_frame *frames,
+                                       size_t frame_count,
+                                       size_t idx,
+                                       size_t *out_len) {
+    if (frames && idx < frame_count && frames[idx].metadata.xmp_len > 0u &&
+        frames[idx].metadata.xmp != NULL) {
+        *out_len = frames[idx].metadata.xmp_len;
+        return frames[idx].metadata.xmp;
+    }
+    if (container_meta && container_meta->xmp_len > 0u &&
+        container_meta->xmp != NULL) {
+        *out_len = container_meta->xmp_len;
+        return container_meta->xmp;
+    }
+    *out_len = 0u;
+    return NULL;
+}
+
+static int has_any_exif(const rfc_metadata *container_meta,
+                        const rfc_frame *frames,
+                        size_t frame_count) {
+    if (container_meta && container_meta->exif_len > 0u &&
+        container_meta->exif != NULL) {
+        return 1;
+    }
+    if (frames) {
+        for (size_t i = 0u; i < frame_count; i++) {
+            if (frames[i].metadata.exif_len > 0u &&
+                frames[i].metadata.exif != NULL) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static int has_any_xmp(const rfc_metadata *container_meta,
+                       const rfc_frame *frames,
+                       size_t frame_count) {
+    if (container_meta && container_meta->xmp_len > 0u &&
+        container_meta->xmp != NULL) {
+        return 1;
+    }
+    if (frames) {
+        for (size_t i = 0u; i < frame_count; i++) {
+            if (frames[i].metadata.xmp_len > 0u &&
+                frames[i].metadata.xmp != NULL) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static int has_any_raw_icc(const rfc_metadata *container_meta,
+                           const rfc_frame *frames,
+                           size_t frame_count) {
+    if (container_meta && container_meta->icc_len > 0u &&
+        container_meta->icc != NULL) {
+        return 1;
+    }
+    if (frames) {
+        for (size_t i = 0u; i < frame_count; i++) {
+            if (frames[i].metadata.icc_len > 0u &&
+                frames[i].metadata.icc != NULL) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static int has_any_raw_colorimetry(const rfc_metadata *container_meta,
+                                   const rfc_frame *frames,
+                                   size_t frame_count) {
+    if (container_meta && rfc_colorimetry_has_any(&container_meta->color)) {
+        return 1;
+    }
+    if (frames) {
+        for (size_t i = 0u; i < frame_count; i++) {
+            if (rfc_colorimetry_has_any(&frames[i].metadata.color)) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static int format_supports_raw_colorimetry(rfc_format_id id) {
+    return id == RFC_FORMAT_PNG || id == RFC_FORMAT_APNG;
+}
+
 static int has_any_color_metadata(const rfc_metadata *container_meta,
                                   const rfc_frame *frames,
                                   size_t frame_count) {
@@ -315,7 +455,8 @@ rfc_status rfc_metadata_check_preflight(rfc_format_id target_format,
 
     if (policy == RFC_META_POLICY_STRIP) {
         uint32_t removable = present_source_items &
-                             (RFC_META_ITEM_ICC | RFC_META_ITEM_ORIENTATION);
+                             (RFC_META_ITEM_ICC | RFC_META_ITEM_ORIENTATION |
+                              RFC_META_ITEM_EXIF | RFC_META_ITEM_XMP);
         if (out_report) {
             out_report->outcome = RFC_VERIFY_META_STRIPPED_EXPLICITLY;
             out_report->stripped_items = removable;
@@ -328,7 +469,7 @@ rfc_status rfc_metadata_check_preflight(rfc_format_id target_format,
     uint32_t unack = unsupported & (~acknowledged_unsupported);
     if (unack != 0u) {
         if (out_report) {
-            char names[64];
+            char names[96];
             rfc_metadata_items_format(unack, names, sizeof(names));
             out_report->outcome = RFC_VERIFY_META_UNSUPPORTED_ITEMS_NAMED;
             out_report->unsupported_items = unsupported;
@@ -348,7 +489,7 @@ rfc_status rfc_metadata_check_preflight(rfc_format_id target_format,
         out_report->unsupported_items = unsupported;
         out_report->preserved_items = supported;
         if (unsupported != 0u) {
-            char names[64];
+            char names[96];
             rfc_metadata_items_format(unsupported, names, sizeof(names));
             out_report->outcome = RFC_VERIFY_META_UNSUPPORTED_ITEMS_NAMED;
             meta_copy_cstr(out_report->detail, sizeof(out_report->detail),
@@ -364,6 +505,59 @@ rfc_status rfc_metadata_check_preflight(rfc_format_id target_format,
             meta_copy_cstr(out_report->detail, sizeof(out_report->detail),
                            "all present metadata items supported");
         }
+    }
+    return RFC_OK;
+}
+
+rfc_status rfc_metadata_check_source_preflight(rfc_format_id target_format,
+                                               rfc_metadata_policy policy,
+                                               rfc_exactness_class exactness,
+                                               const rfc_metadata *src_meta,
+                                               const rfc_frame *src_frames,
+                                               size_t src_frame_count,
+                                               uint32_t acknowledged_unsupported,
+                                               rfc_metadata_report *out_report) {
+    rfc_metadata_report local_rep;
+    rfc_metadata_report *rep = out_report ? out_report : &local_rep;
+    uint32_t present =
+        rfc_metadata_source_items(src_meta, src_frames, src_frame_count);
+    rfc_status st = rfc_metadata_check_preflight(
+        target_format, policy, exactness, present, acknowledged_unsupported,
+        rep);
+    if (st != RFC_OK) {
+        return st;
+    }
+    if (policy == RFC_META_POLICY_PRESERVE &&
+        has_any_raw_colorimetry(src_meta, src_frames, src_frame_count) &&
+        !format_supports_raw_colorimetry(target_format)) {
+        const rfc_capability *cap = rfc_registry_find(target_format);
+        uint32_t unsupported = rep->unsupported_items | RFC_META_ITEM_ICC;
+        rep->unsupported_items = unsupported;
+        if (!has_any_raw_icc(src_meta, src_frames, src_frame_count)) {
+            rep->preserved_items &= ~RFC_META_ITEM_ICC;
+        }
+        if ((acknowledged_unsupported & RFC_META_ITEM_ICC) == 0u) {
+            char names[96];
+            rfc_metadata_items_format(unsupported & (~acknowledged_unsupported),
+                                      names, sizeof(names));
+            rep->outcome = RFC_VERIFY_META_UNSUPPORTED_ITEMS_NAMED;
+            meta_copy_cstr(rep->detail, sizeof(rep->detail), "target format ");
+            meta_append_cstr(rep->detail, sizeof(rep->detail),
+                             cap ? cap->name : "unknown");
+            meta_append_cstr(rep->detail, sizeof(rep->detail),
+                             " does not support metadata items: ");
+            meta_append_cstr(rep->detail, sizeof(rep->detail), names);
+            return RFC_ERR_METADATA_POLICY;
+        }
+        char names[96];
+        rfc_metadata_items_format(unsupported, names, sizeof(names));
+        rep->outcome = RFC_VERIFY_META_UNSUPPORTED_ITEMS_NAMED;
+        meta_copy_cstr(rep->detail, sizeof(rep->detail),
+                       "acknowledged unsupported metadata items for ");
+        meta_append_cstr(rep->detail, sizeof(rep->detail),
+                         cap ? cap->name : "unknown");
+        meta_append_cstr(rep->detail, sizeof(rep->detail), ": ");
+        meta_append_cstr(rep->detail, sizeof(rep->detail), names);
     }
     return RFC_OK;
 }
@@ -386,9 +580,9 @@ rfc_status rfc_metadata_verify(rfc_format_id target_format,
 
     uint32_t present =
         rfc_metadata_source_items(src_meta, src_frames, src_frame_count);
-    rfc_status st = rfc_metadata_check_preflight(
-        target_format, policy, exactness, present, acknowledged_unsupported,
-        rep);
+    rfc_status st = rfc_metadata_check_source_preflight(
+        target_format, policy, exactness, src_meta, src_frames, src_frame_count,
+        acknowledged_unsupported, rep);
     if (st != RFC_OK) {
         if (st == RFC_ERR_METADATA_POLICY && out_mismatch) {
             memset(out_mismatch, 0, sizeof(*out_mismatch));
@@ -409,8 +603,14 @@ rfc_status rfc_metadata_verify(rfc_format_id target_format,
         if (has_non_normal_orientation(dst_meta, dst_frames, dst_frame_count)) {
             retained |= RFC_META_ITEM_ORIENTATION;
         }
+        if (has_any_exif(dst_meta, dst_frames, dst_frame_count)) {
+            retained |= RFC_META_ITEM_EXIF;
+        }
+        if (has_any_xmp(dst_meta, dst_frames, dst_frame_count)) {
+            retained |= RFC_META_ITEM_XMP;
+        }
         if (retained != 0u) {
-            char names[64];
+            char names[96];
             rfc_metadata_items_format(retained, names, sizeof(names));
             rep->retained_removable_items = retained;
             meta_copy_cstr(rep->detail, sizeof(rep->detail),
@@ -433,6 +633,11 @@ rfc_status rfc_metadata_verify(rfc_format_id target_format,
 
     uint32_t caps = rep->target_supported_items;
     uint32_t supported = present & caps;
+    if (!format_supports_raw_colorimetry(target_format) &&
+        has_any_raw_colorimetry(src_meta, src_frames, src_frame_count) &&
+        !has_any_raw_icc(src_meta, src_frames, src_frame_count)) {
+        supported &= ~RFC_META_ITEM_ICC;
+    }
     uint32_t lost = RFC_META_ITEM_NONE;
     size_t check_count =
         (src_frame_count > dst_frame_count) ? src_frame_count : dst_frame_count;
@@ -445,6 +650,7 @@ rfc_status rfc_metadata_verify(rfc_format_id target_format,
             src_frame_count != dst_frame_count) {
             lost |= RFC_META_ITEM_ICC;
         } else {
+            int raw_ok = format_supports_raw_colorimetry(target_format);
             for (size_t i = 0u; i < check_count; i++) {
                 size_t slen = 0u, dlen = 0u;
                 const uint8_t *s_icc = effective_icc_at(
@@ -458,7 +664,8 @@ rfc_status rfc_metadata_verify(rfc_format_id target_format,
                 if (slen != dlen ||
                     (slen > 0u &&
                      (!s_icc || !d_icc || memcmp(s_icc, d_icc, slen) != 0)) ||
-                    !colorimetry_equal(s_col, d_col)) {
+                    (raw_ok ? !colorimetry_equal(s_col, d_col)
+                            : (d_col != NULL))) {
                     lost |= RFC_META_ITEM_ICC;
                     break;
                 }
@@ -500,8 +707,58 @@ rfc_status rfc_metadata_verify(rfc_format_id target_format,
         }
     }
 
+    if (caps & RFC_META_ITEM_EXIF) {
+        if (src_frame_count > 0u && dst_frame_count > 0u &&
+            src_frame_count != dst_frame_count) {
+            lost |= RFC_META_ITEM_EXIF;
+        } else {
+            for (size_t i = 0u; i < check_count; i++) {
+                size_t slen = 0u, dlen = 0u;
+                const uint8_t *s_ex = effective_exif_at(
+                    src_meta, src_frames, src_frame_count, i, &slen);
+                const uint8_t *d_ex = effective_exif_at(
+                    dst_meta, dst_frames, dst_frame_count, i, &dlen);
+                rfc_orientation s_ori = effective_orientation_at(
+                    src_meta, src_frames, src_frame_count, i);
+                if (slen > 0u) {
+                    if (slen != dlen || !s_ex || !d_ex ||
+                        memcmp(s_ex, d_ex, slen) != 0) {
+                        lost |= RFC_META_ITEM_EXIF;
+                        break;
+                    }
+                } else if (s_ori <= RFC_ORIENTATION_NORMAL) {
+                    if (dlen != 0u) {
+                        lost |= RFC_META_ITEM_EXIF;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    if (caps & RFC_META_ITEM_XMP) {
+        if (src_frame_count > 0u && dst_frame_count > 0u &&
+            src_frame_count != dst_frame_count) {
+            lost |= RFC_META_ITEM_XMP;
+        } else {
+            for (size_t i = 0u; i < check_count; i++) {
+                size_t slen = 0u, dlen = 0u;
+                const uint8_t *s_xmp = effective_xmp_at(
+                    src_meta, src_frames, src_frame_count, i, &slen);
+                const uint8_t *d_xmp = effective_xmp_at(
+                    dst_meta, dst_frames, dst_frame_count, i, &dlen);
+                if (slen != dlen ||
+                    (slen > 0u &&
+                     (!s_xmp || !d_xmp || memcmp(s_xmp, d_xmp, slen) != 0))) {
+                    lost |= RFC_META_ITEM_XMP;
+                    break;
+                }
+            }
+        }
+    }
+
     if (lost != 0u) {
-        char names[64];
+        char names[96];
         rfc_metadata_items_format(lost, names, sizeof(names));
         rep->lost_supported_items = lost;
         rep->preserved_items = supported & (~lost);
@@ -521,7 +778,7 @@ rfc_status rfc_metadata_verify(rfc_format_id target_format,
 
     rep->preserved_items = supported;
     if (rep->unsupported_items != 0u) {
-        char names[64];
+        char names[96];
         rfc_metadata_items_format(rep->unsupported_items, names, sizeof(names));
         rep->outcome = RFC_VERIFY_META_UNSUPPORTED_ITEMS_NAMED;
         meta_copy_cstr(rep->detail, sizeof(rep->detail),

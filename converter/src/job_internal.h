@@ -338,6 +338,8 @@ typedef struct rfc_job_inputs {
     rfc_metadata source_meta;
     int has_meta;
     uint8_t *owned_icc;
+    uint8_t *owned_exif;
+    uint8_t *owned_xmp;
     rfc_setting_value *settings;
     size_t setting_count;
     uint32_t acknowledged_unsupported_metadata;
@@ -429,6 +431,8 @@ struct rfc_job {
     size_t decoded_frame_count;
     rfc_metadata decoded_meta;
     uint8_t *decoded_meta_icc;
+    uint8_t *decoded_meta_exif;
+    uint8_t *decoded_meta_xmp;
     int has_decoded_meta;
     const rfc_allocator *decoded_frames_alloc;
 
@@ -452,6 +456,8 @@ struct rfc_job {
     uint32_t decode_credit_frames;
     uint64_t decode_last_checked_fbytes;
     size_t decode_last_checked_icc_len;
+    size_t decode_last_checked_exif_len;
+    size_t decode_last_checked_xmp_len;
     rfc_layout decode_last_checked_layout;
     int decode_unvalidated_alloc;
     rfc_status decode_guard_failure;
@@ -469,6 +475,8 @@ struct rfc_job {
     size_t verify_reconstructed_len;
     rfc_metadata verify_reconstructed_meta;
     uint8_t *verify_reconstructed_icc;
+    uint8_t *verify_reconstructed_exif;
+    uint8_t *verify_reconstructed_xmp;
     int has_verify_reconstructed;
     int has_verify_reconstructed_meta;
 

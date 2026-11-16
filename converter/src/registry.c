@@ -122,14 +122,23 @@ rfc_status rfc_frame_alloc(rfc_frame *frame, const rfc_layout *layout,
     size_t total = 0;
     rfc_status st = rfc_layout_validate(layout, &total);
     if (st != RFC_OK) return st; /* refusal happens before any allocation */
-    if (metadata && metadata->icc_len > RFC_MAX_ICC_BYTES)
-        return RFC_ERR_INVALID_ARGUMENT;
-    if (metadata && metadata->icc_len && !metadata->icc)
-        return RFC_ERR_INVALID_ARGUMENT;
-    if (metadata && metadata->orientation > RFC_ORIENTATION_ROTATE_270)
-        return RFC_ERR_INVALID_ARGUMENT;
-    if (metadata && !rfc_colorimetry_is_valid(&metadata->color))
-        return RFC_ERR_INVALID_ARGUMENT;
+    if (metadata) {
+        if (metadata->icc_len > RFC_MAX_ICC_BYTES ||
+            metadata->exif_len > RFC_MAX_ICC_BYTES ||
+            metadata->xmp_len > RFC_MAX_ICC_BYTES ||
+            metadata->icc_len + metadata->exif_len > RFC_MAX_ICC_BYTES ||
+            metadata->icc_len + metadata->exif_len + metadata->xmp_len >
+                RFC_MAX_ICC_BYTES)
+            return RFC_ERR_INVALID_ARGUMENT;
+        if ((metadata->icc_len && !metadata->icc) ||
+            (metadata->exif_len && !metadata->exif) ||
+            (metadata->xmp_len && !metadata->xmp))
+            return RFC_ERR_INVALID_ARGUMENT;
+        if (metadata->orientation > RFC_ORIENTATION_ROTATE_270)
+            return RFC_ERR_INVALID_ARGUMENT;
+        if (!rfc_colorimetry_is_valid(&metadata->color))
+            return RFC_ERR_INVALID_ARGUMENT;
+    }
     rfc_frame_alloc_guard_fn guard =
         atomic_load_explicit(&g_frame_alloc_guard, memory_order_acquire);
     if (guard) {
@@ -139,10 +148,34 @@ rfc_status rfc_frame_alloc(rfc_frame *frame, const rfc_layout *layout,
     uint8_t *data = (uint8_t *)allocator->alloc(allocator->ctx, total);
     if (!data) return RFC_ERR_OUT_OF_MEMORY;
     uint8_t *icc = NULL;
+    uint8_t *exif = NULL;
+    uint8_t *xmp = NULL;
     if (metadata && metadata->icc_len) {
         icc = (uint8_t *)allocator->alloc(allocator->ctx, metadata->icc_len);
-        if (!icc) { allocator->free(allocator->ctx, data); return RFC_ERR_OUT_OF_MEMORY; }
+        if (!icc) {
+            allocator->free(allocator->ctx, data);
+            return RFC_ERR_OUT_OF_MEMORY;
+        }
         memcpy(icc, metadata->icc, metadata->icc_len);
+    }
+    if (metadata && metadata->exif_len) {
+        exif = (uint8_t *)allocator->alloc(allocator->ctx, metadata->exif_len);
+        if (!exif) {
+            if (icc) allocator->free(allocator->ctx, icc);
+            allocator->free(allocator->ctx, data);
+            return RFC_ERR_OUT_OF_MEMORY;
+        }
+        memcpy(exif, metadata->exif, metadata->exif_len);
+    }
+    if (metadata && metadata->xmp_len) {
+        xmp = (uint8_t *)allocator->alloc(allocator->ctx, metadata->xmp_len);
+        if (!xmp) {
+            if (exif) allocator->free(allocator->ctx, exif);
+            if (icc) allocator->free(allocator->ctx, icc);
+            allocator->free(allocator->ctx, data);
+            return RFC_ERR_OUT_OF_MEMORY;
+        }
+        memcpy(xmp, metadata->xmp, metadata->xmp_len);
     }
     memset(frame, 0, sizeof(*frame));
     frame->layout = *layout;
@@ -151,6 +184,8 @@ rfc_status rfc_frame_alloc(rfc_frame *frame, const rfc_layout *layout,
     frame->allocator = allocator;
     if (metadata) frame->metadata = *metadata;
     frame->metadata.icc = icc;
+    frame->metadata.exif = exif;
+    frame->metadata.xmp = xmp;
     return RFC_OK;
 }
 
@@ -158,8 +193,44 @@ void rfc_frame_free(rfc_frame *frame) {
     if (!frame || !frame->allocator) return;
     if (frame->metadata.icc)
         frame->allocator->free(frame->allocator->ctx, (void *)frame->metadata.icc);
+    if (frame->metadata.exif && frame->metadata.exif != frame->metadata.icc)
+        frame->allocator->free(frame->allocator->ctx, (void *)frame->metadata.exif);
+    if (frame->metadata.xmp && frame->metadata.xmp != frame->metadata.icc &&
+        frame->metadata.xmp != frame->metadata.exif)
+        frame->allocator->free(frame->allocator->ctx, (void *)frame->metadata.xmp);
     if (frame->data) frame->allocator->free(frame->allocator->ctx, frame->data);
     memset(frame, 0, sizeof(*frame));
+}
+
+void rfc_metadata_free(rfc_metadata *meta, const rfc_allocator *allocator) {
+    if (!meta) return;
+    const void *p_icc = meta->icc;
+    const void *p_exif = meta->exif;
+    const void *p_xmp = meta->xmp;
+    if (p_icc) {
+        if (allocator && allocator->free)
+            allocator->free(allocator->ctx, (void *)p_icc);
+        else
+            free((void *)p_icc);
+    }
+    if (p_exif && p_exif != p_icc) {
+        if (allocator && allocator->free)
+            allocator->free(allocator->ctx, (void *)p_exif);
+        else
+            free((void *)p_exif);
+    }
+    if (p_xmp && p_xmp != p_icc && p_xmp != p_exif) {
+        if (allocator && allocator->free)
+            allocator->free(allocator->ctx, (void *)p_xmp);
+        else
+            free((void *)p_xmp);
+    }
+    meta->icc = NULL;
+    meta->icc_len = 0u;
+    meta->exif = NULL;
+    meta->exif_len = 0u;
+    meta->xmp = NULL;
+    meta->xmp_len = 0u;
 }
 
 void rfc_encoded_free(rfc_encoded *encoded) {
@@ -266,6 +337,8 @@ static const rfc_sample_format k_exr[] = {RFC_SAMPLE_RGB_HALF, RFC_SAMPLE_RGBA_H
 #define META_ICC RFC_META_ITEM_ICC
 #define META_ORI RFC_META_ITEM_ORIENTATION
 #define META_TIM RFC_META_ITEM_FRAME_TIMING
+#define META_EXIF RFC_META_ITEM_EXIF
+#define META_XMP RFC_META_ITEM_XMP
 
 static const rfc_capability k_registry[] = {
     {RFC_FORMAT_RASTERFOLD, "rasterfold", "RasterFold (this repository)", "D10 T02 \xc2\xa7" "1", NULL, USABLE, NULL, 1, 1, k_rgb8, 1, COMMON, COMMON_RULES, META_NONE},
@@ -274,7 +347,7 @@ static const rfc_capability k_registry[] = {
     {RFC_FORMAT_APNG, "apng", "libpng (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "1", "D10 T02 \xc2\xa7" "12", PLANNED, "APNG multi-frame sequence composition and export owned by D10 T02 \xc2\xa7" "12", 1, 1, k_png, 6, ANIM, ANIM_RULES, META_ICC | META_TIM},
     {RFC_FORMAT_PNM, "pnm", "in-tree converter code", "D10 T02 \xc2\xa7" "1", NULL, USABLE, NULL, 1, 1, k_pnm, 4, COMMON, COMMON_RULES, META_NONE},
     {RFC_FORMAT_PAM, "pam", "in-tree converter code", "D10 T02 \xc2\xa7" "1", NULL, USABLE, NULL, 1, 1, k_pam, 6, COMMON, COMMON_RULES, META_NONE},
-    {RFC_FORMAT_WEBP, "webp", "libwebp (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "2", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_rgba8, 2, COMMON, COMMON_RULES, META_ICC | META_ORI},
+    {RFC_FORMAT_WEBP, "webp", "libwebp (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "2", NULL, USABLE, NULL, 1, 1, k_rgba8, 2, COMMON, COMMON_RULES, META_ICC | META_ORI | META_EXIF | META_XMP},
     {RFC_FORMAT_JPEG_XL, "jpeg-xl", "libjxl (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "3", "D10 T02 \xc2\xa7" "12", PLANNED, "converter adapter not yet shipped", 1, 1, k_png, 6, JXLSET, JXL_RULES, META_ICC | META_ORI | META_TIM},
     {RFC_FORMAT_AVIF, "avif", "libavif (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "4", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_10bit, 4, COMMON, COMMON_RULES, META_ICC | META_ORI},
     {RFC_FORMAT_JPEG, "jpeg", "libjpeg-turbo (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "5", NULL, PLANNED, "converter adapter not yet shipped", 1, 0, k_jpeg, 2, JPEGSET, COMMON_RULES, META_ICC | META_ORI},

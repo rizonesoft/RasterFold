@@ -331,8 +331,8 @@
       "format": "webp",
       "provider": "libwebp (bundled, pinned by D10 T01 \u00a72)",
       "owner": "D10 T02 \u00a72",
-      "availability": "planned",
-      "unavailable_reason": "converter adapter not yet shipped",
+      "availability": "usable",
+      "unavailable_reason": null,
       "modes": {
         "read": true,
         "write": true
@@ -375,7 +375,9 @@
       "extension_owner": null,
       "metadata_items": [
         "icc",
-        "orientation"
+        "orientation",
+        "exif",
+        "xmp"
       ]
     },
     {

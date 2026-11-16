@@ -1037,10 +1037,9 @@ static rfc_status compute_preflight(const rfc_scheduler_config *cfg,
         if (st != RFC_OK) {
             return st;
         }
-        uint32_t present = rfc_metadata_source_items(source_meta, NULL, 0u);
-        st = rfc_metadata_check_preflight(target_format, pol, ex, present,
-                                          acknowledged_unsupported_metadata,
-                                          NULL);
+        st = rfc_metadata_check_source_preflight(
+            target_format, pol, ex, source_meta, NULL, 0u,
+            acknowledged_unsupported_metadata, NULL);
         if (st != RFC_OK) {
             return st;
         }

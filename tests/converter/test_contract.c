@@ -60,6 +60,8 @@ static void dump_registry(void) {
         if (c->metadata_items & RFC_META_ITEM_ICC) printf("icc,");
         if (c->metadata_items & RFC_META_ITEM_ORIENTATION) printf("orientation,");
         if (c->metadata_items & RFC_META_ITEM_FRAME_TIMING) printf("frame-timing,");
+        if (c->metadata_items & RFC_META_ITEM_EXIF) printf("exif,");
+        if (c->metadata_items & RFC_META_ITEM_XMP) printf("xmp,");
         printf("\n");
     }
 }
@@ -94,14 +96,40 @@ int main(int argc, char **argv) {
     CHECK(rfc_layout_validate(&ten_bit, &ten_total) == RFC_OK && ten_total == 24);
     CHECK(alloc_calls == 0);
 
-    /* A valid frame allocates, owns a copy of the ICC bytes, and frees. */
+    /* A valid frame allocates, owns copies of ICC/EXIF/XMP bytes, and frees. */
     uint8_t icc[4] = {1, 2, 3, 4};
-    rfc_metadata meta = {icc, 4, RFC_ORIENTATION_NORMAL, 0, {0}};
+    uint8_t exif_b[8] = {'I', 'I', 0x2A, 0x00, 8, 0, 0, 0};
+    uint8_t xmp_b[6] = {'<', 'x', '/', 'x', '>', '\n'};
+    rfc_metadata meta = {icc, 4, RFC_ORIENTATION_NORMAL, 0, {0},
+                         exif_b, sizeof(exif_b), xmp_b, sizeof(xmp_b)};
     CHECK(rfc_frame_alloc(&frame, &good, &meta, &alloc) == RFC_OK);
-    CHECK(frame.data_len == 36 && frame.metadata.icc && frame.metadata.icc != icc);
-    CHECK(alloc_calls >= 1);
+    CHECK(frame.data_len == 36 && frame.metadata.icc && frame.metadata.icc != icc &&
+          frame.metadata.icc_len == 4u &&
+          frame.metadata.exif && frame.metadata.exif != exif_b &&
+          frame.metadata.exif_len == sizeof(exif_b) &&
+          frame.metadata.xmp && frame.metadata.xmp != xmp_b &&
+          frame.metadata.xmp_len == sizeof(xmp_b));
+    memset(exif_b, 0xEE, sizeof(exif_b));
+    memset(xmp_b, 0xAA, sizeof(xmp_b));
+    CHECK(frame.metadata.exif[0] == 'I' && frame.metadata.xmp[0] == '<');
+    CHECK(alloc_calls >= 4);
     rfc_frame_free(&frame);
-    CHECK(frame.data == NULL);
+    CHECK(frame.data == NULL && frame.metadata.icc == NULL &&
+          frame.metadata.exif == NULL && frame.metadata.xmp == NULL);
+
+    /* rfc_metadata_free releases independent buffers and clears lengths. */
+    rfc_metadata standalone = {0};
+    standalone.icc = (uint8_t *)malloc(3u);
+    standalone.icc_len = 3u;
+    standalone.exif = (uint8_t *)malloc(5u);
+    standalone.exif_len = 5u;
+    standalone.xmp = (uint8_t *)malloc(7u);
+    standalone.xmp_len = 7u;
+    CHECK(standalone.icc && standalone.exif && standalone.xmp);
+    rfc_metadata_free(&standalone, &alloc);
+    CHECK(standalone.icc == NULL && standalone.icc_len == 0u &&
+          standalone.exif == NULL && standalone.exif_len == 0u &&
+          standalone.xmp == NULL && standalone.xmp_len == 0u);
 
     /* Registry: every vision format is listed; rasterfold is findable. */
     CHECK(rfc_registry_count() == 19);
@@ -112,7 +140,8 @@ int main(int argc, char **argv) {
 
     /* Planned formats fail with RFC_ERR_PLANNED; usable formats without an
      * adapter registered fail with RFC_ERR_NO_ADAPTER. */
-    CHECK(rfc_registry_select(RFC_FORMAT_WEBP, RFC_MODE_READ) == RFC_ERR_PLANNED);
+    CHECK(rfc_registry_select(RFC_FORMAT_AVIF, RFC_MODE_READ) == RFC_ERR_PLANNED);
+    CHECK(rfc_registry_select(RFC_FORMAT_WEBP, RFC_MODE_READ) == RFC_ERR_NO_ADAPTER);
     CHECK(rfc_registry_select(RFC_FORMAT_PNG, RFC_MODE_READ) == RFC_ERR_NO_ADAPTER);
     const char *reason = NULL;
     rfc_setting_value ok_vals[] = {{"metadata", "preserve"}, {"exactness", "pixel-exact"}};
@@ -170,7 +199,12 @@ int main(int argc, char **argv) {
     CHECK(strcmp(rfc_status_name(RFC_ERR_TRUNCATED_INPUT), "truncated-input") == 0);
     CHECK(rfc_registry_find(RFC_FORMAT_RASTERFOLD)->metadata_items == RFC_META_ITEM_NONE);
     CHECK(rfc_registry_find(RFC_FORMAT_PNG)->metadata_items == RFC_META_ITEM_ICC);
-    CHECK(rfc_registry_find(RFC_FORMAT_JPEG_XL)->metadata_items == RFC_META_ITEM_ALL);
+    CHECK(rfc_registry_find(RFC_FORMAT_WEBP)->metadata_items ==
+          (RFC_META_ITEM_ICC | RFC_META_ITEM_ORIENTATION |
+           RFC_META_ITEM_EXIF | RFC_META_ITEM_XMP));
+    CHECK(rfc_registry_find(RFC_FORMAT_JPEG_XL)->metadata_items ==
+          (RFC_META_ITEM_ICC | RFC_META_ITEM_ORIENTATION |
+           RFC_META_ITEM_FRAME_TIMING));
     CHECK(rfc_registry_register(&fake) == RFC_OK);
     CHECK(rfc_registry_acquire_adapter(RFC_FORMAT_QOI) == &fake);
     CHECK(rfc_registry_unregister(RFC_FORMAT_QOI) == RFC_ERR_BUSY);

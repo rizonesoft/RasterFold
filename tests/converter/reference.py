@@ -21,6 +21,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import signal
 import struct
 import subprocess
@@ -160,8 +161,8 @@ PROVENANCE_TABLE: tuple[dict[str, Any], ...] = (
         "reference_decoder_kind": "shared-upstream-library",
         "shares_c_library_with_converter": True,
         "claims_independent_decoder": False,
-        "coverage_state": "provenance-only-pending-adapter",
-        "provenance_note": "Pending D10 T02 s2; Pillow webp binds libwebp so neither Pillow nor fresh libwebp is an independent oracle.",
+        "coverage_state": "executable-in-d10-t02-s2",
+        "provenance_note": "Verified by fresh WebPDecode/WebPDemux session and Pillow (shared libwebp), plus independent clean-room FFmpeg libavcodec webp decoder when available.",
     },
     {
         "format_name": "jpeg-xl",
@@ -400,6 +401,7 @@ def validate_provenance_table() -> dict[str, dict[str, Any]]:
             raise AssertionError(f"{name}: system codec must not claim bundled packages")
         if row["coverage_state"] not in (
             "executable-in-d10-t01-s4",
+            "executable-in-d10-t02-s2",
             "provenance-only-pending-adapter",
         ):
             raise AssertionError(f"{name}: invalid coverage_state {row['coverage_state']!r}")
@@ -1504,3 +1506,76 @@ def run_process_tree(
                 proc.wait()
         elif job is not None:
             job.end()
+
+
+def probe_ffmpeg_webp_decoder() -> dict[str, Any]:
+    """Locate FFmpeg with clean-room libavcodec native webp decoder if present."""
+    candidates: list[str] = []
+    for name in ("ffmpeg", "ffmpeg.exe"):
+        found = shutil.which(name)
+        if found:
+            candidates.append(found)
+    if os.name != "nt":
+        win_winget = Path(
+            "/mnt/c/Users/DerickPayne/AppData/Local/Microsoft/WinGet/Links/ffmpeg.exe"
+        )
+        if win_winget.is_file() and str(win_winget) not in candidates:
+            candidates.append(str(win_winget))
+    for exe in candidates:
+        try:
+            res = run_process_tree(
+                [exe, "-hide_banner", "-decoders"],
+                timeout=10.0,
+                capture_output=True,
+                text=True,
+            )
+        except Exception:
+            continue
+        if res.returncode == 0 and res.stdout:
+            for line in res.stdout.splitlines():
+                parts = line.split()
+                if len(parts) >= 2 and "D" in parts[0] and parts[1] == "webp":
+                    return {
+                        "available": True,
+                        "executable": exe,
+                        "decoder": "libavcodec-webp",
+                        "independent": True,
+                        "reason": "FFmpeg built-in libavcodec clean-room WebP decoder",
+                    }
+    return {
+        "available": False,
+        "executable": "",
+        "decoder": "none",
+        "independent": False,
+        "reason": "no ffmpeg with clean-room libavcodec webp decoder found on host",
+    }
+
+
+def decode_webp_ffmpeg(path: str | os.PathLike[str], pix_fmt: str = "rgba") -> bytes | None:
+    """Decode a still WebP image to tightly packed raw rgb24/rgba via FFmpeg."""
+    info = probe_ffmpeg_webp_decoder()
+    if not info["available"]:
+        return None
+    exe = info["executable"]
+    target = os.fspath(path)
+    if os.name != "nt" and exe.lower().endswith(".exe"):
+        wp = run_process_tree(
+            ["wslpath", "-w", target],
+            timeout=5.0,
+            capture_output=True,
+            text=True,
+        )
+        if wp.returncode != 0 or not wp.stdout.strip():
+            return None
+        target = wp.stdout.strip()
+    res = run_process_tree(
+        [exe, "-v", "error", "-i", target, "-f", "rawvideo", "-pix_fmt", pix_fmt, "-"],
+        timeout=30.0,
+        capture_output=True,
+        text=False,
+    )
+    if res.returncode != 0:
+        raise RuntimeError(
+            f"ffmpeg webp decode failed ({res.returncode}): {res.stderr.decode(errors='replace')}"
+        )
+    return res.stdout

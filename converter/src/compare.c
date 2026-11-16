@@ -755,9 +755,21 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
         if (src_meta.icc && (!probe_frames || probe_count == 0u ||
                              probe_frames[0].metadata.icc != src_meta.icc)) {
             free((void *)src_meta.icc);
-            src_meta.icc = NULL;
-            src_meta.icc_len = 0u;
         }
+        src_meta.icc = NULL;
+        src_meta.icc_len = 0u;
+        if (src_meta.exif && (!probe_frames || probe_count == 0u ||
+                              probe_frames[0].metadata.exif != src_meta.exif)) {
+            free((void *)src_meta.exif);
+        }
+        src_meta.exif = NULL;
+        src_meta.exif_len = 0u;
+        if (src_meta.xmp && (!probe_frames || probe_count == 0u ||
+                             probe_frames[0].metadata.xmp != src_meta.xmp)) {
+            free((void *)src_meta.xmp);
+        }
+        src_meta.xmp = NULL;
+        src_meta.xmp_len = 0u;
         if (probe_frames) {
             for (size_t i = 0u; i < probe_count; i++) {
                 rfc_frame_free(&probe_frames[i]);
@@ -1031,7 +1043,8 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
             if (has_src_layout) {
                 jspec.source_layout = &src_layout;
             }
-            if (has_src_meta && src_meta.icc == NULL) {
+            if (has_src_meta && src_meta.icc == NULL &&
+                src_meta.exif == NULL && src_meta.xmp == NULL) {
                 jspec.source_meta = &src_meta;
             }
             if (!has_src_layout) {

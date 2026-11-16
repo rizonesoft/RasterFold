@@ -170,8 +170,14 @@ rfc_status rfc_limits_check_metadata(const rfc_limits *limits,
     if (!meta) {
         return RFC_ERR_INVALID_ARGUMENT;
     }
+    uint64_t sum = 0u;
     if (meta->icc_len > RFC_MAX_ICC_BYTES ||
-        meta->icc_len > limits->max_metadata_bytes) {
+        meta->exif_len > RFC_MAX_ICC_BYTES ||
+        meta->xmp_len > RFC_MAX_ICC_BYTES ||
+        !add_u64((uint64_t)meta->icc_len, (uint64_t)meta->exif_len, &sum) ||
+        !add_u64(sum, (uint64_t)meta->xmp_len, &sum) ||
+        sum > RFC_MAX_ICC_BYTES ||
+        sum > limits->max_metadata_bytes) {
         return RFC_ERR_LIMIT_EXCEEDED;
     }
     return RFC_OK;
@@ -396,6 +402,13 @@ rfc_status rfc_query_provider_memory_contract(rfc_format_id id,
             out->fixed_overhead_bytes = 1024ull * 1024ull;
             out->limitation_reason =
                 "RasterFold CM internal tables; enforced by rfc_limits preflight and scheduler reservation";
+            break;
+        case RFC_FORMAT_WEBP:
+            out->mode = RFC_MEM_RESERVATION_AND_LIMITS;
+            out->working_set_multiplier = 7u;
+            out->fixed_overhead_bytes = 1024ull * 1024ull;
+            out->limitation_reason =
+                "libwebp uses internal heap allocations; enforced by rfc_limits preflight, rfc_budget_reserve, and conservative reservation";
             break;
         case RFC_FORMAT_CAMERA_RAW:
         case RFC_FORMAT_DNG:

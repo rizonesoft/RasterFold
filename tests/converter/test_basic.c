@@ -543,6 +543,8 @@ static void test_registration_and_fold_v2_v3(void) {
     CHECK(rfc_registry_select(RFC_FORMAT_PNG, RFC_MODE_READ) ==
           RFC_ERR_NO_ADAPTER);
     CHECK(rfc_registry_select(RFC_FORMAT_WEBP, RFC_MODE_READ) ==
+          RFC_ERR_NO_ADAPTER);
+    CHECK(rfc_registry_select(RFC_FORMAT_AVIF, RFC_MODE_READ) ==
           RFC_ERR_PLANNED);
 
     /* Rollback check on duplicate conflict. */
@@ -1225,7 +1227,8 @@ static void test_png_depths_routes_budget_and_exif(void) {
     CHECK(test_alloc_frame(&f8_icc, &l8, NULL, &alloc) == RFC_OK);
     fill_test_pattern(&f8_icc, 89u);
     rfc_metadata meta_icc = {valid_icc, sizeof(valid_icc),
-                             RFC_ORIENTATION_NORMAL, 0u, {0}};
+                             RFC_ORIENTATION_NORMAL, 0u, {0},
+                             NULL, 0u, NULL, 0u};
     rfc_encoded icc_png = {0};
     CHECK(png_adp->encode_session(ps, &exec, &f8_icc, 1u, &meta_icc, NULL, 0u,
                                   &icc_png) == RFC_OK);
@@ -2078,7 +2081,8 @@ static int cli_main(int argc, char **argv) {
         rfc_layout lay = {(rfc_sample_format)sf, (rfc_alpha_mode)am, w, h, 0u,
                           (uint8_t)bps};
         rfc_metadata meta = {icc_len ? (raw + 40u) : NULL, icc_len,
-                             (rfc_orientation)ori, 0u, {0}};
+                             (rfc_orientation)ori, 0u, {0},
+                             NULL, 0u, NULL, 0u};
         rfc_frame fr = {0};
         CHECK(test_alloc_frame(&fr, &lay, &meta, &alloc) == RFC_OK);
         memcpy(fr.data, raw + 40u + icc_len, pay_len);

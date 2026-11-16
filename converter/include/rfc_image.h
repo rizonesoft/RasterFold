@@ -93,14 +93,18 @@ typedef struct rfc_colorimetry {
     uint32_t clli_max_fall;
 } rfc_colorimetry;
 
-/* Per-frame metadata. icc borrows caller memory unless the frame owns it
- * (rfc_frame owns a copy). duration_ms is 0 for still images. */
+/* Per-frame metadata. icc/exif/xmp borrow caller memory unless the frame
+ * owns them (rfc_frame owns a copy). duration_ms is 0 for still images. */
 typedef struct rfc_metadata {
     const uint8_t *icc;
     size_t icc_len;
     rfc_orientation orientation;
     uint32_t duration_ms;
     rfc_colorimetry color;
+    const uint8_t *exif;
+    size_t exif_len;
+    const uint8_t *xmp;
+    size_t xmp_len;
 } rfc_metadata;
 
 typedef struct rfc_allocator {
@@ -130,6 +134,10 @@ typedef struct rfc_encoded {
 } rfc_encoded;
 
 void rfc_encoded_free(rfc_encoded *encoded);
+
+/* Free owned metadata payload buffers (icc, exif, xmp) via allocator (or
+ * libc free when allocator is NULL) and clear their pointers and lengths. */
+void rfc_metadata_free(rfc_metadata *meta, const rfc_allocator *allocator);
 
 /* Bytes per pixel for a sample format, or 0 for an unknown format. */
 size_t rfc_sample_bytes(rfc_sample_format format);

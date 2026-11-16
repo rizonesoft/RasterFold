@@ -807,17 +807,40 @@ static void free_frames_with_alloc(rfc_frame **frames_ptr,
                                    size_t *count_ptr,
                                    rfc_metadata *meta,
                                    const rfc_allocator *alloc) {
-    if (meta && meta->icc) {
-        if (!frames_ptr || !*frames_ptr || !count_ptr || *count_ptr == 0u ||
-            (*frames_ptr)[0].metadata.icc != meta->icc) {
+    if (meta) {
+        if (meta->icc &&
+            (!frames_ptr || !*frames_ptr || !count_ptr || *count_ptr == 0u ||
+             (*frames_ptr)[0].metadata.icc != meta->icc)) {
             if (alloc && alloc->free) {
                 alloc->free(alloc->ctx, (void *)meta->icc);
             } else {
                 free((void *)meta->icc);
             }
         }
+        if (meta->exif && meta->exif != meta->icc &&
+            (!frames_ptr || !*frames_ptr || !count_ptr || *count_ptr == 0u ||
+             (*frames_ptr)[0].metadata.exif != meta->exif)) {
+            if (alloc && alloc->free) {
+                alloc->free(alloc->ctx, (void *)meta->exif);
+            } else {
+                free((void *)meta->exif);
+            }
+        }
+        if (meta->xmp && meta->xmp != meta->icc && meta->xmp != meta->exif &&
+            (!frames_ptr || !*frames_ptr || !count_ptr || *count_ptr == 0u ||
+             (*frames_ptr)[0].metadata.xmp != meta->xmp)) {
+            if (alloc && alloc->free) {
+                alloc->free(alloc->ctx, (void *)meta->xmp);
+            } else {
+                free((void *)meta->xmp);
+            }
+        }
         meta->icc = NULL;
         meta->icc_len = 0u;
+        meta->exif = NULL;
+        meta->exif_len = 0u;
+        meta->xmp = NULL;
+        meta->xmp_len = 0u;
     }
     if (!frames_ptr || !*frames_ptr) {
         if (count_ptr) {
@@ -898,9 +921,10 @@ rfc_status rfc_verify_encoded_fresh(rfc_format_id target_format,
 
     uint32_t present_meta = rfc_metadata_source_items(
         expected_meta, expected_frames, expected_count);
-    st = rfc_metadata_check_preflight(
-        target_format, meta_policy, RFC_EXACT_PIXEL_EXACT, present_meta,
-        acknowledged_unsupported, &out_report->metadata);
+    st = rfc_metadata_check_source_preflight(
+        target_format, meta_policy, RFC_EXACT_PIXEL_EXACT, expected_meta,
+        expected_frames, expected_count, acknowledged_unsupported,
+        &out_report->metadata);
     if (st != RFC_OK) {
         if (st == RFC_ERR_METADATA_POLICY) {
             set_mismatch(&out_report->mismatch, RFC_MISMATCH_METADATA_UNSUPPORTED,

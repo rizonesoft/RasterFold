@@ -19,6 +19,10 @@ rfc_status rfc_codecs_register_basic(void);
  * RFC_ERR_BUSY if a session is still active. */
 rfc_status rfc_codecs_unregister_basic(void);
 
+/* Register and unregister the shipped WebP session adapter (D10 T02 s2). */
+rfc_status rfc_codecs_register_webp(void);
+rfc_status rfc_codecs_unregister_webp(void);
+
 #ifdef __cplusplus
 }
 #endif

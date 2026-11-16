@@ -181,6 +181,7 @@ endif()
 
 add_library(rfc_codecs STATIC
   "${CMAKE_SOURCE_DIR}/codecs/basic.c"
+  "${CMAKE_SOURCE_DIR}/codecs/webp.c"
 )
 set_target_properties(rfc_codecs PROPERTIES
   C_STANDARD 11
@@ -199,6 +200,10 @@ target_link_libraries(rfc_codecs PRIVATE
   "${RF_LIBRASTERFOLD}"
   "${RF_LIB_PNG}"
   "${RF_LIB_Z}"
+  "${RF_LIB_WEBPMUX}"
+  "${RF_LIB_WEBPDEMUX}"
+  "${RF_LIB_WEBP}"
+  "${RF_LIB_SHARPYUV}"
 )
 
 add_executable(rfc_test_basic
@@ -223,6 +228,33 @@ target_link_libraries(rfc_test_basic PRIVATE
 )
 if(WIN32)
   target_link_options(rfc_test_basic PRIVATE -static -Wl,--gc-sections)
+endif()
+
+add_executable(rfc_test_webp
+  "${CMAKE_SOURCE_DIR}/../tests/converter/test_webp.c"
+)
+set_target_properties(rfc_test_webp PROPERTIES
+  C_STANDARD 11
+  C_STANDARD_REQUIRED ON
+  C_EXTENSIONS OFF
+  RUNTIME_OUTPUT_DIRECTORY "${RF_CONVERTER_BIN_DIR}"
+)
+target_compile_options(rfc_test_webp PRIVATE -Wall -Wextra -Werror)
+target_include_directories(rfc_test_webp PRIVATE
+  "${CMAKE_SOURCE_DIR}/codecs"
+  "${RF_DEPS_PREFIX}/include"
+)
+target_link_libraries(rfc_test_webp PRIVATE
+  rfc_codecs
+  rfc_engine
+  "${RF_LIBRASTERFOLD}"
+  "${RF_LIB_WEBPMUX}"
+  "${RF_LIB_WEBPDEMUX}"
+  "${RF_LIB_WEBP}"
+  "${RF_LIB_SHARPYUV}"
+)
+if(WIN32)
+  target_link_options(rfc_test_webp PRIVATE -static -Wl,--gc-sections)
 endif()
 
 add_executable(rfc_bundle_smoke

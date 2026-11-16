@@ -42,7 +42,7 @@ EXPECTED_OWNER = {"rasterfold": 1, "bmp": 1, "png": 1, "apng": 1, "pnm": 1,
 IMPORT_ONLY = {"camera-raw", "dng",   # docs/vision.md: explicit import-only adapter
                "heif", "heic"}        # docs/codec-distribution.md: system codec, read only
 ANIMATED = {"apng", "jpeg-xl", "gif", "tiff"}
-META_ITEMS = ("icc", "orientation", "frame-timing")
+META_ITEMS = ("icc", "orientation", "frame-timing", "exif", "xmp")
 
 
 def fail(msg):
@@ -50,16 +50,18 @@ def fail(msg):
     return 1
 
 
-def validate_registry():
-    path = os.path.join(ROOT, "converter", "codecs.json")
+def validate_registry(json_path=None):
+    path = json_path if json_path else os.path.join(ROOT, "converter", "codecs.json")
     try:
-        doc = json.load(open(path, encoding="utf-8"))
+        with open(path, encoding="utf-8") as f:
+            doc = json.load(f)
     except Exception as exc:
         return fail(f"converter/codecs.json is not valid JSON: {exc}")
     if doc.get("schema") != 1 or doc.get("abi_version") != 1:
         return fail("converter/codecs.json: schema/abi_version must be 1")
-    codecs_md = open(os.path.join(
-        ROOT, "todo", "10-converter", "TODO-02-codecs.md"), encoding="utf-8").read()
+    with open(os.path.join(ROOT, "todo", "10-converter", "TODO-02-codecs.md"),
+              encoding="utf-8") as f:
+        codecs_md = f.read()
     sections = {int(n) for n in re.findall(r"^## (\d+)\.", codecs_md, re.M)}
     shipped = set()
     for line in codecs_md.splitlines():
@@ -390,10 +392,10 @@ def case_exactness(all_targets):
                 'int main(void) {\n'
                 '    uint8_t px[12] = {1,2,3,4,5,6,7,8,9,10,11,12};\n'
                 '    rfc_frame fr = {{RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 2u, 2u, 6u, 8u},\n'
-                '                    {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0}}, px, 12u, NULL};\n'
+                '                    {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0}, NULL, 0u, NULL, 0u}, px, 12u, NULL};\n'
                 '    rfc_sample_mismatch mm;\n'
                 '    if (rfc_verify_frames_equal(&fr, 1u, &fr, 1u, &mm) != RFC_OK) return 1;\n'
-                '    rfc_metadata m = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0}};\n'
+                '    rfc_metadata m = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0}, NULL, 0u, NULL, 0u};\n'
                 '    rfc_metadata_report mr;\n'
                 '    if (rfc_metadata_verify(RFC_FORMAT_PNG, RFC_META_POLICY_PRESERVE,\n'
                 '                            RFC_EXACT_PIXEL_EXACT, &m, &fr, 1u,\n'
@@ -774,15 +776,7 @@ def case_reports(all_targets=False):
     return 0
 
 
-def _assert_basic_output(out_text, label):
-    required = [
-        "basic: registration_and_fold_v2_v3 ok",
-        "basic: bmp_depths_alpha_and_icc ok",
-        "basic: png_depths_routes_budget_and_exif ok",
-        "basic: pnm_and_pam_matrix ok",
-        "basic: jobs_file_safety_and_cancel ok",
-        "basic: all checks passed",
-    ]
+def _assert_suite_output(out_text, label, required):
     for marker in required:
         if marker not in out_text:
             return fail(f"{label} missing marker: {marker}\n{out_text}")
@@ -791,9 +785,9 @@ def _assert_basic_output(out_text, label):
     return 0
 
 
-def _host_libpng_flags():
+def _host_pkgconfig_flags(packages, fallback_cflags, fallback_libs):
     import shlex
-    res = run_capture(["pkg-config", "--cflags", "--libs", "libpng", "zlib"])
+    res = run_capture(["pkg-config", "--cflags", "--libs", *packages])
     if res.returncode == 0 and res.stdout.strip():
         cflags = []
         libs = []
@@ -803,10 +797,40 @@ def _host_libpng_flags():
             else:
                 cflags.append(tok)
         return cflags, libs
-    return ["-I/usr/include/libpng16"], ["-lpng16", "-lz"]
+    return list(fallback_cflags), list(fallback_libs)
 
 
-def case_basic(all_targets=False):
+def _host_libpng_flags():
+    return _host_pkgconfig_flags(
+        ["libpng", "zlib"], ["-I/usr/include/libpng16"], ["-lpng16", "-lz"]
+    )
+
+
+def _host_libwebp_flags():
+    cflags, libs = _host_pkgconfig_flags(
+        ["libwebpmux", "libwebpdemux", "libwebp"],
+        [],
+        ["-lwebpmux", "-lwebpdemux", "-lwebp", "-lm"],
+    )
+    if "-lm" not in libs:
+        libs.append("-lm")
+    return cflags, libs
+
+
+def _run_codec_case(
+    *,
+    case_name,
+    win_target,
+    codec_sources,
+    c_test_file,
+    py_test_file,
+    host_env_var,
+    win_env_var,
+    require_win_env_var,
+    markers,
+    host_flags_fn,
+    all_targets=False,
+):
     from pathlib import Path
 
     if validate_registry():
@@ -819,55 +843,60 @@ def case_basic(all_targets=False):
     rf_inc = os.path.join(ROOT, "include")
     codecs_dir = os.path.join(ROOT, "converter", "codecs")
     src_dir = os.path.join(ROOT, "converter", "src")
-    win_exe = Path(ROOT) / "bin" / "converter" / "windows-x64" / "rfc_test_basic.exe"
+    win_exe = Path(ROOT) / "bin" / "converter" / "windows-x64" / f"{win_target}.exe"
 
-    with tempfile.TemporaryDirectory(prefix="rfc_basic_gate_") as tmp:
+    with tempfile.TemporaryDirectory(prefix=f"rfc_{case_name}_gate_") as tmp:
         if _check_headers(tmp):
             return 1
 
         host_exe = ""
         if os.name != "nt":
             if run([sys.executable, os.path.join(ROOT, "scripts", "build.py"), "--target", "linux-x64"]):
-                return fail("linux-x64 librasterfold.a build failed for basic")
+                return fail(f"linux-x64 librasterfold.a build failed for {case_name}")
             rf_lib = os.path.join(ROOT, "bin", "linux-x64", "lib", "librasterfold.a")
             if not os.path.isfile(rf_lib):
                 return fail(f"missing {rf_lib}")
             cc = os.environ.get("CC", "cc")
-            png_cflags, png_libs = _host_libpng_flags()
-            host_exe = os.path.join(tmp, "test_basic")
+            extra_cflags, extra_libs = host_flags_fn()
+            if "-lm" not in extra_libs:
+                extra_libs = [*extra_libs, "-lm"]
+            host_exe = os.path.join(tmp, f"test_{case_name}")
             sources = [
                 os.path.join(src_dir, "registry.c"),
                 os.path.join(src_dir, "limits.c"),
                 os.path.join(src_dir, "verify.c"),
                 os.path.join(src_dir, "metadata.c"),
+                os.path.join(src_dir, "preview.c"),
                 os.path.join(src_dir, "input.c"),
                 os.path.join(src_dir, "output.c"),
                 os.path.join(src_dir, "metrics.c"),
+                os.path.join(src_dir, "compare.c"),
+                os.path.join(src_dir, "report.c"),
                 os.path.join(src_dir, "job.c"),
                 os.path.join(src_dir, "scheduler.c"),
-                os.path.join(codecs_dir, "basic.c"),
-                os.path.join(ROOT, "tests", "converter", "test_basic.c"),
+                *(os.path.join(codecs_dir, s) for s in codec_sources),
+                os.path.join(ROOT, "tests", "converter", c_test_file),
             ]
             cmd = [
                 cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-pthread",
-                "-I", inc, "-I", rf_inc, "-I", codecs_dir, *png_cflags,
-                *sources, rf_lib, *png_libs, "-o", host_exe,
+                "-I", inc, "-I", rf_inc, "-I", codecs_dir, *extra_cflags,
+                *sources, rf_lib, *extra_libs, "-o", host_exe,
             ]
             if run(cmd):
-                return fail("basic host test does not build")
+                return fail(f"{case_name} host test does not build")
             res = run_capture([host_exe], timeout=60.0)
             if res.returncode:
                 print(res.stdout)
                 print(res.stderr, file=sys.stderr)
-                return fail(f"basic host test exited {res.returncode}")
-            if _assert_basic_output(res.stdout, "host"):
+                return fail(f"{case_name} host test exited {res.returncode}")
+            if _assert_suite_output(res.stdout, "host", markers):
                 return 1
-            print("basic (host): PASS")
+            print(f"{case_name} (host): PASS")
 
         if all_targets or os.name == "nt":
             if run([sys.executable, os.path.join(ROOT, "scripts", "build-converter.py"),
                     "--target", "windows-x64"]):
-                return fail("windows-x64 converter build failed for rfc_test_basic")
+                return fail(f"windows-x64 converter build failed for {win_target}")
             if not win_exe.is_file():
                 return fail(f"missing built Windows binary: {win_exe}")
             pe_dlls = _tb.parse_pe64_imports(win_exe)
@@ -884,21 +913,21 @@ def case_basic(all_targets=False):
             if win_res.returncode:
                 print(win_res.stdout)
                 print(win_res.stderr, file=sys.stderr)
-                return fail(f"rfc_test_basic.exe isolated run exited {win_res.returncode}")
-            if _assert_basic_output(win_res.stdout, "windows-x64"):
+                return fail(f"{win_target}.exe isolated run exited {win_res.returncode}")
+            if _assert_suite_output(win_res.stdout, "windows-x64", markers):
                 return 1
-            print("basic (windows-x64 isolated): PASS")
+            print(f"{case_name} (windows-x64 isolated): PASS")
 
         venv_py = os.path.join(ROOT, ".venv", "bin", "python")
         py_bin = venv_py if (os.name != "nt" and os.path.isfile(venv_py)) else sys.executable
         env = dict(os.environ)
         if host_exe:
-            env["RFC_HOST_BASIC_EXE"] = host_exe
+            env[host_env_var] = host_exe
         if (all_targets or os.name == "nt") and win_exe.is_file():
-            env["RFC_WIN_BASIC_EXE"] = str(win_exe)
-            env["RFC_REQUIRE_WIN_BASIC"] = "1"
+            env[win_env_var] = str(win_exe)
+            env[require_win_env_var] = "1"
         py_res = _ref.run_process_tree(
-            [py_bin, os.path.join(ROOT, "tests", "converter", "test_basic.py"), "-v"],
+            [py_bin, os.path.join(ROOT, "tests", "converter", py_test_file), "-v"],
             cwd=ROOT, env=env, capture_output=True, text=True, timeout=240.0
         )
         if py_res.stdout:
@@ -906,10 +935,62 @@ def case_basic(all_targets=False):
         if py_res.stderr:
             print(py_res.stderr.rstrip(), file=sys.stderr, flush=True)
         if py_res.returncode != 0:
-            return fail(f"test_basic.py failed with rc={py_res.returncode}")
+            return fail(f"{py_test_file} failed with rc={py_res.returncode}")
 
-    print("basic: PASS")
+    print(f"{case_name}: PASS")
     return 0
+
+
+def case_basic(all_targets=False):
+    return _run_codec_case(
+        case_name="basic",
+        win_target="rfc_test_basic",
+        codec_sources=["basic.c"],
+        c_test_file="test_basic.c",
+        py_test_file="test_basic.py",
+        host_env_var="RFC_HOST_BASIC_EXE",
+        win_env_var="RFC_WIN_BASIC_EXE",
+        require_win_env_var="RFC_REQUIRE_WIN_BASIC",
+        markers=[
+            "basic: registration_and_fold_v2_v3 ok",
+            "basic: bmp_depths_alpha_and_icc ok",
+            "basic: png_depths_routes_budget_and_exif ok",
+            "basic: pnm_and_pam_matrix ok",
+            "basic: jobs_file_safety_and_cancel ok",
+            "basic: all checks passed",
+        ],
+        host_flags_fn=_host_libpng_flags,
+        all_targets=all_targets,
+    )
+
+
+def case_webp(all_targets=False):
+    def _flags():
+        w_cf, w_lb = _host_libwebp_flags()
+        p_cf, p_lb = _host_libpng_flags()
+        cflags = list(dict.fromkeys([*w_cf, *p_cf]))
+        libs = [*w_lb, *p_lb]
+        return cflags, libs
+
+    return _run_codec_case(
+        case_name="webp",
+        win_target="rfc_test_webp",
+        codec_sources=["basic.c", "webp.c"],
+        c_test_file="test_webp.c",
+        py_test_file="test_webp.py",
+        host_env_var="RFC_HOST_WEBP_EXE",
+        win_env_var="RFC_WIN_WEBP_EXE",
+        require_win_env_var="RFC_REQUIRE_WIN_WEBP",
+        markers=[
+            "webp: registration_and_upstream_contract ok",
+            "webp: mux_icc_exif_xmp_and_cross_format ok",
+            "webp: refusals_limits_and_budget ok",
+            "webp: malformed_riff_and_cancellation ok",
+            "webp: all checks passed",
+        ],
+        host_flags_fn=_flags,
+        all_targets=all_targets,
+    )
 
 
 def main():
@@ -932,6 +1013,8 @@ def main():
         return case_reports(all_targets)
     if args == ["--case", "basic"]:
         return case_basic(all_targets)
+    if args == ["--case", "webp"]:
+        return case_webp(all_targets)
     if args == ["--case", "all"]:
         rc = case_contract()
         if rc:
@@ -951,8 +1034,11 @@ def main():
         rc = case_basic(all_targets)
         if rc:
             return rc
+        rc = case_webp(all_targets)
+        if rc:
+            return rc
         return case_bundle()
-    print("usage: check-converter.py --case <contract|jobs|exactness|file-safety|reports|basic|bundle|all> [--all-targets]")
+    print("usage: check-converter.py --case <contract|jobs|exactness|file-safety|reports|basic|webp|bundle|all> [--all-targets]")
     return 1
 
 

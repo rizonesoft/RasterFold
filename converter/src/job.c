@@ -562,6 +562,16 @@ rfc_status rfc_job_internal_compute_retained_bytes(
             return RFC_ERR_LIMIT_EXCEEDED;
         }
     }
+    if (src_meta && src_meta->exif_len > 0 && src_meta->exif != NULL) {
+        if (!add_u64_job(total, (uint64_t)src_meta->exif_len, &total)) {
+            return RFC_ERR_LIMIT_EXCEEDED;
+        }
+    }
+    if (src_meta && src_meta->xmp_len > 0 && src_meta->xmp != NULL) {
+        if (!add_u64_job(total, (uint64_t)src_meta->xmp_len, &total)) {
+            return RFC_ERR_LIMIT_EXCEEDED;
+        }
+    }
     if (setting_count > 0 && settings != NULL) {
         uint64_t arr_bytes = 0;
         if (!mul_u64_job((uint64_t)setting_count,
@@ -616,6 +626,8 @@ static void inputs_free_contents(rfc_job_inputs *in) {
     uint64_t charged = in->charged_bytes;
     free(in->source_bytes);
     free(in->owned_icc);
+    free(in->owned_exif);
+    free(in->owned_xmp);
     if (in->settings) {
         for (size_t i = 0; i < in->setting_count; i++) {
             free((void *)in->settings[i].id);
@@ -700,6 +712,8 @@ rfc_job_inputs *rfc_job_inputs_create(rfc_scheduler *sched,
     if (src_meta) {
         in->source_meta = *src_meta;
         in->source_meta.icc = NULL;
+        in->source_meta.exif = NULL;
+        in->source_meta.xmp = NULL;
         in->has_meta = 1;
         if (src_meta->icc_len > 0 && src_meta->icc != NULL) {
             rfc_scheduler_internal_note_submit_alloc(sched);
@@ -710,6 +724,26 @@ rfc_job_inputs *rfc_job_inputs_create(rfc_scheduler *sched,
             }
             memcpy(in->owned_icc, src_meta->icc, src_meta->icc_len);
             in->source_meta.icc = in->owned_icc;
+        }
+        if (src_meta->exif_len > 0 && src_meta->exif != NULL) {
+            rfc_scheduler_internal_note_submit_alloc(sched);
+            in->owned_exif = (uint8_t *)malloc(src_meta->exif_len);
+            if (!in->owned_exif) {
+                inputs_free_contents(in);
+                return NULL;
+            }
+            memcpy(in->owned_exif, src_meta->exif, src_meta->exif_len);
+            in->source_meta.exif = in->owned_exif;
+        }
+        if (src_meta->xmp_len > 0 && src_meta->xmp != NULL) {
+            rfc_scheduler_internal_note_submit_alloc(sched);
+            in->owned_xmp = (uint8_t *)malloc(src_meta->xmp_len);
+            if (!in->owned_xmp) {
+                inputs_free_contents(in);
+                return NULL;
+            }
+            memcpy(in->owned_xmp, src_meta->xmp, src_meta->xmp_len);
+            in->source_meta.xmp = in->owned_xmp;
         }
     }
 
@@ -1154,6 +1188,8 @@ void rfc_job_internal_release_stage_outputs(rfc_job *job) {
     const rfc_allocator *df_alloc =
         job->decoded_frames_alloc ? job->decoded_frames_alloc : &job->allocator;
     uint8_t *d_icc = job->decoded_meta_icc;
+    uint8_t *d_exif = job->decoded_meta_exif;
+    uint8_t *d_xmp = job->decoded_meta_xmp;
     rfc_encoded enc = job->encoded_output;
     int has_enc = job->has_encoded_output;
     const rfc_session_adapter *enc_sess = job->encoded_owner_sess;
@@ -1163,12 +1199,16 @@ void rfc_job_internal_release_stage_outputs(rfc_job *job) {
     rfc_jpeg_coeff_image *v_dst_c = job->verify_dst_coeffs;
     uint8_t *v_rec = job->verify_reconstructed_bytes;
     uint8_t *v_rec_icc = job->verify_reconstructed_icc;
+    uint8_t *v_rec_exif = job->verify_reconstructed_exif;
+    uint8_t *v_rec_xmp = job->verify_reconstructed_xmp;
     uint8_t *imp_bytes = job->imported_source_bytes;
 
     job->decoded_frames = NULL;
     job->decoded_frame_count = 0;
     job->decoded_frames_alloc = NULL;
     job->decoded_meta_icc = NULL;
+    job->decoded_meta_exif = NULL;
+    job->decoded_meta_xmp = NULL;
     job->has_decoded_meta = 0;
     memset(&job->decoded_meta, 0, sizeof(job->decoded_meta));
     job->has_encoded_output = 0;
@@ -1181,6 +1221,8 @@ void rfc_job_internal_release_stage_outputs(rfc_job *job) {
     job->verify_reconstructed_bytes = NULL;
     job->verify_reconstructed_len = 0u;
     job->verify_reconstructed_icc = NULL;
+    job->verify_reconstructed_exif = NULL;
+    job->verify_reconstructed_xmp = NULL;
     job->has_verify_reconstructed = 0;
     job->has_verify_reconstructed_meta = 0;
     memset(&job->verify_reconstructed_meta, 0,
@@ -1218,6 +1260,20 @@ void rfc_job_internal_release_stage_outputs(rfc_job *job) {
             free(d_icc);
         }
     }
+    if (d_exif && d_exif != d_icc) {
+        if (job->allocator.free) {
+            job->allocator.free(job->allocator.ctx, d_exif);
+        } else {
+            free(d_exif);
+        }
+    }
+    if (d_xmp && d_xmp != d_icc && d_xmp != d_exif) {
+        if (job->allocator.free) {
+            job->allocator.free(job->allocator.ctx, d_xmp);
+        } else {
+            free(d_xmp);
+        }
+    }
     free_verify_coeff_image(&job->allocator, &v_src_c);
     free_verify_coeff_image(&job->allocator, &v_dst_c);
     if (v_rec) {
@@ -1232,6 +1288,20 @@ void rfc_job_internal_release_stage_outputs(rfc_job *job) {
             job->allocator.free(job->allocator.ctx, v_rec_icc);
         } else {
             free(v_rec_icc);
+        }
+    }
+    if (v_rec_exif && v_rec_exif != v_rec_icc) {
+        if (job->allocator.free) {
+            job->allocator.free(job->allocator.ctx, v_rec_exif);
+        } else {
+            free(v_rec_exif);
+        }
+    }
+    if (v_rec_xmp && v_rec_xmp != v_rec_icc && v_rec_xmp != v_rec_exif) {
+        if (job->allocator.free) {
+            job->allocator.free(job->allocator.ctx, v_rec_xmp);
+        } else {
+            free(v_rec_xmp);
         }
     }
     free_decoded_frames_array(&df, &df_cnt, df_alloc);
@@ -1284,6 +1354,8 @@ static rfc_status store_decoded_frames_on_job(rfc_job *job,
     rfc_metadata new_meta;
     memset(&new_meta, 0, sizeof(new_meta));
     uint8_t *owned_icc = NULL;
+    uint8_t *owned_exif = NULL;
+    uint8_t *owned_xmp = NULL;
     int has_meta = 0;
 
     if (meta) {
@@ -1308,6 +1380,55 @@ static rfc_status store_decoded_frames_on_job(rfc_job *job,
         } else {
             new_meta.icc = NULL;
         }
+        if (meta->exif && meta->exif_len > 0) {
+            int aliases_frame0 =
+                (frame_count > 0 && frames[0].metadata.exif == meta->exif);
+            if (aliases_frame0) {
+                owned_exif = NULL;
+            } else if (meta_icc_owned_by_exec) {
+                owned_exif = (uint8_t *)meta->exif;
+            } else {
+                owned_exif = (uint8_t *)job->allocator.alloc(job->allocator.ctx,
+                                                             meta->exif_len);
+                if (!owned_exif) {
+                    if (owned_icc && !meta_icc_owned_by_exec) {
+                        job->allocator.free(job->allocator.ctx, owned_icc);
+                    }
+                    return RFC_ERR_OUT_OF_MEMORY;
+                }
+                memcpy(owned_exif, meta->exif, meta->exif_len);
+                new_meta.exif = owned_exif;
+            }
+        } else {
+            new_meta.exif = NULL;
+        }
+        if (meta->xmp && meta->xmp_len > 0) {
+            int aliases_frame0 =
+                (frame_count > 0 && frames[0].metadata.xmp == meta->xmp);
+            if (aliases_frame0) {
+                owned_xmp = NULL;
+            } else if (meta_icc_owned_by_exec) {
+                owned_xmp = (uint8_t *)meta->xmp;
+            } else {
+                owned_xmp = (uint8_t *)job->allocator.alloc(job->allocator.ctx,
+                                                            meta->xmp_len);
+                if (!owned_xmp) {
+                    if (!meta_icc_owned_by_exec) {
+                        if (owned_exif) {
+                            job->allocator.free(job->allocator.ctx, owned_exif);
+                        }
+                        if (owned_icc) {
+                            job->allocator.free(job->allocator.ctx, owned_icc);
+                        }
+                    }
+                    return RFC_ERR_OUT_OF_MEMORY;
+                }
+                memcpy(owned_xmp, meta->xmp, meta->xmp_len);
+                new_meta.xmp = owned_xmp;
+            }
+        } else {
+            new_meta.xmp = NULL;
+        }
     } else if (frame_count > 0) {
         new_meta = frames[0].metadata;
         has_meta = 1;
@@ -1319,6 +1440,8 @@ static rfc_status store_decoded_frames_on_job(rfc_job *job,
     const rfc_allocator *old_alloc =
         job->decoded_frames_alloc ? job->decoded_frames_alloc : &job->allocator;
     uint8_t *old_icc = job->decoded_meta_icc;
+    uint8_t *old_exif = job->decoded_meta_exif;
+    uint8_t *old_xmp = job->decoded_meta_xmp;
 
     job->decoded_frames = frames;
     job->decoded_frame_count = frame_count;
@@ -1327,11 +1450,19 @@ static rfc_status store_decoded_frames_on_job(rfc_job *job,
                                                  : &job->allocator;
     job->decoded_meta = new_meta;
     job->decoded_meta_icc = owned_icc;
+    job->decoded_meta_exif = owned_exif;
+    job->decoded_meta_xmp = owned_xmp;
     job->has_decoded_meta = has_meta;
     rfc_mutex_unlock(&job->lock);
 
     if (old_icc) {
         job->allocator.free(job->allocator.ctx, old_icc);
+    }
+    if (old_exif && old_exif != old_icc) {
+        job->allocator.free(job->allocator.ctx, old_exif);
+    }
+    if (old_xmp && old_xmp != old_icc && old_xmp != old_exif) {
+        job->allocator.free(job->allocator.ctx, old_xmp);
     }
     free_decoded_frames_array(&old_df, &old_cnt, old_alloc);
     return RFC_OK;
@@ -1440,23 +1571,33 @@ static rfc_status job_clone_verified_metadata(
     const rfc_metadata *src,
     rfc_metadata *out_meta,
     uint8_t **out_icc_copy,
+    uint8_t **out_exif_copy,
+    uint8_t **out_xmp_copy,
     int *out_has_meta) {
     memset(out_meta, 0, sizeof(*out_meta));
     *out_icc_copy = NULL;
+    *out_exif_copy = NULL;
+    *out_xmp_copy = NULL;
     *out_has_meta = 0;
     if (!src) {
         return RFC_OK;
     }
-    if (src->icc_len > 0u && !src->icc) {
+    if ((src->icc_len > 0u && !src->icc) ||
+        (src->exif_len > 0u && !src->exif) ||
+        (src->xmp_len > 0u && !src->xmp)) {
         return RFC_ERR_INVALID_ARGUMENT;
     }
     *out_meta = *src;
     out_meta->icc = NULL;
-    if (src->icc_len > 0u) {
-        if (!alloc || !alloc->alloc) {
+    out_meta->exif = NULL;
+    out_meta->xmp = NULL;
+    if (src->icc_len > 0u || src->exif_len > 0u || src->xmp_len > 0u) {
+        if (!alloc || !alloc->alloc || !alloc->free) {
             memset(out_meta, 0, sizeof(*out_meta));
             return RFC_ERR_INVALID_ARGUMENT;
         }
+    }
+    if (src->icc_len > 0u) {
         uint8_t *icc = (uint8_t *)alloc->alloc(alloc->ctx, src->icc_len);
         if (!icc) {
             memset(out_meta, 0, sizeof(*out_meta));
@@ -1465,6 +1606,38 @@ static rfc_status job_clone_verified_metadata(
         memcpy(icc, src->icc, src->icc_len);
         out_meta->icc = icc;
         *out_icc_copy = icc;
+    }
+    if (src->exif_len > 0u) {
+        uint8_t *exif = (uint8_t *)alloc->alloc(alloc->ctx, src->exif_len);
+        if (!exif) {
+            if (*out_icc_copy) {
+                alloc->free(alloc->ctx, *out_icc_copy);
+                *out_icc_copy = NULL;
+            }
+            memset(out_meta, 0, sizeof(*out_meta));
+            return RFC_ERR_OUT_OF_MEMORY;
+        }
+        memcpy(exif, src->exif, src->exif_len);
+        out_meta->exif = exif;
+        *out_exif_copy = exif;
+    }
+    if (src->xmp_len > 0u) {
+        uint8_t *xmp = (uint8_t *)alloc->alloc(alloc->ctx, src->xmp_len);
+        if (!xmp) {
+            if (*out_exif_copy) {
+                alloc->free(alloc->ctx, *out_exif_copy);
+                *out_exif_copy = NULL;
+            }
+            if (*out_icc_copy) {
+                alloc->free(alloc->ctx, *out_icc_copy);
+                *out_icc_copy = NULL;
+            }
+            memset(out_meta, 0, sizeof(*out_meta));
+            return RFC_ERR_OUT_OF_MEMORY;
+        }
+        memcpy(xmp, src->xmp, src->xmp_len);
+        out_meta->xmp = xmp;
+        *out_xmp_copy = xmp;
     }
     *out_has_meta = 1;
     return RFC_OK;
@@ -1492,9 +1665,12 @@ rfc_status rfc_job_set_verified_jpeg_coeffs(
     }
     rfc_metadata meta_copy;
     uint8_t *icc_copy = NULL;
+    uint8_t *exif_copy = NULL;
+    uint8_t *xmp_copy = NULL;
     int has_rmeta = 0;
     st = job_clone_verified_metadata(&job->allocator, verified_meta, &meta_copy,
-                                     &icc_copy, &has_rmeta);
+                                     &icc_copy, &exif_copy, &xmp_copy,
+                                     &has_rmeta);
     if (st != RFC_OK) {
         free_verify_coeff_image(&job->allocator, &src_copy);
         free_verify_coeff_image(&job->allocator, &dst_copy);
@@ -1504,16 +1680,26 @@ rfc_status rfc_job_set_verified_jpeg_coeffs(
     rfc_jpeg_coeff_image *old_src = job->verify_src_coeffs;
     rfc_jpeg_coeff_image *old_dst = job->verify_dst_coeffs;
     uint8_t *old_icc = job->verify_reconstructed_icc;
+    uint8_t *old_exif = job->verify_reconstructed_exif;
+    uint8_t *old_xmp = job->verify_reconstructed_xmp;
     job->verify_src_coeffs = src_copy;
     job->verify_dst_coeffs = dst_copy;
     job->verify_reconstructed_meta = meta_copy;
     job->verify_reconstructed_icc = icc_copy;
+    job->verify_reconstructed_exif = exif_copy;
+    job->verify_reconstructed_xmp = xmp_copy;
     job->has_verify_reconstructed_meta = has_rmeta;
     rfc_mutex_unlock(&job->lock);
     free_verify_coeff_image(&job->allocator, &old_src);
     free_verify_coeff_image(&job->allocator, &old_dst);
     if (old_icc) {
         job->allocator.free(job->allocator.ctx, old_icc);
+    }
+    if (old_exif && old_exif != old_icc) {
+        job->allocator.free(job->allocator.ctx, old_exif);
+    }
+    if (old_xmp && old_xmp != old_icc && old_xmp != old_exif) {
+        job->allocator.free(job->allocator.ctx, old_xmp);
     }
     return RFC_OK;
 }
@@ -1528,9 +1714,12 @@ rfc_status rfc_job_set_verified_reconstructed_bytes(
     }
     rfc_metadata meta_copy;
     uint8_t *icc_copy = NULL;
+    uint8_t *exif_copy = NULL;
+    uint8_t *xmp_copy = NULL;
     int has_rmeta = 0;
     rfc_status st = job_clone_verified_metadata(
-        &job->allocator, reconstructed_meta, &meta_copy, &icc_copy, &has_rmeta);
+        &job->allocator, reconstructed_meta, &meta_copy, &icc_copy, &exif_copy,
+        &xmp_copy, &has_rmeta);
     if (st != RFC_OK) {
         return st;
     }
@@ -1539,6 +1728,12 @@ rfc_status rfc_job_set_verified_reconstructed_bytes(
         bytes_copy = (uint8_t *)job->allocator.alloc(job->allocator.ctx,
                                                      reconstructed_len);
         if (!bytes_copy) {
+            if (xmp_copy) {
+                job->allocator.free(job->allocator.ctx, xmp_copy);
+            }
+            if (exif_copy) {
+                job->allocator.free(job->allocator.ctx, exif_copy);
+            }
             if (icc_copy) {
                 job->allocator.free(job->allocator.ctx, icc_copy);
             }
@@ -1550,10 +1745,14 @@ rfc_status rfc_job_set_verified_reconstructed_bytes(
     rfc_mutex_lock(&job->lock);
     uint8_t *old_bytes = job->verify_reconstructed_bytes;
     uint8_t *old_icc = job->verify_reconstructed_icc;
+    uint8_t *old_exif = job->verify_reconstructed_exif;
+    uint8_t *old_xmp = job->verify_reconstructed_xmp;
     job->verify_reconstructed_bytes = bytes_copy;
     job->verify_reconstructed_len = reconstructed_len;
     job->verify_reconstructed_meta = meta_copy;
     job->verify_reconstructed_icc = icc_copy;
+    job->verify_reconstructed_exif = exif_copy;
+    job->verify_reconstructed_xmp = xmp_copy;
     job->has_verify_reconstructed = 1;
     job->has_verify_reconstructed_meta = has_rmeta;
     rfc_mutex_unlock(&job->lock);
@@ -1563,6 +1762,12 @@ rfc_status rfc_job_set_verified_reconstructed_bytes(
     }
     if (old_icc) {
         job->allocator.free(job->allocator.ctx, old_icc);
+    }
+    if (old_exif && old_exif != old_icc) {
+        job->allocator.free(job->allocator.ctx, old_exif);
+    }
+    if (old_xmp && old_xmp != old_icc && old_xmp != old_exif) {
+        job->allocator.free(job->allocator.ctx, old_xmp);
     }
     return RFC_OK;
 }
@@ -2236,9 +2441,13 @@ static rfc_status consume_decode_credit_locked(rfc_job *job,
                                                const rfc_limits *limits,
                                                const rfc_layout *norm,
                                                uint64_t fbytes,
-                                               size_t icc_len) {
+                                               size_t icc_len,
+                                               size_t exif_len,
+                                               size_t xmp_len) {
     if (job->decode_last_checked_fbytes != fbytes ||
         job->decode_last_checked_icc_len != icc_len ||
+        job->decode_last_checked_exif_len != exif_len ||
+        job->decode_last_checked_xmp_len != xmp_len ||
         !layouts_equal_exact(&job->decode_last_checked_layout, norm)) {
         rfc_status lim_st = rfc_limits_check_image(limits, norm, 1u);
         if (lim_st != RFC_OK) {
@@ -2373,6 +2582,8 @@ static rfc_status internal_exec_check_next_frame(rfc_job *job,
         job->decode_credit_frames = 1u;
         job->decode_last_checked_fbytes = fbytes;
         job->decode_last_checked_icc_len = meta ? meta->icc_len : 0u;
+        job->decode_last_checked_exif_len = meta ? meta->exif_len : 0u;
+        job->decode_last_checked_xmp_len = meta ? meta->xmp_len : 0u;
         job->decode_last_checked_layout = norm;
     }
     rfc_mutex_unlock(&job->lock);
@@ -2418,6 +2629,8 @@ static rfc_status job_frame_alloc_guard(const rfc_allocator *allocator,
     }
     uint64_t fbytes = (uint64_t)row_total;
     size_t icc_len = metadata ? metadata->icc_len : 0u;
+    size_t exif_len = metadata ? metadata->exif_len : 0u;
+    size_t xmp_len = metadata ? metadata->xmp_len : 0u;
 
     rfc_mutex_lock(&job->lock);
     if (!probe_exact && job->decode_credit_frames == 0u) {
@@ -2429,7 +2642,8 @@ static rfc_status job_frame_alloc_guard(const rfc_allocator *allocator,
         return RFC_ERR_INVALID_ARGUMENT;
     }
     if (job->decode_credit_frames > 0u) {
-        st = consume_decode_credit_locked(job, &lim, &norm, fbytes, icc_len);
+        st = consume_decode_credit_locked(job, &lim, &norm, fbytes, icc_len,
+                                          exif_len, xmp_len);
         rfc_mutex_unlock(&job->lock);
         return st;
     }
@@ -2476,10 +2690,13 @@ rfc_status rfc_exec_alloc_frame(const rfc_exec_context *exec,
             return RFC_ERR_LIMIT_EXCEEDED;
         }
         size_t icc_len = metadata ? metadata->icc_len : 0u;
+        size_t exif_len = metadata ? metadata->exif_len : 0u;
+        size_t xmp_len = metadata ? metadata->xmp_len : 0u;
         rfc_mutex_lock(&exec->job->lock);
         if (exec->job->decode_credit_frames > 0u) {
             st = consume_decode_credit_locked(exec->job, &exec->limits, &norm,
-                                              fbytes, icc_len);
+                                              fbytes, icc_len, exif_len,
+                                              xmp_len);
             rfc_mutex_unlock(&exec->job->lock);
             if (st != RFC_OK) {
                 return st;
@@ -2588,6 +2805,33 @@ static void copy_verify_detail(char *dst, size_t dst_cap, const char *src) {
     dst[len] = '\0';
 }
 
+static void free_non_aliasing_meta(rfc_metadata *meta,
+                                     const rfc_frame *frames,
+                                     size_t count,
+                                     const rfc_allocator *alloc) {
+    if (!meta || !alloc || !alloc->free) {
+        return;
+    }
+    const rfc_metadata *f0 = (frames && count > 0u) ? &frames[0].metadata : NULL;
+    if (meta->icc && (!f0 || f0->icc != meta->icc)) {
+        alloc->free(alloc->ctx, (void *)meta->icc);
+    }
+    if (meta->exif && meta->exif != meta->icc &&
+        (!f0 || f0->exif != meta->exif)) {
+        alloc->free(alloc->ctx, (void *)meta->exif);
+    }
+    if (meta->xmp && meta->xmp != meta->icc && meta->xmp != meta->exif &&
+        (!f0 || f0->xmp != meta->xmp)) {
+        alloc->free(alloc->ctx, (void *)meta->xmp);
+    }
+    meta->icc = NULL;
+    meta->icc_len = 0u;
+    meta->exif = NULL;
+    meta->exif_len = 0u;
+    meta->xmp = NULL;
+    meta->xmp_len = 0u;
+}
+
 static rfc_status run_bounded_session_decode(
     rfc_job *job,
     const rfc_exec_context *exec,
@@ -2666,11 +2910,7 @@ static rfc_status run_bounded_session_decode(
                 exp_bytes = probe.total_decoded_bytes;
             }
         }
-        if (probe.container_meta.icc) {
-            exec->allocator->free(exec->allocator->ctx,
-                                  (void *)probe.container_meta.icc);
-            probe.container_meta.icc = NULL;
-        }
+        rfc_metadata_free(&probe.container_meta, exec->allocator);
     }
 
     rfc_frame *decoded_frames = NULL;
@@ -2702,6 +2942,8 @@ static rfc_status run_bounded_session_decode(
         job->decode_credit_frames = 0u;
         job->decode_last_checked_fbytes = 0u;
         job->decode_last_checked_icc_len = 0u;
+        job->decode_last_checked_exif_len = 0u;
+        job->decode_last_checked_xmp_len = 0u;
         memset(&job->decode_last_checked_layout, 0,
                sizeof(job->decode_last_checked_layout));
         job->decode_unvalidated_alloc = 0;
@@ -2757,12 +2999,8 @@ static rfc_status run_bounded_session_decode(
         *out_count = decoded_count;
         *out_meta = decoded_meta;
     } else {
-        if (decoded_meta.icc &&
-            (!decoded_frames || decoded_count == 0u ||
-             decoded_frames[0].metadata.icc != decoded_meta.icc)) {
-            exec->allocator->free(exec->allocator->ctx,
-                                  (void *)decoded_meta.icc);
-        }
+        free_non_aliasing_meta(&decoded_meta, decoded_frames, decoded_count,
+                               exec->allocator);
         free_decoded_frames_array(&decoded_frames, &decoded_count,
                                   exec->allocator);
     }
@@ -2955,12 +3193,8 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
                                                      decoded_count,
                                                      &decoded_meta, 1);
                     if (st != RFC_OK) {
-                        if (decoded_meta.icc &&
-                            decoded_frames[0].metadata.icc !=
-                                decoded_meta.icc) {
-                            exec.allocator->free(exec.allocator->ctx,
-                                                  (void *)decoded_meta.icc);
-                        }
+                        free_non_aliasing_meta(&decoded_meta, decoded_frames,
+                                               decoded_count, exec.allocator);
                         free_decoded_frames_array(&decoded_frames,
                                                   &decoded_count,
                                                   exec.allocator);
@@ -3179,12 +3413,10 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
                                             job->decoded_frame_count,
                                             rep.source_hash);
                 if (st == RFC_OK) {
-                    uint32_t present_meta = rfc_metadata_source_items(
-                        src_meta_eff, job->decoded_frames,
-                        job->decoded_frame_count);
-                    st = rfc_metadata_check_preflight(
+                    st = rfc_metadata_check_source_preflight(
                         job->target_format, meta_policy, RFC_EXACT_PIXEL_EXACT,
-                        present_meta, ack_meta, &rep.metadata);
+                        src_meta_eff, job->decoded_frames,
+                        job->decoded_frame_count, ack_meta, &rep.metadata);
                 }
                 if (st != RFC_OK) {
                     rfc_registry_release_session(job->target_format);
@@ -3234,12 +3466,8 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
                             err_detail = "metadata policy verification failed";
                         }
                     }
-                    if (ver_meta.icc &&
-                        (!ver_frames || ver_count == 0u ||
-                         ver_frames[0].metadata.icc != ver_meta.icc)) {
-                        exec.allocator->free(exec.allocator->ctx,
-                                              (void *)ver_meta.icc);
-                    }
+                    free_non_aliasing_meta(&ver_meta, ver_frames, ver_count,
+                                           exec.allocator);
                     free_decoded_frames_array(&ver_frames, &ver_count,
                                               exec.allocator);
                     if (st != RFC_ERR_CANCELLED && st != RFC_ERR_STALE_JOB) {

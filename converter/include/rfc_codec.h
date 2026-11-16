@@ -98,10 +98,15 @@ enum {
     RFC_META_ITEM_ICC = 1u << 0,
     RFC_META_ITEM_ORIENTATION = 1u << 1,
     RFC_META_ITEM_FRAME_TIMING = 1u << 2,
-    RFC_META_ITEM_ALL = (1u << 0) | (1u << 1) | (1u << 2),
+    RFC_META_ITEM_EXIF = 1u << 3,
+    RFC_META_ITEM_XMP = 1u << 4,
+    RFC_META_ITEM_ALL = (1u << 0) | (1u << 1) | (1u << 2) | (1u << 3) |
+                        (1u << 4),
     RFC_META_CAP_ICC = RFC_META_ITEM_ICC,
     RFC_META_CAP_ORIENTATION = RFC_META_ITEM_ORIENTATION,
-    RFC_META_CAP_FRAME_TIMING = RFC_META_ITEM_FRAME_TIMING
+    RFC_META_CAP_FRAME_TIMING = RFC_META_ITEM_FRAME_TIMING,
+    RFC_META_CAP_EXIF = RFC_META_ITEM_EXIF,
+    RFC_META_CAP_XMP = RFC_META_ITEM_XMP
 };
 
 typedef struct rfc_capability {
@@ -155,7 +160,8 @@ typedef struct rfc_adapter {
 rfc_status rfc_layout_validate(const rfc_layout *layout, size_t *total_out);
 
 /* Allocate an owned frame after validation. Refusals return before the
- * allocator is called. metadata.icc is copied when present. */
+ * allocator is called. metadata.icc, metadata.exif, and metadata.xmp are copied
+ * when present. */
 rfc_status rfc_frame_alloc(rfc_frame *frame, const rfc_layout *layout,
                            const rfc_metadata *metadata,
                            const rfc_allocator *allocator);
@@ -208,9 +214,10 @@ typedef struct rfc_image_probe {
  * calling rfc_frame_alloc for each frame buffer; unvalidated frame
  * allocations are refused before allocation, while general codec scratch
  * allocations through rfc_exec_allocator(exec) and rfc_exec_budget(exec)
- * remain governed by the job memory budget. Any container_meta.icc or out_meta->icc returned by
- * probe_session or decode_session (when not aliasing frame 0 metadata.icc)
- * must be allocated via exec's allocator so the engine can free it cleanly.
+ * remain governed by the job memory budget. Any container_meta or out_meta
+ * payload pointers (icc, exif, xmp) returned by probe_session or
+ * decode_session (when not aliasing frame 0 metadata) must be allocated via
+ * exec's allocator so the engine can free them cleanly.
  * cancel_session, if provided, must be thread-safe and non-blocking (signal an
  * atomic cancellation flag without waiting on blocking codec locks or I/O). */
 typedef struct rfc_session_adapter {

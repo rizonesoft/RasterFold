@@ -10,6 +10,7 @@
 #include "rfc_job.h"
 #include "rfc_verify.h"
 #include "rf_shared_io.h"
+#include "exif_util.h"
 
 #include <limits.h>
 #include <png.h>
@@ -267,6 +268,10 @@ typedef struct encode_common_check {
     size_t eff_icc_len;
     rfc_orientation eff_ori;
     rfc_colorimetry eff_color;
+    const uint8_t *eff_exif;
+    size_t eff_exif_len;
+    const uint8_t *eff_xmp;
+    size_t eff_xmp_len;
 } encode_common_check;
 
 static uint32_t sample_channels(rfc_sample_format fmt) {
@@ -426,15 +431,31 @@ static rfc_status prepare_encode_common(rfc_format_id fmt,
     } else if (meta && rfc_colorimetry_has_any(&meta->color)) {
         out->eff_color = meta->color;
     }
+    if (fr->metadata.exif_len > 0u && fr->metadata.exif != NULL) {
+        out->eff_exif = fr->metadata.exif;
+        out->eff_exif_len = fr->metadata.exif_len;
+    } else if (meta && meta->exif_len > 0u && meta->exif != NULL) {
+        out->eff_exif = meta->exif;
+        out->eff_exif_len = meta->exif_len;
+    }
+    if (fr->metadata.xmp_len > 0u && fr->metadata.xmp != NULL) {
+        out->eff_xmp = fr->metadata.xmp;
+        out->eff_xmp_len = fr->metadata.xmp_len;
+    } else if (meta && meta->xmp_len > 0u && meta->xmp != NULL) {
+        out->eff_xmp = meta->xmp;
+        out->eff_xmp_len = meta->xmp_len;
+    }
     if (!rfc_colorimetry_is_valid(&out->eff_color)) {
         return RFC_ERR_INVALID_ARGUMENT;
     }
 
     rfc_limits lim_def;
     const rfc_limits *lim = basic_limits_of(exec, &lim_def);
-    if (out->eff_icc_len > 0u) {
+    if (out->eff_icc_len > 0u || out->eff_exif_len > 0u ||
+        out->eff_xmp_len > 0u) {
         rfc_metadata check_m = {out->eff_icc, out->eff_icc_len, out->eff_ori, 0u,
-                                out->eff_color};
+                                out->eff_color, out->eff_exif, out->eff_exif_len,
+                                out->eff_xmp, out->eff_xmp_len};
         st = rfc_limits_check_metadata(lim, &check_m);
         if (st != RFC_OK) {
             return st;
@@ -442,14 +463,14 @@ static rfc_status prepare_encode_common(rfc_format_id fmt,
     }
 
     /* Inside an active rfc_job pipeline, STAGE_VERIFY runs
-     * rfc_metadata_check_preflight and rfc_metadata_verify before STAGE_EXPORT
-     * so refusals record a populated rfc_verify_report naming unsupported
-     * items. Standalone direct encode_session callers lack STAGE_VERIFY and
-     * must refuse unacknowledged unsupported metadata here. */
+     * rfc_metadata_check_source_preflight and rfc_metadata_verify before
+     * STAGE_EXPORT so refusals record a populated rfc_verify_report naming
+     * unsupported items. Standalone direct encode_session callers lack
+     * STAGE_VERIFY and must refuse unacknowledged unsupported metadata here. */
     if (!exec || !exec->job) {
-        uint32_t present = rfc_metadata_source_items(meta, frames, frame_count);
-        st = rfc_metadata_check_preflight(fmt, out->meta_policy,
-                                          out->exactness, present, 0u, NULL);
+        st = rfc_metadata_check_source_preflight(
+            fmt, out->meta_policy, out->exactness, meta, frames, frame_count,
+            0u, NULL);
         if (st != RFC_OK) {
             return st;
         }
@@ -1591,61 +1612,6 @@ static void basic_png_flush_fn(png_structp png_ptr) {
     (void)png_ptr;
 }
 
-static rfc_status parse_exif_orientation(const uint8_t *data,
-                                         size_t len,
-                                         rfc_orientation *out_ori) {
-    *out_ori = RFC_ORIENTATION_UNSPECIFIED;
-    if (!data || len < 8u) {
-        return RFC_ERR_INVALID_ARGUMENT;
-    }
-    size_t tiff_off = 0u;
-    if (len >= 14u && memcmp(data, "Exif\x00\x00", 6) == 0) {
-        tiff_off = 6u;
-    }
-    const uint8_t *t = data + tiff_off;
-    size_t tlen = len - tiff_off;
-    if (tlen < 8u) {
-        return RFC_ERR_INVALID_ARGUMENT;
-    }
-    int little = 0;
-    if (t[0] == 'I' && t[1] == 'I' && t[2] == 0x2Au && t[3] == 0x00u) {
-        little = 1;
-    } else if (t[0] == 'M' && t[1] == 'M' && t[2] == 0x00u && t[3] == 0x2Au) {
-        little = 0;
-    } else {
-        return RFC_ERR_INVALID_ARGUMENT;
-    }
-    uint32_t ifd_off = little ? rd32le(t + 4) : rd32be(t + 4);
-    if ((uint64_t)ifd_off + 2ull > (uint64_t)tlen) {
-        return RFC_ERR_INVALID_ARGUMENT;
-    }
-    uint16_t count =
-        little ? rd16le(t + ifd_off) : rd16be(t + ifd_off);
-    uint64_t entries_end =
-        (uint64_t)ifd_off + 2ull + (uint64_t)count * 12ull;
-    if (entries_end > (uint64_t)tlen) {
-        return RFC_ERR_INVALID_ARGUMENT;
-    }
-    for (uint16_t i = 0u; i < count; i++) {
-        const uint8_t *e = t + ifd_off + 2u + (size_t)i * 12u;
-        uint16_t tag = little ? rd16le(e) : rd16be(e);
-        if (tag == 0x0112u) {
-            uint16_t ty = little ? rd16le(e + 2) : rd16be(e + 2);
-            uint32_t cnt = little ? rd32le(e + 4) : rd32be(e + 4);
-            if (ty != 3u || cnt != 1u) {
-                return RFC_ERR_INVALID_ARGUMENT;
-            }
-            uint16_t val = little ? rd16le(e + 8) : rd16be(e + 8);
-            if (val < 1u || val > 8u) {
-                return RFC_ERR_INVALID_ARGUMENT;
-            }
-            *out_ori = (rfc_orientation)val;
-            return RFC_OK;
-        }
-    }
-    return RFC_OK;
-}
-
 static rfc_status png_inflate_iccp(const rfc_exec_context *exec,
                                    const rfc_allocator *alloc,
                                    const rfc_limits *limits,
@@ -2032,7 +1998,7 @@ static rfc_status png_prescan(const rfc_exec_context *exec,
                 }
                 out->has_exif = 1;
                 rfc_status est =
-                    parse_exif_orientation(cdata, clen, &out->orientation);
+                    rfc_exif_parse_orientation(cdata, clen, &out->orientation);
                 if (est != RFC_OK) {
                     return est;
                 }
@@ -2268,7 +2234,7 @@ BASIC_NOINLINE static rfc_status png_decode_libpng_run(png_decode_ctx *ctx) {
         if (png_get_eXIf_1(ctx->png_ptr, ctx->info_ptr, &exif_n, &exif_p) != 0u &&
             exif_p && exif_n > 0u) {
             rfc_orientation ori2 = RFC_ORIENTATION_UNSPECIFIED;
-            if (parse_exif_orientation(exif_p, exif_n, &ori2) == RFC_OK &&
+            if (rfc_exif_parse_orientation(exif_p, exif_n, &ori2) == RFC_OK &&
                 ori2 > RFC_ORIENTATION_NORMAL) {
                 ctx->frame->metadata.orientation = ori2;
             }
@@ -3044,7 +3010,8 @@ static rfc_status pnm_decode(void *session,
         }
     }
 
-    rfc_metadata meta = {NULL, 0u, RFC_ORIENTATION_UNSPECIFIED, 0u, {0}};
+    rfc_metadata meta = {NULL, 0u, RFC_ORIENTATION_UNSPECIFIED, 0u, {0},
+                         NULL, 0u, NULL, 0u};
     rfc_frame *frames = NULL;
     size_t fcnt = 0u;
     st = alloc_single_frame(exec, &probe.first_frame, &meta, &frames, &fcnt,
@@ -3695,7 +3662,8 @@ static rfc_status pam_decode(void *session,
         }
     }
 
-    rfc_metadata meta = {NULL, 0u, RFC_ORIENTATION_UNSPECIFIED, 0u, {0}};
+    rfc_metadata meta = {NULL, 0u, RFC_ORIENTATION_UNSPECIFIED, 0u, {0},
+                         NULL, 0u, NULL, 0u};
     rfc_frame *frames = NULL;
     size_t fcnt = 0u;
     st = alloc_single_frame(exec, &probe.first_frame, &meta, &frames, &fcnt,
