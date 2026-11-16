@@ -1383,6 +1383,48 @@ class TestHostReports(unittest.TestCase):
             bf_m5 = run_prov(deps_mac, base / "prov_m5.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
             self.assertNotEqual(bf_m4, bf_m5)
 
+            # Preprocessed assembly (ASM_COMPILER__ and ASM_NASM_COMPILER__) transitive forced includes
+            deps_asm = base / "deps_asm_mac"
+            write_pkg(
+                deps_asm,
+                "libjxl",
+                False,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="",
+                cxx_rel="",
+                toggles={},
+                ninja_flags="-O3",
+            )
+            pkg_asm = deps_asm / "libjxl"
+            asm_feat = pkg_asm / "features.h"
+            asm_feat.write_text("#define FEATURE 1\n", encoding="utf-8")
+            (pkg_asm / "config.h").write_text(
+                "#define WRAP(x) #x\n"
+                "#define EXP(x) WRAP(x)\n"
+                "#include EXP(features.h)\n",
+                encoding="utf-8",
+            )
+            nasm_inc = pkg_asm / "nasm_feat.inc"
+            nasm_inc.write_text("%define NFEAT 1\n", encoding="utf-8")
+            (pkg_asm / "nasm_cfg.asm").write_text('%include "nasm_feat.inc"\n', encoding="utf-8")
+            (pkg_asm / "build.ninja").write_text(
+                "build CMakeFiles/libjxl.dir/kern.S.obj: ASM_COMPILER__libjxl_Release kern.S\n"
+                "  FLAGS = -O3 -include config.h\n"
+                "  DEFINES = -DASM_MODE=1\n"
+                "build CMakeFiles/libjxl.dir/fast.asm.obj: ASM_NASM_COMPILER__libjxl_Release fast.asm\n"
+                "  FLAGS = -f win64 -P nasm_cfg.asm\n"
+                "  DEFINES = \n",
+                encoding="utf-8",
+            )
+            bf_a1 = run_prov(deps_asm, base / "prov_a1.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            asm_feat.write_text("#define FEATURE 2\n", encoding="utf-8")
+            bf_a2 = run_prov(deps_asm, base / "prov_a2.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertNotEqual(bf_a1, bf_a2)
+            nasm_inc.write_text("%define NFEAT 2\n", encoding="utf-8")
+            bf_a3 = run_prov(deps_asm, base / "prov_a3.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertNotEqual(bf_a2, bf_a3)
+
     def test_kodim23_compare_threads_oracle_and_history(self) -> None:
         self.assertEqual(sha256_file(KODIM_PATH), KODIM_EXPECTED_SHA256)
         with Image.open(KODIM_PATH) as im:

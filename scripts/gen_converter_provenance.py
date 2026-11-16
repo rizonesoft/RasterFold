@@ -12,6 +12,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -511,13 +512,47 @@ def _clean_probe_args(tokens: list[str], compile_dir: Path | None) -> list[str]:
     return out
 
 
-def _tokens_have_forced_include(tokens: list[str]) -> bool:
+def _tokens_have_forced_include(tokens: list[str], lang: str = "") -> bool:
     for tok in tokens:
         if tok in ("-include", "--include", "-imacros") or tok.startswith(
             ("--include=", "-include", "-imacros")
         ):
             return True
+        if lang == "nasm" and (tok in ("-P", "-p") or tok.startswith(("-P", "-p"))):
+            return True
     return False
+
+
+def _clean_nasm_probe_args(tokens: list[str], compile_dir: Path | None) -> list[str]:
+    out: list[str] = []
+    skip_next = ("-o", "-MF", "-MT", "-MQ")
+    keep_next = ("-f", "-P", "-p", "--include", "-include", "-I", "-i", "-D", "-U", "-d", "-u")
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        if tok in skip_next:
+            i += 2 if i + 1 < len(tokens) else 1
+            continue
+        if tok in keep_next and i + 1 < len(tokens):
+            nxt = tokens[i + 1]
+            if tok == "--include":
+                out.extend(("-P", nxt))
+            elif tok == "-include":
+                out.extend(("-P", nxt))
+            else:
+                out.extend((tok, nxt))
+            i += 2
+            continue
+        i += 1
+        if not tok or tok in ("-M", "-MD", "-MMD", "-MP", "-MG", "-MV"):
+            continue
+        if tok.startswith("@") and len(tok) > 1:
+            rsp_p, _ = _resolve_input_path(tok[1:], (compile_dir,) if compile_dir is not None else ())
+            if not rsp_p.is_file():
+                continue
+        if tok.startswith("-"):
+            out.append(tok)
+    return out
 
 
 def _resolve_probe_compiler(cc_path: str, fallback_cc: str) -> str:
@@ -539,29 +574,44 @@ def _probe_compiler_forced_include_deps(
     raw_tokens: list[str],
     compile_dir: Path | None,
 ) -> str:
-    if lang not in ("c", "cxx") or compile_dir is None or not compile_dir.is_dir():
+    if lang not in ("c", "cxx", "asm", "nasm") or compile_dir is None or not compile_dir.is_dir():
         return ""
     exp = _normalize_preprocessor_forwarding(_expand_response_tokens(raw_tokens, compile_dir))
-    if not _tokens_have_forced_include(exp):
+    if not _tokens_have_forced_include(exp, lang):
         return ""
     probe_cc = _resolve_probe_compiler(cc_path, fallback_cc)
     if not probe_cc:
         return ""
-    probe_args = _clean_probe_args(exp, compile_dir)
-    x_lang = "c++" if lang == "cxx" else "c"
+    dummy_asm: Path | None = None
     try:
-        res = subprocess.run(
-            [probe_cc, *probe_args, "-M", "-w", "-x", x_lang, "-"],
-            input="",
-            cwd=str(compile_dir),
-            capture_output=True,
-            text=True,
-            timeout=15.0,
-        )
+        if lang == "nasm":
+            probe_args = _clean_nasm_probe_args(exp, compile_dir)
+            with tempfile.TemporaryDirectory(prefix="rfc_nasm_probe_") as td:
+                dummy_asm = Path(td) / "probe.asm"
+                dummy_asm.write_text("", encoding="utf-8")
+                res = subprocess.run(
+                    [probe_cc, *probe_args, "-M", str(dummy_asm)],
+                    cwd=str(compile_dir),
+                    capture_output=True,
+                    text=True,
+                    timeout=15.0,
+                )
+        else:
+            probe_args = _clean_probe_args(exp, compile_dir)
+            x_lang = {"c": "c", "cxx": "c++", "asm": "assembler-with-cpp"}[lang]
+            res = subprocess.run(
+                [probe_cc, *probe_args, "-M", "-w", "-x", x_lang, "-"],
+                input="",
+                cwd=str(compile_dir),
+                capture_output=True,
+                text=True,
+                timeout=15.0,
+            )
     except (OSError, subprocess.SubprocessError):
         return ""
     if res.returncode != 0:
         return ""
+    dummy_canon = dummy_asm.resolve() if dummy_asm is not None else None
     dep_items: dict[Path, bytes] = {}
     for dep in _parse_makefile_deps(res.stdout):
         dp = Path(dep)
@@ -571,6 +621,8 @@ def _probe_compiler_forced_include_deps(
             canon = dp.resolve()
         except OSError:
             canon = dp
+        if dummy_canon is not None and canon == dummy_canon:
+            continue
         if canon not in dep_items and canon.is_file():
             dep_items[canon] = canon.read_bytes()
     if not dep_items:
@@ -957,6 +1009,7 @@ def _parse_ninja_compile_blocks(
     has_c = False
     has_asm = False
     cur_lang = ""
+    cur_probe_lang = ""
     cur_flags: list[str] = []
     cur_defs: list[str] = []
     cur_includes: list[str] = []
@@ -1014,12 +1067,13 @@ def _parse_ninja_compile_blocks(
                 )
             )
             blocks.append((cur_lang, disp_f, disp_d, fp_f, fp_d))
-            block_ctxs.append(ctx_toks)
+            block_ctxs.append((cur_probe_lang, ctx_toks))
 
     for raw_line in ninja_path.read_text(encoding="utf-8", errors="replace").splitlines():
         if not raw_line.startswith(" ") and not raw_line.startswith("\t"):
             flush_block()
             cur_lang = ""
+            cur_probe_lang = ""
             cur_flags = []
             cur_defs = []
             cur_includes = []
@@ -1028,16 +1082,19 @@ def _parse_ninja_compile_blocks(
                 rule = after_colon.split(None, 1)[0] if after_colon else ""
                 if rule.startswith("CXX_COMPILER__"):
                     cur_lang = "cxx"
+                    cur_probe_lang = "cxx"
                     has_cxx = True
                 elif rule.startswith("C_COMPILER__"):
                     cur_lang = "c"
+                    cur_probe_lang = "c"
                     has_c = True
-                elif (
-                    rule.startswith("ASM_NASM_COMPILER__")
-                    or rule.startswith("ASM_COMPILER__")
-                    or rule.startswith("ASM_MASM_COMPILER__")
-                ):
+                elif rule.startswith("ASM_NASM_COMPILER__"):
                     cur_lang = "asm"
+                    cur_probe_lang = "nasm"
+                    has_asm = True
+                elif rule.startswith("ASM_COMPILER__") or rule.startswith("ASM_MASM_COMPILER__"):
+                    cur_lang = "asm"
+                    cur_probe_lang = "asm"
                     has_asm = True
             continue
         if not cur_lang:
@@ -1382,19 +1439,27 @@ def _collect_pkg_fingerprint_state(
     cache_forced_deps = _probe_compiler_forced_include_deps(
         cc_path, default_cxx if is_cxx else default_cc, "cxx" if is_cxx else "c", raw_cache_toks, compile_dir
     )
+    default_nasm = str(ROOT / ("tools/nasm/nasm.exe" if os.name == "nt" else "tools/nasm-linux/bin/nasm"))
     blocks = list(ninja_info["blocks"])
     block_ctxs = list(ninja_info.get("contexts", []))
     ninja_blocks_json = []
     for idx, (bl, _df, _dd, fp_f, fp_d) in enumerate(blocks):
         entry: dict[str, object] = {"lang": bl, "flags": list(fp_f), "defs": list(fp_d)}
         if idx < len(block_ctxs):
-            blk_fallback = default_cxx if bl == "cxx" else default_cc
-            blk_cc = (
-                (cache.get("CMAKE_CXX_COMPILER") or blk_fallback)
-                if bl == "cxx"
-                else (cache.get("CMAKE_C_COMPILER") or blk_fallback)
-            )
-            fdeps = _probe_compiler_forced_include_deps(blk_cc, blk_fallback, bl, block_ctxs[idx], compile_dir)
+            probe_lang, ctx_toks = block_ctxs[idx]
+            if probe_lang == "cxx":
+                blk_fallback = default_cxx
+                blk_cc = cache.get("CMAKE_CXX_COMPILER") or default_cxx
+            elif probe_lang == "nasm":
+                blk_fallback = default_nasm
+                blk_cc = cache.get("CMAKE_ASM_NASM_COMPILER") or default_nasm
+            elif probe_lang == "asm":
+                blk_fallback = default_cc
+                blk_cc = cache.get("CMAKE_ASM_COMPILER") or cache.get("CMAKE_C_COMPILER") or default_cc
+            else:
+                blk_fallback = default_cc
+                blk_cc = cache.get("CMAKE_C_COMPILER") or default_cc
+            fdeps = _probe_compiler_forced_include_deps(blk_cc, blk_fallback, probe_lang, ctx_toks, compile_dir)
             if fdeps:
                 entry["forced_deps"] = fdeps
         ninja_blocks_json.append(entry)
