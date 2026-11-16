@@ -2,6 +2,10 @@
 #include "rasterfold.h"
 #include "rfc_report.h"
 
+#ifdef RFC_HAVE_GENERATED_PROVENANCE
+#include "rfc_build_provenance.h"
+#endif
+
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,11 +13,26 @@
 
 static rfc_history_fault_stage g_hist_fault_stage = RFC_HIST_FAULT_NONE;
 static rfc_status g_hist_fault_status = RFC_OK;
+static size_t g_hist_max_bytes_override = 0u;
+
+static rfc_mutex g_prov_mutex = {
+#ifdef _WIN32
+    SRWLOCK_INIT
+#else
+    PTHREAD_MUTEX_INITIALIZER
+#endif
+};
+static rfc_provider_build_config g_prov_overrides[RFC_COMPARE_MAX_CANDIDATES];
+static int g_prov_override_set[RFC_COMPARE_MAX_CANDIDATES];
 
 void rfc_history_set_fault_for_testing(rfc_history_fault_stage stage,
                                        rfc_status status) {
     g_hist_fault_stage = stage;
     g_hist_fault_status = status;
+}
+
+void rfc_history_set_max_bytes_for_testing(size_t max_bytes) {
+    g_hist_max_bytes_override = max_bytes;
 }
 
 void rfc_report_free(void *ptr) {
@@ -34,7 +53,105 @@ static const char *format_id_name(rfc_format_id fmt) {
     return (cap && cap->name) ? cap->name : "unknown-format";
 }
 
-static void copy_str_safe(char *dst, size_t cap, const char *src) {
+static size_t utf8_decode_one(const char *s, size_t rem, int *out_valid) {
+    *out_valid = 0;
+    if (!s || rem == 0u) {
+        return 0u;
+    }
+    unsigned char c0 = (unsigned char)s[0];
+    if (c0 < 0x80u) {
+        *out_valid = 1;
+        return 1u;
+    }
+    if ((c0 & 0xE0u) == 0xC0u) {
+        if (rem < 2u) {
+            return 1u;
+        }
+        unsigned char c1 = (unsigned char)s[1];
+        if ((c1 & 0xC0u) != 0x80u) {
+            return 1u;
+        }
+        uint32_t cp = ((uint32_t)(c0 & 0x1Fu) << 6) | (uint32_t)(c1 & 0x3Fu);
+        if (cp < 0x80u) {
+            return 1u;
+        }
+        *out_valid = 1;
+        return 2u;
+    }
+    if ((c0 & 0xF0u) == 0xE0u) {
+        if (rem < 3u) {
+            return 1u;
+        }
+        unsigned char c1 = (unsigned char)s[1];
+        unsigned char c2 = (unsigned char)s[2];
+        if ((c1 & 0xC0u) != 0x80u || (c2 & 0xC0u) != 0x80u) {
+            return 1u;
+        }
+        uint32_t cp = ((uint32_t)(c0 & 0x0Fu) << 12) |
+                      ((uint32_t)(c1 & 0x3Fu) << 6) | (uint32_t)(c2 & 0x3Fu);
+        if (cp < 0x800u || (cp >= 0xD800u && cp <= 0xDFFFu)) {
+            return 1u;
+        }
+        *out_valid = 1;
+        return 3u;
+    }
+    if ((c0 & 0xF8u) == 0xF0u) {
+        if (rem < 4u) {
+            return 1u;
+        }
+        unsigned char c1 = (unsigned char)s[1];
+        unsigned char c2 = (unsigned char)s[2];
+        unsigned char c3 = (unsigned char)s[3];
+        if ((c1 & 0xC0u) != 0x80u || (c2 & 0xC0u) != 0x80u ||
+            (c3 & 0xC0u) != 0x80u) {
+            return 1u;
+        }
+        uint32_t cp = ((uint32_t)(c0 & 0x07u) << 18) |
+                      ((uint32_t)(c1 & 0x3Fu) << 12) |
+                      ((uint32_t)(c2 & 0x3Fu) << 6) | (uint32_t)(c3 & 0x3Fu);
+        if (cp < 0x10000u || cp > 0x10FFFFu) {
+            return 1u;
+        }
+        *out_valid = 1;
+        return 4u;
+    }
+    return 1u;
+}
+
+int rfc_report_internal_is_valid_utf8_bounded(const char *buf,
+                                              size_t cap,
+                                              int require_nonempty,
+                                              size_t *out_len) {
+    if (out_len) {
+        *out_len = 0u;
+    }
+    if (!buf || cap == 0u) {
+        return 0;
+    }
+    const void *nul = memchr(buf, '\0', cap);
+    if (!nul) {
+        return 0;
+    }
+    size_t len = (size_t)((const char *)nul - buf);
+    if (require_nonempty && len == 0u) {
+        return 0;
+    }
+    size_t pos = 0u;
+    while (pos < len) {
+        int ok = 0;
+        size_t adv = utf8_decode_one(buf + pos, len - pos, &ok);
+        if (!ok || adv == 0u) {
+            return 0;
+        }
+        pos += adv;
+    }
+    if (out_len) {
+        *out_len = len;
+    }
+    return 1;
+}
+
+void rfc_report_internal_copy_utf8(char *dst, size_t cap, const char *src) {
     if (!dst || cap == 0u) {
         return;
     }
@@ -42,12 +159,30 @@ static void copy_str_safe(char *dst, size_t cap, const char *src) {
         dst[0] = '\0';
         return;
     }
-    size_t n = strlen(src);
-    if (n >= cap) {
-        n = cap - 1u;
+    size_t slen = strlen(src);
+    size_t spos = 0u;
+    size_t dpos = 0u;
+    size_t max_out = cap - 1u;
+    while (spos < slen && dpos < max_out) {
+        int ok = 0;
+        size_t clen = utf8_decode_one(src + spos, slen - spos, &ok);
+        if (!ok || clen == 0u) {
+            dst[dpos++] = '?';
+            spos++;
+            continue;
+        }
+        if (clen > max_out - dpos) {
+            break;
+        }
+        memcpy(dst + dpos, src + spos, clen);
+        dpos += clen;
+        spos += clen;
     }
-    memcpy(dst, src, n);
-    dst[n] = '\0';
+    dst[dpos] = '\0';
+}
+
+static void copy_str_safe(char *dst, size_t cap, const char *src) {
+    rfc_report_internal_copy_utf8(dst, cap, src);
 }
 
 static void hex_encode_lower(const uint8_t bytes[32], char out_hex[65]) {
@@ -115,6 +250,45 @@ static void detect_build_flags(char out_flags[RFC_REPORT_FLAGS_MAX]) {
              "-std=c11 %s %s -Wall -Wextra -Werror", opt, portable);
 }
 
+static int find_format_slot(rfc_format_id fmt) {
+    size_t n = rfc_registry_count();
+    for (size_t i = 0u; i < n && i < RFC_COMPARE_MAX_CANDIDATES; i++) {
+        const rfc_capability *cap = rfc_registry_at(i);
+        if (cap && cap->id == fmt) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+rfc_status rfc_report_register_provider_config(
+    rfc_format_id fmt,
+    const rfc_provider_build_config *config) {
+    if (!config) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    int slot = find_format_slot(fmt);
+    if (slot < 0) {
+        return RFC_ERR_UNKNOWN_FORMAT;
+    }
+    rfc_status st = rfc_provider_build_config_validate(config);
+    if (st != RFC_OK) {
+        return st;
+    }
+    rfc_mutex_lock(&g_prov_mutex);
+    g_prov_overrides[slot] = *config;
+    g_prov_override_set[slot] = 1;
+    rfc_mutex_unlock(&g_prov_mutex);
+    return RFC_OK;
+}
+
+void rfc_report_clear_provider_configs(void) {
+    rfc_mutex_lock(&g_prov_mutex);
+    memset(g_prov_override_set, 0, sizeof(g_prov_override_set));
+    memset(g_prov_overrides, 0, sizeof(g_prov_overrides));
+    rfc_mutex_unlock(&g_prov_mutex);
+}
+
 rfc_status rfc_report_default_provider_config(
     rfc_format_id fmt,
     rfc_provider_build_config *out_config) {
@@ -122,6 +296,45 @@ rfc_status rfc_report_default_provider_config(
         return RFC_ERR_INVALID_ARGUMENT;
     }
     memset(out_config, 0, sizeof(*out_config));
+    int slot = find_format_slot(fmt);
+    if (slot < 0) {
+        return RFC_ERR_UNKNOWN_FORMAT;
+    }
+
+    rfc_mutex_lock(&g_prov_mutex);
+    if (g_prov_override_set[slot]) {
+        *out_config = g_prov_overrides[slot];
+        rfc_mutex_unlock(&g_prov_mutex);
+        return RFC_OK;
+    }
+    rfc_mutex_unlock(&g_prov_mutex);
+
+#ifdef RFC_HAVE_GENERATED_PROVENANCE
+    size_t gen_n =
+        sizeof(k_rfc_generated_provenance) / sizeof(k_rfc_generated_provenance[0]);
+    for (size_t i = 0u; i < gen_n; i++) {
+        if (k_rfc_generated_provenance[i].format == fmt) {
+            const rfc_generated_prov_entry *e = &k_rfc_generated_provenance[i];
+            copy_str_safe(out_config->provider_name,
+                          sizeof(out_config->provider_name), e->provider_name);
+            copy_str_safe(out_config->codec_version,
+                          sizeof(out_config->codec_version), e->codec_version);
+            copy_str_safe(out_config->compiler_id,
+                          sizeof(out_config->compiler_id), e->compiler_id);
+            copy_str_safe(out_config->target_abi, sizeof(out_config->target_abi),
+                          e->target_abi);
+            copy_str_safe(out_config->build_flags,
+                          sizeof(out_config->build_flags), e->build_flags);
+            copy_str_safe(out_config->simd_features,
+                          sizeof(out_config->simd_features), e->simd_features);
+            copy_str_safe(out_config->threading_features,
+                          sizeof(out_config->threading_features),
+                          e->threading_features);
+            return RFC_OK;
+        }
+    }
+#endif
+
     const rfc_capability *cap = rfc_registry_find(fmt);
     if (!cap) {
         return RFC_ERR_UNKNOWN_FORMAT;
@@ -136,10 +349,8 @@ rfc_status rfc_report_default_provider_config(
 
     switch (fmt) {
         case RFC_FORMAT_RASTERFOLD:
-            snprintf(out_config->codec_version,
-                     sizeof(out_config->codec_version), "%u.%u",
-                     (unsigned)RF_API_VERSION_MAJOR,
-                     (unsigned)RF_API_VERSION_MINOR);
+            copy_str_safe(out_config->codec_version,
+                          sizeof(out_config->codec_version), "1.0.0");
 #ifdef RF_PORTABLE_SIMD
             copy_str_safe(out_config->simd_features,
                           sizeof(out_config->simd_features),
@@ -302,15 +513,38 @@ rfc_status rfc_report_default_provider_config(
     return RFC_OK;
 }
 
+static int validate_provider_build_config_bounded(
+    const rfc_provider_build_config *config,
+    int require_nonempty) {
+    if (!config) {
+        return 0;
+    }
+    return rfc_report_internal_is_valid_utf8_bounded(
+               config->provider_name, sizeof(config->provider_name),
+               require_nonempty, NULL) &&
+           rfc_report_internal_is_valid_utf8_bounded(
+               config->codec_version, sizeof(config->codec_version),
+               require_nonempty, NULL) &&
+           rfc_report_internal_is_valid_utf8_bounded(
+               config->compiler_id, sizeof(config->compiler_id),
+               require_nonempty, NULL) &&
+           rfc_report_internal_is_valid_utf8_bounded(
+               config->target_abi, sizeof(config->target_abi), require_nonempty,
+               NULL) &&
+           rfc_report_internal_is_valid_utf8_bounded(
+               config->build_flags, sizeof(config->build_flags),
+               require_nonempty, NULL) &&
+           rfc_report_internal_is_valid_utf8_bounded(
+               config->simd_features, sizeof(config->simd_features),
+               require_nonempty, NULL) &&
+           rfc_report_internal_is_valid_utf8_bounded(
+               config->threading_features, sizeof(config->threading_features),
+               require_nonempty, NULL);
+}
+
 rfc_status rfc_provider_build_config_validate(
     const rfc_provider_build_config *config) {
-    if (!config) {
-        return RFC_ERR_INVALID_ARGUMENT;
-    }
-    if (config->provider_name[0] == '\0' || config->codec_version[0] == '\0' ||
-        config->compiler_id[0] == '\0' || config->target_abi[0] == '\0' ||
-        config->build_flags[0] == '\0' || config->simd_features[0] == '\0' ||
-        config->threading_features[0] == '\0') {
+    if (!validate_provider_build_config_bounded(config, 1)) {
         return RFC_ERR_INVALID_ARGUMENT;
     }
     return RFC_OK;
@@ -431,8 +665,17 @@ rfc_status rfc_report_validate(const rfc_comparison_report *report) {
     }
     if (report->schema_version != RFC_REPORT_SCHEMA_VERSION ||
         report->candidate_count > RFC_COMPARE_MAX_CANDIDATES ||
-        report->run_id[0] == '\0' || report->recorded_utc[0] == '\0' ||
+        !rfc_report_internal_is_valid_utf8_bounded(
+            report->run_id, sizeof(report->run_id), 1, NULL) ||
+        !rfc_report_internal_is_valid_utf8_bounded(
+            report->recorded_utc, sizeof(report->recorded_utc), 1, NULL) ||
+        !rfc_report_internal_is_valid_utf8_bounded(
+            report->configuration_notes, sizeof(report->configuration_notes), 0,
+            NULL) ||
         !rfc_registry_find(report->source_format)) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    if (rfc_limits_validate(&report->limits) != RFC_OK) {
         return RFC_ERR_INVALID_ARGUMENT;
     }
     if (report->cancelled && report->ranking_complete) {
@@ -449,13 +692,36 @@ rfc_status rfc_report_validate(const rfc_comparison_report *report) {
         if (!rfc_registry_find(c->target_format)) {
             return RFC_ERR_UNKNOWN_FORMAT;
         }
-        if (c->setting_count > RFC_REPORT_MAX_SETTINGS) {
+        if (c->setting_count > RFC_REPORT_MAX_SETTINGS ||
+            !rfc_report_internal_is_valid_utf8_bounded(
+                c->detail, sizeof(c->detail), 0, NULL) ||
+            !validate_provider_build_config_bounded(&c->build_config, 0) ||
+            !rfc_report_internal_is_valid_utf8_bounded(
+                c->verify_report.decoder_provenance,
+                sizeof(c->verify_report.decoder_provenance), 0, NULL) ||
+            !rfc_report_internal_is_valid_utf8_bounded(
+                c->verify_report.mismatch.detail,
+                sizeof(c->verify_report.mismatch.detail), 0, NULL) ||
+            !rfc_report_internal_is_valid_utf8_bounded(
+                c->verify_report.metadata.detail,
+                sizeof(c->verify_report.metadata.detail), 0, NULL)) {
             return RFC_ERR_INVALID_ARGUMENT;
+        }
+        for (size_t s = 0u; s < c->setting_count; s++) {
+            if (!rfc_report_internal_is_valid_utf8_bounded(
+                    c->settings[s].id, sizeof(c->settings[s].id), 1, NULL) ||
+                !rfc_report_internal_is_valid_utf8_bounded(
+                    c->settings[s].value, sizeof(c->settings[s].value), 1,
+                    NULL)) {
+                return RFC_ERR_INVALID_ARGUMENT;
+            }
         }
         if (c->outcome == RFC_CANDIDATE_COMPLETED) {
             c_done++;
-            if (!c->was_started || c->status != RFC_OK ||
-                !c->has_produced_output) {
+            int valid_output_mode =
+                ((c->measurement_only == 0 && c->has_produced_output == 1) ||
+                 (c->measurement_only == 1 && c->has_produced_output == 0));
+            if (!c->was_started || c->status != RFC_OK || !valid_output_mode) {
                 return RFC_ERR_INVALID_ARGUMENT;
             }
             rfc_status cst = rfc_provider_build_config_validate(&c->build_config);
@@ -482,6 +748,7 @@ rfc_status rfc_report_validate(const rfc_comparison_report *report) {
             }
         } else {
             if (c->rank != 0u || c->has_produced_output != 0 ||
+                c->measurement_only != 0 ||
                 c->size.outcome != RFC_SIZE_NOT_APPLICABLE) {
                 return RFC_ERR_INVALID_ARGUMENT;
             }
@@ -645,6 +912,28 @@ static void jb_json_str(json_buf *b, const char *s) {
     jb_raw(b, "\"", 1u);
 }
 
+static void jb_limits_obj(json_buf *b, const rfc_limits *lim) {
+    jb_cstr(b, "{\"max_width\":");
+    jb_u64(b, lim->max_width);
+    jb_cstr(b, ",\"max_height\":");
+    jb_u64(b, lim->max_height);
+    jb_cstr(b, ",\"max_pixels\":");
+    jb_u64(b, lim->max_pixels);
+    jb_cstr(b, ",\"max_frames\":");
+    jb_u64(b, lim->max_frames);
+    jb_cstr(b, ",\"max_total_pixels\":");
+    jb_u64(b, lim->max_total_pixels);
+    jb_cstr(b, ",\"max_decoded_bytes\":");
+    jb_u64(b, lim->max_decoded_bytes);
+    jb_cstr(b, ",\"max_metadata_bytes\":");
+    jb_u64(b, (uint64_t)lim->max_metadata_bytes);
+    jb_cstr(b, ",\"max_compressed_bytes\":");
+    jb_u64(b, lim->max_compressed_bytes);
+    jb_cstr(b, ",\"max_expansion_ratio\":");
+    jb_u64(b, lim->max_expansion_ratio);
+    jb_cstr(b, "}");
+}
+
 static void jb_timings_obj(json_buf *b, const rfc_stage_timings *t) {
     jb_cstr(b, "{\"valid\":");
     jb_bool(b, t->valid);
@@ -724,7 +1013,9 @@ rfc_status rfc_report_format_json(const rfc_comparison_report *report,
     jb_json_str(&b, rfc_metadata_policy_name(report->metadata_policy));
     jb_cstr(&b, ",\"acknowledged_unsupported_metadata\":");
     jb_u64(&b, report->acknowledged_unsupported_metadata);
-    jb_cstr(&b, ",\"sequential_execution\":true}");
+    jb_cstr(&b, ",\"sequential_execution\":true,\"limits\":");
+    jb_limits_obj(&b, &report->limits);
+    jb_cstr(&b, "}");
 
     jb_cstr(&b, ",\"mixed_provider_configurations\":");
     jb_bool(&b, report->mixed_provider_configurations);
@@ -759,6 +1050,8 @@ rfc_status rfc_report_format_json(const rfc_comparison_report *report,
         jb_bool(&b, c->was_started);
         jb_cstr(&b, ",\"has_produced_output\":");
         jb_bool(&b, c->has_produced_output);
+        jb_cstr(&b, ",\"measurement_only\":");
+        jb_bool(&b, c->measurement_only);
         jb_cstr(&b, ",\"rank\":");
         jb_u64(&b, c->rank);
         jb_cstr(&b, ",\"warmup_completed\":");
@@ -860,7 +1153,9 @@ rfc_status rfc_report_format_json(const rfc_comparison_report *report,
             }
             jb_timings_obj(&b, &c->per_iter_timings[m]);
         }
-        jb_cstr(&b, "]}");
+        jb_cstr(&b, "],\"final_publish_ns\":");
+        jb_u64(&b, c->final_publish_ns);
+        jb_cstr(&b, "}");
 
         jb_cstr(&b, ",\"detail\":");
         jb_json_str(&b, c->detail);
@@ -1037,6 +1332,10 @@ static int js_read_str(jscan *js, char *out, size_t cap) {
         if (c == '\"') {
             if (out && cap > 0u) {
                 out[pos < cap ? pos : (cap - 1u)] = '\0';
+                if (!rfc_report_internal_is_valid_utf8_bounded(out, cap, 0,
+                                                               NULL)) {
+                    return 0;
+                }
             }
             return 1;
         }
@@ -1210,6 +1509,59 @@ static int js_expect_key(jscan *js, const char *key, int need_comma) {
     return js_expect(js, ':');
 }
 
+static int js_read_limits_obj(jscan *js, rfc_limits *out_lim) {
+    uint64_t uval = 0u;
+    memset(out_lim, 0, sizeof(*out_lim));
+    if (!js_expect(js, '{')) {
+        return 0;
+    }
+    if (!js_expect_key(js, "max_width", 0) || !js_read_u64(js, &uval) ||
+        uval > UINT32_MAX) {
+        return 0;
+    }
+    out_lim->max_width = (uint32_t)uval;
+    if (!js_expect_key(js, "max_height", 1) || !js_read_u64(js, &uval) ||
+        uval > UINT32_MAX) {
+        return 0;
+    }
+    out_lim->max_height = (uint32_t)uval;
+    if (!js_expect_key(js, "max_pixels", 1) || !js_read_u64(js, &uval)) {
+        return 0;
+    }
+    out_lim->max_pixels = uval;
+    if (!js_expect_key(js, "max_frames", 1) || !js_read_u64(js, &uval) ||
+        uval > UINT32_MAX) {
+        return 0;
+    }
+    out_lim->max_frames = (uint32_t)uval;
+    if (!js_expect_key(js, "max_total_pixels", 1) ||
+        !js_read_u64(js, &out_lim->max_total_pixels)) {
+        return 0;
+    }
+    if (!js_expect_key(js, "max_decoded_bytes", 1) ||
+        !js_read_u64(js, &out_lim->max_decoded_bytes)) {
+        return 0;
+    }
+    if (!js_expect_key(js, "max_metadata_bytes", 1) ||
+        !js_read_u64(js, &uval) || uval > (uint64_t)SIZE_MAX) {
+        return 0;
+    }
+    out_lim->max_metadata_bytes = (size_t)uval;
+    if (!js_expect_key(js, "max_compressed_bytes", 1) ||
+        !js_read_u64(js, &out_lim->max_compressed_bytes)) {
+        return 0;
+    }
+    if (!js_expect_key(js, "max_expansion_ratio", 1) ||
+        !js_read_u64(js, &uval) || uval > UINT32_MAX) {
+        return 0;
+    }
+    out_lim->max_expansion_ratio = (uint32_t)uval;
+    if (!js_expect(js, '}')) {
+        return 0;
+    }
+    return rfc_limits_validate(out_lim) == RFC_OK;
+}
+
 static rfc_status format_history_line(const rfc_comparison_report *report,
                                       uint64_t sequence,
                                       const uint8_t prev_sha256[32],
@@ -1255,6 +1607,8 @@ static rfc_status format_history_line(const rfc_comparison_report *report,
     jb_u64(&b, report->measured_iterations);
     jb_cstr(&b, ",\"metadata_policy\":");
     jb_json_str(&b, rfc_metadata_policy_name(report->metadata_policy));
+    jb_cstr(&b, ",\"limits\":");
+    jb_limits_obj(&b, &report->limits);
     jb_cstr(&b, ",\"mixed_provider_configurations\":");
     jb_bool(&b, report->mixed_provider_configurations);
 
@@ -1284,6 +1638,8 @@ static rfc_status format_history_line(const rfc_comparison_report *report,
         jb_u64(&b, c->rank);
         jb_cstr(&b, ",\"has_produced_output\":");
         jb_bool(&b, c->has_produced_output);
+        jb_cstr(&b, ",\"measurement_only\":");
+        jb_bool(&b, c->measurement_only);
         jb_cstr(&b, ",\"size_outcome\":");
         jb_json_str(&b, rfc_size_outcome_name(c->size.outcome));
         jb_cstr(&b, ",\"produced_file_bytes\":");
@@ -1430,6 +1786,10 @@ static rfc_status parse_and_verify_history_line(
             RFC_OK) {
         return js.truncated ? RFC_ERR_TRUNCATED_INPUT : RFC_ERR_VERIFY_MISMATCH;
     }
+    if (!js_expect_key(&js, "limits", 1) ||
+        !js_read_limits_obj(&js, &out_entry->limits)) {
+        return js.truncated ? RFC_ERR_TRUNCATED_INPUT : RFC_ERR_VERIFY_MISMATCH;
+    }
     if (!js_expect_key(&js, "mixed_provider_configurations", 1) ||
         !js_read_bool(&js, &out_entry->mixed_provider_configurations)) {
         return js.truncated ? RFC_ERR_TRUNCATED_INPUT : RFC_ERR_VERIFY_MISMATCH;
@@ -1506,6 +1866,12 @@ static rfc_status parse_and_verify_history_line(
                                     : RFC_ERR_VERIFY_MISMATCH;
             }
             hc->has_produced_output = bval;
+            if (!js_expect_key(&js, "measurement_only", 1) ||
+                !js_read_bool(&js, &bval)) {
+                return js.truncated ? RFC_ERR_TRUNCATED_INPUT
+                                    : RFC_ERR_VERIFY_MISMATCH;
+            }
+            hc->measurement_only = bval;
             if (!js_expect_key(&js, "size_outcome", 1) ||
                 !js_read_str(&js, str_buf, sizeof(str_buf)) ||
                 !parse_size_outcome_name(str_buf, &hc->size_outcome)) {
@@ -1694,8 +2060,8 @@ rfc_status rfc_history_read_path(const char *path_utf8,
     uint8_t *bytes = NULL;
     size_t len = 0u;
     int exists = 0;
-    rfc_status st = rfc_output_internal_read_regular_path(path_utf8, &bytes,
-                                                          &len, &exists);
+    rfc_status st = rfc_output_internal_read_regular_path(
+        path_utf8, g_hist_max_bytes_override, &bytes, &len, &exists);
     if (st != RFC_OK) {
         free(bytes);
         return st;
@@ -1709,6 +2075,44 @@ rfc_status rfc_history_read_path(const char *path_utf8,
     return st;
 }
 
+static rfc_status build_history_append_line_cb(const uint8_t *existing,
+                                               size_t existing_len,
+                                               int exists,
+                                               void *cb_ctx,
+                                               char **out_line,
+                                               size_t *out_line_len) {
+    const rfc_comparison_report *report =
+        (const rfc_comparison_report *)cb_ctx;
+    uint64_t next_seq = 1u;
+    uint8_t prev_sha[32];
+    memset(prev_sha, 0, sizeof(prev_sha));
+
+    if (exists && existing_len > 0u) {
+        rfc_history_log log;
+        memset(&log, 0, sizeof(log));
+        rfc_status st = rfc_history_verify_bytes(existing, existing_len, &log);
+        if (st != RFC_OK) {
+            rfc_history_log_free(&log);
+            return st;
+        }
+        if (log.entry_count > 0u) {
+            const rfc_history_entry_summary *last =
+                &log.entries[log.entry_count - 1u];
+            if (last->sequence == UINT64_MAX) {
+                rfc_history_log_free(&log);
+                return RFC_ERR_OVERFLOW;
+            }
+            next_seq = last->sequence + 1u;
+            memcpy(prev_sha, last->entry_sha256, 32u);
+        }
+        rfc_history_log_free(&log);
+    }
+
+    uint8_t entry_sha[32];
+    return format_history_line(report, next_seq, prev_sha, entry_sha, out_line,
+                               out_line_len);
+}
+
 rfc_status rfc_history_append_path(const char *path_utf8,
                                    const rfc_comparison_report *report) {
     if (!path_utf8 || !report) {
@@ -1718,53 +2122,7 @@ rfc_status rfc_history_append_path(const char *path_utf8,
     if (st != RFC_OK) {
         return st;
     }
-
-    uint8_t *existing = NULL;
-    size_t existing_len = 0u;
-    int exists = 0;
-    st = rfc_output_internal_read_regular_path(path_utf8, &existing,
-                                               &existing_len, &exists);
-    if (st != RFC_OK) {
-        free(existing);
-        return st;
-    }
-
-    uint64_t next_seq = 1u;
-    uint8_t prev_sha[32];
-    memset(prev_sha, 0, sizeof(prev_sha));
-
-    if (exists && existing_len > 0u) {
-        rfc_history_log log;
-        memset(&log, 0, sizeof(log));
-        st = rfc_history_verify_bytes(existing, existing_len, &log);
-        if (st != RFC_OK) {
-            rfc_history_log_free(&log);
-            free(existing);
-            return st;
-        }
-        if (log.entry_count > 0u) {
-            const rfc_history_entry_summary *last =
-                &log.entries[log.entry_count - 1u];
-            next_seq = last->sequence + 1u;
-            memcpy(prev_sha, last->entry_sha256, 32u);
-        }
-        rfc_history_log_free(&log);
-    }
-
-    uint8_t entry_sha[32];
-    char *line = NULL;
-    size_t line_len = 0u;
-    st = format_history_line(report, next_seq, prev_sha, entry_sha, &line,
-                             &line_len);
-    if (st != RFC_OK) {
-        free(existing);
-        return st;
-    }
-
-    st = rfc_output_internal_replace_regular_path(
-        path_utf8, existing, existing_len, (const uint8_t *)line, line_len,
-        (int)g_hist_fault_stage, g_hist_fault_status);
-    free(line);
-    free(existing);
-    return st;
+    return rfc_output_internal_append_history_locked(
+        path_utf8, g_hist_max_bytes_override, build_history_append_line_cb,
+        (void *)report, (int)g_hist_fault_stage, g_hist_fault_status);
 }

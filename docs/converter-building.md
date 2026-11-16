@@ -21,7 +21,7 @@ Four upstream packages without native upstream CMake support (`lcms2`, `giflib`,
 1. Stage converter build tools and verify all 19 pinned upstream source archives, patches, and `PINNED.json` tree hashes:
    - Linux/WSL host: `python3 tools/bootstrap.py --converter` and `python3 tools/provision.py --converter --verify`
    - Windows host: `powershell -ExecutionPolicy Bypass -File tools\bootstrap.ps1 -Converter` and `powershell -ExecutionPolicy Bypass -File tools\provision.ps1 -Converter -Verify`
-2. Build all 19 static archives into `build/converter/windows-x64/deps-prefix` and link the C11 smoke harness `bin/converter/windows-x64/rfc_bundle_smoke.exe`:
+2. Build all 19 static archives into `build/converter/windows-x64/deps-prefix`, generate `build/converter/windows-x64/generated/rfc_build_provenance.h` via `scripts/gen_converter_provenance.py` (`VERSION`, `bin/<target>/build.json`, `build/<target>/compile_commands.json`, `converter/vendor.json`, `toolchain.json`, and `deps-build/*/CMakeCache.txt` with `-DRFC_HAVE_GENERATED_PROVENANCE=1`), and link `bin/converter/windows-x64/rfc_bundle_smoke.exe` and converter test executables:
    - `python3 scripts/build-converter.py --target windows-x64`
 3. Verify bundled PE imports, registry coverage, offline notices/SBOM, and clean-directory restricted-`PATH` Windows execution:
    - `python3 scripts/check-converter.py --case bundle`

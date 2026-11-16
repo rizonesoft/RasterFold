@@ -43,22 +43,6 @@ static void invoke_cmp_hook(rfc_compare_hook_phase phase,
     }
 }
 
-static void copy_cmp_str(char *dst, size_t cap, const char *src) {
-    if (!dst || cap == 0u) {
-        return;
-    }
-    if (!src) {
-        dst[0] = '\0';
-        return;
-    }
-    size_t n = strlen(src);
-    if (n >= cap) {
-        n = cap - 1u;
-    }
-    memcpy(dst, src, n);
-    dst[n] = '\0';
-}
-
 /* ----------------------------------------------------------------
  * Thread-safe comparison cancellation token
  * ---------------------------------------------------------------- */
@@ -309,6 +293,80 @@ static rfc_status cmp_mem_open_reader(void *raw_ctx,
     return RFC_OK;
 }
 
+typedef struct cmp_cancel_pub_ctx {
+    const rfc_io_publisher *inner;
+    rfc_compare_token *token;
+} cmp_cancel_pub_ctx;
+
+static rfc_status cmp_cpub_begin(void *raw_ctx,
+                                 rfc_job_id job_id,
+                                 uint64_t attempt_number,
+                                 uint64_t expected_bytes,
+                                 const rfc_file_identity *source_id,
+                                 void **out_handle) {
+    cmp_cancel_pub_ctx *w = (cmp_cancel_pub_ctx *)raw_ctx;
+    if (w->token && rfc_compare_is_cancelled(w->token)) {
+        return RFC_ERR_CANCELLED;
+    }
+    return w->inner->begin_stage(w->inner->ctx, job_id, attempt_number,
+                                 expected_bytes, source_id, out_handle);
+}
+
+static rfc_status cmp_cpub_write(void *raw_ctx,
+                                 void *sh,
+                                 const uint8_t *data,
+                                 size_t len) {
+    cmp_cancel_pub_ctx *w = (cmp_cancel_pub_ctx *)raw_ctx;
+    if (w->token && rfc_compare_is_cancelled(w->token)) {
+        return RFC_ERR_CANCELLED;
+    }
+    return w->inner->write_stage(w->inner->ctx, sh, data, len);
+}
+
+static rfc_status cmp_cpub_flush(void *raw_ctx, void *sh) {
+    cmp_cancel_pub_ctx *w = (cmp_cancel_pub_ctx *)raw_ctx;
+    if (w->token && rfc_compare_is_cancelled(w->token)) {
+        return RFC_ERR_CANCELLED;
+    }
+    return w->inner->flush_stage(w->inner->ctx, sh);
+}
+
+static rfc_status cmp_cpub_commit(void *raw_ctx, void *sh, int *out_cleaned) {
+    cmp_cancel_pub_ctx *w = (cmp_cancel_pub_ctx *)raw_ctx;
+    return w->inner->commit_stage(w->inner->ctx, sh, out_cleaned);
+}
+
+static rfc_status cmp_cpub_abort(void *raw_ctx, void *sh) {
+    cmp_cancel_pub_ctx *w = (cmp_cancel_pub_ctx *)raw_ctx;
+    return w->inner->abort_stage(w->inner->ctx, sh);
+}
+
+static rfc_status cmp_cpub_open_reader(void *raw_ctx,
+                                       rfc_job_id job_id,
+                                       uint64_t attempt_number,
+                                       rfc_io_reader *out_reader) {
+    cmp_cancel_pub_ctx *w = (cmp_cancel_pub_ctx *)raw_ctx;
+    return w->inner->open_published_reader(w->inner->ctx, job_id,
+                                           attempt_number, out_reader);
+}
+
+static void release_candidate_contexts(const rfc_compare_spec *spec,
+                                       uint8_t *released,
+                                       size_t idx) {
+    if (!spec || !released || idx >= spec->candidate_count || released[idx]) {
+        return;
+    }
+    released[idx] = 1u;
+    const rfc_compare_candidate_spec *cs = &spec->candidates[idx];
+    void *eff_user_ctx = cs->user_ctx ? cs->user_ctx : cs->stage_ops.user_ctx;
+    if (cs->has_stage_ops && cs->stage_ops.destroy_user_ctx) {
+        cs->stage_ops.destroy_user_ctx(eff_user_ctx);
+    }
+    if (cs->publisher && cs->publisher->release_ctx) {
+        cs->publisher->release_ctx(cs->publisher->ctx);
+    }
+}
+
 /* ----------------------------------------------------------------
  * Statistics & helpers
  * ---------------------------------------------------------------- */
@@ -329,12 +387,14 @@ static void format_utc_now(char out_utc[RFC_REPORT_UTC_MAX]) {
     memset(&tm_utc, 0, sizeof(tm_utc));
 #ifdef _WIN32
     if (gmtime_s(&tm_utc, &now) != 0) {
-        copy_cmp_str(out_utc, RFC_REPORT_UTC_MAX, "2026-11-16T00:00:00Z");
+        rfc_report_internal_copy_utf8(out_utc, RFC_REPORT_UTC_MAX,
+                                      "2026-11-16T00:00:00Z");
         return;
     }
 #else
     if (!gmtime_r(&now, &tm_utc)) {
-        copy_cmp_str(out_utc, RFC_REPORT_UTC_MAX, "2026-11-16T00:00:00Z");
+        rfc_report_internal_copy_utf8(out_utc, RFC_REPORT_UTC_MAX,
+                                      "2026-11-16T00:00:00Z");
         return;
     }
 #endif
@@ -347,15 +407,7 @@ static void format_utc_now(char out_utc[RFC_REPORT_UTC_MAX]) {
              (unsigned)(tm_utc.tm_hour & 0xffu),
              (unsigned)(tm_utc.tm_min & 0xffu),
              (unsigned)(tm_utc.tm_sec & 0xffu));
-    copy_cmp_str(out_utc, RFC_REPORT_UTC_MAX, tmp_utc);
-}
-
-static uint64_t current_pid_u64(void) {
-#ifdef _WIN32
-    return (uint64_t)GetCurrentProcessId();
-#else
-    return (uint64_t)getpid();
-#endif
+    rfc_report_internal_copy_utf8(out_utc, RFC_REPORT_UTC_MAX, tmp_utc);
 }
 
 static int is_unsupported_error(rfc_status st) {
@@ -449,29 +501,18 @@ static void compute_min_median_timings(
     out_med->wall_ns = median_sorted_u64(wal, count);
 }
 
-static rfc_status format_temp_iter_path(char out_path[4096],
-                                        const char *dest_path_utf8,
-                                        const char *staging_dir_utf8,
-                                        size_t cand_idx,
-                                        char phase_ch,
-                                        uint32_t iter_idx) {
-    uint64_t seq = rfc_output_internal_next_seq();
-    uint64_t pid = current_pid_u64();
-    int n = -1;
-    if (dest_path_utf8) {
-        n = snprintf(out_path, 4096u, "%s.rfc-cmp.%llu.%llu.c%zu.%c%u",
-                     dest_path_utf8, (unsigned long long)pid,
-                     (unsigned long long)seq, cand_idx, phase_ch,
-                     (unsigned)iter_idx);
-    } else if (staging_dir_utf8) {
-        size_t dlen = strlen(staging_dir_utf8);
-        int has_sep = dlen > 0u && (staging_dir_utf8[dlen - 1u] == '/' ||
-                                    staging_dir_utf8[dlen - 1u] == '\\');
-        n = snprintf(out_path, 4096u, "%s%srfc-cmp.%llu.%llu.c%zu.%c%u",
-                     staging_dir_utf8, has_sep ? "" : "/",
-                     (unsigned long long)pid, (unsigned long long)seq, cand_idx,
-                     phase_ch, (unsigned)iter_idx);
+static rfc_status format_stage_iter_path(char out_path[4096],
+                                         const char *stage_dir,
+                                         char phase_ch,
+                                         uint32_t iter_idx) {
+    if (!stage_dir || stage_dir[0] == '\0') {
+        return RFC_ERR_INVALID_ARGUMENT;
     }
+    size_t dlen = strlen(stage_dir);
+    int has_sep = (dlen > 0u && (stage_dir[dlen - 1u] == '/' ||
+                                 stage_dir[dlen - 1u] == '\\'));
+    int n = snprintf(out_path, 4096u, "%s%siter.%c%u", stage_dir,
+                     has_sep ? "" : "/", phase_ch, (unsigned)iter_idx);
     if (n <= 0 || (size_t)n >= 3800u) {
         return RFC_ERR_INVALID_ARGUMENT;
     }
@@ -487,11 +528,12 @@ static void mark_remaining_cancelled(rfc_comparison_report *rep,
         cj->status = RFC_ERR_CANCELLED;
         cj->rank = 0u;
         cj->has_produced_output = 0;
+        cj->measurement_only = 0;
         cj->size.outcome = RFC_SIZE_NOT_APPLICABLE;
         if (cj != first_active) {
             cj->was_started = 0;
-            copy_cmp_str(cj->detail, sizeof(cj->detail),
-                         "cancelled before start");
+            rfc_report_internal_copy_utf8(cj->detail, sizeof(cj->detail),
+                                          "cancelled before start");
         }
         rep->cancelled_count++;
     }
@@ -508,6 +550,16 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
         spec->measured_iterations == 0u ||
         spec->measured_iterations > RFC_COMPARE_MAX_ITERATIONS ||
         spec->warmup_iterations > RFC_COMPARE_MAX_ITERATIONS) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    if (spec->run_id && spec->run_id[0] != '\0' &&
+        !rfc_report_internal_is_valid_utf8_bounded(
+            spec->run_id, RFC_REPORT_RUN_ID_MAX, 1, NULL)) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    if (spec->recorded_utc && spec->recorded_utc[0] != '\0' &&
+        !rfc_report_internal_is_valid_utf8_bounded(
+            spec->recorded_utc, RFC_REPORT_UTC_MAX, 1, NULL)) {
         return RFC_ERR_INVALID_ARGUMENT;
     }
 
@@ -527,12 +579,26 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
         if (cs->dest_path_utf8 && cs->publisher) {
             return RFC_ERR_INVALID_ARGUMENT;
         }
+        if (cs->has_stage_ops && cs->stage_ops.on_export != NULL &&
+            (cs->dest_path_utf8 != NULL || cs->publisher != NULL)) {
+            return RFC_ERR_INVALID_ARGUMENT;
+        }
         if (!cs->dest_path_utf8 && !cs->publisher &&
+            (!cs->has_stage_ops || cs->stage_ops.on_export == NULL) &&
             (!spec->staging_dir_utf8 || spec->staging_dir_utf8[0] == '\0')) {
             return RFC_ERR_INVALID_ARGUMENT;
         }
-        if (cs->setting_count > RFC_REPORT_MAX_SETTINGS) {
+        if (cs->setting_count > RFC_REPORT_MAX_SETTINGS ||
+            (cs->setting_count > 0u && !cs->settings)) {
             return RFC_ERR_INVALID_ARGUMENT;
+        }
+        for (size_t s = 0u; s < cs->setting_count; s++) {
+            if (!rfc_report_internal_is_valid_utf8_bounded(
+                    cs->settings[s].id, 48u, 1, NULL) ||
+                !rfc_report_internal_is_valid_utf8_bounded(
+                    cs->settings[s].value, 64u, 1, NULL)) {
+                return RFC_ERR_INVALID_ARGUMENT;
+            }
         }
     }
 
@@ -585,15 +651,16 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
         out_report->candidates[i].size.outcome = RFC_SIZE_NOT_APPLICABLE;
     }
     if (spec->run_id && spec->run_id[0] != '\0') {
-        copy_cmp_str(out_report->run_id, sizeof(out_report->run_id),
-                     spec->run_id);
+        rfc_report_internal_copy_utf8(
+            out_report->run_id, sizeof(out_report->run_id), spec->run_id);
     } else {
         snprintf(out_report->run_id, sizeof(out_report->run_id), "cmp-%llu",
                  (unsigned long long)rfc_output_internal_next_seq());
     }
     if (spec->recorded_utc && spec->recorded_utc[0] != '\0') {
-        copy_cmp_str(out_report->recorded_utc, sizeof(out_report->recorded_utc),
-                     spec->recorded_utc);
+        rfc_report_internal_copy_utf8(out_report->recorded_utc,
+                                      sizeof(out_report->recorded_utc),
+                                      spec->recorded_utc);
     } else {
         format_utc_now(out_report->recorded_utc);
     }
@@ -705,6 +772,9 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
         return RFC_ERR_OUT_OF_MEMORY;
     }
 
+    uint8_t released_ctx[RFC_COMPARE_MAX_CANDIDATES];
+    memset(released_ctx, 0, sizeof(released_ctx));
+
     for (size_t i = 0u; i < spec->candidate_count; i++) {
         const rfc_compare_candidate_spec *cs = &spec->candidates[i];
         rfc_compare_candidate_result *cr = &out_report->candidates[i];
@@ -736,9 +806,11 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
             cr->outcome = RFC_CANDIDATE_FAILED;
             cr->status = cfg_st;
             cr->failing_stage = RFC_STAGE_PREFLIGHT;
-            copy_cmp_str(cr->detail, sizeof(cr->detail),
-                         "missing provider build configuration provenance");
+            rfc_report_internal_copy_utf8(
+                cr->detail, sizeof(cr->detail),
+                "missing provider build configuration provenance");
             out_report->failed_count++;
+            release_candidate_contexts(spec, released_ctx, i);
             continue;
         }
 
@@ -747,11 +819,12 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
             cr->outcome = RFC_CANDIDATE_UNSUPPORTED;
             cr->status = RFC_ERR_UNSUPPORTED_COMBINATION;
             cr->failing_stage = RFC_STAGE_PREFLIGHT;
-            copy_cmp_str(cr->detail, sizeof(cr->detail),
-                         tcap->unavailable_reason
-                             ? tcap->unavailable_reason
-                             : "target format is import-only");
+            rfc_report_internal_copy_utf8(
+                cr->detail, sizeof(cr->detail),
+                tcap->unavailable_reason ? tcap->unavailable_reason
+                                         : "target format is import-only");
             out_report->unsupported_count++;
+            release_candidate_contexts(spec, released_ctx, i);
             continue;
         }
 
@@ -764,11 +837,12 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
                              ? RFC_ERR_PLANNED
                              : RFC_ERR_NO_ADAPTER;
             cr->failing_stage = RFC_STAGE_PREFLIGHT;
-            copy_cmp_str(cr->detail, sizeof(cr->detail),
-                         tcap->unavailable_reason
-                             ? tcap->unavailable_reason
-                             : rfc_status_name(cr->status));
+            rfc_report_internal_copy_utf8(
+                cr->detail, sizeof(cr->detail),
+                tcap->unavailable_reason ? tcap->unavailable_reason
+                                         : rfc_status_name(cr->status));
             out_report->unsupported_count++;
+            release_candidate_contexts(spec, released_ctx, i);
             continue;
         }
 
@@ -776,9 +850,11 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
             cr->outcome = RFC_CANDIDATE_FAILED;
             cr->status = RFC_ERR_NO_ADAPTER;
             cr->failing_stage = RFC_STAGE_PREFLIGHT;
-            copy_cmp_str(cr->detail, sizeof(cr->detail),
-                         "callback sink missing open_published_reader");
+            rfc_report_internal_copy_utf8(
+                cr->detail, sizeof(cr->detail),
+                "callback sink missing open_published_reader");
             out_report->failed_count++;
+            release_candidate_contexts(spec, released_ctx, i);
             continue;
         }
 
@@ -790,9 +866,10 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
                 cr->outcome = RFC_CANDIDATE_FAILED;
                 cr->status = dst_st;
                 cr->failing_stage = RFC_STAGE_PREFLIGHT;
-                copy_cmp_str(cr->detail, sizeof(cr->detail),
-                             rfc_status_name(dst_st));
+                rfc_report_internal_copy_utf8(
+                    cr->detail, sizeof(cr->detail), rfc_status_name(dst_st));
                 out_report->failed_count++;
+                release_candidate_contexts(spec, released_ctx, i);
                 continue;
             }
         }
@@ -805,11 +882,9 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
         const char *meta_str = rfc_metadata_policy_name(eff_meta);
         for (size_t s = 0u; s < cs->setting_count; s++) {
             job_settings[job_setting_count++] = cs->settings[s];
-            if (cs->settings[s].id &&
-                strcmp(cs->settings[s].id, "metadata") == 0) {
+            if (strcmp(cs->settings[s].id, "metadata") == 0) {
                 saw_metadata_setting = 1;
-                if (!cs->settings[s].value ||
-                    strcmp(cs->settings[s].value, meta_str) != 0) {
+                if (strcmp(cs->settings[s].value, meta_str) != 0) {
                     meta_conflict = 1;
                 }
             }
@@ -818,9 +893,11 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
             cr->outcome = RFC_CANDIDATE_FAILED;
             cr->status = RFC_ERR_INVALID_ARGUMENT;
             cr->failing_stage = RFC_STAGE_PREFLIGHT;
-            copy_cmp_str(cr->detail, sizeof(cr->detail),
-                         "candidate metadata setting conflicts with policy");
+            rfc_report_internal_copy_utf8(
+                cr->detail, sizeof(cr->detail),
+                "candidate metadata setting conflicts with policy");
             out_report->failed_count++;
+            release_candidate_contexts(spec, released_ctx, i);
             continue;
         }
         if (!saw_metadata_setting &&
@@ -831,12 +908,45 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
         }
         for (size_t s = 0u;
              s < job_setting_count && s < RFC_REPORT_MAX_SETTINGS; s++) {
-            copy_cmp_str(cr->settings[s].id, sizeof(cr->settings[s].id),
-                         job_settings[s].id);
-            copy_cmp_str(cr->settings[s].value, sizeof(cr->settings[s].value),
-                         job_settings[s].value);
+            rfc_report_internal_copy_utf8(cr->settings[s].id,
+                                          sizeof(cr->settings[s].id),
+                                          job_settings[s].id);
+            rfc_report_internal_copy_utf8(cr->settings[s].value,
+                                          sizeof(cr->settings[s].value),
+                                          job_settings[s].value);
             cr->setting_count++;
         }
+
+        int attach_sink =
+            (!cs->has_stage_ops || cs->stage_ops.on_export == NULL);
+        int use_path_sink = (attach_sink && cs->dest_path_utf8 != NULL);
+        int use_cb_sink = (attach_sink && cs->publisher != NULL);
+        int measurement_only = (!use_path_sink && !use_cb_sink);
+
+        char stage_dir[4096];
+        stage_dir[0] = '\0';
+        int has_stage_dir = 0;
+        if (attach_sink && !use_cb_sink) {
+            const char *anchor =
+                use_path_sink ? cs->dest_path_utf8 : spec->staging_dir_utf8;
+            int parent_of_target = use_path_sink ? 1 : 0;
+            rfc_status sdt = rfc_output_internal_create_staging_subdir(
+                anchor, parent_of_target, stage_dir);
+            if (sdt != RFC_OK) {
+                cr->outcome = RFC_CANDIDATE_FAILED;
+                cr->status = sdt;
+                cr->failing_stage = RFC_STAGE_PREFLIGHT;
+                rfc_report_internal_copy_utf8(
+                    cr->detail, sizeof(cr->detail), rfc_status_name(sdt));
+                out_report->failed_count++;
+                release_candidate_contexts(spec, released_ctx, i);
+                continue;
+            }
+            has_stage_dir = 1;
+        }
+
+        void *eff_user_ctx =
+            cs->user_ctx ? cs->user_ctx : cs->stage_ops.user_ctx;
 
         /* Execute untimed warmups followed by measured iterations strictly sequentially. */
         uint32_t total_runs =
@@ -851,7 +961,13 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
         memset(&final_vrep, 0, sizeof(final_vrep));
         rfc_size_metrics final_smetrics;
         memset(&final_smetrics, 0, sizeof(final_smetrics));
-        int final_has_disk_dest = 0;
+        char final_temp_path[4096];
+        final_temp_path[0] = '\0';
+        rfc_file_identity final_staged_id;
+        memset(&final_staged_id, 0, sizeof(final_staged_id));
+        uint8_t *final_pub_bytes = NULL;
+        size_t final_pub_len = 0u;
+        rfc_job_id final_job_id = 0u;
 
         for (uint32_t r = 0u; r < total_runs; r++) {
             int is_warmup = (r < spec->warmup_iterations);
@@ -874,7 +990,6 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
             char temp_path[4096];
             temp_path[0] = '\0';
             const char *active_path = NULL;
-            int unlink_after = 0;
             cmp_mem_pub_ctx mpub_ctx;
             memset(&mpub_ctx, 0, sizeof(mpub_ctx));
             rfc_io_publisher mpub;
@@ -889,32 +1004,19 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
 
             rfc_io_sink sink;
             memset(&sink, 0, sizeof(sink));
-            int attach_sink =
-                (!cs->has_stage_ops || cs->stage_ops.on_export == NULL);
             if (attach_sink) {
-                if (cs->publisher) {
-                    if (is_final_measured) {
-                        rfc_io_sink_init_callbacks(
-                            &sink, cs->publisher, RFC_EXPORT_REFUSE_EXISTING);
-                    } else {
-                        rfc_io_sink_init_callbacks(
-                            &sink, &mpub, RFC_EXPORT_REFUSE_EXISTING);
-                    }
-                } else if (cs->dest_path_utf8 && is_final_measured) {
-                    active_path = cs->dest_path_utf8;
-                    rfc_io_sink_init_path(&sink, active_path,
-                                          RFC_EXPORT_REFUSE_EXISTING);
+                if (use_cb_sink) {
+                    rfc_io_sink_init_callbacks(
+                        &sink, &mpub, RFC_EXPORT_REFUSE_EXISTING);
                 } else {
-                    rfc_status pst = format_temp_iter_path(
-                        temp_path, cs->dest_path_utf8, spec->staging_dir_utf8,
-                        i, is_warmup ? 'w' : 'm', iter_num);
+                    rfc_status pst = format_stage_iter_path(
+                        temp_path, stage_dir, is_warmup ? 'w' : 'm', iter_num);
                     if (pst != RFC_OK) {
                         iter_fail_st = pst;
                         iter_fail_stage = RFC_STAGE_EXPORT;
                         break;
                     }
                     active_path = temp_path;
-                    unlink_after = 1;
                     rfc_io_sink_init_path(&sink, active_path,
                                           RFC_EXPORT_REFUSE_EXISTING);
                 }
@@ -948,6 +1050,8 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
             jspec.has_stage_ops = cs->has_stage_ops;
             if (cs->has_stage_ops) {
                 jspec.stage_ops = cs->stage_ops;
+                jspec.stage_ops.user_ctx = eff_user_ctx;
+                jspec.stage_ops.destroy_user_ctx = NULL;
             }
             jspec.acknowledged_unsupported_metadata =
                 spec->acknowledged_unsupported_metadata;
@@ -959,9 +1063,6 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
             rfc_status sst = rfc_scheduler_submit(sched, NULL, &jspec, &job);
             if (sst != RFC_OK) {
                 free(mpub_ctx.published);
-                if (unlink_after && active_path) {
-                    (void)rfc_output_internal_unlink_path(active_path);
-                }
                 if (sst == RFC_ERR_CANCELLED ||
                     rfc_compare_is_cancelled(spec->cancel_token)) {
                     cand_cancelled = 1;
@@ -991,6 +1092,10 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
                 }
             }
 
+            rfc_export_report erep;
+            memset(&erep, 0, sizeof(erep));
+            (void)rfc_job_export_report_get(job, &erep);
+
             if (wst != RFC_OK || snap.state != RFC_JOB_SUCCEEDED ||
                 snap.status != RFC_OK ||
                 rfc_compare_is_cancelled(spec->cancel_token)) {
@@ -1003,12 +1108,14 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
                     iter_fail_st =
                         (snap.status != RFC_OK) ? snap.status : RFC_ERR_IO;
                     iter_fail_stage = snap.failing_stage;
-                    copy_cmp_str(iter_detail, sizeof(iter_detail), snap.detail);
+                    rfc_report_internal_copy_utf8(
+                        iter_detail, sizeof(iter_detail), snap.detail);
                 }
                 rfc_job_release(job);
                 free(mpub_ctx.published);
-                if (unlink_after && active_path) {
-                    (void)rfc_output_internal_unlink_path(active_path);
+                if (active_path && erep.published && erep.has_output_identity) {
+                    (void)rfc_output_internal_unlink_owned_path(
+                        active_path, &erep.output_identity);
                 }
                 break;
             }
@@ -1019,12 +1126,14 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
                 vrep.decoder_provenance[0] == '\0') {
                 iter_fail_st = (vst != RFC_OK) ? vst : RFC_ERR_VERIFY_MISMATCH;
                 iter_fail_stage = RFC_STAGE_VERIFY;
-                copy_cmp_str(iter_detail, sizeof(iter_detail),
-                             "missing or invalid verify report");
+                rfc_report_internal_copy_utf8(
+                    iter_detail, sizeof(iter_detail),
+                    "missing or invalid verify report");
                 rfc_job_release(job);
                 free(mpub_ctx.published);
-                if (unlink_after && active_path) {
-                    (void)rfc_output_internal_unlink_path(active_path);
+                if (active_path && erep.published && erep.has_output_identity) {
+                    (void)rfc_output_internal_unlink_owned_path(
+                        active_path, &erep.output_identity);
                 }
                 break;
             }
@@ -1039,21 +1148,55 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
             rfc_status tst = rfc_job_stage_timings_get(job, &stimes);
 
             rfc_job_release(job);
-            free(mpub_ctx.published);
-            if (unlink_after && active_path) {
-                (void)rfc_output_internal_unlink_path(active_path);
-            }
 
             if (mst != RFC_OK || !smetrics.valid ||
                 smetrics.produced_file_bytes == 0u ||
                 tst != RFC_OK || !stimes.valid) {
+                free(mpub_ctx.published);
+                if (active_path && erep.published && erep.has_output_identity) {
+                    (void)rfc_output_internal_unlink_owned_path(
+                        active_path, &erep.output_identity);
+                }
                 iter_fail_st =
                     (mst != RFC_OK) ? mst
                                     : ((tst != RFC_OK) ? tst : RFC_ERR_IO);
                 iter_fail_stage = RFC_STAGE_EXPORT;
-                copy_cmp_str(iter_detail, sizeof(iter_detail),
-                             rfc_status_name(iter_fail_st));
+                rfc_report_internal_copy_utf8(iter_detail, sizeof(iter_detail),
+                                              rfc_status_name(iter_fail_st));
                 break;
+            }
+
+            int keep_staged_for_final =
+                (is_final_measured && use_path_sink);
+            if (active_path && !keep_staged_for_final && erep.published &&
+                erep.has_output_identity) {
+                (void)rfc_output_internal_unlink_owned_path(
+                    active_path, &erep.output_identity);
+            } else if (keep_staged_for_final) {
+                if (!erep.has_output_identity) {
+                    if (erep.published) {
+                        (void)rfc_output_internal_unlink_path(active_path);
+                    }
+                    free(mpub_ctx.published);
+                    iter_fail_st = RFC_ERR_VERIFY_MISMATCH;
+                    iter_fail_stage = RFC_STAGE_EXPORT;
+                    rfc_report_internal_copy_utf8(
+                        iter_detail, sizeof(iter_detail),
+                        "staged file missing verified output identity");
+                    break;
+                }
+                rfc_report_internal_copy_utf8(
+                    final_temp_path, sizeof(final_temp_path), active_path);
+                final_staged_id = erep.output_identity;
+            }
+
+            if (is_final_measured && use_cb_sink) {
+                final_pub_bytes = mpub_ctx.published;
+                final_pub_len = mpub_ctx.published_len;
+                final_job_id = snap.job_id;
+                mpub_ctx.published = NULL;
+            } else {
+                free(mpub_ctx.published);
             }
 
             any_iter_succeeded = 1;
@@ -1064,13 +1207,135 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
                 cr->measured_completed++;
                 final_vrep = vrep;
                 final_smetrics = smetrics;
-                if (is_final_measured &&
-                    (cs->dest_path_utf8 || cs->publisher ||
-                     spec->staging_dir_utf8)) {
-                    final_has_disk_dest = 1;
+            }
+        }
+
+        /* Promote/publish verified final artifact only after all iterations pass. */
+        if (!cand_cancelled && iter_fail_st == RFC_OK) {
+            invoke_cmp_hook(RFC_COMPARE_HOOK_BEFORE_FINAL_PUBLISH, i,
+                            spec->measured_iterations - 1u, spec->cancel_token);
+            if (rfc_compare_is_cancelled(spec->cancel_token)) {
+                cand_cancelled = 1;
+                iter_fail_st = RFC_ERR_CANCELLED;
+            }
+        }
+
+        if (!cand_cancelled && iter_fail_st == RFC_OK) {
+            if (use_path_sink) {
+                uint64_t pub_t0 = rfc_monotonic_now_ns();
+                rfc_status pst = rfc_output_internal_promote_staged_path(
+                    final_temp_path, cs->dest_path_utf8, src_path_for_alias,
+                    src_id_for_alias, &final_staged_id);
+                uint64_t pub_t1 = rfc_monotonic_now_ns();
+                cr->final_publish_ns =
+                    (pub_t1 >= pub_t0) ? (pub_t1 - pub_t0) : 0u;
+                if (pst != RFC_OK) {
+                    (void)rfc_output_internal_unlink_owned_path(
+                        final_temp_path, &final_staged_id);
+                    final_temp_path[0] = '\0';
+                    iter_fail_st = pst;
+                    iter_fail_stage = RFC_STAGE_EXPORT;
+                    rfc_report_internal_copy_utf8(iter_detail,
+                                                  sizeof(iter_detail),
+                                                  rfc_status_name(pst));
+                } else {
+                    final_temp_path[0] = '\0';
+                    if (has_stage_dir) {
+                        (void)rfc_output_internal_remove_staging_subdir(
+                            stage_dir);
+                        has_stage_dir = 0;
+                    }
+                    rfc_export_report prep;
+                    memset(&prep, 0, sizeof(prep));
+                    prep.valid = 1;
+                    prep.published = 1;
+                    prep.status = RFC_OK;
+                    prep.bytes_written = final_smetrics.produced_file_bytes;
+                    memcpy(prep.output_sha256, final_smetrics.produced_sha256,
+                           32u);
+                    rfc_size_metrics post_sm;
+                    rfc_status vmst = rfc_metrics_verify_produced_path(
+                        cs->dest_path_utf8, out_report->source_file_bytes,
+                        out_report->raw_frame_bytes, out_report->source_sha256,
+                        1, &prep, &post_sm);
+                    if (vmst != RFC_OK) {
+                        iter_fail_st = vmst;
+                        iter_fail_stage = RFC_STAGE_VERIFY;
+                        rfc_report_internal_copy_utf8(
+                            iter_detail, sizeof(iter_detail),
+                            rfc_status_name(vmst));
+                    } else {
+                        final_smetrics = post_sm;
+                    }
+                }
+            } else if (use_cb_sink) {
+                cmp_cancel_pub_ctx wctx = {cs->publisher, spec->cancel_token};
+                rfc_io_publisher wrap_pub;
+                memset(&wrap_pub, 0, sizeof(wrap_pub));
+                wrap_pub.ctx = &wctx;
+                wrap_pub.begin_stage = cmp_cpub_begin;
+                wrap_pub.write_stage = cmp_cpub_write;
+                wrap_pub.flush_stage = cmp_cpub_flush;
+                wrap_pub.commit_stage = cmp_cpub_commit;
+                wrap_pub.abort_stage = cmp_cpub_abort;
+                wrap_pub.open_published_reader = cmp_cpub_open_reader;
+
+                rfc_export_report pub_erep;
+                memset(&pub_erep, 0, sizeof(pub_erep));
+                uint64_t pub_t0 = rfc_monotonic_now_ns();
+                rfc_status pst = rfc_output_publish_staged(
+                    &wrap_pub, NULL, final_job_id, 1u, src_id_for_alias,
+                    final_pub_bytes, final_pub_len, NULL, &pub_erep);
+                uint64_t pub_t1 = rfc_monotonic_now_ns();
+                cr->final_publish_ns =
+                    (pub_t1 >= pub_t0) ? (pub_t1 - pub_t0) : 0u;
+                free(final_pub_bytes);
+                final_pub_bytes = NULL;
+                final_pub_len = 0u;
+
+                if (pst != RFC_OK) {
+                    if (pst == RFC_ERR_CANCELLED && !pub_erep.published) {
+                        cand_cancelled = 1;
+                        iter_fail_st = RFC_ERR_CANCELLED;
+                    } else {
+                        iter_fail_st = pst;
+                        iter_fail_stage = RFC_STAGE_EXPORT;
+                        rfc_report_internal_copy_utf8(
+                            iter_detail, sizeof(iter_detail),
+                            pub_erep.detail[0] ? pub_erep.detail
+                                               : rfc_status_name(pst));
+                    }
+                } else {
+                    rfc_size_metrics post_sm;
+                    rfc_status vmst = rfc_metrics_verify_produced_callback(
+                        &wrap_pub, final_job_id, 1u,
+                        out_report->source_file_bytes,
+                        out_report->raw_frame_bytes, out_report->source_sha256,
+                        1, &pub_erep, &post_sm);
+                    if (vmst != RFC_OK) {
+                        iter_fail_st = vmst;
+                        iter_fail_stage = RFC_STAGE_VERIFY;
+                        rfc_report_internal_copy_utf8(
+                            iter_detail, sizeof(iter_detail),
+                            rfc_status_name(vmst));
+                    } else {
+                        final_smetrics = post_sm;
+                    }
                 }
             }
         }
+
+        if (final_temp_path[0] != '\0') {
+            (void)rfc_output_internal_unlink_owned_path(final_temp_path,
+                                                        &final_staged_id);
+            final_temp_path[0] = '\0';
+        }
+        if (has_stage_dir) {
+            (void)rfc_output_internal_remove_staging_subdir(stage_dir);
+            has_stage_dir = 0;
+        }
+        free(final_pub_bytes);
+        final_pub_bytes = NULL;
 
         if (cand_cancelled) {
             out_report->cancelled = 1;
@@ -1078,9 +1343,11 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
             cr->status = RFC_ERR_CANCELLED;
             cr->failing_stage = iter_fail_stage;
             cr->has_produced_output = 0;
+            cr->measurement_only = 0;
             cr->rank = 0u;
             cr->size.outcome = RFC_SIZE_NOT_APPLICABLE;
-            copy_cmp_str(cr->detail, sizeof(cr->detail), "cancelled");
+            rfc_report_internal_copy_utf8(cr->detail, sizeof(cr->detail),
+                                          "cancelled");
             mark_remaining_cancelled(out_report, i, cr);
             break;
         }
@@ -1096,11 +1363,13 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
             cr->status = iter_fail_st;
             cr->failing_stage = iter_fail_stage;
             cr->has_produced_output = 0;
+            cr->measurement_only = 0;
             cr->rank = 0u;
             cr->size.outcome = RFC_SIZE_NOT_APPLICABLE;
-            copy_cmp_str(cr->detail, sizeof(cr->detail),
-                         iter_detail[0] ? iter_detail
-                                        : rfc_status_name(iter_fail_st));
+            rfc_report_internal_copy_utf8(
+                cr->detail, sizeof(cr->detail),
+                iter_detail[0] ? iter_detail : rfc_status_name(iter_fail_st));
+            release_candidate_contexts(spec, released_ctx, i);
             continue;
         }
 
@@ -1108,12 +1377,30 @@ rfc_status rfc_compare_run(const rfc_compare_spec *spec,
                                    &cr->min_timings, &cr->median_timings);
         cr->verify_report = final_vrep;
         cr->size = final_smetrics;
-        cr->has_produced_output = final_has_disk_dest ? 1 : 0;
+        cr->measurement_only = measurement_only ? 1 : 0;
+        cr->has_produced_output = measurement_only ? 0 : 1;
         cr->outcome = RFC_CANDIDATE_COMPLETED;
         cr->status = RFC_OK;
         cr->failing_stage = RFC_STAGE_NONE;
-        copy_cmp_str(cr->detail, sizeof(cr->detail), "ok");
+        rfc_report_internal_copy_utf8(
+            cr->detail, sizeof(cr->detail),
+            measurement_only ? "ok (measurement-only)" : "ok");
         out_report->completed_count++;
+        release_candidate_contexts(spec, released_ctx, i);
+
+        invoke_cmp_hook(RFC_COMPARE_HOOK_AFTER_FINAL_PUBLISH, i,
+                        spec->measured_iterations - 1u, spec->cancel_token);
+        if (rfc_compare_is_cancelled(spec->cancel_token)) {
+            out_report->cancelled = 1;
+            if (i + 1u < spec->candidate_count) {
+                mark_remaining_cancelled(out_report, i + 1u, NULL);
+            }
+            break;
+        }
+    }
+
+    for (size_t k = 0u; k < spec->candidate_count; k++) {
+        release_candidate_contexts(spec, released_ctx, k);
     }
 
     rfc_scheduler_destroy(sched);

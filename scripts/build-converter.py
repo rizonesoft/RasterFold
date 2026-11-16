@@ -324,6 +324,20 @@ def build_target(target: str, clean: bool = False) -> Path:
         resolved_stamps[pid] = want_stamp
         print(f'built dep:{pid} {pkg["version"]}', flush=True)
 
+    # Generate build-captured provider provenance before configuring app CMake.
+    prov_dir = build_root / 'generated'
+    prov_hdr = prov_dir / 'rfc_build_provenance.h'
+    cc_for_engine = tools['llvm_bin'] / ('x86_64-w64-mingw32-clang' + ('.exe' if os.name == 'nt' else ''))
+    _run_checked([
+        sys.executable,
+        str(ROOT / 'scripts/gen_converter_provenance.py'),
+        '--target', target,
+        '--engine-cc', str(cc_for_engine),
+        '--engine-flags', '-std=c11 -O3 -DNDEBUG -march=x86-64-v2 -Wall -Wextra -Werror',
+        '--deps-build', str(deps_build_root),
+        '--out', str(prov_hdr),
+    ], env=env)
+
     # Configure and build converter/CMakeLists.txt -> bin/converter/<target>/rfc_bundle_smoke.exe
     out_exe = ROOT / 'bin/converter' / target / 'rfc_bundle_smoke.exe'
     if rebuilt_any and out_exe.is_file():
@@ -335,6 +349,7 @@ def build_target(target: str, clean: bool = False) -> Path:
         *common_args,
         f'-DRF_LIBRASTERFOLD={rf_lib.as_posix()}',
         f'-DRF_CONVERTER_BIN_DIR={(ROOT / "bin/converter" / target).as_posix()}',
+        f'-DRF_PROVENANCE_INCLUDE_DIR={prov_dir.as_posix()}',
     ]
     _run_checked(app_cfg, env=env)
     _run_checked([str(tools['cmake']), '--build', smoke_build.as_posix(), '--parallel'], env=env)

@@ -630,6 +630,7 @@ def _assert_reports_output(out_text, label):
         "reports: cancel_and_partial_iterations ok",
         "reports: provenance_and_mixed_configs ok",
         "reports: json_and_history_chain ok",
+        "reports: round1_audit_regressions ok",
         "reports: all checks passed",
     ]
     for marker in required:
@@ -661,6 +662,18 @@ def case_reports(all_targets=False):
             if not os.path.isfile(rf_lib):
                 return fail(f"missing {rf_lib}")
             cc = os.environ.get("CC", "cc")
+            prov_dir = os.path.join(tmp, "gen_prov")
+            prov_hdr = os.path.join(prov_dir, "rfc_build_provenance.h")
+            engine_flags = "-std=c11 -Wall -Wextra -Werror -pthread"
+            if run([
+                sys.executable,
+                os.path.join(ROOT, "scripts", "gen_converter_provenance.py"),
+                "--target", "linux-x64",
+                "--engine-cc", cc,
+                "--engine-flags", engine_flags,
+                "--out", prov_hdr,
+            ]):
+                return fail("gen_converter_provenance.py failed on host")
             host_exe = os.path.join(tmp, "test_reports")
             sources = [
                 os.path.join(src_dir, "registry.c"),
@@ -679,7 +692,8 @@ def case_reports(all_targets=False):
             ]
             cmd = [
                 cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-pthread",
-                "-I", inc, "-I", rf_inc,
+                "-DRFC_HAVE_GENERATED_PROVENANCE=1",
+                "-I", prov_dir, "-I", inc, "-I", rf_inc,
                 *sources, rf_lib, "-lm", "-pthread", "-o", host_exe,
             ]
             if run(cmd):

@@ -26,6 +26,7 @@ extern "C" {
 #define RFC_REPORT_NOTES_MAX 512u
 #define RFC_REPORT_RUN_ID_MAX 64u
 #define RFC_REPORT_UTC_MAX 32u
+#define RFC_HISTORY_MAX_BYTES (64u * 1024u * 1024u)
 
 typedef struct rfc_stage_timings {
     int valid;
@@ -108,12 +109,14 @@ typedef struct rfc_compare_candidate_result {
     rfc_job_stage failing_stage;
     int was_started;
     int has_produced_output;
+    int measurement_only;
     uint32_t rank;
     uint32_t warmup_completed;
     uint32_t measured_completed;
     rfc_stage_timings per_iter_timings[RFC_COMPARE_MAX_ITERATIONS];
     rfc_stage_timings min_timings;
     rfc_stage_timings median_timings;
+    uint64_t final_publish_ns;
     rfc_size_metrics size;
     rfc_verify_report verify_report;
     rfc_provider_build_config build_config;
@@ -179,6 +182,7 @@ typedef struct rfc_history_candidate_summary {
     rfc_status status;
     uint32_t rank;
     int has_produced_output;
+    int measurement_only;
     rfc_size_outcome size_outcome;
     uint64_t produced_file_bytes;
     int64_t signed_delta_bytes;
@@ -202,6 +206,7 @@ typedef struct rfc_history_entry_summary {
     uint32_t warmup_iterations;
     uint32_t measured_iterations;
     rfc_metadata_policy metadata_policy;
+    rfc_limits limits;
     int mixed_provider_configurations;
     uint32_t completed_count;
     uint32_t unsupported_count;
@@ -278,6 +283,12 @@ rfc_status rfc_report_default_provider_config(
     rfc_format_id fmt,
     rfc_provider_build_config *out_config);
 
+rfc_status rfc_report_register_provider_config(
+    rfc_format_id fmt,
+    const rfc_provider_build_config *config);
+
+void rfc_report_clear_provider_configs(void);
+
 rfc_status rfc_provider_build_config_validate(
     const rfc_provider_build_config *config);
 
@@ -308,7 +319,9 @@ void rfc_history_log_free(rfc_history_log *log);
 typedef enum rfc_compare_hook_phase {
     RFC_COMPARE_HOOK_BEFORE_CANDIDATE = 1,
     RFC_COMPARE_HOOK_WARMUP_ITER = 2,
-    RFC_COMPARE_HOOK_MEASURED_ITER = 3
+    RFC_COMPARE_HOOK_MEASURED_ITER = 3,
+    RFC_COMPARE_HOOK_BEFORE_FINAL_PUBLISH = 4,
+    RFC_COMPARE_HOOK_AFTER_FINAL_PUBLISH = 5
 } rfc_compare_hook_phase;
 
 void rfc_compare_set_hook_for_testing(
@@ -328,6 +341,8 @@ typedef enum rfc_history_fault_stage {
 
 void rfc_history_set_fault_for_testing(rfc_history_fault_stage stage,
                                        rfc_status status);
+
+void rfc_history_set_max_bytes_for_testing(size_t max_bytes);
 
 #ifdef __cplusplus
 }

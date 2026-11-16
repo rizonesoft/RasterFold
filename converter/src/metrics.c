@@ -280,6 +280,9 @@ static rfc_status verify_reader_against_export(
         if (st != RFC_OK) {
             return st;
         }
+        if (got > sizeof(chunk)) {
+            return RFC_ERR_IO;
+        }
         if (got == 0u) {
             break;
         }

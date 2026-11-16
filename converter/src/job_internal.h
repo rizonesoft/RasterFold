@@ -609,23 +609,49 @@ void rfc_sha256_init(rfc_sha256_ctx *ctx);
 void rfc_sha256_update(rfc_sha256_ctx *ctx, const void *data, size_t len);
 void rfc_sha256_final(rfc_sha256_ctx *ctx, uint8_t out_hash[32]);
 
+typedef rfc_status (*rfc_history_build_line_fn)(const uint8_t *existing,
+                                                size_t existing_len,
+                                                int exists,
+                                                void *cb_ctx,
+                                                char **out_line,
+                                                size_t *out_line_len);
+
 rfc_status rfc_output_internal_hash_regular_path(const char *path_utf8,
                                                  uint64_t *out_bytes,
                                                  uint8_t out_sha256[32]);
 rfc_status rfc_output_internal_read_regular_path(const char *path_utf8,
+                                                 size_t max_bytes,
                                                  uint8_t **out_bytes,
                                                  size_t *out_size,
                                                  int *out_exists);
-rfc_status rfc_output_internal_replace_regular_path(const char *path_utf8,
-                                                    const uint8_t *existing_bytes,
-                                                    size_t existing_len,
-                                                    const uint8_t *append_bytes,
-                                                    size_t append_len,
-                                                    int fault_stage,
-                                                    rfc_status fault_status);
+rfc_status rfc_output_internal_append_history_locked(
+    const char *path_utf8,
+    size_t max_file_bytes,
+    rfc_history_build_line_fn build_fn,
+    void *cb_ctx,
+    int fault_stage,
+    rfc_status fault_status);
+rfc_status rfc_output_internal_unlink_owned_path(
+    const char *path_utf8,
+    const rfc_file_identity *expected_id);
 rfc_status rfc_output_internal_unlink_path(const char *path_utf8);
+rfc_status rfc_output_internal_create_staging_subdir(const char *path_utf8,
+                                                     int parent_of_target,
+                                                     char out_dir[4096]);
+rfc_status rfc_output_internal_remove_staging_subdir(const char *dir_utf8);
+rfc_status rfc_output_internal_promote_staged_path(
+    const char *staged_path_utf8,
+    const char *dest_path_utf8,
+    const char *source_path_utf8,
+    const rfc_file_identity *source_id,
+    const rfc_file_identity *expected_staged_id);
 uint64_t rfc_output_internal_next_seq(void);
 void rfc_report_internal_finalize_configs(rfc_comparison_report *report);
+int rfc_report_internal_is_valid_utf8_bounded(const char *buf,
+                                              size_t cap,
+                                              int require_nonempty,
+                                              size_t *out_len);
+void rfc_report_internal_copy_utf8(char *dst, size_t cap, const char *src);
 uint64_t rfc_job_internal_raw_frame_bytes(const rfc_job *job);
 
 typedef struct rfc_job_exec_result {

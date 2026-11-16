@@ -759,7 +759,8 @@ class BundleTests(unittest.TestCase):
                 build_converter._run_checked = lambda cmd, cwd=None, env=None: cmds_called.append(cmd)
                 build_converter.build_target('windows-x64')
                 self.assertTrue(marker.is_file(), 'deps-build/qoi should survive cache hit')
-                self.assertEqual(len(cmds_called), 2, 'only app configure+build should run on dep cache hit')
+                self.assertEqual(len(cmds_called), 3, 'provenance generation + app configure+build should run on dep cache hit')
+                self.assertIn('gen_converter_provenance.py', ' '.join(cmds_called[0]))
             finally:
                 build_converter.ROOT = old_root
                 build_converter.host_tool_paths = old_htp

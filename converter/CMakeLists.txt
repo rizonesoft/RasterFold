@@ -77,10 +77,33 @@ set_target_properties(rfc_engine PROPERTIES
   C_STANDARD_REQUIRED ON
   C_EXTENSIONS OFF
 )
+if(NOT DEFINED RF_PROVENANCE_INCLUDE_DIR)
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  set(RF_PROVENANCE_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+  set(_rf_prov_target "linux-x64")
+  if(WIN32)
+    set(_rf_prov_target "windows-x64")
+  endif()
+  execute_process(
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/../scripts/gen_converter_provenance.py"
+            --target "${_rf_prov_target}"
+            --engine-cc "${CMAKE_C_COMPILER}"
+            --engine-flags "-std=c11 -O3 -DNDEBUG -march=x86-64-v2 -Wall -Wextra -Werror"
+            --out "${RF_PROVENANCE_INCLUDE_DIR}/rfc_build_provenance.h"
+    RESULT_VARIABLE _rf_prov_rc
+  )
+  if(NOT _rf_prov_rc EQUAL 0)
+    message(FATAL_ERROR "gen_converter_provenance.py failed")
+  endif()
+endif()
 target_include_directories(rfc_engine PUBLIC
   "${CMAKE_SOURCE_DIR}/include"
   "${CMAKE_SOURCE_DIR}/../include"
 )
+target_include_directories(rfc_engine PRIVATE
+  "${RF_PROVENANCE_INCLUDE_DIR}"
+)
+target_compile_definitions(rfc_engine PRIVATE RFC_HAVE_GENERATED_PROVENANCE=1)
 target_compile_options(rfc_engine PRIVATE -Wall -Wextra -Werror)
 if(NOT WIN32)
   find_package(Threads REQUIRED)

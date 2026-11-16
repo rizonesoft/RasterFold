@@ -84,7 +84,29 @@ def resolve_host_exe() -> Path:
     tmp = tempfile.TemporaryDirectory(prefix="rfc_rep_host_bin_")
     _TEMP_COMPILE_DIRS.append(tmp)
     exe = Path(tmp.name) / "test_reports"
+    prov_dir = Path(tmp.name) / "gen_prov"
+    prov_hdr = prov_dir / "rfc_build_provenance.h"
     cc = os.environ.get("CC", "cc")
+    engine_flags = "-std=c11 -Wall -Wextra -Werror -pthread"
+    prov_res = _ref.run_process_tree(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "gen_converter_provenance.py"),
+            "--target",
+            "linux-x64",
+            "--engine-cc",
+            cc,
+            "--engine-flags",
+            engine_flags,
+            "--out",
+            str(prov_hdr),
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        timeout=60.0,
+    )
+    if prov_res.returncode != 0:
+        raise RuntimeError(f"gen_converter_provenance failed:\n{prov_res.stdout}\n{prov_res.stderr}")
     src_dir = ROOT / "converter" / "src"
     sources = [
         src_dir / "registry.c",
@@ -108,6 +130,9 @@ def resolve_host_exe() -> Path:
         "-Wextra",
         "-Werror",
         "-pthread",
+        "-DRFC_HAVE_GENERATED_PROVENANCE=1",
+        "-I",
+        str(prov_dir),
         "-I",
         str(ROOT / "converter" / "include"),
         "-I",
@@ -152,6 +177,10 @@ def verify_history_jsonl_independently(raw: bytes, expected_count: int) -> list[
         assert obj["schema_version"] == 1
         assert obj["sequence"] == idx
         assert obj["prev_entry_sha256"] == prev_hex
+        assert "limits" in obj and isinstance(obj["limits"], dict)
+        assert obj["limits"]["max_width"] > 0
+        for hc in obj["candidates"]:
+            assert isinstance(hc["measurement_only"], bool)
         pos = line.rfind(marker)
         assert pos > 0 and line.endswith('"}')
         canonical = (line[:pos] + "}").encode("utf-8")
@@ -188,6 +217,8 @@ def assert_kodim_report(rep: dict, expected_req_threads: int) -> None:
     assert mc["warmup_iterations"] == 1
     assert mc["measured_iterations"] == 2
     assert mc["sequential_execution"] is True
+    assert "limits" in mc and isinstance(mc["limits"], dict)
+    assert mc["limits"]["max_width"] > 0
     assert rep["mixed_provider_configurations"] is True
     assert "simd_features" in rep["configuration_notes"]
 
@@ -200,11 +231,13 @@ def assert_kodim_report(rep: dict, expected_req_threads: int) -> None:
     assert fold_c["outcome"] == "completed"
     assert fold_c["rank"] == 1
     assert fold_c["has_produced_output"] is True
+    assert fold_c["measurement_only"] is False
     assert fold_c["size"]["outcome"] == "smaller"
     assert fold_c["size"]["produced_file_bytes"] < 556888
     assert fold_c["verification"]["status"] == "ok"
     assert fold_c["verification"]["exactness"] == "pixel-exact"
     assert fold_c["verification"]["decoder_provenance"] == "same-provider-fresh-session"
+    assert "final_publish_ns" in fold_c["timings_ns"]
     assert fold_c["timings_ns"]["median"]["valid"] is True
     assert fold_c["timings_ns"]["median"]["wall_ns"] >= (
         fold_c["timings_ns"]["median"]["import_ns"]
@@ -216,6 +249,7 @@ def assert_kodim_report(rep: dict, expected_req_threads: int) -> None:
     assert bmp_c["outcome"] == "completed"
     assert bmp_c["rank"] == 2
     assert bmp_c["has_produced_output"] is True
+    assert bmp_c["measurement_only"] is False
     assert bmp_c["size"]["outcome"] == "growth"
     assert bmp_c["size"]["produced_file_bytes"] == 1179702
     assert bmp_c["size"]["growth_bytes"] == 1179702 - 556888
@@ -224,14 +258,16 @@ def assert_kodim_report(rep: dict, expected_req_threads: int) -> None:
         assert unsup["outcome"] == "unsupported"
         assert unsup["rank"] == 0
         assert unsup["has_produced_output"] is False
+        assert unsup["measurement_only"] is False
         assert unsup["size"]["outcome"] == "not-applicable"
         assert unsup["size"]["produced_file_bytes"] == 0
 
 
 def expected_vendor_versions() -> dict[str, str]:
     vdoc = json.loads((ROOT / "converter" / "vendor.json").read_text(encoding="utf-8"))
+    rf_version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
     out = {
-        "rasterfold": "1.0",
+        "rasterfold": rf_version,
         "bmp": "builtin-c11",
         "pnm": "builtin-c11",
         "pam": "builtin-c11",
@@ -265,6 +301,7 @@ class TestHostReports(unittest.TestCase):
             "reports: cancel_and_partial_iterations ok",
             "reports: provenance_and_mixed_configs ok",
             "reports: json_and_history_chain ok",
+            "reports: round1_audit_regressions ok",
             "reports: all checks passed",
         ):
             self.assertIn(marker, res.stdout)
@@ -279,13 +316,19 @@ class TestHostReports(unittest.TestCase):
         self.assertEqual(res.returncode, 0, res.stderr)
         expected = expected_vendor_versions()
         seen = {}
+        rows = {}
         for line in res.stdout.strip().splitlines():
             parts = line.split("|")
             self.assertEqual(len(parts), 7, line)
             fmt, _prov, ver, comp, abi, simd, thr = parts
             self.assertTrue(all([ver, comp, abi, simd, thr]), line)
             seen[fmt] = ver
+            rows[fmt] = (comp, abi, simd, thr)
         self.assertEqual(seen, expected)
+        if os.name != "nt":
+            bjson = json.loads((ROOT / "bin" / "linux-x64" / "build.json").read_text(encoding="utf-8"))
+            self.assertEqual(rows["rasterfold"][0][:20], bjson["compiler"][:20])
+            self.assertEqual(rows["rasterfold"][1], "linux-x64")
 
     def test_kodim23_compare_threads_oracle_and_history(self) -> None:
         self.assertEqual(sha256_file(KODIM_PATH), KODIM_EXPECTED_SHA256)

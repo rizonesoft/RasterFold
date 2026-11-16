@@ -63,6 +63,8 @@ typedef struct rfc_export_report {
     int published;
     int temp_cleaned_up;
     uint8_t output_sha256[32];
+    rfc_file_identity output_identity;
+    int has_output_identity;
     char detail[RFC_JOB_DETAIL_MAX];
 } rfc_export_report;
 

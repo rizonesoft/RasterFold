@@ -31,6 +31,7 @@
 #include <windows.h>
 #else
 #include <dirent.h>
+#include <pthread.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #endif
@@ -2346,6 +2347,10 @@ static void test_provenance_and_mixed_configs(void) {
     rfc_comparison_report rep;
     CHECK(rfc_compare_run(&sp, &rep) == RFC_OK);
     CHECK(rep.completed_count == 2u && rep.failed_count == 1u);
+    CHECK(rep.candidates[0].measurement_only == 1 &&
+          rep.candidates[0].has_produced_output == 0);
+    CHECK(rep.candidates[1].measurement_only == 1 &&
+          rep.candidates[1].has_produced_output == 0);
     CHECK(rep.candidates[2].outcome == RFC_CANDIDATE_FAILED &&
           rep.candidates[2].status == RFC_ERR_INVALID_ARGUMENT &&
           rep.candidates[2].rank == 0u);
@@ -2354,12 +2359,19 @@ static void test_provenance_and_mixed_configs(void) {
     CHECK(strstr(rep.configuration_notes, "simd_features") != NULL);
     CHECK(rfc_report_validate(&rep) == RFC_OK);
 
-    /* Ensure rfc_report_validate rejects tampered mixed=0 or cleared provenance */
+    /* Ensure rfc_report_validate rejects tampered mixed=0, cleared provenance,
+     * or inconsistent measurement_only/has_produced_output combinations. */
     rfc_comparison_report bad = rep;
     bad.mixed_provider_configurations = 0;
     CHECK(rfc_report_validate(&bad) == RFC_ERR_INVALID_ARGUMENT);
     bad = rep;
     bad.candidates[0].build_config.simd_features[0] = '\0';
+    CHECK(rfc_report_validate(&bad) == RFC_ERR_INVALID_ARGUMENT);
+    bad = rep;
+    bad.candidates[0].has_produced_output = 1;
+    CHECK(rfc_report_validate(&bad) == RFC_ERR_INVALID_ARGUMENT);
+    bad = rep;
+    bad.candidates[0].measurement_only = 0;
     CHECK(rfc_report_validate(&bad) == RFC_ERR_INVALID_ARGUMENT);
 
     rm_tree(tmp);
@@ -2532,6 +2544,510 @@ static void test_json_and_history_chain(void) {
 }
 
 /* ----------------------------------------------------------------
+ * Test 7: Round 1 audit regression suite (all 14 findings)
+ * ---------------------------------------------------------------- */
+
+typedef struct r1_conc_arg {
+    const char *hist_path;
+    const rfc_comparison_report *tmpl_rep;
+    int tid;
+    int count;
+    rfc_status fail_st;
+} r1_conc_arg;
+
+static void r1_conc_run(r1_conc_arg *arg) {
+    arg->fail_st = RFC_OK;
+    rfc_comparison_report *r =
+        (rfc_comparison_report *)calloc(1u, sizeof(*r));
+    if (!r) {
+        arg->fail_st = RFC_ERR_OUT_OF_MEMORY;
+        return;
+    }
+    for (int j = 0; j < arg->count; j++) {
+        *r = *arg->tmpl_rep;
+        snprintf(r->run_id, sizeof(r->run_id), "conc-t%d-%d", arg->tid, j);
+        rfc_status st = rfc_history_append_path(arg->hist_path, r);
+        if (st != RFC_OK) {
+            arg->fail_st = st;
+            free(r);
+            return;
+        }
+    }
+    free(r);
+}
+
+#ifdef _WIN32
+static DWORD WINAPI r1_conc_win_thread(LPVOID p) {
+    r1_conc_run((r1_conc_arg *)p);
+    return 0u;
+}
+#else
+static void *r1_conc_posix_thread(void *p) {
+    r1_conc_run((r1_conc_arg *)p);
+    return NULL;
+}
+#endif
+
+typedef struct r1_overread_rdr_ctx {
+    int closed;
+} r1_overread_rdr_ctx;
+
+static rfc_status r1_overread_size(void *raw, int *known, uint64_t *sz) {
+    (void)raw;
+    *known = 1;
+    *sz = 70000u;
+    return RFC_OK;
+}
+
+static rfc_status r1_overread_seek(void *raw, uint64_t off) {
+    (void)raw;
+    (void)off;
+    return RFC_OK;
+}
+
+static rfc_status r1_overread_read(void *raw,
+                                   uint8_t *buf,
+                                   size_t max_bytes,
+                                   size_t *out_read) {
+    (void)raw;
+    (void)buf;
+    (void)max_bytes;
+    *out_read = 65537u;
+    return RFC_OK;
+}
+
+static void r1_overread_close(void *raw) {
+    r1_overread_rdr_ctx *rc = (r1_overread_rdr_ctx *)raw;
+    rc->closed++;
+}
+
+static rfc_status r1_overread_open_reader(void *raw_ctx,
+                                          rfc_job_id jid,
+                                          uint64_t attempt,
+                                          rfc_io_reader *out_rdr) {
+    (void)jid;
+    (void)attempt;
+    memset(out_rdr, 0, sizeof(*out_rdr));
+    out_rdr->ctx = raw_ctx;
+    out_rdr->size_fn = r1_overread_size;
+    out_rdr->seek_fn = r1_overread_seek;
+    out_rdr->read_fn = r1_overread_read;
+    out_rdr->close_fn = r1_overread_close;
+    return RFC_OK;
+}
+
+typedef struct r1_ctx_tracker {
+    uint32_t magic;
+    int encode_calls;
+    int destroy_calls;
+} r1_ctx_tracker;
+
+static rfc_status r1_tracked_encode(rfc_job *job,
+                                    const rfc_exec_context *exec,
+                                    void *raw_ctx) {
+    r1_ctx_tracker *t = (r1_ctx_tracker *)raw_ctx;
+    CHECK(t != NULL && t->magic == 0xC0DEC123u && t->destroy_calls == 0);
+    t->encode_calls++;
+    size_t fcnt = 0u;
+    const rfc_metadata *fmeta = NULL;
+    const rfc_frame *frames = rfc_job_decoded_frames(job, &fcnt, &fmeta);
+    CHECK(frames != NULL && fcnt == 1u);
+    rfc_encoded enc;
+    memset(&enc, 0, sizeof(enc));
+    rfc_status st =
+        bmp_sess_encode(NULL, exec, frames, fcnt, fmeta, NULL, 0u, &enc);
+    if (st != RFC_OK) {
+        return st;
+    }
+    return rfc_job_set_encoded_output(job, &enc);
+}
+
+static void r1_destroy_ctx(void *raw_ctx) {
+    r1_ctx_tracker *t = (r1_ctx_tracker *)raw_ctx;
+    CHECK(t != NULL && t->magic == 0xC0DEC123u);
+    t->destroy_calls++;
+}
+
+typedef struct r1_cancel_hook_state {
+    rfc_compare_token *tok;
+    rfc_compare_hook_phase target_phase;
+    size_t target_cand;
+} r1_cancel_hook_state;
+
+static void r1_cancel_hook_cb(rfc_compare_hook_phase phase,
+                              size_t cand_idx,
+                              uint32_t iter_idx,
+                              rfc_compare_token *tok,
+                              void *user) {
+    (void)iter_idx;
+    r1_cancel_hook_state *st = (r1_cancel_hook_state *)user;
+    if (st && phase == st->target_phase && cand_idx == st->target_cand && tok) {
+        rfc_compare_cancel(tok);
+    }
+}
+
+typedef struct r1_count_pub_ctx {
+    cb_pub_ctx base;
+    int commit_count;
+} r1_count_pub_ctx;
+
+static rfc_status r1_cnt_commit(void *raw_ctx, void *raw_sh, int *out_cleaned) {
+    r1_count_pub_ctx *cp = (r1_count_pub_ctx *)raw_ctx;
+    cp->commit_count++;
+    return cb_pub_commit(&cp->base, raw_sh, out_cleaned);
+}
+
+static void test_round1_audit_regressions(void) {
+    uint8_t *png = NULL;
+    size_t plen = 0u;
+    make_test_png_rgb(32u, 32u, 42u, &png, &plen);
+
+    char tmp[1024];
+    make_temp_dir(tmp, sizeof(tmp), "r1audit");
+
+    /* #1 + #11: colliding pre-existing file survives failed submit; staging-only
+     * completes as measurement_only=1 with has_produced_output=0 & no leftover dirs */
+    char collide[1024];
+    join_path(collide, sizeof(collide), tmp, "existing.fold");
+    const uint8_t sentinel[] = "SENTINEL-KEEP-BYTES";
+    write_file_all(collide, sentinel, sizeof(sentinel));
+
+    rfc_compare_candidate_spec c1[2];
+    memset(c1, 0, sizeof(c1));
+    c1[0].target_format = RFC_FORMAT_RASTERFOLD;
+    c1[0].dest_path_utf8 = collide;
+    c1[1].target_format = RFC_FORMAT_BMP; /* staging-only */
+
+    rfc_limits custom_lim;
+    rfc_limits_default(&custom_lim);
+    custom_lim.max_width = 4096u;
+
+    rfc_compare_spec sp1;
+    memset(&sp1, 0, sizeof(sp1));
+    sp1.source_bytes = png;
+    sp1.source_size = plen;
+    sp1.source_format = RFC_FORMAT_PNG;
+    sp1.staging_dir_utf8 = tmp;
+    sp1.requested_threads = 1u;
+    sp1.limits = &custom_lim;
+    sp1.warmup_iterations = 0u;
+    sp1.measured_iterations = 1u;
+    sp1.candidates = c1;
+    sp1.candidate_count = 2u;
+    sp1.run_id = "r1-u-\xC3\xA9-\xE2\x82\xAC-\xF0\x9F\x98\x80";
+    sp1.recorded_utc = "2026-11-16T06:00:00Z";
+
+    rfc_comparison_report *rep1_p =
+        (rfc_comparison_report *)calloc(1u, sizeof(*rep1_p));
+    rfc_comparison_report *rep_bad_p =
+        (rfc_comparison_report *)calloc(1u, sizeof(*rep_bad_p));
+    CHECK(rep1_p != NULL && rep_bad_p != NULL);
+    #define rep1 (*rep1_p)
+    #define rep_bad (*rep_bad_p)
+
+    CHECK(rfc_compare_run(&sp1, &rep1) == RFC_OK);
+    CHECK(rep1.candidates[0].outcome == RFC_CANDIDATE_FAILED &&
+          rep1.candidates[0].status == RFC_ERR_DESTINATION_EXISTS &&
+          !rep1.candidates[0].has_produced_output);
+    uint8_t *got_col = NULL;
+    size_t got_col_len = 0u;
+    read_file_all(collide, &got_col, &got_col_len);
+    CHECK(got_col_len == sizeof(sentinel) &&
+          memcmp(got_col, sentinel, sizeof(sentinel)) == 0);
+    free(got_col);
+
+    CHECK(rep1.candidates[1].outcome == RFC_CANDIDATE_COMPLETED &&
+          rep1.candidates[1].measurement_only == 1 &&
+          rep1.candidates[1].has_produced_output == 0 &&
+          rep1.candidates[1].rank == 1u);
+    CHECK(rep1.limits.max_width == 4096u);
+    CHECK(!dir_has_prefix(tmp, ".rfc-cmp-stage."));
+    CHECK(!dir_has_prefix(tmp, ".rfc-cmp."));
+
+    /* #13: limits & measurement_only preserved in JSON and JSONL history */
+    char *json1 = NULL;
+    size_t json1_len = 0u;
+    CHECK(rfc_report_format_json(&rep1, &json1, &json1_len) == RFC_OK);
+    CHECK(strstr(json1, "\"limits\":{\"max_width\":4096") != NULL);
+    CHECK(strstr(json1, "\"measurement_only\":true") != NULL);
+    CHECK(strstr(json1, "\"final_publish_ns\":") != NULL);
+    rfc_report_free(json1);
+
+    char lim_hist[1024];
+    join_path(lim_hist, sizeof(lim_hist), tmp, "lim.jsonl");
+    CHECK(rfc_history_append_path(lim_hist, &rep1) == RFC_OK);
+    rfc_history_log llog;
+    CHECK(rfc_history_read_path(lim_hist, &llog) == RFC_OK);
+    CHECK(llog.entry_count == 1u && llog.entries[0].limits.max_width == 4096u);
+    CHECK(llog.entries[0].candidates[1].measurement_only == 1 &&
+          llog.entries[0].candidates[1].has_produced_output == 0);
+    rfc_history_log_free(&llog);
+
+    /* #8: bounded history max bytes shared between append and read */
+    uint8_t *lh_bytes = NULL;
+    size_t lh_len = 0u;
+    read_file_all(lim_hist, &lh_bytes, &lh_len);
+    rfc_history_set_max_bytes_for_testing(lh_len + 32u);
+    CHECK(rfc_history_append_path(lim_hist, &rep1) == RFC_ERR_LIMIT_EXCEEDED);
+    CHECK(rfc_history_read_path(lim_hist, &llog) == RFC_OK);
+    CHECK(llog.entry_count == 1u);
+    rfc_history_log_free(&llog);
+    uint8_t *lh_after = NULL;
+    size_t lh_after_len = 0u;
+    read_file_all(lim_hist, &lh_after, &lh_after_len);
+    CHECK(lh_after_len == lh_len && memcmp(lh_after, lh_bytes, lh_len) == 0);
+    free(lh_after);
+    if (lh_len > 1u) {
+        rfc_history_set_max_bytes_for_testing(lh_len - 1u);
+        CHECK(rfc_history_read_path(lim_hist, &llog) == RFC_ERR_LIMIT_EXCEEDED);
+    }
+    rfc_history_set_max_bytes_for_testing(0u);
+    free(lh_bytes);
+
+    /* #2: concurrent multi-thread rfc_history_append_path (4 threads x 4 entries) */
+    char conc_hist[1024];
+    join_path(conc_hist, sizeof(conc_hist), tmp, "concurrent.jsonl");
+    r1_conc_arg targs[4];
+    for (int t = 0; t < 4; t++) {
+        targs[t].hist_path = conc_hist;
+        targs[t].tmpl_rep = &rep1;
+        targs[t].tid = t;
+        targs[t].count = 4;
+        targs[t].fail_st = RFC_OK;
+    }
+#ifdef _WIN32
+    HANDLE ths[4];
+    for (int t = 0; t < 4; t++) {
+        ths[t] = CreateThread(NULL, 0u, r1_conc_win_thread, &targs[t], 0u, NULL);
+        CHECK(ths[t] != NULL);
+    }
+    CHECK(WaitForMultipleObjects(4u, ths, TRUE, 30000u) == WAIT_OBJECT_0);
+    for (int t = 0; t < 4; t++) {
+        CloseHandle(ths[t]);
+        CHECK(targs[t].fail_st == RFC_OK);
+    }
+#else
+    pthread_t ths[4];
+    for (int t = 0; t < 4; t++) {
+        CHECK(pthread_create(&ths[t], NULL, r1_conc_posix_thread, &targs[t]) ==
+              0);
+    }
+    for (int t = 0; t < 4; t++) {
+        CHECK(pthread_join(ths[t], NULL) == 0);
+        CHECK(targs[t].fail_st == RFC_OK);
+    }
+#endif
+    rfc_history_log clog;
+    CHECK(rfc_history_read_path(conc_hist, &clog) == RFC_OK);
+    CHECK(clog.entry_count == 16u);
+    for (size_t e = 0u; e < clog.entry_count; e++) {
+        CHECK(clog.entries[e].sequence == (uint64_t)(e + 1u));
+    }
+    rfc_history_log_free(&clog);
+    CHECK(!dir_has_prefix(tmp, ".rfc-hist-tmp."));
+
+    /* #3: non-existent regular path safely fails without side effects */
+    char no_hist[1024];
+    join_path(no_hist, sizeof(no_hist), tmp, "does_not_exist.jsonl");
+    CHECK(rfc_history_read_path(no_hist, &llog) == RFC_ERR_IO);
+
+    /* #4: callback reader returning got > sizeof(chunk) (65537) fails cleanly */
+    r1_overread_rdr_ctx or_ctx = {0};
+    rfc_io_publisher or_pub;
+    memset(&or_pub, 0, sizeof(or_pub));
+    or_pub.ctx = &or_ctx;
+    or_pub.open_published_reader = r1_overread_open_reader;
+    rfc_export_report or_rep;
+    memset(&or_rep, 0, sizeof(or_rep));
+    or_rep.valid = 1;
+    or_rep.published = 1;
+    or_rep.status = RFC_OK;
+    or_rep.bytes_written = 70000u;
+    rfc_size_metrics or_sm;
+    CHECK(rfc_metrics_verify_produced_callback(&or_pub, 1u, 1u, 100u, 300u,
+                                               rep1.source_sha256, 1, &or_rep,
+                                               &or_sm) == RFC_ERR_IO);
+    CHECK(or_ctx.closed == 1);
+
+    /* #5: unterminated fixed char[] buffers rejected by validate and format */
+    rfc_provider_build_config cfg_bad;
+    CHECK(rfc_report_default_provider_config(RFC_FORMAT_BMP, &cfg_bad) ==
+          RFC_OK);
+    memset(cfg_bad.provider_name, 'A', sizeof(cfg_bad.provider_name));
+    CHECK(rfc_provider_build_config_validate(&cfg_bad) ==
+          RFC_ERR_INVALID_ARGUMENT);
+    rep_bad = rep1;
+    memset(rep_bad.candidates[0].detail, 'Z',
+           sizeof(rep_bad.candidates[0].detail));
+    CHECK(rfc_report_validate(&rep_bad) == RFC_ERR_INVALID_ARGUMENT);
+    CHECK(rfc_report_format_json(&rep_bad, &json1, &json1_len) ==
+          RFC_ERR_INVALID_ARGUMENT);
+
+    /* #6: nonzero setting_count with NULL settings rejected */
+    rfc_compare_candidate_spec c6;
+    memset(&c6, 0, sizeof(c6));
+    c6.target_format = RFC_FORMAT_BMP;
+    c6.setting_count = 1u;
+    c6.settings = NULL;
+    rfc_compare_spec sp6 = sp1;
+    sp6.candidates = &c6;
+    sp6.candidate_count = 1u;
+    sp6.limits = NULL;
+    sp6.run_id = "r1-null-settings";
+    CHECK(rfc_compare_run(&sp6, &rep_bad) == RFC_ERR_INVALID_ARGUMENT);
+
+    rfc_setting_value bad_sv = {"k", NULL};
+    c6.settings = &bad_sv;
+    CHECK(rfc_compare_run(&sp6, &rep_bad) == RFC_ERR_INVALID_ARGUMENT);
+
+    /* #9: invalid UTF-8 and over-capacity run_id rejected; boundary truncation keeps valid UTF-8 */
+    sp6 = sp1;
+    sp6.candidates = &c1[1];
+    sp6.candidate_count = 1u;
+    sp6.limits = NULL;
+    sp6.run_id = "bad-\xFF-utf8";
+    CHECK(rfc_compare_run(&sp6, &rep_bad) == RFC_ERR_INVALID_ARGUMENT);
+    sp6.run_id =
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "\xC3\xA9"; /* 63 ASCII + 2-byte UTF-8 = 65 bytes >= 64 */
+    CHECK(rfc_compare_run(&sp6, &rep_bad) == RFC_ERR_INVALID_ARGUMENT);
+    rep_bad = rep1;
+    memcpy(rep_bad.run_id, "abc\xE2\x82", 6u);
+    CHECK(rfc_report_validate(&rep_bad) == RFC_ERR_INVALID_ARGUMENT);
+
+    /* #7 + #14: single-ownership user_ctx/release_ctx + homogeneous callback sink */
+    r1_count_pub_ctx cpub;
+    memset(&cpub, 0, sizeof(cpub));
+    rfc_io_publisher pub14 = make_cb_pub(&cpub.base, 1);
+    pub14.ctx = &cpub;
+    pub14.commit_stage = r1_cnt_commit;
+
+    r1_ctx_tracker tracker = {0xC0DEC123u, 0, 0};
+    rfc_compare_candidate_spec c7;
+    memset(&c7, 0, sizeof(c7));
+    c7.target_format = RFC_FORMAT_BMP;
+    c7.publisher = &pub14;
+    c7.user_ctx = &tracker;
+    c7.has_stage_ops = 1;
+    c7.stage_ops.on_encode = r1_tracked_encode;
+    c7.stage_ops.destroy_user_ctx = r1_destroy_ctx;
+
+    rfc_compare_spec sp7 = sp1;
+    sp7.candidates = &c7;
+    sp7.candidate_count = 1u;
+    sp7.limits = NULL;
+    sp7.warmup_iterations = 1u;
+    sp7.measured_iterations = 3u;
+    sp7.run_id = "r1-single-owner-cb";
+    rfc_comparison_report *rep7 = &rep_bad;
+    CHECK(rfc_compare_run(&sp7, rep7) == RFC_OK);
+    CHECK(rep7->candidates[0].outcome == RFC_CANDIDATE_COMPLETED);
+    CHECK(tracker.encode_calls == 4 && tracker.destroy_calls == 1);
+    CHECK(cpub.commit_count == 1 && cpub.base.release_called_count == 1 &&
+          cpub.base.closed_before_release == 1);
+    CHECK(rep7->candidates[0].measured_completed == 3u);
+    for (uint32_t m = 0u; m < 3u; m++) {
+        CHECK(rep7->candidates[0].per_iter_timings[m].valid == 1);
+    }
+    free(cpub.base.stored);
+
+    /* #10a: cancel at BEFORE_FINAL_PUBLISH produces zero destination file */
+    char pre_dest[1024];
+    join_path(pre_dest, sizeof(pre_dest), tmp, "pre_cancel.bmp");
+    rfc_compare_candidate_spec c10;
+    memset(&c10, 0, sizeof(c10));
+    c10.target_format = RFC_FORMAT_BMP;
+    c10.dest_path_utf8 = pre_dest;
+    rfc_compare_token *tok10a = NULL;
+    CHECK(rfc_compare_token_create(&tok10a) == RFC_OK);
+    r1_cancel_hook_state h10a = {tok10a, RFC_COMPARE_HOOK_BEFORE_FINAL_PUBLISH,
+                                 0u};
+    rfc_compare_set_hook_for_testing(r1_cancel_hook_cb, &h10a);
+    rfc_compare_spec sp10 = sp1;
+    sp10.candidates = &c10;
+    sp10.candidate_count = 1u;
+    sp10.limits = NULL;
+    sp10.cancel_token = tok10a;
+    sp10.run_id = "r1-before-final";
+    rfc_comparison_report *rep10a = &rep_bad;
+    CHECK(rfc_compare_run(&sp10, rep10a) == RFC_ERR_CANCELLED);
+    rfc_compare_set_hook_for_testing(NULL, NULL);
+    rfc_compare_token_destroy(tok10a);
+    CHECK(rep10a->candidates[0].outcome == RFC_CANDIDATE_CANCELLED &&
+          rep10a->candidates[0].has_produced_output == 0 &&
+          !file_exists_utf8(pre_dest));
+    CHECK(!dir_has_prefix(tmp, ".rfc-cmp-stage."));
+
+    /* #10b: cancel at AFTER_FINAL_PUBLISH preserves completed cand 0 & output */
+    char post0[1024], post1[1024];
+    join_path(post0, sizeof(post0), tmp, "post0.bmp");
+    join_path(post1, sizeof(post1), tmp, "post1.fold");
+    rfc_compare_candidate_spec c10b[2];
+    memset(c10b, 0, sizeof(c10b));
+    c10b[0].target_format = RFC_FORMAT_BMP;
+    c10b[0].dest_path_utf8 = post0;
+    c10b[1].target_format = RFC_FORMAT_RASTERFOLD;
+    c10b[1].dest_path_utf8 = post1;
+    rfc_compare_token *tok10b = NULL;
+    CHECK(rfc_compare_token_create(&tok10b) == RFC_OK);
+    r1_cancel_hook_state h10b = {tok10b, RFC_COMPARE_HOOK_AFTER_FINAL_PUBLISH,
+                                 0u};
+    rfc_compare_set_hook_for_testing(r1_cancel_hook_cb, &h10b);
+    sp10.candidates = c10b;
+    sp10.candidate_count = 2u;
+    sp10.cancel_token = tok10b;
+    sp10.run_id = "r1-after-final";
+    rfc_comparison_report *rep10b = &rep_bad;
+    CHECK(rfc_compare_run(&sp10, rep10b) == RFC_ERR_CANCELLED);
+    rfc_compare_set_hook_for_testing(NULL, NULL);
+    rfc_compare_token_destroy(tok10b);
+    CHECK(rep10b->cancelled == 1 && rep10b->ranking_complete == 0 &&
+          rep10b->completed_count == 1u && rep10b->cancelled_count == 1u);
+    CHECK(rep10b->candidates[0].outcome == RFC_CANDIDATE_COMPLETED &&
+          rep10b->candidates[0].has_produced_output == 1 &&
+          rep10b->candidates[0].rank == 0u && file_exists_utf8(post0));
+    CHECK(rep10b->candidates[1].outcome == RFC_CANDIDATE_CANCELLED &&
+          rep10b->candidates[1].was_started == 0 &&
+          !file_exists_utf8(post1));
+    CHECK(rfc_report_validate(rep10b) == RFC_OK);
+    char *json10b = NULL;
+    size_t json10b_len = 0u;
+    CHECK(rfc_report_format_json(rep10b, &json10b, &json10b_len) == RFC_OK);
+    rfc_report_free(json10b);
+
+    #undef rep1
+    #undef rep_bad
+    free(rep1_p);
+    free(rep_bad_p);
+
+    /* #12: generated rasterfold provenance + runtime override register/clear */
+    rfc_provider_build_config rf_cfg;
+    CHECK(rfc_report_default_provider_config(RFC_FORMAT_RASTERFOLD, &rf_cfg) ==
+          RFC_OK);
+#ifdef RFC_HAVE_GENERATED_PROVENANCE
+    CHECK(strcmp(rf_cfg.codec_version, "1.0") != 0);
+    CHECK(rf_cfg.codec_version[0] != '\0');
+#endif
+    rfc_provider_build_config custom_cfg = rf_cfg;
+    snprintf(custom_cfg.compiler_id, sizeof(custom_cfg.compiler_id),
+             "override-cc 9.9.9");
+    CHECK(rfc_report_register_provider_config(RFC_FORMAT_RASTERFOLD,
+                                              &custom_cfg) == RFC_OK);
+    rfc_provider_build_config got_cfg;
+    CHECK(rfc_report_default_provider_config(RFC_FORMAT_RASTERFOLD, &got_cfg) ==
+          RFC_OK);
+    CHECK(strcmp(got_cfg.compiler_id, "override-cc 9.9.9") == 0);
+    rfc_report_clear_provider_configs();
+    CHECK(rfc_report_default_provider_config(RFC_FORMAT_RASTERFOLD, &got_cfg) ==
+          RFC_OK);
+    CHECK(strcmp(got_cfg.compiler_id, rf_cfg.compiler_id) == 0);
+
+    rm_tree(tmp);
+    free(png);
+    printf("reports: round1_audit_regressions ok\n");
+}
+
+/* ----------------------------------------------------------------
  * CLI subcommands invoked by test_reports.py
  * ---------------------------------------------------------------- */
 
@@ -2636,6 +3152,7 @@ int main(int argc, char **argv) {
         test_cancel_and_partial_iterations();
         test_provenance_and_mixed_configs();
         test_json_and_history_chain();
+        test_round1_audit_regressions();
         printf("reports: all checks passed\n");
     } else if (strcmp(argv[1], "compare-kodim") == 0) {
         rc = cmd_compare_kodim(argc, argv);

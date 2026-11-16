@@ -1804,12 +1804,12 @@
       }
     },
     "docs/converter-building.md": {
-      "evidence": "Re-read 2026-11-15 lines 1-47 after fixing embedded_components host version notes in converter/vendor.json",
+      "evidence": "Re-read 2026-11-16 lines 1-47 after adding scripts/gen_converter_provenance.py step and -DRF_PROVENANCE_INCLUDE_DIR in scripts/build-converter.py; updated step 2 and verified provenance build on host and windows-x64",
       "sources": {
-        "docs/converter-building.md": "562ed4860d60e5715f2b5c9f2787003a186ea8668be0891bcafd165494a7786a",
+        "docs/converter-building.md": "7650a709e4484980d20dd478619f2223606d65f5c09efd7715969675adad449e",
         "converter/vendor.json": "6fcb20746cf1bace959beddaaaabef438b173ca950db8d8c70527164e797fed6",
         "toolchain.json": "eb53e29ed47b6ae570e705e7c48dca3e5fc922f6213d892c084e00489785d75d",
-        "scripts/build-converter.py": "37329cdee8711337e87841f55fdbfcbf4a43a64b2e82c5e05799d93476c3ed0e",
+        "scripts/build-converter.py": "38f38e532254ac856562b08bd5a0d4eb3dd9bdb31e7449377336e1454debd7f8",
         "tools/bootstrap.py": "640e322f62d2b5d8dd67352b47fa24d282fe406aa03d46834bb2eb3d5d1b7344",
         "tools/bootstrap.ps1": "3e4f1857bef09097d43062f5822c55fc3657f1d1cd991ebde9faf04e245fb17c",
         "tools/provision.py": "66f602f6963767cd939e9fc4de56d3bf632997514d3ddc0c8ab552351ecfbe2e",
