@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **135 of 264 sections complete (51%).** 264 sections (32 discovered); backlog 0 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **135 of 265 sections complete (51%).** 265 sections (33 discovered); backlog 0 entries. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -358,16 +358,17 @@ The native converter, its user guide, the whole-product documentation acceptance
 
 Milestone 11's work is authored one milestone ahead by its planning section, from milestone 10's measured results; the gate measures the target and the no-regression rule.
 
-|  ✔  | Section      | Deliverable                                                   | Needs        | Items |
-| :-: | ------------ | ------------------------------------------------------------- | ------------ | :---: |
-| [ ] | `D05 T02 §1` | Plan milestone 11: SIMD decisions                             | none         |   5   |
-| [ ] | `D00 T06 §1` | Separate stderr assertion for legacy-encoding stream setup    | none         |   2   |
-| [ ] | `D06 T02 §1` | Stderr diagnostics and fixtures for example host-I/O failures | none         |   3   |
-| [ ] | `D07 T02 §1` | Report development revision in standalone CLI version output  | none         |   2   |
-| [ ] | `D02 T04 §1` | Finer-grained CM cap-abort check for small caps               | none         |   3   |
-| [x] | `D02 T01 §3` | An AVX2 build, measured before dispatching                    | idle-machine |   3   |
-| [x] | `D02 T02 §2` | The speed of an int16 SIMD mixer                              | idle-machine |   4   |
-| [ ] | `D05 T02 §2` | Milestone 11 gate: SIMD decisions                             | idle-machine |   4   |
+|  ✔  | Section      | Deliverable                                                            | Needs        | Items |
+| :-: | ------------ | ---------------------------------------------------------------------- | ------------ | :---: |
+| [ ] | `D05 T02 §1` | Plan milestone 11: SIMD decisions                                      | none         |   5   |
+| [ ] | `D00 T06 §1` | Separate stderr assertion for legacy-encoding stream setup             | none         |   2   |
+| [ ] | `D08 T05 §1` | Exempt ignored build-dir mtime drift during read-only generator checks | none         |   3   |
+| [ ] | `D06 T02 §1` | Stderr diagnostics and fixtures for example host-I/O failures          | none         |   3   |
+| [ ] | `D07 T02 §1` | Report development revision in standalone CLI version output           | none         |   2   |
+| [ ] | `D02 T04 §1` | Finer-grained CM cap-abort check for small caps                        | none         |   3   |
+| [x] | `D02 T01 §3` | An AVX2 build, measured before dispatching                             | idle-machine |   3   |
+| [x] | `D02 T02 §2` | The speed of an int16 SIMD mixer                                       | idle-machine |   4   |
+| [ ] | `D05 T02 §2` | Milestone 11 gate: SIMD decisions                                      | idle-machine |   4   |
 
 ### Phase 12 -- Milestone 12: Two-layer mixing
 

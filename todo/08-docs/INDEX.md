@@ -1,6 +1,6 @@
 # 08 Docs
 
-> **Phases 0 and 9**
+> **Phases 0, 9 and 11**
 
 The HTML documentation site with its comparison charts, and the gates that keep every document, README, and supporting file true to the code and the data.
 
@@ -10,6 +10,7 @@ The HTML documentation site with its comparison charts, and the gates that keep 
 | ---- | ----- | :----: |
 | [TODO-01](./TODO-01-html-docs.md) | HTML Documentation with Comparison Charts | draft |
 | [TODO-03](./TODO-03-references.md) | Generated Command-Line and API References | draft |
+| [TODO-05](./TODO-05-drift-watched-build-dir.md) | Drift Gate Watched-Paths Exclusion for Ignored Build Directory | draft |
 
 ## Completed
 
