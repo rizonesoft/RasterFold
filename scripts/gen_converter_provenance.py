@@ -318,8 +318,49 @@ def _is_noise_define(tok: str) -> bool:
     )
 
 
+def _resolve_input_path(arg: str, search_dirs: tuple[Path, ...]) -> Path:
+    p = Path(arg)
+    if p.is_absolute():
+        return p
+    for base in search_dirs:
+        cand = base / p
+        if cand.is_file():
+            return cand
+    return p
+
+
+def _extract_token_search_dirs(
+    flags_tokens: list[str], compile_dir: Path | None
+) -> tuple[Path, ...]:
+    dirs: list[Path] = []
+    prefixes = ("-iquote", "-isystem", "-I", "-idirafter")
+    i = 0
+    while i < len(flags_tokens):
+        tok = flags_tokens[i]
+        raw_dir = ""
+        if tok in prefixes and i + 1 < len(flags_tokens):
+            raw_dir = flags_tokens[i + 1]
+            i += 2
+        else:
+            for pfx in prefixes:
+                if tok.startswith(pfx) and len(tok) > len(pfx):
+                    raw_dir = tok[len(pfx):]
+                    break
+            i += 1
+        if raw_dir:
+            dp = Path(raw_dir)
+            if not dp.is_absolute() and compile_dir is not None:
+                dp = compile_dir / dp
+            if dp not in dirs:
+                dirs.append(dp)
+    return tuple(dirs)
+
+
 def _sanitize_forced_include_token(
-    opt: str, arg: str, include_fingerprint: bool
+    opt: str,
+    arg: str,
+    include_fingerprint: bool,
+    search_dirs: tuple[Path, ...] = (),
 ) -> str:
     p = Path(arg)
     name = p.name or arg
@@ -327,14 +368,12 @@ def _sanitize_forced_include_token(
     if not include_fingerprint:
         return f"{opt}{sep}{name}"
     arg_sha = hashlib.sha256(arg.encode("utf-8", errors="replace")).hexdigest()[:16]
-    try:
-        content_sha = (
-            hashlib.sha256(p.read_bytes()).hexdigest()[:16]
-            if p.is_file()
-            else "absent"
-        )
-    except OSError:
-        content_sha = "absent"
+    resolved = _resolve_input_path(arg, search_dirs)
+    content_sha = (
+        hashlib.sha256(resolved.read_bytes()).hexdigest()[:16]
+        if resolved.is_file()
+        else "absent"
+    )
     return f"{opt}{sep}{name}#p={arg_sha}#c={content_sha}"
 
 
@@ -343,8 +382,16 @@ def _semantic_ninja_tokens(
     define_tokens: list[str],
     include_fingerprint: bool = False,
     deps_root: Path | None = None,
+    search_dirs: tuple[Path, ...] = (),
 ) -> list[str]:
     out: list[str] = []
+    compile_dir = search_dirs[0] if search_dirs else None
+    inc_dirs = _extract_token_search_dirs(flags_tokens, compile_dir)
+    all_search: list[Path] = []
+    for d in list(search_dirs) + list(inc_dirs):
+        if d not in all_search:
+            all_search.append(d)
+    eff_search = tuple(all_search)
     i = 0
     two_tok_search = (
         "-isystem",
@@ -381,7 +428,7 @@ def _semantic_ninja_tokens(
             continue
         if tok in ("-include", "--include", "-imacros", "-include-pch") and i + 1 < len(flags_tokens):
             opt_norm = "-include" if tok == "--include" else tok
-            out.append(_sanitize_forced_include_token(opt_norm, flags_tokens[i + 1], include_fingerprint))
+            out.append(_sanitize_forced_include_token(opt_norm, flags_tokens[i + 1], include_fingerprint, eff_search))
             i += 2
             continue
         if tok in ("-Xclang", "-mllvm") and i + 1 < len(flags_tokens):
@@ -392,11 +439,11 @@ def _semantic_ninja_tokens(
                 and i + 3 < len(flags_tokens)
                 and flags_tokens[i + 2] == "-Xclang"
             ):
-                out.append(f"-Xclang {_sanitize_forced_include_token(nxt, flags_tokens[i + 3], include_fingerprint)}")
+                out.append(f"-Xclang {_sanitize_forced_include_token(nxt, flags_tokens[i + 3], include_fingerprint, eff_search)}")
                 i += 4
                 continue
             if "/" in nxt or "\\" in nxt:
-                out.append(_sanitize_forced_include_token(tok, nxt, include_fingerprint))
+                out.append(_sanitize_forced_include_token(tok, nxt, include_fingerprint, eff_search))
             else:
                 out.append(f"{tok} {nxt}")
             i += 2
@@ -419,7 +466,8 @@ def _semantic_ninja_tokens(
         if not tok or tok in ("-c", "-pipe", "-MD", "-MMD", "-MP", "-MG", "-MV", "-w") or tok.startswith("-W"):
             continue
         if tok.startswith("@") and len(tok) > 1:
-            out.append(_sanitize_forced_include_token("@", tok[1:], include_fingerprint))
+            rsp_search = (compile_dir,) if compile_dir is not None else eff_search
+            out.append(_sanitize_forced_include_token("@", tok[1:], include_fingerprint, rsp_search))
             continue
         if (
             tok.startswith("-fmacro-prefix-map=")
@@ -446,16 +494,16 @@ def _semantic_ninja_tokens(
         if matched_glued_search:
             continue
         if tok.startswith("--include="):
-            out.append(_sanitize_forced_include_token("-include", tok[len("--include="):], include_fingerprint))
+            out.append(_sanitize_forced_include_token("-include", tok[len("--include="):], include_fingerprint, eff_search))
             continue
         if tok.startswith("-include-pch") and len(tok) > len("-include-pch"):
-            out.append(_sanitize_forced_include_token("-include-pch", tok[len("-include-pch"):], include_fingerprint))
+            out.append(_sanitize_forced_include_token("-include-pch", tok[len("-include-pch"):], include_fingerprint, eff_search))
             continue
         if tok.startswith("-include") and len(tok) > len("-include"):
-            out.append(_sanitize_forced_include_token("-include", tok[len("-include"):], include_fingerprint))
+            out.append(_sanitize_forced_include_token("-include", tok[len("-include"):], include_fingerprint, eff_search))
             continue
         if tok.startswith("-imacros") and len(tok) > len("-imacros"):
-            out.append(_sanitize_forced_include_token("-imacros", tok[len("-imacros"):], include_fingerprint))
+            out.append(_sanitize_forced_include_token("-imacros", tok[len("-imacros"):], include_fingerprint, eff_search))
             continue
         if tok.startswith("-"):
             out.append(tok)
@@ -469,7 +517,10 @@ def _semantic_ninja_tokens(
 
 
 def _parse_ninja_compile_blocks(
-    ninja_path: Path, is_cxx: bool, deps_root: Path | None = None
+    ninja_path: Path,
+    is_cxx: bool,
+    deps_root: Path | None = None,
+    extra_search_dirs: tuple[Path, ...] = (),
 ) -> dict[str, object]:
     if not ninja_path.is_file():
         return {"blocks": [], "has_cxx": False, "has_c": False, "has_asm": False}
@@ -482,28 +533,45 @@ def _parse_ninja_compile_blocks(
     cur_flags: list[str] = []
     cur_defs: list[str] = []
     cur_includes: list[str] = []
+    search_dirs_list: list[Path] = [ninja_path.parent]
+    for sd in extra_search_dirs:
+        if sd not in search_dirs_list:
+            search_dirs_list.append(sd)
+    base_search_dirs = tuple(search_dirs_list)
 
     def flush_block() -> None:
         if not cur_lang:
             return
         fp_f = tuple(
             _semantic_ninja_tokens(
-                cur_flags + cur_includes, [], include_fingerprint=True, deps_root=deps_root
+                cur_flags + cur_includes,
+                [],
+                include_fingerprint=True,
+                deps_root=deps_root,
+                search_dirs=base_search_dirs,
             )
         )
         fp_d = tuple(
-            _semantic_ninja_tokens([], cur_defs, include_fingerprint=True, deps_root=deps_root)
+            _semantic_ninja_tokens(
+                [], cur_defs, include_fingerprint=True, deps_root=deps_root, search_dirs=base_search_dirs
+            )
         )
         uniq_key = (cur_lang, fp_f, fp_d)
         if uniq_key not in seen_blocks:
             seen_blocks.add(uniq_key)
             disp_f = tuple(
                 _semantic_ninja_tokens(
-                    cur_flags + cur_includes, [], include_fingerprint=False, deps_root=deps_root
+                    cur_flags + cur_includes,
+                    [],
+                    include_fingerprint=False,
+                    deps_root=deps_root,
+                    search_dirs=base_search_dirs,
                 )
             )
             disp_d = tuple(
-                _semantic_ninja_tokens([], cur_defs, include_fingerprint=False, deps_root=deps_root)
+                _semantic_ninja_tokens(
+                    [], cur_defs, include_fingerprint=False, deps_root=deps_root, search_dirs=base_search_dirs
+                )
             )
             blocks.append((cur_lang, disp_f, disp_d, fp_f, fp_d))
 
@@ -804,11 +872,21 @@ def _collect_pkg_fingerprint_state(
         if (deps_build_dir is not None and deps_build_dir.name == "deps-build")
         else deps_build_dir
     )
+    extra_search: list[Path] = []
     if deps_build_dir is not None:
-        cache_file = deps_build_dir / pid / "CMakeCache.txt"
+        pkg_build_dir = deps_build_dir / pid
+        extra_search.append(pkg_build_dir)
+        cache_file = pkg_build_dir / "CMakeCache.txt"
         cache = _parse_cmake_cache(cache_file)
+        for src_key in ("CMAKE_HOME_DIRECTORY", f"{pid}_SOURCE_DIR"):
+            sval = cache.get(src_key, "").strip()
+            if sval and Path(sval) not in extra_search:
+                extra_search.append(Path(sval))
         ninja_info = _parse_ninja_compile_blocks(
-            deps_build_dir / pid / "build.ninja", is_cxx, deps_root=deps_root
+            pkg_build_dir / "build.ninja",
+            is_cxx,
+            deps_root=deps_root,
+            extra_search_dirs=tuple(extra_search),
         )
         sem_cache = _extract_semantic_cache_options(
             cache_file,
@@ -816,6 +894,7 @@ def _collect_pkg_fingerprint_state(
             bool(ninja_info["has_c"]),
             bool(ninja_info["has_cxx"]),
         )
+    base_search_dirs = tuple(extra_search)
 
     btype = (cache.get("CMAKE_BUILD_TYPE") or "Release").strip()
     cc_path = (
@@ -843,10 +922,18 @@ def _collect_pkg_fingerprint_state(
 
     raw_cache_toks = shlex.split(raw_cache_str, posix=True)
     cache_cmd = _semantic_ninja_tokens(
-        raw_cache_toks, [], include_fingerprint=False, deps_root=deps_root
+        raw_cache_toks,
+        [],
+        include_fingerprint=False,
+        deps_root=deps_root,
+        search_dirs=base_search_dirs,
     )
     cache_cmd_fp = _semantic_ninja_tokens(
-        raw_cache_toks, [], include_fingerprint=True, deps_root=deps_root
+        raw_cache_toks,
+        [],
+        include_fingerprint=True,
+        deps_root=deps_root,
+        search_dirs=base_search_dirs,
     )
 
     blocks = list(ninja_info["blocks"])

@@ -1006,6 +1006,33 @@ class TestHostReports(unittest.TestCase):
                 self.assertNotIn("/virtual/", ry)
                 self.assertNotEqual(rx, ry, f"failed differentiation for {name}")
 
+            # Provider-local relative forced include (-include config.h and -I inc -include sub.h)
+            deps_rel = base / "deps_rel_inc"
+            write_pkg(
+                deps_rel,
+                "libjxl",
+                True,
+                c_flags="-march=x86-64-v2",
+                c_rel="-O3 -DNDEBUG",
+                cxx_flags="-march=x86-64-v2 -include config.h",
+                cxx_rel="-O3 -DNDEBUG",
+                toggles={"JPEGXL_ENABLE_THREADS": ("BOOL", "ON")},
+                ninja_flags="-march=x86-64-v2 -O3 -DNDEBUG -std=c++17 -include config.h -I inc -include sub.h",
+            )
+            rel_cfg = deps_rel / "libjxl" / "config.h"
+            rel_cfg.write_text("#define FEATURE 1\n", encoding="utf-8")
+            (deps_rel / "libjxl" / "inc").mkdir(parents=True, exist_ok=True)
+            rel_sub = deps_rel / "libjxl" / "inc" / "sub.h"
+            rel_sub.write_text("#define SUB_MODE 1\n", encoding="utf-8")
+            bf_rel1 = run_prov(deps_rel, base / "prov_rel1.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            rel_cfg.write_text("#define FEATURE 2\n", encoding="utf-8")
+            bf_rel2 = run_prov(deps_rel, base / "prov_rel2.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertIn("-include:config.h", bf_rel1)
+            self.assertNotEqual(bf_rel1, bf_rel2)
+            rel_sub.write_text("#define SUB_MODE 2\n", encoding="utf-8")
+            bf_rel3 = run_prov(deps_rel, base / "prov_rel3.h")["RFC_FORMAT_JPEG_XL"]["build_flags"]
+            self.assertNotEqual(bf_rel2, bf_rel3)
+
     def test_kodim23_compare_threads_oracle_and_history(self) -> None:
         self.assertEqual(sha256_file(KODIM_PATH), KODIM_EXPECTED_SHA256)
         with Image.open(KODIM_PATH) as im:
