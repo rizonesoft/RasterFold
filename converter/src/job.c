@@ -438,12 +438,82 @@ static char *dup_cstr_counted(const char *s, rfc_scheduler *alloc_counter) {
     return copy;
 }
 
+static rfc_io_reader_box *rfc_io_reader_box_create(const rfc_io_reader *reader,
+                                                   rfc_scheduler *alloc_counter) {
+    if (!reader) {
+        return NULL;
+    }
+    rfc_scheduler_internal_note_submit_alloc(alloc_counter);
+    rfc_io_reader_box *box = (rfc_io_reader_box *)calloc(1u, sizeof(*box));
+    if (!box) {
+        return NULL;
+    }
+    if (!rfc_mutex_init(&box->lock)) {
+        free(box);
+        return NULL;
+    }
+    atomic_init(&box->refs, 1u);
+    box->ownership_transferred = 0;
+    box->reader = *reader;
+    return box;
+}
+
+static void rfc_io_reader_box_release(rfc_io_reader_box *box) {
+    if (!box) {
+        return;
+    }
+    if (atomic_fetch_sub_explicit(&box->refs, 1u, memory_order_acq_rel) == 1u) {
+        if (box->ownership_transferred && box->reader.close_fn) {
+            box->reader.close_fn(box->reader.ctx);
+        }
+        rfc_mutex_destroy(&box->lock);
+        free(box);
+    }
+}
+
+static rfc_io_publisher_box *rfc_io_publisher_box_create(
+    const rfc_io_publisher *publisher,
+    rfc_scheduler *alloc_counter) {
+    if (!publisher) {
+        return NULL;
+    }
+    rfc_scheduler_internal_note_submit_alloc(alloc_counter);
+    rfc_io_publisher_box *box =
+        (rfc_io_publisher_box *)calloc(1u, sizeof(*box));
+    if (!box) {
+        return NULL;
+    }
+    if (!rfc_mutex_init(&box->lock)) {
+        free(box);
+        return NULL;
+    }
+    atomic_init(&box->refs, 1u);
+    box->ownership_transferred = 0;
+    box->publisher = *publisher;
+    return box;
+}
+
+static void rfc_io_publisher_box_release(rfc_io_publisher_box *box) {
+    if (!box) {
+        return;
+    }
+    if (atomic_fetch_sub_explicit(&box->refs, 1u, memory_order_acq_rel) == 1u) {
+        if (box->ownership_transferred && box->publisher.release_ctx) {
+            box->publisher.release_ctx(box->publisher.ctx);
+        }
+        rfc_mutex_destroy(&box->lock);
+        free(box);
+    }
+}
+
 rfc_status rfc_job_internal_compute_retained_bytes(
     const uint8_t *src_bytes,
     size_t src_size,
     const rfc_metadata *src_meta,
     const rfc_setting_value *settings,
     size_t setting_count,
+    const rfc_io_source *io_source,
+    const rfc_io_sink *io_sink,
     uint64_t *out_bytes) {
     if (!out_bytes) {
         return RFC_ERR_INVALID_ARGUMENT;
@@ -481,6 +551,26 @@ rfc_status rfc_job_internal_compute_retained_bytes(
             }
         }
     }
+    if (io_source) {
+        if (io_source->path_utf8) {
+            uint64_t sl = (uint64_t)strlen(io_source->path_utf8) + 1ull;
+            if (!add_u64_job(total, sl, &total)) {
+                return RFC_ERR_LIMIT_EXCEEDED;
+            }
+        }
+        if (io_source->virtual_name_utf8) {
+            uint64_t sl = (uint64_t)strlen(io_source->virtual_name_utf8) + 1ull;
+            if (!add_u64_job(total, sl, &total)) {
+                return RFC_ERR_LIMIT_EXCEEDED;
+            }
+        }
+    }
+    if (io_sink && io_sink->path_utf8) {
+        uint64_t sl = (uint64_t)strlen(io_sink->path_utf8) + 1ull;
+        if (!add_u64_job(total, sl, &total)) {
+            return RFC_ERR_LIMIT_EXCEEDED;
+        }
+    }
     *out_bytes = total;
     return RFC_OK;
 }
@@ -500,6 +590,11 @@ static void inputs_free_contents(rfc_job_inputs *in) {
         }
         free(in->settings);
     }
+    free(in->io_source_path);
+    free(in->io_source_virtual_name);
+    free(in->io_sink_path);
+    rfc_io_reader_box_release(in->io_reader_box);
+    rfc_io_publisher_box_release(in->io_publisher_box);
     free(in);
     if (sched && charged > 0) {
         rfc_scheduler_internal_unreserve_retained(sched, charged);
@@ -517,10 +612,14 @@ rfc_job_inputs *rfc_job_inputs_create(rfc_scheduler *sched,
                                       const rfc_metadata *src_meta,
                                       const rfc_setting_value *settings,
                                       size_t setting_count,
-                                      uint32_t acknowledged_unsupported_metadata) {
+                                      uint32_t acknowledged_unsupported_metadata,
+                                      const rfc_io_source *io_source,
+                                      const rfc_io_sink *io_sink,
+                                      uint64_t effective_source_size) {
     uint64_t retained = 0;
     if (rfc_job_internal_compute_retained_bytes(src_bytes, src_size, src_meta,
                                                 settings, setting_count,
+                                                io_source, io_sink,
                                                 &retained) != RFC_OK) {
         return NULL;
     }
@@ -543,6 +642,8 @@ rfc_job_inputs *rfc_job_inputs_create(rfc_scheduler *sched,
     in->setting_count = setting_count;
     in->acknowledged_unsupported_metadata = acknowledged_unsupported_metadata;
     in->retained_bytes = retained;
+    in->effective_source_size =
+        effective_source_size > 0u ? effective_source_size : (uint64_t)src_size;
 
     if (src_size > 0 && src_bytes != NULL) {
         rfc_scheduler_internal_note_submit_alloc(sched);
@@ -603,7 +704,66 @@ rfc_job_inputs *rfc_job_inputs_create(rfc_scheduler *sched,
         }
     }
 
+    if (io_source) {
+        in->has_io_source = 1;
+        in->io_import_flags = io_source->import_flags;
+        if (io_source->path_utf8) {
+            in->io_source_path = dup_cstr_counted(io_source->path_utf8, sched);
+            if (!in->io_source_path) {
+                inputs_free_contents(in);
+                return NULL;
+            }
+        }
+        if (io_source->virtual_name_utf8) {
+            in->io_source_virtual_name =
+                dup_cstr_counted(io_source->virtual_name_utf8, sched);
+            if (!in->io_source_virtual_name) {
+                inputs_free_contents(in);
+                return NULL;
+            }
+        }
+        if (io_source->reader) {
+            in->io_reader_box = rfc_io_reader_box_create(io_source->reader, sched);
+            if (!in->io_reader_box) {
+                inputs_free_contents(in);
+                return NULL;
+            }
+        }
+    }
+
+    if (io_sink) {
+        in->has_io_sink = 1;
+        in->io_export_flags = io_sink->export_flags;
+        if (io_sink->path_utf8) {
+            in->io_sink_path = dup_cstr_counted(io_sink->path_utf8, sched);
+            if (!in->io_sink_path) {
+                inputs_free_contents(in);
+                return NULL;
+            }
+        }
+        if (io_sink->publisher) {
+            in->io_publisher_box =
+                rfc_io_publisher_box_create(io_sink->publisher, sched);
+            if (!in->io_publisher_box) {
+                inputs_free_contents(in);
+                return NULL;
+            }
+        }
+    }
+
     return in;
+}
+
+void rfc_job_inputs_arm_io_ownership(rfc_job_inputs *inputs) {
+    if (!inputs) {
+        return;
+    }
+    if (inputs->io_reader_box) {
+        inputs->io_reader_box->ownership_transferred = 1;
+    }
+    if (inputs->io_publisher_box) {
+        inputs->io_publisher_box->ownership_transferred = 1;
+    }
 }
 
 void rfc_job_inputs_retain(rfc_job_inputs *inputs) {
@@ -811,10 +971,27 @@ rfc_format_id rfc_job_target_format(const rfc_job *job) {
 }
 
 const uint8_t *rfc_job_source_bytes(const rfc_job *job, size_t *out_size) {
-    if (out_size) {
-        *out_size = (job && job->inputs) ? job->inputs->source_size : 0u;
+    if (!job) {
+        if (out_size) {
+            *out_size = 0u;
+        }
+        return NULL;
     }
-    return (job && job->inputs) ? job->inputs->source_bytes : NULL;
+    if (job->inputs && job->inputs->source_bytes) {
+        if (out_size) {
+            *out_size = job->inputs->source_size;
+        }
+        return job->inputs->source_bytes;
+    }
+    rfc_job *m = (rfc_job *)job;
+    rfc_mutex_lock(&m->lock);
+    const uint8_t *imp = m->imported_source_bytes;
+    size_t sz = m->imported_source_size;
+    rfc_mutex_unlock(&m->lock);
+    if (out_size) {
+        *out_size = sz;
+    }
+    return imp;
 }
 
 const rfc_layout *rfc_job_source_layout(const rfc_job *job) {
@@ -953,6 +1130,7 @@ void rfc_job_internal_release_stage_outputs(rfc_job *job) {
     rfc_jpeg_coeff_image *v_dst_c = job->verify_dst_coeffs;
     uint8_t *v_rec = job->verify_reconstructed_bytes;
     uint8_t *v_rec_icc = job->verify_reconstructed_icc;
+    uint8_t *imp_bytes = job->imported_source_bytes;
 
     job->decoded_frames = NULL;
     job->decoded_frame_count = 0;
@@ -974,7 +1152,18 @@ void rfc_job_internal_release_stage_outputs(rfc_job *job) {
     job->has_verify_reconstructed_meta = 0;
     memset(&job->verify_reconstructed_meta, 0,
            sizeof(job->verify_reconstructed_meta));
+    job->imported_source_bytes = NULL;
+    job->imported_source_size = 0u;
+    memset(&job->source_identity, 0, sizeof(job->source_identity));
     rfc_mutex_unlock(&job->lock);
+
+    if (imp_bytes) {
+        if (job->allocator.free) {
+            job->allocator.free(job->allocator.ctx, imp_bytes);
+        } else {
+            free(imp_bytes);
+        }
+    }
 
     if (has_enc) {
         if (enc_sess && enc_sess->free_encoded) {
@@ -1123,9 +1312,13 @@ rfc_status rfc_job_set_decoded_frames(rfc_job *job,
         return RFC_ERR_INVALID_ARGUMENT;
     }
     if (frame_count > 0) {
-        uint64_t comp_sz =
-            job->inputs ? (uint64_t)job->inputs->source_size : 0ull;
-        int has_comp = (job->inputs && job->inputs->source_size > 0) ? 1 : 0;
+        uint64_t comp_sz = 0ull;
+        if (job->inputs && job->inputs->source_size > 0u) {
+            comp_sz = (uint64_t)job->inputs->source_size;
+        } else if (job->imported_source_size > 0u) {
+            comp_sz = (uint64_t)job->imported_source_size;
+        }
+        int has_comp = (comp_sz > 0ull) ? 1 : 0;
         rfc_status st = rfc_limits_check_frames(
             &job->limits, frames, frame_count, meta, comp_sz, has_comp);
         if (st != RFC_OK) {
@@ -1391,7 +1584,8 @@ rfc_status rfc_job_cancel(rfc_job *job) {
     }
 
     rfc_mutex_lock(&job->lock);
-    if (!job->published && !job_is_terminal_state(job->state)) {
+    if (!job->published && !job->publishing && !job->publish_decided &&
+        !job_is_terminal_state(job->state)) {
         job->cancel_requested = 1;
         job->suppress_callbacks = 1;
         if (job->state == RFC_JOB_QUEUED) {
@@ -1669,15 +1863,26 @@ rfc_status rfc_job_attach_partial(rfc_job *job,
     e->free_fn = free_fn;
     e->free_ctx = free_ctx;
 
+    rfc_scheduler *sched = job->sched;
+    if (sched) {
+        rfc_scheduler_internal_lock(sched);
+    }
     rfc_mutex_lock(&job->lock);
     e->next = job->partials;
     job->partials = e;
-    job->live_partial_bytes += (uint64_t)byte_size;
-    rfc_scheduler *sched = job->sched;
+    job->attached_partial_bytes += (uint64_t)byte_size;
+    job->live_partial_bytes =
+        job->attached_partial_bytes + job->staged_partial_bytes;
+    if (sched && byte_size > 0u) {
+        uint64_t step = ((uint64_t)byte_size > (uint64_t)INT64_MAX)
+                            ? (uint64_t)INT64_MAX
+                            : (uint64_t)byte_size;
+        rfc_scheduler_internal_adjust_live_partials_locked(sched,
+                                                           (int64_t)step);
+    }
     rfc_mutex_unlock(&job->lock);
-
-    if (sched && byte_size > 0) {
-        rfc_scheduler_internal_adjust_live_partials(sched, (int64_t)byte_size);
+    if (sched) {
+        rfc_scheduler_internal_unlock(sched);
     }
     return RFC_OK;
 }
@@ -1702,13 +1907,26 @@ void rfc_job_release_partials(rfc_job *job) {
     if (!job) {
         return;
     }
+    rfc_scheduler *sched = job->sched;
+    if (sched) {
+        rfc_scheduler_internal_lock(sched);
+    }
     rfc_mutex_lock(&job->lock);
     rfc_partial_entry *list = job->partials;
     job->partials = NULL;
-    uint64_t freed = job->live_partial_bytes;
-    job->live_partial_bytes = 0;
-    rfc_scheduler *sched = job->sched;
+    uint64_t freed = job->attached_partial_bytes;
+    job->attached_partial_bytes = 0u;
+    job->live_partial_bytes = job->staged_partial_bytes;
+    if (sched && freed > 0u) {
+        uint64_t step =
+            (freed > (uint64_t)INT64_MAX) ? (uint64_t)INT64_MAX : freed;
+        rfc_scheduler_internal_adjust_live_partials_locked(sched,
+                                                           -(int64_t)step);
+    }
     rfc_mutex_unlock(&job->lock);
+    if (sched) {
+        rfc_scheduler_internal_unlock(sched);
+    }
 
     while (list) {
         rfc_partial_entry *next = list->next;
@@ -1717,9 +1935,6 @@ void rfc_job_release_partials(rfc_job *job) {
         }
         free(list);
         list = next;
-    }
-    if (sched && freed > 0) {
-        rfc_scheduler_internal_adjust_live_partials(sched, -(int64_t)freed);
     }
 }
 
@@ -1745,6 +1960,125 @@ rfc_status rfc_job_mark_published(rfc_job *job, rfc_job_id expected_id) {
     }
     job->published = 1;
     rfc_mutex_unlock(&job->lock);
+    return RFC_OK;
+}
+
+rfc_status rfc_job_internal_begin_publish(rfc_job *job, rfc_job_id expected_id) {
+    if (!job || expected_id == RFC_JOB_ID_NONE) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    rfc_mutex_lock(&job->lock);
+    if (job_slot_superseded_locked(job) || job->job_id != expected_id ||
+        job->superseded || job->superseded_by_id != RFC_JOB_ID_NONE ||
+        job->state == RFC_JOB_SUPERSEDED) {
+        rfc_mutex_unlock(&job->lock);
+        return RFC_ERR_STALE_JOB;
+    }
+    if (job->cancel_requested || job->state == RFC_JOB_CANCELLED) {
+        rfc_mutex_unlock(&job->lock);
+        return RFC_ERR_CANCELLED;
+    }
+    if (job->stage != RFC_STAGE_EXPORT) {
+        rfc_mutex_unlock(&job->lock);
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    job->publishing = 1;
+    rfc_mutex_unlock(&job->lock);
+    return RFC_OK;
+}
+
+void rfc_job_internal_finish_publish(rfc_job *job,
+                                     rfc_job_id expected_id,
+                                     int succeeded) {
+    if (!job) {
+        return;
+    }
+    rfc_mutex_lock(&job->lock);
+    job->publishing = 0;
+    if (job->job_id == expected_id) {
+        job->publish_decided = 1;
+        if (succeeded) {
+            job->published = 1;
+        }
+    }
+    rfc_mutex_unlock(&job->lock);
+}
+
+void rfc_job_internal_note_partial_bytes(rfc_job *job, int64_t delta_bytes) {
+    if (!job || delta_bytes == 0) {
+        return;
+    }
+    rfc_scheduler *sched = job->sched;
+    if (sched) {
+        rfc_scheduler_internal_lock(sched);
+    }
+    rfc_mutex_lock(&job->lock);
+    int64_t actual_delta = 0;
+    if (delta_bytes > 0) {
+        uint64_t add = (uint64_t)delta_bytes;
+        job->staged_partial_bytes += add;
+        actual_delta = delta_bytes;
+    } else {
+        uint64_t sub = (uint64_t)(-(delta_bytes + 1)) + 1u;
+        if (job->staged_partial_bytes >= sub) {
+            job->staged_partial_bytes -= sub;
+            actual_delta = delta_bytes;
+        } else {
+            uint64_t clamped = job->staged_partial_bytes;
+            if (clamped > (uint64_t)INT64_MAX) {
+                clamped = (uint64_t)INT64_MAX;
+            }
+            actual_delta = -(int64_t)clamped;
+            job->staged_partial_bytes = 0u;
+        }
+    }
+    job->live_partial_bytes =
+        job->attached_partial_bytes + job->staged_partial_bytes;
+    if (sched && actual_delta != 0) {
+        rfc_scheduler_internal_adjust_live_partials_locked(sched,
+                                                           actual_delta);
+    }
+    rfc_mutex_unlock(&job->lock);
+    if (sched) {
+        rfc_scheduler_internal_unlock(sched);
+    }
+}
+
+rfc_status rfc_job_sniff_result_get(const rfc_job *job,
+                                    rfc_sniff_result *out_sniff) {
+    if (out_sniff) {
+        memset(out_sniff, 0, sizeof(*out_sniff));
+    }
+    if (!job || !out_sniff) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    rfc_job *m = (rfc_job *)job;
+    rfc_mutex_lock(&m->lock);
+    if (!m->has_sniff_result) {
+        rfc_mutex_unlock(&m->lock);
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    *out_sniff = m->sniff_result;
+    rfc_mutex_unlock(&m->lock);
+    return RFC_OK;
+}
+
+rfc_status rfc_job_export_report_get(const rfc_job *job,
+                                     rfc_export_report *out_report) {
+    if (out_report) {
+        memset(out_report, 0, sizeof(*out_report));
+    }
+    if (!job || !out_report) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    rfc_job *m = (rfc_job *)job;
+    rfc_mutex_lock(&m->lock);
+    if (!m->export_report.valid) {
+        rfc_mutex_unlock(&m->lock);
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    *out_report = m->export_report;
+    rfc_mutex_unlock(&m->lock);
     return RFC_OK;
 }
 
@@ -1899,13 +2233,15 @@ static rfc_status internal_exec_check_next_frame(rfc_job *job,
         rfc_mutex_unlock(&job->lock);
         return RFC_ERR_LIMIT_EXCEEDED;
     }
-    uint64_t comp_bytes = job->has_decode_compressed_bytes
-                              ? job->decode_compressed_bytes
-                              : (job->inputs ? (uint64_t)job->inputs->source_size
-                                             : 0ull);
-    int has_comp = job->has_decode_compressed_bytes
-                       ? (comp_bytes > 0ull)
-                       : (job->inputs && job->inputs->source_size > 0u);
+    uint64_t comp_bytes = 0ull;
+    if (job->has_decode_compressed_bytes) {
+        comp_bytes = job->decode_compressed_bytes;
+    } else if (job->inputs && job->inputs->source_size > 0u) {
+        comp_bytes = (uint64_t)job->inputs->source_size;
+    } else if (job->imported_source_size > 0u) {
+        comp_bytes = (uint64_t)job->imported_source_size;
+    }
+    int has_comp = (comp_bytes > 0ull) ? 1 : 0;
     if (has_comp) {
         st = rfc_limits_check_decompression(limits, comp_bytes, next_bytes);
         if (st != RFC_OK) {
@@ -2435,8 +2771,45 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
     if (job->stage_ops.on_import != NULL) {
         st = job->stage_ops.on_import(job, &exec, user_ctx);
     } else {
-        const rfc_capability *src_cap = rfc_registry_find(job->source_format);
-        if (!src_cap) {
+        if (job->inputs && job->inputs->has_io_source) {
+            rfc_io_source io_src_desc;
+            memset(&io_src_desc, 0, sizeof(io_src_desc));
+            io_src_desc.path_utf8 = job->inputs->io_source_path;
+            io_src_desc.virtual_name_utf8 =
+                job->inputs->io_source_virtual_name;
+            io_src_desc.import_flags = job->inputs->io_import_flags;
+            io_src_desc.reader = job->inputs->io_reader_box
+                                     ? &job->inputs->io_reader_box->reader
+                                     : NULL;
+            st = rfc_input_read_job_source(
+                job, &exec, &io_src_desc, job->inputs->io_reader_box,
+                job->inputs->io_import_flags, job->source_format, &err_detail);
+            if (st == RFC_OK && job->inputs->has_io_sink) {
+                rfc_io_sink io_sink_desc;
+                memset(&io_sink_desc, 0, sizeof(io_sink_desc));
+                io_sink_desc.path_utf8 = job->inputs->io_sink_path;
+                io_sink_desc.export_flags = job->inputs->io_export_flags;
+                io_sink_desc.publisher =
+                    job->inputs->io_publisher_box
+                        ? &job->inputs->io_publisher_box->publisher
+                        : NULL;
+                st = rfc_output_validate_sink_preflight(
+                    &io_sink_desc, &io_src_desc,
+                    job->source_identity.valid ? &job->source_identity : NULL);
+                if (st != RFC_OK && !err_detail) {
+                    err_detail = rfc_status_name(st);
+                }
+            }
+            if (st == RFC_OK) {
+                src_bytes = job->imported_source_bytes;
+                src_size = job->imported_source_size;
+            }
+        }
+        const rfc_capability *src_cap =
+            (st == RFC_OK) ? rfc_registry_find(job->source_format) : NULL;
+        if (st != RFC_OK) {
+            /* preserve read/preflight error */
+        } else if (!src_cap) {
             st = RFC_ERR_UNKNOWN_FORMAT;
             err_detail = "unknown source format";
         } else if (!src_cap->can_read) {
@@ -2869,6 +3242,8 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
 
     if (job->stage_ops.on_export != NULL) {
         st = job->stage_ops.on_export(job, &exec, user_ctx);
+    } else if (job->inputs && job->inputs->has_io_sink) {
+        st = rfc_output_publish_job(job, &exec, &err_detail);
     } else {
         st = RFC_ERR_NO_ADAPTER;
         err_detail = "export stage requires an output publisher";
@@ -2890,7 +3265,27 @@ finish:
     rfc_mutex_lock(&job->lock);
     int abort_sup = job->superseded || job->superseded_by_id != RFC_JOB_ID_NONE;
     int abort_can = job->cancel_requested || job->state == RFC_JOB_CANCELLED;
-    if (job->published && st == RFC_OK) {
+    if (job->publish_decided) {
+        if (job->published && st == RFC_OK) {
+            job->stage = RFC_STAGE_DONE;
+            job->state = RFC_JOB_SUCCEEDED;
+            job->status = RFC_OK;
+            job->failing_stage = RFC_STAGE_NONE;
+            if (job->detail[0] == '\0') {
+                rfc_job_internal_set_detail(job->detail, "ok");
+            }
+        } else {
+            job->state = RFC_JOB_FAILED;
+            job->status = (st != RFC_OK) ? st : RFC_ERR_IO;
+            job->failing_stage =
+                (stage_at != RFC_STAGE_NONE) ? stage_at : RFC_STAGE_EXPORT;
+            if (job->detail[0] == '\0') {
+                rfc_job_internal_set_detail(
+                    job->detail,
+                    err_detail ? err_detail : rfc_status_name(job->status));
+            }
+        }
+    } else if (job->published && st == RFC_OK) {
         job->stage = RFC_STAGE_DONE;
         job->state = RFC_JOB_SUCCEEDED;
         job->status = RFC_OK;

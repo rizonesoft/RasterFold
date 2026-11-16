@@ -155,22 +155,30 @@ void rfc_scheduler_internal_on_publish_cancelled(rfc_scheduler *sched) {
     rfc_mutex_unlock(&sched->lock);
 }
 
+void rfc_scheduler_internal_adjust_live_partials_locked(rfc_scheduler *sched,
+                                                        int64_t delta_bytes) {
+    if (!sched || delta_bytes == 0) {
+        return;
+    }
+    if (delta_bytes > 0) {
+        sched->stats.live_partial_bytes += (uint64_t)delta_bytes;
+    } else {
+        uint64_t sub = (uint64_t)(-(delta_bytes + 1)) + 1u;
+        if (sched->stats.live_partial_bytes >= sub) {
+            sched->stats.live_partial_bytes -= sub;
+        } else {
+            sched->stats.live_partial_bytes = 0u;
+        }
+    }
+}
+
 void rfc_scheduler_internal_adjust_live_partials(rfc_scheduler *sched,
                                                  int64_t delta_bytes) {
     if (!sched || delta_bytes == 0) {
         return;
     }
     rfc_mutex_lock(&sched->lock);
-    if (delta_bytes > 0) {
-        sched->stats.live_partial_bytes += (uint64_t)delta_bytes;
-    } else {
-        uint64_t sub = (uint64_t)(-delta_bytes);
-        if (sched->stats.live_partial_bytes >= sub) {
-            sched->stats.live_partial_bytes -= sub;
-        } else {
-            sched->stats.live_partial_bytes = 0;
-        }
-    }
+    rfc_scheduler_internal_adjust_live_partials_locked(sched, delta_bytes);
     rfc_mutex_unlock(&sched->lock);
 }
 
@@ -281,9 +289,9 @@ rfc_status rfc_scheduler_internal_cancel_job(rfc_scheduler *sched, rfc_job *job)
     rfc_mutex_lock(&sched->lock);
     rfc_mutex_lock(&job->lock);
 
-    if (job->published || job->state == RFC_JOB_SUCCEEDED ||
-        job->state == RFC_JOB_FAILED || job->state == RFC_JOB_CANCELLED ||
-        job->state == RFC_JOB_SUPERSEDED) {
+    if (job->published || job->publishing || job->publish_decided ||
+        job->state == RFC_JOB_SUCCEEDED || job->state == RFC_JOB_FAILED ||
+        job->state == RFC_JOB_CANCELLED || job->state == RFC_JOB_SUPERSEDED) {
         rfc_mutex_unlock(&job->lock);
         rfc_mutex_unlock(&sched->lock);
         return RFC_OK;
@@ -450,7 +458,30 @@ static void worker_main(void *arg) {
             job->superseded || job->superseded_by_id != RFC_JOB_ID_NONE;
         int abort_can =
             job->cancel_requested || job->state == RFC_JOB_CANCELLED;
-        if (job->published && exec_res.st == RFC_OK) {
+        if (job->publish_decided) {
+            if (job->published && exec_res.st == RFC_OK) {
+                job->stage = RFC_STAGE_DONE;
+                job->state = RFC_JOB_SUCCEEDED;
+                job->status = RFC_OK;
+                job->failing_stage = RFC_STAGE_NONE;
+                if (job->detail[0] == '\0') {
+                    rfc_job_internal_set_detail(job->detail, "ok");
+                }
+            } else {
+                job->state = RFC_JOB_FAILED;
+                job->status =
+                    (exec_res.st != RFC_OK) ? exec_res.st : RFC_ERR_IO;
+                job->failing_stage = (exec_res.stage_at != RFC_STAGE_NONE)
+                                         ? exec_res.stage_at
+                                         : RFC_STAGE_EXPORT;
+                if (job->detail[0] == '\0') {
+                    rfc_job_internal_set_detail(
+                        job->detail, exec_res.err_detail
+                                         ? exec_res.err_detail
+                                         : rfc_status_name(job->status));
+                }
+            }
+        } else if (job->published && exec_res.st == RFC_OK) {
             job->stage = RFC_STAGE_DONE;
             job->state = RFC_JOB_SUCCEEDED;
             job->status = RFC_OK;
@@ -805,7 +836,7 @@ void rfc_scheduler_destroy(rfc_scheduler *sched) {
         rfc_job *aj = sched->active_jobs[i];
         if (aj) {
             rfc_mutex_lock(&aj->lock);
-            if (!aj->published) {
+            if (!aj->published && !aj->publishing && !aj->publish_decided) {
                 aj->cancel_requested = 1;
                 aj->suppress_callbacks = 1;
                 enqueue_active_cancel_locked(sched, aj);
@@ -849,7 +880,7 @@ static rfc_status compute_preflight_with_contracts(
     const rfc_scheduler_config *cfg,
     const rfc_provider_memory_info *src_mem,
     const rfc_provider_memory_info *dst_mem,
-    size_t source_size,
+    uint64_t source_size,
     const rfc_layout *source_layout,
     const rfc_metadata *source_meta,
     uint64_t retained_bytes,
@@ -974,7 +1005,7 @@ static rfc_status parse_verify_settings_sched(const rfc_setting_value *settings,
 static rfc_status compute_preflight(const rfc_scheduler_config *cfg,
                                     rfc_format_id source_format,
                                     rfc_format_id target_format,
-                                    size_t source_size,
+                                    uint64_t source_size,
                                     const rfc_layout *source_layout,
                                     const rfc_metadata *source_meta,
                                     const rfc_setting_value *settings,
@@ -1098,6 +1129,7 @@ static rfc_status pre_reserve_submit_inputs(
     const rfc_provider_memory_info *src_mem,
     const rfc_provider_memory_info *dst_mem,
     const rfc_job_spec *spec,
+    uint64_t effective_source_size,
     uint64_t retained_bytes,
     uint64_t expected_budget_limit,
     int *out_pending_admit,
@@ -1122,10 +1154,11 @@ static rfc_status pre_reserve_submit_inputs(
     uint64_t live_exec_working = 0;
     uint64_t live_budget = 0;
     rfc_status st = compute_preflight_with_contracts(
-        &sched->cfg, src_mem, dst_mem, spec->source_size, spec->source_layout,
-        spec->source_meta, retained_bytes, spec->expected_working_set_bytes,
-        spec->job_memory_limit_bytes, spec->limits_override, &live_limits,
-        &live_reservation, &live_exec_working, &live_budget);
+        &sched->cfg, src_mem, dst_mem, effective_source_size,
+        spec->source_layout, spec->source_meta, retained_bytes,
+        spec->expected_working_set_bytes, spec->job_memory_limit_bytes,
+        spec->limits_override, &live_limits, &live_reservation,
+        &live_exec_working, &live_budget);
     if (st != RFC_OK) {
         rfc_mutex_unlock(&sched->lock);
         if (slot) {
@@ -1282,7 +1315,7 @@ static rfc_status admit_prepared_job(rfc_scheduler *sched,
     uint64_t live_exec_working = 0;
     uint64_t live_budget = 0;
     rfc_status st = compute_preflight_with_contracts(
-        &sched->cfg, src_mem, dst_mem, inputs->source_size,
+        &sched->cfg, src_mem, dst_mem, inputs->effective_source_size,
         inputs->has_layout ? &inputs->source_layout : NULL,
         inputs->has_meta ? &inputs->source_meta : NULL, inputs->retained_bytes,
         expected_working_set_bytes, job_memory_limit_bytes, limits_override,
@@ -1386,8 +1419,14 @@ static rfc_status admit_prepared_job(rfc_scheduler *sched,
         rfc_slot_state_set_id(slot->state, new_id);
 
         if (prev) {
-            prev->superseded_by_id = new_id;
-            prev->suppress_callbacks = 1;
+            int prev_publish_in_flight =
+                prev->published || prev->state == RFC_JOB_SUCCEEDED ||
+                (prev->state == RFC_JOB_RUNNING &&
+                 (prev->publishing || prev->publish_decided));
+            if (!prev_publish_in_flight) {
+                prev->superseded_by_id = new_id;
+                prev->suppress_callbacks = 1;
+            }
             same_cb_thread =
                 prev->cb_owner_valid &&
                 rfc_thread_id_equal(prev->cb_owner, rfc_thread_id_current());
@@ -1404,7 +1443,8 @@ static rfc_status admit_prepared_job(rfc_scheduler *sched,
                     sched->stats.total_superseded++;
                 }
                 drop_queue_prev = pop_queue_at(sched, prev_q_idx);
-            } else if (prev->state == RFC_JOB_RUNNING && !prev->published) {
+            } else if (prev->state == RFC_JOB_RUNNING && !prev->published &&
+                       !prev->publishing && !prev->publish_decided) {
                 prev->superseded = 1;
                 prev->cancel_requested = 1;
                 enqueue_active_cancel_locked(sched, prev);
@@ -1430,6 +1470,7 @@ static rfc_status admit_prepared_job(rfc_scheduler *sched,
         }
         *pending_admit_inout = 0;
     }
+    rfc_job_inputs_arm_io_ownership(inputs);
     sched->queue[sched->queue_len++] = job;
     sched->stats.queued_jobs = (uint32_t)sched->queue_len;
     sched->stats.total_submitted++;
@@ -1473,6 +1514,15 @@ rfc_status rfc_scheduler_submit(rfc_scheduler *sched,
         (spec->setting_count > 0 && !spec->settings)) {
         return RFC_ERR_INVALID_ARGUMENT;
     }
+    if (spec->io_source &&
+        (spec->source_bytes != NULL || spec->source_size > 0u ||
+         (spec->has_stage_ops && spec->stage_ops.on_import != NULL))) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    if (spec->io_sink &&
+        (spec->has_stage_ops && spec->stage_ops.on_export != NULL)) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
 
     rfc_scheduler_config cur_cfg;
     rfc_status st = rfc_scheduler_get_config(sched, &cur_cfg);
@@ -1480,10 +1530,43 @@ rfc_status rfc_scheduler_submit(rfc_scheduler *sched,
         return st;
     }
 
+    rfc_format_id eff_source_format = spec->source_format;
+    uint64_t eff_source_size = (uint64_t)spec->source_size;
+    rfc_file_identity sniff_src_id;
+    memset(&sniff_src_id, 0, sizeof(sniff_src_id));
+    if (spec->io_source) {
+        const rfc_limits *pre_lim =
+            spec->limits_override ? spec->limits_override
+                                  : &cur_cfg.default_limits;
+        st = rfc_limits_validate(pre_lim);
+        if (st != RFC_OK) {
+            return st;
+        }
+        rfc_sniff_result pre_sniff;
+        uint64_t sniff_sz = 0u;
+        st = rfc_input_sniff_source_preflight(
+            pre_lim, spec->io_source, spec->source_format, &pre_sniff,
+            &sniff_sz, &sniff_src_id);
+        if (st != RFC_OK) {
+            return st;
+        }
+        eff_source_format = pre_sniff.content_format;
+        eff_source_size = sniff_sz;
+    }
+    if (spec->io_sink) {
+        st = rfc_output_validate_sink_preflight(
+            spec->io_sink, spec->io_source,
+            sniff_src_id.valid ? &sniff_src_id : NULL);
+        if (st != RFC_OK) {
+            return st;
+        }
+    }
+
     uint64_t retained_bytes = 0;
     st = rfc_job_internal_compute_retained_bytes(
         spec->source_bytes, spec->source_size, spec->source_meta,
-        spec->settings, spec->setting_count, &retained_bytes);
+        spec->settings, spec->setting_count, spec->io_source, spec->io_sink,
+        &retained_bytes);
     if (st != RFC_OK) {
         return st;
     }
@@ -1497,7 +1580,7 @@ rfc_status rfc_scheduler_submit(rfc_scheduler *sched,
     const rfc_pipeline_stage_ops *stage_ops =
         spec->has_stage_ops ? &spec->stage_ops : NULL;
     st = compute_preflight(
-        &cur_cfg, spec->source_format, spec->target_format, spec->source_size,
+        &cur_cfg, eff_source_format, spec->target_format, eff_source_size,
         spec->source_layout, spec->source_meta, spec->settings,
         spec->setting_count, spec->acknowledged_unsupported_metadata, stage_ops,
         retained_bytes, spec->expected_working_set_bytes,
@@ -1511,7 +1594,7 @@ rfc_status rfc_scheduler_submit(rfc_scheduler *sched,
     int pending_admit = 0;
     uint64_t reserved_remaining = 0;
     st = pre_reserve_submit_inputs(
-        sched, slot, &src_mem, &dst_mem, spec, retained_bytes,
+        sched, slot, &src_mem, &dst_mem, spec, eff_source_size, retained_bytes,
         budget_limit_bytes, &pending_admit, &reserved_remaining);
     if (st != RFC_OK) {
         return st;
@@ -1520,7 +1603,8 @@ rfc_status rfc_scheduler_submit(rfc_scheduler *sched,
     rfc_job_inputs *inputs = rfc_job_inputs_create(
         sched, &reserved_remaining, spec->source_bytes, spec->source_size,
         spec->source_layout, spec->source_meta, spec->settings,
-        spec->setting_count, spec->acknowledged_unsupported_metadata);
+        spec->setting_count, spec->acknowledged_unsupported_metadata,
+        spec->io_source, spec->io_sink, eff_source_size);
     if (!inputs) {
         release_pending_submit(sched, pending_admit, reserved_remaining);
         return RFC_ERR_OUT_OF_MEMORY;
@@ -1539,7 +1623,7 @@ rfc_status rfc_scheduler_submit(rfc_scheduler *sched,
     }
 
     st = admit_prepared_job(
-        sched, slot, 1, &pending_admit, &src_mem, &dst_mem, spec->source_format,
+        sched, slot, 1, &pending_admit, &src_mem, &dst_mem, eff_source_format,
         spec->target_format, inputs, spec->requested_codec_threads,
         spec->expected_working_set_bytes, spec->job_memory_limit_bytes,
         spec->limits_override, spec->has_stage_ops, &spec->stage_ops, ctx_box,
@@ -1603,7 +1687,7 @@ rfc_status rfc_scheduler_retry(rfc_scheduler *sched,
     uint64_t exec_working_bytes = 0;
     uint64_t budget_limit_bytes = 0;
     st = compute_preflight(
-        &cur_cfg, source_format, target_format, inputs->source_size,
+        &cur_cfg, source_format, target_format, inputs->effective_source_size,
         inputs->has_layout ? &inputs->source_layout : NULL,
         inputs->has_meta ? &inputs->source_meta : NULL, inputs->settings,
         inputs->setting_count, inputs->acknowledged_unsupported_metadata,

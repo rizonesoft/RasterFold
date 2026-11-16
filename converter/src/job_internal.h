@@ -7,6 +7,7 @@
 
 #include "rfc_job.h"
 #include "rfc_verify.h"
+#include "rfc_io.h"
 
 #include <stdalign.h>
 #include <stdatomic.h>
@@ -311,6 +312,20 @@ typedef struct rfc_slot_state {
     rfc_job_id current_job_id;
 } rfc_slot_state;
 
+typedef struct rfc_io_reader_box {
+    atomic_size_t refs;
+    rfc_mutex lock;
+    int ownership_transferred;
+    rfc_io_reader reader;
+} rfc_io_reader_box;
+
+typedef struct rfc_io_publisher_box {
+    atomic_size_t refs;
+    rfc_mutex lock;
+    int ownership_transferred;
+    rfc_io_publisher publisher;
+} rfc_io_publisher_box;
+
 typedef struct rfc_job_inputs {
     atomic_size_t refs;
     rfc_scheduler *sched;
@@ -326,6 +341,18 @@ typedef struct rfc_job_inputs {
     size_t setting_count;
     uint32_t acknowledged_unsupported_metadata;
     uint64_t retained_bytes;
+
+    int has_io_source;
+    char *io_source_path;
+    char *io_source_virtual_name;
+    uint32_t io_import_flags;
+    rfc_io_reader_box *io_reader_box;
+    uint64_t effective_source_size;
+
+    int has_io_sink;
+    char *io_sink_path;
+    uint32_t io_export_flags;
+    rfc_io_publisher_box *io_publisher_box;
 } rfc_job_inputs;
 
 typedef struct rfc_partial_entry {
@@ -393,6 +420,8 @@ struct rfc_job {
 
     rfc_partial_entry *partials;
     uint64_t live_partial_bytes;
+    uint64_t attached_partial_bytes;
+    uint64_t staged_partial_bytes;
 
     /* Owned decoded frames and encoded output passed between pipeline stages. */
     rfc_frame *decoded_frames;
@@ -442,6 +471,16 @@ struct rfc_job {
     int has_verify_reconstructed;
     int has_verify_reconstructed_meta;
 
+    /* Safe file/callback import & export state (D10 T01 s5). */
+    uint8_t *imported_source_bytes;
+    size_t imported_source_size;
+    rfc_sniff_result sniff_result;
+    int has_sniff_result;
+    rfc_file_identity source_identity;
+    rfc_export_report export_report;
+    int publishing;
+    int publish_decided;
+
     /* Intrusive cancel dispatcher queue fields guarded by sched->lock. */
     rfc_cancel_snapshot pending_cancel;
     int cancel_queued;
@@ -480,6 +519,8 @@ void rfc_scheduler_internal_on_cancel_count(rfc_scheduler *sched);
 void rfc_scheduler_internal_on_publish_cancelled(rfc_scheduler *sched);
 void rfc_scheduler_internal_adjust_live_partials(rfc_scheduler *sched,
                                                  int64_t delta_bytes);
+void rfc_scheduler_internal_adjust_live_partials_locked(rfc_scheduler *sched,
+                                                        int64_t delta_bytes);
 void rfc_scheduler_internal_lock(rfc_scheduler *sched);
 void rfc_scheduler_internal_unlock(rfc_scheduler *sched);
 int rfc_scheduler_internal_is_destroying_locked(rfc_scheduler *sched);
@@ -505,6 +546,8 @@ rfc_status rfc_job_internal_compute_retained_bytes(
     const rfc_metadata *src_meta,
     const rfc_setting_value *settings,
     size_t setting_count,
+    const rfc_io_source *io_source,
+    const rfc_io_sink *io_sink,
     uint64_t *out_bytes);
 rfc_job_inputs *rfc_job_inputs_create(rfc_scheduler *sched,
                                       uint64_t *reserved_bytes_inout,
@@ -514,9 +557,43 @@ rfc_job_inputs *rfc_job_inputs_create(rfc_scheduler *sched,
                                       const rfc_metadata *src_meta,
                                       const rfc_setting_value *settings,
                                       size_t setting_count,
-                                      uint32_t acknowledged_unsupported_metadata);
+                                      uint32_t acknowledged_unsupported_metadata,
+                                      const rfc_io_source *io_source,
+                                      const rfc_io_sink *io_sink,
+                                      uint64_t effective_source_size);
+void rfc_job_inputs_arm_io_ownership(rfc_job_inputs *inputs);
 void rfc_job_inputs_retain(rfc_job_inputs *inputs);
 void rfc_job_inputs_release(rfc_job_inputs *inputs);
+
+rfc_status rfc_job_internal_begin_publish(rfc_job *job, rfc_job_id expected_id);
+void rfc_job_internal_finish_publish(rfc_job *job,
+                                     rfc_job_id expected_id,
+                                     int succeeded);
+void rfc_job_internal_note_partial_bytes(rfc_job *job, int64_t delta_bytes);
+
+rfc_status rfc_input_sniff_source_preflight(
+    const rfc_limits *limits,
+    const rfc_io_source *io_source,
+    rfc_format_id caller_source_format,
+    rfc_sniff_result *out_sniff,
+    uint64_t *out_source_size,
+    rfc_file_identity *out_identity);
+rfc_status rfc_input_read_job_source(
+    rfc_job *job,
+    const rfc_exec_context *exec,
+    const rfc_io_source *io_source,
+    rfc_io_reader_box *reader_box,
+    uint32_t import_flags,
+    rfc_format_id expected_format,
+    const char **out_err_detail);
+rfc_status rfc_output_validate_sink_preflight(
+    const rfc_io_sink *io_sink,
+    const rfc_io_source *io_source,
+    const rfc_file_identity *source_identity);
+rfc_status rfc_output_publish_job(
+    rfc_job *job,
+    const rfc_exec_context *exec,
+    const char **out_err_detail);
 
 typedef struct rfc_job_exec_result {
     rfc_status st;

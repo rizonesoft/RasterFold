@@ -171,11 +171,11 @@ def _check_headers(tmp):
     cxx = os.environ.get("CXX", "c++")
     inc = os.path.join(ROOT, "converter", "include")
     tu = os.path.join(tmp, "tu.c")
-    open(tu, "w").write('#include "rfc_codec.h"\n#include "rfc_job.h"\n#include "rfc_verify.h"\nint main(void){return 0;}\n')
+    open(tu, "w").write('#include "rfc_codec.h"\n#include "rfc_io.h"\n#include "rfc_job.h"\n#include "rfc_verify.h"\nint main(void){return 0;}\n')
     if run([cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", inc, "-c", tu, "-o", os.path.join(tmp, "tu.o")]):
         return fail("headers do not compile as C11")
     tux = os.path.join(tmp, "tu.cpp")
-    open(tux, "w").write('#include "rfc_codec.h"\n#include "rfc_job.h"\n#include "rfc_verify.h"\nint main(){return 0;}\n')
+    open(tux, "w").write('#include "rfc_codec.h"\n#include "rfc_io.h"\n#include "rfc_job.h"\n#include "rfc_verify.h"\nint main(){return 0;}\n')
     if run([cxx, "-std=c++17", "-Wall", "-Wextra", "-Werror", "-I", inc, "-c", tux, "-o", os.path.join(tmp, "tu_cpp.o")]):
         return fail("headers do not compile as C++")
     return 0
@@ -270,6 +270,8 @@ def case_jobs(all_targets):
         os.path.join(src_dir, "limits.c"),
         os.path.join(src_dir, "verify.c"),
         os.path.join(src_dir, "metadata.c"),
+        os.path.join(src_dir, "input.c"),
+        os.path.join(src_dir, "output.c"),
         os.path.join(src_dir, "job.c"),
         os.path.join(src_dir, "scheduler.c"),
         os.path.join(ROOT, "tests", "converter", "test_jobs.c"),
@@ -385,6 +387,8 @@ def case_exactness(all_targets):
             os.path.join(src_dir, "limits.c"),
             os.path.join(src_dir, "verify.c"),
             os.path.join(src_dir, "metadata.c"),
+            os.path.join(src_dir, "input.c"),
+            os.path.join(src_dir, "output.c"),
             os.path.join(src_dir, "job.c"),
             os.path.join(src_dir, "scheduler.c"),
             noprev_c,
@@ -415,6 +419,8 @@ def case_exactness(all_targets):
                 os.path.join(src_dir, "verify.c"),
                 os.path.join(src_dir, "metadata.c"),
                 os.path.join(src_dir, "preview.c"),
+                os.path.join(src_dir, "input.c"),
+                os.path.join(src_dir, "output.c"),
                 os.path.join(src_dir, "job.c"),
                 os.path.join(src_dir, "scheduler.c"),
                 os.path.join(ROOT, "tests", "converter", "test_exactness.c"),
@@ -485,6 +491,133 @@ def case_exactness(all_targets):
     return 0
 
 
+def _load_conv_module(name, filename):
+    import importlib.util
+    path = os.path.join(ROOT, "tests", "converter", filename)
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"failed to load converter test helper {path}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _assert_file_safety_output(out_text, label):
+    required = [
+        "file-safety: sniffing ok",
+        "file-safety: conflicts_and_bounds ok",
+        "file-safety: path_identity_and_refusals ok",
+        "file-safety: disk_full_and_cleanup ok",
+        "file-safety: callback_ownership_and_retry ok",
+        "file-safety: commit_cancel_serialization ok",
+        "file-safety: fold_roundtrip ok",
+        "file-safety: all checks passed",
+    ]
+    for marker in required:
+        if marker not in out_text:
+            return fail(f"{label} missing marker: {marker}\n{out_text}")
+    return 0
+
+
+def case_file_safety(all_targets=False):
+    import tempfile
+    from pathlib import Path
+
+    _ref = _load_conv_module("_rfc_ref", "reference.py")
+    _tb = _load_conv_module("_rfc_bundle", "test_bundle.py")
+
+    inc = os.path.join(ROOT, "converter", "include")
+    rf_inc = os.path.join(ROOT, "include")
+    src_dir = os.path.join(ROOT, "converter", "src")
+    win_exe = Path(ROOT) / "bin" / "converter" / "windows-x64" / "rfc_test_file_safety.exe"
+
+    with tempfile.TemporaryDirectory(prefix="rfc_fs_gate_") as tmp:
+        host_exe = ""
+        if os.name != "nt":
+            if run([sys.executable, os.path.join(ROOT, "scripts", "build.py"), "--target", "linux-x64"]):
+                return fail("linux-x64 static library build failed for file-safety")
+            rf_lib = os.path.join(ROOT, "bin", "linux-x64", "lib", "librasterfold.a")
+            if not os.path.isfile(rf_lib):
+                return fail(f"missing {rf_lib}")
+            cc = os.environ.get("CC", "cc")
+            host_exe = os.path.join(tmp, "test_file_safety")
+            sources = [
+                os.path.join(src_dir, "registry.c"),
+                os.path.join(src_dir, "limits.c"),
+                os.path.join(src_dir, "verify.c"),
+                os.path.join(src_dir, "metadata.c"),
+                os.path.join(src_dir, "preview.c"),
+                os.path.join(src_dir, "input.c"),
+                os.path.join(src_dir, "output.c"),
+                os.path.join(src_dir, "job.c"),
+                os.path.join(src_dir, "scheduler.c"),
+                os.path.join(ROOT, "tests", "converter", "test_file_safety.c"),
+            ]
+            cmd = [
+                cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-pthread",
+                "-I", inc, "-I", rf_inc,
+                *sources, rf_lib, "-lm", "-pthread", "-o", host_exe,
+            ]
+            if run(cmd):
+                return fail("test_file_safety failed to build cleanly on host")
+            res = _ref.run_process_tree(
+                [host_exe], cwd=ROOT, capture_output=True, text=True, timeout=120.0
+            )
+            if res.stdout:
+                print(res.stdout.rstrip(), flush=True)
+            if res.stderr:
+                print(res.stderr.rstrip(), file=sys.stderr, flush=True)
+            if res.returncode != 0:
+                return fail(f"host test_file_safety failed with rc={res.returncode}")
+            if _assert_file_safety_output(res.stdout or "", "host test_file_safety"):
+                return 1
+
+        if all_targets or os.name == "nt":
+            if run([sys.executable, os.path.join(ROOT, "scripts", "build-converter.py"), "--target", "windows-x64"]):
+                return fail("windows-x64 converter build failed for file-safety")
+            if not win_exe.is_file():
+                return fail(f"missing Windows test binary {win_exe}")
+            dlls = _tb.parse_pe64_imports(win_exe)
+            _tb.validate_pe_imports(dlls)
+            ro_dlls = _tb.readobj_imports(win_exe)
+            _tb.validate_pe_imports(ro_dlls)
+            wres = _tb.run_windows_binary_isolated(win_exe, timeout_sec=120.0)
+            if hasattr(wres, "stdout"):
+                w_rc = wres.returncode
+                w_out = wres.stdout or ""
+                w_err = wres.stderr or ""
+            else:
+                w_rc = 0
+                w_out = str(wres)
+                w_err = ""
+            if w_out:
+                print(w_out.rstrip(), flush=True)
+            if w_err:
+                print(w_err.rstrip(), file=sys.stderr, flush=True)
+            if w_rc != 0:
+                return fail(f"windows-x64 rfc_test_file_safety.exe failed with rc={w_rc}")
+            if _assert_file_safety_output(w_out, "windows-x64 rfc_test_file_safety.exe"):
+                return 1
+
+        env = dict(os.environ)
+        env["RFC_HOST_FILE_SAFETY_EXE"] = host_exe if host_exe else str(win_exe)
+        if (all_targets or os.name == "nt") and win_exe.is_file():
+            env["RFC_WIN_FILE_SAFETY_EXE"] = str(win_exe)
+        py_res = _ref.run_process_tree(
+            [sys.executable, os.path.join(ROOT, "tests", "converter", "test_file_safety.py"), "-v"],
+            cwd=ROOT, env=env, capture_output=True, text=True, timeout=240.0
+        )
+        if py_res.stdout:
+            print(py_res.stdout.rstrip(), flush=True)
+        if py_res.stderr:
+            print(py_res.stderr.rstrip(), file=sys.stderr, flush=True)
+        if py_res.returncode != 0:
+            return fail(f"test_file_safety.py failed with rc={py_res.returncode}")
+
+    print("file-safety: PASS")
+    return 0
+
+
 def main():
     raw_args = sys.argv[1:]
     all_targets = "--all-targets" in raw_args
@@ -497,6 +630,8 @@ def main():
         return case_jobs(all_targets)
     if args == ["--case", "exactness"]:
         return case_exactness(all_targets)
+    if args == ["--case", "file-safety"]:
+        return case_file_safety(all_targets)
     if args == ["--case", "all"]:
         rc = case_contract()
         if rc:
@@ -507,8 +642,11 @@ def main():
         rc = case_exactness(all_targets)
         if rc:
             return rc
+        rc = case_file_safety(all_targets)
+        if rc:
+            return rc
         return case_bundle()
-    print("usage: check-converter.py --case <contract|jobs|exactness|bundle|all> [--all-targets]")
+    print("usage: check-converter.py --case <contract|jobs|exactness|file-safety|bundle|all> [--all-targets]")
     return 1
 
 

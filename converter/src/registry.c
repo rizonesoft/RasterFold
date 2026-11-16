@@ -475,6 +475,13 @@ const char *rfc_status_name(rfc_status s) {
         case RFC_ERR_BUSY: return "busy";
         case RFC_ERR_VERIFY_MISMATCH: return "verify-mismatch";
         case RFC_ERR_METADATA_POLICY: return "metadata-policy";
+        case RFC_ERR_IO: return "io-error";
+        case RFC_ERR_PERMISSION_DENIED: return "permission-denied";
+        case RFC_ERR_DESTINATION_EXISTS: return "destination-exists";
+        case RFC_ERR_PATH_ALIAS: return "path-alias";
+        case RFC_ERR_DISK_FULL: return "disk-full";
+        case RFC_ERR_FORMAT_DISAGREEMENT: return "format-disagreement";
+        case RFC_ERR_TRUNCATED_INPUT: return "truncated-input";
         default: return "unknown-status";
     }
 }

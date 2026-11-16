@@ -159,6 +159,13 @@ int main(int argc, char **argv) {
     CHECK(strcmp(rfc_status_name(RFC_ERR_BUSY), "busy") == 0);
     CHECK(strcmp(rfc_status_name(RFC_ERR_VERIFY_MISMATCH), "verify-mismatch") == 0);
     CHECK(strcmp(rfc_status_name(RFC_ERR_METADATA_POLICY), "metadata-policy") == 0);
+    CHECK(strcmp(rfc_status_name(RFC_ERR_IO), "io-error") == 0);
+    CHECK(strcmp(rfc_status_name(RFC_ERR_PERMISSION_DENIED), "permission-denied") == 0);
+    CHECK(strcmp(rfc_status_name(RFC_ERR_DESTINATION_EXISTS), "destination-exists") == 0);
+    CHECK(strcmp(rfc_status_name(RFC_ERR_PATH_ALIAS), "path-alias") == 0);
+    CHECK(strcmp(rfc_status_name(RFC_ERR_DISK_FULL), "disk-full") == 0);
+    CHECK(strcmp(rfc_status_name(RFC_ERR_FORMAT_DISAGREEMENT), "format-disagreement") == 0);
+    CHECK(strcmp(rfc_status_name(RFC_ERR_TRUNCATED_INPUT), "truncated-input") == 0);
     CHECK(rfc_registry_find(RFC_FORMAT_RASTERFOLD)->metadata_items == RFC_META_ITEM_NONE);
     CHECK(rfc_registry_find(RFC_FORMAT_PNG)->metadata_items == RFC_META_ITEM_ICC);
     CHECK(rfc_registry_find(RFC_FORMAT_JPEG_XL)->metadata_items == RFC_META_ITEM_ALL);

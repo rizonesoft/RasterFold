@@ -18,6 +18,8 @@ typedef struct rfc_budget rfc_budget;
 typedef struct rfc_job_slot rfc_job_slot;
 typedef struct rfc_job rfc_job;
 typedef struct rfc_scheduler rfc_scheduler;
+struct rfc_io_source;
+struct rfc_io_sink;
 
 typedef enum rfc_job_state {
     RFC_JOB_QUEUED = 0,
@@ -185,6 +187,8 @@ typedef struct rfc_job_spec {
     rfc_progress_fn progress_fn;
     void *progress_user;
     uint32_t acknowledged_unsupported_metadata;
+    const struct rfc_io_source *io_source;
+    const struct rfc_io_sink *io_sink;
 } rfc_job_spec;
 
 void rfc_limits_default(rfc_limits *out);
