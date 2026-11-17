@@ -1566,7 +1566,7 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "2026-11-14 operator retirement: re-read README.md against .conclave/reviewers.toml, scripts/review-dispatch.py, scripts/unattended-run.sh, scripts/unattended-preflight.py, scripts/install-launchers.ps1 and .codex/hooks.json. Only Claude Code and Antigravity write; Astra through Codex is the only reviewer; Codex writer launcher is refused, native hook disabled and desktop shortcut removed. Review lenses and pass cap remain unchanged.",
+      "evidence": "Re-read README.md against .conclave/reviewers.toml on 2026-11-17: the reviewer pin moved from GPT-6 Astra to GPT-6.2 Astra (gpt-6.2-astra); routes, lenses and the 33-pass cap are unchanged.",
       "sources": {
         "include/rasterfold.h": "e5e9eecb93e59b3cfb6b00674006e03ba887c671516e6682292ef5753b015379",
         "src/rf.h": "7f58b508d0e3bb10cc2e1c57cda78e3552a2976a99928e0dfa1df16b91e0117d",
@@ -1574,35 +1574,35 @@
         "scripts/build.py": "236a43c711a4b9e667c47b9e06ab04d62c8721db8d126740441de7762276eacc",
         "scripts/package.py": "f030a89836d12e610d9ad4a762bf073c975e6fcaf6bdb83ef09bc174e3f37973",
         "scripts/check-all.py": "ec0f58046fb6beb5e9b522530aa51a4e3eff03bd546a17a09db53e53ca8a5e9a",
-        "README.md": "cef54240f945c0fa7cf92b8cc7f1082d1d4157b230c4a343a7ac57c2f419d7d5",
-        "AGENTS.md": "f776d22098b6728ea7cdb37dc5f0c858b6f096a01274bf87250ed8f81fe3cdd4",
-        ".conclave/reviewers.toml": "39a3e6eb7681f2dc9e154e8c883d8021fd49919fb01ae7cb0590becd3fd385a3",
+        "README.md": "b63303b60e21ca7db52ff5b3555740a60ecc4aaa781e5ed8bd47f5a8985e39fb",
+        "AGENTS.md": "801fe4d2af1db851d4772a95300a475daa4c7dfd2ce6d2864920d979adad5fe3",
+        ".conclave/reviewers.toml": "ed96da5d05acfdd012c2b724746513497bd36d30d777a1ff61c9af7fd2b62b64",
         "scripts/review-dispatch.py": "949f1f36cfca7d37fa36fea0f78b0357cbb66dfd53c4521b9fc6523a2e33486c"
       },
       "review": "Author-attested: 2026-10-25 re-read README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "AGENTS.md": {
-      "evidence": "Re-read 2026-11-15 for D10 T01 s2 round 1: added toolchain.json probe hashes remain isolated behind bootstrap verify and --converter",
+      "evidence": "Re-read AGENTS.md against .conclave/reviewers.toml on 2026-11-17: the reviewer pin moved from GPT-6 Astra to GPT-6.2 Astra (gpt-6.2-astra); routes, lenses and the 33-pass cap are unchanged.",
       "sources": {
         "include/rasterfold.h": "e5e9eecb93e59b3cfb6b00674006e03ba887c671516e6682292ef5753b015379",
         "src/rf.h": "7f58b508d0e3bb10cc2e1c57cda78e3552a2976a99928e0dfa1df16b91e0117d",
         "toolchain.json": "eb53e29ed47b6ae570e705e7c48dca3e5fc922f6213d892c084e00489785d75d",
-        ".conclave/reviewers.toml": "39a3e6eb7681f2dc9e154e8c883d8021fd49919fb01ae7cb0590becd3fd385a3",
+        ".conclave/reviewers.toml": "ed96da5d05acfdd012c2b724746513497bd36d30d777a1ff61c9af7fd2b62b64",
         "scripts/review-dispatch.py": "949f1f36cfca7d37fa36fea0f78b0357cbb66dfd53c4521b9fc6523a2e33486c",
-        "AGENTS.md": "f776d22098b6728ea7cdb37dc5f0c858b6f096a01274bf87250ed8f81fe3cdd4",
+        "AGENTS.md": "801fe4d2af1db851d4772a95300a475daa4c7dfd2ce6d2864920d979adad5fe3",
         ".codex/hooks.json": "2caa02c09946ea197fb9d159f013de70c358ed321143388f8a02524c09de7b45",
         "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",
         "scripts/campaign_guard.py": "564720b1ae8c3999bca60b1a00814ef60ff4c51f636a42e4953f9cbbadfd54d3"
       }
     },
     "GEMINI.md": {
-      "evidence": "2026-11-14 operator retirement: re-read GEMINI.md against .conclave/reviewers.toml, scripts/review-dispatch.py, scripts/unattended-run.sh, scripts/unattended-preflight.py, scripts/install-launchers.ps1 and .codex/hooks.json. Only Claude Code and Antigravity write; Astra through Codex is the only reviewer; Codex writer launcher is refused, native hook disabled and desktop shortcut removed. Review lenses and pass cap remain unchanged.",
+      "evidence": "Re-read GEMINI.md against .conclave/reviewers.toml on 2026-11-17: the reviewer pin moved from GPT-6 Astra to GPT-6.2 Astra (gpt-6.2-astra); routes, lenses and the 33-pass cap are unchanged.",
       "sources": {
-        "AGENTS.md": "f776d22098b6728ea7cdb37dc5f0c858b6f096a01274bf87250ed8f81fe3cdd4",
-        ".conclave/reviewers.toml": "39a3e6eb7681f2dc9e154e8c883d8021fd49919fb01ae7cb0590becd3fd385a3",
+        "AGENTS.md": "801fe4d2af1db851d4772a95300a475daa4c7dfd2ce6d2864920d979adad5fe3",
+        ".conclave/reviewers.toml": "ed96da5d05acfdd012c2b724746513497bd36d30d777a1ff61c9af7fd2b62b64",
         "scripts/review-dispatch.py": "949f1f36cfca7d37fa36fea0f78b0357cbb66dfd53c4521b9fc6523a2e33486c",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
-        "GEMINI.md": "0be703808d81e3b8b5498dbe59f85d9ba521b3ce57fde01d4593ac48a058d648"
+        "GEMINI.md": "88b941d129653f1b32d4dea63ca897f852c8f1ec4df39ba3658676b1aeec1aee"
       }
     },
     "CONTRIBUTING.md": {
@@ -1696,14 +1696,14 @@
       }
     },
     "docs/agent-skills-and-rules-structure.md": {
-      "evidence": "2026-11-14 operator retirement: re-read docs/agent-skills-and-rules-structure.md against .conclave/reviewers.toml, scripts/review-dispatch.py, scripts/unattended-run.sh, scripts/unattended-preflight.py, scripts/install-launchers.ps1 and .codex/hooks.json. Only Claude Code and Antigravity write; Astra through Codex is the only reviewer; Codex writer launcher is refused, native hook disabled and desktop shortcut removed. Review lenses and pass cap remain unchanged.",
+      "evidence": "Re-read docs/agent-skills-and-rules-structure.md against .conclave/reviewers.toml on 2026-11-17: the reviewer pin moved from GPT-6 Astra to GPT-6.2 Astra (gpt-6.2-astra); routes, lenses and the 33-pass cap are unchanged.",
       "sources": {
-        "AGENTS.md": "f776d22098b6728ea7cdb37dc5f0c858b6f096a01274bf87250ed8f81fe3cdd4",
-        "GEMINI.md": "0be703808d81e3b8b5498dbe59f85d9ba521b3ce57fde01d4593ac48a058d648",
-        ".conclave/reviewers.toml": "39a3e6eb7681f2dc9e154e8c883d8021fd49919fb01ae7cb0590becd3fd385a3",
+        "AGENTS.md": "801fe4d2af1db851d4772a95300a475daa4c7dfd2ce6d2864920d979adad5fe3",
+        "GEMINI.md": "88b941d129653f1b32d4dea63ca897f852c8f1ec4df39ba3658676b1aeec1aee",
+        ".conclave/reviewers.toml": "ed96da5d05acfdd012c2b724746513497bd36d30d777a1ff61c9af7fd2b62b64",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
         "scripts/review-dispatch.py": "949f1f36cfca7d37fa36fea0f78b0357cbb66dfd53c4521b9fc6523a2e33486c",
-        "docs/agent-skills-and-rules-structure.md": "f6aea1ffd5c6191d24f3f02537ac3562c425846daf4544989bee806419c10a0d",
+        "docs/agent-skills-and-rules-structure.md": "d11471be6866a0fec94db6a7e29e9a90a21a1600270a7ce5d4559f862f6bbe1e",
         ".codex/hooks.json": "2caa02c09946ea197fb9d159f013de70c358ed321143388f8a02524c09de7b45",
         "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",
         "scripts/campaign_guard.py": "564720b1ae8c3999bca60b1a00814ef60ff4c51f636a42e4953f9cbbadfd54d3"

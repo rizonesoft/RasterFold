@@ -23,7 +23,7 @@ LEGACY_PIN = """schema_version = 1
 
 [reviewers.astra]
 cli = "codex"
-model = "gpt-6-astra"
+model = "gpt-6.2-astra"
 effort = "medium"
 
 [reviewers.spark]
@@ -1299,7 +1299,7 @@ class RepositoryPin(unittest.TestCase):
     def test_the_repository_pin_preserves_routes_and_lenses_without_effort_overrides(self):
         with open(REPO_PIN, "rb") as handle:
             pin = tomllib.load(handle)
-        self.assertEqual(pin["reviewers"], {"astra": {"cli": "codex", "model": "gpt-6-astra", "effort": "medium", "followup_effort": "low"}})
+        self.assertEqual(pin["reviewers"], {"astra": {"cli": "codex", "model": "gpt-6.2-astra", "effort": "medium", "followup_effort": "low"}})
         self.assertEqual(pin["routes"], {"claude": ["astra"], "gemini": ["astra"]})
         schedule = pin["schedule"]
         self.assertEqual(schedule["policy"], "three-pass")
@@ -1373,7 +1373,7 @@ class RepositoryPin(unittest.TestCase):
             bad_lines = ["1. Incomplete reply without footer."]
             report.parent.mkdir(parents=True, exist_ok=True)
             report.write_text("\n".join([
-                "## Completion review: astra (`gpt-6-astra` via `codex`)",
+                "## Completion review: astra (`gpt-6.2-astra` via `codex`)",
                 "",
                 "- Writer: agy",
                 "- Run: 2026-10-24T00:00:00Z",
@@ -1387,17 +1387,17 @@ class RepositoryPin(unittest.TestCase):
             ]), encoding="utf-8")
             dispatch.record_completion(
                 report,
-                {"writer": "agy", "reviewer": "astra", "cli": "codex", "model": "gpt-6-astra",
+                {"writer": "agy", "reviewer": "astra", "cli": "codex", "model": "gpt-6.2-astra",
                  "effort": "medium", "skipped": [], "review": "COMPLETION: complete"},
                 "2026-10-24T00:01:00Z",
                 head,
                 "completion",
             )
             # Now record a plan review and round 1 from an unpinned reviewer (`sol` / `gpt-6.1-sol`) and verify
-            # schedule_ok refuses it against the committed `astra` / `gpt-6-astra` pin.
+            # schedule_ok refuses it against the committed `astra` / `gpt-6.2-astra` pin.
             dispatch.record_completion(
                 report,
-                {"writer": "agy", "reviewer": "astra", "cli": "codex", "model": "gpt-6-astra",
+                {"writer": "agy", "reviewer": "astra", "cli": "codex", "model": "gpt-6.2-astra",
                  "effort": "medium", "lenses": ["plan"], "skipped": [],
                  "review": "HIGHEST: none\nPLAN: complete\nOVERALL: approve"},
                 "2026-10-24T00:02:00Z",
@@ -1415,9 +1415,9 @@ class RepositoryPin(unittest.TestCase):
                 "implementation_sha": head,
                 "schedule": pin["schedule"],
                 "plan": {"report": report_rel, "candidate": head, "reviewer": "astra",
-                         "model": "gpt-6-astra", "effort": "medium", "lenses": ["plan"]},
+                         "model": "gpt-6.2-astra", "effort": "medium", "lenses": ["plan"]},
                 "completion": {"report": report_rel, "verdict": "complete", "candidate": head,
-                               "reviewer": "astra", "model": "gpt-6-astra", "filed": []},
+                               "reviewer": "astra", "model": "gpt-6.2-astra", "filed": []},
                 "reviews": [{"round": 1, "report": report_rel, "verdict": "clean"}],
             }
             with self.assertRaisesRegex(todo_graph.Refused, r"not the reviewer astra"):
@@ -1528,7 +1528,7 @@ class RestartedMarkerTests(StampRepo):
     def reviewed(self, kind, candidate=None, highest="none"):
         report = self.root / self.REPORT
         report.parent.mkdir(parents=True, exist_ok=True)
-        base = {"writer": "copilot", "reviewer": "astra", "cli": "codex", "model": "gpt-6-astra", "skipped": []}
+        base = {"writer": "copilot", "reviewer": "astra", "cli": "codex", "model": "gpt-6.2-astra", "skipped": []}
         if kind == "round":
             rounds = self.dispatch.read_rounds(report.read_text(encoding="utf-8"))
             step = self.dispatch.scheduled(self.schedule, "round", rounds, False)
@@ -1713,7 +1713,7 @@ class ThreePassStamp(StampRepo):
     PIN_TEXT = REPO_PIN.read_text(encoding="utf-8")
     ROUND_LENSES = ["adversarial", "integration", "source-defect", "plan-delivery", "consistency", "record", "quality",
                     "optimization"]
-    BASE = {"writer": "claude", "reviewer": "astra", "cli": "codex", "model": "gpt-6-astra", "skipped": []}
+    BASE = {"writer": "claude", "reviewer": "astra", "cli": "codex", "model": "gpt-6.2-astra", "skipped": []}
 
     def one_pass(self, kind, candidate, footer, lenses=()):
         report = self.root / self.REPORT
@@ -2124,7 +2124,7 @@ class ThreePassDispatch(Harness):
         self.assertEqual(self.calls(), [])
         # A complete recorded on the changed section before that refusal existed is void.
         self.module().record_completion(self.findings, {
-            "writer": "claude", "reviewer": "astra", "cli": "codex", "model": "gpt-6-astra", "skipped": [],
+            "writer": "claude", "reviewer": "astra", "cli": "codex", "model": "gpt-6.2-astra", "skipped": [],
             "effort": "low", "lenses": ["adversarial", "integration", "plan-delivery", "record"],
             "review": "RECONCILIATION: complete"}, "2026-11-12T00:00:00Z", extended, "reconciliation")
         result, _ = self.run_pass("reconciliation", "RECONCILIATION: complete", candidate=extended)
@@ -2167,7 +2167,7 @@ class ThreePassDispatch(Harness):
         module = self.module()
         for i in range(module.REVIEW_PASS_CAP - 4):
             module.record_completion(self.findings, {"writer": "claude", "reviewer": "astra", "cli": "codex",
-                                                     "model": "gpt-6-astra", "effort": "low", "skipped": [],
+                                                     "model": "gpt-6.2-astra", "effort": "low", "skipped": [],
                                                      "lenses": [], "review": "RECONCILIATION: gaps"},
                                      f"2026-11-09T01:{i:02d}:00Z", self.head, "reconciliation")
         result, _ = self.run_pass("reconciliation", "RECONCILIATION: gaps")
@@ -2213,7 +2213,7 @@ class ThreePassDispatch(Harness):
         start = self.commit("the section's plan review ran under this pin")
         self.findings.parent.mkdir(parents=True)
         self.module().record_completion(self.findings, {
-            "writer": "agy", "reviewer": "astra", "cli": "codex", "model": "gpt-6-astra", "effort": "medium",
+            "writer": "agy", "reviewer": "astra", "cli": "codex", "model": "gpt-6.2-astra", "effort": "medium",
             "lenses": ["plan"], "skipped": [], "review": self.PLAN}, "2026-11-06T00:00:00Z", start, "plan")
         pin.write_text(current, encoding="utf-8", newline="\n")
         self.head = self.commit("the pin moves to three-pass")
