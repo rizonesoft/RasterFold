@@ -75,6 +75,11 @@ static uint32_t rd32le(const uint8_t *p) {
            ((uint32_t)p[3] << 24);
 }
 
+static uint32_t rd32be(const uint8_t *p) {
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
+           ((uint32_t)p[2] << 8) | (uint32_t)p[3];
+}
+
 static void wr16le(uint8_t *p, uint16_t v) {
     p[0] = (uint8_t)(v & 0xffu);
     p[1] = (uint8_t)((v >> 8) & 0xffu);
@@ -137,6 +142,63 @@ static void tracked_free(void *ctx, void *ptr) {
     tracked_hdr *h = ((tracked_hdr *)ptr) - 1;
     st->live -= h->size;
     free(h);
+}
+
+#define OOM_MAX_PTRS 4096u
+
+typedef struct oom_alloc_ctx {
+    void *ptrs[OOM_MAX_PTRS];
+    size_t sizes[OOM_MAX_PTRS];
+    size_t live;
+    size_t calls;
+    size_t fail_at_call;
+    size_t invalid_frees;
+    int overflow;
+} oom_alloc_ctx;
+
+static void *oom_alloc(void *ctx, size_t sz) {
+    oom_alloc_ctx *o = (oom_alloc_ctx *)ctx;
+    o->calls++;
+    if (o->fail_at_call > 0u && o->calls == o->fail_at_call) {
+        return NULL;
+    }
+    void *p = malloc(sz ? sz : 1u);
+    if (!p) {
+        return NULL;
+    }
+    int stored = 0;
+    for (size_t i = 0u; i < OOM_MAX_PTRS; i++) {
+        if (o->ptrs[i] == NULL) {
+            o->ptrs[i] = p;
+            o->sizes[i] = sz;
+            stored = 1;
+            break;
+        }
+    }
+    if (!stored) {
+        o->overflow = 1;
+        free(p);
+        return NULL;
+    }
+    o->live += sz;
+    return p;
+}
+
+static void oom_free(void *ctx, void *ptr) {
+    if (!ptr) {
+        return;
+    }
+    oom_alloc_ctx *o = (oom_alloc_ctx *)ctx;
+    for (size_t i = 0u; i < OOM_MAX_PTRS; i++) {
+        if (o->ptrs[i] == ptr) {
+            o->ptrs[i] = NULL;
+            o->live -= o->sizes[i];
+            o->sizes[i] = 0u;
+            free(ptr);
+            return;
+        }
+    }
+    o->invalid_frees++;
 }
 
 static void init_exec(rfc_exec_context *exec,
@@ -560,6 +622,62 @@ static const uint8_t k_jpeg_gray_16x16[] = {
     0x2bu, 0xffu, 0xd9u,
 };
 
+static const uint8_t k_jpeg_baseline_16x8[] = {
+    0xffu, 0xd8u, 0xffu, 0xe0u, 0x00u, 0x10u, 0x4au, 0x46u, 0x49u, 0x46u, 0x00u, 0x01u,
+    0x01u, 0x00u, 0x00u, 0x01u, 0x00u, 0x01u, 0x00u, 0x00u, 0xffu, 0xdbu, 0x00u, 0x43u,
+    0x00u, 0x05u, 0x03u, 0x04u, 0x04u, 0x04u, 0x03u, 0x05u, 0x04u, 0x04u, 0x04u, 0x05u,
+    0x05u, 0x05u, 0x06u, 0x07u, 0x0cu, 0x08u, 0x07u, 0x07u, 0x07u, 0x07u, 0x0fu, 0x0bu,
+    0x0bu, 0x09u, 0x0cu, 0x11u, 0x0fu, 0x12u, 0x12u, 0x11u, 0x0fu, 0x11u, 0x11u, 0x13u,
+    0x16u, 0x1cu, 0x17u, 0x13u, 0x14u, 0x1au, 0x15u, 0x11u, 0x11u, 0x18u, 0x21u, 0x18u,
+    0x1au, 0x1du, 0x1du, 0x1fu, 0x1fu, 0x1fu, 0x13u, 0x17u, 0x22u, 0x24u, 0x22u, 0x1eu,
+    0x24u, 0x1cu, 0x1eu, 0x1fu, 0x1eu, 0xffu, 0xdbu, 0x00u, 0x43u, 0x01u, 0x05u, 0x05u,
+    0x05u, 0x07u, 0x06u, 0x07u, 0x0eu, 0x08u, 0x08u, 0x0eu, 0x1eu, 0x14u, 0x11u, 0x14u,
+    0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu,
+    0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu,
+    0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu,
+    0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu, 0x1eu,
+    0x1eu, 0x1eu, 0xffu, 0xc0u, 0x00u, 0x11u, 0x08u, 0x00u, 0x08u, 0x00u, 0x10u, 0x03u,
+    0x01u, 0x11u, 0x00u, 0x02u, 0x11u, 0x01u, 0x03u, 0x11u, 0x01u, 0xffu, 0xc4u, 0x00u,
+    0x1fu, 0x00u, 0x00u, 0x01u, 0x05u, 0x01u, 0x01u, 0x01u, 0x01u, 0x01u, 0x01u, 0x00u,
+    0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x01u, 0x02u, 0x03u, 0x04u, 0x05u,
+    0x06u, 0x07u, 0x08u, 0x09u, 0x0au, 0x0bu, 0xffu, 0xc4u, 0x00u, 0xb5u, 0x10u, 0x00u,
+    0x02u, 0x01u, 0x03u, 0x03u, 0x02u, 0x04u, 0x03u, 0x05u, 0x05u, 0x04u, 0x04u, 0x00u,
+    0x00u, 0x01u, 0x7du, 0x01u, 0x02u, 0x03u, 0x00u, 0x04u, 0x11u, 0x05u, 0x12u, 0x21u,
+    0x31u, 0x41u, 0x06u, 0x13u, 0x51u, 0x61u, 0x07u, 0x22u, 0x71u, 0x14u, 0x32u, 0x81u,
+    0x91u, 0xa1u, 0x08u, 0x23u, 0x42u, 0xb1u, 0xc1u, 0x15u, 0x52u, 0xd1u, 0xf0u, 0x24u,
+    0x33u, 0x62u, 0x72u, 0x82u, 0x09u, 0x0au, 0x16u, 0x17u, 0x18u, 0x19u, 0x1au, 0x25u,
+    0x26u, 0x27u, 0x28u, 0x29u, 0x2au, 0x34u, 0x35u, 0x36u, 0x37u, 0x38u, 0x39u, 0x3au,
+    0x43u, 0x44u, 0x45u, 0x46u, 0x47u, 0x48u, 0x49u, 0x4au, 0x53u, 0x54u, 0x55u, 0x56u,
+    0x57u, 0x58u, 0x59u, 0x5au, 0x63u, 0x64u, 0x65u, 0x66u, 0x67u, 0x68u, 0x69u, 0x6au,
+    0x73u, 0x74u, 0x75u, 0x76u, 0x77u, 0x78u, 0x79u, 0x7au, 0x83u, 0x84u, 0x85u, 0x86u,
+    0x87u, 0x88u, 0x89u, 0x8au, 0x92u, 0x93u, 0x94u, 0x95u, 0x96u, 0x97u, 0x98u, 0x99u,
+    0x9au, 0xa2u, 0xa3u, 0xa4u, 0xa5u, 0xa6u, 0xa7u, 0xa8u, 0xa9u, 0xaau, 0xb2u, 0xb3u,
+    0xb4u, 0xb5u, 0xb6u, 0xb7u, 0xb8u, 0xb9u, 0xbau, 0xc2u, 0xc3u, 0xc4u, 0xc5u, 0xc6u,
+    0xc7u, 0xc8u, 0xc9u, 0xcau, 0xd2u, 0xd3u, 0xd4u, 0xd5u, 0xd6u, 0xd7u, 0xd8u, 0xd9u,
+    0xdau, 0xe1u, 0xe2u, 0xe3u, 0xe4u, 0xe5u, 0xe6u, 0xe7u, 0xe8u, 0xe9u, 0xeau, 0xf1u,
+    0xf2u, 0xf3u, 0xf4u, 0xf5u, 0xf6u, 0xf7u, 0xf8u, 0xf9u, 0xfau, 0xffu, 0xc4u, 0x00u,
+    0x1fu, 0x01u, 0x00u, 0x03u, 0x01u, 0x01u, 0x01u, 0x01u, 0x01u, 0x01u, 0x01u, 0x01u,
+    0x01u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x01u, 0x02u, 0x03u, 0x04u, 0x05u,
+    0x06u, 0x07u, 0x08u, 0x09u, 0x0au, 0x0bu, 0xffu, 0xc4u, 0x00u, 0xb5u, 0x11u, 0x00u,
+    0x02u, 0x01u, 0x02u, 0x04u, 0x04u, 0x03u, 0x04u, 0x07u, 0x05u, 0x04u, 0x04u, 0x00u,
+    0x01u, 0x02u, 0x77u, 0x00u, 0x01u, 0x02u, 0x03u, 0x11u, 0x04u, 0x05u, 0x21u, 0x31u,
+    0x06u, 0x12u, 0x41u, 0x51u, 0x07u, 0x61u, 0x71u, 0x13u, 0x22u, 0x32u, 0x81u, 0x08u,
+    0x14u, 0x42u, 0x91u, 0xa1u, 0xb1u, 0xc1u, 0x09u, 0x23u, 0x33u, 0x52u, 0xf0u, 0x15u,
+    0x62u, 0x72u, 0xd1u, 0x0au, 0x16u, 0x24u, 0x34u, 0xe1u, 0x25u, 0xf1u, 0x17u, 0x18u,
+    0x19u, 0x1au, 0x26u, 0x27u, 0x28u, 0x29u, 0x2au, 0x35u, 0x36u, 0x37u, 0x38u, 0x39u,
+    0x3au, 0x43u, 0x44u, 0x45u, 0x46u, 0x47u, 0x48u, 0x49u, 0x4au, 0x53u, 0x54u, 0x55u,
+    0x56u, 0x57u, 0x58u, 0x59u, 0x5au, 0x63u, 0x64u, 0x65u, 0x66u, 0x67u, 0x68u, 0x69u,
+    0x6au, 0x73u, 0x74u, 0x75u, 0x76u, 0x77u, 0x78u, 0x79u, 0x7au, 0x82u, 0x83u, 0x84u,
+    0x85u, 0x86u, 0x87u, 0x88u, 0x89u, 0x8au, 0x92u, 0x93u, 0x94u, 0x95u, 0x96u, 0x97u,
+    0x98u, 0x99u, 0x9au, 0xa2u, 0xa3u, 0xa4u, 0xa5u, 0xa6u, 0xa7u, 0xa8u, 0xa9u, 0xaau,
+    0xb2u, 0xb3u, 0xb4u, 0xb5u, 0xb6u, 0xb7u, 0xb8u, 0xb9u, 0xbau, 0xc2u, 0xc3u, 0xc4u,
+    0xc5u, 0xc6u, 0xc7u, 0xc8u, 0xc9u, 0xcau, 0xd2u, 0xd3u, 0xd4u, 0xd5u, 0xd6u, 0xd7u,
+    0xd8u, 0xd9u, 0xdau, 0xe2u, 0xe3u, 0xe4u, 0xe5u, 0xe6u, 0xe7u, 0xe8u, 0xe9u, 0xeau,
+    0xf2u, 0xf3u, 0xf4u, 0xf5u, 0xf6u, 0xf7u, 0xf8u, 0xf9u, 0xfau, 0xffu, 0xdau, 0x00u,
+    0x0cu, 0x03u, 0x01u, 0x00u, 0x02u, 0x11u, 0x03u, 0x11u, 0x00u, 0x3fu, 0x00u, 0xccu,
+    0xafu, 0xd1u, 0x4fu, 0x84u, 0x0au, 0x00u, 0xffu, 0xd9u,
+};
+
 /* Direct upstream JxlEncoder helper for generating fixtures JXL->decoder tests
  * without going through rfc_jxl_encode (covers XYB lossy, brob boxes, odd
  * alpha depths, animations, non-zero Exif TIFF offsets). */
@@ -723,6 +841,308 @@ static void upstream_verify_native_codestream(const uint8_t *jxl_bytes,
     CHECK(memcmp(out, exp_native_pixels, exp_native_len) == 0);
     free(out);
     JxlDecoderDestroy(dec);
+}
+
+static void upstream_encode_jxl_color(uint32_t w,
+                                      uint32_t h,
+                                      const JxlColorEncoding *ce_opt,
+                                      const uint8_t *icc_opt,
+                                      size_t icc_len,
+                                      int lossless,
+                                      int uses_orig,
+                                      const uint8_t *exif_box_payload,
+                                      size_t exif_box_len,
+                                      const uint8_t *xmp_payload,
+                                      size_t xmp_len,
+                                      const uint8_t *pixels,
+                                      size_t pix_len,
+                                      uint8_t **out_buf,
+                                      size_t *out_len) {
+    JxlEncoder *enc = JxlEncoderCreate(NULL);
+    CHECK(enc != NULL);
+    JxlEncoderSetCms(enc, *JxlGetDefaultCms());
+    int need_box = (exif_box_payload != NULL || xmp_payload != NULL);
+    if (need_box) {
+        CHECK(JxlEncoderUseBoxes(enc) == JXL_ENC_SUCCESS);
+    }
+    JxlBasicInfo bi;
+    JxlEncoderInitBasicInfo(&bi);
+    bi.xsize = w;
+    bi.ysize = h;
+    bi.bits_per_sample = 8u;
+    bi.exponent_bits_per_sample = 0u;
+    bi.uses_original_profile = uses_orig ? JXL_TRUE : JXL_FALSE;
+    bi.num_color_channels = 3u;
+    bi.num_extra_channels = 0u;
+    CHECK(JxlEncoderSetBasicInfo(enc, &bi) == JXL_ENC_SUCCESS);
+    if (icc_opt && icc_len > 0u) {
+        CHECK(JxlEncoderSetICCProfile(enc, icc_opt, icc_len) == JXL_ENC_SUCCESS);
+    } else {
+        CHECK(ce_opt != NULL);
+        CHECK(JxlEncoderSetColorEncoding(enc, ce_opt) == JXL_ENC_SUCCESS);
+    }
+    if (exif_box_payload) {
+        JxlBoxType t = {'E', 'x', 'i', 'f'};
+        CHECK(JxlEncoderAddBox(enc, t, exif_box_payload, exif_box_len,
+                               JXL_FALSE) == JXL_ENC_SUCCESS);
+    }
+    if (xmp_payload) {
+        JxlBoxType t = {'x', 'm', 'l', ' '};
+        CHECK(JxlEncoderAddBox(enc, t, xmp_payload, xmp_len, JXL_FALSE) ==
+              JXL_ENC_SUCCESS);
+    }
+    if (need_box) {
+        JxlEncoderCloseBoxes(enc);
+    }
+    JxlEncoderFrameSettings *fs = JxlEncoderFrameSettingsCreate(enc, NULL);
+    CHECK(fs != NULL);
+    if (lossless) {
+        CHECK(JxlEncoderSetFrameLossless(fs, JXL_TRUE) == JXL_ENC_SUCCESS);
+        CHECK(JxlEncoderFrameSettingsSetOption(
+                  fs, JXL_ENC_FRAME_SETTING_MODULAR, 1) == JXL_ENC_SUCCESS);
+    } else {
+        CHECK(JxlEncoderSetFrameDistance(fs, 1.0f) == JXL_ENC_SUCCESS);
+    }
+    JxlPixelFormat px = {3u, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0u};
+    CHECK(JxlEncoderAddImageFrame(fs, &px, pixels, pix_len) == JXL_ENC_SUCCESS);
+    JxlEncoderCloseFrames(enc);
+
+    size_t cap = 4096u, len = 0u;
+    uint8_t *buf = (uint8_t *)malloc(cap);
+    CHECK(buf != NULL);
+    for (;;) {
+        uint8_t *next = buf + len;
+        size_t avail = cap - len;
+        JxlEncoderStatus es = JxlEncoderProcessOutput(enc, &next, &avail);
+        len = (size_t)(next - buf);
+        if (es == JXL_ENC_NEED_MORE_OUTPUT) {
+            cap *= 2u;
+            buf = (uint8_t *)realloc(buf, cap);
+            CHECK(buf != NULL);
+        } else {
+            CHECK(es == JXL_ENC_SUCCESS);
+            break;
+        }
+    }
+    JxlEncoderDestroy(enc);
+    *out_buf = buf;
+    *out_len = len;
+}
+
+static void upstream_decode_xyb_pixels(const uint8_t *jxl_bytes,
+                                       size_t jxl_len,
+                                       const JxlColorEncoding *out_ce,
+                                       const uint8_t *out_icc,
+                                       size_t out_icc_len,
+                                       uint8_t **out_pixels,
+                                       size_t *out_pix_len,
+                                       uint8_t **out_data_icc,
+                                       size_t *out_data_icc_len) {
+    JxlDecoder *dec = JxlDecoderCreate(NULL);
+    CHECK(dec != NULL);
+    CHECK(JxlDecoderSetKeepOrientation(dec, JXL_TRUE) == JXL_DEC_SUCCESS);
+    CHECK(JxlDecoderSetCms(dec, *JxlGetDefaultCms()) == JXL_DEC_SUCCESS);
+    CHECK(JxlDecoderSubscribeEvents(
+              dec, JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING |
+                       JXL_DEC_FULL_IMAGE) == JXL_DEC_SUCCESS);
+    CHECK(JxlDecoderSetInput(dec, jxl_bytes, jxl_len) == JXL_DEC_SUCCESS);
+    JxlDecoderCloseInput(dec);
+
+    uint8_t *pix = NULL;
+    size_t pix_len = 0u;
+    uint8_t *dicc = NULL;
+    size_t dicc_len = 0u;
+    float *fbuf = NULL;
+    size_t fbuf_len = 0u;
+    int cms_flt = 0;
+    const JxlCmsInterface *cms = JxlGetDefaultCms();
+    JxlColorEncoding lin_ce, dst_ce;
+    memset(&lin_ce, 0, sizeof(lin_ce));
+    memset(&dst_ce, 0, sizeof(dst_ce));
+    uint8_t *lin_icc = NULL;
+    size_t lin_icc_len = 0u;
+    JxlBasicInfo bi;
+    memset(&bi, 0, sizeof(bi));
+    int got_bi = 0, got_img = 0;
+    for (;;) {
+        JxlDecoderStatus ds = JxlDecoderProcessInput(dec);
+        if (ds == JXL_DEC_SUCCESS) {
+            break;
+        } else if (ds == JXL_DEC_BASIC_INFO) {
+            CHECK(JxlDecoderGetBasicInfo(dec, &bi) == JXL_DEC_SUCCESS);
+            got_bi = 1;
+        } else if (ds == JXL_DEC_COLOR_ENCODING) {
+            if (out_icc && out_icc_len > 0u) {
+                JXL_BOOL is_cmyk = JXL_FALSE;
+                CHECK(cms != NULL && cms->set_fields_from_icc != NULL);
+                CHECK(cms->set_fields_from_icc(cms->set_fields_data, out_icc,
+                                               out_icc_len, &dst_ce,
+                                               &is_cmyk) &&
+                      !is_cmyk);
+                if (dst_ce.transfer_function == JXL_TRANSFER_FUNCTION_UNKNOWN) {
+                    cms_flt = 1;
+                    CHECK(JxlDecoderGetColorAsEncodedProfile(
+                              dec, JXL_COLOR_PROFILE_TARGET_DATA, &lin_ce) ==
+                          JXL_DEC_SUCCESS);
+                    CHECK(JxlDecoderGetICCProfileSize(
+                              dec, JXL_COLOR_PROFILE_TARGET_DATA,
+                              &lin_icc_len) == JXL_DEC_SUCCESS);
+                    lin_icc = (uint8_t *)malloc(lin_icc_len);
+                    CHECK(lin_icc != NULL);
+                    CHECK(JxlDecoderGetColorAsICCProfile(
+                              dec, JXL_COLOR_PROFILE_TARGET_DATA, lin_icc,
+                              lin_icc_len) == JXL_DEC_SUCCESS);
+                } else {
+                    CHECK(JxlDecoderSetOutputColorProfile(dec, NULL, out_icc,
+                                                          out_icc_len) ==
+                          JXL_DEC_SUCCESS);
+                }
+            } else if (out_ce) {
+                CHECK(JxlDecoderSetOutputColorProfile(dec, out_ce, NULL, 0u) ==
+                      JXL_DEC_SUCCESS);
+            }
+            if (out_data_icc) {
+                CHECK(JxlDecoderGetICCProfileSize(
+                          dec, JXL_COLOR_PROFILE_TARGET_DATA, &dicc_len) ==
+                      JXL_DEC_SUCCESS);
+                CHECK(dicc_len > 0u);
+                dicc = (uint8_t *)malloc(dicc_len);
+                CHECK(dicc != NULL);
+                CHECK(JxlDecoderGetColorAsICCProfile(
+                          dec, JXL_COLOR_PROFILE_TARGET_DATA, dicc, dicc_len) ==
+                      JXL_DEC_SUCCESS);
+            }
+        } else if (ds == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
+            CHECK(got_bi);
+            if (cms_flt) {
+                JxlPixelFormat fpx = {bi.num_color_channels, JXL_TYPE_FLOAT,
+                                      JXL_NATIVE_ENDIAN, 0u};
+                CHECK(JxlDecoderImageOutBufferSize(dec, &fpx, &fbuf_len) ==
+                      JXL_DEC_SUCCESS);
+                fbuf = (float *)malloc(fbuf_len);
+                CHECK(fbuf != NULL);
+                CHECK(JxlDecoderSetImageOutBuffer(dec, &fpx, fbuf, fbuf_len) ==
+                      JXL_DEC_SUCCESS);
+            } else {
+                JxlPixelFormat px = {bi.num_color_channels, JXL_TYPE_UINT8,
+                                     JXL_NATIVE_ENDIAN, 0u};
+                CHECK(JxlDecoderImageOutBufferSize(dec, &px, &pix_len) ==
+                      JXL_DEC_SUCCESS);
+                pix = (uint8_t *)malloc(pix_len);
+                CHECK(pix != NULL);
+                CHECK(JxlDecoderSetImageOutBuffer(dec, &px, pix, pix_len) ==
+                      JXL_DEC_SUCCESS);
+            }
+        } else if (ds == JXL_DEC_FULL_IMAGE) {
+            got_img = 1;
+        } else {
+            CHECK(0 && "unexpected upstream XYB decoder status");
+        }
+    }
+    CHECK(got_bi && got_img);
+    JxlDecoderDestroy(dec);
+    if (cms_flt) {
+        CHECK(fbuf != NULL && lin_icc != NULL);
+        pix_len = (size_t)bi.xsize * (size_t)bi.ysize *
+                  (size_t)bi.num_color_channels;
+        pix = (uint8_t *)malloc(pix_len);
+        CHECK(pix != NULL);
+        JxlColorProfile in_p = {{lin_icc, lin_icc_len}, lin_ce,
+                                bi.num_color_channels};
+        JxlColorProfile out_p = {{out_icc, out_icc_len}, dst_ce,
+                                 bi.num_color_channels};
+        void *ci = cms->init(cms->init_data, 1u, (size_t)bi.xsize, &in_p,
+                             &out_p, 255.0f);
+        CHECK(ci != NULL);
+        float *sb = cms->get_src_buf(ci, 0u);
+        float *db = cms->get_dst_buf(ci, 0u);
+        size_t n_row = (size_t)bi.xsize * (size_t)bi.num_color_channels;
+        for (uint32_t y = 0u; y < bi.ysize; y++) {
+            memcpy(sb, fbuf + (size_t)y * n_row, n_row * sizeof(float));
+            CHECK(cms->run(ci, 0u, sb, db, (size_t)bi.xsize));
+            for (size_t k = 0u; k < n_row; k++) {
+                float v = db[k];
+                if (v <= 0.0f) v = 0.0f;
+                if (v >= 1.0f) v = 1.0f;
+                pix[(size_t)y * n_row + k] = (uint8_t)(v * 255.0f + 0.5f);
+            }
+        }
+        cms->destroy(ci);
+        free(fbuf);
+        free(lin_icc);
+    }
+    CHECK(pix != NULL);
+    *out_pixels = pix;
+    *out_pix_len = pix_len;
+    if (out_data_icc && out_data_icc_len) {
+        *out_data_icc = dicc;
+        *out_data_icc_len = dicc_len;
+    }
+}
+
+static void upstream_extract_raw_exif_box(const uint8_t *jxl_bytes,
+                                          size_t jxl_len,
+                                          uint8_t **out_box,
+                                          size_t *out_box_len) {
+    JxlDecoder *dec = JxlDecoderCreate(NULL);
+    CHECK(dec != NULL);
+    CHECK(JxlDecoderSetDecompressBoxes(dec, JXL_TRUE) == JXL_DEC_SUCCESS);
+    CHECK(JxlDecoderSubscribeEvents(
+              dec, JXL_DEC_BOX | JXL_DEC_BOX_COMPLETE) == JXL_DEC_SUCCESS);
+    CHECK(JxlDecoderSetInput(dec, jxl_bytes, jxl_len) == JXL_DEC_SUCCESS);
+    JxlDecoderCloseInput(dec);
+
+    uint8_t *buf = NULL;
+    size_t cap = 4096u;
+    size_t used = 0u;
+    int capturing = 0;
+    for (;;) {
+        JxlDecoderStatus ds = JxlDecoderProcessInput(dec);
+        if (ds == JXL_DEC_SUCCESS) {
+            if (capturing) {
+                size_t rem = JxlDecoderReleaseBoxBuffer(dec);
+                used = cap - rem;
+                capturing = 0;
+            }
+            break;
+        } else if (ds == JXL_DEC_BOX) {
+            if (capturing) {
+                size_t rem = JxlDecoderReleaseBoxBuffer(dec);
+                used = cap - rem;
+                capturing = 0;
+                break;
+            }
+            JxlBoxType bt;
+            CHECK(JxlDecoderGetBoxType(dec, bt, JXL_TRUE) == JXL_DEC_SUCCESS);
+            if (memcmp(bt, "Exif", 4) == 0) {
+                buf = (uint8_t *)malloc(cap);
+                CHECK(buf != NULL);
+                CHECK(JxlDecoderSetBoxBuffer(dec, buf, cap) == JXL_DEC_SUCCESS);
+                capturing = 1;
+            }
+        } else if (ds == JXL_DEC_BOX_NEED_MORE_OUTPUT) {
+            CHECK(capturing);
+            size_t rem = JxlDecoderReleaseBoxBuffer(dec);
+            size_t have = cap - rem;
+            cap *= 2u;
+            buf = (uint8_t *)realloc(buf, cap);
+            CHECK(buf != NULL);
+            CHECK(JxlDecoderSetBoxBuffer(dec, buf + have, cap - have) ==
+                  JXL_DEC_SUCCESS);
+        } else if (ds == JXL_DEC_BOX_COMPLETE) {
+            if (capturing) {
+                size_t rem = JxlDecoderReleaseBoxBuffer(dec);
+                used = cap - rem;
+                capturing = 0;
+            }
+        } else {
+            CHECK(0 && "unexpected box decoder status");
+        }
+    }
+    JxlDecoderDestroy(dec);
+    CHECK(buf != NULL && used >= 4u);
+    *out_box = buf;
+    *out_box_len = used;
 }
 
 /* ------------------------------------------------------------------------ */
@@ -943,7 +1363,8 @@ static void test_depths_padding_alpha_and_xyb(void) {
         CHECK(st.live == 0u);
     }
 
-    /* Lossy XYB external JXL decode succeeds via JxlGetDefaultCms. */
+    /* Lossy XYB external JXL decode: structured sRGB, structured Display P3,
+     * raw non-sRGB ICC (WantICC=1), plus JXL(XYB Display P3) -> PNG job. */
     {
         uint8_t pix[16 * 16 * 3];
         for (size_t k = 0u; k < sizeof(pix); k++) {
@@ -962,11 +1383,276 @@ static void test_depths_padding_alpha_and_xyb(void) {
                                   &dm) == RFC_OK);
         adp->close_session(sess);
         CHECK(dc == 1u && df[0].layout.format == RFC_SAMPLE_RGB8 &&
-              df[0].layout.width == 16u && df[0].layout.height == 16u);
+              df[0].layout.width == 16u && df[0].layout.height == 16u &&
+              dm.icc == NULL);
         rfc_metadata_free(&dm, &alloc);
         rfc_frame_free(&df[0]);
         alloc.free(alloc.ctx, df);
         free(jbuf);
+
+        /* Structured Display P3 XYB: pixels and returned ICC must match P3, not sRGB. */
+        uint8_t p3_pix[16 * 16 * 3];
+        for (size_t k = 0u; k < 16u * 16u; k++) {
+            p3_pix[k * 3u + 0u] = 220u;
+            p3_pix[k * 3u + 1u] = (uint8_t)(20u + (k % 40u));
+            p3_pix[k * 3u + 2u] = 30u;
+        }
+        JxlColorEncoding srgb_ce, p3_ce;
+        JxlColorEncodingSetToSRGB(&srgb_ce, JXL_FALSE);
+        memset(&p3_ce, 0, sizeof(p3_ce));
+        p3_ce.color_space = JXL_COLOR_SPACE_RGB;
+        p3_ce.white_point = JXL_WHITE_POINT_D65;
+        p3_ce.primaries = JXL_PRIMARIES_P3;
+        p3_ce.transfer_function = JXL_TRANSFER_FUNCTION_SRGB;
+        p3_ce.rendering_intent = JXL_RENDERING_INTENT_RELATIVE;
+
+        uint8_t *jbuf_p3 = NULL;
+        size_t jlen_p3 = 0u;
+        upstream_encode_jxl_color(16u, 16u, &p3_ce, NULL, 0u, 0, 0, NULL, 0u,
+                                  NULL, 0u, p3_pix, sizeof(p3_pix), &jbuf_p3,
+                                  &jlen_p3);
+
+        uint8_t *exp_p3_pix = NULL, *exp_p3_icc = NULL, *srgb_pix = NULL;
+        size_t exp_p3_len = 0u, exp_p3_icc_len = 0u, srgb_len = 0u;
+        upstream_decode_xyb_pixels(jbuf_p3, jlen_p3, &p3_ce, NULL, 0u,
+                                   &exp_p3_pix, &exp_p3_len, &exp_p3_icc,
+                                   &exp_p3_icc_len);
+        upstream_decode_xyb_pixels(jbuf_p3, jlen_p3, &srgb_ce, NULL, 0u,
+                                   &srgb_pix, &srgb_len, NULL, NULL);
+        CHECK(exp_p3_len == sizeof(p3_pix) && srgb_len == sizeof(p3_pix));
+        CHECK(memcmp(exp_p3_pix, srgb_pix, sizeof(p3_pix)) != 0);
+
+        CHECK(adp->open_session(&exec, &sess) == RFC_OK);
+        CHECK(adp->decode_session(sess, &exec, jbuf_p3, jlen_p3, NULL, 0u, &df,
+                                  &dc, &dm) == RFC_OK);
+        adp->close_session(sess);
+        CHECK(dc == 1u && dm.icc != NULL && dm.icc_len == exp_p3_icc_len &&
+              memcmp(dm.icc, exp_p3_icc, exp_p3_icc_len) == 0);
+        CHECK(df[0].data_len == exp_p3_len &&
+              memcmp(df[0].data, exp_p3_pix, exp_p3_len) == 0);
+        CHECK(memcmp(df[0].data, srgb_pix, exp_p3_len) != 0);
+        rfc_metadata_free(&dm, &alloc);
+        rfc_frame_free(&df[0]);
+        alloc.free(alloc.ctx, df);
+
+        /* End-to-end JXL(XYB Display P3) -> PNG job preserves P3 pixels + ICC. */
+        {
+            rfc_scheduler_config scfg;
+            rfc_scheduler_config_default(&scfg);
+            scfg.max_workers = 1u;
+            rfc_scheduler *sched = rfc_scheduler_create(&scfg);
+            CHECK(sched != NULL);
+            char png_out[512];
+            make_temp_path(png_out, sizeof(png_out), "xyb_p3.png");
+            remove(png_out);
+            rfc_io_sink sink;
+            rfc_io_sink_init_path(&sink, png_out, RFC_EXPORT_REFUSE_EXISTING);
+            rfc_job_spec sp;
+            memset(&sp, 0, sizeof(sp));
+            sp.source_format = RFC_FORMAT_JPEG_XL;
+            sp.target_format = RFC_FORMAT_PNG;
+            sp.source_bytes = jbuf_p3;
+            sp.source_size = jlen_p3;
+            sp.io_sink = &sink;
+            sp.expected_working_set_bytes = 32u * 1024u * 1024u;
+            rfc_job *j = NULL;
+            CHECK(rfc_scheduler_submit(sched, NULL, &sp, &j) == RFC_OK);
+            CHECK(rfc_job_wait(j, UINT32_MAX) == RFC_OK);
+            rfc_job_snapshot sn;
+            CHECK(rfc_job_snapshot_get(j, &sn) == RFC_OK);
+            CHECK(sn.state == RFC_JOB_SUCCEEDED && sn.status == RFC_OK);
+            rfc_verify_report rep;
+            CHECK(rfc_job_verify_report_get(j, &rep) == RFC_OK);
+            CHECK(rep.valid == 1);
+            rfc_job_release(j);
+            remove(png_out);
+            rfc_scheduler_destroy(sched);
+        }
+
+        /* Raw non-sRGB ICC XYB (Branch B: WantICC() == 1). */
+        uint8_t *mod_icc = (uint8_t *)malloc(exp_p3_icc_len);
+        CHECK(mod_icc != NULL && exp_p3_icc_len >= 132u);
+        memcpy(mod_icc, exp_p3_icc, exp_p3_icc_len);
+        uint32_t tag_cnt = rd32be(mod_icc + 128u);
+        uint32_t bumped_offs[3] = {0u, 0u, 0u};
+        size_t bumped_n = 0u;
+        for (uint32_t ti = 0u; ti < tag_cnt; ti++) {
+            size_t rec = 132u + (size_t)ti * 12u;
+            if (rec + 12u > exp_p3_icc_len) break;
+            if (memcmp(mod_icc + rec, "cicp", 4u) == 0) {
+                uint32_t coff = rd32be(mod_icc + rec + 4u);
+                uint32_t csz = rd32be(mod_icc + rec + 8u);
+                if (coff + 12u <= exp_p3_icc_len && csz >= 12u) {
+                    mod_icc[coff + 9u] = 2u; /* unspecified transfer -> skip CICP shortcut */
+                }
+            } else if (memcmp(mod_icc + rec, "rTRC", 4u) == 0 ||
+                memcmp(mod_icc + rec, "gTRC", 4u) == 0 ||
+                memcmp(mod_icc + rec, "bTRC", 4u) == 0) {
+                uint32_t toff = rd32be(mod_icc + rec + 4u);
+                uint32_t tsz = rd32be(mod_icc + rec + 8u);
+                int seen = 0;
+                for (size_t bi = 0u; bi < bumped_n; bi++) {
+                    if (bumped_offs[bi] == toff) seen = 1;
+                }
+                if (!seen && toff + 20u <= exp_p3_icc_len && tsz >= 20u &&
+                    memcmp(mod_icc + toff, "para", 4u) == 0) {
+                    uint32_t v = rd32be(mod_icc + toff + 16u);
+                    wr32be(mod_icc + toff + 16u, v + 4096u);
+                    if (bumped_n < 3u) bumped_offs[bumped_n++] = toff;
+                }
+            }
+        }
+        CHECK(bumped_n > 0u);
+        uint8_t *jbuf_raw = NULL;
+        size_t jlen_raw = 0u;
+        upstream_encode_jxl_color(16u, 16u, NULL, mod_icc, exp_p3_icc_len, 0, 0,
+                                  NULL, 0u, NULL, 0u, p3_pix, sizeof(p3_pix),
+                                  &jbuf_raw, &jlen_raw);
+        {
+            /* Confirm upstream TARGET_ORIGINAL has no encoded profile. */
+            JxlDecoder *cdec = JxlDecoderCreate(NULL);
+            CHECK(cdec != NULL);
+            CHECK(JxlDecoderSubscribeEvents(cdec, JXL_DEC_COLOR_ENCODING) ==
+                  JXL_DEC_SUCCESS);
+            CHECK(JxlDecoderSetInput(cdec, jbuf_raw, jlen_raw) ==
+                  JXL_DEC_SUCCESS);
+            JxlDecoderCloseInput(cdec);
+            int checked_enc = 0;
+            for (;;) {
+                JxlDecoderStatus ds = JxlDecoderProcessInput(cdec);
+                if (ds == JXL_DEC_COLOR_ENCODING) {
+                    JxlColorEncoding ce_tmp;
+                    CHECK(JxlDecoderGetColorAsEncodedProfile(
+                              cdec, JXL_COLOR_PROFILE_TARGET_ORIGINAL,
+                              &ce_tmp) != JXL_DEC_SUCCESS);
+                    checked_enc = 1;
+                    break;
+                } else if (ds == JXL_DEC_SUCCESS || ds == JXL_DEC_ERROR) {
+                    break;
+                }
+            }
+            CHECK(checked_enc == 1);
+            JxlDecoderDestroy(cdec);
+        }
+        uint8_t *exp_mod_pix = NULL;
+        size_t exp_mod_len = 0u;
+        upstream_decode_xyb_pixels(jbuf_raw, jlen_raw, NULL, mod_icc,
+                                   exp_p3_icc_len, &exp_mod_pix, &exp_mod_len,
+                                   NULL, NULL);
+        CHECK(adp->open_session(&exec, &sess) == RFC_OK);
+        CHECK(adp->decode_session(sess, &exec, jbuf_raw, jlen_raw, NULL, 0u,
+                                  &df, &dc, &dm) == RFC_OK);
+        adp->close_session(sess);
+        CHECK(dc == 1u && dm.icc != NULL && dm.icc_len == exp_p3_icc_len &&
+              memcmp(dm.icc, mod_icc, exp_p3_icc_len) == 0);
+        CHECK(df[0].data_len == exp_mod_len &&
+              memcmp(df[0].data, exp_mod_pix, exp_mod_len) == 0);
+        CHECK(memcmp(df[0].data, srgb_pix, exp_mod_len) != 0);
+        rfc_metadata_free(&dm, &alloc);
+        rfc_frame_free(&df[0]);
+        alloc.free(alloc.ctx, df);
+
+        /* End-to-end JXL(XYB mod_icc) -> PNG job preserves mod_icc + pixels. */
+        {
+            rfc_scheduler_config mcfg;
+            rfc_scheduler_config_default(&mcfg);
+            mcfg.max_workers = 1u;
+            rfc_scheduler *msched = rfc_scheduler_create(&mcfg);
+            CHECK(msched != NULL);
+            char mpng[512];
+            make_temp_path(mpng, sizeof(mpng), "xyb_mod.png");
+            remove(mpng);
+            rfc_io_sink msink;
+            rfc_io_sink_init_path(&msink, mpng, RFC_EXPORT_REFUSE_EXISTING);
+            rfc_job_spec msp;
+            memset(&msp, 0, sizeof(msp));
+            msp.source_format = RFC_FORMAT_JPEG_XL;
+            msp.target_format = RFC_FORMAT_PNG;
+            msp.source_bytes = jbuf_raw;
+            msp.source_size = jlen_raw;
+            msp.io_sink = &msink;
+            msp.expected_working_set_bytes = 32u * 1024u * 1024u;
+            rfc_job *mj = NULL;
+            CHECK(rfc_scheduler_submit(msched, NULL, &msp, &mj) == RFC_OK);
+            CHECK(rfc_job_wait(mj, UINT32_MAX) == RFC_OK);
+            rfc_job_snapshot msn;
+            CHECK(rfc_job_snapshot_get(mj, &msn) == RFC_OK);
+            CHECK(msn.state == RFC_JOB_SUCCEEDED && msn.status == RFC_OK);
+            rfc_verify_report mrep;
+            CHECK(rfc_job_verify_report_get(mj, &mrep) == RFC_OK);
+            CHECK(mrep.valid == 1);
+            rfc_job_release(mj);
+            remove(mpng);
+            rfc_scheduler_destroy(msched);
+        }
+
+        free(exp_mod_pix);
+        free(jbuf_raw);
+        free(mod_icc);
+        free(exp_p3_pix);
+        free(exp_p3_icc);
+        free(srgb_pix);
+        free(jbuf_p3);
+
+        /* Finding #1: live-pointer OOM fault sweep on metadata clone paths. */
+        uint8_t exif_oom[26];
+        make_exif_blob(1, 6u, exif_oom);
+        static const char k_oom_xmp[] = "<x:xmpmeta>OOM</x:xmpmeta>";
+        rfc_metadata oom_m = {k_srgb_icc, sizeof(k_srgb_icc),
+                              RFC_ORIENTATION_ROTATE_90, 0u, {0}, exif_oom,
+                              sizeof(exif_oom), (const uint8_t *)k_oom_xmp,
+                              sizeof(k_oom_xmp) - 1u};
+        rfc_frame oom_src = {0};
+        fill_pattern_frame(&oom_src, 8u, 8u, RFC_SAMPLE_RGB8, RFC_ALPHA_NONE,
+                           8u, &oom_m, &alloc);
+        rfc_encoded oom_jxl = {0};
+        CHECK(adp->open_session(&exec, &sess) == RFC_OK);
+        CHECK(adp->encode_session(sess, &exec, &oom_src, 1u, &oom_m, NULL, 0u,
+                                  &oom_jxl) == RFC_OK);
+        adp->close_session(sess);
+        rfc_frame_free(&oom_src);
+
+        oom_alloc_ctx octx;
+        memset(&octx, 0, sizeof(octx));
+        rfc_allocator oal = {oom_alloc, oom_free, &octx};
+        rfc_exec_context oex;
+        memset(&oex, 0, sizeof(oex));
+        rfc_limits_default(&oex.limits);
+        oex.allocator = &oal;
+        oex.codec_threads = 1u;
+
+        CHECK(adp->open_session(&oex, &sess) == RFC_OK);
+        CHECK(adp->decode_session(sess, &oex, oom_jxl.data, oom_jxl.len, NULL,
+                                  0u, &df, &dc, &dm) == RFC_OK);
+        adp->close_session(sess);
+        size_t total_calls = octx.calls;
+        CHECK(total_calls >= 4u && !octx.overflow && octx.invalid_frees == 0u);
+        rfc_metadata_free(&dm, &oal);
+        rfc_frame_free(&df[0]);
+        oal.free(oal.ctx, df);
+        CHECK(octx.live == 0u && octx.invalid_frees == 0u);
+
+        for (size_t fc = total_calls; fc >= 1u; fc--) {
+            memset(&octx, 0, sizeof(octx));
+            octx.fail_at_call = fc;
+            void *os = NULL;
+            rfc_status ors = adp->open_session(&oex, &os);
+            if (ors == RFC_OK) {
+                df = NULL;
+                dc = 0u;
+                memset(&dm, 0, sizeof(dm));
+                ors = adp->decode_session(os, &oex, oom_jxl.data, oom_jxl.len,
+                                          NULL, 0u, &df, &dc, &dm);
+                adp->close_session(os);
+            }
+            CHECK(ors != RFC_OK);
+            if (fc >= total_calls - 2u) {
+                CHECK(ors == RFC_ERR_OUT_OF_MEMORY);
+            }
+            CHECK(!octx.overflow && octx.invalid_frees == 0u &&
+                  octx.live == 0u);
+        }
+        rfc_encoded_free(&oom_jxl);
         CHECK(st.live == 0u);
     }
 
@@ -1193,6 +1879,126 @@ static void test_metadata_boxes_orientation_and_cross_format(void) {
         adp->close_session(sess);
         CHECK(mst.live == 0u);
         free(jbuf);
+        CHECK(st.live == 0u);
+    }
+
+    /* 3b. Finding #4: "Exif\0\0"-prefixed EXIF encodes offset=6, round-trips
+     *     byte-for-byte (plus WebP <-> JXL), and offset=0 "Exif\0\0" rejects. */
+    {
+        uint8_t prefixed_exif[32];
+        memcpy(prefixed_exif, "Exif\x00\x00", 6u);
+        memcpy(prefixed_exif + 6u, exif_le6, sizeof(exif_le6));
+
+        rfc_metadata mp = {NULL, 0u, RFC_ORIENTATION_ROTATE_90, 0u, {0},
+                           prefixed_exif, sizeof(prefixed_exif), NULL, 0u};
+        rfc_frame src = {0};
+        fill_pattern_frame(&src, 8u, 8u, RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 8u,
+                           &mp, &alloc);
+        void *sess = NULL;
+        rfc_encoded enc = {0};
+        CHECK(adp->open_session(&exec, &sess) == RFC_OK);
+        CHECK(adp->encode_session(sess, &exec, &src, 1u, &mp, NULL, 0u, &enc) ==
+              RFC_OK);
+
+        uint8_t *raw_box = NULL;
+        size_t raw_box_len = 0u;
+        upstream_extract_raw_exif_box(enc.data, enc.len, &raw_box,
+                                      &raw_box_len);
+        CHECK(raw_box_len == 36u);
+        CHECK(rd32be(raw_box) == 6u);
+        CHECK(memcmp(raw_box + 4u, prefixed_exif, sizeof(prefixed_exif)) == 0);
+        CHECK(memcmp(raw_box + 10u, "II*\0", 4u) == 0);
+        free(raw_box);
+
+        rfc_frame *df = NULL;
+        size_t dc = 0u;
+        rfc_metadata dm = {0};
+        CHECK(adp->decode_session(sess, &exec, enc.data, enc.len, NULL, 0u, &df,
+                                  &dc, &dm) == RFC_OK);
+        adp->close_session(sess);
+        CHECK(dc == 1u && dm.orientation == RFC_ORIENTATION_ROTATE_90);
+        CHECK(dm.exif_len == sizeof(prefixed_exif) &&
+              memcmp(dm.exif, prefixed_exif, sizeof(prefixed_exif)) == 0);
+        rfc_metadata_free(&dm, &alloc);
+        rfc_frame_free(&df[0]);
+        alloc.free(alloc.ctx, df);
+        rfc_frame_free(&src);
+
+        /* WebP <-> JXL cross-format preserve round-trip with Exif\0\0. */
+        {
+            rfc_scheduler_config wcfg;
+            rfc_scheduler_config_default(&wcfg);
+            wcfg.max_workers = 1u;
+            rfc_scheduler *wsched = rfc_scheduler_create(&wcfg);
+            CHECK(wsched != NULL);
+            char wp[512], j2p[512];
+            make_temp_path(wp, sizeof(wp), "exif6_w.webp");
+            make_temp_path(j2p, sizeof(j2p), "exif6_j.jxl");
+            remove(wp);
+            remove(j2p);
+
+            rfc_io_sink wsink, jsink;
+            rfc_io_sink_init_path(&wsink, wp, RFC_EXPORT_REFUSE_EXISTING);
+            rfc_job_spec sp;
+            memset(&sp, 0, sizeof(sp));
+            sp.source_format = RFC_FORMAT_JPEG_XL;
+            sp.target_format = RFC_FORMAT_WEBP;
+            sp.source_bytes = enc.data;
+            sp.source_size = enc.len;
+            sp.io_sink = &wsink;
+            sp.expected_working_set_bytes = 32u * 1024u * 1024u;
+            rfc_job *job = NULL;
+            CHECK(rfc_scheduler_submit(wsched, NULL, &sp, &job) == RFC_OK);
+            CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
+            rfc_job_snapshot sn;
+            CHECK(rfc_job_snapshot_get(job, &sn) == RFC_OK);
+            CHECK(sn.state == RFC_JOB_SUCCEEDED && sn.status == RFC_OK);
+            rfc_job_release(job);
+
+            size_t wlen = 0u;
+            uint8_t *wbytes = read_file_all(wp, &wlen);
+            CHECK(wbytes != NULL && wlen > 0u);
+            rfc_io_sink_init_path(&jsink, j2p, RFC_EXPORT_REFUSE_EXISTING);
+            memset(&sp, 0, sizeof(sp));
+            sp.source_format = RFC_FORMAT_WEBP;
+            sp.target_format = RFC_FORMAT_JPEG_XL;
+            sp.source_bytes = wbytes;
+            sp.source_size = wlen;
+            sp.io_sink = &jsink;
+            sp.expected_working_set_bytes = 32u * 1024u * 1024u;
+            CHECK(rfc_scheduler_submit(wsched, NULL, &sp, &job) == RFC_OK);
+            CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
+            CHECK(rfc_job_snapshot_get(job, &sn) == RFC_OK);
+            CHECK(sn.state == RFC_JOB_SUCCEEDED && sn.status == RFC_OK);
+            rfc_job_release(job);
+
+            remove(wp);
+            remove(j2p);
+            free(wbytes);
+            rfc_scheduler_destroy(wsched);
+        }
+        rfc_encoded_free(&enc);
+
+        /* Malformed Exif box with offset=0 pointing to "Exif\0\0" instead of TIFF
+         * magic must be rejected by both probe and decode. */
+        uint8_t bad_pix[8 * 8 * 3];
+        memset(bad_pix, 0x33, sizeof(bad_pix));
+        uint8_t bad_box[36];
+        wr32be(bad_box, 0u);
+        memcpy(bad_box + 4u, prefixed_exif, sizeof(prefixed_exif));
+        uint8_t *bad_jxl = NULL;
+        size_t bad_jlen = 0u;
+        upstream_encode_jxl(8u, 8u, 3u, 8u, 0u, 1, 1, 0, 0, bad_box,
+                            sizeof(bad_box), NULL, 0u, bad_pix, sizeof(bad_pix),
+                            &bad_jxl, &bad_jlen);
+        rfc_image_probe bad_pr = {0};
+        CHECK(adp->open_session(&exec, &sess) == RFC_OK);
+        CHECK(adp->probe_session(sess, &exec, bad_jxl, bad_jlen, &bad_pr) ==
+              RFC_ERR_INVALID_ARGUMENT);
+        CHECK(adp->decode_session(sess, &exec, bad_jxl, bad_jlen, NULL, 0u, &df,
+                                  &dc, &dm) == RFC_ERR_INVALID_ARGUMENT);
+        adp->close_session(sess);
+        free(bad_jxl);
         CHECK(st.live == 0u);
     }
 
@@ -1579,6 +2385,170 @@ static void test_jpeg_reconstruction_and_exactness(void) {
                                        &rec_m) ==
               RFC_ERR_UNSUPPORTED_COMBINATION);
         rfc_encoded_free(&enc);
+        CHECK(st.live == 0u);
+    }
+
+    /* Finding #2: jxl_jpeg_reconstruct enforces max_width/height/pixels/decoded
+     * and aggregate max_metadata_bytes while keeping coded orientation dims. */
+    {
+        rfc_encoded jxl_aug = {0};
+        rfc_metadata aug_sm = {0};
+        CHECK(rfc_jxl_transcode_jpeg(&exec, aug_base, aug_base_len, sv_recon,
+                                     1u, &jxl_aug, &aug_sm) == RFC_OK);
+        rfc_metadata_free(&aug_sm, &alloc);
+
+        rfc_limits tight_w, tight_h, tight_px, tight_dec, tight_agg;
+        rfc_limits_default(&tight_w);
+        tight_w.max_width = 12u;
+        rfc_limits_default(&tight_h);
+        tight_h.max_height = 12u;
+        rfc_limits_default(&tight_px);
+        tight_px.max_pixels = 200u;
+        rfc_limits_default(&tight_dec);
+        tight_dec.max_decoded_bytes = 500u;
+        rfc_limits_default(&tight_agg);
+        /* Individual items in aug_base: ICC=588B, Exif=26B, XMP=51B (all < 600),
+         * while aggregate = 665B > 600B. */
+        tight_agg.max_metadata_bytes = 600u;
+
+        const rfc_limits *cases[5] = {&tight_w, &tight_h, &tight_px, &tight_dec,
+                                      &tight_agg};
+        for (size_t ci = 0u; ci < 5u; ci++) {
+            rfc_exec_context lex;
+            tracked_alloc_state lst;
+            rfc_allocator lal;
+            init_exec(&lex, &lst, &lal, cases[ci], 1u);
+            rfc_encoded rec = {0};
+            rfc_metadata rm = {0};
+            CHECK(rfc_jxl_reconstruct_jpeg(&lex, jxl_aug.data, jxl_aug.len,
+                                           &rec, &rm) == RFC_ERR_LIMIT_EXCEEDED);
+            CHECK(lst.live == 0u);
+        }
+
+        /* Scheduler JPEG -> JPEG XL with aggregate metadata cap fails cleanly. */
+        {
+            char agg_path[512];
+            make_temp_path(agg_path, sizeof(agg_path), "agg_lim.jxl");
+            remove(agg_path);
+            rfc_io_sink asink;
+            rfc_io_sink_init_path(&asink, agg_path, RFC_EXPORT_REFUSE_EXISTING);
+            rfc_job_spec asp;
+            memset(&asp, 0, sizeof(asp));
+            asp.source_format = RFC_FORMAT_JPEG;
+            asp.target_format = RFC_FORMAT_JPEG_XL;
+            asp.source_bytes = aug_base;
+            asp.source_size = aug_base_len;
+            asp.settings = sv_recon;
+            asp.setting_count = 1u;
+            asp.limits_override = &tight_agg;
+            asp.io_sink = &asink;
+            rfc_job *aj = NULL;
+            CHECK(rfc_scheduler_submit(sched, NULL, &asp, &aj) == RFC_OK);
+            CHECK(rfc_job_wait(aj, UINT32_MAX) == RFC_OK);
+            rfc_job_snapshot asn;
+            CHECK(rfc_job_snapshot_get(aj, &asn) == RFC_OK);
+            CHECK(asn.state == RFC_JOB_FAILED &&
+                  asn.status == RFC_ERR_LIMIT_EXCEEDED &&
+                  asn.budget.current_allocated_bytes == 0u);
+            FILE *af = fopen(agg_path, "rb");
+            CHECK(af == NULL);
+            rfc_job_release(aj);
+        }
+        rfc_encoded_free(&jxl_aug);
+
+        /* Non-square 16x8 JPEG with Ori=6 succeeds at exact max_width=16, max_height=8. */
+        uint8_t rect_aug[1024];
+        size_t rect_len = build_augmented_jpeg(
+            k_jpeg_baseline_16x8, sizeof(k_jpeg_baseline_16x8), exif_le6,
+            sizeof(exif_le6), NULL, 0u, NULL, 0u, rect_aug, sizeof(rect_aug));
+        rfc_encoded jxl_rect = {0};
+        rfc_metadata rsrc_m = {0};
+        CHECK(rfc_jxl_transcode_jpeg(&exec, rect_aug, rect_len, sv_recon, 1u,
+                                     &jxl_rect, &rsrc_m) == RFC_OK);
+        rfc_metadata_free(&rsrc_m, &alloc);
+
+        rfc_limits exact_rect;
+        rfc_limits_default(&exact_rect);
+        exact_rect.max_width = 16u;
+        exact_rect.max_height = 8u;
+        rfc_exec_context rex;
+        tracked_alloc_state rst;
+        rfc_allocator ral;
+        init_exec(&rex, &rst, &ral, &exact_rect, 1u);
+        rfc_encoded rec_rect = {0};
+        rfc_metadata rdst_m = {0};
+        CHECK(rfc_jxl_reconstruct_jpeg(&rex, jxl_rect.data, jxl_rect.len,
+                                       &rec_rect, &rdst_m) == RFC_OK);
+        CHECK(rec_rect.len == rect_len &&
+              memcmp(rec_rect.data, rect_aug, rect_len) == 0);
+        rfc_encoded_free(&rec_rect);
+        rfc_metadata_free(&rdst_m, &ral);
+        rfc_encoded_free(&jxl_rect);
+        CHECK(rst.live == 0u && st.live == 0u);
+    }
+
+    /* Finding #5: 255-chunk JPEG APP2 ICC profile boundary does not wrap. */
+    {
+        /* 255 chunks covering 588B k_srgb_icc: 177 chunks * 2B + 78 chunks * 3B. */
+        size_t jpg255_cap =
+            sizeof(k_jpeg_baseline_16x16) + 255u * 18u + sizeof(k_srgb_icc);
+        uint8_t *jpg255 = (uint8_t *)malloc(jpg255_cap);
+        CHECK(jpg255 != NULL);
+        size_t wp = 0u;
+        jpg255[wp++] = 0xFFu;
+        jpg255[wp++] = 0xD8u;
+        size_t icc_off = 0u;
+        for (uint32_t seq = 1u; seq <= 255u; seq++) {
+            size_t clen = (seq <= 177u) ? 2u : 3u;
+            size_t sl = 2u + 14u + clen;
+            jpg255[wp++] = 0xFFu;
+            jpg255[wp++] = 0xE2u;
+            wr16be(jpg255 + wp, (uint16_t)sl);
+            memcpy(jpg255 + wp + 2u, "ICC_PROFILE\x00", 12u);
+            jpg255[wp + 14u] = (uint8_t)seq;
+            jpg255[wp + 15u] = 255u;
+            memcpy(jpg255 + wp + 16u, k_srgb_icc + icc_off, clen);
+            wp += sl;
+            icc_off += clen;
+        }
+        CHECK(icc_off == sizeof(k_srgb_icc));
+        memcpy(jpg255 + wp, k_jpeg_baseline_16x16 + 2u,
+               sizeof(k_jpeg_baseline_16x16) - 2u);
+        size_t jpg255_len = wp + sizeof(k_jpeg_baseline_16x16) - 2u;
+
+        void *jsess = NULL;
+        CHECK(jrec->open_session(&exec, &jsess) == RFC_OK);
+        rfc_image_probe jpr = {0};
+        CHECK(jrec->probe_jpeg(jsess, &exec, jpg255, jpg255_len, &jpr) ==
+              RFC_OK);
+        CHECK(jpr.container_meta.icc_len == sizeof(k_srgb_icc) &&
+              memcmp(jpr.container_meta.icc, k_srgb_icc, sizeof(k_srgb_icc)) ==
+                  0);
+        rfc_metadata_free(&jpr.container_meta, &alloc);
+
+        rfc_encoded jxl255 = {0};
+        rfc_metadata sm255 = {0};
+        CHECK(jrec->transcode_jpeg_to_jxl(jsess, &exec, jpg255, jpg255_len,
+                                          sv_recon, 1u, &jxl255, &sm255) ==
+              RFC_OK);
+        CHECK(sm255.icc_len == sizeof(k_srgb_icc) &&
+              memcmp(sm255.icc, k_srgb_icc, sizeof(k_srgb_icc)) == 0);
+        rfc_metadata_free(&sm255, &alloc);
+
+        rfc_encoded rec255 = {0};
+        rfc_metadata dm255 = {0};
+        CHECK(jrec->reconstruct_jpeg_from_jxl(jsess, &exec, jxl255.data,
+                                              jxl255.len, &rec255, &dm255) ==
+              RFC_OK);
+        jrec->close_session(jsess);
+        CHECK(dm255.icc_len == sizeof(k_srgb_icc) &&
+              memcmp(dm255.icc, k_srgb_icc, sizeof(k_srgb_icc)) == 0);
+        CHECK(rec255.len == jpg255_len &&
+              memcmp(rec255.data, jpg255, jpg255_len) == 0);
+        rfc_metadata_free(&dm255, &alloc);
+        rfc_encoded_free(&rec255);
+        rfc_encoded_free(&jxl255);
+        free(jpg255);
         CHECK(st.live == 0u);
     }
 

@@ -607,7 +607,9 @@ static rfc_status jxl_box_grow(JxlDecoder *dec,
     size_t rem = JxlDecoderReleaseBoxBuffer(dec);
     size_t have = (rem <= cap->cap) ? (cap->cap - rem) : cap->cap;
     size_t max_allowed =
-        cap->is_exif && meta_cap <= SIZE_MAX - 4u ? (meta_cap + 4u) : meta_cap;
+        (cap->is_exif && meta_cap <= SIZE_MAX - 64u)
+            ? (meta_cap + 64u)
+            : meta_cap;
     if (have >= max_allowed) {
         return RFC_ERR_LIMIT_EXCEEDED;
     }
@@ -638,6 +640,19 @@ static rfc_status jxl_box_grow(JxlDecoder *dec,
     return RFC_OK;
 }
 
+static int jxl_has_tiff_magic(const uint8_t *p, size_t len) {
+    if (!p || len < 4u) {
+        return 0;
+    }
+    if (p[0] == 'I' && p[1] == 'I' && p[2] == 0x2Au && p[3] == 0x00u) {
+        return 1;
+    }
+    if (p[0] == 'M' && p[1] == 'M' && p[2] == 0x00u && p[3] == 0x2Au) {
+        return 1;
+    }
+    return 0;
+}
+
 static rfc_status jxl_box_finish(JxlDecoder *dec,
                                  jxl_box_capture *cap,
                                  const rfc_allocator *alloc,
@@ -660,19 +675,32 @@ static rfc_status jxl_box_finish(JxlDecoder *dec,
                 const uint8_t *tiff = cap->buf + 4u + (size_t)tiff_off;
                 size_t tiff_len = total - 4u - (size_t)tiff_off;
                 rfc_orientation dummy_ori = RFC_ORIENTATION_UNSPECIFIED;
-                if (tiff_len > meta_cap) {
-                    st = RFC_ERR_LIMIT_EXCEEDED;
-                } else if (rfc_exif_parse_orientation(tiff, tiff_len,
-                                                      &dummy_ori) != RFC_OK) {
+                if (tiff_len < 8u || !jxl_has_tiff_magic(tiff, tiff_len)) {
                     st = RFC_ERR_INVALID_ARGUMENT;
                 } else {
-                    uint8_t *copy = (uint8_t *)alloc->alloc(alloc->ctx, tiff_len);
-                    if (!copy) {
-                        st = RFC_ERR_OUT_OF_MEMORY;
+                    const uint8_t *out_ex = tiff;
+                    size_t out_ex_len = tiff_len;
+                    if (tiff_off == 6u &&
+                        memcmp(cap->buf + 4u, "Exif\x00\x00", 6) == 0) {
+                        out_ex = cap->buf + 4u;
+                        out_ex_len = total - 4u;
+                    }
+                    if (out_ex_len > meta_cap) {
+                        st = RFC_ERR_LIMIT_EXCEEDED;
+                    } else if (rfc_exif_parse_orientation(tiff, tiff_len,
+                                                          &dummy_ori) !=
+                               RFC_OK) {
+                        st = RFC_ERR_INVALID_ARGUMENT;
                     } else {
-                        memcpy(copy, tiff, tiff_len);
-                        meta->exif = copy;
-                        meta->exif_len = tiff_len;
+                        uint8_t *copy =
+                            (uint8_t *)alloc->alloc(alloc->ctx, out_ex_len);
+                        if (!copy) {
+                            st = RFC_ERR_OUT_OF_MEMORY;
+                        } else {
+                            memcpy(copy, out_ex, out_ex_len);
+                            meta->exif = copy;
+                            meta->exif_len = out_ex_len;
+                        }
                     }
                 }
             }
@@ -705,12 +733,34 @@ static rfc_status jxl_box_discard_checked(JxlDecoder *dec,
     size_t rem = JxlDecoderReleaseBoxBuffer(dec);
     size_t total = (rem <= cap->cap) ? (cap->cap - rem) : cap->cap;
     size_t bmax =
-        (cap->is_exif && meta_cap <= SIZE_MAX - 4u) ? (meta_cap + 4u) : meta_cap;
-    jxl_box_capture_reset(cap, alloc);
+        (cap->is_exif && meta_cap <= SIZE_MAX - 64u)
+            ? (meta_cap + 64u)
+            : meta_cap;
+    rfc_status st = RFC_OK;
     if (total > bmax) {
-        return RFC_ERR_LIMIT_EXCEEDED;
+        st = RFC_ERR_LIMIT_EXCEEDED;
+    } else if (cap->is_exif) {
+        if (total < 4u) {
+            st = RFC_ERR_INVALID_ARGUMENT;
+        } else {
+            uint32_t tiff_off = jxl_rd32be(cap->buf);
+            if ((uint64_t)tiff_off > (uint64_t)(total - 4u)) {
+                st = RFC_ERR_INVALID_ARGUMENT;
+            } else {
+                size_t tiff_len = total - 4u - (size_t)tiff_off;
+                size_t out_len = tiff_len;
+                if (tiff_off == 6u &&
+                    memcmp(cap->buf + 4u, "Exif\x00\x00", 6) == 0) {
+                    out_len = total - 4u;
+                }
+                if (out_len > meta_cap) {
+                    st = RFC_ERR_LIMIT_EXCEEDED;
+                }
+            }
+        }
     }
-    return RFC_OK;
+    jxl_box_capture_reset(cap, alloc);
+    return st;
 }
 
 static rfc_status jxl_unscale_left_align(rfc_frame *frame) {
@@ -741,6 +791,141 @@ static rfc_status jxl_unscale_left_align(rfc_frame *frame) {
         }
     }
     return RFC_OK;
+}
+
+static int jxl_can_xyb_output_ce(const JxlColorEncoding *ce, JXL_BOOL is_cmyk) {
+    if (!ce || is_cmyk) {
+        return 0;
+    }
+    if (ce->color_space != JXL_COLOR_SPACE_RGB &&
+        ce->color_space != JXL_COLOR_SPACE_GRAY) {
+        return 0;
+    }
+    if (ce->color_space == JXL_COLOR_SPACE_GRAY &&
+        ce->white_point != JXL_WHITE_POINT_D65) {
+        return 0;
+    }
+    switch (ce->transfer_function) {
+        case JXL_TRANSFER_FUNCTION_709:
+        case JXL_TRANSFER_FUNCTION_LINEAR:
+        case JXL_TRANSFER_FUNCTION_SRGB:
+        case JXL_TRANSFER_FUNCTION_PQ:
+        case JXL_TRANSFER_FUNCTION_DCI:
+        case JXL_TRANSFER_FUNCTION_HLG:
+        case JXL_TRANSFER_FUNCTION_GAMMA:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+static uint32_t jxl_quantize_flt_unscaled(float v, uint32_t max_nat) {
+    if (v <= 0.0f) {
+        return 0u;
+    }
+    if (v >= 1.0f) {
+        return max_nat;
+    }
+    uint32_t q = (uint32_t)(v * (float)max_nat + 0.5f);
+    return (q > max_nat) ? max_nat : q;
+}
+
+static rfc_status jxl_apply_xyb_cms_transform(const rfc_layout *layout,
+                                              const JxlBasicInfo *bi,
+                                              const uint8_t *lin_icc,
+                                              size_t lin_icc_len,
+                                              const JxlColorEncoding *lin_ce,
+                                              const uint8_t *dst_icc,
+                                              size_t dst_icc_len,
+                                              const JxlColorEncoding *dst_ce,
+                                              const float *fbuf,
+                                              rfc_frame *frame) {
+    const JxlCmsInterface *cms = JxlGetDefaultCms();
+    if (!cms || !cms->init || !cms->get_src_buf || !cms->get_dst_buf ||
+        !cms->run || !cms->destroy || !fbuf || !frame || !frame->data) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    uint32_t color_ch = bi->num_color_channels;
+    uint32_t nch = jxl_sample_channels(layout->format);
+    uint32_t S = jxl_sample_width_bits(layout->format);
+    uint32_t b = layout->bits_per_sample;
+    if ((color_ch != 1u && color_ch != 3u) ||
+        (nch != color_ch && nch != color_ch + 1u) || (S != 8u && S != 16u) ||
+        b < 1u || b > S) {
+        return RFC_ERR_UNSUPPORTED_SAMPLE;
+    }
+    uint32_t max_nat = (b == 16u) ? 65535u : ((1u << b) - 1u);
+
+    JxlColorProfile in_prof;
+    memset(&in_prof, 0, sizeof(in_prof));
+    in_prof.icc.data = lin_icc;
+    in_prof.icc.size = lin_icc_len;
+    in_prof.color_encoding = *lin_ce;
+    in_prof.num_channels = color_ch;
+
+    JxlColorProfile out_prof;
+    memset(&out_prof, 0, sizeof(out_prof));
+    out_prof.icc.data = dst_icc;
+    out_prof.icc.size = dst_icc_len;
+    out_prof.color_encoding = *dst_ce;
+    out_prof.num_channels = color_ch;
+
+    float it = (bi->intensity_target > 0.0f) ? bi->intensity_target : 255.0f;
+    void *cms_inst =
+        cms->init(cms->init_data, 1u, (size_t)layout->width, &in_prof,
+                  &out_prof, it);
+    if (!cms_inst) {
+        return RFC_ERR_UNSUPPORTED_COMBINATION;
+    }
+    float *src_b = cms->get_src_buf(cms_inst, 0u);
+    float *dst_b = cms->get_dst_buf(cms_inst, 0u);
+    if (!src_b || !dst_b) {
+        cms->destroy(cms_inst);
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+
+    rfc_status st = RFC_OK;
+    for (uint32_t y = 0u; y < layout->height; y++) {
+        const float *in_row =
+            fbuf + (size_t)y * (size_t)layout->width * (size_t)nch;
+        for (uint32_t x = 0u; x < layout->width; x++) {
+            for (uint32_t c = 0u; c < color_ch; c++) {
+                src_b[(size_t)x * color_ch + c] =
+                    in_row[(size_t)x * nch + c];
+            }
+        }
+        if (!cms->run(cms_inst, 0u, src_b, dst_b, (size_t)layout->width)) {
+            st = RFC_ERR_INVALID_ARGUMENT;
+            break;
+        }
+        uint8_t *out_row = frame->data + (size_t)y * layout->stride_bytes;
+        for (uint32_t x = 0u; x < layout->width; x++) {
+            for (uint32_t c = 0u; c < color_ch; c++) {
+                uint32_t q = jxl_quantize_flt_unscaled(
+                    dst_b[(size_t)x * color_ch + c], max_nat);
+                size_t idx = (size_t)x * nch + c;
+                if (S == 8u) {
+                    out_row[idx] = (uint8_t)q;
+                } else {
+                    uint16_t u16 = (uint16_t)q;
+                    memcpy(out_row + idx * 2u, &u16, 2u);
+                }
+            }
+            if (nch > color_ch) {
+                uint32_t aq = jxl_quantize_flt_unscaled(
+                    in_row[(size_t)x * nch + color_ch], max_nat);
+                size_t idx = (size_t)x * nch + color_ch;
+                if (S == 8u) {
+                    out_row[idx] = (uint8_t)aq;
+                } else {
+                    uint16_t u16 = (uint16_t)aq;
+                    memcpy(out_row + idx * 2u, &u16, 2u);
+                }
+            }
+        }
+    }
+    cms->destroy(cms_inst);
+    return st;
 }
 
 static rfc_status jxl_decode_common(void *session,
@@ -826,6 +1011,14 @@ static rfc_status jxl_decode_common(void *session,
     int frame_seen = 0;
     int pixel_buf_set = 0;
     int full_image_done = 0;
+    int xyb_cms_needed = 0;
+    uint8_t *xyb_lin_icc = NULL;
+    size_t xyb_lin_icc_len = 0u;
+    JxlColorEncoding xyb_lin_ce;
+    memset(&xyb_lin_ce, 0, sizeof(xyb_lin_ce));
+    JxlColorEncoding xyb_dst_ce;
+    memset(&xyb_dst_ce, 0, sizeof(xyb_dst_ce));
+    float *xyb_fbuf = NULL;
     int subscribed_events = JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING |
                             JXL_DEC_BOX | JXL_DEC_BOX_COMPLETE | JXL_DEC_FRAME;
     if (want_pixels) {
@@ -896,16 +1089,51 @@ static rfc_status jxl_decode_common(void *session,
             }
         } else if (dstat == JXL_DEC_COLOR_ENCODING) {
             have_color = 1;
+            xyb_cms_needed = 0;
+            if (xyb_lin_icc) {
+                alloc->free(alloc->ctx, xyb_lin_icc);
+                xyb_lin_icc = NULL;
+                xyb_lin_icc_len = 0u;
+            }
             JxlColorEncoding orig_ce;
             memset(&orig_ce, 0, sizeof(orig_ce));
             JxlDecoderStatus est = JxlDecoderGetColorAsEncodedProfile(
                 dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL, &orig_ce);
-            if (est != JXL_DEC_SUCCESS || !jxl_is_standard_srgb_ce(&orig_ce)) {
-                size_t icc_sz = 0u;
-                if (JxlDecoderGetICCProfileSize(
-                        dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL, &icc_sz) ==
-                    JXL_DEC_SUCCESS &&
-                    icc_sz > 0u) {
+            if (est == JXL_DEC_SUCCESS) {
+                if (have_bi && !bi.uses_original_profile) {
+                    if (!jxl_can_xyb_output_ce(&orig_ce, JXL_FALSE) ||
+                        ((orig_ce.color_space == JXL_COLOR_SPACE_GRAY)
+                             ? 1u
+                             : 3u) != bi.num_color_channels) {
+                        st = RFC_ERR_UNSUPPORTED_COMBINATION;
+                        break;
+                    }
+                    if (JxlDecoderSetOutputColorProfile(dec, &orig_ce, NULL,
+                                                        0u) !=
+                        JXL_DEC_SUCCESS) {
+                        st = jxl_budget_rejected(exec)
+                                 ? RFC_ERR_OUT_OF_MEMORY
+                                 : RFC_ERR_UNSUPPORTED_COMBINATION;
+                        break;
+                    }
+                }
+                JxlColorProfileTarget prof_target =
+                    (have_bi && !bi.uses_original_profile)
+                        ? JXL_COLOR_PROFILE_TARGET_DATA
+                        : JXL_COLOR_PROFILE_TARGET_ORIGINAL;
+                JxlColorEncoding data_ce;
+                memset(&data_ce, 0, sizeof(data_ce));
+                if (JxlDecoderGetColorAsEncodedProfile(dec, prof_target,
+                                                        &data_ce) !=
+                        JXL_DEC_SUCCESS ||
+                    !jxl_is_standard_srgb_ce(&data_ce)) {
+                    size_t icc_sz = 0u;
+                    if (JxlDecoderGetICCProfileSize(dec, prof_target, &icc_sz) !=
+                            JXL_DEC_SUCCESS ||
+                        icc_sz == 0u) {
+                        st = RFC_ERR_INVALID_ARGUMENT;
+                        break;
+                    }
                     if (icc_sz > meta_cap) {
                         st = RFC_ERR_LIMIT_EXCEEDED;
                         break;
@@ -917,8 +1145,8 @@ static rfc_status jxl_decode_common(void *session,
                         break;
                     }
                     if (JxlDecoderGetColorAsICCProfile(
-                            dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL, icc_buf,
-                            icc_sz) != JXL_DEC_SUCCESS) {
+                            dec, prof_target, icc_buf, icc_sz) !=
+                        JXL_DEC_SUCCESS) {
                         alloc->free(alloc->ctx, icc_buf);
                         st = RFC_ERR_INVALID_ARGUMENT;
                         break;
@@ -929,14 +1157,131 @@ static rfc_status jxl_decode_common(void *session,
                     meta.icc = icc_buf;
                     meta.icc_len = icc_sz;
                 }
-            }
-            if (have_bi && !bi.uses_original_profile) {
-                JxlColorEncoding target_ce;
-                memset(&target_ce, 0, sizeof(target_ce));
-                JxlColorEncodingSetToSRGB(
-                    &target_ce,
-                    (bi.num_color_channels == 1u) ? JXL_TRUE : JXL_FALSE);
-                (void)JxlDecoderSetOutputColorProfile(dec, &target_ce, NULL, 0u);
+            } else {
+                size_t icc_sz = 0u;
+                if (JxlDecoderGetICCProfileSize(
+                        dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL, &icc_sz) !=
+                        JXL_DEC_SUCCESS ||
+                    icc_sz == 0u) {
+                    st = RFC_ERR_INVALID_ARGUMENT;
+                    break;
+                }
+                if (icc_sz > meta_cap) {
+                    st = RFC_ERR_LIMIT_EXCEEDED;
+                    break;
+                }
+                uint8_t *icc_buf = (uint8_t *)alloc->alloc(alloc->ctx, icc_sz);
+                if (!icc_buf) {
+                    st = RFC_ERR_OUT_OF_MEMORY;
+                    break;
+                }
+                if (JxlDecoderGetColorAsICCProfile(
+                        dec, JXL_COLOR_PROFILE_TARGET_ORIGINAL, icc_buf,
+                        icc_sz) != JXL_DEC_SUCCESS) {
+                    alloc->free(alloc->ctx, icc_buf);
+                    st = RFC_ERR_INVALID_ARGUMENT;
+                    break;
+                }
+                if (have_bi && !bi.uses_original_profile) {
+                    if (icc_sz < 128u ||
+                        jxl_rd32be(icc_buf) != (uint32_t)icc_sz ||
+                        memcmp(icc_buf + 36u, "acsp", 4u) != 0) {
+                        alloc->free(alloc->ctx, icc_buf);
+                        st = RFC_ERR_INVALID_ARGUMENT;
+                        break;
+                    }
+                    if ((bi.num_color_channels == 1u &&
+                         memcmp(icc_buf + 16u, "GRAY", 4u) != 0) ||
+                        (bi.num_color_channels == 3u &&
+                         memcmp(icc_buf + 16u, "RGB ", 4u) != 0)) {
+                        alloc->free(alloc->ctx, icc_buf);
+                        st = RFC_ERR_UNSUPPORTED_COMBINATION;
+                        break;
+                    }
+                    const JxlCmsInterface *cms = JxlGetDefaultCms();
+                    JXL_BOOL is_cmyk = JXL_FALSE;
+                    memset(&xyb_dst_ce, 0, sizeof(xyb_dst_ce));
+                    if (!cms || !cms->set_fields_from_icc ||
+                        !cms->set_fields_from_icc(cms->set_fields_data, icc_buf,
+                                                  icc_sz, &xyb_dst_ce,
+                                                  &is_cmyk) ||
+                        is_cmyk) {
+                        alloc->free(alloc->ctx, icc_buf);
+                        st = RFC_ERR_UNSUPPORTED_COMBINATION;
+                        break;
+                    }
+                    if (jxl_can_xyb_output_ce(&xyb_dst_ce, is_cmyk)) {
+                        if (JxlDecoderSetOutputColorProfile(dec, NULL, icc_buf,
+                                                            icc_sz) !=
+                            JXL_DEC_SUCCESS) {
+                            alloc->free(alloc->ctx, icc_buf);
+                            st = jxl_budget_rejected(exec)
+                                     ? RFC_ERR_OUT_OF_MEMORY
+                                     : RFC_ERR_UNSUPPORTED_COMBINATION;
+                            break;
+                        }
+                    } else {
+                        if (JxlDecoderGetColorAsEncodedProfile(
+                                dec, JXL_COLOR_PROFILE_TARGET_DATA,
+                                &xyb_lin_ce) != JXL_DEC_SUCCESS ||
+                            JxlDecoderGetICCProfileSize(
+                                dec, JXL_COLOR_PROFILE_TARGET_DATA,
+                                &xyb_lin_icc_len) != JXL_DEC_SUCCESS ||
+                            xyb_lin_icc_len == 0u) {
+                            alloc->free(alloc->ctx, icc_buf);
+                            st = RFC_ERR_INVALID_ARGUMENT;
+                            break;
+                        }
+                        xyb_lin_icc = (uint8_t *)alloc->alloc(alloc->ctx,
+                                                              xyb_lin_icc_len);
+                        if (!xyb_lin_icc) {
+                            alloc->free(alloc->ctx, icc_buf);
+                            st = RFC_ERR_OUT_OF_MEMORY;
+                            break;
+                        }
+                        if (JxlDecoderGetColorAsICCProfile(
+                                dec, JXL_COLOR_PROFILE_TARGET_DATA, xyb_lin_icc,
+                                xyb_lin_icc_len) != JXL_DEC_SUCCESS) {
+                            alloc->free(alloc->ctx, icc_buf);
+                            st = RFC_ERR_INVALID_ARGUMENT;
+                            break;
+                        }
+                        JxlColorProfile in_prof;
+                        memset(&in_prof, 0, sizeof(in_prof));
+                        in_prof.icc.data = xyb_lin_icc;
+                        in_prof.icc.size = xyb_lin_icc_len;
+                        in_prof.color_encoding = xyb_lin_ce;
+                        in_prof.num_channels = bi.num_color_channels;
+                        JxlColorProfile out_prof;
+                        memset(&out_prof, 0, sizeof(out_prof));
+                        out_prof.icc.data = icc_buf;
+                        out_prof.icc.size = icc_sz;
+                        out_prof.color_encoding = xyb_dst_ce;
+                        out_prof.num_channels = bi.num_color_channels;
+                        float it = (bi.intensity_target > 0.0f)
+                                       ? bi.intensity_target
+                                       : 255.0f;
+                        if (!cms->init || !cms->destroy) {
+                            alloc->free(alloc->ctx, icc_buf);
+                            st = RFC_ERR_INVALID_ARGUMENT;
+                            break;
+                        }
+                        void *probe_cms = cms->init(
+                            cms->init_data, 1u, 1u, &in_prof, &out_prof, it);
+                        if (!probe_cms) {
+                            alloc->free(alloc->ctx, icc_buf);
+                            st = RFC_ERR_UNSUPPORTED_COMBINATION;
+                            break;
+                        }
+                        cms->destroy(probe_cms);
+                        xyb_cms_needed = 1;
+                    }
+                }
+                if (meta.icc) {
+                    alloc->free(alloc->ctx, (void *)meta.icc);
+                }
+                meta.icc = icc_buf;
+                meta.icc_len = icc_sz;
             }
         } else if (dstat == JXL_DEC_BOX) {
             if (box_cap.active) {
@@ -980,30 +1325,69 @@ static rfc_status jxl_decode_common(void *session,
                     break;
                 }
                 frame_count = 1u;
-                JxlPixelFormat px;
-                px.num_channels = jxl_sample_channels(layout.format);
-                px.data_type =
-                    (jxl_sample_width_bits(layout.format) == 16u)
-                        ? JXL_TYPE_UINT16
-                        : JXL_TYPE_UINT8;
-                px.endianness = JXL_NATIVE_ENDIAN;
-                px.align = 0u;
-                JxlBitDepth bd;
-                bd.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
-                bd.bits_per_sample = 0u;
-                bd.exponent_bits_per_sample = 0u;
-                size_t buf_sz = 0u;
-                if (JxlDecoderImageOutBufferSize(dec, &px, &buf_sz) !=
-                        JXL_DEC_SUCCESS ||
-                    buf_sz != frames[0].data_len ||
-                    JxlDecoderSetImageOutBuffer(dec, &px, frames[0].data,
-                                                frames[0].data_len) !=
-                        JXL_DEC_SUCCESS ||
-                    JxlDecoderSetImageOutBitDepth(dec, &bd) !=
-                        JXL_DEC_SUCCESS) {
-                    st = jxl_budget_rejected(exec) ? RFC_ERR_OUT_OF_MEMORY
-                                                   : RFC_ERR_INVALID_ARGUMENT;
-                    break;
+                if (xyb_cms_needed) {
+                    uint32_t nch = jxl_sample_channels(layout.format);
+                    size_t f_pixels = 0u, f_samples = 0u, f_bytes = 0u;
+                    if (!jxl_mul_sz((size_t)layout.width, (size_t)layout.height,
+                                    &f_pixels) ||
+                        !jxl_mul_sz(f_pixels, (size_t)nch, &f_samples) ||
+                        !jxl_mul_sz(f_samples, sizeof(float), &f_bytes)) {
+                        st = RFC_ERR_OVERFLOW;
+                        break;
+                    }
+                    xyb_fbuf = (float *)alloc->alloc(alloc->ctx, f_bytes);
+                    if (!xyb_fbuf) {
+                        st = RFC_ERR_OUT_OF_MEMORY;
+                        break;
+                    }
+                    JxlPixelFormat fpx;
+                    fpx.num_channels = nch;
+                    fpx.data_type = JXL_TYPE_FLOAT;
+                    fpx.endianness = JXL_NATIVE_ENDIAN;
+                    fpx.align = 0u;
+                    JxlBitDepth fbd;
+                    fbd.type = JXL_BIT_DEPTH_FROM_PIXEL_FORMAT;
+                    fbd.bits_per_sample = 0u;
+                    fbd.exponent_bits_per_sample = 0u;
+                    size_t buf_sz = 0u;
+                    if (JxlDecoderImageOutBufferSize(dec, &fpx, &buf_sz) !=
+                            JXL_DEC_SUCCESS ||
+                        buf_sz != f_bytes ||
+                        JxlDecoderSetImageOutBuffer(dec, &fpx, xyb_fbuf,
+                                                    f_bytes) !=
+                            JXL_DEC_SUCCESS ||
+                        JxlDecoderSetImageOutBitDepth(dec, &fbd) !=
+                            JXL_DEC_SUCCESS) {
+                        st = jxl_budget_rejected(exec) ? RFC_ERR_OUT_OF_MEMORY
+                                                       : RFC_ERR_INVALID_ARGUMENT;
+                        break;
+                    }
+                } else {
+                    JxlPixelFormat px;
+                    px.num_channels = jxl_sample_channels(layout.format);
+                    px.data_type =
+                        (jxl_sample_width_bits(layout.format) == 16u)
+                            ? JXL_TYPE_UINT16
+                            : JXL_TYPE_UINT8;
+                    px.endianness = JXL_NATIVE_ENDIAN;
+                    px.align = 0u;
+                    JxlBitDepth bd;
+                    bd.type = JXL_BIT_DEPTH_FROM_CODESTREAM;
+                    bd.bits_per_sample = 0u;
+                    bd.exponent_bits_per_sample = 0u;
+                    size_t buf_sz = 0u;
+                    if (JxlDecoderImageOutBufferSize(dec, &px, &buf_sz) !=
+                            JXL_DEC_SUCCESS ||
+                        buf_sz != frames[0].data_len ||
+                        JxlDecoderSetImageOutBuffer(dec, &px, frames[0].data,
+                                                    frames[0].data_len) !=
+                            JXL_DEC_SUCCESS ||
+                        JxlDecoderSetImageOutBitDepth(dec, &bd) !=
+                            JXL_DEC_SUCCESS) {
+                        st = jxl_budget_rejected(exec) ? RFC_ERR_OUT_OF_MEMORY
+                                                       : RFC_ERR_INVALID_ARGUMENT;
+                        break;
+                    }
                 }
                 pixel_buf_set = 1;
             }
@@ -1034,11 +1418,28 @@ cleanup:
         st = rfc_limits_check_metadata(limits, &meta);
     }
 
+    if (st == RFC_OK && want_pixels && xyb_cms_needed) {
+        st = jxl_apply_xyb_cms_transform(
+            &layout, &bi, xyb_lin_icc, xyb_lin_icc_len, &xyb_lin_ce, meta.icc,
+            meta.icc_len, &xyb_dst_ce, xyb_fbuf, &frames[0]);
+    }
+    if (xyb_fbuf) {
+        alloc->free(alloc->ctx, xyb_fbuf);
+        xyb_fbuf = NULL;
+    }
+    if (xyb_lin_icc) {
+        alloc->free(alloc->ctx, xyb_lin_icc);
+        xyb_lin_icc = NULL;
+    }
+
     if (st == RFC_OK && want_pixels) {
         st = jxl_unscale_left_align(&frames[0]);
     }
     if (st == RFC_OK && want_pixels) {
-        frames[0].metadata = meta;
+        memset(&frames[0].metadata, 0, sizeof(frames[0].metadata));
+        frames[0].metadata.orientation = meta.orientation;
+        frames[0].metadata.duration_ms = meta.duration_ms;
+        frames[0].metadata.color = meta.color;
         frames[0].allocator = alloc;
         if (meta.icc && meta.icc_len > 0u) {
             uint8_t *ic = (uint8_t *)alloc->alloc(alloc->ctx, meta.icc_len);
@@ -1047,6 +1448,7 @@ cleanup:
             } else {
                 memcpy(ic, meta.icc, meta.icc_len);
                 frames[0].metadata.icc = ic;
+                frames[0].metadata.icc_len = meta.icc_len;
             }
         }
         if (st == RFC_OK && meta.exif && meta.exif_len > 0u) {
@@ -1056,6 +1458,7 @@ cleanup:
             } else {
                 memcpy(ex, meta.exif, meta.exif_len);
                 frames[0].metadata.exif = ex;
+                frames[0].metadata.exif_len = meta.exif_len;
             }
         }
         if (st == RFC_OK && meta.xmp && meta.xmp_len > 0u) {
@@ -1065,6 +1468,7 @@ cleanup:
             } else {
                 memcpy(xm, meta.xmp, meta.xmp_len);
                 frames[0].metadata.xmp = xm;
+                frames[0].metadata.xmp_len = meta.xmp_len;
             }
         }
     }
@@ -1586,6 +1990,17 @@ static rfc_status jxl_encode_session(void *session,
     }
 
     if (add_exif) {
+        uint32_t exif_tiff_off =
+            (eff_exif_len >= 14u &&
+             memcmp(eff_exif, "Exif\x00\x00", 6) == 0)
+                ? 6u
+                : 0u;
+        if (eff_exif_len - (size_t)exif_tiff_off < 8u ||
+            !jxl_has_tiff_magic(eff_exif + exif_tiff_off,
+                                eff_exif_len - (size_t)exif_tiff_off)) {
+            st = RFC_ERR_INVALID_ARGUMENT;
+            goto fail_enc;
+        }
         size_t box_len = 0u;
         if (!jxl_add_sz(4u, eff_exif_len, &box_len)) {
             st = RFC_ERR_OVERFLOW;
@@ -1596,7 +2011,7 @@ static rfc_status jxl_encode_session(void *session,
             st = RFC_ERR_OUT_OF_MEMORY;
             goto fail_enc;
         }
-        jxl_wr32be(exif_box, 0u);
+        jxl_wr32be(exif_box, exif_tiff_off);
         memcpy(exif_box + 4u, eff_exif, eff_exif_len);
         JxlBoxType btype = {'E', 'x', 'i', 'f'};
         JxlEncoderStatus bs =
@@ -1888,7 +2303,7 @@ static rfc_status jxl_materialize_jpeg_meta(const jxl_jpeg_scan_info *info,
     if (info->icc_total_chunks > 0u && !info->icc_invalid) {
         size_t icc_sum = 0u;
         int complete = 1;
-        for (uint8_t i = 1u; i <= info->icc_total_chunks; i++) {
+        for (uint32_t i = 1u; i <= (uint32_t)info->icc_total_chunks; i++) {
             if (info->icc_chunks[i].len == 0u) {
                 complete = 0;
                 break;
@@ -1906,7 +2321,7 @@ static rfc_status jxl_materialize_jpeg_meta(const jxl_jpeg_scan_info *info,
                 return RFC_ERR_OUT_OF_MEMORY;
             }
             size_t wp = 0u;
-            for (uint8_t i = 1u; i <= info->icc_total_chunks; i++) {
+            for (uint32_t i = 1u; i <= (uint32_t)info->icc_total_chunks; i++) {
                 memcpy(icc + wp, bytes + info->icc_chunks[i].off,
                        info->icc_chunks[i].len);
                 wp += info->icc_chunks[i].len;
@@ -2231,9 +2646,12 @@ static rfc_status jxl_jpeg_reconstruct(void *session,
     int seen_xmp_box = 0;
     int jpeg_buf_active = 0;
     int saw_jrec = 0;
+    int have_bi = 0;
+    int frame_seen = 0;
 
     if (JxlDecoderSetParallelRunner(dec, jxl_parallel_runner, &runner_ctx) !=
             JXL_DEC_SUCCESS ||
+        JxlDecoderSetKeepOrientation(dec, JXL_TRUE) != JXL_DEC_SUCCESS ||
         JxlDecoderSetDecompressBoxes(dec, JXL_TRUE) != JXL_DEC_SUCCESS ||
         JxlDecoderSubscribeEvents(
             dec, JXL_DEC_JPEG_RECONSTRUCTION | JXL_DEC_BASIC_INFO |
@@ -2283,8 +2701,23 @@ static rfc_status jxl_jpeg_reconstruct(void *session,
                 st = RFC_ERR_INVALID_ARGUMENT;
                 break;
             }
-            if (bi.have_animation) {
-                st = RFC_ERR_UNSUPPORTED_COMBINATION;
+            rfc_layout bi_layout;
+            st = jxl_validate_basic_info(dec, &bi, &bi_layout);
+            if (st != RFC_OK) {
+                break;
+            }
+            have_bi = 1;
+            rfc_image_probe pr;
+            memset(&pr, 0, sizeof(pr));
+            pr.frame_count = 1u;
+            pr.first_frame = bi_layout;
+            pr.total_pixels =
+                (uint64_t)bi_layout.width * (uint64_t)bi_layout.height;
+            pr.total_decoded_bytes =
+                (uint64_t)bi_layout.height * (uint64_t)bi_layout.stride_bytes;
+            st = rfc_limits_check_probe(limits, &pr, (uint64_t)jxl_size,
+                                        jxl_size > 0u);
+            if (st != RFC_OK) {
                 break;
             }
         } else if (dstat == JXL_DEC_BOX) {
@@ -2361,7 +2794,8 @@ static rfc_status jxl_jpeg_reconstruct(void *session,
             }
             jpeg_buf_active = 1;
         } else if (dstat == JXL_DEC_FRAME) {
-            if (!saw_jrec) {
+            frame_seen++;
+            if (!saw_jrec || frame_seen > 1) {
                 st = RFC_ERR_UNSUPPORTED_COMBINATION;
                 break;
             }
@@ -2379,16 +2813,52 @@ static rfc_status jxl_jpeg_reconstruct(void *session,
         }
     }
 
+    if (st == RFC_OK && (!have_bi || frame_seen != 1)) {
+        st = RFC_ERR_TRUNCATED_INPUT;
+    }
     if (st == RFC_OK && (!saw_jrec || jpeg_len == 0u)) {
         st = RFC_ERR_UNSUPPORTED_COMBINATION;
     }
 
     if (st == RFC_OK) {
+        st = rfc_limits_check_compressed(limits, (uint64_t)jpeg_len);
+    }
+    if (st == RFC_OK) {
         jxl_jpeg_scan_info sinfo;
         st = jxl_scan_jpeg_markers(jpeg_buf, jpeg_len, meta_cap, &sinfo);
         if (st == RFC_OK) {
+            rfc_layout rec_lay;
+            memset(&rec_lay, 0, sizeof(rec_lay));
+            rec_lay.format =
+                (sinfo.components == 1u) ? RFC_SAMPLE_GRAY8 : RFC_SAMPLE_RGB8;
+            rec_lay.alpha = RFC_ALPHA_NONE;
+            rec_lay.width = sinfo.width;
+            rec_lay.height = sinfo.height;
+            rec_lay.bits_per_sample = sinfo.bits_per_sample;
+            size_t rec_rb = 0u;
+            if (!jxl_mul_sz((size_t)rec_lay.width, (size_t)sinfo.components,
+                            &rec_rb)) {
+                st = RFC_ERR_OVERFLOW;
+            } else {
+                rec_lay.stride_bytes = rec_rb;
+                rfc_image_probe rec_pr;
+                memset(&rec_pr, 0, sizeof(rec_pr));
+                rec_pr.frame_count = 1u;
+                rec_pr.first_frame = rec_lay;
+                rec_pr.total_pixels =
+                    (uint64_t)rec_lay.width * (uint64_t)rec_lay.height;
+                rec_pr.total_decoded_bytes =
+                    (uint64_t)rec_lay.height * (uint64_t)rec_lay.stride_bytes;
+                st = rfc_limits_check_probe(limits, &rec_pr, (uint64_t)jpeg_len,
+                                            jpeg_len > 0u);
+            }
+        }
+        if (st == RFC_OK) {
             st = jxl_materialize_jpeg_meta(&sinfo, jpeg_buf, alloc, meta_cap,
                                            out_dst_meta);
+        }
+        if (st == RFC_OK) {
+            st = rfc_limits_check_metadata(limits, out_dst_meta);
         }
     }
 

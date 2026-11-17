@@ -316,6 +316,38 @@ class JXLAdapterVerificationMixin:
         self.assertEqual(dec_12["bps"], 12)
         self.assertEqual(dec_12["pixels"], bytes(rgb12))
 
+        # 2b. "Exif\0\0"-prefixed EXIF encodes ISO/IEC 18181-2 BE offset 6 and
+        #     round-trips byte-identically on both host and Windows x64.
+        prefixed_exif = b"Exif\x00\x00" + exif6
+        jxl_pref = self._encode_jxl(
+            "exif_pref6", w, h, SAMPLE_RGB8, ALPHA_NONE, 8, bytes(rgb8),
+            "preserve", ori=6, exif=prefixed_exif,
+        )
+        raw_jxl = jxl_pref.read_bytes()
+        pos = 0
+        found_exif_box = None
+        while pos + 8 <= len(raw_jxl):
+            bsz = struct.unpack(">I", raw_jxl[pos : pos + 4])[0]
+            btype = raw_jxl[pos + 4 : pos + 8]
+            hdr = 8
+            if bsz == 1 and pos + 16 <= len(raw_jxl):
+                bsz = struct.unpack(">Q", raw_jxl[pos + 8 : pos + 16])[0]
+                hdr = 16
+            elif bsz == 0:
+                bsz = len(raw_jxl) - pos
+            self.assertGreaterEqual(bsz, hdr)
+            if btype == b"Exif":
+                found_exif_box = raw_jxl[pos + hdr : pos + bsz]
+                break
+            pos += bsz
+        self.assertIsNotNone(found_exif_box)
+        assert found_exif_box is not None
+        self.assertEqual(found_exif_box[:14], b"\x00\x00\x00\x06Exif\x00\x00II*\x00")
+        self.assertEqual(found_exif_box, b"\x00\x00\x00\x06" + prefixed_exif)
+        dec_pref = self._decode_jxl(jxl_pref, "exif_pref6")
+        self.assertEqual(dec_pref["orientation"], 6)
+        self.assertEqual(dec_pref["exif"], prefixed_exif)
+
         # 3. Cross-format JXL -> RASTERFOLD verified via independent tests/rfi_ref.py oracle
         #    and JXL -> PNG verified via Pillow + pure-Python PNG decoder
         fold_out = wd / "from_jxl.fold"
