@@ -568,7 +568,7 @@ static rfc_status jxl_box_begin(JxlDecoder *dec,
         return RFC_OK;
     }
     if ((is_exif && already_has_exif) || (is_xmp && already_has_xmp)) {
-        return RFC_OK;
+        return RFC_ERR_UNSUPPORTED_COMBINATION;
     }
     if (meta_cap == 0u) {
         return RFC_ERR_LIMIT_EXCEEDED;
@@ -1003,6 +1003,8 @@ static rfc_status jxl_decode_common(void *session,
     size_t frame_count = 0u;
     jxl_box_capture box_cap;
     memset(&box_cap, 0, sizeof(box_cap));
+    int seen_exif_box = 0;
+    int seen_xmp_box = 0;
 
     JxlBasicInfo bi;
     memset(&bi, 0, sizeof(bi));
@@ -1290,10 +1292,18 @@ static rfc_status jxl_decode_common(void *session,
                     break;
                 }
             }
-            st = jxl_box_begin(dec, &box_cap, alloc, meta_cap,
-                               meta.exif != NULL, meta.xmp != NULL);
+            st = jxl_box_begin(dec, &box_cap, alloc, meta_cap, seen_exif_box,
+                               seen_xmp_box);
             if (st != RFC_OK) {
                 break;
+            }
+            if (box_cap.active) {
+                if (box_cap.is_exif) {
+                    seen_exif_box = 1;
+                }
+                if (box_cap.is_xmp) {
+                    seen_xmp_box = 1;
+                }
             }
         } else if (dstat == JXL_DEC_BOX_NEED_MORE_OUTPUT) {
             st = jxl_box_grow(dec, &box_cap, alloc, meta_cap);

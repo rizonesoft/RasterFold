@@ -782,6 +782,132 @@ static void upstream_encode_jxl(uint32_t w,
     *out_len = len;
 }
 
+static void upstream_encode_multi_box_jxl(uint32_t w,
+                                          uint32_t h,
+                                          const char *box1_type,
+                                          const uint8_t *box1,
+                                          size_t box1_len,
+                                          int box1_compress,
+                                          const char *box2_type,
+                                          const uint8_t *box2,
+                                          size_t box2_len,
+                                          int box2_compress,
+                                          int box2_after_frame,
+                                          const uint8_t *pixels,
+                                          size_t pix_len,
+                                          uint8_t **out_buf,
+                                          size_t *out_len) {
+    JxlEncoder *enc = JxlEncoderCreate(NULL);
+    CHECK(enc != NULL);
+    CHECK(JxlEncoderUseBoxes(enc) == JXL_ENC_SUCCESS);
+    JxlBasicInfo bi;
+    JxlEncoderInitBasicInfo(&bi);
+    bi.xsize = w;
+    bi.ysize = h;
+    bi.bits_per_sample = 8u;
+    bi.exponent_bits_per_sample = 0u;
+    bi.uses_original_profile = JXL_TRUE;
+    bi.num_color_channels = 3u;
+    bi.num_extra_channels = 0u;
+    CHECK(JxlEncoderSetBasicInfo(enc, &bi) == JXL_ENC_SUCCESS);
+    JxlColorEncoding ce;
+    JxlColorEncodingSetToSRGB(&ce, JXL_FALSE);
+    CHECK(JxlEncoderSetColorEncoding(enc, &ce) == JXL_ENC_SUCCESS);
+
+    if (box1 && box1_type) {
+        JxlBoxType t1;
+        memcpy(t1, box1_type, 4u);
+        CHECK(JxlEncoderAddBox(enc, t1, box1, box1_len,
+                               box1_compress ? JXL_TRUE : JXL_FALSE) ==
+              JXL_ENC_SUCCESS);
+    }
+    if (!box2_after_frame && box2 && box2_type) {
+        JxlBoxType t2;
+        memcpy(t2, box2_type, 4u);
+        CHECK(JxlEncoderAddBox(enc, t2, box2, box2_len,
+                               box2_compress ? JXL_TRUE : JXL_FALSE) ==
+              JXL_ENC_SUCCESS);
+        JxlEncoderCloseBoxes(enc);
+    }
+
+    JxlEncoderFrameSettings *fs = JxlEncoderFrameSettingsCreate(enc, NULL);
+    CHECK(fs != NULL);
+    CHECK(JxlEncoderSetFrameLossless(fs, JXL_TRUE) == JXL_ENC_SUCCESS);
+    CHECK(JxlEncoderFrameSettingsSetOption(fs, JXL_ENC_FRAME_SETTING_MODULAR,
+                                           1) == JXL_ENC_SUCCESS);
+    JxlBitDepth bd = {JXL_BIT_DEPTH_FROM_CODESTREAM, 0u, 0u};
+    JxlPixelFormat px = {3u, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0u};
+    CHECK(JxlEncoderSetFrameBitDepth(fs, &bd) == JXL_ENC_SUCCESS);
+    CHECK(JxlEncoderAddImageFrame(fs, &px, pixels, pix_len) == JXL_ENC_SUCCESS);
+    JxlEncoderCloseFrames(enc);
+
+    if (box2_after_frame) {
+        if (box2 && box2_type) {
+            JxlBoxType t2;
+            memcpy(t2, box2_type, 4u);
+            CHECK(JxlEncoderAddBox(enc, t2, box2, box2_len,
+                                   box2_compress ? JXL_TRUE : JXL_FALSE) ==
+                  JXL_ENC_SUCCESS);
+        }
+        JxlEncoderCloseBoxes(enc);
+    }
+
+    size_t cap = 4096u, len = 0u;
+    uint8_t *buf = (uint8_t *)malloc(cap);
+    CHECK(buf != NULL);
+    for (;;) {
+        uint8_t *next = buf + len;
+        size_t avail = cap - len;
+        JxlEncoderStatus es = JxlEncoderProcessOutput(enc, &next, &avail);
+        len = (size_t)(next - buf);
+        if (es == JXL_ENC_NEED_MORE_OUTPUT) {
+            cap *= 2u;
+            buf = (uint8_t *)realloc(buf, cap);
+            CHECK(buf != NULL);
+        } else {
+            CHECK(es == JXL_ENC_SUCCESS);
+            break;
+        }
+    }
+    JxlEncoderDestroy(enc);
+    *out_buf = buf;
+    *out_len = len;
+}
+
+static void upstream_count_box_variants(const uint8_t *jxl,
+                                        size_t len,
+                                        const char *want_inner,
+                                        uint32_t *out_raw_count,
+                                        uint32_t *out_brob_count) {
+    uint32_t raw_c = 0u, brob_c = 0u;
+    size_t pos = 0u;
+    while (pos + 8u <= len) {
+        uint32_t bsz32 = rd32be(jxl + pos);
+        const uint8_t *bt = jxl + pos + 4u;
+        size_t hdr = 8u;
+        size_t bsz = (size_t)bsz32;
+        if (bsz32 == 1u) {
+            CHECK(pos + 16u <= len);
+            hdr = 16u;
+            bsz = (size_t)(((uint64_t)rd32be(jxl + pos + 8u) << 32) |
+                           (uint64_t)rd32be(jxl + pos + 12u));
+        } else if (bsz32 == 0u) {
+            bsz = len - pos;
+        }
+        CHECK(bsz >= hdr && pos + bsz <= len);
+        if (memcmp(bt, want_inner, 4u) == 0) {
+            raw_c++;
+        } else if (memcmp(bt, "brob", 4u) == 0 && bsz >= hdr + 4u &&
+                   memcmp(jxl + pos + hdr, want_inner, 4u) == 0) {
+            brob_c++;
+        }
+        pos += bsz;
+    }
+    CHECK(pos == len);
+    *out_raw_count = raw_c;
+    *out_brob_count = brob_c;
+}
+
 static void upstream_verify_native_codestream(const uint8_t *jxl_bytes,
                                               size_t jxl_len,
                                               uint32_t exp_w,
@@ -2002,6 +2128,128 @@ static void test_metadata_boxes_orientation_and_cross_format(void) {
         CHECK(st.live == 0u);
     }
 
+    /* 3c. Multiple "xml " or "Exif" boxes (including "brob"-compressed
+     *     second box) must be refused cleanly without publishing output. */
+    {
+        uint8_t mb_pix[8 * 8 * 3];
+        memset(mb_pix, 0x55, sizeof(mb_pix));
+        static const char k_xml1[] =
+            "<?xpacket begin=\"\"?><x:xmpmeta>first-doc</x:xmpmeta>";
+        static const char k_xml2[] =
+            "<?xpacket begin=\"\"?><x:xmpmeta>"
+            "second-brotli-compressed-xml-document-payload"
+            "</x:xmpmeta>";
+        uint8_t ex1_box[4 + 26], ex2_box[4 + 26];
+        wr32be(ex1_box, 0u);
+        memcpy(ex1_box + 4u, exif_le6, sizeof(exif_le6));
+        wr32be(ex2_box, 0u);
+        memcpy(ex2_box + 4u, exif_be3, sizeof(exif_be3));
+
+        rfc_scheduler_config mcfg;
+        rfc_scheduler_config_default(&mcfg);
+        mcfg.max_workers = 1u;
+        rfc_scheduler *msched = rfc_scheduler_create(&mcfg);
+        CHECK(msched != NULL);
+        rfc_setting_value sv_preserve[1] = {{"metadata", "preserve"}};
+
+        for (int kind = 0; kind < 3; kind++) {
+            uint8_t *mj = NULL;
+            size_t mlen = 0u;
+            if (kind == 0) {
+                upstream_encode_multi_box_jxl(
+                    8u, 8u, "xml ", (const uint8_t *)k_xml1,
+                    sizeof(k_xml1) - 1u, 0, "xml ", (const uint8_t *)k_xml2,
+                    sizeof(k_xml2) - 1u, 1, 0, mb_pix, sizeof(mb_pix), &mj,
+                    &mlen);
+                uint32_t raw_c = 0u, brob_c = 0u;
+                upstream_count_box_variants(mj, mlen, "xml ", &raw_c, &brob_c);
+                CHECK(raw_c == 1u && brob_c == 1u);
+            } else if (kind == 1) {
+                upstream_encode_multi_box_jxl(
+                    8u, 8u, "xml ", (const uint8_t *)k_xml1,
+                    sizeof(k_xml1) - 1u, 0, "xml ", (const uint8_t *)k_xml2,
+                    sizeof(k_xml2) - 1u, 1, 1, mb_pix, sizeof(mb_pix), &mj,
+                    &mlen);
+                uint32_t raw_c = 0u, brob_c = 0u;
+                upstream_count_box_variants(mj, mlen, "xml ", &raw_c, &brob_c);
+                CHECK(raw_c == 1u && brob_c == 1u);
+            } else {
+                upstream_encode_multi_box_jxl(
+                    8u, 8u, "Exif", ex1_box, sizeof(ex1_box), 0, "Exif",
+                    ex2_box, sizeof(ex2_box), 1, 0, mb_pix, sizeof(mb_pix), &mj,
+                    &mlen);
+                uint32_t raw_c = 0u, brob_c = 0u;
+                upstream_count_box_variants(mj, mlen, "Exif", &raw_c, &brob_c);
+                CHECK(raw_c == 1u && brob_c == 1u);
+            }
+
+            void *sess = NULL;
+            rfc_image_probe mpr = {0};
+            rfc_frame *mdf = NULL;
+            size_t mdc = 0u;
+            rfc_metadata mdm = {0};
+            CHECK(adp->open_session(&exec, &sess) == RFC_OK);
+            CHECK(adp->probe_session(sess, &exec, mj, mlen, &mpr) ==
+                  RFC_ERR_UNSUPPORTED_COMBINATION);
+            CHECK(adp->decode_session(sess, &exec, mj, mlen, NULL, 0u, &mdf,
+                                      &mdc, &mdm) ==
+                  RFC_ERR_UNSUPPORTED_COMBINATION);
+            adp->close_session(sess);
+            CHECK(st.live == 0u);
+
+            char out_png[512], out_webp[512];
+            make_temp_path(out_png, sizeof(out_png), "multi_box_no_pub.png");
+            make_temp_path(out_webp, sizeof(out_webp), "multi_box_no_pub.webp");
+            remove(out_png);
+            remove(out_webp);
+
+            rfc_io_sink psink;
+            rfc_io_sink_init_path(&psink, out_png, RFC_EXPORT_REFUSE_EXISTING);
+            rfc_job_spec sp;
+            memset(&sp, 0, sizeof(sp));
+            sp.source_format = RFC_FORMAT_JPEG_XL;
+            sp.target_format = RFC_FORMAT_PNG;
+            sp.source_bytes = mj;
+            sp.source_size = mlen;
+            sp.settings = sv_preserve;
+            sp.setting_count = 1u;
+            sp.io_sink = &psink;
+            sp.expected_working_set_bytes = 32u * 1024u * 1024u;
+
+            rfc_job *job = NULL;
+            CHECK(rfc_scheduler_submit(msched, NULL, &sp, &job) == RFC_OK);
+            CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
+            rfc_job_snapshot sn;
+            CHECK(rfc_job_snapshot_get(job, &sn) == RFC_OK);
+            CHECK(sn.state == RFC_JOB_FAILED);
+            CHECK(sn.status == RFC_ERR_UNSUPPORTED_COMBINATION);
+            CHECK(sn.failing_stage == RFC_STAGE_IMPORT);
+            rfc_job_release(job);
+            FILE *fp_check = fopen(out_png, "rb");
+            CHECK(fp_check == NULL);
+
+            if (kind == 0) {
+                rfc_io_sink wsink;
+                rfc_io_sink_init_path(&wsink, out_webp,
+                                      RFC_EXPORT_REFUSE_EXISTING);
+                sp.target_format = RFC_FORMAT_WEBP;
+                sp.io_sink = &wsink;
+                CHECK(rfc_scheduler_submit(msched, NULL, &sp, &job) == RFC_OK);
+                CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
+                CHECK(rfc_job_snapshot_get(job, &sn) == RFC_OK);
+                CHECK(sn.state == RFC_JOB_FAILED);
+                CHECK(sn.status == RFC_ERR_UNSUPPORTED_COMBINATION);
+                CHECK(sn.failing_stage == RFC_STAGE_IMPORT);
+                rfc_job_release(job);
+                fp_check = fopen(out_webp, "rb");
+                CHECK(fp_check == NULL);
+            }
+            free(mj);
+        }
+        rfc_scheduler_destroy(msched);
+        CHECK(st.live == 0u);
+    }
+
     /* 4. Cross-format PNG(gAMA) -> JXL policy, WebP <-> JXL, JXL -> BMP/FOLD. */
     {
         rfc_scheduler_config scfg;
@@ -2260,6 +2508,34 @@ static void test_jpeg_reconstruction_and_exactness(void) {
         k_jpeg_prog_16x16, sizeof(k_jpeg_prog_16x16), exif_le6,
         sizeof(exif_le6), (const uint8_t *)k_xmp, sizeof(k_xmp) - 1u,
         k_srgb_icc, sizeof(k_srgb_icc), aug_prog, sizeof(aug_prog));
+
+    /* Also confirm rfc_jxl_reconstruct_jpeg refuses duplicate xml boxes. */
+    {
+        rfc_encoded rec_src_jxl = {0};
+        rfc_metadata rec_sm = {0};
+        CHECK(rfc_jxl_transcode_jpeg(&exec, aug_base, aug_base_len, NULL, 0u,
+                                     &rec_src_jxl, &rec_sm) == RFC_OK);
+        rfc_metadata_free(&rec_sm, &alloc);
+        static const char k_extra_xml[] =
+            "<?xpacket begin=\"\"?><x:xmpmeta>second-xml</x:xmpmeta>";
+        size_t extra_xml_len = sizeof(k_extra_xml) - 1u;
+        uint8_t *dup_jrec =
+            (uint8_t *)malloc(rec_src_jxl.len + 8u + extra_xml_len);
+        CHECK(dup_jrec != NULL);
+        memcpy(dup_jrec, rec_src_jxl.data, rec_src_jxl.len);
+        wr32be(dup_jrec + rec_src_jxl.len, (uint32_t)(8u + extra_xml_len));
+        memcpy(dup_jrec + rec_src_jxl.len + 4u, "xml ", 4u);
+        memcpy(dup_jrec + rec_src_jxl.len + 8u, k_extra_xml, extra_xml_len);
+        rfc_encoded out_rec_j = {0};
+        rfc_metadata out_rec_m = {0};
+        CHECK(rfc_jxl_reconstruct_jpeg(&exec, dup_jrec,
+                                       rec_src_jxl.len + 8u + extra_xml_len,
+                                       &out_rec_j, &out_rec_m) ==
+              RFC_ERR_UNSUPPORTED_COMBINATION);
+        free(dup_jrec);
+        rfc_encoded_free(&rec_src_jxl);
+        CHECK(st.live == 0u);
+    }
 
     struct {
         const uint8_t *bytes;
