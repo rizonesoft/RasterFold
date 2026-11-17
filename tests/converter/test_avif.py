@@ -362,6 +362,30 @@ class AVIFAdapterVerificationMixin:
         dec_back = self._decode_avif(back_avif, "from_fold")
         self.assertEqual(dec_back["pixels"], bytes(rgb8))
 
+        # Multi-tile 2x2 edge-cropped grid RGBA8 import (117x113 -> 64x64 + edges).
+        gw, gh = 117, 113
+        grid_px = bytearray()
+        for gy in range(gh):
+            for gx in range(gw):
+                grid_px.extend(
+                    (
+                        (gx * 9 + gy * 3) & 255,
+                        (gx * 5 + gy * 11) & 255,
+                        ((gx ^ gy) * 7) & 255,
+                        255 if ((gx + gy) % 4 == 0) else ((gx * 13 + gy) & 255),
+                    )
+                )
+        grid_in = wd / "grid_117x113.rfwe"
+        grid_avif = wd / "grid_117x113.avif"
+        grid_in.write_bytes(pack_rfwe(gw, gh, SAMPLE_RGBA8, ALPHA_STRAIGHT, 8, bytes(grid_px)))
+        rc, out, err = self.run_cli(["cli", "encode-grid", self.to_exe_path(grid_in), self.to_exe_path(grid_avif)])
+        self.assertEqual(rc, 0, f"encode-grid failed:\n{out}\n{err}")
+        dec_grid = self._decode_avif(grid_avif, "grid_117x113")
+        self.assertEqual((dec_grid["width"], dec_grid["height"]), (gw, gh))
+        self.assertEqual(dec_grid["sample"], SAMPLE_RGBA8)
+        self.assertEqual(dec_grid["alpha"], ALPHA_STRAIGHT)
+        self.assertEqual(dec_grid["pixels"], bytes(grid_px))
+
     def test_cleanroom_ffmpeg_and_pillow_crosscheck(self) -> None:
         wd = self.work_dir()
         ff_info = _ref.probe_ffmpeg_avif_decoder()
@@ -574,20 +598,20 @@ class HostAVIFMallocHWMTests(unittest.TestCase):
             cls._temp_dir.cleanup()
 
     def test_os_heap_hwm_bounded_by_scheduler_reservation(self) -> None:
-        if os.name == "nt":
-            self.skipTest("LD_PRELOAD heap interposer applies to POSIX hosts")
+        if not sys.platform.startswith("linux"):
+            self.skipTest("LD_PRELOAD heap interposer applies to Linux hosts")
         assert self.host_exe is not None
         assert self._temp_dir is not None
         wd = Path(self._temp_dir.name)
 
-        cc = os.environ.get("CC") or shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
+        cc = os.environ.get("CC") or shutil.which("clang") or shutil.which("cc") or shutil.which("gcc")
+        if not cc:
+            raise AssertionError("Linux C compiler unavailable for LD_PRELOAD HWM interposer")
         so_path = wd / "hwm_interpose.so"
         so_c = wd / "hwm_interpose.c"
         env = dict(os.environ)
-        use_interposer = False
-        if cc:
-            so_c.write_text(
-                r"""#define _GNU_SOURCE
+        so_c.write_text(
+            r"""#define _GNU_SOURCE
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <malloc.h>
@@ -727,26 +751,24 @@ __attribute__((destructor)) static void dump_hwm(void) {
     close(fd);
 }
 """,
-                encoding="utf-8",
-            )
-            cres = _ref.run_process_tree(
-                [cc, "-shared", "-fPIC", "-O2", str(so_c), "-o", str(so_path), "-ldl", "-pthread"],
-                cwd=wd,
-                capture_output=True,
-                text=True,
-                timeout=30.0,
-            )
-            self.assertEqual(cres.returncode, 0, f"compile interposer failed:\n{cres.stderr}")
-            env["LD_PRELOAD"] = str(so_path)
-            use_interposer = True
+            encoding="utf-8",
+        )
+        cres = _ref.run_process_tree(
+            [cc, "-shared", "-fPIC", "-O2", str(so_c), "-o", str(so_path), "-ldl", "-pthread"],
+            cwd=wd,
+            capture_output=True,
+            text=True,
+            timeout=30.0,
+        )
+        self.assertEqual(cres.returncode, 0, f"compile interposer failed:\n{cres.stderr}")
+        env["LD_PRELOAD"] = str(so_path)
 
         def run_budget_peak(op: str, in_p: Path, out_p: str, threads: int, sched_admit: int, tag: str) -> int:
             run_env = dict(env)
             hwm_file = wd / f"hwm_{tag}.txt"
-            if use_interposer:
-                if hwm_file.exists():
-                    hwm_file.unlink()
-                run_env["RFC_HWM_OUT"] = str(hwm_file)
+            if hwm_file.exists():
+                hwm_file.unlink()
+            run_env["RFC_HWM_OUT"] = str(hwm_file)
             res = _ref.run_process_tree(
                 [str(self.host_exe), "cli", "budget-peak", op, str(in_p), out_p, str(threads)],
                 cwd=ROOT,
@@ -761,7 +783,8 @@ __attribute__((destructor)) static void dump_hwm(void) {
             self.assertEqual(kv.get("CURR_ALLOC"), "0", res.stdout)
             budget_peak = int(kv["PEAK_BUDGET"])
             self.assertLessEqual(budget_peak, sched_admit, tag)
-            actual_peak = int(hwm_file.read_text(encoding="utf-8").strip()) if use_interposer else budget_peak
+            self.assertTrue(hwm_file.is_file(), f"{tag}: LD_PRELOAD interposer produced no HWM file")
+            actual_peak = int(hwm_file.read_text(encoding="utf-8").strip())
             self.assertGreater(actual_peak, 0, tag)
             self.assertLessEqual(
                 actual_peak,
@@ -801,6 +824,31 @@ __attribute__((destructor)) static void dump_hwm(void) {
                     )
                     run_budget_peak("encode", rfwe_p, str(avif_p) if thr == 1 else "-", thr, enc_admit, f"enc_{cname}_{dim}_t{thr}")
                     run_budget_peak("decode", avif_p, "-", thr, dec_admit, f"dec_{cname}_{dim}_t{thr}")
+
+        # Verify 2x2 edge-cropped grid decode OS heap HWM <= calibrated reservation.
+        gw, gh = 117, 113
+        gpix = gw * gh
+        gdec = gpix * 4
+        g_rfwe = wd / "hwm_grid_117x113.rfwe"
+        g_avif = wd / "hwm_grid_117x113.avif"
+        g_raw = random.Random(404).randbytes(gdec)
+        g_rfwe.write_bytes(pack_rfwe(gw, gh, SAMPLE_RGBA8, ALPHA_STRAIGHT, 8, g_raw))
+        gres = _ref.run_process_tree(
+            [str(self.host_exe), "cli", "encode-grid", str(g_rfwe), str(g_avif)],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=60.0,
+        )
+        self.assertEqual(gres.returncode, 0, f"grid encode failed:\n{gres.stdout}\n{gres.stderr}")
+        for thr in (1, 3):
+            g_dec_admit = (
+                4 * gdec
+                + (16 + 8 * thr) * gpix
+                + thr * 8 * 1024 * 1024
+                + 8 * 1024 * 1024
+            )
+            run_budget_peak("decode", g_avif, "-", thr, g_dec_admit, f"dec_grid_117x113_t{thr}")
 
 
 class WindowsAVIFTests(AVIFAdapterVerificationMixin, unittest.TestCase):

@@ -646,6 +646,301 @@ static size_t build_synthetic_meta_avif(int duplicate_exif,
     return pos;
 }
 
+static size_t build_synthetic_opaque_combo_avif(size_t icc_len,
+                                                size_t exif_len,
+                                                size_t xmp_len,
+                                                size_t zzzz_len,
+                                                uint32_t ipma_repeat,
+                                                uint8_t *out,
+                                                size_t out_cap) {
+    size_t pos = 0u;
+    uint8_t ftyp_p[12] = {'a', 'v', 'i', 'f', 0, 0, 0, 0, 'm', 'i', 'f', '1'};
+    pos += wrap_isobmff_box("ftyp", ftyp_p, sizeof(ftyp_p), out + pos);
+
+    uint8_t *meta_buf = (uint8_t *)calloc(1u, out_cap);
+    CHECK(meta_buf != NULL);
+    size_t mpos = 0u;
+    uint8_t hdlr_p[16] = {0, 0, 0, 0, 'p', 'i', 'c', 't', 0, 0, 0, 0, 0, 0, 0, 0};
+    mpos += wrap_fullbox("hdlr", 0u, 0u, hdlr_p, sizeof(hdlr_p), meta_buf + mpos);
+    uint8_t pitm_p[2] = {0u, 1u};
+    mpos += wrap_fullbox("pitm", 0u, 0u, pitm_p, sizeof(pitm_p), meta_buf + mpos);
+
+    /* iinf: item 1 (av01), optional item 2 (Exif), optional item 3 (XMP). */
+    {
+        uint8_t iinf_items[256];
+        size_t ipos = 0u;
+        uint16_t cnt = 1u;
+        uint8_t infe1[9] = {0, 1, 0, 0, 'a', 'v', '0', '1', 0};
+        ipos += wrap_fullbox("infe", 2u, 0u, infe1, sizeof(infe1),
+                             iinf_items + ipos);
+        if (exif_len > 0u) {
+            cnt++;
+            uint8_t infe2[9] = {0, 2, 0, 0, 'E', 'x', 'i', 'f', 0};
+            ipos += wrap_fullbox("infe", 2u, 0u, infe2, sizeof(infe2),
+                                 iinf_items + ipos);
+        }
+        if (xmp_len > 0u) {
+            cnt++;
+            uint8_t infe3[29] = {0, 3, 0, 0, 'm', 'i', 'm', 'e', 0,
+                                 'a', 'p', 'p', 'l', 'i', 'c', 'a', 't',
+                                 'i', 'o', 'n', '/', 'r', 'd', 'f', '+',
+                                 'x', 'm', 'l', 0};
+            ipos += wrap_fullbox("infe", 2u, 0u, infe3, sizeof(infe3),
+                                 iinf_items + ipos);
+        }
+        uint8_t iinf_p[2 + 256];
+        wr16be(iinf_p, cnt);
+        memcpy(iinf_p + 2u, iinf_items, ipos);
+        mpos += wrap_fullbox("iinf", 0u, 0u, iinf_p, 2u + ipos, meta_buf + mpos);
+    }
+
+    if (exif_len > 0u || xmp_len > 0u) {
+        uint8_t iref_p[64];
+        size_t rpos = 0u;
+        if (exif_len > 0u) {
+            uint8_t cdsc[6] = {0, 2, 0, 1, 0, 1};
+            rpos += wrap_isobmff_box("cdsc", cdsc, sizeof(cdsc), iref_p + rpos);
+        }
+        if (xmp_len > 0u) {
+            uint8_t cdsc[6] = {0, 3, 0, 1, 0, 1};
+            rpos += wrap_isobmff_box("cdsc", cdsc, sizeof(cdsc), iref_p + rpos);
+        }
+        mpos += wrap_fullbox("iref", 0u, 0u, iref_p, rpos, meta_buf + mpos);
+
+        uint8_t iloc_p[64];
+        size_t lpos = 0u;
+        uint16_t lcnt = (uint16_t)((exif_len > 0u ? 1u : 0u) +
+                                   (xmp_len > 0u ? 1u : 0u));
+        iloc_p[lpos++] = 0x44u;
+        iloc_p[lpos++] = 0x00u;
+        wr16be(iloc_p + lpos, lcnt);
+        lpos += 2u;
+        if (exif_len > 0u) {
+            wr16be(iloc_p + lpos, 2u);
+            lpos += 2u;
+            wr16be(iloc_p + lpos, 0u);
+            lpos += 2u;
+            wr16be(iloc_p + lpos, 1u);
+            lpos += 2u;
+            wr32be(iloc_p + lpos, 0u);
+            lpos += 4u;
+            wr32be(iloc_p + lpos, (uint32_t)(exif_len + 4u));
+            lpos += 4u;
+        }
+        if (xmp_len > 0u) {
+            wr16be(iloc_p + lpos, 3u);
+            lpos += 2u;
+            wr16be(iloc_p + lpos, 0u);
+            lpos += 2u;
+            wr16be(iloc_p + lpos, 1u);
+            lpos += 2u;
+            wr32be(iloc_p + lpos, 0u);
+            lpos += 4u;
+            wr32be(iloc_p + lpos, (uint32_t)xmp_len);
+            lpos += 4u;
+        }
+        mpos += wrap_fullbox("iloc", 0u, 0u, iloc_p, lpos, meta_buf + mpos);
+    }
+
+    if (icc_len > 0u || zzzz_len > 0u) {
+        size_t ipco_cap = icc_len + zzzz_len + 64u;
+        uint8_t *ipco_body = (uint8_t *)calloc(1u, ipco_cap);
+        CHECK(ipco_body != NULL);
+        size_t icpos = 0u;
+        uint8_t zidx = 1u;
+        if (icc_len > 0u) {
+            uint8_t *colr_p = (uint8_t *)calloc(1u, 4u + icc_len);
+            CHECK(colr_p != NULL);
+            memcpy(colr_p, "prof", 4u);
+            icpos += wrap_isobmff_box("colr", colr_p, 4u + icc_len,
+                                      ipco_body + icpos);
+            free(colr_p);
+            zidx = 2u;
+        }
+        if (zzzz_len > 0u) {
+            uint8_t *zp = (uint8_t *)calloc(1u, zzzz_len);
+            CHECK(zp != NULL);
+            icpos += wrap_isobmff_box("zzzz", zp, zzzz_len, ipco_body + icpos);
+            free(zp);
+        }
+        size_t ipco_box_sz = 8u + icpos;
+        size_t ipma_pay_sz = ipma_repeat ? (4u + (size_t)ipma_repeat * 4u) : 0u;
+        size_t ipma_box_sz = ipma_repeat ? (12u + ipma_pay_sz) : 0u;
+        CHECK(mpos + 8u + ipco_box_sz + ipma_box_sz < out_cap);
+        wr32be(meta_buf + mpos, (uint32_t)(8u + ipco_box_sz + ipma_box_sz));
+        memcpy(meta_buf + mpos + 4u, "iprp", 4u);
+        mpos += 8u;
+        mpos += wrap_isobmff_box("ipco", ipco_body, icpos, meta_buf + mpos);
+        free(ipco_body);
+        if (ipma_repeat > 0u) {
+            uint8_t *ipma_p = (uint8_t *)calloc(1u, ipma_pay_sz);
+            CHECK(ipma_p != NULL);
+            wr32be(ipma_p, ipma_repeat);
+            size_t ap = 4u;
+            for (uint32_t ri = 0u; ri < ipma_repeat; ri++) {
+                wr16be(ipma_p + ap, (uint16_t)(10u + ri));
+                ipma_p[ap + 2u] = 1u;
+                ipma_p[ap + 3u] = (uint8_t)(zidx & 0x7fu);
+                ap += 4u;
+            }
+            mpos += wrap_fullbox("ipma", 0u, 0u, ipma_p, ap, meta_buf + mpos);
+            free(ipma_p);
+        }
+    }
+
+    CHECK(pos + 12u + mpos <= out_cap);
+    pos += wrap_fullbox("meta", 0u, 0u, meta_buf, mpos, out + pos);
+    free(meta_buf);
+    return pos;
+}
+
+static uint8_t *build_synthetic_fanout_avif(uint32_t item_cnt,
+                                            size_t *out_len) {
+    size_t cap = 4096u + (size_t)item_cnt * 64u;
+    uint8_t *out = (uint8_t *)malloc(cap);
+    uint8_t *mbuf = (uint8_t *)malloc(cap);
+    CHECK(out != NULL && mbuf != NULL);
+    size_t pos = 0u;
+    uint8_t ftyp_p[12] = {'a', 'v', 'i', 'f', 0, 0, 0, 0, 'm', 'i', 'f', '1'};
+    pos += wrap_isobmff_box("ftyp", ftyp_p, sizeof(ftyp_p), out + pos);
+
+    size_t mpos = 0u;
+    uint8_t hdlr_p[16] = {0, 0, 0, 0, 'p', 'i', 'c', 't', 0, 0, 0, 0, 0, 0, 0, 0};
+    mpos += wrap_fullbox("hdlr", 0u, 0u, hdlr_p, sizeof(hdlr_p), mbuf + mpos);
+    uint8_t pitm_p[2] = {0u, 1u};
+    mpos += wrap_fullbox("pitm", 0u, 0u, pitm_p, sizeof(pitm_p), mbuf + mpos);
+
+    /* iinf: item 1 (av01), item_cnt unrelated Exif (ids 10..10+N-1), plus
+     * two Exif items attached to primary 1 at the end. */
+    uint32_t total_items = item_cnt + 3u;
+    size_t iinf_off = mpos;
+    mpos += 16u; /* fullbox(12) + entry_count(4) for iinf ver 1 */
+    for (uint32_t k = 0u; k < item_cnt; k++) {
+        uint8_t infe_p[11];
+        wr32be(infe_p, 10u + k);
+        wr16be(infe_p + 4u, 0u);
+        memcpy(infe_p + 6u, "Exif", 4u);
+        infe_p[10] = 0u;
+        mpos += wrap_fullbox("infe", 3u, 0u, infe_p, sizeof(infe_p),
+                             mbuf + mpos);
+    }
+    uint8_t infe_p1[11] = {0, 0, 0, 1, 0, 0, 'a', 'v', '0', '1', 0};
+    mpos += wrap_fullbox("infe", 3u, 0u, infe_p1, sizeof(infe_p1), mbuf + mpos);
+    uint8_t infe_e1[11] = {0, 0, 0, 2, 0, 0, 'E', 'x', 'i', 'f', 0};
+    mpos += wrap_fullbox("infe", 3u, 0u, infe_e1, sizeof(infe_e1), mbuf + mpos);
+    uint8_t infe_e2[11] = {0, 0, 0, 3, 0, 0, 'E', 'x', 'i', 'f', 0};
+    mpos += wrap_fullbox("infe", 3u, 0u, infe_e2, sizeof(infe_e2), mbuf + mpos);
+    wr32be(mbuf + iinf_off, (uint32_t)(mpos - iinf_off));
+    memcpy(mbuf + iinf_off + 4u, "iinf", 4u);
+    wr32be(mbuf + iinf_off + 8u, 0x01000000u); /* ver 1 */
+    wr32be(mbuf + iinf_off + 12u, total_items);
+
+    /* iref ver 1: N cdsc refs targeting unrelated item 99999 + 2 targeting 1. */
+    size_t iref_off = mpos;
+    mpos += 12u;
+    for (uint32_t k = 0u; k < item_cnt; k++) {
+        uint8_t cdsc[10];
+        wr32be(cdsc, 10u + k);
+        wr16be(cdsc + 4u, 1u);
+        wr32be(cdsc + 6u, 99999u);
+        mpos += wrap_isobmff_box("cdsc", cdsc, sizeof(cdsc), mbuf + mpos);
+    }
+    uint8_t cdsc_d1[10] = {0, 0, 0, 2, 0, 1, 0, 0, 0, 1};
+    uint8_t cdsc_d2[10] = {0, 0, 0, 3, 0, 1, 0, 0, 0, 1};
+    mpos += wrap_isobmff_box("cdsc", cdsc_d1, sizeof(cdsc_d1), mbuf + mpos);
+    mpos += wrap_isobmff_box("cdsc", cdsc_d2, sizeof(cdsc_d2), mbuf + mpos);
+    wr32be(mbuf + iref_off, (uint32_t)(mpos - iref_off));
+    memcpy(mbuf + iref_off + 4u, "iref", 4u);
+    wr32be(mbuf + iref_off + 8u, 0x01000000u); /* ver 1 */
+
+    CHECK(pos + 12u + mpos <= cap);
+    pos += wrap_fullbox("meta", 0u, 0u, mbuf, mpos, out + pos);
+    free(mbuf);
+    *out_len = pos;
+    return out;
+}
+
+static uint8_t *build_grid_avif_from_frame(const rfc_frame *fr,
+                                           size_t *out_len) {
+    CHECK(fr != NULL);
+    CHECK(fr->layout.width > 64u && fr->layout.width <= 128u);
+    CHECK(fr->layout.height > 64u && fr->layout.height <= 128u);
+    CHECK(fr->layout.bits_per_sample == 8u);
+    int has_alpha = (fr->layout.format == RFC_SAMPLE_RGBA8);
+    CHECK(has_alpha || fr->layout.format == RFC_SAMPLE_RGB8);
+    uint32_t ch = has_alpha ? 4u : 3u;
+
+    uint32_t tw[2] = {64u, fr->layout.width - 64u};
+    uint32_t th[2] = {64u, fr->layout.height - 64u};
+    uint32_t ox[2] = {0u, 64u};
+    uint32_t oy[2] = {0u, 64u};
+    avifImage *cells[4] = {NULL, NULL, NULL, NULL};
+    for (uint32_t r = 0u; r < 2u; r++) {
+        for (uint32_t c = 0u; c < 2u; c++) {
+            uint32_t idx = r * 2u + c;
+            avifImage *tile =
+                avifImageCreate(tw[c], th[r], 8u, AVIF_PIXEL_FORMAT_YUV444);
+            CHECK(tile != NULL);
+            tile->yuvRange = AVIF_RANGE_FULL;
+            tile->colorPrimaries = AVIF_COLOR_PRIMARIES_UNSPECIFIED;
+            tile->transferCharacteristics =
+                AVIF_TRANSFER_CHARACTERISTICS_UNSPECIFIED;
+            tile->matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_IDENTITY;
+            CHECK(avifImageAllocatePlanes(
+                      tile, has_alpha ? AVIF_PLANES_ALL : AVIF_PLANES_YUV) ==
+                  AVIF_RESULT_OK);
+            for (uint32_t y = 0u; y < th[r]; y++) {
+                const uint8_t *srow =
+                    fr->data + (size_t)(oy[r] + y) * fr->layout.stride_bytes +
+                    (size_t)ox[c] * ch;
+                uint8_t *dy =
+                    tile->yuvPlanes[AVIF_CHAN_Y] +
+                    (size_t)y * tile->yuvRowBytes[AVIF_CHAN_Y];
+                uint8_t *du =
+                    tile->yuvPlanes[AVIF_CHAN_U] +
+                    (size_t)y * tile->yuvRowBytes[AVIF_CHAN_U];
+                uint8_t *dv =
+                    tile->yuvPlanes[AVIF_CHAN_V] +
+                    (size_t)y * tile->yuvRowBytes[AVIF_CHAN_V];
+                uint8_t *da =
+                    has_alpha ? (tile->alphaPlane + (size_t)y * tile->alphaRowBytes)
+                              : NULL;
+                for (uint32_t x = 0u; x < tw[c]; x++) {
+                    const uint8_t *px = srow + (size_t)x * ch;
+                    dy[x] = px[1];
+                    du[x] = px[2];
+                    dv[x] = px[0];
+                    if (da) {
+                        da[x] = px[3];
+                    }
+                }
+            }
+            cells[idx] = tile;
+        }
+    }
+
+    avifEncoder *enc = avifEncoderCreate();
+    CHECK(enc != NULL);
+    enc->codecChoice = AVIF_CODEC_CHOICE_AOM;
+    enc->speed = 10;
+    enc->quality = AVIF_QUALITY_LOSSLESS;
+    enc->qualityAlpha = AVIF_QUALITY_LOSSLESS;
+    CHECK(avifEncoderAddImageGrid(enc, 2u, 2u, (const avifImage *const *)cells,
+                                  AVIF_ADD_IMAGE_FLAG_SINGLE) == AVIF_RESULT_OK);
+    avifRWData raw = AVIF_DATA_EMPTY;
+    CHECK(avifEncoderFinish(enc, &raw) == AVIF_RESULT_OK);
+    avifEncoderDestroy(enc);
+    for (uint32_t i = 0u; i < 4u; i++) {
+        avifImageDestroy(cells[i]);
+    }
+    uint8_t *out = (uint8_t *)malloc(raw.size);
+    CHECK(out != NULL);
+    memcpy(out, raw.data, raw.size);
+    *out_len = raw.size;
+    avifRWDataFree(&raw);
+    return out;
+}
+
 /* ------------------------------------------------------------------------ */
 /* Suite 1: Registry contract & upstream libavif/libaom checks              */
 /* ------------------------------------------------------------------------ */
@@ -931,6 +1226,101 @@ static void test_lossless_depths_alpha_padding_and_import(void) {
             free(blob);
             CHECK(st.live == 0u);
         }
+    }
+
+    /* Multi-tile 2x2 edge-cropped RGBA8 grid (117x113 -> 64x64, 53x64, 64x49, 53x49)
+     * plus scheduler AVIF(grid) -> PNG decode. */
+    {
+        rfc_exec_context exec;
+        tracked_alloc_state st;
+        rfc_allocator alloc;
+        init_exec(&exec, &st, &alloc, NULL, 1u);
+
+        rfc_frame ref_fr = {0};
+        fill_pattern_frame(&ref_fr, 117u, 113u, RFC_SAMPLE_RGBA8,
+                           RFC_ALPHA_STRAIGHT, 8u, 0, NULL, &alloc);
+        size_t glen = 0u;
+        uint8_t *gblob = build_grid_avif_from_frame(&ref_fr, &glen);
+
+        void *ds = NULL;
+        CHECK(adp->open_session(&exec, &ds) == RFC_OK);
+        rfc_image_probe pr;
+        memset(&pr, 0, sizeof(pr));
+        CHECK(adp->probe_session(ds, &exec, gblob, glen, &pr) == RFC_OK);
+        CHECK(pr.first_frame.width == 117u && pr.first_frame.height == 113u);
+        CHECK(pr.first_frame.format == RFC_SAMPLE_RGBA8);
+        CHECK(pr.first_frame.alpha == RFC_ALPHA_STRAIGHT);
+        CHECK(pr.first_frame.bits_per_sample == 8u);
+        CHECK(pr.frame_count == 1u);
+        rfc_metadata_free(&pr.container_meta, &alloc);
+
+        /* Tight 4 MiB budget refuses grid decode; 32 MiB budget succeeds cleanly. */
+        rfc_budget *tb = rfc_budget_create(4ull * 1024ull * 1024ull);
+        CHECK(tb != NULL);
+        rfc_allocator ba;
+        rfc_budget_allocator(tb, &ba);
+        rfc_exec_context bexec = exec;
+        bexec.budget = tb;
+        bexec.allocator = &ba;
+        rfc_frame *df = NULL;
+        size_t dc = 0u;
+        rfc_metadata dm = {0};
+        CHECK(adp->decode_session(ds, &bexec, gblob, glen, NULL, 0u, &df, &dc,
+                                  &dm) == RFC_ERR_OUT_OF_MEMORY);
+        rfc_budget_destroy(tb);
+
+        rfc_budget *okb = rfc_budget_create(32ull * 1024ull * 1024ull);
+        CHECK(okb != NULL);
+        rfc_budget_allocator(okb, &ba);
+        bexec.budget = okb;
+        bexec.allocator = &ba;
+        CHECK(adp->decode_session(ds, &bexec, gblob, glen, NULL, 0u, &df, &dc,
+                                  &dm) == RFC_OK);
+        adp->close_session(ds);
+        CHECK(dc == 1u && df != NULL);
+        rfc_sample_mismatch mm;
+        memset(&mm, 0, sizeof(mm));
+        CHECK(rfc_verify_frames_equal(&ref_fr, 1u, df, dc, &mm) == RFC_OK);
+        rfc_metadata_free(&dm, &ba);
+        rfc_frame_free(&df[0]);
+        ba.free(ba.ctx, df);
+        rfc_budget_stats bstats;
+        rfc_budget_stats_get(okb, &bstats);
+        CHECK(bstats.current_allocated_bytes == 0u);
+        rfc_budget_destroy(okb);
+
+        CHECK(rfc_codecs_register_basic() == RFC_OK);
+        rfc_scheduler_config scfg;
+        rfc_scheduler_config_default(&scfg);
+        rfc_scheduler *sched = rfc_scheduler_create(&scfg);
+        CHECK(sched != NULL);
+        char p_png[512];
+        make_temp_path(p_png, sizeof(p_png), "grid.png");
+        remove(p_png);
+        rfc_io_sink png_sink;
+        rfc_io_sink_init_path(&png_sink, p_png, RFC_EXPORT_REFUSE_EXISTING);
+        rfc_job_spec sp;
+        memset(&sp, 0, sizeof(sp));
+        sp.source_format = RFC_FORMAT_AVIF;
+        sp.target_format = RFC_FORMAT_PNG;
+        sp.source_bytes = gblob;
+        sp.source_size = glen;
+        sp.io_sink = &png_sink;
+        sp.source_layout = &ref_fr.layout;
+        rfc_job *job = NULL;
+        CHECK(rfc_scheduler_submit(sched, NULL, &sp, &job) == RFC_OK);
+        CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
+        rfc_job_snapshot snap;
+        CHECK(rfc_job_snapshot_get(job, &snap) == RFC_OK &&
+              snap.state == RFC_JOB_SUCCEEDED);
+        rfc_job_release(job);
+        rfc_scheduler_destroy(sched);
+        remove(p_png);
+        CHECK(rfc_codecs_unregister_basic() == RFC_OK);
+
+        free(gblob);
+        rfc_frame_free(&ref_fr);
+        CHECK(st.live == 0u);
     }
 
     rfc_registry_release_session(RFC_FORMAT_AVIF);
@@ -1496,6 +1886,125 @@ static void test_refusals_preflight_limits_and_cancel(void) {
         CHECK(st.calls == 0u && st.live == 0u);
     }
 
+    /* 3b. Opaque properties: huge unknown ipco, ipma amplification, and budget reservation. */
+    {
+        size_t cap = 400u * 1024u;
+        uint8_t *syn_big = (uint8_t *)calloc(1u, cap);
+        CHECK(syn_big != NULL);
+        rfc_exec_context exec;
+        tracked_alloc_state st;
+        rfc_allocator alloc;
+        init_exec(&exec, &st, &alloc, NULL, 1u);
+        void *ds = NULL;
+        CHECK(adp->open_session(&exec, &ds) == RFC_OK);
+        rfc_frame *df = NULL;
+        size_t dc = 0u;
+        rfc_metadata dm = {0};
+
+        /* Unassociated 300 KiB 'zzzz' property exceeds 256 KiB preflight cap. */
+        size_t n_hostile =
+            build_synthetic_opaque_combo_avif(0u, 0u, 0u, 300u * 1024u, 0u,
+                                              syn_big, cap);
+        CHECK(adp->decode_session(ds, &exec, syn_big, n_hostile, NULL, 0u, &df,
+                                  &dc, &dm) == RFC_ERR_LIMIT_EXCEEDED);
+        CHECK(st.calls == 0u && st.live == 0u);
+
+        /* 8 KiB 'zzzz' associated 40 times in ipma (328 KiB total > 256 KiB). */
+        size_t n_amp = build_synthetic_opaque_combo_avif(0u, 0u, 0u, 8192u, 40u,
+                                                         syn_big, cap);
+        CHECK(adp->decode_session(ds, &exec, syn_big, n_amp, NULL, 0u, &df, &dc,
+                                  &dm) == RFC_ERR_LIMIT_EXCEEDED);
+        CHECK(st.calls == 0u && st.live == 0u);
+
+        /* 16 KiB 'zzzz' billed into parse reservation rejects before libavif. */
+        rfc_budget *bp =
+            rfc_budget_create(15ull * 1024ull * 1024ull + 40000ull);
+        CHECK(bp != NULL);
+        rfc_allocator ba;
+        rfc_budget_allocator(bp, &ba);
+        rfc_exec_context bex = exec;
+        bex.budget = bp;
+        bex.allocator = &ba;
+        size_t n_plain =
+            build_synthetic_opaque_combo_avif(0u, 0u, 0u, 0u, 0u, syn_big, cap);
+        CHECK(adp->decode_session(ds, &bex, syn_big, n_plain, NULL, 0u, &df,
+                                  &dc, &dm) == RFC_ERR_INVALID_ARGUMENT);
+        size_t n_op16k =
+            build_synthetic_opaque_combo_avif(0u, 0u, 0u, 16384u, 0u, syn_big,
+                                              cap);
+        CHECK(adp->decode_session(ds, &bex, syn_big, n_op16k, NULL, 0u, &df,
+                                  &dc, &dm) == RFC_ERR_OUT_OF_MEMORY);
+        rfc_budget_stats bs;
+        rfc_budget_stats_get(bp, &bs);
+        CHECK(bs.current_allocated_bytes == 0u);
+        rfc_budget_destroy(bp);
+
+        adp->close_session(ds);
+        free(syn_big);
+        CHECK(st.calls == 0u && st.live == 0u);
+    }
+
+    /* 3c. max_metadata_bytes == 0 exact enforcement & combined ICC + XMP cap. */
+    {
+        uint8_t syn[4096];
+        rfc_exec_context exec;
+        tracked_alloc_state st;
+        rfc_allocator alloc;
+        rfc_limits lim;
+        rfc_limits_default(&lim);
+        lim.max_metadata_bytes = 0u;
+        init_exec(&exec, &st, &alloc, &lim, 1u);
+        void *ds = NULL;
+        CHECK(adp->open_session(&exec, &ds) == RFC_OK);
+        rfc_frame *df = NULL;
+        size_t dc = 0u;
+        rfc_metadata dm = {0};
+
+        size_t n_icc32 = build_synthetic_opaque_combo_avif(32u, 0u, 0u, 0u, 0u,
+                                                           syn, sizeof(syn));
+        CHECK(adp->decode_session(ds, &exec, syn, n_icc32, NULL, 0u, &df, &dc,
+                                  &dm) == RFC_ERR_LIMIT_EXCEEDED);
+        size_t n_ex32 = build_synthetic_opaque_combo_avif(0u, 32u, 0u, 0u, 0u,
+                                                          syn, sizeof(syn));
+        CHECK(adp->decode_session(ds, &exec, syn, n_ex32, NULL, 0u, &df, &dc,
+                                  &dm) == RFC_ERR_LIMIT_EXCEEDED);
+        adp->close_session(ds);
+
+        lim.max_metadata_bytes = 128u;
+        init_exec(&exec, &st, &alloc, &lim, 1u);
+        CHECK(adp->open_session(&exec, &ds) == RFC_OK);
+        size_t n_combo = build_synthetic_opaque_combo_avif(80u, 0u, 80u, 0u, 0u,
+                                                           syn, sizeof(syn));
+        CHECK(adp->decode_session(ds, &exec, syn, n_combo, NULL, 0u, &df, &dc,
+                                  &dm) == RFC_ERR_LIMIT_EXCEEDED);
+        adp->close_session(ds);
+        CHECK(st.calls == 0u && st.live == 0u);
+    }
+
+    /* 3d. High-fanout 25,000-item ISOBMFF preflight linear pass & cancellation. */
+    {
+        size_t flen = 0u;
+        uint8_t *fan = build_synthetic_fanout_avif(25000u, &flen);
+        rfc_exec_context exec;
+        tracked_alloc_state st;
+        rfc_allocator alloc;
+        init_exec(&exec, &st, &alloc, NULL, 1u);
+        void *ds = NULL;
+        CHECK(adp->open_session(&exec, &ds) == RFC_OK);
+        rfc_image_probe pr;
+        memset(&pr, 0, sizeof(pr));
+        CHECK(adp->probe_session(ds, &exec, fan, flen, &pr) ==
+              RFC_ERR_UNSUPPORTED_COMBINATION);
+        CHECK(st.live == 0u);
+
+        adp->cancel_session(ds);
+        CHECK(adp->probe_session(ds, &exec, fan, flen, &pr) ==
+              RFC_ERR_CANCELLED);
+        adp->close_session(ds);
+        free(fan);
+        CHECK(st.live == 0u);
+    }
+
     /* 4. Tight budget rejection + cooperative cancel + retry isolation. */
     {
         rfc_exec_context exec;
@@ -1681,6 +2190,28 @@ static int cli_main(int argc, char **argv) {
         CHECK(st.live == 0u);
         printf("STATUS=%s OUT_BYTES=%zu\n", rfc_status_name(r), elen);
         rc = (r == RFC_OK) ? 0 : 2;
+    } else if (strcmp(sub, "encode-grid") == 0 && argc == 5) {
+        rfc_layout lay;
+        rfc_metadata meta;
+        uint8_t *raw = NULL, *pix = NULL;
+        size_t pay_len = 0u;
+        CHECK(parse_rfwe(argv[3], &lay, &meta, &raw, &pix, &pay_len));
+        rfc_exec_context exec;
+        tracked_alloc_state st;
+        rfc_allocator alloc;
+        init_exec(&exec, &st, &alloc, NULL, 1u);
+        rfc_frame fr = {0};
+        CHECK(rfc_frame_alloc(&fr, &lay, &meta, &alloc) == RFC_OK);
+        memcpy(fr.data, pix, pay_len);
+        size_t glen = 0u;
+        uint8_t *gblob = build_grid_avif_from_frame(&fr, &glen);
+        CHECK(write_file_all(argv[4], gblob, glen));
+        free(gblob);
+        rfc_frame_free(&fr);
+        free(raw);
+        CHECK(st.live == 0u);
+        printf("STATUS=ok OUT_BYTES=%zu\n", glen);
+        rc = 0;
     } else if (strcmp(sub, "decode") == 0 && (argc == 5 || argc == 6)) {
         size_t alen = 0u;
         uint8_t *ab = read_file_all(argv[3], &alen);
