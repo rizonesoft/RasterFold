@@ -255,6 +255,12 @@ static int iloc_field_valid(uint8_t n) {
 
 #define AVIF_PREFLIGHT_MAX_OPAQUE_BYTES (256ull * 1024ull)
 #define AVIF_PREFLIGHT_MAX_IDAT_BYTES (1024ull * 1024ull)
+#define AVIF_PREFLIGHT_MAX_ITEMS 1024u
+#define AVIF_PREFLIGHT_MAX_ASSOCS 8192ull
+#define AVIF_PREFLIGHT_MAX_EXTENTS 8192ull
+#define AVIF_PREFLIGHT_MAX_PROPS 1024ull
+#define AVIF_PREFLIGHT_MAX_RAW_IDS 131072u
+#define AVIF_PREFLIGHT_MAX_STRUCT_META_BYTES (4ull * 1024ull * 1024ull)
 
 typedef struct avif_u32_vec {
     uint32_t stack_buf[64];
@@ -318,6 +324,13 @@ static rfc_status avif_u32_vec_push(avif_u32_vec *v, uint32_t val) {
     return RFC_OK;
 }
 
+static rfc_status avif_u32_vec_push_bounded_id(avif_u32_vec *v, uint32_t val) {
+    if (v->count >= AVIF_PREFLIGHT_MAX_RAW_IDS) {
+        return RFC_ERR_LIMIT_EXCEEDED;
+    }
+    return avif_u32_vec_push(v, val);
+}
+
 static int avif_cmp_u32(const void *a, const void *b) {
     uint32_t va = *(const uint32_t *)a;
     uint32_t vb = *(const uint32_t *)b;
@@ -329,6 +342,21 @@ static void avif_u32_vec_sort(avif_u32_vec *v) {
         qsort(avif_u32_vec_data(v), v->count, sizeof(uint32_t), avif_cmp_u32);
     }
     v->sorted = 1;
+}
+
+static uint64_t avif_u32_vec_count_distinct(avif_u32_vec *v) {
+    if (v->count == 0u) {
+        return 0u;
+    }
+    avif_u32_vec_sort(v);
+    const uint32_t *arr = avif_u32_vec_cdata(v);
+    uint64_t distinct = 1u;
+    for (size_t i = 1u; i < v->count; i++) {
+        if (arr[i] != arr[i - 1u]) {
+            distinct++;
+        }
+    }
+    return distinct;
 }
 
 static int avif_u32_vec_contains(const avif_u32_vec *v, uint32_t val) {
@@ -350,6 +378,80 @@ static int avif_u32_vec_contains(const avif_u32_vec *v, uint32_t val) {
         }
     }
     return 0;
+}
+
+static rfc_status isobmff_scan_iloc(const void *session,
+                                    const rfc_exec_context *exec,
+                                    const uint8_t *data,
+                                    size_t pay_off,
+                                    size_t pay_len,
+                                    avif_u32_vec *io_item_ids,
+                                    uint64_t *out_total_extents) {
+    *out_total_extents = 0u;
+    if (pay_len < 8u) {
+        return RFC_ERR_TRUNCATED_INPUT;
+    }
+    const uint8_t *p = data + pay_off;
+    uint8_t ver = p[0];
+    if (ver > 2u) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    uint8_t off_sz = (uint8_t)((p[4] >> 4) & 0x0fu);
+    uint8_t len_sz = (uint8_t)(p[4] & 0x0fu);
+    uint8_t base_sz = (uint8_t)((p[5] >> 4) & 0x0fu);
+    uint8_t idx_sz = (ver == 1u || ver == 2u) ? (uint8_t)(p[5] & 0x0fu) : 0u;
+    if (!iloc_field_valid(off_sz) || !iloc_field_valid(len_sz) ||
+        !iloc_field_valid(base_sz) || !iloc_field_valid(idx_sz)) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    size_t cur = 6u;
+    uint32_t item_cnt = 0u;
+    if (ver < 2u) {
+        if (pay_len - cur < 2u) {
+            return RFC_ERR_TRUNCATED_INPUT;
+        }
+        item_cnt = avif_rd16be(p + cur);
+        cur += 2u;
+    } else {
+        if (pay_len - cur < 4u) {
+            return RFC_ERR_TRUNCATED_INPUT;
+        }
+        item_cnt = avif_rd32be(p + cur);
+        cur += 4u;
+    }
+    size_t id_sz = (ver < 2u) ? 2u : 4u;
+    size_t per_hdr = id_sz + ((ver == 1u || ver == 2u) ? 2u : 0u) + 2u +
+                     (size_t)base_sz + 2u;
+    size_t ext_sz = (size_t)idx_sz + (size_t)off_sz + (size_t)len_sz;
+    for (uint32_t i = 0u; i < item_cnt; i++) {
+        if ((i & 63u) == 0u && avif_is_cancelled(session, exec)) {
+            return RFC_ERR_CANCELLED;
+        }
+        if (pay_len - cur < per_hdr) {
+            return RFC_ERR_TRUNCATED_INPUT;
+        }
+        uint32_t iid = (ver < 2u) ? (uint32_t)avif_rd16be(p + cur)
+                                  : avif_rd32be(p + cur);
+        rfc_status st = avif_u32_vec_push_bounded_id(io_item_ids, iid);
+        if (st != RFC_OK) {
+            return st;
+        }
+        cur += id_sz + ((ver == 1u || ver == 2u) ? 2u : 0u) + 2u +
+               (size_t)base_sz;
+        uint16_t ext_cnt = avif_rd16be(p + cur);
+        cur += 2u;
+        if (ext_cnt > 0u &&
+            ((uint64_t)ext_cnt * (uint64_t)ext_sz > (uint64_t)(pay_len - cur))) {
+            return RFC_ERR_TRUNCATED_INPUT;
+        }
+        if (!avif_add_u64(*out_total_extents, (uint64_t)ext_cnt,
+                          out_total_extents) ||
+            *out_total_extents > AVIF_PREFLIGHT_MAX_EXTENTS) {
+            return RFC_ERR_LIMIT_EXCEEDED;
+        }
+        cur += (size_t)ext_cnt * ext_sz;
+    }
+    return RFC_OK;
 }
 
 static rfc_status isobmff_iloc_item_extent_sum(const void *session,
@@ -439,14 +541,15 @@ static rfc_status isobmff_iloc_item_extent_sum(const void *session,
     return RFC_OK;
 }
 
-static rfc_status isobmff_collect_iref_cdsc_to_primary(
+static rfc_status isobmff_collect_iref_items_and_cdsc(
     const void *session,
     const rfc_exec_context *exec,
     const uint8_t *data,
     size_t iref_off,
     size_t iref_len,
     uint32_t primary_id,
-    avif_u32_vec *out_from_ids) {
+    avif_u32_vec *io_item_ids,
+    avif_u32_vec *out_cdsc_from_ids) {
     if (iref_len < 4u) {
         return RFC_ERR_TRUNCATED_INPUT;
     }
@@ -465,19 +568,25 @@ static rfc_status isobmff_collect_iref_cdsc_to_primary(
         if (st != RFC_OK) {
             return st;
         }
-        if (memcmp(b.type, "cdsc", 4) == 0) {
-            if (b.pay_len < ref_sz + 2u) {
-                return RFC_ERR_TRUNCATED_INPUT;
-            }
-            const uint8_t *rp = data + b.pay_off;
-            uint32_t fid = (ver == 0u) ? (uint32_t)avif_rd16be(rp)
-                                       : avif_rd32be(rp);
-            uint16_t cnt = avif_rd16be(rp + ref_sz);
-            if ((uint64_t)cnt * (uint64_t)ref_sz >
-                (uint64_t)(b.pay_len - ref_sz - 2u)) {
-                return RFC_ERR_TRUNCATED_INPUT;
-            }
-            int matches = 0;
+        if (b.pay_len < ref_sz + 2u) {
+            return RFC_ERR_TRUNCATED_INPUT;
+        }
+        const uint8_t *rp = data + b.pay_off;
+        uint32_t fid = (ver == 0u) ? (uint32_t)avif_rd16be(rp)
+                                   : avif_rd32be(rp);
+        uint16_t cnt = avif_rd16be(rp + ref_sz);
+        if ((uint64_t)cnt * (uint64_t)ref_sz >
+            (uint64_t)(b.pay_len - ref_sz - 2u)) {
+            return RFC_ERR_TRUNCATED_INPUT;
+        }
+        st = avif_u32_vec_push_bounded_id(io_item_ids, fid);
+        if (st != RFC_OK) {
+            return st;
+        }
+        int is_cdsc = (memcmp(b.type, "cdsc", 4) == 0);
+        int is_dimg = (memcmp(b.type, "dimg", 4) == 0);
+        if (is_cdsc || is_dimg) {
+            int cdsc_matches = 0;
             for (uint16_t k = 0u; k < cnt; k++) {
                 if ((k & 63u) == 0u && avif_is_cancelled(session, exec)) {
                     return RFC_ERR_CANCELLED;
@@ -485,13 +594,18 @@ static rfc_status isobmff_collect_iref_cdsc_to_primary(
                 const uint8_t *tp = rp + ref_sz + 2u + (size_t)k * ref_sz;
                 uint32_t to_id = (ver == 0u) ? (uint32_t)avif_rd16be(tp)
                                              : avif_rd32be(tp);
-                if (to_id == primary_id) {
-                    matches = 1;
-                    break;
+                if (is_dimg) {
+                    st = avif_u32_vec_push_bounded_id(io_item_ids, to_id);
+                    if (st != RFC_OK) {
+                        return st;
+                    }
+                }
+                if (is_cdsc && primary_id != 0u && to_id == primary_id) {
+                    cdsc_matches = 1;
                 }
             }
-            if (matches) {
-                st = avif_u32_vec_push(out_from_ids, fid);
+            if (cdsc_matches) {
+                st = avif_u32_vec_push(out_cdsc_from_ids, fid);
                 if (st != RFC_OK) {
                     return st;
                 }
@@ -499,7 +613,7 @@ static rfc_status isobmff_collect_iref_cdsc_to_primary(
         }
         pos = b.next_off;
     }
-    avif_u32_vec_sort(out_from_ids);
+    avif_u32_vec_sort(out_cdsc_from_ids);
     return RFC_OK;
 }
 
@@ -587,10 +701,12 @@ static rfc_status isobmff_check_iprp(const void *session,
                                      size_t iprp_off,
                                      size_t iprp_len,
                                      size_t meta_cap,
+                                     avif_u32_vec *io_item_ids,
                                      uint64_t *io_icc_bytes,
                                      uint64_t *io_opaque_alloc_bytes,
                                      uint64_t *io_unknown_opaque_bytes,
-                                     uint64_t *io_prop_count) {
+                                     uint64_t *io_prop_count,
+                                     uint64_t *io_ipma_assoc_count) {
     avif_u32_vec prop_opaque_tags;
     avif_u32_vec_init(&prop_opaque_tags, alloc);
     rfc_status st = RFC_OK;
@@ -629,6 +745,10 @@ static rfc_status isobmff_check_iprp(const void *session,
                     goto done;
                 }
                 *io_prop_count += 1ull;
+                if (*io_prop_count > AVIF_PREFLIGHT_MAX_PROPS) {
+                    st = RFC_ERR_LIMIT_EXCEEDED;
+                    goto done;
+                }
                 uint32_t tag = 0u;
                 if (memcmp(prop.type, "colr", 4) == 0 && prop.pay_len >= 4u) {
                     const uint8_t *ct = data + prop.pay_off;
@@ -710,11 +830,23 @@ static rfc_status isobmff_check_iprp(const void *session,
                     st = RFC_ERR_TRUNCATED_INPUT;
                     goto done;
                 }
+                uint32_t iid = (ver < 1u) ? (uint32_t)avif_rd16be(mp + mcur)
+                                          : avif_rd32be(mp + mcur);
+                st = avif_u32_vec_push_bounded_id(io_item_ids, iid);
+                if (st != RFC_OK) {
+                    goto done;
+                }
                 mcur += id_sz;
                 uint8_t acnt = mp[mcur++];
                 if ((uint64_t)acnt * (uint64_t)assoc_sz >
                     (uint64_t)(b.pay_len - mcur)) {
                     st = RFC_ERR_TRUNCATED_INPUT;
+                    goto done;
+                }
+                if (!avif_add_u64(*io_ipma_assoc_count, (uint64_t)acnt,
+                                  io_ipma_assoc_count) ||
+                    *io_ipma_assoc_count > AVIF_PREFLIGHT_MAX_ASSOCS) {
+                    st = RFC_ERR_LIMIT_EXCEEDED;
                     goto done;
                 }
                 for (uint8_t ai = 0u; ai < acnt; ai++) {
@@ -810,6 +942,9 @@ static rfc_status avif_preflight_isobmff(const void *session,
                           memcmp(ft, "mif1", 4) == 0 ||
                           memcmp(ft, "miaf", 4) == 0);
     for (size_t off = 8u; off + 4u <= first.pay_len; off += 4u) {
+        if (memcmp(ft + off, "avis", 4) == 0) {
+            return RFC_ERR_UNSUPPORTED_COMBINATION;
+        }
         if (memcmp(ft + off, "avif", 4) == 0 ||
             memcmp(ft + off, "mif1", 4) == 0 ||
             memcmp(ft + off, "miaf", 4) == 0) {
@@ -834,6 +969,10 @@ static rfc_status avif_preflight_isobmff(const void *session,
         if (st != RFC_OK) {
             return st;
         }
+        if (memcmp(top.type, "moov", 4) == 0 ||
+            memcmp(top.type, "mini", 4) == 0) {
+            return RFC_ERR_UNSUPPORTED_COMBINATION;
+        }
         if (memcmp(top.type, "meta", 4) == 0 && !saw_meta) {
             saw_meta = 1;
             meta_off = top.pay_off;
@@ -848,6 +987,13 @@ static rfc_status avif_preflight_isobmff(const void *session,
         return RFC_ERR_TRUNCATED_INPUT;
     }
 
+    avif_u32_vec item_ids;
+    avif_u32_vec altr_siblings;
+    avif_u32_vec cdsc_primary_ids;
+    avif_u32_vec_init(&item_ids, alloc);
+    avif_u32_vec_init(&altr_siblings, alloc);
+    avif_u32_vec_init(&cdsc_primary_ids, alloc);
+
     int has_pitm = 0, has_iinf = 0, has_iref = 0, has_iloc = 0, has_grpl = 0,
         has_idat = 0;
     size_t pitm_off = 0u, pitm_len = 0u;
@@ -859,6 +1005,8 @@ static rfc_status avif_preflight_isobmff(const void *session,
     uint64_t opaque_alloc_bytes = 0u;
     uint64_t unknown_opaque_bytes = 0u;
     uint64_t prop_count = 0u;
+    uint64_t ipma_assoc_count = 0u;
+    uint64_t iloc_extent_count = 0u;
     uint64_t idat_bytes = 0u;
 
     size_t mpos = meta_off + 4u;
@@ -866,13 +1014,14 @@ static rfc_status avif_preflight_isobmff(const void *session,
     size_t m_idx = 0u;
     while (mpos < mend) {
         if ((m_idx & 63u) == 0u && avif_is_cancelled(session, exec)) {
-            return RFC_ERR_CANCELLED;
+            st = RFC_ERR_CANCELLED;
+            goto cleanup;
         }
         m_idx++;
         isobmff_box_view sub;
         st = isobmff_next_box(data, mend, mpos, &sub);
         if (st != RFC_OK) {
-            return st;
+            goto cleanup;
         }
         if (memcmp(sub.type, "pitm", 4) == 0 && !has_pitm) {
             has_pitm = 1;
@@ -898,15 +1047,16 @@ static rfc_status avif_preflight_isobmff(const void *session,
             has_idat = 1;
             idat_bytes = (uint64_t)sub.pay_len;
             if (idat_bytes > AVIF_PREFLIGHT_MAX_IDAT_BYTES) {
-                return RFC_ERR_LIMIT_EXCEEDED;
+                st = RFC_ERR_LIMIT_EXCEEDED;
+                goto cleanup;
             }
         } else if (memcmp(sub.type, "iprp", 4) == 0) {
             st = isobmff_check_iprp(
                 session, exec, alloc, data, sub.pay_off, sub.pay_len, meta_cap,
-                &icc_bytes, &opaque_alloc_bytes, &unknown_opaque_bytes,
-                &prop_count);
+                &item_ids, &icc_bytes, &opaque_alloc_bytes,
+                &unknown_opaque_bytes, &prop_count, &ipma_assoc_count);
             if (st != RFC_OK) {
-                return st;
+                goto cleanup;
             }
         }
         mpos = sub.next_off;
@@ -915,23 +1065,26 @@ static rfc_status avif_preflight_isobmff(const void *session,
     uint32_t primary_id = 0u;
     if (has_pitm) {
         if (pitm_len < 6u) {
-            return RFC_ERR_TRUNCATED_INPUT;
+            st = RFC_ERR_TRUNCATED_INPUT;
+            goto cleanup;
         }
         uint8_t ver = data[pitm_off];
         if (ver == 0u) {
             primary_id = avif_rd16be(data + pitm_off + 4u);
         } else {
             if (pitm_len < 8u) {
-                return RFC_ERR_TRUNCATED_INPUT;
+                st = RFC_ERR_TRUNCATED_INPUT;
+                goto cleanup;
             }
             primary_id = avif_rd32be(data + pitm_off + 4u);
         }
+        if (primary_id != 0u) {
+            st = avif_u32_vec_push_bounded_id(&item_ids, primary_id);
+            if (st != RFC_OK) {
+                goto cleanup;
+            }
+        }
     }
-
-    avif_u32_vec altr_siblings;
-    avif_u32_vec cdsc_primary_ids;
-    avif_u32_vec_init(&altr_siblings, alloc);
-    avif_u32_vec_init(&cdsc_primary_ids, alloc);
 
     int primary_in_altr = 0;
     if (has_grpl && primary_id != 0u) {
@@ -942,10 +1095,17 @@ static rfc_status avif_preflight_isobmff(const void *session,
             goto cleanup;
         }
     }
-    if (has_iref && primary_id != 0u) {
-        st = isobmff_collect_iref_cdsc_to_primary(
-            session, exec, data, iref_off, iref_len, primary_id,
+    if (has_iref) {
+        st = isobmff_collect_iref_items_and_cdsc(
+            session, exec, data, iref_off, iref_len, primary_id, &item_ids,
             &cdsc_primary_ids);
+        if (st != RFC_OK) {
+            goto cleanup;
+        }
+    }
+    if (has_iloc) {
+        st = isobmff_scan_iloc(session, exec, data, iloc_off, iloc_len,
+                               &item_ids, &iloc_extent_count);
         if (st != RFC_OK) {
             goto cleanup;
         }
@@ -953,7 +1113,6 @@ static rfc_status avif_preflight_isobmff(const void *session,
 
     uint32_t exif_count = 0u;
     uint32_t xmp_count = 0u;
-    uint32_t iinf_item_cnt = 0u;
     uint64_t total_meta_bytes = icc_bytes;
     if (has_iinf) {
         if (iinf_len < 6u) {
@@ -983,7 +1142,6 @@ static rfc_status avif_preflight_isobmff(const void *session,
             st = RFC_ERR_TRUNCATED_INPUT;
             goto cleanup;
         }
-        iinf_item_cnt = cnt;
         for (uint32_t i = 0u; i < cnt && cur < iend; i++) {
             if ((i & 63u) == 0u && avif_is_cancelled(session, exec)) {
                 st = RFC_ERR_CANCELLED;
@@ -1010,6 +1168,10 @@ static rfc_status avif_preflight_isobmff(const void *session,
             }
             uint32_t iid = (iver == 2u) ? (uint32_t)avif_rd16be(ip + 4u)
                                         : avif_rd32be(ip + 4u);
+            st = avif_u32_vec_push_bounded_id(&item_ids, iid);
+            if (st != RFC_OK) {
+                goto cleanup;
+            }
             const uint8_t *itype = ip + 4u + id_sz + 2u;
             size_t name_off = 4u + id_sz + 2u + 4u;
             size_t rem = infe.pay_len - name_off;
@@ -1090,26 +1252,45 @@ static rfc_status avif_preflight_isobmff(const void *session,
             }
         }
     }
-    if (out_est_meta_bytes) {
-        uint64_t struct_cnt = 0u;
-        uint64_t struct_bytes = 0u;
+
+    uint64_t distinct_items = avif_u32_vec_count_distinct(&item_ids);
+    if (distinct_items > (uint64_t)AVIF_PREFLIGHT_MAX_ITEMS) {
+        st = RFC_ERR_LIMIT_EXCEEDED;
+        goto cleanup;
+    }
+
+    {
+        uint64_t item_bytes = 0u;
+        uint64_t assoc_bytes = 0u;
+        uint64_t extent_bytes = 0u;
+        uint64_t prop_bytes = 0u;
+        uint64_t struct_est = 0u;
         uint64_t est = 0u;
-        if (!avif_add_u64((uint64_t)iinf_item_cnt, prop_count, &struct_cnt) ||
-            !avif_mul_u64(struct_cnt, 256ull, &struct_bytes) ||
-            !avif_add_u64(total_meta_bytes, opaque_alloc_bytes, &est) ||
-            !avif_add_u64(est, idat_bytes, &est) ||
-            !avif_add_u64(est, struct_bytes, &est) ||
+        if (!avif_mul_u64(distinct_items, 2048ull, &item_bytes) ||
+            !avif_mul_u64(ipma_assoc_count, 192ull, &assoc_bytes) ||
+            !avif_mul_u64(iloc_extent_count, 32ull, &extent_bytes) ||
+            !avif_mul_u64(prop_count, 256ull, &prop_bytes) ||
+            !avif_add_u64(opaque_alloc_bytes, idat_bytes, &struct_est) ||
+            !avif_add_u64(struct_est, item_bytes, &struct_est) ||
+            !avif_add_u64(struct_est, assoc_bytes, &struct_est) ||
+            !avif_add_u64(struct_est, extent_bytes, &struct_est) ||
+            !avif_add_u64(struct_est, prop_bytes, &struct_est) ||
+            struct_est > AVIF_PREFLIGHT_MAX_STRUCT_META_BYTES ||
+            !avif_add_u64(total_meta_bytes, struct_est, &est) ||
             est > (uint64_t)SIZE_MAX) {
             st = RFC_ERR_LIMIT_EXCEEDED;
             goto cleanup;
         }
-        *out_est_meta_bytes = (size_t)est;
+        if (out_est_meta_bytes) {
+            *out_est_meta_bytes = (size_t)est;
+        }
     }
     st = RFC_OK;
 
 cleanup:
     avif_u32_vec_free(&cdsc_primary_ids);
     avif_u32_vec_free(&altr_siblings);
+    avif_u32_vec_free(&item_ids);
     return st;
 }
 
@@ -1682,9 +1863,10 @@ static rfc_status avif_decode_common(void *session,
     uint64_t pixels = (uint64_t)lay.width * (uint64_t)lay.height;
     size_t full_dec_bytes = 0u;
     size_t meta_total = meta.icc_len + meta.exif_len + meta.xmp_len;
+    size_t dec_meta_res = (est_meta > meta_total) ? est_meta : meta_total;
     if (!avif_stage_work_bytes(pixels, lay.bits_per_sample,
                                dec->alphaPresent ? 1 : 0, eff_thr, 0,
-                               meta_total, &full_dec_bytes)) {
+                               dec_meta_res, &full_dec_bytes)) {
         rfc_metadata_free(&meta, alloc);
         avifDecoderDestroy(dec);
         avif_release_budget(&bg);

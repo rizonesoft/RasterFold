@@ -924,8 +924,7 @@ static rfc_status compute_avif_stage_work_sched(uint64_t decoded_bytes,
     uint64_t thr_bytes = 0u;
     uint64_t per_pix =
         is_encode ? 44ull : (16ull + 8ull * (uint64_t)eff_req_threads);
-    uint64_t base_fixed =
-        is_encode ? (16ull * 1024ull * 1024ull) : (8ull * 1024ull * 1024ull);
+    uint64_t base_fixed = 16ull * 1024ull * 1024ull;
     uint64_t sum = 0u;
     if (!mul_u64_sched(decoded_bytes, 4ull, &dec_scaled) ||
         !mul_u64_sched(pixels, per_pix, &pix_scaled) ||

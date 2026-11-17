@@ -941,6 +941,140 @@ static uint8_t *build_grid_avif_from_frame(const rfc_frame *fr,
     return out;
 }
 
+/* mode 0: ipma items + assocs; mode 1: iloc items; mode 2: 1 iloc item w/
+ * `count` extents (capped at 65535 per extent_count, or multiple items if >65535);
+ * mode 3: iref dimg target items. */
+static uint8_t *build_synthetic_item_extent_flood_avif(int mode,
+                                                       uint32_t count,
+                                                       uint8_t assocs_per_item,
+                                                       size_t *out_len) {
+    size_t cap =
+        16384u + (size_t)count * (size_t)(24u + (size_t)assocs_per_item * 2u);
+    uint8_t *out = (uint8_t *)calloc(1u, cap);
+    uint8_t *mbuf = (uint8_t *)calloc(1u, cap);
+    CHECK(out != NULL && mbuf != NULL);
+
+    size_t pos = 0u;
+    uint8_t ftyp_p[12] = {'a', 'v', 'i', 'f', 0, 0, 0, 0, 'm', 'i', 'f', '1'};
+    pos += wrap_isobmff_box("ftyp", ftyp_p, sizeof(ftyp_p), out + pos);
+
+    size_t mpos = 0u;
+    uint8_t hdlr_p[16] = {0, 0, 0, 0, 'p', 'i', 'c', 't', 0, 0, 0, 0, 0, 0, 0, 0};
+    mpos += wrap_fullbox("hdlr", 0u, 0u, hdlr_p, sizeof(hdlr_p), mbuf + mpos);
+    uint8_t pitm_p[2] = {0u, 1u};
+    mpos += wrap_fullbox("pitm", 0u, 0u, pitm_p, sizeof(pitm_p), mbuf + mpos);
+
+    /* Minimal valid 1-item iinf (`item 1 = av01`); phantom IDs >= 100 are NOT in iinf. */
+    uint8_t infe1[9] = {0, 1, 0, 0, 'a', 'v', '0', '1', 0};
+    uint8_t iinf_p[64];
+    wr16be(iinf_p, 1u);
+    size_t infe1_len = wrap_fullbox("infe", 2u, 0u, infe1, sizeof(infe1),
+                                    iinf_p + 2u);
+    mpos += wrap_fullbox("iinf", 0u, 0u, iinf_p, 2u + infe1_len, mbuf + mpos);
+
+    if (mode == 0) {
+        /* iprp -> ipco([ispe(20)]) + ipma(ver=1 so >65535 IDs work cleanly). */
+        uint8_t ispe_p[8] = {0, 0, 0, 16, 0, 0, 0, 16};
+        uint8_t ipco_b[64];
+        size_t iclen = wrap_fullbox("ispe", 0u, 0u, ispe_p, sizeof(ispe_p),
+                                    ipco_b);
+        size_t entry_sz = 5u + (size_t)assocs_per_item;
+        size_t ipma_pay_len = 4u + (size_t)count * entry_sz;
+        size_t ipma_box_len = 12u + ipma_pay_len;
+        size_t ipco_box_len = 8u + iclen;
+        wr32be(mbuf + mpos, (uint32_t)(8u + ipco_box_len + ipma_box_len));
+        memcpy(mbuf + mpos + 4u, "iprp", 4u);
+        mpos += 8u;
+        mpos += wrap_isobmff_box("ipco", ipco_b, iclen, mbuf + mpos);
+
+        uint8_t *ipma_p = (uint8_t *)calloc(1u, ipma_pay_len);
+        CHECK(ipma_p != NULL);
+        wr32be(ipma_p, count);
+        size_t ap = 4u;
+        for (uint32_t i = 0u; i < count; i++) {
+            wr32be(ipma_p + ap, 100u + i);
+            ap += 4u;
+            ipma_p[ap++] = assocs_per_item;
+            for (uint8_t ai = 0u; ai < assocs_per_item; ai++) {
+                ipma_p[ap++] = 1u; /* property index 1 = ispe (known) */
+            }
+        }
+        mpos += wrap_fullbox("ipma", 1u, 0u, ipma_p, ap, mbuf + mpos);
+        free(ipma_p);
+    } else if (mode == 1) {
+        /* iloc ver 2: count distinct item_ids each with 1 extent (off=0, len=0 -> 8B). */
+        size_t iloc_len = 6u + (size_t)count * 18u;
+        uint8_t *ip = (uint8_t *)calloc(1u, iloc_len);
+        CHECK(ip != NULL);
+        ip[0] = 0x44u;
+        ip[1] = 0x00u;
+        wr32be(ip + 2u, count);
+        size_t lp = 6u;
+        for (uint32_t i = 0u; i < count; i++) {
+            wr32be(ip + lp, 100u + i);
+            lp += 4u;
+            wr16be(ip + lp, 0u);
+            lp += 2u;
+            wr16be(ip + lp, 0u);
+            lp += 2u;
+            wr16be(ip + lp, 1u);
+            lp += 2u;
+            lp += 8u; /* off=0, len=0 */
+        }
+        CHECK(lp == iloc_len);
+        mpos += wrap_fullbox("iloc", 2u, 0u, ip, lp, mbuf + mpos);
+        free(ip);
+    } else if (mode == 2) {
+        /* iloc ver 2: items splitting `count` total extents (`<= 40000` per item). */
+        uint32_t num_items = (count + 39999u) / 40000u;
+        size_t iloc_len = 6u + (size_t)num_items * 10u + (size_t)count * 8u;
+        uint8_t *ip = (uint8_t *)calloc(1u, iloc_len);
+        CHECK(ip != NULL);
+        ip[0] = 0x44u;
+        ip[1] = 0x00u;
+        wr32be(ip + 2u, num_items);
+        size_t lp = 6u;
+        uint32_t rem = count;
+        for (uint32_t it = 0u; it < num_items; it++) {
+            uint16_t ec = (rem > 40000u) ? 40000u : (uint16_t)rem;
+            rem -= ec;
+            wr32be(ip + lp, 100u + it);
+            lp += 4u;
+            wr16be(ip + lp, 0u);
+            lp += 2u;
+            wr16be(ip + lp, 0u);
+            lp += 2u;
+            wr16be(ip + lp, ec);
+            lp += 2u;
+            lp += (size_t)ec * 8u;
+        }
+        mpos += wrap_fullbox("iloc", 2u, 0u, ip, lp, mbuf + mpos);
+        free(ip);
+    } else if (mode == 3) {
+        /* iref ver 1: single `dimg` fromID=1 targeting `count` distinct toIDs. */
+        size_t dimg_len = 6u + (size_t)count * 4u;
+        uint8_t *dp = (uint8_t *)calloc(1u, dimg_len);
+        CHECK(dp != NULL);
+        wr32be(dp, 1u);
+        wr16be(dp + 4u, (uint16_t)count);
+        for (uint32_t i = 0u; i < count; i++) {
+            wr32be(dp + 6u + (size_t)i * 4u, 100u + i);
+        }
+        uint8_t *iref_body = (uint8_t *)malloc(8u + dimg_len);
+        CHECK(iref_body != NULL);
+        size_t rlen = wrap_isobmff_box("dimg", dp, dimg_len, iref_body);
+        free(dp);
+        mpos += wrap_fullbox("iref", 1u, 0u, iref_body, rlen, mbuf + mpos);
+        free(iref_body);
+    }
+
+    CHECK(pos + 12u + mpos <= cap);
+    pos += wrap_fullbox("meta", 0u, 0u, mbuf, mpos, out + pos);
+    free(mbuf);
+    *out_len = pos;
+    return out;
+}
+
 /* ------------------------------------------------------------------------ */
 /* Suite 1: Registry contract & upstream libavif/libaom checks              */
 /* ------------------------------------------------------------------------ */
@@ -2002,6 +2136,105 @@ static void test_refusals_preflight_limits_and_cancel(void) {
               RFC_ERR_CANCELLED);
         adp->close_session(ds);
         free(fan);
+        CHECK(st.live == 0u);
+    }
+
+    /* 3e. Phantom item/association/extent bounds & reservation accountability. */
+    {
+        rfc_exec_context exec;
+        tracked_alloc_state st;
+        rfc_allocator alloc;
+        init_exec(&exec, &st, &alloc, NULL, 1u);
+        void *ds = NULL;
+        CHECK(adp->open_session(&exec, &ds) == RFC_OK);
+        rfc_image_probe pr;
+        rfc_frame *df = NULL;
+        size_t dc = 0u;
+        rfc_metadata dm = {0};
+
+        const int flood_modes[] = {0, 1, 3, 2, 0};
+        const uint32_t flood_cnts[] = {1500u, 1500u, 1500u, 10000u, 100u};
+        const uint8_t flood_assocs[] = {0u, 0u, 0u, 0u, 100u};
+        for (size_t fi = 0u; fi < 5u; fi++) {
+            size_t fl = 0u;
+            uint8_t *fb = build_synthetic_item_extent_flood_avif(
+                flood_modes[fi], flood_cnts[fi], flood_assocs[fi], &fl);
+            memset(&pr, 0, sizeof(pr));
+            CHECK(adp->probe_session(ds, &exec, fb, fl, &pr) ==
+                  RFC_ERR_LIMIT_EXCEEDED);
+            CHECK(adp->decode_session(ds, &exec, fb, fl, NULL, 0u, &df, &dc,
+                                      &dm) == RFC_ERR_LIMIT_EXCEEDED);
+            free(fb);
+            CHECK(st.live == 0u);
+        }
+
+        /* Compatible `avis` brand and top-level `moov` sequence box refused preflight. */
+        {
+            uint8_t compat_avis[24] = {0,   0,   0,   24,  'f', 't', 'y', 'p',
+                                       'm', 'i', 'f', '1', 0,   0,   0,   0,
+                                       'a', 'v', 'i', 'f', 'a', 'v', 'i', 's'};
+            uint8_t moov_avif[24] = {0,   0,   0,   16,  'f', 't', 'y', 'p',
+                                     'a', 'v', 'i', 'f', 0,   0,   0,   0,
+                                     0,   0,   0,   8,   'm', 'o', 'o', 'v'};
+            memset(&pr, 0, sizeof(pr));
+            CHECK(adp->probe_session(ds, &exec, compat_avis, sizeof(compat_avis),
+                                     &pr) == RFC_ERR_UNSUPPORTED_COMBINATION);
+            CHECK(adp->decode_session(ds, &exec, compat_avis, sizeof(compat_avis),
+                                      NULL, 0u, &df, &dc,
+                                      &dm) == RFC_ERR_UNSUPPORTED_COMBINATION);
+            CHECK(adp->probe_session(ds, &exec, moov_avif, sizeof(moov_avif),
+                                     &pr) == RFC_ERR_UNSUPPORTED_COMBINATION);
+            CHECK(adp->decode_session(ds, &exec, moov_avif, sizeof(moov_avif),
+                                      NULL, 0u, &df, &dc,
+                                      &dm) == RFC_ERR_UNSUPPORTED_COMBINATION);
+            CHECK(st.live == 0u);
+        }
+        adp->close_session(ds);
+
+        /* Below-cap phantom ipma items (800), assocs (7.2k), extents (8k)
+         * all trigger budget reservation before libavif on tight budgets. */
+        struct {
+            int mode;
+            uint32_t cnt;
+            uint8_t assoc;
+            uint64_t budget_kib;
+        } tight_cases[] = {
+            {0, 800u, 0u, 17ull * 1024ull},
+            {0, 40u, 180u, 17ull * 1024ull},
+            {2, 8000u, 0u, 15600ull},
+        };
+        for (size_t ti = 0u; ti < sizeof(tight_cases) / sizeof(tight_cases[0]);
+             ti++) {
+            rfc_budget *tb =
+                rfc_budget_create(tight_cases[ti].budget_kib * 1024ull);
+            CHECK(tb != NULL);
+            rfc_allocator ba;
+            rfc_budget_allocator(tb, &ba);
+            rfc_exec_context bex = exec;
+            bex.budget = tb;
+            bex.allocator = &ba;
+            void *bds = NULL;
+            CHECK(adp->open_session(&bex, &bds) == RFC_OK);
+
+            size_t bl1 = 0u;
+            uint8_t *b1 = build_synthetic_item_extent_flood_avif(0, 1u, 0u, &bl1);
+            CHECK(adp->decode_session(bds, &bex, b1, bl1, NULL, 0u, &df, &dc,
+                                      &dm) == RFC_ERR_INVALID_ARGUMENT);
+            free(b1);
+
+            size_t fl = 0u;
+            uint8_t *fb = build_synthetic_item_extent_flood_avif(
+                tight_cases[ti].mode, tight_cases[ti].cnt,
+                tight_cases[ti].assoc, &fl);
+            CHECK(adp->decode_session(bds, &bex, fb, fl, NULL, 0u, &df, &dc,
+                                      &dm) == RFC_ERR_OUT_OF_MEMORY);
+            free(fb);
+            adp->close_session(bds);
+            rfc_budget_stats bs;
+            rfc_budget_stats_get(tb, &bs);
+            CHECK(bs.current_allocated_bytes == 0u);
+            rfc_budget_destroy(tb);
+        }
         CHECK(st.live == 0u);
     }
 

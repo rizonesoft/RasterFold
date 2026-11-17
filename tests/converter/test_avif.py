@@ -820,7 +820,7 @@ __attribute__((destructor)) static void dump_hwm(void) {
                         4 * decoded_bytes
                         + (16 + 8 * thr) * pixels
                         + thr * 8 * 1024 * 1024
-                        + 8 * 1024 * 1024
+                        + 16 * 1024 * 1024
                     )
                     run_budget_peak("encode", rfwe_p, str(avif_p) if thr == 1 else "-", thr, enc_admit, f"enc_{cname}_{dim}_t{thr}")
                     run_budget_peak("decode", avif_p, "-", thr, dec_admit, f"dec_{cname}_{dim}_t{thr}")
@@ -846,9 +846,184 @@ __attribute__((destructor)) static void dump_hwm(void) {
                 4 * gdec
                 + (16 + 8 * thr) * gpix
                 + thr * 8 * 1024 * 1024
-                + 8 * 1024 * 1024
+                + 16 * 1024 * 1024
             )
             run_budget_peak("decode", g_avif, "-", thr, g_dec_admit, f"dec_grid_117x113_t{thr}")
+
+        def inject_phantom_ipma(blob: bytes, count: int) -> bytes:
+            def parse_boxes(buf: bytes, start: int, end: int):
+                pos = start
+                boxes = []
+                while pos + 8 <= end:
+                    sz = int.from_bytes(buf[pos:pos + 4], "big")
+                    btype = buf[pos + 4:pos + 8]
+                    hdr = 8
+                    if sz == 1:
+                        self.assertLessEqual(pos + 16, end)
+                        sz = int.from_bytes(buf[pos + 8:pos + 16], "big")
+                        hdr = 16
+                    elif sz == 0:
+                        sz = end - pos
+                    self.assertGreaterEqual(sz, hdr)
+                    self.assertLessEqual(pos + sz, end)
+                    boxes.append((btype, pos, pos + sz, hdr))
+                    pos += sz
+                return boxes
+
+            top = parse_boxes(blob, 0, len(blob))
+            meta_boxes = [b for b in top if b[0] == b"meta"]
+            self.assertEqual(len(meta_boxes), 1)
+            _, meta_s, meta_e, meta_hdr = meta_boxes[0]
+            self.assertEqual(meta_hdr, 8)
+            meta_kids = parse_boxes(blob, meta_s + meta_hdr + 4, meta_e)
+            iloc_boxes = [b for b in meta_kids if b[0] == b"iloc"]
+            iprp_boxes = [b for b in meta_kids if b[0] == b"iprp"]
+            self.assertEqual(len(iloc_boxes), 1)
+            self.assertEqual(len(iprp_boxes), 1)
+            _, iloc_s, iloc_e, iloc_hdr = iloc_boxes[0]
+            _, iprp_s, iprp_e, iprp_hdr = iprp_boxes[0]
+            self.assertEqual(iprp_hdr, 8)
+
+            ipma_payload = bytearray(4 + 4 + count * 5)
+            ipma_payload[0] = 1
+            ipma_payload[4:8] = count.to_bytes(4, "big")
+            off = 8
+            for i in range(count):
+                ipma_payload[off:off + 4] = (1000 + i).to_bytes(4, "big")
+                ipma_payload[off + 4] = 0
+                off += 5
+            extra_ipma = (len(ipma_payload) + 8).to_bytes(4, "big") + b"ipma" + bytes(ipma_payload)
+            delta = len(extra_ipma)
+
+            out = bytearray(blob[:iprp_e] + extra_ipma + blob[iprp_e:])
+            # Adjust size fields for meta and iprp by delta (extra_ipma sits inside both).
+            old_meta_sz = int.from_bytes(out[meta_s:meta_s + 4], "big")
+            out[meta_s:meta_s + 4] = (old_meta_sz + delta).to_bytes(4, "big")
+            old_iprp_sz = int.from_bytes(out[iprp_s:iprp_s + 4], "big")
+            out[iprp_s:iprp_s + 4] = (old_iprp_sz + delta).to_bytes(4, "big")
+            if iprp_e <= iloc_s:
+                iloc_s += delta
+                iloc_e += delta
+
+            # Shift file-offset iloc entries >= meta_e by +delta.
+            p = iloc_s + iloc_hdr
+            ver = out[p]
+            p += 4
+            off_sz = out[p] >> 4
+            len_sz = out[p] & 0xF
+            base_sz = out[p + 1] >> 4
+            idx_sz = (out[p + 1] & 0xF) if ver in (1, 2) else 0
+            p += 2
+            item_cnt = int.from_bytes(out[p:p + (2 if ver < 2 else 4)], "big")
+            p += 2 if ver < 2 else 4
+            for _ in range(item_cnt):
+                p += 2 if ver < 2 else 4
+                cmeth = 0
+                if ver in (1, 2):
+                    cmeth = out[p + 1] & 0xF
+                    p += 2
+                p += 2  # data_reference_index
+                base_off = 0
+                if base_sz > 0:
+                    base_off = int.from_bytes(out[p:p + base_sz], "big")
+                    if cmeth == 0 and base_off >= meta_e:
+                        out[p:p + base_sz] = (base_off + delta).to_bytes(base_sz, "big")
+                    p += base_sz
+                ext_cnt = int.from_bytes(out[p:p + 2], "big")
+                p += 2
+                for _ in range(ext_cnt):
+                    if ver in (1, 2) and idx_sz > 0:
+                        p += idx_sz
+                    if off_sz > 0:
+                        if cmeth == 0 and (base_sz == 0 or base_off == 0):
+                            ext_off = int.from_bytes(out[p:p + off_sz], "big")
+                            if ext_off >= meta_e:
+                                out[p:p + off_sz] = (ext_off + delta).to_bytes(off_sz, "big")
+                        p += off_sz
+                    p += len_sz
+            self.assertLessEqual(p, iloc_e)
+            return bytes(out)
+
+        pw, ph = 16, 16
+        ppix = pw * ph
+        pdec = ppix * 4
+        p_rfwe = wd / "hwm_plain_16x16.rfwe"
+        p_plain = wd / "hwm_plain_16x16.avif"
+        p_raw = random.Random(505).randbytes(pdec)
+        p_rfwe.write_bytes(pack_rfwe(pw, ph, SAMPLE_RGBA8, ALPHA_STRAIGHT, 8, p_raw))
+        pres = _ref.run_process_tree(
+            [str(self.host_exe), "cli", "encode", str(p_rfwe), str(p_plain)],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=60.0,
+        )
+        self.assertEqual(pres.returncode, 0, f"plain encode failed:\n{pres.stdout}\n{pres.stderr}")
+        plain_bytes = p_plain.read_bytes()
+
+        plain_bp = _ref.run_process_tree(
+            [str(self.host_exe), "cli", "budget-peak", "decode", str(p_plain), "-", "1"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=60.0,
+        )
+        self.assertEqual(plain_bp.returncode, 0, f"plain budget-peak failed:\n{plain_bp.stdout}\n{plain_bp.stderr}")
+        plain_kv = parse_kv(plain_bp.stdout or "")
+
+        p_800 = wd / "hwm_phantom_ipma_800.avif"
+        p_800.write_bytes(inject_phantom_ipma(plain_bytes, 800))
+        admit_800 = 4 * pdec + 24 * ppix + 8 * 1024 * 1024 + 16 * 1024 * 1024
+        actual_800 = run_budget_peak("decode", p_800, "-", 1, admit_800, "dec_phantom_ipma_800")
+        hostile_bp = _ref.run_process_tree(
+            [str(self.host_exe), "cli", "budget-peak", "decode", str(p_800), "-", "1"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=60.0,
+        )
+        self.assertEqual(hostile_bp.returncode, 0, f"800 ipma budget-peak failed:\n{hostile_bp.stdout}\n{hostile_bp.stderr}")
+        hostile_kv = parse_kv(hostile_bp.stdout or "")
+        self.assertGreaterEqual(
+            int(hostile_kv["PEAK_BUDGET"]) - int(plain_kv["PEAK_BUDGET"]),
+            3 * 1024 * 1024,
+            f"expected phantom ipma item reservation jump: plain={plain_kv}, hostile={hostile_kv}",
+        )
+        self.assertLessEqual(actual_800, admit_800)
+        cres_800 = _ref.run_process_tree(
+            [
+                str(self.host_exe),
+                "cli",
+                "convert",
+                "avif",
+                "png",
+                str(p_800),
+                str(wd / "hwm_phantom_ipma_800.png"),
+                "preserve",
+                "pixel-exact",
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=60.0,
+        )
+        self.assertEqual(cres_800.returncode, 0, f"800 ipma convert failed:\n{cres_800.stdout}\n{cres_800.stderr}")
+
+        p_1500 = wd / "hwm_phantom_ipma_1500.avif"
+        p_1500.write_bytes(inject_phantom_ipma(plain_bytes, 1500))
+        for args in (
+            ["cli", "probe", str(p_1500)],
+            ["cli", "decode", str(p_1500), str(wd / "hwm_phantom_ipma_1500.rfwe")],
+        ):
+            r1500 = _ref.run_process_tree(
+                [str(self.host_exe), *args],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                timeout=60.0,
+            )
+            self.assertEqual(r1500.returncode, 2, f"expected bound refusal for {args}:\n{r1500.stdout}\n{r1500.stderr}")
+            self.assertIn("STATUS=limit-exceeded", r1500.stdout)
 
 
 class WindowsAVIFTests(AVIFAdapterVerificationMixin, unittest.TestCase):
