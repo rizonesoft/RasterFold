@@ -24,7 +24,7 @@ python3 scripts/todo-graph.py query ready
 | Argument is a phase (`0`, `Phase 0`) | That is `process-phase` for that phase only. It does not chain. |
 | Empty argument, "the plan", "process the plan", or this file's path | Audit, then **start `process-phase` on the first phase with a ready row, in this same turn**. After that phase's closeout *or park*, pick the next ready phase. Repeat until no phase has a ready row. |
 
-**An audit-only reply is a process defect.** Ending on the audit table while a ready phase exists is how a plan stalls while everyone agrees it is fine. Starting the phase is the next action, in the same turn.
+**An audit-only reply is a process defect.** Ending on the audit table while a ready phase exists is how a plan stalls while everyone agrees it is fine. Starting the phase is the next action, in the same turn. Under Orchestrator (Carbon), Carbon plans one ready TODO section per `exit_plan_mode` turn, and Hydrogen hands back to Carbon after each section's `stamp`, push (when applicable), `merge_prs.py`, and `ci_status.py` check before resolving the next ready row (whether `Surface` is `yes` or `no`).
 
 ## 1. Audit the whole plan
 
