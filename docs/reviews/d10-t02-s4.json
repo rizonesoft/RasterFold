@@ -1,0 +1,72 @@
+{
+  "ref": "D10 T02 \u00a74",
+  "title": "AVIF",
+  "implementation_sha": "a4ffd06ef7b90ed2cec82ed60968bbfe791913b7",
+  "date": "2026-11-17",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/10-converter/D10-T02-s4.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "bosun run -- python3 scripts/check-converter.py --case avif --all-targets -> PASS",
+    "bosun run -- python3 scripts/check-converter.py --case all --all-targets -> PASS",
+    "bosun run -- python3 scripts/check-all.py --all-targets -> 32/32 passed"
+  ],
+  "completion": {
+    "report": "docs/reviews/10-converter/D10-T02-s4.md",
+    "verdict": "reconciled",
+    "candidate": "a4ffd06ef7b90ed2cec82ed60968bbfe791913b7",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/10-converter/D10-T02-s4.md",
+    "candidate": "641a829d04656831cddcb7e407471e976b30e567",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "641a829d04656831cddcb7e407471e976b30e567",
+  "schedule": {
+    "policy": "three-pass",
+    "pass_cap": 33,
+    "plan": {
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {},
+    "reconciliation": {
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}
