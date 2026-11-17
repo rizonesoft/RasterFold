@@ -1,0 +1,70 @@
+{
+  "ref": "D10 T02 \u00a73",
+  "title": "JPEG XL",
+  "implementation_sha": "8b1b316b3c7a71191325f2bece4a2d85d2805e54",
+  "date": "2026-11-17",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/10-converter/D10-T02-s3.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "bosun run -- python3 scripts/check-converter.py --case jxl --all-targets -> host 1001 checks, windows-x64 1027 checks, test_jxl.py 9/9 OK (46.265s, 0 skipped)"
+  ],
+  "completion": {
+    "report": "docs/reviews/10-converter/D10-T02-s3.md",
+    "verdict": "reconciled",
+    "candidate": "8b1b316b3c7a71191325f2bece4a2d85d2805e54",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/10-converter/D10-T02-s3.md",
+    "candidate": "b7508e6f7bda01e02fcbdc9c3577628aa4cdf182",
+    "reviewer": "astra",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "b7508e6f7bda01e02fcbdc9c3577628aa4cdf182",
+  "schedule": {
+    "policy": "three-pass",
+    "pass_cap": 33,
+    "plan": {
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {},
+    "reconciliation": {
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}

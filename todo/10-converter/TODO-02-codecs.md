@@ -50,7 +50,7 @@ track: GUI2
 | :---: | :-----: | ----------- | ---------- | :----: |
 | 1 | §1 | RasterFold, BMP, PNG and PNM | D10 T01 §2, D10 T01 §4, D10 T01 §5, D07 T01 §2, D07 T01 §3 | [x] |
 | 2 | §2 | WebP | D10 T01 §2, D10 T01 §4, D10 T01 §5 | [x] |
-| 3 | §3 | JPEG XL | D10 T01 §2, D10 T01 §4, D10 T01 §5 | [ ] |
+| 3 | §3 | JPEG XL | D10 T01 §2, D10 T01 §4, D10 T01 §5 | [x] |
 | 4 | §4 | AVIF | D10 T01 §2, D10 T01 §4, D10 T01 §5 | [ ] |
 | 5 | §5 | JPEG optimization and import | D10 T01 §2, D10 T01 §4, D10 T01 §5 | [ ] |
 | 6 | §6 | TIFF and GIF | D10 T01 §2, D10 T01 §4, D10 T01 §5 | [ ] |
@@ -145,6 +145,8 @@ Build in the listed order. This section adds the named test driver before using 
 
 **Freeze check:** `git diff --exit-code -- src/ include/rasterfold.h spec/FOLD.md tests/rfi_ref.py converter/vendor.json` exited `0`, leaving `.fold` v2 and v3 codecs, `KAT_FOLD`, `tests/rfi_ref.py`, and pinned codec dependencies unchanged; every encoded JXL output received a fresh bundled decode and `rfc_verify` / independent oracle (`tests/rfi_ref.py`, Pillow) or SHA-256 original-byte reconstruction check before acceptance, with shared-upstream FFmpeg `libjxl` coverage documented explicitly; source inputs and pre-existing destinations remained byte-identical under refusal, cancellation, and limit failure.
 
+> **Verified:** 2026-11-17 | §3 | 8b1b316b3c7a71191325f2bece4a2d85d2805e54
+> **Review:** `docs/reviews/d10-t02-s3.json`
 ## 4. AVIF
 
 **Requires:** windows-runtime -- The checkpoint requires driven results from the advertised Windows native target. Source checkpoint audit: docs/todo-vision-audit.md.
