@@ -349,7 +349,7 @@ static const rfc_capability k_registry[] = {
     {RFC_FORMAT_PAM, "pam", "in-tree converter code", "D10 T02 \xc2\xa7" "1", NULL, USABLE, NULL, 1, 1, k_pam, 6, COMMON, COMMON_RULES, META_NONE},
     {RFC_FORMAT_WEBP, "webp", "libwebp (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "2", NULL, USABLE, NULL, 1, 1, k_rgba8, 2, COMMON, COMMON_RULES, META_ICC | META_ORI | META_EXIF | META_XMP},
     {RFC_FORMAT_JPEG_XL, "jpeg-xl", "libjxl (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "3", "D10 T02 \xc2\xa7" "12", USABLE, NULL, 1, 1, k_png, 6, JXLSET, JXL_RULES, META_ICC | META_ORI | META_TIM | META_EXIF | META_XMP},
-    {RFC_FORMAT_AVIF, "avif", "libavif (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "4", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_10bit, 4, COMMON, COMMON_RULES, META_ICC | META_ORI},
+    {RFC_FORMAT_AVIF, "avif", "libavif (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "4", NULL, USABLE, NULL, 1, 1, k_10bit, 4, COMMON, COMMON_RULES, META_ICC | META_ORI | META_EXIF | META_XMP},
     {RFC_FORMAT_JPEG, "jpeg", "libjpeg-turbo (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "5", NULL, PLANNED, "converter adapter not yet shipped", 1, 0, k_jpeg, 2, JPEGSET, COMMON_RULES, META_ICC | META_ORI},
     {RFC_FORMAT_GIF, "gif", "in-tree converter code", "D10 T02 \xc2\xa7" "6", "D10 T02 \xc2\xa7" "12", PLANNED, "converter adapter not yet shipped", 1, 1, k_rgba8, 2, ANIM, ANIM_RULES, META_TIM},
     {RFC_FORMAT_TIFF, "tiff", "libtiff (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "6", "D10 T02 \xc2\xa7" "12", PLANNED, "converter adapter not yet shipped", 1, 1, k_png, 6, ANIM, ANIM_RULES, META_ICC | META_ORI},

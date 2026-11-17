@@ -184,11 +184,11 @@ PROVENANCE_TABLE: tuple[dict[str, Any], ...] = (
         "converter_provider": "libavif (bundled, pinned by D10 T01 \u00a72)",
         "pinned_package_ids": ("libavif", "libaom"),
         "verification_path": "fresh-session-decode",
-        "reference_decoder_kind": "same-provider-fresh-session",
+        "reference_decoder_kind": "shared-upstream-library",
         "shares_c_library_with_converter": True,
         "claims_independent_decoder": False,
-        "coverage_state": "provenance-only-pending-adapter",
-        "provenance_note": "Pending D10 T02 s4; verified by fresh libavif session decode preserving n-bit left-alignment.",
+        "coverage_state": "executable-in-d10-t02-s4",
+        "provenance_note": "Verified by fresh avifDecoder session preserving n-bit left-alignment, clean-room Windows FFmpeg libavformat+libdav1d decode, tests/rfi_ref.py .fold oracle, and non-independent Pillow PIL._avif cross-check.",
     },
     {
         "format_name": "jpeg",
@@ -403,6 +403,7 @@ def validate_provenance_table() -> dict[str, dict[str, Any]]:
             "executable-in-d10-t01-s4",
             "executable-in-d10-t02-s2",
             "executable-in-d10-t02-s3",
+            "executable-in-d10-t02-s4",
             "provenance-only-pending-adapter",
         ):
             raise AssertionError(f"{name}: invalid coverage_state {row['coverage_state']!r}")
@@ -1539,9 +1540,20 @@ def _probe_ffmpeg_decoder(
         except Exception:
             continue
         if res.returncode == 0 and res.stdout:
+            in_table = False
             for line in res.stdout.splitlines():
+                if line.strip() == "------":
+                    in_table = True
+                    continue
+                if not in_table:
+                    continue
                 parts = line.split()
-                if len(parts) >= 2 and "D" in parts[0] and parts[1] in decoder_names:
+                if (
+                    len(parts) >= 2
+                    and len(parts[0]) == 6
+                    and parts[0][0] in ("V", "A", "S")
+                    and parts[1] in decoder_names
+                ):
                     return {
                         "available": True,
                         "executable": exe,
@@ -1623,3 +1635,14 @@ def probe_ffmpeg_jxl_decoder() -> dict[str, Any]:
 def decode_jxl_ffmpeg(path: str | os.PathLike[str], pix_fmt: str = "rgb24") -> bytes | None:
     """Decode a still JPEG XL image to raw pixels via FFmpeg libjxl."""
     return _decode_via_ffmpeg(probe_ffmpeg_jxl_decoder(), path, pix_fmt, "jxl")
+
+
+def probe_ffmpeg_avif_decoder() -> dict[str, Any]:
+    """Locate FFmpeg with clean-room VideoLAN libdav1d AV1 decoder if present."""
+    return _probe_ffmpeg_decoder(
+        ("libdav1d",),
+        label="ffmpeg-libdav1d",
+        independent=True,
+        reason_found="FFmpeg libavformat + VideoLAN libdav1d clean-room AV1 decoder",
+        reason_missing="no ffmpeg with clean-room libdav1d decoder found on host",
+    )

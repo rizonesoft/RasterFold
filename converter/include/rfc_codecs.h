@@ -28,6 +28,10 @@ rfc_status rfc_codecs_unregister_webp(void);
 rfc_status rfc_codecs_register_jxl(void);
 rfc_status rfc_codecs_unregister_jxl(void);
 
+/* Register and unregister the shipped AVIF session adapter (D10 T02 s4). */
+rfc_status rfc_codecs_register_avif(void);
+rfc_status rfc_codecs_unregister_avif(void);
+
 /* Direct JPEG <-> JPEG XL lossless byte-reconstruction entry points used by
  * the JXL reconstruction adapter and D10 T02 s5 delegation. */
 rfc_status rfc_jxl_transcode_jpeg(const rfc_exec_context *exec,

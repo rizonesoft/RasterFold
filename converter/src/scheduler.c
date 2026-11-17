@@ -914,6 +914,67 @@ static rfc_status compute_jxl_stage_work_sched(uint64_t decoded_bytes,
     return RFC_OK;
 }
 
+static rfc_status compute_avif_stage_work_sched(uint64_t decoded_bytes,
+                                                uint64_t pixels,
+                                                uint32_t eff_req_threads,
+                                                int is_encode,
+                                                uint64_t *out_work) {
+    uint64_t dec_scaled = 0u;
+    uint64_t pix_scaled = 0u;
+    uint64_t thr_bytes = 0u;
+    uint64_t per_pix =
+        is_encode ? 44ull : (16ull + 8ull * (uint64_t)eff_req_threads);
+    uint64_t base_fixed =
+        is_encode ? (16ull * 1024ull * 1024ull) : (8ull * 1024ull * 1024ull);
+    uint64_t sum = 0u;
+    if (!mul_u64_sched(decoded_bytes, 4ull, &dec_scaled) ||
+        !mul_u64_sched(pixels, per_pix, &pix_scaled) ||
+        !mul_u64_sched((uint64_t)eff_req_threads, 8ull * 1024ull * 1024ull,
+                       &thr_bytes) ||
+        !add_u64_sched(dec_scaled, pix_scaled, &sum) ||
+        !add_u64_sched(sum, thr_bytes, &sum) ||
+        !add_u64_sched(sum, base_fixed, out_work)) {
+        return RFC_ERR_LIMIT_EXCEEDED;
+    }
+    return RFC_OK;
+}
+
+static rfc_status compute_endpoint_stage_work_sched(
+    const rfc_provider_memory_info *mem,
+    uint64_t decoded_bytes,
+    uint64_t pixels,
+    uint32_t eff_req_threads,
+    int is_encode,
+    uint64_t *out_work) {
+    if (mem->format == RFC_FORMAT_JPEG_XL) {
+        return compute_jxl_stage_work_sched(decoded_bytes, pixels,
+                                            eff_req_threads, is_encode,
+                                            out_work);
+    }
+    if (mem->format == RFC_FORMAT_AVIF) {
+        return compute_avif_stage_work_sched(decoded_bytes, pixels,
+                                             eff_req_threads, is_encode,
+                                             out_work);
+    }
+    uint32_t mult = mem->working_set_multiplier;
+    uint64_t overhead = mem->fixed_overhead_bytes;
+    if (mem->format == RFC_FORMAT_WEBP) {
+        if (!is_encode) {
+            mult = 5u;
+            overhead = 2ull * 1024ull * 1024ull;
+        } else if (eff_req_threads <= 1u) {
+            mult = 16u;
+            overhead = 28ull * 1024ull * 1024ull;
+        }
+    }
+    uint64_t scaled = 0u;
+    if (!mul_u64_sched(decoded_bytes, (uint64_t)mult, &scaled) ||
+        !add_u64_sched(overhead, scaled, out_work)) {
+        return RFC_ERR_LIMIT_EXCEEDED;
+    }
+    return RFC_OK;
+}
+
 static rfc_status compute_preflight_with_contracts(
     const rfc_scheduler_config *cfg,
     const rfc_provider_memory_info *src_mem,
@@ -984,20 +1045,10 @@ static rfc_status compute_preflight_with_contracts(
     } else if (source_layout) {
         uint32_t eff_req_threads =
             requested_codec_threads ? requested_codec_threads : 1u;
-        uint32_t src_mult = src_mem->working_set_multiplier;
-        uint64_t src_overhead = src_mem->fixed_overhead_bytes;
-        if (src_mem->format == RFC_FORMAT_WEBP) {
-            src_mult = 5u;
-            src_overhead = 2ull * 1024ull * 1024ull;
-        }
-        uint32_t dst_mult = dst_mem->working_set_multiplier;
-        uint64_t dst_overhead = dst_mem->fixed_overhead_bytes;
-        if (dst_mem->format == RFC_FORMAT_WEBP && eff_req_threads <= 1u) {
-            dst_mult = 16u;
-            dst_overhead = 28ull * 1024ull * 1024ull;
-        }
         if (src_mem->format == RFC_FORMAT_JPEG_XL ||
-            dst_mem->format == RFC_FORMAT_JPEG_XL) {
+            dst_mem->format == RFC_FORMAT_JPEG_XL ||
+            src_mem->format == RFC_FORMAT_AVIF ||
+            dst_mem->format == RFC_FORMAT_AVIF) {
             uint64_t pixels = 0u;
             uint64_t src_work = 0u;
             uint64_t dst_work = 0u;
@@ -1005,37 +1056,33 @@ static rfc_status compute_preflight_with_contracts(
                                (uint64_t)source_layout->height, &pixels)) {
                 return RFC_ERR_LIMIT_EXCEEDED;
             }
-            if (src_mem->format == RFC_FORMAT_JPEG_XL) {
-                st = compute_jxl_stage_work_sched(decoded_bytes, pixels,
-                                                  eff_req_threads, 0, &src_work);
-                if (st != RFC_OK) {
-                    return st;
-                }
-            } else {
-                uint64_t sw = 0u;
-                if (!mul_u64_sched(decoded_bytes, (uint64_t)src_mult, &sw) ||
-                    !add_u64_sched(src_overhead, sw, &src_work)) {
-                    return RFC_ERR_LIMIT_EXCEEDED;
-                }
+            st = compute_endpoint_stage_work_sched(
+                src_mem, decoded_bytes, pixels, eff_req_threads, 0, &src_work);
+            if (st != RFC_OK) {
+                return st;
             }
-            if (dst_mem->format == RFC_FORMAT_JPEG_XL) {
-                st = compute_jxl_stage_work_sched(decoded_bytes, pixels,
-                                                  eff_req_threads, 1, &dst_work);
-                if (st != RFC_OK) {
-                    return st;
-                }
-            } else {
-                uint64_t dw = 0u;
-                if (!mul_u64_sched(decoded_bytes, (uint64_t)dst_mult, &dw) ||
-                    !add_u64_sched(dst_overhead, dw, &dst_work)) {
-                    return RFC_ERR_LIMIT_EXCEEDED;
-                }
+            st = compute_endpoint_stage_work_sched(
+                dst_mem, decoded_bytes, pixels, eff_req_threads, 1, &dst_work);
+            if (st != RFC_OK) {
+                return st;
             }
             uint64_t peak_work = (src_work > dst_work) ? src_work : dst_work;
             if (!add_u64_sched(peak_work, meta_allowance, &base_reservation)) {
                 return RFC_ERR_LIMIT_EXCEEDED;
             }
         } else {
+            uint32_t src_mult = src_mem->working_set_multiplier;
+            uint64_t src_overhead = src_mem->fixed_overhead_bytes;
+            if (src_mem->format == RFC_FORMAT_WEBP) {
+                src_mult = 5u;
+                src_overhead = 2ull * 1024ull * 1024ull;
+            }
+            uint32_t dst_mult = dst_mem->working_set_multiplier;
+            uint64_t dst_overhead = dst_mem->fixed_overhead_bytes;
+            if (dst_mem->format == RFC_FORMAT_WEBP && eff_req_threads <= 1u) {
+                dst_mult = 16u;
+                dst_overhead = 28ull * 1024ull * 1024ull;
+            }
             uint32_t mult = src_mult > dst_mult ? src_mult : dst_mult;
             uint64_t overhead =
                 src_overhead > dst_overhead ? src_overhead : dst_overhead;
@@ -1070,6 +1117,20 @@ static rfc_status compute_preflight_with_contracts(
         if (!add_u64_sched(core_est, thr_bytes, &sum) ||
             !add_u64_sched(sum, 16ull * 1024ull * 1024ull, &sum) ||
             !add_u64_sched(sum, meta_allowance, &base_reservation)) {
+            return RFC_ERR_LIMIT_EXCEEDED;
+        }
+    } else if (src_mem->format == dst_mem->format &&
+               exactness == RFC_EXACT_BYTE_IDENTICAL &&
+               source_size > 0u) {
+        uint64_t scaled_src = 0u;
+        uint64_t core_est = 0u;
+        if (!mul_u64_sched(source_size, 16ull, &scaled_src)) {
+            return RFC_ERR_LIMIT_EXCEEDED;
+        }
+        core_est = (scaled_src > 32ull * 1024ull * 1024ull)
+                       ? scaled_src
+                       : (32ull * 1024ull * 1024ull);
+        if (!add_u64_sched(core_est, meta_allowance, &base_reservation)) {
             return RFC_ERR_LIMIT_EXCEEDED;
         }
     } else {

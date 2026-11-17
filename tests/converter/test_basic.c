@@ -539,12 +539,14 @@ static rfc_status stage_export_noop(rfc_job *j,
 /* ------------------------------------------------------------------------ */
 
 static void test_registration_and_fold_v2_v3(void) {
-    /* Before registration: usable formats report RFC_ERR_NO_ADAPTER. */
+    /* Before registration: usable formats report RFC_ERR_NO_ADAPTER and planned formats report RFC_ERR_PLANNED. */
     CHECK(rfc_registry_select(RFC_FORMAT_PNG, RFC_MODE_READ) ==
           RFC_ERR_NO_ADAPTER);
     CHECK(rfc_registry_select(RFC_FORMAT_WEBP, RFC_MODE_READ) ==
           RFC_ERR_NO_ADAPTER);
     CHECK(rfc_registry_select(RFC_FORMAT_AVIF, RFC_MODE_READ) ==
+          RFC_ERR_NO_ADAPTER);
+    CHECK(rfc_registry_select(RFC_FORMAT_QOI, RFC_MODE_READ) ==
           RFC_ERR_PLANNED);
 
     /* Rollback check on duplicate conflict. */

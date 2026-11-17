@@ -437,6 +437,14 @@ rfc_status rfc_job_internal_validate_settings(
 
     for (size_t i = 0; i < setting_count; i++) {
         if (strcmp(settings[i].id, "exactness") == 0) {
+            if (strcmp(settings[i].value, "byte-identical") == 0 &&
+                source_format != target_format) {
+                if (out_detail) {
+                    *out_detail =
+                        "byte-identical requires matching source and target formats";
+                }
+                return RFC_ERR_UNSUPPORTED_COMBINATION;
+            }
             if (strcmp(settings[i].value, "coefficient-exact") == 0) {
                 if (source_format != RFC_FORMAT_JPEG &&
                     target_format != RFC_FORMAT_JPEG) {
@@ -3398,6 +3406,42 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
         } else if (!dst_cap->can_write) {
             st = RFC_ERR_UNSUPPORTED_COMBINATION;
             err_detail = "target format does not support encoding";
+        } else if (job->source_format == job->target_format &&
+                   job_exactness == RFC_EXACT_BYTE_IDENTICAL &&
+                   job_meta_policy == RFC_META_POLICY_PRESERVE) {
+            rfc_setting_value dst_settings[RFC_MAX_FORMAT_SETTINGS];
+            size_t dst_setting_count = filter_format_settings(
+                dst_cap, settings, setting_count, dst_settings,
+                RFC_MAX_FORMAT_SETTINGS, 1);
+            st = check_stage_abort(job);
+            if (st == RFC_OK) {
+                st = rfc_registry_validate_settings(
+                    job->target_format,
+                    dst_setting_count > 0 ? dst_settings : NULL,
+                    dst_setting_count, &err_detail);
+            }
+            if (st == RFC_OK && (!src_bytes || src_size == 0u)) {
+                st = RFC_ERR_INVALID_ARGUMENT;
+                err_detail = "byte-identical copy requires source bytes";
+            }
+            if (st == RFC_OK) {
+                st = rfc_limits_check_compressed(&job->limits,
+                                                 (uint64_t)src_size);
+            }
+            if (st == RFC_OK) {
+                uint8_t *copy_buf = (uint8_t *)exec.allocator->alloc(
+                    exec.allocator->ctx, src_size);
+                if (!copy_buf) {
+                    st = RFC_ERR_OUT_OF_MEMORY;
+                } else {
+                    memcpy(copy_buf, src_bytes, src_size);
+                    rfc_encoded enc_out = {copy_buf, src_size, exec.allocator};
+                    st = rfc_job_set_encoded_output(job, &enc_out);
+                    if (st != RFC_OK) {
+                        rfc_encoded_free(&enc_out);
+                    }
+                }
+            }
         } else if (use_jxl_jrec) {
             const rfc_jpeg_reconstruct_adapter *jrec =
                 rfc_registry_acquire_jpeg_reconstruct();

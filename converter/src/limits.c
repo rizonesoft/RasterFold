@@ -428,13 +428,19 @@ rfc_status rfc_query_provider_memory_contract(rfc_format_id id,
         case RFC_FORMAT_TIFF:
         case RFC_FORMAT_HEIF:
         case RFC_FORMAT_HEIC:
-        case RFC_FORMAT_AVIF:
         case RFC_FORMAT_JPEG2000:
             out->mode = RFC_MEM_RESERVATION_AND_LIMITS;
             out->working_set_multiplier = 5u;
             out->fixed_overhead_bytes = 4ull * 1024ull * 1024ull;
             out->limitation_reason =
                 "provider uses internal heap allocation; enforced by rfc_limits preflight and conservative reservation";
+            break;
+        case RFC_FORMAT_AVIF:
+            out->mode = RFC_MEM_RESERVATION_AND_LIMITS;
+            out->working_set_multiplier = 18u;
+            out->fixed_overhead_bytes = 24ull * 1024ull * 1024ull;
+            out->limitation_reason =
+                "libavif and libaom allocate internally outside rfc_alloc; enforced by rfc_limits preflight and calibrated working-set reservation";
             break;
         default:
             out->mode = RFC_MEM_RESERVATION_AND_LIMITS;

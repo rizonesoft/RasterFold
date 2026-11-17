@@ -807,6 +807,19 @@ def _host_libpng_flags():
 
 
 def _host_libwebp_flags():
+    from pathlib import Path
+
+    deps_prefix = Path(ROOT) / "build" / "converter" / "linux-x64" / "deps-prefix"
+    lib_dir = deps_prefix / "lib"
+    inc_dir = deps_prefix / "include"
+    bundled = [
+        lib_dir / "libwebpmux.a",
+        lib_dir / "libwebpdemux.a",
+        lib_dir / "libwebp.a",
+        lib_dir / "libsharpyuv.a",
+    ]
+    if (inc_dir / "webp" / "decode.h").is_file() and all(p.is_file() for p in bundled):
+        return [f"-I{inc_dir.as_posix()}"], [*(str(p) for p in bundled), "-lm", "-pthread"]
     cflags, libs = _host_pkgconfig_flags(
         ["libwebpmux", "libwebpdemux", "libwebp"],
         [],
@@ -817,7 +830,7 @@ def _host_libwebp_flags():
     return cflags, libs
 
 
-def _ensure_host_jxl_flags():
+def _ensure_host_vendor_deps(pkg_order):
     import hashlib
     import shutil
     import subprocess
@@ -832,8 +845,10 @@ def _ensure_host_jxl_flags():
 
     cmake_pin = root_p / "tools" / "cmake-linux" / "bin" / "cmake"
     ninja_pin = root_p / "tools" / "ninja-linux" / "ninja"
+    nasm_pin = root_p / "tools" / "nasm-linux" / "bin" / "nasm"
     cmake_exe = str(cmake_pin) if cmake_pin.is_file() else (shutil.which("cmake") or "cmake")
     ninja_exe = str(ninja_pin) if ninja_pin.is_file() else shutil.which("ninja")
+    nasm_exe = str(nasm_pin) if nasm_pin.is_file() else (shutil.which("nasm") or "nasm")
 
     cc_env = os.environ.get("CC") or shutil.which("cc") or shutil.which("clang") or "cc"
     cxx_env = os.environ.get("CXX") or shutil.which("c++") or shutil.which("clang++") or "c++"
@@ -841,18 +856,17 @@ def _ensure_host_jxl_flags():
     by_id = {p["id"]: p for p in vendor["packages"]}
     pfx = deps_prefix.as_posix()
 
-    pkg_order = ["highway", "brotli", "lcms2", "libjxl"]
     resolved_stamps = {}
     for pid in pkg_order:
         pkg = by_id[pid]
         src_dir = root_p / "tools" / "converter-src" / pid
         if not src_dir.is_dir():
-            raise RuntimeError(f"missing converter source tree for host JXL build: {src_dir}")
+            raise RuntimeError(f"missing converter source tree for host build: {src_dir}")
         cmake_src = (root_p / "converter" / "cmake" / pid) if pid == "lcms2" else src_dir
         extra = []
         if pid == "lcms2":
             extra.append(f"-DVENDOR_SOURCE_DIR={src_dir.as_posix()}")
-        if pid == "libjxl":
+        elif pid == "libjxl":
             extra.extend([
                 f"-DLCMS2_INCLUDE_DIR={pfx}/include",
                 f"-DLCMS2_LIBRARIES={(deps_prefix / 'lib' / 'liblcms2.a').as_posix()}",
@@ -860,6 +874,22 @@ def _ensure_host_jxl_flags():
                 f"-DBROTLICOMMON_LIBRARY={(deps_prefix / 'lib' / 'libbrotlicommon.a').as_posix()}",
                 f"-DBROTLIDEC_LIBRARY={(deps_prefix / 'lib' / 'libbrotlidec.a').as_posix()}",
                 f"-DBROTLIENC_LIBRARY={(deps_prefix / 'lib' / 'libbrotlienc.a').as_posix()}",
+            ])
+        elif pid == "libwebp":
+            extra.extend([
+                "-DCMAKE_DISABLE_FIND_PACKAGE_PNG=ON",
+                "-DCMAKE_DISABLE_FIND_PACKAGE_JPEG=ON",
+                "-DCMAKE_DISABLE_FIND_PACKAGE_TIFF=ON",
+                "-DCMAKE_DISABLE_FIND_PACKAGE_GIF=ON",
+            ])
+        elif pid == "libaom":
+            extra.append(f"-DCMAKE_ASM_NASM_COMPILER={nasm_exe}")
+        elif pid == "libavif":
+            extra.extend([
+                f"-DAOM_INCLUDE_DIR={pfx}/include",
+                f"-DAOM_LIBRARY={(deps_prefix / 'lib' / 'libaom.a').as_posix()}",
+                f"-DLIBSHARPYUV_INCLUDE_DIR={pfx}/include/webp",
+                f"-DLIBSHARPYUV_LIBRARY={(deps_prefix / 'lib' / 'libsharpyuv.a').as_posix()}",
             ])
         cfg_flags = [
             f"-DCMAKE_C_COMPILER={cc_env}",
@@ -899,6 +929,11 @@ def _ensure_host_jxl_flags():
         stamp_file.write_text(want_stamp + "\n", encoding="utf-8")
         resolved_stamps[pid] = want_stamp
 
+    return deps_prefix
+
+
+def _ensure_host_jxl_flags():
+    deps_prefix = _ensure_host_vendor_deps(["highway", "brotli", "lcms2", "libjxl"])
     cflags = [
         f"-I{(deps_prefix / 'include').as_posix()}",
         "-DJXL_STATIC_DEFINE",
@@ -916,6 +951,20 @@ def _ensure_host_jxl_flags():
         str(lib_dir / "libbrotlicommon.a"),
         str(lib_dir / "liblcms2.a"),
         "-lstdc++",
+        "-lm",
+        "-pthread",
+    ]
+    return cflags, libs
+
+
+def _ensure_host_avif_flags():
+    deps_prefix = _ensure_host_vendor_deps(["libwebp", "libaom", "libavif"])
+    cflags = [f"-I{(deps_prefix / 'include').as_posix()}"]
+    lib_dir = deps_prefix / "lib"
+    libs = [
+        str(lib_dir / "libavif.a"),
+        str(lib_dir / "libaom.a"),
+        str(lib_dir / "libsharpyuv.a"),
         "-lm",
         "-pthread",
     ]
@@ -1152,6 +1201,42 @@ def case_jxl(all_targets=False):
     )
 
 
+def case_avif(all_targets=False):
+    def _flags():
+        a_cf, a_lb = _ensure_host_avif_flags()
+        j_cf, j_lb = _ensure_host_jxl_flags()
+        w_cf, w_lb = _host_libwebp_flags()
+        p_cf, p_lb = _host_libpng_flags()
+        cflags = list(dict.fromkeys([*a_cf, *j_cf, *w_cf, *p_cf]))
+        a_core = [x for x in a_lb if x.endswith(".a") and not x.endswith("libsharpyuv.a")]
+        a_tail = [x for x in a_lb if x.endswith("libsharpyuv.a") and x not in w_lb]
+        j_arch = [x for x in j_lb if x.endswith(".a")]
+        libs = [*a_core, *j_arch, *w_lb, *a_tail, *p_lb, "-lstdc++", "-lm", "-pthread"]
+        return cflags, libs
+
+    return _run_codec_case(
+        case_name="avif",
+        win_target="rfc_test_avif",
+        codec_sources=["basic.c", "webp.c", "jxl.c", "avif.c"],
+        c_test_file="test_avif.c",
+        py_test_file="test_avif.py",
+        host_env_var="RFC_HOST_AVIF_EXE",
+        win_env_var="RFC_WIN_AVIF_EXE",
+        require_win_env_var="RFC_REQUIRE_WIN_AVIF",
+        markers=[
+            "avif: registration_and_upstream_contract ok",
+            "avif: lossless_depths_alpha_padding_and_import ok",
+            "avif: metadata_colorimetry_and_orientation ok",
+            "avif: byte_identical_and_cross_format ok",
+            "avif: refusals_preflight_limits_and_cancel ok",
+            "avif: all checks passed",
+        ],
+        host_flags_fn=_flags,
+        all_targets=all_targets,
+        host_link_cxx=True,
+    )
+
+
 def main():
     raw_args = sys.argv[1:]
     all_targets = "--all-targets" in raw_args
@@ -1176,6 +1261,8 @@ def main():
         return case_webp(all_targets)
     if args == ["--case", "jxl"]:
         return case_jxl(all_targets)
+    if args == ["--case", "avif"]:
+        return case_avif(all_targets)
     if args == ["--case", "all"]:
         rc = case_contract()
         if rc:
@@ -1201,8 +1288,11 @@ def main():
         rc = case_jxl(all_targets)
         if rc:
             return rc
+        rc = case_avif(all_targets)
+        if rc:
+            return rc
         return case_bundle()
-    print("usage: check-converter.py --case <contract|jobs|exactness|file-safety|reports|basic|webp|jxl|bundle|all> [--all-targets]")
+    print("usage: check-converter.py --case <contract|jobs|exactness|file-safety|reports|basic|webp|jxl|avif|bundle|all> [--all-targets]")
     return 1
 
 

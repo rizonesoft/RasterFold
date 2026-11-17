@@ -342,6 +342,12 @@ static void test_hostile_limits_and_unknown_reservation(void) {
     CHECK(minfo.mode == RFC_MEM_HOOK_ENFORCED);
     CHECK(minfo.working_set_multiplier == 16u);
     CHECK(minfo.fixed_overhead_bytes == 16ull * 1024ull * 1024ull);
+    CHECK(rfc_query_provider_memory_contract(RFC_FORMAT_AVIF, &minfo) ==
+          RFC_OK);
+    CHECK(minfo.mode == RFC_MEM_RESERVATION_AND_LIMITS);
+    CHECK(minfo.working_set_multiplier == 18u);
+    CHECK(minfo.fixed_overhead_bytes == 24ull * 1024ull * 1024ull);
+    CHECK(minfo.limitation_reason != NULL && minfo.limitation_reason[0] != '\0');
     CHECK(rfc_query_provider_memory_contract(RFC_FORMAT_CAMERA_RAW, &minfo) ==
           RFC_OK);
     CHECK(minfo.mode == RFC_MEM_RESERVATION_AND_LIMITS);
@@ -3523,6 +3529,108 @@ static void test_jxl_scheduler_admission_and_contract(void) {
     printf("jobs: jxl_scheduler_admission ok\n");
 }
 
+static void test_avif_scheduler_admission_and_contract(void) {
+    rfc_scheduler_config cfg_def;
+    rfc_scheduler_config_default(&cfg_def);
+    cfg_def.max_workers = 1u;
+    rfc_scheduler *sched_def = rfc_scheduler_create(&cfg_def);
+    CHECK(sched_def != NULL);
+
+    static uint8_t dummy[65536] = {'0', '1', '2', '3'};
+    rfc_layout lay_rgb2k = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 2048u, 2048u,
+                            2048u * 3u, 8u};
+    rfc_layout lay_rgba12_2k = {RFC_SAMPLE_RGBA16, RFC_ALPHA_STRAIGHT, 2048u,
+                                2048u, 2048u * 8u, 12u};
+
+    rfc_job_spec enc2k;
+    memset(&enc2k, 0, sizeof(enc2k));
+    enc2k.source_format = RFC_FORMAT_PNG;
+    enc2k.target_format = RFC_FORMAT_AVIF;
+    enc2k.source_bytes = dummy;
+    enc2k.source_size = sizeof(dummy);
+    enc2k.source_layout = &lay_rgb2k;
+    enc2k.requested_codec_threads = 1u;
+    enc2k.has_stage_ops = 1;
+    enc2k.stage_ops.on_import = ok_noop_stage;
+    enc2k.stage_ops.on_encode = ok_noop_stage;
+    enc2k.stage_ops.on_verify = ok_noop_stage;
+    enc2k.stage_ops.on_export = export_mark_ok;
+
+    rfc_job *j_rgb = NULL;
+    CHECK(rfc_scheduler_submit(sched_def, NULL, &enc2k, &j_rgb) == RFC_OK);
+    rfc_job_snapshot s_rgb;
+    CHECK(rfc_job_snapshot_get(j_rgb, &s_rgb) == RFC_OK);
+    CHECK(rfc_job_wait(j_rgb, UINT32_MAX) == RFC_OK);
+    rfc_job_release(j_rgb);
+
+    rfc_job_spec enc2k_rgba12 = enc2k;
+    enc2k_rgba12.source_layout = &lay_rgba12_2k;
+    rfc_job *j_rgba12 = NULL;
+    CHECK(rfc_scheduler_submit(sched_def, NULL, &enc2k_rgba12, &j_rgba12) ==
+          RFC_OK);
+    rfc_job_snapshot s_rgba12;
+    CHECK(rfc_job_snapshot_get(j_rgba12, &s_rgba12) == RFC_OK);
+    CHECK(s_rgba12.budget.limit_bytes > s_rgb.budget.limit_bytes);
+    CHECK(rfc_job_wait(j_rgba12, UINT32_MAX) == RFC_OK);
+    rfc_job_release(j_rgba12);
+
+    rfc_job_spec enc2k_t3 = enc2k;
+    enc2k_t3.requested_codec_threads = 3u;
+    rfc_job *j_t3 = NULL;
+    CHECK(rfc_scheduler_submit(sched_def, NULL, &enc2k_t3, &j_t3) == RFC_OK);
+    rfc_job_snapshot s_t3;
+    CHECK(rfc_job_snapshot_get(j_t3, &s_t3) == RFC_OK);
+    CHECK(s_t3.budget.limit_bytes > s_rgb.budget.limit_bytes);
+    CHECK(rfc_job_wait(j_t3, UINT32_MAX) == RFC_OK);
+    rfc_job_release(j_t3);
+
+    rfc_job_spec dec2k = enc2k;
+    dec2k.source_format = RFC_FORMAT_AVIF;
+    dec2k.target_format = RFC_FORMAT_PNG;
+    rfc_job *j_dec = NULL;
+    CHECK(rfc_scheduler_submit(sched_def, NULL, &dec2k, &j_dec) == RFC_OK);
+    rfc_job_snapshot s_dec;
+    CHECK(rfc_job_snapshot_get(j_dec, &s_dec) == RFC_OK);
+    CHECK(s_dec.budget.limit_bytes < s_rgb.budget.limit_bytes);
+    CHECK(rfc_job_wait(j_dec, UINT32_MAX) == RFC_OK);
+    rfc_job_release(j_dec);
+
+    rfc_scheduler_destroy(sched_def);
+
+    rfc_scheduler_config cfg_tight;
+    rfc_scheduler_config_default(&cfg_tight);
+    cfg_tight.max_workers = 1u;
+    cfg_tight.memory_budget_bytes = 128ull * 1024ull * 1024ull;
+    rfc_scheduler *sched_tight = rfc_scheduler_create(&cfg_tight);
+    CHECK(sched_tight != NULL);
+
+    rfc_job *j_refused = NULL;
+    CHECK(rfc_scheduler_submit(sched_tight, NULL, &enc2k, &j_refused) ==
+          RFC_ERR_LIMIT_EXCEEDED);
+    CHECK(j_refused == NULL);
+    CHECK(rfc_scheduler_submit(sched_tight, NULL, &dec2k, &j_refused) ==
+          RFC_ERR_LIMIT_EXCEEDED);
+    CHECK(j_refused == NULL);
+
+    rfc_layout lay_512 = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 512u, 512u,
+                          512u * 3u, 8u};
+    rfc_job_spec enc512 = enc2k;
+    enc512.source_layout = &lay_512;
+    rfc_job *j_512 = NULL;
+    CHECK(rfc_scheduler_submit(sched_tight, NULL, &enc512, &j_512) == RFC_OK);
+    CHECK(rfc_job_wait(j_512, UINT32_MAX) == RFC_OK);
+    rfc_job_release(j_512);
+
+    rfc_job_spec bad_ll = enc2k;
+    bad_ll.source_layout = NULL;
+    CHECK(rfc_scheduler_submit(sched_tight, NULL, &bad_ll, &j_refused) ==
+          RFC_ERR_LIMIT_EXCEEDED);
+    CHECK(j_refused == NULL);
+
+    rfc_scheduler_destroy(sched_tight);
+    printf("jobs: avif_scheduler_admission ok\n");
+}
+
 int main(void) {
     test_config_defaults_and_reconfigure();
     test_hostile_limits_and_unknown_reservation();
@@ -3535,6 +3643,7 @@ int main(void) {
     test_completion_gap_regressions();
     test_exif_xmp_aliasing_and_cleanup();
     test_jxl_scheduler_admission_and_contract();
+    test_avif_scheduler_admission_and_contract();
 
     if (g_failures > 0) {
         fprintf(stderr, "jobs: %d check(s) failed\n", g_failures);

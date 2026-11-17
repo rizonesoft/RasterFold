@@ -876,6 +876,7 @@ DEFINE_MOCK_FORMAT(m_webp, RFC_FORMAT_WEBP)
 DEFINE_MOCK_FORMAT(m_tiff, RFC_FORMAT_TIFF)
 DEFINE_MOCK_FORMAT(m_jpeg, RFC_FORMAT_JPEG)
 DEFINE_MOCK_FORMAT(m_jxl, RFC_FORMAT_JPEG_XL)
+DEFINE_MOCK_FORMAT(m_avif, RFC_FORMAT_AVIF)
 
 static rfc_session_adapter g_rf_adp = {
     RFC_CODEC_ABI_VERSION,
@@ -904,6 +905,25 @@ static rfc_status stage_export_count(rfc_job *job,
     g_ctrl.export_calls++;
     ex_mutex_unlock(&g_ctrl.lock);
     return RFC_OK;
+}
+
+static rfc_status stage_encode_byte_copy_flipped(rfc_job *job,
+                                               const rfc_exec_context *exec,
+                                               void *user_ctx) {
+    const uint8_t *src = (const uint8_t *)user_ctx;
+    size_t len = 32u + 48u;
+    uint8_t *buf = (uint8_t *)exec->allocator->alloc(exec->allocator->ctx, len);
+    if (!buf) {
+        return RFC_ERR_OUT_OF_MEMORY;
+    }
+    memcpy(buf, src, len);
+    buf[len - 1u] ^= 0x01u;
+    rfc_encoded enc = {buf, len, exec->allocator};
+    rfc_status st = rfc_job_set_encoded_output(job, &enc);
+    if (st != RFC_OK) {
+        rfc_encoded_free(&enc);
+    }
+    return st;
 }
 
 static rfc_status stage_encode_with_verify_artifacts(
@@ -969,6 +989,7 @@ static void register_all_test_adapters(void) {
     CHECK(rfc_registry_register_session(&m_tiff_adp) == RFC_OK);
     CHECK(rfc_registry_register_session(&m_jpeg_adp) == RFC_OK);
     CHECK(rfc_registry_register_session(&m_jxl_adp) == RFC_OK);
+    CHECK(rfc_registry_register_session(&m_avif_adp) == RFC_OK);
 }
 
 static void unregister_all_test_adapters(void) {
@@ -979,6 +1000,7 @@ static void unregister_all_test_adapters(void) {
     rfc_registry_unregister_session(RFC_FORMAT_TIFF);
     rfc_registry_unregister_session(RFC_FORMAT_JPEG);
     rfc_registry_unregister_session(RFC_FORMAT_JPEG_XL);
+    rfc_registry_unregister_session(RFC_FORMAT_AVIF);
 }
 
 /* ----------------------------------------------------------------
@@ -1471,8 +1493,9 @@ static void test_stage_verify_modes(void) {
         rfc_job_release(job);
 
         /* Flip 1 encoded byte -> refuse with RFC_MISMATCH_BYTE_HASH. */
-        g_ctrl.flip_next_encoded_byte = 1;
         g_ctrl.export_calls = 0u;
+        spec.stage_ops.user_ctx = src_bytes;
+        spec.stage_ops.on_encode = stage_encode_byte_copy_flipped;
         CHECK(rfc_scheduler_submit(sched, NULL, &spec, &job) == RFC_OK);
         CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
         CHECK(rfc_job_snapshot_get(job, &snap) == RFC_OK);
@@ -1483,6 +1506,15 @@ static void test_stage_verify_modes(void) {
         CHECK(rfc_job_verify_report_get(job, &rep) == RFC_OK);
         CHECK(rep.mismatch.kind == RFC_MISMATCH_BYTE_HASH);
         rfc_job_release(job);
+        spec.stage_ops.user_ctx = NULL;
+
+        /* Cross-format PNG -> AVIF with exactness=byte-identical is refused upfront. */
+        spec.source_format = RFC_FORMAT_PNG;
+        spec.target_format = RFC_FORMAT_AVIF;
+        spec.stage_ops.on_encode = NULL;
+        CHECK(rfc_scheduler_submit(sched, NULL, &spec, &job) ==
+              RFC_ERR_UNSUPPORTED_COMBINATION);
+        CHECK(job == NULL);
 
         rfc_scheduler_destroy(sched);
         cleanup_ctrl();
@@ -2085,6 +2117,10 @@ static void test_metadata_policies(void) {
                       RFC_EXACT_PIXEL_EXACT, &cont, &sf[0], 1u, &cont, &df[0],
                       1u, 0u, &mrep, &mmm) == RFC_OK);
             CHECK(rfc_metadata_verify(
+                      RFC_FORMAT_AVIF, RFC_META_POLICY_PRESERVE,
+                      RFC_EXACT_PIXEL_EXACT, &cont, &sf[0], 1u, &cont, &df[0],
+                      1u, 0u, &mrep, &mmm) == RFC_OK);
+            CHECK(rfc_metadata_verify(
                       RFC_FORMAT_WEBP, RFC_META_POLICY_PRESERVE,
                       RFC_EXACT_PIXEL_EXACT, &cont, &sf[0], 1u, &cont, &df[0],
                       1u, 0u, &mrep, &mmm) == RFC_ERR_VERIFY_MISMATCH);
@@ -2094,6 +2130,13 @@ static void test_metadata_policies(void) {
             df[0].metadata.orientation = RFC_ORIENTATION_NORMAL;
             CHECK(rfc_metadata_verify(
                       RFC_FORMAT_JPEG_XL, RFC_META_POLICY_PRESERVE,
+                      RFC_EXACT_PIXEL_EXACT, &cont, &sf[0], 1u, &cont, &df[0],
+                      1u, 0u, &mrep, &mmm) == RFC_ERR_VERIFY_MISMATCH);
+            CHECK(mmm.kind == RFC_MISMATCH_METADATA_LOST &&
+                  (mrep.lost_supported_items & RFC_META_ITEM_ORIENTATION) !=
+                      0u);
+            CHECK(rfc_metadata_verify(
+                      RFC_FORMAT_AVIF, RFC_META_POLICY_PRESERVE,
                       RFC_EXACT_PIXEL_EXACT, &cont, &sf[0], 1u, &cont, &df[0],
                       1u, 0u, &mrep, &mmm) == RFC_ERR_VERIFY_MISMATCH);
             CHECK(mmm.kind == RFC_MISMATCH_METADATA_LOST &&
@@ -2254,6 +2297,112 @@ static void test_metadata_policies(void) {
                                   &mrep, &mmm) == RFC_OK);
         CHECK(mrep.outcome == RFC_VERIFY_META_UNSUPPORTED_ITEMS_NAMED &&
               (mrep.unsupported_items & RFC_META_ITEM_ICC) != 0u);
+
+        /* AVIF non-ICC colourimetry: cICP, whole-nit cLLI, and mDCV preserve;
+         * sRGB/gAMA/cHRM, sub-nit cLLI, and simultaneous ICC+cICP refuse upfront
+         * unless acknowledged; mixed mDCV+gAMA with acknowledgement still preserves mDCV. */
+        {
+            rfc_metadata av_src = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0},
+                                   NULL, 0u, NULL, 0u};
+            av_src.color.has_cicp = 1u;
+            av_src.color.cicp[0] = 9u;
+            av_src.color.cicp[1] = 16u;
+            av_src.color.cicp[2] = 0u;
+            av_src.color.cicp[3] = 1u;
+            av_src.color.has_clli = 1u;
+            av_src.color.clli_max_cll = 10000000u; /* 1000 nits */
+            av_src.color.clli_max_fall = 4000000u; /* 400 nits */
+            av_src.color.has_mdcv = 1u;
+            av_src.color.mdcv_xy[0] = 35400u;
+            av_src.color.mdcv_xy[1] = 14600u;
+            av_src.color.mdcv_xy[2] = 8500u;
+            av_src.color.mdcv_xy[3] = 39850u;
+            av_src.color.mdcv_xy[4] = 6550u;
+            av_src.color.mdcv_xy[5] = 2300u;
+            av_src.color.mdcv_xy[6] = 15635u;
+            av_src.color.mdcv_xy[7] = 16450u;
+            av_src.color.mdcv_max_dl = 10000000u;
+            av_src.color.mdcv_min_dl = 50u;
+            rfc_metadata av_dst = av_src;
+            CHECK(rfc_metadata_verify(RFC_FORMAT_AVIF, RFC_META_POLICY_PRESERVE,
+                                      RFC_EXACT_PIXEL_EXACT, &av_src, NULL, 0u,
+                                      &av_dst, NULL, 0u, 0u, &mrep, &mmm) ==
+                  RFC_OK);
+            CHECK(mrep.outcome == RFC_VERIFY_META_PRESERVED);
+
+            rfc_metadata av_gama = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0},
+                                    NULL, 0u, NULL, 0u};
+            av_gama.color.has_gama = 1u;
+            av_gama.color.gama_scaled = 45455u;
+            CHECK(rfc_metadata_verify(RFC_FORMAT_AVIF, RFC_META_POLICY_PRESERVE,
+                                      RFC_EXACT_PIXEL_EXACT, &av_gama, NULL, 0u,
+                                      &dst_empty, NULL, 0u, 0u, &mrep, &mmm) ==
+                  RFC_ERR_METADATA_POLICY);
+
+            rfc_metadata av_srgb = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0},
+                                    NULL, 0u, NULL, 0u};
+            av_srgb.color.has_srgb = 1u;
+            av_srgb.color.srgb_intent = 0u;
+            CHECK(rfc_metadata_verify(RFC_FORMAT_AVIF, RFC_META_POLICY_PRESERVE,
+                                      RFC_EXACT_PIXEL_EXACT, &av_srgb, NULL, 0u,
+                                      &dst_empty, NULL, 0u, 0u, &mrep, &mmm) ==
+                  RFC_ERR_METADATA_POLICY);
+
+            rfc_metadata av_frac_clli = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u,
+                                         {0}, NULL, 0u, NULL, 0u};
+            av_frac_clli.color.has_clli = 1u;
+            av_frac_clli.color.clli_max_cll = 12345u;
+            av_frac_clli.color.clli_max_fall = 10000u;
+            CHECK(rfc_metadata_verify(RFC_FORMAT_AVIF, RFC_META_POLICY_PRESERVE,
+                                      RFC_EXACT_PIXEL_EXACT, &av_frac_clli,
+                                      NULL, 0u, &dst_empty, NULL, 0u, 0u,
+                                      &mrep, &mmm) == RFC_ERR_METADATA_POLICY);
+
+            uint8_t dummy_icc[4] = {1u, 2u, 3u, 4u};
+            rfc_metadata av_icc_cicp = {dummy_icc, sizeof(dummy_icc),
+                                        RFC_ORIENTATION_NORMAL, 0u, {0},
+                                        NULL, 0u, NULL, 0u};
+            av_icc_cicp.color.has_cicp = 1u;
+            av_icc_cicp.color.cicp[0] = 1u;
+            av_icc_cicp.color.cicp[1] = 13u;
+            av_icc_cicp.color.cicp[2] = 0u;
+            av_icc_cicp.color.cicp[3] = 1u;
+            CHECK(rfc_metadata_verify(RFC_FORMAT_AVIF, RFC_META_POLICY_PRESERVE,
+                                      RFC_EXACT_PIXEL_EXACT, &av_icc_cicp,
+                                      NULL, 0u, &dst_empty, NULL, 0u, 0u,
+                                      &mrep, &mmm) == RFC_ERR_METADATA_POLICY);
+
+            rfc_metadata av_mixed = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u, {0},
+                                     NULL, 0u, NULL, 0u};
+            av_mixed.color.has_mdcv = 1u;
+            memcpy(av_mixed.color.mdcv_xy, av_src.color.mdcv_xy,
+                   sizeof(av_mixed.color.mdcv_xy));
+            av_mixed.color.mdcv_max_dl = 10000000u;
+            av_mixed.color.mdcv_min_dl = 50u;
+            av_mixed.color.has_gama = 1u;
+            av_mixed.color.gama_scaled = 45455u;
+
+            rfc_metadata av_mixed_dst = {NULL, 0u, RFC_ORIENTATION_NORMAL, 0u,
+                                         {0}, NULL, 0u, NULL, 0u};
+            av_mixed_dst.color.has_mdcv = 1u;
+            memcpy(av_mixed_dst.color.mdcv_xy, av_src.color.mdcv_xy,
+                   sizeof(av_mixed_dst.color.mdcv_xy));
+            av_mixed_dst.color.mdcv_max_dl = 10000000u;
+            av_mixed_dst.color.mdcv_min_dl = 50u;
+            CHECK(rfc_metadata_verify(
+                      RFC_FORMAT_AVIF, RFC_META_POLICY_PRESERVE,
+                      RFC_EXACT_PIXEL_EXACT, &av_mixed, NULL, 0u, &av_mixed_dst,
+                      NULL, 0u, RFC_META_ITEM_ICC, &mrep, &mmm) == RFC_OK);
+            CHECK(mrep.outcome == RFC_VERIFY_META_UNSUPPORTED_ITEMS_NAMED &&
+                  (mrep.preserved_items & RFC_META_ITEM_ICC) != 0u);
+            CHECK(rfc_metadata_verify(
+                      RFC_FORMAT_AVIF, RFC_META_POLICY_PRESERVE,
+                      RFC_EXACT_PIXEL_EXACT, &av_mixed, NULL, 0u, &dst_empty,
+                      NULL, 0u, RFC_META_ITEM_ICC, &mrep, &mmm) ==
+                  RFC_ERR_VERIFY_MISMATCH);
+            CHECK(mmm.kind == RFC_MISMATCH_METADATA_LOST &&
+                  (mrep.lost_supported_items & RFC_META_ITEM_ICC) != 0u);
+        }
         CHECK(tr.live == 0u);
     }
 

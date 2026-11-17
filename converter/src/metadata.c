@@ -496,12 +496,98 @@ static int has_any_raw_colorimetry(const rfc_metadata *container_meta,
     return 0;
 }
 
-static int format_supports_raw_colorimetry(rfc_format_id id) {
-    return id == RFC_FORMAT_PNG || id == RFC_FORMAT_APNG;
+static void project_supported_colorimetry(rfc_format_id id,
+                                          size_t icc_len,
+                                          const rfc_colorimetry *in,
+                                          rfc_colorimetry *out) {
+    memset(out, 0, sizeof(*out));
+    if (!in || !rfc_colorimetry_has_any(in)) {
+        return;
+    }
+    if (id == RFC_FORMAT_PNG || id == RFC_FORMAT_APNG) {
+        *out = *in;
+        return;
+    }
+    if (id == RFC_FORMAT_AVIF) {
+        if (in->has_cicp && icc_len == 0u &&
+            in->cicp[2] == 0u && in->cicp[3] == 1u &&
+            (in->cicp[0] != 2u || in->cicp[1] != 2u)) {
+            out->has_cicp = 1u;
+            memcpy(out->cicp, in->cicp, sizeof(out->cicp));
+        }
+        if (in->has_clli &&
+            (in->clli_max_cll != 0u || in->clli_max_fall != 0u) &&
+            (in->clli_max_cll % 10000u) == 0u &&
+            (in->clli_max_fall % 10000u) == 0u &&
+            in->clli_max_cll <= 655350000u &&
+            in->clli_max_fall <= 655350000u) {
+            out->has_clli = 1u;
+            out->clli_max_cll = in->clli_max_cll;
+            out->clli_max_fall = in->clli_max_fall;
+        }
+        if (in->has_mdcv) {
+            out->has_mdcv = 1u;
+            memcpy(out->mdcv_xy, in->mdcv_xy, sizeof(out->mdcv_xy));
+            out->mdcv_max_dl = in->mdcv_max_dl;
+            out->mdcv_min_dl = in->mdcv_min_dl;
+        }
+    }
+}
+
+static int format_supports_frame_colorimetry(rfc_format_id id,
+                                           size_t icc_len,
+                                           const rfc_colorimetry *col) {
+    if (!col || !rfc_colorimetry_has_any(col)) {
+        return 1;
+    }
+    rfc_colorimetry proj;
+    project_supported_colorimetry(id, icc_len, col, &proj);
+    return colorimetry_equal(col, &proj);
+}
+
+static int has_any_preservable_color_metadata(rfc_format_id id,
+                                              const rfc_metadata *src_meta,
+                                              const rfc_frame *src_frames,
+                                              size_t src_frame_count) {
+    if (has_any_raw_icc(src_meta, src_frames, src_frame_count)) {
+        return 1;
+    }
+    size_t n = src_frame_count > 0u ? src_frame_count : 1u;
+    for (size_t i = 0u; i < n; i++) {
+        size_t slen = 0u;
+        (void)effective_icc_at(src_meta, src_frames, src_frame_count, i, &slen);
+        const rfc_colorimetry *col = effective_colorimetry_at(
+            src_meta, src_frames, src_frame_count, i);
+        if (col) {
+            rfc_colorimetry proj;
+            project_supported_colorimetry(id, slen, col, &proj);
+            if (rfc_colorimetry_has_any(&proj)) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static int source_raw_colorimetry_supported(rfc_format_id id,
+                                            const rfc_metadata *src_meta,
+                                            const rfc_frame *src_frames,
+                                            size_t src_frame_count) {
+    size_t n = src_frame_count > 0u ? src_frame_count : 1u;
+    for (size_t i = 0u; i < n; i++) {
+        size_t slen = 0u;
+        (void)effective_icc_at(src_meta, src_frames, src_frame_count, i, &slen);
+        const rfc_colorimetry *col = effective_colorimetry_at(
+            src_meta, src_frames, src_frame_count, i);
+        if (col && !format_supports_frame_colorimetry(id, slen, col)) {
+            return 0;
+        }
+    }
+    return 1;
 }
 
 static int format_carries_native_orientation(rfc_format_id id) {
-    return id == RFC_FORMAT_JPEG_XL;
+    return id == RFC_FORMAT_JPEG_XL || id == RFC_FORMAT_AVIF;
 }
 
 static int has_any_color_metadata(const rfc_metadata *container_meta,
@@ -658,11 +744,13 @@ rfc_status rfc_metadata_check_source_preflight(rfc_format_id target_format,
     }
     if (policy == RFC_META_POLICY_PRESERVE &&
         has_any_raw_colorimetry(src_meta, src_frames, src_frame_count) &&
-        !format_supports_raw_colorimetry(target_format)) {
+        !source_raw_colorimetry_supported(target_format, src_meta, src_frames,
+                                          src_frame_count)) {
         const rfc_capability *cap = rfc_registry_find(target_format);
         uint32_t unsupported = rep->unsupported_items | RFC_META_ITEM_ICC;
         rep->unsupported_items = unsupported;
-        if (!has_any_raw_icc(src_meta, src_frames, src_frame_count)) {
+        if (!has_any_preservable_color_metadata(target_format, src_meta,
+                                                src_frames, src_frame_count)) {
             rep->preserved_items &= ~RFC_META_ITEM_ICC;
         }
         if ((acknowledged_unsupported & RFC_META_ITEM_ICC) == 0u) {
@@ -762,9 +850,12 @@ rfc_status rfc_metadata_verify(rfc_format_id target_format,
 
     uint32_t caps = rep->target_supported_items;
     uint32_t supported = present & caps;
-    if (!format_supports_raw_colorimetry(target_format) &&
+    int raw_supported = source_raw_colorimetry_supported(
+        target_format, src_meta, src_frames, src_frame_count);
+    if (!raw_supported &&
         has_any_raw_colorimetry(src_meta, src_frames, src_frame_count) &&
-        !has_any_raw_icc(src_meta, src_frames, src_frame_count)) {
+        !has_any_preservable_color_metadata(target_format, src_meta, src_frames,
+                                            src_frame_count)) {
         supported &= ~RFC_META_ITEM_ICC;
     }
     uint32_t lost = RFC_META_ITEM_NONE;
@@ -779,7 +870,6 @@ rfc_status rfc_metadata_verify(rfc_format_id target_format,
             src_frame_count != dst_frame_count) {
             lost |= RFC_META_ITEM_ICC;
         } else {
-            int raw_ok = format_supports_raw_colorimetry(target_format);
             for (size_t i = 0u; i < check_count; i++) {
                 size_t slen = 0u, dlen = 0u;
                 const uint8_t *s_icc = effective_icc_at(
@@ -790,11 +880,20 @@ rfc_status rfc_metadata_verify(rfc_format_id target_format,
                     src_meta, src_frames, src_frame_count, i);
                 const rfc_colorimetry *d_col = effective_colorimetry_at(
                     dst_meta, dst_frames, dst_frame_count, i);
+                rfc_colorimetry expected_col;
+                project_supported_colorimetry(target_format, slen, s_col,
+                                              &expected_col);
+                const rfc_colorimetry *exp_ptr =
+                    rfc_colorimetry_has_any(&expected_col) ? &expected_col
+                                                           : NULL;
+                int dst_col_invalid =
+                    (d_col != NULL &&
+                     !format_supports_frame_colorimetry(target_format, dlen,
+                                                       d_col));
                 if (slen != dlen ||
                     (slen > 0u &&
                      (!s_icc || !d_icc || memcmp(s_icc, d_icc, slen) != 0)) ||
-                    (raw_ok ? !colorimetry_equal(s_col, d_col)
-                            : (d_col != NULL))) {
+                    dst_col_invalid || !colorimetry_equal(exp_ptr, d_col)) {
                     lost |= RFC_META_ITEM_ICC;
                     break;
                 }
