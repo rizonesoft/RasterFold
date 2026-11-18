@@ -52,7 +52,7 @@ track: GUI2
 | 2 | §2 | WebP | D10 T01 §2, D10 T01 §4, D10 T01 §5 | [x] |
 | 3 | §3 | JPEG XL | D10 T01 §2, D10 T01 §4, D10 T01 §5 | [x] |
 | 4 | §4 | AVIF | D10 T01 §2, D10 T01 §4, D10 T01 §5 | [x] |
-| 5 | §5 | JPEG optimization and import | D10 T01 §2, D10 T01 §4, D10 T01 §5 | [ ] |
+| 5 | §5 | JPEG optimization and import | D10 T01 §2, D10 T01 §4, D10 T01 §5 | [x] |
 | 6 | §6 | TIFF and GIF | D10 T01 §2, D10 T01 §4, D10 T01 §5 | [ ] |
 | 7 | §7 | HEIF and HEIC | D10 T01 §2, D10 T01 §4, D10 T01 §5, D99 T01 §7 | [ ] |
 | 8 | §8 | QOI | D10 T01 §2, D10 T01 §4, D10 T01 §5 | [ ] |
@@ -221,6 +221,8 @@ Build in the listed order. This section adds the named test driver before using 
 
 **Freeze check:** Existing `.fold` v2 and v3 files, `KAT_FOLD` and the oracle `tests/rfi_ref.py` remain unchanged (`git diff --exit-code -- src/ include/rasterfold.h spec/FOLD.md tests/rfi_ref.py converter/vendor.json`). Executed 2026-11-18: `git diff --exit-code c54e2fd 0b528cf -- src/ include/rasterfold.h spec/FOLD.md tests/rfi_ref.py converter/vendor.json` exited 0. Each new output receives a fresh bundled decode and the format-specific verification contract before acceptance; independent fixture coverage is reported separately; input and existing destination bytes survive refusal, cancellation and failure. **Corrected 2026-11-18:** the check named `.fold` v2 only; format version 3 and `KAT_FOLD` are shipped and frozen.
 
+> **Verified:** 2026-11-18 | §5 | f6e5ea44ab7ec90a61c5d8291dc93adb8deb4bd8
+> **Review:** `docs/reviews/d10-t02-s5.json`
 ## 6. TIFF and GIF
 
 **Requires:** windows-runtime -- The checkpoint requires driven results from the advertised Windows native target. Source checkpoint audit: docs/todo-vision-audit.md.

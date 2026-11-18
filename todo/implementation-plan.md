@@ -2,7 +2,7 @@
 
 The order to run every section in, from today to a codec that beats lossless JPEG XL on every image class it is measured on.
 
-> **Progress:** **139 of 266 sections complete (52%).** 266 sections (34 discovered); backlog 1 entry. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
+> **Progress:** **140 of 266 sections complete (53%).** 266 sections (34 discovered); backlog 1 entry. Derived from the Implementation Order tables by `python scripts/todo-graph.py plan --sync` -- never edited by hand.
 >
 > **Plan/graph parity.** Every numbered TODO section, open or shipped, appears in exactly one phase table row. `plan --check` enforces missing, unknown, duplicate, and status parity. Read live totals from the generated Progress line above and `python scripts/todo-graph.py query stats`.
 
@@ -333,7 +333,7 @@ The native converter, its user guide, the whole-product documentation acceptance
 | [x] | `D10 T02 §2`  | WebP                                                                       | windows-runtime               |   6   |
 | [x] | `D10 T02 §3`  | JPEG XL                                                                    | windows-runtime               |   6   |
 | [x] | `D10 T02 §4`  | AVIF                                                                       | windows-runtime               |   6   |
-| [ ] | `D10 T02 §5`  | JPEG optimization and import                                               | windows-runtime               |   6   |
+| [x] | `D10 T02 §5`  | JPEG optimization and import                                               | windows-runtime               |   6   |
 | [ ] | `D10 T02 §6`  | TIFF and GIF                                                               | windows-runtime               |   6   |
 | [ ] | `D10 T02 §7`  | HEIF and HEIC                                                              | windows-runtime               |   6   |
 | [ ] | `D10 T02 §8`  | QOI                                                                        | windows-runtime               |   6   |
