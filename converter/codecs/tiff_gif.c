@@ -13,6 +13,7 @@
  * by the engine's VERIFY stage in a fresh session, not re-decoded here. */
 
 #include "rfc_codecs.h"
+#include "rfc_gif_scan.h"
 #include "rfc_job.h"
 #include "rfc_verify.h"
 
@@ -45,7 +46,6 @@ static void tg_row_hook(void) {
     }
 }
 #define TG_SEG_SLACK (8u * 1024u * 1024u) /* tile overhang beyond the frame */
-#define TG_GIF_MAX_EXTENSIONS 64u
 #define TG_GIF_STATE_BYTES (1024u * 1024u) /* giflib LZW tables, colour maps */
 
 /* ------------------------------------------------------------------------ */
@@ -1036,162 +1036,85 @@ static rfc_status gif_check_lzw(const void *session,
     return RFC_OK;
 }
 
+typedef struct tg_mem_src {
+    const uint8_t *data;
+    size_t size;
+} tg_mem_src;
+
+static rfc_status tg_mem_read(void *ctx, uint64_t off, uint8_t *dst, size_t n,
+                              size_t *got) {
+    const tg_mem_src *m = (const tg_mem_src *)ctx;
+    *got = 0u;
+    if (off >= (uint64_t)m->size) {
+        return RFC_OK;
+    }
+    size_t avail = m->size - (size_t)off;
+    size_t k = n < avail ? n : avail;
+    memcpy(dst, m->data + off, k);
+    *got = k;
+    return RFC_OK;
+}
+
+typedef struct tg_cancel_src {
+    const void *session;
+    const rfc_exec_context *exec;
+} tg_cancel_src;
+
+static int tg_walk_cancelled(void *ctx) {
+    const tg_cancel_src *c = (const tg_cancel_src *)ctx;
+    tg_row_hook();
+    return tg_cancelled(c->session, c->exec);
+}
+
+/* The structural pre-scan: the walk shared with the submit sniff
+ * (rfc_gif_scan.h) up to the first image, the exact LZW length check of that
+ * image, then the next record, which must be the trailer. */
 static rfc_status gif_prescan(const void *session, const rfc_exec_context *exec,
                               const uint8_t *b, size_t size,
                               const rfc_limits *limits, gif_scan *out) {
     memset(out, 0, sizeof(*out));
-    if (size < 13u) {
-        return RFC_ERR_TRUNCATED_INPUT;
+    tg_mem_src src = {b, size};
+    tg_cancel_src cc = {session, exec};
+    rfc_gif_walk w;
+    rfc_status st = rfc_gif_walk_begin(&w, tg_mem_read, &src, exec, limits,
+                                       tg_walk_cancelled, &cc);
+    if (st != RFC_OK) {
+        return st;
     }
-    if (memcmp(b, "GIF87a", 6) != 0 && memcmp(b, "GIF89a", 6) != 0) {
-        return RFC_ERR_INVALID_ARGUMENT;
-    }
-    out->sw = (uint32_t)b[6] | ((uint32_t)b[7] << 8);
-    out->sh = (uint32_t)b[8] | ((uint32_t)b[9] << 8);
-    if (out->sw == 0u || out->sh == 0u) {
-        return RFC_ERR_INVALID_ARGUMENT;
-    }
-    uint32_t gct = 0u;
-    size_t pos = 13u;
-    if (b[10] & 0x80u) {
-        gct = 2u << (b[10] & 7u);
-        if (size - pos < 3u * (size_t)gct) {
-            return RFC_ERR_TRUNCATED_INPUT;
-        }
-        pos += 3u * (size_t)gct;
-    }
-    uint32_t images = 0u, extensions = 0u;
-    int gce_seen = 0;
-    uint64_t ext_bytes = 0u;
-    int seen_trailer = 0;
-    while (pos < size) {
-        if (tg_cancelled(session, exec)) {
-            return RFC_ERR_CANCELLED;
-        }
-        uint8_t blk = b[pos++];
-        if (blk == 0x3Bu) {
-            seen_trailer = 1;
-            break;
-        }
-        if (blk == 0x21u) {
-            if (pos >= size) {
-                return RFC_ERR_TRUNCATED_INPUT;
-            }
-            uint8_t label = b[pos++];
-            if (++extensions > TG_GIF_MAX_EXTENSIONS) {
-                return RFC_ERR_LIMIT_EXCEEDED;
-            }
-            if (label == 0x01u) {
-                /* Plain Text: a graphic rendering block needing composition */
-                rfc_exec_set_detail(exec, "gif: a Plain Text Extension needs composition");
-                return RFC_ERR_UNSUPPORTED_COMBINATION;
-            }
-            if (label == 0xF9u && gce_seen) {
-                /* one GCE per graphic: it governs the next image only */
-                return RFC_ERR_INVALID_ARGUMENT;
-            }
-            int first = 1;
-            for (;;) {
-                if (pos >= size) {
-                    return RFC_ERR_TRUNCATED_INPUT;
-                }
-                uint8_t n = b[pos++];
-                if (n == 0u) {
-                    break;
-                }
-                if ((size_t)n > size - pos) {
-                    return RFC_ERR_TRUNCATED_INPUT;
-                }
-                ext_bytes += n;
-                /* the limit applies as written, 0 included */
-                if (ext_bytes > (uint64_t)limits->max_metadata_bytes) {
-                    return RFC_ERR_LIMIT_EXCEEDED;
-                }
-                if (label == 0xF9u) {
-                    /* exactly one four-byte block, then the terminator */
-                    if (n != 4u || !first) {
-                        return RFC_ERR_INVALID_ARGUMENT;
-                    }
-                    gce_seen = 1;
-                    if (images == 0u) { /* a later GCE belongs to a later frame */
-                        out->has_transparent = (b[pos] & 1u) != 0u;
-                        out->delay_cs = (uint32_t)b[pos + 1] | ((uint32_t)b[pos + 2] << 8);
-                        out->transparent = b[pos + 3];
-                    }
-                }
-                first = 0;
-                pos += n;
-            }
-            if (label == 0xF9u && first) {
-                return RFC_ERR_INVALID_ARGUMENT; /* zero-length GCE */
-            }
-            continue;
-        }
-        if (blk != 0x2Cu) {
-            return RFC_ERR_INVALID_ARGUMENT;
-        }
-        gce_seen = 0; /* the next graphic may carry its own GCE */
-        if (++images > 1u) {
-            rfc_exec_set_detail(exec, "gif: more than one image (animated GIF is not supported yet)");
-            return RFC_ERR_UNSUPPORTED_COMBINATION; /* animation: D10 T02 s12 */
-        }
-        if (size - pos < 9u) {
-            return RFC_ERR_TRUNCATED_INPUT;
-        }
-        uint32_t x = (uint32_t)b[pos] | ((uint32_t)b[pos + 1] << 8);
-        uint32_t y = (uint32_t)b[pos + 2] | ((uint32_t)b[pos + 3] << 8);
-        uint32_t w = (uint32_t)b[pos + 4] | ((uint32_t)b[pos + 5] << 8);
-        uint32_t h = (uint32_t)b[pos + 6] | ((uint32_t)b[pos + 7] << 8);
-        uint8_t fl = b[pos + 8];
-        pos += 9u;
-        if (x != 0u || y != 0u || w != out->sw || h != out->sh) {
-            rfc_exec_set_detail(exec, "gif: the image does not cover the logical screen at the origin");
-            return RFC_ERR_UNSUPPORTED_COMBINATION; /* partial frame */
-        }
-        out->interlaced = (fl & 0x40u) != 0u;
-        out->colors = gct;
-        if (fl & 0x80u) {
-            out->colors = 2u << (fl & 7u);
-            if (size - pos < 3u * (size_t)out->colors) {
-                return RFC_ERR_TRUNCATED_INPUT;
-            }
-            pos += 3u * (size_t)out->colors;
-        }
-        if (out->colors == 0u) {
-            return RFC_ERR_INVALID_ARGUMENT; /* no colour table */
-        }
-        if (out->has_transparent && out->transparent >= out->colors) {
-            out->has_transparent = 0; /* no pixel can use that index */
-        }
+    rfc_gif_image img;
+    st = rfc_gif_scan_first_image(&w, &img);
+    if (st == RFC_OK) {
+        out->sw = img.width;
+        out->sh = img.height;
+        out->colors = img.colors;
+        out->interlaced = img.interlaced;
+        out->has_transparent = img.has_transparent;
+        out->transparent = img.transparent;
+        out->delay_cs = img.delay_cs;
         /* the limits apply to the layout this image decodes to */
-        rfc_layout lay = {out->has_transparent ? RFC_SAMPLE_RGBA8 : RFC_SAMPLE_RGB8,
-                          out->has_transparent ? RFC_ALPHA_STRAIGHT : RFC_ALPHA_NONE,
-                          w, h, 0u, 8u};
-        rfc_layout norm;
-        rfc_status st = rfc_layout_normalize_stride(&lay, &norm);
-        if (st == RFC_OK) {
-            st = rfc_limits_check_image(limits, &norm, 1u);
-        }
-        if (st != RFC_OK) {
-            return st;
-        }
+        st = rfc_limits_check_image(limits, &img.layout, 1u);
+    }
+    if (st == RFC_OK) {
+        size_t pos = (size_t)img.lzw_pos;
         if (pos >= size) {
-            return RFC_ERR_TRUNCATED_INPUT;
+            st = RFC_ERR_TRUNCATED_INPUT;
+        } else {
+            uint32_t min_code = b[pos++];
+            st = gif_check_lzw(session, exec, b, size, &pos, min_code,
+                               (uint64_t)img.width * img.height);
         }
-        uint32_t min_code = b[pos++];
-        st = gif_check_lzw(session, exec, b, size, &pos, min_code,
-                           (uint64_t)w * h);
-        if (st != RFC_OK) {
-            return st;
+        if (st == RFC_OK) {
+            uint64_t p = pos;
+            uint8_t kind = 0u;
+            st = rfc_gif_next_record(&w, &p, &kind);
+            if (st == RFC_OK && kind == 0x2Cu) {
+                rfc_exec_set_detail(exec, "gif: more than one image (animated GIF is not supported yet)");
+                st = RFC_ERR_UNSUPPORTED_COMBINATION; /* animation: D10 T02 s12 */
+            }
         }
     }
-    if (!seen_trailer) {
-        return RFC_ERR_TRUNCATED_INPUT;
-    }
-    if (images == 0u) {
-        return RFC_ERR_INVALID_ARGUMENT;
-    }
-    return RFC_OK;
+    rfc_gif_walk_end(&w);
+    return st;
 }
 
 /* ------------------------------------------------------------------------ */

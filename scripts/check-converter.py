@@ -296,6 +296,7 @@ def case_jobs(all_targets):
         os.path.join(src_dir, "metrics.c"),
         os.path.join(src_dir, "job.c"),
         os.path.join(src_dir, "scheduler.c"),
+        os.path.join(src_dir, "gif_scan.c"),
         os.path.join(ROOT, "tests", "converter", "test_jobs.c"),
     ]
     with tempfile.TemporaryDirectory() as tmp:
@@ -414,6 +415,7 @@ def case_exactness(all_targets):
             os.path.join(src_dir, "metrics.c"),
             os.path.join(src_dir, "job.c"),
             os.path.join(src_dir, "scheduler.c"),
+            os.path.join(src_dir, "gif_scan.c"),
             noprev_c,
         ]
         if os.name != "nt":
@@ -447,6 +449,7 @@ def case_exactness(all_targets):
                 os.path.join(src_dir, "metrics.c"),
                 os.path.join(src_dir, "job.c"),
                 os.path.join(src_dir, "scheduler.c"),
+                os.path.join(src_dir, "gif_scan.c"),
                 os.path.join(ROOT, "tests", "converter", "test_exactness.c"),
             ]
             host_exe = os.path.join(tmp, "test_exactness")
@@ -576,6 +579,7 @@ def case_file_safety(all_targets=False):
                 os.path.join(src_dir, "metrics.c"),
                 os.path.join(src_dir, "job.c"),
                 os.path.join(src_dir, "scheduler.c"),
+                os.path.join(src_dir, "gif_scan.c"),
                 os.path.join(ROOT, "tests", "converter", "test_file_safety.c"),
             ]
             cmd = [
@@ -709,6 +713,7 @@ def case_reports(all_targets=False):
                 os.path.join(src_dir, "report.c"),
                 os.path.join(src_dir, "job.c"),
                 os.path.join(src_dir, "scheduler.c"),
+                os.path.join(src_dir, "gif_scan.c"),
                 os.path.join(ROOT, "tests", "converter", "test_reports.c"),
             ]
             cmd = [
@@ -1068,6 +1073,7 @@ def _run_codec_case(
                 os.path.join(src_dir, "report.c"),
                 os.path.join(src_dir, "job.c"),
                 os.path.join(src_dir, "scheduler.c"),
+                os.path.join(src_dir, "gif_scan.c"),
                 *(os.path.join(codecs_dir, s) for s in codec_sources),
                 os.path.join(ROOT, "tests", "converter", c_test_file),
             ]

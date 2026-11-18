@@ -131,10 +131,21 @@ class TiffGifAdapterBase(unittest.TestCase):
         # on Windows), each decode checked against the independent oracle.
         mdir = self.work_dir() / "matrix"
         mdir.mkdir(exist_ok=True)
-        kv = self.cli_ok(["cli", "make-matrix", self.to_exe_path(mdir)], timeout=180.0)
-        self.assertEqual(kv["MADE"], "96")
+        rc, out, err = self.run_cli(["cli", "make-matrix", self.to_exe_path(mdir)], timeout=180.0)
+        self.assertEqual(rc, 0, out + err)
+        fields: dict[str, dict[str, str]] = {}
+        for line in out.splitlines():
+            if line.startswith("FIX "):
+                kv = parse_kv(line)
+                fields[kv["name"]] = kv
+            elif line.startswith("STATUS="):
+                self.assertEqual(parse_kv(line)["MADE"], "96")
+        self.assertEqual(len(fields), 96)
         for tif in sorted(mdir.glob("mk_*.tif")):
             ref = _tg.decode_tiff(tif.read_bytes())
+            got = fields[tif.stem]
+            self.assertEqual((int(got["WIDTH"]), int(got["HEIGHT"]), int(got["BPS"])),
+                             (ref["width"], ref["height"], ref["bits"]), tif.name)
             self.assertEqual(tif.with_suffix(".raw").read_bytes(), ref["pixels"], tif.name)
             COVERAGE.append((tif.stem, "independent"))
             n += 1

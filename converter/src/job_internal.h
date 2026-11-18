@@ -594,11 +594,12 @@ void rfc_job_internal_finish_publish(rfc_job *job,
 void rfc_job_internal_note_partial_bytes(rfc_job *job, int64_t delta_bytes);
 
 /* Frame geometry the sniff read cheaply (PNG IHDR, JPEG SOF, TIFF first
- * IFD, GIF screen), so the scheduler can size a job before IMPORT. format
- * is a lower bound of the layout the adapter decodes to (exact for PNG
- * gray/rgb/rgba, JPEG and TIFF; rgb8 for GIF), so admission never refuses
- * what the adapter accepts; the adapter enforces the exact layout and the
- * memory contracts are sized from this bound. Internal: the public
+ * IFD, GIF screen and first image), so the scheduler can size a job
+ * before IMPORT. format is the layout the adapter decodes to (exact for PNG
+ * gray/rgb/rgba, JPEG, TIFF, and GIF under the job's limits, through the
+ * walk the GIF adapter itself runs) or, where that cannot be known, a lower
+ * bound of it (PNG palette and gray-alpha; a GIF the walk refuses), so
+ * admission never refuses what the adapter accepts. Internal: the public
  * rfc_sniff_result keeps its layout. */
 typedef struct rfc_sniff_geometry {
     int has_geometry;
@@ -607,9 +608,12 @@ typedef struct rfc_sniff_geometry {
     rfc_sample_format format;
 } rfc_sniff_geometry;
 
+/* limits: the job's effective limits (the GIF geometry runs the adapter's
+ * own walk under them); NULL gives lower bounds only. */
 rfc_status rfc_input_internal_sniff_bytes_geometry(
     const uint8_t *bytes, size_t len, const char *name_utf8,
-    rfc_sniff_result *out_result, rfc_sniff_geometry *out_geometry);
+    const rfc_limits *limits, rfc_sniff_result *out_result,
+    rfc_sniff_geometry *out_geometry);
 
 /* out_geometry may be NULL. */
 rfc_status rfc_input_sniff_source_preflight(

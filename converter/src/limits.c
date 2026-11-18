@@ -450,10 +450,9 @@ rfc_status rfc_query_provider_memory_contract(rfc_format_id id,
             break;
         case RFC_FORMAT_GIF:
             out->mode = RFC_MEM_RESERVATION_AND_LIMITS;
-            /* sized from the rgb8 lower bound the sniff gives: 4x rgb8 is 3x
-             * the rgba8 a transparent GIF decodes to (measured peak 2.4x of
-             * rgba8 for 4096x1024 GIF to GIF) */
-            out->working_set_multiplier = 4u;
+            /* measured peak 2.4x of the decoded frame (4096x1024 GIF to
+             * GIF); the submit sniff gives the exact decoded layout */
+            out->working_set_multiplier = 3u;
             out->fixed_overhead_bytes = 2ull * 1024ull * 1024ull;
             out->limitation_reason =
                 "giflib state (LZW tables, colour maps) is reserved as 1 MiB "

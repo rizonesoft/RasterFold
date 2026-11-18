@@ -14,6 +14,7 @@
 #endif
 
 #include "job_internal.h"
+#include "rfc_gif_scan.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -815,12 +816,21 @@ static void sniff_tiff_geometry(const seek_stream *ss, const uint8_t *b,
     geo->has_geometry = 1;
 }
 
-/* GIF: the logical screen. The submit sniff gives a lower bound of the
- * decoded layout (rgb8; the adapter decodes rgba8 when a transparent index
- * applies), so admission can never refuse what the adapter would accept:
- * the adapter enforces the exact layout, and the GIF memory contract is
- * sized from this bound. */
-static void sniff_gif_geometry(const uint8_t *b, size_t len,
+static rfc_status gif_stream_read(void *ctx, uint64_t off, uint8_t *dst,
+                                  size_t n, size_t *got) {
+    const seek_stream *ss = (const seek_stream *)ctx;
+    *got = 0u;
+    return ss->read_at(ss->ctx, off, dst, n, got);
+}
+
+/* GIF: the logical screen and the layout the adapter decodes it to, found by
+ * the walk the adapter itself runs (rfc_gif_scan.h) under the job's limits,
+ * so admission and the adapter decide alike. Without limits, or when the
+ * walk refuses the file (the adapter will then refuse it with its own
+ * status), the screen is given as rgb8: a lower bound of every decoded
+ * layout, so admission never refuses what the adapter accepts. */
+static void sniff_gif_geometry(const seek_stream *ss, const uint8_t *b,
+                               size_t len, const rfc_limits *limits,
                                rfc_sniff_geometry *geo) {
     if (len < 10u) {
         return;
@@ -834,6 +844,19 @@ static void sniff_gif_geometry(const uint8_t *b, size_t len,
     geo->height = h;
     geo->format = RFC_SAMPLE_RGB8;
     geo->has_geometry = 1;
+    if (!limits) {
+        return;
+    }
+    rfc_gif_walk walk;
+    if (rfc_gif_walk_begin(&walk, gif_stream_read, (void *)ss, NULL, limits,
+                           NULL, NULL) != RFC_OK) {
+        return;
+    }
+    rfc_gif_image img;
+    if (rfc_gif_scan_first_image(&walk, &img) == RFC_OK) {
+        geo->format = img.layout.format;
+    }
+    rfc_gif_walk_end(&walk);
 }
 
 /* PNG: the IHDR (always the first chunk) gives the decoded layout for the
@@ -876,7 +899,8 @@ static rfc_format_id sniff_stream_core(const seek_stream *ss,
                                        const char *name_utf8,
                                        rfc_sniff_result *out_result,
                                        rfc_status *out_io_status,
-                                       rfc_sniff_geometry *geo_out) {
+                                       rfc_sniff_geometry *geo_out,
+                                       const rfc_limits *geo_limits) {
     rfc_sniff_geometry geo_scratch;
     rfc_sniff_geometry *geo = geo_out ? geo_out : &geo_scratch;
     memset(geo, 0, sizeof(*geo));
@@ -976,7 +1000,7 @@ static rfc_format_id sniff_stream_core(const seek_stream *ss,
     else if (len >= 6u &&
              (memcmp(b, "GIF87a", 6) == 0 || memcmp(b, "GIF89a", 6) == 0)) {
         detected = RFC_FORMAT_GIF;
-        sniff_gif_geometry(b, len, geo);
+        sniff_gif_geometry(ss, b, len, geo_limits, geo);
     }
     /* 11. QOI */
     else if (len >= 4u && memcmp(b, "qoif", 4) == 0) {
@@ -1047,7 +1071,8 @@ static rfc_format_id sniff_stream_core(const seek_stream *ss,
 static rfc_status sniff_bytes_impl(const uint8_t *bytes, size_t len,
                                    const char *name_utf8,
                                    rfc_sniff_result *out_result,
-                                   rfc_sniff_geometry *geo) {
+                                   rfc_sniff_geometry *geo,
+                                   const rfc_limits *limits) {
     if (!out_result || (len > 0u && !bytes)) {
         return RFC_ERR_INVALID_ARGUMENT;
     }
@@ -1055,7 +1080,7 @@ static rfc_status sniff_bytes_impl(const uint8_t *bytes, size_t len,
     seek_stream ss = {mem_stream_read_at, &mc, (uint64_t)len, 1};
     rfc_status io_st = RFC_OK;
     rfc_format_id fmt =
-        sniff_stream_core(&ss, name_utf8, out_result, &io_st, geo);
+        sniff_stream_core(&ss, name_utf8, out_result, &io_st, geo, limits);
     if (io_st != RFC_OK) {
         return io_st;
     }
@@ -1070,20 +1095,23 @@ rfc_status rfc_input_sniff_bytes(const uint8_t *bytes,
                                  size_t len,
                                  const char *name_utf8,
                                  rfc_sniff_result *out_result) {
-    return sniff_bytes_impl(bytes, len, name_utf8, out_result, NULL);
+    return sniff_bytes_impl(bytes, len, name_utf8, out_result, NULL, NULL);
 }
 
 rfc_status rfc_input_internal_sniff_bytes_geometry(
     const uint8_t *bytes, size_t len, const char *name_utf8,
-    rfc_sniff_result *out_result, rfc_sniff_geometry *out_geometry) {
-    return sniff_bytes_impl(bytes, len, name_utf8, out_result, out_geometry);
+    const rfc_limits *limits, rfc_sniff_result *out_result,
+    rfc_sniff_geometry *out_geometry) {
+    return sniff_bytes_impl(bytes, len, name_utf8, out_result, out_geometry,
+                            limits);
 }
 
 static rfc_status sniff_reader_impl(const rfc_io_reader *reader,
                                     const char *name_utf8,
                                     rfc_sniff_result *out_result,
                                     int *out_size_known, uint64_t *out_size,
-                                    rfc_sniff_geometry *geo) {
+                                    rfc_sniff_geometry *geo,
+                                    const rfc_limits *limits) {
     if (out_size_known) {
         *out_size_known = 0;
     }
@@ -1110,7 +1138,7 @@ static rfc_status sniff_reader_impl(const rfc_io_reader *reader,
     seek_stream ss = {reader_stream_read_at, (void *)reader, sz, known};
     rfc_status io_st = RFC_OK;
     rfc_format_id fmt =
-        sniff_stream_core(&ss, name_utf8, out_result, &io_st, geo);
+        sniff_stream_core(&ss, name_utf8, out_result, &io_st, geo, limits);
     /* Always leave seekable reader positioned at offset 0. */
     rfc_status rwst = reader->seek_fn(reader->ctx, 0u);
     if (rwst != RFC_OK) {
@@ -1355,14 +1383,15 @@ rfc_status rfc_input_sniff_reader(const rfc_io_reader *reader,
                                   int *out_size_known,
                                   uint64_t *out_size) {
     return sniff_reader_impl(reader, name_utf8, out_result, out_size_known,
-                             out_size, NULL);
+                             out_size, NULL, NULL);
 }
 
 static rfc_status sniff_path_impl(const char *path_utf8,
                                   rfc_sniff_result *out_result,
                                   uint64_t *out_size,
                                   rfc_file_identity *out_identity,
-                                  rfc_sniff_geometry *geo) {
+                                  rfc_sniff_geometry *geo,
+                                  const rfc_limits *limits) {
     if (out_size) {
         *out_size = 0u;
     }
@@ -1381,7 +1410,7 @@ static rfc_status sniff_path_impl(const char *path_utf8,
     }
     int known = 0;
     uint64_t sz = 0u;
-    st = sniff_reader_impl(&r, path_utf8, out_result, &known, &sz, geo);
+    st = sniff_reader_impl(&r, path_utf8, out_result, &known, &sz, geo, limits);
     CloseHandle(wctx.handle);
     if (out_size) {
         *out_size = sz;
@@ -1396,7 +1425,7 @@ static rfc_status sniff_path_impl(const char *path_utf8,
     }
     int known = 0;
     uint64_t sz = 0u;
-    st = sniff_reader_impl(&r, path_utf8, out_result, &known, &sz, geo);
+    st = sniff_reader_impl(&r, path_utf8, out_result, &known, &sz, geo, limits);
     close(pctx.fd);
     if (out_size) {
         *out_size = sz;
@@ -1409,7 +1438,8 @@ rfc_status rfc_input_sniff_path(const char *path_utf8,
                                 rfc_sniff_result *out_result,
                                 uint64_t *out_size,
                                 rfc_file_identity *out_identity) {
-    return sniff_path_impl(path_utf8, out_result, out_size, out_identity, NULL);
+    return sniff_path_impl(path_utf8, out_result, out_size, out_identity, NULL,
+                           NULL);
 }
 
 static rfc_status check_container_completeness(rfc_format_id fmt,
@@ -2156,7 +2186,7 @@ rfc_status rfc_input_sniff_source_preflight(
     rfc_status st = RFC_OK;
     if (io_source->path_utf8) {
         st = sniff_path_impl(io_source->path_utf8, out_sniff, out_source_size,
-                             out_identity, out_geometry);
+                             out_identity, out_geometry, limits);
     } else {
         const rfc_io_reader *r = io_source->reader;
         if (!r->read_fn || !r->seek_fn) {
@@ -2165,7 +2195,7 @@ rfc_status rfc_input_sniff_source_preflight(
         int known = 0;
         uint64_t sz = 0u;
         st = sniff_reader_impl(r, io_source->virtual_name_utf8, out_sniff,
-                               &known, &sz, out_geometry);
+                               &known, &sz, out_geometry, limits);
         *out_source_size = known ? sz : 0u;
         if (st == RFC_OK && r->identity_fn) {
             if (r->identity_fn(r->ctx, out_identity) != RFC_OK) {

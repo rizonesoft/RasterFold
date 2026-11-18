@@ -1648,12 +1648,11 @@ static void test_completion_gaps(void) {
         remove(path);
         free(b);
     }
-    /* 2. Class regression: submission never refuses what the adapter
-     * accepts. Each fixture is admitted with max_decoded_bytes at exactly
-     * its decoded size and refused one byte below (at submit, or at IMPORT
-     * for a GIF whose transparency the screen does not show); a format whose
-     * sniffed geometry is exact is also refused at submit one byte below and
-     * one pixel narrower or shorter, which pins width, height and layout. */
+    /* 2. Class regression: admission and the adapter decide alike. Each
+     * fixture is admitted with max_decoded_bytes at exactly its decoded size,
+     * and refused at submit one byte below and one pixel narrower or shorter,
+     * which pins width, height and layout (the GIF sniff runs the adapter's
+     * own walk under the job's limits). */
     {
         typedef struct fx {
             const char *name, *ext;
@@ -1661,9 +1660,9 @@ static void test_completion_gaps(void) {
             int exact; /* sniffed geometry equals the decoded layout */
         } fx;
         static const fx fxs[] = {
-            {"gif opaque", "gif", RFC_FORMAT_GIF, 0},
-            {"gif transparent", "gif", RFC_FORMAT_GIF, 0},
-            {"gif 10000-block comment", "gif", RFC_FORMAT_GIF, 0},
+            {"gif opaque", "gif", RFC_FORMAT_GIF, 1},
+            {"gif transparent", "gif", RFC_FORMAT_GIF, 1},
+            {"gif 10000-block comment", "gif", RFC_FORMAT_GIF, 1},
             {"png rgb8", "png", RFC_FORMAT_PNG, 1},
             {"png rgba8", "png", RFC_FORMAT_PNG, 1},
             {"png gray16", "png", RFC_FORMAT_PNG, 1},
@@ -1743,7 +1742,27 @@ static void test_completion_gaps(void) {
         }
     }
     /* 2b. max_metadata_bytes applies as written, 0 included: a GIF with a
-     * comment is refused under 0, one with no extension decodes. */
+     * comment is refused under 0, one with no extension decodes; a job under
+     * 0 is refused with the adapter's own status (the walk refuses it at
+     * submit too, so admission falls back to the lower bound and leaves the
+     * refusal to the adapter). */
+    {
+        gmk gj;
+        gmk_defaults(&gj, 40u, 30u);
+        gj.comment_blocks = 5u;
+        uint8_t *jb = make_gif(&gj, &n);
+        temp_path(p_src, sizeof(p_src), "m0.gif");
+        temp_path(p_dst, sizeof(p_dst), "m0_out.gif");
+        CHECK(write_file_all(p_src, jb, n));
+        rfc_limits l0;
+        rfc_limits_default(&l0);
+        l0.max_metadata_bytes = 0u;
+        run_job_full(RFC_FORMAT_GIF, RFC_FORMAT_GIF, p_src, NULL, 0u, p_dst, NULL, NULL, NULL, &l0, 0u, &r);
+        CHECK(r.submit == RFC_OK && r.status == RFC_ERR_LIMIT_EXCEEDED &&
+              r.failing == RFC_STAGE_IMPORT && !file_exists(p_dst));
+        remove(p_src);
+        free(jb);
+    }
     {
         rfc_limits lim;
         rfc_limits_default(&lim);
@@ -1971,6 +1990,10 @@ static int cli_main(int argc, char **argv) {
                             path[strlen(path) - 3] = '\0';
                             strcat(path, "raw");
                             CHECK(write_file_all(path, px, len));
+                            printf("FIX name=mk_%u_%u_%u_%d_%d WIDTH=%u HEIGHT=%u BPS=%u\n",
+                                   (unsigned)comps[ci], (unsigned)spps[si], (unsigned)bps, tiled,
+                                   sep, info.layout.width, info.layout.height,
+                                   (unsigned)info.layout.bits_per_sample);
                             free(px);
                             free(b);
                             made++;

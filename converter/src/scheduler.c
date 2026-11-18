@@ -1834,8 +1834,12 @@ rfc_status rfc_scheduler_submit(rfc_scheduler *sched,
             geo = pre_geo;
         } else if (spec->source_bytes && spec->source_size > 0u) {
             rfc_sniff_result geo_sniff;
+            const rfc_limits *geo_lim = spec->limits_override
+                                            ? spec->limits_override
+                                            : &cur_cfg.default_limits;
             (void)rfc_input_internal_sniff_bytes_geometry(
-                spec->source_bytes, spec->source_size, NULL, &geo_sniff, &geo);
+                spec->source_bytes, spec->source_size, NULL, geo_lim,
+                &geo_sniff, &geo);
         }
         rfc_exactness_class geo_ex = RFC_EXACT_PIXEL_EXACT;
         rfc_metadata_policy geo_pol = RFC_META_POLICY_PRESERVE;

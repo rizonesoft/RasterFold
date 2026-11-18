@@ -73,6 +73,7 @@ add_library(rfc_engine STATIC
   "${CMAKE_SOURCE_DIR}/src/report.c"
   "${CMAKE_SOURCE_DIR}/src/job.c"
   "${CMAKE_SOURCE_DIR}/src/scheduler.c"
+  "${CMAKE_SOURCE_DIR}/src/gif_scan.c"
 )
 set_target_properties(rfc_engine PROPERTIES
   C_STANDARD 11
