@@ -256,16 +256,21 @@ def decode_coefficients(data: bytes) -> JpegCoefficients:
                 raise JpegError("SOS before SOF")
             scans += 1
             ns = seg[0]
+            o = 1 + 2 * ns
+            ss, se, ah, al = seg[o], seg[o + 1], seg[o + 2] >> 4, seg[o + 2] & 15
             scomps = []
             for i in range(ns):
                 cid, tbl = seg[1 + 2 * i], seg[2 + 2 * i]
                 ci = next(j for j, c in enumerate(frame.components) if c.cid == cid)
-                frame.components[ci].dc_tbl = tbl >> 4
-                frame.components[ci].ac_tbl = tbl & 15
+                # A selector counts only in a scan that uses it (T.81 G.1.1.1:
+                # a DC refinement scan or an AC scan carries an unused one).
+                if ss == 0 and ah == 0:
+                    frame.components[ci].dc_tbl = tbl >> 4
+                if se > 0:
+                    frame.components[ci].ac_tbl = tbl & 15
                 scomps.append(ci)
-            o = 1 + 2 * ns
-            ss, se, ah, al = seg[o], seg[o + 1], seg[o + 2] >> 4, seg[o + 2] & 15
-            pos = _decode_scan(data, pos, frame, scomps, ss, se, ah, al, dc_tabs, ac_tabs, restart_interval, eobrun_state)
+            scan_tables = {ci: (seg[2 + 2 * i] >> 4, seg[2 + 2 * i] & 15) for i, ci in enumerate(scomps)}
+            pos = _decode_scan(data, pos, frame, scomps, ss, se, ah, al, dc_tabs, ac_tabs, restart_interval, eobrun_state, scan_tables)
         # Every other marker (APPn, COM, DNL absent) carries no coefficient data.
     if frame is None:
         raise JpegError("no SOF")
@@ -276,7 +281,7 @@ def decode_coefficients(data: bytes) -> JpegCoefficients:
     return frame
 
 
-def _decode_scan(data, pos, frame, scomps, ss, se, ah, al, dc_tabs, ac_tabs, ri, eob_state):
+def _decode_scan(data, pos, frame, scomps, ss, se, ah, al, dc_tabs, ac_tabs, ri, eob_state, scan_tables):
     br = _Bits(data, pos)
     comps = frame.components
     hmax = max(c.h for c in comps)
@@ -287,13 +292,14 @@ def _decode_scan(data, pos, frame, scomps, ss, se, ah, al, dc_tabs, ac_tabs, ri,
 
     def decode_block(ci: int, blk: list[int]) -> None:
         c = comps[ci]
+        dc_id, ac_id = scan_tables[ci]
         if not progressive:
-            t = br.huff(dc_tabs[c.dc_tbl])
+            t = br.huff(dc_tabs[dc_id])
             diff = _extend(br.bits(t), t)
             preds[ci] += diff
             blk[0] = preds[ci]
             k = 1
-            act = ac_tabs[c.ac_tbl]
+            act = ac_tabs[ac_id]
             while k < 64:
                 rs = br.huff(act)
                 r, s = rs >> 4, rs & 15
@@ -310,7 +316,7 @@ def _decode_scan(data, pos, frame, scomps, ss, se, ah, al, dc_tabs, ac_tabs, ri,
             return
         if ss == 0:
             if ah == 0:
-                t = br.huff(dc_tabs[c.dc_tbl])
+                t = br.huff(dc_tabs[dc_id])
                 diff = _extend(br.bits(t), t)
                 preds[ci] += diff
                 blk[0] = preds[ci] * (1 << al)
@@ -318,7 +324,7 @@ def _decode_scan(data, pos, frame, scomps, ss, se, ah, al, dc_tabs, ac_tabs, ri,
                 if br.bit():
                     blk[0] |= 1 << al
             return
-        act = ac_tabs[c.ac_tbl]
+        act = ac_tabs[ac_id]
         if ah == 0:
             if eob_state["eobrun"] > 0:
                 eob_state["eobrun"] -= 1

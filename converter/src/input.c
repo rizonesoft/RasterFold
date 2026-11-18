@@ -637,6 +637,65 @@ static rfc_format_id sniff_tiff_family(const seek_stream *ss,
     return RFC_FORMAT_TIFF;
 }
 
+/* Walk JPEG marker segments with positional reads up to the first SOF (never
+ * past the first SOS) and record the frame geometry. Bounded: at most 4096
+ * segments and 20 payload bytes read; any malformation leaves no geometry. */
+static void sniff_jpeg_geometry(const seek_stream *ss,
+                                rfc_sniff_result *out_result) {
+    uint64_t pos = 2u;
+    for (uint32_t n = 0u; n < 4096u; n++) {
+        uint8_t hdr[4];
+        size_t got = 0u;
+        if (ss->read_at(ss->ctx, pos, hdr, sizeof(hdr), &got) != RFC_OK ||
+            got < 2u || hdr[0] != 0xFFu) {
+            return;
+        }
+        if (hdr[1] == 0xFFu) {
+            pos++;
+            continue;
+        }
+        uint8_t m = hdr[1];
+        if (m == 0xD8u || m == 0x01u || (m >= 0xD0u && m <= 0xD7u)) {
+            pos += 2u;
+            continue;
+        }
+        if (m == 0xD9u || m == 0xDAu || got < 4u) {
+            return;
+        }
+        uint16_t len = (uint16_t)(((uint16_t)hdr[2] << 8) | hdr[3]);
+        if (len < 2u) {
+            return;
+        }
+        if (m >= 0xC0u && m <= 0xCFu && m != 0xC4u && m != 0xC8u &&
+            m != 0xCCu) {
+            uint8_t sof[18];
+            size_t sg = 0u;
+            if (len < 8u ||
+                ss->read_at(ss->ctx, pos + 4u, sof, sizeof(sof), &sg) !=
+                    RFC_OK ||
+                sg < 6u) {
+                return;
+            }
+            uint32_t nc = sof[5];
+            if (nc == 0u || nc > 4u || (size_t)len != 8u + 3u * nc ||
+                sg < 6u + 3u * (size_t)nc) {
+                return;
+            }
+            out_result->jpeg_height = ((uint32_t)sof[1] << 8) | sof[2];
+            out_result->jpeg_width = ((uint32_t)sof[3] << 8) | sof[4];
+            out_result->jpeg_components = nc;
+            for (uint32_t c = 0u; c < nc; c++) {
+                out_result->jpeg_h_samp[c] = (uint8_t)(sof[7u + 3u * c] >> 4);
+                out_result->jpeg_v_samp[c] = (uint8_t)(sof[7u + 3u * c] & 15u);
+            }
+            out_result->has_jpeg_geometry =
+                out_result->jpeg_width > 0u && out_result->jpeg_height > 0u;
+            return;
+        }
+        pos += 2u + (uint64_t)len;
+    }
+}
+
 static rfc_format_id sniff_stream_core(const seek_stream *ss,
                                        const char *name_utf8,
                                        rfc_sniff_result *out_result,
@@ -728,6 +787,7 @@ static rfc_format_id sniff_stream_core(const seek_stream *ss,
     /* 9. JPEG */
     else if (len >= 3u && b[0] == 0xFFu && b[1] == 0xD8u && b[2] == 0xFFu) {
         detected = RFC_FORMAT_JPEG;
+        sniff_jpeg_geometry(ss, out_result);
     }
     /* 10. GIF */
     else if (len >= 6u &&

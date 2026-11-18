@@ -1052,14 +1052,16 @@ static rfc_status compute_preflight_with_contracts(
                dst_mem->format == RFC_FORMAT_JPEG &&
                exactness == RFC_EXACT_COEFFICIENT_EXACT && source_size > 0u) {
         /* Coefficient-exact optimization holds the source bytes, the output
-         * (bounded by source + 64 KiB), the provider's whole-image arrays,
-         * and at verify the source and output coefficient images plus their
-         * job clones (four coefficient images of up to 2x the decoded RGB
-         * bytes each). Without a layout the bound scales from the source. */
+         * (bounded by source + 64 KiB), and at peak (reading the output's
+         * coefficients at VERIFY) the adopted source coefficient image, the
+         * provider's whole-image arrays and the output image: three images of
+         * at most 2x the decoded bytes each, plus MCU padding. Submission
+         * derives the layout from the SOF when the caller gives none; only a
+         * stream whose SOF could not be sniffed falls back to the source. */
         uint64_t core = 0u;
         uint64_t src2 = 0u;
         if (source_layout) {
-            if (!mul_u64_sched(decoded_bytes, 10ull, &core)) {
+            if (!mul_u64_sched(decoded_bytes, 8ull, &core)) {
                 return RFC_ERR_LIMIT_EXCEEDED;
             }
         } else if (!mul_u64_sched(source_size, 32ull, &core)) {
@@ -1746,6 +1748,8 @@ rfc_status rfc_scheduler_submit(rfc_scheduler *sched,
     uint64_t eff_source_size = (uint64_t)spec->source_size;
     rfc_file_identity sniff_src_id;
     memset(&sniff_src_id, 0, sizeof(sniff_src_id));
+    rfc_sniff_result pre_sniff_copy;
+    memset(&pre_sniff_copy, 0, sizeof(pre_sniff_copy));
     if (spec->io_source) {
         const rfc_limits *pre_lim =
             spec->limits_override ? spec->limits_override
@@ -1764,6 +1768,44 @@ rfc_status rfc_scheduler_submit(rfc_scheduler *sched,
         }
         eff_source_format = pre_sniff.content_format;
         eff_source_size = sniff_sz;
+        pre_sniff_copy = pre_sniff;
+    }
+
+    /* JPEG -> JPEG coefficient-exact work scales with the DCT block count,
+     * not the compressed size: when the caller gave no layout, size the
+     * route from the source's SOF geometry. */
+    rfc_job_spec geo_spec;
+    rfc_layout geo_layout;
+    if (!spec->source_layout && eff_source_format == RFC_FORMAT_JPEG &&
+        spec->target_format == RFC_FORMAT_JPEG) {
+        rfc_exactness_class geo_ex = RFC_EXACT_PIXEL_EXACT;
+        rfc_metadata_policy geo_pol = RFC_META_POLICY_PRESERVE;
+        rfc_sniff_result geo;
+        memset(&geo, 0, sizeof(geo));
+        if (spec->io_source) {
+            geo = pre_sniff_copy;
+        } else if (spec->source_bytes && spec->source_size > 0u) {
+            (void)rfc_input_sniff_bytes(spec->source_bytes, spec->source_size,
+                                        NULL, &geo);
+        }
+        if (rfc_job_internal_resolve_exactness(
+                spec->target_format, spec->settings, spec->setting_count,
+                &geo_ex, &geo_pol) == RFC_OK &&
+            geo_ex == RFC_EXACT_COEFFICIENT_EXACT && geo.has_jpeg_geometry &&
+            (geo.jpeg_components == 1u || geo.jpeg_components == 3u)) {
+            memset(&geo_layout, 0, sizeof(geo_layout));
+            geo_layout.format = geo.jpeg_components == 1u ? RFC_SAMPLE_GRAY8
+                                                          : RFC_SAMPLE_RGB8;
+            geo_layout.alpha = RFC_ALPHA_NONE;
+            geo_layout.width = geo.jpeg_width;
+            geo_layout.height = geo.jpeg_height;
+            geo_layout.bits_per_sample = 8u;
+            geo_layout.stride_bytes =
+                (size_t)geo.jpeg_width * (size_t)geo.jpeg_components;
+            geo_spec = *spec;
+            geo_spec.source_layout = &geo_layout;
+            spec = &geo_spec;
+        }
     }
     if (spec->io_sink) {
         st = rfc_output_validate_sink_preflight(

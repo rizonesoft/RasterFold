@@ -46,6 +46,14 @@ typedef struct rfc_sniff_result {
     int extension_known;
     int disagreement;
     char detail[RFC_SNIFF_DETAIL_MAX];
+    /* JPEG only: frame geometry from the first SOF before the first SOS, so
+     * the scheduler can size coefficient-domain work before IMPORT. */
+    int has_jpeg_geometry;
+    uint32_t jpeg_width;
+    uint32_t jpeg_height;
+    uint32_t jpeg_components;
+    uint8_t jpeg_h_samp[4];
+    uint8_t jpeg_v_samp[4];
 } rfc_sniff_result;
 
 typedef struct rfc_imported_input {

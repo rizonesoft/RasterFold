@@ -641,6 +641,7 @@ void rfc_registry_release_jpeg_reconstruct(void) {
 rfc_status rfc_registry_register_jpeg_transcode(
     const rfc_jpeg_transcode_adapter *adapter) {
     if (!adapter || !adapter->open_session || !adapter->close_session ||
+        !adapter->preflight_optimize ||
         !adapter->optimize_jpeg || !adapter->read_coefficients ||
         !adapter->free_coefficients || !adapter->compare_markers) {
         return RFC_ERR_INVALID_ARGUMENT;
@@ -683,6 +684,58 @@ void rfc_registry_release_jpeg_transcode(void) {
         k_jtrans_active--;
     }
     reg_unlock();
+}
+static int session_adapter_valid(const rfc_session_adapter *a) {
+    return a && a->open_session && a->close_session && a->probe_session &&
+           a->encode_session && a->decode_session;
+}
+static int jtrans_adapter_valid(const rfc_jpeg_transcode_adapter *a) {
+    return a && a->open_session && a->close_session && a->preflight_optimize &&
+           a->optimize_jpeg && a->read_coefficients && a->free_coefficients &&
+           a->compare_markers;
+}
+rfc_status rfc_registry_register_jpeg_pair(
+    const rfc_session_adapter *session_adapter,
+    const rfc_jpeg_transcode_adapter *transcode_adapter) {
+    if (!session_adapter_valid(session_adapter) ||
+        !jtrans_adapter_valid(transcode_adapter) ||
+        session_adapter->format != RFC_FORMAT_JPEG) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    if (session_adapter->abi_version != RFC_CODEC_ABI_VERSION ||
+        transcode_adapter->abi_version != RFC_CODEC_ABI_VERSION) {
+        return RFC_ERR_ABI_VERSION;
+    }
+    reg_lock();
+    int idx = reg_find_index(RFC_FORMAT_JPEG);
+    if (idx < 0) {
+        reg_unlock();
+        return RFC_ERR_UNKNOWN_FORMAT;
+    }
+    if (k_session_adapters[idx] != NULL || k_jtrans_adapter != NULL) {
+        reg_unlock();
+        return RFC_ERR_DUPLICATE;
+    }
+    k_session_adapters[idx] = session_adapter;
+    k_jtrans_adapter = transcode_adapter;
+    reg_unlock();
+    return RFC_OK;
+}
+rfc_status rfc_registry_unregister_jpeg_pair(void) {
+    reg_lock();
+    int idx = reg_find_index(RFC_FORMAT_JPEG);
+    if (idx < 0) {
+        reg_unlock();
+        return RFC_ERR_UNKNOWN_FORMAT;
+    }
+    if (k_session_active[idx] > 0 || k_jtrans_active > 0) {
+        reg_unlock();
+        return RFC_ERR_BUSY;
+    }
+    k_session_adapters[idx] = NULL;
+    k_jtrans_adapter = NULL;
+    reg_unlock();
+    return RFC_OK;
 }
 const char *rfc_status_name(rfc_status s) {
     switch (s) {

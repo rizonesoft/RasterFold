@@ -33,11 +33,16 @@ rfc_status rfc_codecs_register_avif(void);
 rfc_status rfc_codecs_unregister_avif(void);
 
 /* Register and unregister the shipped JPEG session adapter and the JPEG ->
- * JPEG coefficient-exact entropy-optimization adapter (D10 T02 s5). If the
- * second registration fails the first is rolled back; unregister returns
- * RFC_ERR_BUSY while either adapter is acquired and leaves both registered. */
+ * JPEG coefficient-exact entropy-optimization adapter (D10 T02 s5) as one
+ * registry transaction: both or neither. Unregister returns RFC_ERR_BUSY,
+ * leaving both registered, while either adapter is acquired. */
 rfc_status rfc_codecs_register_jpeg(void);
 rfc_status rfc_codecs_unregister_jpeg(void);
+
+/* Test seam: the optimization output buffer is source size + slack bytes
+ * (default 64 KiB); a negative slack shrinks it below the source so tests can
+ * drive the destination-full fallback. -1 restores the default. */
+void rfc_codecs_jpeg_set_output_slack_for_testing(long long slack);
 
 /* Direct JPEG <-> JPEG XL lossless byte-reconstruction entry points used by
  * the JXL reconstruction adapter and D10 T02 s5 delegation. */

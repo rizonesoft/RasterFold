@@ -46,6 +46,12 @@ rfc_status rfc_jpeg_scan(const uint8_t *bytes,
     size_t pos = 2u;
     int seen_sof = 0;
     int seen_eoi = 0;
+    int seen_sos = 0;
+    out->header_adobe_transform = -1;
+    uint16_t qt[4][64];
+    uint8_t qt_defined[4] = {0u, 0u, 0u, 0u};
+    uint16_t latched[4][64];
+    uint8_t is_latched[4] = {0u, 0u, 0u, 0u};
     while (pos < size) {
         if (bytes[pos] != 0xFFu) {
             return RFC_ERR_INVALID_ARGUMENT;
@@ -110,14 +116,70 @@ rfc_status rfc_jpeg_scan(const uint8_t *bytes,
                     out->component_ids[c] = cs[0];
                     out->h_samp[c] = (uint8_t)(cs[1] >> 4);
                     out->v_samp[c] = (uint8_t)(cs[1] & 0x0Fu);
+                    out->quant_slot[c] = cs[2];
                 }
                 seen_sof = 1;
             }
         } else if ((marker >= 0xC3u && marker <= 0xCFu) && marker != 0xC4u &&
                    marker != 0xC8u && marker != 0xCCu) {
             return RFC_ERR_UNSUPPORTED_COMBINATION;
+        } else if (marker == 0xDBu) {
+            size_t q = 0u;
+            while (q < plen) {
+                uint8_t pq = (uint8_t)(payload[q] >> 4);
+                uint8_t tq = (uint8_t)(payload[q] & 0x0Fu);
+                size_t need = 1u + (pq ? 128u : 64u);
+                if (pq > 1u || tq > 3u || plen - q < need) {
+                    break; /* the decoder refuses a malformed DQT */
+                }
+                for (size_t k = 0u; k < 64u; k++) {
+                    qt[tq][k] = pq ? (uint16_t)scan_rd16be(payload + q + 1u + 2u * k)
+                                   : (uint16_t)payload[q + 1u + k];
+                }
+                qt_defined[tq] = 1u;
+                q += need;
+            }
         } else if (marker == 0xDAu) {
             out->sos_count++;
+            seen_sos = 1;
+            /* SOS: Ns, Ns x (Cs, Td/Ta), Ss, Se, Ah/Al. Malformed headers are
+             * counted (the decoder refuses them), never fatal here. */
+            if (!seen_sof || plen < 1u || plen != 1u + 2u * (size_t)payload[0] + 3u ||
+                payload[0] == 0u || payload[0] > 4u) {
+                out->sos_malformed++;
+            } else {
+                uint8_t ns = payload[0];
+                uint8_t ss = payload[1u + 2u * ns];
+                uint8_t se = payload[2u + 2u * ns];
+                uint8_t ah = (uint8_t)(payload[3u + 2u * ns] >> 4);
+                for (uint8_t k = 0u; k < ns; k++) {
+                    uint8_t cid = payload[1u + 2u * k];
+                    uint8_t tbl = payload[2u + 2u * k];
+                    uint32_t ci = 0u;
+                    while (ci < out->components && out->component_ids[ci] != cid) {
+                        ci++;
+                    }
+                    if (ci >= out->components) {
+                        out->sos_malformed++;
+                        continue;
+                    }
+                    if (ss == 0u && ah == 0u) {
+                        out->dc_sel[ci] = (uint8_t)(tbl >> 4);
+                    }
+                    if (se > 0u) {
+                        out->ac_sel[ci] = (uint8_t)(tbl & 0x0Fu);
+                    }
+                    if (!is_latched[ci]) {
+                        uint8_t slot = out->quant_slot[ci] & 3u;
+                        if (out->quant_slot[ci] > 3u || !qt_defined[slot]) {
+                            out->quant_missing = 1;
+                        } else {
+                            memcpy(latched[ci], qt[slot], sizeof(latched[ci]));
+                            is_latched[ci] = 1u;
+                        }
+                    }
+                }
+            }
             while (pos < size) {
                 if (bytes[pos] != 0xFFu) {
                     pos++;
@@ -144,13 +206,25 @@ rfc_status rfc_jpeg_scan(const uint8_t *bytes,
                              &out->marker_bytes)) {
                 return RFC_ERR_LIMIT_EXCEEDED;
             }
-            if (marker == 0xE0u && plen >= 5u &&
+            /* Same recognition lengths as libjpeg's examine_app0/app14. */
+            if (marker == 0xE0u && plen >= 14u &&
                 memcmp(payload, "JFIF\x00", 5) == 0) {
                 out->saw_jfif = 1;
+                if (!seen_sos) {
+                    out->header_jfif = 1;
+                } else {
+                    out->late_structural++;
+                }
             } else if (marker == 0xEEu && plen >= 12u &&
                        memcmp(payload, "Adobe", 5) == 0) {
                 out->saw_adobe = 1;
                 out->adobe_transform = (int)payload[11];
+                if (!seen_sos) {
+                    out->header_adobe = 1;
+                    out->header_adobe_transform = (int)payload[11];
+                } else {
+                    out->late_structural++;
+                }
             } else if (marker == 0xE1u) {
                 if (plen >= 6u && memcmp(payload, "Exif\x00\x00", 6) == 0) {
                     out->exif_count++;
@@ -191,21 +265,26 @@ rfc_status rfc_jpeg_scan(const uint8_t *bytes,
                     out->xmp_ext_count++;
                 }
             } else if (marker == 0xE2u) {
-                if (plen >= 14u &&
+                if (plen >= 12u &&
                     memcmp(payload, "ICC_PROFILE\x00", 12) == 0) {
-                    uint8_t seq = payload[12];
-                    uint8_t tot = payload[13];
-                    if (seq == 0u || tot == 0u || seq > tot ||
-                        (out->icc_total_chunks != 0u &&
-                         out->icc_total_chunks != tot)) {
-                        out->icc_invalid = 1;
+                    if (plen < 14u) {
+                        out->icc_invalid = 1; /* signature without seq/count */
                     } else {
-                        out->icc_total_chunks = tot;
-                        if (out->icc_chunks[seq].len == 0u) {
-                            out->icc_chunks[seq].off = payload_off + 14u;
-                            out->icc_chunks[seq].len = plen - 14u;
-                        } else {
+                        uint8_t seq = payload[12];
+                        uint8_t tot = payload[13];
+                        if (seq == 0u || tot == 0u || seq > tot ||
+                            (out->icc_total_chunks != 0u &&
+                             out->icc_total_chunks != tot)) {
                             out->icc_invalid = 1;
+                        } else {
+                            out->icc_total_chunks = tot;
+                            if (!out->icc_seen[seq]) {
+                                out->icc_seen[seq] = 1u;
+                                out->icc_chunks[seq].off = payload_off + 14u;
+                                out->icc_chunks[seq].len = plen - 14u;
+                            } else {
+                                out->icc_invalid = 1; /* duplicate sequence */
+                            }
                         }
                     }
                 } else if (plen >= 4u && memcmp(payload, "MPF\x00", 4) == 0) {
@@ -220,6 +299,13 @@ rfc_status rfc_jpeg_scan(const uint8_t *bytes,
     }
     if (!seen_sof) {
         return RFC_ERR_INVALID_ARGUMENT;
+    }
+    for (uint32_t c = 0u; c < out->components; c++) {
+        uint8_t slot = out->quant_slot[c] & 3u;
+        if (is_latched[c] && qt_defined[slot] &&
+            memcmp(latched[c], qt[slot], sizeof(latched[c])) != 0) {
+            out->quant_redefined = 1;
+        }
     }
     out->eoi_end = pos;
     for (size_t i = pos; i < size; i++) {
@@ -243,7 +329,7 @@ rfc_status rfc_jpeg_scan_materialize_meta(const rfc_jpeg_scan_info *info,
         size_t icc_sum = 0u;
         int complete = 1;
         for (uint32_t i = 1u; i <= (uint32_t)info->icc_total_chunks; i++) {
-            if (info->icc_chunks[i].len == 0u) {
+            if (!info->icc_seen[i]) {
                 complete = 0;
                 break;
             }

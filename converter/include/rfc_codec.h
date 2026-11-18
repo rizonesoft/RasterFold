@@ -305,6 +305,12 @@ typedef struct rfc_jpeg_transcode_adapter {
     rfc_status (*open_session)(const rfc_exec_context *exec, void **out_session);
     void (*close_session)(void *session);
     void (*cancel_session)(void *session);
+    /* RFC_OK when the source can be re-encoded with identical coefficients
+     * and colour interpretation; RFC_ERR_UNSUPPORTED_COMBINATION otherwise
+     * (for example a quantization slot redefined between scans). Runs at
+     * IMPORT, before any provider work. */
+    rfc_status (*preflight_optimize)(void *session, const rfc_exec_context *exec,
+                                     const uint8_t *jpeg_bytes, size_t jpeg_size);
     /* Re-encode the source's DCT coefficients with optimized entropy coding.
      * settings carry metadata=preserve|strip (registry-validated). */
     rfc_status (*optimize_jpeg)(void *session, const rfc_exec_context *exec,
@@ -334,6 +340,14 @@ rfc_status rfc_registry_register_jpeg_transcode(
 rfc_status rfc_registry_unregister_jpeg_transcode(void);
 const rfc_jpeg_transcode_adapter *rfc_registry_acquire_jpeg_transcode(void);
 void rfc_registry_release_jpeg_transcode(void);
+
+/* Register or unregister the JPEG session adapter and the transcode adapter
+ * as one registry transaction: both or neither. Unregister returns
+ * RFC_ERR_BUSY, changing nothing, while either is acquired. */
+rfc_status rfc_registry_register_jpeg_pair(
+    const rfc_session_adapter *session_adapter,
+    const rfc_jpeg_transcode_adapter *transcode_adapter);
+rfc_status rfc_registry_unregister_jpeg_pair(void);
 
 const char *rfc_status_name(rfc_status status);
 const char *rfc_sample_name(rfc_sample_format format);

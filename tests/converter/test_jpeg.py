@@ -238,10 +238,24 @@ class JpegAdapterMixin:
             if rst:
                 kw["restart_marker_blocks"] = rst
             fx.append((f"pil_{mode}_{sub}_{int(prog)}_{w}x{h}", pillow_jpeg(pattern_image(w, h, mode, w + h), **kw)))
-        for tag, hv in (("440", "12,11,11"), ("411", "41,11,11"), ("422v", "21,11,11")):
+        # Custom geometries: 4:4:0, 4:1:1, and a mixed case where Cb is
+        # vertically and Cr horizontally full-resolution against a 2x2 luma.
+        for tag, hv, factors in (
+            ("440", "12,11,11", [(1, 2), (1, 1), (1, 1)]),
+            ("411", "41,11,11", [(4, 1), (1, 1), (1, 1)]),
+            ("mixed", "22,12,21", [(2, 2), (1, 2), (2, 1)]),
+        ):
             p = self.work_dir() / f"mk_{tag}.jpg"
             self.cli_ok(["cli", "make", self.to_exe_path(p), "53", "39", "3", hv, "90", "0", "0", "0", "0", "7"])
-            fx.append((f"mk_{tag}", p.read_bytes()))
+            data = p.read_bytes()
+            ref = _jref.decode_coefficients(data)
+            self.assertEqual([(c.h, c.v) for c in ref.components], factors, tag)
+            fx.append((f"mk_{tag}", data))
+        # Extended sequential (SOF1): the same Huffman 8-bit stream under SOF1.
+        base = pillow_jpeg(pattern_image(42, 30, "RGB", 9), quality=90, optimize=False)
+        sof1 = base.replace(b"\xff\xc0", b"\xff\xc1", 1)
+        self.assertEqual(_jref.decode_coefficients(sof1).sof, 0xC1)
+        fx.append(("sof1", sof1))
         return fx
 
     def test_independent_coefficients_pixels_and_optimization(self) -> None:
@@ -256,7 +270,14 @@ class JpegAdapterMixin:
             self.assertEqual(rc, 0, kv)
             self.assertEqual(kv.get("EXACTNESS"), "coefficient-exact", kv)
             out = dst.read_bytes()
-            assert_same_coefficients(self, ref, _jref.decode_coefficients(out), f"{label} optimized")
+            out_ref = _jref.decode_coefficients(out)
+            assert_same_coefficients(self, ref, out_ref, f"{label} optimized")
+            # Huffman selectors as the scans that use them declare them.
+            self.assertEqual(
+                [(c.dc_tbl, c.ac_tbl) for c in ref.components],
+                [(c.dc_tbl, c.ac_tbl) for c in out_ref.components],
+                f"{label} selectors",
+            )
             self.assertEqual(_jref.decode_pixels(out)[3], _jref.decode_pixels(data)[3], f"{label} optimized pixels")
             if ref.progressive:
                 # libjpeg always optimizes progressive Huffman tables, so a
@@ -452,20 +473,25 @@ class HostJpegTests(JpegAdapterMixin, unittest.TestCase):
         seg = b"\xff\xfe" + struct.pack(">H", 60002) + b"c" * 60000
         big_markers.write_bytes(data[:2] + seg * 13 + data[2:])
         prog = self.fixture("prog512.jpg", pillow_jpeg(pattern_image(512, 512, "RGB", 8), quality=85, progressive=True))
-        for op, path in (("optimize", big_markers), ("optimize", prog), ("decode", prog), ("coeffs", prog)):
+        def measure(op: str, path: Path) -> tuple[int, int]:
             hwm = wd / f"hwm_{op}_{path.stem}.txt"
             env = dict(os.environ, LD_PRELOAD=str(so), RFC_HWM_OUT=str(hwm))
             rc, out, err = self.run_cli(["cli", "budget-peak", op, str(path), str(256 << 20)], env=env)
             self.assertEqual(rc, 0, out + err)
             kv = parse_kv(out)
             self.assertEqual(kv["CURR_ALLOC"], "0", out)
-            actual = int(hwm.read_text(encoding="utf-8").strip())
-            budget_peak = int(kv["PEAK_BUDGET"])
-            # The CLI also holds the input file and registry state outside the
-            # budget; the adapter's accounting must cover everything else.
-            allowance = path.stat().st_size + (1 << 20)
-            self.assertLessEqual(actual, budget_peak + allowance, f"{op} {path.name}: heap {actual} > budget {budget_peak} + {allowance}")
-            print(f"jpeg heap peak {op} {path.name}: os={actual} budget={budget_peak}")
+            return int(hwm.read_text(encoding="utf-8").strip()), int(kv["PEAK_BUDGET"])
+
+        for op, path in (("optimize", big_markers), ("optimize", prog), ("decode", prog), ("coeffs", prog)):
+            # The CLI's own footprint (input file buffer, registry, stdio) is
+            # measured, not assumed: the same process with no adapter call.
+            baseline, _ = measure("noop", path)
+            actual, budget_peak = measure(op, path)
+            self.assertLessEqual(
+                actual - baseline, budget_peak,
+                f"{op} {path.name}: adapter heap {actual - baseline} (os {actual} - baseline {baseline}) > budget {budget_peak}",
+            )
+            print(f"jpeg heap peak {op} {path.name}: os={actual} baseline={baseline} budget={budget_peak}")
             # A budget below the reservation refuses with nothing left allocated.
             rc, out, _ = self.run_cli(["cli", "budget-peak", op, str(path), str(budget_peak // 4)])
             self.assertEqual(rc, 2, out)

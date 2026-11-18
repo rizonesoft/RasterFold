@@ -29,6 +29,15 @@
 
 #define JPG_MAX_SCANS 1000u
 #define JPG_OUTPUT_SLACK (64u * 1024u)
+
+/* Test seam: output buffer = source size + slack. Negative values shrink it
+ * to exercise the destination-full fallback; -1 restores the default. */
+static _Atomic long long g_jpg_output_slack = (long long)JPG_OUTPUT_SLACK;
+
+void rfc_codecs_jpeg_set_output_slack_for_testing(long long slack) {
+    atomic_store(&g_jpg_output_slack,
+                 slack == -1 ? (long long)JPG_OUTPUT_SLACK : slack);
+}
 #define JPG_FIXED_OVERHEAD (1024u * 1024u)
 
 /* ------------------------------------------------------------------------ */
@@ -170,6 +179,9 @@ static rfc_status jpg_preflight_run(const uint8_t *bytes, size_t size,
     if (si->sos_count > JPG_MAX_SCANS) {
         return RFC_ERR_LIMIT_EXCEEDED;
     }
+    if (si->sos_malformed > 0u || si->quant_missing) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
     /* Metadata that cannot be carried exactly is refused, never dropped. */
     if (si->exif_count > 1u || si->xmp_count > 1u || si->xmp_ext_count > 0u) {
         return RFC_ERR_UNSUPPORTED_COMBINATION;
@@ -179,7 +191,7 @@ static rfc_status jpg_preflight_run(const uint8_t *bytes, size_t size,
             return RFC_ERR_UNSUPPORTED_COMBINATION;
         }
         for (uint32_t i = 1u; i <= (uint32_t)si->icc_total_chunks; i++) {
-            if (si->icc_chunks[i].len == 0u) {
+            if (!si->icc_seen[i] || si->icc_chunks[i].len == 0u) {
                 return RFC_ERR_UNSUPPORTED_COMBINATION;
             }
         }
@@ -190,8 +202,8 @@ static rfc_status jpg_preflight_run(const uint8_t *bytes, size_t size,
     if (si->mpf_count > 0u || si->trailing_nonpad > 0u) {
         return RFC_ERR_UNSUPPORTED_COMBINATION;
     }
-    if (si->components == 3u && si->saw_adobe && !si->saw_jfif &&
-        si->adobe_transform != 0 && si->adobe_transform != 1) {
+    if (si->components == 3u && si->header_adobe && !si->header_jfif &&
+        si->header_adobe_transform != 0 && si->header_adobe_transform != 1) {
         return RFC_ERR_UNSUPPORTED_COMBINATION;
     }
     uint32_t hmax = 1u, vmax = 1u;
@@ -330,7 +342,10 @@ static void jpg_on_emit(j_common_ptr c, int level) {
      * instead of accepting recovered output. */
     jpg_err *e = (jpg_err *)(void *)c->err;
     if (e->guard->st == RFC_OK) {
-        e->guard->st = (c->err->msg_code == JWRN_JPEG_EOF)
+        /* JWRN_JPEG_EOF: input ended; JWRN_HIT_MARKER: coded data ended
+         * at a marker before the scan was complete. Both are truncation. */
+        e->guard->st = (c->err->msg_code == JWRN_JPEG_EOF ||
+                        c->err->msg_code == JWRN_HIT_MARKER)
                            ? RFC_ERR_TRUNCATED_INPUT
                            : RFC_ERR_INVALID_ARGUMENT;
     }
@@ -370,6 +385,7 @@ typedef struct jpg_dest {
     uint8_t *buf;
     size_t cap;
     size_t len;
+    int full;
 } jpg_dest;
 
 static void jpg_dest_init(j_compress_ptr c) {
@@ -380,6 +396,7 @@ static void jpg_dest_init(j_compress_ptr c) {
 
 static boolean jpg_dest_empty(j_compress_ptr c) {
     jpg_dest *d = (jpg_dest *)(void *)c->dest;
+    d->full = 1;
     d->guard->st = RFC_ERR_LIMIT_EXCEEDED; /* output outgrew source + slack */
     longjmp(d->guard->jb, 1);
     return FALSE;
@@ -684,6 +701,35 @@ static rfc_status jpg_parse_policy(const rfc_setting_value *settings,
     return RFC_OK;
 }
 
+/* Coefficient-exact optimization preconditions beyond import: the IJG encoder
+ * cannot reproduce a quantization slot redefined between scans, and every
+ * saved marker is written before the first output scan, so a JFIF or Adobe
+ * header after the first source SOS would change the colour interpretation. */
+static rfc_status jpg_optimize_preflight(const uint8_t *bytes, size_t size,
+                                         const rfc_limits *limits,
+                                         jpg_preflight *pf) {
+    rfc_status st = jpg_preflight_run(bytes, size, limits, pf);
+    if (st != RFC_OK) {
+        return st;
+    }
+    if (pf->info.quant_redefined || pf->info.late_structural > 0u) {
+        return RFC_ERR_UNSUPPORTED_COMBINATION;
+    }
+    return RFC_OK;
+}
+
+static rfc_status jpg_check_optimizable(void *session,
+                                        const rfc_exec_context *exec,
+                                        const uint8_t *bytes, size_t size) {
+    if (jpg_is_cancelled(session, exec)) {
+        return RFC_ERR_CANCELLED;
+    }
+    rfc_limits scratch;
+    jpg_preflight pf;
+    return jpg_optimize_preflight(bytes, size, jpg_limits_of(exec, &scratch),
+                                  &pf);
+}
+
 typedef struct jpg_transcode_ctx {
     jpg_guard guard;
     jpg_err src_err;
@@ -697,6 +743,8 @@ typedef struct jpg_transcode_ctx {
     size_t size;
     int strip;
     long mem_limit;
+    uint8_t dc_sel[4];
+    uint8_t ac_sel[4];
 } jpg_transcode_ctx;
 
 static rfc_status jpg_transcode_run(jpg_transcode_ctx *x) {
@@ -730,11 +778,12 @@ static rfc_status jpg_transcode_run(jpg_transcode_ctx *x) {
     x->c.progress = &x->dst_prog.pub;
     x->c.dest = &x->dest.pub;
     jpeg_copy_critical_parameters(&x->d, &x->c);
-    /* jpeg_copy_critical_parameters does not copy Huffman selectors; keep the
-     * source's so the coefficient-domain contract compares equal. */
-    for (int ci = 0; ci < x->c.num_components; ci++) {
-        x->c.comp_info[ci].dc_tbl_no = x->d.comp_info[ci].dc_tbl_no;
-        x->c.comp_info[ci].ac_tbl_no = x->d.comp_info[ci].ac_tbl_no;
+    /* jpeg_copy_critical_parameters does not copy Huffman selectors, and
+     * libjpeg overwrites both selector fields at every SOS (an AC scan writes
+     * DC selector 0), so the selectors come from the scans that use them. */
+    for (int ci = 0; ci < x->c.num_components && ci < 4; ci++) {
+        x->c.comp_info[ci].dc_tbl_no = x->dc_sel[ci];
+        x->c.comp_info[ci].ac_tbl_no = x->ac_sel[ci];
     }
     x->c.arith_code = x->d.arith_code;
     x->c.optimize_coding = x->d.arith_code ? FALSE : TRUE;
@@ -786,7 +835,7 @@ static rfc_status jpg_optimize(void *session, const rfc_exec_context *exec,
     rfc_limits scratch;
     const rfc_limits *limits = jpg_limits_of(exec, &scratch);
     jpg_preflight pf;
-    st = jpg_preflight_run(bytes, size, limits, &pf);
+    st = jpg_optimize_preflight(bytes, size, limits, &pf);
     if (st != RFC_OK) {
         return st;
     }
@@ -795,16 +844,18 @@ static rfc_status jpg_optimize(void *session, const rfc_exec_context *exec,
     if (st != RFC_OK) {
         return st;
     }
+    long long slack = atomic_load(&g_jpg_output_slack);
     if (size > SIZE_MAX - JPG_OUTPUT_SLACK) {
         return RFC_ERR_LIMIT_EXCEEDED;
     }
+    size_t cap = (slack >= 0) ? size + (size_t)slack
+                 : ((size_t)(-slack) < size ? size - (size_t)(-slack) : 1u);
     jpg_budget_guard g;
     st = jpg_reserve(exec, prov, &g);
     if (st != RFC_OK) {
         return st;
     }
     const rfc_allocator *alloc = jpg_alloc_of(exec);
-    size_t cap = size + JPG_OUTPUT_SLACK;
     uint8_t *buf = (uint8_t *)alloc->alloc(alloc->ctx, cap);
     jpg_transcode_ctx *x =
         buf ? (jpg_transcode_ctx *)alloc->alloc(alloc->ctx, sizeof(*x)) : NULL;
@@ -832,10 +883,19 @@ static rfc_status jpg_optimize(void *session, const rfc_exec_context *exec,
     x->size = size;
     x->strip = strip;
     x->mem_limit = (long)prov;
+    memcpy(x->dc_sel, pf.info.dc_sel, sizeof(x->dc_sel));
+    memcpy(x->ac_sel, pf.info.ac_sel, sizeof(x->ac_sel));
     st = jpg_transcode_run(x);
     size_t out_len = x->dest.len;
+    int dest_full = x->dest.full;
     alloc->free(alloc->ctx, x);
     jpg_release(&g);
+    if (st == RFC_ERR_LIMIT_EXCEEDED && dest_full && !strip) {
+        /* The re-encode outgrew source + 64 KiB, so it cannot be smaller:
+         * take the not-smaller fallback below. */
+        st = RFC_OK;
+        out_len = size;
+    }
     if (st == RFC_OK && jpg_is_cancelled(session, exec)) {
         st = RFC_ERR_CANCELLED;
     }
@@ -845,6 +905,15 @@ static rfc_status jpg_optimize(void *session, const rfc_exec_context *exec,
     }
     if (!strip && out_len >= size) {
         /* Optimization never grows a file: publish the source unchanged. */
+        if (cap < size) {
+            uint8_t *nb = (uint8_t *)alloc->alloc(alloc->ctx, size);
+            if (!nb) {
+                alloc->free(alloc->ctx, buf);
+                return RFC_ERR_OUT_OF_MEMORY;
+            }
+            alloc->free(alloc->ctx, buf);
+            buf = nb;
+        }
         memcpy(buf, bytes, size);
         out_len = size;
     }
@@ -881,6 +950,8 @@ typedef struct jpg_coeff_ctx {
     long mem_limit;
     const rfc_allocator *alloc;
     rfc_jpeg_coeff_image *img;
+    uint8_t dc_sel[4];
+    uint8_t ac_sel[4];
 } jpg_coeff_ctx;
 
 static rfc_status jpg_coeff_run(jpg_coeff_ctx *x) {
@@ -906,8 +977,18 @@ static rfc_status jpg_coeff_run(jpg_coeff_ctx *x) {
     img->arithmetic_coding = x->d.arith_code ? 1 : 0;
     img->component_count = (uint32_t)x->d.num_components;
     int baseline = (!x->d.progressive_mode && !x->d.arith_code) ? 1 : 0;
+    /* Only tables a component references are part of the coefficient
+     * contract: libjpeg's frame writer emits exactly those, so an unused DQT
+     * slot in the source is not image data and is not carried. */
+    int referenced[4] = {0, 0, 0, 0};
+    for (int ci = 0; ci < x->d.num_components && ci < 4; ci++) {
+        if (x->d.comp_info[ci].quant_tbl_no >= 0 &&
+            x->d.comp_info[ci].quant_tbl_no < 4) {
+            referenced[x->d.comp_info[ci].quant_tbl_no] = 1;
+        }
+    }
     for (int t = 0; t < NUM_QUANT_TBLS && t < 4; t++) {
-        if (x->d.quant_tbl_ptrs[t]) {
+        if (referenced[t] && x->d.quant_tbl_ptrs[t]) {
             img->quant_tables[t].populated = 1;
             for (int k = 0; k < DCTSIZE2; k++) {
                 img->quant_tables[t].values[k] =
@@ -925,9 +1006,9 @@ static rfc_status jpg_coeff_run(jpg_coeff_ctx *x) {
         cs->h_samp_factor = (uint8_t)cp->h_samp_factor;
         cs->v_samp_factor = (uint8_t)cp->v_samp_factor;
         cs->quant_table_idx = (uint8_t)cp->quant_tbl_no;
-        cs->dc_table_idx = (uint8_t)cp->dc_tbl_no;
-        cs->ac_table_idx = (uint8_t)cp->ac_tbl_no;
-        if (cp->dc_tbl_no > 1 || cp->ac_tbl_no > 1) {
+        cs->dc_table_idx = x->dc_sel[ci];
+        cs->ac_table_idx = x->ac_sel[ci];
+        if (x->dc_sel[ci] > 1u || x->ac_sel[ci] > 1u) {
             baseline = 0;
         }
         cs->blocks_wide = cp->width_in_blocks;
@@ -994,13 +1075,15 @@ static rfc_status jpg_read_coeffs(void *session, const rfc_exec_context *exec,
     jpg_coeff_ctx *x = NULL;
     if (st == RFC_OK) {
         img = (rfc_jpeg_coeff_image *)alloc->alloc(alloc->ctx, sizeof(*img));
+        if (img) {
+            memset(img, 0, sizeof(*img)); /* before any failure path frees it */
+        }
         x = img ? (jpg_coeff_ctx *)alloc->alloc(alloc->ctx, sizeof(*x)) : NULL;
         if (!img || !x) {
             st = RFC_ERR_OUT_OF_MEMORY;
         }
     }
     if (st == RFC_OK) {
-        memset(img, 0, sizeof(*img));
         memset(x, 0, sizeof(*x));
         x->guard.session = session;
         x->guard.exec = exec;
@@ -1011,6 +1094,8 @@ static rfc_status jpg_read_coeffs(void *session, const rfc_exec_context *exec,
         x->mem_limit = (long)prov;
         x->alloc = alloc;
         x->img = img;
+        memcpy(x->dc_sel, pf.info.dc_sel, sizeof(x->dc_sel));
+        memcpy(x->ac_sel, pf.info.ac_sel, sizeof(x->ac_sel));
         st = jpg_coeff_run(x);
     }
     if (x) {
@@ -1037,15 +1122,18 @@ static void jpg_free_coeffs(void *session, const rfc_exec_context *exec,
 /* Marker contract                                                           */
 /* ------------------------------------------------------------------------ */
 
+/* The colour interpretation libjpeg fixes at jpeg_read_header, from the
+ * structural headers seen before the first SOS (jdapimin.c
+ * default_decompress_parms). */
 static int jpg_color_space(const rfc_jpeg_scan_info *si) {
     if (si->components == 1u) {
         return 1; /* gray */
     }
-    if (si->saw_jfif) {
+    if (si->header_jfif) {
         return 2; /* YCbCr */
     }
-    if (si->saw_adobe) {
-        return si->adobe_transform == 0 ? 3 : 2;
+    if (si->header_adobe) {
+        return si->header_adobe_transform == 0 ? 3 : 2;
     }
     if (si->component_ids[0] == 82u && si->component_ids[1] == 71u &&
         si->component_ids[2] == 66u) {
@@ -1054,12 +1142,15 @@ static int jpg_color_space(const rfc_jpeg_scan_info *si) {
     return 2;
 }
 
-static int jpg_is_jfif(uint8_t m, const uint8_t *p, size_t n) {
-    return m == 0xE0u && n >= 5u && memcmp(p, "JFIF\x00", 5) == 0;
+/* The headers libjpeg's compressor regenerates under metadata=strip: a
+ * 14-byte JFIF APP0 with a 0x0 thumbnail and a 12-byte Adobe APP14. */
+static int jpg_is_fresh_jfif(uint8_t m, const uint8_t *p, size_t n) {
+    return m == 0xE0u && n == 14u && memcmp(p, "JFIF\x00", 5) == 0 &&
+           p[12] == 0u && p[13] == 0u;
 }
 
-static int jpg_is_adobe(uint8_t m, const uint8_t *p, size_t n) {
-    return m == 0xEEu && n >= 12u && memcmp(p, "Adobe", 5) == 0;
+static int jpg_is_fresh_adobe(uint8_t m, const uint8_t *p, size_t n) {
+    return m == 0xEEu && n == 12u && memcmp(p, "Adobe", 5) == 0;
 }
 
 static rfc_status jpg_compare_markers(void *session,
@@ -1067,7 +1158,6 @@ static rfc_status jpg_compare_markers(void *session,
                                       const uint8_t *src, size_t src_size,
                                       const uint8_t *dst, size_t dst_size,
                                       int strip, const char **out_detail) {
-    (void)session;
     const char *dummy = NULL;
     const char **detail = out_detail ? out_detail : &dummy;
     *detail = NULL;
@@ -1077,11 +1167,20 @@ static rfc_status jpg_compare_markers(void *session,
     if (!si) {
         return RFC_ERR_OUT_OF_MEMORY;
     }
-    rfc_status st = rfc_jpeg_scan(src, src_size, jpg_meta_cap_of(limits),
-                                  RFC_JPEG_SCAN_ALLOW_ARITHMETIC, &si[0]);
+    rfc_status st = jpg_is_cancelled(session, exec) ? RFC_ERR_CANCELLED : RFC_OK;
+    if (st == RFC_OK) {
+        st = rfc_jpeg_scan(src, src_size, jpg_meta_cap_of(limits),
+                           RFC_JPEG_SCAN_ALLOW_ARITHMETIC, &si[0]);
+    }
+    if (st == RFC_OK && jpg_is_cancelled(session, exec)) {
+        st = RFC_ERR_CANCELLED;
+    }
     if (st == RFC_OK) {
         st = rfc_jpeg_scan(dst, dst_size, jpg_meta_cap_of(limits),
                            RFC_JPEG_SCAN_ALLOW_ARITHMETIC, &si[1]);
+    }
+    if (st == RFC_OK && jpg_is_cancelled(session, exec)) {
+        st = RFC_ERR_CANCELLED;
     }
     if (st != RFC_OK) {
         free(si);
@@ -1098,7 +1197,11 @@ static rfc_status jpg_compare_markers(void *session,
     const uint8_t *as = NULL, *ad = NULL;
     size_t ls = 0u, ld = 0u;
     if (!strip) {
-        for (;;) {
+        for (uint32_t n = 0u;; n++) {
+            if ((n & 255u) == 255u && jpg_is_cancelled(session, exec)) {
+                free(si);
+                return RFC_ERR_CANCELLED;
+            }
             int hs = rfc_jpeg_next_app_segment(src, src_size, &ps, &ms, &as, &ls);
             int hd = rfc_jpeg_next_app_segment(dst, dst_size, &pd, &md, &ad, &ld);
             if (!hs && !hd) {
@@ -1115,9 +1218,10 @@ static rfc_status jpg_compare_markers(void *session,
     } else {
         uint32_t jfif = 0u, adobe = 0u;
         while (rfc_jpeg_next_app_segment(dst, dst_size, &pd, &md, &ad, &ld)) {
-            if (jpg_is_jfif(md, ad, ld) && si[0].saw_jfif && jfif == 0u) {
+            if (jpg_is_fresh_jfif(md, ad, ld) && si[0].header_jfif &&
+                jfif == 0u) {
                 jfif++;
-            } else if (jpg_is_adobe(md, ad, ld) && si[0].saw_adobe &&
+            } else if (jpg_is_fresh_adobe(md, ad, ld) && si[0].header_adobe &&
                        adobe == 0u) {
                 adobe++;
             } else {
@@ -1153,6 +1257,7 @@ static const rfc_jpeg_transcode_adapter k_jpeg_transcode_adapter = {
     jpg_open,
     jpg_close,
     jpg_cancel,
+    jpg_check_optimizable,
     jpg_optimize,
     jpg_read_coeffs,
     jpg_free_coeffs,
@@ -1160,25 +1265,10 @@ static const rfc_jpeg_transcode_adapter k_jpeg_transcode_adapter = {
 };
 
 rfc_status rfc_codecs_register_jpeg(void) {
-    rfc_status st = rfc_registry_register_session(&k_jpeg_session_adapter);
-    if (st != RFC_OK) {
-        return st;
-    }
-    st = rfc_registry_register_jpeg_transcode(&k_jpeg_transcode_adapter);
-    if (st != RFC_OK) {
-        (void)rfc_registry_unregister_session(RFC_FORMAT_JPEG);
-    }
-    return st;
+    return rfc_registry_register_jpeg_pair(&k_jpeg_session_adapter,
+                                           &k_jpeg_transcode_adapter);
 }
 
 rfc_status rfc_codecs_unregister_jpeg(void) {
-    rfc_status st = rfc_registry_unregister_jpeg_transcode();
-    if (st != RFC_OK) {
-        return st;
-    }
-    st = rfc_registry_unregister_session(RFC_FORMAT_JPEG);
-    if (st != RFC_OK) {
-        (void)rfc_registry_register_jpeg_transcode(&k_jpeg_transcode_adapter);
-    }
-    return st;
+    return rfc_registry_unregister_jpeg_pair();
 }

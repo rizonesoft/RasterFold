@@ -1756,6 +1756,53 @@ rfc_status rfc_job_set_verified_jpeg_coeffs(
     return RFC_OK;
 }
 
+/* Take ownership of coefficient images allocated through job->allocator
+ * (the exec allocator the transcode adapter used), so verification holds one
+ * copy of each image rather than cloning both. */
+static rfc_status job_adopt_verified_jpeg_coeffs(rfc_job *job,
+                                                 rfc_jpeg_coeff_image *src,
+                                                 rfc_jpeg_coeff_image *dst,
+                                                 const rfc_metadata *meta) {
+    rfc_metadata meta_copy;
+    uint8_t *icc_copy = NULL;
+    uint8_t *exif_copy = NULL;
+    uint8_t *xmp_copy = NULL;
+    int has_rmeta = 0;
+    rfc_status st = job_clone_verified_metadata(&job->allocator, meta,
+                                                &meta_copy, &icc_copy,
+                                                &exif_copy, &xmp_copy,
+                                                &has_rmeta);
+    if (st != RFC_OK) {
+        return st;
+    }
+    rfc_mutex_lock(&job->lock);
+    rfc_jpeg_coeff_image *old_src = job->verify_src_coeffs;
+    rfc_jpeg_coeff_image *old_dst = job->verify_dst_coeffs;
+    uint8_t *old_icc = job->verify_reconstructed_icc;
+    uint8_t *old_exif = job->verify_reconstructed_exif;
+    uint8_t *old_xmp = job->verify_reconstructed_xmp;
+    job->verify_src_coeffs = src;
+    job->verify_dst_coeffs = dst;
+    job->verify_reconstructed_meta = meta_copy;
+    job->verify_reconstructed_icc = icc_copy;
+    job->verify_reconstructed_exif = exif_copy;
+    job->verify_reconstructed_xmp = xmp_copy;
+    job->has_verify_reconstructed_meta = has_rmeta;
+    rfc_mutex_unlock(&job->lock);
+    free_verify_coeff_image(&job->allocator, &old_src);
+    free_verify_coeff_image(&job->allocator, &old_dst);
+    if (old_icc) {
+        job->allocator.free(job->allocator.ctx, old_icc);
+    }
+    if (old_exif && old_exif != old_icc) {
+        job->allocator.free(job->allocator.ctx, old_exif);
+    }
+    if (old_xmp && old_xmp != old_icc && old_xmp != old_exif) {
+        job->allocator.free(job->allocator.ctx, old_xmp);
+    }
+    return RFC_OK;
+}
+
 rfc_status rfc_job_set_verified_reconstructed_bytes(
     rfc_job *job,
     const uint8_t *reconstructed_jpeg,
@@ -3203,6 +3250,30 @@ static rfc_status jpeg_coeff_import(rfc_job *job, const rfc_exec_context *exec,
         st = rfc_limits_check_probe(&job->limits, &probe, (uint64_t)src_size,
                                     src_size > 0u);
     }
+    if (st == RFC_OK) {
+        const rfc_jpeg_transcode_adapter *jt =
+            rfc_registry_acquire_jpeg_transcode();
+        if (!jt) {
+            *err_detail =
+                "JPEG optimization requires the registered transcode adapter";
+            st = RFC_ERR_NO_ADAPTER;
+        } else {
+            void *jsess = NULL;
+            st = jt->open_session(exec, &jsess);
+            if (st == RFC_OK) {
+                st = jt->preflight_optimize(jsess, exec, src_bytes, src_size);
+                jt->close_session(jsess);
+            }
+            rfc_registry_release_jpeg_transcode();
+            if (st == RFC_ERR_UNSUPPORTED_COMBINATION) {
+                *err_detail =
+                    "the source JPEG cannot be re-encoded with identical "
+                    "coefficients and colour interpretation (a quantization "
+                    "table slot redefined between scans, or a JFIF/Adobe "
+                    "header after the first scan)";
+            }
+        }
+    }
     uint64_t raw_b = 0u;
     if (st == RFC_OK) {
         st = rfc_limits_compute_frame_bytes(&probe.first_frame, 1u, &raw_b);
@@ -3344,7 +3415,13 @@ static rfc_status jpeg_coeff_evidence(rfc_job *job, const rfc_exec_context *exec
         jtrans_clear_active(job);
         jt->close_session(sess);
     }
-    if (st == RFC_OK) {
+    if (st == RFC_OK && exec->allocator == &job->allocator) {
+        st = job_adopt_verified_jpeg_coeffs(job, src_c, dst_c, &dst_m);
+        if (st == RFC_OK) {
+            src_c = NULL; /* owned by the job now */
+            dst_c = NULL;
+        }
+    } else if (st == RFC_OK) {
         st = rfc_job_set_verified_jpeg_coeffs(job, src_c, dst_c, &dst_m);
     }
     jt->free_coefficients(NULL, exec, src_c);

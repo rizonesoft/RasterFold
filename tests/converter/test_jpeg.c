@@ -64,6 +64,18 @@ static void t_free(void *ctx, void *ptr) {
     }
 }
 
+static int g_fail_after = -1;
+
+static void *fail_alloc(void *ctx, size_t sz) {
+    if (g_fail_after == 0) {
+        return NULL;
+    }
+    if (g_fail_after > 0) {
+        g_fail_after--;
+    }
+    return t_alloc(ctx, sz);
+}
+
 static void init_exec(rfc_exec_context *exec, tracked_alloc_state *st,
                       rfc_allocator *alloc) {
     memset(exec, 0, sizeof(*exec));
@@ -155,6 +167,7 @@ typedef struct mk_opts {
     int multiscan;
     int rgb_adobe;
     int no_jfif;
+    int flat;
     uint32_t seed;
     mk_marker extra[20];
     int extra_n;
@@ -240,7 +253,8 @@ static uint8_t *make_jpeg(const mk_opts *o, size_t *out_len) {
         for (uint32_t x = 0u; x < o->w; x++) {
             for (int k = 0; k < o->ncomp; k++) {
                 row[(size_t)x * (size_t)o->ncomp + (size_t)k] =
-                    pattern_px(x, c.next_scanline, k, o->seed);
+                    o->flat ? (uint8_t)(100 + 20 * k)
+                            : pattern_px(x, c.next_scanline, k, o->seed);
             }
         }
         JSAMPROW rp = row;
@@ -580,6 +594,11 @@ static rfc_status dummy_open(const rfc_exec_context *e, void **s) {
     return RFC_OK;
 }
 static void dummy_close(void *s) { (void)s; }
+static rfc_status dummy_pre(void *s, const rfc_exec_context *e, const uint8_t *b,
+                            size_t n) {
+    (void)s; (void)e; (void)b; (void)n;
+    return RFC_ERR_INVALID_ARGUMENT;
+}
 static rfc_status dummy_opt(void *s, const rfc_exec_context *e, const uint8_t *b,
                             size_t n, const rfc_setting_value *v, size_t vc,
                             rfc_encoded *o) {
@@ -619,7 +638,7 @@ static void test_registration_and_upstream_contract(void) {
 
     /* Rollback: a foreign transcode adapter makes registration fail cleanly. */
     static const rfc_jpeg_transcode_adapter dummy = {
-        RFC_CODEC_ABI_VERSION, dummy_open, dummy_close, NULL,
+        RFC_CODEC_ABI_VERSION, dummy_open, dummy_close, NULL, dummy_pre,
         dummy_opt, dummy_read, dummy_free, dummy_cmp};
     CHECK(rfc_registry_register_jpeg_transcode(&dummy) == RFC_OK);
     CHECK(rfc_codecs_register_jpeg() == RFC_ERR_DUPLICATE);
@@ -967,10 +986,11 @@ static void test_coefficient_optimization_and_markers(void) {
         run_job(RFC_FORMAT_JPEG, RFC_FORMAT_JPEG, p_src, p_dst, NULL, NULL, 0u,
                 0u, &r);
         CHECK(r.status == RFC_ERR_UNSUPPORTED_COMBINATION &&
-              r.failing == RFC_STAGE_ENCODE && !file_exists(p_dst));
+              r.failing == RFC_STAGE_IMPORT && !file_exists(p_dst));
         run_job(RFC_FORMAT_JPEG, RFC_FORMAT_JPEG, p_src, p_dst, NULL, "strip",
                 0u, 0u, &r);
-        CHECK(r.status == RFC_ERR_UNSUPPORTED_COMBINATION && !file_exists(p_dst));
+        CHECK(r.status == RFC_ERR_UNSUPPORTED_COMBINATION &&
+              r.failing == RFC_STAGE_IMPORT && !file_exists(p_dst));
         remove(p_src);
         free(redef);
         free(j);
@@ -1064,6 +1084,126 @@ static void test_coefficient_optimization_and_markers(void) {
             free(out);
         }
         free(p0);
+        free(j);
+    }
+    /* Progressive selectors come from the scans that use them: libjpeg's
+     * default chroma DC table 1 survives although AC scans write DC 0. */
+    {
+        mk_defaults(&o, 40u, 40u, 3);
+        o.progressive = 1;
+        j = make_jpeg(&o, &n);
+        rfc_jpeg_coeff_image *ci = NULL;
+        CHECK(read_coeffs(j, n, &ci) == RFC_OK);
+        CHECK(ci->components[1].dc_table_idx == 1u &&
+              ci->components[1].ac_table_idx == 1u &&
+              ci->components[0].dc_table_idx == 0u);
+        free_coeffs(ci);
+        uint8_t *out = NULL;
+        size_t out_n = 0u;
+        opt_job_roundtrip(j, n, NULL, 0, "psel.jpg", &out, &out_n);
+        CHECK(read_coeffs(out, out_n, &ci) == RFC_OK);
+        CHECK(ci->components[1].dc_table_idx == 1u &&
+              ci->components[2].dc_table_idx == 1u);
+        free_coeffs(ci);
+        free(out);
+        free(j);
+    }
+
+    /* An unused quantization slot is not image data: optimization succeeds
+     * and compares equal on the referenced tables. */
+    {
+        mk_defaults(&o, 24u, 24u, 3);
+        j = make_jpeg(&o, &n);
+        size_t sof = find_marker(j, n, 0xC0u, 0);
+        uint8_t dqt[69] = {0xFFu, 0xDBu, 0u, 67u, 3u};
+        for (int i = 0; i < 64; i++) dqt[5 + i] = (uint8_t)(2 + i);
+        size_t xn = 0u;
+        uint8_t *x = splice(j, n, sof, dqt, sizeof(dqt), &xn);
+        opt_job_roundtrip(x, xn, NULL, 0, "extradqt.jpg", NULL, NULL);
+        free(x);
+        free(j);
+    }
+
+    /* A JFIF/Adobe header after the first scan would move ahead of the
+     * output's first scan and change the colour interpretation: refused at
+     * IMPORT, while pixel import of the source still works. */
+    {
+        mk_defaults(&o, 32u, 32u, 3);
+        o.progressive = 1;
+        o.no_jfif = 1;
+        j = make_jpeg(&o, &n);
+        size_t sos2 = find_marker(j, n, 0xDAu, 1);
+        static const uint8_t adobe[16] = {0xFFu, 0xEEu, 0u, 14u, 'A', 'd', 'o', 'b',
+                                          'e', 0u, 100u, 0u, 0u, 0u, 0u, 0u};
+        size_t xn = 0u;
+        uint8_t *x = splice(j, n, sos2, adobe, sizeof(adobe), &xn);
+        uint8_t *px = NULL, *ref = NULL;
+        CHECK(adapter_decode(x, xn, &px, NULL, NULL, NULL) == RFC_OK);
+        CHECK(adapter_decode(j, n, &ref, NULL, NULL, NULL) == RFC_OK);
+        CHECK(memcmp(px, ref, 32u * 32u * 3u) == 0); /* still YCbCr */
+        free(px);
+        free(ref);
+        char p_src[512], p_dst[512];
+        make_temp_path(p_src, sizeof(p_src), "late.jpg");
+        make_temp_path(p_dst, sizeof(p_dst), "late_out.jpg");
+        CHECK(write_file_all(p_src, x, xn));
+        job_result r;
+        run_job(RFC_FORMAT_JPEG, RFC_FORMAT_JPEG, p_src, p_dst, NULL, NULL, 0u,
+                0u, &r);
+        CHECK(r.status == RFC_ERR_UNSUPPORTED_COMBINATION &&
+              r.failing == RFC_STAGE_IMPORT && !file_exists(p_dst));
+        remove(p_src);
+        free(x);
+        free(j);
+    }
+
+    /* Strip verification refuses a retained JFIF thumbnail. */
+    {
+        static uint8_t jfif_t[5 + 9 + 12];
+        memcpy(jfif_t, "JFIF\0", 5);
+        jfif_t[5] = 1; jfif_t[6] = 2; jfif_t[7] = 1; jfif_t[9] = 72; jfif_t[11] = 72;
+        jfif_t[12] = 2; jfif_t[13] = 2;
+        mk_defaults(&o, 24u, 16u, 3);
+        o.no_jfif = 1;
+        o.extra[0] = (mk_marker){JPEG_APP0, jfif_t, (unsigned)sizeof(jfif_t)};
+        o.extra_n = 1;
+        j = make_jpeg(&o, &n);
+        uint8_t *keep = NULL;
+        size_t keep_n = 0u;
+        CHECK(optimize_direct(j, n, "preserve", NULL, &keep, &keep_n) == RFC_OK);
+        rfc_exec_context exec;
+        tracked_alloc_state st;
+        rfc_allocator al;
+        init_exec(&exec, &st, &al);
+        const rfc_jpeg_transcode_adapter *t = rfc_registry_acquire_jpeg_transcode();
+        void *ss = NULL;
+        CHECK(t->open_session(&exec, &ss) == RFC_OK);
+        const char *det = NULL;
+        CHECK(t->compare_markers(ss, &exec, j, n, keep, keep_n, 1, &det) ==
+              RFC_ERR_VERIFY_MISMATCH);
+        t->cancel_session(ss);
+        CHECK(t->compare_markers(ss, &exec, j, n, keep, keep_n, 0, &det) ==
+              RFC_ERR_CANCELLED);
+        t->close_session(ss);
+        rfc_registry_release_jpeg_transcode();
+        free(keep);
+        free(j);
+    }
+
+    /* Not-smaller fallback when the re-encode outgrows the output buffer:
+     * preserve publishes the source, strip refuses. */
+    {
+        mk_defaults(&o, 64u, 64u, 3);
+        j = make_jpeg(&o, &n);
+        rfc_codecs_jpeg_set_output_slack_for_testing(-(long long)(n / 2u));
+        uint8_t *out = NULL;
+        size_t out_n = 0u;
+        CHECK(optimize_direct(j, n, "preserve", NULL, &out, &out_n) == RFC_OK);
+        CHECK(out_n == n && memcmp(out, j, n) == 0);
+        free(out);
+        CHECK(optimize_direct(j, n, "strip", NULL, NULL, NULL) ==
+              RFC_ERR_LIMIT_EXCEEDED);
+        rfc_codecs_jpeg_set_output_slack_for_testing(-1);
         free(j);
     }
     printf("jpeg: coefficient_optimization_and_markers ok\n");
@@ -1386,6 +1526,96 @@ static void test_refusals_errors_limits_and_cancel(void) {
         free(pj);
     }
 
+    /* Truncated entropy data with an EOI present is truncation. */
+    {
+        size_t sos = find_marker(j, n, 0xDAu, 0);
+        size_t data0 = sos + 2u + (((size_t)j[sos + 2u] << 8) | j[sos + 3u]);
+        size_t cut = data0 + (n - data0) / 3u;
+        uint8_t *tr = (uint8_t *)malloc(cut + 2u);
+        CHECK(tr != NULL);
+        memcpy(tr, j, cut);
+        if (tr[cut - 1u] == 0xFFu) tr[cut - 1u] = 0x00u;
+        tr[cut] = 0xFFu;
+        tr[cut + 1u] = 0xD9u;
+        CHECK(adapter_decode(tr, cut + 2u, NULL, NULL, NULL, NULL) ==
+              RFC_ERR_TRUNCATED_INPUT);
+        free(tr);
+    }
+
+    /* Every allocation failure is clean: no crash, no leak. */
+    for (int op = 0; op < 3; op++) {
+        for (int k = 0; k < 12; k++) {
+            g_fail_after = k;
+            rfc_exec_context exec;
+            tracked_alloc_state st;
+            rfc_allocator al;
+            init_exec(&exec, &st, &al);
+            al.alloc = fail_alloc;
+            rfc_status fs = RFC_OK;
+            if (op == 0) {
+                const rfc_jpeg_transcode_adapter *t = rfc_registry_acquire_jpeg_transcode();
+                void *ss = NULL;
+                CHECK(t->open_session(&exec, &ss) == RFC_OK);
+                struct rfc_jpeg_coeff_image *ci = NULL;
+                rfc_metadata m;
+                fs = t->read_coefficients(ss, &exec, j, n, &ci, &m);
+                if (fs == RFC_OK) {
+                    t->free_coefficients(ss, &exec, ci);
+                    rfc_metadata_free(&m, &al);
+                }
+                t->close_session(ss);
+                rfc_registry_release_jpeg_transcode();
+            } else if (op == 1) {
+                const rfc_jpeg_transcode_adapter *t = rfc_registry_acquire_jpeg_transcode();
+                void *ss = NULL;
+                CHECK(t->open_session(&exec, &ss) == RFC_OK);
+                rfc_encoded enc;
+                fs = t->optimize_jpeg(ss, &exec, j, n, NULL, 0u, &enc);
+                if (fs == RFC_OK) rfc_encoded_free(&enc);
+                t->close_session(ss);
+                rfc_registry_release_jpeg_transcode();
+            } else {
+                const rfc_session_adapter *a = rfc_registry_acquire_session(RFC_FORMAT_JPEG);
+                void *ss = NULL;
+                CHECK(a->open_session(&exec, &ss) == RFC_OK);
+                rfc_frame *fr = NULL;
+                size_t fc = 0u;
+                fs = a->decode_session(ss, &exec, j, n, NULL, 0u, &fr, &fc, NULL);
+                if (fs == RFC_OK) {
+                    rfc_frame_free(&fr[0]);
+                    al.free(al.ctx, fr);
+                }
+                a->close_session(ss);
+                rfc_registry_release_session(RFC_FORMAT_JPEG);
+            }
+            CHECK(fs == RFC_OK || fs == RFC_ERR_OUT_OF_MEMORY);
+            CHECK(st.live == 0u);
+        }
+        g_fail_after = -1;
+    }
+
+    /* A large flat image: the default reservation comes from the SOF, not the
+     * tiny compressed size. */
+    {
+        mk_opts fo;
+        mk_defaults(&fo, 4096u, 4096u, 1);
+        fo.flat = 1;
+        size_t fn = 0u;
+        uint8_t *fj = make_jpeg(&fo, &fn);
+        CHECK(fn < 2u * 1024u * 1024u);
+        char p_src[512], p_dst[512];
+        make_temp_path(p_src, sizeof(p_src), "flat.jpg");
+        make_temp_path(p_dst, sizeof(p_dst), "flat_out.jpg");
+        CHECK(write_file_all(p_src, fj, fn));
+        job_result r;
+        run_job(RFC_FORMAT_JPEG, RFC_FORMAT_JPEG, p_src, p_dst, NULL, NULL, 0u,
+                0u, &r);
+        CHECK(r.submit == RFC_OK && r.state == RFC_JOB_SUCCEEDED);
+        remove(p_src);
+        remove(p_dst);
+        free(fj);
+    }
+
     /* Cancellation before work. */
     {
         rfc_exec_context exec;
@@ -1578,7 +1808,9 @@ static int cli_main(int argc, char **argv) {
         rfc_budget *bud = rfc_budget_create(strtoull(argv[5], NULL, 10));
         CHECK(bud != NULL);
         rfc_status r;
-        if (strcmp(argv[3], "decode") == 0) {
+        if (strcmp(argv[3], "noop") == 0) {
+            r = RFC_OK; /* the CLI's own footprint, no adapter call */
+        } else if (strcmp(argv[3], "decode") == 0) {
             uint8_t *px = NULL;
             r = adapter_decode(b, n, &px, NULL, NULL, bud);
             free(px);

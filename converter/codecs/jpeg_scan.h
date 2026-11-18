@@ -44,15 +44,29 @@ typedef struct rfc_jpeg_scan_info {
     uint32_t xmp_count;    /* APP1 standard XMP segments */
     uint32_t xmp_ext_count;/* APP1 Extended XMP segments */
     uint32_t mpf_count;    /* APP2 "MPF\0" segments */
-    int saw_jfif;
-    int saw_adobe;
+    int saw_jfif;          /* libjpeg-valid JFIF APP0 (>= 14 payload bytes) anywhere */
+    int saw_adobe;         /* libjpeg-valid Adobe APP14 (>= 12 payload bytes) anywhere */
     int adobe_transform;   /* -1 when no Adobe APP14 */
+    /* Structural headers seen before the first SOS: what the decoder uses to
+     * pick the colour interpretation. late_structural counts JFIF/Adobe
+     * headers that appear after the first SOS. */
+    int header_jfif;
+    int header_adobe;
+    int header_adobe_transform; /* -1 when none before the first SOS */
+    uint32_t late_structural;
+    uint8_t quant_slot[4];     /* SOF Tq per component */
+    uint8_t dc_sel[4];         /* DC selector from the first DC scan (Ss == 0, Ah == 0) */
+    uint8_t ac_sel[4];         /* AC selector from scans with Se > 0 */
+    uint32_t sos_malformed;    /* SOS headers whose layout or components are invalid */
+    int quant_missing;         /* a scanned component's slot had no DQT */
+    int quant_redefined;       /* a slot changed after a component using it was first scanned */
     size_t marker_bytes;   /* total APPn + COM segment bytes (marker + length + payload) */
     uint32_t marker_count; /* APPn + COM segments */
     size_t eoi_end;        /* offset just past the first EOI */
     size_t trailing_nonpad;/* bytes after EOI that are not 0x00 or 0xFF */
     uint8_t icc_total_chunks;
     int icc_invalid;
+    uint8_t icc_seen[256];
     rfc_jpeg_icc_chunk_ref icc_chunks[256];
 } rfc_jpeg_scan_info;
 
