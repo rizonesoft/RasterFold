@@ -2298,7 +2298,7 @@ def _self_test() -> int:
                         ("skill-reconciles-before-starting", "python3 scripts/campaign_guard.py reconcile --session"),
                         ("skill-checks-health-at-each-boundary", "python3 scripts/campaign_guard.py health --session"),
                         ("skill-confirms-the-cancel", "python3 scripts/campaign_guard.py cancel-confirmed --cron-id"),
-                        ("skill-marks-bookkeeping", "- bookkeeping: heartbeat resumed"),
+                        ("skill-heartbeat-writes-no-run-file-line", "writing nothing to the run file for this firing"),
                         ("skill-heartbeat-confirms-before-clearing",
                          "CronDelete this job, confirm it gone with CronList, then run `cancel-confirmed`"),
                         ("skill-markers-carry-the-run-id", "a closeout is a line `## Closeout run=<run id>`"),
