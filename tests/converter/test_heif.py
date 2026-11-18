@@ -236,6 +236,21 @@ class WindowsHeifTests(HeifAdapterBase):
             self.assertEqual((kv["WIDTH"], kv["HEIGHT"]), (kw["WIDTH"], kw["HEIGHT"]))
             self.assertEqual(a.read_bytes(), b.read_bytes(), src.name)
             COVERAGE.append((src.name, "shared-provider"))
+        # the HEIF row: the same picture rebranded as generic HEIF (mif1)
+        src = self.make("eq_heif.heic", 64, 48)
+        data = bytearray(src.read_bytes())
+        ftyp = struct.unpack(">I", data[:4])[0]
+        for i in range(8, ftyp, 4):
+            if data[i:i + 4] in (b"heic", b"heix"):
+                data[i:i + 4] = b"mif1"
+        heif = self.work_dir() / "eq.heif"
+        heif.write_bytes(bytes(data))
+        a = self.work_dir() / "ha.raw"
+        b = self.work_dir() / "hb.raw"
+        self.cli_ok(["cli", "dump", self.to_exe_path(heif), self.to_exe_path(a), "heif"])
+        self.cli_ok(["cli", "wic-dump", self.to_exe_path(heif), self.to_exe_path(b)])
+        self.assertEqual(a.read_bytes(), b.read_bytes(), "heif")
+        COVERAGE.append((heif.name, "shared-provider"))
 
     def test_seeded_mutations_never_crash_or_hang(self) -> None:
         base = self.make("mut_base.heic", 64, 48).read_bytes()
@@ -263,8 +278,8 @@ class WindowsHeifTests(HeifAdapterBase):
             base = self.cli_ok(["cli", "heif-peak", "noop", self.to_exe_path(src)], timeout=120.0)
             dec = self.cli_ok(["cli", "heif-peak", "decode", self.to_exe_path(src)], timeout=120.0)
             growth = int(dec["PEAK"]) - int(base["PEAK"])
-            reserve = int(dec["RESERVE"])
-            print(f"heif decode peak {w}x{h}: growth {growth} of reservation {reserve} ({growth / reserve:.3f})")
+            reserve = int(dec["RESERVE"])  # the budget's peak: the adapter's own reservation and frame
+            print(f"heif decode peak {w}x{h}: growth {growth} of the adapter's budgeted {reserve} ({growth / reserve:.3f})")
             self.assertLessEqual(growth, reserve, f"{w}x{h}")
 
 

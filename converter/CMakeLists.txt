@@ -234,9 +234,11 @@ target_link_libraries(rfc_codecs PRIVATE
   "${RF_LIB_JPEG}"
   "${RF_LIB_GIF}"
   Threads::Threads
-  # heif.c reaches WIC through COM (CoCreateInstance) only
-  ole32
 )
+if(WIN32)
+  # heif.c reaches WIC through COM (CoCreateInstance) only
+  target_link_libraries(rfc_codecs PRIVATE ole32)
+endif()
 
 add_executable(rfc_test_basic
   "${CMAKE_SOURCE_DIR}/../tests/converter/test_basic.c"

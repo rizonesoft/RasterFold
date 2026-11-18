@@ -53,6 +53,9 @@ static const char k_no_heif[] =
 static const char k_no_hevc[] =
     "heif: the HEVC Video Extensions (Microsoft Store 9N4WGH0Z6VHQ) are not "
     "installed";
+static const char k_no_av1[] =
+    "heif: the AV1 Video Extension (Microsoft Store 9MVZQVXJBQ9V) is not "
+    "installed";
 #endif
 
 /* Test seam: force the component lookups to report a missing component. */
@@ -168,7 +171,9 @@ static rfc_status heif_mem_read(void *ctx, uint64_t off, uint8_t *dst, size_t n,
     return RFC_OK;
 }
 
-/* The container facts and the metadata they give, without settings. */
+/* The container facts and the metadata they give, without settings. The
+ * image limits apply to the coded picture, which the system decoder decodes
+ * in full, and to the picture it returns. */
 static rfc_status heif_inspect(const rfc_exec_context *exec,
                                const uint8_t *bytes, size_t size,
                                rfc_heif_info *info) {
@@ -180,14 +185,18 @@ static rfc_status heif_inspect(const rfc_exec_context *exec,
     }
     heif_mem m = {bytes, size};
     const char *detail = NULL;
-    st = rfc_heif_scan(heif_mem_read, &m, (uint64_t)size, info, &detail, NULL);
+    st = rfc_heif_scan(heif_mem_read, &m, (uint64_t)size, heif_alloc_of(exec),
+                       info, &detail, NULL);
     if (st != RFC_OK) {
         if (detail) {
             rfc_exec_set_detail(exec, detail);
         }
         return st;
     }
-    st = rfc_limits_check_image(limits, &info->layout, 1u);
+    st = rfc_limits_check_image(limits, &info->coded_layout, 1u);
+    if (st == RFC_OK) {
+        st = rfc_limits_check_image(limits, &info->layout, 1u);
+    }
     if (st != RFC_OK) {
         return st;
     }
@@ -233,13 +242,16 @@ static const GUID k_mf_media_type_video = {
     0x73646976, 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71}};
 static const GUID k_mf_video_format_hevc = {
     0x43564548, 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71}};
+static const GUID k_mf_video_format_av1 = {
+    0x31305641, 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71}};
 
-/* Ask Media Foundation, loaded at run time, for a decoder taking HEVC. */
-static int heif_system_has_hevc(void) {
-    if (atomic_load(&g_force_no_hevc)) {
+/* Ask Media Foundation, loaded at run time from the system directory only,
+ * for a decoder taking the primary picture's coding. */
+static int heif_system_has_decoder(rfc_heif_coding coding) {
+    if (coding == RFC_HEIF_CODING_HEVC && atomic_load(&g_force_no_hevc)) {
         return 0;
     }
-    HMODULE mf = LoadLibraryW(L"mfplat.dll");
+    HMODULE mf = LoadLibraryExW(L"mfplat.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!mf) {
         return 0;
     }
@@ -247,7 +259,9 @@ static int heif_system_has_hevc(void) {
         (mft_enum_ex_fn)(void (*)(void))GetProcAddress(mf, "MFTEnumEx");
     int found = 0;
     if (fn) {
-        mf_type_info in = {k_mf_media_type_video, k_mf_video_format_hevc};
+        mf_type_info in = {k_mf_media_type_video,
+                           coding == RFC_HEIF_CODING_AV1 ? k_mf_video_format_av1
+                                                         : k_mf_video_format_hevc};
         IUnknown **acts = NULL;
         UINT32 n = 0u;
         if (SUCCEEDED(fn(k_mft_category_video_decoder, 0x3Fu /* all */, &in,
@@ -263,6 +277,10 @@ static int heif_system_has_hevc(void) {
     }
     FreeLibrary(mf);
     return found;
+}
+
+static const char *heif_codec_detail(rfc_heif_coding coding) {
+    return coding == RFC_HEIF_CODING_AV1 ? k_no_av1 : k_no_hevc;
 }
 
 typedef struct heif_com {
@@ -282,10 +300,13 @@ static void heif_com_end(heif_com *c) {
     memset(c, 0, sizeof(*c));
 }
 
-static rfc_status heif_map_hr(const rfc_exec_context *exec, HRESULT hr) {
+/* A failure while the system decodes the picture: a missing codec names
+ * the video extension for the picture's coding. */
+static rfc_status heif_map_hr(const rfc_exec_context *exec,
+                              rfc_heif_coding coding, HRESULT hr) {
     if (hr == WINCODEC_ERR_COMPONENTNOTFOUND || hr == REGDB_E_CLASSNOTREG ||
         hr == (HRESULT)0xC00D5212L /* MF_E_TOPO_CODEC_NOT_FOUND */) {
-        rfc_exec_set_detail(exec, k_no_hevc);
+        rfc_exec_set_detail(exec, heif_codec_detail(coding));
         return RFC_ERR_NO_ADAPTER;
     }
     if (hr == E_OUTOFMEMORY) {
@@ -294,14 +315,54 @@ static rfc_status heif_map_hr(const rfc_exec_context *exec, HRESULT hr) {
     return RFC_ERR_INVALID_ARGUMENT;
 }
 
+/* The WIC HEIF decoder and a Media Foundation decoder for the picture's
+ * coding, looked up for real (the probe runs this before any decode). */
+static rfc_status heif_components_ready(const rfc_exec_context *exec,
+                                        const rfc_heif_info *info) {
+    HRESULT hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
+    int uninit = hr == S_OK || hr == S_FALSE;
+    if (!uninit && hr != RPC_E_CHANGED_MODE) {
+        return RFC_ERR_IO;
+    }
+    IWICImagingFactory *f = NULL;
+    rfc_status st = RFC_OK;
+    hr = CoCreateInstance(&CLSID_WICImagingFactory, NULL, CLSCTX_INPROC_SERVER,
+                          &IID_IWICImagingFactory, (void **)&f);
+    if (FAILED(hr)) {
+        rfc_exec_set_detail(exec, k_no_wic);
+        st = RFC_ERR_NO_ADAPTER;
+    } else {
+        IWICBitmapDecoder *d = NULL;
+        hr = atomic_load(&g_force_no_heif)
+                 ? WINCODEC_ERR_COMPONENTNOTFOUND
+                 : IWICImagingFactory_CreateDecoder(f, &GUID_ContainerFormatHeif,
+                                                    NULL, &d);
+        if (FAILED(hr)) {
+            rfc_exec_set_detail(exec, k_no_heif);
+            st = RFC_ERR_NO_ADAPTER;
+        } else {
+            IWICBitmapDecoder_Release(d);
+        }
+        IWICImagingFactory_Release(f);
+    }
+    if (uninit) {
+        CoUninitialize();
+    }
+    if (st == RFC_OK && !heif_system_has_decoder(info->coding)) {
+        rfc_exec_set_detail(exec, heif_codec_detail(info->coding));
+        st = RFC_ERR_NO_ADAPTER;
+    }
+    return st;
+}
+
 /* Open the system decoder on the bytes; frame 0 ready. */
 static rfc_status heif_com_open(const rfc_exec_context *exec,
                                 const rfc_heif_info *info,
                                 const uint8_t *bytes, size_t size,
                                 heif_com *c) {
     memset(c, 0, sizeof(*c));
-    if (info->hevc && !heif_system_has_hevc()) {
-        rfc_exec_set_detail(exec, k_no_hevc);
+    if (!heif_system_has_decoder(info->coding)) {
+        rfc_exec_set_detail(exec, heif_codec_detail(info->coding));
         return RFC_ERR_NO_ADAPTER;
     }
     HRESULT hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
@@ -353,7 +414,7 @@ static rfc_status heif_com_open(const rfc_exec_context *exec,
         hr = IWICBitmapDecoder_GetFrame(c->decoder, 0u, &c->frame);
     }
     if (FAILED(hr)) {
-        rfc_status st = heif_map_hr(exec, hr);
+        rfc_status st = heif_map_hr(exec, info->coding, hr);
         heif_com_end(c);
         return st;
     }
@@ -369,11 +430,12 @@ static rfc_status heif_com_open(const rfc_exec_context *exec,
 /* Copy the system decoder's pixels into the rgb8 frame, in bands. */
 static rfc_status heif_copy_pixels(const heif_session *s,
                                    const rfc_exec_context *exec, heif_com *c,
+                                   rfc_heif_coding coding,
                                    const rfc_allocator *alloc, rfc_frame *fr) {
     WICPixelFormatGUID pf;
     HRESULT hr = IWICBitmapFrameDecode_GetPixelFormat(c->frame, &pf);
     if (FAILED(hr)) {
-        return heif_map_hr(exec, hr);
+        return heif_map_hr(exec, coding, hr);
     }
     uint32_t bpp = 0u;
     if (IsEqualGUID(&pf, &GUID_WICPixelFormat24bppBGR)) {
@@ -407,7 +469,7 @@ static rfc_status heif_copy_pixels(const heif_session *s,
         hr = IWICBitmapFrameDecode_CopyPixels(c->frame, &rc, (UINT)src_stride,
                                               (UINT)(src_stride * rows), buf);
         if (FAILED(hr)) {
-            st = heif_map_hr(exec, hr);
+            st = heif_map_hr(exec, coding, hr);
             break;
         }
         for (uint32_t r = 0u; r < rows; r++) {
@@ -432,6 +494,7 @@ typedef struct heif_guard {
     size_t bytes;
 } heif_guard;
 
+/* The system decoders work on the coded picture: reserve from it. */
 static rfc_status heif_reserve(const rfc_exec_context *exec,
                                const rfc_layout *L, heif_guard *g) {
     memset(g, 0, sizeof(*g));
@@ -482,13 +545,10 @@ static rfc_status heif_probe(void *session, const rfc_exec_context *exec,
     if (st != RFC_OK) {
         return st;
     }
-    if (atomic_load(&g_force_no_heif)) {
-        rfc_exec_set_detail(exec, k_no_heif);
-        return RFC_ERR_NO_ADAPTER;
-    }
-    if (info.hevc && !heif_system_has_hevc()) {
-        rfc_exec_set_detail(exec, k_no_hevc);
-        return RFC_ERR_NO_ADAPTER;
+    /* the same components the decode needs, looked up for real */
+    st = heif_components_ready(exec, &info);
+    if (st != RFC_OK) {
+        return st;
     }
     out_probe->first_frame = info.layout;
     out_probe->frame_count = 1u;
@@ -499,11 +559,24 @@ static rfc_status heif_probe(void *session, const rfc_exec_context *exec,
     heif_fill_meta(bytes, &info, &meta);
     out_probe->container_meta.color = meta.color;
     out_probe->container_meta.orientation = meta.orientation;
-    out_probe->container_meta.icc_len = meta.icc_len; /* sizes only */
+    out_probe->container_meta.icc_len = meta.icc_len;
     rfc_limits scratch;
     st = rfc_limits_check_probe(heif_limits_of(exec, &scratch), out_probe,
                                 (uint64_t)size, 1);
     out_probe->container_meta.icc_len = 0u;
+    if (st == RFC_OK && meta.icc_len > 0u) {
+        /* the ICC bytes, copied out through the exec allocator */
+        rfc_frame tmp;
+        memset(&tmp, 0, sizeof(tmp));
+        rfc_layout one = {RFC_SAMPLE_GRAY8, RFC_ALPHA_NONE, 1u, 1u, 1u, 8u};
+        st = rfc_frame_alloc(&tmp, &one, &meta, heif_alloc_of(exec));
+        if (st == RFC_OK) {
+            out_probe->container_meta = tmp.metadata;
+            tmp.metadata.icc = NULL;
+            tmp.metadata.icc_len = 0u;
+            rfc_frame_free(&tmp);
+        }
+    }
     return st;
 #endif
 }
@@ -556,7 +629,7 @@ static rfc_status heif_decode(void *session, const rfc_exec_context *exec,
         return RFC_ERR_METADATA_POLICY;
     }
     heif_guard g;
-    st = heif_reserve(exec, &info.layout, &g);
+    st = heif_reserve(exec, &info.coded_layout, &g);
     if (st != RFC_OK) {
         return st;
     }
@@ -577,7 +650,7 @@ static rfc_status heif_decode(void *session, const rfc_exec_context *exec,
         st = exec ? rfc_exec_alloc_frame(exec, &frames[0], &info.layout, &meta)
                   : rfc_frame_alloc(&frames[0], &info.layout, &meta, alloc);
         if (st == RFC_OK) {
-            st = heif_copy_pixels(s, exec, &c, alloc, &frames[0]);
+            st = heif_copy_pixels(s, exec, &c, info.coding, alloc, &frames[0]);
         }
         if (st != RFC_OK) {
             if (frames[0].data) {

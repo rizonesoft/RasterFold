@@ -922,23 +922,27 @@ static rfc_status heif_stream_read(void *ctx, uint64_t off, uint8_t *dst,
 }
 
 /* HEIF/HEIC: the geometry the shared ISOBMFF reader (the one the HEIF
- * adapter runs) gives for the primary picture, exact when it accepts the
- * file. When it refuses the file, the adapter will refuse it at IMPORT with
- * its own status, so admission takes a lower bound: rgb8 at the dimensions
- * read, or a 1x1 placeholder when none were. A read failure fails the sniff. */
+ * adapter runs) gives for the primary picture. Admission sizes and limits
+ * the coded picture, which the system decoder decodes in full before any
+ * clean-aperture crop (the adapter checks both). When the reader refuses the
+ * file, the adapter will refuse it at IMPORT with its own status, so
+ * admission takes the dimensions read, or a 1x1 placeholder when none were.
+ * A read failure fails the sniff. */
 static rfc_status sniff_heif_geometry(const seek_stream *ss,
                                       rfc_sniff_geometry *geo) {
     rfc_heif_info info;
     int read_failed = 0;
-    uint64_t size = ss->size_known ? ss->total_size : UINT64_MAX;
-    rfc_status st =
-        rfc_heif_scan(heif_stream_read, (void *)ss, size, &info, NULL, &read_failed);
+    uint64_t size = ss->size_known ? ss->total_size : RFC_HEIF_SIZE_UNKNOWN;
+    rfc_status st = rfc_heif_scan(heif_stream_read, (void *)ss, size, NULL,
+                                  &info, NULL, &read_failed);
     if (read_failed) {
         return st;
     }
+    uint32_t w = info.coded_width ? info.coded_width : (info.dims_known ? info.width : 1u);
+    uint32_t h = info.coded_height ? info.coded_height : (info.dims_known ? info.height : 1u);
     geo->format = RFC_SAMPLE_RGB8;
-    geo->width = info.dims_known ? info.width : 1u;
-    geo->height = info.dims_known ? info.height : 1u;
+    geo->width = w;
+    geo->height = h;
     geo->has_geometry = 1;
     return RFC_OK;
 }

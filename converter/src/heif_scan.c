@@ -1,53 +1,65 @@
 /* Bounded ISOBMFF reader for HEIF and HEIC (see rfc_heif_scan.h).
+ *
  * ISO/IEC 14496-12 boxes (ftyp, meta, hdlr, pitm, iinf/infe, iref, iprp,
- * ipco, ipma) and ISO/IEC 23008-12 item properties (ispe, pixi, irot, imir,
- * colr, auxC, hvcC, av1C). Every query walks the boxes again through
- * positional reads; no table is built and nothing is allocated. */
+ * ipco, ipma, moov) and ISO/IEC 23008-12 item properties (ispe, pixi, clap,
+ * irot, imir, colr, auxC, hvcC, av1C). The top-level boxes are walked with
+ * positional reads; the meta box is read once and parsed in memory, each
+ * field checked against the box that holds it; the item, reference,
+ * property and association tables are built once and searched by item ID. */
 
 #include "rfc_heif_scan.h"
 #include "rfc_job.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #define FOURCC(a, b, c, d)                                                     \
     (((uint32_t)(uint8_t)(a) << 24) | ((uint32_t)(uint8_t)(b) << 16) |        \
      ((uint32_t)(uint8_t)(c) << 8) | (uint32_t)(uint8_t)(d))
 
-#define MAX_BOXES 4096u
+#define MAX_TOP_BOXES 4096u
 
-typedef struct hrd {
-    rfc_heif_read_fn read_at;
-    void *ctx;
-    uint64_t size;
-    int read_failed;
-} hrd;
+typedef struct span {
+    size_t s, e; /* payload [s, e) inside the meta buffer */
+} span;
 
-typedef struct range {
-    uint64_t start, end; /* box payload, after the header */
-    int present;
-} range;
+typedef struct item {
+    uint32_t id, type;
+    uint8_t is_xmp;
+    uint8_t ref_from_thmb_auxl; /* a thumbnail or auxiliary of something */
+    uint8_t ref_to_dimg;        /* an input of a derived image */
+    uint32_t assoc_first, assoc_count; /* into the sorted association table */
+} item;
+
+typedef struct ref {
+    uint32_t type, from, to;
+} ref;
+
+typedef struct prop {
+    uint32_t type;
+    span p;
+} prop;
+
+typedef struct assoc {
+    uint32_t item, index; /* index: 1-based into props */
+    uint32_t order;       /* stable order of appearance */
+} assoc;
 
 typedef struct heif_ctx {
-    hrd r;
-    range meta;   /* after the FullBox header */
-    range iinf, iref, ipco, ipma;
-    uint32_t iinf_version, iref_version, ipma_version, ipma_flags;
+    const uint8_t *m; /* the meta box payload, after its FullBox header */
+    size_t mn;
+    uint64_t m_file_off; /* file offset of m[0] */
+    item *items;
+    uint32_t n_items;
+    ref *refs;
+    uint32_t n_refs;
+    prop *props;
+    uint32_t n_props;
+    assoc *assocs;
+    uint32_t n_assocs;
     uint32_t primary;
     const char *detail;
 } heif_ctx;
-
-static rfc_status rd(hrd *r, uint64_t off, uint8_t *dst, size_t n) {
-    if (off > r->size || n > r->size - off) {
-        return RFC_ERR_TRUNCATED_INPUT;
-    }
-    size_t got = 0u;
-    rfc_status st = r->read_at(r->ctx, off, dst, n, &got);
-    if (st != RFC_OK) {
-        r->read_failed = 1;
-        return st;
-    }
-    return got == n ? RFC_OK : RFC_ERR_TRUNCATED_INPUT;
-}
 
 static uint32_t be16(const uint8_t *p) {
     return ((uint32_t)p[0] << 8) | p[1];
@@ -58,47 +70,65 @@ static uint32_t be32(const uint8_t *p) {
            ((uint32_t)p[2] << 8) | p[3];
 }
 
-static rfc_status rd16(hrd *r, uint64_t off, uint32_t *v) {
-    uint8_t b[2];
-    rfc_status st = rd(r, off, b, 2u);
-    if (st == RFC_OK) {
-        *v = be16(b);
-    }
+static rfc_status refuse(heif_ctx *c, rfc_status st, const char *detail) {
+    c->detail = detail;
     return st;
 }
 
-static rfc_status rd32(hrd *r, uint64_t off, uint32_t *v) {
-    uint8_t b[4];
-    rfc_status st = rd(r, off, b, 4u);
-    if (st == RFC_OK) {
-        *v = be32(b);
+/* ---- positional reads for the top level -------------------------------- */
+
+typedef struct src {
+    rfc_heif_read_fn read_at;
+    void *ctx;
+    uint64_t size; /* RFC_HEIF_SIZE_UNKNOWN when not known */
+    int read_failed;
+} src;
+
+/* Read n bytes at off; *got may be short only at the end of the input. */
+static rfc_status src_read(src *r, uint64_t off, uint8_t *dst, size_t n,
+                           size_t *got) {
+    *got = 0u;
+    if (r->size != RFC_HEIF_SIZE_UNKNOWN) {
+        if (off >= r->size) {
+            return RFC_OK;
+        }
+        if (n > r->size - off) {
+            n = (size_t)(r->size - off);
+        }
     }
-    return st;
+    size_t total = 0u;
+    while (total < n) {
+        size_t g = 0u;
+        rfc_status st = r->read_at(r->ctx, off + total, dst + total, n - total, &g);
+        if (st != RFC_OK) {
+            r->read_failed = 1;
+            return st;
+        }
+        if (g == 0u) {
+            break;
+        }
+        total += g;
+    }
+    *got = total;
+    return RFC_OK;
 }
 
-/* The box at pos inside [pos, end): its type and payload range. */
-static rfc_status box_at(hrd *r, uint64_t pos, uint64_t end, uint32_t *type,
-                         range *payload) {
-    uint8_t h[16];
-    if (end - pos < 8u) {
+/* ---- boxes in memory ---------------------------------------------------- */
+
+/* The box at pos in [pos, end): its type and payload span. */
+static rfc_status mbox(const uint8_t *m, size_t pos, size_t end, uint32_t *type,
+                       span *payload, size_t *next) {
+    if (end < pos || end - pos < 8u) {
         return RFC_ERR_INVALID_ARGUMENT;
     }
-    rfc_status st = rd(r, pos, h, 8u);
-    if (st != RFC_OK) {
-        return st;
-    }
-    uint64_t size = be32(h);
-    *type = be32(h + 4);
-    uint64_t hdr = 8u;
+    uint64_t size = be32(m + pos);
+    *type = be32(m + pos + 4);
+    size_t hdr = 8u;
     if (size == 1u) {
         if (end - pos < 16u) {
             return RFC_ERR_INVALID_ARGUMENT;
         }
-        st = rd(r, pos + 8u, h + 8, 8u);
-        if (st != RFC_OK) {
-            return st;
-        }
-        size = ((uint64_t)be32(h + 8) << 32) | be32(h + 12);
+        size = ((uint64_t)be32(m + pos + 8) << 32) | be32(m + pos + 12);
         hdr = 16u;
     } else if (size == 0u) {
         size = end - pos;
@@ -109,393 +139,301 @@ static rfc_status box_at(hrd *r, uint64_t pos, uint64_t end, uint32_t *type,
     if (size < hdr || size > end - pos) {
         return RFC_ERR_INVALID_ARGUMENT;
     }
-    payload->start = pos + hdr;
-    payload->end = pos + size;
-    payload->present = 1;
+    payload->s = pos + hdr;
+    payload->e = pos + (size_t)size;
+    *next = payload->e;
     return RFC_OK;
 }
 
-/* Visit the boxes in [start, end); cb returns 1 to stop. */
-typedef int (*box_fn)(heif_ctx *c, uint32_t type, const range *p, void *u,
-                      rfc_status *st);
-
-static rfc_status each_box(heif_ctx *c, uint64_t start, uint64_t end,
-                           box_fn cb, void *u) {
-    uint64_t pos = start;
-    for (uint32_t n = 0u; pos < end; n++) {
-        if (n >= MAX_BOXES) {
-            return RFC_ERR_LIMIT_EXCEEDED;
-        }
-        uint32_t type = 0u;
-        range p;
-        rfc_status st = box_at(&c->r, pos, end, &type, &p);
-        if (st != RFC_OK) {
-            return st;
-        }
-        st = RFC_OK;
-        if (cb && cb(c, type, &p, u, &st)) {
-            return st;
-        }
-        if (st != RFC_OK) {
-            return st;
-        }
-        pos = p.end;
-    }
-    return RFC_OK;
-}
-
-/* ---- items (iinf / infe) ---------------------------------------------- */
-
-typedef struct item {
-    uint32_t id, type;
-    int is_xmp;
-} item;
-
-typedef int (*item_fn)(heif_ctx *c, const item *it, void *u, rfc_status *st);
-
-static rfc_status read_cstr_end(hrd *r, uint64_t pos, uint64_t end,
-                                uint64_t *after) {
-    for (uint64_t p = pos; p < end; p++) {
-        uint8_t ch = 0u;
-        rfc_status st = rd(r, p, &ch, 1u);
-        if (st != RFC_OK) {
-            return st;
-        }
-        if (ch == 0u) {
-            *after = p + 1u;
-            return RFC_OK;
-        }
-    }
-    *after = end; /* an unterminated string runs to the end of the box */
-    return RFC_OK;
-}
-
-static rfc_status infe_parse(heif_ctx *c, const range *p, item *it) {
-    memset(it, 0, sizeof(*it));
-    uint8_t vf[4];
-    rfc_status st = rd(&c->r, p->start, vf, 4u);
-    if (st != RFC_OK) {
-        return st;
-    }
-    uint32_t version = vf[0];
-    uint64_t q = p->start + 4u;
-    if (version < 2u) {
-        uint32_t id = 0u;
-        st = rd16(&c->r, q, &id);
-        if (st != RFC_OK) {
-            return st;
-        }
-        it->id = id;
-        q += 4u; /* item_ID, item_protection_index */
-        st = read_cstr_end(&c->r, q, p->end, &q); /* item_name */
-        if (st != RFC_OK) {
-            return st;
-        }
-        it->type = FOURCC('m', 'i', 'm', 'e');
-    } else {
-        uint32_t id = 0u;
-        if (version == 2u) {
-            st = rd16(&c->r, q, &id);
-            q += 2u;
-        } else {
-            st = rd32(&c->r, q, &id);
-            q += 4u;
-        }
-        if (st != RFC_OK) {
-            return st;
-        }
-        it->id = id;
-        q += 2u; /* item_protection_index */
-        st = rd32(&c->r, q, &it->type);
-        if (st != RFC_OK) {
-            return st;
-        }
-        q += 4u;
-        if (it->type != FOURCC('m', 'i', 'm', 'e')) {
-            return RFC_OK;
-        }
-        st = read_cstr_end(&c->r, q, p->end, &q); /* item_name */
-        if (st != RFC_OK) {
-            return st;
-        }
-    }
-    /* content_type of a MIME item */
-    static const char xmp[] = "application/rdf+xml";
-    uint8_t ct[sizeof(xmp)];
-    if (p->end - q >= sizeof(xmp)) {
-        st = rd(&c->r, q, ct, sizeof(xmp));
-        if (st != RFC_OK) {
-            return st;
-        }
-        it->is_xmp = memcmp(ct, xmp, sizeof(xmp)) == 0;
-    }
-    return RFC_OK;
-}
-
-typedef struct items_walk {
-    item_fn fn;
-    void *u;
-    uint32_t count;
-    int stopped;
-} items_walk;
-
-static int iinf_child(heif_ctx *c, uint32_t type, const range *p, void *u,
-                      rfc_status *st) {
-    items_walk *w = (items_walk *)u;
-    if (type != FOURCC('i', 'n', 'f', 'e')) {
-        return 0;
-    }
-    if (++w->count > RFC_HEIF_MAX_ITEMS) {
-        *st = RFC_ERR_LIMIT_EXCEEDED;
-        return 1;
-    }
-    item it;
-    *st = infe_parse(c, p, &it);
-    if (*st != RFC_OK) {
-        return 1;
-    }
-    if (w->fn(c, &it, w->u, st)) {
-        w->stopped = 1;
-        return 1;
-    }
-    return 0;
-}
-
-static rfc_status each_item(heif_ctx *c, item_fn fn, void *u) {
-    if (!c->iinf.present) {
+/* A FullBox: version and flags, the content after them in *body. */
+static rfc_status fullbox(const uint8_t *m, span p, uint32_t *version,
+                          uint32_t *flags, span *body) {
+    if (p.e - p.s < 4u) {
         return RFC_ERR_INVALID_ARGUMENT;
     }
-    uint64_t q = c->iinf.start + 4u + (c->iinf_version == 0u ? 2u : 4u);
-    items_walk w = {fn, u, 0u, 0};
-    return each_box(c, q, c->iinf.end, iinf_child, &w);
+    *version = m[p.s];
+    if (flags) {
+        *flags = ((uint32_t)m[p.s + 1] << 16) | ((uint32_t)m[p.s + 2] << 8) | m[p.s + 3];
+    }
+    body->s = p.s + 4u;
+    body->e = p.e;
+    return RFC_OK;
 }
 
-typedef struct find_item {
-    uint32_t id;
-    item found;
-    int ok;
-} find_item;
-
-static int find_item_cb(heif_ctx *c, const item *it, void *u, rfc_status *st) {
-    (void)c;
-    (void)st;
-    find_item *f = (find_item *)u;
-    if (it->id == f->id) {
-        f->found = *it;
-        f->ok = 1;
-        return 1;
+/* A NUL-terminated string at *pos inside [*pos, end); *pos moves past it. */
+static rfc_status cstr(const uint8_t *m, size_t *pos, size_t end,
+                       const uint8_t **out, size_t *len) {
+    if (*pos >= end) {
+        return RFC_ERR_INVALID_ARGUMENT;
     }
-    return 0;
+    const uint8_t *z = (const uint8_t *)memchr(m + *pos, 0, end - *pos);
+    if (!z) {
+        return RFC_ERR_INVALID_ARGUMENT; /* unterminated */
+    }
+    *out = m + *pos;
+    *len = (size_t)(z - (m + *pos));
+    *pos += *len + 1u;
+    return RFC_OK;
 }
 
-static rfc_status item_by_id(heif_ctx *c, uint32_t id, item *out, int *ok) {
-    find_item f = {id, {0u, 0u, 0}, 0};
-    rfc_status st = each_item(c, find_item_cb, &f);
-    *out = f.found;
-    *ok = f.ok;
-    return st;
-}
+/* ---- tables ------------------------------------------------------------- */
 
-/* ---- references (iref) ------------------------------------------------- */
-
-/* Visit every (type, from, to) reference. */
-typedef int (*ref_fn)(heif_ctx *c, uint32_t type, uint32_t from, uint32_t to,
-                      void *u, rfc_status *st);
-
-typedef struct refs_walk {
-    ref_fn fn;
-    void *u;
-} refs_walk;
-
-static int iref_child(heif_ctx *c, uint32_t type, const range *p, void *u,
-                      rfc_status *st) {
-    refs_walk *w = (refs_walk *)u;
-    unsigned idsz = c->iref_version == 0u ? 2u : 4u;
-    uint64_t q = p->start;
-    uint8_t b[4];
-    if (p->end - q < idsz + 2u) {
-        *st = RFC_ERR_INVALID_ARGUMENT;
-        return 1;
-    }
-    *st = rd(&c->r, q, b, idsz);
-    if (*st != RFC_OK) {
-        return 1;
-    }
-    uint32_t from = idsz == 2u ? be16(b) : be32(b);
-    q += idsz;
-    uint32_t count = 0u;
-    *st = rd16(&c->r, q, &count);
-    if (*st != RFC_OK) {
-        return 1;
-    }
-    q += 2u;
-    if (count > RFC_HEIF_MAX_ITEMS || (uint64_t)count * idsz > p->end - q) {
-        *st = RFC_ERR_INVALID_ARGUMENT;
-        return 1;
-    }
-    for (uint32_t i = 0u; i < count; i++) {
-        *st = rd(&c->r, q + (uint64_t)i * idsz, b, idsz);
-        if (*st != RFC_OK) {
-            return 1;
-        }
-        uint32_t to = idsz == 2u ? be16(b) : be32(b);
-        if (w->fn(c, type, from, to, w->u, st)) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-static rfc_status each_ref(heif_ctx *c, ref_fn fn, void *u) {
-    if (!c->iref.present) {
-        return RFC_OK;
-    }
-    refs_walk w = {fn, u};
-    return each_box(c, c->iref.start + 4u, c->iref.end, iref_child, &w);
-}
-
-typedef struct ref_query {
-    uint32_t type, from, to; /* 0 is a wildcard for from / to */
-    uint32_t hits;
-    uint32_t last_from, last_to;
-} ref_query;
-
-static int ref_query_cb(heif_ctx *c, uint32_t type, uint32_t from, uint32_t to,
-                        void *u, rfc_status *st) {
-    (void)c;
-    (void)st;
-    ref_query *q = (ref_query *)u;
-    if (type == q->type && (q->from == 0u || q->from == from) &&
-        (q->to == 0u || q->to == to)) {
-        q->hits++;
-        q->last_from = from;
-        q->last_to = to;
-    }
-    return 0;
-}
-
-static rfc_status count_refs(heif_ctx *c, uint32_t type, uint32_t from,
-                             uint32_t to, uint32_t *hits) {
-    ref_query q = {type, from, to, 0u, 0u, 0u};
-    rfc_status st = each_ref(c, ref_query_cb, &q);
-    *hits = q.hits;
-    return st;
-}
-
-/* ---- properties (ipco / ipma) ----------------------------------------- */
-
-typedef struct nth_prop {
-    uint32_t want, seen, type;
-    range p;
-} nth_prop;
-
-static int nth_prop_cb(heif_ctx *c, uint32_t type, const range *p, void *u,
-                       rfc_status *st) {
-    (void)c;
-    (void)st;
-    nth_prop *n = (nth_prop *)u;
-    if (++n->seen == n->want) {
-        n->type = type;
-        n->p = *p;
-        return 1;
-    }
-    return 0;
-}
-
-/* Visit the properties associated with `id`, in association order. */
-typedef int (*prop_fn)(heif_ctx *c, uint32_t type, const range *p, void *u,
-                       rfc_status *st);
-
-static rfc_status each_prop_of(heif_ctx *c, uint32_t id, prop_fn fn, void *u) {
-    if (!c->ipma.present || !c->ipco.present) {
-        return RFC_OK;
-    }
-    uint64_t q = c->ipma.start + 4u;
-    uint32_t entries = 0u;
-    rfc_status st = rd32(&c->r, q, &entries);
+static rfc_status parse_iinf(heif_ctx *c, span p) {
+    uint32_t version = 0u;
+    span b;
+    rfc_status st = fullbox(c->m, p, &version, NULL, &b);
     if (st != RFC_OK) {
         return st;
     }
-    q += 4u;
-    if (entries > RFC_HEIF_MAX_ITEMS) {
+    size_t q = b.s;
+    uint32_t count = 0u;
+    if (version == 0u) {
+        if (b.e - q < 2u) return RFC_ERR_INVALID_ARGUMENT;
+        count = be16(c->m + q);
+        q += 2u;
+    } else {
+        if (b.e - q < 4u) return RFC_ERR_INVALID_ARGUMENT;
+        count = be32(c->m + q);
+        q += 4u;
+    }
+    if (count > RFC_HEIF_MAX_ITEMS) {
         return RFC_ERR_LIMIT_EXCEEDED;
     }
-    unsigned idsz = c->ipma_version < 1u ? 2u : 4u;
-    unsigned asz = (c->ipma_flags & 1u) ? 2u : 1u;
-    for (uint32_t e = 0u; e < entries; e++) {
-        uint8_t b[4];
-        st = rd(&c->r, q, b, idsz + 1u);
+    while (q < b.e) {
+        uint32_t type = 0u;
+        span ip;
+        size_t next = 0u;
+        st = mbox(c->m, q, b.e, &type, &ip, &next);
         if (st != RFC_OK) {
             return st;
         }
-        uint32_t item_id = idsz == 2u ? be16(b) : be32(b);
-        uint32_t n = b[idsz];
-        q += idsz + 1u;
-        for (uint32_t a = 0u; a < n; a++) {
-            st = rd(&c->r, q, b, asz);
+        q = next;
+        if (type != FOURCC('i', 'n', 'f', 'e')) {
+            continue;
+        }
+        if (c->n_items >= RFC_HEIF_MAX_ITEMS) {
+            return RFC_ERR_LIMIT_EXCEEDED;
+        }
+        uint32_t iv = 0u;
+        span ib;
+        st = fullbox(c->m, ip, &iv, NULL, &ib);
+        if (st != RFC_OK) {
+            return st;
+        }
+        item it;
+        memset(&it, 0, sizeof(it));
+        size_t r = ib.s;
+        const uint8_t *str = NULL;
+        size_t sl = 0u;
+        if (iv < 2u) {
+            if (ib.e - r < 4u) return RFC_ERR_INVALID_ARGUMENT;
+            it.id = be16(c->m + r);
+            r += 4u; /* item_ID, item_protection_index */
+            it.type = FOURCC('m', 'i', 'm', 'e');
+            st = cstr(c->m, &r, ib.e, &str, &sl); /* item_name */
+        } else {
+            size_t idsz = iv == 2u ? 2u : 4u;
+            if (ib.e - r < idsz + 6u) return RFC_ERR_INVALID_ARGUMENT;
+            it.id = idsz == 2u ? be16(c->m + r) : be32(c->m + r);
+            r += idsz + 2u; /* item_ID, item_protection_index */
+            it.type = be32(c->m + r);
+            r += 4u;
+            st = cstr(c->m, &r, ib.e, &str, &sl); /* item_name */
+        }
+        if (st != RFC_OK) {
+            return st;
+        }
+        if (it.type == FOURCC('m', 'i', 'm', 'e')) {
+            st = cstr(c->m, &r, ib.e, &str, &sl); /* content_type */
             if (st != RFC_OK) {
                 return st;
             }
-            q += asz;
-            if (item_id != id) {
-                continue;
-            }
-            uint32_t index = asz == 2u ? (be16(b) & 0x7FFFu) : (b[0] & 0x7Fu);
-            if (index == 0u) {
-                continue; /* no property */
-            }
-            if (index > RFC_HEIF_MAX_PROPERTIES) {
+            it.is_xmp = sl == 19u && memcmp(str, "application/rdf+xml", 19u) == 0;
+        }
+        c->items[c->n_items++] = it;
+    }
+    return RFC_OK;
+}
+
+static rfc_status parse_iref(heif_ctx *c, span p) {
+    uint32_t version = 0u;
+    span b;
+    rfc_status st = fullbox(c->m, p, &version, NULL, &b);
+    if (st != RFC_OK) {
+        return st;
+    }
+    size_t idsz = version == 0u ? 2u : 4u;
+    size_t q = b.s;
+    while (q < b.e) {
+        uint32_t type = 0u;
+        span rp;
+        size_t next = 0u;
+        st = mbox(c->m, q, b.e, &type, &rp, &next);
+        if (st != RFC_OK) {
+            return st;
+        }
+        q = next;
+        size_t r = rp.s;
+        if (rp.e - r < idsz + 2u) return RFC_ERR_INVALID_ARGUMENT;
+        uint32_t from = idsz == 2u ? be16(c->m + r) : be32(c->m + r);
+        r += idsz;
+        uint32_t count = be16(c->m + r);
+        r += 2u;
+        if ((uint64_t)count * idsz > rp.e - r) return RFC_ERR_INVALID_ARGUMENT;
+        for (uint32_t k = 0u; k < count; k++, r += idsz) {
+            if (c->n_refs >= RFC_HEIF_MAX_REFERENCES) {
                 return RFC_ERR_LIMIT_EXCEEDED;
             }
-            nth_prop np = {index, 0u, 0u, {0u, 0u, 0}};
-            st = each_box(c, c->ipco.start, c->ipco.end, nth_prop_cb, &np);
-            if (st != RFC_OK) {
-                return st;
-            }
-            if (np.seen != index) {
-                return RFC_ERR_INVALID_ARGUMENT; /* index past ipco */
-            }
-            st = RFC_OK;
-            if (fn(c, np.type, &np.p, u, &st)) {
-                return st;
-            }
-            if (st != RFC_OK) {
-                return st;
-            }
-        }
-        if (q > c->ipma.end) {
-            return RFC_ERR_INVALID_ARGUMENT;
+            uint32_t to = idsz == 2u ? be16(c->m + r) : be32(c->m + r);
+            c->refs[c->n_refs++] = (ref){type, from, to};
         }
     }
     return RFC_OK;
 }
 
-typedef struct first_prop {
-    uint32_t type;
-    range p;
-    int found;
-} first_prop;
-
-static int first_prop_cb(heif_ctx *c, uint32_t type, const range *p, void *u,
-                         rfc_status *st) {
-    (void)c;
-    (void)st;
-    first_prop *f = (first_prop *)u;
-    if (type == f->type) {
-        f->p = *p;
-        f->found = 1;
-        return 1;
+static rfc_status parse_ipco(heif_ctx *c, span p) {
+    size_t q = p.s;
+    while (q < p.e) {
+        uint32_t type = 0u;
+        span pp;
+        size_t next = 0u;
+        rfc_status st = mbox(c->m, q, p.e, &type, &pp, &next);
+        if (st != RFC_OK) {
+            return st;
+        }
+        q = next;
+        if (c->n_props >= RFC_HEIF_MAX_PROPERTIES) {
+            return RFC_ERR_LIMIT_EXCEEDED;
+        }
+        c->props[c->n_props++] = (prop){type, pp};
     }
-    return 0;
+    return RFC_OK;
 }
 
-static rfc_status prop_of(heif_ctx *c, uint32_t id, uint32_t type, range *p,
-                          int *found) {
-    first_prop f = {type, {0u, 0u, 0}, 0};
-    rfc_status st = each_prop_of(c, id, first_prop_cb, &f);
-    *p = f.p;
-    *found = f.found;
-    return st;
+static rfc_status parse_ipma(heif_ctx *c, span p) {
+    uint32_t version = 0u, flags = 0u;
+    span b;
+    rfc_status st = fullbox(c->m, p, &version, &flags, &b);
+    if (st != RFC_OK) {
+        return st;
+    }
+    size_t q = b.s;
+    if (b.e - q < 4u) return RFC_ERR_INVALID_ARGUMENT;
+    uint32_t entries = be32(c->m + q);
+    q += 4u;
+    size_t idsz = version < 1u ? 2u : 4u;
+    size_t asz = (flags & 1u) ? 2u : 1u;
+    for (uint32_t e = 0u; e < entries; e++) {
+        if (b.e - q < idsz + 1u) return RFC_ERR_INVALID_ARGUMENT;
+        uint32_t id = idsz == 2u ? be16(c->m + q) : be32(c->m + q);
+        q += idsz;
+        uint32_t n = c->m[q++];
+        if ((uint64_t)n * asz > b.e - q) return RFC_ERR_INVALID_ARGUMENT;
+        for (uint32_t a = 0u; a < n; a++, q += asz) {
+            uint32_t index = asz == 2u ? (be16(c->m + q) & 0x7FFFu) : (c->m[q] & 0x7Fu);
+            if (index == 0u) {
+                continue;
+            }
+            if (c->n_assocs >= RFC_HEIF_MAX_ASSOCIATIONS) {
+                return RFC_ERR_LIMIT_EXCEEDED;
+            }
+            c->assocs[c->n_assocs] = (assoc){id, index, c->n_assocs};
+            c->n_assocs++;
+        }
+    }
+    return RFC_OK;
+}
+
+static rfc_status parse_iprp(heif_ctx *c, span p) {
+    size_t q = p.s;
+    int ipco_seen = 0;
+    while (q < p.e) {
+        uint32_t type = 0u;
+        span cp;
+        size_t next = 0u;
+        rfc_status st = mbox(c->m, q, p.e, &type, &cp, &next);
+        if (st != RFC_OK) {
+            return st;
+        }
+        q = next;
+        if (type == FOURCC('i', 'p', 'c', 'o')) {
+            if (ipco_seen) {
+                return RFC_ERR_INVALID_ARGUMENT; /* one ipco */
+            }
+            ipco_seen = 1;
+            st = parse_ipco(c, cp);
+        } else if (type == FOURCC('i', 'p', 'm', 'a')) {
+            st = parse_ipma(c, cp); /* every ipma, in order */
+        }
+        if (st != RFC_OK) {
+            return st;
+        }
+    }
+    return RFC_OK;
+}
+
+static int item_cmp(const void *a, const void *b) {
+    uint32_t x = ((const item *)a)->id, y = ((const item *)b)->id;
+    return x < y ? -1 : (x > y ? 1 : 0);
+}
+
+static int assoc_cmp(const void *a, const void *b) {
+    const assoc *x = (const assoc *)a, *y = (const assoc *)b;
+    if (x->item != y->item) return x->item < y->item ? -1 : 1;
+    return x->order < y->order ? -1 : (x->order > y->order ? 1 : 0);
+}
+
+static item *find_item(heif_ctx *c, uint32_t id) {
+    item key;
+    memset(&key, 0, sizeof(key));
+    key.id = id;
+    return (item *)bsearch(&key, c->items, c->n_items, sizeof(item), item_cmp);
+}
+
+/* Index once: items by ID, associations by item, reference flags. */
+static rfc_status index_tables(heif_ctx *c) {
+    qsort(c->items, c->n_items, sizeof(item), item_cmp);
+    for (uint32_t i = 1u; i < c->n_items; i++) {
+        if (c->items[i].id == c->items[i - 1u].id) {
+            return RFC_ERR_INVALID_ARGUMENT; /* duplicate item ID */
+        }
+    }
+    qsort(c->assocs, c->n_assocs, sizeof(assoc), assoc_cmp);
+    for (uint32_t a = 0u; a < c->n_assocs; a++) {
+        if (c->assocs[a].index > c->n_props) {
+            return RFC_ERR_INVALID_ARGUMENT; /* index past ipco */
+        }
+        item *it = find_item(c, c->assocs[a].item);
+        if (!it) {
+            continue; /* associations of unknown items are ignored */
+        }
+        if (it->assoc_count == 0u) {
+            it->assoc_first = a;
+        }
+        it->assoc_count++;
+    }
+    for (uint32_t r = 0u; r < c->n_refs; r++) {
+        const ref *rf = &c->refs[r];
+        if (rf->type == FOURCC('t', 'h', 'm', 'b') || rf->type == FOURCC('a', 'u', 'x', 'l')) {
+            item *f = find_item(c, rf->from);
+            if (f) f->ref_from_thmb_auxl = 1u;
+        } else if (rf->type == FOURCC('d', 'i', 'm', 'g')) {
+            item *t = find_item(c, rf->to);
+            if (t) t->ref_to_dimg = 1u;
+        }
+    }
+    return RFC_OK;
+}
+
+/* The first property of `type` associated with `it`, in association order. */
+static const prop *prop_of(heif_ctx *c, const item *it, uint32_t type) {
+    for (uint32_t a = 0u; a < it->assoc_count; a++) {
+        const prop *p = &c->props[c->assocs[it->assoc_first + a].index - 1u];
+        if (p->type == type) {
+            return p;
+        }
+    }
+    return NULL;
 }
 
 /* ---- the scan ----------------------------------------------------------- */
@@ -507,400 +445,166 @@ static int is_image_type(uint32_t t) {
            t == FOURCC('a', 'v', 'c', '1') || t == FOURCC('u', 'n', 'c', 'i');
 }
 
-typedef struct top_level {
-    uint32_t count;
-    uint32_t first_id;
-    rfc_status st;
-} top_level;
-
-static int top_level_cb(heif_ctx *c, const item *it, void *u, rfc_status *st) {
-    top_level *t = (top_level *)u;
-    if (!is_image_type(it->type)) {
-        return 0;
-    }
-    uint32_t hits = 0u, all = 0u;
-    static const uint32_t from_kinds[2] = {FOURCC('t', 'h', 'm', 'b'),
-                                           FOURCC('a', 'u', 'x', 'l')};
-    for (int k = 0; k < 2; k++) {
-        *st = count_refs(c, from_kinds[k], it->id, 0u, &hits);
-        if (*st != RFC_OK) {
-            return 1;
-        }
-        all += hits;
-    }
-    *st = count_refs(c, FOURCC('d', 'i', 'm', 'g'), 0u, it->id, &hits);
-    if (*st != RFC_OK) {
-        return 1;
-    }
-    all += hits;
-    if (all == 0u) {
-        if (t->count++ == 0u) {
-            t->first_id = it->id;
+/* Largest significant depth of any channel of `it` (8 when unstated). */
+static rfc_status item_depth(heif_ctx *c, const item *it, uint32_t *depth) {
+    uint32_t d = 0u;
+    const prop *p = prop_of(c, it, FOURCC('p', 'i', 'x', 'i'));
+    if (p) {
+        uint32_t v = 0u;
+        span b;
+        rfc_status st = fullbox(c->m, p->p, &v, NULL, &b);
+        if (st != RFC_OK) return st;
+        if (b.e - b.s < 1u) return RFC_ERR_INVALID_ARGUMENT;
+        uint32_t n = c->m[b.s];
+        if (n == 0u || b.e - b.s < 1u + n) return RFC_ERR_INVALID_ARGUMENT;
+        for (uint32_t k = 0u; k < n; k++) {
+            uint32_t bits = c->m[b.s + 1u + k];
+            if (bits > d) d = bits;
         }
     }
-    return 0;
+    if (it->type == FOURCC('h', 'v', 'c', '1')) {
+        p = prop_of(c, it, FOURCC('h', 'v', 'c', 'C'));
+        if (p) {
+            if (p->p.e - p->p.s < 19u) return RFC_ERR_INVALID_ARGUMENT;
+            uint32_t luma = 8u + (c->m[p->p.s + 17u] & 7u);
+            uint32_t chroma = 8u + (c->m[p->p.s + 18u] & 7u);
+            if (luma > d) d = luma;
+            if (chroma > d) d = chroma;
+        }
+    } else if (it->type == FOURCC('a', 'v', '0', '1')) {
+        p = prop_of(c, it, FOURCC('a', 'v', '1', 'C'));
+        if (p) {
+            if (p->p.e - p->p.s < 3u) return RFC_ERR_INVALID_ARGUMENT;
+            uint8_t b = c->m[p->p.s + 2u];
+            uint32_t ad = (b & 0x40u) ? ((b & 0x20u) ? 12u : 10u) : 8u;
+            if (ad > d) d = ad;
+        }
+    }
+    *depth = d ? d : 8u;
+    return RFC_OK;
 }
 
-typedef struct meta_child {
-    int hdlr_pict, pitm_seen;
-} meta_child;
+/* Clean aperture (ISO/IEC 14496-12 12.1.4.1): the crop must lie on the
+ * pixel grid inside the coded w x h picture. */
+static rfc_status apply_clap(heif_ctx *c, const prop *p, uint32_t *w, uint32_t *h) {
+    if (p->p.e - p->p.s < 32u) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    const uint8_t *b = c->m + p->p.s;
+    uint32_t wn = be32(b), wd = be32(b + 4), hn = be32(b + 8), hd = be32(b + 12);
+    int32_t hon = (int32_t)be32(b + 16), von = (int32_t)be32(b + 24);
+    uint32_t hod = be32(b + 20), vod = be32(b + 28);
+    if (wd == 0u || hd == 0u || hod == 0u || vod == 0u || wn % wd != 0u || hn % hd != 0u) {
+        return refuse(c, RFC_ERR_UNSUPPORTED_COMBINATION,
+                      "heif: a clean aperture off the pixel grid");
+    }
+    uint64_t cw = wn / wd, ch = hn / hd;
+    if (cw == 0u || ch == 0u || cw > *w || ch > *h) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    /* left = (W - cw) / 2 + hon / hod, which must be a whole pixel in range */
+    int64_t ln = (int64_t)(*w - cw) * (int64_t)hod + 2 * (int64_t)hon;
+    int64_t tn = (int64_t)(*h - ch) * (int64_t)vod + 2 * (int64_t)von;
+    int64_t ld = 2 * (int64_t)hod, td = 2 * (int64_t)vod;
+    if (ln < 0 || tn < 0 || ln % ld != 0 || tn % td != 0 ||
+        ln / ld > (int64_t)(*w - cw) || tn / td > (int64_t)(*h - ch)) {
+        return refuse(c, RFC_ERR_UNSUPPORTED_COMBINATION,
+                      "heif: a clean aperture off the pixel grid");
+    }
+    *w = (uint32_t)cw;
+    *h = (uint32_t)ch;
+    return RFC_OK;
+}
 
-static int meta_child_cb(heif_ctx *c, uint32_t type, const range *p, void *u,
-                         rfc_status *st) {
-    meta_child *m = (meta_child *)u;
-    uint8_t vf[4];
-    if (type == FOURCC('h', 'd', 'l', 'r')) {
-        uint8_t h[12];
-        *st = rd(&c->r, p->start, h, 12u);
-        if (*st != RFC_OK) {
-            return 1;
+static rfc_status scan_meta(heif_ctx *c, rfc_heif_info *out) {
+    int hdlr_pict = 0, pitm_seen = 0, iinf_seen = 0;
+    size_t q = 0u;
+    while (q < c->mn) {
+        uint32_t type = 0u;
+        span p;
+        size_t next = 0u;
+        rfc_status st = mbox(c->m, q, c->mn, &type, &p, &next);
+        if (st != RFC_OK) {
+            return st;
         }
-        m->hdlr_pict = be32(h + 8) == FOURCC('p', 'i', 'c', 't');
-    } else if (type == FOURCC('p', 'i', 't', 'm')) {
-        *st = rd(&c->r, p->start, vf, 4u);
-        if (*st != RFC_OK) {
-            return 1;
-        }
-        *st = vf[0] == 0u ? rd16(&c->r, p->start + 4u, &c->primary)
-                          : rd32(&c->r, p->start + 4u, &c->primary);
-        if (*st != RFC_OK) {
-            return 1;
-        }
-        m->pitm_seen = 1;
-    } else if (type == FOURCC('i', 'i', 'n', 'f') ||
-               type == FOURCC('i', 'r', 'e', 'f') ||
-               type == FOURCC('i', 'p', 'm', 'a')) {
-        *st = rd(&c->r, p->start, vf, 4u);
-        if (*st != RFC_OK) {
-            return 1;
-        }
-        if (type == FOURCC('i', 'i', 'n', 'f')) {
-            c->iinf = *p;
-            c->iinf_version = vf[0];
+        q = next;
+        uint32_t v = 0u;
+        span b;
+        if (type == FOURCC('h', 'd', 'l', 'r')) {
+            st = fullbox(c->m, p, &v, NULL, &b);
+            if (st != RFC_OK) return st;
+            if (b.e - b.s < 8u) return RFC_ERR_INVALID_ARGUMENT;
+            hdlr_pict = be32(c->m + b.s + 4u) == FOURCC('p', 'i', 'c', 't');
+        } else if (type == FOURCC('p', 'i', 't', 'm')) {
+            st = fullbox(c->m, p, &v, NULL, &b);
+            if (st != RFC_OK) return st;
+            size_t idsz = v == 0u ? 2u : 4u;
+            if (b.e - b.s < idsz) return RFC_ERR_INVALID_ARGUMENT;
+            c->primary = idsz == 2u ? be16(c->m + b.s) : be32(c->m + b.s);
+            pitm_seen = 1;
+        } else if (type == FOURCC('i', 'i', 'n', 'f')) {
+            if (iinf_seen) return RFC_ERR_INVALID_ARGUMENT;
+            iinf_seen = 1;
+            st = parse_iinf(c, p);
         } else if (type == FOURCC('i', 'r', 'e', 'f')) {
-            c->iref = *p;
-            c->iref_version = vf[0];
-        } else {
-            c->ipma = *p;
-            c->ipma_version = vf[0];
-            c->ipma_flags = ((uint32_t)vf[1] << 16) | ((uint32_t)vf[2] << 8) | vf[3];
+            st = parse_iref(c, p);
+        } else if (type == FOURCC('i', 'p', 'r', 'p')) {
+            st = parse_iprp(c, p);
         }
-    } else if (type == FOURCC('i', 'p', 'r', 'p')) {
-        /* ipco and ipma live inside iprp */
-        *st = each_box(c, p->start, p->end, meta_child_cb, u);
-        if (*st != RFC_OK) {
-            return 1;
-        }
-    } else if (type == FOURCC('i', 'p', 'c', 'o')) {
-        c->ipco = *p;
-    }
-    return 0;
-}
-
-typedef struct top_box {
-    int ftyp_first, moov;
-    uint32_t n;
-} top_box;
-
-static int top_box_cb(heif_ctx *c, uint32_t type, const range *p, void *u,
-                      rfc_status *st) {
-    top_box *t = (top_box *)u;
-    if (t->n++ == 0u) {
-        t->ftyp_first = type == FOURCC('f', 't', 'y', 'p');
-    }
-    if (type == FOURCC('m', 'o', 'o', 'v')) {
-        t->moov = 1;
-    } else if (type == FOURCC('m', 'e', 't', 'a') && !c->meta.present) {
-        if (p->end - p->start < 4u) {
-            *st = RFC_ERR_INVALID_ARGUMENT;
-            return 1;
-        }
-        c->meta.start = p->start + 4u;
-        c->meta.end = p->end;
-        c->meta.present = 1;
-    }
-    return 0;
-}
-
-typedef struct aux_scan {
-    uint32_t primary;
-    int alpha, other;
-} aux_scan;
-
-static int aux_ref_cb(heif_ctx *c, uint32_t type, uint32_t from, uint32_t to,
-                      void *u, rfc_status *st) {
-    aux_scan *a = (aux_scan *)u;
-    if (type != FOURCC('a', 'u', 'x', 'l') || to != a->primary) {
-        return 0;
-    }
-    range p;
-    int found = 0;
-    *st = prop_of(c, from, FOURCC('a', 'u', 'x', 'C'), &p, &found);
-    if (*st != RFC_OK) {
-        return 1;
-    }
-    static const char a1[] = "urn:mpeg:hevc:2015:auxid:1";
-    static const char a2[] = "urn:mpeg:mpegB:cicp:systems:auxiliary:alpha";
-    char urn[sizeof(a2)];
-    memset(urn, 0, sizeof(urn));
-    if (found && p.end - p.start > 4u) {
-        uint64_t n = p.end - p.start - 4u;
-        if (n > sizeof(urn) - 1u) {
-            n = sizeof(urn) - 1u;
-        }
-        *st = rd(&c->r, p.start + 4u, (uint8_t *)urn, (size_t)n);
-        if (*st != RFC_OK) {
-            return 1;
-        }
-    }
-    if (strcmp(urn, a1) == 0 || strcmp(urn, a2) == 0) {
-        a->alpha = 1;
-    } else {
-        a->other = 1;
-    }
-    return 0;
-}
-
-typedef struct tile_scan {
-    uint32_t grid;
-    uint32_t tiles, hevc_tiles;
-    uint32_t first_tile;
-} tile_scan;
-
-static int tile_ref_cb(heif_ctx *c, uint32_t type, uint32_t from, uint32_t to,
-                       void *u, rfc_status *st) {
-    tile_scan *t = (tile_scan *)u;
-    if (type != FOURCC('d', 'i', 'm', 'g') || from != t->grid) {
-        return 0;
-    }
-    item it;
-    int ok = 0;
-    *st = item_by_id(c, to, &it, &ok);
-    if (*st != RFC_OK) {
-        return 1;
-    }
-    if (!ok) {
-        *st = RFC_ERR_INVALID_ARGUMENT;
-        return 1;
-    }
-    if (t->tiles++ == 0u) {
-        t->first_tile = to;
-    }
-    if (it.type == FOURCC('h', 'v', 'c', '1')) {
-        t->hevc_tiles++;
-    }
-    return 0;
-}
-
-typedef struct exif_scan {
-    int exif, xmp;
-} exif_scan;
-
-static int exif_cb(heif_ctx *c, const item *it, void *u, rfc_status *st) {
-    (void)c;
-    (void)st;
-    exif_scan *e = (exif_scan *)u;
-    if (it->type == FOURCC('E', 'x', 'i', 'f')) {
-        e->exif = 1;
-    } else if (it->is_xmp) {
-        e->xmp = 1;
-    }
-    return 0;
-}
-
-typedef struct colr_scan {
-    rfc_heif_info *out;
-} colr_scan;
-
-static int colr_cb(heif_ctx *c, uint32_t type, const range *p, void *u,
-                   rfc_status *st) {
-    rfc_heif_info *o = ((colr_scan *)u)->out;
-    if (type != FOURCC('c', 'o', 'l', 'r') || p->end - p->start < 4u) {
-        return 0;
-    }
-    uint32_t ct = 0u;
-    *st = rd32(&c->r, p->start, &ct);
-    if (*st != RFC_OK) {
-        return 1;
-    }
-    if (ct == FOURCC('p', 'r', 'o', 'f') || ct == FOURCC('r', 'I', 'C', 'C')) {
-        uint64_t n = p->end - p->start - 4u;
-        if (n == 0u || n > 0xFFFFFFFFu) {
-            *st = RFC_ERR_INVALID_ARGUMENT;
-            return 1;
-        }
-        o->has_icc = 1;
-        o->icc_offset = p->start + 4u;
-        o->icc_len = (uint32_t)n;
-    } else if (ct == FOURCC('n', 'c', 'l', 'x')) {
-        uint8_t b[7];
-        if (p->end - p->start < 11u) {
-            *st = RFC_ERR_INVALID_ARGUMENT;
-            return 1;
-        }
-        *st = rd(&c->r, p->start + 4u, b, 7u);
-        if (*st != RFC_OK) {
-            return 1;
-        }
-        o->has_nclx = 1;
-        o->primaries = (uint16_t)be16(b);
-        o->transfer = (uint16_t)be16(b + 2);
-        o->matrix = (uint16_t)be16(b + 4);
-        o->full_range = (uint8_t)(b[6] >> 7);
-    }
-    return 0;
-}
-
-static rfc_status scan_depth(heif_ctx *c, uint32_t id, uint32_t type,
-                             uint32_t *depth) {
-    range p;
-    int found = 0;
-    rfc_status st = prop_of(c, id, FOURCC('p', 'i', 'x', 'i'), &p, &found);
-    if (st != RFC_OK) {
-        return st;
-    }
-    if (found && p.end - p.start >= 6u) {
-        uint8_t b[2];
-        st = rd(&c->r, p.start + 4u, b, 2u); /* num_channels, bits[0] */
         if (st != RFC_OK) {
             return st;
         }
-        if (b[0] > 0u) {
-            *depth = b[1];
-            return RFC_OK;
-        }
     }
-    if (type == FOURCC('h', 'v', 'c', '1')) {
-        st = prop_of(c, id, FOURCC('h', 'v', 'c', 'C'), &p, &found);
-        if (st == RFC_OK && found && p.end - p.start >= 18u) {
-            uint8_t b = 0u;
-            st = rd(&c->r, p.start + 17u, &b, 1u);
-            if (st == RFC_OK) {
-                *depth = 8u + (b & 7u);
-            }
-        }
-        return st;
+    if (!hdlr_pict || !pitm_seen || !iinf_seen) {
+        return RFC_ERR_INVALID_ARGUMENT;
     }
-    if (type == FOURCC('a', 'v', '0', '1')) {
-        st = prop_of(c, id, FOURCC('a', 'v', '1', 'C'), &p, &found);
-        if (st == RFC_OK && found && p.end - p.start >= 3u) {
-            uint8_t b = 0u;
-            st = rd(&c->r, p.start + 2u, &b, 1u);
-            if (st == RFC_OK) {
-                *depth = (b & 0x40u) ? ((b & 0x20u) ? 12u : 10u) : 8u;
-            }
-        }
-    }
-    return st;
-}
-
-static rfc_status refuse(heif_ctx *c, rfc_status st, const char *detail) {
-    c->detail = detail;
-    return st;
-}
-
-static rfc_status heif_scan_core(heif_ctx *c, rfc_heif_info *out) {
-    top_box tb = {0, 0, 0u};
-    rfc_status st = each_box(c, 0u, c->r.size, top_box_cb, &tb);
+    rfc_status st = index_tables(c);
     if (st != RFC_OK) {
         return st;
     }
-    if (!tb.ftyp_first || !c->meta.present) {
+    item *prim = find_item(c, c->primary);
+    if (!prim) {
         return RFC_ERR_INVALID_ARGUMENT;
     }
-    meta_child mc = {0, 0};
-    st = each_box(c, c->meta.start, c->meta.end, meta_child_cb, &mc);
-    if (st != RFC_OK) {
-        return st;
-    }
-    if (!mc.hdlr_pict || !mc.pitm_seen || !c->iinf.present) {
-        return RFC_ERR_INVALID_ARGUMENT;
-    }
-    item prim;
-    int ok = 0;
-    st = item_by_id(c, c->primary, &prim, &ok);
-    if (st != RFC_OK) {
-        return st;
-    }
-    if (!ok) {
-        return RFC_ERR_INVALID_ARGUMENT;
-    }
-    out->primary_type = prim.type;
+    out->primary_type = prim->type;
     /* geometry first, so a caller can size even a file refused below */
-    range p;
-    int found = 0;
-    st = prop_of(c, c->primary, FOURCC('i', 's', 'p', 'e'), &p, &found);
-    if (st != RFC_OK) {
-        return st;
-    }
-    if (!found || p.end - p.start < 12u) {
+    const prop *p = prop_of(c, prim, FOURCC('i', 's', 'p', 'e'));
+    if (!p) {
         return RFC_ERR_INVALID_ARGUMENT;
     }
-    uint8_t wh[8];
-    st = rd(&c->r, p.start + 4u, wh, 8u);
-    if (st != RFC_OK) {
-        return st;
-    }
-    uint32_t w = be32(wh), h = be32(wh + 4);
-    if (w == 0u || h == 0u) {
+    uint32_t v = 0u;
+    span b;
+    st = fullbox(c->m, p->p, &v, NULL, &b);
+    if (st != RFC_OK) return st;
+    if (b.e - b.s < 8u) return RFC_ERR_INVALID_ARGUMENT;
+    uint32_t cw = be32(c->m + b.s), ch = be32(c->m + b.s + 4u);
+    if (cw == 0u || ch == 0u) {
         return RFC_ERR_INVALID_ARGUMENT;
     }
-    /* clean aperture (applied before irot and imir, ISO/IEC 23008-12 6.5):
-     * the picture the system decoder returns is cropped to it */
-    st = prop_of(c, c->primary, FOURCC('c', 'l', 'a', 'p'), &p, &found);
-    if (st != RFC_OK) {
-        return st;
+    uint32_t w = cw, h = ch;
+    const prop *cl = prop_of(c, prim, FOURCC('c', 'l', 'a', 'p'));
+    p = prop_of(c, prim, FOURCC('i', 'r', 'o', 't'));
+    if (p) {
+        if (p->p.e - p->p.s < 1u) return RFC_ERR_INVALID_ARGUMENT;
+        out->irot = c->m[p->p.s] & 3u;
     }
-    if (found) {
-        uint8_t cl[32];
-        if (p.end - p.start < 32u) {
-            return RFC_ERR_INVALID_ARGUMENT;
-        }
-        st = rd(&c->r, p.start, cl, 32u);
-        if (st != RFC_OK) {
-            return st;
-        }
-        uint32_t wn = be32(cl), wd = be32(cl + 4), hn = be32(cl + 8), hd = be32(cl + 12);
-        if (wd == 0u || hd == 0u || wn % wd != 0u || hn % hd != 0u) {
-            return refuse(c, RFC_ERR_UNSUPPORTED_COMBINATION,
-                          "heif: a fractional clean aperture");
-        }
-        uint32_t cw = wn / wd, ch = hn / hd;
-        if (cw == 0u || ch == 0u || cw > w || ch > h) {
-            return RFC_ERR_INVALID_ARGUMENT;
-        }
-        w = cw;
-        h = ch;
-    }
-    st = prop_of(c, c->primary, FOURCC('i', 'r', 'o', 't'), &p, &found);
-    if (st != RFC_OK) {
-        return st;
-    }
-    if (found && p.end > p.start) {
-        uint8_t a = 0u;
-        st = rd(&c->r, p.start, &a, 1u);
-        if (st != RFC_OK) {
-            return st;
-        }
-        out->irot = a & 3u;
-    }
-    st = prop_of(c, c->primary, FOURCC('i', 'm', 'i', 'r'), &p, &found);
-    if (st != RFC_OK) {
-        return st;
-    }
-    if (found && p.end > p.start) {
-        uint8_t a = 0u;
-        st = rd(&c->r, p.start, &a, 1u);
-        if (st != RFC_OK) {
-            return st;
-        }
+    p = prop_of(c, prim, FOURCC('i', 'm', 'i', 'r'));
+    if (p) {
+        if (p->p.e - p->p.s < 1u) return RFC_ERR_INVALID_ARGUMENT;
         out->has_imir = 1;
-        out->imir_axis = a & 1u;
     }
-    out->width = (out->irot & 1u) ? h : w;
-    out->height = (out->irot & 1u) ? w : h;
+    int turn = out->irot & 1u;
+    out->coded_width = turn ? ch : cw;
+    out->coded_height = turn ? cw : ch;
+    if (cl) {
+        st = apply_clap(c, cl, &w, &h);
+        if (st != RFC_OK) {
+            return st;
+        }
+    }
+    out->width = turn ? h : w;
+    out->height = turn ? w : h;
     out->dims_known = 1;
-
     if (out->has_imir && out->irot != 0u) {
         /* the host's WIC HEIF encoder and decoder disagree on a mirror
          * combined with a rotation (EXIF orientations 5 and 7 come back
@@ -908,74 +612,97 @@ static rfc_status heif_scan_core(heif_ctx *c, rfc_heif_info *out) {
         return refuse(c, RFC_ERR_UNSUPPORTED_COMBINATION,
                       "heif: a mirrored and rotated image (the system decoder's combined mirror and rotation is not verified)");
     }
-
-    if (tb.moov) {
-        return refuse(c, RFC_ERR_UNSUPPORTED_COMBINATION,
-                      "heif: an image sequence track (sequences are not supported)");
+    /* exactly one top-level picture, and it is the primary */
+    uint32_t top = 0u;
+    for (uint32_t i = 0u; i < c->n_items; i++) {
+        const item *it = &c->items[i];
+        if (is_image_type(it->type) && !it->ref_from_thmb_auxl && !it->ref_to_dimg) {
+            top++;
+            if (it->id != c->primary) {
+                return refuse(c, RFC_ERR_UNSUPPORTED_COMBINATION,
+                              "heif: more than one top-level image");
+            }
+        }
     }
-    top_level tl = {0u, 0u, RFC_OK};
-    st = each_item(c, top_level_cb, &tl);
-    if (st != RFC_OK) {
-        return st;
-    }
-    if (tl.count > 1u) {
-        return refuse(c, RFC_ERR_UNSUPPORTED_COMBINATION,
-                      "heif: more than one top-level image");
-    }
-    if (tl.count == 0u || tl.first_id != c->primary) {
+    if (top == 0u) {
         return RFC_ERR_INVALID_ARGUMENT; /* the primary is not a picture */
     }
-    if (prim.type == FOURCC('i', 'd', 'e', 'n') ||
-        prim.type == FOURCC('i', 'o', 'v', 'l')) {
+    if (prim->type == FOURCC('i', 'd', 'e', 'n') || prim->type == FOURCC('i', 'o', 'v', 'l')) {
         return refuse(c, RFC_ERR_UNSUPPORTED_COMBINATION,
                       "heif: a derived (iden) or overlay (iovl) primary image");
     }
-    uint32_t coded_id = c->primary, coded_type = prim.type;
-    if (prim.type == FOURCC('g', 'r', 'i', 'd')) {
-        tile_scan ts = {c->primary, 0u, 0u, 0u};
-        st = each_ref(c, tile_ref_cb, &ts);
-        if (st != RFC_OK) {
-            return st;
+    uint32_t depth = 0u;
+    if (prim->type == FOURCC('g', 'r', 'i', 'd')) {
+        /* every tile has the same supported coding, and each depth counts */
+        uint32_t tiles = 0u, tile_type = 0u;
+        for (uint32_t r = 0u; r < c->n_refs; r++) {
+            const ref *rf = &c->refs[r];
+            if (rf->type != FOURCC('d', 'i', 'm', 'g') || rf->from != c->primary) {
+                continue;
+            }
+            const item *t = find_item(c, rf->to);
+            if (!t) {
+                return RFC_ERR_INVALID_ARGUMENT;
+            }
+            if ((t->type != FOURCC('h', 'v', 'c', '1') && t->type != FOURCC('a', 'v', '0', '1')) ||
+                (tiles > 0u && t->type != tile_type)) {
+                return refuse(c, RFC_ERR_UNSUPPORTED_COMBINATION,
+                              "heif: a grid whose tiles are not all HEVC or all AV1");
+            }
+            tile_type = t->type;
+            tiles++;
+            uint32_t td = 8u;
+            st = item_depth(c, t, &td);
+            if (st != RFC_OK) return st;
+            if (td > depth) depth = td;
         }
-        if (ts.tiles == 0u) {
+        if (tiles == 0u) {
             return RFC_ERR_INVALID_ARGUMENT;
         }
-        out->hevc = ts.hevc_tiles > 0u;
-        coded_id = ts.first_tile;
-        item tile;
-        st = item_by_id(c, coded_id, &tile, &ok);
-        if (st != RFC_OK) {
-            return st;
-        }
-        coded_type = tile.type;
-    } else if (prim.type == FOURCC('h', 'v', 'c', '1')) {
-        out->hevc = 1;
-    } else if (prim.type != FOURCC('a', 'v', '0', '1')) {
+        out->coding = tile_type == FOURCC('h', 'v', 'c', '1') ? RFC_HEIF_CODING_HEVC : RFC_HEIF_CODING_AV1;
+        uint32_t gd = 8u;
+        st = item_depth(c, prim, &gd);
+        if (st != RFC_OK) return st;
+        if (gd > depth) depth = gd;
+    } else if (prim->type == FOURCC('h', 'v', 'c', '1') || prim->type == FOURCC('a', 'v', '0', '1')) {
+        out->coding = prim->type == FOURCC('h', 'v', 'c', '1') ? RFC_HEIF_CODING_HEVC : RFC_HEIF_CODING_AV1;
+        st = item_depth(c, prim, &depth);
+        if (st != RFC_OK) return st;
+    } else {
         return refuse(c, RFC_ERR_UNSUPPORTED_COMBINATION,
                       "heif: the primary image coding is not HEVC, AV1 or a grid of them");
     }
-    out->bit_depth = 8u;
-    st = scan_depth(c, c->primary, prim.type, &out->bit_depth);
-    if (st == RFC_OK && coded_id != c->primary) {
-        uint32_t td = out->bit_depth;
-        st = scan_depth(c, coded_id, coded_type, &td);
-        if (td > out->bit_depth) {
-            out->bit_depth = td;
+    out->bit_depth = depth;
+    /* auxiliary images of the primary */
+    int alpha = 0, other = 0;
+    for (uint32_t r = 0u; r < c->n_refs; r++) {
+        const ref *rf = &c->refs[r];
+        if (rf->type != FOURCC('a', 'u', 'x', 'l') || rf->to != c->primary) {
+            continue;
         }
+        const item *a = find_item(c, rf->from);
+        const prop *ac = a ? prop_of(c, a, FOURCC('a', 'u', 'x', 'C')) : NULL;
+        int is_alpha = 0;
+        if (ac) {
+            uint32_t av = 0u;
+            span ab;
+            st = fullbox(c->m, ac->p, &av, NULL, &ab);
+            if (st != RFC_OK) return st;
+            size_t pos = ab.s;
+            const uint8_t *urn = NULL;
+            size_t ul = 0u;
+            st = cstr(c->m, &pos, ab.e, &urn, &ul);
+            if (st != RFC_OK) return st;
+            is_alpha = (ul == 26u && memcmp(urn, "urn:mpeg:hevc:2015:auxid:1", 26u) == 0) ||
+                       (ul == 43u && memcmp(urn, "urn:mpeg:mpegB:cicp:systems:auxiliary:alpha", 43u) == 0);
+        }
+        if (is_alpha) alpha = 1; else other = 1;
     }
-    if (st != RFC_OK) {
-        return st;
-    }
-    aux_scan ax = {c->primary, 0, 0};
-    st = each_ref(c, aux_ref_cb, &ax);
-    if (st != RFC_OK) {
-        return st;
-    }
-    if (ax.other) {
+    if (other) {
         return refuse(c, RFC_ERR_UNSUPPORTED_COMBINATION,
                       "heif: an auxiliary image (depth map or gain map) cannot be carried");
     }
-    if (ax.alpha) {
+    if (alpha) {
         return refuse(c, RFC_ERR_UNSUPPORTED_ALPHA,
                       "heif: an alpha auxiliary image (alpha HEIF import is not verified)");
     }
@@ -983,10 +710,31 @@ static rfc_status heif_scan_core(heif_ctx *c, rfc_heif_info *out) {
         return refuse(c, RFC_ERR_UNSUPPORTED_SAMPLE,
                       "heif: a 10- or 12-bit image (the system decoder's high-depth output is not verified)");
     }
-    colr_scan cs = {out};
-    st = each_prop_of(c, c->primary, colr_cb, &cs);
-    if (st != RFC_OK) {
-        return st;
+    /* colour boxes of the primary, in association order */
+    for (uint32_t a = 0u; a < prim->assoc_count; a++) {
+        const prop *cp = &c->props[c->assocs[prim->assoc_first + a].index - 1u];
+        if (cp->type != FOURCC('c', 'o', 'l', 'r')) {
+            continue;
+        }
+        if (cp->p.e - cp->p.s < 4u) return RFC_ERR_INVALID_ARGUMENT;
+        uint32_t ct = be32(c->m + cp->p.s);
+        if (ct == FOURCC('p', 'r', 'o', 'f') || ct == FOURCC('r', 'I', 'C', 'C')) {
+            size_t n = cp->p.e - cp->p.s - 4u;
+            if (n == 0u) return RFC_ERR_INVALID_ARGUMENT;
+            if (!out->has_icc) {
+                out->has_icc = 1;
+                out->icc_offset = c->m_file_off + cp->p.s + 4u;
+                out->icc_len = (uint32_t)n;
+            }
+        } else if (ct == FOURCC('n', 'c', 'l', 'x')) {
+            if (cp->p.e - cp->p.s < 11u) return RFC_ERR_INVALID_ARGUMENT;
+            const uint8_t *nb = c->m + cp->p.s + 4u;
+            out->has_nclx = 1;
+            out->primaries = (uint16_t)be16(nb);
+            out->transfer = (uint16_t)be16(nb + 2);
+            out->matrix = (uint16_t)be16(nb + 4);
+            out->full_range = (uint8_t)(nb[6] >> 7);
+        }
     }
     if (out->has_icc) {
         out->has_nclx = 0; /* ICC takes precedence */
@@ -994,47 +742,149 @@ static rfc_status heif_scan_core(heif_ctx *c, rfc_heif_info *out) {
         return refuse(c, RFC_ERR_UNSUPPORTED_COMBINATION,
                       "heif: a PQ or HLG transfer (the system decoder's HDR output is not specified)");
     }
-    exif_scan ex = {0, 0};
-    st = each_item(c, exif_cb, &ex);
-    if (st != RFC_OK) {
-        return st;
+    for (uint32_t i = 0u; i < c->n_items; i++) {
+        if (c->items[i].type == FOURCC('E', 'x', 'i', 'f')) out->has_exif = 1;
+        if (c->items[i].is_xmp) out->has_xmp = 1;
     }
-    out->has_exif = ex.exif;
-    out->has_xmp = ex.xmp;
     rfc_layout lay;
     memset(&lay, 0, sizeof(lay));
     lay.format = RFC_SAMPLE_RGB8;
     lay.alpha = RFC_ALPHA_NONE;
+    lay.bits_per_sample = 8u;
     lay.width = out->width;
     lay.height = out->height;
-    lay.bits_per_sample = 8u;
-    return rfc_layout_normalize_stride(&lay, &out->layout);
+    st = rfc_layout_normalize_stride(&lay, &out->layout);
+    if (st != RFC_OK) return st;
+    lay.width = out->coded_width;
+    lay.height = out->coded_height;
+    return rfc_layout_normalize_stride(&lay, &out->coded_layout);
+}
+
+static void *heap_alloc(void *ctx, size_t n) {
+    (void)ctx;
+    return malloc(n ? n : 1u);
+}
+
+static void heap_free(void *ctx, void *p) {
+    (void)ctx;
+    free(p);
 }
 
 rfc_status rfc_heif_scan(rfc_heif_read_fn read_at, void *ctx, uint64_t size,
-                         rfc_heif_info *out, const char **detail,
-                         int *read_failed) {
-    if (detail) {
-        *detail = NULL;
-    }
-    if (read_failed) {
-        *read_failed = 0;
-    }
+                         const rfc_allocator *alloc, rfc_heif_info *out,
+                         const char **detail, int *read_failed) {
+    static const rfc_allocator k_heap = {heap_alloc, heap_free, NULL};
+    if (detail) *detail = NULL;
+    if (read_failed) *read_failed = 0;
     if (!read_at || !out) {
         return RFC_ERR_INVALID_ARGUMENT;
     }
     memset(out, 0, sizeof(*out));
+    if (!alloc || !alloc->alloc || !alloc->free) {
+        alloc = &k_heap;
+    }
+    src r = {read_at, ctx, size, 0};
     heif_ctx c;
     memset(&c, 0, sizeof(c));
-    c.r.read_at = read_at;
-    c.r.ctx = ctx;
-    c.r.size = size;
-    rfc_status st = heif_scan_core(&c, out);
-    if (detail) {
-        *detail = c.detail;
+    rfc_status st = RFC_OK;
+    /* top level: ftyp first; find meta; a moov is a sequence track */
+    uint64_t pos = 0u, meta_off = 0u, meta_size = 0u;
+    int meta_seen = 0, ftyp_first = 0, moov = 0;
+    for (uint32_t n = 0u;; n++) {
+        if (n >= MAX_TOP_BOXES) {
+            st = RFC_ERR_LIMIT_EXCEEDED;
+            break;
+        }
+        uint8_t h[16];
+        size_t got = 0u;
+        st = src_read(&r, pos, h, 16u, &got);
+        if (st != RFC_OK) break;
+        if (got == 0u) break; /* the end, at a box boundary */
+        if (got < 8u) {
+            st = RFC_ERR_TRUNCATED_INPUT;
+            break;
+        }
+        uint64_t bsz = be32(h);
+        uint32_t type = be32(h + 4);
+        uint64_t hdr = 8u;
+        if (bsz == 1u) {
+            if (got < 16u) {
+                st = RFC_ERR_TRUNCATED_INPUT;
+                break;
+            }
+            bsz = ((uint64_t)be32(h + 8) << 32) | be32(h + 12);
+            hdr = 16u;
+        }
+        if (n == 0u) ftyp_first = type == FOURCC('f', 't', 'y', 'p');
+        if (type == FOURCC('m', 'o', 'o', 'v')) moov = 1;
+        if (bsz == 0u) {
+            /* runs to the end of the file */
+            if (type == FOURCC('m', 'e', 't', 'a')) {
+                if (size == RFC_HEIF_SIZE_UNKNOWN) {
+                    st = RFC_ERR_INVALID_ARGUMENT;
+                    break;
+                }
+                bsz = size - pos;
+            } else {
+                break;
+            }
+        }
+        if (bsz < hdr || (size != RFC_HEIF_SIZE_UNKNOWN && bsz > size - pos)) {
+            st = RFC_ERR_INVALID_ARGUMENT;
+            break;
+        }
+        if (type == FOURCC('m', 'e', 't', 'a') && !meta_seen) {
+            meta_seen = 1;
+            meta_off = pos + hdr;
+            meta_size = bsz - hdr;
+        }
+        if (UINT64_MAX - pos < bsz) {
+            st = RFC_ERR_INVALID_ARGUMENT;
+            break;
+        }
+        pos += bsz;
     }
-    if (read_failed) {
-        *read_failed = c.r.read_failed;
+    if (st == RFC_OK && moov) {
+        st = refuse(&c, RFC_ERR_UNSUPPORTED_COMBINATION,
+                    "heif: an image sequence track (sequences are not supported)");
     }
+    if (st == RFC_OK && (!ftyp_first || !meta_seen || meta_size < 4u)) {
+        st = RFC_ERR_INVALID_ARGUMENT;
+    }
+    if (st == RFC_OK && meta_size > RFC_HEIF_MAX_META_BYTES) {
+        st = RFC_ERR_LIMIT_EXCEEDED;
+    }
+    uint8_t *meta = NULL;
+    if (st == RFC_OK) {
+        meta = (uint8_t *)alloc->alloc(alloc->ctx, (size_t)meta_size);
+        c.items = (item *)alloc->alloc(alloc->ctx, sizeof(item) * RFC_HEIF_MAX_ITEMS);
+        c.refs = (ref *)alloc->alloc(alloc->ctx, sizeof(ref) * RFC_HEIF_MAX_REFERENCES);
+        c.props = (prop *)alloc->alloc(alloc->ctx, sizeof(prop) * RFC_HEIF_MAX_PROPERTIES);
+        c.assocs = (assoc *)alloc->alloc(alloc->ctx, sizeof(assoc) * RFC_HEIF_MAX_ASSOCIATIONS);
+        if (!meta || !c.items || !c.refs || !c.props || !c.assocs) {
+            st = RFC_ERR_OUT_OF_MEMORY;
+        }
+    }
+    if (st == RFC_OK) {
+        size_t got = 0u;
+        st = src_read(&r, meta_off, meta, (size_t)meta_size, &got);
+        if (st == RFC_OK && got != meta_size) {
+            st = RFC_ERR_TRUNCATED_INPUT;
+        }
+    }
+    if (st == RFC_OK) {
+        c.m = meta + 4u; /* after the FullBox header of meta */
+        c.mn = (size_t)meta_size - 4u;
+        c.m_file_off = meta_off + 4u;
+        memset(c.items, 0, sizeof(item) * RFC_HEIF_MAX_ITEMS);
+        st = scan_meta(&c, out);
+    }
+    if (meta) alloc->free(alloc->ctx, meta);
+    if (c.items) alloc->free(alloc->ctx, c.items);
+    if (c.refs) alloc->free(alloc->ctx, c.refs);
+    if (c.props) alloc->free(alloc->ctx, c.props);
+    if (c.assocs) alloc->free(alloc->ctx, c.assocs);
+    if (detail) *detail = c.detail;
+    if (read_failed) *read_failed = r.read_failed;
     return st;
 }

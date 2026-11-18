@@ -1395,6 +1395,28 @@ HEVC_SYMBOL_PREFIXES = ("x265_", "de265_", "kvz_", "heif_context_", "heif_image_
                         "heif_decode_", "heif_init", "heif_get_version")
 
 
+def _no_hevc_in_link_inputs():
+    """The resolved Windows link commands (the generated build.ninja files of
+    the converter and its dependencies) and the dependency archives name no
+    HEVC implementation."""
+    import re as _re
+    word = _re.compile(r"(?<![A-Za-z0-9])(" + "|".join(HEVC_NAMES) + r")(?![A-Za-z0-9])", _re.I)
+    base = os.path.join(ROOT, "build", "converter", "windows-x64")
+    for dp, _dn, fn in os.walk(base):
+        for f in fn:
+            if f == "build.ninja":
+                path = os.path.join(dp, f)
+                with open(path, encoding="utf-8", errors="replace") as fh:
+                    for no, line in enumerate(fh, 1):
+                        if ("LINK_LIBRARIES" in line or "LINK_PATH" in line) and word.search(line):
+                            return f"{os.path.relpath(path, ROOT)}:{no} links an HEVC implementation"
+    deps = os.path.join(base, "deps-prefix", "lib")
+    for f in sorted(os.listdir(deps)) if os.path.isdir(deps) else []:
+        if word.search(f):
+            return f"dependency archive {f} is an HEVC implementation"
+    return None
+
+
 def _no_hevc_symbols(paths):
     """llvm-nm finds no external symbol of an HEVC implementation (x265,
     libde265, kvazaar, or libheif's API) in the built artifacts; the
@@ -1431,6 +1453,9 @@ def case_heif(all_targets=False):
         a_core = [x for x in a_lb if x.endswith(".a") and not x.endswith("libsharpyuv.a")]
         j_arch = [x for x in j_lb if x.endswith(".a")]
         libs = [*t_lb, *a_core, *j_arch, *w_lb, *p_lb, "-lstdc++", "-lm", "-pthread"]
+        for lib in libs:
+            if any(n in os.path.basename(lib).lower() for n in HEVC_NAMES):
+                raise RuntimeError(f"heif: the host link list includes HEVC implementation {lib}")
         return cflags, libs
 
     markers_host = [
@@ -1461,12 +1486,18 @@ def case_heif(all_targets=False):
     if rc:
         return rc
     if all_targets or os.name == "nt":
+        msg = _no_hevc_in_link_inputs()
+        if msg:
+            return fail(f"heif: {msg}")
+        print("heif: no HEVC implementation among the Windows link inputs and dependency archives")
         bindir = os.path.join(ROOT, "bin", "converter", "windows-x64")
+        deps = os.path.join(ROOT, "build", "converter", "windows-x64", "deps-prefix", "lib")
         arts = [os.path.join(bindir, n) for n in ("rfc_test_heif.exe", "rfc_bundle_smoke.exe")]
+        arts += sorted(os.path.join(deps, f) for f in os.listdir(deps) if f.endswith(".a"))
         msg = _no_hevc_symbols(arts)
         if msg:
             return fail(f"heif: {msg}")
-        print("heif: llvm-nm finds no HEVC symbol in the built Windows artifacts")
+        print(f"heif: llvm-nm finds no HEVC symbol in {len(arts)} built Windows artifacts and archives")
     return 0
 
 

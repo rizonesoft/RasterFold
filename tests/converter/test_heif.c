@@ -246,7 +246,7 @@ static rfc_status adapter_decode(rfc_format_id f, const uint8_t *b, size_t n,
 /* ------------------------------------------------------------------------ */
 
 typedef struct buf {
-    uint8_t d[65536];
+    uint8_t d[262144];
     size_t n;
 } buf;
 
@@ -297,6 +297,17 @@ typedef struct hspec {
     int extra_items; /* plain items to exceed bounds */
     int ftyp_late;
     uint32_t clap_w, clap_h, clap_d; /* clean aperture N/D; 0: none */
+    int32_t clap_hon, clap_von;      /* offsets, over clap_od */
+    uint32_t clap_od;                /* 0: 1 */
+    int ipma_v1;        /* ipma version 1 with flags 1 (32-bit IDs, 16-bit entries) */
+    int split_ipma;     /* the ispe association in a second ipma box */
+    int nested_iprp;    /* ipco and ipma one iprp deeper (not permitted) */
+    int pixi_c1;        /* pixi second-channel depth (0: as pixi_bits) */
+    int hvcc_chroma;    /* hvcC chroma depth (0: as hvcc_depth) */
+    int grid_mixed;     /* the last grid tile is av01 */
+    int grid_deep_tile; /* the last grid tile has its own 10-bit hvcC */
+    int moov_only;      /* ftyp and moov, no meta */
+    int unterminated;   /* the primary's item name has no terminator */
 } hspec;
 
 static void hspec_default(hspec *s) {
@@ -325,6 +336,14 @@ static size_t build_heif(const hspec *s, uint8_t *out) {
     put4cc(b, "mif1");
     put4cc(b, "heic");
     box_end(b, ft);
+    if (s->moov_only) {
+        size_t mv = box_begin(b, "moov");
+        box_end(b, mv);
+        size_t n0 = b->n;
+        memcpy(out, b->d, n0);
+        free(b);
+        return n0;
+    }
     size_t meta = fullbox_begin(b, "meta", 0u, 0u);
     size_t hdlr = fullbox_begin(b, "hdlr", 0u, 0u);
     put32(b, 0u);
@@ -337,10 +356,11 @@ static size_t build_heif(const hspec *s, uint8_t *out) {
     box_end(b, pitm);
     /* items */
     typedef struct it { uint32_t id; const char *type; int mime_xmp; } it;
-    it items[1200];
+    it items[4300];
     int ni = 0;
     items[ni++] = (it){1u, s->primary_type, 0};
-    for (int t = 0; t < s->grid_tiles; t++) items[ni++] = (it){10u + (uint32_t)t, "hvc1", 0};
+    for (int t = 0; t < s->grid_tiles; t++)
+        items[ni++] = (it){10u + (uint32_t)t, (s->grid_mixed && t == s->grid_tiles - 1) ? "av01" : "hvc1", 0};
     if (s->second_image) items[ni++] = (it){2u, "hvc1", 0};
     if (s->thumbnail) items[ni++] = (it){3u, "hvc1", 0};
     if (s->alpha_aux) items[ni++] = (it){4u, "hvc1", 0};
@@ -356,6 +376,11 @@ static size_t build_heif(const hspec *s, uint8_t *out) {
         put16(b, items[k].id);
         put16(b, 0u);
         put4cc(b, items[k].type);
+        if (s->unterminated && k == ni - 1) {
+            put8(b, 'x'); /* name runs to the end of the box */
+            box_end(b, infe);
+            continue;
+        }
         put8(b, 0u); /* name */
         if (items[k].mime_xmp) {
             putbytes(b, "application/rdf+xml", 20u);
@@ -400,6 +425,7 @@ static size_t build_heif(const hspec *s, uint8_t *out) {
     box_end(b, iref);
     /* properties */
     size_t iprp = box_begin(b, "iprp");
+    size_t iprp_inner = s->nested_iprp ? box_begin(b, "iprp") : 0u;
     size_t ipco = box_begin(b, "ipco");
     uint32_t np = 0u;
     prop_ref refs[64];
@@ -414,15 +440,30 @@ static size_t build_heif(const hspec *s, uint8_t *out) {
         p = box_begin(b, "hvcC");
         uint8_t cfg[23] = {1};
         cfg[17] = (uint8_t)(0xF8u | ((uint32_t)(s->hvcc_depth - 8) & 7u));
+        cfg[18] = (uint8_t)(0xF8u | ((uint32_t)((s->hvcc_chroma ? s->hvcc_chroma : s->hvcc_depth) - 8) & 7u));
         putbytes(b, cfg, sizeof(cfg));
         box_end(b, p);
         np++;
         refs[nr++] = (prop_ref){1u, np};
-        for (int t = 0; t < s->grid_tiles; t++) refs[nr++] = (prop_ref){10u + (uint32_t)t, np};
+        for (int t = 0; t < s->grid_tiles; t++) {
+            if (s->grid_deep_tile && t == s->grid_tiles - 1) continue;
+            refs[nr++] = (prop_ref){10u + (uint32_t)t, np};
+        }
+        if (s->grid_deep_tile && s->grid_tiles) {
+            p = box_begin(b, "hvcC");
+            uint8_t deep[23] = {1};
+            deep[17] = 0xFAu; /* luma 10 */
+            deep[18] = 0xFAu;
+            putbytes(b, deep, sizeof(deep));
+            box_end(b, p);
+            np++;
+            refs[nr++] = (prop_ref){10u + (uint32_t)(s->grid_tiles - 1), np};
+        }
     }
     if (s->pixi_bits) {
         p = fullbox_begin(b, "pixi", 0u, 0u);
-        put8(b, 3u); put8(b, (uint32_t)s->pixi_bits); put8(b, (uint32_t)s->pixi_bits); put8(b, (uint32_t)s->pixi_bits);
+        put8(b, 3u); put8(b, (uint32_t)s->pixi_bits);
+        put8(b, (uint32_t)(s->pixi_c1 ? s->pixi_c1 : s->pixi_bits)); put8(b, (uint32_t)s->pixi_bits);
         box_end(b, p);
         np++;
         refs[nr++] = (prop_ref){1u, np};
@@ -431,7 +472,8 @@ static size_t build_heif(const hspec *s, uint8_t *out) {
         p = box_begin(b, "clap");
         put32(b, s->clap_w); put32(b, s->clap_d);
         put32(b, s->clap_h); put32(b, s->clap_d);
-        put32(b, 0u); put32(b, 1u); put32(b, 0u); put32(b, 1u);
+        put32(b, (uint32_t)s->clap_hon); put32(b, s->clap_od ? s->clap_od : 1u);
+        put32(b, (uint32_t)s->clap_von); put32(b, s->clap_od ? s->clap_od : 1u);
         box_end(b, p);
         np++;
         refs[nr++] = (prop_ref){1u, np};
@@ -482,25 +524,34 @@ static size_t build_heif(const hspec *s, uint8_t *out) {
         if (s->depth_aux) refs[nr++] = (prop_ref){5u, np};
     }
     box_end(b, ipco);
-    size_t ipma = fullbox_begin(b, "ipma", 0u, 0u);
-    /* one entry per distinct item, in first-seen order */
-    uint32_t ids[64];
-    int nid = 0;
-    for (int k = 0; k < nr; k++) {
-        int seen = 0;
-        for (int q = 0; q < nid; q++) seen |= ids[q] == refs[k].item;
-        if (!seen) ids[nid++] = refs[k].item;
+    /* one entry per distinct item, in first-seen order; with split_ipma
+     * the first association (the primary's ispe) goes in its own ipma */
+    for (int pass = 0; pass < (s->split_ipma ? 2 : 1); pass++) {
+        int lo = s->split_ipma ? (pass == 0 ? 0 : 1) : 0;
+        int hi = s->split_ipma ? (pass == 0 ? 1 : nr) : nr;
+        size_t ipma = fullbox_begin(b, "ipma", s->ipma_v1 ? 1u : 0u, s->ipma_v1 ? 1u : 0u);
+        uint32_t ids[64];
+        int nid = 0;
+        for (int k = lo; k < hi; k++) {
+            int seen = 0;
+            for (int q = 0; q < nid; q++) seen |= ids[q] == refs[k].item;
+            if (!seen) ids[nid++] = refs[k].item;
+        }
+        put32(b, (uint32_t)nid);
+        for (int q = 0; q < nid; q++) {
+            if (s->ipma_v1) put32(b, ids[q]); else put16(b, ids[q]);
+            uint32_t cnt = 0u;
+            for (int k = lo; k < hi; k++) cnt += refs[k].item == ids[q];
+            put8(b, cnt);
+            for (int k = lo; k < hi; k++)
+                if (refs[k].item == ids[q]) {
+                    if (s->ipma_v1) put16(b, 0x8000u | refs[k].index);
+                    else put8(b, 0x80u | refs[k].index);
+                }
+        }
+        box_end(b, ipma);
     }
-    put32(b, (uint32_t)nid);
-    for (int q = 0; q < nid; q++) {
-        put16(b, ids[q]);
-        uint32_t cnt = 0u;
-        for (int k = 0; k < nr; k++) cnt += refs[k].item == ids[q];
-        put8(b, cnt);
-        for (int k = 0; k < nr; k++)
-            if (refs[k].item == ids[q]) put8(b, 0x80u | refs[k].index);
-    }
-    box_end(b, ipma);
+    if (s->nested_iprp) box_end(b, iprp_inner);
     box_end(b, iprp);
     box_end(b, meta);
     if (s->moov) {
@@ -535,12 +586,17 @@ static rfc_status mem_read(void *ctx, uint64_t off, uint8_t *dst, size_t n, size
 }
 
 static rfc_status scan(const hspec *s, rfc_heif_info *info, const char **detail) {
-    static uint8_t bytes[65536];
+    static uint8_t bytes[262144];
     size_t n = build_heif(s, bytes);
     mem_ctx m = {bytes, n, 0, 0};
     int rf = 0;
-    rfc_status st = rfc_heif_scan(mem_read, &m, n, info, detail, &rf);
+    rfc_status st = rfc_heif_scan(mem_read, &m, n, NULL, info, detail, &rf);
     CHECK(!rf);
+    /* the same verdict with the size unknown (read to the end) */
+    rfc_heif_info info2;
+    mem_ctx m2 = {bytes, n, 0, 0};
+    rfc_status st2 = rfc_heif_scan(mem_read, &m2, RFC_HEIF_SIZE_UNKNOWN, NULL, &info2, NULL, &rf);
+    CHECK(st2 == st && info2.width == info->width && info2.height == info->height);
     return st;
 }
 
@@ -596,7 +652,7 @@ static void test_registration_and_scanner(void) {
     hspec s;
     hspec_default(&s);
     CHECK(scan(&s, &info, &d) == RFC_OK);
-    CHECK(info.width == 64u && info.height == 48u && info.hevc && info.bit_depth == 8u);
+    CHECK(info.width == 64u && info.height == 48u && info.coding == RFC_HEIF_CODING_HEVC && info.bit_depth == 8u);
     CHECK(info.layout.format == RFC_SAMPLE_RGB8 && !info.has_icc && !info.has_exif);
     hspec_default(&s); s.irot = 1;
     CHECK(scan(&s, &info, &d) == RFC_OK && info.width == 48u && info.height == 64u);
@@ -609,7 +665,7 @@ static void test_registration_and_scanner(void) {
     hspec_default(&s); s.irot = 2; s.imir = 1;
     CHECK(scan(&s, &info, &d) == RFC_ERR_UNSUPPORTED_COMBINATION && d != NULL); /* mirror + rotation */
     hspec_default(&s); s.primary_type = "grid"; s.grid_tiles = 4; s.hvcc_depth = 8;
-    CHECK(scan(&s, &info, &d) == RFC_OK && info.hevc && info.primary_type == 0x67726964u);
+    CHECK(scan(&s, &info, &d) == RFC_OK && info.coding == RFC_HEIF_CODING_HEVC && info.primary_type == 0x67726964u);
     hspec_default(&s); s.thumbnail = 1;
     CHECK(scan(&s, &info, &d) == RFC_OK);
     struct {
@@ -635,15 +691,45 @@ static void test_registration_and_scanner(void) {
         if (!strcmp(w, "hvcc10")) s.hvcc_depth = 10;
         if (!strcmp(w, "pq")) { s.nclx_primaries = 9; s.nclx_transfer = 16; }
         if (!strcmp(w, "hlg")) { s.nclx_primaries = 9; s.nclx_transfer = 18; }
-        if (!strcmp(w, "items")) s.extra_items = 1100;
+        if (!strcmp(w, "items")) s.extra_items = 4100;
         if (!strcmp(w, "ftyp_late")) s.ftyp_late = 1;
         rfc_status st = scan(&s, &info, &d);
         if (st != cases[k].want) fprintf(stderr, "scan %s: got %s\n", w, rfc_status_name(st));
         CHECK(st == cases[k].want);
-        if (st != RFC_ERR_LIMIT_EXCEEDED && st != RFC_ERR_INVALID_ARGUMENT) {
+        if (st != RFC_ERR_LIMIT_EXCEEDED && st != RFC_ERR_INVALID_ARGUMENT && strcmp(w, "moov") != 0) {
             CHECK(d != NULL && info.dims_known && info.width == 64u);
         }
     }
+    /* table forms and bounds the redesign covers */
+    hspec_default(&s); s.ipma_v1 = 1;
+    CHECK(scan(&s, &info, &d) == RFC_OK && info.width == 64u);
+    hspec_default(&s); s.split_ipma = 1; s.icc_len = 40;
+    CHECK(scan(&s, &info, &d) == RFC_OK && info.width == 64u && info.has_icc);
+    hspec_default(&s); s.nested_iprp = 1;
+    CHECK(scan(&s, &info, &d) == RFC_ERR_INVALID_ARGUMENT); /* no ispe at its level */
+    hspec_default(&s); s.pixi_bits = 8; s.pixi_c1 = 10;
+    CHECK(scan(&s, &info, &d) == RFC_ERR_UNSUPPORTED_SAMPLE);
+    hspec_default(&s); s.hvcc_chroma = 10;
+    CHECK(scan(&s, &info, &d) == RFC_ERR_UNSUPPORTED_SAMPLE);
+    hspec_default(&s); s.primary_type = "grid"; s.grid_tiles = 3; s.grid_mixed = 1;
+    CHECK(scan(&s, &info, &d) == RFC_ERR_UNSUPPORTED_COMBINATION);
+    hspec_default(&s); s.primary_type = "grid"; s.grid_tiles = 3; s.grid_deep_tile = 1;
+    CHECK(scan(&s, &info, &d) == RFC_ERR_UNSUPPORTED_SAMPLE);
+    hspec_default(&s); s.moov_only = 1;
+    CHECK(scan(&s, &info, &d) == RFC_ERR_UNSUPPORTED_COMBINATION && d != NULL);
+    hspec_default(&s); s.unterminated = 1;
+    CHECK(scan(&s, &info, &d) == RFC_ERR_INVALID_ARGUMENT);
+    /* coded and displayed geometry: a 30x20 aperture of a 64x48 picture
+     * turned a quarter, and apertures off the pixel grid */
+    hspec_default(&s); s.clap_w = 30u; s.clap_h = 20u; s.clap_d = 1u; s.irot = 1;
+    CHECK(scan(&s, &info, &d) == RFC_OK && info.width == 20u && info.height == 30u &&
+          info.coded_width == 48u && info.coded_height == 64u);
+    hspec_default(&s); s.clap_w = 31u; s.clap_h = 20u; s.clap_d = 1u; /* (64-31)/2 not whole */
+    CHECK(scan(&s, &info, &d) == RFC_ERR_UNSUPPORTED_COMBINATION);
+    hspec_default(&s); s.clap_w = 31u; s.clap_h = 20u; s.clap_d = 1u; s.clap_hon = -1; s.clap_od = 2u;
+    CHECK(scan(&s, &info, &d) == RFC_OK && info.width == 31u); /* 16.5 - 0.5 = 16 */
+    hspec_default(&s); s.clap_w = 30u; s.clap_h = 20u; s.clap_d = 1u; s.clap_hon = 40;
+    CHECK(scan(&s, &info, &d) == RFC_ERR_UNSUPPORTED_COMBINATION); /* off the picture */
     /* colour boxes and metadata items */
     hspec_default(&s); s.icc_len = 300;
     CHECK(scan(&s, &info, &d) == RFC_OK && info.has_icc && info.icc_len == 300u && !info.has_nclx);
@@ -657,21 +743,27 @@ static void test_registration_and_scanner(void) {
     /* truncation at every length refuses cleanly; a reader failure is told
      * apart from a verdict */
     {
-        static uint8_t bytes[65536];
+        static uint8_t bytes[262144];
         hspec_default(&s);
         s.icc_len = 64;
         size_t n = build_heif(&s, bytes);
         for (size_t cut = 0u; cut < n; cut += 7u) {
             mem_ctx m = {bytes, cut, 0, 0};
             int rf = 0;
-            rfc_status st = rfc_heif_scan(mem_read, &m, cut, &info, &d, &rf);
+            rfc_status st = rfc_heif_scan(mem_read, &m, cut, NULL, &info, &d, &rf);
             CHECK(st != RFC_OK || cut >= n - 16u); /* mdat payload is not needed */
             CHECK(!rf);
         }
-        for (int fail = 1; fail < 12; fail++) {
+        /* the reader is read a handful of times (top-level headers, then the
+         * meta box once); a failure at any of those reads is the reader's */
+        mem_ctx count = {bytes, n, 1000000, 0};
+        int rf0 = 0;
+        CHECK(rfc_heif_scan(mem_read, &count, n, NULL, &info, &d, &rf0) == RFC_OK && !rf0);
+        CHECK(count.reads >= 3 && count.reads <= 8);
+        for (int fail = 1; fail <= count.reads; fail++) {
             mem_ctx m = {bytes, n, fail, 0};
             int rf = 0;
-            rfc_status st = rfc_heif_scan(mem_read, &m, n, &info, &d, &rf);
+            rfc_status st = rfc_heif_scan(mem_read, &m, n, NULL, &info, &d, &rf);
             CHECK(rf && st == RFC_ERR_IO);
         }
     }
@@ -684,7 +776,7 @@ static void test_registration_and_scanner(void) {
 
 #ifndef _WIN32
 static void test_platform_refusal(void) {
-    static uint8_t bytes[65536];
+    static uint8_t bytes[262144];
     hspec s;
     hspec_default(&s);
     size_t n = build_heif(&s, bytes);
@@ -817,6 +909,27 @@ static uint8_t *make_heic(const heic_opts *o, size_t *out_n) {
     return b;
 }
 
+/* Rebrand a WIC-written HEIC as generic HEIF: its ftyp brands heic -> mif1. */
+static void as_heif(uint8_t *b, size_t n) {
+    uint32_t ftyp = ((uint32_t)b[0] << 24) | ((uint32_t)b[1] << 16) | ((uint32_t)b[2] << 8) | b[3];
+    for (size_t i = 8u; i + 4u <= ftyp && i + 4u <= n; i += 4u) {
+        if (memcmp(b + i, "heic", 4) == 0 || memcmp(b + i, "heix", 4) == 0) memcpy(b + i, "mif1", 4);
+    }
+}
+
+/* Rewrite the primary's 7-byte ICC colr box in place as an nclx box of the
+ * same size (BT.2020 primaries, sRGB transfer). */
+static void icc7_to_nclx(uint8_t *b, size_t n) {
+    for (size_t i = 0u; i + 19u <= n; i++) {
+        if (memcmp(b + i + 4u, "colrprof", 8) == 0 && b[i + 3u] == 19u) {
+            static const uint8_t nclx[11] = {'n', 'c', 'l', 'x', 0, 9, 0, 13, 0, 6, 0x80};
+            memcpy(b + i + 8u, nclx, sizeof(nclx));
+            return;
+        }
+    }
+    CHECK(0 && "no 7-byte colr prof box");
+}
+
 /* A second, fresh WIC decode (shared provider), packed RGB. */
 static uint8_t *wic_decode_rgb(const uint8_t *b, size_t n, uint32_t *w, uint32_t *h) {
     IWICImagingFactory *f = wic();
@@ -916,6 +1029,13 @@ typedef struct cancel_ctx {
     const rfc_session_adapter *a;
     void *sess;
 } cancel_ctx;
+
+static rfc_job *volatile g_cancel_job = NULL;
+
+static void job_cancel_hook(void *ctx) {
+    (void)ctx;
+    if (g_cancel_job) rfc_job_cancel(g_cancel_job);
+}
 
 static void cancel_hook(void *ctx) {
     cancel_ctx *c = (cancel_ctx *)ctx;
@@ -1018,8 +1138,68 @@ static void test_wic_metadata_and_refusals(void) {
         CHECK(st.live == 0u);
         free(b);
     }
+    /* the probe reports the file's ICC */
+    {
+        heic_opts o = {40u, 30u, 0, 600, 0, 0, 1};
+        uint8_t *b = make_heic(&o, &n);
+        rfc_exec_context e;
+        tracked st;
+        rfc_allocator al;
+        init_exec(&e, &st, &al);
+        const rfc_session_adapter *a = rfc_registry_acquire_session(RFC_FORMAT_HEIC);
+        void *s = NULL;
+        CHECK(a->open_session(&e, &s) == RFC_OK);
+        rfc_image_probe pr;
+        CHECK(a->probe_session(s, &e, b, n, &pr) == RFC_OK);
+        CHECK(pr.first_frame.width == 40u && pr.container_meta.icc_len == 600u &&
+              memcmp(pr.container_meta.icc, g_icc, 600u) == 0);
+        al.free(al.ctx, (void *)pr.container_meta.icc);
+        a->close_session(s);
+        rfc_registry_release_session(RFC_FORMAT_HEIC);
+        CHECK(st.live == 0u);
+        free(b);
+    }
+    /* nclx reaches the frame as CICP: primaries and transfer, matrix 0 and
+     * full range for the RGB the system returns */
+    {
+        heic_opts o = {40u, 30u, 0, 7, 0, 0, 1};
+        uint8_t *b = make_heic(&o, &n);
+        icc7_to_nclx(b, n);
+        rfc_frame info;
+        CHECK(adapter_decode(RFC_FORMAT_HEIC, b, n, NULL, NULL, NULL, &info, NULL) == RFC_OK);
+        CHECK(info.metadata.icc_len == 0u && info.metadata.color.has_cicp &&
+              info.metadata.color.cicp[0] == 9u && info.metadata.color.cicp[1] == 13u &&
+              info.metadata.color.cicp[2] == 0u && info.metadata.color.cicp[3] == 1u);
+        free(b);
+    }
+    /* the HEIF row: a generic HEIF (mif1) file through its own sniff,
+     * selection and decode, and a job */
+    {
+        heic_opts o = {48u, 32u, 0, 0, 0, 0, 1};
+        uint8_t *b = make_heic(&o, &n);
+        as_heif(b, n);
+        rfc_sniff_result sr;
+        CHECK(rfc_input_sniff_bytes(b, n, "x.heif", &sr) == RFC_OK && sr.content_format == RFC_FORMAT_HEIF);
+        uint8_t *px = NULL;
+        CHECK(adapter_decode(RFC_FORMAT_HEIF, b, n, NULL, NULL, NULL, NULL, &px) == RFC_OK);
+        uint32_t w2 = 0u, h2 = 0u;
+        uint8_t *ref = wic_decode_rgb(b, n, &w2, &h2);
+        CHECK(w2 == 48u && h2 == 32u && memcmp(px, ref, 48u * 32u * 3u) == 0);
+        char src[512], dst[512];
+        temp_path(src, sizeof(src), "g.heif");
+        temp_path(dst, sizeof(dst), "g.png");
+        CHECK(write_file_all(src, b, n));
+        job_result r;
+        run_job_full(RFC_FORMAT_HEIF, RFC_FORMAT_PNG, src, dst, NULL, NULL, &r);
+        CHECK_JOB_OK(r);
+        remove(dst);
+        remove(src);
+        free(ref);
+        free(px);
+        free(b);
+    }
     /* Exif and XMP: refused under preserve, imported under strip; through a
-     * job, strip publishes a PNG holding the same pixels */
+     * job, strip publishes a PNG holding the same pixels and neither item */
     for (int k = 0; k < 2; k++) {
         heic_opts o = {40u, 30u, 0, 0, k == 0, k == 1, 1};
         uint8_t *b = make_heic(&o, &n);
@@ -1052,6 +1232,7 @@ static void test_wic_metadata_and_refusals(void) {
         back = (uint8_t *)malloc(40u * 30u * 3u);
         for (uint32_t y = 0u; y < 30u; y++) memcpy(back + y * 120u, pf[0].data + (size_t)y * pf[0].layout.stride_bytes, 120u);
         CHECK(memcmp(back, px, 40u * 30u * 3u) == 0);
+        CHECK(pf[0].metadata.exif_len == 0u && pf[0].metadata.xmp_len == 0u);
         rfc_frame_free(&pf[0]);
         al.free(al.ctx, pf);
         pa->close_session(ps);
@@ -1149,6 +1330,60 @@ static void test_wic_metadata_and_refusals(void) {
         rfc_budget_destroy(bud);
         free(b);
     }
+    /* a scheduled file job cancelled mid-decode leaves the source unchanged
+     * and no destination or partial file; an existing destination is never
+     * replaced */
+    {
+        heic_opts o = {64u, 640u, 0, 0, 0, 0, 1};
+        uint8_t *b = make_heic(&o, &n);
+        char src[512], dst[512], partial[600];
+        temp_path(src, sizeof(src), "fj.heic");
+        temp_path(dst, sizeof(dst), "fj.png");
+        CHECK(write_file_all(src, b, n));
+        rfc_scheduler_config cfg;
+        rfc_scheduler_config_default(&cfg);
+        rfc_scheduler *sched = rfc_scheduler_create(&cfg);
+        rfc_io_source si;
+        rfc_io_sink so;
+        rfc_io_source_init_path(&si, src, RFC_IMPORT_DEFAULT);
+        rfc_io_sink_init_path(&so, dst, RFC_EXPORT_REFUSE_EXISTING);
+        rfc_job_spec sp;
+        memset(&sp, 0, sizeof(sp));
+        sp.source_format = RFC_FORMAT_HEIC;
+        sp.target_format = RFC_FORMAT_PNG;
+        sp.io_source = &si;
+        sp.io_sink = &so;
+        g_cancel_job = NULL;
+        rfc_codecs_heif_set_band_hook_for_testing(job_cancel_hook, NULL);
+        rfc_job *j = NULL;
+        CHECK(rfc_scheduler_submit(sched, NULL, &sp, &j) == RFC_OK);
+        g_cancel_job = j;
+        CHECK(rfc_job_wait(j, UINT32_MAX) == RFC_OK);
+        rfc_codecs_heif_set_band_hook_for_testing(NULL, NULL);
+        g_cancel_job = NULL;
+        rfc_job_snapshot snap;
+        CHECK(rfc_job_snapshot_get(j, &snap) == RFC_OK);
+        CHECK(snap.status == RFC_ERR_CANCELLED);
+        rfc_job_release(j);
+        rfc_scheduler_destroy(sched);
+        snprintf(partial, sizeof(partial), "%s.partial", dst);
+        CHECK(!file_exists(dst) && !file_exists(partial));
+        size_t sn = 0u;
+        uint8_t *sb = read_file_all(src, &sn);
+        CHECK(sb && sn == n && memcmp(sb, b, n) == 0);
+        free(sb);
+        static const uint8_t keep[5] = {'k', 'e', 'e', 'p', '!'};
+        CHECK(write_file_all(dst, keep, sizeof(keep)));
+        job_result r;
+        run_job_full(RFC_FORMAT_HEIC, RFC_FORMAT_PNG, src, dst, NULL, NULL, &r);
+        CHECK(r.submit == RFC_ERR_DESTINATION_EXISTS || r.status == RFC_ERR_DESTINATION_EXISTS);
+        uint8_t *kb = read_file_all(dst, &sn);
+        CHECK(kb && sn == sizeof(keep) && memcmp(kb, keep, sizeof(keep)) == 0);
+        free(kb);
+        remove(dst);
+        remove(src);
+        free(b);
+    }
     printf("heif: wic_metadata_refusals_limits_and_cancel ok\n");
 }
 #endif /* _WIN32 */
@@ -1161,14 +1396,16 @@ static int cli_main(int argc, char **argv) {
     CHECK(rfc_codecs_register_basic() == RFC_OK);
     CHECK(rfc_codecs_register_heif() == RFC_OK);
     const char *sub = argv[2];
-    if (strcmp(sub, "dump") == 0 && argc == 5) {
+    if (strcmp(sub, "dump") == 0 && (argc == 5 || argc == 6)) {
+        /* dump <in> <raw> [heif|heic] */
+        rfc_format_id f = (argc == 6 && strcmp(argv[5], "heif") == 0) ? RFC_FORMAT_HEIF : RFC_FORMAT_HEIC;
         size_t n = 0u;
         uint8_t *b = read_file_all(argv[3], &n);
         if (!b) b = (uint8_t *)calloc(1u, 1u);
         uint8_t *px = NULL;
         rfc_frame info;
         memset(&info, 0, sizeof(info));
-        rfc_status r = adapter_decode(RFC_FORMAT_HEIC, b, n, "strip", NULL, NULL, &info, &px);
+        rfc_status r = adapter_decode(f, b, n, "strip", NULL, NULL, &info, &px);
         free(b);
         if (r == RFC_OK) {
             CHECK(write_file_all(argv[4], px, (size_t)info.layout.width * info.layout.height * 3u));
@@ -1207,13 +1444,17 @@ static int cli_main(int argc, char **argv) {
         CHECK(b != NULL);
         rfc_status r = RFC_OK;
         uint64_t reserve = 0u;
-        rfc_heif_info info;
-        mem_ctx m = {b, n, 0, 0};
-        CHECK(rfc_heif_scan(mem_read, &m, n, &info, NULL, NULL) == RFC_OK);
-        reserve = (uint64_t)info.width * info.height * 4u * 3u + 32u * 1024u * 1024u +
-                  (uint64_t)info.layout.stride_bytes * info.height;
         if (strcmp(argv[3], "decode") == 0) {
-            r = adapter_decode(RFC_FORMAT_HEIC, b, n, "strip", NULL, NULL, NULL, NULL);
+            /* decode under a budget: its peak is what the adapter actually
+             * reserved and allocated through the job allocator */
+            rfc_budget *bud = rfc_budget_create(1ull << 32);
+            CHECK(bud != NULL);
+            r = adapter_decode(RFC_FORMAT_HEIC, b, n, "strip", NULL, bud, NULL, NULL);
+            rfc_budget_stats bs;
+            rfc_budget_stats_get(bud, &bs);
+            reserve = bs.peak_allocated_bytes;
+            CHECK(bs.current_allocated_bytes == 0u);
+            rfc_budget_destroy(bud);
         }
         PROCESS_MEMORY_COUNTERS_EX pmc;
         memset(&pmc, 0, sizeof(pmc));
