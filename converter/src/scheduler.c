@@ -198,7 +198,9 @@ static int enqueue_active_cancel_locked(rfc_scheduler *sched, rfc_job *job) {
                     job->active_sess_adapter->cancel_session);
     int has_jrec = (job->active_jrec_adapter &&
                     job->active_jrec_adapter->cancel_session);
-    if (!has_sess && !has_jrec) {
+    int has_jtrans = (job->active_jtrans_adapter &&
+                      job->active_jtrans_adapter->cancel_session);
+    if (!has_sess && !has_jrec && !has_jtrans) {
         return 0;
     }
     if (job->cancel_queued &&
@@ -210,6 +212,7 @@ static int enqueue_active_cancel_locked(rfc_scheduler *sched, rfc_job *job) {
     }
     job->pending_cancel.sess_adapter = job->active_sess_adapter;
     job->pending_cancel.jrec_adapter = job->active_jrec_adapter;
+    job->pending_cancel.jtrans_adapter = job->active_jtrans_adapter;
     job->pending_cancel.session = job->active_session;
     job->cancel_queued = 1;
     job->cancel_next = NULL;
@@ -254,6 +257,9 @@ static void cancel_worker_main(void *arg) {
         } else if (snap.jrec_adapter && snap.jrec_adapter->cancel_session &&
                    snap.session) {
             snap.jrec_adapter->cancel_session(snap.session);
+        } else if (snap.jtrans_adapter &&
+                   snap.jtrans_adapter->cancel_session && snap.session) {
+            snap.jtrans_adapter->cancel_session(snap.session);
         }
 
         rfc_mutex_lock(&sched->lock);
@@ -886,7 +892,8 @@ void rfc_scheduler_destroy(rfc_scheduler *sched) {
     rfc_scheduler_internal_release(sched);
 }
 
-static rfc_status parse_verify_settings_sched(const rfc_setting_value *settings,
+static rfc_status parse_verify_settings_sched(rfc_format_id target_format,
+                                              const rfc_setting_value *settings,
                                               size_t setting_count,
                                               rfc_exactness_class *out_exact,
                                               rfc_metadata_policy *out_meta);
@@ -1041,6 +1048,32 @@ static rfc_status compute_preflight_with_contracts(
     uint64_t base_reservation = 0;
     if (expected_working_set_bytes > 0) {
         base_reservation = expected_working_set_bytes;
+    } else if (src_mem->format == RFC_FORMAT_JPEG &&
+               dst_mem->format == RFC_FORMAT_JPEG &&
+               exactness == RFC_EXACT_COEFFICIENT_EXACT && source_size > 0u) {
+        /* Coefficient-exact optimization holds the source bytes, the output
+         * (bounded by source + 64 KiB), the provider's whole-image arrays,
+         * and at verify the source and output coefficient images plus their
+         * job clones (four coefficient images of up to 2x the decoded RGB
+         * bytes each). Without a layout the bound scales from the source. */
+        uint64_t core = 0u;
+        uint64_t src2 = 0u;
+        if (source_layout) {
+            if (!mul_u64_sched(decoded_bytes, 10ull, &core)) {
+                return RFC_ERR_LIMIT_EXCEEDED;
+            }
+        } else if (!mul_u64_sched(source_size, 32ull, &core)) {
+            return RFC_ERR_LIMIT_EXCEEDED;
+        }
+        if (core < 64ull * 1024ull * 1024ull) {
+            core = 64ull * 1024ull * 1024ull;
+        }
+        if (!mul_u64_sched(source_size, 3ull, &src2) ||
+            !add_u64_sched(core, src2, &core) ||
+            !add_u64_sched(core, 16ull * 1024ull * 1024ull, &core) ||
+            !add_u64_sched(core, meta_allowance, &base_reservation)) {
+            return RFC_ERR_LIMIT_EXCEEDED;
+        }
     } else if (source_layout) {
         uint32_t eff_req_threads =
             requested_codec_threads ? requested_codec_threads : 1u;
@@ -1161,32 +1194,14 @@ static rfc_status compute_preflight_with_contracts(
     return RFC_OK;
 }
 
-static rfc_status parse_verify_settings_sched(const rfc_setting_value *settings,
+static rfc_status parse_verify_settings_sched(rfc_format_id target_format,
+                                              const rfc_setting_value *settings,
                                               size_t setting_count,
                                               rfc_exactness_class *out_exact,
                                               rfc_metadata_policy *out_meta) {
-    *out_exact = RFC_EXACT_PIXEL_EXACT;
-    *out_meta = RFC_META_POLICY_PRESERVE;
-    if (!settings) {
-        return RFC_OK;
-    }
-    for (size_t i = 0u; i < setting_count; i++) {
-        if (!settings[i].id || !settings[i].value) {
-            return RFC_ERR_INVALID_ARGUMENT;
-        }
-        if (strcmp(settings[i].id, "exactness") == 0) {
-            rfc_status st = rfc_exactness_class_parse(settings[i].value, out_exact);
-            if (st != RFC_OK) {
-                return st;
-            }
-        } else if (strcmp(settings[i].id, "metadata") == 0) {
-            rfc_status st = rfc_metadata_policy_parse(settings[i].value, out_meta);
-            if (st != RFC_OK) {
-                return st;
-            }
-        }
-    }
-    return RFC_OK;
+    return rfc_job_internal_resolve_exactness(target_format, settings,
+                                              setting_count, out_exact,
+                                              out_meta);
 }
 
 static rfc_status compute_preflight(const rfc_scheduler_config *cfg,
@@ -1220,11 +1235,10 @@ static rfc_status compute_preflight(const rfc_scheduler_config *cfg,
     }
     rfc_exactness_class ex = RFC_EXACT_PIXEL_EXACT;
     rfc_metadata_policy pol = RFC_META_POLICY_PRESERVE;
-    if (settings && setting_count > 0u) {
-        st = parse_verify_settings_sched(settings, setting_count, &ex, &pol);
-        if (st != RFC_OK) {
-            return st;
-        }
+    st = parse_verify_settings_sched(target_format, settings, setting_count,
+                                     &ex, &pol);
+    if (st != RFC_OK) {
+        return st;
     }
     if ((!stage_ops || !stage_ops->on_verify) && source_meta != NULL) {
         st = rfc_metadata_check_source_preflight(
@@ -1340,10 +1354,8 @@ static rfc_status pre_reserve_submit_inputs(
 
     rfc_exactness_class ex = RFC_EXACT_PIXEL_EXACT;
     rfc_metadata_policy pol = RFC_META_POLICY_PRESERVE;
-    if (spec->settings && spec->setting_count > 0u) {
-        (void)parse_verify_settings_sched(spec->settings, spec->setting_count,
-                                          &ex, &pol);
-    }
+    (void)parse_verify_settings_sched(spec->target_format, spec->settings,
+                                      spec->setting_count, &ex, &pol);
     rfc_limits live_limits;
     uint64_t live_reservation = 0;
     uint64_t live_exec_working = 0;
@@ -1507,10 +1519,8 @@ static rfc_status admit_prepared_job(rfc_scheduler *sched,
 
     rfc_exactness_class ex = RFC_EXACT_PIXEL_EXACT;
     rfc_metadata_policy pol = RFC_META_POLICY_PRESERVE;
-    if (inputs->settings && inputs->setting_count > 0u) {
-        (void)parse_verify_settings_sched(inputs->settings, inputs->setting_count,
-                                          &ex, &pol);
-    }
+    (void)parse_verify_settings_sched(job->target_format, inputs->settings,
+                                      inputs->setting_count, &ex, &pol);
     rfc_limits live_limits;
     uint64_t live_reservation = 0;
     uint64_t live_exec_working = 0;

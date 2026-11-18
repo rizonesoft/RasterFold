@@ -66,6 +66,9 @@ class ExactnessReferenceTests(unittest.TestCase):
         self.assertEqual(by_name["webp"]["coverage_state"], "executable-in-d10-t02-s2")
         self.assertEqual(by_name["jpeg-xl"]["coverage_state"], "executable-in-d10-t02-s3")
         self.assertEqual(by_name["avif"]["coverage_state"], "executable-in-d10-t02-s4")
+        self.assertEqual(by_name["jpeg"]["coverage_state"], "executable-in-d10-t02-s5")
+        self.assertEqual(by_name["jpeg"]["reference_decoder_kind"], "independent-pure-python")
+        self.assertFalse(by_name["jpeg"]["shares_c_library_with_converter"])
         for executable in (
             "rasterfold",
             "bmp",
@@ -74,7 +77,6 @@ class ExactnessReferenceTests(unittest.TestCase):
             "pam",
             "qoi",
             "openexr",
-            "jpeg",
             "camera-raw",
             "dng",
         ):

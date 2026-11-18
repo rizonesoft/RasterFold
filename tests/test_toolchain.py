@@ -366,7 +366,7 @@ class Toolchain(unittest.TestCase):
                 "if ($ok2.Ok -or $ok2.Reason -notlike '*probe changed*') { throw \"expected probe tamper rejection, got: $($ok2.Reason)\" }; "
                 "$jRoot = Join-Path $tmpWin 'jtest'; $jSub = Join-Path $jRoot 'real'; "
                 "New-Item -ItemType Directory -Path $jSub | Out-Null; "
-                "& cmd.exe /c mklink /J (Join-Path $jRoot 'junc') $jSub | Out-Null; "
+                "& (Join-Path $env:SystemRoot 'System32\\cmd.exe') /c mklink /J (Join-Path $jRoot 'junc') $jSub | Out-Null; "
                 "$jThrew = $false; try { $null = Get-TreeSha256 $jRoot } catch { if ($_.Exception.Message -like '*reparse point*') { $jThrew = $true } }; "
                 "if (-not $jThrew) { throw 'expected Get-TreeSha256 to reject non-symlink reparse point' }; "
                 "Write-Host 'PS_BEHAVIOR_OK' "

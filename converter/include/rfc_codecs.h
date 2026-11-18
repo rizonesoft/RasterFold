@@ -32,6 +32,13 @@ rfc_status rfc_codecs_unregister_jxl(void);
 rfc_status rfc_codecs_register_avif(void);
 rfc_status rfc_codecs_unregister_avif(void);
 
+/* Register and unregister the shipped JPEG session adapter and the JPEG ->
+ * JPEG coefficient-exact entropy-optimization adapter (D10 T02 s5). If the
+ * second registration fails the first is rolled back; unregister returns
+ * RFC_ERR_BUSY while either adapter is acquired and leaves both registered. */
+rfc_status rfc_codecs_register_jpeg(void);
+rfc_status rfc_codecs_unregister_jpeg(void);
+
 /* Direct JPEG <-> JPEG XL lossless byte-reconstruction entry points used by
  * the JXL reconstruction adapter and D10 T02 s5 delegation. */
 rfc_status rfc_jxl_transcode_jpeg(const rfc_exec_context *exec,

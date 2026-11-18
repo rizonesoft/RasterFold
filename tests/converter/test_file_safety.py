@@ -533,6 +533,8 @@ class TestWindowsNtfsFileSafety(unittest.TestCase):
             # Create NTFS hard link, NTFS junction directory, and ACL-denied dir inside Windows temp
             ps_script = f"""
 $ErrorActionPreference = 'Stop'
+# System tools resolve from System32 only, whatever PATH/Path WSL interop passed.
+$env:PATH = "$env:SystemRoot\\System32;$env:SystemRoot"
 $root = {ps_quote(win_temp_dir)}
 $exe = Join-Path $root 'rfc_test_file_safety.exe'
 $src = Join-Path $root 'src.bmp'
@@ -628,6 +630,7 @@ Invoke-Fs 'roundtrip' @('pipeline-fold', $src, (Join-Path $root 'out.fold'), '0'
         finally:
             junc_win_dir = f"{win_temp_dir}\\junc_sub"
             self._run_ps(
+                "$env:PATH = \"$env:SystemRoot\\System32;$env:SystemRoot\"; "
                 f"if (Test-Path {ps_quote(junc_win_dir)}) {{ cmd.exe /c rmdir {ps_quote(junc_win_dir)} | Out-Null }}; "
                 f"if (Test-Path {ps_quote(ro_win_dir)}) {{ "
                 f"icacls {ps_quote(ro_win_dir)} /remove:d '*S-1-1-0' | Out-Null; "

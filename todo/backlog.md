@@ -8,4 +8,6 @@ Ideas worth keeping that are not planned work. Nothing here is a section: an ent
 
 ## Entries
 
+- [B-006] Carry text and IPTC metadata across formats -- app: rasterfold -- source: d10-t02-s5-text-metadata -- added: 2026-11-18 -- summary: the converter metadata model carries ICC, EXIF, XMP, orientation, frame timing and colorimetry only; JPEG COM and APP13 (IPTC/Photoshop) segments and PNG tEXt/zTXt/iTXt chunks survive same-format coefficient-exact and byte-identical routes but are not carried by pixel conversion; a model item for comments and IPTC with per-format preserve/strip/acknowledge policy would close it -- needs: D10 T01 §4 -- why deferred: discovered by D10 T02 §5; it is outside every shipped section's metadata contract and serves no acceptance-bar row or planned prerequisite -- promote when: a planned converter section or the operator needs comments or IPTC to survive a format change
+
 ## Removed with operator approval

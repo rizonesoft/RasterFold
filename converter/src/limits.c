@@ -435,6 +435,16 @@ rfc_status rfc_query_provider_memory_contract(rfc_format_id id,
             out->limitation_reason =
                 "provider uses internal heap allocation; enforced by rfc_limits preflight and conservative reservation";
             break;
+        case RFC_FORMAT_JPEG:
+            out->mode = RFC_MEM_RESERVATION_AND_LIMITS;
+            out->working_set_multiplier = 4u;
+            out->fixed_overhead_bytes = 8ull * 1024ull * 1024ull;
+            out->limitation_reason =
+                "libjpeg-turbo pools allocate outside rfc_alloc; the adapter "
+                "reserves whole-image coefficient arrays, row buffers and "
+                "saved markers from the SOF geometry through rfc_budget_reserve "
+                "and caps libjpeg virtual arrays at that reservation";
+            break;
         case RFC_FORMAT_AVIF:
             out->mode = RFC_MEM_RESERVATION_AND_LIMITS;
             out->working_set_multiplier = 18u;

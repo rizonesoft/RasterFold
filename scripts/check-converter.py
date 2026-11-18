@@ -971,6 +971,12 @@ def _ensure_host_avif_flags():
     return cflags, libs
 
 
+def _ensure_host_jpeg_flags():
+    deps_prefix = _ensure_host_vendor_deps(["libjpeg-turbo"])
+    lib_dir = deps_prefix / "lib"
+    return [f"-I{(deps_prefix / 'include').as_posix()}"], [str(lib_dir / "libjpeg.a")]
+
+
 def _run_codec_case(
     *,
     case_name,
@@ -1181,7 +1187,7 @@ def case_jxl(all_targets=False):
     return _run_codec_case(
         case_name="jxl",
         win_target="rfc_test_jxl",
-        codec_sources=["basic.c", "webp.c", "jxl.c"],
+        codec_sources=["basic.c", "webp.c", "jpeg_scan.c", "jxl.c"],
         c_test_file="test_jxl.c",
         py_test_file="test_jxl.py",
         host_env_var="RFC_HOST_JXL_EXE",
@@ -1217,7 +1223,7 @@ def case_avif(all_targets=False):
     return _run_codec_case(
         case_name="avif",
         win_target="rfc_test_avif",
-        codec_sources=["basic.c", "webp.c", "jxl.c", "avif.c"],
+        codec_sources=["basic.c", "webp.c", "jpeg_scan.c", "jxl.c", "avif.c"],
         c_test_file="test_avif.c",
         py_test_file="test_avif.py",
         host_env_var="RFC_HOST_AVIF_EXE",
@@ -1230,6 +1236,40 @@ def case_avif(all_targets=False):
             "avif: byte_identical_and_cross_format ok",
             "avif: refusals_preflight_limits_and_cancel ok",
             "avif: all checks passed",
+        ],
+        host_flags_fn=_flags,
+        all_targets=all_targets,
+        host_link_cxx=True,
+    )
+
+
+def case_jpeg(all_targets=False):
+    def _flags():
+        g_cf, g_lb = _ensure_host_jpeg_flags()
+        j_cf, j_lb = _ensure_host_jxl_flags()
+        w_cf, w_lb = _host_libwebp_flags()
+        p_cf, p_lb = _host_libpng_flags()
+        cflags = list(dict.fromkeys([*g_cf, *j_cf, *w_cf, *p_cf]))
+        j_arch = [x for x in j_lb if x.endswith(".a")]
+        libs = [*g_lb, *j_arch, *w_lb, *p_lb, "-lstdc++", "-lm", "-pthread"]
+        return cflags, libs
+
+    return _run_codec_case(
+        case_name="jpeg",
+        win_target="rfc_test_jpeg",
+        codec_sources=["basic.c", "webp.c", "jpeg_scan.c", "jxl.c", "jpeg.c"],
+        c_test_file="test_jpeg.c",
+        py_test_file="test_jpeg.py",
+        host_env_var="RFC_HOST_JPEG_EXE",
+        win_env_var="RFC_WIN_JPEG_EXE",
+        require_win_env_var="RFC_REQUIRE_WIN_JPEG",
+        markers=[
+            "jpeg: registration_and_upstream_contract ok",
+            "jpeg: import_pinned_decoder_and_metadata ok",
+            "jpeg: coefficient_optimization_and_markers ok",
+            "jpeg: jobs_defaults_delegation_and_file_safety ok",
+            "jpeg: refusals_errors_limits_and_cancel ok",
+            "jpeg: all checks passed",
         ],
         host_flags_fn=_flags,
         all_targets=all_targets,
@@ -1263,6 +1303,8 @@ def main():
         return case_jxl(all_targets)
     if args == ["--case", "avif"]:
         return case_avif(all_targets)
+    if args == ["--case", "jpeg"]:
+        return case_jpeg(all_targets)
     if args == ["--case", "all"]:
         rc = case_contract()
         if rc:
@@ -1291,8 +1333,11 @@ def main():
         rc = case_avif(all_targets)
         if rc:
             return rc
+        rc = case_jpeg(all_targets)
+        if rc:
+            return rc
         return case_bundle()
-    print("usage: check-converter.py --case <contract|jobs|exactness|file-safety|reports|basic|webp|jxl|avif|bundle|all> [--all-targets]")
+    print("usage: check-converter.py --case <contract|jobs|exactness|file-safety|reports|basic|webp|jxl|avif|jpeg|bundle|all> [--all-targets]")
     return 1
 
 

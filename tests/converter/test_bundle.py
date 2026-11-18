@@ -204,6 +204,10 @@ def run_windows_binary_isolated(
         "try { "
         "$dst=Join-Path $tmp $env:RFC_EXE_NAME; "
         "Copy-Item -LiteralPath $env:RFC_WIN_EXE -Destination $dst; "
+        # WSL interop can hand Windows both PATH and Path; .NET then leaves
+        # ProcessStartInfo.EnvironmentVariables null. Drop one entry so the
+        # child's System32-only PATH below is the only one it receives.
+        "[Environment]::SetEnvironmentVariable('PATH', $null, 'Process'); "
         "$psi=[System.Diagnostics.ProcessStartInfo]::new(); "
         "$psi.FileName=$dst; "
         "$argArr=@($env:RFC_ARGS_JSON | ConvertFrom-Json); "
@@ -512,6 +516,22 @@ class BundleTests(unittest.TestCase):
         self.assertIn('BUNDLE_SMOKE PASS', proc.stdout)
         for prov in EXPECTED_SMOKE_PROVIDERS:
             self.assertIn(f'PASS provider={prov}', proc.stdout)
+
+    def test_isolated_windows_runner_gives_child_one_system32_path(self):
+        # Regression: a Windows environment carrying both PATH and Path (as WSL
+        # interop produces) made ProcessStartInfo.EnvironmentVariables null and
+        # every isolated run fail before the child started.
+        if os.name == 'nt':
+            cmd_exe = Path(os.environ.get('SystemRoot', r'C:\Windows')) / 'System32' / 'cmd.exe'
+        else:
+            cmd_exe = Path('/mnt/c/Windows/System32/cmd.exe')
+        if not cmd_exe.is_file():
+            self.skipTest(f'Windows cmd.exe unavailable at {cmd_exe}')
+        proc = run_windows_binary_isolated(cmd_exe, args=('/d', '/c', 'set', 'PATH'), timeout_sec=30.0)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        path_lines = [ln.strip() for ln in proc.stdout.splitlines() if ln.strip().upper().startswith('PATH=')]
+        self.assertEqual(len(path_lines), 1, proc.stdout)
+        self.assertTrue(path_lines[0].upper().endswith('\\SYSTEM32'), path_lines[0])
 
     def test_isolated_windows_runner_kills_process_tree_on_timeout(self):
         if os.name == 'nt':

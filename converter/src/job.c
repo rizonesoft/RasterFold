@@ -387,11 +387,43 @@ rfc_status rfc_job_internal_validate_settings(
         }
         return RFC_ERR_UNSUPPORTED_COMBINATION;
     }
+    if (setting_count > 0u && !settings) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    rfc_exactness_class eff_exact = RFC_EXACT_PIXEL_EXACT;
+    rfc_metadata_policy eff_policy = RFC_META_POLICY_PRESERVE;
+    if (rfc_job_internal_resolve_exactness(target_format, settings,
+                                           setting_count, &eff_exact,
+                                           &eff_policy) == RFC_OK) {
+        /* JPEG output is never a lossy re-encode of pixels (D10 T02 s5). */
+        if (target_format == RFC_FORMAT_JPEG &&
+            (!stage_ops || !stage_ops->on_encode) &&
+            !(source_format == RFC_FORMAT_JPEG &&
+              (eff_exact == RFC_EXACT_COEFFICIENT_EXACT ||
+               eff_exact == RFC_EXACT_BYTE_IDENTICAL))) {
+            if (out_detail) {
+                *out_detail =
+                    "JPEG output is limited to lossless entropy optimization "
+                    "(exactness=coefficient-exact) or a byte-identical copy of "
+                    "a JPEG source; RGB to baseline JPEG is lossy";
+            }
+            return RFC_ERR_UNSUPPORTED_COMBINATION;
+        }
+        if (eff_exact == RFC_EXACT_COEFFICIENT_EXACT &&
+            source_format == RFC_FORMAT_JPEG &&
+            target_format != RFC_FORMAT_JPEG &&
+            target_format != RFC_FORMAT_JPEG_XL &&
+            (!stage_ops || (!stage_ops->on_import && !stage_ops->on_encode))) {
+            if (out_detail) {
+                *out_detail =
+                    "coefficient-exact needs a target that stores JPEG DCT "
+                    "coefficients (JPEG or JPEG XL)";
+            }
+            return RFC_ERR_UNSUPPORTED_COMBINATION;
+        }
+    }
     if (setting_count == 0) {
         return RFC_OK;
-    }
-    if (!settings) {
-        return RFC_ERR_INVALID_ARGUMENT;
     }
     for (size_t i = 0; i < setting_count; i++) {
         if (!settings[i].id || !settings[i].value) {
@@ -2769,12 +2801,21 @@ static rfc_status check_stage_abort(rfc_job *job) {
     return RFC_OK;
 }
 
-static rfc_status parse_job_verify_settings(const rfc_setting_value *settings,
-                                          size_t setting_count,
-                                          rfc_exactness_class *out_exact,
-                                          rfc_metadata_policy *out_meta) {
+rfc_status rfc_job_internal_resolve_exactness(
+    rfc_format_id target_format,
+    const rfc_setting_value *settings,
+    size_t setting_count,
+    rfc_exactness_class *out_exact,
+    rfc_metadata_policy *out_meta) {
+    /* The effective exactness is the explicit setting, else the target
+     * format's registry default (coefficient-exact for JPEG, pixel-exact for
+     * every other format). */
     *out_exact = RFC_EXACT_PIXEL_EXACT;
     *out_meta = RFC_META_POLICY_PRESERVE;
+    const char *def = rfc_registry_setting_default(target_format, "exactness");
+    if (def && rfc_exactness_class_parse(def, out_exact) != RFC_OK) {
+        *out_exact = RFC_EXACT_PIXEL_EXACT;
+    }
     if (!settings) {
         return RFC_OK;
     }
@@ -2797,6 +2838,16 @@ static rfc_status parse_job_verify_settings(const rfc_setting_value *settings,
         }
     }
     return RFC_OK;
+}
+
+static rfc_status parse_job_verify_settings(const rfc_job *job,
+                                          const rfc_setting_value *settings,
+                                          size_t setting_count,
+                                          rfc_exactness_class *out_exact,
+                                          rfc_metadata_policy *out_meta) {
+    return rfc_job_internal_resolve_exactness(job->target_format, settings,
+                                              setting_count, out_exact,
+                                              out_meta);
 }
 
 static void store_job_verify_report(rfc_job *job,
@@ -3096,6 +3147,214 @@ static rfc_status verify_reconstructed_metadata(
     return st;
 }
 
+/* ------------------------------------------------------------------------ */
+/* JPEG -> JPEG coefficient-exact entropy optimization (D10 T02 s5)          */
+/* ------------------------------------------------------------------------ */
+
+static void jtrans_set_active(rfc_job *job,
+                              const rfc_jpeg_transcode_adapter *a,
+                              void *sess) {
+    rfc_mutex_lock(&job->lock);
+    job->active_jtrans_adapter = a;
+    job->active_session = sess;
+    rfc_mutex_unlock(&job->lock);
+}
+
+static void jtrans_clear_active(rfc_job *job) {
+    rfc_mutex_lock(&job->lock);
+    job->active_jtrans_adapter = NULL;
+    job->active_session = NULL;
+    while (job->active_cancel_calls > 0) {
+        rfc_cond_wait(&job->done_cond, &job->lock);
+    }
+    rfc_mutex_unlock(&job->lock);
+}
+
+/* IMPORT: bounded probe (limits, metadata) without a pixel decode. */
+static rfc_status jpeg_coeff_import(rfc_job *job, const rfc_exec_context *exec,
+                                    const uint8_t *src_bytes, size_t src_size,
+                                    const char **err_detail) {
+    const rfc_session_adapter *sadp =
+        rfc_registry_acquire_session(RFC_FORMAT_JPEG);
+    if (!sadp) {
+        *err_detail = "JPEG optimization requires the registered JPEG adapter";
+        return RFC_ERR_NO_ADAPTER;
+    }
+    void *sess = NULL;
+    rfc_status st = sadp->open_session(exec, &sess);
+    if (st != RFC_OK) {
+        rfc_registry_release_session(RFC_FORMAT_JPEG);
+        return st;
+    }
+    rfc_mutex_lock(&job->lock);
+    job->active_sess_adapter = sadp;
+    job->active_session = sess;
+    rfc_mutex_unlock(&job->lock);
+    rfc_image_probe probe;
+    memset(&probe, 0, sizeof(probe));
+    st = check_stage_abort(job);
+    if (st == RFC_OK) {
+        st = rfc_limits_check_compressed(&job->limits, (uint64_t)src_size);
+    }
+    if (st == RFC_OK) {
+        st = sadp->probe_session(sess, exec, src_bytes, src_size, &probe);
+    }
+    if (st == RFC_OK) {
+        st = rfc_limits_check_probe(&job->limits, &probe, (uint64_t)src_size,
+                                    src_size > 0u);
+    }
+    uint64_t raw_b = 0u;
+    if (st == RFC_OK) {
+        st = rfc_limits_compute_frame_bytes(&probe.first_frame, 1u, &raw_b);
+    }
+    rfc_mutex_lock(&job->lock);
+    job->active_sess_adapter = NULL;
+    job->active_session = NULL;
+    while (job->active_cancel_calls > 0) {
+        rfc_cond_wait(&job->done_cond, &job->lock);
+    }
+    rfc_mutex_unlock(&job->lock);
+    sadp->close_session(sess);
+    rfc_registry_release_session(RFC_FORMAT_JPEG);
+    if (st == RFC_OK) {
+        st = check_stage_abort(job);
+    }
+    if (st == RFC_OK) {
+        int has_meta = (probe.container_meta.icc_len > 0u ||
+                        probe.container_meta.exif_len > 0u ||
+                        probe.container_meta.xmp_len > 0u ||
+                        probe.container_meta.orientation >
+                            RFC_ORIENTATION_NORMAL);
+        if (has_meta || !job->inputs || !job->inputs->has_meta) {
+            st = store_decoded_frames_on_job(job, NULL, 0u,
+                                             &probe.container_meta, 1);
+            if (st != RFC_OK) {
+                rfc_metadata_free(&probe.container_meta, exec->allocator);
+            }
+        } else {
+            rfc_metadata_free(&probe.container_meta, exec->allocator);
+        }
+    } else {
+        rfc_metadata_free(&probe.container_meta, exec->allocator);
+    }
+    if (st == RFC_OK) {
+        rfc_mutex_lock(&job->lock);
+        job->raw_frame_bytes = raw_b;
+        rfc_mutex_unlock(&job->lock);
+    }
+    return st;
+}
+
+/* ENCODE: entropy-optimize the source coefficients. */
+static rfc_status jpeg_coeff_encode(rfc_job *job, const rfc_exec_context *exec,
+                                    const rfc_setting_value *dst_settings,
+                                    size_t dst_setting_count,
+                                    const uint8_t *src_bytes, size_t src_size,
+                                    const char **err_detail) {
+    const rfc_jpeg_transcode_adapter *jt = rfc_registry_acquire_jpeg_transcode();
+    if (!jt) {
+        *err_detail =
+            "JPEG optimization requires the registered transcode adapter";
+        return RFC_ERR_NO_ADAPTER;
+    }
+    void *sess = NULL;
+    rfc_status st = jt->open_session(exec, &sess);
+    if (st != RFC_OK) {
+        rfc_registry_release_jpeg_transcode();
+        return st;
+    }
+    jtrans_set_active(job, jt, sess);
+    rfc_encoded enc_out;
+    memset(&enc_out, 0, sizeof(enc_out));
+    st = check_stage_abort(job);
+    if (st == RFC_OK) {
+        st = jt->optimize_jpeg(sess, exec, src_bytes, src_size, dst_settings,
+                               dst_setting_count, &enc_out);
+        if (st == RFC_ERR_UNSUPPORTED_COMBINATION) {
+            *err_detail = "the source JPEG cannot be re-encoded with identical "
+                          "coefficients (for example a quantization table slot "
+                          "redefined between scans)";
+        }
+    }
+    jtrans_clear_active(job);
+    jt->close_session(sess);
+    rfc_registry_release_jpeg_transcode();
+    if (st == RFC_OK) {
+        st = rfc_job_set_encoded_output(job, &enc_out);
+    }
+    if (st != RFC_OK) {
+        rfc_encoded_free(&enc_out);
+    }
+    return st;
+}
+
+/* VERIFY: read source and output coefficients in separate fresh sessions,
+ * check the marker contract, and record the evidence on the job. */
+static rfc_status jpeg_coeff_evidence(rfc_job *job, const rfc_exec_context *exec,
+                                      const uint8_t *src_bytes, size_t src_size,
+                                      int strip, rfc_verify_report *rep,
+                                      const char **err_detail) {
+    if (!src_bytes || src_size == 0u || !job->has_encoded_output ||
+        !job->encoded_output.data || job->encoded_output.len == 0u) {
+        *err_detail = "coefficient-exact verify requires source and output "
+                      "JPEG bytes";
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    const rfc_jpeg_transcode_adapter *jt = rfc_registry_acquire_jpeg_transcode();
+    if (!jt) {
+        *err_detail =
+            "coefficient-exact verify requires the registered transcode adapter";
+        return RFC_ERR_NO_ADAPTER;
+    }
+    struct rfc_jpeg_coeff_image *src_c = NULL;
+    struct rfc_jpeg_coeff_image *dst_c = NULL;
+    rfc_metadata src_m, dst_m;
+    memset(&src_m, 0, sizeof(src_m));
+    memset(&dst_m, 0, sizeof(dst_m));
+    const uint8_t *in[2] = {src_bytes, job->encoded_output.data};
+    size_t in_len[2] = {src_size, job->encoded_output.len};
+    struct rfc_jpeg_coeff_image **out_c[2] = {&src_c, &dst_c};
+    rfc_metadata *out_m[2] = {&src_m, &dst_m};
+    rfc_status st = RFC_OK;
+    for (int k = 0; k < 2 && st == RFC_OK; k++) {
+        void *sess = NULL;
+        st = jt->open_session(exec, &sess);
+        if (st != RFC_OK) {
+            break;
+        }
+        jtrans_set_active(job, jt, sess);
+        st = check_stage_abort(job);
+        if (st == RFC_OK) {
+            st = jt->read_coefficients(sess, exec, in[k], in_len[k], out_c[k],
+                                       out_m[k]);
+        }
+        if (st == RFC_OK && k == 1) {
+            const char *mdet = NULL;
+            st = jt->compare_markers(sess, exec, src_bytes, src_size, in[1],
+                                     in_len[1], strip, &mdet);
+            if (st == RFC_ERR_VERIFY_MISMATCH) {
+                rep->mismatch.kind = strip ? RFC_MISMATCH_METADATA_RETAINED
+                                           : RFC_MISMATCH_METADATA_LOST;
+                copy_verify_detail(rep->mismatch.detail,
+                                   sizeof(rep->mismatch.detail),
+                                   mdet ? mdet : "marker contract mismatch");
+                *err_detail = mdet ? mdet : "marker contract mismatch";
+            }
+        }
+        jtrans_clear_active(job);
+        jt->close_session(sess);
+    }
+    if (st == RFC_OK) {
+        st = rfc_job_set_verified_jpeg_coeffs(job, src_c, dst_c, &dst_m);
+    }
+    jt->free_coefficients(NULL, exec, src_c);
+    jt->free_coefficients(NULL, exec, dst_c);
+    rfc_registry_release_jpeg_transcode();
+    rfc_metadata_free(&src_m, exec->allocator);
+    rfc_metadata_free(&dst_m, exec->allocator);
+    return st;
+}
+
 void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
     if (!job) {
         return;
@@ -3119,12 +3378,18 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
 
     rfc_exactness_class job_exactness = RFC_EXACT_PIXEL_EXACT;
     rfc_metadata_policy job_meta_policy = RFC_META_POLICY_PRESERVE;
-    (void)parse_job_verify_settings(settings, setting_count, &job_exactness,
+    (void)parse_job_verify_settings(job, settings, setting_count, &job_exactness,
                                     &job_meta_policy);
     int use_jxl_jrec =
         (job->source_format == RFC_FORMAT_JPEG &&
          job->target_format == RFC_FORMAT_JPEG_XL &&
          job_exactness == RFC_EXACT_ORIGINAL_BYTE_RECONSTRUCTION &&
+         job->stage_ops.on_import == NULL &&
+         job->stage_ops.on_encode == NULL);
+    int use_jpeg_coeff =
+        (job->source_format == RFC_FORMAT_JPEG &&
+         job->target_format == RFC_FORMAT_JPEG &&
+         job_exactness == RFC_EXACT_COEFFICIENT_EXACT &&
          job->stage_ops.on_import == NULL &&
          job->stage_ops.on_encode == NULL);
 
@@ -3203,6 +3468,9 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
         } else if (!src_cap->can_read) {
             st = RFC_ERR_UNSUPPORTED_COMBINATION;
             err_detail = "source format does not support decoding";
+        } else if (use_jpeg_coeff) {
+            st = jpeg_coeff_import(job, &exec, src_bytes, src_size,
+                                   &err_detail);
         } else if (use_jxl_jrec) {
             const rfc_jpeg_reconstruct_adapter *jrec =
                 rfc_registry_acquire_jpeg_reconstruct();
@@ -3442,6 +3710,25 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
                     }
                 }
             }
+        } else if (use_jpeg_coeff) {
+            rfc_setting_value dst_settings[RFC_MAX_FORMAT_SETTINGS];
+            size_t dst_setting_count = filter_format_settings(
+                dst_cap, settings, setting_count, dst_settings,
+                RFC_MAX_FORMAT_SETTINGS, 1);
+            st = check_stage_abort(job);
+            if (st == RFC_OK) {
+                st = rfc_registry_validate_settings(
+                    job->target_format,
+                    dst_setting_count > 0 ? dst_settings : NULL,
+                    dst_setting_count, &err_detail);
+            }
+            if (st == RFC_OK) {
+                st = jpeg_coeff_encode(job, &exec,
+                                       dst_setting_count > 0 ? dst_settings
+                                                             : NULL,
+                                       dst_setting_count, src_bytes, src_size,
+                                       &err_detail);
+            }
         } else if (use_jxl_jrec) {
             const rfc_jpeg_reconstruct_adapter *jrec =
                 rfc_registry_acquire_jpeg_reconstruct();
@@ -3641,7 +3928,7 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
     } else {
         rfc_exactness_class exactness = RFC_EXACT_PIXEL_EXACT;
         rfc_metadata_policy meta_policy = RFC_META_POLICY_PRESERVE;
-        st = parse_job_verify_settings(settings, setting_count, &exactness,
+        st = parse_job_verify_settings(job, settings, setting_count, &exactness,
                                        &meta_policy);
         uint32_t ack_meta = rfc_job_acknowledged_metadata(job);
         const rfc_metadata *src_meta_eff =
@@ -3771,6 +4058,19 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
                 store_job_verify_report(job, &rep);
             }
         } else if (st == RFC_OK && exactness == RFC_EXACT_COEFFICIENT_EXACT) {
+            if (use_jpeg_coeff && !job->verify_src_coeffs) {
+                st = jpeg_coeff_evidence(
+                    job, &exec, src_bytes, src_size,
+                    meta_policy == RFC_META_POLICY_STRIP, &rep, &err_detail);
+                if (st != RFC_OK) {
+                    if (st != RFC_ERR_CANCELLED && st != RFC_ERR_STALE_JOB) {
+                        rep.status = st;
+                        rep.valid = 1;
+                        store_job_verify_report(job, &rep);
+                    }
+                    goto verify_done;
+                }
+            }
             if (job->source_format != RFC_FORMAT_JPEG &&
                 job->target_format != RFC_FORMAT_JPEG) {
                 st = RFC_ERR_UNSUPPORTED_COMBINATION;
@@ -3946,6 +4246,7 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
         }
     }
 
+verify_done:
     timings.verify_ns = rfc_monotonic_now_ns() - ver_t0;
     if (st != RFC_OK) {
         goto finish;

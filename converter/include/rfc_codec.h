@@ -180,6 +180,10 @@ rfc_status rfc_registry_validate_settings(rfc_format_id id,
                                           size_t value_count,
                                           const char **reason_out);
 
+/* The registry default value of a format's setting, or NULL when the format
+ * does not define that setting. Never allocates. */
+const char *rfc_registry_setting_default(rfc_format_id id, const char *setting_id);
+
 /* Select a format for execution in a mode. Planned formats return
  * RFC_ERR_PLANNED; usable formats without an adapter return
  * RFC_ERR_NO_ADAPTER. */
@@ -290,6 +294,46 @@ rfc_status rfc_registry_unregister_jpeg_reconstruct(void);
 const rfc_jpeg_reconstruct_adapter *rfc_registry_jpeg_reconstruct_adapter(void);
 const rfc_jpeg_reconstruct_adapter *rfc_registry_acquire_jpeg_reconstruct(void);
 void rfc_registry_release_jpeg_reconstruct(void);
+
+/* JPEG -> JPEG lossless entropy-optimization adapter (D10 T02 s5). The
+ * coefficient image type is defined in rfc_verify.h. Every buffer and
+ * coefficient image is allocated through exec's allocator.
+ * cancel_session, if provided, must be thread-safe and non-blocking. */
+struct rfc_jpeg_coeff_image;
+typedef struct rfc_jpeg_transcode_adapter {
+    uint32_t abi_version;
+    rfc_status (*open_session)(const rfc_exec_context *exec, void **out_session);
+    void (*close_session)(void *session);
+    void (*cancel_session)(void *session);
+    /* Re-encode the source's DCT coefficients with optimized entropy coding.
+     * settings carry metadata=preserve|strip (registry-validated). */
+    rfc_status (*optimize_jpeg)(void *session, const rfc_exec_context *exec,
+                                const uint8_t *jpeg_bytes, size_t jpeg_size,
+                                const rfc_setting_value *settings,
+                                size_t setting_count, rfc_encoded *out_jpeg);
+    /* Read every quantized DCT block, quantization table and component
+     * parameter, plus modelled metadata, through a fresh decompressor. */
+    rfc_status (*read_coefficients)(void *session, const rfc_exec_context *exec,
+                                    const uint8_t *jpeg_bytes, size_t jpeg_size,
+                                    struct rfc_jpeg_coeff_image **out_coeffs,
+                                    rfc_metadata *out_meta);
+    void (*free_coefficients)(void *session, const rfc_exec_context *exec,
+                              struct rfc_jpeg_coeff_image *coeffs);
+    /* Compare the ordered APPn/COM marker lists: identical when strip == 0;
+     * when strip != 0 only the structural JFIF APP0 and Adobe APP14 headers
+     * may remain and the derived colour space must match. RFC_OK or
+     * RFC_ERR_VERIFY_MISMATCH with *out_detail naming the difference. */
+    rfc_status (*compare_markers)(void *session, const rfc_exec_context *exec,
+                                  const uint8_t *src_jpeg, size_t src_size,
+                                  const uint8_t *dst_jpeg, size_t dst_size,
+                                  int strip, const char **out_detail);
+} rfc_jpeg_transcode_adapter;
+
+rfc_status rfc_registry_register_jpeg_transcode(
+    const rfc_jpeg_transcode_adapter *adapter);
+rfc_status rfc_registry_unregister_jpeg_transcode(void);
+const rfc_jpeg_transcode_adapter *rfc_registry_acquire_jpeg_transcode(void);
+void rfc_registry_release_jpeg_transcode(void);
 
 const char *rfc_status_name(rfc_status status);
 const char *rfc_sample_name(rfc_sample_format format);

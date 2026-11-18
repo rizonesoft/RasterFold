@@ -369,6 +369,7 @@ typedef struct rfc_partial_entry {
 typedef struct rfc_cancel_snapshot {
     const rfc_session_adapter *sess_adapter;
     const rfc_jpeg_reconstruct_adapter *jrec_adapter;
+    const rfc_jpeg_transcode_adapter *jtrans_adapter;
     void *session;
 } rfc_cancel_snapshot;
 
@@ -447,6 +448,7 @@ struct rfc_job {
     uint32_t active_cancel_calls;
     const rfc_session_adapter *active_sess_adapter;
     const rfc_jpeg_reconstruct_adapter *active_jrec_adapter;
+    const rfc_jpeg_transcode_adapter *active_jtrans_adapter;
     void *active_session;
 
     /* Streaming per-frame pre-allocation counters guarded by job->lock. */
@@ -546,6 +548,12 @@ void rfc_slot_state_release(rfc_slot_state *state);
 rfc_job_id rfc_slot_state_get_id(rfc_slot_state *state);
 void rfc_slot_state_set_id(rfc_slot_state *state, rfc_job_id id);
 
+rfc_status rfc_job_internal_resolve_exactness(
+    rfc_format_id target_format,
+    const rfc_setting_value *settings,
+    size_t setting_count,
+    rfc_exactness_class *out_exact,
+    rfc_metadata_policy *out_meta);
 rfc_status rfc_job_internal_validate_settings(
     rfc_format_id source_format,
     rfc_format_id target_format,
