@@ -24,6 +24,7 @@
 #include <string.h>
 
 #include <tiffio.h>
+#include <zlib.h>
 
 static int g_checks = 0;
 
@@ -1601,6 +1602,87 @@ static void test_review_round1(void) {
 /* 8. Completion-review gap regressions                                      */
 /* ------------------------------------------------------------------------ */
 
+/* A memory reader whose Nth seek fails once with RFC_ERR_IO. */
+typedef struct flaky_reader {
+    const uint8_t *data;
+    size_t size, pos;
+    int seeks, fail_seek;
+} flaky_reader;
+
+static rfc_status fr_size(void *ctx, int *known, uint64_t *size) {
+    flaky_reader *f = (flaky_reader *)ctx;
+    *known = 1;
+    *size = f->size;
+    return RFC_OK;
+}
+
+static rfc_status fr_read(void *ctx, uint8_t *buf, size_t max, size_t *got) {
+    flaky_reader *f = (flaky_reader *)ctx;
+    size_t k = f->pos < f->size ? f->size - f->pos : 0u;
+    if (k > max) k = max;
+    memcpy(buf, f->data + f->pos, k);
+    f->pos += k;
+    *got = k;
+    return RFC_OK;
+}
+
+static rfc_status fr_seek(void *ctx, uint64_t off) {
+    flaky_reader *f = (flaky_reader *)ctx;
+    if (++f->seeks == f->fail_seek) {
+        return RFC_ERR_IO;
+    }
+    f->pos = off > f->size ? f->size : (size_t)off;
+    return RFC_OK;
+}
+
+/* A minimal PNG (one IDAT, filter 0) of the given colour type and depth. */
+static uint8_t *make_png_ct(uint32_t w, uint32_t h, uint8_t depth, uint8_t ct, size_t *out_n) {
+    uint32_t ch = ct == 0u ? 1u : ct == 2u ? 3u : ct == 3u ? 1u : ct == 4u ? 2u : 4u;
+    size_t row = 1u + (size_t)w * ch * (depth / 8u);
+    size_t raw_n = row * h;
+    uint8_t *raw = (uint8_t *)calloc(raw_n, 1u);
+    CHECK(raw != NULL);
+    for (uint32_t y = 0u; y < h; y++)
+        for (size_t i = 1u; i < row; i++) raw[y * row + i] = (uint8_t)((y + i) & (ct == 3u ? 1u : 255u));
+    uLongf zn = compressBound((uLong)raw_n);
+    uint8_t *z = (uint8_t *)malloc(zn);
+    CHECK(z && compress(z, &zn, raw, (uLong)raw_n) == Z_OK);
+    size_t cap = 8u + 25u + (ct == 3u ? 18u : 0u) + 12u + zn + 12u;
+    uint8_t *o = (uint8_t *)malloc(cap);
+    CHECK(o != NULL);
+    size_t n = 0u;
+    memcpy(o, "\x89PNG\r\n\x1a\n", 8);
+    n = 8u;
+#define PUT32(v) do { o[n++] = (uint8_t)((v) >> 24); o[n++] = (uint8_t)((v) >> 16); o[n++] = (uint8_t)((v) >> 8); o[n++] = (uint8_t)(v); } while (0)
+    uint8_t ihdr[13] = {0};
+    ihdr[0] = (uint8_t)(w >> 24); ihdr[1] = (uint8_t)(w >> 16); ihdr[2] = (uint8_t)(w >> 8); ihdr[3] = (uint8_t)w;
+    ihdr[4] = (uint8_t)(h >> 24); ihdr[5] = (uint8_t)(h >> 16); ihdr[6] = (uint8_t)(h >> 8); ihdr[7] = (uint8_t)h;
+    ihdr[8] = depth;
+    ihdr[9] = ct;
+    struct { const char *t; const uint8_t *d; size_t len; } chunks[3];
+    static const uint8_t plte[6] = {0, 0, 0, 255, 255, 255};
+    size_t nc = 0u;
+    chunks[nc].t = "IHDR"; chunks[nc].d = ihdr; chunks[nc].len = 13u; nc++;
+    if (ct == 3u) { chunks[nc].t = "PLTE"; chunks[nc].d = plte; chunks[nc].len = 6u; nc++; }
+    chunks[nc].t = "IDAT"; chunks[nc].d = z; chunks[nc].len = zn; nc++;
+    for (size_t c = 0u; c <= nc; c++) {
+        const char *t = c < nc ? chunks[c].t : "IEND";
+        const uint8_t *d = c < nc ? chunks[c].d : NULL;
+        size_t len = c < nc ? chunks[c].len : 0u;
+        PUT32((uint32_t)len);
+        memcpy(o + n, t, 4);
+        uLong crc = crc32(0L, (const Bytef *)t, 4u);
+        n += 4u;
+        if (len) { memcpy(o + n, d, len); crc = crc32(crc, d, (uInt)len); n += len; }
+        PUT32((uint32_t)crc);
+    }
+#undef PUT32
+    free(raw);
+    free(z);
+    *out_n = n;
+    return o;
+}
+
 static void png_file(const char *path, const rfc_layout *lay, const uint8_t *px) {
     uint8_t *out = NULL;
     size_t on = 0u;
@@ -1776,6 +1858,75 @@ static void test_completion_gaps(void) {
         gb = make_gif(&g, &n);
         CHECK(adapter_decode(RFC_FORMAT_GIF, gb, n, &lim, NULL, NULL, NULL) == RFC_ERR_LIMIT_EXCEEDED);
         free(gb);
+    }
+    /* 2c. A read failure during the submit-time GIF walk fails the
+     * submission with that status, rather than admitting the image on a
+     * guessed layout. */
+    {
+        gmk g;
+        gmk_defaults(&g, 40u, 30u);
+        g.transparent = 1;
+        uint8_t *gb = make_gif(&g, &n);
+        int refused_io = 0;
+        for (int fail = 1; fail <= 6; fail++) {
+            flaky_reader fr = {gb, n, 0u, 0, fail};
+            rfc_io_reader rd;
+            memset(&rd, 0, sizeof(rd));
+            rd.ctx = &fr;
+            rd.size_fn = fr_size;
+            rd.read_fn = fr_read;
+            rd.seek_fn = fr_seek;
+            rfc_scheduler_config cfg;
+            rfc_scheduler_config_default(&cfg);
+            rfc_scheduler *sched = rfc_scheduler_create(&cfg);
+            CHECK(sched != NULL);
+            rfc_io_source si;
+            rfc_io_source_init_callbacks(&si, &rd, "flaky.gif", RFC_IMPORT_DEFAULT);
+            rfc_io_sink so;
+            temp_path(p_dst, sizeof(p_dst), "flaky_out.gif");
+            rfc_io_sink_init_path(&so, p_dst, RFC_EXPORT_REFUSE_EXISTING);
+            rfc_limits lim;
+            rfc_limits_default(&lim);
+            lim.max_decoded_bytes = 40u * 30u * 3u; /* the rgb8 guess fits, rgba8 does not */
+            rfc_job_spec sp;
+            memset(&sp, 0, sizeof(sp));
+            sp.source_format = RFC_FORMAT_GIF;
+            sp.target_format = RFC_FORMAT_GIF;
+            sp.io_source = &si;
+            sp.io_sink = &so;
+            sp.limits_override = &lim;
+            rfc_job *j = NULL;
+            rfc_status sst = rfc_scheduler_submit(sched, NULL, &sp, &j);
+            /* every failure point either fails submission with the I/O
+             * error or refuses the rgba8 layout at submit: never a job */
+            CHECK(sst == RFC_ERR_IO || sst == RFC_ERR_LIMIT_EXCEEDED);
+            if (sst == RFC_ERR_IO) refused_io++;
+            CHECK(j == NULL && !file_exists(p_dst));
+            rfc_scheduler_destroy(sched);
+        }
+        CHECK(refused_io > 0);
+        free(gb);
+    }
+    /* 2d. PNG palette and gray-alpha are sized as rgba at their depth: a
+     * 40x30 gray-alpha PNG8 (and palette PNG8) passes submit at 4,800
+     * decoded bytes and is then refused by the PNG adapter, which does not
+     * decode either colour type, and is refused at submit at 4,799. */
+    for (int k = 0; k < 2; k++) {
+        uint8_t ct = k ? 3u : 4u;
+        uint8_t *pb = make_png_ct(40u, 30u, 8u, ct, &n);
+        temp_path(p_src, sizeof(p_src), k ? "pal.png" : "ga.png");
+        temp_path(p_dst, sizeof(p_dst), "ct_out.png");
+        CHECK(write_file_all(p_src, pb, n));
+        rfc_limits lim;
+        rfc_limits_default(&lim);
+        lim.max_decoded_bytes = 40u * 30u * 4u;
+        run_job_full(RFC_FORMAT_PNG, RFC_FORMAT_PNG, p_src, NULL, 0u, p_dst, NULL, NULL, NULL, &lim, 0u, &r);
+        CHECK(r.submit == RFC_OK && r.status == RFC_ERR_UNSUPPORTED_SAMPLE && !file_exists(p_dst));
+        lim.max_decoded_bytes -= 1u;
+        run_job_full(RFC_FORMAT_PNG, RFC_FORMAT_PNG, p_src, NULL, 0u, p_dst, NULL, NULL, NULL, &lim, 0u, &r);
+        CHECK(r.submit == RFC_ERR_LIMIT_EXCEEDED);
+        remove(p_src);
+        free(pb);
     }
     /* 3. A small TIFF with a 10 MiB XMP packet converts to JPEG XL and AVIF
      * with default settings (the TIFF terms in both admission paths). */

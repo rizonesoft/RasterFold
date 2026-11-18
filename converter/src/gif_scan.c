@@ -4,10 +4,8 @@
 
 #include "rfc_gif_scan.h"
 
-#include <stdlib.h>
 #include <string.h>
 
-#define GIF_WINDOW (64u * 1024u)
 
 rfc_status rfc_gif_walk_begin(rfc_gif_walk *w, rfc_gif_read_fn read_at,
                               void *ctx, const rfc_exec_context *exec,
@@ -16,10 +14,6 @@ rfc_status rfc_gif_walk_begin(rfc_gif_walk *w, rfc_gif_read_fn read_at,
     memset(w, 0, sizeof(*w));
     if (!read_at || !limits) {
         return RFC_ERR_INVALID_ARGUMENT;
-    }
-    w->win = (uint8_t *)malloc(GIF_WINDOW);
-    if (!w->win) {
-        return RFC_ERR_OUT_OF_MEMORY;
     }
     w->read_at = read_at;
     w->ctx = ctx;
@@ -31,8 +25,7 @@ rfc_status rfc_gif_walk_begin(rfc_gif_walk *w, rfc_gif_read_fn read_at,
 }
 
 void rfc_gif_walk_end(rfc_gif_walk *w) {
-    free(w->win);
-    w->win = NULL;
+    (void)w;
 }
 
 static void gif_detail(rfc_gif_walk *w, const char *d) {
@@ -44,7 +37,7 @@ static void gif_detail(rfc_gif_walk *w, const char *d) {
 rfc_status rfc_gif_byte(rfc_gif_walk *w, uint64_t pos, uint8_t *out) {
     if (pos < w->win_base || pos >= w->win_base + w->win_len) {
         size_t got = 0u;
-        rfc_status st = w->read_at(w->ctx, pos, w->win, GIF_WINDOW, &got);
+        rfc_status st = w->read_at(w->ctx, pos, w->win, RFC_GIF_WINDOW, &got);
         if (st != RFC_OK) {
             return st;
         }

@@ -597,10 +597,11 @@ void rfc_job_internal_note_partial_bytes(rfc_job *job, int64_t delta_bytes);
  * IFD, GIF screen and first image), so the scheduler can size a job
  * before IMPORT. format is the layout the adapter decodes to (exact for PNG
  * gray/rgb/rgba, JPEG, TIFF, and GIF under the job's limits, through the
- * walk the GIF adapter itself runs) or, where that cannot be known, a lower
- * bound of it (PNG palette and gray-alpha; a GIF the walk refuses), so
- * admission never refuses what the adapter accepts. Internal: the public
- * rfc_sniff_result keeps its layout. */
+ * walk the GIF adapter itself runs); a GIF the walk refuses is given as the
+ * rgb8 lower bound (the adapter refuses it at IMPORT with its own status),
+ * and PNG palette and gray-alpha, which the PNG adapter refuses, as rgba at
+ * their depth. A read failure during the GIF walk fails the sniff.
+ * Internal: the public rfc_sniff_result keeps its layout. */
 typedef struct rfc_sniff_geometry {
     int has_geometry;
     uint32_t width;

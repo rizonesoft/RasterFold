@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #define RFC_GIF_MAX_EXTENSIONS 64u
+#define RFC_GIF_WINDOW 4096u
 
 /* Positional read: up to n bytes at off into dst, the count in *got (fewer
  * only at the end of the input). */
@@ -38,10 +39,10 @@ typedef struct rfc_gif_walk {
     int has_transparent;
     uint8_t transparent;
     uint32_t delay_cs;
-    /* a 64 KiB read window */
+    /* a read window inside the walk: no allocation */
     uint64_t win_base;
     size_t win_len;
-    uint8_t *win;
+    uint8_t win[RFC_GIF_WINDOW];
 } rfc_gif_walk;
 
 typedef struct rfc_gif_image {
@@ -55,7 +56,8 @@ typedef struct rfc_gif_image {
     uint64_t lzw_pos;         /* offset of the LZW minimum code size byte */
 } rfc_gif_image;
 
-/* Prepare a walk (allocates the window; rfc_gif_walk_end frees it). */
+/* Prepare a walk; it allocates nothing (rfc_gif_walk_end is a no-op kept
+ * for symmetry). A read error from read_at is returned as it is. */
 rfc_status rfc_gif_walk_begin(rfc_gif_walk *w, rfc_gif_read_fn read_at,
                               void *ctx, const rfc_exec_context *exec,
                               const rfc_limits *limits,

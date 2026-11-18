@@ -829,39 +829,57 @@ static rfc_status gif_stream_read(void *ctx, uint64_t off, uint8_t *dst,
  * walk refuses the file (the adapter will then refuse it with its own
  * status), the screen is given as rgb8: a lower bound of every decoded
  * layout, so admission never refuses what the adapter accepts. */
-static void sniff_gif_geometry(const seek_stream *ss, const uint8_t *b,
-                               size_t len, const rfc_limits *limits,
-                               rfc_sniff_geometry *geo) {
+static rfc_status sniff_gif_geometry(const seek_stream *ss, const uint8_t *b,
+                                     size_t len, const rfc_limits *limits,
+                                     rfc_sniff_geometry *geo) {
     if (len < 10u) {
-        return;
+        return RFC_OK;
     }
     uint32_t w = (uint32_t)b[6] | ((uint32_t)b[7] << 8);
     uint32_t h = (uint32_t)b[8] | ((uint32_t)b[9] << 8);
     if (w == 0u || h == 0u) {
-        return;
+        return RFC_OK;
+    }
+    if (!limits) {
+        geo->width = w;
+        geo->height = h;
+        geo->format = RFC_SAMPLE_RGB8;
+        geo->has_geometry = 1;
+        return RFC_OK;
+    }
+    rfc_gif_walk walk;
+    rfc_status st = rfc_gif_walk_begin(&walk, gif_stream_read, (void *)ss,
+                                       NULL, limits, NULL, NULL);
+    rfc_gif_image img;
+    if (st == RFC_OK) {
+        st = rfc_gif_scan_first_image(&walk, &img);
+    }
+    rfc_gif_walk_end(&walk);
+    switch (st) {
+        case RFC_OK:
+            geo->format = img.layout.format;
+            break;
+        case RFC_ERR_INVALID_ARGUMENT:
+        case RFC_ERR_TRUNCATED_INPUT:
+        case RFC_ERR_LIMIT_EXCEEDED:
+        case RFC_ERR_UNSUPPORTED_COMBINATION:
+            /* the walk refuses the file: the adapter will refuse it with
+             * this status at IMPORT, so admission takes the lower bound */
+            geo->format = RFC_SAMPLE_RGB8;
+            break;
+        default:
+            return st; /* a read failure is the sniff's own failure */
     }
     geo->width = w;
     geo->height = h;
-    geo->format = RFC_SAMPLE_RGB8;
     geo->has_geometry = 1;
-    if (!limits) {
-        return;
-    }
-    rfc_gif_walk walk;
-    if (rfc_gif_walk_begin(&walk, gif_stream_read, (void *)ss, NULL, limits,
-                           NULL, NULL) != RFC_OK) {
-        return;
-    }
-    rfc_gif_image img;
-    if (rfc_gif_scan_first_image(&walk, &img) == RFC_OK) {
-        geo->format = img.layout.format;
-    }
-    rfc_gif_walk_end(&walk);
+    return RFC_OK;
 }
 
 /* PNG: the IHDR (always the first chunk) gives the decoded layout for the
- * colour types the PNG adapter decodes; palette and gray-alpha images give
- * a lower bound (rgb and gray at their depth), like every sniffed layout. */
+ * colour types the PNG adapter decodes; palette and gray-alpha images are
+ * sized as rgba at their depth (the larger layout; the adapter refuses both
+ * today, so no accepted image is affected). */
 static void sniff_png_geometry(const uint8_t *b, size_t len,
                                rfc_sniff_geometry *geo) {
     if (len < 26u || memcmp(b + 12, "IHDR", 4) != 0) {
@@ -880,11 +898,7 @@ static void sniff_png_geometry(const uint8_t *b, size_t len,
         f = wide ? RFC_SAMPLE_GRAY16 : RFC_SAMPLE_GRAY8;
     } else if (ct == 2u) {
         f = wide ? RFC_SAMPLE_RGB16 : RFC_SAMPLE_RGB8;
-    } else if (ct == 3u) {
-        f = wide ? RFC_SAMPLE_RGB16 : RFC_SAMPLE_RGB8;
-    } else if (ct == 4u) {
-        f = wide ? RFC_SAMPLE_GRAY16 : RFC_SAMPLE_GRAY8;
-    } else if (ct == 6u) {
+    } else if (ct == 3u || ct == 4u || ct == 6u) {
         f = wide ? RFC_SAMPLE_RGBA16 : RFC_SAMPLE_RGBA8;
     } else {
         return;
@@ -1000,7 +1014,10 @@ static rfc_format_id sniff_stream_core(const seek_stream *ss,
     else if (len >= 6u &&
              (memcmp(b, "GIF87a", 6) == 0 || memcmp(b, "GIF89a", 6) == 0)) {
         detected = RFC_FORMAT_GIF;
-        sniff_gif_geometry(ss, b, len, geo_limits, geo);
+        rfc_status gst = sniff_gif_geometry(ss, b, len, geo_limits, geo);
+        if (gst != RFC_OK && out_io_status) {
+            *out_io_status = gst;
+        }
     }
     /* 11. QOI */
     else if (len >= 4u && memcmp(b, "qoif", 4) == 0) {
