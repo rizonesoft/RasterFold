@@ -45,6 +45,23 @@ rfc_status rfc_codecs_unregister_jpeg(void);
 rfc_status rfc_codecs_register_tiff_gif(void);
 rfc_status rfc_codecs_unregister_tiff_gif(void);
 
+/* Register and unregister the import-only HEIF and HEIC session adapters
+ * (D10 T02 s7) as one registry transaction: both or neither; unregister
+ * returns RFC_ERR_BUSY, leaving both registered, while either is acquired.
+ * On a build or a system without the Windows Imaging Component HEIF decoder
+ * the adapters refuse with RFC_ERR_NO_ADAPTER and a detail naming what is
+ * missing. */
+rfc_status rfc_codecs_register_heif(void);
+rfc_status rfc_codecs_unregister_heif(void);
+
+/* Test seam: report the WIC HEIF decoder and/or the Media Foundation HEVC
+ * decoder as missing (0 restores the real lookups). */
+void rfc_codecs_heif_set_missing_for_testing(int heif_decoder, int hevc_decoder);
+
+/* Test seam: hook called before each 64-row band of HEIF pixels is copied
+ * (NULL removes it), for deterministic mid-decode cancellation tests. */
+void rfc_codecs_heif_set_band_hook_for_testing(void (*hook)(void *), void *ctx);
+
 /* Test seam: hook called before each decoded TIFF strip or tile, each GIF
  * row, every 256 GIF LZW sub-blocks of the pre-scan and each row of the GIF
  * palette pass (NULL removes it), for deterministic mid-decode cancellation tests. */

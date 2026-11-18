@@ -460,9 +460,21 @@ rfc_status rfc_query_provider_memory_contract(rfc_format_id id,
                 "pre-scan; frames, rows, palette indices and the output go "
                 "through the job allocator";
             break;
-        case RFC_FORMAT_OPENEXR:
         case RFC_FORMAT_HEIF:
         case RFC_FORMAT_HEIC:
+            out->mode = RFC_MEM_RESERVATION_AND_LIMITS;
+            /* import only: the rgb8 frame, plus the adapter's reservation for
+             * the system decoders (three 32-bit frames and 32 MiB), checked
+             * against the measured peak private bytes of a decode */
+            out->working_set_multiplier = 6u;
+            out->fixed_overhead_bytes = 40ull * 1024ull * 1024ull;
+            out->limitation_reason =
+                "the Windows Imaging Component HEIF decoder and the system "
+                "HEVC decoder allocate outside rfc_alloc; the adapter reserves "
+                "three 32-bit frames and 32 MiB through rfc_budget_reserve, "
+                "checked against the measured peak private bytes of a decode";
+            break;
+        case RFC_FORMAT_OPENEXR:
         case RFC_FORMAT_JPEG2000:
             out->mode = RFC_MEM_RESERVATION_AND_LIMITS;
             out->working_set_multiplier = 5u;

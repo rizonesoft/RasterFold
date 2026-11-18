@@ -56,8 +56,6 @@ class ExactnessReferenceTests(unittest.TestCase):
         self.assertEqual(len(by_name), 19)
         for pending in (
             "apng",
-            "heif",
-            "heic",
             "jpeg-2000",
         ):
             self.assertEqual(by_name[pending]["coverage_state"], "provenance-only-pending-adapter")
@@ -65,6 +63,11 @@ class ExactnessReferenceTests(unittest.TestCase):
         self.assertEqual(by_name["jpeg-xl"]["coverage_state"], "executable-in-d10-t02-s3")
         self.assertEqual(by_name["avif"]["coverage_state"], "executable-in-d10-t02-s4")
         self.assertEqual(by_name["jpeg"]["coverage_state"], "executable-in-d10-t02-s5")
+        for s7 in ("heif", "heic"):
+            self.assertEqual(by_name[s7]["coverage_state"], "executable-in-d10-t02-s7")
+            self.assertEqual(by_name[s7]["reference_decoder_kind"], "system-codec-non-independent")
+            self.assertFalse(by_name[s7]["claims_independent_decoder"])
+            self.assertTrue(by_name[s7]["shares_c_library_with_converter"])
         for s6 in ("tiff", "gif"):
             self.assertEqual(by_name[s6]["coverage_state"], "executable-in-d10-t02-s6")
             self.assertEqual(by_name[s6]["reference_decoder_kind"], "independent-pure-python")

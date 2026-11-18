@@ -75,7 +75,7 @@ def validate_registry(json_path=None):
         4: os.path.join("converter", "codecs", "avif.c"),
         5: os.path.join("converter", "codecs", "jpeg.c"),
         6: os.path.join("converter", "codecs", "tiff_gif.c"),
-        7: os.path.join("converter", "codecs", "wic.c"),
+        7: os.path.join("converter", "codecs", "heif.c"),
         8: os.path.join("converter", "codecs", "qoi.c"),
         9: os.path.join("converter", "codecs", "jp2.c"),
         10: os.path.join("converter", "codecs", "openexr.c"),
@@ -297,6 +297,7 @@ def case_jobs(all_targets):
         os.path.join(src_dir, "job.c"),
         os.path.join(src_dir, "scheduler.c"),
         os.path.join(src_dir, "gif_scan.c"),
+        os.path.join(src_dir, "heif_scan.c"),
         os.path.join(ROOT, "tests", "converter", "test_jobs.c"),
     ]
     with tempfile.TemporaryDirectory() as tmp:
@@ -416,6 +417,7 @@ def case_exactness(all_targets):
             os.path.join(src_dir, "job.c"),
             os.path.join(src_dir, "scheduler.c"),
             os.path.join(src_dir, "gif_scan.c"),
+            os.path.join(src_dir, "heif_scan.c"),
             noprev_c,
         ]
         if os.name != "nt":
@@ -450,6 +452,7 @@ def case_exactness(all_targets):
                 os.path.join(src_dir, "job.c"),
                 os.path.join(src_dir, "scheduler.c"),
                 os.path.join(src_dir, "gif_scan.c"),
+                os.path.join(src_dir, "heif_scan.c"),
                 os.path.join(ROOT, "tests", "converter", "test_exactness.c"),
             ]
             host_exe = os.path.join(tmp, "test_exactness")
@@ -580,6 +583,7 @@ def case_file_safety(all_targets=False):
                 os.path.join(src_dir, "job.c"),
                 os.path.join(src_dir, "scheduler.c"),
                 os.path.join(src_dir, "gif_scan.c"),
+                os.path.join(src_dir, "heif_scan.c"),
                 os.path.join(ROOT, "tests", "converter", "test_file_safety.c"),
             ]
             cmd = [
@@ -714,6 +718,7 @@ def case_reports(all_targets=False):
                 os.path.join(src_dir, "job.c"),
                 os.path.join(src_dir, "scheduler.c"),
                 os.path.join(src_dir, "gif_scan.c"),
+                os.path.join(src_dir, "heif_scan.c"),
                 os.path.join(ROOT, "tests", "converter", "test_reports.c"),
             ]
             cmd = [
@@ -1029,6 +1034,7 @@ def _run_codec_case(
     host_flags_fn,
     all_targets=False,
     host_link_cxx=False,
+    win_markers=None,
 ):
     from pathlib import Path
 
@@ -1074,6 +1080,7 @@ def _run_codec_case(
                 os.path.join(src_dir, "job.c"),
                 os.path.join(src_dir, "scheduler.c"),
                 os.path.join(src_dir, "gif_scan.c"),
+                os.path.join(src_dir, "heif_scan.c"),
                 *(os.path.join(codecs_dir, s) for s in codec_sources),
                 os.path.join(ROOT, "tests", "converter", c_test_file),
             ]
@@ -1131,7 +1138,8 @@ def _run_codec_case(
                 print(win_res.stdout)
                 print(win_res.stderr, file=sys.stderr)
                 return fail(f"{win_target}.exe isolated run exited {win_res.returncode}")
-            if _assert_suite_output(win_res.stdout, "windows-x64", markers):
+            if _assert_suite_output(win_res.stdout, "windows-x64",
+                                    win_markers if win_markers else markers):
                 return 1
             print(f"{case_name} (windows-x64 isolated): PASS")
 
@@ -1355,6 +1363,113 @@ def case_tiff_gif(all_targets=False):
     )
 
 
+HEVC_NAMES = ("x265", "libde265", "de265", "kvazaar", "openhevc", "libheif")
+
+
+def _no_hevc_in_build_inputs():
+    """The converter's actual build inputs name no HEVC implementation: its
+    sources and CMake (beyond the comments that say none is bundled), and
+    the vendor manifest's packages."""
+    import re as _re
+    word = _re.compile(r"\b(" + "|".join(HEVC_NAMES) + r")\b", _re.I)
+    roots = [os.path.join(ROOT, "converter", d) for d in ("src", "codecs", "include", "cmake")]
+    files = [os.path.join(ROOT, "converter", "CMakeLists.txt")]
+    for r in roots:
+        for dp, _dn, fn in os.walk(r):
+            files.extend(os.path.join(dp, f) for f in fn)
+    for path in files:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for no, line in enumerate(fh, 1):
+                code = line.split("//")[0]
+                if word.search(code) and "/*" not in line and "*" != line.strip()[:1]:
+                    return f"{os.path.relpath(path, ROOT)}:{no} names an HEVC implementation"
+    with open(os.path.join(ROOT, "converter", "vendor.json"), encoding="utf-8") as fh:
+        vendor = json.load(fh)
+    for pkg in vendor.get("packages", []):
+        if word.search(pkg.get("id", "")) or word.search(pkg.get("name", "")):
+            return f"converter/vendor.json packages include {pkg.get('id')}"
+    return None
+
+
+HEVC_SYMBOL_PREFIXES = ("x265_", "de265_", "kvz_", "heif_context_", "heif_image_",
+                        "heif_decode_", "heif_init", "heif_get_version")
+
+
+def _no_hevc_symbols(paths):
+    """llvm-nm finds no external symbol of an HEVC implementation (x265,
+    libde265, kvazaar, or libheif's API) in the built artifacts; the
+    adapter's own file-local helpers are not external."""
+    tool = os.path.join(ROOT, "tools", "llvm-mingw-linux", "bin", "llvm-nm")
+    if os.name == "nt":
+        tool = os.path.join(ROOT, "tools", "llvm-mingw", "bin", "llvm-nm.exe")
+    for path in paths:
+        if not os.path.isfile(path):
+            return f"missing artifact {path}"
+        res = run_capture([tool, "--defined-only", "--extern-only", path], timeout=120.0)
+        if res.returncode:
+            return f"llvm-nm failed on {path}"
+        for line in res.stdout.splitlines():
+            sym = line.split()[-1] if line.split() else ""
+            if sym.startswith(HEVC_SYMBOL_PREFIXES):
+                return f"{os.path.relpath(path, ROOT)} defines HEVC symbol {sym}"
+    return None
+
+
+def case_heif(all_targets=False):
+    msg = _no_hevc_in_build_inputs()
+    if msg:
+        return fail(f"heif: {msg}")
+    print("heif: no HEVC implementation in the converter's build inputs")
+
+    def _flags():
+        w_cf, w_lb = _host_libwebp_flags()
+        p_cf, p_lb = _host_libpng_flags()
+        j_cf, j_lb = _ensure_host_jxl_flags()
+        a_cf, a_lb = _ensure_host_avif_flags()
+        t_cf, t_lb = _ensure_host_tiff_gif_flags()
+        cflags = list(dict.fromkeys([*t_cf, *a_cf, *j_cf, *w_cf, *p_cf]))
+        a_core = [x for x in a_lb if x.endswith(".a") and not x.endswith("libsharpyuv.a")]
+        j_arch = [x for x in j_lb if x.endswith(".a")]
+        libs = [*t_lb, *a_core, *j_arch, *w_lb, *p_lb, "-lstdc++", "-lm", "-pthread"]
+        return cflags, libs
+
+    markers_host = [
+        "heif: registration_and_scanner ok",
+        "heif: platform_refusal ok",
+        "heif: all checks passed",
+    ]
+    rc = _run_codec_case(
+        case_name="heif",
+        win_target="rfc_test_heif",
+        codec_sources=["basic.c", "webp.c", "jpeg_scan.c", "jxl.c", "avif.c", "jpeg.c", "tiff_gif.c", "heif.c"],
+        c_test_file="test_heif.c",
+        py_test_file="test_heif.py",
+        host_env_var="RFC_HOST_HEIF_EXE",
+        win_env_var="RFC_WIN_HEIF_EXE",
+        require_win_env_var="RFC_REQUIRE_WIN_HEIF",
+        markers=markers_host,
+        win_markers=[
+            "heif: registration_and_scanner ok",
+            "heif: wic_decode_matrix ok",
+            "heif: wic_metadata_refusals_limits_and_cancel ok",
+            "heif: all checks passed",
+        ],
+        host_flags_fn=_flags,
+        all_targets=all_targets,
+        host_link_cxx=True,
+    )
+    if rc:
+        return rc
+    if all_targets or os.name == "nt":
+        bindir = os.path.join(ROOT, "bin", "converter", "windows-x64")
+        arts = [os.path.join(bindir, n) for n in ("rfc_test_heif.exe", "rfc_bundle_smoke.exe")]
+        msg = _no_hevc_symbols(arts)
+        if msg:
+            return fail(f"heif: {msg}")
+        print("heif: llvm-nm finds no HEVC symbol in the built Windows artifacts")
+    return 0
+
+
 def main():
     raw_args = sys.argv[1:]
     all_targets = "--all-targets" in raw_args
@@ -1385,6 +1500,8 @@ def main():
         return case_jpeg(all_targets)
     if args == ["--case", "tiff_gif"]:
         return case_tiff_gif(all_targets)
+    if args == ["--case", "heif"]:
+        return case_heif(all_targets)
     if args == ["--case", "all"]:
         rc = case_contract()
         if rc:
@@ -1419,8 +1536,11 @@ def main():
         rc = case_tiff_gif(all_targets)
         if rc:
             return rc
+        rc = case_heif(all_targets)
+        if rc:
+            return rc
         return case_bundle()
-    print("usage: check-converter.py --case <contract|jobs|exactness|file-safety|reports|basic|webp|jxl|avif|jpeg|tiff_gif|bundle|all> [--all-targets]")
+    print("usage: check-converter.py --case <contract|jobs|exactness|file-safety|reports|basic|webp|jxl|avif|jpeg|tiff_gif|heif|bundle|all> [--all-targets]")
     return 1
 
 

@@ -239,8 +239,8 @@ PROVENANCE_TABLE: tuple[dict[str, Any], ...] = (
         "reference_decoder_kind": "system-codec-non-independent",
         "shares_c_library_with_converter": True,
         "claims_independent_decoder": False,
-        "coverage_state": "provenance-only-pending-adapter",
-        "provenance_note": "Pending D10 T02 s7; Windows system WIC import-only decoder, no HEVC decoder bundled.",
+        "coverage_state": "executable-in-d10-t02-s7",
+        "provenance_note": "Import-only through the Windows Imaging Component HEIF decoder with the system HEVC decoder (no HEVC code bundled); 8-bit opaque pictures checked against a second fresh WIC decode of the same bytes and for closeness to the encoded pattern (shared system provider, no independent decoder); orientation is applied by the system decoder; the container facts come from the converter's own ISOBMFF reader.",
     },
     {
         "format_name": "heic",
@@ -252,8 +252,8 @@ PROVENANCE_TABLE: tuple[dict[str, Any], ...] = (
         "reference_decoder_kind": "system-codec-non-independent",
         "shares_c_library_with_converter": True,
         "claims_independent_decoder": False,
-        "coverage_state": "provenance-only-pending-adapter",
-        "provenance_note": "Pending D10 T02 s7; Windows system WIC import-only decoder, no HEVC decoder bundled.",
+        "coverage_state": "executable-in-d10-t02-s7",
+        "provenance_note": "Import-only through the Windows Imaging Component HEIF decoder with the system HEVC decoder (no HEVC code bundled); 8-bit opaque pictures checked against a second fresh WIC decode of the same bytes and for closeness to the encoded pattern (shared system provider, no independent decoder); orientation is applied by the system decoder; the container facts come from the converter's own ISOBMFF reader.",
     },
     {
         "format_name": "jpeg-2000",
@@ -406,6 +406,7 @@ def validate_provenance_table() -> dict[str, dict[str, Any]]:
             "executable-in-d10-t02-s4",
             "executable-in-d10-t02-s5",
             "executable-in-d10-t02-s6",
+            "executable-in-d10-t02-s7",
             "provenance-only-pending-adapter",
         ):
             raise AssertionError(f"{name}: invalid coverage_state {row['coverage_state']!r}")

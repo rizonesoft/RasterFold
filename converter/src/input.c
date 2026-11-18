@@ -15,6 +15,7 @@
 
 #include "job_internal.h"
 #include "rfc_gif_scan.h"
+#include "rfc_heif_scan.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -913,6 +914,35 @@ static void sniff_png_geometry(const uint8_t *b, size_t len,
     geo->has_geometry = 1;
 }
 
+static rfc_status heif_stream_read(void *ctx, uint64_t off, uint8_t *dst,
+                                   size_t n, size_t *got) {
+    const seek_stream *ss = (const seek_stream *)ctx;
+    *got = 0u;
+    return ss->read_at(ss->ctx, off, dst, n, got);
+}
+
+/* HEIF/HEIC: the geometry the shared ISOBMFF reader (the one the HEIF
+ * adapter runs) gives for the primary picture, exact when it accepts the
+ * file. When it refuses the file, the adapter will refuse it at IMPORT with
+ * its own status, so admission takes a lower bound: rgb8 at the dimensions
+ * read, or a 1x1 placeholder when none were. A read failure fails the sniff. */
+static rfc_status sniff_heif_geometry(const seek_stream *ss,
+                                      rfc_sniff_geometry *geo) {
+    rfc_heif_info info;
+    int read_failed = 0;
+    uint64_t size = ss->size_known ? ss->total_size : UINT64_MAX;
+    rfc_status st =
+        rfc_heif_scan(heif_stream_read, (void *)ss, size, &info, NULL, &read_failed);
+    if (read_failed) {
+        return st;
+    }
+    geo->format = RFC_SAMPLE_RGB8;
+    geo->width = info.dims_known ? info.width : 1u;
+    geo->height = info.dims_known ? info.height : 1u;
+    geo->has_geometry = 1;
+    return RFC_OK;
+}
+
 static rfc_format_id sniff_stream_core(const seek_stream *ss,
                                        const char *name_utf8,
                                        rfc_sniff_result *out_result,
@@ -1008,6 +1038,13 @@ static rfc_format_id sniff_stream_core(const seek_stream *ss,
     /* 8. ISOBMFF (AVIF, HEIC, HEIF, CR3) */
     else if (len >= 16u && memcmp(b + 4, "ftyp", 4) == 0) {
         detected = sniff_isobmff(b, len);
+        if (geo_out &&
+            (detected == RFC_FORMAT_HEIF || detected == RFC_FORMAT_HEIC)) {
+            rfc_status hst = sniff_heif_geometry(ss, geo);
+            if (hst != RFC_OK && out_io_status) {
+                *out_io_status = hst;
+            }
+        }
     }
     /* 9. JPEG */
     else if (len >= 3u && b[0] == 0xFFu && b[1] == 0xD8u && b[2] == 0xFFu) {
