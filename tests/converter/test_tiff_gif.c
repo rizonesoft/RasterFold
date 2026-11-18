@@ -524,6 +524,7 @@ typedef struct gmk {
     int no_trailer;
     int plain_text;      /* a Plain Text Extension before the image */
     int gce_shape;       /* 1: zero-length GCE, 2: GCE with an extra block */
+    uint32_t comment_blocks; /* a Comment Extension of this many 1-byte blocks */
 } gmk;
 
 static const uint8_t k_gct[12] = {0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255};
@@ -533,7 +534,7 @@ static uint8_t gmk_index(uint32_t x, uint32_t y) {
 }
 
 static uint8_t *make_gif(const gmk *g, size_t *out_n) {
-    size_t cap = 64u + 2u * (size_t)g->w * g->h + 4096u;
+    size_t cap = 64u + 2u * (size_t)g->w * g->h + 4096u + 2u * (size_t)g->comment_blocks;
     uint8_t *o = (uint8_t *)malloc(cap * (g->images > 1 ? (size_t)g->images : 1u));
     CHECK(o != NULL);
     size_t n = 0u;
@@ -546,6 +547,15 @@ static uint8_t *make_gif(const gmk *g, size_t *out_n) {
     o[n++] = 0u;
     memcpy(o + n, k_gct, sizeof(k_gct));
     n += sizeof(k_gct);
+    if (g->comment_blocks) {
+        o[n++] = 0x21u;
+        o[n++] = 0xFEu;
+        for (uint32_t k = 0u; k < g->comment_blocks; k++) {
+            o[n++] = 1u;
+            o[n++] = (uint8_t)('a' + k % 26u);
+        }
+        o[n++] = 0u;
+    }
     if (g->plain_text) {
         static const uint8_t pte[19] = {0x21u, 0x01u, 12u, 0, 0, 0, 0, 8, 0, 8, 0,
                                         8, 8, 1, 0, 2u, 'h', 'i', 0u};
@@ -1665,6 +1675,55 @@ static void test_completion_gaps(void) {
         }
         remove(p_src);
         free(gb);
+    }
+    /* 2b. The sniff walks extensions within the adapter's bounds: a comment
+     * of 10,000 one-byte sub-blocks still gives the exact rgb8 geometry
+     * (admitted at exactly 3,600 decoded bytes, refused at 3,599). */
+    {
+        gmk g;
+        gmk_defaults(&g, 40u, 30u);
+        g.comment_blocks = 10000u;
+        uint8_t *gb = make_gif(&g, &n);
+        CHECK(adapter_decode(RFC_FORMAT_GIF, gb, n, NULL, NULL, NULL, NULL) == RFC_OK);
+        temp_path(p_src, sizeof(p_src), "cmt.gif");
+        temp_path(p_dst, sizeof(p_dst), "cmt_out.png");
+        CHECK(write_file_all(p_src, gb, n));
+        run_job(RFC_FORMAT_GIF, RFC_FORMAT_PNG, p_src, p_dst, NULL, NULL, &r);
+        CHECK_JOB_OK(r);
+        remove(p_dst);
+        rfc_limits lim;
+        rfc_limits_default(&lim);
+        lim.max_decoded_bytes = 40u * 30u * 3u;
+        run_job_full(RFC_FORMAT_GIF, RFC_FORMAT_PNG, p_src, NULL, 0u, p_dst, NULL, NULL, NULL, &lim, 0u, &r);
+        CHECK_JOB_OK(r);
+        remove(p_dst);
+        lim.max_decoded_bytes -= 1u;
+        run_job_full(RFC_FORMAT_GIF, RFC_FORMAT_PNG, p_src, NULL, 0u, p_dst, NULL, NULL, NULL, &lim, 0u, &r);
+        CHECK(r.submit == RFC_ERR_LIMIT_EXCEEDED);
+        remove(p_src);
+        free(gb);
+    }
+    /* 2c. BigTIFF geometry is exact: a 29x13 rgb16 file is admitted at
+     * exactly 2,262 decoded bytes and refused at submit at 2,261. */
+    {
+        tmk m;
+        tmk_defaults(&m, 29u, 13u, 3u, 16u);
+        m.bigtiff = 1;
+        uint8_t *b = make_tiff(&m, &n);
+        temp_path(p_src, sizeof(p_src), "b8x.tif");
+        temp_path(p_dst, sizeof(p_dst), "b8x_out.tif");
+        CHECK(write_file_all(p_src, b, n));
+        rfc_limits lim;
+        rfc_limits_default(&lim);
+        lim.max_decoded_bytes = 29u * 13u * 6u;
+        run_job_full(RFC_FORMAT_TIFF, RFC_FORMAT_TIFF, p_src, NULL, 0u, p_dst, NULL, NULL, NULL, &lim, 0u, &r);
+        CHECK_JOB_OK(r);
+        remove(p_dst);
+        lim.max_decoded_bytes -= 1u;
+        run_job_full(RFC_FORMAT_TIFF, RFC_FORMAT_TIFF, p_src, NULL, 0u, p_dst, NULL, NULL, NULL, &lim, 0u, &r);
+        CHECK(r.submit == RFC_ERR_LIMIT_EXCEEDED && !file_exists(p_dst));
+        remove(p_src);
+        free(b);
     }
     /* 3. A small TIFF with a 10 MiB XMP packet converts to JPEG XL and AVIF
      * with default settings (the TIFF terms in both admission paths). */

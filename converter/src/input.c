@@ -815,11 +815,36 @@ static void sniff_tiff_geometry(const seek_stream *ss, const uint8_t *b,
     geo->has_geometry = 1;
 }
 
+/* Byte-wise reads through a 64 KiB window, so walking many small GIF
+ * sub-blocks costs one positional read per window, not per block. */
+typedef struct gif_win {
+    const seek_stream *ss;
+    uint64_t base;
+    size_t len;
+    uint8_t buf[65536];
+} gif_win;
+
+static int gif_win_byte(gif_win *w, uint64_t pos, uint8_t *out) {
+    if (pos < w->base || pos >= w->base + w->len) {
+        size_t got = 0u;
+        if (w->ss->read_at(w->ss->ctx, pos, w->buf, sizeof(w->buf), &got) !=
+                RFC_OK ||
+            got == 0u) {
+            return 0;
+        }
+        w->base = pos;
+        w->len = got;
+    }
+    *out = w->buf[pos - w->base];
+    return 1;
+}
+
 /* GIF: the logical screen and the layout the GIF adapter decodes it to,
- * found by walking the extensions to the first image descriptor with
- * bounded reads (at most 64 extensions and 4,096 sub-blocks): rgba8 when a
- * Graphics Control Extension declares a transparent index inside the
- * active colour table, otherwise rgb8. */
+ * found by walking the extensions to the first image descriptor within the
+ * adapter's own bounds (64 extensions, extension payload up to the default
+ * metadata limit): rgba8 when a Graphics Control Extension declares a
+ * transparent index inside the active colour table, otherwise rgb8. A file
+ * beyond those bounds is one the adapter refuses, so no geometry is given. */
 static void sniff_gif_geometry(const seek_stream *ss, const uint8_t *b,
                                size_t len, rfc_sniff_geometry *geo) {
     if (len < 13u) {
@@ -830,60 +855,76 @@ static void sniff_gif_geometry(const seek_stream *ss, const uint8_t *b,
     if (w == 0u || h == 0u) {
         return;
     }
+    gif_win *win = (gif_win *)malloc(sizeof(gif_win));
+    if (!win) {
+        return;
+    }
+    win->ss = ss;
+    win->base = 0u;
+    win->len = 0u;
     uint32_t colors = (b[10] & 0x80u) ? (2u << (b[10] & 7u)) : 0u;
     uint64_t pos = 13u + 3u * (uint64_t)colors;
     int has_t = 0;
     uint32_t t_index = 0u;
-    uint32_t blocks = 0u;
+    uint64_t ext_bytes = 0u;
     for (uint32_t ext = 0u; ext <= 64u; ext++) {
-        uint8_t hdr[2];
-        size_t got = 0u;
-        if (ss->read_at(ss->ctx, pos, hdr, 1u, &got) != RFC_OK || got != 1u) {
-            return;
+        uint8_t c = 0u;
+        if (!gif_win_byte(win, pos, &c)) {
+            break;
         }
-        if (hdr[0] == 0x2Cu) {
-            uint8_t d[10];
-            if (ss->read_at(ss->ctx, pos, d, 10u, &got) != RFC_OK ||
-                got != 10u) {
-                return;
+        if (c == 0x2Cu) {
+            uint8_t fl = 0u;
+            if (!gif_win_byte(win, pos + 9u, &fl)) {
+                break;
             }
-            if (d[9] & 0x80u) {
-                colors = 2u << (d[9] & 7u);
+            if (fl & 0x80u) {
+                colors = 2u << (fl & 7u);
             }
-            int rgba = has_t && t_index < colors;
             geo->width = w;
             geo->height = h;
-            geo->format = rgba ? RFC_SAMPLE_RGBA8 : RFC_SAMPLE_RGB8;
+            geo->format = (has_t && t_index < colors) ? RFC_SAMPLE_RGBA8
+                                                      : RFC_SAMPLE_RGB8;
             geo->has_geometry = 1;
-            return;
+            break;
         }
-        if (hdr[0] != 0x21u ||
-            ss->read_at(ss->ctx, pos, hdr, 2u, &got) != RFC_OK || got != 2u) {
-            return;
+        uint8_t label = 0u;
+        if (c != 0x21u || !gif_win_byte(win, pos + 1u, &label)) {
+            break;
         }
         pos += 2u;
+        int ok = 1;
         for (int first = 1;; first = 0) {
-            uint8_t blk[5];
-            if (++blocks > 4096u ||
-                ss->read_at(ss->ctx, pos, blk, 1u, &got) != RFC_OK ||
-                got != 1u) {
-                return;
+            uint8_t n = 0u;
+            if (!gif_win_byte(win, pos, &n)) {
+                ok = 0;
+                break;
             }
-            if (blk[0] == 0u) {
+            if (n == 0u) {
                 pos += 1u;
                 break;
             }
-            if (hdr[1] == 0xF9u && first && blk[0] == 4u) {
-                if (ss->read_at(ss->ctx, pos, blk, 5u, &got) != RFC_OK ||
-                    got != 5u) {
-                    return;
-                }
-                has_t = (blk[1] & 1u) != 0u;
-                t_index = blk[4];
+            ext_bytes += n;
+            if (ext_bytes > (uint64_t)RFC_MAX_ICC_BYTES) {
+                ok = 0;
+                break;
             }
-            pos += 1u + (uint64_t)blk[0];
+            if (label == 0xF9u && first && n == 4u) {
+                uint8_t fb = 0u, ti = 0u;
+                if (!gif_win_byte(win, pos + 1u, &fb) ||
+                    !gif_win_byte(win, pos + 4u, &ti)) {
+                    ok = 0;
+                    break;
+                }
+                has_t = (fb & 1u) != 0u;
+                t_index = ti;
+            }
+            pos += 1u + (uint64_t)n;
+        }
+        if (!ok) {
+            break;
         }
     }
+    free(win);
 }
 
 /* PNG: the IHDR (always the first chunk) gives the decoded layout for the
