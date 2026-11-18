@@ -1,0 +1,73 @@
+{
+  "ref": "D10 T02 \u00a76",
+  "title": "TIFF and GIF",
+  "implementation_sha": "de3dc1b553d040971bd63d9824a468ebae0e3d80",
+  "date": "2026-11-18",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/10-converter/D10-T02-s6.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "python3 scripts/check-converter.py --case tiff_gif --all-targets -> [host] and [windows-x64] tiff_gif: all checks passed (14703 checks), Ran 11 tests OK",
+    "python3 scripts/check-converter.py --case all --all-targets -> exit 0",
+    "python3 scripts/check-all.py --all-targets -> check-all: 32/32 passed",
+    "git diff --exit-code 5578212 de3dc1b -- src/ include/rasterfold.h spec/FOLD.md tests/rfi_ref.py tests/test_correctness.py converter/vendor.json -> exit 0"
+  ],
+  "completion": {
+    "report": "docs/reviews/10-converter/D10-T02-s6.md",
+    "verdict": "reconciled",
+    "candidate": "de3dc1b553d040971bd63d9824a468ebae0e3d80",
+    "reviewer": "astra",
+    "model": "gpt-6.2-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/10-converter/D10-T02-s6.md",
+    "candidate": "04feb978eb97b4c977601236b09c4ef2e7a53317",
+    "reviewer": "astra",
+    "model": "gpt-6.2-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "04feb978eb97b4c977601236b09c4ef2e7a53317",
+  "schedule": {
+    "policy": "three-pass",
+    "pass_cap": 33,
+    "plan": {
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {},
+    "reconciliation": {
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}
