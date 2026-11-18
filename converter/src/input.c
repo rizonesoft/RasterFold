@@ -847,14 +847,18 @@ static rfc_status sniff_gif_geometry(const seek_stream *ss, const uint8_t *b,
         geo->has_geometry = 1;
         return RFC_OK;
     }
+    uint8_t window[4096];
     rfc_gif_walk walk;
-    rfc_status st = rfc_gif_walk_begin(&walk, gif_stream_read, (void *)ss,
-                                       NULL, limits, NULL, NULL);
+    rfc_status st = rfc_gif_walk_begin_reader(&walk, gif_stream_read,
+                                              (void *)ss, window,
+                                              sizeof(window), limits);
     rfc_gif_image img;
     if (st == RFC_OK) {
         st = rfc_gif_scan_first_image(&walk, &img);
     }
-    rfc_gif_walk_end(&walk);
+    if (walk.read_status != RFC_OK) {
+        return walk.read_status; /* whatever the reader returned */
+    }
     switch (st) {
         case RFC_OK:
             geo->format = img.layout.format;

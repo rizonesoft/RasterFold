@@ -526,6 +526,7 @@ typedef struct gmk {
     int plain_text;      /* a Plain Text Extension before the image */
     int gce_shape;       /* 1: zero-length GCE, 2: GCE with an extra block */
     uint32_t comment_blocks; /* a Comment Extension of this many 1-byte blocks */
+    int trailing_gce;    /* a GCE after the image, then the trailer */
 } gmk;
 
 static const uint8_t k_gct[12] = {0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255};
@@ -602,6 +603,11 @@ static uint8_t *make_gif(const gmk *g, size_t *out_n) {
         if (g->pixel_delta < 0) count--;
         n += gif_lzw(idx, count, !g->no_eoi, o + n);
         free(idx);
+    }
+    if (g->trailing_gce) {
+        static const uint8_t tg[8] = {0x21u, 0xF9u, 4u, 0u, 5u, 0u, 0u, 0u};
+        memcpy(o + n, tg, sizeof(tg));
+        n += sizeof(tg);
     }
     if (!g->no_trailer) o[n++] = 0x3Bu;
     *out_n = n;
@@ -937,6 +943,7 @@ static void test_gif_import_lzw_and_refusals(void) {
         {"plain_text", RFC_ERR_UNSUPPORTED_COMBINATION},
         {"gce_zero", RFC_ERR_INVALID_ARGUMENT},
         {"gce_extra", RFC_ERR_INVALID_ARGUMENT},
+        {"trailing_gce", RFC_ERR_INVALID_ARGUMENT},
     };
     for (size_t k = 0u; k < sizeof(cases) / sizeof(cases[0]); k++) {
         gmk g;
@@ -952,6 +959,7 @@ static void test_gif_import_lzw_and_refusals(void) {
         if (!strcmp(w, "plain_text")) g.plain_text = 1;
         if (!strcmp(w, "gce_zero")) g.gce_shape = 1;
         if (!strcmp(w, "gce_extra")) g.gce_shape = 2;
+        if (!strcmp(w, "trailing_gce")) g.trailing_gce = 1;
         size_t n = 0u;
         uint8_t *b = make_gif(&g, &n);
         rfc_status st = adapter_decode(RFC_FORMAT_GIF, b, n, NULL, NULL, NULL, NULL);
@@ -1602,11 +1610,12 @@ static void test_review_round1(void) {
 /* 8. Completion-review gap regressions                                      */
 /* ------------------------------------------------------------------------ */
 
-/* A memory reader whose Nth seek fails once with RFC_ERR_IO. */
+/* A memory reader whose Nth seek fails once with a chosen status. */
 typedef struct flaky_reader {
     const uint8_t *data;
     size_t size, pos;
     int seeks, fail_seek;
+    rfc_status fail_status;
 } flaky_reader;
 
 static rfc_status fr_size(void *ctx, int *known, uint64_t *size) {
@@ -1629,7 +1638,7 @@ static rfc_status fr_read(void *ctx, uint8_t *buf, size_t max, size_t *got) {
 static rfc_status fr_seek(void *ctx, uint64_t off) {
     flaky_reader *f = (flaky_reader *)ctx;
     if (++f->seeks == f->fail_seek) {
-        return RFC_ERR_IO;
+        return f->fail_status;
     }
     f->pos = off > f->size ? f->size : (size_t)off;
     return RFC_OK;
@@ -1867,9 +1876,12 @@ static void test_completion_gaps(void) {
         gmk_defaults(&g, 40u, 30u);
         g.transparent = 1;
         uint8_t *gb = make_gif(&g, &n);
+        static const rfc_status fails[3] = {RFC_ERR_IO, RFC_ERR_TRUNCATED_INPUT,
+                                            RFC_ERR_INVALID_ARGUMENT};
+        for (int fs = 0; fs < 3; fs++) {
         int refused_io = 0;
         for (int fail = 1; fail <= 6; fail++) {
-            flaky_reader fr = {gb, n, 0u, 0, fail};
+            flaky_reader fr = {gb, n, 0u, 0, fail, fails[fs]};
             rfc_io_reader rd;
             memset(&rd, 0, sizeof(rd));
             rd.ctx = &fr;
@@ -1897,14 +1909,16 @@ static void test_completion_gaps(void) {
             sp.limits_override = &lim;
             rfc_job *j = NULL;
             rfc_status sst = rfc_scheduler_submit(sched, NULL, &sp, &j);
-            /* every failure point either fails submission with the I/O
-             * error or refuses the rgba8 layout at submit: never a job */
-            CHECK(sst == RFC_ERR_IO || sst == RFC_ERR_LIMIT_EXCEEDED);
-            if (sst == RFC_ERR_IO) refused_io++;
+            /* every failure point either fails submission with the status
+             * the reader returned (whatever it is, even one a parser could
+             * return) or refuses the rgba8 layout at submit: never a job */
+            CHECK(sst == fails[fs] || sst == RFC_ERR_LIMIT_EXCEEDED);
+            if (sst == fails[fs]) refused_io++;
             CHECK(j == NULL && !file_exists(p_dst));
             rfc_scheduler_destroy(sched);
         }
         CHECK(refused_io > 0);
+        }
         free(gb);
     }
     /* 2d. PNG palette and gray-alpha are sized as rgba at their depth: a

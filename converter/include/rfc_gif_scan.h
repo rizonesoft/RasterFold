@@ -15,7 +15,6 @@
 #include <stdint.h>
 
 #define RFC_GIF_MAX_EXTENSIONS 64u
-#define RFC_GIF_WINDOW 4096u
 
 /* Positional read: up to n bytes at off into dst, the count in *got (fewer
  * only at the end of the input). */
@@ -23,8 +22,13 @@ typedef rfc_status (*rfc_gif_read_fn)(void *ctx, uint64_t off, uint8_t *dst,
                                       size_t n, size_t *got);
 
 typedef struct rfc_gif_walk {
+    /* the input: contiguous bytes (scanned in place, no scratch), or a
+     * positional reader with a caller-supplied window */
+    const uint8_t *data;
+    uint64_t data_size;
     rfc_gif_read_fn read_at;
     void *ctx;
+    rfc_status read_status;         /* the first failure read_at returned */
     const rfc_exec_context *exec;   /* refusal details; may be NULL */
     const rfc_limits *limits;
     int (*cancelled)(void *cctx);   /* may be NULL */
@@ -39,10 +43,11 @@ typedef struct rfc_gif_walk {
     int has_transparent;
     uint8_t transparent;
     uint32_t delay_cs;
-    /* a read window inside the walk: no allocation */
+    /* the reader's window, owned by the caller */
     uint64_t win_base;
     size_t win_len;
-    uint8_t win[RFC_GIF_WINDOW];
+    uint8_t *win;
+    size_t win_cap;
 } rfc_gif_walk;
 
 typedef struct rfc_gif_image {
@@ -56,13 +61,19 @@ typedef struct rfc_gif_image {
     uint64_t lzw_pos;         /* offset of the LZW minimum code size byte */
 } rfc_gif_image;
 
-/* Prepare a walk; it allocates nothing (rfc_gif_walk_end is a no-op kept
- * for symmetry). A read error from read_at is returned as it is. */
-rfc_status rfc_gif_walk_begin(rfc_gif_walk *w, rfc_gif_read_fn read_at,
-                              void *ctx, const rfc_exec_context *exec,
-                              const rfc_limits *limits,
-                              int (*cancelled)(void *), void *cancel_ctx);
-void rfc_gif_walk_end(rfc_gif_walk *w);
+/* Prepare a walk over contiguous bytes (no scratch at all) ... */
+rfc_status rfc_gif_walk_begin_bytes(rfc_gif_walk *w, const uint8_t *data,
+                                    uint64_t size,
+                                    const rfc_exec_context *exec,
+                                    const rfc_limits *limits,
+                                    int (*cancelled)(void *),
+                                    void *cancel_ctx);
+/* ... or over a positional reader, reading through the caller's window.
+ * A failure the reader returns is recorded in read_status and returned. */
+rfc_status rfc_gif_walk_begin_reader(rfc_gif_walk *w, rfc_gif_read_fn read_at,
+                                     void *ctx, uint8_t *window,
+                                     size_t window_cap,
+                                     const rfc_limits *limits);
 
 /* Header, global colour table, extensions and the first image descriptor
  * with its local colour table. The layout it decodes to is reported, not

@@ -1036,25 +1036,6 @@ static rfc_status gif_check_lzw(const void *session,
     return RFC_OK;
 }
 
-typedef struct tg_mem_src {
-    const uint8_t *data;
-    size_t size;
-} tg_mem_src;
-
-static rfc_status tg_mem_read(void *ctx, uint64_t off, uint8_t *dst, size_t n,
-                              size_t *got) {
-    const tg_mem_src *m = (const tg_mem_src *)ctx;
-    *got = 0u;
-    if (off >= (uint64_t)m->size) {
-        return RFC_OK;
-    }
-    size_t avail = m->size - (size_t)off;
-    size_t k = n < avail ? n : avail;
-    memcpy(dst, m->data + off, k);
-    *got = k;
-    return RFC_OK;
-}
-
 typedef struct tg_cancel_src {
     const void *session;
     const rfc_exec_context *exec;
@@ -1073,11 +1054,10 @@ static rfc_status gif_prescan(const void *session, const rfc_exec_context *exec,
                               const uint8_t *b, size_t size,
                               const rfc_limits *limits, gif_scan *out) {
     memset(out, 0, sizeof(*out));
-    tg_mem_src src = {b, size};
     tg_cancel_src cc = {session, exec};
     rfc_gif_walk w;
-    rfc_status st = rfc_gif_walk_begin(&w, tg_mem_read, &src, exec, limits,
-                                       tg_walk_cancelled, &cc);
+    rfc_status st = rfc_gif_walk_begin_bytes(&w, b, size, exec, limits,
+                                             tg_walk_cancelled, &cc);
     if (st != RFC_OK) {
         return st;
     }
@@ -1113,7 +1093,6 @@ static rfc_status gif_prescan(const void *session, const rfc_exec_context *exec,
             }
         }
     }
-    rfc_gif_walk_end(&w);
     return st;
 }
 

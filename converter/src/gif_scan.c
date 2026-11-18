@@ -7,16 +7,18 @@
 #include <string.h>
 
 
-rfc_status rfc_gif_walk_begin(rfc_gif_walk *w, rfc_gif_read_fn read_at,
-                              void *ctx, const rfc_exec_context *exec,
-                              const rfc_limits *limits,
-                              int (*cancelled)(void *), void *cancel_ctx) {
+rfc_status rfc_gif_walk_begin_bytes(rfc_gif_walk *w, const uint8_t *data,
+                                    uint64_t size,
+                                    const rfc_exec_context *exec,
+                                    const rfc_limits *limits,
+                                    int (*cancelled)(void *),
+                                    void *cancel_ctx) {
     memset(w, 0, sizeof(*w));
-    if (!read_at || !limits) {
+    if ((!data && size > 0u) || !limits) {
         return RFC_ERR_INVALID_ARGUMENT;
     }
-    w->read_at = read_at;
-    w->ctx = ctx;
+    w->data = data;
+    w->data_size = size;
     w->exec = exec;
     w->limits = limits;
     w->cancelled = cancelled;
@@ -24,8 +26,20 @@ rfc_status rfc_gif_walk_begin(rfc_gif_walk *w, rfc_gif_read_fn read_at,
     return RFC_OK;
 }
 
-void rfc_gif_walk_end(rfc_gif_walk *w) {
-    (void)w;
+rfc_status rfc_gif_walk_begin_reader(rfc_gif_walk *w, rfc_gif_read_fn read_at,
+                                     void *ctx, uint8_t *window,
+                                     size_t window_cap,
+                                     const rfc_limits *limits) {
+    memset(w, 0, sizeof(*w));
+    if (!read_at || !window || window_cap == 0u || !limits) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    w->read_at = read_at;
+    w->ctx = ctx;
+    w->win = window;
+    w->win_cap = window_cap;
+    w->limits = limits;
+    return RFC_OK;
 }
 
 static void gif_detail(rfc_gif_walk *w, const char *d) {
@@ -35,10 +49,18 @@ static void gif_detail(rfc_gif_walk *w, const char *d) {
 }
 
 rfc_status rfc_gif_byte(rfc_gif_walk *w, uint64_t pos, uint8_t *out) {
+    if (!w->read_at) {
+        if (pos >= w->data_size) {
+            return RFC_ERR_TRUNCATED_INPUT;
+        }
+        *out = w->data[pos];
+        return RFC_OK;
+    }
     if (pos < w->win_base || pos >= w->win_base + w->win_len) {
         size_t got = 0u;
-        rfc_status st = w->read_at(w->ctx, pos, w->win, RFC_GIF_WINDOW, &got);
+        rfc_status st = w->read_at(w->ctx, pos, w->win, w->win_cap, &got);
         if (st != RFC_OK) {
+            w->read_status = st; /* the reader's failure, not a verdict */
             return st;
         }
         if (got == 0u) {
@@ -79,6 +101,10 @@ rfc_status rfc_gif_next_record(rfc_gif_walk *w, uint64_t *pos,
             return st;
         }
         if (blk == 0x3Bu) {
+            if (w->gce_seen) {
+                /* graphic control with no graphic after it */
+                return RFC_ERR_INVALID_ARGUMENT;
+            }
             *pos = p + 1u;
             *out_kind = blk;
             return RFC_OK;
@@ -161,17 +187,16 @@ rfc_status rfc_gif_next_record(rfc_gif_walk *w, uint64_t *pos,
 rfc_status rfc_gif_scan_first_image(rfc_gif_walk *w, rfc_gif_image *out) {
     memset(out, 0, sizeof(*out));
     uint8_t h[13];
-    size_t got = 0u;
-    rfc_status st = w->read_at(w->ctx, 0u, h, sizeof(h), &got);
+    rfc_status st = gif_bytes(w, 0u, h, 6u);
     if (st != RFC_OK) {
         return st;
     }
-    if (got < 6u ||
-        (memcmp(h, "GIF87a", 6) != 0 && memcmp(h, "GIF89a", 6) != 0)) {
-        return got < 6u ? RFC_ERR_TRUNCATED_INPUT : RFC_ERR_INVALID_ARGUMENT;
+    if (memcmp(h, "GIF87a", 6) != 0 && memcmp(h, "GIF89a", 6) != 0) {
+        return RFC_ERR_INVALID_ARGUMENT;
     }
-    if (got < sizeof(h)) {
-        return RFC_ERR_TRUNCATED_INPUT;
+    st = gif_bytes(w, 6u, h + 6, 7u);
+    if (st != RFC_OK) {
+        return st;
     }
     out->width = (uint32_t)h[6] | ((uint32_t)h[7] << 8);
     out->height = (uint32_t)h[8] | ((uint32_t)h[9] << 8);
