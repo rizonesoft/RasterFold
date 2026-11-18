@@ -1313,18 +1313,20 @@ def case_jpeg(all_targets=False):
 def case_tiff_gif(all_targets=False):
     def _flags():
         t_cf, t_lb = _ensure_host_tiff_gif_flags()
+        a_cf, a_lb = _ensure_host_avif_flags()
         j_cf, j_lb = _ensure_host_jxl_flags()
         w_cf, w_lb = _host_libwebp_flags()
         p_cf, p_lb = _host_libpng_flags()
-        cflags = list(dict.fromkeys([*t_cf, *j_cf, *w_cf, *p_cf]))
+        cflags = list(dict.fromkeys([*t_cf, *a_cf, *j_cf, *w_cf, *p_cf]))
+        a_core = [x for x in a_lb if x.endswith(".a") and not x.endswith("libsharpyuv.a")]
         j_arch = [x for x in j_lb if x.endswith(".a")]
-        libs = [*t_lb, *j_arch, *w_lb, *p_lb, "-lstdc++", "-lm", "-pthread"]
+        libs = [*t_lb, *a_core, *j_arch, *w_lb, *p_lb, "-lstdc++", "-lm", "-pthread"]
         return cflags, libs
 
     return _run_codec_case(
         case_name="tiff_gif",
         win_target="rfc_test_tiff_gif",
-        codec_sources=["basic.c", "webp.c", "jpeg_scan.c", "jxl.c", "jpeg.c", "tiff_gif.c"],
+        codec_sources=["basic.c", "webp.c", "jpeg_scan.c", "jxl.c", "avif.c", "jpeg.c", "tiff_gif.c"],
         c_test_file="test_tiff_gif.c",
         py_test_file="test_tiff_gif.py",
         host_env_var="RFC_HOST_TIFF_GIF_EXE",
@@ -1338,6 +1340,7 @@ def case_tiff_gif(all_targets=False):
             "tiff_gif: gif_export_palette_timing ok",
             "tiff_gif: jobs_limits_budget_and_cancel ok",
             "tiff_gif: review_round1_regressions ok",
+            "tiff_gif: completion_gap_regressions ok",
             "tiff_gif: all checks passed",
         ],
         host_flags_fn=_flags,

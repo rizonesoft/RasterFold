@@ -300,6 +300,10 @@ void rfc_job_release_partials(rfc_job *job);
 rfc_status rfc_job_mark_published(rfc_job *job, rfc_job_id expected_id);
 
 int rfc_exec_is_cancelled(const rfc_exec_context *exec);
+/* A codec adapter names why it is refusing (a static string, e.g. "palette
+ * reduction: more than 256 colours"); when its encode or decode then fails,
+ * the job reports that text as its detail. No effect outside a job. */
+void rfc_exec_set_detail(const rfc_exec_context *exec, const char *detail);
 uint32_t rfc_exec_threads(const rfc_exec_context *exec);
 const rfc_limits *rfc_exec_limits(const rfc_exec_context *exec);
 /* Job-budget allocator for codec scratch buffers, session state, frame

@@ -1043,13 +1043,26 @@ static rfc_status compute_preflight_with_contracts(
         }
     }
 
+    /* Up to five copies of the carried metadata coexist at VERIFY: the
+     * decoded source's, the encoder's staging copy, the encoded output's,
+     * and the target provider's parsed input and output (measured: a 10 MiB
+     * XMP packet TIFF -> AVIF peaks near five copies beyond the source). */
     uint64_t meta_allowance = 0u;
     if (source_meta) {
         uint64_t m_sum = 0u;
         if (!add_u64_sched((uint64_t)source_meta->icc_len,
                            (uint64_t)source_meta->exif_len, &m_sum) ||
             !add_u64_sched(m_sum, (uint64_t)source_meta->xmp_len, &m_sum) ||
-            !mul_u64_sched(m_sum, 3ull, &meta_allowance)) {
+            !mul_u64_sched(m_sum, 5ull, &meta_allowance)) {
+            return RFC_ERR_LIMIT_EXCEEDED;
+        }
+    } else if (source_size > 0u) {
+        /* Unknown until IMPORT, but the carried metadata can be no larger
+         * than the source bytes or the metadata limit. */
+        uint64_t m_bound = (uint64_t)source_size < eff.max_metadata_bytes
+                               ? (uint64_t)source_size
+                               : eff.max_metadata_bytes;
+        if (!mul_u64_sched(m_bound, 5ull, &meta_allowance)) {
             return RFC_ERR_LIMIT_EXCEEDED;
         }
     }
@@ -1088,6 +1101,22 @@ static rfc_status compute_preflight_with_contracts(
     } else if (source_layout) {
         uint32_t eff_req_threads =
             requested_codec_threads ? requested_codec_threads : 1u;
+        /* The imported source bytes stay in the job's budget for the whole
+         * job, beside every stage's working set. TIFF adds terms
+         * proportional to the source, whatever the frame size: libtiff's
+         * read cap is twice the source, and a TIFF target's output buffer
+         * and VERIFY read cap each carry the source's metadata twice. */
+        uint64_t src_factor = 1u;
+        if (src_mem->format == RFC_FORMAT_TIFF) {
+            src_factor += 2u;
+        }
+        if (dst_mem->format == RFC_FORMAT_TIFF) {
+            src_factor += 4u;
+        }
+        uint64_t src_terms = 0u;
+        if (!mul_u64_sched(source_size, src_factor, &src_terms)) {
+            return RFC_ERR_LIMIT_EXCEEDED;
+        }
         if (src_mem->format == RFC_FORMAT_JPEG_XL ||
             dst_mem->format == RFC_FORMAT_JPEG_XL ||
             src_mem->format == RFC_FORMAT_AVIF ||
@@ -1110,7 +1139,9 @@ static rfc_status compute_preflight_with_contracts(
                 return st;
             }
             uint64_t peak_work = (src_work > dst_work) ? src_work : dst_work;
-            if (!add_u64_sched(peak_work, meta_allowance, &base_reservation)) {
+            if (!add_u64_sched(peak_work, meta_allowance, &base_reservation) ||
+                !add_u64_sched(base_reservation, src_terms,
+                               &base_reservation)) {
                 return RFC_ERR_LIMIT_EXCEEDED;
             }
         } else {
@@ -1140,21 +1171,7 @@ static rfc_status compute_preflight_with_contracts(
                 work > UINT64_MAX - overhead) {
                 return RFC_ERR_LIMIT_EXCEEDED;
             }
-            /* The imported source bytes stay in the job's budget for the
-             * whole job, beside every stage's working set. TIFF adds terms
-             * proportional to the source, whatever the frame size: libtiff's
-             * read cap is twice the source, and a TIFF target's output buffer
-             * and VERIFY read cap each carry the source's metadata twice. */
-            uint64_t src_factor = 1u;
-            if (src_mem->format == RFC_FORMAT_TIFF) {
-                src_factor += 2u;
-            }
-            if (dst_mem->format == RFC_FORMAT_TIFF) {
-                src_factor += 4u;
-            }
-            uint64_t src_terms = 0u;
-            if (!mul_u64_sched(source_size, src_factor, &src_terms) ||
-                !add_u64_sched(overhead + work, src_terms,
+            if (!add_u64_sched(overhead + work, src_terms,
                                &base_reservation)) {
                 return RFC_ERR_LIMIT_EXCEEDED;
             }
@@ -1777,8 +1794,8 @@ rfc_status rfc_scheduler_submit(rfc_scheduler *sched,
     uint64_t eff_source_size = (uint64_t)spec->source_size;
     rfc_file_identity sniff_src_id;
     memset(&sniff_src_id, 0, sizeof(sniff_src_id));
-    rfc_sniff_result pre_sniff_copy;
-    memset(&pre_sniff_copy, 0, sizeof(pre_sniff_copy));
+    rfc_sniff_geometry pre_geo;
+    memset(&pre_geo, 0, sizeof(pre_geo));
     if (spec->io_source) {
         const rfc_limits *pre_lim =
             spec->limits_override ? spec->limits_override
@@ -1791,13 +1808,12 @@ rfc_status rfc_scheduler_submit(rfc_scheduler *sched,
         uint64_t sniff_sz = 0u;
         st = rfc_input_sniff_source_preflight(
             pre_lim, spec->io_source, spec->source_format, &pre_sniff,
-            &sniff_sz, &sniff_src_id);
+            &sniff_sz, &sniff_src_id, &pre_geo);
         if (st != RFC_OK) {
             return st;
         }
         eff_source_format = pre_sniff.content_format;
         eff_source_size = sniff_sz;
-        pre_sniff_copy = pre_sniff;
     }
 
     /* Decoding work scales with the frame, not the compressed size: when the
@@ -1812,13 +1828,14 @@ rfc_status rfc_scheduler_submit(rfc_scheduler *sched,
          eff_source_format == RFC_FORMAT_JPEG ||
          eff_source_format == RFC_FORMAT_TIFF ||
          eff_source_format == RFC_FORMAT_GIF)) {
-        rfc_sniff_result geo;
+        rfc_sniff_geometry geo;
         memset(&geo, 0, sizeof(geo));
         if (spec->io_source) {
-            geo = pre_sniff_copy;
+            geo = pre_geo;
         } else if (spec->source_bytes && spec->source_size > 0u) {
-            (void)rfc_input_sniff_bytes(spec->source_bytes, spec->source_size,
-                                        NULL, &geo);
+            rfc_sniff_result geo_sniff;
+            (void)rfc_input_internal_sniff_bytes_geometry(
+                spec->source_bytes, spec->source_size, NULL, &geo_sniff, &geo);
         }
         rfc_exactness_class geo_ex = RFC_EXACT_PIXEL_EXACT;
         rfc_metadata_policy geo_pol = RFC_META_POLICY_PRESERVE;
@@ -1829,17 +1846,17 @@ rfc_status rfc_scheduler_submit(rfc_scheduler *sched,
              geo_ex == RFC_EXACT_COEFFICIENT_EXACT) &&
             geo.has_geometry) {
             memset(&geo_layout, 0, sizeof(geo_layout));
-            geo_layout.format = geo.geometry_format;
-            geo_layout.alpha = (geo.geometry_format == RFC_SAMPLE_RGBA8 ||
-                                geo.geometry_format == RFC_SAMPLE_RGBA16)
+            geo_layout.format = geo.format;
+            geo_layout.alpha = (geo.format == RFC_SAMPLE_RGBA8 ||
+                                geo.format == RFC_SAMPLE_RGBA16)
                                    ? RFC_ALPHA_STRAIGHT
                                    : RFC_ALPHA_NONE;
-            geo_layout.width = geo.geometry_width;
-            geo_layout.height = geo.geometry_height;
+            geo_layout.width = geo.width;
+            geo_layout.height = geo.height;
             geo_layout.bits_per_sample =
-                (geo.geometry_format == RFC_SAMPLE_GRAY16 ||
-                 geo.geometry_format == RFC_SAMPLE_RGB16 ||
-                 geo.geometry_format == RFC_SAMPLE_RGBA16)
+                (geo.format == RFC_SAMPLE_GRAY16 ||
+                 geo.format == RFC_SAMPLE_RGB16 ||
+                 geo.format == RFC_SAMPLE_RGBA16)
                     ? 16u
                     : 8u;
             if (rfc_layout_normalize_stride(&geo_layout, &geo_layout) !=

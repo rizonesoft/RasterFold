@@ -370,11 +370,12 @@ typedef struct tif_info {
 } tif_info;
 
 /* Inspect the open TIFF's first and only IFD and decide what it decodes to. */
-static rfc_status tif_inspect(TIFF *tif, const rfc_limits *limits,
-                              tif_info *ti) {
+static rfc_status tif_inspect(TIFF *tif, const rfc_exec_context *exec,
+                              const rfc_limits *limits, tif_info *ti) {
     memset(ti, 0, sizeof(*ti));
     /* a nonzero next-IFD pointer is enough to refuse: no chain walk */
     if (!TIFFLastDirectory(tif)) {
+        rfc_exec_set_detail(exec, "tiff: more than one image (multi-page TIFF is not supported yet)");
         return RFC_ERR_UNSUPPORTED_COMBINATION; /* multi-page: D10 T02 s12 */
     }
     uint16_t nsub = 0u;
@@ -385,6 +386,7 @@ static rfc_status tif_inspect(TIFF *tif, const rfc_limits *limits,
     }
     if (TIFFGetField(tif, TIFFTAG_EXIFIFD, &exif_off) ||
         TIFFGetField(tif, TIFFTAG_GPSIFD, &gps_off)) {
+        rfc_exec_set_detail(exec, "tiff: an EXIF or GPS IFD cannot be carried yet");
         return RFC_ERR_UNSUPPORTED_COMBINATION; /* backlog B-007 */
     }
     float *fp = NULL;
@@ -395,12 +397,20 @@ static rfc_status tif_inspect(TIFF *tif, const rfc_limits *limits,
         TIFFGetField(tif, TIFFTAG_PRIMARYCHROMATICITIES, &fp) ||
         TIFFGetField(tif, TIFFTAG_TRANSFERFUNCTION, &tf[0], &tf[1], &tf[2]) ||
         TIFFFindField(tif, 342, TIFF_ANY) != NULL) {
+        rfc_exec_set_detail(exec, "tiff: WhitePoint, PrimaryChromaticities, TransferFunction or TransferRange cannot be carried");
         return RFC_ERR_UNSUPPORTED_COMBINATION; /* colour tags: backlog B-007 */
     }
     if (!TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &ti->w) ||
         !TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &ti->h) || ti->w == 0u ||
         ti->h == 0u) {
         return RFC_ERR_INVALID_ARGUMENT;
+    }
+    uint32_t depth = 1u;
+    TIFFGetFieldDefaulted(tif, TIFFTAG_IMAGEDEPTH, &depth);
+    if (depth != 1u) {
+        /* each z slice is its own image: refused rather than flattened */
+        rfc_exec_set_detail(exec, "tiff: a volumetric image (ImageDepth above 1)");
+        return RFC_ERR_UNSUPPORTED_COMBINATION;
     }
     TIFFGetFieldDefaulted(tif, TIFFTAG_SAMPLESPERPIXEL, &ti->spp);
     TIFFGetFieldDefaulted(tif, TIFFTAG_BITSPERSAMPLE, &ti->bps);
@@ -629,7 +639,7 @@ static rfc_status tif_decode_bytes(const void *session,
         return e.short_read ? RFC_ERR_TRUNCATED_INPUT : RFC_ERR_INVALID_ARGUMENT;
     }
     tif_info ti;
-    st = tif_inspect(tif, limits, &ti);
+    st = tif_inspect(tif, exec, limits, &ti);
     const rfc_allocator *alloc = tg_alloc_of(exec);
     rfc_metadata meta;
     memset(&meta, 0, sizeof(meta));
@@ -760,6 +770,7 @@ static rfc_status tif_encode(void *session, const rfc_exec_context *exec,
         return RFC_ERR_INVALID_ARGUMENT;
     }
     if (frame_count > 1u) {
+        rfc_exec_set_detail(exec, "tiff: more than one image (multi-page TIFF is not supported yet)");
         return RFC_ERR_UNSUPPORTED_COMBINATION; /* multi-page: D10 T02 s12 */
     }
     const rfc_frame *fr = &frames[0];
@@ -820,6 +831,17 @@ static rfc_status tif_encode(void *session, const rfc_exec_context *exec,
     }
     if (rps > L->height) {
         rps = L->height;
+    }
+    if (!strip) {
+        /* the caller's metadata byte limit applies to what is carried */
+        rfc_metadata carried_meta;
+        memset(&carried_meta, 0, sizeof(carried_meta));
+        carried_meta.icc_len = eff.icc_len;
+        carried_meta.xmp_len = eff.xmp_len;
+        st = rfc_limits_check_metadata(limits, &carried_meta);
+        if (st != RFC_OK) {
+            return st;
+        }
     }
     /* libtiff copies the carried ICC and XMP into its directory and stages
      * them again while writing it. */
@@ -1061,10 +1083,12 @@ static rfc_status gif_prescan(const void *session, const rfc_exec_context *exec,
             }
             if (label == 0x01u) {
                 /* Plain Text: a graphic rendering block needing composition */
+                rfc_exec_set_detail(exec, "gif: a Plain Text Extension needs composition");
                 return RFC_ERR_UNSUPPORTED_COMBINATION;
             }
-            if (label == 0xF9u && (gce_seen || images > 0u)) {
-                return RFC_ERR_INVALID_ARGUMENT; /* one GCE, before the image */
+            if (label == 0xF9u && gce_seen) {
+                /* one GCE per graphic: it governs the next image only */
+                return RFC_ERR_INVALID_ARGUMENT;
             }
             int first = 1;
             for (;;) {
@@ -1089,9 +1113,11 @@ static rfc_status gif_prescan(const void *session, const rfc_exec_context *exec,
                         return RFC_ERR_INVALID_ARGUMENT;
                     }
                     gce_seen = 1;
-                    out->has_transparent = (b[pos] & 1u) != 0u;
-                    out->delay_cs = (uint32_t)b[pos + 1] | ((uint32_t)b[pos + 2] << 8);
-                    out->transparent = b[pos + 3];
+                    if (images == 0u) { /* a later GCE belongs to a later frame */
+                        out->has_transparent = (b[pos] & 1u) != 0u;
+                        out->delay_cs = (uint32_t)b[pos + 1] | ((uint32_t)b[pos + 2] << 8);
+                        out->transparent = b[pos + 3];
+                    }
                 }
                 first = 0;
                 pos += n;
@@ -1104,7 +1130,9 @@ static rfc_status gif_prescan(const void *session, const rfc_exec_context *exec,
         if (blk != 0x2Cu) {
             return RFC_ERR_INVALID_ARGUMENT;
         }
+        gce_seen = 0; /* the next graphic may carry its own GCE */
         if (++images > 1u) {
+            rfc_exec_set_detail(exec, "gif: more than one image (animated GIF is not supported yet)");
             return RFC_ERR_UNSUPPORTED_COMBINATION; /* animation: D10 T02 s12 */
         }
         if (size - pos < 9u) {
@@ -1117,6 +1145,7 @@ static rfc_status gif_prescan(const void *session, const rfc_exec_context *exec,
         uint8_t fl = b[pos + 8];
         pos += 9u;
         if (x != 0u || y != 0u || w != out->sw || h != out->sh) {
+            rfc_exec_set_detail(exec, "gif: the image does not cover the logical screen at the origin");
             return RFC_ERR_UNSUPPORTED_COMBINATION; /* partial frame */
         }
         out->interlaced = (fl & 0x40u) != 0u;
@@ -1477,6 +1506,7 @@ static rfc_status gif_encode(void *session, const rfc_exec_context *exec,
         return RFC_ERR_INVALID_ARGUMENT;
     }
     if (frame_count > 1u) {
+        rfc_exec_set_detail(exec, "gif: more than one frame (animated GIF export is not supported yet)");
         return RFC_ERR_UNSUPPORTED_COMBINATION; /* animation: D10 T02 s12 */
     }
     const rfc_frame *fr = &frames[0];
@@ -1511,6 +1541,7 @@ static rfc_status gif_encode(void *session, const rfc_exec_context *exec,
     uint32_t dur = fr->metadata.duration_ms ? fr->metadata.duration_ms
                                             : (meta ? meta->duration_ms : 0u);
     if (dur % 10u != 0u || dur / 10u > 65535u) {
+        rfc_exec_set_detail(exec, "gif: frame duration is not a whole number of centiseconds up to 655350 ms");
         return RFC_ERR_UNSUPPORTED_COMBINATION; /* centisecond delays only */
     }
     /* GIF carries frame timing only: inside a job the engine has already
@@ -1551,10 +1582,12 @@ static rfc_status gif_encode(void *session, const rfc_exec_context *exec,
             uint32_t rgb = ((uint32_t)px[0] << 16) | ((uint32_t)px[1] << 8) | px[2];
             if (rgba && px[3] != 255u) {
                 if (px[3] != 0u) {
+                    rfc_exec_set_detail(exec, "gif: partial alpha (only 0 and 255 are exact in GIF)");
                     st = RFC_ERR_UNSUPPORTED_COMBINATION; /* partial alpha */
                     break;
                 }
                 if (have_transp && rgb != transp_rgb) {
+                    rfc_exec_set_detail(exec, "gif: transparent pixels with differing RGB values");
                     st = RFC_ERR_UNSUPPORTED_COMBINATION; /* differing RGB */
                     break;
                 }
@@ -1565,6 +1598,7 @@ static rfc_status gif_encode(void *session, const rfc_exec_context *exec,
             }
             int idx = 0;
             if (!gif_pal_index(pal, rgb, rgba ? 255u : 256u, &idx)) {
+                rfc_exec_set_detail(exec, "gif: palette reduction (more distinct colours than the palette holds)");
                 st = RFC_ERR_UNSUPPORTED_COMBINATION; /* palette reduction */
                 break;
             }
@@ -1576,6 +1610,7 @@ static rfc_status gif_encode(void *session, const rfc_exec_context *exec,
         /* The transparent entry always exists so a fresh decode yields
          * rgba8; it holds the transparent pixels' RGB (black if none). */
         if (pal->count >= 256u) {
+            rfc_exec_set_detail(exec, "gif: palette reduction (rgba8 needs a free entry for its transparent index)");
             st = RFC_ERR_UNSUPPORTED_COMBINATION;
         } else {
             tindex = pal->count++;

@@ -2478,6 +2478,24 @@ int rfc_exec_is_cancelled(const rfc_exec_context *exec) {
     return rfc_job_is_cancelled(exec->job);
 }
 
+void rfc_exec_set_detail(const rfc_exec_context *exec, const char *detail) {
+    if (!exec || !exec->job) {
+        return;
+    }
+    rfc_mutex_lock(&exec->job->lock);
+    exec->job->adapter_detail = detail;
+    rfc_mutex_unlock(&exec->job->lock);
+}
+
+/* The detail an adapter named for its refusal, consumed once. */
+static const char *take_adapter_detail(rfc_job *job) {
+    rfc_mutex_lock(&job->lock);
+    const char *d = job->adapter_detail;
+    job->adapter_detail = NULL;
+    rfc_mutex_unlock(&job->lock);
+    return d;
+}
+
 uint32_t rfc_exec_threads(const rfc_exec_context *exec) {
     return exec ? exec->codec_threads : 0u;
 }
@@ -3048,6 +3066,14 @@ static rfc_status run_bounded_session_decode(
 
     rfc_mutex_lock(&job->lock);
     job->in_decode_session = 0;
+    {
+        /* job->lock is held here */
+        const char *ad = job->adapter_detail;
+        job->adapter_detail = NULL;
+        if (st != RFC_OK && ad && out_err_detail && !*out_err_detail) {
+            *out_err_detail = ad;
+        }
+    }
     job->decode_compressed_bytes = 0ull;
     job->has_decode_compressed_bytes = 0;
     guard_fail = job->decode_guard_failure;
@@ -3959,6 +3985,12 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
                                                       : NULL,
                                 dst_setting_count > 0 ? dst_settings : NULL,
                                 dst_setting_count, &enc_out);
+                        }
+                        {
+                            const char *ad = take_adapter_detail(job);
+                            if (st != RFC_OK && !err_detail && ad) {
+                                err_detail = ad;
+                            }
                         }
 
                         rfc_mutex_lock(&job->lock);

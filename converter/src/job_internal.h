@@ -436,6 +436,7 @@ struct rfc_job {
     uint8_t *decoded_meta_exif;
     uint8_t *decoded_meta_xmp;
     int has_decoded_meta;
+    const char *adapter_detail; /* rfc_exec_set_detail; guarded by lock */
     const rfc_allocator *decoded_frames_alloc;
 
     rfc_encoded encoded_output;
@@ -592,13 +593,30 @@ void rfc_job_internal_finish_publish(rfc_job *job,
                                      int succeeded);
 void rfc_job_internal_note_partial_bytes(rfc_job *job, int64_t delta_bytes);
 
+/* Frame geometry the sniff read cheaply (PNG IHDR, JPEG SOF, TIFF first
+ * IFD, GIF screen and first image), so the scheduler can size a job before
+ * IMPORT. format is the sample format the adapter decodes the header to.
+ * Internal: the public rfc_sniff_result keeps its layout. */
+typedef struct rfc_sniff_geometry {
+    int has_geometry;
+    uint32_t width;
+    uint32_t height;
+    rfc_sample_format format;
+} rfc_sniff_geometry;
+
+rfc_status rfc_input_internal_sniff_bytes_geometry(
+    const uint8_t *bytes, size_t len, const char *name_utf8,
+    rfc_sniff_result *out_result, rfc_sniff_geometry *out_geometry);
+
+/* out_geometry may be NULL. */
 rfc_status rfc_input_sniff_source_preflight(
     const rfc_limits *limits,
     const rfc_io_source *io_source,
     rfc_format_id caller_source_format,
     rfc_sniff_result *out_sniff,
     uint64_t *out_source_size,
-    rfc_file_identity *out_identity);
+    rfc_file_identity *out_identity,
+    rfc_sniff_geometry *out_geometry);
 rfc_status rfc_input_read_job_source(
     rfc_job *job,
     const rfc_exec_context *exec,
