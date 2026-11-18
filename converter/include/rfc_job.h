@@ -191,6 +191,16 @@ typedef struct rfc_job_spec {
     const struct rfc_io_sink *io_sink;
 } rfc_job_spec;
 
+/* Check a conversion's formats and settings exactly as submission does,
+ * without creating a job. On refusal *out_reason (when not NULL) names the
+ * cause in words, for example why a JPEG target is limited to lossless
+ * optimization. Never allocates. */
+rfc_status rfc_job_validate_combination(rfc_format_id source_format,
+                                        rfc_format_id target_format,
+                                        const rfc_setting_value *settings,
+                                        size_t setting_count,
+                                        const char **out_reason);
+
 void rfc_limits_default(rfc_limits *out);
 rfc_status rfc_limits_validate(const rfc_limits *limits);
 rfc_status rfc_layout_normalize_stride(const rfc_layout *layout,

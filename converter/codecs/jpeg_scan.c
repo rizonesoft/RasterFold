@@ -52,6 +52,8 @@ rfc_status rfc_jpeg_scan(const uint8_t *bytes,
     uint8_t qt_defined[4] = {0u, 0u, 0u, 0u};
     uint16_t latched[4][64];
     uint8_t is_latched[4] = {0u, 0u, 0u, 0u};
+    uint8_t dc_set[4] = {0u, 0u, 0u, 0u};
+    uint8_t ac_set[4] = {0u, 0u, 0u, 0u};
     while (pos < size) {
         if (bytes[pos] != 0xFFu) {
             return RFC_ERR_INVALID_ARGUMENT;
@@ -164,10 +166,20 @@ rfc_status rfc_jpeg_scan(const uint8_t *bytes,
                         continue;
                     }
                     if (ss == 0u && ah == 0u) {
-                        out->dc_sel[ci] = (uint8_t)(tbl >> 4);
+                        uint8_t td = (uint8_t)(tbl >> 4);
+                        if (dc_set[ci] && out->dc_sel[ci] != td) {
+                            out->selector_conflict = 1;
+                        }
+                        out->dc_sel[ci] = td;
+                        dc_set[ci] = 1u;
                     }
                     if (se > 0u) {
-                        out->ac_sel[ci] = (uint8_t)(tbl & 0x0Fu);
+                        uint8_t ta = (uint8_t)(tbl & 0x0Fu);
+                        if (ac_set[ci] && out->ac_sel[ci] != ta) {
+                            out->selector_conflict = 1;
+                        }
+                        out->ac_sel[ci] = ta;
+                        ac_set[ci] = 1u;
                     }
                     if (!is_latched[ci]) {
                         uint8_t slot = out->quant_slot[ci] & 3u;

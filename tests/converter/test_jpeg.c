@@ -1119,7 +1119,18 @@ static void test_coefficient_optimization_and_markers(void) {
         for (int i = 0; i < 64; i++) dqt[5 + i] = (uint8_t)(2 + i);
         size_t xn = 0u;
         uint8_t *x = splice(j, n, sof, dqt, sizeof(dqt), &xn);
-        opt_job_roundtrip(x, xn, NULL, 0, "extradqt.jpg", NULL, NULL);
+        uint8_t *out = NULL;
+        size_t out_n = 0u;
+        opt_job_roundtrip(x, xn, NULL, 0, "extradqt.jpg", &out, &out_n);
+        rfc_jpeg_coeff_image *ca = NULL, *cb = NULL;
+        CHECK(read_coeffs(x, xn, &ca) == RFC_OK);
+        CHECK(read_coeffs(out, out_n, &cb) == RFC_OK);
+        CHECK(ca->quant_tables[3].populated && cb->quant_tables[3].populated);
+        CHECK(memcmp(ca->quant_tables[3].values, cb->quant_tables[3].values,
+                     sizeof(ca->quant_tables[3].values)) == 0);
+        free_coeffs(ca);
+        free_coeffs(cb);
+        free(out);
         free(x);
         free(j);
     }
@@ -1190,6 +1201,78 @@ static void test_coefficient_optimization_and_markers(void) {
         free(j);
     }
 
+    /* One component with different AC tables in different bands cannot be
+     * re-encoded with its selectors: refused at IMPORT. */
+    {
+        mk_defaults(&o, 32u, 32u, 3);
+        o.progressive = 1;
+        j = make_jpeg(&o, &n);
+        int patched = 0;
+        for (int k = 0; k < 64 && !patched; k++) {
+            size_t sp = find_marker(j, n, 0xDAu, k);
+            if (sp == 0u) break;
+            uint8_t ns = j[sp + 4u];
+            uint8_t se = j[sp + 4u + 1u + 2u * ns + 1u];
+            if (ns == 1u && j[sp + 5u] == 2u && se > 0u &&
+                (j[sp + 6u] & 0x0Fu) == 1u) {
+                j[sp + 6u] = (uint8_t)(j[sp + 6u] & 0xF0u); /* AC table 0 */
+                patched = 1;
+            }
+        }
+        CHECK(patched);
+        char p_src[512], p_dst[512];
+        make_temp_path(p_src, sizeof(p_src), "selconf.jpg");
+        make_temp_path(p_dst, sizeof(p_dst), "selconf_out.jpg");
+        CHECK(write_file_all(p_src, j, n));
+        job_result r;
+        run_job(RFC_FORMAT_JPEG, RFC_FORMAT_JPEG, p_src, p_dst, NULL, "strip",
+                0u, 0u, &r);
+        CHECK(r.status == RFC_ERR_UNSUPPORTED_COMBINATION &&
+              r.failing == RFC_STAGE_IMPORT && !file_exists(p_dst));
+        remove(p_src);
+        free(j);
+    }
+
+    /* Strip verification requires the regenerated JFIF header with the
+     * source's density: a missing header or a changed density fails. */
+    {
+        mk_defaults(&o, 24u, 24u, 1);
+        j = make_jpeg(&o, &n);
+        uint8_t *st_out = NULL;
+        size_t st_n = 0u;
+        CHECK(optimize_direct(j, n, "strip", NULL, &st_out, &st_n) == RFC_OK);
+        size_t a0 = find_marker(st_out, st_n, 0xE0u, 0);
+        CHECK(a0 > 0u);
+        size_t seg = 2u + (((size_t)st_out[a0 + 2u] << 8) | st_out[a0 + 3u]);
+        uint8_t *nojfif = (uint8_t *)malloc(st_n);
+        CHECK(nojfif != NULL);
+        memcpy(nojfif, st_out, a0);
+        memcpy(nojfif + a0, st_out + a0 + seg, st_n - a0 - seg);
+        uint8_t *dens = (uint8_t *)malloc(st_n);
+        CHECK(dens != NULL);
+        memcpy(dens, st_out, st_n);
+        dens[a0 + 4u + 9u] ^= 0x01u; /* X density low byte */
+        rfc_exec_context exec;
+        tracked_alloc_state st;
+        rfc_allocator al;
+        init_exec(&exec, &st, &al);
+        const rfc_jpeg_transcode_adapter *t = rfc_registry_acquire_jpeg_transcode();
+        void *ss = NULL;
+        CHECK(t->open_session(&exec, &ss) == RFC_OK);
+        const char *det = NULL;
+        CHECK(t->compare_markers(ss, &exec, j, n, st_out, st_n, 1, &det) == RFC_OK);
+        CHECK(t->compare_markers(ss, &exec, j, n, nojfif, st_n - seg, 1, &det) ==
+              RFC_ERR_VERIFY_MISMATCH);
+        CHECK(t->compare_markers(ss, &exec, j, n, dens, st_n, 1, &det) ==
+              RFC_ERR_VERIFY_MISMATCH);
+        t->close_session(ss);
+        rfc_registry_release_jpeg_transcode();
+        free(nojfif);
+        free(dens);
+        free(st_out);
+        free(j);
+    }
+
     /* Not-smaller fallback when the re-encode outgrows the output buffer:
      * preserve publishes the source, strip refuses. */
     {
@@ -1246,9 +1329,25 @@ static void test_jobs_defaults_delegation_and_file_safety(void) {
         remove(p_pin);
     }
 
-    /* JPEG -> PNG with exactness omitted is pixel-exact. */
+    /* The refusal reason reaches the caller before submission. */
+    {
+        const char *why = NULL;
+        rfc_setting_value px[1] = {{"exactness", "pixel-exact"}};
+        CHECK(rfc_job_validate_combination(RFC_FORMAT_PNG, RFC_FORMAT_JPEG, NULL,
+                                           0u, &why) ==
+              RFC_ERR_UNSUPPORTED_COMBINATION);
+        CHECK(why && strstr(why, "lossy") && strstr(why, "coefficient-exact"));
+        CHECK(rfc_job_validate_combination(RFC_FORMAT_JPEG, RFC_FORMAT_JPEG, px,
+                                           1u, &why) ==
+              RFC_ERR_UNSUPPORTED_COMBINATION && why != NULL);
+        CHECK(rfc_job_validate_combination(RFC_FORMAT_JPEG, RFC_FORMAT_JPEG, NULL,
+                                           0u, &why) == RFC_OK && why == NULL);
+    }
+
+    /* JPEG -> PNG with exactness omitted is pixel-exact, and a file job
+     * needs no caller working-set estimate: the SOF sizes it. */
     run_job(RFC_FORMAT_JPEG, RFC_FORMAT_PNG, p_src, p_png, NULL, NULL, 0u,
-            64u << 20, &r);
+            0u, &r);
     CHECK(r.state == RFC_JOB_SUCCEEDED && r.rep.exactness == RFC_EXACT_PIXEL_EXACT);
     remove(p_png);
 
@@ -1763,8 +1862,17 @@ static int cli_main(int argc, char **argv) {
         const char *meta = strcmp(argv[8], "-") == 0 ? NULL : argv[8];
         uint32_t ack = (uint32_t)strtoul(argv[9], NULL, 0);
         job_result r;
-        run_job(sf, df, argv[5], argv[6], ex, meta, ack,
-                df == RFC_FORMAT_JPEG ? 0u : 256u << 20, &r);
+        uint64_t ws = (sf == RFC_FORMAT_JPEG) ? 0u : 256u << 20;
+        run_job(sf, df, argv[5], argv[6], ex, meta, ack, ws, &r);
+        if (r.submit != RFC_OK) {
+            rfc_setting_value sv[2];
+            size_t svn = 0u;
+            if (ex) { sv[svn].id = "exactness"; sv[svn].value = ex; svn++; }
+            if (meta) { sv[svn].id = "metadata"; sv[svn].value = meta; svn++; }
+            const char *why = NULL;
+            (void)rfc_job_validate_combination(sf, df, svn ? sv : NULL, svn, &why);
+            fprintf(stderr, "REASON=%s\n", why ? why : "none");
+        }
         printf("SUBMIT=%s STATUS=%s STATE=%u EXACTNESS=%s META_OUTCOME=%s "
                "STAGE=%u\n",
                rfc_status_name(r.submit), rfc_status_name(r.status),

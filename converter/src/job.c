@@ -510,6 +510,21 @@ rfc_status rfc_job_internal_validate_settings(
     return RFC_OK;
 }
 
+rfc_status rfc_job_validate_combination(rfc_format_id source_format,
+                                        rfc_format_id target_format,
+                                        const rfc_setting_value *settings,
+                                        size_t setting_count,
+                                        const char **out_reason) {
+    const char *reason = NULL;
+    rfc_status st = rfc_job_internal_validate_settings(
+        source_format, target_format, settings, setting_count, NULL, &reason);
+    if (out_reason) {
+        *out_reason = (st != RFC_OK) ? (reason ? reason : rfc_status_name(st))
+                                     : NULL;
+    }
+    return st;
+}
+
 static char *dup_cstr_counted(const char *s, rfc_scheduler *alloc_counter) {
     if (!s) {
         return NULL;
@@ -1736,53 +1751,6 @@ rfc_status rfc_job_set_verified_jpeg_coeffs(
     uint8_t *old_xmp = job->verify_reconstructed_xmp;
     job->verify_src_coeffs = src_copy;
     job->verify_dst_coeffs = dst_copy;
-    job->verify_reconstructed_meta = meta_copy;
-    job->verify_reconstructed_icc = icc_copy;
-    job->verify_reconstructed_exif = exif_copy;
-    job->verify_reconstructed_xmp = xmp_copy;
-    job->has_verify_reconstructed_meta = has_rmeta;
-    rfc_mutex_unlock(&job->lock);
-    free_verify_coeff_image(&job->allocator, &old_src);
-    free_verify_coeff_image(&job->allocator, &old_dst);
-    if (old_icc) {
-        job->allocator.free(job->allocator.ctx, old_icc);
-    }
-    if (old_exif && old_exif != old_icc) {
-        job->allocator.free(job->allocator.ctx, old_exif);
-    }
-    if (old_xmp && old_xmp != old_icc && old_xmp != old_exif) {
-        job->allocator.free(job->allocator.ctx, old_xmp);
-    }
-    return RFC_OK;
-}
-
-/* Take ownership of coefficient images allocated through job->allocator
- * (the exec allocator the transcode adapter used), so verification holds one
- * copy of each image rather than cloning both. */
-static rfc_status job_adopt_verified_jpeg_coeffs(rfc_job *job,
-                                                 rfc_jpeg_coeff_image *src,
-                                                 rfc_jpeg_coeff_image *dst,
-                                                 const rfc_metadata *meta) {
-    rfc_metadata meta_copy;
-    uint8_t *icc_copy = NULL;
-    uint8_t *exif_copy = NULL;
-    uint8_t *xmp_copy = NULL;
-    int has_rmeta = 0;
-    rfc_status st = job_clone_verified_metadata(&job->allocator, meta,
-                                                &meta_copy, &icc_copy,
-                                                &exif_copy, &xmp_copy,
-                                                &has_rmeta);
-    if (st != RFC_OK) {
-        return st;
-    }
-    rfc_mutex_lock(&job->lock);
-    rfc_jpeg_coeff_image *old_src = job->verify_src_coeffs;
-    rfc_jpeg_coeff_image *old_dst = job->verify_dst_coeffs;
-    uint8_t *old_icc = job->verify_reconstructed_icc;
-    uint8_t *old_exif = job->verify_reconstructed_exif;
-    uint8_t *old_xmp = job->verify_reconstructed_xmp;
-    job->verify_src_coeffs = src;
-    job->verify_dst_coeffs = dst;
     job->verify_reconstructed_meta = meta_copy;
     job->verify_reconstructed_icc = icc_copy;
     job->verify_reconstructed_exif = exif_copy;
@@ -3360,11 +3328,15 @@ static rfc_status jpeg_coeff_encode(rfc_job *job, const rfc_exec_context *exec,
 }
 
 /* VERIFY: read source and output coefficients in separate fresh sessions,
- * check the marker contract, and record the evidence on the job. */
-static rfc_status jpeg_coeff_evidence(rfc_job *job, const rfc_exec_context *exec,
-                                      const uint8_t *src_bytes, size_t src_size,
-                                      int strip, rfc_verify_report *rep,
-                                      const char **err_detail) {
+ * check the marker contract, compare the coefficient images and the modelled
+ * metadata while the adapter still owns the images, then release them
+ * through the adapter's own free_coefficients. */
+static rfc_status jpeg_coeff_verify(rfc_job *job, const rfc_exec_context *exec,
+                                    const uint8_t *src_bytes, size_t src_size,
+                                    rfc_metadata_policy meta_policy,
+                                    const rfc_metadata *src_meta_eff,
+                                    uint32_t ack_meta, rfc_verify_report *rep,
+                                    const char **err_detail) {
     if (!src_bytes || src_size == 0u || !job->has_encoded_output ||
         !job->encoded_output.data || job->encoded_output.len == 0u) {
         *err_detail = "coefficient-exact verify requires source and output "
@@ -3377,15 +3349,15 @@ static rfc_status jpeg_coeff_evidence(rfc_job *job, const rfc_exec_context *exec
             "coefficient-exact verify requires the registered transcode adapter";
         return RFC_ERR_NO_ADAPTER;
     }
-    struct rfc_jpeg_coeff_image *src_c = NULL;
-    struct rfc_jpeg_coeff_image *dst_c = NULL;
-    rfc_metadata src_m, dst_m;
-    memset(&src_m, 0, sizeof(src_m));
-    memset(&dst_m, 0, sizeof(dst_m));
+    rfc_bytes_hash_sha256(src_bytes, src_size, rep->source_hash);
+    rfc_bytes_hash_sha256(job->encoded_output.data, job->encoded_output.len,
+                          rep->verified_hash);
+    struct rfc_jpeg_coeff_image *img[2] = {NULL, NULL};
+    rfc_metadata meta[2];
+    memset(meta, 0, sizeof(meta));
     const uint8_t *in[2] = {src_bytes, job->encoded_output.data};
     size_t in_len[2] = {src_size, job->encoded_output.len};
-    struct rfc_jpeg_coeff_image **out_c[2] = {&src_c, &dst_c};
-    rfc_metadata *out_m[2] = {&src_m, &dst_m};
+    int strip = (meta_policy == RFC_META_POLICY_STRIP);
     rfc_status st = RFC_OK;
     for (int k = 0; k < 2 && st == RFC_OK; k++) {
         void *sess = NULL;
@@ -3396,8 +3368,8 @@ static rfc_status jpeg_coeff_evidence(rfc_job *job, const rfc_exec_context *exec
         jtrans_set_active(job, jt, sess);
         st = check_stage_abort(job);
         if (st == RFC_OK) {
-            st = jt->read_coefficients(sess, exec, in[k], in_len[k], out_c[k],
-                                       out_m[k]);
+            st = jt->read_coefficients(sess, exec, in[k], in_len[k], &img[k],
+                                       &meta[k]);
         }
         if (st == RFC_OK && k == 1) {
             const char *mdet = NULL;
@@ -3415,20 +3387,27 @@ static rfc_status jpeg_coeff_evidence(rfc_job *job, const rfc_exec_context *exec
         jtrans_clear_active(job);
         jt->close_session(sess);
     }
-    if (st == RFC_OK && exec->allocator == &job->allocator) {
-        st = job_adopt_verified_jpeg_coeffs(job, src_c, dst_c, &dst_m);
-        if (st == RFC_OK) {
-            src_c = NULL; /* owned by the job now */
-            dst_c = NULL;
+    if (st == RFC_OK) {
+        st = rfc_verify_jpeg_coefficients(img[0], img[1], &rep->mismatch);
+        if (st == RFC_ERR_VERIFY_MISMATCH) {
+            *err_detail = "JPEG coefficient-domain mismatch";
         }
-    } else if (st == RFC_OK) {
-        st = rfc_job_set_verified_jpeg_coeffs(job, src_c, dst_c, &dst_m);
     }
-    jt->free_coefficients(NULL, exec, src_c);
-    jt->free_coefficients(NULL, exec, dst_c);
+    if (st == RFC_OK) {
+        st = rfc_metadata_verify(job->target_format, meta_policy,
+                                 RFC_EXACT_COEFFICIENT_EXACT, src_meta_eff,
+                                 NULL, 0u, &meta[1], NULL, 0u, ack_meta,
+                                 &rep->metadata, &rep->mismatch);
+        rep->meta_outcome = rep->metadata.outcome;
+        if (st == RFC_ERR_VERIFY_MISMATCH) {
+            *err_detail = "metadata policy verification failed";
+        }
+    }
+    jt->free_coefficients(NULL, exec, img[0]);
+    jt->free_coefficients(NULL, exec, img[1]);
     rfc_registry_release_jpeg_transcode();
-    rfc_metadata_free(&src_m, exec->allocator);
-    rfc_metadata_free(&dst_m, exec->allocator);
+    rfc_metadata_free(&meta[0], exec->allocator);
+    rfc_metadata_free(&meta[1], exec->allocator);
     return st;
 }
 
@@ -4135,20 +4114,16 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
                 store_job_verify_report(job, &rep);
             }
         } else if (st == RFC_OK && exactness == RFC_EXACT_COEFFICIENT_EXACT) {
-            if (use_jpeg_coeff && !job->verify_src_coeffs) {
-                st = jpeg_coeff_evidence(
-                    job, &exec, src_bytes, src_size,
-                    meta_policy == RFC_META_POLICY_STRIP, &rep, &err_detail);
-                if (st != RFC_OK) {
-                    if (st != RFC_ERR_CANCELLED && st != RFC_ERR_STALE_JOB) {
-                        rep.status = st;
-                        rep.valid = 1;
-                        store_job_verify_report(job, &rep);
-                    }
-                    goto verify_done;
+            if (use_jpeg_coeff) {
+                st = jpeg_coeff_verify(job, &exec, src_bytes, src_size,
+                                       meta_policy, src_meta_eff, ack_meta,
+                                       &rep, &err_detail);
+                if (st != RFC_ERR_CANCELLED && st != RFC_ERR_STALE_JOB) {
+                    rep.status = st;
+                    rep.valid = 1;
+                    store_job_verify_report(job, &rep);
                 }
-            }
-            if (job->source_format != RFC_FORMAT_JPEG &&
+            } else if (job->source_format != RFC_FORMAT_JPEG &&
                 job->target_format != RFC_FORMAT_JPEG) {
                 st = RFC_ERR_UNSUPPORTED_COMBINATION;
                 err_detail = "coefficient-exact requires a JPEG source or "
@@ -4323,7 +4298,6 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
         }
     }
 
-verify_done:
     timings.verify_ns = rfc_monotonic_now_ns() - ver_t0;
     if (st != RFC_OK) {
         goto finish;

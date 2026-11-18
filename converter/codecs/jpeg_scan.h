@@ -58,6 +58,7 @@ typedef struct rfc_jpeg_scan_info {
     uint8_t dc_sel[4];         /* DC selector from the first DC scan (Ss == 0, Ah == 0) */
     uint8_t ac_sel[4];         /* AC selector from scans with Se > 0 */
     uint32_t sos_malformed;    /* SOS headers whose layout or components are invalid */
+    int selector_conflict;     /* one component's scans use different AC (or DC) tables */
     int quant_missing;         /* a scanned component's slot had no DQT */
     int quant_redefined;       /* a slot changed after a component using it was first scanned */
     size_t marker_bytes;   /* total APPn + COM segment bytes (marker + length + payload) */

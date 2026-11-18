@@ -712,7 +712,11 @@ static rfc_status jpg_optimize_preflight(const uint8_t *bytes, size_t size,
     if (st != RFC_OK) {
         return st;
     }
-    if (pf->info.quant_redefined || pf->info.late_structural > 0u) {
+    /* The IJG encoder holds one DC and one AC selector per component, so a
+     * source whose scans give one component different tables cannot be
+     * re-encoded with its selectors intact. */
+    if (pf->info.quant_redefined || pf->info.late_structural > 0u ||
+        pf->info.selector_conflict) {
         return RFC_ERR_UNSUPPORTED_COMBINATION;
     }
     return RFC_OK;
@@ -728,6 +732,48 @@ static rfc_status jpg_check_optimizable(void *session,
     jpg_preflight pf;
     return jpg_optimize_preflight(bytes, size, jpg_limits_of(exec, &scratch),
                                   &pf);
+}
+
+/* Natural-order index of each zigzag position (ITU-T T.81 Figure A.6). */
+static const uint8_t k_jpg_zigzag[64] = {
+    0,  1,  8,  16, 9,  2,  3,  10, 17, 24, 32, 25, 18, 11, 4,  5,
+    12, 19, 26, 33, 40, 48, 41, 34, 27, 20, 13, 6,  7,  14, 21, 28,
+    35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15, 23, 30, 37, 44, 51,
+    58, 59, 52, 45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62, 63};
+
+/* libjpeg's frame writer emits only the tables components reference, so
+ * every other populated slot is written back verbatim as its own DQT. */
+static void jpg_emit_unused_dqt(j_decompress_ptr d, j_compress_ptr c) {
+    int referenced[NUM_QUANT_TBLS] = {0};
+    for (int ci = 0; ci < d->num_components; ci++) {
+        int t = d->comp_info[ci].quant_tbl_no;
+        if (t >= 0 && t < NUM_QUANT_TBLS) {
+            referenced[t] = 1;
+        }
+    }
+    for (int t = 0; t < NUM_QUANT_TBLS; t++) {
+        const JQUANT_TBL *q = d->quant_tbl_ptrs[t];
+        if (!q || referenced[t]) {
+            continue;
+        }
+        int wide = 0;
+        for (int k = 0; k < DCTSIZE2; k++) {
+            if (q->quantval[k] > 255u) {
+                wide = 1;
+            }
+        }
+        JOCTET seg[1 + 128];
+        unsigned len = 0u;
+        seg[len++] = (JOCTET)((wide ? 0x10 : 0x00) | t);
+        for (int k = 0; k < DCTSIZE2; k++) {
+            UINT16 v = q->quantval[k_jpg_zigzag[k]];
+            if (wide) {
+                seg[len++] = (JOCTET)(v >> 8);
+            }
+            seg[len++] = (JOCTET)(v & 0xFFu);
+        }
+        jpeg_write_marker(c, 0xDB /* DQT */, seg, len);
+    }
 }
 
 typedef struct jpg_transcode_ctx {
@@ -800,6 +846,7 @@ static rfc_status jpg_transcode_run(jpg_transcode_ctx *x) {
         x->c.write_Adobe_marker = FALSE;
     }
     jpeg_write_coefficients(&x->c, coefs);
+    jpg_emit_unused_dqt(&x->d, &x->c);
     if (!x->strip) {
         for (jpeg_saved_marker_ptr m = x->d.marker_list; m; m = m->next) {
             if (m->original_length != m->data_length) {
@@ -977,9 +1024,9 @@ static rfc_status jpg_coeff_run(jpg_coeff_ctx *x) {
     img->arithmetic_coding = x->d.arith_code ? 1 : 0;
     img->component_count = (uint32_t)x->d.num_components;
     int baseline = (!x->d.progressive_mode && !x->d.arith_code) ? 1 : 0;
-    /* Only tables a component references are part of the coefficient
-     * contract: libjpeg's frame writer emits exactly those, so an unused DQT
-     * slot in the source is not image data and is not carried. */
+    /* Every populated slot is part of the contract (optimization writes the
+     * unused ones back verbatim); baseline compatibility depends only on the
+     * tables components reference. */
     int referenced[4] = {0, 0, 0, 0};
     for (int ci = 0; ci < x->d.num_components && ci < 4; ci++) {
         if (x->d.comp_info[ci].quant_tbl_no >= 0 &&
@@ -988,12 +1035,12 @@ static rfc_status jpg_coeff_run(jpg_coeff_ctx *x) {
         }
     }
     for (int t = 0; t < NUM_QUANT_TBLS && t < 4; t++) {
-        if (referenced[t] && x->d.quant_tbl_ptrs[t]) {
+        if (x->d.quant_tbl_ptrs[t]) {
             img->quant_tables[t].populated = 1;
             for (int k = 0; k < DCTSIZE2; k++) {
                 img->quant_tables[t].values[k] =
                     (uint16_t)x->d.quant_tbl_ptrs[t]->quantval[k];
-                if (x->d.quant_tbl_ptrs[t]->quantval[k] > 255u) {
+                if (referenced[t] && x->d.quant_tbl_ptrs[t]->quantval[k] > 255u) {
                     baseline = 0;
                 }
             }
@@ -1216,20 +1263,59 @@ static rfc_status jpg_compare_markers(void *session,
             }
         }
     } else {
+        /* The source's structural headers (the first JFIF APP0 and Adobe
+         * APP14; late ones were refused at IMPORT). */
+        const uint8_t *sj = NULL, *sa = NULL;
+        size_t sjl = 0u, sal = 0u;
+        while (rfc_jpeg_next_app_segment(src, src_size, &ps, &ms, &as, &ls)) {
+            if (!sj && ms == 0xE0u && ls >= 14u && memcmp(as, "JFIF\x00", 5) == 0) {
+                sj = as;
+                sjl = ls;
+            } else if (!sa && ms == 0xEEu && ls >= 12u &&
+                       memcmp(as, "Adobe", 5) == 0) {
+                sa = as;
+                sal = ls;
+            }
+        }
+        (void)sjl;
+        (void)sal;
         uint32_t jfif = 0u, adobe = 0u;
         while (rfc_jpeg_next_app_segment(dst, dst_size, &pd, &md, &ad, &ld)) {
-            if (jpg_is_fresh_jfif(md, ad, ld) && si[0].header_jfif &&
+            if (jpg_is_fresh_jfif(md, ad, ld) && si[0].header_jfif && sj &&
                 jfif == 0u) {
+                /* Version is copied from a 1.x source (else libjpeg's 1.01);
+                 * density units and values are always copied. */
+                int ver_ok = (sj[5] == 1u) ? (ad[5] == sj[5] && ad[6] == sj[6])
+                                           : (ad[5] == 1u && ad[6] == 1u);
+                if (!ver_ok || memcmp(ad + 7, sj + 7, 5) != 0) {
+                    free(si);
+                    *detail = "metadata=strip JFIF header changes version or "
+                              "density";
+                    return RFC_ERR_VERIFY_MISMATCH;
+                }
                 jfif++;
             } else if (jpg_is_fresh_adobe(md, ad, ld) && si[0].header_adobe &&
-                       adobe == 0u) {
+                       sa && adobe == 0u) {
+                if (ad[11] != sa[11]) {
+                    free(si);
+                    *detail = "metadata=strip Adobe header changes the "
+                              "colour transform";
+                    return RFC_ERR_VERIFY_MISMATCH;
+                }
                 adobe++;
             } else {
                 free(si);
-                *detail = "metadata=strip output keeps a non-structural "
-                          "APPn/COM marker";
+                *detail = "metadata=strip output keeps a non-structural or "
+                          "altered APPn/COM marker";
                 return RFC_ERR_VERIFY_MISMATCH;
             }
+        }
+        if (jfif != (si[0].header_jfif ? 1u : 0u) ||
+            adobe != (si[0].header_adobe ? 1u : 0u)) {
+            free(si);
+            *detail = "metadata=strip output is missing a required JFIF or "
+                      "Adobe structural header";
+            return RFC_ERR_VERIFY_MISMATCH;
         }
     }
     free(si);

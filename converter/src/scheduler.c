@@ -1053,7 +1053,7 @@ static rfc_status compute_preflight_with_contracts(
                exactness == RFC_EXACT_COEFFICIENT_EXACT && source_size > 0u) {
         /* Coefficient-exact optimization holds the source bytes, the output
          * (bounded by source + 64 KiB), and at peak (reading the output's
-         * coefficients at VERIFY) the adopted source coefficient image, the
+         * coefficients at VERIFY) the source coefficient image, the
          * provider's whole-image arrays and the output image: three images of
          * at most 2x the decoded bytes each, plus MCU padding. Submission
          * derives the layout from the SOF when the caller gives none; only a
@@ -1771,15 +1771,12 @@ rfc_status rfc_scheduler_submit(rfc_scheduler *sched,
         pre_sniff_copy = pre_sniff;
     }
 
-    /* JPEG -> JPEG coefficient-exact work scales with the DCT block count,
-     * not the compressed size: when the caller gave no layout, size the
-     * route from the source's SOF geometry. */
+    /* JPEG import and coefficient-domain work scale with the frame, not the
+     * compressed size: when the caller gave no layout, size the job from the
+     * source's SOF geometry (gray8 or rgb8, the samples the adapter emits). */
     rfc_job_spec geo_spec;
     rfc_layout geo_layout;
-    if (!spec->source_layout && eff_source_format == RFC_FORMAT_JPEG &&
-        spec->target_format == RFC_FORMAT_JPEG) {
-        rfc_exactness_class geo_ex = RFC_EXACT_PIXEL_EXACT;
-        rfc_metadata_policy geo_pol = RFC_META_POLICY_PRESERVE;
+    if (!spec->source_layout && eff_source_format == RFC_FORMAT_JPEG) {
         rfc_sniff_result geo;
         memset(&geo, 0, sizeof(geo));
         if (spec->io_source) {
@@ -1788,10 +1785,16 @@ rfc_status rfc_scheduler_submit(rfc_scheduler *sched,
             (void)rfc_input_sniff_bytes(spec->source_bytes, spec->source_size,
                                         NULL, &geo);
         }
+        /* Byte-identical copies and JPEG XL original-byte reconstruction
+         * keep their source-size reservations. */
+        rfc_exactness_class geo_ex = RFC_EXACT_PIXEL_EXACT;
+        rfc_metadata_policy geo_pol = RFC_META_POLICY_PRESERVE;
         if (rfc_job_internal_resolve_exactness(
                 spec->target_format, spec->settings, spec->setting_count,
                 &geo_ex, &geo_pol) == RFC_OK &&
-            geo_ex == RFC_EXACT_COEFFICIENT_EXACT && geo.has_jpeg_geometry &&
+            (geo_ex == RFC_EXACT_PIXEL_EXACT ||
+             geo_ex == RFC_EXACT_COEFFICIENT_EXACT) &&
+            geo.has_jpeg_geometry &&
             (geo.jpeg_components == 1u || geo.jpeg_components == 3u)) {
             memset(&geo_layout, 0, sizeof(geo_layout));
             geo_layout.format = geo.jpeg_components == 1u ? RFC_SAMPLE_GRAY8

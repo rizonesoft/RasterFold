@@ -358,8 +358,10 @@ class JpegAdapterMixin:
         self.assertEqual(kv.get("SUBMIT"), "unsupported-combination", kv)
         self.assertFalse(dst.exists())
         png_src = self.fixture("ref.png", _ref.encode_png(4, 4, 2, 8, bytes(48)))
-        rc, kv = self.convert(png_src, dst, sfmt="png")
+        rc, out, err = self.run_cli(["cli", "convert", "png", "jpeg", self.to_exe_path(png_src), self.to_exe_path(dst), "-", "-", "0"])
+        kv = parse_kv(out)
         self.assertEqual(kv.get("SUBMIT"), "unsupported-combination", kv)
+        self.assertIn("lossy", err, "the refusal reason reaches the caller")
         self.assertFalse(dst.exists())
         # Existing destination survives untouched.
         dst.write_bytes(b"keep-me")
