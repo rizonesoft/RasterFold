@@ -575,10 +575,10 @@
     },
     {
       "format": "gif",
-      "provider": "in-tree converter code",
+      "provider": "giflib (bundled, pinned by D10 T01 \u00a72)",
       "owner": "D10 T02 \u00a76",
-      "availability": "planned",
-      "unavailable_reason": "converter adapter not yet shipped",
+      "availability": "usable",
+      "unavailable_reason": null,
       "modes": {
         "read": true,
         "write": true
@@ -644,8 +644,8 @@
       "format": "tiff",
       "provider": "libtiff (bundled, pinned by D10 T01 \u00a72)",
       "owner": "D10 T02 \u00a76",
-      "availability": "planned",
-      "unavailable_reason": "converter adapter not yet shipped",
+      "availability": "usable",
+      "unavailable_reason": null,
       "modes": {
         "read": true,
         "write": true
@@ -709,7 +709,8 @@
       "extension_owner": "D10 T02 \u00a712",
       "metadata_items": [
         "icc",
-        "orientation"
+        "orientation",
+        "xmp"
       ]
     },
     {

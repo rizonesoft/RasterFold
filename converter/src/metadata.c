@@ -668,6 +668,26 @@ rfc_status rfc_metadata_check_preflight(rfc_format_id target_format,
         out_report->target_supported_items = caps;
     }
 
+    /* Frame timing is part of pixel-exact verification (frame durations are
+     * compared with the samples), so it is neither strippable nor droppable
+     * by acknowledgement: a target that cannot carry it is refused as a
+     * metadata-policy failure, never reported as a sample mismatch. */
+    if ((present_source_items & RFC_META_ITEM_FRAME_TIMING) != 0u &&
+        (caps & RFC_META_ITEM_FRAME_TIMING) == 0u) {
+        if (out_report) {
+            out_report->outcome = RFC_VERIFY_META_UNSUPPORTED_ITEMS_NAMED;
+            out_report->unsupported_items = RFC_META_ITEM_FRAME_TIMING;
+            meta_copy_cstr(out_report->detail, sizeof(out_report->detail),
+                           "target format ");
+            meta_append_cstr(out_report->detail, sizeof(out_report->detail),
+                             cap->name);
+            meta_append_cstr(out_report->detail, sizeof(out_report->detail),
+                             " cannot carry frame timing, which pixel-exact "
+                             "verification compares");
+        }
+        return RFC_ERR_METADATA_POLICY;
+    }
+
     if (policy == RFC_META_POLICY_STRIP) {
         uint32_t removable = present_source_items &
                              (RFC_META_ITEM_ICC | RFC_META_ITEM_ORIENTATION |

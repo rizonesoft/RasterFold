@@ -343,6 +343,15 @@ rfc_status rfc_registry_unregister_jpeg_transcode(void);
 const rfc_jpeg_transcode_adapter *rfc_registry_acquire_jpeg_transcode(void);
 void rfc_registry_release_jpeg_transcode(void);
 
+/* Register or unregister two session adapters as one registry transaction:
+ * both or neither (RFC_ERR_DUPLICATE when either format already has one).
+ * Unregister returns RFC_ERR_BUSY, changing nothing, while either is
+ * acquired. */
+rfc_status rfc_registry_register_session_pair(const rfc_session_adapter *a,
+                                              const rfc_session_adapter *b);
+rfc_status rfc_registry_unregister_session_pair(rfc_format_id a,
+                                                rfc_format_id b);
+
 /* Register or unregister the JPEG session adapter and the transcode adapter
  * as one registry transaction: both or neither. Unregister returns
  * RFC_ERR_BUSY, changing nothing, while either is acquired. */

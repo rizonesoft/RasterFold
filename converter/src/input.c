@@ -681,19 +681,168 @@ static void sniff_jpeg_geometry(const seek_stream *ss,
                 sg < 6u + 3u * (size_t)nc) {
                 return;
             }
-            out_result->jpeg_height = ((uint32_t)sof[1] << 8) | sof[2];
-            out_result->jpeg_width = ((uint32_t)sof[3] << 8) | sof[4];
-            out_result->jpeg_components = nc;
-            for (uint32_t c = 0u; c < nc; c++) {
-                out_result->jpeg_h_samp[c] = (uint8_t)(sof[7u + 3u * c] >> 4);
-                out_result->jpeg_v_samp[c] = (uint8_t)(sof[7u + 3u * c] & 15u);
+            out_result->geometry_height = ((uint32_t)sof[1] << 8) | sof[2];
+            out_result->geometry_width = ((uint32_t)sof[3] << 8) | sof[4];
+            if (nc == 1u || nc == 3u) {
+                out_result->geometry_format =
+                    nc == 1u ? RFC_SAMPLE_GRAY8 : RFC_SAMPLE_RGB8;
+                out_result->has_geometry = out_result->geometry_width > 0u &&
+                                           out_result->geometry_height > 0u;
             }
-            out_result->has_jpeg_geometry =
-                out_result->jpeg_width > 0u && out_result->jpeg_height > 0u;
             return;
         }
         pos += 2u + (uint64_t)len;
     }
+}
+
+/* TIFF: ImageWidth, ImageLength, SamplesPerPixel, BitsPerSample and
+ * ExtraSamples of the first IFD by positional reads (classic TIFF only, at
+ * most 4096 entries); unknown or unsupported layouts leave no geometry. */
+static void sniff_tiff_geometry(const seek_stream *ss, const uint8_t *b,
+                                size_t len, rfc_sniff_result *out_result) {
+    if (len < 8u) {
+        return;
+    }
+    int le = (b[0] == 'I');
+    uint16_t magic = le ? (uint16_t)(b[2] | (b[3] << 8))
+                        : (uint16_t)((b[2] << 8) | b[3]);
+    if (magic != 42u) {
+        return;
+    }
+    uint32_t ifd = le ? ((uint32_t)b[4] | ((uint32_t)b[5] << 8) |
+                         ((uint32_t)b[6] << 16) | ((uint32_t)b[7] << 24))
+                      : (((uint32_t)b[4] << 24) | ((uint32_t)b[5] << 16) |
+                         ((uint32_t)b[6] << 8) | (uint32_t)b[7]);
+    uint8_t cnt_b[2];
+    size_t got = 0u;
+    if (ss->read_at(ss->ctx, ifd, cnt_b, 2u, &got) != RFC_OK || got != 2u) {
+        return;
+    }
+    uint32_t n = le ? (uint32_t)(cnt_b[0] | (cnt_b[1] << 8))
+                    : (uint32_t)((cnt_b[0] << 8) | cnt_b[1]);
+    if (n == 0u || n > 4096u) {
+        return;
+    }
+    uint32_t w = 0u, h = 0u, spp = 1u, bps = 0u, extra = 0u;
+    for (uint32_t i = 0u; i < n; i++) {
+        uint8_t e[12];
+        if (ss->read_at(ss->ctx, (uint64_t)ifd + 2u + 12u * (uint64_t)i, e,
+                        12u, &got) != RFC_OK || got != 12u) {
+            return;
+        }
+        uint16_t tag = le ? (uint16_t)(e[0] | (e[1] << 8))
+                          : (uint16_t)((e[0] << 8) | e[1]);
+        uint16_t typ = le ? (uint16_t)(e[2] | (e[3] << 8))
+                          : (uint16_t)((e[2] << 8) | e[3]);
+        uint32_t v = 0u;
+        if (typ == 3u) {
+            v = le ? (uint32_t)(e[8] | (e[9] << 8))
+                   : (uint32_t)((e[8] << 8) | e[9]);
+        } else if (typ == 4u) {
+            v = le ? ((uint32_t)e[8] | ((uint32_t)e[9] << 8) |
+                      ((uint32_t)e[10] << 16) | ((uint32_t)e[11] << 24))
+                   : (((uint32_t)e[8] << 24) | ((uint32_t)e[9] << 16) |
+                      ((uint32_t)e[10] << 8) | (uint32_t)e[11]);
+        } else {
+            continue;
+        }
+        if (tag == 256u) {
+            w = v;
+        } else if (tag == 257u) {
+            h = v;
+        } else if (tag == 277u) {
+            spp = v;
+        } else if (tag == 258u) {
+            /* An inline first value (count <= 2 SHORTs); a per-sample array
+             * stored elsewhere starts with the same depth for supported files. */
+            uint32_t count = le ? ((uint32_t)e[4] | ((uint32_t)e[5] << 8))
+                                : (((uint32_t)e[6] << 8) | e[7]);
+            if (typ == 3u && count > 2u) {
+                uint8_t first[2];
+                uint32_t off = le ? ((uint32_t)e[8] | ((uint32_t)e[9] << 8) |
+                                     ((uint32_t)e[10] << 16) |
+                                     ((uint32_t)e[11] << 24))
+                                  : (((uint32_t)e[8] << 24) |
+                                     ((uint32_t)e[9] << 16) |
+                                     ((uint32_t)e[10] << 8) | (uint32_t)e[11]);
+                if (ss->read_at(ss->ctx, off, first, 2u, &got) != RFC_OK ||
+                    got != 2u) {
+                    return;
+                }
+                v = le ? (uint32_t)(first[0] | (first[1] << 8))
+                       : (uint32_t)((first[0] << 8) | first[1]);
+            }
+            bps = v;
+        } else if (tag == 338u) {
+            extra = 1u;
+        }
+    }
+    if (w == 0u || h == 0u || (bps != 8u && bps != 16u)) {
+        return;
+    }
+    rfc_sample_format f;
+    if (spp == 1u) {
+        f = bps == 8u ? RFC_SAMPLE_GRAY8 : RFC_SAMPLE_GRAY16;
+    } else if (spp == 3u) {
+        f = bps == 8u ? RFC_SAMPLE_RGB8 : RFC_SAMPLE_RGB16;
+    } else if (spp == 4u && extra) {
+        f = bps == 8u ? RFC_SAMPLE_RGBA8 : RFC_SAMPLE_RGBA16;
+    } else {
+        return;
+    }
+    out_result->geometry_width = w;
+    out_result->geometry_height = h;
+    out_result->geometry_format = f;
+    out_result->has_geometry = 1;
+}
+
+/* GIF: the logical screen, sized as rgba8 (the larger decoded layout). */
+static void sniff_gif_geometry(const uint8_t *b, size_t len,
+                               rfc_sniff_result *out_result) {
+    if (len < 10u) {
+        return;
+    }
+    uint32_t w = (uint32_t)b[6] | ((uint32_t)b[7] << 8);
+    uint32_t h = (uint32_t)b[8] | ((uint32_t)b[9] << 8);
+    if (w == 0u || h == 0u) {
+        return;
+    }
+    out_result->geometry_width = w;
+    out_result->geometry_height = h;
+    out_result->geometry_format = RFC_SAMPLE_RGBA8;
+    out_result->has_geometry = 1;
+}
+
+/* PNG: the IHDR (always the first chunk) gives the decoded layout for the
+ * colour types the PNG adapter decodes; palette and gray-alpha images are
+ * sized as rgba at their depth (the larger layout). */
+static void sniff_png_geometry(const uint8_t *b, size_t len,
+                               rfc_sniff_result *out_result) {
+    if (len < 26u || memcmp(b + 12, "IHDR", 4) != 0) {
+        return;
+    }
+    uint32_t w = rd32be(b + 16);
+    uint32_t h = rd32be(b + 20);
+    uint8_t depth = b[24];
+    uint8_t ct = b[25];
+    if (w == 0u || h == 0u || w > 0x7FFFFFFFu || h > 0x7FFFFFFFu) {
+        return;
+    }
+    int wide = depth == 16u;
+    rfc_sample_format f;
+    if (ct == 0u) {
+        f = wide ? RFC_SAMPLE_GRAY16 : RFC_SAMPLE_GRAY8;
+    } else if (ct == 2u) {
+        f = wide ? RFC_SAMPLE_RGB16 : RFC_SAMPLE_RGB8;
+    } else if (ct == 3u || ct == 4u || ct == 6u) {
+        f = wide ? RFC_SAMPLE_RGBA16 : RFC_SAMPLE_RGBA8;
+    } else {
+        return;
+    }
+    out_result->geometry_width = w;
+    out_result->geometry_height = h;
+    out_result->geometry_format = f;
+    out_result->has_geometry = 1;
 }
 
 static rfc_format_id sniff_stream_core(const seek_stream *ss,
@@ -742,6 +891,9 @@ static rfc_format_id sniff_stream_core(const seek_stream *ss,
     else if (len >= 8u &&
              memcmp(b, "\x89PNG\r\n\x1a\n", 8) == 0) {
         detected = sniff_png_chunks(ss, b, len, out_io_status);
+        if (detected == RFC_FORMAT_PNG) {
+            sniff_png_geometry(b, len, out_result);
+        }
     }
     /* 3. BMP */
     else if (len >= 2u && b[0] == 'B' && b[1] == 'M') {
@@ -793,6 +945,7 @@ static rfc_format_id sniff_stream_core(const seek_stream *ss,
     else if (len >= 6u &&
              (memcmp(b, "GIF87a", 6) == 0 || memcmp(b, "GIF89a", 6) == 0)) {
         detected = RFC_FORMAT_GIF;
+        sniff_gif_geometry(b, len, out_result);
     }
     /* 11. QOI */
     else if (len >= 4u && memcmp(b, "qoif", 4) == 0) {
@@ -814,6 +967,9 @@ static rfc_format_id sniff_stream_core(const seek_stream *ss,
     /* 14. TIFF / DNG / CR2 / ORF / RW2 */
     else {
         detected = sniff_tiff_family(ss, b, len, out_io_status);
+        if (detected == RFC_FORMAT_TIFF) {
+            sniff_tiff_geometry(ss, b, len, out_result);
+        }
     }
 
     if (out_io_status && *out_io_status != RFC_OK) {

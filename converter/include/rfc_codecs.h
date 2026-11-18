@@ -39,6 +39,17 @@ rfc_status rfc_codecs_unregister_avif(void);
 rfc_status rfc_codecs_register_jpeg(void);
 rfc_status rfc_codecs_unregister_jpeg(void);
 
+/* Register and unregister the shipped TIFF and GIF session adapters
+ * (D10 T02 s6) as one registry transaction: both or neither; unregister
+ * returns RFC_ERR_BUSY, leaving both registered, while either is acquired. */
+rfc_status rfc_codecs_register_tiff_gif(void);
+rfc_status rfc_codecs_unregister_tiff_gif(void);
+
+/* Test seam: hook called before each decoded TIFF strip or tile and each GIF
+ * row (NULL removes it), for deterministic mid-decode cancellation tests. */
+void rfc_codecs_tiff_gif_set_row_hook_for_testing(void (*hook)(void *),
+                                                  void *ctx);
+
 /* Test seam: the optimization output buffer is source size + slack bytes
  * (default 64 KiB); a negative slack shrinks it below the source so tests can
  * drive the destination-full fallback. -1 restores the default. */

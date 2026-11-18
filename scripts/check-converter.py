@@ -862,9 +862,10 @@ def _ensure_host_vendor_deps(pkg_order):
         src_dir = root_p / "tools" / "converter-src" / pid
         if not src_dir.is_dir():
             raise RuntimeError(f"missing converter source tree for host build: {src_dir}")
-        cmake_src = (root_p / "converter" / "cmake" / pid) if pid == "lcms2" else src_dir
+        wrapped = pid in ("lcms2", "giflib")
+        cmake_src = (root_p / "converter" / "cmake" / pid) if wrapped else src_dir
         extra = []
-        if pid == "lcms2":
+        if wrapped:
             extra.append(f"-DVENDOR_SOURCE_DIR={src_dir.as_posix()}")
         elif pid == "libjxl":
             extra.extend([
@@ -881,6 +882,20 @@ def _ensure_host_vendor_deps(pkg_order):
                 "-DCMAKE_DISABLE_FIND_PACKAGE_JPEG=ON",
                 "-DCMAKE_DISABLE_FIND_PACKAGE_TIFF=ON",
                 "-DCMAKE_DISABLE_FIND_PACKAGE_GIF=ON",
+            ])
+        elif pid == "libtiff":
+            extra.extend([
+                "-Dtiff-cxx=OFF",
+                f"-DDeflate_INCLUDE_DIR={pfx}/include",
+                f"-DDeflate_LIBRARY={(deps_prefix / 'lib' / 'libdeflate.a').as_posix()}",
+                f"-DJPEG_INCLUDE_DIR={pfx}/include",
+                f"-DJPEG_LIBRARY={(deps_prefix / 'lib' / 'libjpeg.a').as_posix()}",
+                f"-DWebP_INCLUDE_DIR={pfx}/include",
+                f"-DWebP_LIBRARY={(deps_prefix / 'lib' / 'libwebp.a').as_posix()}",
+                "-DCMAKE_DISABLE_FIND_PACKAGE_ZSTD=ON",
+                "-DCMAKE_DISABLE_FIND_PACKAGE_LibLZMA=ON",
+                "-DCMAKE_DISABLE_FIND_PACKAGE_LERC=ON",
+                "-DCMAKE_DISABLE_FIND_PACKAGE_JBIG=ON",
             ])
         elif pid == "libaom":
             extra.append(f"-DCMAKE_ASM_NASM_COMPILER={nasm_exe}")
@@ -975,6 +990,24 @@ def _ensure_host_jpeg_flags():
     deps_prefix = _ensure_host_vendor_deps(["libjpeg-turbo"])
     lib_dir = deps_prefix / "lib"
     return [f"-I{(deps_prefix / 'include').as_posix()}"], [str(lib_dir / "libjpeg.a")]
+
+
+def _ensure_host_tiff_gif_flags():
+    deps_prefix = _ensure_host_vendor_deps(
+        ["libdeflate", "libjpeg-turbo", "libwebp", "libtiff", "giflib"]
+    )
+    lib_dir = deps_prefix / "lib"
+    libs = [
+        str(lib_dir / "libtiff.a"),
+        str(lib_dir / "libdeflate.a"),
+        str(lib_dir / "libjpeg.a"),
+        str(lib_dir / "libwebp.a"),
+        str(lib_dir / "libsharpyuv.a"),
+        str(lib_dir / "libgif.a"),
+        "-lz",
+        "-lm",
+    ]
+    return [f"-I{(deps_prefix / 'include').as_posix()}"], libs
 
 
 def _run_codec_case(
@@ -1277,6 +1310,41 @@ def case_jpeg(all_targets=False):
     )
 
 
+def case_tiff_gif(all_targets=False):
+    def _flags():
+        t_cf, t_lb = _ensure_host_tiff_gif_flags()
+        j_cf, j_lb = _ensure_host_jxl_flags()
+        w_cf, w_lb = _host_libwebp_flags()
+        p_cf, p_lb = _host_libpng_flags()
+        cflags = list(dict.fromkeys([*t_cf, *j_cf, *w_cf, *p_cf]))
+        j_arch = [x for x in j_lb if x.endswith(".a")]
+        libs = [*t_lb, *j_arch, *w_lb, *p_lb, "-lstdc++", "-lm", "-pthread"]
+        return cflags, libs
+
+    return _run_codec_case(
+        case_name="tiff_gif",
+        win_target="rfc_test_tiff_gif",
+        codec_sources=["basic.c", "webp.c", "jpeg_scan.c", "jxl.c", "jpeg.c", "tiff_gif.c"],
+        c_test_file="test_tiff_gif.c",
+        py_test_file="test_tiff_gif.py",
+        host_env_var="RFC_HOST_TIFF_GIF_EXE",
+        win_env_var="RFC_WIN_TIFF_GIF_EXE",
+        require_win_env_var="RFC_REQUIRE_WIN_TIFF_GIF",
+        markers=[
+            "tiff_gif: registration_and_geometry ok",
+            "tiff_gif: tiff_import_matrix_and_refusals ok",
+            "tiff_gif: tiff_export_and_metadata ok",
+            "tiff_gif: gif_import_lzw_and_refusals ok",
+            "tiff_gif: gif_export_palette_timing ok",
+            "tiff_gif: jobs_limits_budget_and_cancel ok",
+            "tiff_gif: all checks passed",
+        ],
+        host_flags_fn=_flags,
+        all_targets=all_targets,
+        host_link_cxx=True,
+    )
+
+
 def main():
     raw_args = sys.argv[1:]
     all_targets = "--all-targets" in raw_args
@@ -1305,6 +1373,8 @@ def main():
         return case_avif(all_targets)
     if args == ["--case", "jpeg"]:
         return case_jpeg(all_targets)
+    if args == ["--case", "tiff_gif"]:
+        return case_tiff_gif(all_targets)
     if args == ["--case", "all"]:
         rc = case_contract()
         if rc:
@@ -1336,8 +1406,11 @@ def main():
         rc = case_jpeg(all_targets)
         if rc:
             return rc
+        rc = case_tiff_gif(all_targets)
+        if rc:
+            return rc
         return case_bundle()
-    print("usage: check-converter.py --case <contract|jobs|exactness|file-safety|reports|basic|webp|jxl|avif|jpeg|bundle|all> [--all-targets]")
+    print("usage: check-converter.py --case <contract|jobs|exactness|file-safety|reports|basic|webp|jxl|avif|jpeg|tiff_gif|bundle|all> [--all-targets]")
     return 1
 
 

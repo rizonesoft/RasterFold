@@ -351,8 +351,8 @@ static const rfc_capability k_registry[] = {
     {RFC_FORMAT_JPEG_XL, "jpeg-xl", "libjxl (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "3", "D10 T02 \xc2\xa7" "12", USABLE, NULL, 1, 1, k_png, 6, JXLSET, JXL_RULES, META_ICC | META_ORI | META_TIM | META_EXIF | META_XMP},
     {RFC_FORMAT_AVIF, "avif", "libavif (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "4", NULL, USABLE, NULL, 1, 1, k_10bit, 4, COMMON, COMMON_RULES, META_ICC | META_ORI | META_EXIF | META_XMP},
     {RFC_FORMAT_JPEG, "jpeg", "libjpeg-turbo (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "5", NULL, USABLE, NULL, 1, 1, k_jpeg, 2, JPEGSET, COMMON_RULES, META_ICC | META_ORI | META_EXIF | META_XMP},
-    {RFC_FORMAT_GIF, "gif", "in-tree converter code", "D10 T02 \xc2\xa7" "6", "D10 T02 \xc2\xa7" "12", PLANNED, "converter adapter not yet shipped", 1, 1, k_rgba8, 2, ANIM, ANIM_RULES, META_TIM},
-    {RFC_FORMAT_TIFF, "tiff", "libtiff (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "6", "D10 T02 \xc2\xa7" "12", PLANNED, "converter adapter not yet shipped", 1, 1, k_png, 6, ANIM, ANIM_RULES, META_ICC | META_ORI},
+    {RFC_FORMAT_GIF, "gif", "giflib (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "6", "D10 T02 \xc2\xa7" "12", USABLE, NULL, 1, 1, k_rgba8, 2, ANIM, ANIM_RULES, META_TIM},
+    {RFC_FORMAT_TIFF, "tiff", "libtiff (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "6", "D10 T02 \xc2\xa7" "12", USABLE, NULL, 1, 1, k_png, 6, ANIM, ANIM_RULES, META_ICC | META_ORI | META_XMP},
     {RFC_FORMAT_HEIF, "heif", "Windows Imaging Component (system codec, not bundled)", "D10 T02 \xc2\xa7" "7", NULL, PLANNED, "import-only system-codec adapter not yet shipped; decision recorded in docs/codec-distribution.md", 1, 0, k_10bit, 4, COMMON, COMMON_RULES, META_ICC | META_ORI},
     {RFC_FORMAT_HEIC, "heic", "Windows Imaging Component (system codec, not bundled)", "D10 T02 \xc2\xa7" "7", NULL, PLANNED, "import-only system-codec adapter not yet shipped; decision recorded in docs/codec-distribution.md", 1, 0, k_10bit, 4, COMMON, COMMON_RULES, META_ICC | META_ORI},
     {RFC_FORMAT_JPEG2000, "jpeg-2000", "OpenJPEG (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "9", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_png, 6, COMMON, COMMON_RULES, META_ICC},
@@ -693,6 +693,50 @@ static int jtrans_adapter_valid(const rfc_jpeg_transcode_adapter *a) {
     return a && a->open_session && a->close_session && a->preflight_optimize &&
            a->optimize_jpeg && a->read_coefficients && a->free_coefficients &&
            a->compare_markers;
+}
+rfc_status rfc_registry_register_session_pair(const rfc_session_adapter *a,
+                                              const rfc_session_adapter *b) {
+    if (!session_adapter_valid(a) || !session_adapter_valid(b) ||
+        a->format == b->format) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    if (a->abi_version != RFC_CODEC_ABI_VERSION ||
+        b->abi_version != RFC_CODEC_ABI_VERSION) {
+        return RFC_ERR_ABI_VERSION;
+    }
+    reg_lock();
+    int ia = reg_find_index(a->format);
+    int ib = reg_find_index(b->format);
+    if (ia < 0 || ib < 0) {
+        reg_unlock();
+        return RFC_ERR_UNKNOWN_FORMAT;
+    }
+    if (k_session_adapters[ia] != NULL || k_session_adapters[ib] != NULL) {
+        reg_unlock();
+        return RFC_ERR_DUPLICATE;
+    }
+    k_session_adapters[ia] = a;
+    k_session_adapters[ib] = b;
+    reg_unlock();
+    return RFC_OK;
+}
+rfc_status rfc_registry_unregister_session_pair(rfc_format_id a,
+                                                rfc_format_id b) {
+    reg_lock();
+    int ia = reg_find_index(a);
+    int ib = reg_find_index(b);
+    if (ia < 0 || ib < 0) {
+        reg_unlock();
+        return RFC_ERR_UNKNOWN_FORMAT;
+    }
+    if (k_session_active[ia] > 0 || k_session_active[ib] > 0) {
+        reg_unlock();
+        return RFC_ERR_BUSY;
+    }
+    k_session_adapters[ia] = NULL;
+    k_session_adapters[ib] = NULL;
+    reg_unlock();
+    return RFC_OK;
 }
 rfc_status rfc_registry_register_jpeg_pair(
     const rfc_session_adapter *session_adapter,

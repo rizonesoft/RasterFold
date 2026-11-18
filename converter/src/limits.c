@@ -375,12 +375,18 @@ rfc_status rfc_query_provider_memory_contract(rfc_format_id id,
     switch (cap->id) {
         case RFC_FORMAT_PNG:
             out->mode = RFC_MEM_HOOK_ENFORCED;
-            out->working_set_multiplier = 3u;
+            /* As a target the peak is VERIFY: the retained source frame, the
+             * encoded output (at most the raw rows for stored deflate), the
+             * shared loader's IDAT copy (up to twice the output), its raw
+             * filter rows and RGB buffer, and the decoded frame: 8x. As a
+             * source the scheduler applies the decode-only figure. */
+            out->working_set_multiplier = 8u;
             out->fixed_overhead_bytes = 512ull * 1024ull;
             out->limitation_reason =
                 "libpng and zlib allocations route through rfc_budget hooks; "
                 "baseline RGB8 shared rf_png_load pre-reserves its working set "
-                "in rfc_budget";
+                "in rfc_budget; target VERIFY peak measured at 4.5x-7.7x the "
+                "decoded frame (8x reserved), source decode 5x";
             break;
         case RFC_FORMAT_APNG:
             out->mode = RFC_MEM_HOOK_ENFORCED;
@@ -424,8 +430,33 @@ rfc_status rfc_query_provider_memory_contract(rfc_format_id id,
             out->limitation_reason =
                 "LibRaw uses internal C++ heap allocations; enforced by rfc_limits preflight and conservative reservation";
             break;
-        case RFC_FORMAT_OPENEXR:
         case RFC_FORMAT_TIFF:
+            out->mode = RFC_MEM_RESERVATION_AND_LIMITS;
+            /* Target VERIFY peak: the retained source frame, the output
+             * buffer (doubling, at most twice the output, which is at most
+             * the raw samples plus framing), the decoded frame and libtiff's
+             * capped heap; source decode is the frame, one strip or tile and
+             * the capped heap. */
+            out->working_set_multiplier = 6u;
+            out->fixed_overhead_bytes = 16ull * 1024ull * 1024ull;
+            out->limitation_reason =
+                "libtiff allocations are capped per handle by "
+                "TIFFOpenOptionsSetMaxCumulatedMemAlloc (8 MiB plus twice the "
+                "source when reading, 8 MiB plus two strips when writing) and "
+                "that cap is reserved through rfc_budget_reserve; frames, "
+                "strip buffers and the output go through the job allocator";
+            break;
+        case RFC_FORMAT_GIF:
+            out->mode = RFC_MEM_RESERVATION_AND_LIMITS;
+            out->working_set_multiplier = 3u;
+            out->fixed_overhead_bytes = 2ull * 1024ull * 1024ull;
+            out->limitation_reason =
+                "giflib state (LZW tables, colour maps) is reserved as 1 MiB "
+                "through rfc_budget_reserve after a zero-allocation structural "
+                "pre-scan; frames, rows, palette indices and the output go "
+                "through the job allocator";
+            break;
+        case RFC_FORMAT_OPENEXR:
         case RFC_FORMAT_HEIF:
         case RFC_FORMAT_HEIC:
         case RFC_FORMAT_JPEG2000:

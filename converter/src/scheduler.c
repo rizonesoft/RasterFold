@@ -898,6 +898,12 @@ static rfc_status parse_verify_settings_sched(rfc_format_id target_format,
                                               rfc_exactness_class *out_exact,
                                               rfc_metadata_policy *out_meta);
 
+
+/* PNG as a source (decode only): the frame, the shared loader's IDAT copy (up
+ * to twice a stored-deflate source), its raw filter rows and RGB buffer.
+ * The provider contract's 8x is the target's VERIFY peak (limits.c). */
+#define RFC_PNG_DECODE_WORKING_SET_MULTIPLIER 5u
+
 static rfc_status compute_jxl_stage_work_sched(uint64_t decoded_bytes,
                                                uint64_t pixels,
                                                uint32_t eff_req_threads,
@@ -964,6 +970,9 @@ static rfc_status compute_endpoint_stage_work_sched(
     }
     uint32_t mult = mem->working_set_multiplier;
     uint64_t overhead = mem->fixed_overhead_bytes;
+    if (mem->format == RFC_FORMAT_PNG && !is_encode) {
+        mult = RFC_PNG_DECODE_WORKING_SET_MULTIPLIER;
+    }
     if (mem->format == RFC_FORMAT_WEBP) {
         if (!is_encode) {
             mult = 5u;
@@ -1107,6 +1116,9 @@ static rfc_status compute_preflight_with_contracts(
         } else {
             uint32_t src_mult = src_mem->working_set_multiplier;
             uint64_t src_overhead = src_mem->fixed_overhead_bytes;
+            if (src_mem->format == RFC_FORMAT_PNG) {
+                src_mult = RFC_PNG_DECODE_WORKING_SET_MULTIPLIER;
+            }
             if (src_mem->format == RFC_FORMAT_WEBP) {
                 src_mult = 5u;
                 src_overhead = 2ull * 1024ull * 1024ull;
@@ -1128,7 +1140,12 @@ static rfc_status compute_preflight_with_contracts(
                 work > UINT64_MAX - overhead) {
                 return RFC_ERR_LIMIT_EXCEEDED;
             }
-            base_reservation = overhead + work;
+            /* The imported source bytes stay in the job's budget for the
+             * whole job, beside every stage's working set. */
+            if (!add_u64_sched(overhead + work, source_size,
+                               &base_reservation)) {
+                return RFC_ERR_LIMIT_EXCEEDED;
+            }
         }
     } else if (src_mem->format == RFC_FORMAT_JPEG &&
                dst_mem->format == RFC_FORMAT_JPEG_XL &&
@@ -1771,12 +1788,18 @@ rfc_status rfc_scheduler_submit(rfc_scheduler *sched,
         pre_sniff_copy = pre_sniff;
     }
 
-    /* JPEG import and coefficient-domain work scale with the frame, not the
-     * compressed size: when the caller gave no layout, size the job from the
-     * source's SOF geometry (gray8 or rgb8, the samples the adapter emits). */
+    /* Decoding work scales with the frame, not the compressed size: when the
+     * caller gave neither a layout nor a working-set estimate, size a PNG,
+     * JPEG, TIFF or GIF job from the geometry the sniff read (byte-identical
+     * copies and JPEG XL original-byte reconstruction keep their source-size
+     * reservations; an explicit estimate keeps its caller's sizing). */
     rfc_job_spec geo_spec;
     rfc_layout geo_layout;
-    if (!spec->source_layout && eff_source_format == RFC_FORMAT_JPEG) {
+    if (!spec->source_layout && spec->expected_working_set_bytes == 0u &&
+        (eff_source_format == RFC_FORMAT_PNG ||
+         eff_source_format == RFC_FORMAT_JPEG ||
+         eff_source_format == RFC_FORMAT_TIFF ||
+         eff_source_format == RFC_FORMAT_GIF)) {
         rfc_sniff_result geo;
         memset(&geo, 0, sizeof(geo));
         if (spec->io_source) {
@@ -1785,8 +1808,6 @@ rfc_status rfc_scheduler_submit(rfc_scheduler *sched,
             (void)rfc_input_sniff_bytes(spec->source_bytes, spec->source_size,
                                         NULL, &geo);
         }
-        /* Byte-identical copies and JPEG XL original-byte reconstruction
-         * keep their source-size reservations. */
         rfc_exactness_class geo_ex = RFC_EXACT_PIXEL_EXACT;
         rfc_metadata_policy geo_pol = RFC_META_POLICY_PRESERVE;
         if (rfc_job_internal_resolve_exactness(
@@ -1794,20 +1815,30 @@ rfc_status rfc_scheduler_submit(rfc_scheduler *sched,
                 &geo_ex, &geo_pol) == RFC_OK &&
             (geo_ex == RFC_EXACT_PIXEL_EXACT ||
              geo_ex == RFC_EXACT_COEFFICIENT_EXACT) &&
-            geo.has_jpeg_geometry &&
-            (geo.jpeg_components == 1u || geo.jpeg_components == 3u)) {
+            geo.has_geometry) {
             memset(&geo_layout, 0, sizeof(geo_layout));
-            geo_layout.format = geo.jpeg_components == 1u ? RFC_SAMPLE_GRAY8
-                                                          : RFC_SAMPLE_RGB8;
-            geo_layout.alpha = RFC_ALPHA_NONE;
-            geo_layout.width = geo.jpeg_width;
-            geo_layout.height = geo.jpeg_height;
-            geo_layout.bits_per_sample = 8u;
-            geo_layout.stride_bytes =
-                (size_t)geo.jpeg_width * (size_t)geo.jpeg_components;
-            geo_spec = *spec;
-            geo_spec.source_layout = &geo_layout;
-            spec = &geo_spec;
+            geo_layout.format = geo.geometry_format;
+            geo_layout.alpha = (geo.geometry_format == RFC_SAMPLE_RGBA8 ||
+                                geo.geometry_format == RFC_SAMPLE_RGBA16)
+                                   ? RFC_ALPHA_STRAIGHT
+                                   : RFC_ALPHA_NONE;
+            geo_layout.width = geo.geometry_width;
+            geo_layout.height = geo.geometry_height;
+            geo_layout.bits_per_sample =
+                (geo.geometry_format == RFC_SAMPLE_GRAY16 ||
+                 geo.geometry_format == RFC_SAMPLE_RGB16 ||
+                 geo.geometry_format == RFC_SAMPLE_RGBA16)
+                    ? 16u
+                    : 8u;
+            if (rfc_layout_normalize_stride(&geo_layout, &geo_layout) !=
+                RFC_OK) {
+                geo_layout.stride_bytes = 0u;
+            }
+            if (geo_layout.stride_bytes > 0u) {
+                geo_spec = *spec;
+                geo_spec.source_layout = &geo_layout;
+                spec = &geo_spec;
+            }
         }
     }
     if (spec->io_sink) {
