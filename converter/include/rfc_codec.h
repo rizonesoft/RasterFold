@@ -323,6 +323,8 @@ typedef struct rfc_jpeg_transcode_adapter {
                                     const uint8_t *jpeg_bytes, size_t jpeg_size,
                                     struct rfc_jpeg_coeff_image **out_coeffs,
                                     rfc_metadata *out_meta);
+    /* Release an image read_coefficients returned, called with the same
+     * still-open session that produced it, before that session closes. */
     void (*free_coefficients)(void *session, const rfc_exec_context *exec,
                               struct rfc_jpeg_coeff_image *coeffs);
     /* Compare the ordered APPn/COM marker lists: identical when strip == 0;

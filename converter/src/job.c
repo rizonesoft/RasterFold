@@ -3353,27 +3353,30 @@ static rfc_status jpeg_coeff_verify(rfc_job *job, const rfc_exec_context *exec,
     rfc_bytes_hash_sha256(job->encoded_output.data, job->encoded_output.len,
                           rep->verified_hash);
     struct rfc_jpeg_coeff_image *img[2] = {NULL, NULL};
+    void *sess[2] = {NULL, NULL};
     rfc_metadata meta[2];
     memset(meta, 0, sizeof(meta));
     const uint8_t *in[2] = {src_bytes, job->encoded_output.data};
     size_t in_len[2] = {src_size, job->encoded_output.len};
     int strip = (meta_policy == RFC_META_POLICY_STRIP);
     rfc_status st = RFC_OK;
+    /* Each image is read by its own fresh session, and that session stays
+     * open until the adapter has released the image it produced. */
     for (int k = 0; k < 2 && st == RFC_OK; k++) {
-        void *sess = NULL;
-        st = jt->open_session(exec, &sess);
+        st = jt->open_session(exec, &sess[k]);
         if (st != RFC_OK) {
+            sess[k] = NULL;
             break;
         }
-        jtrans_set_active(job, jt, sess);
+        jtrans_set_active(job, jt, sess[k]);
         st = check_stage_abort(job);
         if (st == RFC_OK) {
-            st = jt->read_coefficients(sess, exec, in[k], in_len[k], &img[k],
+            st = jt->read_coefficients(sess[k], exec, in[k], in_len[k], &img[k],
                                        &meta[k]);
         }
         if (st == RFC_OK && k == 1) {
             const char *mdet = NULL;
-            st = jt->compare_markers(sess, exec, src_bytes, src_size, in[1],
+            st = jt->compare_markers(sess[k], exec, src_bytes, src_size, in[1],
                                      in_len[1], strip, &mdet);
             if (st == RFC_ERR_VERIFY_MISMATCH) {
                 rep->mismatch.kind = strip ? RFC_MISMATCH_METADATA_RETAINED
@@ -3385,7 +3388,6 @@ static rfc_status jpeg_coeff_verify(rfc_job *job, const rfc_exec_context *exec,
             }
         }
         jtrans_clear_active(job);
-        jt->close_session(sess);
     }
     if (st == RFC_OK) {
         st = rfc_verify_jpeg_coefficients(img[0], img[1], &rep->mismatch);
@@ -3403,8 +3405,14 @@ static rfc_status jpeg_coeff_verify(rfc_job *job, const rfc_exec_context *exec,
             *err_detail = "metadata policy verification failed";
         }
     }
-    jt->free_coefficients(NULL, exec, img[0]);
-    jt->free_coefficients(NULL, exec, img[1]);
+    for (int k = 0; k < 2; k++) {
+        if (sess[k]) {
+            if (img[k]) {
+                jt->free_coefficients(sess[k], exec, img[k]);
+            }
+            jt->close_session(sess[k]);
+        }
+    }
     rfc_registry_release_jpeg_transcode();
     rfc_metadata_free(&meta[0], exec->allocator);
     rfc_metadata_free(&meta[1], exec->allocator);

@@ -191,10 +191,12 @@ typedef struct rfc_job_spec {
     const struct rfc_io_sink *io_sink;
 } rfc_job_spec;
 
-/* Check a conversion's formats and settings exactly as submission does,
- * without creating a job. On refusal *out_reason (when not NULL) names the
- * cause in words, for example why a JPEG target is limited to lossless
- * optimization. Never allocates. */
+/* Check a conversion's formats and settings exactly as submission does for
+ * the built-in pipeline (a job spec without custom stage hooks), without
+ * creating a job. A spec with stage hooks is decided by submission itself.
+ * On refusal *out_reason (when not NULL) names the cause in words, for
+ * example why a JPEG target is limited to lossless optimization. Never
+ * allocates. */
 rfc_status rfc_job_validate_combination(rfc_format_id source_format,
                                         rfc_format_id target_format,
                                         const rfc_setting_value *settings,

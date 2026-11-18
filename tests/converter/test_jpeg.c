@@ -1337,6 +1337,98 @@ static void test_coefficient_optimization_and_markers(void) {
 /* 4. Jobs: defaults, delegation to JPEG XL, file safety                     */
 /* ------------------------------------------------------------------------ */
 
+/* Session-checking wrapper around the shipped transcode adapter: every image
+ * must be released through the live session that produced it. */
+typedef struct wrap_sess {
+    void *inner;
+} wrap_sess;
+
+static const rfc_jpeg_transcode_adapter *g_real_jt = NULL;
+static int g_wrap_violations = 0;
+static int g_wrap_frees = 0;
+static struct {
+    const void *img;
+    wrap_sess *sess;
+} g_owned[8];
+
+static rfc_status w_open(const rfc_exec_context *e, void **out) {
+    wrap_sess *w = (wrap_sess *)calloc(1u, sizeof(*w));
+    CHECK(w != NULL);
+    rfc_status st = g_real_jt->open_session(e, &w->inner);
+    if (st != RFC_OK) {
+        free(w);
+        return st;
+    }
+    *out = w;
+    return RFC_OK;
+}
+static void w_close(void *s) {
+    wrap_sess *w = (wrap_sess *)s;
+    for (int i = 0; i < 8; i++) {
+        if (g_owned[i].sess == w) {
+            g_wrap_violations++; /* closed before its image was released */
+            g_owned[i].sess = NULL;
+            g_owned[i].img = NULL;
+        }
+    }
+    g_real_jt->close_session(w->inner);
+    free(w);
+}
+static void w_cancel(void *s) {
+    g_real_jt->cancel_session(((wrap_sess *)s)->inner);
+}
+static rfc_status w_pre(void *s, const rfc_exec_context *e, const uint8_t *b,
+                        size_t n) {
+    return g_real_jt->preflight_optimize(((wrap_sess *)s)->inner, e, b, n);
+}
+static rfc_status w_opt(void *s, const rfc_exec_context *e, const uint8_t *b,
+                        size_t n, const rfc_setting_value *v, size_t vc,
+                        rfc_encoded *o) {
+    return g_real_jt->optimize_jpeg(((wrap_sess *)s)->inner, e, b, n, v, vc, o);
+}
+static rfc_status w_read(void *s, const rfc_exec_context *e, const uint8_t *b,
+                         size_t n, struct rfc_jpeg_coeff_image **c,
+                         rfc_metadata *m) {
+    rfc_status st = g_real_jt->read_coefficients(((wrap_sess *)s)->inner, e, b,
+                                                 n, c, m);
+    if (st == RFC_OK) {
+        int i = 0;
+        while (i < 8 && g_owned[i].img) i++;
+        CHECK(i < 8);
+        g_owned[i].img = *c;
+        g_owned[i].sess = (wrap_sess *)s;
+    }
+    return st;
+}
+static void w_free(void *s, const rfc_exec_context *e,
+                   struct rfc_jpeg_coeff_image *c) {
+    if (!c) {
+        return;
+    }
+    int found = 0;
+    for (int i = 0; i < 8; i++) {
+        if (g_owned[i].img == c) {
+            found = 1;
+            if (!s || g_owned[i].sess != (wrap_sess *)s) {
+                g_wrap_violations++; /* not the producing, still-open session */
+            }
+            g_owned[i].img = NULL;
+            g_owned[i].sess = NULL;
+        }
+    }
+    if (!found) {
+        g_wrap_violations++;
+    }
+    g_wrap_frees++;
+    g_real_jt->free_coefficients(s ? ((wrap_sess *)s)->inner : NULL, e, c);
+}
+static rfc_status w_cmp(void *s, const rfc_exec_context *e, const uint8_t *a,
+                        size_t an, const uint8_t *b, size_t bn, int strip,
+                        const char **d) {
+    return g_real_jt->compare_markers(((wrap_sess *)s)->inner, e, a, an, b, bn,
+                                      strip, d);
+}
+
 static void test_jobs_defaults_delegation_and_file_safety(void) {
     mk_opts o;
     mk_defaults(&o, 50u, 34u, 3);
@@ -1410,6 +1502,36 @@ static void test_jobs_defaults_delegation_and_file_safety(void) {
     CHECK(copy && cn == n && memcmp(copy, j, n) == 0);
     free(copy);
     remove(p_dst);
+
+    /* The engine releases every coefficient image through the live session
+     * that produced it (checked by a wrapper around the shipped adapter). */
+    {
+        const rfc_session_adapter *real_sa = rfc_registry_session_adapter(RFC_FORMAT_JPEG);
+        g_real_jt = rfc_registry_acquire_jpeg_transcode();
+        rfc_registry_release_jpeg_transcode();
+        CHECK(real_sa != NULL && g_real_jt != NULL);
+        static const rfc_jpeg_transcode_adapter wrap = {
+            RFC_CODEC_ABI_VERSION, w_open, w_close, w_cancel, w_pre,
+            w_opt, w_read, w_free, w_cmp};
+        CHECK(rfc_codecs_unregister_jpeg() == RFC_OK);
+        CHECK(rfc_registry_register_jpeg_pair(real_sa, &wrap) == RFC_OK);
+        g_wrap_violations = 0;
+        g_wrap_frees = 0;
+        char p_w[512];
+        make_temp_path(p_w, sizeof(p_w), "wrap_out.jpg");
+        for (int pol = 0; pol < 2; pol++) {
+            run_job(RFC_FORMAT_JPEG, RFC_FORMAT_JPEG, p_src, p_w, NULL,
+                    pol ? "strip" : "preserve", 0u, 0u, &r);
+            CHECK(r.state == RFC_JOB_SUCCEEDED);
+            remove(p_w);
+        }
+        CHECK(g_wrap_violations == 0 && g_wrap_frees == 4);
+        for (int i = 0; i < 8; i++) {
+            CHECK(g_owned[i].img == NULL);
+        }
+        CHECK(rfc_registry_unregister_jpeg_pair() == RFC_OK);
+        CHECK(rfc_codecs_register_jpeg() == RFC_OK);
+    }
 
     /* Original-byte reconstruction is delegated to the JPEG XL adapter. */
     run_job(RFC_FORMAT_JPEG, RFC_FORMAT_JPEG_XL, p_src, p_jxl,
