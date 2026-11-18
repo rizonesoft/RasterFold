@@ -425,24 +425,42 @@ static rfc_status adapter_decode(const uint8_t *b, size_t n, uint8_t **out_px,
     return r;
 }
 
+/* Coefficient images stay owned by the adapter session that produced them:
+ * read_coeffs keeps that session (and the adapter acquisition) open, and
+ * free_coeffs releases the image through free_coefficients on it before
+ * closing it, as rfc_codec.h requires. */
+typedef struct coeff_owner {
+    rfc_jpeg_coeff_image *img;
+    const rfc_jpeg_transcode_adapter *t;
+    void *sess;
+    rfc_exec_context exec;
+} coeff_owner;
+
+static coeff_owner g_coeff_owners[16];
+
 static rfc_status read_coeffs(const uint8_t *b, size_t n,
                               rfc_jpeg_coeff_image **out) {
-    rfc_exec_context exec;
+    int slot = 0;
+    while (slot < 16 && g_coeff_owners[slot].t) slot++;
+    CHECK(slot < 16);
+    coeff_owner *o = &g_coeff_owners[slot];
     tracked_alloc_state st;
     rfc_allocator al;
-    init_exec(&exec, &st, &al);
-    exec.allocator = NULL; /* stdlib */
-    const rfc_jpeg_transcode_adapter *t = rfc_registry_acquire_jpeg_transcode();
-    CHECK(t != NULL);
-    void *s = NULL;
-    CHECK(t->open_session(&exec, &s) == RFC_OK);
+    init_exec(&o->exec, &st, &al);
+    o->exec.allocator = NULL; /* the adapter's stdlib allocator */
+    o->t = rfc_registry_acquire_jpeg_transcode();
+    CHECK(o->t != NULL);
+    CHECK(o->t->open_session(&o->exec, &o->sess) == RFC_OK);
     rfc_metadata m;
-    rfc_status r = t->read_coefficients(s, &exec, b, n, out, &m);
+    rfc_status r = o->t->read_coefficients(o->sess, &o->exec, b, n, out, &m);
     if (r == RFC_OK) {
         rfc_metadata_free(&m, NULL);
+        o->img = *out;
+    } else {
+        o->t->close_session(o->sess);
+        rfc_registry_release_jpeg_transcode();
+        memset(o, 0, sizeof(*o));
     }
-    t->close_session(s);
-    rfc_registry_release_jpeg_transcode();
     return r;
 }
 
@@ -450,10 +468,25 @@ static void free_coeffs(rfc_jpeg_coeff_image *img) {
     if (!img) {
         return;
     }
-    for (int c = 0; c < 4; c++) {
-        free((void *)img->components[c].dct_blocks);
+    for (int i = 0; i < 16; i++) {
+        coeff_owner *o = &g_coeff_owners[i];
+        if (o->t && o->img == img) {
+            o->t->free_coefficients(o->sess, &o->exec, img);
+            o->t->close_session(o->sess);
+            rfc_registry_release_jpeg_transcode();
+            memset(o, 0, sizeof(*o));
+            return;
+        }
     }
-    free(img);
+    CHECK(!"free_coeffs: image not produced by read_coeffs");
+}
+
+static int coeff_owners_open(void) {
+    int n = 0;
+    for (int i = 0; i < 16; i++) {
+        n += g_coeff_owners[i].t != NULL;
+    }
+    return n;
 }
 
 static rfc_status coeffs_equal(const uint8_t *a, size_t an, const uint8_t *b,
@@ -2135,6 +2168,7 @@ int main(int argc, char **argv) {
     test_coefficient_optimization_and_markers();
     test_jobs_defaults_delegation_and_file_safety();
     test_refusals_errors_limits_and_cancel();
+    CHECK(coeff_owners_open() == 0); /* every image released through its session */
     CHECK(rfc_codecs_unregister_jpeg() == RFC_OK);
     printf("jpeg: all checks passed (%d checks)\n", g_checks);
     return 0;
