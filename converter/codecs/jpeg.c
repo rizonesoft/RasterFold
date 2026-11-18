@@ -1263,22 +1263,32 @@ static rfc_status jpg_compare_markers(void *session,
             }
         }
     } else {
-        /* The source's structural headers (the first JFIF APP0 and Adobe
-         * APP14; late ones were refused at IMPORT). */
+        /* Regenerated headers must sit before the output's first scan, and
+         * a source header after its first scan is never reproducible. */
+        if (si[0].late_structural > 0u || si[1].late_structural > 0u ||
+            si[1].header_jfif != si[0].header_jfif ||
+            si[1].header_adobe != si[0].header_adobe) {
+            free(si);
+            *detail = "metadata=strip structural headers are missing, extra, "
+                      "or placed after the first scan";
+            return RFC_ERR_VERIFY_MISMATCH;
+        }
+        /* The reference is the last JFIF and Adobe header before the first
+         * scan: libjpeg's examine_app0/app14 overwrite density and transform
+         * at each one, and jpeg_copy_critical_parameters copies that state. */
         const uint8_t *sj = NULL, *sa = NULL;
-        size_t sjl = 0u, sal = 0u;
-        while (rfc_jpeg_next_app_segment(src, src_size, &ps, &ms, &as, &ls)) {
-            if (!sj && ms == 0xE0u && ls >= 14u && memcmp(as, "JFIF\x00", 5) == 0) {
+        for (uint32_t n = 0u;
+             rfc_jpeg_next_app_segment(src, src_size, &ps, &ms, &as, &ls); n++) {
+            if ((n & 255u) == 255u && jpg_is_cancelled(session, exec)) {
+                free(si);
+                return RFC_ERR_CANCELLED;
+            }
+            if (ms == 0xE0u && ls >= 14u && memcmp(as, "JFIF\x00", 5) == 0) {
                 sj = as;
-                sjl = ls;
-            } else if (!sa && ms == 0xEEu && ls >= 12u &&
-                       memcmp(as, "Adobe", 5) == 0) {
+            } else if (ms == 0xEEu && ls >= 12u && memcmp(as, "Adobe", 5) == 0) {
                 sa = as;
-                sal = ls;
             }
         }
-        (void)sjl;
-        (void)sal;
         uint32_t jfif = 0u, adobe = 0u;
         while (rfc_jpeg_next_app_segment(dst, dst_size, &pd, &md, &ad, &ld)) {
             if (jpg_is_fresh_jfif(md, ad, ld) && si[0].header_jfif && sj &&
@@ -1319,7 +1329,8 @@ static rfc_status jpg_compare_markers(void *session,
         }
     }
     free(si);
-    return RFC_OK;
+    /* A cancellation during the walks never ends in a success verdict. */
+    return jpg_is_cancelled(session, exec) ? RFC_ERR_CANCELLED : RFC_OK;
 }
 
 /* ------------------------------------------------------------------------ */

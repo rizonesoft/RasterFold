@@ -1265,11 +1265,52 @@ static void test_coefficient_optimization_and_markers(void) {
               RFC_ERR_VERIFY_MISMATCH);
         CHECK(t->compare_markers(ss, &exec, j, n, dens, st_n, 1, &det) ==
               RFC_ERR_VERIFY_MISMATCH);
+        /* The same JFIF moved after the scan (just before EOI) fails. */
+        uint8_t *late = (uint8_t *)malloc(st_n);
+        CHECK(late != NULL);
+        size_t body = st_n - seg - 2u; /* bytes without the APP0 and EOI */
+        memcpy(late, nojfif, body);
+        memcpy(late + body, st_out + a0, seg);
+        late[body + seg] = 0xFFu;
+        late[body + seg + 1u] = 0xD9u;
+        CHECK(t->compare_markers(ss, &exec, j, n, late, st_n, 1, &det) ==
+              RFC_ERR_VERIFY_MISMATCH);
+        free(late);
+        t->cancel_session(ss);
+        CHECK(t->compare_markers(ss, &exec, j, n, st_out, st_n, 1, &det) ==
+              RFC_ERR_CANCELLED);
         t->close_session(ss);
         rfc_registry_release_jpeg_transcode();
         free(nojfif);
         free(dens);
         free(st_out);
+        free(j);
+    }
+
+    /* Two JFIF headers before the scan: libjpeg keeps the last density, and
+     * strip regenerates and verifies that one. */
+    {
+        mk_defaults(&o, 24u, 24u, 3);
+        j = make_jpeg(&o, &n); /* writes JFIF density 1:1, units 0 */
+        uint8_t jf2[14];
+        memcpy(jf2, "JFIF\0", 5);
+        jf2[5] = 1; jf2[6] = 2; jf2[7] = 1;
+        jf2[8] = 0; jf2[9] = 150; jf2[10] = 0; jf2[11] = 150;
+        jf2[12] = 0; jf2[13] = 0;
+        size_t a0 = find_marker(j, n, 0xE0u, 0);
+        size_t seg0 = 2u + (((size_t)j[a0 + 2u] << 8) | j[a0 + 3u]);
+        uint8_t ins[18] = {0xFFu, 0xE0u, 0u, 16u};
+        memcpy(ins + 4, jf2, sizeof(jf2));
+        size_t xn = 0u;
+        uint8_t *x = splice(j, n, a0 + seg0, ins, sizeof(ins), &xn);
+        uint8_t *out = NULL;
+        size_t out_n = 0u;
+        opt_job_roundtrip(x, xn, "strip", 0, "twojfif.jpg", &out, &out_n);
+        size_t b0 = find_marker(out, out_n, 0xE0u, 0);
+        CHECK(b0 > 0u && out[b0 + 4u + 7u] == 1u && out[b0 + 4u + 9u] == 150u &&
+              out[b0 + 4u + 11u] == 150u);
+        free(out);
+        free(x);
         free(j);
     }
 
