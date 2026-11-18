@@ -1103,8 +1103,8 @@ static rfc_status gif_prescan(const void *session, const rfc_exec_context *exec,
                     return RFC_ERR_TRUNCATED_INPUT;
                 }
                 ext_bytes += n;
-                if (limits->max_metadata_bytes > 0u &&
-                    ext_bytes > (uint64_t)limits->max_metadata_bytes) {
+                /* the limit applies as written, 0 included */
+                if (ext_bytes > (uint64_t)limits->max_metadata_bytes) {
                     return RFC_ERR_LIMIT_EXCEEDED;
                 }
                 if (label == 0xF9u) {

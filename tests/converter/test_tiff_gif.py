@@ -126,18 +126,18 @@ class TiffGifAdapterBase(unittest.TestCase):
 
     def test_tiff_independent_oracle_matrix(self) -> None:
         n = 0
-        # The pinned libtiff writer: every compression, layout and depth.
-        for comp in ("none", "packbits", "lzw", "deflate"):
-            for spp in (1, 3, 4):
-                for bps in (8, 16):
-                    for tiled in (0, 1):
-                        for sep in (0, 1):
-                            pred = 2 if comp in ("lzw", "deflate") and not sep else 1
-                            p = self.work_dir() / f"mk_{comp}_{spp}_{bps}_{tiled}_{sep}.tif"
-                            self.cli_ok(["cli", "make-tiff", self.to_exe_path(p), "45", "27", str(spp), str(bps),
-                                         str(COMP[comp]), str(pred), str(tiled), str(sep)])
-                            self.assert_matches_tiff_oracle(p, p.stem)
-                            n += 1
+        # The pinned libtiff writer: every compression, layout and depth,
+        # written and decoded by the adapter in one process (one round trip
+        # on Windows), each decode checked against the independent oracle.
+        mdir = self.work_dir() / "matrix"
+        mdir.mkdir(exist_ok=True)
+        kv = self.cli_ok(["cli", "make-matrix", self.to_exe_path(mdir)], timeout=180.0)
+        self.assertEqual(kv["MADE"], "96")
+        for tif in sorted(mdir.glob("mk_*.tif")):
+            ref = _tg.decode_tiff(tif.read_bytes())
+            self.assertEqual(tif.with_suffix(".raw").read_bytes(), ref["pixels"], tif.name)
+            COVERAGE.append((tif.stem, "independent"))
+            n += 1
         # Pillow's writer (a different encoder of the same format).
         for mode in ("L", "RGB", "RGBA"):
             for comp in ("raw", "packbits", "tiff_lzw", "tiff_adobe_deflate"):

@@ -594,9 +594,12 @@ void rfc_job_internal_finish_publish(rfc_job *job,
 void rfc_job_internal_note_partial_bytes(rfc_job *job, int64_t delta_bytes);
 
 /* Frame geometry the sniff read cheaply (PNG IHDR, JPEG SOF, TIFF first
- * IFD, GIF screen and first image), so the scheduler can size a job before
- * IMPORT. format is the sample format the adapter decodes the header to.
- * Internal: the public rfc_sniff_result keeps its layout. */
+ * IFD, GIF screen), so the scheduler can size a job before IMPORT. format
+ * is a lower bound of the layout the adapter decodes to (exact for PNG
+ * gray/rgb/rgba, JPEG and TIFF; rgb8 for GIF), so admission never refuses
+ * what the adapter accepts; the adapter enforces the exact layout and the
+ * memory contracts are sized from this bound. Internal: the public
+ * rfc_sniff_result keeps its layout. */
 typedef struct rfc_sniff_geometry {
     int has_geometry;
     uint32_t width;

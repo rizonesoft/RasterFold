@@ -815,39 +815,14 @@ static void sniff_tiff_geometry(const seek_stream *ss, const uint8_t *b,
     geo->has_geometry = 1;
 }
 
-/* Byte-wise reads through a 64 KiB window, so walking many small GIF
- * sub-blocks costs one positional read per window, not per block. */
-typedef struct gif_win {
-    const seek_stream *ss;
-    uint64_t base;
-    size_t len;
-    uint8_t buf[65536];
-} gif_win;
-
-static int gif_win_byte(gif_win *w, uint64_t pos, uint8_t *out) {
-    if (pos < w->base || pos >= w->base + w->len) {
-        size_t got = 0u;
-        if (w->ss->read_at(w->ss->ctx, pos, w->buf, sizeof(w->buf), &got) !=
-                RFC_OK ||
-            got == 0u) {
-            return 0;
-        }
-        w->base = pos;
-        w->len = got;
-    }
-    *out = w->buf[pos - w->base];
-    return 1;
-}
-
-/* GIF: the logical screen and the layout the GIF adapter decodes it to,
- * found by walking the extensions to the first image descriptor within the
- * adapter's own bounds (64 extensions, extension payload up to the default
- * metadata limit): rgba8 when a Graphics Control Extension declares a
- * transparent index inside the active colour table, otherwise rgb8. A file
- * beyond those bounds is one the adapter refuses, so no geometry is given. */
-static void sniff_gif_geometry(const seek_stream *ss, const uint8_t *b,
-                               size_t len, rfc_sniff_geometry *geo) {
-    if (len < 13u) {
+/* GIF: the logical screen. The submit sniff gives a lower bound of the
+ * decoded layout (rgb8; the adapter decodes rgba8 when a transparent index
+ * applies), so admission can never refuse what the adapter would accept:
+ * the adapter enforces the exact layout, and the GIF memory contract is
+ * sized from this bound. */
+static void sniff_gif_geometry(const uint8_t *b, size_t len,
+                               rfc_sniff_geometry *geo) {
+    if (len < 10u) {
         return;
     }
     uint32_t w = (uint32_t)b[6] | ((uint32_t)b[7] << 8);
@@ -855,81 +830,15 @@ static void sniff_gif_geometry(const seek_stream *ss, const uint8_t *b,
     if (w == 0u || h == 0u) {
         return;
     }
-    gif_win *win = (gif_win *)malloc(sizeof(gif_win));
-    if (!win) {
-        return;
-    }
-    win->ss = ss;
-    win->base = 0u;
-    win->len = 0u;
-    uint32_t colors = (b[10] & 0x80u) ? (2u << (b[10] & 7u)) : 0u;
-    uint64_t pos = 13u + 3u * (uint64_t)colors;
-    int has_t = 0;
-    uint32_t t_index = 0u;
-    uint64_t ext_bytes = 0u;
-    for (uint32_t ext = 0u; ext <= 64u; ext++) {
-        uint8_t c = 0u;
-        if (!gif_win_byte(win, pos, &c)) {
-            break;
-        }
-        if (c == 0x2Cu) {
-            uint8_t fl = 0u;
-            if (!gif_win_byte(win, pos + 9u, &fl)) {
-                break;
-            }
-            if (fl & 0x80u) {
-                colors = 2u << (fl & 7u);
-            }
-            geo->width = w;
-            geo->height = h;
-            geo->format = (has_t && t_index < colors) ? RFC_SAMPLE_RGBA8
-                                                      : RFC_SAMPLE_RGB8;
-            geo->has_geometry = 1;
-            break;
-        }
-        uint8_t label = 0u;
-        if (c != 0x21u || !gif_win_byte(win, pos + 1u, &label)) {
-            break;
-        }
-        pos += 2u;
-        int ok = 1;
-        for (int first = 1;; first = 0) {
-            uint8_t n = 0u;
-            if (!gif_win_byte(win, pos, &n)) {
-                ok = 0;
-                break;
-            }
-            if (n == 0u) {
-                pos += 1u;
-                break;
-            }
-            ext_bytes += n;
-            if (ext_bytes > (uint64_t)RFC_MAX_ICC_BYTES) {
-                ok = 0;
-                break;
-            }
-            if (label == 0xF9u && first && n == 4u) {
-                uint8_t fb = 0u, ti = 0u;
-                if (!gif_win_byte(win, pos + 1u, &fb) ||
-                    !gif_win_byte(win, pos + 4u, &ti)) {
-                    ok = 0;
-                    break;
-                }
-                has_t = (fb & 1u) != 0u;
-                t_index = ti;
-            }
-            pos += 1u + (uint64_t)n;
-        }
-        if (!ok) {
-            break;
-        }
-    }
-    free(win);
+    geo->width = w;
+    geo->height = h;
+    geo->format = RFC_SAMPLE_RGB8;
+    geo->has_geometry = 1;
 }
 
 /* PNG: the IHDR (always the first chunk) gives the decoded layout for the
- * colour types the PNG adapter decodes; palette and gray-alpha images are
- * sized as rgba at their depth (the larger layout). */
+ * colour types the PNG adapter decodes; palette and gray-alpha images give
+ * a lower bound (rgb and gray at their depth), like every sniffed layout. */
 static void sniff_png_geometry(const uint8_t *b, size_t len,
                                rfc_sniff_geometry *geo) {
     if (len < 26u || memcmp(b + 12, "IHDR", 4) != 0) {
@@ -948,7 +857,11 @@ static void sniff_png_geometry(const uint8_t *b, size_t len,
         f = wide ? RFC_SAMPLE_GRAY16 : RFC_SAMPLE_GRAY8;
     } else if (ct == 2u) {
         f = wide ? RFC_SAMPLE_RGB16 : RFC_SAMPLE_RGB8;
-    } else if (ct == 3u || ct == 4u || ct == 6u) {
+    } else if (ct == 3u) {
+        f = wide ? RFC_SAMPLE_RGB16 : RFC_SAMPLE_RGB8;
+    } else if (ct == 4u) {
+        f = wide ? RFC_SAMPLE_GRAY16 : RFC_SAMPLE_GRAY8;
+    } else if (ct == 6u) {
         f = wide ? RFC_SAMPLE_RGBA16 : RFC_SAMPLE_RGBA8;
     } else {
         return;
@@ -1063,7 +976,7 @@ static rfc_format_id sniff_stream_core(const seek_stream *ss,
     else if (len >= 6u &&
              (memcmp(b, "GIF87a", 6) == 0 || memcmp(b, "GIF89a", 6) == 0)) {
         detected = RFC_FORMAT_GIF;
-        sniff_gif_geometry(ss, b, len, geo);
+        sniff_gif_geometry(b, len, geo);
     }
     /* 11. QOI */
     else if (len >= 4u && memcmp(b, "qoif", 4) == 0) {

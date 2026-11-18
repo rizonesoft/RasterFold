@@ -1648,82 +1648,115 @@ static void test_completion_gaps(void) {
         remove(path);
         free(b);
     }
-    /* 2. Submission enforces the decoded-byte limit on the layout a GIF
-     * actually decodes to: an opaque 40x30 GIF (rgb8, 3,600 bytes) is
-     * admitted at exactly 3,600, refused at submit at 3,599, and a
-     * transparent one (rgba8, 4,800 bytes) is refused at 3,600. */
-    for (int tr = 0; tr < 2; tr++) {
-        gmk g;
-        gmk_defaults(&g, 40u, 30u);
-        g.transparent = tr ? 2 : -1;
-        uint8_t *gb = make_gif(&g, &n);
-        temp_path(p_src, sizeof(p_src), "lim.gif");
-        temp_path(p_dst, sizeof(p_dst), "lim_out.gif");
-        CHECK(write_file_all(p_src, gb, n));
-        rfc_limits lim;
-        rfc_limits_default(&lim);
-        lim.max_decoded_bytes = 40u * 30u * 3u;
-        run_job_full(RFC_FORMAT_GIF, RFC_FORMAT_GIF, p_src, NULL, 0u, p_dst, NULL, NULL, NULL, &lim, 0u, &r);
-        if (tr) {
-            CHECK(r.submit == RFC_ERR_LIMIT_EXCEEDED && !file_exists(p_dst));
-        } else {
+    /* 2. Class regression: submission never refuses what the adapter
+     * accepts. Each fixture is admitted with max_decoded_bytes at exactly
+     * its decoded size and refused one byte below (at submit, or at IMPORT
+     * for a GIF whose transparency the screen does not show); a format whose
+     * sniffed geometry is exact is also refused at submit one byte below and
+     * one pixel narrower or shorter, which pins width, height and layout. */
+    {
+        typedef struct fx {
+            const char *name, *ext;
+            rfc_format_id fmt;
+            int exact; /* sniffed geometry equals the decoded layout */
+        } fx;
+        static const fx fxs[] = {
+            {"gif opaque", "gif", RFC_FORMAT_GIF, 0},
+            {"gif transparent", "gif", RFC_FORMAT_GIF, 0},
+            {"gif 10000-block comment", "gif", RFC_FORMAT_GIF, 0},
+            {"png rgb8", "png", RFC_FORMAT_PNG, 1},
+            {"png rgba8", "png", RFC_FORMAT_PNG, 1},
+            {"png gray16", "png", RFC_FORMAT_PNG, 1},
+            {"tiff rgb16", "tif", RFC_FORMAT_TIFF, 1},
+            {"tiff rgba8 tiled", "tif", RFC_FORMAT_TIFF, 1},
+            {"bigtiff rgb16", "tif", RFC_FORMAT_TIFF, 1},
+        };
+        for (size_t k = 0u; k < sizeof(fxs) / sizeof(fxs[0]); k++) {
+            uint8_t *b = NULL;
+            uint32_t w = 29u, h = 13u;
+            if (fxs[k].fmt == RFC_FORMAT_GIF) {
+                gmk g;
+                gmk_defaults(&g, w, h);
+                if (k == 1u) g.transparent = 2;
+                if (k == 2u) g.comment_blocks = 10000u;
+                b = make_gif(&g, &n);
+            } else if (fxs[k].fmt == RFC_FORMAT_PNG) {
+                rfc_sample_format f = k == 3u ? RFC_SAMPLE_RGB8 : k == 4u ? RFC_SAMPLE_RGBA8 : RFC_SAMPLE_GRAY16;
+                rfc_layout lay = {f, f == RFC_SAMPLE_RGBA8 ? RFC_ALPHA_STRAIGHT : RFC_ALPHA_NONE, w, h, 0u,
+                                  f == RFC_SAMPLE_GRAY16 ? 16u : 8u};
+                size_t bytes = (size_t)w * h * rfc_sample_bytes(f);
+                uint8_t *px = (uint8_t *)malloc(bytes);
+                CHECK(px != NULL);
+                for (size_t i = 0u; i < bytes; i++) px[i] = (uint8_t)(i * 37u + 11u);
+                if (f == RFC_SAMPLE_RGBA8) for (size_t i = 3u; i < bytes; i += 4u) px[i] = 255u;
+                temp_path(p_src, sizeof(p_src), "cls.png");
+                png_file(p_src, &lay, px);
+                b = read_file_all(p_src, &n);
+                remove(p_src);
+                free(px);
+            } else {
+                tmk m;
+                tmk_defaults(&m, w, h, k == 7u ? 4u : 3u, k == 7u ? 8u : 16u);
+                m.tiled = k == 7u;
+                m.bigtiff = k == 8u;
+                m.compression = COMPRESSION_ADOBE_DEFLATE;
+                b = make_tiff(&m, &n);
+            }
+            CHECK(b != NULL);
+            rfc_frame info;
+            CHECK(adapter_decode(fxs[k].fmt, b, n, NULL, NULL, &info, NULL) == RFC_OK);
+            uint64_t dbytes = (uint64_t)info.layout.width * info.layout.height *
+                              rfc_sample_bytes(info.layout.format);
+            char ext_name[32];
+            snprintf(ext_name, sizeof(ext_name), "cls_%zu.%s", k, fxs[k].ext);
+            temp_path(p_src, sizeof(p_src), ext_name);
+            snprintf(ext_name, sizeof(ext_name), "cls_%zu_out.%s", k, fxs[k].ext);
+            temp_path(p_dst, sizeof(p_dst), ext_name);
+            CHECK(write_file_all(p_src, b, n));
+            rfc_limits lim;
+            rfc_limits_default(&lim);
+            lim.max_decoded_bytes = dbytes;
+            run_job_full(fxs[k].fmt, fxs[k].fmt, p_src, NULL, 0u, p_dst, NULL, NULL, NULL, &lim, 0u, &r);
+            if (r.submit != RFC_OK || r.state != RFC_JOB_SUCCEEDED) {
+                fprintf(stderr, "class %s at %llu bytes\n", fxs[k].name, (unsigned long long)dbytes);
+            }
             CHECK_JOB_OK(r);
             remove(p_dst);
-            lim.max_decoded_bytes -= 1u;
-            run_job_full(RFC_FORMAT_GIF, RFC_FORMAT_GIF, p_src, NULL, 0u, p_dst, NULL, NULL, NULL, &lim, 0u, &r);
-            CHECK(r.submit == RFC_ERR_LIMIT_EXCEEDED && !file_exists(p_dst));
+            lim.max_decoded_bytes = dbytes - 1u;
+            run_job_full(fxs[k].fmt, fxs[k].fmt, p_src, NULL, 0u, p_dst, NULL, NULL, NULL, &lim, 0u, &r);
+            CHECK((r.submit == RFC_ERR_LIMIT_EXCEEDED ||
+                   (r.submit == RFC_OK && r.status == RFC_ERR_LIMIT_EXCEEDED)) &&
+                  !file_exists(p_dst));
+            if (fxs[k].exact) {
+                CHECK(r.submit == RFC_ERR_LIMIT_EXCEEDED);
+                rfc_limits_default(&lim);
+                lim.max_width = w - 1u;
+                run_job_full(fxs[k].fmt, fxs[k].fmt, p_src, NULL, 0u, p_dst, NULL, NULL, NULL, &lim, 0u, &r);
+                CHECK(r.submit == RFC_ERR_LIMIT_EXCEEDED);
+                rfc_limits_default(&lim);
+                lim.max_height = h - 1u;
+                run_job_full(fxs[k].fmt, fxs[k].fmt, p_src, NULL, 0u, p_dst, NULL, NULL, NULL, &lim, 0u, &r);
+                CHECK(r.submit == RFC_ERR_LIMIT_EXCEEDED);
+            }
+            remove(p_src);
+            free(b);
         }
-        remove(p_src);
-        free(gb);
     }
-    /* 2b. The sniff walks extensions within the adapter's bounds: a comment
-     * of 10,000 one-byte sub-blocks still gives the exact rgb8 geometry
-     * (admitted at exactly 3,600 decoded bytes, refused at 3,599). */
+    /* 2b. max_metadata_bytes applies as written, 0 included: a GIF with a
+     * comment is refused under 0, one with no extension decodes. */
     {
+        rfc_limits lim;
+        rfc_limits_default(&lim);
+        lim.max_metadata_bytes = 0u;
         gmk g;
-        gmk_defaults(&g, 40u, 30u);
-        g.comment_blocks = 10000u;
+        gmk_defaults(&g, 8u, 8u);
         uint8_t *gb = make_gif(&g, &n);
-        CHECK(adapter_decode(RFC_FORMAT_GIF, gb, n, NULL, NULL, NULL, NULL) == RFC_OK);
-        temp_path(p_src, sizeof(p_src), "cmt.gif");
-        temp_path(p_dst, sizeof(p_dst), "cmt_out.png");
-        CHECK(write_file_all(p_src, gb, n));
-        run_job(RFC_FORMAT_GIF, RFC_FORMAT_PNG, p_src, p_dst, NULL, NULL, &r);
-        CHECK_JOB_OK(r);
-        remove(p_dst);
-        rfc_limits lim;
-        rfc_limits_default(&lim);
-        lim.max_decoded_bytes = 40u * 30u * 3u;
-        run_job_full(RFC_FORMAT_GIF, RFC_FORMAT_PNG, p_src, NULL, 0u, p_dst, NULL, NULL, NULL, &lim, 0u, &r);
-        CHECK_JOB_OK(r);
-        remove(p_dst);
-        lim.max_decoded_bytes -= 1u;
-        run_job_full(RFC_FORMAT_GIF, RFC_FORMAT_PNG, p_src, NULL, 0u, p_dst, NULL, NULL, NULL, &lim, 0u, &r);
-        CHECK(r.submit == RFC_ERR_LIMIT_EXCEEDED);
-        remove(p_src);
+        CHECK(adapter_decode(RFC_FORMAT_GIF, gb, n, &lim, NULL, NULL, NULL) == RFC_OK);
         free(gb);
-    }
-    /* 2c. BigTIFF geometry is exact: a 29x13 rgb16 file is admitted at
-     * exactly 2,262 decoded bytes and refused at submit at 2,261. */
-    {
-        tmk m;
-        tmk_defaults(&m, 29u, 13u, 3u, 16u);
-        m.bigtiff = 1;
-        uint8_t *b = make_tiff(&m, &n);
-        temp_path(p_src, sizeof(p_src), "b8x.tif");
-        temp_path(p_dst, sizeof(p_dst), "b8x_out.tif");
-        CHECK(write_file_all(p_src, b, n));
-        rfc_limits lim;
-        rfc_limits_default(&lim);
-        lim.max_decoded_bytes = 29u * 13u * 6u;
-        run_job_full(RFC_FORMAT_TIFF, RFC_FORMAT_TIFF, p_src, NULL, 0u, p_dst, NULL, NULL, NULL, &lim, 0u, &r);
-        CHECK_JOB_OK(r);
-        remove(p_dst);
-        lim.max_decoded_bytes -= 1u;
-        run_job_full(RFC_FORMAT_TIFF, RFC_FORMAT_TIFF, p_src, NULL, 0u, p_dst, NULL, NULL, NULL, &lim, 0u, &r);
-        CHECK(r.submit == RFC_ERR_LIMIT_EXCEEDED && !file_exists(p_dst));
-        remove(p_src);
-        free(b);
+        g.comment_blocks = 3u;
+        gb = make_gif(&g, &n);
+        CHECK(adapter_decode(RFC_FORMAT_GIF, gb, n, &lim, NULL, NULL, NULL) == RFC_ERR_LIMIT_EXCEEDED);
+        free(gb);
     }
     /* 3. A small TIFF with a 10 MiB XMP packet converts to JPEG XL and AVIF
      * with default settings (the TIFF terms in both admission paths). */
@@ -1903,6 +1936,47 @@ static int cli_main(int argc, char **argv) {
                (unsigned)r.failing,
                (unsigned long long)r.budget_limit, (unsigned long long)r.budget_peak);
         return (r.submit == RFC_OK && r.state == RFC_JOB_SUCCEEDED) ? 0 : 2;
+    }
+    if (strcmp(sub, "make-matrix") == 0 && argc == 4) {
+        /* make-matrix <dir>: every compression x spp x depth x tiling x
+         * planar fixture written as <dir>/mk_<c>_<spp>_<bps>_<t>_<p>.tif with
+         * its adapter decode as the matching .raw, in one process. */
+        static const uint16_t comps[4] = {COMPRESSION_NONE, COMPRESSION_PACKBITS,
+                                          COMPRESSION_LZW, COMPRESSION_ADOBE_DEFLATE};
+        static const uint16_t spps[3] = {1u, 3u, 4u};
+        int made = 0;
+        for (int ci = 0; ci < 4; ci++)
+            for (int si = 0; si < 3; si++)
+                for (uint16_t bps = 8u; bps <= 16u; bps = (uint16_t)(bps + 8u))
+                    for (int tiled = 0; tiled < 2; tiled++)
+                        for (int sep = 0; sep < 2; sep++) {
+                            tmk m;
+                            tmk_defaults(&m, 45u, 27u, spps[si], bps);
+                            m.compression = comps[ci];
+                            m.tiled = tiled;
+                            m.planar = sep ? PLANARCONFIG_SEPARATE : PLANARCONFIG_CONTIG;
+                            m.predictor = (comps[ci] == COMPRESSION_LZW ||
+                                           comps[ci] == COMPRESSION_ADOBE_DEFLATE) && !sep ? 2u : 1u;
+                            size_t n = 0u;
+                            uint8_t *b = make_tiff(&m, &n);
+                            char path[1024];
+                            snprintf(path, sizeof(path), "%s/mk_%u_%u_%u_%d_%d.tif", argv[3],
+                                     (unsigned)comps[ci], (unsigned)spps[si], (unsigned)bps, tiled, sep);
+                            CHECK(write_file_all(path, b, n));
+                            uint8_t *px = NULL;
+                            rfc_frame info;
+                            CHECK(adapter_decode(RFC_FORMAT_TIFF, b, n, NULL, NULL, &info, &px) == RFC_OK);
+                            size_t len = (size_t)info.layout.width * info.layout.height *
+                                         rfc_sample_bytes(info.layout.format);
+                            path[strlen(path) - 3] = '\0';
+                            strcat(path, "raw");
+                            CHECK(write_file_all(path, px, len));
+                            free(px);
+                            free(b);
+                            made++;
+                        }
+        printf("STATUS=ok MADE=%d\n", made);
+        return 0;
     }
     if (strcmp(sub, "make-tiff") == 0 && (argc == 12 || argc == 13)) {
         /* make-tiff <out> <w> <h> <spp> <bps> <compression> <predictor> <tiled> <separate> [photometric] */
