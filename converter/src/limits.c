@@ -442,9 +442,11 @@ rfc_status rfc_query_provider_memory_contract(rfc_format_id id,
             out->limitation_reason =
                 "libtiff allocations are capped per handle by "
                 "TIFFOpenOptionsSetMaxCumulatedMemAlloc (8 MiB plus twice the "
-                "source when reading, 8 MiB plus two strips when writing) and "
-                "that cap is reserved through rfc_budget_reserve; frames, "
-                "strip buffers and the output go through the job allocator";
+                "source when reading, 8 MiB plus twice a strip and the carried "
+                "ICC and XMP when writing) and that cap is reserved through "
+                "rfc_budget_reserve, with the scheduler adding terms "
+                "proportional to the source; frames, strip buffers and the "
+                "output go through the job allocator";
             break;
         case RFC_FORMAT_GIF:
             out->mode = RFC_MEM_RESERVATION_AND_LIMITS;

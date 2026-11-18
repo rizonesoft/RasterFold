@@ -3718,6 +3718,51 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
         goto finish;
     }
 
+    /* A pixel-exact conversion whose decoded metadata the target cannot
+     * carry (and the caller did not acknowledge) is refused here, before
+     * ENCODE spends its work; the report is the one VERIFY would publish. */
+    if (job->stage_ops.on_encode == NULL && job->stage_ops.on_verify == NULL &&
+        job->decoded_frames && job->decoded_frame_count > 0u) {
+        rfc_exactness_class pre_ex = RFC_EXACT_PIXEL_EXACT;
+        rfc_metadata_policy pre_pol = RFC_META_POLICY_PRESERVE;
+        if (parse_job_verify_settings(job, settings, setting_count, &pre_ex,
+                                      &pre_pol) == RFC_OK &&
+            pre_ex == RFC_EXACT_PIXEL_EXACT) {
+            const rfc_metadata *pre_meta =
+                job->has_decoded_meta
+                    ? &job->decoded_meta
+                    : (job->inputs && job->inputs->has_meta
+                           ? &job->inputs->source_meta
+                           : NULL);
+            rfc_verify_report pre_rep;
+            memset(&pre_rep, 0, sizeof(pre_rep));
+            rfc_status pst = rfc_metadata_check_source_preflight(
+                job->target_format, pre_pol, RFC_EXACT_PIXEL_EXACT, pre_meta,
+                job->decoded_frames, job->decoded_frame_count,
+                rfc_job_acknowledged_metadata(job), &pre_rep.metadata);
+            if (pst == RFC_ERR_METADATA_POLICY) {
+                pre_rep.exactness = RFC_EXACT_PIXEL_EXACT;
+                copy_verify_detail(pre_rep.decoder_provenance,
+                                   sizeof(pre_rep.decoder_provenance),
+                                   "same-provider-fresh-session");
+                (void)rfc_frames_hash_sha256(job->decoded_frames,
+                                             job->decoded_frame_count,
+                                             pre_rep.source_hash);
+                pre_rep.mismatch.kind = RFC_MISMATCH_METADATA_UNSUPPORTED;
+                copy_verify_detail(pre_rep.mismatch.detail,
+                                   sizeof(pre_rep.mismatch.detail),
+                                   pre_rep.metadata.detail);
+                pre_rep.meta_outcome = pre_rep.metadata.outcome;
+                pre_rep.status = pst;
+                pre_rep.valid = 1;
+                store_job_verify_report(job, &pre_rep);
+                err_detail = "unacknowledged unsupported metadata";
+                st = pst;
+                goto finish;
+            }
+        }
+    }
+
     /* Stage 2: ENCODE */
     stage_at = RFC_STAGE_ENCODE;
     st = rfc_job_advance_stage(job, job->job_id, RFC_STAGE_IMPORT,

@@ -681,8 +681,17 @@ static void sniff_jpeg_geometry(const seek_stream *ss,
                 sg < 6u + 3u * (size_t)nc) {
                 return;
             }
-            out_result->geometry_height = ((uint32_t)sof[1] << 8) | sof[2];
-            out_result->geometry_width = ((uint32_t)sof[3] << 8) | sof[4];
+            out_result->jpeg_height = ((uint32_t)sof[1] << 8) | sof[2];
+            out_result->jpeg_width = ((uint32_t)sof[3] << 8) | sof[4];
+            out_result->jpeg_components = nc;
+            for (uint32_t c = 0u; c < nc; c++) {
+                out_result->jpeg_h_samp[c] = (uint8_t)(sof[7u + 3u * c] >> 4);
+                out_result->jpeg_v_samp[c] = (uint8_t)(sof[7u + 3u * c] & 15u);
+            }
+            out_result->has_jpeg_geometry =
+                out_result->jpeg_width > 0u && out_result->jpeg_height > 0u;
+            out_result->geometry_height = out_result->jpeg_height;
+            out_result->geometry_width = out_result->jpeg_width;
             if (nc == 1u || nc == 3u) {
                 out_result->geometry_format =
                     nc == 1u ? RFC_SAMPLE_GRAY8 : RFC_SAMPLE_RGB8;
@@ -698,51 +707,69 @@ static void sniff_jpeg_geometry(const seek_stream *ss,
 /* TIFF: ImageWidth, ImageLength, SamplesPerPixel, BitsPerSample and
  * ExtraSamples of the first IFD by positional reads (classic TIFF only, at
  * most 4096 entries); unknown or unsupported layouts leave no geometry. */
+static uint64_t tiff_rd(const uint8_t *p, unsigned n, int le) {
+    uint64_t v = 0u;
+    for (unsigned i = 0u; i < n; i++) {
+        unsigned k = le ? n - 1u - i : i;
+        v = (v << 8) | p[k];
+    }
+    return v;
+}
+
+/* TIFF and BigTIFF: the first IFD's ImageWidth, ImageLength,
+ * SamplesPerPixel, BitsPerSample and ExtraSamples, read with bounded
+ * positional reads (at most 4,096 entries). */
 static void sniff_tiff_geometry(const seek_stream *ss, const uint8_t *b,
                                 size_t len, rfc_sniff_result *out_result) {
     if (len < 8u) {
         return;
     }
     int le = (b[0] == 'I');
-    uint16_t magic = le ? (uint16_t)(b[2] | (b[3] << 8))
-                        : (uint16_t)((b[2] << 8) | b[3]);
-    if (magic != 42u) {
+    uint64_t magic = tiff_rd(b + 2, 2u, le);
+    int big = 0;
+    uint64_t ifd = 0u;
+    if (magic == 42u) {
+        ifd = tiff_rd(b + 4, 4u, le);
+    } else if (magic == 43u && len >= 16u && tiff_rd(b + 4, 2u, le) == 8u &&
+               tiff_rd(b + 6, 2u, le) == 0u) {
+        big = 1;
+        ifd = tiff_rd(b + 8, 8u, le);
+    } else {
         return;
     }
-    uint32_t ifd = le ? ((uint32_t)b[4] | ((uint32_t)b[5] << 8) |
-                         ((uint32_t)b[6] << 16) | ((uint32_t)b[7] << 24))
-                      : (((uint32_t)b[4] << 24) | ((uint32_t)b[5] << 16) |
-                         ((uint32_t)b[6] << 8) | (uint32_t)b[7]);
-    uint8_t cnt_b[2];
+    unsigned cnt_sz = big ? 8u : 2u;   /* entry-count field */
+    unsigned ent_sz = big ? 20u : 12u; /* directory entry */
+    unsigned val_sz = big ? 8u : 4u;   /* count and value/offset fields */
+    uint8_t cnt_b[8];
     size_t got = 0u;
-    if (ss->read_at(ss->ctx, ifd, cnt_b, 2u, &got) != RFC_OK || got != 2u) {
+    if (ss->read_at(ss->ctx, ifd, cnt_b, cnt_sz, &got) != RFC_OK ||
+        got != cnt_sz) {
         return;
     }
-    uint32_t n = le ? (uint32_t)(cnt_b[0] | (cnt_b[1] << 8))
-                    : (uint32_t)((cnt_b[0] << 8) | cnt_b[1]);
+    uint64_t n = tiff_rd(cnt_b, cnt_sz, le);
     if (n == 0u || n > 4096u) {
         return;
     }
-    uint32_t w = 0u, h = 0u, spp = 1u, bps = 0u, extra = 0u;
-    for (uint32_t i = 0u; i < n; i++) {
-        uint8_t e[12];
-        if (ss->read_at(ss->ctx, (uint64_t)ifd + 2u + 12u * (uint64_t)i, e,
-                        12u, &got) != RFC_OK || got != 12u) {
+    uint64_t w = 0u, h = 0u, spp = 1u, bps = 0u;
+    int extra = 0;
+    for (uint64_t i = 0u; i < n; i++) {
+        uint8_t e[20];
+        if (ss->read_at(ss->ctx, ifd + cnt_sz + (uint64_t)ent_sz * i, e, ent_sz,
+                        &got) != RFC_OK ||
+            got != ent_sz) {
             return;
         }
-        uint16_t tag = le ? (uint16_t)(e[0] | (e[1] << 8))
-                          : (uint16_t)((e[0] << 8) | e[1]);
-        uint16_t typ = le ? (uint16_t)(e[2] | (e[3] << 8))
-                          : (uint16_t)((e[2] << 8) | e[3]);
-        uint32_t v = 0u;
+        uint64_t tag = tiff_rd(e, 2u, le);
+        uint64_t typ = tiff_rd(e + 2, 2u, le);
+        uint64_t count = tiff_rd(e + 4, val_sz, le);
+        const uint8_t *val = e + 4 + val_sz;
+        uint64_t v = 0u;
         if (typ == 3u) {
-            v = le ? (uint32_t)(e[8] | (e[9] << 8))
-                   : (uint32_t)((e[8] << 8) | e[9]);
+            v = tiff_rd(val, 2u, le);
         } else if (typ == 4u) {
-            v = le ? ((uint32_t)e[8] | ((uint32_t)e[9] << 8) |
-                      ((uint32_t)e[10] << 16) | ((uint32_t)e[11] << 24))
-                   : (((uint32_t)e[8] << 24) | ((uint32_t)e[9] << 16) |
-                      ((uint32_t)e[10] << 8) | (uint32_t)e[11]);
+            v = tiff_rd(val, 4u, le);
+        } else if (typ == 16u && big) {
+            v = tiff_rd(val, 8u, le);
         } else {
             continue;
         }
@@ -753,31 +780,24 @@ static void sniff_tiff_geometry(const seek_stream *ss, const uint8_t *b,
         } else if (tag == 277u) {
             spp = v;
         } else if (tag == 258u) {
-            /* An inline first value (count <= 2 SHORTs); a per-sample array
-             * stored elsewhere starts with the same depth for supported files. */
-            uint32_t count = le ? ((uint32_t)e[4] | ((uint32_t)e[5] << 8))
-                                : (((uint32_t)e[6] << 8) | e[7]);
-            if (typ == 3u && count > 2u) {
+            /* An array too large for the value field lives elsewhere; it
+             * starts with the same depth for every supported file. */
+            if (typ == 3u && count * 2u > val_sz) {
                 uint8_t first[2];
-                uint32_t off = le ? ((uint32_t)e[8] | ((uint32_t)e[9] << 8) |
-                                     ((uint32_t)e[10] << 16) |
-                                     ((uint32_t)e[11] << 24))
-                                  : (((uint32_t)e[8] << 24) |
-                                     ((uint32_t)e[9] << 16) |
-                                     ((uint32_t)e[10] << 8) | (uint32_t)e[11]);
+                uint64_t off = tiff_rd(val, val_sz, le);
                 if (ss->read_at(ss->ctx, off, first, 2u, &got) != RFC_OK ||
                     got != 2u) {
                     return;
                 }
-                v = le ? (uint32_t)(first[0] | (first[1] << 8))
-                       : (uint32_t)((first[0] << 8) | first[1]);
+                v = tiff_rd(first, 2u, le);
             }
             bps = v;
         } else if (tag == 338u) {
-            extra = 1u;
+            extra = 1;
         }
     }
-    if (w == 0u || h == 0u || (bps != 8u && bps != 16u)) {
+    if (w == 0u || h == 0u || w > UINT32_MAX || h > UINT32_MAX ||
+        (bps != 8u && bps != 16u)) {
         return;
     }
     rfc_sample_format f;
@@ -790,8 +810,8 @@ static void sniff_tiff_geometry(const seek_stream *ss, const uint8_t *b,
     } else {
         return;
     }
-    out_result->geometry_width = w;
-    out_result->geometry_height = h;
+    out_result->geometry_width = (uint32_t)w;
+    out_result->geometry_height = (uint32_t)h;
     out_result->geometry_format = f;
     out_result->has_geometry = 1;
 }

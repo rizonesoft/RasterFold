@@ -45,8 +45,9 @@ rfc_status rfc_codecs_unregister_jpeg(void);
 rfc_status rfc_codecs_register_tiff_gif(void);
 rfc_status rfc_codecs_unregister_tiff_gif(void);
 
-/* Test seam: hook called before each decoded TIFF strip or tile and each GIF
- * row (NULL removes it), for deterministic mid-decode cancellation tests. */
+/* Test seam: hook called before each decoded TIFF strip or tile, each GIF
+ * row, every 256 GIF LZW sub-blocks of the pre-scan and each row of the GIF
+ * palette pass (NULL removes it), for deterministic mid-decode cancellation tests. */
 void rfc_codecs_tiff_gif_set_row_hook_for_testing(void (*hook)(void *),
                                                   void *ctx);
 

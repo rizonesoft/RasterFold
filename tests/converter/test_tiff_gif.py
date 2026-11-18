@@ -48,7 +48,7 @@ _tg = _load_mod("_rfc_tiff_gif_ref", ROOT / "tests" / "converter" / "tiff_gif_re
 
 COVERAGE: list[tuple[str, str]] = []
 
-COMP = {"none": 1, "lzw": 5, "jpeg": 7, "deflate": 8, "packbits": 32773}
+COMP = {"none": 1, "lzw": 5, "jpeg": 7, "deflate": 8, "packbits": 32773, "webp": 50001}
 
 
 def ps_quote(val: str) -> str:
@@ -147,20 +147,44 @@ class TiffGifAdapterBase(unittest.TestCase):
                 n += 1
         self.assertEqual(n, 96 + 12)
 
-    def test_tiff_jpeg_shared_provider_coverage(self) -> None:
-        # JPEG-in-TIFF (RGB and YCbCr 2x2) has no independent oracle: it is
-        # decoded by a fresh libtiff/libjpeg-turbo session only, reported as
-        # shared-provider coverage, and checked for geometry and sample
-        # format only (JPEG is lossy).
-        for photometric, tag in ((2, "rgb"), (6, "ycbcr")):
-            p = self.work_dir() / f"mk_jpeg_{tag}.tif"
-            self.cli_ok(["cli", "make-tiff", self.to_exe_path(p), "48", "32", "3", "8", str(COMP["jpeg"]), "1", "0",
+    def test_tiff_jpeg_webp_shared_provider_coverage(self) -> None:
+        # JPEG- and WebP-in-TIFF have no independent oracle: they are decoded
+        # by a fresh libtiff session only and reported as shared-provider
+        # coverage. The writer's pattern, written uncompressed and decoded by
+        # the independent oracle, is the reference: WebP lossless must match
+        # it exactly, JPEG (lossy, RGB and YCbCr 2x2) must stay close to it.
+        ref_p = self.work_dir() / "mk_ref_none.tif"
+        self.cli_ok(["cli", "make-tiff", self.to_exe_path(ref_p), "48", "32", "3", "8", str(COMP["none"]), "1",
+                     "0", "0"])
+        ref = _tg.decode_tiff(ref_p.read_bytes())["pixels"]
+        assert isinstance(ref, bytes)
+        for comp, photometric, tag in (("jpeg", 2, "jpeg_rgb"), ("jpeg", 6, "jpeg_ycbcr"), ("webp", 2, "webp")):
+            p = self.work_dir() / f"mk_{tag}.tif"
+            self.cli_ok(["cli", "make-tiff", self.to_exe_path(p), "48", "32", "3", "8", str(COMP[comp]), "1", "0",
                          "0", str(photometric)])
             with self.assertRaises(_tg.UnsupportedTiff):
                 _tg.decode_tiff(p.read_bytes())
-            kv, px = self.c_dump("tiff", p, f"mk_jpeg_{tag}")
-            self.assertEqual((kv["WIDTH"], kv["HEIGHT"], kv["SAMPLE"], len(px)), ("48", "32", "3", 48 * 32 * 3))
-            COVERAGE.append((f"mk_jpeg_{tag}", "shared-provider"))
+            kv, px = self.c_dump("tiff", p, f"mk_{tag}")
+            self.assertEqual((kv["WIDTH"], kv["HEIGHT"], kv["SAMPLE"], len(px)), ("48", "32", "3", len(ref)), tag)
+            if comp == "webp":
+                self.assertEqual(px, ref, tag)
+            else:
+                diffs = [abs(a - b) for a, b in zip(px, ref)]
+                mean = sum(diffs) / len(diffs)
+
+                def luma(buf: bytes, i: int) -> float:
+                    return 0.299 * buf[i] + 0.587 * buf[i + 1] + 0.114 * buf[i + 2]
+
+                lerr = [abs(luma(px, i) - luma(ref, i)) for i in range(0, len(ref), 3)]
+                lmean = sum(lerr) / len(lerr)
+                # A wrong YCbCr conversion breaks luma; 2x2 chroma subsampling
+                # of a pattern with per-pixel chroma detail only raises the
+                # overall error.
+                self.assertLess(lmean, 8.0, f"{tag}: luma mean abs error {lmean:.2f}")
+                self.assertLess(mean, 24.0 if photometric == 6 else 12.0, f"{tag}: mean abs error {mean:.2f}")
+                self.assertGreater(len(set(px)), 32, f"{tag}: decoded image is degenerate")
+                print(f"tiff/gif {tag}: mean abs error {mean:.2f}, luma {lmean:.2f}, against the uncompressed pattern")
+            COVERAGE.append((f"mk_{tag}", "shared-provider"))
 
     def test_gif_independent_oracle(self) -> None:
         for interlace in (False, True):

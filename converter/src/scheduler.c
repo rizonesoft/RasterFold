@@ -1141,8 +1141,20 @@ static rfc_status compute_preflight_with_contracts(
                 return RFC_ERR_LIMIT_EXCEEDED;
             }
             /* The imported source bytes stay in the job's budget for the
-             * whole job, beside every stage's working set. */
-            if (!add_u64_sched(overhead + work, source_size,
+             * whole job, beside every stage's working set. TIFF adds terms
+             * proportional to the source, whatever the frame size: libtiff's
+             * read cap is twice the source, and a TIFF target's output buffer
+             * and VERIFY read cap each carry the source's metadata twice. */
+            uint64_t src_factor = 1u;
+            if (src_mem->format == RFC_FORMAT_TIFF) {
+                src_factor += 2u;
+            }
+            if (dst_mem->format == RFC_FORMAT_TIFF) {
+                src_factor += 4u;
+            }
+            uint64_t src_terms = 0u;
+            if (!mul_u64_sched(source_size, src_factor, &src_terms) ||
+                !add_u64_sched(overhead + work, src_terms,
                                &base_reservation)) {
                 return RFC_ERR_LIMIT_EXCEEDED;
             }

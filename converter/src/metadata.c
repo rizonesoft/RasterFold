@@ -676,7 +676,7 @@ rfc_status rfc_metadata_check_preflight(rfc_format_id target_format,
         (caps & RFC_META_ITEM_FRAME_TIMING) == 0u) {
         if (out_report) {
             out_report->outcome = RFC_VERIFY_META_UNSUPPORTED_ITEMS_NAMED;
-            out_report->unsupported_items = RFC_META_ITEM_FRAME_TIMING;
+            out_report->unsupported_items = unsupported; /* every item */
             meta_copy_cstr(out_report->detail, sizeof(out_report->detail),
                            "target format ");
             meta_append_cstr(out_report->detail, sizeof(out_report->detail),

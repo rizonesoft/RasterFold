@@ -46,6 +46,14 @@ typedef struct rfc_sniff_result {
     int extension_known;
     int disagreement;
     char detail[RFC_SNIFF_DETAIL_MAX];
+    /* JPEG only: frame geometry from the first SOF before the first SOS, so
+     * the scheduler can size coefficient-domain work before IMPORT. */
+    int has_jpeg_geometry;
+    uint32_t jpeg_width;
+    uint32_t jpeg_height;
+    uint32_t jpeg_components;
+    uint8_t jpeg_h_samp[4];
+    uint8_t jpeg_v_samp[4];
     /* Frame geometry the sniff could read cheaply (JPEG SOF, TIFF first IFD,
      * GIF logical screen, the last sized as rgba8), so the scheduler can size
      * a job before IMPORT. geometry_format is the sample format the adapter

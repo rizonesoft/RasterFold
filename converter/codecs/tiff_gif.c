@@ -44,6 +44,7 @@ static void tg_row_hook(void) {
         g_tg_row_hook(g_tg_row_hook_ctx);
     }
 }
+#define TG_SEG_SLACK (8u * 1024u * 1024u) /* tile overhang beyond the frame */
 #define TG_GIF_MAX_EXTENSIONS 64u
 #define TG_GIF_STATE_BYTES (1024u * 1024u) /* giflib LZW tables, colour maps */
 
@@ -145,6 +146,27 @@ static void tg_release(tg_guard *g) {
     memset(g, 0, sizeof(*g));
 }
 
+/* The frame an encoder reads: its layout with a zero (packed) stride
+ * replaced by the normalized one, refused when the buffer is shorter than
+ * that layout needs. */
+static rfc_status tg_frame_layout(const rfc_frame *fr, rfc_layout *out) {
+    rfc_layout norm;
+    rfc_status st = rfc_layout_normalize_stride(&fr->layout, &norm);
+    if (st != RFC_OK) {
+        return st;
+    }
+    *out = fr->layout;
+    if (out->stride_bytes == 0u) {
+        out->stride_bytes = norm.stride_bytes;
+    }
+    size_t need = 0u;
+    st = rfc_layout_validate(out, &need);
+    if (st != RFC_OK) {
+        return st;
+    }
+    return fr->data_len < need ? RFC_ERR_INVALID_ARGUMENT : RFC_OK;
+}
+
 /* Settings shared by both formats: metadata policy and exactness. */
 static rfc_status tg_parse_settings(rfc_format_id fmt,
                                     const rfc_setting_value *settings,
@@ -237,7 +259,10 @@ static tmsize_t tif_read(thandle_t h, void *buf, tmsize_t n) {
     if (n < 0 || !m->data) {
         return 0;
     }
-    size_t avail = m->pos < m->size ? m->size - m->pos : 0u;
+    if (m->pos >= m->size) {
+        return 0; /* at or past the end: no pointer is formed */
+    }
+    size_t avail = m->size - m->pos;
     size_t k = (size_t)n < avail ? (size_t)n : avail;
     memcpy(buf, m->data + m->pos, k);
     m->pos += k;
@@ -246,7 +271,7 @@ static tmsize_t tif_read(thandle_t h, void *buf, tmsize_t n) {
 
 static tmsize_t tif_write(thandle_t h, void *buf, tmsize_t n) {
     tif_mem *m = (tif_mem *)h;
-    if (n < 0 || !m->out) {
+    if (n < 0 || !m->out || (!buf && n > 0)) {
         return 0;
     }
     if (!tg_out_write_at(m->out, m->pos, buf, (size_t)n)) {
@@ -323,7 +348,7 @@ static TIFF *tif_open(const char *mode, tif_mem *m, tif_err *e,
 
 /* libtiff's per-handle heap cap: bookkeeping plus twice `bytes` (reading:
  * the raw strip buffer and the strip offset/count arrays, each bounded by the
- * file; writing: two strips). */
+ * file; writing: one strip plus the carried ICC and XMP). */
 static size_t tif_mem_cap(size_t bytes) {
     uint64_t cap = (uint64_t)TG_FIXED_OVERHEAD + 2u * (uint64_t)bytes;
     if (cap > (uint64_t)LONG_MAX) {
@@ -348,7 +373,8 @@ typedef struct tif_info {
 static rfc_status tif_inspect(TIFF *tif, const rfc_limits *limits,
                               tif_info *ti) {
     memset(ti, 0, sizeof(*ti));
-    if (TIFFNumberOfDirectories(tif) != 1u) {
+    /* a nonzero next-IFD pointer is enough to refuse: no chain walk */
+    if (!TIFFLastDirectory(tif)) {
         return RFC_ERR_UNSUPPORTED_COMBINATION; /* multi-page: D10 T02 s12 */
     }
     uint16_t nsub = 0u;
@@ -500,6 +526,13 @@ static rfc_status tif_read_pixels(TIFF *tif, const tif_info *ti,
     tmsize_t seg_size = tiled ? TIFFTileSize(tif) : TIFFStripSize(tif);
     if (seg_size <= 0) {
         return RFC_ERR_INVALID_ARGUMENT;
+    }
+    /* A tile may overhang the image, but its decoded size is bounded before
+     * it is allocated: at most the frame plus TG_SEG_SLACK (the provider
+     * contract's fixed overhead covers the slack). */
+    if ((uint64_t)seg_size >
+        (uint64_t)fr->layout.stride_bytes * fr->layout.height + TG_SEG_SLACK) {
+        return RFC_ERR_LIMIT_EXCEEDED;
     }
     uint8_t *seg = (uint8_t *)alloc->alloc(alloc->ctx, (size_t)seg_size);
     if (!seg) {
@@ -730,7 +763,12 @@ static rfc_status tif_encode(void *session, const rfc_exec_context *exec,
         return RFC_ERR_UNSUPPORTED_COMBINATION; /* multi-page: D10 T02 s12 */
     }
     const rfc_frame *fr = &frames[0];
-    const rfc_layout *L = &fr->layout;
+    rfc_layout lay_eff;
+    st = tg_frame_layout(fr, &lay_eff);
+    if (st != RFC_OK) {
+        return st;
+    }
+    const rfc_layout *L = &lay_eff;
     uint16_t spp = 0u, bps = 0u, photometric = PHOTOMETRIC_RGB;
     int alpha = 0;
     switch (L->format) {
@@ -783,7 +821,10 @@ static rfc_status tif_encode(void *session, const rfc_exec_context *exec,
     if (rps > L->height) {
         rps = L->height;
     }
-    size_t cap = tif_mem_cap(row_b * rps);
+    /* libtiff copies the carried ICC and XMP into its directory and stages
+     * them again while writing it. */
+    size_t carried = strip ? 0u : eff.icc_len + eff.xmp_len;
+    size_t cap = tif_mem_cap(row_b * rps + carried);
     tg_guard g;
     st = tg_reserve(exec, cap, &g);
     if (st != RFC_OK) {
@@ -848,6 +889,12 @@ static rfc_status tif_encode(void *session, const rfc_exec_context *exec,
     if (st == RFC_OK && (!TIFFWriteDirectory(tif) || e.errors || ob.oom)) {
         st = ob.oom ? RFC_ERR_OUT_OF_MEMORY : RFC_ERR_INVALID_ARGUMENT;
     }
+    if (st != RFC_OK) {
+        /* The output is discarded: detach the sink so TIFFClose's flush of an
+         * unfinished directory writes nothing (libtiff may hand the write
+         * callback a NULL buffer on that path). */
+        m.out = NULL;
+    }
     TIFFClose(tif);
     tg_release(&g);
     if (st == RFC_OK && (ob.oom || ob.len == 0u)) {
@@ -881,7 +928,9 @@ typedef struct gif_scan {
 /* Length-only walk of the LZW code stream in the image's sub-blocks: codes
  * stay within the table, exactly `pixels` indices are produced, and the
  * end-of-information code is present (GIF89a appendix F). */
-static rfc_status gif_check_lzw(const uint8_t *b, size_t size, size_t *pos,
+static rfc_status gif_check_lzw(const void *session,
+                                const rfc_exec_context *exec,
+                                const uint8_t *b, size_t size, size_t *pos,
                                 uint32_t min_code, uint64_t pixels) {
     if (min_code < 2u || min_code > 8u) {
         return RFC_ERR_INVALID_ARGUMENT;
@@ -898,7 +947,14 @@ static rfc_status gif_check_lzw(const uint8_t *b, size_t size, size_t *pos,
         lens[i] = 1u;
     }
     size_t p = *pos;
+    uint32_t blocks = 0u;
     for (;;) {
+        if ((++blocks & 255u) == 0u) { /* every 256 sub-blocks (64 KiB) */
+            tg_row_hook();
+            if (tg_cancelled(session, exec)) {
+                return RFC_ERR_CANCELLED;
+            }
+        }
         if (p >= size) {
             return RFC_ERR_TRUNCATED_INPUT;
         }
@@ -958,7 +1014,8 @@ static rfc_status gif_check_lzw(const uint8_t *b, size_t size, size_t *pos,
     return RFC_OK;
 }
 
-static rfc_status gif_prescan(const uint8_t *b, size_t size,
+static rfc_status gif_prescan(const void *session, const rfc_exec_context *exec,
+                              const uint8_t *b, size_t size,
                               const rfc_limits *limits, gif_scan *out) {
     memset(out, 0, sizeof(*out));
     if (size < 13u) {
@@ -982,9 +1039,13 @@ static rfc_status gif_prescan(const uint8_t *b, size_t size,
         pos += 3u * (size_t)gct;
     }
     uint32_t images = 0u, extensions = 0u;
+    int gce_seen = 0;
     uint64_t ext_bytes = 0u;
     int seen_trailer = 0;
     while (pos < size) {
+        if (tg_cancelled(session, exec)) {
+            return RFC_ERR_CANCELLED;
+        }
         uint8_t blk = b[pos++];
         if (blk == 0x3Bu) {
             seen_trailer = 1;
@@ -997,6 +1058,13 @@ static rfc_status gif_prescan(const uint8_t *b, size_t size,
             uint8_t label = b[pos++];
             if (++extensions > TG_GIF_MAX_EXTENSIONS) {
                 return RFC_ERR_LIMIT_EXCEEDED;
+            }
+            if (label == 0x01u) {
+                /* Plain Text: a graphic rendering block needing composition */
+                return RFC_ERR_UNSUPPORTED_COMBINATION;
+            }
+            if (label == 0xF9u && (gce_seen || images > 0u)) {
+                return RFC_ERR_INVALID_ARGUMENT; /* one GCE, before the image */
             }
             int first = 1;
             for (;;) {
@@ -1015,16 +1083,21 @@ static rfc_status gif_prescan(const uint8_t *b, size_t size,
                     ext_bytes > (uint64_t)limits->max_metadata_bytes) {
                     return RFC_ERR_LIMIT_EXCEEDED;
                 }
-                if (label == 0xF9u && first) {
-                    if (n != 4u || images > 0u) {
+                if (label == 0xF9u) {
+                    /* exactly one four-byte block, then the terminator */
+                    if (n != 4u || !first) {
                         return RFC_ERR_INVALID_ARGUMENT;
                     }
+                    gce_seen = 1;
                     out->has_transparent = (b[pos] & 1u) != 0u;
                     out->delay_cs = (uint32_t)b[pos + 1] | ((uint32_t)b[pos + 2] << 8);
                     out->transparent = b[pos + 3];
                 }
                 first = 0;
                 pos += n;
+            }
+            if (label == 0xF9u && first) {
+                return RFC_ERR_INVALID_ARGUMENT; /* zero-length GCE */
             }
             continue;
         }
@@ -1046,15 +1119,6 @@ static rfc_status gif_prescan(const uint8_t *b, size_t size,
         if (x != 0u || y != 0u || w != out->sw || h != out->sh) {
             return RFC_ERR_UNSUPPORTED_COMBINATION; /* partial frame */
         }
-        rfc_layout lay = {RFC_SAMPLE_RGBA8, RFC_ALPHA_STRAIGHT, w, h, 0u, 8u};
-        rfc_layout norm;
-        rfc_status st = rfc_layout_normalize_stride(&lay, &norm);
-        if (st == RFC_OK) {
-            st = rfc_limits_check_image(limits, &norm, 1u);
-        }
-        if (st != RFC_OK) {
-            return st;
-        }
         out->interlaced = (fl & 0x40u) != 0u;
         out->colors = gct;
         if (fl & 0x80u) {
@@ -1067,11 +1131,27 @@ static rfc_status gif_prescan(const uint8_t *b, size_t size,
         if (out->colors == 0u) {
             return RFC_ERR_INVALID_ARGUMENT; /* no colour table */
         }
+        if (out->has_transparent && out->transparent >= out->colors) {
+            out->has_transparent = 0; /* no pixel can use that index */
+        }
+        /* the limits apply to the layout this image decodes to */
+        rfc_layout lay = {out->has_transparent ? RFC_SAMPLE_RGBA8 : RFC_SAMPLE_RGB8,
+                          out->has_transparent ? RFC_ALPHA_STRAIGHT : RFC_ALPHA_NONE,
+                          w, h, 0u, 8u};
+        rfc_layout norm;
+        rfc_status st = rfc_layout_normalize_stride(&lay, &norm);
+        if (st == RFC_OK) {
+            st = rfc_limits_check_image(limits, &norm, 1u);
+        }
+        if (st != RFC_OK) {
+            return st;
+        }
         if (pos >= size) {
             return RFC_ERR_TRUNCATED_INPUT;
         }
         uint32_t min_code = b[pos++];
-        st = gif_check_lzw(b, size, &pos, min_code, (uint64_t)w * h);
+        st = gif_check_lzw(session, exec, b, size, &pos, min_code,
+                           (uint64_t)w * h);
         if (st != RFC_OK) {
             return st;
         }
@@ -1081,9 +1161,6 @@ static rfc_status gif_prescan(const uint8_t *b, size_t size,
     }
     if (images == 0u) {
         return RFC_ERR_INVALID_ARGUMENT;
-    }
-    if (out->has_transparent && out->transparent >= out->colors) {
-        out->has_transparent = 0; /* an index no pixel can use is no transparency */
     }
     return RFC_OK;
 }
@@ -1122,7 +1199,7 @@ static rfc_status gif_decode_bytes(const void *session,
         return st;
     }
     gif_scan gs;
-    st = gif_prescan(bytes, size, limits, &gs);
+    st = gif_prescan(session, exec, bytes, size, limits, &gs);
     if (st != RFC_OK) {
         return st;
     }
@@ -1403,7 +1480,12 @@ static rfc_status gif_encode(void *session, const rfc_exec_context *exec,
         return RFC_ERR_UNSUPPORTED_COMBINATION; /* animation: D10 T02 s12 */
     }
     const rfc_frame *fr = &frames[0];
-    const rfc_layout *L = &fr->layout;
+    rfc_layout lay_eff;
+    st = tg_frame_layout(fr, &lay_eff);
+    if (st != RFC_OK) {
+        return st;
+    }
+    const rfc_layout *L = &lay_eff;
     int rgba = 0;
     if (L->format == RFC_SAMPLE_RGBA8) {
         rgba = 1;
@@ -1458,6 +1540,11 @@ static rfc_status gif_encode(void *session, const rfc_exec_context *exec,
     int have_transp = 0;
     uint32_t transp_rgb = 0u;
     for (uint32_t y = 0u; y < L->height && st == RFC_OK; y++) {
+        tg_row_hook();
+        if (tg_cancelled(session, exec)) {
+            st = RFC_ERR_CANCELLED;
+            break;
+        }
         const uint8_t *src = fr->data + (size_t)y * L->stride_bytes;
         for (uint32_t x = 0u; x < L->width; x++) {
             const uint8_t *px = src + (size_t)x * (rgba ? 4u : 3u);
@@ -1496,7 +1583,11 @@ static rfc_status gif_encode(void *session, const rfc_exec_context *exec,
             pal->colors[tindex].Green = (GifByteType)(transp_rgb >> 8);
             pal->colors[tindex].Blue = (GifByteType)transp_rgb;
             if (have_transp) {
-                for (uint32_t y = 0u; y < L->height; y++) {
+                for (uint32_t y = 0u; y < L->height && st == RFC_OK; y++) {
+                    if (tg_cancelled(session, exec)) {
+                        st = RFC_ERR_CANCELLED;
+                        break;
+                    }
                     const uint8_t *src = fr->data + (size_t)y * L->stride_bytes;
                     for (uint32_t x = 0u; x < L->width; x++) {
                         if (src[(size_t)x * 4u + 3u] == 0u) {
@@ -1538,7 +1629,7 @@ static rfc_status gif_encode(void *session, const rfc_exec_context *exec,
         EGifSetGifVersion(gif, need_gce);
         if (EGifPutScreenDesc(gif, (int)L->width, (int)L->height, bits, 0, cm) !=
             GIF_OK) {
-            st = RFC_ERR_INVALID_ARGUMENT;
+            st = ob.oom ? RFC_ERR_OUT_OF_MEMORY : RFC_ERR_INVALID_ARGUMENT;
         }
     }
     if (st == RFC_OK && need_gce) {
@@ -1548,13 +1639,13 @@ static rfc_status gif_encode(void *session, const rfc_exec_context *exec,
         gce[2] = (GifByteType)((dur / 10u) >> 8);
         gce[3] = (GifByteType)tindex;
         if (EGifPutExtension(gif, GRAPHICS_EXT_FUNC_CODE, 4, gce) != GIF_OK) {
-            st = RFC_ERR_INVALID_ARGUMENT;
+            st = ob.oom ? RFC_ERR_OUT_OF_MEMORY : RFC_ERR_INVALID_ARGUMENT;
         }
     }
     if (st == RFC_OK &&
         EGifPutImageDesc(gif, 0, 0, (int)L->width, (int)L->height, false, NULL) !=
             GIF_OK) {
-        st = RFC_ERR_INVALID_ARGUMENT;
+        st = ob.oom ? RFC_ERR_OUT_OF_MEMORY : RFC_ERR_INVALID_ARGUMENT;
     }
     for (uint32_t y = 0u; st == RFC_OK && y < L->height; y++) {
         if (tg_cancelled(session, exec)) {
@@ -1571,6 +1662,11 @@ static rfc_status gif_encode(void *session, const rfc_exec_context *exec,
         if (EGifCloseFile(gif, &cerr) != GIF_OK && st == RFC_OK) {
             st = ob.oom ? RFC_ERR_OUT_OF_MEMORY : RFC_ERR_INVALID_ARGUMENT;
         }
+    }
+    /* giflib ignores the write callback's result for the trailer: the
+     * sticky output error decides. */
+    if (st == RFC_OK && ob.oom) {
+        st = RFC_ERR_OUT_OF_MEMORY;
     }
     if (cm) {
         GifFreeMapObject(cm);

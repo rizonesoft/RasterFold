@@ -310,6 +310,8 @@ typedef struct tmk {
     uint16_t sampleformat;
     uint32_t seed;
     int flat;
+    int bigtiff;
+    uint32_t tile; /* tile edge when tiled (16 when 0) */
 } tmk;
 
 static void tmk_defaults(tmk *t, uint32_t w, uint32_t h, uint16_t spp,
@@ -352,7 +354,7 @@ static uint8_t *tmk_pixels(const tmk *t) {
 static uint8_t *make_tiff(const tmk *t, size_t *out_n) {
     char path[512];
     temp_path(path, sizeof(path), "mk.tif");
-    TIFF *tif = TIFFOpen(path, "w");
+    TIFF *tif = TIFFOpen(path, t->bigtiff ? "w8" : "w");
     CHECK(tif != NULL);
     uint8_t *px = tmk_pixels(t);
     size_t bpsb = t->bps / 8u;
@@ -365,6 +367,9 @@ static uint8_t *make_tiff(const tmk *t, size_t *out_n) {
         TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, t->photometric);
         TIFFSetField(tif, TIFFTAG_PLANARCONFIG, t->planar);
         TIFFSetField(tif, TIFFTAG_COMPRESSION, t->compression);
+        if (t->compression == COMPRESSION_WEBP) {
+            TIFFSetField(tif, TIFFTAG_WEBP_LOSSLESS, 1);
+        }
         if (t->predictor > 1u) TIFFSetField(tif, TIFFTAG_PREDICTOR, t->predictor);
         if (t->alpha) {
             uint16_t ex = t->alpha == 2 ? EXTRASAMPLE_ASSOCALPHA : EXTRASAMPLE_UNASSALPHA;
@@ -393,19 +398,20 @@ static uint8_t *make_tiff(const tmk *t, size_t *out_n) {
         uint32_t ch = t->planar == PLANARCONFIG_SEPARATE ? 1u : t->spp;
         uint32_t planes = t->planar == PLANARCONFIG_SEPARATE ? t->spp : 1u;
         if (t->tiled) {
-            TIFFSetField(tif, TIFFTAG_TILEWIDTH, 16u);
-            TIFFSetField(tif, TIFFTAG_TILELENGTH, 16u);
-            uint8_t *tile = (uint8_t *)calloc(16u * 16u * ch * bpsb, 1u);
+            uint32_t T = t->tile ? t->tile : 16u;
+            TIFFSetField(tif, TIFFTAG_TILEWIDTH, T);
+            TIFFSetField(tif, TIFFTAG_TILELENGTH, T);
+            uint8_t *tile = (uint8_t *)calloc((size_t)T * T * ch * bpsb, 1u);
             CHECK(tile != NULL);
             for (uint32_t p = 0u; p < planes; p++)
-                for (uint32_t ty = 0u; ty < t->h; ty += 16u)
-                    for (uint32_t tx = 0u; tx < t->w; tx += 16u) {
-                        memset(tile, 0, 16u * 16u * ch * bpsb);
-                        for (uint32_t r = 0u; r < 16u && ty + r < t->h; r++)
-                            for (uint32_t x = 0u; x < 16u && tx + x < t->w; x++)
+                for (uint32_t ty = 0u; ty < t->h; ty += T)
+                    for (uint32_t tx = 0u; tx < t->w; tx += T) {
+                        memset(tile, 0, (size_t)T * T * ch * bpsb);
+                        for (uint32_t r = 0u; r < T && ty + r < t->h; r++)
+                            for (uint32_t x = 0u; x < T && tx + x < t->w; x++)
                                 for (uint32_t c = 0u; c < ch; c++) {
                                     uint32_t sc = planes > 1u ? p : c;
-                                    memcpy(tile + ((size_t)(r * 16u + x) * ch + c) * bpsb,
+                                    memcpy(tile + ((size_t)(r * T + x) * ch + c) * bpsb,
                                            px + (((size_t)(ty + r) * t->w + tx + x) * t->spp + sc) * bpsb,
                                            bpsb);
                                 }
@@ -514,6 +520,8 @@ typedef struct gmk {
     int no_eoi;
     int bad_index;
     int no_trailer;
+    int plain_text;      /* a Plain Text Extension before the image */
+    int gce_shape;       /* 1: zero-length GCE, 2: GCE with an extra block */
 } gmk;
 
 static const uint8_t k_gct[12] = {0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255};
@@ -536,6 +544,21 @@ static uint8_t *make_gif(const gmk *g, size_t *out_n) {
     o[n++] = 0u;
     memcpy(o + n, k_gct, sizeof(k_gct));
     n += sizeof(k_gct);
+    if (g->plain_text) {
+        static const uint8_t pte[19] = {0x21u, 0x01u, 12u, 0, 0, 0, 0, 8, 0, 8, 0,
+                                        8, 8, 1, 0, 2u, 'h', 'i', 0u};
+        memcpy(o + n, pte, sizeof(pte));
+        n += sizeof(pte);
+    }
+    if (g->gce_shape == 1) {
+        static const uint8_t z[3] = {0x21u, 0xF9u, 0u};
+        memcpy(o + n, z, sizeof(z));
+        n += sizeof(z);
+    } else if (g->gce_shape == 2) {
+        static const uint8_t x[10] = {0x21u, 0xF9u, 4u, 0, 0, 0, 0, 1u, 0xAAu, 0u};
+        memcpy(o + n, x, sizeof(x));
+        n += sizeof(x);
+    }
     for (int im = 0; im < (g->images ? g->images : 1); im++) {
         if (g->transparent >= 0 || g->delay_cs) {
             uint8_t gce[8] = {0x21u, 0xF9u, 4u,
@@ -912,6 +935,9 @@ static void test_gif_import_lzw_and_refusals(void) {
         {"two_images", RFC_ERR_UNSUPPORTED_COMBINATION},
         {"partial", RFC_ERR_UNSUPPORTED_COMBINATION},
         {"no_trailer", RFC_ERR_TRUNCATED_INPUT},
+        {"plain_text", RFC_ERR_UNSUPPORTED_COMBINATION},
+        {"gce_zero", RFC_ERR_INVALID_ARGUMENT},
+        {"gce_extra", RFC_ERR_INVALID_ARGUMENT},
     };
     for (size_t k = 0u; k < sizeof(cases) / sizeof(cases[0]); k++) {
         gmk g;
@@ -924,6 +950,9 @@ static void test_gif_import_lzw_and_refusals(void) {
         if (!strcmp(w, "two_images")) g.images = 2;
         if (!strcmp(w, "partial")) g.partial = 1;
         if (!strcmp(w, "no_trailer")) g.no_trailer = 1;
+        if (!strcmp(w, "plain_text")) g.plain_text = 1;
+        if (!strcmp(w, "gce_zero")) g.gce_shape = 1;
+        if (!strcmp(w, "gce_extra")) g.gce_shape = 2;
         size_t n = 0u;
         uint8_t *b = make_gif(&g, &n);
         rfc_status st = adapter_decode(RFC_FORMAT_GIF, b, n, NULL, NULL, NULL, NULL);
@@ -1109,8 +1138,9 @@ static void test_jobs_limits_budget_and_cancel(void) {
     CHECK(write_file_all(p_src, gb, gn));
     /* PNG cannot carry frame timing, which pixel-exact verification
      * compares: refused as a metadata-policy failure under both policies
-     * (strip cannot remove timing; it is never a verify mismatch), with no
-     * output left behind. The engine checks decoded metadata at VERIFY. */
+     * (strip cannot remove timing; it is never a verify mismatch) after
+     * IMPORT and before any ENCODE, with the verify report published and
+     * no output left behind. */
     {
         rfc_metadata_report mr;
         for (int pol = 0; pol < 2; pol++) {
@@ -1130,7 +1160,7 @@ static void test_jobs_limits_budget_and_cancel(void) {
                 pol ? "strip" : "preserve", &r);
         CHECK(r.submit == RFC_OK && r.state == RFC_JOB_FAILED &&
               r.status == RFC_ERR_METADATA_POLICY &&
-              r.failing == RFC_STAGE_VERIFY);
+              r.failing == RFC_STAGE_IMPORT);
         CHECK(r.has_rep && r.rep.mismatch.kind == RFC_MISMATCH_METADATA_UNSUPPORTED);
         CHECK(!file_exists(p_png));
     }
@@ -1199,6 +1229,379 @@ static void test_jobs_limits_budget_and_cancel(void) {
     free(gb);
     free(tb);
     printf("tiff_gif: jobs_limits_budget_and_cancel ok\n");
+}
+
+/* ------------------------------------------------------------------------ */
+/* 7. Round-1 review regressions                                             */
+/* ------------------------------------------------------------------------ */
+
+static rfc_job *volatile g_cancel_job = NULL;
+
+static void job_cancel_hook(void *ctx) {
+    int *after = (int *)ctx;
+    if (g_cancel_job && (*after)-- == 0) {
+        rfc_job_cancel(g_cancel_job);
+    }
+}
+
+typedef struct fail_alloc {
+    size_t calls, fail_at;
+} fail_alloc;
+
+static void *fa_alloc(void *ctx, size_t sz) {
+    fail_alloc *f = (fail_alloc *)ctx;
+    if (++f->calls == f->fail_at) return NULL;
+    return malloc(sz ? sz : 1u);
+}
+
+static void fa_free(void *ctx, void *p) {
+    (void)ctx;
+    free(p);
+}
+
+static void test_review_round1(void) {
+    char p_src[512], p_dst[512], p_png[512];
+    job_result r;
+    size_t n = 0u;
+
+    /* JPEG sniff fields survive beside the generic geometry. */
+    {
+        static const uint8_t j[] = {0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x11, 8, 0x00, 0x20, 0x00, 0x30, 3,
+                                    1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1, 0xFF, 0xDA};
+        rfc_sniff_result sr;
+        CHECK(rfc_input_sniff_bytes(j, sizeof(j), "a.jpg", &sr) == RFC_OK);
+        CHECK(sr.has_jpeg_geometry && sr.jpeg_width == 48u && sr.jpeg_height == 32u &&
+              sr.jpeg_components == 3u && sr.jpeg_h_samp[0] == 2u && sr.jpeg_v_samp[0] == 2u &&
+              sr.jpeg_h_samp[1] == 1u);
+        CHECK(sr.has_geometry && sr.geometry_width == 48u && sr.geometry_format == RFC_SAMPLE_RGB8);
+    }
+    /* BigTIFF: sniffed geometry, decode and a default job. */
+    {
+        tmk m;
+        tmk_defaults(&m, 29u, 13u, 3u, 16u);
+        m.bigtiff = 1;
+        m.compression = COMPRESSION_ADOBE_DEFLATE;
+        uint8_t *b = make_tiff(&m, &n);
+        CHECK(b[2] == 0x2Bu || b[3] == 0x2Bu);
+        rfc_sniff_result sr;
+        CHECK(rfc_input_sniff_bytes(b, n, "a.tif", &sr) == RFC_OK);
+        CHECK(sr.has_geometry && sr.geometry_width == 29u && sr.geometry_height == 13u &&
+              sr.geometry_format == RFC_SAMPLE_RGB16);
+        uint8_t *px = NULL;
+        CHECK(adapter_decode(RFC_FORMAT_TIFF, b, n, NULL, NULL, NULL, &px) == RFC_OK);
+        uint8_t *want = tmk_pixels(&m);
+        CHECK(memcmp(px, want, 29u * 13u * 6u) == 0);
+        free(want);
+        free(px);
+        temp_path(p_src, sizeof(p_src), "big8.tif");
+        temp_path(p_dst, sizeof(p_dst), "big8_out.png");
+        CHECK(write_file_all(p_src, b, n));
+        run_job(RFC_FORMAT_TIFF, RFC_FORMAT_PNG, p_src, p_dst, NULL, NULL, &r);
+        CHECK_JOB_OK(r);
+        remove(p_src);
+        remove(p_dst);
+        free(b);
+    }
+    /* A tile far larger than its frame is refused before allocation. */
+    {
+        tmk m;
+        tmk_defaults(&m, 3u, 2u, 4u, 16u);
+        m.tiled = 1;
+        m.tile = 2048u;
+        m.compression = COMPRESSION_ADOBE_DEFLATE;
+        uint8_t *b = make_tiff(&m, &n);
+        CHECK(adapter_decode(RFC_FORMAT_TIFF, b, n, NULL, NULL, NULL, NULL) == RFC_ERR_LIMIT_EXCEEDED);
+        free(b);
+    }
+    /* An IFD offset past the end of the input is refused cleanly. */
+    {
+        tmk m;
+        tmk_defaults(&m, 8u, 8u, 1u, 8u);
+        uint8_t *b = make_tiff(&m, &n);
+        uint32_t off = (uint32_t)n + 4096u;
+        if (b[0] == 'I') { b[4] = (uint8_t)off; b[5] = (uint8_t)(off >> 8); b[6] = (uint8_t)(off >> 16); b[7] = (uint8_t)(off >> 24); }
+        else { b[7] = (uint8_t)off; b[6] = (uint8_t)(off >> 8); b[5] = (uint8_t)(off >> 16); b[4] = (uint8_t)(off >> 24); }
+        CHECK(adapter_decode(RFC_FORMAT_TIFF, b, n, NULL, NULL, NULL, NULL) != RFC_OK);
+        free(b);
+    }
+    /* A small TIFF carrying a 10 MiB XMP packet converts with default
+     * settings (TIFF's source-proportional reservation terms). */
+    {
+        size_t xn = 10u * 1024u * 1024u;
+        char *xmp = (char *)malloc(xn + 1u);
+        CHECK(xmp != NULL);
+        memset(xmp, 'x', xn);
+        memcpy(xmp, "<x:xmpmeta>", 11);
+        xmp[xn] = '\0';
+        tmk m;
+        tmk_defaults(&m, 16u, 16u, 3u, 8u);
+        m.xmp = xmp;
+        uint8_t *b = make_tiff(&m, &n);
+        temp_path(p_src, sizeof(p_src), "xmp.tif");
+        temp_path(p_dst, sizeof(p_dst), "xmp_out.tif");
+        CHECK(write_file_all(p_src, b, n));
+        run_job(RFC_FORMAT_TIFF, RFC_FORMAT_TIFF, p_src, p_dst, NULL, NULL, &r);
+        CHECK_JOB_OK(r);
+        size_t on = 0u;
+        uint8_t *ob = read_file_all(p_dst, &on);
+        rfc_frame info;
+        CHECK(ob && adapter_decode(RFC_FORMAT_TIFF, ob, on, NULL, NULL, &info, NULL) == RFC_OK);
+        CHECK(info.metadata.xmp_len == xn);
+        free(ob);
+        remove(p_src);
+        remove(p_dst);
+        free(b);
+        free(xmp);
+    }
+    /* Encoders validate the buffer and honour a packed (zero) stride. */
+    {
+        const rfc_session_adapter *ads[2] = {rfc_registry_acquire_session(RFC_FORMAT_TIFF),
+                                             rfc_registry_acquire_session(RFC_FORMAT_GIF)};
+        rfc_format_id fs[2] = {RFC_FORMAT_TIFF, RFC_FORMAT_GIF};
+        for (int k = 0; k < 2; k++) {
+            rfc_exec_context e;
+            tracked st;
+            rfc_allocator al;
+            init_exec(&e, &st, &al);
+            void *sess = NULL;
+            CHECK(ads[k]->open_session(&e, &sess) == RFC_OK);
+            uint8_t px[4 * 3 * 3];
+            for (size_t i = 0u; i < sizeof(px); i++) px[i] = (uint8_t)(i * 9u);
+            rfc_frame fr;
+            memset(&fr, 0, sizeof(fr));
+            fr.layout = (rfc_layout){RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 4u, 3u, 0u, 8u};
+            fr.data = px;
+            fr.data_len = sizeof(px) - 1u; /* one byte short */
+            fr.metadata.orientation = RFC_ORIENTATION_NORMAL;
+            rfc_encoded enc;
+            memset(&enc, 0, sizeof(enc));
+            CHECK(ads[k]->encode_session(sess, &e, &fr, 1u, NULL, NULL, 0u, &enc) ==
+                  RFC_ERR_INVALID_ARGUMENT);
+            fr.data_len = sizeof(px);
+            CHECK(ads[k]->encode_session(sess, &e, &fr, 1u, NULL, NULL, 0u, &enc) == RFC_OK);
+            uint8_t *back = NULL;
+            CHECK(adapter_decode(fs[k], enc.data, enc.len, NULL, NULL, NULL, &back) == RFC_OK);
+            CHECK(memcmp(back, px, sizeof(px)) == 0); /* rows not repeated */
+            free(back);
+            rfc_encoded_free(&enc);
+            ads[k]->close_session(sess);
+            rfc_registry_release_session(fs[k]);
+        }
+    }
+    /* GIF encode never returns success with a truncated output: every
+     * allocation failure point either refuses or yields a decodable file. */
+    {
+        rfc_layout lay = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 64u, 64u, 0u, 8u};
+        uint8_t *px = (uint8_t *)malloc(64u * 64u * 3u);
+        CHECK(px != NULL);
+        for (size_t i = 0u; i < 64u * 64u * 3u; i++) px[i] = (uint8_t)((i / 3u) % 7u * 30u);
+        int refused = 0, ok = 0;
+        for (size_t fail_at = 1u; fail_at < 40u; fail_at++) {
+            fail_alloc fa = {0u, fail_at};
+            rfc_allocator fal = {fa_alloc, fa_free, &fa};
+            rfc_exec_context e;
+            memset(&e, 0, sizeof(e));
+            rfc_limits_default(&e.limits);
+            e.codec_threads = 1u;
+            e.allocator = &fal;
+            rfc_frame fr;
+            memset(&fr, 0, sizeof(fr));
+            fr.layout = lay;
+            fr.layout.stride_bytes = 64u * 3u;
+            fr.data = px;
+            fr.data_len = 64u * 64u * 3u;
+            fr.metadata.orientation = RFC_ORIENTATION_NORMAL;
+            const rfc_session_adapter *a = rfc_registry_acquire_session(RFC_FORMAT_GIF);
+            void *sess = NULL;
+            CHECK(a->open_session(&e, &sess) == RFC_OK);
+            rfc_encoded enc;
+            memset(&enc, 0, sizeof(enc));
+            rfc_status est = a->encode_session(sess, &e, &fr, 1u, NULL, NULL, 0u, &enc);
+            a->close_session(sess);
+            rfc_registry_release_session(RFC_FORMAT_GIF);
+            if (est == RFC_OK) {
+                ok++;
+                uint8_t *back = NULL;
+                CHECK(adapter_decode(RFC_FORMAT_GIF, enc.data, enc.len, NULL, NULL, NULL, &back) == RFC_OK);
+                CHECK(memcmp(back, px, 64u * 64u * 3u) == 0);
+                free(back);
+                rfc_encoded_free(&enc);
+            } else {
+                refused++;
+                if (est != RFC_ERR_OUT_OF_MEMORY) {
+                    fprintf(stderr, "gif fail_at=%zu: %s\n", fail_at, rfc_status_name(est));
+                }
+                CHECK(est == RFC_ERR_OUT_OF_MEMORY && enc.data == NULL);
+            }
+        }
+        CHECK(refused > 0 && ok > 0);
+        free(px);
+    }
+    /* An opaque GIF is limited as the rgb8 it decodes to. */
+    {
+        gmk g;
+        gmk_defaults(&g, 40u, 30u);
+        uint8_t *b = make_gif(&g, &n);
+        rfc_limits lim;
+        rfc_limits_default(&lim);
+        lim.max_decoded_bytes = 40u * 30u * 3u;
+        CHECK(adapter_decode(RFC_FORMAT_GIF, b, n, &lim, NULL, NULL, NULL) == RFC_OK);
+        lim.max_decoded_bytes = 40u * 30u * 3u - 1u;
+        CHECK(adapter_decode(RFC_FORMAT_GIF, b, n, &lim, NULL, NULL, NULL) == RFC_ERR_LIMIT_EXCEEDED);
+        free(b);
+    }
+    /* The timing refusal names every unsupported item. */
+    {
+        rfc_metadata_report mr;
+        uint32_t present = RFC_META_ITEM_FRAME_TIMING | RFC_META_ITEM_ICC | RFC_META_ITEM_XMP;
+        CHECK(rfc_metadata_check_preflight(RFC_FORMAT_BMP, RFC_META_POLICY_PRESERVE,
+                                           RFC_EXACT_PIXEL_EXACT, present, 0u, &mr) ==
+              RFC_ERR_METADATA_POLICY);
+        CHECK(mr.unsupported_items == present);
+    }
+    /* Cancellation inside the GIF LZW pre-scan (probe) and palette pass. */
+    {
+        gmk g;
+        gmk_defaults(&g, 2048u, 512u);
+        uint8_t *b = make_gif(&g, &n);
+        const rfc_session_adapter *a = rfc_registry_acquire_session(RFC_FORMAT_GIF);
+        rfc_exec_context e;
+        tracked st;
+        rfc_allocator al;
+        init_exec(&e, &st, &al);
+        void *sess = NULL;
+        CHECK(a->open_session(&e, &sess) == RFC_OK);
+        cancel_ctx cc = {a, sess, 0};
+        rfc_codecs_tiff_gif_set_row_hook_for_testing(cancel_hook, &cc);
+        rfc_image_probe pr;
+        CHECK(a->probe_session(sess, &e, b, n, &pr) == RFC_ERR_CANCELLED);
+        rfc_codecs_tiff_gif_set_row_hook_for_testing(NULL, NULL);
+        a->close_session(sess);
+        CHECK(a->open_session(&e, &sess) == RFC_OK);
+        uint8_t *px = (uint8_t *)calloc(256u * 64u * 3u, 1u);
+        CHECK(px != NULL);
+        rfc_frame fr;
+        memset(&fr, 0, sizeof(fr));
+        fr.layout = (rfc_layout){RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 256u, 64u, 256u * 3u, 8u};
+        fr.data = px;
+        fr.data_len = 256u * 64u * 3u;
+        fr.metadata.orientation = RFC_ORIENTATION_NORMAL;
+        cc.sess = sess;
+        cc.after = 3;
+        rfc_codecs_tiff_gif_set_row_hook_for_testing(cancel_hook, &cc);
+        rfc_encoded enc;
+        memset(&enc, 0, sizeof(enc));
+        CHECK(a->encode_session(sess, &e, &fr, 1u, NULL, NULL, 0u, &enc) == RFC_ERR_CANCELLED);
+        CHECK(enc.data == NULL);
+        rfc_codecs_tiff_gif_set_row_hook_for_testing(NULL, NULL);
+        a->close_session(sess);
+        rfc_registry_release_session(RFC_FORMAT_GIF);
+        CHECK(st.live == 0u);
+        free(px);
+        free(b);
+    }
+    /* GIF -> PNG -> GIF returns the original samples (untimed). */
+    {
+        gmk g;
+        gmk_defaults(&g, 33u, 21u);
+        g.transparent = 1;
+        uint8_t *gb = make_gif(&g, &n);
+        temp_path(p_src, sizeof(p_src), "rt.gif");
+        temp_path(p_png, sizeof(p_png), "rt.png");
+        temp_path(p_dst, sizeof(p_dst), "rt_back.gif");
+        CHECK(write_file_all(p_src, gb, n));
+        run_job(RFC_FORMAT_GIF, RFC_FORMAT_PNG, p_src, p_png, NULL, NULL, &r);
+        CHECK_JOB_OK(r);
+        run_job(RFC_FORMAT_PNG, RFC_FORMAT_GIF, p_png, p_dst, NULL, NULL, &r);
+        CHECK_JOB_OK(r);
+        size_t bn = 0u;
+        uint8_t *bb = read_file_all(p_dst, &bn);
+        uint8_t *a1 = NULL, *a2 = NULL;
+        CHECK(adapter_decode(RFC_FORMAT_GIF, gb, n, NULL, NULL, NULL, &a1) == RFC_OK);
+        CHECK(bb && adapter_decode(RFC_FORMAT_GIF, bb, bn, NULL, NULL, NULL, &a2) == RFC_OK);
+        CHECK(memcmp(a1, a2, 33u * 21u * 4u) == 0);
+        free(a1); free(a2); free(bb);
+        remove(p_src); remove(p_png); remove(p_dst);
+        free(gb);
+    }
+    /* A scheduled file job cancelled mid-decode leaves the source intact and
+     * no destination or partial file. */
+    for (int fmt = 0; fmt < 2; fmt++) {
+        uint8_t *b = NULL;
+        if (fmt == 0) {
+            tmk m;
+            tmk_defaults(&m, 512u, 512u, 3u, 8u);
+            b = make_tiff(&m, &n);
+        } else {
+            gmk g;
+            gmk_defaults(&g, 512u, 512u);
+            b = make_gif(&g, &n);
+        }
+        temp_path(p_src, sizeof(p_src), fmt ? "c.gif" : "c.tif");
+        temp_path(p_dst, sizeof(p_dst), "c_out.png");
+        CHECK(write_file_all(p_src, b, n));
+        rfc_scheduler_config cfg;
+        rfc_scheduler_config_default(&cfg);
+        rfc_scheduler *sched = rfc_scheduler_create(&cfg);
+        CHECK(sched != NULL);
+        rfc_io_source si;
+        rfc_io_sink so;
+        rfc_io_source_init_path(&si, p_src, RFC_IMPORT_DEFAULT);
+        rfc_io_sink_init_path(&so, p_dst, RFC_EXPORT_REFUSE_EXISTING);
+        rfc_job_spec sp;
+        memset(&sp, 0, sizeof(sp));
+        sp.source_format = fmt ? RFC_FORMAT_GIF : RFC_FORMAT_TIFF;
+        sp.target_format = RFC_FORMAT_PNG;
+        sp.io_source = &si;
+        sp.io_sink = &so;
+        int after = 4;
+        g_cancel_job = NULL;
+        rfc_codecs_tiff_gif_set_row_hook_for_testing(job_cancel_hook, &after);
+        rfc_job *j = NULL;
+        CHECK(rfc_scheduler_submit(sched, NULL, &sp, &j) == RFC_OK);
+        g_cancel_job = j;
+        CHECK(rfc_job_wait(j, UINT32_MAX) == RFC_OK);
+        rfc_codecs_tiff_gif_set_row_hook_for_testing(NULL, NULL);
+        g_cancel_job = NULL;
+        rfc_job_snapshot snap;
+        CHECK(rfc_job_snapshot_get(j, &snap) == RFC_OK);
+        CHECK(snap.status == RFC_ERR_CANCELLED);
+        rfc_job_release(j);
+        rfc_scheduler_destroy(sched);
+        char partial[600];
+        snprintf(partial, sizeof(partial), "%s.partial", p_dst);
+        CHECK(!file_exists(p_dst) && !file_exists(partial));
+        size_t sn = 0u;
+        uint8_t *sb = read_file_all(p_src, &sn);
+        CHECK(sb && sn == n && memcmp(sb, b, n) == 0);
+        free(sb);
+        remove(p_src);
+        free(b);
+    }
+    /* GIF default submissions: path and bytes for a compressible 4096x4096
+     * screen, and a submit-time refusal under a lower max_width. */
+    {
+        gmk g;
+        gmk_defaults(&g, 4096u, 4096u);
+        uint8_t *gb = make_gif(&g, &n);
+        temp_path(p_src, sizeof(p_src), "g4k.gif");
+        temp_path(p_dst, sizeof(p_dst), "g4k.gif.out.gif");
+        CHECK(write_file_all(p_src, gb, n));
+        run_job(RFC_FORMAT_GIF, RFC_FORMAT_GIF, p_src, p_dst, NULL, NULL, &r);
+        CHECK_JOB_OK(r);
+        remove(p_dst);
+        run_job_full(RFC_FORMAT_GIF, RFC_FORMAT_GIF, NULL, gb, n, p_dst, NULL, NULL, NULL, NULL, 0u, &r);
+        CHECK_JOB_OK(r);
+        remove(p_dst);
+        rfc_limits lim;
+        rfc_limits_default(&lim);
+        lim.max_width = 1024u;
+        run_job_full(RFC_FORMAT_GIF, RFC_FORMAT_GIF, p_src, NULL, 0u, p_dst, NULL, NULL, NULL, &lim, 0u, &r);
+        CHECK(r.submit == RFC_ERR_LIMIT_EXCEEDED && !file_exists(p_dst));
+        remove(p_src);
+        free(gb);
+    }
+    printf("tiff_gif: review_round1_regressions ok\n");
 }
 
 /* ------------------------------------------------------------------------ */
@@ -1275,6 +1678,7 @@ static int cli_main(int argc, char **argv) {
 }
 
 int main(int argc, char **argv) {
+    setvbuf(stdout, NULL, _IONBF, 0); /* progress survives a crash */
     TIFFSetErrorHandler(NULL);
     TIFFSetWarningHandler(NULL);
     if (argc >= 3 && strcmp(argv[1], "cli") == 0) {
@@ -1287,6 +1691,7 @@ int main(int argc, char **argv) {
     test_gif_import_lzw_and_refusals();
     test_gif_export_palette_timing();
     test_jobs_limits_budget_and_cancel();
+    test_review_round1();
     CHECK(rfc_codecs_unregister_tiff_gif() == RFC_OK);
     printf("tiff_gif: all checks passed (%d checks)\n", g_checks);
     return 0;

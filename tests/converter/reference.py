@@ -227,7 +227,7 @@ PROVENANCE_TABLE: tuple[dict[str, Any], ...] = (
         "shares_c_library_with_converter": False,
         "claims_independent_decoder": True,
         "coverage_state": "executable-in-d10-t02-s6",
-        "provenance_note": "Uncompressed, PackBits, LZW and Deflate TIFF (strips, tiles, contiguous and separate planes, 8/16-bit, horizontal predictor) verified by the independent pure-Python tests/converter/tiff_gif_ref.py; JPEG- and WebP-compressed TIFF only by a fresh libtiff session (shared provider); Pillow tiff binds libtiff.",
+        "provenance_note": "Uncompressed, PackBits, LZW and Deflate TIFF (strips, tiles, contiguous and separate planes, 8/16-bit, horizontal predictor) verified by the independent pure-Python tests/converter/tiff_gif_ref.py; JPEG-compressed (RGB and YCbCr) and WebP-lossless TIFF only by a fresh libtiff session (shared provider; WebP checked for exact samples, JPEG for closeness to the uncompressed pattern); Pillow tiff binds libtiff.",
     },
     {
         "format_name": "heif",

@@ -1337,6 +1337,7 @@ def case_tiff_gif(all_targets=False):
             "tiff_gif: gif_import_lzw_and_refusals ok",
             "tiff_gif: gif_export_palette_timing ok",
             "tiff_gif: jobs_limits_budget_and_cancel ok",
+            "tiff_gif: review_round1_regressions ok",
             "tiff_gif: all checks passed",
         ],
         host_flags_fn=_flags,
