@@ -604,6 +604,7 @@ typedef struct mem_ctx {
     size_t n;
     int fail_at;   /* fail the Nth read (0: never) */
     int reads;
+    size_t bytes;  /* bytes returned in all */
 } mem_ctx;
 
 static rfc_status mem_read(void *ctx, uint64_t off, uint8_t *dst, size_t n, size_t *got) {
@@ -614,19 +615,20 @@ static rfc_status mem_read(void *ctx, uint64_t off, uint8_t *dst, size_t n, size
     size_t k = m->n - (size_t)off < n ? m->n - (size_t)off : n;
     memcpy(dst, m->d + off, k);
     *got = k;
+    m->bytes += k;
     return RFC_OK;
 }
 
 static rfc_status scan(const hspec *s, rfc_heif_info *info, const char **detail) {
     static uint8_t bytes[262144];
     size_t n = build_heif(s, bytes);
-    mem_ctx m = {bytes, n, 0, 0};
+    mem_ctx m = {bytes, n, 0, 0, 0u};
     int rf = 0;
     rfc_status st = rfc_heif_scan(mem_read, &m, n, NULL, info, detail, &rf);
     CHECK(!rf);
     /* the same verdict with the size unknown (read to the end) */
     rfc_heif_info info2;
-    mem_ctx m2 = {bytes, n, 0, 0};
+    mem_ctx m2 = {bytes, n, 0, 0, 0u};
     rfc_status st2 = rfc_heif_scan(mem_read, &m2, RFC_HEIF_SIZE_UNKNOWN, NULL, &info2, NULL, &rf);
     CHECK(st2 == st && info2.width == info->width && info2.height == info->height);
     return st;
@@ -756,6 +758,17 @@ static void test_registration_and_scanner(void) {
      * clean-aperture extremes stay defined (UBSan) */
     hspec_default(&s); s.meta_to_eof = 1;
     CHECK(scan(&s, &info, &d) == RFC_OK && info.width == 64u && info.height == 48u);
+    {
+        /* read once: with the size unknown, the meta payload is read a
+         * single time (the bytes read stay within the file plus the box
+         * headers looked at) */
+        static uint8_t eb[262144];
+        size_t en = build_heif(&s, eb);
+        mem_ctx em = {eb, en, 0, 0, 0u};
+        int erf = 0;
+        CHECK(rfc_heif_scan(mem_read, &em, RFC_HEIF_SIZE_UNKNOWN, NULL, &info, NULL, &erf) == RFC_OK);
+        CHECK(em.bytes <= en + 64u);
+    }
     hspec_default(&s); s.primary_type = "grid"; s.grid_tiles = 4; s.w = 60u; s.h = 60u; s.tile_w = 32u; s.tile_h = 32u;
     CHECK(scan(&s, &info, &d) == RFC_OK && info.width == 60u && info.coded_width == 64u &&
           info.coded_height == 64u && info.tile_width == 32u);
@@ -800,7 +813,7 @@ static void test_registration_and_scanner(void) {
         s.icc_len = 64;
         size_t n = build_heif(&s, bytes);
         for (size_t cut = 0u; cut < n; cut += 7u) {
-            mem_ctx m = {bytes, cut, 0, 0};
+            mem_ctx m = {bytes, cut, 0, 0, 0u};
             int rf = 0;
             rfc_status st = rfc_heif_scan(mem_read, &m, cut, NULL, &info, &d, &rf);
             CHECK(st != RFC_OK || cut >= n - 16u); /* mdat payload is not needed */
@@ -808,12 +821,12 @@ static void test_registration_and_scanner(void) {
         }
         /* the reader is read a handful of times (top-level headers, then the
          * meta box once); a failure at any of those reads is the reader's */
-        mem_ctx count = {bytes, n, 1000000, 0};
+        mem_ctx count = {bytes, n, 1000000, 0, 0u};
         int rf0 = 0;
         CHECK(rfc_heif_scan(mem_read, &count, n, NULL, &info, &d, &rf0) == RFC_OK && !rf0);
         CHECK(count.reads >= 3 && count.reads <= 8);
         for (int fail = 1; fail <= count.reads; fail++) {
-            mem_ctx m = {bytes, n, fail, 0};
+            mem_ctx m = {bytes, n, fail, 0, 0u};
             int rf = 0;
             rfc_status st = rfc_heif_scan(mem_read, &m, n, NULL, &info, &d, &rf);
             CHECK(rf && st == RFC_ERR_IO);

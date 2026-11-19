@@ -1403,9 +1403,12 @@ def _hevc_link_name(token):
     name without '-l', a 'lib' prefix and library extensions, compared
     exactly (so libx265.a, -lx265, libkvazaar.a and libheif.dll.a match,
     rfc_test_heif.exe does not)."""
-    name = os.path.basename(token.strip().strip('"'))
-    if name.startswith("-l"):
-        name = name[2:]
+    tok = token.strip().strip('"')
+    if tok.startswith("-l:"):
+        tok = tok[3:]  # -l:<file> selects that exact archive
+    elif tok.startswith("-l"):
+        tok = tok[2:]
+    name = os.path.basename(tok)
     low = name.lower()
     for ext in (".dll.a", ".a", ".lib", ".so", ".dylib", ".dll", ".obj", ".o"):
         if low.endswith(ext):
@@ -1431,8 +1434,9 @@ def _link_tokens_and_archives():
                     continue
                 for tok in line.split("=", 1)[-1].split():
                     tokens.append((f"{os.path.relpath(path, ROOT)}:{no}", tok))
-                    if tok.endswith(".a"):
-                        cand = tok if os.path.isabs(tok) else os.path.join(dp, tok)
+                    arch = tok[3:] if tok.startswith("-l:") else tok
+                    if arch.endswith(".a"):
+                        cand = arch if os.path.isabs(arch) else os.path.join(dp, arch)
                         if os.path.isfile(cand):
                             archives.add(os.path.normpath(cand))
     return tokens, sorted(archives)

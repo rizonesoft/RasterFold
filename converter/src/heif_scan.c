@@ -886,23 +886,44 @@ rfc_status rfc_heif_scan(rfc_heif_read_fn read_at, void *ctx, uint64_t size,
         st = refuse(&c, RFC_ERR_UNSUPPORTED_COMBINATION,
                     "heif: an image sequence track (sequences are not supported)");
     }
+    uint8_t *meta = NULL;
     if (st == RFC_OK && meta_to_end) {
-        /* the size is unknown: the meta box ends where the input does,
-         * found by reading on to the end within the meta bound */
-        uint8_t probe[4096];
-        uint64_t at = meta_off;
-        for (;;) {
+        /* the size is unknown: the meta box ends where the input does; it is
+         * read once, to the end, into a buffer grown within the meta bound */
+        size_t cap = 65536u, len = 0u;
+        meta = (uint8_t *)alloc->alloc(alloc->ctx, cap);
+        if (!meta) st = RFC_ERR_OUT_OF_MEMORY;
+        while (st == RFC_OK) {
+            if (len == cap) {
+                if ((uint64_t)cap > RFC_HEIF_MAX_META_BYTES) {
+                    st = RFC_ERR_LIMIT_EXCEEDED;
+                    break;
+                }
+                uint64_t want = (uint64_t)cap * 2u;
+                size_t ncap = want > RFC_HEIF_MAX_META_BYTES + 1u
+                                  ? (size_t)(RFC_HEIF_MAX_META_BYTES + 1u)
+                                  : (size_t)want;
+                uint8_t *nb = (uint8_t *)alloc->alloc(alloc->ctx, ncap);
+                if (!nb) {
+                    st = RFC_ERR_OUT_OF_MEMORY;
+                    break;
+                }
+                memcpy(nb, meta, len);
+                alloc->free(alloc->ctx, meta);
+                meta = nb;
+                cap = ncap;
+            }
             size_t got = 0u;
-            st = src_read(&r, at, probe, sizeof(probe), &got);
+            st = src_read(&r, meta_off + len, meta + len, cap - len, &got);
             if (st != RFC_OK) break;
-            at += got;
-            if (at - meta_off > RFC_HEIF_MAX_META_BYTES) {
+            len += got;
+            if (len > RFC_HEIF_MAX_META_BYTES) {
                 st = RFC_ERR_LIMIT_EXCEEDED;
                 break;
             }
-            if (got < sizeof(probe)) break;
+            if (len < cap) break; /* the end of the input */
         }
-        meta_size = at - meta_off;
+        meta_size = len;
     }
     if (st == RFC_OK && (!ftyp_first || !meta_seen || meta_size < 4u)) {
         st = RFC_ERR_INVALID_ARGUMENT;
@@ -910,9 +931,10 @@ rfc_status rfc_heif_scan(rfc_heif_read_fn read_at, void *ctx, uint64_t size,
     if (st == RFC_OK && meta_size > RFC_HEIF_MAX_META_BYTES) {
         st = RFC_ERR_LIMIT_EXCEEDED;
     }
-    uint8_t *meta = NULL;
     if (st == RFC_OK) {
-        meta = (uint8_t *)alloc->alloc(alloc->ctx, (size_t)meta_size);
+        if (!meta) {
+            meta = (uint8_t *)alloc->alloc(alloc->ctx, (size_t)meta_size);
+        }
         c.items = (item *)alloc->alloc(alloc->ctx, sizeof(item) * RFC_HEIF_MAX_ITEMS);
         c.refs = (ref *)alloc->alloc(alloc->ctx, sizeof(ref) * RFC_HEIF_MAX_REFERENCES);
         c.props = (prop *)alloc->alloc(alloc->ctx, sizeof(prop) * RFC_HEIF_MAX_PROPERTIES);
@@ -921,7 +943,7 @@ rfc_status rfc_heif_scan(rfc_heif_read_fn read_at, void *ctx, uint64_t size,
             st = RFC_ERR_OUT_OF_MEMORY;
         }
     }
-    if (st == RFC_OK) {
+    if (st == RFC_OK && !meta_to_end) {
         size_t got = 0u;
         st = src_read(&r, meta_off, meta, (size_t)meta_size, &got);
         if (st == RFC_OK && got != meta_size) {

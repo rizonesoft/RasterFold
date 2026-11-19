@@ -289,7 +289,7 @@ class LinkMatcherTests(unittest.TestCase):
     def test_hevc_link_names(self) -> None:
         cc = _load_mod("_rfc_check_conv", ROOT / "scripts" / "check-converter.py")
         for tok in ("libx265.a", "-lx265", "libkvazaar.a", "/opt/lib/libde265.a", "-lheif",
-                    "libheif.dll.a", "x265.lib", "libopenhevc.a"):
+                    "libheif.dll.a", "x265.lib", "libopenhevc.a", "-l:libx265.a", "-l:/opt/libde265.a"):
             self.assertIsNotNone(cc._hevc_link_name(tok), tok)
         for tok in ("rfc_test_heif.exe", "heif_scan.c.obj", "librfc_engine.a", "-lole32", "libavif.a",
                     "libjxl.a"):
