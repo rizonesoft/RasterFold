@@ -147,35 +147,12 @@ def readobj_imports(pe_path: Path) -> list[str]:
     return names
 
 
-WSL_INTEROP_LAUNCH_FAILURE = 'UtilAcceptVsock'
-
-
 def run_windows_binary_isolated(
     exe_path: Path,
     args: tuple[str, ...] = (),
     timeout_sec: float = 45.0,
 ) -> subprocess.CompletedProcess[str]:
     """Run a Windows PE binary in a clean temp dir with System32-only PATH, killing its tree on timeout."""
-    res = _run_windows_binary_isolated_once(exe_path, args, timeout_sec)
-    # WORKAROUND: under host load the WSL interop bridge intermittently fails
-    # to start powershell.exe ("UtilAcceptVsock:281: accept4 failed 110"), a
-    # WSL platform fault the repository cannot fix; the child never started
-    # (it prints SMOKE_WIN_PID first), so only that signature is relaunched,
-    # at most twice.
-    for _ in range(2):
-        if (os.name == 'nt' or res.returncode == 0 or (res.stdout or '').strip()
-                or WSL_INTEROP_LAUNCH_FAILURE not in (res.stderr or '')):
-            break
-        res = _run_windows_binary_isolated_once(exe_path, args, timeout_sec)
-    return res
-
-
-def _run_windows_binary_isolated_once(
-    exe_path: Path,
-    args: tuple[str, ...] = (),
-    timeout_sec: float = 45.0,
-) -> subprocess.CompletedProcess[str]:
-    """One isolated run of a Windows PE binary (see run_windows_binary_isolated)."""
     if os.name == 'nt':
         tmp = Path(tempfile.mkdtemp(prefix='rfc_smoke_'))
         copied = tmp / exe_path.name
@@ -346,41 +323,6 @@ def _run_windows_binary_isolated_once(
             proc.stdout.close()
         if proc.stderr is not None:
             proc.stderr.close()
-
-
-class IsolatedRunnerRelaunchTests(unittest.TestCase):
-    """The isolated Windows runner relaunches only a WSL interop launch failure."""
-
-    def test_relaunch_only_the_bridge_launch_failure(self) -> None:
-        if os.name == 'nt':
-            self.skipTest('the WSL interop bridge exists only on the Linux side')
-        mod = sys.modules[__name__]
-        real = mod._run_windows_binary_isolated_once
-        bridge = subprocess.CompletedProcess(['x'], 1, '', '<3>WSL (1 - ) ERROR: UtilAcceptVsock:281: accept4 failed 110\n')
-        calls: list[int] = []
-
-        def fake(results):
-            def run(exe, args=(), timeout_sec=45.0):
-                calls.append(1)
-                return results.pop(0)
-            return run
-
-        try:
-            ok = subprocess.CompletedProcess(['x'], 0, 'SMOKE_WIN_PID=1\nall checks passed', '')
-            mod._run_windows_binary_isolated_once = fake([bridge, ok])
-            self.assertEqual(mod.run_windows_binary_isolated(Path('x.exe')).returncode, 0)
-            self.assertEqual(len(calls), 2)
-            calls.clear()
-            failed = subprocess.CompletedProcess(['x'], 1, 'SMOKE_WIN_PID=1\nCHECK FAILED', '')
-            mod._run_windows_binary_isolated_once = fake([failed, ok])
-            self.assertEqual(mod.run_windows_binary_isolated(Path('x.exe')).returncode, 1)
-            self.assertEqual(len(calls), 1)  # a test failure is never relaunched
-            calls.clear()
-            mod._run_windows_binary_isolated_once = fake([bridge, bridge, bridge, ok])
-            self.assertEqual(mod.run_windows_binary_isolated(Path('x.exe')).returncode, 1)
-            self.assertEqual(len(calls), 3)  # at most two relaunches
-        finally:
-            mod._run_windows_binary_isolated_once = real
 
 
 class BundleTests(unittest.TestCase):

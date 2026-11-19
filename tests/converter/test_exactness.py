@@ -326,35 +326,6 @@ class ExactnessReferenceTests(unittest.TestCase):
             with self.assertRaises(ref.rfi_ref.FormatError):
                 ref.rfi_ref.decode_image(bytes(tampered))
 
-    def test_run_process_tree_relaunches_only_a_wsl_interop_launch_failure(self) -> None:
-        if os.name == "nt":
-            self.skipTest("the WSL interop bridge exists only on the Linux side")
-        with tempfile.TemporaryDirectory() as td:
-            count = Path(td) / "count"
-            fail_then_ok = (
-                f'n=$(cat {count} 2>/dev/null || echo 0); n=$((n+1)); echo $n > {count}; '
-                'if [ $n -lt 2 ]; then echo "<3>WSL (1 - ) ERROR: UtilAcceptVsock:281: accept4 failed 110" >&2; '
-                'exit 1; fi; echo ran'
-            )
-            res = ref.run_process_tree(["sh", "-c", fail_then_ok], capture_output=True, timeout=30.0)
-            self.assertEqual((res.returncode, res.stdout.strip(), count.read_text().strip()), (0, "ran", "2"))
-            # any other failure, or one that printed output, is returned as it is
-            count.write_text("0")
-            other = ref.run_process_tree(["sh", "-c", f'echo 9 > {count}; echo boom >&2; exit 3'],
-                                         capture_output=True, timeout=30.0)
-            self.assertEqual((other.returncode, count.read_text().strip()), (3, "9"))
-            count.write_text("0\n")
-            printed = ref.run_process_tree(
-                ["sh", "-c", f'echo 5 >> {count}; echo partial; echo "UtilAcceptVsock" >&2; exit 1'],
-                capture_output=True, timeout=30.0)
-            self.assertEqual((printed.returncode, count.read_text().split()), (1, ["0", "5"]))
-            # a persistent bridge failure is retried at most twice
-            count.write_text("0")
-            always = ref.run_process_tree(
-                ["sh", "-c", f'echo x >> {count}; echo "UtilAcceptVsock" >&2; exit 1'],
-                capture_output=True, timeout=30.0)
-            self.assertEqual((always.returncode, count.read_text().count("x")), (1, 3))
-
     def test_run_process_tree_kills_descendants_on_timeout(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             pid_file = Path(tmp) / "grandchild.pid"

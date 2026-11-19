@@ -295,6 +295,38 @@ class LinkMatcherTests(unittest.TestCase):
                     "libjxl.a"):
             self.assertIsNone(cc._hevc_link_name(tok), tok)
 
+    def test_linker_reported_inputs_catch_flag_and_search_path_archives(self) -> None:
+        """An HEVC-named archive reached only through -Wl, flags and a library
+        search path, with no member extracted, is still among the inputs lld
+        reports reading, so the check sees it however the command spells it."""
+        cc = _load_mod("_rfc_check_conv", ROOT / "scripts" / "check-converter.py")
+        tc = ROOT / "tools" / "llvm-mingw-linux" / "bin"
+        clang, ar = tc / "x86_64-w64-mingw32-clang", tc / "llvm-ar"
+        if not clang.exists() or not ar.exists():
+            self.skipTest("the pinned llvm-mingw toolchain is not provisioned")
+        with tempfile.TemporaryDirectory() as td:
+            t = Path(td)
+            (t / "unused.c").write_text("int x265_unused(void) { return 1; }\n")
+            (t / "main.c").write_text("int main(void) { return 0; }\n")
+            obj = _ref.run_process_tree([str(clang), "-c", str(t / "unused.c"), "-o", str(t / "unused.o")],
+                                       capture_output=True, timeout=120.0)
+            self.assertEqual(obj.returncode, 0, obj.stderr)
+            lib = t / "deps"
+            lib.mkdir()
+            ok = _ref.run_process_tree([str(ar), "rcs", str(lib / "libx265.a"), str(t / "unused.o")],
+                                      capture_output=True, timeout=60.0)
+            self.assertEqual(ok.returncode, 0, ok.stderr)
+            for spelling in (["-Wl,-L" + str(lib), "-Wl,-lx265"], ["-Wl,-L" + str(lib), "-Wl,-l:libx265.a"]):
+                link = _ref.run_process_tree([str(clang), str(t / "main.c"), "-o", str(t / "m.exe"), *spelling,
+                                             "-Wl,--verbose"], cwd=td, capture_output=True, timeout=300.0)
+                self.assertEqual(link.returncode, 0, link.stderr[-400:])
+                files = cc._linker_inputs_from_verbose(link.stdout + "\n" + link.stderr, td)
+                self.assertEqual(cc._hevc_among_inputs(files), str(lib / "libx265.a"), spelling)
+            clean = _ref.run_process_tree([str(clang), str(t / "main.c"), "-o", str(t / "c.exe"), "-Wl,--verbose"],
+                                         cwd=td, capture_output=True, timeout=300.0)
+            self.assertIsNone(cc._hevc_among_inputs(
+                cc._linker_inputs_from_verbose(clean.stdout + "\n" + clean.stderr, td)))
+
 
 def load_tests(loader: unittest.TestLoader, tests: unittest.TestSuite, pattern: str | None) -> unittest.TestSuite:
     suite = unittest.TestSuite()

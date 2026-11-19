@@ -1432,22 +1432,6 @@ def _kill_process_tree(
         _kill_posix_tree(proc.pid, tree_token)
 
 
-WSL_INTEROP_LAUNCH_FAILURE = "UtilAcceptVsock"
-WSL_INTEROP_RELAUNCHES = 2
-
-
-def _wsl_interop_launch_failed(res: subprocess.CompletedProcess[Any]) -> bool:
-    """The WSL interop bridge failed to start the Windows child: a nonzero
-    exit, nothing on stdout, and the bridge's vsock accept error on stderr."""
-    out = res.stdout or ""
-    err = res.stderr or ""
-    if isinstance(out, bytes):
-        out = out.decode("utf-8", "replace")
-    if isinstance(err, bytes):
-        err = err.decode("utf-8", "replace")
-    return res.returncode != 0 and not out.strip() and WSL_INTEROP_LAUNCH_FAILURE in err
-
-
 def run_process_tree(
     cmd: list[str] | tuple[str, ...],
     *,
@@ -1458,31 +1442,6 @@ def run_process_tree(
     text: bool = True,
 ) -> subprocess.CompletedProcess[Any]:
     """Run a child command and terminate its entire descendant tree on completion or timeout."""
-    res = _run_process_tree_once(cmd, cwd=cwd, env=env, timeout=timeout,
-                                 capture_output=capture_output, text=text)
-    # WORKAROUND: under host load the WSL interop bridge intermittently fails
-    # to start a Windows child ("UtilAcceptVsock:281: accept4 failed 110"),
-    # a WSL platform fault the repository cannot fix; the child never ran,
-    # so only that exact signature is relaunched, at most twice.
-    if os.name != "nt" and capture_output:
-        for _ in range(WSL_INTEROP_RELAUNCHES):
-            if not _wsl_interop_launch_failed(res):
-                break
-            res = _run_process_tree_once(cmd, cwd=cwd, env=env, timeout=timeout,
-                                         capture_output=capture_output, text=text)
-    return res
-
-
-def _run_process_tree_once(
-    cmd: list[str] | tuple[str, ...],
-    *,
-    cwd: str | Path | None = None,
-    env: dict[str, str] | None = None,
-    timeout: float = 60.0,
-    capture_output: bool = False,
-    text: bool = True,
-) -> subprocess.CompletedProcess[Any]:
-    """Run a child command once and terminate its entire descendant tree on completion or timeout."""
     argv = [str(part) for part in cmd]
     pipes = subprocess.PIPE if capture_output else None
     tree_token = f"{os.getpid()}-{os.urandom(8).hex()}"

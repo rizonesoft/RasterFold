@@ -746,7 +746,7 @@ static void test_registration_and_scanner(void) {
     hspec_default(&s); s.hvcc_chroma = 10;
     CHECK(scan(&s, &info, &d) == RFC_ERR_UNSUPPORTED_SAMPLE);
     hspec_default(&s); s.primary_type = "grid"; s.grid_tiles = 4; s.grid_mixed = 1;
-    CHECK(scan(&s, &info, &d) == RFC_ERR_UNSUPPORTED_COMBINATION);
+    CHECK(scan(&s, &info, &d) == RFC_ERR_UNSUPPORTED_COMBINATION && d != NULL && strstr(d, "AV1") != NULL);
     hspec_default(&s); s.primary_type = "grid"; s.grid_tiles = 4; s.grid_deep_tile = 1;
     CHECK(scan(&s, &info, &d) == RFC_ERR_UNSUPPORTED_SAMPLE);
     hspec_default(&s); s.moov_only = 1;

@@ -654,6 +654,10 @@ static rfc_status scan_meta(heif_ctx *c, rfc_heif_info *out) {
             if (!t) {
                 return RFC_ERR_INVALID_ARGUMENT;
             }
+            if (t->type == FOURCC('a', 'v', '0', '1')) {
+                return refuse(c, RFC_ERR_UNSUPPORTED_COMBINATION,
+                              "heif: an AV1-coded HEIF image (not verified; AVIF files use the AVIF adapter)");
+            }
             if (t->type != FOURCC('h', 'v', 'c', '1')) {
                 return refuse(c, RFC_ERR_UNSUPPORTED_COMBINATION,
                               "heif: a grid whose tiles are not all HEVC");

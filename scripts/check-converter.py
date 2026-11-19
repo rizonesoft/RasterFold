@@ -1419,41 +1419,77 @@ def _hevc_link_name(token):
     return low if low in HEVC_LIBRARY_NAMES else None
 
 
-def _link_tokens_and_archives():
-    """Tokens of the resolved Windows link lines (the generated build.ninja
-    files of the converter and its dependencies) and the archives they name."""
-    base = os.path.join(ROOT, "build", "converter", "windows-x64")
-    tokens, archives = [], set()
-    for dp, _dn, fn in os.walk(base):
-        if "build.ninja" not in fn:
-            continue
-        path = os.path.join(dp, "build.ninja")
-        with open(path, encoding="utf-8", errors="replace") as fh:
-            for no, line in enumerate(fh, 1):
-                if "LINK_LIBRARIES" not in line and "LINK_PATH" not in line:
-                    continue
-                for tok in line.split("=", 1)[-1].split():
-                    tokens.append((f"{os.path.relpath(path, ROOT)}:{no}", tok))
-                    arch = tok[3:] if tok.startswith("-l:") else tok
-                    if arch.endswith(".a"):
-                        cand = arch if os.path.isabs(arch) else os.path.join(dp, arch)
-                        if os.path.isfile(cand):
-                            archives.add(os.path.normpath(cand))
-    return tokens, sorted(archives)
+def _linker_inputs_from_verbose(text, base_dir):
+    """The input files lld reports reading (its `ld.lld: Reading <file>`
+    lines under -Wl,--verbose), resolved against the link's directory."""
+    files = []
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("ld.lld: Reading "):
+            path = line[len("ld.lld: Reading "):].strip()
+            if not os.path.isabs(path):
+                path = os.path.normpath(os.path.join(base_dir, path))
+            if path not in files:
+                files.append(path)
+    return files
+
+
+def _hevc_among_inputs(files):
+    """The first input whose file name is an HEVC implementation, or None."""
+    for path in files:
+        if _hevc_link_name(path):
+            return path
+    return None
+
+
+def _windows_linker_inputs():
+    """Relink every built Windows converter executable from its own Ninja link
+    command into a scratch output with -Wl,--verbose, and return
+    {executable: [input files lld read]}: the linker's own account of its
+    inputs, however the command spells them."""
+    import shlex
+    app = os.path.join(ROOT, "build", "converter", "windows-x64", "app")
+    bindir = os.path.join(ROOT, "bin", "converter", "windows-x64")
+    result = {}
+    exes = sorted(f for f in os.listdir(bindir) if f.endswith(".exe")) if os.path.isdir(bindir) else []
+    with tempfile.TemporaryDirectory() as td:
+        for exe in exes:
+            target = os.path.join(bindir, exe)
+            res = run_capture(["ninja", "-C", app, "-t", "commands", target], timeout=60.0)
+            lines = [l for l in res.stdout.splitlines() if l.strip()]
+            if res.returncode or not lines:
+                raise RuntimeError(f"no Ninja link command for {exe}")
+            cmd = lines[-1].strip()
+            if cmd.startswith(": && "):
+                cmd = cmd[5:]
+            if cmd.endswith(" && :"):
+                cmd = cmd[:-5]
+            argv = shlex.split(cmd)
+            out = os.path.join(td, exe)
+            for i, a in enumerate(argv):
+                if a == "-o" and i + 1 < len(argv):
+                    argv[i + 1] = out
+            argv = [a for a in argv if not a.startswith("-Wl,--out-implib")]
+            argv.append("-Wl,--verbose")
+            link = _ref.run_process_tree(argv, cwd=app, timeout=600.0, capture_output=True)
+            if link.returncode:
+                raise RuntimeError(f"verbose relink of {exe} failed: {link.stderr[-400:]}")
+            files = _linker_inputs_from_verbose(link.stdout + "\n" + link.stderr, app)
+            if not files:
+                raise RuntimeError(f"lld reported no inputs for {exe}")
+            result[exe] = files
+    return result
 
 
 def _no_hevc_in_link_inputs():
-    """No resolved Windows link token and no dependency archive names an HEVC
-    implementation."""
-    tokens, _archives = _link_tokens_and_archives()
-    for where, tok in tokens:
-        if _hevc_link_name(tok):
-            return f"{where} links an HEVC implementation ({tok})"
-    deps = os.path.join(ROOT, "build", "converter", "windows-x64", "deps-prefix", "lib")
-    for f in sorted(os.listdir(deps)) if os.path.isdir(deps) else []:
-        if _hevc_link_name(f):
-            return f"dependency archive {f} is an HEVC implementation"
-    return None
+    """No file the linker reads for any Windows converter executable is an
+    HEVC implementation; returns (problem or None, {exe: inputs})."""
+    inputs = _windows_linker_inputs()
+    for exe, files in inputs.items():
+        bad = _hevc_among_inputs(files)
+        if bad:
+            return f"{exe} links {bad}", inputs
+    return None, inputs
 
 
 def _no_hevc_symbols(paths):
@@ -1525,20 +1561,20 @@ def case_heif(all_targets=False):
     if rc:
         return rc
     if all_targets or os.name == "nt":
-        msg = _no_hevc_in_link_inputs()
+        msg, inputs = _no_hevc_in_link_inputs()
         if msg:
             return fail(f"heif: {msg}")
-        print("heif: no HEVC implementation among the Windows link inputs and dependency archives")
+        n_in = len({f for files in inputs.values() for f in files})
+        print(f"heif: lld's own input lists for {len(inputs)} Windows executables "
+              f"({n_in} files read) name no HEVC implementation")
         bindir = os.path.join(ROOT, "bin", "converter", "windows-x64")
-        deps = os.path.join(ROOT, "build", "converter", "windows-x64", "deps-prefix", "lib")
-        arts = [os.path.join(bindir, n) for n in ("rfc_test_heif.exe", "rfc_bundle_smoke.exe")]
-        arts += sorted(os.path.join(deps, f) for f in os.listdir(deps) if f.endswith(".a"))
-        _toks, linked = _link_tokens_and_archives()
-        arts += [a for a in linked if a not in arts]  # every archive on a link line
+        arts = [os.path.join(bindir, e) for e in sorted(inputs)]
+        for files in inputs.values():
+            arts += [f for f in files if f.endswith((".a", ".obj", ".o")) and f not in arts]
         msg = _no_hevc_symbols(arts)
         if msg:
             return fail(f"heif: {msg}")
-        print(f"heif: llvm-nm finds no HEVC symbol in {len(arts)} built Windows artifacts and archives")
+        print(f"heif: llvm-nm finds no HEVC symbol in {len(arts)} executables and linked inputs")
     return 0
 
 
