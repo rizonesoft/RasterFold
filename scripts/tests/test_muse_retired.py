@@ -101,11 +101,7 @@ class MuseRetired(Harness):
                 module.load_pin(data=pin.encode(), historical=True)
 
     def test_stamp_replays_recorded_muse_reviews_under_the_committed_pin(self):
-        subprocess.run(["git", "-C", str(self.repo), "init", "-q"], check=True)
-        subprocess.run(["git", "-C", str(self.repo), "add", ".conclave/reviewers.toml"], check=True)
-        subprocess.run(["git", "-C", str(self.repo), "-c", "user.name=Test", "-c", "user.email=test@example.com",
-                        "commit", "-q", "-m", "pin"], check=True)
-        head = subprocess.check_output(["git", "-C", str(self.repo), "rev-parse", "HEAD"], text=True).strip()
+        head = self.commit_pin(PIN, "pin")
         module = self.module()
         pin = module.load_pin(data=PIN.encode(), historical=True)
         self.findings.parent.mkdir(parents=True, exist_ok=True)

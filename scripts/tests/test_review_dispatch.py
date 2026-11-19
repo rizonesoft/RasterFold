@@ -183,7 +183,11 @@ class Harness(unittest.TestCase):
 
     def dispatch(self, *args, cwd=None, **modes):
         system_root = {"SYSTEMROOT": os.environ["SYSTEMROOT"]} if os.name == "nt" else {}
-        env = {"PATH": f"{self.bin}{os.pathsep}{Path(sys.executable).parent}", "FAKE_LOG": str(self.log),
+        # The fake launchers come first; Git's own directory comes last, so a dispatcher reading a committed pin
+        # with `git show` works when Git and Python live apart (a virtual environment), without unmasking a real CLI.
+        git = shutil.which("git")
+        path = os.pathsep.join([str(self.bin), str(Path(sys.executable).parent)] + ([str(Path(git).parent)] if git else []))
+        env = {"PATH": path, "FAKE_LOG": str(self.log),
                "FAKE_CHILD_PID": str(Path(self._tmp.name) / "child.pid"), **system_root,
                **{var: str(self.scratch) for var in ("TMP", "TEMP", "TMPDIR")},
                **{f"FAKE_{k.upper()}": v for k, v in modes.items()}}

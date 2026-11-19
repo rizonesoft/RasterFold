@@ -45,3 +45,51 @@ approve
 
 HIGHEST: P2
 OVERALL: needs-attention
+
+## Round 2: astra (`gpt-6.2-astra` via `codex`)
+
+- Writer: claude
+- Run: 2026-11-19T22:01:08Z
+- Effort: low
+- Lenses: adversarial, integration, source-defect, plan-delivery, consistency, record, quality, optimization
+- Lines: 38
+- Digest: d2a69ddb551a56c3
+
+## adversarial
+
+approve
+
+## integration
+
+needs-attention
+
+1. P1 The new regression fails when Git and Python live in different directories, including a standard virtual environment. The fixture commits use the parent `PATH`, but the dispatcher launched at `scripts/tests/test_muse_retired.py:78` receives only the fake-launcher directory and the Python executable’s directory from `scripts/tests/test_review_dispatch.py:188`. Its `git show` at `scripts/review-dispatch.py:929` then fails, so the dispatcher exits 2 before recording the outage. Make the Git executable available on the child `PATH` while keeping the fake launchers first.
+
+## source-defect
+
+approve
+
+## plan-delivery
+
+approve
+
+## consistency
+
+approve
+
+## record
+
+approve
+
+## quality
+
+advisory
+
+1. P3 The new `commit_pin` helper at `scripts/tests/test_muse_retired.py:60` duplicates the Git initialization, staging, commit identity and SHA lookup in the replay test at `scripts/tests/test_muse_retired.py:104`. Use `head = self.commit_pin(PIN, "pin")` there so both historical-pin tests share the same fixture setup.
+
+## optimization
+
+approve
+
+HIGHEST: P1
+OVERALL: needs-attention
