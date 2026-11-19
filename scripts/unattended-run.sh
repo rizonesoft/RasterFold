@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Launch the unattended RasterFold campaign (docs/unattended-run.md).
 #   scripts/unattended-run.sh          Claude Code, latest Opus at medium (Desktop: "RasterFold Claude campaign")
-#   scripts/unattended-run.sh carbon   Antigravity on Gemini 4 Neon at medium effort (Desktop: "RasterFold Carbon campaign")
+#   scripts/unattended-run.sh carbon   Antigravity on Gemini 4 Neon at medium effort (Desktop: "RasterFold Gemini campaign")
 # Straight on main, permissions skipped, no tool that waits on a human. For Claude Code the lead makes every write
 # and the only agents are the read-only Sonnet scouts in .claude/agents/ (operator directive 2026-11-11); for
 # Antigravity, Gemini 4 Neon at medium effort (gemini-4-neon-medium) uses Antigravity's built-in read-only
