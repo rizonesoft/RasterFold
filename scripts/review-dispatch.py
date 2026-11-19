@@ -149,8 +149,9 @@ def load_pin(path=PIN, data=None, historical=False):
         cli, model, effort = entry.get("cli"), entry.get("model"), entry.get("effort")
         if cli in RETIRED_CLIS and not historical:
             raise Refused(f"reviewer {name!r} names the retired {cli} CLI; only a historical pin may name it")
-        if cli not in CLIS + RETIRED_CLIS:
-            raise Refused(f"reviewer {name!r} needs cli = one of {', '.join(CLIS)}")
+        accepted = CLIS + RETIRED_CLIS if historical else CLIS
+        if cli not in accepted:
+            raise Refused(f"reviewer {name!r} needs cli = one of {', '.join(accepted)}")
         if not isinstance(model, str) or not MODEL.fullmatch(model):
             raise Refused(f"reviewer {name!r} has a malformed model")
         if cli == "agy":
