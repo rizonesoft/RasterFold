@@ -355,19 +355,36 @@ class LinkMatcherTests(unittest.TestCase):
             self.assertEqual(clean, [str(prefix / "lib" / "libneutral.a")])
             self.assertIsNone(cc._hevc_among_inputs(clean))
             self.assertIsNone(cc._no_hevc_symbols(cc._symbol_scan_set([], {}, clean)))
-            mkar(prefix / "lib" / "sub" / "libx265.a", "ok.o")  # unused, never opened by lld
-            self.assertEqual(cc._hevc_among_inputs(cc._dependency_archives(str(prefix))),
-                             str(prefix / "lib" / "sub" / "libx265.a"))
-            (prefix / "lib" / "sub" / "libx265.a").unlink()
-            mkar(prefix / "lib" / "codec.lib", "enc.o")  # neutral name, HEVC member
-            deps = cc._dependency_archives(str(prefix))
-            self.assertIn(str(prefix / "lib" / "codec.lib"), deps)
-            self.assertIsNone(cc._hevc_among_inputs(deps))
-            linked = {"x.exe": [str(prefix / "lib" / "codec.lib")]}
-            for scan in (cc._symbol_scan_set([], {}, deps), cc._symbol_scan_set([], linked, [])):
-                msg = cc._no_hevc_symbols(scan)
-                self.assertIsNotNone(msg)
-                self.assertIn("x265_encoder_open", msg)
+            # an unused HEVC-named archive, under any suffix spelling, is named
+            for spelling in ("libx265.a", "libx265.A", "x265.LIB", "libde265.Lib"):
+                mkar(prefix / "lib" / "sub" / spelling, "ok.o")  # never opened by lld
+                self.assertEqual(cc._hevc_among_inputs(cc._dependency_archives(str(prefix))),
+                                 str(prefix / "lib" / "sub" / spelling), spelling)
+                (prefix / "lib" / "sub" / spelling).unlink()
+            # a neutrally named archive with an HEVC member, under any name or
+            # suffix (none at all included), fails the symbol scan both as a
+            # prefix archive and as a linked input
+            for spelling in ("codec.lib", "codec.LIB", "codec.A", "codec.bin", "codec"):
+                mkar(prefix / "lib" / spelling, "enc.o")
+                deps = cc._dependency_archives(str(prefix))
+                self.assertIn(str(prefix / "lib" / spelling), deps, spelling)
+                self.assertIsNone(cc._hevc_among_inputs(deps))
+                linked = {"x.exe": [str(prefix / "lib" / spelling)]}
+                for scan in (cc._symbol_scan_set([], {}, deps), cc._symbol_scan_set([], linked, [])):
+                    msg = cc._no_hevc_symbols(scan)
+                    self.assertIsNotNone(msg, spelling)
+                    self.assertIn("x265_encoder_open", msg)
+                (prefix / "lib" / spelling).unlink()
+            # lld's archive(member) lines are covered by the archive's own line
+            self.assertEqual(cc._linker_inputs_from_verbose(
+                "ld.lld: Reading lib/codec.bin\nld.lld: Reading codec.bin(enc.o)\nld.lld: Reading /abs/x.o", "/b"),
+                ["/b/lib/codec.bin", "/abs/x.o"])
+            # a linked object, however named, is scanned too
+            linked = {"x.exe": [str(t / "enc.o")]}
+            self.assertIn("x265_encoder_open", cc._no_hevc_symbols(cc._symbol_scan_set([], linked, [])) or "")
+            # a file that is not an archive is not taken for one
+            (prefix / "lib" / "notes.a").write_text("not an archive")
+            self.assertNotIn(str(prefix / "lib" / "notes.a"), cc._dependency_archives(str(prefix)))
 
 
 def load_tests(loader: unittest.TestLoader, tests: unittest.TestSuite, pattern: str | None) -> unittest.TestSuite:

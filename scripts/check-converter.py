@@ -1427,6 +1427,8 @@ def _linker_inputs_from_verbose(text, base_dir):
         line = line.strip()
         if line.startswith("ld.lld: Reading "):
             path = line[len("ld.lld: Reading "):].strip()
+            if path.endswith(")") and "(" in path:
+                continue  # archive(member): its archive has its own Reading line, scanned whole
             if not os.path.isabs(path):
                 path = os.path.normpath(os.path.join(base_dir, path))
             if path not in files:
@@ -1481,25 +1483,38 @@ def _windows_linker_inputs():
     return result
 
 
-SYMBOL_SCAN_SUFFIXES = (".a", ".lib", ".obj", ".o")
+ARCHIVE_MAGICS = (b"!<arch>\n", b"!<thin>\n")
+
+
+def _is_archive(path):
+    """A static archive by its content (the ar magic), whatever its name or
+    suffix spelling."""
+    try:
+        with open(path, "rb") as fh:
+            return fh.read(8) in ARCHIVE_MAGICS
+    except OSError:
+        return False
 
 
 def _dependency_archives(prefix):
-    """Every archive under the dependency prefix (.a and .lib, any depth),
-    linked or not."""
+    """Every static archive under the dependency prefix, at any depth and by
+    content, linked or not."""
     found = []
     if os.path.isdir(prefix):
         for dp, _dn, fns in os.walk(prefix):
-            found += [os.path.join(dp, f) for f in fns if f.endswith((".a", ".lib"))]
+            for f in fns:
+                path = os.path.join(dp, f)
+                if os.path.isfile(path) and not os.path.islink(path) and _is_archive(path):
+                    found.append(path)
     return sorted(found)
 
 
 def _symbol_scan_set(executables, inputs, deps):
-    """The executables, every archive or object any link read, and every
-    dependency archive, each once."""
+    """The executables, every file any link read (archives and objects alike,
+    however named), and every dependency archive, each once."""
     arts = list(executables)
     for files in inputs.values():
-        arts += [f for f in files if f.endswith(SYMBOL_SCAN_SUFFIXES) and f not in arts]
+        arts += [f for f in files if f not in arts]
     arts += [f for f in deps if f not in arts]
     return arts
 
