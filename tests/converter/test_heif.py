@@ -283,9 +283,22 @@ class WindowsHeifTests(HeifAdapterBase):
             self.assertLessEqual(growth, reserve, f"{w}x{h}")
 
 
+class LinkMatcherTests(unittest.TestCase):
+    """The no-HEVC link check recognises the ordinary linker spellings."""
+
+    def test_hevc_link_names(self) -> None:
+        cc = _load_mod("_rfc_check_conv", ROOT / "scripts" / "check-converter.py")
+        for tok in ("libx265.a", "-lx265", "libkvazaar.a", "/opt/lib/libde265.a", "-lheif",
+                    "libheif.dll.a", "x265.lib", "libopenhevc.a"):
+            self.assertIsNotNone(cc._hevc_link_name(tok), tok)
+        for tok in ("rfc_test_heif.exe", "heif_scan.c.obj", "librfc_engine.a", "-lole32", "libavif.a",
+                    "libjxl.a"):
+            self.assertIsNone(cc._hevc_link_name(tok), tok)
+
+
 def load_tests(loader: unittest.TestLoader, tests: unittest.TestSuite, pattern: str | None) -> unittest.TestSuite:
     suite = unittest.TestSuite()
-    for cls in (HostHeifTests, WindowsHeifTests):
+    for cls in (LinkMatcherTests, HostHeifTests, WindowsHeifTests):
         suite.addTests(loader.loadTestsFromTestCase(cls))
     return suite
 

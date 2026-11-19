@@ -53,14 +53,18 @@ static const char k_no_heif[] =
 static const char k_no_hevc[] =
     "heif: the HEVC Video Extensions (Microsoft Store 9N4WGH0Z6VHQ) are not "
     "installed";
-static const char k_no_av1[] =
-    "heif: the AV1 Video Extension (Microsoft Store 9MVZQVXJBQ9V) is not "
-    "installed";
+
 #endif
 
-/* Test seam: force the component lookups to report a missing component. */
+/* Test seam: force the component lookups to report a missing component,
+ * or the WIC decoder creation to fail with a given HRESULT. */
 static atomic_int g_force_no_heif = 0;
 static atomic_int g_force_no_hevc = 0;
+static atomic_long g_force_create_hr = 0;
+
+void rfc_codecs_heif_set_create_hr_for_testing(long hr) {
+    atomic_store(&g_force_create_hr, hr);
+}
 
 void rfc_codecs_heif_set_missing_for_testing(int heif_decoder, int hevc_decoder) {
     atomic_store(&g_force_no_heif, heif_decoder ? 1 : 0);
@@ -195,6 +199,9 @@ static rfc_status heif_inspect(const rfc_exec_context *exec,
     }
     st = rfc_limits_check_image(limits, &info->coded_layout, 1u);
     if (st == RFC_OK) {
+        st = rfc_limits_check_image(limits, &info->tile_layout, 1u);
+    }
+    if (st == RFC_OK) {
         st = rfc_limits_check_image(limits, &info->layout, 1u);
     }
     if (st != RFC_OK) {
@@ -242,13 +249,13 @@ static const GUID k_mf_media_type_video = {
     0x73646976, 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71}};
 static const GUID k_mf_video_format_hevc = {
     0x43564548, 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71}};
-static const GUID k_mf_video_format_av1 = {
-    0x31305641, 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71}};
 
 /* Ask Media Foundation, loaded at run time from the system directory only,
- * for a decoder taking the primary picture's coding. */
+ * for a decoder taking the primary picture's coding (HEVC, the only coding
+ * the shared reader accepts). */
 static int heif_system_has_decoder(rfc_heif_coding coding) {
-    if (coding == RFC_HEIF_CODING_HEVC && atomic_load(&g_force_no_hevc)) {
+    (void)coding;
+    if (atomic_load(&g_force_no_hevc)) {
         return 0;
     }
     HMODULE mf = LoadLibraryExW(L"mfplat.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
@@ -259,9 +266,7 @@ static int heif_system_has_decoder(rfc_heif_coding coding) {
         (mft_enum_ex_fn)(void (*)(void))GetProcAddress(mf, "MFTEnumEx");
     int found = 0;
     if (fn) {
-        mf_type_info in = {k_mf_media_type_video,
-                           coding == RFC_HEIF_CODING_AV1 ? k_mf_video_format_av1
-                                                         : k_mf_video_format_hevc};
+        mf_type_info in = {k_mf_media_type_video, k_mf_video_format_hevc};
         IUnknown **acts = NULL;
         UINT32 n = 0u;
         if (SUCCEEDED(fn(k_mft_category_video_decoder, 0x3Fu /* all */, &in,
@@ -280,7 +285,22 @@ static int heif_system_has_decoder(rfc_heif_coding coding) {
 }
 
 static const char *heif_codec_detail(rfc_heif_coding coding) {
-    return coding == RFC_HEIF_CODING_AV1 ? k_no_av1 : k_no_hevc;
+    (void)coding;
+    return k_no_hevc;
+}
+
+/* A WIC object could not be created: only a missing component earns the
+ * installation guidance; resource and other failures keep their meaning. */
+static rfc_status heif_create_failure(const rfc_exec_context *exec, HRESULT hr,
+                                      const char *missing) {
+    if (hr == WINCODEC_ERR_COMPONENTNOTFOUND || hr == REGDB_E_CLASSNOTREG) {
+        rfc_exec_set_detail(exec, missing);
+        return RFC_ERR_NO_ADAPTER;
+    }
+    if (hr == E_OUTOFMEMORY) {
+        return RFC_ERR_OUT_OF_MEMORY;
+    }
+    return RFC_ERR_IO;
 }
 
 typedef struct heif_com {
@@ -329,17 +349,16 @@ static rfc_status heif_components_ready(const rfc_exec_context *exec,
     hr = CoCreateInstance(&CLSID_WICImagingFactory, NULL, CLSCTX_INPROC_SERVER,
                           &IID_IWICImagingFactory, (void **)&f);
     if (FAILED(hr)) {
-        rfc_exec_set_detail(exec, k_no_wic);
-        st = RFC_ERR_NO_ADAPTER;
+        st = heif_create_failure(exec, hr, k_no_wic);
     } else {
         IWICBitmapDecoder *d = NULL;
-        hr = atomic_load(&g_force_no_heif)
-                 ? WINCODEC_ERR_COMPONENTNOTFOUND
-                 : IWICImagingFactory_CreateDecoder(f, &GUID_ContainerFormatHeif,
-                                                    NULL, &d);
+        long forced = atomic_load(&g_force_create_hr);
+        hr = atomic_load(&g_force_no_heif) ? WINCODEC_ERR_COMPONENTNOTFOUND
+             : forced                      ? (HRESULT)forced
+                                           : IWICImagingFactory_CreateDecoder(
+                                                 f, &GUID_ContainerFormatHeif, NULL, &d);
         if (FAILED(hr)) {
-            rfc_exec_set_detail(exec, k_no_heif);
-            st = RFC_ERR_NO_ADAPTER;
+            st = heif_create_failure(exec, hr, k_no_heif);
         } else {
             IWICBitmapDecoder_Release(d);
         }
@@ -375,18 +394,17 @@ static rfc_status heif_com_open(const rfc_exec_context *exec,
                           &IID_IWICImagingFactory, (void **)&c->factory);
     if (FAILED(hr)) {
         heif_com_end(c);
-        rfc_exec_set_detail(exec, k_no_wic);
-        return RFC_ERR_NO_ADAPTER;
+        return heif_create_failure(exec, hr, k_no_wic);
     }
-    hr = atomic_load(&g_force_no_heif)
-             ? WINCODEC_ERR_COMPONENTNOTFOUND
-             : IWICImagingFactory_CreateDecoder(c->factory,
-                                                &GUID_ContainerFormatHeif, NULL,
-                                                &c->decoder);
+    long forced = atomic_load(&g_force_create_hr);
+    hr = atomic_load(&g_force_no_heif) ? WINCODEC_ERR_COMPONENTNOTFOUND
+         : forced                      ? (HRESULT)forced
+                                       : IWICImagingFactory_CreateDecoder(
+                                             c->factory, &GUID_ContainerFormatHeif,
+                                             NULL, &c->decoder);
     if (FAILED(hr)) {
         heif_com_end(c);
-        rfc_exec_set_detail(exec, k_no_heif);
-        return RFC_ERR_NO_ADAPTER;
+        return heif_create_failure(exec, hr, k_no_heif);
     }
     if (size > 0xFFFFFFFFu) {
         heif_com_end(c);

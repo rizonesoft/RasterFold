@@ -308,6 +308,9 @@ typedef struct hspec {
     int grid_deep_tile; /* the last grid tile has its own 10-bit hvcC */
     int moov_only;      /* ftyp and moov, no meta */
     int unterminated;   /* the primary's item name has no terminator */
+    uint32_t tile_w, tile_h; /* grid tile size (0: half the grid each way) */
+    int tile_mismatch;  /* the last tile has another size */
+    int meta_to_eof;    /* meta is the last box, its size 0 (to the end) */
 } hspec;
 
 static void hspec_default(hspec *s) {
@@ -345,6 +348,9 @@ static size_t build_heif(const hspec *s, uint8_t *out) {
         return n0;
     }
     size_t meta = fullbox_begin(b, "meta", 0u, 0u);
+    if (s->meta_to_eof) {
+        /* no mdat after it; the size field is set to 0 below */
+    }
     size_t hdlr = fullbox_begin(b, "hdlr", 0u, 0u);
     put32(b, 0u);
     put4cc(b, "pict");
@@ -436,6 +442,25 @@ static size_t build_heif(const hspec *s, uint8_t *out) {
     box_end(b, p);
     np++;
     refs[nr++] = (prop_ref){1u, np};
+    if (s->grid_tiles) {
+        uint32_t tw = s->tile_w ? s->tile_w : (s->w + 1u) / 2u;
+        uint32_t th = s->tile_h ? s->tile_h : (s->h + 1u) / 2u;
+        p = fullbox_begin(b, "ispe", 0u, 0u);
+        put32(b, tw); put32(b, th);
+        box_end(b, p);
+        np++;
+        for (int t = 0; t < s->grid_tiles; t++) {
+            if (s->tile_mismatch && t == s->grid_tiles - 1) continue;
+            refs[nr++] = (prop_ref){10u + (uint32_t)t, np};
+        }
+        if (s->tile_mismatch) {
+            p = fullbox_begin(b, "ispe", 0u, 0u);
+            put32(b, tw + 2u); put32(b, th);
+            box_end(b, p);
+            np++;
+            refs[nr++] = (prop_ref){10u + (uint32_t)(s->grid_tiles - 1), np};
+        }
+    }
     if (s->hvcc_depth) {
         p = box_begin(b, "hvcC");
         uint8_t cfg[23] = {1};
@@ -554,6 +579,13 @@ static size_t build_heif(const hspec *s, uint8_t *out) {
     if (s->nested_iprp) box_end(b, iprp_inner);
     box_end(b, iprp);
     box_end(b, meta);
+    if (s->meta_to_eof) {
+        b->d[meta] = b->d[meta + 1] = b->d[meta + 2] = b->d[meta + 3] = 0u;
+        size_t n0 = b->n;
+        memcpy(out, b->d, n0);
+        free(b);
+        return n0;
+    }
     if (s->moov) {
         size_t m = box_begin(b, "moov");
         box_end(b, m);
@@ -711,14 +743,34 @@ static void test_registration_and_scanner(void) {
     CHECK(scan(&s, &info, &d) == RFC_ERR_UNSUPPORTED_SAMPLE);
     hspec_default(&s); s.hvcc_chroma = 10;
     CHECK(scan(&s, &info, &d) == RFC_ERR_UNSUPPORTED_SAMPLE);
-    hspec_default(&s); s.primary_type = "grid"; s.grid_tiles = 3; s.grid_mixed = 1;
+    hspec_default(&s); s.primary_type = "grid"; s.grid_tiles = 4; s.grid_mixed = 1;
     CHECK(scan(&s, &info, &d) == RFC_ERR_UNSUPPORTED_COMBINATION);
-    hspec_default(&s); s.primary_type = "grid"; s.grid_tiles = 3; s.grid_deep_tile = 1;
+    hspec_default(&s); s.primary_type = "grid"; s.grid_tiles = 4; s.grid_deep_tile = 1;
     CHECK(scan(&s, &info, &d) == RFC_ERR_UNSUPPORTED_SAMPLE);
     hspec_default(&s); s.moov_only = 1;
     CHECK(scan(&s, &info, &d) == RFC_ERR_UNSUPPORTED_COMBINATION && d != NULL);
     hspec_default(&s); s.unterminated = 1;
     CHECK(scan(&s, &info, &d) == RFC_ERR_INVALID_ARGUMENT);
+    /* completion gaps: a meta box running to the end with the size unknown;
+     * a grid's coded picture is its tile mosaic; AV1 is refused, named;
+     * clean-aperture extremes stay defined (UBSan) */
+    hspec_default(&s); s.meta_to_eof = 1;
+    CHECK(scan(&s, &info, &d) == RFC_OK && info.width == 64u && info.height == 48u);
+    hspec_default(&s); s.primary_type = "grid"; s.grid_tiles = 4; s.w = 60u; s.h = 60u; s.tile_w = 32u; s.tile_h = 32u;
+    CHECK(scan(&s, &info, &d) == RFC_OK && info.width == 60u && info.coded_width == 64u &&
+          info.coded_height == 64u && info.tile_width == 32u);
+    hspec_default(&s); s.primary_type = "grid"; s.grid_tiles = 4; s.tile_mismatch = 1;
+    CHECK(scan(&s, &info, &d) == RFC_ERR_INVALID_ARGUMENT);
+    hspec_default(&s); s.primary_type = "grid"; s.grid_tiles = 3;
+    CHECK(scan(&s, &info, &d) == RFC_ERR_INVALID_ARGUMENT); /* 3 tiles cannot cover 2x2 */
+    hspec_default(&s); s.primary_type = "av01"; s.hvcc_depth = 0;
+    CHECK(scan(&s, &info, &d) == RFC_ERR_UNSUPPORTED_COMBINATION && d != NULL && strstr(d, "AV1") != NULL);
+    hspec_default(&s); s.w = 0xFFFFFFFFu; s.h = 0xFFFFFFFFu; s.clap_w = 1u; s.clap_h = 1u; s.clap_d = 1u;
+    s.clap_hon = 0x7FFFFFFF; s.clap_od = 0xFFFFFFFFu;
+    {
+        rfc_status cst = scan(&s, &info, &d);
+        CHECK(cst == RFC_ERR_LIMIT_EXCEEDED || cst == RFC_ERR_UNSUPPORTED_COMBINATION);
+    }
     /* coded and displayed geometry: a 30x20 aperture of a 64x48 picture
      * turned a quarter, and apertures off the pixel grid */
     hspec_default(&s); s.clap_w = 30u; s.clap_h = 20u; s.clap_d = 1u; s.irot = 1;
@@ -1266,6 +1318,16 @@ static void test_wic_metadata_and_refusals(void) {
             rfc_codecs_heif_set_missing_for_testing(0, 0);
             CHECK(r.submit == RFC_OK && r.status == RFC_ERR_NO_ADAPTER && !file_exists(dst));
             CHECK(strstr(r.detail, k == 0 ? "HEIF Image Extensions" : "HEVC Video Extensions") != NULL);
+        }
+        /* a resource failure creating the WIC decoder is reported as such,
+         * never as a missing extension */
+        rfc_codecs_heif_set_create_hr_for_testing((long)E_OUTOFMEMORY);
+        {
+            job_result r;
+            run_job_full(RFC_FORMAT_HEIC, RFC_FORMAT_PNG, src, dst, NULL, NULL, &r);
+            rfc_codecs_heif_set_create_hr_for_testing(0);
+            CHECK(r.submit == RFC_OK && r.status == RFC_ERR_OUT_OF_MEMORY && !file_exists(dst));
+            CHECK(strstr(r.detail, "Extensions") == NULL);
         }
         /* and with the components, the same submission publishes a PNG */
         job_result r;

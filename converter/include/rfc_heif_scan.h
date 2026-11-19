@@ -32,8 +32,7 @@ typedef rfc_status (*rfc_heif_read_fn)(void *ctx, uint64_t off, uint8_t *dst,
                                        size_t n, size_t *got);
 
 typedef enum rfc_heif_coding {
-    RFC_HEIF_CODING_HEVC = 1,
-    RFC_HEIF_CODING_AV1 = 2
+    RFC_HEIF_CODING_HEVC = 1 /* the only coding accepted (AV1 is refused) */
 } rfc_heif_coding;
 
 typedef struct rfc_heif_info {
@@ -54,6 +53,8 @@ typedef struct rfc_heif_info {
     int has_imir;
     rfc_layout layout;         /* rgb8 at width x height */
     rfc_layout coded_layout;   /* rgb8 at coded_width x coded_height */
+    uint32_t tile_width, tile_height; /* one coded tile (the picture if no grid) */
+    rfc_layout tile_layout;    /* rgb8 at tile_width x tile_height */
 } rfc_heif_info;
 
 /* Scan a HEIF/HEIC file of `size` bytes (RFC_HEIF_SIZE_UNKNOWN: read to the

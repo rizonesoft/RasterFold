@@ -1395,24 +1395,59 @@ HEVC_SYMBOL_PREFIXES = ("x265_", "de265_", "kvz_", "heif_context_", "heif_image_
                         "heif_decode_", "heif_init", "heif_get_version")
 
 
-def _no_hevc_in_link_inputs():
-    """The resolved Windows link commands (the generated build.ninja files of
-    the converter and its dependencies) and the dependency archives name no
-    HEVC implementation."""
-    import re as _re
-    word = _re.compile(r"(?<![A-Za-z0-9])(" + "|".join(HEVC_NAMES) + r")(?![A-Za-z0-9])", _re.I)
+HEVC_LIBRARY_NAMES = frozenset({"x265", "de265", "kvazaar", "openhevc", "heif"})
+
+
+def _hevc_link_name(token):
+    """The HEVC implementation a link token names, or None: the token's file
+    name without '-l', a 'lib' prefix and library extensions, compared
+    exactly (so libx265.a, -lx265, libkvazaar.a and libheif.dll.a match,
+    rfc_test_heif.exe does not)."""
+    name = os.path.basename(token.strip().strip('"'))
+    if name.startswith("-l"):
+        name = name[2:]
+    low = name.lower()
+    for ext in (".dll.a", ".a", ".lib", ".so", ".dylib", ".dll", ".obj", ".o"):
+        if low.endswith(ext):
+            low = low[: -len(ext)]
+            break
+    if low.startswith("lib"):
+        low = low[3:]
+    return low if low in HEVC_LIBRARY_NAMES else None
+
+
+def _link_tokens_and_archives():
+    """Tokens of the resolved Windows link lines (the generated build.ninja
+    files of the converter and its dependencies) and the archives they name."""
     base = os.path.join(ROOT, "build", "converter", "windows-x64")
+    tokens, archives = [], set()
     for dp, _dn, fn in os.walk(base):
-        for f in fn:
-            if f == "build.ninja":
-                path = os.path.join(dp, f)
-                with open(path, encoding="utf-8", errors="replace") as fh:
-                    for no, line in enumerate(fh, 1):
-                        if ("LINK_LIBRARIES" in line or "LINK_PATH" in line) and word.search(line):
-                            return f"{os.path.relpath(path, ROOT)}:{no} links an HEVC implementation"
-    deps = os.path.join(base, "deps-prefix", "lib")
+        if "build.ninja" not in fn:
+            continue
+        path = os.path.join(dp, "build.ninja")
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for no, line in enumerate(fh, 1):
+                if "LINK_LIBRARIES" not in line and "LINK_PATH" not in line:
+                    continue
+                for tok in line.split("=", 1)[-1].split():
+                    tokens.append((f"{os.path.relpath(path, ROOT)}:{no}", tok))
+                    if tok.endswith(".a"):
+                        cand = tok if os.path.isabs(tok) else os.path.join(dp, tok)
+                        if os.path.isfile(cand):
+                            archives.add(os.path.normpath(cand))
+    return tokens, sorted(archives)
+
+
+def _no_hevc_in_link_inputs():
+    """No resolved Windows link token and no dependency archive names an HEVC
+    implementation."""
+    tokens, _archives = _link_tokens_and_archives()
+    for where, tok in tokens:
+        if _hevc_link_name(tok):
+            return f"{where} links an HEVC implementation ({tok})"
+    deps = os.path.join(ROOT, "build", "converter", "windows-x64", "deps-prefix", "lib")
     for f in sorted(os.listdir(deps)) if os.path.isdir(deps) else []:
-        if word.search(f):
+        if _hevc_link_name(f):
             return f"dependency archive {f} is an HEVC implementation"
     return None
 
@@ -1454,7 +1489,7 @@ def case_heif(all_targets=False):
         j_arch = [x for x in j_lb if x.endswith(".a")]
         libs = [*t_lb, *a_core, *j_arch, *w_lb, *p_lb, "-lstdc++", "-lm", "-pthread"]
         for lib in libs:
-            if any(n in os.path.basename(lib).lower() for n in HEVC_NAMES):
+            if _hevc_link_name(lib):
                 raise RuntimeError(f"heif: the host link list includes HEVC implementation {lib}")
         return cflags, libs
 
@@ -1494,6 +1529,8 @@ def case_heif(all_targets=False):
         deps = os.path.join(ROOT, "build", "converter", "windows-x64", "deps-prefix", "lib")
         arts = [os.path.join(bindir, n) for n in ("rfc_test_heif.exe", "rfc_bundle_smoke.exe")]
         arts += sorted(os.path.join(deps, f) for f in os.listdir(deps) if f.endswith(".a"))
+        _toks, linked = _link_tokens_and_archives()
+        arts += [a for a in linked if a not in arts]  # every archive on a link line
         msg = _no_hevc_symbols(arts)
         if msg:
             return fail(f"heif: {msg}")

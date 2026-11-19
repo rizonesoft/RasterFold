@@ -58,6 +58,10 @@ rfc_status rfc_codecs_unregister_heif(void);
  * decoder as missing (0 restores the real lookups). */
 void rfc_codecs_heif_set_missing_for_testing(int heif_decoder, int hevc_decoder);
 
+/* Test seam: make the WIC HEIF decoder creation fail with this HRESULT
+ * (0 restores the real call). */
+void rfc_codecs_heif_set_create_hr_for_testing(long hr);
+
 /* Test seam: hook called before each 64-row band of HEIF pixels is copied
  * (NULL removes it), for deterministic mid-decode cancellation tests. */
 void rfc_codecs_heif_set_band_hook_for_testing(void (*hook)(void *), void *ctx);

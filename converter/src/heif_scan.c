@@ -502,12 +502,17 @@ static rfc_status apply_clap(heif_ctx *c, const prop *p, uint32_t *w, uint32_t *
     if (cw == 0u || ch == 0u || cw > *w || ch > *h) {
         return RFC_ERR_INVALID_ARGUMENT;
     }
-    /* left = (W - cw) / 2 + hon / hod, which must be a whole pixel in range */
-    int64_t ln = (int64_t)(*w - cw) * (int64_t)hod + 2 * (int64_t)hon;
-    int64_t tn = (int64_t)(*h - ch) * (int64_t)vod + 2 * (int64_t)von;
+    /* left = (W - cw) / 2 + hon / hod, which must be a whole pixel in range;
+     * every factor is below 2^32, so the products below fit in 64 bits */
+    uint64_t dw = (uint64_t)*w - cw, dh = (uint64_t)*h - ch;
+    if (dw > 0x7FFFFFFFu || dh > 0x7FFFFFFFu) {
+        return RFC_ERR_LIMIT_EXCEEDED;
+    }
+    int64_t ln = (int64_t)(dw * (uint64_t)hod) + 2 * (int64_t)hon;
+    int64_t tn = (int64_t)(dh * (uint64_t)vod) + 2 * (int64_t)von;
     int64_t ld = 2 * (int64_t)hod, td = 2 * (int64_t)vod;
     if (ln < 0 || tn < 0 || ln % ld != 0 || tn % td != 0 ||
-        ln / ld > (int64_t)(*w - cw) || tn / td > (int64_t)(*h - ch)) {
+        ln / ld > (int64_t)dw || tn / td > (int64_t)dh) {
         return refuse(c, RFC_ERR_UNSUPPORTED_COMBINATION,
                       "heif: a clean aperture off the pixel grid");
     }
@@ -632,9 +637,14 @@ static rfc_status scan_meta(heif_ctx *c, rfc_heif_info *out) {
                       "heif: a derived (iden) or overlay (iovl) primary image");
     }
     uint32_t depth = 0u;
+    if (prim->type == FOURCC('a', 'v', '0', '1')) {
+        return refuse(c, RFC_ERR_UNSUPPORTED_COMBINATION,
+                      "heif: an AV1-coded HEIF image (not verified; AVIF files use the AVIF adapter)");
+    }
     if (prim->type == FOURCC('g', 'r', 'i', 'd')) {
-        /* every tile has the same supported coding, and each depth counts */
-        uint32_t tiles = 0u, tile_type = 0u;
+        /* every tile is HEVC of one size, and each depth counts; the coded
+         * picture is the tile mosaic covering the grid */
+        uint32_t tiles = 0u, tile_type = 0u, tw = 0u, th = 0u;
         for (uint32_t r = 0u; r < c->n_refs; r++) {
             const ref *rf = &c->refs[r];
             if (rf->type != FOURCC('d', 'i', 'm', 'g') || rf->from != c->primary) {
@@ -644,11 +654,23 @@ static rfc_status scan_meta(heif_ctx *c, rfc_heif_info *out) {
             if (!t) {
                 return RFC_ERR_INVALID_ARGUMENT;
             }
-            if ((t->type != FOURCC('h', 'v', 'c', '1') && t->type != FOURCC('a', 'v', '0', '1')) ||
-                (tiles > 0u && t->type != tile_type)) {
+            if (t->type != FOURCC('h', 'v', 'c', '1')) {
                 return refuse(c, RFC_ERR_UNSUPPORTED_COMBINATION,
-                              "heif: a grid whose tiles are not all HEVC or all AV1");
+                              "heif: a grid whose tiles are not all HEVC");
             }
+            const prop *tp = prop_of(c, t, FOURCC('i', 's', 'p', 'e'));
+            uint32_t tv = 0u;
+            span tb;
+            if (!tp) return RFC_ERR_INVALID_ARGUMENT;
+            st = fullbox(c->m, tp->p, &tv, NULL, &tb);
+            if (st != RFC_OK) return st;
+            if (tb.e - tb.s < 8u) return RFC_ERR_INVALID_ARGUMENT;
+            uint32_t w1 = be32(c->m + tb.s), h1 = be32(c->m + tb.s + 4u);
+            if (w1 == 0u || h1 == 0u || (tiles > 0u && (w1 != tw || h1 != th))) {
+                return RFC_ERR_INVALID_ARGUMENT; /* grid tiles share one size */
+            }
+            tw = w1;
+            th = h1;
             tile_type = t->type;
             tiles++;
             uint32_t td = 8u;
@@ -659,18 +681,29 @@ static rfc_status scan_meta(heif_ctx *c, rfc_heif_info *out) {
         if (tiles == 0u) {
             return RFC_ERR_INVALID_ARGUMENT;
         }
-        out->coding = tile_type == FOURCC('h', 'v', 'c', '1') ? RFC_HEIF_CODING_HEVC : RFC_HEIF_CODING_AV1;
+        uint64_t cols = ((uint64_t)cw + tw - 1u) / tw, rows = ((uint64_t)ch + th - 1u) / th;
+        if (cols * rows != tiles || cols * tw > 0xFFFFFFFFu || rows * th > 0xFFFFFFFFu) {
+            return RFC_ERR_INVALID_ARGUMENT; /* the tiles do not cover the grid */
+        }
+        out->coded_width = turn ? (uint32_t)(rows * th) : (uint32_t)(cols * tw);
+        out->coded_height = turn ? (uint32_t)(cols * tw) : (uint32_t)(rows * th);
+        out->tile_width = turn ? th : tw;
+        out->tile_height = turn ? tw : th;
+        (void)tile_type;
+        out->coding = RFC_HEIF_CODING_HEVC;
         uint32_t gd = 8u;
         st = item_depth(c, prim, &gd);
         if (st != RFC_OK) return st;
         if (gd > depth) depth = gd;
-    } else if (prim->type == FOURCC('h', 'v', 'c', '1') || prim->type == FOURCC('a', 'v', '0', '1')) {
-        out->coding = prim->type == FOURCC('h', 'v', 'c', '1') ? RFC_HEIF_CODING_HEVC : RFC_HEIF_CODING_AV1;
+    } else if (prim->type == FOURCC('h', 'v', 'c', '1')) {
+        out->coding = RFC_HEIF_CODING_HEVC;
+        out->tile_width = out->coded_width;
+        out->tile_height = out->coded_height;
         st = item_depth(c, prim, &depth);
         if (st != RFC_OK) return st;
     } else {
         return refuse(c, RFC_ERR_UNSUPPORTED_COMBINATION,
-                      "heif: the primary image coding is not HEVC, AV1 or a grid of them");
+                      "heif: the primary image coding is not HEVC or a grid of HEVC tiles");
     }
     out->bit_depth = depth;
     /* auxiliary images of the primary */
@@ -757,7 +790,11 @@ static rfc_status scan_meta(heif_ctx *c, rfc_heif_info *out) {
     if (st != RFC_OK) return st;
     lay.width = out->coded_width;
     lay.height = out->coded_height;
-    return rfc_layout_normalize_stride(&lay, &out->coded_layout);
+    st = rfc_layout_normalize_stride(&lay, &out->coded_layout);
+    if (st != RFC_OK) return st;
+    lay.width = out->tile_width;
+    lay.height = out->tile_height;
+    return rfc_layout_normalize_stride(&lay, &out->tile_layout);
 }
 
 static void *heap_alloc(void *ctx, size_t n) {
@@ -789,7 +826,7 @@ rfc_status rfc_heif_scan(rfc_heif_read_fn read_at, void *ctx, uint64_t size,
     rfc_status st = RFC_OK;
     /* top level: ftyp first; find meta; a moov is a sequence track */
     uint64_t pos = 0u, meta_off = 0u, meta_size = 0u;
-    int meta_seen = 0, ftyp_first = 0, moov = 0;
+    int meta_seen = 0, ftyp_first = 0, moov = 0, meta_to_end = 0;
     for (uint32_t n = 0u;; n++) {
         if (n >= MAX_TOP_BOXES) {
             st = RFC_ERR_LIMIT_EXCEEDED;
@@ -819,15 +856,16 @@ rfc_status rfc_heif_scan(rfc_heif_read_fn read_at, void *ctx, uint64_t size,
         if (type == FOURCC('m', 'o', 'o', 'v')) moov = 1;
         if (bsz == 0u) {
             /* runs to the end of the file */
-            if (type == FOURCC('m', 'e', 't', 'a')) {
-                if (size == RFC_HEIF_SIZE_UNKNOWN) {
-                    st = RFC_ERR_INVALID_ARGUMENT;
-                    break;
+            if (type == FOURCC('m', 'e', 't', 'a') && !meta_seen) {
+                meta_seen = 1;
+                meta_off = pos + hdr;
+                meta_to_end = 1;
+                if (size != RFC_HEIF_SIZE_UNKNOWN) {
+                    meta_size = size - meta_off;
+                    meta_to_end = 0;
                 }
-                bsz = size - pos;
-            } else {
-                break;
             }
+            break;
         }
         if (bsz < hdr || (size != RFC_HEIF_SIZE_UNKNOWN && bsz > size - pos)) {
             st = RFC_ERR_INVALID_ARGUMENT;
@@ -847,6 +885,24 @@ rfc_status rfc_heif_scan(rfc_heif_read_fn read_at, void *ctx, uint64_t size,
     if (st == RFC_OK && moov) {
         st = refuse(&c, RFC_ERR_UNSUPPORTED_COMBINATION,
                     "heif: an image sequence track (sequences are not supported)");
+    }
+    if (st == RFC_OK && meta_to_end) {
+        /* the size is unknown: the meta box ends where the input does,
+         * found by reading on to the end within the meta bound */
+        uint8_t probe[4096];
+        uint64_t at = meta_off;
+        for (;;) {
+            size_t got = 0u;
+            st = src_read(&r, at, probe, sizeof(probe), &got);
+            if (st != RFC_OK) break;
+            at += got;
+            if (at - meta_off > RFC_HEIF_MAX_META_BYTES) {
+                st = RFC_ERR_LIMIT_EXCEEDED;
+                break;
+            }
+            if (got < sizeof(probe)) break;
+        }
+        meta_size = at - meta_off;
     }
     if (st == RFC_OK && (!ftyp_first || !meta_seen || meta_size < 4u)) {
         st = RFC_ERR_INVALID_ARGUMENT;
