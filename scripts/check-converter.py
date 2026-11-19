@@ -1432,7 +1432,7 @@ def _linker_inputs_from_verbose(text, base_dir):
         if not line.startswith("ld.lld: Reading "):
             continue
         raw = line[len("ld.lld: Reading "):].strip()
-        path = raw if os.path.isabs(raw) else os.path.normpath(os.path.join(base_dir, raw))
+        path = os.path.normpath(os.path.join(base_dir, raw))  # absolute raw paths stay absolute
         if os.path.isfile(path):
             if path not in files:
                 files.append(path)
@@ -1441,15 +1441,18 @@ def _linker_inputs_from_verbose(text, base_dir):
             # archive(member), the member's own name possibly holding
             # parentheses: matched against the archives already read, by
             # lld's base-name spelling or by the archive's path
-            owners = []
-            for f in files:
-                if not _is_archive(f):
-                    continue
-                spellings = {os.path.basename(f), f}
-                if not os.path.isabs(raw):
-                    spellings.add(os.path.relpath(f, base_dir))
-                if any(raw.startswith(sp + "(") and len(raw) > len(sp) + 2 for sp in spellings):
-                    owners.append(f)
+            # every split point is tried, each archive part normalised as a
+            # Reading path is, so neither the archive's nor the member's name
+            # can mislead the split
+            archives = [f for f in files if _is_archive(f)]
+            owners = set()
+            for cut in (i for i, ch in enumerate(raw) if ch == "(" and 0 < i < len(raw) - 2):
+                part = raw[:cut]
+                norm = os.path.normpath(os.path.join(base_dir, part))
+                bare = os.path.basename(part) == part
+                for f in archives:
+                    if f == norm or (bare and os.path.basename(f) == part):
+                        owners.add(f)
             if len(owners) == 1:
                 continue  # a member of an archive already read, scanned whole
             if len(owners) > 1:

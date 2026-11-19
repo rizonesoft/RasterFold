@@ -409,9 +409,14 @@ class LinkMatcherTests(unittest.TestCase):
             self.assertEqual(cc._linker_inputs_from_verbose(
                 f"ld.lld: Reading {t / 'plain.a'}\nld.lld: Reading {t / 'plain.a'}(ok.o)", td), [str(t / "plain.a")])
             # a member whose own name holds parentheses belongs to its archive
-            for ann in ("plain.a(codec(v2).o)", f"{t / 'plain.a'}(codec(v2).o)", "plain.a((x)).o)"):
+            for ann in ("plain.a(codec(v2).o)", f"{t / 'plain.a'}(codec(v2).o)", "plain.a((x)).o)",
+                        "./plain.a(ok.o)", "d1/../plain.a(ok.o)", f"{t}/./plain.a(codec(v2).o)"):
                 self.assertEqual(cc._linker_inputs_from_verbose(
                     f"ld.lld: Reading {t / 'plain.a'}\nld.lld: Reading {ann}", td), [str(t / "plain.a")], ann)
+            self.assertEqual(cc._linker_inputs_from_verbose(
+                "ld.lld: Reading ./plain.a\nld.lld: Reading ./plain.a(ok.o)", td), [str(t / "plain.a")])
+            self.assertEqual(cc._linker_inputs_from_verbose(
+                f"ld.lld: Reading {t}/./plain.a\nld.lld: Reading {t}/d1/../plain.a(ok.o)", td), [str(t / "plain.a")])
             got = cc._linker_inputs_from_verbose(
                 f"ld.lld: Reading {t / 'codec(test)'}\nld.lld: Reading codec(test)(enc(1).o)", td)
             self.assertIn("x265_encoder_open", cc._no_hevc_symbols(cc._symbol_scan_set([], {"x": got}, [])) or "")
