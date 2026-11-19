@@ -163,16 +163,19 @@ class LauncherClaudeTests(unittest.TestCase):
 
 
 class LauncherCarbonTests(unittest.TestCase):
-    """`unattended-run.sh carbon` starts Antigravity on Orchestrator (Carbon) (operator directives 2026-11-12 and 2026-11-14)."""
+    """`unattended-run.sh carbon` starts Antigravity on Gemini 4 Neon at medium effort (operator directives 2026-11-12 and 2026-11-19)."""
 
     def test_starts_antigravity_on_carbon_orchestrator_with_the_launch_id_in_the_prompt(self):
         with tempfile.TemporaryDirectory() as tmp:
             launch = Launch(tmp, args=("carbon",))
         self.assertEqual(launch.cli, "agy", launch.out)
         argv = launch.argv
-        self.assertEqual(argv[:5], ["--dangerously-skip-permissions", "--model", "gemini-pro-orchestrator", "-i", argv[4]])
-        self.assertEqual(len(argv), 5)
-        prompt = argv[4]
+        self.assertEqual(
+            argv[:7],
+            ["--dangerously-skip-permissions", "--model", "gemini-4-neon-medium", "--effort", "medium", "-i", argv[6]],
+        )
+        self.assertEqual(len(argv), 7)
+        prompt = argv[6]
         session = prompt.rsplit("Launch id: ", 1)[1].rstrip(".")
         self.assertEqual(str(uuid.UUID(session)), session)
         self.assertEqual(prompt, f"{campaign_prompt_in_script('CARBON_PROMPT')} Launch id: {session}.")
@@ -199,12 +202,12 @@ class LauncherCarbonTests(unittest.TestCase):
             override = Path(tmp) / "dry.txt"
             override.write_text("Report your conversation id, then end the turn.", encoding="utf-8")
             launch = Launch(tmp, env={"UNATTENDED_PROMPT_OVERRIDE": str(override)}, args=("carbon",))
-        self.assertTrue(launch.argv[4].startswith("Report your conversation id, then end the turn. Launch id: "))
+        self.assertTrue(launch.argv[6].startswith("Report your conversation id, then end the turn. Launch id: "))
 
     def test_the_carbon_prompt_is_the_campaign_prompt_for_antigravity(self):
         prompt = campaign_prompt_in_script("CARBON_PROMPT")
         for phrase in ("Finish RasterFold 100% complete and excellent", "Act with full autonomy", "Never ask the operator a question",
-                       "Antigravity on Orchestrator (Carbon)", "gemini-pro-orchestrator",
+                       "Antigravity on Gemini 4 Neon at medium effort", "gemini-4-neon-medium",
                        "the schedule tool, CronExpression 3-59/5 * * * *",
                        "writer Antigravity", "Conversation ID", "writer key gemini",
                        "no custom workspace subagents exist",

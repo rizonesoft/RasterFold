@@ -11,16 +11,16 @@ gen-compdb.py --rebuild-stale, which writes only ignored build output
 (build/, bin/, the root compile_commands.json), and only after the branch,
 clean-tree and guard checks passed, so nothing is rebuilt under a live writer.
 
-Two runners launch it (operator directives 2026-11-12 and 2026-11-14): Claude
-Code (`--runner claude`, the default) and Antigravity on Orchestrator (Carbon)
-(`--runner gemini`, `--model gemini-pro-orchestrator`). For Claude Code the
+Two runners launch it (operator directives 2026-11-12 and 2026-11-19): Claude
+Code (`--runner claude`, the default) and Antigravity on Gemini 4 Neon at medium
+effort (`--runner gemini`, `--model gemini-4-neon-medium --effort medium`). For Claude Code the
 launch preconditions are its CLI and the reviewer's, the campaign Stop hook in
 .claude/settings.json, the two dialogs that would sit unanswered, the session
 cron tools, and the language-server plugin. For Antigravity they are the agy
 CLI and the reviewer's and the campaign Stop hook in .agents/hooks.json. Both
 runners check the read-only Sonnet scout roster in .claude/agents/ and verify
 that no custom Antigravity subagents or plugins exist under .agents/ (since
-Orchestrator (Carbon) handles delegation natively).
+Antigravity handles built-in subagent delegation natively).
 """
 from __future__ import annotations
 
@@ -409,9 +409,8 @@ def roster_problems(agents_dir: Path) -> list[str]:
 
 def antigravity_custom_agent_problems(root: Path = ROOT) -> list[str]:
     """Why the checkout still carries custom Antigravity subagents, plugins, or MCP configs, or [] when clean.
-    Orchestrator (Carbon) (`gemini-pro-orchestrator`) handles Carbon/Hydrogen execution handoffs and built-in read-only
-    `research` subagent delegation natively (operator directive 2026-11-14), so custom Antigravity subagent definitions
-    and workspace plugins must stay absent across all Antigravity discovery roots."""
+    Antigravity (`gemini-4-neon-medium`) ships built-in read-only `research` subagent delegation natively,
+    so custom Antigravity subagent definitions and workspace plugins must stay absent across all Antigravity discovery roots."""
     problems: list[str] = []
     for alt in AGY_ALT_ROOTS:
         if (root / alt).exists() or (root / alt).is_symlink():
@@ -420,7 +419,7 @@ def antigravity_custom_agent_problems(root: Path = ROOT) -> list[str]:
     for entry in AGY_FORBIDDEN_ENTRIES:
         target = agents_root / entry
         if target.exists() or target.is_symlink():
-            problems.append(f".agents/{entry} is not allowed (Orchestrator (Carbon) handles subagents natively)")
+            problems.append(f".agents/{entry} is not allowed (Antigravity handles built-in subagents natively)")
     return problems
 
 
@@ -431,7 +430,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--claim", metavar="SESSION", help="on success, record this launch (its session id) in build/unattended-launch.json")
     parser.add_argument("--claim-pid", type=int, help="the launcher's pid, which `exec claude` or `exec agy` keeps (required with --claim)")
     parser.add_argument("--runner", choices=RUNNERS, default="claude",
-                        help="the writer the launch starts: claude (Claude Code) or gemini (Antigravity on Orchestrator (Carbon))")
+                        help="the writer the launch starts: claude (Claude Code) or gemini (Antigravity on Gemini 4 Neon at medium effort)")
     options = parser.parse_args(argv)
     if options.claim and not options.claim_pid:
         parser.error("--claim needs --claim-pid")
@@ -496,7 +495,7 @@ def main(argv: list[str] | None = None) -> int:
     check("read-only Sonnet scout roster", not problems, "; ".join(problems) if problems else ", ".join(SCOUTS))
     g_problems = antigravity_custom_agent_problems(ROOT)
     check("no custom Antigravity subagents", not g_problems,
-          "; ".join(g_problems) if g_problems else "Orchestrator (Carbon) native")
+          "; ".join(g_problems) if g_problems else "Antigravity built-in native")
 
     # Pinned toolchain and LSP stack.
     tools = ROOT / "tools/llvm-mingw-linux/bin"
