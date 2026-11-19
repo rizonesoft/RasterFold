@@ -1437,16 +1437,19 @@ def _linker_inputs_from_verbose(text, base_dir):
             if path not in files:
                 files.append(path)
             continue
-        cut = raw.rfind("(")
-        if raw.endswith(")") and cut > 0:
-            arch = raw[:cut]
-            if os.path.basename(arch) != arch:
-                # a directory part: it must be the very archive already read
-                ap = arch if os.path.isabs(arch) else os.path.normpath(os.path.join(base_dir, arch))
-                owners = [f for f in files if f == ap and _is_archive(f)]
-            else:
-                # lld's own spelling, the base name: exactly one archive read
-                owners = [f for f in files if os.path.basename(f) == arch and _is_archive(f)]
+        if raw.endswith(")"):
+            # archive(member), the member's own name possibly holding
+            # parentheses: matched against the archives already read, by
+            # lld's base-name spelling or by the archive's path
+            owners = []
+            for f in files:
+                if not _is_archive(f):
+                    continue
+                spellings = {os.path.basename(f), f}
+                if not os.path.isabs(raw):
+                    spellings.add(os.path.relpath(f, base_dir))
+                if any(raw.startswith(sp + "(") and len(raw) > len(sp) + 2 for sp in spellings):
+                    owners.append(f)
             if len(owners) == 1:
                 continue  # a member of an archive already read, scanned whole
             if len(owners) > 1:

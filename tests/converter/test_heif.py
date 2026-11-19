@@ -408,6 +408,13 @@ class LinkMatcherTests(unittest.TestCase):
                     cc._linker_inputs_from_verbose(bad, td)
             self.assertEqual(cc._linker_inputs_from_verbose(
                 f"ld.lld: Reading {t / 'plain.a'}\nld.lld: Reading {t / 'plain.a'}(ok.o)", td), [str(t / "plain.a")])
+            # a member whose own name holds parentheses belongs to its archive
+            for ann in ("plain.a(codec(v2).o)", f"{t / 'plain.a'}(codec(v2).o)", "plain.a((x)).o)"):
+                self.assertEqual(cc._linker_inputs_from_verbose(
+                    f"ld.lld: Reading {t / 'plain.a'}\nld.lld: Reading {ann}", td), [str(t / "plain.a")], ann)
+            got = cc._linker_inputs_from_verbose(
+                f"ld.lld: Reading {t / 'codec(test)'}\nld.lld: Reading codec(test)(enc(1).o)", td)
+            self.assertIn("x265_encoder_open", cc._no_hevc_symbols(cc._symbol_scan_set([], {"x": got}, [])) or "")
             # a linked object, however named, is scanned too
             linked = {"x.exe": [str(t / "enc.o")]}
             self.assertIn("x265_encoder_open", cc._no_hevc_symbols(cc._symbol_scan_set([], linked, [])) or "")
