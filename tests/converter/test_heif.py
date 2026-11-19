@@ -311,18 +311,21 @@ class LinkMatcherTests(unittest.TestCase):
             obj = _ref.run_process_tree([str(clang), "-c", str(t / "unused.c"), "-o", str(t / "unused.o")],
                                        capture_output=True, timeout=120.0)
             self.assertEqual(obj.returncode, 0, obj.stderr)
+            mo = _ref.run_process_tree([str(clang), "-c", str(t / "main.c"), "-o", str(t / "main.o")],
+                                       capture_output=True, timeout=120.0)
+            self.assertEqual(mo.returncode, 0, mo.stderr)
             lib = t / "deps"
             lib.mkdir()
             ok = _ref.run_process_tree([str(ar), "rcs", str(lib / "libx265.a"), str(t / "unused.o")],
                                       capture_output=True, timeout=60.0)
             self.assertEqual(ok.returncode, 0, ok.stderr)
             for spelling in (["-Wl,-L" + str(lib), "-Wl,-lx265"], ["-Wl,-L" + str(lib), "-Wl,-l:libx265.a"]):
-                link = _ref.run_process_tree([str(clang), str(t / "main.c"), "-o", str(t / "m.exe"), *spelling,
+                link = _ref.run_process_tree([str(clang), str(t / "main.o"), "-o", str(t / "m.exe"), *spelling,
                                              "-Wl,--verbose"], cwd=td, capture_output=True, timeout=300.0)
                 self.assertEqual(link.returncode, 0, link.stderr[-400:])
                 files = cc._linker_inputs_from_verbose(link.stdout + "\n" + link.stderr, td)
                 self.assertEqual(cc._hevc_among_inputs(files), str(lib / "libx265.a"), spelling)
-            clean = _ref.run_process_tree([str(clang), str(t / "main.c"), "-o", str(t / "c.exe"), "-Wl,--verbose"],
+            clean = _ref.run_process_tree([str(clang), str(t / "main.o"), "-o", str(t / "c.exe"), "-Wl,--verbose"],
                                          cwd=td, capture_output=True, timeout=300.0)
             self.assertIsNone(cc._hevc_among_inputs(
                 cc._linker_inputs_from_verbose(clean.stdout + "\n" + clean.stderr, td)))
@@ -351,14 +354,14 @@ class LinkMatcherTests(unittest.TestCase):
                 r = _ref.run_process_tree([str(ar), "rcs", str(dst), str(t / obj)], capture_output=True, timeout=60.0)
                 self.assertEqual(r.returncode, 0, r.stderr)
             mkar(prefix / "lib" / "libneutral.a", "ok.o")
-            clean = cc._dependency_archives(str(prefix))
+            _ents, clean = cc._dependency_files(str(prefix))
             self.assertEqual(clean, [str(prefix / "lib" / "libneutral.a")])
             self.assertIsNone(cc._hevc_among_inputs(clean))
             self.assertIsNone(cc._no_hevc_symbols(cc._symbol_scan_set([], {}, clean)))
             # an unused HEVC-named archive, under any suffix spelling, is named
             for spelling in ("libx265.a", "libx265.A", "x265.LIB", "libde265.Lib"):
                 mkar(prefix / "lib" / "sub" / spelling, "ok.o")  # never opened by lld
-                self.assertEqual(cc._hevc_among_inputs(cc._dependency_archives(str(prefix))),
+                self.assertEqual(cc._hevc_among_inputs(cc._dependency_files(str(prefix))[0]),
                                  str(prefix / "lib" / "sub" / spelling), spelling)
                 (prefix / "lib" / "sub" / spelling).unlink()
             # a neutrally named archive with an HEVC member, under any name or
@@ -366,7 +369,7 @@ class LinkMatcherTests(unittest.TestCase):
             # prefix archive and as a linked input
             for spelling in ("codec.lib", "codec.LIB", "codec.A", "codec.bin", "codec"):
                 mkar(prefix / "lib" / spelling, "enc.o")
-                deps = cc._dependency_archives(str(prefix))
+                deps = cc._dependency_files(str(prefix))[1]
                 self.assertIn(str(prefix / "lib" / spelling), deps, spelling)
                 self.assertIsNone(cc._hevc_among_inputs(deps))
                 linked = {"x.exe": [str(prefix / "lib" / spelling)]}
@@ -375,16 +378,58 @@ class LinkMatcherTests(unittest.TestCase):
                     self.assertIsNotNone(msg, spelling)
                     self.assertIn("x265_encoder_open", msg)
                 (prefix / "lib" / spelling).unlink()
-            # lld's archive(member) lines are covered by the archive's own line
-            self.assertEqual(cc._linker_inputs_from_verbose(
-                "ld.lld: Reading lib/codec.bin\nld.lld: Reading codec.bin(enc.o)\nld.lld: Reading /abs/x.o", "/b"),
-                ["/b/lib/codec.bin", "/abs/x.o"])
+            # parser: a reported path that exists is kept whatever its spelling
+            # (parentheses included); an archive(member) annotation of an
+            # archive already read is covered by it; anything else fails closed
+            mkar(t / "codec(test)", "enc.o")
+            mkar(t / "plain.a", "ok.o")
+            got = cc._linker_inputs_from_verbose(
+                f"ld.lld: Reading codec(test)\nld.lld: Reading {t / 'plain.a'}\n"
+                "ld.lld: Reading plain.a(ok.o)\nld.lld: Reading enc.o", td)
+            self.assertEqual(got, [str(t / "codec(test)"), str(t / "plain.a"), str(t / "enc.o")])
+            self.assertIn("x265_encoder_open", cc._no_hevc_symbols(cc._symbol_scan_set([], {"x": got}, [])) or "")
+            for bad in ("ld.lld: Reading gone.a", "ld.lld: Reading other.a(m.o)"):
+                with self.assertRaises(RuntimeError):
+                    cc._linker_inputs_from_verbose(bad, td)
             # a linked object, however named, is scanned too
             linked = {"x.exe": [str(t / "enc.o")]}
             self.assertIn("x265_encoder_open", cc._no_hevc_symbols(cc._symbol_scan_set([], linked, [])) or "")
             # a file that is not an archive is not taken for one
             (prefix / "lib" / "notes.a").write_text("not an archive")
-            self.assertNotIn(str(prefix / "lib" / "notes.a"), cc._dependency_archives(str(prefix)))
+            self.assertNotIn(str(prefix / "lib" / "notes.a"), cc._dependency_files(str(prefix))[1])
+            (prefix / "lib" / "notes.a").unlink()
+            # symbolic links are followed: an HEVC-named link to a real archive
+            # is named, and a neutrally named link to an HEVC archive is scanned
+            store = t / "store"
+            store.mkdir()
+            mkar(store / "real.a", "ok.o")
+            mkar(store / "enc.a", "enc.o")
+            (prefix / "lib" / "libx265.a").symlink_to(store / "real.a")
+            self.assertEqual(cc._hevc_among_inputs(cc._dependency_files(str(prefix))[0]),
+                             str(prefix / "lib" / "libx265.a"))
+            (prefix / "lib" / "libx265.a").unlink()
+            (prefix / "lib" / "libcodec.a").symlink_to(store / "enc.a")
+            ents, deps = cc._dependency_files(str(prefix))
+            self.assertIn("x265_encoder_open", cc._no_hevc_symbols(cc._symbol_scan_set([], {}, deps)) or "")
+            (prefix / "lib" / "libcodec.a").unlink()
+            (prefix / "linked").symlink_to(store, target_is_directory=True)  # a linked directory
+            self.assertIn(str(prefix / "linked" / "enc.a"), cc._dependency_files(str(prefix))[1])
+            (prefix / "linked").unlink()
+            # entries that cannot be inspected fail closed
+            (prefix / "lib" / "dangling.a").symlink_to(t / "nowhere.a")
+            with self.assertRaises(RuntimeError):
+                cc._dependency_files(str(prefix))
+            (prefix / "lib" / "dangling.a").unlink()
+            locked = prefix / "lib" / "locked.a"
+            mkar(locked, "ok.o")
+            locked.chmod(0)
+            try:
+                if os.access(locked, os.R_OK):
+                    self.skipTest("running with privileges that ignore file modes")
+                with self.assertRaises(RuntimeError):
+                    cc._dependency_files(str(prefix))
+            finally:
+                locked.chmod(0o644)
 
 
 def load_tests(loader: unittest.TestLoader, tests: unittest.TestSuite, pattern: str | None) -> unittest.TestSuite:

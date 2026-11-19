@@ -1421,18 +1421,28 @@ def _hevc_link_name(token):
 
 def _linker_inputs_from_verbose(text, base_dir):
     """The input files lld reports reading (its `ld.lld: Reading <file>`
-    lines under -Wl,--verbose), resolved against the link's directory."""
+    lines under -Wl,--verbose), resolved against the link's directory. A
+    reported path that exists as a file is kept, whatever its spelling; one
+    that does not is accepted only as lld's `archive(member)` annotation of an
+    archive already read. Anything else fails closed (RuntimeError), so no
+    input goes uninspected."""
     files = []
     for line in text.splitlines():
         line = line.strip()
-        if line.startswith("ld.lld: Reading "):
-            path = line[len("ld.lld: Reading "):].strip()
-            if path.endswith(")") and "(" in path:
-                continue  # archive(member): its archive has its own Reading line, scanned whole
-            if not os.path.isabs(path):
-                path = os.path.normpath(os.path.join(base_dir, path))
+        if not line.startswith("ld.lld: Reading "):
+            continue
+        raw = line[len("ld.lld: Reading "):].strip()
+        path = raw if os.path.isabs(raw) else os.path.normpath(os.path.join(base_dir, raw))
+        if os.path.isfile(path):
             if path not in files:
                 files.append(path)
+            continue
+        cut = raw.rfind("(")
+        if raw.endswith(")") and cut > 0:
+            arch = os.path.basename(raw[:cut])
+            if any(os.path.basename(f) == arch for f in files):
+                continue  # a member of an archive already read, scanned whole
+        raise RuntimeError(f"lld read {raw}, which resolves to no file and no archive already read")
     return files
 
 
@@ -1488,25 +1498,36 @@ ARCHIVE_MAGICS = (b"!<arch>\n", b"!<thin>\n")
 
 def _is_archive(path):
     """A static archive by its content (the ar magic), whatever its name or
-    suffix spelling."""
+    suffix spelling; a file that cannot be read fails closed (RuntimeError)."""
     try:
         with open(path, "rb") as fh:
             return fh.read(8) in ARCHIVE_MAGICS
-    except OSError:
-        return False
+    except OSError as exc:
+        raise RuntimeError(f"cannot read {path}: {exc}") from exc
 
 
-def _dependency_archives(prefix):
-    """Every static archive under the dependency prefix, at any depth and by
-    content, linked or not."""
-    found = []
-    if os.path.isdir(prefix):
-        for dp, _dn, fns in os.walk(prefix):
-            for f in fns:
-                path = os.path.join(dp, f)
-                if os.path.isfile(path) and not os.path.islink(path) and _is_archive(path):
-                    found.append(path)
-    return sorted(found)
+def _dependency_files(prefix):
+    """(every entry, every static archive) under the dependency prefix, at any
+    depth, symbolic links followed, archives found by content. An entry that
+    is neither a readable file nor a directory (a dangling link, a device)
+    fails closed (RuntimeError)."""
+    entries, archives, seen = [], [], set()
+    if not os.path.isdir(prefix):
+        return entries, archives
+    for dp, dn, fns in os.walk(prefix, followlinks=True):
+        real = os.path.realpath(dp)
+        if real in seen:
+            dn[:] = []
+            continue
+        seen.add(real)
+        for f in fns:
+            path = os.path.join(dp, f)
+            entries.append(path)
+            if not os.path.isfile(path):
+                raise RuntimeError(f"cannot inspect {path}: not a readable file")
+            if _is_archive(path):
+                archives.append(path)
+    return sorted(entries), sorted(archives)
 
 
 def _symbol_scan_set(executables, inputs, deps):
@@ -1599,23 +1620,34 @@ def case_heif(all_targets=False):
     if rc:
         return rc
     if all_targets or os.name == "nt":
-        msg, inputs = _no_hevc_in_link_inputs()
-        if msg:
-            return fail(f"heif: {msg}")
-        n_in = len({f for files in inputs.values() for f in files})
-        print(f"heif: lld's own input lists for {len(inputs)} Windows executables "
-              f"({n_in} files read) name no HEVC implementation")
-        deps = _dependency_archives(os.path.join(ROOT, "build", "converter", "windows-x64", "deps-prefix"))
-        bad = _hevc_among_inputs(deps)
-        if bad:
-            return fail(f"heif: the Windows dependency prefix holds {bad}")
-        print(f"heif: none of the {len(deps)} archives in the Windows dependency prefix is named for HEVC")
-        bindir = os.path.join(ROOT, "bin", "converter", "windows-x64")
-        arts = _symbol_scan_set([os.path.join(bindir, e) for e in sorted(inputs)], inputs, deps)
-        msg = _no_hevc_symbols(arts)
-        if msg:
-            return fail(f"heif: {msg}")
-        print(f"heif: llvm-nm finds no HEVC symbol in {len(arts)} executables, linked inputs and dependency archives")
+        try:
+            return _heif_windows_link_checks()
+        except RuntimeError as exc:
+            return fail(f"heif: {exc}")
+    return 0
+
+
+def _heif_windows_link_checks():
+    """The Windows no-HEVC proof: lld's own inputs, the dependency prefix,
+    and the external symbols of all of them."""
+    msg, inputs = _no_hevc_in_link_inputs()
+    if msg:
+        return fail(f"heif: {msg}")
+    n_in = len({f for files in inputs.values() for f in files})
+    print(f"heif: lld's own input lists for {len(inputs)} Windows executables "
+          f"({n_in} files read) name no HEVC implementation")
+    entries, deps = _dependency_files(os.path.join(ROOT, "build", "converter", "windows-x64", "deps-prefix"))
+    bad = _hevc_among_inputs(entries)
+    if bad:
+        return fail(f"heif: the Windows dependency prefix holds {bad}")
+    print(f"heif: none of the {len(entries)} files in the Windows dependency prefix is named for HEVC "
+          f"({len(deps)} archives)")
+    bindir = os.path.join(ROOT, "bin", "converter", "windows-x64")
+    arts = _symbol_scan_set([os.path.join(bindir, e) for e in sorted(inputs)], inputs, deps)
+    msg = _no_hevc_symbols(arts)
+    if msg:
+        return fail(f"heif: {msg}")
+    print(f"heif: llvm-nm finds no HEVC symbol in {len(arts)} executables, linked inputs and dependency archives")
     return 0
 
 
