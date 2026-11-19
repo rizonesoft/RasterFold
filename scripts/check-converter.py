@@ -1425,10 +1425,11 @@ def _linker_inputs_from_verbose(text, base_dir):
     directory (the spelling the name check reads). Identity is the
     filesystem's own (os.path.realpath, which resolves links before `..` as
     the system does), never a textual normalisation. A reported path that is
-    a file is kept once per identity; one that is not is accepted only as
+    a file is kept under every spelling lld reported (the symbol scan
+    deduplicates by identity); one that is not is accepted only as
     lld's `archive(member)` annotation of exactly one archive already read.
     Anything else fails closed (RuntimeError), so no input goes uninspected."""
-    files, ids = [], {}
+    files = []
     for line in text.splitlines():
         line = line.strip()
         if not line.startswith("ld.lld: Reading "):
@@ -1436,9 +1437,7 @@ def _linker_inputs_from_verbose(text, base_dir):
         raw = line[len("ld.lld: Reading "):].strip()
         path = os.path.join(base_dir, raw)  # an absolute raw path stays as reported
         if os.path.isfile(path):
-            ident = os.path.realpath(path)
-            if ident not in ids:
-                ids[ident] = path
+            if path not in files:  # every spelling is kept: the name check reads each
                 files.append(path)
             continue
         if raw.endswith(")"):

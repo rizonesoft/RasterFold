@@ -437,6 +437,16 @@ class LinkMatcherTests(unittest.TestCase):
             (t / "neutral.a").symlink_to(t / "deep" / "libx265.a")
             got = cc._linker_inputs_from_verbose(f"ld.lld: Reading {t / 'neutral.a'}", td)
             self.assertEqual(cc._hevc_among_inputs(got), str(t / "neutral.a"))
+            # two spellings of one archive, the forbidden one second: both are
+            # kept for the name check, and the archive is scanned once
+            mkar(t / "first.a", "ok.o")
+            (t / "libde265.a").symlink_to(t / "first.a")
+            got = cc._linker_inputs_from_verbose(
+                f"ld.lld: Reading {t / 'first.a'}\nld.lld: Reading {t / 'libde265.a'}\n"
+                "ld.lld: Reading libde265.a(ok.o)\nld.lld: Reading first.a(ok.o)", td)
+            self.assertEqual(got, [str(t / "first.a"), str(t / "libde265.a")])
+            self.assertEqual(cc._hevc_among_inputs(got), str(t / "libde265.a"))
+            self.assertEqual(cc._symbol_scan_set([], {"x": got}, []), [str(t / "first.a")])
             got = cc._linker_inputs_from_verbose(
                 f"ld.lld: Reading {t / 'codec(test)'}\nld.lld: Reading codec(test)(enc(1).o)", td)
             self.assertIn("x265_encoder_open", cc._no_hevc_symbols(cc._symbol_scan_set([], {"x": got}, [])) or "")
