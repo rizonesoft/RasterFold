@@ -328,6 +328,48 @@ class LinkMatcherTests(unittest.TestCase):
                 cc._linker_inputs_from_verbose(clean.stdout + "\n" + clean.stderr, td)))
 
 
+    def test_dependency_prefix_and_lib_archives_are_checked(self) -> None:
+        """An unused HEVC-named archive in the dependency prefix fails the name
+        check, and a neutrally named .lib whose member defines an x265 symbol
+        joins the symbol scan and fails it."""
+        cc = _load_mod("_rfc_check_conv", ROOT / "scripts" / "check-converter.py")
+        tc = ROOT / "tools" / "llvm-mingw-linux" / "bin"
+        clang, ar = tc / "x86_64-w64-mingw32-clang", tc / "llvm-ar"
+        if not clang.exists() or not ar.exists():
+            self.skipTest("the pinned llvm-mingw toolchain is not provisioned")
+        with tempfile.TemporaryDirectory() as td:
+            t = Path(td)
+            prefix = t / "deps-prefix"
+            (prefix / "lib" / "sub").mkdir(parents=True)
+            (t / "enc.c").write_text("int x265_encoder_open(void) { return 1; }\n")
+            (t / "ok.c").write_text("int neutral_fn(void) { return 1; }\n")
+            for name in ("enc", "ok"):
+                r = _ref.run_process_tree([str(clang), "-c", str(t / f"{name}.c"), "-o", str(t / f"{name}.o")],
+                                          capture_output=True, timeout=120.0)
+                self.assertEqual(r.returncode, 0, r.stderr)
+            def mkar(dst: Path, obj: str) -> None:
+                r = _ref.run_process_tree([str(ar), "rcs", str(dst), str(t / obj)], capture_output=True, timeout=60.0)
+                self.assertEqual(r.returncode, 0, r.stderr)
+            mkar(prefix / "lib" / "libneutral.a", "ok.o")
+            clean = cc._dependency_archives(str(prefix))
+            self.assertEqual(clean, [str(prefix / "lib" / "libneutral.a")])
+            self.assertIsNone(cc._hevc_among_inputs(clean))
+            self.assertIsNone(cc._no_hevc_symbols(cc._symbol_scan_set([], {}, clean)))
+            mkar(prefix / "lib" / "sub" / "libx265.a", "ok.o")  # unused, never opened by lld
+            self.assertEqual(cc._hevc_among_inputs(cc._dependency_archives(str(prefix))),
+                             str(prefix / "lib" / "sub" / "libx265.a"))
+            (prefix / "lib" / "sub" / "libx265.a").unlink()
+            mkar(prefix / "lib" / "codec.lib", "enc.o")  # neutral name, HEVC member
+            deps = cc._dependency_archives(str(prefix))
+            self.assertIn(str(prefix / "lib" / "codec.lib"), deps)
+            self.assertIsNone(cc._hevc_among_inputs(deps))
+            linked = {"x.exe": [str(prefix / "lib" / "codec.lib")]}
+            for scan in (cc._symbol_scan_set([], {}, deps), cc._symbol_scan_set([], linked, [])):
+                msg = cc._no_hevc_symbols(scan)
+                self.assertIsNotNone(msg)
+                self.assertIn("x265_encoder_open", msg)
+
+
 def load_tests(loader: unittest.TestLoader, tests: unittest.TestSuite, pattern: str | None) -> unittest.TestSuite:
     suite = unittest.TestSuite()
     for cls in (LinkMatcherTests, HostHeifTests, WindowsHeifTests):

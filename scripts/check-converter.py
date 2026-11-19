@@ -1481,6 +1481,29 @@ def _windows_linker_inputs():
     return result
 
 
+SYMBOL_SCAN_SUFFIXES = (".a", ".lib", ".obj", ".o")
+
+
+def _dependency_archives(prefix):
+    """Every archive under the dependency prefix (.a and .lib, any depth),
+    linked or not."""
+    found = []
+    if os.path.isdir(prefix):
+        for dp, _dn, fns in os.walk(prefix):
+            found += [os.path.join(dp, f) for f in fns if f.endswith((".a", ".lib"))]
+    return sorted(found)
+
+
+def _symbol_scan_set(executables, inputs, deps):
+    """The executables, every archive or object any link read, and every
+    dependency archive, each once."""
+    arts = list(executables)
+    for files in inputs.values():
+        arts += [f for f in files if f.endswith(SYMBOL_SCAN_SUFFIXES) and f not in arts]
+    arts += [f for f in deps if f not in arts]
+    return arts
+
+
 def _no_hevc_in_link_inputs():
     """No file the linker reads for any Windows converter executable is an
     HEVC implementation; returns (problem or None, {exe: inputs})."""
@@ -1567,14 +1590,17 @@ def case_heif(all_targets=False):
         n_in = len({f for files in inputs.values() for f in files})
         print(f"heif: lld's own input lists for {len(inputs)} Windows executables "
               f"({n_in} files read) name no HEVC implementation")
+        deps = _dependency_archives(os.path.join(ROOT, "build", "converter", "windows-x64", "deps-prefix"))
+        bad = _hevc_among_inputs(deps)
+        if bad:
+            return fail(f"heif: the Windows dependency prefix holds {bad}")
+        print(f"heif: none of the {len(deps)} archives in the Windows dependency prefix is named for HEVC")
         bindir = os.path.join(ROOT, "bin", "converter", "windows-x64")
-        arts = [os.path.join(bindir, e) for e in sorted(inputs)]
-        for files in inputs.values():
-            arts += [f for f in files if f.endswith((".a", ".obj", ".o")) and f not in arts]
+        arts = _symbol_scan_set([os.path.join(bindir, e) for e in sorted(inputs)], inputs, deps)
         msg = _no_hevc_symbols(arts)
         if msg:
             return fail(f"heif: {msg}")
-        print(f"heif: llvm-nm finds no HEVC symbol in {len(arts)} executables and linked inputs")
+        print(f"heif: llvm-nm finds no HEVC symbol in {len(arts)} executables, linked inputs and dependency archives")
     return 0
 
 
