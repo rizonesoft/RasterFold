@@ -1421,38 +1421,40 @@ def _hevc_link_name(token):
 
 def _linker_inputs_from_verbose(text, base_dir):
     """The input files lld reports reading (its `ld.lld: Reading <file>`
-    lines under -Wl,--verbose), resolved against the link's directory. A
-    reported path that exists as a file is kept, whatever its spelling; one
-    that does not is accepted only as lld's `archive(member)` annotation of an
-    archive already read. Anything else fails closed (RuntimeError), so no
-    input goes uninspected."""
-    files = []
+    lines under -Wl,--verbose), each as reported, joined to the link's
+    directory (the spelling the name check reads). Identity is the
+    filesystem's own (os.path.realpath, which resolves links before `..` as
+    the system does), never a textual normalisation. A reported path that is
+    a file is kept once per identity; one that is not is accepted only as
+    lld's `archive(member)` annotation of exactly one archive already read.
+    Anything else fails closed (RuntimeError), so no input goes uninspected."""
+    files, ids = [], {}
     for line in text.splitlines():
         line = line.strip()
         if not line.startswith("ld.lld: Reading "):
             continue
         raw = line[len("ld.lld: Reading "):].strip()
-        path = os.path.normpath(os.path.join(base_dir, raw))  # absolute raw paths stay absolute
+        path = os.path.join(base_dir, raw)  # an absolute raw path stays as reported
         if os.path.isfile(path):
-            if path not in files:
+            ident = os.path.realpath(path)
+            if ident not in ids:
+                ids[ident] = path
                 files.append(path)
             continue
         if raw.endswith(")"):
-            # archive(member), the member's own name possibly holding
-            # parentheses: matched against the archives already read, by
-            # lld's base-name spelling or by the archive's path
-            # every split point is tried, each archive part normalised as a
-            # Reading path is, so neither the archive's nor the member's name
-            # can mislead the split
-            archives = [f for f in files if _is_archive(f)]
+            # archive(member), either name possibly holding parentheses: every
+            # split point is tried, and the archive part is matched by
+            # filesystem identity, or by base name when lld gives only that
+            archives = [(os.path.realpath(f), f) for f in files if _is_archive(f)]
             owners = set()
             for cut in (i for i, ch in enumerate(raw) if ch == "(" and 0 < i < len(raw) - 2):
                 part = raw[:cut]
-                norm = os.path.normpath(os.path.join(base_dir, part))
+                cand = os.path.join(base_dir, part)
+                ident = os.path.realpath(cand) if os.path.isfile(cand) else None
                 bare = os.path.basename(part) == part
-                for f in archives:
-                    if f == norm or (bare and os.path.basename(f) == part):
-                        owners.add(f)
+                for real, f in archives:
+                    if real == ident or (bare and os.path.basename(f) == part):
+                        owners.add(real)
             if len(owners) == 1:
                 continue  # a member of an archive already read, scanned whole
             if len(owners) > 1:
@@ -1462,9 +1464,10 @@ def _linker_inputs_from_verbose(text, base_dir):
 
 
 def _hevc_among_inputs(files):
-    """The first input whose file name is an HEVC implementation, or None."""
+    """The first input whose file name, as reported or as the file it
+    resolves to, is an HEVC implementation, or None."""
     for path in files:
-        if _hevc_link_name(path):
+        if _hevc_link_name(path) or _hevc_link_name(os.path.realpath(path)):
             return path
     return None
 
@@ -1551,10 +1554,12 @@ def _dependency_files(prefix):
 def _symbol_scan_set(executables, inputs, deps):
     """The executables, every file any link read (archives and objects alike,
     however named), and every dependency archive, each once."""
-    arts = list(executables)
-    for files in inputs.values():
-        arts += [f for f in files if f not in arts]
-    arts += [f for f in deps if f not in arts]
+    arts, seen = [], set()
+    for f in [*executables, *(f for files in inputs.values() for f in files), *deps]:
+        ident = os.path.realpath(f)
+        if ident not in seen:  # one scan per file, however it was reached
+            seen.add(ident)
+            arts.append(f)
     return arts
 
 

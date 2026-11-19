@@ -406,17 +406,37 @@ class LinkMatcherTests(unittest.TestCase):
                         "ld.lld: Reading dup.a(ok.o)"):
                 with self.assertRaises(RuntimeError, msg=bad):
                     cc._linker_inputs_from_verbose(bad, td)
-            self.assertEqual(cc._linker_inputs_from_verbose(
-                f"ld.lld: Reading {t / 'plain.a'}\nld.lld: Reading {t / 'plain.a'}(ok.o)", td), [str(t / "plain.a")])
+            self.assertEqual([os.path.realpath(x) for x in cc._linker_inputs_from_verbose(
+                f"ld.lld: Reading {t / 'plain.a'}\nld.lld: Reading {t / 'plain.a'}(ok.o)", td)],
+                [os.path.realpath(t / "plain.a")])
             # a member whose own name holds parentheses belongs to its archive
+            def real(xs):
+                return [os.path.realpath(x) for x in xs]
+            plain = os.path.realpath(t / "plain.a")
             for ann in ("plain.a(codec(v2).o)", f"{t / 'plain.a'}(codec(v2).o)", "plain.a((x)).o)",
                         "./plain.a(ok.o)", "d1/../plain.a(ok.o)", f"{t}/./plain.a(codec(v2).o)"):
-                self.assertEqual(cc._linker_inputs_from_verbose(
-                    f"ld.lld: Reading {t / 'plain.a'}\nld.lld: Reading {ann}", td), [str(t / "plain.a")], ann)
-            self.assertEqual(cc._linker_inputs_from_verbose(
-                "ld.lld: Reading ./plain.a\nld.lld: Reading ./plain.a(ok.o)", td), [str(t / "plain.a")])
-            self.assertEqual(cc._linker_inputs_from_verbose(
-                f"ld.lld: Reading {t}/./plain.a\nld.lld: Reading {t}/d1/../plain.a(ok.o)", td), [str(t / "plain.a")])
+                self.assertEqual(real(cc._linker_inputs_from_verbose(
+                    f"ld.lld: Reading {t / 'plain.a'}\nld.lld: Reading {ann}", td)), [plain], ann)
+            self.assertEqual(real(cc._linker_inputs_from_verbose(
+                "ld.lld: Reading ./plain.a\nld.lld: Reading ./plain.a(ok.o)", td)), [plain])
+            self.assertEqual(real(cc._linker_inputs_from_verbose(
+                f"ld.lld: Reading {t}/./plain.a\nld.lld: Reading {t}/d1/../plain.a(ok.o)", td)), [plain])
+            # identity is the filesystem's: a linked directory followed by `..`
+            # resolves through the link, as the system resolves it, in both the
+            # Reading line and its member annotation
+            (t / "deep" / "inner").mkdir(parents=True)
+            mkar(t / "deep" / "lib.a", "enc.o")
+            (t / "hop").symlink_to(t / "deep" / "inner", target_is_directory=True)
+            via = f"{t}/hop/../lib.a"  # the system reaches deep/lib.a; textual normpath says t/lib.a
+            self.assertFalse(os.path.exists(t / "lib.a"))
+            got = cc._linker_inputs_from_verbose(f"ld.lld: Reading {via}\nld.lld: Reading {via}(enc.o)", td)
+            self.assertEqual(real(got), [os.path.realpath(t / "deep" / "lib.a")])
+            self.assertIn("x265_encoder_open", cc._no_hevc_symbols(cc._symbol_scan_set([], {"x": got}, [])) or "")
+            # a neutrally named link to an HEVC-named archive is named by its target
+            mkar(t / "deep" / "libx265.a", "ok.o")
+            (t / "neutral.a").symlink_to(t / "deep" / "libx265.a")
+            got = cc._linker_inputs_from_verbose(f"ld.lld: Reading {t / 'neutral.a'}", td)
+            self.assertEqual(cc._hevc_among_inputs(got), str(t / "neutral.a"))
             got = cc._linker_inputs_from_verbose(
                 f"ld.lld: Reading {t / 'codec(test)'}\nld.lld: Reading codec(test)(enc(1).o)", td)
             self.assertIn("x265_encoder_open", cc._no_hevc_symbols(cc._symbol_scan_set([], {"x": got}, [])) or "")
