@@ -391,6 +391,23 @@ class LinkMatcherTests(unittest.TestCase):
             for bad in ("ld.lld: Reading gone.a", "ld.lld: Reading other.a(m.o)"):
                 with self.assertRaises(RuntimeError):
                     cc._linker_inputs_from_verbose(bad, td)
+            # an annotation is covered only by an archive already read: not by
+            # a non-archive of the same name, not by an archive elsewhere when
+            # a directory is named, and not when the name is ambiguous
+            (t / "same.a").write_text("not an archive")
+            (t / "d1").mkdir()
+            (t / "d2").mkdir()
+            mkar(t / "d1" / "dup.a", "ok.o")
+            mkar(t / "d2" / "dup.a", "ok.o")
+            for bad in (f"ld.lld: Reading {t / 'same.a'}\nld.lld: Reading /absent/same.a(m.o)",
+                        f"ld.lld: Reading {t / 'same.a'}\nld.lld: Reading same.a(m.o)",
+                        f"ld.lld: Reading {t / 'plain.a'}\nld.lld: Reading /absent/plain.a(m.o)",
+                        f"ld.lld: Reading {t / 'd1' / 'dup.a'}\nld.lld: Reading {t / 'd2' / 'dup.a'}\n"
+                        "ld.lld: Reading dup.a(ok.o)"):
+                with self.assertRaises(RuntimeError, msg=bad):
+                    cc._linker_inputs_from_verbose(bad, td)
+            self.assertEqual(cc._linker_inputs_from_verbose(
+                f"ld.lld: Reading {t / 'plain.a'}\nld.lld: Reading {t / 'plain.a'}(ok.o)", td), [str(t / "plain.a")])
             # a linked object, however named, is scanned too
             linked = {"x.exe": [str(t / "enc.o")]}
             self.assertIn("x265_encoder_open", cc._no_hevc_symbols(cc._symbol_scan_set([], linked, [])) or "")
@@ -420,6 +437,18 @@ class LinkMatcherTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 cc._dependency_files(str(prefix))
             (prefix / "lib" / "dangling.a").unlink()
+            # a directory that cannot be listed fails closed
+            hidden = prefix / "lib" / "hidden"
+            hidden.mkdir()
+            mkar(hidden / "libx265.a", "ok.o")
+            hidden.chmod(0)
+            try:
+                if not os.access(hidden, os.R_OK):
+                    with self.assertRaises(RuntimeError):
+                        cc._dependency_files(str(prefix))
+            finally:
+                hidden.chmod(0o755)
+            shutil.rmtree(hidden)
             locked = prefix / "lib" / "locked.a"
             mkar(locked, "ok.o")
             locked.chmod(0)

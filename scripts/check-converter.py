@@ -1439,9 +1439,18 @@ def _linker_inputs_from_verbose(text, base_dir):
             continue
         cut = raw.rfind("(")
         if raw.endswith(")") and cut > 0:
-            arch = os.path.basename(raw[:cut])
-            if any(os.path.basename(f) == arch for f in files):
+            arch = raw[:cut]
+            if os.path.basename(arch) != arch:
+                # a directory part: it must be the very archive already read
+                ap = arch if os.path.isabs(arch) else os.path.normpath(os.path.join(base_dir, arch))
+                owners = [f for f in files if f == ap and _is_archive(f)]
+            else:
+                # lld's own spelling, the base name: exactly one archive read
+                owners = [f for f in files if os.path.basename(f) == arch and _is_archive(f)]
+            if len(owners) == 1:
                 continue  # a member of an archive already read, scanned whole
+            if len(owners) > 1:
+                raise RuntimeError(f"lld read {raw}, whose archive name matches {len(owners)} archives read")
         raise RuntimeError(f"lld read {raw}, which resolves to no file and no archive already read")
     return files
 
@@ -1514,7 +1523,10 @@ def _dependency_files(prefix):
     entries, archives, seen = [], [], set()
     if not os.path.isdir(prefix):
         return entries, archives
-    for dp, dn, fns in os.walk(prefix, followlinks=True):
+    def _walk_error(exc):
+        raise RuntimeError(f"cannot list {getattr(exc, 'filename', prefix)}: {exc}") from exc
+
+    for dp, dn, fns in os.walk(prefix, onerror=_walk_error, followlinks=True):
         real = os.path.realpath(dp)
         if real in seen:
             dn[:] = []
