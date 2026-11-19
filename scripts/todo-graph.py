@@ -7063,7 +7063,7 @@ def committed_pin(root: Path, sha: str, ref: str) -> dict:
     require(data is not None, f"no reviewer pin {PIN_PATH} at {sha}: {ref}")
     dispatch = review_dispatch()
     try:
-        pin = dispatch.load_pin(PIN_PATH, data=data)
+        pin = dispatch.load_pin(PIN_PATH, data=data, historical=True)
     except dispatch.Refused as exc:
         raise Refused(f"the reviewer pin at {sha} does not load: {exc}: {ref}") from None
     require("schedule" in pin, f"the reviewer pin at {sha} has no [schedule] to check the reviews against: {ref}")

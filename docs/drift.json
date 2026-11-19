@@ -1566,7 +1566,7 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "Re-read README.md against .conclave/reviewers.toml on 2026-11-17: the reviewer pin moved from GPT-6 Astra to GPT-6.2 Astra (gpt-6.2-astra); routes, lenses and the 33-pass cap are unchanged.",
+      "evidence": "Re-read against scripts/review-dispatch.py and .conclave/reviewers.toml on 2026-11-19: Muse Code execution was removed (the current pin may not name cli muse; historical pins load read-only); the writers, the Codex-only Astra route and the review schedule this document describes are unchanged.",
       "sources": {
         "include/rasterfold.h": "e5e9eecb93e59b3cfb6b00674006e03ba887c671516e6682292ef5753b015379",
         "src/rf.h": "7f58b508d0e3bb10cc2e1c57cda78e3552a2976a99928e0dfa1df16b91e0117d",
@@ -1575,32 +1575,32 @@
         "scripts/package.py": "f030a89836d12e610d9ad4a762bf073c975e6fcaf6bdb83ef09bc174e3f37973",
         "scripts/check-all.py": "ec0f58046fb6beb5e9b522530aa51a4e3eff03bd546a17a09db53e53ca8a5e9a",
         "README.md": "b63303b60e21ca7db52ff5b3555740a60ecc4aaa781e5ed8bd47f5a8985e39fb",
-        "AGENTS.md": "801fe4d2af1db851d4772a95300a475daa4c7dfd2ce6d2864920d979adad5fe3",
-        ".conclave/reviewers.toml": "ed96da5d05acfdd012c2b724746513497bd36d30d777a1ff61c9af7fd2b62b64",
-        "scripts/review-dispatch.py": "949f1f36cfca7d37fa36fea0f78b0357cbb66dfd53c4521b9fc6523a2e33486c"
+        "AGENTS.md": "11c3d1cbb0f65286d88ed8292e8c58aa7da6f700a6b756c4b5bddc198c7388fe",
+        ".conclave/reviewers.toml": "b361c06a590cca2094266f86fdaa004dd031ee3e21e5b5e01f6d8a515ef3490e",
+        "scripts/review-dispatch.py": "409aec7886dafa9d6867779b39108dab07b2214a16f889be34b6084849040a61"
       },
       "review": "Author-attested: 2026-10-25 re-read README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "AGENTS.md": {
-      "evidence": "Re-read against scripts/campaign_guard.py on 2026-11-18: only the self-test pin for the process-plan heartbeat changed (step 7 no longer appends a run-file line per firing); the guard, hook, heartbeat and stall-breaker behaviour this document describes is unchanged.",
+      "evidence": "Re-read against scripts/review-dispatch.py and .conclave/reviewers.toml on 2026-11-19: Muse Code execution was removed (the current pin may not name cli muse; historical pins load read-only); the writers, the Codex-only Astra route and the review schedule this document describes are unchanged.",
       "sources": {
         "include/rasterfold.h": "e5e9eecb93e59b3cfb6b00674006e03ba887c671516e6682292ef5753b015379",
         "src/rf.h": "7f58b508d0e3bb10cc2e1c57cda78e3552a2976a99928e0dfa1df16b91e0117d",
         "toolchain.json": "eb53e29ed47b6ae570e705e7c48dca3e5fc922f6213d892c084e00489785d75d",
-        ".conclave/reviewers.toml": "ed96da5d05acfdd012c2b724746513497bd36d30d777a1ff61c9af7fd2b62b64",
-        "scripts/review-dispatch.py": "949f1f36cfca7d37fa36fea0f78b0357cbb66dfd53c4521b9fc6523a2e33486c",
-        "AGENTS.md": "801fe4d2af1db851d4772a95300a475daa4c7dfd2ce6d2864920d979adad5fe3",
+        ".conclave/reviewers.toml": "b361c06a590cca2094266f86fdaa004dd031ee3e21e5b5e01f6d8a515ef3490e",
+        "scripts/review-dispatch.py": "409aec7886dafa9d6867779b39108dab07b2214a16f889be34b6084849040a61",
+        "AGENTS.md": "11c3d1cbb0f65286d88ed8292e8c58aa7da6f700a6b756c4b5bddc198c7388fe",
         ".codex/hooks.json": "2caa02c09946ea197fb9d159f013de70c358ed321143388f8a02524c09de7b45",
         "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",
         "scripts/campaign_guard.py": "f8044aa048163be69c921ef42bece232c3b771a329bc958c6cf96c30ebaf842b"
       }
     },
     "GEMINI.md": {
-      "evidence": "Re-read GEMINI.md against .conclave/reviewers.toml on 2026-11-17: the reviewer pin moved from GPT-6 Astra to GPT-6.2 Astra (gpt-6.2-astra); routes, lenses and the 33-pass cap are unchanged.",
+      "evidence": "Re-read against scripts/review-dispatch.py and .conclave/reviewers.toml on 2026-11-19: Muse Code execution was removed (the current pin may not name cli muse; historical pins load read-only); the writers, the Codex-only Astra route and the review schedule this document describes are unchanged.",
       "sources": {
-        "AGENTS.md": "801fe4d2af1db851d4772a95300a475daa4c7dfd2ce6d2864920d979adad5fe3",
-        ".conclave/reviewers.toml": "ed96da5d05acfdd012c2b724746513497bd36d30d777a1ff61c9af7fd2b62b64",
-        "scripts/review-dispatch.py": "949f1f36cfca7d37fa36fea0f78b0357cbb66dfd53c4521b9fc6523a2e33486c",
+        "AGENTS.md": "11c3d1cbb0f65286d88ed8292e8c58aa7da6f700a6b756c4b5bddc198c7388fe",
+        ".conclave/reviewers.toml": "b361c06a590cca2094266f86fdaa004dd031ee3e21e5b5e01f6d8a515ef3490e",
+        "scripts/review-dispatch.py": "409aec7886dafa9d6867779b39108dab07b2214a16f889be34b6084849040a61",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
         "GEMINI.md": "88b941d129653f1b32d4dea63ca897f852c8f1ec4df39ba3658676b1aeec1aee"
       }
@@ -1696,13 +1696,13 @@
       }
     },
     "docs/agent-skills-and-rules-structure.md": {
-      "evidence": "Re-read against scripts/campaign_guard.py on 2026-11-18: only the self-test pin for the process-plan heartbeat changed (step 7 no longer appends a run-file line per firing); the guard, hook, heartbeat and stall-breaker behaviour this document describes is unchanged.",
+      "evidence": "Re-read against scripts/review-dispatch.py and .conclave/reviewers.toml on 2026-11-19: Muse Code execution was removed (the current pin may not name cli muse; historical pins load read-only); the writers, the Codex-only Astra route and the review schedule this document describes are unchanged.",
       "sources": {
-        "AGENTS.md": "801fe4d2af1db851d4772a95300a475daa4c7dfd2ce6d2864920d979adad5fe3",
+        "AGENTS.md": "11c3d1cbb0f65286d88ed8292e8c58aa7da6f700a6b756c4b5bddc198c7388fe",
         "GEMINI.md": "88b941d129653f1b32d4dea63ca897f852c8f1ec4df39ba3658676b1aeec1aee",
-        ".conclave/reviewers.toml": "ed96da5d05acfdd012c2b724746513497bd36d30d777a1ff61c9af7fd2b62b64",
+        ".conclave/reviewers.toml": "b361c06a590cca2094266f86fdaa004dd031ee3e21e5b5e01f6d8a515ef3490e",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
-        "scripts/review-dispatch.py": "949f1f36cfca7d37fa36fea0f78b0357cbb66dfd53c4521b9fc6523a2e33486c",
+        "scripts/review-dispatch.py": "409aec7886dafa9d6867779b39108dab07b2214a16f889be34b6084849040a61",
         "docs/agent-skills-and-rules-structure.md": "d11471be6866a0fec94db6a7e29e9a90a21a1600270a7ce5d4559f862f6bbe1e",
         ".codex/hooks.json": "2caa02c09946ea197fb9d159f013de70c358ed321143388f8a02524c09de7b45",
         "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",

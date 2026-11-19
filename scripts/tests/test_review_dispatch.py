@@ -19,6 +19,7 @@ SCRIPTS = Path(__file__).resolve().parents[1]
 REPO_PIN = SCRIPTS.parent / ".conclave" / "reviewers.toml"
 ORCHESTRATOR_PIN = SCRIPTS / "tests/fixtures/reviewers-orchestrator.toml"
 # The repository pin as it stood before the three-pass policy (2026-11-06): older sections stay on it to their stamp.
+# It names the retired Muse reviewer, so it loads only as a historical pin (`historical=True`).
 LEGACY_PIN = """schema_version = 1
 
 [reviewers.astra]
@@ -321,7 +322,7 @@ class Dispatch(Harness):
         pin = module.load_pin(self.repo / ".conclave/reviewers.toml")
         self.assertEqual((report["ok"], report["schema_version"]), (True, 1))
         self.assertEqual((report["reviewers"], report["routes"]), (pin["reviewers"], pin["routes"]))
-        self.assertEqual(report["clis"], {"codex": True, "agy": False, "muse": False})
+        self.assertEqual(report["clis"], {"codex": True, "agy": False})
         self.assertEqual(self.calls(), [], "--check-pin ran a reviewer")
 
     def test_check_pin_reports_a_refused_pin(self):
@@ -344,7 +345,7 @@ class Dispatch(Harness):
         module, pin, good = self.module(), self.repo / ".conclave/reviewers.toml", FIXTURE_PIN
         mini = '\n[reviewers.mini]\ncli = "codex"\nmodel = "gpt-6-mini"\neffort = "low"\n'
         cases = {good.replace('cli = "codex"', 'cli = "agy"'): "reviewer 'sol': Antigravity carries the effort in the model name, so set no effort",
-                 good.replace('cli = "codex"', 'cli = "claude"'): "reviewer 'sol' needs cli = one of codex, agy, muse",
+                 good.replace('cli = "codex"', 'cli = "claude"'): "reviewer 'sol' needs cli = one of codex, agy",
                  good.replace('agy = ["sol"]', 'agy = ["sol", "mini"]') + mini:
                      "route 'agy' must list exactly one reviewer, with no fallback",
                  good.replace('agy = ["sol"]', 'agy = []'):
@@ -1492,7 +1493,7 @@ class StampRepo(unittest.TestCase):
         self.root = Path(self._tmp.name)
         (self.root / ".conclave").mkdir()
         (self.root / ".conclave/reviewers.toml").write_text(self.PIN_TEXT, encoding="utf-8", newline="\n")
-        self.schedule = self.dispatch.load_pin(str(self.root / ".conclave/reviewers.toml"))["schedule"]
+        self.schedule = self.dispatch.load_pin(str(self.root / ".conclave/reviewers.toml"), historical=True)["schedule"]
         (self.root / "todo/00-workspace").mkdir(parents=True)
         self.saved = (self.tg.REPO, self.tg.TODO_DIR, self.tg.PLAN)
         self.tg.REPO = self.root

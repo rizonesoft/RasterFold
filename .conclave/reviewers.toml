@@ -39,6 +39,11 @@
 # Owner decision 2026-11-17: GPT-6.2 Astra was released and replaces GPT-6 Astra (`gpt-6.2-astra` through the Codex
 # CLI). Sections whose plan review read an earlier pin finish on it.
 
+# Owner decision 2026-11-19: Muse Code is removed from this machine and from the dispatcher. No reviewer here may name
+# `cli = "muse"` (the loader refuses it), and the dispatcher never runs Muse. Committed historical pins that name the
+# Muse Spark reviewer still load read-only, so their recorded reviews replay at the stamp. Reversal cost: restore the
+# Muse adapter (`command`, `muse_response` and its tests) from the commit before this one.
+
 schema_version = 1
 
 [reviewers.astra]

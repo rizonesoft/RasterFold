@@ -19,8 +19,9 @@ with `--json`, `{"ok": true, "schema_version", "reviewers", "routes", "clis": {c
 `{"ok": false, "error": "<the Refused message>"}` and exit 2; without `--json`, `ok` or `refused: <message>`.
 
 The reviewer runs read-only in the repository root: Codex in its read-only sandbox, Antigravity in plan mode inside its
-sandbox. Muse Code is no longer routed, but older sections' pins may name it: its shell and write tools are disabled,
-so its prompt must include the exact candidate diff. The script prints a JSON summary;
+sandbox. Muse Code was removed (owner decision 2026-11-19): the dispatcher never runs it, the current pin may not name
+it, and only a committed historical pin (`load_pin(..., historical=True)`) still reads back with a `muse` reviewer, so
+older receipts replay. A section whose historical route names Muse gets no review. The script prints a JSON summary;
 `--record` also appends a `## Round N` section to the findings file with an atomic write, and writes nothing (exit 2,
 the summary still printed) to a findings file it cannot read back. Works the same from PowerShell and from WSL.
 Stdlib only.
@@ -74,7 +75,11 @@ import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 PIN = ROOT / ".conclave" / "reviewers.toml"
-CLIS = ("codex", "agy", "muse")
+# The reviewer CLIs the dispatcher runs.
+CLIS = ("codex", "agy")
+# Retired reviewer CLIs (Muse Code, removed by owner decision 2026-11-19): a committed historical pin naming one still
+# loads with `historical=True` so its recorded reviews replay at the stamp, but nothing here ever runs it.
+RETIRED_CLIS = ("muse",)
 # A reviewer is never of the writer's own model family: its CLI names the family, and so does the writer.
 FAMILY = {"codex": "openai", "agy": "google", "muse": "meta"}
 # `gemini` is Antigravity running a Gemini model. The pin's [routes] names who may write today (owner decision
@@ -84,6 +89,7 @@ WRITER_FAMILY = {"claude": "anthropic", "codex": "openai", "gemini": "google", "
                  "opencode": "anthropic", "agy": "google", "copilot": "anthropic"}
 WRITERS = tuple(WRITER_FAMILY)
 # Antigravity takes no effort flag. Effort-suffixed models must match scheduled overrides; Orchestrator has none.
+# The `muse` efforts stay only to validate historical pins (RETIRED_CLIS).
 EFFORTS = {"codex": ("low", "medium", "high", "xhigh"),
            "muse": ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")}
 MODEL = re.compile(r"^[a-z0-9][a-z0-9.-]*$")
@@ -100,9 +106,10 @@ class Refused(Exception):
     """The pin or the arguments are wrong; nothing ran."""
 
 
-def load_pin(path=PIN, data=None):
+def load_pin(path=PIN, data=None, historical=False):
     """The checked pin at `path`, or, given `data`, the pin in those bytes (a committed pin read with `git show`), so
-    a read-only caller needs no temporary file."""
+    a read-only caller needs no temporary file. `historical` admits a retired reviewer CLI (`RETIRED_CLIS`): only a
+    committed pin an older section or receipt is held to passes it, never the pin reviews run under today."""
     try:
         if data is None:
             with open(path, "rb") as handle:
@@ -140,7 +147,9 @@ def load_pin(path=PIN, data=None):
         if unknown:
             raise Refused(f"reviewer {name!r} has unknown keys: {', '.join(sorted(unknown))}")
         cli, model, effort = entry.get("cli"), entry.get("model"), entry.get("effort")
-        if cli not in CLIS:
+        if cli in RETIRED_CLIS and not historical:
+            raise Refused(f"reviewer {name!r} names the retired {cli} CLI; only a historical pin may name it")
+        if cli not in CLIS + RETIRED_CLIS:
             raise Refused(f"reviewer {name!r} needs cli = one of {', '.join(CLIS)}")
         if not isinstance(model, str) or not MODEL.fullmatch(model):
             raise Refused(f"reviewer {name!r} has a malformed model")
@@ -404,12 +413,6 @@ def command(reviewer, executable, output_path, effort=None, prompt_path=None, ti
         return [executable, "--model", reviewer["model"], "--mode", "plan", "--sandbox",
                 f"--print-timeout={timeout}s" if timeout else "--print-timeout=0s",
                 f"-p=Follow the review instructions in the file {prompt_path} exactly. Do not modify any file."]
-    if reviewer["cli"] == "muse":
-        return [executable, "exec", "--json", "--provider", "meta", "--model", reviewer["model"],
-                "--reasoning-effort", effort or reviewer["effort"],
-                "--disable-write", "--disable-shell", "--disable-web-tools", "--disable-reminders",
-                "--disable-request-user-input", "--approval-mode", "never", "--no-session-log",
-                "--no-foreign-personal-context", "--prompt-file", str(prompt_path)]
     return [executable, "exec", "-m", reviewer["model"], "-c", f"model_reasoning_effort={effort or reviewer['effort']}",
             "--sandbox", "read-only", "--ephemeral", "--skip-git-repo-check", "-o", str(output_path), "-"]
 
@@ -587,28 +590,6 @@ def run(argv, stdin_text, timeout, watched):
     return process.returncode, None
 
 
-def muse_response(path, model):
-    """Extract the completed answer from Muse's JSONL stream, never its progress or tool output."""
-    try:
-        events = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
-        if not events:
-            return None, "returned no review"
-        if not all(isinstance(event, dict) and isinstance(event.get("payload"), dict) for event in events):
-            return None, "returned malformed Muse events"
-        models = [event["payload"] for event in events if event.get("payload_type") == "run.model.configured"]
-        terminals = [event for event in events if str(event.get("payload_type", "")).startswith("run.terminal.")]
-        if len(models) != 1 or models[0].get("model_id") != model or models[0].get("provider_id") != "meta":
-            return None, "did not confirm the pinned Muse model and provider"
-        if len(terminals) != 1 or terminals[0].get("payload_type") != "run.terminal.completed":
-            return None, "did not complete a Muse run"
-        final = terminals[0]["payload"]
-        if final.get("terminal") != "completed" or not isinstance(final.get("text"), str):
-            return None, "returned malformed Muse completion"
-        return final["text"], None
-    except (OSError, UnicodeDecodeError, ValueError, RecursionError, MemoryError):
-        return None, "returned malformed Muse events"
-
-
 def review_effort(reviewer, plan, kind, position=1):
     """Resolve the actual effort once for dispatch and stamp verification; historical scheduled overrides win."""
     if plan and plan.get("effort") is not None:
@@ -643,6 +624,8 @@ def review(pin, writer, prompt_path, timeout, plan=None, kind="round", position=
         return {"writer": writer, "reviewer": None, "skipped": [{"reviewer": name, "reason": reason}], "review": None,
                 **scheduled_fields}
 
+    if reviewer["cli"] in RETIRED_CLIS:
+        return none(f"{reviewer['cli']} is retired and never runs")
     # The resolved path, not the bare name: on Windows a CLI is often a .cmd shim that Popen cannot find by name.
     executable = find_cli(reviewer["cli"])
     if executable is None:
@@ -650,16 +633,14 @@ def review(pin, writer, prompt_path, timeout, plan=None, kind="round", position=
     text = None
     tmp = Path(tempfile.mkdtemp())
     try:
-        stdout_path, message_path, muse_prompt = tmp / "stdout.txt", tmp / "last-message.md", tmp / "prompt.md"
+        stdout_path, message_path, prompt_file = tmp / "stdout.txt", tmp / "last-message.md", tmp / "prompt.md"
         if reviewer["cli"] != "codex":
-            muse_prompt.write_text(prompt, encoding="utf-8")
-        _, problem = run(command(reviewer, executable, message_path, effort, muse_prompt, timeout),
+            prompt_file.write_text(prompt, encoding="utf-8")
+        _, problem = run(command(reviewer, executable, message_path, effort, prompt_file, timeout),
                          prompt if reviewer["cli"] == "codex" else "", timeout,
                          [stdout_path, message_path])
         if problem is None:
-            if reviewer["cli"] == "muse":
-                text, problem = muse_response(stdout_path, reviewer["model"])
-            elif reviewer["cli"] == "agy":
+            if reviewer["cli"] == "agy":
                 text = stdout_path.read_text(encoding="utf-8", errors="replace") if stdout_path.is_file() else ""
             else:
                 # Codex writes its final message to -o; stdout carries progress.
@@ -949,7 +930,7 @@ def section_pin(current, record_path):
     if shown.returncode != 0:
         return current
     try:
-        return load_pin(data=shown.stdout)
+        return load_pin(data=shown.stdout, historical=True)
     except Refused:
         return current
 
