@@ -1026,6 +1026,9 @@ static rfc_status bi_encode_cb(rfc_job *job, const rfc_exec_context *exec,
 static struct {
     int mode;
     uint32_t decode_calls;
+    rfc_status frame1_check_st;
+    rfc_status frame2_check_st;
+    int frame2_alloc_attempted;
 } g_qoi_probe_mock;
 
 static rfc_status qoi_mock_open(const rfc_exec_context *exec, void **out_sess) {
@@ -1061,12 +1064,17 @@ static rfc_status qoi_mock_probe(void *session,
         out_probe->first_frame.alpha = RFC_ALPHA_PREMULTIPLIED;
         out_probe->first_frame.stride_bytes = 4u * 4u;
         out_probe->frame_count = 1u;
-    } else {
+    } else if (g_qoi_probe_mock.mode == 2) {
         out_probe->first_frame.format = RFC_SAMPLE_RGB8;
         out_probe->first_frame.alpha = RFC_ALPHA_NONE;
         out_probe->first_frame.stride_bytes = 4u * 3u;
         out_probe->first_frame.bits_per_sample = 7u;
         out_probe->frame_count = 1u;
+    } else {
+        out_probe->first_frame.format = RFC_SAMPLE_RGB8;
+        out_probe->first_frame.alpha = RFC_ALPHA_NONE;
+        out_probe->first_frame.stride_bytes = 4u * 3u;
+        out_probe->frame_count = 0u; /* unknown at probe time */
     }
     return RFC_OK;
 }
@@ -1081,7 +1089,6 @@ static rfc_status qoi_mock_decode(void *session,
                                   size_t *out_frame_count,
                                   rfc_metadata *out_meta) {
     (void)session;
-    (void)exec;
     (void)bytes;
     (void)size;
     (void)settings;
@@ -1090,6 +1097,27 @@ static rfc_status qoi_mock_decode(void *session,
     (void)out_frame_count;
     (void)out_meta;
     g_qoi_probe_mock.decode_calls++;
+    if (g_qoi_probe_mock.mode == 3) {
+        rfc_layout l0 = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 4u, 4u, 12u, 8u};
+        rfc_status s1 = rfc_exec_check_next_frame(exec, &l0, NULL);
+        g_qoi_probe_mock.frame1_check_st = s1;
+        if (s1 != RFC_OK) {
+            return s1;
+        }
+        rfc_frame f0;
+        memset(&f0, 0, sizeof(f0));
+        s1 = rfc_exec_alloc_frame(exec, &f0, &l0, NULL);
+        if (s1 != RFC_OK) {
+            return s1;
+        }
+        rfc_status s2 = rfc_exec_check_next_frame(exec, &l0, NULL);
+        g_qoi_probe_mock.frame2_check_st = s2;
+        if (s2 == RFC_OK) {
+            g_qoi_probe_mock.frame2_alloc_attempted = 1;
+        }
+        rfc_frame_free(&f0);
+        return (s2 != RFC_OK) ? s2 : RFC_ERR_TRUNCATED_INPUT;
+    }
     return RFC_ERR_TRUNCATED_INPUT;
 }
 
@@ -1661,6 +1689,36 @@ static void test_jobs_budget_cancel_and_file_safety(void) {
             CHECK(snap.state == RFC_JOB_FAILED &&
                   snap.status == RFC_ERR_UNSUPPORTED_SAMPLE &&
                   g_qoi_probe_mock.decode_calls == 0u &&
+                  !file_exists(p_ack_qoi));
+            rfc_job_release(job);
+
+            /* Unknown probe frame_count == 0 with incremental frame discovery:
+             * frame 1 succeeds, frame 2 is refused with
+             * RFC_ERR_UNSUPPORTED_COMBINATION before allocation credit. */
+            g_qoi_probe_mock.mode = 3;
+            g_qoi_probe_mock.decode_calls = 0u;
+            g_qoi_probe_mock.frame1_check_st = RFC_ERR_TRUNCATED_INPUT;
+            g_qoi_probe_mock.frame2_check_st = RFC_OK;
+            g_qoi_probe_mock.frame2_alloc_attempted = 0;
+            memset(&sp, 0, sizeof(sp));
+            rfc_io_source_init_path(&si, p_mock_src, RFC_IMPORT_DEFAULT);
+            rfc_io_sink_init_path(&so, p_ack_qoi, RFC_EXPORT_REFUSE_EXISTING);
+            sp.source_format = RFC_FORMAT_JPEG_XL;
+            sp.target_format = RFC_FORMAT_QOI;
+            sp.io_source = &si;
+            sp.io_sink = &so;
+            sp.expected_working_set_bytes = 64u * 1024u;
+            sp.requested_codec_threads = 1u;
+            CHECK(rfc_scheduler_submit(sched, NULL, &sp, &job) == RFC_OK);
+            CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
+            CHECK(rfc_job_snapshot_get(job, &snap) == RFC_OK);
+            CHECK(g_qoi_probe_mock.decode_calls == 1u &&
+                  g_qoi_probe_mock.frame1_check_st == RFC_OK &&
+                  g_qoi_probe_mock.frame2_check_st ==
+                      RFC_ERR_UNSUPPORTED_COMBINATION &&
+                  g_qoi_probe_mock.frame2_alloc_attempted == 0 &&
+                  snap.state == RFC_JOB_FAILED &&
+                  snap.status == RFC_ERR_UNSUPPORTED_COMBINATION &&
                   !file_exists(p_ack_qoi));
             rfc_job_release(job);
 

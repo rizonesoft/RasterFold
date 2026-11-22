@@ -2553,6 +2553,76 @@ static rfc_status consume_decode_credit_locked(rfc_job *job,
     return RFC_OK;
 }
 
+static rfc_status check_target_frame_compat(const rfc_job *job,
+                                            uint32_t frame_count,
+                                            const rfc_layout *layout,
+                                            const char **out_err_detail) {
+    if (!job || job->stage_ops.on_encode != NULL ||
+        job->target_format == (rfc_format_id)0) {
+        return RFC_OK;
+    }
+    size_t job_sc = 0u;
+    const rfc_setting_value *job_sv = rfc_job_settings(job, &job_sc);
+    rfc_exactness_class t_ex = RFC_EXACT_PIXEL_EXACT;
+    rfc_metadata_policy t_pol = RFC_META_POLICY_PRESERVE;
+    if (rfc_job_internal_resolve_exactness(
+            job->target_format, job_sv, job_sc, &t_ex, &t_pol) != RFC_OK ||
+        t_ex != RFC_EXACT_PIXEL_EXACT) {
+        return RFC_OK;
+    }
+    const rfc_capability *tcap = rfc_registry_find(job->target_format);
+    if (!tcap) {
+        return RFC_OK;
+    }
+    if (layout && layout->format != (rfc_sample_format)0) {
+        int sample_ok = 0;
+        for (size_t si = 0u; si < tcap->sample_count; si++) {
+            if (tcap->samples[si] == layout->format) {
+                sample_ok = 1;
+                break;
+            }
+        }
+        if (!sample_ok) {
+            if (out_err_detail && !*out_err_detail) {
+                *out_err_detail =
+                    "target format does not support source sample format";
+            }
+            return RFC_ERR_UNSUPPORTED_SAMPLE;
+        }
+    }
+    if (frame_count > 1u && tcap->extension_owner == NULL) {
+        if (out_err_detail && !*out_err_detail) {
+            *out_err_detail =
+                "target format does not support multi-frame input";
+        }
+        return RFC_ERR_UNSUPPORTED_COMBINATION;
+    }
+    if (job->target_format == RFC_FORMAT_QOI && layout &&
+        layout->format != (rfc_sample_format)0) {
+        if (layout->bits_per_sample != 0u && layout->bits_per_sample != 8u) {
+            if (out_err_detail && !*out_err_detail) {
+                *out_err_detail = "QOI requires 8 bits per channel";
+            }
+            return RFC_ERR_UNSUPPORTED_SAMPLE;
+        }
+        if (layout->format == RFC_SAMPLE_RGB8 &&
+            layout->alpha != RFC_ALPHA_NONE) {
+            if (out_err_detail && !*out_err_detail) {
+                *out_err_detail = "QOI RGB8 requires RFC_ALPHA_NONE";
+            }
+            return RFC_ERR_UNSUPPORTED_ALPHA;
+        }
+        if (layout->format == RFC_SAMPLE_RGBA8 &&
+            layout->alpha != RFC_ALPHA_STRAIGHT) {
+            if (out_err_detail && !*out_err_detail) {
+                *out_err_detail = "QOI RGBA8 requires straight alpha";
+            }
+            return RFC_ERR_UNSUPPORTED_ALPHA;
+        }
+    }
+    return RFC_OK;
+}
+
 static rfc_status internal_exec_check_next_frame(rfc_job *job,
                                                  const rfc_limits *limits,
                                                  const rfc_layout *layout,
@@ -2619,6 +2689,16 @@ static rfc_status internal_exec_check_next_frame(rfc_job *job,
         }
         rfc_mutex_unlock(&job->lock);
         return RFC_ERR_INVALID_ARGUMENT;
+    }
+    if (job->in_decode_session) {
+        rfc_status cst = check_target_frame_compat(job, next_frames, &norm, NULL);
+        if (cst != RFC_OK) {
+            if (job->decode_guard_failure == RFC_OK) {
+                job->decode_guard_failure = cst;
+            }
+            rfc_mutex_unlock(&job->lock);
+            return cst;
+        }
     }
     uint64_t next_pixels = 0;
     uint64_t next_bytes = 0;
@@ -3017,66 +3097,18 @@ static rfc_status run_bounded_session_decode(
         if (st == RFC_OK && validate_dec_settings &&
             job->stage_ops.on_encode == NULL &&
             job->target_format != (rfc_format_id)0) {
-            size_t job_sc = 0u;
-            const rfc_setting_value *job_sv = rfc_job_settings(job, &job_sc);
-            rfc_exactness_class t_ex = RFC_EXACT_PIXEL_EXACT;
-            rfc_metadata_policy t_pol = RFC_META_POLICY_PRESERVE;
-            if (rfc_job_internal_resolve_exactness(
-                    job->target_format, job_sv, job_sc, &t_ex, &t_pol) ==
-                    RFC_OK &&
-                t_ex == RFC_EXACT_PIXEL_EXACT) {
-                const rfc_capability *tcap =
-                    rfc_registry_find(job->target_format);
-                if (tcap && probe.first_frame.format != (rfc_sample_format)0) {
-                    int sample_ok = 0;
-                    for (size_t si = 0u; si < tcap->sample_count; si++) {
-                        if (tcap->samples[si] == probe.first_frame.format) {
-                            sample_ok = 1;
-                            break;
-                        }
-                    }
-                    if (!sample_ok) {
-                        st = RFC_ERR_UNSUPPORTED_SAMPLE;
-                        if (out_err_detail && !*out_err_detail) {
-                            *out_err_detail =
-                                "target format does not support source sample format";
-                        }
-                    }
-                }
-                if (st == RFC_OK && tcap && probe.frame_count > 1u &&
-                    tcap->extension_owner == NULL) {
-                    st = RFC_ERR_UNSUPPORTED_COMBINATION;
-                    if (out_err_detail && !*out_err_detail) {
-                        *out_err_detail =
-                            "target format does not support multi-frame input";
-                    }
-                }
-                if (st == RFC_OK && job->target_format == RFC_FORMAT_QOI &&
-                    probe.first_frame.format != (rfc_sample_format)0) {
-                    if (probe.first_frame.bits_per_sample != 0u &&
-                        probe.first_frame.bits_per_sample != 8u) {
-                        st = RFC_ERR_UNSUPPORTED_SAMPLE;
-                        if (out_err_detail && !*out_err_detail) {
-                            *out_err_detail =
-                                "QOI requires 8 bits per channel";
-                        }
-                    } else if (probe.first_frame.format == RFC_SAMPLE_RGB8 &&
-                               probe.first_frame.alpha != RFC_ALPHA_NONE) {
-                        st = RFC_ERR_UNSUPPORTED_ALPHA;
-                        if (out_err_detail && !*out_err_detail) {
-                            *out_err_detail =
-                                "QOI RGB8 requires RFC_ALPHA_NONE";
-                        }
-                    } else if (probe.first_frame.format == RFC_SAMPLE_RGBA8 &&
-                               probe.first_frame.alpha != RFC_ALPHA_STRAIGHT) {
-                        st = RFC_ERR_UNSUPPORTED_ALPHA;
-                        if (out_err_detail && !*out_err_detail) {
-                            *out_err_detail =
-                                "QOI RGBA8 requires straight alpha";
-                        }
-                    }
-                }
-                if (st == RFC_OK) {
+            st = check_target_frame_compat(job, probe.frame_count,
+                                           &probe.first_frame, out_err_detail);
+            if (st == RFC_OK) {
+                size_t job_sc = 0u;
+                const rfc_setting_value *job_sv =
+                    rfc_job_settings(job, &job_sc);
+                rfc_exactness_class t_ex = RFC_EXACT_PIXEL_EXACT;
+                rfc_metadata_policy t_pol = RFC_META_POLICY_PRESERVE;
+                if (rfc_job_internal_resolve_exactness(
+                        job->target_format, job_sv, job_sc, &t_ex, &t_pol) ==
+                        RFC_OK &&
+                    t_ex == RFC_EXACT_PIXEL_EXACT) {
                     rfc_verify_report pre_rep;
                     memset(&pre_rep, 0, sizeof(pre_rep));
                     rfc_status mst = rfc_metadata_check_source_preflight(
