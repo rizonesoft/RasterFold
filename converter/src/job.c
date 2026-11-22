@@ -2553,10 +2553,17 @@ static rfc_status consume_decode_credit_locked(rfc_job *job,
     return RFC_OK;
 }
 
-static rfc_status check_target_frame_compat(const rfc_job *job,
+static void store_job_verify_report(rfc_job *job,
+                                    const rfc_verify_report *rep);
+static void copy_verify_detail(char *dst, size_t dst_cap, const char *src);
+
+static rfc_status check_target_frame_compat(rfc_job *job,
                                             uint32_t frame_count,
                                             const rfc_layout *layout,
-                                            const char **out_err_detail) {
+                                            const rfc_metadata *meta,
+                                            int store_verify_on_policy,
+                                            const char **out_err_detail,
+                                            rfc_verify_report *out_policy_rep) {
     if (!job || job->stage_ops.on_encode != NULL ||
         job->target_format == (rfc_format_id)0) {
         return RFC_OK;
@@ -2618,6 +2625,35 @@ static rfc_status check_target_frame_compat(const rfc_job *job,
                 *out_err_detail = "QOI RGBA8 requires straight alpha";
             }
             return RFC_ERR_UNSUPPORTED_ALPHA;
+        }
+    }
+    if (meta) {
+        rfc_verify_report pre_rep;
+        memset(&pre_rep, 0, sizeof(pre_rep));
+        rfc_status mst = rfc_metadata_check_source_preflight(
+            job->target_format, t_pol, RFC_EXACT_PIXEL_EXACT, meta, NULL, 0u,
+            rfc_job_acknowledged_metadata(job), &pre_rep.metadata);
+        if (mst == RFC_ERR_METADATA_POLICY) {
+            pre_rep.exactness = RFC_EXACT_PIXEL_EXACT;
+            copy_verify_detail(pre_rep.decoder_provenance,
+                               sizeof(pre_rep.decoder_provenance),
+                               "same-provider-fresh-session");
+            pre_rep.mismatch.kind = RFC_MISMATCH_METADATA_UNSUPPORTED;
+            copy_verify_detail(pre_rep.mismatch.detail,
+                               sizeof(pre_rep.mismatch.detail),
+                               pre_rep.metadata.detail);
+            pre_rep.meta_outcome = pre_rep.metadata.outcome;
+            pre_rep.status = mst;
+            pre_rep.valid = 1;
+            if (out_policy_rep) {
+                *out_policy_rep = pre_rep;
+            } else if (store_verify_on_policy) {
+                store_job_verify_report(job, &pre_rep);
+            }
+            if (out_err_detail && !*out_err_detail) {
+                *out_err_detail = "unacknowledged unsupported metadata";
+            }
+            return mst;
         }
     }
     return RFC_OK;
@@ -2691,12 +2727,18 @@ static rfc_status internal_exec_check_next_frame(rfc_job *job,
         return RFC_ERR_INVALID_ARGUMENT;
     }
     if (job->in_decode_session) {
-        rfc_status cst = check_target_frame_compat(job, next_frames, &norm, NULL);
+        rfc_verify_report pre_rep;
+        memset(&pre_rep, 0, sizeof(pre_rep));
+        rfc_status cst = check_target_frame_compat(job, next_frames, &norm,
+                                                   meta, 0, NULL, &pre_rep);
         if (cst != RFC_OK) {
             if (job->decode_guard_failure == RFC_OK) {
                 job->decode_guard_failure = cst;
             }
             rfc_mutex_unlock(&job->lock);
+            if (cst == RFC_ERR_METADATA_POLICY && pre_rep.valid) {
+                store_job_verify_report(job, &pre_rep);
+            }
             return cst;
         }
     }
@@ -2807,6 +2849,22 @@ static rfc_status job_frame_alloc_guard(const rfc_allocator *allocator,
         return RFC_ERR_INVALID_ARGUMENT;
     }
     if (job->decode_credit_frames > 0u) {
+        rfc_verify_report pre_rep;
+        memset(&pre_rep, 0, sizeof(pre_rep));
+        rfc_status cst =
+            metadata ? check_target_frame_compat(job, 1u, &norm, metadata, 0,
+                                                 NULL, &pre_rep)
+                     : RFC_OK;
+        if (cst != RFC_OK) {
+            if (job->decode_guard_failure == RFC_OK) {
+                job->decode_guard_failure = cst;
+            }
+            rfc_mutex_unlock(&job->lock);
+            if (cst == RFC_ERR_METADATA_POLICY && pre_rep.valid) {
+                store_job_verify_report(job, &pre_rep);
+            }
+            return cst;
+        }
         st = consume_decode_credit_locked(job, &lim, &norm, fbytes, icc_len,
                                           exif_len, xmp_len);
         rfc_mutex_unlock(&job->lock);
@@ -3098,44 +3156,9 @@ static rfc_status run_bounded_session_decode(
             job->stage_ops.on_encode == NULL &&
             job->target_format != (rfc_format_id)0) {
             st = check_target_frame_compat(job, probe.frame_count,
-                                           &probe.first_frame, out_err_detail);
-            if (st == RFC_OK) {
-                size_t job_sc = 0u;
-                const rfc_setting_value *job_sv =
-                    rfc_job_settings(job, &job_sc);
-                rfc_exactness_class t_ex = RFC_EXACT_PIXEL_EXACT;
-                rfc_metadata_policy t_pol = RFC_META_POLICY_PRESERVE;
-                if (rfc_job_internal_resolve_exactness(
-                        job->target_format, job_sv, job_sc, &t_ex, &t_pol) ==
-                        RFC_OK &&
-                    t_ex == RFC_EXACT_PIXEL_EXACT) {
-                    rfc_verify_report pre_rep;
-                    memset(&pre_rep, 0, sizeof(pre_rep));
-                    rfc_status mst = rfc_metadata_check_source_preflight(
-                        job->target_format, t_pol, RFC_EXACT_PIXEL_EXACT,
-                        &probe.container_meta, NULL, 0u,
-                        rfc_job_acknowledged_metadata(job), &pre_rep.metadata);
-                    if (mst == RFC_ERR_METADATA_POLICY) {
-                        pre_rep.exactness = RFC_EXACT_PIXEL_EXACT;
-                        copy_verify_detail(pre_rep.decoder_provenance,
-                                           sizeof(pre_rep.decoder_provenance),
-                                           "same-provider-fresh-session");
-                        pre_rep.mismatch.kind = RFC_MISMATCH_METADATA_UNSUPPORTED;
-                        copy_verify_detail(pre_rep.mismatch.detail,
-                                           sizeof(pre_rep.mismatch.detail),
-                                           pre_rep.metadata.detail);
-                        pre_rep.meta_outcome = pre_rep.metadata.outcome;
-                        pre_rep.status = mst;
-                        pre_rep.valid = 1;
-                        store_job_verify_report(job, &pre_rep);
-                        st = mst;
-                        if (out_err_detail && !*out_err_detail) {
-                            *out_err_detail =
-                                "unacknowledged unsupported metadata";
-                        }
-                    }
-                }
-            }
+                                           &probe.first_frame,
+                                           &probe.container_meta, 1,
+                                           out_err_detail, NULL);
         }
         rfc_metadata_free(&probe.container_meta, exec->allocator);
     }
