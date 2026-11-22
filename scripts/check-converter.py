@@ -1619,6 +1619,8 @@ def _no_hevc_in_dependency_prefix(prefix):
             if unrecognized:
                 continue
             raise RuntimeError(f"llvm-nm failed on {path}: {res.stderr.strip()[:200]}")
+        if hdr8 == b"!<thin>\n":
+            return f"{os.path.relpath(path, ROOT)} is a thin archive (external members cannot be self-contained)", entries, scanned
         if _is_pe_binary(path):
             msg = _no_hevc_pe_imports(path)
             if msg:
@@ -1748,6 +1750,8 @@ def _no_hevc_in_repro_tar(tar_path, scanned_hashes=None):
                 msg = _no_hevc_symbols([scratch])
                 if msg:
                     return f"{member.name}: {msg}", checked_inputs
+                if data[:8] == b"!<thin>\n":
+                    return f"{member.name} is a thin archive (external members cannot be self-contained)", checked_inputs
                 if is_pe:
                     msg = _no_hevc_pe_imports(scratch)
                     if msg:
