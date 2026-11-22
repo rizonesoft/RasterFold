@@ -1301,31 +1301,54 @@ static void test_review_round1_regressions(void) {
             free(ma);
         }
 
-        /* Valid XMP preceded by 20 XML comments + whitespace around '=' preserved verbatim. */
+        /* Valid XMP preceded by 20 XML comments + whitespace around '=' preserved verbatim,
+         * plus alternate namespace prefix (m:xmpmeta), default namespace (xmpmeta),
+         * and mismatched prefix refusal. */
         {
-            const char *good_xmp =
+            const char *good_cases[] = {
                 "<!-- c01 --><!-- c02 --><!-- c03 --><!-- c04 --><!-- c05 -->"
                 "<!-- c06 --><!-- c07 --><!-- c08 --><!-- c09 --><!-- c10 -->"
                 "<!-- c11 --><!-- c12 --><!-- c13 --><!-- c14 --><!-- c15 -->"
                 "<!-- c16 --><!-- c17 --><!-- c18 --><!-- c19 --><!-- c20 -->"
-                "<x:xmpmeta xmlns:x = \"adobe:ns:meta/\"><rdf:RDF/></x:xmpmeta>";
-            size_t glen = strlen(good_xmp);
-            uint8_t *mg = (uint8_t *)malloc(e4.len + 8u + glen);
-            CHECK(mg != NULL);
-            memcpy(mg, e4.data, e4.len);
-            put_be32(mg + e4.len, (uint32_t)(8u + glen));
-            memcpy(mg + e4.len + 4u, "xml ", 4u);
-            memcpy(mg + e4.len + 8u, good_xmp, glen);
+                "<x:xmpmeta xmlns:x = \"adobe:ns:meta/\"><rdf:RDF/></x:xmpmeta>",
+                "<m:xmpmeta xmlns:m=\"adobe:ns:meta/\"><rdf:RDF/></m:xmpmeta>",
+                "<xmpmeta xmlns=\"adobe:ns:meta/\"><rdf:RDF/></xmpmeta>"
+            };
+            for (size_t gi = 0u; gi < 3u; gi++) {
+                const char *good_xmp = good_cases[gi];
+                size_t glen = strlen(good_xmp);
+                uint8_t *mg = (uint8_t *)malloc(e4.len + 8u + glen);
+                CHECK(mg != NULL);
+                memcpy(mg, e4.data, e4.len);
+                put_be32(mg + e4.len, (uint32_t)(8u + glen));
+                memcpy(mg + e4.len + 4u, "xml ", 4u);
+                memcpy(mg + e4.len + 8u, good_xmp, glen);
+                CHECK(adp->open_session(&exec, &sd) == RFC_OK);
+                CHECK(adp->decode_session(sd, &exec, mg, e4.len + 8u + glen, NULL,
+                                          0u, &dec, &dc, &dm) == RFC_OK);
+                CHECK(dc == 1u && dm.xmp != NULL && dm.xmp_len == glen &&
+                      memcmp(dm.xmp, good_xmp, glen) == 0);
+                rfc_metadata_free(&dm, &al);
+                rfc_frame_free(&dec[0]);
+                al.free(al.ctx, dec);
+                adp->close_session(sd);
+                free(mg);
+            }
+            /* Mismatched prefix: root uses m:, declaration binds x:. Must refuse in preserve. */
+            const char *bad_prefix_xmp =
+                "<m:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF/></m:xmpmeta>";
+            size_t blen = strlen(bad_prefix_xmp);
+            uint8_t *mb = (uint8_t *)malloc(e4.len + 8u + blen);
+            CHECK(mb != NULL);
+            memcpy(mb, e4.data, e4.len);
+            put_be32(mb + e4.len, (uint32_t)(8u + blen));
+            memcpy(mb + e4.len + 4u, "xml ", 4u);
+            memcpy(mb + e4.len + 8u, bad_prefix_xmp, blen);
             CHECK(adp->open_session(&exec, &sd) == RFC_OK);
-            CHECK(adp->decode_session(sd, &exec, mg, e4.len + 8u + glen, NULL,
-                                      0u, &dec, &dc, &dm) == RFC_OK);
-            CHECK(dc == 1u && dm.xmp != NULL && dm.xmp_len == glen &&
-                  memcmp(dm.xmp, good_xmp, glen) == 0);
-            rfc_metadata_free(&dm, &al);
-            rfc_frame_free(&dec[0]);
-            al.free(al.ctx, dec);
+            CHECK(adp->decode_session(sd, &exec, mb, e4.len + 8u + blen, NULL,
+                                      0u, &dec, &dc, &dm) == RFC_ERR_METADATA_POLICY);
             adp->close_session(sd);
-            free(mg);
+            free(mb);
         }
 
         /* 4g. meth=3 colr before meth=1 sRGB: meth=3 ignored, sRGB wins (no ICC). */

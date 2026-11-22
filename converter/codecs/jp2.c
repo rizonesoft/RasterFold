@@ -479,19 +479,54 @@ static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
         }
         break;
     }
-    size_t rem = len - i;
-    if (rem < 11u || memcmp(p + i, "<x:xmpmeta", 10u) != 0) {
+    if (i >= len || p[i] != '<') {
         return 0;
     }
-    i += 10u;
+    i++; /* skip '<' */
+    /* Parse root element QName: either "xmpmeta" (default namespace) or
+     * "<prefix>:xmpmeta" (prefixed namespace), with at most one ':'. */
+    size_t qname_start = i;
+    size_t colon_pos = SIZE_MAX;
+    while (i < len && !jp2_is_xml_ws(p[i]) && p[i] != '>' && p[i] != '/') {
+        uint8_t ch = p[i];
+        if (ch == '<' || ch == '"' || ch == '\'' || ch == '=') {
+            return 0;
+        }
+        if (ch == ':') {
+            if (colon_pos != SIZE_MAX) {
+                return 0; /* multiple colons in QName */
+            }
+            colon_pos = i;
+        }
+        i++;
+    }
     if (i >= len || (!jp2_is_xml_ws(p[i]) && p[i] != '>' && p[i] != '/')) {
         return 0;
     }
+    const uint8_t *prefix = NULL;
+    size_t prefix_len = 0u;
+    const uint8_t *local = p + qname_start;
+    size_t local_len = i - qname_start;
+    if (colon_pos != SIZE_MAX) {
+        prefix = p + qname_start;
+        prefix_len = colon_pos - qname_start;
+        local = p + colon_pos + 1u;
+        local_len = i - (colon_pos + 1u);
+        if (prefix_len == 0u ||
+            (prefix_len == 5u && memcmp(prefix, "xmlns", 5u) == 0)) {
+            return 0;
+        }
+    }
+    if (local_len != 7u || memcmp(local, "xmpmeta", 7u) != 0) {
+        return 0;
+    }
     /* Parse opening-tag attributes token-by-token so values of unrelated
-     * attributes cannot spoof xmlns:x and whitespace around '=' is accepted. */
+     * attributes cannot spoof namespace declarations and whitespace around '='
+     * is accepted. Resolve the root element's actual prefix (xmlns:<prefix>) or
+     * default namespace (xmlns) against "adobe:ns:meta/". */
     static const char k_ns_val[] = "adobe:ns:meta/";
     const size_t ns_val_len = sizeof(k_ns_val) - 1u;
-    int has_x_ns = 0;
+    int has_ns = 0;
     while (i < len) {
         while (i < len && jp2_is_xml_ws(p[i])) {
             i++;
@@ -500,10 +535,10 @@ static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
             return 0;
         }
         if (p[i] == '>') {
-            return has_x_ns;
+            return has_ns;
         }
         if (p[i] == '/' && i + 1u < len && p[i + 1u] == '>') {
-            return has_x_ns;
+            return has_ns;
         }
         /* Attribute name */
         size_t name_start = i;
@@ -538,10 +573,22 @@ static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
         }
         size_t val_len = i - val_start;
         i++; /* skip closing quote */
-        if (name_len == 7u && memcmp(p + name_start, "xmlns:x", 7u) == 0) {
+        int is_target_ns = 0;
+        if (prefix_len == 0u) {
+            is_target_ns = (name_len == 5u &&
+                            memcmp(p + name_start, "xmlns", 5u) == 0);
+        } else {
+            is_target_ns = (name_len == 6u + prefix_len &&
+                            memcmp(p + name_start, "xmlns:", 6u) == 0 &&
+                            memcmp(p + name_start + 6u, prefix, prefix_len) == 0);
+        }
+        if (is_target_ns) {
+            if (has_ns) {
+                return 0; /* duplicate namespace attribute */
+            }
             if (val_len == ns_val_len &&
                 memcmp(p + val_start, k_ns_val, ns_val_len) == 0) {
-                has_x_ns = 1;
+                has_ns = 1;
             } else {
                 return 0;
             }
