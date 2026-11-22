@@ -345,22 +345,24 @@ Build in the listed order. This section adds the named test driver before using 
 > **Review:** `docs/reviews/d10-t02-s7.json`
 ## 8. QOI
 
+> **Started:** 2026-11-22T07:41:00Z
+
 **Requires:** windows-runtime -- The checkpoint requires driven results from the advertised Windows native target. Source checkpoint audit: docs/todo-vision-audit.md.
 
 **Job:** A user can import or compress qoi with accurately advertised preservation guarantees.
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
-- [ ] Pin the required the audited QOI reference source and build options in `converter/vendor.json`. Done when: the provider builds for Windows x64 with source/license evidence.
-- [ ] Implement `converter/codecs/qoi.c`. Done when: RGB/RGBA8 preserves all channel bytes, including fully transparent RGB; larger depths and metadata that QOI cannot carry are rejected under preserve mode.
-- [ ] Register exact input/output capabilities in `converter/codecs.json`. Done when: unsupported sample depth, alpha, metadata and frame modes are refused before work, with a user-visible reason.
-- [ ] Add positive and malformed fixtures in `tests/converter/test_qoi.py`. Done when: a fresh decoder proves the advertised representation and metadata contract, differential fixtures identify implementation independence or shared-provider limitations, and mutated input cannot crash or hang.
-- [ ] Add its fixtures to `scripts/check-converter.py`. Done when: the Windows build and native Windows test matrix include this provider.
+- [ ] Verify the audited QOI reference source and build options already pinned in `converter/vendor.json` (`qoi` `0.0.0-ffb2d2cb`, `phoboslab/qoi@ffb2d2cb74a1de60819b21b939f7209aa53e91c1`, MIT, built via `converter/cmake/qoi/CMakeLists.txt` with license evidence in `converter/licenses/qoi.txt`, `converter/sbom.spdx.json`, and `converter/THIRD-PARTY-NOTICES.txt`) and link `libqoi.a` into `rfc_codecs` in `converter/CMakeLists.txt`. **Corrected 2026-11-22:** `D10 T01 §2` already pinned QOI in `converter/vendor.json`, so `converter/vendor.json` stays unchanged. Done when: the provider builds for Windows x64 with source/license evidence.
+- [ ] Implement `converter/codecs/qoi.c`, declare `rfc_codecs_register_qoi`/`rfc_codecs_unregister_qoi` (and a cancellation test hook) in `converter/include/rfc_codecs.h`, add `sniff_qoi_geometry` in `converter/src/input.c` and layout-free sizing in `converter/src/scheduler.c`, and add the QOI memory contract in `converter/src/limits.c`. Done when: RGB/RGBA8 preserves all channel bytes, including fully transparent RGB; larger depths, premultiplied alpha, multi-frame inputs, over-limit or malformed streams (bad header, truncated chunks, excess run, trailing bytes, missing end marker), and metadata that QOI cannot carry are rejected before allocation under preserve mode.
+- [ ] Register exact input/output capabilities in `converter/codecs.json` and `converter/src/registry.c` (marking `qoi` usable with provider `"qoi (bundled, pinned by D10 T01 §2)"` and `metadata_items: []`), update `tests/converter/reference.py` (`coverage_state: "executable-in-d10-t02-s8"`), and update `tests/converter/test_contract.c` to check `RFC_FORMAT_JPEG2000` for `RFC_ERR_PLANNED` and `RFC_FORMAT_QOI` for `RFC_ERR_NO_ADAPTER`. Done when: unsupported sample depth, alpha, metadata and frame modes are refused before work, with a user-visible reason.
+- [ ] Add C11 harness `tests/converter/test_qoi.c` and positive, differential, and malformed fixtures in `tests/converter/test_qoi.py`. Done when: a fresh decoder proves the advertised representation and metadata contract, independent pure-Python oracle (`tests/converter/reference.py`) differential fixtures verify RGB8/RGBA8 (including `A == 0` RGB preservation) and report independent-decoder coverage separately from same-provider verification, and mutated input cannot crash or hang.
+- [ ] Add `qoi` (`rfc_test_qoi` and `case_qoi`) to `converter/CMakeLists.txt` and `scripts/check-converter.py`. Done when: the Windows build and native Windows test matrix include this provider.
 - [ ] Commit: `"converter: qoi"`
 
-**Test checkpoint:** Run `python3 scripts/check-converter.py --case qoi`; quote native sample equality and refusal evidence for each supported target. Compression improvements require the report protocol, not a claim from upstream marketing.
+**Test checkpoint:** Run `python3 scripts/check-converter.py --case qoi --all-targets` and `python3 scripts/check-converter.py --case all --all-targets`; quote native sample equality and refusal evidence for each supported target. **Corrected 2026-11-22:** the checkpoint said `--case qoi` alone; driven Windows x64 results need `--all-targets`, and the registry/contract change is re-proved by `--case all`. Compression improvements require the report protocol, not a claim from upstream marketing.
 
-**Freeze check:** Existing `.fold` v2 files and the oracle remain unchanged. Each new output receives a fresh bundled decode and the format-specific verification contract before acceptance; independent fixture coverage is reported separately; input and existing destination bytes survive refusal, cancellation and failure.
+**Freeze check:** Existing `.fold` v2 and v3 files, `KAT_FOLD`, `KAT_FOLD3`, the oracle, `converter/vendor.json`, and `converter/include/rfc_io.h` remain unchanged (`git diff --exit-code 7f75317 <candidate> -- src/ include/rasterfold.h spec/FOLD.md tests/rfi_ref.py tests/test_correctness.py converter/vendor.json converter/include/rfc_io.h`). **Corrected 2026-11-22:** the check named `.fold` v2 only. Each new output receives a fresh bundled decode and the format-specific verification contract before acceptance; independent fixture coverage is reported separately; input and existing destination bytes survive refusal, cancellation and failure.
 
 ## 9. JPEG 2000
 
