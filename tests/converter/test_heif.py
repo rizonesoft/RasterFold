@@ -408,6 +408,8 @@ class NoHevcArtifactProofTests(unittest.TestCase):
             (t / "hop").symlink_to(t / "deep" / "inner", target_is_directory=True)
             run_ok([str(ar), "rcs", str(ext / "first.a"), str(t / "unused_ok.o")])
             (ext / "libde265.a").symlink_to(ext / "first.a")
+            run_ok([str(ar), "rcs", str(ext / "version.txt"), str(t / "unused_enc.o")])
+            run_ok([str(ar), "rcs", str(ext / "response.txt"), str(t / "unused_enc.o")])
 
             clean_rep = t / "clean.repro.tar"
             run_ok([str(clang), str(t / "ok.o"), "-o", str(t / "c.exe"), f"-Wl,--reproduce={clean_rep}"])
@@ -421,6 +423,8 @@ class NoHevcArtifactProofTests(unittest.TestCase):
                 ("parens", [str(ext / "codec(test)")], "x265_encoder_open"),
                 ("symlink_dotdot", [f"{t}/hop/../via.a"], "x265_encoder_open"),
                 ("alias_second", [str(ext / "first.a"), str(ext / "libde265.a")], "libde265.a"),
+                ("nested_version", [str(ext / "version.txt")], "x265_encoder_open"),
+                ("nested_response", [str(ext / "response.txt")], "x265_encoder_open"),
             ]
             for label, extra_args, needle in cases:
                 rep = t / f"{label}.repro.tar"

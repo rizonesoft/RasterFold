@@ -1711,8 +1711,9 @@ def _no_hevc_in_repro_tar(tar_path, scanned_hashes=None):
             for member in tf.getmembers():
                 if not member.isfile():
                     continue
-                base = os.path.basename(member.name)
-                if base == "response.txt":
+                parts = [p for p in member.name.split("/") if p]
+                is_root_meta = len(parts) == 2 and parts[1] in ("response.txt", "version.txt")
+                if is_root_meta and parts[1] == "response.txt":
                     saw_response = True
                     fh = tf.extractfile(member)
                     if fh is None:
@@ -1731,7 +1732,7 @@ def _no_hevc_in_repro_tar(tar_path, scanned_hashes=None):
                             if _hevc_link_name(tok):
                                 return f"linker response lists HEVC input {tok}", checked_inputs
                     continue
-                if base == "version.txt":
+                if is_root_meta and parts[1] == "version.txt":
                     continue
                 checked_inputs += 1
                 if _hevc_link_name(member.name):
