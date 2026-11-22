@@ -2381,7 +2381,7 @@ static void test_round1_regressions(void) {
         rfc_session_adapter psess;
         memset(&psess, 0, sizeof(psess));
         psess.abi_version = RFC_CODEC_ABI_VERSION;
-        psess.format = RFC_FORMAT_QOI;
+        psess.format = RFC_FORMAT_JPEG_XL;
         psess.open_session = r1_p_open;
         psess.close_session = r1_p_close;
         psess.probe_session = r1_p_probe;
@@ -2403,8 +2403,8 @@ static void test_round1_regressions(void) {
 
         rfc_job_spec spec;
         memset(&spec, 0, sizeof(spec));
-        spec.source_format = RFC_FORMAT_QOI;
-        spec.target_format = RFC_FORMAT_QOI;
+        spec.source_format = RFC_FORMAT_JPEG_XL;
+        spec.target_format = RFC_FORMAT_JPEG_XL;
         spec.source_bytes = src;
         spec.source_size = sizeof(src);
         spec.source_layout = &lay;
@@ -2465,7 +2465,7 @@ static void test_round1_regressions(void) {
         rfc_job_release(j2);
 
         rfc_scheduler_destroy(sched);
-        CHECK(rfc_registry_unregister_session(RFC_FORMAT_QOI) == RFC_OK);
+        CHECK(rfc_registry_unregister_session(RFC_FORMAT_JPEG_XL) == RFC_OK);
         test_cond_destroy(&g_r1_probe.cond);
         test_mutex_destroy(&g_r1_probe.lock);
     }

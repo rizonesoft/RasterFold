@@ -1023,6 +1023,93 @@ static rfc_status bi_encode_cb(rfc_job *job, const rfc_exec_context *exec,
     return st;
 }
 
+static struct {
+    int mode;
+    uint32_t decode_calls;
+} g_qoi_probe_mock;
+
+static rfc_status qoi_mock_open(const rfc_exec_context *exec, void **out_sess) {
+    (void)exec;
+    *out_sess = &g_qoi_probe_mock;
+    return RFC_OK;
+}
+
+static void qoi_mock_close(void *session) { (void)session; }
+
+static rfc_status qoi_mock_probe(void *session,
+                                 const rfc_exec_context *exec,
+                                 const uint8_t *bytes,
+                                 size_t size,
+                                 rfc_image_probe *out_probe) {
+    (void)session;
+    (void)exec;
+    (void)bytes;
+    (void)size;
+    memset(out_probe, 0, sizeof(*out_probe));
+    out_probe->first_frame.width = 4u;
+    out_probe->first_frame.height = 4u;
+    out_probe->first_frame.bits_per_sample = 8u;
+    if (g_qoi_probe_mock.mode == 0) {
+        out_probe->first_frame.format = RFC_SAMPLE_RGB8;
+        out_probe->first_frame.alpha = RFC_ALPHA_NONE;
+        out_probe->first_frame.stride_bytes = 4u * 3u;
+        out_probe->frame_count = 2u;
+        out_probe->total_pixels = 4u * 4u * 2u;
+        out_probe->total_decoded_bytes = 4u * 4u * 3u * 2u;
+    } else {
+        out_probe->first_frame.format = RFC_SAMPLE_RGBA8;
+        out_probe->first_frame.alpha = RFC_ALPHA_PREMULTIPLIED;
+        out_probe->first_frame.stride_bytes = 4u * 4u;
+        out_probe->frame_count = 1u;
+    }
+    return RFC_OK;
+}
+
+static rfc_status qoi_mock_decode(void *session,
+                                  const rfc_exec_context *exec,
+                                  const uint8_t *bytes,
+                                  size_t size,
+                                  const rfc_setting_value *settings,
+                                  size_t setting_count,
+                                  rfc_frame **out_frames,
+                                  size_t *out_frame_count,
+                                  rfc_metadata *out_meta) {
+    (void)session;
+    (void)exec;
+    (void)bytes;
+    (void)size;
+    (void)settings;
+    (void)setting_count;
+    (void)out_frames;
+    (void)out_frame_count;
+    (void)out_meta;
+    g_qoi_probe_mock.decode_calls++;
+    return RFC_ERR_TRUNCATED_INPUT;
+}
+
+static rfc_status qoi_mock_encode(void *session,
+                                  const rfc_exec_context *exec,
+                                  const rfc_frame *frames,
+                                  size_t frame_count,
+                                  const rfc_metadata *meta,
+                                  const rfc_setting_value *settings,
+                                  size_t setting_count,
+                                  rfc_encoded *out_encoded) {
+    (void)session;
+    (void)exec;
+    (void)frames;
+    (void)frame_count;
+    (void)meta;
+    (void)settings;
+    (void)setting_count;
+    (void)out_encoded;
+    return RFC_ERR_UNSUPPORTED_COMBINATION;
+}
+
+static void qoi_mock_cancel(void *session) {
+    (void)session;
+}
+
 static void test_jobs_budget_cancel_and_file_safety(void) {
     CHECK(rfc_codecs_register_basic() == RFC_OK);
     const rfc_session_adapter *adp = rfc_registry_session_adapter(RFC_FORMAT_QOI);
@@ -1488,6 +1575,71 @@ static void test_jobs_budget_cancel_and_file_safety(void) {
                   !file_exists(p_ack_qoi));
             rfc_job_release(job);
             remove(p_rgb16);
+
+            /* Multi-frame (2 RGB8 frames, empty metadata) and premultiplied-alpha
+             * (RGBA8, empty metadata) sources submitted to a built-in QOI file
+             * job under preserve mode are refused BEFORE decode_session is called. */
+            rfc_session_adapter msess;
+            memset(&msess, 0, sizeof(msess));
+            msess.abi_version = RFC_CODEC_ABI_VERSION;
+            msess.format = RFC_FORMAT_JPEG_XL;
+            msess.open_session = qoi_mock_open;
+            msess.close_session = qoi_mock_close;
+            msess.probe_session = qoi_mock_probe;
+            msess.decode_session = qoi_mock_decode;
+            msess.encode_session = qoi_mock_encode;
+            msess.cancel_session = qoi_mock_cancel;
+            CHECK(rfc_registry_register_session(&msess) == RFC_OK);
+
+            char p_mock_src[256];
+            temp_path(p_mock_src, sizeof(p_mock_src), "mock_mf.jxl");
+            static const uint8_t mock_bytes[16] = {
+                0xFFu, 0x0Au, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+                0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u};
+            CHECK(write_file_all(p_mock_src, mock_bytes, sizeof(mock_bytes)));
+
+            g_qoi_probe_mock.mode = 0;
+            g_qoi_probe_mock.decode_calls = 0u;
+            memset(&sp, 0, sizeof(sp));
+            rfc_io_source_init_path(&si, p_mock_src, RFC_IMPORT_DEFAULT);
+            rfc_io_sink_init_path(&so, p_ack_qoi, RFC_EXPORT_REFUSE_EXISTING);
+            sp.source_format = RFC_FORMAT_JPEG_XL;
+            sp.target_format = RFC_FORMAT_QOI;
+            sp.io_source = &si;
+            sp.io_sink = &so;
+            sp.expected_working_set_bytes = 64u * 1024u;
+            sp.requested_codec_threads = 1u;
+            CHECK(rfc_scheduler_submit(sched, NULL, &sp, &job) == RFC_OK);
+            CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
+            CHECK(rfc_job_snapshot_get(job, &snap) == RFC_OK);
+            CHECK(snap.state == RFC_JOB_FAILED &&
+                  snap.status == RFC_ERR_UNSUPPORTED_COMBINATION &&
+                  g_qoi_probe_mock.decode_calls == 0u &&
+                  !file_exists(p_ack_qoi));
+            rfc_job_release(job);
+
+            g_qoi_probe_mock.mode = 1;
+            g_qoi_probe_mock.decode_calls = 0u;
+            memset(&sp, 0, sizeof(sp));
+            rfc_io_source_init_path(&si, p_mock_src, RFC_IMPORT_DEFAULT);
+            rfc_io_sink_init_path(&so, p_ack_qoi, RFC_EXPORT_REFUSE_EXISTING);
+            sp.source_format = RFC_FORMAT_JPEG_XL;
+            sp.target_format = RFC_FORMAT_QOI;
+            sp.io_source = &si;
+            sp.io_sink = &so;
+            sp.expected_working_set_bytes = 64u * 1024u;
+            sp.requested_codec_threads = 1u;
+            CHECK(rfc_scheduler_submit(sched, NULL, &sp, &job) == RFC_OK);
+            CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
+            CHECK(rfc_job_snapshot_get(job, &snap) == RFC_OK);
+            CHECK(snap.state == RFC_JOB_FAILED &&
+                  snap.status == RFC_ERR_UNSUPPORTED_ALPHA &&
+                  g_qoi_probe_mock.decode_calls == 0u &&
+                  !file_exists(p_ack_qoi));
+            rfc_job_release(job);
+
+            remove(p_mock_src);
+            CHECK(rfc_registry_unregister_session(RFC_FORMAT_JPEG_XL) == RFC_OK);
         }
 
         /* D2: Acknowledged unsupported-item loss succeeds and reports UNSUPPORTED_ITEMS_NAMED. */

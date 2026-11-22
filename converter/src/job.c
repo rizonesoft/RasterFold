@@ -3043,6 +3043,22 @@ static rfc_status run_bounded_session_decode(
                         }
                     }
                 }
+                if (st == RFC_OK && tcap && probe.frame_count > 1u &&
+                    tcap->extension_owner == NULL) {
+                    st = RFC_ERR_UNSUPPORTED_COMBINATION;
+                    if (out_err_detail && !*out_err_detail) {
+                        *out_err_detail =
+                            "target format does not support multi-frame input";
+                    }
+                }
+                if (st == RFC_OK && job->target_format == RFC_FORMAT_QOI &&
+                    probe.first_frame.alpha == RFC_ALPHA_PREMULTIPLIED) {
+                    st = RFC_ERR_UNSUPPORTED_ALPHA;
+                    if (out_err_detail && !*out_err_detail) {
+                        *out_err_detail =
+                            "QOI does not support premultiplied alpha";
+                    }
+                }
                 if (st == RFC_OK) {
                     rfc_verify_report pre_rep;
                     memset(&pre_rep, 0, sizeof(pre_rep));
