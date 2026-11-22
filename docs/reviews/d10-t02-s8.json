@@ -1,0 +1,72 @@
+{
+  "ref": "D10 T02 \u00a78",
+  "title": "QOI",
+  "implementation_sha": "387736b2c34f44db52b6f173d0c5889af986946e",
+  "date": "2026-11-22",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/10-converter/D10-T02-s8.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "git diff --exit-code 7f75317 -- src/ include/rasterfold.h spec/FOLD.md tests/rfi_ref.py tests/test_correctness.py converter/vendor.json converter/include/rfc_io.h -> FREEZE=OK (exit 0)",
+    "python3 scripts/check-all.py -> check-all: 32/32 passed (exit 0, build/logs/s8_checkall_rec11.log)",
+    "python3 scripts/check-converter.py --case all --all-targets -> PASS (host linux-x64 and isolated windows-x64: qoi 585/585 checks each, 6/6 Python differential tests, bundle: PASS, exit 0, build/logs/s8_all_targets_rec11.log)"
+  ],
+  "completion": {
+    "report": "docs/reviews/10-converter/D10-T02-s8.md",
+    "verdict": "reconciled",
+    "candidate": "387736b2c34f44db52b6f173d0c5889af986946e",
+    "reviewer": "astra",
+    "model": "gpt-6.2-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/10-converter/D10-T02-s8.md",
+    "candidate": "568b5c945eb1881f212ffaf6aa26af2f25f1caed",
+    "reviewer": "astra",
+    "model": "gpt-6.2-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "568b5c945eb1881f212ffaf6aa26af2f25f1caed",
+  "schedule": {
+    "policy": "three-pass",
+    "pass_cap": 33,
+    "plan": {
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {},
+    "reconciliation": {
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}
