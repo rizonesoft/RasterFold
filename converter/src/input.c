@@ -1095,7 +1095,7 @@ static void sniff_jp2_geometry_stream(const seek_stream *ss,
                 } else if (sl == 0u) {
                     stot = (sub_end > sub) ? (sub_end - sub) : 0u;
                 }
-                if (stot < shlen || sub > sub_end - stot) {
+                if (stot < shlen || stot > sub_end - sub) {
                     break;
                 }
                 uint64_t splen = stot - shlen;
@@ -1134,7 +1134,8 @@ static void sniff_jp2_geometry_stream(const seek_stream *ss,
             }
             break;
         }
-        if (total == UINT64_MAX || off > UINT64_MAX - total) {
+        if (total == UINT64_MAX || total > UINT64_MAX - off ||
+            (ss->size_known && total > ss->total_size - off)) {
             return;
         }
         off += total;

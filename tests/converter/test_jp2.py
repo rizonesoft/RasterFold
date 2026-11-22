@@ -503,7 +503,6 @@ class WinJp2Tests(Jp2AdapterMixin, unittest.TestCase):
             if require:
                 raise AssertionError("powershell.exe unavailable while RFC_REQUIRE_WIN_JP2=1")
             raise unittest.SkipTest("powershell.exe unavailable")
-        cls._exe = exe
         cls._ps = ps
         wp = _ref.run_process_tree(
             ["wslpath", "-w", exe], timeout=10.0, capture_output=True, text=True
@@ -530,9 +529,15 @@ class WinJp2Tests(Jp2AdapterMixin, unittest.TestCase):
         return f"{self._win_wd}\\{rel}"
 
     def run_cli(self, args: list[str]) -> tuple[int, str, str]:
+        quoted = ", ".join("'" + a.replace("'", "''") + "'" for a in args)
+        ps_cmd = (
+            "$env:PATH = 'C:\\Windows\\System32'; "
+            f"& '{self._win_exe}' @({quoted}); "
+            "exit $LASTEXITCODE"
+        )
         for attempt in range(3):
             res = _ref.run_process_tree(
-                [self._exe, *args],
+                [self._ps, "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
                 timeout=45.0,
                 capture_output=True,
                 text=True,

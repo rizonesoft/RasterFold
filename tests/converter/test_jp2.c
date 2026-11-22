@@ -1790,6 +1790,41 @@ static void test_jobs_budget_cancel_threads_and_file_safety(void) {
             free(buf_f);
         }
 
+        /* Hostile 64-bit wrapping nested box length inside jp2h past 16 KiB prefix
+         * must terminate immediately in sniff_jp2_geometry_stream without looping. */
+        {
+            size_t free_sz = 20u * 1024u;
+            size_t total_sz = 12u + 20u + free_sz + 8u + 16u;
+            uint8_t *hostile = (uint8_t *)calloc(1u, total_sz);
+            CHECK(hostile != NULL);
+            memcpy(hostile, "\x00\x00\x00\x0cjP  \x0d\x0a\x87\x0a", 12u);
+            put_be32(hostile + 12u, 20u);
+            memcpy(hostile + 16u, "ftypjp2 \x00\x00\x00\x00jp2 ", 16u);
+            put_be32(hostile + 32u, (uint32_t)free_sz);
+            memcpy(hostile + 36u, "free", 4u);
+            size_t joff = 32u + free_sz;
+            put_be32(hostile + joff, 24u);
+            memcpy(hostile + joff + 4u, "jp2h", 4u);
+            /* Child box with lbox=1 and 64-bit length 0xFFFFFFFFFFFFFF00 (> sub_end). */
+            put_be32(hostile + joff + 8u, 1u);
+            memcpy(hostile + joff + 12u, "free", 4u);
+            put_be32(hostile + joff + 16u, 0xFFFFFFFFu);
+            put_be32(hostile + joff + 20u, 0xFFFFFF00u);
+            char p_hos[256];
+            temp_path(p_hos, sizeof(p_hos), "hostile_wrap.jp2");
+            remove(p_hos);
+            CHECK(write_file_all(p_hos, hostile, total_sz));
+            rfc_sniff_result hsr;
+            uint64_t hsz = 0u;
+            rfc_file_identity hid;
+            memset(&hsr, 0, sizeof(hsr));
+            memset(&hid, 0, sizeof(hid));
+            CHECK(rfc_input_sniff_path(p_hos, &hsr, &hsz, &hid) == RFC_OK);
+            CHECK(hsr.content_format == RFC_FORMAT_JPEG2000);
+            remove(p_hos);
+            free(hostile);
+        }
+
         /* Bare J2K 3-ch accepted + bare J2K 4-ch refused through file importer. */
         {
             const uint8_t *cs3 = NULL;
