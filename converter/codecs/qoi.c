@@ -599,7 +599,7 @@ static rfc_status qoi_encode_session(void *session,
     if (st != RFC_OK) {
         return st;
     }
-    if (exactness == RFC_EXACT_BYTE_IDENTICAL && (!exec || !exec->job)) {
+    if (exactness == RFC_EXACT_BYTE_IDENTICAL) {
         return RFC_ERR_UNSUPPORTED_COMBINATION;
     }
 

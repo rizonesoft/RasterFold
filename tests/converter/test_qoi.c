@@ -987,6 +987,42 @@ static void hook_cancel_job(void *ctx) {
 #endif
 }
 
+static rfc_status noop_verify_cb(rfc_job *job, const rfc_exec_context *exec,
+                                 void *ctx) {
+    (void)job;
+    (void)exec;
+    (void)ctx;
+    return RFC_OK;
+}
+
+static rfc_status bi_encode_cb(rfc_job *job, const rfc_exec_context *exec,
+                               void *ctx) {
+    (void)ctx;
+    size_t fc = 0u;
+    const rfc_metadata *dm = NULL;
+    const rfc_frame *fr = rfc_job_decoded_frames(job, &fc, &dm);
+    if (!fr || fc != 1u) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    const rfc_session_adapter *adp = rfc_registry_session_adapter(RFC_FORMAT_QOI);
+    if (!adp) {
+        return RFC_ERR_NO_ADAPTER;
+    }
+    void *s = NULL;
+    rfc_status st = adp->open_session(exec, &s);
+    if (st != RFC_OK) {
+        return st;
+    }
+    rfc_setting_value sv[1] = {{"exactness", "byte-identical"}};
+    rfc_encoded enc;
+    st = adp->encode_session(s, exec, fr, fc, dm, sv, 1u, &enc);
+    if (st == RFC_OK) {
+        rfc_encoded_free(&enc);
+    }
+    adp->close_session(s);
+    return st;
+}
+
 static void test_jobs_budget_cancel_and_file_safety(void) {
     CHECK(rfc_codecs_register_basic() == RFC_OK);
     const rfc_session_adapter *adp = rfc_registry_session_adapter(RFC_FORMAT_QOI);
@@ -1380,7 +1416,40 @@ static void test_jobs_budget_cancel_and_file_safety(void) {
                   snap.budget.peak_allocated_bytes < 256u * 256u * 4u &&
                   !file_exists(p_ack_qoi));
             rfc_job_release(job);
+
+            /* Same ICC-tagged PNG -> QOI job with custom on_verify (on_encode == NULL)
+             * also refuses before pixel allocation. */
+            sp.has_stage_ops = 1;
+            sp.stage_ops.on_verify = noop_verify_cb;
+            CHECK(rfc_scheduler_submit(sched, NULL, &sp, &job) == RFC_OK);
+            CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
+            CHECK(rfc_job_snapshot_get(job, &snap) == RFC_OK);
+            CHECK(snap.state == RFC_JOB_FAILED &&
+                  snap.status == RFC_ERR_METADATA_POLICY &&
+                  snap.budget.peak_allocated_bytes < 256u * 256u * 4u &&
+                  !file_exists(p_ack_qoi));
+            rfc_job_release(job);
             remove(p_big_icc);
+
+            /* Calling qoi_encode_session with exactness=byte-identical inside a
+             * live job on_encode callback (non-NULL exec->job) is refused. */
+            memset(&sp, 0, sizeof(sp));
+            rfc_io_source_init_path(&si, p_qoi, RFC_IMPORT_DEFAULT);
+            rfc_io_sink_init_path(&so, p_ack_qoi, RFC_EXPORT_REFUSE_EXISTING);
+            sp.source_format = RFC_FORMAT_QOI;
+            sp.target_format = RFC_FORMAT_QOI;
+            sp.io_source = &si;
+            sp.io_sink = &so;
+            sp.has_stage_ops = 1;
+            sp.stage_ops.on_encode = bi_encode_cb;
+            sp.requested_codec_threads = 1u;
+            CHECK(rfc_scheduler_submit(sched, NULL, &sp, &job) == RFC_OK);
+            CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
+            CHECK(rfc_job_snapshot_get(job, &snap) == RFC_OK);
+            CHECK(snap.state == RFC_JOB_FAILED &&
+                  snap.status == RFC_ERR_UNSUPPORTED_COMBINATION &&
+                  !file_exists(p_ack_qoi));
+            rfc_job_release(job);
         }
 
         /* D2: Acknowledged unsupported-item loss succeeds and reports UNSUPPORTED_ITEMS_NAMED. */

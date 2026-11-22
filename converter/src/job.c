@@ -3016,7 +3016,6 @@ static rfc_status run_bounded_session_decode(
         }
         if (st == RFC_OK && validate_dec_settings &&
             job->stage_ops.on_encode == NULL &&
-            job->stage_ops.on_verify == NULL &&
             job->target_format != (rfc_format_id)0) {
             size_t job_sc = 0u;
             const rfc_setting_value *job_sv = rfc_job_settings(job, &job_sc);
@@ -3791,7 +3790,7 @@ void rfc_job_internal_execute(rfc_job *job, rfc_job_exec_result *out_res) {
     /* A pixel-exact conversion whose decoded metadata the target cannot
      * carry (and the caller did not acknowledge) is refused here, before
      * ENCODE spends its work; the report is the one VERIFY would publish. */
-    if (job->stage_ops.on_encode == NULL && job->stage_ops.on_verify == NULL &&
+    if (job->stage_ops.on_encode == NULL &&
         job->decoded_frames && job->decoded_frame_count > 0u) {
         rfc_exactness_class pre_ex = RFC_EXACT_PIXEL_EXACT;
         rfc_metadata_policy pre_pol = RFC_META_POLICY_PRESERVE;
