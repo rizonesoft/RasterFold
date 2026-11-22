@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RasterFold Converter Reference</title>
+<!--
+  Visual reference for docs/design/converter.md. That file is the contract and
+  wins where this drawing disagrees. Every window is drawn at the default client
+  size (1280 x 800 DIP at 100%) with the Geometry table's values; colours are the
+  Resolute-SDK DESIGN.md palette at bddf5860, and tokens that table leaves out
+  (surfaceHover, surfaceActive, semantic, surfaceBase) are stand-ins until the
+  pinned theme.cpp supplies them. Figures are placeholders, not measurements.
+-->
+<style>
+:root{
+  --background:#F6F5F2; --surface:#ECEAE5; --surfaceHover:#E2DFD8; --surfaceActive:#D9D5CD; --toolbar:#FCFBF9;
+  --border:#827E76; --hair:#D6D3CC; --text:#17191E; --textSecondary:#56524A; --statusBar:#E8E6E0;
+  --accent:#8A5A00; --accentSubtle:#F6E7C6; --success:#1F7A3F; --warning:#9A5B00; --error:#B42318; --info:#2459A8;
+  --surfaceBase:#8E8C86; --scrim:rgb(0 0 0 / .55);
+  --ui:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif; --mono:"Cascadia Mono",Consolas,monospace;
+  color-scheme:light;
+}
+:root[data-theme="dark"]{
+  --background:#17191E; --surface:#1F2228; --surfaceHover:#2A2E36; --surfaceActive:#33373F; --toolbar:#23262D;
+  --border:#80858F; --hair:#33373F; --text:#ECEAE5; --textSecondary:#B0B3BA; --statusBar:#1B1D22;
+  --accent:#FFB020; --accentSubtle:#3A3018; --success:#5FD08A; --warning:#FFB020; --error:#FF8A7A; --info:#7EB6FF;
+  --surfaceBase:#4A4D54; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--background);color:var(--text);font:13px/1.4 var(--ui);padding:24px 16px 48px}
+.top{max-width:1280px;margin:0 auto 24px;display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.top h1{font-size:20px;font-weight:600;margin:0 auto 0 0}
+.top p{flex-basis:100%;margin:0;color:var(--textSecondary);max-width:80ch}
+.toggle{display:inline-flex;border:1px solid var(--border);border-radius:4px;overflow:hidden}
+.toggle button{font:inherit;color:var(--text);background:var(--toolbar);border:0;padding:6px 12px;cursor:pointer}
+.toggle button[aria-pressed="true"]{background:var(--accentSubtle);font-weight:600}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+figure{margin:0 auto 40px;max-width:1282px}
+figcaption{font-weight:600;margin-bottom:8px}
+figcaption span{font-weight:400;color:var(--textSecondary)}
+.scroll{overflow-x:auto}
+/* window: 1280 x (32 caption + 800 client) */
+.win{width:1282px;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--background);box-shadow:0 8px 24px rgb(0 0 0 / .14)}
+.cap{height:32px;display:flex;align-items:center;background:var(--toolbar);padding-left:12px;gap:8px}
+.cap svg.mark{width:16px;height:16px}
+.cbs{margin-left:auto;display:flex;height:32px}
+.cb{width:46px;height:32px;display:grid;place-items:center}
+.cb svg{width:10px;height:10px;stroke:var(--text);stroke-width:1;fill:none}
+.client{height:800px;display:grid;grid-template-columns:200px 1fr;grid-template-rows:1fr 26px}
+.side{background:var(--surface);padding-top:8px;display:flex;flex-direction:column}
+.si{height:40px;display:flex;align-items:center;gap:12px;padding:0 16px;color:var(--textSecondary);font-size:14px;position:relative}
+.si.on{color:var(--text);font-weight:600;background:var(--accentSubtle)}
+.si.on::before{content:"";position:absolute;left:4px;top:10px;bottom:10px;width:3px;border-radius:2px;background:var(--accent)}
+.si .g{width:18px;height:18px}
+.spacer{flex:1}
+.main{display:flex;flex-direction:column;min-width:0;min-height:0}
+.ch{height:56px;flex:none;display:flex;align-items:center;gap:8px;padding:0 16px;border-bottom:1px solid var(--border)}
+.ch .t{font-size:16px;font-weight:600;margin-right:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.btn{height:32px;display:inline-flex;align-items:center;gap:8px;padding:0 12px;border:1px solid var(--border);border-radius:4px;background:var(--toolbar);white-space:nowrap}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--background);font-weight:600}
+.btn .g{width:16px;height:16px}
+.btn.pri .g{stroke:var(--background)}
+.btn[aria-disabled="true"]{opacity:.45}
+.g{stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.body{flex:1;display:flex;min-height:0}
+.list{flex:1;min-width:0;overflow:hidden}
+table{border-collapse:collapse;width:100%;table-layout:fixed;font-variant-numeric:tabular-nums}
+th{height:32px;font-size:12px;font-weight:600;color:var(--textSecondary);text-align:left;padding:0 8px;border-bottom:1px solid var(--hair)}
+td{height:28px;padding:0 8px;border-bottom:1px solid var(--hair);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.r{text-align:right}
+tr.sel td{background:var(--accentSubtle)}
+.st{display:inline-flex;align-items:center;gap:6px}
+.st .g{width:16px;height:16px}
+.c-ok{color:var(--success)} .c-warn{color:var(--warning)} .c-err{color:var(--error)} .c-info{color:var(--info)} .c-mute{color:var(--textSecondary)}
+.st span{color:var(--text)}
+.panel{width:280px;flex:none;border-left:1px solid var(--border);background:var(--toolbar);padding:16px;display:flex;flex-direction:column;gap:12px}
+.prev{height:160px;background:var(--surfaceBase);display:grid;place-items:center;border-radius:2px}
+.prev .img{width:72%;height:100%}
+.field label{display:block;font-size:11px;color:var(--textSecondary);margin-bottom:4px}
+.field .ctl{height:32px;border:1px solid var(--border);border-radius:4px;background:var(--background);display:flex;align-items:center;justify-content:space-between;padding:0 8px}
+.facts{font-size:11px;color:var(--textSecondary)}
+.sb{grid-column:1/-1;background:var(--statusBar);display:flex;align-items:center;justify-content:space-between;padding:0 10px;font-size:12px;color:var(--textSecondary)}
+.sb .p{font-family:var(--mono)}
+/* placeholder photograph */
+.img{background:radial-gradient(circle at 30% 32%,#E9C27A 0 10%,transparent 11%),linear-gradient(180deg,#7FA6C4 0 46%,#4E6E5A 46% 70%,#3A4E40 70%)}
+.empty{flex:1;display:grid;place-items:center;text-align:center}
+.empty .g{width:48px;height:48px;color:var(--textSecondary)}
+.empty h2{font-size:16px;font-weight:600;margin:12px 0 4px}
+.empty p{margin:0 0 16px;color:var(--textSecondary)}
+.empty .row{display:flex;gap:8px;justify-content:center}
+.ctb{height:40px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:4px;overflow:hidden;height:28px}
+.seg span{display:flex;align-items:center;gap:6px;padding:0 10px}
+.seg span+span{border-left:1px solid var(--border)}
+.seg span.on{background:var(--accentSubtle);font-weight:600}
+.seg .g,.tb .g{width:16px;height:16px}
+.tb{height:28px;display:inline-flex;align-items:center;gap:6px;padding:0 8px;border-radius:4px}
+.num{height:28px;width:64px;border:1px solid var(--border);border-radius:4px;display:flex;align-items:center;justify-content:flex-end;padding:0 8px;background:var(--background);font-variant-numeric:tabular-nums}
+.pane{flex:1;min-height:240px;background:var(--surfaceBase);position:relative;padding:12px}
+.pane .ph{position:absolute;inset:12px}
+.pane .ph .img{position:absolute;inset:0}
+.pane .ph .res{clip-path:inset(0 0 0 50%);filter:saturate(1.04)}
+.wipe{position:absolute;top:0;bottom:0;left:50%;width:2px;margin-left:-1px;background:var(--accent)}
+.grab{position:absolute;top:50%;left:50%;width:24px;height:24px;margin:-12px 0 0 -12px;border-radius:12px;background:var(--accent);color:var(--background);font-size:11px;font-weight:600;display:grid;place-items:center}
+.lbl{position:absolute;top:8px;font-size:11px;font-weight:600;background:var(--scrim);color:#fff;padding:2px 6px;border-radius:3px}
+.bar{display:flex;align-items:center;gap:8px}
+.bar i{display:block;height:6px;border-radius:3px;background:var(--surfaceActive);flex:1;position:relative}
+.bar i b{position:absolute;inset:0 auto 0 0;border-radius:3px;background:var(--textSecondary)}
+tr.sel .bar i b{background:var(--accent)}
+.bar small{font-size:11px;width:32px;text-align:right}
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>RasterFold Converter reference</h1>
+  <div class="toggle" role="group" aria-label="Theme">
+    <button type="button" id="t-light" aria-pressed="true">Light</button>
+    <button type="button" id="t-dark" aria-pressed="false">Dark</button>
+  </div>
+  <p>Drawn at the default client size, 1280 x 800 DIP at 100%, from the Geometry table of <code>converter.md</code>, which is the contract. Figures are placeholders, not measurements.</p>
+</div>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="mark" viewBox="0 0 256 256"><rect width="256" height="256" rx="48" fill="#0b1426"/><path d="M36 36H220V96H96V220H36Z" fill="#a9ef76"/><path d="M96 96H220L96 220Z" fill="#20a9b1"/><path d="M96 96H158L96 158Z" fill="#e9ffbe"/><rect x="166" y="166" width="54" height="54" rx="6" fill="#ff936c"/></symbol>
+  <symbol id="i-images" viewBox="0 0 24 24"><path d="M18 22H4a2 2 0 0 1-2-2V6"/><path d="m22 13-1.3-1.3a2.4 2.4 0 0 0-3.4 0L11 18"/><circle cx="12" cy="8" r="2"/><rect width="16" height="16" x="6" y="2" rx="2"/></symbol>
+  <symbol id="i-columns" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M12 3v18"/></symbol>
+  <symbol id="i-library" viewBox="0 0 24 24"><path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/></symbol>
+  <symbol id="i-activity" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
+  <symbol id="i-imageplus" viewBox="0 0 24 24"><path d="M16 5h6"/><path d="M19 2v6"/><path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/><circle cx="9" cy="9" r="2"/></symbol>
+  <symbol id="i-folderplus" viewBox="0 0 24 24"><path d="M12 10v6"/><path d="M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9l-.8-1.2A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></symbol>
+  <symbol id="i-open" viewBox="0 0 24 24"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.2 10H20a2 2 0 0 1 1.9 2.5l-1.5 6a2 2 0 0 1-1.9 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.7.9l.8 1.2a2 2 0 0 0 1.7.9H18a2 2 0 0 1 2 2v2"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.8 9.8 0 0 1 6.7 2.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.8 9.8 0 0 1-6.7-2.7L3 16"/><path d="M8 16H3v5"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></symbol>
+  <symbol id="i-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></symbol>
+  <symbol id="i-loader" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.7 18-8-14a2 2 0 0 0-3.5 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></symbol>
+  <symbol id="i-slash" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9 15 15 9"/></symbol>
+  <symbol id="i-split" viewBox="0 0 24 24"><path d="M8 19H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h3"/><path d="M16 5h3a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-3"/><path d="M12 4v16"/></symbol>
+  <symbol id="i-diff" viewBox="0 0 24 24"><path d="M12 3v14"/><path d="M5 10h14"/><path d="M5 21h14"/></symbol>
+  <symbol id="i-max" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></symbol>
+  <symbol id="i-scan" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/></symbol>
+  <symbol id="i-zin" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M11 8v6"/><path d="M8 11h6"/></symbol>
+  <symbol id="i-zout" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M8 11h6"/></symbol>
+  <symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.8 9.8 0 0 0-6.7 2.7L3 8"/><path d="M3 3v5h5"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+</svg>
+
+<template id="chrome">
+  <div class="cap"><svg class="mark"><use href="#mark"/></svg><span>RasterFold Converter</span>
+    <span class="cbs" aria-hidden="true">
+      <span class="cb"><svg viewBox="0 0 10 10"><path d="M0 5.5H10"/></svg></span>
+      <span class="cb"><svg viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9" rx="1"/></svg></span>
+      <span class="cb"><svg viewBox="0 0 10 10"><path d="M0 0L10 10M10 0L0 10"/></svg></span>
+    </span></div>
+</template>
+
+<figure id="images">
+  <figcaption>Images <span>· working state, one job encoding, normal density</span></figcaption>
+  <div class="scroll"><div class="win" data-active="0">
+    <div class="client">
+      <nav class="side"></nav>
+      <div class="main">
+        <div class="ch"><span class="t">Images</span>
+          <span class="btn"><svg class="g"><use href="#i-imageplus"/></svg>Add images</span>
+          <span class="btn"><svg class="g"><use href="#i-folderplus"/></svg>Add folder</span>
+          <span class="btn pri"><svg class="g"><use href="#i-play"/></svg>Convert 2</span></div>
+        <div class="body">
+          <div class="list"><table>
+            <colgroup><col><col style="width:96px"><col style="width:112px"><col style="width:96px"><col style="width:112px"><col style="width:144px"></colgroup>
+            <thead><tr><th>Name</th><th class="r">Size</th><th class="r">Dimensions</th><th>Output</th><th class="r">Result</th><th>State</th></tr></thead>
+            <tbody>
+              <tr><td>harbour-dawn.png</td><td class="r">18.4 MB</td><td class="r">6000 x 4000</td><td>FOLD</td><td class="r">11.2 MB</td><td><span class="st c-ok"><svg class="g"><use href="#i-check"/></svg><span>Verified</span></span></td></tr>
+              <tr class="sel"><td>site-plan.tiff</td><td class="r">42.0 MB</td><td class="r">9921 x 7016</td><td>FOLD</td><td class="r">61%</td><td><span class="st c-info"><svg class="g"><use href="#i-loader"/></svg><span>Encoding</span></span></td></tr>
+              <tr><td>logo-master.png</td><td class="r">0.9 MB</td><td class="r">2048 x 2048</td><td>FOLD</td><td class="r"></td><td><span class="st c-mute"><svg class="g"><use href="#i-circle"/></svg><span>Ready</span></span></td></tr>
+              <tr><td>scan-0412.bmp</td><td class="r">27.6 MB</td><td class="r">4800 x 2000</td><td>FOLD</td><td class="r"></td><td><span class="st c-mute"><svg class="g"><use href="#i-circle"/></svg><span>Ready</span></span></td></tr>
+              <tr><td>ui-capture-07.png</td><td class="r">2.1 MB</td><td class="r">2560 x 1440</td><td>FOLD</td><td class="r">2.3 MB</td><td><span class="st c-warn"><svg class="g"><use href="#i-alert"/></svg><span>Verified, larger</span></span></td></tr>
+              <tr><td>night-market.png</td><td class="r">15.8 MB</td><td class="r">5472 x 3648</td><td>FOLD</td><td class="r"></td><td><span class="st c-mute"><svg class="g"><use href="#i-slash"/></svg><span>Cancelled</span></span></td></tr>
+              <tr><td>locked-archive.png</td><td class="r">8.2 MB</td><td class="r">4000 x 3000</td><td>FOLD</td><td class="r"></td><td><span class="st c-err"><svg class="g"><use href="#i-x"/></svg><span>Failed</span></span></td></tr>
+            </tbody></table></div>
+          <aside class="panel">
+            <div class="prev"><div class="img"></div></div>
+            <div class="field"><label>Output format</label><div class="ctl">RasterFold (.fold)<svg class="g" width="16" height="16"><use href="#i-chev"/></svg></div></div>
+            <div class="field"><label>Effort</label><div class="ctl">Balanced<svg class="g" width="16" height="16"><use href="#i-chev"/></svg></div></div>
+            <div class="field"><label>Threads</label><div class="ctl">Automatic<svg class="g" width="16" height="16"><use href="#i-chev"/></svg></div></div>
+            <div class="field"><label>Destination</label><div class="ctl">Beside the original<svg class="g" width="16" height="16"><use href="#i-chev"/></svg></div></div>
+            <div class="facts">TIFF · 8-bit RGB · no alpha · sRGB</div>
+          </aside>
+        </div>
+      </div>
+      <div class="sb"><span>Converting 1 of 3 · site-plan.tiff, encoding</span><span class="p">D:\Projects\Survey\site-plan.fold</span></div>
+    </div>
+  </div></div>
+</figure>
+
+<figure id="empty">
+  <figcaption>Images <span>· empty state</span></figcaption>
+  <div class="scroll"><div class="win" data-active="0">
+    <div class="client">
+      <nav class="side"></nav>
+      <div class="main">
+        <div class="ch"><span class="t">Images</span>
+          <span class="btn"><svg class="g"><use href="#i-imageplus"/></svg>Add images</span>
+          <span class="btn"><svg class="g"><use href="#i-folderplus"/></svg>Add folder</span>
+          <span class="btn pri" aria-disabled="true"><svg class="g"><use href="#i-play"/></svg>Convert 0</span></div>
+        <div class="empty"><div>
+          <svg class="g"><use href="#i-images"/></svg>
+          <h2>Add images to convert</h2>
+          <p>Drop files or folders here, or try a bundled sample.</p>
+          <div class="row"><span class="btn"><svg class="g"><use href="#i-imageplus"/></svg>Add images</span><span class="btn"><svg class="g"><use href="#i-library"/></svg>Try sample</span></div>
+        </div></div>
+      </div>
+      <div class="sb"><span>No images</span><span></span></div>
+    </div>
+  </div></div>
+</figure>
+
+<figure id="compare">
+  <figcaption>Compare <span>· four codecs on one source, wipe at 50%</span></figcaption>
+  <div class="scroll"><div class="win" data-active="1">
+    <div class="client">
+      <nav class="side"></nav>
+      <div class="main">
+        <div class="ch"><span class="t">harbour-dawn.png</span>
+          <span class="btn"><svg class="g"><use href="#i-open"/></svg>Open</span>
+          <span class="btn"><svg class="g"><use href="#i-refresh"/></svg>Run again</span>
+          <span class="btn pri"><svg class="g"><use href="#i-save"/></svg>Save selected</span></div>
+        <div style="flex:none"><table>
+          <colgroup><col><col style="width:112px"><col style="width:160px"><col style="width:80px"><col style="width:72px"><col style="width:144px"></colgroup>
+          <thead><tr><th>Codec</th><th class="r">Output</th><th>Relative size</th><th class="r">Time</th><th class="r">Threads</th><th>Exactness</th></tr></thead>
+          <tbody>
+            <tr class="sel"><td>RasterFold</td><td class="r">11.2 MB</td><td><span class="bar"><i><b style="width:61%"></b></i><small>61%</small></span></td><td class="r">2.4 s</td><td class="r">8</td><td><span class="st c-ok"><svg class="g"><use href="#i-check"/></svg><span>Verified</span></span></td></tr>
+            <tr><td>JPEG XL lossless</td><td class="r">11.9 MB</td><td><span class="bar"><i><b style="width:65%"></b></i><small>65%</small></span></td><td class="r">3.1 s</td><td class="r">8</td><td><span class="st c-ok"><svg class="g"><use href="#i-check"/></svg><span>Verified</span></span></td></tr>
+            <tr><td>WebP lossless</td><td class="r">13.6 MB</td><td><span class="bar"><i><b style="width:74%"></b></i><small>74%</small></span></td><td class="r">5.8 s</td><td class="r">1</td><td><span class="st c-ok"><svg class="g"><use href="#i-check"/></svg><span>Verified</span></span></td></tr>
+            <tr><td>PNG</td><td class="r">18.4 MB</td><td><span class="bar"><i><b style="width:100%"></b></i><small>100%</small></span></td><td class="r">1.1 s</td><td class="r">1</td><td><span class="st c-ok"><svg class="g"><use href="#i-check"/></svg><span>Verified</span></span></td></tr>
+          </tbody></table></div>
+        <div class="ctb">
+          <span class="seg"><span><svg class="g"><use href="#i-columns"/></svg>Side by side</span><span class="on"><svg class="g"><use href="#i-split"/></svg>Wipe</span><span><svg class="g"><use href="#i-diff"/></svg>Difference</span></span>
+          <span class="num">50</span><span class="c-mute">%</span>
+          <span class="tb"><svg class="g"><use href="#i-max"/></svg>Fit</span>
+          <span class="tb"><svg class="g"><use href="#i-scan"/></svg>Actual pixels</span>
+          <span class="tb"><svg class="g"><use href="#i-zout"/></svg>Zoom out</span>
+          <span class="tb"><svg class="g"><use href="#i-zin"/></svg>Zoom in</span>
+          <span class="tb"><svg class="g"><use href="#i-reset"/></svg>Reset view</span>
+          <span style="margin-left:auto" class="seg"><span class="on">Checkerboard</span><span>Black</span><span>White</span></span>
+        </div>
+        <div class="pane"><div class="ph"><div class="img"></div><div class="img res"></div><span class="wipe"></span><span class="grab">50</span><span class="lbl" style="left:8px">Original</span><span class="lbl" style="right:8px">RasterFold</span></div></div>
+      </div>
+      <div class="sb"><span>4 codecs on one source · 4 exact · effort Balanced · 8 threads</span><span class="p">0 of 24,000,000 samples differ</span></div>
+    </div>
+  </div></div>
+</figure>
+
+<figure id="samples">
+  <figcaption>Samples</figcaption>
+  <div class="scroll"><div class="win" data-active="2">
+    <div class="client">
+      <nav class="side"></nav>
+      <div class="main">
+        <div class="ch"><span class="t">Samples</span><span class="btn pri"><svg class="g"><use href="#i-library"/></svg>Try sample</span></div>
+        <div class="list"><table>
+          <colgroup><col><col style="width:128px"><col style="width:112px"><col style="width:128px"></colgroup>
+          <thead><tr><th>Name</th><th>Kind</th><th class="r">Dimensions</th><th>Licence</th></tr></thead>
+          <tbody>
+            <tr class="sel"><td>Harbour at dawn</td><td>Photograph</td><td class="r">3000 x 2000</td><td>CC0 1.0</td></tr>
+            <tr><td>Type specimen</td><td>Text</td><td class="r">2400 x 1600</td><td>CC BY 4.0</td></tr>
+            <tr><td>Interface capture</td><td>Graphics</td><td class="r">2560 x 1440</td><td>CC0 1.0</td></tr>
+            <tr><td>Glass with alpha</td><td>Transparency</td><td class="r">1600 x 1600</td><td>CC0 1.0</td></tr>
+            <tr><td>16-bit gradient</td><td>High depth</td><td class="r">2048 x 1024</td><td>CC0 1.0</td></tr>
+          </tbody></table></div>
+      </div>
+      <div class="sb"><span>5 licensed samples</span><span></span></div>
+    </div>
+  </div></div>
+</figure>
+
+<script>
+(function(){
+  var items=[["Images","i-images"],["Compare","i-columns"],["Samples","i-library"],null,["Activity","i-activity"],["Settings","i-settings"],["About","i-info"]];
+  var tpl=document.getElementById("chrome");
+  document.querySelectorAll(".win").forEach(function(w){
+    w.insertBefore(tpl.content.cloneNode(true),w.firstChild);
+    var active=+w.dataset.active, nav=w.querySelector(".side"), k=0;
+    items.forEach(function(it){
+      var el=document.createElement("span");
+      if(!it){el.className="spacer";nav.appendChild(el);return;}
+      el.className="si"+(k===active?" on":"");
+      el.innerHTML='<svg class="g"><use href="#'+it[1]+'"/></svg>'+it[0];
+      nav.appendChild(el);k++;
+    });
+  });
+  function set(t){
+    document.documentElement.dataset.theme=t;
+    document.getElementById("t-light").setAttribute("aria-pressed",t==="light");
+    document.getElementById("t-dark").setAttribute("aria-pressed",t==="dark");
+  }
+  document.getElementById("t-light").onclick=function(){set("light")};
+  document.getElementById("t-dark").onclick=function(){set("dark")};
+  if(window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches)set("dark");
+})();
+</script>
+</body>
+</html>

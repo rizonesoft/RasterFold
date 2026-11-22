@@ -342,9 +342,9 @@ The native converter, its user guide, the whole-product documentation acceptance
 | [ ] | `D10 T02 §11` | Camera RAW and DNG import                                                  | windows-runtime               |   6   |
 | [ ] | `D10 T02 §12` | Animation and multi-page preservation                                      | windows-runtime               |   5   |
 | [ ] | `D10 T02 §13` | Broader PNG import for indexed, grayscale-alpha, sub-8-bit and tRNS assets | windows-runtime               |   5   |
-| [ ] | `D10 T03 §1`  | Interface shell on resolute-ui                                             | display-session               |  10   |
-| [ ] | `D10 T03 §2`  | Windows native integration                                                 | windows-host, display-session |   7   |
-| [ ] | `D10 T03 §5`  | Single-image conversion and preview                                        | display-session               |   7   |
+| [ ] | `D10 T03 §1`  | Interface shell on resolute-ui                                             | display-session               |  11   |
+| [ ] | `D10 T03 §2`  | Windows native integration                                                 | windows-host, display-session |   8   |
+| [ ] | `D10 T03 §5`  | Single-image conversion and preview                                        | display-session               |   8   |
 | [ ] | `D10 T03 §6`  | Synchronized comparisons                                                   | display-session               |   6   |
 | [ ] | `D10 T03 §7`  | Preferences and accessible error recovery                                  | display-session               |   7   |
 | [ ] | `D10 T03 §8`  | Guided RasterFold demonstration                                            | display-session               |   5   |
