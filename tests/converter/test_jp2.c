@@ -1169,7 +1169,8 @@ static void test_review_round1_regressions(void) {
                                   0u, &dec, &dc, &dm) == RFC_ERR_INVALID_ARGUMENT);
         adp->close_session(sd);
 
-        /* 4e. Non-XMP xml box refused under preserve, ignored under strip. */
+        /* 4e. Non-XMP xml box (including comment-spoofed <x:xmpmeta) refused
+         * under preserve, ignored under strip. */
         static const uint8_t k_nonxmp_xml[20] = {
             0, 0, 0, 20, 'x', 'm', 'l', ' ',
             '<', 'g', 'm', 'l', '>', '1', '<', '/', 'g', 'm', 'l', '>'
@@ -1188,22 +1189,130 @@ static void test_review_round1_regressions(void) {
         al.free(al.ctx, dec);
         adp->close_session(sd);
 
-        /* 4f. 1-thread vs 3-thread decode/encode + >64B OPJ_NUM_THREADS preserved. */
+        static const uint8_t k_spoof_xml[40] = {
+            0, 0, 0, 40, 'x', 'm', 'l', ' ',
+            '<', '!', '-', '-', ' ', '<', 'x', ':', 'x', 'm', 'p', 'm', 'e',
+            't', 'a', ' ', '-', '-', '>', '<', 'g', 'm', 'l', '>', '1', '<',
+            '/', 'g', 'm', 'l', '>', ' '
+        };
+        memcpy(m2, e4.data, e4.len);
+        memcpy(m2 + e4.len, k_spoof_xml, sizeof(k_spoof_xml));
+        CHECK(adp->open_session(&exec, &sd) == RFC_OK);
+        CHECK(adp->decode_session(sd, &exec, m2, e4.len + sizeof(k_spoof_xml),
+                                  NULL, 0u, &dec, &dc, &dm) ==
+              RFC_ERR_METADATA_POLICY);
+        CHECK(adp->decode_session(sd, &exec, m2, e4.len + sizeof(k_spoof_xml),
+                                  strip_sv, 1u, &dec, &dc, &dm) == RFC_OK);
+        CHECK(dc == 1u && dm.xmp == NULL);
+        rfc_metadata_free(&dm, &al);
+        rfc_frame_free(&dec[0]);
+        al.free(al.ctx, dec);
+        adp->close_session(sd);
+
+        /* 4g. meth=3 colr before meth=1 sRGB: meth=3 ignored, sRGB wins (no ICC). */
+        const uint8_t *colr1_p = NULL;
+        size_t colr1_l = 0u;
+        CHECK(find_sub_box(jp2h_p, jp2h_l, "colr", &colr1_p, &colr1_l));
+        size_t colr1_box_off = (size_t)(colr1_p - e4.data) - 8u;
+        static const uint8_t k_colr3[19] = {
+            0, 0, 0, 19, 'c', 'o', 'l', 'r', 3, 0, 0, 'M', '3', 'I', 'G', 'N',
+            'O', 'R', 'E'
+        };
+        memcpy(m2, e4.data, colr1_box_off);
+        memcpy(m2 + colr1_box_off, k_colr3, sizeof(k_colr3));
+        memcpy(m2 + colr1_box_off + sizeof(k_colr3), e4.data + colr1_box_off,
+               e4.len - colr1_box_off);
+        put_be32(m2 + jp2h_off, (uint32_t)(8u + jp2h_l + sizeof(k_colr3)));
+        CHECK(adp->open_session(&exec, &sd) == RFC_OK);
+        CHECK(adp->decode_session(sd, &exec, m2, e4.len + sizeof(k_colr3), NULL,
+                                  0u, &dec, &dc, &dm) == RFC_OK);
+        CHECK(dc == 1u && dm.icc == NULL && dm.icc_len == 0u);
+        rfc_metadata_free(&dm, &al);
+        rfc_frame_free(&dec[0]);
+        al.free(al.ctx, dec);
+        adp->close_session(sd);
+
+        /* 4h. sRGB-first + 512 KiB second colr inside jp2h exceeds 400 KiB budget. */
+        {
+            size_t extra_sz = 512u * 1024u;
+            uint8_t *m_big = (uint8_t *)calloc(1u, e4.len + extra_sz + 16u);
+            CHECK(m_big != NULL);
+            memcpy(m_big, e4.data, jp2h_end);
+            put_be32(m_big + jp2h_off,
+                     (uint32_t)(8u + jp2h_l + 11u + extra_sz));
+            put_be32(m_big + jp2h_end, (uint32_t)(11u + extra_sz));
+            memcpy(m_big + jp2h_end + 4u, "colr", 4u);
+            m_big[jp2h_end + 8u] = 2u;
+            memcpy(m_big + jp2h_end + 11u + extra_sz, e4.data + jp2h_end,
+                   e4.len - jp2h_end);
+            rfc_budget *b400b = rfc_budget_create(400u * 1024u);
+            CHECK(b400b != NULL);
+            rfc_exec_context e400b = exec;
+            e400b.budget = b400b;
+            CHECK(adp->open_session(&e400b, &sd) == RFC_OK);
+            CHECK(adp->decode_session(sd, &e400b, m_big,
+                                      e4.len + 11u + extra_sz, NULL, 0u, &dec,
+                                      &dc, &dm) == RFC_ERR_OUT_OF_MEMORY);
+            CHECK(adp->decode_session(sd, &e400b, m_big,
+                                      e4.len + 11u + extra_sz, strip_sv, 1u,
+                                      &dec, &dc, &dm) == RFC_ERR_OUT_OF_MEMORY);
+            adp->close_session(sd);
+            rfc_budget_destroy(b400b);
+            free(m_big);
+        }
+
+        /* 4i. ihdr_nc=33 + cdef(cn=32, typ=0, asoc=33) refused before shift (no UB). */
+        {
+            memcpy(m2, e4.data, e4.len);
+            const uint8_t *ihp = NULL;
+            size_t ihl = 0u;
+            CHECK(find_sub_box(jp2h_p, jp2h_l, "ihdr", &ihp, &ihl));
+            size_t ih_off = (size_t)(ihp - e4.data);
+            m2[ih_off + 8u] = 0u;
+            m2[ih_off + 9u] = 33u; /* nc = 33 */
+            CHECK(adp->open_session(&exec, &sd) == RFC_OK);
+            CHECK(adp->decode_session(sd, &exec, m2, e4.len, NULL, 0u, &dec,
+                                      &dc, &dm) == RFC_ERR_UNSUPPORTED_SAMPLE);
+            adp->close_session(sd);
+        }
+
+        /* 4f. 1-thread vs 3-thread decode/encode equivalence + >64B OPJ_NUM_THREADS. */
         const char *long_env =
             "4_padding_long_value_over_64_bytes_0123456789_0123456789_0123456789";
         set_env_var("OPJ_NUM_THREADS", long_env);
+        rfc_exec_context e1 = exec;
+        e1.codec_threads = 1u;
         rfc_exec_context e3 = exec;
         e3.codec_threads = 3u;
+        void *s1 = NULL;
+        CHECK(adp->open_session(&e1, &s1) == RFC_OK);
+        rfc_encoded e4_t1;
+        CHECK(adp->encode_session(s1, &e1, &f4, 1u, NULL, NULL, 0u, &e4_t1) ==
+              RFC_OK);
+        rfc_frame *dec1 = NULL;
+        size_t dc1 = 0u;
+        rfc_metadata dm1;
+        CHECK(adp->decode_session(s1, &e1, e4_t1.data, e4_t1.len, NULL, 0u,
+                                  &dec1, &dc1, &dm1) == RFC_OK);
+        adp->close_session(s1);
+
         CHECK(adp->open_session(&e3, &se) == RFC_OK);
         rfc_encoded e4_t3;
         CHECK(adp->encode_session(se, &e3, &f4, 1u, NULL, NULL, 0u, &e4_t3) ==
               RFC_OK);
         CHECK(adp->decode_session(se, &e3, e4_t3.data, e4_t3.len, NULL, 0u,
                                   &dec, &dc, &dm) == RFC_OK);
-        CHECK(dc == 1u && memcmp(dec[0].data, f4.data, f4.data_len) == 0);
+        CHECK(dc1 == 1u && dc == 1u &&
+              dec1[0].data_len == dec[0].data_len &&
+              memcmp(dec1[0].data, dec[0].data, dec[0].data_len) == 0 &&
+              memcmp(dec[0].data, f4.data, f4.data_len) == 0);
         const char *after_env = getenv("OPJ_NUM_THREADS");
         CHECK(after_env != NULL && strcmp(after_env, long_env) == 0);
         unset_env_var("OPJ_NUM_THREADS");
+        rfc_metadata_free(&dm1, &al);
+        rfc_frame_free(&dec1[0]);
+        al.free(al.ctx, dec1);
+        rfc_encoded_free(&e4_t1);
         rfc_metadata_free(&dm, &al);
         rfc_frame_free(&dec[0]);
         al.free(al.ctx, dec);
@@ -1501,26 +1610,35 @@ static void test_jobs_budget_cancel_threads_and_file_safety(void) {
             free(big_icc);
         }
 
-        /* Layout-free file job with a 24 KiB top-level free box BEFORE jp2h. */
+        /* Layout-free file job with 60 leading free boxes (one 24 KiB) before jp2h. */
         {
             const uint8_t *jp2h_p = NULL;
             size_t jp2h_l = 0u;
             CHECK(find_jp2_box(j_bytes.data, j_bytes.len, "jp2h", &jp2h_p,
                                &jp2h_l));
             size_t jp2h_off = (size_t)(jp2h_p - j_bytes.data) - 8u;
-            size_t free_sz = 24u * 1024u;
-            uint8_t *buf_f = (uint8_t *)calloc(1u, j_bytes.len + free_sz);
+            size_t small_free = 8u;
+            size_t big_free = 24u * 1024u;
+            size_t total_free = 59u * small_free + big_free;
+            uint8_t *buf_f = (uint8_t *)calloc(1u, j_bytes.len + total_free);
             CHECK(buf_f != NULL);
             memcpy(buf_f, j_bytes.data, jp2h_off);
-            put_be32(buf_f + jp2h_off, (uint32_t)free_sz);
-            memcpy(buf_f + jp2h_off + 4u, "free", 4u);
-            memcpy(buf_f + jp2h_off + free_sz, j_bytes.data + jp2h_off,
+            size_t pos_f = jp2h_off;
+            for (int fi = 0; fi < 59; fi++) {
+                put_be32(buf_f + pos_f, (uint32_t)small_free);
+                memcpy(buf_f + pos_f + 4u, "free", 4u);
+                pos_f += small_free;
+            }
+            put_be32(buf_f + pos_f, (uint32_t)big_free);
+            memcpy(buf_f + pos_f + 4u, "free", 4u);
+            pos_f += big_free;
+            memcpy(buf_f + pos_f, j_bytes.data + jp2h_off,
                    j_bytes.len - jp2h_off);
             char p_free_in[256], p_free_out[256];
             temp_path(p_free_in, sizeof(p_free_in), "free_prefix.jp2");
             temp_path(p_free_out, sizeof(p_free_out), "free_prefix_out.png");
             remove(p_free_in); remove(p_free_out);
-            CHECK(write_file_all(p_free_in, buf_f, j_bytes.len + free_sz));
+            CHECK(write_file_all(p_free_in, buf_f, j_bytes.len + total_free));
             memset(&sp, 0, sizeof(sp));
             rfc_io_source_init_path(&si, p_free_in, RFC_IMPORT_DEFAULT);
             rfc_io_sink_init_path(&so, p_free_out, RFC_EXPORT_REFUSE_EXISTING);

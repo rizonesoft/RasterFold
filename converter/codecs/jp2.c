@@ -185,6 +185,7 @@ typedef struct jp2_scan_info {
     uint16_t numcomps;
     uint8_t prec;
     uint64_t num_tiles;
+    size_t jp2h_len;
     rfc_sample_format sample_format;
     rfc_alpha_mode alpha_mode;
     const uint8_t *codestream;
@@ -421,34 +422,50 @@ static rfc_status jp2_scan_codestream(const uint8_t *cs,
 }
 
 static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
-    if (!p || len < 9u) {
+    if (!p || len < 10u) {
         return 0;
     }
     size_t i = 0u;
     if (len >= 3u && p[0] == 0xEFu && p[1] == 0xBBu && p[2] == 0xBFu) {
         i = 3u;
     }
+    /* Skip leading ASCII whitespace and leading <?xpacket ...?> / <?xml ...?> PIs,
+     * never XML comments, then require the root element to be <x:xmpmeta. */
+    for (int pi = 0; pi < 4; pi++) {
+        while (i < len && (p[i] == ' ' || p[i] == '\t' || p[i] == '\r' ||
+                           p[i] == '\n')) {
+            i++;
+        }
+        size_t rem = len - i;
+        if (rem >= 2u && p[i] == '<' && p[i + 1u] == '?') {
+            int is_xpacket = (rem >= 9u && memcmp(p + i, "<?xpacket", 9u) == 0);
+            int is_xml_decl = (rem >= 5u && memcmp(p + i, "<?xml", 5u) == 0);
+            if (!is_xpacket && !is_xml_decl) {
+                return 0;
+            }
+            size_t j = i + 2u;
+            int closed = 0;
+            while (j + 1u < len) {
+                if (p[j] == '?' && p[j + 1u] == '>') {
+                    i = j + 2u;
+                    closed = 1;
+                    break;
+                }
+                j++;
+            }
+            if (!closed) {
+                return 0;
+            }
+            continue;
+        }
+        break;
+    }
     while (i < len && (p[i] == ' ' || p[i] == '\t' || p[i] == '\r' ||
                        p[i] == '\n')) {
         i++;
     }
     size_t rem = len - i;
-    if (rem >= 9u && memcmp(p + i, "<?xpacket", 9u) == 0) {
-        return 1;
-    }
-    if (rem >= 10u && memcmp(p + i, "<x:xmpmeta", 10u) == 0) {
-        return 1;
-    }
-    if (rem >= 8u && memcmp(p + i, "<rdf:RDF", 8u) == 0) {
-        return 1;
-    }
-    size_t scan = (rem < 256u) ? rem : 256u;
-    for (size_t j = 0u; j + 10u <= scan; j++) {
-        if (memcmp(p + i + j, "<x:xmpmeta", 10u) == 0) {
-            return 1;
-        }
-    }
-    return 0;
+    return (rem >= 10u && memcmp(p + i, "<x:xmpmeta", 10u) == 0) ? 1 : 0;
 }
 
 static rfc_status jp2_scan_input(const uint8_t *bytes,
@@ -508,6 +525,7 @@ static rfc_status jp2_scan_input(const uint8_t *bytes,
                 return RFC_ERR_INVALID_ARGUMENT;
             }
             saw_jp2h = 1;
+            out->jp2h_len = plen;
             size_t sub = poff;
             size_t sub_end = poff + plen;
             uint32_t sub_count = 0u;
@@ -535,6 +553,9 @@ static rfc_status jp2_scan_input(const uint8_t *bytes,
                     if (ihdr_w == 0u || ihdr_h == 0u || ihdr_nc == 0u ||
                         comp_t != 7u) {
                         return RFC_ERR_INVALID_ARGUMENT;
+                    }
+                    if (ihdr_nc != 1u && ihdr_nc != 3u && ihdr_nc != 4u) {
+                        return RFC_ERR_UNSUPPORTED_SAMPLE;
                     }
                     if (ihdr_bpc != 0xFFu) {
                         if ((ihdr_bpc & 0x80u) != 0u ||
@@ -571,13 +592,16 @@ static rfc_status jp2_scan_input(const uint8_t *bytes,
                         if (splen < 7u) {
                             return RFC_ERR_TRUNCATED_INPUT;
                         }
-                        /* Match OpenJPEG (jp2.c:1482): first supported colr wins. */
+                        /* Match OpenJPEG (jp2.c:1482, 1567, 1586): only meth 1
+                         * and meth 2 are supported; first supported colr wins
+                         * and meth > 2 is ignored by OpenJPEG. */
                         if (!has_colr_winner) {
                             enumcs = jp2_be32(bytes + spoff + 3u);
                             has_enumcs = 1;
                             has_colr_winner = 1;
+                            out->has_unsupported_colr = 0;
                         }
-                    } else if (meth == 2u || meth == 3u) {
+                    } else if (meth == 2u) {
                         if (splen <= 3u) {
                             return RFC_ERR_INVALID_ARGUMENT;
                         }
@@ -585,6 +609,7 @@ static rfc_status jp2_scan_input(const uint8_t *bytes,
                             out->icc = bytes + spoff + 3u;
                             out->icc_len = splen - 3u;
                             has_colr_winner = 1;
+                            out->has_unsupported_colr = 0;
                         }
                     } else if (!has_colr_winner) {
                         out->has_unsupported_colr = 1;
@@ -922,19 +947,32 @@ static opj_codec_t *jp2_create_codec_safe(int is_decompress,
             restore_val = stack_saved;
         } else {
             heap_saved = (char *)malloc(slen + 1u);
-            if (heap_saved) {
-                memcpy(heap_saved, cur, slen + 1u);
-                restore_val = heap_saved;
-            }
-        }
-        if (restore_val) {
+            if (!heap_saved) {
 #ifdef _WIN32
-            _putenv_s("OPJ_NUM_THREADS", "0");
+                ReleaseSRWLockExclusive(&g_jp2_env_lock);
 #else
-            setenv("OPJ_NUM_THREADS", "0", 1);
+                pthread_mutex_unlock(&g_jp2_env_lock);
 #endif
-            modified = 1;
+                return NULL;
+            }
+            memcpy(heap_saved, cur, slen + 1u);
+            restore_val = heap_saved;
         }
+#ifdef _WIN32
+        int set_rc = _putenv_s("OPJ_NUM_THREADS", "0");
+#else
+        int set_rc = setenv("OPJ_NUM_THREADS", "0", 1);
+#endif
+        if (set_rc != 0) {
+            free(heap_saved);
+#ifdef _WIN32
+            ReleaseSRWLockExclusive(&g_jp2_env_lock);
+#else
+            pthread_mutex_unlock(&g_jp2_env_lock);
+#endif
+            return NULL;
+        }
+        modified = 1;
     }
     opj_codec_t *c = is_decompress ? opj_create_decompress(fmt)
                                    : opj_create_compress(fmt);
@@ -974,24 +1012,23 @@ static rfc_status jp2_apply_threads(opj_codec_t *codec,
 /* Estimate OpenJPEG's internal working memory for reservation:
  * opj_image_t stores int32_t per pixel per component (4 * nc * w * h),
  * wavelet/tile working buffers (~2x component array), per-tile structures
- * (4 KiB per tile), 2x embedded ICC profile bytes (jp2h buffer + OpenJPEG
+ * (4 KiB per tile), header + ICC profile copy bytes (jp2h buffer + OpenJPEG
  * icc_profile_buf copy), the stream chunk buffer (JP2_STREAM_CHUNK_BYTES),
  * and fixed codec state (256 KiB). */
 static rfc_status jp2_compute_work_reserve(uint32_t w,
                                            uint32_t h,
                                            uint16_t nc,
                                            uint64_t num_tiles,
-                                           uint64_t icc_bytes,
+                                           uint64_t hdr_and_icc_bytes,
                                            uint64_t *out_bytes) {
-    uint64_t px = 0u, comps = 0u, tile_bytes = 0u, icc_res = 0u, total = 0u;
+    uint64_t px = 0u, comps = 0u, tile_bytes = 0u, total = 0u;
     uint64_t tiles = (num_tiles > 0u) ? num_tiles : 1u;
     if (!jp2_mul_u64((uint64_t)w, (uint64_t)h, &px) ||
         !jp2_mul_u64(px, (uint64_t)nc * 4ull, &comps) ||
         !jp2_mul_u64(comps, 2ull, &total) ||
         !jp2_mul_u64(tiles, 4096ull, &tile_bytes) ||
-        !jp2_mul_u64(icc_bytes, 2ull, &icc_res) ||
         !jp2_add_u64(total, tile_bytes, &total) ||
-        !jp2_add_u64(total, icc_res, &total) ||
+        !jp2_add_u64(total, hdr_and_icc_bytes, &total) ||
         !jp2_add_u64(total, (uint64_t)JP2_STREAM_CHUNK_BYTES, &total) ||
         !jp2_add_u64(total, 256ull * 1024ull, &total)) {
         return RFC_ERR_LIMIT_EXCEEDED;
@@ -1330,10 +1367,16 @@ static rfc_status jp2_decode_session(void *session,
         return st;
     }
 
-    /* Reserve OpenJPEG internal working memory on the job budget before decode. */
+    /* Reserve OpenJPEG internal working memory on the job budget before decode
+     * (including full jp2h box buffer + selected ICC copy). */
+    uint64_t hdr_icc_bytes = 0u;
+    if (!jp2_add_u64((uint64_t)info.jp2h_len, (uint64_t)info.icc_len,
+                     &hdr_icc_bytes)) {
+        return RFC_ERR_LIMIT_EXCEEDED;
+    }
     uint64_t work_reserve = 0u;
     st = jp2_compute_work_reserve(info.width, info.height, info.numcomps,
-                                  info.num_tiles, (uint64_t)info.icc_len,
+                                  info.num_tiles, hdr_icc_bytes,
                                   &work_reserve);
     if (st != RFC_OK) {
         return st;
@@ -1758,8 +1801,12 @@ static rfc_status jp2_encode_session(void *session,
         icc_len = eff_icc_len;
     }
 
+    uint64_t enc_icc_bytes = 0u;
+    if (!jp2_mul_u64((uint64_t)icc_len, 2ull, &enc_icc_bytes)) {
+        return RFC_ERR_LIMIT_EXCEEDED;
+    }
     uint64_t work_reserve = 0u;
-    st = jp2_compute_work_reserve(w, h, nc, 1u, (uint64_t)icc_len,
+    st = jp2_compute_work_reserve(w, h, nc, 1u, enc_icc_bytes,
                                   &work_reserve);
     if (st != RFC_OK) {
         return st;
