@@ -21,6 +21,10 @@
  *     are refused before pixel allocation (RFC_ERR_UNSUPPORTED_COMBINATION).
  */
 
+#ifndef _WIN32
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #ifndef OPJ_STATIC
 #define OPJ_STATIC
 #endif
@@ -31,6 +35,12 @@
 
 #include <openjpeg.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <pthread.h>
+#endif
+
 #include <limits.h>
 #include <stdatomic.h>
 #include <stdint.h>
@@ -39,6 +49,13 @@
 
 #define JP2_MAX_BOXES 64u
 #define JP2_MAX_THREADS 16u
+#define JP2_STREAM_CHUNK_BYTES (64u * 1024u)
+
+#ifdef _WIN32
+static SRWLOCK g_jp2_env_lock = SRWLOCK_INIT;
+#else
+static pthread_mutex_t g_jp2_env_lock = PTHREAD_MUTEX_INITIALIZER;
+#endif
 
 static atomic_uintptr_t g_jp2_test_hook = 0;
 
@@ -167,6 +184,7 @@ typedef struct jp2_scan_info {
     uint32_t height;
     uint16_t numcomps;
     uint8_t prec;
+    uint64_t num_tiles;
     rfc_sample_format sample_format;
     rfc_alpha_mode alpha_mode;
     const uint8_t *codestream;
@@ -180,6 +198,7 @@ typedef struct jp2_scan_info {
     int has_cdef;
     int has_straight_alpha;
     int has_unsupported_colr;
+    int has_unknown_uuid;
     int is_reversible;
 } jp2_scan_info;
 
@@ -191,6 +210,12 @@ static const uint8_t k_jp2_sig[12] = {
 static const uint8_t k_xmp_uuid[16] = {
     0xBEu, 0x7Au, 0xCFu, 0xCBu, 0x97u, 0xA9u, 0x42u, 0xE8u,
     0x9Cu, 0x71u, 0x99u, 0x94u, 0x91u, 0xE3u, 0xAFu, 0xACu
+};
+
+/* Standard JP2 Exif UUID ("JpgTiffExif->JP2"). */
+static const uint8_t k_exif_uuid[16] = {
+    0x4Au, 0x70u, 0x67u, 0x54u, 0x69u, 0x66u, 0x66u, 0x45u,
+    0x78u, 0x69u, 0x66u, 0x2Du, 0x3Eu, 0x4Au, 0x50u, 0x32u
 };
 
 static rfc_status jp2_read_box(const uint8_t *buf,
@@ -238,6 +263,7 @@ static rfc_status jp2_scan_codestream(const uint8_t *cs,
                                       uint32_t ihdr_w,
                                       uint32_t ihdr_h,
                                       uint16_t ihdr_nc,
+                                      uint8_t ihdr_prec,
                                       jp2_scan_info *out) {
     if (!cs || cs_len < 4u) {
         return RFC_ERR_TRUNCATED_INPUT;
@@ -277,6 +303,15 @@ static rfc_status jp2_scan_codestream(const uint8_t *cs,
         return RFC_ERR_INVALID_ARGUMENT;
     }
 
+    uint64_t tx = ((uint64_t)(xsiz - xtosiz) + (uint64_t)xtsiz - 1ull) /
+                  (uint64_t)xtsiz;
+    uint64_t ty = ((uint64_t)(ysiz - ytosiz) + (uint64_t)ytsiz - 1ull) /
+                  (uint64_t)ytsiz;
+    uint64_t num_tiles = 0u;
+    if (!jp2_mul_u64(tx, ty, &num_tiles) || num_tiles == 0u) {
+        return RFC_ERR_LIMIT_EXCEEDED;
+    }
+
     uint32_t w = xsiz - xosiz;
     uint32_t h = ysiz - yosiz;
     if (has_ihdr && (w != ihdr_w || h != ihdr_h || csiz != ihdr_nc)) {
@@ -311,6 +346,9 @@ static rfc_status jp2_scan_codestream(const uint8_t *cs,
         } else if (p != prec0) {
             return RFC_ERR_UNSUPPORTED_SAMPLE; /* mixed precision */
         }
+    }
+    if (has_ihdr && ihdr_prec != 0u && prec0 != ihdr_prec) {
+        return RFC_ERR_INVALID_ARGUMENT;
     }
 
     /* Walk main-header markers up to SOT (FF 90) to validate COD (FF 52). */
@@ -365,6 +403,7 @@ static rfc_status jp2_scan_codestream(const uint8_t *cs,
     out->height = h;
     out->numcomps = csiz;
     out->prec = prec0;
+    out->num_tiles = num_tiles;
     out->codestream = cs;
     out->codestream_len = cs_len;
     out->is_reversible = reversible;
@@ -395,7 +434,7 @@ static rfc_status jp2_scan_input(const uint8_t *bytes,
     if (bytes[0] == 0xFFu && bytes[1] == 0x4Fu &&
         bytes[2] == 0xFFu && bytes[3] == 0x51u) {
         out->is_jp2 = 0;
-        return jp2_scan_codestream(bytes, size, 0, 0, 0u, 0u, 0u, out);
+        return jp2_scan_codestream(bytes, size, 0, 0, 0u, 0u, 0u, 0u, out);
     }
     /* JP2 container signature? */
     if (size < 12u || memcmp(bytes, k_jp2_sig, 12u) != 0) {
@@ -412,6 +451,7 @@ static rfc_status jp2_scan_input(const uint8_t *bytes,
     uint32_t ihdr_w = 0u, ihdr_h = 0u;
     uint16_t ihdr_nc = 0u;
     uint8_t ihdr_bpc = 0u;
+    uint8_t ihdr_prec = 0u;
     int has_enumcs = 0;
     uint32_t enumcs = 0u;
 
@@ -469,6 +509,7 @@ static rfc_status jp2_scan_input(const uint8_t *bytes,
                             ((ihdr_bpc & 0x7Fu) + 1u) > 16u) {
                             return RFC_ERR_UNSUPPORTED_SAMPLE;
                         }
+                        ihdr_prec = (uint8_t)((ihdr_bpc & 0x7Fu) + 1u);
                     }
                     saw_ihdr = 1;
                 } else if (stype == 0x62706363u) { /* bpcc */
@@ -484,6 +525,7 @@ static rfc_status jp2_scan_input(const uint8_t *bytes,
                             return RFC_ERR_UNSUPPORTED_SAMPLE;
                         }
                     }
+                    ihdr_prec = (uint8_t)((b0 & 0x7Fu) + 1u);
                 } else if (stype == 0x70636C72u || stype == 0x636D6170u) {
                     /* pclr / cmap (paletted JP2) */
                     return RFC_ERR_UNSUPPORTED_COMBINATION;
@@ -524,16 +566,23 @@ static rfc_status jp2_scan_input(const uint8_t *bytes,
                         const uint8_t *e = bytes + spoff + 2u + (size_t)ei * 6u;
                         uint16_t cn = jp2_be16(e);
                         uint16_t typ = jp2_be16(e + 2u);
+                        uint16_t asoc = jp2_be16(e + 4u);
                         if (typ == 2u) {
                             /* Premultiplied alpha */
                             return RFC_ERR_UNSUPPORTED_ALPHA;
                         }
                         if (typ == 1u) {
-                            if (cn != 3u) {
+                            /* Require channel 3 whole-image straight alpha. */
+                            if (cn != 3u || asoc != 0u) {
                                 return RFC_ERR_UNSUPPORTED_COMBINATION;
                             }
                             out->has_straight_alpha = 1;
-                        } else if (typ != 0u) {
+                        } else if (typ == 0u) {
+                            /* Color channels must map 1:1 (cn=0..2 -> asoc=1..3). */
+                            if (cn >= 3u || asoc != (uint16_t)(cn + 1u)) {
+                                return RFC_ERR_UNSUPPORTED_COMBINATION;
+                            }
+                        } else {
                             return RFC_ERR_UNSUPPORTED_COMBINATION;
                         }
                     }
@@ -544,27 +593,34 @@ static rfc_status jp2_scan_input(const uint8_t *bytes,
                 return RFC_ERR_INVALID_ARGUMENT;
             }
         } else if (tbox == 0x6A703263u) { /* jp2c */
-            if (!saw_jp2c) {
-                out->codestream = bytes + poff;
-                out->codestream_len = plen;
-                saw_jp2c = 1;
+            if (saw_jp2c) {
+                /* Multi-codestream JP2 is unsupported; refuse rather than drop. */
+                return RFC_ERR_UNSUPPORTED_COMBINATION;
             }
+            out->codestream = bytes + poff;
+            out->codestream_len = plen;
+            saw_jp2c = 1;
         } else if (tbox == 0x786D6C20u) { /* xml  */
             if (plen > 0u && !out->xmp) {
                 out->xmp = bytes + poff;
                 out->xmp_len = plen;
             }
         } else if (tbox == 0x75756964u) { /* uuid */
-            if (plen > 16u) {
-                if (memcmp(bytes + poff, k_xmp_uuid, 16u) == 0) {
-                    if (!out->xmp) {
-                        out->xmp = bytes + poff + 16u;
-                        out->xmp_len = plen - 16u;
-                    }
-                } else if (!out->exif) {
-                    out->exif = bytes + poff;
-                    out->exif_len = plen;
+            if (plen < 16u) {
+                return RFC_ERR_INVALID_ARGUMENT;
+            }
+            if (memcmp(bytes + poff, k_xmp_uuid, 16u) == 0) {
+                if (plen > 16u && !out->xmp) {
+                    out->xmp = bytes + poff + 16u;
+                    out->xmp_len = plen - 16u;
                 }
+            } else if (memcmp(bytes + poff, k_exif_uuid, 16u) == 0) {
+                if (plen > 16u && !out->exif) {
+                    out->exif = bytes + poff + 16u;
+                    out->exif_len = plen - 16u;
+                }
+            } else {
+                out->has_unknown_uuid = 1;
             }
         }
         off = next;
@@ -572,6 +628,11 @@ static rfc_status jp2_scan_input(const uint8_t *bytes,
 
     if (!saw_ftyp || !saw_jp2h || !saw_ihdr || !saw_jp2c) {
         return RFC_ERR_TRUNCATED_INPUT;
+    }
+    if (ihdr_nc == 4u && (!out->has_cdef || !out->has_straight_alpha)) {
+        /* 4-component JP2 without unambiguous whole-image straight-alpha cdef
+         * (e.g. sRGB + unspecified auxiliary channel) cannot be labeled RGBA. */
+        return RFC_ERR_UNSUPPORTED_COMBINATION;
     }
     if (has_enumcs && !out->icc) {
         /* 16 = sRGB, 17 = greyscale; reject sYCC(18), e-YCC(24), CMYK(12), etc. */
@@ -588,7 +649,7 @@ static rfc_status jp2_scan_input(const uint8_t *bytes,
         }
     }
     return jp2_scan_codestream(out->codestream, out->codestream_len, 1, 1,
-                               ihdr_w, ihdr_h, ihdr_nc, out);
+                               ihdr_w, ihdr_h, ihdr_nc, ihdr_prec, out);
 }
 
 /* ---- OpenJPEG memory stream with cancellation ---- */
@@ -664,17 +725,16 @@ typedef struct jp2_mem_writer {
     size_t pos;
     const jp2_session *sess;
     const rfc_exec_context *exec;
+    const rfc_allocator *alloc;
     int cancelled;
     int oom;
-    rfc_budget *budget;
-    uint64_t reserved;
 } jp2_mem_writer;
 
 static OPJ_SIZE_T jp2_write_cb(void *p_buffer,
                                OPJ_SIZE_T p_nb_bytes,
                                void *p_user_data) {
     jp2_mem_writer *w = (jp2_mem_writer *)p_user_data;
-    if (!w || !p_buffer) {
+    if (!w || !p_buffer || !w->alloc) {
         return (OPJ_SIZE_T)-1;
     }
     if (jp2_is_cancelled(w->sess, w->exec)) {
@@ -696,18 +756,16 @@ static OPJ_SIZE_T jp2_write_cb(void *p_buffer,
             }
             ncap *= 2u;
         }
-        if (w->budget) {
-            uint64_t delta = (uint64_t)ncap - w->reserved;
-            if (rfc_budget_reserve(w->budget, delta) != RFC_OK) {
-                w->oom = 1;
-                return (OPJ_SIZE_T)-1;
-            }
-            w->reserved = (uint64_t)ncap;
-        }
-        uint8_t *nb = (uint8_t *)realloc(w->data, ncap);
+        uint8_t *nb = (uint8_t *)w->alloc->alloc(w->alloc->ctx, ncap);
         if (!nb) {
             w->oom = 1;
             return (OPJ_SIZE_T)-1;
+        }
+        if (w->data && w->len > 0u) {
+            memcpy(nb, w->data, w->len);
+        }
+        if (w->data) {
+            w->alloc->free(w->alloc->ctx, w->data);
         }
         w->data = nb;
         w->cap = ncap;
@@ -764,20 +822,68 @@ static OPJ_BOOL jp2_wseek_cb(OPJ_OFF_T p_nb_bytes, void *p_user_data) {
 }
 
 static void jp2_writer_cleanup(jp2_mem_writer *w) {
-    free(w->data);
+    if (w->data && w->alloc) {
+        w->alloc->free(w->alloc->ctx, w->data);
+    }
     w->data = NULL;
     w->len = 0u;
     w->cap = 0u;
     w->pos = 0u;
-    if (w->budget && w->reserved > 0u) {
-        rfc_budget_release(w->budget, w->reserved);
-        w->reserved = 0u;
+}
+
+/* OpenJPEG 2.5.4 constructors (j2k.c:6856, 10755) read OPJ_NUM_THREADS from
+ * the environment and spawn a thread pool before opj_codec_set_threads can be
+ * called. Guard creation with a narrow lock only when OPJ_NUM_THREADS is set
+ * so a 1-thread job never transiently spawns a larger pool. */
+static opj_codec_t *jp2_create_codec_safe(int is_decompress,
+                                          OPJ_CODEC_FORMAT fmt) {
+    const char *env = getenv("OPJ_NUM_THREADS");
+    if (!env || strcmp(env, "0") == 0) {
+        return is_decompress ? opj_create_decompress(fmt)
+                             : opj_create_compress(fmt);
     }
+#ifdef _WIN32
+    AcquireSRWLockExclusive(&g_jp2_env_lock);
+#else
+    pthread_mutex_lock(&g_jp2_env_lock);
+#endif
+    const char *cur = getenv("OPJ_NUM_THREADS");
+    char saved[64];
+    int had_saved = 0;
+    if (cur && strcmp(cur, "0") != 0) {
+        size_t slen = strlen(cur);
+        if (slen < sizeof(saved)) {
+            memcpy(saved, cur, slen + 1u);
+            had_saved = 1;
+        }
+#ifdef _WIN32
+        _putenv_s("OPJ_NUM_THREADS", "0");
+#else
+        setenv("OPJ_NUM_THREADS", "0", 1);
+#endif
+    }
+    opj_codec_t *c = is_decompress ? opj_create_decompress(fmt)
+                                   : opj_create_compress(fmt);
+    if (had_saved) {
+#ifdef _WIN32
+        _putenv_s("OPJ_NUM_THREADS", saved);
+#else
+        setenv("OPJ_NUM_THREADS", saved, 1);
+#endif
+    }
+#ifdef _WIN32
+    ReleaseSRWLockExclusive(&g_jp2_env_lock);
+#else
+    pthread_mutex_unlock(&g_jp2_env_lock);
+#endif
+    return c;
 }
 
 static rfc_status jp2_apply_threads(opj_codec_t *codec,
                                     const rfc_exec_context *exec) {
-    int n = 1;
+    /* OpenJPEG thread count 0 = single-threaded inline (zero worker threads);
+     * N >= 2 = N worker threads capped to JP2_MAX_THREADS. */
+    int n = 0;
     if (exec && exec->codec_threads > 1u) {
         uint32_t t = (exec->codec_threads > JP2_MAX_THREADS)
                          ? JP2_MAX_THREADS
@@ -792,15 +898,22 @@ static rfc_status jp2_apply_threads(opj_codec_t *codec,
 
 /* Estimate OpenJPEG's internal working memory for reservation:
  * opj_image_t stores int32_t per pixel per component (4 * nc * w * h),
- * plus tile/wavelet working buffers (~2x component array + 256 KiB). */
+ * wavelet/tile working buffers (~2x component array), per-tile structures
+ * (4 KiB per tile), the stream chunk buffer (JP2_STREAM_CHUNK_BYTES),
+ * and fixed codec state (256 KiB). */
 static rfc_status jp2_compute_work_reserve(uint32_t w,
                                            uint32_t h,
                                            uint16_t nc,
+                                           uint64_t num_tiles,
                                            uint64_t *out_bytes) {
-    uint64_t px = 0u, comps = 0u, total = 0u;
+    uint64_t px = 0u, comps = 0u, tile_bytes = 0u, total = 0u;
+    uint64_t tiles = (num_tiles > 0u) ? num_tiles : 1u;
     if (!jp2_mul_u64((uint64_t)w, (uint64_t)h, &px) ||
         !jp2_mul_u64(px, (uint64_t)nc * 4ull, &comps) ||
         !jp2_mul_u64(comps, 2ull, &total) ||
+        !jp2_mul_u64(tiles, 4096ull, &tile_bytes) ||
+        !jp2_add_u64(total, tile_bytes, &total) ||
+        !jp2_add_u64(total, (uint64_t)JP2_STREAM_CHUNK_BYTES, &total) ||
         !jp2_add_u64(total, 256ull * 1024ull, &total)) {
         return RFC_ERR_LIMIT_EXCEEDED;
     }
@@ -809,12 +922,17 @@ static rfc_status jp2_compute_work_reserve(uint32_t w,
 }
 
 /* Splice a 34-byte cdef box inside jp2h when RGBA + ICC caused OpenJPEG to
- * omit cdef (enumcs == 0). Returns newly allocated buffer via alloc. */
+ * omit cdef (enumcs == 0). If cdef is already present, sets *out_spliced = 0
+ * without allocating a second copy so the caller can transfer in_buf directly. */
 static rfc_status jp2_ensure_rgba_cdef(const uint8_t *in_buf,
                                        size_t in_len,
                                        const rfc_allocator *alloc,
                                        uint8_t **out_buf,
-                                       size_t *out_len) {
+                                       size_t *out_len,
+                                       int *out_spliced) {
+    *out_buf = NULL;
+    *out_len = 0u;
+    *out_spliced = 0;
     /* Locate jp2h box and check whether cdef already exists inside it. */
     if (in_len < 12u || memcmp(in_buf, k_jp2_sig, 12u) != 0) {
         return RFC_ERR_INVALID_ARGUMENT;
@@ -860,13 +978,6 @@ static rfc_status jp2_ensure_rgba_cdef(const uint8_t *in_buf,
         return RFC_ERR_INVALID_ARGUMENT;
     }
     if (has_cdef) {
-        uint8_t *copy = (uint8_t *)alloc->alloc(alloc->ctx, in_len);
-        if (!copy) {
-            return RFC_ERR_OUT_OF_MEMORY;
-        }
-        memcpy(copy, in_buf, in_len);
-        *out_buf = copy;
-        *out_len = in_len;
         return RFC_OK;
     }
     /* Standard 32-bit jp2h box header expected (OpenJPEG always writes 8-byte hdr). */
@@ -900,6 +1011,7 @@ static rfc_status jp2_ensure_rgba_cdef(const uint8_t *in_buf,
     }
     *out_buf = dst;
     *out_len = total_out;
+    *out_spliced = 1;
     return RFC_OK;
 }
 
@@ -1095,7 +1207,8 @@ static rfc_status jp2_decode_session(void *session,
     if (st != RFC_OK) {
         return st;
     }
-    if (info.has_unsupported_colr && meta_policy == RFC_META_POLICY_PRESERVE) {
+    if ((info.has_unsupported_colr || info.has_unknown_uuid) &&
+        meta_policy == RFC_META_POLICY_PRESERVE) {
         return RFC_ERR_METADATA_POLICY;
     }
 
@@ -1125,23 +1238,23 @@ static rfc_status jp2_decode_session(void *session,
         return st;
     }
 
-    /* Check metadata size limits before any OpenJPEG allocation. */
+    /* Check metadata size limits before any OpenJPEG allocation under BOTH
+     * preserve and strip, since OpenJPEG reads and allocates embedded colr ICC
+     * regardless of whether the adapter later drops it. */
     rfc_metadata meta_chk;
     memset(&meta_chk, 0, sizeof(meta_chk));
-    if (meta_policy == RFC_META_POLICY_PRESERVE) {
-        meta_chk.icc_len = info.icc_len;
-        meta_chk.xmp_len = info.xmp_len;
-        meta_chk.exif_len = info.exif_len;
-        st = rfc_limits_check_metadata(limits, &meta_chk);
-        if (st != RFC_OK) {
-            return st;
-        }
+    meta_chk.icc_len = info.icc_len;
+    meta_chk.xmp_len = info.xmp_len;
+    meta_chk.exif_len = info.exif_len;
+    st = rfc_limits_check_metadata(limits, &meta_chk);
+    if (st != RFC_OK) {
+        return st;
     }
 
     /* Reserve OpenJPEG internal working memory on the job budget before decode. */
     uint64_t work_reserve = 0u;
     st = jp2_compute_work_reserve(info.width, info.height, info.numcomps,
-                                  &work_reserve);
+                                  info.num_tiles, &work_reserve);
     if (st != RFC_OK) {
         return st;
     }
@@ -1162,8 +1275,8 @@ static rfc_status jp2_decode_session(void *session,
         return RFC_ERR_CANCELLED;
     }
 
-    opj_codec_t *dec = opj_create_decompress(info.is_jp2 ? OPJ_CODEC_JP2
-                                                         : OPJ_CODEC_J2K);
+    opj_codec_t *dec = jp2_create_codec_safe(
+        1, info.is_jp2 ? OPJ_CODEC_JP2 : OPJ_CODEC_J2K);
     opj_stream_t *stream = NULL;
     opj_image_t *img = NULL;
     jp2_mem_reader mr;
@@ -1193,7 +1306,7 @@ static rfc_status jp2_decode_session(void *session,
         goto cleanup;
     }
 
-    stream = opj_stream_create(OPJ_J2K_STREAM_CHUNK_SIZE, OPJ_TRUE);
+    stream = opj_stream_create(JP2_STREAM_CHUNK_BYTES, OPJ_TRUE);
     if (!stream) {
         st = RFC_ERR_OUT_OF_MEMORY;
         goto cleanup;
@@ -1258,6 +1371,7 @@ static rfc_status jp2_decode_session(void *session,
     if (st != RFC_OK) {
         goto cleanup;
     }
+    jp2_invoke_hook(3);
     rfc_frame *frames = (rfc_frame *)exec->allocator->alloc(
         exec->allocator->ctx, sizeof(*frames));
     if (!frames) {
@@ -1297,7 +1411,6 @@ static rfc_status jp2_decode_session(void *session,
                 }
             }
         } else {
-            uint16_t *row16 = (uint16_t *)row;
             for (uint32_t x = 0u; x < w; x++) {
                 size_t idx = row_px + (size_t)x;
                 for (uint16_t c = 0u; c < nc; c++) {
@@ -1307,8 +1420,8 @@ static rfc_status jp2_decode_session(void *session,
                     } else if (v > max_val) {
                         v = max_val;
                     }
-                    row16[(size_t)x * nc + c] =
-                        (uint16_t)((uint32_t)v << shift);
+                    uint16_t sv = (uint16_t)((uint32_t)v << shift);
+                    memcpy(row + ((size_t)x * nc + c) * 2u, &sv, sizeof(sv));
                 }
             }
         }
@@ -1465,7 +1578,8 @@ static rfc_status jp2_encode_session(void *session,
         return st;
     }
 
-    /* Validate reduced-precision low padding bits before OpenJPEG allocation. */
+    /* Validate reduced-precision low padding bits before OpenJPEG allocation.
+     * Use alignment-safe memcpy for 16-bit samples so odd padded strides are UB-free. */
     const uint32_t shift = storage_bits - prec;
     const uint32_t low_mask = (shift > 0u) ? ((1u << shift) - 1u) : 0u;
     const uint32_t w = eff_lay.width;
@@ -1481,10 +1595,11 @@ static rfc_status jp2_encode_session(void *session,
                     }
                 }
             } else {
-                const uint16_t *row16 = (const uint16_t *)row;
                 size_t n_samp = (size_t)w * (size_t)nc;
                 for (size_t i = 0u; i < n_samp; i++) {
-                    if (((uint32_t)row16[i] & low_mask) != 0u) {
+                    uint16_t v16 = 0u;
+                    memcpy(&v16, row + i * 2u, sizeof(v16));
+                    if (((uint32_t)v16 & low_mask) != 0u) {
                         return RFC_ERR_INVALID_ARGUMENT;
                     }
                 }
@@ -1492,24 +1607,79 @@ static rfc_status jp2_encode_session(void *session,
         }
     }
 
-    /* Pick ICC profile (frame or container) if policy is preserve. */
-    const uint8_t *icc_ptr = NULL;
-    size_t icc_len = 0u;
-    if (meta_policy == RFC_META_POLICY_PRESERVE) {
-        if (fr->metadata.icc && fr->metadata.icc_len > 0u) {
-            icc_ptr = fr->metadata.icc;
-            icc_len = fr->metadata.icc_len;
-        } else if (meta && meta->icc && meta->icc_len > 0u) {
-            icc_ptr = meta->icc;
-            icc_len = meta->icc_len;
-        }
-        if (icc_len > UINT32_MAX) {
-            return RFC_ERR_LIMIT_EXCEEDED;
+    /* Validate effective metadata limits and preservation policy before work. */
+    const uint8_t *eff_icc = NULL;
+    size_t eff_icc_len = 0u;
+    const uint8_t *eff_exif = NULL;
+    size_t eff_exif_len = 0u;
+    const uint8_t *eff_xmp = NULL;
+    size_t eff_xmp_len = 0u;
+    rfc_orientation eff_ori = RFC_ORIENTATION_UNSPECIFIED;
+    rfc_colorimetry eff_color;
+    memset(&eff_color, 0, sizeof(eff_color));
+    if (fr->metadata.icc && fr->metadata.icc_len > 0u) {
+        eff_icc = fr->metadata.icc;
+        eff_icc_len = fr->metadata.icc_len;
+    } else if (meta && meta->icc && meta->icc_len > 0u) {
+        eff_icc = meta->icc;
+        eff_icc_len = meta->icc_len;
+    }
+    if (fr->metadata.exif && fr->metadata.exif_len > 0u) {
+        eff_exif = fr->metadata.exif;
+        eff_exif_len = fr->metadata.exif_len;
+    } else if (meta && meta->exif && meta->exif_len > 0u) {
+        eff_exif = meta->exif;
+        eff_exif_len = meta->exif_len;
+    }
+    if (fr->metadata.xmp && fr->metadata.xmp_len > 0u) {
+        eff_xmp = fr->metadata.xmp;
+        eff_xmp_len = fr->metadata.xmp_len;
+    } else if (meta && meta->xmp && meta->xmp_len > 0u) {
+        eff_xmp = meta->xmp;
+        eff_xmp_len = meta->xmp_len;
+    }
+    if (fr->metadata.orientation != RFC_ORIENTATION_UNSPECIFIED) {
+        eff_ori = fr->metadata.orientation;
+    } else if (meta && meta->orientation != RFC_ORIENTATION_UNSPECIFIED) {
+        eff_ori = meta->orientation;
+    }
+    if (rfc_colorimetry_has_any(&fr->metadata.color)) {
+        eff_color = fr->metadata.color;
+    } else if (meta && rfc_colorimetry_has_any(&meta->color)) {
+        eff_color = meta->color;
+    }
+    if (!rfc_colorimetry_is_valid(&eff_color) ||
+        eff_ori > RFC_ORIENTATION_ROTATE_270) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+    rfc_metadata check_m = {eff_icc, eff_icc_len, eff_ori, 0u, eff_color,
+                            eff_exif, eff_exif_len, eff_xmp, eff_xmp_len};
+    st = rfc_limits_check_metadata(limits, &check_m);
+    if (st != RFC_OK) {
+        return st;
+    }
+    if (!exec->job) {
+        st = rfc_metadata_check_source_preflight(
+            RFC_FORMAT_JPEG2000, meta_policy, exactness, meta, frames,
+            frame_count, 0u, NULL);
+        if (st != RFC_OK) {
+            return st;
         }
     }
 
+    const uint8_t *icc_ptr = NULL;
+    size_t icc_len = 0u;
+    if (meta_policy == RFC_META_POLICY_PRESERVE && eff_icc &&
+        eff_icc_len > 0u) {
+        if (eff_icc_len > UINT32_MAX) {
+            return RFC_ERR_LIMIT_EXCEEDED;
+        }
+        icc_ptr = eff_icc;
+        icc_len = eff_icc_len;
+    }
+
     uint64_t work_reserve = 0u;
-    st = jp2_compute_work_reserve(w, h, nc, &work_reserve);
+    st = jp2_compute_work_reserve(w, h, nc, 1u, &work_reserve);
     if (st != RFC_OK) {
         return st;
     }
@@ -1550,7 +1720,7 @@ static rfc_status jp2_encode_session(void *session,
     memset(&mw, 0, sizeof(mw));
     mw.sess = s;
     mw.exec = exec;
-    mw.budget = exec->budget;
+    mw.alloc = exec->allocator;
 
     if (!img) {
         st = RFC_ERR_OUT_OF_MEMORY;
@@ -1580,12 +1750,12 @@ static rfc_status jp2_encode_session(void *session,
                 }
             }
         } else {
-            const uint16_t *row16 = (const uint16_t *)row;
             for (uint32_t x = 0u; x < w; x++) {
                 size_t idx = row_px + (size_t)x;
                 for (uint16_t c = 0u; c < nc; c++) {
-                    uint32_t v = (uint32_t)row16[(size_t)x * nc + c];
-                    img->comps[c].data[idx] = (OPJ_INT32)(v >> shift);
+                    uint16_t v16 = 0u;
+                    memcpy(&v16, row + ((size_t)x * nc + c) * 2u, sizeof(v16));
+                    img->comps[c].data[idx] = (OPJ_INT32)((uint32_t)v16 >> shift);
                 }
             }
         }
@@ -1607,7 +1777,7 @@ static rfc_status jp2_encode_session(void *session,
     }
     cp.numresolution = nres;
 
-    enc = opj_create_compress(OPJ_CODEC_JP2);
+    enc = jp2_create_codec_safe(0, OPJ_CODEC_JP2);
     if (!enc) {
         st = RFC_ERR_OUT_OF_MEMORY;
         goto cleanup;
@@ -1629,7 +1799,7 @@ static rfc_status jp2_encode_session(void *session,
         goto cleanup;
     }
 
-    stream = opj_stream_create(OPJ_J2K_STREAM_CHUNK_SIZE, OPJ_FALSE);
+    stream = opj_stream_create(JP2_STREAM_CHUNK_BYTES, OPJ_FALSE);
     if (!stream) {
         st = RFC_ERR_OUT_OF_MEMORY;
         goto cleanup;
@@ -1655,7 +1825,7 @@ static rfc_status jp2_encode_session(void *session,
         goto cleanup;
     }
 
-    /* Release OpenJPEG handles and working reserve before final output copy. */
+    /* Release OpenJPEG handles and working reserve before finalizing output. */
     opj_stream_destroy(stream);
     stream = NULL;
     opj_destroy_codec(enc);
@@ -1670,21 +1840,23 @@ static rfc_status jp2_encode_session(void *session,
     uint8_t *final_buf = NULL;
     size_t final_len = 0u;
     if (nc == 4u) {
+        int spliced = 0;
         st = jp2_ensure_rgba_cdef(mw.data, mw.len, exec->allocator, &final_buf,
-                                  &final_len);
-    } else {
-        final_buf = (uint8_t *)exec->allocator->alloc(exec->allocator->ctx,
-                                                      mw.len);
-        if (!final_buf) {
-            st = RFC_ERR_OUT_OF_MEMORY;
-        } else {
-            memcpy(final_buf, mw.data, mw.len);
-            final_len = mw.len;
-            st = RFC_OK;
+                                  &final_len, &spliced);
+        if (st != RFC_OK) {
+            goto cleanup;
         }
-    }
-    if (st != RFC_OK) {
-        goto cleanup;
+        if (!spliced) {
+            /* Transfer mw.data directly with zero second copy. */
+            final_buf = mw.data;
+            final_len = mw.len;
+            mw.data = NULL;
+        }
+    } else {
+        /* Transfer mw.data directly with zero second copy. */
+        final_buf = mw.data;
+        final_len = mw.len;
+        mw.data = NULL;
     }
 
     out_encoded->data = final_buf;

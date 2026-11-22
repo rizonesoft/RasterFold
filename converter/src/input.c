@@ -917,7 +917,8 @@ static void sniff_jp2_geometry(const uint8_t *b, size_t len,
         uint32_t xosiz = rd32be(s + 10u);
         uint32_t yosiz = rd32be(s + 14u);
         nc = rd16be(s + 34u);
-        if (xsiz <= xosiz || ysiz <= yosiz || (nc != 1u && nc != 3u)) {
+        if (xsiz <= xosiz || ysiz <= yosiz ||
+            (nc != 1u && nc != 3u && nc != 4u)) {
             return;
         }
         uint8_t ssiz = s[36u];
@@ -933,9 +934,11 @@ static void sniff_jp2_geometry(const uint8_t *b, size_t len,
         is_16 = (prec > 8u);
     } else if (len >= 12u &&
                memcmp(b, "\x00\x00\x00\x0cjP  \x0d\x0a\x87\x0a", 12) == 0) {
-        /* JP2 container: walk boxes to jp2h -> ihdr */
+        /* JP2 container: walk up to 64 boxes to jp2h -> ihdr (and bpcc).
+         * Allow jp2h itself to extend past the 16 KiB sniff prefix (e.g., a
+         * large ICC profile in colr) since ihdr precedes colr inside jp2h. */
         size_t off = 12u;
-        for (int bi = 0; bi < 16 && off + 8u <= len; bi++) {
+        for (int bi = 0; bi < 64 && off + 8u <= len; bi++) {
             uint32_t lbox = rd32be(b + off);
             uint32_t tbox = rd32be(b + off + 4u);
             size_t hdr = 8u;
@@ -948,43 +951,70 @@ static void sniff_jp2_geometry(const uint8_t *b, size_t len,
             } else if (lbox == 0u) {
                 total = (uint64_t)(len - off);
             }
-            if (total < hdr || total > (uint64_t)(len - off)) {
+            if (total < hdr) {
                 return;
             }
-            size_t next = off + (size_t)total;
             if (tbox == 0x6A703268u) { /* jp2h */
                 size_t sub = off + hdr;
-                for (int si = 0; si < 16 && sub + 8u <= next; si++) {
+                size_t sub_end = (total <= (uint64_t)(len - off))
+                                     ? (off + (size_t)total)
+                                     : len;
+                int saw_ihdr = 0;
+                uint8_t ihdr_bpc = 0u;
+                for (int si = 0; si < 64 && sub + 8u <= sub_end; si++) {
                     uint32_t sl = rd32be(b + sub);
                     uint32_t st = rd32be(b + sub + 4u);
-                    if (sl < 8u || sub + sl > next) {
-                        return;
+                    size_t shdr = 8u;
+                    uint64_t stot = sl;
+                    if (sl == 1u) {
+                        if (sub + 16u > sub_end) break;
+                        stot = ((uint64_t)rd32be(b + sub + 8u) << 32) |
+                               (uint64_t)rd32be(b + sub + 12u);
+                        shdr = 16u;
+                    } else if (sl == 0u) {
+                        stot = (uint64_t)(sub_end - sub);
                     }
-                    if (st == 0x69686472u && sl == 22u) { /* ihdr */
-                        const uint8_t *p = b + sub + 8u;
+                    if (stot < shdr || stot > (uint64_t)(sub_end - sub)) {
+                        break;
+                    }
+                    size_t splen = (size_t)(stot - shdr);
+                    const uint8_t *p = b + sub + shdr;
+                    if (st == 0x69686472u && splen == 14u) { /* ihdr */
                         h = rd32be(p);
                         w = rd32be(p + 4u);
                         nc = rd16be(p + 8u);
-                        uint8_t bpc = p[10u];
+                        ihdr_bpc = p[10u];
                         if (w == 0u || h == 0u ||
                             (nc != 1u && nc != 3u && nc != 4u)) {
                             return;
                         }
-                        if (bpc != 0xFFu) {
-                            if ((bpc & 0x80u) != 0u) return;
-                            uint8_t prec = (uint8_t)((bpc & 0x7Fu) + 1u);
+                        if (ihdr_bpc != 0xFFu) {
+                            if ((ihdr_bpc & 0x80u) != 0u) return;
+                            uint8_t prec = (uint8_t)((ihdr_bpc & 0x7Fu) + 1u);
                             if (prec > 16u) return;
                             is_16 = (prec > 8u);
-                        } else {
-                            is_16 = 1;
+                            saw_ihdr = 1;
+                            break;
                         }
+                        is_16 = 1;
+                        saw_ihdr = 1;
+                    } else if (st == 0x62706363u && saw_ihdr &&
+                               ihdr_bpc == 0xFFu && splen == (size_t)nc) {
+                        uint8_t b0 = p[0];
+                        if ((b0 & 0x80u) != 0u) return;
+                        uint8_t prec = (uint8_t)((b0 & 0x7Fu) + 1u);
+                        if (prec > 16u) return;
+                        is_16 = (prec > 8u);
                         break;
                     }
-                    sub += sl;
+                    sub += (size_t)stot;
                 }
                 break;
             }
-            off = next;
+            if (total > (uint64_t)(len - off)) {
+                return;
+            }
+            off += (size_t)total;
         }
     }
     if (w == 0u || h == 0u || (nc != 1u && nc != 3u && nc != 4u)) {
