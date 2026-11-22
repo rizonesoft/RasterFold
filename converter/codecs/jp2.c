@@ -1038,10 +1038,23 @@ static int jp2_ascii_ieq(const uint8_t *a, size_t n, const char *lit) {
     return 1;
 }
 
+static int jp2_enc_in_list(const uint8_t *enc,
+                           size_t enc_len,
+                           const char *const *list,
+                           size_t count) {
+    for (size_t k = 0u; k < count; k++) {
+        if (jp2_ascii_ieq(enc, enc_len, list[k])) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* Parse strict W3C XML 1.0 (5th ed.) §2.8 XMLDecl starting at p[*pos]:
  * '<?xml' S VersionInfo EncodingDecl? SDDecl? S? '?>'
  * Also verifies any declared encoding is compatible with this UTF-8 byte stream
- * (UTF-8, or US-ASCII/ASCII when no BOM and all document bytes are < 0x80). */
+ * (UTF-8 aliases, or IANA US-ASCII / ASCII-superset single-byte aliases only
+ * when no UTF-8 BOM and all document bytes are < 0x80). */
 static int jp2_xml_parse_xmldecl(const uint8_t *p,
                                  size_t len,
                                  int has_bom,
@@ -1100,10 +1113,23 @@ static int jp2_xml_parse_xmldecl(const uint8_t *p,
         }
         if (i >= len || p[i] != q) return 0;
         size_t enc_len = i - enc_start;
-        if (jp2_ascii_ieq(p + enc_start, enc_len, "utf-8")) {
+        static const char *const k_utf8_encs[] = {
+            "utf-8", "utf_8", "utf8", "cp65001"
+        };
+        static const char *const k_ascii_7bit_encs[] = {
+            "us-ascii", "us_ascii", "ascii", "iso-ir-6", "iso_ir_6",
+            "ansi_x3.4-1968", "ansi_x3.4-1986", "iso_646.irv-1991",
+            "iso646-us", "us", "ibm367", "cp367", "csascii",
+            "iso-8859-1", "iso_8859_1", "iso8859-1", "latin1", "latin-1",
+            "latin_1", "l1", "cp819", "ibm819", "iso-ir-100", "csisolatin1",
+            "windows-1252", "windows_1252", "cp1252"
+        };
+        if (jp2_enc_in_list(p + enc_start, enc_len, k_utf8_encs,
+                            sizeof(k_utf8_encs) / sizeof(k_utf8_encs[0]))) {
             /* UTF-8 matches this UTF-8 byte stream (with or without UTF-8 BOM). */
-        } else if (jp2_ascii_ieq(p + enc_start, enc_len, "us-ascii") ||
-                   jp2_ascii_ieq(p + enc_start, enc_len, "ascii")) {
+        } else if (jp2_enc_in_list(p + enc_start, enc_len, k_ascii_7bit_encs,
+                                   sizeof(k_ascii_7bit_encs) /
+                                       sizeof(k_ascii_7bit_encs[0]))) {
             if (has_bom) {
                 return 0;
             }

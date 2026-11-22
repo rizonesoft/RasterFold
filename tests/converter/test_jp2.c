@@ -1329,9 +1329,13 @@ static void test_review_round1_regressions(void) {
                 "<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"/></m:xmpmeta>"
                 "<?xpacket end=\"w\"?>",
                 "<?xml version=\"1.0\" encoding=\"US-ASCII\"?>"
+                "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"/>",
+                "<?xml version=\"1.0\" encoding=\"ISO-IR-6\"?>"
+                "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"/>",
+                "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>"
                 "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"/>"
             };
-            for (size_t gi = 0u; gi < 7u; gi++) {
+            for (size_t gi = 0u; gi < 9u; gi++) {
                 const char *good_xmp = good_cases[gi];
                 size_t glen = strlen(good_xmp);
                 uint8_t *mg = (uint8_t *)malloc(e4.len + 8u + glen);
