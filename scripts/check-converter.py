@@ -1586,38 +1586,21 @@ def _no_hevc_in_shipped_binaries(bindir):
 
 
 def _no_hevc_in_thin_archive_members(path):
-    """Inspect every member referenced by a thin archive (!<thin>\\n) for
-    HEVC names, PE imports, and encoder/decoder strings, preserving exact
-    member filename bytes (including leading/trailing whitespace). Fails closed
-    (RuntimeError) if llvm-ar fails or any referenced member is unreadable."""
+    """Stream every member's exact raw bytes directly through `llvm-ar p`
+    (zero filename parsing or path reconstruction, so spaces, CR, LF, or
+    arbitrary filename bytes can never redirect lookup), and scan the stream
+    for HEVC encoder/decoder strings. Fails closed (RuntimeError) if llvm-ar
+    cannot open any referenced member."""
     import subprocess
     tool = _llvm_tool("llvm-ar")
-    res = subprocess.run([tool, "t", path], capture_output=True, timeout=120.0)
+    res = subprocess.run([tool, "p", path], capture_output=True, timeout=120.0)
     if res.returncode != 0:
         err = res.stderr.decode("utf-8", errors="replace").strip()[:200]
-        raise RuntimeError(f"llvm-ar t failed on {path}: {err}")
-    base_dir = os.path.dirname(path)
-    seen = set()
-    for raw_line in res.stdout.splitlines():
-        if not raw_line:
-            continue
-        rel = os.fsdecode(raw_line)
-        full = rel if os.path.isabs(rel) else os.path.join(base_dir, rel)
-        if not os.path.isfile(full):
-            raise RuntimeError(f"thin archive {path} references unreadable member {full}")
-        if _hevc_link_name(full) or _hevc_link_name(os.path.realpath(full)):
-            return f"{os.path.relpath(path, ROOT)} references HEVC member {rel}"
-        ident = os.path.realpath(full)
-        if ident in seen:
-            continue
-        seen.add(ident)
-        if _is_pe_binary(full):
-            msg = _no_hevc_pe_imports(full)
-            if msg:
-                return msg
-        msg = _no_hevc_binary_strings(full)
-        if msg:
-            return msg
+        raise RuntimeError(f"llvm-ar p failed on {path}: {err}")
+    low = res.stdout.lower()
+    for tok in HEVC_BINARY_STRINGS:
+        if tok in low:
+            return f"{os.path.relpath(path, ROOT)} member contains HEVC string {tok.decode('ascii')}"
     return None
 
 
