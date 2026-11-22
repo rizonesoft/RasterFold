@@ -1316,9 +1316,14 @@ static void test_review_round1_regressions(void) {
                 "<m:xmpmeta xmlns:m=\"adobe:ns:meta/\"><rdf:RDF/></m:xmpmeta>",
                 "<xmpmeta xmlns=\"adobe:ns:meta/\"><rdf:RDF/></xmpmeta>",
                 "<m:xmpmeta xmlns:m=\"adobe:ns:meta&#x2F;\"><rdf:RDF/></m:xmpmeta>",
-                "<m:xmpmeta xmlns:m=\"adobe:ns:meta&#47;\"><rdf:RDF/></m:xmpmeta>"
+                "<m:xmpmeta xmlns:m=\"adobe:ns:meta&#47;\"><rdf:RDF/></m:xmpmeta>",
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                "<?xml-stylesheet type=\"text/xsl\" href=\"local.xsl\"?>"
+                "<?xpacket begin=\"\xEF\xBB\xBF\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+                "<m:xmpmeta xmlns:m=\"adobe:ns:meta/\"><rdf:RDF/></m:xmpmeta>"
+                "<?xpacket end=\"w\"?>"
             };
-            for (size_t gi = 0u; gi < 5u; gi++) {
+            for (size_t gi = 0u; gi < 6u; gi++) {
                 const char *good_xmp = good_cases[gi];
                 size_t glen = strlen(good_xmp);
                 uint8_t *mg = (uint8_t *)malloc(e4.len + 8u + glen);
@@ -1338,14 +1343,17 @@ static void test_review_round1_regressions(void) {
                 adp->close_session(sd);
                 free(mg);
             }
-            /* Invalid/mismatched XML boxes must refuse under preserve mode. */
+            /* Invalid/mismatched/truncated XML boxes must refuse under preserve mode. */
             const char *bad_cases[] = {
                 "<m:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF/></m:xmpmeta>",
                 "<1:xmpmeta xmlns:1=\"adobe:ns:meta/\"/>",
                 "<xml:xmpmeta xmlns:xml=\"adobe:ns:meta/\"/>",
-                "<m:xmpmeta xmlns:m=\"adobe:ns:meta&#x2F;\" bad=\"a<b\"/>"
+                "<m:xmpmeta xmlns:m=\"adobe:ns:meta&#x2F;\" bad=\"a<b\"/>",
+                "<m:xmpmeta xmlns:m=\"adobe:ns:meta&#47;\">",
+                "<m:xmpmeta xmlns:m=\"adobe:ns:meta/\"></x:xmpmeta>",
+                "<m:xmpmeta xmlns:m=\"adobe:ns:meta/\"/>trailing"
             };
-            for (size_t bi = 0u; bi < 4u; bi++) {
+            for (size_t bi = 0u; bi < 7u; bi++) {
                 const char *bad_xmp = bad_cases[bi];
                 size_t blen = strlen(bad_xmp);
                 uint8_t *mb = (uint8_t *)malloc(e4.len + 8u + blen);

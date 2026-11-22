@@ -642,72 +642,117 @@ static int jp2_xml_check_attr_val(const uint8_t *val,
     return 1;
 }
 
-static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
-    if (!p || len < 11u) {
+static int jp2_xml_is_reserved_xml_target(const uint8_t *p, size_t len) {
+    if (len != 3u) {
         return 0;
     }
-    size_t i = 0u;
-    if (len >= 3u && p[0] == 0xEFu && p[1] == 0xBBu && p[2] == 0xBFu) {
-        i = 3u;
+    return (p[0] == 'x' || p[0] == 'X') &&
+           (p[1] == 'm' || p[1] == 'M') &&
+           (p[2] == 'l' || p[2] == 'L');
+}
+
+/* Parse a comment starting at p[*pos] == "<!--". Validates UTF-8 XML chars and
+ * forbids "--" before "-->". */
+static int jp2_xml_skip_comment(const uint8_t *p, size_t len, size_t *pos) {
+    if (len - *pos < 7u || memcmp(p + *pos, "<!--", 4u) != 0) {
+        return 0;
     }
-    /* Skip any number of leading ASCII whitespace, <?xpacket ...?> / <?xml ...?>
-     * PIs, and <!-- ... --> comments before the root element; every iteration
-     * strictly advances i so parsing is linear in len. */
-    while (i < len) {
-        while (i < len && jp2_is_xml_ws(p[i])) {
-            i++;
+    size_t j = *pos + 4u;
+    while (j < len) {
+        if (p[j] == '-' && j + 1u < len && p[j + 1u] == '-') {
+            if (j + 2u < len && p[j + 2u] == '>') {
+                *pos = j + 3u;
+                return 1;
+            }
+            return 0; /* '--' is forbidden inside XML comments */
         }
-        size_t rem = len - i;
-        if (rem >= 2u && p[i] == '<' && p[i + 1u] == '?') {
-            int is_xpacket = (rem >= 9u && memcmp(p + i, "<?xpacket", 9u) == 0 &&
-                              (rem >= 10u && (jp2_is_xml_ws(p[i + 9u]) || p[i + 9u] == '?')));
-            int is_xml_decl = (rem >= 5u && memcmp(p + i, "<?xml", 5u) == 0 &&
-                               (rem >= 6u && (jp2_is_xml_ws(p[i + 5u]) || p[i + 5u] == '?')));
-            if (!is_xpacket && !is_xml_decl) {
-                return 0;
-            }
-            size_t j = i + 2u;
-            int closed = 0;
-            while (j + 1u < len) {
-                if (p[j] == '?' && p[j + 1u] == '>') {
-                    i = j + 2u;
-                    closed = 1;
-                    break;
-                }
-                j++;
-            }
-            if (!closed) {
+        uint32_t cp = 0u;
+        if (!jp2_utf8_next(p, len, &j, &cp) || !jp2_xml_is_char(cp)) {
+            return 0;
+        }
+    }
+    return 0;
+}
+
+/* Parse a processing instruction starting at p[*pos] == "<?". Target must be a
+ * valid NCName (and not case-insensitive "xml"); body chars must be valid XML
+ * 1.0 Char values. */
+static int jp2_xml_skip_pi(const uint8_t *p, size_t len, size_t *pos) {
+    if (len - *pos < 4u || p[*pos] != '<' || p[*pos + 1u] != '?') {
+        return 0;
+    }
+    size_t j = *pos + 2u;
+    size_t t_start = j;
+    while (j < len && !jp2_is_xml_ws(p[j]) &&
+           !(p[j] == '?' && j + 1u < len && p[j + 1u] == '>')) {
+        j++;
+    }
+    size_t t_len = j - t_start;
+    if (!jp2_xml_valid_ncname(p + t_start, t_len) ||
+        jp2_xml_is_reserved_xml_target(p + t_start, t_len)) {
+        return 0;
+    }
+    if (j + 1u < len && p[j] == '?' && p[j + 1u] == '>') {
+        *pos = j + 2u;
+        return 1;
+    }
+    if (j >= len || !jp2_is_xml_ws(p[j])) {
+        return 0;
+    }
+    while (j < len) {
+        if (p[j] == '?' && j + 1u < len && p[j + 1u] == '>') {
+            *pos = j + 2u;
+            return 1;
+        }
+        uint32_t cp = 0u;
+        if (!jp2_utf8_next(p, len, &j, &cp) || !jp2_xml_is_char(cp)) {
+            return 0;
+        }
+    }
+    return 0;
+}
+
+/* Skip Misc* (whitespace, comments, and legal PIs). Returns 0 on malformed
+ * comment/PI, 1 otherwise. */
+static int jp2_xml_skip_misc(const uint8_t *p, size_t len, size_t *pos) {
+    while (*pos < len) {
+        while (*pos < len && jp2_is_xml_ws(p[*pos])) {
+            (*pos)++;
+        }
+        size_t rem = len - *pos;
+        if (rem >= 2u && p[*pos] == '<' && p[*pos + 1u] == '?') {
+            if (!jp2_xml_skip_pi(p, len, pos)) {
                 return 0;
             }
             continue;
         }
-        if (rem >= 4u && memcmp(p + i, "<!--", 4u) == 0) {
-            size_t j = i + 4u;
-            int closed = 0;
-            while (j + 1u < len) {
-                if (p[j] == '-' && p[j + 1u] == '-') {
-                    if (j + 2u < len && p[j + 2u] == '>') {
-                        i = j + 3u;
-                        closed = 1;
-                        break;
-                    }
-                    return 0; /* '--' is forbidden inside XML comments */
-                }
-                j++;
-            }
-            if (!closed) {
+        if (rem >= 4u && memcmp(p + *pos, "<!--", 4u) == 0) {
+            if (!jp2_xml_skip_comment(p, len, pos)) {
                 return 0;
             }
             continue;
         }
         break;
     }
+    return 1;
+}
+
+/* Parse an XML start-tag (p[*pos] == '<', not "</", "<!", or "<?"). Validates
+ * QName, attributes, duplicate attribute names, and XML 1.0 AttValues. When
+ * check_xmp_root is non-zero, requires the element's expanded name to be
+ * {adobe:ns:meta/}xmpmeta. */
+static int jp2_xml_parse_start_tag(const uint8_t *p,
+                                   size_t len,
+                                   size_t *pos,
+                                   int check_xmp_root,
+                                   size_t *out_qname_off,
+                                   size_t *out_qname_len,
+                                   int *out_self_closing) {
+    size_t i = *pos;
     if (i >= len || p[i] != '<') {
         return 0;
     }
     i++; /* skip '<' */
-    /* Parse root element QName: either "xmpmeta" (default namespace) or
-     * "<NCName>:xmpmeta" (prefixed namespace), with at most one ':'. */
     size_t qname_start = i;
     size_t colon_pos = SIZE_MAX;
     while (i < len && !jp2_is_xml_ws(p[i]) && p[i] != '>' && p[i] != '/') {
@@ -717,41 +762,43 @@ static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
         }
         if (ch == ':') {
             if (colon_pos != SIZE_MAX) {
-                return 0; /* multiple colons in QName */
+                return 0;
             }
             colon_pos = i;
         }
         i++;
     }
-    if (i >= len || (!jp2_is_xml_ws(p[i]) && p[i] != '>' && p[i] != '/')) {
+    size_t qname_len = i - qname_start;
+    if (i >= len || !jp2_xml_valid_qname(p + qname_start, qname_len) ||
+        (!jp2_is_xml_ws(p[i]) && p[i] != '>' && p[i] != '/')) {
         return 0;
     }
     const uint8_t *prefix = NULL;
     size_t prefix_len = 0u;
     const uint8_t *local = p + qname_start;
-    size_t local_len = i - qname_start;
+    size_t local_len = qname_len;
     if (colon_pos != SIZE_MAX) {
         prefix = p + qname_start;
         prefix_len = colon_pos - qname_start;
         local = p + colon_pos + 1u;
         local_len = i - (colon_pos + 1u);
-        if (!jp2_xml_valid_ncname(prefix, prefix_len) ||
-            (prefix_len == 5u && memcmp(prefix, "xmlns", 5u) == 0) ||
-            (prefix_len == 3u && memcmp(prefix, "xml", 3u) == 0)) {
+        if ((prefix_len == 5u && memcmp(prefix, "xmlns", 5u) == 0)) {
             return 0;
         }
     }
-    if (local_len != 7u || memcmp(local, "xmpmeta", 7u) != 0) {
-        return 0;
+    if (check_xmp_root) {
+        if ((prefix_len == 3u && memcmp(prefix, "xml", 3u) == 0) ||
+            local_len != 7u || memcmp(local, "xmpmeta", 7u) != 0) {
+            return 0;
+        }
     }
-    /* Parse opening-tag attributes token-by-token so values of unrelated
-     * attributes cannot spoof namespace declarations, whitespace around '=' is
-     * accepted, and numeric character/entity references in attribute values are
-     * decoded per XML 1.0 §3.3.3. Resolve the root element's actual prefix
-     * (xmlns:<prefix>) or default namespace (xmlns) against "adobe:ns:meta/". */
+
     static const char k_ns_val[] = "adobe:ns:meta/";
     const size_t ns_val_len = sizeof(k_ns_val) - 1u;
     int has_ns = 0;
+    struct { size_t off; size_t len; } seen_attrs[256];
+    size_t seen_count = 0u;
+
     while (i < len) {
         size_t ws_start = i;
         while (i < len && jp2_is_xml_ws(p[i])) {
@@ -761,15 +808,28 @@ static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
             return 0;
         }
         if (p[i] == '>') {
-            return has_ns;
+            if (check_xmp_root && !has_ns) {
+                return 0;
+            }
+            *pos = i + 1u;
+            *out_qname_off = qname_start;
+            *out_qname_len = qname_len;
+            *out_self_closing = 0;
+            return 1;
         }
         if (p[i] == '/' && i + 1u < len && p[i + 1u] == '>') {
-            return has_ns;
+            if (check_xmp_root && !has_ns) {
+                return 0;
+            }
+            *pos = i + 2u;
+            *out_qname_off = qname_start;
+            *out_qname_len = qname_len;
+            *out_self_closing = 1;
+            return 1;
         }
         if (i == ws_start) {
             return 0; /* XML 1.0 requires whitespace before every attribute */
         }
-        /* Attribute name */
         size_t name_start = i;
         while (i < len && !jp2_is_xml_ws(p[i]) && p[i] != '=' &&
                p[i] != '>' && p[i] != '/' && p[i] != '"' && p[i] != '\'') {
@@ -778,6 +838,17 @@ static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
         size_t name_len = i - name_start;
         if (!jp2_xml_valid_qname(p + name_start, name_len)) {
             return 0;
+        }
+        for (size_t a = 0u; a < seen_count; a++) {
+            if (seen_attrs[a].len == name_len &&
+                memcmp(p + seen_attrs[a].off, p + name_start, name_len) == 0) {
+                return 0; /* duplicate attribute on element */
+            }
+        }
+        if (seen_count < (sizeof(seen_attrs) / sizeof(seen_attrs[0]))) {
+            seen_attrs[seen_count].off = name_start;
+            seen_attrs[seen_count].len = name_len;
+            seen_count++;
         }
         while (i < len && jp2_is_xml_ws(p[i])) {
             i++;
@@ -802,14 +873,17 @@ static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
         }
         size_t val_len = i - val_start;
         i++; /* skip closing quote */
+
         int is_target_ns = 0;
-        if (prefix_len == 0u) {
-            is_target_ns = (name_len == 5u &&
-                            memcmp(p + name_start, "xmlns", 5u) == 0);
-        } else {
-            is_target_ns = (name_len == 6u + prefix_len &&
-                            memcmp(p + name_start, "xmlns:", 6u) == 0 &&
-                            memcmp(p + name_start + 6u, prefix, prefix_len) == 0);
+        if (check_xmp_root) {
+            if (prefix_len == 0u) {
+                is_target_ns = (name_len == 5u &&
+                                memcmp(p + name_start, "xmlns", 5u) == 0);
+            } else {
+                is_target_ns = (name_len == 6u + prefix_len &&
+                                memcmp(p + name_start, "xmlns:", 6u) == 0 &&
+                                memcmp(p + name_start + 6u, prefix, prefix_len) == 0);
+            }
         }
         int val_matches = 0;
         if (!jp2_xml_check_attr_val(p + val_start, val_len,
@@ -820,16 +894,167 @@ static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
         }
         if (is_target_ns) {
             if (has_ns || !val_matches) {
-                return 0; /* duplicate or non-matching namespace attribute */
+                return 0;
             }
             has_ns = 1;
         }
-        /* Next token must be whitespace or tag close. */
         if (i < len && !jp2_is_xml_ws(p[i]) && p[i] != '>' && p[i] != '/') {
             return 0;
         }
     }
     return 0;
+}
+
+static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
+    if (!p || len < 11u) {
+        return 0;
+    }
+    size_t i = 0u;
+    if (len >= 3u && p[0] == 0xEFu && p[1] == 0xBBu && p[2] == 0xBFu) {
+        i = 3u;
+    }
+    /* Optional XMLDecl strictly at document start (after optional UTF-8 BOM). */
+    if (len - i >= 6u && memcmp(p + i, "<?xml", 5u) == 0 &&
+        jp2_is_xml_ws(p[i + 5u])) {
+        size_t j = i + 6u;
+        int closed = 0;
+        while (j < len) {
+            if (p[j] == '?' && j + 1u < len && p[j + 1u] == '>') {
+                i = j + 2u;
+                closed = 1;
+                break;
+            }
+            uint32_t cp = 0u;
+            if (!jp2_utf8_next(p, len, &j, &cp) || !jp2_xml_is_char(cp)) {
+                return 0;
+            }
+        }
+        if (!closed) {
+            return 0;
+        }
+    }
+    /* Prolog Misc*: whitespace, comments, and any legal XML PI (including
+     * <?xpacket ...?> and <?xml-stylesheet ...?>). */
+    if (!jp2_xml_skip_misc(p, len, &i)) {
+        return 0;
+    }
+    /* Root element must be well-formed {adobe:ns:meta/}xmpmeta. */
+    struct { size_t off; size_t len; } stack[64];
+    size_t depth = 0u;
+    size_t root_off = 0u, root_len = 0u;
+    int root_self = 0;
+    if (!jp2_xml_parse_start_tag(p, len, &i, 1, &root_off, &root_len,
+                                 &root_self)) {
+        return 0;
+    }
+    if (!root_self) {
+        stack[depth].off = root_off;
+        stack[depth].len = root_len;
+        depth = 1u;
+    }
+    /* Walk the complete element tree to verify balanced closing tags and XML
+     * 1.0 well-formedness (rejecting truncated or malformed packets). */
+    while (depth > 0u) {
+        if (i >= len) {
+            return 0; /* truncated before closing root element */
+        }
+        if (p[i] == '<') {
+            size_t rem = len - i;
+            if (rem >= 2u && p[i + 1u] == '/') {
+                i += 2u;
+                size_t en_start = i;
+                while (i < len && !jp2_is_xml_ws(p[i]) && p[i] != '>') {
+                    i++;
+                }
+                size_t en_len = i - en_start;
+                while (i < len && jp2_is_xml_ws(p[i])) {
+                    i++;
+                }
+                if (i >= len || p[i] != '>') {
+                    return 0;
+                }
+                i++; /* skip '>' */
+                if (en_len != stack[depth - 1u].len ||
+                    memcmp(p + en_start, p + stack[depth - 1u].off, en_len) != 0) {
+                    return 0; /* mismatched closing tag */
+                }
+                depth--;
+            } else if (rem >= 4u && memcmp(p + i, "<!--", 4u) == 0) {
+                if (!jp2_xml_skip_comment(p, len, &i)) {
+                    return 0;
+                }
+            } else if (rem >= 2u && p[i + 1u] == '?') {
+                if (!jp2_xml_skip_pi(p, len, &i)) {
+                    return 0;
+                }
+            } else if (rem >= 9u && memcmp(p + i, "<![CDATA[", 9u) == 0) {
+                i += 9u;
+                int closed = 0;
+                while (i < len) {
+                    if (p[i] == ']' && i + 2u < len &&
+                        p[i + 1u] == ']' && p[i + 2u] == '>') {
+                        i += 3u;
+                        closed = 1;
+                        break;
+                    }
+                    uint32_t cp = 0u;
+                    if (!jp2_utf8_next(p, len, &i, &cp) || !jp2_xml_is_char(cp)) {
+                        return 0;
+                    }
+                }
+                if (!closed) {
+                    return 0;
+                }
+            } else {
+                size_t cn_off = 0u, cn_len = 0u;
+                int cn_self = 0;
+                if (!jp2_xml_parse_start_tag(p, len, &i, 0, &cn_off, &cn_len,
+                                             &cn_self)) {
+                    return 0;
+                }
+                if (!cn_self) {
+                    if (depth >= (sizeof(stack) / sizeof(stack[0]))) {
+                        return 0;
+                    }
+                    stack[depth].off = cn_off;
+                    stack[depth].len = cn_len;
+                    depth++;
+                }
+            }
+        } else if (p[i] == '&') {
+            /* Validate entity or numeric character reference in text content. */
+            size_t ref_start = i;
+            i++;
+            while (i < len && p[i] != ';') {
+                if (p[i] == '<' || p[i] == '&') {
+                    return 0;
+                }
+                i++;
+            }
+            if (i >= len) {
+                return 0;
+            }
+            i++; /* include ';' */
+            if (!jp2_xml_check_attr_val(p + ref_start, i - ref_start,
+                                        NULL, 0u, NULL)) {
+                return 0;
+            }
+        } else {
+            if (p[i] == ']' && i + 2u < len &&
+                p[i + 1u] == ']' && p[i + 2u] == '>') {
+                return 0; /* ']]>' is forbidden in CharData */
+            }
+            uint32_t cp = 0u;
+            if (!jp2_utf8_next(p, len, &i, &cp) || !jp2_xml_is_char(cp)) {
+                return 0;
+            }
+        }
+    }
+    /* Epilog Misc*: whitespace, comments, and legal PIs (e.g. <?xpacket end="w"?>). */
+    if (!jp2_xml_skip_misc(p, len, &i)) {
+        return 0;
+    }
+    return (i == len) ? 1 : 0;
 }
 
 static rfc_status jp2_scan_input(const uint8_t *bytes,
