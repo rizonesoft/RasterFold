@@ -741,6 +741,7 @@ def decode_qoi_ex(blob: bytes) -> tuple[int, int, int, int, bytes]:
     pos = 14
     end = len(blob) - 8
     run = 0
+    prev_index_tag = -1
     for px in range(total_px):
         if run > 0:
             run -= 1
@@ -754,17 +755,24 @@ def decode_qoi_ex(blob: bytes) -> tuple[int, int, int, int, bytes]:
                     raise ValueError("truncated QOI_OP_RGB")
                 r, g, b = blob[pos], blob[pos + 1], blob[pos + 2]
                 pos += 3
+                prev_index_tag = -1
             elif tag == 0xFF:
                 if end - pos < 4:
                     raise ValueError("truncated QOI_OP_RGBA")
                 r, g, b, a = blob[pos], blob[pos + 1], blob[pos + 2], blob[pos + 3]
                 pos += 4
+                prev_index_tag = -1
             elif (tag & 0xC0) == 0x00:
+                # Per QOI spec, two consecutive QOI_OP_INDEX chunks to the same slot are invalid.
+                if tag == prev_index_tag:
+                    raise ValueError("consecutive identical QOI_OP_INDEX chunks")
+                prev_index_tag = tag
                 r, g, b, a = index[tag]
             elif (tag & 0xC0) == 0x40:
                 r = (r + ((tag >> 4) & 3) - 2) & 255
                 g = (g + ((tag >> 2) & 3) - 2) & 255
                 b = (b + (tag & 3) - 2) & 255
+                prev_index_tag = -1
             elif (tag & 0xC0) == 0x80:
                 if end - pos < 1:
                     raise ValueError("truncated QOI_OP_LUMA")
@@ -774,10 +782,12 @@ def decode_qoi_ex(blob: bytes) -> tuple[int, int, int, int, bytes]:
                 r = (r + vg - 8 + ((b2 >> 4) & 0x0F)) & 255
                 g = (g + vg) & 255
                 b = (b + vg - 8 + (b2 & 0x0F)) & 255
+                prev_index_tag = -1
             else:
                 run = tag & 0x3F
                 if run + 1 > total_px - px:
                     raise ValueError("QOI_OP_RUN exceeds image pixel count")
+                prev_index_tag = -1
             idx = (r * 3 + g * 5 + b * 7 + a * 11) & 63
             index[idx] = (r, g, b, a)
         dst = px * ch

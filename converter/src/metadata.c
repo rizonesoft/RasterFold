@@ -896,6 +896,13 @@ rfc_status rfc_metadata_verify(rfc_format_id target_format,
 
     uint32_t caps = rep->target_supported_items;
     uint32_t supported = present & caps;
+    if (target_format == RFC_FORMAT_QOI &&
+        !has_any_raw_icc(src_meta, src_frames, src_frame_count) &&
+        has_any_raw_colorimetry(src_meta, src_frames, src_frame_count) &&
+        source_raw_colorimetry_supported(RFC_FORMAT_QOI, src_meta, src_frames,
+                                         src_frame_count)) {
+        supported |= RFC_META_ITEM_ICC;
+    }
     int raw_supported = source_raw_colorimetry_supported(
         target_format, src_meta, src_frames, src_frame_count);
     if (!raw_supported &&

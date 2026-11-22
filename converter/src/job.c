@@ -3157,6 +3157,13 @@ rfc_status rfc_job_internal_run_standalone_decode(
     rfc_status st = run_bounded_session_decode(
         tmp_job, &exec, fmt, sadp, in_bytes, in_size, dec_settings,
         dec_setting_count, 0, out_frames, out_count, out_meta, &err_detail);
+    if (st == RFC_OK && *out_frames) {
+        for (size_t i = 0u; i < *out_count; i++) {
+            if ((*out_frames)[i].allocator == &tmp_job->frame_allocator) {
+                (*out_frames)[i].allocator = alloc;
+            }
+        }
+    }
     rfc_job_release(tmp_job);
     return st;
 }

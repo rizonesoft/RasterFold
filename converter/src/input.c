@@ -881,10 +881,6 @@ static rfc_status sniff_gif_geometry(const seek_stream *ss, const uint8_t *b,
     return RFC_OK;
 }
 
-/* PNG: the IHDR (always the first chunk) gives the decoded layout for the
- * colour types the PNG adapter decodes; palette and gray-alpha images are
- * sized as rgba at their depth (the larger layout; the adapter refuses both
- * today, so no accepted image is affected). */
 static void sniff_qoi_geometry(const uint8_t *b, size_t len,
                                rfc_sniff_geometry *geo) {
     if (len < 14u || memcmp(b, "qoif", 4) != 0) {
@@ -903,6 +899,10 @@ static void sniff_qoi_geometry(const uint8_t *b, size_t len,
     geo->has_geometry = 1;
 }
 
+/* PNG: the IHDR (always the first chunk) gives the decoded layout for the
+ * colour types the PNG adapter decodes; palette and gray-alpha images are
+ * sized as rgba at their depth (the larger layout; the adapter refuses both
+ * today, so no accepted image is affected). */
 static void sniff_png_geometry(const uint8_t *b, size_t len,
                                rfc_sniff_geometry *geo) {
     if (len < 26u || memcmp(b + 12, "IHDR", 4) != 0) {

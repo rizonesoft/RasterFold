@@ -296,12 +296,15 @@ static rfc_status qoi_preflight_stream(const uint8_t *bytes,
     /* Strict chunk-stream validation with zero heap allocation:
      *   - every multi-byte op must fit strictly before the 8-byte end marker;
      *   - every run must fit within the remaining image pixel count;
+     *   - two consecutive QOI_OP_INDEX chunks naming the same slot are refused
+     *     per the QOI specification (QOI_OP_RUN must be used instead);
      *   - all pixels must be covered before reaching the end marker;
      *   - no trailing bytes may remain between the last chunk and the end marker. */
     size_t pos = RFC_QOI_HDR_SIZE;
     size_t chunks_end = size - RFC_QOI_END_SIZE;
     uint64_t pixels_done = 0u;
     uint32_t step = 0u;
+    int prev_op_index = -1;
 
     qoi_run_test_hook();
     if (qoi_is_cancelled(session, exec)) {
@@ -327,25 +330,36 @@ static rfc_status qoi_preflight_stream(const uint8_t *bytes,
             }
             pos += 3u;
             pixels_done += 1u;
+            prev_op_index = -1;
         } else if (tag == 0xFFu) {
             if (chunks_end - pos < 4u) {
                 return RFC_ERR_TRUNCATED_INPUT;
             }
             pos += 4u;
             pixels_done += 1u;
+            prev_op_index = -1;
         } else if ((tag & 0xC0u) == 0x80u) {
             if (chunks_end - pos < 1u) {
                 return RFC_ERR_TRUNCATED_INPUT;
             }
             pos += 1u;
             pixels_done += 1u;
+            prev_op_index = -1;
         } else if ((tag & 0xC0u) == 0xC0u) {
             uint64_t run_len = (uint64_t)(tag & 0x3Fu) + 1u;
             if (run_len > total_pixels - pixels_done) {
                 return RFC_ERR_INVALID_ARGUMENT;
             }
             pixels_done += run_len;
+            prev_op_index = -1;
+        } else if ((tag & 0xC0u) == 0x00u) {
+            if ((int)tag == prev_op_index) {
+                return RFC_ERR_INVALID_ARGUMENT;
+            }
+            prev_op_index = (int)tag;
+            pixels_done += 1u;
         } else {
+            prev_op_index = -1;
             pixels_done += 1u;
         }
     }
@@ -639,6 +653,15 @@ static rfc_status qoi_encode_session(void *session,
         return RFC_ERR_LIMIT_EXCEEDED;
     }
 
+    if ((fr->metadata.icc_len > 0u && !fr->metadata.icc) ||
+        (fr->metadata.exif_len > 0u && !fr->metadata.exif) ||
+        (fr->metadata.xmp_len > 0u && !fr->metadata.xmp) ||
+        (meta && ((meta->icc_len > 0u && !meta->icc) ||
+                  (meta->exif_len > 0u && !meta->exif) ||
+                  (meta->xmp_len > 0u && !meta->xmp)))) {
+        return RFC_ERR_INVALID_ARGUMENT;
+    }
+
     const uint8_t *eff_icc = NULL;
     size_t eff_icc_len = 0u;
     const uint8_t *eff_exif = NULL;
@@ -722,23 +745,26 @@ static rfc_status qoi_encode_session(void *session,
     }
 
     int need_pack = (eff_lay.stride_bytes != (size_t)row_bytes64) ? 1 : 0;
-    uint64_t reserve64 = worst_qoi64;
-    if (need_pack && !qoi_add_u64(reserve64, packed_bytes64, &reserve64)) {
-        return RFC_ERR_LIMIT_EXCEEDED;
-    }
-    if (reserve64 > (uint64_t)SIZE_MAX) {
-        return RFC_ERR_LIMIT_EXCEEDED;
+    qoi_budget_guard pack_guard;
+    memset(&pack_guard, 0, sizeof(pack_guard));
+    if (need_pack) {
+        st = qoi_reserve_budget(exec, (size_t)packed_bytes64, &pack_guard);
+        if (st != RFC_OK) {
+            return st;
+        }
     }
 
     qoi_budget_guard enc_guard;
-    st = qoi_reserve_budget(exec, (size_t)reserve64, &enc_guard);
+    st = qoi_reserve_budget(exec, (size_t)worst_qoi64, &enc_guard);
     if (st != RFC_OK) {
+        qoi_release_budget(&pack_guard);
         return st;
     }
 
     qoi_run_test_hook();
     if (qoi_is_cancelled(session, exec)) {
         qoi_release_budget(&enc_guard);
+        qoi_release_budget(&pack_guard);
         return RFC_ERR_CANCELLED;
     }
 
@@ -748,6 +774,7 @@ static rfc_status qoi_encode_session(void *session,
         packed = (uint8_t *)malloc((size_t)packed_bytes64);
         if (!packed) {
             qoi_release_budget(&enc_guard);
+            qoi_release_budget(&pack_guard);
             return RFC_ERR_OUT_OF_MEMORY;
         }
         size_t row_b = (size_t)row_bytes64;
@@ -759,6 +786,7 @@ static rfc_status qoi_encode_session(void *session,
                 if (qoi_is_cancelled(session, exec)) {
                     free(packed);
                     qoi_release_budget(&enc_guard);
+                    qoi_release_budget(&pack_guard);
                     return RFC_ERR_CANCELLED;
                 }
             }
@@ -777,6 +805,7 @@ static rfc_status qoi_encode_session(void *session,
     int encoded_len = 0;
     void *encoded_raw = qoi_encode(src_pixels, &desc, &encoded_len);
     free(packed);
+    qoi_release_budget(&pack_guard);
     if (!encoded_raw || encoded_len <= 0) {
         free(encoded_raw);
         qoi_release_budget(&enc_guard);

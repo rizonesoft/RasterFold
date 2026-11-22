@@ -9,6 +9,9 @@
 #include <process.h>
 #else
 #define _POSIX_C_SOURCE 200809L
+#include <dirent.h>
+#include <pthread.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 
@@ -153,15 +156,92 @@ static int file_exists(const char *path) {
     return 0;
 }
 
+static char g_test_dir[256] = {0};
+
+static void create_private_test_dir(void) {
+    if (g_test_dir[0] != '\0') {
+        return;
+    }
+#ifdef _WIN32
+    char base[MAX_PATH];
+    DWORD n = GetTempPathA((DWORD)sizeof(base), base);
+    CHECK(n > 0u && n < sizeof(base) - 64u);
+    for (unsigned attempt = 0u; attempt < 256u; attempt++) {
+        snprintf(g_test_dir, sizeof(g_test_dir), "%srfc_qoi_%lu_%lu_%u",
+                 base, (unsigned long)GetCurrentProcessId(),
+                 (unsigned long)GetTickCount(), attempt);
+        if (CreateDirectoryA(g_test_dir, NULL)) {
+            return;
+        }
+    }
+    CHECK(0 && "failed to create exclusive Windows temp directory");
+#else
+    char tmpl[] = "/tmp/rfc_qoi_XXXXXX";
+    char *created = mkdtemp(tmpl);
+    CHECK(created != NULL);
+    snprintf(g_test_dir, sizeof(g_test_dir), "%s", created);
+#endif
+}
+
+static void remove_private_test_dir(void) {
+    if (g_test_dir[0] == '\0') {
+        return;
+    }
+#ifdef _WIN32
+    (void)RemoveDirectoryA(g_test_dir);
+#else
+    (void)rmdir(g_test_dir);
+#endif
+    g_test_dir[0] = '\0';
+}
+
+static int dir_has_partial_files(const char *dir) {
+#ifdef _WIN32
+    char pat[320];
+    snprintf(pat, sizeof(pat), "%s\\*", dir);
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(pat, &fd);
+    if (h == INVALID_HANDLE_VALUE) {
+        return 0;
+    }
+    int found = 0;
+    do {
+        if (strstr(fd.cFileName, ".partial") != NULL ||
+            strstr(fd.cFileName, ".rfc-partial") != NULL) {
+            found = 1;
+            break;
+        }
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+    return found;
+#else
+    DIR *d = opendir(dir);
+    if (!d) {
+        return 0;
+    }
+    int found = 0;
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL) {
+        if (strstr(ent->d_name, ".partial") != NULL ||
+            strstr(ent->d_name, ".rfc-partial") != NULL) {
+            found = 1;
+            break;
+        }
+    }
+    closedir(d);
+    return found;
+#endif
+}
+
 static void temp_path(char *buf, size_t cap, const char *tag) {
     static unsigned counter = 0u;
+    create_private_test_dir();
     counter++;
 #ifdef _WIN32
-    snprintf(buf, cap, "rfc_qoi_%d_%u_%s", (int)_getpid(), counter, tag);
+    snprintf(buf, cap, "%s\\%u_%s", g_test_dir, counter, tag);
 #else
-    snprintf(buf, cap, "/tmp/rfc_qoi_%ld_%u_%s", (long)getpid(), counter, tag);
+    snprintf(buf, cap, "%s/%u_%s", g_test_dir, counter, tag);
 #endif
-    remove(buf);
 }
 
 static void fill_pattern_rgb8(uint8_t *buf, uint32_t w, uint32_t h,
@@ -243,15 +323,68 @@ static void test_registration_and_geometry(void) {
     CHECK(mem.working_set_multiplier == 5u);
     CHECK(mem.fixed_overhead_bytes == 256ull * 1024ull);
 
-    /* Sniff both RGB8 and RGBA8 headers. */
+    /* Sniff both RGB8 and RGBA8 headers (format + dimensions + channel layout). */
     const uint8_t hdr_rgb[22] = {
-        'q', 'o', 'i', 'f', 0, 0, 0, 1, 0, 0, 0, 1, 3, 0,
+        'q', 'o', 'i', 'f', 0, 0, 0, 4, 0, 0, 0, 4, 3, 0,
+        0, 0, 0, 0, 0, 0, 0, 1
+    };
+    const uint8_t hdr_rgba[22] = {
+        'q', 'o', 'i', 'f', 0, 0, 0, 4, 0, 0, 0, 4, 4, 1,
         0, 0, 0, 0, 0, 0, 0, 1
     };
     rfc_sniff_result sr;
     memset(&sr, 0, sizeof(sr));
     CHECK(rfc_input_sniff_bytes(hdr_rgb, sizeof(hdr_rgb), "a.qoi", &sr) == RFC_OK);
     CHECK(sr.content_format == RFC_FORMAT_QOI && !sr.disagreement);
+    memset(&sr, 0, sizeof(sr));
+    CHECK(rfc_input_sniff_bytes(hdr_rgba, sizeof(hdr_rgba), "b.qoi", &sr) == RFC_OK);
+    CHECK(sr.content_format == RFC_FORMAT_QOI && !sr.disagreement);
+
+    /* Prove sniff_qoi_geometry extracts both dimensions and 3-vs-4 channel
+     * sample format on layout-free scheduler submission: 4x4 RGB8 = 48 B fits
+     * under max_decoded_bytes=50, while 4x4 RGBA8 = 64 B is refused at submit. */
+    {
+        rfc_scheduler_config scfg;
+        rfc_scheduler_config_default(&scfg);
+        rfc_scheduler *sched = rfc_scheduler_create(&scfg);
+        CHECK(sched != NULL);
+        rfc_limits tight_lim;
+        rfc_limits_default(&tight_lim);
+        tight_lim.max_decoded_bytes = 50u;
+        rfc_job_spec sp;
+        rfc_job *j = NULL;
+        memset(&sp, 0, sizeof(sp));
+        sp.source_format = RFC_FORMAT_QOI;
+        sp.target_format = RFC_FORMAT_QOI;
+        sp.source_bytes = hdr_rgba;
+        sp.source_size = sizeof(hdr_rgba);
+        sp.limits_override = &tight_lim;
+        sp.requested_codec_threads = 1u;
+        CHECK(rfc_scheduler_submit(sched, NULL, &sp, &j) == RFC_ERR_LIMIT_EXCEEDED);
+        CHECK(j == NULL);
+
+        /* Valid 4x4 RGB8 QOI (16 pixels = 48 B <= 50 B) is admitted by geometry sniff. */
+        uint8_t rgb_ok[14 + 1 + 8] = {
+            'q', 'o', 'i', 'f', 0, 0, 0, 4, 0, 0, 0, 4, 3, 0,
+            0xCF, /* QOI_OP_RUN(16) */
+            0, 0, 0, 0, 0, 0, 0, 1
+        };
+        char p_geo[256];
+        temp_path(p_geo, sizeof(p_geo), "geo_rgb.qoi");
+        rfc_io_sink gso;
+        rfc_io_sink_init_path(&gso, p_geo, RFC_EXPORT_REFUSE_EXISTING);
+        sp.source_bytes = rgb_ok;
+        sp.source_size = sizeof(rgb_ok);
+        sp.io_sink = &gso;
+        CHECK(rfc_scheduler_submit(sched, NULL, &sp, &j) == RFC_OK);
+        CHECK(rfc_job_wait(j, UINT32_MAX) == RFC_OK);
+        rfc_job_snapshot snap;
+        CHECK(rfc_job_snapshot_get(j, &snap) == RFC_OK);
+        CHECK(snap.state == RFC_JOB_SUCCEEDED && snap.status == RFC_OK);
+        rfc_job_release(j);
+        remove(p_geo);
+        rfc_scheduler_destroy(sched);
+    }
 
     printf("qoi: registration_and_geometry ok\n");
 }
@@ -376,6 +509,8 @@ static void test_rgb_rgba_stride_and_colorspace(void) {
                                        NULL, 0u, &exec.limits, &al, &vrep) ==
               RFC_OK);
         CHECK(vrep.valid == 1);
+        CHECK(vrep.metadata.outcome == RFC_VERIFY_META_PRESERVED);
+        CHECK((vrep.metadata.preserved_items & RFC_META_ITEM_ICC) != 0u);
 
         /* Flipping header byte 13 from linear (1) to sRGB (0) must fail verification! */
         enc_lin.data[13] = QOI_SRGB;
@@ -434,19 +569,27 @@ static void assert_malformed_refused(const rfc_session_adapter *adp,
     for (int m = 0; m < 2; m++) {
         tracked_alloc st;
         rfc_allocator al;
+        rfc_budget *bud = rfc_budget_create(32ull * 1024ull * 1024ull);
+        CHECK(bud != NULL);
         rfc_exec_context exec;
-        init_exec(&exec, &st, &al, NULL);
+        init_exec(&exec, &st, &al, bud);
 
         rfc_image_probe pr;
         CHECK(adp->probe_session(sess, &exec, blob, len, &pr) == expected);
-        CHECK(st.calls == 0u && st.live == 0u);
+        rfc_budget_stats bs;
+        rfc_budget_stats_get(bud, &bs);
+        CHECK(st.calls == 0u && st.live == 0u &&
+              bs.peak_allocated_bytes == 0u && bs.allocation_count == 0u);
 
         rfc_frame *dec = NULL;
         size_t dec_n = 0u;
         CHECK(adp->decode_session(sess, &exec, blob, len, modes[m], 1u, &dec,
                                   &dec_n, NULL) == expected);
+        rfc_budget_stats_get(bud, &bs);
         CHECK(dec == NULL && dec_n == 0u);
-        CHECK(st.calls == 0u && st.live == 0u);
+        CHECK(st.calls == 0u && st.live == 0u &&
+              bs.peak_allocated_bytes == 0u && bs.allocation_count == 0u);
+        rfc_budget_destroy(bud);
     }
 }
 
@@ -567,6 +710,17 @@ static void test_refusals_malformed_and_metadata_policy(void) {
                                       &out) == RFC_ERR_METADATA_POLICY);
             CHECK(st.calls == 0u);
         }
+
+        /* Malformed metadata descriptor (nonzero length with NULL pointer) refused. */
+        rfc_metadata bad_desc;
+        memset(&bad_desc, 0, sizeof(bad_desc));
+        bad_desc.icc = NULL;
+        bad_desc.icc_len = 4u;
+        rfc_encoded bad_out;
+        st.calls = 0u;
+        CHECK(adp->encode_session(sess, &exec, &fr, 1u, &bad_desc, NULL, 0u,
+                                  &bad_out) == RFC_ERR_INVALID_ARGUMENT);
+        CHECK(st.calls == 0u);
     }
 
     /* 3. Valid control + named malformed QOI fixtures (all zero-alloc refused). */
@@ -677,6 +831,15 @@ static void test_refusals_malformed_and_metadata_policy(void) {
         assert_malformed_refused(adp, sess, excess_run, sizeof(excess_run),
                                  RFC_ERR_INVALID_ARGUMENT);
 
+        /* Consecutive identical QOI_OP_INDEX chunks (forbidden by QOI spec). */
+        const uint8_t consec_idx[] = {
+            'q', 'o', 'i', 'f', 0, 0, 0, 2, 0, 0, 0, 1, 3, 0,
+            0x00, 0x00,
+            0, 0, 0, 0, 0, 0, 0, 1
+        };
+        assert_malformed_refused(adp, sess, consec_idx, sizeof(consec_idx),
+                                 RFC_ERR_INVALID_ARGUMENT);
+
         /* Trailing garbage byte before end marker. */
         const uint8_t trailing[] = {
             'q', 'o', 'i', 'f', 0, 0, 0, 1, 0, 0, 0, 1, 3, 0,
@@ -708,40 +871,112 @@ static void test_refusals_malformed_and_metadata_policy(void) {
 typedef struct cancel_sess_ctx {
     const rfc_session_adapter *adp;
     void *sess;
+    const rfc_budget *bud;
+    unsigned skip_calls;
+    unsigned calls;
+    uint64_t observed_used;
     int fired;
 } cancel_sess_ctx;
 
 static void hook_cancel_session(void *ctx) {
     cancel_sess_ctx *c = (cancel_sess_ctx *)ctx;
-    if (c && !c->fired) {
-        c->fired = 1;
-        c->adp->cancel_session(c->sess);
+    if (!c || c->fired) {
+        return;
     }
+    c->calls++;
+    if (c->calls <= c->skip_calls) {
+        return;
+    }
+    if (c->bud) {
+        c->observed_used = budget_used(c->bud);
+    }
+    c->fired = 1;
+    c->adp->cancel_session(c->sess);
 }
 
 typedef struct cancel_job_ctx {
-    _Atomic(rfc_job *) job;
-    atomic_int fired;
+#ifdef _WIN32
+    CRITICAL_SECTION mu;
+    CONDITION_VARIABLE cv;
+#else
+    pthread_mutex_t mu;
+    pthread_cond_t cv;
+#endif
+    rfc_job *job;
+    int fired;
 } cancel_job_ctx;
+
+static void cancel_job_ctx_init(cancel_job_ctx *c) {
+    memset(c, 0, sizeof(*c));
+#ifdef _WIN32
+    InitializeCriticalSection(&c->mu);
+    InitializeConditionVariable(&c->cv);
+#else
+    pthread_mutex_init(&c->mu, NULL);
+    pthread_cond_init(&c->cv, NULL);
+#endif
+}
+
+static void cancel_job_ctx_destroy(cancel_job_ctx *c) {
+#ifdef _WIN32
+    DeleteCriticalSection(&c->mu);
+#else
+    pthread_cond_destroy(&c->cv);
+    pthread_mutex_destroy(&c->mu);
+#endif
+}
+
+static void cancel_job_ctx_publish(cancel_job_ctx *c, rfc_job *j) {
+#ifdef _WIN32
+    EnterCriticalSection(&c->mu);
+    c->job = j;
+    WakeAllConditionVariable(&c->cv);
+    LeaveCriticalSection(&c->mu);
+#else
+    pthread_mutex_lock(&c->mu);
+    c->job = j;
+    pthread_cond_broadcast(&c->cv);
+    pthread_mutex_unlock(&c->mu);
+#endif
+}
 
 static void hook_cancel_job(void *ctx) {
     cancel_job_ctx *c = (cancel_job_ctx *)ctx;
     if (!c) {
         return;
     }
-    if (atomic_exchange_explicit(&c->fired, 1, memory_order_acq_rel) != 0) {
+    rfc_job *j = NULL;
+#ifdef _WIN32
+    EnterCriticalSection(&c->mu);
+    if (c->fired) {
+        LeaveCriticalSection(&c->mu);
         return;
     }
-    rfc_job *j = NULL;
-    for (unsigned spin = 0u; spin < 10000000u; spin++) {
-        j = atomic_load_explicit(&c->job, memory_order_acquire);
-        if (j) {
-            break;
-        }
+    while (!c->job) {
+        SleepConditionVariableCS(&c->cv, &c->mu, INFINITE);
     }
-    if (j) {
-        (void)rfc_job_cancel(j);
+    j = c->job;
+    LeaveCriticalSection(&c->mu);
+    (void)rfc_job_cancel(j);
+    EnterCriticalSection(&c->mu);
+    c->fired = 1;
+    LeaveCriticalSection(&c->mu);
+#else
+    pthread_mutex_lock(&c->mu);
+    if (c->fired) {
+        pthread_mutex_unlock(&c->mu);
+        return;
     }
+    while (!c->job) {
+        pthread_cond_wait(&c->cv, &c->mu);
+    }
+    j = c->job;
+    pthread_mutex_unlock(&c->mu);
+    (void)rfc_job_cancel(j);
+    pthread_mutex_lock(&c->mu);
+    c->fired = 1;
+    pthread_mutex_unlock(&c->mu);
+#endif
 }
 
 static void test_jobs_budget_cancel_and_file_safety(void) {
@@ -788,26 +1023,71 @@ static void test_jobs_budget_cancel_and_file_safety(void) {
         CHECK(dec == NULL && dec_n == 0u);
         CHECK(budget_used(tight) == 0u);
 
-        /* Mid-decode and mid-encode cancellation via test hook -> budget released. */
+        /* Mid-decode cancellation AFTER qoi_reserve_budget + qoi_decode (skip_calls=1):
+         * verify the decode reservation is live when the hook fires and released on cancel. */
         exec.budget = ample;
-        cancel_sess_ctx cctx = {adp, sess, 0};
+        cancel_sess_ctx cctx = {adp, sess, ample, 1u, 0u, 0u, 0};
         rfc_codecs_qoi_set_hook_for_testing(hook_cancel_session, &cctx);
         CHECK(adp->decode_session(sess, &exec, enc.data, enc.len, NULL, 0u,
                                   &dec, &dec_n, NULL) == RFC_ERR_CANCELLED);
         rfc_codecs_qoi_set_hook_for_testing(NULL, NULL);
-        CHECK(cctx.fired == 1 && dec == NULL && budget_used(ample) == 0u);
+        CHECK(cctx.fired == 1 && cctx.observed_used >= 32u * 32u * 4u &&
+              dec == NULL && budget_used(ample) == 0u);
 
         void *sess2 = NULL;
         CHECK(adp->open_session(&exec, &sess2) == RFC_OK);
-        cancel_sess_ctx cctx2 = {adp, sess2, 0};
+        cancel_sess_ctx cctx2 = {adp, sess2, ample, 0u, 0u, 0u, 0};
         rfc_codecs_qoi_set_hook_for_testing(hook_cancel_session, &cctx2);
         rfc_encoded enc2;
         CHECK(adp->encode_session(sess2, &exec, &src, 1u, NULL, NULL, 0u,
                                   &enc2) == RFC_ERR_CANCELLED);
         rfc_codecs_qoi_set_hook_for_testing(NULL, NULL);
-        CHECK(cctx2.fired == 1 && enc2.data == NULL &&
-              budget_used(ample) == 0u);
+        CHECK(cctx2.fired == 1 && cctx2.observed_used > 0u &&
+              enc2.data == NULL && budget_used(ample) == 0u);
         adp->close_session(sess2);
+
+        /* Padded encode budget-release boundary: release packing reservation after
+         * free(packed) so a budget-backed final output allocation fits without
+         * double-counting packed_bytes alongside final_len. */
+        {
+            const uint32_t pw = 32u, ph = 32u;
+            const size_t packed_b = (size_t)pw * (size_t)ph * 4u;
+            const size_t pad_stride = (size_t)pw * 4u + 16u;
+            const size_t worst_qoi = (size_t)pw * (size_t)ph * 5u + 22u;
+            rfc_layout play = {RFC_SAMPLE_RGBA8, RFC_ALPHA_STRAIGHT, pw, ph,
+                               pad_stride, 8u};
+            rfc_frame psrc;
+            CHECK(rfc_frame_alloc(&psrc, &play, NULL, &al) == RFC_OK);
+            fill_pattern_rgba8(psrc.data, pw, ph, pad_stride);
+
+            /* Limit = worst_qoi + max(packed_b, enc.len) (strictly less than
+             * worst_qoi + packed_b + enc.len, so keeping pack_guard would OOM). */
+            size_t peak_needed =
+                worst_qoi + (packed_b > enc.len ? packed_b : enc.len);
+            CHECK(peak_needed < worst_qoi + packed_b + enc.len);
+            rfc_budget *bbound = rfc_budget_create((uint64_t)peak_needed);
+            CHECK(bbound != NULL);
+            rfc_allocator bal;
+            rfc_budget_allocator(bbound, &bal);
+            rfc_exec_context bexec;
+            memset(&bexec, 0, sizeof(bexec));
+            rfc_limits_default(&bexec.limits);
+            bexec.codec_threads = 1u;
+            bexec.allocator = &bal;
+            bexec.budget = bbound;
+
+            void *bsess = NULL;
+            CHECK(adp->open_session(&bexec, &bsess) == RFC_OK);
+            rfc_encoded penc;
+            CHECK(adp->encode_session(bsess, &bexec, &psrc, 1u, NULL, NULL, 0u,
+                                      &penc) == RFC_OK);
+            CHECK(penc.len == enc.len);
+            rfc_encoded_free(&penc);
+            CHECK(budget_used(bbound) == 0u);
+            adp->close_session(bsess);
+            rfc_budget_destroy(bbound);
+            rfc_frame_free(&psrc);
+        }
 
         rfc_encoded_free(&enc);
         rfc_frame_free(&src);
@@ -854,8 +1134,7 @@ static void test_jobs_budget_cancel_and_file_safety(void) {
 
         char p_qoi[256], p_png[256], p_qoi2[256], p_bi[256], p_lin_qoi[256],
              p_lin_png[256], p_lin_qoi2[256], p_icc_png[256], p_ack_qoi[256],
-             p_strip_qoi[256], p_cancel[256], p_cancel_part[280],
-             p_occ[256], p_occ_part[280];
+             p_strip_qoi[256], p_cancel[256], p_occ[256];
         temp_path(p_qoi, sizeof(p_qoi), "src.qoi");
         temp_path(p_png, sizeof(p_png), "mid.png");
         temp_path(p_qoi2, sizeof(p_qoi2), "back.qoi");
@@ -867,9 +1146,7 @@ static void test_jobs_budget_cancel_and_file_safety(void) {
         temp_path(p_ack_qoi, sizeof(p_ack_qoi), "ack.qoi");
         temp_path(p_strip_qoi, sizeof(p_strip_qoi), "strip.qoi");
         temp_path(p_cancel, sizeof(p_cancel), "cancel.png");
-        snprintf(p_cancel_part, sizeof(p_cancel_part), "%s.partial", p_cancel);
         temp_path(p_occ, sizeof(p_occ), "occupied.png");
-        snprintf(p_occ_part, sizeof(p_occ_part), "%s.partial", p_occ);
 
         CHECK(write_file_all(p_qoi, qoi_srgb.data, qoi_srgb.len));
         CHECK(write_file_all(p_lin_qoi, qoi_lin.data, qoi_lin.len));
@@ -1085,12 +1362,12 @@ static void test_jobs_budget_cancel_and_file_safety(void) {
         CHECK(occ_after != NULL && occ_len == sizeof(sentinel) &&
               memcmp(occ_after, sentinel, sizeof(sentinel)) == 0);
         free(occ_after);
-        CHECK(!file_exists(p_occ_part));
+        CHECK(!dir_has_partial_files(g_test_dir));
 
-        /* F. Active job cancellation via hook: source intact, no destination, no .partial. */
+        /* F. Active job cancellation via synchronized hook: source intact,
+         * no destination, and no .partial / .rfc-partial staging files. */
         cancel_job_ctx cj;
-        atomic_init(&cj.job, NULL);
-        atomic_init(&cj.fired, 0);
+        cancel_job_ctx_init(&cj);
         rfc_codecs_qoi_set_hook_for_testing(hook_cancel_job, &cj);
         memset(&sp, 0, sizeof(sp));
         rfc_io_source_init_path(&si, p_qoi, RFC_IMPORT_DEFAULT);
@@ -1101,15 +1378,16 @@ static void test_jobs_budget_cancel_and_file_safety(void) {
         sp.io_sink = &so;
         sp.requested_codec_threads = 1u;
         CHECK(rfc_scheduler_submit(sched, NULL, &sp, &job) == RFC_OK);
-        atomic_store_explicit(&cj.job, job, memory_order_release);
+        cancel_job_ctx_publish(&cj, job);
         CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
         CHECK(rfc_job_snapshot_get(job, &snap) == RFC_OK);
         rfc_codecs_qoi_set_hook_for_testing(NULL, NULL);
-        CHECK(atomic_load_explicit(&cj.fired, memory_order_acquire) == 1);
+        CHECK(cj.fired == 1);
+        cancel_job_ctx_destroy(&cj);
         CHECK(snap.state == RFC_JOB_CANCELLED &&
               snap.status == RFC_ERR_CANCELLED);
         rfc_job_release(job);
-        CHECK(!file_exists(p_cancel) && !file_exists(p_cancel_part));
+        CHECK(!file_exists(p_cancel) && !dir_has_partial_files(g_test_dir));
         size_t src_after_len = 0u;
         uint8_t *src_after = read_file_all(p_qoi, &src_after_len);
         CHECK(src_after != NULL && src_after_len == qoi_srgb.len &&
@@ -1120,6 +1398,7 @@ static void test_jobs_budget_cancel_and_file_safety(void) {
         remove(p_lin_qoi); remove(p_lin_png); remove(p_lin_qoi2);
         remove(p_icc_png); remove(p_ack_qoi); remove(p_strip_qoi);
         remove(p_cancel); remove(p_occ);
+        remove_private_test_dir();
 
         rfc_encoded_free(&qoi_srgb);
         rfc_encoded_free(&qoi_lin);
