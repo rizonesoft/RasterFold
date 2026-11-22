@@ -1032,6 +1032,129 @@ static void sniff_jp2_geometry(const uint8_t *b, size_t len,
     geo->has_geometry = 1;
 }
 
+/* Stream fallback for JP2 containers whose jp2h box sits past the 16 KiB
+ * sniff prefix (for example after a large top-level free box). Walks at most
+ * 64 top-level boxes via positional 16-byte header reads, zero allocations. */
+static void sniff_jp2_geometry_stream(const seek_stream *ss,
+                                      rfc_sniff_geometry *geo) {
+    if (!ss || !ss->read_at || geo->has_geometry) {
+        return;
+    }
+    uint64_t off = 12u;
+    uint32_t w = 0u, h = 0u;
+    uint16_t nc = 0u;
+    int is_16 = 0;
+    for (int bi = 0; bi < 64; bi++) {
+        uint8_t hdr[16];
+        size_t got = 0u;
+        if (ss->read_at(ss->ctx, off, hdr, sizeof(hdr), &got) != RFC_OK ||
+            got < 8u) {
+            return;
+        }
+        uint32_t lbox = rd32be(hdr);
+        uint32_t tbox = rd32be(hdr + 4u);
+        uint64_t hlen = 8u;
+        uint64_t total = lbox;
+        if (lbox == 1u) {
+            if (got < 16u) {
+                return;
+            }
+            total = ((uint64_t)rd32be(hdr + 8u) << 32) |
+                    (uint64_t)rd32be(hdr + 12u);
+            hlen = 16u;
+        } else if (lbox == 0u) {
+            total = (ss->size_known && ss->total_size > off)
+                        ? (ss->total_size - off)
+                        : UINT64_MAX;
+        }
+        if (total < hlen) {
+            return;
+        }
+        if (tbox == 0x6A703268u) { /* jp2h */
+            uint64_t sub = off + hlen;
+            uint64_t sub_end = (total == UINT64_MAX || off > UINT64_MAX - total)
+                                   ? UINT64_MAX
+                                   : (off + total);
+            int saw_ihdr = 0;
+            uint8_t ihdr_bpc = 0u;
+            for (int si = 0; si < 64 && sub < sub_end; si++) {
+                uint8_t sh[32];
+                size_t sgot = 0u;
+                if (ss->read_at(ss->ctx, sub, sh, sizeof(sh), &sgot) != RFC_OK ||
+                    sgot < 8u) {
+                    break;
+                }
+                uint32_t sl = rd32be(sh);
+                uint32_t st = rd32be(sh + 4u);
+                uint64_t shlen = 8u;
+                uint64_t stot = sl;
+                if (sl == 1u) {
+                    if (sgot < 16u) break;
+                    stot = ((uint64_t)rd32be(sh + 8u) << 32) |
+                           (uint64_t)rd32be(sh + 12u);
+                    shlen = 16u;
+                } else if (sl == 0u) {
+                    stot = (sub_end > sub) ? (sub_end - sub) : 0u;
+                }
+                if (stot < shlen || sub > sub_end - stot) {
+                    break;
+                }
+                uint64_t splen = stot - shlen;
+                if (st == 0x69686472u && splen == 14u &&
+                    sgot >= (size_t)(shlen + 14u)) {
+                    const uint8_t *p = sh + shlen;
+                    h = rd32be(p);
+                    w = rd32be(p + 4u);
+                    nc = rd16be(p + 8u);
+                    ihdr_bpc = p[10u];
+                    if (w == 0u || h == 0u ||
+                        (nc != 1u && nc != 3u && nc != 4u)) {
+                        return;
+                    }
+                    if (ihdr_bpc != 0xFFu) {
+                        if ((ihdr_bpc & 0x80u) != 0u) return;
+                        uint8_t prec = (uint8_t)((ihdr_bpc & 0x7Fu) + 1u);
+                        if (prec > 16u) return;
+                        is_16 = (prec > 8u);
+                        saw_ihdr = 1;
+                        break;
+                    }
+                    is_16 = 1;
+                    saw_ihdr = 1;
+                } else if (st == 0x62706363u && saw_ihdr && ihdr_bpc == 0xFFu &&
+                           splen == (uint64_t)nc &&
+                           sgot >= (size_t)(shlen + 1u)) {
+                    uint8_t b0 = sh[shlen];
+                    if ((b0 & 0x80u) != 0u) return;
+                    uint8_t prec = (uint8_t)((b0 & 0x7Fu) + 1u);
+                    if (prec > 16u) return;
+                    is_16 = (prec > 8u);
+                    break;
+                }
+                sub += stot;
+            }
+            break;
+        }
+        if (total == UINT64_MAX || off > UINT64_MAX - total) {
+            return;
+        }
+        off += total;
+    }
+    if (w == 0u || h == 0u || (nc != 1u && nc != 3u && nc != 4u)) {
+        return;
+    }
+    geo->width = w;
+    geo->height = h;
+    if (nc == 1u) {
+        geo->format = is_16 ? RFC_SAMPLE_GRAY16 : RFC_SAMPLE_GRAY8;
+    } else if (nc == 3u) {
+        geo->format = is_16 ? RFC_SAMPLE_RGB16 : RFC_SAMPLE_RGB8;
+    } else {
+        geo->format = is_16 ? RFC_SAMPLE_RGBA16 : RFC_SAMPLE_RGBA8;
+    }
+    geo->has_geometry = 1;
+}
+
 /* PNG: the IHDR (always the first chunk) gives the decoded layout for the
  * colour types the PNG adapter decodes; palette and gray-alpha images are
  * sized as rgba at their depth (the larger layout; the adapter refuses both
@@ -1190,6 +1313,10 @@ static rfc_format_id sniff_stream_core(const seek_stream *ss,
               b[3] == 0x51u)) {
         detected = RFC_FORMAT_JPEG2000;
         sniff_jp2_geometry(b, len, geo);
+        if (!geo->has_geometry && len >= 12u &&
+            memcmp(b, "\x00\x00\x00\x0cjP  \x0d\x0a\x87\x0a", 12) == 0) {
+            sniff_jp2_geometry_stream(ss, geo);
+        }
     }
     /* 8. ISOBMFF (AVIF, HEIC, HEIF, CR3) */
     else if (len >= 16u && memcmp(b + 4, "ftyp", 4) == 0) {
