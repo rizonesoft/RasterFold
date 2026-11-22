@@ -446,6 +446,29 @@ class NoHevcArtifactProofTests(unittest.TestCase):
                 self.assertIn("libde265", msg, repr(suffix))
                 thin_tr_bad.unlink()
 
+            # Multi-member clean thin archive whose bytes end with 'libde' in member 1
+            # and begin with '265' in member 2 must pass (no cross-member concatenation)
+            m1_o = t / "part1.o"
+            m2_o = t / "part2.o"
+            m1_o.write_bytes((t / "unused_ok.o").read_bytes() + b"libde")
+            (t / "part2.c").write_text("const char *p2(void) { return \"265\"; }\n")
+            run_ok([str(clang), "-c", str(t / "part2.c"), "-o", str(m2_o)])
+            thin_multi = prefix / "lib" / "thin_multi.bin"
+            run_ok([str(ar), "rcsT", str(thin_multi), str(m1_o), str(m2_o)])
+            msg, _, _ = cc._no_hevc_in_dependency_prefix(str(prefix))
+            self.assertIsNone(msg)
+            thin_multi.unlink()
+
+            # Thin archive referencing a neutrally-coded member named 'x265.o' must fail by name
+            x265_o = t / "x265.o"
+            shutil.copyfile(t / "unused_ok.o", x265_o)
+            thin_named = prefix / "lib" / "thin_named.bin"
+            run_ok([str(ar), "rcsT", str(thin_named), str(x265_o)])
+            msg, _, _ = cc._no_hevc_in_dependency_prefix(str(prefix))
+            self.assertIsNotNone(msg)
+            self.assertIn("x265.o", msg)
+            thin_named.unlink()
+
             (prefix / "lib" / "dangling.a").symlink_to(t / "nowhere.a")
             with self.assertRaises(RuntimeError):
                 cc._no_hevc_in_dependency_prefix(str(prefix))

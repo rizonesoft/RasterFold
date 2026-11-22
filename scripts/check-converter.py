@@ -1585,22 +1585,82 @@ def _no_hevc_in_shipped_binaries(bindir):
     return None, unique
 
 
+def _parse_thin_archive_members(path):
+    """Parse a GNU/LLVM thin archive (!<thin>\\n) binary header table directly
+    and return the exact raw member path bytes (preserving spaces, CR, and
+    arbitrary filename bytes without invoking text-line splitting). Fails
+    closed (RuntimeError) on any malformed or truncated header."""
+    data = _read_file_bytes(path)
+    if not data.startswith(b"!<thin>\n"):
+        raise RuntimeError(f"{path} is not a thin archive")
+    pos = 8
+    strtab = b""
+    members = []
+    while pos < len(data):
+        if pos + 60 > len(data) or data[pos + 58 : pos + 60] != b"`\n":
+            raise RuntimeError(f"malformed thin-archive header in {path} at offset {pos}")
+        raw_name = data[pos : pos + 16]
+        try:
+            size = int(data[pos + 48 : pos + 58].strip())
+        except ValueError as exc:
+            raise RuntimeError(f"malformed thin-archive size in {path} at offset {pos}") from exc
+        if size < 0:
+            raise RuntimeError(f"negative thin-archive size in {path} at offset {pos}")
+        pos += 60
+        if raw_name in (b"/               ", b"/SYM64/         "):
+            step = size + (size & 1)
+            if pos + step > len(data):
+                raise RuntimeError(f"truncated thin-archive symtab in {path}")
+            pos += step
+            continue
+        if raw_name == b"//              ":
+            step = size + (size & 1)
+            if pos + step > len(data):
+                raise RuntimeError(f"truncated thin-archive strtab in {path}")
+            strtab = data[pos : pos + size]
+            pos += step
+            continue
+        if raw_name.startswith(b"/"):
+            try:
+                off = int(raw_name[1:].strip())
+                end = strtab.index(b"/\n", off)
+            except ValueError as exc:
+                raise RuntimeError(f"malformed thin-archive long name in {path}") from exc
+            members.append(strtab[off:end])
+        else:
+            slash = raw_name.find(b"/")
+            if slash < 0:
+                raise RuntimeError(f"malformed thin-archive member name in {path}")
+            members.append(raw_name[:slash])
+    return members
+
+
 def _no_hevc_in_thin_archive_members(path):
-    """Stream every member's exact raw bytes directly through `llvm-ar p`
-    (zero filename parsing or path reconstruction, so spaces, CR, LF, or
-    arbitrary filename bytes can never redirect lookup), and scan the stream
-    for HEVC encoder/decoder strings. Fails closed (RuntimeError) if llvm-ar
-    cannot open any referenced member."""
-    import subprocess
-    tool = _llvm_tool("llvm-ar")
-    res = subprocess.run([tool, "p", path], capture_output=True, timeout=120.0)
-    if res.returncode != 0:
-        err = res.stderr.decode("utf-8", errors="replace").strip()[:200]
-        raise RuntimeError(f"llvm-ar p failed on {path}: {err}")
-    low = res.stdout.lower()
-    for tok in HEVC_BINARY_STRINGS:
-        if tok in low:
-            return f"{os.path.relpath(path, ROOT)} member contains HEVC string {tok.decode('ascii')}"
+    """Inspect each member of a thin archive (!<thin>\\n) individually by
+    parsing its binary header table directly: check member name, resolved
+    name, PE imports, and per-member HEVC binary strings (never concatenating
+    bytes across member boundaries). Fails closed (RuntimeError) on malformed
+    headers or unreadable members."""
+    base_dir = os.path.dirname(path)
+    seen = set()
+    for raw_member in _parse_thin_archive_members(path):
+        rel = os.fsdecode(raw_member)
+        full = rel if os.path.isabs(rel) else os.path.join(base_dir, rel)
+        if not os.path.isfile(full):
+            raise RuntimeError(f"thin archive {path} references unreadable member {full}")
+        if _hevc_link_name(full) or _hevc_link_name(os.path.realpath(full)):
+            return f"{os.path.relpath(path, ROOT)} references HEVC member {rel}"
+        ident = os.path.realpath(full)
+        if ident in seen:
+            continue
+        seen.add(ident)
+        if _is_pe_binary(full):
+            msg = _no_hevc_pe_imports(full)
+            if msg:
+                return msg
+        msg = _no_hevc_binary_strings(full)
+        if msg:
+            return msg
     return None
 
 
