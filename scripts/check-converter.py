@@ -1442,22 +1442,12 @@ def _hevc_link_name(token):
     return low if low in HEVC_LIBRARY_NAMES else None
 
 
-ARCHIVE_MAGICS = (b"!<arch>\n", b"!<thin>\n")
-COFF_OBJ_MAGICS = (b"\x64\x86", b"\x4c\x01", b"\x64\xaa")
-BITCODE_MAGICS = (b"BC\xc0\xde", b"\xde\xc0\x17\x0b")
-
-
 def _read_file_bytes(path, limit=None):
     try:
         with open(path, "rb") as fh:
             return fh.read() if limit is None else fh.read(limit)
     except OSError as exc:
         raise RuntimeError(f"cannot read {path}: {exc}") from exc
-
-
-def _is_archive(path):
-    """A static archive by its content (the ar magic), whatever its name."""
-    return _read_file_bytes(path, 8) in ARCHIVE_MAGICS
 
 
 def _is_pe_binary(path):
@@ -1472,16 +1462,6 @@ def _is_pe_binary(path):
             return fh.read(4) == b"PE\x00\x00"
     except OSError as exc:
         raise RuntimeError(f"cannot read {path}: {exc}") from exc
-
-
-def _is_coff_object(path):
-    """A COFF object file by its machine header, whatever its name."""
-    return _read_file_bytes(path, 2) in COFF_OBJ_MAGICS
-
-
-def _is_bitcode(path):
-    """An LLVM bitcode object (raw or wrapper) by its magic, whatever its name."""
-    return _read_file_bytes(path, 4) in BITCODE_MAGICS
 
 
 def _hevc_among_names(paths):
@@ -1577,16 +1557,6 @@ def _shipped_windows_binaries(bindir):
     return entries, binaries
 
 
-def _dependency_files(prefix):
-    """(every entry, every inspectable library/archive/object/bitcode/PE by
-    content) under the dependency prefix. Fails closed on missing directory,
-    unlistable subtrees, dangling links, or unreadable files."""
-    entries = _walk_dir_fail_closed(prefix)
-    libs = [p for p in entries
-            if _is_archive(p) or _is_pe_binary(p) or _is_coff_object(p) or _is_bitcode(p)]
-    return entries, libs
-
-
 def _no_hevc_in_shipped_binaries(bindir):
     """Prove HEVC absence from what actually shipped: inspect every Windows
     converter executable and bundled DLL for HEVC names, symbols, imports,
@@ -1616,31 +1586,42 @@ def _no_hevc_in_shipped_binaries(bindir):
 
 
 def _no_hevc_in_dependency_prefix(prefix):
-    """Fail-closed walk of the dependency prefix: no HEVC library is present
-    by name or by content (symbols, PE imports, or encoder/decoder strings)."""
-    entries, libs = _dependency_files(prefix)
+    """Fail-closed walk of the dependency prefix: every entry is checked by
+    name/realpath and probed directly with llvm-nm (no magic-byte whitelist),
+    so every archive, COFF object, COFF BigObj, LLVM bitcode, or PE binary is
+    inspected for HEVC symbols, PE imports, and encoder/decoder strings."""
+    entries = _walk_dir_fail_closed(prefix)
     bad = _hevc_among_names(entries)
     if bad:
-        return f"the Windows dependency prefix holds {bad}", entries, libs
+        return f"the Windows dependency prefix holds {bad}", entries, []
+    tool = _llvm_tool("llvm-nm")
     seen = set()
-    unique = []
-    for path in libs:
+    scanned = []
+    for path in entries:
         ident = os.path.realpath(path)
-        if ident not in seen:
-            seen.add(ident)
-            unique.append(path)
-    msg = _no_hevc_symbols(unique)
-    if msg:
-        return msg, entries, unique
-    for path in unique:
+        if ident in seen:
+            continue
+        seen.add(ident)
+        _read_file_bytes(path, 1)  # verify readability explicitly
+        res = run_capture([tool, "--defined-only", "--extern-only", path], timeout=120.0)
+        if res.returncode != 0:
+            if "was not recognized as a valid object file" in res.stderr:
+                continue
+            raise RuntimeError(f"llvm-nm failed on {path}: {res.stderr.strip()[:200]}")
+        for line in res.stdout.splitlines():
+            parts = line.split()
+            sym = parts[-1] if parts else ""
+            if sym.lstrip("_").startswith(HEVC_SYMBOL_PREFIXES):
+                return f"{os.path.relpath(path, ROOT)} defines HEVC symbol {sym}", entries, scanned
         if _is_pe_binary(path):
             msg = _no_hevc_pe_imports(path)
             if msg:
-                return msg, entries, unique
+                return msg, entries, scanned
         msg = _no_hevc_binary_strings(path)
         if msg:
-            return msg, entries, unique
-    return None, entries, unique
+            return msg, entries, scanned
+        scanned.append(path)
+    return None, entries, scanned
 
 
 def case_heif(all_targets=False):

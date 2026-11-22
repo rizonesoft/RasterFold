@@ -379,6 +379,21 @@ class NoHevcArtifactProofTests(unittest.TestCase):
             self.assertIn("x265_encoder_open", msg)
             bad_ar.unlink()
 
+            # Neutrally named Windows COFF BigObj (header 00 00 ff ff) in prefix caught directly by llvm-nm
+            bigobj_s = t / "bigobj.s"
+            bigobj_s.write_text(
+                ".text\n.globl x265_encoder_open\nx265_encoder_open:\nret\n"
+                ".macro ms n\n.section .s\\n,\"r\"\n.byte 0\n.endm\n"
+                ".altmacro\n.set i,0\n.rept 65280\nms %i\n.set i,i+1\n.endr\n"
+            )
+            bigobj = prefix / "lib" / "bigobj.bin"
+            run_ok([str(clang), "-c", str(bigobj_s), "-o", str(bigobj)])
+            self.assertEqual(bigobj.read_bytes()[:4], b"\x00\x00\xff\xff")
+            msg, _, _ = cc._no_hevc_in_dependency_prefix(str(prefix))
+            self.assertIsNotNone(msg)
+            self.assertIn("x265_encoder_open", msg)
+            bigobj.unlink()
+
             (prefix / "lib" / "dangling.a").symlink_to(t / "nowhere.a")
             with self.assertRaises(RuntimeError):
                 cc._no_hevc_in_dependency_prefix(str(prefix))
