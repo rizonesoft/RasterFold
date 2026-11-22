@@ -1,0 +1,1206 @@
+/* C11 test harness + CLI for JPEG 2000 session adapter (D10 T02 s9). */
+#ifndef _WIN32
+#define _POSIX_C_SOURCE 200809L
+#endif
+
+#include "rfc_codecs.h"
+#include "rfc_io.h"
+#include "rfc_job.h"
+#include "rfc_verify.h"
+
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#define set_env_var(k, v) _putenv_s((k), (v))
+#define unset_env_var(k) _putenv_s((k), "")
+#else
+#include <unistd.h>
+#define set_env_var(k, v) setenv((k), (v), 1)
+#define unset_env_var(k) unsetenv((k))
+#endif
+
+static int g_checks = 0;
+static int g_fails = 0;
+
+#define CHECK(cond)                                                          \
+    do {                                                                     \
+        g_checks++;                                                          \
+        if (!(cond)) {                                                       \
+            fprintf(stderr, "CHECK FAILED (%s:%d): %s\n", __FILE__,          \
+                    __LINE__, #cond);                                        \
+            g_fails++;                                                       \
+            return;                                                          \
+        }                                                                    \
+    } while (0)
+
+typedef struct tracked_alloc {
+    size_t live_bytes;
+    size_t peak_bytes;
+    size_t alloc_count;
+} tracked_alloc;
+
+static void *t_alloc(void *ctx, size_t n) {
+    tracked_alloc *t = (tracked_alloc *)ctx;
+    size_t *hdr = (size_t *)malloc(sizeof(size_t) + (n ? n : 1u));
+    if (!hdr) {
+        return NULL;
+    }
+    *hdr = n;
+    t->live_bytes += n;
+    if (t->live_bytes > t->peak_bytes) {
+        t->peak_bytes = t->live_bytes;
+    }
+    t->alloc_count++;
+    return (void *)(hdr + 1);
+}
+
+static void t_free(void *ctx, void *p) {
+    if (!p) {
+        return;
+    }
+    tracked_alloc *t = (tracked_alloc *)ctx;
+    size_t *hdr = ((size_t *)p) - 1;
+    t->live_bytes -= *hdr;
+    free(hdr);
+}
+
+static void init_exec(rfc_exec_context *exec,
+                      tracked_alloc *st,
+                      rfc_allocator *al,
+                      rfc_budget *budget) {
+    memset(st, 0, sizeof(*st));
+    memset(al, 0, sizeof(*al));
+    al->ctx = st;
+    al->alloc = t_alloc;
+    al->free = t_free;
+    memset(exec, 0, sizeof(*exec));
+    exec->allocator = al;
+    exec->budget = budget;
+    exec->codec_threads = 1u;
+    rfc_limits_default(&exec->limits);
+}
+
+static void temp_path(char *out, size_t cap, const char *name) {
+#ifdef _WIN32
+    char dir[MAX_PATH];
+    DWORD n = GetTempPathA((DWORD)sizeof(dir), dir);
+    if (n == 0u || n >= sizeof(dir)) {
+        snprintf(out, cap, "%s", name);
+        return;
+    }
+    snprintf(out, cap, "%srfc_jp2_%lu_%s", dir,
+             (unsigned long)GetCurrentProcessId(), name);
+#else
+    snprintf(out, cap, "/tmp/rfc_jp2_%ld_%s", (long)getpid(), name);
+#endif
+}
+
+static int file_exists(const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        return 0;
+    }
+    fclose(f);
+    return 1;
+}
+
+static int write_file_all(const char *path, const uint8_t *buf, size_t len) {
+    FILE *f = fopen(path, "wb");
+    if (!f) {
+        return 0;
+    }
+    int ok = (len == 0u) || (fwrite(buf, 1u, len, f) == len);
+    fclose(f);
+    return ok;
+}
+
+static uint8_t *read_file_all(const char *path, size_t *out_len) {
+    *out_len = 0u;
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        return NULL;
+    }
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        return NULL;
+    }
+    long sz = ftell(f);
+    if (sz < 0) {
+        fclose(f);
+        return NULL;
+    }
+    rewind(f);
+    uint8_t *buf = (uint8_t *)malloc((size_t)sz + 1u);
+    if (!buf) {
+        fclose(f);
+        return NULL;
+    }
+    if (sz > 0 && fread(buf, 1u, (size_t)sz, f) != (size_t)sz) {
+        free(buf);
+        fclose(f);
+        return NULL;
+    }
+    fclose(f);
+    *out_len = (size_t)sz;
+    return buf;
+}
+
+static uint16_t be16(const uint8_t *p) {
+    return (uint16_t)(((uint16_t)p[0] << 8) | (uint16_t)p[1]);
+}
+
+static uint32_t be32(const uint8_t *p) {
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
+           ((uint32_t)p[2] << 8) | (uint32_t)p[3];
+}
+
+static void put_be32(uint8_t *p, uint32_t v) {
+    p[0] = (uint8_t)(v >> 24);
+    p[1] = (uint8_t)((v >> 16) & 0xFFu);
+    p[2] = (uint8_t)((v >> 8) & 0xFFu);
+    p[3] = (uint8_t)(v & 0xFFu);
+}
+
+/* Locate a top-level JP2 box payload. */
+static int find_jp2_box(const uint8_t *buf,
+                        size_t len,
+                        const char tag[4],
+                        const uint8_t **out_ptr,
+                        size_t *out_len) {
+    if (len < 12u) {
+        return 0;
+    }
+    size_t off = 12u;
+    while (off + 8u <= len) {
+        uint32_t l = be32(buf + off);
+        size_t total = (l == 0u) ? (len - off) : (size_t)l;
+        if (total < 8u || off + total > len) {
+            return 0;
+        }
+        if (memcmp(buf + off + 4u, tag, 4u) == 0) {
+            *out_ptr = buf + off + 8u;
+            *out_len = total - 8u;
+            return 1;
+        }
+        off += total;
+    }
+    return 0;
+}
+
+static int find_sub_box(const uint8_t *buf,
+                        size_t len,
+                        const char tag[4],
+                        const uint8_t **out_ptr,
+                        size_t *out_len) {
+    size_t off = 0u;
+    while (off + 8u <= len) {
+        uint32_t l = be32(buf + off);
+        size_t total = (l == 0u) ? (len - off) : (size_t)l;
+        if (total < 8u || off + total > len) {
+            return 0;
+        }
+        if (memcmp(buf + off + 4u, tag, 4u) == 0) {
+            *out_ptr = buf + off + 8u;
+            *out_len = total - 8u;
+            return 1;
+        }
+        off += total;
+    }
+    return 0;
+}
+
+/* Verify that a JP2 file's jp2c codestream carries a 5-3 reversible COD marker. */
+static int verify_cod_reversible(const uint8_t *jp2, size_t jp2_len) {
+    const uint8_t *cs = NULL;
+    size_t cs_len = 0u;
+    if (!find_jp2_box(jp2, jp2_len, "jp2c", &cs, &cs_len)) {
+        return 0;
+    }
+    if (cs_len < 6u || cs[0] != 0xFFu || cs[1] != 0x4Fu ||
+        cs[2] != 0xFFu || cs[3] != 0x51u) {
+        return 0;
+    }
+    uint16_t lsiz = be16(cs + 4u);
+    size_t pos = 4u + (size_t)lsiz;
+    while (pos + 4u <= cs_len) {
+        if (cs[pos] != 0xFFu) {
+            return 0;
+        }
+        uint8_t m = cs[pos + 1u];
+        if (m == 0x90u) {
+            break;
+        }
+        uint16_t ml = be16(cs + pos + 2u);
+        if (ml < 2u || pos + 2u + ml > cs_len) {
+            return 0;
+        }
+        if (m == 0x52u && ml >= 12u) {
+            return cs[pos + 13u] == 1u; /* 1 == 5-3 reversible */
+        }
+        pos += 2u + ml;
+    }
+    return 0;
+}
+
+/* ---- Test 1: Registration and geometry sniffing ---- */
+
+static void test_registration_and_geometry(void) {
+    CHECK(rfc_registry_select(RFC_FORMAT_JPEG2000, RFC_MODE_READ) ==
+          RFC_ERR_NO_ADAPTER);
+    CHECK(rfc_codecs_register_jp2() == RFC_OK);
+    CHECK(rfc_codecs_register_jp2() == RFC_ERR_DUPLICATE);
+    CHECK(rfc_registry_select(RFC_FORMAT_JPEG2000, RFC_MODE_READ) == RFC_OK);
+    CHECK(rfc_registry_select(RFC_FORMAT_JPEG2000, RFC_MODE_WRITE) == RFC_OK);
+    CHECK(rfc_codecs_unregister_jp2() == RFC_OK);
+    CHECK(rfc_registry_select(RFC_FORMAT_JPEG2000, RFC_MODE_READ) ==
+          RFC_ERR_NO_ADAPTER);
+    CHECK(rfc_codecs_register_jp2() == RFC_OK);
+
+    /* Encode a small RGBA8 JP2 and verify both JP2 and bare-J2K geometry sniffing. */
+    const rfc_session_adapter *adp =
+        rfc_registry_session_adapter(RFC_FORMAT_JPEG2000);
+    CHECK(adp != NULL);
+    tracked_alloc st;
+    rfc_allocator al;
+    rfc_exec_context exec;
+    init_exec(&exec, &st, &al, NULL);
+
+    rfc_layout lay = {RFC_SAMPLE_RGBA8, RFC_ALPHA_STRAIGHT, 13u, 9u, 13u * 4u, 8u};
+    rfc_frame src;
+    CHECK(rfc_frame_alloc(&src, &lay, NULL, &al) == RFC_OK);
+    for (size_t i = 0u; i < src.data_len; i++) {
+        src.data[i] = (uint8_t)((i * 37u + 11u) & 0xFFu);
+    }
+    void *sess = NULL;
+    CHECK(adp->open_session(&exec, &sess) == RFC_OK);
+    rfc_encoded enc;
+    CHECK(adp->encode_session(sess, &exec, &src, 1u, NULL, NULL, 0u, &enc) ==
+          RFC_OK);
+    adp->close_session(sess);
+
+    rfc_sniff_result sr;
+    memset(&sr, 0, sizeof(sr));
+    CHECK(rfc_input_sniff_bytes(enc.data, enc.len, "a.jp2", &sr) == RFC_OK);
+    CHECK(sr.content_format == RFC_FORMAT_JPEG2000 && !sr.disagreement);
+
+    /* RGB8 bare J2K sniff */
+    rfc_frame_free(&src);
+    rfc_encoded_free(&enc);
+    rfc_layout lay3 = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 11u, 7u, 11u * 3u, 8u};
+    CHECK(rfc_frame_alloc(&src, &lay3, NULL, &al) == RFC_OK);
+    memset(src.data, 0x5Au, src.data_len);
+    CHECK(adp->open_session(&exec, &sess) == RFC_OK);
+    CHECK(adp->encode_session(sess, &exec, &src, 1u, NULL, NULL, 0u, &enc) ==
+          RFC_OK);
+    adp->close_session(sess);
+    const uint8_t *cs = NULL;
+    size_t cs_len = 0u;
+    CHECK(find_jp2_box(enc.data, enc.len, "jp2c", &cs, &cs_len));
+    memset(&sr, 0, sizeof(sr));
+    CHECK(rfc_input_sniff_bytes(cs, cs_len, "b.j2k", &sr) == RFC_OK);
+    CHECK(sr.content_format == RFC_FORMAT_JPEG2000 && !sr.disagreement);
+
+    rfc_frame_free(&src);
+    rfc_encoded_free(&enc);
+    CHECK(st.live_bytes == 0u);
+    printf("jp2: registration_and_geometry ok\n");
+}
+
+/* ---- Test 2: All 6 sample formats, small sizes, reduced precision, stride, ICC+RGBA cdef, bare J2K ---- */
+
+static void test_samples_precision_stride_and_icc(void) {
+    const rfc_session_adapter *adp =
+        rfc_registry_session_adapter(RFC_FORMAT_JPEG2000);
+    CHECK(adp != NULL);
+    tracked_alloc st;
+    rfc_allocator al;
+    rfc_exec_context exec;
+    init_exec(&exec, &st, &al, NULL);
+
+    /* 1. All 6 native sample formats + small dimensions (1x1, 1x17, 17x1, 43x31). */
+    static const struct {
+        rfc_sample_format fmt;
+        rfc_alpha_mode alpha;
+        uint32_t w;
+        uint32_t h;
+        uint32_t bpp;
+        uint32_t bits;
+    } cases[] = {
+        {RFC_SAMPLE_GRAY8, RFC_ALPHA_NONE, 1u, 1u, 1u, 8u},
+        {RFC_SAMPLE_GRAY8, RFC_ALPHA_NONE, 1u, 17u, 1u, 8u},
+        {RFC_SAMPLE_GRAY16, RFC_ALPHA_NONE, 17u, 1u, 2u, 16u},
+        {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 43u, 31u, 3u, 8u},
+        {RFC_SAMPLE_RGBA8, RFC_ALPHA_STRAIGHT, 29u, 23u, 4u, 8u},
+        {RFC_SAMPLE_RGB16, RFC_ALPHA_NONE, 19u, 15u, 6u, 16u},
+        {RFC_SAMPLE_RGBA16, RFC_ALPHA_STRAIGHT, 17u, 13u, 8u, 16u},
+    };
+    for (size_t ci = 0u; ci < sizeof(cases) / sizeof(cases[0]); ci++) {
+        rfc_layout lay = {cases[ci].fmt, cases[ci].alpha, cases[ci].w,
+                          cases[ci].h, cases[ci].w * cases[ci].bpp,
+                          cases[ci].bits};
+        rfc_frame src;
+        CHECK(rfc_frame_alloc(&src, &lay, NULL, &al) == RFC_OK);
+        for (size_t i = 0u; i < src.data_len; i++) {
+            src.data[i] = (uint8_t)((i * 73u + ci * 19u + 7u) & 0xFFu);
+        }
+        /* For RGBA8/RGBA16, put A == 0 with non-zero RGB on pixel 0. */
+        if (cases[ci].fmt == RFC_SAMPLE_RGBA8) {
+            src.data[0] = 0xABu;
+            src.data[1] = 0xCDu;
+            src.data[2] = 0xEFu;
+            src.data[3] = 0x00u;
+        } else if (cases[ci].fmt == RFC_SAMPLE_RGBA16) {
+            uint16_t *p16 = (uint16_t *)src.data;
+            p16[0] = 0x1234u;
+            p16[1] = 0x5678u;
+            p16[2] = 0x9ABCu;
+            p16[3] = 0x0000u;
+        }
+
+        void *s_enc = NULL;
+        CHECK(adp->open_session(&exec, &s_enc) == RFC_OK);
+        rfc_encoded enc;
+        CHECK(adp->encode_session(s_enc, &exec, &src, 1u, NULL, NULL, 0u,
+                                  &enc) == RFC_OK);
+        adp->close_session(s_enc);
+        CHECK(verify_cod_reversible(enc.data, enc.len));
+
+        void *s_dec = NULL;
+        CHECK(adp->open_session(&exec, &s_dec) == RFC_OK);
+        rfc_frame *dec = NULL;
+        size_t dc = 0u;
+        rfc_metadata dm;
+        CHECK(adp->decode_session(s_dec, &exec, enc.data, enc.len, NULL, 0u,
+                                  &dec, &dc, &dm) == RFC_OK);
+        adp->close_session(s_dec);
+        CHECK(dc == 1u && dec[0].layout.format == cases[ci].fmt &&
+              dec[0].layout.alpha == cases[ci].alpha &&
+              dec[0].layout.width == cases[ci].w &&
+              dec[0].layout.height == cases[ci].h &&
+              dec[0].layout.bits_per_sample == cases[ci].bits &&
+              dec[0].data_len == src.data_len &&
+              memcmp(dec[0].data, src.data, src.data_len) == 0);
+
+        rfc_metadata_free(&dm, &al);
+        rfc_frame_free(&dec[0]);
+        al.free(al.ctx, dec);
+        rfc_encoded_free(&enc);
+        rfc_frame_free(&src);
+    }
+
+    /* 2. Padded-stride multi-row frame round-trip. */
+    {
+        uint32_t w = 11u, h = 7u;
+        size_t tight = (size_t)w * 3u;
+        size_t stride = tight + 19u;
+        rfc_layout lay = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, w, h, stride, 8u};
+        rfc_frame src;
+        CHECK(rfc_frame_alloc(&src, &lay, NULL, &al) == RFC_OK);
+        memset(src.data, 0xEEu, src.data_len);
+        for (uint32_t y = 0u; y < h; y++) {
+            for (size_t x = 0u; x < tight; x++) {
+                src.data[(size_t)y * stride + x] =
+                    (uint8_t)((y * 41u + x * 13u) & 0xFFu);
+            }
+        }
+        void *se = NULL, *sd = NULL;
+        CHECK(adp->open_session(&exec, &se) == RFC_OK);
+        rfc_encoded enc;
+        CHECK(adp->encode_session(se, &exec, &src, 1u, NULL, NULL, 0u, &enc) ==
+              RFC_OK);
+        adp->close_session(se);
+        CHECK(adp->open_session(&exec, &sd) == RFC_OK);
+        rfc_frame *dec = NULL;
+        size_t dc = 0u;
+        rfc_metadata dm;
+        CHECK(adp->decode_session(sd, &exec, enc.data, enc.len, NULL, 0u, &dec,
+                                  &dc, &dm) == RFC_OK);
+        adp->close_session(sd);
+        CHECK(dc == 1u);
+        for (uint32_t y = 0u; y < h; y++) {
+            CHECK(memcmp(dec[0].data + (size_t)y * dec[0].layout.stride_bytes,
+                         src.data + (size_t)y * stride, tight) == 0);
+        }
+        rfc_metadata_free(&dm, &al);
+        rfc_frame_free(&dec[0]);
+        al.free(al.ctx, dec);
+        rfc_encoded_free(&enc);
+        rfc_frame_free(&src);
+    }
+
+    /* 3. Reduced-precision left-aligned MSB contract (Plan #5):
+     * 12-bit valid 0xFFF0 passes and emits prec=12; invalid 0xFFF1 refused. */
+    {
+        rfc_layout lay12 = {RFC_SAMPLE_RGB16, RFC_ALPHA_NONE, 4u, 4u,
+                            4u * 6u, 12u};
+        rfc_frame src12;
+        CHECK(rfc_frame_alloc(&src12, &lay12, NULL, &al) == RFC_OK);
+        uint16_t *p = (uint16_t *)src12.data;
+        for (size_t i = 0u; i < 4u * 4u * 3u; i++) {
+            p[i] = (uint16_t)(((i * 257u) & 0x0FFFu) << 4);
+        }
+        p[0] = 0xFFF0u;
+        void *se = NULL;
+        CHECK(adp->open_session(&exec, &se) == RFC_OK);
+        rfc_encoded enc;
+        CHECK(adp->encode_session(se, &exec, &src12, 1u, NULL, NULL, 0u,
+                                  &enc) == RFC_OK);
+        /* Verify SIZ Ssiz byte reports 12-bit unsigned (prec - 1 == 11). */
+        const uint8_t *cs = NULL;
+        size_t cs_len = 0u;
+        CHECK(find_jp2_box(enc.data, enc.len, "jp2c", &cs, &cs_len));
+        CHECK(cs_len > 42u && cs[42u] == 11u);
+        void *sd = NULL;
+        CHECK(adp->open_session(&exec, &sd) == RFC_OK);
+        rfc_frame *dec = NULL;
+        size_t dc = 0u;
+        rfc_metadata dm;
+        CHECK(adp->decode_session(sd, &exec, enc.data, enc.len, NULL, 0u, &dec,
+                                  &dc, &dm) == RFC_OK);
+        adp->close_session(sd);
+        CHECK(dc == 1u && dec[0].layout.bits_per_sample == 12u &&
+              memcmp(dec[0].data, src12.data, src12.data_len) == 0);
+        rfc_metadata_free(&dm, &al);
+        rfc_frame_free(&dec[0]);
+        al.free(al.ctx, dec);
+        rfc_encoded_free(&enc);
+
+        /* Set low padding bit (0xFFF1): must be refused with RFC_ERR_INVALID_ARGUMENT. */
+        p[0] = 0xFFF1u;
+        CHECK(adp->encode_session(se, &exec, &src12, 1u, NULL, NULL, 0u,
+                                  &enc) == RFC_ERR_INVALID_ARGUMENT);
+        adp->close_session(se);
+        rfc_frame_free(&src12);
+    }
+
+    /* 4. ICC-tagged RGBA8 (Plan #1): BOTH colr (meth=2) AND cdef (typ=1 on ch 3)
+     * must be present in jp2h, and A==0 RGB survives fresh decode. */
+    {
+        static const uint8_t k_icc[32] = {
+            0x00, 0x00, 0x00, 0x20, 't', 'e', 's', 't',
+            0x04, 0x30, 0x00, 0x00, 'm', 'n', 't', 'r',
+            'R',  'G',  'B',  ' ',  'X', 'Y', 'Z', ' ',
+            'a',  'c',  's',  'p',  1,   2,   3,   4
+        };
+        rfc_layout lay = {RFC_SAMPLE_RGBA8, RFC_ALPHA_STRAIGHT, 8u, 6u,
+                          8u * 4u, 8u};
+        rfc_frame src;
+        CHECK(rfc_frame_alloc(&src, &lay, NULL, &al) == RFC_OK);
+        for (size_t i = 0u; i < src.data_len; i++) {
+            src.data[i] = (uint8_t)((i * 29u + 5u) & 0xFFu);
+        }
+        src.data[0] = 0xDEu;
+        src.data[1] = 0xADu;
+        src.data[2] = 0xBEu;
+        src.data[3] = 0x00u; /* A == 0 with non-zero RGB */
+        rfc_metadata m_in;
+        memset(&m_in, 0, sizeof(m_in));
+        m_in.icc = (uint8_t *)k_icc;
+        m_in.icc_len = sizeof(k_icc);
+
+        void *se = NULL;
+        CHECK(adp->open_session(&exec, &se) == RFC_OK);
+        rfc_encoded enc;
+        CHECK(adp->encode_session(se, &exec, &src, 1u, &m_in, NULL, 0u, &enc) ==
+              RFC_OK);
+        adp->close_session(se);
+
+        /* Inspect jp2h for BOTH colr(meth=2) and cdef(cn=3, typ=1, asoc=0). */
+        const uint8_t *jp2h = NULL, *colr = NULL, *cdef = NULL;
+        size_t jp2h_len = 0u, colr_len = 0u, cdef_len = 0u;
+        CHECK(find_jp2_box(enc.data, enc.len, "jp2h", &jp2h, &jp2h_len));
+        CHECK(find_sub_box(jp2h, jp2h_len, "colr", &colr, &colr_len));
+        CHECK(colr_len == 3u + sizeof(k_icc) && colr[0] == 2u &&
+              memcmp(colr + 3u, k_icc, sizeof(k_icc)) == 0);
+        CHECK(find_sub_box(jp2h, jp2h_len, "cdef", &cdef, &cdef_len));
+        CHECK(cdef_len == 2u + 4u * 6u && be16(cdef) == 4u &&
+              be16(cdef + 2u + 3u * 6u) == 3u &&
+              be16(cdef + 2u + 3u * 6u + 2u) == 1u &&
+              be16(cdef + 2u + 3u * 6u + 4u) == 0u);
+
+        /* Fresh decode preserves exact pixels (including A==0 RGB) and ICC. */
+        void *sd = NULL;
+        CHECK(adp->open_session(&exec, &sd) == RFC_OK);
+        rfc_frame *dec = NULL;
+        size_t dc = 0u;
+        rfc_metadata dm;
+        CHECK(adp->decode_session(sd, &exec, enc.data, enc.len, NULL, 0u, &dec,
+                                  &dc, &dm) == RFC_OK);
+        adp->close_session(sd);
+        CHECK(dc == 1u && dec[0].layout.format == RFC_SAMPLE_RGBA8 &&
+              dec[0].layout.alpha == RFC_ALPHA_STRAIGHT &&
+              memcmp(dec[0].data, src.data, src.data_len) == 0 &&
+              dm.icc_len == sizeof(k_icc) &&
+              memcmp(dm.icc, k_icc, sizeof(k_icc)) == 0);
+        rfc_metadata_free(&dm, &al);
+        rfc_frame_free(&dec[0]);
+        al.free(al.ctx, dec);
+
+        /* Bare 4-component J2K codestream (extracted jp2c) must be REFUSED (Plan #2). */
+        const uint8_t *cs4 = NULL;
+        size_t cs4_len = 0u;
+        CHECK(find_jp2_box(enc.data, enc.len, "jp2c", &cs4, &cs4_len));
+        CHECK(adp->open_session(&exec, &sd) == RFC_OK);
+        size_t before_alloc = st.alloc_count;
+        CHECK(adp->decode_session(sd, &exec, cs4, cs4_len, NULL, 0u, &dec, &dc,
+                                  &dm) == RFC_ERR_UNSUPPORTED_COMBINATION);
+        CHECK(st.alloc_count == before_alloc);
+        adp->close_session(sd);
+
+        rfc_encoded_free(&enc);
+        rfc_frame_free(&src);
+    }
+
+    /* 5. Bare 1-ch (GRAY8) and 3-ch (RGB8) J2K codestreams import accurately (Plan #2). */
+    for (int ch = 1; ch <= 3; ch += 2) {
+        rfc_layout lay = {ch == 1 ? RFC_SAMPLE_GRAY8 : RFC_SAMPLE_RGB8,
+                          RFC_ALPHA_NONE, 9u, 7u, (size_t)9u * (size_t)ch, 8u};
+        rfc_frame src;
+        CHECK(rfc_frame_alloc(&src, &lay, NULL, &al) == RFC_OK);
+        for (size_t i = 0u; i < src.data_len; i++) {
+            src.data[i] = (uint8_t)((i * 53u + 3u) & 0xFFu);
+        }
+        void *se = NULL, *sd = NULL;
+        CHECK(adp->open_session(&exec, &se) == RFC_OK);
+        rfc_encoded enc;
+        CHECK(adp->encode_session(se, &exec, &src, 1u, NULL, NULL, 0u, &enc) ==
+              RFC_OK);
+        adp->close_session(se);
+        const uint8_t *cs = NULL;
+        size_t cs_len = 0u;
+        CHECK(find_jp2_box(enc.data, enc.len, "jp2c", &cs, &cs_len));
+        CHECK(adp->open_session(&exec, &sd) == RFC_OK);
+        rfc_frame *dec = NULL;
+        size_t dc = 0u;
+        rfc_metadata dm;
+        CHECK(adp->decode_session(sd, &exec, cs, cs_len, NULL, 0u, &dec, &dc,
+                                  &dm) == RFC_OK);
+        adp->close_session(sd);
+        CHECK(dc == 1u && dec[0].layout.format == lay.format &&
+              memcmp(dec[0].data, src.data, src.data_len) == 0);
+        rfc_metadata_free(&dm, &al);
+        rfc_frame_free(&dec[0]);
+        al.free(al.ctx, dec);
+        rfc_encoded_free(&enc);
+        rfc_frame_free(&src);
+    }
+
+    CHECK(st.live_bytes == 0u);
+    printf("jp2: samples_precision_stride_and_icc ok\n");
+}
+
+/* ---- Test 3: Refusals, two-tier malformed inputs, metadata policy ---- */
+
+static void test_refusals_malformed_and_metadata_policy(void) {
+    const rfc_session_adapter *adp =
+        rfc_registry_session_adapter(RFC_FORMAT_JPEG2000);
+    CHECK(adp != NULL);
+    tracked_alloc st;
+    rfc_allocator al;
+    rfc_budget *bud = rfc_budget_create(16u * 1024u * 1024u);
+    CHECK(bud != NULL);
+    rfc_exec_context exec;
+    init_exec(&exec, &st, &al, bud);
+
+    /* Encode refusals: byte-identical, multi-frame, premultiplied alpha. */
+    {
+        rfc_layout lay = {RFC_SAMPLE_RGBA8, RFC_ALPHA_STRAIGHT, 4u, 4u, 16u, 8u};
+        rfc_frame fr[2];
+        CHECK(rfc_frame_alloc(&fr[0], &lay, NULL, &al) == RFC_OK);
+        CHECK(rfc_frame_alloc(&fr[1], &lay, NULL, &al) == RFC_OK);
+        memset(fr[0].data, 0x40, fr[0].data_len);
+        memset(fr[1].data, 0x40, fr[1].data_len);
+        void *se = NULL;
+        CHECK(adp->open_session(&exec, &se) == RFC_OK);
+        rfc_encoded enc;
+        rfc_setting_value bi[1] = {{"exactness", "byte-identical"}};
+        CHECK(adp->encode_session(se, &exec, &fr[0], 1u, NULL, bi, 1u, &enc) ==
+              RFC_ERR_UNSUPPORTED_COMBINATION);
+        CHECK(adp->encode_session(se, &exec, fr, 2u, NULL, NULL, 0u, &enc) ==
+              RFC_ERR_UNSUPPORTED_COMBINATION);
+        fr[0].layout.alpha = RFC_ALPHA_PREMULTIPLIED;
+        CHECK(adp->encode_session(se, &exec, &fr[0], 1u, NULL, NULL, 0u,
+                                  &enc) == RFC_ERR_UNSUPPORTED_ALPHA);
+        adp->close_session(se);
+        rfc_frame_free(&fr[0]);
+        rfc_frame_free(&fr[1]);
+    }
+
+    /* Build a valid 8x8 RGB8 JP2 to derive Tier-1 (structural/representation)
+     * and Tier-2 (valid framing, corrupt tile payload) malformed fixtures. */
+    rfc_layout lay = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 8u, 8u, 24u, 8u};
+    rfc_frame src;
+    CHECK(rfc_frame_alloc(&src, &lay, NULL, &al) == RFC_OK);
+    for (size_t i = 0u; i < src.data_len; i++) {
+        src.data[i] = (uint8_t)((i * 17u + 3u) & 0xFFu);
+    }
+    void *se = NULL;
+    CHECK(adp->open_session(&exec, &se) == RFC_OK);
+    rfc_encoded valid;
+    CHECK(adp->encode_session(se, &exec, &src, 1u, NULL, NULL, 0u, &valid) ==
+          RFC_OK);
+    adp->close_session(se);
+
+    /* Tier-1: bad magic, truncated header, signed Ssiz, subsampled XRsiz=2,
+     * over-limit dimensions: all must fail BEFORE any frame allocation. */
+    {
+        static const uint8_t bad_sig[16] = {'N', 'O', 'P', 'E', 0, 0, 0, 0,
+                                            0,   0,   0,   0,   0, 0, 0, 0};
+        void *sd = NULL;
+        CHECK(adp->open_session(&exec, &sd) == RFC_OK);
+        rfc_frame *dec = NULL;
+        size_t dc = 0u;
+        rfc_metadata dm;
+        size_t ac0 = st.alloc_count;
+        CHECK(adp->decode_session(sd, &exec, bad_sig, sizeof(bad_sig), NULL, 0u,
+                                  &dec, &dc, &dm) == RFC_ERR_INVALID_ARGUMENT);
+        CHECK(st.alloc_count == ac0);
+        CHECK(adp->decode_session(sd, &exec, valid.data, 16u, NULL, 0u, &dec,
+                                  &dc, &dm) == RFC_ERR_TRUNCATED_INPUT);
+        CHECK(st.alloc_count == ac0);
+
+        /* Mutate SIZ Ssiz to signed (bit 7 set) -> RFC_ERR_UNSUPPORTED_SAMPLE. */
+        uint8_t *mut = (uint8_t *)malloc(valid.len);
+        CHECK(mut != NULL);
+        memcpy(mut, valid.data, valid.len);
+        const uint8_t *cs_ptr = NULL;
+        size_t cs_len = 0u;
+        CHECK(find_jp2_box(mut, valid.len, "jp2c", &cs_ptr, &cs_len));
+        size_t cs_off = (size_t)(cs_ptr - mut);
+        mut[cs_off + 42u] |= 0x80u;
+        CHECK(adp->decode_session(sd, &exec, mut, valid.len, NULL, 0u, &dec,
+                                  &dc, &dm) == RFC_ERR_UNSUPPORTED_SAMPLE);
+        CHECK(st.alloc_count == ac0);
+
+        /* Subsampled XRsiz = 2 -> RFC_ERR_UNSUPPORTED_SAMPLE. */
+        memcpy(mut, valid.data, valid.len);
+        mut[cs_off + 43u] = 2u;
+        CHECK(adp->decode_session(sd, &exec, mut, valid.len, NULL, 0u, &dec,
+                                  &dc, &dm) == RFC_ERR_UNSUPPORTED_SAMPLE);
+        CHECK(st.alloc_count == ac0);
+
+        /* Tier-2 (Plan #3): valid framing, truncated tile/packet payload ->
+         * fails within budget, releases reservation to 0, allocates no frame. */
+        memcpy(mut, valid.data, valid.len);
+        /* Truncate mid-tile after SOT so header passes but decode fails. */
+        size_t trunc_len = valid.len - 6u;
+        /* Update jp2c box length to match truncation. */
+        if (cs_off >= 8u) {
+            put_be32(mut + cs_off - 8u, (uint32_t)(trunc_len - (cs_off - 8u)));
+        }
+        rfc_status tst = adp->decode_session(sd, &exec, mut, trunc_len, NULL,
+                                             0u, &dec, &dc, &dm);
+        CHECK(tst != RFC_OK && dec == NULL && dc == 0u);
+        rfc_budget_stats bsn;
+        rfc_budget_stats_get(bud, &bsn);
+        CHECK(bsn.current_allocated_bytes == 0u);
+
+        free(mut);
+        adp->close_session(sd);
+    }
+
+    /* Strip metadata policy drops ICC on decode. */
+    {
+        static const uint8_t k_icc[20] = {'a', 'c', 's', 'p', 1, 2, 3, 4, 5, 6,
+                                          7,   8,   9,   10,  11, 12, 13, 14, 15, 16};
+        rfc_metadata mi;
+        memset(&mi, 0, sizeof(mi));
+        mi.icc = (uint8_t *)k_icc;
+        mi.icc_len = sizeof(k_icc);
+        CHECK(adp->open_session(&exec, &se) == RFC_OK);
+        rfc_encoded e_icc;
+        CHECK(adp->encode_session(se, &exec, &src, 1u, &mi, NULL, 0u, &e_icc) ==
+              RFC_OK);
+        adp->close_session(se);
+
+        void *sd = NULL;
+        CHECK(adp->open_session(&exec, &sd) == RFC_OK);
+        rfc_setting_value strip_sv[1] = {{"metadata", "strip"}};
+        rfc_frame *dec = NULL;
+        size_t dc = 0u;
+        rfc_metadata dm;
+        CHECK(adp->decode_session(sd, &exec, e_icc.data, e_icc.len, strip_sv,
+                                  1u, &dec, &dc, &dm) == RFC_OK);
+        adp->close_session(sd);
+        CHECK(dc == 1u && dm.icc == NULL && dm.icc_len == 0u);
+        rfc_metadata_free(&dm, &al);
+        rfc_frame_free(&dec[0]);
+        al.free(al.ctx, dec);
+        rfc_encoded_free(&e_icc);
+    }
+
+    rfc_encoded_free(&valid);
+    rfc_frame_free(&src);
+    rfc_budget_destroy(bud);
+    CHECK(st.live_bytes == 0u);
+    printf("jp2: refusals_malformed_and_metadata_policy ok\n");
+}
+
+/* ---- Test 4: Jobs, budget, pre-decode premul alpha, threads, cancel, file safety ---- */
+
+static struct {
+    uint32_t decode_calls;
+} g_jp2_premul_mock;
+
+static rfc_status pm_open(const rfc_exec_context *exec, void **out_s) {
+    (void)exec;
+    *out_s = &g_jp2_premul_mock;
+    return RFC_OK;
+}
+static void pm_close(void *s) { (void)s; }
+static void pm_cancel(void *s) { (void)s; }
+static rfc_status pm_probe(void *s,
+                           const rfc_exec_context *exec,
+                           const uint8_t *bytes,
+                           size_t size,
+                           rfc_image_probe *out_probe) {
+    (void)s; (void)exec; (void)bytes; (void)size;
+    memset(out_probe, 0, sizeof(*out_probe));
+    out_probe->first_frame.format = RFC_SAMPLE_RGBA8;
+    out_probe->first_frame.alpha = RFC_ALPHA_PREMULTIPLIED;
+    out_probe->first_frame.width = 4u;
+    out_probe->first_frame.height = 4u;
+    out_probe->first_frame.stride_bytes = 16u;
+    out_probe->first_frame.bits_per_sample = 8u;
+    out_probe->frame_count = 1u;
+    return RFC_OK;
+}
+static rfc_status pm_decode(void *s,
+                            const rfc_exec_context *exec,
+                            const uint8_t *bytes,
+                            size_t size,
+                            const rfc_setting_value *settings,
+                            size_t setting_count,
+                            rfc_frame **out_frames,
+                            size_t *out_frame_count,
+                            rfc_metadata *out_meta) {
+    (void)s; (void)exec; (void)bytes; (void)size; (void)settings;
+    (void)setting_count; (void)out_frames; (void)out_frame_count;
+    (void)out_meta;
+    g_jp2_premul_mock.decode_calls++;
+    return RFC_ERR_TRUNCATED_INPUT;
+}
+static rfc_status pm_encode(void *s,
+                            const rfc_exec_context *exec,
+                            const rfc_frame *frames,
+                            size_t frame_count,
+                            const rfc_metadata *meta,
+                            const rfc_setting_value *settings,
+                            size_t setting_count,
+                            rfc_encoded *out_encoded) {
+    (void)s; (void)exec; (void)frames; (void)frame_count; (void)meta;
+    (void)settings; (void)setting_count; (void)out_encoded;
+    return RFC_ERR_UNSUPPORTED_COMBINATION;
+}
+
+static rfc_job *g_cancel_job = NULL;
+static void cancel_hook_fn(int phase) {
+    if (phase == 1 && g_cancel_job) {
+        rfc_job_cancel(g_cancel_job);
+    }
+}
+
+static void test_jobs_budget_cancel_threads_and_file_safety(void) {
+    CHECK(rfc_codecs_register_basic() == RFC_OK);
+    const rfc_session_adapter *adp =
+        rfc_registry_session_adapter(RFC_FORMAT_JPEG2000);
+    CHECK(adp != NULL);
+
+    /* 1. Insufficient budget refused on both encode and decode, 0 live leaked. */
+    {
+        tracked_alloc st;
+        rfc_allocator al;
+        rfc_budget *tight = rfc_budget_create(128u);
+        CHECK(tight != NULL);
+        rfc_exec_context exec;
+        init_exec(&exec, &st, &al, tight);
+        rfc_layout lay = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 16u, 16u, 48u, 8u};
+        rfc_frame src;
+        CHECK(rfc_frame_alloc(&src, &lay, NULL, &al) == RFC_OK);
+        memset(src.data, 0x22, src.data_len);
+        void *s = NULL;
+        CHECK(adp->open_session(&exec, &s) == RFC_OK);
+        rfc_encoded enc;
+        CHECK(adp->encode_session(s, &exec, &src, 1u, NULL, NULL, 0u, &enc) ==
+              RFC_ERR_OUT_OF_MEMORY);
+        rfc_budget_stats bsn;
+        rfc_budget_stats_get(tight, &bsn);
+        CHECK(bsn.current_allocated_bytes == 0u);
+        adp->close_session(s);
+        rfc_frame_free(&src);
+        rfc_budget_destroy(tight);
+        CHECK(st.live_bytes == 0u);
+    }
+
+    /* 2. Scheduler file jobs: JP2 -> PNG, PNG -> JP2, byte-identical JP2 -> JP2,
+     * 1-thread job under conflicting OPJ_NUM_THREADS=4 (Plan #7),
+     * pre-decode premultiplied RGBA refusal (Plan #4), active cancel & rollback. */
+    {
+        rfc_scheduler_config cfg;
+        rfc_scheduler_config_default(&cfg);
+        cfg.max_workers = 1u;
+        cfg.memory_budget_bytes = 64u * 1024u * 1024u;
+        rfc_scheduler *sched = rfc_scheduler_create(&cfg);
+        CHECK(sched != NULL);
+
+        /* Create a valid JP2 on disk. */
+        tracked_alloc st;
+        rfc_allocator al;
+        rfc_exec_context exec;
+        init_exec(&exec, &st, &al, NULL);
+        rfc_layout lay = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 24u, 20u, 72u, 8u};
+        rfc_frame src;
+        CHECK(rfc_frame_alloc(&src, &lay, NULL, &al) == RFC_OK);
+        for (size_t i = 0u; i < src.data_len; i++) {
+            src.data[i] = (uint8_t)((i * 31u + 9u) & 0xFFu);
+        }
+        void *se = NULL;
+        CHECK(adp->open_session(&exec, &se) == RFC_OK);
+        rfc_encoded j_bytes;
+        CHECK(adp->encode_session(se, &exec, &src, 1u, NULL, NULL, 0u,
+                                  &j_bytes) == RFC_OK);
+        adp->close_session(se);
+
+        char p_jp2[256], p_png[256], p_jp2_2[256], p_bi[256], p_occ[256];
+        temp_path(p_jp2, sizeof(p_jp2), "src.jp2");
+        temp_path(p_png, sizeof(p_png), "out.png");
+        temp_path(p_jp2_2, sizeof(p_jp2_2), "out2.jp2");
+        temp_path(p_bi, sizeof(p_bi), "bi.jp2");
+        temp_path(p_occ, sizeof(p_occ), "occ.jp2");
+        remove(p_jp2); remove(p_png); remove(p_jp2_2); remove(p_bi); remove(p_occ);
+        CHECK(write_file_all(p_jp2, j_bytes.data, j_bytes.len));
+
+        /* 1-thread job under conflicting OPJ_NUM_THREADS=4 (Plan #7). */
+        set_env_var("OPJ_NUM_THREADS", "4");
+        rfc_io_source si;
+        rfc_io_sink so;
+        rfc_job_spec sp;
+        rfc_job *job = NULL;
+        rfc_job_snapshot snap;
+
+        memset(&sp, 0, sizeof(sp));
+        rfc_io_source_init_path(&si, p_jp2, RFC_IMPORT_DEFAULT);
+        rfc_io_sink_init_path(&so, p_png, RFC_EXPORT_REFUSE_EXISTING);
+        sp.source_format = RFC_FORMAT_JPEG2000;
+        sp.target_format = RFC_FORMAT_PNG;
+        sp.io_source = &si;
+        sp.io_sink = &so;
+        sp.requested_codec_threads = 1u;
+        CHECK(rfc_scheduler_submit(sched, NULL, &sp, &job) == RFC_OK);
+        CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
+        CHECK(rfc_job_snapshot_get(job, &snap) == RFC_OK);
+        CHECK(snap.state == RFC_JOB_SUCCEEDED && snap.status == RFC_OK);
+        rfc_job_release(job);
+
+        /* PNG -> JP2 layout-free job. */
+        memset(&sp, 0, sizeof(sp));
+        rfc_io_source_init_path(&si, p_png, RFC_IMPORT_DEFAULT);
+        rfc_io_sink_init_path(&so, p_jp2_2, RFC_EXPORT_REFUSE_EXISTING);
+        sp.source_format = RFC_FORMAT_PNG;
+        sp.target_format = RFC_FORMAT_JPEG2000;
+        sp.io_source = &si;
+        sp.io_sink = &so;
+        sp.requested_codec_threads = 1u;
+        CHECK(rfc_scheduler_submit(sched, NULL, &sp, &job) == RFC_OK);
+        CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
+        CHECK(rfc_job_snapshot_get(job, &snap) == RFC_OK);
+        CHECK(snap.state == RFC_JOB_SUCCEEDED && snap.status == RFC_OK);
+        rfc_job_release(job);
+        unset_env_var("OPJ_NUM_THREADS");
+
+        /* Same-format byte-identical JP2 -> JP2 copy. */
+        rfc_setting_value bi_sv[1] = {{"exactness", "byte-identical"}};
+        memset(&sp, 0, sizeof(sp));
+        rfc_io_source_init_path(&si, p_jp2, RFC_IMPORT_DEFAULT);
+        rfc_io_sink_init_path(&so, p_bi, RFC_EXPORT_REFUSE_EXISTING);
+        sp.source_format = RFC_FORMAT_JPEG2000;
+        sp.target_format = RFC_FORMAT_JPEG2000;
+        sp.io_source = &si;
+        sp.io_sink = &so;
+        sp.settings = bi_sv;
+        sp.setting_count = 1u;
+        sp.requested_codec_threads = 1u;
+        CHECK(rfc_scheduler_submit(sched, NULL, &sp, &job) == RFC_OK);
+        CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
+        CHECK(rfc_job_snapshot_get(job, &snap) == RFC_OK);
+        CHECK(snap.state == RFC_JOB_SUCCEEDED && snap.status == RFC_OK);
+        rfc_job_release(job);
+        size_t bi_len = 0u;
+        uint8_t *bi_buf = read_file_all(p_bi, &bi_len);
+        CHECK(bi_buf != NULL && bi_len == j_bytes.len &&
+              memcmp(bi_buf, j_bytes.data, bi_len) == 0);
+        free(bi_buf);
+
+        /* Pre-decode premultiplied RGBA refusal (Plan #4): decode_calls == 0. */
+        {
+            rfc_session_adapter msess;
+            memset(&msess, 0, sizeof(msess));
+            msess.abi_version = RFC_CODEC_ABI_VERSION;
+            msess.format = RFC_FORMAT_JPEG_XL;
+            msess.open_session = pm_open;
+            msess.close_session = pm_close;
+            msess.probe_session = pm_probe;
+            msess.decode_session = pm_decode;
+            msess.encode_session = pm_encode;
+            msess.cancel_session = pm_cancel;
+            CHECK(rfc_registry_register_session(&msess) == RFC_OK);
+
+            char p_pm[256], p_pm_out[256];
+            temp_path(p_pm, sizeof(p_pm), "premul.jxl");
+            temp_path(p_pm_out, sizeof(p_pm_out), "premul_out.jp2");
+            remove(p_pm_out);
+            static const uint8_t jxl_stub[16] = {0xFFu, 0x0Au};
+            CHECK(write_file_all(p_pm, jxl_stub, sizeof(jxl_stub)));
+
+            g_jp2_premul_mock.decode_calls = 0u;
+            memset(&sp, 0, sizeof(sp));
+            rfc_io_source_init_path(&si, p_pm, RFC_IMPORT_DEFAULT);
+            rfc_io_sink_init_path(&so, p_pm_out, RFC_EXPORT_REFUSE_EXISTING);
+            sp.source_format = RFC_FORMAT_JPEG_XL;
+            sp.target_format = RFC_FORMAT_JPEG2000;
+            sp.io_source = &si;
+            sp.io_sink = &so;
+            sp.expected_working_set_bytes = 64u * 1024u;
+            sp.requested_codec_threads = 1u;
+            CHECK(rfc_scheduler_submit(sched, NULL, &sp, &job) == RFC_OK);
+            CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
+            CHECK(rfc_job_snapshot_get(job, &snap) == RFC_OK);
+            CHECK(snap.state == RFC_JOB_FAILED &&
+                  snap.status == RFC_ERR_UNSUPPORTED_ALPHA &&
+                  snap.detail[0] != '\0' &&
+                  g_jp2_premul_mock.decode_calls == 0u &&
+                  !file_exists(p_pm_out));
+            rfc_job_release(job);
+            remove(p_pm);
+            CHECK(rfc_registry_unregister_session(RFC_FORMAT_JPEG_XL) == RFC_OK);
+        }
+
+        /* Occupied destination rollback + mid-decode cancellation. */
+        static const uint8_t sentinel[12] = {'K', 'E', 'E', 'P', 'M', 'E',
+                                             'S', 'A', 'F', 'E', '!', '!'};
+        CHECK(write_file_all(p_occ, sentinel, sizeof(sentinel)));
+        memset(&sp, 0, sizeof(sp));
+        rfc_io_source_init_path(&si, p_png, RFC_IMPORT_DEFAULT);
+        rfc_io_sink_init_path(&so, p_occ, RFC_EXPORT_REFUSE_EXISTING);
+        sp.source_format = RFC_FORMAT_PNG;
+        sp.target_format = RFC_FORMAT_JPEG2000;
+        sp.io_source = &si;
+        sp.io_sink = &so;
+        sp.requested_codec_threads = 1u;
+        job = NULL;
+        CHECK(rfc_scheduler_submit(sched, NULL, &sp, &job) ==
+                  RFC_ERR_DESTINATION_EXISTS &&
+              job == NULL);
+        size_t occ_len = 0u;
+        uint8_t *occ_buf = read_file_all(p_occ, &occ_len);
+        CHECK(occ_buf != NULL && occ_len == sizeof(sentinel) &&
+              memcmp(occ_buf, sentinel, sizeof(sentinel)) == 0);
+        free(occ_buf);
+
+        char p_can[256];
+        temp_path(p_can, sizeof(p_can), "cancel_out.png");
+        remove(p_can);
+        rfc_codecs_jp2_set_hook_for_testing(cancel_hook_fn);
+        memset(&sp, 0, sizeof(sp));
+        rfc_io_source_init_path(&si, p_jp2, RFC_IMPORT_DEFAULT);
+        rfc_io_sink_init_path(&so, p_can, RFC_EXPORT_REFUSE_EXISTING);
+        sp.source_format = RFC_FORMAT_JPEG2000;
+        sp.target_format = RFC_FORMAT_PNG;
+        sp.io_source = &si;
+        sp.io_sink = &so;
+        sp.requested_codec_threads = 1u;
+        CHECK(rfc_scheduler_submit(sched, NULL, &sp, &job) == RFC_OK);
+        g_cancel_job = job;
+        CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
+        g_cancel_job = NULL;
+        rfc_codecs_jp2_set_hook_for_testing(NULL);
+        CHECK(rfc_job_snapshot_get(job, &snap) == RFC_OK);
+        CHECK(snap.state == RFC_JOB_CANCELLED && !file_exists(p_can));
+        rfc_job_release(job);
+
+        remove(p_jp2); remove(p_png); remove(p_jp2_2); remove(p_bi);
+        remove(p_occ); remove(p_can);
+        rfc_encoded_free(&j_bytes);
+        rfc_frame_free(&src);
+        rfc_scheduler_destroy(sched);
+        CHECK(st.live_bytes == 0u);
+    }
+
+    CHECK(rfc_codecs_unregister_basic() == RFC_OK);
+    printf("jp2: jobs_budget_cancel_threads_and_file_safety ok\n");
+}
+
+/* ---- CLI mode for test_jp2.py ----
+ *   encode <in.rfqd> <out.jp2> <preserve|strip> [icc_path]
+ *   decode <in.jp2>  <out.rfqd> <preserve|strip>
+ * RFQD binary layout:
+ *   4B "RFQD", u32 LE w, u32 LE h, u32 LE fmt, u32 LE alpha, u32 LE bits,
+ *   u32 LE stride, u32 LE data_len, u32 LE icc_len, data[data_len], icc[icc_len]. */
+
+static uint32_t le32(const uint8_t *p) {
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+static void put_le32(uint8_t *p, uint32_t v) {
+    p[0] = (uint8_t)(v & 0xFFu);
+    p[1] = (uint8_t)((v >> 8) & 0xFFu);
+    p[2] = (uint8_t)((v >> 16) & 0xFFu);
+    p[3] = (uint8_t)(v >> 24);
+}
+
+static int cli_main(int argc, char **argv) {
+    if (rfc_codecs_register_jp2() != RFC_OK) {
+        printf("status=register-failed\n");
+        return 2;
+    }
+    const rfc_session_adapter *adp =
+        rfc_registry_session_adapter(RFC_FORMAT_JPEG2000);
+    tracked_alloc st;
+    rfc_allocator al;
+    rfc_budget *bud = rfc_budget_create(128u * 1024u * 1024u);
+    rfc_exec_context exec;
+    init_exec(&exec, &st, &al, bud);
+
+    if (strcmp(argv[1], "encode") == 0 && argc >= 5) {
+        size_t in_len = 0u;
+        uint8_t *raw = read_file_all(argv[2], &in_len);
+        if (!raw || in_len < 36u || memcmp(raw, "RFQD", 4) != 0) {
+            free(raw);
+            printf("status=invalid-argument\n");
+            rfc_budget_destroy(bud);
+            return 2;
+        }
+        rfc_frame fr;
+        memset(&fr, 0, sizeof(fr));
+        fr.layout.width = le32(raw + 4u);
+        fr.layout.height = le32(raw + 8u);
+        fr.layout.format = (rfc_sample_format)le32(raw + 12u);
+        fr.layout.alpha = (rfc_alpha_mode)le32(raw + 16u);
+        fr.layout.bits_per_sample = le32(raw + 20u);
+        fr.layout.stride_bytes = le32(raw + 24u);
+        uint32_t dlen = le32(raw + 28u);
+        uint32_t ilen = le32(raw + 32u);
+        if ((size_t)36u + dlen + ilen > in_len) {
+            free(raw);
+            printf("status=invalid-argument\n");
+            rfc_budget_destroy(bud);
+            return 2;
+        }
+        fr.data = raw + 36u;
+        fr.data_len = dlen;
+        rfc_metadata meta;
+        memset(&meta, 0, sizeof(meta));
+        if (ilen > 0u) {
+            meta.icc = raw + 36u + dlen;
+            meta.icc_len = ilen;
+        }
+        rfc_setting_value sv[1] = {{"metadata", argv[4]}};
+        void *s = NULL;
+        rfc_status rc = adp->open_session(&exec, &s);
+        rfc_encoded enc;
+        memset(&enc, 0, sizeof(enc));
+        if (rc == RFC_OK) {
+            rc = adp->encode_session(s, &exec, &fr, 1u, &meta, sv, 1u, &enc);
+            adp->close_session(s);
+        }
+        printf("status=%s\nlen=%zu\n", rfc_status_name(rc), enc.len);
+        int exit_c = (rc == RFC_OK) ? 0 : 2;
+        if (rc == RFC_OK && !write_file_all(argv[3], enc.data, enc.len)) {
+            exit_c = 2;
+        }
+        rfc_encoded_free(&enc);
+        free(raw);
+        rfc_budget_destroy(bud);
+        return exit_c;
+    }
+
+    if (strcmp(argv[1], "decode") == 0 && argc >= 5) {
+        size_t in_len = 0u;
+        uint8_t *raw = read_file_all(argv[2], &in_len);
+        if (!raw) {
+            printf("status=io-error\n");
+            rfc_budget_destroy(bud);
+            return 2;
+        }
+        rfc_setting_value sv[1] = {{"metadata", argv[4]}};
+        void *s = NULL;
+        rfc_status rc = adp->open_session(&exec, &s);
+        size_t base_alloc = st.live_bytes;
+        st.peak_bytes = base_alloc;
+        rfc_frame *dec = NULL;
+        size_t dc = 0u;
+        rfc_metadata dm;
+        memset(&dm, 0, sizeof(dm));
+        if (rc == RFC_OK) {
+            rc = adp->decode_session(s, &exec, raw, in_len, sv, 1u, &dec, &dc,
+                                     &dm);
+            adp->close_session(s);
+        }
+        size_t peak_delta =
+            (st.peak_bytes > base_alloc) ? (st.peak_bytes - base_alloc) : 0u;
+        rfc_budget_stats bsn;
+        rfc_budget_stats_get(bud, &bsn);
+        printf("status=%s\npeak_alloc=%zu\nlive_budget=%llu\nout_frames=%zu\n",
+               rfc_status_name(rc), peak_delta,
+               (unsigned long long)bsn.current_allocated_bytes, dc);
+        int exit_c = (rc == RFC_OK) ? 0 : 2;
+        if (rc == RFC_OK && dc == 1u) {
+            printf("w=%u\nh=%u\nfmt=%u\nalpha=%u\nbits=%u\nicc_len=%zu\n",
+                   dec[0].layout.width, dec[0].layout.height,
+                   (unsigned)dec[0].layout.format,
+                   (unsigned)dec[0].layout.alpha,
+                   dec[0].layout.bits_per_sample, dm.icc_len);
+            size_t total = 36u + dec[0].data_len + dm.icc_len;
+            uint8_t *out = (uint8_t *)malloc(total);
+            if (out) {
+                memcpy(out, "RFQD", 4u);
+                put_le32(out + 4u, dec[0].layout.width);
+                put_le32(out + 8u, dec[0].layout.height);
+                put_le32(out + 12u, (uint32_t)dec[0].layout.format);
+                put_le32(out + 16u, (uint32_t)dec[0].layout.alpha);
+                put_le32(out + 20u, dec[0].layout.bits_per_sample);
+                put_le32(out + 24u, (uint32_t)dec[0].layout.stride_bytes);
+                put_le32(out + 28u, (uint32_t)dec[0].data_len);
+                put_le32(out + 32u, (uint32_t)dm.icc_len);
+                memcpy(out + 36u, dec[0].data, dec[0].data_len);
+                if (dm.icc_len > 0u) {
+                    memcpy(out + 36u + dec[0].data_len, dm.icc, dm.icc_len);
+                }
+                if (!write_file_all(argv[3], out, total)) {
+                    exit_c = 2;
+                }
+                free(out);
+            }
+            rfc_metadata_free(&dm, &al);
+            rfc_frame_free(&dec[0]);
+            al.free(al.ctx, dec);
+        }
+        free(raw);
+        rfc_budget_destroy(bud);
+        return exit_c;
+    }
+
+    rfc_budget_destroy(bud);
+    return 2;
+}
+
+int main(int argc, char **argv) {
+    if (argc >= 2) {
+        return cli_main(argc, argv);
+    }
+    test_registration_and_geometry();
+    test_samples_precision_stride_and_icc();
+    test_refusals_malformed_and_metadata_policy();
+    test_jobs_budget_cancel_threads_and_file_safety();
+    if (g_fails != 0) {
+        fprintf(stderr, "jp2: %d FAILURES out of %d checks\n", g_fails,
+                g_checks);
+        return 1;
+    }
+    printf("jp2: all checks passed (%d checks)\n", g_checks);
+    return 0;
+}

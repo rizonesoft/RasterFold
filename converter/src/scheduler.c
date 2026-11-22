@@ -1831,7 +1831,8 @@ rfc_status rfc_scheduler_submit(rfc_scheduler *sched,
          eff_source_format == RFC_FORMAT_GIF ||
          eff_source_format == RFC_FORMAT_HEIF ||
          eff_source_format == RFC_FORMAT_HEIC ||
-         eff_source_format == RFC_FORMAT_QOI)) {
+         eff_source_format == RFC_FORMAT_QOI ||
+         eff_source_format == RFC_FORMAT_JPEG2000)) {
         rfc_sniff_geometry geo;
         memset(&geo, 0, sizeof(geo));
         if (spec->io_source) {
@@ -1853,7 +1854,8 @@ rfc_status rfc_scheduler_submit(rfc_scheduler *sched,
             (geo_ex == RFC_EXACT_PIXEL_EXACT ||
              geo_ex == RFC_EXACT_COEFFICIENT_EXACT ||
              (geo_ex == RFC_EXACT_BYTE_IDENTICAL &&
-              eff_source_format == RFC_FORMAT_QOI)) &&
+              (eff_source_format == RFC_FORMAT_QOI ||
+               eff_source_format == RFC_FORMAT_JPEG2000))) &&
             geo.has_geometry) {
             memset(&geo_layout, 0, sizeof(geo_layout));
             geo_layout.format = geo.format;

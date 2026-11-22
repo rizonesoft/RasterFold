@@ -56,7 +56,6 @@ class ExactnessReferenceTests(unittest.TestCase):
         self.assertEqual(len(by_name), 19)
         for pending in (
             "apng",
-            "jpeg-2000",
         ):
             self.assertEqual(by_name[pending]["coverage_state"], "provenance-only-pending-adapter")
         self.assertEqual(by_name["webp"]["coverage_state"], "executable-in-d10-t02-s2")
@@ -78,6 +77,10 @@ class ExactnessReferenceTests(unittest.TestCase):
         self.assertEqual(by_name["qoi"]["reference_decoder_kind"], "independent-pure-python")
         self.assertTrue(by_name["qoi"]["claims_independent_decoder"])
         self.assertFalse(by_name["qoi"]["shares_c_library_with_converter"])
+        self.assertEqual(by_name["jpeg-2000"]["coverage_state"], "executable-in-d10-t02-s9")
+        self.assertEqual(by_name["jpeg-2000"]["reference_decoder_kind"], "independent-external-tool")
+        self.assertTrue(by_name["jpeg-2000"]["claims_independent_decoder"])
+        self.assertFalse(by_name["jpeg-2000"]["shares_c_library_with_converter"])
         for executable in (
             "rasterfold",
             "bmp",

@@ -899,6 +899,109 @@ static void sniff_qoi_geometry(const uint8_t *b, size_t len,
     geo->has_geometry = 1;
 }
 
+static void sniff_jp2_geometry(const uint8_t *b, size_t len,
+                               rfc_sniff_geometry *geo) {
+    uint32_t w = 0u, h = 0u;
+    uint16_t nc = 0u;
+    int is_16 = 0;
+    if (len >= 46u && b[0] == 0xFFu && b[1] == 0x4Fu &&
+        b[2] == 0xFFu && b[3] == 0x51u) {
+        /* Bare J2K SOC + SIZ */
+        uint16_t lsiz = rd16be(b + 4);
+        if (lsiz < 41u || (size_t)4u + (size_t)lsiz > len) {
+            return;
+        }
+        const uint8_t *s = b + 6u;
+        uint32_t xsiz = rd32be(s + 2u);
+        uint32_t ysiz = rd32be(s + 6u);
+        uint32_t xosiz = rd32be(s + 10u);
+        uint32_t yosiz = rd32be(s + 14u);
+        nc = rd16be(s + 34u);
+        if (xsiz <= xosiz || ysiz <= yosiz || (nc != 1u && nc != 3u)) {
+            return;
+        }
+        uint8_t ssiz = s[36u];
+        if ((ssiz & 0x80u) != 0u) {
+            return;
+        }
+        uint8_t prec = (uint8_t)((ssiz & 0x7Fu) + 1u);
+        if (prec < 1u || prec > 16u) {
+            return;
+        }
+        w = xsiz - xosiz;
+        h = ysiz - yosiz;
+        is_16 = (prec > 8u);
+    } else if (len >= 12u &&
+               memcmp(b, "\x00\x00\x00\x0cjP  \x0d\x0a\x87\x0a", 12) == 0) {
+        /* JP2 container: walk boxes to jp2h -> ihdr */
+        size_t off = 12u;
+        for (int bi = 0; bi < 16 && off + 8u <= len; bi++) {
+            uint32_t lbox = rd32be(b + off);
+            uint32_t tbox = rd32be(b + off + 4u);
+            size_t hdr = 8u;
+            uint64_t total = lbox;
+            if (lbox == 1u) {
+                if (off + 16u > len) return;
+                total = ((uint64_t)rd32be(b + off + 8u) << 32) |
+                        (uint64_t)rd32be(b + off + 12u);
+                hdr = 16u;
+            } else if (lbox == 0u) {
+                total = (uint64_t)(len - off);
+            }
+            if (total < hdr || total > (uint64_t)(len - off)) {
+                return;
+            }
+            size_t next = off + (size_t)total;
+            if (tbox == 0x6A703268u) { /* jp2h */
+                size_t sub = off + hdr;
+                for (int si = 0; si < 16 && sub + 8u <= next; si++) {
+                    uint32_t sl = rd32be(b + sub);
+                    uint32_t st = rd32be(b + sub + 4u);
+                    if (sl < 8u || sub + sl > next) {
+                        return;
+                    }
+                    if (st == 0x69686472u && sl == 22u) { /* ihdr */
+                        const uint8_t *p = b + sub + 8u;
+                        h = rd32be(p);
+                        w = rd32be(p + 4u);
+                        nc = rd16be(p + 8u);
+                        uint8_t bpc = p[10u];
+                        if (w == 0u || h == 0u ||
+                            (nc != 1u && nc != 3u && nc != 4u)) {
+                            return;
+                        }
+                        if (bpc != 0xFFu) {
+                            if ((bpc & 0x80u) != 0u) return;
+                            uint8_t prec = (uint8_t)((bpc & 0x7Fu) + 1u);
+                            if (prec > 16u) return;
+                            is_16 = (prec > 8u);
+                        } else {
+                            is_16 = 1;
+                        }
+                        break;
+                    }
+                    sub += sl;
+                }
+                break;
+            }
+            off = next;
+        }
+    }
+    if (w == 0u || h == 0u || (nc != 1u && nc != 3u && nc != 4u)) {
+        return;
+    }
+    geo->width = w;
+    geo->height = h;
+    if (nc == 1u) {
+        geo->format = is_16 ? RFC_SAMPLE_GRAY16 : RFC_SAMPLE_GRAY8;
+    } else if (nc == 3u) {
+        geo->format = is_16 ? RFC_SAMPLE_RGB16 : RFC_SAMPLE_RGB8;
+    } else {
+        geo->format = is_16 ? RFC_SAMPLE_RGBA16 : RFC_SAMPLE_RGBA8;
+    }
+    geo->has_geometry = 1;
+}
+
 /* PNG: the IHDR (always the first chunk) gives the decoded layout for the
  * colour types the PNG adapter decodes; palette and gray-alpha images are
  * sized as rgba at their depth (the larger layout; the adapter refuses both
@@ -1056,6 +1159,7 @@ static rfc_format_id sniff_stream_core(const seek_stream *ss,
              (len >= 4u && b[0] == 0xFFu && b[1] == 0x4Fu && b[2] == 0xFFu &&
               b[3] == 0x51u)) {
         detected = RFC_FORMAT_JPEG2000;
+        sniff_jp2_geometry(b, len, geo);
     }
     /* 8. ISOBMFF (AVIF, HEIC, HEIF, CR3) */
     else if (len >= 16u && memcmp(b + 4, "ftyp", 4) == 0) {

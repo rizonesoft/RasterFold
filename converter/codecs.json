@@ -815,8 +815,8 @@
       "format": "jpeg-2000",
       "provider": "OpenJPEG (bundled, pinned by D10 T01 \u00a72)",
       "owner": "D10 T02 \u00a79",
-      "availability": "planned",
-      "unavailable_reason": "converter adapter not yet shipped",
+      "availability": "usable",
+      "unavailable_reason": null,
       "modes": {
         "read": true,
         "write": true

@@ -262,11 +262,11 @@ PROVENANCE_TABLE: tuple[dict[str, Any], ...] = (
         "converter_provider": "OpenJPEG (bundled, pinned by D10 T01 \u00a72)",
         "pinned_package_ids": ("openjpeg",),
         "verification_path": "fresh-session-decode",
-        "reference_decoder_kind": "shared-upstream-library",
-        "shares_c_library_with_converter": True,
-        "claims_independent_decoder": False,
-        "coverage_state": "provenance-only-pending-adapter",
-        "provenance_note": "Pending D10 T02 s9; Pillow openjp2 shares OpenJPEG C library.",
+        "reference_decoder_kind": "independent-external-tool",
+        "shares_c_library_with_converter": False,
+        "claims_independent_decoder": True,
+        "coverage_state": "executable-in-d10-t02-s9",
+        "provenance_note": "Independent native FFmpeg jpeg2000 decoder cross-checks native sample equality; Pillow openjp2 is reported separately as shared-upstream-library (shares OpenJPEG C library).",
     },
     {
         "format_name": "qoi",
@@ -408,6 +408,7 @@ def validate_provenance_table() -> dict[str, dict[str, Any]]:
             "executable-in-d10-t02-s6",
             "executable-in-d10-t02-s7",
             "executable-in-d10-t02-s8",
+            "executable-in-d10-t02-s9",
             "provenance-only-pending-adapter",
         ):
             raise AssertionError(f"{name}: invalid coverage_state {row['coverage_state']!r}")

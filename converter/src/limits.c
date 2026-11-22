@@ -475,7 +475,6 @@ rfc_status rfc_query_provider_memory_contract(rfc_format_id id,
                 "checked against the measured peak private bytes of a decode";
             break;
         case RFC_FORMAT_OPENEXR:
-        case RFC_FORMAT_JPEG2000:
             out->mode = RFC_MEM_RESERVATION_AND_LIMITS;
             out->working_set_multiplier = 5u;
             out->fixed_overhead_bytes = 4ull * 1024ull * 1024ull;
@@ -513,6 +512,19 @@ rfc_status rfc_query_provider_memory_contract(rfc_format_id id,
                 "malloc; the adapter pre-reserves worst-case encode capacity, "
                 "strided row-packing copies, and decode pixel buffers through "
                 "rfc_budget_reserve before calling libqoi";
+            break;
+        case RFC_FORMAT_JPEG2000:
+            out->mode = RFC_MEM_RESERVATION_AND_LIMITS;
+            /* OpenJPEG stores planar int32_t components (4x for 8-bit, 2x for
+             * 16-bit) plus wavelet/tile working buffers; adapter reserves
+             * internal working memory via rfc_budget_reserve before decode
+             * and encode. */
+            out->working_set_multiplier = 12u;
+            out->fixed_overhead_bytes = 4ull * 1024ull * 1024ull;
+            out->limitation_reason =
+                "bundled OpenJPEG allocates planar int32_t component arrays "
+                "and tile/wavelet buffers via malloc; enforced by rfc_limits "
+                "preflight and explicit rfc_budget_reserve in jp2.c";
             break;
         default:
             out->mode = RFC_MEM_RESERVATION_AND_LIMITS;

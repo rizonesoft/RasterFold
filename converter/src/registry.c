@@ -355,7 +355,7 @@ static const rfc_capability k_registry[] = {
     {RFC_FORMAT_TIFF, "tiff", "libtiff (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "6", "D10 T02 \xc2\xa7" "12", USABLE, NULL, 1, 1, k_png, 6, ANIM, ANIM_RULES, META_ICC | META_ORI | META_XMP},
     {RFC_FORMAT_HEIF, "heif", "Windows Imaging Component (system codec, not bundled)", "D10 T02 \xc2\xa7" "7", NULL, USABLE, NULL, 1, 0, k_rgb8, 1, COMMON, COMMON_RULES, META_ICC},
     {RFC_FORMAT_HEIC, "heic", "Windows Imaging Component (system codec, not bundled)", "D10 T02 \xc2\xa7" "7", NULL, USABLE, NULL, 1, 0, k_rgb8, 1, COMMON, COMMON_RULES, META_ICC},
-    {RFC_FORMAT_JPEG2000, "jpeg-2000", "OpenJPEG (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "9", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_png, 6, COMMON, COMMON_RULES, META_ICC},
+    {RFC_FORMAT_JPEG2000, "jpeg-2000", "OpenJPEG (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "9", NULL, USABLE, NULL, 1, 1, k_png, 6, COMMON, COMMON_RULES, META_ICC},
     {RFC_FORMAT_QOI, "qoi", "qoi (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "8", NULL, USABLE, NULL, 1, 1, k_rgba8, 2, COMMON, COMMON_RULES, META_NONE},
     {RFC_FORMAT_OPENEXR, "openexr", "OpenEXR (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "10", NULL, PLANNED, "converter adapter not yet shipped", 1, 1, k_exr, 4, COMMON, COMMON_RULES, META_ICC},
     {RFC_FORMAT_CAMERA_RAW, "camera-raw", "LibRaw (bundled, pinned by D10 T01 \xc2\xa7" "2)", "D10 T02 \xc2\xa7" "11", NULL, PLANNED, "import-only adapter not yet shipped", 1, 0, k_png, 6, COMMON, COMMON_RULES, META_ICC | META_ORI},

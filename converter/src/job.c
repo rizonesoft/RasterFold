@@ -2636,6 +2636,25 @@ static rfc_status check_target_frame_compat(rfc_job *job,
             }
         }
     }
+    if (job->target_format == RFC_FORMAT_JPEG2000 && layout &&
+        layout->format != (rfc_sample_format)0) {
+        int jp2_has_alpha = (layout->format == RFC_SAMPLE_RGBA8 ||
+                             layout->format == RFC_SAMPLE_RGBA16);
+        if (jp2_has_alpha && layout->alpha != RFC_ALPHA_STRAIGHT) {
+            if (out_err_detail && !*out_err_detail) {
+                *out_err_detail =
+                    "JPEG 2000 RGBA requires straight alpha (premultiplied alpha refused)";
+            }
+            return RFC_ERR_UNSUPPORTED_ALPHA;
+        }
+        if (!jp2_has_alpha && layout->alpha != RFC_ALPHA_NONE) {
+            if (out_err_detail && !*out_err_detail) {
+                *out_err_detail =
+                    "JPEG 2000 opaque formats require RFC_ALPHA_NONE";
+            }
+            return RFC_ERR_UNSUPPORTED_ALPHA;
+        }
+    }
     if (meta) {
         rfc_verify_report pre_rep;
         memset(&pre_rep, 0, sizeof(pre_rep));

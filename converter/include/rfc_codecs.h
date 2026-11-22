@@ -63,6 +63,14 @@ rfc_status rfc_codecs_unregister_qoi(void);
  * cancellation tests. */
 void rfc_codecs_qoi_set_hook_for_testing(void (*hook)(void *), void *ctx);
 
+/* Register and unregister the shipped JPEG 2000 session adapter (D10 T02 s9). */
+rfc_status rfc_codecs_register_jp2(void);
+rfc_status rfc_codecs_unregister_jp2(void);
+
+/* Test seam: hook called during JPEG 2000 decode/encode checkpoints
+ * (NULL removes it), for deterministic mid-operation cancellation tests. */
+void rfc_codecs_jp2_set_hook_for_testing(void (*fn)(int phase));
+
 /* Test seam: report the WIC HEIF decoder and/or the Media Foundation HEVC
  * decoder as missing (0 restores the real lookups). */
 void rfc_codecs_heif_set_missing_for_testing(int heif_decoder, int hevc_decoder);
