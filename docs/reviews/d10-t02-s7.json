@@ -1,0 +1,73 @@
+{
+  "ref": "D10 T02 \u00a77",
+  "title": "HEIF and HEIC",
+  "implementation_sha": "4f6537a80935692138f0a40cd9383bdcd2dd8de1",
+  "date": "2026-11-22",
+  "reviews": [
+    {
+      "round": 1,
+      "report": "docs/reviews/10-converter/D10-T02-s7.md",
+      "verdict": "fixed"
+    }
+  ],
+  "checks": [
+    "python3 scripts/check-converter.py --case heif --all-targets -> [host] 306 checks, [windows-x64] 922 checks, 5 tests OK, 12 shipped binaries, 451 prefix files / 36 libraries, 66 unique reproduce inputs",
+    "python3 scripts/check-converter.py --case all --all-targets -> heif: PASS, bundle: PASS (exit 0)",
+    "python3 scripts/check-all.py -> check-all: 32/32 passed (exit 0)",
+    "git diff --exit-code 5cf9a5e 4f6537a -- src/ include/rasterfold.h spec/FOLD.md tests/rfi_ref.py tests/test_correctness.py converter/vendor.json converter/include/rfc_io.h -> empty (exit 0)"
+  ],
+  "completion": {
+    "report": "docs/reviews/10-converter/D10-T02-s7.md",
+    "verdict": "reconciled",
+    "candidate": "4f6537a80935692138f0a40cd9383bdcd2dd8de1",
+    "reviewer": "astra",
+    "model": "gpt-6.2-astra",
+    "filed": []
+  },
+  "rounds_spent": 1,
+  "round_cap": 33,
+  "plan": {
+    "report": "docs/reviews/10-converter/D10-T02-s7.md",
+    "candidate": "1485efb4983106e14a897d4d93abfb98421f12fb",
+    "reviewer": "astra",
+    "model": "gpt-6.2-astra",
+    "effort": "medium",
+    "lenses": [
+      "plan"
+    ]
+  },
+  "schedule_sha": "1485efb4983106e14a897d4d93abfb98421f12fb",
+  "schedule": {
+    "policy": "three-pass",
+    "pass_cap": 33,
+    "plan": {
+      "lenses": [
+        "plan"
+      ]
+    },
+    "rounds": [
+      {
+        "lenses": [
+          "adversarial",
+          "integration",
+          "source-defect",
+          "plan-delivery",
+          "consistency",
+          "record",
+          "quality",
+          "optimization",
+          "design"
+        ]
+      }
+    ],
+    "completion": {},
+    "reconciliation": {
+      "lenses": [
+        "adversarial",
+        "integration",
+        "plan-delivery",
+        "record"
+      ]
+    }
+  }
+}
