@@ -1058,12 +1058,20 @@ static size_t jp2_xml_normalize_enc(const uint8_t *src,
     return out;
 }
 
-static int jp2_enc_norm_in_list(const char *norm,
-                                const char *const *list,
-                                size_t count) {
-    for (size_t k = 0u; k < count; k++) {
-        if (strcmp(norm, list[k]) == 0) {
+static int jp2_enc_norm_in_sorted_list(const char *norm,
+                                       const char *const *list,
+                                       size_t count) {
+    size_t lo = 0u, hi = count;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2u;
+        int cmp = strcmp(norm, list[mid]);
+        if (cmp == 0) {
             return 1;
+        }
+        if (cmp < 0) {
+            hi = mid;
+        } else {
+            lo = mid + 1u;
         }
     }
     return 0;
@@ -1072,9 +1080,9 @@ static int jp2_enc_norm_in_list(const char *norm,
 /* Parse strict W3C XML 1.0 (5th ed.) §2.8 XMLDecl starting at p[*pos]:
  * '<?xml' S VersionInfo EncodingDecl? SDDecl? S? '?>'
  * Also verifies any declared encoding (normalized via jp2_xml_normalize_enc)
- * is compatible with this UTF-8 byte stream (UTF-8 aliases, or US-ASCII /
- * ISO-8859-1 / Windows-1252 aliases only when no UTF-8 BOM and all document
- * bytes are < 0x80). */
+ * is compatible with this UTF-8 byte stream (UTF-8 aliases, or Expat-supported
+ * 7-bit-ASCII-identical character encodings only when no UTF-8 BOM and all
+ * document bytes are < 0x80). */
 static int jp2_xml_parse_xmldecl(const uint8_t *p,
                                  size_t len,
                                  int has_bom,
@@ -1138,24 +1146,76 @@ static int jp2_xml_parse_xmldecl(const uint8_t *p,
                                   norm_enc, sizeof(norm_enc)) == SIZE_MAX) {
             return 0;
         }
+        /* Sorted normalized UTF-8 aliases (accepted with or without UTF-8 BOM). */
         static const char *const k_utf8_encs[] = {
-            "cp65001", "u8", "utf", "utf8", "utf8_ucs2", "utf8_ucs4", "utf_8"
+            "cp65001", "u8", "utf", "utf8", "utf8_ucs2", "utf8_ucs4", "utf_8",
+            "utf_8_sig"
         };
+        /* Sorted normalized 7-bit-ASCII-identical encodings supported by Expat
+         * (accepted only when no UTF-8 BOM and every document byte is < 0x80). */
         static const char *const k_ascii_7bit_encs[] = {
-            "ansi_x3.4_1968", "ansi_x3.4_1986", "ansi_x3_4_1968", "ascii",
-            "cp367", "csascii", "ibm367", "iso646_us", "iso_646.irv_1991",
-            "iso_ir_6", "us", "us_ascii",
-            "cp819", "csisolatin1", "ibm819", "iso8859", "iso8859_1",
-            "iso_8859_1", "iso_8859_1_1987", "iso_ir_100", "l1", "latin",
-            "latin1", "latin_1",
-            "cp1252", "windows_1252"
+            "ansi_x3.4_1968", "ansi_x3.4_1986", "ansi_x3_4_1968", "arabic",
+            "ascii", "asmo_708", "cp1006", "cp1051", "cp1125", "cp1250",
+            "cp1251", "cp1252", "cp1253", "cp1254", "cp1255", "cp1256",
+            "cp1257", "cp1258", "cp154", "cp367", "cp437", "cp720", "cp737",
+            "cp775", "cp819", "cp850", "cp852", "cp855", "cp856", "cp857",
+            "cp858", "cp860", "cp861", "cp862", "cp863", "cp865", "cp866",
+            "cp866u", "cp869", "cp874", "cp_gr", "cp_is", "csascii",
+            "csibm855", "csibm857", "csibm858", "csibm860", "csibm861",
+            "csibm863", "csibm865", "csibm866", "csibm869", "csiso2022jp",
+            "csisolatin1", "csisolatin2", "csisolatin3", "csisolatin4",
+            "csisolatin5", "csisolatin6", "csisolatinarabic",
+            "csisolatincyrillic", "csisolatingreek", "csisolatinhebrew",
+            "cskoi8r", "cspc775baltic", "cspc850multilingual",
+            "cspc862latinhebrew", "cspc8codepage437", "cspcp852", "csptcp154",
+            "cyrillic", "cyrillic_asian", "ecma_114", "ecma_118", "elot_928",
+            "greek", "greek8", "hebrew", "hp_roman8", "ibm1051", "ibm1125",
+            "ibm367", "ibm437", "ibm775", "ibm819", "ibm850", "ibm852",
+            "ibm855", "ibm857", "ibm858", "ibm860", "ibm861", "ibm862",
+            "ibm863", "ibm865", "ibm866", "ibm869", "iso2022_jp",
+            "iso2022_jp_1", "iso2022_jp_2", "iso2022_jp_2004", "iso2022_jp_3",
+            "iso2022_jp_ext", "iso2022jp", "iso2022jp_1", "iso2022jp_2",
+            "iso2022jp_2004", "iso2022jp_3", "iso2022jp_ext", "iso646_us",
+            "iso8859", "iso8859_1", "iso8859_10", "iso8859_11", "iso8859_13",
+            "iso8859_14", "iso8859_15", "iso8859_16", "iso8859_2", "iso8859_3",
+            "iso8859_4", "iso8859_5", "iso8859_6", "iso8859_7", "iso8859_8",
+            "iso8859_9", "iso_2022_jp", "iso_2022_jp_1", "iso_2022_jp_2",
+            "iso_2022_jp_2004", "iso_2022_jp_3", "iso_2022_jp_ext",
+            "iso_646.irv_1991", "iso_8859_1", "iso_8859_10",
+            "iso_8859_10_1992", "iso_8859_11", "iso_8859_11_2001",
+            "iso_8859_13", "iso_8859_14", "iso_8859_14_1998", "iso_8859_15",
+            "iso_8859_16", "iso_8859_16_2001", "iso_8859_1_1987",
+            "iso_8859_2", "iso_8859_2_1987", "iso_8859_3", "iso_8859_3_1988",
+            "iso_8859_4", "iso_8859_4_1988", "iso_8859_5", "iso_8859_5_1988",
+            "iso_8859_6", "iso_8859_6_1987", "iso_8859_7", "iso_8859_7_1987",
+            "iso_8859_8", "iso_8859_8_1988", "iso_8859_8_e", "iso_8859_8_i",
+            "iso_8859_9", "iso_8859_9_1989", "iso_celtic", "iso_ir_100",
+            "iso_ir_101", "iso_ir_109", "iso_ir_110", "iso_ir_126",
+            "iso_ir_127", "iso_ir_138", "iso_ir_144", "iso_ir_148",
+            "iso_ir_157", "iso_ir_166", "iso_ir_199", "iso_ir_226", "iso_ir_6",
+            "koi8_r", "koi8_t", "koi8_u", "kz1048", "kz_1048", "l1", "l10",
+            "l2", "l3", "l4", "l5", "l6", "l7", "l8", "l9", "latin", "latin1",
+            "latin10", "latin2", "latin3", "latin4", "latin5", "latin6",
+            "latin7", "latin8", "latin9", "latin_1", "mac_centeuro",
+            "mac_croatian", "mac_cyrillic", "mac_greek", "mac_iceland",
+            "mac_latin2", "mac_roman", "mac_romanian", "mac_turkish",
+            "maccentraleurope", "maccyrillic", "macgreek", "maciceland",
+            "macintosh", "maclatin2", "macroman", "macturkish", "ms874",
+            "palmos", "pt154", "ptcp154", "r8", "rk1048", "roman8", "ruscii",
+            "strk1048_2002", "thai", "tis620", "tis_620", "tis_620_0",
+            "tis_620_2529_0", "tis_620_2529_1", "us", "us_ascii",
+            "windows_1250", "windows_1251", "windows_1252", "windows_1253",
+            "windows_1254", "windows_1255", "windows_1256", "windows_1257",
+            "windows_1258", "windows_874"
         };
-        if (jp2_enc_norm_in_list(norm_enc, k_utf8_encs,
-                                 sizeof(k_utf8_encs) / sizeof(k_utf8_encs[0]))) {
+        if (jp2_enc_norm_in_sorted_list(
+                norm_enc, k_utf8_encs,
+                sizeof(k_utf8_encs) / sizeof(k_utf8_encs[0]))) {
             /* UTF-8 matches this UTF-8 byte stream (with or without UTF-8 BOM). */
-        } else if (jp2_enc_norm_in_list(norm_enc, k_ascii_7bit_encs,
-                                        sizeof(k_ascii_7bit_encs) /
-                                            sizeof(k_ascii_7bit_encs[0]))) {
+        } else if (jp2_enc_norm_in_sorted_list(
+                       norm_enc, k_ascii_7bit_encs,
+                       sizeof(k_ascii_7bit_encs) /
+                           sizeof(k_ascii_7bit_encs[0]))) {
             if (has_bom) {
                 return 0;
             }

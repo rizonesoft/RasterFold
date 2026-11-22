@@ -1337,9 +1337,13 @@ static void test_review_round1_regressions(void) {
                 "<?xml version=\"1.0\" encoding=\"ISO_8859-1\"?>"
                 "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"/>",
                 "<?xml version=\"1.0\" encoding=\"U8\"?>"
+                "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"/>",
+                "<?xml version=\"1.0\" encoding=\"ISO-8859-2\"?>"
+                "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"/>",
+                "<?xml version=\"1.0\" encoding=\"KOI8-R\"?>"
                 "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"/>"
             };
-            for (size_t gi = 0u; gi < 11u; gi++) {
+            for (size_t gi = 0u; gi < 13u; gi++) {
                 const char *good_xmp = good_cases[gi];
                 size_t glen = strlen(good_xmp);
                 uint8_t *mg = (uint8_t *)malloc(e4.len + 8u + glen);
@@ -1507,9 +1511,10 @@ static void test_review_round1_regressions(void) {
                 "<?xml version=\"2.0\"?><x:xmpmeta xmlns:x=\"adobe:ns:meta/\"/>",
                 "<?xml version=\"1.0\" encoding=\"UTF-16\"?><x:xmpmeta xmlns:x=\"adobe:ns:meta/\"/>",
                 "<?xml version=\"1.0\" encoding=\"US-ASCII\"?><x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\xC3\xA9</x:xmpmeta>",
+                "<?xml version=\"1.0\" encoding=\"ISO-8859-2\"?><x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\xC3\xA9</x:xmpmeta>",
                 "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\" xmlns:a=\"urn:u\" xmlns:b=\"urn:u\" a:k=\"1\" b:k=\"2\"/>"
             };
-            for (size_t bi = 0u; bi < 13u; bi++) {
+            for (size_t bi = 0u; bi < 14u; bi++) {
                 const char *bad_xmp = bad_cases[bi];
                 size_t blen = strlen(bad_xmp);
                 uint8_t *mb = (uint8_t *)malloc(e4.len + 8u + blen);
