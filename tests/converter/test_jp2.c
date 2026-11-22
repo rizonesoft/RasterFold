@@ -1312,15 +1312,21 @@ static void test_review_round1_regressions(void) {
                 "<!-- c06 --><!-- c07 --><!-- c08 --><!-- c09 --><!-- c10 -->"
                 "<!-- c11 --><!-- c12 --><!-- c13 --><!-- c14 --><!-- c15 -->"
                 "<!-- c16 --><!-- c17 --><!-- c18 --><!-- c19 --><!-- c20 -->"
-                "<x:xmpmeta xmlns:x = \"adobe:ns:meta/\"><rdf:RDF/></x:xmpmeta>",
-                "<m:xmpmeta xmlns:m=\"adobe:ns:meta/\"><rdf:RDF/></m:xmpmeta>",
-                "<xmpmeta xmlns=\"adobe:ns:meta/\"><rdf:RDF/></xmpmeta>",
-                "<m:xmpmeta xmlns:m=\"adobe:ns:meta&#x2F;\"><rdf:RDF/></m:xmpmeta>",
-                "<m:xmpmeta xmlns:m=\"adobe:ns:meta&#47;\"><rdf:RDF/></m:xmpmeta>",
+                "<x:xmpmeta xmlns:x = \"adobe:ns:meta/\">"
+                "<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"/></x:xmpmeta>",
+                "<m:xmpmeta xmlns:m=\"adobe:ns:meta/\">"
+                "<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"/></m:xmpmeta>",
+                "<xmpmeta xmlns=\"adobe:ns:meta/\">"
+                "<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"/></xmpmeta>",
+                "<m:xmpmeta xmlns:m=\"adobe:ns:meta&#x2F;\">"
+                "<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"/></m:xmpmeta>",
+                "<m:xmpmeta xmlns:m=\"adobe:ns:meta&#47;\">"
+                "<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"/></m:xmpmeta>",
                 "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
                 "<?xml-stylesheet type=\"text/xsl\" href=\"local.xsl\"?>"
                 "<?xpacket begin=\"\xEF\xBB\xBF\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
-                "<m:xmpmeta xmlns:m=\"adobe:ns:meta/\"><rdf:RDF/></m:xmpmeta>"
+                "<m:xmpmeta xmlns:m=\"adobe:ns:meta/\">"
+                "<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"/></m:xmpmeta>"
                 "<?xpacket end=\"w\"?>"
             };
             for (size_t gi = 0u; gi < 6u; gi++) {
@@ -1343,17 +1349,94 @@ static void test_review_round1_regressions(void) {
                 adp->close_session(sd);
                 free(mg);
             }
-            /* Invalid/mismatched/truncated XML boxes must refuse under preserve mode. */
+            /* Deeply nested valid XMP (>64 levels) preserved verbatim (Finding 20). */
+            {
+                char deep[4096];
+                size_t pos = 0u;
+                pos += (size_t)snprintf(deep + pos, sizeof(deep) - pos,
+                                        "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">");
+                for (int d = 0; d < 70; d++) {
+                    pos += (size_t)snprintf(deep + pos, sizeof(deep) - pos, "<n%d>", d);
+                }
+                for (int d = 69; d >= 0; d--) {
+                    pos += (size_t)snprintf(deep + pos, sizeof(deep) - pos, "</n%d>", d);
+                }
+                pos += (size_t)snprintf(deep + pos, sizeof(deep) - pos, "</x:xmpmeta>");
+                uint8_t *md = (uint8_t *)malloc(e4.len + 8u + pos);
+                CHECK(md != NULL);
+                memcpy(md, e4.data, e4.len);
+                put_be32(md + e4.len, (uint32_t)(8u + pos));
+                memcpy(md + e4.len + 4u, "xml ", 4u);
+                memcpy(md + e4.len + 8u, deep, pos);
+                CHECK(adp->open_session(&exec, &sd) == RFC_OK);
+                CHECK(adp->decode_session(sd, &exec, md, e4.len + 8u + pos, NULL,
+                                          0u, &dec, &dc, &dm) == RFC_OK);
+                CHECK(dc == 1u && dm.xmp != NULL && dm.xmp_len == pos &&
+                      memcmp(dm.xmp, deep, pos) == 0);
+                rfc_metadata_free(&dm, &al);
+                rfc_frame_free(&dec[0]);
+                al.free(al.ctx, dec);
+                adp->close_session(sd);
+                free(md);
+            }
+            /* >256 distinct attributes accepted; duplicate attribute >256 refused (Finding 22). */
+            {
+                char many[8192];
+                size_t pos = 0u;
+                pos += (size_t)snprintf(many + pos, sizeof(many) - pos,
+                                        "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><c");
+                for (int a = 0; a < 260; a++) {
+                    pos += (size_t)snprintf(many + pos, sizeof(many) - pos,
+                                            " a%d=\"1\"", a);
+                }
+                size_t base_pos = pos;
+                pos += (size_t)snprintf(many + pos, sizeof(many) - pos, "/></x:xmpmeta>");
+                uint8_t *mm = (uint8_t *)malloc(e4.len + 8u + pos);
+                CHECK(mm != NULL);
+                memcpy(mm, e4.data, e4.len);
+                put_be32(mm + e4.len, (uint32_t)(8u + pos));
+                memcpy(mm + e4.len + 4u, "xml ", 4u);
+                memcpy(mm + e4.len + 8u, many, pos);
+                CHECK(adp->open_session(&exec, &sd) == RFC_OK);
+                CHECK(adp->decode_session(sd, &exec, mm, e4.len + 8u + pos, NULL,
+                                          0u, &dec, &dc, &dm) == RFC_OK);
+                CHECK(dc == 1u && dm.xmp != NULL && dm.xmp_len == pos);
+                rfc_metadata_free(&dm, &al);
+                rfc_frame_free(&dec[0]);
+                al.free(al.ctx, dec);
+                adp->close_session(sd);
+                free(mm);
+
+                size_t dpos = base_pos;
+                dpos += (size_t)snprintf(many + dpos, sizeof(many) - dpos,
+                                         " a259=\"dup\"/></x:xmpmeta>");
+                uint8_t *mdup = (uint8_t *)malloc(e4.len + 8u + dpos);
+                CHECK(mdup != NULL);
+                memcpy(mdup, e4.data, e4.len);
+                put_be32(mdup + e4.len, (uint32_t)(8u + dpos));
+                memcpy(mdup + e4.len + 4u, "xml ", 4u);
+                memcpy(mdup + e4.len + 8u, many, dpos);
+                CHECK(adp->open_session(&exec, &sd) == RFC_OK);
+                CHECK(adp->decode_session(sd, &exec, mdup, e4.len + 8u + dpos, NULL,
+                                          0u, &dec, &dc, &dm) == RFC_ERR_METADATA_POLICY);
+                adp->close_session(sd);
+                free(mdup);
+            }
+            /* Invalid/mismatched/unbound/truncated/bad-XMLDecl boxes refuse under preserve. */
             const char *bad_cases[] = {
                 "<m:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF/></m:xmpmeta>",
+                "<m:xmpmeta xmlns:m=\"adobe:ns:meta/\"><rdf:RDF/></m:xmpmeta>",
                 "<1:xmpmeta xmlns:1=\"adobe:ns:meta/\"/>",
                 "<xml:xmpmeta xmlns:xml=\"adobe:ns:meta/\"/>",
                 "<m:xmpmeta xmlns:m=\"adobe:ns:meta&#x2F;\" bad=\"a<b\"/>",
                 "<m:xmpmeta xmlns:m=\"adobe:ns:meta&#47;\">",
                 "<m:xmpmeta xmlns:m=\"adobe:ns:meta/\"></x:xmpmeta>",
-                "<m:xmpmeta xmlns:m=\"adobe:ns:meta/\"/>trailing"
+                "<m:xmpmeta xmlns:m=\"adobe:ns:meta/\"/>trailing",
+                "<?xml garbage?><x:xmpmeta xmlns:x=\"adobe:ns:meta/\"/>",
+                "<?xml version=\"2.0\"?><x:xmpmeta xmlns:x=\"adobe:ns:meta/\"/>",
+                "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\" xmlns:a=\"urn:u\" xmlns:b=\"urn:u\" a:k=\"1\" b:k=\"2\"/>"
             };
-            for (size_t bi = 0u; bi < 7u; bi++) {
+            for (size_t bi = 0u; bi < 11u; bi++) {
                 const char *bad_xmp = bad_cases[bi];
                 size_t blen = strlen(bad_xmp);
                 uint8_t *mb = (uint8_t *)malloc(e4.len + 8u + blen);

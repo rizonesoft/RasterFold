@@ -541,17 +541,71 @@ static int jp2_xml_valid_qname(const uint8_t *p, size_t len) {
            jp2_xml_valid_ncname(p + colon + 1u, len - colon - 1u);
 }
 
+static size_t jp2_utf8_encode(uint32_t cp, uint8_t out[4]) {
+    if (cp < 0x80u) {
+        out[0] = (uint8_t)cp;
+        return 1u;
+    }
+    if (cp < 0x800u) {
+        out[0] = (uint8_t)(0xC0u | (cp >> 6));
+        out[1] = (uint8_t)(0x80u | (cp & 0x3Fu));
+        return 2u;
+    }
+    if (cp < 0x10000u) {
+        out[0] = (uint8_t)(0xE0u | (cp >> 12));
+        out[1] = (uint8_t)(0x80u | ((cp >> 6) & 0x3Fu));
+        out[2] = (uint8_t)(0x80u | (cp & 0x3Fu));
+        return 3u;
+    }
+    out[0] = (uint8_t)(0xF0u | (cp >> 18));
+    out[1] = (uint8_t)(0x80u | ((cp >> 12) & 0x3Fu));
+    out[2] = (uint8_t)(0x80u | ((cp >> 6) & 0x3Fu));
+    out[3] = (uint8_t)(0x80u | (cp & 0x3Fu));
+    return 4u;
+}
+
+typedef struct jp2_xml_buf {
+    uint8_t *data;
+    size_t len;
+    size_t cap;
+} jp2_xml_buf;
+
+static int jp2_xml_buf_append(jp2_xml_buf *b, const uint8_t *src, size_t n) {
+    if (n == 0u) {
+        return 1;
+    }
+    if (n > SIZE_MAX - b->len) {
+        return 0;
+    }
+    size_t need = b->len + n;
+    if (need > b->cap) {
+        size_t ncap = b->cap ? b->cap : 256u;
+        while (ncap < need) {
+            if (ncap > SIZE_MAX / 2u) {
+                ncap = need;
+                break;
+            }
+            ncap *= 2u;
+        }
+        uint8_t *nd = (uint8_t *)realloc(b->data, ncap);
+        if (!nd) {
+            return 0;
+        }
+        b->data = nd;
+        b->cap = ncap;
+    }
+    memcpy(b->data + b->len, src, n);
+    b->len = need;
+    return 1;
+}
+
 /* Validate an XML 1.0 attribute value (no literal '<', valid UTF-8 XML chars,
  * valid numeric character references and predefined entity references) and, if
- * out_matches != NULL, compare its normalized/decoded value byte-for-byte with
- * target[0..target_len] (pure ASCII). Returns 1 if well-formed, 0 otherwise. */
-static int jp2_xml_check_attr_val(const uint8_t *val,
-                                  size_t val_len,
-                                  const char *target,
-                                  size_t target_len,
-                                  int *out_matches) {
-    int matches = (target != NULL);
-    size_t matched = 0u;
+ * out_buf != NULL, append its normalized/decoded UTF-8 value into out_buf.
+ * Returns 1 if well-formed, 0 otherwise. */
+static int jp2_xml_decode_attr_val(const uint8_t *val,
+                                   size_t val_len,
+                                   jp2_xml_buf *out_buf) {
     size_t pos = 0u;
     while (pos < val_len) {
         uint8_t c = val[pos];
@@ -627,17 +681,13 @@ static int jp2_xml_check_attr_val(const uint8_t *val,
                 return 0;
             }
         }
-        if (matches) {
-            if (out_cp >= 0x80u || matched >= target_len ||
-                (uint8_t)out_cp != (uint8_t)target[matched]) {
-                matches = 0;
-            } else {
-                matched++;
+        if (out_buf) {
+            uint8_t enc[4];
+            size_t elen = jp2_utf8_encode(out_cp, enc);
+            if (!jp2_xml_buf_append(out_buf, enc, elen)) {
+                return 0;
             }
         }
-    }
-    if (out_matches) {
-        *out_matches = (matches && matched == target_len) ? 1 : 0;
     }
     return 1;
 }
@@ -737,11 +787,290 @@ static int jp2_xml_skip_misc(const uint8_t *p, size_t len, size_t *pos) {
     return 1;
 }
 
-/* Parse an XML start-tag (p[*pos] == '<', not "</", "<!", or "<?"). Validates
- * QName, attributes, duplicate attribute names, and XML 1.0 AttValues. When
- * check_xmp_root is non-zero, requires the element's expanded name to be
- * {adobe:ns:meta/}xmpmeta. */
-static int jp2_xml_parse_start_tag(const uint8_t *p,
+typedef struct jp2_xml_elem {
+    size_t qname_off;
+    size_t qname_len;
+} jp2_xml_elem;
+
+typedef struct jp2_xml_ns {
+    size_t depth;
+    size_t prefix_off; /* ignored when prefix_len == 0 (default namespace) */
+    size_t prefix_len;
+    size_t uri_off;    /* offset into uri_arena */
+    size_t uri_len;
+} jp2_xml_ns;
+
+typedef struct jp2_xml_attr {
+    size_t name_off;
+    size_t name_len;
+    size_t prefix_off;
+    size_t prefix_len;
+    size_t local_off;
+    size_t local_len;
+    size_t val_off;
+    size_t val_len;
+    int is_xmlns;
+    const uint8_t *ns_uri;
+    size_t ns_uri_len;
+} jp2_xml_attr;
+
+typedef struct jp2_xml_parser {
+    jp2_xml_elem *stack;
+    size_t depth;
+    size_t stack_cap;
+    jp2_xml_ns *ns;
+    size_t ns_count;
+    size_t ns_cap;
+    jp2_xml_buf uri_arena;
+    jp2_xml_attr *attrs;
+    size_t attr_count;
+    size_t attr_cap;
+    size_t *ht;
+    size_t ht_cap;
+} jp2_xml_parser;
+
+static void jp2_xml_parser_free(jp2_xml_parser *xp) {
+    free(xp->stack);
+    free(xp->ns);
+    free(xp->uri_arena.data);
+    free(xp->attrs);
+    free(xp->ht);
+    memset(xp, 0, sizeof(*xp));
+}
+
+static int jp2_xml_stack_push(jp2_xml_parser *xp, size_t off, size_t len) {
+    if (xp->depth == xp->stack_cap) {
+        size_t ncap = xp->stack_cap ? xp->stack_cap * 2u : 64u;
+        if (ncap < xp->depth + 1u || ncap > SIZE_MAX / sizeof(jp2_xml_elem)) {
+            return 0;
+        }
+        jp2_xml_elem *ns = (jp2_xml_elem *)realloc(xp->stack, ncap * sizeof(*ns));
+        if (!ns) {
+            return 0;
+        }
+        xp->stack = ns;
+        xp->stack_cap = ncap;
+    }
+    xp->stack[xp->depth].qname_off = off;
+    xp->stack[xp->depth].qname_len = len;
+    xp->depth++;
+    return 1;
+}
+
+static int jp2_xml_ns_push(jp2_xml_parser *xp,
+                           size_t depth,
+                           size_t prefix_off,
+                           size_t prefix_len,
+                           size_t uri_off,
+                           size_t uri_len) {
+    if (xp->ns_count == xp->ns_cap) {
+        size_t ncap = xp->ns_cap ? xp->ns_cap * 2u : 16u;
+        if (ncap < xp->ns_count + 1u || ncap > SIZE_MAX / sizeof(jp2_xml_ns)) {
+            return 0;
+        }
+        jp2_xml_ns *nn = (jp2_xml_ns *)realloc(xp->ns, ncap * sizeof(*nn));
+        if (!nn) {
+            return 0;
+        }
+        xp->ns = nn;
+        xp->ns_cap = ncap;
+    }
+    xp->ns[xp->ns_count].depth = depth;
+    xp->ns[xp->ns_count].prefix_off = prefix_off;
+    xp->ns[xp->ns_count].prefix_len = prefix_len;
+    xp->ns[xp->ns_count].uri_off = uri_off;
+    xp->ns[xp->ns_count].uri_len = uri_len;
+    xp->ns_count++;
+    return 1;
+}
+
+static void jp2_xml_ns_pop_depth(jp2_xml_parser *xp, size_t depth) {
+    while (xp->ns_count > 0u && xp->ns[xp->ns_count - 1u].depth == depth) {
+        xp->uri_arena.len = xp->ns[xp->ns_count - 1u].uri_off;
+        xp->ns_count--;
+    }
+}
+
+static int jp2_xml_attr_push(jp2_xml_parser *xp, const jp2_xml_attr *a) {
+    if (xp->attr_count == xp->attr_cap) {
+        size_t ncap = xp->attr_cap ? xp->attr_cap * 2u : 16u;
+        if (ncap < xp->attr_count + 1u || ncap > SIZE_MAX / sizeof(jp2_xml_attr)) {
+            return 0;
+        }
+        jp2_xml_attr *na = (jp2_xml_attr *)realloc(xp->attrs, ncap * sizeof(*na));
+        if (!na) {
+            return 0;
+        }
+        xp->attrs = na;
+        xp->attr_cap = ncap;
+    }
+    xp->attrs[xp->attr_count++] = *a;
+    return 1;
+}
+
+static uint64_t jp2_xml_fnv1a(uint64_t h, const uint8_t *data, size_t n) {
+    for (size_t k = 0u; k < n; k++) {
+        h ^= (uint64_t)data[k];
+        h *= 1099511628211ull;
+    }
+    return h;
+}
+
+static int jp2_xml_ht_prepare(jp2_xml_parser *xp, size_t count) {
+    size_t need = 32u;
+    while (need < count * 2u + 8u) {
+        if (need > SIZE_MAX / 2u) {
+            return 0;
+        }
+        need *= 2u;
+    }
+    if (need > xp->ht_cap) {
+        if (need > SIZE_MAX / sizeof(size_t)) {
+            return 0;
+        }
+        size_t *nh = (size_t *)realloc(xp->ht, need * sizeof(size_t));
+        if (!nh) {
+            return 0;
+        }
+        xp->ht = nh;
+        xp->ht_cap = need;
+    }
+    for (size_t k = 0u; k < need; k++) {
+        xp->ht[k] = SIZE_MAX;
+    }
+    return 1;
+}
+
+static const char k_xml_ns_uri[] = "http://www.w3.org/XML/1998/namespace";
+static const char k_xmlns_ns_uri[] = "http://www.w3.org/2000/xmlns/";
+static const char k_xmp_ns_uri[] = "adobe:ns:meta/";
+
+/* Resolve an XML namespace prefix (or default namespace when prefix_len == 0)
+ * in the active scope. Returns 1 on success (for prefix_len == 0, *out_len may
+ * be 0 meaning no default namespace); returns 0 when a non-empty prefix is
+ * unbound. */
+static int jp2_xml_resolve_ns(const jp2_xml_parser *xp,
+                              const uint8_t *p,
+                              const uint8_t *prefix,
+                              size_t prefix_len,
+                              const uint8_t **out_uri,
+                              size_t *out_len) {
+    if (prefix_len == 3u && memcmp(prefix, "xml", 3u) == 0) {
+        *out_uri = (const uint8_t *)k_xml_ns_uri;
+        *out_len = sizeof(k_xml_ns_uri) - 1u;
+        return 1;
+    }
+    for (size_t idx = xp->ns_count; idx > 0u; idx--) {
+        const jp2_xml_ns *e = &xp->ns[idx - 1u];
+        if (e->prefix_len == prefix_len &&
+            (prefix_len == 0u || memcmp(p + e->prefix_off, prefix, prefix_len) == 0)) {
+            *out_uri = e->uri_len ? (xp->uri_arena.data + e->uri_off) : NULL;
+            *out_len = e->uri_len;
+            return 1;
+        }
+    }
+    if (prefix_len == 0u) {
+        *out_uri = NULL;
+        *out_len = 0u;
+        return 1;
+    }
+    return 0;
+}
+
+/* Parse strict W3C XML 1.0 (5th ed.) §2.8 XMLDecl starting at p[*pos]:
+ * '<?xml' S VersionInfo EncodingDecl? SDDecl? S? '?>' */
+static int jp2_xml_parse_xmldecl(const uint8_t *p, size_t len, size_t *pos) {
+    size_t i = *pos;
+    if (len - i < 6u || memcmp(p + i, "<?xml", 5u) != 0 ||
+        !jp2_is_xml_ws(p[i + 5u])) {
+        return 0;
+    }
+    i += 5u;
+    /* VersionInfo ::= S 'version' Eq ("'" VersionNum "'" | '"' VersionNum '"') */
+    size_t ws0 = i;
+    while (i < len && jp2_is_xml_ws(p[i])) i++;
+    if (i == ws0 || len - i < 7u || memcmp(p + i, "version", 7u) != 0) {
+        return 0;
+    }
+    i += 7u;
+    while (i < len && jp2_is_xml_ws(p[i])) i++;
+    if (i >= len || p[i] != '=') return 0;
+    i++;
+    while (i < len && jp2_is_xml_ws(p[i])) i++;
+    if (i >= len || (p[i] != '"' && p[i] != '\'')) return 0;
+    uint8_t q = p[i++];
+    if (len - i < 3u || p[i] != '1' || p[i + 1u] != '.') return 0;
+    i += 2u;
+    size_t d0 = i;
+    while (i < len && p[i] >= '0' && p[i] <= '9') i++;
+    if (i == d0 || i >= len || p[i] != q) return 0;
+    i++; /* closing quote of VersionNum */
+
+    /* Optional EncodingDecl ::= S 'encoding' Eq ('"' EncName '"' | "'" EncName "'") */
+    size_t after_ver = i;
+    while (i < len && jp2_is_xml_ws(p[i])) i++;
+    if (i > after_ver && len - i >= 8u && memcmp(p + i, "encoding", 8u) == 0 &&
+        (len - i == 8u || jp2_is_xml_ws(p[i + 8u]) || p[i + 8u] == '=')) {
+        i += 8u;
+        while (i < len && jp2_is_xml_ws(p[i])) i++;
+        if (i >= len || p[i] != '=') return 0;
+        i++;
+        while (i < len && jp2_is_xml_ws(p[i])) i++;
+        if (i >= len || (p[i] != '"' && p[i] != '\'')) return 0;
+        q = p[i++];
+        if (i >= len ||
+            !((p[i] >= 'A' && p[i] <= 'Z') || (p[i] >= 'a' && p[i] <= 'z'))) {
+            return 0;
+        }
+        i++;
+        while (i < len && p[i] != q) {
+            uint8_t c = p[i];
+            if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                  (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-')) {
+                return 0;
+            }
+            i++;
+        }
+        if (i >= len || p[i] != q) return 0;
+        i++;
+        after_ver = i;
+        while (i < len && jp2_is_xml_ws(p[i])) i++;
+    }
+
+    /* Optional SDDecl ::= S 'standalone' Eq (("'" ('yes'|'no') "'") | ...) */
+    if (i > after_ver && len - i >= 10u && memcmp(p + i, "standalone", 10u) == 0 &&
+        (len - i == 10u || jp2_is_xml_ws(p[i + 10u]) || p[i + 10u] == '=')) {
+        i += 10u;
+        while (i < len && jp2_is_xml_ws(p[i])) i++;
+        if (i >= len || p[i] != '=') return 0;
+        i++;
+        while (i < len && jp2_is_xml_ws(p[i])) i++;
+        if (i >= len || (p[i] != '"' && p[i] != '\'')) return 0;
+        q = p[i++];
+        if (len - i >= 3u && memcmp(p + i, "yes", 3u) == 0) {
+            i += 3u;
+        } else if (len - i >= 2u && memcmp(p + i, "no", 2u) == 0) {
+            i += 2u;
+        } else {
+            return 0;
+        }
+        if (i >= len || p[i] != q) return 0;
+        i++;
+        while (i < len && jp2_is_xml_ws(p[i])) i++;
+    }
+
+    if (len - i < 2u || p[i] != '?' || p[i + 1u] != '>') {
+        return 0;
+    }
+    *pos = i + 2u;
+    return 1;
+}
+
+/* Parse an XML start-tag with full W3C XML 1.0 + Namespaces 1.0 scoping,
+ * unbounded dynamic attribute storage, hash-table duplicate checks (both raw
+ * QName and expanded {uri}local), and prefix binding verification. */
+static int jp2_xml_parse_start_tag(jp2_xml_parser *xp,
+                                   const uint8_t *p,
                                    size_t len,
                                    size_t *pos,
                                    int check_xmp_root,
@@ -773,32 +1102,22 @@ static int jp2_xml_parse_start_tag(const uint8_t *p,
         (!jp2_is_xml_ws(p[i]) && p[i] != '>' && p[i] != '/')) {
         return 0;
     }
-    const uint8_t *prefix = NULL;
-    size_t prefix_len = 0u;
-    const uint8_t *local = p + qname_start;
-    size_t local_len = qname_len;
+    const uint8_t *el_prefix = NULL;
+    size_t el_prefix_len = 0u;
+    const uint8_t *el_local = p + qname_start;
+    size_t el_local_len = qname_len;
     if (colon_pos != SIZE_MAX) {
-        prefix = p + qname_start;
-        prefix_len = colon_pos - qname_start;
-        local = p + colon_pos + 1u;
-        local_len = i - (colon_pos + 1u);
-        if ((prefix_len == 5u && memcmp(prefix, "xmlns", 5u) == 0)) {
-            return 0;
-        }
-    }
-    if (check_xmp_root) {
-        if ((prefix_len == 3u && memcmp(prefix, "xml", 3u) == 0) ||
-            local_len != 7u || memcmp(local, "xmpmeta", 7u) != 0) {
+        el_prefix = p + qname_start;
+        el_prefix_len = colon_pos - qname_start;
+        el_local = p + colon_pos + 1u;
+        el_local_len = i - (colon_pos + 1u);
+        if (el_prefix_len == 5u && memcmp(el_prefix, "xmlns", 5u) == 0) {
             return 0;
         }
     }
 
-    static const char k_ns_val[] = "adobe:ns:meta/";
-    const size_t ns_val_len = sizeof(k_ns_val) - 1u;
-    int has_ns = 0;
-    struct { size_t off; size_t len; } seen_attrs[256];
-    size_t seen_count = 0u;
-
+    xp->attr_count = 0u;
+    int self_closing = 0;
     while (i < len) {
         size_t ws_start = i;
         while (i < len && jp2_is_xml_ws(p[i])) {
@@ -808,101 +1127,218 @@ static int jp2_xml_parse_start_tag(const uint8_t *p,
             return 0;
         }
         if (p[i] == '>') {
-            if (check_xmp_root && !has_ns) {
-                return 0;
-            }
-            *pos = i + 1u;
-            *out_qname_off = qname_start;
-            *out_qname_len = qname_len;
-            *out_self_closing = 0;
-            return 1;
+            i++;
+            self_closing = 0;
+            break;
         }
         if (p[i] == '/' && i + 1u < len && p[i + 1u] == '>') {
-            if (check_xmp_root && !has_ns) {
-                return 0;
-            }
-            *pos = i + 2u;
-            *out_qname_off = qname_start;
-            *out_qname_len = qname_len;
-            *out_self_closing = 1;
-            return 1;
+            i += 2u;
+            self_closing = 1;
+            break;
         }
         if (i == ws_start) {
             return 0; /* XML 1.0 requires whitespace before every attribute */
         }
         size_t name_start = i;
+        size_t a_colon = SIZE_MAX;
         while (i < len && !jp2_is_xml_ws(p[i]) && p[i] != '=' &&
                p[i] != '>' && p[i] != '/' && p[i] != '"' && p[i] != '\'') {
+            if (p[i] == ':' && a_colon == SIZE_MAX) {
+                a_colon = i;
+            }
             i++;
         }
         size_t name_len = i - name_start;
         if (!jp2_xml_valid_qname(p + name_start, name_len)) {
             return 0;
         }
-        for (size_t a = 0u; a < seen_count; a++) {
-            if (seen_attrs[a].len == name_len &&
-                memcmp(p + seen_attrs[a].off, p + name_start, name_len) == 0) {
-                return 0; /* duplicate attribute on element */
-            }
-        }
-        if (seen_count < (sizeof(seen_attrs) / sizeof(seen_attrs[0]))) {
-            seen_attrs[seen_count].off = name_start;
-            seen_attrs[seen_count].len = name_len;
-            seen_count++;
-        }
-        while (i < len && jp2_is_xml_ws(p[i])) {
-            i++;
-        }
-        if (i >= len || p[i] != '=') {
-            return 0;
-        }
-        i++; /* skip '=' */
-        while (i < len && jp2_is_xml_ws(p[i])) {
-            i++;
-        }
-        if (i >= len || (p[i] != '"' && p[i] != '\'')) {
-            return 0;
-        }
+        while (i < len && jp2_is_xml_ws(p[i])) i++;
+        if (i >= len || p[i] != '=') return 0;
+        i++;
+        while (i < len && jp2_is_xml_ws(p[i])) i++;
+        if (i >= len || (p[i] != '"' && p[i] != '\'')) return 0;
         uint8_t quote = p[i++];
         size_t val_start = i;
-        while (i < len && p[i] != quote) {
-            i++;
-        }
-        if (i >= len) {
-            return 0;
-        }
+        while (i < len && p[i] != quote) i++;
+        if (i >= len) return 0;
         size_t val_len = i - val_start;
         i++; /* skip closing quote */
-
-        int is_target_ns = 0;
-        if (check_xmp_root) {
-            if (prefix_len == 0u) {
-                is_target_ns = (name_len == 5u &&
-                                memcmp(p + name_start, "xmlns", 5u) == 0);
-            } else {
-                is_target_ns = (name_len == 6u + prefix_len &&
-                                memcmp(p + name_start, "xmlns:", 6u) == 0 &&
-                                memcmp(p + name_start + 6u, prefix, prefix_len) == 0);
-            }
-        }
-        int val_matches = 0;
-        if (!jp2_xml_check_attr_val(p + val_start, val_len,
-                                    is_target_ns ? k_ns_val : NULL,
-                                    is_target_ns ? ns_val_len : 0u,
-                                    is_target_ns ? &val_matches : NULL)) {
-            return 0;
-        }
-        if (is_target_ns) {
-            if (has_ns || !val_matches) {
-                return 0;
-            }
-            has_ns = 1;
-        }
         if (i < len && !jp2_is_xml_ws(p[i]) && p[i] != '>' && p[i] != '/') {
             return 0;
         }
+
+        jp2_xml_attr a;
+        memset(&a, 0, sizeof(a));
+        a.name_off = name_start;
+        a.name_len = name_len;
+        a.val_off = val_start;
+        a.val_len = val_len;
+        if (a_colon != SIZE_MAX) {
+            a.prefix_off = name_start;
+            a.prefix_len = a_colon - name_start;
+            a.local_off = a_colon + 1u;
+            a.local_len = (name_start + name_len) - (a_colon + 1u);
+            if (a.prefix_len == 5u && memcmp(p + a.prefix_off, "xmlns", 5u) == 0) {
+                a.is_xmlns = 1;
+            }
+        } else {
+            a.local_off = name_start;
+            a.local_len = name_len;
+            if (name_len == 5u && memcmp(p + name_start, "xmlns", 5u) == 0) {
+                a.is_xmlns = 1;
+            }
+        }
+        if (!jp2_xml_attr_push(xp, &a)) {
+            return 0;
+        }
     }
-    return 0;
+
+    /* Check raw QName uniqueness across ALL attributes (unbounded). */
+    if (xp->attr_count > 1u) {
+        if (!jp2_xml_ht_prepare(xp, xp->attr_count)) {
+            return 0;
+        }
+        size_t mask = 32u;
+        while (mask < xp->attr_count * 2u + 8u) mask *= 2u;
+        mask -= 1u;
+        for (size_t k = 0u; k < xp->attr_count; k++) {
+            const jp2_xml_attr *a = &xp->attrs[k];
+            uint64_t h = jp2_xml_fnv1a(14695981039346656037ull,
+                                       p + a->name_off, a->name_len);
+            size_t slot = (size_t)h & mask;
+            while (xp->ht[slot] != SIZE_MAX) {
+                const jp2_xml_attr *prev = &xp->attrs[xp->ht[slot]];
+                if (prev->name_len == a->name_len &&
+                    memcmp(p + prev->name_off, p + a->name_off, a->name_len) == 0) {
+                    return 0; /* duplicate attribute QName */
+                }
+                slot = (slot + 1u) & mask;
+            }
+            xp->ht[slot] = k;
+        }
+    }
+
+    /* Pass 1: validate all attribute values and push xmlns bindings at xp->depth. */
+    size_t cur_depth = xp->depth;
+    for (size_t k = 0u; k < xp->attr_count; k++) {
+        const jp2_xml_attr *a = &xp->attrs[k];
+        if (!a->is_xmlns) {
+            if (!jp2_xml_decode_attr_val(p + a->val_off, a->val_len, NULL)) {
+                return 0;
+            }
+            continue;
+        }
+        size_t uri_off = xp->uri_arena.len;
+        if (!jp2_xml_decode_attr_val(p + a->val_off, a->val_len, &xp->uri_arena)) {
+            return 0;
+        }
+        size_t uri_len = xp->uri_arena.len - uri_off;
+        const uint8_t *uri = uri_len ? (xp->uri_arena.data + uri_off) : NULL;
+        int is_xml_uri = (uri_len == sizeof(k_xml_ns_uri) - 1u &&
+                          memcmp(uri, k_xml_ns_uri, uri_len) == 0);
+        int is_xmlns_uri = (uri_len == sizeof(k_xmlns_ns_uri) - 1u &&
+                            memcmp(uri, k_xmlns_ns_uri, uri_len) == 0);
+        if (a->prefix_len == 0u) {
+            /* Default namespace: xmlns="..." */
+            if (is_xml_uri || is_xmlns_uri) {
+                return 0;
+            }
+            if (!jp2_xml_ns_push(xp, cur_depth, 0u, 0u, uri_off, uri_len)) {
+                return 0;
+            }
+        } else {
+            /* Prefixed binding: xmlns:<local>="..." */
+            const uint8_t *bpref = p + a->local_off;
+            size_t bplen = a->local_len;
+            if (uri_len == 0u ||
+                (bplen == 5u && memcmp(bpref, "xmlns", 5u) == 0)) {
+                return 0; /* Namespaces 1.0 forbids empty prefixed binding and xmlns */
+            }
+            if (bplen == 3u && memcmp(bpref, "xml", 3u) == 0) {
+                if (!is_xml_uri) {
+                    return 0;
+                }
+            } else if (is_xml_uri || is_xmlns_uri) {
+                return 0;
+            }
+            if (!jp2_xml_ns_push(xp, cur_depth, a->local_off, bplen, uri_off, uri_len)) {
+                return 0;
+            }
+        }
+    }
+
+    /* Pass 2: resolve element prefix and check XMP root expanded name. */
+    const uint8_t *el_uri = NULL;
+    size_t el_uri_len = 0u;
+    if (!jp2_xml_resolve_ns(xp, p, el_prefix, el_prefix_len, &el_uri, &el_uri_len)) {
+        return 0; /* unbound element prefix */
+    }
+    if (check_xmp_root) {
+        if (el_local_len != 7u || memcmp(el_local, "xmpmeta", 7u) != 0 ||
+            el_uri_len != sizeof(k_xmp_ns_uri) - 1u ||
+            memcmp(el_uri, k_xmp_ns_uri, el_uri_len) != 0) {
+            return 0;
+        }
+    }
+
+    /* Pass 3: resolve prefixed non-xmlns attributes and check expanded-name uniqueness. */
+    size_t non_xmlns_count = 0u;
+    for (size_t k = 0u; k < xp->attr_count; k++) {
+        jp2_xml_attr *a = &xp->attrs[k];
+        if (a->is_xmlns) {
+            continue;
+        }
+        if (a->prefix_len > 0u) {
+            if (!jp2_xml_resolve_ns(xp, p, p + a->prefix_off, a->prefix_len,
+                                    &a->ns_uri, &a->ns_uri_len)) {
+                return 0; /* unbound attribute prefix */
+            }
+        }
+        non_xmlns_count++;
+    }
+    if (non_xmlns_count > 1u) {
+        if (!jp2_xml_ht_prepare(xp, non_xmlns_count)) {
+            return 0;
+        }
+        size_t mask = 32u;
+        while (mask < non_xmlns_count * 2u + 8u) mask *= 2u;
+        mask -= 1u;
+        for (size_t k = 0u; k < xp->attr_count; k++) {
+            const jp2_xml_attr *a = &xp->attrs[k];
+            if (a->is_xmlns) {
+                continue;
+            }
+            uint64_t h = 14695981039346656037ull;
+            if (a->ns_uri_len > 0u) {
+                h = jp2_xml_fnv1a(h, a->ns_uri, a->ns_uri_len);
+            }
+            uint8_t sep = 0u;
+            h = jp2_xml_fnv1a(h, &sep, 1u);
+            h = jp2_xml_fnv1a(h, p + a->local_off, a->local_len);
+            size_t slot = (size_t)h & mask;
+            while (xp->ht[slot] != SIZE_MAX) {
+                const jp2_xml_attr *prev = &xp->attrs[xp->ht[slot]];
+                if (prev->ns_uri_len == a->ns_uri_len &&
+                    prev->local_len == a->local_len &&
+                    (a->ns_uri_len == 0u ||
+                     memcmp(prev->ns_uri, a->ns_uri, a->ns_uri_len) == 0) &&
+                    memcmp(p + prev->local_off, p + a->local_off, a->local_len) == 0) {
+                    return 0; /* duplicate expanded attribute name */
+                }
+                slot = (slot + 1u) & mask;
+            }
+            xp->ht[slot] = k;
+        }
+    }
+
+    if (self_closing) {
+        jp2_xml_ns_pop_depth(xp, cur_depth);
+    }
+    *pos = i;
+    *out_qname_off = qname_start;
+    *out_qname_len = qname_len;
+    *out_self_closing = self_closing;
+    return 1;
 }
 
 static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
@@ -916,20 +1352,7 @@ static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
     /* Optional XMLDecl strictly at document start (after optional UTF-8 BOM). */
     if (len - i >= 6u && memcmp(p + i, "<?xml", 5u) == 0 &&
         jp2_is_xml_ws(p[i + 5u])) {
-        size_t j = i + 6u;
-        int closed = 0;
-        while (j < len) {
-            if (p[j] == '?' && j + 1u < len && p[j + 1u] == '>') {
-                i = j + 2u;
-                closed = 1;
-                break;
-            }
-            uint32_t cp = 0u;
-            if (!jp2_utf8_next(p, len, &j, &cp) || !jp2_xml_is_char(cp)) {
-                return 0;
-            }
-        }
-        if (!closed) {
+        if (!jp2_xml_parse_xmldecl(p, len, &i)) {
             return 0;
         }
     }
@@ -938,25 +1361,27 @@ static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
     if (!jp2_xml_skip_misc(p, len, &i)) {
         return 0;
     }
-    /* Root element must be well-formed {adobe:ns:meta/}xmpmeta. */
-    struct { size_t off; size_t len; } stack[64];
-    size_t depth = 0u;
+
+    jp2_xml_parser xp;
+    memset(&xp, 0, sizeof(xp));
+    int ok = 0;
+
     size_t root_off = 0u, root_len = 0u;
     int root_self = 0;
-    if (!jp2_xml_parse_start_tag(p, len, &i, 1, &root_off, &root_len,
+    if (!jp2_xml_parse_start_tag(&xp, p, len, &i, 1, &root_off, &root_len,
                                  &root_self)) {
-        return 0;
+        goto done;
     }
     if (!root_self) {
-        stack[depth].off = root_off;
-        stack[depth].len = root_len;
-        depth = 1u;
+        if (!jp2_xml_stack_push(&xp, root_off, root_len)) {
+            goto done;
+        }
     }
-    /* Walk the complete element tree to verify balanced closing tags and XML
-     * 1.0 well-formedness (rejecting truncated or malformed packets). */
-    while (depth > 0u) {
+    /* Walk the complete element tree to verify balanced closing tags, scoped
+     * namespaces, and XML 1.0 well-formedness through EOF. */
+    while (xp.depth > 0u) {
         if (i >= len) {
-            return 0; /* truncated before closing root element */
+            goto done; /* truncated before closing root element */
         }
         if (p[i] == '<') {
             size_t rem = len - i;
@@ -971,21 +1396,23 @@ static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
                     i++;
                 }
                 if (i >= len || p[i] != '>') {
-                    return 0;
+                    goto done;
                 }
                 i++; /* skip '>' */
-                if (en_len != stack[depth - 1u].len ||
-                    memcmp(p + en_start, p + stack[depth - 1u].off, en_len) != 0) {
-                    return 0; /* mismatched closing tag */
+                size_t top_idx = xp.depth - 1u;
+                if (en_len != xp.stack[top_idx].qname_len ||
+                    memcmp(p + en_start, p + xp.stack[top_idx].qname_off, en_len) != 0) {
+                    goto done; /* mismatched closing tag */
                 }
-                depth--;
+                xp.depth--;
+                jp2_xml_ns_pop_depth(&xp, xp.depth);
             } else if (rem >= 4u && memcmp(p + i, "<!--", 4u) == 0) {
                 if (!jp2_xml_skip_comment(p, len, &i)) {
-                    return 0;
+                    goto done;
                 }
             } else if (rem >= 2u && p[i + 1u] == '?') {
                 if (!jp2_xml_skip_pi(p, len, &i)) {
-                    return 0;
+                    goto done;
                 }
             } else if (rem >= 9u && memcmp(p + i, "<![CDATA[", 9u) == 0) {
                 i += 9u;
@@ -999,26 +1426,23 @@ static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
                     }
                     uint32_t cp = 0u;
                     if (!jp2_utf8_next(p, len, &i, &cp) || !jp2_xml_is_char(cp)) {
-                        return 0;
+                        goto done;
                     }
                 }
                 if (!closed) {
-                    return 0;
+                    goto done;
                 }
             } else {
                 size_t cn_off = 0u, cn_len = 0u;
                 int cn_self = 0;
-                if (!jp2_xml_parse_start_tag(p, len, &i, 0, &cn_off, &cn_len,
+                if (!jp2_xml_parse_start_tag(&xp, p, len, &i, 0, &cn_off, &cn_len,
                                              &cn_self)) {
-                    return 0;
+                    goto done;
                 }
                 if (!cn_self) {
-                    if (depth >= (sizeof(stack) / sizeof(stack[0]))) {
-                        return 0;
+                    if (!jp2_xml_stack_push(&xp, cn_off, cn_len)) {
+                        goto done;
                     }
-                    stack[depth].off = cn_off;
-                    stack[depth].len = cn_len;
-                    depth++;
                 }
             }
         } else if (p[i] == '&') {
@@ -1027,34 +1451,37 @@ static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
             i++;
             while (i < len && p[i] != ';') {
                 if (p[i] == '<' || p[i] == '&') {
-                    return 0;
+                    goto done;
                 }
                 i++;
             }
             if (i >= len) {
-                return 0;
+                goto done;
             }
             i++; /* include ';' */
-            if (!jp2_xml_check_attr_val(p + ref_start, i - ref_start,
-                                        NULL, 0u, NULL)) {
-                return 0;
+            if (!jp2_xml_decode_attr_val(p + ref_start, i - ref_start, NULL)) {
+                goto done;
             }
         } else {
             if (p[i] == ']' && i + 2u < len &&
                 p[i + 1u] == ']' && p[i + 2u] == '>') {
-                return 0; /* ']]>' is forbidden in CharData */
+                goto done; /* ']]>' is forbidden in CharData */
             }
             uint32_t cp = 0u;
             if (!jp2_utf8_next(p, len, &i, &cp) || !jp2_xml_is_char(cp)) {
-                return 0;
+                goto done;
             }
         }
     }
     /* Epilog Misc*: whitespace, comments, and legal PIs (e.g. <?xpacket end="w"?>). */
     if (!jp2_xml_skip_misc(p, len, &i)) {
-        return 0;
+        goto done;
     }
-    return (i == len) ? 1 : 0;
+    ok = (i == len) ? 1 : 0;
+
+done:
+    jp2_xml_parser_free(&xp);
+    return ok;
 }
 
 static rfc_status jp2_scan_input(const uint8_t *bytes,
