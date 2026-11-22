@@ -241,6 +241,7 @@ class QoiAdapterBase:
             ("consec_index", b"qoif\x00\x00\x00\x02\x00\x00\x00\x01\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01", "invalid-argument"),
             ("trailing", b"qoif\x00\x00\x00\x01\x00\x00\x00\x01\x03\x00\xc0\x00\x00\x00\x00\x00\x00\x00\x00\x01", "invalid-argument"),
             ("trunc_bomb", b"qoif\x00\x00\x27\x10\x00\x00\x27\x10\x04\x00\x00\x00\x00\x00\x00\x00\x00\x01", "limit-exceeded"),
+            ("div_bound", struct.pack(">4sIIBB", b"qoif", 20001, 19999, 3, 0) + b"\x00\x00\x00\x00\x00\x00\x00\x01", "limit-exceeded"),
         ]
         for tag, blob, exp_status in named_bad:
             with self.assertRaises(ValueError, msg=f"oracle accepted malformed {tag}"):

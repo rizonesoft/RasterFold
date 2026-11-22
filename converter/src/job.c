@@ -2604,27 +2604,36 @@ static rfc_status check_target_frame_compat(rfc_job *job,
         }
         return RFC_ERR_UNSUPPORTED_COMBINATION;
     }
-    if (job->target_format == RFC_FORMAT_QOI && layout &&
-        layout->format != (rfc_sample_format)0) {
-        if (layout->bits_per_sample != 0u && layout->bits_per_sample != 8u) {
+    if (job->target_format == RFC_FORMAT_QOI && layout) {
+        if (layout->width > 0u && layout->height > 0u &&
+            layout->height >= 400000000u / layout->width) {
             if (out_err_detail && !*out_err_detail) {
-                *out_err_detail = "QOI requires 8 bits per channel";
+                *out_err_detail = "QOI dimensions exceed 400M pixel limit";
             }
-            return RFC_ERR_UNSUPPORTED_SAMPLE;
+            return RFC_ERR_LIMIT_EXCEEDED;
         }
-        if (layout->format == RFC_SAMPLE_RGB8 &&
-            layout->alpha != RFC_ALPHA_NONE) {
-            if (out_err_detail && !*out_err_detail) {
-                *out_err_detail = "QOI RGB8 requires RFC_ALPHA_NONE";
+        if (layout->format != (rfc_sample_format)0) {
+            if (layout->bits_per_sample != 0u &&
+                layout->bits_per_sample != 8u) {
+                if (out_err_detail && !*out_err_detail) {
+                    *out_err_detail = "QOI requires 8 bits per channel";
+                }
+                return RFC_ERR_UNSUPPORTED_SAMPLE;
             }
-            return RFC_ERR_UNSUPPORTED_ALPHA;
-        }
-        if (layout->format == RFC_SAMPLE_RGBA8 &&
-            layout->alpha != RFC_ALPHA_STRAIGHT) {
-            if (out_err_detail && !*out_err_detail) {
-                *out_err_detail = "QOI RGBA8 requires straight alpha";
+            if (layout->format == RFC_SAMPLE_RGB8 &&
+                layout->alpha != RFC_ALPHA_NONE) {
+                if (out_err_detail && !*out_err_detail) {
+                    *out_err_detail = "QOI RGB8 requires RFC_ALPHA_NONE";
+                }
+                return RFC_ERR_UNSUPPORTED_ALPHA;
             }
-            return RFC_ERR_UNSUPPORTED_ALPHA;
+            if (layout->format == RFC_SAMPLE_RGBA8 &&
+                layout->alpha != RFC_ALPHA_STRAIGHT) {
+                if (out_err_detail && !*out_err_detail) {
+                    *out_err_detail = "QOI RGBA8 requires straight alpha";
+                }
+                return RFC_ERR_UNSUPPORTED_ALPHA;
+            }
         }
     }
     if (meta) {

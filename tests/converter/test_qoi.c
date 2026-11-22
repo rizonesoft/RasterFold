@@ -1077,11 +1077,18 @@ static rfc_status qoi_mock_probe(void *session,
         out_probe->first_frame.alpha = RFC_ALPHA_NONE;
         out_probe->first_frame.stride_bytes = 4u * 3u;
         out_probe->frame_count = 0u; /* unknown at probe time */
+    } else if (g_qoi_probe_mock.mode == 6) {
+        out_probe->first_frame.width = 20000u;
+        out_probe->first_frame.height = 20000u;
+        out_probe->first_frame.format = RFC_SAMPLE_RGB8;
+        out_probe->first_frame.alpha = RFC_ALPHA_NONE;
+        out_probe->first_frame.stride_bytes = 20000u * 3u;
+        out_probe->frame_count = 1u;
     } else {
         out_probe->first_frame.format = RFC_SAMPLE_RGB8;
         out_probe->first_frame.alpha = RFC_ALPHA_NONE;
         out_probe->first_frame.stride_bytes = 4u * 3u;
-        out_probe->frame_count = 1u; /* empty container_meta; ICC on frame 1 */
+        out_probe->frame_count = 1u; /* empty container_meta; ICC/ori on frame 1 */
     }
     return RFC_OK;
 }
@@ -1816,6 +1823,36 @@ static void test_jobs_budget_cancel_and_file_safety(void) {
                   snap.state == RFC_JOB_FAILED &&
                   snap.status == RFC_ERR_METADATA_POLICY &&
                   snap.budget.peak_allocated_bytes < 4u * 4u * 3u &&
+                  !file_exists(p_ack_qoi));
+            rfc_job_release(job);
+
+            /* 20000x20000 RGB8 probe passes raised job limits, but exceeds
+             * QOI's 400M-pixel ceiling: refused before decode_session. */
+            rfc_limits big_lim;
+            rfc_limits_default(&big_lim);
+            big_lim.max_width = 65536u;
+            big_lim.max_height = 65536u;
+            big_lim.max_total_pixels = 500000000ULL;
+            big_lim.max_decoded_bytes = 2ULL * 1024u * 1024u * 1024u;
+            big_lim.max_expansion_ratio = 1000000000ULL;
+            g_qoi_probe_mock.mode = 6;
+            g_qoi_probe_mock.decode_calls = 0u;
+            memset(&sp, 0, sizeof(sp));
+            rfc_io_source_init_path(&si, p_mock_src, RFC_IMPORT_DEFAULT);
+            rfc_io_sink_init_path(&so, p_ack_qoi, RFC_EXPORT_REFUSE_EXISTING);
+            sp.source_format = RFC_FORMAT_JPEG_XL;
+            sp.target_format = RFC_FORMAT_QOI;
+            sp.io_source = &si;
+            sp.io_sink = &so;
+            sp.limits_override = &big_lim;
+            sp.expected_working_set_bytes = 64u * 1024u;
+            sp.requested_codec_threads = 1u;
+            CHECK(rfc_scheduler_submit(sched, NULL, &sp, &job) == RFC_OK);
+            CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
+            CHECK(rfc_job_snapshot_get(job, &snap) == RFC_OK);
+            CHECK(snap.state == RFC_JOB_FAILED &&
+                  snap.status == RFC_ERR_LIMIT_EXCEEDED &&
+                  g_qoi_probe_mock.decode_calls == 0u &&
                   !file_exists(p_ack_qoi));
             rfc_job_release(job);
 

@@ -734,9 +734,9 @@ def decode_qoi_ex(blob: bytes) -> tuple[int, int, int, int, bytes]:
     magic, w, ht, ch, cs = struct.unpack_from(">4sIIBB", blob, 0)
     if magic != b"qoif" or w == 0 or ht == 0 or ch not in (3, 4) or cs not in (0, 1):
         raise ValueError("invalid QOI header")
-    total_px = w * ht
-    if total_px >= 400_000_000:
+    if ht >= 400_000_000 // w:
         raise ValueError("QOI dimensions exceed QOI_PIXELS_MAX")
+    total_px = w * ht
     end = len(blob) - 8
     # Zero-allocation chunk-coverage pre-scan before allocating pixel buffer.
     scan_pos = 14
