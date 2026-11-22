@@ -25,6 +25,7 @@ import shutil
 import signal
 import struct
 import subprocess
+import time
 import zlib
 from typing import Any
 
@@ -1507,6 +1508,14 @@ def _kill_process_tree(
         _kill_posix_tree(proc.pid, tree_token)
 
 
+def _is_wsl_vsock_flake(returncode: int, out: Any, err: Any) -> bool:
+    if os.name == "nt" or returncode != 1 or out:
+        return False
+    if isinstance(err, bytes):
+        return b"UtilAcceptVsock" in err
+    return isinstance(err, str) and "UtilAcceptVsock" in err
+
+
 def run_process_tree(
     cmd: list[str] | tuple[str, ...],
     *,
@@ -1519,37 +1528,18 @@ def run_process_tree(
     """Run a child command and terminate its entire descendant tree on completion or timeout."""
     argv = [str(part) for part in cmd]
     pipes = subprocess.PIPE if capture_output else None
-    tree_token = f"{os.getpid()}-{os.urandom(8).hex()}"
-    child_env = dict(os.environ if env is None else env)
-    prev_tags = child_env.get("RFC_PROCESS_TREE_TAGS", "")
-    child_env["RFC_PROCESS_TREE_TAGS"] = f"{prev_tags},{tree_token}" if prev_tags else tree_token
-    job: _WindowsProcessJob | None = None
-    proc: subprocess.Popen[Any] | None = None
-    try:
-        if os.name == "nt":
-            job = _WindowsProcessJob()
-            flags = 0x00000004 | getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
-            proc = subprocess.Popen(
-                argv,
-                cwd=cwd,
-                env=child_env,
-                stdin=subprocess.DEVNULL,
-                stdout=pipes,
-                stderr=pipes,
-                text=text,
-                creationflags=flags,
-            )
-            try:
-                job.adopt_and_resume(proc)
-            except OSError:
-                proc.kill()
-                proc.wait()
-                job.end()
-                job = None
-                fb_flags = (
-                    getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
-                    | getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
-                )
+    max_attempts = 4 if (os.name != "nt" and capture_output) else 1
+    for attempt in range(max_attempts):
+        tree_token = f"{os.getpid()}-{os.urandom(8).hex()}"
+        child_env = dict(os.environ if env is None else env)
+        prev_tags = child_env.get("RFC_PROCESS_TREE_TAGS", "")
+        child_env["RFC_PROCESS_TREE_TAGS"] = f"{prev_tags},{tree_token}" if prev_tags else tree_token
+        job: _WindowsProcessJob | None = None
+        proc: subprocess.Popen[Any] | None = None
+        try:
+            if os.name == "nt":
+                job = _WindowsProcessJob()
+                flags = 0x00000004 | getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
                 proc = subprocess.Popen(
                     argv,
                     cwd=cwd,
@@ -1558,34 +1548,62 @@ def run_process_tree(
                     stdout=pipes,
                     stderr=pipes,
                     text=text,
-                    creationflags=fb_flags,
+                    creationflags=flags,
                 )
-        else:
-            proc = subprocess.Popen(
-                argv,
-                cwd=cwd,
-                env=child_env,
-                stdin=subprocess.DEVNULL,
-                stdout=pipes,
-                stderr=pipes,
-                text=text,
-                start_new_session=True,
-            )
-        try:
-            out, err = proc.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired as exc:
-            _kill_process_tree(proc, job, tree_token)
-            out_tail, err_tail = proc.communicate()
-            raise subprocess.TimeoutExpired(argv, timeout, output=out_tail, stderr=err_tail) from exc
-        return subprocess.CompletedProcess(argv, proc.returncode, out, err)
-    finally:
-        if proc is not None:
-            _kill_process_tree(proc, job, tree_token)
-            if proc.poll() is None:
-                proc.kill()
-                proc.wait()
-        elif job is not None:
-            job.end()
+                try:
+                    job.adopt_and_resume(proc)
+                except OSError:
+                    proc.kill()
+                    proc.wait()
+                    job.end()
+                    job = None
+                    fb_flags = (
+                        getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
+                        | getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+                    )
+                    proc = subprocess.Popen(
+                        argv,
+                        cwd=cwd,
+                        env=child_env,
+                        stdin=subprocess.DEVNULL,
+                        stdout=pipes,
+                        stderr=pipes,
+                        text=text,
+                        creationflags=fb_flags,
+                    )
+            else:
+                proc = subprocess.Popen(
+                    argv,
+                    cwd=cwd,
+                    env=child_env,
+                    stdin=subprocess.DEVNULL,
+                    stdout=pipes,
+                    stderr=pipes,
+                    text=text,
+                    start_new_session=True,
+                )
+            try:
+                out, err = proc.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired as exc:
+                _kill_process_tree(proc, job, tree_token)
+                out_tail, err_tail = proc.communicate()
+                raise subprocess.TimeoutExpired(argv, timeout, output=out_tail, stderr=err_tail) from exc
+            if attempt + 1 < max_attempts and _is_wsl_vsock_flake(proc.returncode, out, err):
+                time.sleep(0.25 * (attempt + 1))
+                continue
+            return subprocess.CompletedProcess(argv, proc.returncode, out, err)
+        finally:
+            if proc is not None:
+                _kill_process_tree(proc, job, tree_token)
+                if proc.poll() is None:
+                    proc.kill()
+                    proc.wait()
+            elif job is not None:
+                job.end()
+    raise RuntimeError("run_process_tree exhausted attempts")
+
+
+_FFMPEG_DECODER_CACHE: dict[tuple[tuple[str, ...], str, bool], dict[str, Any]] = {}
 
 
 def _probe_ffmpeg_decoder(
@@ -1596,6 +1614,10 @@ def _probe_ffmpeg_decoder(
     reason_found: str,
     reason_missing: str,
 ) -> dict[str, Any]:
+    cache_key = (decoder_names, label, independent)
+    cached = _FFMPEG_DECODER_CACHE.get(cache_key)
+    if cached is not None:
+        return dict(cached)
     candidates: list[str] = []
     for name in ("ffmpeg", "ffmpeg.exe"):
         found = shutil.which(name)
@@ -1611,7 +1633,7 @@ def _probe_ffmpeg_decoder(
         try:
             res = run_process_tree(
                 [exe, "-hide_banner", "-decoders"],
-                timeout=10.0,
+                timeout=30.0,
                 capture_output=True,
                 text=True,
             )
@@ -1632,7 +1654,7 @@ def _probe_ffmpeg_decoder(
                     and parts[0][0] in ("V", "A", "S")
                     and parts[1] in decoder_names
                 ):
-                    return {
+                    result = {
                         "available": True,
                         "executable": exe,
                         "decoder": label,
@@ -1640,6 +1662,8 @@ def _probe_ffmpeg_decoder(
                         "independent": independent,
                         "reason": reason_found,
                     }
+                    _FFMPEG_DECODER_CACHE[cache_key] = result
+                    return dict(result)
     return {
         "available": False,
         "executable": "",
