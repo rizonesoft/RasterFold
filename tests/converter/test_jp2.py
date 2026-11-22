@@ -173,13 +173,17 @@ def _run_ffmpeg_jpeg2000(exe: str, jp2_path: Path, pix_fmt: str) -> bytes:
         pix_fmt,
         "-",
     ]
-    res = _ref.run_process_tree(cmd, timeout=30.0, capture_output=True, text=False)
-    if res.returncode != 0:
+    for attempt in range(3):
+        res = _ref.run_process_tree(cmd, timeout=30.0, capture_output=True, text=False)
+        if res.returncode == 0:
+            return res.stdout
+        if res.returncode == 1 and not res.stdout and b"UtilAcceptVsock" in (res.stderr or b"") and attempt < 2:
+            continue
         raise RuntimeError(
             f"ffmpeg jpeg2000 failed ({res.returncode}): "
             f"{res.stderr.decode(errors='replace')}"
         )
-    return res.stdout
+    raise RuntimeError("ffmpeg jpeg2000 failed after retries")
 
 
 class Jp2AdapterMixin:
@@ -499,6 +503,7 @@ class WinJp2Tests(Jp2AdapterMixin, unittest.TestCase):
             if require:
                 raise AssertionError("powershell.exe unavailable while RFC_REQUIRE_WIN_JP2=1")
             raise unittest.SkipTest("powershell.exe unavailable")
+        cls._exe = exe
         cls._ps = ps
         wp = _ref.run_process_tree(
             ["wslpath", "-w", exe], timeout=10.0, capture_output=True, text=True
@@ -525,18 +530,21 @@ class WinJp2Tests(Jp2AdapterMixin, unittest.TestCase):
         return f"{self._win_wd}\\{rel}"
 
     def run_cli(self, args: list[str]) -> tuple[int, str, str]:
-        quoted = ", ".join("'" + a.replace("'", "''") + "'" for a in args)
-        ps_cmd = (
-            "$env:PATH = 'C:\\Windows\\System32'; "
-            f"& '{self._win_exe}' @({quoted}); "
-            "exit $LASTEXITCODE"
-        )
-        res = _ref.run_process_tree(
-            [self._ps, "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
-            timeout=45.0,
-            capture_output=True,
-            text=True,
-        )
+        for attempt in range(3):
+            res = _ref.run_process_tree(
+                [self._exe, *args],
+                timeout=45.0,
+                capture_output=True,
+                text=True,
+            )
+            if (
+                res.returncode == 1
+                and not (res.stdout or "")
+                and "UtilAcceptVsock" in (res.stderr or "")
+                and attempt < 2
+            ):
+                continue
+            return res.returncode, res.stdout, res.stderr
         return res.returncode, res.stdout, res.stderr
 
 

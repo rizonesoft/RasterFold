@@ -47,7 +47,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define JP2_MAX_BOXES 1024u
 #define JP2_MAX_THREADS 16u
 #define JP2_STREAM_CHUNK_BYTES (64u * 1024u)
 
@@ -421,6 +420,10 @@ static rfc_status jp2_scan_codestream(const uint8_t *cs,
     return RFC_OK;
 }
 
+static int jp2_is_xml_ws(uint8_t c) {
+    return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+}
+
 static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
     if (!p || len < 11u) {
         return 0;
@@ -429,11 +432,11 @@ static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
     if (len >= 3u && p[0] == 0xEFu && p[1] == 0xBBu && p[2] == 0xBFu) {
         i = 3u;
     }
-    /* Skip leading ASCII whitespace, <?xpacket ...?> / <?xml ...?> PIs,
-     * and <!-- ... --> XML comments before the root element. */
-    for (int step = 0; step < 16; step++) {
-        while (i < len && (p[i] == ' ' || p[i] == '\t' || p[i] == '\r' ||
-                           p[i] == '\n')) {
+    /* Skip any number of leading ASCII whitespace, <?xpacket ...?> / <?xml ...?>
+     * PIs, and <!-- ... --> comments before the root element; every iteration
+     * strictly advances i so parsing is linear in len. */
+    while (i < len) {
+        while (i < len && jp2_is_xml_ws(p[i])) {
             i++;
         }
         size_t rem = len - i;
@@ -476,37 +479,76 @@ static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
         }
         break;
     }
-    while (i < len && (p[i] == ' ' || p[i] == '\t' || p[i] == '\r' ||
-                       p[i] == '\n')) {
-        i++;
-    }
     size_t rem = len - i;
     if (rem < 11u || memcmp(p + i, "<x:xmpmeta", 10u) != 0) {
         return 0;
     }
-    /* Require an XML name delimiter immediately after "<x:xmpmeta". */
-    uint8_t next = p[i + 10u];
-    if (next != ' ' && next != '\t' && next != '\r' && next != '\n' &&
-        next != '>' && next != '/') {
+    i += 10u;
+    if (i >= len || (!jp2_is_xml_ws(p[i]) && p[i] != '>' && p[i] != '/')) {
         return 0;
     }
-    /* Find the end of the opening <x:xmpmeta ...> tag and verify the official
-     * Adobe XMP namespace xmlns:x="adobe:ns:meta/" (single or double quotes). */
-    size_t tag_end = i + 10u;
-    size_t tag_lim = (len - i > 1024u) ? (i + 1024u) : len;
-    while (tag_end < tag_lim && p[tag_end] != '>') {
-        tag_end++;
-    }
-    if (tag_end >= tag_lim) {
-        return 0;
-    }
-    static const char k_ns_dq[] = "xmlns:x=\"adobe:ns:meta/\"";
-    static const char k_ns_sq[] = "xmlns:x='adobe:ns:meta/'";
-    const size_t ns_len = sizeof(k_ns_dq) - 1u;
-    for (size_t k = i + 10u; k + ns_len <= tag_end; k++) {
-        if (memcmp(p + k, k_ns_dq, ns_len) == 0 ||
-            memcmp(p + k, k_ns_sq, ns_len) == 0) {
-            return 1;
+    /* Parse opening-tag attributes token-by-token so values of unrelated
+     * attributes cannot spoof xmlns:x and whitespace around '=' is accepted. */
+    static const char k_ns_val[] = "adobe:ns:meta/";
+    const size_t ns_val_len = sizeof(k_ns_val) - 1u;
+    int has_x_ns = 0;
+    while (i < len) {
+        while (i < len && jp2_is_xml_ws(p[i])) {
+            i++;
+        }
+        if (i >= len) {
+            return 0;
+        }
+        if (p[i] == '>') {
+            return has_x_ns;
+        }
+        if (p[i] == '/' && i + 1u < len && p[i + 1u] == '>') {
+            return has_x_ns;
+        }
+        /* Attribute name */
+        size_t name_start = i;
+        while (i < len && !jp2_is_xml_ws(p[i]) && p[i] != '=' &&
+               p[i] != '>' && p[i] != '/' && p[i] != '"' && p[i] != '\'') {
+            i++;
+        }
+        size_t name_len = i - name_start;
+        if (name_len == 0u) {
+            return 0;
+        }
+        while (i < len && jp2_is_xml_ws(p[i])) {
+            i++;
+        }
+        if (i >= len || p[i] != '=') {
+            return 0;
+        }
+        i++; /* skip '=' */
+        while (i < len && jp2_is_xml_ws(p[i])) {
+            i++;
+        }
+        if (i >= len || (p[i] != '"' && p[i] != '\'')) {
+            return 0;
+        }
+        uint8_t quote = p[i++];
+        size_t val_start = i;
+        while (i < len && p[i] != quote) {
+            i++;
+        }
+        if (i >= len) {
+            return 0;
+        }
+        size_t val_len = i - val_start;
+        i++; /* skip closing quote */
+        if (name_len == 7u && memcmp(p + name_start, "xmlns:x", 7u) == 0) {
+            if (val_len == ns_val_len &&
+                memcmp(p + val_start, k_ns_val, ns_val_len) == 0) {
+                has_x_ns = 1;
+            } else {
+                return 0;
+            }
+        }
+        /* Next token must be whitespace or tag close. */
+        if (i < len && !jp2_is_xml_ws(p[i]) && p[i] != '>' && p[i] != '/') {
+            return 0;
         }
     }
     return 0;
@@ -535,7 +577,6 @@ static rfc_status jp2_scan_input(const uint8_t *bytes,
     out->is_jp2 = 1;
 
     size_t off = 12u;
-    uint32_t box_count = 0u;
     int saw_ftyp = 0;
     int saw_jp2h = 0;
     int saw_ihdr = 0;
@@ -549,9 +590,6 @@ static rfc_status jp2_scan_input(const uint8_t *bytes,
     uint32_t enumcs = 0u;
 
     while (off < size) {
-        if (++box_count > JP2_MAX_BOXES) {
-            return RFC_ERR_INVALID_ARGUMENT;
-        }
         uint32_t tbox = 0u;
         size_t poff = 0u, plen = 0u, next = 0u;
         rfc_status st =
@@ -572,12 +610,8 @@ static rfc_status jp2_scan_input(const uint8_t *bytes,
             out->jp2h_len = plen;
             size_t sub = poff;
             size_t sub_end = poff + plen;
-            uint32_t sub_count = 0u;
             int saw_bpcc = 0;
             while (sub < sub_end) {
-                if (++sub_count > JP2_MAX_BOXES) {
-                    return RFC_ERR_INVALID_ARGUMENT;
-                }
                 uint32_t stype = 0u;
                 size_t spoff = 0u, splen = 0u, snext = 0u;
                 st = jp2_read_box(bytes, sub_end, sub, &stype, &spoff, &splen,
@@ -1108,8 +1142,7 @@ static rfc_status jp2_ensure_rgba_cdef(const uint8_t *in_buf,
     size_t jp2h_off = 0u, jp2h_poff = 0u, jp2h_plen = 0u, jp2h_end = 0u;
     int found_jp2h = 0;
     int has_cdef = 0;
-    uint32_t guard = 0u;
-    while (off < in_len && ++guard <= JP2_MAX_BOXES) {
+    while (off < in_len) {
         uint32_t tbox = 0u;
         size_t poff = 0u, plen = 0u, next = 0u;
         rfc_status st =
@@ -1124,8 +1157,7 @@ static rfc_status jp2_ensure_rgba_cdef(const uint8_t *in_buf,
             jp2h_end = next;
             found_jp2h = 1;
             size_t sub = poff;
-            uint32_t sguard = 0u;
-            while (sub < next && ++sguard <= JP2_MAX_BOXES) {
+            while (sub < next) {
                 uint32_t stype = 0u;
                 size_t sp = 0u, sl = 0u, sn = 0u;
                 st = jp2_read_box(in_buf, next, sub, &stype, &sp, &sl, &sn);
@@ -1465,6 +1497,9 @@ static rfc_status jp2_decode_session(void *session,
         st = RFC_ERR_OUT_OF_MEMORY;
         goto cleanup;
     }
+    /* Observe thread count right after constructor returns, BEFORE
+     * jp2_apply_threads could tear down any constructor-created pool. */
+    jp2_invoke_hook(4);
     opj_set_info_handler(dec, jp2_quiet_msg, NULL);
     opj_set_warning_handler(dec, jp2_quiet_msg, NULL);
     opj_set_error_handler(dec, jp2_quiet_msg, NULL);
@@ -1479,7 +1514,6 @@ static rfc_status jp2_decode_session(void *session,
     if (st != RFC_OK) {
         goto cleanup;
     }
-    jp2_invoke_hook(4);
 
     stream = opj_stream_create(JP2_STREAM_CHUNK_BYTES, OPJ_TRUE);
     if (!stream) {
@@ -1962,6 +1996,7 @@ static rfc_status jp2_encode_session(void *session,
         st = RFC_ERR_OUT_OF_MEMORY;
         goto cleanup;
     }
+    jp2_invoke_hook(5);
     opj_set_info_handler(enc, jp2_quiet_msg, NULL);
     opj_set_warning_handler(enc, jp2_quiet_msg, NULL);
     opj_set_error_handler(enc, jp2_quiet_msg, NULL);

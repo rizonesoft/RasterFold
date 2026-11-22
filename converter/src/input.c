@@ -934,11 +934,10 @@ static void sniff_jp2_geometry(const uint8_t *b, size_t len,
         is_16 = (prec > 8u);
     } else if (len >= 12u &&
                memcmp(b, "\x00\x00\x00\x0cjP  \x0d\x0a\x87\x0a", 12) == 0) {
-        /* JP2 container: walk up to 64 boxes to jp2h -> ihdr (and bpcc).
-         * Allow jp2h itself to extend past the 16 KiB sniff prefix (e.g., a
-         * large ICC profile in colr) since ihdr precedes colr inside jp2h. */
+        /* JP2 container: walk boxes to jp2h -> ihdr (and bpcc); every box
+         * strictly advances off by at least 8 bytes so termination is linear. */
         size_t off = 12u;
-        for (int bi = 0; bi < 1024 && off + 8u <= len; bi++) {
+        while (off + 8u <= len) {
             uint32_t lbox = rd32be(b + off);
             uint32_t tbox = rd32be(b + off + 4u);
             size_t hdr = 8u;
@@ -961,7 +960,7 @@ static void sniff_jp2_geometry(const uint8_t *b, size_t len,
                                      : len;
                 int saw_ihdr = 0;
                 uint8_t ihdr_bpc = 0u;
-                for (int si = 0; si < 64 && sub + 8u <= sub_end; si++) {
+                while (sub + 8u <= sub_end) {
                     uint32_t sl = rd32be(b + sub);
                     uint32_t st = rd32be(b + sub + 4u);
                     size_t shdr = 8u;
@@ -1044,7 +1043,7 @@ static void sniff_jp2_geometry_stream(const seek_stream *ss,
     uint32_t w = 0u, h = 0u;
     uint16_t nc = 0u;
     int is_16 = 0;
-    for (int bi = 0; bi < 1024; bi++) {
+    while (!ss->size_known || off + 8u <= ss->total_size) {
         uint8_t hdr[16];
         size_t got = 0u;
         if (ss->read_at(ss->ctx, off, hdr, sizeof(hdr), &got) != RFC_OK ||
@@ -1077,7 +1076,7 @@ static void sniff_jp2_geometry_stream(const seek_stream *ss,
                                    : (off + total);
             int saw_ihdr = 0;
             uint8_t ihdr_bpc = 0u;
-            for (int si = 0; si < 64 && sub < sub_end; si++) {
+            while (sub < sub_end) {
                 uint8_t sh[32];
                 size_t sgot = 0u;
                 if (ss->read_at(ss->ctx, sub, sh, sizeof(sh), &sgot) != RFC_OK ||

@@ -853,7 +853,8 @@ static void cancel_hook_fn(int phase) {
 
 static _Atomic(uint32_t) g_cli_provider_calls = 0;
 static _Atomic(uint32_t) g_cli_frame_alloc_calls = 0;
-static _Atomic(int) g_obs_threads_during = -1;
+static _Atomic(int) g_obs_threads_dec_ctor = -1;
+static _Atomic(int) g_obs_threads_enc_ctor = -1;
 static void cli_obs_hook_fn(int phase) {
     if (phase == 1) {
         atomic_fetch_add_explicit(&g_cli_provider_calls, 1u,
@@ -862,7 +863,11 @@ static void cli_obs_hook_fn(int phase) {
         atomic_fetch_add_explicit(&g_cli_frame_alloc_calls, 1u,
                                   memory_order_relaxed);
     } else if (phase == 4) {
-        atomic_store_explicit(&g_obs_threads_during,
+        atomic_store_explicit(&g_obs_threads_dec_ctor,
+                              get_process_thread_count(),
+                              memory_order_release);
+    } else if (phase == 5) {
+        atomic_store_explicit(&g_obs_threads_enc_ctor,
                               get_process_thread_count(),
                               memory_order_release);
     }
@@ -1271,17 +1276,48 @@ static void test_review_round1_regressions(void) {
             adp->close_session(sd);
         }
 
-        /* Valid XMP preceded by a leading XML comment is accepted under preserve. */
+        /* Attribute-value spoofed namespace refused under preserve, ignored under strip. */
+        {
+            const char *attr_spoof =
+                "<x:xmpmeta xmlns:x=\"urn:unrelated\" note='xmlns:x=\"adobe:ns:meta/\"'/>";
+            size_t alen = strlen(attr_spoof);
+            uint8_t *ma = (uint8_t *)malloc(e4.len + 8u + alen);
+            CHECK(ma != NULL);
+            memcpy(ma, e4.data, e4.len);
+            put_be32(ma + e4.len, (uint32_t)(8u + alen));
+            memcpy(ma + e4.len + 4u, "xml ", 4u);
+            memcpy(ma + e4.len + 8u, attr_spoof, alen);
+            CHECK(adp->open_session(&exec, &sd) == RFC_OK);
+            CHECK(adp->decode_session(sd, &exec, ma, e4.len + 8u + alen, NULL,
+                                      0u, &dec, &dc, &dm) ==
+                  RFC_ERR_METADATA_POLICY);
+            CHECK(adp->decode_session(sd, &exec, ma, e4.len + 8u + alen,
+                                      strip_sv, 1u, &dec, &dc, &dm) == RFC_OK);
+            CHECK(dc == 1u && dm.xmp == NULL);
+            rfc_metadata_free(&dm, &al);
+            rfc_frame_free(&dec[0]);
+            al.free(al.ctx, dec);
+            adp->close_session(sd);
+            free(ma);
+        }
+
+        /* Valid XMP preceded by 20 XML comments + whitespace around '=' preserved verbatim. */
         {
             const char *good_xmp =
-                "<!-- lead --><x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF/></x:xmpmeta>";
+                "<!-- c01 --><!-- c02 --><!-- c03 --><!-- c04 --><!-- c05 -->"
+                "<!-- c06 --><!-- c07 --><!-- c08 --><!-- c09 --><!-- c10 -->"
+                "<!-- c11 --><!-- c12 --><!-- c13 --><!-- c14 --><!-- c15 -->"
+                "<!-- c16 --><!-- c17 --><!-- c18 --><!-- c19 --><!-- c20 -->"
+                "<x:xmpmeta xmlns:x = \"adobe:ns:meta/\"><rdf:RDF/></x:xmpmeta>";
             size_t glen = strlen(good_xmp);
-            memcpy(m2, e4.data, e4.len);
-            put_be32(m2 + e4.len, (uint32_t)(8u + glen));
-            memcpy(m2 + e4.len + 4u, "xml ", 4u);
-            memcpy(m2 + e4.len + 8u, good_xmp, glen);
+            uint8_t *mg = (uint8_t *)malloc(e4.len + 8u + glen);
+            CHECK(mg != NULL);
+            memcpy(mg, e4.data, e4.len);
+            put_be32(mg + e4.len, (uint32_t)(8u + glen));
+            memcpy(mg + e4.len + 4u, "xml ", 4u);
+            memcpy(mg + e4.len + 8u, good_xmp, glen);
             CHECK(adp->open_session(&exec, &sd) == RFC_OK);
-            CHECK(adp->decode_session(sd, &exec, m2, e4.len + 8u + glen, NULL,
+            CHECK(adp->decode_session(sd, &exec, mg, e4.len + 8u + glen, NULL,
                                       0u, &dec, &dc, &dm) == RFC_OK);
             CHECK(dc == 1u && dm.xmp != NULL && dm.xmp_len == glen &&
                   memcmp(dm.xmp, good_xmp, glen) == 0);
@@ -1289,6 +1325,7 @@ static void test_review_round1_regressions(void) {
             rfc_frame_free(&dec[0]);
             al.free(al.ctx, dec);
             adp->close_session(sd);
+            free(mg);
         }
 
         /* 4g. meth=3 colr before meth=1 sRGB: meth=3 ignored, sRGB wins (no ICC). */
@@ -1358,11 +1395,13 @@ static void test_review_round1_regressions(void) {
             adp->close_session(sd);
         }
 
-        /* 4f. 1-thread vs 3-thread decode/encode equivalence, zero worker threads
-         * spawned for 1-thread job under OPJ_NUM_THREADS=4, + >64B env preserved. */
+        /* 4f. 1-thread vs 3-thread decode/encode equivalence, zero constructor
+         * worker threads observed BEFORE jp2_apply_threads on both encode and
+         * decode under OPJ_NUM_THREADS=4, + >64B env preserved. */
         set_env_var("OPJ_NUM_THREADS", "4");
         int threads_before = get_process_thread_count();
-        atomic_store_explicit(&g_obs_threads_during, -1, memory_order_release);
+        atomic_store_explicit(&g_obs_threads_enc_ctor, -1, memory_order_release);
+        atomic_store_explicit(&g_obs_threads_dec_ctor, -1, memory_order_release);
         rfc_codecs_jp2_set_hook_for_testing(cli_obs_hook_fn);
         rfc_exec_context e1 = exec;
         e1.codec_threads = 1u;
@@ -1377,9 +1416,12 @@ static void test_review_round1_regressions(void) {
         CHECK(adp->decode_session(s1, &e1, e4_t1.data, e4_t1.len, NULL, 0u,
                                   &dec1, &dc1, &dm1) == RFC_OK);
         rfc_codecs_jp2_set_hook_for_testing(NULL);
-        int threads_during =
-            atomic_load_explicit(&g_obs_threads_during, memory_order_acquire);
-        CHECK(threads_before > 0 && threads_during == threads_before);
+        int threads_enc =
+            atomic_load_explicit(&g_obs_threads_enc_ctor, memory_order_acquire);
+        int threads_dec =
+            atomic_load_explicit(&g_obs_threads_dec_ctor, memory_order_acquire);
+        CHECK(threads_before > 0 && threads_enc == threads_before &&
+              threads_dec == threads_before);
         adp->close_session(s1);
 
         const char *long_env =
@@ -1701,7 +1743,7 @@ static void test_jobs_budget_cancel_threads_and_file_safety(void) {
             free(big_icc);
         }
 
-        /* Layout-free file job with 64 leading free boxes (one 24 KiB) before jp2h. */
+        /* Layout-free file job with 1025 leading free boxes (one 24 KiB) before jp2h. */
         {
             const uint8_t *jp2h_p = NULL;
             size_t jp2h_l = 0u;
@@ -1710,12 +1752,12 @@ static void test_jobs_budget_cancel_threads_and_file_safety(void) {
             size_t jp2h_off = (size_t)(jp2h_p - j_bytes.data) - 8u;
             size_t small_free = 8u;
             size_t big_free = 24u * 1024u;
-            size_t total_free = 63u * small_free + big_free;
+            size_t total_free = 1024u * small_free + big_free;
             uint8_t *buf_f = (uint8_t *)calloc(1u, j_bytes.len + total_free);
             CHECK(buf_f != NULL);
             memcpy(buf_f, j_bytes.data, jp2h_off);
             size_t pos_f = jp2h_off;
-            for (int fi = 0; fi < 63; fi++) {
+            for (int fi = 0; fi < 1024; fi++) {
                 put_be32(buf_f + pos_f, (uint32_t)small_free);
                 memcpy(buf_f + pos_f + 4u, "free", 4u);
                 pos_f += small_free;
