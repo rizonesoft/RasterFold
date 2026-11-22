@@ -1585,6 +1585,39 @@ def _no_hevc_in_shipped_binaries(bindir):
     return None, unique
 
 
+def _no_hevc_in_thin_archive_members(path):
+    """Inspect every member referenced by a thin archive (!<thin>\\n) for
+    HEVC names, PE imports, and encoder/decoder strings. Fails closed
+    (RuntimeError) if llvm-ar fails or any referenced member is unreadable."""
+    tool = _llvm_tool("llvm-ar")
+    res = run_capture([tool, "t", path], timeout=120.0)
+    if res.returncode != 0:
+        raise RuntimeError(f"llvm-ar t failed on {path}: {res.stderr.strip()[:200]}")
+    base_dir = os.path.dirname(path)
+    seen = set()
+    for line in res.stdout.splitlines():
+        rel = line.strip()
+        if not rel:
+            continue
+        full = rel if os.path.isabs(rel) else os.path.join(base_dir, rel)
+        if not os.path.isfile(full):
+            raise RuntimeError(f"thin archive {path} references unreadable member {full}")
+        if _hevc_link_name(full) or _hevc_link_name(os.path.realpath(full)):
+            return f"{os.path.relpath(path, ROOT)} references HEVC member {rel}"
+        ident = os.path.realpath(full)
+        if ident in seen:
+            continue
+        seen.add(ident)
+        if _is_pe_binary(full):
+            msg = _no_hevc_pe_imports(full)
+            if msg:
+                return msg
+        msg = _no_hevc_binary_strings(full)
+        if msg:
+            return msg
+    return None
+
+
 def _no_hevc_in_dependency_prefix(prefix):
     """Fail-closed walk of the dependency prefix: every entry is checked by
     name/realpath and probed directly with llvm-nm (no magic-byte whitelist),
@@ -1620,7 +1653,9 @@ def _no_hevc_in_dependency_prefix(prefix):
                 continue
             raise RuntimeError(f"llvm-nm failed on {path}: {res.stderr.strip()[:200]}")
         if hdr8 == b"!<thin>\n":
-            return f"{os.path.relpath(path, ROOT)} is a thin archive (external members cannot be self-contained)", entries, scanned
+            msg = _no_hevc_in_thin_archive_members(path)
+            if msg:
+                return msg, entries, scanned
         if _is_pe_binary(path):
             msg = _no_hevc_pe_imports(path)
             if msg:

@@ -406,15 +406,21 @@ class NoHevcArtifactProofTests(unittest.TestCase):
             self.assertIn("x265_encoder_open", msg)
             thin_ar.unlink()
 
-            # Thin archive pointing to an external member with only a neutral symbol
-            # and an HEVC signature string must also be rejected (thin archives forbidden)
+            # Clean thin archive in prefix passes; thin archive pointing to an external
+            # member with only a neutral symbol and an HEVC signature string fails on that string
+            thin_clean = prefix / "lib" / "thin_clean.bin"
+            run_ok([str(ar), "rcsT", str(thin_clean), str(t / "unused_ok.o")])
+            msg, _, _ = cc._no_hevc_in_dependency_prefix(str(prefix))
+            self.assertIsNone(msg)
+            thin_clean.unlink()
+
             (t / "ext_sig.c").write_text("const char *codec_signature(void) { return \"libde265\"; }\n")
             run_ok([str(clang), "-c", str(t / "ext_sig.c"), "-o", str(t / "ext_sig.o")])
             thin_ext = prefix / "lib" / "thin_ext.bin"
             run_ok([str(ar), "rcsT", str(thin_ext), str(t / "ext_sig.o")])
             msg, _, _ = cc._no_hevc_in_dependency_prefix(str(prefix))
             self.assertIsNotNone(msg)
-            self.assertIn("thin archive", msg)
+            self.assertIn("libde265", msg)
             thin_ext.unlink()
 
             (prefix / "lib" / "dangling.a").symlink_to(t / "nowhere.a")
