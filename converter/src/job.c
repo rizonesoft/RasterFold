@@ -2917,6 +2917,22 @@ rfc_status rfc_exec_alloc_frame(const rfc_exec_context *exec,
         size_t xmp_len = metadata ? metadata->xmp_len : 0u;
         rfc_mutex_lock(&exec->job->lock);
         if (exec->job->decode_credit_frames > 0u) {
+            if (exec->job->in_decode_session && metadata) {
+                rfc_verify_report pre_rep;
+                memset(&pre_rep, 0, sizeof(pre_rep));
+                rfc_status cst = check_target_frame_compat(
+                    exec->job, 1u, &norm, metadata, 0, NULL, &pre_rep);
+                if (cst != RFC_OK) {
+                    if (exec->job->decode_guard_failure == RFC_OK) {
+                        exec->job->decode_guard_failure = cst;
+                    }
+                    rfc_mutex_unlock(&exec->job->lock);
+                    if (cst == RFC_ERR_METADATA_POLICY && pre_rep.valid) {
+                        store_job_verify_report(exec->job, &pre_rep);
+                    }
+                    return cst;
+                }
+            }
             st = consume_decode_credit_locked(exec->job, &exec->limits, &norm,
                                               fbytes, icc_len, exif_len,
                                               xmp_len);

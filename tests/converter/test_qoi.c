@@ -1027,6 +1027,7 @@ static struct {
     int mode;
     uint32_t decode_calls;
     rfc_status frame1_check_st;
+    rfc_status frame1_alloc_st;
     rfc_status frame2_check_st;
     int frame1_alloc_attempted;
     int frame2_alloc_attempted;
@@ -1138,6 +1139,25 @@ static rfc_status qoi_mock_decode(void *session,
             g_qoi_probe_mock.frame1_alloc_attempted = 1;
         }
         return (s1 != RFC_OK) ? s1 : RFC_ERR_TRUNCATED_INPUT;
+    }
+    if (g_qoi_probe_mock.mode == 5) {
+        rfc_layout l0 = {RFC_SAMPLE_RGB8, RFC_ALPHA_NONE, 4u, 4u, 12u, 8u};
+        rfc_status s1 = rfc_exec_check_next_frame(exec, &l0, NULL);
+        g_qoi_probe_mock.frame1_check_st = s1;
+        if (s1 != RFC_OK) {
+            return s1;
+        }
+        rfc_metadata om;
+        memset(&om, 0, sizeof(om));
+        om.orientation = RFC_ORIENTATION_ROTATE_90;
+        rfc_frame f0;
+        memset(&f0, 0, sizeof(f0));
+        rfc_status sa = rfc_exec_alloc_frame(exec, &f0, &l0, &om);
+        g_qoi_probe_mock.frame1_alloc_st = sa;
+        if (sa == RFC_OK) {
+            rfc_frame_free(&f0);
+        }
+        return (sa != RFC_OK) ? sa : RFC_ERR_TRUNCATED_INPUT;
     }
     return RFC_ERR_TRUNCATED_INPUT;
 }
@@ -1765,6 +1785,34 @@ static void test_jobs_budget_cancel_and_file_safety(void) {
             CHECK(g_qoi_probe_mock.decode_calls == 1u &&
                   g_qoi_probe_mock.frame1_check_st == RFC_ERR_METADATA_POLICY &&
                   g_qoi_probe_mock.frame1_alloc_attempted == 0 &&
+                  snap.state == RFC_JOB_FAILED &&
+                  snap.status == RFC_ERR_METADATA_POLICY &&
+                  snap.budget.peak_allocated_bytes < 4u * 4u * 3u &&
+                  !file_exists(p_ack_qoi));
+            rfc_job_release(job);
+
+            /* Two-call sequence: rfc_exec_check_next_frame with empty metadata
+             * followed by rfc_exec_alloc_frame with non-normal orientation
+             * must refuse with RFC_ERR_METADATA_POLICY before pixel allocation. */
+            g_qoi_probe_mock.mode = 5;
+            g_qoi_probe_mock.decode_calls = 0u;
+            g_qoi_probe_mock.frame1_check_st = RFC_ERR_TRUNCATED_INPUT;
+            g_qoi_probe_mock.frame1_alloc_st = RFC_OK;
+            memset(&sp, 0, sizeof(sp));
+            rfc_io_source_init_path(&si, p_mock_src, RFC_IMPORT_DEFAULT);
+            rfc_io_sink_init_path(&so, p_ack_qoi, RFC_EXPORT_REFUSE_EXISTING);
+            sp.source_format = RFC_FORMAT_JPEG_XL;
+            sp.target_format = RFC_FORMAT_QOI;
+            sp.io_source = &si;
+            sp.io_sink = &so;
+            sp.expected_working_set_bytes = 64u * 1024u;
+            sp.requested_codec_threads = 1u;
+            CHECK(rfc_scheduler_submit(sched, NULL, &sp, &job) == RFC_OK);
+            CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
+            CHECK(rfc_job_snapshot_get(job, &snap) == RFC_OK);
+            CHECK(g_qoi_probe_mock.decode_calls == 1u &&
+                  g_qoi_probe_mock.frame1_check_st == RFC_OK &&
+                  g_qoi_probe_mock.frame1_alloc_st == RFC_ERR_METADATA_POLICY &&
                   snap.state == RFC_JOB_FAILED &&
                   snap.status == RFC_ERR_METADATA_POLICY &&
                   snap.budget.peak_allocated_bytes < 4u * 4u * 3u &&
