@@ -867,10 +867,10 @@
     },
     {
       "format": "qoi",
-      "provider": "in-tree converter code",
+      "provider": "qoi (bundled, pinned by D10 T01 \u00a72)",
       "owner": "D10 T02 \u00a78",
-      "availability": "planned",
-      "unavailable_reason": "converter adapter not yet shipped",
+      "availability": "usable",
+      "unavailable_reason": null,
       "modes": {
         "read": true,
         "write": true

@@ -74,13 +74,16 @@ class ExactnessReferenceTests(unittest.TestCase):
             self.assertFalse(by_name[s6]["shares_c_library_with_converter"])
         self.assertEqual(by_name["jpeg"]["reference_decoder_kind"], "independent-pure-python")
         self.assertFalse(by_name["jpeg"]["shares_c_library_with_converter"])
+        self.assertEqual(by_name["qoi"]["coverage_state"], "executable-in-d10-t02-s8")
+        self.assertEqual(by_name["qoi"]["reference_decoder_kind"], "independent-pure-python")
+        self.assertTrue(by_name["qoi"]["claims_independent_decoder"])
+        self.assertFalse(by_name["qoi"]["shares_c_library_with_converter"])
         for executable in (
             "rasterfold",
             "bmp",
             "png",
             "pnm",
             "pam",
-            "qoi",
             "openexr",
             "camera-raw",
             "dng",

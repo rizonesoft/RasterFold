@@ -885,6 +885,24 @@ static rfc_status sniff_gif_geometry(const seek_stream *ss, const uint8_t *b,
  * colour types the PNG adapter decodes; palette and gray-alpha images are
  * sized as rgba at their depth (the larger layout; the adapter refuses both
  * today, so no accepted image is affected). */
+static void sniff_qoi_geometry(const uint8_t *b, size_t len,
+                               rfc_sniff_geometry *geo) {
+    if (len < 14u || memcmp(b, "qoif", 4) != 0) {
+        return;
+    }
+    uint32_t w = rd32be(b + 4);
+    uint32_t h = rd32be(b + 8);
+    uint8_t ch = b[12];
+    uint8_t cs = b[13];
+    if (w == 0u || h == 0u || (ch != 3u && ch != 4u) || cs > 1u) {
+        return;
+    }
+    geo->width = w;
+    geo->height = h;
+    geo->format = (ch == 4u) ? RFC_SAMPLE_RGBA8 : RFC_SAMPLE_RGB8;
+    geo->has_geometry = 1;
+}
+
 static void sniff_png_geometry(const uint8_t *b, size_t len,
                                rfc_sniff_geometry *geo) {
     if (len < 26u || memcmp(b + 12, "IHDR", 4) != 0) {
@@ -1067,6 +1085,7 @@ static rfc_format_id sniff_stream_core(const seek_stream *ss,
     /* 11. QOI */
     else if (len >= 4u && memcmp(b, "qoif", 4) == 0) {
         detected = RFC_FORMAT_QOI;
+        sniff_qoi_geometry(b, len, geo);
     }
     /* 12. OpenEXR */
     else if (len >= 8u && b[0] == 0x76u && b[1] == 0x2Fu && b[2] == 0x31u &&

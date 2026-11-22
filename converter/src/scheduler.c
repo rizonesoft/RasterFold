@@ -1818,9 +1818,10 @@ rfc_status rfc_scheduler_submit(rfc_scheduler *sched,
 
     /* Decoding work scales with the frame, not the compressed size: when the
      * caller gave neither a layout nor a working-set estimate, size a PNG,
-     * JPEG, TIFF, GIF, HEIF or HEIC job from the geometry the sniff read (byte-identical
-     * copies and JPEG XL original-byte reconstruction keep their source-size
-     * reservations; an explicit estimate keeps its caller's sizing). */
+     * JPEG, TIFF, GIF, HEIF, HEIC or QOI job from the geometry the sniff read
+     * (byte-identical copies and JPEG XL original-byte reconstruction keep
+     * their source-size reservations; an explicit estimate keeps its caller's
+     * sizing). */
     rfc_job_spec geo_spec;
     rfc_layout geo_layout;
     if (!spec->source_layout && spec->expected_working_set_bytes == 0u &&
@@ -1829,7 +1830,8 @@ rfc_status rfc_scheduler_submit(rfc_scheduler *sched,
          eff_source_format == RFC_FORMAT_TIFF ||
          eff_source_format == RFC_FORMAT_GIF ||
          eff_source_format == RFC_FORMAT_HEIF ||
-         eff_source_format == RFC_FORMAT_HEIC)) {
+         eff_source_format == RFC_FORMAT_HEIC ||
+         eff_source_format == RFC_FORMAT_QOI)) {
         rfc_sniff_geometry geo;
         memset(&geo, 0, sizeof(geo));
         if (spec->io_source) {

@@ -140,7 +140,8 @@ int main(int argc, char **argv) {
 
     /* Planned formats fail with RFC_ERR_PLANNED; usable formats without an
      * adapter registered fail with RFC_ERR_NO_ADAPTER. */
-    CHECK(rfc_registry_select(RFC_FORMAT_QOI, RFC_MODE_READ) == RFC_ERR_PLANNED);
+    CHECK(rfc_registry_select(RFC_FORMAT_JPEG2000, RFC_MODE_READ) == RFC_ERR_PLANNED);
+    CHECK(rfc_registry_select(RFC_FORMAT_QOI, RFC_MODE_READ) == RFC_ERR_NO_ADAPTER);
     CHECK(rfc_registry_select(RFC_FORMAT_AVIF, RFC_MODE_READ) == RFC_ERR_NO_ADAPTER);
     CHECK(rfc_registry_select(RFC_FORMAT_JPEG_XL, RFC_MODE_READ) == RFC_ERR_NO_ADAPTER);
     CHECK(rfc_registry_select(RFC_FORMAT_WEBP, RFC_MODE_READ) == RFC_ERR_NO_ADAPTER);

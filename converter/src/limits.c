@@ -499,6 +499,21 @@ rfc_status rfc_query_provider_memory_contract(rfc_format_id id,
             out->limitation_reason =
                 "libavif and libaom allocate internally outside rfc_alloc; enforced by rfc_limits preflight and calibrated working-set reservation";
             break;
+        case RFC_FORMAT_QOI:
+            out->mode = RFC_MEM_RESERVATION_AND_LIMITS;
+            /* Target VERIFY peak: retained source frame (1x), encoded QOI
+             * output (up to ~1.33x), libqoi qoi_decode buffer (1x), and
+             * verified output frame (1x); encode peak includes libqoi's
+             * worst-case (channels+1)/channels buffer plus optional tight
+             * row-packing copy when input is strided. */
+            out->working_set_multiplier = 5u;
+            out->fixed_overhead_bytes = 256ull * 1024ull;
+            out->limitation_reason =
+                "bundled libqoi allocates its encode and decode buffers via "
+                "malloc; the adapter pre-reserves worst-case encode capacity, "
+                "strided row-packing copies, and decode pixel buffers through "
+                "rfc_budget_reserve before calling libqoi";
+            break;
         default:
             out->mode = RFC_MEM_RESERVATION_AND_LIMITS;
             out->working_set_multiplier = 2u;

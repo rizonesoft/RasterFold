@@ -547,6 +547,8 @@ static void test_registration_and_fold_v2_v3(void) {
     CHECK(rfc_registry_select(RFC_FORMAT_AVIF, RFC_MODE_READ) ==
           RFC_ERR_NO_ADAPTER);
     CHECK(rfc_registry_select(RFC_FORMAT_QOI, RFC_MODE_READ) ==
+          RFC_ERR_NO_ADAPTER);
+    CHECK(rfc_registry_select(RFC_FORMAT_JPEG2000, RFC_MODE_READ) ==
           RFC_ERR_PLANNED);
 
     /* Rollback check on duplicate conflict. */

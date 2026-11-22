@@ -192,6 +192,7 @@ add_library(rfc_codecs STATIC
   "${CMAKE_SOURCE_DIR}/codecs/jpeg.c"
   "${CMAKE_SOURCE_DIR}/codecs/tiff_gif.c"
   "${CMAKE_SOURCE_DIR}/codecs/heif.c"
+  "${CMAKE_SOURCE_DIR}/codecs/qoi.c"
 )
 set_target_properties(rfc_codecs PROPERTIES
   C_STANDARD 11
@@ -233,6 +234,7 @@ target_link_libraries(rfc_codecs PRIVATE
   "${RF_LIB_DEFLATE}"
   "${RF_LIB_JPEG}"
   "${RF_LIB_GIF}"
+  "${RF_LIB_QOI}"
   Threads::Threads
 )
 if(WIN32)
@@ -527,6 +529,58 @@ target_link_libraries(rfc_test_heif PRIVATE
 )
 if(WIN32)
   target_link_options(rfc_test_heif PRIVATE -static -Wl,--gc-sections)
+endif()
+
+add_executable(rfc_test_qoi
+  "${CMAKE_SOURCE_DIR}/../tests/converter/test_qoi.c"
+)
+set_target_properties(rfc_test_qoi PROPERTIES
+  C_STANDARD 11
+  C_STANDARD_REQUIRED ON
+  C_EXTENSIONS OFF
+  LINKER_LANGUAGE CXX
+  RUNTIME_OUTPUT_DIRECTORY "${RF_CONVERTER_BIN_DIR}"
+)
+target_compile_options(rfc_test_qoi PRIVATE -Wall -Wextra -Werror)
+target_compile_definitions(rfc_test_qoi PRIVATE
+  JXL_STATIC_DEFINE
+  JXL_THREADS_STATIC_DEFINE
+  JXL_CMS_STATIC_DEFINE
+  QOI_NO_STDIO
+)
+target_include_directories(rfc_test_qoi PRIVATE
+  "${CMAKE_SOURCE_DIR}/codecs"
+  "${RF_DEPS_PREFIX}/include"
+)
+target_link_libraries(rfc_test_qoi PRIVATE
+  rfc_codecs
+  rfc_engine
+  "${RF_LIBRASTERFOLD}"
+  "${RF_LIB_QOI}"
+  "${RF_LIB_AVIF}"
+  "${RF_LIB_AOM}"
+  "${RF_LIB_WEBPMUX}"
+  "${RF_LIB_WEBPDEMUX}"
+  "${RF_LIB_WEBP}"
+  "${RF_LIB_SHARPYUV}"
+  "${RF_LIB_JXL}"
+  "${RF_LIB_JXL_THREADS}"
+  "${RF_LIB_JXL_CMS}"
+  "${RF_LIB_HWY}"
+  "${RF_LIB_BROTLIENC}"
+  "${RF_LIB_BROTLIDEC}"
+  "${RF_LIB_BROTLICOMMON}"
+  "${RF_LIB_LCMS2}"
+  "${RF_LIB_TIFF}"
+  "${RF_LIB_DEFLATE}"
+  "${RF_LIB_JPEG}"
+  "${RF_LIB_GIF}"
+  "${RF_LIB_PNG}"
+  "${RF_LIB_Z}"
+  Threads::Threads
+)
+if(WIN32)
+  target_link_options(rfc_test_qoi PRIVATE -static -Wl,--gc-sections)
 endif()
 
 add_executable(rfc_bundle_smoke

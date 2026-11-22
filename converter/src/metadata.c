@@ -532,6 +532,17 @@ static void project_supported_colorimetry(rfc_format_id id,
             out->mdcv_min_dl = in->mdcv_min_dl;
         }
     }
+    if (id == RFC_FORMAT_QOI) {
+        if (icc_len == 0u &&
+            !in->has_srgb && !in->has_gama && !in->has_chrm &&
+            !in->has_mdcv && !in->has_clli &&
+            in->has_cicp &&
+            in->cicp[0] == 2u && in->cicp[1] == 8u &&
+            in->cicp[2] == 0u && in->cicp[3] == 1u) {
+            out->has_cicp = 1u;
+            memcpy(out->cicp, in->cicp, sizeof(out->cicp));
+        }
+    }
 }
 
 static int format_supports_frame_colorimetry(rfc_format_id id,
@@ -756,11 +767,26 @@ rfc_status rfc_metadata_check_source_preflight(rfc_format_id target_format,
     rfc_metadata_report *rep = out_report ? out_report : &local_rep;
     uint32_t present =
         rfc_metadata_source_items(src_meta, src_frames, src_frame_count);
+    int qoi_linear_only =
+        (target_format == RFC_FORMAT_QOI &&
+         policy == RFC_META_POLICY_PRESERVE &&
+         !has_any_raw_icc(src_meta, src_frames, src_frame_count) &&
+         has_any_raw_colorimetry(src_meta, src_frames, src_frame_count) &&
+         source_raw_colorimetry_supported(RFC_FORMAT_QOI, src_meta, src_frames,
+                                          src_frame_count))
+            ? 1
+            : 0;
+    uint32_t preflight_present =
+        qoi_linear_only ? (present & ~RFC_META_ITEM_ICC) : present;
     rfc_status st = rfc_metadata_check_preflight(
-        target_format, policy, exactness, present, acknowledged_unsupported,
-        rep);
+        target_format, policy, exactness, preflight_present,
+        acknowledged_unsupported, rep);
     if (st != RFC_OK) {
         return st;
+    }
+    if (qoi_linear_only) {
+        rep->present_source_items = present;
+        rep->preserved_items |= RFC_META_ITEM_ICC;
     }
     if (policy == RFC_META_POLICY_PRESERVE &&
         has_any_raw_colorimetry(src_meta, src_frames, src_frame_count) &&
@@ -885,7 +911,7 @@ rfc_status rfc_metadata_verify(rfc_format_id target_format,
         check_count = 1u;
     }
 
-    if (caps & RFC_META_ITEM_ICC) {
+    if ((caps & RFC_META_ITEM_ICC) || target_format == RFC_FORMAT_QOI) {
         if (src_frame_count > 0u && dst_frame_count > 0u &&
             src_frame_count != dst_frame_count) {
             lost |= RFC_META_ITEM_ICC;
@@ -910,10 +936,15 @@ rfc_status rfc_metadata_verify(rfc_format_id target_format,
                     (d_col != NULL &&
                      !format_supports_frame_colorimetry(target_format, dlen,
                                                        d_col));
-                if (slen != dlen ||
-                    (slen > 0u &&
-                     (!s_icc || !d_icc || memcmp(s_icc, d_icc, slen) != 0)) ||
-                    dst_col_invalid || !colorimetry_equal(exp_ptr, d_col)) {
+                int icc_mismatch =
+                    (target_format == RFC_FORMAT_QOI)
+                        ? (dlen != 0u)
+                        : (slen != dlen ||
+                           (slen > 0u &&
+                            (!s_icc || !d_icc ||
+                             memcmp(s_icc, d_icc, slen) != 0)));
+                if (icc_mismatch || dst_col_invalid ||
+                    !colorimetry_equal(exp_ptr, d_col)) {
                     lost |= RFC_META_ITEM_ICC;
                     break;
                 }

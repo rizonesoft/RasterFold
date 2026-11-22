@@ -872,7 +872,7 @@ def _ensure_host_vendor_deps(pkg_order):
         src_dir = root_p / "tools" / "converter-src" / pid
         if not src_dir.is_dir():
             raise RuntimeError(f"missing converter source tree for host build: {src_dir}")
-        wrapped = pid in ("lcms2", "giflib")
+        wrapped = (root_p / "converter" / "cmake" / pid / "CMakeLists.txt").is_file()
         cmake_src = (root_p / "converter" / "cmake" / pid) if wrapped else src_dir
         extra = []
         if wrapped:
@@ -1018,6 +1018,12 @@ def _ensure_host_tiff_gif_flags():
         "-lm",
     ]
     return [f"-I{(deps_prefix / 'include').as_posix()}"], libs
+
+
+def _ensure_host_qoi_flags():
+    deps_prefix = _ensure_host_vendor_deps(["qoi"])
+    lib_dir = deps_prefix / "lib"
+    return [f"-I{(deps_prefix / 'include').as_posix()}"], [str(lib_dir / "libqoi.a")]
 
 
 def _run_codec_case(
@@ -1713,6 +1719,36 @@ def _no_hevc_in_dependency_prefix(prefix):
     return None, entries, scanned
 
 
+def case_qoi(all_targets=False):
+    def _flags():
+        q_cf, q_lb = _ensure_host_qoi_flags()
+        p_cf, p_lb = _host_libpng_flags()
+        cflags = list(dict.fromkeys([*q_cf, *p_cf]))
+        libs = [*q_lb, *p_lb, "-lm", "-pthread"]
+        return cflags, libs
+
+    return _run_codec_case(
+        case_name="qoi",
+        win_target="rfc_test_qoi",
+        codec_sources=["basic.c", "qoi.c"],
+        c_test_file="test_qoi.c",
+        py_test_file="test_qoi.py",
+        host_env_var="RFC_HOST_QOI_EXE",
+        win_env_var="RFC_WIN_QOI_EXE",
+        require_win_env_var="RFC_REQUIRE_WIN_QOI",
+        markers=[
+            "qoi: registration_and_geometry ok",
+            "qoi: rgb_rgba_stride_and_colorspace ok",
+            "qoi: refusals_malformed_and_metadata_policy ok",
+            "qoi: jobs_budget_cancel_and_file_safety ok",
+            "qoi: all checks passed",
+        ],
+        host_flags_fn=_flags,
+        all_targets=all_targets,
+        host_link_cxx=False,
+    )
+
+
 def case_heif(all_targets=False):
     msg = _no_hevc_in_build_inputs()
     if msg:
@@ -1948,6 +1984,8 @@ def main():
         return case_tiff_gif(all_targets)
     if args == ["--case", "heif"]:
         return case_heif(all_targets)
+    if args == ["--case", "qoi"]:
+        return case_qoi(all_targets)
     if args == ["--case", "all"]:
         rc = case_contract()
         if rc:
@@ -1985,8 +2023,11 @@ def main():
         rc = case_heif(all_targets)
         if rc:
             return rc
+        rc = case_qoi(all_targets)
+        if rc:
+            return rc
         return case_bundle()
-    print("usage: check-converter.py --case <contract|jobs|exactness|file-safety|reports|basic|webp|jxl|avif|jpeg|tiff_gif|heif|bundle|all> [--all-targets]")
+    print("usage: check-converter.py --case <contract|jobs|exactness|file-safety|reports|basic|webp|jxl|avif|jpeg|tiff_gif|heif|qoi|bundle|all> [--all-targets]")
     return 1
 
 

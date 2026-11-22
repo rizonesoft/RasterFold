@@ -272,13 +272,13 @@ PROVENANCE_TABLE: tuple[dict[str, Any], ...] = (
         "format_name": "qoi",
         "owner_section": "D10 T02 \u00a78",
         "exactness_class": "pixel-exact",
-        "converter_provider": "in-tree converter code",
+        "converter_provider": "qoi (bundled, pinned by D10 T01 \u00a72)",
         "pinned_package_ids": ("qoi",),
         "verification_path": "fresh-session-decode",
         "reference_decoder_kind": "independent-pure-python",
         "shares_c_library_with_converter": False,
         "claims_independent_decoder": True,
-        "coverage_state": "executable-in-d10-t01-s4",
+        "coverage_state": "executable-in-d10-t02-s8",
         "provenance_note": "Clean-room pure-Python QOI specification encoder/decoder.",
     },
     {
@@ -407,6 +407,7 @@ def validate_provenance_table() -> dict[str, dict[str, Any]]:
             "executable-in-d10-t02-s5",
             "executable-in-d10-t02-s6",
             "executable-in-d10-t02-s7",
+            "executable-in-d10-t02-s8",
             "provenance-only-pending-adapter",
         ):
             raise AssertionError(f"{name}: invalid coverage_state {row['coverage_state']!r}")
@@ -726,20 +727,21 @@ def encode_qoi(width: int, height: int, channels: int, pixels: bytes, colorspace
     return bytes(out)
 
 
-def decode_qoi(blob: bytes) -> tuple[int, int, int, bytes]:
-    """Clean-room QOI specification decoder."""
+def decode_qoi_ex(blob: bytes) -> tuple[int, int, int, int, bytes]:
+    """Strict clean-room QOI specification decoder returning (w, h, ch, colorspace, pixels)."""
     if len(blob) < 22 or blob[:4] != b"qoif" or blob[-8:] != b"\x00\x00\x00\x00\x00\x00\x00\x01":
         raise ValueError("invalid QOI framing")
-    magic, w, ht, ch, _cs = struct.unpack_from(">4sIIBB", blob, 0)
-    if magic != b"qoif" or w == 0 or ht == 0 or ch not in (3, 4):
+    magic, w, ht, ch, cs = struct.unpack_from(">4sIIBB", blob, 0)
+    if magic != b"qoif" or w == 0 or ht == 0 or ch not in (3, 4) or cs not in (0, 1):
         raise ValueError("invalid QOI header")
-    out = bytearray(w * ht * ch)
+    total_px = w * ht
+    out = bytearray(total_px * ch)
     index = [(0, 0, 0, 0)] * 64
     r, g, b, a = 0, 0, 0, 255
     pos = 14
     end = len(blob) - 8
     run = 0
-    for px in range(w * ht):
+    for px in range(total_px):
         if run > 0:
             run -= 1
         else:
@@ -748,9 +750,13 @@ def decode_qoi(blob: bytes) -> tuple[int, int, int, bytes]:
             tag = blob[pos]
             pos += 1
             if tag == 0xFE:
+                if end - pos < 3:
+                    raise ValueError("truncated QOI_OP_RGB")
                 r, g, b = blob[pos], blob[pos + 1], blob[pos + 2]
                 pos += 3
             elif tag == 0xFF:
+                if end - pos < 4:
+                    raise ValueError("truncated QOI_OP_RGBA")
                 r, g, b, a = blob[pos], blob[pos + 1], blob[pos + 2], blob[pos + 3]
                 pos += 4
             elif (tag & 0xC0) == 0x00:
@@ -760,6 +766,8 @@ def decode_qoi(blob: bytes) -> tuple[int, int, int, bytes]:
                 g = (g + ((tag >> 2) & 3) - 2) & 255
                 b = (b + (tag & 3) - 2) & 255
             elif (tag & 0xC0) == 0x80:
+                if end - pos < 1:
+                    raise ValueError("truncated QOI_OP_LUMA")
                 b2 = blob[pos]
                 pos += 1
                 vg = (tag & 0x3F) - 32
@@ -768,13 +776,23 @@ def decode_qoi(blob: bytes) -> tuple[int, int, int, bytes]:
                 b = (b + vg - 8 + (b2 & 0x0F)) & 255
             else:
                 run = tag & 0x3F
+                if run + 1 > total_px - px:
+                    raise ValueError("QOI_OP_RUN exceeds image pixel count")
             idx = (r * 3 + g * 5 + b * 7 + a * 11) & 63
             index[idx] = (r, g, b, a)
         dst = px * ch
         out[dst], out[dst + 1], out[dst + 2] = r, g, b
         if ch == 4:
             out[dst + 3] = a
-    return w, ht, ch, bytes(out)
+    if run != 0 or pos != end:
+        raise ValueError("trailing QOI data or unconsumed run")
+    return w, ht, ch, cs, bytes(out)
+
+
+def decode_qoi(blob: bytes) -> tuple[int, int, int, bytes]:
+    """Clean-room QOI specification decoder."""
+    w, ht, ch, _cs, pixels = decode_qoi_ex(blob)
+    return w, ht, ch, pixels
 
 
 # ---------------------------------------------------------------- PNG (pure-Python chunks + unfiltering)

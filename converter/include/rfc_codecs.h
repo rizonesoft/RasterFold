@@ -54,6 +54,15 @@ rfc_status rfc_codecs_unregister_tiff_gif(void);
 rfc_status rfc_codecs_register_heif(void);
 rfc_status rfc_codecs_unregister_heif(void);
 
+/* Register and unregister the shipped QOI session adapter (D10 T02 s8). */
+rfc_status rfc_codecs_register_qoi(void);
+rfc_status rfc_codecs_unregister_qoi(void);
+
+/* Test seam: hook called during QOI preflight, strided row packing, and
+ * encode/decode checkpoints (NULL removes it), for deterministic mid-operation
+ * cancellation tests. */
+void rfc_codecs_qoi_set_hook_for_testing(void (*hook)(void *), void *ctx);
+
 /* Test seam: report the WIC HEIF decoder and/or the Media Foundation HEVC
  * decoder as missing (0 restores the real lookups). */
 void rfc_codecs_heif_set_missing_for_testing(int heif_decoder, int hevc_decoder);

@@ -3146,13 +3146,12 @@ rfc_status rfc_job_internal_run_standalone_decode(
     tmp_job->limits = *limits;
     tmp_job->frame_allocator = *alloc;
 
-    rfc_allocator local_alloc = *alloc;
     rfc_exec_context exec;
     memset(&exec, 0, sizeof(exec));
     exec.job = tmp_job;
     exec.codec_threads = 1u;
     exec.limits = *limits;
-    exec.allocator = &local_alloc;
+    exec.allocator = alloc;
 
     const char *err_detail = NULL;
     rfc_status st = run_bounded_session_decode(
