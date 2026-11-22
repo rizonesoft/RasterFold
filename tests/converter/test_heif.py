@@ -446,13 +446,16 @@ class NoHevcArtifactProofTests(unittest.TestCase):
                 self.assertIn("libde265", msg, repr(suffix))
                 thin_tr_bad.unlink()
 
-            # Multi-member clean thin archive whose bytes end with 'libde' in member 1
-            # and begin with '265' in member 2 must pass (no cross-member concatenation)
+            # Multi-member clean thin archive whose member 1 ends with 'libde' and
+            # member 2 starts with '265' (so concatenating them forms 'libde265')
+            # must pass (no cross-member concatenation)
             m1_o = t / "part1.o"
             m2_o = t / "part2.o"
             m1_o.write_bytes((t / "unused_ok.o").read_bytes() + b"libde")
-            (t / "part2.c").write_text("const char *p2(void) { return \"265\"; }\n")
-            run_ok([str(clang), "-c", str(t / "part2.c"), "-o", str(m2_o)])
+            m2_o.write_bytes(b"265\n")
+            self.assertTrue(m1_o.read_bytes().endswith(b"libde"))
+            self.assertTrue(m2_o.read_bytes().startswith(b"265"))
+            self.assertIn(b"libde265", m1_o.read_bytes() + m2_o.read_bytes())
             thin_multi = prefix / "lib" / "thin_multi.bin"
             run_ok([str(ar), "rcsT", str(thin_multi), str(m1_o), str(m2_o)])
             msg, _, _ = cc._no_hevc_in_dependency_prefix(str(prefix))
