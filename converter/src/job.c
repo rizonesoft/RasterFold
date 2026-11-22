@@ -3052,11 +3052,28 @@ static rfc_status run_bounded_session_decode(
                     }
                 }
                 if (st == RFC_OK && job->target_format == RFC_FORMAT_QOI &&
-                    probe.first_frame.alpha == RFC_ALPHA_PREMULTIPLIED) {
-                    st = RFC_ERR_UNSUPPORTED_ALPHA;
-                    if (out_err_detail && !*out_err_detail) {
-                        *out_err_detail =
-                            "QOI does not support premultiplied alpha";
+                    probe.first_frame.format != (rfc_sample_format)0) {
+                    if (probe.first_frame.bits_per_sample != 0u &&
+                        probe.first_frame.bits_per_sample != 8u) {
+                        st = RFC_ERR_UNSUPPORTED_SAMPLE;
+                        if (out_err_detail && !*out_err_detail) {
+                            *out_err_detail =
+                                "QOI requires 8 bits per channel";
+                        }
+                    } else if (probe.first_frame.format == RFC_SAMPLE_RGB8 &&
+                               probe.first_frame.alpha != RFC_ALPHA_NONE) {
+                        st = RFC_ERR_UNSUPPORTED_ALPHA;
+                        if (out_err_detail && !*out_err_detail) {
+                            *out_err_detail =
+                                "QOI RGB8 requires RFC_ALPHA_NONE";
+                        }
+                    } else if (probe.first_frame.format == RFC_SAMPLE_RGBA8 &&
+                               probe.first_frame.alpha != RFC_ALPHA_STRAIGHT) {
+                        st = RFC_ERR_UNSUPPORTED_ALPHA;
+                        if (out_err_detail && !*out_err_detail) {
+                            *out_err_detail =
+                                "QOI RGBA8 requires straight alpha";
+                        }
                     }
                 }
                 if (st == RFC_OK) {
