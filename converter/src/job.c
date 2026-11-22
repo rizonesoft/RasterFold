@@ -3025,28 +3025,49 @@ static rfc_status run_bounded_session_decode(
                     job->target_format, job_sv, job_sc, &t_ex, &t_pol) ==
                     RFC_OK &&
                 t_ex == RFC_EXACT_PIXEL_EXACT) {
-                rfc_verify_report pre_rep;
-                memset(&pre_rep, 0, sizeof(pre_rep));
-                rfc_status mst = rfc_metadata_check_source_preflight(
-                    job->target_format, t_pol, RFC_EXACT_PIXEL_EXACT,
-                    &probe.container_meta, NULL, 0u,
-                    rfc_job_acknowledged_metadata(job), &pre_rep.metadata);
-                if (mst == RFC_ERR_METADATA_POLICY) {
-                    pre_rep.exactness = RFC_EXACT_PIXEL_EXACT;
-                    copy_verify_detail(pre_rep.decoder_provenance,
-                                       sizeof(pre_rep.decoder_provenance),
-                                       "same-provider-fresh-session");
-                    pre_rep.mismatch.kind = RFC_MISMATCH_METADATA_UNSUPPORTED;
-                    copy_verify_detail(pre_rep.mismatch.detail,
-                                       sizeof(pre_rep.mismatch.detail),
-                                       pre_rep.metadata.detail);
-                    pre_rep.meta_outcome = pre_rep.metadata.outcome;
-                    pre_rep.status = mst;
-                    pre_rep.valid = 1;
-                    store_job_verify_report(job, &pre_rep);
-                    st = mst;
-                    if (out_err_detail && !*out_err_detail) {
-                        *out_err_detail = "unacknowledged unsupported metadata";
+                const rfc_capability *tcap =
+                    rfc_registry_find(job->target_format);
+                if (tcap && probe.first_frame.format != (rfc_sample_format)0) {
+                    int sample_ok = 0;
+                    for (size_t si = 0u; si < tcap->sample_count; si++) {
+                        if (tcap->samples[si] == probe.first_frame.format) {
+                            sample_ok = 1;
+                            break;
+                        }
+                    }
+                    if (!sample_ok) {
+                        st = RFC_ERR_UNSUPPORTED_SAMPLE;
+                        if (out_err_detail && !*out_err_detail) {
+                            *out_err_detail =
+                                "target format does not support source sample format";
+                        }
+                    }
+                }
+                if (st == RFC_OK) {
+                    rfc_verify_report pre_rep;
+                    memset(&pre_rep, 0, sizeof(pre_rep));
+                    rfc_status mst = rfc_metadata_check_source_preflight(
+                        job->target_format, t_pol, RFC_EXACT_PIXEL_EXACT,
+                        &probe.container_meta, NULL, 0u,
+                        rfc_job_acknowledged_metadata(job), &pre_rep.metadata);
+                    if (mst == RFC_ERR_METADATA_POLICY) {
+                        pre_rep.exactness = RFC_EXACT_PIXEL_EXACT;
+                        copy_verify_detail(pre_rep.decoder_provenance,
+                                           sizeof(pre_rep.decoder_provenance),
+                                           "same-provider-fresh-session");
+                        pre_rep.mismatch.kind = RFC_MISMATCH_METADATA_UNSUPPORTED;
+                        copy_verify_detail(pre_rep.mismatch.detail,
+                                           sizeof(pre_rep.mismatch.detail),
+                                           pre_rep.metadata.detail);
+                        pre_rep.meta_outcome = pre_rep.metadata.outcome;
+                        pre_rep.status = mst;
+                        pre_rep.valid = 1;
+                        store_job_verify_report(job, &pre_rep);
+                        st = mst;
+                        if (out_err_detail && !*out_err_detail) {
+                            *out_err_detail =
+                                "unacknowledged unsupported metadata";
+                        }
                     }
                 }
             }

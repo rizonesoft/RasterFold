@@ -1450,6 +1450,44 @@ static void test_jobs_budget_cancel_and_file_safety(void) {
                   snap.status == RFC_ERR_UNSUPPORTED_COMBINATION &&
                   !file_exists(p_ack_qoi));
             rfc_job_release(job);
+
+            /* Untagged 16-bit RGB16 PNG (256x256x6 = 393216 B decoded) submitted
+             * to a built-in QOI file job under preserve mode is refused with
+             * RFC_ERR_UNSUPPORTED_SAMPLE BEFORE pixel allocation. */
+            rfc_layout lay16 = {RFC_SAMPLE_RGB16, RFC_ALPHA_NONE, 256u, 256u,
+                                256u * 6u, 16u};
+            rfc_frame src16;
+            CHECK(rfc_frame_alloc(&src16, &lay16, NULL, &al) == RFC_OK);
+            memset(src16.data, 0x3Cu, src16.data_len);
+            void *psess16 = NULL;
+            CHECK(png_adp->open_session(&exec, &psess16) == RFC_OK);
+            rfc_encoded png16;
+            CHECK(png_adp->encode_session(psess16, &exec, &src16, 1u, NULL,
+                                          NULL, 0u, &png16) == RFC_OK);
+            png_adp->close_session(psess16);
+            char p_rgb16[256];
+            temp_path(p_rgb16, sizeof(p_rgb16), "rgb16.png");
+            CHECK(write_file_all(p_rgb16, png16.data, png16.len));
+            rfc_encoded_free(&png16);
+            rfc_frame_free(&src16);
+
+            memset(&sp, 0, sizeof(sp));
+            rfc_io_source_init_path(&si, p_rgb16, RFC_IMPORT_DEFAULT);
+            rfc_io_sink_init_path(&so, p_ack_qoi, RFC_EXPORT_REFUSE_EXISTING);
+            sp.source_format = RFC_FORMAT_PNG;
+            sp.target_format = RFC_FORMAT_QOI;
+            sp.io_source = &si;
+            sp.io_sink = &so;
+            sp.requested_codec_threads = 1u;
+            CHECK(rfc_scheduler_submit(sched, NULL, &sp, &job) == RFC_OK);
+            CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
+            CHECK(rfc_job_snapshot_get(job, &snap) == RFC_OK);
+            CHECK(snap.state == RFC_JOB_FAILED &&
+                  snap.status == RFC_ERR_UNSUPPORTED_SAMPLE &&
+                  snap.budget.peak_allocated_bytes < 256u * 256u * 6u &&
+                  !file_exists(p_ack_qoi));
+            rfc_job_release(job);
+            remove(p_rgb16);
         }
 
         /* D2: Acknowledged unsupported-item loss succeeds and reports UNSUPPORTED_ITEMS_NAMED. */
