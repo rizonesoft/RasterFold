@@ -244,8 +244,14 @@ class QoiAdapterBase:
             ("div_bound", struct.pack(">4sIIBB", b"qoif", 20001, 19999, 3, 0) + b"\x00\x00\x00\x00\x00\x00\x00\x01", "limit-exceeded"),
         ]
         for tag, blob, exp_status in named_bad:
-            with self.assertRaises(ValueError, msg=f"oracle accepted malformed {tag}"):
-                _ref.decode_qoi_ex(blob)
+            if tag == "div_bound":
+                with self.assertRaisesRegex(
+                    ValueError, "QOI_PIXELS_MAX", msg=f"oracle did not reject {tag} at dimension guard"
+                ):
+                    _ref.decode_qoi_ex(blob)
+            else:
+                with self.assertRaises(ValueError, msg=f"oracle accepted malformed {tag}"):
+                    _ref.decode_qoi_ex(blob)
             p_in = wd / f"bad_{tag}.qoi"
             p_out = wd / f"bad_{tag}.rfqd"
             p_in.write_bytes(blob)
