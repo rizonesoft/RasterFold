@@ -1444,6 +1444,7 @@ def _hevc_link_name(token):
 
 ARCHIVE_MAGICS = (b"!<arch>\n", b"!<thin>\n")
 COFF_OBJ_MAGICS = (b"\x64\x86", b"\x4c\x01", b"\x64\xaa")
+BITCODE_MAGICS = (b"BC\xc0\xde", b"\xde\xc0\x17\x0b")
 
 
 def _read_file_bytes(path, limit=None):
@@ -1476,6 +1477,11 @@ def _is_pe_binary(path):
 def _is_coff_object(path):
     """A COFF object file by its machine header, whatever its name."""
     return _read_file_bytes(path, 2) in COFF_OBJ_MAGICS
+
+
+def _is_bitcode(path):
+    """An LLVM bitcode object (raw or wrapper) by its magic, whatever its name."""
+    return _read_file_bytes(path, 4) in BITCODE_MAGICS
 
 
 def _hevc_among_names(paths):
@@ -1572,11 +1578,12 @@ def _shipped_windows_binaries(bindir):
 
 
 def _dependency_files(prefix):
-    """(every entry, every inspectable library/archive/object/PE by content)
-    under the dependency prefix. Fails closed on missing directory, unlistable
-    subtrees, dangling links, or unreadable files."""
+    """(every entry, every inspectable library/archive/object/bitcode/PE by
+    content) under the dependency prefix. Fails closed on missing directory,
+    unlistable subtrees, dangling links, or unreadable files."""
     entries = _walk_dir_fail_closed(prefix)
-    libs = [p for p in entries if _is_archive(p) or _is_pe_binary(p) or _is_coff_object(p)]
+    libs = [p for p in entries
+            if _is_archive(p) or _is_pe_binary(p) or _is_coff_object(p) or _is_bitcode(p)]
     return entries, libs
 
 
@@ -1744,15 +1751,10 @@ def _no_hevc_in_repro_tar(tar_path, scanned_hashes=None):
                 digest = hashlib.sha256(data).hexdigest()
                 if digest in scanned_hashes:
                     continue
-                scanned_hashes.add(digest)
-                is_ar = data[:8] in ARCHIVE_MAGICS
-                is_coff = data[:2] in COFF_OBJ_MAGICS
                 is_pe = False
                 if len(data) >= 0x40 and data[:2] == b"MZ":
                     pe_off = int.from_bytes(data[0x3C:0x40], "little")
                     is_pe = pe_off + 4 <= len(data) and data[pe_off : pe_off + 4] == b"PE\x00\x00"
-                if not (is_ar or is_coff or is_pe):
-                    continue
                 scratch = os.path.join(td, f"in_{digest[:16]}")
                 with open(scratch, "wb") as out_fh:
                     out_fh.write(data)
@@ -1767,6 +1769,7 @@ def _no_hevc_in_repro_tar(tar_path, scanned_hashes=None):
                 for tok in HEVC_BINARY_STRINGS:
                     if tok in low:
                         return f"{member.name} contains HEVC string {tok.decode('ascii')}", checked_inputs
+                scanned_hashes.add(digest)
     if not saw_response or checked_inputs == 0:
         raise RuntimeError(f"lld reproduce archive {tar_path} is missing response.txt or input files")
     return None, checked_inputs
