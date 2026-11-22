@@ -487,6 +487,20 @@ class HostJp2Tests(Jp2AdapterMixin, unittest.TestCase):
         return res.returncode, res.stdout, res.stderr
 
 
+def _ps_single_quote(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _build_win_ps_command(win_exe: str, args: list[str]) -> str:
+    quoted_exe = _ps_single_quote(win_exe)
+    quoted_args = ", ".join(_ps_single_quote(a) for a in args)
+    return (
+        "$env:PATH = 'C:\\Windows\\System32'; "
+        f"& {quoted_exe} @({quoted_args}); "
+        "exit $LASTEXITCODE"
+    )
+
+
 class WinJp2Tests(Jp2AdapterMixin, unittest.TestCase):
     TARGET_LABEL = "windows-x64"
 
@@ -528,28 +542,23 @@ class WinJp2Tests(Jp2AdapterMixin, unittest.TestCase):
         rel = p.relative_to(self._wd())
         return f"{self._win_wd}\\{rel}"
 
-    def run_cli(self, args: list[str]) -> tuple[int, str, str]:
-        quoted = ", ".join("'" + a.replace("'", "''") + "'" for a in args)
-        ps_cmd = (
-            "$env:PATH = 'C:\\Windows\\System32'; "
-            f"& '{self._win_exe}' @({quoted}); "
-            "exit $LASTEXITCODE"
+    def test_ps_command_quotes_apostrophe_in_executable_path(self) -> None:
+        cmd = _build_win_ps_command(
+            r"C:\Users\O'Brien\RasterFold\rfc_test_jp2.exe",
+            ["cli", "probe", r"C:\Users\O'Brien\in.jp2"],
         )
-        for attempt in range(3):
-            res = _ref.run_process_tree(
-                [self._ps, "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
-                timeout=45.0,
-                capture_output=True,
-                text=True,
-            )
-            if (
-                res.returncode == 1
-                and not (res.stdout or "")
-                and "UtilAcceptVsock" in (res.stderr or "")
-                and attempt < 2
-            ):
-                continue
-            return res.returncode, res.stdout, res.stderr
+        self.assertIn(r"& 'C:\Users\O''Brien\RasterFold\rfc_test_jp2.exe'", cmd)
+        self.assertIn(r"'C:\Users\O''Brien\in.jp2'", cmd)
+        self.assertIn("$env:PATH = 'C:\\Windows\\System32';", cmd)
+
+    def run_cli(self, args: list[str]) -> tuple[int, str, str]:
+        ps_cmd = _build_win_ps_command(self._win_exe, args)
+        res = _ref.run_process_tree(
+            [self._ps, "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
+            timeout=45.0,
+            capture_output=True,
+            text=True,
+        )
         return res.returncode, res.stdout, res.stderr
 
 

@@ -1791,7 +1791,10 @@ static void test_jobs_budget_cancel_threads_and_file_safety(void) {
         }
 
         /* Hostile 64-bit wrapping nested box length inside jp2h past 16 KiB prefix
-         * must terminate immediately in sniff_jp2_geometry_stream without looping. */
+         * must terminate immediately in sniff_jp2_geometry_stream without wrapping
+         * backward into the preceding free box (where a decoy ihdr is planted at
+         * offset joff + 8 - 256 so an unguarded sub += stot would extract 17x19
+         * geometry and admit a layout-free submission instead of refusing it). */
         {
             size_t free_sz = 20u * 1024u;
             size_t total_sz = 12u + 20u + free_sz + 8u + 16u;
@@ -1803,6 +1806,19 @@ static void test_jobs_budget_cancel_threads_and_file_safety(void) {
             put_be32(hostile + 32u, (uint32_t)free_sz);
             memcpy(hostile + 36u, "free", 4u);
             size_t joff = 32u + free_sz;
+            /* Plant a valid 22-byte decoy ihdr (17x19, 3ch, 8-bit) at the exact
+             * offset (joff + 8 - 256) that sub += 0xFFFFFFFFFFFFFF00 wraps to. */
+            size_t decoy = joff + 8u - 256u;
+            put_be32(hostile + decoy, 22u);
+            memcpy(hostile + decoy + 4u, "ihdr", 4u);
+            put_be32(hostile + decoy + 8u, 19u);   /* height */
+            put_be32(hostile + decoy + 12u, 17u);  /* width */
+            hostile[decoy + 16u] = 0u;
+            hostile[decoy + 17u] = 3u;             /* nc = 3 */
+            hostile[decoy + 18u] = 7u;             /* bpc = 8-bit unsigned */
+            hostile[decoy + 19u] = 7u;             /* C = 7 */
+            hostile[decoy + 20u] = 0u;             /* UnkC */
+            hostile[decoy + 21u] = 0u;             /* IPR */
             put_be32(hostile + joff, 24u);
             memcpy(hostile + joff + 4u, "jp2h", 4u);
             /* Child box with lbox=1 and 64-bit length 0xFFFFFFFFFFFFFF00 (> sub_end). */
@@ -1810,9 +1826,11 @@ static void test_jobs_budget_cancel_threads_and_file_safety(void) {
             memcpy(hostile + joff + 12u, "free", 4u);
             put_be32(hostile + joff + 16u, 0xFFFFFFFFu);
             put_be32(hostile + joff + 20u, 0xFFFFFF00u);
-            char p_hos[256];
+            char p_hos[256], p_hos_out[256];
             temp_path(p_hos, sizeof(p_hos), "hostile_wrap.jp2");
+            temp_path(p_hos_out, sizeof(p_hos_out), "hostile_wrap.png");
             remove(p_hos);
+            remove(p_hos_out);
             CHECK(write_file_all(p_hos, hostile, total_sz));
             rfc_sniff_result hsr;
             uint64_t hsz = 0u;
@@ -1821,7 +1839,26 @@ static void test_jobs_budget_cancel_threads_and_file_safety(void) {
             memset(&hid, 0, sizeof(hid));
             CHECK(rfc_input_sniff_path(p_hos, &hsr, &hsz, &hid) == RFC_OK);
             CHECK(hsr.content_format == RFC_FORMAT_JPEG2000);
+            /* Layout-free scheduler submission must NOT read the backward decoy
+             * ihdr; it must refuse admission before queueing with no job/output. */
+            memset(&sp, 0, sizeof(sp));
+            rfc_io_source_init_path(&si, p_hos, RFC_IMPORT_DEFAULT);
+            rfc_io_sink_init_path(&so, p_hos_out, RFC_EXPORT_REFUSE_EXISTING);
+            sp.source_format = RFC_FORMAT_JPEG2000;
+            sp.target_format = RFC_FORMAT_PNG;
+            sp.io_source = &si;
+            sp.io_sink = &so;
+            sp.requested_codec_threads = 1u;
+            job = NULL;
+            rfc_status wst = rfc_scheduler_submit(sched, NULL, &sp, &job);
+            CHECK(wst == RFC_ERR_LIMIT_EXCEEDED && job == NULL &&
+                  !file_exists(p_hos_out));
+            if (job) {
+                rfc_job_wait(job, UINT32_MAX);
+                rfc_job_release(job);
+            }
             remove(p_hos);
+            remove(p_hos_out);
             free(hostile);
         }
 
