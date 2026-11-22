@@ -284,9 +284,9 @@ class WindowsHeifTests(HeifAdapterBase):
 
 
 class NoHevcArtifactProofTests(unittest.TestCase):
-    """Class regression for the shipped-artifact and dependency-prefix no-HEVC proof."""
+    """Class regression for the shipped-artifact, dependency-prefix, and lld --reproduce no-HEVC proof."""
 
-    def test_shipped_binaries_and_prefix_catch_hevc_by_content_and_imports(self) -> None:
+    def test_shipped_binaries_prefix_and_repro_links_catch_hevc(self) -> None:
         cc = _load_mod("_rfc_check_conv", ROOT / "scripts" / "check-converter.py")
         tc = ROOT / "tools" / "llvm-mingw-linux" / "bin"
         clang, ar, strip = tc / "x86_64-w64-mingw32-clang", tc / "llvm-ar", tc / "llvm-strip"
@@ -295,10 +295,16 @@ class NoHevcArtifactProofTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             t = Path(td)
             (t / "ok.c").write_text("int neutral_fn(void) { return 0; }\nint main(void) { return neutral_fn(); }\n")
-            (t / "enc.c").write_text(
-                "const char *x265_encoder_open(void) { return \"x265_encoder_open\"; }\n"
-                "int main(void) { return x265_encoder_open()[0] == 0; }\n"
+            (t / "sym_only.c").write_text(
+                "int x265_encoder_open(void) { return 1; }\n"
+                "int main(void) { return x265_encoder_open() - 1; }\n"
             )
+            (t / "str_only.c").write_text(
+                "const char *banner(void) { return \"libde265\"; }\n"
+                "int main(void) { return banner()[0] == 0; }\n"
+            )
+            (t / "unused_enc.c").write_text("int x265_encoder_open(void) { return 1; }\n")
+            (t / "unused_ok.c").write_text("int neutral_unused(void) { return 0; }\n")
             (t / "dll_hevc.c").write_text(
                 "__declspec(dllexport) int de265_new_decoder(void) { return 1; }\n"
             )
@@ -307,8 +313,8 @@ class NoHevcArtifactProofTests(unittest.TestCase):
                 "int main(void) { return de265_new_decoder() - 1; }\n"
             )
 
-            def run_ok(cmd: list[str]) -> None:
-                r = _ref.run_process_tree(cmd, capture_output=True, timeout=120.0)
+            def run_ok(cmd: list[str], cwd: str | None = None) -> None:
+                r = _ref.run_process_tree(cmd, cwd=cwd, capture_output=True, timeout=120.0)
                 self.assertEqual(r.returncode, 0, r.stderr)
 
             # 1. Clean shipped executable passes
@@ -319,17 +325,22 @@ class NoHevcArtifactProofTests(unittest.TestCase):
             self.assertIsNone(msg)
             self.assertEqual(bins, [str(clean_bin / "app.exe")])
 
-            # 2. Shipped executable with HEVC symbol fails, and still fails when stripped (string scan)
+            # 2a. Unstripped executable defining an HEVC symbol (no string literal) fails via llvm-nm
             sym_bin = t / "bin_sym"
             sym_bin.mkdir()
-            run_ok([str(clang), str(t / "enc.c"), "-o", str(sym_bin / "app.exe")])
+            run_ok([str(clang), str(t / "sym_only.c"), "-o", str(sym_bin / "app.exe")])
             msg, _ = cc._no_hevc_in_shipped_binaries(str(sym_bin))
             self.assertIsNotNone(msg)
             self.assertIn("x265_encoder_open", msg)
-            run_ok([str(strip), "--strip-all", str(sym_bin / "app.exe")])
-            msg, _ = cc._no_hevc_in_shipped_binaries(str(sym_bin))
+
+            # 2b. Stripped executable with an HEVC encoder/decoder string fails via binary string scan
+            str_bin = t / "bin_str"
+            str_bin.mkdir()
+            run_ok([str(clang), str(t / "str_only.c"), "-o", str(str_bin / "app.exe")])
+            run_ok([str(strip), "--strip-all", str(str_bin / "app.exe")])
+            msg, _ = cc._no_hevc_in_shipped_binaries(str(str_bin))
             self.assertIsNotNone(msg)
-            self.assertIn("x265_encoder_open", msg)
+            self.assertIn("libde265", msg)
 
             # 3. Shipped executable importing an HEVC symbol from a neutrally named DLL fails on imports
             imp_bin = t / "bin_imp"
@@ -354,30 +365,28 @@ class NoHevcArtifactProofTests(unittest.TestCase):
             prefix = t / "deps-prefix"
             (prefix / "lib").mkdir(parents=True)
             run_ok([str(clang), "-c", str(t / "ok.c"), "-o", str(t / "ok.o")])
-            run_ok([str(clang), "-c", str(t / "enc.c"), "-o", str(t / "enc.o")])
-            run_ok([str(ar), "rcs", str(prefix / "lib" / "libneutral.a"), str(t / "ok.o")])
+            run_ok([str(clang), "-c", str(t / "unused_enc.c"), "-o", str(t / "unused_enc.o")])
+            run_ok([str(clang), "-c", str(t / "unused_ok.c"), "-o", str(t / "unused_ok.o")])
+            run_ok([str(ar), "rcs", str(prefix / "lib" / "libneutral.a"), str(t / "unused_ok.o")])
             msg, _entries, libs = cc._no_hevc_in_dependency_prefix(str(prefix))
             self.assertIsNone(msg)
             self.assertEqual(libs, [str(prefix / "lib" / "libneutral.a")])
 
-            # Neutrally named archive (no .a suffix) caught by content
             bad_ar = prefix / "lib" / "codec.bin"
-            run_ok([str(ar), "rcs", str(bad_ar), str(t / "enc.o")])
+            run_ok([str(ar), "rcs", str(bad_ar), str(t / "unused_enc.o")])
             msg, _, _ = cc._no_hevc_in_dependency_prefix(str(prefix))
             self.assertIsNotNone(msg)
             self.assertIn("x265_encoder_open", msg)
             bad_ar.unlink()
 
-            # Dangling link fails closed
             (prefix / "lib" / "dangling.a").symlink_to(t / "nowhere.a")
             with self.assertRaises(RuntimeError):
                 cc._no_hevc_in_dependency_prefix(str(prefix))
             (prefix / "lib" / "dangling.a").unlink()
 
-            # Unreadable directory fails closed
             hidden = prefix / "lib" / "hidden"
             hidden.mkdir()
-            run_ok([str(ar), "rcs", str(hidden / "codec.bin"), str(t / "enc.o")])
+            run_ok([str(ar), "rcs", str(hidden / "codec.bin"), str(t / "unused_enc.o")])
             hidden.chmod(0)
             try:
                 if not os.access(hidden, os.R_OK):
@@ -386,6 +395,40 @@ class NoHevcArtifactProofTests(unittest.TestCase):
             finally:
                 hidden.chmod(0o755)
             shutil.rmtree(hidden)
+
+            # 6. lld --reproduce catches external unused archives however spelled:
+            #    -Wl,-lx265, -Wl,-l:libx265.a, parenthesized archive codec(test),
+            #    symlink-plus-.. path, and a later forbidden alias libde265.a -> first.a
+            ext = t / "ext"
+            ext.mkdir()
+            run_ok([str(ar), "rcs", str(ext / "libx265.a"), str(t / "unused_ok.o")])
+            run_ok([str(ar), "rcs", str(ext / "codec(test)"), str(t / "unused_enc.o")])
+            (t / "deep" / "inner").mkdir(parents=True)
+            run_ok([str(ar), "rcs", str(t / "deep" / "via.a"), str(t / "unused_enc.o")])
+            (t / "hop").symlink_to(t / "deep" / "inner", target_is_directory=True)
+            run_ok([str(ar), "rcs", str(ext / "first.a"), str(t / "unused_ok.o")])
+            (ext / "libde265.a").symlink_to(ext / "first.a")
+
+            clean_rep = t / "clean.repro.tar"
+            run_ok([str(clang), str(t / "ok.o"), "-o", str(t / "c.exe"), f"-Wl,--reproduce={clean_rep}"])
+            msg, n_in = cc._no_hevc_in_repro_tar(str(clean_rep))
+            self.assertIsNone(msg)
+            self.assertGreater(n_in, 0)
+
+            cases = [
+                ("wl_l", ["-Wl,-L" + str(ext), "-Wl,-lx265"], "libx265.a"),
+                ("wl_l_colon", ["-Wl,-L" + str(ext), "-Wl,-l:libx265.a"], "libx265.a"),
+                ("parens", [str(ext / "codec(test)")], "x265_encoder_open"),
+                ("symlink_dotdot", [f"{t}/hop/../via.a"], "x265_encoder_open"),
+                ("alias_second", [str(ext / "first.a"), str(ext / "libde265.a")], "libde265.a"),
+            ]
+            for label, extra_args, needle in cases:
+                rep = t / f"{label}.repro.tar"
+                run_ok([str(clang), str(t / "ok.o"), "-o", str(t / f"{label}.exe"),
+                        *extra_args, f"-Wl,--reproduce={rep}"])
+                msg, _ = cc._no_hevc_in_repro_tar(str(rep))
+                self.assertIsNotNone(msg, label)
+                self.assertIn(needle, msg, label)
 
 
 def load_tests(loader: unittest.TestLoader, tests: unittest.TestSuite, pattern: str | None) -> unittest.TestSuite:

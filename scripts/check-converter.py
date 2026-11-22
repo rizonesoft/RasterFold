@@ -1692,10 +1692,135 @@ def case_heif(all_targets=False):
     return 0
 
 
+def _no_hevc_in_repro_tar(tar_path, scanned_hashes=None):
+    """Inspect an lld --reproduce tar archive: check every resolved input
+    path in response.txt and every tar member name for HEVC library names,
+    and inspect every archive, COFF object, or PE binary member (by content
+    magic, deduplicated by SHA-256 across links) for HEVC symbols and strings.
+    Fails closed (RuntimeError) if response.txt or input members are absent."""
+    import hashlib
+    import shlex
+    import tarfile
+
+    if scanned_hashes is None:
+        scanned_hashes = set()
+    checked_inputs = 0
+    saw_response = False
+    with tempfile.TemporaryDirectory(prefix="rfc_repro_") as td:
+        with tarfile.open(tar_path, "r") as tf:
+            for member in tf.getmembers():
+                if not member.isfile():
+                    continue
+                base = os.path.basename(member.name)
+                if base == "response.txt":
+                    saw_response = True
+                    fh = tf.extractfile(member)
+                    if fh is None:
+                        raise RuntimeError(f"cannot read {member.name} in {tar_path}")
+                    text = fh.read().decode("utf-8", errors="replace")
+                    for raw_line in text.splitlines():
+                        line = raw_line.strip()
+                        if not line:
+                            continue
+                        for tok in shlex.split(line):
+                            low_tok = tok.lower()
+                            if low_tok.startswith(("-wholearchive:", "/wholearchive:", "-defaultlib:", "/defaultlib:")):
+                                tok = tok.split(":", 1)[1]
+                            elif tok.startswith("-") or tok.startswith("/"):
+                                continue
+                            if _hevc_link_name(tok):
+                                return f"linker response lists HEVC input {tok}", checked_inputs
+                    continue
+                if base == "version.txt":
+                    continue
+                checked_inputs += 1
+                if _hevc_link_name(member.name):
+                    return f"linker reproduce archive contains HEVC input {member.name}", checked_inputs
+                fh = tf.extractfile(member)
+                if fh is None:
+                    raise RuntimeError(f"cannot read {member.name} in {tar_path}")
+                data = fh.read()
+                digest = hashlib.sha256(data).hexdigest()
+                if digest in scanned_hashes:
+                    continue
+                scanned_hashes.add(digest)
+                is_ar = data[:8] in ARCHIVE_MAGICS
+                is_coff = data[:2] in COFF_OBJ_MAGICS
+                is_pe = False
+                if len(data) >= 0x40 and data[:2] == b"MZ":
+                    pe_off = int.from_bytes(data[0x3C:0x40], "little")
+                    is_pe = pe_off + 4 <= len(data) and data[pe_off : pe_off + 4] == b"PE\x00\x00"
+                if not (is_ar or is_coff or is_pe):
+                    continue
+                scratch = os.path.join(td, f"in_{digest[:16]}")
+                with open(scratch, "wb") as out_fh:
+                    out_fh.write(data)
+                msg = _no_hevc_symbols([scratch])
+                if msg:
+                    return f"{member.name}: {msg}", checked_inputs
+                if is_pe:
+                    msg = _no_hevc_pe_imports(scratch)
+                    if msg:
+                        return f"{member.name}: {msg}", checked_inputs
+                low = data.lower()
+                for tok in HEVC_BINARY_STRINGS:
+                    if tok in low:
+                        return f"{member.name} contains HEVC string {tok.decode('ascii')}", checked_inputs
+    if not saw_response or checked_inputs == 0:
+        raise RuntimeError(f"lld reproduce archive {tar_path} is missing response.txt or input files")
+    return None, checked_inputs
+
+
+def _no_hevc_in_windows_repro_links():
+    """Relink every built Windows converter executable from its own Ninja link
+    command into a scratch output with -Wl,--reproduce=<tar> and inspect each
+    reproduce archive for HEVC inputs, symbols, and strings."""
+    import shlex
+
+    app = os.path.join(ROOT, "build", "converter", "windows-x64", "app")
+    bindir = os.path.join(ROOT, "bin", "converter", "windows-x64")
+    exes = sorted(f for f in os.listdir(bindir) if f.lower().endswith(".exe")) if os.path.isdir(bindir) else []
+    if not exes:
+        raise RuntimeError(f"no shipped Windows converter executables found in {bindir}")
+    scanned_hashes = set()
+    total_members = 0
+    with tempfile.TemporaryDirectory(prefix="rfc_relink_") as td:
+        for exe in exes:
+            target = os.path.join(bindir, exe)
+            res = run_capture(["ninja", "-C", app, "-t", "commands", target], timeout=60.0)
+            lines = [l for l in res.stdout.splitlines() if l.strip()]
+            if res.returncode or not lines:
+                raise RuntimeError(f"no Ninja link command for {exe}")
+            cmd = lines[-1].strip()
+            if cmd.startswith(": && "):
+                cmd = cmd[5:]
+            if cmd.endswith(" && :"):
+                cmd = cmd[:-5]
+            argv = shlex.split(cmd)
+            out = os.path.join(td, exe)
+            repro = os.path.join(td, f"{exe}.repro.tar")
+            for i, a in enumerate(argv):
+                if a == "-o" and i + 1 < len(argv):
+                    argv[i + 1] = out
+            argv = [a for a in argv if not a.startswith("-Wl,--out-implib")]
+            argv.append(f"-Wl,--reproduce={repro}")
+            link = _ref.run_process_tree(argv, cwd=app, timeout=600.0, capture_output=True)
+            if link.returncode:
+                raise RuntimeError(f"reproduce relink of {exe} failed: {link.stderr[-400:]}")
+            msg, n_in = _no_hevc_in_repro_tar(repro, scanned_hashes)
+            if msg:
+                return f"{exe}: {msg}", len(exes), len(scanned_hashes)
+            total_members += n_in
+            os.unlink(repro)
+    return None, len(exes), len(scanned_hashes)
+
+
 def _heif_windows_link_checks():
-    """The Windows no-HEVC proof: inspect every shipped Windows converter
-    executable and bundled DLL (symbols, imports, and known HEVC strings),
-    plus a fail-closed content walk of the dependency prefix."""
+    """The Windows no-HEVC proof:
+    1. Every shipped Windows converter executable and bundled DLL (names,
+       external symbols, PE imports, and known HEVC strings).
+    2. Fail-closed content walk of the dependency prefix.
+    3. Exact linker-resolved inputs via lld --reproduce tar archives."""
     bindir = os.path.join(ROOT, "bin", "converter", "windows-x64")
     msg, binaries = _no_hevc_in_shipped_binaries(bindir)
     if msg:
@@ -1707,6 +1832,11 @@ def _heif_windows_link_checks():
         return fail(f"heif: {msg}")
     print(f"heif: none of the {len(entries)} files ({len(libs)} libraries by content) "
           f"in the Windows dependency prefix contains an HEVC implementation")
+    msg, n_exes, n_unique = _no_hevc_in_windows_repro_links()
+    if msg:
+        return fail(f"heif: {msg}")
+    print(f"heif: lld --reproduce across {n_exes} Windows executables "
+          f"({n_unique} unique resolved input files) contains no HEVC implementation")
     return 0
 
 
