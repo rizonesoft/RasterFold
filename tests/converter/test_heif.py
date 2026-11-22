@@ -423,6 +423,25 @@ class NoHevcArtifactProofTests(unittest.TestCase):
             self.assertIn("libde265", msg)
             thin_ext.unlink()
 
+            # Thin archive members whose names end in trailing whitespace:
+            # (a) clean member 'clean_ws.o ' with no trimmed sibling must pass
+            # (b) HEVC-string member 'codec_ws.o ' alongside clean sibling 'codec_ws.o' must fail on libde265
+            shutil.copyfile(t / "unused_ok.o", t / "clean_ws.o ")
+            thin_ws_clean = prefix / "lib" / "thin_ws_clean.bin"
+            run_ok([str(ar), "rcsT", str(thin_ws_clean), str(t / "clean_ws.o ")])
+            msg, _, _ = cc._no_hevc_in_dependency_prefix(str(prefix))
+            self.assertIsNone(msg)
+            thin_ws_clean.unlink()
+
+            shutil.copyfile(t / "unused_ok.o", t / "codec_ws.o")
+            shutil.copyfile(t / "ext_sig.o", t / "codec_ws.o ")
+            thin_ws_bad = prefix / "lib" / "thin_ws_bad.bin"
+            run_ok([str(ar), "rcsT", str(thin_ws_bad), str(t / "codec_ws.o ")])
+            msg, _, _ = cc._no_hevc_in_dependency_prefix(str(prefix))
+            self.assertIsNotNone(msg)
+            self.assertIn("libde265", msg)
+            thin_ws_bad.unlink()
+
             (prefix / "lib" / "dangling.a").symlink_to(t / "nowhere.a")
             with self.assertRaises(RuntimeError):
                 cc._no_hevc_in_dependency_prefix(str(prefix))

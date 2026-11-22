@@ -1587,18 +1587,21 @@ def _no_hevc_in_shipped_binaries(bindir):
 
 def _no_hevc_in_thin_archive_members(path):
     """Inspect every member referenced by a thin archive (!<thin>\\n) for
-    HEVC names, PE imports, and encoder/decoder strings. Fails closed
+    HEVC names, PE imports, and encoder/decoder strings, preserving exact
+    member filename bytes (including leading/trailing whitespace). Fails closed
     (RuntimeError) if llvm-ar fails or any referenced member is unreadable."""
+    import subprocess
     tool = _llvm_tool("llvm-ar")
-    res = run_capture([tool, "t", path], timeout=120.0)
+    res = subprocess.run([tool, "t", path], capture_output=True, timeout=120.0)
     if res.returncode != 0:
-        raise RuntimeError(f"llvm-ar t failed on {path}: {res.stderr.strip()[:200]}")
+        err = res.stderr.decode("utf-8", errors="replace").strip()[:200]
+        raise RuntimeError(f"llvm-ar t failed on {path}: {err}")
     base_dir = os.path.dirname(path)
     seen = set()
-    for line in res.stdout.splitlines():
-        rel = line.strip()
-        if not rel:
+    for raw_line in res.stdout.splitlines():
+        if not raw_line:
             continue
+        rel = os.fsdecode(raw_line)
         full = rel if os.path.isabs(rel) else os.path.join(base_dir, rel)
         if not os.path.isfile(full):
             raise RuntimeError(f"thin archive {path} references unreadable member {full}")
