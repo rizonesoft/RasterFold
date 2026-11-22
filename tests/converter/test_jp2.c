@@ -1405,6 +1405,67 @@ static void test_review_round1_regressions(void) {
                 rfc_frame_free(&dec[0]);
                 al.free(al.ctx, dec);
                 adp->close_session(sd);
+
+                /* Finding 24a: xml box exceeding max_metadata_bytes must fail
+                 * BEFORE any XML parser allocation (peak == 0, alloc_count == 0). */
+                {
+                    rfc_budget *bl = rfc_budget_create(1024u * 1024u);
+                    CHECK(bl != NULL);
+                    rfc_allocator bal;
+                    rfc_budget_allocator(bl, &bal);
+                    rfc_exec_context bex;
+                    memset(&bex, 0, sizeof(bex));
+                    bex.codec_threads = 1u;
+                    rfc_limits_default(&bex.limits);
+                    bex.limits.max_metadata_bytes = 256u;
+                    bex.allocator = &bal;
+                    bex.budget = bl;
+                    void *bsd = NULL;
+                    rfc_image_probe bpr;
+                    memset(&bpr, 0, sizeof(bpr));
+                    CHECK(adp->open_session(&bex, &bsd) == RFC_OK);
+                    rfc_budget_stats bstat_before, bstat_after;
+                    rfc_budget_stats_get(bl, &bstat_before);
+                    CHECK(adp->probe_session(bsd, &bex, mm, e4.len + 8u + pos,
+                                             &bpr) == RFC_ERR_LIMIT_EXCEEDED);
+                    rfc_budget_stats_get(bl, &bstat_after);
+                    adp->close_session(bsd);
+                    rfc_budget_stats bstat_end;
+                    rfc_budget_stats_get(bl, &bstat_end);
+                    CHECK(bstat_after.allocation_count == bstat_before.allocation_count &&
+                          bstat_after.peak_allocated_bytes == bstat_before.peak_allocated_bytes &&
+                          bstat_end.current_allocated_bytes == 0u);
+                    rfc_budget_destroy(bl);
+                }
+
+                /* Finding 24b: valid 260-attr XMP xml box under a tight job
+                 * budget must fail with RFC_ERR_OUT_OF_MEMORY (never silently
+                 * misclassified as unrecognized XML), within limit, 0 live. */
+                {
+                    rfc_budget *bt = rfc_budget_create(2048u);
+                    CHECK(bt != NULL);
+                    rfc_allocator bal;
+                    rfc_budget_allocator(bt, &bal);
+                    rfc_exec_context bex;
+                    memset(&bex, 0, sizeof(bex));
+                    bex.codec_threads = 1u;
+                    rfc_limits_default(&bex.limits);
+                    bex.allocator = &bal;
+                    bex.budget = bt;
+                    void *bsd = NULL;
+                    rfc_image_probe bpr;
+                    memset(&bpr, 0, sizeof(bpr));
+                    CHECK(adp->open_session(&bex, &bsd) == RFC_OK);
+                    CHECK(adp->probe_session(bsd, &bex, mm, e4.len + 8u + pos,
+                                             &bpr) == RFC_ERR_OUT_OF_MEMORY);
+                    adp->close_session(bsd);
+                    rfc_budget_stats bstat;
+                    rfc_budget_stats_get(bt, &bstat);
+                    CHECK(bstat.rejected_count > 0u &&
+                          bstat.peak_allocated_bytes <= 2048u &&
+                          bstat.current_allocated_bytes == 0u);
+                    rfc_budget_destroy(bt);
+                }
                 free(mm);
 
                 size_t dpos = base_pos;

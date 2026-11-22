@@ -564,17 +564,41 @@ static size_t jp2_utf8_encode(uint32_t cp, uint8_t out[4]) {
     return 4u;
 }
 
+static void *jp2_xml_realloc(const rfc_allocator *alloc,
+                             void *old_ptr,
+                             size_t old_bytes,
+                             size_t new_bytes) {
+    if (!alloc || !alloc->alloc || !alloc->free || new_bytes == 0u) {
+        return NULL;
+    }
+    void *np = alloc->alloc(alloc->ctx, new_bytes);
+    if (!np) {
+        return NULL;
+    }
+    if (old_ptr && old_bytes > 0u) {
+        size_t copy_n = (old_bytes < new_bytes) ? old_bytes : new_bytes;
+        memcpy(np, old_ptr, copy_n);
+        alloc->free(alloc->ctx, old_ptr);
+    }
+    return np;
+}
+
 typedef struct jp2_xml_buf {
     uint8_t *data;
     size_t len;
     size_t cap;
 } jp2_xml_buf;
 
-static int jp2_xml_buf_append(jp2_xml_buf *b, const uint8_t *src, size_t n) {
+static int jp2_xml_buf_append(jp2_xml_buf *b,
+                              const rfc_allocator *alloc,
+                              int *oom,
+                              const uint8_t *src,
+                              size_t n) {
     if (n == 0u) {
         return 1;
     }
     if (n > SIZE_MAX - b->len) {
+        if (oom) *oom = 1;
         return 0;
     }
     size_t need = b->len + n;
@@ -587,8 +611,9 @@ static int jp2_xml_buf_append(jp2_xml_buf *b, const uint8_t *src, size_t n) {
             }
             ncap *= 2u;
         }
-        uint8_t *nd = (uint8_t *)realloc(b->data, ncap);
+        uint8_t *nd = (uint8_t *)jp2_xml_realloc(alloc, b->data, b->cap, ncap);
         if (!nd) {
+            if (oom) *oom = 1;
             return 0;
         }
         b->data = nd;
@@ -601,11 +626,13 @@ static int jp2_xml_buf_append(jp2_xml_buf *b, const uint8_t *src, size_t n) {
 
 /* Validate an XML 1.0 attribute value (no literal '<', valid UTF-8 XML chars,
  * valid numeric character references and predefined entity references) and, if
- * out_buf != NULL, append its normalized/decoded UTF-8 value into out_buf.
- * Returns 1 if well-formed, 0 otherwise. */
+ * out_buf != NULL, append its normalized/decoded UTF-8 value into out_buf via
+ * alloc. Returns 1 if well-formed, 0 otherwise (setting *oom = 1 on budget/OOM). */
 static int jp2_xml_decode_attr_val(const uint8_t *val,
                                    size_t val_len,
-                                   jp2_xml_buf *out_buf) {
+                                   jp2_xml_buf *out_buf,
+                                   const rfc_allocator *alloc,
+                                   int *oom) {
     size_t pos = 0u;
     while (pos < val_len) {
         uint8_t c = val[pos];
@@ -684,7 +711,7 @@ static int jp2_xml_decode_attr_val(const uint8_t *val,
         if (out_buf) {
             uint8_t enc[4];
             size_t elen = jp2_utf8_encode(out_cp, enc);
-            if (!jp2_xml_buf_append(out_buf, enc, elen)) {
+            if (!jp2_xml_buf_append(out_buf, alloc, oom, enc, elen)) {
                 return 0;
             }
         }
@@ -815,6 +842,8 @@ typedef struct jp2_xml_attr {
 } jp2_xml_attr;
 
 typedef struct jp2_xml_parser {
+    const rfc_allocator *alloc;
+    int oom;
     jp2_xml_elem *stack;
     size_t depth;
     size_t stack_cap;
@@ -830,11 +859,13 @@ typedef struct jp2_xml_parser {
 } jp2_xml_parser;
 
 static void jp2_xml_parser_free(jp2_xml_parser *xp) {
-    free(xp->stack);
-    free(xp->ns);
-    free(xp->uri_arena.data);
-    free(xp->attrs);
-    free(xp->ht);
+    if (xp->alloc && xp->alloc->free) {
+        if (xp->stack) xp->alloc->free(xp->alloc->ctx, xp->stack);
+        if (xp->ns) xp->alloc->free(xp->alloc->ctx, xp->ns);
+        if (xp->uri_arena.data) xp->alloc->free(xp->alloc->ctx, xp->uri_arena.data);
+        if (xp->attrs) xp->alloc->free(xp->alloc->ctx, xp->attrs);
+        if (xp->ht) xp->alloc->free(xp->alloc->ctx, xp->ht);
+    }
     memset(xp, 0, sizeof(*xp));
 }
 
@@ -842,10 +873,13 @@ static int jp2_xml_stack_push(jp2_xml_parser *xp, size_t off, size_t len) {
     if (xp->depth == xp->stack_cap) {
         size_t ncap = xp->stack_cap ? xp->stack_cap * 2u : 64u;
         if (ncap < xp->depth + 1u || ncap > SIZE_MAX / sizeof(jp2_xml_elem)) {
+            xp->oom = 1;
             return 0;
         }
-        jp2_xml_elem *ns = (jp2_xml_elem *)realloc(xp->stack, ncap * sizeof(*ns));
+        jp2_xml_elem *ns = (jp2_xml_elem *)jp2_xml_realloc(
+            xp->alloc, xp->stack, xp->stack_cap * sizeof(*ns), ncap * sizeof(*ns));
         if (!ns) {
+            xp->oom = 1;
             return 0;
         }
         xp->stack = ns;
@@ -866,10 +900,13 @@ static int jp2_xml_ns_push(jp2_xml_parser *xp,
     if (xp->ns_count == xp->ns_cap) {
         size_t ncap = xp->ns_cap ? xp->ns_cap * 2u : 16u;
         if (ncap < xp->ns_count + 1u || ncap > SIZE_MAX / sizeof(jp2_xml_ns)) {
+            xp->oom = 1;
             return 0;
         }
-        jp2_xml_ns *nn = (jp2_xml_ns *)realloc(xp->ns, ncap * sizeof(*nn));
+        jp2_xml_ns *nn = (jp2_xml_ns *)jp2_xml_realloc(
+            xp->alloc, xp->ns, xp->ns_cap * sizeof(*nn), ncap * sizeof(*nn));
         if (!nn) {
+            xp->oom = 1;
             return 0;
         }
         xp->ns = nn;
@@ -895,10 +932,13 @@ static int jp2_xml_attr_push(jp2_xml_parser *xp, const jp2_xml_attr *a) {
     if (xp->attr_count == xp->attr_cap) {
         size_t ncap = xp->attr_cap ? xp->attr_cap * 2u : 16u;
         if (ncap < xp->attr_count + 1u || ncap > SIZE_MAX / sizeof(jp2_xml_attr)) {
+            xp->oom = 1;
             return 0;
         }
-        jp2_xml_attr *na = (jp2_xml_attr *)realloc(xp->attrs, ncap * sizeof(*na));
+        jp2_xml_attr *na = (jp2_xml_attr *)jp2_xml_realloc(
+            xp->alloc, xp->attrs, xp->attr_cap * sizeof(*na), ncap * sizeof(*na));
         if (!na) {
+            xp->oom = 1;
             return 0;
         }
         xp->attrs = na;
@@ -920,16 +960,20 @@ static int jp2_xml_ht_prepare(jp2_xml_parser *xp, size_t count) {
     size_t need = 32u;
     while (need < count * 2u + 8u) {
         if (need > SIZE_MAX / 2u) {
+            xp->oom = 1;
             return 0;
         }
         need *= 2u;
     }
     if (need > xp->ht_cap) {
         if (need > SIZE_MAX / sizeof(size_t)) {
+            xp->oom = 1;
             return 0;
         }
-        size_t *nh = (size_t *)realloc(xp->ht, need * sizeof(size_t));
+        size_t *nh = (size_t *)jp2_xml_realloc(
+            xp->alloc, xp->ht, xp->ht_cap * sizeof(size_t), need * sizeof(size_t));
         if (!nh) {
+            xp->oom = 1;
             return 0;
         }
         xp->ht = nh;
@@ -1223,13 +1267,15 @@ static int jp2_xml_parse_start_tag(jp2_xml_parser *xp,
     for (size_t k = 0u; k < xp->attr_count; k++) {
         const jp2_xml_attr *a = &xp->attrs[k];
         if (!a->is_xmlns) {
-            if (!jp2_xml_decode_attr_val(p + a->val_off, a->val_len, NULL)) {
+            if (!jp2_xml_decode_attr_val(p + a->val_off, a->val_len,
+                                         NULL, NULL, NULL)) {
                 return 0;
             }
             continue;
         }
         size_t uri_off = xp->uri_arena.len;
-        if (!jp2_xml_decode_attr_val(p + a->val_off, a->val_len, &xp->uri_arena)) {
+        if (!jp2_xml_decode_attr_val(p + a->val_off, a->val_len,
+                                     &xp->uri_arena, xp->alloc, &xp->oom)) {
             return 0;
         }
         size_t uri_len = xp->uri_arena.len - uri_off;
@@ -1341,9 +1387,16 @@ static int jp2_xml_parse_start_tag(jp2_xml_parser *xp,
     return 1;
 }
 
-static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
+static rfc_status jp2_classify_xmp_xml(const uint8_t *p,
+                                       size_t len,
+                                       const rfc_allocator *alloc,
+                                       int *out_is_xmp) {
+    *out_is_xmp = 0;
     if (!p || len < 11u) {
-        return 0;
+        return RFC_OK;
+    }
+    if (!alloc || !alloc->alloc || !alloc->free) {
+        return RFC_ERR_INVALID_ARGUMENT;
     }
     size_t i = 0u;
     if (len >= 3u && p[0] == 0xEFu && p[1] == 0xBBu && p[2] == 0xBFu) {
@@ -1353,17 +1406,18 @@ static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
     if (len - i >= 6u && memcmp(p + i, "<?xml", 5u) == 0 &&
         jp2_is_xml_ws(p[i + 5u])) {
         if (!jp2_xml_parse_xmldecl(p, len, &i)) {
-            return 0;
+            return RFC_OK;
         }
     }
     /* Prolog Misc*: whitespace, comments, and any legal XML PI (including
      * <?xpacket ...?> and <?xml-stylesheet ...?>). */
     if (!jp2_xml_skip_misc(p, len, &i)) {
-        return 0;
+        return RFC_OK;
     }
 
     jp2_xml_parser xp;
     memset(&xp, 0, sizeof(xp));
+    xp.alloc = alloc;
     int ok = 0;
 
     size_t root_off = 0u, root_len = 0u;
@@ -1459,7 +1513,8 @@ static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
                 goto done;
             }
             i++; /* include ';' */
-            if (!jp2_xml_decode_attr_val(p + ref_start, i - ref_start, NULL)) {
+            if (!jp2_xml_decode_attr_val(p + ref_start, i - ref_start,
+                                         NULL, NULL, NULL)) {
                 goto done;
             }
         } else {
@@ -1480,12 +1535,21 @@ static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
     ok = (i == len) ? 1 : 0;
 
 done:
-    jp2_xml_parser_free(&xp);
-    return ok;
+    {
+        int was_oom = xp.oom;
+        jp2_xml_parser_free(&xp);
+        if (was_oom) {
+            return RFC_ERR_OUT_OF_MEMORY;
+        }
+        *out_is_xmp = ok;
+        return RFC_OK;
+    }
 }
 
 static rfc_status jp2_scan_input(const uint8_t *bytes,
                                  size_t size,
+                                 const rfc_limits *limits,
+                                 const rfc_allocator *alloc,
                                  jp2_scan_info *out) {
     memset(out, 0, sizeof(*out));
     if (!bytes) {
@@ -1686,15 +1750,24 @@ static rfc_status jp2_scan_input(const uint8_t *bytes,
             saw_jp2c = 1;
         } else if (tbox == 0x786D6C20u) { /* xml  */
             if (plen > 0u) {
-                if (jp2_is_xmp_xml(bytes + poff, plen)) {
-                    if (!out->xmp) {
+                if (limits && plen > limits->max_metadata_bytes) {
+                    return RFC_ERR_LIMIT_EXCEEDED;
+                }
+                if (out->xmp) {
+                    out->has_unpreserved_meta = 1;
+                } else {
+                    int is_xmp = 0;
+                    rfc_status xst = jp2_classify_xmp_xml(
+                        bytes + poff, plen, alloc, &is_xmp);
+                    if (xst != RFC_OK) {
+                        return xst;
+                    }
+                    if (is_xmp) {
                         out->xmp = bytes + poff;
                         out->xmp_len = plen;
                     } else {
                         out->has_unpreserved_meta = 1;
                     }
-                } else {
-                    out->has_unpreserved_meta = 1;
                 }
             }
         } else if (tbox == 0x75756964u) { /* uuid */
@@ -2220,7 +2293,7 @@ static rfc_status jp2_probe_session(void *session,
     }
 
     jp2_scan_info info;
-    st = jp2_scan_input(bytes, size, &info);
+    st = jp2_scan_input(bytes, size, limits, exec->allocator, &info);
     if (st != RFC_OK) {
         return st;
     }
@@ -2332,7 +2405,7 @@ static rfc_status jp2_decode_session(void *session,
     }
 
     jp2_scan_info info;
-    st = jp2_scan_input(bytes, size, &info);
+    st = jp2_scan_input(bytes, size, limits, exec->allocator, &info);
     if (st != RFC_OK) {
         return st;
     }
