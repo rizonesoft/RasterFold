@@ -1021,9 +1021,31 @@ static int jp2_xml_resolve_ns(const jp2_xml_parser *xp,
     return 0;
 }
 
+static int jp2_ascii_ieq(const uint8_t *a, size_t n, const char *lit) {
+    size_t m = strlen(lit);
+    if (n != m) {
+        return 0;
+    }
+    for (size_t k = 0u; k < n; k++) {
+        uint8_t ca = a[k];
+        uint8_t cb = (uint8_t)lit[k];
+        if (ca >= 'A' && ca <= 'Z') ca = (uint8_t)(ca - 'A' + 'a');
+        if (cb >= 'A' && cb <= 'Z') cb = (uint8_t)(cb - 'A' + 'a');
+        if (ca != cb) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 /* Parse strict W3C XML 1.0 (5th ed.) §2.8 XMLDecl starting at p[*pos]:
- * '<?xml' S VersionInfo EncodingDecl? SDDecl? S? '?>' */
-static int jp2_xml_parse_xmldecl(const uint8_t *p, size_t len, size_t *pos) {
+ * '<?xml' S VersionInfo EncodingDecl? SDDecl? S? '?>'
+ * Also verifies any declared encoding is compatible with this UTF-8 byte stream
+ * (UTF-8, or US-ASCII/ASCII when no BOM and all document bytes are < 0x80). */
+static int jp2_xml_parse_xmldecl(const uint8_t *p,
+                                 size_t len,
+                                 int has_bom,
+                                 size_t *pos) {
     size_t i = *pos;
     if (len - i < 6u || memcmp(p + i, "<?xml", 5u) != 0 ||
         !jp2_is_xml_ws(p[i + 5u])) {
@@ -1062,6 +1084,7 @@ static int jp2_xml_parse_xmldecl(const uint8_t *p, size_t len, size_t *pos) {
         while (i < len && jp2_is_xml_ws(p[i])) i++;
         if (i >= len || (p[i] != '"' && p[i] != '\'')) return 0;
         q = p[i++];
+        size_t enc_start = i;
         if (i >= len ||
             !((p[i] >= 'A' && p[i] <= 'Z') || (p[i] >= 'a' && p[i] <= 'z'))) {
             return 0;
@@ -1076,6 +1099,22 @@ static int jp2_xml_parse_xmldecl(const uint8_t *p, size_t len, size_t *pos) {
             i++;
         }
         if (i >= len || p[i] != q) return 0;
+        size_t enc_len = i - enc_start;
+        if (jp2_ascii_ieq(p + enc_start, enc_len, "utf-8")) {
+            /* UTF-8 matches this UTF-8 byte stream (with or without UTF-8 BOM). */
+        } else if (jp2_ascii_ieq(p + enc_start, enc_len, "us-ascii") ||
+                   jp2_ascii_ieq(p + enc_start, enc_len, "ascii")) {
+            if (has_bom) {
+                return 0;
+            }
+            for (size_t k = 0u; k < len; k++) {
+                if (p[k] >= 0x80u) {
+                    return 0;
+                }
+            }
+        } else {
+            return 0; /* encoding contradicts or is unsupported on this UTF-8 byte stream */
+        }
         i++;
         after_ver = i;
         while (i < len && jp2_is_xml_ws(p[i])) i++;
@@ -1399,13 +1438,15 @@ static rfc_status jp2_classify_xmp_xml(const uint8_t *p,
         return RFC_ERR_INVALID_ARGUMENT;
     }
     size_t i = 0u;
+    int has_bom = 0;
     if (len >= 3u && p[0] == 0xEFu && p[1] == 0xBBu && p[2] == 0xBFu) {
         i = 3u;
+        has_bom = 1;
     }
     /* Optional XMLDecl strictly at document start (after optional UTF-8 BOM). */
     if (len - i >= 6u && memcmp(p + i, "<?xml", 5u) == 0 &&
         jp2_is_xml_ws(p[i + 5u])) {
-        if (!jp2_xml_parse_xmldecl(p, len, &i)) {
+        if (!jp2_xml_parse_xmldecl(p, len, has_bom, &i)) {
             return RFC_OK;
         }
     }

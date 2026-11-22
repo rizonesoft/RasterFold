@@ -1327,9 +1327,11 @@ static void test_review_round1_regressions(void) {
                 "<?xpacket begin=\"\xEF\xBB\xBF\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
                 "<m:xmpmeta xmlns:m=\"adobe:ns:meta/\">"
                 "<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"/></m:xmpmeta>"
-                "<?xpacket end=\"w\"?>"
+                "<?xpacket end=\"w\"?>",
+                "<?xml version=\"1.0\" encoding=\"US-ASCII\"?>"
+                "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"/>"
             };
-            for (size_t gi = 0u; gi < 6u; gi++) {
+            for (size_t gi = 0u; gi < 7u; gi++) {
                 const char *good_xmp = good_cases[gi];
                 size_t glen = strlen(good_xmp);
                 uint8_t *mg = (uint8_t *)malloc(e4.len + 8u + glen);
@@ -1495,9 +1497,11 @@ static void test_review_round1_regressions(void) {
                 "<m:xmpmeta xmlns:m=\"adobe:ns:meta/\"/>trailing",
                 "<?xml garbage?><x:xmpmeta xmlns:x=\"adobe:ns:meta/\"/>",
                 "<?xml version=\"2.0\"?><x:xmpmeta xmlns:x=\"adobe:ns:meta/\"/>",
+                "<?xml version=\"1.0\" encoding=\"UTF-16\"?><x:xmpmeta xmlns:x=\"adobe:ns:meta/\"/>",
+                "<?xml version=\"1.0\" encoding=\"US-ASCII\"?><x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\xC3\xA9</x:xmpmeta>",
                 "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\" xmlns:a=\"urn:u\" xmlns:b=\"urn:u\" a:k=\"1\" b:k=\"2\"/>"
             };
-            for (size_t bi = 0u; bi < 11u; bi++) {
+            for (size_t bi = 0u; bi < 13u; bi++) {
                 const char *bad_xmp = bad_cases[bi];
                 size_t blen = strlen(bad_xmp);
                 uint8_t *mb = (uint8_t *)malloc(e4.len + 8u + blen);
