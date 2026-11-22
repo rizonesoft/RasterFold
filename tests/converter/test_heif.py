@@ -283,229 +283,114 @@ class WindowsHeifTests(HeifAdapterBase):
             self.assertLessEqual(growth, reserve, f"{w}x{h}")
 
 
-class LinkMatcherTests(unittest.TestCase):
-    """The no-HEVC link check recognises the ordinary linker spellings."""
+class NoHevcArtifactProofTests(unittest.TestCase):
+    """Class regression for the shipped-artifact and dependency-prefix no-HEVC proof."""
 
-    def test_hevc_link_names(self) -> None:
-        cc = _load_mod("_rfc_check_conv", ROOT / "scripts" / "check-converter.py")
-        for tok in ("libx265.a", "-lx265", "libkvazaar.a", "/opt/lib/libde265.a", "-lheif",
-                    "libheif.dll.a", "x265.lib", "libopenhevc.a", "-l:libx265.a", "-l:/opt/libde265.a"):
-            self.assertIsNotNone(cc._hevc_link_name(tok), tok)
-        for tok in ("rfc_test_heif.exe", "heif_scan.c.obj", "librfc_engine.a", "-lole32", "libavif.a",
-                    "libjxl.a"):
-            self.assertIsNone(cc._hevc_link_name(tok), tok)
-
-    def test_linker_reported_inputs_catch_flag_and_search_path_archives(self) -> None:
-        """An HEVC-named archive reached only through -Wl, flags and a library
-        search path, with no member extracted, is still among the inputs lld
-        reports reading, so the check sees it however the command spells it."""
+    def test_shipped_binaries_and_prefix_catch_hevc_by_content_and_imports(self) -> None:
         cc = _load_mod("_rfc_check_conv", ROOT / "scripts" / "check-converter.py")
         tc = ROOT / "tools" / "llvm-mingw-linux" / "bin"
-        clang, ar = tc / "x86_64-w64-mingw32-clang", tc / "llvm-ar"
-        if not clang.exists() or not ar.exists():
+        clang, ar, strip = tc / "x86_64-w64-mingw32-clang", tc / "llvm-ar", tc / "llvm-strip"
+        if not clang.exists() or not ar.exists() or not strip.exists():
             self.skipTest("the pinned llvm-mingw toolchain is not provisioned")
         with tempfile.TemporaryDirectory() as td:
             t = Path(td)
-            (t / "unused.c").write_text("int x265_unused(void) { return 1; }\n")
-            (t / "main.c").write_text("int main(void) { return 0; }\n")
-            obj = _ref.run_process_tree([str(clang), "-c", str(t / "unused.c"), "-o", str(t / "unused.o")],
-                                       capture_output=True, timeout=120.0)
-            self.assertEqual(obj.returncode, 0, obj.stderr)
-            mo = _ref.run_process_tree([str(clang), "-c", str(t / "main.c"), "-o", str(t / "main.o")],
-                                       capture_output=True, timeout=120.0)
-            self.assertEqual(mo.returncode, 0, mo.stderr)
-            lib = t / "deps"
-            lib.mkdir()
-            ok = _ref.run_process_tree([str(ar), "rcs", str(lib / "libx265.a"), str(t / "unused.o")],
-                                      capture_output=True, timeout=60.0)
-            self.assertEqual(ok.returncode, 0, ok.stderr)
-            for spelling in (["-Wl,-L" + str(lib), "-Wl,-lx265"], ["-Wl,-L" + str(lib), "-Wl,-l:libx265.a"]):
-                link = _ref.run_process_tree([str(clang), str(t / "main.o"), "-o", str(t / "m.exe"), *spelling,
-                                             "-Wl,--verbose"], cwd=td, capture_output=True, timeout=300.0)
-                self.assertEqual(link.returncode, 0, link.stderr[-400:])
-                files = cc._linker_inputs_from_verbose(link.stdout + "\n" + link.stderr, td)
-                self.assertEqual(cc._hevc_among_inputs(files), str(lib / "libx265.a"), spelling)
-            clean = _ref.run_process_tree([str(clang), str(t / "main.o"), "-o", str(t / "c.exe"), "-Wl,--verbose"],
-                                         cwd=td, capture_output=True, timeout=300.0)
-            self.assertIsNone(cc._hevc_among_inputs(
-                cc._linker_inputs_from_verbose(clean.stdout + "\n" + clean.stderr, td)))
+            (t / "ok.c").write_text("int neutral_fn(void) { return 0; }\nint main(void) { return neutral_fn(); }\n")
+            (t / "enc.c").write_text(
+                "const char *x265_encoder_open(void) { return \"x265_encoder_open\"; }\n"
+                "int main(void) { return x265_encoder_open()[0] == 0; }\n"
+            )
+            (t / "dll_hevc.c").write_text(
+                "__declspec(dllexport) int de265_new_decoder(void) { return 1; }\n"
+            )
+            (t / "use_dll.c").write_text(
+                "__declspec(dllimport) int de265_new_decoder(void);\n"
+                "int main(void) { return de265_new_decoder() - 1; }\n"
+            )
 
+            def run_ok(cmd: list[str]) -> None:
+                r = _ref.run_process_tree(cmd, capture_output=True, timeout=120.0)
+                self.assertEqual(r.returncode, 0, r.stderr)
 
-    def test_dependency_prefix_and_lib_archives_are_checked(self) -> None:
-        """An unused HEVC-named archive in the dependency prefix fails the name
-        check, and a neutrally named .lib whose member defines an x265 symbol
-        joins the symbol scan and fails it."""
-        cc = _load_mod("_rfc_check_conv", ROOT / "scripts" / "check-converter.py")
-        tc = ROOT / "tools" / "llvm-mingw-linux" / "bin"
-        clang, ar = tc / "x86_64-w64-mingw32-clang", tc / "llvm-ar"
-        if not clang.exists() or not ar.exists():
-            self.skipTest("the pinned llvm-mingw toolchain is not provisioned")
-        with tempfile.TemporaryDirectory() as td:
-            t = Path(td)
+            # 1. Clean shipped executable passes
+            clean_bin = t / "bin_clean"
+            clean_bin.mkdir()
+            run_ok([str(clang), str(t / "ok.c"), "-o", str(clean_bin / "app.exe")])
+            msg, bins = cc._no_hevc_in_shipped_binaries(str(clean_bin))
+            self.assertIsNone(msg)
+            self.assertEqual(bins, [str(clean_bin / "app.exe")])
+
+            # 2. Shipped executable with HEVC symbol fails, and still fails when stripped (string scan)
+            sym_bin = t / "bin_sym"
+            sym_bin.mkdir()
+            run_ok([str(clang), str(t / "enc.c"), "-o", str(sym_bin / "app.exe")])
+            msg, _ = cc._no_hevc_in_shipped_binaries(str(sym_bin))
+            self.assertIsNotNone(msg)
+            self.assertIn("x265_encoder_open", msg)
+            run_ok([str(strip), "--strip-all", str(sym_bin / "app.exe")])
+            msg, _ = cc._no_hevc_in_shipped_binaries(str(sym_bin))
+            self.assertIsNotNone(msg)
+            self.assertIn("x265_encoder_open", msg)
+
+            # 3. Shipped executable importing an HEVC symbol from a neutrally named DLL fails on imports
+            imp_bin = t / "bin_imp"
+            imp_bin.mkdir()
+            run_ok([str(clang), "-shared", str(t / "dll_hevc.c"),
+                    "-Wl,--out-implib," + str(t / "libneutral.dll.a"),
+                    "-o", str(t / "neutral.dll")])
+            run_ok([str(clang), str(t / "use_dll.c"), str(t / "libneutral.dll.a"),
+                    "-o", str(imp_bin / "app.exe")])
+            msg, _ = cc._no_hevc_in_shipped_binaries(str(imp_bin))
+            self.assertIsNotNone(msg)
+            self.assertIn("de265_new_decoder", msg)
+
+            # 4. Empty shipped directory fails closed
+            empty_bin = t / "bin_empty"
+            empty_bin.mkdir()
+            with self.assertRaises(RuntimeError):
+                cc._no_hevc_in_shipped_binaries(str(empty_bin))
+
+            # 5. Dependency prefix: clean passes; neutrally named archive with HEVC content fails;
+            #    dangling link and unreadable subtree fail closed
             prefix = t / "deps-prefix"
-            (prefix / "lib" / "sub").mkdir(parents=True)
-            (t / "enc.c").write_text("int x265_encoder_open(void) { return 1; }\n")
-            (t / "ok.c").write_text("int neutral_fn(void) { return 1; }\n")
-            for name in ("enc", "ok"):
-                r = _ref.run_process_tree([str(clang), "-c", str(t / f"{name}.c"), "-o", str(t / f"{name}.o")],
-                                          capture_output=True, timeout=120.0)
-                self.assertEqual(r.returncode, 0, r.stderr)
-            def mkar(dst: Path, obj: str) -> None:
-                r = _ref.run_process_tree([str(ar), "rcs", str(dst), str(t / obj)], capture_output=True, timeout=60.0)
-                self.assertEqual(r.returncode, 0, r.stderr)
-            mkar(prefix / "lib" / "libneutral.a", "ok.o")
-            _ents, clean = cc._dependency_files(str(prefix))
-            self.assertEqual(clean, [str(prefix / "lib" / "libneutral.a")])
-            self.assertIsNone(cc._hevc_among_inputs(clean))
-            self.assertIsNone(cc._no_hevc_symbols(cc._symbol_scan_set([], {}, clean)))
-            # an unused HEVC-named archive, under any suffix spelling, is named
-            for spelling in ("libx265.a", "libx265.A", "x265.LIB", "libde265.Lib"):
-                mkar(prefix / "lib" / "sub" / spelling, "ok.o")  # never opened by lld
-                self.assertEqual(cc._hevc_among_inputs(cc._dependency_files(str(prefix))[0]),
-                                 str(prefix / "lib" / "sub" / spelling), spelling)
-                (prefix / "lib" / "sub" / spelling).unlink()
-            # a neutrally named archive with an HEVC member, under any name or
-            # suffix (none at all included), fails the symbol scan both as a
-            # prefix archive and as a linked input
-            for spelling in ("codec.lib", "codec.LIB", "codec.A", "codec.bin", "codec"):
-                mkar(prefix / "lib" / spelling, "enc.o")
-                deps = cc._dependency_files(str(prefix))[1]
-                self.assertIn(str(prefix / "lib" / spelling), deps, spelling)
-                self.assertIsNone(cc._hevc_among_inputs(deps))
-                linked = {"x.exe": [str(prefix / "lib" / spelling)]}
-                for scan in (cc._symbol_scan_set([], {}, deps), cc._symbol_scan_set([], linked, [])):
-                    msg = cc._no_hevc_symbols(scan)
-                    self.assertIsNotNone(msg, spelling)
-                    self.assertIn("x265_encoder_open", msg)
-                (prefix / "lib" / spelling).unlink()
-            # parser: a reported path that exists is kept whatever its spelling
-            # (parentheses included); an archive(member) annotation of an
-            # archive already read is covered by it; anything else fails closed
-            mkar(t / "codec(test)", "enc.o")
-            mkar(t / "plain.a", "ok.o")
-            got = cc._linker_inputs_from_verbose(
-                f"ld.lld: Reading codec(test)\nld.lld: Reading {t / 'plain.a'}\n"
-                "ld.lld: Reading plain.a(ok.o)\nld.lld: Reading enc.o", td)
-            self.assertEqual(got, [str(t / "codec(test)"), str(t / "plain.a"), str(t / "enc.o")])
-            self.assertIn("x265_encoder_open", cc._no_hevc_symbols(cc._symbol_scan_set([], {"x": got}, [])) or "")
-            for bad in ("ld.lld: Reading gone.a", "ld.lld: Reading other.a(m.o)"):
-                with self.assertRaises(RuntimeError):
-                    cc._linker_inputs_from_verbose(bad, td)
-            # an annotation is covered only by an archive already read: not by
-            # a non-archive of the same name, not by an archive elsewhere when
-            # a directory is named, and not when the name is ambiguous
-            (t / "same.a").write_text("not an archive")
-            (t / "d1").mkdir()
-            (t / "d2").mkdir()
-            mkar(t / "d1" / "dup.a", "ok.o")
-            mkar(t / "d2" / "dup.a", "ok.o")
-            for bad in (f"ld.lld: Reading {t / 'same.a'}\nld.lld: Reading /absent/same.a(m.o)",
-                        f"ld.lld: Reading {t / 'same.a'}\nld.lld: Reading same.a(m.o)",
-                        f"ld.lld: Reading {t / 'plain.a'}\nld.lld: Reading /absent/plain.a(m.o)",
-                        f"ld.lld: Reading {t / 'd1' / 'dup.a'}\nld.lld: Reading {t / 'd2' / 'dup.a'}\n"
-                        "ld.lld: Reading dup.a(ok.o)"):
-                with self.assertRaises(RuntimeError, msg=bad):
-                    cc._linker_inputs_from_verbose(bad, td)
-            self.assertEqual([os.path.realpath(x) for x in cc._linker_inputs_from_verbose(
-                f"ld.lld: Reading {t / 'plain.a'}\nld.lld: Reading {t / 'plain.a'}(ok.o)", td)],
-                [os.path.realpath(t / "plain.a")])
-            # a member whose own name holds parentheses belongs to its archive
-            def real(xs):
-                return [os.path.realpath(x) for x in xs]
-            plain = os.path.realpath(t / "plain.a")
-            for ann in ("plain.a(codec(v2).o)", f"{t / 'plain.a'}(codec(v2).o)", "plain.a((x)).o)",
-                        "./plain.a(ok.o)", "d1/../plain.a(ok.o)", f"{t}/./plain.a(codec(v2).o)"):
-                self.assertEqual(real(cc._linker_inputs_from_verbose(
-                    f"ld.lld: Reading {t / 'plain.a'}\nld.lld: Reading {ann}", td)), [plain], ann)
-            self.assertEqual(real(cc._linker_inputs_from_verbose(
-                "ld.lld: Reading ./plain.a\nld.lld: Reading ./plain.a(ok.o)", td)), [plain])
-            self.assertEqual(real(cc._linker_inputs_from_verbose(
-                f"ld.lld: Reading {t}/./plain.a\nld.lld: Reading {t}/d1/../plain.a(ok.o)", td)), [plain])
-            # identity is the filesystem's: a linked directory followed by `..`
-            # resolves through the link, as the system resolves it, in both the
-            # Reading line and its member annotation
-            (t / "deep" / "inner").mkdir(parents=True)
-            mkar(t / "deep" / "lib.a", "enc.o")
-            (t / "hop").symlink_to(t / "deep" / "inner", target_is_directory=True)
-            via = f"{t}/hop/../lib.a"  # the system reaches deep/lib.a; textual normpath says t/lib.a
-            self.assertFalse(os.path.exists(t / "lib.a"))
-            got = cc._linker_inputs_from_verbose(f"ld.lld: Reading {via}\nld.lld: Reading {via}(enc.o)", td)
-            self.assertEqual(real(got), [os.path.realpath(t / "deep" / "lib.a")])
-            self.assertIn("x265_encoder_open", cc._no_hevc_symbols(cc._symbol_scan_set([], {"x": got}, [])) or "")
-            # a neutrally named link to an HEVC-named archive is named by its target
-            mkar(t / "deep" / "libx265.a", "ok.o")
-            (t / "neutral.a").symlink_to(t / "deep" / "libx265.a")
-            got = cc._linker_inputs_from_verbose(f"ld.lld: Reading {t / 'neutral.a'}", td)
-            self.assertEqual(cc._hevc_among_inputs(got), str(t / "neutral.a"))
-            # two spellings of one archive, the forbidden one second: both are
-            # kept for the name check, and the archive is scanned once
-            mkar(t / "first.a", "ok.o")
-            (t / "libde265.a").symlink_to(t / "first.a")
-            got = cc._linker_inputs_from_verbose(
-                f"ld.lld: Reading {t / 'first.a'}\nld.lld: Reading {t / 'libde265.a'}\n"
-                "ld.lld: Reading libde265.a(ok.o)\nld.lld: Reading first.a(ok.o)", td)
-            self.assertEqual(got, [str(t / "first.a"), str(t / "libde265.a")])
-            self.assertEqual(cc._hevc_among_inputs(got), str(t / "libde265.a"))
-            self.assertEqual(cc._symbol_scan_set([], {"x": got}, []), [str(t / "first.a")])
-            got = cc._linker_inputs_from_verbose(
-                f"ld.lld: Reading {t / 'codec(test)'}\nld.lld: Reading codec(test)(enc(1).o)", td)
-            self.assertIn("x265_encoder_open", cc._no_hevc_symbols(cc._symbol_scan_set([], {"x": got}, [])) or "")
-            # a linked object, however named, is scanned too
-            linked = {"x.exe": [str(t / "enc.o")]}
-            self.assertIn("x265_encoder_open", cc._no_hevc_symbols(cc._symbol_scan_set([], linked, [])) or "")
-            # a file that is not an archive is not taken for one
-            (prefix / "lib" / "notes.a").write_text("not an archive")
-            self.assertNotIn(str(prefix / "lib" / "notes.a"), cc._dependency_files(str(prefix))[1])
-            (prefix / "lib" / "notes.a").unlink()
-            # symbolic links are followed: an HEVC-named link to a real archive
-            # is named, and a neutrally named link to an HEVC archive is scanned
-            store = t / "store"
-            store.mkdir()
-            mkar(store / "real.a", "ok.o")
-            mkar(store / "enc.a", "enc.o")
-            (prefix / "lib" / "libx265.a").symlink_to(store / "real.a")
-            self.assertEqual(cc._hevc_among_inputs(cc._dependency_files(str(prefix))[0]),
-                             str(prefix / "lib" / "libx265.a"))
-            (prefix / "lib" / "libx265.a").unlink()
-            (prefix / "lib" / "libcodec.a").symlink_to(store / "enc.a")
-            ents, deps = cc._dependency_files(str(prefix))
-            self.assertIn("x265_encoder_open", cc._no_hevc_symbols(cc._symbol_scan_set([], {}, deps)) or "")
-            (prefix / "lib" / "libcodec.a").unlink()
-            (prefix / "linked").symlink_to(store, target_is_directory=True)  # a linked directory
-            self.assertIn(str(prefix / "linked" / "enc.a"), cc._dependency_files(str(prefix))[1])
-            (prefix / "linked").unlink()
-            # entries that cannot be inspected fail closed
+            (prefix / "lib").mkdir(parents=True)
+            run_ok([str(clang), "-c", str(t / "ok.c"), "-o", str(t / "ok.o")])
+            run_ok([str(clang), "-c", str(t / "enc.c"), "-o", str(t / "enc.o")])
+            run_ok([str(ar), "rcs", str(prefix / "lib" / "libneutral.a"), str(t / "ok.o")])
+            msg, _entries, libs = cc._no_hevc_in_dependency_prefix(str(prefix))
+            self.assertIsNone(msg)
+            self.assertEqual(libs, [str(prefix / "lib" / "libneutral.a")])
+
+            # Neutrally named archive (no .a suffix) caught by content
+            bad_ar = prefix / "lib" / "codec.bin"
+            run_ok([str(ar), "rcs", str(bad_ar), str(t / "enc.o")])
+            msg, _, _ = cc._no_hevc_in_dependency_prefix(str(prefix))
+            self.assertIsNotNone(msg)
+            self.assertIn("x265_encoder_open", msg)
+            bad_ar.unlink()
+
+            # Dangling link fails closed
             (prefix / "lib" / "dangling.a").symlink_to(t / "nowhere.a")
             with self.assertRaises(RuntimeError):
-                cc._dependency_files(str(prefix))
+                cc._no_hevc_in_dependency_prefix(str(prefix))
             (prefix / "lib" / "dangling.a").unlink()
-            # a directory that cannot be listed fails closed
+
+            # Unreadable directory fails closed
             hidden = prefix / "lib" / "hidden"
             hidden.mkdir()
-            mkar(hidden / "libx265.a", "ok.o")
+            run_ok([str(ar), "rcs", str(hidden / "codec.bin"), str(t / "enc.o")])
             hidden.chmod(0)
             try:
                 if not os.access(hidden, os.R_OK):
                     with self.assertRaises(RuntimeError):
-                        cc._dependency_files(str(prefix))
+                        cc._no_hevc_in_dependency_prefix(str(prefix))
             finally:
                 hidden.chmod(0o755)
             shutil.rmtree(hidden)
-            locked = prefix / "lib" / "locked.a"
-            mkar(locked, "ok.o")
-            locked.chmod(0)
-            try:
-                if os.access(locked, os.R_OK):
-                    self.skipTest("running with privileges that ignore file modes")
-                with self.assertRaises(RuntimeError):
-                    cc._dependency_files(str(prefix))
-            finally:
-                locked.chmod(0o644)
 
 
 def load_tests(loader: unittest.TestLoader, tests: unittest.TestSuite, pattern: str | None) -> unittest.TestSuite:
     suite = unittest.TestSuite()
-    for cls in (LinkMatcherTests, HostHeifTests, WindowsHeifTests):
+    for cls in (NoHevcArtifactProofTests, HostHeifTests, WindowsHeifTests):
         suite.addTests(loader.loadTestsFromTestCase(cls))
     return suite
 

@@ -1398,14 +1398,37 @@ HEVC_SYMBOL_PREFIXES = ("x265_", "de265_", "kvz_", "heif_context_", "heif_image_
 HEVC_LIBRARY_NAMES = frozenset({"x265", "de265", "kvazaar", "openhevc", "heif"})
 
 
+HEVC_BINARY_STRINGS = (
+    b"x265_encoder_open",
+    b"x265_param_default",
+    b"x265_api_get",
+    b"libx265",
+    b"de265_new_decoder",
+    b"de265_decode",
+    b"libde265",
+    b"kvz_api_get",
+    b"kvazaar",
+    b"openhevc",
+    b"libheif",
+    b"heif_context_alloc",
+    b"heif_decode_image",
+)
+
+
+def _llvm_tool(name):
+    if os.name == "nt":
+        return os.path.join(ROOT, "tools", "llvm-mingw", "bin", f"{name}.exe")
+    return os.path.join(ROOT, "tools", "llvm-mingw-linux", "bin", name)
+
+
 def _hevc_link_name(token):
-    """The HEVC implementation a link token names, or None: the token's file
+    """The HEVC implementation a library/DLL token names, or None: the file
     name without '-l', a 'lib' prefix and library extensions, compared
-    exactly (so libx265.a, -lx265, libkvazaar.a and libheif.dll.a match,
+    exactly (so libx265.dll, libx265.a, -lx265, libkvazaar.a match,
     rfc_test_heif.exe does not)."""
     tok = token.strip().strip('"')
     if tok.startswith("-l:"):
-        tok = tok[3:]  # -l:<file> selects that exact archive
+        tok = tok[3:]
     elif tok.startswith("-l"):
         tok = tok[2:]
     name = os.path.basename(tok)
@@ -1419,167 +1442,55 @@ def _hevc_link_name(token):
     return low if low in HEVC_LIBRARY_NAMES else None
 
 
-def _linker_inputs_from_verbose(text, base_dir):
-    """The input files lld reports reading (its `ld.lld: Reading <file>`
-    lines under -Wl,--verbose), each as reported, joined to the link's
-    directory (the spelling the name check reads). Identity is the
-    filesystem's own (os.path.realpath, which resolves links before `..` as
-    the system does), never a textual normalisation. A reported path that is
-    a file is kept under every spelling lld reported (the symbol scan
-    deduplicates by identity); one that is not is accepted only as
-    lld's `archive(member)` annotation of exactly one archive already read.
-    Anything else fails closed (RuntimeError), so no input goes uninspected."""
-    files = []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line.startswith("ld.lld: Reading "):
-            continue
-        raw = line[len("ld.lld: Reading "):].strip()
-        path = os.path.join(base_dir, raw)  # an absolute raw path stays as reported
-        if os.path.isfile(path):
-            if path not in files:  # every spelling is kept: the name check reads each
-                files.append(path)
-            continue
-        if raw.endswith(")"):
-            # archive(member), either name possibly holding parentheses: every
-            # split point is tried, and the archive part is matched by
-            # filesystem identity, or by base name when lld gives only that
-            archives = [(os.path.realpath(f), f) for f in files if _is_archive(f)]
-            owners = set()
-            for cut in (i for i, ch in enumerate(raw) if ch == "(" and 0 < i < len(raw) - 2):
-                part = raw[:cut]
-                cand = os.path.join(base_dir, part)
-                ident = os.path.realpath(cand) if os.path.isfile(cand) else None
-                bare = os.path.basename(part) == part
-                for real, f in archives:
-                    if real == ident or (bare and os.path.basename(f) == part):
-                        owners.add(real)
-            if len(owners) == 1:
-                continue  # a member of an archive already read, scanned whole
-            if len(owners) > 1:
-                raise RuntimeError(f"lld read {raw}, whose archive name matches {len(owners)} archives read")
-        raise RuntimeError(f"lld read {raw}, which resolves to no file and no archive already read")
-    return files
+ARCHIVE_MAGICS = (b"!<arch>\n", b"!<thin>\n")
+COFF_OBJ_MAGICS = (b"\x64\x86", b"\x4c\x01", b"\x64\xaa")
 
 
-def _hevc_among_inputs(files):
-    """The first input whose file name, as reported or as the file it
-    resolves to, is an HEVC implementation, or None."""
-    for path in files:
+def _read_file_bytes(path, limit=None):
+    try:
+        with open(path, "rb") as fh:
+            return fh.read() if limit is None else fh.read(limit)
+    except OSError as exc:
+        raise RuntimeError(f"cannot read {path}: {exc}") from exc
+
+
+def _is_archive(path):
+    """A static archive by its content (the ar magic), whatever its name."""
+    return _read_file_bytes(path, 8) in ARCHIVE_MAGICS
+
+
+def _is_pe_binary(path):
+    """A PE executable or DLL by its MZ + PE\\0\\0 header, whatever its name."""
+    hdr = _read_file_bytes(path, 0x40)
+    if len(hdr) < 0x40 or hdr[:2] != b"MZ":
+        return False
+    pe_off = int.from_bytes(hdr[0x3C:0x40], "little")
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(pe_off)
+            return fh.read(4) == b"PE\x00\x00"
+    except OSError as exc:
+        raise RuntimeError(f"cannot read {path}: {exc}") from exc
+
+
+def _is_coff_object(path):
+    """A COFF object file by its machine header, whatever its name."""
+    return _read_file_bytes(path, 2) in COFF_OBJ_MAGICS
+
+
+def _hevc_among_names(paths):
+    """The first path whose file name, as given or resolved, names an HEVC
+    implementation, or None."""
+    for path in paths:
         if _hevc_link_name(path) or _hevc_link_name(os.path.realpath(path)):
             return path
     return None
 
 
-def _windows_linker_inputs():
-    """Relink every built Windows converter executable from its own Ninja link
-    command into a scratch output with -Wl,--verbose, and return
-    {executable: [input files lld read]}: the linker's own account of its
-    inputs, however the command spells them."""
-    import shlex
-    app = os.path.join(ROOT, "build", "converter", "windows-x64", "app")
-    bindir = os.path.join(ROOT, "bin", "converter", "windows-x64")
-    result = {}
-    exes = sorted(f for f in os.listdir(bindir) if f.endswith(".exe")) if os.path.isdir(bindir) else []
-    with tempfile.TemporaryDirectory() as td:
-        for exe in exes:
-            target = os.path.join(bindir, exe)
-            res = run_capture(["ninja", "-C", app, "-t", "commands", target], timeout=60.0)
-            lines = [l for l in res.stdout.splitlines() if l.strip()]
-            if res.returncode or not lines:
-                raise RuntimeError(f"no Ninja link command for {exe}")
-            cmd = lines[-1].strip()
-            if cmd.startswith(": && "):
-                cmd = cmd[5:]
-            if cmd.endswith(" && :"):
-                cmd = cmd[:-5]
-            argv = shlex.split(cmd)
-            out = os.path.join(td, exe)
-            for i, a in enumerate(argv):
-                if a == "-o" and i + 1 < len(argv):
-                    argv[i + 1] = out
-            argv = [a for a in argv if not a.startswith("-Wl,--out-implib")]
-            argv.append("-Wl,--verbose")
-            link = _ref.run_process_tree(argv, cwd=app, timeout=600.0, capture_output=True)
-            if link.returncode:
-                raise RuntimeError(f"verbose relink of {exe} failed: {link.stderr[-400:]}")
-            files = _linker_inputs_from_verbose(link.stdout + "\n" + link.stderr, app)
-            if not files:
-                raise RuntimeError(f"lld reported no inputs for {exe}")
-            result[exe] = files
-    return result
-
-
-ARCHIVE_MAGICS = (b"!<arch>\n", b"!<thin>\n")
-
-
-def _is_archive(path):
-    """A static archive by its content (the ar magic), whatever its name or
-    suffix spelling; a file that cannot be read fails closed (RuntimeError)."""
-    try:
-        with open(path, "rb") as fh:
-            return fh.read(8) in ARCHIVE_MAGICS
-    except OSError as exc:
-        raise RuntimeError(f"cannot read {path}: {exc}") from exc
-
-
-def _dependency_files(prefix):
-    """(every entry, every static archive) under the dependency prefix, at any
-    depth, symbolic links followed, archives found by content. An entry that
-    is neither a readable file nor a directory (a dangling link, a device)
-    fails closed (RuntimeError)."""
-    entries, archives, seen = [], [], set()
-    if not os.path.isdir(prefix):
-        return entries, archives
-    def _walk_error(exc):
-        raise RuntimeError(f"cannot list {getattr(exc, 'filename', prefix)}: {exc}") from exc
-
-    for dp, dn, fns in os.walk(prefix, onerror=_walk_error, followlinks=True):
-        real = os.path.realpath(dp)
-        if real in seen:
-            dn[:] = []
-            continue
-        seen.add(real)
-        for f in fns:
-            path = os.path.join(dp, f)
-            entries.append(path)
-            if not os.path.isfile(path):
-                raise RuntimeError(f"cannot inspect {path}: not a readable file")
-            if _is_archive(path):
-                archives.append(path)
-    return sorted(entries), sorted(archives)
-
-
-def _symbol_scan_set(executables, inputs, deps):
-    """The executables, every file any link read (archives and objects alike,
-    however named), and every dependency archive, each once."""
-    arts, seen = [], set()
-    for f in [*executables, *(f for files in inputs.values() for f in files), *deps]:
-        ident = os.path.realpath(f)
-        if ident not in seen:  # one scan per file, however it was reached
-            seen.add(ident)
-            arts.append(f)
-    return arts
-
-
-def _no_hevc_in_link_inputs():
-    """No file the linker reads for any Windows converter executable is an
-    HEVC implementation; returns (problem or None, {exe: inputs})."""
-    inputs = _windows_linker_inputs()
-    for exe, files in inputs.items():
-        bad = _hevc_among_inputs(files)
-        if bad:
-            return f"{exe} links {bad}", inputs
-    return None, inputs
-
-
 def _no_hevc_symbols(paths):
     """llvm-nm finds no external symbol of an HEVC implementation (x265,
-    libde265, kvazaar, or libheif's API) in the built artifacts; the
-    adapter's own file-local helpers are not external."""
-    tool = os.path.join(ROOT, "tools", "llvm-mingw-linux", "bin", "llvm-nm")
-    if os.name == "nt":
-        tool = os.path.join(ROOT, "tools", "llvm-mingw", "bin", "llvm-nm.exe")
+    libde265, kvazaar, or libheif's API) in the given binaries/archives."""
+    tool = _llvm_tool("llvm-nm")
     for path in paths:
         if not os.path.isfile(path):
             return f"missing artifact {path}"
@@ -1587,10 +1498,142 @@ def _no_hevc_symbols(paths):
         if res.returncode:
             return f"llvm-nm failed on {path}"
         for line in res.stdout.splitlines():
-            sym = line.split()[-1] if line.split() else ""
-            if sym.startswith(HEVC_SYMBOL_PREFIXES):
+            parts = line.split()
+            sym = parts[-1] if parts else ""
+            if sym.lstrip("_").startswith(HEVC_SYMBOL_PREFIXES):
                 return f"{os.path.relpath(path, ROOT)} defines HEVC symbol {sym}"
     return None
+
+
+def _no_hevc_pe_imports(path):
+    """llvm-readobj --coff-imports finds no HEVC DLL or HEVC symbol import
+    in a shipped PE binary (exe or dll)."""
+    tool = _llvm_tool("llvm-readobj")
+    res = run_capture([tool, "--coff-imports", path], timeout=120.0)
+    if res.returncode:
+        return f"llvm-readobj --coff-imports failed on {path}"
+    cur_dll = ""
+    for line in res.stdout.splitlines():
+        s = line.strip()
+        if s.startswith("Name:"):
+            cur_dll = s.split(":", 1)[1].strip()
+            if _hevc_link_name(cur_dll):
+                return f"{os.path.relpath(path, ROOT)} imports HEVC DLL {cur_dll}"
+        elif s.startswith("Symbol:"):
+            sym = s.split(":", 1)[1].strip().split()[0]
+            if sym.lstrip("_").startswith(HEVC_SYMBOL_PREFIXES):
+                return f"{os.path.relpath(path, ROOT)} imports HEVC symbol {sym} from {cur_dll}"
+    return None
+
+
+def _no_hevc_binary_strings(path):
+    """No known HEVC encoder/decoder signature string appears in the binary."""
+    low = _read_file_bytes(path).lower()
+    for tok in HEVC_BINARY_STRINGS:
+        if tok in low:
+            return f"{os.path.relpath(path, ROOT)} contains HEVC string {tok.decode('ascii')}"
+    return None
+
+
+def _walk_dir_fail_closed(root):
+    """Walk root recursively (following symlinks, cycle-safe) and return all
+    file paths. Fails closed (RuntimeError) if root is missing, any directory
+    cannot be listed, or any entry is not a readable file."""
+    if not os.path.isdir(root):
+        raise RuntimeError(f"missing directory {root}")
+    entries, seen = [], set()
+
+    def _walk_error(exc):
+        raise RuntimeError(f"cannot list {getattr(exc, 'filename', root)}: {exc}") from exc
+
+    for dp, dn, fns in os.walk(root, onerror=_walk_error, followlinks=True):
+        real = os.path.realpath(dp)
+        if real in seen:
+            dn[:] = []
+            continue
+        seen.add(real)
+        for f in fns:
+            path = os.path.join(dp, f)
+            if not os.path.isfile(path):
+                raise RuntimeError(f"cannot inspect {path}: not a readable file")
+            entries.append(path)
+    return sorted(entries)
+
+
+def _shipped_windows_binaries(bindir):
+    """All PE executables and DLLs in the shipped Windows converter directory,
+    identified by PE content magic. Fails closed if bindir is missing, any
+    entry is unreadable, or no executable is present."""
+    entries = _walk_dir_fail_closed(bindir)
+    binaries = [p for p in entries if _is_pe_binary(p)]
+    if not any(p.lower().endswith(".exe") for p in binaries):
+        raise RuntimeError(f"no shipped Windows converter executables found in {bindir}")
+    return entries, binaries
+
+
+def _dependency_files(prefix):
+    """(every entry, every inspectable library/archive/object/PE by content)
+    under the dependency prefix. Fails closed on missing directory, unlistable
+    subtrees, dangling links, or unreadable files."""
+    entries = _walk_dir_fail_closed(prefix)
+    libs = [p for p in entries if _is_archive(p) or _is_pe_binary(p) or _is_coff_object(p)]
+    return entries, libs
+
+
+def _no_hevc_in_shipped_binaries(bindir):
+    """Prove HEVC absence from what actually shipped: inspect every Windows
+    converter executable and bundled DLL for HEVC names, symbols, imports,
+    and known encoder/decoder strings."""
+    entries, binaries = _shipped_windows_binaries(bindir)
+    bad = _hevc_among_names(entries)
+    if bad:
+        return f"shipped Windows directory holds {bad}", binaries
+    seen = set()
+    unique = []
+    for path in binaries:
+        ident = os.path.realpath(path)
+        if ident not in seen:
+            seen.add(ident)
+            unique.append(path)
+    msg = _no_hevc_symbols(unique)
+    if msg:
+        return msg, unique
+    for path in unique:
+        msg = _no_hevc_pe_imports(path)
+        if msg:
+            return msg, unique
+        msg = _no_hevc_binary_strings(path)
+        if msg:
+            return msg, unique
+    return None, unique
+
+
+def _no_hevc_in_dependency_prefix(prefix):
+    """Fail-closed walk of the dependency prefix: no HEVC library is present
+    by name or by content (symbols, PE imports, or encoder/decoder strings)."""
+    entries, libs = _dependency_files(prefix)
+    bad = _hevc_among_names(entries)
+    if bad:
+        return f"the Windows dependency prefix holds {bad}", entries, libs
+    seen = set()
+    unique = []
+    for path in libs:
+        ident = os.path.realpath(path)
+        if ident not in seen:
+            seen.add(ident)
+            unique.append(path)
+    msg = _no_hevc_symbols(unique)
+    if msg:
+        return msg, entries, unique
+    for path in unique:
+        if _is_pe_binary(path):
+            msg = _no_hevc_pe_imports(path)
+            if msg:
+                return msg, entries, unique
+        msg = _no_hevc_binary_strings(path)
+        if msg:
+            return msg, entries, unique
+    return None, entries, unique
 
 
 def case_heif(all_targets=False):
@@ -1650,26 +1693,20 @@ def case_heif(all_targets=False):
 
 
 def _heif_windows_link_checks():
-    """The Windows no-HEVC proof: lld's own inputs, the dependency prefix,
-    and the external symbols of all of them."""
-    msg, inputs = _no_hevc_in_link_inputs()
-    if msg:
-        return fail(f"heif: {msg}")
-    n_in = len({f for files in inputs.values() for f in files})
-    print(f"heif: lld's own input lists for {len(inputs)} Windows executables "
-          f"({n_in} files read) name no HEVC implementation")
-    entries, deps = _dependency_files(os.path.join(ROOT, "build", "converter", "windows-x64", "deps-prefix"))
-    bad = _hevc_among_inputs(entries)
-    if bad:
-        return fail(f"heif: the Windows dependency prefix holds {bad}")
-    print(f"heif: none of the {len(entries)} files in the Windows dependency prefix is named for HEVC "
-          f"({len(deps)} archives)")
+    """The Windows no-HEVC proof: inspect every shipped Windows converter
+    executable and bundled DLL (symbols, imports, and known HEVC strings),
+    plus a fail-closed content walk of the dependency prefix."""
     bindir = os.path.join(ROOT, "bin", "converter", "windows-x64")
-    arts = _symbol_scan_set([os.path.join(bindir, e) for e in sorted(inputs)], inputs, deps)
-    msg = _no_hevc_symbols(arts)
+    msg, binaries = _no_hevc_in_shipped_binaries(bindir)
     if msg:
         return fail(f"heif: {msg}")
-    print(f"heif: llvm-nm finds no HEVC symbol in {len(arts)} executables, linked inputs and dependency archives")
+    print(f"heif: {len(binaries)} shipped Windows binaries have no HEVC symbols, imports, or strings")
+    prefix = os.path.join(ROOT, "build", "converter", "windows-x64", "deps-prefix")
+    msg, entries, libs = _no_hevc_in_dependency_prefix(prefix)
+    if msg:
+        return fail(f"heif: {msg}")
+    print(f"heif: none of the {len(entries)} files ({len(libs)} libraries by content) "
+          f"in the Windows dependency prefix contains an HEVC implementation")
     return 0
 
 
