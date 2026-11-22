@@ -9,7 +9,9 @@ Reports three verification tracks separately:
 
 from __future__ import annotations
 
+import base64
 import io
+import json
 import os
 import random
 import shutil
@@ -487,16 +489,13 @@ class HostJp2Tests(Jp2AdapterMixin, unittest.TestCase):
         return res.returncode, res.stdout, res.stderr
 
 
-def _ps_single_quote(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
-
-
 def _build_win_ps_command(win_exe: str, args: list[str]) -> str:
-    quoted_exe = _ps_single_quote(win_exe)
-    quoted_args = ", ".join(_ps_single_quote(a) for a in args)
+    payload = json.dumps({"exe": win_exe, "args": list(args)}, ensure_ascii=True)
+    b64 = base64.b64encode(payload.encode("ascii")).decode("ascii")
     return (
         "$env:PATH = 'C:\\Windows\\System32'; "
-        f"& {quoted_exe} @({quoted_args}); "
+        f"$p = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{b64}')) | ConvertFrom-Json; "
+        "& $p.exe @($p.args); "
         "exit $LASTEXITCODE"
     )
 
@@ -542,14 +541,43 @@ class WinJp2Tests(Jp2AdapterMixin, unittest.TestCase):
         rel = p.relative_to(self._wd())
         return f"{self._win_wd}\\{rel}"
 
-    def test_ps_command_quotes_apostrophe_in_executable_path(self) -> None:
-        cmd = _build_win_ps_command(
-            r"C:\Users\O'Brien\RasterFold\rfc_test_jp2.exe",
-            ["cli", "probe", r"C:\Users\O'Brien\in.jp2"],
-        )
-        self.assertIn(r"& 'C:\Users\O''Brien\RasterFold\rfc_test_jp2.exe'", cmd)
-        self.assertIn(r"'C:\Users\O''Brien\in.jp2'", cmd)
-        self.assertIn("$env:PATH = 'C:\\Windows\\System32';", cmd)
+    def test_ps_command_passes_special_paths_as_data(self) -> None:
+        cases = [
+            (
+                r"C:\Users\O'Brien\RasterFold\rfc_test_jp2.exe",
+                ["cli", "probe", r"C:\Users\O'Brien\in.jp2"],
+            ),
+            (
+                "C:\\Users\\O\u2019Brien\\RasterFold\\rfc_test_jp2.exe",
+                ["cli", "probe", "C:\\Users\\O\u2019Brien\\$var`tick.jp2"],
+            ),
+        ]
+        for exe_path, argv in cases:
+            cmd = _build_win_ps_command(exe_path, argv)
+            self.assertIn("$env:PATH = 'C:\\Windows\\System32';", cmd)
+            # Ask PowerShell's real parser to parse the generated command and
+            # decode the Base64 JSON payload back to verify exact data transport.
+            probe_b64 = base64.b64encode(cmd.encode("utf-8")).decode("ascii")
+            verify_ps = (
+                f"$src = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{probe_b64}')); "
+                "$tok = $null; $err = $null; "
+                "[void][Management.Automation.Language.Parser]::ParseInput($src, [ref]$tok, [ref]$err); "
+                "if ($err.Count -ne 0) { Write-Output ('PARSE_ERR=' + $err.Count); exit 2 }; "
+                "$m = [regex]::Match($src, \"FromBase64String\\('([^']+)'\\)\"); "
+                "$p = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($m.Groups[1].Value)) | ConvertFrom-Json; "
+                "$out = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($p | ConvertTo-Json -Compress))); "
+                "Write-Output $out"
+            )
+            res = _ref.run_process_tree(
+                [self._ps, "-NoProfile", "-NonInteractive", "-Command", verify_ps],
+                timeout=30.0,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(res.returncode, 0, f"cmd={cmd}\nout={res.stdout}\nerr={res.stderr}")
+            decoded = json.loads(base64.b64decode(res.stdout.strip()).decode("utf-8"))
+            self.assertEqual(decoded["exe"], exe_path)
+            self.assertEqual(decoded["args"], argv)
 
     def run_cli(self, args: list[str]) -> tuple[int, str, str]:
         ps_cmd = _build_win_ps_command(self._win_exe, args)
