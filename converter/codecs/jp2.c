@@ -1021,29 +1021,48 @@ static int jp2_xml_resolve_ns(const jp2_xml_parser *xp,
     return 0;
 }
 
-static int jp2_ascii_ieq(const uint8_t *a, size_t n, const char *lit) {
-    size_t m = strlen(lit);
-    if (n != m) {
-        return 0;
-    }
+/* Normalize an XML EncName (already validated as [A-Za-z][A-Za-z0-9._-]*)
+ * identically to Python encodings.normalize_encoding: ASCII lowercase, keep
+ * [a-z0-9.], collapse runs of '-'/'_' between tokens into a single '_'. */
+static size_t jp2_xml_normalize_enc(const uint8_t *src,
+                                    size_t n,
+                                    char *dst,
+                                    size_t cap) {
+    size_t out = 0u;
+    int punct = 0;
     for (size_t k = 0u; k < n; k++) {
-        uint8_t ca = a[k];
-        uint8_t cb = (uint8_t)lit[k];
-        if (ca >= 'A' && ca <= 'Z') ca = (uint8_t)(ca - 'A' + 'a');
-        if (cb >= 'A' && cb <= 'Z') cb = (uint8_t)(cb - 'A' + 'a');
-        if (ca != cb) {
-            return 0;
+        uint8_t c = src[k];
+        if (c >= 'A' && c <= 'Z') {
+            c = (uint8_t)(c - 'A' + 'a');
+        }
+        if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.') {
+            if (punct && out > 0u) {
+                if (out + 1u >= cap) {
+                    return SIZE_MAX;
+                }
+                dst[out++] = '_';
+            }
+            if (out + 1u >= cap) {
+                return SIZE_MAX;
+            }
+            dst[out++] = (char)c;
+            punct = 0;
+        } else {
+            punct = 1;
         }
     }
-    return 1;
+    if (out >= cap) {
+        return SIZE_MAX;
+    }
+    dst[out] = '\0';
+    return out;
 }
 
-static int jp2_enc_in_list(const uint8_t *enc,
-                           size_t enc_len,
-                           const char *const *list,
-                           size_t count) {
+static int jp2_enc_norm_in_list(const char *norm,
+                                const char *const *list,
+                                size_t count) {
     for (size_t k = 0u; k < count; k++) {
-        if (jp2_ascii_ieq(enc, enc_len, list[k])) {
+        if (strcmp(norm, list[k]) == 0) {
             return 1;
         }
     }
@@ -1052,9 +1071,10 @@ static int jp2_enc_in_list(const uint8_t *enc,
 
 /* Parse strict W3C XML 1.0 (5th ed.) §2.8 XMLDecl starting at p[*pos]:
  * '<?xml' S VersionInfo EncodingDecl? SDDecl? S? '?>'
- * Also verifies any declared encoding is compatible with this UTF-8 byte stream
- * (UTF-8 aliases, or IANA US-ASCII / ASCII-superset single-byte aliases only
- * when no UTF-8 BOM and all document bytes are < 0x80). */
+ * Also verifies any declared encoding (normalized via jp2_xml_normalize_enc)
+ * is compatible with this UTF-8 byte stream (UTF-8 aliases, or US-ASCII /
+ * ISO-8859-1 / Windows-1252 aliases only when no UTF-8 BOM and all document
+ * bytes are < 0x80). */
 static int jp2_xml_parse_xmldecl(const uint8_t *p,
                                  size_t len,
                                  int has_bom,
@@ -1113,23 +1133,29 @@ static int jp2_xml_parse_xmldecl(const uint8_t *p,
         }
         if (i >= len || p[i] != q) return 0;
         size_t enc_len = i - enc_start;
+        char norm_enc[64];
+        if (jp2_xml_normalize_enc(p + enc_start, enc_len,
+                                  norm_enc, sizeof(norm_enc)) == SIZE_MAX) {
+            return 0;
+        }
         static const char *const k_utf8_encs[] = {
-            "utf-8", "utf_8", "utf8", "cp65001"
+            "cp65001", "u8", "utf", "utf8", "utf8_ucs2", "utf8_ucs4", "utf_8"
         };
         static const char *const k_ascii_7bit_encs[] = {
-            "us-ascii", "us_ascii", "ascii", "iso-ir-6", "iso_ir_6",
-            "ansi_x3.4-1968", "ansi_x3.4-1986", "iso_646.irv-1991",
-            "iso646-us", "us", "ibm367", "cp367", "csascii",
-            "iso-8859-1", "iso_8859_1", "iso8859-1", "latin1", "latin-1",
-            "latin_1", "l1", "cp819", "ibm819", "iso-ir-100", "csisolatin1",
-            "windows-1252", "windows_1252", "cp1252"
+            "ansi_x3.4_1968", "ansi_x3.4_1986", "ansi_x3_4_1968", "ascii",
+            "cp367", "csascii", "ibm367", "iso646_us", "iso_646.irv_1991",
+            "iso_ir_6", "us", "us_ascii",
+            "cp819", "csisolatin1", "ibm819", "iso8859", "iso8859_1",
+            "iso_8859_1", "iso_8859_1_1987", "iso_ir_100", "l1", "latin",
+            "latin1", "latin_1",
+            "cp1252", "windows_1252"
         };
-        if (jp2_enc_in_list(p + enc_start, enc_len, k_utf8_encs,
-                            sizeof(k_utf8_encs) / sizeof(k_utf8_encs[0]))) {
+        if (jp2_enc_norm_in_list(norm_enc, k_utf8_encs,
+                                 sizeof(k_utf8_encs) / sizeof(k_utf8_encs[0]))) {
             /* UTF-8 matches this UTF-8 byte stream (with or without UTF-8 BOM). */
-        } else if (jp2_enc_in_list(p + enc_start, enc_len, k_ascii_7bit_encs,
-                                   sizeof(k_ascii_7bit_encs) /
-                                       sizeof(k_ascii_7bit_encs[0]))) {
+        } else if (jp2_enc_norm_in_list(norm_enc, k_ascii_7bit_encs,
+                                        sizeof(k_ascii_7bit_encs) /
+                                            sizeof(k_ascii_7bit_encs[0]))) {
             if (has_bom) {
                 return 0;
             }

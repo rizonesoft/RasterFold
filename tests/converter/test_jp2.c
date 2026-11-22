@@ -1333,9 +1333,13 @@ static void test_review_round1_regressions(void) {
                 "<?xml version=\"1.0\" encoding=\"ISO-IR-6\"?>"
                 "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"/>",
                 "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>"
+                "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"/>",
+                "<?xml version=\"1.0\" encoding=\"ISO_8859-1\"?>"
+                "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"/>",
+                "<?xml version=\"1.0\" encoding=\"U8\"?>"
                 "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"/>"
             };
-            for (size_t gi = 0u; gi < 9u; gi++) {
+            for (size_t gi = 0u; gi < 11u; gi++) {
                 const char *good_xmp = good_cases[gi];
                 size_t glen = strlen(good_xmp);
                 uint8_t *mg = (uint8_t *)malloc(e4.len + 8u + glen);
