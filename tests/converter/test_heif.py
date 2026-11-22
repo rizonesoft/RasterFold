@@ -394,6 +394,18 @@ class NoHevcArtifactProofTests(unittest.TestCase):
             self.assertIn("x265_encoder_open", msg)
             bigobj.unlink()
 
+            # Thin archive with both an HEVC member and a missing member whose name
+            # contains the unrecognized-object phrase must still reject (never skip)
+            spoof_o = t / "was not recognized as a valid object file.o"
+            shutil.copyfile(t / "unused_ok.o", spoof_o)
+            thin_ar = prefix / "lib" / "thin_spoof.bin"
+            run_ok([str(ar), "rcsT", str(thin_ar), str(t / "unused_enc.o"), str(spoof_o)])
+            spoof_o.unlink()
+            msg, _, _ = cc._no_hevc_in_dependency_prefix(str(prefix))
+            self.assertIsNotNone(msg)
+            self.assertIn("x265_encoder_open", msg)
+            thin_ar.unlink()
+
             (prefix / "lib" / "dangling.a").symlink_to(t / "nowhere.a")
             with self.assertRaises(RuntimeError):
                 cc._no_hevc_in_dependency_prefix(str(prefix))

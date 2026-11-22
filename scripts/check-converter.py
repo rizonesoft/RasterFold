@@ -1602,17 +1602,23 @@ def _no_hevc_in_dependency_prefix(prefix):
         if ident in seen:
             continue
         seen.add(ident)
-        _read_file_bytes(path, 1)  # verify readability explicitly
+        hdr8 = _read_file_bytes(path, 8)  # verify readability explicitly
         res = run_capture([tool, "--defined-only", "--extern-only", path], timeout=120.0)
-        if res.returncode != 0:
-            if "was not recognized as a valid object file" in res.stderr:
-                continue
-            raise RuntimeError(f"llvm-nm failed on {path}: {res.stderr.strip()[:200]}")
         for line in res.stdout.splitlines():
             parts = line.split()
             sym = parts[-1] if parts else ""
             if sym.lstrip("_").startswith(HEVC_SYMBOL_PREFIXES):
                 return f"{os.path.relpath(path, ROOT)} defines HEVC symbol {sym}", entries, scanned
+        if res.returncode != 0:
+            err_lines = [l.strip() for l in res.stderr.splitlines() if l.strip()]
+            unrecognized = (
+                not res.stdout.strip()
+                and hdr8 not in (b"!<arch>\n", b"!<thin>\n")
+                and err_lines == [f"{tool}: error: {path}: The file was not recognized as a valid object file"]
+            )
+            if unrecognized:
+                continue
+            raise RuntimeError(f"llvm-nm failed on {path}: {res.stderr.strip()[:200]}")
         if _is_pe_binary(path):
             msg = _no_hevc_pe_imports(path)
             if msg:
