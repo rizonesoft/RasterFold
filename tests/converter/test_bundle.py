@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -243,86 +244,99 @@ def run_windows_binary_isolated(
     export_keys = 'RFC_RUN_ID:RFC_EXE_NAME:RFC_WIN_EXE:RFC_ARGS_JSON'
     ps_env['WSLENV'] = f'{existing_wslenv}:{export_keys}' if existing_wslenv else export_keys
 
-    proc = subprocess.Popen(
-        ['powershell.exe', '-NoProfile', '-Command', ps_script],
-        env=ps_env,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        start_new_session=True,
-    )
-    out_chunks: list[str] = []
-    err_chunks: list[str] = []
-    win_pid_box: list[int | None] = [None]
-    pid_ready = threading.Event()
+    for attempt in range(6):
+        proc = subprocess.Popen(
+            ['powershell.exe', '-NoProfile', '-Command', ps_script],
+            env=ps_env,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
+        )
+        out_chunks: list[str] = []
+        err_chunks: list[str] = []
+        win_pid_box: list[int | None] = [None]
+        pid_ready = threading.Event()
 
-    def _drain_out() -> None:
-        assert proc.stdout is not None
-        for line in proc.stdout:
-            if win_pid_box[0] is None and line.startswith('SMOKE_WIN_PID='):
-                pid_str = line.split('=', 1)[1].strip()
-                if pid_str.isdigit():
-                    win_pid_box[0] = int(pid_str)
-                pid_ready.set()
-            else:
-                out_chunks.append(line)
+        def _drain_out() -> None:
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                if win_pid_box[0] is None and line.startswith('SMOKE_WIN_PID='):
+                    pid_str = line.split('=', 1)[1].strip()
+                    if pid_str.isdigit():
+                        win_pid_box[0] = int(pid_str)
+                    pid_ready.set()
+                else:
+                    out_chunks.append(line)
 
-    def _drain_err() -> None:
-        assert proc.stderr is not None
-        for line in proc.stderr:
-            err_chunks.append(line)
+        def _drain_err() -> None:
+            assert proc.stderr is not None
+            for line in proc.stderr:
+                err_chunks.append(line)
 
-    t_out = threading.Thread(target=_drain_out, daemon=True)
-    t_err = threading.Thread(target=_drain_err, daemon=True)
-    t_out.start()
-    t_err.start()
-    try:
-        rc = proc.wait(timeout=timeout_sec)
-        t_out.join(timeout=5)
-        t_err.join(timeout=5)
-        return subprocess.CompletedProcess(proc.args, rc, ''.join(out_chunks), ''.join(err_chunks))
-    except subprocess.TimeoutExpired as exc:
-        pid_ready.wait(timeout=1.0)
-        win_pid = win_pid_box[0]
-        if win_pid is not None:
+        t_out = threading.Thread(target=_drain_out, daemon=True)
+        t_err = threading.Thread(target=_drain_err, daemon=True)
+        t_out.start()
+        t_err.start()
+        try:
+            rc = proc.wait(timeout=timeout_sec)
+            t_out.join(timeout=5)
+            t_err.join(timeout=5)
+            out_s = ''.join(out_chunks)
+            err_s = ''.join(err_chunks)
+            if (
+                attempt < 5
+                and rc == 1
+                and not out_s
+                and win_pid_box[0] is None
+                and 'UtilAcceptVsock' in err_s
+            ):
+                time.sleep(0.5 * (attempt + 1))
+                continue
+            return subprocess.CompletedProcess(proc.args, rc, out_s, err_s)
+        except subprocess.TimeoutExpired as exc:
+            pid_ready.wait(timeout=1.0)
+            win_pid = win_pid_box[0]
+            if win_pid is not None:
+                subprocess.run(
+                    ['taskkill.exe', '/F', '/T', '/PID', str(win_pid)],
+                    stdin=subprocess.DEVNULL,
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            proc.wait(timeout=10)
+            t_out.join(timeout=2)
+            t_err.join(timeout=2)
             subprocess.run(
-                ['taskkill.exe', '/F', '/T', '/PID', str(win_pid)],
+                [
+                    'powershell.exe',
+                    '-NoProfile',
+                    '-Command',
+                    f"$t=Join-Path ([IO.Path]::GetTempPath()) 'rfc_smoke_{run_id}'; "
+                    "if (Test-Path -LiteralPath $t) { Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath $t }",
+                ],
                 stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
                 timeout=15,
             )
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        proc.wait(timeout=10)
-        t_out.join(timeout=2)
-        t_err.join(timeout=2)
-        subprocess.run(
-            [
-                'powershell.exe',
-                '-NoProfile',
-                '-Command',
-                f"$t=Join-Path ([IO.Path]::GetTempPath()) 'rfc_smoke_{run_id}'; "
-                "if (Test-Path -LiteralPath $t) { Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath $t }",
-            ],
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        new_exc = subprocess.TimeoutExpired(
-            exc.cmd, timeout_sec, output=''.join(out_chunks), stderr=''.join(err_chunks)
-        )
-        setattr(new_exc, 'win_pid', win_pid)
-        raise new_exc from exc
-    finally:
-        if proc.stdout is not None:
-            proc.stdout.close()
-        if proc.stderr is not None:
-            proc.stderr.close()
+            new_exc = subprocess.TimeoutExpired(
+                exc.cmd, timeout_sec, output=''.join(out_chunks), stderr=''.join(err_chunks)
+            )
+            setattr(new_exc, 'win_pid', win_pid)
+            raise new_exc from exc
+        finally:
+            if proc.stdout is not None:
+                proc.stdout.close()
+            if proc.stderr is not None:
+                proc.stderr.close()
+    raise RuntimeError('run_windows_binary_isolated exhausted attempts')
 
 
 class BundleTests(unittest.TestCase):

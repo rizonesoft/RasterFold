@@ -1528,7 +1528,7 @@ def run_process_tree(
     """Run a child command and terminate its entire descendant tree on completion or timeout."""
     argv = [str(part) for part in cmd]
     pipes = subprocess.PIPE if capture_output else None
-    max_attempts = 4 if (os.name != "nt" and capture_output) else 1
+    max_attempts = 6 if (os.name != "nt" and capture_output) else 1
     for attempt in range(max_attempts):
         tree_token = f"{os.getpid()}-{os.urandom(8).hex()}"
         child_env = dict(os.environ if env is None else env)
@@ -1589,7 +1589,7 @@ def run_process_tree(
                 out_tail, err_tail = proc.communicate()
                 raise subprocess.TimeoutExpired(argv, timeout, output=out_tail, stderr=err_tail) from exc
             if attempt + 1 < max_attempts and _is_wsl_vsock_flake(proc.returncode, out, err):
-                time.sleep(0.25 * (attempt + 1))
+                time.sleep(0.5 * (attempt + 1))
                 continue
             return subprocess.CompletedProcess(argv, proc.returncode, out, err)
         finally:
