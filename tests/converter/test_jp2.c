@@ -1303,7 +1303,9 @@ static void test_review_round1_regressions(void) {
 
         /* Valid XMP preceded by 20 XML comments + whitespace around '=' preserved verbatim,
          * plus alternate namespace prefix (m:xmpmeta), default namespace (xmpmeta),
-         * and mismatched prefix refusal. */
+         * numeric character references in namespace URI (&#x2F; / &#47;), and refusals for
+         * mismatched prefix, invalid NCName prefix (<1:xmpmeta), reserved prefix, and
+         * malformed attribute value. */
         {
             const char *good_cases[] = {
                 "<!-- c01 --><!-- c02 --><!-- c03 --><!-- c04 --><!-- c05 -->"
@@ -1312,9 +1314,11 @@ static void test_review_round1_regressions(void) {
                 "<!-- c16 --><!-- c17 --><!-- c18 --><!-- c19 --><!-- c20 -->"
                 "<x:xmpmeta xmlns:x = \"adobe:ns:meta/\"><rdf:RDF/></x:xmpmeta>",
                 "<m:xmpmeta xmlns:m=\"adobe:ns:meta/\"><rdf:RDF/></m:xmpmeta>",
-                "<xmpmeta xmlns=\"adobe:ns:meta/\"><rdf:RDF/></xmpmeta>"
+                "<xmpmeta xmlns=\"adobe:ns:meta/\"><rdf:RDF/></xmpmeta>",
+                "<m:xmpmeta xmlns:m=\"adobe:ns:meta&#x2F;\"><rdf:RDF/></m:xmpmeta>",
+                "<m:xmpmeta xmlns:m=\"adobe:ns:meta&#47;\"><rdf:RDF/></m:xmpmeta>"
             };
-            for (size_t gi = 0u; gi < 3u; gi++) {
+            for (size_t gi = 0u; gi < 5u; gi++) {
                 const char *good_xmp = good_cases[gi];
                 size_t glen = strlen(good_xmp);
                 uint8_t *mg = (uint8_t *)malloc(e4.len + 8u + glen);
@@ -1334,21 +1338,28 @@ static void test_review_round1_regressions(void) {
                 adp->close_session(sd);
                 free(mg);
             }
-            /* Mismatched prefix: root uses m:, declaration binds x:. Must refuse in preserve. */
-            const char *bad_prefix_xmp =
-                "<m:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF/></m:xmpmeta>";
-            size_t blen = strlen(bad_prefix_xmp);
-            uint8_t *mb = (uint8_t *)malloc(e4.len + 8u + blen);
-            CHECK(mb != NULL);
-            memcpy(mb, e4.data, e4.len);
-            put_be32(mb + e4.len, (uint32_t)(8u + blen));
-            memcpy(mb + e4.len + 4u, "xml ", 4u);
-            memcpy(mb + e4.len + 8u, bad_prefix_xmp, blen);
-            CHECK(adp->open_session(&exec, &sd) == RFC_OK);
-            CHECK(adp->decode_session(sd, &exec, mb, e4.len + 8u + blen, NULL,
-                                      0u, &dec, &dc, &dm) == RFC_ERR_METADATA_POLICY);
-            adp->close_session(sd);
-            free(mb);
+            /* Invalid/mismatched XML boxes must refuse under preserve mode. */
+            const char *bad_cases[] = {
+                "<m:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF/></m:xmpmeta>",
+                "<1:xmpmeta xmlns:1=\"adobe:ns:meta/\"/>",
+                "<xml:xmpmeta xmlns:xml=\"adobe:ns:meta/\"/>",
+                "<m:xmpmeta xmlns:m=\"adobe:ns:meta&#x2F;\" bad=\"a<b\"/>"
+            };
+            for (size_t bi = 0u; bi < 4u; bi++) {
+                const char *bad_xmp = bad_cases[bi];
+                size_t blen = strlen(bad_xmp);
+                uint8_t *mb = (uint8_t *)malloc(e4.len + 8u + blen);
+                CHECK(mb != NULL);
+                memcpy(mb, e4.data, e4.len);
+                put_be32(mb + e4.len, (uint32_t)(8u + blen));
+                memcpy(mb + e4.len + 4u, "xml ", 4u);
+                memcpy(mb + e4.len + 8u, bad_xmp, blen);
+                CHECK(adp->open_session(&exec, &sd) == RFC_OK);
+                CHECK(adp->decode_session(sd, &exec, mb, e4.len + 8u + blen, NULL,
+                                          0u, &dec, &dc, &dm) == RFC_ERR_METADATA_POLICY);
+                adp->close_session(sd);
+                free(mb);
+            }
         }
 
         /* 4g. meth=3 colr before meth=1 sRGB: meth=3 ignored, sRGB wins (no ICC). */

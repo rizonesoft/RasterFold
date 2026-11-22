@@ -424,6 +424,224 @@ static int jp2_is_xml_ws(uint8_t c) {
     return c == ' ' || c == '\t' || c == '\r' || c == '\n';
 }
 
+/* Decode one UTF-8 scalar value (no overlongs, no surrogates, <= U+10FFFF). */
+static int jp2_utf8_next(const uint8_t *p, size_t len, size_t *pos, uint32_t *out_cp) {
+    if (*pos >= len) {
+        return 0;
+    }
+    uint8_t b0 = p[*pos];
+    if (b0 < 0x80u) {
+        *out_cp = b0;
+        (*pos)++;
+        return 1;
+    }
+    if ((b0 & 0xE0u) == 0xC0u) {
+        if (*pos + 1u >= len) return 0;
+        uint8_t b1 = p[*pos + 1u];
+        if ((b1 & 0xC0u) != 0x80u) return 0;
+        uint32_t cp = ((uint32_t)(b0 & 0x1Fu) << 6) | (uint32_t)(b1 & 0x3Fu);
+        if (cp < 0x80u) return 0;
+        *out_cp = cp;
+        *pos += 2u;
+        return 1;
+    }
+    if ((b0 & 0xF0u) == 0xE0u) {
+        if (*pos + 2u >= len) return 0;
+        uint8_t b1 = p[*pos + 1u], b2 = p[*pos + 2u];
+        if ((b1 & 0xC0u) != 0x80u || (b2 & 0xC0u) != 0x80u) return 0;
+        uint32_t cp = ((uint32_t)(b0 & 0x0Fu) << 12) |
+                      ((uint32_t)(b1 & 0x3Fu) << 6) |
+                      (uint32_t)(b2 & 0x3Fu);
+        if (cp < 0x800u || (cp >= 0xD800u && cp <= 0xDFFFu)) return 0;
+        *out_cp = cp;
+        *pos += 3u;
+        return 1;
+    }
+    if ((b0 & 0xF8u) == 0xF0u) {
+        if (*pos + 3u >= len) return 0;
+        uint8_t b1 = p[*pos + 1u], b2 = p[*pos + 2u], b3 = p[*pos + 3u];
+        if ((b1 & 0xC0u) != 0x80u || (b2 & 0xC0u) != 0x80u ||
+            (b3 & 0xC0u) != 0x80u) return 0;
+        uint32_t cp = ((uint32_t)(b0 & 0x07u) << 18) |
+                      ((uint32_t)(b1 & 0x3Fu) << 12) |
+                      ((uint32_t)(b2 & 0x3Fu) << 6) |
+                      (uint32_t)(b3 & 0x3Fu);
+        if (cp < 0x10000u || cp > 0x10FFFFu) return 0;
+        *out_cp = cp;
+        *pos += 4u;
+        return 1;
+    }
+    return 0;
+}
+
+static int jp2_xml_is_char(uint32_t cp) {
+    return cp == 0x09u || cp == 0x0Au || cp == 0x0Du ||
+           (cp >= 0x20u && cp <= 0xD7FFu) ||
+           (cp >= 0xE000u && cp <= 0xFFFDu) ||
+           (cp >= 0x10000u && cp <= 0x10FFFFu);
+}
+
+/* XML 1.0 (5th ed.) NameStartChar minus ':'. */
+static int jp2_xml_is_ncname_start(uint32_t cp) {
+    return (cp >= 'A' && cp <= 'Z') || cp == '_' || (cp >= 'a' && cp <= 'z') ||
+           (cp >= 0xC0u && cp <= 0xD6u) || (cp >= 0xD8u && cp <= 0xF6u) ||
+           (cp >= 0xF8u && cp <= 0x2FFu) || (cp >= 0x370u && cp <= 0x37Du) ||
+           (cp >= 0x37Fu && cp <= 0x1FFFu) ||
+           (cp >= 0x200Cu && cp <= 0x200Du) ||
+           (cp >= 0x2070u && cp <= 0x218Fu) ||
+           (cp >= 0x2C00u && cp <= 0x2FEFu) ||
+           (cp >= 0x3001u && cp <= 0xD7FFu) ||
+           (cp >= 0xF900u && cp <= 0xFDCFu) ||
+           (cp >= 0xFDF0u && cp <= 0xFFFDu) ||
+           (cp >= 0x10000u && cp <= 0xEFFFFu);
+}
+
+/* XML 1.0 (5th ed.) NameChar minus ':'. */
+static int jp2_xml_is_ncname_char(uint32_t cp) {
+    return jp2_xml_is_ncname_start(cp) || cp == '-' || cp == '.' ||
+           (cp >= '0' && cp <= '9') || cp == 0xB7u ||
+           (cp >= 0x0300u && cp <= 0x036Fu) ||
+           (cp >= 0x203Fu && cp <= 0x2040u);
+}
+
+static int jp2_xml_valid_ncname(const uint8_t *p, size_t len) {
+    if (!p || len == 0u) {
+        return 0;
+    }
+    size_t pos = 0u;
+    uint32_t cp = 0u;
+    if (!jp2_utf8_next(p, len, &pos, &cp) || !jp2_xml_is_ncname_start(cp)) {
+        return 0;
+    }
+    while (pos < len) {
+        if (!jp2_utf8_next(p, len, &pos, &cp) || !jp2_xml_is_ncname_char(cp)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int jp2_xml_valid_qname(const uint8_t *p, size_t len) {
+    if (!p || len == 0u) {
+        return 0;
+    }
+    size_t colon = SIZE_MAX;
+    for (size_t k = 0u; k < len; k++) {
+        if (p[k] == ':') {
+            if (colon != SIZE_MAX) {
+                return 0;
+            }
+            colon = k;
+        }
+    }
+    if (colon == SIZE_MAX) {
+        return jp2_xml_valid_ncname(p, len);
+    }
+    return jp2_xml_valid_ncname(p, colon) &&
+           jp2_xml_valid_ncname(p + colon + 1u, len - colon - 1u);
+}
+
+/* Validate an XML 1.0 attribute value (no literal '<', valid UTF-8 XML chars,
+ * valid numeric character references and predefined entity references) and, if
+ * out_matches != NULL, compare its normalized/decoded value byte-for-byte with
+ * target[0..target_len] (pure ASCII). Returns 1 if well-formed, 0 otherwise. */
+static int jp2_xml_check_attr_val(const uint8_t *val,
+                                  size_t val_len,
+                                  const char *target,
+                                  size_t target_len,
+                                  int *out_matches) {
+    int matches = (target != NULL);
+    size_t matched = 0u;
+    size_t pos = 0u;
+    while (pos < val_len) {
+        uint8_t c = val[pos];
+        if (c == '<') {
+            return 0; /* unescaped '<' forbidden in XML AttValue */
+        }
+        uint32_t out_cp = 0u;
+        if (c == '&') {
+            pos++;
+            size_t ref_start = pos;
+            while (pos < val_len && val[pos] != ';') {
+                pos++;
+            }
+            if (pos >= val_len || pos == ref_start) {
+                return 0;
+            }
+            size_t ref_len = pos - ref_start;
+            const uint8_t *ref = val + ref_start;
+            pos++; /* skip ';' */
+            if (ref[0] == '#') {
+                uint32_t cp = 0u;
+                if (ref_len >= 3u && ref[1] == 'x') {
+                    for (size_t k = 2u; k < ref_len; k++) {
+                        uint8_t d = ref[k];
+                        uint32_t v = 0u;
+                        if (d >= '0' && d <= '9') v = (uint32_t)(d - '0');
+                        else if (d >= 'a' && d <= 'f') v = (uint32_t)(d - 'a' + 10);
+                        else if (d >= 'A' && d <= 'F') v = (uint32_t)(d - 'A' + 10);
+                        else return 0;
+                        if (cp > (0x10FFFFu - v) / 16u) return 0;
+                        cp = cp * 16u + v;
+                    }
+                } else if (ref_len >= 2u) {
+                    for (size_t k = 1u; k < ref_len; k++) {
+                        uint8_t d = ref[k];
+                        if (d < '0' || d > '9') return 0;
+                        uint32_t v = (uint32_t)(d - '0');
+                        if (cp > (0x10FFFFu - v) / 10u) return 0;
+                        cp = cp * 10u + v;
+                    }
+                } else {
+                    return 0;
+                }
+                if (!jp2_xml_is_char(cp)) {
+                    return 0;
+                }
+                out_cp = cp;
+            } else if (ref_len == 3u && memcmp(ref, "amp", 3u) == 0) {
+                out_cp = '&';
+            } else if (ref_len == 2u && memcmp(ref, "lt", 2u) == 0) {
+                out_cp = '<';
+            } else if (ref_len == 2u && memcmp(ref, "gt", 2u) == 0) {
+                out_cp = '>';
+            } else if (ref_len == 4u && memcmp(ref, "quot", 4u) == 0) {
+                out_cp = '"';
+            } else if (ref_len == 4u && memcmp(ref, "apos", 4u) == 0) {
+                out_cp = '\'';
+            } else {
+                return 0;
+            }
+        } else if (c == '\r') {
+            pos++;
+            if (pos < val_len && val[pos] == '\n') {
+                pos++;
+            }
+            out_cp = ' '; /* XML 1.0 §3.3.3 whitespace normalization */
+        } else if (c == '\n' || c == '\t') {
+            pos++;
+            out_cp = ' ';
+        } else {
+            if (!jp2_utf8_next(val, val_len, &pos, &out_cp) ||
+                !jp2_xml_is_char(out_cp)) {
+                return 0;
+            }
+        }
+        if (matches) {
+            if (out_cp >= 0x80u || matched >= target_len ||
+                (uint8_t)out_cp != (uint8_t)target[matched]) {
+                matches = 0;
+            } else {
+                matched++;
+            }
+        }
+    }
+    if (out_matches) {
+        *out_matches = (matches && matched == target_len) ? 1 : 0;
+    }
+    return 1;
+}
+
 static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
     if (!p || len < 11u) {
         return 0;
@@ -441,8 +659,10 @@ static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
         }
         size_t rem = len - i;
         if (rem >= 2u && p[i] == '<' && p[i + 1u] == '?') {
-            int is_xpacket = (rem >= 9u && memcmp(p + i, "<?xpacket", 9u) == 0);
-            int is_xml_decl = (rem >= 5u && memcmp(p + i, "<?xml", 5u) == 0);
+            int is_xpacket = (rem >= 9u && memcmp(p + i, "<?xpacket", 9u) == 0 &&
+                              (rem >= 10u && (jp2_is_xml_ws(p[i + 9u]) || p[i + 9u] == '?')));
+            int is_xml_decl = (rem >= 5u && memcmp(p + i, "<?xml", 5u) == 0 &&
+                               (rem >= 6u && (jp2_is_xml_ws(p[i + 5u]) || p[i + 5u] == '?')));
             if (!is_xpacket && !is_xml_decl) {
                 return 0;
             }
@@ -464,11 +684,14 @@ static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
         if (rem >= 4u && memcmp(p + i, "<!--", 4u) == 0) {
             size_t j = i + 4u;
             int closed = 0;
-            while (j + 2u < len) {
-                if (p[j] == '-' && p[j + 1u] == '-' && p[j + 2u] == '>') {
-                    i = j + 3u;
-                    closed = 1;
-                    break;
+            while (j + 1u < len) {
+                if (p[j] == '-' && p[j + 1u] == '-') {
+                    if (j + 2u < len && p[j + 2u] == '>') {
+                        i = j + 3u;
+                        closed = 1;
+                        break;
+                    }
+                    return 0; /* '--' is forbidden inside XML comments */
                 }
                 j++;
             }
@@ -484,7 +707,7 @@ static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
     }
     i++; /* skip '<' */
     /* Parse root element QName: either "xmpmeta" (default namespace) or
-     * "<prefix>:xmpmeta" (prefixed namespace), with at most one ':'. */
+     * "<NCName>:xmpmeta" (prefixed namespace), with at most one ':'. */
     size_t qname_start = i;
     size_t colon_pos = SIZE_MAX;
     while (i < len && !jp2_is_xml_ws(p[i]) && p[i] != '>' && p[i] != '/') {
@@ -512,8 +735,9 @@ static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
         prefix_len = colon_pos - qname_start;
         local = p + colon_pos + 1u;
         local_len = i - (colon_pos + 1u);
-        if (prefix_len == 0u ||
-            (prefix_len == 5u && memcmp(prefix, "xmlns", 5u) == 0)) {
+        if (!jp2_xml_valid_ncname(prefix, prefix_len) ||
+            (prefix_len == 5u && memcmp(prefix, "xmlns", 5u) == 0) ||
+            (prefix_len == 3u && memcmp(prefix, "xml", 3u) == 0)) {
             return 0;
         }
     }
@@ -521,13 +745,15 @@ static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
         return 0;
     }
     /* Parse opening-tag attributes token-by-token so values of unrelated
-     * attributes cannot spoof namespace declarations and whitespace around '='
-     * is accepted. Resolve the root element's actual prefix (xmlns:<prefix>) or
-     * default namespace (xmlns) against "adobe:ns:meta/". */
+     * attributes cannot spoof namespace declarations, whitespace around '=' is
+     * accepted, and numeric character/entity references in attribute values are
+     * decoded per XML 1.0 §3.3.3. Resolve the root element's actual prefix
+     * (xmlns:<prefix>) or default namespace (xmlns) against "adobe:ns:meta/". */
     static const char k_ns_val[] = "adobe:ns:meta/";
     const size_t ns_val_len = sizeof(k_ns_val) - 1u;
     int has_ns = 0;
     while (i < len) {
+        size_t ws_start = i;
         while (i < len && jp2_is_xml_ws(p[i])) {
             i++;
         }
@@ -540,6 +766,9 @@ static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
         if (p[i] == '/' && i + 1u < len && p[i + 1u] == '>') {
             return has_ns;
         }
+        if (i == ws_start) {
+            return 0; /* XML 1.0 requires whitespace before every attribute */
+        }
         /* Attribute name */
         size_t name_start = i;
         while (i < len && !jp2_is_xml_ws(p[i]) && p[i] != '=' &&
@@ -547,7 +776,7 @@ static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
             i++;
         }
         size_t name_len = i - name_start;
-        if (name_len == 0u) {
+        if (!jp2_xml_valid_qname(p + name_start, name_len)) {
             return 0;
         }
         while (i < len && jp2_is_xml_ws(p[i])) {
@@ -582,16 +811,18 @@ static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
                             memcmp(p + name_start, "xmlns:", 6u) == 0 &&
                             memcmp(p + name_start + 6u, prefix, prefix_len) == 0);
         }
+        int val_matches = 0;
+        if (!jp2_xml_check_attr_val(p + val_start, val_len,
+                                    is_target_ns ? k_ns_val : NULL,
+                                    is_target_ns ? ns_val_len : 0u,
+                                    is_target_ns ? &val_matches : NULL)) {
+            return 0;
+        }
         if (is_target_ns) {
-            if (has_ns) {
-                return 0; /* duplicate namespace attribute */
+            if (has_ns || !val_matches) {
+                return 0; /* duplicate or non-matching namespace attribute */
             }
-            if (val_len == ns_val_len &&
-                memcmp(p + val_start, k_ns_val, ns_val_len) == 0) {
-                has_ns = 1;
-            } else {
-                return 0;
-            }
+            has_ns = 1;
         }
         /* Next token must be whitespace or tag close. */
         if (i < len && !jp2_is_xml_ws(p[i]) && p[i] != '>' && p[i] != '/') {
