@@ -1566,7 +1566,7 @@
   ],
   "reviews": {
     "README.md": {
-      "evidence": "Re-read against scripts/review-dispatch.py on 2026-11-19 after round 1 of docs/reviews/retire-muse-reviewer.md: only the pin refusal message now names the CLIs each mode accepts; the writers, the Codex-only Astra route and the review schedule this document describes are unchanged.",
+      "evidence": "Re-read on 2026-11-22 after AGENTS.md changed only its converter stack sentence (resolute-ui and Lucide now vendored from rizonesoft/Resolute-SDK shared/, the section 16 tool window and the 2026-11-22 converter section decision); this document names neither Resolute nor the converter layout, so it is unchanged.",
       "sources": {
         "include/rasterfold.h": "e5e9eecb93e59b3cfb6b00674006e03ba887c671516e6682292ef5753b015379",
         "src/rf.h": "7f58b508d0e3bb10cc2e1c57cda78e3552a2976a99928e0dfa1df16b91e0117d",
@@ -1575,30 +1575,30 @@
         "scripts/package.py": "f030a89836d12e610d9ad4a762bf073c975e6fcaf6bdb83ef09bc174e3f37973",
         "scripts/check-all.py": "ec0f58046fb6beb5e9b522530aa51a4e3eff03bd546a17a09db53e53ca8a5e9a",
         "README.md": "b63303b60e21ca7db52ff5b3555740a60ecc4aaa781e5ed8bd47f5a8985e39fb",
-        "AGENTS.md": "11c3d1cbb0f65286d88ed8292e8c58aa7da6f700a6b756c4b5bddc198c7388fe",
+        "AGENTS.md": "0559a8f478fac35dbdfb272b24d229c5d8a61f646bdf93a49452db2abb8638bc",
         ".conclave/reviewers.toml": "b361c06a590cca2094266f86fdaa004dd031ee3e21e5b5e01f6d8a515ef3490e",
         "scripts/review-dispatch.py": "20ac03bd60ffadfca7f1bfae6327ce651c85eb5753f0f8684b2a7253258a876b"
       },
       "review": "Author-attested: 2026-10-25 re-read README.md against scripts/build.py, src/main.c, and research/vsjxl.py after D02 T01 section 1 (opt-in --pgo-gen / --pgo-use and vsjxl.py options; default release build, CLI, and C API unchanged)"
     },
     "AGENTS.md": {
-      "evidence": "Re-read against scripts/review-dispatch.py on 2026-11-19 after round 1 of docs/reviews/retire-muse-reviewer.md: only the pin refusal message now names the CLIs each mode accepts; the writers, the Codex-only Astra route and the review schedule this document describes are unchanged.",
+      "evidence": "Re-read on 2026-11-22: only the converter stack sentence changed (resolute-ui and Lucide now vendored from rizonesoft/Resolute-SDK shared/, the section 16 tool window and the 2026-11-22 converter section decision, checked against Resolute-SDK at bddf5860); the toolchain, writers, reviewer route and review schedule this document describes are unchanged.",
       "sources": {
         "include/rasterfold.h": "e5e9eecb93e59b3cfb6b00674006e03ba887c671516e6682292ef5753b015379",
         "src/rf.h": "7f58b508d0e3bb10cc2e1c57cda78e3552a2976a99928e0dfa1df16b91e0117d",
         "toolchain.json": "eb53e29ed47b6ae570e705e7c48dca3e5fc922f6213d892c084e00489785d75d",
         ".conclave/reviewers.toml": "b361c06a590cca2094266f86fdaa004dd031ee3e21e5b5e01f6d8a515ef3490e",
         "scripts/review-dispatch.py": "20ac03bd60ffadfca7f1bfae6327ce651c85eb5753f0f8684b2a7253258a876b",
-        "AGENTS.md": "11c3d1cbb0f65286d88ed8292e8c58aa7da6f700a6b756c4b5bddc198c7388fe",
+        "AGENTS.md": "0559a8f478fac35dbdfb272b24d229c5d8a61f646bdf93a49452db2abb8638bc",
         ".codex/hooks.json": "2caa02c09946ea197fb9d159f013de70c358ed321143388f8a02524c09de7b45",
         "scripts/codex-campaign-hook.py": "64598f49a1fb847fe163e740df1ab1fd765497eacd2d79da9265cf4ce52bb4ea",
         "scripts/campaign_guard.py": "f8044aa048163be69c921ef42bece232c3b771a329bc958c6cf96c30ebaf842b"
       }
     },
     "GEMINI.md": {
-      "evidence": "Re-read against scripts/review-dispatch.py on 2026-11-19 after round 1 of docs/reviews/retire-muse-reviewer.md: only the pin refusal message now names the CLIs each mode accepts; the writers, the Codex-only Astra route and the review schedule this document describes are unchanged.",
+      "evidence": "Re-read on 2026-11-22 after AGENTS.md changed only its converter stack sentence (resolute-ui and Lucide now vendored from rizonesoft/Resolute-SDK shared/, the section 16 tool window and the 2026-11-22 converter section decision); this document names neither Resolute nor the converter layout, so it is unchanged.",
       "sources": {
-        "AGENTS.md": "11c3d1cbb0f65286d88ed8292e8c58aa7da6f700a6b756c4b5bddc198c7388fe",
+        "AGENTS.md": "0559a8f478fac35dbdfb272b24d229c5d8a61f646bdf93a49452db2abb8638bc",
         ".conclave/reviewers.toml": "b361c06a590cca2094266f86fdaa004dd031ee3e21e5b5e01f6d8a515ef3490e",
         "scripts/review-dispatch.py": "20ac03bd60ffadfca7f1bfae6327ce651c85eb5753f0f8684b2a7253258a876b",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",
@@ -1696,9 +1696,9 @@
       }
     },
     "docs/agent-skills-and-rules-structure.md": {
-      "evidence": "Re-read against scripts/review-dispatch.py on 2026-11-19 after round 1 of docs/reviews/retire-muse-reviewer.md: only the pin refusal message now names the CLIs each mode accepts; the writers, the Codex-only Astra route and the review schedule this document describes are unchanged.",
+      "evidence": "Re-read on 2026-11-22 after AGENTS.md changed only its converter stack sentence (resolute-ui and Lucide now vendored from rizonesoft/Resolute-SDK shared/, the section 16 tool window and the 2026-11-22 converter section decision); this document names neither Resolute nor the converter layout, so it is unchanged.",
       "sources": {
-        "AGENTS.md": "11c3d1cbb0f65286d88ed8292e8c58aa7da6f700a6b756c4b5bddc198c7388fe",
+        "AGENTS.md": "0559a8f478fac35dbdfb272b24d229c5d8a61f646bdf93a49452db2abb8638bc",
         "GEMINI.md": "88b941d129653f1b32d4dea63ca897f852c8f1ec4df39ba3658676b1aeec1aee",
         ".conclave/reviewers.toml": "b361c06a590cca2094266f86fdaa004dd031ee3e21e5b5e01f6d8a515ef3490e",
         ".agents/hooks.json": "885269c2d5e2ea5643bb28c47f002c34cca343360eea4f6b1498f7f25ebe2d9d",

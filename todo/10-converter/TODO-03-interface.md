@@ -22,9 +22,9 @@ track: GUI3
 
 - [Product vision](../../docs/vision.md) and [native design](../../docs/design/converter.md): scope, exactness, platform and interaction contracts.
 - [C API](../../include/rasterfold.h): RasterFold ownership and error boundary.
-- Resolute's design contract (`DESIGN.md` in `rizonesoft/Resolute`) and its launcher (`src/main.cpp` there): the reference for how a `resolute-ui` application is assembled. Both are vendored for reading with the library by §1.
+- Resolute's design contract (`DESIGN.md` in `rizonesoft/Resolute-SDK`, moved there from `rizonesoft/Resolute` on 2026-11-15) and the launcher (`src/main.cpp` in `rizonesoft/Resolute`): the reference for how a `resolute-ui` application is assembled. Both are vendored for reading with the library by §1.
 
-**Stack facts (read 2026-11-11 from `rizonesoft/Resolute` at `513ab81c`; §1 re-reads them at the commit it pins).** `resolute-ui` is a static C++23 library, namespace `rui::`, include prefix `resolute/`. It provides `Toolbar`, `Sidebar`, `StatusBar`, `ContentView`, `ListView` and `PopupMenu`; `Theme` (dark, light and follow-system modes, the token set, `IsHighContrast`); `Typography`; `Dpi`; `AnimationManager`; `LucideIcons`; and `RenderContext` (the Direct2D and DirectWrite factories, `CreateHwndTarget`, `CreateBitmapFromRGBA`, `DrawSvgIcon`). It does not provide a button, drop-down, slider, check box, progress bar, an image pane, or UI Automation providers. The rule for the gap: a control the library provides is used as is; a generic control it lacks is written once under `converter/app/controls/` on `rui::RenderContext`, `rui::Theme` tokens and `rui::Typography`, with a UI Automation provider, and listed in `docs/converter-building.md` as a candidate to move upstream into Resolute; a later pin that ships the control replaces the local one. Converter-specific surfaces (the image pane, the wipe, the difference view) live under `converter/app/` and follow the same token and accessibility rules. Reversal cost of the rule: deleting `converter/app/controls/` once Resolute ships equivalents.
+**Stack facts (read 2026-11-11 from `rizonesoft/Resolute` at `513ab81c`; §1 re-reads them at the commit it pins; on 2026-11-22 the library and its Lucide set were found moved to `rizonesoft/Resolute-SDK` under `shared/resolute-ui/` and `shared/lucide/`, at `bddf5860`).** `resolute-ui` is a static C++23 library, namespace `rui::`, include prefix `resolute/`. It provides `Toolbar`, `Sidebar`, `StatusBar`, `ContentView`, `ListView` and `PopupMenu`; `Theme` (dark, light and follow-system modes, the token set, `IsHighContrast`); `Typography`; `Dpi`; `AnimationManager`; `LucideIcons`; and `RenderContext` (the Direct2D and DirectWrite factories, `CreateHwndTarget`, `CreateBitmapFromRGBA`, `DrawSvgIcon`). It does not provide a button, drop-down, slider, check box, progress bar, an image pane, or UI Automation providers. The rule for the gap: a control the library provides is used as is; a generic control it lacks is written once under `converter/app/controls/` on `rui::RenderContext`, `rui::Theme` tokens and `rui::Typography`, with a UI Automation provider, and listed in `docs/converter-building.md` as a candidate to move upstream into Resolute; a later pin that ships the control replaces the local one. Converter-specific surfaces (the image pane, the wipe, the difference view) live under `converter/app/` and follow the same token and accessibility rules. Reversal cost of the rule: deleting `converter/app/controls/` once Resolute ships equivalents.
 
 - -> XREF: D10 T04 §1 -- shared implementation or verification boundary.
 
@@ -70,13 +70,13 @@ track: GUI3
 
 **Treatment:** Resolute launcher treatment: Direct2D surfaces, theme tokens, Lucide glyphs with labels, and persistent progress.
 
-**Chrome:** Resolute's custom Direct2D caption and window chrome; shared application bar, comparison panes and result footer.
+**Chrome:** Resolute's custom Direct2D caption and window chrome; the tool window of Resolute-SDK `DESIGN.md` section 16 with the Images, Compare and Samples sections, content headers and status bar.
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies.
 
-- [ ] Vendor `resolute-ui` and its Lucide set from `rizonesoft/Resolute` at a pinned commit into `converter/vendor/resolute-ui/` and `converter/vendor/lucide/`, recorded in `converter/vendor.json` with the commit, the file list, SHA-256 hashes and licence. Done when: a changed or missing vendored file fails `scripts/check-converter.py`, and `AGENTS.md` records the dependency and its reason.
+- [ ] Vendor `resolute-ui` and its Lucide set from `rizonesoft/Resolute-SDK` (`shared/resolute-ui/`, `shared/lucide/`) at a pinned commit into `converter/vendor/resolute-ui/` and `converter/vendor/lucide/`, recorded in `converter/vendor.json` with the commit, the file list, SHA-256 hashes and licence. Done when: a changed or missing vendored file fails `scripts/check-converter.py`, and `AGENTS.md` records the dependency and its reason.
 - [ ] Add the `RasterFoldConverter` executable to `converter/CMakeLists.txt` (the CMake build and its driver `scripts/build-converter.py` come from D10 T01 §2). Done when: a clean checkout builds a `RasterFoldConverter` Windows x64 executable as C++23 that statically links `ResoluteUI_static` and `Lucide_static`, with the manifest declaring per-monitor DPI v2, and the codec targets in `scripts/build.py` are unchanged.
-- [ ] Implement the application shell in `converter/app/main.cpp` and `converter/app/shell.cpp` on `rui::` windows and controls. Done when: the application bar, workspace, settings column and result footer of `docs/design/converter.md` exist as `resolute-ui` controls, and no file under `converter/app/` draws a control the library provides or names a colour, font size or spacing literal.
+- [ ] Implement the application shell in `converter/app/main.cpp` and `converter/app/shell.cpp` on `rui::` windows and controls. Done when: the sidebar with the Images, Compare, Samples, Activity, Settings and About sections, each section's content header and the status bar of `docs/design/converter.md` exist as `resolute-ui` controls, and no file under `converter/app/` draws a control the library provides or names a colour, font size or spacing literal.
 - [ ] Implement the generic controls the pinned library lacks (button, drop-down, slider, check box, progress bar) and a shared UI Automation provider base under `converter/app/controls/`. Done when: each draws only through `rui::RenderContext` with `rui::Theme` tokens, shows the 2px accent focus ring, meets the 24x24 hit target at 100%, reports name, role, state and value to UI Automation, and is listed in `docs/converter-building.md` as an upstream candidate.
 - [ ] Add UI Automation adapters for every `resolute-ui` control the converter uses (`ListView`, `Toolbar`, `Sidebar`, `StatusBar`, `PopupMenu`, `ContentView`) in `converter/app/controls/uia_adapters.cpp`, wrapping each control without changing how it renders. Done when: a UI Automation client enumerates every item, row, button and menu entry of those controls with a name, role and state, can invoke, select and sort through them, and `tests/converter/test_ui.cpp` fails when an adapter is removed.
 - [ ] Bind the shell to the C engine through `converter/app/engine_bridge.cpp`. Done when: interface code reaches jobs, capabilities and results only through the C headers under `converter/include/`, and rendering, input, accessibility and application state have separate ownership.
@@ -101,7 +101,7 @@ Build in the listed order. This section adds the named test driver before using 
 
 **Treatment:** Resolute launcher treatment: Direct2D surfaces, theme tokens, Lucide glyphs with labels, and persistent progress.
 
-**Chrome:** Resolute's custom Direct2D caption and window chrome; shared application bar, comparison panes and result footer.
+**Chrome:** Resolute's custom Direct2D caption and window chrome; the tool window of Resolute-SDK `DESIGN.md` section 16 with the Images, Compare and Samples sections, content headers and status bar.
 
 **Needs:** Windows host (build/test)
 
@@ -131,7 +131,7 @@ Build in the listed order. This section adds the named test driver before using 
 
 **Treatment:** Resolute launcher treatment: Direct2D surfaces, theme tokens, Lucide glyphs with labels, and persistent progress.
 
-**Chrome:** Resolute's custom Direct2D caption and window chrome; shared application bar, comparison panes and result footer.
+**Chrome:** Resolute's custom Direct2D caption and window chrome; the tool window of Resolute-SDK `DESIGN.md` section 16 with the Images, Compare and Samples sections, content headers and status bar.
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies. Interface code is C++23 under `converter/app/` on the `resolute-ui` shell of §1 and reaches the engine only through the C headers under `converter/include/`; see the stack facts under Inputs.
 
@@ -159,7 +159,7 @@ Build in the listed order. This section adds the named test driver before using 
 
 **Treatment:** Resolute launcher treatment: Direct2D surfaces, theme tokens, Lucide glyphs with labels, and persistent progress.
 
-**Chrome:** Resolute's custom Direct2D caption and window chrome; shared application bar, comparison panes and result footer.
+**Chrome:** Resolute's custom Direct2D caption and window chrome; the tool window of Resolute-SDK `DESIGN.md` section 16 with the Images, Compare and Samples sections, content headers and status bar.
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies. Interface code is C++23 under `converter/app/` on the `resolute-ui` shell of §1 and reaches the engine only through the C headers under `converter/include/`; see the stack facts under Inputs.
 
@@ -186,7 +186,7 @@ Build in the listed order. This section adds the named test driver before using 
 
 **Treatment:** Resolute launcher treatment: Direct2D surfaces, theme tokens, Lucide glyphs with labels, and persistent progress.
 
-**Chrome:** Resolute's custom Direct2D caption and window chrome; shared application bar, comparison panes and result footer.
+**Chrome:** Resolute's custom Direct2D caption and window chrome; the tool window of Resolute-SDK `DESIGN.md` section 16 with the Images, Compare and Samples sections, content headers and status bar.
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies. Interface code is C++23 under `converter/app/` on the `resolute-ui` shell of §1 and reaches the engine only through the C headers under `converter/include/`; see the stack facts under Inputs.
 
@@ -214,7 +214,7 @@ Build in the listed order. This section adds the named test driver before using 
 
 **Treatment:** Resolute launcher treatment: Direct2D surfaces, theme tokens, Lucide glyphs with labels, and persistent progress.
 
-**Chrome:** Resolute's custom Direct2D caption and window chrome; shared application bar, comparison panes and result footer.
+**Chrome:** Resolute's custom Direct2D caption and window chrome; the tool window of Resolute-SDK `DESIGN.md` section 16 with the Images, Compare and Samples sections, content headers and status bar.
 
 Build in the listed order. This section adds the named test driver before using its checkpoint; no existing gate is claimed for future files. Keep RasterFold codec artifacts independent from converter dependencies. Interface code is C++23 under `converter/app/` on the `resolute-ui` shell of §1 and reaches the engine only through the C headers under `converter/include/`; see the stack facts under Inputs.
 
