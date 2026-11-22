@@ -47,7 +47,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define JP2_MAX_BOXES 64u
+#define JP2_MAX_BOXES 1024u
 #define JP2_MAX_THREADS 16u
 #define JP2_STREAM_CHUNK_BYTES (64u * 1024u)
 
@@ -422,16 +422,16 @@ static rfc_status jp2_scan_codestream(const uint8_t *cs,
 }
 
 static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
-    if (!p || len < 10u) {
+    if (!p || len < 11u) {
         return 0;
     }
     size_t i = 0u;
     if (len >= 3u && p[0] == 0xEFu && p[1] == 0xBBu && p[2] == 0xBFu) {
         i = 3u;
     }
-    /* Skip leading ASCII whitespace and leading <?xpacket ...?> / <?xml ...?> PIs,
-     * never XML comments, then require the root element to be <x:xmpmeta. */
-    for (int pi = 0; pi < 4; pi++) {
+    /* Skip leading ASCII whitespace, <?xpacket ...?> / <?xml ...?> PIs,
+     * and <!-- ... --> XML comments before the root element. */
+    for (int step = 0; step < 16; step++) {
         while (i < len && (p[i] == ' ' || p[i] == '\t' || p[i] == '\r' ||
                            p[i] == '\n')) {
             i++;
@@ -458,6 +458,22 @@ static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
             }
             continue;
         }
+        if (rem >= 4u && memcmp(p + i, "<!--", 4u) == 0) {
+            size_t j = i + 4u;
+            int closed = 0;
+            while (j + 2u < len) {
+                if (p[j] == '-' && p[j + 1u] == '-' && p[j + 2u] == '>') {
+                    i = j + 3u;
+                    closed = 1;
+                    break;
+                }
+                j++;
+            }
+            if (!closed) {
+                return 0;
+            }
+            continue;
+        }
         break;
     }
     while (i < len && (p[i] == ' ' || p[i] == '\t' || p[i] == '\r' ||
@@ -465,7 +481,35 @@ static int jp2_is_xmp_xml(const uint8_t *p, size_t len) {
         i++;
     }
     size_t rem = len - i;
-    return (rem >= 10u && memcmp(p + i, "<x:xmpmeta", 10u) == 0) ? 1 : 0;
+    if (rem < 11u || memcmp(p + i, "<x:xmpmeta", 10u) != 0) {
+        return 0;
+    }
+    /* Require an XML name delimiter immediately after "<x:xmpmeta". */
+    uint8_t next = p[i + 10u];
+    if (next != ' ' && next != '\t' && next != '\r' && next != '\n' &&
+        next != '>' && next != '/') {
+        return 0;
+    }
+    /* Find the end of the opening <x:xmpmeta ...> tag and verify the official
+     * Adobe XMP namespace xmlns:x="adobe:ns:meta/" (single or double quotes). */
+    size_t tag_end = i + 10u;
+    size_t tag_lim = (len - i > 1024u) ? (i + 1024u) : len;
+    while (tag_end < tag_lim && p[tag_end] != '>') {
+        tag_end++;
+    }
+    if (tag_end >= tag_lim) {
+        return 0;
+    }
+    static const char k_ns_dq[] = "xmlns:x=\"adobe:ns:meta/\"";
+    static const char k_ns_sq[] = "xmlns:x='adobe:ns:meta/'";
+    const size_t ns_len = sizeof(k_ns_dq) - 1u;
+    for (size_t k = i + 10u; k + ns_len <= tag_end; k++) {
+        if (memcmp(p + k, k_ns_dq, ns_len) == 0 ||
+            memcmp(p + k, k_ns_sq, ns_len) == 0) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 static rfc_status jp2_scan_input(const uint8_t *bytes,
@@ -976,11 +1020,12 @@ static opj_codec_t *jp2_create_codec_safe(int is_decompress,
     }
     opj_codec_t *c = is_decompress ? opj_create_decompress(fmt)
                                    : opj_create_compress(fmt);
+    int restore_rc = 0;
     if (modified) {
 #ifdef _WIN32
-        _putenv_s("OPJ_NUM_THREADS", restore_val);
+        restore_rc = _putenv_s("OPJ_NUM_THREADS", restore_val);
 #else
-        setenv("OPJ_NUM_THREADS", restore_val, 1);
+        restore_rc = setenv("OPJ_NUM_THREADS", restore_val, 1);
 #endif
     }
     free(heap_saved);
@@ -989,6 +1034,12 @@ static opj_codec_t *jp2_create_codec_safe(int is_decompress,
 #else
     pthread_mutex_unlock(&g_jp2_env_lock);
 #endif
+    if (restore_rc != 0) {
+        if (c) {
+            opj_destroy_codec(c);
+        }
+        return NULL;
+    }
     return c;
 }
 
@@ -1428,6 +1479,7 @@ static rfc_status jp2_decode_session(void *session,
     if (st != RFC_OK) {
         goto cleanup;
     }
+    jp2_invoke_hook(4);
 
     stream = opj_stream_create(JP2_STREAM_CHUNK_BYTES, OPJ_TRUE);
     if (!stream) {

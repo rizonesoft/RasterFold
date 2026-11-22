@@ -938,7 +938,7 @@ static void sniff_jp2_geometry(const uint8_t *b, size_t len,
          * Allow jp2h itself to extend past the 16 KiB sniff prefix (e.g., a
          * large ICC profile in colr) since ihdr precedes colr inside jp2h. */
         size_t off = 12u;
-        for (int bi = 0; bi < 64 && off + 8u <= len; bi++) {
+        for (int bi = 0; bi < 1024 && off + 8u <= len; bi++) {
             uint32_t lbox = rd32be(b + off);
             uint32_t tbox = rd32be(b + off + 4u);
             size_t hdr = 8u;
@@ -1044,7 +1044,7 @@ static void sniff_jp2_geometry_stream(const seek_stream *ss,
     uint32_t w = 0u, h = 0u;
     uint16_t nc = 0u;
     int is_16 = 0;
-    for (int bi = 0; bi < 64; bi++) {
+    for (int bi = 0; bi < 1024; bi++) {
         uint8_t hdr[16];
         size_t got = 0u;
         if (ss->read_at(ss->ctx, off, hdr, sizeof(hdr), &got) != RFC_OK ||

@@ -16,15 +16,51 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <tlhelp32.h>
 #define set_env_var(k, v) _putenv_s((k), (v))
 #define unset_env_var(k) _putenv_s((k), "")
 #define jp2_test_yield() Sleep(0)
+static int get_process_thread_count(void) {
+    DWORD pid = GetCurrentProcessId();
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (snap == INVALID_HANDLE_VALUE) {
+        return -1;
+    }
+    THREADENTRY32 te;
+    te.dwSize = sizeof(te);
+    int count = 0;
+    if (Thread32First(snap, &te)) {
+        do {
+            if (te.th32OwnerProcessID == pid) {
+                count++;
+            }
+        } while (Thread32Next(snap, &te));
+    }
+    CloseHandle(snap);
+    return count;
+}
 #else
 #include <sched.h>
 #include <unistd.h>
 #define set_env_var(k, v) setenv((k), (v), 1)
 #define unset_env_var(k) unsetenv((k))
 #define jp2_test_yield() sched_yield()
+static int get_process_thread_count(void) {
+    FILE *f = fopen("/proc/self/status", "r");
+    if (!f) {
+        return -1;
+    }
+    char line[256];
+    int count = -1;
+    while (fgets(line, sizeof(line), f)) {
+        if (strncmp(line, "Threads:", 8) == 0) {
+            count = atoi(line + 8);
+            break;
+        }
+    }
+    fclose(f);
+    return count;
+}
 #endif
 
 static int g_checks = 0;
@@ -817,6 +853,7 @@ static void cancel_hook_fn(int phase) {
 
 static _Atomic(uint32_t) g_cli_provider_calls = 0;
 static _Atomic(uint32_t) g_cli_frame_alloc_calls = 0;
+static _Atomic(int) g_obs_threads_during = -1;
 static void cli_obs_hook_fn(int phase) {
     if (phase == 1) {
         atomic_fetch_add_explicit(&g_cli_provider_calls, 1u,
@@ -824,6 +861,10 @@ static void cli_obs_hook_fn(int phase) {
     } else if (phase == 3) {
         atomic_fetch_add_explicit(&g_cli_frame_alloc_calls, 1u,
                                   memory_order_relaxed);
+    } else if (phase == 4) {
+        atomic_store_explicit(&g_obs_threads_during,
+                              get_process_thread_count(),
+                              memory_order_release);
     }
 }
 
@@ -1209,6 +1250,47 @@ static void test_review_round1_regressions(void) {
         al.free(al.ctx, dec);
         adp->close_session(sd);
 
+        /* Prefix-spoofed <x:xmpmetadata xmlns:x="urn:unrelated"/> refused under preserve. */
+        {
+            const char *fake_xmp = "<x:xmpmetadata xmlns:x=\"urn:unrelated\"/>";
+            size_t flen = strlen(fake_xmp);
+            memcpy(m2, e4.data, e4.len);
+            put_be32(m2 + e4.len, (uint32_t)(8u + flen));
+            memcpy(m2 + e4.len + 4u, "xml ", 4u);
+            memcpy(m2 + e4.len + 8u, fake_xmp, flen);
+            CHECK(adp->open_session(&exec, &sd) == RFC_OK);
+            CHECK(adp->decode_session(sd, &exec, m2, e4.len + 8u + flen, NULL,
+                                      0u, &dec, &dc, &dm) ==
+                  RFC_ERR_METADATA_POLICY);
+            CHECK(adp->decode_session(sd, &exec, m2, e4.len + 8u + flen,
+                                      strip_sv, 1u, &dec, &dc, &dm) == RFC_OK);
+            CHECK(dc == 1u && dm.xmp == NULL);
+            rfc_metadata_free(&dm, &al);
+            rfc_frame_free(&dec[0]);
+            al.free(al.ctx, dec);
+            adp->close_session(sd);
+        }
+
+        /* Valid XMP preceded by a leading XML comment is accepted under preserve. */
+        {
+            const char *good_xmp =
+                "<!-- lead --><x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF/></x:xmpmeta>";
+            size_t glen = strlen(good_xmp);
+            memcpy(m2, e4.data, e4.len);
+            put_be32(m2 + e4.len, (uint32_t)(8u + glen));
+            memcpy(m2 + e4.len + 4u, "xml ", 4u);
+            memcpy(m2 + e4.len + 8u, good_xmp, glen);
+            CHECK(adp->open_session(&exec, &sd) == RFC_OK);
+            CHECK(adp->decode_session(sd, &exec, m2, e4.len + 8u + glen, NULL,
+                                      0u, &dec, &dc, &dm) == RFC_OK);
+            CHECK(dc == 1u && dm.xmp != NULL && dm.xmp_len == glen &&
+                  memcmp(dm.xmp, good_xmp, glen) == 0);
+            rfc_metadata_free(&dm, &al);
+            rfc_frame_free(&dec[0]);
+            al.free(al.ctx, dec);
+            adp->close_session(sd);
+        }
+
         /* 4g. meth=3 colr before meth=1 sRGB: meth=3 ignored, sRGB wins (no ICC). */
         const uint8_t *colr1_p = NULL;
         size_t colr1_l = 0u;
@@ -1276,14 +1358,14 @@ static void test_review_round1_regressions(void) {
             adp->close_session(sd);
         }
 
-        /* 4f. 1-thread vs 3-thread decode/encode equivalence + >64B OPJ_NUM_THREADS. */
-        const char *long_env =
-            "4_padding_long_value_over_64_bytes_0123456789_0123456789_0123456789";
-        set_env_var("OPJ_NUM_THREADS", long_env);
+        /* 4f. 1-thread vs 3-thread decode/encode equivalence, zero worker threads
+         * spawned for 1-thread job under OPJ_NUM_THREADS=4, + >64B env preserved. */
+        set_env_var("OPJ_NUM_THREADS", "4");
+        int threads_before = get_process_thread_count();
+        atomic_store_explicit(&g_obs_threads_during, -1, memory_order_release);
+        rfc_codecs_jp2_set_hook_for_testing(cli_obs_hook_fn);
         rfc_exec_context e1 = exec;
         e1.codec_threads = 1u;
-        rfc_exec_context e3 = exec;
-        e3.codec_threads = 3u;
         void *s1 = NULL;
         CHECK(adp->open_session(&e1, &s1) == RFC_OK);
         rfc_encoded e4_t1;
@@ -1294,8 +1376,17 @@ static void test_review_round1_regressions(void) {
         rfc_metadata dm1;
         CHECK(adp->decode_session(s1, &e1, e4_t1.data, e4_t1.len, NULL, 0u,
                                   &dec1, &dc1, &dm1) == RFC_OK);
+        rfc_codecs_jp2_set_hook_for_testing(NULL);
+        int threads_during =
+            atomic_load_explicit(&g_obs_threads_during, memory_order_acquire);
+        CHECK(threads_before > 0 && threads_during == threads_before);
         adp->close_session(s1);
 
+        const char *long_env =
+            "4_padding_long_value_over_64_bytes_0123456789_0123456789_0123456789";
+        set_env_var("OPJ_NUM_THREADS", long_env);
+        rfc_exec_context e3 = exec;
+        e3.codec_threads = 3u;
         CHECK(adp->open_session(&e3, &se) == RFC_OK);
         rfc_encoded e4_t3;
         CHECK(adp->encode_session(se, &e3, &f4, 1u, NULL, NULL, 0u, &e4_t3) ==
@@ -1610,7 +1701,7 @@ static void test_jobs_budget_cancel_threads_and_file_safety(void) {
             free(big_icc);
         }
 
-        /* Layout-free file job with 60 leading free boxes (one 24 KiB) before jp2h. */
+        /* Layout-free file job with 64 leading free boxes (one 24 KiB) before jp2h. */
         {
             const uint8_t *jp2h_p = NULL;
             size_t jp2h_l = 0u;
@@ -1619,12 +1710,12 @@ static void test_jobs_budget_cancel_threads_and_file_safety(void) {
             size_t jp2h_off = (size_t)(jp2h_p - j_bytes.data) - 8u;
             size_t small_free = 8u;
             size_t big_free = 24u * 1024u;
-            size_t total_free = 59u * small_free + big_free;
+            size_t total_free = 63u * small_free + big_free;
             uint8_t *buf_f = (uint8_t *)calloc(1u, j_bytes.len + total_free);
             CHECK(buf_f != NULL);
             memcpy(buf_f, j_bytes.data, jp2h_off);
             size_t pos_f = jp2h_off;
-            for (int fi = 0; fi < 59; fi++) {
+            for (int fi = 0; fi < 63; fi++) {
                 put_be32(buf_f + pos_f, (uint32_t)small_free);
                 memcpy(buf_f + pos_f + 4u, "free", 4u);
                 pos_f += small_free;
