@@ -711,6 +711,14 @@ static void test_refusals_malformed_and_metadata_policy(void) {
             CHECK(st.calls == 0u);
         }
 
+        /* Standalone encode_session refuses exactness=byte-identical before work. */
+        rfc_setting_value bi_sv[1] = {{"exactness", "byte-identical"}};
+        rfc_encoded bi_out;
+        st.calls = 0u;
+        CHECK(adp->encode_session(sess, &exec, &fr, 1u, NULL, bi_sv, 1u,
+                                  &bi_out) == RFC_ERR_UNSUPPORTED_COMBINATION);
+        CHECK(st.calls == 0u);
+
         /* Malformed metadata descriptor (nonzero length with NULL pointer) refused. */
         rfc_metadata bad_desc;
         memset(&bad_desc, 0, sizeof(bad_desc));
@@ -1257,6 +1265,61 @@ static void test_jobs_budget_cancel_and_file_safety(void) {
               memcmp(bi_bytes, qoi_srgb.data, bi_len) == 0);
         free(bi_bytes);
 
+        /* C2. Compressible 4096x4096 RGBA8 solid QOI (~265 KiB compressed, 64 MiB
+         * decoded) succeeds through layout-free byte-identical file job under
+         * default scheduler sizing. */
+        {
+            const uint32_t bw = 4096u, bh = 4096u;
+            const uint64_t total_px = (uint64_t)bw * (uint64_t)bh;
+            const size_t full_runs = (size_t)(total_px / 62u);
+            const size_t rem_px = (size_t)(total_px % 62u);
+            const size_t big_len = 14u + full_runs + (rem_px ? 1u : 0u) + 8u;
+            uint8_t *big_qoi = (uint8_t *)malloc(big_len);
+            CHECK(big_qoi != NULL);
+            memcpy(big_qoi, "qoif", 4u);
+            wr32be(big_qoi + 4u, bw);
+            wr32be(big_qoi + 8u, bh);
+            big_qoi[12] = 4u;
+            big_qoi[13] = QOI_SRGB;
+            memset(big_qoi + 14u, 0xC0 | 61u, full_runs);
+            size_t tail_off = 14u + full_runs;
+            if (rem_px) {
+                big_qoi[tail_off++] = (uint8_t)(0xC0u | (rem_px - 1u));
+            }
+            const uint8_t endm[8] = {0, 0, 0, 0, 0, 0, 0, 1};
+            memcpy(big_qoi + tail_off, endm, 8u);
+
+            char p_big_in[256], p_big_out[256];
+            temp_path(p_big_in, sizeof(p_big_in), "big4k.qoi");
+            temp_path(p_big_out, sizeof(p_big_out), "big4k_bi.qoi");
+            CHECK(write_file_all(p_big_in, big_qoi, big_len));
+
+            memset(&sp, 0, sizeof(sp));
+            rfc_io_source_init_path(&si, p_big_in, RFC_IMPORT_DEFAULT);
+            rfc_io_sink_init_path(&so, p_big_out, RFC_EXPORT_REFUSE_EXISTING);
+            sp.source_format = RFC_FORMAT_QOI;
+            sp.target_format = RFC_FORMAT_QOI;
+            sp.io_source = &si;
+            sp.io_sink = &so;
+            sp.settings = bi_sv;
+            sp.setting_count = 1u;
+            sp.requested_codec_threads = 1u;
+            CHECK(rfc_scheduler_submit(sched, NULL, &sp, &job) == RFC_OK);
+            CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
+            CHECK(rfc_job_snapshot_get(job, &snap) == RFC_OK);
+            CHECK(snap.state == RFC_JOB_SUCCEEDED && snap.status == RFC_OK);
+            rfc_job_release(job);
+
+            size_t big_out_len = 0u;
+            uint8_t *big_out = read_file_all(p_big_out, &big_out_len);
+            CHECK(big_out != NULL && big_out_len == big_len &&
+                  memcmp(big_out, big_qoi, big_len) == 0);
+            free(big_out);
+            free(big_qoi);
+            remove(p_big_in);
+            remove(p_big_out);
+        }
+
         /* D. Tagged PNG (with ICC profile) -> QOI: preserve refusal, acknowledged loss, explicit strip. */
         const rfc_session_adapter *png_adp =
             rfc_registry_session_adapter(RFC_FORMAT_PNG);
@@ -1280,7 +1343,47 @@ static void test_jobs_budget_cancel_and_file_safety(void) {
         CHECK(write_file_all(p_icc_png, icc_png.data, icc_png.len));
         rfc_encoded_free(&icc_png);
 
-        /* D1: Default preserve refuses with RFC_ERR_METADATA_POLICY. */
+        /* D1: Default preserve refuses with RFC_ERR_METADATA_POLICY BEFORE pixel
+         * allocation (verified via a 256x256 RGBA8 = 262144 B ICC-tagged PNG
+         * whose job budget peak stays far below one decoded pixel buffer). */
+        {
+            rfc_layout big_lay = {RFC_SAMPLE_RGBA8, RFC_ALPHA_STRAIGHT, 256u,
+                                  256u, 256u * 4u, 8u};
+            rfc_frame big_src;
+            CHECK(rfc_frame_alloc(&big_src, &big_lay, NULL, &al) == RFC_OK);
+            fill_pattern_rgba8(big_src.data, 256u, 256u, 256u * 4u);
+            void *psess2 = NULL;
+            CHECK(png_adp->open_session(&exec, &psess2) == RFC_OK);
+            rfc_encoded big_icc_png;
+            CHECK(png_adp->encode_session(psess2, &exec, &big_src, 1u, &icc_m,
+                                          NULL, 0u, &big_icc_png) == RFC_OK);
+            png_adp->close_session(psess2);
+            char p_big_icc[256];
+            temp_path(p_big_icc, sizeof(p_big_icc), "big_icc.png");
+            CHECK(write_file_all(p_big_icc, big_icc_png.data, big_icc_png.len));
+            rfc_encoded_free(&big_icc_png);
+            rfc_frame_free(&big_src);
+
+            memset(&sp, 0, sizeof(sp));
+            rfc_io_source_init_path(&si, p_big_icc, RFC_IMPORT_DEFAULT);
+            rfc_io_sink_init_path(&so, p_ack_qoi, RFC_EXPORT_REFUSE_EXISTING);
+            sp.source_format = RFC_FORMAT_PNG;
+            sp.target_format = RFC_FORMAT_QOI;
+            sp.io_source = &si;
+            sp.io_sink = &so;
+            sp.requested_codec_threads = 1u;
+            CHECK(rfc_scheduler_submit(sched, NULL, &sp, &job) == RFC_OK);
+            CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
+            CHECK(rfc_job_snapshot_get(job, &snap) == RFC_OK);
+            CHECK(snap.state == RFC_JOB_FAILED &&
+                  snap.status == RFC_ERR_METADATA_POLICY &&
+                  snap.budget.peak_allocated_bytes < 256u * 256u * 4u &&
+                  !file_exists(p_ack_qoi));
+            rfc_job_release(job);
+            remove(p_big_icc);
+        }
+
+        /* D2: Acknowledged unsupported-item loss succeeds and reports UNSUPPORTED_ITEMS_NAMED. */
         memset(&sp, 0, sizeof(sp));
         rfc_io_source_init_path(&si, p_icc_png, RFC_IMPORT_DEFAULT);
         rfc_io_sink_init_path(&so, p_ack_qoi, RFC_EXPORT_REFUSE_EXISTING);
@@ -1289,15 +1392,6 @@ static void test_jobs_budget_cancel_and_file_safety(void) {
         sp.io_source = &si;
         sp.io_sink = &so;
         sp.requested_codec_threads = 1u;
-        CHECK(rfc_scheduler_submit(sched, NULL, &sp, &job) == RFC_OK);
-        CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);
-        CHECK(rfc_job_snapshot_get(job, &snap) == RFC_OK);
-        CHECK(snap.state == RFC_JOB_FAILED &&
-              snap.status == RFC_ERR_METADATA_POLICY &&
-              !file_exists(p_ack_qoi));
-        rfc_job_release(job);
-
-        /* D2: Acknowledged unsupported-item loss succeeds and reports UNSUPPORTED_ITEMS_NAMED. */
         sp.acknowledged_unsupported_metadata = RFC_META_ITEM_ICC;
         CHECK(rfc_scheduler_submit(sched, NULL, &sp, &job) == RFC_OK);
         CHECK(rfc_job_wait(job, UINT32_MAX) == RFC_OK);

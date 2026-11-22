@@ -1851,7 +1851,9 @@ rfc_status rfc_scheduler_submit(rfc_scheduler *sched,
                 spec->target_format, spec->settings, spec->setting_count,
                 &geo_ex, &geo_pol) == RFC_OK &&
             (geo_ex == RFC_EXACT_PIXEL_EXACT ||
-             geo_ex == RFC_EXACT_COEFFICIENT_EXACT) &&
+             geo_ex == RFC_EXACT_COEFFICIENT_EXACT ||
+             (geo_ex == RFC_EXACT_BYTE_IDENTICAL &&
+              eff_source_format == RFC_FORMAT_QOI)) &&
             geo.has_geometry) {
             memset(&geo_layout, 0, sizeof(geo_layout));
             geo_layout.format = geo.format;

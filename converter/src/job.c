@@ -3014,6 +3014,44 @@ static rfc_status run_bounded_session_decode(
                 exp_bytes = probe.total_decoded_bytes;
             }
         }
+        if (st == RFC_OK && validate_dec_settings &&
+            job->stage_ops.on_encode == NULL &&
+            job->stage_ops.on_verify == NULL &&
+            job->target_format != (rfc_format_id)0) {
+            size_t job_sc = 0u;
+            const rfc_setting_value *job_sv = rfc_job_settings(job, &job_sc);
+            rfc_exactness_class t_ex = RFC_EXACT_PIXEL_EXACT;
+            rfc_metadata_policy t_pol = RFC_META_POLICY_PRESERVE;
+            if (rfc_job_internal_resolve_exactness(
+                    job->target_format, job_sv, job_sc, &t_ex, &t_pol) ==
+                    RFC_OK &&
+                t_ex == RFC_EXACT_PIXEL_EXACT) {
+                rfc_verify_report pre_rep;
+                memset(&pre_rep, 0, sizeof(pre_rep));
+                rfc_status mst = rfc_metadata_check_source_preflight(
+                    job->target_format, t_pol, RFC_EXACT_PIXEL_EXACT,
+                    &probe.container_meta, NULL, 0u,
+                    rfc_job_acknowledged_metadata(job), &pre_rep.metadata);
+                if (mst == RFC_ERR_METADATA_POLICY) {
+                    pre_rep.exactness = RFC_EXACT_PIXEL_EXACT;
+                    copy_verify_detail(pre_rep.decoder_provenance,
+                                       sizeof(pre_rep.decoder_provenance),
+                                       "same-provider-fresh-session");
+                    pre_rep.mismatch.kind = RFC_MISMATCH_METADATA_UNSUPPORTED;
+                    copy_verify_detail(pre_rep.mismatch.detail,
+                                       sizeof(pre_rep.mismatch.detail),
+                                       pre_rep.metadata.detail);
+                    pre_rep.meta_outcome = pre_rep.metadata.outcome;
+                    pre_rep.status = mst;
+                    pre_rep.valid = 1;
+                    store_job_verify_report(job, &pre_rep);
+                    st = mst;
+                    if (out_err_detail && !*out_err_detail) {
+                        *out_err_detail = "unacknowledged unsupported metadata";
+                    }
+                }
+            }
+        }
         rfc_metadata_free(&probe.container_meta, exec->allocator);
     }
 

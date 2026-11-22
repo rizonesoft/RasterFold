@@ -735,6 +735,52 @@ def decode_qoi_ex(blob: bytes) -> tuple[int, int, int, int, bytes]:
     if magic != b"qoif" or w == 0 or ht == 0 or ch not in (3, 4) or cs not in (0, 1):
         raise ValueError("invalid QOI header")
     total_px = w * ht
+    if total_px >= 400_000_000:
+        raise ValueError("QOI dimensions exceed QOI_PIXELS_MAX")
+    end = len(blob) - 8
+    # Zero-allocation chunk-coverage pre-scan before allocating pixel buffer.
+    scan_pos = 14
+    scan_px = 0
+    scan_prev_idx = -1
+    while scan_px < total_px:
+        if scan_pos >= end:
+            raise ValueError("truncated QOI stream")
+        tag = blob[scan_pos]
+        scan_pos += 1
+        if tag == 0xFE:
+            if end - scan_pos < 3:
+                raise ValueError("truncated QOI_OP_RGB")
+            scan_pos += 3
+            scan_px += 1
+            scan_prev_idx = -1
+        elif tag == 0xFF:
+            if end - scan_pos < 4:
+                raise ValueError("truncated QOI_OP_RGBA")
+            scan_pos += 4
+            scan_px += 1
+            scan_prev_idx = -1
+        elif (tag & 0xC0) == 0x00:
+            if tag == scan_prev_idx:
+                raise ValueError("consecutive identical QOI_OP_INDEX chunks")
+            scan_prev_idx = tag
+            scan_px += 1
+        elif (tag & 0xC0) == 0x80:
+            if end - scan_pos < 1:
+                raise ValueError("truncated QOI_OP_LUMA")
+            scan_pos += 1
+            scan_px += 1
+            scan_prev_idx = -1
+        elif (tag & 0xC0) == 0xC0:
+            run_len = (tag & 0x3F) + 1
+            if run_len > total_px - scan_px:
+                raise ValueError("QOI_OP_RUN exceeds image pixel count")
+            scan_px += run_len
+            scan_prev_idx = -1
+        else:
+            scan_px += 1
+            scan_prev_idx = -1
+    if scan_pos != end:
+        raise ValueError("trailing QOI data")
     out = bytearray(total_px * ch)
     index = [(0, 0, 0, 0)] * 64
     r, g, b, a = 0, 0, 0, 255
