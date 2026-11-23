@@ -1164,6 +1164,7 @@ static rfc_status jp2_iso2022_to_utf8(const uint8_t *src,
     /* state: 0=ASCII, 1=JIS0208, 2=JIS0212, 3=KATA, 4=JIS-Roman, 5=GB2312,
      * 6=KSX1001, 7=JIS0213-O, 8=JIS0213-Q, 9=JIS0213-P, 10=CNS-P1, 11=IR165 */
     int state = 0;
+    int kr_seg_chars = 0;
     int g1_state = 0;
     int g2_kind = 0; /* JP_2: 1=ISO8859-1, 2=ISO8859-7; CN/CN_EXT: 3=CNS-P2 */
     int g3_kind = 0; /* CN_EXT: 1..5 = CNS 11643 Planes 3..7 (ESC$+I..M) */
@@ -1339,15 +1340,17 @@ static rfc_status jp2_iso2022_to_utf8(const uint8_t *src,
                 return RFC_ERR_INVALID_ARGUMENT;
             }
             state = g1_state;
+            kr_seg_chars = 0;
             i++;
             continue;
         }
         if (is_so_si && b == 0x0Fu) {
-            if (mode == JP2_ISO_KR && state == 0) {
+            if (mode == JP2_ISO_KR && (state == 0 || kr_seg_chars == 0)) {
                 alloc->free(alloc->ctx, buf);
                 return RFC_ERR_INVALID_ARGUMENT;
             }
             state = 0;
+            kr_seg_chars = 0;
             i++;
             continue;
         }
@@ -1358,9 +1361,14 @@ static rfc_status jp2_iso2022_to_utf8(const uint8_t *src,
             continue;
         }
         if (mode == JP2_ISO_KR && (b == 0x09u || b == 0x0Au || b == 0x0Du)) {
+            if (b == 0x0Au && state != 0 && kr_seg_chars == 0) {
+                alloc->free(alloc->ctx, buf);
+                return RFC_ERR_INVALID_ARGUMENT;
+            }
             buf[o++] = b;
             if (b == 0x0Au) {
                 state = 0;
+                kr_seg_chars = 0;
             }
             i++;
             continue;
@@ -1429,6 +1437,7 @@ static rfc_status jp2_iso2022_to_utf8(const uint8_t *src,
                 alloc->free(alloc->ctx, buf);
                 return RFC_ERR_INVALID_ARGUMENT;
             }
+            kr_seg_chars = 1;
             i += 2u;
         }
     }

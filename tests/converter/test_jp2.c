@@ -1588,10 +1588,11 @@ static void test_review_round1_regressions(void) {
                 "<?xml version=\"1.0\" encoding=\"ISO-2022-KR\"?><x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\x0F</x:xmpmeta>",
                 "<?xml version=\"1.0\" encoding=\"ISO-2022-KR\"?><x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\x1B$)C\x0EGQ\x0F\x0F</x:xmpmeta>",
                 "<?xml version=\"1.0\" encoding=\"ISO-2022-KR\"?><x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\x1B$)C\x0EGQ\01619\x0F</x:xmpmeta>",
+                "<?xml version=\"1.0\" encoding=\"ISO-2022-KR\"?><x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\x1B$)C\x0E\x0F</x:xmpmeta>",
                 "<?xml version=\"1.0\" encoding=\"UTF-8\"?><x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\x1B$BF|K\\\x1B(B</x:xmpmeta>",
                 "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\" xmlns:a=\"urn:u\" xmlns:b=\"urn:u\" a:k=\"1\" b:k=\"2\"/>"
             };
-            for (size_t bi = 0u; bi < 40u; bi++) {
+            for (size_t bi = 0u; bi < 41u; bi++) {
                 const char *bad_xmp = bad_cases[bi];
                 size_t blen = strlen(bad_xmp);
                 uint8_t *mb = (uint8_t *)malloc(e4.len + 8u + blen);
