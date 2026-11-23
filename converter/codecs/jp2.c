@@ -1383,11 +1383,8 @@ static rfc_status jp2_iso2022_to_utf8(const uint8_t *src,
         } else if (state == 4) {
             if (mode == JP2_ISO_JP_2 && b == 0x0Du && i + 1u < len &&
                 src[i + 1u] == 0x0Au) {
-                g2_kind = 0;
-                buf[o++] = 0x0Du;
-                buf[o++] = 0x0Au;
-                i += 2u;
-                continue;
+                alloc->free(alloc->ctx, buf);
+                return RFC_ERR_INVALID_ARGUMENT;
             }
             if (b == 0x5Cu) {
                 jp2_emit_utf8_cp(buf, &o, 0x00A5u);
@@ -1430,7 +1427,7 @@ static rfc_status jp2_iso2022_to_utf8(const uint8_t *src,
             i += 2u;
         }
     }
-    if (state != 0 && !(is_jp && state == 4)) {
+    if (state != 0) {
         alloc->free(alloc->ctx, buf);
         return RFC_ERR_INVALID_ARGUMENT;
     }
