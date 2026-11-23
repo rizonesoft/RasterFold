@@ -1354,10 +1354,15 @@ static void test_review_round1_regressions(void) {
                 "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"/>",
                 "<?xml version=\"1.0\" encoding=\"ISO-2022-JP\"?>"
                 "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\x1B$BF|K\\\x1B(B</x:xmpmeta>",
+                "<?xml version=\"1.0\" encoding=\"ISO-2022-JP\"?>"
+                "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\" xmlns:a=\"urn:\x1B$BF|\x1B(B\" "
+                "xmlns:b=\"urn:&#x5BF1;\" a:v=\"1\" b:v=\"2\"/>",
                 "<?xml version=\"1.0\" encoding=\"ISO-2022-KR\"?>"
-                "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\x1B$)C\x0EGQ19\x0F</x:xmpmeta>"
+                "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\x1B$)C\x0EGQ19\x0F</x:xmpmeta>",
+                "<?xml version=\"1.0\" encoding=\"SCSU\"?>"
+                "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"/>"
             };
-            for (size_t gi = 0u; gi < 20u; gi++) {
+            for (size_t gi = 0u; gi < 22u; gi++) {
                 const char *good_xmp = good_cases[gi];
                 size_t glen = strlen(good_xmp);
                 uint8_t *mg = (uint8_t *)malloc(e4.len + 8u + glen);
@@ -1529,10 +1534,11 @@ static void test_review_round1_regressions(void) {
                 "<?xml version=\"1.0\" encoding=\"Shift_JIS\"?><x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\x82\xA0</x:xmpmeta>",
                 "<?xml version=\"1.0\" encoding=\"ISO-2022-JP\"?><x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\x1B$B\x29\x21\x1B(B</x:xmpmeta>",
                 "<?xml version=\"1.0\" encoding=\"ISO-2022-JP\"?><x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\x1B$BF|</x:xmpmeta>",
+                "<?xml version=\"1.0\" encoding=\"ISO-2022-JP\"?><x:xmpmeta xmlns:x=\"adobe:ns:meta/\" xmlns:a=\"urn:\x1B$BF|\x1B(B\" xmlns:b=\"urn:&#x65E5;\" a:v=\"1\" b:v=\"2\"/>",
                 "<?xml version=\"1.0\" encoding=\"UTF-8\"?><x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\x1B$BF|K\\\x1B(B</x:xmpmeta>",
                 "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\" xmlns:a=\"urn:u\" xmlns:b=\"urn:u\" a:k=\"1\" b:k=\"2\"/>"
             };
-            for (size_t bi = 0u; bi < 18u; bi++) {
+            for (size_t bi = 0u; bi < 19u; bi++) {
                 const char *bad_xmp = bad_cases[bi];
                 size_t blen = strlen(bad_xmp);
                 uint8_t *mb = (uint8_t *)malloc(e4.len + 8u + blen);
