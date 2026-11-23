@@ -1349,7 +1349,8 @@ static rfc_status jp2_iso2022_to_utf8(const uint8_t *src,
             i++;
             continue;
         }
-        if (is_jp && (b == 0x09u || b == 0x0Au || b == 0x0Du)) {
+        if (is_jp && mode != JP2_ISO_JP_2 &&
+            (b == 0x09u || b == 0x0Au || b == 0x0Du)) {
             buf[o++] = b;
             i++;
             continue;
