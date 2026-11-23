@@ -1193,7 +1193,8 @@ static rfc_status jp2_iso2022_to_utf8(const uint8_t *src,
                         i += 3u;
                         continue;
                     }
-                } else if (i + 5u < len && src[i + 1u] == '&' &&
+                } else if (mode != JP2_ISO_JP_2 && i + 5u < len &&
+                           src[i + 1u] == '&' &&
                            src[i + 2u] == '@' && src[i + 3u] == 0x1Bu &&
                            src[i + 4u] == '$' && src[i + 5u] == 'B') {
                     state = 1;
