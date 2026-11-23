@@ -1267,7 +1267,7 @@ static rfc_status jp2_iso2022_to_utf8(const uint8_t *src,
                 alloc->free(alloc->ctx, buf);
                 return RFC_ERR_INVALID_ARGUMENT;
             } else if (mode == JP2_ISO_KR) {
-                if (i + 3u < len && src[i + 1u] == '$' &&
+                if (state == 0 && i + 3u < len && src[i + 1u] == '$' &&
                     src[i + 2u] == ')' && src[i + 3u] == 'C') {
                     g1_state = 6;
                     i += 4u;
@@ -1334,7 +1334,7 @@ static rfc_status jp2_iso2022_to_utf8(const uint8_t *src,
             }
         }
         if (is_so_si && b == 0x0Eu) {
-            if (g1_state == 0) {
+            if (g1_state == 0 || (mode == JP2_ISO_KR && state != 0)) {
                 alloc->free(alloc->ctx, buf);
                 return RFC_ERR_INVALID_ARGUMENT;
             }
@@ -1343,6 +1343,10 @@ static rfc_status jp2_iso2022_to_utf8(const uint8_t *src,
             continue;
         }
         if (is_so_si && b == 0x0Fu) {
+            if (mode == JP2_ISO_KR && state == 0) {
+                alloc->free(alloc->ctx, buf);
+                return RFC_ERR_INVALID_ARGUMENT;
+            }
             state = 0;
             i++;
             continue;
