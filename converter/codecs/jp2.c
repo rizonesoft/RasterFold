@@ -1070,6 +1070,19 @@ static int jp2_enc_norm_in_sorted_list(const char *norm,
 
 #include "jp2_iso2022_tables.h"
 
+enum {
+    JP2_ISO_NONE = 0,
+    JP2_ISO_JP_BASE = 1,  /* RFC 1468: ESC(B, ESC(J, ESC$@, ESC$B */
+    JP2_ISO_JP_1 = 2,     /* RFC 2237: JP_BASE + ESC$(D (JIS X 0212) */
+    JP2_ISO_JP_EXT = 3,   /* JP_BASE + ESC$(D + ESC(I (JIS X 0201 Katakana) */
+    JP2_ISO_JP_2 = 4,     /* RFC 1554: JP_BASE + ESC$(D, ESC$A, ESC$(C, ESC.A/F + ESC N */
+    JP2_ISO_JP_3 = 5,     /* JIS X 0213:2000: JP_BASE + ESC$(O, ESC$(P */
+    JP2_ISO_JP_2004 = 6,  /* JIS X 0213:2004: JP_BASE + ESC$(Q, ESC$(P */
+    JP2_ISO_KR = 7,       /* RFC 1557: ESC$)C + SO/SI (KS X 1001) */
+    JP2_ISO_CN = 8,       /* RFC 1922: ESC$)A, ESC$)G, ESC$*H + ESC N, SO/SI */
+    JP2_ISO_CN_EXT = 9    /* RFC 1922 ext: CN + ESC$)E (ISO-IR-165) */
+};
+
 static uint16_t jp2_dbcs_lookup_u16(const uint16_t *tbl, uint8_t b1, uint8_t b2) {
     if (b1 < 0x21u || b1 > 0x7Eu || b2 < 0x21u || b2 > 0x7Eu) {
         return 0u;
@@ -1077,24 +1090,52 @@ static uint16_t jp2_dbcs_lookup_u16(const uint16_t *tbl, uint8_t b1, uint8_t b2)
     return tbl[(uint32_t)(b1 - 0x21u) * 94u + (uint32_t)(b2 - 0x21u)];
 }
 
-static void jp2_emit_utf8_bmp(uint8_t *out, size_t *pos, uint16_t cp) {
+static void jp2_emit_utf8_cp(uint8_t *out, size_t *pos, uint32_t cp) {
     if (cp < 0x80u) {
         out[(*pos)++] = (uint8_t)cp;
     } else if (cp < 0x800u) {
         out[(*pos)++] = (uint8_t)(0xC0u | ((cp >> 6) & 0x1Fu));
         out[(*pos)++] = (uint8_t)(0x80u | (cp & 0x3Fu));
-    } else {
+    } else if (cp < 0x10000u) {
         out[(*pos)++] = (uint8_t)(0xE0u | ((cp >> 12) & 0x0Fu));
+        out[(*pos)++] = (uint8_t)(0x80u | ((cp >> 6) & 0x3Fu));
+        out[(*pos)++] = (uint8_t)(0x80u | (cp & 0x3Fu));
+    } else {
+        out[(*pos)++] = (uint8_t)(0xF0u | ((cp >> 18) & 0x07u));
+        out[(*pos)++] = (uint8_t)(0x80u | ((cp >> 12) & 0x3Fu));
         out[(*pos)++] = (uint8_t)(0x80u | ((cp >> 6) & 0x3Fu));
         out[(*pos)++] = (uint8_t)(0x80u | (cp & 0x3Fu));
     }
 }
 
-/* Decode 7-bit ISO-2022-{JP,KR,CN} post-XMLDecl bytes into exact UTF-8 in a
- * job-budgeted buffer using ICU 78 Unicode BMP tables (zero synthetic codepoints)
- * so XML 1.0 + Namespaces 1.0 validation matches reference parsers on both
- * literal characters and numeric character references, while preserving the
- * original raw XMP packet bytes verbatim. */
+static int jp2_emit_table_entry(uint8_t *out, size_t *pos, uint16_t v) {
+    if (v == 0u) {
+        return 0;
+    }
+    if (v >= 0xD800u && v < 0xDC00u) {
+        size_t idx = (size_t)(v - 0xD800u);
+        if (idx >= sizeof(k_jis0213_astral) / sizeof(k_jis0213_astral[0])) {
+            return 0;
+        }
+        jp2_emit_utf8_cp(out, pos, k_jis0213_astral[idx]);
+        return 1;
+    }
+    if (v >= 0xDC00u && v < 0xE000u) {
+        size_t idx = (size_t)(v - 0xDC00u);
+        if (idx >= sizeof(k_jis0213_multi) / sizeof(k_jis0213_multi[0])) {
+            return 0;
+        }
+        jp2_emit_utf8_cp(out, pos, k_jis0213_multi[idx][0]);
+        jp2_emit_utf8_cp(out, pos, k_jis0213_multi[idx][1]);
+        return 1;
+    }
+    jp2_emit_utf8_cp(out, pos, v);
+    return 1;
+}
+
+/* Variant-strict decoder for 7-bit ISO-2022-{JP,JP-1,JP-2,JP-3,JP-2004,JP-EXT,
+ * KR,CN,CN-EXT} post-XMLDecl bytes into exact UTF-8 in a job-budgeted buffer.
+ * Only escape designations permitted by the declared variant are accepted. */
 static rfc_status jp2_iso2022_to_utf8(const uint8_t *src,
                                       size_t len,
                                       int mode,
@@ -1113,9 +1154,13 @@ static rfc_status jp2_iso2022_to_utf8(const uint8_t *src,
     }
     size_t i = 0u;
     size_t o = 0u;
-    int state = 0; /* 0=ASCII; mode1: 1=JIS0208, 2=JIS0212, 3=KATA, 4=JIS-Roman; mode2: 1=KSX1001; mode3: 1=GB2312, 2=CNS-P1 */
-    int g1_kind = 0;
-    int g2_kind = 0; /* mode1: 1=ISO8859-1, 2=ISO8859-7; mode3: 1=CNS-P2 */
+    /* state: 0=ASCII, 1=JIS0208, 2=JIS0212, 3=KATA, 4=JIS-Roman, 5=GB2312,
+     * 6=KSX1001, 7=JIS0213-O, 8=JIS0213-Q, 9=JIS0213-P, 10=CNS-P1, 11=IR165 */
+    int state = 0;
+    int g1_state = 0;
+    int g2_kind = 0; /* JP_2: 1=ISO8859-1, 2=ISO8859-7; CN/CN_EXT: 3=CNS-P2 */
+    int is_jp = (mode >= JP2_ISO_JP_BASE && mode <= JP2_ISO_JP_2004);
+    int is_so_si = (mode == JP2_ISO_KR || mode == JP2_ISO_CN || mode == JP2_ISO_CN_EXT);
 
     while (i < len) {
         uint8_t b = src[i];
@@ -1124,7 +1169,7 @@ static rfc_status jp2_iso2022_to_utf8(const uint8_t *src,
             return RFC_ERR_INVALID_ARGUMENT;
         }
         if (b == 0x1Bu) {
-            if (mode == 1) {
+            if (is_jp) {
                 if (i + 2u < len && src[i + 1u] == '(') {
                     uint8_t f = src[i + 2u];
                     if (f == 'B') {
@@ -1135,44 +1180,71 @@ static rfc_status jp2_iso2022_to_utf8(const uint8_t *src,
                         state = 4;
                         i += 3u;
                         continue;
-                    } else if (f == 'I') {
+                    } else if (f == 'I' && mode == JP2_ISO_JP_EXT) {
                         state = 3;
                         i += 3u;
                         continue;
                     }
-                } else if (i + 2u < len && src[i + 1u] == '$' &&
-                           (src[i + 2u] == '@' || src[i + 2u] == 'B')) {
-                    state = 1;
-                    i += 3u;
-                    continue;
-                } else if (i + 3u < len && src[i + 1u] == '$' &&
-                           src[i + 2u] == '(' && src[i + 3u] == 'D') {
-                    state = 2;
-                    i += 4u;
-                    continue;
-                } else if (i + 2u < len && src[i + 1u] == '.' &&
+                } else if (i + 2u < len && src[i + 1u] == '$') {
+                    uint8_t f = src[i + 2u];
+                    if (f == '@' || f == 'B') {
+                        state = 1;
+                        i += 3u;
+                        continue;
+                    } else if (f == 'A' && mode == JP2_ISO_JP_2) {
+                        state = 5;
+                        i += 3u;
+                        continue;
+                    } else if (f == '(' && i + 3u < len) {
+                        uint8_t f2 = src[i + 3u];
+                        if (f2 == 'D' &&
+                            (mode == JP2_ISO_JP_1 || mode == JP2_ISO_JP_EXT ||
+                             mode == JP2_ISO_JP_2)) {
+                            state = 2;
+                            i += 4u;
+                            continue;
+                        } else if (f2 == 'C' && mode == JP2_ISO_JP_2) {
+                            state = 6;
+                            i += 4u;
+                            continue;
+                        } else if (f2 == 'O' && mode == JP2_ISO_JP_3) {
+                            state = 7;
+                            i += 4u;
+                            continue;
+                        } else if (f2 == 'Q' && mode == JP2_ISO_JP_2004) {
+                            state = 8;
+                            i += 4u;
+                            continue;
+                        } else if (f2 == 'P' &&
+                                   (mode == JP2_ISO_JP_3 || mode == JP2_ISO_JP_2004)) {
+                            state = 9;
+                            i += 4u;
+                            continue;
+                        }
+                    }
+                } else if (mode == JP2_ISO_JP_2 && i + 2u < len &&
+                           src[i + 1u] == '.' &&
                            (src[i + 2u] == 'A' || src[i + 2u] == 'F')) {
                     g2_kind = (src[i + 2u] == 'A') ? 1 : 2;
                     i += 3u;
                     continue;
-                } else if (g2_kind != 0 && i + 2u < len && src[i + 1u] == 'N' &&
+                } else if (mode == JP2_ISO_JP_2 && g2_kind != 0 &&
+                           i + 2u < len && src[i + 1u] == 'N' &&
                            src[i + 2u] >= 0x21u && src[i + 2u] <= 0x7Eu) {
                     const uint16_t *gt = (g2_kind == 1) ? k_jp2_g2_a_u16 : k_jp2_g2_f_u16;
-                    uint16_t cp = gt[src[i + 2u] - 0x21u];
-                    if (cp == 0u) {
+                    if (!jp2_emit_table_entry(buf, &o, gt[src[i + 2u] - 0x21u])) {
                         alloc->free(alloc->ctx, buf);
                         return RFC_ERR_INVALID_ARGUMENT;
                     }
-                    jp2_emit_utf8_bmp(buf, &o, cp);
                     i += 3u;
                     continue;
                 }
                 alloc->free(alloc->ctx, buf);
                 return RFC_ERR_INVALID_ARGUMENT;
-            } else if (mode == 2) {
+            } else if (mode == JP2_ISO_KR) {
                 if (i + 3u < len && src[i + 1u] == '$' &&
                     src[i + 2u] == ')' && src[i + 3u] == 'C') {
-                    g1_kind = 1;
+                    g1_state = 6;
                     i += 4u;
                     continue;
                 }
@@ -1181,26 +1253,29 @@ static rfc_status jp2_iso2022_to_utf8(const uint8_t *src,
             } else {
                 if (i + 3u < len && src[i + 1u] == '$' && src[i + 2u] == ')') {
                     if (src[i + 3u] == 'A') {
-                        g1_kind = 1;
+                        g1_state = 5;
                         i += 4u;
                         continue;
                     } else if (src[i + 3u] == 'G') {
-                        g1_kind = 2;
+                        g1_state = 10;
+                        i += 4u;
+                        continue;
+                    } else if (src[i + 3u] == 'E' && mode == JP2_ISO_CN_EXT) {
+                        g1_state = 11;
                         i += 4u;
                         continue;
                     }
                 } else if (i + 3u < len && src[i + 1u] == '$' &&
                            src[i + 2u] == '*' && src[i + 3u] == 'H') {
-                    g2_kind = 1;
+                    g2_kind = 3;
                     i += 4u;
                     continue;
-                } else if (g2_kind == 1 && i + 3u < len && src[i + 1u] == 'N') {
-                    uint16_t cp = jp2_dbcs_lookup_u16(k_cns_p2_u16, src[i + 2u], src[i + 3u]);
-                    if (cp == 0u) {
+                } else if (g2_kind == 3 && i + 3u < len && src[i + 1u] == 'N') {
+                    uint16_t v = jp2_dbcs_lookup_u16(k_cns_p2_u16, src[i + 2u], src[i + 3u]);
+                    if (!jp2_emit_table_entry(buf, &o, v)) {
                         alloc->free(alloc->ctx, buf);
                         return RFC_ERR_INVALID_ARGUMENT;
                     }
-                    jp2_emit_utf8_bmp(buf, &o, cp);
                     i += 4u;
                     continue;
                 }
@@ -1208,16 +1283,16 @@ static rfc_status jp2_iso2022_to_utf8(const uint8_t *src,
                 return RFC_ERR_INVALID_ARGUMENT;
             }
         }
-        if ((mode == 2 || mode == 3) && b == 0x0Eu) {
-            if (g1_kind == 0 || state != 0) {
+        if (is_so_si && b == 0x0Eu) {
+            if (g1_state == 0 || state != 0) {
                 alloc->free(alloc->ctx, buf);
                 return RFC_ERR_INVALID_ARGUMENT;
             }
-            state = g1_kind;
+            state = g1_state;
             i++;
             continue;
         }
-        if ((mode == 2 || mode == 3) && b == 0x0Fu) {
+        if (is_so_si && b == 0x0Fu) {
             if (state == 0) {
                 alloc->free(alloc->ctx, buf);
                 return RFC_ERR_INVALID_ARGUMENT;
@@ -1229,21 +1304,21 @@ static rfc_status jp2_iso2022_to_utf8(const uint8_t *src,
         if (state == 0) {
             buf[o++] = b;
             i++;
-        } else if (mode == 1 && state == 4) {
+        } else if (state == 4) {
             if (b == 0x5Cu) {
-                jp2_emit_utf8_bmp(buf, &o, 0x00A5u);
+                jp2_emit_utf8_cp(buf, &o, 0x00A5u);
             } else if (b == 0x7Eu) {
-                jp2_emit_utf8_bmp(buf, &o, 0x203Eu);
+                jp2_emit_utf8_cp(buf, &o, 0x203Eu);
             } else {
                 buf[o++] = b;
             }
             i++;
-        } else if (mode == 1 && state == 3) {
+        } else if (state == 3) {
             if (b < 0x21u || b > 0x5Fu) {
                 alloc->free(alloc->ctx, buf);
                 return RFC_ERR_INVALID_ARGUMENT;
             }
-            jp2_emit_utf8_bmp(buf, &o, (uint16_t)(0xFF61u + (b - 0x21u)));
+            jp2_emit_utf8_cp(buf, &o, 0xFF61u + (uint32_t)(b - 0x21u));
             i++;
         } else {
             if (i + 1u >= len) {
@@ -1251,27 +1326,27 @@ static rfc_status jp2_iso2022_to_utf8(const uint8_t *src,
                 return RFC_ERR_INVALID_ARGUMENT;
             }
             const uint16_t *tbl = NULL;
-            if (mode == 1 && state == 1) {
-                tbl = k_jis0208_u16;
-            } else if (mode == 1 && state == 2) {
-                tbl = k_jis0212_u16;
-            } else if (mode == 2 && state == 1) {
-                tbl = k_ksx1001_u16;
-            } else if (mode == 3 && state == 1) {
-                tbl = k_gb2312_u16;
-            } else if (mode == 3 && state == 2) {
-                tbl = k_cns_p1_u16;
+            switch (state) {
+                case 1: tbl = k_jis0208_u16; break;
+                case 2: tbl = k_jis0212_u16; break;
+                case 5: tbl = k_gb2312_u16; break;
+                case 6: tbl = k_ksx1001_u16; break;
+                case 7: tbl = k_jis0213_o_u16; break;
+                case 8: tbl = k_jis0213_q_u16; break;
+                case 9: tbl = k_jis0213_p_u16; break;
+                case 10: tbl = k_cns_p1_u16; break;
+                case 11: tbl = k_ir165_u16; break;
+                default: tbl = NULL; break;
             }
-            uint16_t cp = tbl ? jp2_dbcs_lookup_u16(tbl, b, src[i + 1u]) : 0u;
-            if (cp == 0u) {
+            uint16_t v = tbl ? jp2_dbcs_lookup_u16(tbl, b, src[i + 1u]) : 0u;
+            if (!jp2_emit_table_entry(buf, &o, v)) {
                 alloc->free(alloc->ctx, buf);
                 return RFC_ERR_INVALID_ARGUMENT;
             }
-            jp2_emit_utf8_bmp(buf, &o, cp);
             i += 2u;
         }
     }
-    if (state != 0 && !(mode == 1 && state == 4)) {
+    if (state != 0 && !(is_jp && state == 4)) {
         alloc->free(alloc->ctx, buf);
         return RFC_ERR_INVALID_ARGUMENT;
     }
@@ -1541,21 +1616,34 @@ static int jp2_xml_parse_xmldecl(const uint8_t *p,
             "xmacukraine", "xms9320213", "xms950hkscs", "xmscp932",
             "xroman8", "xsjis", "xwindows1256s", "xwindows874", "xwindows950"
         };
-        static const char *const k_iso2022_jp_encs[] = {
-            "csiso2022jp", "csiso2022jp2", "csjisencoding", "ibm5054",
-            "iso2022jp", "iso2022jp1", "iso2022jp2", "iso2022jp2004",
-            "iso2022jp3", "iso2022jpext", "jis", "jis7", "jis8",
-            "jisencoding", "xwindows50220", "xwindows50221",
-            "xwindowsiso2022jp"
+        static const struct { const char *name; int mode; } k_iso2022_encs[] = {
+            {"csiso2022cn", JP2_ISO_CN},
+            {"csiso2022jp", JP2_ISO_JP_BASE},
+            {"csiso2022jp2", JP2_ISO_JP_2},
+            {"csiso2022kr", JP2_ISO_KR},
+            {"csjisencoding", JP2_ISO_JP_EXT},
+            {"ibm25546", JP2_ISO_KR},
+            {"ibm5054", JP2_ISO_JP_EXT},
+            {"iso2022cn", JP2_ISO_CN},
+            {"iso2022cncns", JP2_ISO_CN_EXT},
+            {"iso2022cnext", JP2_ISO_CN_EXT},
+            {"iso2022jp", JP2_ISO_JP_BASE},
+            {"iso2022jp1", JP2_ISO_JP_1},
+            {"iso2022jp2", JP2_ISO_JP_2},
+            {"iso2022jp2004", JP2_ISO_JP_2004},
+            {"iso2022jp3", JP2_ISO_JP_3},
+            {"iso2022jpext", JP2_ISO_JP_EXT},
+            {"iso2022kr", JP2_ISO_KR},
+            {"jis", JP2_ISO_JP_EXT},
+            {"jis7", JP2_ISO_JP_2},
+            {"jis8", JP2_ISO_JP_2},
+            {"jisencoding", JP2_ISO_JP_EXT},
+            {"xiso2022cncns", JP2_ISO_CN_EXT},
+            {"xiso2022cngb", JP2_ISO_CN},
+            {"xwindows50220", JP2_ISO_JP_BASE},
+            {"xwindows50221", JP2_ISO_JP_EXT},
+            {"xwindowsiso2022jp", JP2_ISO_JP_BASE}
         };
-        static const char *const k_iso2022_kr_encs[] = {
-            "csiso2022kr", "ibm25546", "iso2022kr"
-        };
-        static const char *const k_iso2022_cn_encs[] = {
-            "csiso2022cn", "iso2022cn", "iso2022cncns", "iso2022cnext",
-            "xiso2022cncns", "xiso2022cngb"
-        };
-        int iso_mode = 0;
         if (jp2_enc_norm_in_sorted_list(
                 norm_enc, k_utf8_encs,
                 sizeof(k_utf8_encs) / sizeof(k_utf8_encs[0]))) {
@@ -1573,25 +1661,24 @@ static int jp2_xml_parse_xmldecl(const uint8_t *p,
                 }
             }
         } else {
-            if (jp2_enc_norm_in_sorted_list(
-                    norm_enc, k_iso2022_jp_encs,
-                    sizeof(k_iso2022_jp_encs) / sizeof(k_iso2022_jp_encs[0]))) {
-                iso_mode = 1;
-            } else if (jp2_enc_norm_in_sorted_list(
-                           norm_enc, k_iso2022_kr_encs,
-                           sizeof(k_iso2022_kr_encs) /
-                               sizeof(k_iso2022_kr_encs[0]))) {
-                iso_mode = 2;
-            } else if (jp2_enc_norm_in_sorted_list(
-                           norm_enc, k_iso2022_cn_encs,
-                           sizeof(k_iso2022_cn_encs) /
-                               sizeof(k_iso2022_cn_encs[0]))) {
-                iso_mode = 3;
-            } else {
-                return 0; /* encoding contradicts or is unsupported on this byte stream */
+            int iso_mode = JP2_ISO_NONE;
+            size_t lo = 0u;
+            size_t hi = sizeof(k_iso2022_encs) / sizeof(k_iso2022_encs[0]);
+            while (lo < hi) {
+                size_t mid = lo + (hi - lo) / 2u;
+                int cmp = strcmp(norm_enc, k_iso2022_encs[mid].name);
+                if (cmp == 0) {
+                    iso_mode = k_iso2022_encs[mid].mode;
+                    break;
+                }
+                if (cmp < 0) {
+                    hi = mid;
+                } else {
+                    lo = mid + 1u;
+                }
             }
-            if (has_bom) {
-                return 0;
+            if (iso_mode == JP2_ISO_NONE || has_bom) {
+                return 0; /* encoding contradicts or is unsupported on this byte stream */
             }
             for (size_t k = 0u; k < len; k++) {
                 if (p[k] >= 0x80u) {
@@ -1949,7 +2036,8 @@ static rfc_status jp2_classify_xmp_xml(const uint8_t *p,
         int has_shift = 0;
         for (size_t k = i; k < len; k++) {
             if (p[k] == 0x1Bu ||
-                ((iso2022_mode == 2 || iso2022_mode == 3) &&
+                ((iso2022_mode == JP2_ISO_KR || iso2022_mode == JP2_ISO_CN ||
+                  iso2022_mode == JP2_ISO_CN_EXT) &&
                  (p[k] == 0x0Eu || p[k] == 0x0Fu))) {
                 has_shift = 1;
                 break;
