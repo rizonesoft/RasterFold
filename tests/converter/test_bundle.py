@@ -148,6 +148,30 @@ def readobj_imports(pe_path: Path) -> list[str]:
     return names
 
 
+def _run_wsl_win_tool(argv: list[str], *, timeout: float = 15.0) -> subprocess.CompletedProcess[str]:
+    max_attempts = 6 if os.name != 'nt' else 1
+    for attempt in range(max_attempts):
+        res = subprocess.run(
+            argv,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            timeout=timeout,
+        )
+        if (
+            attempt + 1 < max_attempts
+            and res.returncode == 1
+            and not res.stdout
+            and 'UtilAcceptVsock' in (res.stderr or '')
+        ):
+            time.sleep(0.5 * (attempt + 1))
+            continue
+        return res
+    raise RuntimeError(f'_run_wsl_win_tool exhausted attempts for {argv[0]}')
+
+
 def run_windows_binary_isolated(
     exe_path: Path,
     args: tuple[str, ...] = (),
@@ -299,13 +323,7 @@ def run_windows_binary_isolated(
             pid_ready.wait(timeout=1.0)
             win_pid = win_pid_box[0]
             if win_pid is not None:
-                subprocess.run(
-                    ['taskkill.exe', '/F', '/T', '/PID', str(win_pid)],
-                    stdin=subprocess.DEVNULL,
-                    capture_output=True,
-                    text=True,
-                    timeout=15,
-                )
+                _run_wsl_win_tool(['taskkill.exe', '/F', '/T', '/PID', str(win_pid)], timeout=15.0)
             try:
                 os.killpg(proc.pid, signal.SIGKILL)
             except ProcessLookupError:
@@ -313,7 +331,7 @@ def run_windows_binary_isolated(
             proc.wait(timeout=10)
             t_out.join(timeout=2)
             t_err.join(timeout=2)
-            subprocess.run(
+            _run_wsl_win_tool(
                 [
                     'powershell.exe',
                     '-NoProfile',
@@ -321,10 +339,7 @@ def run_windows_binary_isolated(
                     f"$t=Join-Path ([IO.Path]::GetTempPath()) 'rfc_smoke_{run_id}'; "
                     "if (Test-Path -LiteralPath $t) { Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath $t }",
                 ],
-                stdin=subprocess.DEVNULL,
-                capture_output=True,
-                text=True,
-                timeout=15,
+                timeout=15.0,
             )
             new_exc = subprocess.TimeoutExpired(
                 exc.cmd, timeout_sec, output=''.join(out_chunks), stderr=''.join(err_chunks)
@@ -559,15 +574,16 @@ class BundleTests(unittest.TestCase):
         win_pid = getattr(ctx.exception, 'win_pid', None)
         self.assertIsNotNone(win_pid, 'expected runner to capture Windows PID before timeout kill')
         tasklist_cmd = 'tasklist.exe' if os.name != 'nt' else 'tasklist'
-        chk = subprocess.run(
-            [tasklist_cmd, '/FI', f'PID eq {win_pid}', '/NH'],
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            timeout=15,
-            check=True,
-        )
-        self.assertNotIn(str(win_pid), chk.stdout, f'orphaned Windows child survived timeout: {chk.stdout}')
+        deadline = time.monotonic() + 3.0
+        last_stdout = ''
+        while True:
+            chk = _run_wsl_win_tool([tasklist_cmd, '/FI', f'PID eq {win_pid}', '/NH'], timeout=15.0)
+            self.assertEqual(chk.returncode, 0, chk.stdout + chk.stderr)
+            last_stdout = chk.stdout
+            if str(win_pid) not in last_stdout or time.monotonic() >= deadline:
+                break
+            time.sleep(0.25)
+        self.assertNotIn(str(win_pid), last_stdout, f'orphaned Windows child survived timeout: {last_stdout}')
 
     def test_build_converter_stamp_cache_fixup_and_tool_verification(self):
         build_converter = _load_build_converter()
