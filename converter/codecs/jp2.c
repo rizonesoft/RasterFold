@@ -1213,14 +1213,11 @@ static rfc_status jp2_iso2022_to_utf8(const uint8_t *src,
                         continue;
                     } else if (f == '(' && i + 3u < len) {
                         uint8_t f2 = src[i + 3u];
-                        if (f2 == 'B' ||
-                            (f2 == '@' && mode != JP2_ISO_JP_3 &&
+                        if ((f2 == 'B' && mode != JP2_ISO_JP_2) ||
+                            (f2 == '@' && mode != JP2_ISO_JP_2 &&
+                             mode != JP2_ISO_JP_3 &&
                              mode != JP2_ISO_JP_2004)) {
                             state = 1;
-                            i += 4u;
-                            continue;
-                        } else if (f2 == 'A' && mode == JP2_ISO_JP_2) {
-                            state = 5;
                             i += 4u;
                             continue;
                         } else if (f2 == 'D' &&

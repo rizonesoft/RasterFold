@@ -1581,10 +1581,13 @@ static void test_review_round1_regressions(void) {
                 "<?xml version=\"1.0\" encoding=\"ISO-2022-CN\"?><x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\x1B$)A\r\n\x0EVP\x0F</x:xmpmeta>",
                 "<?xml version=\"1.0\" encoding=\"ISO-2022-CN-EXT\"?><x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\x1B$+I\n\x1BO4;</x:xmpmeta>",
                 "<?xml version=\"1.0\" encoding=\"ISO-2022-JP-2\"?><x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\x1B(J</x:xmpmeta>",
+                "<?xml version=\"1.0\" encoding=\"ISO-2022-JP-2\"?><x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\x1B$(BF|\x1B(B</x:xmpmeta>",
+                "<?xml version=\"1.0\" encoding=\"ISO-2022-JP-2\"?><x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\x1B$(@F|\x1B(B</x:xmpmeta>",
+                "<?xml version=\"1.0\" encoding=\"ISO-2022-JP-2\"?><x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\x1B$(AVP\x1B(B</x:xmpmeta>",
                 "<?xml version=\"1.0\" encoding=\"UTF-8\"?><x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\x1B$BF|K\\\x1B(B</x:xmpmeta>",
                 "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\" xmlns:a=\"urn:u\" xmlns:b=\"urn:u\" a:k=\"1\" b:k=\"2\"/>"
             };
-            for (size_t bi = 0u; bi < 33u; bi++) {
+            for (size_t bi = 0u; bi < 36u; bi++) {
                 const char *bad_xmp = bad_cases[bi];
                 size_t blen = strlen(bad_xmp);
                 uint8_t *mb = (uint8_t *)malloc(e4.len + 8u + blen);
