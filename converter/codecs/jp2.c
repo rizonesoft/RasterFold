@@ -1364,9 +1364,21 @@ static rfc_status jp2_iso2022_to_utf8(const uint8_t *src,
             continue;
         }
         if (state == 0) {
+            if (b == 0x0Au || b == 0x0Du) {
+                if (mode == JP2_ISO_JP_2) {
+                    g2_kind = 0;
+                } else if (mode == JP2_ISO_CN || mode == JP2_ISO_CN_EXT) {
+                    g1_state = 0;
+                    g2_kind = 0;
+                    g3_kind = 0;
+                }
+            }
             buf[o++] = b;
             i++;
         } else if (state == 4) {
+            if (mode == JP2_ISO_JP_2 && (b == 0x0Au || b == 0x0Du)) {
+                g2_kind = 0;
+            }
             if (b == 0x5Cu) {
                 jp2_emit_utf8_cp(buf, &o, 0x00A5u);
             } else if (b == 0x7Eu) {
