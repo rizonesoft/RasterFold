@@ -1090,6 +1090,13 @@ static uint16_t jp2_dbcs_lookup_u16(const uint16_t *tbl, uint8_t b1, uint8_t b2)
     return tbl[(uint32_t)(b1 - 0x21u) * 94u + (uint32_t)(b2 - 0x21u)];
 }
 
+static uint32_t jp2_dbcs_lookup_u32(const uint32_t *tbl, uint8_t b1, uint8_t b2) {
+    if (b1 < 0x21u || b1 > 0x7Eu || b2 < 0x21u || b2 > 0x7Eu) {
+        return 0u;
+    }
+    return tbl[(uint32_t)(b1 - 0x21u) * 94u + (uint32_t)(b2 - 0x21u)];
+}
+
 static void jp2_emit_utf8_cp(uint8_t *out, size_t *pos, uint32_t cp) {
     if (cp < 0x80u) {
         out[(*pos)++] = (uint8_t)cp;
@@ -1159,6 +1166,7 @@ static rfc_status jp2_iso2022_to_utf8(const uint8_t *src,
     int state = 0;
     int g1_state = 0;
     int g2_kind = 0; /* JP_2: 1=ISO8859-1, 2=ISO8859-7; CN/CN_EXT: 3=CNS-P2 */
+    int g3_kind = 0; /* CN_EXT: 1..5 = CNS 11643 Planes 3..7 (ESC$+I..M) */
     int is_jp = (mode >= JP2_ISO_JP_BASE && mode <= JP2_ISO_JP_2004);
     int is_so_si = (mode == JP2_ISO_KR || mode == JP2_ISO_CN || mode == JP2_ISO_CN_EXT);
 
@@ -1230,9 +1238,9 @@ static rfc_status jp2_iso2022_to_utf8(const uint8_t *src,
                     continue;
                 } else if (mode == JP2_ISO_JP_2 && g2_kind != 0 &&
                            i + 2u < len && src[i + 1u] == 'N' &&
-                           src[i + 2u] >= 0x21u && src[i + 2u] <= 0x7Eu) {
+                           src[i + 2u] >= 0x20u && src[i + 2u] <= 0x7Fu) {
                     const uint16_t *gt = (g2_kind == 1) ? k_jp2_g2_a_u16 : k_jp2_g2_f_u16;
-                    if (!jp2_emit_table_entry(buf, &o, gt[src[i + 2u] - 0x21u])) {
+                    if (!jp2_emit_table_entry(buf, &o, gt[src[i + 2u] - 0x20u])) {
                         alloc->free(alloc->ctx, buf);
                         return RFC_ERR_INVALID_ARGUMENT;
                     }
@@ -1270,6 +1278,12 @@ static rfc_status jp2_iso2022_to_utf8(const uint8_t *src,
                     g2_kind = 3;
                     i += 4u;
                     continue;
+                } else if (mode == JP2_ISO_CN_EXT && i + 3u < len &&
+                           src[i + 1u] == '$' && src[i + 2u] == '+' &&
+                           src[i + 3u] >= 'I' && src[i + 3u] <= 'M') {
+                    g3_kind = (int)(src[i + 3u] - 'I') + 1;
+                    i += 4u;
+                    continue;
                 } else if (g2_kind == 3 && i + 3u < len && src[i + 1u] == 'N') {
                     uint16_t v = jp2_dbcs_lookup_u16(k_cns_p2_u16, src[i + 2u], src[i + 3u]);
                     if (!jp2_emit_table_entry(buf, &o, v)) {
@@ -1278,13 +1292,32 @@ static rfc_status jp2_iso2022_to_utf8(const uint8_t *src,
                     }
                     i += 4u;
                     continue;
+                } else if (mode == JP2_ISO_CN_EXT && g3_kind != 0 &&
+                           i + 3u < len && src[i + 1u] == 'O') {
+                    const uint32_t *gt = NULL;
+                    switch (g3_kind) {
+                        case 1: gt = k_cns_p3_u32; break;
+                        case 2: gt = k_cns_p4_u32; break;
+                        case 3: gt = k_cns_p5_u32; break;
+                        case 4: gt = k_cns_p6_u32; break;
+                        case 5: gt = k_cns_p7_u32; break;
+                        default: gt = NULL; break;
+                    }
+                    uint32_t cp = gt ? jp2_dbcs_lookup_u32(gt, src[i + 2u], src[i + 3u]) : 0u;
+                    if (cp == 0u) {
+                        alloc->free(alloc->ctx, buf);
+                        return RFC_ERR_INVALID_ARGUMENT;
+                    }
+                    jp2_emit_utf8_cp(buf, &o, cp);
+                    i += 4u;
+                    continue;
                 }
                 alloc->free(alloc->ctx, buf);
                 return RFC_ERR_INVALID_ARGUMENT;
             }
         }
         if (is_so_si && b == 0x0Eu) {
-            if (g1_state == 0 || state != 0) {
+            if (g1_state == 0) {
                 alloc->free(alloc->ctx, buf);
                 return RFC_ERR_INVALID_ARGUMENT;
             }
@@ -1293,10 +1326,6 @@ static rfc_status jp2_iso2022_to_utf8(const uint8_t *src,
             continue;
         }
         if (is_so_si && b == 0x0Fu) {
-            if (state == 0) {
-                alloc->free(alloc->ctx, buf);
-                return RFC_ERR_INVALID_ARGUMENT;
-            }
             state = 0;
             i++;
             continue;
