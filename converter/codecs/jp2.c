@@ -1193,9 +1193,17 @@ static rfc_status jp2_iso2022_to_utf8(const uint8_t *src,
                         i += 3u;
                         continue;
                     }
+                } else if (i + 5u < len && src[i + 1u] == '&' &&
+                           src[i + 2u] == '@' && src[i + 3u] == 0x1Bu &&
+                           src[i + 4u] == '$' && src[i + 5u] == 'B') {
+                    state = 1;
+                    i += 6u;
+                    continue;
                 } else if (i + 2u < len && src[i + 1u] == '$') {
                     uint8_t f = src[i + 2u];
-                    if (f == '@' || f == 'B') {
+                    if (f == 'B' ||
+                        (f == '@' && mode != JP2_ISO_JP_3 &&
+                         mode != JP2_ISO_JP_2004)) {
                         state = 1;
                         i += 3u;
                         continue;
@@ -1205,9 +1213,20 @@ static rfc_status jp2_iso2022_to_utf8(const uint8_t *src,
                         continue;
                     } else if (f == '(' && i + 3u < len) {
                         uint8_t f2 = src[i + 3u];
-                        if (f2 == 'D' &&
-                            (mode == JP2_ISO_JP_1 || mode == JP2_ISO_JP_EXT ||
-                             mode == JP2_ISO_JP_2)) {
+                        if (f2 == 'B' ||
+                            (f2 == '@' && mode != JP2_ISO_JP_3 &&
+                             mode != JP2_ISO_JP_2004)) {
+                            state = 1;
+                            i += 4u;
+                            continue;
+                        } else if (f2 == 'A' && mode == JP2_ISO_JP_2) {
+                            state = 5;
+                            i += 4u;
+                            continue;
+                        } else if (f2 == 'D' &&
+                                   (mode == JP2_ISO_JP_1 ||
+                                    mode == JP2_ISO_JP_EXT ||
+                                    mode == JP2_ISO_JP_2)) {
                             state = 2;
                             i += 4u;
                             continue;
@@ -1327,6 +1346,19 @@ static rfc_status jp2_iso2022_to_utf8(const uint8_t *src,
         }
         if (is_so_si && b == 0x0Fu) {
             state = 0;
+            i++;
+            continue;
+        }
+        if (is_jp && (b == 0x09u || b == 0x0Au || b == 0x0Du)) {
+            buf[o++] = b;
+            i++;
+            continue;
+        }
+        if (mode == JP2_ISO_KR && (b == 0x09u || b == 0x0Au || b == 0x0Du)) {
+            buf[o++] = b;
+            if (b == 0x0Au) {
+                state = 0;
+            }
             i++;
             continue;
         }
